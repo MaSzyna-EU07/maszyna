@@ -44,12 +44,25 @@ public:
 	double signal_offset() const { return m_signal_offset; }
 	void signal_offset(double Distance) { m_signal_offset = Distance; }
 
+	// node bank: cards with the previews of the models or a list, and the size of the cards in pixels
+	bool nodebank_previews() const { return m_nodebank_previews; }
+	void nodebank_previews(bool Previews) { m_nodebank_previews = Previews; }
+	int nodebank_card() const { return m_nodebank_card; }
+	void nodebank_card(int Size) { m_nodebank_card = Size; }
+
+	// colours of the editor: 0 green, as the rest of the simulator; 1 amber
+	int palette() const { return m_palette; }
+	void palette(int Palette) { m_palette = Palette; }
+
 private:
 	movement_scheme m_movement{movement_scheme::wsad};
 	orthophoto_settings m_orthophoto;
 	std::map<std::string, std::pair<double, double>> m_orthophoto_origins;
 	double m_platform_edge{1.725};
 	double m_signal_offset{2.25};
+	bool m_nodebank_previews{true};
+	int m_nodebank_card{96};
+	int m_palette{0};
 };
 
 // global editor settings instance

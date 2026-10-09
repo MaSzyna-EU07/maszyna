@@ -289,7 +289,7 @@ void editor_mode::draw_track_overlay() const
 		return;
 
 	screen_projection const projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	bool const trackmode = ui()->mode() == nodebank_panel::TRACK;
 
 	ImU32 const coursecolor = IM_COL32(40, 220, 255, 220);
@@ -600,19 +600,6 @@ std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 	return modes;
 }
 
-void editor_mode::render_track_menu()
-{
-	if (ImGui::MenuItem(STR_C("Tracks"), nullptr, m_track_window_open))
-	{
-		if (m_track_window_open)
-			m_track_window_open = false;
-		else
-			show_track_tab(m_track_tab);
-	}
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Track editor: the window with its modes opens or closes"));
-}
-
 void editor_mode::show_track_tab(track_tab const Tab)
 {
 	m_track_window_open = true;
@@ -763,102 +750,86 @@ void editor_mode::render_track_inspector()
 		return;
 	}
 
-	auto *track{selected_track()};
 	m_route_tab = m_track_tab != track_tab::path;
 
-	ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 460.0f, ImGui::GetFrameHeight() + 8.0f), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowSize(ImVec2(440.0f, std::min(720.0f, io.DisplaySize.y - 80.0f)), ImGuiCond_FirstUseEver);
-	std::string title{STR_C("Tracks")};
-	if (track != nullptr && m_track_tab != track_tab::lay && false == track_analysis_tab())
-		title += ": " + (track->name().empty() ? std::string{"(noname)"} : track->name());
-	title += "###trackinspector";
-	if (ImGui::Begin(title.c_str(), &m_track_window_open, ImGuiWindowFlags_NoCollapse))
+	// the tools of the mode are drawn in the tool options window and the selected path in the inspector, see
+	// render_track_tool_options() and render_track_selection(); the checks list what they find in a window of their own
+	if (m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra)
 	{
-		render_track_modes(track);
-		ImGui::BeginChild("##trackmode");
-		switch (m_track_tab)
+		auto const *title{m_track_tab == track_tab::speed ? STR_C("Speed check") : m_track_tab == track_tab::joints ? STR_C("Joints") : STR_C("Infrastructure")};
+		ImGui::SetNextWindowSize(ImVec2(600.0f, std::min(320.0f, io.DisplaySize.y - 80.0f)), ImGuiCond_FirstUseEver);
+		if (ImGui::Begin((std::string{title} + "###trackanalysis").c_str(), nullptr, ImGuiWindowFlags_NoCollapse))
 		{
-		case track_tab::lay:
-			render_lay_ui();
-			break;
-		case track_tab::turnout:
-			if (track != nullptr && track->eType == tt_Switch)
-				render_turnout_ui();
-			else
-				render_switch_ui();
-			break;
-		case track_tab::straights:
-			render_straight_ui();
-			if (ImGui::CollapsingHeader(STR_C("Straights in the scenery")))
-				render_straights_ui();
-			break;
-		case track_tab::route:
-			render_route_ui();
-			break;
-		case track_tab::profile: render_profile_body(); break;
-		case track_tab::speed: render_speed_body(); break;
-		case track_tab::joints: render_joints_body(); break;
-		case track_tab::lineside: render_lineside_ui(); break;
-		case track_tab::signals: render_signal_ui(); break;
-		case track_tab::infra: render_infra_body(); break;
-		case track_tab::turntable: render_turntable_ui(); break;
-		default:
-			render_track_set_ui();
-			render_track_spread_ui();
-			if (track != nullptr)
-				render_path_ui();
-			else
-				ImGui::TextDisabled("%s", STR_C("LMB on a path in the view selects it"));
-			break;
+			switch (m_track_tab)
+			{
+			case track_tab::speed: render_speed_body(); break;
+			case track_tab::joints: render_joints_body(); break;
+			default: render_infra_body(); break;
+			}
 		}
-		ImGui::EndChild();
+		ImGui::End();
 	}
-	ImGui::End();
-	if (false == m_track_window_open)
-		ui()->set_track(false);
 
 	if (m_track_tab == track_tab::profile && m_track_window_open && false == m_profile.route.spans.empty())
 		render_profile_strip();
 }
 
-void editor_mode::render_track_modes(TTrack *Track)
+void editor_mode::render_track_tool_options()
 {
-	auto const &modes{track_modes()};
-	auto const row = [&](char const *Label, int const From, int const To) {
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextDisabled("%s", STR_C(Label));
-		for (int i = From; i < To; ++i)
-		{
-			auto const &mode{modes[i]};
-			auto const label{std::string{STR_C(mode.label)} + "###trackmode" + std::to_string(i)};
-			// the buttons which don't fit go on to the next line, under the first one
-			auto const width{ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(STR_C(mode.label)).x};
-			if (i == From)
-				ImGui::SameLine(72.0f);
-			else if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width > ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x)
-				ImGui::SetCursorPosX(72.0f);
-			else
-				ImGui::SameLine();
-			if (ImGui::RadioButton(label.c_str(), m_track_tab == mode.tab))
-				show_track_tab(mode.tab);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s  [%s]", STR_C(mode.tooltip), mode.key);
-		}
-	};
-	row("Edit", 0, 7);
-	row("Analysis", 7, static_cast<int>(modes.size()));
-	ImGui::SameLine();
-	ImGui::Checkbox(STR_C("Structure gauge"), &m_gauge.open);
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
+	auto *track{selected_track()};
+	// the tools themselves are in the toolbar
 	render_track_search();
 	ImGui::Spacing();
 	render_track_guide();
-	if (Track != nullptr && m_track_tab != track_tab::lay && false == track_analysis_tab())
+	switch (m_track_tab)
 	{
-		char const *type = Track->eType == tt_Normal ? "normal" : Track->eType == tt_Switch ? "switch" : Track->eType == tt_Cross ? "cross" : Track->eType == tt_Table ? "turntable" : Track->eType == tt_Tributary ? "tributary" : "unknown";
-		ImGui::TextDisabled("%s, %.2f m", STR_C(type), Track->Length());
+	case track_tab::lay:
+		render_lay_ui();
+		break;
+	case track_tab::turnout:
+		if (track != nullptr && track->eType == tt_Switch)
+			render_turnout_ui();
+		else
+			render_switch_ui();
+		break;
+	case track_tab::straights:
+		render_straight_ui();
+		if (ImGui::CollapsingHeader(STR_C("Straights in the scenery")))
+			render_straights_ui();
+		break;
+	case track_tab::route:
+		render_route_ui();
+		break;
+	case track_tab::profile: render_profile_body(); break;
+	case track_tab::speed:
+	case track_tab::joints:
+	case track_tab::infra:
+		ImGui::TextDisabled("%s", STR_C("What the check finds is listed in its window"));
+		break;
+	case track_tab::lineside: render_lineside_ui(); break;
+	case track_tab::signals: render_signal_ui(); break;
+	case track_tab::turntable: render_turntable_ui(); break;
+	default:
+		render_track_set_ui();
+		render_track_spread_ui();
+		break;
 	}
+}
+
+void editor_mode::render_track_selection()
+{
+	auto *track{selected_track()};
+	if (track == nullptr)
+	{
+		ImGui::TextDisabled("%s", STR_C("LMB on a path in the view selects it"));
+		return;
+	}
+	char const *type = track->eType == tt_Normal ? "normal" : track->eType == tt_Switch ? "switch" : track->eType == tt_Cross ? "cross" : track->eType == tt_Table ? "turntable" : track->eType == tt_Tributary ? "tributary" : "unknown";
+	ImGui::TextUnformatted((track->name().empty() ? std::string{"(noname)"} : track->name()).c_str());
+	ImGui::TextDisabled("%s, %.2f m", STR_C(type), track->Length());
+	// the parameters of the path belong to the select tool, the other tools show the path they work with
+	if (m_track_tab == track_tab::path)
+		render_path_ui();
 }
 
 void editor_mode::render_track_guide()
@@ -2057,7 +2028,7 @@ void editor_mode::draw_route_overlay() const
 	auto const &design{route.design};
 	auto const &result{route.result};
 	screen_projection const projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	auto const &start{result.valid ? result.start : design.start};
 	auto const &end{result.valid ? result.end : design.end};
 
@@ -2430,7 +2401,7 @@ editor_track::straight const &editor_mode::current_straight()
 void editor_mode::draw_straights_overlay() const
 {
 	screen_projection const projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	auto const nearby = [&](editor_track::straight const &Line) {
 		auto const offset{camera - Line.start};
@@ -2563,7 +2534,7 @@ void editor_mode::draw_straights_overlay() const
 		auto const lateral{across(other.start) + (across(other.end) - across(other.start)) * fraction};
 		glm::dvec3 const foot{line.start.x + line.direction.x * middle, line.start.y + line.grade * middle, line.start.z + line.direction.y * middle};
 		glm::dvec3 const target{foot.x + normal.x * lateral, foot.y, foot.z + normal.y * lateral};
-		bool const highlighted{offer.near && offer.neighbour == &other};
+		bool const highlighted{offer.nearby && offer.neighbour == &other};
 		auto const tick{highlighted ? (offer.snaps ? IM_COL32(80, 230, 255, 255) : IM_COL32(255, 210, 60, 255)) : IM_COL32(255, 230, 120, 230)};
 		if (highlighted)
 			projection.line(drawlist, other.start, other.end, tick, 3.0f);
@@ -2580,7 +2551,7 @@ void editor_mode::draw_straights_overlay() const
 			drawlist->AddText(screen, highlighted ? tick : IM_COL32(255, 230, 120, 255), label);
 		}
 	}
-	if (offer.near && false == offer.snaps && std::abs(offer.correction) > 0.02)
+	if (offer.nearby && false == offer.snaps && std::abs(offer.correction) > 0.02)
 	{
 		auto const shift{glm::dvec3{normal.x, 0.0, normal.y} * offer.correction};
 		projection.line(drawlist, line.start + shift, line.end + shift, IM_COL32(80, 230, 255, 210), 3.5f);
@@ -2642,7 +2613,7 @@ editor_mode::parallel_offer editor_mode::straight_parallel_offer(editor_track::s
 			if (error < best)
 			{
 				best = error;
-				offer.near = true;
+				offer.nearby = true;
 				offer.snaps = error < kParallelSnapWindow && angle <= kParallelSnapAngle;
 				offer.spacing = spacing;
 				offer.distance = std::abs(distance);
@@ -3561,7 +3532,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		auto const offer{straight_parallel_offer(m_straights.drag_line, m_straights.preview_start - m_straights.drag_line.start)};
 		if (offer.snaps)
 			hints = {{"Release", format(STR_C("parallel at %.2f m"), offer.spacing)}, {"Esc", "cancel"}};
-		else if (offer.near)
+		else if (offer.nearby)
 			hints = {{"Near another straight", format(STR_C("snap at %.2f m  (%.1f°)"), offer.spacing, offer.angle)}, {"Esc", "cancel"}};
 		else
 			hints = {{"Drag the diamond", "snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Esc", "cancel"}};
@@ -3705,7 +3676,7 @@ std::string editor_mode::track_readout() const
 			auto const offer{straight_parallel_offer(grabbed, offset)};
 			if (offer.snaps)
 				text += "\n" + format(STR_C("parallel  %.2f m"), offer.spacing);
-			else if (offer.near)
+			else if (offer.nearby)
 				text += "\n" + format(STR_C("close: %.2f m  %.1f°"), offer.spacing, offer.angle);
 			return text;
 		}
@@ -3733,7 +3704,7 @@ std::string editor_mode::track_readout() const
 void editor_mode::draw_track_hints()
 {
 	ImGuiIO const &io = ImGui::GetIO();
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	float const margin{12.0f};
 	float const gap{14.0f};
 	float const pad{4.0f};
@@ -3749,8 +3720,10 @@ void editor_mode::draw_track_hints()
 	auto hints{track_key_hints(false)};
 	if (hints.size() > 4)
 		hints.resize(4);
-	auto const bottom{io.DisplaySize.y};
-	auto const available{io.DisplaySize.x * 0.6f - 2.0f * margin};
+	// in the part of the window the 3d view is seen in, between the docked windows
+	auto const left{editor_ui::view_min().x + margin};
+	auto const bottom{editor_ui::view_max().y};
+	auto const available{(editor_ui::view_max().x - editor_ui::view_min().x) * 0.6f - 2.0f * margin};
 	auto const mode{track_mode_name()};
 	std::vector<std::vector<key_hint const *>> lines(1);
 	float used{ImGui::CalcTextSize(mode.c_str()).x + 2.0f * pad + gap};
@@ -3771,13 +3744,13 @@ void editor_mode::draw_track_hints()
 		float width{i == 0 ? ImGui::CalcTextSize(mode.c_str()).x + 2.0f * pad : 0.0f};
 		for (auto const *hint : lines[i])
 			width += (width > 0.0f ? gap : 0.0f) + width_of(*hint);
-		drawlist->AddRectFilled(ImVec2(margin - 6.0f, y - pad - 2.0f), ImVec2(margin + width + 6.0f, y + lineheight - pad - 2.0f), IM_COL32(0, 0, 0, 160), 4.0f);
-		auto x{margin};
+		drawlist->AddRectFilled(ImVec2(left - 6.0f, y - pad - 2.0f), ImVec2(left + width + 6.0f, y + lineheight - pad - 2.0f), IM_COL32(0, 0, 0, 160), 4.0f);
+		auto x{left};
 		if (i == 0)
 			x += chip(ImVec2(x, y), mode.c_str(), IM_COL32(60, 140, 230, 235), IM_COL32(255, 255, 255, 255));
 		for (auto const *hint : lines[i])
 		{
-			if (x > margin)
+			if (x > left)
 				x += gap;
 			x += chip(ImVec2(x, y), hint->key, IM_COL32(255, 210, 60, 220), IM_COL32(20, 20, 20, 255)) + 5.0f;
 			drawlist->AddText(ImVec2(x, y), IM_COL32(255, 255, 255, 230), hint->action.c_str());
@@ -3790,7 +3763,7 @@ void editor_mode::draw_track_hints()
 		readout += (readout.empty() ? "" : "\n") + std::string{"= "} + m_typed + "_   " + STR(meaning);
 	if (readout.empty() || ImGui::GetIO().WantCaptureMouse)
 		return;
-	auto *foreground{ImGui::GetForegroundDrawList()};
+	auto *foreground{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 	auto const size{ImGui::CalcTextSize(readout.c_str())};
 	ImVec2 at{io.MousePos.x + 20.0f, io.MousePos.y + 20.0f};
 	at.x = std::min(at.x, io.DisplaySize.x - size.x - 10.0f);
@@ -3965,7 +3938,7 @@ editor_track::snap_target editor_mode::snap_free_end(glm::dvec3 const &Near, glm
 void editor_mode::draw_free_ends(TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const
 {
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const &display{ImGui::GetIO().DisplaySize};
 	auto const reach{Global.EditorOrtho ? std::max(kJointRange, static_cast<double>(Global.EditorOrthoExtent) * 2.0) : kJointRange};
 	for (auto const &candidate : editor_track::free_ends(Self, Category, glm::dvec3{Global.pCamera.Pos}, reach, Exclude))
@@ -5066,7 +5039,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 void editor_mode::draw_build_overlay() const
 {
 	screen_projection const projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	auto const drawpath = [&](segment_data const &Path, ImU32 const Color) {
 		auto previous{bezier{Path}.point(0.0)};
 		for (int i = 1; i <= 24; ++i)

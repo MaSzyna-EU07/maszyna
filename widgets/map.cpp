@@ -308,13 +308,16 @@ void ui::map_panel::render_contents()
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-	ImGui::ImageButton((ImTextureID)(intptr_t)(m_tex->id),
+	// imgui 1.89+ takes the frame padding of the image button from the style
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+	ImGui::ImageButton("##map",
+					   (ImTextureID)(intptr_t)(m_tex->id),
 					   surface_size_im,
 					   ImVec2(0, surface_size.y / fb_size),
 					   ImVec2(surface_size.x / fb_size, 0),
-					   0,
 					   ImVec4(0.0f, 0.0f, 0.0f, 0.0f),
 					   ImVec4(1.0f, 1.0f, 1.0f, Global.UIBgOpacity));
+	ImGui::PopStyleVar();
 	ImGui::PopStyleColor(3);
 
 	if (ImGui::IsItemHovered())

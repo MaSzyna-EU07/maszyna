@@ -708,7 +708,7 @@ void editor_mode::render_gauge_window()
 	if (false == m_gauge.open)
 		return;
 	ImGui::SetNextWindowSize(ImVec2(380.0f, 420.0f), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin(STR_C("Structure gauge"), &m_gauge.open))
+	if (false == ImGui::Begin((std::string(STR_C("Structure gauge")) + "###structuregauge").c_str(), &m_gauge.open))
 	{
 		ImGui::End();
 		return;
@@ -778,7 +778,8 @@ void editor_mode::render_gauge_hits()
 	ImGui::SameLine();
 	ImGui::Text("%d / %zu", m_gauge.current + 1, hits.size());
 	ImGui::BeginChild("gaugehits", ImVec2(0.0f, std::min(160.0f, ImGui::GetTextLineHeightWithSpacing() * hits.size() + 8.0f)), true);
-	ImGuiListClipper clipper(static_cast<int>(hits.size()));
+	ImGuiListClipper clipper;
+	clipper.Begin(static_cast<int>(hits.size()));
 	while (clipper.Step())
 		for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
 		{

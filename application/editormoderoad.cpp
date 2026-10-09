@@ -216,17 +216,6 @@ glm::dvec3 path_direction(segment_data const &Path, double const T)
 
 }
 
-void editor_mode::render_road_menu()
-{
-	if (ImGui::BeginMenu("Roads"))
-	{
-		if (ImGui::MenuItem("Road editor", nullptr, &m_roadtool.window) && m_roadtool.window)
-			m_track_window_open = false;
-		ImGui::MenuItem("Show lanes", nullptr, &m_roadtool.lanes);
-		ImGui::EndMenu();
-	}
-}
-
 void editor_mode::update_road_tool()
 {
 	auto &tool{m_roadtool};
@@ -1919,7 +1908,8 @@ bool editor_mode::render_road_material(char const *Label, char *Buffer, std::siz
 			if (filter.empty() || name.find(filter) != std::string::npos)
 				listed.emplace_back(&name);
 		ImGui::BeginChild("list", ImVec2(340.0f, 280.0f), true);
-		ImGuiListClipper clipper(static_cast<int>(listed.size()));
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(listed.size()));
 		while (clipper.Step())
 		{
 			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
@@ -2257,49 +2247,33 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	return changed;
 }
 
-void editor_mode::render_road_window()
+void editor_mode::road_choose_tool(int const Tool)
 {
 	auto &tool{m_roadtool};
-	if (false == tool.window)
+	if (Tool == tool.tool)
 		return;
-	ImGui::SetNextWindowSize(ImVec2(440.0f, 620.0f), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin("Roads###roadeditor", &tool.window))
+	tool.tool = Tool;
+	road_cancel();
+	if (tool.tool != 0)
 	{
-		ImGui::End();
-		return;
+		tool.junction = nullptr;
+		tool.points.clear();
+		tool.marker = nullptr;
+		// the fields for the names of materials show the layout for the roads to be built again
+		road_select(nullptr);
 	}
+}
+
+// the road tools and what the next pieces get, in the tool options window; the selection is drawn in the inspector by render_road_selection()
+void editor_mode::render_road_tool_options()
+{
+	auto &tool{m_roadtool};
 	std::string reason;
 	if (false == editor_road::available(&reason))
 		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", reason.c_str());
 
-	auto const previoustool{tool.tool};
-	ImGui::RadioButton("Select", &tool.tool, 0);
-	ImGui::SameLine();
-	ImGui::RadioButton("Build", &tool.tool, 1);
-	ImGui::SameLine();
-	ImGui::RadioButton("Place", &tool.tool, 2);
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", "Level crossings, and the points where vehicles appear on the roads or are taken off them");
-	if (tool.tool != previoustool)
-	{
-		road_cancel();
-		if (tool.tool != 0)
-		{
-			tool.junction = nullptr;
-			tool.points.clear();
-			tool.marker = nullptr;
-			// the fields for the names of materials show the layout for the roads to be built again
-			road_select(nullptr);
-		}
-	}
-	ImGui::SameLine();
-	ImGui::Checkbox("Show lanes", &tool.lanes);
+	// the tools and what the place tool puts are chosen in the toolbar
 
-	// typed values are taken when confirmed, so nothing is made anew with each digit
-	auto const number = [](char const *Label, float &Value, float const Step, char const *Format) {
-		ImGui::SetNextItemWidth(120.0f);
-		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
-	};
 	if (tool.tool == 1)
 	{
 		if (ImGui::Checkbox("Roundabout", &tool.ring))
@@ -2346,12 +2320,6 @@ void editor_mode::render_road_window()
 	}
 	else if (tool.tool == 2)
 	{
-		ImGui::RadioButton("Level crossing", &tool.placekind, 0);
-		ImGui::SameLine();
-		ImGui::RadioButton("Spawn point", &tool.placekind, 1);
-		ImGui::SameLine();
-		ImGui::RadioButton("Removal point", &tool.placekind, 2);
-		ImGui::RadioButton("Pedestrian crossing", &tool.placekind, 3);
 		tool.placekind = std::clamp(tool.placekind, 0, 3);
 		switch (tool.placekind)
 		{
@@ -2377,6 +2345,26 @@ void editor_mode::render_road_window()
 		placing.kind = point_kind(tool.placekind);
 		render_roadpoint_layout(placing, nullptr);
 	}
+	else
+		ImGui::TextDisabled("The selected road is set up in the inspector");
+	if (false == tool.status.empty())
+	{
+		ImGui::Separator();
+		ImGui::TextWrapped("%s", tool.status.c_str());
+	}
+}
+
+// what the select tool of the roads picked, in the inspector
+void editor_mode::render_road_selection()
+{
+	auto &tool{m_roadtool};
+	// typed values are taken when confirmed, so nothing is made anew with each digit
+	auto const number = [](char const *Label, float &Value, float const Step, char const *Format) {
+		ImGui::SetNextItemWidth(120.0f);
+		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
+	};
+	if (tool.tool != 0)
+		ImGui::TextDisabled("The select tool shows the road picked in the view here");
 	else if (tool.marker != nullptr)
 	{
 		auto &point{*tool.marker};
@@ -2489,12 +2477,6 @@ void editor_mode::render_road_window()
 		ImGui::TextDisabled("LMB: select a road piece, a junction, a point where pieces meet,");
 		ImGui::TextDisabled("a level crossing or a traffic point");
 	}
-	if (false == tool.status.empty())
-	{
-		ImGui::Separator();
-		ImGui::TextWrapped("%s", tool.status.c_str());
-	}
-	ImGui::End();
 }
 
 void editor_mode::draw_road_overlay() const
@@ -2504,7 +2486,7 @@ void editor_mode::draw_road_overlay() const
 		return;
 
 	screen_projection projection;
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	// pieces of a line needed to draw a path: one for a straight, more the longer a bend is and the nearer it is
 	auto const pieces = [&camera](segment_data const &Path, glm::dvec3 const &Location) {
@@ -2833,8 +2815,7 @@ void editor_mode::draw_road_overlay() const
 		                                      "LMB: select a piece, a junction, a point (white dot) or a marker";
 	}
 	// shown above the place the track tools put their hints at
-	ImGuiIO const &io = ImGui::GetIO();
-	ImVec2 const position{12.0f, io.DisplaySize.y - 56.0f};
+	ImVec2 const position{editor_ui::view_min().x + 12.0f, editor_ui::view_max().y - 56.0f};
 	auto const size{ImGui::CalcTextSize(hint.c_str())};
 	drawlist->AddRectFilled(ImVec2(position.x - 6.0f, position.y - 4.0f), ImVec2(position.x + size.x + 6.0f, position.y + size.y + 4.0f), IM_COL32(0, 0, 0, 150), 4.0f);
 	drawlist->AddText(position, IM_COL32(255, 255, 255, 230), hint.c_str());

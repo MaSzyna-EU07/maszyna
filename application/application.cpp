@@ -74,7 +74,13 @@ extern WNDPROC BaseWindowProc;
 
 void focus_callback(GLFWwindow *window, int focus)
 {
+	ui_layer::focus_callback(focus);
 	Application.on_focus_change(focus != 0);
+}
+
+void cursor_enter_callback(GLFWwindow *window, int entered)
+{
+	ui_layer::cursor_enter_callback(entered);
 }
 
 void framebuffer_resize_callback(GLFWwindow *, int w, int h)
@@ -90,6 +96,7 @@ void window_resize_callback(GLFWwindow *, int w, int h)
 
 void cursor_pos_callback(GLFWwindow *window, double x, double y)
 {
+	ui_layer::cursor_pos_callback(x, y);
 	Global.cursor_pos = glm::ivec2(x, y);
 	Application.on_cursor_pos(x, y);
 }
@@ -1351,6 +1358,7 @@ void eu07_application::init_callbacks()
 	glfwSetScrollCallback(window, scroll_callback);
 	glfwSetCharCallback(window, char_callback);
 	glfwSetWindowFocusCallback(window, focus_callback);
+	glfwSetCursorEnterCallback(window, cursor_enter_callback);
 }
 
 int eu07_application::init_ogl()

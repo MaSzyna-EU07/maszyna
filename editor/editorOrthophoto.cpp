@@ -1356,7 +1356,7 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 	if (!m_enabled || m_config.in_scene || m_config.opacity <= 0.0f || ScreenWidth <= 0.0f || ScreenHeight <= 0.0f)
 		return;
 
-	ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	// without vertex offset support in the backend the whole list has to fit 16-bit indices
 	std::size_t const vertexbudget = (ImGui::GetIO().BackendFlags & ImGuiBackendFlags_RendererHasVtxOffset) ? vertex_budget * 8 : vertex_budget;
 	ImU32 const color = IM_COL32(255, 255, 255, static_cast<int>(m_config.opacity * 255.0f + 0.5f));
@@ -1417,7 +1417,7 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 		float const segmentsize = 1.0f / static_cast<float>(segments);
 		auto const height_at = [&](float U, float V) { return draped ? sample_heights(t.heights, U, V) + lift : flat; };
 
-		drawlist->PushTextureID(reinterpret_cast<ImTextureID>(textureid));
+		drawlist->PushTextureID((ImTextureID)(intptr_t)(textureid));
 		for (int j = 0; j < segments; ++j)
 			for (int i = 0; i < segments; ++i)
 			{

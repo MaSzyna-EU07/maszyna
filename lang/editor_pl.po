@@ -2075,8 +2075,8 @@ msgstr "Długość, na której skarpa przechodzi w koronę i w teren; 0: ostre k
 msgid "Sculpting..."
 msgstr "Rzeźbienie..."
 
-msgid "Opens the terrain tab of the editor settings: raising, lowering and smoothing with a brush"
-msgstr "Otwiera zakładkę terenu w ustawieniach edytora: podnoszenie, obniżanie i wygładzanie pędzlem"
+msgid "Opens the terrain tools: raising, lowering and smoothing with a brush"
+msgstr "Otwiera narzędzia terenu: podnoszenie, obniżanie i wygładzanie pędzlem"
 
 # scenery editor: track editor, selection, joints, parallel track, hectometre posts, fouling points
 
@@ -2553,9 +2553,6 @@ msgstr "Ortofotomapa"
 
 msgid "Orthophoto settings..."
 msgstr "Ustawienia ortofotomapy..."
-
-msgid "Orthophoto##window"
-msgstr "Ortofotomapa##window"
 
 msgid "Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"
 msgstr "Zdjęcia lotnicze z geoportal.gov.pl pod scenerią, ułożone według punktu odniesienia scenerii"
@@ -3974,7 +3971,7 @@ msgid "Not for the node bank yet: %s."
 msgstr "Jeszcze nie do banku węzłów: %s."
 
 msgid "A template placed from the node bank gets the cursor location in the pos.* parameters, the rotation set in the\nInsert tab in rot.y, and a unique name (the default value followed by a random suffix) in the name parameter.\nThe other parameters receive their default values."
-msgstr "Szablon wstawiony z banku węzłów dostaje położenie kursora w parametrach pos.*, obrót ustawiony w zakładce\nWstaw w rot.y, a w parametrze name niepowtarzalną nazwę (wartość domyślna z losowym przyrostkiem).\nPozostałe parametry dostają wartości domyślne."
+msgstr "Szablon wstawiony z banku obiektów dostaje położenie kursora w parametrach pos.*, obrót ustawiony w zakładce\nWstaw w rot.y, a w parametrze name niepowtarzalną nazwę (wartość domyślna z losowym przyrostkiem).\nPozostałe parametry dostają wartości domyślne."
 
 msgid "Suggest roles"
 msgstr "Podpowiedz role"
@@ -4725,3 +4722,494 @@ msgstr "Głowica na bramkę wisi nad osią toru tak wysoko nad główkami szyn"
 
 msgid " not read"
 msgstr " nieodczytywany"
+
+msgid "Reset window layout"
+msgstr "Przywróć układ okien"
+
+msgid "Selected:"
+msgstr "Zaznaczono:"
+
+msgid "Tool options"
+msgstr "Opcje narzędzia"
+
+msgid "Inspector"
+msgstr "Inspektor"
+
+msgid "Scene"
+msgstr "Scena"
+
+msgid "Node bank"
+msgstr "Bank obiektów"
+
+msgid "Refresh"
+msgstr "Odśwież"
+
+msgid "Filter: name or uuid"
+msgstr "Filtr: nazwa lub uuid"
+
+msgid "%zu models"
+msgstr "modeli: %zu"
+
+msgid "(no layer)"
+msgstr "(bez warstwy)"
+
+msgid "Group"
+msgstr "Grupa"
+
+msgid "Double click: fly to it"
+msgstr "Dwuklik: kamera leci do niego"
+
+msgid "By the track"
+msgstr "Przy torze"
+
+msgid "Checks"
+msgstr "Kontrola"
+
+msgid "Infrastructure"
+msgstr "Infrastruktura"
+
+msgid "Speed check"
+msgstr "Kontrola prędkości"
+
+msgid "What the check finds is listed in its window"
+msgstr "Wyniki kontroli są w jej oknie"
+
+msgid "Unpin: the dock hides at the edge of the window, its tabs show it over the view (Ctrl+Space: all docks)"
+msgstr "Odepnij: dok chowa się przy krawędzi okna, jego zakładki wysuwają go nad widok (Ctrl+Spacja: wszystkie doki)"
+
+msgid "Pin: the dock goes back to its place"
+msgstr "Przypnij: dok wraca na swoje miejsce"
+
+msgid "Unpin (hide at the edge)"
+msgstr "Odepnij (schowaj przy krawędzi)"
+
+msgid "Unpin all docks"
+msgstr "Odepnij wszystkie doki"
+
+msgid "Pin the docks back"
+msgstr "Przypnij doki z powrotem"
+
+msgid "Previews"
+msgstr "Podglądy"
+
+msgid "%d px"
+msgstr "%d px"
+
+msgid "No previews yet: they're made by eu07 -generate-nodebank-previews"
+msgstr "Brak podglądów: tworzy je eu07 -generate-nodebank-previews"
+
+msgid "Scenery templates (.inc) are listed with the previews off"
+msgstr "Szablony scenerii (.inc) są na liście przy wyłączonych podglądach"
+
+msgid "not a model"
+msgstr "to nie model"
+
+msgid "no preview"
+msgstr "brak podglądu"
+
+msgid "Colours of the editor"
+msgstr "Kolory edytora"
+
+msgid "Green, as the rest of the simulator"
+msgstr "Zielone, jak reszta symulatora"
+
+msgid "Amber, of the editor"
+msgstr "Bursztynowe, edytora"
+
+msgid "Surroundings"
+msgstr "Otoczenie"
+
+msgid "Roads"
+msgstr "Drogi"
+
+msgid "Sculpt"
+msgstr "Rzeźbienie"
+
+msgid "Chunks"
+msgstr "Kafle"
+
+msgid "Models around the line: select, insert, brush, area fill, copy to the node bank"
+msgstr "Modele wokół linii: zaznaczanie, wstawianie, pędzel, wypełnianie obszaru, kopiowanie do banku"
+
+msgid "Tracks and switches, signals, objects along the track, checks of the line"
+msgstr "Tory i rozjazdy, sygnalizatory, obiekty wzdłuż toru, kontrole linii"
+
+msgid "Roads and junctions, level crossings, the points where the traffic comes and goes"
+msgstr "Drogi i skrzyżowania, przejazdy, punkty pojawiania się i znikania ruchu"
+
+msgid "Terrain patches and chunks, sculpting, streaming, orthophoto"
+msgstr "Płaty i kafle terenu, rzeźbienie, strumieniowanie, ortofotomapa"
+
+msgid "LMB picks the models, as in the surroundings"
+msgstr "LPM zaznacza modele, jak w otoczeniu"
+
+msgid "LMB raises the terrain under the brush, Shift+LMB lowers it"
+msgstr "LPM podnosi teren pod pędzlem, Shift+LPM go obniża"
+
+msgid "LMB evens the terrain out under the brush"
+msgstr "LPM wyrównuje teren pod pędzlem"
+
+msgid "LMB adds a chunk next to the clicked one, Shift+LMB deletes it"
+msgstr "LPM dodaje kafel obok klikniętego, Shift+LPM go usuwa"
+
+msgid "A vehicle to drive, put on the selected track; it isn't written to the scenery files"
+msgstr "Pojazd do jazdy, stawiany na zaznaczonym torze; nie trafia do plików scenerii"
+
+msgid "%zu groups taken apart"
+msgstr "Rozgrupowano grup: %zu"
+
+msgid "%zu models copied; Ctrl+V puts them at the cursor"
+msgstr "Skopiowano modeli: %zu; Ctrl+V wstawia je przy kursorze"
+
+msgid "%zu models grouped: a click on one selects them all; Ctrl+Shift+G takes the group apart"
+msgstr "Zgrupowano modeli: %zu; klik na jednym zaznacza wszystkie, Ctrl+Shift+G rozgrupowuje"
+
+msgid "%zu models pasted; Ctrl+Z takes them back"
+msgstr "Wklejono modeli: %zu; Ctrl+Z cofa"
+
+msgid "%zu models selected"
+msgstr "Zaznaczono modeli: %zu"
+
+msgid "%zu models selected; Shift+LMB adds or takes one out"
+msgstr "Zaznaczono modeli: %zu; Shift+LPM dodaje lub odejmuje model"
+
+msgid "Add a model to the selection, or take it out"
+msgstr "Dodaje model do zaznaczenia albo go odejmuje"
+
+msgid "Add a track to the selection, drag: a box"
+msgstr "Dodaje tor do zaznaczenia, przeciąganie: ramka"
+
+msgid "Area fill: take the last point of the outline back"
+msgstr "Wypełnianie obszaru: cofnij ostatni punkt obrysu"
+
+msgid "Bend the selected along the track"
+msgstr "Wygnij zaznaczony wzdłuż toru"
+
+msgid "Bends the selected model, e.g. a platform edge or a fence, along the nearest track; the settings are in the inspector"
+msgstr "Wygina zaznaczony model, np. krawędź peronu albo płot, wzdłuż najbliższego toru; ustawienia są w inspektorze"
+
+msgid "Build: straight ahead"
+msgstr "Budowa: prosto przed siebie"
+
+msgid "Camera"
+msgstr "Kamera"
+
+msgid "Copies the selected models with their groups"
+msgstr "Kopiuje zaznaczone modele razem z ich grupami"
+
+msgid "Copy"
+msgstr "Kopiuj"
+
+msgid "Copy the selected models / paste them at the cursor"
+msgstr "Kopiuj zaznaczone modele / wklej je przy kursorze"
+
+msgid "Ctrl held"
+msgstr "Ctrl wciśnięty"
+
+msgid "Ctrl held while dragging"
+msgstr "Ctrl wciśnięty przy przeciąganiu"
+
+msgid "Ctrl+RMB"
+msgstr "Ctrl+PPM"
+
+msgid "Delete the selected"
+msgstr "Usuń zaznaczone"
+
+msgid "Delete the selected tracks"
+msgstr "Usuń zaznaczone tory"
+
+msgid "Deletes the selected models"
+msgstr "Usuwa zaznaczone modele"
+
+msgid "Deletes what's selected: a model, tracks, a road piece or point, a signal, an include of a scenery template"
+msgstr "Usuwa to, co zaznaczone: model, tory, kawałek lub punkt drogi, sygnalizator, include szablonu scenerii"
+
+msgid "Drop the selected onto the ground, each model of a group by itself"
+msgstr "Opuść zaznaczone na ziemię, każdy model grupy osobno"
+
+msgid "Drop to the ground"
+msgstr "Opuść na ziemię"
+
+msgid "Enter / Backspace"
+msgstr "Enter / Backspace"
+
+msgid "Fields of work"
+msgstr "Tryby pracy"
+
+msgid "Find a track by its name"
+msgstr "Znajdź tor po nazwie"
+
+msgid "Finish the road being built"
+msgstr "Zakończ budowaną drogę"
+
+msgid "Fly forwards, back, left, right (arrows in the legacy scheme)"
+msgstr "Lot do przodu, do tyłu, w lewo, w prawo (strzałki w starym układzie)"
+
+msgid "Fly to the selected"
+msgstr "Leć do zaznaczonego"
+
+msgid "Fly up / down (Page Up / Page Down in the legacy scheme)"
+msgstr "Lot w górę / w dół (Page Up / Page Down w starym układzie)"
+
+msgid "Group the selected models / take their group apart"
+msgstr "Grupuj zaznaczone modele / rozgrupuj ich grupę"
+
+msgid "Help"
+msgstr "Pomoc"
+
+msgid "Keyboard shortcuts"
+msgstr "Skróty klawiszowe"
+
+msgid "Lay track / switch / turntable"
+msgstr "Układanie toru / rozjazd / obrotnica"
+
+msgid "Laying track: finish / take the last point back"
+msgstr "Układanie toru: zakończ / cofnij ostatni punkt"
+
+msgid "Leave the editor"
+msgstr "Wyjście z edytora"
+
+msgid "Local space"
+msgstr "Lokalne osie"
+
+msgid "Log"
+msgstr "Log"
+
+msgid "Look around"
+msgstr "Rozglądanie się"
+
+msgid "Makes the change taken back again"
+msgstr "Przywraca cofniętą zmianę"
+
+msgid "Menu of the selection at the cursor"
+msgstr "Menu zaznaczenia przy kursorze"
+
+msgid "Nothing copied yet; Ctrl+C copies the selected models"
+msgstr "Nic jeszcze nie skopiowano; Ctrl+C kopiuje zaznaczone modele"
+
+msgid "Nothing selected"
+msgstr "Nic nie zaznaczono"
+
+msgid "Paste"
+msgstr "Wklej"
+
+msgid "Paste here"
+msgstr "Wklej tutaj"
+
+msgid "Profile / speed / joints / infrastructure"
+msgstr "Profil / prędkość / styki / infrastruktura"
+
+msgid "Puts each selected model, also each model of their groups, down onto the terrain or the object under it"
+msgstr "Opuszcza każdy zaznaczony model, także każdy model ich grup, na teren albo obiekt pod nim"
+
+msgid "Puts the copied models at the cursor, around it as they were around the selected one; Ctrl+RMB in the view pastes them where it was clicked"
+msgstr "Wstawia skopiowane modele przy kursorze, rozłożone wokół niego tak jak wokół zaznaczonego; Ctrl+PPM w widoku wkleja je w klikniętym miejscu"
+
+msgid "Puts the copied models here, around this point as they were around the selected one"
+msgstr "Wstawia skopiowane modele tutaj, rozłożone wokół tego punktu tak jak wokół zaznaczonego"
+
+msgid "Quit"
+msgstr "Wyjście"
+
+msgid "RMB held, E / Q"
+msgstr "PPM wciśnięty, E / Q"
+
+msgid "RMB held, W S A D"
+msgstr "PPM wciśnięty, W S A D"
+
+msgid "RMB held, mouse"
+msgstr "PPM wciśnięty, mysz"
+
+msgid "Redo"
+msgstr "Ponów"
+
+msgid "Save the scenery"
+msgstr "Zapisz scenerię"
+
+msgid "Screenshot"
+msgstr "Zrzut ekranu"
+
+msgid "Sculpt: lower; chunks: delete one"
+msgstr "Rzeźbienie: obniżanie; kafle: usunięcie kafla"
+
+msgid "Sculpt: raise; smooth: even out; chunks: add one"
+msgstr "Rzeźbienie: podnoszenie; wygładzanie: wyrównanie; kafle: dodanie kafla"
+
+msgid "Select a model to copy"
+msgstr "Zaznacz model do skopiowania"
+
+msgid "Select a model, or place one in the insert and brush modes"
+msgstr "Zaznacz model albo postaw go w trybach wstawiania i pędzla"
+
+msgid "Select tool; cancels what's going on first"
+msgstr "Narzędzie zaznaczania; najpierw przerywa to, co trwa"
+
+msgid "Select two models or more to group them: Shift+LMB adds one to the selection"
+msgstr "Zaznacz co najmniej dwa modele, by je zgrupować: Shift+LPM dodaje model do zaznaczenia"
+
+msgid "Select, insert, brush, area fill, copy to bank"
+msgstr "Zaznaczanie, wstawianie, pędzel, wypełnianie obszaru, kopiowanie do banku"
+
+msgid "Select: add a point, or take it out"
+msgstr "Zaznaczanie: dodaj punkt albo go odejmij"
+
+msgid "Signals / objects along the track"
+msgstr "Sygnalizatory / obiekty wzdłuż toru"
+
+msgid "Snap to the step set in the gizmo settings"
+msgstr "Przyciąganie do kroku z ustawień gizma"
+
+msgid "Split the road at the cursor, or make a point there"
+msgstr "Podziel drogę przy kursorze albo zrób tam punkt"
+
+msgid "Split the selected track at the cursor"
+msgstr "Podziel zaznaczony tor przy kursorze"
+
+msgid "Straight / curve"
+msgstr "Prosta / łuk"
+
+msgid "Takes the last change back"
+msgstr "Cofa ostatnią zmianę"
+
+msgid "The camera flies to the selected model and looks at it"
+msgstr "Kamera leci do zaznaczonego modelu i na niego patrzy"
+
+msgid "The handles along the axes of the selected model instead of the axes of the world"
+msgstr "Uchwyty wzdłuż osi zaznaczonego modelu zamiast osi świata"
+
+msgid "The keys of the editor, for each field of work"
+msgstr "Klawisze edytora w każdym trybie pracy"
+
+msgid "The models of the group move each by itself again"
+msgstr "Modele grupy znów poruszają się osobno"
+
+msgid "The selected model isn't in a group"
+msgstr "Zaznaczony model nie jest w grupie"
+
+msgid "The selected models move together from now on; a click on one selects them all"
+msgstr "Zaznaczone modele poruszają się odtąd razem; klik na jednym zaznacza wszystkie"
+
+msgid "The selected models move together from now on; a click on one selects them all. Shift+LMB adds a model to the selection"
+msgstr "Zaznaczone modele poruszają się odtąd razem; klik na jednym zaznacza wszystkie. Shift+LPM dodaje model do zaznaczenia"
+
+msgid "The view straight down without perspective, as on a map; again for the camera as it was"
+msgstr "Widok z góry bez perspektywy, jak na mapie; ponownie: kamera jak była"
+
+msgid "This list of shortcuts"
+msgstr "Ta lista skrótów"
+
+msgid "Top view, orthographic"
+msgstr "Widok z góry, ortogonalny"
+
+msgid "Translate / rotate / scale"
+msgstr "Przesuwanie / obrót / skala"
+
+msgid "Undo"
+msgstr "Cofnij"
+
+msgid "Undo / redo"
+msgstr "Cofnij / ponów"
+
+msgid "Ungroup"
+msgstr "Rozgrupuj"
+
+msgid "Unpin all docks for the most of the view, or pin them back"
+msgstr "Odepnij wszystkie doki dla większego widoku albo przypnij je z powrotem"
+
+msgid "What can be done with it"
+msgstr "Co można z nim zrobić"
+
+msgid "What the handles of the gizmo on the selection do when dragged; Ctrl held snaps the values"
+msgstr "Co robią uchwyty gizma na zaznaczeniu przy przeciąganiu; z Ctrl wartości są przyciągane"
+
+# scenery editor: view menu, weather and time
+
+msgid "View"
+msgstr "Widok"
+
+msgid "Weather and time"
+msgstr "Pogoda i czas"
+
+msgid "Time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor"
+msgstr "Godzina, dzień roku, widoczność, zachmurzenie i temperatura powietrza, z jakimi sceneria jest widoczna w edytorze"
+
+msgid "Time of day"
+msgstr "Godzina"
+
+msgid "Day of the year"
+msgstr "Dzień roku"
+
+msgid "Visibility"
+msgstr "Widoczność"
+
+msgid "Clouds"
+msgstr "Zachmurzenie"
+
+msgid "Up to 1 the sky clouds over, past it rain or snow falls, by the air temperature"
+msgstr "Do 1 niebo się chmurzy, powyżej pada deszcz albo śnieg, zależnie od temperatury powietrza"
+
+msgid "Air temperature"
+msgstr "Temperatura powietrza"
+
+msgid "Seen in the editor only; the scenery keeps its own time and weather"
+msgstr "Widoczne tylko w edytorze; sceneria zachowuje własny czas i pogodę"
+
+msgid "Top view, orthographic (O)"
+msgstr "Widok z góry, ortogonalny (O)"
+
+# scenery editor: tools over the 3d view
+
+msgid "Translate"
+msgstr "Przesuwanie"
+
+msgid "Rotate"
+msgstr "Obrót"
+
+msgid "Scale"
+msgstr "Skala"
+
+msgid "Look along %s%s; from over the scenery it's the top view"
+msgstr "Spójrz wzdłuż %s%s; znad scenerii to widok z góry"
+
+msgid "Show lanes"
+msgstr "Pokaż pasy ruchu"
+
+msgid "The lanes of the roads drawn as the paths the vehicles take"
+msgstr "Pasy ruchu dróg rysowane jako tory jazdy pojazdów"
+
+msgid "LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"
+msgstr "LPM: kawałek drogi, skrzyżowanie, punkt łączenia kawałków, przejazd kolejowy albo punkt ruchu"
+
+msgid "LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"
+msgstr "LPM: początek drogi, potem każdy kolejny punkt; na wolnym końcu, boku drogi albo skrzyżowaniu droga zostaje do nich dołączona"
+
+msgid "Level crossings, and the points where vehicles appear on the roads or are taken off them"
+msgstr "Przejazdy kolejowe oraz punkty, w których pojazdy pojawiają się na drogach albo są z nich zdejmowane"
+
+# scenery editor: node bank in two panes, models dragged to the sets
+
+msgid "Drop it on a model set, or on the list of the brush or the area fill"
+msgstr "Upuść go na zestaw modeli albo na listę pędzla lub wypełniania obszaru"
+
+msgid "or drag models here from the node bank"
+msgstr "albo przeciągnij tu modele z banku obiektów"
+
+# scenery editor: the toolbar with icons, the rows captioned
+
+msgid "Work modes"
+msgstr "Tryby pracy"
+
+msgid "Tools"
+msgstr "Narzędzia"
+
+msgid "Level crossing"
+msgstr "Przejazd kolejowy"
+
+msgid "Spawn point"
+msgstr "Punkt pojawiania"
+
+msgid "Removal point"
+msgstr "Punkt znikania"
+
+msgid "Pedestrian crossing"
+msgstr "Przejście dla pieszych"

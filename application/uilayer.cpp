@@ -19,16 +19,20 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/application.h"
 #include "application/editormode.h"
+#include "application/editoruilayer.h"
 
 #include "imgui/imgui_impl_glfw.h"
 
 GLFWwindow *ui_layer::m_window{nullptr};
+GLFWwindow *ui_layer::m_keywindow{nullptr};
 ImGuiIO *ui_layer::m_imguiio{nullptr};
 GLint ui_layer::m_textureunit{GL_TEXTURE0};
 bool ui_layer::m_cursorvisible;
+int ui_layer::m_palette{0};
 ImFont *ui_layer::font_default{nullptr};
 ImFont *ui_layer::font_mono{nullptr};
 ImFont *ui_layer::font_loading{nullptr};
+ImFont *ui_layer::font_bold{nullptr};
 
 ui_panel::ui_panel(std::string Identifier, bool const Isopen) : is_open(Isopen), m_name(std::move(Identifier)) {}
 
@@ -108,7 +112,7 @@ ui_layer::~ui_layer() {}
 
 bool ui_layer::key_callback(int key, int scancode, int action, int mods)
 {
-	ImGui_ImplGlfw_KeyCallback(m_window, key, scancode, action, mods);
+	ImGui_ImplGlfw_KeyCallback(m_keywindow != nullptr ? m_keywindow : m_window, key, scancode, action, mods);
 	return m_imguiio->WantCaptureKeyboard;
 }
 
@@ -130,25 +134,71 @@ bool ui_layer::mouse_button_callback(int button, int action, int mods)
 	return m_imguiio->WantCaptureMouse;
 }
 
-void ui_layer::imgui_style()
+// the glfw backend of imgui works with events since 1.87: position, hover and focus of the window are passed to it as they come
+void ui_layer::cursor_pos_callback(double x, double y)
 {
-	// palette shared with the MaSzyna starter: flat dark panels, thin borders, green accents
+	if (ImGui::GetCurrentContext() == nullptr)
+		return;
+	ImGui_ImplGlfw_CursorPosCallback(m_window, x, y);
+}
+
+void ui_layer::cursor_enter_callback(int entered)
+{
+	if (ImGui::GetCurrentContext() == nullptr)
+		return;
+	ImGui_ImplGlfw_CursorEnterCallback(m_window, entered);
+}
+
+void ui_layer::focus_callback(int focused)
+{
+	if (ImGui::GetCurrentContext() == nullptr)
+		return;
+	ImGui_ImplGlfw_WindowFocusCallback(m_window, focused);
+}
+
+void ui_layer::viewport_key_callback(GLFWwindow *Window, int key, int scancode, int action, int mods)
+{
+	// imgui gets the key with the window it came from (the state of modifiers is read from it), the simulator gets it unless imgui takes it
+	m_keywindow = Window;
+	Application.on_key(key, scancode, action, mods);
+	m_keywindow = nullptr;
+}
+
+namespace
+{
+// window creation of the glfw backend, wrapped to give the new windows the key callback of the simulator
+void (*imgui_create_window)(ImGuiViewport *Viewport){nullptr};
+
+void create_viewport_window(ImGuiViewport *Viewport)
+{
+	imgui_create_window(Viewport);
+	if (Viewport->PlatformHandle != nullptr)
+		glfwSetKeyCallback(static_cast<GLFWwindow *>(Viewport->PlatformHandle), ui_layer::viewport_key_callback);
+}
+} // namespace
+
+void ui_layer::imgui_colors(int const Palette)
+{
+	m_palette = Palette;
 	auto const rgb = [](int const Color, float const Alpha = 1.0f) {
 		return ImVec4(((Color >> 16) & 0xff) / 255.0f, ((Color >> 8) & 0xff) / 255.0f, (Color & 0xff) / 255.0f, Alpha);
 	};
-	int constexpr panel{0x1e2327}; // window background
-	int constexpr base{0x15171b}; // darker background, between panels
-	int constexpr header{0x2a3036}; // section headers, hovered items
-	int constexpr border{0x3a424a};
-	int constexpr field{0x121517}; // input fields, combos
-	int constexpr accent{0x177f00}; // selection, active elements
-	int constexpr accentbright{0x41c400}; // marks: checkmarks, active tab underline
-	int constexpr accentdim{0x164b0e};
+	auto const editor{Palette == 1};
+	// palette shared with the MaSzyna starter: flat dark panels, thin borders, green accents; the one of the editor
+	// has amber accents on cooler grey panels
+	int const panel{editor ? 0x1f2226 : 0x1e2327}; // window background
+	int const base{editor ? 0x1b1d21 : 0x15171b}; // darker background, between panels
+	int const header{editor ? 0x2c3036 : 0x2a3036}; // section headers, hovered items
+	int const border{editor ? 0x3a3f47 : 0x3a424a};
+	int const field{editor ? 0x15171a : 0x121517}; // input fields, combos
+	int const accent{editor ? 0xb07a1c : 0x177f00}; // selection, active elements
+	int const accentbright{editor ? 0xe5a73a : 0x41c400}; // marks: checkmarks, active tab underline
+	int const accentdim{editor ? 0x5a4319 : 0x164b0e};
 
 	ImVec4 *colors = ImGui::GetStyle().Colors;
 
-	colors[ImGuiCol_Text] = rgb(0xffffff);
-	colors[ImGuiCol_TextDisabled] = rgb(0xa0a0a2);
+	colors[ImGuiCol_Text] = rgb(editor ? 0xe6e8eb : 0xffffff);
+	colors[ImGuiCol_TextDisabled] = rgb(editor ? 0x8a929c : 0xa0a0a2);
 	colors[ImGuiCol_WindowBg] = rgb(panel, Global.UIBgOpacity); // ui.bg.opacity from config file
 	colors[ImGuiCol_ChildBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 	colors[ImGuiCol_PopupBg] = rgb(base, 0.98f);
@@ -186,6 +236,9 @@ void ui_layer::imgui_style()
 	colors[ImGuiCol_TabActive] = rgb(accent); // also the line under the tab bar
 	colors[ImGuiCol_TabUnfocused] = rgb(header);
 	colors[ImGuiCol_TabUnfocusedActive] = rgb(accentdim);
+	// imgui 1.90+ marks the selected tab with a line over it as well, in the same colours
+	colors[ImGuiCol_TabSelectedOverline] = rgb(accent);
+	colors[ImGuiCol_TabDimmedSelectedOverline] = rgb(accentdim);
 	colors[ImGuiCol_PlotLines] = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
 	colors[ImGuiCol_PlotLinesHovered] = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
 	colors[ImGuiCol_PlotHistogram] = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
@@ -196,6 +249,14 @@ void ui_layer::imgui_style()
 	colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
 	colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
 	colors[ImGuiCol_ModalWindowDimBg] = rgb(base, 0.60f);
+	// where a dragged window would be docked, and an empty dock node
+	colors[ImGuiCol_DockingPreview] = rgb(accentbright, 0.70f);
+	colors[ImGuiCol_DockingEmptyBg] = rgb(base);
+}
+
+void ui_layer::imgui_style()
+{
+	imgui_colors(0);
 
 	// flat, square elements with thin borders
 	auto &style = ImGui::GetStyle();
@@ -222,6 +283,8 @@ bool ui_layer::init(GLFWwindow *Window)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     m_imguiio = &ImGui::GetIO();
+	// imgui.ini is read with the first frame, which may be of another mode than the editor
+	editor_ui::register_settings();
 
 	m_imguiio->ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     // m_imguiio->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -278,6 +341,14 @@ bool ui_layer::init(GLFWwindow *Window)
 			}
 		}
 	}
+	for (auto const *bold : {"fonts/dejavusans-bold.ttf", "fonts/DejaVuSans-Bold.ttf"})
+	{
+		if (font_bold == nullptr && FileExists(bold))
+		{
+			ImFontConfig bold_config;
+			font_bold = m_imguiio->Fonts->AddFontFromFileTTF(bold, Global.ui_fontsize * 1.25f, &bold_config, &ranges[0]);
+		}
+	}
 	if (FileExists("fonts/bahnschrift.ttf")) {
 		ImFontConfig loading_config;
 		font_loading = m_imguiio->Fonts->AddFontFromFileTTF("fonts/bahnschrift.ttf", 48, &loading_config, &ranges[0]);
@@ -315,6 +386,20 @@ bool ui_layer::init(GLFWwindow *Window)
 	  {
 		  return false;
 	  }
+
+	// panels can be docked together, and dragged out of the simulator window into windows of their own (e.g. on another monitor)
+	// when both backends can do it. glfw can't place windows under wayland. both flags have to be set before the first frame
+	m_imguiio->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	auto const viewportsupport{(m_imguiio->BackendFlags & ImGuiBackendFlags_PlatformHasViewports) && (m_imguiio->BackendFlags & ImGuiBackendFlags_RendererHasViewports) &&
+	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND};
+	if (Global.ui_viewports && viewportsupport)
+	{
+		m_imguiio->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+		auto &platformio{ImGui::GetPlatformIO()};
+		imgui_create_window = platformio.Platform_CreateWindow;
+		platformio.Platform_CreateWindow = create_viewport_window;
+	}
+	WriteLog(std::string("ui: panels in separate windows ") + ((m_imguiio->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) ? "enabled" : (viewportsupport ? "disabled in settings" : "not supported here")));
 
     return true;
 }
@@ -399,6 +484,13 @@ void ui_layer::update()
 
 void ui_layer::render()
 {
+	// the frame may have been started by the ui of another mode, when the mode changes; the windows docked in the dockspace
+	// of this one would come undocked if they were drawn in a frame without it
+	if (m_dockspaceframe != ImGui::GetFrameCount())
+	{
+		render_dockspace();
+		m_dockspaceframe = ImGui::GetFrameCount();
+	}
 	render_background();
 	render_panels();
 	render_tooltip();
@@ -415,11 +507,25 @@ void ui_layer::render_internal()
 {
 	ImGui::Render();
 	GfxRenderer->GetImguiRenderer()->Render();
+
+	if (m_imguiio->ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+	{
+		// panels outside of the main window are drawn in their own windows, whose gl contexts are shared with the main one
+		auto *context{glfwGetCurrentContext()};
+		ImGui::UpdatePlatformWindows();
+		ImGui::RenderPlatformWindowsDefault();
+		glfwMakeContextCurrent(context);
+	}
 }
 
 void ui_layer::begin_ui_frame()
 {
+	// the colours follow the ui of the mode drawn
+	if (palette() != m_palette)
+		imgui_colors(palette());
 	begin_ui_frame_internal();
+	render_dockspace();
+	m_dockspaceframe = ImGui::GetFrameCount();
 }
 
 void ui_layer::begin_ui_frame_internal()
@@ -450,8 +556,9 @@ void ui_layer::render_hierarchy(){
 	if(!m_editor_hierarchy)
 		return;
 
-	ImGui::SetNextWindowSize(ImVec2(0, 0));
-	ImGui::Begin(STR_C("Scene Hierarchy"), &m_editor_hierarchy, ImGuiWindowFlags_AlwaysAutoResize);
+	// fitted to the contents when it first appears; no auto resize, which a docked window can't do
+	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);
+	ImGui::Begin((std::string(STR_C("Scene Hierarchy")) + "###scenehierarchy").c_str(), &m_editor_hierarchy);
 	ImGui::Text("Registered nodes: %zu", scene::Hierarchy.size());
     ImGui::BeginChild("hierarchy_list", ImVec2(500, 300), true);
 
@@ -605,6 +712,7 @@ void ui_layer::render_menu_contents()
 				editor_mode::set_settings_open(settings_open);
 			}
 		}
+		render_windows_menu();
 		ImGui::EndMenu();
 	}
 }
@@ -613,7 +721,7 @@ void ui_layer::render_menu()
 {
 	glm::dvec2 mousepos = Global.cursor_pos;
 
-	if (!((Global.ControlPicking && mousepos.y < 50.0f) || m_imguiio->WantCaptureMouse) || m_suppress_menu)
+	if (m_suppress_menu || (false == m_menu_always && !((Global.ControlPicking && mousepos.y < 50.0f) || m_imguiio->WantCaptureMouse)))
 		return;
 
 	if (ImGui::BeginMainMenuBar())
@@ -645,5 +753,5 @@ void ui_layer::render_background()
 	ImVec2 end_position(start_position.x + image_size.x, start_position.y + image_size.y);
 
 	// obrazek jest odwrócony w pionie – odwracamy UV
-	ImGui::GetBackgroundDrawList()->AddImage(reinterpret_cast<ImTextureID>(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
+	ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())->AddImage((ImTextureID)(intptr_t)(tex.get_id()), start_position, end_position, ImVec2(0, 1), ImVec2(1, 0));
 }

@@ -688,7 +688,7 @@ void editor_mode::draw_hekto_overlay() const
 	if (false == tool.open || tool.track == nullptr)
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	for (auto const &post : tool.posts)
 	{
@@ -955,7 +955,7 @@ void editor_mode::draw_fouling_overlay() const
 	if (false == tool.open)
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	for (auto const &point : tool.points)
 	{

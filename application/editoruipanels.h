@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uilayer.h"
 #include "utilities/Classes.h"
 #include "editor/editorIncludeInfo.hpp"
+#include "editor/editorPreviews.hpp"
 
 #include <functional>
 /*
@@ -132,7 +133,6 @@ class nodebank_panel : public ui_panel
 		TRACK
 	};
 	edit_mode mode = MODIFY;
-	int requested_mode{-1}; // tab brought forward on the next frame
 
 	nodebank_panel(std::string const &Name, bool const Isopen);
 	void nodebank_reload();
@@ -157,21 +157,44 @@ class nodebank_panel : public ui_panel
 	// shows the set manager window, optionally with specified user set selected
 	void open_sets_window(int const Setid = 0);
 
-	// draws settings of the active edit mode inside its tab
-	std::function<void(edit_mode)> mode_options;
-	// draws sections attached above the mode tabs (gizmo, node properties)
-	std::function<void()> header_sections;
 
   private:
 	// methods:
 	std::string generate_node_label(std::string Input) const;
 	void render_sets_window();
+	// finds the preview images of the entries, in the order of the file, as the generator names them
+	void index_previews();
+	// entries of a group as cards with their previews, in rows as many as fit the width
+	void render_cards(std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> const &Entries);
+	// the same entries as a list, for when the previews are off
+	void render_list(std::vector<std::pair<std::string, std::shared_ptr<std::string>> const *> const &Entries);
+	// the scenery templates (.inc), as a list; they're placed with include directives, so they take a scenery opened for editing
+	void render_templates_list(std::string const &Filter);
+	// the entry dragged from the item drawn last, to drop it on a list of the model sets or of a tool
+	void drag_entry(std::pair<std::string, std::shared_ptr<std::string>> const &Entry);
+	// image of a node definition as the node bank has it, or an empty string
+	std::string const &template_preview(std::string const &Template) const;
+	// texture of the small preview of the image, 0 if there's none (yet)
+	std::uint64_t preview_texture(std::string const &Path, char const *&Placeholder);
+	// the templates of the edited model set as cards with their previews
+	void render_set_cards(int const Setid);
+	// the entry pointed at for a moment: a popup with its preview, big, and the model and skin it shows
+	void preview_popup(std::pair<std::string, std::shared_ptr<std::string>> const &Entry);
 	// true if the node bank selection is a definition of a node, which the hand-made lists and the model sets can take
 	bool node_selected() const;
 	// members:
 	std::vector<std::pair<std::string, std::shared_ptr<std::string>>> m_nodebank;
 	char m_nodesearch[128];
 	std::shared_ptr<std::string> m_selectedtemplate;
+	// previews of the models: image of each node definition, by its address, and the images read so far
+	std::unordered_map<std::string const *, std::string> m_previewpaths;
+	std::unique_ptr<editor_previews::image_cache> m_previews;
+	std::unique_ptr<editor_previews::image_cache> m_largepreviews; // a few, for the popup
+	bool m_previewfolder{false}; // the generator was run, there's the folder of the images
+	std::unordered_map<std::string, std::string> m_templatepreviews; // images of the node definitions by their text, for the model sets
+	// the group of the node bank shown, by its place among the groups; scenery_templates for the scenery templates
+	static int constexpr scenery_templates{-1};
+	int m_category{0};
 	// set manager window
 	bool m_setsopen{false};
 	int m_setsselected{0}; // id of the user set being edited

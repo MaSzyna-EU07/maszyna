@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <regex>
 #include "application/editormode.h"
+#include "scene/scenenodegroups.h"
 #include "application/editoruilayer.h"
 #ifndef _WIN32
 #include <spawn.h>
@@ -28,6 +29,7 @@ extern char **environ;
 #include "editor/editorGroundMesh.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorIcons.hpp"
 #include "utilities/translation.h"
 #include "utilities/Globals.h"
 #include "utilities/glmHelpers.h"
@@ -488,16 +490,37 @@ editor_mode::editor_mode() {
 	// the area fill settings live in the node bank window, in the tab of the fill mode
 	ui()->set_fill_options([this]() { render_area_fill(); });
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
+	ui()->set_toolbar_options([this]() { render_toolbar(); });
+	ui()->set_workspace_bar([this]() { render_workspaces(); });
+	ui()->set_track_options([this]() { render_track_tool_options(); }, [this]() { render_track_selection(); });
+	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });
+	ui()->set_workspace_options(editor_ui::workspace::terrain, [this]() { render_terrain_tool_options(); });
+	// a node picked in the scene window is selected as if clicked in the view; a double click flies the camera to it
+	ui()->set_scene_select([this](scene::basic_node *Node, bool const Focus) {
+		if (Focus)
+			start_focus(Node);
+		std::string reason;
+		if (Node->from_template() || false == scene::Layers.editable(Node, &reason))
+		{
+			ui()->set_status("\"" + (Node->name().empty() ? std::string{"(unnamed node)"} : Node->name()) + "\" can't be edited: " + reason, true);
+			return;
+		}
+		m_track_window_open = false;
+		ui()->set_mode(nodebank_panel::MODIFY);
+		m_node = Node;
+		ui()->set_node(m_node);
+	});
 	ui()->set_array_options([this]() { render_array(); });
 	ui()->set_bend_options([this]() { render_bend(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
+	ui()->set_edit_menu([this]() { render_edit_menu(); });
 	ui()->set_menu_options([this]() {
 		render_object_menu();
-		render_track_menu();
-		render_road_menu();
+		render_view_menu();
 		render_map_menu();
+		render_help_menu();
 	});
 	m_roadtool.settings.normalize();
 	road_select(nullptr);
@@ -653,7 +676,7 @@ void editor_mode::start_focus(scene::basic_node *node, double duration)
     m_focus_duration = duration;
 }
 
-void editor_mode::snap_to_ground(scene::basic_node *node)
+void editor_mode::snap_to_ground(scene::basic_node *node, bool const Alone, bool const Joined)
 {
     if (!node || !simulation::Region)
         return;
@@ -662,89 +685,25 @@ void editor_mode::snap_to_ground(scene::basic_node *node)
     if (!simulation::Region->point_inside(origin))
         return;
 
-    // small tolerance so a node already resting on a surface still snaps cleanly to it
-    double const epsilon = 0.05;
-    double bestY = -std::numeric_limits<double>::max();
-    bool found = false;
-
-    // record the highest surface that is at or below the node's current position at its (x,z)
-    auto consider_triangle = [&](glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c) {
-        double y;
-        if (triangle_height_at(a, b, c, origin.x, origin.z, y) && y <= origin.y + epsilon && y > bestY)
-        {
-            bestY = y;
-            found = true;
-        }
-    };
-
-    auto consider_shapes = [&](std::vector<scene::shape_node> const &shapes) {
-        for (auto const &shape : shapes)
-        {
-            // quick reject: skip shapes whose bounding circle doesn't cover our (x,z) column
-            auto const &sdata = shape.data();
-            double const sdx = origin.x - sdata.area.center.x;
-            double const sdz = origin.z - sdata.area.center.z;
-            if (sdx * sdx + sdz * sdz > static_cast<double>(sdata.area.radius) * sdata.area.radius)
-                continue;
-
-            auto const &verts = sdata.vertices;
-            for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
-                consider_triangle(verts[i].position, verts[i + 1].position, verts[i + 2].position);
-        }
-    };
-
-    scene::basic_section &sec = simulation::Region->section(origin);
-    // section level holds the large opaque geometry, including legacy terrain
-    consider_shapes(sec.m_shapes);
-
-    // scan a 3x3 neighbourhood of cells for smaller geometry and other model instances below us
-    for (int dz = -1; dz <= 1; ++dz)
-        for (int dx = -1; dx <= 1; ++dx)
-        {
-            scene::basic_cell &cell = sec.cell(origin, glm::ivec2(dx, dz));
-            consider_shapes(cell.m_shapesopaque);
-            consider_shapes(cell.m_shapestranslucent);
-
-            // other instances are approximated by their bounding sphere, so a node can rest on top of them
-            for (auto *inst : cell.m_instancesopaque)
-            {
-                if (!inst || inst == node)
-                    continue;
-                glm::dvec3 const ic = inst->location();
-                double const r = static_cast<double>(inst->radius());
-                double const idx = origin.x - ic.x, idz = origin.z - ic.z;
-                double const horiz2 = idx * idx + idz * idz;
-                if (horiz2 < r * r)
-                {
-                    double const ytop = ic.y + std::sqrt(r * r - horiz2);
-                    if (ytop <= origin.y + epsilon && ytop > bestY)
-                    {
-                        bestY = ytop;
-                        found = true;
-                    }
-                }
-            }
-        }
-
-    // editable terrain patches keep their heightmap on the CPU, so query them directly
-    for (editor_terrain *terrain : active_terrains())
-    {
-        if (!terrain->contains(origin.x, origin.z))
-            continue;
-        double const y = terrain->height_at(origin.x, origin.z);
-        if (y <= origin.y + epsilon && y > bestY)
-        {
-            bestY = y;
-            found = true;
-        }
-    }
-
-    if (!found)
+    // the same ground the models are put on when they're inserted: the terrain shapes, the terrain tile models and the terrain
+    // patches of the editor, under the node, or over it when it went under the ground. the shapes alone and the spheres of the
+    // models around, which were asked about before, missed the ground of the sceneries made of terrain tile models
+    glm::dvec3 const target = placement_on_ground(origin);
+    if (std::abs(target.y - origin.y) < 1e-4)
         return;
 
     push_snapshot(node, EditorSnapshot::Action::Move);
-    glm::dvec3 target = origin;
-    target.y = bestY;
+    if (false == m_history.empty())
+        m_history.back().joined = Joined;
+    if (auto *model = dynamic_cast<TAnimModel *>(node); Alone && model != nullptr && node->group() > 1)
+    {
+        // the model of a group goes down by itself, the rest of the group stays
+        simulation::Region->erase(model);
+        model->location(target);
+        simulation::Region->insert(model);
+        model->mark_dirty();
+        return;
+    }
     m_editor.translate(node, target, true); // true == apply the computed Y (free vertical move)
 }
 
@@ -905,6 +864,9 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
 
     // deleted nodes also drop out of the "undo last fill" set
     m_fill_last.erase(std::remove(m_fill_last.begin(), m_fill_last.end(), node), m_fill_last.end());
+    // and out of the selection and their group
+    m_selection.erase(std::remove(m_selection.begin(), m_selection.end(), node), m_selection.end());
+    scene::Groups.remove(node);
 
     // an array no longer follows its settings once the model it was made of is gone
     if (m_array.base == node)
@@ -912,6 +874,28 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
 }
 
 void editor_mode::undo_last()
+{
+    // the changes made together are taken back together, and their models are the selection again
+    std::vector<scene::basic_node *> touched;
+    while (false == m_history.empty())
+    {
+        auto const joined{m_history.back().joined};
+        undo_one();
+        if (m_node != nullptr && std::find(touched.begin(), touched.end(), m_node) == touched.end())
+            touched.push_back(m_node);
+        if (false == joined)
+            break;
+    }
+    if (touched.size() > 1)
+    {
+        // the one with the gizmo was recorded first, so it's taken back last
+        m_node = touched.back();
+        m_selection.assign(touched.begin(), touched.end() - 1);
+        ui()->set_node(m_node);
+    }
+}
+
+void editor_mode::undo_one()
 {
     if (m_history.empty())
         return;
@@ -979,6 +963,7 @@ void editor_mode::undo_last()
         redoSnap.node_ptr = nullptr;
         redoSnap.uuid = snap.uuid;
         redoSnap.layer = snap.layer;
+        redoSnap.joined = snap.joined;
         g_redo.push_back(std::move(redoSnap));
 
         TAnimModel *created = simulation::State.create_model(snap.serialized, snap.node_name, snap.position);
@@ -1003,6 +988,7 @@ void editor_mode::undo_last()
 
     EditorSnapshot current;
     current.action = snap.action;
+    current.joined = snap.joined;
     current.node_name = snap.node_name;
     current.node_ptr = target;
     current.layer = target->layer();
@@ -1046,6 +1032,24 @@ void editor_mode::undo_last()
 }
 
 void editor_mode::redo_last()
+{
+    // the first of the changes made together is on the top, the others follow it
+    std::vector<scene::basic_node *> touched;
+    do
+    {
+        redo_one();
+        if (m_node != nullptr && std::find(touched.begin(), touched.end(), m_node) == touched.end())
+            touched.push_back(m_node);
+    } while (false == g_redo.empty() && g_redo.back().joined);
+    if (touched.size() > 1)
+    {
+        m_node = touched.front();
+        m_selection.assign(touched.begin() + 1, touched.end());
+        ui()->set_node(m_node);
+    }
+}
+
+void editor_mode::redo_one()
 {
     if (g_redo.empty())
         return;
@@ -1112,6 +1116,7 @@ void editor_mode::redo_last()
         hist.position = snap.position;
         hist.uuid = snap.uuid;
         hist.layer = snap.layer;
+        hist.joined = snap.joined;
         m_history.push_back(std::move(hist));
 
         // NOTE: located the way other steps do it, as the name alone doesn't lead to a node which has none
@@ -1134,6 +1139,7 @@ void editor_mode::redo_last()
 
     EditorSnapshot hist;
     hist.action = snap.action;
+    hist.joined = snap.joined;
     hist.node_name = snap.node_name;
     hist.node_ptr = target;
 
@@ -1342,6 +1348,8 @@ bool editor_mode::update()
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
+    // the tools, the gizmo modes and the axes over the 3d view
+    render_viewport_overlays();
 
     render_track_inspector();
     if (selected_track())
@@ -1400,7 +1408,8 @@ bool editor_mode::update()
     // roads: trajectories of the lanes, and the tools of the road window
     update_road_tool();
     draw_road_overlay();
-    render_road_window();
+    // the roads and the terrain are fields of work, their tools are drawn in the tool options window in place of the edit mode ones
+    ui()->set_workspace(m_terrain_open ? editor_ui::workspace::terrain : m_roadtool.window ? editor_ui::workspace::roads : editor_ui::workspace::none);
 
     // --- array: the one made last is kept in line with its settings ---
     update_array();
@@ -1410,9 +1419,13 @@ bool editor_mode::update()
         draw_area_fill_outline();
     draw_ortho_compass();
 
-    render_orthophoto_window();
     render_new_scenery_popup();
     render_open_scenery_popup();
+    render_shortcuts_window();
+    render_orthophoto_window();
+    render_environment_window();
+    draw_selection_overlay();
+    render_context_menu();
 
     // --- ImGui: Editor Settings & History windows ---
     if(m_settings_open)
@@ -1427,7 +1440,7 @@ bool editor_mode::update()
 
 void editor_mode::render_settings()
 {
-    ImGui::Begin(STR_C("Editor Settings"), &m_settings_open, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin((std::string(STR_C("Editor Settings")) + "###editorsettings").c_str(), &m_settings_open);
 
     if (ImGui::BeginTabBar("##editorsettings"))
     {
@@ -1447,13 +1460,16 @@ void editor_mode::render_settings()
 
             ImGui::Separator();
             ImGui::Checkbox(STR_C("Transform gizmo (ImGuizmo)"), &m_gizmo_enabled);
-            ImGui::EndTabItem();
-        }
-        bool const terrainwanted = m_terrain_tab_wanted;
-        m_terrain_tab_wanted = false;
-        if (ImGui::BeginTabItem(STR_C("Terrain"), nullptr, terrainwanted ? ImGuiTabItemFlags_SetSelected : 0))
-        {
-            render_terrain_ui();
+
+            ImGui::Separator();
+            ImGui::TextUnformatted(STR_C("Colours of the editor"));
+            const char *palettes[] = {STR_C("Green, as the rest of the simulator"), STR_C("Amber, of the editor")};
+            int palette = std::clamp(EditorSettings.palette(), 0, 1);
+            if (ImGui::Combo("##palette", &palette, palettes, IM_ARRAYSIZE(palettes)))
+            {
+                EditorSettings.palette(palette);
+                EditorSettings.save();
+            }
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -2866,6 +2882,103 @@ void editor_mode::render_map_menu()
     ImGui::EndMenu();
 }
 
+void editor_mode::render_orthophoto_window()
+{
+    if (false == m_orthophoto_window)
+        return;
+    ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin((std::string(STR_C("Orthophoto")) + "###orthophoto").c_str(), &m_orthophoto_window))
+        render_orthophoto_ui();
+    ImGui::End();
+}
+
+void editor_mode::render_view_menu()
+{
+    if (false == ImGui::BeginMenu(STR_C("View")))
+        return;
+    if (ImGui::MenuItem(STR_C("Top view, orthographic"), "O", Global.EditorOrtho))
+        toggle_ortho();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
+    ImGui::MenuItem("Show lanes", nullptr, &m_roadtool.lanes);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", "Draws the lanes of the roads with the ways the vehicles take through the junctions");
+    if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.open))
+        m_gauge.open = !m_gauge.open;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
+    ImGui::Separator();
+    ImGui::MenuItem(STR_C("Weather and time"), nullptr, &m_environment_open);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor"));
+    ImGui::EndMenu();
+}
+
+void editor_mode::render_environment_window()
+{
+    if (false == m_environment_open)
+        return;
+    ImGui::SetNextWindowSize(ImVec2(420.0f * Global.ui_scale, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin((std::string(STR_C("Weather and time")) + "###environment").c_str(), &m_environment_open, ImGuiWindowFlags_NoCollapse))
+    {
+        // what the setdatetime, setweather and settemperature commands do in the driver mode; the editor doesn't take commands
+        auto const set_date_time = [](int const Yearday, int const Minute) {
+            simulation::Time.set_time(Yearday, Minute);
+            auto const weather{Global.Weather};
+            simulation::Environment.compute_season(Yearday);
+            if (weather != Global.Weather)
+            {
+                // HACK: force re-calculation of precipitation, as the command does
+                Global.Overcast = std::clamp(Global.Overcast - 0.0001f, 0.0f, 2.0f);
+            }
+            simulation::Environment.update_moon();
+        };
+        // the names of the period, season and weather end with a colon, being keys of other lookups
+        auto const name = [](std::string Text) {
+            if (false == Text.empty() && Text.back() == ':')
+                Text.pop_back();
+            return Text;
+        };
+        auto const &time{simulation::Time.data()};
+        auto minute{time.wHour * 60 + time.wMinute};
+        auto const clock{format("%02d:%02d (%s)", time.wHour, time.wMinute, name(Global.Period).c_str())};
+        if (ImGui::SliderInt((std::string(STR_C("Time of day")) + "###timeofday").c_str(), &minute, 0, 1439, clock.c_str()))
+            set_date_time(static_cast<int>(std::round(Global.fMoveLight)), std::clamp(minute, 0, 1439));
+        auto yearday{Global.fMoveLight};
+        auto const day{format("%.0f (%s)", Global.fMoveLight, name(Global.Season).c_str())};
+        if (ImGui::SliderFloat((std::string(STR_C("Day of the year")) + "###dayofyear").c_str(), &yearday, 0.0f, 364.0f, day.c_str()))
+            set_date_time(static_cast<int>(std::round(std::clamp(yearday, 0.0f, 365.0f))), time.wHour * 60 + time.wMinute);
+        ImGui::Separator();
+        auto visibility{std::log(Global.fFogEnd)};
+        auto const fog{format("%.0f m", Global.fFogEnd)};
+        if (ImGui::SliderFloat((std::string(STR_C("Visibility")) + "###visibility").c_str(), &visibility, std::log(10.0f), std::log(50000.0f), fog.c_str()))
+        {
+            Global.fFogEnd = std::clamp(std::exp(visibility), 10.0f, 50000.0f);
+            simulation::Environment.compute_weather();
+        }
+        auto overcast{Global.Overcast};
+        auto const clouds{format("%.2f (%s)", Global.Overcast, name(Global.Weather).c_str())};
+        if (ImGui::SliderFloat((std::string(STR_C("Clouds")) + "###overcast").c_str(), &overcast, 0.0f, 2.0f, clouds.c_str()))
+        {
+            Global.Overcast = std::clamp(overcast, 0.0f, 2.0f);
+            simulation::Environment.compute_weather();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Up to 1 the sky clouds over, past it rain or snow falls, by the air temperature"));
+        auto temperature{Global.AirTemperature};
+        auto const air{format("%.1f deg C", Global.AirTemperature)};
+        if (ImGui::SliderFloat((std::string(STR_C("Air temperature")) + "###airtemperature").c_str(), &temperature, -35.0f, 40.0f, air.c_str()))
+        {
+            Global.AirTemperature = std::clamp(temperature, -35.0f, 40.0f);
+            simulation::Environment.compute_weather();
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", STR_C("Seen in the editor only; the scenery keeps its own time and weather"));
+        ImGui::PopStyleColor();
+    }
+    ImGui::End();
+}
+
 void editor_mode::render_new_scenery_popup()
 {
     if (m_newscenery_asked)
@@ -3012,14 +3125,17 @@ void editor_mode::render_open_scenery_popup()
     ImGui::EndPopup();
 }
 
-void editor_mode::render_orthophoto_window()
+void editor_mode::terrain_workspace(bool const Open)
 {
-    if (false == m_orthophoto_window)
-        return;
-    ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin(STR_C("Orthophoto##window"), &m_orthophoto_window, ImGuiWindowFlags_AlwaysAutoResize))
-        render_orthophoto_ui();
-    ImGui::End();
+    m_terrain_open = Open;
+    if (false == Open)
+        m_terrain_sculpt = m_chunk_edit = false;
+}
+
+void editor_mode::render_terrain_tool_options()
+{
+    // the orthophoto has a window of its own, see render_orthophoto_window()
+    render_terrain_ui();
 }
 
 void editor_mode::render_object_menu()
@@ -3243,7 +3359,7 @@ void editor_mode::draw_area_fill_outline() const
     };
     float constexpr nearw = 0.1f;
 
-    ImDrawList *drawlist = ImGui::GetBackgroundDrawList();
+    ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
     ImU32 const edgecolor = IM_COL32(255, 200, 40, 230);
     ImU32 const closingcolor = IM_COL32(255, 200, 40, 110);
 
@@ -3676,6 +3792,273 @@ void editor_mode::render_array()
     ImGui::PopID();
 }
 
+void editor_mode::choose_edit_mode(nodebank_panel::edit_mode const Mode)
+{
+	// an edit mode is the field of work instead of the tracks, roads or terrain
+	m_track_window_open = false;
+	m_roadtool.window = false;
+	terrain_workspace(false);
+	if (Mode != nodebank_panel::MODIFY)
+		m_selection.clear();
+	ui()->set_mode(Mode);
+}
+
+editor_mode::work_area editor_mode::current_work_area() const
+{
+	// the terrain is shown over the tracks, see the tool options window
+	if (m_terrain_open)
+		return work_area::terrain;
+	if (m_track_window_open)
+		return work_area::tracks;
+	if (m_roadtool.window)
+		return work_area::roads;
+	return work_area::surroundings;
+}
+
+void editor_mode::choose_work_area(work_area const Area)
+{
+	switch (Area)
+	{
+	case work_area::surroundings:
+		// the edit mode used last
+		choose_edit_mode(ui()->nodebank().mode);
+		break;
+	case work_area::tracks:
+		terrain_workspace(false);
+		show_track_tab(m_track_tab);
+		break;
+	case work_area::roads:
+		m_track_window_open = false;
+		terrain_workspace(false);
+		m_roadtool.window = true;
+		break;
+	case work_area::terrain:
+		m_track_window_open = false;
+		m_roadtool.window = false;
+		terrain_workspace(true);
+		break;
+	}
+}
+
+void editor_mode::render_workspaces()
+{
+	struct area
+	{
+		char const *label;
+		work_area which;
+		editor_icons::icon picture;
+		char const *tooltip;
+	};
+	area const areas[] = {
+	    {STR_C("Surroundings"), work_area::surroundings, editor_icons::icon::work_surroundings, STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
+	    {STR_C("Tracks"), work_area::tracks, editor_icons::icon::work_tracks, STR_C("Tracks and switches, signals, objects along the track, checks of the line")},
+	    {STR_C("Roads"), work_area::roads, editor_icons::icon::work_roads, STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
+	    {STR_C("Terrain"), work_area::terrain, editor_icons::icon::work_terrain, STR_C("Terrain patches and chunks, sculpting, streaming, orthophoto")},
+	};
+	char const *const keys[] = {"F2", "F3", "F4", "F5"};
+	auto const current{current_work_area()};
+	auto const &style{ImGui::GetStyle()};
+	auto *list{ImGui::GetWindowDrawList()};
+	// bigger and bold, with the font made for it if there's one, or drawn twice a pixel apart
+	auto *font{ui_layer::font_bold != nullptr ? ui_layer::font_bold : ImGui::GetFont()};
+	auto const fontsize{ui_layer::font_bold != nullptr ? ui_layer::font_bold->FontSize : ImGui::GetFontSize() * 1.25f};
+	auto const height{ImGui::GetWindowHeight()};
+	auto const padding{style.FramePadding.x * 3.0f};
+	// the icon of the field of work before its name
+	auto const iconside{editor_icons::size()};
+	auto const spacing{style.ItemInnerSpacing.x * 1.5f};
+	render_toolbar_caption(STR_C("Work modes"));
+	for (auto const &entry : areas)
+	{
+		auto const text{font->CalcTextSizeA(fontsize, FLT_MAX, 0.0f, entry.label)};
+		ImVec2 const size{text.x + iconside + spacing + padding * 2.0f, height};
+		auto const position{ImGui::GetCursorScreenPos()};
+		ImGui::PushID(static_cast<int>(entry.which));
+		if (ImGui::InvisibleButton("##area", size))
+			choose_work_area(entry.which);
+		ImGui::PopID();
+		auto const hovered{ImGui::IsItemHovered()};
+		auto const chosen{entry.which == current};
+		ImVec2 const end{position.x + size.x, position.y + size.y};
+		if (chosen || hovered)
+			list->AddRectFilled(position, end, ImGui::GetColorU32(chosen ? ImGuiCol_Header : ImGuiCol_HeaderHovered));
+		if (chosen)
+			list->AddRectFilled(ImVec2(position.x, end.y - 3.0f), end, ImGui::GetColorU32(ImGuiCol_CheckMark));
+		ImVec2 const textposition{position.x + padding + iconside + spacing, position.y + (height - text.y) * 0.5f};
+		auto const color{ImGui::GetColorU32(chosen ? ImGuiCol_Text : ImGuiCol_TextDisabled)};
+		editor_icons::draw(list, entry.picture, ImVec2(position.x + padding + iconside * 0.5f, position.y + height * 0.5f), color);
+		list->AddText(font, fontsize, textposition, color, entry.label);
+		if (ui_layer::font_bold == nullptr)
+			list->AddText(font, fontsize, ImVec2(textposition.x + 1.0f, textposition.y), color, entry.label);
+		if (hovered)
+			ImGui::SetTooltip("%s  [%s]", entry.tooltip, keys[static_cast<int>(entry.which)]);
+		ImGui::SameLine(0.0f, style.ItemSpacing.x);
+	}
+}
+
+void editor_mode::render_toolbar()
+{
+	// the modes of the gizmo and the top view are over the 3d view, see render_viewport_overlays()
+	render_toolbar_tools();
+}
+
+void editor_mode::render_edit_menu()
+{
+	if (false == ImGui::BeginMenu(STR_C("Edit")))
+		return;
+	if (ImGui::MenuItem(STR_C("Undo"), "Ctrl+Z", false, false == m_history.empty()))
+		undo_last();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Takes the last change back"));
+	if (ImGui::MenuItem(STR_C("Redo"), "Ctrl+Y", false, false == g_redo.empty()))
+		redo_last();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Makes the change taken back again"));
+	ImGui::Separator();
+	auto const selected{m_node != nullptr};
+	if (ImGui::MenuItem(STR_C("Delete"), STR_C("Del"), false, selected || m_instance != 0))
+		delete_selected();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Deletes what's selected: a model, tracks, a road piece or point, a signal, an include of a scenery template"));
+	auto const models{dynamic_cast<TAnimModel *>(m_node) != nullptr && ui()->mode() != nodebank_panel::TRACK};
+	if (ImGui::MenuItem(STR_C("Copy"), "Ctrl+C", false, models))
+		copy_selection();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Copies the selected models with their groups"));
+	if (ImGui::MenuItem(STR_C("Paste"), "Ctrl+V", false, false == m_clipboard.empty()))
+		paste_clipboard(cursor_ground());
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Puts the copied models at the cursor, around it as they were around the selected one; Ctrl+RMB in the view pastes them where it was clicked"));
+	ImGui::Separator();
+	if (ImGui::MenuItem(STR_C("Group"), "Ctrl+G", false, models && selected_nodes().size() > 1))
+		group_selection();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The selected models move together from now on; a click on one selects them all. Shift+LMB adds a model to the selection"));
+	if (ImGui::MenuItem(STR_C("Ungroup"), "Ctrl+Shift+G", false, selected && m_node->group() > 1))
+		ungroup_selection();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The models of the group move each by itself again"));
+	if (ImGui::MenuItem(STR_C("Drop to the ground"), STR_C("End"), false, selected))
+		drop_selection_to_ground();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Puts each selected model, also each model of their groups, down onto the terrain or the object under it"));
+	if (ImGui::MenuItem(STR_C("Fly to the selected"), "F", false, selected))
+		start_focus(m_node, 0.6);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The camera flies to the selected model and looks at it"));
+	if (ImGui::MenuItem(STR_C("Find a track by its name"), "Ctrl+F"))
+	{
+		terrain_workspace(false);
+		show_track_tab(m_track_window_open ? m_track_tab : track_tab::path);
+		m_track_search.focus = true;
+	}
+	if (ImGui::MenuItem(STR_C("Bend along the track"), "B", false, ui()->mode() != nodebank_panel::TRACK))
+		bend_shortcut();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Bends the selected model, e.g. a platform edge or a fence, along the nearest track; the settings are in the inspector"));
+	ImGui::EndMenu();
+}
+
+void editor_mode::render_help_menu()
+{
+	if (false == ImGui::BeginMenu(STR_C("Help")))
+		return;
+	ImGui::MenuItem(STR_C("Keyboard shortcuts"), "F1", &m_shortcuts_open);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
+	ImGui::EndMenu();
+}
+
+void editor_mode::render_shortcuts_window()
+{
+	if (false == m_shortcuts_open)
+		return;
+	struct shortcut
+	{
+		char const *keys;
+		char const *action;
+	};
+	struct group
+	{
+		char const *title;
+		std::vector<shortcut> shortcuts;
+	};
+	static std::vector<group> const groups{
+	    {"General",
+	     {{"F1", "This list of shortcuts"},
+	      {"Ctrl+S", "Save the scenery"},
+	      {"Ctrl+Z / Ctrl+Y", "Undo / redo"},
+	      {"Ctrl+Space", "Unpin all docks for the most of the view, or pin them back"},
+	      {"F9", "Log"},
+	      {"PrtScr", "Screenshot"},
+	      {"Ctrl+Shift+F11", "Export scenery dump"},
+	      {"F11", "Leave the editor"},
+	      {"F10", "Quit"}}},
+	    {"Fields of work", {{"F2", "Surroundings"}, {"F3", "Tracks"}, {"F4", "Roads"}, {"F5", "Terrain"}}},
+	    {"Camera",
+	     {{"RMB held, mouse", "Look around"},
+	      {"RMB held, W S A D", "Fly forwards, back, left, right (arrows in the legacy scheme)"},
+	      {"RMB held, E / Q", "Fly up / down (Page Up / Page Down in the legacy scheme)"},
+	      {"F", "Fly to the selected"},
+	      {"O", "Top view, orthographic"}}},
+	    {"Gizmo",
+	     {{"Q / W / E", "Translate / rotate / scale"}, {"R", "Local space"}, {"Ctrl held while dragging", "Snap to the step set in the gizmo settings"}}},
+	    {"Surroundings",
+	     {{"1 2 3 4 5", "Select, insert, brush, area fill, copy to bank"},
+	      {"LMB", "Select a model, or place one in the insert and brush modes"},
+	      {"Shift+LMB", "Add a model to the selection, or take it out"},
+	      {"Ctrl+RMB", "Menu of the selection at the cursor"},
+	      {"Ctrl+C / Ctrl+V", "Copy the selected models / paste them at the cursor"},
+	      {"Ctrl+G / Ctrl+Shift+G", "Group the selected models / take their group apart"},
+	      {"End", "Drop the selected onto the ground, each model of a group by itself"},
+	      {"Del", "Delete the selected"},
+	      {"B", "Bend the selected along the track"},
+	      {"Backspace", "Area fill: take the last point of the outline back"}}},
+	    {"Tracks",
+	     {{"Esc", "Select tool; cancels what's going on first"},
+	      {"L / T / U", "Lay track / switch / turntable"},
+	      {"G / C", "Straight / curve"},
+	      {"H / B", "Signals / objects along the track"},
+	      {"P / V / J / I", "Profile / speed / joints / infrastructure"},
+	      {"Ctrl+F", "Find a track by its name"},
+	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
+	      {"RMB on a track", "What can be done with it"},
+	      {"K", "Split the selected track at the cursor"},
+	      {"Enter / Backspace", "Laying track: finish / take the last point back"},
+	      {"Del", "Delete the selected tracks"}}},
+	    {"Roads",
+	     {{"Esc", "Finish the road being built"},
+	      {"Ctrl held", "Build: straight ahead"},
+	      {"Shift+LMB", "Select: add a point, or take it out"},
+	      {"K", "Split the road at the cursor, or make a point there"},
+	      {"Del", "Delete the selected"}}},
+	    {"Terrain", {{"LMB", "Sculpt: raise; smooth: even out; chunks: add one"}, {"Shift+LMB", "Sculpt: lower; chunks: delete one"}}},
+	};
+	ImGui::SetNextWindowSize(ImVec2(620.0f * Global.ui_scale, 560.0f * Global.ui_scale), ImGuiCond_FirstUseEver);
+	// it floats over the view, read better on a solid background
+	ImGui::SetNextWindowBgAlpha(0.97f);
+	if (ImGui::Begin((std::string(STR_C("Keyboard shortcuts")) + "###shortcuts").c_str(), &m_shortcuts_open, ImGuiWindowFlags_NoCollapse))
+	{
+		for (auto const &entry : groups)
+		{
+			ImGui::SeparatorText(STR_C(entry.title));
+			if (false == ImGui::BeginTable(entry.title, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+				continue;
+			ImGui::TableSetupColumn("##keys", ImGuiTableColumnFlags_WidthFixed, 190.0f * Global.ui_scale);
+			ImGui::TableSetupColumn("##action", ImGuiTableColumnFlags_WidthStretch);
+			for (auto const &item : entry.shortcuts)
+			{
+				ImGui::TableNextColumn();
+				ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "%s", STR_C(item.keys));
+				ImGui::TableNextColumn();
+				ImGui::TextWrapped("%s", STR_C(item.action));
+			}
+			ImGui::EndTable();
+		}
+	}
+	ImGui::End();
+}
+
 void editor_mode::render_gizmo_options()
 {
     if (ImGui::Button(Global.EditorOrtho ? "3D view (O)" : "Top view, orthographic (O)"))
@@ -3686,7 +4069,7 @@ void editor_mode::render_gizmo_options()
     {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::SliderFloat(STR_C("Extent (m), wheel / MMB pan"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", 3.0f);
+        ImGui::SliderFloat(STR_C("Extent (m), wheel / MMB pan"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Wheel zooms. Hold the wheel and drag to pan."));
     }
@@ -3842,7 +4225,8 @@ void editor_mode::render_gizmo()
         // record a single undo snapshot at the start of the drag
         if (!m_gizmo_using)
         {
-            push_snapshot(m_node, action);
+            // the models selected along with it and their groups go into the same step of the history
+            selection_snapshots(action);
             m_gizmo_using = true;
         }
 
@@ -3853,7 +4237,9 @@ void editor_mode::render_gizmo()
         {
             // apply the rotation delta relative to the model's current orientation
             glm::vec3 const newangles(newrotation[0], newrotation[1], newrotation[2]);
-            m_editor.rotate(model, newangles - model->Angles(), 0.0f);
+            auto const turned{newangles - model->Angles()};
+            m_editor.rotate(model, turned, 0.0f);
+            selection_follow(glm::dvec3(0.0), turned, model->location());
         }
         else if (operation == ImGuizmo::SCALE && model)
         {
@@ -3863,7 +4249,9 @@ void editor_mode::render_gizmo()
         {
             glm::dvec3 const newworldpos = camerapos + glm::dvec3(newtranslation[0], newtranslation[1], newtranslation[2]);
             // pass Snaptoground == true so the gizmo's Y component is applied (free 3D move)
+            auto const before{m_node->location()};
             m_editor.translate(m_node, newworldpos, true);
+            selection_follow(m_node->location() - before, glm::vec3(0.0f), m_node->location());
         }
     }
     else
@@ -4192,6 +4580,76 @@ void editor_mode::exit()
     }
 }
 
+void editor_mode::delete_model(TAnimModel *model, bool const Joined)
+{
+    // record deletion for undo (serialize full node)
+    std::string as_text;
+
+    model->export_as_text(as_text);
+    std::string debug = "Deleting node: " + as_text + "\nSerialized data:\n";
+    push_snapshot(model, EditorSnapshot::Action::Delete, as_text);
+    if (false == m_history.empty())
+        m_history.back().joined = Joined;
+    WriteLog(debug, logtype::generic);
+
+    // clear history pointers referencing this model before actually deleting it
+    nullify_history_pointers(model);
+    remove_from_hierarchy(model);
+
+    if (m_node == model)
+    {
+        m_node = nullptr;
+        m_dragging = false;
+        ui()->set_node(nullptr);
+    }
+    simulation::State.delete_model(model);
+}
+
+void editor_mode::delete_selected()
+{
+    // what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks
+    if (road_delete())
+        return;
+    if (m_instance != 0 && signal_delete(m_instance))
+        return;
+    if (m_instance != 0)
+    {
+        // include of a scenery template. what it shows goes out of sight, the directive is erased on save
+        scene::Layers.removed(m_instance, true);
+        EditorSnapshot snap;
+        snap.instance = m_instance;
+        snap.node_name = *scene::Layers.instance(m_instance).file;
+        m_history.push_back(std::move(snap));
+        g_redo.clear();
+        ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" removed, Ctrl+Z brings it back. Its directive is erased when the scenery is saved.");
+        select_include(0);
+        return;
+    }
+    TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
+    if (model)
+    {
+        // the models of the selection go together, one step of the history
+        auto joined{false};
+        for (auto *node : selected_nodes())
+        {
+            if (auto *selected = dynamic_cast<TAnimModel *>(node))
+            {
+                delete_model(selected, joined);
+                joined = true;
+            }
+        }
+        m_selection.clear();
+    }
+    else if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && m_track_set.size() >= 2)
+    {
+        track_set_delete();
+    }
+    else if (selected_track() != nullptr)
+    {
+        delete_selected_track();
+    }
+}
+
 void editor_mode::on_key(int const Key, int const Scancode, int const Action, int const Mods)
 {
 #ifndef __unix__
@@ -4236,10 +4694,47 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; break;
         case GLFW_KEY_R: m_gizmo_local = !m_gizmo_local; break;
         case GLFW_KEY_B: handled = ui()->mode() != nodebank_panel::TRACK && bend_shortcut(); break;
+        case GLFW_KEY_F1: m_shortcuts_open = !m_shortcuts_open; break;
+        // the fields of work in the order of their row
+        case GLFW_KEY_F2: choose_work_area(work_area::surroundings); break;
+        case GLFW_KEY_F3: choose_work_area(work_area::tracks); break;
+        case GLFW_KEY_F4: choose_work_area(work_area::roads); break;
+        case GLFW_KEY_F5: choose_work_area(work_area::terrain); break;
+        // the edit modes in the order of the toolbar; in the track mode the digits typed as a value were taken already
+        case GLFW_KEY_1: choose_edit_mode(nodebank_panel::MODIFY); break;
+        case GLFW_KEY_2: choose_edit_mode(nodebank_panel::ADD); break;
+        case GLFW_KEY_3: choose_edit_mode(nodebank_panel::BRUSH); break;
+        case GLFW_KEY_4: choose_edit_mode(nodebank_panel::FILL); break;
+        case GLFW_KEY_5: choose_edit_mode(nodebank_panel::COPY); break;
         default: handled = false; break;
         }
         if (handled)
             return;
+    }
+
+    // all docks unpinned and hidden at the edges, for the most of the view, or pinned back
+    if (Global.ctrlState && false == Global.shiftState && Key == GLFW_KEY_SPACE)
+    {
+        if (is_press(Action))
+            ui()->toggle_docks();
+        return;
+    }
+
+    // the selection: copy, paste at the cursor, group and ungroup. ahead of the camera keys, the letters may be bound there
+    if (Global.ctrlState && (Key == GLFW_KEY_C || Key == GLFW_KEY_V || Key == GLFW_KEY_G) && ui()->mode() != nodebank_panel::TRACK && false == m_roadtool.window)
+    {
+        if (is_press(Action))
+        {
+            if (Key == GLFW_KEY_C)
+                copy_selection();
+            else if (Key == GLFW_KEY_V)
+                paste_clipboard(cursor_ground());
+            else if (Global.shiftState)
+                ungroup_selection();
+            else
+                group_selection();
+        }
+        return;
     }
 
     // save; checked ahead of the camera keys, which have S bound to moving back
@@ -4306,58 +4801,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_DELETE:
-        if (is_press(Action) && road_delete())
-        {
-            break;
-        }
-        if (is_press(Action) && m_instance != 0 && signal_delete(m_instance))
-        {
-            break;
-        }
-        if (is_press(Action) && m_instance != 0)
-        {
-            // include of a scenery template. what it shows goes out of sight, the directive is erased on save
-            scene::Layers.removed(m_instance, true);
-            EditorSnapshot snap;
-            snap.instance = m_instance;
-            snap.node_name = *scene::Layers.instance(m_instance).file;
-            m_history.push_back(std::move(snap));
-            g_redo.clear();
-            ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" removed, Ctrl+Z brings it back. Its directive is erased when the scenery is saved.");
-            select_include(0);
-            break;
-        }
         if (is_press(Action))
-        {
-            TAnimModel *model = dynamic_cast<TAnimModel *>(m_node);
-            if (model)
-            {
-                // record deletion for undo (serialize full node)
-                std::string as_text;
-                
-                model->export_as_text(as_text);
-                std::string debug = "Deleting node: " + as_text + "\nSerialized data:\n";
-                push_snapshot(model, EditorSnapshot::Action::Delete, as_text);
-                WriteLog(debug, logtype::generic);
-
-                // clear history pointers referencing this model before actually deleting it
-                nullify_history_pointers(model);
-                remove_from_hierarchy(model);
-
-                m_node = nullptr;
-                m_dragging = false;
-                ui()->set_node(nullptr);
-                simulation::State.delete_model(model);
-            }
-            else if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && m_track_set.size() >= 2)
-            {
-                track_set_delete();
-            }
-            else if (selected_track() != nullptr)
-            {
-                delete_selected_track();
-            }
-        }
+            delete_selected();
         break;
 
     case GLFW_KEY_ESCAPE:
@@ -4416,11 +4861,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_F:
-        if (is_press(Action))
+        if (is_press(Action) && m_node)
         {
-            if(!m_node)
-                break;
-
             // start smooth focus camera on selected node
             start_focus(m_node, 0.6);
         }
@@ -4432,7 +4874,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             // Unreal-style "snap to floor": drop the selected node onto the surface below it.
             // works against triangle geometry (shape_node terrain / opaque shapes); once a proper
             // editable terrain mesh exists, dropping onto it works without further changes here.
-            snap_to_ground(m_node);
+            drop_selection_to_ground();
         }
         break;
 
@@ -4538,12 +4980,15 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             // delegate node picking behaviour depending on current panel mode.
             // NOTE: the pick is resolved a few frames later, often after the button was already released,
             // so the callback mustn't depend on the button still being held
+            // Shift+LMB adds a model to the selection, or takes it out
+            auto const additive{mode == nodebank_panel::MODIFY && (Mods & GLFW_MOD_SHIFT) != 0};
             GfxRenderer->Pick_Node_Callback(
-                [this, mode, rotation_mode, fixed_rotation_value](scene::basic_node *node) {
+                [this, mode, rotation_mode, fixed_rotation_value, additive](scene::basic_node *node) {
                     // the press turned out to be meant for the UI
                     if (!viewport_click())
                         return;
 
+                    auto *const previous{m_node};
                     m_node = nullptr;
                     select_include(0);
 
@@ -4570,12 +5015,17 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     if (node) {
                         double const dist = glm::distance(node->location(), glm::dvec3{Global.pCamera.Pos});
                         if (dist > static_cast<double>(kMaxPlacementDistance))
+                        {
+                            if (additive)
+                                m_node = previous;
                             return;
+                        }
                     }
                     if (mode == nodebank_panel::MODIFY)
                     {
-                        m_node = node;
-                        ui()->set_node(m_node);
+                        if (additive)
+                            m_node = previous;
+                        select_node(node, additive);
                     }
                     else if (mode == nodebank_panel::COPY)
                     {
@@ -4650,6 +5100,23 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     }
     else if (Button == GLFW_MOUSE_BUTTON_RIGHT)
     {
+        // Ctrl+RMB: the menu at the cursor, for the model under it or the selection; RMB alone turns the camera
+        if ((Mods & GLFW_MOD_CONTROL) != 0 && ui()->mode() != nodebank_panel::TRACK)
+        {
+            if (is_press(Action))
+            {
+                m_contextpoint = cursor_ground();
+                GfxRenderer->Pick_Node_Callback([this](scene::basic_node *node) {
+                    if (!viewport_click())
+                        return;
+                    auto const selection{selected_nodes()};
+                    if (node != nullptr && false == node->from_template() && scene::Layers.editable(node) && std::find(selection.begin(), selection.end(), node) == selection.end())
+                        select_node(node, false);
+                    m_contextopen = true;
+                });
+            }
+            return;
+        }
         if (ui()->mode() == nodebank_panel::TRACK)
         {
             if (is_press(Action))
@@ -4679,7 +5146,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 void editor_mode::render_change_history(){
 
 
-    ImGui::Begin(STR_C("Editor History"), &m_change_history, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin((std::string(STR_C("Editor History")) + "###editorhistory").c_str(), &m_change_history);
     int maxsize = m_max_history_size;
     if (ImGui::InputInt(STR_C("Max history size"), &maxsize))
     {

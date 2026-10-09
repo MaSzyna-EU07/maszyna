@@ -130,6 +130,7 @@ class opengl33_renderer : public gfx_renderer {
     std::string const &
         info_stats() const override;
 	  void MakeScreenshot() override;
+    bool Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) override;
 
 
 
@@ -333,6 +334,16 @@ class opengl33_renderer : public gfx_renderer {
     void draw(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end);
 
 	void draw_debug_ui();
+
+	// model previews
+	// extends provided bounds with the geometry of the submodel and its siblings and children visible in a preview
+	void Preview_Bounds( TSubModel const *Submodel, glm::dmat4 const &Transform, glm::dvec3 &Min, glm::dvec3 &Max ) const;
+	// prepares the offscreen targets of model previews for square images of specified size
+	bool Preview_Targets( int const Size );
+	// draws the instance on its own with the current render pass settings
+	void Preview_Model( TAnimModel *Instance, float const Squaredistance, bool const Alpha );
+	// draws the lit instance into the hdr preview target, marking in its stencil the pixels covered by the model
+	void Preview_Color( TAnimModel *Instance, float const Squaredistance, int const Size, glm::dvec3 const &Eye, glm::mat4 const &View, glm::mat4 const &Projection, bool const Shadows );
 
 	// members
 	GLFWwindow *m_window{nullptr}; // main window
@@ -547,6 +558,19 @@ class opengl33_renderer : public gfx_renderer {
     std::unique_ptr<vr_interface> vr;
     bool debug_ui_active = false;
 
+	// offscreen targets of model previews
+	struct preview_targets
+	{
+		int size { 0 };
+		std::unique_ptr<opengl_texture> hdr_tex;
+		std::unique_ptr<gl::renderbuffer> hdr_rbds; // depth and stencil, the stencil marks pixels covered by the model
+		std::unique_ptr<gl::framebuffer> hdr_fb;
+		std::unique_ptr<opengl_texture> ldr_tex;
+		std::unique_ptr<gl::framebuffer> ldr_fb;
+	} m_preview;
+	// set while a preview is drawn: submodels faded out entirely are skipped, instead of being drawn invisible over the stencil
+	bool m_previewing { false };
+
     static bool renderer_register;
 
 	class opengl33_imgui_renderer : public imgui_renderer
@@ -555,6 +579,8 @@ class opengl33_renderer : public gfx_renderer {
 		virtual void Shutdown() override;
 		virtual void BeginFrame() override;
 		virtual void Render() override;
+		virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height) override;
+		virtual void Release_Image(std::uint64_t const Image) override;
 	} m_imgui_renderer;
 
   virtual imgui_renderer* GetImguiRenderer() override {

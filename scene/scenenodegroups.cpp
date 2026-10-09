@@ -22,9 +22,20 @@ node_groups Groups;
 
 // requests creation of a new node group. returns: handle to the group
 scene::group_handle
-node_groups::create() {
+node_groups::create( bool const Separate ) {
 
-    m_activegroup.push( create_handle() );
+    if( false == Separate ) {
+        m_activegroup.push( create_handle() );
+        return handle();
+    }
+    // a handle no other group has, see make()
+    auto group { std::max<group_handle>( 2, static_cast<group_handle>( m_groupmap.size() + 1 ) ) };
+    while( m_groupmap.find( group ) != m_groupmap.end() ) {
+        ++group;
+    }
+    // NOTE: registered before the nodes come, so that a group nested in this one doesn't get the same handle
+    m_groupmap[ group ];
+    m_activegroup.push( group );
 
     return handle();
 }
@@ -332,6 +343,87 @@ node_groups::erase( group_map::const_iterator Group ) {
         event->group( null_handle );
     }
     m_groupmap.erase( Group );
+}
+
+group_handle
+node_groups::make( std::vector<scene::basic_node *> const &Nodes ) {
+
+    // a handle no other group has, past the first one, which the editor treats as no group at all
+    auto handle { std::max<group_handle>( 2, static_cast<group_handle>( m_groupmap.size() + 1 ) ) };
+    while( m_groupmap.find( handle ) != m_groupmap.end() ) {
+        ++handle;
+    }
+    for( auto *node : Nodes ) {
+        leave( node );
+        m_loose.erase( node );
+        insert( handle, node );
+    }
+    m_rewrite.insert( handle );
+    return handle;
+}
+
+void
+node_groups::dissolve( scene::group_handle const Group ) {
+
+    auto const lookup { m_groupmap.find( Group ) };
+    if( lookup == m_groupmap.end() ) { return; }
+    for( auto *node : lookup->second.nodes ) {
+        m_loose.insert( node );
+    }
+    m_rewrite.erase( Group );
+    erase( lookup );
+}
+
+void
+node_groups::remove( scene::basic_node *Node ) {
+
+    leave( Node );
+    m_loose.erase( Node );
+}
+
+void
+node_groups::leave( scene::basic_node *Node ) {
+
+    auto const group { Node->group() };
+    Node->group( null_handle );
+    auto const lookup { m_groupmap.find( group ) };
+    if( lookup == m_groupmap.end() ) { return; }
+    auto &nodes { lookup->second.nodes };
+    nodes.erase( std::remove( std::begin( nodes ), std::end( nodes ), Node ), std::end( nodes ) );
+    if( nodes.empty() && lookup->second.events.empty() ) {
+        // a group made in the editor goes with its last node
+        m_rewrite.erase( group );
+        m_groupmap.erase( lookup );
+    }
+}
+
+bool
+node_groups::relocating( scene::basic_node const *Node ) const {
+
+    return ( m_loose.count( Node ) != 0 ) || ( m_rewrite.count( Node->group() ) != 0 );
+}
+
+std::vector<scene::group_handle>
+node_groups::rewritten() const {
+
+    return { std::begin( m_rewrite ), std::end( m_rewrite ) };
+}
+
+std::vector<scene::basic_node *>
+node_groups::loose() const {
+
+    std::vector<scene::basic_node *> nodes;
+    for( auto const *node : m_loose ) {
+        nodes.emplace_back( const_cast<scene::basic_node *>( node ) );
+    }
+    return nodes;
+}
+
+void
+node_groups::saved() {
+
+    m_rewrite.clear();
+    m_loose.clear();
 }
 
 // creates handle for a new group

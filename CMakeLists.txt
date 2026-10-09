@@ -77,7 +77,7 @@ option(WITH_ZMQ "Compile with cppzmq" OFF)
 option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
 option(USE_LTO "Use link-time optimization" OFF)
-option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" ON)
+option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" OFF)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
@@ -112,6 +112,7 @@ set(SOURCES
 "EU07.cpp"
 "export_e3d_standalone.cpp"
 "export_btf_standalone.cpp"
+"nodebank_previews_standalone.cpp"
 "world/Event.cpp"
 "world/EvLaunch.cpp"
 "utilities/Float3d.cpp"
@@ -183,6 +184,8 @@ set(SOURCES
 "editor/editorInfra.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
+"editor/editorPreviews.cpp"
+"editor/editorIcons.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
 "application/editormodetrackux.cpp"
@@ -195,6 +198,8 @@ set(SOURCES
 "application/editormodeparallel.cpp"
 "application/editormodelineside.cpp"
 "application/editormodevehicle.cpp"
+"application/editormodeselection.cpp"
+"application/editormodeviewport.cpp"
 "application/editormodesignal.cpp"
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
@@ -256,6 +261,7 @@ set(SOURCES
 "imgui/imgui_demo.cpp"
 "imgui/imgui_draw.cpp"
 "imgui/imgui_widgets.cpp"
+"imgui/imgui_tables.cpp"
 "imgui/imgui_impl_glfw.cpp"
 "imgui/ImGuizmo.cpp"
 
@@ -377,6 +383,14 @@ endif()
 
 configure_file("${CMAKE_SOURCE_DIR}/version_info.h.in" "${CMAKE_BINARY_DIR}/geninc/version_info.h")
 
+# the icons of the editor are built into the executable: the png is written out as the bytes of an array, see editor/editorIcons.cpp
+set(EDITOR_ICONS "${CMAKE_SOURCE_DIR}/editor/icons/editor_icons.png")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${EDITOR_ICONS}")
+file(READ "${EDITOR_ICONS}" EDITOR_ICONS_HEX HEX)
+string(REGEX REPLACE "(................................)" "\\1\n" EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
+file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/editor_icons_png.inc" CONTENT "${EDITOR_ICONS_HEX}\n")
+
 set (PREFIX "")
 set (SUFFIX "")
 
@@ -484,7 +498,7 @@ if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
 	if (USE_PCH)
 		target_precompile_headers(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h>")
 		set_source_files_properties("/glad/src/glad.c" "ref/dds-ktx/src/dds-ktx.c" "stb/stb_image.c"
-			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_impl_glfw.cpp" "imgui/ImGuizmo.cpp"
+			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_tables.cpp" "imgui/imgui_impl_glfw.cpp" "imgui/ImGuizmo.cpp"
 			PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 	endif()
 endif()

@@ -171,7 +171,7 @@ void ui::scenerywizard_panel::render_map(glm::vec2 const &Size)
 	drawlist->PushClipRect(origin, ImVec2(origin.x + Size.x, origin.y + Size.y), true);
 	drawlist->AddRectFilled(origin, ImVec2(origin.x + Size.x, origin.y + Size.y), IM_COL32(200, 214, 222, 255));
 	if (m_texture != 0)
-		drawlist->AddImage(reinterpret_cast<ImTextureID>(static_cast<std::intptr_t>(m_texture)), to_screen({m_image_low.x, m_image_high.y}), to_screen({m_image_high.x, m_image_low.y}));
+		drawlist->AddImage((ImTextureID)(static_cast<std::intptr_t>(m_texture)), to_screen({m_image_low.x, m_image_high.y}), to_screen({m_image_high.x, m_image_low.y}));
 	if (m_picked)
 	{
 		auto const at{to_screen(m_point)};

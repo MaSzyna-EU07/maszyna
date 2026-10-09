@@ -298,7 +298,7 @@ void editor_mode::draw_vehicle_marker() const
 	ImVec2 screen;
 	if (false == projection.project(tool.point, screen))
 		return;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const colour{IM_COL32(255, 220, 60, 235)};
 	drawlist->AddCircle(screen, 9.0f, colour, 16, 2.5f);
 	if (tool.track->m_editorremoved || tool.track->m_paths.empty())

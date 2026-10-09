@@ -852,13 +852,11 @@ void editor_mode::render_profile_earthworks()
 	}
 	if (false == active_terrains().empty())
 	{
+		// the terrain tools take the tool options window over, the profile stays open under them
 		if (ImGui::Button(STR_C("Sculpting...")))
-		{
-			set_settings_open(true);
-			m_terrain_tab_wanted = true;
-		}
+			terrain_workspace(true);
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Opens the terrain tab of the editor settings: raising, lowering and smoothing with a brush"));
+			ImGui::SetTooltip("%s", STR_C("Opens the terrain tools: raising, lowering and smoothing with a brush"));
 	}
 	ImGui::TreePop();
 }
@@ -1433,7 +1431,7 @@ void editor_mode::render_profile_toolbar()
 	toggle(kPlan, STR_C("Plan curvature"), state.show_plan);
 	legend(kSwitchLabel, "Switches");
 	ImGui::SetNextItemWidth(130.0f);
-	ImGui::SliderFloat("##exaggeration", &state.exaggeration, 1.0f, 500.0f, STR_C("heights x%.0f"), 2.0f);
+	ImGui::SliderFloat("##exaggeration", &state.exaggeration, 1.0f, 500.0f, STR_C("heights x%.0f"), ImGuiSliderFlags_Logarithmic);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Exaggeration of the heights against the lengths, also Ctrl+wheel over the plot"));
 	ImGui::SameLine();
@@ -1677,7 +1675,7 @@ bool editor_mode::profile_canvas_edit(profile_view const &View, bool const Hover
 	}
 	else
 		state.curve_grip = -1;
-	if ((Hovered || ImGui::IsWindowFocused()) && state.selected > 0 && state.selected + 1 < static_cast<int>(points.size()) && false == points[state.selected].joint && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
+	if ((Hovered || ImGui::IsWindowFocused()) && state.selected > 0 && state.selected + 1 < static_cast<int>(points.size()) && false == points[state.selected].joint && ImGui::IsKeyPressed(ImGuiKey_Delete))
 	{
 		points.erase(points.begin() + state.selected);
 		state.selected = -1;
@@ -1885,7 +1883,7 @@ void editor_mode::draw_profile_overlay() const
 	if (false == state.open || state.samples.size() < 2)
 		return;
 	screen_projection const projection;
-	ImDrawList *drawlist{ImGui::GetBackgroundDrawList()};
+	ImDrawList *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const &samples{state.samples};
 	glm::dvec3 previous{samples.front().position};
 	glm::dvec3 designedprevious{previous.x, profile::elevation(state.line, 0.0), previous.z};

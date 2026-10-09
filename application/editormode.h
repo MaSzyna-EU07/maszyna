@@ -38,6 +38,8 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 
 class TAnimModel;
+// a tool of a field of work of the editor, a button in the toolbar and over the 3d view
+struct editor_tool_button;
 class TTrack;
 namespace ui
 {
@@ -96,6 +98,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	}
 	void on_event_poll() override;
 	bool is_command_processor() const override;
+	// takes the last change back; changes made together (e.g. to the models of a selection) are taken back together
 	void undo_last();
 	static bool focus_active();
 	static void  set_focus_active(bool isActive);
@@ -166,6 +169,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool profiles{false}; // the stored grade line designs changed too, these were the ones before
 		std::vector<stored_profile> profile_library;
 		std::vector<array_copy> copies; // models an array added to the one it was made of
+		bool joined{false}; // undone and redone together with the change before it
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
 
@@ -176,6 +180,9 @@ class editor_mode : public application_mode, private editor_track::observer
 
 	editor_ui *ui() const;
 	void redo_last();
+	// a single step of the history, see undo_last()
+	void undo_one();
+	void redo_one();
 	void handle_brush_mouse_hold(int Action, int Button);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
 	// members
@@ -226,15 +233,61 @@ class editor_mode : public application_mode, private editor_track::observer
 	// puts every instance of the model the selected node shows on the ground under it
 	void drop_model_instances();
 	void render_object_menu();
+	// undo, redo and what can be done with the selection, with their keys
+	void render_edit_menu();
+	// the list of the keyboard shortcuts, opened from the help menu or by F1
+	void render_help_menu();
+	void render_shortcuts_window();
+	bool m_shortcuts_open{false};
+	// deletes what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks (Del)
+	void delete_selected();
+	void delete_model(TAnimModel *Model, bool const Joined);
+
+	// more models selected at once, in the surroundings: m_node is the one the gizmo is on, the others are in m_selection.
+	// Shift+LMB adds a model or takes it out; a model of a group stands for the whole group
+	std::vector<scene::basic_node *> m_selection;
+	std::vector<scene::basic_node *> selected_nodes() const; // m_node first
+	std::vector<scene::basic_node *> selection_with_groups() const; // and the other models of their groups
+	void select_node(scene::basic_node *Node, bool const Additive);
+	void draw_selection_overlay();
+	// the other models of the selection follow m_node moved or turned by the gizmo
+	void selection_snapshots(EditorSnapshot::Action const Action);
+	void selection_follow(glm::dvec3 const &Moved, glm::vec3 const &Turned, glm::dvec3 const &Pivot);
+	// clipboard (Ctrl+C, Ctrl+V): definitions of the models, placed around the cursor as they were around the selected one
+	struct clipboard_entry
+	{
+		std::string definition;
+		glm::dvec3 offset{0.0};
+		glm::vec3 angles{0.0f};
+		glm::vec3 scale{1.0f};
+		int group{-1}; // models copied with their group are grouped again, each group anew
+	};
+	std::vector<clipboard_entry> m_clipboard;
+	void copy_selection();
+	void paste_clipboard(glm::dvec3 const &Location);
+	glm::dvec3 cursor_ground(); // the point of the ground under the cursor
+	// groups (Ctrl+G, Ctrl+Shift+G), written to the scenery as group ... endgroup
+	void group_selection();
+	void ungroup_selection();
+	void drop_selection_to_ground();
+	// menu at the cursor, Ctrl+RMB
+	bool m_contextopen{false};
+	glm::dvec3 m_contextpoint{0.0};
+	void render_context_menu();
 
 	// focus camera smoothly on specified node
 	void start_focus(scene::basic_node *node, double duration = 0.6);
 
-	// drops the node straight down onto the nearest surface below (terrain or another object)
-	void snap_to_ground(scene::basic_node *node);
+	// drops the node straight down onto the nearest surface below (terrain or another object). its group goes along with it,
+	// unless Alone: then the node goes by itself. Joined: undone together with the change before
+	void snap_to_ground(scene::basic_node *node, bool const Alone = false, bool const Joined = false);
 
 	// editable terrain patches created in the editor
 	void render_terrain_ui();
+	// the terrain as a field of work of its own: the terrain tools and the orthophoto in the tool options window
+	void render_terrain_tool_options();
+	// opens or leaves the terrain; leaving it puts the sculpting and the chunk editing away, so the mouse doesn't stay with them
+	void terrain_workspace(bool const Open);
 	// creates a large terrain as a grid of adjacent chunks (each its own editable patch)
 	void create_chunked_terrain();
 	// manual grid-aligned chunks: add/remove single chunks for fine control
@@ -293,7 +346,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::map<std::pair<int, int>, std::unique_ptr<editor_terrain>> m_grid_chunks;
 	bool m_terrain_sculpt{false};     // when true, LMB sculpts terrain instead of picking
 	bool m_terrain_brush_smooth{false}; // the brush evens the ground out instead of raising or lowering it
-	bool m_terrain_tab_wanted{false}; // the settings window brings the terrain tab forward the next time it's drawn
+	bool m_terrain_open{false};       // the terrain is the field of work, chosen in the toolbar
 	bool m_chunk_edit{false};         // when true, LMB adds/removes whole chunks
 	int m_terrain_cells{32};          // grid resolution (quads per side)
 	int m_terrain_chunks{4};          // chunks per side for a chunked terrain
@@ -315,7 +368,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	// geoportal orthophoto layer drawn under the other viewport overlays
 	void render_orthophoto_ui();
 	void render_map_menu();
-	void render_orthophoto_window();
 	bool m_newscenery_asked{false};
 	void render_new_scenery_popup();
 	bool restart_for_new_scenery();
@@ -331,6 +383,26 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::string m_openscenery_choice;
 	void render_open_scenery_popup();
 	bool m_orthophoto_window{false};
+	void render_orthophoto_window();
+	// view menu: the top view, the lanes of the roads, the structure gauge, the environment
+	void render_view_menu();
+	// time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor
+	void render_environment_window();
+	bool m_environment_open{false};
+	// over the 3d view: the tools of the field of work along its left edge, the modes of the gizmo at its top, the axes of the
+	// world and the top view in its top right corner
+	void render_viewport_overlays();
+	void render_viewport_tools();
+	// the tools of the field of work, in the order of the toolbar
+	void work_area_tools(std::vector<editor_tool_button> &Buttons);
+	// the tools of the field of work in the toolbar, as icons with their names
+	void render_toolbar_tools();
+	// what the row of the toolbar holds, written at its left end: the fields of work, the tools
+	static void render_toolbar_caption(char const *Text);
+	void render_viewport_gizmo();
+	void render_view_axes();
+	// the camera looking along an axis of the world (0: x, 1: y, 2: z) from its positive or negative side
+	void look_along_axis(int const Axis, bool const Positive);
 	// origin of the scenery in PUWG 1992 the scenery file gives in its //$g line, if it does
 	bool m_georeference_read{false};
 	bool m_georeference{false};
@@ -430,6 +502,21 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_gizmo();
 	// gizmo settings, drawn in the toolset window
 	void render_gizmo_options();
+	// the tools of the field of work in the toolbar under the menu
+	void render_toolbar();
+	// an edit mode of the node bank as the field of work, from the toolbar or its key (1-5)
+	void choose_edit_mode(nodebank_panel::edit_mode const Mode);
+	// fields of work of the editor, in the row above the toolbar: the models around, the tracks, the roads, the terrain
+	enum class work_area
+	{
+		surroundings,
+		tracks,
+		roads,
+		terrain
+	};
+	work_area current_work_area() const;
+	void choose_work_area(work_area const Area);
+	void render_workspaces();
 	bool m_gizmo_enabled{true};                                  // master switch for the in-viewport gizmo
 	bool m_gizmo_using{false};                                   // tracks an ongoing drag, so a single undo snapshot is taken per drag
 	bool m_gizmo_local{false};                                   // manipulate in the object's local space instead of world space
@@ -625,7 +712,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	// listed spacing of a neighbouring straight the line can snap to, if it is close enough
 	struct parallel_offer
 	{
-		bool near{false};
+		bool nearby{false};
 		bool snaps{false};
 		double spacing{0.0};
 		double distance{0.0};
@@ -844,12 +931,13 @@ class editor_mode : public application_mode, private editor_track::observer
 	// the objects along the track: a tab for each tool
 	int m_lineside_tab{0};
 	void render_lineside_ui();
-	void render_track_menu();
 	void arm_switch();
 	bool m_track_window_open{false};
 	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
 	void render_track_inspector();
-	void render_track_modes(TTrack *Track);
+	// the track tools in the tool options window, and the selected path in the inspector
+	void render_track_tool_options();
+	void render_track_selection();
 	void show_track_tab(track_tab const Tab);
 	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
@@ -1769,8 +1857,10 @@ class editor_mode : public application_mode, private editor_track::observer
 		char banktext[128]{};
 		char islandtext[128]{"none"};
 	};
-	void render_road_menu();
-	void render_road_window();
+	void render_road_tool_options();
+	// the change of the road tool
+	void road_choose_tool(int const Tool);
+	void render_road_selection();
 	bool render_road_layout(road_node::state &State);
 	bool render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value);
 	void render_junction_layout(junction_node &Junction);

@@ -290,7 +290,8 @@ void editor_mode::render_speed_body()
 	ImGui::BeginChild("speedresults", ImVec2(0.0f, -details), true);
 	ImGui::Columns(6, STR_C("speedrows"), false);
 	ImGui::SetColumnWidth(0, namewidth);
-	ImGuiListClipper clipper(static_cast<int>(listed.size()));
+	ImGuiListClipper clipper;
+	clipper.Begin(static_cast<int>(listed.size()));
 	while (clipper.Step())
 		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{
@@ -348,7 +349,7 @@ void editor_mode::draw_speed_overlay() const
 	if (false == state.open || state.results.empty())
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	for (int i = 0; i < static_cast<int>(state.results.size()); ++i)
 	{
