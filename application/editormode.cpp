@@ -516,8 +516,7 @@ editor_mode::editor_mode() {
 	ui()->set_edit_menu([this]() { render_edit_menu(); });
 	ui()->set_menu_options([this]() {
 		render_object_menu();
-		render_track_menu();
-		render_road_menu();
+		render_view_menu();
 		render_map_menu();
 		render_help_menu();
 	});
@@ -684,91 +683,16 @@ void editor_mode::snap_to_ground(scene::basic_node *node, bool const Alone, bool
     if (!simulation::Region->point_inside(origin))
         return;
 
-    // small tolerance so a node already resting on a surface still snaps cleanly to it
-    double const epsilon = 0.05;
-    double bestY = -std::numeric_limits<double>::max();
-    bool found = false;
-
-    // record the highest surface that is at or below the node's current position at its (x,z)
-    auto consider_triangle = [&](glm::dvec3 const &a, glm::dvec3 const &b, glm::dvec3 const &c) {
-        double y;
-        if (triangle_height_at(a, b, c, origin.x, origin.z, y) && y <= origin.y + epsilon && y > bestY)
-        {
-            bestY = y;
-            found = true;
-        }
-    };
-
-    auto consider_shapes = [&](std::vector<scene::shape_node> const &shapes) {
-        for (auto const &shape : shapes)
-        {
-            // quick reject: skip shapes whose bounding circle doesn't cover our (x,z) column
-            auto const &sdata = shape.data();
-            double const sdx = origin.x - sdata.area.center.x;
-            double const sdz = origin.z - sdata.area.center.z;
-            if (sdx * sdx + sdz * sdz > static_cast<double>(sdata.area.radius) * sdata.area.radius)
-                continue;
-
-            auto const &verts = sdata.vertices;
-            for (std::size_t i = 0; i + 2 < verts.size(); i += 3)
-                consider_triangle(verts[i].position, verts[i + 1].position, verts[i + 2].position);
-        }
-    };
-
-    scene::basic_section &sec = simulation::Region->section(origin);
-    // section level holds the large opaque geometry, including legacy terrain
-    consider_shapes(sec.m_shapes);
-
-    // scan a 3x3 neighbourhood of cells for smaller geometry and other model instances below us
-    for (int dz = -1; dz <= 1; ++dz)
-        for (int dx = -1; dx <= 1; ++dx)
-        {
-            scene::basic_cell &cell = sec.cell(origin, glm::ivec2(dx, dz));
-            consider_shapes(cell.m_shapesopaque);
-            consider_shapes(cell.m_shapestranslucent);
-
-            // other instances are approximated by their bounding sphere, so a node can rest on top of them
-            for (auto *inst : cell.m_instancesopaque)
-            {
-                if (!inst || inst == node)
-                    continue;
-                glm::dvec3 const ic = inst->location();
-                double const r = static_cast<double>(inst->radius());
-                double const idx = origin.x - ic.x, idz = origin.z - ic.z;
-                double const horiz2 = idx * idx + idz * idz;
-                if (horiz2 < r * r)
-                {
-                    double const ytop = ic.y + std::sqrt(r * r - horiz2);
-                    if (ytop <= origin.y + epsilon && ytop > bestY)
-                    {
-                        bestY = ytop;
-                        found = true;
-                    }
-                }
-            }
-        }
-
-    // editable terrain patches keep their heightmap on the CPU, so query them directly
-    for (editor_terrain *terrain : active_terrains())
-    {
-        if (!terrain->contains(origin.x, origin.z))
-            continue;
-        double const y = terrain->height_at(origin.x, origin.z);
-        if (y <= origin.y + epsilon && y > bestY)
-        {
-            bestY = y;
-            found = true;
-        }
-    }
-
-    if (!found)
+    // the same ground the models are put on when they're inserted: the terrain shapes, the terrain tile models and the terrain
+    // patches of the editor, under the node, or over it when it went under the ground. the shapes alone and the spheres of the
+    // models around, which were asked about before, missed the ground of the sceneries made of terrain tile models
+    glm::dvec3 const target = placement_on_ground(origin);
+    if (std::abs(target.y - origin.y) < 1e-4)
         return;
 
     push_snapshot(node, EditorSnapshot::Action::Move);
     if (false == m_history.empty())
         m_history.back().joined = Joined;
-    glm::dvec3 target = origin;
-    target.y = bestY;
     if (auto *model = dynamic_cast<TAnimModel *>(node); Alone && model != nullptr && node->group() > 1)
     {
         // the model of a group goes down by itself, the rest of the group stays
@@ -1491,6 +1415,8 @@ bool editor_mode::update()
     render_new_scenery_popup();
     render_open_scenery_popup();
     render_shortcuts_window();
+    render_orthophoto_window();
+    render_environment_window();
     draw_selection_overlay();
     render_context_menu();
 
@@ -2896,15 +2822,105 @@ void editor_mode::render_map_menu()
         m_orthophoto.enabled(false == enabled);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
-    // the settings are a part of the terrain tools
-    if (ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, m_terrain_open))
-    {
-        m_track_window_open = false;
-        m_roadtool.window = false;
-        terrain_workspace(true);
-        m_orthophoto_expand = true;
-    }
+    ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, &m_orthophoto_window);
     ImGui::EndMenu();
+}
+
+void editor_mode::render_orthophoto_window()
+{
+    if (false == m_orthophoto_window)
+        return;
+    ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin((std::string(STR_C("Orthophoto")) + "###orthophoto").c_str(), &m_orthophoto_window))
+        render_orthophoto_ui();
+    ImGui::End();
+}
+
+void editor_mode::render_view_menu()
+{
+    if (false == ImGui::BeginMenu(STR_C("View")))
+        return;
+    if (ImGui::MenuItem(STR_C("Top view, orthographic"), "O", Global.EditorOrtho))
+        toggle_ortho();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
+    ImGui::MenuItem("Show lanes", nullptr, &m_roadtool.lanes);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", "Draws the lanes of the roads with the ways the vehicles take through the junctions");
+    if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.open))
+        m_gauge.open = !m_gauge.open;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
+    ImGui::Separator();
+    ImGui::MenuItem(STR_C("Weather and time"), nullptr, &m_environment_open);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor"));
+    ImGui::EndMenu();
+}
+
+void editor_mode::render_environment_window()
+{
+    if (false == m_environment_open)
+        return;
+    ImGui::SetNextWindowSize(ImVec2(420.0f * Global.ui_scale, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin((std::string(STR_C("Weather and time")) + "###environment").c_str(), &m_environment_open, ImGuiWindowFlags_NoCollapse))
+    {
+        // what the setdatetime, setweather and settemperature commands do in the driver mode; the editor doesn't take commands
+        auto const set_date_time = [](int const Yearday, int const Minute) {
+            simulation::Time.set_time(Yearday, Minute);
+            auto const weather{Global.Weather};
+            simulation::Environment.compute_season(Yearday);
+            if (weather != Global.Weather)
+            {
+                // HACK: force re-calculation of precipitation, as the command does
+                Global.Overcast = std::clamp(Global.Overcast - 0.0001f, 0.0f, 2.0f);
+            }
+            simulation::Environment.update_moon();
+        };
+        // the names of the period, season and weather end with a colon, being keys of other lookups
+        auto const name = [](std::string Text) {
+            if (false == Text.empty() && Text.back() == ':')
+                Text.pop_back();
+            return Text;
+        };
+        auto const &time{simulation::Time.data()};
+        auto minute{time.wHour * 60 + time.wMinute};
+        auto const clock{format("%02d:%02d (%s)", time.wHour, time.wMinute, name(Global.Period).c_str())};
+        if (ImGui::SliderInt((std::string(STR_C("Time of day")) + "###timeofday").c_str(), &minute, 0, 1439, clock.c_str()))
+            set_date_time(static_cast<int>(std::round(Global.fMoveLight)), std::clamp(minute, 0, 1439));
+        auto yearday{Global.fMoveLight};
+        auto const day{format("%.0f (%s)", Global.fMoveLight, name(Global.Season).c_str())};
+        if (ImGui::SliderFloat((std::string(STR_C("Day of the year")) + "###dayofyear").c_str(), &yearday, 0.0f, 364.0f, day.c_str()))
+            set_date_time(static_cast<int>(std::round(std::clamp(yearday, 0.0f, 365.0f))), time.wHour * 60 + time.wMinute);
+        ImGui::Separator();
+        auto visibility{std::log(Global.fFogEnd)};
+        auto const fog{format("%.0f m", Global.fFogEnd)};
+        if (ImGui::SliderFloat((std::string(STR_C("Visibility")) + "###visibility").c_str(), &visibility, std::log(10.0f), std::log(50000.0f), fog.c_str()))
+        {
+            Global.fFogEnd = std::clamp(std::exp(visibility), 10.0f, 50000.0f);
+            simulation::Environment.compute_weather();
+        }
+        auto overcast{Global.Overcast};
+        auto const clouds{format("%.2f (%s)", Global.Overcast, name(Global.Weather).c_str())};
+        if (ImGui::SliderFloat((std::string(STR_C("Clouds")) + "###overcast").c_str(), &overcast, 0.0f, 2.0f, clouds.c_str()))
+        {
+            Global.Overcast = std::clamp(overcast, 0.0f, 2.0f);
+            simulation::Environment.compute_weather();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Up to 1 the sky clouds over, past it rain or snow falls, by the air temperature"));
+        auto temperature{Global.AirTemperature};
+        auto const air{format("%.1f deg C", Global.AirTemperature)};
+        if (ImGui::SliderFloat((std::string(STR_C("Air temperature")) + "###airtemperature").c_str(), &temperature, -35.0f, 40.0f, air.c_str()))
+        {
+            Global.AirTemperature = std::clamp(temperature, -35.0f, 40.0f);
+            simulation::Environment.compute_weather();
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", STR_C("Seen in the editor only; the scenery keeps its own time and weather"));
+        ImGui::PopStyleColor();
+    }
+    ImGui::End();
 }
 
 void editor_mode::render_new_scenery_popup()
@@ -3062,18 +3078,8 @@ void editor_mode::terrain_workspace(bool const Open)
 
 void editor_mode::render_terrain_tool_options()
 {
+    // the orthophoto has a window of its own, see render_orthophoto_window()
     render_terrain_ui();
-    bool const expand{m_orthophoto_expand};
-    m_orthophoto_expand = false;
-    if (expand)
-        ImGui::SetNextItemOpen(true);
-    if (ImGui::CollapsingHeader(STR_C("Orthophoto")))
-    {
-        // opened from the map menu: brought into sight, the terrain tools above them take the most of the window
-        if (expand)
-            ImGui::SetScrollHereY(0.0f);
-        render_orthophoto_ui();
-    }
 }
 
 void editor_mode::render_object_menu()
@@ -3864,6 +3870,7 @@ void editor_mode::render_terrain_toolbar()
 		m_orthophoto.enabled(false == orthophoto);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
+	ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, &m_orthophoto_window);
 }
 
 void editor_mode::render_toolbar()
@@ -3959,6 +3966,12 @@ void editor_mode::render_edit_menu()
 		start_focus(m_node, 0.6);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The camera flies to the selected model and looks at it"));
+	if (ImGui::MenuItem(STR_C("Find a track by its name"), "Ctrl+F"))
+	{
+		terrain_workspace(false);
+		show_track_tab(m_track_window_open ? m_track_tab : track_tab::path);
+		m_track_search.focus = true;
+	}
 	if (ImGui::MenuItem(STR_C("Bend along the track"), "B", false, ui()->mode() != nodebank_panel::TRACK))
 		bend_shortcut();
 	if (ImGui::IsItemHovered())

@@ -378,7 +378,13 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::vector<std::string> m_openscenery_list;
 	std::string m_openscenery_choice;
 	void render_open_scenery_popup();
-	bool m_orthophoto_expand{false}; // the orthophoto settings of the terrain tools are opened the next time they're drawn
+	bool m_orthophoto_window{false};
+	void render_orthophoto_window();
+	// view menu: the top view, the lanes of the roads, the structure gauge, the environment
+	void render_view_menu();
+	// time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor
+	void render_environment_window();
+	bool m_environment_open{false};
 	// origin of the scenery in PUWG 1992 the scenery file gives in its //$g line, if it does
 	bool m_georeference_read{false};
 	bool m_georeference{false};
@@ -894,7 +900,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	// the objects along the track: a tab for each tool
 	int m_lineside_tab{0};
 	void render_lineside_ui();
-	void render_track_menu();
 	void arm_switch();
 	bool m_track_window_open{false};
 	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
@@ -1814,7 +1819,6 @@ class editor_mode : public application_mode, private editor_track::observer
 		char banktext[128]{};
 		char islandtext[128]{"none"};
 	};
-	void render_road_menu();
 	void render_road_tool_options();
 	// tools of the roads in the toolbar, and the change of the tool
 	void render_road_toolbar();

@@ -580,35 +580,6 @@ std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 	return modes;
 }
 
-void editor_mode::render_track_menu()
-{
-	// the tools of the tracks with their keys, as in the toolbar of the field of work
-	if (false == ImGui::BeginMenu(STR_C("Tracks")))
-		return;
-	for (auto const &mode : track_modes())
-	{
-		if (ImGui::MenuItem(STR_C(mode.label), mode.key, m_track_window_open && m_track_tab == mode.tab))
-		{
-			terrain_workspace(false);
-			show_track_tab(mode.tab);
-		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C(mode.tooltip));
-	}
-	ImGui::Separator();
-	if (ImGui::MenuItem(STR_C("Find a track by its name"), "Ctrl+F"))
-	{
-		terrain_workspace(false);
-		show_track_tab(m_track_window_open ? m_track_tab : track_tab::path);
-		m_track_search.focus = true;
-	}
-	if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.open))
-		m_gauge.open = !m_gauge.open;
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
-	ImGui::EndMenu();
-}
-
 void editor_mode::show_track_tab(track_tab const Tab)
 {
 	m_track_window_open = true;

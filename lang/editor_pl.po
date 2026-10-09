@@ -4989,3 +4989,38 @@ msgstr "Co można z nim zrobić"
 
 msgid "What the handles of the gizmo on the selection do when dragged; Ctrl held snaps the values"
 msgstr "Co robią uchwyty gizma na zaznaczeniu przy przeciąganiu; z Ctrl wartości są przyciągane"
+
+# scenery editor: view menu, weather and time
+
+msgid "View"
+msgstr "Widok"
+
+msgid "Weather and time"
+msgstr "Pogoda i czas"
+
+msgid "Time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor"
+msgstr "Godzina, dzień roku, widoczność, zachmurzenie i temperatura powietrza, z jakimi sceneria jest widoczna w edytorze"
+
+msgid "Time of day"
+msgstr "Godzina"
+
+msgid "Day of the year"
+msgstr "Dzień roku"
+
+msgid "Visibility"
+msgstr "Widoczność"
+
+msgid "Clouds"
+msgstr "Zachmurzenie"
+
+msgid "Up to 1 the sky clouds over, past it rain or snow falls, by the air temperature"
+msgstr "Do 1 niebo się chmurzy, powyżej pada deszcz albo śnieg, zależnie od temperatury powietrza"
+
+msgid "Air temperature"
+msgstr "Temperatura powietrza"
+
+msgid "Seen in the editor only; the scenery keeps its own time and weather"
+msgstr "Widoczne tylko w edytorze; sceneria zachowuje własny czas i pogodę"
+
+msgid "Top view, orthographic (O)"
+msgstr "Widok z góry, ortogonalny (O)"

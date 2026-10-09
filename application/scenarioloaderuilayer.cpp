@@ -193,6 +193,8 @@ void scenarioloader_ui::render_()
 	ImVec2 screen_size(Global.window_size.x, Global.window_size.y);
 	ImGui::SetNextWindowPos(ImVec2(-padding, -padding));
 	ImGui::SetNextWindowSize(ImVec2(Global.window_size.x + padding * 2, Global.window_size.y + padding * 2));
+	// it reaches past the edges of the main window, which would make it a window of its own with the panels able to leave the main one
+	ImGui::SetNextWindowViewport(ImGui::GetMainViewport()->ID);
 	ImGui::Begin("Neo Loading Screen", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
 	ImDrawList* draw_list = ImGui::GetWindowDrawList();
 	ImGui::PushFont(font_loading);

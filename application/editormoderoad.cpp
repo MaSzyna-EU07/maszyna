@@ -216,24 +216,6 @@ glm::dvec3 path_direction(segment_data const &Path, double const T)
 
 }
 
-void editor_mode::render_road_menu()
-{
-	if (ImGui::BeginMenu("Roads"))
-	{
-		if (ImGui::MenuItem("Road editor", "F4", &m_roadtool.window) && m_roadtool.window)
-		{
-			m_track_window_open = false;
-			terrain_workspace(false);
-		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", "The roads as the field of work: their tools in the toolbar, their settings in the tool options");
-		ImGui::MenuItem("Show lanes", nullptr, &m_roadtool.lanes);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", "Draws the lanes of the roads with the ways the vehicles take through the junctions");
-		ImGui::EndMenu();
-	}
-}
-
 void editor_mode::update_road_tool()
 {
 	auto &tool{m_roadtool};

@@ -96,7 +96,7 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 	ImGui::DockBuilderDockWindow("###tooloptions", lefttop);
 	for (auto const *window : {"###scenetree", "###Layers", "###scenehierarchy"})
 		ImGui::DockBuilderDockWindow(window, leftbottom);
-	for (auto const *window : {"###inspector", "###editorsettings", "###Include database"})
+	for (auto const *window : {"###inspector", "###editorsettings", "###Include database", "###orthophoto", "###environment"})
 		ImGui::DockBuilderDockWindow(window, right);
 	for (auto const *window : {"###Node bank", "###profilestrip", "###trackanalysis", "###structuregauge", "###editorhistory", "###modelsets"})
 		ImGui::DockBuilderDockWindow(window, bottom);
