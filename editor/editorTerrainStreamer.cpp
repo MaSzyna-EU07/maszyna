@@ -640,11 +640,11 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 
 	// chunks gone out of range are dropped, except edited ones, which wait in memory to be saved
 	auto const outside = [&](chunk_key const &Key, int const Margin) {
-		auto const near = [&](chunk_key const &Centre) {
+		auto const within = [&](chunk_key const &Centre) {
 			auto const dx{Key.first - Centre.first}, dz{Key.second - Centre.second};
 			return dx * dx + dz * dz <= (radius + Margin) * (radius + Margin);
 		};
-		return false == near(here) && false == near(there);
+		return false == within(here) && false == within(there);
 	};
 	for (auto it = m_chunks.begin(); it != m_chunks.end();)
 	{
