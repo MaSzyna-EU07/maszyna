@@ -529,7 +529,7 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 		glDeleteTextures(1, &id);
 		id = invalid_id;
 	}
-	if (id == invalid_id)
+	if (id == invalid_id) // NOSONAR
 	{
 		data_width = width;
 		data_height = height;

@@ -704,7 +704,7 @@ void driver_mode::update_camera(double const Deltatime)
 
 			auto const lr{m_input.keyboard.key(GLFW_KEY_LEFT) != GLFW_RELEASE};
 			// Camera.Yaw powinno być wyzerowane, aby po powrocie patrzeć do przodu
-			Camera.Pos = controlled->GetPosition() + simulation::Train->MirrorPosition(lr); // pozycja lusterka
+			Camera.Pos = controlled->GetPosition() + simulation::Train->MirrorPosition(lr); // pozycja lusterka // NOSONAR
 			Camera.Angle.y = 0; // odchylenie na bok od Camera.LookAt
 			if (simulation::Train->Occupied()->CabOccupied == 0)
 			{

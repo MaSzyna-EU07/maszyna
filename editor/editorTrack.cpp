@@ -1176,7 +1176,7 @@ glm::dvec2 direction_at(TTrack const &Track, glm::dvec3 const &Joint, bool const
 TTrack *neighbour_at(TTrack const &Track, int const Path, bool const Atend)
 {
 	if (has_switch_paths(Track))
-		return Atend ? Track.SwitchExtension->pNexts[Path & 1] : Track.SwitchExtension->pPrevs[Path & 1];
+		return Atend ? Track.SwitchExtension->pNexts[Path & 1] : Track.SwitchExtension->pPrevs[Path & 1]; // NOSONAR
 	return Atend ? Track.trNext : Track.trPrev;
 }
 

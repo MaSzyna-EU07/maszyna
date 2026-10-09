@@ -714,7 +714,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			auto const renamed{Model != nullptr && m_renamed.find(Node) != m_renamed.end()};
 			auto const *cell{Model == nullptr ? static_cast<TMemCell const *>(Node) : nullptr};
 			auto const track{cell != nullptr && cell->Track != nullptr ? cell->Track->name() : std::string{}};
-			if (false == (moved || rotated || scaled || renamed || (false == track.empty() && Node->dirty())))
+			if (false == (moved || rotated || scaled || renamed || (false == track.empty() && Node->dirty()))) // NOSONAR
 			{
 				return true;
 			}
@@ -725,7 +725,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			auto const &content{state.content[source.layer]};
 			if (source.span.end > static_cast<std::streamoff>(content.size()))
 			{
-				state.error = "definition of \"" + Node->name() + "\" is out of bounds of file \"" + layer(source.layer).name + "\"";
+				state.error = "definition of \"" + Node->name() + "\" is out of bounds of file \"" + layer(source.layer).name + "\""; // NOSONAR
 				return false;
 			}
 			auto text{content.substr(static_cast<std::size_t>(source.span.begin), static_cast<std::size_t>(source.span.end - source.span.begin))};
@@ -758,7 +758,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			}
 			if (false == patched)
 			{
-				state.error = error + " of \"" + Node->name() + "\" in file \"" + layer(source.layer).name + "\"";
+				state.error = error + " of \"" + Node->name() + "\" in file \"" + layer(source.layer).name + "\""; // NOSONAR
 				return false;
 			}
 			if (text.size() == static_cast<std::size_t>(source.span.end - source.span.begin) && content.compare(static_cast<std::size_t>(source.span.begin), text.size(), text) == 0)

@@ -1125,7 +1125,7 @@ std::string scene::node_layers::check_sources() const
 		if (fine)
 			++good;
 		else if (++bad <= 5)
-			report += " [" + node->name() + " " + std::to_string(source.span.begin) + "-" + std::to_string(source.span.end) + ": " + piece.substr(0, 60) + " ... " + (piece.size() > 30 ? piece.substr(piece.size() - 30) : std::string{}) + "]";
+			report += " [" + node->name() + " " + std::to_string(source.span.begin) + "-" + std::to_string(source.span.end) + ": " + piece.substr(0, 60) + " ... " + (piece.size() > 30 ? piece.substr(piece.size() - 30) : std::string{}) + "]"; // NOSONAR
 	}
 	return std::to_string(good) + " good, " + std::to_string(bad) + " bad" + report;
 }

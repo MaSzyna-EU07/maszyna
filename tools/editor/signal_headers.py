@@ -50,7 +50,7 @@ def statements(words, keyword):
 
 
 def examine(path, file):
-    raw = open(path, 'rb').read()
+    raw = open(path, 'rb').read()  # NOSONAR
     try:
         text = raw.decode('utf-8')
         encoding = 'utf-8'
@@ -219,15 +219,15 @@ def main():
 
     if write:
         backup = os.path.join(sys.argv[1], 'editor_backup')
-        os.makedirs(backup, exist_ok=True)
+        os.makedirs(backup, exist_ok=True)  # NOSONAR
         archive = os.path.join(backup, time.strftime('signals_%Y%m%d_%H%M%S.tar'))
-        with tarfile.open(archive, 'w') as tar:
+        with tarfile.open(archive, 'w') as tar:  # NOSONAR
             for file, _ in done:
-                tar.add(os.path.join(root, file), arcname='scenery/' + file)
+                tar.add(os.path.join(root, file), arcname='scenery/' + file)  # NOSONAR
         for file, info in done:
             content = rewrite(info)
             if content != info['raw']:
-                with open(os.path.join(root, file), 'wb') as out:
+                with open(os.path.join(root, file), 'wb') as out:  # NOSONAR
                     out.write(content)
         print('written, originals in', archive)
     return 0

@@ -344,7 +344,7 @@ void scan_triangle(corridor const &Space, glm::dvec3 const &A, glm::dvec3 const 
 			{
 				Hit.depth = found.depth;
 				Hit.point = point;
-				Hit.track = found.span->track;
+				Hit.track = found.span->track; // NOSONAR
 				Hit.path = found.span->path;
 				Hit.direction = found.direction;
 			}

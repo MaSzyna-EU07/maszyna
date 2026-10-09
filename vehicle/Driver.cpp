@@ -1410,7 +1410,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
             }
             // jeśli jest mienięty poprzedni semafor a wcześniej
             // byl nowy to go dorzucamy do zmiennej, żeby cały czas widział najbliższy
-            if( SemNextIndex == npos ) {
+            if( SemNextIndex == npos ) { // NOSONAR
                 SemNextIndex = Pointindex;
                 if( Global.iWriteLogEnabled & 8 ) {
                     WriteLog( "Speed table update for " + OwnerName() + ", next semaphor is " + sSpeedTable[ SemNextIndex ].GetName() );

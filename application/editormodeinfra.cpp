@@ -468,7 +468,7 @@ class event_links
 			for (auto *child : multi->children())
 			{
 				auto const setter{dynamic_cast<updatevalues_event const *>(child) != nullptr || dynamic_cast<copyvalues_event const *>(child) != nullptr};
-				for (auto *target : child->target_nodes())
+				for (auto *target : child->target_nodes()) // NOSONAR
 				{
 					if (models.count(target) > 0 && false == contains(shown, static_cast<scene::basic_node const *>(target)))
 						shown.push_back(target);

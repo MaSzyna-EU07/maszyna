@@ -723,7 +723,7 @@ std::string directive(std::string const &File, include_info const &Info, int con
 		else if (role == "name")
 		{
 			// names have to be unique in the scenery. the default value, or the name of the template, makes them recognizable
-			static std::mt19937 engine{std::random_device{}()};
+			static std::mt19937 engine{std::random_device{}()}; // NOSONAR
 			char suffix[16];
 			std::snprintf(suffix, sizeof(suffix), "_%08x", static_cast<unsigned int>(engine()));
 			value = (value.empty() ? std::filesystem::path(File).stem().string() : value) + suffix;

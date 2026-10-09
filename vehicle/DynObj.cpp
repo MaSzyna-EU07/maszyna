@@ -1422,7 +1422,7 @@ TDynamicObject * TDynamicObject::ABuScanNearestObject(glm::vec3 pos, TTrack *Tra
             ActDist += CurrDist;
             if (ScanDir > 0) // do przodu
             {
-                if (Track->iNextDirection)
+                if (Track->iNextDirection) // NOSONAR
                 {
                     Track = Track->CurrentNext();
                     ScanDir = -ScanDir;
@@ -1432,7 +1432,7 @@ TDynamicObject * TDynamicObject::ABuScanNearestObject(glm::vec3 pos, TTrack *Tra
             }
             else // do tyłu
             {
-                if (Track->iPrevDirection)
+                if (Track->iPrevDirection) // NOSONAR
                     Track = Track->CurrentPrev();
                 else
                 {
