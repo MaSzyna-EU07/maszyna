@@ -93,6 +93,9 @@ class terrain_streamer
 	bool sculpt(double X, double Z, double Radius, double Strength);
 	// evens out the ground within Radius of (X,Z), Amount (0..1) of the way at the centre
 	bool smooth(double X, double Z, double Radius, double Amount);
+	// leads the ground within Radius of (X,Z) towards the height Target, Amount (0..1) of the way at the centre;
+	// Mode: 0 up and down, 1 only raises it, 2 only lowers it
+	bool level(double X, double Z, double Radius, double Target, double Amount, int Mode = 0);
 	// gives every grid point within the rectangle to Shaper, with its world position and height (before the modifiers);
 	// Shaper returns true if it changed the height
 	bool reshape(glm::dvec2 const &Min, glm::dvec2 const &Max, std::function<bool(double X, double Z, float &Height)> const &Shaper);

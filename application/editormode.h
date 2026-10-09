@@ -309,12 +309,15 @@ class editor_mode : public application_mode, private editor_track::observer
 		chunks, // adds a chunk, Shift: removes it
 		sculpt, // raises the ground, Shift: lowers it
 		smooth,
+		level, // leads the ground to the target height, Ctrl: picks the target height under the cursor
 		paint, // paints the chosen material, Shift: the first material of the palette
 		spacing, // gives the clicked chunk the chosen point spacing
 		water // outlines a body of water
 	};
 	terrain_tool m_terrain_tool{terrain_tool::none};
-	bool terrain_brush() const { return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::paint; }
+	bool terrain_brush() const { return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::level || m_terrain_tool == terrain_tool::paint; }
+	// takes the height of whatever is under the cursor (terrain, track, model) for the target of the level brush. returns: false if there's nothing
+	bool pick_terrain_target();
 	bool terrain_clicking() const { return m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::water; }
 	// the brush, the hovered chunk and the outlines of water drawn over the viewport
 	void draw_terrain_overlay();
@@ -410,6 +413,12 @@ class editor_mode : public application_mode, private editor_track::observer
 	int m_terrain_add_count{4};       // chunks along a side added around the camera
 	float m_terrain_brush_radius{12.0f};
 	float m_terrain_brush_strength{4.0f}; // metres per second while held; for the paint, how fast it covers
+	// the level brush
+	float m_terrain_target{0.0f}; // height the ground is led to
+	int m_terrain_level_mode{0}; // 0: up and down, 1: only raises, 2: only lowers
+	bool m_terrain_target_from_stroke{false}; // the target is the height where a stroke starts
+	bool m_terrain_stroke{false}; // a stroke of the brush is under way
+	bool m_terrain_picking{false}; // the next click picks the target height
 	int m_terrain_layer{0};               // entry of the palette painted
 	char m_terrain_material[128]{"grass"}; // material added to the palette
 	float m_terrain_material_size{0.0f};   // metres its textures repeat at, 0: given by the material

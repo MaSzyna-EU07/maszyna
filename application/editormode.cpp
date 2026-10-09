@@ -391,7 +391,9 @@ namespace
 
     // ground triangles overlapping an XZ rectangle (Min/Max are x,z). shapes hold the (legacy) terrain,
     // model instances at least ModelRadius large (if ModelsAsGround) the terrain tiles
-    void gather_ground_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const ModelsAsGround, float const ModelRadius, std::vector<world_triangle> &Out, bool const Skiproads = false)
+    // Heightmap: the heightmap terrain is given as triangles too (for the ones which can ask the terrain for heights, it's a waste)
+    void gather_ground_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const ModelsAsGround, float const ModelRadius, std::vector<world_triangle> &Out, bool const Skiproads = false,
+                                 bool const Heightmap = true)
     {
         auto const started = std::chrono::steady_clock::now();
         ++ground_question;
@@ -444,7 +446,8 @@ namespace
             }
         }
         // the heightmap terrain answers for itself, with its full grid whatever is drawn of it
-        EditorTerrain.gather_triangles(Min, Max, Out);
+        if (Heightmap)
+            EditorTerrain.gather_triangles(Min, Max, Out);
         trim_ground_meshes();
         // going through the scenery is the one thing here which can take long enough to be felt; when it does it's worth knowing
         auto const elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
@@ -533,9 +536,10 @@ editor_mode::editor_mode() {
 	road_select(nullptr);
 	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
 	// the roads built in the editor aren't ground: the imagery goes under them
-	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out) {
-		gather_ground_triangles(Min, Max, true, 50.0f, Out, true);
+	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, bool const Heightmap, std::vector<world_triangle> &Out) {
+		gather_ground_triangles(Min, Max, true, 50.0f, Out, true, Heightmap);
 	});
+	m_orthophoto.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
 	editor_track::observe(this);
  }
 
@@ -1380,6 +1384,8 @@ bool editor_mode::update()
     // the brush of the terrain works while the left mouse button is held
     if (terrain_brush() && mouseHold)
         handle_terrain_brush(deltarealtime);
+    else
+        m_terrain_stroke = false;
     if (m_terrain_open)
         draw_terrain_overlay();
 
@@ -1606,6 +1612,8 @@ void editor_mode::render_terrain_ui()
     ImGui::SameLine();
     radio(STR_C("Smooth"), terrain_tool::smooth, STR_C("LMB evens the terrain out under the brush"));
     ImGui::SameLine();
+    radio(STR_C("Level"), terrain_tool::level, STR_C("LMB leads the terrain under the brush to the target height, Ctrl+LMB takes the target height from what's under the cursor"));
+    ImGui::SameLine();
     radio(STR_C("Paint"), terrain_tool::paint, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"));
     ImGui::SameLine();
     radio(STR_C("Water"), terrain_tool::water, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"));
@@ -1650,7 +1658,23 @@ void editor_mode::render_terrain_ui()
         ImGui::DragFloat(STR_C("Strength"), &m_terrain_brush_strength, 0.05f, 0.05f, 50.0f, "%.2f");
         m_terrain_brush_strength = std::max(0.05f, m_terrain_brush_strength);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", STR_C("Sculpting: metres per second at the middle of the brush; smoothing and painting: how fast they work"));
+            ImGui::SetTooltip("%s", STR_C("Sculpting: metres per second at the middle of the brush; smoothing, levelling and painting: how fast they work"));
+        if (m_terrain_tool == terrain_tool::level)
+        {
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::DragFloat(STR_C("Target height (m)"), &m_terrain_target, 0.05f, -1000.0f, 5000.0f, "%.2f");
+            ImGui::SameLine();
+            if (ImGui::Button(m_terrain_picking ? STR_C("Click in the view...") : STR_C("Pick")))
+                m_terrain_picking = false == m_terrain_picking;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("The next click takes the height of whatever is under the cursor: terrain, a track, a model.\nCtrl+LMB does the same at any time"));
+            char const *modes[]{STR_C("Raise and lower"), STR_C("Only raise"), STR_C("Only lower")};
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::Combo("##levelmode", &m_terrain_level_mode, modes, IM_ARRAYSIZE(modes));
+            ImGui::Checkbox(STR_C("Target where the stroke starts"), &m_terrain_target_from_stroke);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("Each stroke takes the height of the terrain under the cursor where it starts as its target,\nand drags it along: the ground stroked over is levelled with that point"));
+        }
     }
 
     if (ImGui::CollapsingHeader(STR_C("Materials"), m_terrain_tool == terrain_tool::paint ? ImGuiTreeNodeFlags_DefaultOpen : 0))
@@ -1834,6 +1858,30 @@ void editor_mode::draw_terrain_overlay()
         }
         auto const color = m_terrain_tool == terrain_tool::paint ? IM_COL32(120, 230, 120, 220) : m_terrain_tool == terrain_tool::smooth ? IM_COL32(120, 200, 255, 220) : IM_COL32(255, 180, 80, 220);
         polyline(circle, color, true, 2.0f);
+        if (m_terrain_tool == terrain_tool::level)
+        {
+            // the target: the rim of the brush at its height, joined with the ground, and the height by the cursor
+            auto const target = static_cast<double>(m_terrain_target);
+            std::vector<glm::dvec3> level;
+            for (auto const &point : circle)
+                level.emplace_back(point.x, target, point.z);
+            ImU32 const levelcolor = IM_COL32(255, 230, 90, 230);
+            polyline(level, levelcolor, true, 1.5f);
+            for (std::size_t i = 0; i < circle.size(); i += circle.size() / 8)
+            {
+                ImVec2 from, to;
+                if (projection.project(circle[i], from) && projection.project(level[i], to))
+                    drawlist->AddLine(from, to, IM_COL32(255, 230, 90, 120), 1.0f);
+            }
+            ImVec2 label;
+            if (projection.project(glm::dvec3{cursor.x, target, cursor.z}, label))
+            {
+                double ground{cursor.y};
+                m_streamer.height_at(cursor.x, cursor.z, ground);
+                auto const text = format("%.2f m (%+.2f)", target, target - ground);
+                drawlist->AddText(ImVec2(label.x + 12.0f, label.y - 8.0f), levelcolor, text.c_str());
+            }
+        }
     }
     if ((m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing) && hovering)
     {
@@ -2888,6 +2936,18 @@ void editor_mode::handle_terrain_brush(double Deltatime)
     case terrain_tool::smooth:
         shaped = m_streamer.smooth(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.5));
         break;
+    case terrain_tool::level:
+    {
+        if (false == m_terrain_stroke && m_terrain_target_from_stroke)
+        {
+            double height;
+            if (m_streamer.height_at(world.x, world.z, height))
+                m_terrain_target = static_cast<float>(height);
+        }
+        m_terrain_stroke = true;
+        shaped = m_streamer.level(world.x, world.z, m_terrain_brush_radius, m_terrain_target, std::min(1.0, rate * 0.5), m_terrain_level_mode);
+        break;
+    }
     case terrain_tool::paint:
         m_streamer.paint(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.25), Global.shiftState ? std::uint16_t{0} : static_cast<std::uint16_t>(m_terrain_layer));
         break;
@@ -2900,6 +2960,16 @@ void editor_mode::handle_terrain_brush(double Deltatime)
         ground_tiles.clear();
         forget_ground_shapes();
     }
+}
+
+bool editor_mode::pick_terrain_target()
+{
+    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
+    if (glm::length(offset) < 1e-3)
+        return false; // nothing under the cursor
+    m_terrain_target = static_cast<float>(Camera.Pos.y + offset.y);
+    m_terrain_status = format(STR_C("Target height: %.2f m"), m_terrain_target);
+    return true;
 }
 
 void editor_mode::capture_terrain()
@@ -5153,6 +5223,15 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // with a brush of the terrain the left button works the brush instead of picking nodes
     if (terrain_brush() && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
+        if (m_terrain_tool == terrain_tool::level && is_press(Action) && (Global.ctrlState || m_terrain_picking))
+        {
+            // a click which picks the target height doesn't level anything
+            pick_terrain_target();
+            m_terrain_picking = false;
+            mouseHold = false;
+            m_input.mouse.button(Button, Action);
+            return;
+        }
         mouseHold = is_press(Action);
         m_input.mouse.button(Button, Action);
         return;

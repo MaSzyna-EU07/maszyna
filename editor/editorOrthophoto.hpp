@@ -67,8 +67,11 @@ class editor_orthophoto
 	};
 
 	using world_triangle = std::array<glm::dvec3, 3>;
-	// supplies the ground triangles overlapping an XZ rectangle (Min/Max are x,z); used to drape the imagery
-	using ground_query = std::function<void(glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<world_triangle> &Out)>;
+	// supplies the ground triangles overlapping an XZ rectangle (Min/Max are x,z); used to drape the imagery.
+	// Heightmap: the heightmap terrain as triangles too; without it the terrain is asked through the height query alone
+	using ground_query = std::function<void(glm::dvec2 const &Min, glm::dvec2 const &Max, bool Heightmap, std::vector<world_triangle> &Out)>;
+	// height of the heightmap terrain at a point, false where there's none
+	using height_query = std::function<bool(double X, double Z, double &Height)>;
 
 	struct statistics
 	{
@@ -93,6 +96,7 @@ class editor_orthophoto
 	// changes of year / resolution invalidate resident tiles, the rest applies immediately
 	void settings(config const &Config);
 	void ground_source(ground_query Query) { m_ground = std::move(Query); }
+	void height_source(height_query Query) { m_height = std::move(Query); }
 	// samples the ground again (after it was edited); tiles are refitted progressively
 	void refit();
 	// takes the scene geometry out of the region (e.g. when the editor is left); it's re-created on the next update
@@ -202,6 +206,7 @@ class editor_orthophoto
 	std::vector<texture_slot> m_free_slots; // pool of textures, reused between tiles
 	int m_texture_count{0};
 	ground_query m_ground;
+	height_query m_height;
 	scene::basic_region *m_region{nullptr};                  // region the scene geometry was put into
 	std::multimap<std::size_t, gfx::geometry_handle> m_free_chunks; // geometry chunks by capacity, reused between tiles
 	// the scene opacity is baked into the textures, which means reading the tiles again; applied once the value settles

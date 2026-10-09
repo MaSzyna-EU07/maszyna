@@ -73,9 +73,12 @@ http://mozilla.org/MPL/2.0/.
 //   newscenery                           the editor starts again with the wizard of a new scenery
 //   vehicles                             logs each vehicle: its head, facing, and what its couplers hold
 //   terrainmode                          the terrain field of work, with its texture browser
-//   terrainsculpt <x> <z> <radius> <metres>, terrainpaint <x> <z> <radius> <palette entry>   as a stroke of the brush
+//   terrainsculpt <x> <z> <radius> <metres>, terrainpaint <x> <z> <radius> <palette entry>,
+//   terrainlevel <x> <z> <radius> <target height> [mode]   as a stroke of the brush
+//   terrainadd <count> <spacing>          chunks made around the camera, count x count, as the button of the chunks panel does it
 //   terrainprobe <x> <z>                 logs the height of the heightmap terrain and the materials of the chunk
 //   terrainconvert                       converts every material of the terrain files of the scenery
+//   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
 //   screenshot
 //   save
 //   log <text>
@@ -1138,18 +1141,41 @@ void editor_mode::selftest_step()
 				}
 			}
 		}
+		else if (command == "orthophoto")
+		{
+			auto config{m_orthophoto.settings()};
+			int fit{1}, inscene{0};
+			words >> config.north >> config.east >> config.radius >> fit >> inscene;
+			config.drape = fit != 0;
+			config.in_scene = inscene != 0;
+			m_orthophoto.settings(config);
+			m_orthophoto.enabled(true);
+			WriteLog(format("SELFTEST orthophoto at %.0f %.0f, radius %d, %s%s", config.north, config.east, config.radius, config.drape ? "fitted" : "flat", config.in_scene ? ", in the scene" : ""));
+		}
 		else if (command == "terrainmode")
 		{
 			m_terrain_open = true;
 			WriteLog("SELFTEST terrainmode");
 		}
-		else if (command == "terrainsculpt" || command == "terrainpaint")
+		else if (command == "terrainsculpt" || command == "terrainpaint" || command == "terrainlevel")
 		{
 			double x{0.0}, z{0.0}, radius{10.0}, value{1.0};
-			words >> x >> z >> radius >> value;
-			auto const changed{command == "terrainsculpt" ? m_streamer.sculpt(x, z, radius, value) : m_streamer.paint(x, z, radius, 1.0, static_cast<std::uint16_t>(value))};
+			int mode{0};
+			words >> x >> z >> radius >> value >> mode;
+			auto const changed{command == "terrainsculpt" ? m_streamer.sculpt(x, z, radius, value)
+			                   : command == "terrainlevel" ? m_streamer.level(x, z, radius, value, 1.0, mode)
+			                                               : m_streamer.paint(x, z, radius, 1.0, static_cast<std::uint16_t>(value))};
 			forget_ground();
 			WriteLog(format("SELFTEST %s %.1f %.1f: %s", command.c_str(), x, z, changed ? "changed" : "nothing changed"));
+		}
+		else if (command == "terrainadd")
+		{
+			int count{1};
+			float spacing{m_terrain_spacing};
+			words >> count >> spacing;
+			m_terrain_spacing = heightmap::valid_spacing(spacing);
+			add_chunks_around(std::clamp(count, 1, 8));
+			WriteLog("SELFTEST terrainadd: " + m_terrain_status);
 		}
 		else if (command == "terrainprobe")
 		{

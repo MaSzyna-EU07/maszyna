@@ -698,7 +698,11 @@ void editor_orthophoto::settings(config const &Config)
 {
 	bool const sourcechanged = (Config.year != m_config.year || Config.hires != m_config.hires);
 	bool const shapechanged = (Config.height != m_config.height || Config.drape != m_config.drape || Config.in_scene != m_config.in_scene || Config.lift != m_config.lift);
+	// the surface of the ground is gathered only for the geometry in the scene, the overlay makes do with the heights
+	bool const groundchanged = (Config.in_scene != m_config.in_scene);
 	m_config = Config;
+	if (groundchanged)
+		refit();
 	m_config.lift = std::clamp(m_config.lift, 0.0f, 50.0f);
 	m_config.radius = std::clamp(m_config.radius, 0, max_radius);
 	m_config.opacity = std::clamp(m_config.opacity, 0.0f, 1.0f);
@@ -914,12 +918,23 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	glm::dvec2 const corner = tile_corner(Key);
 	glm::dvec2 const min(corner.x - tile_size, corner.y - tile_size);
 	glm::dvec2 const max(corner.x, corner.y);
+	// the clipped surface is drawn only by the geometry in the scene. the overlay needs just the heights, and the heightmap
+	// terrain gives these straight away: its triangles (hundreds of thousands in a tile) aren't gathered for it
+	bool const surface = m_config.in_scene || !m_height;
 	std::vector<world_triangle> triangles;
-	m_ground(min, max, triangles);
+	m_ground(min, max, surface, triangles);
 
 	int constexpr samples{ground_grid + 1};
 	double constexpr step{tile_size / ground_grid};
 	std::vector<float> heights(static_cast<std::size_t>(samples) * samples, no_height);
+	if (!surface)
+		for (int j = 0; j < samples; ++j)
+			for (int i = 0; i < samples; ++i)
+			{
+				double y;
+				if (m_height(corner.x - i * step, corner.y - j * step, y))
+					heights[static_cast<std::size_t>(j) * samples + i] = static_cast<float>(y);
+			}
 
 	for (auto const &triangle : triangles)
 	{
@@ -935,17 +950,20 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 		if (length < 1e-9 || normal.y / length < steepest_ground)
 			continue; // walls and the like don't receive the imagery
 
-		glm::dvec3 polygon[8] = {a, b, c};
-		glm::dvec3 scratch[8];
-		int count = clip_xz(polygon, 3, scratch, 0, max.x, true);
-		count = clip_xz(scratch, count, polygon, 0, min.x, false);
-		count = clip_xz(polygon, count, scratch, 2, max.y, true);
-		count = clip_xz(scratch, count, polygon, 2, min.y, false);
-		for (int k = 1; k + 1 < count; ++k)
+		if (surface)
 		{
-			Tile.surface.push_back(polygon[0]);
-			Tile.surface.push_back(polygon[k]);
-			Tile.surface.push_back(polygon[k + 1]);
+			glm::dvec3 polygon[8] = {a, b, c};
+			glm::dvec3 scratch[8];
+			int count = clip_xz(polygon, 3, scratch, 0, max.x, true);
+			count = clip_xz(scratch, count, polygon, 0, min.x, false);
+			count = clip_xz(polygon, count, scratch, 2, max.y, true);
+			count = clip_xz(scratch, count, polygon, 2, min.y, false);
+			for (int k = 1; k + 1 < count; ++k)
+			{
+				Tile.surface.push_back(polygon[0]);
+				Tile.surface.push_back(polygon[k]);
+				Tile.surface.push_back(polygon[k + 1]);
+			}
 		}
 
 		// heightfield samples under the (whole) triangle, the highest surface wins
@@ -1415,7 +1433,33 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 		if (draped)
 			segments = std::max(segments, distance < 300.0 ? ground_grid : distance < 800.0 ? ground_grid / 2 : ground_grid / 4);
 		float const segmentsize = 1.0f / static_cast<float>(segments);
-		auto const height_at = [&](float U, float V) { return draped ? sample_heights(t.heights, U, V) + lift : flat; };
+		// the grid points of the heights are taken as they are where the segments fall on them
+		int const stride = (draped && ground_grid % segments == 0) ? ground_grid / segments : 0;
+		auto const height_at = [&](int I, int J) {
+			if (!draped)
+				return flat;
+			if (stride > 0)
+				return static_cast<double>(t.heights[static_cast<std::size_t>(J * stride) * (ground_grid + 1) + I * stride]) + lift;
+			return sample_heights(t.heights, I * segmentsize, J * segmentsize) + lift;
+		};
+
+		// each point of the grid is projected once, with the sides of the view it's beyond: a quad wholly inside goes
+		// straight to the draw list, one wholly beyond a side is skipped, only the ones across an edge are clipped
+		int const side = segments + 1;
+		static std::vector<clip_vertex> points;
+		static std::vector<std::uint8_t> codes;
+		points.resize(static_cast<std::size_t>(side) * side);
+		codes.resize(points.size());
+		for (int j = 0; j < side; ++j)
+			for (int i = 0; i < side; ++i)
+			{
+				auto const index = static_cast<std::size_t>(j) * side + i;
+				float const u = i * segmentsize, v = j * segmentsize;
+				glm::vec4 const position = clip(u, v, height_at(i, j));
+				points[index] = {position, {u, v}};
+				codes[index] = static_cast<std::uint8_t>((position.w < near_w ? 1 : 0) | (position.x > position.w * guard ? 2 : 0) | (position.x < -position.w * guard ? 4 : 0) |
+				                                         (position.y > position.w * guard ? 8 : 0) | (position.y < -position.w * guard ? 16 : 0));
+			}
 
 		drawlist->PushTextureID((ImTextureID)(intptr_t)(textureid));
 		for (int j = 0; j < segments; ++j)
@@ -1426,19 +1470,29 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 					drawlist->PopTextureID();
 					return;
 				}
-				float const u0 = i * segmentsize, u1 = (i + 1) * segmentsize;
-				float const v0 = j * segmentsize, v1 = (j + 1) * segmentsize;
-				clip_vertex quad[4] = {
-				    {clip(u0, v0, height_at(u0, v0)), {u0, v0}},
-				    {clip(u1, v0, height_at(u1, v0)), {u1, v0}},
-				    {clip(u1, v1, height_at(u1, v1)), {u1, v1}},
-				    {clip(u0, v1, height_at(u0, v1)), {u0, v1}},
-				};
-				glm::vec4 const positions[4] = {quad[0].position, quad[1].position, quad[2].position, quad[3].position};
-				if (outside(positions, 4))
+				std::size_t const corners[4] = {static_cast<std::size_t>(j) * side + i, static_cast<std::size_t>(j) * side + i + 1, static_cast<std::size_t>(j + 1) * side + i + 1,
+				                                static_cast<std::size_t>(j + 1) * side + i};
+				auto const all = codes[corners[0]] & codes[corners[1]] & codes[corners[2]] & codes[corners[3]];
+				if (all != 0)
+					continue; // beyond one side of the view
+				auto const any = codes[corners[0]] | codes[corners[1]] | codes[corners[2]] | codes[corners[3]];
+				if (any == 0)
+				{
+					drawlist->PrimReserve(6, 4);
+					auto const base = static_cast<ImDrawIdx>(drawlist->_VtxCurrentIdx);
+					drawlist->PrimWriteIdx(base);
+					drawlist->PrimWriteIdx(static_cast<ImDrawIdx>(base + 1));
+					drawlist->PrimWriteIdx(static_cast<ImDrawIdx>(base + 2));
+					drawlist->PrimWriteIdx(base);
+					drawlist->PrimWriteIdx(static_cast<ImDrawIdx>(base + 2));
+					drawlist->PrimWriteIdx(static_cast<ImDrawIdx>(base + 3));
+					for (auto const corner : corners)
+						drawlist->PrimWriteVtx(toscreen(points[corner].position), ImVec2(points[corner].uv.x, points[corner].uv.y), color);
 					continue;
+				}
 
 				// clip against the near plane and the (slightly widened) sides of the view
+				clip_vertex quad[4] = {points[corners[0]], points[corners[1]], points[corners[2]], points[corners[3]]};
 				clip_vertex buffer0[12], buffer1[12];
 				int count = clip_polygon(quad, 4, buffer0, [](glm::vec4 const &v) { return v.w - near_w; });
 				count = clip_polygon(buffer0, count, buffer1, [&](glm::vec4 const &v) { return v.w * guard - v.x; });

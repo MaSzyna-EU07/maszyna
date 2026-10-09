@@ -1041,6 +1041,27 @@ bool terrain_streamer::smooth(double X, double Z, double Radius, double Amount)
 	});
 }
 
+bool terrain_streamer::level(double X, double Z, double Radius, double Target, double Amount, int const Mode)
+{
+	if (Radius <= 0.0 || Amount <= 0.0)
+		return false;
+	return reshape(glm::dvec2{X - Radius, Z - Radius}, glm::dvec2{X + Radius, Z + Radius}, [&](double const Vx, double const Vz, float &Height) {
+		auto const distance{std::sqrt((Vx - X) * (Vx - X) + (Vz - Z) * (Vz - Z))};
+		if (distance > Radius)
+			return false;
+		auto const own{static_cast<double>(Height)};
+		if ((Mode == 1 && own >= Target) || (Mode == 2 && own <= Target))
+			return false;
+		// the middle of the brush gets there, the rim follows less; what's within the step of the stored heights is there already
+		auto const levelled{own + (Target - own) * std::min(1.0, Amount * falloff(distance, Radius))};
+		auto const result{std::abs(Target - levelled) < heightmap::height_step ? Target : levelled};
+		if (std::abs(result - own) < 1e-5)
+			return false;
+		Height = static_cast<float>(result);
+		return true;
+	});
+}
+
 bool terrain_streamer::paint(double X, double Z, double Radius, double Strength, std::uint16_t Layer)
 {
 	if (Radius <= 0.0 || Strength <= 0.0)
