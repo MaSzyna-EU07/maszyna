@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 // over the 3d view: the tools of the field of work along its left edge, the modes of the gizmo at its top, the axes of the
-// world and the top view in its top right corner
+// world and the top view in its top right corner. the same tools in the toolbar under the menu, with their names
 
 #include "stdafx.h"
 #include "application/editormode.h"
@@ -25,14 +25,9 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <vector>
 
-namespace
+struct editor_tool_button
 {
-
-using editor_icons::icon;
-
-struct tool_button
-{
-	icon picture;
+	editor_icons::icon picture; // icon::count if it has none: then it's only in the toolbar, as its name
 	char const *label;
 	char const *key; // nullptr if there's none
 	char const *tooltip; // nullptr if the label says enough
@@ -41,6 +36,12 @@ struct tool_button
 	bool group{false}; // a gap before it, it starts another group
 	bool enabled{true};
 };
+
+namespace
+{
+
+using editor_icons::icon;
+using tool_button = editor_tool_button;
 
 float scale()
 {
@@ -69,6 +70,27 @@ bool begin_overlay(char const *Name, ImVec2 const &Position, ImVec2 const &Size)
 	return open;
 }
 
+// the name of the tool with its key, and what it does
+void button_tooltip(tool_button const &Button)
+{
+	std::string tip{Button.label};
+	if (Button.key != nullptr)
+		tip += std::string{"  ["} + Button.key + "]";
+	if (Button.tooltip != nullptr)
+		tip += std::string{"\n"} + Button.tooltip;
+	ImGui::SetTooltip("%s", tip.c_str());
+}
+
+// the first letters of the label in place of the icon, if the renderer can't show images
+void icon_or_letters(ImDrawList *List, tool_button const &Button, ImVec2 const &Center, ImU32 const Color)
+{
+	if (editor_icons::draw(List, Button.picture, Center, Color))
+		return;
+	char const text[]{Button.label[0], (Button.label[0] != '\0' ? Button.label[1] : '\0'), '\0'};
+	auto const size{ImGui::CalcTextSize(text)};
+	List->AddText(ImVec2(Center.x - size.x * 0.5f, Center.y - size.y * 0.5f), Color, text);
+}
+
 // the button with the icon at the place; the label stands in for the icon if the renderer can't show images
 void icon_button(tool_button const &Button, ImVec2 const &Position, int const Id)
 {
@@ -88,22 +110,9 @@ void icon_button(tool_button const &Button, ImVec2 const &Position, int const Id
 	if (Button.chosen)
 		list->AddRect(Position, end, ImGui::GetColorU32(ImGuiCol_CheckMark), rounding, 0, 1.5f * scale());
 	auto const color{Button.enabled ? (Button.chosen || hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(215, 220, 225, 235)) : IM_COL32(150, 150, 150, 110)};
-	ImVec2 const center{Position.x + side * 0.5f, Position.y + side * 0.5f};
-	if (false == editor_icons::draw(list, Button.picture, center, color))
-	{
-		char const text[]{Button.label[0], (Button.label[0] != '\0' ? Button.label[1] : '\0'), '\0'};
-		auto const size{ImGui::CalcTextSize(text)};
-		list->AddText(ImVec2(center.x - size.x * 0.5f, center.y - size.y * 0.5f), color, text);
-	}
+	icon_or_letters(list, Button, ImVec2(Position.x + side * 0.5f, Position.y + side * 0.5f), color);
 	if (hovered)
-	{
-		std::string tip{Button.label};
-		if (Button.key != nullptr)
-			tip += std::string{"  ["} + Button.key + "]";
-		if (Button.tooltip != nullptr)
-			tip += std::string{"\n"} + Button.tooltip;
-		ImGui::SetTooltip("%s", tip.c_str());
-	}
+		button_tooltip(Button);
 	if (clicked && Button.enabled && Button.action)
 		Button.action();
 }
@@ -122,13 +131,9 @@ void editor_mode::render_viewport_overlays()
 	render_view_axes();
 }
 
-void editor_mode::render_viewport_tools()
+void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 {
-	// the tools of the field of work, as in the toolbar
-	std::vector<tool_button> buttons;
-	buttons.reserve(16);
-	auto const area{current_work_area()};
-	switch (area)
+	switch (current_work_area())
 	{
 	case work_area::surroundings:
 	{
@@ -145,7 +150,7 @@ void editor_mode::render_viewport_tools()
 		                      {icon::area_fill, STR_C("Area fill"), "4", nodebank_panel::FILL},
 		                      {icon::copy_to_bank, STR_C("Copy to bank"), "5", nodebank_panel::COPY}};
 		for (auto const &entry : modes)
-			buttons.push_back({entry.picture, entry.label, entry.key, nullptr, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
+			Buttons.push_back({entry.picture, entry.label, entry.key, nullptr, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
 		break;
 	}
 	case work_area::tracks:
@@ -156,9 +161,9 @@ void editor_mode::render_viewport_tools()
 			auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == Tab; })};
 			if (found == modes.end())
 				return;
-			// a tool chosen again gives way to the select one, as in the toolbar
+			// a tool chosen again gives way to the select one
 			auto const chosen{m_track_tab == Tab && false == (Tab == track_tab::lineside && vehicle)};
-			buttons.push_back({Picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
+			Buttons.push_back({Picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
 		};
 		add(track_tab::path, icon::select, false);
 		add(track_tab::lay, icon::lay_track, false);
@@ -168,7 +173,7 @@ void editor_mode::render_viewport_tools()
 		add(track_tab::turntable, icon::turntable, false);
 		add(track_tab::signals, icon::signal, true);
 		add(track_tab::lineside, icon::objects, false);
-		buttons.push_back({icon::vehicle, STR_C("Vehicle"), nullptr, STR_C("A vehicle to drive, put on the selected track; it isn't written to the scenery files"), vehicle, [this, vehicle]() {
+		Buttons.push_back({icon::vehicle, STR_C("Vehicle"), nullptr, STR_C("A vehicle to drive, put on the selected track; it isn't written to the scenery files"), vehicle, [this, vehicle]() {
 			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
 			                   m_vehicle.expand = false == vehicle;
 		                   }});
@@ -176,22 +181,29 @@ void editor_mode::render_viewport_tools()
 		add(track_tab::speed, icon::speed, false);
 		add(track_tab::joints, icon::joints, false);
 		add(track_tab::infra, icon::infra, false);
-		buttons.push_back({icon::gauge, STR_C("Structure gauge"), nullptr, STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"), m_gauge.open,
+		Buttons.push_back({icon::gauge, STR_C("Structure gauge"), nullptr, STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"), m_gauge.open,
 		                   [this]() { m_gauge.open = !m_gauge.open; }});
 		break;
 	}
 	case work_area::roads:
 	{
 		auto &tool{m_roadtool};
-		buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"), tool.tool == 0, [this]() { road_choose_tool(0); }});
-		buttons.push_back({icon::road, STR_C("Build"), nullptr, STR_C("LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"), tool.tool == 1, [this]() { road_choose_tool(1); }});
-		buttons.push_back({icon::place, STR_C("Place"), nullptr, STR_C("Level crossings, and the points where vehicles appear on the roads or are taken off them"), tool.tool == 2, [this]() { road_choose_tool(2); }});
-		buttons.push_back({icon::lanes, STR_C("Show lanes"), nullptr, STR_C("The lanes of the roads drawn as the paths the vehicles take"), tool.lanes, [&tool]() { tool.lanes = !tool.lanes; }, true});
+		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"), tool.tool == 0, [this]() { road_choose_tool(0); }});
+		Buttons.push_back({icon::road, STR_C("Build"), nullptr, STR_C("LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"), tool.tool == 1, [this]() { road_choose_tool(1); }});
+		Buttons.push_back({icon::place, STR_C("Place"), nullptr, STR_C("Level crossings, and the points where vehicles appear on the roads or are taken off them"), tool.tool == 2, [this]() { road_choose_tool(2); }});
+		if (tool.tool == 2)
+		{
+			// what the place tool puts
+			char const *const kinds[] = {STR_C("Level crossing"), STR_C("Spawn point"), STR_C("Removal point"), STR_C("Pedestrian crossing")};
+			for (int index = 0; index < static_cast<int>(std::size(kinds)); ++index)
+				Buttons.push_back({icon::count, kinds[index], nullptr, nullptr, tool.placekind == index, [&tool, index]() { tool.placekind = index; }, index == 0});
+		}
+		Buttons.push_back({icon::lanes, STR_C("Show lanes"), nullptr, STR_C("The lanes of the roads drawn as the paths the vehicles take"), tool.lanes, [&tool]() { tool.lanes = !tool.lanes; }, true});
 		break;
 	}
 	case work_area::terrain:
 	{
-		// what the left button does on the terrain, as in the toolbar
+		// what the left button does on the terrain
 		auto const choose = [this](bool const Sculpt, bool const Smooth, bool const Chunks) {
 			return [this, Sculpt, Smooth, Chunks]() {
 				m_terrain_sculpt = Sculpt;
@@ -199,16 +211,26 @@ void editor_mode::render_viewport_tools()
 				m_chunk_edit = Chunks;
 			};
 		};
-		buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), false == m_terrain_sculpt && false == m_chunk_edit, choose(false, m_terrain_brush_smooth, false)});
-		buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), m_terrain_sculpt && false == m_terrain_brush_smooth, choose(true, false, false)});
-		buttons.push_back({icon::smooth, STR_C("Smooth"), nullptr, STR_C("LMB evens the terrain out under the brush"), m_terrain_sculpt && m_terrain_brush_smooth, choose(true, true, false)});
-		buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB deletes it"), m_chunk_edit, choose(false, m_terrain_brush_smooth, true)});
+		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), false == m_terrain_sculpt && false == m_chunk_edit, choose(false, m_terrain_brush_smooth, false)});
+		Buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), m_terrain_sculpt && false == m_terrain_brush_smooth, choose(true, false, false)});
+		Buttons.push_back({icon::smooth, STR_C("Smooth"), nullptr, STR_C("LMB evens the terrain out under the brush"), m_terrain_sculpt && m_terrain_brush_smooth, choose(true, true, false)});
+		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB deletes it"), m_chunk_edit, choose(false, m_terrain_brush_smooth, true)});
 		auto const orthophoto{m_orthophoto.enabled()};
-		buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
+		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
 		                   [this, orthophoto]() { m_orthophoto.enabled(false == orthophoto); }, true});
+		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, m_orthophoto_window, [this]() { m_orthophoto_window = !m_orthophoto_window; }});
 		break;
 	}
 	}
+}
+
+void editor_mode::render_viewport_tools()
+{
+	// the tools of the field of work which have icons, as in the toolbar
+	std::vector<tool_button> buttons;
+	buttons.reserve(24);
+	work_area_tools(buttons);
+	std::erase_if(buttons, [](tool_button const &Button) { return Button.picture == icon::count; });
 	if (buttons.empty())
 		return;
 
@@ -242,6 +264,122 @@ void editor_mode::render_viewport_tools()
 			icon_button(buttons[index], places[index], static_cast<int>(index));
 	}
 	ImGui::End();
+}
+
+void editor_mode::render_toolbar_caption(char const *Text)
+{
+	// as wide in both rows, so the buttons of the rows start one under the other. the rows are drawn with no spacing of items
+	auto const margin{std::round(ImGui::GetFontSize() * 0.75f)};
+	auto const width{std::max(ImGui::CalcTextSize(STR_C("Work modes")).x, ImGui::CalcTextSize(STR_C("Tools")).x) + 2.0f * margin};
+	auto const position{ImGui::GetWindowPos()};
+	auto const height{ImGui::GetWindowHeight()};
+	auto *list{ImGui::GetWindowDrawList()};
+	auto const text{ImGui::CalcTextSize(Text)};
+	list->AddText(ImVec2(position.x + margin, std::round(position.y + (height - text.y) * 0.5f)), ImGui::GetColorU32(ImGuiCol_TextDisabled), Text);
+	list->AddLine(ImVec2(position.x + width, position.y + height * 0.2f), ImVec2(position.x + width, position.y + height * 0.8f), ImGui::GetColorU32(ImGuiCol_Separator));
+	ImGui::SetCursorScreenPos(position);
+	ImGui::Dummy(ImVec2(width + margin * 0.5f, height));
+	ImGui::SameLine(0.0f, 0.0f);
+}
+
+void editor_mode::render_toolbar_tools()
+{
+	render_toolbar_caption(STR_C("Tools"));
+	std::vector<tool_button> buttons;
+	buttons.reserve(24);
+	work_area_tools(buttons);
+	if (buttons.empty())
+		return;
+
+	auto const s{scale()};
+	auto const iconside{editor_icons::size()};
+	auto const height{ImGui::GetWindowHeight()};
+	auto const margin{3.0f * s}; // over and under the buttons
+	auto const pad{7.0f * s}; // inside the button, at its ends
+	auto const spacing{5.0f * s}; // between the icon and the name
+	auto const gap{3.0f * s};
+	auto const groupgap{15.0f * s};
+	auto const buttonheight{height - 2.0f * margin};
+	auto const left{ImGui::GetCursorScreenPos().x};
+	auto const top{ImGui::GetWindowPos().y + margin};
+	auto const right{ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - 4.0f * s};
+	// the names next to the icons if there's room for them; if there isn't, the name of the chosen tool only, or none
+	enum class names
+	{
+		all,
+		chosen,
+		none
+	};
+	auto const named = [](tool_button const &Button, names const Names) {
+		return Button.picture == icon::count || Names == names::all || (Names == names::chosen && Button.chosen);
+	};
+	auto const width = [&](tool_button const &Button, names const Names) {
+		if (false == named(Button, Names))
+			return std::max(buttonheight, iconside + pad);
+		auto result{2.0f * pad + ImGui::CalcTextSize(Button.label).x};
+		if (Button.picture != icon::count)
+			result += iconside + spacing;
+		return result;
+	};
+	auto const total = [&](names const Names) {
+		auto result{0.0f};
+		for (std::size_t index = 0; index < buttons.size(); ++index)
+			result += width(buttons[index], Names) + (index == 0 ? 0.0f : buttons[index].group ? groupgap : gap);
+		return result;
+	};
+	auto shown{names::none};
+	for (auto const option : {names::all, names::chosen})
+		if (left + total(option) <= right)
+		{
+			shown = option;
+			break;
+		}
+
+	auto *list{ImGui::GetWindowDrawList()};
+	auto const rounding{3.0f * s};
+	auto x{left};
+	for (std::size_t index = 0; index < buttons.size(); ++index)
+	{
+		auto const &button{buttons[index]};
+		if (index > 0)
+		{
+			x += button.group ? groupgap : gap;
+			if (button.group)
+				list->AddLine(ImVec2(std::round(x - groupgap * 0.5f), top + buttonheight * 0.15f), ImVec2(std::round(x - groupgap * 0.5f), top + buttonheight * 0.85f), ImGui::GetColorU32(ImGuiCol_Separator));
+		}
+		auto const size{ImVec2(width(button, shown), buttonheight)};
+		ImVec2 const position{x, top};
+		ImGui::SetCursorScreenPos(position);
+		ImGui::PushID(static_cast<int>(index));
+		auto const clicked{ImGui::InvisibleButton("##tool", size)};
+		ImGui::PopID();
+		auto const hovered{ImGui::IsItemHovered()};
+		ImVec2 const end{position.x + size.x, position.y + size.y};
+		// the chosen one stands out as the chosen field of work does, the others as buttons
+		auto const background{button.chosen ? ImGui::GetColorU32(ImGuiCol_Header) : hovered && button.enabled ? ImGui::GetColorU32(ImGuiCol_HeaderHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg)};
+		list->AddRectFilled(position, end, background, rounding);
+		if (button.chosen)
+			list->AddRectFilled(ImVec2(position.x, end.y - 2.0f * s), end, ImGui::GetColorU32(ImGuiCol_CheckMark), rounding, ImDrawFlags_RoundCornersBottom);
+		auto const color{button.enabled ? ImGui::GetColorU32(ImGuiCol_Text, button.chosen || hovered ? 1.0f : 0.85f) : ImGui::GetColorU32(ImGuiCol_TextDisabled)};
+		auto const center{position.y + size.y * 0.5f};
+		if (named(button, shown))
+		{
+			auto textx{position.x + pad};
+			if (button.picture != icon::count)
+			{
+				editor_icons::draw(list, button.picture, ImVec2(textx + iconside * 0.5f, center), color);
+				textx += iconside + spacing;
+			}
+			list->AddText(ImVec2(textx, std::round(center - ImGui::GetFontSize() * 0.5f)), color, button.label);
+		}
+		else
+			icon_or_letters(list, button, ImVec2(position.x + size.x * 0.5f, center), color);
+		if (hovered)
+			button_tooltip(button);
+		if (clicked && button.enabled && button.action)
+			button.action();
+		x = end.x;
+	}
 }
 
 void editor_mode::render_viewport_gizmo()

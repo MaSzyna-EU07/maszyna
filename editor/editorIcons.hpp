@@ -50,6 +50,11 @@ enum class icon
 	infra,
 	gauge,
 	turntable,
+	// the fields of work
+	work_surroundings,
+	work_tracks,
+	work_roads,
+	work_terrain,
 	count
 };
 

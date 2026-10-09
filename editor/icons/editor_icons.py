@@ -321,10 +321,53 @@ def turntable(d):
         line(d, [(32 + math.cos(r) * 24, 32 + math.sin(r) * 24), (32 + math.cos(r) * 31, 32 + math.sin(r) * 31)], W - 4)
 
 
+# the fields of work of the editor, in the row over the toolbar
+
+
+def work_surroundings(d):
+    # a tree and a house by it
+    poly(d, [(18, 4), (32, 30), (4, 30)])
+    poly(d, [(18, 14), (34, 44), (2, 44)])
+    line(d, [(18, 44), (18, 60)], W - 2)
+    poly(d, [(36, 34), (49, 22), (62, 34)])
+    rect(d, 39, 34, 59, 60)
+
+
+def work_tracks(d):
+    # the track going away, rails on sleepers
+    line(d, [(8, 60), (26, 4)], W - 4)
+    line(d, [(56, 60), (38, 4)], W - 4)
+    for y, half in ((54, 28), (40, 22), (28, 17), (18, 13), (10, 10)):
+        line(d, [(32 - half, y), (32 + half, y)], W - 8 if y > 20 else W - 10)
+
+
+def work_roads(d):
+    # a car seen from its side
+    poly(d, [(4, 44), (4, 34), (14, 30), (22, 18), (44, 18), (52, 30), (60, 34), (60, 44)])
+    circle(d, 17, 46, 8)
+    circle(d, 47, 46, 8)
+
+
+def work_terrain(d):
+    # the mesh of the ground over a hill
+    def at(u, v):
+        # u across 0..1, v from the back (0) to the front (1)
+        half = 18 + 12 * v
+        x = 32 + (u - 0.5) * 2 * half
+        hill = 18 * math.exp(-((u - 0.5) ** 2) / 0.07 - ((v - 0.35) ** 2) / 0.15)
+        return (x, 24 + 34 * v - hill)
+    steps = [i / 12 for i in range(13)]
+    for v in (0.0, 0.33, 0.66, 1.0):
+        line(d, [at(u, v) for u in steps], W - 6)
+    for u in (0.0, 0.33, 0.66, 1.0):
+        line(d, [at(u, v) for v in steps], W - 6)
+
+
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
-         vehicle, profile, speed, joints, infra, gauge, turntable]
+         vehicle, profile, speed, joints, infra, gauge, turntable, work_surroundings,
+         work_tracks, work_roads, work_terrain]
 
 
 def cutouts(name, d):
@@ -341,6 +384,18 @@ def cutouts(name, d):
         rect(d, 10, 27, 20, 35)
         rect(d, 26, 27, 36, 35)
         rect(d, 42, 27, 50, 35)
+    elif name == "work_surroundings":
+        # the door and the gap between the crowns of the tree
+        rect(d, 46, 46, 52, 60)
+        line(d, [(9, 31), (27, 31)], 8)
+    elif name == "work_roads":
+        # the windows, and the gaps around the wheels
+        poly(d, [(25, 22), (31, 22), (31, 30), (19, 30)])
+        poly(d, [(35, 22), (42, 22), (47, 30), (35, 30)])
+        circle(d, 17, 46, 11, outline=True, width=12)
+        circle(d, 47, 46, 11, outline=True, width=12)
+        circle(d, 17, 46, 3)
+        circle(d, 47, 46, 3)
 
 
 def main():

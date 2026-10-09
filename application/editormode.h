@@ -38,6 +38,8 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 
 class TAnimModel;
+// a tool of a field of work of the editor, a button in the toolbar and over the 3d view
+struct editor_tool_button;
 class TTrack;
 namespace ui
 {
@@ -280,8 +282,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_terrain_ui();
 	// the terrain as a field of work of its own: the terrain tools and the orthophoto in the tool options window
 	void render_terrain_tool_options();
-	// tools of the terrain in the toolbar: picking, sculpting, smoothing, chunks, orthophoto
-	void render_terrain_toolbar();
 	// opens or leaves the terrain; leaving it puts the sculpting and the chunk editing away, so the mouse doesn't stay with them
 	void terrain_workspace(bool const Open);
 	// creates a large terrain as a grid of adjacent chunks (each its own editable patch)
@@ -389,6 +389,12 @@ class editor_mode : public application_mode, private editor_track::observer
 	// world and the top view in its top right corner
 	void render_viewport_overlays();
 	void render_viewport_tools();
+	// the tools of the field of work, in the order of the toolbar
+	void work_area_tools(std::vector<editor_tool_button> &Buttons);
+	// the tools of the field of work in the toolbar, as icons with their names
+	void render_toolbar_tools();
+	// what the row of the toolbar holds, written at its left end: the fields of work, the tools
+	static void render_toolbar_caption(char const *Text);
 	void render_viewport_gizmo();
 	void render_view_axes();
 	// the camera looking along an axis of the world (0: x, 1: y, 2: z) from its positive or negative side
@@ -491,7 +497,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_gizmo();
 	// gizmo settings, drawn in the toolset window
 	void render_gizmo_options();
-	// edit modes, editor windows and gizmo settings in the toolbar under the menu
+	// the tools of the field of work in the toolbar under the menu
 	void render_toolbar();
 	// an edit mode of the node bank as the field of work, from the toolbar or its key (1-5)
 	void choose_edit_mode(nodebank_panel::edit_mode const Mode);
@@ -915,8 +921,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	// the track tools in the tool options window, and the selected path in the inspector
 	void render_track_tool_options();
 	void render_track_selection();
-	// tools of the track mode in the toolbar, in groups: building, by the track, checks
-	void render_track_toolbar();
 	void show_track_tab(track_tab const Tab);
 	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
@@ -1828,8 +1832,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		char islandtext[128]{"none"};
 	};
 	void render_road_tool_options();
-	// tools of the roads in the toolbar, and the change of the tool
-	void render_road_toolbar();
+	// the change of the road tool
 	void road_choose_tool(int const Tool);
 	void render_road_selection();
 	bool render_road_layout(road_node::state &State);

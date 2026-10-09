@@ -5061,3 +5061,23 @@ msgstr "Upuść go na zestaw modeli albo na listę pędzla lub wypełniania obsz
 
 msgid "or drag models here from the node bank"
 msgstr "albo przeciągnij tu modele z banku obiektów"
+
+# scenery editor: the toolbar with icons, the rows captioned
+
+msgid "Work modes"
+msgstr "Tryby pracy"
+
+msgid "Tools"
+msgstr "Narzędzia"
+
+msgid "Level crossing"
+msgstr "Przejazd kolejowy"
+
+msgid "Spawn point"
+msgstr "Punkt pojawiania"
+
+msgid "Removal point"
+msgstr "Punkt znikania"
+
+msgid "Pedestrian crossing"
+msgstr "Przejście dla pieszych"

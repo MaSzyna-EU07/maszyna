@@ -2264,40 +2264,6 @@ void editor_mode::road_choose_tool(int const Tool)
 	}
 }
 
-void editor_mode::render_road_toolbar()
-{
-	auto &tool{m_roadtool};
-	struct entry
-	{
-		char const *label;
-		char const *tooltip;
-	};
-	entry const tools[] = {{"Select", "LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"},
-	                       {"Build", "LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"},
-	                       {"Place", "Level crossings, and the points where vehicles appear on the roads or are taken off them"}};
-	for (int index = 0; index < static_cast<int>(std::size(tools)); ++index)
-	{
-		if (ImGui::MenuItem(tools[index].label, nullptr, tool.tool == index))
-			road_choose_tool(index);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", tools[index].tooltip);
-	}
-	if (tool.tool == 2)
-	{
-		// what the place tool puts
-		ImGui::Separator();
-		char const *const kinds[] = {"Level crossing", "Spawn point", "Removal point", "Pedestrian crossing"};
-		for (int index = 0; index < static_cast<int>(std::size(kinds)); ++index)
-		{
-			if (ImGui::MenuItem(kinds[index], nullptr, tool.placekind == index))
-				tool.placekind = index;
-		}
-	}
-	ImGui::Separator();
-	if (ImGui::MenuItem("Show lanes", nullptr, tool.lanes))
-		tool.lanes = !tool.lanes;
-}
-
 // the road tools and what the next pieces get, in the tool options window; the selection is drawn in the inspector by render_road_selection()
 void editor_mode::render_road_tool_options()
 {

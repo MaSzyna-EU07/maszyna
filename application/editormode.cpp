@@ -29,6 +29,7 @@ extern char **environ;
 #include "editor/editorGroundMesh.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorIcons.hpp"
 #include "utilities/translation.h"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
@@ -3792,13 +3793,14 @@ void editor_mode::render_workspaces()
 	{
 		char const *label;
 		work_area which;
+		editor_icons::icon picture;
 		char const *tooltip;
 	};
 	area const areas[] = {
-	    {STR_C("Surroundings"), work_area::surroundings, STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
-	    {STR_C("Tracks"), work_area::tracks, STR_C("Tracks and switches, signals, objects along the track, checks of the line")},
-	    {STR_C("Roads"), work_area::roads, STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
-	    {STR_C("Terrain"), work_area::terrain, STR_C("Terrain patches and chunks, sculpting, streaming, orthophoto")},
+	    {STR_C("Surroundings"), work_area::surroundings, editor_icons::icon::work_surroundings, STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
+	    {STR_C("Tracks"), work_area::tracks, editor_icons::icon::work_tracks, STR_C("Tracks and switches, signals, objects along the track, checks of the line")},
+	    {STR_C("Roads"), work_area::roads, editor_icons::icon::work_roads, STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
+	    {STR_C("Terrain"), work_area::terrain, editor_icons::icon::work_terrain, STR_C("Terrain patches and chunks, sculpting, streaming, orthophoto")},
 	};
 	char const *const keys[] = {"F2", "F3", "F4", "F5"};
 	auto const current{current_work_area()};
@@ -3809,11 +3811,14 @@ void editor_mode::render_workspaces()
 	auto const fontsize{ui_layer::font_bold != nullptr ? ui_layer::font_bold->FontSize : ImGui::GetFontSize() * 1.25f};
 	auto const height{ImGui::GetWindowHeight()};
 	auto const padding{style.FramePadding.x * 3.0f};
-	ImGui::SetCursorPos(ImVec2(style.ItemSpacing.x, 0.0f));
+	// the icon of the field of work before its name
+	auto const iconside{editor_icons::size()};
+	auto const spacing{style.ItemInnerSpacing.x * 1.5f};
+	render_toolbar_caption(STR_C("Work modes"));
 	for (auto const &entry : areas)
 	{
 		auto const text{font->CalcTextSizeA(fontsize, FLT_MAX, 0.0f, entry.label)};
-		ImVec2 const size{text.x + padding * 2.0f, height};
+		ImVec2 const size{text.x + iconside + spacing + padding * 2.0f, height};
 		auto const position{ImGui::GetCursorScreenPos()};
 		ImGui::PushID(static_cast<int>(entry.which));
 		if (ImGui::InvisibleButton("##area", size))
@@ -3826,8 +3831,9 @@ void editor_mode::render_workspaces()
 			list->AddRectFilled(position, end, ImGui::GetColorU32(chosen ? ImGuiCol_Header : ImGuiCol_HeaderHovered));
 		if (chosen)
 			list->AddRectFilled(ImVec2(position.x, end.y - 3.0f), end, ImGui::GetColorU32(ImGuiCol_CheckMark));
-		ImVec2 const textposition{position.x + padding, position.y + (height - text.y) * 0.5f};
+		ImVec2 const textposition{position.x + padding + iconside + spacing, position.y + (height - text.y) * 0.5f};
 		auto const color{ImGui::GetColorU32(chosen ? ImGuiCol_Text : ImGuiCol_TextDisabled)};
+		editor_icons::draw(list, entry.picture, ImVec2(position.x + padding + iconside * 0.5f, position.y + height * 0.5f), color);
 		list->AddText(font, fontsize, textposition, color, entry.label);
 		if (ui_layer::font_bold == nullptr)
 			list->AddText(font, fontsize, ImVec2(textposition.x + 1.0f, textposition.y), color, entry.label);
@@ -3837,69 +3843,10 @@ void editor_mode::render_workspaces()
 	}
 }
 
-void editor_mode::render_terrain_toolbar()
-{
-	// what the left button does on the terrain: picks the models as it does elsewhere, raises and lowers, evens out, adds chunks
-	struct tool
-	{
-		char const *label;
-		bool chosen;
-		bool sculpt;
-		bool smooth;
-		bool chunks;
-		char const *tooltip;
-	};
-	tool const tools[] = {
-	    {STR_C("Select"), false == m_terrain_sculpt && false == m_chunk_edit, false, m_terrain_brush_smooth, false, STR_C("LMB picks the models, as in the surroundings")},
-	    {STR_C("Sculpt"), m_terrain_sculpt && false == m_terrain_brush_smooth, true, false, false, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it")},
-	    {STR_C("Smooth"), m_terrain_sculpt && m_terrain_brush_smooth, true, true, false, STR_C("LMB evens the terrain out under the brush")},
-	    {STR_C("Chunks"), m_chunk_edit, false, m_terrain_brush_smooth, true, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB deletes it")},
-	};
-	for (auto const &entry : tools)
-	{
-		if (ImGui::MenuItem(entry.label, nullptr, entry.chosen))
-		{
-			m_terrain_sculpt = entry.sculpt;
-			m_terrain_brush_smooth = entry.smooth;
-			m_chunk_edit = entry.chunks;
-		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", entry.tooltip);
-	}
-	ImGui::Separator();
-	auto const orthophoto{m_orthophoto.enabled()};
-	if (ImGui::MenuItem(STR_C("Orthophoto"), nullptr, orthophoto))
-		m_orthophoto.enabled(false == orthophoto);
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
-	ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, &m_orthophoto_window);
-}
-
 void editor_mode::render_toolbar()
 {
-	auto const area{current_work_area()};
-	switch (area)
-	{
-	case work_area::surroundings:
-	{
-		// edit modes of the node bank
-		std::pair<char const *, nodebank_panel::edit_mode> const modes[] = {
-		    {STR_C("Select"), nodebank_panel::MODIFY}, {STR_C("Insert"), nodebank_panel::ADD}, {STR_C("Brush"), nodebank_panel::BRUSH}, {STR_C("Area fill"), nodebank_panel::FILL}, {STR_C("Copy to bank"), nodebank_panel::COPY}};
-		for (std::size_t index = 0; index < std::size(modes); ++index)
-		{
-			auto const &mode{modes[index]};
-			if (ImGui::MenuItem(mode.first, nullptr, ui()->mode() == mode.second))
-				choose_edit_mode(mode.second);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s (%d)", mode.first, static_cast<int>(index + 1));
-		}
-		break;
-	}
-	case work_area::tracks: render_track_toolbar(); break;
-	case work_area::roads: render_road_toolbar(); break;
-	case work_area::terrain: render_terrain_toolbar(); break;
-	}
 	// the modes of the gizmo and the top view are over the 3d view, see render_viewport_overlays()
+	render_toolbar_tools();
 }
 
 void editor_mode::render_edit_menu()

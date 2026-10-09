@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "imgui/imgui_internal.h"
 #include "editor/editorSettings.hpp"
+#include "editor/editorIcons.hpp"
 
 #include <cstdio>
 #include <limits>
@@ -602,16 +603,16 @@ void editor_ui::render_()
 		ImGui::End();
 		ImGui::PopStyleVar(2);
 	}
-	// toolbar under them: the tools of the field of work
-	if (ImGui::BeginViewportSideBar("##editortoolbar", viewport, ImGuiDir_Up, ImGui::GetFrameHeight(), flags))
-	{
-		if (ImGui::BeginMenuBar())
-		{
-			if (m_toolbaroptions)
-				m_toolbaroptions();
-			ImGui::EndMenuBar();
-		}
-	}
+	// toolbar under them: the tools of the field of work, as buttons with their icons, high enough for them.
+	// the buttons are laid out by hand, the padding is given back for their tooltips
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
+	auto const toolbarheight{std::max(ImGui::GetFrameHeight(), editor_icons::size() + 12.0f * std::max(1.0f, Global.ui_scale))};
+	auto const toolbar{ImGui::BeginViewportSideBar("##editortoolbar", viewport, ImGuiDir_Up, toolbarheight, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollWithMouse)};
+	ImGui::PopStyleColor();
+	ImGui::PopStyleVar();
+	if (toolbar && m_toolbaroptions)
+		m_toolbaroptions();
 	ImGui::End();
 	render_tool_options();
 	render_inspector();
@@ -1094,4 +1095,4 @@ float editor_ui::rot_val()
 bool editor_ui::rot_from_last()
 {
 	return m_functionspanel.rot_from_last;
-}
+}
