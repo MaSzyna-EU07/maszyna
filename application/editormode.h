@@ -385,6 +385,14 @@ class editor_mode : public application_mode, private editor_track::observer
 	// time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor
 	void render_environment_window();
 	bool m_environment_open{false};
+	// over the 3d view: the tools of the field of work along its left edge, the modes of the gizmo at its top, the axes of the
+	// world and the top view in its top right corner
+	void render_viewport_overlays();
+	void render_viewport_tools();
+	void render_viewport_gizmo();
+	void render_view_axes();
+	// the camera looking along an axis of the world (0: x, 1: y, 2: z) from its positive or negative side
+	void look_along_axis(int const Axis, bool const Positive);
 	// origin of the scenery in PUWG 1992 the scenery file gives in its //$g line, if it does
 	bool m_georeference_read{false};
 	bool m_georeference{false};

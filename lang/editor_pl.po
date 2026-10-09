@@ -5024,3 +5024,32 @@ msgstr "Widoczne tylko w edytorze; sceneria zachowuje własny czas i pogodę"
 
 msgid "Top view, orthographic (O)"
 msgstr "Widok z góry, ortogonalny (O)"
+
+# scenery editor: tools over the 3d view
+
+msgid "Translate"
+msgstr "Przesuwanie"
+
+msgid "Rotate"
+msgstr "Obrót"
+
+msgid "Scale"
+msgstr "Skala"
+
+msgid "Look along %s%s; from over the scenery it's the top view"
+msgstr "Spójrz wzdłuż %s%s; znad scenerii to widok z góry"
+
+msgid "Show lanes"
+msgstr "Pokaż pasy ruchu"
+
+msgid "The lanes of the roads drawn as the paths the vehicles take"
+msgstr "Pasy ruchu dróg rysowane jako tory jazdy pojazdów"
+
+msgid "LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"
+msgstr "LPM: kawałek drogi, skrzyżowanie, punkt łączenia kawałków, przejazd kolejowy albo punkt ruchu"
+
+msgid "LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"
+msgstr "LPM: początek drogi, potem każdy kolejny punkt; na wolnym końcu, boku drogi albo skrzyżowaniu droga zostaje do nich dołączona"
+
+msgid "Level crossings, and the points where vehicles appear on the roads or are taken off them"
+msgstr "Przejazdy kolejowe oraz punkty, w których pojazdy pojawiają się na drogach albo są z nich zdejmowane"

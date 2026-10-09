@@ -1344,6 +1344,8 @@ bool editor_mode::update()
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
+    // the tools, the gizmo modes and the axes over the 3d view
+    render_viewport_overlays();
 
     render_track_inspector();
     if (selected_track())
@@ -3897,29 +3899,7 @@ void editor_mode::render_toolbar()
 	case work_area::roads: render_road_toolbar(); break;
 	case work_area::terrain: render_terrain_toolbar(); break;
 	}
-	ImGui::Separator();
-	// the gizmo moves the models and the tracks; on the terrain the mouse is the brush's
-	if (m_gizmo_enabled && area != work_area::terrain)
-	{
-		std::pair<char const *, gizmo_operation> const operations[] = {
-		    {STR_C("Translate (Q)"), gizmo_operation::translate}, {STR_C("Rotate (W)"), gizmo_operation::rotate}, {STR_C("Scale (E)"), gizmo_operation::scale}};
-		for (auto const &operation : operations)
-		{
-			if (ImGui::MenuItem(operation.first, nullptr, m_gizmo_op == operation.second))
-				m_gizmo_op = operation.second;
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C("What the handles of the gizmo on the selection do when dragged; Ctrl held snaps the values"));
-		}
-		if (m_gizmo_op != gizmo_operation::scale && ImGui::MenuItem(STR_C("Local space (R)"), nullptr, m_gizmo_local))
-			m_gizmo_local = !m_gizmo_local;
-		if (m_gizmo_op != gizmo_operation::scale && ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("The handles along the axes of the selected model instead of the axes of the world"));
-		ImGui::Separator();
-	}
-	if (ImGui::MenuItem(STR_C("Top view, orthographic (O)"), nullptr, Global.EditorOrtho))
-		toggle_ortho();
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
+	// the modes of the gizmo and the top view are over the 3d view, see render_viewport_overlays()
 }
 
 void editor_mode::render_edit_menu()

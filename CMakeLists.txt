@@ -185,6 +185,7 @@ set(SOURCES
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
 "editor/editorPreviews.cpp"
+"editor/editorIcons.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
 "application/editormodetrackux.cpp"
@@ -198,6 +199,7 @@ set(SOURCES
 "application/editormodelineside.cpp"
 "application/editormodevehicle.cpp"
 "application/editormodeselection.cpp"
+"application/editormodeviewport.cpp"
 "application/editormodesignal.cpp"
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
@@ -380,6 +382,14 @@ else()
 endif()
 
 configure_file("${CMAKE_SOURCE_DIR}/version_info.h.in" "${CMAKE_BINARY_DIR}/geninc/version_info.h")
+
+# the icons of the editor are built into the executable: the png is written out as the bytes of an array, see editor/editorIcons.cpp
+set(EDITOR_ICONS "${CMAKE_SOURCE_DIR}/editor/icons/editor_icons.png")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${EDITOR_ICONS}")
+file(READ "${EDITOR_ICONS}" EDITOR_ICONS_HEX HEX)
+string(REGEX REPLACE "(................................)" "\\1\n" EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
+file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/editor_icons_png.inc" CONTENT "${EDITOR_ICONS_HEX}\n")
 
 set (PREFIX "")
 set (SUFFIX "")
