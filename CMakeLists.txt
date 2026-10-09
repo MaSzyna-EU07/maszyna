@@ -191,6 +191,7 @@ set(SOURCES
 "application/editormodetrackux.cpp"
 "application/editormoderoad.cpp"
 "application/editormodeprofile.cpp"
+"application/editormodetextures.cpp"
 "application/editormodegauge.cpp"
 "application/editormodeinfra.cpp"
 "application/editormodespeed.cpp"

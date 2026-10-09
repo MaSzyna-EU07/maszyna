@@ -23,6 +23,8 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <sstream>
+#include <stack>
 #include <unordered_map>
 
 /*
@@ -75,6 +77,7 @@ struct terrain_source
 	};
 	std::string file;
 	std::vector<material> materials;
+	std::uint16_t reference{0}; // see terrain_file::reference_of()
 };
 
 namespace
@@ -739,6 +742,233 @@ std::string terrain_file::extra(std::string const &Binaryfile)
 	return text;
 }
 
+std::vector<terrain_reference> &terrain_file::references()
+{
+	static std::vector<terrain_reference> references;
+	return references;
+}
+
+std::uint16_t terrain_file::reference_of(std::string const &File)
+{
+	auto file{File};
+	replace_slashes(file);
+	auto const &list{references()};
+	for (std::size_t index{0}; index < list.size() && index < std::numeric_limits<std::uint16_t>::max(); ++index)
+	{
+		auto const base{Global.asCurrentSceneryPath + list[index].file};
+		if (file.ends_with(base + ".txtf") || file.ends_with(base + ".btf"))
+		{
+			return static_cast<std::uint16_t>(index + 1);
+		}
+	}
+	return 0;
+}
+
+namespace
+{
+
+// world position of a vertex of a shape placed with specified rotation and offset, the way basic_region::insert() does it
+glm::dvec3 place_vertex(glm::dvec3 Position, glm::vec3 const &Rotation, glm::dvec3 const &Offset)
+{
+	if (Rotation != glm::vec3(0.f))
+	{
+		auto const rotation{glm::radians(glm::dvec3{Rotation})};
+		Position = glm::rotateZ<double>(Position, rotation.z);
+		Position = glm::rotateX<double>(Position, rotation.x);
+		Position = glm::rotateY<double>(Position, rotation.y);
+	}
+	return Position + Offset;
+}
+
+bool read_text_triangles(std::string const &Text, terrain_reference const &Reference, terrain_file::triangle_visitor const &Visit, std::string &Message)
+{
+	conversion_scope scope;
+	std::stack<glm::dvec3> offsets;
+	offsets.push(Reference.offset);
+	auto rotation{Reference.rotation};
+	std::size_t count{0};
+	cParser input{Text, cParser::buffer_TEXT};
+	input.expandIncludes = false;
+	auto token{input.getToken<std::string>()};
+	while (false == token.empty())
+	{
+		if (token == "node")
+		{
+			node_data nodedata;
+			input.getTokens(4);
+			input >> nodedata.range_max >> nodedata.range_min >> nodedata.name >> nodedata.type;
+			if (nodedata.type == "triangles" || nodedata.type == "triangle_strip" || nodedata.type == "triangle_fan")
+			{
+				auto const shape{shape_node().import(input, nodedata)};
+				auto const &data{shape.data()};
+				auto const *material{GfxRenderer->Material(data.material)};
+				auto const name{material != nullptr ? material->GetName() : std::string{}};
+				for (std::size_t index{0}; index + 2 < data.vertices.size(); index += 3)
+				{
+					Visit(name, {place_vertex(data.vertices[index].position, rotation, offsets.top()), place_vertex(data.vertices[index + 1].position, rotation, offsets.top()),
+					             place_vertex(data.vertices[index + 2].position, rotation, offsets.top())});
+					++count;
+				}
+			}
+			else
+			{
+				// anything else the file holds (the editor keeps sweeps there) is of no interest here
+				auto const end{"end" + nodedata.type};
+				auto rest{input.getToken<std::string>()};
+				while (false == rest.empty() && rest != end)
+					rest = input.getToken<std::string>();
+			}
+		}
+		else if (token == "origin")
+		{
+			glm::dvec3 offset;
+			input.getTokens(3);
+			input >> offset.x >> offset.y >> offset.z;
+			offsets.push(offset + offsets.top());
+		}
+		else if (token == "endorigin")
+		{
+			if (offsets.size() > 1)
+			{
+				offsets.pop();
+			}
+		}
+		else if (token == "rotate")
+		{
+			input.getTokens(3);
+			input >> rotation.x >> rotation.y >> rotation.z;
+		}
+		token = input.getToken<std::string>();
+	}
+	Message = std::to_string(count) + " triangle(s)";
+	return true;
+}
+
+bool read_binary_triangles(std::string const &Binaryfile, terrain_file::triangle_visitor const &Visit, std::string &Message)
+{
+	std::string content;
+	if (false == read_file(Binaryfile, content))
+	{
+		Message = "can't read the file";
+		return false;
+	}
+	std::istringstream stream{content};
+	file_header header;
+	if (false == read_header(stream, header))
+	{
+		Message = "the file is of either unrecognized type or version";
+		return false;
+	}
+	std::vector<std::string> materials;
+	for (std::uint32_t index{0}; index < header.materialcount; ++index)
+	{
+		std::string name;
+		if (false == static_cast<bool>(std::getline(stream, name, '\0')))
+		{
+			Message = "the file is damaged";
+			return false;
+		}
+		materials.emplace_back(std::move(name));
+	}
+	auto const directorystart{static_cast<std::size_t>(stream.tellg())};
+	std::size_t const entrysize{sizeof(std::uint32_t) + sizeof(std::uint64_t) + sizeof(std::uint32_t) + sizeof(float)};
+	if (directorystart > content.size() || content.size() - directorystart < header.sectioncount * entrysize)
+	{
+		Message = "the file is damaged";
+		return false;
+	}
+	data_reader directory{content.data() + directorystart, header.sectioncount * entrysize};
+	std::size_t count{0};
+	for (std::uint32_t entry{0}; entry < header.sectioncount; ++entry)
+	{
+		auto const sectionindex{directory.get<std::uint32_t>()};
+		auto const offset{directory.get<std::uint64_t>()};
+		auto const size{directory.get<std::uint32_t>()};
+		directory.get<float>();
+		if (false == directory.good() || offset > content.size() || content.size() - offset < size)
+		{
+			Message = "the file is damaged";
+			return false;
+		}
+		// the vertices are relative to the centre of their section, see attach()
+		auto const column{static_cast<int>(sectionindex % EU07_REGIONSIDESECTIONCOUNT)};
+		auto const row{static_cast<int>(sectionindex / EU07_REGIONSIDESECTIONCOUNT)};
+		auto const centeroffset{-(EU07_REGIONSIDESECTIONCOUNT / 2 * EU07_SECTIONSIZE) + EU07_SECTIONSIZE / 2};
+		glm::dvec3 const centre{static_cast<double>(centeroffset + column * EU07_SECTIONSIZE), 0.0, static_cast<double>(centeroffset + row * EU07_SECTIONSIZE)};
+		data_reader reader{content.data() + offset, size};
+		if (reader.get<std::uint32_t>() != EU07_TERRAINBLOCK)
+		{
+			Message = "the file is damaged";
+			return false;
+		}
+		reader.get<std::uint32_t>(); // section index
+		auto shapecount{reader.get<std::uint32_t>()};
+		while (shapecount-- > 0 && reader.good())
+		{
+			auto const materialindex{reader.get<std::uint32_t>()};
+			// cell, ranges, colours, centre and radius
+			reader.skip(sizeof(std::uint32_t) + 2 * sizeof(double) + 12 * sizeof(float) + 3 * sizeof(double) + sizeof(float));
+			auto const vertexcount{reader.get<std::uint32_t>()};
+			if (false == reader.good() || false == reader.has(static_cast<std::size_t>(vertexcount) * EU07_TERRAINVERTEXSIZE) || materialindex >= materials.size())
+			{
+				Message = "the file is damaged";
+				return false;
+			}
+			std::array<glm::dvec3, 3> triangle;
+			for (std::uint32_t vertex{0}; vertex < vertexcount; ++vertex)
+			{
+				float values[8];
+				reader.get(values, 8);
+				triangle[vertex % 3] = centre + glm::dvec3{values[0], values[1], values[2]};
+				if (vertex % 3 == 2)
+				{
+					Visit(materials[materialindex], triangle);
+					++count;
+				}
+			}
+		}
+		if (false == reader.good())
+		{
+			Message = "the file is damaged";
+			return false;
+		}
+	}
+	Message = std::to_string(count) + " triangle(s)";
+	return true;
+}
+
+} // namespace
+
+bool terrain_file::read_triangles(terrain_reference const &Reference, triangle_visitor const &Visit, std::string *Message, bool *Text)
+{
+	auto const textfile{Global.asCurrentSceneryPath + Reference.file + ".txtf"};
+	auto const binaryfile{Global.asCurrentSceneryPath + Reference.file + ".btf"};
+	std::string message;
+	auto result{false};
+	auto const fromtext{FileExists(textfile)};
+	if (fromtext)
+	{
+		std::string text;
+		result = read_file(textfile, text) && read_text_triangles(text, Reference, Visit, message);
+		if (message.empty())
+			message = "can't read the file";
+	}
+	else if (FileExists(binaryfile))
+	{
+		// the binary file holds the geometry where the text alone puts it; it stands in for files placed without offset or rotation only
+		result = read_binary_triangles(binaryfile, Visit, message);
+	}
+	else
+	{
+		message = "the file is missing";
+	}
+	if (Message != nullptr)
+		*Message = message;
+	if (Text != nullptr)
+		*Text = fromtext;
+	return result;
+}
+
 // makes content of specified binary terrain file a part of provided region
 bool terrain_file::attach(std::string const &Binaryfile, basic_region &Region, bool Deferred)
 {
@@ -751,6 +981,7 @@ bool terrain_file::attach(std::string const &Binaryfile, basic_region &Region, b
 	}
 	auto source{std::make_shared<terrain_source>()};
 	source->file = Binaryfile;
+	source->reference = reference_of(Binaryfile);
 	source->materials.reserve(header.materialcount);
 	for (std::uint32_t index{0}; index < header.materialcount; ++index)
 	{
@@ -878,6 +1109,7 @@ void terrain_file::load(basic_section &Section, terrain_block const &Block)
 		}
 		shapedata.material = material.handle;
 		shapedata.translucent = material.translucent;
+		shapedata.terrainfile = source.reference;
 		shapedata.vertices.resize(vertexcount);
 		for (auto &vertex : shapedata.vertices)
 		{

@@ -9,8 +9,12 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <vector>
+#include <glm/glm.hpp>
 
 namespace scene
 {
@@ -22,10 +26,20 @@ struct terrain_block;
 // binary terrain file (.btf): static geometry of a text terrain file (.txtf), arranged by the sections
 // of the scene so each can be loaded on its own, when it comes into use.
 // the binary file records length and checksum of the text it was made from, and is made anew when these don't match
+// terrain file named by a terrain directive of the scenery, with the placement it was loaded with
+struct terrain_reference
+{
+	std::string file; // name relative to the scenery folder, without extension
+	glm::dvec3 offset{0.0};
+	glm::vec3 rotation{0.f};
+};
+
 class terrain_file
 {
   public:
 	// types
+	// receives a triangle of a terrain file: name of its material, the vertices in the world
+	using triangle_visitor = std::function<void(std::string const &Material, std::array<glm::dvec3, 3> const &Triangle)>;
 	// what a scenery is left with for a terrain file it refers to
 	enum class state
 	{
@@ -47,6 +61,13 @@ class terrain_file
 	// loads specified piece of a binary terrain file into provided section
 	static void load(basic_section &Section, terrain_block const &Block);
 	static std::string extra(std::string const &Binaryfile);
+	// terrain files used by the scenery being loaded or shown, in the order the directives named them
+	static std::vector<terrain_reference> &references();
+	// number (counted from 1) of the reference whose text or binary file is the specified file, 0 if there's none
+	static std::uint16_t reference_of(std::string const &File);
+	// goes through the triangles of the terrain file of specified reference, read from the text file if it's there,
+	// otherwise from the binary one. returns: true on success, Message describing what was read or the failure
+	static bool read_triangles(terrain_reference const &Reference, triangle_visitor const &Visit, std::string *Message = nullptr, bool *Text = nullptr);
 
   private:
 	// converts provided content of a text terrain file to binary format and stores it in specified file. returns: true on success, false otherwise

@@ -267,9 +267,9 @@ class node_layers
 	{
 		return m_shapes;
 	}
-	// drops the definitions of the shapes of specified materials from the writable layer files on save.
+	// drops the definitions of the shapes of specified materials from the writable layer files on save; only from specified layers, if given.
 	// returns: amount of the shapes to drop, and of the ones which stay as their files can't be rewritten
-	std::pair<std::size_t, std::size_t> erase_shapes(std::set<material_handle> const &Materials);
+	std::pair<std::size_t, std::size_t> erase_shapes(std::set<material_handle> const &Materials, std::set<layer_handle> const *Layers = nullptr);
 	// indicates the scenario initialization (FirstInit) is being performed. Span: location of the directive.
 	// Infile: the directive comes straight from the layer file being loaded
 	void initialization(source_span const &Span, bool Infile);

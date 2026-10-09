@@ -485,6 +485,11 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 		return;
 	}
 
+	// layers are named by their files relative to the scenery folder; the terrain files (.txtf) come from includes made up by
+	// the loader, relative to the folder of the simulator
+	auto layername{mPath + includefile};
+	layername = (layername.starts_with(Global.asCurrentSceneryPath) ? layername.substr(Global.asCurrentSceneryPath.size()) : includefile);
+
 	const bool isTerrain = contains(includefile, "_ter.scm");
 	if (isTerrain && true == Global.file_binary_terrain_state) {
 		WriteLog("SBT found, ignoring: " + includefile);
@@ -493,7 +498,7 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 		if (sceneryLayers)
 		{
 			// the file is still a part of the scenery, even though its content comes from the binary terrain file
-			scene::Layers.layer(scene::Layers.open(includefile, include_site())).binary = true;
+			scene::Layers.layer(scene::Layers.open(layername, include_site())).binary = true;
 			scene::Layers.close();
 		}
 		return;
@@ -537,7 +542,7 @@ void cParser::startIncludeFromParser(cParser& srcParser, bool ToLower, std::stri
 		{
 			auto site{include_site()};
 			site.parameters = false == mIncludeParser->parameters.empty();
-			scene::Layers.open(includefile, site);
+			scene::Layers.open(layername, site);
 			mIncludeParser->mLayerFile = true;
 		}
 	}

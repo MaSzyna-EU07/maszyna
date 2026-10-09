@@ -329,11 +329,24 @@ bool opengl33_terrain_materials::copy_layer(layer &Layer)
 		if (slots[i] < 0 || material.textures[slots[i]] == null_handle)
 			continue;
 		auto &texture{m_textures.mark_as_used(material.textures[slots[i]])};
-		if (false == texture.create())
+		if (false == texture.is_ready)
 		{
-			if (++Layer.attempts < copy_attempts)
-				return false;
-			continue; // waited long enough, the layer goes without it
+			// a texture which is on the card already may have dropped its data after the upload (create() would refuse it then),
+			// one released by the sweep or never read has to be read first
+			if (texture.data_state == resource_state::none)
+			{
+				texture.reload_on_use = false;
+				texture.load();
+			}
+			if (texture.data_state == resource_state::failed)
+				continue;
+			if (false == texture.create())
+			{
+				if (++Layer.attempts < copy_attempts)
+					return false;
+				WriteLog("heightmap terrain: texture \"" + texture.name + "\" isn't ready, the terrain goes without it");
+				continue; // waited long enough, the layer goes without it
+			}
 		}
 		sources[i] = &texture;
 	}

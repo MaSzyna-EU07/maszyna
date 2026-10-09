@@ -429,7 +429,9 @@ bool
 shape_node::merge( shape_node &Shape ) {
 
     if( m_data.material != Shape.m_data.material
-     || m_data.lighting != Shape.m_data.lighting ) {
+     || m_data.lighting != Shape.m_data.lighting
+     || m_data.terrainfile != Shape.m_data.terrainfile ) {
+        // (shapes of different terrain files are kept apart, so the editor can tell which file the geometry comes from)
         // can't merge nodes with different appearance
         return false;
     }

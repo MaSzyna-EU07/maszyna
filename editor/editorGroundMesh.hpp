@@ -120,13 +120,15 @@ class ground_mesh
 	}
 
   private:
+	// NOTE: clamped before the conversion: a rectangle asked about can reach far beyond the mesh (to infinity even),
+	// and a float out of the range of int doesn't turn into anything sensible
 	int column(float const X) const
 	{
-		return std::clamp(static_cast<int>(std::floor((X - m_low.x) / m_cellsize)), 0, m_columns - 1);
+		return static_cast<int>(std::clamp(std::floor((X - m_low.x) / m_cellsize), 0.f, static_cast<float>(m_columns - 1)));
 	}
 	int row(float const Z) const
 	{
-		return std::clamp(static_cast<int>(std::floor((Z - m_low.y) / m_cellsize)), 0, m_rows - 1);
+		return static_cast<int>(std::clamp(std::floor((Z - m_low.y) / m_cellsize), 0.f, static_cast<float>(m_rows - 1)));
 	}
 	// cells the bounds of a triangle reach: first column, first row, last column, last row
 	std::array<int, 4> cells(triangle const &Triangle) const

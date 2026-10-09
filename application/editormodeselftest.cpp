@@ -72,6 +72,10 @@ http://mozilla.org/MPL/2.0/.
 //   spread <track> <stop 0..2> <reach>   logs the paths the spread from the track takes
 //   newscenery                           the editor starts again with the wizard of a new scenery
 //   vehicles                             logs each vehicle: its head, facing, and what its couplers hold
+//   terrainmode                          the terrain field of work, with its texture browser
+//   terrainsculpt <x> <z> <radius> <metres>, terrainpaint <x> <z> <radius> <palette entry>   as a stroke of the brush
+//   terrainprobe <x> <z>                 logs the height of the heightmap terrain and the materials of the chunk
+//   terrainconvert                       converts every material of the terrain files of the scenery
 //   screenshot
 //   save
 //   log <text>
@@ -1133,6 +1137,53 @@ void editor_mode::selftest_step()
 					                standing.read.empty() ? "-" : standing.read.c_str(), where.c_str()));
 				}
 			}
+		}
+		else if (command == "terrainmode")
+		{
+			m_terrain_open = true;
+			WriteLog("SELFTEST terrainmode");
+		}
+		else if (command == "terrainsculpt" || command == "terrainpaint")
+		{
+			double x{0.0}, z{0.0}, radius{10.0}, value{1.0};
+			words >> x >> z >> radius >> value;
+			auto const changed{command == "terrainsculpt" ? m_streamer.sculpt(x, z, radius, value) : m_streamer.paint(x, z, radius, 1.0, static_cast<std::uint16_t>(value))};
+			forget_ground();
+			WriteLog(format("SELFTEST %s %.1f %.1f: %s", command.c_str(), x, z, changed ? "changed" : "nothing changed"));
+		}
+		else if (command == "terrainprobe")
+		{
+			double x{0.0}, z{0.0}, height{0.0};
+			words >> x >> z;
+			auto const *chunk{m_streamer.terrain_at(x, z)};
+			std::string materials;
+			if (chunk != nullptr)
+				for (std::size_t slot = 0; slot < std::max<std::size_t>(1, chunk->data().layer_count()); ++slot)
+				{
+					auto const layer{chunk->data().layers[slot]};
+					auto const &palette{m_streamer.manifest().layers};
+					materials += (layer < palette.size() ? palette[layer].material : std::string{"?"}) + " ";
+				}
+			auto const found{m_streamer.height_at(x, z, height)};
+			WriteLog(format("SELFTEST terrainprobe %.1f %.1f: %s %.3f, %zu chunks, materials %s", x, z, found ? "height" : "no terrain", height, m_streamer.resident(), materials.c_str()));
+		}
+		else if (command == "terrainconvert")
+		{
+			load_ground_files();
+			for (auto const &source : m_ground_conversion.files)
+			{
+				glm::dvec3 low{1e30}, high{-1e30};
+				for (auto index = source.first; index < source.first + source.count; ++index)
+					for (auto const &vertex : m_ground_conversion.triangles[index])
+					{
+						low = glm::min(low, vertex);
+						high = glm::max(high, vertex);
+					}
+				WriteLog("SELFTEST terrain file " + source.file + (source.text ? " (text): " : " (binary): ") + source.message +
+				         format(", from %.1f %.1f %.1f to %.1f %.1f %.1f", low.x, low.y, low.z, high.x, high.y, high.z));
+			}
+			m_ground_conversion.status = convert_ground();
+			WriteLog("SELFTEST terrainconvert: " + m_ground_conversion.status);
 		}
 		else if (command == "quit")
 		{

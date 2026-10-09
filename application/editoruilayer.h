@@ -128,6 +128,13 @@ class editor_ui : public ui_layer
 	void set_workspace(workspace const Workspace)
 	{
 		m_workspace = Workspace;
+		auto const &bank{m_workspacebank[static_cast<std::size_t>(Workspace)]};
+		m_nodebankpanel.stand_in(bank.first, bank.second);
+	}
+	// content of the window of the node bank while the field of work is chosen, in place of the node bank
+	void set_workspace_bank(workspace const Workspace, std::function<void()> Content, std::string Title)
+	{
+		m_workspacebank[static_cast<std::size_t>(Workspace)] = {std::move(Content), std::move(Title)};
 	}
 	void set_workspace_options(workspace const Workspace, std::function<void()> Tools, std::function<void()> Selection = {})
 	{
@@ -205,6 +212,7 @@ class editor_ui : public ui_layer
 	workspace m_workspace{workspace::none};
 	std::array<std::function<void()>, static_cast<std::size_t>(workspace::count_)> m_workspacetools;
 	std::array<std::function<void()>, static_cast<std::size_t>(workspace::count_)> m_workspaceselection;
+	std::array<std::pair<std::function<void()>, std::string>, static_cast<std::size_t>(workspace::count_)> m_workspacebank;
 	// scene window: the models of the scenery by layer and group, rebuilt when their number changes
 	struct scene_entry
 	{

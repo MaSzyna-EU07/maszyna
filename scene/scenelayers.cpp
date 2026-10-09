@@ -499,12 +499,12 @@ void node_layers::shape(material_handle const Material, source_span const &Span)
 	m_shapes.push_back({current, Span, Material, false});
 }
 
-std::pair<std::size_t, std::size_t> node_layers::erase_shapes(std::set<material_handle> const &Materials)
+std::pair<std::size_t, std::size_t> node_layers::erase_shapes(std::set<material_handle> const &Materials, std::set<layer_handle> const *Layers)
 {
 	std::pair<std::size_t, std::size_t> result{0, 0};
 	for (auto &shape : m_shapes)
 	{
-		if (shape.erased || Materials.count(shape.material) == 0)
+		if (shape.erased || Materials.count(shape.material) == 0 || (Layers != nullptr && Layers->count(shape.layer) == 0))
 		{
 			continue;
 		}

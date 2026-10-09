@@ -84,6 +84,8 @@ class terrain_streamer
 	bool add_chunk(int Cx, int Cz, float Spacing, float Height, std::uint16_t Layer = 0);
 	// a chunk at (Cx, Cz), heights given for each grid point by Height (from its world position)
 	bool add_chunk(int Cx, int Cz, float Spacing, std::function<float(double X, double Z)> const &Height, std::uint16_t Layer = 0);
+	// a chunk made elsewhere, at the place its key says; its layers are indices of the palette
+	bool add_chunk(std::shared_ptr<heightmap::chunk_data> Data);
 	void remove_chunk(int Cx, int Cz);
 	// changes the point spacing of the chunk at (Cx, Cz), heights resampled
 	void spacing(int Cx, int Cz, float Spacing);
@@ -99,6 +101,8 @@ class terrain_streamer
 	// palette entry of the material, added to the palette if needed
 	std::uint16_t layer(std::string const &Material, float Size = 0.f);
 	void layer_size(std::uint16_t Layer, float Size);
+	// gives the palette entry Layer another material; the chunks painted with it change with it
+	void layer_material(std::uint16_t Layer, std::string const &Material);
 	void compress(bool State);
 	void default_spacing(float Spacing);
 	// bodies of water
@@ -110,6 +114,26 @@ class terrain_streamer
 	std::vector<heightmap::modifier> const &modifiers() const { return m_manifest.modifiers; }
 	// changed since the last save
 	bool modified() const;
+
+	// undo: the state of what a change touched, from before it
+	struct change
+	{
+		std::map<chunk_key, heightmap::chunk_ptr> chunks; // the data the chunks had; null: there was no chunk
+		bool manifest{false}; // the palette, the water and the modifiers below were changed
+		std::vector<heightmap::layer_def> layers;
+		std::vector<heightmap::water_body> water;
+		std::vector<heightmap::modifier> modifiers;
+
+		bool empty() const { return chunks.empty() && false == manifest; }
+	};
+	// from now on the state of what's changed is kept, until end_change(); nested calls join the change in progress
+	void begin_change();
+	// returns: the state from before the changes made since begin_change() (empty if nothing changed)
+	change end_change();
+	bool recording() const { return m_recording > 0; }
+	// puts the terrain back in the state recorded. returns: the state it replaced, to go forward again
+	change restore(change const &Change);
+
 	// writes the description and the changed pack files. returns: true on success, Error describing the failure
 	bool save(std::string *Error = nullptr);
 
@@ -200,6 +224,10 @@ class terrain_streamer
 	void build_water();
 	void clear_water(bool const Touch);
 	std::string pack_path(heightmap::pack_key const &Key) const;
+	// the state of a chunk (null: no chunk) or of the description is kept for the change in progress, if it's the first time
+	void remember(chunk_key const &Key, heightmap::chunk_ptr const &Data);
+	void remember(editor_terrain const &Chunk) { remember(Chunk.key(), Chunk.shared()); }
+	void remember_manifest();
 
 	bool m_active{false};
 	std::string m_name;
@@ -220,6 +248,9 @@ class terrain_streamer
 	std::vector<gfx::geometry_handle> m_waterfree; // geometry of the water shown before, to be filled anew
 	gfx::geometrybank_handle m_waterbank{0, 0};
 	bool m_waterchanged{false};
+
+	int m_recording{0};
+	change m_change;
 
 	glm::dvec3 m_camera{0.0};
 	glm::dvec3 m_velocity{0.0};

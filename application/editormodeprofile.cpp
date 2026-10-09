@@ -674,54 +674,84 @@ void editor_mode::profile_restore_ground()
 void editor_mode::render_ground_conversion()
 {
 	auto &conversion{m_ground_conversion};
+	ImGui::PushID("ground_conversion");
 	if (false == conversion.open)
 	{
-		if (ImGui::Button(STR_C("Convert the scenery ground to heightmap terrain...")))
+		if (ImGui::Button(STR_C("Convert the terrain files to heightmap terrain...")))
 		{
 			conversion.open = true;
-			conversion.materials = ground_materials();
-			conversion.chosen.clear();
-			// the material with the most triangles is the ground, most likely
-			auto const most{std::max_element(conversion.materials.begin(), conversion.materials.end(), [](auto const &A, auto const &B) { return A.second < B.second; })};
-			if (most != conversion.materials.end())
-				conversion.chosen.insert(most->first);
+			load_ground_files();
 		}
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Replaces the triangles of the chosen materials with heightmap terrain of the same shape,\nwhich can be shaped, sculpted and painted; the scenery files lose these triangles on save"));
+			ImGui::SetTooltip("%s", STR_C("Replaces the triangles of the terrain files of the scenery (terrain directive, .txtf/.btf) with heightmap terrain\n"
+			                              "of the same shape, painted with their materials; the files lose these triangles on save"));
 		if (false == conversion.status.empty())
 			ImGui::TextWrapped("%s", conversion.status.c_str());
+		ImGui::PopID();
 		return;
 	}
-	ImGui::TextWrapped("%s", STR_C("Materials of the scenery triangles: tick the ones which are the ground"));
-	if (conversion.materials.empty())
-		ImGui::TextDisabled("%s", STR_C("The scenery has no triangles"));
-	for (auto const &entry : conversion.materials)
+	if (conversion.files.empty())
+		ImGui::TextWrapped("%s", STR_C("The scenery has no terrain files: no terrain directive names a .txtf or .btf file"));
+	else
+		ImGui::TextUnformatted(STR_C("Terrain files of the scenery:"));
+	for (std::size_t index = 0; index < conversion.files.size(); ++index)
 	{
-		auto const *material{GfxRenderer->Material(entry.first)};
-		auto const name{material != nullptr ? material->GetName() : std::string{"?"}};
-		bool chosen{conversion.chosen.count(entry.first) != 0};
-		ImGui::PushID(static_cast<int>(entry.first));
-		if (ImGui::Checkbox(format(STR_C("%s  (%zu triangles)"), name.c_str(), entry.second).c_str(), &chosen))
+		auto &source{conversion.files[index]};
+		ImGui::PushID(static_cast<int>(index));
+		ImGui::BeginDisabled(false == source.good);
+		ImGui::Checkbox(source.file.c_str(), &source.chosen);
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+		if (source.good)
+			ImGui::TextDisabled(source.text ? STR_C("(text, %zu triangles)") : STR_C("(binary, %zu triangles)"), source.count);
+		else
+			ImGui::TextDisabled("(%s)", source.message.c_str());
+		ImGui::PopID();
+	}
+	// the materials of the chosen files
+	std::vector<std::size_t> counts(conversion.names.size(), 0);
+	for (auto const &source : conversion.files)
+		if (source.good && source.chosen)
+			for (auto index = source.first; index < source.first + source.count; ++index)
+				++counts[conversion.materials[index]];
+	if (false == conversion.names.empty())
+		ImGui::TextUnformatted(STR_C("Materials: tick the ones which are the ground"));
+	for (std::size_t index = 0; index < conversion.names.size(); ++index)
+	{
+		if (counts[index] == 0)
+			continue;
+		bool chosen{conversion.chosen.count(index) != 0};
+		ImGui::PushID(static_cast<int>(index) + 0x10000);
+		if (ImGui::Checkbox(format(STR_C("%s  (%zu triangles)"), conversion.names[index].c_str(), counts[index]).c_str(), &chosen))
 		{
 			if (chosen)
-				conversion.chosen.insert(entry.first);
+				conversion.chosen.insert(index);
 			else
-				conversion.chosen.erase(entry.first);
+				conversion.chosen.erase(index);
 		}
 		ImGui::PopID();
 	}
-	ImGui::TextWrapped("%s", STR_C("The chunks are covered with the material which covers the most, added to the palette of the terrain. Until saved, loading the scenery again takes it all back."));
-	if (conversion.chosen.empty())
-		ImGui::TextDisabled("%s", STR_C("Tick at least one material"));
-	else if (ImGui::Button(STR_C("Convert")))
+	ImGui::TextWrapped("%s", STR_C("The chunks are painted with the materials of the triangles, up to 8 of them per chunk, added to the palette of the terrain. "
+	                               "Until saved, loading the scenery again takes it all back."));
+	auto const ready{std::any_of(conversion.files.begin(), conversion.files.end(), [](auto const &Source) { return Source.good && Source.chosen; }) && false == conversion.chosen.empty()};
+	ImGui::BeginDisabled(false == ready);
+	if (ImGui::Button(STR_C("Convert")))
 	{
-		conversion.status = convert_ground(conversion.chosen);
+		conversion.status = convert_ground();
 		conversion.open = false;
 		profile_resample();
 	}
+	ImGui::EndDisabled();
 	ImGui::SameLine();
 	if (ImGui::Button(STR_C("Cancel")))
 		conversion.open = false;
+	if (false == conversion.open)
+	{
+		// the triangles take memory, they're read again the next time
+		conversion.triangles = {};
+		conversion.materials = {};
+	}
+	ImGui::PopID();
 }
 
 void editor_mode::render_profile_earthworks()

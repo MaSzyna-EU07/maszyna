@@ -156,6 +156,13 @@ class nodebank_panel : public ui_panel
 	std::string set_name(model_set_ref const &Ref, char const *Manuallabel) const;
 	// shows the set manager window, optionally with specified user set selected
 	void open_sets_window(int const Setid = 0);
+	// content drawn in the window of the node bank in its place, with its own title (a field of work of the editor uses the window
+	// for its own browser); none: the node bank
+	void stand_in(std::function<void()> Content, std::string Title)
+	{
+		m_standin = std::move(Content);
+		m_standintitle = std::move(Title);
+	}
 
 
   private:
@@ -183,6 +190,8 @@ class nodebank_panel : public ui_panel
 	// true if the node bank selection is a definition of a node, which the hand-made lists and the model sets can take
 	bool node_selected() const;
 	// members:
+	std::function<void()> m_standin;
+	std::string m_standintitle;
 	std::vector<std::pair<std::string, std::shared_ptr<std::string>>> m_nodebank;
 	char m_nodesearch[128];
 	std::shared_ptr<std::string> m_selectedtemplate;
@@ -295,4 +304,4 @@ class functions_panel : public ui_panel
 	scene::group_handle m_grouphandle{null_handle}; // scene group bound to the panel
 	std::string m_groupprefix;
 	std::vector<text_line> m_grouplines;
-};
+};

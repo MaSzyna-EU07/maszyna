@@ -99,6 +99,8 @@ public:
         gfx::geometry_handle geometry { 0, 0 }; // relative origin-centered chunk of geometry held by gfx renderer
         std::vector<world_vertex> vertices; // world space source data of the geometry
 		gfx::userdata_array userdata;
+        // terrain file the shape comes from, see scene::terrain_file::reference_of(); 0: none, or not known (only the editor asks)
+        std::uint16_t terrainfile { 0 };
     // methods:
         // sends content of the struct to provided stream
         void
@@ -152,6 +154,9 @@ public:
     // sets whether the shape is drawn with the translucent geometry (used by generated geometry)
     void
         translucent( bool const Translucent );
+    // notes the terrain file the shape comes from
+    void
+        source_file( std::uint16_t const Reference ) { m_data.terrainfile = Reference; }
     // data access
     shapenode_data const &
         data() const;

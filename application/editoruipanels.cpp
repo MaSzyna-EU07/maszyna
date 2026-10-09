@@ -934,6 +934,14 @@ void nodebank_panel::render()
 	{
 		ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x, size_min.y), ImVec2S(size_max.x, size_max.y));
 	}
+	if (m_standin)
+	{
+		// the same window, so it keeps its place in the dock
+		if (ImGui::Begin((m_standintitle + "###" + name()).c_str(), nullptr, flags))
+			m_standin();
+		ImGui::End();
+		return;
+	}
 	auto const panelname{(title.empty() ? name() : title) + "###" + name()};
 
 	if (true == ImGui::Begin(panelname.c_str(), nullptr, flags))

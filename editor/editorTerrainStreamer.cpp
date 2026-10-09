@@ -136,6 +136,8 @@ void terrain_streamer::close()
 	m_loading.clear();
 	m_removed.clear();
 	m_palette.clear();
+	m_recording = 0;
+	m_change = change();
 	m_active = false;
 	m_name.clear();
 	m_directory.clear();
@@ -159,6 +161,8 @@ void terrain_streamer::reset()
 	m_removed.clear();
 	m_palette.clear();
 	clear_water(false);
+	m_recording = 0;
+	m_change = change();
 	m_active = false;
 	m_name.clear();
 	m_directory.clear();
@@ -898,6 +902,24 @@ bool terrain_streamer::add_chunk(int Cx, int Cz, float Spacing, std::function<fl
 	for (int iz = 0; iz <= data->cells; ++iz)
 		for (int ix = 0; ix <= data->cells; ++ix)
 			data->heights[static_cast<std::size_t>(iz) * data->side() + ix] = Height(low.x + ix * step, low.y + iz * step);
+	return add_chunk(std::move(data));
+}
+
+bool terrain_streamer::add_chunk(std::shared_ptr<heightmap::chunk_data> Data)
+{
+	if (Data == nullptr || false == Data->valid())
+		return false;
+	auto const key{Data->key};
+	if (false == m_active || load_now(key) != nullptr || m_chunks.count(key) > 0)
+		return false;
+	if (false == in_region(glm::dvec2{chunk_centre(key).x, chunk_centre(key).z}))
+		return false;
+	for (auto &layer : Data->layers)
+		if (layer != heightmap::no_layer && layer >= m_manifest.layers.size())
+			layer = 0;
+	auto data{std::move(Data)};
+	auto const low{data->corner()};
+	remember(key, nullptr);
 	auto chunk{std::make_unique<editor_terrain>(std::move(data))};
 	chunk->m_modified = true;
 	auto const [lowest, highest]{std::minmax_element(chunk->heights().begin(), chunk->heights().end())};
@@ -915,6 +937,12 @@ bool terrain_streamer::add_chunk(int Cx, int Cz, float Spacing, std::function<fl
 void terrain_streamer::remove_chunk(int Cx, int Cz)
 {
 	chunk_key const key{Cx, Cz};
+	if (recording())
+	{
+		// the data is needed to bring the chunk back
+		if (auto const *chunk{load_now(key)})
+			remember(*chunk);
+	}
 	auto const lookup{m_chunks.find(key)};
 	if (lookup != m_chunks.end())
 	{
@@ -931,6 +959,7 @@ void terrain_streamer::spacing(int Cx, int Cz, float Spacing)
 	auto *chunk{load_now({Cx, Cz})};
 	if (chunk == nullptr || heightmap::cells_for(Spacing) == chunk->cells())
 		return;
+	remember(*chunk);
 	chunk->replace(chunk->data().resampled(Spacing), true, false);
 	auto const low{chunk->data().corner()};
 	apply_modifiers(*chunk, low, low + glm::dvec2{heightmap::chunk_size});
@@ -957,6 +986,7 @@ bool terrain_streamer::reshape(glm::dvec2 const &Min, glm::dvec2 const &Max, std
 				shaped |= Shaper(low.x + ix * step, low.y + iz * step, heights[static_cast<std::size_t>(iz) * current.side() + ix]);
 		if (false == shaped)
 			continue;
+		remember(*chunk);
 		auto &data{chunk->edit(true, false)};
 		(data.base.empty() ? data.heights : data.base) = std::move(heights);
 		if (false == data.base.empty())
@@ -1081,6 +1111,7 @@ bool terrain_streamer::paint(double X, double Z, double Radius, double Strength,
 		if (false == painted)
 			continue;
 		data->compact_layers();
+		remember(*chunk);
 		chunk->replace(std::move(data), false, true);
 		changed = true;
 	}
@@ -1092,6 +1123,7 @@ std::uint16_t terrain_streamer::layer(std::string const &Material, float const S
 	for (std::size_t i = 0; i < m_manifest.layers.size(); ++i)
 		if (m_manifest.layers[i].material == Material && (Size <= 0.f || m_manifest.layers[i].size == Size))
 			return static_cast<std::uint16_t>(i);
+	remember_manifest();
 	m_manifest.layers.push_back({Material, std::max(0.f, Size)});
 	m_manifestchanged = true;
 	return static_cast<std::uint16_t>(m_manifest.layers.size() - 1);
@@ -1101,11 +1133,25 @@ void terrain_streamer::layer_size(std::uint16_t const Layer, float const Size)
 {
 	if (Layer >= m_manifest.layers.size() || m_manifest.layers[Layer].size == Size)
 		return;
+	remember_manifest();
 	m_manifest.layers[Layer].size = std::max(0.f, Size);
 	m_manifestchanged = true;
 	// the materials of the chunks using it are made again
 	for (auto &entry : m_chunks)
 		if (entry.second->data().slot_of(Layer) >= 0)
+			entry.second->m_paintedversion = 0;
+}
+
+void terrain_streamer::layer_material(std::uint16_t const Layer, std::string const &Material)
+{
+	if (Layer >= m_manifest.layers.size() || Material.empty() || m_manifest.layers[Layer].material == Material)
+		return;
+	remember_manifest();
+	m_manifest.layers[Layer].material = Material;
+	m_manifestchanged = true;
+	m_palette.erase(Layer);
+	for (auto &entry : m_chunks)
+		if (entry.second->data().slot_of(Layer) >= 0 || (Layer == 0 && entry.second->data().layer_count() == 0))
 			entry.second->m_paintedversion = 0;
 }
 
@@ -1128,6 +1174,7 @@ void terrain_streamer::default_spacing(float const Spacing)
 
 void terrain_streamer::water(std::vector<heightmap::water_body> Water)
 {
+	remember_manifest();
 	m_manifest.water = std::move(Water);
 	m_manifestchanged = true;
 	m_waterchanged = true;
@@ -1155,12 +1202,14 @@ void terrain_streamer::apply_modifiers(editor_terrain &Chunk, glm::dvec2 const &
 		// no modifier reaches the chunk (any more): its own heights are what's left
 		if (false == current.base.empty())
 		{
+			remember(Chunk);
 			auto &data{Chunk.edit(true, false)};
 			data.heights = std::move(data.base);
 			data.base.clear();
 		}
 		return;
 	}
+	remember(Chunk);
 	auto &data{Chunk.edit(true, false)};
 	if (data.base.empty())
 		data.base = data.heights;
@@ -1187,6 +1236,7 @@ void terrain_streamer::apply_modifiers(glm::dvec2 const &Min, glm::dvec2 const &
 
 void terrain_streamer::modifier(heightmap::modifier Modifier)
 {
+	remember_manifest();
 	auto bounds{Modifier.bounds()};
 	auto const existing{std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == Modifier.name; })};
 	if (existing != m_manifest.modifiers.end())
@@ -1208,6 +1258,7 @@ bool terrain_streamer::remove_modifier(std::string const &Name)
 	auto const existing{std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == Name; })};
 	if (existing == m_manifest.modifiers.end())
 		return false;
+	remember_manifest();
 	auto const bounds{existing->bounds()};
 	m_manifest.modifiers.erase(existing);
 	m_manifestchanged = true;
@@ -1220,6 +1271,103 @@ bool terrain_streamer::modified() const
 	if (m_manifestchanged || false == m_removed.empty())
 		return true;
 	return std::any_of(m_chunks.begin(), m_chunks.end(), [](auto const &Entry) { return Entry.second->modified(); });
+}
+
+// undo
+
+void terrain_streamer::begin_change()
+{
+	if (m_recording++ == 0)
+		m_change = change();
+}
+
+terrain_streamer::change terrain_streamer::end_change()
+{
+	if (m_recording == 0)
+		return change();
+	if (--m_recording > 0)
+		return change(); // the outer change goes on
+	change result{std::move(m_change)};
+	m_change = change();
+	return result;
+}
+
+void terrain_streamer::remember(chunk_key const &Key, heightmap::chunk_ptr const &Data)
+{
+	if (m_recording > 0)
+		m_change.chunks.emplace(Key, Data); // only the first state counts
+}
+
+void terrain_streamer::remember_manifest()
+{
+	if (m_recording == 0 || m_change.manifest)
+		return;
+	m_change.manifest = true;
+	m_change.layers = m_manifest.layers;
+	m_change.water = m_manifest.water;
+	m_change.modifiers = m_manifest.modifiers;
+}
+
+terrain_streamer::change terrain_streamer::restore(change const &Change)
+{
+	change opposite;
+	if (false == m_active)
+		return opposite;
+	for (auto const &[key, data] : Change.chunks)
+	{
+		auto *current{load_now(key)};
+		opposite.chunks.emplace(key, current != nullptr ? current->shared() : nullptr);
+		if (data == nullptr)
+		{
+			if (current != nullptr)
+			{
+				undraw(*current);
+				m_chunks.erase(key);
+				m_removed.insert(key);
+				touch_neighbours(key);
+			}
+			continue;
+		}
+		if (current != nullptr)
+		{
+			current->replace(data, true, true);
+		}
+		else
+		{
+			auto chunk{std::make_unique<editor_terrain>(data)};
+			chunk->m_modified = true;
+			auto const [low, high]{std::minmax_element(chunk->heights().begin(), chunk->heights().end())};
+			auto const corner{data->corner()};
+			chunk->m_low = {corner.x, *low, corner.y};
+			chunk->m_high = {corner.x + heightmap::chunk_size, *high, corner.y + heightmap::chunk_size};
+			m_chunks.emplace(key, std::move(chunk));
+			m_removed.erase(key);
+			m_loading.erase(key);
+		}
+		touch_neighbours(key);
+	}
+	if (Change.manifest)
+	{
+		opposite.manifest = true;
+		opposite.layers = m_manifest.layers;
+		opposite.water = m_manifest.water;
+		opposite.modifiers = m_manifest.modifiers;
+		auto const samelayers{std::equal(Change.layers.begin(), Change.layers.end(), m_manifest.layers.begin(), m_manifest.layers.end(),
+		                                 [](heightmap::layer_def const &A, heightmap::layer_def const &B) { return A.material == B.material && A.size == B.size; })};
+		m_manifest.layers = Change.layers;
+		m_manifest.modifiers = Change.modifiers;
+		m_manifest.water = Change.water;
+		m_manifestchanged = true;
+		m_waterchanged = true;
+		if (false == samelayers)
+		{
+			// the materials of the chunks are made anew from the palette as it was
+			m_palette.clear();
+			for (auto &entry : m_chunks)
+				entry.second->m_paintedversion = 0;
+		}
+	}
+	return opposite;
 }
 
 bool terrain_streamer::save(std::string *Error)

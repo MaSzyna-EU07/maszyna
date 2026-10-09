@@ -57,6 +57,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     // drop any streamed editor terrain from a previously loaded scenery before the old region (and
     // its sections, which those chunks referenced) is destroyed below
     EditorTerrain.reset();
+    scene::terrain_file::references().clear();
 
     // TODO: move initialization to separate routine so we can reuse it
     SafeDelete( Region );
@@ -722,6 +723,9 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
             ++Scratchpad.binary.geometry_imported;
             auto shape { scene::shape_node().import( Input, nodedata ) };
             material = shape.data().material;
+            if( true == Global.editor_session ) {
+                shape.source_file( scene::terrain_file::reference_of( Input.Name() ) );
+            }
             simulation::Region->insert(
                 std::move( shape ),
                 Scratchpad,
@@ -1188,6 +1192,11 @@ include_terrain_file( std::string File, std::string &Includes, scene::scratch_da
         return;
     }
     binary.terrain_textfiles.emplace_back( File );
+    // the editor converts the triangles of the terrain files to heightmap terrain, it has to know them and where they're placed
+    scene::terrain_file::references().push_back( {
+        File,
+        ( Scratchpad.location.offset.empty() ? glm::dvec3( 0.0 ) : Scratchpad.location.offset.top() ),
+        Scratchpad.location.rotation } );
 
     auto const textfile { Global.asCurrentSceneryPath + File + ".txtf" };
     auto const binaryfile { Global.asCurrentSceneryPath + File + ".btf" };

@@ -132,7 +132,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	struct stored_profile;
 	struct EditorSnapshot
 	{
-		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array, Bend };
+		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array, Bend, Terrain };
 		// copy of a model an array made
 		struct array_copy
 		{
@@ -170,6 +170,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<stored_profile> profile_library;
 		std::vector<array_copy> copies; // models an array added to the one it was made of
 		bool joined{false}; // undone and redone together with the change before it
+		std::shared_ptr<terrain_streamer::change const> terrain; // the heightmap terrain from before the change (Action::Terrain)
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
 
@@ -183,6 +184,12 @@ class editor_mode : public application_mode, private editor_track::observer
 	// a single step of the history, see undo_last()
 	void undo_one();
 	void redo_one();
+	// the changes of the heightmap terrain since the last step become a step of the history: a stroke of the brush,
+	// or what a frame did; the next change is recorded from now on
+	void terrain_history_step();
+	// puts the terrain back as the step recorded it, the step left with the state it replaced
+	void restore_terrain(EditorSnapshot &Snapshot);
+	bool m_history_busy{false}; // undo or redo under way
 	void handle_brush_mouse_hold(int Action, int Button);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
 	// members
@@ -313,18 +320,59 @@ class editor_mode : public application_mode, private editor_track::observer
 	void draw_terrain_overlay();
 	// forgets what's known about the ground, after the terrain changed
 	void forget_ground();
-	// the scenery ground: triangles of each material, the ones the editor makes itself left out
-	std::map<material_handle, std::size_t> ground_materials();
-	// replaces the triangles of specified materials with chunks of heightmap terrain of their shape; the scenery files lose them on save.
-	// returns: summary for the user
-	std::string convert_ground(std::set<material_handle> const &Materials);
+	// conversion of the ground of the terrain files of the scenery (terrain directive, .txtf/.btf) to heightmap terrain
 	struct ground_conversion
 	{
+		struct source
+		{
+			std::string file; // as the terrain directive names it
+			std::uint16_t reference{0}; // see scene::terrain_file::reference_of()
+			bool text{false}; // read from the text file, rather than the binary one
+			bool good{false};
+			bool chosen{true};
+			std::string message;
+			std::size_t first{0}, count{0}; // its triangles
+		};
 		bool open{false};
-		std::map<material_handle, std::size_t> materials;
-		std::set<material_handle> chosen;
+		std::vector<source> files;
+		std::vector<std::array<glm::dvec3, 3>> triangles;
+		std::vector<std::uint16_t> materials; // of the triangles: index of the name
+		std::vector<std::string> names; // of the materials
+		std::set<std::size_t> chosen; // materials to convert
 		std::string status;
 	} m_ground_conversion;
+	// reads the triangles of the terrain files of the scenery for the conversion
+	void load_ground_files();
+	// the folder of the textures as a browser, in the window of the node bank while the terrain is edited: the textures and the
+	// materials can be dragged onto the fields which take a material
+	struct texture_browser
+	{
+		struct item
+		{
+			std::string name; // as the materials are named: relative to the folder of the textures, without the extension
+			std::string label; // the file, without the folder
+			bool material{false}; // there's a .mat file of the name
+		};
+		std::string folder; // relative to the folder of the textures, empty or with a trailing slash
+		std::vector<std::string> folders; // under the current one
+		std::vector<item> items;
+		bool listed{false};
+		char filter[64]{};
+		float size{96.f}; // of the images, pixels
+		std::string selected;
+		std::map<std::string, int> thumbnails; // texture shown for the item of the name, 0: none
+		int loads{0}; // textures read in the frame, a few at most so the browser doesn't stall the editor
+	} m_textures;
+	void render_texture_browser();
+	// texture of the image of the item of the browser, 0 while there's none
+	std::uint64_t texture_thumbnail(texture_browser::item const &Item);
+	// takes a material dragged from the texture browser onto the item drawn last. returns: true if one was dropped, its name in Name
+	static bool material_drop(std::string &Name);
+	// the same, for a text field
+	static bool material_drop(char *Buffer, std::size_t Size);
+	// replaces the chosen triangles of the chosen terrain files with chunks of heightmap terrain of their shape, painted with
+	// their materials; the files lose them on save. returns: summary for the user
+	std::string convert_ground();
 	void render_ground_conversion();
 	// handles a click of the chunk, spacing and water tools (Shift: the other way round)
 	void handle_terrain_click(bool const Shift);
