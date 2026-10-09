@@ -321,8 +321,9 @@ void editor_mode::selftest_step()
 			geometry::bezier const main{track->m_paths[0]};
 			geometry::bezier const other{track->m_paths[1]};
 			std::string text;
-			for (double t = 0.125; t < 1.01; t += 0.125)
+			for (int i = 1; i <= 8; ++i)
 			{
+				auto const t{i * 0.125};
 				auto const point{other.point(t)};
 				double best{std::numeric_limits<double>::max()}, along{0.0};
 				for (int k = 0; k <= 2000; ++k)
@@ -350,8 +351,11 @@ void editor_mode::selftest_step()
 			if (sweep == nullptr)
 				continue;
 			auto const side{sweep->definition().lateral >= 0.0 ? 1 : 0};
-			for (double station = from; station <= to + 1e-9; station += step)
+			if (step <= 0.0)
+				continue;
+			for (int i = 0; from + i * step <= to + 1e-9; ++i)
 			{
+				auto const station{from + i * step};
 				auto const at{sweep->frame_at(station)};
 				WriteLog(format("SELFTEST frame %s %.2f: %.3f %.3f %.3f widening %.4f cant %.4f setback %.4f", name.c_str(), station, at.position.x, at.position.y, at.position.z, at.widening[side], at.cant[side], sweep->setback(at)));
 			}

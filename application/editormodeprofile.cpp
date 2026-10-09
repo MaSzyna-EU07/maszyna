@@ -1695,16 +1695,19 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 	auto const plotbottom{View.plot_bottom()};
 
 	auto const step{nice_step(View.across * 110.0)};
-	for (auto s = std::ceil((state.view_from + state.origin) / step) * step - state.origin; s <= state.view_to; s += step)
+	auto const firsts{std::ceil((state.view_from + state.origin) / step) * step - state.origin};
+	for (int i = 0; firsts + i * step <= state.view_to; ++i)
 	{
+		auto const s{firsts + i * step};
 		auto const x{View.x_of(s)};
 		Draw.AddLine(ImVec2(x, plottop), ImVec2(x, plotbottom), kGrid);
 		Draw.AddText(ImVec2(x + 3.0f, View.corner.y + 2.0f), kLabel, profile::format_chainage(s + state.origin).c_str());
 	}
 	auto const heightstep{nice_step(View.vertical * 45.0)};
-	for (auto h = std::floor(View.height_of(plotbottom) / heightstep) * heightstep; h <= View.height_of(plottop); h += heightstep)
+	auto const firsth{std::floor(View.height_of(plotbottom) / heightstep) * heightstep};
+	for (int i = 0; firsth + i * heightstep <= View.height_of(plottop); ++i)
 	{
-		auto const y{View.y_of(h)};
+		auto const y{View.y_of(firsth + i * heightstep)};
 		Draw.AddLine(ImVec2(View.corner.x, y), ImVec2(bottomright.x, y), kGrid);
 	}
 	for (auto const &zone : state.context.switches)
@@ -1772,8 +1775,10 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		auto const from{std::max(points.front().chainage, View.chainage_of(View.corner.x))};
 		auto const to{std::min(points.back().chainage, View.chainage_of(bottomright.x))};
 		ImVec2 previous{View.x_of(from), View.y_of(profile::elevation(line, from))};
-		for (auto x = previous.x + 2.0f; x <= View.x_of(to) + 2.0f; x += 2.0f)
+		auto const firstx{previous.x};
+		for (int i = 1; firstx + 2.0f * i <= View.x_of(to) + 2.0f; ++i)
 		{
+			auto const x{firstx + 2.0f * i};
 			auto const chainage{std::min(to, View.chainage_of(x))};
 			ImVec2 const next{View.x_of(chainage), View.y_of(profile::elevation(line, chainage))};
 			Draw.AddLine(previous, next, kGradeLine, 2.5f);
@@ -1827,8 +1832,8 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		plot_label(Draw, ImVec2(at.x + 8.0f, at.y - 22.0f), overlay_color::marked, text);
 	}
 	// heights along the left edge, over everything else
-	for (auto h = std::floor(View.height_of(plotbottom) / heightstep) * heightstep; h <= View.height_of(plottop); h += heightstep)
-		plot_label(Draw, ImVec2(View.corner.x + 4.0f, View.y_of(h) - 8.0f), kLabel, format("%.1f", h));
+	for (int i = 0; firsth + i * heightstep <= View.height_of(plottop); ++i)
+		plot_label(Draw, ImVec2(View.corner.x + 4.0f, View.y_of(firsth + i * heightstep) - 8.0f), kLabel, format("%.1f", firsth + i * heightstep));
 	for (auto const &issue : state.issues)
 	{
 		auto const x{View.x_of(issue.chainage)};

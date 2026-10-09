@@ -3934,7 +3934,8 @@ void editor_mode::render_edit_menu()
 		group_selection();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The selected models move together from now on; a click on one selects them all. Shift+LMB adds a model to the selection"));
-	if (ImGui::MenuItem(STR_C("Ungroup"), "Ctrl+Shift+G", false, selected && m_node->group() > 1))
+	// Delete above may have just dropped the node, selected is from before it
+	if (ImGui::MenuItem(STR_C("Ungroup"), "Ctrl+Shift+G", false, m_node != nullptr && m_node->group() > 1))
 		ungroup_selection();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The models of the group move each by itself again"));

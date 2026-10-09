@@ -402,8 +402,8 @@ bool editor_mode::turntable_fit_end(editor_track::snap_target const &End, turnta
 				for (auto const heading : {line, line + 180.0})
 				{
 					auto const radial{heading_vector(heading)};
-					for (auto radius{static_cast<double>(tool.radius)}; radius >= kMinimumRadius; radius *= 0.9)
-						if (auto const candidate{connect(radial, radius)})
+					for (int i = 0; tool.radius * std::pow(0.9, i) >= kMinimumRadius; ++i)
+						if (auto const candidate{connect(radial, tool.radius * std::pow(0.9, i))})
 						{
 							if (better(*candidate))
 								best = candidate;
@@ -419,8 +419,9 @@ bool editor_mode::turntable_fit_end(editor_track::snap_target const &End, turnta
 		}
 		else
 		{
-			for (auto radius{static_cast<double>(tool.radius)}; radius >= kMinimumRadius && false == best.has_value(); radius *= 0.9)
+			for (int r = 0; tool.radius * std::pow(0.9, r) >= kMinimumRadius && false == best.has_value(); ++r)
 			{
+				auto const radius{tool.radius * std::pow(0.9, r)};
 				auto const gap = [&](double const S) {
 					auto const vertex{e - t * S};
 					auto const radial{vertex - c};
@@ -432,8 +433,9 @@ bool editor_mode::turntable_fit_end(editor_track::snap_target const &End, turnta
 				auto const limit{plan_distance(End.position, centre) + 400.0};
 				double low{0.0};
 				std::optional<double> high;
-				for (double s = 0.25; s <= limit; s += 0.25)
+				for (int i = 1; i * 0.25 <= limit; ++i)
 				{
+					auto const s{i * 0.25};
 					if (gap(s) >= 0.0)
 					{
 						high = s;

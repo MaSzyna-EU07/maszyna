@@ -1545,7 +1545,7 @@ void editor_mode::render_infra_candidates()
 			if (ImGui::IsItemHovered())
 			{
 				state.hovered = i;
-				std::string text{format(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), anchor.at.track->name().c_str(), std::abs(candidate.offset),
+				std::string text{format(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), anchor.at.track != nullptr ? anchor.at.track->name().c_str() : "-", std::abs(candidate.offset),
 				                        candidate.offset >= 0.0 ? "right" : "left", anchor.height, candidate.reason.c_str())};
 				if (candidate.reader != nullptr)
 					text += format(STR_C("\nRead by the path %s: event %s, getvalues of the memory cell %s"), candidate.reader->name().c_str(), candidate.event.c_str(), candidate.cell.c_str()) +

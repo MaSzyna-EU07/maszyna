@@ -52,8 +52,9 @@ double jerk_limit(double const Curvature, double const Cant, double const Gauge,
 	if (rate(Top) <= Jerk)
 		return Top;
 	double low{0.0};
-	for (double speed = 10.0; speed <= Top; speed += 10.0)
+	for (int i = 1; i * 10.0 <= Top; ++i)
 	{
+		auto const speed{i * 10.0};
 		if (rate(speed) > Jerk)
 		{
 			double high{speed};
