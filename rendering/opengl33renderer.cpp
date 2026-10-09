@@ -31,6 +31,28 @@ int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of r
 
 namespace {
 
+float
+editor_track_view_range(float const Range, bool const Apply)
+{
+	if (false == Apply || false == Global.editor_tracks)
+		return Range;
+	float extra = 50000.0f;
+	if (Global.EditorOrtho)
+		extra = Global.EditorOrthoExtent * 3.0f;
+	return Range > extra ? Range : extra;
+}
+
+bool
+editor_far_tracks_only(bool const Apply, scene::basic_cell const *Cell, glm::dvec3 const &Camera, double const SceneryLimit)
+{
+	if (false == Apply)
+		return false;
+	double nearest = glm::length(Cell->m_area.center - Camera) - static_cast<double>(Cell->m_area.radius);
+	if (nearest < 0.0)
+		nearest = 0.0;
+	return nearest > SceneryLimit;
+}
+
 // returns material assigned to the submodel, resolving replacable skins. null_handle if no skin set is bound
 material_handle
 submodel_material( TSubModel const *Submodel ) {
@@ -1642,8 +1664,10 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         Config.draw_range = std::max( 2000.f, Config.draw_range );
 
 		// projection
-		auto const zfar  = ( Zfar  > 1.f ? Zfar : Config.draw_range * Zfar );
+		auto zfar  = ( Zfar  > 1.f ? Zfar : Config.draw_range * Zfar );
 		auto const znear = ( Znear > 1.f ? Znear : Znear > 0.f ? Znear * zfar : 0.1f * Global.ZoomFactor);
+		if (EditorModeFlag && Viewport.main)
+			zfar = editor_track_view_range(zfar, true);
 
 		camera.projection() = perspective_projection(Viewport.projection, znear, zfar, frustumtest_proj);
 		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
@@ -1726,6 +1750,8 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         // projection
         float znear = 0.1f * Global.ZoomFactor;
         float zfar = Config.draw_range * Global.fDistanceFactor;
+		if (EditorModeFlag && Viewport.main && Mode == rendermode::pickscenery)
+			zfar = editor_track_view_range(zfar, true);
 
         if (vr) {
             glm::mat4 transform = vr->get_pick_transform();
@@ -2447,7 +2473,9 @@ void opengl33_renderer::Render(scene::basic_region *Region)
 	glm::vec3 const cameraposition{m_renderpass.pass_camera.position()};
 	auto const camerax = static_cast<int>(std::floor(cameraposition.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
 	auto const cameraz = static_cast<int>(std::floor(cameraposition.z / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
-	int const segmentcount = 2 * static_cast<int>(std::ceil(m_renderpass.draw_range * Global.fDistanceFactor / scene::EU07_SECTIONSIZE));
+	float section_range = m_renderpass.draw_range * Global.fDistanceFactor;
+	section_range = editor_track_view_range(section_range, EditorModeFlag && (m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery));
+	int const segmentcount = 2 * static_cast<int>(std::ceil(section_range / scene::EU07_SECTIONSIZE));
 	int const originx = camerax - segmentcount / 2;
 	int const originz = cameraz - segmentcount / 2;
 
@@ -2643,6 +2671,9 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 
 	// cache initial iterator for the second sweep
 	auto first{First};
+	auto const scenery_limit{static_cast<double>(Global.BaseDrawRange) * Global.fDistanceFactor + 250.0};
+	bool const far_paths{EditorModeFlag && Global.editor_tracks && (m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery)};
+	glm::dvec3 const camera{m_renderpass.pass_camera.position()};
 	// first pass draws elements which we know are located in section banks, to reduce vbo switching
 	while (First != Last)
 	{
@@ -2650,6 +2681,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		auto *cell = First->second;
 		// przeliczenia animacji torów w sektorze
 		cell->RaAnimate(m_framestamp);
+		bool const tracks_only{editor_far_tracks_only(far_paths, cell, camera, scenery_limit)};
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -2662,9 +2694,12 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 
 			// render
 			// opaque non-instanced shapes
-			for (auto const &shape : cell->m_shapesopaque)
+			if (false == tracks_only)
 			{
-				Render(shape, false);
+				for (auto const &shape : cell->m_shapesopaque)
+				{
+					Render(shape, false);
+				}
 			}
 			// tracks
 			// TODO: update after path node refactoring
@@ -2720,9 +2755,12 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 			// render
 			// opaque non-instanced shapes
 			// non-interactive scenery elements get neutral colour
-			model_ubs.param[0] = colors::none;
-			for (auto const &shape : cell->m_shapesopaque)
-				Render(shape, false);
+			if (false == tracks_only)
+			{
+				model_ubs.param[0] = colors::none;
+				for (auto const &shape : cell->m_shapesopaque)
+					Render(shape, false);
+			}
 			// tracks
 			for (auto *path : cell->m_paths)
 			{
@@ -2753,6 +2791,8 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		case rendermode::color:
         case rendermode::shadows:
         {
+			if (editor_far_tracks_only(far_paths, cell, camera, scenery_limit))
+				break;
             // TBD, TODO: refactor in to a method to reuse in branch below?
 			// opaque parts of instanced models -- accumulate this cell's buckets
 			// into the frame-level map; the actual Render_Instanced() calls are
@@ -2833,6 +2873,8 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         }
         case rendermode::pickscenery:
 		{
+			if (editor_far_tracks_only(far_paths, cell, camera, scenery_limit))
+				break;
 			// opaque parts of instanced models
 			// same procedure like with regular render, but each node receives custom colour used for picking.
 			// picking always uses the per-instance path because each instance needs a unique pick colour;

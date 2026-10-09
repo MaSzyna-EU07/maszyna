@@ -86,6 +86,7 @@ struct global_settings {
     std::string local_start_vehicle{ "EU07-424" };
     std::string editor_enter_vehicle; // vehicle placed in the editor, to be entered when the driving goes on
     bool editor_session{ false }; // scenery was opened for editing (-edit): loader keeps track of scenery layers and hands over to the editor
+    bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization

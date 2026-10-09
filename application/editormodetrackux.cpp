@@ -40,8 +40,6 @@ namespace
 using geometry::bezier;
 
 float const kHoverPixels{12.0f};
-double const kHoverReachMin{15.0};
-double const kHoverReachMax{250.0};
 double const kHoverLabelDelay{0.35}; // s the cursor rests on a path before its data shows up
 double const kFocusDistance{25.0};
 auto const kContextClick{std::chrono::milliseconds(350)};
@@ -98,50 +96,40 @@ editor_mode::track_hover editor_mode::track_under_cursor() const
 {
 	track_hover result;
 	auto const &io{ImGui::GetIO()};
-	glm::dvec3 const camera{Global.pCamera.Pos};
-	glm::dvec3 const ground{cursor_ground()};
-	auto const reach{std::clamp(glm::distance(camera, ground) * 0.1, kHoverReachMin, kHoverReachMax)};
 	screen_projection const projection;
 	glm::vec2 const mouse{io.MousePos.x, io.MousePos.y};
 	double best{kHoverPixels * kHoverPixels};
-	for (auto *section : simulation::Region->sections(ground, static_cast<float>(reach)))
+	for (auto *track : simulation::Paths.sequence())
 	{
-		for (auto const &cell : section->m_cells)
+		if (track == nullptr || false == rail(*track) || track->m_editorremoved)
+			continue;
+		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		{
-			for (auto *track : cell.m_directories.paths)
+			bezier const curve{track->m_paths[i]};
+			auto const count{std::clamp(static_cast<int>(curve.plan_length() / 3.0), 6, 64)};
+			auto previous{curve.point(0.0)};
+			ImVec2 from;
+			bool visible{projection.project(previous, from)};
+			for (int k = 1; k <= count; ++k)
 			{
-				if (track == nullptr || false == rail(*track))
-					continue;
-				for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
+				auto const next{curve.point(static_cast<double>(k) / count)};
+				ImVec2 to;
+				bool const shown{projection.project(next, to)};
+				if (visible && shown)
 				{
-					bezier const curve{track->m_paths[i]};
-					auto const count{std::clamp(static_cast<int>(curve.plan_length() / 3.0), 6, 64)};
-					auto previous{curve.point(0.0)};
-					ImVec2 from;
-					bool visible{projection.project(previous, from)};
-					for (int k = 1; k <= count; ++k)
+					double t;
+					auto const distance{segment_distance2(mouse, {from.x, from.y}, {to.x, to.y}, t)};
+					if (distance < best)
 					{
-						auto const next{curve.point(static_cast<double>(k) / count)};
-						ImVec2 to;
-						bool const shown{projection.project(next, to)};
-						if (visible && shown)
-						{
-							double t;
-							auto const distance{segment_distance2(mouse, {from.x, from.y}, {to.x, to.y}, t)};
-							auto const point{glm::mix(previous, next, t)};
-							if (distance < best && glm::distance(point, camera) <= static_cast<double>(kMaxPlacementDistance))
-							{
-								best = distance;
-								result.track = track;
-								result.path = i;
-								result.point = point;
-							}
-						}
-						previous = next;
-						from = to;
-						visible = shown;
+						best = distance;
+						result.track = track;
+						result.path = i;
+						result.point = glm::mix(previous, next, t);
 					}
 				}
+				previous = next;
+				from = to;
+				visible = shown;
 			}
 		}
 	}
@@ -908,14 +896,13 @@ void editor_mode::finish_track_box()
 	glm::vec2 const low{std::min(box.from.x, box.to.x), std::min(box.from.y, box.to.y)};
 	glm::vec2 const high{std::max(box.from.x, box.to.x), std::max(box.from.y, box.to.y)};
 	screen_projection const projection;
-	glm::dvec3 const camera{Global.pCamera.Pos};
 	track_set_prune();
 	if (m_track_set.empty())
 		if (auto *selected{selected_track()}; selected != nullptr)
 			m_track_set.push_back(selected);
 	for (auto *track : simulation::Paths.sequence())
 	{
-		if (track == nullptr || false == rail(*track) || in_track_set(track) || glm::distance(track->location(), camera) > static_cast<double>(Global.BaseDrawRange))
+		if (track == nullptr || false == rail(*track) || in_track_set(track))
 			continue;
 		bool inside{false};
 		for (auto const &path : track->m_paths)
