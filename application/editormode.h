@@ -712,7 +712,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	// listed spacing of a neighbouring straight the line can snap to, if it is close enough
 	struct parallel_offer
 	{
-		bool near{false};
+		bool nearby{false};
 		bool snaps{false};
 		double spacing{0.0};
 		double distance{0.0};

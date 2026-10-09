@@ -328,7 +328,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			if (hit == 2)
 			{
 				auto const offer{straight_parallel_offer(line, {})};
-				if (offer.near)
+				if (offer.nearby)
 				{
 					intent.action = format(offer.snaps ? STR_C("Drag: shift the straight sideways — snaps parallel at %.2f m") : STR_C("Drag: shift the straight sideways — close: %.2f m  %.1f°"), offer.spacing, offer.angle);
 					intent.what = kind::straight_handle;

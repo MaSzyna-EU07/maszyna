@@ -2534,7 +2534,7 @@ void editor_mode::draw_straights_overlay() const
 		auto const lateral{across(other.start) + (across(other.end) - across(other.start)) * fraction};
 		glm::dvec3 const foot{line.start.x + line.direction.x * middle, line.start.y + line.grade * middle, line.start.z + line.direction.y * middle};
 		glm::dvec3 const target{foot.x + normal.x * lateral, foot.y, foot.z + normal.y * lateral};
-		bool const highlighted{offer.near && offer.neighbour == &other};
+		bool const highlighted{offer.nearby && offer.neighbour == &other};
 		auto const tick{highlighted ? (offer.snaps ? IM_COL32(80, 230, 255, 255) : IM_COL32(255, 210, 60, 255)) : IM_COL32(255, 230, 120, 230)};
 		if (highlighted)
 			projection.line(drawlist, other.start, other.end, tick, 3.0f);
@@ -2551,7 +2551,7 @@ void editor_mode::draw_straights_overlay() const
 			drawlist->AddText(screen, highlighted ? tick : IM_COL32(255, 230, 120, 255), label);
 		}
 	}
-	if (offer.near && false == offer.snaps && std::abs(offer.correction) > 0.02)
+	if (offer.nearby && false == offer.snaps && std::abs(offer.correction) > 0.02)
 	{
 		auto const shift{glm::dvec3{normal.x, 0.0, normal.y} * offer.correction};
 		projection.line(drawlist, line.start + shift, line.end + shift, IM_COL32(80, 230, 255, 210), 3.5f);
@@ -2613,7 +2613,7 @@ editor_mode::parallel_offer editor_mode::straight_parallel_offer(editor_track::s
 			if (error < best)
 			{
 				best = error;
-				offer.near = true;
+				offer.nearby = true;
 				offer.snaps = error < kParallelSnapWindow && angle <= kParallelSnapAngle;
 				offer.spacing = spacing;
 				offer.distance = std::abs(distance);
@@ -3532,7 +3532,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		auto const offer{straight_parallel_offer(m_straights.drag_line, m_straights.preview_start - m_straights.drag_line.start)};
 		if (offer.snaps)
 			hints = {{"Release", format(STR_C("parallel at %.2f m"), offer.spacing)}, {"Esc", "cancel"}};
-		else if (offer.near)
+		else if (offer.nearby)
 			hints = {{"Near another straight", format(STR_C("snap at %.2f m  (%.1f°)"), offer.spacing, offer.angle)}, {"Esc", "cancel"}};
 		else
 			hints = {{"Drag the diamond", "snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Esc", "cancel"}};
@@ -3676,7 +3676,7 @@ std::string editor_mode::track_readout() const
 			auto const offer{straight_parallel_offer(grabbed, offset)};
 			if (offer.snaps)
 				text += "\n" + format(STR_C("parallel  %.2f m"), offer.spacing);
-			else if (offer.near)
+			else if (offer.nearby)
 				text += "\n" + format(STR_C("close: %.2f m  %.1f°"), offer.spacing, offer.angle);
 			return text;
 		}
