@@ -121,6 +121,8 @@ public:
     auto draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in specified chunk N times via glDrawElementsInstanced*
     auto draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams = basic_streams ) -> std::size_t;
+    // draws geometry stored in supplied sequence of chunks of the bank, in their order. the bank is free to combine them into fewer draw calls
+    auto draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in supplied list of chunks
     template <typename Iterator_>
     auto draw( Iterator_ First, Iterator_ Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) ->std::size_t {
@@ -187,6 +189,11 @@ private:
         std::size_t count { 0 };
         for( std::size_t i = 0; i < InstanceCount; ++i ) { count += draw_( Geometry, Units, Streams ); }
         return count; }
+    // draw_batch() subclass details. Default implementation falls back to regular draw of each chunk.
+    virtual auto draw_batch_( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t {
+        std::size_t count { 0 };
+        for( ; First != Last; ++First ) { count += draw_( *First, Units, Streams ); }
+        return count; }
     // resource release subclass details
     virtual void release_() = 0;
 };
@@ -218,6 +225,8 @@ public:
     // draws geometry stored in specified chunk InstanceCount times via GPU instancing.
     // The shader reads per-instance modelview matrices from instance_ubo[gl_InstanceID].
     void draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, unsigned int const Streams = basic_streams );
+    // draws geometry stored in supplied sequence of chunks, in their order. neighbouring chunks of the same bank are passed to it together
+    void draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, unsigned int const Streams = basic_streams );
     template <typename Iterator_>
     void draw( Iterator_ First, Iterator_ Last, unsigned int const Streams = basic_streams ) {
             while( First != Last ) { 

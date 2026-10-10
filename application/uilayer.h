@@ -78,6 +78,8 @@ public:
 	// methods
     static bool init( GLFWwindow *Window );
 	static void imgui_style();
+	// colours of the user interface: 0 the green ones shared with the starter, 1 the amber ones of the editor
+	static void imgui_colors(int const Palette);
 
     // assign texturing hardware unit
     static void set_unit( GLint const Textureunit ) { m_textureunit = GL_TEXTURE0 + Textureunit; }
@@ -118,20 +120,39 @@ public:
     static bool char_callback(unsigned int c);
     static bool scroll_callback(double xoffset, double yoffset);
     static bool mouse_button_callback(int button, int action, int mods);
+	// state updates only, nothing to consume
+	static void cursor_pos_callback(double x, double y);
+	static void cursor_enter_callback(int entered);
+	static void focus_callback(int focused);
+	// key presses in windows of the ui outside of the main window, passed on to the simulator like those of the main window
+	static void viewport_key_callback(GLFWwindow *Window, int key, int scancode, int action, int mods);
 
 	static ImFont *font_default;
 	static ImFont *font_mono;
 	static ImFont *font_loading;
+	// bigger and bold, for headings like the fields of work of the editor; nullptr if the font isn't there
+	static ImFont *font_bold;
 
 protected:
 // members
     static GLFWwindow *m_window;
+	static GLFWwindow *m_keywindow; // window of the key event being handled
     static ImGuiIO *m_imguiio;
     static bool m_cursorvisible;
 
    virtual void render_menu_contents();
+	// items of the windows menu which belong to the ui of a mode, after the common ones
+	virtual void render_windows_menu() {}
+	// colours this ui is drawn in, see imgui_colors()
+	virtual int palette() const
+	{
+		return 0;
+	}
+	static int m_palette; // colours set at the moment
    ui_log_panel m_logpanel { "Log", true };
 	bool m_suppress_menu = false; // if `true`, the menu at the top of the window will not be present
+	bool m_menu_always = false; // if `true`, the menu is shown all the time, not only when the mouse is at the top of the window
+	int m_dockspaceframe{-1}; // frame the dockspace was last submitted in
 	// progress bar config
 	float m_progress { 0.0f }; // percentage of filled progres bar, to indicate lengthy operations.
 	float m_subtaskprogress{ 0.0f }; // percentage of filled progres bar, to indicate lengthy operations.
@@ -141,6 +162,8 @@ protected:
 // methods
 	// render() subclass details
    virtual void render_() {}
+	// submitted right after the start of the frame, before any window that may be docked in it
+	virtual void render_dockspace() {}
     // draws background quad with specified earlier texture
     void render_background();
     void render_tooltip();

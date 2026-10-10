@@ -47,21 +47,25 @@ class buffer_manager {
 
 public:
 // constructors
-    buffer_manager() { m_buffers.emplace_back( openal_buffer() ); } // empty bindings for null buffer
+    buffer_manager(); // makes empty bindings for null buffer
 // destructor
     ~buffer_manager();
 // methods
     // creates buffer object out of data stored in specified file. returns: handle to the buffer or null_handle if creation failed
     buffer_handle
         create( std::string const &Filename );
-    // provides direct access to a specified buffer
+    // provides direct access to a specified buffer. a buffer still decoded in the background is completed first
     audio::openal_buffer const &
         buffer( audio::buffer_handle const Buffer ) const;
+    // creates AL buffers for files decoded in the background so far, or for all of them if requested
+    void
+        update( bool const Wait = false );
 
 private:
 // types
     using buffer_sequence = std::vector<openal_buffer>;
     using index_map = std::unordered_map<std::string, std::size_t>;
+    struct decoder; // background decoding of sound files, used with sound.asyncload
 // methods
     // places in the bank a buffer containing data stored in specified file. returns: handle to the buffer
     buffer_handle
@@ -72,9 +76,13 @@ private:
     // checks whether specified file exists. returns: name of the located file, or empty string.
     std::string
         find_file( std::string const &Filename ) const;
+    // creates AL buffer for a file decoded in the background, waiting for the decoder if needed
+    void
+        complete( audio::buffer_handle const Buffer ) const;
 // members
-    buffer_sequence m_buffers;
+    mutable buffer_sequence m_buffers; // buffers decoded in the background are completed on first access
     index_map m_buffermappings;
+    mutable std::unique_ptr<decoder> m_decoder;
 };
 
 } // audio

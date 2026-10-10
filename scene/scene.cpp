@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "scene/sn_utils.h"
+#include "scene/sceneterrain.h"
 #include "rendering/renderer.h"
 #include "widgets/map_objects.h"
 
@@ -378,7 +379,9 @@ basic_cell::insert( TAnimModel *Instance ) {
             if( mat != nullptr ) {
                 for( int i = 0; i < 5; ++i ) { key.skins[i] = mat->replacable_skins[i]; }
             }
-            m_instancebuckets_opaque[ key ].emplace_back( Instance );
+            auto &bucket { m_instancebuckets_opaque[ key ] };
+            bucket.instances.emplace_back( Instance );
+            bucket.bounds.clear();
         }
     }
    // re-calculate cell bounding area, in case model extends outside the cell's boundaries
@@ -416,6 +419,37 @@ basic_cell::insert( TMemCell *Memorycell ) {
     // NOTE: memory cells are virtual 'points' hence they don't ever expand cell range
 }
 
+void
+basic_cell::erase( TTrack *Path ) {
+
+    m_paths.erase(
+        std::remove( std::begin( m_paths ), std::end( m_paths ), Path ),
+        std::end( m_paths ) );
+    if( tTrackAnim == Path ) {
+        tTrackAnim = Path->SwitchExtension->pNextAnim;
+        Path->SwitchExtension->pNextAnim = nullptr;
+    }
+    else {
+        for( auto *track = tTrackAnim; track != nullptr; track = track->SwitchExtension->pNextAnim ) {
+            if( track->SwitchExtension->pNextAnim == Path ) {
+                track->SwitchExtension->pNextAnim = Path->SwitchExtension->pNextAnim;
+                Path->SwitchExtension->pNextAnim = nullptr;
+                break;
+            }
+        }
+    }
+    Path->RaOwnerSet( nullptr );
+    // TODO: update cell bounding area
+}
+
+void
+basic_cell::unregister_end( TTrack *Path ) {
+
+    m_directories.paths.erase(
+        std::remove( std::begin( m_directories.paths ), std::end( m_directories.paths ), Path ),
+        std::end( m_directories.paths ) );
+}
+
 // removes provided model instance from the cell
 void
 basic_cell::erase( TAnimModel *Instance ) {
@@ -446,10 +480,12 @@ basic_cell::erase( TAnimModel *Instance ) {
         // NOTE: searched by pointer rather than by key: the instance may have lost its instanceable
         // status or changed its skins since it was inserted, which would leave a dangling pointer behind
         for( auto bucket = m_instancebuckets_opaque.begin(); bucket != m_instancebuckets_opaque.end(); ) {
-            bucket->second.erase(
-                std::remove( std::begin( bucket->second ), std::end( bucket->second ), Instance ),
-                std::end( bucket->second ) );
-            if( bucket->second.empty() ) {
+            auto &instances { bucket->second.instances };
+            instances.erase(
+                std::remove( std::begin( instances ), std::end( instances ), Instance ),
+                std::end( instances ) );
+            bucket->second.bounds.clear();
+            if( instances.empty() ) {
                 bucket = m_instancebuckets_opaque.erase( bucket );
             }
             else {
@@ -470,6 +506,30 @@ basic_cell::erase( TMemCell *Memorycell ) {
             [=]( TMemCell *memorycell ) {
                 return memorycell == Memorycell; } ),
         std::end( m_memorycells ) );
+}
+
+void
+basic_cell::erase( TTraction *Traction ) {
+
+    m_traction.erase(
+        std::remove( std::begin( m_traction ), std::end( m_traction ), Traction ),
+        std::end( m_traction ) );
+}
+
+void
+basic_cell::unregister_end( TTraction *Traction ) {
+
+    m_directories.traction.erase(
+        std::remove( std::begin( m_directories.traction ), std::end( m_directories.traction ), Traction ),
+        std::end( m_directories.traction ) );
+}
+
+void
+basic_cell::erase( TEventLauncher *Launcher ) {
+
+    m_eventlaunchers.erase(
+        std::remove( std::begin( m_eventlaunchers ), std::end( m_eventlaunchers ), Launcher ),
+        std::end( m_eventlaunchers ) );
 }
 
 // registers provided path in the lookup directory of the cell
@@ -952,6 +1012,12 @@ basic_section::center( glm::dvec3 Center ) {
 void
 basic_section::create_geometry() {
 
+    if( false == m_terrain.empty() ) {
+        // this is the first thing done with a section about to be drawn or modified, which makes it
+        // the moment for the geometry kept in binary terrain files to arrive
+        load_terrain();
+    }
+
     if( true == m_geometrycreated ) { return; }
     else {
         // mark it done for future checks
@@ -968,6 +1034,18 @@ basic_section::create_geometry() {
     }
     for( auto &cell : m_cells ) {
         cell.create_geometry( m_geometrybank );
+    }
+}
+
+// loads geometry of the section kept in binary terrain files, if any is waiting
+void
+basic_section::load_terrain() {
+
+    // the list is emptied first, as loading can lead back here
+    auto const blocks { std::move( m_terrain ) };
+    m_terrain.clear();
+    for( auto const &block : blocks ) {
+        terrain_file::load( *this, block );
     }
 }
 
@@ -1720,6 +1798,16 @@ void basic_region::create_map_geometry()
             if (s)
                 s->create_map_geometry(m_map_geometrybank);
         }
+}
+
+// loads all geometry kept in binary terrain files which wasn't needed so far
+void basic_region::load_terrain()
+{
+    for( auto *section : m_sections ) {
+        if( section != nullptr ) {
+            section->load_terrain();
+        }
+    }
 }
 
 void basic_region::update_poi_geometry()

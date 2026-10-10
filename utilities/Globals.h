@@ -84,10 +84,15 @@ struct global_settings {
     std::string szDefaultExt{ szTexturesDDS };
 	std::string SceneryFile;
     std::string local_start_vehicle{ "EU07-424" };
+    std::string editor_enter_vehicle; // vehicle placed in the editor, to be entered when the driving goes on
+    bool editor_session{ false }; // scenery was opened for editing (-edit): loader keeps track of scenery layers and hands over to the editor
+    bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
     bool file_binary_terrain{ true }; // enable binary terrain (de)serialization
+    int file_binary_terrain_checksum{ 1 }; // check of a binary terrain file (.btf) against its text: 0 = none, 1 = length of the text, 2 = length and checksum
 	bool file_binary_terrain_state{true};
+	int file_binary_terrain_skipped{0}; // number of terrain includes left out by the parser during the current scenery load
     // logs
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
@@ -167,6 +172,8 @@ struct global_settings {
     bool bUseVBO{ true }; // czy jest VBO w karcie graficznej (czy użyć)
     float AnisotropicFiltering{ 8.f }; // requested level of anisotropic filtering. TODO: move it to renderer object
     float FieldOfView{ 45.f }; // vertical field of view for the camera. TODO: move it to the renderer
+    bool EditorOrtho{ false };
+    float EditorOrthoExtent{ 150.f };
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px
@@ -176,6 +183,8 @@ struct global_settings {
     float SmokeFidelity{ 1.f }; // determines amount of generated smoke particles
     bool ResourceSweep{ true }; // gfx resource garbage collection
     bool ResourceMove{ false }; // gfx resources are moved between cpu and gpu side instead of sending a copy
+    bool gfx_texture_streaming{ false }; // data of dds textures is read by worker threads, the rest of the loading doesn't wait for it
+    float gfx_texture_releasedistance{ 0.f }; // gl textures of vehicles farther than this many draw ranges are released. 0 = off
     bool compress_tex{ true }; // all textures are compressed on gpu side
     std::string asSky{ "1" };
     float fFpsAverage{ 0.f }; // oczekiwana wartosć FPS
@@ -191,6 +200,7 @@ struct global_settings {
     float EnvironmentAmbientVolume{ 1.0f };
     int audio_max_sources = 30;
     std::string AudioRenderer;
+    bool AudioAsyncLoad{ false }; // sound files are decoded by worker threads
     // input
     float fMouseXScale{ 1.5f };
     float fMouseYScale{ 0.2f };
@@ -297,6 +307,7 @@ struct global_settings {
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;
+    bool ui_viewports = true; // panels of the ui can be dragged out of the simulator window, into windows of their own
 
 	float map_highlight_distance = 3000.0f;
 

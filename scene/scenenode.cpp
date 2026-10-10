@@ -309,7 +309,8 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
         }
         token = Input.getToken<std::string>();
 
-    } while( token != "endtri" );
+    } while( token != "endtri"
+          && false == token.empty() ); // data which ends without closing the node would otherwise keep the loop going forever
 
     return *this;
 }
@@ -428,7 +429,9 @@ bool
 shape_node::merge( shape_node &Shape ) {
 
     if( m_data.material != Shape.m_data.material
-     || m_data.lighting != Shape.m_data.lighting ) {
+     || m_data.lighting != Shape.m_data.lighting
+     || m_data.terrainfile != Shape.m_data.terrainfile ) {
+        // (shapes of different terrain files are kept apart, so the editor can tell which file the geometry comes from)
         // can't merge nodes with different appearance
         return false;
     }
@@ -717,7 +720,9 @@ memory_node::deserialize( cParser &Input, node_data const &Nodedata ) {
 
 
 basic_node::basic_node( scene::node_data const &Nodedata ) :
-    m_name( Nodedata.name )
+    m_name( Nodedata.name ),
+    m_layer( Nodedata.layer ),
+    m_instance( Nodedata.instance )
 {
     uuid = UID::random();
     node_type = Nodedata.type;
