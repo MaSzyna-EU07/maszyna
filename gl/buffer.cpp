@@ -47,7 +47,7 @@ void gl::buffer::unbind(targets target)
 
 void gl::buffer::unbind()
 {
-	for (size_t i = 0; i < sizeof(binding_points) / sizeof(GLuint); i++)
+	for (size_t i = 0; i < std::size(binding_points); i++)
 		unbind((targets)i);
 }
 
