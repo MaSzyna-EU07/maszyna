@@ -2294,7 +2294,6 @@ class TMoverParameters
 	bool AIHintPantUpIfIdle{true}; // whether raise both pantographs if idling for a while
 	double AIHintLocalBrakeAccFactor{1.05}; // suggested acceleration weight for local brake operation
 
-  public:
 	TMoverParameters(double VelInitial, std::string TypeNameInit, std::string NameInit, int Cab);
 	// obsługa sprzęgów
 	static double CouplerDist(TMoverParameters const *Left, TMoverParameters const *Right);

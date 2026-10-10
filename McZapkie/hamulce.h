@@ -567,7 +567,6 @@ class TWest : public TBrake
 class TESt : public TBrake
 {
 
-  private:
   protected:
 	/// <summary>Control reservoir (ZS) — long-term reference pressure.</summary>
 	std::shared_ptr<TReservoir> CntrlRes; // zbiornik sterujący
@@ -627,7 +626,6 @@ class TESt : public TBrake
 class TESt3 : public TESt
 {
 
-  private:
 	// double CylFlowSpeed[2][2]; //zmienna nie uzywana
 
   public:
@@ -713,7 +711,6 @@ class TESt4R : public TESt
 class TLSt : public TESt4R
 {
 
-  private:
 	// double CylFlowSpeed[2][2]; // zmienna nie używana
 
   protected:
