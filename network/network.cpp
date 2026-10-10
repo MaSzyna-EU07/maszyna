@@ -30,9 +30,7 @@ void network::connection::set_handler(std::function<void (const message &)> hand
 	message_handler = handler;
 }
 
-network::connection::connection(bool client, size_t counter) {
-	packet_counter = counter;
-	is_client = client;
+network::connection::connection(bool client, size_t counter) : is_client(client), packet_counter(counter) {
 	state = AWAITING_HELLO;
 }
 

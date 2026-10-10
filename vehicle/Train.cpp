@@ -585,21 +585,11 @@ std::vector<std::string> const TTrain::fPress_labels = {
 TTrain::TTrain()
 {
 
-	ShowNextCurrent = false;
-	// McZapkie-240302 - przyda sie do tachometru
-	fTachoVelocity = 0;
-	fTachoCount = 0;
-	fPPress = 0;
-	fNPress = 0;
+	// McZapkie-240302 - przyda sie do tachometru
 
-	// asMessage="";
-	pMechOffset = glm::dvec3(0, 0, 0);
-	fBlinkTimer = 0;
-	fHaslerTimer = 0;
+	// asMessage="";
 	DynamicSet(nullptr); // ustawia wszystkie mv*
-	//-----
-	pMechSittingPosition = glm::dvec3(0, 0, 0); // ABu: 180404
-	fTachoTimer = 0.0; // włączenie skoków wskazań prędkościomierza
+	//-----
 
 	//
 	for (int i = 0; i < 8; i++)

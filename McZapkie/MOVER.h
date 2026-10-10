@@ -989,11 +989,11 @@ struct TTransducer
 struct TPowerParameters
 {
 	/// <summary>Maximum source voltage [V].</summary>
-	double MaxVoltage;
+	double MaxVoltage{0.0};
 	/// <summary>Maximum source current [A].</summary>
-	double MaxCurrent;
+	double MaxCurrent{0.0};
 	/// <summary>Internal resistance [Ω].</summary>
-	double IntR;
+	double IntR{0.001};
 	/// <summary>Type of source (selects which union member is meaningful).</summary>
 	TPowerSource SourceType;
 	union
@@ -1029,9 +1029,6 @@ struct TPowerParameters
 	};
 	inline TPowerParameters()
 	{
-		MaxVoltage = 0.0;
-		MaxCurrent = 0.0;
-		IntR = 0.001;
 		SourceType = TPowerSource::NotDefined;
 		PowerType = TPowerType::NoPower;
 		RPowerCable.PowerTrans = TPowerType::NoPower;
@@ -1090,23 +1087,13 @@ using TMPTRelayTable = TMPTRelay[MotorParametersArraySize + 1]; // indexed like 
 
 struct TMotorParameters
 {
-	double mfi;
-	double mIsat;
-	double mfi0; // aproksymacja M(I) silnika} {dla dizla mIsat=przekladnia biegu
-	double fi;
-	double Isat;
-	double fi0; // aproksymacja E(n)=fi*n}    {dla dizla fi, mfi: predkosci przelozenia biegu <->
-	bool AutoSwitch;
-	TMotorParameters()
-	{
-		mfi = 0.0;
-		mIsat = 0.0;
-		mfi0 = 0.0;
-		fi = 0.0;
-		Isat = 0.0;
-		fi0 = 0.0;
-		AutoSwitch = false;
-	}
+	double mfi{0.0};
+	double mIsat{0.0};
+	double mfi0{0.0}; // aproksymacja M(I) silnika} {dla dizla mIsat=przekladnia biegu
+	double fi{0.0};
+	double Isat{0.0};
+	double fi0{0.0}; // aproksymacja E(n)=fi*n}    {dla dizla fi, mfi: predkosci przelozenia biegu <->
+	bool AutoSwitch{false};
 };
 
 struct TUniversalCtrl

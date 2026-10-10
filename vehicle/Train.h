@@ -146,7 +146,7 @@ class TTrain {
 
 // methods
     bool CabChange(int iDirection);
-    bool ShowNextCurrent; // pokaz przd w podlaczonej lokomotywie (ET41)
+    bool ShowNextCurrent{false}; // pokaz przd w podlaczonej lokomotywie (ET41)
     bool InitializeCab(int NewCabNo, std::string const &asFileName);
     TTrain();
 	~TTrain();
@@ -857,14 +857,14 @@ public: // reszta może by?publiczna
     int iCabn { 0 }; // 0: mid, 1: front, 2: rear
     bool is_cab_initialized { false };
     // McZapkie: do poruszania sie po kabinie
-	glm::dvec3 pMechSittingPosition; // ABu 180404
+	glm::dvec3 pMechSittingPosition{0.0}; // ABu 180404
 	glm::dvec3 MirrorPosition(bool lewe);
-	glm::dvec3 pMechOffset; // base position of the driver in the cab
+	glm::dvec3 pMechOffset{0.0}; // base position of the driver in the cab
     glm::vec2 pMechViewAngle { 0.0, 0.0 }; // camera pitch and yaw values, preserved while in external view
 
 private:
-    double fBlinkTimer;
-    float fHaslerTimer;
+    double fBlinkTimer{0.0};
+    float fHaslerTimer{0.0f};
     float fConverterTimer; // hunter-261211: dla przekaznika
     float fMainRelayTimer; // hunter-141211: zalaczanie WSa z opoznieniem
 	float fBatteryTimer = {-1.f}; // Hirek: zalaczanie baterii z opoznieniem (tylko gdy zdefiniowano takie zachowanie w fiz)
@@ -898,8 +898,8 @@ private:
 	std::vector<std::tuple<bool, bool, int>> bCompressors;
     bool bHeat[8]; // grzanie
     // McZapkie: do syczenia
-    float fPPress;
-    float fNPress;
+    float fPPress{0.0f};
+    float fNPress{0.0f};
     bool m_mastercontrollerinuse { false };
     float m_mastercontrollerreturndelay { 0.f };
 	screenentry_sequence m_screens;

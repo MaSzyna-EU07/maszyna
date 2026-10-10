@@ -19,12 +19,7 @@ class float3
     float y;
     float z;
     float3() = default;
-    float3(float a, float b, float c)
-    {
-        x = a;
-        y = b;
-        z = c;
-    };
+    float3(float a, float b, float c) : x(a), y(b), z(c) {}
     float Length() const;
     float LengthSquared() const;
 
@@ -106,20 +101,8 @@ class float4
     float y;
     float z;
     float w;
-    float4()
-    {
-        x = 0.f;
-        y = 0.f;
-        z = 0.f;
-        w = 1.f;
-    };
-    float4(float a, float b, float c, float d)
-    {
-        x = a;
-        y = b;
-        z = c;
-        w = d;
-    };
+    float4() : x(0.f), y(0.f), z(0.f), w(1.f) {}
+    float4(float a, float b, float c, float d) : x(a), y(b), z(c), w(d) {}
     float inline LengthSquared() const
     {
         return x * x + y * y + z * z + w * w;

@@ -1,10 +1,9 @@
 #include "stdafx.h"
 #include "ubo.h"
 
-gl::ubo::ubo(size_t size, int idx, GLenum hint)
+gl::ubo::ubo(size_t size, int idx, GLenum hint) : index(idx)
 {
     allocate(buffer::UNIFORM_BUFFER, size, hint);
-    index = idx;
     bind_uniform();
 }
 

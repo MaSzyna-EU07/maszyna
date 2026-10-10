@@ -30,9 +30,8 @@ void texture_window_cursor_pos(GLFWwindow *win, double x, double y)
 }
 
 python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string surfacename)
+    : m_rt(rt), m_touchlist(touchlist)
 {
-	m_rt = rt;
-    m_touchlist = touchlist;
 
 	for (const auto &viewport : Global.python_viewports) {
 		if (viewport.surface == surfacename) {
