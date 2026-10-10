@@ -467,16 +467,14 @@ particle_manager::find( std::string const &Template ) {
     auto const templatename { ToLower( Template ) };
 
     // try to locate specified rail profile...
-    auto const lookup { m_sourcetemplates.find( templatename ) };
-    if( lookup != m_sourcetemplates.end() ) {
+    if( auto const lookup { m_sourcetemplates.find( templatename ) }; lookup != m_sourcetemplates.end() ) {
         // ...if it works, we're done...
         return &(lookup->second);
     }
     // ... and if it fails try to add the template to the database from a data file
     smoke_source source;
-	cParser parser(templatepath + templatename + ".txt", cParser::buffer_FILE);
 
-    if (source.deserialize(parser))
+    if (cParser parser(templatepath + templatename + ".txt", cParser::buffer_FILE); source.deserialize(parser))
 	{
         // if deserialization didn't fail finish source setup...
         source.m_opacitymodifier.bind( &Global.SmokeFidelity );

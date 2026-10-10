@@ -574,8 +574,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
     //
     load_sounds();
     // potentially offset table times
-    auto const timeoffset { static_cast<int>( Global.ScenarioTimeOffset * 60 ) + iPlus };
-    if( timeoffset != 0 ) // jeżeli jest przesunięcie rozkładu
+    if( auto const timeoffset { static_cast<int>( Global.ScenarioTimeOffset * 60 ) + iPlus }; timeoffset != 0 ) // jeżeli jest przesunięcie rozkładu
     {
         long i_end = StationCount + 1;
         float adjustedtime; // do zwiększania czasu

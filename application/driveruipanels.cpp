@@ -61,8 +61,7 @@ drivingaid_panel::update() {
             // grade
             std::string gradetext;
             auto const reverser { ( mover->DirActive > 0 ? 1 : -1 ) };
-            auto const grade { controlled->VectorFront().y * 100 * ( controlled->DirectionGet() == reverser ? 1 : -1 ) * reverser };
-            if( std::abs( grade ) >= 0.25 ) {
+            if( auto const grade { controlled->VectorFront().y * 100 * ( controlled->DirectionGet() == reverser ? 1 : -1 ) * reverser }; std::abs( grade ) >= 0.25 ) {
                 std::snprintf(
                     m_buffer.data(), m_buffer.size(),
 				    STR_C(" Grade: %.1f%%%%"),
@@ -87,8 +86,7 @@ drivingaid_panel::update() {
                 // then take into account speed change ahead, compare it with speed after potentially clearing last limit
                 // lower of these two takes priority; otherwise limit lasts at least until potential last limit is cleared
                 auto const noactivespeedlimit { owner->VelLimitLastDist.second < 0 };
-                auto const speedatproximitydistance { min_speed( schedulespeedlimit, static_cast<int>( owner->VelNext ) ) };
-                if( speedatproximitydistance == nextspeedlimit ) {
+                if( auto const speedatproximitydistance { min_speed( schedulespeedlimit, static_cast<int>( owner->VelNext ) ) }; speedatproximitydistance == nextspeedlimit ) {
                     if( noactivespeedlimit ) {
                         nextspeedlimit = speedatproximitydistance;
                         nextspeedlimitdistance = owner->ActualProximityDist;
@@ -253,12 +251,7 @@ scenario_panel::render() {
     if( size_min.x > 0 ) {
         ImGui::SetNextWindowSizeConstraints( ImVec2S( size_min.x, size_min.y ), ImVec2S( size_max.x, size_max.y ) );
     }
-    auto const panelname { (
-        title.empty() ?
-		    m_name :
-            title )
-		+ "###" + m_name };
-    if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // potential assignment section
         auto const *owner { (
             m_nearest->Mechanik != nullptr && m_nearest->Mechanik->primary() ?
@@ -362,8 +355,7 @@ timetable_panel::update() {
 				//odejmij lokomotywy czynne, a przynajmniej aktualną
 				consistmass -= owner->pVehicle->MoverParameters->TotalMass;
 				// subtract potential other half of a two-part vehicle
-				auto const *previous { owner->pVehicle->Prev( coupling::permanent ) };
-				if( previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
+				if( auto const *previous { owner->pVehicle->Prev( coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
 				auto const *next { owner->pVehicle->Next( coupling::permanent ) };
 				if( next != nullptr ) { consistmass -= next->MoverParameters->TotalMass; }
 			}
@@ -484,12 +476,7 @@ timetable_panel::render() {
     if( size_min.x > 0 ) {
         ImGui::SetNextWindowSizeConstraints( ImVec2S( size_min.x * horizontalScale, size_min.y ), ImVec2S( size_max.x * horizontalScale, size_max.y ) );
     }
-    auto const panelname { (
-        title.empty() ?
-            m_name :
-            title )
-        + "###" + m_name };
-    if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         for( auto const &line : text_lines ) {
             ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
         }
@@ -574,12 +561,7 @@ debug_panel::render() {
     if( size_min.x > 0 ) {
         ImGui::SetNextWindowSizeConstraints( ImVec2S( size_min.x, size_min.y ), ImVec2S( size_max.x, size_max.y ) );
     }
-    auto const panelname { (
-        title.empty() ?
-		    m_name :
-            title )
-		+ "###" + m_name };
-    if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // header section
         for( auto const &line : text_lines ) {
             ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
@@ -1627,12 +1609,7 @@ transcripts_panel::render() {
     if( size_min.x > 0 ) {
         ImGui::SetNextWindowSizeConstraints( ImVec2S( size_min.x, size_min.y ), ImVec2S( size_max.x, size_max.y ) );
     }
-    auto const panelname { (
-        title.empty() ?
-		    m_name :
-            title )
-		+ "###" + m_name };
-    if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // header section
         for( auto const &line : text_lines ) {
             ImGui::TextWrapped( "%s", line.data.c_str() );

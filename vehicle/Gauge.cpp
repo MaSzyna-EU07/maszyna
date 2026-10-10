@@ -307,8 +307,7 @@ TGauge::UpdateValue( float fNewDesired ) {
     m_targetvalue = fNewDesired;
     // if there's any sound associated with new requested value, play it
     // check value-specific table first...
-    auto const fullinteger { desiredtimes100 % 100 == 0 };
-    if( fullinteger ) {
+    if( auto const fullinteger { desiredtimes100 % 100 == 0 }; fullinteger ) {
         // filter out values other than full integers
         auto const lookup = m_soundfxvalues.find( desiredtimes100 / 100 );
         if( lookup != m_soundfxvalues.end() ) {
@@ -321,9 +320,8 @@ TGauge::UpdateValue( float fNewDesired ) {
         m_soundtype = sound_flags::exclusive;
     }
     // ...and if there isn't any, fall back on the basic set...
-    auto const currentvalue = GetValue();
     // HACK: crude way to discern controls with continuous and quantized value range
-    if( currentvalue < fNewDesired ) {
+    if( auto const currentvalue = GetValue(); currentvalue < fNewDesired ) {
         // shift up
         if( false == m_soundfxincrease.empty() ) {
             m_soundfxincrease.play( m_soundtype );
@@ -471,8 +469,7 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) const {
         case TGaugeAnimation::gt_Wiper: {
             auto const scaledvalue { GetScaledValue() };
             Submodel->SetRotate( float3( 0, 1, 0 ), static_cast<float>(scaledvalue * 360.0) );
-            auto *sm = Submodel->ChildGet();
-            if( sm ) {
+            if( auto *sm = Submodel->ChildGet(); sm ) {
                 sm->SetRotate( float3( 0, 1, 0 ), static_cast<float>(scaledvalue * 360.0) );
                 sm = sm->ChildGet();
                 if( sm )

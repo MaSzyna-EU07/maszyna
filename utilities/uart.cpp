@@ -193,8 +193,7 @@ uart_input::recall_bindings() {
     m_inputbindings.clear();
 	std::string filePath = "eu07_input-uart.ini";
 
-	fs::path appPath = user_config_path("eu07_input-uart.ini");
-	if (!appPath.empty() && fs::exists(appPath))
+	if (fs::path appPath = user_config_path("eu07_input-uart.ini"); !appPath.empty() && fs::exists(appPath))
 		filePath = appPath.string();
 	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
 	if (false == bindingparser.ok())

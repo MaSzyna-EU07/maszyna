@@ -239,8 +239,7 @@ void keyboard_input::dump_bindings() const
 		stream << simulation::Commands_descriptions[static_cast<std::size_t>(binding.first)].name << ' ';
 
 		int keycode = std::get<int>(binding.second);
-		auto it = keytonamemap.find(keycode & 0xFFFF);
-		if (it != keytonamemap.end()) {
+		if (auto it = keytonamemap.find(keycode & 0xFFFF); it != keytonamemap.end()) {
 			if (keycode & keymodifier::control)
 				stream << "ctrl ";
 			if (keycode & keymodifier::shift)
@@ -298,8 +297,7 @@ keyboard_input::key( int const Key, int const Action ) {
         | ( modifier ? 0 : input::key_ctrl ? keymodifier::control : 0 );
 
     if( Action == GLFW_RELEASE ) {
-        auto const stored = m_modsforkeys.find( Key );
-        if( stored != m_modsforkeys.end() ) {
+        if( auto const stored = m_modsforkeys.find( Key ); stored != m_modsforkeys.end() ) {
             key = stored->second;
         }
         m_modsforkeys.erase( Key );

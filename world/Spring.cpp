@@ -24,8 +24,7 @@ glm::dvec3 TSpring::ComputateForces(glm::dvec3 const &pPosition1, glm::dvec3 con
     //		VectorDifference(&p1->pos,&p2->pos,&deltaP);	// Vector distance
     auto deltaP = pPosition1 - pPosition2;
     //		dist = VectorLength(&deltaP);					// Magnitude of deltaP
-	auto dist = glm::length(deltaP);
-    if( dist > restLen ) {
+    if( auto dist = glm::length(deltaP); dist > restLen ) {
 
         //		Hterm = (dist - spring->restLen) * spring->Ks;	// Ks * (dist - rest)
         auto Hterm = ( dist - restLen ) * Ks; // Ks * (dist - rest)

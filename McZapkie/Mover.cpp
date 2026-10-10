@@ -595,9 +595,8 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 	auto &othercoupler = ConnectTo->Couplers[(ConnectToNr != 2 ? ConnectToNr : coupler.ConnectedNr)];
 	auto const distance{CouplerDist(this, ConnectTo) - (coupler.adapter_length + othercoupler.adapter_length)};
 
-	auto const couplercheck{Enforce || (distance <= dEpsilon && coupler.type() != TCouplerType::NoCoupler && coupler.type() == othercoupler.type())};
 
-	if (false == couplercheck)
+	if (auto const couplercheck{Enforce || (distance <= dEpsilon && coupler.type() != TCouplerType::NoCoupler && coupler.type() == othercoupler.type())}; false == couplercheck)
 	{
 		return false;
 	}
@@ -1570,10 +1569,9 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	// Uproszczona symulacja wentylatorow rezystora hamowania
 
 	// Prad oddawany na rezystor
-	double Irh = abs(eimv[eimv_Pe]) - abs(eimv[eimv_Ipoj]);
 
 	// Wlacz wentylator jesli prad rekuperacji przekroczy maksymalny dla pasywnego chlodzenia rezystora
-	if (Irh > Imaxrpc && eimv[eimv_Ipoj] < 0)
+	if (double Irh = abs(eimv[eimv_Pe]) - abs(eimv[eimv_Ipoj]); Irh > Imaxrpc && eimv[eimv_Ipoj] < 0)
 	{
 		BRVtimer = 0;
 		BRVentilators = true;
@@ -3007,8 +3005,7 @@ bool TMoverParameters::SandboxManual(bool const State, range_t const Notify)
 bool TMoverParameters::SandboxAuto(bool const State, range_t const Notify)
 {
 	bool result{false};
-	bool NewState = State && SandDoseAutoAllow;
-	if (SandDoseAuto != NewState)
+	if (bool NewState = State && SandDoseAutoAllow; SandDoseAuto != NewState)
 	{
 		if (SandDoseAuto == false)
 		{
@@ -3921,8 +3918,7 @@ double TMoverParameters::DynamicBrakeRatio(void) const
 bool TMoverParameters::DynamicBrakeAvailable(void) const
 {
 	double const vh0{eimc[eimc_p_Vh0]};
-	double const vh1{eimc[eimc_p_Vh1]};
-	if (vh1 <= 0.001)
+	if (double const vh1{eimc[eimc_p_Vh1]}; vh1 <= 0.001)
 	{
 		// brak zdefiniowanej strefy - ED dziala zawsze
 		return true;
@@ -4331,9 +4327,8 @@ void TMoverParameters::CompressorCheck(double dt)
 	auto const MaxCompressorF{CompressorList[TCompressorList::cl_MaxFactor][CompressorListPos] * MaxCompressor};
 	auto const MinCompressorF{CompressorList[TCompressorList::cl_MinFactor][CompressorListPos] * MinCompressor};
 	auto const CompressorSpeedF{CompressorList[TCompressorList::cl_SpeedFactor][CompressorListPos] * CompressorSpeed};
-	auto const AllowFactor{CompressorList[TCompressorList::cl_Allow][CompressorListPos]};
 	// checking the impact on the compressor allowance
-	if (AllowFactor > 0.5)
+	if (auto const AllowFactor{CompressorList[TCompressorList::cl_Allow][CompressorListPos]}; AllowFactor > 0.5)
 	{
 		CompressorAllow = AllowFactor > 1.5;
 	}
@@ -6470,9 +6465,8 @@ double TMoverParameters::TractionForce(double dt)
 				auto const tmpV{std::abs(eimv[eimv_fp])};
 				auto const useFFEDList = FFEDListSize > 0 && DynamicBrakeFlag;
 				auto const list = useFFEDList ? FFEDlist : FFlist;
-				auto const listSize = useFFEDList ? FFEDListSize : FFListSize;
 
-				if (listSize > 0 && std::abs(eimv[eimv_If]) > 1.0 && tmpV > 0.0001)
+				if (auto const listSize = useFFEDList ? FFEDListSize : FFListSize; listSize > 0 && std::abs(eimv[eimv_If]) > 1.0 && tmpV > 0.0001)
 				{
 
 					int i = 0;
@@ -6610,8 +6604,7 @@ void TMoverParameters::FuseOff(void)
 bool TMoverParameters::UniversalResetButton(int const Button, range_t const Notify)
 {
 
-	auto const lowvoltagepower{Power24vIsAvailable || Power110vIsAvailable};
-	if (false == lowvoltagepower)
+	if (auto const lowvoltagepower{Power24vIsAvailable || Power110vIsAvailable}; false == lowvoltagepower)
 	{
 		return false;
 	}
@@ -8195,8 +8188,7 @@ double TMoverParameters::dizel_MomentumRetarder(double n, double dt)
 	}
 
 	double Moment = hydro_R_MaxTorque;
-	double pwr = Moment * std::abs(n) * M_PI * 2 * 0.001;
-	if (pwr > hydro_R_MaxPower)
+	if (double pwr = Moment * std::abs(n) * M_PI * 2 * 0.001; pwr > hydro_R_MaxPower)
 		Moment = Moment * hydro_R_MaxPower / pwr;
 	double moment_in = n * n * hydro_R_TorqueInIn;
 	Moment = std::min(moment_in, Moment * hydro_R_Fill);
@@ -8937,8 +8929,7 @@ double TMoverParameters::GetTrainsetVoltage(int const Coupling) const
 			continue;
 		}
 		auto const &coupler{Couplers[end]};
-		auto const fullcoupling{coupler.CouplingFlag | (TestFlag(coupler.CouplingFlag, coupler.PowerCoupling) ? coupler.PowerFlag : 0)};
-		if ((fullcoupling & Coupling) == 0)
+		if (auto const fullcoupling{coupler.CouplingFlag | (TestFlag(coupler.CouplingFlag, coupler.PowerCoupling) ? coupler.PowerFlag : 0)}; (fullcoupling & Coupling) == 0)
 		{
 			continue;
 		}
@@ -10835,8 +10826,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(ScndInMain, "SCIM", line, "");
 	extract_value(MainCtrlMaxDirChangePos, "DirChangeMaxPos", line, "");
 
-	auto const autorelay{ToLower(extract_value("AutoRelay", line))};
-	if (autorelay == "optional")
+	if (auto const autorelay{ToLower(extract_value("AutoRelay", line))}; autorelay == "optional")
 	{
 		AutoRelayType = 2;
 	}
@@ -11117,8 +11107,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 
 	EngineType = LoadFIZ_EngineDecode(extract_value("EngineType", Input));
 
-	std::string transmission = extract_value("Trans", Input);
-	if (false == transmission.empty())
+	if (std::string transmission = extract_value("Trans", Input); false == transmission.empty())
 	{
 		// transmission type. moved here because more than one engine type has this entry
 		auto ratios = Split(transmission, ':'); // e.g. 18:79
@@ -11442,8 +11431,7 @@ void TMoverParameters::LoadFIZ_RList(std::string const &Input)
 
 	extract_value(RlistSize, "Size", Input, "");
 
-	auto const venttype{ToLower(extract_value("RVent", Input))};
-	if (venttype == "automatic")
+	if (auto const venttype{ToLower(extract_value("RVent", Input))}; venttype == "automatic")
 	{
 
 		RVentType = 2;
@@ -11564,8 +11552,7 @@ void TMoverParameters::LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparamete
 		// prime mover for the generator
 		auto &generatorparameters{Powerparameters.EngineGenerator};
 
-		auto const enginetype{LoadFIZ_EngineDecode(extract_value(Prefix + "GeneratorEngine", Line))};
-		if (enginetype == TEngineType::Main)
+		if (auto const enginetype{LoadFIZ_EngineDecode(extract_value(Prefix + "GeneratorEngine", Line))}; enginetype == TEngineType::Main)
 		{
 			generatorparameters.engine_revolutions = &enrot;
 		}
@@ -12496,9 +12483,8 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 	{
 
 		auto const left{CValue2 > 0 ? 1 : 2};
-		auto const right{3 - left};
 
-		if (std::abs(static_cast<int>(CValue1)) & right)
+		if (auto const right{3 - left}; std::abs(static_cast<int>(CValue1)) & right)
 		{
 			PermitDoors_(side::right, CValue1 > 0);
 		}
@@ -12580,8 +12566,7 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 		auto const inputoperation{static_cast<int>(CValue1) & ~(0x80 | 0x40)};
 		auto const noswap{TrainType == dt_EZT || TrainType == dt_ET41};
 		auto swap{false == noswap && TestFlag(Couplers[(CValue2 == -1 ? end::rear : end::front)].CouplingFlag, coupling::control)};
-		auto const reversed{inputcab != (CabActive != -1 ? 1 : 0)};
-		if (reversed)
+		if (auto const reversed{inputcab != (CabActive != -1 ? 1 : 0)}; reversed)
 		{
 			swap = !swap;
 		} // TODO: check whether this part has RL equivalent
@@ -12624,8 +12609,7 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 	}
 	else if (Command == "BrakeDelay")
 	{
-		auto const brakesetting = static_cast<int>(std::floor(CValue1));
-		if (true == Hamulec->SetBDF(brakesetting))
+		if (auto const brakesetting = static_cast<int>(std::floor(CValue1)); true == Hamulec->SetBDF(brakesetting))
 		{
 			BrakeDelayFlag = brakesetting;
 			OK = true;
@@ -12784,8 +12768,7 @@ bool TMoverParameters::reload_FIZ()
 	WriteLog("[DEV] Reloading FIZ for " + Name);
 	// pause simulation
 	Global.iPause |= 0b1000;
-	bool result = LoadFIZ(chkPath);
-	if (result == true)
+	if (bool result = LoadFIZ(chkPath); result == true)
 	{
 		// jesli sie udalo przeladowac FIZ
 		Global.iPause &= 0b0111;
