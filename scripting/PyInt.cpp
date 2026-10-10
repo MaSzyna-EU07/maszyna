@@ -363,7 +363,7 @@ void python_taskqueue::exit()
 	// document intent. clearing the deque also actually releases the tasks,
 	// which the previous code did not do (cancel() is a no-op stub).
 	{
-		std::lock_guard<std::mutex> lock(m_tasks.mutex);
+		std::scoped_lock lock(m_tasks.mutex);
 		for (auto &task : m_tasks.data)
 		{
 			task->cancel();
@@ -371,7 +371,7 @@ void python_taskqueue::exit()
 		m_tasks.data.clear();
 	}
 	{
-		std::lock_guard<std::mutex> lock(m_uploadtasks.mutex);
+		std::scoped_lock lock(m_uploadtasks.mutex);
 		m_uploadtasks.data.clear();
 	}
 	// reclaim cached python objects while the interpreter is still alive,
@@ -410,7 +410,7 @@ auto python_taskqueue::insert(task_request const &Task) -> bool
 	bool newtaskinserted{false};
 	// acquire a lock on the task queue and add the new task
 	{
-		std::lock_guard<std::mutex> lock(m_tasks.mutex);
+		std::scoped_lock lock(m_tasks.mutex);
 		// check the task list for a pending request with the same target
 		for (auto &task : m_tasks.data)
 		{
@@ -555,7 +555,7 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 			task = nullptr;
 			// acquire a lock on the task queue and potentially grab a task from it
 			{
-				std::lock_guard<std::mutex> lock(Tasks.mutex);
+				std::scoped_lock lock(Tasks.mutex);
 				if (false == Tasks.data.empty())
 				{
 					// fifo
@@ -574,7 +574,7 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 						task->upload();
 					else
 					{
-						std::lock_guard<std::mutex> lock(Upload_Tasks.mutex);
+						std::scoped_lock lock(Upload_Tasks.mutex);
 						Upload_Tasks.data.push_back(task);
 					}
 					if (PyErr_Occurred() != nullptr)
@@ -609,7 +609,7 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 
 void python_taskqueue::update()
 {
-	std::lock_guard<std::mutex> lock(m_uploadtasks.mutex);
+	std::scoped_lock lock(m_uploadtasks.mutex);
 
 	for (auto &task : m_uploadtasks.data)
 		task->upload();

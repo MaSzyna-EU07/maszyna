@@ -447,7 +447,7 @@ class condition_variable
 	}
 	void spurious(bool const Spurious)
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_spurious = Spurious;
 	}
 
