@@ -294,7 +294,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     return dV - dV1;
 }
 
-void TNESt3::EStParams( double const /*i_crc*/ ) // parametry charakterystyczne dla ESt
+void TNESt3::EStParams( double const /*i_crc*/ ) const // parametry charakterystyczne dla ESt
 {
 }
 
@@ -384,7 +384,7 @@ void TNESt3::CheckReleaser(double const dt) // odluzniacz
     }
 }
 
-double TNESt3::CVs(double const /*BP*/) // napelniacz sterujacego
+double TNESt3::CVs(double const /*BP*/) const // napelniacz sterujacego
 {
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
@@ -398,7 +398,7 @@ double TNESt3::CVs(double const /*BP*/) // napelniacz sterujacego
         return Nozzles[dSm];
 }
 
-double TNESt3::BVs(double const BCP) // napelniacz pomocniczego
+double TNESt3::BVs(double const BCP) const // napelniacz pomocniczego
 {
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };

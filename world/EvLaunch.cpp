@@ -156,7 +156,7 @@ bool TEventLauncher::Load(cParser *parser)
     return true;
 }
 
-bool TEventLauncher::check_activation_key() {
+bool TEventLauncher::check_activation_key() const {
 	if (iKey <= 0)
 		return false;
 
@@ -211,7 +211,7 @@ bool TEventLauncher::check_activation() {
     return bCond;
 }
 
-bool TEventLauncher::check_conditions() {
+bool TEventLauncher::check_conditions() const {
 
     auto bCond { true };
 

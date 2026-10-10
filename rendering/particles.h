@@ -122,7 +122,7 @@ private:
         glm::vec3 color { 16.f / 255.f };
 
         void deserialize( cParser &Input );
-        void initialize( smoke_particle &Particle );
+        void initialize( smoke_particle &Particle ) const;
     };
 
     using bounding_box = glm::dvec3[ 2 ]; // bounding box of owned particles

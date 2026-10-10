@@ -17,7 +17,7 @@ void TSpring::Init(double nKs, double nKd) {
     kd = static_cast<float>(Kd);
 }
 
-glm::dvec3 TSpring::ComputateForces(glm::dvec3 const &pPosition1, glm::dvec3 const &pPosition2) {
+glm::dvec3 TSpring::ComputateForces(glm::dvec3 const &pPosition1, glm::dvec3 const &pPosition2) const {
 	glm::vec3 springForce;
     //		p1 = &system[spring->p1];
     //		p2 = &system[spring->p2];

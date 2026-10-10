@@ -146,7 +146,7 @@ scenario_time::year_day( int Day, const int Month, const int Year ) const {
 }
 
 void
-scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yearday ) {
+scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yearday ) const {
 
     WORD daytab[ 2 ][ 13 ] = {
         { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365 },

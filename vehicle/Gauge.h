@@ -82,7 +82,7 @@ private:
     float
         GetScaledValue() const;
     void
-        UpdateAnimation( TSubModel *Submodel );
+        UpdateAnimation( TSubModel *Submodel ) const;
 
 // members
     TGaugeAnimation m_animation { TGaugeAnimation::gt_Unknown }; // typ ruchu

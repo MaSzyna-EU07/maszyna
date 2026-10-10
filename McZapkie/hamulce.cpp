@@ -450,7 +450,7 @@ double TBrake::GetFC(double const Vel, double const N)
 
 /// <summary>Returns the gauge pressure inside the brake cylinder.</summary>
 // cisnienie cylindra hamulcowego
-double TBrake::GetBCP()
+double TBrake::GetBCP() const
 {
 	return BrakeCyl->P();
 }
@@ -464,14 +464,14 @@ double TBrake::GetEDBCP()
 
 /// <summary>Returns the auxiliary reservoir (ZP) pressure.</summary>
 // cisnienie zbiornika pomocniczego
-double TBrake::GetBRP()
+double TBrake::GetBRP() const
 {
 	return BrakeRes->P();
 }
 
 /// <summary>Returns the valve pre-chamber pressure.</summary>
 // cisnienie komory wstepnej
-double TBrake::GetVRP()
+double TBrake::GetVRP() const
 {
 	return ValveRes->P();
 }
@@ -516,7 +516,7 @@ double TBrake::GetHPFlow(double const HP, double const dt)
 /// <summary>
 /// Returns the piston force from the cylinder pressure (BCA * 100 * P).
 /// </summary>
-double TBrake::GetBCF()
+double TBrake::GetBCF() const
 {
 	return BCA * 100 * BrakeCyl->P();
 }
@@ -572,7 +572,7 @@ void TBrake::ASB(int const state)
 }
 
 /// <summary>Returns the raw BrakeStatus bitfield.</summary>
-int TBrake::GetStatus()
+int TBrake::GetStatus() const
 {
 	return BrakeStatus;
 }
@@ -927,7 +927,7 @@ void TESt::CheckState(double const BCP, double & /*dV1*/)
 /// </summary>
 /// <param name="BP">Brake cylinder (or impulse) pressure.</param>
 /// <returns>Opening coefficient (0 closed, 1 fully open).</returns>
-double TESt::CVs(double const BP)
+double TESt::CVs(double const BP) const
 {
 	double VVP;
 	double BVP;
@@ -958,7 +958,7 @@ double TESt::CVs(double const BP)
 /// </summary>
 /// <param name="BCP">Brake cylinder pressure.</param>
 /// <returns>Opening coefficient.</returns>
-double TESt::BVs(double const BCP)
+double TESt::BVs(double const BCP) const
 {
 	double VVP;
 	double BVP;
@@ -1086,7 +1086,7 @@ void TESt::Init(double const PP, double const HPP, double const LPP, double cons
 /// derived variants and currently a no-op.
 /// </summary>
 /// <param name="i_crc">Characteristic value.</param>
-void TESt::EStParams(double const /*i_crc*/) {}
+void TESt::EStParams(double const /*i_crc*/) const {}
 
 /// <summary>Returns the control reservoir (ZS) pressure.</summary>
 double TESt::GetCRP()
@@ -2188,7 +2188,7 @@ void TCV1::CheckState(double const BCP, double &dV1)
 /// </summary>
 /// <param name="BP">Cylinder pressure.</param>
 /// <returns>Opening coefficient.</returns>
-double TCV1::CVs(double const BP)
+double TCV1::CVs(double const BP) const
 {
 	// przeplyw ZS <-> PG
 	if (BP > 0.05)
@@ -2204,7 +2204,7 @@ double TCV1::CVs(double const BP)
 /// </summary>
 /// <param name="BCP">Cylinder pressure.</param>
 /// <returns>Opening coefficient.</returns>
-double TCV1::BVs(double const BCP)
+double TCV1::BVs(double const BCP) const
 {
 	double VVP;
 	double BVP;
@@ -2578,7 +2578,7 @@ void TKE::CheckState(double const BCP, double & /*dV1*/)
 /// </summary>
 /// <param name="BP">Cylinder (or impulse) pressure.</param>
 /// <returns>Opening coefficient.</returns>
-double TKE::CVs(double const BP)
+double TKE::CVs(double const BP) const
 {
 	double VVP;
 	double BVP;
@@ -2604,7 +2604,7 @@ double TKE::CVs(double const BP)
 /// </summary>
 /// <param name="BCP">Impulse-chamber pressure.</param>
 /// <returns>Opening coefficient.</returns>
-double TKE::BVs(double const /*BCP*/)
+double TKE::BVs(double const /*BCP*/) const
 {
 	double VVP;
 	double BVP;
@@ -3239,7 +3239,7 @@ double TFV4aM::GetRP()
 /// </summary>
 /// <param name="pos">Continuous handle position.</param>
 /// <returns>Interpolated target pressure [bar].</returns>
-double TFV4aM::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
+double TFV4aM::LPP_RP(double pos) const // cisnienie z zaokraglonej pozycji;
 {
 	int const i_pos = static_cast<int>(2 + std::floor(pos)); // zaokraglone w dol
 
@@ -3248,7 +3248,7 @@ double TFV4aM::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
 /// <summary>Returns true if pos is within ±0.5 of i_pos (detent test).</summary>
 /// <param name="pos">Continuous handle position.</param>
 /// <param name="i_pos">Detent centre.</param>
-bool TFV4aM::EQ(double pos, double i_pos)
+bool TFV4aM::EQ(double pos, double i_pos) const
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }
@@ -3425,7 +3425,7 @@ double TMHZ_EN57::GetEP(double pos)
 /// </summary>
 /// <param name="pos">Continuous handle position.</param>
 /// <returns>Target brake-pipe pressure [bar].</returns>
-double TMHZ_EN57::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
+double TMHZ_EN57::LPP_RP(double pos) const // cisnienie z zaokraglonej pozycji;
 {
 	if (pos > 8.5)
 		return 5.0 - 0.15 * pos - 0.35;
@@ -3456,7 +3456,7 @@ void TMHZ_EN57::SetParams(bool AO, bool MO, double OverP, double, double OMP, do
 }
 
 /// <summary>Returns true if pos is within ±0.5 of i_pos (detent test).</summary>
-bool TMHZ_EN57::EQ(double pos, double i_pos)
+bool TMHZ_EN57::EQ(double pos, double i_pos) const
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }
@@ -3636,7 +3636,7 @@ void TMHZ_K5P::SetParams(bool AO, bool MO, double OverP, double FSF, double OMP,
 }
 
 /// <summary>Returns true if pos is within ±0.5 of i_pos (detent test).</summary>
-bool TMHZ_K5P::EQ(double pos, double i_pos)
+bool TMHZ_K5P::EQ(double pos, double i_pos) const
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }
@@ -3815,7 +3815,7 @@ void TMHZ_6P::SetParams(bool AO, bool MO, double OverP, double FSF, double OMP, 
 }
 
 /// <summary>Returns true if pos is within ±0.5 of i_pos (detent test).</summary>
-bool TMHZ_6P::EQ(double pos, double i_pos)
+bool TMHZ_6P::EQ(double pos, double i_pos) const
 {
 	return pos <= i_pos + 0.5 && pos > i_pos - 0.5;
 }

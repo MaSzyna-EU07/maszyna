@@ -81,27 +81,27 @@ private:
 // methods
     // generate and send section data to provided output
     void update_section_vehicle( std::vector<text_line> &Output );
-    void update_section_engine( std::vector<text_line> &Output );
-    void update_section_ai( std::vector<text_line> &Output );
-    void update_section_scantable( std::vector<text_line> &Output );
-    void update_section_scenario( std::vector<text_line> &Output );
+    void update_section_engine( std::vector<text_line> &Output ) const;
+    void update_section_ai( std::vector<text_line> &Output ) const;
+    void update_section_scantable( std::vector<text_line> &Output ) const;
+    void update_section_scenario( std::vector<text_line> &Output ) const;
     void update_section_eventqueue( std::vector<text_line> &Output );
-    void update_section_powergrid( std::vector<text_line> &Output );
-    void update_section_camera( std::vector<text_line> &Output );
-    void update_section_renderer( std::vector<text_line> &Output );
+    void update_section_powergrid( std::vector<text_line> &Output ) const;
+    void update_section_camera( std::vector<text_line> &Output ) const;
+    void update_section_renderer( std::vector<text_line> &Output ) const;
 #ifdef WITH_UART
-    void update_section_uart( std::vector<text_line> &Output );
+    void update_section_uart( std::vector<text_line> &Output ) const;
 #endif
     // section update helpers
     std::string update_vehicle_coupler( int const Side );
     std::string update_vehicle_brake() const;
     // renders provided lines, under specified collapsing header
     bool render_section( std::string const &Header, std::vector<text_line> const &Lines );
-    bool render_section( std::vector<text_line> const &Lines );
+    bool render_section( std::vector<text_line> const &Lines ) const;
     bool render_section_scenario();
     bool render_section_eventqueue();
-    bool render_section_settings();
-	bool render_section_developer();
+    bool render_section_settings() const;
+	bool render_section_developer() const;
 	    // members
     std::array<char, 1024> m_buffer;
     std::array<char, 128> m_eventsearch;

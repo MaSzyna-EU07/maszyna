@@ -91,7 +91,7 @@ private:
         default_bindings();
     // potentially replaces supplied command with a more relevant one
     user_command
-        adjust_command( user_command Command );
+        adjust_command( user_command Command ) const;
 
 // members
     command_relay m_relay;

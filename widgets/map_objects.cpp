@@ -5,7 +5,7 @@
 
 map::objects map::Objects;
 
-map::sorted_object_list map::objects::find_in_range(glm::vec3 from, float distance)
+map::sorted_object_list map::objects::find_in_range(glm::vec3 from, float distance) const
 {
 	sorted_object_list items;
 

@@ -469,7 +469,7 @@ public:
         update();
     // checks if given command must be scheduled on server
 	bool
-	    is_network_target(const uint32_t Recipient);
+	    is_network_target(const uint32_t Recipient) const;
 
 	// pops commands from intercept queue
 	commands_map pop_intercept_queue();

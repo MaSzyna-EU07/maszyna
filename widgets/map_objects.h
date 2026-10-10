@@ -87,7 +87,7 @@ struct objects
 	bool poi_dirty = true;
 
 	// returns objects in range from vec3, NaN in Y ignores it
-	sorted_object_list find_in_range(glm::vec3 from, float distance);
+	sorted_object_list find_in_range(glm::vec3 from, float distance) const;
 };
 
 extern objects Objects;

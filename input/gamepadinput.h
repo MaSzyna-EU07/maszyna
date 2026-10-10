@@ -77,7 +77,7 @@ private:
     using inputaxis_sequence = std::vector<input_axis>;
 // methods
     bool recall_bindings();
-    void bind( std::vector< std::reference_wrapper<user_command> > &Targets, cParser &Input, std::unordered_map<std::string, user_command> const &Translator, std::string const Point );
+    void bind( std::vector< std::reference_wrapper<user_command> > &Targets, cParser &Input, std::unordered_map<std::string, user_command> const &Translator, std::string const Point ) const;
     void on_button( int const Button, int const Action );
     void process_axes();
 

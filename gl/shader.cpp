@@ -52,7 +52,7 @@ bool has_gl_extension(char const *name) {
 
 } // anonymous namespace
 
-std::string gl::shader::read_file(const std::string &filename)
+std::string gl::shader::read_file(const std::string &filename) const
 {
     std::stringstream stream;
     std::ifstream f;
@@ -299,7 +299,7 @@ void gl::shader::parse_param_entries(std::string &str)
     }
 }
 
-void gl::shader::log_error(const std::string &str)
+void gl::shader::log_error(const std::string &str) const
 {
     ErrorLog("bad shader: " + name + ": " + str, logtype::shader);
 }

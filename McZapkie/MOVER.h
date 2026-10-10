@@ -2099,7 +2099,7 @@ class TMoverParameters
 	int CabActive = 0; // numer kabiny, z której jest sterowanie: 1 lub -1; w przeciwnym razie brak sterowania - rozrzad
 	int CabOccupied = 0; // numer kabiny, w ktorej jest obsada (zwykle jedna na skład) // TODO: move to TController
 	bool CabMaster = false; // czy pojazd jest nadrzędny w składzie
-	inline bool IsCabMaster()
+	inline bool IsCabMaster() const
 	{
 		return CabActive == CabOccupied && CabMaster;
 	} // czy aktualna kabina jest na pewno tą, z której można sterować
@@ -2306,7 +2306,7 @@ class TMoverParameters
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;
-	inline double IsVehicleEIMBrakingFactor()
+	inline double IsVehicleEIMBrakingFactor() const
 	{
 		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : eimv[eimv_Ipoj] < 0 ? -1.0 : 1.0;
 	}
@@ -2322,16 +2322,16 @@ class TMoverParameters
 	                       TRotation const &NewRot); // oblicza przesuniecie pojazdu
 	double FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot); // oblicza przesuniecie pojazdu - wersja zoptymalizowana
 	void compute_movement_(double const Deltatime);
-	double ShowEngineRotation(int VehN);
+	double ShowEngineRotation(int VehN) const;
 
 	// Q *******************************************************************************************
 	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
 	double GetTrainsetHighVoltage() const;
 	bool switch_physics(bool const State);
-	double LocalBrakeRatio(void);
-	double ManualBrakeRatio(void);
-	double PipeRatio(void); /*ile napelniac*/
-	double RealPipeRatio(void); /*jak szybko*/
+	double LocalBrakeRatio(void) const;
+	double ManualBrakeRatio(void) const;
+	double PipeRatio(void) const; /*ile napelniac*/
+	double RealPipeRatio(void) const; /*jak szybko*/
 	double BrakeVP(void) const;
 	double EngineRPMRatio() const; // returns current engine revolutions as percentage of max engine revolutions, in range 0-1
 	double EngineIdleRPM() const;
@@ -2340,7 +2340,7 @@ class TMoverParameters
 	/*! przesylanie komend sterujacych*/
 	bool SendCtrlToNext(std::string const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
 	bool SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
-	double GetExternalCommand(std::string &Command);
+	double GetExternalCommand(std::string &Command) const;
 	bool RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
 	bool RunInternalCommand();
 	void PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
@@ -2362,7 +2362,7 @@ class TMoverParameters
 	/*! pomocniczy nastawnik:*/
 	bool IncScndCtrl(int CtrlSpeed);
 	bool DecScndCtrl(int CtrlSpeed);
-	int GetVirtualScndPos();
+	int GetVirtualScndPos() const;
 	bool IsScndCtrlNoPowerPos() const;
 	bool IsScndCtrlMaxPowerPos() const;
 
@@ -2429,7 +2429,7 @@ class TMoverParameters
 	double TractionForce(double dt);
 	double FrictionForce() const;
 	double BrakeForceR(double ratio, double velocity);
-	double BrakeForceP(double press, double velocity);
+	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);
 	double CouplerForce(int const End, double dt);
 	void CollisionDetect(int const End, double const dt);
@@ -2487,8 +2487,8 @@ class TMoverParameters
 	/*funkcje uzalezniajace sile pociagowa od predkosci: v2n, n2r, current, momentum*/
 	double v2n(void);
 	double Current(double n, double U);
-	double Momentum(double I);
-	double MomentumF(double I, double Iw, int SCP);
+	double Momentum(double I) const;
+	double MomentumF(double I, double Iw, int SCP) const;
 
 	bool CutOffEngine(void); // odlaczenie udszkodzonych silnikow
 	/*funkcje automatycznego rozruchu np EN57*/
@@ -2577,9 +2577,9 @@ class TMoverParameters
 	void LoadFIZ_DimmerList(std::string const &Input);
 	void LoadFIZ_CompressorList(std::string const &Input);
 	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const Prefix, std::string const &Input);
-	TPowerType LoadFIZ_PowerDecode(std::string const &Power);
-	TPowerSource LoadFIZ_SourceDecode(std::string const &Source);
-	TEngineType LoadFIZ_EngineDecode(std::string const &Engine);
+	TPowerType LoadFIZ_PowerDecode(std::string const &Power) const;
+	TPowerSource LoadFIZ_SourceDecode(std::string const &Source) const;
+	TEngineType LoadFIZ_EngineDecode(std::string const &Engine) const;
 	bool readMPT0(std::string const &line);
 	bool readMPT(std::string const &line); // Q 20160717
 	bool readMPTElectricSeries(std::string const &line);

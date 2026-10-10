@@ -194,7 +194,7 @@ opengl_vbogeometrybank::setup_buffer() {
 }
 
 void
-opengl_vbogeometrybank::bind_buffer() {
+opengl_vbogeometrybank::bind_buffer() const {
 
     ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_indexbuffer );
     ::glBindBuffer( GL_ARRAY_BUFFER, m_vertexbuffer );

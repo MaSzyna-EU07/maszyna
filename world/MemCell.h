@@ -85,10 +85,10 @@ class memory_table : public basic_table<TMemCell> {
 public:
     // legacy method, initializes traction after deserialization from scenario file
     void
-        InitCells();
+        InitCells() const;
     // legacy method, sends content of all cells to the log
     void
-        log_all();
+        log_all() const;
 };
 
 //---------------------------------------------------------------------------

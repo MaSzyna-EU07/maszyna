@@ -68,7 +68,7 @@ class TTraction : public scene::basic_node
     // creates geometry data in specified geometry bank. returns: number of created elements, or NULL
     // NOTE: deleting nodes doesn't currently release geometry data owned by the node. TODO: implement erasing individual geometry chunks and banks
     std::size_t create_geometry( gfx::geometrybank_handle const &Bank );
-    int TestPoint(glm::dvec3 const &Point);
+    int TestPoint(glm::dvec3 const &Point) const;
     void Connect(int my, TTraction *with, int to);
     void Init();
     bool WhereIs();

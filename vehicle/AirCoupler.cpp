@@ -25,7 +25,7 @@ AirCoupler::~AirCoupler() = default;
  * \return 2 when \(slanted\) TModel3d \c ModelxOn exists
  * \return 0 when neither of them exist
  */
-int AirCoupler::GetStatus()
+int AirCoupler::GetStatus() const
 {
     if (ModelxOn)
 		return 2;

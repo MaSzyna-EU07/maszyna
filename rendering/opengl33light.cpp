@@ -16,7 +16,7 @@ void opengl33_light::apply_intensity(float const Factor) {
 	factor = Factor;
 }
 
-void opengl33_light::apply_angle() {}
+void opengl33_light::apply_angle() const {}
 
 
 //---------------------------------------------------------------------------

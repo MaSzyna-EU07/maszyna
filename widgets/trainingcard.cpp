@@ -187,7 +187,7 @@ void trainingcard_panel::render_contents()
 	}
 }
 
-const std::string *trainingcard_panel::is_recording()
+const std::string *trainingcard_panel::is_recording() const
 {
 	if (!start_time_wall)
 		return nullptr;

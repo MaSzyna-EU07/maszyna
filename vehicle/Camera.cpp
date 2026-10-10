@@ -194,7 +194,7 @@ void TCamera::Update()
     }
 }
 
-bool TCamera::SetMatrix( glm::dmat4 &Matrix ) {
+bool TCamera::SetMatrix( glm::dmat4 &Matrix ) const {
 
     Matrix = glm::rotate(Matrix, -(double)Angle.x, glm::dvec3(1, 0, 0));
 	Matrix = glm::rotate(Matrix, -(double)Angle.y, glm::dvec3(0, 1, 0)); // w zewnętrznym widoku: kierunek patrzenia

@@ -457,7 +457,7 @@ float TGauge::GetScaledValue() const {
 }
 
 void
-TGauge::UpdateAnimation( TSubModel *Submodel ) {
+TGauge::UpdateAnimation( TSubModel *Submodel ) const {
 
     if( Submodel == nullptr ) { return; }
 

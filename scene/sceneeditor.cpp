@@ -102,7 +102,7 @@ basic_editor::translate_node( scene::basic_node *Node, float const Offset ) {
 }
 
 void
-basic_editor::translate_instance( TAnimModel *Instance, glm::dvec3 const &Location ) {
+basic_editor::translate_instance( TAnimModel *Instance, glm::dvec3 const &Location ) const {
 
     simulation::Region->erase( Instance );
     Instance->location( Location );
@@ -110,7 +110,7 @@ basic_editor::translate_instance( TAnimModel *Instance, glm::dvec3 const &Locati
 }
 
 void
-basic_editor::translate_instance( TAnimModel *Instance, float const Offset ) {
+basic_editor::translate_instance( TAnimModel *Instance, float const Offset ) const {
 
     auto location { Instance->location() };
     location.y += Offset;
@@ -118,7 +118,7 @@ basic_editor::translate_instance( TAnimModel *Instance, float const Offset ) {
 }
 
 void
-basic_editor::translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location ) {
+basic_editor::translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location ) const {
 
     simulation::Region->erase( Memorycell );
     Memorycell->location( Location );
@@ -126,7 +126,7 @@ basic_editor::translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Loca
 }
 
 void
-basic_editor::translate_memorycell( TMemCell *Memorycell, float const Offset ) {
+basic_editor::translate_memorycell( TMemCell *Memorycell, float const Offset ) const {
 
     auto location { Memorycell->location() };
     location.y += Offset;
@@ -184,7 +184,7 @@ basic_editor::rotate_node( scene::basic_node *Node, glm::vec3 const &Angle ) {
 }
 
 void
-basic_editor::rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle ) {
+basic_editor::rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle ) const {
 
     auto targetangle { Instance->Angles() + Angle };
 

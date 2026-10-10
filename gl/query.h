@@ -22,7 +22,7 @@ private:
 	thread_local static query* active_queries[6];
 
 protected:
-	GLenum glenum_target(targets target);
+	GLenum glenum_target(targets target) const;
 
 public:
 	query(targets target);
