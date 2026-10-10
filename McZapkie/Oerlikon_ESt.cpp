@@ -637,9 +637,9 @@ void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie 
     Nozzles[dSm] = 0.9;
 
     // przeliczanie z mm^2 na l/m
-    for (int i = 0; i < dMAX; ++i)
+    for (auto &nozzle : Nozzles)
     {
-        Nozzles[i] = d2A(Nozzles[i]); //(/1000^2*pi/4*1000)
+        nozzle = d2A(nozzle); //(/1000^2*pi/4*1000)
     }
     for (int i = 1; i < 4; ++i)
     {

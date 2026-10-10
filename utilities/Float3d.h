@@ -234,8 +234,8 @@ public:
     }
     void Identity()
     {
-        for (int i = 0; i < 16; ++i)
-            e[i] = 0;
+        for (auto &element : e)
+            element = 0;
         e[0] = e[5] = e[10] = e[15] = 1.0f;
     }
     const float *operator[](int i) const

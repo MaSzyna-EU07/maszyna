@@ -73,16 +73,11 @@ bool
 cFrustum::point_inside( float const X, float const Y, float const Z ) const {
 
     // cycle through the sides of the frustum, checking if the point is behind them
-    for( int idx = 0; idx < 6; ++idx ) {
-        if( m_frustum[ idx ][ plane_A ] * X
-            + m_frustum[ idx ][ plane_B ] * Y
-            + m_frustum[ idx ][ plane_C ] * Z
-            + m_frustum[ idx ][ plane_D ] <= 0 )
-            return false;
-    }
-
-    // the point is in front of each frustum plane, i.e. inside of the frustum
-    return true;
+    return std::ranges::all_of( m_frustum, [&]( auto const &frustumplane ) {
+        return frustumplane[ plane_A ] * X
+                + frustumplane[ plane_B ] * Y
+                + frustumplane[ plane_C ] * Z
+                + frustumplane[ plane_D ] > 0; } );
 }
 
 float
@@ -90,12 +85,12 @@ cFrustum::sphere_inside( float const X, float const Y, float const Z, float cons
 
     float distance;
     // go through all the sides of the frustum. bail out as soon as possible
-    for( int idx = 0; idx < 6; ++idx ) {
+    for (auto &frustumplane : m_frustum) {
         distance =
-            m_frustum[ idx ][ plane_A ] * X
-            + m_frustum[ idx ][ plane_B ] * Y
-            + m_frustum[ idx ][ plane_C ] * Z
-            + m_frustum[ idx ][ plane_D ];
+            frustumplane[ plane_A ] * X
+            + frustumplane[ plane_B ] * Y
+            + frustumplane[ plane_C ] * Z
+            + frustumplane[ plane_D ];
         if( distance <= -Radius )
             return 0.0f;
     }
@@ -105,52 +100,50 @@ cFrustum::sphere_inside( float const X, float const Y, float const Z, float cons
 bool
 cFrustum::cube_inside( float const X, float const Y, float const Z, float const Size ) const {
 
-    for( int idx = 0; idx < 6; ++idx ) {
-        if( m_frustum[ idx ][ plane_A ] * ( X - Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y - Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z - Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X + Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y - Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z - Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X - Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y + Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z - Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X + Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y + Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z - Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X - Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y - Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z + Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X + Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y - Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z + Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X - Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y + Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z + Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X + Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y + Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z + Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
+    // the cube is inside unless all of its corners lie behind one of the frustum planes
+    return std::ranges::all_of( m_frustum, [&]( auto const &frustumplane ) {
+        if( frustumplane[ plane_A ] * ( X - Size )
+            + frustumplane[ plane_B ] * ( Y - Size )
+            + frustumplane[ plane_C ] * ( Z - Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X + Size )
+            + frustumplane[ plane_B ] * ( Y - Size )
+            + frustumplane[ plane_C ] * ( Z - Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X - Size )
+            + frustumplane[ plane_B ] * ( Y + Size )
+            + frustumplane[ plane_C ] * ( Z - Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X + Size )
+            + frustumplane[ plane_B ] * ( Y + Size )
+            + frustumplane[ plane_C ] * ( Z - Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X - Size )
+            + frustumplane[ plane_B ] * ( Y - Size )
+            + frustumplane[ plane_C ] * ( Z + Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X + Size )
+            + frustumplane[ plane_B ] * ( Y - Size )
+            + frustumplane[ plane_C ] * ( Z + Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X - Size )
+            + frustumplane[ plane_B ] * ( Y + Size )
+            + frustumplane[ plane_C ] * ( Z + Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X + Size )
+            + frustumplane[ plane_B ] * ( Y + Size )
+            + frustumplane[ plane_C ] * ( Z + Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
 
-        return false;
-    }
-
-    return true;
+        return false; } );
 }
 
 void cFrustum::normalize_plane( cFrustum::side const Side ) {

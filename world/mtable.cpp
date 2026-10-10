@@ -217,9 +217,9 @@ void TTrainParameters::NewName(std::string const &NewTrainName)
     Direction = 1;
     Relation1 = "";
     Relation2 = "";
-    for (int i = 0; i < MaxTTableSize + 1; ++i)
+    for (auto &tableline : TimeTable)
     {
-        TimeTable[ i ] = TMTableLine();
+        tableline = TMTableLine();
     }
     TTVmax = 100; /*wykasowac*/
     BrakeRatio = 0;

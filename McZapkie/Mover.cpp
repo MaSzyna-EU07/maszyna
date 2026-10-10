@@ -471,23 +471,23 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string TypeNameInit, 
 	iLights[1] = 0; // światła zgaszone
 
 	// inicjalizacja stalych
-	for (int b = 0; b < ResArraySize + 1; ++b)
+	for (auto &scheme : RList)
 	{
-		RList[b] = TScheme();
+		scheme = TScheme();
 	}
 	RlistSize = 0;
-	for (int b = 0; b < MotorParametersArraySize + 1; ++b)
+	for (auto &motorparam : MotorParam)
 	{
-		MotorParam[b] = TMotorParameters();
+		motorparam = TMotorParameters();
 	}
 
-	for (int b = 0; b < 2; ++b)
+	for (auto &cablights : Lights)
 		for (int k = 0; k < 17; ++k)
-			Lights[b][k] = 0;
+			cablights[k] = 0;
 
-	for (int b = 0; b < 4; ++b)
+	for (auto &compressorrow : CompressorList)
 		for (int k = 1; k < 9; ++k)
-			CompressorList[b][k] = 0;
+			compressorrow[k] = 0;
 	CompressorList[0][0] = 0.0;
 	CompressorList[1][0] = CompressorList[2][0] = CompressorList[3][0] = 1.0;
 
@@ -503,9 +503,9 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string TypeNameInit, 
 		BrakePressureTable[-2].BrakePressureVal = -1.0;
 		BrakePressureTable[-2].FlowSpeedVal = 0.0;
 	}
-	for (int b = 0; b < 4; ++b)
+	for (auto &delay : BrakeDelay)
 	{
-		BrakeDelay[b] = 0.0;
+		delay = 0.0;
 	}
 
 	for (int b = 0; b < 2; ++b) // Ra: kto tu zrobił "for b:=1 to 2 do" ???
@@ -518,40 +518,40 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string TypeNameInit, 
 		Couplers[b].DmaxC = 0.1;
 		Couplers[b].FmaxC = 1000.0;
 	}
-	for (int b = 0; b < 3; ++b)
+	for (auto &cylindermult : BrakeCylMult)
 	{
-		BrakeCylMult[b] = 0.0;
+		cylindermult = 0.0;
 	}
 
-	for (int b = 0; b < 26; ++b)
+	for (auto &eimcvalue : eimc)
 	{
-		eimc[b] = 0.0;
+		eimcvalue = 0.0;
 	}
 	eimc[eimc_p_eped] = 1.5;
 
-	for (int b = 0; b < 2; ++b)
+	for (auto &couplerentry : Couplers)
 	{
-		Couplers[b].AllowedFlag = 3; // domyślnie hak i hamulec, inne trzeba włączyć jawnie w FIZ
-		Couplers[b].CouplingFlag = 0;
-		Couplers[b].Connected = nullptr;
-		Couplers[b].ConnectedNr = 0; // Ra: to nie ma znaczenia jak nie podłączony
-		Couplers[b].Render = false;
-		Couplers[b].CForce = 0.0;
-		Couplers[b].Dist = 0.0;
-		Couplers[b].CheckCollision = false;
+		couplerentry.AllowedFlag = 3; // domyślnie hak i hamulec, inne trzeba włączyć jawnie w FIZ
+		couplerentry.CouplingFlag = 0;
+		couplerentry.Connected = nullptr;
+		couplerentry.ConnectedNr = 0; // Ra: to nie ma znaczenia jak nie podłączony
+		couplerentry.Render = false;
+		couplerentry.CForce = 0.0;
+		couplerentry.Dist = 0.0;
+		couplerentry.CheckCollision = false;
 	}
 
-	for (int b = 0; b < 5; ++b)
+	for (auto &brakepress : MaxBrakePress)
 	{
-		MaxBrakePress[b] = 0.0;
+		brakepress = 0.0;
 	}
 
 	Vel = abs(VelInitial);
 	V = VelInitial / 3.6;
 
-	for (int b = 0; b < 21; b++)
+	for (auto &eimvvalue : eimv)
 	{
-		eimv[b] = 0.0;
+		eimvvalue = 0.0;
 	}
 
 	RunningShape.Len = 1.0;
@@ -1933,10 +1933,8 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 	                     Coupling == coupling::power24v    ? &PowerCircuits[0].second :
 	                                                         nullptr;
 
-	for (auto side = 0; side < 2; ++side)
+	for (auto &coupler : Couplers)
 	{
-
-		auto &coupler{Couplers[side]};
 		auto *coupling = Coupling == coupling::highvoltage ? &coupler.power_high :
 		                 Coupling == coupling::power110v   ? &coupler.power_110v :
 		                 Coupling == coupling::power24v    ? &coupler.power_24v :
@@ -3978,10 +3976,10 @@ bool TMoverParameters::DynamicBrakeSwitch(bool Switch)
 	{
 		DynamicBrakeFlag = Switch;
 		DBS = true;
-		for (int b = 0; b < 2; b++)
+		for (auto &coupler : Couplers)
 			//  with Couplers[b] do
-			if (TestFlag(Couplers[b].CouplingFlag, coupling::control))
-				Couplers[b].Connected->DynamicBrakeFlag = Switch;
+			if (TestFlag(coupler.CouplingFlag, coupling::control))
+				coupler.Connected->DynamicBrakeFlag = Switch;
 		// end;
 		// if (DynamicBrakeType=dbrake_passive) and (TrainType=dt_ET42) then
 		// begin
@@ -4602,11 +4600,11 @@ void TMoverParameters::UpdatePipePressure(double dt)
 	{
 
 		LocBrakePress = LocHandle->GetCP();
-		for (int b = 0; b < 2; b++)
+		for (auto &couplerentry : Couplers)
 			// nie podoba mi się to rozwiązanie, chyba trzeba
 			// dodać jakiś wpis do fizyki na to
-			if ((TrainType & (dt_ET41 | dt_ET42)) != 0 && Couplers[b].Connected != nullptr && (Couplers[b].Connected->TrainType & (dt_ET41 | dt_ET42)) != 0 && (Couplers[b].CouplingFlag & 36) == 36)
-				LocBrakePress = std::max(Couplers[b].Connected->LocHandle->GetCP(), LocBrakePress);
+			if ((TrainType & (dt_ET41 | dt_ET42)) != 0 && couplerentry.Connected != nullptr && (couplerentry.Connected->TrainType & (dt_ET41 | dt_ET42)) != 0 && (couplerentry.CouplingFlag & 36) == 36)
+				LocBrakePress = std::max(couplerentry.Connected->LocHandle->GetCP(), LocBrakePress);
 
 		// if ((DynamicBrakeFlag) && (EngineType == ElectricInductionMotor))
 		//{
@@ -6493,8 +6491,8 @@ double TMoverParameters::TractionForce(double dt)
 				eimv_pr = 0.0;
 				EnginePower = 0.0;
 				{
-					for (int i = 0; i < 21; ++i)
-						eimv[i] = 0.0;
+					for (auto &eimvvalue : eimv)
+						eimvvalue = 0.0;
 				}
 				Hamulec->SetED(0.0);
 				InverterFrequency = 0.0; //(Hamulec as TLSt).SetLBP(LocBrakePress);
@@ -6558,9 +6556,9 @@ bool TMoverParameters::FuseFlagCheck(void) const
 	if (Power > 0.01)
 		FFC = FuseFlag;
 	else // pobor pradu jezeli niema mocy
-		for (int b = 0; b < 2; b++)
-			if (TestFlag(Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Power > 0.01)
-				FFC = Couplers[b].Connected->FuseFlagCheck();
+		for (auto &coupler : Couplers)
+			if (TestFlag(coupler.CouplingFlag, coupling::control) && coupler.Connected->Power > 0.01)
+				FFC = coupler.Connected->FuseFlagCheck();
 
 	return FFC;
 }
@@ -6788,9 +6786,9 @@ bool TMoverParameters::ResistorsFlagCheck(void) const
 		RFC = ResistorsFlag;
 	else // pobor pradu jezeli niema mocy
 	{
-		for (int b = 0; b < 2; b++)
-			if (TestFlag(Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Power > 0.01)
-				RFC = Couplers[b].Connected->ResistorsFlagCheck();
+		for (auto &coupler : Couplers)
+			if (TestFlag(coupler.CouplingFlag, coupling::control) && coupler.Connected->Power > 0.01)
+				RFC = coupler.Connected->ResistorsFlagCheck();
 	}
 	return RFC;
 }
@@ -8409,19 +8407,17 @@ bool TMoverParameters::AssignLoad(std::string const &Name, float const Amount)
 		return false;
 	}
 
-	for (auto const &loadattributes : LoadAttributes)
+	auto const loadattributes = std::ranges::find_if(LoadAttributes, [&](auto const &attributes) { return attributes.name == Name; });
+	if (loadattributes == std::end(LoadAttributes))
 	{
-		if (Name == loadattributes.name)
-		{
-			LoadTypeChange = LoadType.name != Name;
-			LoadType = loadattributes;
-			LoadAmount = std::clamp(Amount, 0.f, MaxLoad);
-			ComputeMass();
-			return true;
-		}
+		// didn't find matching load configuration, this type is unsupported
+		return false;
 	}
-	// didn't find matching load configuration, this type is unsupported
-	return false;
+	LoadTypeChange = LoadType.name != Name;
+	LoadType = *loadattributes;
+	LoadAmount = std::clamp(Amount, 0.f, MaxLoad);
+	ComputeMass();
+	return true;
 }
 
 // *************************************************************************************************
@@ -8989,10 +8985,10 @@ int s2NPW(std::string s)
 { // wylicza ilosc osi napednych z opisu ukladu osi
 	const char A = 64;
 	int NPW = 0;
-	for (std::size_t k = 0; k < s.size(); ++k)
+	for (char const chentry : s)
 	{
-		if (s[k] >= (char)65 && s[k] <= (char)90)
-			NPW += s[k] - A;
+		if (chentry >= (char)65 && chentry <= (char)90)
+			NPW += chentry - A;
 	}
 	return NPW;
 }
@@ -9001,10 +8997,10 @@ int s2NNW(std::string s)
 { // wylicza ilosc osi nienapedzanych z opisu ukladu osi
 	const char Zero = 48;
 	int NNW = 0;
-	for (std::size_t k = 0; k < s.size(); ++k)
+	for (char const ch : s)
 	{
-		if (s[k] >= (char)49 && s[k] <= (char)57)
-			NNW += s[k] - Zero;
+		if (ch >= (char)49 && ch <= (char)57)
+			NNW += ch - Zero;
 	}
 	return NNW;
 }

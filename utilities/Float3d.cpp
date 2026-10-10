@@ -15,20 +15,20 @@ http://mozilla.org/MPL/2.0/.
 
 void float4x4::deserialize_float32(std::istream &s)
 {
-	for (size_t i = 0; i < 16; i++)
-		e[i] = sn_utils::ld_float32(s);
+	for (auto &elemententry : e)
+		elemententry = sn_utils::ld_float32(s);
 }
 
 void float4x4::deserialize_float64(std::istream &s)
 {
-	for (size_t i = 0; i < 16; i++)
-		e[i] = (float)sn_utils::ld_float64(s);
+	for (auto &elemententry : e)
+		elemententry = (float)sn_utils::ld_float64(s);
 }
 
 void float4x4::serialize_float32(std::ostream &s) const
 {
-	for (size_t i = 0; i < 16; i++)
-		sn_utils::ls_float32(s, e[i]);
+	for (auto &element : e)
+		sn_utils::ls_float32(s, element);
 }
 
 void float4x4::Quaternion(float4 *q)

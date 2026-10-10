@@ -626,8 +626,8 @@ TTrain::TTrain()
 
 	for (int i = 0; i < 20; ++i)
 	{
-		for (int j = 0; j < 7; ++j)
-			fPress[i][j] = 0.0;
+		for (auto &press : fPress[i])
+			press = 0.0;
 		bBrakes[i][0] = bBrakes[i][1] = false;
 	}
 }
