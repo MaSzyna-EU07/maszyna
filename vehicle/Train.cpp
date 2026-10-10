@@ -585,11 +585,11 @@ std::vector<std::string> const TTrain::fPress_labels = {
 TTrain::TTrain()
 {
 
-	// McZapkie-240302 - przyda sie do tachometru
+	// McZapkie-240302 - przyda sie do tachometru
 
-	// asMessage="";
+	// asMessage="";
 	DynamicSet(nullptr); // ustawia wszystkie mv*
-	//-----
+	//-----
 
 	//
 	for (int i = 0; i < 8; i++)
