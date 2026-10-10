@@ -145,10 +145,10 @@ int lua::scriptapi_event_create(lua_State *L)
 int lua::scriptapi_event_find(lua_State *L)
 {
 	std::string name = lua_tostring(L, 1);
-	basic_event *event = simulation::Events.FindEvent(name);
-	if (event)
+	basic_event *foundevent = simulation::Events.FindEvent(name);
+	if (foundevent)
 	{
-		lua_pushlightuserdata(L, event);
+		lua_pushlightuserdata(L, foundevent);
 		return 1;
 	}
 	ErrorLog("lua: missing event: " + name);
@@ -158,8 +158,8 @@ int lua::scriptapi_event_find(lua_State *L)
 int lua::scriptapi_event_exists(lua_State *L)
 {
 	std::string name = lua_tostring(L, 1);
-	basic_event *event = simulation::Events.FindEvent(name);
-	lua_pushboolean(L, event != nullptr);
+	basic_event *foundevent = simulation::Events.FindEvent(name);
+	lua_pushboolean(L, foundevent != nullptr);
 	return 1;
 }
 
@@ -189,9 +189,9 @@ int lua::scriptapi_event_dispatch_n(lua_State *L)
 	std::string name = lua_tostring(L, 1);
 	auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
 	double delay = lua_tonumber(L, 3);
-	basic_event *event = simulation::Events.FindEvent(name);
-	if (event)
-		simulation::Events.AddToQuery(event, activator, delay);
+	basic_event *foundevent = simulation::Events.FindEvent(name);
+	if (foundevent)
+		simulation::Events.AddToQuery(foundevent, activator, delay);
 	else
 		ErrorLog("lua: missing event: " + name);
 	return 0;

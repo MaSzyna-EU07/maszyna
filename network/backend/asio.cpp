@@ -183,17 +183,17 @@ void network::tcp::client::connect()
 	if (this->conn)
 		return;
 
-	auto conn = std::make_shared<connection>(io_ctx, true, resume_frame_counter);
-	conn->set_handler(std::bind(&client::handle_message, this, conn, std::placeholders::_1));
+	auto newconnection = std::make_shared<connection>(io_ctx, true, resume_frame_counter);
+	newconnection->set_handler(std::bind(&client::handle_message, this, newconnection, std::placeholders::_1));
 
 	asio::ip::tcp::endpoint endpoint(
 	            asio::ip::make_address(host), static_cast<asio::ip::port_type>(port));
-	conn->m_socket.open(endpoint.protocol());
-	conn->m_socket.set_option(asio::ip::tcp::no_delay(true));
-	conn->m_socket.async_connect(endpoint,
+	newconnection->m_socket.open(endpoint.protocol());
+	newconnection->m_socket.set_option(asio::ip::tcp::no_delay(true));
+	newconnection->m_socket.async_connect(endpoint,
 	                    std::bind(&client::handle_accept, this, std::placeholders::_1));
 
-	this->conn = conn;
+	this->conn = newconnection;
 
 }
 

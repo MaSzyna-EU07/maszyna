@@ -62,7 +62,7 @@ void network::request_command::deserialize(std::istream &stream)
 		uint32_t sequence_size = sn_utils::ld_uint32(stream);
 
 		command_queue::commanddata_sequence sequence;
-		for (uint32_t i = 0; i < sequence_size; i++)
+		for (uint32_t j = 0; j < sequence_size; j++)
 		{
 			command_data data;
 			data.command = (user_command)sn_utils::ld_uint32(stream);

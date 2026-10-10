@@ -164,9 +164,9 @@ void ui::cameraview_panel::record_func()
 
 	if (!rec_name.empty()) {
 		const std::string magic{"{RECORD}"};
-		size_t pos = cmdline.find(magic);
-		if (pos != -1)
-			cmdline.replace(pos, magic.size(), rec_name);
+		size_t magicpos = cmdline.find(magic);
+		if (magicpos != -1)
+			cmdline.replace(magicpos, magic.size(), rec_name);
 	}
 
 	piped_proc proc(cmdline, true);

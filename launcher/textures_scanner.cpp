@@ -178,14 +178,14 @@ std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &
 	std::ranges::replace(meta->photo_author, '_', ' ');
 
 	if (!meta->rev_date.empty() && meta->rev_date != "?") {
-		std::istringstream stream(meta->rev_date);
+		std::istringstream datestream(meta->rev_date);
 		std::string day;
 		std::string month;
 
-		std::getline(stream, day, '.');
-		std::getline(stream, month, '.');
+		std::getline(datestream, day, '.');
+		std::getline(datestream, month, '.');
 
-		stream >> meta->rev_year;
+		datestream >> meta->rev_year;
 	}
 
 	return meta;

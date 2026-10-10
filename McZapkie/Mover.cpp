@@ -591,29 +591,29 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 		return false;
 	}
 
-	auto &coupler{Couplers[ConnectNo]};
-	auto &othercoupler = ConnectTo->Couplers[ConnectToNr != 2 ? ConnectToNr : coupler.ConnectedNr];
-	auto const distance{CouplerDist(this, ConnectTo) - (coupler.adapter_length + othercoupler.adapter_length)};
+	auto &thiscoupler{Couplers[ConnectNo]};
+	auto &othercoupler = ConnectTo->Couplers[ConnectToNr != 2 ? ConnectToNr : thiscoupler.ConnectedNr];
+	auto const distance{CouplerDist(this, ConnectTo) - (thiscoupler.adapter_length + othercoupler.adapter_length)};
 
 
-	if (auto const couplercheck{Enforce || (distance <= dEpsilon && coupler.type() != TCouplerType::NoCoupler && coupler.type() == othercoupler.type())}; false == couplercheck)
+	if (auto const couplercheck{Enforce || (distance <= dEpsilon && thiscoupler.type() != TCouplerType::NoCoupler && thiscoupler.type() == othercoupler.type())}; false == couplercheck)
 	{
 		return false;
 	}
 
 	// stykaja sie zderzaki i kompatybilne typy sprzegow, chyba że łączenie na starcie
-	if (coupler.CouplingFlag == coupling::faux)
+	if (thiscoupler.CouplingFlag == coupling::faux)
 	{
 		// jeśli wcześniej nie było połączone, ustalenie z której strony rysować sprzęg
-		coupler.Render = true; // tego rysować
+		thiscoupler.Render = true; // tego rysować
 		othercoupler.Render = false; // a tego nie
 	}
-	auto const couplingchange{CouplingType ^ coupler.CouplingFlag};
-	coupler.Connected = ConnectTo;
-	coupler.CouplingFlag = CouplingType; // ustawienie typu sprzęgu
+	auto const couplingchange{CouplingType ^ thiscoupler.CouplingFlag};
+	thiscoupler.Connected = ConnectTo;
+	thiscoupler.CouplingFlag = CouplingType; // ustawienie typu sprzęgu
 	if (ConnectToNr != 2)
 	{
-		coupler.ConnectedNr = ConnectToNr; // 2=nic nie podłączone
+		thiscoupler.ConnectedNr = ConnectToNr; // 2=nic nie podłączone
 	}
 	othercoupler.Connected = this;
 	othercoupler.CouplingFlag = CouplingType;
@@ -633,7 +633,7 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 				soundflag |= mappingsound;
 			}
 		}
-		SetFlag(coupler.sounds, soundflag);
+		SetFlag(thiscoupler.sounds, soundflag);
 	}
 
 	return true;
@@ -657,30 +657,30 @@ int TMoverParameters::DettachStatus(int ConnectNo)
 bool TMoverParameters::Dettach(int ConnectNo)
 { // rozlaczanie
 
-	auto &coupler{Couplers[ConnectNo]};
-	auto &othervehicle{coupler.Connected};
-	auto &othercoupler{othervehicle->Couplers[coupler.ConnectedNr]};
+	auto &thiscoupler{Couplers[ConnectNo]};
+	auto &othervehicle{thiscoupler.Connected};
+	auto &othercoupler{othervehicle->Couplers[thiscoupler.ConnectedNr]};
 
 	if (othervehicle == nullptr)
 	{
 		return true;
 	} // nie ma nic, to odczepiono
 
-	auto couplingchange{coupler.CouplingFlag}; // presume we'll uncouple all active flags
+	auto couplingchange{thiscoupler.CouplingFlag}; // presume we'll uncouple all active flags
 	auto const couplingstate{DettachStatus(ConnectNo)}; // stan sprzęgu
 	if (couplingstate < 0)
 	{
 		// gdy scisniete zderzaki, chyba ze zerwany sprzeg (wirtualnego nie odpinamy z drugiej strony)
 		std::tie(othercoupler.Connected, othercoupler.ConnectedNr, othercoupler.CouplingFlag) = std::make_tuple(nullptr, -1, coupling::faux);
-		std::tie(coupler.Connected, coupler.ConnectedNr, coupler.CouplingFlag) = std::make_tuple(nullptr, -1, coupling::faux);
+		std::tie(thiscoupler.Connected, thiscoupler.ConnectedNr, thiscoupler.CouplingFlag) = std::make_tuple(nullptr, -1, coupling::faux);
 	}
 	else if (couplingstate > 0)
 	{ // odłączamy węże i resztę, pozostaje sprzęg fizyczny, który wymaga dociśnięcia (z wirtualnym nic)
-		coupler.CouplingFlag &= coupling::coupler;
+		thiscoupler.CouplingFlag &= coupling::coupler;
 		othercoupler.CouplingFlag &= coupling::coupler;
 	}
 	// set sound event flag
-	couplingchange ^= coupler.CouplingFlag; // remaining bits were removed from coupling
+	couplingchange ^= thiscoupler.CouplingFlag; // remaining bits were removed from coupling
 	if (couplingchange != 0)
 	{
 		int soundflag{sound::detach}; // HACK: use detach flag to indicate removal of listed coupling
@@ -694,7 +694,7 @@ bool TMoverParameters::Dettach(int ConnectNo)
 				soundflag |= mappingsound;
 			}
 		}
-		SetFlag(coupler.sounds, soundflag);
+		SetFlag(thiscoupler.sounds, soundflag);
 	}
 
 	return couplingstate < 0;
@@ -1188,7 +1188,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 		return;
 	} // shouldn't normally happen but, eh
 
-	auto &coupler{Couplers[End]};
+	auto &thiscoupler{Couplers[End]};
 	auto *othervehicle{Neighbours[End].vehicle->MoverParameters};
 	auto const otherend{Neighbours[End].vehicle_end};
 	auto &othercoupler{othervehicle->Couplers[otherend]};
@@ -1196,19 +1196,19 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto velocity{V};
 	auto othervehiclevelocity{othervehicle->V};
 	// calculate collision force and new velocities for involved vehicles
-	auto const VirtualCoupling{(coupler.CouplingFlag == coupling::faux)};
+	auto const VirtualCoupling{(thiscoupler.CouplingFlag == coupling::faux)};
 	auto CCF{0.0};
 
 	switch (End)
 	{
 	case 0:
 	{
-		CCF = ComputeCollision(velocity, othervehiclevelocity, TotalMass, othervehicle->TotalMass, (coupler.beta + othercoupler.beta) / 2.0, VirtualCoupling) / dt;
+		CCF = ComputeCollision(velocity, othervehiclevelocity, TotalMass, othervehicle->TotalMass, (thiscoupler.beta + othercoupler.beta) / 2.0, VirtualCoupling) / dt;
 		break; // yB: ej ej ej, a po
 	}
 	case 1:
 	{
-		CCF = ComputeCollision(othervehiclevelocity, velocity, othervehicle->TotalMass, TotalMass, (coupler.beta + othercoupler.beta) / 2.0, VirtualCoupling) / dt;
+		CCF = ComputeCollision(othervehiclevelocity, velocity, othervehicle->TotalMass, TotalMass, (thiscoupler.beta + othercoupler.beta) / 2.0, VirtualCoupling) / dt;
 		break;
 	}
 	default:
@@ -1219,13 +1219,13 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 
 	if (Global.crash_damage)
 	{
-		if (-coupler.Dist >= coupler.DmaxB && FuzzyLogic(std::abs(CCF), 5.0 * (coupler.FmaxC + 1.0), p_coupldmg))
+		if (-thiscoupler.Dist >= thiscoupler.DmaxB && FuzzyLogic(std::abs(CCF), 5.0 * (thiscoupler.FmaxC + 1.0), p_coupldmg))
 		{
 			// small chance to smash the coupler if it's hit with excessive force
 			damage_coupler(End);
 		}
 
-		if (coupler.CouplingFlag == coupling::faux || true == TestFlag(othervehicle->DamageFlag, dtrain_out))
+		if (thiscoupler.CouplingFlag == coupling::faux || true == TestFlag(othervehicle->DamageFlag, dtrain_out))
 		{ // HACK: limit excessive speed derailment checks to vehicles which aren't part of the same consist
 			auto const safevelocitylimit{15.0};
 			auto const velocitydifference{glm::length(glm::angleAxis(Rot.Rz, glm::dvec3{0, 1, 0}) * V - glm::angleAxis(othervehicle->Rot.Rz, glm::dvec3{0, 1, 0}) * othervehicle->V) *
@@ -1276,9 +1276,9 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 void TMoverParameters::damage_coupler(int const End)
 {
 
-	auto &coupler{Couplers[End]};
+	auto &thiscoupler{Couplers[End]};
 
-	if (coupler.type() == TCouplerType::Articulated)
+	if (thiscoupler.type() == TCouplerType::Articulated)
 	{
 		return;
 	} // HACK: don't break articulated couplings no matter what
@@ -1286,27 +1286,27 @@ void TMoverParameters::damage_coupler(int const End)
 	if (SetFlag(DamageFlag, dtrain_coupling))
 		EventFlag = true;
 
-	if ((coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose)
+	if ((thiscoupler.CouplingFlag & coupling::brakehose) == coupling::brakehose)
 	{
 		// hamowanie nagle - zerwanie przewodow hamulcowych
 		AlarmChainFlag = true;
 	}
 
-	coupler.CouplingFlag = 0;
+	thiscoupler.CouplingFlag = 0;
 
-	if (coupler.Connected != nullptr)
+	if (thiscoupler.Connected != nullptr)
 	{
 		switch (End)
 		{
 		// break connection with other vehicle, if there's any
 		case 0:
 		{
-			coupler.Connected->Couplers[end::rear].CouplingFlag = coupling::faux;
+			thiscoupler.Connected->Couplers[end::rear].CouplingFlag = coupling::faux;
 			break;
 		}
 		case 1:
 		{
-			coupler.Connected->Couplers[end::front].CouplingFlag = coupling::faux;
+			thiscoupler.Connected->Couplers[end::front].CouplingFlag = coupling::faux;
 			break;
 		}
 		default:
@@ -1831,7 +1831,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 	for (auto side = 0; side < 2; ++side)
 	{
 
-		auto &coupler{Couplers[side]};
+		auto &thiscoupler{Couplers[side]};
 		// NOTE: in the loop we actually update the state of the coupler on the opposite end of the vehicle
 		auto &oppositecoupler{Couplers[side == end::front ? end::rear : end::front]};
 
@@ -1871,9 +1871,9 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 		}
 		}
 
-		auto const *coupling = Coupling == coupling::highvoltage ? &coupler.power_high :
-		                       Coupling == coupling::power110v   ? &coupler.power_110v :
-		                       Coupling == coupling::power24v    ? &coupler.power_24v :
+		auto const *coupling = Coupling == coupling::highvoltage ? &thiscoupler.power_high :
+		                       Coupling == coupling::power110v   ? &thiscoupler.power_110v :
+		                       Coupling == coupling::power24v    ? &thiscoupler.power_24v :
 		                                                           nullptr;
 		auto *oppositecoupling = Coupling == coupling::highvoltage ? &oppositecoupler.power_high :
 		                         Coupling == coupling::power110v   ? &oppositecoupler.power_110v :
@@ -1885,9 +1885,9 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 		oppositecoupling->is_live = false;
 		oppositecoupling->is_local = localpowersource; // indicate power source
 		// draw from external source
-		if (coupler.Connected != nullptr)
+		if (thiscoupler.Connected != nullptr)
 		{
-			auto const &connectedcoupler{coupler.Connected->Couplers[coupler.ConnectedNr]};
+			auto const &connectedcoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr]};
 			auto const *connectedcoupling = Coupling == coupling::highvoltage ? &connectedcoupler.power_high :
 			                                Coupling == coupling::power110v   ? &connectedcoupler.power_110v :
 			                                Coupling == coupling::power24v    ? &connectedcoupler.power_24v :
@@ -1934,21 +1934,21 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 	                     Coupling == coupling::power24v    ? &PowerCircuits[0].second :
 	                                                         nullptr;
 
-	for (auto &coupler : Couplers)
+	for (auto &thiscoupler : Couplers)
 	{
-		auto *coupling = Coupling == coupling::highvoltage ? &coupler.power_high :
-		                 Coupling == coupling::power110v   ? &coupler.power_110v :
-		                 Coupling == coupling::power24v    ? &coupler.power_24v :
+		auto *coupling = Coupling == coupling::highvoltage ? &thiscoupler.power_high :
+		                 Coupling == coupling::power110v   ? &thiscoupler.power_110v :
+		                 Coupling == coupling::power24v    ? &thiscoupler.power_24v :
 		                                                     nullptr;
 
 		coupling->current = 0.0;
 
-		if (coupler.Connected == nullptr)
+		if (thiscoupler.Connected == nullptr)
 		{
 			continue;
 		}
 
-		auto const &connectedothercoupler{coupler.Connected->Couplers[coupler.ConnectedNr == end::front ? end::rear : end::front]};
+		auto const &connectedothercoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr == end::front ? end::rear : end::front]};
 		auto const *connectedothercoupling = Coupling == coupling::highvoltage ? &connectedothercoupler.power_high :
 		                                     Coupling == coupling::power110v   ? &connectedothercoupler.power_110v :
 		                                     Coupling == coupling::power24v    ? &connectedothercoupler.power_24v :
@@ -3983,10 +3983,10 @@ bool TMoverParameters::DynamicBrakeSwitch(bool Switch)
 	{
 		DynamicBrakeFlag = Switch;
 		DBS = true;
-		for (auto &coupler : Couplers)
+		for (auto &thiscoupler : Couplers)
 			//  with Couplers[b] do
-			if (TestFlag(coupler.CouplingFlag, coupling::control))
-				coupler.Connected->DynamicBrakeFlag = Switch;
+			if (TestFlag(thiscoupler.CouplingFlag, coupling::control))
+				thiscoupler.Connected->DynamicBrakeFlag = Switch;
 		// end;
 		// if (DynamicBrakeType=dbrake_passive) and (TrainType=dt_ET42) then
 		// begin
@@ -5165,7 +5165,7 @@ double TMoverParameters::BrakeForce(TTrackParam const & /*Track*/)
 {
 
 	double K{0};
-	double Fb{0};
+	double brakeforce{0};
 
 	switch (LocalBrake)
 	{
@@ -5222,11 +5222,11 @@ double TMoverParameters::BrakeForce(TTrackParam const & /*Track*/)
 	//      Fb:=UnitBrakeForce*NBpA {ham. reczny dziala na jedna os}
 	//     else  //yB: to nie do konca ma sens, ponieważ ręczny w wagonie działa na jeden cylinder
 	//     hamulcowy/wózek, dlatego potrzebne są oddzielnie liczone osie
-	Fb = UnitBrakeForce * NBrakeAxles * std::max(1, NBpA);
+	brakeforce = UnitBrakeForce * NBrakeAxles * std::max(1, NBpA);
 
 	//  u:=((BrakePress*P2FTrans)-BrakeCylSpring*BrakeCylMult[BCMFlag]/BrakeCylNo-0.83*BrakeSlckAdj/(BrakeCylNo))*BrakeCylNo;
 	// {  end; }
-	return Fb;
+	return brakeforce;
 }
 
 // *************************************************************************************************
@@ -5306,7 +5306,7 @@ double TMoverParameters::Adhesive(double staticfriction) const
 double TMoverParameters::CouplerForce(int const End, double dt)
 {
 
-	auto &coupler{Couplers[End]};
+	auto &thiscoupler{Couplers[End]};
 	auto *othervehicle{Neighbours[End].vehicle->MoverParameters};
 	auto const otherend{Neighbours[End].vehicle_end};
 	auto &othercoupler{othervehicle->Couplers[otherend]};
@@ -5321,81 +5321,81 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	auto const absdV{std::abs(dV)};
 
 	// potentially generate sounds on clash or stretch
-	if (newdistance < 0.0 && coupler.Dist > newdistance && dV < -0.1 && false == coupler.has_adapter())
+	if (newdistance < 0.0 && thiscoupler.Dist > newdistance && dV < -0.1 && false == thiscoupler.has_adapter())
 	{ // HACK: with adapter present we presume buffers won't clash
 		// 090503: dzwieki pracy zderzakow
-		SetFlag(coupler.sounds, absdV > 5.0 ? sound::bufferclash | sound::loud : sound::bufferclash);
+		SetFlag(thiscoupler.sounds, absdV > 5.0 ? sound::bufferclash | sound::loud : sound::bufferclash);
 	}
-	else if (coupler.CouplingFlag != coupling::faux && newdistance > 0.001 && coupler.Dist <= 0.001 && absdV > 0.005 && Vel > 1.0)
+	else if (thiscoupler.CouplingFlag != coupling::faux && newdistance > 0.001 && thiscoupler.Dist <= 0.001 && absdV > 0.005 && Vel > 1.0)
 	{
 		// 090503: dzwieki pracy sprzegu
-		SetFlag(coupler.sounds, absdV > 0.035 ? sound::couplerstretch | sound::loud : sound::couplerstretch);
+		SetFlag(thiscoupler.sounds, absdV > 0.035 ? sound::couplerstretch | sound::loud : sound::couplerstretch);
 	}
 
-	coupler.CheckCollision = false;
-	coupler.Dist = 0.0;
+	thiscoupler.CheckCollision = false;
+	thiscoupler.Dist = 0.0;
 
 	double CF{0.0};
 
-	if (coupler.CouplingFlag == coupling::faux && initialdistance > 0.05)
+	if (thiscoupler.CouplingFlag == coupling::faux && initialdistance > 0.05)
 	{ // arbitrary distance
 		// potentially reset auto coupling lock
-		coupler.AutomaticCouplingAllowed = true;
+		thiscoupler.AutomaticCouplingAllowed = true;
 	}
 
-	if (coupler.CouplingFlag != coupling::faux || initialdistance < 0)
+	if (thiscoupler.CouplingFlag != coupling::faux || initialdistance < 0)
 	{
 
-		coupler.Dist = std::clamp(newdistance, coupler.has_adapter() ? 0 : -coupler.DmaxB, coupler.DmaxC);
+		thiscoupler.Dist = std::clamp(newdistance, thiscoupler.has_adapter() ? 0 : -thiscoupler.DmaxB, thiscoupler.DmaxC);
 
 		double BetaAvg = 0;
 		double Fmax = 0;
 
-		if (coupler.CouplingFlag == coupling::faux)
+		if (thiscoupler.CouplingFlag == coupling::faux)
 		{
 
-			BetaAvg = coupler.beta;
-			Fmax = (coupler.FmaxC + coupler.FmaxB) * CouplerTune;
+			BetaAvg = thiscoupler.beta;
+			Fmax = (thiscoupler.FmaxC + thiscoupler.FmaxB) * CouplerTune;
 		}
 		else
 		{
 			// usrednij bo wspolny sprzeg
-			BetaAvg = 0.5 * (coupler.beta + othercoupler.beta);
-			Fmax = 0.5 * (coupler.FmaxC + coupler.FmaxB + othercoupler.FmaxC + othercoupler.FmaxB) * CouplerTune;
+			BetaAvg = 0.5 * (thiscoupler.beta + othercoupler.beta);
+			Fmax = 0.5 * (thiscoupler.FmaxC + thiscoupler.FmaxB + othercoupler.FmaxC + othercoupler.FmaxB) * CouplerTune;
 		}
-		auto const distDelta{std::abs(newdistance) - std::abs(coupler.Dist)}; // McZapkie-191103: poprawka na histereze
+		auto const distDelta{std::abs(newdistance) - std::abs(thiscoupler.Dist)}; // McZapkie-191103: poprawka na histereze
 
 		if (newdistance > 0)
 		{
 
 			if (distDelta > 0)
 			{
-				CF = -(coupler.SpringKC + othercoupler.SpringKC) * coupler.Dist / 2.0 * DirF(End) - Fmax * dV * BetaAvg;
+				CF = -(thiscoupler.SpringKC + othercoupler.SpringKC) * thiscoupler.Dist / 2.0 * DirF(End) - Fmax * dV * BetaAvg;
 			}
 			else
 			{
-				CF = -(coupler.SpringKC + othercoupler.SpringKC) * coupler.Dist / 2.0 * DirF(End) * BetaAvg - Fmax * dV * BetaAvg;
+				CF = -(thiscoupler.SpringKC + othercoupler.SpringKC) * thiscoupler.Dist / 2.0 * DirF(End) * BetaAvg - Fmax * dV * BetaAvg;
 			}
 			// liczenie sily ze sprezystosci sprzegu
-			if (newdistance > coupler.DmaxC + othercoupler.DmaxC)
+			if (newdistance > thiscoupler.DmaxC + othercoupler.DmaxC)
 			{
 				// zderzenie
-				coupler.CheckCollision = true;
+				thiscoupler.CheckCollision = true;
 			}
-			if (std::abs(CF) > coupler.FmaxC)
+			if (std::abs(CF) > thiscoupler.FmaxC)
 			{
 				// coupler is stretched with excessive force, may break
-				coupler.stretch_duration += static_cast<float>(dt);
+				thiscoupler.stretch_duration += static_cast<float>(dt);
 				// give coupler 1 sec of leeway to account for simulation glitches, before checking whether it breaks
 				// (arbitrary) chance to break grows from 10-100% over 10 sec period
-				if (Global.crash_damage && coupler.stretch_duration > 1.f && Random() < coupler.stretch_duration * 0.1f * dt)
+				if (Global.crash_damage && thiscoupler.stretch_duration > 1.f && Random() < thiscoupler.stretch_duration * 0.1f * dt)
 				{
 					damage_coupler(End);
 				}
 			}
 			else
 			{
-				coupler.stretch_duration = 0.f;
+				thiscoupler.stretch_duration = 0.f;
 			}
 		}
 		if (newdistance < 0)
@@ -5403,29 +5403,29 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 
 			if (distDelta > 0)
 			{
-				CF = -(coupler.SpringKB + othercoupler.SpringKB) * coupler.Dist / 2.0 * DirF(End) - Fmax * dV * BetaAvg;
+				CF = -(thiscoupler.SpringKB + othercoupler.SpringKB) * thiscoupler.Dist / 2.0 * DirF(End) - Fmax * dV * BetaAvg;
 			}
 			else
 			{
-				CF = -(coupler.SpringKB + othercoupler.SpringKB) * coupler.Dist / 2.0 * DirF(End) * BetaAvg - Fmax * dV * BetaAvg;
+				CF = -(thiscoupler.SpringKB + othercoupler.SpringKB) * thiscoupler.Dist / 2.0 * DirF(End) * BetaAvg - Fmax * dV * BetaAvg;
 			}
 			// liczenie sily ze sprezystosci zderzaka
-			auto const collisiondistance{(coupler.has_adapter() || othercoupler.has_adapter() ?
-			                                  std::min(coupler.DmaxB, othercoupler.DmaxB) : // HACK: only take into account buffering ability of automatic coupler
-			                                  coupler.DmaxB + othercoupler.DmaxB)};
+			auto const collisiondistance{(thiscoupler.has_adapter() || othercoupler.has_adapter() ?
+			                                  std::min(thiscoupler.DmaxB, othercoupler.DmaxB) : // HACK: only take into account buffering ability of automatic coupler
+			                                  thiscoupler.DmaxB + othercoupler.DmaxB)};
 			if (-newdistance > collisiondistance)
 			{
 				// zderzenie
-				coupler.CheckCollision = true;
+				thiscoupler.CheckCollision = true;
 			}
-			if (-newdistance >= std::min(collisiondistance, dEpsilon) && coupler.type() == TCouplerType::Automatic && coupler.type() == othercoupler.type() && coupler.CouplingFlag == coupling::faux &&
-				    coupler.AutomaticCouplingAllowed &&
+			if (-newdistance >= std::min(collisiondistance, dEpsilon) && thiscoupler.type() == TCouplerType::Automatic && thiscoupler.type() == othercoupler.type() && thiscoupler.CouplingFlag == coupling::faux &&
+				    thiscoupler.AutomaticCouplingAllowed &&
 				    othercoupler.AutomaticCouplingAllowed)
 			{
 				// sprzeganie wagonow z samoczynnymi sprzegami
-				auto couplingtype{coupler.AutomaticCouplingFlag & othercoupler.AutomaticCouplingFlag};
+				auto couplingtype{thiscoupler.AutomaticCouplingFlag & othercoupler.AutomaticCouplingFlag};
 				// potentially exclude incompatible control coupling
-				if (coupler.control_type != othercoupler.control_type)
+				if (thiscoupler.control_type != othercoupler.control_type)
 				{
 					couplingtype &= ~coupling::control;
 				}
@@ -5434,7 +5434,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 				{
 					// HACK: we're reusing sound enum to mark whether vehicle was connected to another
 					SetFlag(AIFlag, sound::attachcoupler);
-					coupler.AutomaticCouplingAllowed = false;
+					thiscoupler.AutomaticCouplingAllowed = false;
 					othercoupler.AutomaticCouplingAllowed = false;
 				}
 				/*
@@ -5445,7 +5445,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 		}
 	}
 
-	if (coupler.CouplingFlag != coupling::faux)
+	if (thiscoupler.CouplingFlag != coupling::faux)
 	{
 		// uzgadnianie prawa Newtona
 		othervehicle->Couplers[1 - End].CForce = -CF;
@@ -6569,9 +6569,9 @@ bool TMoverParameters::FuseFlagCheck(void) const
 	if (Power > 0.01)
 		FFC = FuseFlag;
 	else // pobor pradu jezeli niema mocy
-		for (auto &coupler : Couplers)
-			if (TestFlag(coupler.CouplingFlag, coupling::control) && coupler.Connected->Power > 0.01)
-				FFC = coupler.Connected->FuseFlagCheck();
+		for (auto &thiscoupler : Couplers)
+			if (TestFlag(thiscoupler.CouplingFlag, coupling::control) && thiscoupler.Connected->Power > 0.01)
+				FFC = thiscoupler.Connected->FuseFlagCheck();
 
 	return FFC;
 }
@@ -6799,9 +6799,9 @@ bool TMoverParameters::ResistorsFlagCheck(void) const
 		RFC = ResistorsFlag;
 	else // pobor pradu jezeli niema mocy
 	{
-		for (auto &coupler : Couplers)
-			if (TestFlag(coupler.CouplingFlag, coupling::control) && coupler.Connected->Power > 0.01)
-				RFC = coupler.Connected->ResistorsFlagCheck();
+		for (auto &thiscoupler : Couplers)
+			if (TestFlag(thiscoupler.CouplingFlag, coupling::control) && thiscoupler.Connected->Power > 0.01)
+				RFC = thiscoupler.Connected->ResistorsFlagCheck();
 	}
 	return RFC;
 }
@@ -7974,7 +7974,7 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 // Q: 20160715
 // Oblicza moment siły wytwarzany przez silnik spalinowy
 // *************************************************************************************************
-double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
+double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 { // liczy moment sily wytwarzany przez silnik spalinowy}
 	double Moment = 0;
 	double enMoment = 0;
@@ -7997,14 +7997,14 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 	{
 		if (dizel_Momentum_Table.size() > 1)
 		{
-			Moment = TableInterpolation(dizel_Momentum_Table, enrot) * dizel_fill - dizel_Mstand;
+			Moment = TableInterpolation(dizel_Momentum_Table, enrot) * Fill - dizel_Mstand;
 		}
 		else
 		{
-			Moment = (dizel_Mmax - (dizel_Mmax - dizel_Mnmax) * square((enrot - dizel_nMmax) / (dizel_nMmax - dizel_nmax))) * dizel_fill - dizel_Mstand;
+			Moment = (dizel_Mmax - (dizel_Mmax - dizel_Mnmax) * square((enrot - dizel_nMmax) / (dizel_nMmax - dizel_nmax))) * Fill - dizel_Mstand;
 		}
 		Mm = Moment;
-		dizel_FuelConsumptionActual = dizel_FuelConsumption * enrot * dizel_fill;
+		dizel_FuelConsumptionActual = dizel_FuelConsumption * enrot * Fill;
 		dizel_FuelConsumptedTotal += dizel_FuelConsumptionActual * dt / 3600.0;
 		if (hydro_R && hydro_R_Placement == 2)
 			Moment -= dizel_MomentumRetarder(enrot, dt);
@@ -8375,10 +8375,10 @@ void TMoverParameters::dizel_Heat(double const dt)
 	*/
 }
 
-bool TMoverParameters::AssignLoad(std::string const &Name, float const Amount)
+bool TMoverParameters::AssignLoad(std::string const &Loadname, float const Amount)
 {
 
-	if (Name == "pantstate")
+	if (Loadname == "pantstate")
 	{
 		if (EnginePowerSource.SourceType == TPowerSource::CurrentCollector)
 		{
@@ -8418,27 +8418,27 @@ bool TMoverParameters::AssignLoad(std::string const &Name, float const Amount)
 		}
 	}
 
-	if (Name.empty())
+	if (Loadname.empty())
 	{
 		// empty the vehicle if requested
-		LoadTypeChange = LoadType.name != Name;
+		LoadTypeChange = LoadType.name != Loadname;
 		LoadType = load_attributes();
 		LoadAmount = 0.f;
 		return true;
 	}
 	// can't mix load types, at least for the time being
-	if (LoadAmount > 0 && LoadType.name != Name)
+	if (LoadAmount > 0 && LoadType.name != Loadname)
 	{
 		return false;
 	}
 
-	auto const loadattributes = std::ranges::find_if(LoadAttributes, [&](auto const &attributes) { return attributes.name == Name; });
+	auto const loadattributes = std::ranges::find_if(LoadAttributes, [&](auto const &attributes) { return attributes.name == Loadname; });
 	if (loadattributes == std::end(LoadAttributes))
 	{
 		// didn't find matching load configuration, this type is unsupported
 		return false;
 	}
-	LoadTypeChange = LoadType.name != Name;
+	LoadTypeChange = LoadType.name != Loadname;
 	LoadType = *loadattributes;
 	LoadAmount = std::clamp(Amount, 0.f, MaxLoad);
 	ComputeMass();
@@ -8936,14 +8936,14 @@ double TMoverParameters::GetTrainsetVoltage(int const Coupling) const
 		{
 			continue;
 		}
-		auto const &coupler{Couplers[end]};
-		if (auto const fullcoupling{coupler.CouplingFlag | (TestFlag(coupler.CouplingFlag, coupler.PowerCoupling) ? coupler.PowerFlag : 0)}; (fullcoupling & Coupling) == 0)
+		auto const &thiscoupler{Couplers[end]};
+		if (auto const fullcoupling{thiscoupler.CouplingFlag | (TestFlag(thiscoupler.CouplingFlag, thiscoupler.PowerCoupling) ? thiscoupler.PowerFlag : 0)}; (fullcoupling & Coupling) == 0)
 		{
 			continue;
 		}
-		auto *connectedpowercoupling = (Coupling & (coupling::highvoltage | coupling::heating)) != 0 ? &coupler.Connected->Couplers[coupler.ConnectedNr].power_high :
-		                               (Coupling & coupling::power110v) != 0                         ? &coupler.Connected->Couplers[coupler.ConnectedNr].power_110v :
-		                               (Coupling & coupling::power24v) != 0                          ? &coupler.Connected->Couplers[coupler.ConnectedNr].power_24v :
+		auto *connectedpowercoupling = (Coupling & (coupling::highvoltage | coupling::heating)) != 0 ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_high :
+		                               (Coupling & coupling::power110v) != 0                         ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_110v :
+		                               (Coupling & coupling::power24v) != 0                          ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_24v :
 		                                                                                               nullptr;
 		if (connectedpowercoupling != nullptr && connectedpowercoupling->is_live)
 		{
@@ -10613,59 +10613,59 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Index)
 {
 
-	TCoupling *coupler;
+	TCoupling *thiscoupler;
 	if (Index == 2)
 	{
-		coupler = &Couplers[1];
+		thiscoupler = &Couplers[1];
 	}
 	else
 	{
-		coupler = &Couplers[0];
+		thiscoupler = &Couplers[0];
 	}
 
 	std::map<std::string, TCouplerType> couplertypes{
 	    {"Automatic", TCouplerType::Automatic}, {"Screw", TCouplerType::Screw}, {"Chain", TCouplerType::Chain}, {"Bare", TCouplerType::Bare}, {"Articulated", TCouplerType::Articulated},
 	};
 	auto lookup = couplertypes.find(extract_value("CType", line));
-	coupler->CouplerType = lookup != couplertypes.end() ? lookup->second : TCouplerType::NoCoupler;
+	thiscoupler->CouplerType = lookup != couplertypes.end() ? lookup->second : TCouplerType::NoCoupler;
 
-	extract_value(coupler->SpringKC, "kC", line, "");
-	extract_value(coupler->DmaxC, "DmaxC", line, "");
-	extract_value(coupler->FmaxC, "FmaxC", line, "");
-	extract_value(coupler->SpringKB, "kB", line, "");
-	extract_value(coupler->DmaxB, "DmaxB", line, "");
-	extract_value(coupler->FmaxB, "FmaxB", line, "");
-	extract_value(coupler->beta, "beta", line, "");
-	extract_value(coupler->AutomaticCouplingFlag, "AutomaticFlag", line, "");
-	extract_value(coupler->AllowedFlag, "AllowedFlag", line, "");
-	if (coupler->AllowedFlag < 0)
+	extract_value(thiscoupler->SpringKC, "kC", line, "");
+	extract_value(thiscoupler->DmaxC, "DmaxC", line, "");
+	extract_value(thiscoupler->FmaxC, "FmaxC", line, "");
+	extract_value(thiscoupler->SpringKB, "kB", line, "");
+	extract_value(thiscoupler->DmaxB, "DmaxB", line, "");
+	extract_value(thiscoupler->FmaxB, "FmaxB", line, "");
+	extract_value(thiscoupler->beta, "beta", line, "");
+	extract_value(thiscoupler->AutomaticCouplingFlag, "AutomaticFlag", line, "");
+	extract_value(thiscoupler->AllowedFlag, "AllowedFlag", line, "");
+	if (thiscoupler->AllowedFlag < 0)
 	{
-		coupler->AllowedFlag = -coupler->AllowedFlag | coupling::permanent;
+		thiscoupler->AllowedFlag = -thiscoupler->AllowedFlag | coupling::permanent;
 	}
-	extract_value(coupler->PowerCoupling, "PowerCoupling", line, "");
-	extract_value(coupler->PowerFlag, "PowerFlag", line, "");
-	extract_value(coupler->control_type, "ControlType", line, "");
+	extract_value(thiscoupler->PowerCoupling, "PowerCoupling", line, "");
+	extract_value(thiscoupler->PowerFlag, "PowerFlag", line, "");
+	extract_value(thiscoupler->control_type, "ControlType", line, "");
 
-	if (coupler->CouplerType != TCouplerType::NoCoupler && coupler->CouplerType != TCouplerType::Bare && coupler->CouplerType != TCouplerType::Articulated)
-	{
-
-		coupler->SpringKC *= 1000;
-		coupler->FmaxC *= 1000;
-		coupler->SpringKB *= 1000;
-		coupler->FmaxB *= 1000;
-	}
-	else if (coupler->CouplerType == TCouplerType::Bare)
+	if (thiscoupler->CouplerType != TCouplerType::NoCoupler && thiscoupler->CouplerType != TCouplerType::Bare && thiscoupler->CouplerType != TCouplerType::Articulated)
 	{
 
-		coupler->SpringKC = 50.0 * Mass + Ftmax / 0.05;
-		coupler->DmaxC = 0.05;
-		coupler->FmaxC = 100.0 * Mass + 2 * Ftmax;
-		coupler->SpringKB = 60.0 * Mass + Ftmax / 0.05;
-		coupler->DmaxB = 0.05;
-		coupler->FmaxB = 50.0 * Mass + 2.0 * Ftmax;
-		coupler->beta = 0.3;
+		thiscoupler->SpringKC *= 1000;
+		thiscoupler->FmaxC *= 1000;
+		thiscoupler->SpringKB *= 1000;
+		thiscoupler->FmaxB *= 1000;
 	}
-	else if (coupler->CouplerType == TCouplerType::Articulated)
+	else if (thiscoupler->CouplerType == TCouplerType::Bare)
+	{
+
+		thiscoupler->SpringKC = 50.0 * Mass + Ftmax / 0.05;
+		thiscoupler->DmaxC = 0.05;
+		thiscoupler->FmaxC = 100.0 * Mass + 2 * Ftmax;
+		thiscoupler->SpringKB = 60.0 * Mass + Ftmax / 0.05;
+		thiscoupler->DmaxB = 0.05;
+		thiscoupler->FmaxB = 50.0 * Mass + 2.0 * Ftmax;
+		thiscoupler->beta = 0.3;
+	}
+	else if (thiscoupler->CouplerType == TCouplerType::Articulated)
 	{
 		/*
 		        coupler->SpringKC = 60.0 * Mass + 1000;
@@ -10676,13 +10676,13 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 		        coupler->FmaxB = 4000000.0 + 2.0 * Ftmax;
 		        coupler->beta = 0.55;
 		*/
-		coupler->SpringKC = 4500 * 1000;
-		coupler->DmaxC = 0.05;
-		coupler->FmaxC = 850 * 1000;
-		coupler->SpringKB = 9200 * 1000;
-		coupler->DmaxB = 0.05;
-		coupler->FmaxB = 320 * 1000;
-		coupler->beta = 0.55;
+		thiscoupler->SpringKC = 4500 * 1000;
+		thiscoupler->DmaxC = 0.05;
+		thiscoupler->FmaxC = 850 * 1000;
+		thiscoupler->SpringKB = 9200 * 1000;
+		thiscoupler->DmaxB = 0.05;
+		thiscoupler->FmaxB = 320 * 1000;
+		thiscoupler->beta = 0.55;
 	}
 
 	if (Index == 0)
@@ -11656,12 +11656,12 @@ void TMoverParameters::LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparamete
 	}
 }
 
-TPowerType TMoverParameters::LoadFIZ_PowerDecode(std::string const &Power) const
+TPowerType TMoverParameters::LoadFIZ_PowerDecode(std::string const &Powertype) const
 {
 
 	std::map<std::string, TPowerType> powertypes{
 	    {"BioPower", TPowerType::BioPower}, {"MechPower", TPowerType::MechPower}, {"ElectricPower", TPowerType::ElectricPower}, {"SteamPower", TPowerType::SteamPower}};
-	auto lookup = powertypes.find(Power);
+	auto lookup = powertypes.find(Powertype);
 	return lookup != powertypes.end() ? lookup->second : TPowerType::NoPower;
 }
 
@@ -12489,13 +12489,13 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 	else if (Command == "DoorPermit")
 	{
 
-		auto const left{CValue2 > 0 ? 1 : 2};
+		auto const leftside{CValue2 > 0 ? 1 : 2};
 
-		if (auto const right{3 - left}; std::abs(static_cast<int>(CValue1)) & right)
+		if (auto const rightside{3 - leftside}; std::abs(static_cast<int>(CValue1)) & rightside)
 		{
 			PermitDoors_(side::right, CValue1 > 0);
 		}
-		if (std::abs(static_cast<int>(CValue1)) & left)
+		if (std::abs(static_cast<int>(CValue1)) & leftside)
 		{
 			PermitDoors_(side::left, CValue1 > 0);
 		}
@@ -12508,15 +12508,15 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 		if ((Doors.open_control == control_t::conductor || Doors.open_control == control_t::driver || Doors.open_control == control_t::mixed) && (Power24vIsAvailable || Power110vIsAvailable))
 		{
 
-			auto const left{CValue2 > 0 ? 1 : 2};
-			auto const right{3 - left};
+			auto const leftside{CValue2 > 0 ? 1 : 2};
+			auto const rightside{3 - leftside};
 
-			if (static_cast<int>(CValue1) & right)
+			if (static_cast<int>(CValue1) & rightside)
 			{
 				Doors.instances[side::right].remote_open = true;
 				Doors.instances[side::right].remote_close = false;
 			}
-			if (static_cast<int>(CValue1) & left)
+			if (static_cast<int>(CValue1) & leftside)
 			{
 				Doors.instances[side::left].remote_open = true;
 				Doors.instances[side::left].remote_close = false;
@@ -12530,15 +12530,15 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 		if ((Doors.close_control == control_t::conductor || Doors.close_control == control_t::driver || Doors.close_control == control_t::mixed) && (Power24vIsAvailable || Power110vIsAvailable))
 		{
 
-			auto const left{CValue2 > 0 ? 1 : 2};
-			auto const right{3 - left};
+			auto const leftside{CValue2 > 0 ? 1 : 2};
+			auto const rightside{3 - leftside};
 
-			if (static_cast<int>(CValue1) & right)
+			if (static_cast<int>(CValue1) & rightside)
 			{
 				Doors.instances[side::right].remote_close = true;
 				Doors.instances[side::right].remote_open = false;
 			}
-			if (static_cast<int>(CValue1) & left)
+			if (static_cast<int>(CValue1) & leftside)
 			{
 				Doors.instances[side::left].remote_close = true;
 				Doors.instances[side::left].remote_open = false;
