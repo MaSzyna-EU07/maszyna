@@ -17,6 +17,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#include <sys/stat.h>
 #include <charconv>
 #include <ranges>
+#include <format>
 //#ifndef WIN32
 //#include <unistd.h>
 //#endif
@@ -188,16 +189,12 @@ std::string generate_uuid_v4()
 	bytes[6] = bytes[6] & 0x0F | 0x40;
 	bytes[8] = bytes[8] & 0x3F | 0x80;
 
-	char buf[37]; // 36 znaków + \0
-	std::snprintf(buf, sizeof(buf),
-	              "%02x%02x%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x%02x%02x%02x%02x",
-	              bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
-
-	return std::string(buf);
+	return std::format("{:02x}{:02x}{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+	                   bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
 }
 
 double LocalRandom(double a, double b)
