@@ -19,7 +19,7 @@ struct node_snapshot {
     scene::basic_node *node;
     std::string data;
 
-    node_snapshot( scene::basic_node *Node ) :
+    explicit node_snapshot( scene::basic_node *Node ) :
         node( Node ) {
         if( Node != nullptr ) {
             Node->export_as_text( data ); } };

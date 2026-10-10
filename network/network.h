@@ -35,7 +35,7 @@ namespace network
 		virtual void send_message(const message &msg) = 0;
 		virtual void send_messages(const std::vector<std::shared_ptr<message>> &messages) = 0;
 
-		connection(bool client = false, size_t counter = 0);
+		explicit connection(bool client = false, size_t counter = 0);
 		void set_handler(std::function<void(const message &msg)> handler);
 
 		virtual void disconnect() = 0;
@@ -63,7 +63,7 @@ namespace network
 		command_queue::commands_map client_commands_queue;
 
 	public:
-		server(std::shared_ptr<std::istream> buf);
+		explicit server(std::shared_ptr<std::istream> buf);
 		void push_delta(const frame_info &msg);
 		command_queue::commands_map pop_commands();
 	};

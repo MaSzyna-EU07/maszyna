@@ -25,7 +25,7 @@ protected:
 	GLenum glenum_target(targets target) const;
 
 public:
-	query(targets target);
+	explicit query(targets target);
 	~query();
 
 	void begin();

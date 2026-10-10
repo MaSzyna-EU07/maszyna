@@ -27,7 +27,7 @@ public:
     };
 // constructors
     template<typename ...Args_>
-    basic_element( basic_element::type_e Type = basic_element::type_e::variable, Args_ ...Args );
+    explicit basic_element( basic_element::type_e Type = basic_element::type_e::variable, Args_ ...Args );
 // methods
     // data access
     auto input() -> int &;

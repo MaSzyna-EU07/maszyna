@@ -19,7 +19,7 @@ class TTractionPowerSource : public scene::basic_node {
 
 public:
 // constructor
-    TTractionPowerSource( scene::node_data const &Nodedata );
+    explicit TTractionPowerSource( scene::node_data const &Nodedata );
 // methods
     void Init(double const u, double const i);
     bool Load(cParser *parser);

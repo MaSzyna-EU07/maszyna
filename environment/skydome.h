@@ -5,7 +5,7 @@
 
 class CSkyDome {
 public:
-    CSkyDome( int const Tesselation = 54 );
+    explicit CSkyDome( int const Tesselation = 54 );
 	~CSkyDome();
 	void Generate();
 	void RebuildColors();

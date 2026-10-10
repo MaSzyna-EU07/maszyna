@@ -70,7 +70,7 @@ class TSegment
 public:
     bool bCurve = false;
 
-    TSegment(TTrack *owner);
+    explicit TSegment(TTrack *owner);
     bool Init(glm::dvec3 NewPoint1, glm::dvec3 NewPoint2, double fNewStep, double fNewRoll1 = 0, double fNewRoll2 = 0);
 	bool Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 NewCPointIn, glm::dvec3 &NewPoint2, double fNewStep, double fNewRoll1 = 0, double fNewRoll2 = 0, bool bIsCurve = true);
     double
