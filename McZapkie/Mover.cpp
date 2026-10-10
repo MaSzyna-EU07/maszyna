@@ -1353,8 +1353,6 @@ void TMoverParameters::Derail(DerailReason const Reason)
 // *************************************************************************************************
 double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
 {
-	const double Vepsilon = 1e-5;
-	const double Aepsilon = 1e-3; // ASBSpeed=0.8;
 
 	if (!TestFlag(DamageFlag, dtrain_out))
 	{ // Ra: to przepisywanie tu jest bez sensu
@@ -4450,8 +4448,6 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		Pipe->Act();
 	}
 
-	const double LBDelay = 100;
-	const double kL = 0.5;
 	// double dV;
 	// TMoverParameters *c; // T_MoverParameters
 	double temp;
@@ -5161,7 +5157,6 @@ double TMoverParameters::BrakeForce(TTrackParam const & /*Track*/)
 
 	double K{0};
 	double Fb{0};
-	double sm{0};
 
 	switch (LocalBrake)
 	{
@@ -6827,7 +6822,6 @@ bool TMoverParameters::AutoRelaySwitch(bool State)
 bool TMoverParameters::AutoRelayCheck(void)
 {
 	bool OK = false; // b:int;
-	bool ARC = false;
 
 	auto const motorconnectorsoff{false == MotorConnectorsCheck()};
 
@@ -9585,9 +9579,6 @@ void TMoverParameters::BrakeSubsystemDecode()
 bool TMoverParameters::LoadFIZ(std::string chkpath)
 {
 	chkPath = chkpath; // assign class path for reloading
-	const int param_ok = 1;
-	const int wheels_ok = 2;
-	const int dimensions_ok = 4;
 
 	ConversionError = 666;
 	LISTLINE = 0;

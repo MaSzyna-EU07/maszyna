@@ -263,7 +263,6 @@ void cMoon::refract() {
 
 void cMoon::irradiance() {
 
-	static double radtodeg = 57.295779513;					// converts from radians to degrees
 	static double degtorad = 0.0174532925;					// converts from degrees to radians
 
 	m_body.dayang = ( simulation::Time.year_day() - 1 ) * 360.0 / 365.0;
