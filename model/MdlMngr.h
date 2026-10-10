@@ -26,8 +26,8 @@ public:
 
 private:
 // types:
-    typedef std::deque<TMdlContainer> modelcontainer_sequence;
-    typedef std::unordered_map<std::string, modelcontainer_sequence::size_type> stringmodelcontainerindex_map;
+    using modelcontainer_sequence = std::deque<TMdlContainer>;
+    using stringmodelcontainerindex_map = std::unordered_map<std::string, modelcontainer_sequence::size_type>;
 // members:
     static modelcontainer_sequence m_models;
     static stringmodelcontainerindex_map m_modelsmap;
