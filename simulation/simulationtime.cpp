@@ -167,7 +167,7 @@ scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yea
 int
 scenario_time::julian_day() const {
 
-    int yy = static_cast<int>(( m_time.wYear < 0 ? m_time.wYear + 1 : m_time.wYear ) - std::floor( ( 12 - m_time.wMonth ) / 10.f ));
+    int yy = static_cast<int>( m_time.wYear - std::floor( ( 12 - m_time.wMonth ) / 10.f ));
     int mm = m_time.wMonth + 9;
     if( mm >= 12 ) { mm -= 12; }
 

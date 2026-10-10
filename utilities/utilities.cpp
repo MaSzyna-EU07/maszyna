@@ -249,23 +249,18 @@ std::string to_string(int Value, int width)
 
 std::string to_string(double Value, int precision)
 {
-	std::ostringstream o;
-	o << std::fixed << std::setprecision(precision) << Value;
-	return std::move(o).str();
+	return std::format("{:.{}f}", Value, precision);
 };
 
 std::string to_string(double const Value, int const Precision, int const Width)
 {
-	std::ostringstream o;
-	o << std::setw(Width) << std::fixed << std::setprecision(Precision) << Value;
-	return std::move(o).str();
+	return std::format("{:>{}.{}f}", Value, Width, Precision);
 };
 
 std::string to_hex_str(int const Value, int const Width)
 {
-	std::ostringstream o;
-	o << "0x" << std::uppercase << std::setfill('0') << std::setw(Width) << std::hex << Value;
-	return o.str();
+	// iostreams print negative values in hex as their unsigned representation
+	return std::format("0x{:0{}X}", static_cast<unsigned int>(Value), Width);
 };
 
 std::string const fractionlabels[] = {U8(" "), U8("¹"), U8("²"), U8("³"), U8("⁴"), U8("⁵"), U8("⁶"), U8("⁷"), U8("⁸"), U8("⁹")};

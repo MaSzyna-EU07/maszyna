@@ -38,7 +38,7 @@ void
 TController::remove_hint( driver_hint const Value ) {
 
     m_hints.remove_if(
-        [=]( auto const &Hint ) {
+        [Value]( auto const &Hint ) {
             return std::get<driver_hint>(Hint) == Value; } );
 }
 
