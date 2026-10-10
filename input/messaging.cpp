@@ -43,7 +43,7 @@ Navigate([[maybe_unused]] std::string const &ClassName, [[maybe_unused]] UINT Ms
 }
 
 void
-OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
+OnCommandGet(multiplayer::DaneRozkaz const *pRozkaz)
 { // odebranie komunikatu z serwera
     if (pRozkaz->iSygn == EU07_MESSAGEHEADER )
         switch (pRozkaz->iComm)

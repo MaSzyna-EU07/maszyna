@@ -26,7 +26,7 @@ size_t piped_proc::read(unsigned char *buf, size_t len)
 	return fread(buf, 1, len, file);
 }
 
-size_t piped_proc::write(unsigned char *buf, size_t len)
+size_t piped_proc::write(unsigned char const *buf, size_t len)
 {
 	if (!file)
 		return 0;
@@ -97,7 +97,7 @@ size_t piped_proc::read(unsigned char *buf, size_t len)
 	return read;
 }
 
-size_t piped_proc::write(unsigned char *buf, size_t len)
+size_t piped_proc::write(unsigned char const *buf, size_t len)
 {
 	if (!pipe_wr)
 		return 0;

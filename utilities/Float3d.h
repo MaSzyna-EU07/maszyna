@@ -253,7 +253,7 @@ public:
                 return false;
         return true;
     }
-    void Quaternion(float4 *q);
+    void Quaternion(float4 const *q);
     inline float3 *TranslationGet()
     {
         return (float3 *)(e + 12);

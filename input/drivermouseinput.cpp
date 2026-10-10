@@ -315,7 +315,7 @@ drivermouse_input::button( int const Button, int const Action ) {
         // left mouse button launches on_click event associated with to the node
         if (Button == GLFW_MOUSE_BUTTON_LEFT && Action == GLFW_PRESS) {
             GfxRenderer->Pick_Node_Callback(
-                [](scene::basic_node *node) {
+                [](scene::basic_node const *node) {
                     if( node == nullptr
                      || typeid(*node) != typeid(TAnimModel) )
                         return;

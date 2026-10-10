@@ -1352,7 +1352,7 @@ void TMoverParameters::Derail(DerailReason const Reason)
 // *************************************************************************************************
 // Oblicza przemieszczenie taboru
 // *************************************************************************************************
-double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
+double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam const &Track, TTractionParam const &ElectricTraction, TLocation const &NewLoc, TRotation const &NewRot)
 {
 
 	if (!TestFlag(DamageFlag, dtrain_out))

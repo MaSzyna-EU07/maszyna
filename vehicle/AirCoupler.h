@@ -27,7 +27,7 @@ public:
     ///Reset members.
     void Clear();
     ///Looks for submodels.
-    void Init(std::string const &asName, TModel3d *Model);
+    void Init(std::string const &asName, TModel3d const *Model);
     ///Loads info about coupler.
     void Load(cParser *Parser, TModel3d *Model);
     int GetStatus() const;

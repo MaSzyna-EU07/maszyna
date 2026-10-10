@@ -2311,7 +2311,7 @@ class TMoverParameters
 	bool CurrentSwitch(bool const State);
 	bool IsMotorOverloadRelayHighThresholdOn() const;
 	void UpdateBatteryVoltage(double dt);
-	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc,
+	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam const &Track, TTractionParam const &ElectricTraction, TLocation const &NewLoc,
 	                       TRotation const &NewRot); // oblicza przesuniecie pojazdu
 	double FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot); // oblicza przesuniecie pojazdu - wersja zoptymalizowana
 	void compute_movement_(double const Deltatime);
