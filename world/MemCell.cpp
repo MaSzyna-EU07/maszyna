@@ -157,11 +157,11 @@ bool TMemCell::Compare( std::string const &szTestText, double const fTestValue1,
 
     if( TestFlag( CheckMask, basic_event::flags::text ) ) {
         // porównać teksty
-        auto range = szTestText.find( '*' );
+        auto wildcardpos = szTestText.find( '*' );
         auto const result { (
-            range == std::string::npos ?
+            wildcardpos == std::string::npos ?
                 compare( szText, szTestText, TextOperator ) :
-                compare( szText.substr( 0, range ), szTestText.substr( 0, range ), TextOperator ) ) };
+                compare( szText.substr( 0, wildcardpos ), szTestText.substr( 0, wildcardpos ), TextOperator ) ) };
         checkpassed |=    result;
         checkfailed |= !result;
     }

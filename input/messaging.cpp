@@ -62,13 +62,13 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) + " rcvd" );
 
             if( Global.iMultiplayer ) {
-                auto *event = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
-                if (event != nullptr && (typeid(*event) == typeid(multi_event)
-                     || typeid(*event) == typeid(lights_event)
-                     || event->m_sibling != nullptr)) {
+                auto *foundevent = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
+                if (foundevent != nullptr && (typeid(*foundevent) == typeid(multi_event)
+                     || typeid(*foundevent) == typeid(lights_event)
+                     || foundevent->m_sibling != nullptr)) {
                     // tylko jawne albo niejawne Multiple
-						command_relay relay;
-						relay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &event->name());
+						command_relay commandrelay;
+						commandrelay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &foundevent->name());
                 }
             }
             break;

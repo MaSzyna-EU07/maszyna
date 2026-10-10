@@ -198,7 +198,7 @@ void gl::shader::parse_texture_entries(std::string &str)
         std::istringstream ss(str.substr(fp + 1, fe - fp - 1));
         std::string token;
 
-        std::string name;
+        std::string uniformname;
         texture_entry conf;
 
         size_t arg = 0;
@@ -206,7 +206,7 @@ void gl::shader::parse_texture_entries(std::string &str)
         {
             std::istringstream token_ss(token);
             if (arg == 0)
-                token_ss >> name;
+                token_ss >> uniformname;
             else if (arg == 1)
                 token_ss >> conf.id;
             else if (arg == 2)
@@ -223,12 +223,12 @@ void gl::shader::parse_texture_entries(std::string &str)
 
         if (arg == 3)
         {
-            if (name.empty())
+            if (uniformname.empty())
                 log_error("empty name");
             else if (conf.id >= gl::MAX_TEXTURES)
                 log_error("invalid texture binding: " + std::to_string(conf.id));
             else
-                texture_conf.try_emplace(name, conf);
+                texture_conf.try_emplace(uniformname, conf);
         }
         else
             log_error("invalid argument count to #texture");
@@ -252,7 +252,7 @@ void gl::shader::parse_param_entries(std::string &str)
         std::istringstream ss(str.substr(fp + 1, fe - fp - 1));
         std::string token;
 
-        std::string name;
+        std::string uniformname;
         param_entry conf;
 
         size_t arg = 0;
@@ -260,7 +260,7 @@ void gl::shader::parse_param_entries(std::string &str)
         {
             std::istringstream token_ss(token);
             if (arg == 0)
-                token_ss >> name;
+                token_ss >> uniformname;
             else if (arg == 1)
                 token_ss >> conf.location;
             else if (arg == 2)
@@ -280,7 +280,7 @@ void gl::shader::parse_param_entries(std::string &str)
 
         if (arg == 5)
         {
-            if (name.empty())
+            if (uniformname.empty())
                 log_error("empty name");
             else if (conf.location >= gl::MAX_PARAMS)
                 log_error("invalid param binding: " + std::to_string(conf.location));
@@ -289,7 +289,7 @@ void gl::shader::parse_param_entries(std::string &str)
             else if (conf.offset + conf.size > 4)
                 log_error("invalid size: " + std::to_string(conf.size));
             else
-                param_conf.try_emplace(name, conf);
+                param_conf.try_emplace(uniformname, conf);
         }
         else
             log_error("invalid argument count to #param");

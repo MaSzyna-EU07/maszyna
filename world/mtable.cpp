@@ -227,7 +227,7 @@ void TTrainParameters::NewName(std::string const &NewTrainName)
     LocLoad = 0;
 }
 
-void TTrainParameters::UpdateVelocity(int StationCount, double vActual)
+void TTrainParameters::UpdateVelocity(int Stationcount, double vActual)
 // zapisywanie prędkości maksymalnej do wcześniejszych odcinków
 // wywoływane z numerem ostatniego przetworzonego przystanku
 {
@@ -254,7 +254,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
     bool EndTable;
     double vActual;
 
-    int ConversionError = 0;
+    int conversionerror = 0;
     EndTable = false;
     if (TrainName == "")
     { // jeśli pusty rozkład
@@ -277,15 +277,15 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
             {
                 TTVmax = vmax; // Ra 2014-07: zamiast rozkładu można podać Vmax
                 UpdateVelocity(StationCount, vmax); // ograniczenie do prędkości startowej
-                ConversionError = 0;
+                conversionerror = 0;
             }
             else
-                ConversionError = -8; /*Ra: ten błąd jest niepotrzebny*/
+                conversionerror = -8; /*Ra: ten błąd jest niepotrzebny*/
         }
         else
         { /*analiza rozkładu jazdy*/
-            ConversionError = 0;
-            while (fin.good() && !(ConversionError != 0 || EndTable))
+            conversionerror = 0;
+            while (fin.good() && !(conversionerror != 0 || EndTable))
             {
                 std::getline(fin, lines); /*wczytanie linii*/
                 if (contains( lines, "___________________") ) /*linia pozioma górna*/
@@ -353,7 +353,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                         win1250_to_ascii( Relation1 );
                     }
                     else
-                        ConversionError = -5;
+                        conversionerror = -5;
                     while (fin >> s || !fin.bad())
                     {
                         if (s == "Relacja")
@@ -408,7 +408,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                             if (s == "[")
                                 fin >> s;
                             else
-                                ConversionError = -4;
+                                conversionerror = -4;
                             if (false == contains( s,"|") )
                             {
                                 record->km = static_cast<float>(atof(s.c_str()));
@@ -565,7 +565,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
         }
     }
     // jeśli nazwa pierwszego zgodna z relacją
-    if (ConversionError == 0 && TimeTable[1].StationName == Relation1 && TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
+    if (conversionerror == 0 && TimeTable[1].StationName == Relation1 && TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
     { // to mamy zatrzymanie na pierwszym, a nie przelot
         TimeTable[1].Ah = TimeTable[1].Dh;
         TimeTable[1].Am = TimeTable[1].Dm;
@@ -593,7 +593,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
             }
         }
     }
-    return ConversionError == 0;
+    return conversionerror == 0;
 }
 
 void

@@ -163,7 +163,7 @@ TTraction::endpoints() const {
 }
 
 std::size_t
-TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
+TTraction::create_geometry( gfx::geometrybank_handle const &Geometrybank ) {
     if( m_geometry != null_handle ) {
         return GfxRenderer->Vertices( m_geometry ).size() / 2;
     }
@@ -343,7 +343,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
     auto const elementcount = vertices.size() / 2;
 
 	gfx::userdata_array empty_userdata{};
-    m_geometry = GfxRenderer->Insert( vertices, empty_userdata, Bank, GL_LINES );
+    m_geometry = GfxRenderer->Insert( vertices, empty_userdata, Geometrybank, GL_LINES );
 
     return elementcount;
 }

@@ -52,7 +52,7 @@ drivingaid_panel::update() {
      || controlled->Mechanik == nullptr ) { return; }
 
     auto const *mover = controlled->MoverParameters;
-    auto const *driver = controlled->Mechanik;
+    auto const *vehicledriver = controlled->Mechanik;
     auto const *owner = controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik;
 
     { // throttle, velocity, speed limits and grade
@@ -140,8 +140,8 @@ drivingaid_panel::update() {
         std::snprintf(
             m_buffer.data(), m_buffer.size(),
             STR_C("Throttle: %3d+%d %c%s"),
-            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : driver->Controlling()->MainCtrlPos,
-            mover->EIMCtrlType > 0 ? driver->Controlling()->MainCtrlPos : driver->Controlling()->ScndCtrlPos,
+            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : vehicledriver->Controlling()->MainCtrlPos,
+            mover->EIMCtrlType > 0 ? vehicledriver->Controlling()->MainCtrlPos : vehicledriver->Controlling()->ScndCtrlPos,
             mover->SpeedCtrlUnit.IsActive ? 'T' :
 		              mover->DirActive > 0          ? 'D' :
 		              mover->DirActive < 0          ? 'R' :
@@ -569,8 +569,8 @@ debug_panel::render() {
         // sections
         ImGui::Separator();
         if (true == render_section( "Vehicle", m_vehiclelines ) && DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 && true == ImGui::Button( "Stop and repair consist" )) {
-            command_relay relay;
-            relay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
+            command_relay commandrelay;
+            commandrelay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
         }
         render_section( "Vehicle Engine", m_enginelines );
         render_section( "Vehicle AI", m_ailines );
@@ -601,8 +601,8 @@ debug_panel::render() {
         ImGui::Separator();
         bool flag = DebugModeFlag;
         if (ImGui::Checkbox("Debug Mode", &flag)) {
-            command_relay relay;
-            relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
+            command_relay commandrelay;
+            commandrelay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
         }
     }
 
@@ -623,8 +623,8 @@ debug_panel::render_section_scenario() {
         auto fogrange = std::log( Global.fFogEnd );
         if( ImGui::SliderFloat(
             ( to_string( std::exp( fogrange ), 0, 5 ) + " m###fogend" ).c_str(), &fogrange, std::log( 10.0f ), std::log( 50000.0f ), "Fog distance" ) ) {
-            command_relay relay;
-            relay.post(
+            command_relay commandrelay;
+            commandrelay.post(
                 user_command::setweather,
                 std::clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
                 Global.Overcast,
@@ -637,8 +637,8 @@ debug_panel::render_section_scenario() {
 		        (to_string(Airtemperature, 1) + " deg C###Airtemperature").c_str(),
 		        &Airtemperature, -35.0f, 40.0f, "Air Temperature"))
 		{
-			command_relay relay;
-            relay.post(
+			command_relay commandrelay;
+            commandrelay.post(
                 user_command::settemperature, 
                 std::clamp(Airtemperature, -35.0f, 40.0f),
 			           Global.Overcast,
@@ -649,8 +649,8 @@ debug_panel::render_section_scenario() {
     {
         if( ImGui::SliderFloat(
             ( to_string( Global.Overcast, 2, 5 ) + " (" + Global.Weather + ")###overcast" ).c_str(), &Global.Overcast, 0.0f, 2.0f, "Cloud cover" ) ) {
-            command_relay relay;
-            relay.post(
+            command_relay commandrelay;
+            commandrelay.post(
                 user_command::setweather,
                 Global.fFogEnd,
                 std::clamp( Global.Overcast, 0.0f, 2.0f ),
@@ -661,8 +661,8 @@ debug_panel::render_section_scenario() {
     {
         if( ImGui::SliderFloat(
             ( to_string( Global.fMoveLight, 0, 5 ) + " (" + Global.Season + ")###movelight" ).c_str(), &Global.fMoveLight, 0.0f, 364.0f, "Day of year" ) ) {
-            command_relay relay;
-            relay.post(
+            command_relay commandrelay;
+            commandrelay.post(
                 user_command::setdatetime,
                 std::clamp( Global.fMoveLight, 0.0f, 365.0f ),
                 simulation::Time.data().wHour * 60 + simulation::Time.data().wMinute,
@@ -687,8 +687,8 @@ debug_panel::render_section_scenario() {
                     + ":"
                     + std::string( std::to_string( int( 100 + simulation::Time.data().wMinute ) ).substr( 1, 2 ) ) ) };
             if( ImGui::SliderInt( ( timestring + " (" + Global.Period + ")###simulationtime" ).c_str(), &time, 0, 1439, "Time of day" ) ) {
-                command_relay relay;
-                relay.post(
+                command_relay commandrelay;
+                commandrelay.post(
                     user_command::setdatetime,
                     Global.fMoveLight,
                     std::clamp( time, 0, 1439 ),
@@ -1314,36 +1314,36 @@ debug_panel::update_section_eventqueue( std::vector<text_line> &Output ) {
 
     // current event queue
     auto const time { Timer::GetTime() };
-    auto const *event { simulation::Events.begin() };
+    auto const *queuedevent { simulation::Events.begin() };
     auto const searchfilter { std::string( m_eventsearch.data() ) };
 
 	Output.emplace_back( "Delay:   Event:", Global.UITextColor );
 
-	while( event != nullptr
+	while( queuedevent != nullptr
 	    && Output.size() < 30 ) {
 
-		if( false == event->m_ignored
-		 && false == event->m_passive
+		if( false == queuedevent->m_ignored
+		 && false == queuedevent->m_passive
 		 && ( false == m_eventqueueactivevehicleonly
-		   || event->m_activator == m_input.vehicle ) ) {
+		   || queuedevent->m_activator == m_input.vehicle ) ) {
 
-            auto const label { event->m_name + ( event->m_activator ? " (by: " + event->m_activator->asName + ")" : "" ) };
+            auto const label { queuedevent->m_name + ( queuedevent->m_activator ? " (by: " + queuedevent->m_activator->asName + ")" : "" ) };
 
             if( false == searchfilter.empty()
              && false == contains(label, searchfilter) ) {
-                event = event->m_next;
+                queuedevent = queuedevent->m_next;
                 continue;
             }
 
-            auto const delay { "   " + to_string( std::max( 0.0, event->m_launchtime - time ), 1 ) };
+            auto const delay { "   " + to_string( std::max( 0.0, queuedevent->m_launchtime - time ), 1 ) };
             textline =
                 delay.substr( delay.length() - 6 )
                 + "   "
-                + label + ( event->m_sibling ? " (joint event)" : "" );
+                + label + ( queuedevent->m_sibling ? " (joint event)" : "" );
 
             Output.emplace_back( textline, Global.UITextColor );
         }
-        event = event->m_next;
+        queuedevent = queuedevent->m_next;
     }
     if( Output.size() == 1 ) {
         // event queue can be empty either because no event got through active filters, or because it is genuinely empty
@@ -1569,8 +1569,8 @@ debug_panel::render_section_settings() const {
     if (simulation::Train) {
         float val = simulation::Train->get_radiovolume();
         if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( val * 100 ) ) + "%###volumeradio" ).c_str(), &val, 0.0f, 1.0f, "Vehicle radio volume" ) ) {
-            command_relay relay;
-            relay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
+            command_relay commandrelay;
+            commandrelay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
         }
     }
 

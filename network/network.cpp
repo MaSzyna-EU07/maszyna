@@ -232,17 +232,17 @@ void network::client::send_commands(command_queue::commands_map commands) const
 	conn->send_message(msg);
 }
 
-void network::client::handle_message(std::shared_ptr<connection> conn, const message &msg)
+void network::client::handle_message(std::shared_ptr<connection> Connection, const message &msg)
 {
 	if (msg.type >= message::TYPE_MAX)
 	{
-		conn->disconnect();
+		Connection->disconnect();
 		return;
 	}
 
 	if (msg.type == message::SERVER_HELLO) {
 		const auto& cmd = dynamic_cast<const server_hello&>(msg);
-		conn->state = connection::ACTIVE;
+		Connection->state = connection::ACTIVE;
 
 		if (!Global.ready_to_load) {
 			Global.random_seed = cmd.seed;
@@ -253,14 +253,14 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 			Global.ready_to_load = true;
 		} else if (Global.random_seed != cmd.seed) {
 			ErrorLog("net: seed mismatch", logtype::net);
-			conn->disconnect();
+			Connection->disconnect();
 			return;
 		}
 
 		WriteLog("net: accept received", logtype::net);
 	}
 
-	if (conn->state != connection::ACTIVE)
+	if (Connection->state != connection::ACTIVE)
 		return;
 
 	if (msg.type == message::FRAME_INFO) {

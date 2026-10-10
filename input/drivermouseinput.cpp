@@ -355,19 +355,19 @@ drivermouse_input::button( int const Button, int const Action ) {
             // if not release then it's press
             m_pickwaiting = true;
             GfxRenderer->Pick_Control_Callback(
-                [this, Button, Action, &mousecommand](TSubModel const *control, const glm::vec2 pos) {
+                [this, Button, Action, &mousecommand](TSubModel const *controlsubmodel, const glm::vec2 pos) {
 
                     bool pickwaiting = m_pickwaiting;
                     m_pickwaiting = false;
 
                     // click on python screen
                     if (Button == GLFW_MOUSE_BUTTON_LEFT
-                            && control && control->screen_touch_list) {
+                            && controlsubmodel && controlsubmodel->screen_touch_list) {
 
-                        control->screen_touch_list->emplace_back(pos);
+                        controlsubmodel->screen_touch_list->emplace_back(pos);
                     }
 
-                    auto const [leftbinding, rightbinding]{ bindings( simulation::Train->GetLabel( control ) ) };
+                    auto const [leftbinding, rightbinding]{ bindings( simulation::Train->GetLabel( controlsubmodel ) ) };
                     // if the recognized element under the cursor has a command associated with the pressed button, notify the recipient
                     mousecommand = Button == GLFW_MOUSE_BUTTON_LEFT ? leftbinding : rightbinding;
 

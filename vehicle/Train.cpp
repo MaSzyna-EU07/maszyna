@@ -902,19 +902,19 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 		dict->insert("slip_" + caridx, bSlip[i]);
 	}
 	// ai state data
-	auto const *driver{(DynamicObject->ctOwner != nullptr ? DynamicObject->ctOwner : DynamicObject->Mechanik)};
+	auto const *vehicledriver{(DynamicObject->ctOwner != nullptr ? DynamicObject->ctOwner : DynamicObject->Mechanik)};
 
-	dict->insert("velocity_desired", driver->VelDesired);
-	dict->insert("velroad", driver->VelRoad);
-	dict->insert("vellimitlast", driver->VelLimitLast);
-	dict->insert("velsignallast", driver->VelSignalLast);
-	dict->insert("velsignalnext", driver->VelSignalNext);
-	dict->insert("velnext", driver->VelNext);
-	dict->insert("actualproximitydist", driver->ActualProximityDist);
+	dict->insert("velocity_desired", vehicledriver->VelDesired);
+	dict->insert("velroad", vehicledriver->VelRoad);
+	dict->insert("vellimitlast", vehicledriver->VelLimitLast);
+	dict->insert("velsignallast", vehicledriver->VelSignalLast);
+	dict->insert("velsignalnext", vehicledriver->VelSignalNext);
+	dict->insert("velnext", vehicledriver->VelNext);
+	dict->insert("actualproximitydist", vehicledriver->ActualProximityDist);
 	// train data
-	driver->TrainTimetable().serialize(dict.get());
-	dict->insert("train_atpassengerstop", driver->IsAtPassengerStop);
-	dict->insert("train_length", driver->fLength);
+	vehicledriver->TrainTimetable().serialize(dict.get());
+	dict->insert("train_atpassengerstop", vehicledriver->IsAtPassengerStop);
+	dict->insert("train_length", vehicledriver->fLength);
 	// world state data
 	dict->insert("scenario", Global.SceneryFile);
 	dict->insert("hours", static_cast<int>(simulation::Time.data().wHour));
@@ -1075,10 +1075,10 @@ TDynamicObject *TTrain::find_nearest_consist_vehicle(bool freefly, glm::vec3 pos
 	if (!freefly)
 		return DynamicObject;
 
-	auto coupler{-2}; // scan for vehicle, not any specific coupler
-	auto *vehicle{DynamicObject->ABuScanNearestObject(pos, DynamicObject->GetTrack(), 1, 1500, coupler)};
+	auto couplerindex{-2}; // scan for vehicle, not any specific coupler
+	auto *vehicle{DynamicObject->ABuScanNearestObject(pos, DynamicObject->GetTrack(), 1, 1500, couplerindex)};
 	if (vehicle == nullptr)
-		vehicle = DynamicObject->ABuScanNearestObject(pos, DynamicObject->GetTrack(), -1, 1500, coupler);
+		vehicle = DynamicObject->ABuScanNearestObject(pos, DynamicObject->GetTrack(), -1, 1500, couplerindex);
 	// TBD, TODO: perform owner test for the located vehicle
 	return vehicle;
 }
@@ -7669,15 +7669,15 @@ void TTrain::OnCommand_nearestcarcouplingincrease(TTrain *Train, command_data co
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
 	{
 		// tryb freefly, press only
-		auto coupler{-1};
-		auto *vehicle{Train->DynamicObject->ABuScanNearestObject(Command.location, Train->DynamicObject->GetTrack(), 1, 1500, coupler)};
+		auto couplerindex{-1};
+		auto *vehicle{Train->DynamicObject->ABuScanNearestObject(Command.location, Train->DynamicObject->GetTrack(), 1, 1500, couplerindex)};
 		if (vehicle == nullptr)
-			vehicle = Train->DynamicObject->ABuScanNearestObject(Command.location, Train->DynamicObject->GetTrack(), -1, 1500, coupler);
+			vehicle = Train->DynamicObject->ABuScanNearestObject(Command.location, Train->DynamicObject->GetTrack(), -1, 1500, couplerindex);
 
-		if (coupler != -1 && vehicle != nullptr)
+		if (couplerindex != -1 && vehicle != nullptr)
 		{
 
-			vehicle->couple(coupler);
+			vehicle->couple(couplerindex);
 		}
 		if (Train->DynamicObject->Mechanik)
 		{
@@ -7693,15 +7693,15 @@ void TTrain::OnCommand_nearestcarcouplingdisconnect(TTrain *Train, command_data 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
 	{
 		// tryb freefly, press only
-		auto coupler{-1};
-		auto *vehicle{Train->DynamicObject->ABuScanNearestObject(Command.location, Train->DynamicObject->GetTrack(), 1, 1500, coupler)};
+		auto couplerindex{-1};
+		auto *vehicle{Train->DynamicObject->ABuScanNearestObject(Command.location, Train->DynamicObject->GetTrack(), 1, 1500, couplerindex)};
 		if (vehicle == nullptr)
-			vehicle = Train->DynamicObject->ABuScanNearestObject(Command.location, Train->DynamicObject->GetTrack(), -1, 1500, coupler);
+			vehicle = Train->DynamicObject->ABuScanNearestObject(Command.location, Train->DynamicObject->GetTrack(), -1, 1500, couplerindex);
 
-		if (coupler != -1 && vehicle != nullptr)
+		if (couplerindex != -1 && vehicle != nullptr)
 		{
 
-			vehicle->uncouple(coupler);
+			vehicle->uncouple(couplerindex);
 		}
 		if (Train->DynamicObject->Mechanik)
 		{
@@ -7723,10 +7723,10 @@ void TTrain::OnCommand_nearestcarcoupleradapterattach(TTrain * /*Train*/, comman
 			return;
 		}
 
-		auto const coupler =
+		auto const couplerindex =
 		    glm::length2(glm::vec3{vehicle->CouplerPosition(end::front)} - Command.location) < glm::length2(glm::vec3{vehicle->CouplerPosition(end::rear)} - Command.location) ? end::front : end::rear;
 
-		vehicle->attach_coupler_adapter(coupler);
+		vehicle->attach_coupler_adapter(couplerindex);
 	}
 }
 
@@ -7742,10 +7742,10 @@ void TTrain::OnCommand_nearestcarcoupleradapterremove(TTrain * /*Train*/, comman
 			return;
 		}
 
-		auto const coupler =
+		auto const couplerindex =
 		    glm::length2(glm::vec3{vehicle->CouplerPosition(end::front)} - Command.location) < glm::length2(glm::vec3{vehicle->CouplerPosition(end::rear)} - Command.location) ? end::front : end::rear;
 
-		vehicle->remove_coupler_adapter(coupler);
+		vehicle->remove_coupler_adapter(couplerindex);
 	}
 }
 
@@ -9964,8 +9964,8 @@ void TTrain::update_sounds(double const Deltatime)
 	{
 		if (fTachoCount >= 3.f)
 		{
-			auto const frequency{(true == dsbHasler->is_combined() ? fTachoVelocity * 0.01 : dsbHasler->m_frequencyoffset + dsbHasler->m_frequencyfactor)};
-			dsbHasler->pitch(static_cast<float>(frequency));
+			auto const soundfrequency{(true == dsbHasler->is_combined() ? fTachoVelocity * 0.01 : dsbHasler->m_frequencyoffset + dsbHasler->m_frequencyfactor)};
+			dsbHasler->pitch(static_cast<float>(soundfrequency));
 			dsbHasler->gain(dsbHasler->m_amplitudeoffset + dsbHasler->m_amplitudefactor);
 			dsbHasler->play(sound_flags::exclusive | sound_flags::looping);
 		}
@@ -10067,14 +10067,14 @@ void TTrain::update_sounds_resonancenoise(sound_source &Sound) const
 {
 	// frequency calculation
 	auto const normalizer{mvOccupied->Vmax * 0.01f};
-	auto const frequency{Sound.m_frequencyoffset + Sound.m_frequencyfactor * mvOccupied->Vel * normalizer};
+	auto const soundfrequency{Sound.m_frequencyoffset + Sound.m_frequencyfactor * mvOccupied->Vel * normalizer};
 
 	// volume calculation
 	auto volume = Sound.m_amplitudeoffset + Sound.m_amplitudefactor * std::lerp(mvOccupied->Vel / (1 + mvOccupied->Vmax), 1.0, 0.5); // scale base volume between 0.5-1.0
 
 	if (volume > 0.05)
 	{
-		Sound.pitch(static_cast<float>(frequency)).gain(static_cast<float>(volume)).play(sound_flags::exclusive | sound_flags::looping);
+		Sound.pitch(static_cast<float>(soundfrequency)).gain(static_cast<float>(volume)).play(sound_flags::exclusive | sound_flags::looping);
 	}
 	else
 	{
@@ -10086,7 +10086,7 @@ void TTrain::update_sounds_runningnoise(sound_source &Sound)
 {
 	// frequency calculation
 	auto const normalizer{(true == Sound.is_combined() ? mvOccupied->Vmax * 0.01f : 1.f)};
-	auto const frequency{Sound.m_frequencyoffset + Sound.m_frequencyfactor * mvOccupied->Vel * normalizer};
+	auto const soundfrequency{Sound.m_frequencyoffset + Sound.m_frequencyfactor * mvOccupied->Vel * normalizer};
 
 	// volume calculation
 	auto volume = Sound.m_amplitudeoffset + Sound.m_amplitudefactor * std::lerp(mvOccupied->Vel / (1 + mvOccupied->Vmax), 1.0,
@@ -10109,7 +10109,7 @@ void TTrain::update_sounds_runningnoise(sound_source &Sound)
 
 	if (volume > 0.05)
 	{
-		Sound.pitch(static_cast<float>(frequency)).gain(static_cast<float>(volume)).play(sound_flags::exclusive | sound_flags::looping);
+		Sound.pitch(static_cast<float>(soundfrequency)).gain(static_cast<float>(volume)).play(sound_flags::exclusive | sound_flags::looping);
 	}
 	else
 	{
