@@ -355,14 +355,14 @@ void TNESt3::CheckState(double const BCP, double & /*dV1*/) // glowny przyrzad r
     if( ( BrakeStatus & b_hld ) == 0 )
         SoundFlag |= sf_CylU;
 
-    if (VVP + 0.10 < CVP && BCP < 0.25) // poczatek hamowania
-        if (false == Przys_blok)
-        {
-            ValveRes->CreatePress(0.1 * VVP);
-            SoundFlag |= sf_Acc;
-            ValveRes->Act();
-            Przys_blok = true;
-        }
+    // poczatek hamowania
+    if (VVP + 0.10 < CVP && BCP < 0.25 && false == Przys_blok)
+    {
+        ValveRes->CreatePress(0.1 * VVP);
+        SoundFlag |= sf_Acc;
+        ValveRes->Act();
+        Przys_blok = true;
+    }
 
     if (BCP > 0.5)
         Zamykajacy = true;

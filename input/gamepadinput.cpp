@@ -370,16 +370,14 @@ gamepad_input::process_axes() {
                 auto const deltatime { Timer::GetDeltaTime() * 15.0 };
                 if( axis.state >= 0.0f ) {
                     // first bound command selected
-                    if( axis.accumulator < 0.0f ) {
-                        // we were issuing the other command, post notification that's no longer the case
-                        if( boundcommand2 != user_command::none ) {
-                            m_relay.post(
-                                boundcommand2,
-                                0, 0,
-                                GLFW_RELEASE,
-                                0 );
-                            axis.accumulator = 0.0f;
-                        }
+                    // we were issuing the other command, post notification that's no longer the case
+                    if (axis.accumulator < 0.0f && boundcommand2 != user_command::none) {
+                        m_relay.post(
+                            boundcommand2,
+                            0, 0,
+                            GLFW_RELEASE,
+                            0 );
+                        axis.accumulator = 0.0f;
                     }
                     if( boundcommand1 != user_command::none ) {
                         if( axis.state > m_deadzone ) {
@@ -410,16 +408,14 @@ gamepad_input::process_axes() {
                 }
                 else {
                     // second bound command selected
-                    if( axis.accumulator > 0.0f ) {
-                        // we were issuing the other command, post notification that's no longer the case
-                        if( boundcommand1 != user_command::none ) {
-                            m_relay.post(
-                                boundcommand1,
-                                0, 0,
-                                GLFW_RELEASE,
-                                0 );
-                            axis.accumulator = 0.0f;
-                        }
+                    // we were issuing the other command, post notification that's no longer the case
+                    if (axis.accumulator > 0.0f && boundcommand1 != user_command::none) {
+                        m_relay.post(
+                            boundcommand1,
+                            0, 0,
+                            GLFW_RELEASE,
+                            0 );
+                        axis.accumulator = 0.0f;
                     }
                     if( boundcommand1 != user_command::none ) {
                         if( axis.state < -m_deadzone ) {
@@ -465,10 +461,8 @@ gamepad_input::process_axes() {
                 else {
                     param = param > 0.0 ? (param - m_deadzone) / (1.0 - m_deadzone) : (param + m_deadzone) / (1.0 - m_deadzone);
                 }
-                if( param != 0.0 ) {
-                    if( inputtype == input_type::value_invert ) {
-                        param *= -1.0;
-                    }
+                if (param != 0.0 && inputtype == input_type::value_invert) {
+                    param *= -1.0;
                 }
                 // scale passed value according to command type
                 switch( boundcommand1 ) {

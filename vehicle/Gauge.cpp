@@ -290,11 +290,9 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
 bool
 TGauge::UpdateValue( float fNewDesired, std::optional<sound_source> &Fallbacksound ) {
 
-    if( false == UpdateValue( fNewDesired ) ) {
-        if( Fallbacksound ) {
-            Fallbacksound->play( m_soundtype );
-            return true;
-        }
+    if (false == UpdateValue( fNewDesired ) && Fallbacksound) {
+        Fallbacksound->play( m_soundtype );
+        return true;
     }
     return false;
 }

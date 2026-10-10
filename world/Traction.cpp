@@ -472,9 +472,8 @@ void TTraction::PowerSet(TTractionPowerSource *ps)
 
 double TTraction::VoltageGet(double u, double i)
 { // pobranie napięcia na przęśle po podłączeniu do niego rezystancji (res) - na razie jest to prąd
-    if (!psSection)
-        if (!psPowered)
-            return NominalVoltage; // jak nie ma zasilacza, to napięcie podane w przęśle
+    if (!psSection && !psPowered)
+        return NominalVoltage; // jak nie ma zasilacza, to napięcie podane w przęśle
     // na początek można założyć, że wszystkie podstacje mają to samo napięcie i nie płynie prąd
     // pomiędzy nimi
     // dla danego przęsła mamy 3 źródła zasilania
@@ -740,29 +739,25 @@ traction_table::InitTraction() {
                     break;
                 }
             }
-            if( traction->hvNext[ 0 ] ) {
-                // jeśli został podłączony
-                if( traction->psSection != nullptr
-                 && matchingtraction->psSection != nullptr ) {
-                    // tylko przęsło z izolatorem może nie mieć zasilania, bo ma 2, trzeba sprawdzać sąsiednie
-                    if( traction->psSection != matchingtraction->psSection ) {
-                        // połączone odcinki mają różne zasilacze
-                        // to może być albo podłączenie podstacji lub kabiny sekcyjnej do sekcji, albo błąd
-                        if( true == traction->psSection->bSection
-                         && false == matchingtraction->psSection->bSection ) {
-                            //(tmp->psSection) jest podstacją, a (Traction->psSection) nazwą sekcji
-                            matchingtraction->PowerSet( traction->psSection ); // zastąpienie wskazaniem sekcji
-                        }
-                        else if( false == traction->psSection->bSection
-                              && true == matchingtraction->psSection->bSection ) {
-                            //(Traction->psSection) jest podstacją, a (tmp->psSection) nazwą sekcji
-                            traction->PowerSet( matchingtraction->psSection ); // zastąpienie wskazaniem sekcji
-                        }
-                        else {
-                            // jeśli obie to sekcje albo obie podstacje, to będzie błąd
-                            ErrorLog( "Bad scenario: faulty traction power connection at location " + to_string( traction->pPoint1 ) );
-                        }
-                    }
+            // jeśli został podłączony
+            // tylko przęsło z izolatorem może nie mieć zasilania, bo ma 2, trzeba sprawdzać sąsiednie
+            if (traction->hvNext[ 0 ] && traction->psSection != nullptr
+                 && matchingtraction->psSection != nullptr && traction->psSection != matchingtraction->psSection) {
+                // połączone odcinki mają różne zasilacze
+                // to może być albo podłączenie podstacji lub kabiny sekcyjnej do sekcji, albo błąd
+                if( true == traction->psSection->bSection
+                 && false == matchingtraction->psSection->bSection ) {
+                    //(tmp->psSection) jest podstacją, a (Traction->psSection) nazwą sekcji
+                    matchingtraction->PowerSet( traction->psSection ); // zastąpienie wskazaniem sekcji
+                }
+                else if( false == traction->psSection->bSection
+                      && true == matchingtraction->psSection->bSection ) {
+                    //(Traction->psSection) jest podstacją, a (tmp->psSection) nazwą sekcji
+                    traction->PowerSet( matchingtraction->psSection ); // zastąpienie wskazaniem sekcji
+                }
+                else {
+                    // jeśli obie to sekcje albo obie podstacje, to będzie błąd
+                    ErrorLog( "Bad scenario: faulty traction power connection at location " + to_string( traction->pPoint1 ) );
                 }
             }
         }
@@ -779,28 +774,24 @@ traction_table::InitTraction() {
                     break;
                 }
             }
-            if( traction->hvNext[ 1 ] ) {
-                // jeśli został podłączony
-                if( traction->psSection != nullptr
-                 && matchingtraction->psSection != nullptr ) {
-                    // tylko przęsło z izolatorem może nie mieć zasilania, bo ma 2, trzeba sprawdzać sąsiednie
-                    if( traction->psSection != matchingtraction->psSection ) {
-                        // to może być albo podłączenie podstacji lub kabiny sekcyjnej do sekcji, albo błąd
-                        if( true == traction->psSection->bSection
-                         && false == matchingtraction->psSection->bSection ) {
-                            //(tmp->psSection) jest podstacją, a (Traction->psSection) nazwą sekcji
-                            matchingtraction->PowerSet( traction->psSection ); // zastąpienie wskazaniem sekcji
-                        }
-                        else if( false == traction->psSection->bSection
-                              && true == matchingtraction->psSection->bSection ) {
-                            //(Traction->psSection) jest podstacją, a (tmp->psSection) nazwą sekcji
-                            traction->PowerSet( matchingtraction->psSection ); // zastąpienie wskazaniem sekcji
-                        }
-                        else {
-                            // jeśli obie to sekcje albo obie podstacje, to będzie błąd
-                            ErrorLog( "Bad scenario: faulty traction power connection at location " + to_string( traction->pPoint2 ) );
-                        }
-                    }
+            // jeśli został podłączony
+            // tylko przęsło z izolatorem może nie mieć zasilania, bo ma 2, trzeba sprawdzać sąsiednie
+            if (traction->hvNext[ 1 ] && traction->psSection != nullptr
+                 && matchingtraction->psSection != nullptr && traction->psSection != matchingtraction->psSection) {
+                // to może być albo podłączenie podstacji lub kabiny sekcyjnej do sekcji, albo błąd
+                if( true == traction->psSection->bSection
+                 && false == matchingtraction->psSection->bSection ) {
+                    //(tmp->psSection) jest podstacją, a (Traction->psSection) nazwą sekcji
+                    matchingtraction->PowerSet( traction->psSection ); // zastąpienie wskazaniem sekcji
+                }
+                else if( false == traction->psSection->bSection
+                      && true == matchingtraction->psSection->bSection ) {
+                    //(Traction->psSection) jest podstacją, a (tmp->psSection) nazwą sekcji
+                    traction->PowerSet( matchingtraction->psSection ); // zastąpienie wskazaniem sekcji
+                }
+                else {
+                    // jeśli obie to sekcje albo obie podstacje, to będzie błąd
+                    ErrorLog( "Bad scenario: faulty traction power connection at location " + to_string( traction->pPoint2 ) );
                 }
             }
         }
