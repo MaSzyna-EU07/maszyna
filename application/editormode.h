@@ -432,6 +432,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	int m_terrain_layer{0};               // entry of the palette painted
 	char m_terrain_material[128]{"grass"}; // material added to the palette
 	float m_terrain_material_size{0.0f};   // metres its textures repeat at, 0: given by the material
+	float m_terrain_layer_size{0.0f};      // repeat of the chosen palette entry, while it's dragged
+	bool m_terrain_layer_size_dragged{false};
+	float m_terrain_layer_rotation{0.0f};  // angle of the chosen palette entry, while it's dragged
+	bool m_terrain_layer_rotation_dragged{false};
 	std::vector<glm::dvec3> m_water_points; // outline of a body of water being drawn
 	float m_water_level{0.0f};
 	bool m_water_level_edited{false}; // the level was given by hand, the points clicked don't change it

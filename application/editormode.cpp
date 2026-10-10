@@ -1762,18 +1762,24 @@ void editor_mode::render_terrain_ui()
         }
         if (false == layers.empty())
         {
-            auto size{layers[m_terrain_layer].size};
+            // the values are kept while dragged and given to the palette once the dragging ends;
+            // read back from the palette every frame, the release would hand it the old value
+            if (false == m_terrain_layer_size_dragged)
+                m_terrain_layer_size = layers[m_terrain_layer].size;
             ImGui::SetNextItemWidth(120.0f);
-            ImGui::DragFloat(STR_C("Repeats every (m)"), &size, 0.1f, 0.0f, 200.0f, "%.1f");
+            ImGui::DragFloat(STR_C("Repeats every (m)"), &m_terrain_layer_size, 0.1f, 0.0f, 200.0f, "%.1f");
+            m_terrain_layer_size_dragged = ImGui::IsItemActive();
             if (ImGui::IsItemDeactivatedAfterEdit())
-                m_streamer.layer_size(static_cast<std::uint16_t>(m_terrain_layer), size);
+                m_streamer.layer_size(static_cast<std::uint16_t>(m_terrain_layer), m_terrain_layer_size);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", STR_C("Metres the textures of the chosen material repeat at; 0: as the material gives it, or 8 m"));
-            auto rotation{layers[m_terrain_layer].rotation};
+            if (false == m_terrain_layer_rotation_dragged)
+                m_terrain_layer_rotation = layers[m_terrain_layer].rotation;
             ImGui::SetNextItemWidth(120.0f);
-            ImGui::SliderFloat(STR_C("Turned by (deg)"), &rotation, -180.0f, 180.0f, "%.0f");
+            ImGui::SliderFloat(STR_C("Turned by (deg)"), &m_terrain_layer_rotation, -180.0f, 180.0f, "%.0f");
+            m_terrain_layer_rotation_dragged = ImGui::IsItemActive();
             if (ImGui::IsItemDeactivatedAfterEdit())
-                m_streamer.layer_rotation(static_cast<std::uint16_t>(m_terrain_layer), rotation);
+                m_streamer.layer_rotation(static_cast<std::uint16_t>(m_terrain_layer), m_terrain_layer_rotation);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", STR_C("Angle the textures of the chosen material are turned by, on every chunk painted with it.\n"
                                         "Ctrl+click to type it. To have the material turned in one place only, fill it there with an angle of its own."));
