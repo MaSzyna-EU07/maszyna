@@ -62,7 +62,7 @@ private:
 	// coloring
 	void GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity ) const;
 	float GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, const float Turbidity ) const;		
-	float PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) const;
-	float PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) const;
+	float PerezFunctionO1( float const Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) const;
+	float PerezFunctionO2( float const Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) const;
 };
 

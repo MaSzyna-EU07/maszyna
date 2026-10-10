@@ -188,7 +188,7 @@ void python_screen_viewer::threadfunc()
 	}
 }
 
-void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int h) const
+void python_screen_viewer::notify_window_fb_size(GLFWwindow const *window, int w, int h) const
 {
     for (auto const &conf : m_windows) {
         if (conf->window == window) {
@@ -199,7 +199,7 @@ void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int 
     }
 }
 
-void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h) const
+void python_screen_viewer::notify_window_size(GLFWwindow const *window, int w, int h) const
 {
 	for (auto const &conf : m_windows) {
 		if (conf->window == window) {
@@ -210,7 +210,7 @@ void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h) 
 	}
 }
 
-void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, double x, double y) const
+void python_screen_viewer::notify_cursor_pos(GLFWwindow const *window, double x, double y) const
 {
     for (auto const &conf : m_windows) {
         if (conf->window == window) {
@@ -221,7 +221,7 @@ void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, double x, doubl
     }
 }
 
-void python_screen_viewer::notify_click(GLFWwindow *window, int button, int action) const
+void python_screen_viewer::notify_click(GLFWwindow const *window, int button, int action) const
 {
     if (button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS)
         return;

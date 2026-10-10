@@ -31,7 +31,7 @@ void float4x4::serialize_float32(std::ostream &s) const
 		sn_utils::ls_float32(s, element);
 }
 
-void float4x4::Quaternion(float4 *q)
+void float4x4::Quaternion(float4 const *q)
 { // konwersja kwaternionu obrotu na macierz obrotu
     float xx = q->x * q->x;
     float yy = q->y * q->y;

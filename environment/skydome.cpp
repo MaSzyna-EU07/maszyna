@@ -166,7 +166,7 @@ float CSkyDome::GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, cons
 
 }
 
-float CSkyDome::PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) const {
+float CSkyDome::PerezFunctionO1( float const Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) const {
 
 	const float val = static_cast<float>(( 1.0f + Perezcoeffs[ 0 ] * std::exp( Perezcoeffs[ 1 ] ) ) *
 						( 1.0f + Perezcoeffs[ 2 ] * std::exp( Perezcoeffs[ 3 ] * Thetasun ) + Perezcoeffs[ 4 ] * std::pow( std::cos( Thetasun ), 2 ) ));
@@ -174,7 +174,7 @@ float CSkyDome::PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, c
 	return Zenithval / val;
 }
 
-float CSkyDome::PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) const {
+float CSkyDome::PerezFunctionO2( float const Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) const {
 	// iCosTheta = 1.0f / cosf(theta)
 	// cosGamma2 = SQR( cosf( gamma ) )
 	return Zenithval * ( 1.0f + Perezcoeffs[ 0 ] * std::exp( Perezcoeffs[ 1 ] * Icostheta ) ) * 
