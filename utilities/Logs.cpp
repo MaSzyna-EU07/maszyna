@@ -175,7 +175,7 @@ void WriteLog(std::string_view str, logtype type, bool isError)
 	const auto message = FormatLogMessage(str);
 
 	std::scoped_lock lock(logMutex);
-	InfoStack.push_back({message, isError});
+	InfoStack.emplace_back(message, isError);
 }
 
 void ErrorLog(std::string_view str, logtype type)
