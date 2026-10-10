@@ -707,7 +707,6 @@ double TWest::GetPF(double const PP, double const dt, double const Vel)
 	temp = BVP * int(EPS > 0);
 	dv = PF(temp, LBP, 0.0015) * dt * EPS * EPS * int(LBP * EPS < MaxBP * LoadC);
 	LBP = LBP - dv;
-	dv = 0;
 
 	// przeplyw ZP <-> silowniki
 	if ((BrakeStatus & b_on) == b_on && (TareBP < 0.1 || BCP < MaxBP * LoadC))
@@ -783,7 +782,6 @@ void TWest::SetEPS(double const nEPS)
 {
 	double BCP;
 
-	BCP = BrakeCyl->P();
 	if (nEPS > 0)
 		DCV = true;
 	else if (nEPS == 0 && EPS != 0)
@@ -855,7 +853,6 @@ void TESt::CheckState(double const BCP, double & /*dV1*/)
 {
 
 	double const VVP{ValveRes->P()};
-	double const BVP{BrakeRes->P()};
 	double const CVP{CntrlRes->P()};
 
 	// sprawdzanie stanu
@@ -997,11 +994,8 @@ double TESt::GetPF(double const PP, double const dt, double const Vel)
 	double CVP;
 
 	BVP = BrakeRes->P();
-	VVP = ValveRes->P();
 	BCP = BrakeCyl->P();
-	CVP = CntrlRes->P() - 0.0;
 
-	dv = 0;
 	dV1 = 0;
 
 	// sprawdzanie stanu
@@ -1157,7 +1151,6 @@ double TEStEP2::GetPF(double const PP, double const dt, double const Vel)
 	BCP = ImplsRes->P();
 	CVP = CntrlRes->P(); // 110115 - konsultacje warszawa1
 
-	dv = 0;
 	dV1 = 0;
 
 	// odluzniacz
@@ -1340,9 +1333,9 @@ void TEStEP1::SetEPS(double const nEPS)
 double TESt3::GetPF(double const PP, double const dt, double const Vel)
 {
 	double BVP{BrakeRes->P()};
-	double VVP{ValveRes->P()};
+	double VVP;
 	double BCP{BrakeCyl->P()};
-	double CVP{CntrlRes->P() - 0.0};
+	double CVP;
 
 	double dv{0.0};
 	double dV1{0.0};
@@ -1417,11 +1410,8 @@ double TESt4R::GetPF(double const PP, double const dt, double const Vel)
 	double CVP;
 
 	BVP = BrakeRes->P();
-	VVP = ValveRes->P();
 	BCP = ImplsRes->P();
-	CVP = CntrlRes->P();
 
-	dv = 0;
 	dV1 = 0;
 
 	// sprawdzanie stanu
@@ -1540,11 +1530,9 @@ double TESt3AL2::GetPF(double const PP, double const dt, double const Vel)
 	double CVP;
 
 	BVP = BrakeRes->P();
-	VVP = ValveRes->P();
 	BCP = ImplsRes->P();
 	CVP = CntrlRes->P() - 0.0;
 
-	dv = 0;
 	dV1 = 0;
 
 	// sprawdzanie stanu
@@ -2239,11 +2227,9 @@ double TCV1::GetPF(double const PP, double const dt, double const Vel)
 	double CVP;
 
 	BVP = BrakeRes->P();
-	VVP = std::min(ValveRes->P(), BVP + 0.05);
 	BCP = BrakeCyl->P();
 	CVP = CntrlRes->P();
 
-	dv = 0;
 	dV1 = 0;
 
 	// sprawdzanie stanu
@@ -2398,11 +2384,9 @@ double TCV1L_TR::GetPF(double const PP, double const dt, double const Vel)
 	double CVP;
 
 	BVP = BrakeRes->P();
-	VVP = std::min(ValveRes->P(), BVP + 0.05);
 	BCP = ImplsRes->P();
 	CVP = CntrlRes->P();
 
-	dv = 0;
 	dV1 = 0;
 
 	// sprawdzanie stanu
@@ -2504,7 +2488,6 @@ void TKE::CheckState(double const BCP, double & /*dV1*/)
 	double BVP;
 	double CVP;
 
-	BVP = BrakeRes->P();
 	VVP = ValveRes->P();
 	CVP = CntrlRes->P();
 
@@ -2580,7 +2563,6 @@ double TKE::CVs(double const BP) const
 	double BVP;
 	double CVP;
 
-	BVP = BrakeRes->P();
 	CVP = CntrlRes->P();
 	VVP = ValveRes->P();
 
@@ -2647,7 +2629,6 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 	IMP = ImplsRes->P();
 	CVP = CntrlRes->P();
 
-	dv = 0;
 	dV1 = 0;
 
 	// sprawdzanie stanu
@@ -3032,7 +3013,6 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	int const LBDelay{100};
 	double const xpM{0.3}; // mnoznik membrany komory pod
 
-	ep = PP / 2.0 * 1.5 + ep / 2.0 * 0.5; // SPKS!!
 
 	for (int idx = 0; idx < 5; ++idx)
 	{
@@ -3275,7 +3255,6 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 		Sounds[idx] = 0;
 	}
 
-	DP = 0;
 
 	i_bcp = std::clamp(i_bcp, -0.999, 9.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
@@ -3482,7 +3461,6 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		Sounds[idx] = 0;
 	}
 
-	DP = 0;
 
 	i_bcp = std::clamp(i_bcp, -0.999, 2.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
@@ -3503,7 +3481,6 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		LimCP = 3.4;
 	else // luzowanie
 		LimCP = 5.0;
-	pom = CP;
 	LimCP = std::min(LimCP, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 
@@ -3661,7 +3638,6 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		Sounds[idx] = 0;
 	}
 
-	DP = 0;
 
 	i_bcp = std::clamp(i_bcp, -0.999, 3.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
@@ -3682,7 +3658,6 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		LimCP = 3.4;
 	else // luzowanie
 		LimCP = 5.0;
-	pom = CP;
 	LimCP = std::min(LimCP, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 

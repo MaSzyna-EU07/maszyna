@@ -262,7 +262,6 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
     }
     else
     {
-        ConversionError = 666;
         vActual = -1;
         s = scnpath + TrainName + ".txt";
 		replace_slashes(s);

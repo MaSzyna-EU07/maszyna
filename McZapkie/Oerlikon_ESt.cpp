@@ -334,7 +334,6 @@ double TNESt3::GetCRP()
 
 void TNESt3::CheckState(double const BCP, double & /*dV1*/) // glowny przyrzad rozrzadczy
 {
-    double const BVP{ BrakeRes->P() }; //-> tu ma byc komora rozprezna
     double const VVP{ ValveRes->P() };
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
