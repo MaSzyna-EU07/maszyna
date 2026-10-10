@@ -76,7 +76,11 @@ inline float3 SafeNormalize(const float3 &v)
     auto const l = v.Length();
     float3 retVal;
     if (l == 0)
-        retVal.x = retVal.y = retVal.z = 0;
+    {
+        retVal.x = 0;
+        retVal.y = 0;
+        retVal.z = 0;
+    }
     else
         retVal = v / l;
     return retVal;
@@ -104,7 +108,9 @@ class float4
     float w;
     float4()
     {
-        x = y = z = 0.f;
+        x = 0.f;
+        y = 0.f;
+        z = 0.f;
         w = 1.f;
     };
     float4(float a, float b, float c, float d)
@@ -236,7 +242,10 @@ public:
     {
         for (auto &element : e)
             element = 0;
-        e[0] = e[5] = e[10] = e[15] = 1.0f;
+        e[0] = 1.0f;
+        e[5] = 1.0f;
+        e[10] = 1.0f;
+        e[15] = 1.0f;
     }
     const float *operator[](int i) const
     {

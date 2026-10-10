@@ -489,7 +489,9 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string TypeNameInit, 
 		for (int k = 1; k < 9; ++k)
 			compressorrow[k] = 0;
 	CompressorList[0][0] = 0.0;
-	CompressorList[1][0] = CompressorList[2][0] = CompressorList[3][0] = 1.0;
+	CompressorList[1][0] = 1.0;
+	CompressorList[2][0] = 1.0;
+	CompressorList[3][0] = 1.0;
 
 	for (int b = -1; b <= MainBrakeMaxPos; ++b)
 	{
@@ -669,8 +671,8 @@ bool TMoverParameters::Dettach(int ConnectNo)
 	if (couplingstate < 0)
 	{
 		// gdy scisniete zderzaki, chyba ze zerwany sprzeg (wirtualnego nie odpinamy z drugiej strony)
-		std::tie(coupler.Connected, coupler.ConnectedNr, coupler.CouplingFlag) = std::tie(othercoupler.Connected, othercoupler.ConnectedNr, othercoupler.CouplingFlag) =
-		    std::make_tuple(nullptr, -1, coupling::faux);
+		std::tie(othercoupler.Connected, othercoupler.ConnectedNr, othercoupler.CouplingFlag) = std::make_tuple(nullptr, -1, coupling::faux);
+		std::tie(coupler.Connected, coupler.ConnectedNr, coupler.CouplingFlag) = std::make_tuple(nullptr, -1, coupling::faux);
 	}
 	else if (couplingstate > 0)
 	{ // odłączamy węże i resztę, pozostaje sprzęg fizyczny, który wymaga dociśnięcia (z wirtualnym nic)
@@ -8187,8 +8189,16 @@ double TMoverParameters::dizel_MomentumRetarder(double n, double dt)
 void TMoverParameters::dizel_HeatSet(float const Value)
 {
 
-	dizel_heat.Te = // TODO: don't include ambient temperature, pull it from environment data instead
-	    dizel_heat.Ts = dizel_heat.To = dizel_heat.Tsr = dizel_heat.Twy = dizel_heat.Tsr2 = dizel_heat.Twy2 = dizel_heat.temperatura1 = dizel_heat.temperatura2 = Value;
+	// TODO: don't include ambient temperature, pull it from environment data instead
+	dizel_heat.Te = Value;
+	dizel_heat.Ts = Value;
+	dizel_heat.To = Value;
+	dizel_heat.Tsr = Value;
+	dizel_heat.Twy = Value;
+	dizel_heat.Tsr2 = Value;
+	dizel_heat.Twy2 = Value;
+	dizel_heat.temperatura1 = Value;
+	dizel_heat.temperatura2 = Value;
 }
 
 // calculates diesel engine temperature and heat transfers
@@ -10929,7 +10939,8 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	// traction motor fans
 	{
 		auto lookup = starts.find(extract_value("MotorBlowersStart", line));
-		MotorBlowers[end::front].start_type = MotorBlowers[end::rear].start_type = lookup != starts.end() ? lookup->second : start_t::manual;
+		MotorBlowers[end::rear].start_type = lookup != starts.end() ? lookup->second : start_t::manual;
+		MotorBlowers[end::front].start_type = MotorBlowers[end::rear].start_type;
 	}
 	// compartment lights
 	{
