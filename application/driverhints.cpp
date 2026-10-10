@@ -501,16 +501,14 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             break;
         }
         case driver_hint::mastercontrollersetseriesmode: {
-            if( AIControllFlag ) {
-                if( mvControlling->RList[ mvControlling->MainCtrlPos ].Bn > 1 ) {
-                    // limit yourself to series mode
-                    if( mvControlling->ScndCtrlPos ) {
-                        mvControlling->DecScndCtrl( 2 );
-                    }
-                    while( mvControlling->RList[mvControlling->MainCtrlPos].Bn > 1
-                        && mvControlling->DecMainCtrl(1) ) {
-                        // all work is performed in the header
-                    }
+            if (AIControllFlag && mvControlling->RList[ mvControlling->MainCtrlPos ].Bn > 1) {
+                // limit yourself to series mode
+                if( mvControlling->ScndCtrlPos ) {
+                    mvControlling->DecScndCtrl( 2 );
+                }
+                while( mvControlling->RList[mvControlling->MainCtrlPos].Bn > 1
+                    && mvControlling->DecMainCtrl(1) ) {
+                    // all work is performed in the header
                 }
             }
             remove_master_controller_hints();
@@ -581,10 +579,8 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             break;
         }
         case driver_hint::bufferscompress: {
-            if( AIControllFlag ) {
-                if( std::abs( mvControlling->Ft ) < 50000.0 ) {
-                    IncSpeed();
-                }
+            if (AIControllFlag && std::abs( mvControlling->Ft ) < 50000.0) {
+                IncSpeed();
             }
             remove_master_controller_hints();
             hint(
@@ -773,12 +769,10 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         // driver_hint_brakingforcesetzero
         // driver_hint_brakingforcelap
         case driver_hint::trainbrakesetpipeunlock: {
-            if( AIControllFlag ) {
-                if( mvOccupied->HandleUnlock != -3 ) {
-                    while( BrakeCtrlPosition >= mvOccupied->HandleUnlock
-                        && BrakeLevelAdd(-1) ) {
-                        // all work is done in the header
-                    }
+            if (AIControllFlag && mvOccupied->HandleUnlock != -3) {
+                while( BrakeCtrlPosition >= mvOccupied->HandleUnlock
+                    && BrakeLevelAdd(-1) ) {
+                    // all work is done in the header
                 }
             }
             remove_train_brake_hints();
@@ -878,13 +872,11 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
         // independent brake
         case driver_hint::independentbrakeapply: {
-            if( AIControllFlag ) {
-                if( mvOccupied->LocalBrakePosA < 1.0 ) {
-                    mvOccupied->IncLocalBrakeLevel( LocalBrakePosNo );
-                    if (mvOccupied->EIMCtrlEmergency) {
-                        mvOccupied->DecLocalBrakeLevel(1);
+            if (AIControllFlag && mvOccupied->LocalBrakePosA < 1.0) {
+                mvOccupied->IncLocalBrakeLevel( LocalBrakePosNo );
+                if (mvOccupied->EIMCtrlEmergency) {
+                    mvOccupied->DecLocalBrakeLevel(1);
 					}
-                }
             }
             remove_hint( driver_hint::independentbrakerelease );
             hint(
@@ -1192,10 +1184,8 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
 
         case driver_hint::securitysystemreset: {
-            if( AIControllFlag ) {
-                if (mvOccupied->SecuritySystem.is_blinking())
-                    mvOccupied->SecuritySystemReset();
-            }
+            if (AIControllFlag && mvOccupied->SecuritySystem.is_blinking())
+                mvOccupied->SecuritySystemReset();
             hint(
                 Action,
                 [this](float const /*Parameter*/) {
@@ -1203,10 +1193,8 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             break;
         }
         case driver_hint::shpsystemreset: {
-            if( AIControllFlag ) {
-                if (mvOccupied->SecuritySystem.is_cabsignal_blinking())
-                    mvOccupied->SecuritySystem.cabsignal_reset();
-            }
+            if (AIControllFlag && mvOccupied->SecuritySystem.is_cabsignal_blinking())
+                mvOccupied->SecuritySystem.cabsignal_reset();
             hint(
                 Action,
                 [this](float const /*Parameter*/) {

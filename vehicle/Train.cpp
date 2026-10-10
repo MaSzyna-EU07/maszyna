@@ -1007,13 +1007,10 @@ void TTrain::set_train_brake(double const Position)
 		return;
 	}
 
-	if (true == is_eztoer() && false == ((originalbrakeposition / 100 == 0 || originalbrakeposition / 100 >= 5) && (mvOccupied->BrakeCtrlPos == 0 || mvOccupied->BrakeCtrlPos >= 5)))
+	// sound feedback if the lever movement activates one of the switches
+	if (true == is_eztoer() && false == ((originalbrakeposition / 100 == 0 || originalbrakeposition / 100 >= 5) && (mvOccupied->BrakeCtrlPos == 0 || mvOccupied->BrakeCtrlPos >= 5)) && dsbPneumaticSwitch)
 	{
-		// sound feedback if the lever movement activates one of the switches
-		if (dsbPneumaticSwitch)
-		{
-			dsbPneumaticSwitch->play();
-		}
+		dsbPneumaticSwitch->play();
 	}
 }
 
@@ -1031,24 +1028,21 @@ void TTrain::zero_charging_train_brake()
 void TTrain::set_train_brake_speed(TDynamicObject *Vehicle, int const Speed)
 {
 
-	if (true == Vehicle->MoverParameters->BrakeDelaySwitch(Speed))
+	// visual feedback
+	// TODO: add setting indicator to vehicle class, for external lever/indicator
+	if (true == Vehicle->MoverParameters->BrakeDelaySwitch(Speed) && Vehicle == DynamicObject)
 	{
-		// visual feedback
-		// TODO: add setting indicator to vehicle class, for external lever/indicator
-		if (Vehicle == DynamicObject)
+		if (ggBrakeProfileCtrl.SubModel != nullptr)
 		{
-			if (ggBrakeProfileCtrl.SubModel != nullptr)
-			{
-				ggBrakeProfileCtrl.UpdateValue((mvOccupied->BrakeDelayFlag & bdelay_R) != 0 ? 2.0 : static_cast<float>(mvOccupied->BrakeDelayFlag - 1), dsbSwitch);
-			}
-			if (ggBrakeProfileG.SubModel != nullptr)
-			{
-				ggBrakeProfileG.UpdateValue(mvOccupied->BrakeDelayFlag == bdelay_G ? 1.0 : 0.0, dsbSwitch);
-			}
-			if (ggBrakeProfileR.SubModel != nullptr)
-			{
-				ggBrakeProfileR.UpdateValue((mvOccupied->BrakeDelayFlag & bdelay_R) != 0 ? 1.0 : 0.0, dsbSwitch);
-			}
+			ggBrakeProfileCtrl.UpdateValue((mvOccupied->BrakeDelayFlag & bdelay_R) != 0 ? 2.0 : static_cast<float>(mvOccupied->BrakeDelayFlag - 1), dsbSwitch);
+		}
+		if (ggBrakeProfileG.SubModel != nullptr)
+		{
+			ggBrakeProfileG.UpdateValue(mvOccupied->BrakeDelayFlag == bdelay_G ? 1.0 : 0.0, dsbSwitch);
+		}
+		if (ggBrakeProfileR.SubModel != nullptr)
+		{
+			ggBrakeProfileR.UpdateValue((mvOccupied->BrakeDelayFlag & bdelay_R) != 0 ? 1.0 : 0.0, dsbSwitch);
 		}
 	}
 }
@@ -1109,13 +1103,9 @@ void TTrain::OnCommand_aidriverenable(TTrain *Train, command_data const &Command
 void TTrain::OnCommand_aidriverdisable(TTrain *Train, command_data const &Command)
 {
 
-	if (Command.action == GLFW_PRESS)
-	{
-		// on press
-
-		if (Train->DynamicObject->Mechanik)
-			Train->DynamicObject->Mechanik->TakeControl(false);
-	}
+	// on press
+	if (Command.action == GLFW_PRESS && Train->DynamicObject->Mechanik)
+		Train->DynamicObject->Mechanik->TakeControl(false);
 }
 
 auto const EU07_CONTROLLER_BASERETURNDELAY{0.5f};
@@ -1624,13 +1614,10 @@ void TTrain::OnCommand_secondcontrollerdecrease(TTrain *Train, command_data cons
 		if (Train->ggScndCtrl.is_push())
 		{
 			// basic push control can't decrease state, but pushtoggle can
-			if (true == Train->ggScndCtrl.is_toggle())
+			if (true == Train->ggScndCtrl.is_toggle() && Command.action == GLFW_PRESS)
 			{
-				if (Command.action == GLFW_PRESS)
-				{
-					// activate on press
-					Train->mvControlled->DecScndCtrl(1);
-				}
+				// activate on press
+				Train->mvControlled->DecScndCtrl(1);
 			}
 		}
 		// toggle control type
@@ -2348,20 +2335,17 @@ void TTrain::OnCommand_autosandboxdeactivate(TTrain *Train, command_data const &
 void TTrain::OnCommand_epbrakecontrolenable(TTrain *Train, command_data const &Command)
 {
 	auto const istoggle{(static_cast<int>(Train->ggEPFuseButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-	if (Command.action == GLFW_PRESS)
+	// command only works for bistable switch
+	if (Command.action == GLFW_PRESS && istoggle)
 	{
-		// command only works for bistable switch
-		if (istoggle)
+		if (Train->mvOccupied->EpFuseSwitch(true))
 		{
-			if (Train->mvOccupied->EpFuseSwitch(true))
+			// audio feedback
+			if (Train->dsbPneumaticSwitch)
 			{
-				// audio feedback
-				if (Train->dsbPneumaticSwitch)
-				{
-					Train->dsbPneumaticSwitch->play();
-				}
-				Train->ggEPFuseButton.UpdateValue(1.0f, Train->dsbSwitch);
+				Train->dsbPneumaticSwitch->play();
 			}
+			Train->ggEPFuseButton.UpdateValue(1.0f, Train->dsbSwitch);
 		}
 	}
 }
@@ -2369,15 +2353,12 @@ void TTrain::OnCommand_epbrakecontrolenable(TTrain *Train, command_data const &C
 void TTrain::OnCommand_epbrakecontroldisable(TTrain *Train, command_data const &Command)
 {
 	auto const istoggle{(static_cast<int>(Train->ggEPFuseButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-	if (Command.action == GLFW_PRESS)
+	// command only works for bistable switch
+	if (Command.action == GLFW_PRESS && istoggle)
 	{
-		// command only works for bistable switch
-		if (istoggle)
+		if (Train->mvOccupied->EpFuseSwitch(false))
 		{
-			if (Train->mvOccupied->EpFuseSwitch(false))
-			{
-				Train->ggEPFuseButton.UpdateValue(0.0f, Train->dsbSwitch);
-			}
+			Train->ggEPFuseButton.UpdateValue(0.0f, Train->dsbSwitch);
 		}
 	}
 }
@@ -2401,13 +2382,10 @@ void TTrain::OnCommand_epbrakecontroltoggle(TTrain *Train, command_data const &C
 			if (false == Train->mvOccupied->EpFuse)
 			{
 				// turn on
-				if (Train->mvOccupied->EpFuseSwitch(true))
+				// audio feedback
+				if (Train->mvOccupied->EpFuseSwitch(true) && Train->dsbPneumaticSwitch)
 				{
-					// audio feedback
-					if (Train->dsbPneumaticSwitch)
-					{
-						Train->dsbPneumaticSwitch->play();
-					}
+					Train->dsbPneumaticSwitch->play();
 				}
 			}
 			else
@@ -2419,13 +2397,10 @@ void TTrain::OnCommand_epbrakecontroltoggle(TTrain *Train, command_data const &C
 		else if (ispush)
 		{
 			// potentially turn on
-			if (Train->mvOccupied->EpFuseSwitch(true))
+			// audio feedback
+			if (Train->mvOccupied->EpFuseSwitch(true) && Train->dsbPneumaticSwitch)
 			{
-				// audio feedback
-				if (Train->dsbPneumaticSwitch)
-				{
-					Train->dsbPneumaticSwitch->play();
-				}
+				Train->dsbPneumaticSwitch->play();
 			}
 		}
 		// visual feedback
@@ -2434,45 +2409,36 @@ void TTrain::OnCommand_epbrakecontroltoggle(TTrain *Train, command_data const &C
 		                                                                  0.0f, // toggle
 		                                  Train->dsbSwitch);
 	}
-	else if (Command.action == GLFW_RELEASE)
+	else if (Command.action == GLFW_RELEASE && ispush)
 	{
-		if (ispush)
-		{
-			// return the switch to neutral position
-			Train->ggEPFuseButton.UpdateValue(0.0f, Train->dsbSwitch);
-		}
+		// return the switch to neutral position
+		Train->ggEPFuseButton.UpdateValue(0.0f, Train->dsbSwitch);
 	}
 }
 
 void TTrain::OnCommand_trainbrakeoperationmodeincrease(TTrain *Train, command_data const &Command)
 {
 
-	if (Command.action == GLFW_PRESS)
+	// only reacting to press, so the switch doesn't flip back and forth if key is held down
+	if (Command.action == GLFW_PRESS && (Train->mvOccupied->BrakeOpModeFlag << 1 & Train->mvOccupied->BrakeOpModes) != 0)
 	{
-		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		if ((Train->mvOccupied->BrakeOpModeFlag << 1 & Train->mvOccupied->BrakeOpModes) != 0)
-		{
-			// next mode
-			Train->mvOccupied->BrakeOpModeFlag <<= 1;
-			// visual feedback
-			Train->ggBrakeOperationModeCtrl.UpdateValue(Train->mvOccupied->BrakeOpModeFlag > 0 ? static_cast<float>(std::log2(Train->mvOccupied->BrakeOpModeFlag)) : 0); // audio fallback
-		}
+		// next mode
+		Train->mvOccupied->BrakeOpModeFlag <<= 1;
+		// visual feedback
+		Train->ggBrakeOperationModeCtrl.UpdateValue(Train->mvOccupied->BrakeOpModeFlag > 0 ? static_cast<float>(std::log2(Train->mvOccupied->BrakeOpModeFlag)) : 0); // audio fallback
 	}
 }
 
 void TTrain::OnCommand_trainbrakeoperationmodedecrease(TTrain *Train, command_data const &Command)
 {
 
-	if (Command.action == GLFW_PRESS)
+	// only reacting to press, so the switch doesn't flip back and forth if key is held down
+	if (Command.action == GLFW_PRESS && (Train->mvOccupied->BrakeOpModeFlag >> 1 & Train->mvOccupied->BrakeOpModes) != 0)
 	{
-		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		if ((Train->mvOccupied->BrakeOpModeFlag >> 1 & Train->mvOccupied->BrakeOpModes) != 0)
-		{
-			// previous mode
-			Train->mvOccupied->BrakeOpModeFlag >>= 1;
-			// visual feedback
-			Train->ggBrakeOperationModeCtrl.UpdateValue(Train->mvOccupied->BrakeOpModeFlag > 0 ? static_cast<float>(std::log2(Train->mvOccupied->BrakeOpModeFlag)) : 0);
-		}
+		// previous mode
+		Train->mvOccupied->BrakeOpModeFlag >>= 1;
+		// visual feedback
+		Train->ggBrakeOperationModeCtrl.UpdateValue(Train->mvOccupied->BrakeOpModeFlag > 0 ? static_cast<float>(std::log2(Train->mvOccupied->BrakeOpModeFlag)) : 0);
 	}
 }
 
@@ -2671,14 +2637,11 @@ void TTrain::OnCommand_reverserincrease(TTrain *Train, command_data const &Comma
 			return;
 		}
 
-		if (Train->mvOccupied->DirectionForward())
+		// aktualizacja skrajnych pojazdów w składzie
+		if (Train->mvOccupied->DirectionForward() && Train->mvOccupied->DirActive && Train->DynamicObject->Mechanik)
 		{
-			// aktualizacja skrajnych pojazdów w składzie
-			if (Train->mvOccupied->DirActive && Train->DynamicObject->Mechanik)
-			{
 
-				Train->DynamicObject->Mechanik->DirectionChange();
-			}
+			Train->DynamicObject->Mechanik->DirectionChange();
 		}
 	}
 }
@@ -2696,14 +2659,11 @@ void TTrain::OnCommand_reverserdecrease(TTrain *Train, command_data const &Comma
 			return;
 		}
 
-		if (Train->mvOccupied->DirectionBackward())
+		// aktualizacja skrajnych pojazdów w składzie
+		if (Train->mvOccupied->DirectionBackward() && Train->mvOccupied->DirActive && Train->DynamicObject->Mechanik)
 		{
-			// aktualizacja skrajnych pojazdów w składzie
-			if (Train->mvOccupied->DirActive && Train->DynamicObject->Mechanik)
-			{
 
-				Train->DynamicObject->Mechanik->DirectionChange();
-			}
+			Train->DynamicObject->Mechanik->DirectionChange();
 		}
 	}
 }
@@ -3109,13 +3069,10 @@ void TTrain::OnCommand_cabactivationenable(TTrain *Train, command_data const &Co
 			Train->Dynamic()->SetLights();
 		}
 	}
-	else if (Command.action == GLFW_RELEASE)
+	else if (Command.action == GLFW_RELEASE && Train->ggCabActivationButton.type() == TGaugeType::push)
 	{
-		if (Train->ggCabActivationButton.type() == TGaugeType::push)
-		{
-			// return the switch to neutral position
-			Train->ggCabActivationButton.UpdateValue(0.5f);
-		}
+		// return the switch to neutral position
+		Train->ggCabActivationButton.UpdateValue(0.5f);
 	}
 }
 
@@ -3136,13 +3093,10 @@ void TTrain::OnCommand_cabactivationdisable(TTrain *Train, command_data const &C
 			Train->Dynamic()->SetLights();
 		}
 	}
-	else if (Command.action == GLFW_RELEASE)
+	else if (Command.action == GLFW_RELEASE && Train->ggCabActivationButton.type() == TGaugeType::push)
 	{
-		if (Train->ggCabActivationButton.type() == TGaugeType::push)
-		{
-			// return the switch to neutral position
-			Train->ggCabActivationButton.UpdateValue(0.5f);
-		}
+		// return the switch to neutral position
+		Train->ggCabActivationButton.UpdateValue(0.5f);
 	}
 }
 
@@ -3838,12 +3792,9 @@ void TTrain::OnCommand_linebreakerclose(TTrain *Train, command_data const &Comma
 			// setup with two separate switches
 			Train->ggMainOnButton.UpdateValue(0.0, Train->dsbSwitch);
 		}
-		else if (Train->ggMainButton.SubModel != nullptr)
+		else if (Train->ggMainButton.SubModel != nullptr && Train->ggMainButton.type() != TGaugeType::toggle)
 		{
-			if (Train->ggMainButton.type() != TGaugeType::toggle)
-			{
-				Train->ggMainButton.UpdateValue(0.5, Train->dsbSwitch);
-			}
+			Train->ggMainButton.UpdateValue(0.5, Train->dsbSwitch);
 		}
 
 		if (Train->m_linebreakerstate == 1)
@@ -3851,16 +3802,13 @@ void TTrain::OnCommand_linebreakerclose(TTrain *Train, command_data const &Comma
 			return;
 		} // already in the desired state
 
-		if (Train->m_linebreakerstate == 2)
+		// we don't need to start the diesel twice, but the other types (with impulse switch setup) still need to be launched
+		// NOTE: this behaviour should depend on MainOnButton presence and type_delayed
+		// TODO: change it when/if vehicle definition files get their proper switch types
+		if (Train->m_linebreakerstate == 2 && Train->mvControlled->EngineType == TEngineType::ElectricSeriesMotor)
 		{
-			// we don't need to start the diesel twice, but the other types (with impulse switch setup) still need to be launched
-			// NOTE: this behaviour should depend on MainOnButton presence and type_delayed
-			// TODO: change it when/if vehicle definition files get their proper switch types
-			if (Train->mvControlled->EngineType == TEngineType::ElectricSeriesMotor)
-			{
-				// try to finalize state change of the line breaker, set the state based on the outcome
-				Train->m_linebreakerstate = Train->mvControlled->MainSwitch(true) ? 1 : 0;
-			}
+			// try to finalize state change of the line breaker, set the state based on the outcome
+			Train->m_linebreakerstate = Train->mvControlled->MainSwitch(true) ? 1 : 0;
 		}
 		// on button release reset the closing timer
 		Train->fMainRelayTimer = 0.0f;
@@ -6402,15 +6350,12 @@ void TTrain::OnCommand_compartmentlightsenable(TTrain *Train, command_data const
 	}
 	else if (Command.action == GLFW_RELEASE)
 	{
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		if (Train->m_controlmapper.contains("compartmentlights_sw:") && Train->ggCompartmentLightsButton.type() == TGaugeType::push)
 		{
-			if (Train->ggCompartmentLightsButton.type() == TGaugeType::push)
-			{
-				// return the switch to neutral position
-				Train->mvOccupied->CompartmentLightsSwitch(false);
-				Train->mvOccupied->CompartmentLightsSwitchOff(false);
-				Train->ggCompartmentLightsButton.UpdateValue(0.5f);
-			}
+			// return the switch to neutral position
+			Train->mvOccupied->CompartmentLightsSwitch(false);
+			Train->mvOccupied->CompartmentLightsSwitchOff(false);
+			Train->ggCompartmentLightsButton.UpdateValue(0.5f);
 		}
 		if (Train->m_controlmapper.contains("compartmentlightson_sw:"))
 		{
@@ -6446,15 +6391,12 @@ void TTrain::OnCommand_compartmentlightsdisable(TTrain *Train, command_data cons
 	}
 	else if (Command.action == GLFW_RELEASE)
 	{
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		if (Train->m_controlmapper.contains("compartmentlights_sw:") && Train->ggCompartmentLightsButton.type() == TGaugeType::push)
 		{
-			if (Train->ggCompartmentLightsButton.type() == TGaugeType::push)
-			{
-				// return the switch to neutral position
-				Train->mvOccupied->CompartmentLightsSwitch(false);
-				Train->mvOccupied->CompartmentLightsSwitchOff(false);
-				Train->ggCompartmentLightsButton.UpdateValue(0.5f);
-			}
+			// return the switch to neutral position
+			Train->mvOccupied->CompartmentLightsSwitch(false);
+			Train->mvOccupied->CompartmentLightsSwitchOff(false);
+			Train->ggCompartmentLightsButton.UpdateValue(0.5f);
 		}
 		if (Train->m_controlmapper.contains("compartmentlightsoff_sw:"))
 		{
@@ -6682,15 +6624,11 @@ void TTrain::OnCommand_heatingtoggle(TTrain *Train, command_data const &Command)
 			OnCommand_heatingdisable(Train, Command);
 		}
 	}
-	else if (Command.action == GLFW_RELEASE)
+	else if (Command.action == GLFW_RELEASE && Train->ggTrainHeatingButton.type() == TGaugeType::push)
 	{
-
-		if (Train->ggTrainHeatingButton.type() == TGaugeType::push)
-		{
-			// impulse switch
-			// visual feedback
-			Train->ggTrainHeatingButton.UpdateValue(0.0, Train->dsbSwitch);
-		}
+		// impulse switch
+		// visual feedback
+		Train->ggTrainHeatingButton.UpdateValue(0.0, Train->dsbSwitch);
 	}
 }
 
@@ -6759,16 +6697,12 @@ void TTrain::OnCommand_generictoggle(TTrain *Train, command_data const &Command)
 			}
 		}
 	}
-	else if (Command.action == GLFW_RELEASE)
+	else if (Command.action == GLFW_RELEASE && item.type() == TGaugeType::push)
 	{
-
-		if (item.type() == TGaugeType::push)
-		{
-			// impulse switch
-			// turn off
-			// visual feedback
-			item.UpdateValue(0.0);
-		}
+		// impulse switch
+		// turn off
+		// visual feedback
+		item.UpdateValue(0.0);
 	}
 }
 
@@ -7230,17 +7164,13 @@ void TTrain::OnCommand_doorpermitleft(TTrain *Train, command_data const &Command
 			Train->ggDoorLeftPermitButton.UpdateValue(newstate ? 1.0 : 0.0, Train->dsbSwitch);
 		}
 	}
-	else if (Command.action == GLFW_RELEASE)
+	else if (Command.action == GLFW_RELEASE && Train->ggDoorLeftPermitButton.is_push())
 	{
-
-		if (Train->ggDoorLeftPermitButton.is_push())
-		{
-			// impulse switch
-			// visual feedback
-			Train->ggDoorLeftPermitButton.UpdateValue(0.0, Train->dsbSwitch);
-			// reset potential remote door control timer
-			Train->m_doorpermittimers[side] = -1.f;
-		}
+		// impulse switch
+		// visual feedback
+		Train->ggDoorLeftPermitButton.UpdateValue(0.0, Train->dsbSwitch);
+		// reset potential remote door control timer
+		Train->m_doorpermittimers[side] = -1.f;
 	}
 }
 
@@ -7280,17 +7210,13 @@ void TTrain::OnCommand_doorpermitright(TTrain *Train, command_data const &Comman
 			Train->ggDoorRightPermitButton.UpdateValue(newstate ? 1.0 : 0.0, Train->dsbSwitch);
 		}
 	}
-	else if (Command.action == GLFW_RELEASE)
+	else if (Command.action == GLFW_RELEASE && Train->ggDoorRightPermitButton.type() == TGaugeType::push)
 	{
-
-		if (Train->ggDoorRightPermitButton.type() == TGaugeType::push)
-		{
-			// impulse switch
-			// visual feedback
-			Train->ggDoorRightPermitButton.UpdateValue(0.0, Train->dsbSwitch);
-			// reset potential remote door control timer
-			Train->m_doorpermittimers[side] = -1.f;
-		}
+		// impulse switch
+		// visual feedback
+		Train->ggDoorRightPermitButton.UpdateValue(0.0, Train->dsbSwitch);
+		// reset potential remote door control timer
+		Train->m_doorpermittimers[side] = -1.f;
 	}
 }
 
@@ -8398,15 +8324,11 @@ void TTrain::UpdateCab()
 
 	// Ra: przesiadka, jeśli AI zmieniło kabinę (a człon?)...
 	if (DynamicObject->Mechanik // może nie być?
-	    && DynamicObject->Mechanik->AIControllFlag)
+	    && DynamicObject->Mechanik->AIControllFlag && iCabn != ( // numer kabiny (-1: kabina B)
+		                 mvOccupied->CabOccupied == -1 ? 2 : mvOccupied->CabOccupied))
 	{
 
-		if (iCabn != ( // numer kabiny (-1: kabina B)
-		                 mvOccupied->CabOccupied == -1 ? 2 : mvOccupied->CabOccupied))
-		{
-
-			InitializeCab(mvOccupied->CabOccupied, mvOccupied->TypeName + ".mmd");
-		}
+		InitializeCab(mvOccupied->CabOccupied, mvOccupied->TypeName + ".mmd");
 	}
 	iCabn = mvOccupied->CabOccupied == -1 ? 2 : mvOccupied->CabOccupied;
 }
@@ -8415,22 +8337,16 @@ bool TTrain::Update(double const Deltatime)
 {
 	// train state update
 	// line breaker:
-	if (m_linebreakerstate == 0)
+	if (m_linebreakerstate == 0 && true == mvControlled->Mains)
 	{
-		if (true == mvControlled->Mains)
-		{
-			// crude way to sync state of the linebreaker with ai-issued commands
-			m_linebreakerstate = 1;
-		}
+		// crude way to sync state of the linebreaker with ai-issued commands
+		m_linebreakerstate = 1;
 	}
-	if (m_linebreakerstate == 1)
+	if (m_linebreakerstate == 1 && false == (mvControlled->Mains || mvControlled->dizel_startup))
 	{
-		if (false == (mvControlled->Mains || mvControlled->dizel_startup))
-		{
-			// crude way to catch cases where the main was knocked out
-			// because the state of the line breaker isn't changed to match, we need to do it here manually
-			m_linebreakerstate = 0;
-		}
+		// crude way to catch cases where the main was knocked out
+		// because the state of the line breaker isn't changed to match, we need to do it here manually
+		m_linebreakerstate = 0;
 	}
 
 	if ((ggMainButton.SubModel != nullptr && ggMainButton.GetDesiredValue() > 0.95) ||
@@ -8453,24 +8369,18 @@ bool TTrain::Update(double const Deltatime)
 		// if the button disconnecting the line breaker is down prevent the timer from accumulating
 		fMainRelayTimer = 0.0f;
 	}
-	if (m_linebreakerstate == 0)
+	if (m_linebreakerstate == 0 && fMainRelayTimer > mvControlled->InitialCtrlDelay)
 	{
-		if (fMainRelayTimer > mvControlled->InitialCtrlDelay)
-		{
-			// wlaczanie WSa z opoznieniem
-			// mark the line breaker as ready to close; for electric series vehicles with impulse switch the setup is completed on button release
-			m_linebreakerstate = 2;
-		}
+		// wlaczanie WSa z opoznieniem
+		// mark the line breaker as ready to close; for electric series vehicles with impulse switch the setup is completed on button release
+		m_linebreakerstate = 2;
 	}
-	if (m_linebreakerstate == 2)
+	// for diesels and/or vehicles with toggle switch setup we complete the engine start here
+	// TODO: make it a test for main_on_bt of type push_delayed instead
+	if (m_linebreakerstate == 2 && (ggMainOnButton.SubModel == nullptr || mvControlled->EngineType != TEngineType::ElectricSeriesMotor))
 	{
-		// for diesels and/or vehicles with toggle switch setup we complete the engine start here
-		// TODO: make it a test for main_on_bt of type push_delayed instead
-		if (ggMainOnButton.SubModel == nullptr || mvControlled->EngineType != TEngineType::ElectricSeriesMotor)
-		{
-			// try to finalize state change of the line breaker, set the state based on the outcome
-			m_linebreakerstate = mvControlled->MainSwitch(true) ? 1 : 0;
-		}
+		// try to finalize state change of the line breaker, set the state based on the outcome
+		m_linebreakerstate = mvControlled->MainSwitch(true) ? 1 : 0;
 	}
 	// door permits
 	for (auto idx = 0; idx < 2; ++idx)
@@ -8544,34 +8454,31 @@ bool TTrain::Update(double const Deltatime)
 
 	UpdateCab();
 
-	if (DynamicObject->Mechanik != nullptr && false == DynamicObject->Mechanik->AIControllFlag)
+	// nie blokujemy AI
+	if (DynamicObject->Mechanik != nullptr && false == DynamicObject->Mechanik->AIControllFlag && (mvOccupied->TrainType == dt_ET40 || mvOccupied->TrainType == dt_EP05 || mvOccupied->HasCamshaft))
 	{
-		// nie blokujemy AI
-		if (mvOccupied->TrainType == dt_ET40 || mvOccupied->TrainType == dt_EP05 || mvOccupied->HasCamshaft)
+		// dla ET40 i EU05 automatyczne cofanie nastawnika - i tak nie będzie to działać dobrze...
+		// TODO: use deltatime to stabilize speed
+		/*
+		            if( false == (
+		                ( input::command == user_command::mastercontrollerset )
+		                || ( input::command == user_command::mastercontrollerincrease )
+		                || ( input::command == user_command::mastercontrollerdecrease ) ) ) {
+		*/
+		if (false == (m_mastercontrollerinuse || Global.ctrlState))
 		{
-			// dla ET40 i EU05 automatyczne cofanie nastawnika - i tak nie będzie to działać dobrze...
-			// TODO: use deltatime to stabilize speed
-			/*
-			            if( false == (
-			                ( input::command == user_command::mastercontrollerset )
-			                || ( input::command == user_command::mastercontrollerincrease )
-			                || ( input::command == user_command::mastercontrollerdecrease ) ) ) {
-			*/
-			if (false == (m_mastercontrollerinuse || Global.ctrlState))
+			m_mastercontrollerreturndelay -= static_cast<float>(Deltatime);
+			if (m_mastercontrollerreturndelay < 0.f)
 			{
-				m_mastercontrollerreturndelay -= static_cast<float>(Deltatime);
-				if (m_mastercontrollerreturndelay < 0.f)
+				m_mastercontrollerreturndelay = EU07_CONTROLLER_BASERETURNDELAY;
+				if (mvOccupied->MainCtrlPos > mvOccupied->MainCtrlActualPos)
 				{
-					m_mastercontrollerreturndelay = EU07_CONTROLLER_BASERETURNDELAY;
-					if (mvOccupied->MainCtrlPos > mvOccupied->MainCtrlActualPos)
-					{
-						mvOccupied->DecMainCtrl(1);
-					}
-					else if (mvOccupied->MainCtrlPos < mvOccupied->MainCtrlActualPos)
-					{
-						// Ra 15-01: a to nie miało być tylko cofanie?
-						mvOccupied->IncMainCtrl(1);
-					}
+					mvOccupied->DecMainCtrl(1);
+				}
+				else if (mvOccupied->MainCtrlPos < mvOccupied->MainCtrlActualPos)
+				{
+					// Ra 15-01: a to nie miało być tylko cofanie?
+					mvOccupied->IncMainCtrl(1);
 				}
 			}
 		}
@@ -8842,46 +8749,41 @@ bool TTrain::Update(double const Deltatime)
 	// youBy - prad w drugim czlonie: galaz lub calosc
 	{
 		TDynamicObject *tmp{nullptr};
-		if (DynamicObject->NextConnected())
-			if (TestFlag(mvControlled->Couplers[end::rear].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == 1)
-				tmp = DynamicObject->NextConnected();
-		if (DynamicObject->PrevConnected())
-			if (TestFlag(mvControlled->Couplers[end::front].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == -1)
-				tmp = DynamicObject->PrevConnected();
-		if (tmp)
+		if (DynamicObject->NextConnected() && TestFlag(mvControlled->Couplers[end::rear].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == 1)
+			tmp = DynamicObject->NextConnected();
+		if (DynamicObject->PrevConnected() && TestFlag(mvControlled->Couplers[end::front].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == -1)
+			tmp = DynamicObject->PrevConnected();
+		if (tmp && tmp->MoverParameters->Power > 0)
 		{
-			if (tmp->MoverParameters->Power > 0)
+			if (ggI1B.SubModel)
 			{
-				if (ggI1B.SubModel)
-				{
-					ggI1B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(1)));
-					ggI1B.Update();
-				}
-				if (ggI2B.SubModel)
-				{
-					ggI2B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(2)));
-					ggI2B.Update();
-				}
-				if (ggI3B.SubModel)
-				{
-					ggI3B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(3)));
-					ggI3B.Update();
-				}
-				if (ggItotalB.SubModel)
-				{
-					ggItotalB.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(0)));
-					ggItotalB.Update();
-				}
-				if (ggWater1TempB.SubModel)
-				{
-					ggWater1TempB.UpdateValue(tmp->MoverParameters->dizel_heat.temperatura1);
-					ggWater1TempB.Update();
-				}
-				if (ggOilPressB.SubModel)
-				{
-					ggOilPressB.UpdateValue(tmp->MoverParameters->OilPump.pressure);
-					ggOilPressB.Update();
-				}
+				ggI1B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(1)));
+				ggI1B.Update();
+			}
+			if (ggI2B.SubModel)
+			{
+				ggI2B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(2)));
+				ggI2B.Update();
+			}
+			if (ggI3B.SubModel)
+			{
+				ggI3B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(3)));
+				ggI3B.Update();
+			}
+			if (ggItotalB.SubModel)
+			{
+				ggItotalB.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(0)));
+				ggItotalB.Update();
+			}
+			if (ggWater1TempB.SubModel)
+			{
+				ggWater1TempB.UpdateValue(tmp->MoverParameters->dizel_heat.temperatura1);
+				ggWater1TempB.Update();
+			}
+			if (ggOilPressB.SubModel)
+			{
+				ggOilPressB.UpdateValue(tmp->MoverParameters->OilPump.pressure);
+				ggOilPressB.Update();
 			}
 		}
 	}
@@ -8975,13 +8877,10 @@ bool TTrain::Update(double const Deltatime)
 	{
 		// Ra 2014-12: lokomotywy 181/182 dostają SlippingWheels po zahamowaniu powyżej 2.85 bara i buczały
 		double veldiff = (DynamicObject->GetVelocity() - fTachoVelocity) / mvControlled->Vmax;
-		if (veldiff < -0.01)
+		// 1% Vmax rezerwy, żeby 181/182 nie buczały po zahamowaniu, ale to proteza
+		if (veldiff < -0.01 && std::abs(mvControlled->Im) > 10.0)
 		{
-			// 1% Vmax rezerwy, żeby 181/182 nie buczały po zahamowaniu, ale to proteza
-			if (std::abs(mvControlled->Im) > 10.0)
-			{
-				btLampkaPoslizg.Turn(true);
-			}
+			btLampkaPoslizg.Turn(true);
 		}
 	}
 	else
@@ -9734,12 +9633,9 @@ bool TTrain::Update(double const Deltatime)
 	}
 
 	// anti slip system activation, maintained while the control button is down
-	if (mvOccupied->BrakeSystem != TBrakeSystem::ElectroPneumatic)
+	if (mvOccupied->BrakeSystem != TBrakeSystem::ElectroPneumatic && ggAntiSlipButton.GetDesiredValue() > 0.95)
 	{
-		if (ggAntiSlipButton.GetDesiredValue() > 0.95)
-		{
-			mvControlled->AntiSlippingBrake();
-		}
+		mvControlled->AntiSlippingBrake();
 	}
 	// screens
 
@@ -10140,15 +10036,12 @@ void TTrain::update_sounds(double const Deltatime)
 	else
 	{
 		// stop power-reliant sounds if power is cut
-		if (dsbBuzzer)
+		if (dsbBuzzer && true == dsbBuzzer->is_playing())
 		{
-			if (true == dsbBuzzer->is_playing())
-			{
-				dsbBuzzer->stop();
+			dsbBuzzer->stop();
 #ifdef _WIN32
-				Console::BitsClear(1 << 14); // ustawienie bitu 16 na PoKeys
+			Console::BitsClear(1 << 14); // ustawienie bitu 16 na PoKeys
 #endif
-			}
 		}
 
 		if (dsbBuzzerShp && dsbBuzzerShp->is_playing())
@@ -10307,15 +10200,12 @@ bool TTrain::CabChange(int iDirection)
 	else
 	{ // jeśli pojazd prowadzony ręcznie albo wcale (wagon)
 		mvOccupied->CabDeactivisationAuto();
-		if (mvOccupied->ChangeCab(iDirection))
+		if (mvOccupied->ChangeCab(iDirection) && InitializeCab(mvOccupied->CabOccupied, mvOccupied->TypeName + ".mmd"))
 		{
-			if (InitializeCab(mvOccupied->CabOccupied, mvOccupied->TypeName + ".mmd"))
-			{
-				// zmiana kabiny w ramach tego samego pojazdu
-				mvOccupied->CabActivisationAuto(); // załączenie rozrządu (wirtualne kabiny)
-				DynamicObject->Mechanik->DirectionChange();
-				return true; // udało się zmienić kabinę
-			}
+			// zmiana kabiny w ramach tego samego pojazdu
+			mvOccupied->CabActivisationAuto(); // załączenie rozrządu (wirtualne kabiny)
+			DynamicObject->Mechanik->DirectionChange();
+			return true; // udało się zmienić kabinę
 		}
 		// aktywizacja poprzedniej, bo jeszcze nie wiadomo, czy jakiś pojazd jest
 		mvOccupied->CabActivisationAuto();
@@ -12280,15 +12170,12 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	else if (Label == "clock:")
 	{
 		// zegar analogowy
-		if (Parser.getToken<std::string>() == "analog")
+		if (Parser.getToken<std::string>() == "analog" && DynamicObject->mdKabina)
 		{
-			if (DynamicObject->mdKabina)
-			{
-				// McZapkie-300302: zegarek
-				ggClockSInd.Init(DynamicObject->mdKabina->GetFromName("ClockShand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 60.0));
-				ggClockMInd.Init(DynamicObject->mdKabina->GetFromName("ClockMhand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 60.0));
-				ggClockHInd.Init(DynamicObject->mdKabina->GetFromName("ClockHhand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 12.0));
-			}
+			// McZapkie-300302: zegarek
+			ggClockSInd.Init(DynamicObject->mdKabina->GetFromName("ClockShand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 60.0));
+			ggClockMInd.Init(DynamicObject->mdKabina->GetFromName("ClockMhand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 60.0));
+			ggClockHInd.Init(DynamicObject->mdKabina->GetFromName("ClockHhand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 12.0));
 		}
 	}
 	else if (Label == "clock_seconds:")

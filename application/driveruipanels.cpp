@@ -277,18 +277,16 @@ scenario_panel::render() {
             ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
         }
         // hints
-        if( owner != nullptr ) {
-            if( true == ImGui::CollapsingHeader( STR_C("Hints"), ImGuiTreeNodeFlags_DefaultOpen ) ) {
-                for( auto const &hint : owner->m_hints ) {
-                    auto const isdone { std::get<TController::hintpredicate>( hint )( std::get<float>( hint ) ) };
-                    auto const hintcolor{ (
-                        isdone ?
-                            colors::uitextgreen :
-                            Global.UITextColor ) };
-                    ImGui::PushStyleColor( ImGuiCol_Text, { hintcolor.r, hintcolor.g, hintcolor.b, hintcolor.a } );
-                    ImGui::TextWrapped( Translations.lookup_c(driver_hints_texts[(size_t)std::get<driver_hint>( hint )], true), std::get<float>( hint ) );
-                    ImGui::PopStyleColor();
-                }
+        if (owner != nullptr && true == ImGui::CollapsingHeader( STR_C("Hints"), ImGuiTreeNodeFlags_DefaultOpen )) {
+            for( auto const &hint : owner->m_hints ) {
+                auto const isdone { std::get<TController::hintpredicate>( hint )( std::get<float>( hint ) ) };
+                auto const hintcolor{ (
+                    isdone ?
+                        colors::uitextgreen :
+                        Global.UITextColor ) };
+                ImGui::PushStyleColor( ImGuiCol_Text, { hintcolor.r, hintcolor.g, hintcolor.b, hintcolor.a } );
+                ImGui::TextWrapped( Translations.lookup_c(driver_hints_texts[(size_t)std::get<driver_hint>( hint )], true), std::get<float>( hint ) );
+                ImGui::PopStyleColor();
             }
         }
     }
@@ -588,13 +586,9 @@ debug_panel::render() {
         }
         // sections
         ImGui::Separator();
-        if( true == render_section( "Vehicle", m_vehiclelines ) ) {
-            if( DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 ) {
-                if( true == ImGui::Button( "Stop and repair consist" ) ) {
-                    command_relay relay;
-                    relay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
-                }
-            }
+        if (true == render_section( "Vehicle", m_vehiclelines ) && DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 && true == ImGui::Button( "Stop and repair consist" )) {
+            command_relay relay;
+            relay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
         }
         render_section( "Vehicle Engine", m_enginelines );
         render_section( "Vehicle AI", m_ailines );
@@ -695,10 +689,8 @@ debug_panel::render_section_scenario() {
     }
     // dynamic material update checkbox
     ImGui::Checkbox( "Update Item Materials", &Global.UpdateMaterials );
-    if( DebugModeFlag ) {
-        if( ImGui::Checkbox( "Force Daylight", &Global.FakeLight ) ) {
-            simulation::Environment.on_daylight_change();
-        }
+    if (DebugModeFlag && ImGui::Checkbox( "Force Daylight", &Global.FakeLight )) {
+        simulation::Environment.on_daylight_change();
     }
     // advanced options, only visible in debug mode
     if( DebugModeFlag ) {

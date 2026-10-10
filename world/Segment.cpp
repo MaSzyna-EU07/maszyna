@@ -502,13 +502,12 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm1 * ShapePoints[ j ].texture.x + m1 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv1 } );
                 }
-                if( p ) // jeśli jest wskaźnik do tablicy
-                    if( *p )
-                        if( !j ) // to dla pierwszego punktu
-                        {
-                            **p = pt;
-                            ( *p )++;
-                        } // zapamiętanie brzegu jezdni
+                // jeśli jest wskaźnik do tablicy
+                if (p && *p && !j) // to dla pierwszego punktu
+                {
+                    **p = pt;
+                    ( *p )++;
+                } // zapamiętanie brzegu jezdni
                 // dla trapezu drugi koniec ma inne współrzędne
                 pt = parallel2 * ( jmm2 * ( ShapePoints[ j ].position.x - fOffsetX.first ) + m2 * ( ShapePoints[ j + iNumShapePoints ].position.x - fOffsetX.second ) ) + pos2;
                 pt.y += jmm2 * ShapePoints[ j ].position.y + m2 * ShapePoints[ j + iNumShapePoints ].position.y;
@@ -521,13 +520,12 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm2 * ShapePoints[ j ].texture.x + m2 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv2 } );
                 }
-                if( p ) // jeśli jest wskaźnik do tablicy
-                    if( *p )
-                        if( !j ) // to dla pierwszego punktu
-                            if( i == iSegCount ) {
-                                **p = pt;
-                                ( *p )++;
-                            } // zapamiętanie brzegu jezdni
+                // jeśli jest wskaźnik do tablicy
+                // to dla pierwszego punktu
+                if (p && *p && !j && i == iSegCount) {
+                    **p = pt;
+                    ( *p )++;
+                } // zapamiętanie brzegu jezdni
             }
         }
         else {

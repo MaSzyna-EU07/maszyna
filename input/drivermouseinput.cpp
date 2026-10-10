@@ -314,15 +314,13 @@ drivermouse_input::button( int const Button, int const Action ) {
     if( true == FreeFlyModeFlag ) {
         // freefly mode
         // left mouse button launches on_click event associated with to the node
-        if( Button == GLFW_MOUSE_BUTTON_LEFT ) {
-            if( Action == GLFW_PRESS ) {
-                GfxRenderer->Pick_Node_Callback(
-                    [this](scene::basic_node *node) {
-                        if( node == nullptr
-                         || typeid(*node) != typeid(TAnimModel) )
-                            return;
-                        simulation::Region->on_click( static_cast<TAnimModel const *>( node ) ); } );
-            }
+        if (Button == GLFW_MOUSE_BUTTON_LEFT && Action == GLFW_PRESS) {
+            GfxRenderer->Pick_Node_Callback(
+                [this](scene::basic_node *node) {
+                    if( node == nullptr
+                     || typeid(*node) != typeid(TAnimModel) )
+                        return;
+                    simulation::Region->on_click( static_cast<TAnimModel const *>( node ) ); } );
         }
         // right button controls panning
         if( Button == GLFW_MOUSE_BUTTON_RIGHT ) {
@@ -343,11 +341,9 @@ drivermouse_input::button( int const Button, int const Action ) {
             }
             else {
                 m_pickwaiting = false;
-                if( Button == GLFW_MOUSE_BUTTON_LEFT ) {
-                    if( m_slider.command() != user_command::none ) {
-                        m_relay.post( m_slider.command(), 0, 0, Action, 0 );
-                        m_slider.release();
-                    }
+                if (Button == GLFW_MOUSE_BUTTON_LEFT && m_slider.command() != user_command::none) {
+                    m_relay.post( m_slider.command(), 0, 0, Action, 0 );
+                    m_slider.release();
                 }
                 // if it's the right mouse button that got released and we had no command active, we were potentially in view panning mode; stop it
                 if( Button == GLFW_MOUSE_BUTTON_RIGHT ) {

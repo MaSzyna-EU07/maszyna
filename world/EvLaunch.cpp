@@ -195,12 +195,10 @@ bool TEventLauncher::check_activation() {
     else {
         // jeśli nie cykliczny, to sprawdzić czas
         if( simulation::Time.data().wHour == iHour ) {
-            if( simulation::Time.data().wMinute == iMinute ) {
-                // zgodność czasu uruchomienia
-                if( UpdatedTime < 10 ) {
-                    UpdatedTime = 20; // czas do kolejnego wyzwolenia?
-                    bCond = true;
-                }
+            // zgodność czasu uruchomienia
+            if (simulation::Time.data().wMinute == iMinute && UpdatedTime < 10) {
+                UpdatedTime = 20; // czas do kolejnego wyzwolenia?
+                bCond = true;
             }
         }
         else {

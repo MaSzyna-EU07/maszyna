@@ -786,15 +786,12 @@ void TWest::SetEPS(double const nEPS)
 	BCP = BrakeCyl->P();
 	if (nEPS > 0)
 		DCV = true;
-	else if (nEPS == 0)
+	else if (nEPS == 0 && EPS != 0)
 	{
-		if (EPS != 0)
-		{
-			if (LBP > 0.4)
-				LBP = BrakeCyl->P();
-			if (LBP < 0.15)
-				LBP = 0;
-		}
+		if (LBP > 0.4)
+			LBP = BrakeCyl->P();
+		if (LBP < 0.15)
+			LBP = 0;
 	}
 	EPS = nEPS;
 }
@@ -1934,14 +1931,14 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 	else if (VVP + (BCP - 0.1) / BVM < CVP - 0.05 && BCP > 0.25) // zatrzymanie luzowania
 		BrakeStatus |= b_hld;
 
-	if (VVP + 0.10 < CVP && BCP < 0.25) // poczatek hamowania
-		if (!Przys_blok)
-		{
-			ValveRes->CreatePress(0.75 * VVP);
-			SoundFlag |= sf_Acc;
-			ValveRes->Act();
-			Przys_blok = true;
-		}
+	// poczatek hamowania
+	if (VVP + 0.10 < CVP && BCP < 0.25 && !Przys_blok)
+	{
+		ValveRes->CreatePress(0.75 * VVP);
+		SoundFlag |= sf_Acc;
+		ValveRes->Act();
+		Przys_blok = true;
+	}
 
 	if (BCP > 0.5)
 		Zamykajacy = true;
@@ -2969,9 +2966,8 @@ double TFV4a::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	if (lround(i_bcp) == -1)
 	{
 		CP = CP + 5 * std::min(std::abs(LimPP - CP), 0.2) * PR(CP, LimPP) * dt / 2;
-		if (CP < RP + 0.03)
-			if (TP < 5)
-				TP = TP + dt;
+		if (CP < RP + 0.03 && TP < 5)
+			TP = TP + dt;
 		//            if(cp+0.03<5.4)then
 		if (RP + 0.03 < 5.4 || CP + 0.03 < 5.4) // fala
 			dpMainValve = PF(std::min(HP, 17.1), PP, ActFlowSpeed / LBDelay) * dt;
@@ -3134,13 +3130,9 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		}
 	}
 
-	if (EQ(i_bcp, 0))
+	if (EQ(i_bcp, 0) && TP > 2)
 	{
-
-		if (TP > 2)
-		{
-			dpMainValve *= 1.5;
-		}
+		dpMainValve *= 1.5;
 	}
 
 	ep = dpPipe;

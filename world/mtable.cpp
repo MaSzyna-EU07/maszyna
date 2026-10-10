@@ -565,14 +565,11 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
             fin.close();
         }
     }
-    if (ConversionError == 0)
-    {
-        if (TimeTable[1].StationName == Relation1) // jeśli nazwa pierwszego zgodna z relacją
-            if (TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
-            { // to mamy zatrzymanie na pierwszym, a nie przelot
-                TimeTable[1].Ah = TimeTable[1].Dh;
-                TimeTable[1].Am = TimeTable[1].Dm;
-            }
+    // jeśli nazwa pierwszego zgodna z relacją
+    if (ConversionError == 0 && TimeTable[1].StationName == Relation1 && TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
+    { // to mamy zatrzymanie na pierwszym, a nie przelot
+        TimeTable[1].Ah = TimeTable[1].Dh;
+        TimeTable[1].Am = TimeTable[1].Dm;
     }
     //
     load_sounds();
@@ -632,9 +629,9 @@ TTrainParameters::load_sounds() {
 bool TTrainParameters::DirectionChange() const
 // sprawdzenie, czy po zatrzymaniu wykonać kolejne komendy
 {
-    if (StationIndex > 0 && StationIndex < StationCount) // dla ostatniej stacji nie
-        if (contains( TimeTable[StationIndex].StationWare, '@') )
-            return true;
+    // dla ostatniej stacji nie
+    if (StationIndex > 0 && StationIndex < StationCount && contains( TimeTable[StationIndex].StationWare, '@'))
+        return true;
     return false;
 }
 
