@@ -87,8 +87,9 @@ class terrain_streamer
 	// a chunk made elsewhere, at the place its key says; its layers are indices of the palette
 	bool add_chunk(std::shared_ptr<heightmap::chunk_data> Data);
 	void remove_chunk(int Cx, int Cz);
-	// changes the point spacing of the chunk at (Cx, Cz), heights resampled
-	void spacing(int Cx, int Cz, float Spacing);
+	// changes the point spacing of the chunk at (Cx, Cz), heights resampled; Paint: paint samples along a side less one
+	// the chunk gets, 0 keeps the ones it has. returns: true if the chunk changed
+	bool spacing(int Cx, int Cz, float Spacing, int Paint = 0);
 	// raises (Strength > 0) or lowers the ground within Radius of (X,Z), with a smooth falloff
 	bool sculpt(double X, double Z, double Radius, double Strength);
 	// evens out the ground within Radius of (X,Z), Amount (0..1) of the way at the centre
@@ -96,9 +97,19 @@ class terrain_streamer
 	// leads the ground within Radius of (X,Z) towards the height Target, Amount (0..1) of the way at the centre;
 	// Mode: 0 up and down, 1 only raises it, 2 only lowers it
 	bool level(double X, double Z, double Radius, double Target, double Amount, int Mode = 0);
-	// gives every grid point within the rectangle to Shaper, with its world position and height (before the modifiers);
-	// Shaper returns true if it changed the height
+	// gives every grid point within the rectangle to Shaper, with its world position and height; Shaper returns true if it
+	// changed the height. where the modifiers shape the ground the change is a touch-up kept over them (see touch_up()),
+	// elsewhere it changes the ground under them
 	bool reshape(glm::dvec2 const &Min, glm::dvec2 const &Max, std::function<bool(double X, double Z, float &Height)> const &Shaper);
+	// true: the brushes shape the terrain as it's seen, also where the modifiers (tracks) shape it, the changes kept there
+	// as touch-ups over the modifiers; false: the brushes shape only the ground under the modifiers, which keep their shape
+	void touch_up(bool const State) { m_touchup = State; }
+	bool touch_up() const { return m_touchup; }
+	// takes the touch-ups within Radius of (X,Z) back, Amount (0..1) of the way at the centre: the terrain goes back to the
+	// shape the modifiers give it
+	bool restore_stitching(double X, double Z, double Radius, double Amount);
+	// grid points with touch-ups over the modifiers, in the chunks in memory
+	std::size_t touched_up() const;
 	// paints the material of the palette entry Layer within Radius of (X,Z), Strength (0..1) of the way at the centre
 	bool paint(double X, double Z, double Radius, double Strength, std::uint16_t Layer);
 	// palette entry of the material, added to the palette if needed
@@ -111,9 +122,14 @@ class terrain_streamer
 	// bodies of water
 	std::vector<heightmap::water_body> const &water() const { return m_manifest.water; }
 	void water(std::vector<heightmap::water_body> Water);
+	// material of the bodies of water which don't name their own
+	void water_material(std::string const &Material);
 	// modifiers: added or replaced by name
 	void modifier(heightmap::modifier Modifier);
 	bool remove_modifier(std::string const &Name);
+	// the ground takes the shape the modifier gives it for good, and the modifier is removed: from then on the
+	// terrain there is shaped by hand like anywhere else
+	bool bake_modifier(std::string const &Name);
 	std::vector<heightmap::modifier> const &modifiers() const { return m_manifest.modifiers; }
 	// changed since the last save
 	bool modified() const;
@@ -122,9 +138,10 @@ class terrain_streamer
 	struct change
 	{
 		std::map<chunk_key, heightmap::chunk_ptr> chunks; // the data the chunks had; null: there was no chunk
-		bool manifest{false}; // the palette, the water and the modifiers below were changed
+		bool manifest{false}; // the palette, the water (and its material) and the modifiers below were changed
 		std::vector<heightmap::layer_def> layers;
 		std::vector<heightmap::water_body> water;
+		std::string water_material;
 		std::vector<heightmap::modifier> modifiers;
 
 		bool empty() const { return chunks.empty() && false == manifest; }
@@ -238,6 +255,7 @@ class terrain_streamer
 	heightmap::manifest m_manifest;
 	bool m_manifestchanged{false};
 	float m_detail{120.f};
+	bool m_touchup{true};
 	int m_radius{2};
 
 	std::map<heightmap::pack_key, pack_state> m_packs;

@@ -920,6 +920,7 @@ void editor_mode::restore_terrain(EditorSnapshot &Snapshot)
     Snapshot.terrain = std::make_shared<terrain_streamer::change const>(std::move(opposite));
     forget_ground();
     m_water_selected = -1;
+    m_water_material_of = -1;
 }
 
 void editor_mode::undo_last()
@@ -1607,7 +1608,9 @@ void editor_mode::render_terrain_ui()
     ImGui::SameLine();
     radio(STR_C("Chunks"), terrain_tool::chunks, STR_C("LMB adds a chunk shaped as the ground under it, next to the clicked one; Shift+LMB removes the clicked chunk"));
     ImGui::SameLine();
-    radio(STR_C("Spacing"), terrain_tool::spacing, STR_C("LMB gives the clicked chunk the point spacing chosen below, the ground resampled"));
+    radio(STR_C("Spacing"), terrain_tool::spacing, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds it to the selection or takes it away;\nthe point spacing of the selected chunks is converted in \"Chunk resolution\" below"));
+    ImGui::SameLine();
+    radio(STR_C("Restore"), terrain_tool::restore, STR_C("LMB takes back the touch-ups made over the tracks under the brush:\nthe terrain returns to the shape the modifiers (tracks) give it"));
     radio(STR_C("Sculpt"), terrain_tool::sculpt, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"));
     ImGui::SameLine();
     radio(STR_C("Smooth"), terrain_tool::smooth, STR_C("LMB evens the terrain out under the brush"));
@@ -1625,7 +1628,7 @@ void editor_mode::render_terrain_ui()
         if (spacing_combo(STR_C("Point spacing"), m_terrain_spacing))
             m_streamer.default_spacing(m_terrain_spacing);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", STR_C("Spacing of the grid points of the chunks made, and the one the spacing tool gives the clicked chunk.\n"
+            ImGui::SetTooltip("%s", STR_C("Spacing of the grid points of the chunks made.\n"
                                     "A chunk is 250 x 250 m; finer grids take more memory and time to draw."));
         ImGui::SetNextItemWidth(120.0f);
         ImGui::InputFloat(STR_C("Base height (m)"), &m_terrain_baseheight, 0.0f, 0.0f, "%.2f");
@@ -1649,6 +1652,56 @@ void editor_mode::render_terrain_ui()
         }
     }
 
+    if (ImGui::CollapsingHeader(STR_C("Chunk resolution"), m_terrain_tool == terrain_tool::spacing ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+    {
+        // chunks removed since are no longer selected
+        for (auto it = m_terrain_selection.begin(); it != m_terrain_selection.end();)
+            it = m_streamer.exists(*it) ? std::next(it) : m_terrain_selection.erase(it);
+        if (m_terrain_selection.empty())
+            ImGui::TextWrapped("%s", STR_C("No chunk selected. With the Spacing tool LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away."));
+        else
+        {
+            bool coarser = false;
+            std::size_t points = 0, after = 0;
+            int const cells = heightmap::cells_for(m_terrain_convert_spacing);
+            ImGui::BeginChild("##chunkselection", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * std::min<float>(6.0f, static_cast<float>(m_terrain_selection.size()) + 0.5f)), true);
+            for (auto const &key : m_terrain_selection)
+            {
+                auto const centre = heightmap::chunk_corner(key) + glm::dvec2{heightmap::chunk_size * 0.5};
+                auto const *chunk = m_streamer.terrain_at(centre.x, centre.y);
+                if (chunk == nullptr)
+                {
+                    ImGui::TextDisabled(STR_C("%d,%d: not loaded"), key.first, key.second);
+                    continue;
+                }
+                auto const &data = chunk->data();
+                coarser |= cells < data.cells;
+                points += static_cast<std::size_t>(data.side()) * data.side();
+                after += static_cast<std::size_t>(cells + 1) * (cells + 1);
+                auto const paint = data.paint > 0 ? format(STR_C(", paint every %.2f m"), heightmap::chunk_size / data.paint) : std::string(STR_C(", one material"));
+                auto const touchups = data.adjust.empty() ? std::string() : std::string(STR_C(", touch-ups"));
+                ImGui::Text("%d,%d: %s%s%s", key.first, key.second, spacing_label(static_cast<float>(data.spacing())), paint.c_str(), touchups.c_str());
+            }
+            ImGui::EndChild();
+            spacing_combo(STR_C("Convert to"), m_terrain_convert_spacing);
+            ImGui::SameLine();
+            if (ImGui::Button(STR_C("Convert")))
+                convert_selected_chunks();
+            ImGui::SameLine();
+            if (ImGui::Button(STR_C("Clear the selection")))
+                m_terrain_selection.clear();
+            ImGui::Checkbox(STR_C("Paint every 0.5 m with 0.5 m spacing"), &m_terrain_convert_paint);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("Chunks converted to 0.5 m get their paint samples every 0.5 m as well (every metre otherwise),\n"
+                                        "so the materials can be painted as finely as the ground is shaped"));
+            if (points > 0)
+                ImGui::TextDisabled(STR_C("Grid points: %zu -> %zu"), points, after);
+            if (coarser)
+                ImGui::TextWrapped("%s", STR_C("A coarser grid can't hold the shapes smaller than its spacing: they're averaged out. "
+                                               "The edges of the chunks keep their heights, so the neighbours still meet them. Ctrl+Z takes it back."));
+        }
+    }
+
     if (terrain_brush() && ImGui::CollapsingHeader(STR_C("Brush"), ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::SetNextItemWidth(120.0f);
@@ -1658,7 +1711,18 @@ void editor_mode::render_terrain_ui()
         ImGui::DragFloat(STR_C("Strength"), &m_terrain_brush_strength, 0.05f, 0.05f, 50.0f, "%.2f");
         m_terrain_brush_strength = std::max(0.05f, m_terrain_brush_strength);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", STR_C("Sculpting: metres per second at the middle of the brush; smoothing, levelling and painting: how fast they work"));
+            ImGui::SetTooltip("%s", STR_C("Sculpting: metres per second at the middle of the brush; smoothing, levelling, painting and restoring: how fast they work"));
+        if (m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::level)
+        {
+            auto touchup = m_streamer.touch_up();
+            if (ImGui::Checkbox(STR_C("Touch up over the tracks"), &touchup))
+                m_streamer.touch_up(touchup);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("On: the brush shapes the terrain as it's seen, also where the tracks (modifiers) shape it;\n"
+                                        "the changes there are kept as touch-ups over the modifiers, and stay when the track changes.\n"
+                                        "The Restore tool takes them back.\n"
+                                        "Off: the brush shapes only the ground under the modifiers, the tracks keep their formation and slopes."));
+        }
         if (m_terrain_tool == terrain_tool::level)
         {
             ImGui::SetNextItemWidth(120.0f);
@@ -1750,12 +1814,26 @@ void editor_mode::render_terrain_ui()
         }
         auto const &water{m_streamer.water()};
         std::optional<std::size_t> removed;
+        std::optional<std::pair<std::size_t, std::string>> dropped;
         for (std::size_t i = 0; i < water.size(); ++i)
         {
             ImGui::PushID(static_cast<int>(i));
-            if (ImGui::Selectable(format("%s, %.2f m, %zu points", water[i].name.c_str(), water[i].level, water[i].outline.size()).c_str(), static_cast<int>(i) == m_water_selected))
+            auto const material = water[i].material.empty() ? std::string(STR_C("default material")) : water[i].material;
+            if (ImGui::Selectable(format("%s, %.2f m, %zu points, %s", water[i].name.c_str(), water[i].level, water[i].outline.size(), material.c_str()).c_str(), static_cast<int>(i) == m_water_selected))
                 m_water_selected = static_cast<int>(i);
+            // a texture dropped on an entry becomes the material of that water
+            std::string name;
+            if (material_drop(name))
+                dropped = std::make_pair(i, name);
             ImGui::PopID();
+        }
+        if (dropped)
+        {
+            auto changed{water};
+            changed[dropped->first].material = dropped->second;
+            m_streamer.water(std::move(changed));
+            m_water_selected = static_cast<int>(dropped->first);
+            m_water_material_of = -1;
         }
         if (m_water_selected >= 0 && m_water_selected < static_cast<int>(water.size()))
         {
@@ -1771,6 +1849,33 @@ void editor_mode::render_terrain_ui()
                 changed[m_water_selected].level = m_water_selected_level;
                 m_streamer.water(std::move(changed));
             }
+            // the material and the repeat of its texture, changed once the field is left (or a texture dropped on it)
+            if (m_water_material_of != m_water_selected)
+            {
+                std::snprintf(m_water_selected_material, sizeof(m_water_selected_material), "%s", water[m_water_selected].material.c_str());
+                m_water_selected_size = water[m_water_selected].size;
+                m_water_material_of = m_water_selected;
+            }
+            bool retexture = false;
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::InputText(STR_C("Material of the chosen"), m_water_selected_material, IM_ARRAYSIZE(m_water_selected_material));
+            retexture |= ImGui::IsItemDeactivatedAfterEdit();
+            retexture |= material_drop(m_water_selected_material, IM_ARRAYSIZE(m_water_selected_material));
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(STR_C("A material or a texture (drag one from the texture browser).\nEmpty: %s, the water material of the terrain"), m_streamer.manifest().water_material.c_str());
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::DragFloat(STR_C("Texture repeats every (m)##water"), &m_water_selected_size, 0.1f, 0.0f, 500.0f, "%.1f");
+            m_water_selected_size = std::max(0.0f, m_water_selected_size);
+            retexture |= ImGui::IsItemDeactivatedAfterEdit();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("Metres the texture of the water repeats at; 0: as the material gives it, or 8 m"));
+            if (retexture)
+            {
+                auto changed{water};
+                changed[m_water_selected].material = m_water_selected_material;
+                changed[m_water_selected].size = m_water_selected_size;
+                m_streamer.water(std::move(changed));
+            }
             if (ImGui::Button(STR_C("Remove the chosen water")))
                 removed = static_cast<std::size_t>(m_water_selected);
         }
@@ -1780,7 +1885,20 @@ void editor_mode::render_terrain_ui()
             changed.erase(changed.begin() + *removed);
             m_streamer.water(std::move(changed));
             m_water_selected = -1;
+            m_water_material_of = -1;
         }
+        // the material of the bodies of water which don't name their own
+        if (false == m_water_default_edited)
+            std::snprintf(m_water_default_material, sizeof(m_water_default_material), "%s", m_streamer.manifest().water_material.c_str());
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputText(STR_C("Default water material"), m_water_default_material, IM_ARRAYSIZE(m_water_default_material));
+        m_water_default_edited = ImGui::IsItemActive();
+        bool redefault = ImGui::IsItemDeactivatedAfterEdit();
+        redefault |= material_drop(m_water_default_material, IM_ARRAYSIZE(m_water_default_material));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Material of the bodies of water which don't name their own"));
+        if (redefault)
+            m_streamer.water_material(m_water_default_material);
     }
 
     if (ImGui::CollapsingHeader(STR_C("Modifiers")))
@@ -1788,15 +1906,29 @@ void editor_mode::render_terrain_ui()
         auto const &modifiers{m_streamer.modifiers()};
         if (modifiers.empty())
             ImGui::TextWrapped("%s", STR_C("None. The vertical profile of the tracks makes them: the terrain follows the formation and the slopes of the route."));
-        std::optional<std::string> removed;
+        std::optional<std::string> removed, baked;
         for (auto const &modifier : modifiers)
         {
             ImGui::PushID(modifier.name.c_str());
             ImGui::TextUnformatted(format("%s, %zu points", modifier.name.c_str(), modifier.points.size()).c_str());
             ImGui::SameLine();
+            if (ImGui::SmallButton(STR_C("Bake")))
+                baked = modifier.name;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("The ground keeps the shape the modifier gives it, and the modifier is removed:\n"
+                                        "from then on the terrain there is shaped by hand like anywhere else, and no longer follows the track"));
+            ImGui::SameLine();
             if (ImGui::SmallButton(STR_C("Remove")))
                 removed = modifier.name;
             ImGui::PopID();
+        }
+        if (auto const touchups = m_streamer.touched_up(); touchups > 0)
+            ImGui::TextDisabled(STR_C("Touch-ups over the modifiers: %zu points (of the chunks in memory)"), touchups);
+        if (baked)
+        {
+            m_streamer.bake_modifier(*baked);
+            ground_tiles.clear();
+            forget_ground_shapes();
         }
         if (removed)
         {
@@ -1856,7 +1988,10 @@ void editor_mode::draw_terrain_overlay()
             auto const z = cursor.z + std::sin(angle) * m_terrain_brush_radius;
             circle.emplace_back(x, ground(x, z, cursor.y) + 0.1, z);
         }
-        auto const color = m_terrain_tool == terrain_tool::paint ? IM_COL32(120, 230, 120, 220) : m_terrain_tool == terrain_tool::smooth ? IM_COL32(120, 200, 255, 220) : IM_COL32(255, 180, 80, 220);
+        auto const color = m_terrain_tool == terrain_tool::paint     ? IM_COL32(120, 230, 120, 220)
+                           : m_terrain_tool == terrain_tool::smooth  ? IM_COL32(120, 200, 255, 220)
+                           : m_terrain_tool == terrain_tool::restore ? IM_COL32(230, 120, 230, 220)
+                                                                     : IM_COL32(255, 180, 80, 220);
         polyline(circle, color, true, 2.0f);
         if (m_terrain_tool == terrain_tool::level)
         {
@@ -1883,17 +2018,15 @@ void editor_mode::draw_terrain_overlay()
             }
         }
     }
-    if ((m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing) && hovering)
-    {
-        auto const key = heightmap::chunk_at(cursor.x, cursor.z);
-        auto const exists = m_streamer.exists(key);
-        auto const low = heightmap::chunk_corner(key);
+    // outline of a chunk, laid over the ground
+    auto const chunk_outline = [&](heightmap::chunk_key const &Key, double const Fallback, ImU32 const Color, float const Thickness) {
+        auto const low = heightmap::chunk_corner(Key);
         std::vector<glm::dvec3> square;
         auto const edge = [&](glm::dvec2 const &From, glm::dvec2 const &To) {
             for (int i = 0; i < 25; ++i)
             {
                 auto const point = From + (To - From) * (i / 25.0);
-                square.emplace_back(point.x, ground(point.x, point.y, cursor.y) + 0.2, point.y);
+                square.emplace_back(point.x, ground(point.x, point.y, Fallback) + 0.2, point.y);
             }
         };
         auto const size = heightmap::chunk_size;
@@ -1901,15 +2034,31 @@ void editor_mode::draw_terrain_overlay()
         edge(low + glm::dvec2{size, 0.0}, low + glm::dvec2{size});
         edge(low + glm::dvec2{size}, low + glm::dvec2{0.0, size});
         edge(low + glm::dvec2{0.0, size}, low);
-        polyline(square, exists ? IM_COL32(255, 255, 255, 200) : IM_COL32(255, 230, 90, 200), true, 2.0f);
+        polyline(square, Color, true, Thickness);
+    };
+    if (m_terrain_tool == terrain_tool::spacing)
+        for (auto const &key : m_terrain_selection)
+            chunk_outline(key, cursor.y, IM_COL32(90, 220, 255, 230), 3.0f);
+    if ((m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing) && hovering)
+    {
+        auto const key = heightmap::chunk_at(cursor.x, cursor.z);
+        auto const exists = m_streamer.exists(key);
+        chunk_outline(key, cursor.y, exists ? IM_COL32(255, 255, 255, 200) : IM_COL32(255, 230, 90, 200), 2.0f);
         ImVec2 label;
         if (exists && projection.project(cursor, label))
         {
             auto const *chunk = m_streamer.terrain_at(cursor.x, cursor.z);
             if (chunk != nullptr)
             {
-                auto const text = (m_terrain_tool == terrain_tool::spacing ? format("%s -> %s", spacing_label(static_cast<float>(chunk->data().spacing())), spacing_label(m_terrain_spacing))
-                                                                            : std::string(spacing_label(static_cast<float>(chunk->data().spacing()))));
+                auto const &data = chunk->data();
+                auto text = std::string(spacing_label(static_cast<float>(data.spacing())));
+                if (m_terrain_tool == terrain_tool::spacing)
+                {
+                    if (data.paint > 0)
+                        text += format(STR_C(", paint every %.2f m"), heightmap::chunk_size / data.paint);
+                    if (m_terrain_selection.count(key) != 0)
+                        text += STR(" (selected)");
+                }
                 drawlist->AddText(ImVec2(label.x + 14.0f, label.y - 14.0f), IM_COL32(255, 255, 255, 230), text.c_str());
             }
         }
@@ -2346,13 +2495,19 @@ void editor_mode::handle_terrain_click(bool const Shift)
     }
     case terrain_tool::spacing:
     {
+        // a click selects the chunk, Ctrl adds it to the selection or takes it away
         auto const key = heightmap::chunk_at(world.x, world.z);
         if (false == m_streamer.exists(key))
+        {
+            if (false == Global.ctrlState)
+                m_terrain_selection.clear();
             return;
-        m_streamer.spacing(key.first, key.second, m_terrain_spacing);
-        ground_tiles.clear();
-        forget_ground_shapes();
-        m_terrain_status = format(STR_C("Chunk %d,%d has points every %s now"), key.first, key.second, spacing_label(m_terrain_spacing));
+        }
+        if (false == Global.ctrlState)
+            m_terrain_selection = {key};
+        else if (m_terrain_selection.erase(key) == 0)
+            m_terrain_selection.insert(key);
+        m_terrain_status = format(STR_C("Chunks selected: %zu"), m_terrain_selection.size());
         break;
     }
     case terrain_tool::water:
@@ -2951,6 +3106,9 @@ void editor_mode::handle_terrain_brush(double Deltatime)
     case terrain_tool::paint:
         m_streamer.paint(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.25), Global.shiftState ? std::uint16_t{0} : static_cast<std::uint16_t>(m_terrain_layer));
         break;
+    case terrain_tool::restore:
+        shaped = m_streamer.restore_stitching(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.5));
+        break;
     default:
         break;
     }
@@ -2960,6 +3118,22 @@ void editor_mode::handle_terrain_brush(double Deltatime)
         ground_tiles.clear();
         forget_ground_shapes();
     }
+}
+
+void editor_mode::convert_selected_chunks()
+{
+    // with 0.5 m spacing the paint can be as fine, the other spacings keep a sample per metre
+    auto const paint = m_terrain_convert_paint ? (m_terrain_convert_spacing < 0.75f ? heightmap::default_paint_samples * 2 : heightmap::default_paint_samples) : 0;
+    std::size_t converted = 0;
+    for (auto const &key : m_terrain_selection)
+        if (m_streamer.spacing(key.first, key.second, m_terrain_convert_spacing, paint))
+            ++converted;
+    if (converted > 0)
+    {
+        ground_tiles.clear();
+        forget_ground_shapes();
+    }
+    m_terrain_status = format(STR_C("Chunks converted to %s: %zu of %zu"), spacing_label(m_terrain_convert_spacing), converted, m_terrain_selection.size());
 }
 
 bool editor_mode::pick_terrain_target()

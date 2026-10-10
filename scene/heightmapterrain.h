@@ -64,6 +64,9 @@ struct chunk_data
 	int cells{0}; // quads along a side; (cells + 1)^2 grid points
 	std::vector<float> heights; // world y of the grid points, rows of growing z, from the lowest x
 	std::vector<float> base; // the heights before the modifiers were applied; empty where no modifier reaches the chunk
+	// touch-ups made by hand over what the modifiers give, added to it: heights = modifiers(base) + adjust.
+	// empty when there are none, and always when base is empty
+	std::vector<float> adjust;
 	int paint{0}; // paint samples along a side, less one. 0: the chunk is covered with its first layer alone
 	std::array<std::uint16_t, max_chunk_layers> layers; // indices of the materials in the terrain palette, no_layer for unused
 	std::vector<std::uint8_t> weights; // planar, (paint + 1)^2 per used layer, rows like the heights; weights of a sample add up to 255
@@ -84,8 +87,10 @@ struct chunk_data
 	bool contains(double const X, double const Z) const;
 	// a flat chunk of specified spacing at specified height, covered with the first material of the palette
 	static std::shared_ptr<chunk_data> make_flat(chunk_key const &Key, float const Spacing, float const Height);
-	// the same chunk with the grid of another spacing, heights and paint taken over
-	std::shared_ptr<chunk_data> resampled(float const Spacing) const;
+	// the same chunk with the grid of another spacing, heights and paint taken over. a coarser grid takes the average
+	// of the ground around each of its points (the finer one only its own heights). Paint: paint samples along a side
+	// less one the chunk gets, 0 keeps the ones it has
+	std::shared_ptr<chunk_data> resampled(float const Spacing, int const Paint = 0) const;
 	// weight of specified layer slot at paint sample (Ix, Iz)
 	std::uint8_t weight(std::size_t const Slot, int const Ix, int const Iz) const;
 	// layer slot of specified palette index, or -1
@@ -106,6 +111,7 @@ struct water_body
 	std::string name;
 	double level{0.0};
 	std::string material; // empty: the default water material
+	float size{0.f}; // metres the texture repeats at; 0: the size given by the material, or 8 m
 	std::vector<glm::dvec2> outline; // x, z
 };
 
@@ -183,6 +189,7 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 //   'HGHT' heights: uint8 encoding (0: int32 base and uint16 steps of height_step above it, delta coded in row order;
 //          1: float32), then the values
 //   'HBAS' heights before the modifiers, as 'HGHT'
+//   'HADJ' touch-ups over the modifiers, as 'HGHT' (only with 'HBAS'; older versions skip it and keep the heights)
 //   'SPLT' paint weights: uint8 per sample per used layer, planar
 class pack_file
 {

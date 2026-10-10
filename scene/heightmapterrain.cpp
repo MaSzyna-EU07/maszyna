@@ -38,6 +38,7 @@ std::uint32_t constexpr tag_chunk{fourcc('C', 'H', 'N', 'K')};
 std::uint32_t constexpr tag_heights{fourcc('H', 'G', 'H', 'T')};
 std::uint32_t constexpr tag_base{fourcc('H', 'B', 'A', 'S')};
 std::uint32_t constexpr tag_paint{fourcc('S', 'P', 'L', 'T')};
+std::uint32_t constexpr tag_adjust{fourcc('H', 'A', 'D', 'J')};
 
 std::uint32_t constexpr pack_magic{fourcc('T', 'C', 'H', '1')};
 std::uint32_t constexpr pack_version{1};
@@ -262,23 +263,83 @@ std::shared_ptr<chunk_data> chunk_data::make_flat(chunk_key const &Key, float co
 	return chunk;
 }
 
-std::shared_ptr<chunk_data> chunk_data::resampled(float const Spacing) const
+std::shared_ptr<chunk_data> chunk_data::resampled(float const Spacing, int const Paint) const
 {
 	auto chunk{std::make_shared<chunk_data>(*this)};
 	chunk->cells = cells_for(Spacing);
-	if (chunk->cells == cells)
-		return chunk;
-	auto const low{corner()};
-	auto const step{chunk->spacing()};
-	auto const resample = [&](std::vector<float> const &Source, std::vector<float> &Target) {
-		Target.resize(static_cast<std::size_t>(chunk->side()) * chunk->side());
-		for (int iz = 0; iz <= chunk->cells; ++iz)
-			for (int ix = 0; ix <= chunk->cells; ++ix)
-				Target[static_cast<std::size_t>(iz) * chunk->side() + ix] = static_cast<float>(height_in(Source, low.x + ix * step, low.y + iz * step));
-	};
-	resample(heights, chunk->heights);
-	if (false == base.empty())
-		resample(base, chunk->base);
+	if (chunk->cells != cells)
+	{
+		auto const low{corner()};
+		auto const step{chunk->spacing()};
+		// a coarser grid would otherwise pick single points of the finer one: each point inside the chunk takes the average of
+		// the ground around it (a tent of the size of its cell). the points of the edges are the ground itself, as they're
+		// shared with the neighbours, which keep theirs
+		auto const reach{chunk->cells < cells ? step * 0.5 : 0.0};
+		auto const taps{reach > 0.0 ? std::max(1, static_cast<int>(std::ceil(reach / spacing()))) : 0};
+		auto const resample = [&](std::vector<float> const &Source, std::vector<float> &Target) {
+			Target.resize(static_cast<std::size_t>(chunk->side()) * chunk->side());
+			for (int iz = 0; iz <= chunk->cells; ++iz)
+				for (int ix = 0; ix <= chunk->cells; ++ix)
+				{
+					auto const x{low.x + ix * step}, z{low.y + iz * step};
+					auto value{height_in(Source, x, z)};
+					if (taps > 0 && ix > 0 && iz > 0 && ix < chunk->cells && iz < chunk->cells)
+					{
+						double sum{0.0}, weights{0.0};
+						for (int dz = -taps; dz <= taps; ++dz)
+							for (int dx = -taps; dx <= taps; ++dx)
+							{
+								auto const weight{static_cast<double>((taps + 1 - std::abs(dx)) * (taps + 1 - std::abs(dz)))};
+								sum += weight * height_in(Source, x + dx * reach / taps, z + dz * reach / taps);
+								weights += weight;
+							}
+						value = sum / weights;
+					}
+					Target[static_cast<std::size_t>(iz) * chunk->side() + ix] = static_cast<float>(value);
+				}
+		};
+		resample(heights, chunk->heights);
+		if (false == base.empty())
+			resample(base, chunk->base);
+		if (false == adjust.empty())
+			resample(adjust, chunk->adjust);
+	}
+	if (Paint > 0 && paint > 0 && Paint != paint)
+	{
+		// the weights of the samples between the old ones blended from them, and brought back to 255 a sample
+		auto const count{layer_count()};
+		auto const oldside{static_cast<std::size_t>(paint + 1)};
+		auto const newside{static_cast<std::size_t>(Paint + 1)};
+		chunk->paint = Paint;
+		chunk->weights.assign(newside * newside * count, 0);
+		std::vector<double> values(count);
+		for (std::size_t iz = 0; iz < newside; ++iz)
+			for (std::size_t ix = 0; ix < newside; ++ix)
+			{
+				auto const fx{static_cast<double>(ix) * paint / Paint}, fz{static_cast<double>(iz) * paint / Paint};
+				auto const x0{std::min(static_cast<std::size_t>(fx), oldside - 2)}, z0{std::min(static_cast<std::size_t>(fz), oldside - 2)};
+				auto const tx{fx - x0}, tz{fz - z0};
+				double total{0.0};
+				for (std::size_t slot = 0; slot < count; ++slot)
+				{
+					auto const at = [&](std::size_t const X, std::size_t const Z) { return static_cast<double>(weights[slot * oldside * oldside + Z * oldside + X]); };
+					values[slot] = (at(x0, z0) * (1.0 - tx) + at(x0 + 1, z0) * tx) * (1.0 - tz) + (at(x0, z0 + 1) * (1.0 - tx) + at(x0 + 1, z0 + 1) * tx) * tz;
+					total += values[slot];
+				}
+				// rounded down, what's left of 255 goes to the heaviest
+				int sum{0};
+				std::size_t heaviest{0};
+				for (std::size_t slot = 0; slot < count; ++slot)
+				{
+					auto const weight{total > 0.0 ? static_cast<int>(values[slot] * 255.0 / total) : (slot == 0 ? 255 : 0)};
+					chunk->weights[slot * newside * newside + iz * newside + ix] = static_cast<std::uint8_t>(weight);
+					sum += weight;
+					if (values[slot] > values[heaviest])
+						heaviest = slot;
+				}
+				chunk->weights[heaviest * newside * newside + iz * newside + ix] += static_cast<std::uint8_t>(255 - sum);
+			}
+	}
 	return chunk;
 }
 
@@ -516,6 +577,8 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 					water.level = level.as<double>();
 				if (auto const material{entry["material"]})
 					water.material = material.as<std::string>();
+				if (auto const size{entry["size"]})
+					water.size = std::max(0.f, size.as<float>());
 				if (auto const outline{entry["outline"]}; outline && outline.IsSequence())
 					for (auto const &point : outline)
 						if (point.IsSequence() && point.size() >= 2)
@@ -583,6 +646,8 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 			out << YAML::Key << "level" << YAML::Value << water.level;
 			if (false == water.material.empty())
 				out << YAML::Key << "material" << YAML::Value << water.material;
+			if (water.size > 0.f)
+				out << YAML::Key << "size" << YAML::Value << water.size;
 			out << YAML::Key << "outline" << YAML::Value << YAML::BeginSeq;
 			for (auto const &point : water.outline)
 				out << YAML::Flow << YAML::BeginSeq << point.x << point.y << YAML::EndSeq;
@@ -764,7 +829,7 @@ std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *E
 
 	auto chunk{std::make_shared<chunk_data>()};
 	chunk->key = Key;
-	slice const *heights{nullptr}, *base{nullptr}, *paint{nullptr};
+	slice const *heights{nullptr}, *base{nullptr}, *adjust{nullptr}, *paint{nullptr};
 	bool header{false};
 	for (auto const &slice : slices)
 	{
@@ -787,6 +852,8 @@ std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *E
 			heights = &slice;
 		else if (slice.tag == tag_base)
 			base = &slice;
+		else if (slice.tag == tag_adjust)
+			adjust = &slice;
 		else if (slice.tag == tag_paint)
 			paint = &slice;
 		// slices of unknown kinds are left for newer versions of the simulator
@@ -801,6 +868,9 @@ std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *E
 		return fail("damaged heights");
 	if (base != nullptr && (false == load(*base, data) || false == decode_heights(data, count, chunk->base)))
 		return fail("damaged base heights");
+	// touch-ups go with the base heights only
+	if (adjust != nullptr && false == chunk->base.empty() && (false == load(*adjust, data) || false == decode_heights(data, count, chunk->adjust)))
+		return fail("damaged touch-ups");
 	if (chunk->paint > 0)
 	{
 		auto const expected{static_cast<std::size_t>(chunk->paint + 1) * (chunk->paint + 1) * chunk->layer_count()};
@@ -864,6 +934,12 @@ bool write_pack(std::string const &Path, pack_key const &Key, std::vector<chunk_
 			data.clear();
 			encode_heights(chunk->base, data);
 			add(table, tag_base, data);
+			if (chunk->adjust.size() == chunk->heights.size())
+			{
+				data.clear();
+				encode_heights(chunk->adjust, data);
+				add(table, tag_adjust, data);
+			}
 		}
 		if (chunk->paint > 0 && chunk->layer_count() > 1)
 			add(table, tag_paint, chunk->weights);

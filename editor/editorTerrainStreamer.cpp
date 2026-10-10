@@ -954,16 +954,21 @@ void terrain_streamer::remove_chunk(int Cx, int Cz)
 	touch_neighbours(key);
 }
 
-void terrain_streamer::spacing(int Cx, int Cz, float Spacing)
+bool terrain_streamer::spacing(int Cx, int Cz, float Spacing, int Paint)
 {
 	auto *chunk{load_now({Cx, Cz})};
-	if (chunk == nullptr || heightmap::cells_for(Spacing) == chunk->cells())
-		return;
+	if (chunk == nullptr)
+		return false;
+	auto const &current{chunk->data()};
+	auto const repaint{Paint > 0 && current.paint > 0 && Paint != current.paint};
+	if (heightmap::cells_for(Spacing) == current.cells && false == repaint)
+		return false;
 	remember(*chunk);
-	chunk->replace(chunk->data().resampled(Spacing), true, false);
+	chunk->replace(current.resampled(Spacing, Paint), true, repaint);
 	auto const low{chunk->data().corner()};
 	apply_modifiers(*chunk, low, low + glm::dvec2{heightmap::chunk_size});
 	touch_neighbours(chunk->key());
+	return true;
 }
 
 bool terrain_streamer::reshape(glm::dvec2 const &Min, glm::dvec2 const &Max, std::function<bool(double X, double Z, float &Height)> const &Shaper)
@@ -978,22 +983,117 @@ bool terrain_streamer::reshape(glm::dvec2 const &Min, glm::dvec2 const &Max, std
 		auto const zs{index_range(low.y, step, current.side(), Min.y, Max.y)};
 		if (xs.first > xs.second || zs.first > zs.second)
 			continue;
-		// a copy is shaped, and taken only if anything changed
-		auto heights{current.base.empty() ? current.heights : current.base};
-		bool shaped{false};
+		if (current.base.empty() || false == m_touchup)
+		{
+			// a copy is shaped, and taken only if anything changed
+			auto heights{current.base.empty() ? current.heights : current.base};
+			bool shaped{false};
+			for (int iz = zs.first; iz <= zs.second; ++iz)
+				for (int ix = xs.first; ix <= xs.second; ++ix)
+					shaped |= Shaper(low.x + ix * step, low.y + iz * step, heights[static_cast<std::size_t>(iz) * current.side() + ix]);
+			if (false == shaped)
+				continue;
+			remember(*chunk);
+			auto &data{chunk->edit(true, false)};
+			(data.base.empty() ? data.heights : data.base) = std::move(heights);
+			if (false == data.base.empty())
+				apply_modifiers(*chunk, Min, Max);
+			changed = true;
+			continue;
+		}
+		// the terrain as it's seen is shaped. where a modifier shapes the ground (or a touch-up is there already) the change
+		// is a touch-up over it, elsewhere it's the ground under the modifiers, which may then reach further
+		auto heights{current.heights};
+		auto base{current.base};
+		auto adjust{current.adjust.empty() ? std::vector<float>(heights.size(), 0.f) : current.adjust};
+		bool shaped{false}, touched{false};
 		for (int iz = zs.first; iz <= zs.second; ++iz)
 			for (int ix = xs.first; ix <= xs.second; ++ix)
-				shaped |= Shaper(low.x + ix * step, low.y + iz * step, heights[static_cast<std::size_t>(iz) * current.side() + ix]);
+			{
+				auto const index{static_cast<std::size_t>(iz) * current.side() + ix};
+				auto height{heights[index]};
+				if (false == Shaper(low.x + ix * step, low.y + iz * step, height))
+					continue;
+				shaped = true;
+				auto const change{height - heights[index]};
+				auto const shapedbymodifier{std::abs(heights[index] - adjust[index] - base[index]) > 0.0005f};
+				if (shapedbymodifier || adjust[index] != 0.f)
+				{
+					adjust[index] += change;
+					touched = true;
+				}
+				else
+					base[index] += change;
+				heights[index] = height;
+			}
 		if (false == shaped)
 			continue;
 		remember(*chunk);
 		auto &data{chunk->edit(true, false)};
-		(data.base.empty() ? data.heights : data.base) = std::move(heights);
-		if (false == data.base.empty())
-			apply_modifiers(*chunk, Min, Max);
+		data.base = std::move(base);
+		if (touched)
+			data.adjust = std::move(adjust);
+		data.heights = std::move(heights);
+		apply_modifiers(*chunk, Min, Max);
 		changed = true;
 	}
 	return changed;
+}
+
+bool terrain_streamer::restore_stitching(double X, double Z, double Radius, double Amount)
+{
+	if (Radius <= 0.0 || Amount <= 0.0)
+		return false;
+	glm::dvec2 const low{X - Radius, Z - Radius}, high{X + Radius, Z + Radius};
+	bool changed{false};
+	for (auto *chunk : chunks_in(low, high, false))
+	{
+		auto const &current{chunk->data()};
+		if (current.adjust.empty())
+			continue;
+		auto const corner{current.corner()};
+		auto const step{current.spacing()};
+		auto const xs{index_range(corner.x, step, current.side(), low.x, high.x)};
+		auto const zs{index_range(corner.y, step, current.side(), low.y, high.y)};
+		auto adjust{current.adjust};
+		bool restored{false};
+		for (int iz = zs.first; iz <= zs.second; ++iz)
+			for (int ix = xs.first; ix <= xs.second; ++ix)
+			{
+				auto const vx{corner.x + ix * step}, vz{corner.y + iz * step};
+				auto const distance{std::sqrt((vx - X) * (vx - X) + (vz - Z) * (vz - Z))};
+				auto &value{adjust[static_cast<std::size_t>(iz) * current.side() + ix]};
+				if (distance > Radius || value == 0.f)
+					continue;
+				value *= static_cast<float>(1.0 - std::min(1.0, Amount * falloff(distance, Radius)));
+				// what's below the step of the stored heights is gone
+				if (std::abs(value) < heightmap::height_step * 0.5)
+					value = 0.f;
+				restored = true;
+			}
+		if (false == restored)
+			continue;
+		remember(*chunk);
+		auto &data{chunk->edit(true, false)};
+		if (std::all_of(adjust.begin(), adjust.end(), [](float const Value) { return Value == 0.f; }))
+			data.adjust.clear();
+		else
+			data.adjust = std::move(adjust);
+		apply_modifiers(*chunk, low, high);
+		changed = true;
+	}
+	return changed;
+}
+
+std::size_t terrain_streamer::touched_up() const
+{
+	std::size_t count{0};
+	for (auto const &entry : m_chunks)
+	{
+		auto const &adjust{entry.second->data().adjust};
+		count += static_cast<std::size_t>(std::count_if(adjust.begin(), adjust.end(), [](float const Value) { return Value != 0.f; }));
+	}
+	return count;
 }
 
 bool terrain_streamer::sculpt(double X, double Z, double Radius, double Strength)
@@ -1017,7 +1117,7 @@ bool terrain_streamer::smooth(double X, double Z, double Radius, double Amount)
 	// every chunk the brush touches is smoothed from the same ground, so the edges they share stay together
 	std::vector<std::pair<editor_terrain const *, std::vector<float>>> before;
 	for (auto *chunk : chunks_in(low - glm::dvec2{6.0}, high + glm::dvec2{6.0}, false))
-		before.emplace_back(chunk, chunk->data().base.empty() ? chunk->heights() : chunk->data().base);
+		before.emplace_back(chunk, (chunk->data().base.empty() || m_touchup) ? chunk->heights() : chunk->data().base);
 	auto const ground = [&](double const Gx, double const Gz, double const Fallback) {
 		for (auto const &entry : before)
 			if (entry.first->contains(Gx, Gz))
@@ -1201,6 +1301,16 @@ void terrain_streamer::water(std::vector<heightmap::water_body> Water)
 	m_waterchanged = true;
 }
 
+void terrain_streamer::water_material(std::string const &Material)
+{
+	if (Material.empty() || Material == m_manifest.water_material)
+		return;
+	remember_manifest();
+	m_manifest.water_material = Material;
+	m_manifestchanged = true;
+	m_waterchanged = true;
+}
+
 void terrain_streamer::apply_modifiers(editor_terrain &Chunk, glm::dvec2 const &Min, glm::dvec2 const &Max)
 {
 	auto const &current{Chunk.data()};
@@ -1220,20 +1330,28 @@ void terrain_streamer::apply_modifiers(editor_terrain &Chunk, glm::dvec2 const &
 	}
 	if (false == reachesany)
 	{
-		// no modifier reaches the chunk (any more): its own heights are what's left
+		// no modifier reaches the chunk (any more): its own heights are what's left, with the touch-ups made over the modifiers
 		if (false == current.base.empty())
 		{
 			remember(Chunk);
 			auto &data{Chunk.edit(true, false)};
 			data.heights = std::move(data.base);
+			if (data.adjust.size() == data.heights.size())
+				for (std::size_t index = 0; index < data.heights.size(); ++index)
+					data.heights[index] += data.adjust[index];
 			data.base.clear();
+			data.adjust.clear();
 		}
 		return;
 	}
 	remember(Chunk);
 	auto &data{Chunk.edit(true, false)};
 	if (data.base.empty())
+	{
 		data.base = data.heights;
+		data.adjust.clear();
+	}
+	auto const touchups{data.adjust.size() == data.heights.size()};
 	auto const step{data.spacing()};
 	auto const xs{index_range(low.x, step, data.side(), std::max(Min.x, low.x), std::min(Max.x, high.x))};
 	auto const zs{index_range(low.y, step, data.side(), std::max(Min.y, low.y), std::min(Max.y, high.y))};
@@ -1245,7 +1363,7 @@ void terrain_streamer::apply_modifiers(editor_terrain &Chunk, glm::dvec2 const &
 			auto const x{low.x + ix * step}, z{low.y + iz * step};
 			for (auto const &shape : shapes)
 				shape.apply(x, z, height);
-			data.heights[index] = height;
+			data.heights[index] = touchups ? height + data.adjust[index] : height;
 		}
 }
 
@@ -1282,6 +1400,41 @@ bool terrain_streamer::remove_modifier(std::string const &Name)
 	remember_manifest();
 	auto const bounds{existing->bounds()};
 	m_manifest.modifiers.erase(existing);
+	m_manifestchanged = true;
+	apply_modifiers(bounds.first, bounds.second);
+	return true;
+}
+
+bool terrain_streamer::bake_modifier(std::string const &Name)
+{
+	auto const existing{std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == Name; })};
+	if (existing == m_manifest.modifiers.end())
+		return false;
+	remember_manifest();
+	auto const baked{*existing};
+	auto const bounds{baked.bounds()};
+	heightmap::modifier_shape const shape{baked};
+	// the ground under the modifiers takes the shape this one gives it; the other modifiers and the touch-ups go on top
+	for (auto *chunk : chunks_in(bounds.first, bounds.second, true))
+	{
+		auto const &current{chunk->data()};
+		if (current.base.empty())
+			continue;
+		auto const low{current.corner()};
+		auto const step{current.spacing()};
+		auto const xs{index_range(low.x, step, current.side(), bounds.first.x, bounds.second.x)};
+		auto const zs{index_range(low.y, step, current.side(), bounds.first.y, bounds.second.y)};
+		auto base{current.base};
+		bool shaped{false};
+		for (int iz = zs.first; iz <= zs.second; ++iz)
+			for (int ix = xs.first; ix <= xs.second; ++ix)
+				shaped |= shape.apply(low.x + ix * step, low.y + iz * step, base[static_cast<std::size_t>(iz) * current.side() + ix]);
+		if (false == shaped)
+			continue;
+		remember(*chunk);
+		chunk->edit(true, false).base = std::move(base);
+	}
+	m_manifest.modifiers.erase(std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == Name; }));
 	m_manifestchanged = true;
 	apply_modifiers(bounds.first, bounds.second);
 	return true;
@@ -1326,6 +1479,7 @@ void terrain_streamer::remember_manifest()
 	m_change.manifest = true;
 	m_change.layers = m_manifest.layers;
 	m_change.water = m_manifest.water;
+	m_change.water_material = m_manifest.water_material;
 	m_change.modifiers = m_manifest.modifiers;
 }
 
@@ -1372,12 +1526,15 @@ terrain_streamer::change terrain_streamer::restore(change const &Change)
 		opposite.manifest = true;
 		opposite.layers = m_manifest.layers;
 		opposite.water = m_manifest.water;
+		opposite.water_material = m_manifest.water_material;
 		opposite.modifiers = m_manifest.modifiers;
 		auto const samelayers{std::equal(Change.layers.begin(), Change.layers.end(), m_manifest.layers.begin(), m_manifest.layers.end(),
 		                                 [](heightmap::layer_def const &A, heightmap::layer_def const &B) { return A.material == B.material && A.size == B.size; })};
 		m_manifest.layers = Change.layers;
 		m_manifest.modifiers = Change.modifiers;
 		m_manifest.water = Change.water;
+		if (false == Change.water_material.empty())
+			m_manifest.water_material = Change.water_material;
 		m_manifestchanged = true;
 		m_waterchanged = true;
 		if (false == samelayers)
@@ -1523,7 +1680,7 @@ void terrain_streamer::build_water()
 			continue;
 		auto const material{GfxRenderer->Fetch_Material(body.material.empty() ? m_manifest.water_material : body.material)};
 		auto const *materialdata{GfxRenderer->Material(material)};
-		auto const repeat{(materialdata != nullptr && materialdata->GetSize().x > 0.f) ? static_cast<double>(materialdata->GetSize().x) : 8.0};
+		auto const repeat{body.size > 0.f ? static_cast<double>(body.size) : (materialdata != nullptr && materialdata->GetSize().x > 0.f) ? static_cast<double>(materialdata->GetSize().x) : 8.0};
 		glm::dvec3 const centre{centroid.x, body.level, centroid.y};
 		auto &section{simulation::Region->section(centre)};
 		// the section makes the geometry of its own shapes once, before it's drawn; done first, it leaves ours alone

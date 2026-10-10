@@ -213,8 +213,11 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   chosen(terrain_tool::level), choose(terrain_tool::level)});
 		Buttons.push_back({icon::brush, STR_C("Paint"), nullptr, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"), chosen(terrain_tool::paint), choose(terrain_tool::paint)});
 		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), chosen(terrain_tool::chunks), choose(terrain_tool::chunks)});
-		Buttons.push_back({icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB gives the clicked chunk the point spacing chosen in the tool options"), chosen(terrain_tool::spacing), choose(terrain_tool::spacing)});
+		Buttons.push_back({icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away; the tool options convert the point spacing of the selected"),
+		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing)});
 		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
+		Buttons.push_back({icon::joints, STR_C("Restore"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
+		                   choose(terrain_tool::restore)});
 		auto const orthophoto{m_orthophoto.enabled()};
 		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
 		                   [this, orthophoto]() { m_orthophoto.enabled(false == orthophoto); }, true});

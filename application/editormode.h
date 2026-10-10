@@ -311,11 +311,18 @@ class editor_mode : public application_mode, private editor_track::observer
 		smooth,
 		level, // leads the ground to the target height, Ctrl: picks the target height under the cursor
 		paint, // paints the chosen material, Shift: the first material of the palette
-		spacing, // gives the clicked chunk the chosen point spacing
-		water // outlines a body of water
+		spacing, // selects chunks (Ctrl: adds or takes away one), whose point spacing is then converted
+		water, // outlines a body of water
+		restore // takes the touch-ups over the modifiers back
 	};
 	terrain_tool m_terrain_tool{terrain_tool::none};
-	bool terrain_brush() const { return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::level || m_terrain_tool == terrain_tool::paint; }
+	bool terrain_brush() const
+	{
+		return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::level || m_terrain_tool == terrain_tool::paint ||
+		       m_terrain_tool == terrain_tool::restore;
+	}
+	// converts the point spacing of the selected chunks to m_terrain_convert_spacing
+	void convert_selected_chunks();
 	// takes the height of whatever is under the cursor (terrain, track, model) for the target of the level brush. returns: false if there's nothing
 	bool pick_terrain_target();
 	bool terrain_clicking() const { return m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::water; }
@@ -427,6 +434,14 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool m_water_level_edited{false}; // the level was given by hand, the points clicked don't change it
 	char m_water_material[128]{""};
 	int m_water_selected{-1};
+	char m_water_selected_material[128]{""}; // material of the chosen water, while it's edited
+	int m_water_material_of{-1}; // the water whose material is in the field above
+	float m_water_selected_size{0.0f}; // metres its texture repeats at, 0: given by the material
+	char m_water_default_material[128]{""}; // of the waters which don't name their own, while it's edited
+	bool m_water_default_edited{false};
+	std::set<heightmap::chunk_key> m_terrain_selection; // chunks chosen with the spacing tool
+	float m_terrain_convert_spacing{1.0f}; // point spacing the selected chunks are converted to
+	bool m_terrain_convert_paint{true}; // chunks converted to 0.5 m get paint samples every 0.5 m too
 	float m_water_selected_level{0.0f}; // level of the chosen water, while it's edited
 	bool m_water_level_dragged{false};
 	std::string m_terrain_status;

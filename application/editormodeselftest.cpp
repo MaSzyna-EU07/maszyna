@@ -78,6 +78,13 @@ http://mozilla.org/MPL/2.0/.
 //   terrainadd <count> <spacing>          chunks made around the camera, count x count, as the button of the chunks panel does it
 //   terrainprobe <x> <z>                 logs the height of the heightmap terrain and the materials of the chunk
 //   terrainconvert                       converts every material of the terrain files of the scenery
+//   terrainmodifier <name> <x0> <z0> <x1> <z1> <formation> <half width>   a straight modifier, as the vertical profile makes them
+//   terraintouchup <0|1>                 the brushes touch up over the modifiers, or shape the ground under them
+//   terrainrestore <x> <z> <radius>      a stroke of the restore brush
+//   terrainbake <name>                   the modifier baked into the ground
+//   terrainselect <cx> <cz> [add]        the chunk selected with the spacing tool (add: Ctrl)
+//   terrainresolution <spacing> [paint 0|1]   the selected chunks converted, as the button of the resolution panel does it
+//   terrainwater <index> <material> [size]    material and repeat of a body of water; terrainwaterdefault <material>
 //   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
 //   screenshot
 //   save
@@ -1168,6 +1175,90 @@ void editor_mode::selftest_step()
 			forget_ground();
 			WriteLog(format("SELFTEST %s %.1f %.1f: %s", command.c_str(), x, z, changed ? "changed" : "nothing changed"));
 		}
+		else if (command == "terrainmodifier")
+		{
+			heightmap::modifier modifier;
+			heightmap::corridor_point a, b;
+			double formation{0.0}, halfwidth{3.5};
+			words >> modifier.name >> a.position.x >> a.position.y >> b.position.x >> b.position.y >> formation >> halfwidth;
+			a.formation = b.formation = formation;
+			a.half_width = b.half_width = halfwidth;
+			modifier.points = {a, b};
+			m_streamer.modifier(std::move(modifier));
+			forget_ground();
+			WriteLog(format("SELFTEST terrainmodifier: %zu modifiers", m_streamer.modifiers().size()));
+		}
+		else if (command == "terraintouchup")
+		{
+			int state{1};
+			words >> state;
+			m_streamer.touch_up(state != 0);
+			WriteLog(format("SELFTEST terraintouchup %d", state));
+		}
+		else if (command == "terrainrestore")
+		{
+			double x{0.0}, z{0.0}, radius{10.0};
+			words >> x >> z >> radius;
+			auto const changed{m_streamer.restore_stitching(x, z, radius, 1.0)};
+			forget_ground();
+			WriteLog(format("SELFTEST terrainrestore %.1f %.1f: %s, touch-ups left %zu", x, z, changed ? "changed" : "nothing changed", m_streamer.touched_up()));
+		}
+		else if (command == "terrainbake")
+		{
+			std::string name;
+			words >> name;
+			auto const baked{m_streamer.bake_modifier(name)};
+			forget_ground();
+			WriteLog(format("SELFTEST terrainbake %s: %s, %zu modifiers left", name.c_str(), baked ? "baked" : "not found", m_streamer.modifiers().size()));
+		}
+		else if (command == "terrainselect")
+		{
+			int cx{0}, cz{0};
+			std::string add;
+			words >> cx >> cz >> add;
+			if (add != "add")
+				m_terrain_selection.clear();
+			if (m_streamer.exists({cx, cz}))
+				m_terrain_selection.insert({cx, cz});
+			WriteLog(format("SELFTEST terrainselect: %zu selected", m_terrain_selection.size()));
+		}
+		else if (command == "terrainresolution")
+		{
+			float spacing{1.f};
+			int paint{1};
+			words >> spacing >> paint;
+			m_terrain_convert_spacing = heightmap::valid_spacing(spacing);
+			m_terrain_convert_paint = paint != 0;
+			convert_selected_chunks();
+			WriteLog("SELFTEST terrainresolution: " + m_terrain_status);
+		}
+		else if (command == "terrainwater" || command == "terrainwaterdefault")
+		{
+			if (command == "terrainwaterdefault")
+			{
+				std::string material;
+				words >> material;
+				m_streamer.water_material(material);
+			}
+			else
+			{
+				std::size_t index{0};
+				std::string material;
+				float size{0.f};
+				words >> index >> material >> size;
+				auto water{m_streamer.water()};
+				if (index < water.size())
+				{
+					water[index].material = material == "-" ? std::string{} : material;
+					water[index].size = size;
+					m_streamer.water(std::move(water));
+				}
+			}
+			std::string list;
+			for (auto const &body : m_streamer.water())
+				list += format(" [%s: %s, %.1f m]", body.name.c_str(), body.material.empty() ? "default" : body.material.c_str(), body.size);
+			WriteLog("SELFTEST " + command + ": default " + m_streamer.manifest().water_material + list);
+		}
 		else if (command == "terrainadd")
 		{
 			int count{1};
@@ -1191,7 +1282,18 @@ void editor_mode::selftest_step()
 					materials += (layer < palette.size() ? palette[layer].material : std::string{"?"}) + " ";
 				}
 			auto const found{m_streamer.height_at(x, z, height)};
-			WriteLog(format("SELFTEST terrainprobe %.1f %.1f: %s %.3f, %zu chunks, materials %s", x, z, found ? "height" : "no terrain", height, m_streamer.resident(), materials.c_str()));
+			std::string grid;
+			if (chunk != nullptr)
+			{
+				auto const &data{chunk->data()};
+				double base{0.0}, adjust{0.0};
+				if (false == data.base.empty())
+					base = data.height_in(data.base, x, z);
+				if (false == data.adjust.empty())
+					adjust = data.height_in(data.adjust, x, z);
+				grid = format(", spacing %.1f, paint %d, base %s %.3f, touch-up %.3f", data.spacing(), data.paint, data.base.empty() ? "none" : "", base, adjust);
+			}
+			WriteLog(format("SELFTEST terrainprobe %.1f %.1f: %s %.3f, %zu chunks, materials %s%s", x, z, found ? "height" : "no terrain", height, m_streamer.resident(), materials.c_str(), grid.c_str()));
 		}
 		else if (command == "terrainconvert")
 		{
