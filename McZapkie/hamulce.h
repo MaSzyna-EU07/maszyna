@@ -299,7 +299,7 @@ class TBrakeCyl : public TReservoir
 	/// <returns>Cylinder pressure in bar.</returns>
 	double P() override;
 	/// <summary>Default constructor.</summary>
-	TBrakeCyl() : TReservoir() {};
+	using TReservoir::TReservoir;
 };
 
 /// <summary>
@@ -558,7 +558,7 @@ class TWest : public TBrake
 	void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
 
 	/// <summary>Constructs the distributor by forwarding all parameters to TBrake.</summary>
-	inline TWest(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	using TBrake::TBrake;
 };
 
 /// <summary>
@@ -636,7 +636,7 @@ class TESt3 : public TESt
 	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 
 	/// <summary>Constructs the ESt3 distributor.</summary>
-	inline TESt3(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	using TESt::TESt;
 };
 
 /// <summary>
@@ -742,7 +742,7 @@ class TLSt : public TESt4R
 	void SetED(double const EDstate) override; // stan hamulca ED do luzowania
 
 	/// <summary>Constructs the LSt distributor.</summary>
-	inline TLSt(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt4R(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	using TESt4R::TESt4R;
 };
 
 /// <summary>
@@ -825,7 +825,7 @@ class TEStEP2 : public TLSt
 	void virtual EPCalc(double dt);
 
 	/// <summary>Constructs the EP2 distributor.</summary>
-	inline TEStEP2(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TLSt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	using TLSt::TLSt;
 };
 
 /// <summary>
@@ -844,9 +844,7 @@ class TEStEP1 : public TEStEP2
 	void SetEPS(double const nEPS) override; // stan hamulca EP
 
 	/// <summary>Constructs the EP1 distributor.</summary>
-	inline TEStEP1(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TEStEP2(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
-	{
-	}
+	using TEStEP2::TEStEP2;
 };
 
 /// <summary>
@@ -1112,7 +1110,7 @@ class TFV4a : public TDriverHandle
 	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TFV4a() : TDriverHandle() {}
+	using TDriverHandle::TDriverHandle;
 };
 
 /// <summary>
@@ -1163,7 +1161,7 @@ class TFV4aM : public TDriverHandle
 	/// <summary>Returns the regulator pressure (5 + TP*0.08 + RedAdj).</summary>
 	double GetRP() override;
 	/// <summary>Default constructor.</summary>
-	inline TFV4aM() : TDriverHandle() {}
+	using TDriverHandle::TDriverHandle;
 };
 
 /// <summary>
@@ -1217,8 +1215,7 @@ class TMHZ_EN57 : public TDriverHandle
 	/// <summary>Configures handle parameters (auto/manual overcharge, over-pressure, overcharge dynamics).</summary>
 	void SetParams(bool AO, bool MO, double OverP, double, double OMP, double OPD) override;
 	/// <summary>Default constructor.</summary>
-	inline TMHZ_EN57(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// MHZ_K5P — Knorr 5-position combined brake handle.
@@ -1269,8 +1266,7 @@ class TMHZ_K5P : public TDriverHandle
 	void SetParams(bool AO, bool MO, double, double, double OMP, double OPD) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TMHZ_K5P(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// MHZ_6P — 6-position combined brake handle (similar logic to K5P with one more detent).
@@ -1321,8 +1317,7 @@ class TMHZ_6P : public TDriverHandle
 	void SetParams(bool AO, bool MO, double, double, double OMP, double OPD) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TMHZ_6P(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /*    FBS2= class(TTDriverHandle)
           private
@@ -1461,8 +1456,7 @@ class TSt113 : public TH14K1
 	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TSt113(void) : TH14K1() {}
-};
+	using TH14K1::TH14K1;};
 
 /// <summary>
 /// Test handle — minimal implementation used during development for verifying
@@ -1482,8 +1476,7 @@ class Ttest : public TDriverHandle
 	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline Ttest(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// FD1 auxiliary brake handle — directly drives the cylinder pressure between
@@ -1513,8 +1506,7 @@ class TFD1 : public TDriverHandle
 	//        procedure Init(press: real; MaxBP: real); overload;
 
 	/// <summary>Default constructor.</summary>
-	inline TFD1(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// H1405 — Knorr auxiliary brake handle (continuous, independent brake).
@@ -1538,8 +1530,7 @@ class TH1405 : public TDriverHandle
 	//        procedure Init(press: real; MaxBP: real); overload;
 
 	/// <summary>Default constructor.</summary>
-	inline TH1405(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// FVel6 — combined EP + pneumatic brake handle (Czech, 6+1 positions).
@@ -1572,8 +1563,7 @@ class TFVel6 : public TDriverHandle
 	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TFVel6(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// FVE408 — newer combined EP + pneumatic brake handle (10 positions).
@@ -1607,8 +1597,7 @@ class TFVE408 : public TDriverHandle
 	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TFVE408(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// Pneumatic flow rate from one pressure to another through an orifice of area S.

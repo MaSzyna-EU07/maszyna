@@ -74,7 +74,7 @@ class TPrzekladnik : public TReservoir // przekladnik (powtarzacz)
     std::shared_ptr<TReservoir> BrakeRes;
     std::shared_ptr<TReservoir> Next;
 
-	TPrzekladnik() : TReservoir() {};
+	using TReservoir::TReservoir;
     virtual void Update(double dt);
 };
 
@@ -82,7 +82,7 @@ class TRura : public TPrzekladnik // nieprzekladnik, rura laczaca
 
 {
   public:
-	  TRura() : TPrzekladnik() {};
+	  using TPrzekladnik::TPrzekladnik;
     double P(void) override;
     void Update(double dt) override;
 };
@@ -116,9 +116,7 @@ class TRapid : public TPrzekladnik {
     void SetRapidParams(double mult, double size);
     void SetRapidStatus(bool rs);
     void Update(double dt) override;
-	inline TRapid() :
-		TPrzekladnik()
-	{}
+	using TPrzekladnik::TPrzekladnik;
 };
 
 // AL2
@@ -130,9 +128,7 @@ class TPrzekCiagly : public TPrzekladnik {
   public:
     void SetMult(double m);
     void Update(double dt) override;
-	inline TPrzekCiagly() :
-		TPrzekladnik()
-	{}
+	using TPrzekladnik::TPrzekladnik;
 };
 
 // podwojny zawor zwrotny
@@ -144,18 +140,14 @@ class TPrzek_PZZ : public TPrzekladnik {
   public:
     void SetLBP(double P);
     void Update(double dt) override;
-	inline TPrzek_PZZ() :
-		TPrzekladnik()
-	{}
+	using TPrzekladnik::TPrzekladnik;
 };
 
 class TPrzekZalamany : public TPrzekladnik // Knicksventil
 
 {
   public:
-	  TPrzekZalamany() :
-		  TPrzekladnik()
-	  {}
+	  using TPrzekladnik::TPrzekladnik;
 };
 
 // przy napelnianiu - rura, przy hamowaniu - upust
@@ -167,9 +159,7 @@ class TPrzekED : public TRura  {
   public:
     void SetP(double P);
     void Update(double dt) override;
-	inline TPrzekED() :
-		TRura()
-	{}
+	using TRura::TRura;
 };
 
 class TNESt3 : public TBrake {
@@ -203,9 +193,7 @@ class TNESt3 : public TBrake {
     double LBP = 0.0; // cisnienie hamulca pomocniczego
 
   public:
-	inline TNESt3(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) :
-           TBrake(       i_mbp,        i_bcr,        i_bcd,        i_brc,     i_bcn,     i_BD,     i_mat,     i_ba,     i_nbpa)
-	{}
+	using TBrake::TBrake;
     void Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF ) override;
     double GetPF( double const PP, double const dt, double const Vel ) override; // przeplyw miedzy komora wstepna i PG
     void EStParams(double i_crc) const; // parametry charakterystyczne dla ESt
