@@ -267,7 +267,7 @@ scenario_panel::render() {
         }
         // current task
         for( auto const &line : text_lines ) {
-            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
         // hints
         if (owner != nullptr && true == ImGui::CollapsingHeader( STR_C("Hints"), ImGuiTreeNodeFlags_DefaultOpen )) {
@@ -478,12 +478,12 @@ timetable_panel::render() {
     }
     if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         for( auto const &line : text_lines ) {
-            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
         if( is_expanded ) {
             ImGui::PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( 1, 0 ) );
             for( auto const &line : m_tablelines ) {
-                ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
+                ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
             }
             ImGui::PopStyleVar();
         }
@@ -564,7 +564,7 @@ debug_panel::render() {
     if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // header section
         for( auto const &line : text_lines ) {
-            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
         // sections
         ImGui::Separator();
