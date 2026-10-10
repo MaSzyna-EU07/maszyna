@@ -267,7 +267,7 @@ double TSegment::ComputeLength() const // McZapkie-150503: dlugosc miedzy punkta
     double l = 0;
 	glm::dvec3 last{0, 0, 0}; // długość liczona po przesunięciu odcinka do początku układu
 	glm::dvec3 tmp = Point2 - Point1;
-    int m = static_cast<int>(20.0 * glm::length(tmp)); // było zawsze do 10000, teraz jest liczone odcinkami po około 5cm
+    auto m = static_cast<int>(20.0 * glm::length(tmp)); // było zawsze do 10000, teraz jest liczone odcinkami po około 5cm
     for (int i = 1; i <= m; i++)
     {
         t = double(i) / double(m); // wyznaczenie parametru na krzywej z przedziału (0,1>
@@ -420,8 +420,8 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
     float t;
     float fEnd;
     auto const iNumShapePoints = Transition ? ShapePoints.size() / 2 : ShapePoints.size();
-    float const texturelength = static_cast<float>(fTextureLength * Texturescale);
-    float const texturescale = static_cast<float>(Texturescale);
+    auto const texturelength = static_cast<float>(fTextureLength * Texturescale);
+    auto const texturescale = static_cast<float>(Texturescale);
 
     float m1;
     float jmm1;
@@ -568,7 +568,8 @@ void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) 
 
 	glm::vec3 previous = FastGetPoint(0.0);
 
-	for (float x = step; x <= 1.0f; x += step) {
+	for (int i = 1; static_cast<float>(i) * step <= 1.0f; ++i) {
+		float const x = static_cast<float>(i) * step;
 		out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 
 		previous = glm::vec3(FastGetPoint(x));
@@ -589,7 +590,8 @@ glm::vec3 TSegment::get_nearest_point(const glm::dvec3 &point, float quality) co
 	glm::vec3 nearest;
 	float min = std::numeric_limits<float>::max();
 
-	for (float x = step; x <= 1.0f; x += step) {
+	for (int i = 1; static_cast<float>(i) * step <= 1.0f; ++i) {
+		float const x = static_cast<float>(i) * step;
         glm::vec3 p1 = FastGetPoint(x);
 
         if (glm::vec3 p2 = FastGetPoint(glm::min(1.0f, x + step)); p1 != p2) {
