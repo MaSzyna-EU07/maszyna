@@ -50,7 +50,7 @@ struct server_hello : public message
 
 struct request_command : public message
 {
-	request_command(type_e type) : message(type) {}
+	using message::message;
 	request_command() : message(REQUEST_COMMAND) {}
 
 	command_queue::commands_map commands;
