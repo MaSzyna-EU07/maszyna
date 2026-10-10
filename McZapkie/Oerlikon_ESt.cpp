@@ -319,7 +319,9 @@ void TNESt3::Init( double const PP, double const HPP, double const LPP, double c
 
     Zamykajacy = false;
 
-    if ( typeid(*FM) == typeid(TDisk1) || typeid(*FM) == typeid(TDisk2) ) // jesli zeliwo to schodz
+    auto const &frictionmaterial { *FM };
+    auto const &frictionmaterialtype { typeid( frictionmaterial ) };
+    if ( frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2) ) // jesli zeliwo to schodz
         RapidStaly = true;
     else
         RapidStaly = false;

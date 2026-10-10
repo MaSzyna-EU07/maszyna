@@ -2675,7 +2675,9 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 	ImplsRes->Flow(-dv);
 
 	// rapid
-	if (!(typeid(*FM) == typeid(TDisk1) || typeid(*FM) == typeid(TDisk2))) // jesli zeliwo to schodz
+	auto const &frictionmaterial{*FM};
+	auto const &frictionmaterialtype{typeid(frictionmaterial)};
+	if (!(frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2))) // jesli zeliwo to schodz
 		RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R && (RV < 0 || (Vel > RV && RapidStatus) || Vel > RV + 20);
 	else // jesli tarczowki, to zostan
 		RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R;

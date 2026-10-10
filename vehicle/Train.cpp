@@ -767,7 +767,9 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	bool const bEP = mvControlled->LocHandle->GetCP() > 0.2 || fEIMParams[0][5] > 0.01;
 	dict->insert("dir_brake", bEP);
 	bool bPN{false};
-	if (typeid(*mvOccupied->Hamulec) == typeid(TLSt) || typeid(*mvOccupied->Hamulec) == typeid(TEStED))
+	auto const &brakevalve{*mvOccupied->Hamulec};
+	auto const &brakevalvetype{typeid(brakevalve)};
+	if (brakevalvetype == typeid(TLSt) || brakevalvetype == typeid(TEStED))
 	{
 
 		TBrake *temp_ham = mvOccupied->Hamulec.get();
