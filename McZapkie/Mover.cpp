@@ -256,7 +256,7 @@ void TSecuritySystem::load(std::string const &line, double Vmax)
 
 double TableInterpolation(std::map<double, double> &Map, double Parameter)
 {
-	if (Map.size() == 0)
+	if (Map.empty())
 		return 0.0;
 	if (Map.size() == 1)
 		return Map.begin()->second;
@@ -7868,7 +7868,7 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 					else
 						dizel_nreg_min = dizel_nmin;
 				}
-				if (dizel_vel2nmax_Table.size() > 0 && !hydro_TC_Lockup)
+				if (!dizel_vel2nmax_Table.empty() && !hydro_TC_Lockup)
 				{
 					dizel_nreg_max = std::min(std::min(dizel_nreg_max, enrot) + dizel_nreg_acc * dt, TableInterpolation(dizel_vel2nmax_Table, Vel));
 				}

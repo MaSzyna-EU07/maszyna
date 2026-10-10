@@ -111,7 +111,7 @@ void network::tcp::connection::write_message(const message &msg, std::ostream &s
 
 void network::tcp::connection::send_messages(const std::vector<std::shared_ptr<message> > &messages)
 {
-	if (messages.size() == 0)
+	if (messages.empty())
 		return;
 
 	std::ostringstream stream;
@@ -173,7 +173,7 @@ void network::tcp::server::handle_accept(std::shared_ptr<connection> conn, const
 // ------------------
 
 network::tcp::client::client(asio::io_context &io_ctxx, const std::string &hostarg, uint32_t portarg)
-    : host(hostarg), port(portarg), io_ctx(io_ctxx)
+    : io_ctx(io_ctxx), host(hostarg), port(portarg)
 {
 }
 

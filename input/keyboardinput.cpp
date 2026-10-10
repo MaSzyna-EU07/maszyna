@@ -136,7 +136,7 @@ keyboard_input::recall_bindings() {
 		// Fallback � plik w folderze symulatora
 		path = "eu07_input-keyboard.ini";
 	}
-	cParser bindingparser(path.c_str(), cParser::buffer_FILE);
+	cParser bindingparser(path, cParser::buffer_FILE);
 
 	bindingparser.skipComments = false;
     if( false == bindingparser.ok() ) {

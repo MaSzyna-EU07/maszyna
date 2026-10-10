@@ -108,9 +108,9 @@ OnCommandGet(multiplayer::DaneRozkaz const *pRozkaz)
         break;
         case 5: // ustawienie parametrów
         {
-			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " params " + std::to_string(*pRozkaz->iPar) + " rcvd");
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " params " + std::to_string(pRozkaz->iPar[0]) + " rcvd");
             // sprawdzenie czasu
-            if (*pRozkaz->iPar == 0 && *pRozkaz->iPar & 1) // ustawienie czasu
+            if (pRozkaz->iPar[0] == 0 && pRozkaz->iPar[0] & 1) // ustawienie czasu
             {
                 auto t = pRozkaz->fPar[1];
                 simulation::Time.data().wDay = static_cast<uint16_t>(std::floor(t)); // niby nie powinno być dnia, ale...
@@ -120,7 +120,7 @@ OnCommandGet(multiplayer::DaneRozkaz const *pRozkaz)
                 simulation::Time.data().wMinute = static_cast<uint16_t>(std::floor(60 * 24 * t) - 60.0 * (24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour));
                 simulation::Time.data().wSecond = static_cast<uint16_t>(std::floor( 60 * 60 * 24 * t ) - 60.0 * ( 60.0 * ( 24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour ) + simulation::Time.data().wMinute ));
             }
-            if (*pRozkaz->iPar & 2)
+            if (pRozkaz->iPar[0] & 2)
             { // ustawienie flag zapauzowania
                 Global.iPause = static_cast<int>(pRozkaz->fPar[2]); // zakładamy, że wysyłający wie, co robi
             }

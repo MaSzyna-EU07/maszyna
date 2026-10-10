@@ -245,7 +245,7 @@ public:
             e[i + 2] = f; // zamiana Y i Z
         }
     };
-    inline float4x4 &Rotation(float const angle, float3 const &axis);
+    float4x4 &Rotation(float const angle, float3 const &axis);
     inline bool IdentityIs() const
     { // sprawdzenie jednostkowości
         for (int i = 0; i < 16; ++i)

@@ -119,7 +119,7 @@ void trainingcard_panel::render_contents()
 		ImGui::EndPopup();
 	}
 
-	if (start_time_wall)
+	if (start_time_wall.has_value())
 	{
 		std::tm const tm = local_tm(*start_time_wall);
 		std::string rep = "Czas rozpoczęcia: " + std::to_string(tm.tm_year + 1900) + "-" + std::to_string(tm.tm_mon + 1) + "-" + std::to_string(tm.tm_mday) + " " + std::to_string(tm.tm_hour) +
@@ -154,7 +154,7 @@ void trainingcard_panel::render_contents()
 	ImGui::TextUnformatted("Uwagi");
 	ImGui::InputTextMultiline("##remarks", &remarks[0], remarks.size(), ImVec2(-1.0f, 200.0f));
 
-	if (!start_time_wall)
+	if (!start_time_wall.has_value())
 	{
 		if (ImGui::Button("Rozpocznij szkolenie"))
 		{
@@ -189,7 +189,7 @@ void trainingcard_panel::render_contents()
 
 const std::string *trainingcard_panel::is_recording() const
 {
-	if (!start_time_wall)
+	if (!start_time_wall.has_value())
 		return nullptr;
 
 	return &recording_timestamp;

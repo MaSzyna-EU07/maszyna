@@ -157,7 +157,7 @@ gamepad_input::recall_bindings() {
 		filePath = appPath.string();
 
 	// bindingparser tworzony zawsze, z wybran� �cie�k�
-	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
+	cParser bindingparser(filePath, cParser::buffer_FILE);
 
     if( false == bindingparser.ok() ) {
         return false;

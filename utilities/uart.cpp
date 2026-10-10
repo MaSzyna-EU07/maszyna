@@ -195,7 +195,7 @@ uart_input::recall_bindings() {
 
 	if (fs::path appPath = user_config_path("eu07_input-uart.ini"); !appPath.empty() && fs::exists(appPath))
 		filePath = appPath.string();
-	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
+	cParser bindingparser(filePath, cParser::buffer_FILE);
 	if (false == bindingparser.ok())
 	{
         return false;
@@ -282,7 +282,7 @@ void uart_input::poll()
     }
 
     /* handle port change */
-    if(status->available_ports.size() > 0 && status->selected_port_index >= 0 && status->active_port_index != status->selected_port_index) {
+    if(!status->available_ports.empty() && status->selected_port_index >= 0 && status->active_port_index != status->selected_port_index) {
         status->port_name = status->available_ports[status->selected_port_index];
         status->active_port_index = status->selected_port_index;
         status->reset_stats();

@@ -47,7 +47,7 @@ void ui::vehicles_bank::parse_entry(const std::string &line)
 
 		if (line[0] == '!')
 			parse_category_entry(param);
-		else if (line[0] == '*' && line[1] == '*')
+		else if (line.starts_with("**"))
 			parse_texture_rule(target.substr(2), param);
 		else if (line[0] == '*')
 			parse_coupling_rule(target.substr(1), param);
@@ -124,12 +124,12 @@ void ui::vehicles_bank::parse_texture_info(const std::string &target, const std:
 	set.meta = meta;
 
 	if (!mini.empty())
-		group_icons.try_emplace(mini, std::move(deferred_image("textures/mini/" + ToLower(mini) + ".bmp")));
+		group_icons.try_emplace(mini, deferred_image("textures/mini/" + ToLower(mini) + ".bmp"));
 
 	if (!miniplus.empty())
-		set.mini = std::move(deferred_image("textures/mini/" + ToLower(miniplus) + ".bmp"));
+		set.mini = deferred_image("textures/mini/" + ToLower(miniplus) + ".bmp");
 	else if (!mini.empty())
-		set.mini = std::move(deferred_image("textures/mini/" + ToLower(mini) + ".bmp"));
+		set.mini = deferred_image("textures/mini/" + ToLower(mini) + ".bmp");
 
 	set.skin = ToLower(target);
 	erase_extension(set.skin);

@@ -174,7 +174,7 @@ drivermouse_input::recall_bindings() {
 	if (fs::path appPath = user_config_path("eu07_input-mouse.ini"); !appPath.empty() && fs::exists(appPath))
 		filePath = appPath.string();
 
-    cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
+    cParser bindingparser(filePath, cParser::buffer_FILE);
 
     if (false == bindingparser.ok()) {
         return false;

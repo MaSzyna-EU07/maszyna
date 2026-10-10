@@ -207,7 +207,7 @@ void Error(const std::string &asMessage, bool /*box*/)
 {
     // if (box)
     //	MessageBox(NULL, asMessage.c_str(), string("EU07 " + Global.asRelease).c_str(), MB_OK);
-    ErrorLog(asMessage.c_str());
+    ErrorLog(asMessage);
 }
 
 void Error(const char *&asMessage, bool /*box*/)
