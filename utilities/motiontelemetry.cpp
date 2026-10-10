@@ -28,7 +28,8 @@ motiontelemetry::motiontelemetry()
 		throw std::runtime_error("failed to init winsock");
 #endif
 
-	struct addrinfo hints, *res;
+	struct addrinfo hints;
+	struct addrinfo *res;
 	memset(&hints, 0, sizeof(hints));
 
 	hints.ai_family = AF_UNSPEC;

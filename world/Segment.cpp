@@ -263,7 +263,8 @@ double TSegment::ComputeLength() const // McZapkie-150503: dlugosc miedzy punkta
     // Ra: koniec rekurencji jeśli po podziale suma długości nie różni się więcej niż 0.5mm od
     // poprzedniej
     // Ra: ewentualnie rozpoznać łuk okręgu płaskiego i liczyć ze wzoru na długość łuku
-    double t, l = 0;
+    double t;
+    double l = 0;
 	glm::dvec3 last{0, 0, 0}; // długość liczona po przesunięciu odcinka do początku układu
 	glm::dvec3 tmp = Point2 - Point1;
     int m = 20.0 * glm::length(tmp); // było zawsze do 10000, teraz jest liczone odcinkami po około 5cm
@@ -404,13 +405,28 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
     if( fTsBuffer.empty() )
         return false; // prowizoryczne zabezpieczenie przed wysypem - ustalić faktyczną przyczynę
 
-    glm::vec3 pos1, pos2, dir, parallel1, parallel2, pt, norm;
-    float s, step, fOffset, tv1, tv2, t, fEnd;
+    glm::vec3 pos1;
+    glm::vec3 pos2;
+    glm::vec3 dir;
+    glm::vec3 parallel1;
+    glm::vec3 parallel2;
+    glm::vec3 pt;
+    glm::vec3 norm;
+    float s;
+    float step;
+    float fOffset;
+    float tv1;
+    float tv2;
+    float t;
+    float fEnd;
     auto const iNumShapePoints = Transition ? ShapePoints.size() / 2 : ShapePoints.size();
     float const texturelength = fTextureLength * Texturescale;
     float const texturescale = Texturescale;
 
-    float m1, jmm1, m2, jmm2; // pozycje względne na odcinku 0...1 (ale nie parametr Beziera)
+    float m1;
+    float jmm1;
+    float m2;
+    float jmm2; // pozycje względne na odcinku 0...1 (ale nie parametr Beziera)
     step = fStep;
     tv1 = 1.0; // Ra: to by można było wyliczać dla odcinka, wyglądało by lepiej
     s = fStep * iSkip; // iSkip - ile odcinków z początku pominąć

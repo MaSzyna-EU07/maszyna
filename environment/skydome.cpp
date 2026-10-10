@@ -196,7 +196,9 @@ void CSkyDome::RebuildColors() {
 	float zenithy = GetZenith( m_zenithymatrix, m_thetasun, m_turbidity );
 
 	// get perez function parametrs
-	float perezluminance[5], perezx[5], perezy[5];  
+	float perezluminance[5];
+	float perezx[5];
+	float perezy[5];  
 	GetPerez( perezluminance, m_distributionluminance, m_turbidity );
 	GetPerez( perezx, m_distributionxcomp, m_turbidity );
 	GetPerez( perezy, m_distributionycomp, m_turbidity );
@@ -207,11 +209,13 @@ void CSkyDome::RebuildColors() {
 	zenithluminance = PerezFunctionO1( perezluminance, m_thetasun, zenithluminance );
 
     // start with fresh average for the new pass
-    glm::vec3 averagecolor, averagehorizoncolor;
+    glm::vec3 averagecolor;
+    glm::vec3 averagehorizoncolor;
 
 	// trough all vertices
 	glm::vec3 vertex;
-	glm::vec3 color, colorconverter;
+	glm::vec3 color;
+	glm::vec3 colorconverter;
 
 	for ( unsigned int i = 0; i < m_vertices.size(); ++i ) {
 		// grab it

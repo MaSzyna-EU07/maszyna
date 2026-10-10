@@ -15,7 +15,9 @@ http://mozilla.org/MPL/2.0/.
 class float3
 { // wapółrzędne wierchołka 3D o pojedynczej precyzji
   public:
-    float x, y, z;
+    float x;
+    float y;
+    float z;
     float3(void){};
     float3(float a, float b, float c)
     {
@@ -96,7 +98,10 @@ inline float3 Interpolate( float3 const &First, float3 const &Second, float cons
 class float4
 { // kwaternion obrotu
   public:
-    float x, y, z, w;
+    float x;
+    float y;
+    float z;
+    float w;
     float4()
     {
         x = y = z = 0.f;
@@ -177,7 +182,8 @@ inline float4 Slerp(const float4 &q0, const float4 &q1, float t)
         new_q1.w = -new_q1.w;
         cosOmega = -cosOmega;
     }
-    float k0, k1;
+    float k0;
+    float k1;
     if (cosOmega > 0.9999f)
     { // jeśli jesteśmy z (t) na maksimum kosinusa, to tam prawie liniowo jest
         k0 = 1.0f - t;
@@ -200,7 +206,8 @@ struct float8
   public:
     float3 Point;
     float3 Normal;
-    float tu, tv;
+    float tu;
+    float tv;
 };
 
 class float4x4
@@ -345,10 +352,22 @@ inline float Det3x3(float a1, float a2, float a3, float b1, float b2, float b3, 
 inline
 float Det(const float4x4 &m)
 { // obliczenie wyznacznika macierzy 4×4
-    float a1 = m[0][0], a2 = m[1][0], a3 = m[2][0], a4 = m[3][0];
-    float b1 = m[0][1], b2 = m[1][1], b3 = m[2][1], b4 = m[3][1];
-    float c1 = m[0][2], c2 = m[1][2], c3 = m[2][2], c4 = m[3][2];
-    float d1 = m[0][3], d2 = m[1][3], d3 = m[2][3], d4 = m[3][3];
+    float a1 = m[0][0];
+    float a2 = m[1][0];
+    float a3 = m[2][0];
+    float a4 = m[3][0];
+    float b1 = m[0][1];
+    float b2 = m[1][1];
+    float b3 = m[2][1];
+    float b4 = m[3][1];
+    float c1 = m[0][2];
+    float c2 = m[1][2];
+    float c3 = m[2][2];
+    float c4 = m[3][2];
+    float d1 = m[0][3];
+    float d2 = m[1][3];
+    float d3 = m[2][3];
+    float d4 = m[3][3];
     return +a1 * Det3x3(b2, b3, b4, c2, c3, c4, d2, d3, d4) -
            b1 * Det3x3(a2, a3, a4, c2, c3, c4, d2, d3, d4) +
            c1 * Det3x3(a2, a3, a4, b2, b3, b4, d2, d3, d4) -

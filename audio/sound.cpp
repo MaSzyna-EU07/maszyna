@@ -47,7 +47,7 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
     if( Input.peek() == "{" ) {
         // block type config
         while( true == deserialize_mapping( Input ) ) {
-            ; // all work done by while()
+            // all work done by while()
         }
 
         if( false == m_soundchunks.empty() ) {

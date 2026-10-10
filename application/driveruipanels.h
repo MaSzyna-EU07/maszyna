@@ -106,17 +106,16 @@ private:
     std::array<char, 1024> m_buffer;
     std::array<char, 128> m_eventsearch;
     input_data m_input;
-    std::vector<text_line>
-        m_vehiclelines,
-        m_enginelines,
-        m_ailines,
-        m_scantablelines,
-        m_cameralines,
-        m_scenariolines,
-        m_eventqueuelines,
-        m_powergridlines,
-        m_rendererlines,
-        m_uartlines;
+    std::vector<text_line> m_vehiclelines;
+    std::vector<text_line> m_enginelines;
+    std::vector<text_line> m_ailines;
+    std::vector<text_line> m_scantablelines;
+    std::vector<text_line> m_cameralines;
+    std::vector<text_line> m_scenariolines;
+    std::vector<text_line> m_eventqueuelines;
+    std::vector<text_line> m_powergridlines;
+    std::vector<text_line> m_rendererlines;
+    std::vector<text_line> m_uartlines;
 
 	double last_time = std::numeric_limits<double>::quiet_NaN();
 

@@ -48,9 +48,8 @@ private:
         play();
 
 // members
-    TSubModel
-        *pModelOn { nullptr },
-        *pModelOff { nullptr }; // submodel dla stanu załączonego i wyłączonego
+    TSubModel *pModelOn { nullptr };
+    TSubModel *pModelOff { nullptr }; // submodel dla stanu załączonego i wyłączonego
     bool m_state { false };
     bool const *bData { nullptr };
     int iFeedbackBit { 0 }; // Ra: bit informacji zwrotnej, do wyprowadzenia na pulpit

@@ -19,7 +19,7 @@ public:
 // constructors
     opengl33_skydome() = default;
 // destructor
-    ~opengl33_skydome() {;}
+    ~opengl33_skydome() = default;
 // methods
     // updates data stores on the opengl end. NOTE: unbinds buffers
     void update();

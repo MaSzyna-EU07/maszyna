@@ -289,8 +289,11 @@ double TMoverParameters::Current(double n, double U)
 	// a takze wywala bezpiecznik nadmiarowy gdy za duzy prad lub za male napiecie
 	// jest takze mozliwosc uszkodzenia silnika wskutek nietypowych parametrow
 
-	double R, MotorCurrent;
-	double Rz, Delta, Isf;
+	double R;
+	double MotorCurrent;
+	double Rz;
+	double Delta;
+	double Isf;
 	double Mn; // przujmuje int, ale dla poprawnosci obliczeń
 	double Bn;
 	int SP = 0;
@@ -609,7 +612,7 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 		// jeśli wcześniej nie było połączone, ustalenie z której strony rysować sprzęg
 		coupler.Render = true; // tego rysować
 		othercoupler.Render = false; // a tego nie
-	};
+	}
 	auto const couplingchange{CouplingType ^ coupler.CouplingFlag};
 	coupler.Connected = ConnectTo;
 	coupler.CouplingFlag = CouplingType; // ustawienie typu sprzęgu
@@ -936,8 +939,11 @@ void TMoverParameters::UpdatePantVolume(double dt)
 
 void TMoverParameters::UpdateBatteryVoltage(double dt)
 { // przeliczenie obciążenia baterii
-	double sn1 = 0.0, sn2 = 0.0, sn3 = 0.0, sn4 = 0.0,
-	       sn5 = 0.0; // Ra: zrobić z tego amperomierz NN
+	double sn1 = 0.0;
+	double sn2 = 0.0;
+	double sn3 = 0.0;
+	double sn4 = 0.0;
+	double sn5 = 0.0; // Ra: zrobić z tego amperomierz NN
 	if (BatteryVoltage > 0 && EngineType != TEngineType::DieselEngine && EngineType != TEngineType::WheelsDriven && NominalBatteryVoltage > 0)
 	{
 
@@ -968,7 +974,7 @@ void TMoverParameters::UpdateBatteryVoltage(double dt)
 				sn5 = dt * 0.001;
 			else
 				sn5 = 0;
-		};
+		}
 		if (NominalBatteryVoltage / BatteryVoltage >= 1.22 && Battery)
 		{ // 90V
 			if (PantCompFlag)
@@ -991,7 +997,7 @@ void TMoverParameters::UpdateBatteryVoltage(double dt)
 				sn5 = dt * 0.0010;
 			else
 				sn5 = 0;
-		};
+		}
 		if (!Battery)
 		{
 			if (NominalBatteryVoltage / BatteryVoltage < 1.22)
@@ -1002,7 +1008,7 @@ void TMoverParameters::UpdateBatteryVoltage(double dt)
 			sn3 = dt * 0.000001;
 			sn4 = dt * 0.000001;
 			sn5 = dt * 0.000001; // bardzo powolny spadek przy wyłączonych bateriach
-		};
+		}
 		BatteryVoltage -= sn1 + sn2 + sn3 + sn4 + sn5;
 		if (NominalBatteryVoltage / BatteryVoltage > 1.57)
 			if (MainSwitch(false) && EngineType != TEngineType::DieselEngine && EngineType != TEngineType::WheelsDriven)
@@ -1624,7 +1630,7 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	{
 		Compressor = 0;
 		CompressorFlag = false;
-	};
+	}
 	if (VeselVolume > 0.0)
 	{
 		// sprężarka musi mieć jakąś niezerową wydajność żeby rozważać jej załączenie i pracę
@@ -2015,7 +2021,7 @@ double TMoverParameters::ShowEngineRotation(int VehN)
 						if (Couplers[b].Connected->Couplers[b].Connected->Power > 0.01)
 							return fabs(Couplers[b].Connected->Couplers[b].Connected->enrot);
 		break;
-	};
+	}
 	return 0.0;
 };
 
@@ -2437,7 +2443,6 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 				while (RList[MainCtrlPos].R > 0.0 && IncMainCtrl(1))
 				{
 					// all work is done in the loop header
-					;
 				}
 				OK = false; // shouldn't this be part of the loop above?
 				// if (TrainType=dt_ET40)  then
@@ -2493,7 +2498,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 			{
 				while (MainCtrlPos < MainCtrlPosNo && IncMainCtrl(1))
 				{
-					;
+					// all work is done in the loop header
 				}
 			}
 			else
@@ -4782,7 +4787,9 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 
 	const double Spz = 0.5067;
 	TMoverParameters *c;
-	double dv1, dv2, dV;
+	double dv1;
+	double dv2;
+	double dV;
 
 	UpdateSpringBrake(dt);
 
@@ -4875,7 +4882,8 @@ double TMoverParameters::GetDVc(double dt)
 {
 	// T_MoverParameters *c;
 	TMoverParameters *c;
-	double dv1, dv2; // , dV;
+	double dv1;
+	double dv2; // , dV;
 
 	dv1 = 0;
 	dv2 = 0;
@@ -4919,7 +4927,9 @@ double TMoverParameters::GetDVc(double dt)
 // *************************************************************************************************
 void TMoverParameters::ComputeConstans(void)
 {
-	double BearingF, RollF, HideModifier;
+	double BearingF;
+	double RollF;
+	double HideModifier;
 	double Curvature; // Ra 2014-07: odwrotność promienia
 
 	TotalMassxg = TotalMass * g; // TotalMass*g
@@ -5193,7 +5203,9 @@ double TMoverParameters::BrakeForceP(double press, double velocity)
 double TMoverParameters::BrakeForce(TTrackParam const &Track)
 {
 
-	double K{0}, Fb{0}, sm{0};
+	double K{0};
+	double Fb{0};
+	double sm{0};
 
 	switch (LocalBrake)
 	{
@@ -5491,7 +5503,10 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 // *************************************************************************************************
 double TMoverParameters::TractionForce(double dt)
 {
-	double PosRatio, dmoment, dtrans, tmp;
+	double PosRatio;
+	double dmoment;
+	double dtrans;
+	double tmp;
 
 	Ft = 0;
 	dtrans = 0;
@@ -6579,7 +6594,8 @@ double TMoverParameters::TractionForce(double dt)
 // *************************************************************************************************
 double TMoverParameters::ComputeRotatingWheel(double WForce, double dt, double n) const
 {
-	double newn = 0, eps = 0;
+	double newn = 0;
+	double eps = 0;
 	if (n == 0 && WForce * Sign(V) < 0)
 		newn = 0;
 	else
@@ -6725,7 +6741,8 @@ double TMoverParameters::v2n(void)
 {
 	// przelicza predkosc liniowa na obrotowa
 	const double dmgn = 0.5;
-	double n, deltan = 0;
+	double n;
+	double deltan = 0;
 
 	n = V / (M_PI * WheelDiameter); // predkosc obrotowa wynikajaca z liniowej [obr/s]
 	deltan = n - nrot; //"pochodna" prędkości obrotowej
@@ -8036,8 +8053,16 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 // *************************************************************************************************
 double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 { // liczy moment sily wytwarzany przez silnik spalinowy}
-	double Moment = 0, enMoment = 0, gearMoment = 0, eps = 0, newn = 0, friction = 0, neps = 0;
-	double TorqueH = 0, TorqueL = 0, TorqueC = 0;
+	double Moment = 0;
+	double enMoment = 0;
+	double gearMoment = 0;
+	double eps = 0;
+	double newn = 0;
+	double friction = 0;
+	double neps = 0;
+	double TorqueH = 0;
+	double TorqueL = 0;
+	double TorqueC = 0;
 	n = n * CabActive;
 	if (motor_param(ScndCtrlActualPos).mIsat < 0.001 || DirActive == 0)
 		n = enrot;
@@ -9032,10 +9057,20 @@ bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA
 // FUNKCJE PARSERA WCZYTYWANIA PLIKU FIZYKI POJAZDU
 // *************************************************************************************************
 bool startBPT;
-bool startMPT, startMPT0;
-bool startRLIST, startUCLIST;
-bool startDIZELMOMENTUMLIST, startDIZELV2NMAXLIST, startHYDROTCLIST, startPMAXLIST;
-bool startDLIST, startFFLIST, startWWLIST, startWiperList, startDimmerList, startFFEDLIST;
+bool startMPT;
+bool startMPT0;
+bool startRLIST;
+bool startUCLIST;
+bool startDIZELMOMENTUMLIST;
+bool startDIZELV2NMAXLIST;
+bool startHYDROTCLIST;
+bool startPMAXLIST;
+bool startDLIST;
+bool startFFLIST;
+bool startWWLIST;
+bool startWiperList;
+bool startDimmerList;
+bool startFFEDLIST;
 bool startLIGHTSLIST;
 bool startCOMPRESSORLIST;
 int LISTLINE;
@@ -12795,7 +12830,8 @@ bool TMoverParameters::RunInternalCommand()
 // *************************************************************************************************
 double TMoverParameters::ShowCurrentP(int AmpN) const
 {
-	int b, Bn;
+	int b;
+	int Bn;
 	bool Grupowy;
 
 	// ClearPendingExceptions;

@@ -14,7 +14,9 @@ http://mozilla.org/MPL/2.0/.
 class AirCoupler
 {
 private:
-    TSubModel *ModelOn, *ModelOff, *ModelxOn;
+    TSubModel *ModelOn;
+    TSubModel *ModelOff;
+    TSubModel *ModelxOn;
     bool On;
     bool xOn;
     void Update();

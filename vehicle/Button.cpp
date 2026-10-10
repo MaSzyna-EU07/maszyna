@@ -51,7 +51,7 @@ void TButton::Load( cParser &Parser, TDynamicObject const *Owner ) {
         // TODO: rework the base part into yaml-compatible flow style mapping
         submodelname = Parser.getToken<std::string>( false );
         while( true == Load_mapping( Parser ) ) {
-            ; // all work done by while()
+            // all work done by while()
         }
     }
 

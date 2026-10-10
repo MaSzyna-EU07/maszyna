@@ -87,7 +87,7 @@ void TTrain::screen_entry::deserialize(cParser &Input)
 
 	while (true == deserialize_mapping(Input))
 	{
-		; // all work done by while()
+		// all work done by while()
 	}
 }
 
@@ -1703,12 +1703,10 @@ void TTrain::OnCommand_secondcontrollerset(TTrain *Train, command_data const &Co
 		while (targetposition < Train->mvControlled->GetVirtualScndPos() && true == Train->mvControlled->DecScndCtrl(1))
 		{
 			// all work is done in the header
-			;
 		}
 		while (targetposition > Train->mvControlled->GetVirtualScndPos() && true == Train->mvControlled->IncScndCtrl(1))
 		{
 			// all work is done in the header
-			;
 		}
 	}
 }
@@ -2363,7 +2361,7 @@ void TTrain::OnCommand_epbrakecontrolenable(TTrain *Train, command_data const &C
 					Train->dsbPneumaticSwitch->play();
 				}
 				Train->ggEPFuseButton.UpdateValue(1.0f, Train->dsbSwitch);
-			};
+			}
 		}
 	}
 }
@@ -2379,7 +2377,7 @@ void TTrain::OnCommand_epbrakecontroldisable(TTrain *Train, command_data const &
 			if (Train->mvOccupied->EpFuseSwitch(false))
 			{
 				Train->ggEPFuseButton.UpdateValue(0.0f, Train->dsbSwitch);
-			};
+			}
 		}
 	}
 }
@@ -2410,7 +2408,7 @@ void TTrain::OnCommand_epbrakecontroltoggle(TTrain *Train, command_data const &C
 					{
 						Train->dsbPneumaticSwitch->play();
 					}
-				};
+				}
 			}
 			else
 			{
@@ -2428,7 +2426,7 @@ void TTrain::OnCommand_epbrakecontroltoggle(TTrain *Train, command_data const &C
 				{
 					Train->dsbPneumaticSwitch->play();
 				}
-			};
+			}
 		}
 		// visual feedback
 		Train->ggEPFuseButton.UpdateValue(ispush ? 1.0f : // push or pushtoggle
@@ -2705,7 +2703,6 @@ void TTrain::OnCommand_reverserdecrease(TTrain *Train, command_data const &Comma
 			{
 
 				Train->DynamicObject->Mechanik->DirectionChange();
-				;
 			}
 		}
 	}
@@ -12147,7 +12144,8 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	else if (Label == "eimscreen:")
 	{
 		// amperomierz calkowitego pradu
-		int i, j;
+		int i;
+		int j;
 		Parser.getTokens(2, false);
 		Parser >> i >> j;
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
@@ -12157,7 +12155,8 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	else if (Label == "brakes:")
 	{
 		// specified pipe pressure of specified consist vehicle
-		int i, j;
+		int i;
+		int j;
 		Parser.getTokens(2, false);
 		Parser >> i >> j;
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka

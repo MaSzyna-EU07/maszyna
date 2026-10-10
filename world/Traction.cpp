@@ -175,7 +175,8 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
     if( Wires == 2 )
         WireOffset = 0;
     // jezdny
-    gfx::basic_vertex startvertex, endvertex;
+    gfx::basic_vertex startvertex;
+    gfx::basic_vertex endvertex;
     startvertex.position =
         glm::vec3(
             pPoint1.x - ( pPoint2.z / ddp - pPoint1.z / ddp ) * WireOffset - m_origin.x,
@@ -189,7 +190,12 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
     vertices.emplace_back( startvertex );
     vertices.emplace_back( endvertex );
     // Nie wiem co 'Marcin
-    glm::dvec3 pt1, pt2, pt3, pt4, v1, v2;
+    glm::dvec3 pt1;
+    glm::dvec3 pt2;
+    glm::dvec3 pt3;
+    glm::dvec3 pt4;
+    glm::dvec3 v1;
+    glm::dvec3 v2;
     v1 = pPoint4 - pPoint3;
     v2 = pPoint2 - pPoint1;
     float step = 0;
@@ -410,7 +416,8 @@ void TTraction::ResistanceCalc(int d, double r, TTractionPowerSource *ps)
 { //(this) jest przęsłem zasilanym, o rezystancji (r), policzyć rezystancję zastępczą sąsiednich
     if (d >= 0)
     { // podążanie we wskazanym kierunku
-        TTraction *t = hvNext[d], *p;
+        TTraction *t = hvNext[d];
+        TTraction *p;
         if (ps)
             psPower[d ^ 1] = ps; // podłączenie podanego
         else
@@ -485,8 +492,12 @@ double TTraction::VoltageGet(double u, double i)
         return 0.0;
     }
 
-    double r0t, r1t, r0g, r1g;
-    double i0, i1;
+    double r0t;
+    double r1t;
+    double r0g;
+    double r1g;
+    double i0;
+    double i1;
     r0t = fResistance[0]; //średni pomysł, ale lepsze niż nic
     r1t = fResistance[1]; // bo nie uwzględnia spadków z innych pojazdów
     if (psPower[0] && psPower[1])

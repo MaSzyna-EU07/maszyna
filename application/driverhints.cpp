@@ -490,7 +490,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             if( AIControllFlag ) {
                 while( mvControlling->RList[mvControlling->MainCtrlPos].Mn == 0
                     && mvControlling->IncMainCtrl(1) ) {
-                    ;
+                    // all work is done in the loop header
                 }
             }
             remove_master_controller_hints();
@@ -509,7 +509,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                     }
                     while( mvControlling->RList[mvControlling->MainCtrlPos].Bn > 1
                         && mvControlling->DecMainCtrl(1) ) {
-                        ; // all work is performed in the header
+                        // all work is performed in the header
                     }
                 }
             }
@@ -535,7 +535,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
             if( AIControllFlag ) {
                 while( false == mvControlling->EIMDirectionChangeAllow()
                     && mvControlling->DecMainCtrl(1) ) {
-                    ;
+                    // all work is done in the loop header
                 }
             }
             remove_master_controller_hints();
@@ -778,7 +778,6 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                     while( BrakeCtrlPosition >= mvOccupied->HandleUnlock
                         && BrakeLevelAdd(-1) ) {
                         // all work is done in the header
-                        ;
                     }
                 }
             }
@@ -857,7 +856,9 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
         case driver_hint::brakingforcesetzero: { // releases both train and independent brake
             if( AIControllFlag ) {
-                while( true == DecBrake() ) { ; }
+                while( true == DecBrake() ) {
+                    // all work is done in the loop condition
+                }
             }
             remove_train_brake_hints();
             hint(

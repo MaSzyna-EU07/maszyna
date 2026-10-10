@@ -130,10 +130,9 @@ basic_controller::deserialize_operation( cParser &Input ) -> bool {
     cParser operationparser( operationdata, cParser::buffer_TEXT );
     // HACK: operation potentially contains 1-2 parameters so we try to grab the whole set
     operationparser.getTokens( 3, "\t " );
-    std::string
-        operationname,
-        operationelement,
-        operationparameter;
+    std::string operationname;
+    std::string operationelement;
+    std::string operationparameter;
     operationparser
         >> operationname
         >> operationelement

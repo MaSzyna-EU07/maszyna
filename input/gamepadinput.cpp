@@ -345,7 +345,8 @@ void
 gamepad_input::process_axes() {
 
     input_type inputtype;
-    user_command boundcommand1, boundcommand2;
+    user_command boundcommand1;
+    user_command boundcommand2;
     auto binding { std::tie( inputtype, boundcommand1, boundcommand2 ) };
 
     // since some commands can potentially collect values from two different axes we can't post them directly

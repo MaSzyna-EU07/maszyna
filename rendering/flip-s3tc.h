@@ -14,39 +14,43 @@ namespace flip_s3tc
 
 struct dxt1_block
 {
-	uint16_t	c0, c1;
-	uint8_t		dcba,
-				hgfe,
-				lkji,
-				ponm;
+	uint16_t	c0;
+	uint16_t	c1;
+	uint8_t		dcba;
+	uint8_t		hgfe;
+	uint8_t		lkji;
+	uint8_t		ponm;
 };
 
 struct dxt23_block
 {
-	uint16_t	adacabaa,
-				ahagafae,
-				alakajai,
-				apaoanam;
-	uint16_t	c0, c1;
-	uint8_t		dcba,
-				hgfe,
-				lkji,
-				ponm;
+	uint16_t	adacabaa;
+	uint16_t	ahagafae;
+	uint16_t	alakajai;
+	uint16_t	apaoanam;
+	uint16_t	c0;
+	uint16_t	c1;
+	uint8_t		dcba;
+	uint8_t		hgfe;
+	uint8_t		lkji;
+	uint8_t		ponm;
 };
 
 struct dxt45_block
 {
-	uint8_t		a0, a1;
+	uint8_t		a0;
+	uint8_t		a1;
 	struct
 	{
 		uint8_t	alpha[3];
 	}			ahagafaeadacabaa,
 				apaoanamalakajai;
-	uint16_t	c0, c1;
-	uint8_t		dcba,
-				hgfe,
-				lkji,
-				ponm;
+	uint16_t	c0;
+	uint16_t	c1;
+	uint8_t		dcba;
+	uint8_t		hgfe;
+	uint8_t		lkji;
+	uint8_t		ponm;
 };
 
 #pragma pack(pop)
@@ -123,8 +127,10 @@ void flip_dxt45_block(struct dxt45_block *block)
  */
 void flip_dxt1_image(void *data, int width, int height)
 {
-	int x, y;
-	struct dxt1_block temp1, temp2;
+	int x;
+	int y;
+	struct dxt1_block temp1;
+	struct dxt1_block temp2;
 	struct dxt1_block *blocks = (struct dxt1_block *)data;
 	
 	width	= (width	+ 3) / 4;
@@ -152,8 +158,10 @@ void flip_dxt1_image(void *data, int width, int height)
  */
 void flip_dxt23_image(void *data, int width, int height)
 {
-	int x, y;
-	struct dxt23_block temp1, temp2;
+	int x;
+	int y;
+	struct dxt23_block temp1;
+	struct dxt23_block temp2;
 	struct dxt23_block *blocks = (struct dxt23_block *)data;
 	
 	width	= (width	+ 3) / 4;
@@ -181,8 +189,10 @@ void flip_dxt23_image(void *data, int width, int height)
  */
 void flip_dxt45_image(void *data, int width, int height)
 {
-	int x, y;
-	struct dxt45_block temp1, temp2;
+	int x;
+	int y;
+	struct dxt45_block temp1;
+	struct dxt45_block temp2;
 	struct dxt45_block *blocks = (struct dxt45_block *)data;
 	
 	width	= (width	+ 3) / 4;
