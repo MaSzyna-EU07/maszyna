@@ -216,7 +216,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         }
     }
 
-    std::map<std::string, TGaugeAnimation> gaugetypes {
+    std::map<std::string, TGaugeAnimation, std::less<>> gaugetypes {
         { "rot", TGaugeAnimation::gt_Rotate },
         { "rotvar", TGaugeAnimation::gt_Rotate },
         { "mov", TGaugeAnimation::gt_Move },

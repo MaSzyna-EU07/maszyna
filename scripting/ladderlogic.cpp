@@ -111,7 +111,7 @@ basic_controller::update( double const Timestep ) -> int {
     return run();
 }
 
-std::map<std::string, basic_controller::opcode_e> const basic_controller::m_operationcodemap = {
+std::map<std::string, basic_controller::opcode_e, std::less<>> const basic_controller::m_operationcodemap = {
     { "ld", opcode_e::op_ld }, { "ldi", opcode_e::op_ldi },
     { "and", opcode_e::op_and }, { "ani", opcode_e::op_ani }, { "anb", opcode_e::op_anb },
     { "or", opcode_e::op_or }, { "ori", opcode_e::op_ori }, { "orb", opcode_e::op_orb },

@@ -66,7 +66,7 @@ bool TEventLauncher::Load(cParser *parser)
         }
         else {
             // this launcher may be activated by radio message
-            std::map<std::string, int> messages {
+            std::map<std::string, int, std::less<>> messages {
                 { "radio_call1", radio_message::call1 },
                 { "radio_call3", radio_message::call3 }
             };
