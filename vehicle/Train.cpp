@@ -10033,8 +10033,6 @@ void TTrain::update_sounds(double const Deltatime)
 		{
 			dsbBuzzerShp->stop();
 		}
-		{
-		}
 
 		if (m_distancecounterclear)
 		{
