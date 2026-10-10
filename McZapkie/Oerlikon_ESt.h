@@ -70,7 +70,6 @@ static int const P_ed = 5;
 class TPrzekladnik : public TReservoir // przekladnik (powtarzacz)
 
 {
-  private:
   public:
     std::shared_ptr<TReservoir> BrakeRes;
     std::shared_ptr<TReservoir> Next;
@@ -82,7 +81,6 @@ class TPrzekladnik : public TReservoir // przekladnik (powtarzacz)
 class TRura : public TPrzekladnik // nieprzekladnik, rura laczaca
 
 {
-  private:
   public:
 	  TRura() : TPrzekladnik() {};
     double P(void) override;
@@ -154,7 +152,6 @@ class TPrzek_PZZ : public TPrzekladnik {
 class TPrzekZalamany : public TPrzekladnik // Knicksventil
 
 {
-  private:
   public:
 	  TPrzekZalamany() :
 		  TPrzekladnik()

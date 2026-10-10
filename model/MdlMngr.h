@@ -12,7 +12,6 @@ http://mozilla.org/MPL/2.0/.
 
 class TMdlContainer {
     friend class TModelsManager;
-private:
     TModel3d *LoadModel( std::string const &Name, bool const Dynamic );
     std::shared_ptr<TModel3d> Model { nullptr };
     std::string m_name;

@@ -530,7 +530,6 @@ public:
     void
 	    post(user_command const Command, double const Param1, double const Param2,
 	        int const Action, uint16_t Recipient, glm::vec3 Position = glm::vec3(0.0f) , const std::string *Payload = nullptr) const;
-private:
 // types
 // members
 };
