@@ -23,7 +23,7 @@ struct ITexture
 	virtual void update_from_memory(size_t width, size_t height, const uint8_t *data) = 0;
 	static ITexture *null_texture()
 	{
-		static struct NullTexture : public ITexture
+		struct NullTexture : public ITexture
 		{
 			bool create(bool Static = false) override
 			{
@@ -70,7 +70,8 @@ struct ITexture
 			void set_components_hint(int hint) override { /* null implementation, nothing to do */ }
 			void make_from_memory(size_t width, size_t height, const uint8_t *data) override { /* null implementation, nothing to do */ }
 			void update_from_memory(size_t width, size_t height, const uint8_t *data) override { /* null implementation, nothing to do */ }
-		} null_texture{};
+		};
+		static NullTexture null_texture{};
 		return &null_texture;
 	}
 	virtual ~ITexture() = default;

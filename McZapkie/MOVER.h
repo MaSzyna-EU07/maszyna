@@ -1465,7 +1465,8 @@ class TMoverParameters
 		{
 			float temp_min{-1}; // lowest accepted temperature
 			float temp_max{-1}; // highest accepted temperature
-		} config;
+		};
+		heater_config_t config;
 		// ld inputs
 		bool breaker{false}; // device is allowed to operate
 		bool is_enabled{false}; // device is requested to operate
@@ -1500,12 +1501,17 @@ class TMoverParameters
 				float temp_cooling{-1}; // active cooling activation point
 				float temp_flow{-1}; // fluid flow activation point
 				bool shutters{false}; // the radiator has shutters to assist the cooling
-			} config;
+			};
+			circuit_config_t config;
 			bool is_cold{false}; // fluid is too cold
 			bool is_warm{false}; // fluid is too hot
 			bool is_hot{false}; // fluid temperature crossed cooling threshold
 			bool is_flowing{false}; // fluid is being pushed through the circuit
-		} water, water_aux, oil, engine;
+		};
+		fluid_circuit_t water;
+		fluid_circuit_t water_aux;
+		fluid_circuit_t oil;
+		fluid_circuit_t engine;
 		// output, state of affected devices
 		bool PA{false}; // malfunction flag
 		float rpmw{0.0}; // current main circuit fan revolutions
