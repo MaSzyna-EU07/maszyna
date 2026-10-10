@@ -571,7 +571,9 @@ constexpr int ground_grid{32};          // ground samples per tile side (8 m) fo
 constexpr double steepest_ground{0.3};  // minimal normal.y of ground triangles receiving the imagery
 constexpr float no_height{-std::numeric_limits<float>::max()};
 
-gfx::geometrybank_handle scene_bank{0, 0}; // created on first use, shared by every tile
+// a bank of its own for every geometry chunk: adding a chunk to a bank makes the renderer upload the whole bank again,
+// and the tiles fitted onto a heightmap terrain carry its full grid (hundreds of thousands of vertices each)
+std::vector<std::uint32_t> scene_banks;
 
 std::string slot_name(int Index)
 {
@@ -672,7 +674,7 @@ std::string editor_orthophoto::cache_directory()
 
 bool editor_orthophoto::owns(gfx::geometry_handle const &Geometry)
 {
-	return scene_bank.bank != 0 && Geometry.bank == scene_bank.bank;
+	return Geometry.bank != 0 && std::find(scene_banks.begin(), scene_banks.end(), Geometry.bank) != scene_banks.end();
 }
 
 void editor_orthophoto::enabled(bool State)
@@ -1139,9 +1141,9 @@ void editor_orthophoto::build_shape(tile_key const &Key, tile &Tile)
 	}
 	else
 	{
-		if (scene_bank.bank == 0)
-			scene_bank = GfxRenderer->Create_Bank();
-		Tile.geometry = GfxRenderer->Insert(gpuvertices, userdata, scene_bank, GL_TRIANGLES);
+		auto const bank = GfxRenderer->Create_Bank();
+		scene_banks.push_back(bank.bank);
+		Tile.geometry = GfxRenderer->Insert(gpuvertices, userdata, bank, GL_TRIANGLES);
 		Tile.capacity = capacity;
 		if (Tile.geometry.chunk == 0)
 		{
@@ -1194,7 +1196,9 @@ void editor_orthophoto::update_scene()
 	if (simulation::Region == nullptr)
 		return;
 
-	int built{0};
+	// vertices handed to the renderer per frame; at least one tile goes in every frame however large it is
+	std::size_t constexpr vertex_budget_scene{256u * 1024u};
+	std::size_t built{0};
 	for (auto &entry : m_tiles)
 	{
 		tile &t = entry.second;
@@ -1205,7 +1209,8 @@ void editor_orthophoto::update_scene()
 		if (m_config.drape && !t.grounded && m_ground)
 			continue; // wait for the ground fit; a shape already in place stays until then
 		build_shape(entry.first, t);
-		if (++built >= 8)
+		built += std::max<std::size_t>(t.capacity, 1);
+		if (built >= vertex_budget_scene)
 			break; // the rest next frame
 	}
 }
