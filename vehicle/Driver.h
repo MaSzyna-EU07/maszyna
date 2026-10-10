@@ -357,6 +357,12 @@ private:
     void control_tractive_force();
     void increase_tractive_force();
     void control_braking_force();
+    // how far short of a stop the AI aims: in train running the middle of the 8-15 m window before a signal,
+    // otherwise (a W4 stop point, shunting, coupling) half the minimum proximity distance, as before
+    double stopping_margin() const {
+        return ( ( OrderCurrentGet() & Obey_train ) != 0 ) && !IsAtPassengerStop ?
+            fMinProximityDist + 3.5 :
+            0.5 * fMinProximityDist; }
     void apply_independent_brake_only();
     void check_route_ahead( double const Range );
     void check_route_behind( double const Range );
@@ -391,6 +397,8 @@ private:
     double AccDesired = 0.0; // przyspieszenie, jakie ma utrzymywać (<0:nie przyspieszaj,<-0.1:hamuj)
     double VelDesired = 0.0; // predkość, z jaką ma jechać, wynikająca z analizy tableki; <=VelSignal
     double fAccDesiredAv = 0.0; // uśrednione przyspieszenie z kolejnych przebłysków świadomości, żeby ograniczyć migotanie
+    double fBrakeHeldTime = 0.0; // czas od ostatniego przestawienia kranu hamulca zasadniczego
+    double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie
     double VelLimit = -1.0; // predkość zadawana przez event jednokierunkowego ograniczenia prędkości // -1: brak ograniczenia prędkości
