@@ -1996,6 +1996,8 @@ double TMoverParameters::ShowEngineRotation(int VehN) const
 			if (TestFlag(Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Power > 0.01 && TestFlag(Couplers[b].Connected->Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Couplers[b].Connected->Power > 0.01)
 				return fabs(Couplers[b].Connected->Couplers[b].Connected->enrot);
 		break;
+	default:
+		break;
 	}
 	return 0.0;
 };
@@ -2484,6 +2486,8 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 			OK = AddPulseForce(CtrlSpeed);
 			break;
 		}
+		default:
+			break;
 		} // switch EngineType of
 	}
 	else
@@ -2618,6 +2622,8 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 						}
 						break;
 					}
+					default:
+						break;
 					} // switch EngineType
 			}
 		}
@@ -6251,6 +6257,8 @@ double TMoverParameters::TractionForce(double dt)
 						SpeedCtrlValue = Vmax;
 						SpeedCtrlTimer = 10;
 						break;
+					default:
+						break;
 					}
 				}
 				else if (ScndCtrlPosNo > 1)
@@ -7321,6 +7329,8 @@ void TMoverParameters::CheckEIMIC(double dt)
 		case 7: // TMax
 			eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1, max
 			break;
+		default:
+			break;
 		}
 		if (MainCtrlPos >= 3 && eimic < 0)
 			eimic = 0;
@@ -7349,6 +7359,8 @@ void TMoverParameters::CheckEIMIC(double dt)
 				eimic += std::clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
 				if (eimic < 0)
 					eimic = 0;
+				break;
+			default:
 				break;
 			}
 		}
@@ -9572,6 +9584,8 @@ void TMoverParameters::BrakeSubsystemDecode()
 	case TBrakeValve::LSt:
 	case TBrakeValve::EStED:
 		BrakeSubsystem = TBrakeSubSystem::ss_LSt;
+		break;
+	default:
 		break;
 	}
 }

@@ -10386,6 +10386,8 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	case 0:
 		cabindex = 0;
 		break;
+	default:
+		break;
 	}
 	iCabn = cabindex;
 
