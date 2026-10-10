@@ -1259,7 +1259,7 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) const {
 #ifdef WITH_UART
 void
 debug_panel::update_section_uart( std::vector<text_line> &Output ) const {
-    uart_status *status = &UartStatus;
+    uart_status const *status = &UartStatus;
 
     Output.emplace_back(
         ("Port: " + status->port_name).c_str(),

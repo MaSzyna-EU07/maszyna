@@ -19,7 +19,7 @@ void perfgraph_panel::render_contents() {
 		ImGui::EndCombo();
 	}
 
-	Timer::stopwatch *stopwatch = nullptr;
+	Timer::stopwatch const *stopwatch = nullptr;
 
 	if (current_timer == gfx_total)
 		stopwatch = &Timer::subsystem.gfx_total;

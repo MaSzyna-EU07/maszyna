@@ -210,7 +210,7 @@ drivermouse_input::recall_bindings() {
             }
             // TODO: binding targets for mouse buttons
 
-            for( auto &bindingtarget : bindingtargets ) {
+            for( auto const &bindingtarget : bindingtargets ) {
                 // grab command(s) associated with the input pin
                 auto const bindingcommandname{ entryparser.getToken<std::string>() };
                 if( true == bindingcommandname.empty() ) {

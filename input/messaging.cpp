@@ -62,7 +62,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) + " rcvd" );
 
             if( Global.iMultiplayer ) {
-                auto *foundevent = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
+                auto const *foundevent = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
                 if (foundevent != nullptr && (typeid(*foundevent) == typeid(multi_event)
                      || typeid(*foundevent) == typeid(lights_event)
                      || foundevent->m_sibling != nullptr)) {
@@ -136,7 +136,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                   + " rcvd" );
                 if (pRozkaz->cString[0]) {
                     // jeśli długość nazwy jest niezerowa szukamy pierwszego pojazdu o takiej nazwie i odsyłamy parametry ramką #7
-                    auto *vehicle = pRozkaz->cString[1] == '*' ? simulation::Train->Dynamic() : simulation::Vehicles.find(std::string{pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]});
+                    auto const *vehicle = pRozkaz->cString[1] == '*' ? simulation::Train->Dynamic() : simulation::Vehicles.find(std::string{pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]});
                     if( vehicle != nullptr ) {
                         WyslijNamiary( vehicle ); // wysłanie informacji o pojeździe
                     }
