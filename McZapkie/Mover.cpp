@@ -9762,7 +9762,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Param.", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Param", inputline);
+			fizlines.try_emplace("Param", inputline);
 			LoadFIZ_Param(inputline);
 			continue;
 		}
@@ -9770,7 +9770,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Load:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Load", inputline);
+			fizlines.try_emplace("Load", inputline);
 			LoadFIZ_Load(inputline);
 			continue;
 		}
@@ -9778,7 +9778,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Dimensions:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Dimensions", inputline);
+			fizlines.try_emplace("Dimensions", inputline);
 			LoadFIZ_Dimensions(inputline);
 			continue;
 		}
@@ -9786,7 +9786,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Wheels:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Wheels", inputline);
+			fizlines.try_emplace("Wheels", inputline);
 			LoadFIZ_Wheels(inputline);
 			continue;
 		}
@@ -9794,7 +9794,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Brake:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Brake", inputline);
+			fizlines.try_emplace("Brake", inputline);
 			LoadFIZ_Brake(inputline);
 			continue;
 		}
@@ -9803,7 +9803,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		{
 
 			startBPT = false;
-			fizlines.emplace("Doors", inputline);
+			fizlines.try_emplace("Doors", inputline);
 			LoadFIZ_Doors(inputline);
 			continue;
 		}
@@ -9812,7 +9812,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		{
 
 			startBPT = false;
-			fizlines.emplace("BuffCoupl", inputline);
+			fizlines.try_emplace("BuffCoupl", inputline);
 			LoadFIZ_BuffCoupl(inputline, 0);
 			continue;
 		}
@@ -9821,7 +9821,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		{
 
 			startBPT = false;
-			fizlines.emplace("BuffCoupl1", inputline);
+			fizlines.try_emplace("BuffCoupl1", inputline);
 			LoadFIZ_BuffCoupl(inputline, 1);
 			continue;
 		}
@@ -9830,7 +9830,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		{
 
 			startBPT = false;
-			fizlines.emplace("BuffCoupl2", inputline);
+			fizlines.try_emplace("BuffCoupl2", inputline);
 			LoadFIZ_BuffCoupl(inputline, 2);
 			continue;
 		}
@@ -9839,7 +9839,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		{
 
 			startBPT = false;
-			fizlines.emplace("TurboPos", inputline);
+			fizlines.try_emplace("TurboPos", inputline);
 			LoadFIZ_TurboPos(inputline);
 			continue;
 		}
@@ -9849,7 +9849,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 
 			startBPT = true;
 			LISTLINE = 0;
-			fizlines.emplace("Cntrl", inputline);
+			fizlines.try_emplace("Cntrl", inputline);
 			LoadFIZ_Cntrl(inputline);
 			continue;
 		}
@@ -9857,7 +9857,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Headlights:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Headlights", inputline);
+			fizlines.try_emplace("Headlights", inputline);
 			LoadFIZ_Headlights(inputline);
 			continue;
 		}
@@ -9867,7 +9867,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 
 			startBPT = false;
 			LISTLINE = 0;
-			fizlines.emplace("Blending", inputline);
+			fizlines.try_emplace("Blending", inputline);
 			LoadFIZ_Blending(inputline);
 			continue;
 		}
@@ -9877,7 +9877,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 
 			startBPT = false;
 			LISTLINE = 0;
-			fizlines.emplace("DCEMUED", inputline);
+			fizlines.try_emplace("DCEMUED", inputline);
 			LoadFIZ_DCEMUED(inputline);
 			continue;
 		}
@@ -9887,7 +9887,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 
 			startBPT = false;
 			LISTLINE = 0;
-			fizlines.emplace("SpringBrake", inputline);
+			fizlines.try_emplace("SpringBrake", inputline);
 			LoadFIZ_SpringBrake(inputline);
 			continue;
 		}
@@ -9896,7 +9896,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		{
 
 			startBPT = false;
-			fizlines.emplace("Light", inputline);
+			fizlines.try_emplace("Light", inputline);
 			LoadFIZ_Light(inputline);
 			continue;
 		}
@@ -9904,7 +9904,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Security:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Security", inputline);
+			fizlines.try_emplace("Security", inputline);
 			SecuritySystem.load(inputline, Vmax);
 			extract_value(EmergencyBrakeWarningSignal, "EmergencyBrakeWarningSignal", inputline, "");
 			continue;
@@ -9914,7 +9914,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		{
 
 			startBPT = false;
-			fizlines.emplace("Clima", inputline);
+			fizlines.try_emplace("Clima", inputline);
 			LoadFIZ_Clima(inputline);
 			continue;
 		}
@@ -9922,7 +9922,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Power:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Power", inputline);
+			fizlines.try_emplace("Power", inputline);
 			LoadFIZ_Power(inputline);
 			continue;
 		}
@@ -9930,7 +9930,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("SpeedControl:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("SpeedControl", inputline);
+			fizlines.try_emplace("SpeedControl", inputline);
 			LoadFIZ_SpeedControl(inputline);
 			continue;
 		}
@@ -9938,7 +9938,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Engine:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Engine", inputline);
+			fizlines.try_emplace("Engine", inputline);
 			LoadFIZ_Engine(inputline);
 			continue;
 		}
@@ -9946,7 +9946,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Switches:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Switches", inputline);
+			fizlines.try_emplace("Switches", inputline);
 			LoadFIZ_Switches(inputline);
 			continue;
 		}
@@ -9956,7 +9956,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 			startBPT = false;
 			startMPT = true;
 			LISTLINE = 0;
-			fizlines.emplace("MotorParamTable", inputline);
+			fizlines.try_emplace("MotorParamTable", inputline);
 			LoadFIZ_MotorParamTable(inputline);
 			continue;
 		}
@@ -9972,7 +9972,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("Circuit:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("Circuit", inputline);
+			fizlines.try_emplace("Circuit", inputline);
 			LoadFIZ_Circuit(inputline);
 			continue;
 		}
@@ -9980,7 +9980,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("AI:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("AI", inputline);
+			fizlines.try_emplace("AI", inputline);
 			LoadFIZ_AI(inputline);
 			continue;
 		}
@@ -9988,7 +9988,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("RList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("RList", inputline);
+			fizlines.try_emplace("RList", inputline);
 			startRLIST = true;
 			LISTLINE = 0;
 			LoadFIZ_RList(inputline);
@@ -9998,7 +9998,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("UCList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("UCList", inputline);
+			fizlines.try_emplace("UCList", inputline);
 			startUCLIST = true;
 			LISTLINE = 0;
 			LoadFIZ_UCList(inputline);
@@ -10008,7 +10008,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("DList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("DList", inputline);
+			fizlines.try_emplace("DList", inputline);
 			startDLIST = true;
 			LISTLINE = 0;
 			LoadFIZ_DList(inputline);
@@ -10018,7 +10018,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("DMList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("DMList", inputline);
+			fizlines.try_emplace("DMList", inputline);
 			startDIZELMOMENTUMLIST = true;
 			LISTLINE = 0;
 			continue;
@@ -10027,7 +10027,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("HTCList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("HTCList", inputline);
+			fizlines.try_emplace("HTCList", inputline);
 			startHYDROTCLIST = true;
 			LISTLINE = 0;
 			continue;
@@ -10036,7 +10036,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("PmaxList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("PmaxList", inputline);
+			fizlines.try_emplace("PmaxList", inputline);
 			startPMAXLIST = true;
 			LISTLINE = 0;
 			continue;
@@ -10045,7 +10045,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("V2NList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("V2NList", inputline);
+			fizlines.try_emplace("V2NList", inputline);
 			startDIZELV2NMAXLIST = true;
 			LISTLINE = 0;
 			continue;
@@ -10081,7 +10081,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("WiperList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("WiperList", inputline);
+			fizlines.try_emplace("WiperList", inputline);
 			startWiperList = true;
 			LISTLINE = 0;
 			LoadFIZ_WiperList(inputline);
@@ -10094,7 +10094,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 			dimPositions.clear(); // uzywamy customowej listy
 			startBPT = false;
 			startDimmerList = true;
-			fizlines.emplace("DimmerList", inputline);
+			fizlines.try_emplace("DimmerList", inputline);
 			LoadFIZ_DimmerList(inputline);
 			continue;
 		}
@@ -10102,7 +10102,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("LightsList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("LightsList", inputline);
+			fizlines.try_emplace("LightsList", inputline);
 			startLIGHTSLIST = true;
 			LISTLINE = 0;
 			LoadFIZ_LightsList(inputline);
@@ -10112,7 +10112,7 @@ bool TMoverParameters::LoadFIZ(std::string chkpath)
 		if (issection("CompressorList:", inputline))
 		{
 			startBPT = false;
-			fizlines.emplace("CompressorList", inputline);
+			fizlines.try_emplace("CompressorList", inputline);
 			startCOMPRESSORLIST = true;
 			LISTLINE = 0;
 			LoadFIZ_CompressorList(inputline);

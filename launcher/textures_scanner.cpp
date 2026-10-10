@@ -94,7 +94,7 @@ void ui::vehicles_bank::parse_category_entry(const std::string &param)
 	std::string mini;
 	std::getline(stream, mini, ',');
 
-	category_icons.emplace(ctx_type, "textures/mini/" + ToLower(mini) + ".bmp");
+	category_icons.try_emplace(ctx_type, "textures/mini/" + ToLower(mini) + ".bmp");
 }
 
 void ui::vehicles_bank::parse_controllable_entry(const std::string &target, const std::string &param)
@@ -123,7 +123,7 @@ void ui::vehicles_bank::parse_texture_info(const std::string &target, const std:
 	set.meta = meta;
 
 	if (!mini.empty())
-		group_icons.emplace(mini, std::move(deferred_image("textures/mini/" + ToLower(mini) + ".bmp")));
+		group_icons.try_emplace(mini, std::move(deferred_image("textures/mini/" + ToLower(mini) + ".bmp")));
 
 	if (!miniplus.empty())
 		set.mini = std::move(deferred_image("textures/mini/" + ToLower(miniplus) + ".bmp"));
@@ -261,7 +261,7 @@ std::shared_ptr<ui::vehicle_desc> ui::vehicles_bank::get_vehicle(const std::stri
 		auto desc = std::make_shared<vehicle_desc>();
 		desc->type = ctx_type;
 		desc->path = path;
-		vehicles.emplace(path, desc);
+		vehicles.try_emplace(path, desc);
 		return desc;
 	}
 }

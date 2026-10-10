@@ -79,7 +79,7 @@ void network::request_command::deserialize(std::istream &stream)
 			sequence.emplace_back(data);
 		}
 
-		commands.emplace(recipient, sequence);
+		commands.try_emplace(recipient, sequence);
 	}
 }
 

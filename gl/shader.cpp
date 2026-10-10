@@ -228,7 +228,7 @@ void gl::shader::parse_texture_entries(std::string &str)
             else if (conf.id >= gl::MAX_TEXTURES)
                 log_error("invalid texture binding: " + std::to_string(conf.id));
             else
-                texture_conf.emplace(std::make_pair(name, conf));
+                texture_conf.try_emplace(name, conf);
         }
         else
             log_error("invalid argument count to #texture");
@@ -289,7 +289,7 @@ void gl::shader::parse_param_entries(std::string &str)
             else if (conf.offset + conf.size > 4)
                 log_error("invalid size: " + std::to_string(conf.size));
             else
-                param_conf.emplace(std::make_pair(name, conf));
+                param_conf.try_emplace(name, conf);
         }
         else
             log_error("invalid argument count to #param");
@@ -379,9 +379,9 @@ gl::program::program(std::vector<std::reference_wrapper<const gl::shader>> shade
 void gl::program::attach(const gl::shader &s)
 {
     for (auto it : s.texture_conf)
-        texture_conf.emplace(std::make_pair(it.first, std::move(it.second)));
+        texture_conf.try_emplace(it.first, std::move(it.second));
     for (auto it : s.param_conf)
-        param_conf.emplace(std::make_pair(it.first, std::move(it.second)));
+        param_conf.try_emplace(it.first, std::move(it.second));
     glAttachShader(*this, *s);
 }
 

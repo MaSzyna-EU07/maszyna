@@ -278,7 +278,7 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
         auto const indexstart { key.find_first_of( "-1234567890" ) };
         auto const indexend { key.find_first_not_of( "-1234567890", indexstart ) };
         if( indexstart != std::string::npos ) {
-            m_soundfxvalues.emplace(
+            m_soundfxvalues.try_emplace(
                 std::stoi( key.substr( indexstart, indexend - indexstart ) ),
                 sound_source( m_soundtemplate ).deserialize( Input, sound_type::single ) );
         }

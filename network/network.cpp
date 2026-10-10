@@ -151,7 +151,7 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		const auto& cmd = dynamic_cast<const request_command&>(msg);
 
 		for (auto const &kv : cmd.commands)
-			client_commands_queue.emplace(kv);
+			client_commands_queue.try_emplace(kv.first, kv.second);
 	}
 }
 

@@ -52,11 +52,11 @@ void control_mapper::insert(TGauge const &Gauge, std::string const &Label)
 
 	if (Gauge.SubModel != nullptr)
 	{
-		m_controlnames.emplace(Gauge.SubModel, Label);
+		m_controlnames.try_emplace(Gauge.SubModel, Label);
 	}
 	if (Gauge.SubModelOn != nullptr)
 	{
-		m_controlnames.emplace(Gauge.SubModelOn, Label);
+		m_controlnames.try_emplace(Gauge.SubModelOn, Label);
 	}
 
 	m_names.emplace(Label);

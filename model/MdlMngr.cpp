@@ -47,11 +47,11 @@ TModelsManager::LoadModel(std::string const &Name, std::string const &virtualNam
     m_models.emplace_back();
     auto model = m_models.back().LoadModel( Name, dynamic );
     if( model != nullptr ) {
-		m_modelsmap.emplace( virtualName, m_models.size() - 1 );
+		m_modelsmap.try_emplace( virtualName, m_models.size() - 1 );
     }
     else {
         m_models.pop_back();
-		m_modelsmap.emplace( virtualName, null_handle );
+		m_modelsmap.try_emplace( virtualName, null_handle );
     }
     return model;
 }
@@ -113,7 +113,7 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
             ErrorLog( "Bad file: failed to locate 3d model file \"" + filename + "\"", logtype::file );
         }
         // ...and link it with the error model slot
-		m_modelsmap.emplace( filename + postfix, null_handle );
+		m_modelsmap.try_emplace( filename + postfix, null_handle );
     }
     Global.asCurrentTexturePath = buftp; // odtworzenie ścieżki do tekstur
     return model; // NULL jeśli błąd

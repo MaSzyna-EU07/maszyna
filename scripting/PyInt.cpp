@@ -526,7 +526,7 @@ auto python_taskqueue::fetch_renderer(std::string const Renderer) -> PyObject *
 	}
 	release_lock();
 	// cache the failures as well so we don't try again on subsequent requests
-	m_renderers.emplace(Renderer, renderer);
+	m_renderers.try_emplace(Renderer, renderer);
 	return renderer;
 }
 
