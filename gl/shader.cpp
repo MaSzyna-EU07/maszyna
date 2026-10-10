@@ -318,11 +318,11 @@ gl::shader::shader(const std::string &filename) : name(filename)
     glGetShaderiv(*this, GL_COMPILE_STATUS, &status);
     if (!status)
     {
-        GLchar info[512];
-        glGetShaderInfoLog(*this, 512, nullptr, info);
-        log_error(std::string(info));
+        std::array<GLchar, 512> info{};
+        glGetShaderInfoLog(*this, static_cast<GLsizei>(info.size()), nullptr, info.data());
+        log_error(std::string(info.data()));
 
-        throw shader_exception("failed to compile " + filename + ": " + std::string(info));
+        throw shader_exception("failed to compile " + filename + ": " + std::string(info.data()));
     }
 }
 
@@ -392,9 +392,9 @@ void gl::program::link()
     glGetProgramiv(*this, GL_LINK_STATUS, &status);
     if (!status)
     {
-        GLchar info[512];
-        glGetProgramInfoLog(*this, 512, nullptr, info);
-        throw shader_exception("failed to link program: " + std::string(info));
+        std::array<GLchar, 512> info{};
+        glGetProgramInfoLog(*this, static_cast<GLsizei>(info.size()), nullptr, info.data());
+        throw shader_exception("failed to link program: " + std::string(info.data()));
     }
 
     init();

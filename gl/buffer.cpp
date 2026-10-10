@@ -3,7 +3,7 @@
 
 GLenum gl::buffer::glenum_target(gl::buffer::targets target)
 {
-	static GLenum mapping[13] =
+	static std::array<GLenum, 13> const mapping =
     {
         GL_ARRAY_BUFFER,
         GL_ATOMIC_COUNTER_BUFFER,

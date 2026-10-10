@@ -806,10 +806,10 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	dict->insert("power_returned", mvOccupied->EnergyMeter.second);
 
 	// induction motor state data
-	char const *TXTT[10] = {"fd", "fdt", "fdb", "pd", "pdt", "pdb", "itothv", "1", "2", "3"};
-	char const *TXTC[10] = {"fr", "frt", "frb", "pr", "prt", "prb", "im", "vm", "ihv", "uhv"};
-	char const *TXTD[10] = {"enrot", "nrot", "fill_des", "fill_real", "clutch_des", "clutch_real", "water_temp", "oil_press", "engine_temp", "retarder_fill"};
-	char const *TXTP[7] = {"bc", "bp", "sp", "cp", "rp", "mass", "spring"};
+	std::array<char const *, 10> const TXTT{"fd", "fdt", "fdb", "pd", "pdt", "pdb", "itothv", "1", "2", "3"};
+	std::array<char const *, 10> const TXTC{"fr", "frt", "frb", "pr", "prt", "prb", "im", "vm", "ihv", "uhv"};
+	std::array<char const *, 10> const TXTD{"enrot", "nrot", "fill_des", "fill_real", "clutch_des", "clutch_real", "water_temp", "oil_press", "engine_temp", "retarder_fill"};
+	std::array<char const *, 7> const TXTP{"bc", "bp", "sp", "cp", "rp", "mass", "spring"};
 	char const *TXTB[2] = {"spring_active", "spring_shutoff"};
 	for (int j = 0; j < 10; ++j)
 		dict->insert("eimp_t_" + std::string(TXTT[j]), fEIMParams[0][j]);

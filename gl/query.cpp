@@ -51,7 +51,7 @@ std::optional<int64_t> gl::query::result()
 
 GLenum gl::query::glenum_target(targets Target) const
 {
-	static GLenum mapping[6] =
+	static std::array<GLenum, 6> const mapping =
 	{
 	    GL_SAMPLES_PASSED,
 	    GL_ANY_SAMPLES_PASSED,
