@@ -632,7 +632,7 @@ TTrain::TTrain()
 	}
 }
 
-TTrain::~TTrain() {}
+TTrain::~TTrain() = default;
 
 bool TTrain::Init(TDynamicObject *NewDynamicObject, bool e3d)
 { // powiązanie ręcznego sterowania kabiną z pojazdem

@@ -53,8 +53,7 @@ CSkyDome::CSkyDome (int const Tesselation) :
     Generate();
 }
 
-CSkyDome::~CSkyDome() {
-}
+CSkyDome::~CSkyDome() = default;
 
 //******************************************************************************//
 

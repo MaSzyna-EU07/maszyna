@@ -55,9 +55,7 @@ void network::server_manager::create_server(const std::string &backend, const st
 	servers.emplace_back(it->second->create_server(backbuffer, conf));
 }
 
-network::manager::manager()
-{
-}
+network::manager::manager() = default;
 
 void network::manager::update()
 {

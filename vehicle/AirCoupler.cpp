@@ -18,9 +18,7 @@ AirCoupler::AirCoupler()
     Clear();
 }
 
-AirCoupler::~AirCoupler()
-{
-}
+AirCoupler::~AirCoupler() = default;
 
 /**
  * \return 1 when \(straight\) TModel3d \c only ModelOn exists
