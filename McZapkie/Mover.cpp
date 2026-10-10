@@ -4544,6 +4544,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		}
 
 		if (dpMainValve < 0) // && (PipePressureVal > 0.01)           //50
+		{
 			if (Compressor > ScndPipePress)
 			{
 				CompressedVolume = CompressedVolume + dpMainValve / 1500.0;
@@ -4551,6 +4552,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 			}
 			else
 				Pipe2->Flow(dpMainValve);
+		}
 	}
 
 	// ulepszony hamulec bezp.
@@ -4625,10 +4627,12 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		//(Hamulec as TLSt).SetLBP(LocBrakePress);
 		Hamulec->SetLBP(LocBrakePress);
 		if (BrakeValve == TBrakeValve::EStED)
+		{
 			if (MBPM < 2)
 				Hamulec->PLC(MaxBrakePress[LoadFlag]);
 			else
 				Hamulec->PLC(TotalMass - Mred);
+		}
 		break;
 	}
 
