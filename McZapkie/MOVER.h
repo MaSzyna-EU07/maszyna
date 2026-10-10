@@ -2287,7 +2287,7 @@ class TMoverParameters
 	bool AIHintPantUpIfIdle{true}; // whether raise both pantographs if idling for a while
 	double AIHintLocalBrakeAccFactor{1.05}; // suggested acceleration weight for local brake operation
 
-	TMoverParameters(double VelInitial, std::string TypeNameInit, std::string NameInit, int Cab);
+	TMoverParameters(double VelInitial, std::string const &TypeNameInit, std::string const &NameInit, int Cab);
 	// obsługa sprzęgów
 	static double CouplerDist(TMoverParameters const *Left, TMoverParameters const *Right);
 	static double Distance(const TLocation &Loc1, const TLocation &Loc2, const TDimension &Dim1, const TDimension &Dim2);
@@ -2331,12 +2331,12 @@ class TMoverParameters
 	double EngineMaxRPM() const;
 
 	/*! przesylanie komend sterujacych*/
-	bool SendCtrlToNext(std::string const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
-	bool SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
+	bool SendCtrlToNext(std::string const &CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
+	bool SetInternalCommand(std::string const &NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
 	double GetExternalCommand(std::string &Command) const;
-	bool RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
+	bool RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
 	bool RunInternalCommand();
-	void PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
+	void PutCommand(std::string const &NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
 	bool CabActivisation(bool const Enforce = false);
 	bool CabDeactivisation(bool const Enforce = false);
 	bool CabActivisationAuto(bool const Enforce = false);
@@ -2533,7 +2533,7 @@ class TMoverParameters
 	bool ChangeOffsetH(double DeltaOffset);
 
 	/*funkcje ladujace pliki opisujace pojazd*/
-	bool LoadFIZ(std::string chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
+	bool LoadFIZ(std::string const &chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
 	std::string EngineDescription(int what) const;
 
@@ -2569,7 +2569,7 @@ class TMoverParameters
 	void LoadFIZ_LightsList(std::string const &Input);
 	void LoadFIZ_DimmerList(std::string const &Input);
 	void LoadFIZ_CompressorList(std::string const &Input);
-	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const Prefix, std::string const &Input);
+	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const &Prefix, std::string const &Input);
 	TPowerType LoadFIZ_PowerDecode(std::string const &Power) const;
 	TPowerSource LoadFIZ_SourceDecode(std::string const &Source) const;
 	TEngineType LoadFIZ_EngineDecode(std::string const &Engine) const;

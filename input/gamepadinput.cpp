@@ -124,7 +124,7 @@ gamepad_input::poll() {
 }
 
 void
-gamepad_input::bind( std::vector< std::reference_wrapper<user_command> > const &Targets, cParser &Input, std::unordered_map<std::string, user_command> const &Translator, std::string const Point ) const {
+gamepad_input::bind( std::vector< std::reference_wrapper<user_command> > const &Targets, cParser &Input, std::unordered_map<std::string, user_command> const &Translator, std::string const &Point ) const {
 
     for( auto const &bindingtarget : Targets ) {
         // grab command(s) associated with the input pin

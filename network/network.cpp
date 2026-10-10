@@ -218,7 +218,7 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 	}
 }
 
-void network::client::send_commands(command_queue::commands_map commands) const
+void network::client::send_commands(command_queue::commands_map const &commands) const
 {
 	if (!conn || conn->state == connection::DEAD || commands.empty())
 		return;

@@ -29,7 +29,7 @@ void texture_window_cursor_pos(GLFWwindow *win, double x, double y)
     texwindow->notify_cursor_pos(win, x, y);
 }
 
-python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string surfacename)
+python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string const &surfacename)
     : m_rt(rt), m_touchlist(touchlist)
 {
 

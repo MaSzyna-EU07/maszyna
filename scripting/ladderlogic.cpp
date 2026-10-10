@@ -164,7 +164,7 @@ basic_controller::deserialize_operation( cParser &Input ) -> bool {
 }
 
 auto
-basic_controller::insert( std::string const Name, basic_element Element ) -> element_handle {
+basic_controller::insert( std::string const &Name, basic_element Element ) -> element_handle {
 
     m_elements.push_back( Element );
     m_elementnames.push_back( Name );

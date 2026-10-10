@@ -35,7 +35,7 @@ class python_screen_viewer
 	void threadfunc();
 
 public:
-    python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string name);
+    python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string const &name);
 	~python_screen_viewer();
 
 	void notify_window_size(GLFWwindow const *window, int w, int h) const;

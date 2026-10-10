@@ -226,7 +226,7 @@ void sn_utils::s_uint8(std::ostream &s, uint8_t v)
     s.write((char*)&v, 1);
 }
 
-void sn_utils::s_str(std::ostream &s, std::string v)
+void sn_utils::s_str(std::ostream &s, std::string const &v)
 {
 	const char* buf = v.c_str();
 	s.write(buf, v.size() + 1);

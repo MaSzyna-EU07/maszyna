@@ -76,7 +76,7 @@ std::string control_mapper::find(TSubModel const *Control) const
 	}
 }
 
-bool control_mapper::contains(std::string const Control) const
+bool control_mapper::contains(std::string const &Control) const
 {
 
 	return m_names.find(Control) != m_names.end();

@@ -98,7 +98,7 @@ namespace network
 	public:
 		void update();
 		std::tuple<double, double, command_queue::commands_map> get_next_delta(int counter);
-		void send_commands(command_queue::commands_map commands) const;
+		void send_commands(command_queue::commands_map const &commands) const;
 		int get_frame_counter() const {
 			return static_cast<int>(resume_frame_counter);
 		}

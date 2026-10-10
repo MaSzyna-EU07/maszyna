@@ -368,7 +368,7 @@ gl::program::program()
     **this = glCreateProgram();
 }
 
-gl::program::program(std::vector<std::reference_wrapper<const gl::shader>> shaders) : program()
+gl::program::program(std::vector<std::reference_wrapper<const gl::shader>> const &shaders) : program()
 {
     for (const gl::shader &s : shaders)
         attach(s);

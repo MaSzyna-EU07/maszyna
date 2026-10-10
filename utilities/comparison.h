@@ -55,7 +55,7 @@ to_string( comparison_operator const Operator ) {
 
 inline
 comparison_pass
-comparison_pass_from_string( std::string const Input ) {
+comparison_pass_from_string( std::string const &Input ) {
          using enum comparison_pass;
          if( Input == "all" ) { return all; }
     else if( Input == "any" ) { return any; }
@@ -66,7 +66,7 @@ comparison_pass_from_string( std::string const Input ) {
 
 inline
 comparison_operator
-comparison_operator_from_string( std::string const Input ) {
+comparison_operator_from_string( std::string const &Input ) {
          using enum comparison_operator;
          if( Input == "==" ) { return equal; }
     else if( Input == "!=" ) { return not_equal; }

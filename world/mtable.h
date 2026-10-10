@@ -84,7 +84,7 @@ class TTrainParameters
     explicit TTrainParameters( std::string const &NewTrainName = "none" );
     void NewName(std::string const &NewTrainName);
     void UpdateVelocity(int StationCount, double vActual);
-    bool LoadTTfile(std::string scnpath, int iPlus, double vmax);
+    bool LoadTTfile(std::string const &scnpath, int iPlus, double vmax);
     bool DirectionChange() const;
     void StationIndexInc();
     void serialize( dictionary_source *Output ) const;

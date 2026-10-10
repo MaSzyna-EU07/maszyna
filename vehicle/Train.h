@@ -71,7 +71,7 @@ public:
     std::string
         find( TSubModel const *Control ) const;
     bool
-        contains( std::string const Control ) const;
+        contains( std::string const &Control ) const;
 };
 
 class TTrain {
