@@ -733,7 +733,7 @@ void TMoverParameters::BrakeLevelSet(double b)
 		fBrakeCtrlPos = Handle->GetPos(bh_MAX);
 	// TODO: verify whether BrakeCtrlPosR and fBrakeCtrlPos can be rolled into single variable
 	BrakeCtrlPosR = fBrakeCtrlPos;
-	int x = static_cast<int>(std::floor(fBrakeCtrlPos)); // jeśli odwołujemy się do BrakeCtrlPos w pośrednich, to musi być
+	auto x = static_cast<int>(std::floor(fBrakeCtrlPos)); // jeśli odwołujemy się do BrakeCtrlPos w pośrednich, to musi być
 	// obcięte a nie zaokrągone
 	while (x > BrakeCtrlPos && BrakeCtrlPos < BrakeCtrlPosNo) // jeśli zwiększyło się o 1
 		if (!IncBrakeLevelOld()) // T_MoverParameters::

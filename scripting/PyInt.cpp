@@ -117,8 +117,8 @@ void render_task::run()
 
 		if (outputWidth != nullptr && outputHeight != nullptr && m_target != nullptr)
 		{
-			const int screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
-			const int screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
+			const auto screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
+			const auto screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
 
 			const bool useRgb = false && !Global.gfx_usegles;
 

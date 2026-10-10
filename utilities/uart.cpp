@@ -496,7 +496,7 @@ void uart_input::poll()
             );
         }
         if( true == conf.radiovolumeenable ) {
-            int8_t requested_volume = static_cast<int8_t>((buffer[12] & 0xF0) >> 4);
+            auto requested_volume = static_cast<int8_t>((buffer[12] & 0xF0) >> 4);
             relay.post(
                 user_command::radiovolumeset,
                 requested_volume == 0xF ? 1.0 : requested_volume * (1.0 / 15.0),
@@ -534,16 +534,16 @@ void uart_input::poll()
 
 		SYSTEMTIME time = simulation::Time.data();
 		uint16_t tacho = Global.iPause ? 0 : static_cast<uint16_t>(trainstate.velocity * conf.tachoscale);
-	    uint16_t tank_press = (uint16_t)std::min(conf.tankuart, trainstate.reservoir_pressure * 0.1f / conf.tankmax * conf.tankuart);
-	    uint16_t pipe_press = (uint16_t)std::min(conf.pipeuart, trainstate.pipe_pressure * 0.1f / conf.pipemax * conf.pipeuart);
-	    uint16_t brake_press = (uint16_t)std::min(conf.brakeuart, trainstate.brake_pressure * 0.1f / conf.brakemax * conf.brakeuart);
-        uint16_t pantograph_press = (uint16_t)std::min(conf.pantographuart, trainstate.pantograph_pressure * 0.1f / conf.pantographmax * conf.pantographuart );
-        uint16_t hv_voltage = (uint16_t)std::min(conf.hvuart, trainstate.hv_voltage / conf.hvmax * conf.hvuart);
-	    uint16_t current1 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[0] / conf.currentmax * conf.currentuart);
-	    uint16_t current2 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[1] / conf.currentmax * conf.currentuart);
-	    uint16_t current3 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[2] / conf.currentmax * conf.currentuart);
+	    auto tank_press = (uint16_t)std::min(conf.tankuart, trainstate.reservoir_pressure * 0.1f / conf.tankmax * conf.tankuart);
+	    auto pipe_press = (uint16_t)std::min(conf.pipeuart, trainstate.pipe_pressure * 0.1f / conf.pipemax * conf.pipeuart);
+	    auto brake_press = (uint16_t)std::min(conf.brakeuart, trainstate.brake_pressure * 0.1f / conf.brakemax * conf.brakeuart);
+        auto pantograph_press = (uint16_t)std::min(conf.pantographuart, trainstate.pantograph_pressure * 0.1f / conf.pantographmax * conf.pantographuart );
+        auto hv_voltage = (uint16_t)std::min(conf.hvuart, trainstate.hv_voltage / conf.hvmax * conf.hvuart);
+	    auto current1 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[0] / conf.currentmax * conf.currentuart);
+	    auto current2 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[1] / conf.currentmax * conf.currentuart);
+	    auto current3 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[2] / conf.currentmax * conf.currentuart);
 	    uint32_t odometer = static_cast<uint32_t>(trainstate.distance * 10000.0);
-        uint16_t lv_voltage = (uint16_t)std::min( conf.lvuart, trainstate.lv_voltage / conf.lvmax * conf.lvuart );
+        auto lv_voltage = (uint16_t)std::min( conf.lvuart, trainstate.lv_voltage / conf.lvmax * conf.lvuart );
         if( trainstate.cab > 0 ) {
             // NOTE: moving from a cab to engine room doesn't change cab indicator
             m_trainstatecab = trainstate.cab - 1;

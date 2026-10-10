@@ -197,7 +197,7 @@ void sn_utils::ls_int64(std::ostream &s, int64_t v)
 
 void sn_utils::ls_float32(std::ostream &s, float t)
 {
-	uint32_t v = std::bit_cast<uint32_t>(t);
+	auto v = std::bit_cast<uint32_t>(t);
 	uint8_t buf[4];
 	buf[0] = static_cast<uint8_t>(v);
 	buf[1] = static_cast<uint8_t>(v >> 8);
@@ -208,7 +208,7 @@ void sn_utils::ls_float32(std::ostream &s, float t)
 
 void sn_utils::ls_float64(std::ostream &s, double t)
 {
-	uint64_t v = std::bit_cast<uint64_t>(t);
+	auto v = std::bit_cast<uint64_t>(t);
 	uint8_t buf[8];
 	buf[0] = static_cast<uint8_t>(v);
 	buf[1] = static_cast<uint8_t>(v >> 8);

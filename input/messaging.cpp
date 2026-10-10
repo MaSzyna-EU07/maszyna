@@ -76,7 +76,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         case 3: // rozkaz dla AI
             if (Global.iMultiplayer)
             {
-                int i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
+                auto i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
                 CommLog(
                     Now() + " " + std::to_string(pRozkaz->iComm) + " " +
                     std::string(pRozkaz->cString + 11 + i, (unsigned)pRozkaz->cString[10 + i]) +

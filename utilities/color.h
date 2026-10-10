@@ -82,7 +82,7 @@ HSVtoRGB( glm::vec3 const &HSV ) {
     float hh = HSV.x;
     if( hh >= 360.0 ) hh = 0.0;
     hh /= 60.0f;
-    int const i = (int)hh;
+    auto const i = (int)hh;
     float const ff = hh - static_cast<float>(i);
     float const p = HSV.z * ( 1.f - HSV.y );
     float const q = HSV.z * ( 1.f - HSV.y * ff );

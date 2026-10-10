@@ -120,7 +120,7 @@ opengl33_particles::render() {
 	if (!m_shader) {
 		gl::shader vert("smoke.vert");
 		gl::shader frag("smoke.frag");
-		gl::program *prog = new gl::program({vert, frag});
+		auto prog = new gl::program({vert, frag});
 		m_shader = std::unique_ptr<gl::program>(prog);
 	}
 
