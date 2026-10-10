@@ -2062,18 +2062,13 @@ void TTrain::OnCommand_trainbrakebasepressureincrease(TTrain *Train, command_dat
 	if (Command.action != GLFW_RELEASE)
 	{
 
-		switch (Train->mvOccupied->BrakeHandle)
-		{
-		case TBrakeHandle::FV4a:
+		if (Train->mvOccupied->BrakeHandle == TBrakeHandle::FV4a)
 		{
 			Train->mvOccupied->BrakeCtrlPos2 = std::clamp(Train->mvOccupied->BrakeCtrlPos2 - 0.01, -1.5, 2.0);
-			break;
 		}
-		default:
+		else
 		{
 			Train->mvOccupied->BrakeLevelAdd(0.01);
-			break;
-		}
 		}
 	}
 }
@@ -2084,18 +2079,13 @@ void TTrain::OnCommand_trainbrakebasepressuredecrease(TTrain *Train, command_dat
 	if (Command.action != GLFW_RELEASE)
 	{
 
-		switch (Train->mvOccupied->BrakeHandle)
-		{
-		case TBrakeHandle::FV4a:
+		if (Train->mvOccupied->BrakeHandle == TBrakeHandle::FV4a)
 		{
 			Train->mvOccupied->BrakeCtrlPos2 = std::clamp(Train->mvOccupied->BrakeCtrlPos2 + 0.01, -1.5, 2.0);
-			break;
 		}
-		default:
+		else
 		{
 			Train->mvOccupied->BrakeLevelAdd(-0.01);
-			break;
-		}
 		}
 	}
 }

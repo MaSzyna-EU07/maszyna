@@ -330,8 +330,8 @@ smoke_source::initialize( smoke_particle &Particle ) {
 
     if( m_ownertype == owner_type::vehicle ) {
         Particle.opacity *= static_cast<float>(m_owner.vehicle->MoverParameters->dizel_fill);
-        switch( m_owner.vehicle->MoverParameters->EngineType ) {
-        case TEngineType::DieselElectric: {
+        if (m_owner.vehicle->MoverParameters->EngineType == TEngineType::DieselElectric)
+        {
                 if (m_owner.vehicle->MoverParameters->dizel_spinup == true)
                 {
                 Particle.velocity *= 0.38*(((m_owner.vehicle->MoverParameters->enrot)/2)*0.5);  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
@@ -344,11 +344,6 @@ smoke_source::initialize( smoke_particle &Particle ) {
                 //Particle.velocity *= m_owner.vehicle->GetVelocity();  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
                 }
 
-                break;
-            }
-            default: {
-                break;
-            }
         }
     }
 }
@@ -365,22 +360,17 @@ smoke_source::update( smoke_particle &Particle, bounding_box &Boundingbox, doubl
 
     // crude smoke dispersion simulation
     // http://www.auburn.edu/academic/forestry_wildlife/fire/smoke_guide/smoke_dispersion.htm
-	switch (m_ownertype)
-	{
-	case owner_type::vehicle:
+	if (m_ownertype == owner_type::vehicle)
 	{
     Particle.velocity.y += static_cast<float>(( 0.025 * Particle.velocity.y ) * std::min( 0.f, Global.AirTemperature - 90 ) * Timedelta); // decelerate faster in cold weather
 	Particle.velocity.y -= static_cast<float>(( (0.05 * (pow(m_owner.vehicle->GetVelocity()*1,0.4))) * Particle.velocity.y ) * Global.Overcast * Timedelta); // decelerate faster with high air humidity and/or precipitation
-	break;
-    }
-	default:
+	}
+	else
 	{
 	Particle.velocity.y += static_cast<float>(( 0.005 * Particle.velocity.y ) * std::min( 0.f, Global.AirTemperature - 10 ) * Timedelta); // decelerate faster in cold weather
     Particle.velocity.y -= static_cast<float>(( 0.050 * Particle.velocity.y ) * Global.Overcast * Timedelta); // decelerate faster with high air humidity and/or precipitation
     Particle.velocity.y = std::max<float>( static_cast<float>(0.25 * ( 2.f - Global.Overcast )), Particle.velocity.y ); // put a cap on deceleration
-	break;
-    }
-    }
+	}
     
     Particle.position += Particle.velocity * static_cast<float>( Timedelta );
     Particle.position += 0.1f * Particle.age * simulation::Environment.wind() * static_cast<float>( Timedelta );
