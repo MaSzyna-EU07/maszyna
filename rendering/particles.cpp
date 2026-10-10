@@ -479,7 +479,7 @@ particle_manager::find( std::string const &Template ) {
         // if deserialization didn't fail finish source setup...
         source.m_opacitymodifier.bind( &Global.SmokeFidelity );
         // ...then cache the source as template for future instances
-        m_sourcetemplates.emplace( templatename, source );
+        m_sourcetemplates.try_emplace( templatename, source );
         // should be 'safe enough' to return lookup result directly afterwards
         return &( m_sourcetemplates.find( templatename )->second );
     }

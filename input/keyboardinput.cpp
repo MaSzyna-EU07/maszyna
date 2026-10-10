@@ -147,7 +147,7 @@ keyboard_input::recall_bindings() {
     std::unordered_map<std::string, user_command> nametocommandmap;
     std::size_t commandid = 0;
     for( auto const &description : simulation::Commands_descriptions ) {
-        nametocommandmap.emplace(
+        nametocommandmap.try_emplace(
             description.name,
             static_cast<user_command>( commandid ) );
         ++commandid;
@@ -155,7 +155,7 @@ keyboard_input::recall_bindings() {
 	std::unordered_map<std::string, int> nametokeymap;
 
 	for (const std::pair<int, std::string> &key : keytonamemap) {
-		nametokeymap.emplace(key.second, key.first);
+		nametokeymap.try_emplace(key.second, key.first);
 	}
 
     // NOTE: to simplify things we expect one entry per line, and whole entry in one line

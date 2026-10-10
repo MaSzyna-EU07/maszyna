@@ -167,7 +167,7 @@ gamepad_input::recall_bindings() {
     std::unordered_map<std::string, user_command> nametocommandmap;
     std::size_t commandid = 0;
     for( auto const &description : simulation::Commands_descriptions ) {
-        nametocommandmap.emplace(
+        nametocommandmap.try_emplace(
             description.name,
             static_cast<user_command>( commandid ) );
         ++commandid;

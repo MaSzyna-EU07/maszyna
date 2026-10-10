@@ -211,7 +211,7 @@ void network::tcp::client::handle_accept(const asio::error_code &err) const
 }
 
 network::tcp::asio_manager::asio_manager() {
-	backend_list().emplace("tcp", this);
+	backend_list().try_emplace("tcp", this);
 }
 
 std::shared_ptr<network::server> network::tcp::asio_manager::create_server(std::shared_ptr<std::fstream> backbuffer, const std::string &conf) {
