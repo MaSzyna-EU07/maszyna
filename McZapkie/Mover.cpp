@@ -4863,7 +4863,7 @@ void TMoverParameters::ComputeConstans(void)
 	double Curvature; // Ra 2014-07: odwrotność promienia
 
 	TotalMassxg = TotalMass * g; // TotalMass*g
-	BearingF = DamageFlag & dtrain_bearing > 0 ? 2.0 : 0;
+	BearingF = (DamageFlag & dtrain_bearing) != 0 ? 2.0 : 0;
 
 	HideModifier = 0; // int(Couplers[0].CouplingFlag>0)+int(Couplers[1].CouplingFlag>0);
 
