@@ -350,7 +350,6 @@ double TMoverParameters::Current(double n, double U)
 		Mn = RList[MainCtrlActualPos].Mn * RList[MainCtrlActualPos].Bn;
 		if (RList[MainCtrlActualPos].Bn > 1)
 		{
-			Bn = 1;
 			R = CircuitRes;
 		}
 	}
@@ -432,7 +431,6 @@ double TMoverParameters::Current(double n, double U)
 	if (DynamicBrakeType == dbrake_switch && (BrakePress > 2.0 || PipePress < 3.6))
 	{
 		Im = 0;
-		MotorCurrent = 0;
 		// Im:=0;
 		Itot = 0;
 	}
@@ -4556,7 +4554,6 @@ void TMoverParameters::UpdatePipePressure(double dt)
 	// ulepszony hamulec bezp.
 	EmergencyValveFlow = 0.0;
 
-	auto const lowvoltagepower{Power24vIsAvailable || Power110vIsAvailable};
 
 	// EngDmgFlag 32 (load destroyed) used to trigger this too; dropped, it has nothing to do with
 	// the emergency brake (a broken coupler sets AlarmChainFlag instead)
@@ -5903,7 +5900,6 @@ double TMoverParameters::TractionForce(double dt)
 				auto power = Power;
 				tempImax = DElist[MainCtrlPos].Imax;
 				tempUmax = DElist[MainCtrlPos].Umax;
-				tempPmax = DElist[MainCtrlPos].GenPower;
 				if (true == Heating)
 				{
 					power -= HeatingPower;
@@ -6361,7 +6357,6 @@ double TMoverParameters::TractionForce(double dt)
 					//           (Hamulec as TLSt).SetLBP(LocBrakePress);
 					tmp = 4; // szybkie malenie, powolne wzrastanie
 				}
-				dmoment = eimv[eimv_Fful];
 				// NOTE: the commands to operate the sandbox are likely to conflict with other similar ai decisions
 				// TODO: gather these in single place so they can be resolved together
 				if (SlippingWheels)
@@ -7988,7 +7983,6 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 	friction = dizel_engagefriction;
 	hydro_TC_nIn = enrot; // wal wejsciowy przetwornika momentu
 	hydro_TC_nOut = dizel_n_old; // wal wyjsciowy przetwornika momentu
-	neps = (n - dizel_n_old) / dt; // przyspieszenie katowe walu wejsciowego skrzyni biegow
 
 	if (enrot > 0)
 	{
@@ -8132,7 +8126,6 @@ double TMoverParameters::dizel_Momentum(double dizel_fill, double n, double dt)
 	{
 		dizel_engagedeltaomega = 0;
 		gearMoment = Moment;
-		enMoment = 0;
 		double enrot_min = enrot - (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) - Moment) / dizel_AIM * dt;
 		double enrot_max = enrot + (std::min(TorqueC, TorqueL + abs(hydro_TC_TorqueIn)) + Moment) / dizel_AIM * dt;
 		enrot = safe_clamp(n, enrot_min, enrot_max);
@@ -9289,7 +9282,7 @@ bool TMoverParameters::readDMList(std::string const &line)
 		WriteLog("Read DMList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	auto idx = LISTLINE++;
+	++LISTLINE;
 	double x = 0.0;
 	double y = 0.0;
 	parser >> x >> y;
@@ -9309,7 +9302,7 @@ bool TMoverParameters::readV2NMAXList(std::string const &line)
 		WriteLog("Read V2nmaxList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	auto idx = LISTLINE++;
+	++LISTLINE;
 	double x = 0.0;
 	double y = 0.0;
 	parser >> x >> y;
@@ -9329,7 +9322,7 @@ bool TMoverParameters::readHTCList(std::string const &line)
 		WriteLog("Read HTCList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	auto idx = LISTLINE++;
+	++LISTLINE;
 	double x = 0.0;
 	double y = 0.0;
 	parser >> x >> y;
@@ -9349,7 +9342,7 @@ bool TMoverParameters::readPmaxList(std::string const &line)
 		WriteLog("Read PmaxList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	auto idx = LISTLINE++;
+	++LISTLINE;
 	double x = 0.0;
 	double y = 0.0;
 	parser >> x >> y;
@@ -9426,7 +9419,7 @@ bool TMoverParameters::readDimmerList(std::string const &line)
 		WriteLog("Read DimmerList: arguments missing in line " + std::to_string(LISTLINE + 1));
 		return false;
 	}
-	int idx = LISTLINE++;
+	++LISTLINE;
 
 	dimPosition dps;
 	parser >> dps.isHighBeam >> dps.isDimmed >> dps.isOff;

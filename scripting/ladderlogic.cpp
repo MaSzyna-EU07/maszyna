@@ -315,7 +315,6 @@ basic_controller::run() -> int {
                     break;
                 }
                 auto &target { element( operation.element ) };
-                auto const initialstate { target.input() };
                 target.input() = m_accumulator.back();
                 // additional operations for advanced element types
                 switch( (basic_element::type_e)target.data.index() ) {

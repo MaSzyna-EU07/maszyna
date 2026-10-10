@@ -179,10 +179,8 @@ void cMoon::move() {
     double const pertvariation = +0.658 * std::sin( degtorad * ( 2.0 * mnelong ) ); // Variation
     double const pertyearlyeqt = -0.186 * std::sin( degtorad * sunmnanom ); // Yearly equation
     // latitude perturbations
-    double const pertlat = -0.173 * std::sin( degtorad * ( arglat - 2.0 * mnelong ) );
 
     m_body.eclong += pertevection + pertvariation + pertyearlyeqt;
-    ecliplat += pertlat;
     // declination
 	m_body.declin = radtodeg * std::asin( std::sin (m_body.oblecl * degtorad) * std::sin(m_body.eclong * degtorad) );
 

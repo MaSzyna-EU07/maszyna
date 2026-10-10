@@ -61,7 +61,6 @@ mouse_slider::bind( user_command const &Command ) {
                     vehicle->MainCtrlPosNo + vehicle->ScndCtrlPosNo :
                     vehicle->MainCtrlPosNo ) };
             // for simplicity upper half of the range controls power, lower controls brakes
-            auto const brakerangemultiplier { powerrange / LocalBrakePosNo };
 
             m_valuerange = 1.0;
             m_value =

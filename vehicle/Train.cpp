@@ -8207,7 +8207,6 @@ void TTrain::OnCommand_cabchangeforward(TTrain *Train, command_data const &Comma
 
 	if (Command.action == GLFW_PRESS)
 	{
-		auto const *owner{(Train->DynamicObject->ctOwner != nullptr ? Train->DynamicObject->ctOwner : Train->DynamicObject->Mechanik)};
 		if (auto const movedirection{1}; false == Train->CabChange(movedirection))
 		{
 			auto const exitdirection{(movedirection > 0 ? end::front : end::rear)};
@@ -8237,7 +8236,6 @@ void TTrain::OnCommand_cabchangebackward(TTrain *Train, command_data const &Comm
 
 	if (Command.action == GLFW_PRESS)
 	{
-		auto const *owner{(Train->DynamicObject->ctOwner != nullptr ? Train->DynamicObject->ctOwner : Train->DynamicObject->Mechanik)};
 		if (auto const movedirection{-1}; false == Train->CabChange(movedirection))
 		{
 			// current vehicle doesn't extend any farther in this direction, check if we there's one connected we can move to
@@ -10312,7 +10310,6 @@ bool TTrain::LoadMMediaFile(std::string const &asFileName)
 			rsHuntingNoise->m_frequencyfactor /= static_cast<float>(1 + mvOccupied->Vmax);
 		}
 	}
-	auto const nullvector{glm::vec3()};
 	std::vector<std::reference_wrapper<std::optional<sound_source>>> sounds = {
 	    dsbReverserKey, dsbNastawnikJazdy, dsbNastawnikBocz, dsbSwitch,        dsbPneumaticSwitch, rsHiss,         rsHissU,   rsHissE,   rsHissX,      rsHissT,      rsSBHiss,
 	    rsSBHissU,      rsFadeSound,       rsRunningNoise,   rsResonanceNoise, rsWindSound,        rsHuntingNoise, dsbHasler, dsbBuzzer, dsbBuzzerShp, dsbSlipAlarm, m_distancecounterclear,
