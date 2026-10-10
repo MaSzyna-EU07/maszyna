@@ -189,16 +189,16 @@ gamepad_input::recall_bindings() {
 
         std::string bindingpoint {};
         entryparser >> bindingpoint;
-        auto const splitbindingpoint { split_string_and_number( bindingpoint ) };
+        auto const [bindingtype, bindingindex]{ split_string_and_number( bindingpoint ) };
 
-        if( splitbindingpoint.first == "axis" ) {
+        if( bindingtype == "axis" ) {
             // one or more sets of: [modeIDX] input type, parameters
             // [optional] modeIDX associates the set with control mode IDX
             // input types:
             // -- range commandname IDX; axis value is passed as paramIDX of commandname
             // -- 3state commandname commandname; positive axis value issues first commandname, negative value issues second commandname
 
-            auto const axisindex { splitbindingpoint.second };
+            auto const axisindex { bindingindex };
             // sanity check, connected gamepad isn't guaranteed to have that many axes
             if( axisindex >= m_inputaxes.size() ) { continue; }
 
@@ -264,9 +264,9 @@ gamepad_input::recall_bindings() {
                 }
             }
         }
-        else if( splitbindingpoint.first == "button" ) {
+        else if( bindingtype == "button" ) {
 
-            auto const buttonindex { splitbindingpoint.second };
+            auto const buttonindex { bindingindex };
             // sanity check, connected gamepad isn't guaranteed to have that many buttons
             if( buttonindex >= m_inputbuttons.size() ) { continue; }
 
@@ -486,17 +486,17 @@ gamepad_input::process_axes() {
         }
     }
     // issue remaining, assembled commands
-    for( auto const &command : commands ) {
-        auto const param1 { std::get<0>( command.second ) };
-        auto const param2 { std::get<1>( command.second ) };
-        auto &lastparams { m_lastcommandparams[ command.first ] };
+    for( auto const &[commandid, commandparams] : commands ) {
+        auto const param1 { std::get<0>( commandparams ) };
+        auto const param2 { std::get<1>( commandparams ) };
+        auto &lastparams { m_lastcommandparams[ commandid ] };
         if( param1 != 0.0 || std::get<0>(lastparams) != 0.0
          || param2 != 0.0 || std::get<1>(lastparams) != 0.0 ) {
             m_relay.post(
-                command.first,
+                commandid,
                 param1,
                 param2,
-                std::get<2>( command.second ),
+                std::get<2>( commandparams ),
                 // as we haven't yet implemented either item id system or multiplayer, the 'local' controlled vehicle and entity have temporary ids of 0
                 // TODO: pass correct entity id once the missing systems are in place
                 0 );

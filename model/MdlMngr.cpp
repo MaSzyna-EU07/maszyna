@@ -95,9 +95,9 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
 		postfix = "^^" + std::to_string(uid);
 
 	// see if we have it in the databank
-	auto banklookup { find_in_databank( filename + postfix ) };
-    TModel3d *model { banklookup.second };
-    if( true == banklookup.first ) {
+	auto [banklookupfound, banklookupmodel]{ find_in_databank( filename + postfix ) };
+    TModel3d *model { banklookupmodel };
+    if( true == banklookupfound ) {
         Global.asCurrentTexturePath = buftp;
         return model;
     }

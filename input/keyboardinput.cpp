@@ -330,9 +330,9 @@ void
 keyboard_input::bind() {
 	m_bindings.clear();
 
-    for( auto const &bindingsetup : m_bindingsetups ) {
+    for( auto const &[setupcommand, setupbinding] : m_bindingsetups ) {
 
-        m_bindings[ std::get<int>(bindingsetup.second) ] = bindingsetup.first;
+        m_bindings[ std::get<int>(setupbinding) ] = setupcommand;
     }
 
     // cache movement key bindings
@@ -347,9 +347,9 @@ keyboard_input::bind() {
 int
 keyboard_input::binding( user_command const Command ) const {
 
-    for( auto const &binding : m_bindings ) {
-        if( binding.second == Command ) {
-            return binding.first;
+    for( auto const &[bindingkey, bindingcommand] : m_bindings ) {
+        if( bindingcommand == Command ) {
+            return bindingkey;
         }
     }
     return -1;

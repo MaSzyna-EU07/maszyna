@@ -796,12 +796,12 @@ std::unordered_map<std::string, user_command> commandMap = {
 void command_queue::update()
 {
 	double delta = Timer::GetDeltaTime();
-	for (auto c : m_active_continuous)
+	for (auto [activecommand, activerecipient] : m_active_continuous)
 	{
-		command_data data({c.first, GLFW_REPEAT, 0.0, 0.0, delta, false, glm::vec3()}); // todo: improve
-		auto lookup = m_commands.try_emplace( c.second, commanddata_sequence() );
+		command_data data({activecommand, GLFW_REPEAT, 0.0, 0.0, delta, false, glm::vec3()}); // todo: improve
+		auto [queueiterator, queueinserted] = m_commands.try_emplace( activerecipient, commanddata_sequence() );
 		// recipient stack was either located or created, so we can add to it quite safely
-		lookup.first->second.emplace_back( data );
+		queueiterator->second.emplace_back( data );
 	}
 }
 
@@ -809,8 +809,8 @@ void command_queue::update()
 void
 command_queue::push( command_data const &Command, uint32_t const Recipient ) {
 	if (is_network_target(Recipient)) {
-		auto lookup = m_intercept_queue.try_emplace(Recipient, commanddata_sequence());
-		lookup.first->second.emplace_back(Command);
+		auto [queueiterator, queueinserted] = m_intercept_queue.try_emplace(Recipient, commanddata_sequence());
+		queueiterator->second.emplace_back(Command);
 	} else {
 		push_direct(Command, Recipient);
 	}
@@ -827,9 +827,9 @@ void command_queue::push_direct(const command_data &Command, const uint32_t Reci
 			return;
 	}
 
-	auto lookup = m_commands.try_emplace( Recipient, commanddata_sequence() );
+	auto [queueiterator, queueinserted] = m_commands.try_emplace( Recipient, commanddata_sequence() );
 	// recipient stack was either located or created, so we can add to it quite safely
-	lookup.first->second.emplace_back( Command );
+	queueiterator->second.emplace_back( Command );
 }
 
 // retrieves oldest posted command for specified recipient, if any. returns: true on retrieval, false if there's nothing to retrieve
@@ -868,9 +868,9 @@ command_queue::commands_map command_queue::pop_intercept_queue() {
 }
 
 void command_queue::push_commands(const commands_map &commands) {
-	for (auto const &kv : commands)
-		for (command_data const &data : kv.second)
-			push_direct(data, kv.first);
+	for (auto const &[recipient, sequence] : commands)
+		for (command_data const &data : sequence)
+			push_direct(data, recipient);
 }
 
 void

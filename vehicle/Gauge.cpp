@@ -88,9 +88,9 @@ void TGauge::Init(TSubModel *Submodel, TSubModel *Submodelon, TGaugeAnimation Ty
             }
         }
     }
-    for( auto &soundfx : m_soundfxvalues ) {
-        if( soundfx.second.offset() == nulloffset ) {
-            soundfx.second.offset( offset );
+    for( auto &[soundfxkey, soundfxsource] : m_soundfxvalues ) {
+        if( soundfxsource.offset() == nulloffset ) {
+            soundfxsource.offset( offset );
         }
     }
 };
@@ -166,9 +166,9 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
                 if( !m_soundfxoff.soundproofing() ) {
                     m_soundfxoff.soundproofing() = scratchpad.soundproofing;
                 }
-                for( auto &soundfxrecord : m_soundfxvalues ) {
-                    if( !soundfxrecord.second.soundproofing() ) {
-                        soundfxrecord.second.soundproofing() = scratchpad.soundproofing;
+                for( auto &[soundfxkey, soundfxsource] : m_soundfxvalues ) {
+                    if( !soundfxsource.soundproofing() ) {
+                        soundfxsource.soundproofing() = scratchpad.soundproofing;
                     }
                 }
             }
@@ -180,8 +180,8 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     m_soundfxdecrease.owner( Owner );
     m_soundfxon.owner( Owner );
     m_soundfxoff.owner( Owner );
-    for( auto &soundfxrecord : m_soundfxvalues ) {
-        soundfxrecord.second.owner( Owner );
+    for( auto &[soundfxkey, soundfxsource] : m_soundfxvalues ) {
+        soundfxsource.owner( Owner );
     }
 
 	scale *= static_cast<float>(mul);

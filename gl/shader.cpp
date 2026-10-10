@@ -307,11 +307,11 @@ gl::shader::shader(const std::string &filename)
 {
     name = filename;
 
-    std::pair<GLuint, std::string> source = process_source(filename, "shaders/");
+    auto [shadertype, shadersource] = process_source(filename, "shaders/");
 
-    const GLchar *cstr = source.second.c_str();
+    const GLchar *cstr = shadersource.c_str();
 
-    **this = glCreateShader(source.first);
+    **this = glCreateShader(shadertype);
     glShaderSource(*this, 1, &cstr, nullptr);
     glCompileShader(*this);
 
@@ -338,10 +338,10 @@ void gl::program::init()
 {
     bind();
 
-    for (auto it : texture_conf)
+    for (auto [texturename, textureentry] : texture_conf)
     {
-        shader::texture_entry &e = it.second;
-        GLuint loc = glGetUniformLocation(*this, it.first.c_str());
+        shader::texture_entry &e = textureentry;
+        GLuint loc = glGetUniformLocation(*this, texturename.c_str());
         glUniform1i(loc, static_cast<GLint>(e.id));
     }
 
@@ -378,10 +378,10 @@ gl::program::program(std::vector<std::reference_wrapper<const gl::shader>> shade
 
 void gl::program::attach(const gl::shader &s)
 {
-    for (auto it : s.texture_conf)
-        texture_conf.try_emplace(it.first, std::move(it.second));
-    for (auto it : s.param_conf)
-        param_conf.try_emplace(it.first, std::move(it.second));
+    for (auto [texturename, textureentry] : s.texture_conf)
+        texture_conf.try_emplace(texturename, std::move(textureentry));
+    for (auto [paramname, paramentry] : s.param_conf)
+        param_conf.try_emplace(paramname, std::move(paramentry));
     glAttachShader(*this, *s);
 }
 
