@@ -85,8 +85,8 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
             m_soundchunks.back().second.fadeout = static_cast<float>(std::max( Chunkrange, m_soundchunks.back().second.threshold ));
 //            m_soundchunks.back().second.fadeout = m_soundchunks.back().second.threshold;
             // test if the chunk table contains any actual samples while at it
-            for( auto &soundchunk : m_soundchunks ) {
-                if( soundchunk.first.buffer != null_handle ) {
+            for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
+                if( chunkbuffer.buffer != null_handle ) {
                     m_soundchunksempty = false;
                     break;
                 }
@@ -219,9 +219,9 @@ sound_source::deserialize_mapping( cParser &Input ) {
         if( indexstart != std::string::npos ) {
             auto const index { std::stoi( key.substr( indexstart, indexend - indexstart ) ) };
             auto const pitch { Input.getToken<float>( false, "\n\r\t ,;" ) };
-            for( auto &chunk : m_soundchunks ) {
-                if( chunk.second.threshold == index ) {
-                    chunk.second.pitch = pitch > 0.f ? pitch : 1.f;
+            for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
+                if( chunkdata.threshold == index ) {
+                    chunkdata.pitch = pitch > 0.f ? pitch : 1.f;
                     break;
                 }
             }
@@ -333,8 +333,8 @@ sound_source::copy_sounds( sound_source const &Source ) {
     for( auto &sound : m_sounds ) {
         sound.playing = 0;
     }
-    for( auto &sound : m_soundchunks ) {
-        sound.first.playing = 0;
+    for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
+        chunkbuffer.playing = 0;
     }
     return *this;
 }
@@ -418,14 +418,14 @@ sound_source::play_combined() {
     auto const soundpoint { compute_combined_point() };
     for( std::uint32_t idx = 0; idx < m_soundchunks.size(); ++idx ) {
 
-        auto const &soundchunk { m_soundchunks[ idx ] };
+        auto const &[chunkbuffer, chunkdata]{ m_soundchunks[ idx ] };
         // a chunk covers range from fade in point, where it starts rising in volume over crossfade distance,
         // lasts until fadeout - crossfade distance point, past which it grows quiet until fade out point where it ends
-        if( soundpoint < soundchunk.second.fadein )  { break; }
-        if( soundpoint >= soundchunk.second.fadeout ) { continue; }
+        if( soundpoint < chunkdata.fadein )  { break; }
+        if( soundpoint >= chunkdata.fadeout ) { continue; }
         
-        if( soundchunk.first.buffer == null_handle || ( (m_flags & (sound_flags::exclusive | sound_flags::looping)) != 0
-           && soundchunk.first.playing > 0 ) ) {
+        if( chunkbuffer.buffer == null_handle || ( (m_flags & (sound_flags::exclusive | sound_flags::looping)) != 0
+           && chunkbuffer.playing > 0 ) ) {
             // combined sounds only play looped, single copy of each activated chunk
             continue;
         }
@@ -669,9 +669,9 @@ sound_source::update_combined( audio::openal_source &Source ) {
             // for sound chunks, test whether the chunk should still be active given current value of the controlling variable
             if( ( m_flags & ( sound_flags::exclusive | sound_flags::looping ) ) != 0 ) {
                 auto const soundpoint { compute_combined_point() };
-                auto const &soundchunk { m_soundchunks[ soundhandle ^ sound_id::chunk ] };
-                if( soundpoint < soundchunk.second.fadein
-                 || soundpoint >= soundchunk.second.fadeout ) {
+                auto const &[chunkbuffer, chunkdata]{ m_soundchunks[ soundhandle ^ sound_id::chunk ] };
+                if( soundpoint < chunkdata.fadein
+                 || soundpoint >= chunkdata.fadeout ) {
                     Source.stop();
                     update_counter( soundhandle, -1 );
                     return;
@@ -867,8 +867,8 @@ sound_source::is_playing( bool const /*Includesoundends*/ ) const {
     if( false == isplaying
      && false == m_soundchunks.empty() ) {
         // for emitters with sample tables check also if any of the chunks is active
-        for( auto const &soundchunk : m_soundchunks ) {
-            if( soundchunk.first.playing > 0 ) {
+        for( auto const &[chunkbuffer, chunkdata] : m_soundchunks ) {
+            if( chunkbuffer.playing > 0 ) {
                 isplaying = true;
                 break; // one will do
             }

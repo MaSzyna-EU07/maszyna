@@ -47,15 +47,15 @@ opengl_particles::update( opengl_camera const &Camera ) {
     // build billboard data for particles from visible sources
     auto const camerarotation { glm::mat3( Camera.modelview() ) };
     particle_vertex vertex;
-    for( auto const &source : sources ) {
+    for( auto const &[sourcekey, sourcedata] : sources ) {
 
         auto const particlecolor {
             glm::clamp(
-                source.second.color()
+                sourcedata.color()
                 * ( glm::vec3 { Global.DayLight.ambient } + 0.35f * glm::vec3{ Global.DayLight.diffuse } )
                 * 255.f,
                 glm::vec3{ 0.f }, glm::vec3{ 255.f } ) };
-        auto const &particles { source.second.sequence() };
+        auto const &particles { sourcedata.sequence() };
         // TODO: put sanity cap on the overall amount of particles that can be drawn
         auto const sizestep { 256.0 * billboard_vertices.size() };
         m_particlevertices.reserve(
@@ -70,9 +70,9 @@ opengl_particles::update( opengl_camera const &Camera ) {
             auto const offset { glm::vec3{ particle.position - Camera.position() } };
             auto const rotation { glm::angleAxis( particle.rotation, glm::vec3{ 0.f, 0.f, 1.f } ) };
 
-            for( auto const &billboardvertex : billboard_vertices ) {
-                vertex.position = offset + ( rotation * billboardvertex.first * particle.size ) * camerarotation;
-                vertex.texture = billboardvertex.second;
+            for( auto const &[billboardoffset, billboardtexture] : billboard_vertices ) {
+                vertex.position = offset + ( rotation * billboardoffset * particle.size ) * camerarotation;
+                vertex.texture = billboardtexture;
 
                 m_particlevertices.emplace_back( vertex );
             }

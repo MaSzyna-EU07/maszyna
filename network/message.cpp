@@ -33,11 +33,11 @@ void network::server_hello::deserialize(std::istream &stream)
 void ::network::request_command::serialize(std::ostream &stream) const
 {
 	sn_utils::ls_uint32(stream, static_cast<uint32_t>(commands.size()));
-	for (auto const &kv : commands)
+	for (auto const &[recipient, sequence] : commands)
 	{
-		sn_utils::ls_uint32(stream, kv.first);
-		sn_utils::ls_uint32(stream, static_cast<uint32_t>(kv.second.size()));
-		for (command_data const &data : kv.second)
+		sn_utils::ls_uint32(stream, recipient);
+		sn_utils::ls_uint32(stream, static_cast<uint32_t>(sequence.size()));
+		for (command_data const &data : sequence)
 		{
 			sn_utils::ls_uint32(stream, (uint32_t)data.command);
 			sn_utils::ls_int32(stream, data.action);

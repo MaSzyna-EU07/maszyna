@@ -367,9 +367,9 @@ drivermouse_input::button( int const Button, int const Action ) {
                         control->screen_touch_list->emplace_back(pos);
                     }
 
-                    auto const controlbindings { bindings( simulation::Train->GetLabel( control ) ) };
+                    auto const [leftbinding, rightbinding]{ bindings( simulation::Train->GetLabel( control ) ) };
                     // if the recognized element under the cursor has a command associated with the pressed button, notify the recipient
-                    mousecommand = Button == GLFW_MOUSE_BUTTON_LEFT ? controlbindings.first : controlbindings.second;
+                    mousecommand = Button == GLFW_MOUSE_BUTTON_LEFT ? leftbinding : rightbinding;
 
                     if( mousecommand == user_command::none ) {
                         // if we don't have any recognized element under the cursor and the right button was pressed, enter view panning mode

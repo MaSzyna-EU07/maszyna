@@ -1021,9 +1021,9 @@ debug_panel::update_vehicle_brake() const {
 		{ bdelay_R, "R" },
 		{ bdelay_M, "+Mg" } };
 
-	for( auto const &delay : delays ) {
-		if( ( mover.BrakeDelayFlag & delay.first ) == delay.first ) {
-			brakedelay += delay.second;
+	for( auto const &[delayflag, delayname] : delays ) {
+		if( ( mover.BrakeDelayFlag & delayflag ) == delayflag ) {
+			brakedelay += delayname;
 		}
 	}
 
@@ -1086,8 +1086,8 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
             { "cdesi: ", mover.dizel_engagestate },
             { "cdelt: ", mover.dizel_engagedeltaomega },
             { "gears: ", mover.dizel_automaticgearstatus} };
-        for( auto const &parameter : paramvalues ) {
-            parameterstext += "\n" + parameter.first + to_string( parameter.second, 2, 9 );
+        for( auto const &[parametername, parametervalue] : paramvalues ) {
+            parameterstext += "\n" + parametername + to_string( parametervalue, 2, 9 );
         }
         Output.emplace_back( parameterstext, Global.UITextColor );
 
@@ -1104,8 +1104,8 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 			{ "hRtTq: ", mover.hydro_R_Torque }
 
 		};
-		for( auto const &parameter : hydrovalues ) {
-			parameterstext += "\n" + parameter.first + to_string( parameter.second, 2, 9 );
+		for( auto const &[parametername, parametervalue] : hydrovalues ) {
+			parameterstext += "\n" + parametername + to_string( parametervalue, 2, 9 );
 		}
 		Output.emplace_back( parameterstext, Global.UITextColor );
 	}
@@ -1176,14 +1176,14 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) const {
         { mover.RunningTrack.Velmax, "track" } };
 
     std::string restrictionstext;
-    for( auto const &restriction : restrictions ) {
-        if( restriction.first < 0.0 ) { continue; }
+    for( auto const &[restrictionspeed, restrictionsource] : restrictions ) {
+        if( restrictionspeed < 0.0 ) { continue; }
         if( false == restrictionstext.empty() ) {
             restrictionstext += ", ";
         }
         restrictionstext +=
-            to_string( restriction.first, 0 )
-            + " (" + restriction.second + ")";
+            to_string( restrictionspeed, 0 )
+            + " (" + restrictionsource + ")";
     }
 
     if( false == restrictionstext.empty() ) {

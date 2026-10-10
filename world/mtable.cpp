@@ -489,10 +489,10 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                     if( entry.front() != 'R' ) {
                                         continue;
                                     }
-                                    auto const entrysplit { split_string_and_number( entry ) };
-                                    if( entrysplit.first == "R"
-                                     && entrysplit.second <= 10 ) {
-                                        auto const radiochannel { entrysplit.second };
+                                    auto const [entrytype, entrynumber]{ split_string_and_number( entry ) };
+                                    if( entrytype == "R"
+                                     && entrynumber <= 10 ) {
+                                        auto const radiochannel { entrynumber };
                                         if( record->radio_channel == -1
                                          || radiochannel != activeradiochannel ) {
                                             // if the station has more than one radiochannel listed,
@@ -610,17 +610,17 @@ TTrainParameters::load_sounds() {
                 station.StationName.substr( 0, station.StationName.size() - 3 ) :
                 station.StationName ) };
 
-        auto const lookup {
+        auto const [filepath, fileextension]{
             FileExists(
                 { Global.asCurrentSceneryPath + stationname, std::string{ paths::sounds } + "sip/" + stationname },
                 { ".ogg", ".flac", ".wav" } ) };
-        if( lookup.first.empty() ) {
+        if( filepath.empty() ) {
             continue;
         }
         //  wczytanie dźwięku odjazdu w wersji radiowej (słychać tylko w kabinie)
         station.name_sound =
             sound_source{ sound_placement::engine, EU07_SOUND_CABANNOUNCEMENTCUTOFFRANGE }
-                .deserialize( lookup.first + lookup.second, sound_type::single );
+                .deserialize( filepath + fileextension, sound_type::single );
     }
 }
 

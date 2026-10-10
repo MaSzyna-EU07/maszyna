@@ -30,36 +30,36 @@ void render_task::run()
 		cancel();
 		return;
 	}
-	for (auto const &datapair : m_input->floats)
+	for (auto const &[dataname, datavalue] : m_input->floats)
 	{
-		auto *value{PyGetFloat(datapair.second)};
+		auto *value{PyGetFloat(datavalue)};
 		if (value == nullptr)
 		{
 			PyErr_Clear();
 			continue;
 		}
-		PyDict_SetItemString(input, datapair.first.c_str(), value);
+		PyDict_SetItemString(input, dataname.c_str(), value);
 		Py_DECREF(value);
 	}
-	for (auto const &datapair : m_input->integers)
+	for (auto const &[dataname, datavalue] : m_input->integers)
 	{
-		auto *value{PyLong_FromLong(datapair.second)};
+		auto *value{PyLong_FromLong(datavalue)};
 		if (value == nullptr)
 		{
 			PyErr_Clear();
 			continue;
 		}
-		PyDict_SetItemString(input, datapair.first.c_str(), value);
+		PyDict_SetItemString(input, dataname.c_str(), value);
 		Py_DECREF(value);
 	}
-	for (auto const &datapair : m_input->bools)
+	for (auto const &[dataname, datavalue] : m_input->bools)
 	{
 		// Py_True / Py_False sa niesmiertelne, ale PyDict_SetItemString i tak
 		// pobiera wlasna referencje - nie zwalniamy
-		auto *value{PyGetBool(datapair.second)};
-		PyDict_SetItemString(input, datapair.first.c_str(), value);
+		auto *value{PyGetBool(datavalue)};
+		PyDict_SetItemString(input, dataname.c_str(), value);
 	}
-	for (auto const &datapair : m_input->strings)
+	for (auto const &[dataname, datavalue] : m_input->strings)
 	{
 		// Nazwy scenerii/wagonow (asName, SceneryFile, asCarName, cCode...) moga
 		// byc albo w UTF-8, albo w starym kodowaniu Windows-1250. PyUnicode_FromString
@@ -68,8 +68,8 @@ void render_task::run()
 		//
 		// Strategia: najpierw probujemy UTF-8 (strict). Jesli sie nie uda - probujemy
 		// cp1250. Jesli oba zawioda - pomijamy klucz, ale nie wywracamy symulatora.
-		char const *const str{datapair.second.c_str()};
-		Py_ssize_t const len{static_cast<Py_ssize_t>(datapair.second.size())};
+		char const *const str{datavalue.c_str()};
+		Py_ssize_t const len{static_cast<Py_ssize_t>(datavalue.size())};
 
 		auto *value{PyUnicode_DecodeUTF8(str, len, "strict")};
 		if (value == nullptr)
@@ -82,16 +82,16 @@ void render_task::run()
 			PyErr_Clear();
 			continue;
 		}
-		PyDict_SetItemString(input, datapair.first.c_str(), value);
+		PyDict_SetItemString(input, dataname.c_str(), value);
 		Py_DECREF(value);
 	}
-	for (auto const &datapair : m_input->vec2_lists)
+	for (auto const &[dataname, datavalue] : m_input->vec2_lists)
 	{
-		PyObject *list = PyList_New(datapair.second.size());
+		PyObject *list = PyList_New(datavalue.size());
 
-		for (size_t i = 0; i < datapair.second.size(); i++)
+		for (size_t i = 0; i < datavalue.size(); i++)
 		{
-			auto const &vec = datapair.second[i];
+			auto const &vec = datavalue[i];
 			WriteLog("passing " + glm::to_string(vec));
 
 			PyObject *tuple = PyTuple_New(2);
@@ -101,7 +101,7 @@ void render_task::run()
 			PyList_SetItem(list, i, tuple); // steals ref
 		}
 
-		PyDict_SetItemString(input, datapair.first.c_str(), list);
+		PyDict_SetItemString(input, dataname.c_str(), list);
 		Py_DECREF(list);
 	}
 	m_input = nullptr;
@@ -376,9 +376,9 @@ void python_taskqueue::exit()
 	// reclaim cached python objects while the interpreter is still alive,
 	// so no Py_DECREF lands on a finalized interpreter during later teardown
 	acquire_lock();
-	for (auto &entry : m_renderers)
+	for (auto &[renderername, rendererobject] : m_renderers)
 	{
-		Py_XDECREF(entry.second);
+		Py_XDECREF(rendererobject);
 	}
 	m_renderers.clear();
 	Py_XDECREF(m_stderr);
@@ -437,13 +437,13 @@ auto python_taskqueue::insert(task_request const &Task) -> bool
 auto python_taskqueue::run_file(std::string const &File, std::string const &Path) -> bool
 {
 
-	auto const lookup{FileExists({Path + File, "python/local/" + File}, {".py"})};
-	if (lookup.first.empty())
+	auto const [filepath, fileextension]{FileExists({Path + File, "python/local/" + File}, {".py"})};
+	if (filepath.empty())
 	{
 		return false;
 	}
 
-	std::ifstream inputfile{lookup.first + lookup.second};
+	std::ifstream inputfile{filepath + fileextension};
 	std::string input;
 	input.assign(std::istreambuf_iterator<char>(inputfile), std::istreambuf_iterator<char>());
 

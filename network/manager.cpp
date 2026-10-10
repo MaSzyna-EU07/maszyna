@@ -59,8 +59,8 @@ network::manager::manager() = default;
 
 void network::manager::update()
 {
-	for (auto &backend : backend_list())
-		backend.second->update();
+	for (auto &[backendname, backendinstance] : backend_list())
+		backendinstance->update();
 
 	if (client)
 		client->update();

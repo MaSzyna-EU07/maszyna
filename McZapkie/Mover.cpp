@@ -624,11 +624,11 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 		std::vector<std::pair<coupling, sound>> const soundmappings = {{coupling::coupler, sound::attachcoupler},   {coupling::brakehose, sound::attachbrakehose},
 		                                                               {coupling::mainhose, sound::attachmainhose}, {coupling::control, sound::attachcontrol},
 		                                                               {coupling::gangway, sound::attachgangway},   {coupling::heating, sound::attachheating}};
-		for (auto const &soundmapping : soundmappings)
+		for (auto const &[mappingcoupling, mappingsound] : soundmappings)
 		{
-			if ((couplingchange & soundmapping.first) != 0)
+			if ((couplingchange & mappingcoupling) != 0)
 			{
-				soundflag |= soundmapping.second;
+				soundflag |= mappingsound;
 			}
 		}
 		SetFlag(coupler.sounds, soundflag);
@@ -685,11 +685,11 @@ bool TMoverParameters::Dettach(int ConnectNo)
 		std::vector<std::pair<coupling, sound>> const soundmappings = {{coupling::coupler, sound::attachcoupler},   {coupling::brakehose, sound::attachbrakehose},
 		                                                               {coupling::mainhose, sound::attachmainhose}, {coupling::control, sound::attachcontrol},
 		                                                               {coupling::gangway, sound::attachgangway},   {coupling::heating, sound::attachheating}};
-		for (auto const &soundmapping : soundmappings)
+		for (auto const &[mappingcoupling, mappingsound] : soundmappings)
 		{
-			if ((couplingchange & soundmapping.first) != 0)
+			if ((couplingchange & mappingcoupling) != 0)
 			{
-				soundflag |= soundmapping.second;
+				soundflag |= mappingsound;
 			}
 		}
 		SetFlag(coupler.sounds, soundflag);

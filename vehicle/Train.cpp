@@ -10110,11 +10110,11 @@ void TTrain::update_sounds_radio()
 	}
 	// adjust audibility of remaining messages based on current radio conditions
 	auto const radioenabled{true == mvOccupied->Radio && (mvOccupied->Power24vIsAvailable || mvOccupied->Power110vIsAvailable)};
-	for (auto &message : m_radiomessages)
+	for (auto &[messagechannel, messagesound] : m_radiomessages)
 	{
-		auto const volume{true == radioenabled && Dynamic()->Mechanik != nullptr && message.first == RadioChannel() ? m_radiovolume : 0.0};
-		message.second->gain(static_cast<float>(volume));
-		radio_message_played |= true == radioenabled && Dynamic()->Mechanik != nullptr && message.first == RadioChannel();
+		auto const volume{true == radioenabled && Dynamic()->Mechanik != nullptr && messagechannel == RadioChannel() ? m_radiovolume : 0.0};
+		messagesound->gain(static_cast<float>(volume));
+		radio_message_played |= true == radioenabled && Dynamic()->Mechanik != nullptr && messagechannel == RadioChannel();
 	}
 	// radiostop
 	if (m_radiostop)
@@ -10229,9 +10229,9 @@ bool TTrain::LoadMMediaFile(std::string const &asFileName)
 	    {"huntingnoise:", {rsHuntingNoise, sound_placement::internal, EU07_SOUND_GLOBALRANGE, sound_type::single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
 	    {"rainsound:", {m_rainsound, sound_placement::internal, -1, sound_type::single, 0, 100.0}},
 	};
-	for (auto &soundconfig : internalsounds)
+	for (auto &[soundname, soundsource] : internalsounds)
 	{
-		std::get<std::optional<sound_source> &>(soundconfig.second).reset();
+		std::get<std::optional<sound_source> &>(soundsource).reset();
 	}
 	// NOTE: since radiosound is an incomplete template not using std::optional it gets a special treatment
 	m_radiosound.owner(DynamicObject);
@@ -10343,11 +10343,11 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 		}
 	}
 	m_radiosound.offset(nullvector);
-	for (auto &sound : CabSoundLocations)
+	for (auto &[soundsource, soundoffset] : CabSoundLocations)
 	{
-		if (sound.first.get() && sound.first.get()->offset() == nullvector)
+		if (soundsource.get() && soundsource.get()->offset() == nullvector)
 		{
-			sound.first.get()->offset(sound.second);
+			soundsource.get()->offset(soundoffset);
 		}
 	}
 	// reset view angles
@@ -10636,19 +10636,19 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	    {m_rainsound, caboffset},
 	    {m_radiostop, m_radiosound.offset()},
 	};
-	for (auto &sound : soundlocations)
+	for (auto &[soundsource, soundoffset] : soundlocations)
 	{
-		if (sound.first.get() && sound.first.get()->offset() == nullvector)
+		if (soundsource.get() && soundsource.get()->offset() == nullvector)
 		{
-			sound.first.get()->offset(sound.second);
+			soundsource.get()->offset(soundoffset);
 		}
 	}
 	// second pass, in case some items received no positioning due to missing submodels etc
-	for (auto &sound : soundlocations)
+	for (auto &[soundsource, soundoffset] : soundlocations)
 	{
-		if (sound.first.get() && sound.first.get()->offset() == nullvector)
+		if (soundsource.get() && soundsource.get()->offset() == nullvector)
 		{
-			sound.first.get()->offset(caboffset);
+			soundsource.get()->offset(caboffset);
 		}
 	}
 
