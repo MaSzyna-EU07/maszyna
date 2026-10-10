@@ -467,7 +467,7 @@ void uart_input::poll()
         }
         if( true == conf.trainenable ) {
             // train brake
-            double const position { (float)( ( (uint16_t)buffer[ 8 ] | (uint16_t)buffer[9] << 8 ) - conf.mainbrakemin ) / ( conf.mainbrakemax - conf.mainbrakemin ) };
+            double const position { ( ( (uint16_t)buffer[ 8 ] | (uint16_t)buffer[9] << 8 ) - conf.mainbrakemin ) / ( conf.mainbrakemax - conf.mainbrakemin ) };
             relay.post(
                 user_command::trainbrakeset,
                 position,
@@ -478,7 +478,7 @@ void uart_input::poll()
         }
         if( true == conf.localenable ) {
             // independent brake
-            double const position { (float)( ( (uint16_t)buffer[ 10 ] | (uint16_t)buffer[11] << 8 ) - conf.localbrakemin ) / ( conf.localbrakemax - conf.localbrakemin ) };
+            double const position { ( ( (uint16_t)buffer[ 10 ] | (uint16_t)buffer[11] << 8 ) - conf.localbrakemin ) / ( conf.localbrakemax - conf.localbrakemin ) };
             relay.post(
                 user_command::independentbrakeset,
                 position,
@@ -509,7 +509,7 @@ void uart_input::poll()
 		if (true == conf.dynamicenable)
 		{
 			// dynamic brake 8 bit
-			double const position{(float)(buffer[13] - conf.dynamicbrakemin) / (conf.dynamicbrakemax - conf.dynamicbrakemin)};
+			double const position{(buffer[13] - conf.dynamicbrakemin) / (conf.dynamicbrakemax - conf.dynamicbrakemin)};
 
 			relay.post(
                 user_command::dynamicbrakecontrollerset,
