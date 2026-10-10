@@ -10721,6 +10721,7 @@ void TTrain::DynamicSet(TDynamicObject *d)
 	mvControlled = DynamicObject->FindPowered()->MoverParameters;
 	mvSecond = nullptr; // gdyby się nic nie znalazło
 	if (mvOccupied->Power > 1.0) // dwuczłonowe lub ukrotnienia, żeby nie szukać każdorazowo
+	{
 		if (mvOccupied->Couplers[1].Connected ? mvOccupied->Couplers[1].AllowedFlag & coupling::control : false)
 		{ // gdy jest człon od sprzęgu 1, a sprzęg łączony
 			// warsztatowo (powiedzmy)
@@ -10733,6 +10734,7 @@ void TTrain::DynamicSet(TDynamicObject *d)
 			if (mvOccupied->Couplers[0].Connected->Power > 1.0) // ale ten drugi ma moc
 				mvSecond = mvOccupied->Couplers[0].Connected; // wskaźnik na drugiego
 		}
+	}
 	// cache nearest unit equipped with pantographs
 	{
 		auto *lookup{DynamicObject->FindPantographCarrier()};

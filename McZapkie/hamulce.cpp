@@ -833,12 +833,14 @@ void TESt::CheckReleaser(double const dt)
 
 	// odluzniacz
 	if ((BrakeStatus & b_rls) == b_rls)
+	{
 		if (CVP - VVP < 0)
 			BrakeStatus &= ~b_rls;
 		else
 		{
 			CntrlRes->Flow(+PF(CVP, 0, 0.1) * dt);
 		}
+	}
 }
 
 /// <summary>
@@ -2468,10 +2470,12 @@ void TKE::CheckReleaser(double const dt)
 
 	// odluzniacz
 	if (true == ((BrakeStatus & b_rls) == b_rls))
+	{
 		if (CVP - VVP < 0)
 			BrakeStatus &= ~b_rls;
 		else
 			CntrlRes->Flow(+PF(CVP, 0, 0.1) * dt);
+	}
 }
 
 /// <summary>
@@ -3821,6 +3825,7 @@ double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	if (BCP == 0)
 		LimPP = LimPP + RedAdj;
 	if (BCP != 2)
+	{
 		if (CP < LimPP)
 			CP = CP + 4 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
 		//      cp:=cp+6*(2+int(bcp<0))*std::min(abs(Limpp-cp),0.05)*PR(cp,Limpp)*dt //zbiornik
@@ -3829,6 +3834,7 @@ double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 			CP = CP - 0.2 * dt / 100;
 		else
 			CP = CP + 4 * (1 + int(BCP != 3) + int(BCP > 4)) * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy
+	}
 
 	LimPP = CP;
 	dpPipe = std::min(HP, LimPP);
