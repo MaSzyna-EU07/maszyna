@@ -254,10 +254,8 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
     // if we still have pending requests after filling entire container replace older particles
     if( m_spawncount >= 1.f ) {
         // sort all particles from most to least transparent, oldest to youngest if it's a tie
-        std::sort(
-            std::begin( m_particles ),
-            std::end( m_particles ),
-            []( smoke_particle const &Left, smoke_particle const &Right ) {
+        std::ranges::sort(
+            m_particles, []( smoke_particle const &Left, smoke_particle const &Right ) {
                 return ( Left.opacity != Right.opacity ?
                             Left.opacity < Right.opacity :
                             Left.age > Right.age ); } );

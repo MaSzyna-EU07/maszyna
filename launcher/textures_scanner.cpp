@@ -172,10 +172,10 @@ std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &
 	        ToLower("n:" + meta->name + ":i:" + meta->short_id + ":d:" + meta->location +
 	                ":r:" + meta->rev_date + ":c:" + meta->rev_company + ":t:" + meta->texture_author + ":p:" + meta->photo_author);
 
-	std::replace(std::begin(meta->location), std::end(meta->location), '_', ' ');
-	std::replace(std::begin(meta->rev_company), std::end(meta->rev_company), '_', ' ');
-	std::replace(std::begin(meta->texture_author), std::end(meta->texture_author), '_', ' ');
-	std::replace(std::begin(meta->photo_author), std::end(meta->photo_author), '_', ' ');
+	std::ranges::replace(meta->location, '_', ' ');
+	std::ranges::replace(meta->rev_company, '_', ' ');
+	std::ranges::replace(meta->texture_author, '_', ' ');
+	std::ranges::replace(meta->photo_author, '_', ' ');
 
 	if (!meta->rev_date.empty() && meta->rev_date != "?") {
 		std::istringstream stream(meta->rev_date);

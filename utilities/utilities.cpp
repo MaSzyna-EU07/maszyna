@@ -297,7 +297,7 @@ std::string ToLower(std::string const &text)
 {
 
 	auto lowercase{text};
-	std::transform(std::begin(text), std::end(text), std::begin(lowercase), [](unsigned char c) { return std::tolower(c); });
+	std::ranges::transform(text, std::begin(lowercase), [](unsigned char c) { return std::tolower(c); });
 	return lowercase;
 }
 
@@ -305,7 +305,7 @@ std::string ToUpper(std::string const &text)
 {
 
 	auto uppercase{text};
-	std::transform(std::begin(text), std::end(text), std::begin(uppercase), [](unsigned char c) { return std::toupper(c); });
+	std::ranges::transform(text, std::begin(uppercase), [](unsigned char c) { return std::toupper(c); });
 	return uppercase;
 }
 
@@ -607,7 +607,7 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 {
 
 	auto token{Input.getToken<std::string>(true, Break)};
-	std::replace(token.begin(), token.end(), '\\', '/');
+	std::ranges::replace(token, '\\', '/');
 	if (token != "[")
 	{
 		// simple case, single token
@@ -622,7 +622,7 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 	}
 	if (false == tokens.empty())
 	{
-		std::shuffle(std::begin(tokens), std::end(tokens), Global.random_engine);
+		std::ranges::shuffle(tokens, Global.random_engine);
 		return tokens.front();
 	}
 	else

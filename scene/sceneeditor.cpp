@@ -50,9 +50,8 @@ basic_editor::translate( scene::basic_node *Node, glm::dvec3 const &Location, bo
         // TODO: contextual switch between group and item translation
         // TODO: translation of affected/relevant events
         auto &nodegroup { scene::Groups.group( Node->group() ).nodes };
-        std::for_each(
-            std::begin( nodegroup ), std::end( nodegroup ),
-            [&]( auto *node ) {
+        std::ranges::for_each(
+            nodegroup, [&]( auto *node ) {
                 translate_node( node, node->location() + translation ); } );
     }
 }
@@ -72,9 +71,8 @@ basic_editor::translate( scene::basic_node *Node, float const Offset ) {
         // TODO: contextual switch between group and item translation
         // TODO: translation of affected/relevant events
         auto &nodegroup { scene::Groups.group( Node->group() ).nodes };
-        std::for_each(
-            std::begin( nodegroup ), std::end( nodegroup ),
-            [&]( auto *node ) {
+        std::ranges::for_each(
+            nodegroup, [&]( auto *node ) {
                 translate_node( node, offset ); } );
     }
 }
@@ -161,9 +159,8 @@ basic_editor::rotate( scene::basic_node *Node, glm::vec3 const &Angle, float con
         // TODO: translation of affected/relevant events
         auto const &rotationcenter { Node->location() };
         auto const &nodegroup { scene::Groups.group( Node->group() ).nodes };
-        std::for_each(
-            std::begin( nodegroup ), std::end( nodegroup ),
-            [&]( auto *node ) {
+        std::ranges::for_each(
+            nodegroup, [&]( auto *node ) {
                 rotate_node( node, rotation );
                 if( node != Node ) {
                     translate_node(

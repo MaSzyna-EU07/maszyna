@@ -46,11 +46,10 @@ world_environment::compute_season( int const Yearday ) {
         { 341, "autumn:" },
         { 366, "winter:" } };
     auto const lookup =
-        std::lower_bound(
-            std::begin( seasonsequence ), std::end( seasonsequence ),
+        std::ranges::lower_bound(
+            seasonsequence,
             std::clamp( Yearday, 1, seasonsequence.back().first ),
-            []( dayseasonpair const &Left, const int Right ) {
-                return Left.first < Right; } );
+            {}, &dayseasonpair::first );
     
     Global.Season = lookup->second;
     // season can affect the weather so if it changes, re-calculate weather as well
