@@ -7518,7 +7518,10 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
             }
             else if (ActualProximityDist > fMinProximityDist) {
                 // jedzie szybciej, niż trzeba na końcu ActualProximityDist, ale jeszcze jest daleko
-				if (ActualProximityDist < fMaxProximityDist) {
+				// only a stop has a final approach of its own inside the proximity range; a lower speed ahead
+				// keeps the braking curve below right up to where it begins, or the train would stop braking
+				// (and even take power) that far out
+				if( ( VelNext == 0.0 ) && ( ActualProximityDist < fMaxProximityDist ) ) {
                     // jak minął już maksymalny dystans po prostu hamuj (niski stopień)
                     // ma stanąć, a jest w drodze hamowania albo ma jechać
 /*
