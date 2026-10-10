@@ -31,7 +31,7 @@ void gl::vao::setup_attrib(gl::buffer &buffer, int attrib, int size, int type, i
 	else {
         if (attrib == 0)
             params.clear();
-		params.push_back({buffer, attrib, size, type, stride, offset});
+		params.emplace_back(buffer, attrib, size, type, stride, offset);
 		active = nullptr;
 	}
 }

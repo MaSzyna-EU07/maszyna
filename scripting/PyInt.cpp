@@ -712,7 +712,7 @@ std::vector<std::string> python_external_utils::PyObjectToStringArray(PyObject *
 			return emptyIfError;
 		}
 
-		result.push_back(std::string(str));
+		result.emplace_back(str);
 		Py_DECREF(item); // Decrease reference count for the item
 	}
 

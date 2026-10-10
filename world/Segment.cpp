@@ -572,16 +572,16 @@ void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) 
 	glm::vec3 previous = FastGetPoint(0.0);
 
 	for (x = step; x <= 1.0f; x += step) {
-		out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
+		out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 
 		previous = glm::vec3(FastGetPoint(x));
-		out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
+		out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 	}
 
-	out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
+	out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 
 	previous = glm::vec3(FastGetPoint(1.0));
-	out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
+	out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 }
 
 glm::vec3 TSegment::get_nearest_point(const glm::dvec3 &point, float quality) const
