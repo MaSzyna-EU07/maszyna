@@ -1715,9 +1715,7 @@ void TMoverParameters::LowVoltagePowerCheck(double const /*Deltatime*/)
 
 	auto const lowvoltagepower{Power24vIsAvailable || Power110vIsAvailable};
 
-	switch (EngineType)
-	{
-	case TEngineType::ElectricSeriesMotor:
+	if (EngineType == TEngineType::ElectricSeriesMotor)
 	{
 		GroundRelay &= lowvoltagepower;
 		if (GroundRelayStart != start_t::manual)
@@ -1726,12 +1724,6 @@ void TMoverParameters::LowVoltagePowerCheck(double const /*Deltatime*/)
 			// TODO: generic check method which takes these into account
 			GroundRelay |= lowvoltagepower;
 		}
-		break;
-	}
-	default:
-	{
-		break;
-	}
 	}
 }
 
@@ -1780,17 +1772,9 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 			}
 		}
 		// high voltage power sources
-		switch (EnginePowerSource.SourceType)
-		{
-		case TPowerSource::CurrentCollector:
+		if (EnginePowerSource.SourceType == TPowerSource::CurrentCollector)
 		{
 			localvoltage = std::max(localvoltage, PantographVoltage);
-			break;
-		}
-		default:
-		{
-			break;
-		}
 		}
 		break;
 	}
@@ -2066,9 +2050,7 @@ void TMoverParameters::HeatingCheck(double const /*Timestep*/)
 
 	// update heating devices
 	// TBD, TODO: move this to a separate method?
-	switch (HeatingPowerSource.SourceType)
-	{
-	case TPowerSource::Generator:
+	if (HeatingPowerSource.SourceType == TPowerSource::Generator)
 	{
 		if (HeatingPowerSource.EngineGenerator.engine_revolutions != nullptr && HeatingPowerSource.EngineGenerator.revolutions_max > 0)
 		{
@@ -2087,12 +2069,6 @@ void TMoverParameters::HeatingCheck(double const /*Timestep*/)
 			                                                         std::clamp((absrevolutions - generator.revolutions_min) / (generator.revolutions_max - generator.revolutions_min), 0.0, 1.0))) *
 			                    sign(generator.revolutions);
 		}
-		break;
-	}
-	default:
-	{
-		break;
-	}
 	}
 
 	// quick check first to avoid unnecessary calls...
@@ -4392,21 +4368,16 @@ void TMoverParameters::CompressorCheck(double dt)
 	}
 
 	// working compressor adds air to the air reservoir
-	switch (CompressorPower)
-	{
-	case 3:
+	if (CompressorPower == 3)
 	{
 		// the compressor is coupled with the diesel engine, engine revolutions affect the output
 		CompressedVolume +=
 		    CompressorSpeedF * (2.0 * MaxCompressorF - Compressor) / MaxCompressorF * EngineRPMRatio() * dt * (CompressorGovernorLock ? 0.0 : 1.0); // with the lock active air is vented out
-		break;
 	}
-	default:
+	else
 	{
 		// the compressor is a stand-alone device, working at steady pace
 		CompressedVolume += CompressorSpeedF * (2.0 * MaxCompressorF - Compressor) / MaxCompressorF * dt;
-		break;
-	}
 	}
 
 	if (pressureistoohigh && (false == governorlockispresent || CompressorPower == 3))
@@ -4424,14 +4395,11 @@ void TMoverParameters::CompressorCheck(double dt)
 
 	// tymczasowo tylko obciążenie sprężarki, tak z 5A na sprężarkę
 	// TODO: draw power from proper high- or low voltage circuit
-	switch (CompressorPower)
-	{
-	case 3:
+	if (CompressorPower == 3)
 	{
 		// diesel-powered compressor doesn't draw power
-		break;
 	}
-	default:
+	else
 	{
 		// TODO: drain power from 110v circuit
 		/*
@@ -4439,8 +4407,6 @@ void TMoverParameters::CompressorCheck(double dt)
 		                compressorowner->TotalCurrent += 0.0015 * compressorowner->PantographVoltage;
 		            }
 		*/
-		break;
-	}
 	}
 }
 
@@ -6523,18 +6489,10 @@ double TMoverParameters::TractionForce(double dt)
 		}
 		} // case EngineType
 
-	switch (EngineType)
-	{
-	case TEngineType::DieselElectric:
+	if (EngineType == TEngineType::DieselElectric)
 	{
 		// rough approximation of extra effort to overcome friction etc
 		EnginePower += EngineRPMRatio() * 0.15 * DElist[MainCtrlPosNo].GenPower;
-		break;
-	}
-	default:
-	{
-		break;
-	}
 	}
 
 	return Ft;
@@ -8864,9 +8822,7 @@ bool TMoverParameters::ChangeOffsetH(double DeltaOffset)
 std::string TMoverParameters::EngineDescription(int what) const
 {
 	std::string outstr{"OK"};
-	switch (what)
-	{
-	case 0:
+	if (what == 0)
 	{
 		if (DamageFlag == 255)
 		{
@@ -8916,13 +8872,10 @@ std::string TMoverParameters::EngineDescription(int what) const
 				outstr = "DERAILED";
 			}
 		}
-		break;
 	}
-	default:
+	else
 	{
 		outstr = "Invalid qualifier";
-		break;
-	}
 	}
 	return outstr;
 }
@@ -9066,18 +9019,13 @@ bool TMoverParameters::readMPT0(std::string const &line)
 	{
 		return false;
 	}
-	switch (EngineType)
-	{
-	case TEngineType::DieselEngine:
+	if (EngineType == TEngineType::DieselEngine)
 	{
 		parser >> MotorParam[idx].mIsat >> MotorParam[idx].fi0 >> MotorParam[idx].fi >> MotorParam[idx].mfi0 >> MotorParam[idx].mfi >> MotorParam[idx].Isat;
-		break;
 	}
-	default:
+	else
 	{
 		parser >> MotorParam[idx].mfi >> MotorParam[idx].mIsat >> MotorParam[idx].mfi0 >> MotorParam[idx].fi >> MotorParam[idx].Isat >> MotorParam[idx].fi0;
-		break;
-	}
 	}
 	if (true == parser.getTokens(1, false))
 	{
