@@ -91,14 +91,14 @@ void gl::framebuffer::blit(framebuffer *src, framebuffer *dst, int sx, int sy, i
 
         {
             GLenum outputs[8] = { GL_NONE };
-            outputs[attachment_n] = src != 0 ? attachment : GL_BACK_LEFT;
+            outputs[attachment_n] = src != nullptr ? attachment : GL_BACK_LEFT;
 
             glReadBuffer(attachment);
         }
 
         {
             GLenum outputs[8] = { GL_NONE };
-            outputs[attachment_n] = dst != 0 ? attachment : GL_BACK_LEFT;
+            outputs[attachment_n] = dst != nullptr ? attachment : GL_BACK_LEFT;
 
             glDrawBuffers(attachment_n + 1, outputs);
         }
