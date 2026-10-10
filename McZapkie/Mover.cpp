@@ -9524,7 +9524,7 @@ void TMoverParameters::BrakeValveDecode(std::string const &Valve)
 {
 	using enum TBrakeValve;
 
-	std::map<std::string, TBrakeValve> valvetypes{{"W", W},
+	std::map<std::string, TBrakeValve, std::less<>> valvetypes{{"W", W},
 	                                              {"W_Lu_L", W_Lu_L},
 	                                              {"W_Lu_XR", W_Lu_XR},
 	                                              {"W_Lu_VI", W_Lu_VI},
@@ -10255,7 +10255,7 @@ void TMoverParameters::LoadFIZ_Param(std::string const &line)
 	extract_value(LightPower, "LightP", line, "0");
 
 	{
-		std::map<std::string, int> categories{{"train", 1}, {"road", 2}, {"unimog", 3}, {"ship", 4}, {"airplane,", 8}};
+		std::map<std::string, int, std::less<>> categories{{"train", 1}, {"road", 2}, {"unimog", 3}, {"ship", 4}, {"airplane,", 8}};
 		std::string category;
 		extract_value(category, "Category", line, "none");
 		auto lookup = categories.find(category);
@@ -10267,7 +10267,7 @@ void TMoverParameters::LoadFIZ_Param(std::string const &line)
 	}
 
 	{
-		std::map<std::string, int> types{
+		std::map<std::string, int, std::less<>> types{
 		    {"pseudodiesel", dt_PseudoDiesel},
 		    {"ezt", dt_EZT},
 		    {"dmu", dt_DMU},
@@ -10452,7 +10452,7 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 			extract_value(BrakeVVolume, "BVV", line, "");
 
 			{
-				std::map<std::string, int> brakemethods{{"P10-Bg", bp_P10Bg},  {"P10-Bgu", bp_P10Bgu},  {"FR513", bp_FR513}, {"FR510", bp_FR510},          {"Cosid", bp_Cosid},
+				std::map<std::string, int, std::less<>> brakemethods{{"P10-Bg", bp_P10Bg},  {"P10-Bgu", bp_P10Bgu},  {"FR513", bp_FR513}, {"FR510", bp_FR510},          {"Cosid", bp_Cosid},
 				                                        {"P10yBg", bp_P10yBg}, {"P10yBgu", bp_P10yBgu}, {"Disk1", bp_D1},    {"Disk1+Mg", bp_D1 + bp_MHS}, {"Disk2", bp_D2}};
 				auto lookup = brakemethods.find(extract_value("BM", line));
 				BrakeMethod = lookup != brakemethods.end() ? lookup->second : 0;
@@ -10496,7 +10496,7 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 	extract_value(HandleUnlock, "HandlePipeUnlockPos", line, "-3");
 	extract_value(EmergencyCutsOffHandle, "EmergencyCutsOffHandle", line, "");
 	{
-		std::map<std::string, int> compressorpowers{
+		std::map<std::string, int, std::less<>> compressorpowers{
 		    {"Main", 0},
 		    // 1: default, powered by converter, with manual state control
 		    {"Converter", 2},
@@ -10539,7 +10539,7 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 {
 
-	std::map<std::string, control_t> doorcontrols{
+	std::map<std::string, control_t, std::less<>> doorcontrols{
 	    {"Passenger", control_t::passenger}, {"AutomaticCtrl", control_t::autonomous}, {"DriverCtrl", control_t::driver}, {"Conductor", control_t::conductor}, {"Mixed", control_t::mixed}};
 	// opening method
 	{
@@ -10579,7 +10579,7 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 	extract_value(Doors.range, "DoorMaxShiftR", line, "");
 	extract_value(Doors.range_out, "DoorMaxShiftPlug", line, "");
 
-	std::map<std::string, int> doortypes{
+	std::map<std::string, int, std::less<>> doortypes{
 	    {"Shift", 1},
 	    {"Rotate", 2},
 	    {"Fold", 3},
@@ -10631,7 +10631,7 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 		thiscoupler = &Couplers[0];
 	}
 
-	std::map<std::string, TCouplerType> couplertypes{
+	std::map<std::string, TCouplerType, std::less<>> couplertypes{
 	    {"Automatic", TCouplerType::Automatic}, {"Screw", TCouplerType::Screw}, {"Chain", TCouplerType::Chain}, {"Bare", TCouplerType::Bare}, {"Articulated", TCouplerType::Articulated},
 	};
 	auto lookup = couplertypes.find(extract_value("CType", line));
@@ -10711,7 +10711,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 
 	{
 		using enum TBrakeSystem;
-		std::map<std::string, TBrakeSystem> brakesystems{{"Pneumatic", Pneumatic}, {"ElectroPneumatic", ElectroPneumatic}};
+		std::map<std::string, TBrakeSystem, std::less<>> brakesystems{{"Pneumatic", Pneumatic}, {"ElectroPneumatic", ElectroPneumatic}};
 		auto lookup = brakesystems.find(extract_value("BrakeSystem", line));
 		BrakeSystem = lookup != brakesystems.end() ? lookup->second : Individual;
 	}
@@ -10727,7 +10727,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		}
 		// brakedelays, brakedelayflag
 		{
-			std::map<std::string, int> brakedelays{{"GPR", bdelay_G + bdelay_P + bdelay_R},
+			std::map<std::string, int, std::less<>> brakedelays{{"GPR", bdelay_G + bdelay_P + bdelay_R},
 			                                       {"PR", bdelay_P + bdelay_R},
 			                                       {"GP", bdelay_G + bdelay_P},
 			                                       {"R", bdelay_R},
@@ -10735,7 +10735,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 			                                       {"G", bdelay_G},
 			                                       {"GPR+Mg", bdelay_G + bdelay_P + bdelay_R + bdelay_M},
 			                                       {"PR+Mg", bdelay_P + bdelay_R + bdelay_M}};
-			std::map<std::string, int> brakedelayflags{{"R", bdelay_R}, {"P", bdelay_P}, {"G", bdelay_G}};
+			std::map<std::string, int, std::less<>> brakedelayflags{{"R", bdelay_R}, {"P", bdelay_P}, {"G", bdelay_G}};
 			std::string brakedelay;
 			extract_value(brakedelay, "BrakeDelays", line, "");
 			auto lookup = brakedelays.find(brakedelay);
@@ -10745,13 +10745,13 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		}
 		// brakeopmode
 		{
-			std::map<std::string, int> brakeopmodes{{"PN", bom_PS + bom_PN}, {"PNEP", bom_PS + bom_PN + bom_EP}, {"PNEPMED", bom_PS + bom_PN + bom_EP + bom_MED}};
+			std::map<std::string, int, std::less<>> brakeopmodes{{"PN", bom_PS + bom_PN}, {"PNEP", bom_PS + bom_PN + bom_EP}, {"PNEPMED", bom_PS + bom_PN + bom_EP + bom_MED}};
 			auto lookup = brakeopmodes.find(extract_value("BrakeOpModes", line));
 			BrakeOpModes = lookup != brakeopmodes.end() ? lookup->second : 0;
 		}
 		// brakehandle
 		{
-			std::map<std::string, TBrakeHandle> brakehandles{
+			std::map<std::string, TBrakeHandle, std::less<>> brakehandles{
 			    {"FV4a", FV4a},       {"test", testH},    {"D2", D2},      {"MHZ_EN57", MHZ_EN57}, {"MHZ_K5P", MHZ_K5P},
 			    {"MHZ_K8P", MHZ_K8P}, {"MHZ_6P", MHZ_6P}, {"M394", M394},  {"Knorr", Knorr},       {"Westinghouse", West},
 			    {"FVel6", FVel6},     {"FVE408", FVE408}, {"St113", St113}};
@@ -10766,7 +10766,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		extract_value(Handle_OverloadPressureDecrease, "OPD", line, "");
 		// brakelochandle
 		{
-			std::map<std::string, TBrakeHandle> locbrakehandles{{"FD1", FD1}, {"Knorr", Knorr}, {"Westinghouse", West}};
+			std::map<std::string, TBrakeHandle, std::less<>> locbrakehandles{{"FD1", FD1}, {"Knorr", Knorr}, {"Westinghouse", West}};
 			auto lookup = locbrakehandles.find(extract_value("LocBrakeHandle", line));
 			BrakeLocHandle = lookup != locbrakehandles.end() ? lookup->second : NoHandle;
 		}
@@ -10809,7 +10809,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	// localbrake
 	{
 		using enum TLocalBrake;
-		std::map<std::string, TLocalBrake> localbrakes{{"ManualBrake", ManualBrake}, {"PneumaticBrake", PneumaticBrake}, {"HydraulicBrake", HydraulicBrake}};
+		std::map<std::string, TLocalBrake, std::less<>> localbrakes{{"ManualBrake", ManualBrake}, {"PneumaticBrake", PneumaticBrake}, {"HydraulicBrake", HydraulicBrake}};
 		auto lookup = localbrakes.find(extract_value("LocalBrake", line));
 		LocalBrake = lookup != localbrakes.end() ? lookup->second : NoBrake;
 	}
@@ -10821,7 +10821,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 
 	// dynamicbrake
 	{
-		std::map<std::string, int> dynamicbrakes{{"Passive", dbrake_passive}, {"Switch", dbrake_switch}, {"Reversal", dbrake_reversal}, {"Automatic", dbrake_automatic}};
+		std::map<std::string, int, std::less<>> dynamicbrakes{{"Passive", dbrake_passive}, {"Switch", dbrake_switch}, {"Reversal", dbrake_reversal}, {"Automatic", dbrake_automatic}};
 		auto lookup = dynamicbrakes.find(extract_value("DynamicBrake", line));
 		DynamicBrakeType = lookup != dynamicbrakes.end() ? lookup->second : dbrake_none;
 		extract_value(DynamicBrakeAmpmeters, "DBAM", line, "");
@@ -10894,7 +10894,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(shouldHoldBatteryButton, "SBBBH", line, "");
 	extract_value(BatteryButtonHoldTime, "BBHT", line, "");
 
-	std::map<std::string, start_t> starts{{"Disabled", start_t::disabled}, {"Manual", start_t::manual},       {"Automatic", start_t::automatic}, {"Mixed", start_t::manualwithautofallback},
+	std::map<std::string, start_t, std::less<>> starts{{"Disabled", start_t::disabled}, {"Manual", start_t::manual},       {"Automatic", start_t::automatic}, {"Mixed", start_t::manualwithautofallback},
 	                                      {"Battery", start_t::battery},   {"Converter", start_t::converter}, {"Direction", start_t::direction}};
 
 	// main circuit
@@ -11671,7 +11671,7 @@ TPowerType TMoverParameters::LoadFIZ_PowerDecode(std::string const &Powertype) c
 {
 	using enum TPowerType;
 
-	std::map<std::string, TPowerType> powertypes{
+	std::map<std::string, TPowerType, std::less<>> powertypes{
 	    {"BioPower", BioPower}, {"MechPower", MechPower}, {"ElectricPower", ElectricPower}, {"SteamPower", SteamPower}};
 	auto lookup = powertypes.find(Powertype);
 	return lookup != powertypes.end() ? lookup->second : NoPower;
@@ -11681,7 +11681,7 @@ TPowerSource TMoverParameters::LoadFIZ_SourceDecode(std::string const &Source) c
 {
 	using enum TPowerSource;
 
-	std::map<std::string, TPowerSource> powersources{{"Transducer", Transducer},   {"Generator", Generator},
+	std::map<std::string, TPowerSource, std::less<>> powersources{{"Transducer", Transducer},   {"Generator", Generator},
 	                                                 {"Accu", Accumulator}, // legacy compatibility leftover. TODO: check if we can get rid of it
 	                                                 {"Accumulator", Accumulator}, {"CurrentCollector", CurrentCollector},
 	                                                 {"PowerCable", PowerCable},   {"Heater", Heater},
@@ -11694,7 +11694,7 @@ TEngineType TMoverParameters::LoadFIZ_EngineDecode(std::string const &Engine) co
 {
 	using enum TEngineType;
 
-	std::map<std::string, TEngineType> enginetypes{{"ElectricSeriesMotor", ElectricSeriesMotor},
+	std::map<std::string, TEngineType, std::less<>> enginetypes{{"ElectricSeriesMotor", ElectricSeriesMotor},
 	                                               {"DieselEngine", DieselEngine},
 	                                               {"SteamEngine", SteamEngine},
 	                                               {"WheelsDriven", WheelsDriven},

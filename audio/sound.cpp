@@ -235,7 +235,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
     else if( key == "placement:" ) {
         using enum sound_placement;
         auto const value { Input.getToken<std::string>( true, "\n\r\t ,;" ) };
-        std::map<std::string, sound_placement> const placements {
+        std::map<std::string, sound_placement, std::less<>> const placements {
             { "internal", internal },
             { "engine", engine },
             { "external", external },
@@ -256,7 +256,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
     }
     else {
         // floating point properties
-        std::map<std::string, float &> const properties {
+        std::map<std::string, float &, std::less<>> const properties {
             { "frequencyfactor:", m_frequencyfactor },
             { "frequencyoffset:", m_frequencyoffset },
             { "amplitudefactor:", m_amplitudefactor },

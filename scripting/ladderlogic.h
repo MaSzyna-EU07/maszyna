@@ -116,7 +116,7 @@ private:
     auto element( element_handle const Element ) -> basic_element & {
         return m_elements[ Element - 1 ]; }
 // members
-    static std::map<std::string, basic_controller::opcode_e> const m_operationcodemap;
+    static std::map<std::string, basic_controller::opcode_e, std::less<>> const m_operationcodemap;
     element_sequence m_elements; // collection of elements accessed by the plc program
     name_sequence m_elementnames;
     handle_sequence m_timerhandles; // indices of timer elements, timer update optimization helper
