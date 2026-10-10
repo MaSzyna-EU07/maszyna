@@ -275,7 +275,7 @@ class TReservoir
 };
 
 /// <summary>Pointer typedef for a reservoir instance.</summary>
-typedef TReservoir *PReservoir;
+using PReservoir = TReservoir *;
 
 /// <summary>
 /// Brake cylinder reservoir — overrides pressure functions to model the

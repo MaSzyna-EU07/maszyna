@@ -455,8 +455,8 @@ class command_queue {
 
 public:
 // types
-	typedef std::deque<command_data> commanddata_sequence;
-	typedef std::unordered_map<uint32_t, commanddata_sequence> commands_map;
+	using commanddata_sequence = std::deque<command_data>;
+	using commands_map = std::unordered_map<uint32_t, commanddata_sequence>;
 // methods
 	// posts specified command for specified recipient into m_intercept_queue
 	void
@@ -511,7 +511,7 @@ void add_to_dequemap(std::unordered_map<A, std::deque<B>> &lhs, const std::unord
 //       but realistically it's not like we're going to run more than one simulation at a time
 namespace simulation {
 
-typedef std::vector<command_description> commanddescription_sequence;
+using commanddescription_sequence = std::vector<command_description>;
 
 extern command_queue Commands;
 // TODO: add name to command map, and wrap these two into helper object

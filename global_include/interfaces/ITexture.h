@@ -1,6 +1,6 @@
 #pragma once
 
-typedef int texture_handle;
+using texture_handle = int;
 
 #define null_handle (0)
 
