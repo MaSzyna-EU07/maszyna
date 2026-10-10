@@ -18,7 +18,7 @@ namespace network::tcp
 		friend class client;
 
 	public:
-                connection(asio::io_context &io_ctx, bool client = false, size_t counter = 0);
+                explicit connection(asio::io_context &io_ctx, bool client = false, size_t counter = 0);
 		~connection();
 
 		void connected() override;

@@ -15,8 +15,8 @@ namespace gl
         static std::shared_ptr<gl::vao> vao;
 
     public:
-        postfx(const std::string &s);
-        postfx(const shader &s);
+        explicit postfx(const std::string &s);
+        explicit postfx(const shader &s);
 
         void attach();
         void apply(opengl_texture &src, framebuffer *dst);

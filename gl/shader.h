@@ -21,7 +21,7 @@ namespace gl
 #ifdef SHADERVALIDATOR_STANDALONE
         shader() = default;
 #endif
-        shader(const std::string &filename);
+        explicit shader(const std::string &filename);
         ~shader();
 
         enum class components_e
@@ -85,7 +85,7 @@ namespace gl
     {
     public:
         program();
-        program(std::vector<std::reference_wrapper<const gl::shader>>);
+        explicit program(std::vector<std::reference_wrapper<const gl::shader>>);
         ~program();
 
         using bindable::bind;
