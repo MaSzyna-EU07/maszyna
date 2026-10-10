@@ -145,7 +145,7 @@ void ui::vehicles_bank::parse_texture_info(const std::string &target, const std:
 	vehicle->matching_skinsets.push_back(std::make_shared<skin_set>(std::move(set)));
 }
 
-std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &str)
+std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &str) const
 {
 	std::istringstream stream(str);
 

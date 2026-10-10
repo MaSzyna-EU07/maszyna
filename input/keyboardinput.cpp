@@ -225,7 +225,7 @@ keyboard_input::recall_bindings() {
     return true;
 }
 
-void keyboard_input::dump_bindings()
+void keyboard_input::dump_bindings() const
 {
 	std::fstream stream("eu07_input-keyboard.ini",
 	             std::ios_base::binary | std::ios_base::trunc | std::ios_base::out);

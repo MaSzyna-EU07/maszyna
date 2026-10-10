@@ -10167,7 +10167,7 @@ void TTrain::update_sounds(double const Deltatime)
 	update_sounds_radio();
 }
 
-void TTrain::update_sounds_resonancenoise(sound_source &Sound)
+void TTrain::update_sounds_resonancenoise(sound_source &Sound) const
 {
 	// frequency calculation
 	auto const normalizer{mvOccupied->Vmax * 0.01f};

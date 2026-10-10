@@ -14,7 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "utilities/utilities.h"
 
-double TTrainParameters::CheckTrainLatency()
+double TTrainParameters::CheckTrainLatency() const
 {
     if (LastStationLatency > 1.0 || LastStationLatency < 0)
         return LastStationLatency; /*spoznienie + lub do przodu - z tolerancja 1 min*/
@@ -22,7 +22,7 @@ double TTrainParameters::CheckTrainLatency()
         return 0;
 }
 
-double TTrainParameters::WatchMTable(double DistCounter)
+double TTrainParameters::WatchMTable(double DistCounter) const
 { // zwraca odleglość do najblizszej stacji z zatrzymaniem
     double dist;
 
@@ -163,7 +163,7 @@ void TTrainParameters::StationIndexInc()
     ++StationIndex;
 }
 
-bool TTrainParameters::IsTimeToGo(double hh, double mm)
+bool TTrainParameters::IsTimeToGo(double hh, double mm) const
 // sprawdzenie, czy można już odjechać z aktualnego zatrzymania
 // StationIndex to numer następnego po dodarciu do aktualnego
 {
@@ -629,7 +629,7 @@ TTrainParameters::load_sounds() {
     }
 }
 
-bool TTrainParameters::DirectionChange()
+bool TTrainParameters::DirectionChange() const
 // sprawdzenie, czy po zatrzymaniu wykonać kolejne komendy
 {
     if (StationIndex > 0 && StationIndex < StationCount) // dla ostatniej stacji nie

@@ -349,7 +349,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
     return elementcount;
 }
 
-int TTraction::TestPoint(glm::dvec3 const &Point)
+int TTraction::TestPoint(glm::dvec3 const &Point) const
 { // sprawdzanie, czy przęsła można połączyć
     if( hvNext[0] == nullptr
      && glm::all(glm::epsilonEqual(Point, pPoint1, 0.025)) ) {

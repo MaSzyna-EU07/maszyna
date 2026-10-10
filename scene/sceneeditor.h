@@ -46,17 +46,17 @@ private:
     void
         translate_node( scene::basic_node *Node, float const Offset );
     void
-        translate_instance( TAnimModel *Instance, glm::dvec3 const &Location );
+        translate_instance( TAnimModel *Instance, glm::dvec3 const &Location ) const;
     void
-        translate_instance( TAnimModel *Instance, float const Offset );
+        translate_instance( TAnimModel *Instance, float const Offset ) const;
     void
-        translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location );
+        translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location ) const;
     void
-        translate_memorycell( TMemCell *Memorycell, float const Offset );
+        translate_memorycell( TMemCell *Memorycell, float const Offset ) const;
     void
         rotate_node( scene::basic_node *Node, glm::vec3 const &Angle );
     void
-        rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle );
+        rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle ) const;
 };
 
 } // scene

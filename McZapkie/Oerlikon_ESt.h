@@ -208,12 +208,12 @@ class TNESt3 : public TBrake {
 	{}
     void Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF ) override;
     double GetPF( double const PP, double const dt, double const Vel ) override; // przeplyw miedzy komora wstepna i PG
-    void EStParams(double i_crc); // parametry charakterystyczne dla ESt
+    void EStParams(double i_crc) const; // parametry charakterystyczne dla ESt
     double GetCRP() override;
     void CheckState(double const BCP, double &dV1); // glowny przyrzad rozrzadczy
     void CheckReleaser(double const dt); // odluzniacz
-    double CVs(double const BP); // napelniacz sterujacego
-    double BVs(double const BCP); // napelniacz pomocniczego
+    double CVs(double const BP) const; // napelniacz sterujacego
+    double BVs(double const BCP) const; // napelniacz pomocniczego
     void SetSize( int const size, std::string const &params ); // ustawianie dysz (rozmiaru ZR), przekladniki
     void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej
     void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej

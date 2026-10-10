@@ -56,7 +56,7 @@ smoke_source::particle_emitter::deserialize( cParser &Input ) {
 }
 
 void
-smoke_source::particle_emitter::initialize( smoke_particle &Particle ) {
+smoke_source::particle_emitter::initialize( smoke_particle &Particle ) const {
 
     auto const polarangle { glm::radians( LocalRandom( inclination[ value_limit::min ], inclination[ value_limit::max ] ) ) }; // theta
     auto const azimuthalangle { glm::radians( LocalRandom( -180, 180 ) ) }; // phi

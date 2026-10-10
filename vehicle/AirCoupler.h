@@ -30,7 +30,7 @@ public:
     void Init(std::string const &asName, TModel3d *Model);
     ///Loads info about coupler.
     void Load(cParser *Parser, TModel3d *Model);
-    int GetStatus();
+    int GetStatus() const;
     inline void TurnOn() ///Turns on straight coupler.
     {
         On = true;

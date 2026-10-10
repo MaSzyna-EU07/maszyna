@@ -93,7 +93,7 @@ public:
         GetDirection() const {
             return CPointOut; };
 	glm::dvec3
-        FastGetDirection(double const fDistance, double const fOffset);
+        FastGetDirection(double const fDistance, double const fOffset) const;
 /*
     Math3D::vector3
         GetPoint(double const fDistance) const;

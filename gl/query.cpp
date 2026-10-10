@@ -49,7 +49,7 @@ std::optional<int64_t> gl::query::result()
 	return std::nullopt;
 }
 
-GLenum gl::query::glenum_target(targets target)
+GLenum gl::query::glenum_target(targets target) const
 {
 	static GLenum mapping[6] =
 	{

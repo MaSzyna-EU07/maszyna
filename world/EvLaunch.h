@@ -30,10 +30,10 @@ public:
 
 // methods
     bool Load( cParser *parser );
-	bool check_activation_key();
+	bool check_activation_key() const;
     bool check_activation();
     // checks conditions associated with the event. returns: true if the conditions are met
-    bool check_conditions();
+    bool check_conditions() const;
     inline
     auto key() const {
         return iKey; }

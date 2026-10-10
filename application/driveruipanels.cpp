@@ -1057,7 +1057,7 @@ debug_panel::update_vehicle_brake() const {
 }
 
 void
-debug_panel::update_section_engine( std::vector<text_line> &Output ) {
+debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 
 	if( m_input.vehicle == nullptr ) { return; }
 	if( m_input.mover == nullptr ) { return; }
@@ -1138,7 +1138,7 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) {
 }
 
 void
-debug_panel::update_section_ai( std::vector<text_line> &Output ) {
+debug_panel::update_section_ai( std::vector<text_line> &Output ) const {
 
     if( m_input.mover == nullptr )    { return; }
     if( m_input.mechanik == nullptr ) { return; }
@@ -1262,7 +1262,7 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
 }
 
 void
-debug_panel::update_section_scantable( std::vector<text_line> &Output ) {
+debug_panel::update_section_scantable( std::vector<text_line> &Output ) const {
 
 	if( m_input.mechanik == nullptr ) { return; }
 
@@ -1284,7 +1284,7 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) {
 
 #ifdef WITH_UART
 void
-debug_panel::update_section_uart( std::vector<text_line> &Output ) {
+debug_panel::update_section_uart( std::vector<text_line> &Output ) const {
     uart_status *status = &UartStatus;
 
     Output.emplace_back(
@@ -1312,7 +1312,7 @@ debug_panel::update_section_uart( std::vector<text_line> &Output ) {
 #endif
 
 void
-debug_panel::update_section_scenario( std::vector<text_line> &Output ) {
+debug_panel::update_section_scenario( std::vector<text_line> &Output ) const {
 
     auto textline =
         "vehicles: " + to_string( Timer::subsystem.sim_dynamics.average(), 2 ) + " msec"
@@ -1378,7 +1378,7 @@ debug_panel::update_section_eventqueue( std::vector<text_line> &Output ) {
 }
 
 void
-debug_panel::update_section_powergrid( std::vector<text_line> &Output ) {
+debug_panel::update_section_powergrid( std::vector<text_line> &Output ) const {
 
 	auto const lowpowercolor { glm::vec4( 164.0f / 255.0f, 132.0f / 255.0f, 84.0f / 255.0f, 1.f ) };
 	auto const nopowercolor { glm::vec4( 164.0f / 255.0f, 84.0f / 255.0f, 84.0f / 255.0f, 1.f ) };
@@ -1420,7 +1420,7 @@ debug_panel::update_section_powergrid( std::vector<text_line> &Output ) {
 }
 
 void
-debug_panel::update_section_camera( std::vector<text_line> &Output ) {
+debug_panel::update_section_camera( std::vector<text_line> &Output ) const {
 
 	if( m_input.camera == nullptr ) { return; }
 
@@ -1446,7 +1446,7 @@ debug_panel::update_section_camera( std::vector<text_line> &Output ) {
 }
 
 void
-debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
+debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 
             // gfx renderer data
             auto textline =
@@ -1526,7 +1526,7 @@ debug_panel::render_section( std::string const &Header, std::vector<text_line> c
 }
 
 bool
-debug_panel::render_section( std::vector<text_line> const &Lines ) {
+debug_panel::render_section( std::vector<text_line> const &Lines ) const {
 
     for( auto const &line : Lines ) {
         ImGui::PushStyleColor( ImGuiCol_Text, { line.color.r, line.color.g, line.color.b, line.color.a } );
@@ -1537,7 +1537,7 @@ debug_panel::render_section( std::vector<text_line> const &Lines ) {
 	return true;
 }
 
-bool debug_panel::render_section_developer()
+bool debug_panel::render_section_developer() const
 {
 	if (false == ImGui::CollapsingHeader("Developer tools"))
 		return false;
@@ -1553,7 +1553,7 @@ bool debug_panel::render_section_developer()
 }
 
 bool
-debug_panel::render_section_settings() {
+debug_panel::render_section_settings() const {
 
     if( false == ImGui::CollapsingHeader( "Settings" ) ) { return false; }
 

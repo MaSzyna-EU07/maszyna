@@ -1068,7 +1068,7 @@ ZN //masa
 // Q: 20160714
 // Oblicza iloraz aktualnej pozycji do maksymalnej hamulca pomocnicznego
 // *****************************************************************************
-double TMoverParameters::LocalBrakeRatio(void)
+double TMoverParameters::LocalBrakeRatio(void) const
 {
 	double LBR;
 	if (BrakeHandle == TBrakeHandle::MHZ_EN57)
@@ -1092,7 +1092,7 @@ double TMoverParameters::LocalBrakeRatio(void)
 // Q: 20160714
 // Oblicza iloraz aktualnej pozycji do maksymalnej hamulca ręcznego
 // *****************************************************************************
-double TMoverParameters::ManualBrakeRatio(void)
+double TMoverParameters::ManualBrakeRatio(void) const
 {
 	double MBR;
 
@@ -1119,7 +1119,7 @@ double TMoverParameters::BrakeVP(void) const
 // Q: 20160713
 // Zwraca iloraz różnicy między przewodem kontrolnym i głównym oraz DeltaPipePress
 // *****************************************************************************
-double TMoverParameters::RealPipeRatio(void)
+double TMoverParameters::RealPipeRatio(void) const
 {
 	double rpp;
 
@@ -1134,7 +1134,7 @@ double TMoverParameters::RealPipeRatio(void)
 // Q: 20160713
 // Zwraca iloraz ciśnienia w przewodzie do DeltaPipePress
 // *****************************************************************************
-double TMoverParameters::PipeRatio(void)
+double TMoverParameters::PipeRatio(void) const
 {
 	double pr;
 
@@ -2000,7 +2000,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 	}
 }
 
-double TMoverParameters::ShowEngineRotation(int VehN)
+double TMoverParameters::ShowEngineRotation(int VehN) const
 { // Zwraca wartość prędkości obrotowej silnika wybranego pojazdu. Do 3 pojazdów (3×SN61).
 	int b;
 	switch (VehN)
@@ -2871,7 +2871,7 @@ bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
 	return OK;
 }
 
-int TMoverParameters::GetVirtualScndPos()
+int TMoverParameters::GetVirtualScndPos() const
 {
 	if (TrainType == dt_ET42)
 	{
@@ -5187,7 +5187,7 @@ double TMoverParameters::BrakeForceR(double ratio, double velocity)
 	return BrakeForceP(press * ratio, velocity);
 }
 
-double TMoverParameters::BrakeForceP(double press, double velocity)
+double TMoverParameters::BrakeForceP(double press, double velocity) const
 {
 	double BFP = 0;
 	double K = ((press * P2FTrans - BrakeCylSpring) * BrakeCylMult[0] - BrakeSlckAdj) * BrakeRigEff;
@@ -6768,7 +6768,7 @@ double TMoverParameters::v2n(void)
 // Q: 20160714
 // Oblicza moment siły wytwarzany przez silnik
 // *************************************************************************************************
-double TMoverParameters::Momentum(double I)
+double TMoverParameters::Momentum(double I) const
 {
 	// liczy moment sily wytwarzany przez silnik elektryczny}
 	int SP;
@@ -6786,7 +6786,7 @@ double TMoverParameters::Momentum(double I)
 // Q: 20160714
 // Oblicza moment siły do sterowania wzbudzeniem
 // *************************************************************************************************
-double TMoverParameters::MomentumF(double I, double Iw, int SCP)
+double TMoverParameters::MomentumF(double I, double Iw, int SCP) const
 {
 	// umozliwia dokladne sterowanie wzbudzeniem
 
@@ -11735,7 +11735,7 @@ void TMoverParameters::LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparamete
 	}
 }
 
-TPowerType TMoverParameters::LoadFIZ_PowerDecode(std::string const &Power)
+TPowerType TMoverParameters::LoadFIZ_PowerDecode(std::string const &Power) const
 {
 
 	std::map<std::string, TPowerType> powertypes{
@@ -11744,7 +11744,7 @@ TPowerType TMoverParameters::LoadFIZ_PowerDecode(std::string const &Power)
 	return lookup != powertypes.end() ? lookup->second : TPowerType::NoPower;
 }
 
-TPowerSource TMoverParameters::LoadFIZ_SourceDecode(std::string const &Source)
+TPowerSource TMoverParameters::LoadFIZ_SourceDecode(std::string const &Source) const
 {
 
 	std::map<std::string, TPowerSource> powersources{{"Transducer", TPowerSource::Transducer},   {"Generator", TPowerSource::Generator},
@@ -11756,7 +11756,7 @@ TPowerSource TMoverParameters::LoadFIZ_SourceDecode(std::string const &Source)
 	return lookup != powersources.end() ? lookup->second : TPowerSource::NotDefined;
 }
 
-TEngineType TMoverParameters::LoadFIZ_EngineDecode(std::string const &Engine)
+TEngineType TMoverParameters::LoadFIZ_EngineDecode(std::string const &Engine) const
 {
 
 	std::map<std::string, TEngineType> enginetypes{{"ElectricSeriesMotor", TEngineType::ElectricSeriesMotor},
@@ -12187,7 +12187,7 @@ void TMoverParameters::PutCommand(std::string NewCommand, double NewValue1, doub
 // Q: 20160714
 // Pobiera komendę z parametru funkcji oraz wartość zmiennej jako return
 // *************************************************************************************************
-double TMoverParameters::GetExternalCommand(std::string &Command)
+double TMoverParameters::GetExternalCommand(std::string &Command) const
 {
 	Command = CommandOut;
 	return ValueOut;

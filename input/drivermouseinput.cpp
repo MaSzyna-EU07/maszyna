@@ -1116,7 +1116,7 @@ drivermouse_input::default_bindings() {
 }
 
 user_command
-drivermouse_input::adjust_command( user_command Command ) {
+drivermouse_input::adjust_command( user_command Command ) const {
 
     if( true == Global.shiftState
      && Command != user_command::none ) {

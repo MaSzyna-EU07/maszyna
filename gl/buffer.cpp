@@ -22,7 +22,7 @@ GLenum gl::buffer::glenum_target(gl::buffer::targets target)
     return mapping[target];
 }
 
-void gl::buffer::bind(targets target)
+void gl::buffer::bind(targets target) const
 {
     if (binding_points[target] == *this)
         return;
@@ -31,7 +31,7 @@ void gl::buffer::bind(targets target)
     binding_points[target] = *this;
 }
 
-void gl::buffer::bind_base(targets target, GLuint index)
+void gl::buffer::bind_base(targets target, GLuint index) const
 {
     glBindBufferBase(glenum_target(target), index, *this);
     binding_points[target] = *this;

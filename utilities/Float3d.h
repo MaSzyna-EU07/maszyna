@@ -217,7 +217,7 @@ public:
 
 	void deserialize_float32(std::istream&);
 	void deserialize_float64(std::istream&);
-	void serialize_float32(std::ostream&);
+	void serialize_float32(std::ostream&) const;
     float4x4() = default;
     float4x4(const float f[16])
     {
@@ -254,7 +254,7 @@ public:
         }
     };
     inline float4x4 &Rotation(float const angle, float3 const &axis);
-    inline bool IdentityIs()
+    inline bool IdentityIs() const
     { // sprawdzenie jednostkowości
         for (int i = 0; i < 16; ++i)
             if (e[i] != (i % 5 ? 0.0 : 1.0)) // jedynki tylko na 0, 5, 10 i 15

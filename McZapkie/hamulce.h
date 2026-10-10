@@ -399,7 +399,7 @@ class TBrake
 	/// Returns the piston force produced by the brake cylinder pressure.
 	/// </summary>
 	/// <returns>Force in arbitrary engine units (BCA * 100 * P).</returns>
-	double GetBCF(); // sila tlokowa z tloka
+	double GetBCF() const; // sila tlokowa z tloka
 	/// <summary>
 	/// Computes the airflow drawn from the high-pressure (8 bar / main) line for one step.
 	/// </summary>
@@ -408,16 +408,16 @@ class TBrake
 	/// <returns>Net flow from the high-pressure line.</returns>
 	virtual double GetHPFlow(double const HP, double const dt); // przeplyw - 8 bar
 	/// <summary>Returns brake cylinder gauge pressure [bar].</summary>
-	double GetBCP(); // cisnienie cylindrow hamulcowych
+	double GetBCP() const; // cisnienie cylindrow hamulcowych
 	/// <summary>
 	/// Returns brake cylinder pressure originating only from the pneumatic
 	/// (main) brake — used to drive the ED (electrodynamic) brake e.g. in EP09.
 	/// </summary>
 	virtual double GetEDBCP(); // cisnienie tylko z hamulca zasadniczego, uzywane do hamulca ED w EP09
 	/// <summary>Returns auxiliary reservoir (ZP) pressure [bar].</summary>
-	double GetBRP(); // cisnienie zbiornika pomocniczego
+	double GetBRP() const; // cisnienie zbiornika pomocniczego
 	/// <summary>Returns valve pre-chamber pressure [bar].</summary>
-	double GetVRP(); // cisnienie komory wstepnej rozdzielacza
+	double GetVRP() const; // cisnienie komory wstepnej rozdzielacza
 	/// <summary>Returns control reservoir (ZS) pressure [bar]; defaults to the auxiliary reservoir for valves without a dedicated ZS.</summary>
 	virtual double GetCRP(); // cisnienie zbiornika sterujacego
 	/// <summary>
@@ -468,7 +468,7 @@ class TBrake
 	/// <param name="state">Two-bit value: bit1 = hold (b_asb), bit0 = release (b_asb_unbrake).</param>
 	void ASB(int state); // hamulec przeciwposlizgowy
 	/// <summary>Returns the raw BrakeStatus flags (for sound/visual cues).</summary>
-	int GetStatus(); // flaga statusu, moze sie przydac do odglosow
+	int GetStatus() const; // flaga statusu, moze sie przydac do odglosow
 	/// <summary>Sets the anti-slip target pressure.</summary>
 	/// <param name="Press">Pressure [bar].</param>
 	void SetASBP(double const Press); // ustalenie cisnienia pp
@@ -581,7 +581,7 @@ class TESt : public TBrake
 	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Sets ESt-specific characteristic parameters (placeholder; used by some variants).</summary>
 	/// <param name="i_crc">Characteristic value.</param>
-	void EStParams(double i_crc); // parametry charakterystyczne dla ESt
+	void EStParams(double i_crc) const; // parametry charakterystyczne dla ESt
 	/// <summary>Returns the control reservoir (ZS) pressure.</summary>
 	double GetCRP() override;
 	/// <summary>
@@ -601,14 +601,14 @@ class TESt : public TBrake
 	/// </summary>
 	/// <param name="BP">Cylinder pressure (or impulse-chamber pressure).</param>
 	/// <returns>Dimensionless opening coefficient.</returns>
-	double CVs(double BP); // napelniacz sterujacego
+	double CVs(double BP) const; // napelniacz sterujacego
 	/// <summary>
 	/// Returns the effective opening factor of the auxiliary-reservoir filling
 	/// slide valve (ZP &lt;-&gt; pre-chamber path).
 	/// </summary>
 	/// <param name="BCP">Brake cylinder pressure.</param>
 	/// <returns>Dimensionless opening coefficient.</returns>
-	double BVs(double BCP); // napelniacz pomocniczego
+	double BVs(double BCP) const; // napelniacz pomocniczego
 	/// <summary>Vents the valve, brake and control reservoirs to zero.</summary>
 	void ForceEmptiness() override; // wymuszenie bycia pustym
 
@@ -874,9 +874,9 @@ class TCV1 : public TBrake
 	/// <param name="dV1">In/out brake pipe flow correction.</param>
 	void CheckState(double const BCP, double &dV1);
 	/// <summary>Returns the ZS-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double CVs(double const BP);
+	double CVs(double const BP) const;
 	/// <summary>Returns the ZP-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double BVs(double const BCP);
+	double BVs(double const BCP) const;
 	/// <summary>Vents valve, brake and control reservoirs to zero.</summary>
 	void ForceEmptiness() override; // wymuszenie bycia pustym
 
@@ -982,9 +982,9 @@ class TKE : public TBrake
 	/// <summary>Drives the releaser logic for KE — bleeds the control reservoir while engaged.</summary>
 	void CheckReleaser(double const dt); // odluzniacz
 	/// <summary>ZS-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double CVs(double const BP); // napelniacz sterujacego
+	double CVs(double const BP) const; // napelniacz sterujacego
 	/// <summary>ZP-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double BVs(double const BCP); // napelniacz pomocniczego
+	double BVs(double const BCP) const; // napelniacz pomocniczego
 	/// <summary>Recomputes LoadC for the current vehicle mass.</summary>
 	void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej
 	/// <summary>Stores the load-weighing parameters.</summary>
@@ -1140,9 +1140,9 @@ class TFV4aM : public TDriverHandle
 	/// Returns the brake pipe pressure target interpolated from BPT[] for the given handle position.
 	/// </summary>
 	/// <param name="pos">Handle position.</param>
-	double LPP_RP(double pos);
+	double LPP_RP(double pos) const;
 	/// <summary>Returns true if pos is within ±0.5 of i_pos (detent comparison).</summary>
-	bool EQ(double pos, double i_pos);
+	bool EQ(double pos, double i_pos) const;
 
   public:
 	/// <summary>Computes brake pipe flow for the FV4a/M handle (interpolated BPT, wave modelling, accelerator).</summary>
@@ -1190,9 +1190,9 @@ class TMHZ_EN57 : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns the brake pipe pressure target for the given handle position (piecewise).</summary>
-	double LPP_RP(double pos);
+	double LPP_RP(double pos) const;
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	bool EQ(double pos, double i_pos) const;
 
   public:
 	/// <summary>Computes brake pipe flow for MHZ_EN57 (covers handle positions -1..10 with EP/pneumatic mix).</summary>
@@ -1246,7 +1246,7 @@ class TMHZ_K5P : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	bool EQ(double pos, double i_pos) const;
 
   public:
 	/// <summary>Computes brake pipe flow for the K5P 5-position handle (release / cut-off / brake / emergency).</summary>
@@ -1299,7 +1299,7 @@ class TMHZ_6P : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	bool EQ(double pos, double i_pos) const;
 
   public:
 	/// <summary>Computes brake pipe flow for the 6P handle.</summary>

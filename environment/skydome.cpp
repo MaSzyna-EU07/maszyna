@@ -146,7 +146,7 @@ void CSkyDome::SetOvercastFactor( float const Overcast ) {
 	m_overcast = std::clamp( Overcast, 0.0f, 1.0f ) * 0.75f; // going above 0.65 makes the model go pretty bad, appearance-wise
 }
 
-void CSkyDome::GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity ) {
+void CSkyDome::GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity ) const {
 
 	Perez[ 0 ] = Distribution[ 0 ][ 0 ] * Turbidity + Distribution[ 0 ][ 1 ];
 	Perez[ 1 ] = Distribution[ 1 ][ 0 ] * Turbidity + Distribution[ 1 ][ 1 ];
@@ -155,7 +155,7 @@ void CSkyDome::GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float
 	Perez[ 4 ] = Distribution[ 4 ][ 0 ] * Turbidity + Distribution[ 4 ][ 1 ];
 }
 
-float CSkyDome::GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, const float Turbidity ) {
+float CSkyDome::GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, const float Turbidity ) const {
 
 	const float theta2 = Theta*Theta;
 	const float theta3 = Theta*theta2;
@@ -166,7 +166,7 @@ float CSkyDome::GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, cons
 
 }
 
-float CSkyDome::PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) {
+float CSkyDome::PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) const {
 
 	const float val = static_cast<float>(( 1.0f + Perezcoeffs[ 0 ] * std::exp( Perezcoeffs[ 1 ] ) ) *
 						( 1.0f + Perezcoeffs[ 2 ] * std::exp( Perezcoeffs[ 3 ] * Thetasun ) + Perezcoeffs[ 4 ] * std::pow( std::cos( Thetasun ), 2 ) ));
@@ -174,7 +174,7 @@ float CSkyDome::PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, c
 	return Zenithval / val;
 }
 
-float CSkyDome::PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) {
+float CSkyDome::PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) const {
 	// iCosTheta = 1.0f / cosf(theta)
 	// cosGamma2 = SQR( cosf( gamma ) )
 	return Zenithval * ( 1.0f + Perezcoeffs[ 0 ] * std::exp( Perezcoeffs[ 1 ] * Icostheta ) ) * 

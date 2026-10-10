@@ -59,7 +59,7 @@ world_environment::compute_season( int const Yearday ) {
 
 // calculates current weather
 void
-world_environment::compute_weather() {
+world_environment::compute_weather() const {
 
     Global.Weather = Global.Overcast <= 0.10 ? "clear:" :
 	                 Global.Overcast <= 0.50 ? "scattered:" :

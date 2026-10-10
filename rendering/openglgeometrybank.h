@@ -58,7 +58,7 @@ private:
     void
         setup_buffer();
     void
-        bind_buffer();
+        bind_buffer() const;
     void
         delete_buffer();
     static

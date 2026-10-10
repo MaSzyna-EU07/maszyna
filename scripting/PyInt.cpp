@@ -225,7 +225,7 @@ void render_task::run()
 	}
 }
 
-void render_task::upload()
+void render_task::upload() const
 {
 	if (Global.python_uploadmain && m_target && m_target->shared_tex)
 	{
@@ -233,7 +233,7 @@ void render_task::upload()
 	}
 }
 
-void render_task::cancel() {}
+void render_task::cancel() const {}
 
 // initializes the module. returns true on success
 auto python_taskqueue::init() -> bool
@@ -465,7 +465,7 @@ void python_taskqueue::acquire_lock()
 }
 
 // releases the python gil and swaps the main thread out
-void python_taskqueue::release_lock()
+void python_taskqueue::release_lock() const
 {
 
 	PyEval_SaveThread();

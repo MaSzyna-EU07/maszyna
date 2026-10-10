@@ -258,7 +258,7 @@ TMemCell::export_as_text_( std::ostream &Output ) const {
 
 // legacy method, initializes traction after deserialization from scenario file
 void
-memory_table::InitCells() {
+memory_table::InitCells() const {
 
     for( auto *cell : m_items ) {
         // Ra: eventy komórek pamięci, wykonywane po wysłaniu komendy do zatrzymanego pojazdu
@@ -275,7 +275,7 @@ memory_table::InitCells() {
 
 // legacy method, sends content of all cells to the log
 void
-memory_table::log_all() {
+memory_table::log_all() const {
 
     for( auto *cell : m_items ) {
         cell->LogValues();

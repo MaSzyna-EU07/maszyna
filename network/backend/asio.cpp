@@ -91,7 +91,7 @@ void network::tcp::connection::handle_data(const asio::error_code &err, size_t b
 	read_header();
 }
 
-void network::tcp::connection::write_message(const message &msg, std::ostream &stream)
+void network::tcp::connection::write_message(const message &msg, std::ostream &stream) const
 {
 	size_t beg = (size_t)stream.tellp();
 
@@ -198,7 +198,7 @@ void network::tcp::client::connect()
 
 }
 
-void network::tcp::client::handle_accept(const asio::error_code &err)
+void network::tcp::client::handle_accept(const asio::error_code &err) const
 {
 	if (!err)
 	{

@@ -65,17 +65,17 @@ class TTrainParameters
     std::string NextStationName;
     double LastStationLatency;
     int Direction; /*kierunek jazdy w/g kilometrazu*/
-    double CheckTrainLatency();
+    double CheckTrainLatency() const;
     /*todo: str hh:mm to int i z powrotem*/
     std::string ShowRelation() const;
-    double WatchMTable(double DistCounter);
+    double WatchMTable(double DistCounter) const;
     std::string NextStop() const;
     sound_source next_stop_sound() const;
     sound_source last_stop_sound() const;
     bool IsStop() const;
     bool IsLastStop() const;
     bool IsMaintenance() const;
-    bool IsTimeToGo(double hh, double mm);
+    bool IsTimeToGo(double hh, double mm) const;
     // returns: difference between specified time and scheduled departure from current stop, in seconds
     double seconds_until_departure( double const Hour, double const Minute ) const;
     bool UpdateMTable(double hh, double mm, std::string const &NewName);
@@ -85,7 +85,7 @@ class TTrainParameters
     void NewName(std::string const &NewTrainName);
     void UpdateVelocity(int StationCount, double vActual);
     bool LoadTTfile(std::string scnpath, int iPlus, double vmax);
-    bool DirectionChange();
+    bool DirectionChange() const;
     void StationIndexInc();
     void serialize( dictionary_source *Output ) const;
     // returns: radio channel associated with current station, or -1

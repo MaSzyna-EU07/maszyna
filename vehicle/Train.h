@@ -214,7 +214,7 @@ class TTrain {
     // update function subroutines
     void update_sounds( double const Deltatime );
     void update_sounds_runningnoise( sound_source &Sound );
-    void update_sounds_resonancenoise( sound_source &Sound );
+    void update_sounds_resonancenoise( sound_source &Sound ) const;
     void update_sounds_radio();
     inline
     end cab_to_end( int const End ) const {
