@@ -37,8 +37,7 @@ void network::tcp::connection::connected()
 void network::tcp::connection::read_header()
 {
 	asio::async_read(m_socket, asio::buffer(m_header_buffer),
-	                    std::bind(&connection::handle_header, this,
-	                              std::placeholders::_1, std::placeholders::_2));
+	                    std::bind_front(&connection::handle_header, this));
 }
 
 void network::tcp::connection::handle_header(const asio::error_code &err, size_t bytes_transferred)
@@ -67,7 +66,7 @@ void network::tcp::connection::handle_header(const asio::error_code &err, size_t
 	}
 
 	asio::async_read(m_socket, asio::buffer(m_body_buffer),
-	                 std::bind(&connection::handle_data, this, std::placeholders::_1, std::placeholders::_2));
+	                 std::bind_front(&connection::handle_data, this));
 }
 
 void network::tcp::connection::handle_data(const asio::error_code &err, size_t bytes_transferred)
@@ -150,9 +149,9 @@ network::tcp::server::server(std::shared_ptr<std::istream> buf, asio::io_context
 void network::tcp::server::accept_conn()
 {
     auto conn = std::make_shared<connection>(m_io_ctx);
-    conn->set_handler(std::bind(&server::handle_message, this, conn, std::placeholders::_1));
+    conn->set_handler(std::bind_front(&server::handle_message, this, conn));
 
-    m_acceptor.async_accept(conn->m_socket, std::bind(&server::handle_accept, this, conn, std::placeholders::_1));
+    m_acceptor.async_accept(conn->m_socket, std::bind_front(&server::handle_accept, this, conn));
 }
 
 void network::tcp::server::handle_accept(std::shared_ptr<connection> conn, const asio::error_code &err)
@@ -184,14 +183,14 @@ void network::tcp::client::connect()
 		return;
 
 	auto newconnection = std::make_shared<connection>(io_ctx, true, resume_frame_counter);
-	newconnection->set_handler(std::bind(&client::handle_message, this, newconnection, std::placeholders::_1));
+	newconnection->set_handler(std::bind_front(&client::handle_message, this, newconnection));
 
 	asio::ip::tcp::endpoint endpoint(
 	            asio::ip::make_address(host), static_cast<asio::ip::port_type>(port));
 	newconnection->m_socket.open(endpoint.protocol());
 	newconnection->m_socket.set_option(asio::ip::tcp::no_delay(true));
 	newconnection->m_socket.async_connect(endpoint,
-	                    std::bind(&client::handle_accept, this, std::placeholders::_1));
+	                    std::bind_front(&client::handle_accept, this));
 
 	this->conn = newconnection;
 
