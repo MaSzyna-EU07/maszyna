@@ -156,7 +156,6 @@ void cMoon::move() {
     double const yeclip = m_body.distance * ( std::sin( degtorad * longascnode ) * std::cos( vpluswinrad ) + std::cos( degtorad * longascnode ) * std::sin( vpluswinrad ) * std::cos( degtorad * inclination ) );
     double const zeclip = m_body.distance * std::sin( vpluswinrad ) * std::sin( degtorad * inclination );
     // ecliptic coordinates
-    double ecliplat = radtodeg * std::atan2( zeclip, std::sqrt( xeclip*xeclip + yeclip*yeclip ) );
     m_body.eclong = clamp_circular( radtodeg * std::atan2( yeclip, xeclip ) );
     // distance
     m_body.distance = std::sqrt( xeclip*xeclip + yeclip*yeclip + zeclip*zeclip );
@@ -172,8 +171,6 @@ void cMoon::move() {
     m_body.mnlong = clamp_circular( longascnode + perigeearg + m_body.mnanom );
     // Moon's mean elongation:       D   =  Lm - Ls
     double const mnelong = clamp_circular( m_body.mnlong - sunmnlong );
-    // Moon's argument of latitude:  F   =  Lm - N
-    double const arglat = clamp_circular( m_body.mnlong - longascnode );
     // longitude perturbations
     double const pertevection = -1.274 * std::sin( degtorad * ( m_body.mnanom - 2.0 * mnelong ) ); // Evection
     double const pertvariation = +0.658 * std::sin( degtorad * ( 2.0 * mnelong ) ); // Variation
@@ -303,7 +300,7 @@ cMoon::phase() {
 float
 cMoon::normalize( const float Value ) const {
 
-    float value = static_cast<float>(Value - floor( Value ));
+    auto value = static_cast<float>(Value - floor( Value ));
     if( value < 0.f ) { ++value; }
 
     return value;

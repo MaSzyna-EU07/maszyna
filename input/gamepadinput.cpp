@@ -189,16 +189,16 @@ gamepad_input::recall_bindings() {
 
         std::string bindingpoint {};
         entryparser >> bindingpoint;
-        auto const [bindingtype, bindingindex]{ split_string_and_number( bindingpoint ) };
+        auto const [pointtype, pointindex]{ split_string_and_number( bindingpoint ) };
 
-        if( bindingtype == "axis" ) {
+        if( pointtype == "axis" ) {
             // one or more sets of: [modeIDX] input type, parameters
             // [optional] modeIDX associates the set with control mode IDX
             // input types:
             // -- range commandname IDX; axis value is passed as paramIDX of commandname
             // -- 3state commandname commandname; positive axis value issues first commandname, negative value issues second commandname
 
-            auto const axisindex { bindingindex };
+            auto const axisindex { pointindex };
             // sanity check, connected gamepad isn't guaranteed to have that many axes
             if( axisindex >= m_inputaxes.size() ) { continue; }
 
@@ -265,9 +265,9 @@ gamepad_input::recall_bindings() {
                 }
             }
         }
-        else if( bindingtype == "button" ) {
+        else if( pointtype == "button" ) {
 
-            auto const buttonindex { bindingindex };
+            auto const buttonindex { pointindex };
             // sanity check, connected gamepad isn't guaranteed to have that many buttons
             if( buttonindex >= m_inputbuttons.size() ) { continue; }
 

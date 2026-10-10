@@ -4295,7 +4295,7 @@ void TMoverParameters::CompressorCheck(double dt)
 	EmergencyValveOpen = Compressor > (EmergencyValveOpen ? EmergencyValveOff : EmergencyValveOn);
 	if (EmergencyValveOpen)
 	{
-		float dV = static_cast<float>(PF(0, Compressor, EmergencyValveArea) * dt);
+		auto dV = static_cast<float>(PF(0, Compressor, EmergencyValveArea) * dt);
 		CompressedVolume -= dV;
 	}
 
@@ -4578,7 +4578,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 	{
 
 		LocBrakePress = LocHandle->GetCP();
-		for (auto &couplerentry : Couplers)
+		for (auto const &couplerentry : Couplers)
 			// nie podoba mi się to rozwiązanie, chyba trzeba
 			// dodać jakiś wpis do fizyki na to
 			if ((TrainType & (dt_ET41 | dt_ET42)) != 0 && couplerentry.Connected != nullptr && (couplerentry.Connected->TrainType & (dt_ET41 | dt_ET42)) != 0 && (couplerentry.CouplingFlag & 36) == 36)
@@ -6246,7 +6246,7 @@ double TMoverParameters::TractionForce(double dt)
 						SpeedCtrlTimer += dt;
 						if (SpeedCtrlTimer > SpeedCtrlDelay)
 						{
-							int NewSCAP = static_cast<int>((float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax);
+							auto NewSCAP = static_cast<int>((float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax);
 							if (NewSCAP != SpeedCtrlValue)
 							{
 								SpeedCtrlValue = NewSCAP;
@@ -7945,7 +7945,6 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 	double eps = 0;
 	double newn = 0;
 	double friction = 0;
-	double neps = 0;
 	double TorqueH = 0;
 	double TorqueL = 0;
 	double TorqueC = 0;
@@ -12472,9 +12471,8 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 		{
 
 			auto const leftside{CValue2 > 0 ? 1 : 2};
-			auto const rightside{3 - leftside};
 
-			if (static_cast<int>(CValue1) & rightside)
+			if (auto const rightside{3 - leftside}; static_cast<int>(CValue1) & rightside)
 			{
 				Doors.instances[side::right].remote_open = true;
 				Doors.instances[side::right].remote_close = false;
@@ -12494,9 +12492,8 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 		{
 
 			auto const leftside{CValue2 > 0 ? 1 : 2};
-			auto const rightside{3 - leftside};
 
-			if (static_cast<int>(CValue1) & rightside)
+			if (auto const rightside{3 - leftside}; static_cast<int>(CValue1) & rightside)
 			{
 				Doors.instances[side::right].remote_close = true;
 				Doors.instances[side::right].remote_open = false;

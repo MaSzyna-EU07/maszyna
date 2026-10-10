@@ -587,7 +587,7 @@ debug_panel::render() {
 		render_section_developer(); // Developer tools
 #ifdef WITH_UART
         if(true == render_section( "UART", m_uartlines)) {
-            int ports_num = static_cast<int>(UartStatus.available_ports.size());
+            auto ports_num = static_cast<int>(UartStatus.available_ports.size());
             auto avlports = new char*[ports_num];
             for (int i=0; i < ports_num; i++) {
                 avlports[i] = (char *) UartStatus.available_ports[i].c_str();

@@ -773,7 +773,6 @@ void TWest::SetLBP(double const P)
 /// <param name="nEPS">New EP intensity.</param>
 void TWest::SetEPS(double const nEPS)
 {
-	double BCP;
 
 	if (nEPS > 0)
 		DCV = true;
@@ -2481,7 +2480,6 @@ void TKE::CheckReleaser(double const dt)
 void TKE::CheckState(double const BCP, double & /*dV1*/)
 {
 	double VVP;
-	double BVP;
 	double CVP;
 
 	VVP = ValveRes->P();
@@ -2556,7 +2554,6 @@ void TKE::CheckState(double const BCP, double & /*dV1*/)
 double TKE::CVs(double const BP) const
 {
 	double VVP;
-	double BVP;
 	double CVP;
 
 	CVP = CntrlRes->P();
@@ -2668,8 +2665,7 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 
 	// rapid
 	auto const &frictionmaterial{*FM};
-	auto const &frictionmaterialtype{typeid(frictionmaterial)};
-	if (!(frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2))) // jesli zeliwo to schodz
+	if (auto const &frictionmaterialtype{typeid(frictionmaterial)}; !(frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2))) // jesli zeliwo to schodz
 		RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R && (RV < 0 || (Vel > RV && RapidStatus) || Vel > RV + 20);
 	else // jesli tarczowki, to zostan
 		RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R;
@@ -3210,7 +3206,7 @@ double TFV4aM::GetRP()
 /// <returns>Interpolated target pressure [bar].</returns>
 double TFV4aM::LPP_RP(double pos) const // cisnienie z zaokraglonej pozycji;
 {
-	int const i_pos = static_cast<int>(2 + std::floor(pos)); // zaokraglone w dol
+	auto const i_pos = static_cast<int>(2 + std::floor(pos)); // zaokraglone w dol
 
 	return BPT[i_pos][1] + (BPT[i_pos + 1][1] - BPT[i_pos][1]) * (pos + 2 - i_pos); // interpolacja liniowa
 }
@@ -3452,7 +3448,6 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	double dpMainValve;
 	double ActFlowSpeed;
 	double DP;
-	double pom;
 
 	for (auto &soundvalue : Sounds)
 	{
@@ -3629,7 +3624,6 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	double dpMainValve;
 	double ActFlowSpeed;
 	double DP;
-	double pom;
 
 	for (auto &soundvalue : Sounds)
 	{
@@ -3903,7 +3897,7 @@ double TH14K1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	//{ (10, 0), (4, 1), (0, 1), (4, 0), (4, -1), (15, -1) };
 	double const NomPress = 5.0;
 
-	int BCP = static_cast<int>(std::lround(i_bcp));
+	auto BCP = static_cast<int>(std::lround(i_bcp));
 	if (i_bcp < -1)
 	{
 		BCP = 1;

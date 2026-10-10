@@ -416,7 +416,7 @@ void TTraction::ResistanceCalc(int d, double r, TTractionPowerSource *ps)
     if (d >= 0)
     { // podążanie we wskazanym kierunku
         TTraction *t = hvNext[d];
-        TTraction *p;
+        TTraction const *p;
         if (ps)
             psPower[d ^ 1] = ps; // podłączenie podanego
         else

@@ -163,7 +163,7 @@ bool TEventLauncher::check_activation_key() const {
 
 	bool result = Console::Pressed(key);
 
-	char modifier = static_cast<char>(iKey >> 8);
+	auto modifier = static_cast<char>(iKey >> 8);
 	if (modifier & GLFW_MOD_SHIFT)
 		result &= Global.shiftState;
 	if (modifier & GLFW_MOD_CONTROL)

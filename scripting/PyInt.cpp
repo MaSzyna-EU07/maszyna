@@ -376,7 +376,7 @@ void python_taskqueue::exit()
 	// reclaim cached python objects while the interpreter is still alive,
 	// so no Py_DECREF lands on a finalized interpreter during later teardown
 	acquire_lock();
-	for (auto &[renderername, rendererobject] : m_renderers)
+	for (auto const &[renderername, rendererobject] : m_renderers)
 	{
 		Py_XDECREF(rendererobject);
 	}

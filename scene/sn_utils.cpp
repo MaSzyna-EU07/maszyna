@@ -18,7 +18,7 @@ uint16_t sn_utils::ld_uint16(std::istream &s)
 {
 	std::array<uint8_t, 2> buf{};
 	s.read(reinterpret_cast<char *>(buf.data()), buf.size());
-	uint16_t v = static_cast<uint16_t>(buf[1] << 8 | buf[0]);
+	auto v = static_cast<uint16_t>(buf[1] << 8 | buf[0]);
 	return v;
 }
 

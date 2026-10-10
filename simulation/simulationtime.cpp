@@ -167,19 +167,19 @@ scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yea
 int
 scenario_time::julian_day() const {
 
-    int yy = static_cast<int>( m_time.wYear - std::floor( ( 12 - m_time.wMonth ) / 10.f ));
+    auto yy = static_cast<int>( m_time.wYear - std::floor( ( 12 - m_time.wMonth ) / 10.f ));
     int mm = m_time.wMonth + 9;
     if( mm >= 12 ) { mm -= 12; }
 
-    int K1 = static_cast<int>(std::floor( 365.25 * ( yy + 4712 ) ));
-    int K2 = static_cast<int>(std::floor( 30.6 * mm + 0.5 ));
+    auto K1 = static_cast<int>(std::floor( 365.25 * ( yy + 4712 ) ));
+    auto K2 = static_cast<int>(std::floor( 30.6 * mm + 0.5 ));
 
     // for dates in Julian calendar
     int JD = K1 + K2 + m_time.wDay + 59;
     // for dates in Gregorian calendar; 2299160 is October 15th, 1582
     if( const int gregorianswitchday = 2299160; JD > gregorianswitchday ) {
 
-        int K3 = static_cast<int>(std::floor( std::floor( yy * 0.01 + 49 ) * 0.75 ) - 38);
+        auto K3 = static_cast<int>(std::floor( std::floor( yy * 0.01 + 49 ) * 0.75 ) - 38);
         JD -= K3;
     }
 

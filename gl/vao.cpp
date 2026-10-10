@@ -60,7 +60,7 @@ void gl::vao::bind()
 		glBindVertexArray(*this);
 	}
 	else {
-		for (attrib_params &param : params) {
+		for (attrib_params const &param : params) {
 			param.buffer.bind(gl::buffer::ARRAY_BUFFER);
 			glVertexAttribPointer(param.attrib, param.size, param.type, GL_FALSE, param.stride, reinterpret_cast<void*>(param.offset));
 			glEnableVertexAttribArray(param.attrib);

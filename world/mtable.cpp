@@ -227,7 +227,7 @@ void TTrainParameters::NewName(std::string_view NewTrainName)
     LocLoad = 0;
 }
 
-void TTrainParameters::UpdateVelocity(int Stationcount, double vActual)
+void TTrainParameters::UpdateVelocity(int /*Stationcount*/, double vActual)
 // zapisywanie prędkości maksymalnej do wcześniejszych odcinków
 // wywoływane z numerem ostatniego przetworzonego przystanku
 {

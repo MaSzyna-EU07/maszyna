@@ -758,8 +758,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	dict->insert("dir_brake", bEP);
 	bool bPN{false};
 	auto const &brakevalve{*mvOccupied->Hamulec};
-	auto const &brakevalvetype{typeid(brakevalve)};
-	if (brakevalvetype == typeid(TLSt) || brakevalvetype == typeid(TEStED))
+	if (auto const &brakevalvetype{typeid(brakevalve)}; brakevalvetype == typeid(TLSt) || brakevalvetype == typeid(TEStED))
 	{
 
 		TBrake *temp_ham = mvOccupied->Hamulec.get();
@@ -6792,7 +6791,7 @@ void TTrain::OnCommand_springbrakerelease(TTrain *Train, command_data const &Com
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 
-		if (auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)}; vehicle == nullptr)
+		if (auto const *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)}; vehicle == nullptr)
 		{
 			return;
 		}

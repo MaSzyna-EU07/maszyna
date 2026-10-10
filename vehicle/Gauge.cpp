@@ -359,7 +359,7 @@ void TGauge::Update( bool const Power ) {
     // update value
     // TODO: remove passing manually power state when LD is in place
     if( m_value != m_targetvalue ) {
-        float dt = static_cast<float>(Timer::GetDeltaTime());
+        auto dt = static_cast<float>(Timer::GetDeltaTime());
         if( m_friction > 0 && dt < 0.5 * m_friction ) {
             // McZapkie-281102: zabezpieczenie przed oscylacjami dla dlugich czasow
             m_value += dt * ( m_targetvalue - m_value ) / m_friction;
