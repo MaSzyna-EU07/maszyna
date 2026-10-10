@@ -898,7 +898,7 @@ sound_source::has_bookends() const {
 }
 
 // returns location of the sound source in simulation region space
-glm::dvec3 const
+glm::dvec3
 sound_source::location() const {
 
     if( m_owner == nullptr ) {
@@ -920,7 +920,7 @@ sound_source::range( float const Range ) {
 }
 
 // returns defined range of the sound
-float const
+float
 sound_source::range() const {
 
     return m_range;

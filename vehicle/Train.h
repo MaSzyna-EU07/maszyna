@@ -929,7 +929,7 @@ private:
     // plays provided sound from position of the radio
 	bool radio_message_played;
     void radio_message( sound_source *Message, int const Channel );
-    inline auto const RadioChannel() const { return Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1; }
+    inline auto RadioChannel() const { return Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1; }
     inline auto &RadioChannel() { return Dynamic()->Mechanik->iRadioChannel; }
     inline TDynamicObject *Dynamic() { return DynamicObject; };
     inline TDynamicObject const *Dynamic() const { return DynamicObject; };
