@@ -300,6 +300,8 @@ basic_controller::run() -> int {
                         }
                         break;
                     }
+                    default:
+                        break;
                 }
                 // accumulator was published at least once, next ld(i) operation will start a new rung
                 m_popstack = true;
@@ -332,6 +334,8 @@ basic_controller::run() -> int {
 */
                         break;
                     }
+                    default:
+                        break;
                 }
                 // accumulator was published at least once, next ld(i) operation will start a new rung
                 m_popstack = true;
@@ -354,9 +358,14 @@ basic_controller::run() -> int {
                         std::get<basic_element::counter>(target.data).count_value = 0;
                         break;
                     }
+                    default:
+                        break;
                 }
                 // accumulator was published at least once, next ld(i) operation will start a new rung
                 m_popstack = true;
+                break;
+            }
+            default: {
                 break;
             }
         }
