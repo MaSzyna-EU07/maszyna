@@ -29,12 +29,7 @@ light_array::insert( TDynamicObject const *Owner ) {
 void
 light_array::remove( TDynamicObject const *Owner ) {
 
-    data.erase(
-        std::remove_if(
-            data.begin(),
-            data.end(),
-            [=]( light_record const &light ){ return light.owner == Owner; } ),
-        data.end() );
+    std::erase_if( data, [=]( light_record const &light ){ return light.owner == Owner; } );
 }
 
 // updates records in the collection

@@ -11377,7 +11377,7 @@ void TMoverParameters::LoadFIZ_Switches(std::string const &Input)
 	{
 		auto &presets{PantsPreset.first};
 		extract_value(presets, "PantographPresets", Input, "0|1|3|2");
-		presets.erase(std::remove(std::begin(presets), std::end(presets), '|'), std::end(presets));
+		std::erase(presets, '|');
 	}
 }
 

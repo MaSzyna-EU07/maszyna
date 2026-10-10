@@ -52,9 +52,8 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
 
         if( false == m_soundchunks.empty() ) {
             // arrange loaded sound chunks in requested order
-            std::sort(
-                std::begin( m_soundchunks ), std::end( m_soundchunks ),
-                []( soundchunk_pair const &Left, soundchunk_pair const &Right ) {
+            std::ranges::sort(
+                m_soundchunks, []( soundchunk_pair const &Left, soundchunk_pair const &Right ) {
                     return Left.second.threshold < Right.second.threshold; } );
             // calculate and cache full range points for each chunk, including crossfade sections:
             // on the far end the crossfade section extends to the threshold point of the next chunk...

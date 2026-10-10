@@ -10122,8 +10122,7 @@ void TTrain::update_sounds_radio()
 	if (false == m_radiomessages.empty())
 	{
 		// erase completed radio messages from the list
-		m_radiomessages.erase(std::remove_if(std::begin(m_radiomessages), std::end(m_radiomessages), [](auto const &source) { return false == source.second->is_playing(); }),
-		                      std::end(m_radiomessages));
+		std::erase_if(m_radiomessages, [](auto const &source) { return false == source.second->is_playing(); });
 	}
 	// adjust audibility of remaining messages based on current radio conditions
 	auto const radioenabled{true == mvOccupied->Radio && (mvOccupied->Power24vIsAvailable || mvOccupied->Power110vIsAvailable)};
@@ -10472,7 +10471,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 				// model kabiny
 				parser.getTokens();
 				parser >> token;
-				std::replace(token.begin(), token.end(), '\\', '/');
+				std::ranges::replace(token, '\\', '/');
 				if (token != "none")
 				{
 					// bieżąca sciezka do tekstur to dynamic/...
