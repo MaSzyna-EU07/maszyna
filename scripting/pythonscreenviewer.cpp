@@ -49,7 +49,8 @@ python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::s
 			                                 monitor, false, Global.python_sharectx);
 
             {
-                int w, h;
+                int w;
+                int h;
                 glfwGetWindowSize(conf->window, &w, &h);
                 conf->window_size = glm::ivec2(w, h);
                 glfwGetFramebufferSize(conf->window, &w, &h);
@@ -118,7 +119,10 @@ void python_screen_viewer::threadfunc()
 		for (auto &window : m_windows) {
 
 			unsigned char *image = nullptr;
-			int format, components, width, height;
+			int format;
+			int components;
+			int width;
+			int height;
 
 			if (!Global.python_sharectx) {
 				std::lock_guard<std::mutex> guard(m_rt->mutex);

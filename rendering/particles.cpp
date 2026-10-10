@@ -81,7 +81,7 @@ smoke_source::deserialize( cParser &Input ) {
     if( false == Input.ok() ) { return false; }
 
     while( true == deserialize_mapping( Input ) ) {
-        ; // all work done by while()
+        // all work done by while()
     }
 
     return true;

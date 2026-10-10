@@ -178,7 +178,8 @@ void render_task::run()
 			for (const auto &cmd : commands)
 			{
 				std::string baseCmd;
-				int p1 = 0, p2 = 0;
+				int p1 = 0;
+				int p2 = 0;
 
 				size_t pos1 = cmd.find(';');
 				if (pos1 == std::string::npos)
@@ -636,7 +637,9 @@ void python_taskqueue::error()
 	else
 	{
 		// nie dziala buffor pythona
-		PyObject *type, *value, *traceback;
+		PyObject *type;
+		PyObject *value;
+		PyObject *traceback;
 		PyErr_Fetch(&type, &value, &traceback);
 		if (type == nullptr)
 		{

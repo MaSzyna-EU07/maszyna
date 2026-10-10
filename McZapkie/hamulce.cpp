@@ -674,14 +674,14 @@ double TWest::GetPF(double const PP, double const dt, double const Vel)
 	BCP = BrakeCyl->P();
 
 	if ((BrakeStatus & b_hld) == b_hld)
+	{
 		if (VVP + 0.03 < BVP)
 			BrakeStatus |= b_on;
 		else if (VVP > BVP + 0.1)
 			BrakeStatus &= ~(b_on | b_hld);
 		else if (VVP > BVP)
 			BrakeStatus &= ~b_on;
-		else
-			;
+	}
 	else if (VVP + 0.25 < BVP)
 		BrakeStatus |= b_on | b_hld;
 
@@ -1168,14 +1168,14 @@ double TEStEP2::GetPF(double const PP, double const dt, double const Vel)
 
 	// sprawdzanie stanu
 	if ((BrakeStatus & b_hld) == b_hld && BCP > 0.25)
+	{
 		if (VVP + 0.003 + BCP / BVM < CVP - 0.12)
 			BrakeStatus |= b_on; // hamowanie stopniowe;
 		else if (VVP - 0.003 + BCP / BVM > CVP - 0.12)
 			BrakeStatus &= ~(b_on | b_hld); // luzowanie;
 		else if (VVP + BCP / BVM > CVP - 0.12)
 			BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
-		else
-			;
+	}
 	else if (VVP + 0.10 < CVP - 0.12 && BCP < 0.25) // poczatek hamowania
 	{
 		// if ((BrakeStatus & 1) == 0)
@@ -2165,14 +2165,14 @@ void TCV1::CheckState(double const BCP, double &dV1)
 
 	// sprawdzanie stanu
 	if ((BrakeStatus & b_hld) == b_hld)
+	{
 		if (VVP + 0.003 + BCP / BVM < CVP)
 			BrakeStatus |= b_on; // hamowanie stopniowe;
 		else if (VVP - 0.003 + BCP * 1.0 / BVM > CVP)
 			BrakeStatus &= ~(b_on | b_hld); // luzowanie;
 		else if (VVP + BCP * 1.0 / BVM > CVP)
 			BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
-		else
-			;
+	}
 	else if (VVP + 0.10 < CVP && BCP < 0.1) // poczatek hamowania
 	{
 		BrakeStatus |= b_on | b_hld;

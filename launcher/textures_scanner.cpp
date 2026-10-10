@@ -108,7 +108,9 @@ void ui::vehicles_bank::parse_texture_info(const std::string &target, const std:
 {
 	std::istringstream stream(param);
 
-	std::string model, mini, miniplus;
+	std::string model;
+	std::string mini;
+	std::string miniplus;
 
 	std::getline(stream, model, ',');
 	std::getline(stream, mini, ',');
@@ -178,7 +180,8 @@ std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &
 
 	if (!meta->rev_date.empty() && meta->rev_date != "?") {
 		std::istringstream stream(meta->rev_date);
-		std::string day, month;
+		std::string day;
+		std::string month;
 
 		std::getline(stream, day, '.');
 		std::getline(stream, month, '.');
@@ -205,7 +208,8 @@ void ui::vehicles_bank::parse_coupling_rule(const std::string &target, const std
 	std::string connected;
 	std::getline(stream, connected, ',');
 
-	std::string param1, param2;
+	std::string param1;
+	std::string param2;
 	std::getline(stream, param1, ',');
 	std::getline(stream, param2, ',');
 
@@ -232,7 +236,8 @@ void ui::vehicles_bank::parse_texture_rule(const std::string &target, const std:
 
 		std::istringstream rule_stream(replace_rule);
 
-		std::string src, dst;
+		std::string src;
+		std::string dst;
 		std::getline(rule_stream, src, '-');
 		std::getline(rule_stream, dst, '-');
 

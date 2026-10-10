@@ -30,7 +30,10 @@ class TTraction : public scene::basic_node
     int iNext[ 2 ] { 0, 0 }; // do którego końca się łączy
     int iLast { 0 }; //że niby ostatni drut // ustawiony bit 0, jeśli jest ostatnim drutem w sekcji; bit1 - przedostatni
   public:
-    glm::dvec3 pPoint1, pPoint2, pPoint3, pPoint4;
+    glm::dvec3 pPoint1;
+    glm::dvec3 pPoint2;
+    glm::dvec3 pPoint3;
+    glm::dvec3 pPoint4;
     glm::dvec3 vParametric; // współczynniki równania parametrycznego odcinka
     double fHeightDifference { 0.0 };
     int iNumSections { 0 };

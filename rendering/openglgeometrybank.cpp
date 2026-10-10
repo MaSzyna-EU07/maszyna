@@ -139,9 +139,8 @@ opengl_vbogeometrybank::setup_buffer() {
     // may be better to initiate upload earlier (during update phase) and trust this effort won't go to waste
     if( true == m_chunks.empty() ) { return; }
 
-    std::size_t
-        vertexcount{ 0 },
-        indexcount{ 0 };
+    std::size_t vertexcount{ 0 };
+    std::size_t indexcount{ 0 };
     auto chunkiterator = m_chunks.cbegin();
     for( auto &chunkrecord : m_chunkrecords ) {
         // fill records for all chunks, based on the chunk data

@@ -35,7 +35,8 @@ public:
 private:
 	// shading parametrs
     glm::vec3 m_sundirection;
-    float m_thetasun, m_phisun;
+    float m_thetasun;
+    float m_phisun;
     float m_turbidity;
     bool m_linearexpcontrol;
     float m_expfactor;

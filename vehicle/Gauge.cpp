@@ -97,8 +97,13 @@ void TGauge::Init(TSubModel *Submodel, TSubModel *Submodelon, TGaugeAnimation Ty
 
 void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mul ) {
 
-    std::string submodelname, gaugetypename;
-    float scale, endscale, endvalue, offset, friction;
+    std::string submodelname;
+    std::string gaugetypename;
+    float scale;
+    float endscale;
+    float endvalue;
+    float offset;
+    float friction;
     endscale = -1;
     endvalue = -1;
     bool interpolatescale { false };
@@ -144,7 +149,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         {
             scratch_data scratchpad;
             while( true == Load_mapping( Parser, scratchpad ) ) {
-                ; // all work done by while()
+                // all work done by while()
             }
             // post-deserialization cleanup
             // set provided custom soundproofing to assigned sounds (for sounds without their own custom soundproofing)

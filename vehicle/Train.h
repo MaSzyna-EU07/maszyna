@@ -817,31 +817,31 @@ public: // reszta może by?publiczna
     TButton btHaslerBrakes; // ciśnienie w cylindrach
     TButton btHaslerCurrent; // prąd na silnikach
 
-    std::optional<sound_source>
-        dsbNastawnikJazdy,
-        dsbNastawnikBocz,
-        dsbReverserKey,
-        dsbBuzzer, dsbBuzzerShp,
-        m_radiostop,
-        dsbSlipAlarm,
-        m_distancecounterclear,
-        dsbHasler,
-        dsbSwitch,
-        dsbPneumaticSwitch,
-        rsHiss,
-        rsHissU,
-        rsHissE,
-        rsHissX,
-        rsHissT,
-        rsSBHiss,
-        rsSBHissU,
-        rsBrake,
-        rsFadeSound,
-        rsRunningNoise,
-        rsResonanceNoise,
-        rsWindSound,
-        rsHuntingNoise,
-        m_rainsound;
+    std::optional<sound_source> dsbNastawnikJazdy;
+    std::optional<sound_source> dsbNastawnikBocz;
+    std::optional<sound_source> dsbReverserKey;
+    std::optional<sound_source> dsbBuzzer;
+    std::optional<sound_source> dsbBuzzerShp;
+    std::optional<sound_source> m_radiostop;
+    std::optional<sound_source> dsbSlipAlarm;
+    std::optional<sound_source> m_distancecounterclear;
+    std::optional<sound_source> dsbHasler;
+    std::optional<sound_source> dsbSwitch;
+    std::optional<sound_source> dsbPneumaticSwitch;
+    std::optional<sound_source> rsHiss;
+    std::optional<sound_source> rsHissU;
+    std::optional<sound_source> rsHissE;
+    std::optional<sound_source> rsHissX;
+    std::optional<sound_source> rsHissT;
+    std::optional<sound_source> rsSBHiss;
+    std::optional<sound_source> rsSBHissU;
+    std::optional<sound_source> rsBrake;
+    std::optional<sound_source> rsFadeSound;
+    std::optional<sound_source> rsRunningNoise;
+    std::optional<sound_source> rsResonanceNoise;
+    std::optional<sound_source> rsWindSound;
+    std::optional<sound_source> rsHuntingNoise;
+    std::optional<sound_source> m_rainsound;
     sound_source m_radiosound { sound_placement::internal, 2 * EU07_SOUND_CABCONTROLSCUTOFFRANGE }; // cached template for radio messages
     std::vector<std::pair<int, std::shared_ptr<sound_source>>> m_radiomessages; // list of currently played radio messages
 	std::vector<std::pair<std::reference_wrapper<std::optional<sound_source>>, glm::vec3>> CabSoundLocations; // list of offsets for manually located sounds;
@@ -879,7 +879,9 @@ private:
     float fHVoltage{ 0.0f }; // napi?cie dla dynamicznych ga?ek
     float fHCurrent[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f }; // pr?dy: suma i amperomierze 1,2,3
     float fEngine[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f }; // obroty te? trzeba pobra?
-    int iCarNo, iPowerNo, iUnitNo; // liczba pojazdow, czlonow napednych i jednostek spiętych ze sobą
+    int iCarNo;
+    int iPowerNo;
+    int iUnitNo; // liczba pojazdow, czlonow napednych i jednostek spiętych ze sobą
     bool bDoors[20][5]; // drzwi dla wszystkich czlonow; left+right, left, right, step_left, step_right
     int iUnits[20]; // numer jednostki
     int iDoorNo[20]; // liczba drzwi
@@ -896,7 +898,8 @@ private:
 	std::vector<std::tuple<bool, bool, int>> bCompressors;
     bool bHeat[8]; // grzanie
     // McZapkie: do syczenia
-    float fPPress, fNPress;
+    float fPPress;
+    float fNPress;
     bool m_mastercontrollerinuse { false };
     float m_mastercontrollerreturndelay { 0.f };
 	screenentry_sequence m_screens;
