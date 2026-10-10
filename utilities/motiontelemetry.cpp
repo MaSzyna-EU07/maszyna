@@ -145,7 +145,7 @@ void motiontelemetry::update()
 		rot *= -1;
 	}
 
-	float buffer[12] = { 0 };
+	std::array<float, 12> buffer{};
 	buffer[0] = static_cast<float>(Timer::GetTime());
 	buffer[1] = static_cast<float>(velocity);
 	buffer[2] = static_cast<float>(local_acc.y);
@@ -157,6 +157,6 @@ void motiontelemetry::update()
 	buffer[8] = static_cast<float>(yaw_vel);
 	buffer[9] = 1.0f;
 
-	if (send(sock, (char*)buffer, sizeof(buffer), 0) == -1)
+	if (send(sock, reinterpret_cast<char const *>(buffer.data()), sizeof(buffer), 0) == -1)
 		WriteLog("motiontelemetry: socket send failed");
 }

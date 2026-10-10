@@ -195,17 +195,17 @@ void CSkyDome::RebuildColors() {
 	float zenithy = GetZenith( m_zenithymatrix, m_thetasun, m_turbidity );
 
 	// get perez function parametrs
-	float perezluminance[5];
-	float perezx[5];
-	float perezy[5];  
-	GetPerez( perezluminance, m_distributionluminance, m_turbidity );
-	GetPerez( perezx, m_distributionxcomp, m_turbidity );
-	GetPerez( perezy, m_distributionycomp, m_turbidity );
+	std::array<float, 5> perezluminance{};
+	std::array<float, 5> perezx{};
+	std::array<float, 5> perezy{};
+	GetPerez( perezluminance.data(), m_distributionluminance, m_turbidity );
+	GetPerez( perezx.data(), m_distributionxcomp, m_turbidity );
+	GetPerez( perezy.data(), m_distributionycomp, m_turbidity );
 
 	// make some precalculation
-	zenithx = PerezFunctionO1( perezx, m_thetasun, zenithx );
-	zenithy = PerezFunctionO1( perezy, m_thetasun, zenithy );
-	zenithluminance = PerezFunctionO1( perezluminance, m_thetasun, zenithluminance );
+	zenithx = PerezFunctionO1( perezx.data(), m_thetasun, zenithx );
+	zenithy = PerezFunctionO1( perezy.data(), m_thetasun, zenithy );
+	zenithluminance = PerezFunctionO1( perezluminance.data(), m_thetasun, zenithluminance );
 
     // start with fresh average for the new pass
     glm::vec3 averagecolor;
@@ -241,11 +241,11 @@ void CSkyDome::RebuildColors() {
 		float const cosgamma2 = static_cast<float>(std::pow( std::cos( gamma ), 2 ));
 
 		// Compute x,y values  
-		float const x = PerezFunctionO2( perezx, icostheta, gamma, cosgamma2, zenithx );
-		float const y = PerezFunctionO2( perezy, icostheta, gamma, cosgamma2, zenithy );
+		float const x = PerezFunctionO2( perezx.data(), icostheta, gamma, cosgamma2, zenithx );
+		float const y = PerezFunctionO2( perezy.data(), icostheta, gamma, cosgamma2, zenithy );
 
 		// luminance(Y) for clear & overcast sky
-		float const yclear = std::max( 0.01f, PerezFunctionO2( perezluminance, icostheta, gamma, cosgamma2, zenithluminance ) );
+		float const yclear = std::max( 0.01f, PerezFunctionO2( perezluminance.data(), icostheta, gamma, cosgamma2, zenithluminance ) );
 		float const yover = std::max( 0.01f, zenithluminance * ( 1.0f + 2.0f * vertex.y ) / 3.0f );
 		
 		float const Y = std::lerp( yclear, yover, m_overcast );

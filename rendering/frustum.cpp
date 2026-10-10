@@ -24,7 +24,7 @@ cFrustum::calculate( glm::mat4 const &Projection, glm::mat4 const &Modelview ) {
 
     // multiply the matrices to retrieve clipping planes (column-major, same layout as the old float[16] form)
     auto const clipmatrix { Projection * Modelview };
-    float clip[ 16 ];
+    std::array<float, 16> clip{};
     for( int column = 0; column < 4; ++column ) {
         for( int row = 0; row < 4; ++row ) {
             clip[ column * 4 + row ] = clipmatrix[ column ][ row ];

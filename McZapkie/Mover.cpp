@@ -8887,7 +8887,7 @@ std::string TMoverParameters::EngineDescription(int what) const
 double TMoverParameters::GetTrainsetVoltage(int const Coupling) const
 { // ABu: funkcja zwracajaca napiecie dla calego skladu, przydatna dla EZT
 	// TBD, TODO: call once per vehicle update, return cached results?
-	double voltages[] = {0.0, 0.0};
+	std::array<double, 2> voltages{0.0, 0.0};
 	for (int end = end::front; end <= end::rear; ++end)
 	{
 		if (Couplers[end].Connected == nullptr)
@@ -12011,7 +12011,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	BrakeOpModeFlag = bom_PN;
 
 	// yB: jesli pojazdy nie maja zadeklarowanych czasow, to wsadz z przepisow +-16,(6)%
-	int DefBrakeTable[8] = {15, 4, 25, 25, 13, 3, 12, 2};
+	std::array<int, 8> const DefBrakeTable{15, 4, 25, 25, 13, 3, 12, 2};
 
 	for (int b = 1; b < 4; b++)
 	{

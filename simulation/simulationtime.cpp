@@ -134,10 +134,10 @@ scenario_time::update( double const Deltatime ) {
 int
 scenario_time::year_day( int Day, const int Month, const int Year ) const {
 
-    char const daytab[ 2 ][ 13 ] = {
+    std::array<std::array<char, 13>, 2> const daytab = {{
         { 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
         { 0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
-    };
+    }};
 
     int const leap { is_leap( Year ) };
     for( int i = 1; i < Month; ++i )
@@ -149,10 +149,10 @@ scenario_time::year_day( int Day, const int Month, const int Year ) const {
 void
 scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yearday ) const {
 
-    WORD daytab[ 2 ][ 13 ] = {
+    std::array<std::array<WORD, 13>, 2> const daytab = {{
         { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365 },
         { 0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366 }
-    };
+    }};
 
     int const leap { is_leap( Year ) };
     WORD idx = 1;
@@ -219,10 +219,10 @@ scenario_time::day_of_month( int const Week, int const Weekday, int const Month,
 
     if( Week == 5 ) {
         // 5th week potentially indicates last week in the month, not necessarily actual 5th
-        char const daytab[ 2 ][ 13 ] = {
+        std::array<std::array<char, 13>, 2> const daytab = {{
             { 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
             { 0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
-        };
+        }};
         int const leap { is_leap( Year ) };
 
         while( day > daytab[ leap ][ Month ] ) {

@@ -90,17 +90,17 @@ void gl::framebuffer::blit(framebuffer const *src, framebuffer const *dst, int s
         int attachment_n = attachment - GL_COLOR_ATTACHMENT0;
 
         {
-            GLenum outputs[8] = { GL_NONE };
+            std::array<GLenum, 8> outputs{ GL_NONE };
             outputs[attachment_n] = src != nullptr ? attachment : GL_BACK_LEFT;
 
             glReadBuffer(attachment);
         }
 
         {
-            GLenum outputs[8] = { GL_NONE };
+            std::array<GLenum, 8> outputs{ GL_NONE };
             outputs[attachment_n] = dst != nullptr ? attachment : GL_BACK_LEFT;
 
-            glDrawBuffers(attachment_n + 1, outputs);
+            glDrawBuffers(attachment_n + 1, outputs.data());
         }
     }
 
