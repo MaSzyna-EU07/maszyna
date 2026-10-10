@@ -211,7 +211,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     double dV{ 0.0 };
     double dV1{ 0.0 };
 
-    double const nastG = static_cast<double>(BrakeDelayFlag & bdelay_G);
+    auto const nastG = static_cast<double>(BrakeDelayFlag & bdelay_G);
 
     // sprawdzanie stanu
     CheckState(BCP, dV1);

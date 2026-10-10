@@ -855,7 +855,7 @@ command_queue::pop( command_data &Command, uint32_t const Recipient ) {
 
 bool command_queue::is_network_target(uint32_t const Recipient) const {
 
-	if (const command_target target = (command_target)(Recipient & ~0xffff); target == command_target::entity)
+	if (const auto target = (command_target)(Recipient & ~0xffff); target == command_target::entity)
 		return false;
 
 	return true;

@@ -95,7 +95,7 @@ void UpdateTimers(bool pause)
     oldCount = count;
     // Keep track of the time lapse and frame count
 #if __unix__
-	double fTime = (double)(count / 1000000000);
+	auto fTime = (double)(count / 1000000000);
 #elif _WIN32_WINNT >= _WIN32_WINNT_VISTA
     double fTime = ::GetTickCount64() * 0.001f; // Get current time in seconds
 #elif _WIN32
