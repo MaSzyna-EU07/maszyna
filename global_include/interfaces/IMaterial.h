@@ -21,7 +21,7 @@ struct IMaterial
 	{
 		static struct NullMaterial : public IMaterial
 		{
-			void finalize(bool Loadnow) override {}
+			void finalize(bool Loadnow) override { /* null implementation, nothing to do */ }
 			bool update() override
 			{
 				return false;

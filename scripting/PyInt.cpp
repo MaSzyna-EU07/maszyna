@@ -232,7 +232,7 @@ void render_task::upload() const
 	}
 }
 
-void render_task::cancel() const {}
+void render_task::cancel() const { /* nothing to do */ }
 
 // initializes the module. returns true on success
 auto python_taskqueue::init() -> bool

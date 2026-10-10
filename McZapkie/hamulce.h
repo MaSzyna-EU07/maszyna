@@ -442,7 +442,7 @@ class TBrake
 	virtual void SetEPS(double const nEPS); // hamulec EP
 	/// <summary>Sets the rapid step ratio. Default no-op; overridden where supported.</summary>
 	/// <param name="RMR">Rapid ratio.</param>
-	virtual void SetRM(double const RMR) {}; // ustalenie przelozenia rapida
+	virtual void SetRM(double const RMR) { /* no effect for this device type */ } // ustalenie przelozenia rapida
 	/// <summary>Sets the velocity threshold for the rapid step.</summary>
 	/// <param name="RVR">Velocity threshold (same unit as Vel passed to GetPF).</param>
 	virtual void SetRV(double const RVR)
@@ -456,13 +456,13 @@ class TBrake
 	/// <param name="TM">Tare (empty) mass.</param>
 	/// <param name="LM">Loaded mass.</param>
 	/// <param name="TBP">Brake cylinder pressure for the tare mass.</param>
-	virtual void SetLP(double const TM, double const LM, double const TBP) {}; // parametry przystawki wazacej
+	virtual void SetLP(double const TM, double const LM, double const TBP) { /* no effect for this device type */ } // parametry przystawki wazacej
 	/// <summary>Sets the auxiliary (local) brake target pressure.</summary>
 	/// <param name="P">Local brake pressure [bar].</param>
-	virtual void SetLBP(double const P) {}; // cisnienie z hamulca pomocniczego
+	virtual void SetLBP(double const P) { /* no effect for this device type */ } // cisnienie z hamulca pomocniczego
 	/// <summary>Updates the load-weighing pressure coefficient based on current vehicle mass.</summary>
 	/// <param name="mass">Current vehicle mass.</param>
-	virtual void PLC(double const mass) {}; // wspolczynnik cisnienia przystawki wazacej
+	virtual void PLC(double const mass) { /* no effect for this device type */ } // wspolczynnik cisnienia przystawki wazacej
 	/// <summary>
 	/// Engages the anti-slip brake function (set hold and/or release flags).
 	/// </summary>
@@ -498,7 +498,7 @@ class TBrake
 	/// brake when ED braking is sufficient. Default no-op; overridden where supported.
 	/// </summary>
 	/// <param name="EDstate">ED brake intensity (0..1).</param>
-	virtual void SetED(double const EDstate) {}; // stan hamulca ED do luzowania
+	virtual void SetED(double const EDstate) { /* no effect for this device type */ } // stan hamulca ED do luzowania
 	/// <summary>Sets the universal-button flags (see TUniversalBrake).</summary>
 	/// <param name="flag">Combined ub_* flags.</param>
 	virtual void SetUniversalFlag(int flag)
@@ -1076,7 +1076,7 @@ class TDriverHandle
 	/// <param name="OverP">Unbrake over-pressure [bar].</param>
 	/// <param name="OMP">Overload (assimilation) max pressure [bar].</param>
 	/// <param name="OPD">Overload pressure decay rate [bar/s].</param>
-	virtual void SetParams(bool AO, bool MO, double, double, double OMP, double OPD) {}; // ustawianie jakichs parametrow dla zaworu
+	virtual void SetParams(bool AO, bool MO, double, double, double OMP, double OPD) { /* no effect for this device type */ } // ustawianie jakichs parametrow dla zaworu
 	/// <summary>Sets the manual overcharge button state.</summary>
 	/// <param name="Active">True while the button is pressed.</param>
 	virtual void OvrldButton(bool Active); // przycisk recznego przeladowania/asymilacji

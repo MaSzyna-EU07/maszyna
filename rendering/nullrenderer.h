@@ -23,16 +23,16 @@ private:
 // methods:
     // create() subclass details
     void
-        create_( gfx::geometry_handle const &Geometry ) override {}
+        create_( gfx::geometry_handle const &Geometry ) override { /* null implementation, nothing to do */ }
     // replace() subclass details
     void
-        replace_( gfx::geometry_handle const &Geometry ) override {}
+        replace_( gfx::geometry_handle const &Geometry ) override { /* null implementation, nothing to do */ }
     // draw() subclass details
     auto
         draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t override { return 0; }
     // release() subclass details
     void
-        release_() override {}
+        release_() override { /* null implementation, nothing to do */ }
 };
 
 // bare-bones render controller, in lack of anything better yet
@@ -51,14 +51,14 @@ public:
     bool
         Render() override { return true; }
     void
-        SwapBuffers() override {}
+        SwapBuffers() override { /* null implementation, nothing to do */ }
     inline
     float
         Framerate() override { return 10.0f; }
 
     bool AddViewport(const global_settings::extraviewport_config &conf) override { return false; }
     bool Debug_Ui_State(std::optional<bool>) override { return false; }
-    void Shutdown() override {}
+    void Shutdown() override { /* null implementation, nothing to do */ }
 
     // geometry methods
     // NOTE: hands-on geometry management is exposed as a temporary measure; ultimately all visualization data should be generated/handled automatically by the renderer itself
@@ -103,7 +103,7 @@ public:
                 return static_cast<material_handle>(m_materials.size());
             }
     void
-        Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override {}
+        Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override { /* null implementation, nothing to do */ }
     IMaterial const *
         Material( material_handle const Material ) const override { return m_materials.at(Material - 1).get(); }
     // shader methods
@@ -112,18 +112,18 @@ public:
     texture_handle
         Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) override { throw std::runtime_error("not impl"); }
     void
-        Bind_Texture( texture_handle const Texture ) override {}
+        Bind_Texture( texture_handle const Texture ) override { /* null implementation, nothing to do */ }
     void
-        Bind_Texture( std::size_t const Unit, texture_handle const Texture ) override {}
+        Bind_Texture( std::size_t const Unit, texture_handle const Texture ) override { /* null implementation, nothing to do */ }
     opengl_texture &
         Texture( texture_handle const Texture ) override { throw std::runtime_error("not impl"); }
     opengl_texture const &
         Texture( texture_handle const Texture ) const override { throw std::runtime_error("not impl"); }
     // utility methods
     void
-        Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2  )> Callback ) override {}
+        Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2  )> Callback ) override { /* null implementation, nothing to do */ }
     void
-        Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) override {}
+        Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) override { /* null implementation, nothing to do */ }
     TSubModel const *
         Pick_Control() const override { return nullptr; }
     scene::basic_node const *
@@ -132,11 +132,11 @@ public:
         Mouse_Position() const override { return glm::dvec3(); }
     // maintenance methods
     void
-        Update( double const Deltatime ) override {}
+        Update( double const Deltatime ) override { /* null implementation, nothing to do */ }
     void
-        Update_Pick_Control() override {}
+        Update_Pick_Control() override { /* null implementation, nothing to do */ }
     void
-        Update_Pick_Node() override {}
+        Update_Pick_Node() override { /* null implementation, nothing to do */ }
     glm::dvec3
         Update_Mouse_Position() override { return glm::dvec3(); }
     // debug methods
@@ -144,7 +144,7 @@ public:
         info_times() const override { return empty_str; }
     std::string const &
         info_stats() const override { return empty_str; }
-	  void MakeScreenshot() override {}
+	  void MakeScreenshot() override { /* null implementation, nothing to do */ }
 
     static std::unique_ptr<gfx_renderer> create_func();
 

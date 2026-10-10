@@ -19,8 +19,8 @@ struct message
 	type_e type;
 
 	message(type_e t) : type(t) {}
-	virtual void serialize(std::ostream &stream) const {}
-	virtual void deserialize(std::istream &stream) {}
+	virtual void serialize(std::ostream &stream) const { /* message carries no payload */ }
+	virtual void deserialize(std::istream &stream) { /* message carries no payload */ }
 	virtual ~message() = default;
 };
 
