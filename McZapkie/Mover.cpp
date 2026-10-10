@@ -6892,7 +6892,7 @@ bool TMoverParameters::AutoRelayCheck(void)
 					// return ARC;// bbylo exit; //Ra: to powoduje, że EN57 nie wyłącza się przy IminLo
 				}
 				// main bez samoczynnego rozruchu
-				if (MainCtrlActualPos < sizeof(RList) / sizeof(TScheme) - 1 // crude guard against running out of current fixed table
+				if (MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
 				    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
 				        (TrainType == dt_ET22 && DelayCtrlFlag)))
 				{
@@ -9231,7 +9231,7 @@ bool TMoverParameters::readRList(std::string const &Input)
 		return false;
 	}
 	auto idx = LISTLINE++;
-	if (idx >= sizeof(RList) / sizeof(TScheme))
+	if (idx >= std::size(RList))
 	{
 		WriteLog("Read RList: number of entries exceeded capacity of the data table");
 		return false;
@@ -9256,7 +9256,7 @@ bool TMoverParameters::readUCList(std::string const &line)
 	cParser parser(line);
 	parser.getTokens(10, false);
 	auto idx = LISTLINE++;
-	if (idx >= sizeof(UniCtrlList) / sizeof(TUniversalCtrl))
+	if (idx >= std::size(UniCtrlList))
 	{
 		WriteLog("Read UCList: number of entries exceeded capacity of the data table");
 		return false;
@@ -9274,7 +9274,7 @@ bool TMoverParameters::readDList(std::string const &line)
 	cParser parser(line);
 	parser.getTokens(3, false);
 	auto idx = LISTLINE++;
-	if (idx >= sizeof(RList) / sizeof(TScheme))
+	if (idx >= std::size(RList))
 	{
 		WriteLog("Read DList: number of entries exceeded capacity of the data table");
 		return false;
@@ -9374,7 +9374,7 @@ bool TMoverParameters::readFFList(std::string const &line)
 		return false;
 	}
 	int idx = LISTLINE++;
-	if (idx >= sizeof(FFlist) / sizeof(TFFScheme))
+	if (idx >= std::size(FFlist))
 	{
 		WriteLog("Read FList: number of entries exceeded capacity of the data table");
 		return false;
@@ -9394,7 +9394,7 @@ bool TMoverParameters::readFFEDList(std::string const &line)
 		return false;
 	}
 	int idx = LISTLINE++;
-	if (idx >= sizeof(FFEDlist) / sizeof(TFFScheme))
+	if (idx >= std::size(FFEDlist))
 	{
 		WriteLog("Read FList: number of entries exceeded capacity of the data table");
 		return false;
@@ -9414,7 +9414,7 @@ bool TMoverParameters::readWiperList(std::string const &line)
 		return false;
 	}
 	int idx = LISTLINE++;
-	if (idx >= sizeof(WiperList) / sizeof(TWiperScheme))
+	if (idx >= std::size(WiperList))
 	{
 		WriteLog("Read WiperList: number of entries exceeded capacity of the data table");
 		return false;
@@ -9450,7 +9450,7 @@ bool TMoverParameters::readWWList(std::string const &line)
 		return false;
 	}
 	int idx = LISTLINE++;
-	if (idx >= sizeof(DElist) / sizeof(TDEScheme))
+	if (idx >= std::size(DElist))
 	{
 		WriteLog("Read WWList: number of entries exceeded capacity of the data table");
 		return false;
