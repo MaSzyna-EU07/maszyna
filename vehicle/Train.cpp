@@ -10833,13 +10833,13 @@ void TTrain::DynamicSet(TDynamicObject *d)
 		{ // gdy jest człon od sprzęgu 1, a sprzęg łączony
 			// warsztatowo (powiedzmy)
 			if (mvOccupied->Couplers[1].Connected->Power > 1.0) // ten drugi ma moc
-				mvSecond = (TMoverParameters *)mvOccupied->Couplers[1].Connected; // wskaźnik na drugiego
+				mvSecond = mvOccupied->Couplers[1].Connected; // wskaźnik na drugiego
 		}
 		else if (mvOccupied->Couplers[0].Connected ? mvOccupied->Couplers[0].AllowedFlag & coupling::control : false)
 		{ // gdy jest człon od sprzęgu 0, a sprzęg łączony
 			// warsztatowo (powiedzmy)
 			if (mvOccupied->Couplers[0].Connected->Power > 1.0) // ale ten drugi ma moc
-				mvSecond = (TMoverParameters *)mvOccupied->Couplers[0].Connected; // wskaźnik na drugiego
+				mvSecond = mvOccupied->Couplers[0].Connected; // wskaźnik na drugiego
 		}
 	// cache nearest unit equipped with pantographs
 	{
