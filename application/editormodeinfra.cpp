@@ -1529,52 +1529,54 @@ void editor_mode::render_infra_candidates()
 		ImGuiListClipper clipper;
 		clipper.Begin(static_cast<int>(rows.size()));
 		while (clipper.Step())
-		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{
-			auto const i{rows[row]};
-			auto &candidate{candidates[i]};
-			auto const &anchor{candidate.binding.anchors.front()};
-			ImGui::PushID(i);
-			if (candidate.bound)
-				ImGui::TextDisabled(STR_C("[bound]"));
-			else
-				ImGui::Checkbox("##chosen", &candidate.chosen);
-			ImGui::SameLine();
-			if (ImGui::Selectable(candidate.binding.label.c_str(), false, ImGuiSelectableFlags_None, ImVec2(ImGui::CalcTextSize(candidate.binding.label.c_str()).x, 0.f)) && anchor.at.track != nullptr)
-				focus_track(*anchor.at.track, anchor.at.path, anchor.foot);
-			if (ImGui::IsItemHovered())
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 			{
-				state.hovered = i;
-				std::string text{format(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), anchor.at.track != nullptr ? anchor.at.track->name().c_str() : "-", std::abs(candidate.offset),
-				                        candidate.offset >= 0.0 ? "right" : "left", anchor.height, candidate.reason.c_str())};
+				auto const i{rows[row]};
+				auto &candidate{candidates[i]};
+				auto const &anchor{candidate.binding.anchors.front()};
+				ImGui::PushID(i);
+				if (candidate.bound)
+					ImGui::TextDisabled(STR_C("[bound]"));
+				else
+					ImGui::Checkbox("##chosen", &candidate.chosen);
+				ImGui::SameLine();
+				if (ImGui::Selectable(candidate.binding.label.c_str(), false, ImGuiSelectableFlags_None, ImVec2(ImGui::CalcTextSize(candidate.binding.label.c_str()).x, 0.f)) && anchor.at.track != nullptr)
+					focus_track(*anchor.at.track, anchor.at.path, anchor.foot);
+				if (ImGui::IsItemHovered())
+				{
+					state.hovered = i;
+					std::string text{format(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), anchor.at.track != nullptr ? anchor.at.track->name().c_str() : "-", std::abs(candidate.offset),
+					                        candidate.offset >= 0.0 ? "right" : "left", anchor.height, candidate.reason.c_str())};
+					if (candidate.reader != nullptr)
+						text += format(STR_C("\nRead by the path %s: event %s, getvalues of the memory cell %s"), candidate.reader->name().c_str(), candidate.event.c_str(), candidate.cell.c_str()) +
+						        (candidate.loose ? STR(" (written loose, the path takes it by the name)") : std::string{});
+					if (candidate.nearer != nullptr)
+						text += format(STR_C("\nThe path %s is nearer, but it doesn't read the object"), candidate.nearer->name().c_str());
+					if (candidate.unread)
+						text += STR("\nNo path reads the memory cell of the signal");
+					text += STR("\nClick to look at it");
+					ImGui::SetTooltip("%s", text.c_str());
+				}
+				ImGui::SameLine();
+				ImGui::TextDisabled("%s %+.1f m", infra::name(candidate.binding.type), candidate.offset);
 				if (candidate.reader != nullptr)
-					text += format(STR_C("\nRead by the path %s: event %s, getvalues of the memory cell %s"), candidate.reader->name().c_str(), candidate.event.c_str(), candidate.cell.c_str()) +
-					        (candidate.loose ? STR(" (written loose, the path takes it by the name)") : std::string{});
+				{
+					ImGui::SameLine();
+					ImGui::TextColored(readcolour, STR_C("read by %s"), candidate.reader->name().c_str());
+				}
 				if (candidate.nearer != nullptr)
-					text += format(STR_C("\nThe path %s is nearer, but it doesn't read the object"), candidate.nearer->name().c_str());
+				{
+					ImGui::SameLine();
+					ImGui::TextColored(warncolour, STR_C("(nearer: %s)"), candidate.nearer->name().c_str());
+				}
 				if (candidate.unread)
-					text += STR("\nNo path reads the memory cell of the signal");
-				text += STR("\nClick to look at it");
-				ImGui::SetTooltip("%s", text.c_str());
+				{
+					ImGui::SameLine();
+					ImGui::TextColored(warncolour, "%s", STR_C("not read"));
+				}
+				ImGui::PopID();
 			}
-			ImGui::SameLine();
-			ImGui::TextDisabled("%s %+.1f m", infra::name(candidate.binding.type), candidate.offset);
-			if (candidate.reader != nullptr)
-			{
-				ImGui::SameLine();
-				ImGui::TextColored(readcolour, STR_C("read by %s"), candidate.reader->name().c_str());
-			}
-			if (candidate.nearer != nullptr)
-			{
-				ImGui::SameLine();
-				ImGui::TextColored(warncolour, STR_C("(nearer: %s)"), candidate.nearer->name().c_str());
-			}
-			if (candidate.unread)
-			{
-				ImGui::SameLine();
-				ImGui::TextColored(warncolour, "%s", STR_C("not read"));
-			}
-			ImGui::PopID();
 		}
 		ImGui::TreePop();
 	}
@@ -1606,18 +1608,20 @@ void editor_mode::render_infra_bound()
 		ImGuiListClipper clipper;
 		clipper.Begin(static_cast<int>(along.size()));
 		while (clipper.Step())
-		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{
-			auto const index{along[row]};
-			auto const &binding{m_bindings[index]};
-			ImGui::PushID(static_cast<int>(index));
-			if (ImGui::SmallButton(STR_C("unbind")))
-				unbind = index;
-			ImGui::SameLine();
-			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(binding.lost ? IM_COL32(255, 80, 70, 255) : colour(binding.group)));
-			ImGui::Text("%s%s", binding.label.c_str(), binding.lost ? STR_C("  (no path to follow)") : "");
-			ImGui::PopStyleColor();
-			ImGui::PopID();
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+			{
+				auto const index{along[row]};
+				auto const &binding{m_bindings[index]};
+				ImGui::PushID(static_cast<int>(index));
+				if (ImGui::SmallButton(STR_C("unbind")))
+					unbind = index;
+				ImGui::SameLine();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(binding.lost ? IM_COL32(255, 80, 70, 255) : colour(binding.group)));
+				ImGui::Text("%s%s", binding.label.c_str(), binding.lost ? STR_C("  (no path to follow)") : "");
+				ImGui::PopStyleColor();
+				ImGui::PopID();
+			}
 		}
 		ImGui::EndChild();
 		if (unbind)

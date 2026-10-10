@@ -61,7 +61,7 @@ class scenerywizard_panel : public ui_panel
 
 	bool m_picked{false};
 	glm::dvec2 m_point{0.0};
-	char m_name[64]{};
+	char m_filename[64]{};
 	char m_title[128]{};
 	char m_latlon[64]{};
 	std::string m_status;

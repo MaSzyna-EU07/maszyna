@@ -274,8 +274,8 @@ void ui::scenerywizard_panel::render_form()
 	ImGui::Spacing();
 
 	ImGui::SetNextItemWidth(-1.f);
-	ImGui::InputTextWithHint("##name", STR_C("file name, e.g. my_line"), m_name, sizeof(m_name), ImGuiInputTextFlags_CharsNoBlank);
-	std::string name{m_name};
+	ImGui::InputTextWithHint("##name", STR_C("file name, e.g. my_line"), m_filename, sizeof(m_filename), ImGuiInputTextFlags_CharsNoBlank);
+	std::string name{m_filename};
 	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
 	auto const path{Global.asCurrentSceneryPath + name + ".scn"};
 	auto const named{valid_name(name)};
@@ -352,7 +352,7 @@ void ui::scenerywizard_panel::render_form()
 
 bool ui::scenerywizard_panel::create_scenery()
 {
-	std::string name{m_name};
+	std::string name{m_filename};
 	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
 	auto const file{name + ".scn"};
 	std::ofstream output(Global.asCurrentSceneryPath + file, std::ios::binary);
