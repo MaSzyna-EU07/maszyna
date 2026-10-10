@@ -76,7 +76,7 @@ void TGauge::Init(TSubModel *Submodel, TSubModel *Submodelon, TGaugeAnimation Ty
     auto const nulloffset { glm::vec3{} };
     auto const offset { model_offset() };
     {
-        std::vector<sound_source *> soundfxs = {
+        std::vector soundfxs = {
             &m_soundfxincrease,
             &m_soundfxdecrease,
             &m_soundfxon,
