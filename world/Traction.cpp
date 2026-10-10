@@ -463,9 +463,11 @@ void TTraction::PowerSet(TTractionPowerSource *ps)
     else
     { // ustalenie punktu zasilania (nie ma jeszcze połączeń między przęsłami)
         psPowered = ps; // ustawienie bezpośredniego zasilania dla przęsła
-        psPower[0] = psPower[1] = ps; // a to chyba nie jest dobry pomysł, bo nawet zasilane przęsło
+        psPower[0] = ps; // a to chyba nie jest dobry pomysł, bo nawet zasilane przęsło
+        psPower[1] = ps;
         // powinno mieć wskazania na inne
-        fResistance[0] = fResistance[1] = 0.0; // a liczy się tylko rezystancja zasilacza
+        fResistance[0] = 0.0; // a liczy się tylko rezystancja zasilacza
+        fResistance[1] = 0.0;
     }
 };
 

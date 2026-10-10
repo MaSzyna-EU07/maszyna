@@ -589,7 +589,8 @@ TTrain::TTrain()
 	// McZapkie-240302 - przyda sie do tachometru
 	fTachoVelocity = 0;
 	fTachoCount = 0;
-	fPPress = fNPress = 0;
+	fPPress = 0;
+	fNPress = 0;
 
 	// asMessage="";
 	pMechOffset = glm::dvec3(0, 0, 0);
@@ -628,7 +629,8 @@ TTrain::TTrain()
 	{
 		for (auto &press : fPress[i])
 			press = 0.0;
-		bBrakes[i][0] = bBrakes[i][1] = false;
+		bBrakes[i][0] = false;
+		bBrakes[i][1] = false;
 	}
 }
 
@@ -8522,7 +8524,12 @@ bool TTrain::Update(double const Deltatime)
 			fHCurrent[3] = static_cast<float>(mvSecond->ShowCurrent(3) * 1.05);
 		}
 		else
-			fHCurrent[0] = fHCurrent[1] = fHCurrent[2] = fHCurrent[3] = 0.0; // gdy nie ma człona
+		{
+			fHCurrent[0] = 0.0; // gdy nie ma człona
+			fHCurrent[1] = 0.0;
+			fHCurrent[2] = 0.0;
+			fHCurrent[3] = 0.0;
+		}
 	}
 	else
 	{ // normalne pokazywanie
@@ -8649,9 +8656,19 @@ bool TTrain::Update(double const Deltatime)
 		}
 		else
 		{
-			fPress[i][0] = fPress[i][1] = fPress[i][2] = fPress[i][3] = fPress[i][4] = fPress[i][5] = 0;
-			bDoors[i][0] = bDoors[i][1] = bDoors[i][2] = bDoors[i][3] = bDoors[i][4] = false;
-			bBrakes[i][0] = bBrakes[i][1] = false;
+			fPress[i][0] = 0;
+			fPress[i][1] = 0;
+			fPress[i][2] = 0;
+			fPress[i][3] = 0;
+			fPress[i][4] = 0;
+			fPress[i][5] = 0;
+			bDoors[i][0] = false;
+			bDoors[i][1] = false;
+			bDoors[i][2] = false;
+			bDoors[i][3] = false;
+			bDoors[i][4] = false;
+			bBrakes[i][0] = false;
+			bBrakes[i][1] = false;
 			bSlip[i] = false;
 			iUnits[i] = 0;
 			cCode[i] = 0; //'0';
@@ -10692,7 +10709,8 @@ void TTrain::DynamicSet(TDynamicObject *d)
 	// jeździć dobrze
 	// również hamowanie wykonuje się zaworem w członie, a nie w silnikowym...
 	DynamicObject = d; // jedyne miejsce zmiany
-	mvOccupied = mvControlled = d ? DynamicObject->MoverParameters : nullptr; // albo silnikowy w EZT
+	mvControlled = d ? DynamicObject->MoverParameters : nullptr; // albo silnikowy w EZT
+	mvOccupied = mvControlled;
 
 	if (DynamicObject == nullptr)
 	{
