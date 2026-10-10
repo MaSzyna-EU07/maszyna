@@ -245,7 +245,7 @@ void TTrainParameters::UpdateVelocity(int Stationcount, double vActual)
 //	return false;
 //}
 
-bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
+bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double vmax)
 // wczytanie pliku-tabeli z rozkładem przesuniętym o (fPlus); (vMax) nie ma znaczenia
 {
     std::string lines;

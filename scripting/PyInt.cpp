@@ -470,7 +470,7 @@ void python_taskqueue::release_lock() const
 	PyEval_SaveThread();
 }
 
-auto python_taskqueue::fetch_renderer(std::string const Renderer) -> PyObject *
+auto python_taskqueue::fetch_renderer(std::string const &Renderer) -> PyObject *
 {
 
 	if (auto const lookup{m_renderers.find(Renderer)}; lookup != std::end(m_renderers))

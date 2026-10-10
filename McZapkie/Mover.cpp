@@ -460,7 +460,7 @@ double TMoverParameters::Current(double n, double U)
 // *************************************************************************************************
 //  główny konstruktor
 // *************************************************************************************************
-TMoverParameters::TMoverParameters(double VelInitial, std::string TypeNameInit, std::string NameInit, int Cab) : TypeName(TypeNameInit), Name(NameInit), CabOccupied(Cab)
+TMoverParameters::TMoverParameters(double VelInitial, std::string const &TypeNameInit, std::string const &NameInit, int Cab) : TypeName(TypeNameInit), Name(NameInit), CabOccupied(Cab)
 {
 	WriteLog("------------------------------------------------------");
 	WriteLog("init default physic values for " + NameInit + ", [" + TypeNameInit + "]");
@@ -9607,7 +9607,7 @@ void TMoverParameters::BrakeSubsystemDecode()
 // TDynamicObject::Init()
 // Po niej wykonywana jest CreateBrakeSys(), ktora jest odpowiednikiem CheckLocomotiveParameters()
 // *************************************************************************************************
-bool TMoverParameters::LoadFIZ(std::string chkpath)
+bool TMoverParameters::LoadFIZ(std::string const &chkpath)
 {
 	chkPath = chkpath; // assign class path for reloading
 
@@ -11547,7 +11547,7 @@ void TMoverParameters::LoadFIZ_CompressorList(std::string const &Input)
 	extract_value(CompressorListDefPos, "Default", Input, "");
 }
 
-void TMoverParameters::LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const Prefix, std::string const &Line)
+void TMoverParameters::LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const &Prefix, std::string const &Line)
 {
 
 	switch (Powerparameters.SourceType)
@@ -12106,7 +12106,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 // Q: 20160714
 // Wstawia komendę z parametrem, od sprzęgu i w lokalizacji do pojazdu
 // *************************************************************************************************
-void TMoverParameters::PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation)
+void TMoverParameters::PutCommand(std::string const &NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation)
 {
 	CommandLast = NewCommand; // zapamiętanie komendy
 
@@ -12131,7 +12131,7 @@ double TMoverParameters::GetExternalCommand(std::string &Command) const
 // Q: 20160714
 // Ustawienie komendy wraz z parametrami
 // *************************************************************************************************
-bool TMoverParameters::SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype)
+bool TMoverParameters::SetInternalCommand(std::string const &NewCommand, double NewValue1, double NewValue2, int const Couplertype)
 {
 	bool SIC;
 	if (CommandIn.Command == NewCommand && CommandIn.Value1 == NewValue1 && CommandIn.Value2 == NewValue2 && CommandIn.Coupling == Couplertype)
@@ -12153,7 +12153,7 @@ bool TMoverParameters::SetInternalCommand(std::string NewCommand, double NewValu
 // Q: 20160714
 // wysyłanie komendy w kierunku dir (1=przód, -1=tył) do kolejnego pojazdu (jednego)
 // *************************************************************************************************
-bool TMoverParameters::SendCtrlToNext(std::string const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype)
+bool TMoverParameters::SendCtrlToNext(std::string const &CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype)
 {
 	bool OK;
 	int d; // numer sprzęgu w kierunku którego wysyłamy
@@ -12193,7 +12193,7 @@ bool TMoverParameters::SendCtrlToNext(std::string const CtrlCommand, double cons
 // Komenda musi być zdefiniowana tutaj, a jeśli się wywołuje funkcję, to ona nie może
 // sama przesyłać do kolejnych pojazdów. Należy też się zastanowić, czy dla uzyskania
 // jakiejś zmiany (np. IncMainCtrl) lepiej wywołać funkcję, czy od razu wysłać komendę.
-bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype)
+bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype)
 {
 	bool OK{false};
 

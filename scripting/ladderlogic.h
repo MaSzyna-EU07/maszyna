@@ -100,7 +100,7 @@ private:
 // methods
     auto deserialize_operation( cParser &Input ) -> bool;
     // adds provided item to the collection. returns: true if there's no duplicate with the same name, false otherwise
-    auto insert( std::string const Name, basic_element Element ) -> element_handle;
+    auto insert( std::string const &Name, basic_element Element ) -> element_handle;
     // runs one cycle of current program. returns: error code or 0 if there's no error
     auto run() -> int;
     void log_error( std::string const &Error, int const Line = -1 ) const;

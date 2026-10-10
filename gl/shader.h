@@ -85,7 +85,7 @@ namespace gl
     {
     public:
         program();
-        explicit program(std::vector<std::reference_wrapper<const gl::shader>>);
+        explicit program(std::vector<std::reference_wrapper<const gl::shader>> const &);
         ~program();
 
         using bindable::bind;

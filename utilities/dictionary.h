@@ -28,6 +28,6 @@ struct dictionary_source {
     inline void insert( std::string const &Key, double const Value )      { floats.emplace_back( Key, Value ); }
     inline void insert( std::string const &Key, int const Value )         { integers.emplace_back( Key, Value ); }
     inline void insert( std::string const &Key, bool const Value )        { bools.emplace_back( Key, Value ); }
-    inline void insert( std::string const &Key, std::string const Value ) { strings.emplace_back( Key, Value ); }
-    inline void insert( std::string const &Key, std::vector<glm::vec2> const Value ) { vec2_lists.emplace_back( Key, Value ); }
+    inline void insert( std::string const &Key, std::string const &Value ) { strings.emplace_back( Key, Value ); }
+    inline void insert( std::string const &Key, std::vector<glm::vec2> const &Value ) { vec2_lists.emplace_back( Key, Value ); }
 };
