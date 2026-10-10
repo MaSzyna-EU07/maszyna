@@ -107,13 +107,13 @@ void render_task::run()
 	m_input = nullptr;
 
 	// call the renderer
-	auto *output{PyObject_CallMethod(m_renderer, const_cast<char *>("render"), const_cast<char *>("O"), input)};
+	auto *output{PyObject_CallMethod(m_renderer, "render", "O", input)};
 	Py_DECREF(input);
 
 	if (output != nullptr)
 	{
-		auto *outputWidth = PyObject_CallMethod(m_renderer, const_cast<char *>("get_width"), nullptr);
-		auto *outputHeight = PyObject_CallMethod(m_renderer, const_cast<char *>("get_height"), nullptr);
+		auto *outputWidth = PyObject_CallMethod(m_renderer, "get_width", nullptr);
+		auto *outputHeight = PyObject_CallMethod(m_renderer, "get_height", nullptr);
 
 		if (outputWidth != nullptr && outputHeight != nullptr && m_target != nullptr)
 		{
@@ -166,7 +166,7 @@ void render_task::run()
 	}
 
 	// get commands from renderer
-	auto *commandsPO = PyObject_CallMethod(m_renderer, const_cast<char *>("getCommands"), nullptr);
+	auto *commandsPO = PyObject_CallMethod(m_renderer, "getCommands", nullptr);
 	if (commandsPO != nullptr)
 	{
 		std::vector<std::string> commands = python_external_utils::PyObjectToStringArray(commandsPO);
@@ -310,7 +310,7 @@ auto python_taskqueue::init() -> bool
 	stringiomodule = PyImport_ImportModule("io");
 	stringioclassname = stringiomodule != nullptr ? PyObject_GetAttrString(stringiomodule, "StringIO") : nullptr;
 	stringioobject = stringioclassname != nullptr ? PyObject_CallObject(stringioclassname, nullptr) : nullptr;
-	m_stderr = {(stringioobject == nullptr ? nullptr : PySys_SetObject(const_cast<char *>("stderr"), stringioobject) != 0 ? nullptr : stringioobject)};
+	m_stderr = {(stringioobject == nullptr ? nullptr : PySys_SetObject("stderr", stringioobject) != 0 ? nullptr : stringioobject)};
 
 	if (false == run_file("abstractscreenrenderer"))
 	{
@@ -509,7 +509,7 @@ auto python_taskqueue::fetch_renderer(std::string const &Renderer) -> PyObject *
 		}
 		renderer = PyObject_CallObject(renderername, rendererarguments);
 
-		PyObject_CallMethod(renderer, const_cast<char *>("manul_set_format"), const_cast<char *>("(s)"), "RGBA");
+		PyObject_CallMethod(renderer, "manul_set_format", "(s)", "RGBA");
 
 		if (PyErr_Occurred() != nullptr)
 		{
@@ -621,14 +621,14 @@ void python_taskqueue::error()
 	{
 		// std err pythona jest buforowane
 		PyErr_Print();
-		if (auto *errortext{PyObject_CallMethod(m_stderr, const_cast<char *>("getvalue"), nullptr)}; errortext != nullptr)
+		if (auto *errortext{PyObject_CallMethod(m_stderr, "getvalue", nullptr)}; errortext != nullptr)
 		{
 			if (const char *errstr = PyUnicode_AsUTF8(errortext); errstr != nullptr)
 				ErrorLog(errstr);
 			Py_DECREF(errortext);
 		}
-		PyObject_CallMethod(m_stderr, const_cast<char *>("truncate"), const_cast<char *>("L"), (long long)0);
-		PyObject_CallMethod(m_stderr, const_cast<char *>("seek"), const_cast<char *>("L"), (long long)0);
+		PyObject_CallMethod(m_stderr, "truncate", "L", (long long)0);
+		PyObject_CallMethod(m_stderr, "seek", "L", (long long)0);
 	}
 	else
 	{
