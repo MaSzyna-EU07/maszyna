@@ -1476,7 +1476,6 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 
 double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Shape*/, TTrackParam & /*Track*/, TLocation const &NewLoc, TRotation const &NewRot)
 {
-	int b;
 	// T_MoverParameters::FastComputeMovement(dt, Shape, Track, NewLoc, NewRot);
 
 	Loc = NewLoc;
@@ -1517,7 +1516,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 
 		dL = (3.0 * V - Vprev) * dt / 2.0; // metoda Adamsa-Bashfortha
 		// ale jesli jest kolizja (zas. zach. pedu) to...
-		for (b = 0; b < 2; b++)
+		for (int b = 0; b < 2; b++)
 			if (Couplers[b].CheckCollision)
 				CollisionDetect(b, dt); // zmienia niejawnie AccS, V !!!
 	} // liczone dL, predkosc i przyspieszenie
@@ -11701,7 +11700,6 @@ TEngineType TMoverParameters::LoadFIZ_EngineDecode(std::string const &Engine) co
 bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 {
 	WriteLog("check locomotive parameters...");
-	int b;
 	bool OK = true;
 
 	AutoRelayFlag = AutoRelayType == 1;
@@ -12052,7 +12050,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	// yB: jesli pojazdy nie maja zadeklarowanych czasow, to wsadz z przepisow +-16,(6)%
 	int DefBrakeTable[8] = {15, 4, 25, 25, 13, 3, 12, 2};
 
-	for (b = 1; b < 4; b++)
+	for (int b = 1; b < 4; b++)
 	{
 		if (BrakeDelay[b] == 0)
 			BrakeDelay[b] = DefBrakeTable[b];
@@ -12739,7 +12737,6 @@ bool TMoverParameters::RunInternalCommand()
 // *************************************************************************************************
 double TMoverParameters::ShowCurrentP(int AmpN) const
 {
-	int b;
 	int Bn;
 	bool Grupowy;
 
@@ -12764,7 +12761,7 @@ double TMoverParameters::ShowCurrentP(int AmpN) const
 	else // pobor pradu jezeli niema mocy
 	{
 		int current = 0;
-		for (b = 0; b < 2; b++)
+		for (int b = 0; b < 2; b++)
 			// with Couplers[b] do
 			if (TestFlag(Couplers[b].CouplingFlag, coupling::control) && Couplers[b].Connected->Power > 0.01)
 				current = static_cast<int>(Couplers[b].Connected->ShowCurrent(AmpN));

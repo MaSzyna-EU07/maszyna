@@ -2055,7 +2055,6 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 void TEStED::Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF)
 {
 	TLSt::Init(PP, HPP, LPP, BP, BDF);
-	int i;
 
 	ValveRes->CreatePress(PP);
 	BrakeCyl->CreatePress(BP);
@@ -2090,7 +2089,7 @@ void TEStED::Init(double const PP, double const HPP, double const LPP, double co
 	Nozzles[6] = 0.9;
 
 	{
-		for (i = 0; i < 11; ++i)
+		for (int i = 0; i < 11; ++i)
 		{
 			Nozzles[i] = Nozzles[i] * Nozzles[i] * 3.14159 / 4000;
 		}
