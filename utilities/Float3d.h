@@ -120,7 +120,7 @@ class float4
     };
     float inline Length() const
     {
-        return sqrt(x * x + y * y + z * z + w * w);
+        return static_cast<float>(sqrt(x * x + y * y + z * z + w * w));
     };
 };
 inline float4 operator*(const float4 &q1, const float4 &q2)
@@ -194,8 +194,8 @@ inline float4 Slerp(const float4 &q0, const float4 &q1, float t)
         auto const sinOmega = std::sqrt(1.0f - cosOmega * cosOmega); // sinus z jedynki tryg.
         auto const omega = std::atan2(sinOmega, cosOmega); // wyznaczenie kąta
         auto const oneOverSinOmega = 1.0f / sinOmega; // odwrotność sinusa, bo sinus w mianowniku
-        k0 = sin((1.0f - t) * omega) * oneOverSinOmega;
-        k1 = sin(t * omega) * oneOverSinOmega;
+        k0 = static_cast<float>(sin((1.0f - t) * omega) * oneOverSinOmega);
+        k1 = static_cast<float>(sin(t * omega) * oneOverSinOmega);
     }
     return float4(q0.x * k0 + new_q1.x * k1, q0.y * k0 + new_q1.y * k1, q0.z * k0 + new_q1.z * k1,
                   q0.w * k0 + new_q1.w * k1);

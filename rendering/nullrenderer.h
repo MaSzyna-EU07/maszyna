@@ -100,7 +100,7 @@ public:
         Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override {
                 m_materials.push_back(std::make_shared<opengl_material>());
                 m_materials.back()->name = Filename;
-                return m_materials.size();
+                return static_cast<material_handle>(m_materials.size());
             }
     void
         Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override {}

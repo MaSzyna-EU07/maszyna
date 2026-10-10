@@ -158,7 +158,7 @@ auto basic_controller::find_or_insert( std::string const &Name, basic_element::t
     auto index { 1 };
     for( auto const &name : m_elementnames ) {
         if( name == Name ) {
-            return index;
+            return static_cast<element_handle>(index);
         }
         ++index;
     }

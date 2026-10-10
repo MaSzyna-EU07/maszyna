@@ -69,9 +69,9 @@ smoke_source::particle_emitter::initialize( smoke_particle &Particle ) {
     
     Particle.velocity = launchvector * launchvelocity;
 
-    Particle.rotation = glm::radians( LocalRandom( 0, 360 ) );
-    Particle.size = LocalRandom( size[ value_limit::min ], size[ value_limit::max ] );
-    Particle.opacity = LocalRandom( opacity[ value_limit::min ], opacity[ value_limit::max ] ) / Global.SmokeFidelity;
+    Particle.rotation = static_cast<float>(glm::radians( LocalRandom( 0, 360 ) ));
+    Particle.size = static_cast<float>(LocalRandom( size[ value_limit::min ], size[ value_limit::max ] ));
+    Particle.opacity = static_cast<float>(LocalRandom( opacity[ value_limit::min ], opacity[ value_limit::max ] ) / Global.SmokeFidelity);
     Particle.age = 0;
 }
 
@@ -166,8 +166,8 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
         ( ( false == Global.Smoke ) || ( true == Onlydespawn ) ) ?
             0.f :
             std::min<float>(
-                m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
-                m_max_particles ) );
+                static_cast<float>(m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity )),
+                static_cast<float>(m_max_particles) ) );
     // consider special spawn rate cases
     if( m_ownertype == owner_type::vehicle ) {
 
@@ -183,7 +183,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
 			        0.f :
 			        std::min<float>(
 			            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
-			   m_spawncount +(m_spawnrate * Timedelta * Global.SmokeFidelity * (((m_owner.vehicle->MoverParameters->enrot) / 4 ) * 0.01)), m_max_particles);
+			   static_cast<float>(m_spawncount +(m_spawnrate * Timedelta * Global.SmokeFidelity * (((m_owner.vehicle->MoverParameters->enrot) / 4 ) * 0.01))), static_cast<float>(m_max_particles));
 		}
 		else
 		{
@@ -195,7 +195,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
 				        0.f :
 				        std::min<float>(
 				            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
-				            m_spawncount + (m_spawnrate * Timedelta * Global.SmokeFidelity * ((((m_owner.vehicle->MoverParameters->DElist[m_owner.vehicle->MoverParameters->MainCtrlPosNo].RPM -m_owner.vehicle->MoverParameters->enrot) /60) *0.02) *(m_owner.vehicle->MoverParameters->EnginePower * 0.005))), m_max_particles);
+				            static_cast<float>(m_spawncount + (m_spawnrate * Timedelta * Global.SmokeFidelity * ((((m_owner.vehicle->MoverParameters->DElist[m_owner.vehicle->MoverParameters->MainCtrlPosNo].RPM -m_owner.vehicle->MoverParameters->enrot) /60) *0.02) *(m_owner.vehicle->MoverParameters->EnginePower * 0.005)))), static_cast<float>(m_max_particles));
 			}
 			else
 			{
@@ -205,7 +205,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
 				        0.f :
 				        std::min<float>(
 				            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
-				            m_spawncount + (m_spawnrate * Timedelta * Global.SmokeFidelity * ((((m_owner.vehicle->MoverParameters->DElist[m_owner.vehicle->MoverParameters->MainCtrlPosNo].RPM -m_owner.vehicle->MoverParameters->enrot) /60) * (sqrt(m_owner.vehicle->MoverParameters->Im) * 0.01) * 0.02) *(m_owner.vehicle->MoverParameters->EnginePower * 0.005))), m_max_particles);
+				            static_cast<float>(m_spawncount + (m_spawnrate * Timedelta * Global.SmokeFidelity * ((((m_owner.vehicle->MoverParameters->DElist[m_owner.vehicle->MoverParameters->MainCtrlPosNo].RPM -m_owner.vehicle->MoverParameters->enrot) /60) * (sqrt(m_owner.vehicle->MoverParameters->Im) * 0.01) * 0.02) *(m_owner.vehicle->MoverParameters->EnginePower * 0.005)))), static_cast<float>(m_max_particles));
 			}
 		}
 	}
@@ -283,7 +283,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
     // determine bounding area from calculated bounding box
     if( false == m_particles.empty() ) {
 		m_area.center = glm::mix(boundingbox[value_limit::min], boundingbox[value_limit::max], 0.5);
-        m_area.radius = 0.5 * ( glm::length( boundingbox[ value_limit::max ] - boundingbox[ value_limit::min ] ) );
+        m_area.radius = static_cast<float>(0.5 * ( glm::length( boundingbox[ value_limit::max ] - boundingbox[ value_limit::min ] ) ));
     }
     else {
         m_area.center = location();
@@ -331,7 +331,7 @@ smoke_source::initialize( smoke_particle &Particle ) {
     Particle.position = location();
 
     if( m_ownertype == owner_type::vehicle ) {
-        Particle.opacity *= m_owner.vehicle->MoverParameters->dizel_fill;
+        Particle.opacity *= static_cast<float>(m_owner.vehicle->MoverParameters->dizel_fill);
         auto const enginerevolutionsfactor { 1.5f }; // high engine revolutions increase initial particle velocity
         switch( m_owner.vehicle->MoverParameters->EngineType ) {
         case TEngineType::DieselElectric: {
@@ -372,15 +372,15 @@ smoke_source::update( smoke_particle &Particle, bounding_box &Boundingbox, doubl
 	{
 	case owner_type::vehicle:
 	{
-    Particle.velocity.y += ( 0.025 * Particle.velocity.y ) * std::min( 0.f, Global.AirTemperature - 90 ) * Timedelta; // decelerate faster in cold weather
-	Particle.velocity.y -= ( (0.05 * (pow(m_owner.vehicle->GetVelocity()*1,0.4))) * Particle.velocity.y ) * Global.Overcast * Timedelta; // decelerate faster with high air humidity and/or precipitation
+    Particle.velocity.y += static_cast<float>(( 0.025 * Particle.velocity.y ) * std::min( 0.f, Global.AirTemperature - 90 ) * Timedelta); // decelerate faster in cold weather
+	Particle.velocity.y -= static_cast<float>(( (0.05 * (pow(m_owner.vehicle->GetVelocity()*1,0.4))) * Particle.velocity.y ) * Global.Overcast * Timedelta); // decelerate faster with high air humidity and/or precipitation
 	break;
     }
 	default:
 	{
-	Particle.velocity.y += ( 0.005 * Particle.velocity.y ) * std::min( 0.f, Global.AirTemperature - 10 ) * Timedelta; // decelerate faster in cold weather
-    Particle.velocity.y -= ( 0.050 * Particle.velocity.y ) * Global.Overcast * Timedelta; // decelerate faster with high air humidity and/or precipitation
-    Particle.velocity.y = std::max<float>( 0.25 * ( 2.f - Global.Overcast ), Particle.velocity.y ); // put a cap on deceleration
+	Particle.velocity.y += static_cast<float>(( 0.005 * Particle.velocity.y ) * std::min( 0.f, Global.AirTemperature - 10 ) * Timedelta); // decelerate faster in cold weather
+    Particle.velocity.y -= static_cast<float>(( 0.050 * Particle.velocity.y ) * Global.Overcast * Timedelta); // decelerate faster with high air humidity and/or precipitation
+    Particle.velocity.y = std::max<float>( static_cast<float>(0.25 * ( 2.f - Global.Overcast )), Particle.velocity.y ); // put a cap on deceleration
 	break;
     }
     }
@@ -389,7 +389,7 @@ smoke_source::update( smoke_particle &Particle, bounding_box &Boundingbox, doubl
     Particle.position += 0.1f * Particle.age * simulation::Environment.wind() * static_cast<float>( Timedelta );
 //    m_velocitymodifier.update( Particle.velocity, Timedelta );
 
-    Particle.age += Timedelta;
+    Particle.age += static_cast<float>(Timedelta);
 
     // update bounding box
     Boundingbox[ value_limit::min ] = glm::min( Boundingbox[ value_limit::min ], Particle.position - glm::dvec3{ Particle.size } );

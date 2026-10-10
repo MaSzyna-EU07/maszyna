@@ -115,16 +115,16 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 if (*pRozkaz->iPar & 1) // ustawienie czasu
                 {
                     auto t = pRozkaz->fPar[1];
-                    simulation::Time.data().wDay = std::floor(t); // niby nie powinno być dnia, ale...
+                    simulation::Time.data().wDay = static_cast<uint16_t>(std::floor(t)); // niby nie powinno być dnia, ale...
                     if (Global.fMoveLight >= 0)
                         Global.fMoveLight = t; // trzeba by deklinację Słońca przeliczyć
-                    simulation::Time.data().wHour = std::floor(24 * t) - 24.0 * simulation::Time.data().wDay;
-                    simulation::Time.data().wMinute = std::floor(60 * 24 * t) - 60.0 * (24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour);
-                    simulation::Time.data().wSecond = std::floor( 60 * 60 * 24 * t ) - 60.0 * ( 60.0 * ( 24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour ) + simulation::Time.data().wMinute );
+                    simulation::Time.data().wHour = static_cast<uint16_t>(std::floor(24 * t) - 24.0 * simulation::Time.data().wDay);
+                    simulation::Time.data().wMinute = static_cast<uint16_t>(std::floor(60 * 24 * t) - 60.0 * (24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour));
+                    simulation::Time.data().wSecond = static_cast<uint16_t>(std::floor( 60 * 60 * 24 * t ) - 60.0 * ( 60.0 * ( 24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour ) + simulation::Time.data().wMinute ));
                 }
             if (*pRozkaz->iPar & 2)
             { // ustawienie flag zapauzowania
-                Global.iPause = pRozkaz->fPar[2]; // zakładamy, że wysyłający wie, co robi
+                Global.iPause = static_cast<int>(pRozkaz->fPar[2]); // zakładamy, że wysyłający wie, co robi
             }
         }
         break;
@@ -189,7 +189,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                     d->Damage( pRozkaz->cString[ 0 ] );
                     d = d->Prev(); // w drugą stronę też
                 }
-                WyslijUszkodzenia( lookup->asName, lookup->MoverParameters->EngDmgFlag ); // zwrot informacji o pojeździe
+                WyslijUszkodzenia( lookup->asName, static_cast<char>(lookup->MoverParameters->EngDmgFlag) ); // zwrot informacji o pojeździe
             }
 			break;
         default:

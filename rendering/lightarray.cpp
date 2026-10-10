@@ -75,13 +75,13 @@ light_array::update() {
 
 				light.intensity = std::max(0.0f, std::log((float)light.count + 1.0f));
 				if (light.owner->DimHeadlights && !light.owner->HighBeamLights && isEnabled) // tylko przyciemnione
-					light.intensity *= light.owner->MoverParameters->dimMultiplier;
+					light.intensity *= static_cast<float>(light.owner->MoverParameters->dimMultiplier);
 				else if (!light.owner->DimHeadlights && !light.owner->HighBeamLights && isEnabled) // normalne
-					light.intensity *= light.owner->MoverParameters->normMultiplier;
+					light.intensity *= static_cast<float>(light.owner->MoverParameters->normMultiplier);
 				else if (light.owner->DimHeadlights && light.owner->HighBeamLights && isEnabled) // przyciemnione dlugie
-					light.intensity *= light.owner->MoverParameters->highDimMultiplier;
+					light.intensity *= static_cast<float>(light.owner->MoverParameters->highDimMultiplier);
 				else if (!light.owner->DimHeadlights && light.owner->HighBeamLights && isEnabled) // dlugie zwykle
-					light.intensity *= light.owner->MoverParameters->highMultiplier;
+					light.intensity *= static_cast<float>(light.owner->MoverParameters->highMultiplier);
 				else if (!isEnabled)
                 {
 					light.intensity = 0.0f;

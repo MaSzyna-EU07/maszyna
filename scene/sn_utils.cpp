@@ -18,7 +18,7 @@ uint16_t sn_utils::ld_uint16(std::istream &s)
 {
 	uint8_t buf[2];
 	s.read((char*)buf, 2);
-	uint16_t v = buf[1] << 8 | buf[0];
+	uint16_t v = static_cast<uint16_t>(buf[1] << 8 | buf[0]);
 	return v;
 }
 
@@ -142,7 +142,7 @@ uint8_t sn_utils::d_uint8( std::istream& s ) {
 void sn_utils::ls_uint16(std::ostream &s, uint16_t v)
 {
 	uint8_t buf[2];
-	buf[0] = v;
+	buf[0] = static_cast<uint8_t>(v);
 	buf[1] = v >> 8;
 	s.write((char*)buf, 2);
 }
@@ -150,9 +150,9 @@ void sn_utils::ls_uint16(std::ostream &s, uint16_t v)
 void sn_utils::ls_uint32(std::ostream &s, uint32_t v)
 {
 	uint8_t buf[4];
-	buf[0] = v;
-	buf[1] = v >> 8;
-	buf[2] = v >> 16;
+	buf[0] = static_cast<uint8_t>(v);
+	buf[1] = static_cast<uint8_t>(v >> 8);
+	buf[2] = static_cast<uint8_t>(v >> 16);
 	buf[3] = v >> 24;
 	s.write((char*)buf, 4);
 }
@@ -160,9 +160,9 @@ void sn_utils::ls_uint32(std::ostream &s, uint32_t v)
 void sn_utils::ls_int32(std::ostream &s, int32_t v)
 {
 	uint8_t buf[4];
-	buf[0] = v;
-	buf[1] = v >> 8;
-	buf[2] = v >> 16;
+	buf[0] = static_cast<uint8_t>(v);
+	buf[1] = static_cast<uint8_t>(v >> 8);
+	buf[2] = static_cast<uint8_t>(v >> 16);
 	buf[3] = v >> 24;
 	s.write((char*)buf, 4);
 }
@@ -170,13 +170,13 @@ void sn_utils::ls_int32(std::ostream &s, int32_t v)
 void sn_utils::ls_uint64(std::ostream &s, uint64_t v)
 {
 	uint8_t buf[8];
-	buf[0] = v;
-	buf[1] = v >> 8;
-	buf[2] = v >> 16;
-	buf[3] = v >> 24;
-	buf[4] = v >> 32;
-	buf[5] = v >> 40;
-	buf[6] = v >> 48;
+	buf[0] = static_cast<uint8_t>(v);
+	buf[1] = static_cast<uint8_t>(v >> 8);
+	buf[2] = static_cast<uint8_t>(v >> 16);
+	buf[3] = static_cast<uint8_t>(v >> 24);
+	buf[4] = static_cast<uint8_t>(v >> 32);
+	buf[5] = static_cast<uint8_t>(v >> 40);
+	buf[6] = static_cast<uint8_t>(v >> 48);
 	buf[7] = v >> 56;
 	s.write((char*)buf, 8);
 }
@@ -184,13 +184,13 @@ void sn_utils::ls_uint64(std::ostream &s, uint64_t v)
 void sn_utils::ls_int64(std::ostream &s, int64_t v)
 {
 	uint8_t buf[8];
-	buf[0] = v;
-	buf[1] = v >> 8;
-	buf[2] = v >> 16;
-	buf[3] = v >> 24;
-	buf[4] = v >> 32;
-	buf[5] = v >> 40;
-	buf[6] = v >> 48;
+	buf[0] = static_cast<uint8_t>(v);
+	buf[1] = static_cast<uint8_t>(v >> 8);
+	buf[2] = static_cast<uint8_t>(v >> 16);
+	buf[3] = static_cast<uint8_t>(v >> 24);
+	buf[4] = static_cast<uint8_t>(v >> 32);
+	buf[5] = static_cast<uint8_t>(v >> 40);
+	buf[6] = static_cast<uint8_t>(v >> 48);
 	buf[7] = v >> 56;
 	s.write((char*)buf, 8);
 }
@@ -199,9 +199,9 @@ void sn_utils::ls_float32(std::ostream &s, float t)
 {
 	uint32_t v = std::bit_cast<uint32_t>(t);
 	uint8_t buf[4];
-	buf[0] = v;
-	buf[1] = v >> 8;
-	buf[2] = v >> 16;
+	buf[0] = static_cast<uint8_t>(v);
+	buf[1] = static_cast<uint8_t>(v >> 8);
+	buf[2] = static_cast<uint8_t>(v >> 16);
 	buf[3] = v >> 24;
 	s.write((char*)buf, 4);
 }
@@ -210,13 +210,13 @@ void sn_utils::ls_float64(std::ostream &s, double t)
 {
 	uint64_t v = std::bit_cast<uint64_t>(t);
 	uint8_t buf[8];
-	buf[0] = v;
-	buf[1] = v >> 8;
-	buf[2] = v >> 16;
-	buf[3] = v >> 24;
-	buf[4] = v >> 32;
-	buf[5] = v >> 40;
-	buf[6] = v >> 48;
+	buf[0] = static_cast<uint8_t>(v);
+	buf[1] = static_cast<uint8_t>(v >> 8);
+	buf[2] = static_cast<uint8_t>(v >> 16);
+	buf[3] = static_cast<uint8_t>(v >> 24);
+	buf[4] = static_cast<uint8_t>(v >> 32);
+	buf[5] = static_cast<uint8_t>(v >> 40);
+	buf[6] = static_cast<uint8_t>(v >> 48);
 	buf[7] = v >> 56;
 	s.write((char*)buf, 8);
 }

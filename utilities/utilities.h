@@ -100,7 +100,7 @@ inline double LocalRandom(double b)
 inline double BorlandTime()
 {
 	auto timesinceepoch = std::time(nullptr);
-	return timesinceepoch / (24.0 * 60 * 60);
+	return static_cast<double>(timesinceepoch) / (24.0 * 60 * 60);
 	/*
 	    // std alternative
 	    auto timesinceepoch = std::chrono::system_clock::now().time_since_epoch();
@@ -315,7 +315,7 @@ template <typename T> T clamp_power_of_two(T Value, T const Min = T(1), T const 
 template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
 {
 
-	return Step * std::round(Value / Step);
+	return static_cast<unsigned int>(Step * std::round(Value / Step));
 }
 
 template <typename T> T min_speed(T const Left, T const Right)

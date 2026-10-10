@@ -184,9 +184,9 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         soundfxrecord.second.owner( Owner );
     }
 
-	scale *= mul;
+	scale *= static_cast<float>(mul);
     if( interpolatescale ) {
-        endscale *= mul;
+        endscale *= static_cast<float>(mul);
     }
     TSubModel *submodel { nullptr };
     std::array<TModel3d *, 2> sources { Owner->mdKabina, Owner->mdLowPolyInt };
@@ -362,7 +362,7 @@ void TGauge::Update( bool const Power ) {
     // update value
     // TODO: remove passing manually power state when LD is in place
     if( m_value != m_targetvalue ) {
-        float dt = Timer::GetDeltaTime();
+        float dt = static_cast<float>(Timer::GetDeltaTime());
         if( m_friction > 0 && dt < 0.5 * m_friction ) {
             // McZapkie-281102: zabezpieczenie przed oscylacjami dla dlugich czasow
             m_value += dt * ( m_targetvalue - m_value ) / m_friction;
@@ -429,11 +429,11 @@ void TGauge::UpdateValue()
             break;
         }
         case 'd': {
-            UpdateValue( *dData );
+            UpdateValue( static_cast<float>(*dData) );
             break;
         }
         case 'i': {
-            UpdateValue( *iData );
+            UpdateValue( static_cast<float>(*iData) );
             break;
         }
         case 'b': {
@@ -463,7 +463,7 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
 
     switch (m_animation) {
         case TGaugeAnimation::gt_Rotate: {
-            Submodel->SetRotate( float3( 0, 1, 0 ), GetScaledValue() * 360.0 );
+            Submodel->SetRotate( float3( 0, 1, 0 ), static_cast<float>(GetScaledValue() * 360.0) );
             break;
         }
         case TGaugeAnimation::gt_Move: {
@@ -472,13 +472,13 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
         }
         case TGaugeAnimation::gt_Wiper: {
             auto const scaledvalue { GetScaledValue() };
-            Submodel->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
+            Submodel->SetRotate( float3( 0, 1, 0 ), static_cast<float>(scaledvalue * 360.0) );
             auto *sm = Submodel->ChildGet();
             if( sm ) {
-                sm->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
+                sm->SetRotate( float3( 0, 1, 0 ), static_cast<float>(scaledvalue * 360.0) );
                 sm = sm->ChildGet();
                 if( sm )
-                    sm->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
+                    sm->SetRotate( float3( 0, 1, 0 ), static_cast<float>(scaledvalue * 360.0) );
             }
             break;
         }
@@ -493,7 +493,7 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
                  && std::isdigit(sm->pName[0]) ) {
                     sm->SetRotate(
                         float3( 0, 1, 0 ),
-                        -36.0 * ( n[ '0' + 9 - sm->pName[ 0 ] ] - '0' ) );
+                        static_cast<float>(-36.0 * ( n[ '0' + 9 - sm->pName[ 0 ] ] - '0' )) );
                 }
                 sm = sm->NextGet();
             } while( sm );

@@ -59,10 +59,10 @@ RGBtoHSV( glm::vec3 const &RGB ) {
         else
             hsv.x = 4.f + ( RGB.r - RGB.g ) / delta;  // between magenta & cyan
 
-    hsv.x *= 60.0;                              // degrees
+    hsv.x *= 60.0f;                              // degrees
 
     if( hsv.x < 0.0 )
-        hsv.x += 360.0;
+        hsv.x += 360.0f;
 
     return hsv;
 }
@@ -81,9 +81,9 @@ HSVtoRGB( glm::vec3 const &HSV ) {
     }
     float hh = HSV.x;
     if( hh >= 360.0 ) hh = 0.0;
-    hh /= 60.0;
+    hh /= 60.0f;
     int const i = (int)hh;
-    float const ff = hh - i;
+    float const ff = hh - static_cast<float>(i);
     float const p = HSV.z * ( 1.f - HSV.y );
     float const q = HSV.z * ( 1.f - HSV.y * ff );
     float const t = HSV.z * ( 1.f - HSV.y * (1.f - ff) );

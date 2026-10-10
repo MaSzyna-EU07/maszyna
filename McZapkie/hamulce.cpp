@@ -3241,7 +3241,7 @@ double TFV4aM::GetRP()
 /// <returns>Interpolated target pressure [bar].</returns>
 double TFV4aM::LPP_RP(double pos) // cisnienie z zaokraglonej pozycji;
 {
-	int const i_pos = 2 + std::floor(pos); // zaokraglone w dol
+	int const i_pos = static_cast<int>(2 + std::floor(pos)); // zaokraglone w dol
 
 	return BPT[i_pos][1] + (BPT[i_pos + 1][1] - BPT[i_pos][1]) * (pos + 2 - i_pos); // interpolacja liniowa
 }
@@ -3844,7 +3844,7 @@ double TM394::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	double ActFlowSpeed;
 	int BCP;
 
-	BCP = lround(i_bcp);
+	BCP = static_cast<int>(lround(i_bcp));
 	if (BCP < -1)
 		BCP = 1;
 
@@ -3937,7 +3937,7 @@ double TH14K1::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	//{ (10, 0), (4, 1), (0, 1), (4, 0), (4, -1), (15, -1) };
 	double const NomPress = 5.0;
 
-	int BCP = std::lround(i_bcp);
+	int BCP = static_cast<int>(std::lround(i_bcp));
 	if (i_bcp < -1)
 	{
 		BCP = 1;
@@ -4034,7 +4034,7 @@ double TSt113::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 
 	CP = PP;
 
-	BCP = lround(i_bcp);
+	BCP = static_cast<int>(lround(i_bcp));
 
 	EPS = BEP_K[BCP + 1];
 

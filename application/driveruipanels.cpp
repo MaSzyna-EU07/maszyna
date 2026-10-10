@@ -428,13 +428,13 @@ timetable_panel::update() {
                     && i < table.StationIndex
                     && ( tableline->Ah < 0 // pass-through, always valid
                       || tableline->is_maintenance // maintenance stop, always valid
-                      || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= tableline->Dh * 60 + tableline->Dm ) ) };
+                      || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= static_cast<float>(tableline->Dh * 60) + tableline->Dm ) ) };
                 auto const loadchangeinprogress { ( static_cast<int>(std::ceil(-1.0 * owner->fStopTime)) > 0 ) };
                 auto const isatpassengerstop { true == owner->IsAtPassengerStop && vehicle->MoverParameters->Vel < 1.0 };
                 auto const traveltime { (
                     i < 2 ? "   " :
-                    tableline->Ah >= 0 ? to_minutes_str( CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Ah, tableline->Am ), false, 3 ) :
-                    to_minutes_str( std::max( 0.0, CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Dh, tableline->Dm ) - 0.5 ), false, 3 ) ) };
+                    tableline->Ah >= 0 ? to_minutes_str( static_cast<float>(CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Ah, tableline->Am )), false, 3 ) :
+                    to_minutes_str( static_cast<float>(std::max( 0.0, CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Dh, tableline->Dm ) - 0.5 )), false, 3 ) ) };
                 auto const linecolor { (
                     i != table.StationStart ? Global.UITextColor :
                     loadchangeinprogress ? colors::uitextred :
@@ -611,13 +611,13 @@ debug_panel::render() {
 		render_section_developer(); // Developer tools
 #ifdef WITH_UART
         if(true == render_section( "UART", m_uartlines)) {
-            int ports_num = UartStatus.available_ports.size();
+            int ports_num = static_cast<int>(UartStatus.available_ports.size());
             char **avlports = new char*[ports_num];
             for (int i=0; i < ports_num; i++) {
                 avlports[i] = (char *) UartStatus.available_ports[i].c_str();
             }
             ImGui::Combo("Port", &UartStatus.selected_port_index, avlports, ports_num);
-            ImGui::Combo("Baud", &UartStatus.selected_baud_index, uart_baudrates_list, uart_baudrates_list_num);
+            ImGui::Combo("Baud", &UartStatus.selected_baud_index, uart_baudrates_list, static_cast<int>(uart_baudrates_list_num));
             ImGui::Checkbox("Enabled", &UartStatus.enabled);
         }
 #endif
@@ -903,7 +903,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         mover.LoadFlag,
         mover.LocalBrakePosA,
         mover.LocalBrakePosAEIM,
-        mover.ManualBrakePos / static_cast<float>(ManualBrakePosNo),
+        static_cast<float>(mover.ManualBrakePos) / static_cast<float>(ManualBrakePosNo),
         mover.SpringBrake.Activate ? 1.f : 0.f,
         // cylinders
         mover.BrakePress,
@@ -981,11 +981,11 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
 
 	if (!std::isnan(last_time)) {
 		double dt = Timer::GetTime() - last_time;
-		AccN_jerk_graph.update((mover.AccN - last_AccN) / dt);
-		AccN_acc_graph.update(mover.AccN);
+		AccN_jerk_graph.update(static_cast<float>((mover.AccN - last_AccN) / dt));
+		AccN_acc_graph.update(static_cast<float>(mover.AccN));
 	}
 
-	last_AccN = mover.AccN;
+	last_AccN = static_cast<float>(mover.AccN);
 	last_time = Timer::GetTime();
 }
 
@@ -1002,7 +1002,7 @@ void debug_panel::graph_data::update(float val) {
 void debug_panel::graph_data::render() {
 	ImGui::PushID(this);
 	ImGui::SliderFloat(STR_C("##Range"), &range, 0.5f, 60.0f, "%.1f");
-	ImGui::PlotLines("##plot", data.data(), data.size(), pos, nullptr, 0.0f, range, ImVec2(0, 100));
+	ImGui::PlotLines("##plot", data.data(), static_cast<int>(data.size()), static_cast<int>(pos), nullptr, 0.0f, range, ImVec2(0, 100));
 	ImGui::PopID();
 }
 
@@ -1326,7 +1326,7 @@ debug_panel::update_section_scenario( std::vector<text_line> &Output ) {
         + to_string( simulation::Environment.wind_azimuth(), 0 ) // ma być azymut, czyli 0 na północy i rośnie na wschód
         + " "
         + std::string( "N NEE SES SWW NW" )
-        .substr( 0 + 2 * std::floor( std::fmod( 8 + ( glm::radians( simulation::Environment.wind_azimuth() ) + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ), 2 )
+        .substr( static_cast<std::size_t>( 2 * std::floor( std::fmod( 8 + ( glm::radians( simulation::Environment.wind_azimuth() ) + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ) ), 2 )
         + ", " + to_string( glm::length( simulation::Environment.wind() ), 1 ) + " m/s";
     textline += "\nAir temperature: " + to_string( Global.AirTemperature, 1 ) + " deg C";
 
@@ -1440,7 +1440,7 @@ debug_panel::update_section_camera( std::vector<text_line> &Output ) {
 	    + to_string( 180.0 - glm::degrees( camera.Angle.y ), 0 ) // ma być azymut, czyli 0 na północy i rośnie na wschód
 	    + " "
 	    + std::string( "S SEE NEN NWW SW" )
-	    .substr( 0 + 2 * floor( fmod( 8 + ( camera.Angle.y + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ), 2 );
+	    .substr( static_cast<std::size_t>( 2 * floor( fmod( 8 + ( camera.Angle.y + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ) ), 2 );
 
 	Output.emplace_back( textline, Global.UITextColor );
 }
@@ -1563,7 +1563,7 @@ debug_panel::render_section_settings() {
     // reflection fidelity
     ImGui::SliderInt( ( std::to_string( Global.reflectiontune.fidelity ) + "###reflectionfidelity" ).c_str(), &Global.reflectiontune.fidelity, 0, 2, "Reflection fidelity" );
     ImGui::SliderInt( ( std::to_string( Global.gfx_shadow_rank_cutoff ) + "###shadowrankcutoff" ).c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks" );
-    if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2, "Shadow angle cutoff" ) ) {
+    if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2f, "Shadow angle cutoff" ) ) {
         Global.gfx_shadow_angle_min = quantize( Global.gfx_shadow_angle_min, 0.05f );
     }
     if( DebugModeFlag ) {

@@ -27,20 +27,20 @@ scenario_time::init(std::time_t timestamp) {
     ::memcpy( m_monthdaycounts, monthdaycounts, sizeof( monthdaycounts ) );
 
     // potentially adjust scenario clock
-    auto const requestedtime { clamp_circular<int>( m_time.wHour * 60 + m_time.wMinute + Global.ScenarioTimeOffset * 60, 24 * 60 ) };
+    auto const requestedtime { clamp_circular<int>( static_cast<int>(m_time.wHour * 60 + m_time.wMinute + Global.ScenarioTimeOffset * 60), 24 * 60 ) };
     auto const requestedhour { requestedtime / 60 % 24 };
     auto const requestedminute { requestedtime % 60 };
     // cache requested elements, if any
 
 	std::tm const tm = utc_tm(timestamp);
 	std::tm const *tms = &tm;
-	m_time.wYear = tms->tm_year + 1900;
-	m_time.wMonth = tms->tm_mon + 1;
-	m_time.wDayOfWeek = tms->tm_wday;
-	m_time.wDay = tms->tm_mday;
-	m_time.wHour = tms->tm_hour;
-	m_time.wMinute = tms->tm_min;
-	m_time.wSecond = tms->tm_sec;
+	m_time.wYear = static_cast<uint16_t>(tms->tm_year + 1900);
+	m_time.wMonth = static_cast<uint16_t>(tms->tm_mon + 1);
+	m_time.wDayOfWeek = static_cast<uint16_t>(tms->tm_wday);
+	m_time.wDay = static_cast<uint16_t>(tms->tm_mday);
+	m_time.wHour = static_cast<uint16_t>(tms->tm_hour);
+	m_time.wMinute = static_cast<uint16_t>(tms->tm_min);
+	m_time.wSecond = static_cast<uint16_t>(tms->tm_sec);
 	m_time.wMilliseconds = 0;
 
     if( Global.fMoveLight > 0.0 ) {
@@ -83,7 +83,7 @@ scenario_time::init(std::time_t timestamp) {
         zonebias += timezoneinfo.StandardBias;
     }
 
-	m_timezonebias = zonebias / 60.0;
+	m_timezonebias = static_cast<double>(zonebias) / 60.0;
 }
 
 void
@@ -95,7 +95,7 @@ scenario_time::update( double const Deltatime ) {
         ++m_time.wSecond;
         m_milliseconds -= 1000.0;
     }
-    m_time.wMilliseconds = std::floor( m_milliseconds );
+    m_time.wMilliseconds = static_cast<uint16_t>(std::floor( m_milliseconds ));
     while( m_time.wSecond >= 60 ) {
 
         ++m_time.wMinute;
@@ -166,12 +166,12 @@ scenario_time::daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yea
 int
 scenario_time::julian_day() const {
 
-    int yy = ( m_time.wYear < 0 ? m_time.wYear + 1 : m_time.wYear ) - std::floor( ( 12 - m_time.wMonth ) / 10.f );
+    int yy = static_cast<int>(( m_time.wYear < 0 ? m_time.wYear + 1 : m_time.wYear ) - std::floor( ( 12 - m_time.wMonth ) / 10.f ));
     int mm = m_time.wMonth + 9;
     if( mm >= 12 ) { mm -= 12; }
 
-    int K1 = std::floor( 365.25 * ( yy + 4712 ) );
-    int K2 = std::floor( 30.6 * mm + 0.5 );
+    int K1 = static_cast<int>(std::floor( 365.25 * ( yy + 4712 ) ));
+    int K2 = static_cast<int>(std::floor( 30.6 * mm + 0.5 ));
 
     // for dates in Julian calendar
     int JD = K1 + K2 + m_time.wDay + 59;
@@ -179,7 +179,7 @@ scenario_time::julian_day() const {
     const int gregorianswitchday = 2299160;
     if( JD > gregorianswitchday ) {
 
-        int K3 = std::floor( std::floor( yy * 0.01 + 49 ) * 0.75 ) - 38;
+        int K3 = static_cast<int>(std::floor( std::floor( yy * 0.01 + 49 ) * 0.75 ) - 38);
         JD -= K3;
     }
 
@@ -188,8 +188,8 @@ scenario_time::julian_day() const {
 
 void scenario_time::set_time(int yearday, int minute) {
 	m_yearday = yearday;
-	daymonth(m_time.wDay, m_time.wMonth, m_time.wYear, m_yearday);
-	m_time.wHour = minute / 60;
+	daymonth(m_time.wDay, m_time.wMonth, m_time.wYear, static_cast<uint16_t>(m_yearday));
+	m_time.wHour = static_cast<uint16_t>(minute / 60);
 	m_time.wMinute = minute % 60;
 }
 
@@ -246,7 +246,7 @@ void
 scenario_time::convert_transition_time( SYSTEMTIME &Time ) const {
 
     // NOTE: windows uses 0-6 range for days of week numbering, our methods use 1-7
-    Time.wDay = day_of_month( Time.wDay, Time.wDayOfWeek + 1, Time.wMonth, m_time.wYear );
+    Time.wDay = static_cast<uint16_t>(day_of_month( Time.wDay, Time.wDayOfWeek + 1, Time.wMonth, m_time.wYear ));
 }
 
 bool

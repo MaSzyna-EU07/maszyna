@@ -343,7 +343,7 @@ void gl::program::init()
     {
         shader::texture_entry &e = it.second;
         GLuint loc = glGetUniformLocation(*this, it.first.c_str());
-        glUniform1i(loc, e.id);
+        glUniform1i(loc, static_cast<GLint>(e.id));
     }
 
     glUniform1i(glGetUniformLocation(*this, "shadowmap"), gl::SHADOW_TEX);
