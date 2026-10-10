@@ -127,14 +127,14 @@ bool ClearFlag(int &Flag, int const Value)
 double Random(double min, double max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_real_distribution requires min <= max (inverted bounds are UB)
-	std::uniform_real_distribution<double> dist(min, max);
+	std::uniform_real_distribution dist(min, max);
 	return dist(Global.random_engine);
 }
 
 int Random(int min, int max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_int_distribution requires min <= max (inverted bounds are UB)
-	std::uniform_int_distribution<int> dist(min, max);
+	std::uniform_int_distribution dist(min, max);
 	return dist(Global.random_engine);
 }
 
@@ -178,7 +178,7 @@ std::uint32_t seed_of(std::string const &Text)
 
 std::string generate_uuid_v4()
 {
-	std::uniform_int_distribution<int> dist(0, 255);
+	std::uniform_int_distribution dist(0, 255);
 
 	std::array<uint8_t, 16> bytes;
 	for (auto &b : bytes)
@@ -203,7 +203,7 @@ std::string generate_uuid_v4()
 double LocalRandom(double a, double b)
 {
 	if (b < a) { std::swap(a, b); } // std::uniform_real_distribution requires a <= b (inverted bounds are UB)
-	std::uniform_real_distribution<double> dist(a, b);
+	std::uniform_real_distribution dist(a, b);
 	return dist(Global.local_random_engine);
 }
 

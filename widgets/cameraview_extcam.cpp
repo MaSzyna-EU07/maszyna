@@ -180,7 +180,7 @@ void ui::cameraview_panel::record_func()
 	while (record_state == RUNNING) {
 		if (bufpos == frame_size)
 		{
-			std::unique_lock<std::mutex> lock(mutex);
+			std::unique_lock lock(mutex);
 			auto r = notify_var.wait_for(lock, std::chrono::milliseconds(50), [this, last_cnt]{return last_cnt != frame_cnt;});
 			last_cnt = frame_cnt;
 			if (!image_ptr || !r)
