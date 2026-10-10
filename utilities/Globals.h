@@ -201,6 +201,10 @@ struct global_settings {
     int audio_max_sources = 30;
     std::string AudioRenderer;
     bool AudioAsyncLoad{ false }; // sound files are decoded by worker threads
+    // broadcast radio receiver
+    bool fmradio_enabled{ true }; // allows cab radio receivers to play internet radio streams
+    bool fmradio_cleansound{ false }; // disables simulation of the receiver speaker
+    std::string fmradio_stations{ "fmradio.txt" }; // list of stations available to the receivers
     // input
     float fMouseXScale{ 1.5f };
     float fMouseYScale{ 0.2f };

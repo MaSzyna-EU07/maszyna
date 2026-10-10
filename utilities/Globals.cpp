@@ -193,6 +193,24 @@ bool global_settings::ConfigParseAudio(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "fmradio.enabled")
+    {
+        ParseOne(Parser, fmradio_enabled);
+        return true;
+    }
+
+    if (token == "fmradio.cleansound")
+    {
+        ParseOne(Parser, fmradio_cleansound);
+        return true;
+    }
+
+    if (token == "fmradio.stations")
+    {
+        fmradio_stations = Parser.getToken<std::string>(false);
+        return true;
+    }
+
     if (token == "sound.volume.vehicle")
     {
         ParseOneClamped(Parser, VehicleVolume, 0.f, 1.f);
@@ -1555,6 +1573,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.volume.positional", EnvironmentPositionalVolume );
     export_as_text( Output, "sound.volume.ambient", EnvironmentAmbientVolume );
     export_as_text( Output, "sound.asyncload", AudioAsyncLoad );
+    export_as_text( Output, "fmradio.enabled", fmradio_enabled );
+    export_as_text( Output, "fmradio.cleansound", fmradio_cleansound );
+    export_as_text( Output, "fmradio.stations", fmradio_stations );
     export_as_text( Output, "physicslog", WriteLogFlag );
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "debuglog", iWriteLogEnabled );

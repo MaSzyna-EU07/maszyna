@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "audio/audio.h"
+#include "audio/fmradio.h"
 #include "model/ResourceManager.h"
 #include "application/uitranscripts.h"
 
@@ -121,6 +122,8 @@ public:
 
     void erase( sound_source const *Controller );
     void update( double const Deltatime );
+    // provides access to the broadcast radio receiver
+    audio::fm_radio &fmradio() { return m_fmradio; }
 
     glm::dvec3 cached_camerapos;
 
@@ -142,6 +145,7 @@ private:
     buffer_manager m_buffers;
     source_list m_sources;
     source_sequence m_sourcespares;
+    audio::fm_radio m_fmradio; // streamed sound, maintained separately from regular emitters
 
     // OpenAL Soft extension entry points, resolved at runtime via al(c)GetProcAddress
     LPALDEFERUPDATESSOFT m_alDeferUpdatesSOFT { nullptr };

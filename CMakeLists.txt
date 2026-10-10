@@ -154,6 +154,8 @@ set(SOURCES
 "model/vertex.cpp"
 "audio/audio.cpp"
 "audio/audiorenderer.cpp"
+"audio/radiostream.cpp"
+"audio/fmradio.cpp"
 "utilities/motiontelemetry.cpp"
 "application/uitranscripts.cpp"
 "world/station.cpp"
