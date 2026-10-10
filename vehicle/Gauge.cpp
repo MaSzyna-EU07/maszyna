@@ -240,13 +240,14 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
     if( true == key.empty() || key == "}" ) { return false; }
     // if not block end then the key is followed by assigned value or sub-block
     if( key == "type:" ) {
+        using enum TGaugeType;
         auto const gaugetype { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
-        m_type = gaugetype == "push"       ? TGaugeType::push :
-		         gaugetype == "impulse"    ? TGaugeType::push :
-		         gaugetype == "return"     ? TGaugeType::push :
-		         gaugetype == "delayed"    ? TGaugeType::push_delayed :
-		         gaugetype == "pushtoggle" ? TGaugeType::pushtoggle :
-		                                     TGaugeType::toggle; // "toggle" and default
+        m_type = gaugetype == "push"       ? push :
+		         gaugetype == "impulse"    ? push :
+		         gaugetype == "return"     ? push :
+		         gaugetype == "delayed"    ? push_delayed :
+		         gaugetype == "pushtoggle" ? pushtoggle :
+		                                     toggle; // "toggle" and default
     }
     else if( key == "soundinc:" ) {
         m_soundfxincrease.deserialize( Input, sound_type::single );

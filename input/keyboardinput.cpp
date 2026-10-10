@@ -328,6 +328,7 @@ keyboard_input::key( int const Key ) const {
 
 void
 keyboard_input::bind() {
+	using enum user_command;
 	m_bindings.clear();
 
     for( auto const &[setupcommand, setupbinding] : m_bindingsetups ) {
@@ -336,12 +337,12 @@ keyboard_input::bind() {
     }
 
     // cache movement key bindings
-    m_bindingscache.forward = binding( user_command::moveforward );
-    m_bindingscache.back = binding( user_command::moveback );
-    m_bindingscache.left = binding( user_command::moveleft );
-    m_bindingscache.right = binding( user_command::moveright );
-    m_bindingscache.up = binding( user_command::moveup );
-    m_bindingscache.down = binding( user_command::movedown );
+    m_bindingscache.forward = binding( moveforward );
+    m_bindingscache.back = binding( moveback );
+    m_bindingscache.left = binding( moveleft );
+    m_bindingscache.right = binding( moveright );
+    m_bindingscache.up = binding( moveup );
+    m_bindingscache.down = binding( movedown );
 }
 
 int

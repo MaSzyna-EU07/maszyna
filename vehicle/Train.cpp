@@ -1020,9 +1020,10 @@ void TTrain::set_train_brake(double const Position)
 
 void TTrain::zero_charging_train_brake()
 {
+	using enum TBrakeHandle;
 
 	if (mvOccupied->BrakeCtrlPos == -1 && DynamicObject->Controller != AIdriver && Global.iFeedbackMode < 3 &&
-	    (mvOccupied->BrakeHandle == TBrakeHandle::FVel6 || mvOccupied->BrakeHandle == TBrakeHandle::MHZ_EN57 || mvOccupied->BrakeHandle == TBrakeHandle::MHZ_K8P))
+	    (mvOccupied->BrakeHandle == FVel6 || mvOccupied->BrakeHandle == MHZ_EN57 || mvOccupied->BrakeHandle == MHZ_K8P))
 	{
 		// Odskakiwanie hamulce EP
 		set_train_brake(0);
@@ -3470,6 +3471,7 @@ void TTrain::OnCommand_pantographlowerselected(TTrain *Train, command_data const
 
 void TTrain::update_pantograph_valves()
 {
+	using enum operation_t;
 
 	auto const &presets{mvOccupied->PantsPreset.first};
 	auto &selection{mvOccupied->PantsPreset.second[cab_to_end()]};
@@ -3479,8 +3481,8 @@ void TTrain::update_pantograph_valves()
 	// check desired states for both pantographs; value: whether the pantograph should be raised
 	auto const frontstate{preset & (swapends ? 2 : 1)};
 	auto const rearstate{preset & (swapends ? 1 : 2)};
-	mvOccupied->OperatePantographValve(end::front, frontstate ? operation_t::enable : operation_t::disable);
-	mvOccupied->OperatePantographValve(end::rear, rearstate ? operation_t::enable : operation_t::disable);
+	mvOccupied->OperatePantographValve(end::front, frontstate ? enable : disable);
+	mvOccupied->OperatePantographValve(end::rear, rearstate ? enable : disable);
 }
 
 void TTrain::change_pantograph_selection(int const Change)
@@ -10219,33 +10221,35 @@ bool TTrain::CabChange(int iDirection)
 // wczytywanie pliku z danymi multimedialnymi (dzwieki, kontrolki, kabiny)
 bool TTrain::LoadMMediaFile(std::string const &asFileName)
 {
+	using enum sound_placement;
+	using enum sound_type;
 	// initialize sounds so potential entries from previous vehicle don't stick around
 	std::unordered_map<std::string, std::tuple<std::optional<sound_source> &, sound_placement, float, sound_type, int, double>> internalsounds = {
-	    {"ctrl:", {dsbNastawnikJazdy, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"ctrlscnd:", {dsbNastawnikBocz, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"reverserkey:", {dsbReverserKey, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"buzzer:", {dsbBuzzer, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"buzzershp:", {dsbBuzzerShp, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"radiostop:", {m_radiostop, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"slipalarm:", {dsbSlipAlarm, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"distancecounter:", {m_distancecounterclear, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"tachoclock:", {dsbHasler, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"switch:", {dsbSwitch, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"pneumaticswitch:", {dsbPneumaticSwitch, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"airsound:", {rsHiss, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, sound_parameters::amplitude, 100.0}},
-	    {"airsound2:", {rsHissU, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, sound_parameters::amplitude, 100.0}},
-	    {"airsound3:", {rsHissE, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, sound_parameters::amplitude, 100.0}},
-	    {"airsound4:", {rsHissX, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, sound_parameters::amplitude, 100.0}},
-	    {"airsound5:", {rsHissT, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, sound_parameters::amplitude, 100.0}},
-	    {"localbrakesound:", {rsSBHiss, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, sound_parameters::amplitude, 100.0}},
-	    {"localbrakesound2:", {rsSBHissU, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, sound_parameters::amplitude, 100.0}},
-	    {"brakesound:", {rsBrake, sound_placement::internal, -1, sound_type::single, sound_parameters::amplitude | sound_parameters::frequency, 100.0}},
-	    {"fadesound:", {rsFadeSound, sound_placement::internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, sound_type::single, 0, 100.0}},
-	    {"runningnoise:", {rsRunningNoise, sound_placement::internal, EU07_SOUND_GLOBALRANGE, sound_type::single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
-	    {"resonancenoise:", {rsResonanceNoise, sound_placement::internal, EU07_SOUND_GLOBALRANGE, sound_type::single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
-	    {"windsound:", {rsWindSound, sound_placement::internal, EU07_SOUND_GLOBALRANGE, sound_type::single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
-	    {"huntingnoise:", {rsHuntingNoise, sound_placement::internal, EU07_SOUND_GLOBALRANGE, sound_type::single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
-	    {"rainsound:", {m_rainsound, sound_placement::internal, -1, sound_type::single, 0, 100.0}},
+	    {"ctrl:", {dsbNastawnikJazdy, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"ctrlscnd:", {dsbNastawnikBocz, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"reverserkey:", {dsbReverserKey, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"buzzer:", {dsbBuzzer, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"buzzershp:", {dsbBuzzerShp, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"radiostop:", {m_radiostop, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"slipalarm:", {dsbSlipAlarm, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"distancecounter:", {m_distancecounterclear, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"tachoclock:", {dsbHasler, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"switch:", {dsbSwitch, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"pneumaticswitch:", {dsbPneumaticSwitch, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"airsound:", {rsHiss, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, sound_parameters::amplitude, 100.0}},
+	    {"airsound2:", {rsHissU, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, sound_parameters::amplitude, 100.0}},
+	    {"airsound3:", {rsHissE, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, sound_parameters::amplitude, 100.0}},
+	    {"airsound4:", {rsHissX, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, sound_parameters::amplitude, 100.0}},
+	    {"airsound5:", {rsHissT, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, sound_parameters::amplitude, 100.0}},
+	    {"localbrakesound:", {rsSBHiss, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, sound_parameters::amplitude, 100.0}},
+	    {"localbrakesound2:", {rsSBHissU, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, sound_parameters::amplitude, 100.0}},
+	    {"brakesound:", {rsBrake, internal, -1, single, sound_parameters::amplitude | sound_parameters::frequency, 100.0}},
+	    {"fadesound:", {rsFadeSound, internal, EU07_SOUND_CABCONTROLSCUTOFFRANGE, single, 0, 100.0}},
+	    {"runningnoise:", {rsRunningNoise, internal, EU07_SOUND_GLOBALRANGE, single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
+	    {"resonancenoise:", {rsResonanceNoise, internal, EU07_SOUND_GLOBALRANGE, single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
+	    {"windsound:", {rsWindSound, internal, EU07_SOUND_GLOBALRANGE, single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
+	    {"huntingnoise:", {rsHuntingNoise, internal, EU07_SOUND_GLOBALRANGE, single, sound_parameters::amplitude | sound_parameters::frequency, mvOccupied->Vmax}},
+	    {"rainsound:", {m_rainsound, internal, -1, single, 0, 100.0}},
 	};
 	for (auto &[soundname, soundsource] : internalsounds)
 	{
@@ -10292,7 +10296,7 @@ bool TTrain::LoadMMediaFile(std::string const &asFileName)
 		if (!m_rainsound)
 		{
 			sound_source rainsound;
-			rainsound.deserialize("rainsound_default", sound_type::single);
+			rainsound.deserialize("rainsound_default", single);
 			rainsound.owner(DynamicObject);
 			m_rainsound = rainsound;
 		}

@@ -233,13 +233,14 @@ sound_source::deserialize_mapping( cParser &Input ) {
         m_crossfaderange = std::clamp( m_crossfaderange, 0, 100 );
     }
     else if( key == "placement:" ) {
+        using enum sound_placement;
         auto const value { Input.getToken<std::string>( true, "\n\r\t ,;" ) };
         std::map<std::string, sound_placement> const placements {
-            { "internal", sound_placement::internal },
-            { "engine", sound_placement::engine },
-            { "external", sound_placement::external },
-            { "custom", sound_placement::custom },
-            { "general", sound_placement::general } };
+            { "internal", internal },
+            { "engine", engine },
+            { "external", external },
+            { "custom", custom },
+            { "general", general } };
         auto lookup{ placements.find( value ) };
         if( lookup != placements.end() ) {
             m_placement = lookup->second;

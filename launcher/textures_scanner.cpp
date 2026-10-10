@@ -60,23 +60,24 @@ void ui::vehicles_bank::parse_entry(const std::string &line)
 
 void ui::vehicles_bank::parse_category_entry(const std::string &param)
 {
+	using enum ui::vehicle_type;
 	static std::unordered_map<char, vehicle_type> type_map = {
-	    { 'e', vehicle_type::electric_loco },
-	    { 's', vehicle_type::diesel_loco },
-	    { 'p', vehicle_type::steam_loco },
-	    { 'a', vehicle_type::railcar },
-	    { 'z', vehicle_type::emu },
-	    { 'r', vehicle_type::utility },
-	    { 'd', vehicle_type::draisine },
-	    { 't', vehicle_type::tram },
-	    { 'c', vehicle_type::truck },
-	    { 'b', vehicle_type::bus },
-	    { 'o', vehicle_type::car },
-	    { 'h', vehicle_type::man },
-	    { 'f', vehicle_type::animal },
+	    { 'e', electric_loco },
+	    { 's', diesel_loco },
+	    { 'p', steam_loco },
+	    { 'a', railcar },
+	    { 'z', emu },
+	    { 'r', utility },
+	    { 'd', draisine },
+	    { 't', tram },
+	    { 'c', truck },
+	    { 'b', bus },
+	    { 'o', car },
+	    { 'h', man },
+	    { 'f', animal },
 	};
 
-	ctx_type = vehicle_type::unknown;
+	ctx_type = unknown;
 
 	std::istringstream stream(param);
 
@@ -89,7 +90,7 @@ void ui::vehicles_bank::parse_category_entry(const std::string &param)
 	if (auto it = type_map.find(tok[0]); it != type_map.end())
 		ctx_type = it->second;
 	else if (tok[0] >= 'A' && tok[0] <= 'Z')
-		ctx_type = vehicle_type::carriage;
+		ctx_type = carriage;
 
 	std::string mini;
 	std::getline(stream, mini, ',');
