@@ -228,12 +228,13 @@ gamepad_input::recall_bindings() {
                     std::get<0>( m_inputaxes[ axisindex ].bindings[ controlmode ] ) = bindingtype;
                     // retrieve regular commands associated with the axis and mode
                     switch( bindingtype ) {
-                        case input_type::value:
-                        case input_type::value_invert: {
+                        using enum gamepad_input::input_type;
+                        case value:
+                        case value_invert: {
                             bindingtargets.emplace_back( std::ref( std::get<1>( m_inputaxes[ axisindex ].bindings[ controlmode ] ) ) );
                             break;
                         }
-                        case input_type::threestate: {
+                        case threestate: {
                             bindingtargets.emplace_back( std::ref( std::get<1>( m_inputaxes[ axisindex ].bindings[ controlmode ] ) ) );
                             bindingtargets.emplace_back( std::ref( std::get<2>( m_inputaxes[ axisindex ].bindings[ controlmode ] ) ) );
                             break;
@@ -463,12 +464,13 @@ gamepad_input::process_axes() {
                 }
                 // scale passed value according to command type
                 switch( boundcommand1 ) {
-                    case user_command::viewturn: {
+                    using enum user_command;
+                    case viewturn: {
                         param *= 10.0 * ( Timer::GetDeltaRenderTime() * 60.0 );
                         break;
                     }
-                    case user_command::movehorizontal:
-                    case user_command::movehorizontalfast: {
+                    case movehorizontal:
+                    case movehorizontalfast: {
                         // these expect value in -1:1 range
                         break;
                     }

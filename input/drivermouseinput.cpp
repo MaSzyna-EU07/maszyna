@@ -32,14 +32,15 @@ mouse_slider::bind( user_command const &Command ) {
     auto const *train { simulation::Train };
     TMoverParameters const *vehicle { nullptr };
     switch( m_command ) {
-        case user_command::jointcontrollerset:
-        case user_command::mastercontrollerset:
-        case user_command::secondcontrollerset: {
+        using enum user_command;
+        case jointcontrollerset:
+        case mastercontrollerset:
+        case secondcontrollerset: {
             vehicle = train ? train->Controlled() : nullptr;
             break;
         }
-        case user_command::trainbrakeset:
-        case user_command::independentbrakeset: {
+        case trainbrakeset:
+        case independentbrakeset: {
             vehicle = train ? train->Occupied() : nullptr;
             break;
         }
@@ -356,6 +357,7 @@ drivermouse_input::button( int const Button, int const Action ) {
             m_pickwaiting = true;
             GfxRenderer->Pick_Control_Callback(
                 [this, Button, Action, &mousecommand](TSubModel const *controlsubmodel, const glm::vec2 pos) {
+                    using enum user_command;
 
                     bool pickwaiting = m_pickwaiting;
                     m_pickwaiting = false;
@@ -371,7 +373,7 @@ drivermouse_input::button( int const Button, int const Action ) {
                     // if the recognized element under the cursor has a command associated with the pressed button, notify the recipient
                     mousecommand = Button == GLFW_MOUSE_BUTTON_LEFT ? leftbinding : rightbinding;
 
-                    if( mousecommand == user_command::none ) {
+                    if( mousecommand == none ) {
                         // if we don't have any recognized element under the cursor and the right button was pressed, enter view panning mode
                         if( Button == GLFW_MOUSE_BUTTON_RIGHT ) {
                             m_pickmodepanning = true;
@@ -381,38 +383,38 @@ drivermouse_input::button( int const Button, int const Action ) {
                     // check manually for commands which have 'fast' variants launched with shift modifier
                     if( Global.shiftState ) {
                         switch( mousecommand ) {
-                            case user_command::mastercontrollerincrease: { mousecommand = user_command::mastercontrollerincreasefast; break; }
-                            case user_command::mastercontrollerdecrease: { mousecommand = user_command::mastercontrollerdecreasefast; break; }
-                            case user_command::secondcontrollerincrease: { mousecommand = user_command::secondcontrollerincreasefast; break; }
-                            case user_command::secondcontrollerdecrease: { mousecommand = user_command::secondcontrollerdecreasefast; break; }
-                            case user_command::independentbrakeincrease: { mousecommand = user_command::independentbrakeincreasefast; break; }
-                            case user_command::independentbrakedecrease: { mousecommand = user_command::independentbrakedecreasefast; break; }
+                            case mastercontrollerincrease: { mousecommand = mastercontrollerincreasefast; break; }
+                            case mastercontrollerdecrease: { mousecommand = mastercontrollerdecreasefast; break; }
+                            case secondcontrollerincrease: { mousecommand = secondcontrollerincreasefast; break; }
+                            case secondcontrollerdecrease: { mousecommand = secondcontrollerdecreasefast; break; }
+                            case independentbrakeincrease: { mousecommand = independentbrakeincreasefast; break; }
+                            case independentbrakedecrease: { mousecommand = independentbrakedecreasefast; break; }
                             default: { break; }
                         }
                     }
 
 					switch( mousecommand ) {
-					    case user_command::mastercontrollerincrease:
-					    case user_command::mastercontrollerdecrease:
-					    case user_command::secondcontrollerincrease:
-					    case user_command::secondcontrollerdecrease:
-					    case user_command::trainbrakeincrease:
-					    case user_command::trainbrakedecrease:
-					    case user_command::independentbrakeincrease:
-					    case user_command::independentbrakedecrease: {
+					    case mastercontrollerincrease:
+					    case mastercontrollerdecrease:
+					    case secondcontrollerincrease:
+					    case secondcontrollerdecrease:
+					    case trainbrakeincrease:
+					    case trainbrakedecrease:
+					    case independentbrakeincrease:
+					    case independentbrakedecrease: {
 						    // these commands trigger varying repeat rate mode,
 						    // which scales the rate based on the distance of the cursor from its point when the command was first issued
 						    m_varyingpollrateorigin = m_cursorposition;
 							m_varyingpollrate = true;
 							break;
 					    }
-					    case user_command::jointcontrollerset:
-					    case user_command::mastercontrollerset:
-					    case user_command::secondcontrollerset:
-					    case user_command::trainbrakeset:
-					    case user_command::independentbrakeset: {
+					    case jointcontrollerset:
+					    case mastercontrollerset:
+					    case secondcontrollerset:
+					    case trainbrakeset:
+					    case independentbrakeset: {
 						    m_slider.bind( mousecommand );
-							mousecommand = user_command::none;
+							mousecommand = none;
 							return;
 					    }
 					    default: {
@@ -486,624 +488,625 @@ drivermouse_input::bindings( std::string const &Control ) const {
 
 void
 drivermouse_input::default_bindings() {
+    using enum user_command;
     // pierwsza komenda jest od zwiekszania a druga od zmniejszania - ewentualnie kolejno lewy i prawy przycisk
     m_buttonbindings = {
         { "jointctrl:", {
-            user_command::jointcontrollerset,
-            user_command::none } },
+            jointcontrollerset,
+            none } },
         { "mainctrl:", {
-            user_command::mastercontrollerset,
-            user_command::none } },
+            mastercontrollerset,
+            none } },
     	{ "dynamicbrakectrl:", {
-    		user_command::dynamicbrakecontrollerset,
-			user_command::none } },
+    		dynamicbrakecontrollerset,
+			none } },
         { "scndctrl:", {
-            user_command::secondcontrollerset,
-            user_command::none } },
+            secondcontrollerset,
+            none } },
         { "shuntmodepower:", {
-            user_command::secondcontrollerincrease,
-            user_command::secondcontrollerdecrease } },
+            secondcontrollerincrease,
+            secondcontrollerdecrease } },
         { "tempomat_sw:", {
-            user_command::tempomattoggle,
-            user_command::none } },
+            tempomattoggle,
+            none } },
         { "tempomatoff_sw:", {
-            user_command::tempomattoggle,
-            user_command::none } },
+            tempomattoggle,
+            none } },
         { "dirkey:", {
-            user_command::reverserincrease,
-            user_command::reverserdecrease } },
+            reverserincrease,
+            reverserdecrease } },
         { "dirforward_bt:", {
-            user_command::reverserforward,
-            user_command::none } },
+            reverserforward,
+            none } },
         { "dirneutral_bt:", {
-            user_command::reverserneutral,
-            user_command::none } },
+            reverserneutral,
+            none } },
         { "dirbackward_bt:", {
-            user_command::reverserbackward,
-            user_command::none } },
+            reverserbackward,
+            none } },
         { "brakectrl:", {
-            user_command::trainbrakeset,
-            user_command::none } },
+            trainbrakeset,
+            none } },
         { "localbrake:", {
-            user_command::independentbrakeset,
-            user_command::none } },
+            independentbrakeset,
+            none } },
         { "manualbrake:", {
-            user_command::manualbrakeincrease,
-            user_command::manualbrakedecrease } },
+            manualbrakeincrease,
+            manualbrakedecrease } },
         { "alarmchain:", {
-            user_command::alarmchaintoggle,
-            user_command::none } },
+            alarmchaintoggle,
+            none } },
         { "alarmchainon:", {
-            user_command::alarmchainenable,
-            user_command::none} },
+            alarmchainenable,
+            none} },
         { "alarmchainoff:", {
-            user_command::alarmchainenable,
-            user_command::none} },
+            alarmchainenable,
+            none} },
         { "brakeprofile_sw:", {
-            user_command::brakeactingspeedincrease,
-            user_command::brakeactingspeeddecrease } },
+            brakeactingspeedincrease,
+            brakeactingspeeddecrease } },
         // TODO: dedicated methods for braking speed switches
         { "brakeprofileg_sw:", {
-            user_command::brakeactingspeedsetcargo,
-            user_command::brakeactingspeedsetpassenger } },
+            brakeactingspeedsetcargo,
+            brakeactingspeedsetpassenger } },
         { "brakeprofiler_sw:", {
-            user_command::brakeactingspeedsetrapid,
-            user_command::brakeactingspeedsetpassenger } },
+            brakeactingspeedsetrapid,
+            brakeactingspeedsetpassenger } },
         { "brakeopmode_sw:", {
-            user_command::trainbrakeoperationmodeincrease,
-            user_command::trainbrakeoperationmodedecrease } },
+            trainbrakeoperationmodeincrease,
+            trainbrakeoperationmodedecrease } },
         { "maxcurrent_sw:", {
-            user_command::motoroverloadrelaythresholdtoggle,
-            user_command::none } },
+            motoroverloadrelaythresholdtoggle,
+            none } },
         { "waterpumpbreaker_sw:", {
-            user_command::waterpumpbreakertoggle,
-            user_command::none } },
+            waterpumpbreakertoggle,
+            none } },
         { "waterpump_sw:", {
-            user_command::waterpumptoggle,
-            user_command::none } },
+            waterpumptoggle,
+            none } },
         { "waterheaterbreaker_sw:", {
-            user_command::waterheaterbreakertoggle,
-            user_command::none } },
+            waterheaterbreakertoggle,
+            none } },
         { "waterheater_sw:", {
-            user_command::waterheatertoggle,
-            user_command::none } },
+            waterheatertoggle,
+            none } },
         { "fuelpump_sw:", {
-            user_command::fuelpumptoggle,
-            user_command::none } },
+            fuelpumptoggle,
+            none } },
         { "oilpump_sw:", {
-            user_command::oilpumptoggle,
-            user_command::none } },
+            oilpumptoggle,
+            none } },
         { "motorblowersfront_sw:", {
-            user_command::motorblowerstogglefront,
-            user_command::none } },
+            motorblowerstogglefront,
+            none } },
         { "motorblowersrear_sw:", {
-            user_command::motorblowerstogglerear,
-            user_command::none } },
+            motorblowerstogglerear,
+            none } },
         { "motorblowersalloff_sw:", {
-            user_command::motorblowersdisableall,
-            user_command::none } },
+            motorblowersdisableall,
+            none } },
         { "coolingfans_sw:", {
-            user_command::coolingfanstoggle,
-            user_command::none } },
+            coolingfanstoggle,
+            none } },
         { "main_off_bt:", {
-            user_command::linebreakeropen,
-            user_command::none } },
+            linebreakeropen,
+            none } },
         { "main_on_bt:",{
-            user_command::linebreakerclose,
-            user_command::none } },
+            linebreakerclose,
+            none } },
         { "security_reset_bt:", {
-            user_command::alerteracknowledge,
-            user_command::none } },
+            alerteracknowledge,
+            none } },
         { "shp_reset_bt:", {
-            user_command::cabsignalacknowledge,
-            user_command::none } },
+            cabsignalacknowledge,
+            none } },
         { "releaser_bt:", {
-            user_command::independentbrakebailoff,
-            user_command::none } },
+            independentbrakebailoff,
+            none } },
 		{ "springbraketoggle_bt:",{
-			user_command::springbraketoggle,
-			user_command::none } },
+			springbraketoggle,
+			none } },
 		{ "springbrakeon_bt:",{
-			user_command::springbrakeenable,
-			user_command::none } },
+			springbrakeenable,
+			none } },
 		{ "springbrakeoff_bt:",{
-			user_command::springbrakedisable,
-			user_command::none } },
+			springbrakedisable,
+			none } },
 		{ "universalbrake1_bt:",{
-			user_command::universalbrakebutton1,
-			user_command::none } },
+			universalbrakebutton1,
+			none } },
 		{ "universalbrake2_bt:",{
-			user_command::universalbrakebutton2,
-			user_command::none } },
+			universalbrakebutton2,
+			none } },
 		{ "universalbrake3_bt:",{
-			user_command::universalbrakebutton3,
-			user_command::none } },
+			universalbrakebutton3,
+			none } },
 		{ "epbrake_bt:",{
-			user_command::epbrakecontroltoggle,
-			user_command::none } },
+			epbrakecontroltoggle,
+			none } },
 		{ "epbrakeon_bt:",{
-			user_command::epbrakecontrolenable,
-			user_command::none } },
+			epbrakecontrolenable,
+			none } },
 		{ "epbrakeoff_bt:",{
-			user_command::epbrakecontroldisable,
-			user_command::none } },
+			epbrakecontroldisable,
+			none } },
         { "sand_bt:", {
-            user_command::sandboxactivate,
-            user_command::none } },
+            sandboxactivate,
+            none } },
         { "antislip_bt:", {
-            user_command::wheelspinbrakeactivate,
-            user_command::none } },
+            wheelspinbrakeactivate,
+            none } },
         { "horn_bt:", {
-            user_command::hornhighactivate,
-            user_command::hornlowactivate } },
+            hornhighactivate,
+            hornlowactivate } },
         { "hornlow_bt:", {
-            user_command::hornlowactivate,
-            user_command::none } },
+            hornlowactivate,
+            none } },
         { "hornhigh_bt:", {
-            user_command::hornhighactivate,
-            user_command::none } },
+            hornhighactivate,
+            none } },
         { "whistle_bt:", {
-            user_command::whistleactivate,
-            user_command::none } },
+            whistleactivate,
+            none } },
         { "fuse_bt:", {
-            user_command::motoroverloadrelayreset,
-            user_command::none } },
+            motoroverloadrelayreset,
+            none } },
         { "converterfuse_bt:", {
-            user_command::converteroverloadrelayreset,
-            user_command::none } },
+            converteroverloadrelayreset,
+            none } },
         { "relayreset1_bt:", {
-            user_command::universalrelayreset1,
-            user_command::none } },
+            universalrelayreset1,
+            none } },
         { "relayreset2_bt:", {
-            user_command::universalrelayreset2,
-            user_command::none } },
+            universalrelayreset2,
+            none } },
         { "relayreset3_bt:", {
-            user_command::universalrelayreset3,
-            user_command::none } },
+            universalrelayreset3,
+            none } },
         { "stlinoff_bt:", {
-            user_command::motorconnectorsopen,
-            user_command::none } },
+            motorconnectorsopen,
+            none } },
         { "doorleftpermit_sw:", {
-            user_command::doorpermitleft,
-            user_command::none } },
+            doorpermitleft,
+            none } },
         { "doorrightpermit_sw:", {
-            user_command::doorpermitright,
-            user_command::none } },
+            doorpermitright,
+            none } },
         { "doorpermitpreset_sw:", {
-            user_command::doorpermitpresetactivatenext,
-            user_command::doorpermitpresetactivateprevious } },
+            doorpermitpresetactivatenext,
+            doorpermitpresetactivateprevious } },
         { "door_left_sw:", {
-            user_command::doortoggleleft,
-            user_command::none } },
+            doortoggleleft,
+            none } },
         { "door_right_sw:", {
-            user_command::doortoggleright,
-            user_command::none } },
+            doortoggleright,
+            none } },
         { "doorlefton_sw:", {
-            user_command::dooropenleft,
-            user_command::none } },
+            dooropenleft,
+            none } },
         { "doorrighton_sw:", {
-            user_command::dooropenright,
-            user_command::none } },
+            dooropenright,
+            none } },
         { "doorleftoff_sw:", {
-            user_command::doorcloseleft,
-            user_command::none } },
+            doorcloseleft,
+            none } },
         { "doorrightoff_sw:", {
-            user_command::doorcloseright,
-            user_command::none } },
+            doorcloseright,
+            none } },
         { "doorallon_sw:", {
-            user_command::dooropenall,
-            user_command::none } },
+            dooropenall,
+            none } },
         { "dooralloff_sw:", {
-            user_command::doorcloseall,
-            user_command::none } },
+            doorcloseall,
+            none } },
         { "doorstep_sw:", {
-            user_command::doorsteptoggle,
-            user_command::none } },
+            doorsteptoggle,
+            none } },
         { "doormode_sw:", {
-            user_command::doormodetoggle,
-            user_command::none } },
+            doormodetoggle,
+            none } },
 		{ "mirrors_sw:", {
-			user_command::mirrorstoggle,
-			user_command::none } },
+			mirrorstoggle,
+			none } },
         { "departure_signal_bt:", {
-            user_command::departureannounce,
-            user_command::none } },
+            departureannounce,
+            none } },
         { "upperlight_sw:", {
-            user_command::headlighttoggleupper,
-            user_command::none } },
+            headlighttoggleupper,
+            none } },
         { "leftlight_sw:", {
-            user_command::headlighttoggleleft,
-            user_command::none } },
+            headlighttoggleleft,
+            none } },
         { "rightlight_sw:", {
-            user_command::headlighttoggleright,
-            user_command::none } },
+            headlighttoggleright,
+            none } },
         { "dimheadlights_sw:", {
-            user_command::headlightsdimtoggle,
-            user_command::none } },
+            headlightsdimtoggle,
+            none } },
 	    {"moderndimmer_sw:", {
-            user_command::modernlightdimmerincrease, 
-            user_command::modernlightdimmerdecrease } },
+            modernlightdimmerincrease, 
+            modernlightdimmerdecrease } },
         { "leftend_sw:", {
-            user_command::redmarkertoggleleft,
-            user_command::none } },
+            redmarkertoggleleft,
+            none } },
         { "rightend_sw:", {
-            user_command::redmarkertoggleright,
-            user_command::none } },
+            redmarkertoggleright,
+            none } },
         { "lights_sw:", {
-            user_command::lightspresetactivatenext,
-            user_command::lightspresetactivateprevious } },
+            lightspresetactivatenext,
+            lightspresetactivateprevious } },
         { "rearupperlight_sw:", {
-            user_command::headlighttogglerearupper,
-            user_command::none } },
+            headlighttogglerearupper,
+            none } },
         { "rearleftlight_sw:", {
-            user_command::headlighttogglerearleft,
-            user_command::none } },
+            headlighttogglerearleft,
+            none } },
         { "rearrightlight_sw:", {
-            user_command::headlighttogglerearright,
-            user_command::none } },
+            headlighttogglerearright,
+            none } },
         { "rearleftend_sw:", {
-            user_command::redmarkertogglerearleft,
-            user_command::none } },
+            redmarkertogglerearleft,
+            none } },
         { "rearrightend_sw:", {
-            user_command::redmarkertogglerearright,
-            user_command::none } },
+            redmarkertogglerearright,
+            none } },
         { "compressor_sw:", {
-            user_command::compressortoggle,
-            user_command::none } },
+            compressortoggle,
+            none } },
         { "compressorlocal_sw:", {
-            user_command::compressortogglelocal,
-            user_command::none } },
+            compressortogglelocal,
+            none } },
 		{ "compressorlist_sw:", {
-			user_command::compressorpresetactivatenext,
-			user_command::compressorpresetactivateprevious } },
+			compressorpresetactivatenext,
+			compressorpresetactivateprevious } },
         { "converter_sw:", {
-            user_command::convertertoggle,
-            user_command::none } },
+            convertertoggle,
+            none } },
         { "converterlocal_sw:", {
-            user_command::convertertogglelocal,
-            user_command::none } },
+            convertertogglelocal,
+            none } },
         { "converteroff_sw:", {
-            user_command::convertertoggle,
-            user_command::none } }, // TODO: dedicated converter shutdown command
+            convertertoggle,
+            none } }, // TODO: dedicated converter shutdown command
         { "main_sw:", {
-            user_command::linebreakertoggle,
-            user_command::none } },
+            linebreakertoggle,
+            none } },
         { "radio_sw:", {
-            user_command::radiotoggle,
-            user_command::none } },
+            radiotoggle,
+            none } },
         { "radioon_sw:", {
-            user_command::radioenable,
-            user_command::none } },
+            radioenable,
+            none } },
         { "radiooff_sw:", {
-            user_command::radiodisable,
-            user_command::none } },
+            radiodisable,
+            none } },
         { "radiochannel_sw:", {
-            user_command::radiochannelincrease,
-            user_command::radiochanneldecrease } },
+            radiochannelincrease,
+            radiochanneldecrease } },
         { "radiochannelprev_sw:", {
-            user_command::radiochanneldecrease,
-            user_command::none } },
+            radiochanneldecrease,
+            none } },
         { "radiochannelnext_sw:", {
-            user_command::radiochannelincrease,
-            user_command::none } },
+            radiochannelincrease,
+            none } },
         { "radiostop_sw:", {
-            user_command::radiostopsend,
-            user_command::none } },
+            radiostopsend,
+            none } },
         { "radiostopon_sw:", {
-            user_command::radiostopenable,
-            user_command::none } },
+            radiostopenable,
+            none } },
         { "radiostopoff_sw:", {
-            user_command::radiostopdisable,
-            user_command::none } },
+            radiostopdisable,
+            none } },
         { "radiotest_sw:", {
-            user_command::radiostoptest,
-            user_command::none } },
+            radiostoptest,
+            none } },
 		{ "radiocall1_sw:", {
-			user_command::radiocall1send,
-			user_command::none } },
+			radiocall1send,
+			none } },
         { "radiocall3_sw:", {
-            user_command::radiocall3send,
-            user_command::none } },
+            radiocall3send,
+            none } },
 		{ "radiovolume_sw:",{
-			user_command::radiovolumeincrease,
-			user_command::radiovolumedecrease } },
+			radiovolumeincrease,
+			radiovolumedecrease } },
 		{ "radiovolumeprev_sw:",{
-			user_command::radiovolumedecrease,
-			user_command::none } },
+			radiovolumedecrease,
+			none } },
 		{ "radiovolumenext_sw:",{
-			user_command::radiovolumeincrease,
-			user_command::none } },
+			radiovolumeincrease,
+			none } },
         { "pantfront_sw:", {
-            user_command::pantographtogglefront,
-            user_command::none } },
+            pantographtogglefront,
+            none } },
         { "pantrear_sw:", {
-            user_command::pantographtogglerear,
-            user_command::none } },
+            pantographtogglerear,
+            none } },
         { "pantfrontoff_sw:", {
-            user_command::pantographlowerfront,
-            user_command::none } },
+            pantographlowerfront,
+            none } },
         { "pantrearoff_sw:", {
-            user_command::pantographlowerrear,
-            user_command::none } },
+            pantographlowerrear,
+            none } },
         { "pantalloff_sw:", {
-            user_command::pantographlowerall,
-            user_command::none } },
+            pantographlowerall,
+            none } },
         { "pantselected_sw:", {
-            user_command::pantographtoggleselected,
-            user_command::none } }, // TBD: bind lowerselected in case of toggle switch
+            pantographtoggleselected,
+            none } }, // TBD: bind lowerselected in case of toggle switch
         { "pantselectedoff_sw:", {
-            user_command::pantographlowerselected,
-            user_command::none } },
+            pantographlowerselected,
+            none } },
         { "pantselect_sw:", {
-            user_command::pantographselectnext,
-            user_command::pantographselectprevious } },
+            pantographselectnext,
+            pantographselectprevious } },
         { "pantvalves_sw:", {
-            user_command::pantographvalvesupdate,
-            user_command::pantographvalvesoff } },
+            pantographvalvesupdate,
+            pantographvalvesoff } },
         { "pantvalvesupdate_bt:", {
-	         user_command::pantographvalvesupdate, 
-             user_command::none}},
+	         pantographvalvesupdate, 
+             none}},
         { "pantvalvesoff_bt:", {
-	         user_command::pantographvalvesoff, 
-             user_command::none}},
+	         pantographvalvesoff, 
+             none}},
         { "pantcompressor_sw:", {
-            user_command::pantographcompressoractivate,
-            user_command::none } },
+            pantographcompressoractivate,
+            none } },
         { "pantcompressorvalve_sw:", {
-            user_command::pantographcompressorvalvetoggle,
-            user_command::none } },
+            pantographcompressorvalvetoggle,
+            none } },
         { "trainheating_sw:", {
-            user_command::heatingtoggle,
-            user_command::none } },
+            heatingtoggle,
+            none } },
         { "signalling_sw:", {
-            user_command::mubrakingindicatortoggle,
-            user_command::none } },
+            mubrakingindicatortoggle,
+            none } },
         { "door_signalling_sw:", {
-            user_command::doorlocktoggle,
-            user_command::none } },
+            doorlocktoggle,
+            none } },
         { "nextcurrent_sw:", {
-            user_command::mucurrentindicatorothersourceactivate,
-            user_command::none } },
+            mucurrentindicatorothersourceactivate,
+            none } },
         { "distancecounter_sw:", {
-            user_command::distancecounteractivate,
-            user_command::none } },
+            distancecounteractivate,
+            none } },
         { "instrumentlight_sw:", {
-            user_command::instrumentlighttoggle,
-            user_command::none } },
+            instrumentlighttoggle,
+            none } },
         { "dashboardlight_sw:", {
-            user_command::dashboardlighttoggle,
-            user_command::none } },
+            dashboardlighttoggle,
+            none } },
         { "dashboardlighton_sw:", {
-            user_command::dashboardlightenable,
-            user_command::none } },
+            dashboardlightenable,
+            none } },
         { "dashboardlightoff_sw:", {
-            user_command::dashboardlightdisable,
-            user_command::none } },
+            dashboardlightdisable,
+            none } },
         { "timetablelight_sw:", {
-            user_command::timetablelighttoggle,
-            user_command::none } },
+            timetablelighttoggle,
+            none } },
         { "timetablelighton_sw:", {
-            user_command::timetablelightenable,
-            user_command::none } },
+            timetablelightenable,
+            none } },
         { "timetablelightoff_sw:", {
-            user_command::timetablelightdisable,
-            user_command::none } },
+            timetablelightdisable,
+            none } },
         { "cablight_sw:", {
-            user_command::interiorlighttoggle,
-            user_command::none } },
+            interiorlighttoggle,
+            none } },
         { "cablightdim_sw:", {
-            user_command::interiorlightdimtoggle,
-            user_command::none } },
+            interiorlightdimtoggle,
+            none } },
         { "compartmentlights_sw:", {
-            user_command::compartmentlightstoggle,
-            user_command::none } },
+            compartmentlightstoggle,
+            none } },
         { "compartmentlightson_sw:", {
-            user_command::compartmentlightsenable,
-            user_command::none } },
+            compartmentlightsenable,
+            none } },
         { "compartmentlightsoff_sw:", {
-            user_command::compartmentlightsdisable,
-            user_command::none } },
+            compartmentlightsdisable,
+            none } },
         { "battery_sw:", {
-            user_command::batterytoggle,
-            user_command::none } },
+            batterytoggle,
+            none } },
         { "batteryon_sw:", {
-            user_command::batteryenable,
-            user_command::none } },
+            batteryenable,
+            none } },
         { "batteryoff_sw:", {
-            user_command::batterydisable,
-            user_command::none } },
+            batterydisable,
+            none } },
 		{ "cabactivation_sw:", {
-			user_command::cabactivationtoggle,
-			user_command::none } },
+			cabactivationtoggle,
+			none } },
         { "couplingdisconnect_sw:",{
-			user_command::occupiedcarcouplingdisconnect,
-			user_command::none } },
+			occupiedcarcouplingdisconnect,
+			none } },
 		{ "couplingdisconnectback_sw:",{
-			user_command::occupiedcarcouplingdisconnectback,
-			user_command::none } },
-	    {"universal0:", {user_command::generictoggle0, user_command::none}},
-	    {"universal1:", {user_command::generictoggle1, user_command::none}},
-	    {"universal2:", {user_command::generictoggle2, user_command::none}},
-	    {"universal3:", {user_command::generictoggle3, user_command::none}},
-	    {"universal4:", {user_command::generictoggle4, user_command::none}},
-	    {"universal5:", {user_command::generictoggle5, user_command::none}},
-	    {"universal6:", {user_command::generictoggle6, user_command::none}},
-	    {"universal7:", {user_command::generictoggle7, user_command::none}},
-	    {"universal8:", {user_command::generictoggle8, user_command::none}},
-	    {"universal9:", {user_command::generictoggle9, user_command::none}},
-	    {"universal10:", {user_command::generictoggle10, user_command::none}},
-	    {"universal11:", {user_command::generictoggle11, user_command::none}},
-	    {"universal12:", {user_command::generictoggle12, user_command::none}},
-	    {"universal13:", {user_command::generictoggle13, user_command::none}},
-	    {"universal14:", {user_command::generictoggle14, user_command::none}},
-	    {"universal15:", {user_command::generictoggle15, user_command::none}},
-	    {"universal16:", {user_command::generictoggle16, user_command::none}},
-	    {"universal17:", {user_command::generictoggle17, user_command::none}},
-	    {"universal18:", {user_command::generictoggle18, user_command::none}},
-	    {"universal19:", {user_command::generictoggle19, user_command::none}},
-	    {"universal20:", {user_command::generictoggle20, user_command::none}},
-	    {"universal21:", {user_command::generictoggle21, user_command::none}},
-	    {"universal22:", {user_command::generictoggle22, user_command::none}},
-	    {"universal23:", {user_command::generictoggle23, user_command::none}},
-	    {"universal24:", {user_command::generictoggle24, user_command::none}},
-	    {"universal25:", {user_command::generictoggle25, user_command::none}},
-	    {"universal26:", {user_command::generictoggle26, user_command::none}},
-	    {"universal27:", {user_command::generictoggle27, user_command::none}},
-	    {"universal28:", {user_command::generictoggle28, user_command::none}},
-	    {"universal29:", {user_command::generictoggle29, user_command::none}},
+			occupiedcarcouplingdisconnectback,
+			none } },
+	    {"universal0:", {generictoggle0, none}},
+	    {"universal1:", {generictoggle1, none}},
+	    {"universal2:", {generictoggle2, none}},
+	    {"universal3:", {generictoggle3, none}},
+	    {"universal4:", {generictoggle4, none}},
+	    {"universal5:", {generictoggle5, none}},
+	    {"universal6:", {generictoggle6, none}},
+	    {"universal7:", {generictoggle7, none}},
+	    {"universal8:", {generictoggle8, none}},
+	    {"universal9:", {generictoggle9, none}},
+	    {"universal10:", {generictoggle10, none}},
+	    {"universal11:", {generictoggle11, none}},
+	    {"universal12:", {generictoggle12, none}},
+	    {"universal13:", {generictoggle13, none}},
+	    {"universal14:", {generictoggle14, none}},
+	    {"universal15:", {generictoggle15, none}},
+	    {"universal16:", {generictoggle16, none}},
+	    {"universal17:", {generictoggle17, none}},
+	    {"universal18:", {generictoggle18, none}},
+	    {"universal19:", {generictoggle19, none}},
+	    {"universal20:", {generictoggle20, none}},
+	    {"universal21:", {generictoggle21, none}},
+	    {"universal22:", {generictoggle22, none}},
+	    {"universal23:", {generictoggle23, none}},
+	    {"universal24:", {generictoggle24, none}},
+	    {"universal25:", {generictoggle25, none}},
+	    {"universal26:", {generictoggle26, none}},
+	    {"universal27:", {generictoggle27, none}},
+	    {"universal28:", {generictoggle28, none}},
+	    {"universal29:", {generictoggle29, none}},
 		{ "speedinc_bt:",{
-			user_command::speedcontrolincrease,
-			user_command::none } },
+			speedcontrolincrease,
+			none } },
 		{ "speeddec_bt:",{
-			user_command::speedcontroldecrease,
-			user_command::none } },
+			speedcontroldecrease,
+			none } },
 		{ "speedctrlpowerinc_bt:",{
-			user_command::speedcontrolpowerincrease,
-			user_command::none } },
+			speedcontrolpowerincrease,
+			none } },
 		{ "speedctrlpowerdec_bt:",{
-			user_command::speedcontrolpowerdecrease,
-			user_command::none } },
+			speedcontrolpowerdecrease,
+			none } },
 		{ "speedbutton0:",{
-			user_command::speedcontrolbutton0,
-			user_command::none } },
+			speedcontrolbutton0,
+			none } },
 		{ "speedbutton1:",{
-			user_command::speedcontrolbutton1,
-			user_command::none } },
+			speedcontrolbutton1,
+			none } },
 		{ "speedbutton2:",{
-			user_command::speedcontrolbutton2,
-			user_command::none } },
+			speedcontrolbutton2,
+			none } },
 		{ "speedbutton3:",{
-			user_command::speedcontrolbutton3,
-			user_command::none } },
+			speedcontrolbutton3,
+			none } },
 		{ "speedbutton4:",{
-			user_command::speedcontrolbutton4,
-			user_command::none } },
+			speedcontrolbutton4,
+			none } },
 		{ "speedbutton5:",{
-			user_command::speedcontrolbutton5,
-			user_command::none } },
+			speedcontrolbutton5,
+			none } },
 		{ "speedbutton6:",{
-			user_command::speedcontrolbutton6,
-			user_command::none } },
+			speedcontrolbutton6,
+			none } },
 		{ "speedbutton7:",{
-			user_command::speedcontrolbutton7,
-			user_command::none } },
+			speedcontrolbutton7,
+			none } },
 		{ "speedbutton8:",{
-			user_command::speedcontrolbutton8,
-			user_command::none } },
+			speedcontrolbutton8,
+			none } },
 		{ "speedbutton9:",{
-			user_command::speedcontrolbutton9,
-			user_command::none } },
+			speedcontrolbutton9,
+			none } },
 		{ "inverterenable1_bt:",{
-			user_command::inverterenable1,
-			user_command::none } },
+			inverterenable1,
+			none } },
 		{ "inverterenable2_bt:",{
-			user_command::inverterenable2,
-			user_command::none } },
+			inverterenable2,
+			none } },
 		{ "inverterenable3_bt:",{
-			user_command::inverterenable3,
-			user_command::none } },
+			inverterenable3,
+			none } },
 		{ "inverterenable4_bt:",{
-			user_command::inverterenable4,
-			user_command::none } },
+			inverterenable4,
+			none } },
 		{ "inverterenable5_bt:",{
-			user_command::inverterenable5,
-			user_command::none } },
+			inverterenable5,
+			none } },
 		{ "inverterenable6_bt:",{
-			user_command::inverterenable6,
-			user_command::none } },
+			inverterenable6,
+			none } },
 		{ "inverterenable7_bt:",{
-			user_command::inverterenable7,
-			user_command::none } },
+			inverterenable7,
+			none } },
 		{ "inverterenable8_bt:",{
-			user_command::inverterenable8,
-			user_command::none } },
+			inverterenable8,
+			none } },
 		{ "inverterenable9_bt:",{
-			user_command::inverterenable9,
-			user_command::none } },
+			inverterenable9,
+			none } },
 		{ "inverterenable10_bt:",{
-			user_command::inverterenable10,
-			user_command::none } },
+			inverterenable10,
+			none } },
 		{ "inverterenable11_bt:",{
-			user_command::inverterenable11,
-			user_command::none } },
+			inverterenable11,
+			none } },
 		{ "inverterenable12_bt:",{
-			user_command::inverterenable12,
-			user_command::none } },
+			inverterenable12,
+			none } },
 		{ "inverterdisable1_bt:",{
-			user_command::inverterdisable1,
-			user_command::none } },
+			inverterdisable1,
+			none } },
 		{ "inverterdisable2_bt:",{
-			user_command::inverterdisable2,
-			user_command::none } },
+			inverterdisable2,
+			none } },
 		{ "inverterdisable3_bt:",{
-			user_command::inverterdisable3,
-			user_command::none } },
+			inverterdisable3,
+			none } },
 		{ "inverterdisable4_bt:",{
-			user_command::inverterdisable4,
-			user_command::none } },
+			inverterdisable4,
+			none } },
 		{ "inverterdisable5_bt:",{
-			user_command::inverterdisable5,
-			user_command::none } },
+			inverterdisable5,
+			none } },
 		{ "inverterdisable6_bt:",{
-			user_command::inverterdisable6,
-			user_command::none } },
+			inverterdisable6,
+			none } },
 		{ "inverterdisable7_bt:",{
-			user_command::inverterdisable7,
-			user_command::none } },
+			inverterdisable7,
+			none } },
 		{ "inverterdisable8_bt:",{
-			user_command::inverterdisable8,
-			user_command::none } },
+			inverterdisable8,
+			none } },
 		{ "inverterdisable9_bt:",{
-			user_command::inverterdisable9,
-			user_command::none } },
+			inverterdisable9,
+			none } },
 		{ "inverterdisable10_bt:",{
-			user_command::inverterdisable10,
-			user_command::none } },
+			inverterdisable10,
+			none } },
 		{ "inverterdisable11_bt:",{
-			user_command::inverterdisable11,
-			user_command::none } },
+			inverterdisable11,
+			none } },
 		{ "inverterdisable12_bt:",{
-			user_command::inverterdisable12,
-			user_command::none } },
+			inverterdisable12,
+			none } },
 		{ "invertertoggle1_bt:",{
-			user_command::invertertoggle1,
-			user_command::none } },
+			invertertoggle1,
+			none } },
 		{ "invertertoggle2_bt:",{
-			user_command::invertertoggle2,
-			user_command::none } },
+			invertertoggle2,
+			none } },
 		{ "invertertoggle3_bt:",{
-			user_command::invertertoggle3,
-			user_command::none } },
+			invertertoggle3,
+			none } },
 		{ "invertertoggle4_bt:",{
-			user_command::invertertoggle4,
-			user_command::none } },
+			invertertoggle4,
+			none } },
 		{ "invertertoggle5_bt:",{
-			user_command::invertertoggle5,
-			user_command::none } },
+			invertertoggle5,
+			none } },
 		{ "invertertoggle6_bt:",{
-			user_command::invertertoggle6,
-			user_command::none } },
+			invertertoggle6,
+			none } },
 		{ "invertertoggle7_bt:",{
-			user_command::invertertoggle7,
-			user_command::none } },
+			invertertoggle7,
+			none } },
 		{ "invertertoggle8_bt:",{
-			user_command::invertertoggle8,
-			user_command::none } },
+			invertertoggle8,
+			none } },
 		{ "invertertoggle9_bt:",{
-			user_command::invertertoggle9,
-			user_command::none } },
+			invertertoggle9,
+			none } },
 		{ "invertertoggle10_bt:",{
-			user_command::invertertoggle10,
-			user_command::none } },
+			invertertoggle10,
+			none } },
 		{ "invertertoggle11_bt:",{
-			user_command::invertertoggle11,
-			user_command::none } },
+			invertertoggle11,
+			none } },
 		{ "invertertoggle12_bt:",{
-			user_command::invertertoggle12,
-			user_command::none } },
+			invertertoggle12,
+			none } },
         { "wipers_sw:",{
-			user_command::wiperswitchincrease,
-			user_command::wiperswitchdecrease
+			wiperswitchincrease,
+			wiperswitchdecrease
          } },
 
     };
@@ -1111,16 +1114,17 @@ drivermouse_input::default_bindings() {
 
 user_command
 drivermouse_input::adjust_command( user_command Command ) const {
+    using enum user_command;
 
     if( true == Global.shiftState
-     && Command != user_command::none ) {
+     && Command != none ) {
         switch( Command ) {
-            case user_command::mastercontrollerincrease: { Command = user_command::mastercontrollerincreasefast; break; }
-            case user_command::mastercontrollerdecrease: { Command = user_command::mastercontrollerdecreasefast; break; }
-            case user_command::secondcontrollerincrease: { Command = user_command::secondcontrollerincreasefast; break; }
-            case user_command::secondcontrollerdecrease: { Command = user_command::secondcontrollerdecreasefast; break; }
-            case user_command::independentbrakeincrease: { Command = user_command::independentbrakeincreasefast; break; }
-            case user_command::independentbrakedecrease: { Command = user_command::independentbrakedecreasefast; break; }
+            case mastercontrollerincrease: { Command = mastercontrollerincreasefast; break; }
+            case mastercontrollerdecrease: { Command = mastercontrollerdecreasefast; break; }
+            case secondcontrollerincrease: { Command = secondcontrollerincreasefast; break; }
+            case secondcontrollerdecrease: { Command = secondcontrollerdecreasefast; break; }
+            case independentbrakeincrease: { Command = independentbrakeincreasefast; break; }
+            case independentbrakedecrease: { Command = independentbrakedecreasefast; break; }
             default: { break; }
         }
     }
