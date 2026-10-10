@@ -313,7 +313,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		paint, // paints the chosen material, Shift: the first material of the palette
 		spacing, // selects chunks (Ctrl: adds or takes away one), whose point spacing is then converted
 		water, // outlines a body of water
-		restore // takes the touch-ups over the modifiers back
+		restore, // takes the touch-ups over the modifiers back
+		fill // outlines an area filled with a material
 	};
 	terrain_tool m_terrain_tool{terrain_tool::none};
 	bool terrain_brush() const
@@ -325,7 +326,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	void convert_selected_chunks();
 	// takes the height of whatever is under the cursor (terrain, track, model) for the target of the level brush. returns: false if there's nothing
 	bool pick_terrain_target();
-	bool terrain_clicking() const { return m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::water; }
+	bool terrain_clicking() const { return m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::water || m_terrain_tool == terrain_tool::fill; }
+	// fills the outlined area with the material of the chosen palette entry, turned by m_paint_rotation
+	void fill_terrain_area();
 	// the brush, the hovered chunk and the outlines of water drawn over the viewport
 	void draw_terrain_overlay();
 	// forgets what's known about the ground, after the terrain changed
@@ -442,6 +445,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::set<heightmap::chunk_key> m_terrain_selection; // chunks chosen with the spacing tool
 	float m_terrain_convert_spacing{1.0f}; // point spacing the selected chunks are converted to
 	bool m_terrain_convert_paint{true}; // chunks converted to 0.5 m get paint samples every 0.5 m too
+	std::vector<glm::dvec3> m_paint_outline; // of the area filled with a material
+	float m_paint_feather{0.0f}; // metres the filled material blends in over across the outline, 0: sharp
+	float m_paint_rotation{0.0f}; // degrees the textures of the filled material are turned by
 	float m_water_selected_level{0.0f}; // level of the chosen water, while it's edited
 	bool m_water_level_dragged{false};
 	std::string m_terrain_status;

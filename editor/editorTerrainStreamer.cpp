@@ -358,7 +358,8 @@ void terrain_streamer::update_material(editor_terrain &Chunk)
 	{
 		auto const layer{data.layers[slot] == heightmap::no_layer ? std::uint16_t{0} : data.layers[slot]};
 		auto const size{layer < m_manifest.layers.size() ? m_manifest.layers[layer].size : 0.f};
-		layers.push_back({palette_material(layer), size});
+		auto const rotation{layer < m_manifest.layers.size() ? m_manifest.layers[layer].rotation : 0.f};
+		layers.push_back({palette_material(layer), size, rotation});
 	}
 	auto const corner{data.corner()};
 	auto const packcorner{heightmap::pack_corner(heightmap::pack_of(data.key))};
@@ -1166,15 +1167,62 @@ bool terrain_streamer::paint(double X, double Z, double Radius, double Strength,
 {
 	if (Radius <= 0.0 || Strength <= 0.0)
 		return false;
+	return paint_area(glm::dvec2{X - Radius, Z - Radius}, glm::dvec2{X + Radius, Z + Radius}, Layer, false, [&](double const Px, double const Pz) {
+		auto const distance{std::sqrt((Px - X) * (Px - X) + (Pz - Z) * (Pz - Z))};
+		return distance > Radius ? 0.0 : Strength * falloff(distance, Radius);
+	});
+}
+
+bool terrain_streamer::fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength)
+{
+	if (Outline.size() < 3 || Strength <= 0.0)
+		return false;
+	Feather = std::max(0.0, Feather);
+	glm::dvec2 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+	for (auto const &point : Outline)
+	{
+		low = glm::min(low, point);
+		high = glm::max(high, point);
+	}
+	// the blend runs across the outline, half of it inside
+	auto const margin{Feather * 0.5};
+	return paint_area(low - glm::dvec2{margin}, high + glm::dvec2{margin}, Layer, true, [&](double const Px, double const Pz) {
+		glm::dvec2 const point{Px, Pz};
+		bool inside{false};
+		auto nearest{std::numeric_limits<double>::max()};
+		for (std::size_t i = 0, j = Outline.size() - 1; i < Outline.size(); j = i++)
+		{
+			auto const &a{Outline[i]};
+			auto const &b{Outline[j]};
+			if ((a.y > Pz) != (b.y > Pz) && Px < (b.x - a.x) * (Pz - a.y) / (b.y - a.y) + a.x)
+				inside = !inside;
+			if (Feather > 0.0)
+			{
+				auto const run{b - a};
+				auto const length{glm::dot(run, run)};
+				auto const t{length > 1e-12 ? std::clamp(glm::dot(point - a, run) / length, 0.0, 1.0) : 0.0};
+				nearest = std::min(nearest, glm::length(point - (a + run * t)));
+			}
+		}
+		if (Feather <= 0.0)
+			return inside ? Strength : 0.0;
+		// signed distance from the outline, inside positive, led smoothly through the blend
+		auto const t{std::clamp(((inside ? nearest : -nearest) + margin) / Feather, 0.0, 1.0)};
+		return Strength * t * t * (3.0 - 2.0 * t);
+	});
+}
+
+bool terrain_streamer::paint_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t const Layer, bool const Load, std::function<double(double X, double Z)> const &Amount)
+{
 	bool changed{false};
-	for (auto *chunk : chunks_in(glm::dvec2{X - Radius, Z - Radius}, glm::dvec2{X + Radius, Z + Radius}, false))
+	for (auto *chunk : chunks_in(Min, Max, Load))
 	{
 		auto const &current{chunk->data()};
 		auto const samples{current.paint > 0 ? current.paint : heightmap::default_paint_samples};
 		auto const step{heightmap::chunk_size / samples};
 		auto const low{current.corner()};
-		auto const xs{index_range(low.x, step, samples + 1, X - Radius, X + Radius)};
-		auto const zs{index_range(low.y, step, samples + 1, Z - Radius, Z + Radius)};
+		auto const xs{index_range(low.x, step, samples + 1, Min.x, Max.x)};
+		auto const zs{index_range(low.y, step, samples + 1, Min.y, Max.y)};
 		if (xs.first > xs.second || zs.first > zs.second)
 			continue;
 		if (current.paint <= 0 && current.layers[0] == Layer)
@@ -1203,13 +1251,11 @@ bool terrain_streamer::paint(double X, double Z, double Radius, double Strength,
 		for (int iz = zs.first; iz <= zs.second; ++iz)
 			for (int ix = xs.first; ix <= xs.second; ++ix)
 			{
-				auto const px{low.x + ix * step}, pz{low.y + iz * step};
-				auto const distance{std::sqrt((px - X) * (px - X) + (pz - Z) * (pz - Z))};
-				if (distance > Radius)
+				auto const amount{std::clamp(Amount(low.x + ix * step, low.y + iz * step), 0.0, 1.0)};
+				if (amount <= 0.0)
 					continue;
 				auto const sample{static_cast<std::size_t>(iz) * (samples + 1) + ix};
 				auto &own{data->weights[slot * plane + sample]};
-				auto const amount{std::clamp(Strength * falloff(distance, Radius), 0.0, 1.0)};
 				auto const target{static_cast<int>(std::lround(own + (255 - own) * amount))};
 				if (target == own)
 					continue;
@@ -1239,13 +1285,13 @@ bool terrain_streamer::paint(double X, double Z, double Radius, double Strength,
 	return changed;
 }
 
-std::uint16_t terrain_streamer::layer(std::string const &Material, float const Size)
+std::uint16_t terrain_streamer::layer(std::string const &Material, float const Size, float const Rotation)
 {
 	for (std::size_t i = 0; i < m_manifest.layers.size(); ++i)
-		if (m_manifest.layers[i].material == Material && (Size <= 0.f || m_manifest.layers[i].size == Size))
+		if (m_manifest.layers[i].material == Material && (Size <= 0.f || m_manifest.layers[i].size == Size) && m_manifest.layers[i].rotation == Rotation)
 			return static_cast<std::uint16_t>(i);
 	remember_manifest();
-	m_manifest.layers.push_back({Material, std::max(0.f, Size)});
+	m_manifest.layers.push_back({Material, std::max(0.f, Size), Rotation});
 	m_manifestchanged = true;
 	return static_cast<std::uint16_t>(m_manifest.layers.size() - 1);
 }
@@ -1260,6 +1306,19 @@ void terrain_streamer::layer_size(std::uint16_t const Layer, float const Size)
 	// the materials of the chunks using it are made again
 	for (auto &entry : m_chunks)
 		if (entry.second->data().slot_of(Layer) >= 0)
+			entry.second->m_paintedversion = 0;
+}
+
+void terrain_streamer::layer_rotation(std::uint16_t const Layer, float Rotation)
+{
+	Rotation = static_cast<float>(std::remainder(static_cast<double>(Rotation), 360.0));
+	if (Layer >= m_manifest.layers.size() || m_manifest.layers[Layer].rotation == Rotation)
+		return;
+	remember_manifest();
+	m_manifest.layers[Layer].rotation = Rotation;
+	m_manifestchanged = true;
+	for (auto &entry : m_chunks)
+		if (entry.second->data().slot_of(Layer) >= 0 || (Layer == 0 && entry.second->data().layer_count() == 0))
 			entry.second->m_paintedversion = 0;
 }
 
@@ -1529,7 +1588,7 @@ terrain_streamer::change terrain_streamer::restore(change const &Change)
 		opposite.water_material = m_manifest.water_material;
 		opposite.modifiers = m_manifest.modifiers;
 		auto const samelayers{std::equal(Change.layers.begin(), Change.layers.end(), m_manifest.layers.begin(), m_manifest.layers.end(),
-		                                 [](heightmap::layer_def const &A, heightmap::layer_def const &B) { return A.material == B.material && A.size == B.size; })};
+		                                 [](heightmap::layer_def const &A, heightmap::layer_def const &B) { return A.material == B.material && A.size == B.size && A.rotation == B.rotation; })};
 		m_manifest.layers = Change.layers;
 		m_manifest.modifiers = Change.modifiers;
 		m_manifest.water = Change.water;

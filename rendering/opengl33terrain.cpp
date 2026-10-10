@@ -289,6 +289,10 @@ material_handle opengl33_terrain_materials::make(material_handle const Reuse, st
 		table[i * 4 + 2] = layer.normalmap ? 1.f : 0.f;
 		table[i * 4 + 3] = layer.specgloss ? 1.f : 0.f;
 		table[(max_layers + i) * 4 + 0] = layer.reflection;
+		// the textures turned by the layer of the chunk (the same material can be turned differently in another layer)
+		auto const angle{glm::radians(static_cast<double>(Layers[i].rotation))};
+		table[(max_layers + i) * 4 + 1] = static_cast<float>(std::cos(angle));
+		table[(max_layers + i) * 4 + 2] = static_cast<float>(std::sin(angle));
 	}
 	bind_for_upload(m_textures.texture(entry.table));
 	::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, static_cast<GLsizei>(max_layers), 2, 0, GL_RGBA, GL_FLOAT, table.data());

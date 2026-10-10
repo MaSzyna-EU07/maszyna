@@ -153,11 +153,13 @@ class modifier_shape
 	std::vector<std::pair<std::uint64_t, std::uint32_t>> m_grid; // (cell key, segment), sorted
 };
 
-// material of the palette, and the size (metres) its textures repeat at; 0: the size given by the material, or 8 m
+// material of the palette, and the size (metres) its textures repeat at; 0: the size given by the material, or 8 m.
+// the same material can be in the palette more than once, e.g. turned by another angle
 struct layer_def
 {
 	std::string material;
 	float size{0.f};
+	float rotation{0.f}; // degrees the textures are turned by, counterclockwise seen from above
 };
 
 // description of the terrain, terrain.yaml

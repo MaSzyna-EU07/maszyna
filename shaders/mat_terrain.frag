@@ -16,7 +16,7 @@ layout(location = 1) out vec4 out_motion;
 // heightmap terrain: up to 8 materials (layers) painted over a chunk, blended by their weights.
 // the textures of all layers of the terrain are kept in texture arrays; the table of the chunk tells which layers it has:
 //   row 0, per layer: index in the arrays, 1 / metres the textures repeat at, has normal map, has specular/gloss map
-//   row 1, per layer: reflection
+//   row 1, per layer: reflection, cosine and sine of the angle the textures are turned by
 // f_coord holds metres from the corner of the pack of chunks, along x and -z
 
 #param (color, 0, 0, 4, diffuse)
@@ -77,9 +77,12 @@ void main()
 			continue;
 		vec4 info = texelFetch(layertable, ivec2(i, 0), 0);
 		vec4 extra = texelFetch(layertable, ivec2(i, 1), 0);
-		vec3 coord = vec3(f_coord * info.y, info.x);
-		vec2 dx = coorddx * info.y;
-		vec2 dy = coorddy * info.y;
+		// turned counterclockwise seen from above; f_coord runs along x and -z, so that's clockwise in it
+		vec2 turn = (extra.y == 0.0 && extra.z == 0.0) ? vec2(1.0, 0.0) : extra.yz;
+		mat2 rotation = mat2(turn.x, -turn.y, turn.y, turn.x);
+		vec3 coord = vec3(rotation * f_coord * info.y, info.x);
+		vec2 dx = rotation * coorddx * info.y;
+		vec2 dy = rotation * coorddy * info.y;
 		albedo += textureGrad(layerdiffuse, coord, dx, dy).rgb * weight;
 		vec3 layernormal_ts = vec3(0.0, 0.0, 1.0);
 		float layerreflection = extra.x;
@@ -88,6 +91,8 @@ void main()
 			vec4 normalmap = textureGrad(layernormal, coord, dx, dy);
 			layernormal_ts.xy = normalmap.rg * 2.0 - 1.0;
 			layernormal_ts.z = sqrt(1.0 - clamp(dot(layernormal_ts.xy, layernormal_ts.xy), 0.0, 1.0));
+			// the normal map leans along the turned texture; turned back to the axes of the terrain
+			layernormal_ts.xy = layernormal_ts.xy * rotation;
 			layerreflection *= normalmap.a;
 		}
 		normal += layernormal_ts * weight;

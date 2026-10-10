@@ -84,6 +84,8 @@ http://mozilla.org/MPL/2.0/.
 //   terrainbake <name>                   the modifier baked into the ground
 //   terrainselect <cx> <cz> [add]        the chunk selected with the spacing tool (add: Ctrl)
 //   terrainresolution <spacing> [paint 0|1]   the selected chunks converted, as the button of the resolution panel does it
+//   terrainfill <palette entry> <blur> <rotation> <x> <z> <x> <z> <x> <z>...   the area outlined filled, as the fill tool does it
+//   terrainturn <palette entry> <degrees>  the textures of the palette entry turned
 //   terrainwater <index> <material> [size]    material and repeat of a body of water; terrainwaterdefault <material>
 //   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
 //   screenshot
@@ -1188,6 +1190,29 @@ void editor_mode::selftest_step()
 			forget_ground();
 			WriteLog(format("SELFTEST terrainmodifier: %zu modifiers", m_streamer.modifiers().size()));
 		}
+		else if (command == "terrainfill")
+		{
+			int layer{0};
+			words >> layer >> m_paint_feather >> m_paint_rotation;
+			m_terrain_layer = layer;
+			m_paint_outline.clear();
+			double x, z;
+			while (words >> x >> z)
+				m_paint_outline.emplace_back(x, 0.0, z);
+			fill_terrain_area();
+			std::string palette;
+			for (auto const &entry : m_streamer.manifest().layers)
+				palette += format(" [%s %.1f m %.0f deg]", entry.material.c_str(), entry.size, entry.rotation);
+			WriteLog("SELFTEST terrainfill: " + m_terrain_status + ", palette" + palette);
+		}
+		else if (command == "terrainturn")
+		{
+			int layer{0};
+			float degrees{0.f};
+			words >> layer >> degrees;
+			m_streamer.layer_rotation(static_cast<std::uint16_t>(layer), degrees);
+			WriteLog(format("SELFTEST terrainturn %d: %.1f deg", layer, m_streamer.manifest().layers.at(layer).rotation));
+		}
 		else if (command == "terraintouchup")
 		{
 			int state{1};
@@ -1292,6 +1317,16 @@ void editor_mode::selftest_step()
 				if (false == data.adjust.empty())
 					adjust = data.height_in(data.adjust, x, z);
 				grid = format(", spacing %.1f, paint %d, base %s %.3f, touch-up %.3f", data.spacing(), data.paint, data.base.empty() ? "none" : "", base, adjust);
+				if (data.paint > 0)
+				{
+					// weights at the paint sample nearest the point
+					auto const corner{data.corner()};
+					auto const ix{static_cast<int>(std::lround((x - corner.x) / heightmap::chunk_size * data.paint))};
+					auto const iz{static_cast<int>(std::lround((z - corner.y) / heightmap::chunk_size * data.paint))};
+					grid += ", weights";
+					for (std::size_t slot = 0; slot < data.layer_count(); ++slot)
+						grid += format(" %d", data.weight(slot, std::clamp(ix, 0, data.paint), std::clamp(iz, 0, data.paint)));
+				}
 			}
 			WriteLog(format("SELFTEST terrainprobe %.1f %.1f: %s %.3f, %zu chunks, materials %s%s", x, z, found ? "height" : "no terrain", height, m_streamer.resident(), materials.c_str(), grid.c_str()));
 		}

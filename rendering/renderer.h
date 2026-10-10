@@ -28,6 +28,7 @@ struct terrain_layer
 {
 	material_handle material{null_handle};
 	float size{0.f};
+	float rotation{0.f}; // degrees the textures are turned by
 };
 } // namespace gfx
 

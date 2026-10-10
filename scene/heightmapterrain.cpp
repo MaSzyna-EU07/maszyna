@@ -551,7 +551,7 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 		if (auto const node{document["layers"]}; node && node.IsSequence())
 			for (auto const &layer : node)
 			{
-				// a material name, or a map with the material and the size its textures repeat at
+				// a material name, or a map with the material, the size its textures repeat at and the angle they're turned by
 				if (layer.IsMap())
 				{
 					layer_def entry;
@@ -559,6 +559,8 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 						entry.material = material.as<std::string>();
 					if (auto const size{layer["size"]})
 						entry.size = std::max(0.f, size.as<float>());
+					if (auto const rotation{layer["rotation"]})
+						entry.rotation = rotation.as<float>();
 					if (false == entry.material.empty())
 						result.layers.push_back(entry);
 				}
@@ -630,8 +632,13 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 	out << YAML::Key << "layers" << YAML::Value << YAML::BeginSeq;
 	for (auto const &layer : Manifest.layers)
 	{
-		if (layer.size > 0.f)
-			out << YAML::Flow << YAML::BeginMap << YAML::Key << "material" << YAML::Value << layer.material << YAML::Key << "size" << YAML::Value << layer.size << YAML::EndMap;
+		if (layer.size > 0.f || layer.rotation != 0.f)
+		{
+			out << YAML::Flow << YAML::BeginMap << YAML::Key << "material" << YAML::Value << layer.material << YAML::Key << "size" << YAML::Value << layer.size;
+			if (layer.rotation != 0.f)
+				out << YAML::Key << "rotation" << YAML::Value << layer.rotation;
+			out << YAML::EndMap;
+		}
 		else
 			out << layer.material;
 	}

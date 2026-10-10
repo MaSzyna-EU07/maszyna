@@ -1604,13 +1604,16 @@ void editor_mode::render_terrain_ui()
     };
     // the tools are named like the headers below, which would give them the same IDs
     ImGui::PushID("terrain_tools");
+    // the tools working on a click, then the brushes
     radio(STR_C("Select"), terrain_tool::none, STR_C("LMB picks the models, as in the surroundings"));
     ImGui::SameLine();
     radio(STR_C("Chunks"), terrain_tool::chunks, STR_C("LMB adds a chunk shaped as the ground under it, next to the clicked one; Shift+LMB removes the clicked chunk"));
     ImGui::SameLine();
     radio(STR_C("Spacing"), terrain_tool::spacing, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds it to the selection or takes it away;\nthe point spacing of the selected chunks is converted in \"Chunk resolution\" below"));
     ImGui::SameLine();
-    radio(STR_C("Restore"), terrain_tool::restore, STR_C("LMB takes back the touch-ups made over the tracks under the brush:\nthe terrain returns to the shape the modifiers (tracks) give it"));
+    radio(STR_C("Water"), terrain_tool::water, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"));
+    ImGui::SameLine();
+    radio(STR_C("Fill"), terrain_tool::fill, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"));
     radio(STR_C("Sculpt"), terrain_tool::sculpt, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"));
     ImGui::SameLine();
     radio(STR_C("Smooth"), terrain_tool::smooth, STR_C("LMB evens the terrain out under the brush"));
@@ -1619,7 +1622,7 @@ void editor_mode::render_terrain_ui()
     ImGui::SameLine();
     radio(STR_C("Paint"), terrain_tool::paint, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"));
     ImGui::SameLine();
-    radio(STR_C("Water"), terrain_tool::water, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"));
+    radio(STR_C("Restore"), terrain_tool::restore, STR_C("LMB takes back the touch-ups made over the tracks under the brush:\nthe terrain returns to the shape the modifiers (tracks) give it"));
     ImGui::PopID();
     m_terrain_tool = static_cast<terrain_tool>(tool);
 
@@ -1747,7 +1750,9 @@ void editor_mode::render_terrain_ui()
         m_terrain_layer = std::clamp(m_terrain_layer, 0, static_cast<int>(layers.size()) - 1);
         for (std::size_t i = 0; i < layers.size(); ++i)
         {
-            auto const label{layers[i].size > 0.f ? format("%zu: %s (%.1f m)", i, layers[i].material.c_str(), layers[i].size) : format("%zu: %s", i, layers[i].material.c_str())};
+            auto label{layers[i].size > 0.f ? format("%zu: %s (%.1f m)", i, layers[i].material.c_str(), layers[i].size) : format("%zu: %s", i, layers[i].material.c_str())};
+            if (layers[i].rotation != 0.f)
+                label += format(STR_C(", turned %.0f deg"), layers[i].rotation);
             if (ImGui::Selectable(label.c_str(), static_cast<int>(i) == m_terrain_layer))
                 m_terrain_layer = static_cast<int>(i);
             // a material dropped on an entry takes its place, on every chunk painted with it
@@ -1764,6 +1769,14 @@ void editor_mode::render_terrain_ui()
                 m_streamer.layer_size(static_cast<std::uint16_t>(m_terrain_layer), size);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", STR_C("Metres the textures of the chosen material repeat at; 0: as the material gives it, or 8 m"));
+            auto rotation{layers[m_terrain_layer].rotation};
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::SliderFloat(STR_C("Turned by (deg)"), &rotation, -180.0f, 180.0f, "%.0f");
+            if (ImGui::IsItemDeactivatedAfterEdit())
+                m_streamer.layer_rotation(static_cast<std::uint16_t>(m_terrain_layer), rotation);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("Angle the textures of the chosen material are turned by, on every chunk painted with it.\n"
+                                        "Ctrl+click to type it. To have the material turned in one place only, fill it there with an angle of its own."));
         }
         ImGui::SetNextItemWidth(160.0f);
         ImGui::InputText(STR_C("Material"), m_terrain_material, IM_ARRAYSIZE(m_terrain_material));
@@ -1773,6 +1786,35 @@ void editor_mode::render_terrain_ui()
             m_terrain_layer = m_streamer.layer(m_terrain_material, m_terrain_material_size);
         ImGui::TextDisabled("%s", STR_C("New chunks are covered with the first material. A chunk holds up to 8 of them. "
                                         "A texture dragged from the browser onto an entry of the palette takes its place."));
+    }
+
+    if (ImGui::CollapsingHeader(STR_C("Fill"), m_terrain_tool == terrain_tool::fill ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+    {
+        auto const &layers{m_streamer.manifest().layers};
+        if (false == layers.empty())
+        {
+            auto const &chosen{layers[std::clamp(m_terrain_layer, 0, static_cast<int>(layers.size()) - 1)]};
+            ImGui::Text(STR_C("Material: %s (chosen in the palette below)"), chosen.material.c_str());
+        }
+        ImGui::Text(STR_C("Outline: %zu points"), m_paint_outline.size());
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::DragFloat(STR_C("Edge blur (m)"), &m_paint_feather, 0.1f, 0.0f, 100.0f, m_paint_feather > 0.0f ? "%.1f" : STR_C("sharp"));
+        m_paint_feather = std::max(0.0f, m_paint_feather);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Metres across the outline the material blends in over, half of them inside the area.\n"
+                                    "0: a sharp edge, as sharp as the paint samples go: every metre, or every 0.5 m in chunks converted to 0.5 m with fine paint"));
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SliderFloat(STR_C("Texture turned by (deg)"), &m_paint_rotation, -180.0f, 180.0f, "%.0f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("The area gets the material turned by this angle: an entry of the palette with the material at that angle\n"
+                                    "is used, or added. Ctrl+click to type it"));
+        ImGui::BeginDisabled(m_paint_outline.size() < 3 || layers.empty());
+        if (ImGui::Button(STR_C("Fill the area")))
+            fill_terrain_area();
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button(STR_C("Clear the outline##fill")))
+            m_paint_outline.clear();
     }
 
     if (ImGui::CollapsingHeader(STR_C("Water"), m_terrain_tool == terrain_tool::water ? ImGuiTreeNodeFlags_DefaultOpen : 0))
@@ -2071,6 +2113,32 @@ void editor_mode::draw_terrain_overlay()
         for (auto const &point : water[i].outline)
             outline.emplace_back(point.x, water[i].level, point.y);
         polyline(outline, static_cast<int>(i) == m_water_selected ? IM_COL32(120, 200, 255, 255) : IM_COL32(60, 120, 220, 160), true, static_cast<int>(i) == m_water_selected ? 2.5f : 1.5f);
+    }
+    if (m_terrain_tool == terrain_tool::fill && false == m_paint_outline.empty())
+    {
+        // laid over the ground, the edges followed every few metres
+        std::vector<glm::dvec3> outline;
+        auto const closed = m_paint_outline.size() >= 3;
+        for (std::size_t i = 0; i + (closed ? 0 : 1) < m_paint_outline.size(); ++i)
+        {
+            auto const &from = m_paint_outline[i];
+            auto const &to = m_paint_outline[(i + 1) % m_paint_outline.size()];
+            auto const steps = std::clamp(static_cast<int>(glm::distance(glm::dvec2{from.x, from.z}, glm::dvec2{to.x, to.z}) / 4.0), 1, 200);
+            for (int k = 0; k < steps; ++k)
+            {
+                auto const point = from + (to - from) * (static_cast<double>(k) / steps);
+                outline.emplace_back(point.x, ground(point.x, point.z, point.y) + 0.15, point.z);
+            }
+        }
+        if (false == closed)
+            outline.push_back(m_paint_outline.back() + glm::dvec3{0.0, 0.15, 0.0});
+        polyline(outline, IM_COL32(250, 200, 90, 255), false, 2.0f);
+        for (auto const &point : m_paint_outline)
+        {
+            ImVec2 dot;
+            if (projection.project(point + glm::dvec3{0.0, 0.15, 0.0}, dot))
+                drawlist->AddCircleFilled(dot, 4.0f, IM_COL32(250, 200, 90, 255));
+        }
     }
     if (m_terrain_tool == terrain_tool::water && false == m_water_points.empty())
     {
@@ -2508,6 +2576,17 @@ void editor_mode::handle_terrain_click(bool const Shift)
         else if (m_terrain_selection.erase(key) == 0)
             m_terrain_selection.insert(key);
         m_terrain_status = format(STR_C("Chunks selected: %zu"), m_terrain_selection.size());
+        break;
+    }
+    case terrain_tool::fill:
+    {
+        if (Shift)
+        {
+            if (false == m_paint_outline.empty())
+                m_paint_outline.pop_back();
+            return;
+        }
+        m_paint_outline.push_back(placement_on_ground(world));
         break;
     }
     case terrain_tool::water:
@@ -3118,6 +3197,25 @@ void editor_mode::handle_terrain_brush(double Deltatime)
         ground_tiles.clear();
         forget_ground_shapes();
     }
+}
+
+void editor_mode::fill_terrain_area()
+{
+    auto const &layers = m_streamer.manifest().layers;
+    if (m_paint_outline.size() < 3 || layers.empty())
+        return;
+    auto const chosen = layers[std::clamp(m_terrain_layer, 0, static_cast<int>(layers.size()) - 1)];
+    // the material turned by its own angle is another entry of the palette
+    auto const rotation = static_cast<float>(std::remainder(static_cast<double>(m_paint_rotation), 360.0));
+    auto const layer = chosen.rotation == rotation ? static_cast<std::uint16_t>(std::clamp(m_terrain_layer, 0, static_cast<int>(layers.size()) - 1))
+                                                   : m_streamer.layer(chosen.material, chosen.size, rotation);
+    std::vector<glm::dvec2> outline;
+    for (auto const &point : m_paint_outline)
+        outline.emplace_back(point.x, point.z);
+    auto const filled = m_streamer.fill(outline, m_paint_feather, layer);
+    m_terrain_status = filled ? format(STR_C("Area filled with %s"), chosen.material.c_str()) : std::string(STR_C("Nothing filled: no chunk under the outline, or no room for another material"));
+    if (filled)
+        m_paint_outline.clear();
 }
 
 void editor_mode::convert_selected_chunks()

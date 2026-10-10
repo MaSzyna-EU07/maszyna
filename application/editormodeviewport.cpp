@@ -216,6 +216,8 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		Buttons.push_back({icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away; the tool options convert the point spacing of the selected"),
 		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing)});
 		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
+		Buttons.push_back({icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
+		                   choose(terrain_tool::fill)});
 		Buttons.push_back({icon::joints, STR_C("Restore"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
 		                   choose(terrain_tool::restore)});
 		auto const orthophoto{m_orthophoto.enabled()};

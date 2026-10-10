@@ -112,9 +112,15 @@ class terrain_streamer
 	std::size_t touched_up() const;
 	// paints the material of the palette entry Layer within Radius of (X,Z), Strength (0..1) of the way at the centre
 	bool paint(double X, double Z, double Radius, double Strength, std::uint16_t Layer);
-	// palette entry of the material, added to the palette if needed
-	std::uint16_t layer(std::string const &Material, float Size = 0.f);
+	// fills the area within Outline (x, z) with the material of the palette entry Layer, Strength (0..1) of the way.
+	// Feather: metres across the outline the material blends in over, half of them inside; 0: a sharp edge, as sharp as
+	// the paint samples of the chunks go. the chunks are loaded where needed
+	bool fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength = 1.0);
+	// palette entry of the material (repeated at Size, 0: any, turned by Rotation degrees), added to the palette if needed
+	std::uint16_t layer(std::string const &Material, float Size = 0.f, float Rotation = 0.f);
 	void layer_size(std::uint16_t Layer, float Size);
+	// turns the textures of the palette entry Layer by Rotation degrees, on every chunk painted with it
+	void layer_rotation(std::uint16_t Layer, float Rotation);
 	// gives the palette entry Layer another material; the chunks painted with it change with it
 	void layer_material(std::uint16_t Layer, std::string const &Material);
 	void compress(bool State);
@@ -234,6 +240,9 @@ class terrain_streamer
 	heightmap::chunk_ptr neighbour(chunk_key const &Key) const;
 	void touch_neighbours(chunk_key const &Key);
 	material_handle palette_material(std::uint16_t const Layer);
+	// paints the material of the palette entry Layer over the paint samples within the rectangle, Amount (0..1) of the way
+	// at each, as Amount gives it for the place of the sample. Load: chunks not in memory are loaded
+	bool paint_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t Layer, bool Load, std::function<double(double X, double Z)> const &Amount);
 	// chunk loaded right away from its pack file, for editing far from the camera
 	editor_terrain *load_now(chunk_key const &Key);
 	// chunks in memory or in the files overlapping the rectangle, loaded if needed
