@@ -242,7 +242,7 @@ double TSegment::FastGetTFromS(double const s) const
 	double const h01 = -2.0 * u3 + 3.0 * u2;
 	double const t = ( ( 1.0 - h01 )         * fTsBuffer[ i ] +
 					   ( u3 - 2.0 * u2 + u ) * fTsSlope [ i ] +
-					   ( h01 )               * fTsBuffer[ i + 1 ] +
+					   h01               * fTsBuffer[ i + 1 ] +
 					   ( u3 - u2 )           * fTsSlope [ i + 1 ] );
 	return t;
 }

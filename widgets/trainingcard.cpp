@@ -63,16 +63,16 @@ void trainingcard_panel::save_thread_func()
 		if (in_line.compare(0, magic.size(), magic) == 0)
 		{
 			temp << "<div><b>Miejsce: </b>" << (std::string(place.c_str())) << "</div><br />" << std::endl;
-			temp << "<div><b>Data: </b>" << (date) << "</div><br />" << std::endl;
-			temp << "<div><b>Czas: </b>" << (from) << " - " << (to) << "</div><br />" << std::endl;
-			temp << "<div><b>Imię (imiona) i nazwisko szkolonego: </b>" << (trainee_name) << "</div><br />" << std::endl;
-			temp << "<div><b>Data urodzenia: </b>" << (trainee_birthdate) << "</div><br />" << std::endl;
-			temp << "<div><b>Firma: </b>" << (trainee_company) << "</div><br />" << std::endl;
-			temp << "<div><b>Imię i nazwisko instruktora: </b>" << (instructor_name) << "</div><br />" << std::endl;
-			temp << "<div><b>Odcinek trasy: </b>" << (track_segment) << "</div><br />" << std::endl;
+			temp << "<div><b>Data: </b>" << date << "</div><br />" << std::endl;
+			temp << "<div><b>Czas: </b>" << from << " - " << to << "</div><br />" << std::endl;
+			temp << "<div><b>Imię (imiona) i nazwisko szkolonego: </b>" << trainee_name << "</div><br />" << std::endl;
+			temp << "<div><b>Data urodzenia: </b>" << trainee_birthdate << "</div><br />" << std::endl;
+			temp << "<div><b>Firma: </b>" << trainee_company << "</div><br />" << std::endl;
+			temp << "<div><b>Imię i nazwisko instruktora: </b>" << instructor_name << "</div><br />" << std::endl;
+			temp << "<div><b>Odcinek trasy: </b>" << track_segment << "</div><br />" << std::endl;
 			if (distance > 0.0f)
 				temp << "<div><b>Przebyta odległość: </b>" << std::round(distance) << " km</div><br />" << std::endl;
-			temp << "<div><b>Uwagi: </b><br />" << (remarks) << "</div>" << std::endl;
+			temp << "<div><b>Uwagi: </b><br />" << remarks << "</div>" << std::endl;
 		}
 		else
 		{
