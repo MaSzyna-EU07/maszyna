@@ -395,7 +395,7 @@ void python_taskqueue::exit()
 auto python_taskqueue::insert(task_request const &Task) -> bool
 {
 
-	if (!m_initialized || false == Global.python_enabled || Task.renderer.empty() || Task.input == nullptr || Task.target == 0)
+	if (!m_initialized || false == Global.python_enabled || Task.renderer.empty() || Task.input == nullptr || Task.target == nullptr)
 	{
 		return false;
 	}
