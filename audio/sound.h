@@ -137,12 +137,12 @@ public:
     bool
         has_bookends() const;
     // returns location of the sound source in simulation region space
-    glm::dvec3 const
+    glm::dvec3
         location() const;
     // returns defined range of the sound
     void
         range( float const Range );
-    float const
+    float
         range() const;
 
 // members

@@ -56,7 +56,7 @@ public:
     void
         poll();
     inline
-    user_command const
+    user_command
         command() const {
             return m_command; }
     bindingsetup_sequence&

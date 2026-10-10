@@ -110,7 +110,7 @@ private:
         return Value == 0 ? 1 : 0; }
     // element access
     inline
-    auto element( element_handle const Element ) const -> basic_element const {
+    auto element( element_handle const Element ) const -> basic_element {
         return m_elements[ Element - 1 ]; }
     inline
     auto element( element_handle const Element ) -> basic_element & {

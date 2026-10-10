@@ -15,12 +15,12 @@ namespace gl
             return id;
         }
 
-        inline operator GLuint* const()
+        inline operator GLuint*()
         {
             return &id;
         }
 
-        inline operator const GLuint* const() const
+        inline operator const GLuint*() const
         {
             return &id;
         }

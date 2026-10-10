@@ -1240,7 +1240,7 @@ struct TCoupling
 	{
 		return adapter_type != TCouplerType::NoCoupler;
 	}
-	inline TCouplerType const type() const
+	inline TCouplerType type() const
 	{
 		return adapter_type == TCouplerType::NoCoupler ? CouplerType : adapter_type;
 	}
