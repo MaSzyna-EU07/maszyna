@@ -8405,14 +8405,14 @@ bool TTrain::Update(double const Deltatime)
 	{
 		m_doors = DynamicObject->Mechanik->IsAnyDoorOpen[side::right] || DynamicObject->Mechanik->IsAnyDoorOpen[side::left];
 		m_doorpermits = DynamicObject->Mechanik->IsAnyDoorPermitActive[side::right] || DynamicObject->Mechanik->IsAnyDoorPermitActive[side::left];
-		m_doorspermitleft = mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::left : side::right)].open_permit &&
+		m_doorspermitleft = mvOccupied->Doors.instances[cab_to_end() == end::front ? side::left : side::right].open_permit &&
 		                    (simulation::Time.data().wSecond % 2 < 1 || mvOccupied->DoorsPermitLightBlinking < 1 ||
-		                     mvOccupied->DoorsPermitLightBlinking < 2 && DynamicObject->Mechanik->IsAnyDoorOpen[(cab_to_end() == end::front ? side::left : side::right)] ||
-		                     (mvOccupied->DoorsPermitLightBlinking < 3 && DynamicObject->Mechanik->IsAnyDoorOnlyOpen[(cab_to_end() == end::front ? side::left : side::right)]));
-		m_doorspermitright = mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::right : side::left)].open_permit &&
+		                     mvOccupied->DoorsPermitLightBlinking < 2 && DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::left : side::right] ||
+		                     (mvOccupied->DoorsPermitLightBlinking < 3 && DynamicObject->Mechanik->IsAnyDoorOnlyOpen[cab_to_end() == end::front ? side::left : side::right]));
+		m_doorspermitright = mvOccupied->Doors.instances[cab_to_end() == end::front ? side::right : side::left].open_permit &&
 		                     (simulation::Time.data().wSecond % 2 < 1 || mvOccupied->DoorsPermitLightBlinking < 1 ||
-		                      mvOccupied->DoorsPermitLightBlinking < 2 && DynamicObject->Mechanik->IsAnyDoorOpen[(cab_to_end() == end::front ? side::right : side::left)] ||
-		                      (mvOccupied->DoorsPermitLightBlinking < 3 && DynamicObject->Mechanik->IsAnyDoorOnlyOpen[(cab_to_end() == end::front ? side::right : side::left)]));
+		                      mvOccupied->DoorsPermitLightBlinking < 2 && DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::right : side::left] ||
+		                      (mvOccupied->DoorsPermitLightBlinking < 3 && DynamicObject->Mechanik->IsAnyDoorOnlyOpen[cab_to_end() == end::front ? side::right : side::left]));
 	}
 	m_dirforward = mvControlled->DirActive > 0;
 	m_dirneutral = mvControlled->DirActive == 0;
@@ -9015,8 +9015,8 @@ bool TTrain::Update(double const Deltatime)
 		// NBMX wrzesien 2003 - drzwi oraz sygnał odjazdu
 		if (DynamicObject->Mechanik != nullptr)
 		{
-			btLampkaDoorLeft.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[(cab_to_end() == end::front ? side::left : side::right)]);
-			btLampkaDoorRight.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[(cab_to_end() == end::front ? side::right : side::left)]);
+			btLampkaDoorLeft.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::left : side::right]);
+			btLampkaDoorRight.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::right : side::left]);
 		}
 		btLampkaBlokadaDrzwi.Turn(mvOccupied->Doors.is_locked);
 		btLampkaDoorLockOff.Turn(false == mvOccupied->Doors.lock_enabled);
@@ -11344,16 +11344,16 @@ void TTrain::set_cab_controls(int const Cab)
 	// doors permits
 	if (false == ggDoorLeftPermitButton.is_push())
 	{
-		ggDoorLeftPermitButton.PutValue(mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::left : side::right)].open_permit ? 1.f : 0.f);
+		ggDoorLeftPermitButton.PutValue(mvOccupied->Doors.instances[cab_to_end() == end::front ? side::left : side::right].open_permit ? 1.f : 0.f);
 	}
 	if (false == ggDoorRightPermitButton.is_push())
 	{
-		ggDoorRightPermitButton.PutValue(mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::right : side::left)].open_permit ? 1.f : 0.f);
+		ggDoorRightPermitButton.PutValue(mvOccupied->Doors.instances[cab_to_end() == end::front ? side::right : side::left].open_permit ? 1.f : 0.f);
 	}
 	ggDoorPermitPresetButton.PutValue(static_cast<float>(mvOccupied->Doors.permit_preset));
 	// door controls
-	ggDoorLeftButton.PutValue(mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::left : side::right)].is_closed ? 0.f : 1.f);
-	ggDoorRightButton.PutValue(mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::right : side::left)].is_closed ? 0.f : 1.f);
+	ggDoorLeftButton.PutValue(mvOccupied->Doors.instances[cab_to_end() == end::front ? side::left : side::right].is_closed ? 0.f : 1.f);
+	ggDoorRightButton.PutValue(mvOccupied->Doors.instances[cab_to_end() == end::front ? side::right : side::left].is_closed ? 0.f : 1.f);
 	// door lock
 	ggDoorSignallingButton.PutValue(mvOccupied->Doors.lock_enabled ? 1.f : 0.f);
 	// door step

@@ -56,7 +56,7 @@ public:
             return (
                 m_valuechangemodifier == nullptr ?
                     m_valuechange :
-                    m_valuechange / *( m_valuechangemodifier ) ); }
+                    m_valuechange / *m_valuechangemodifier ); }
 
 private:
 //types
@@ -212,7 +212,7 @@ fixedstep_modifier<Type_>::update( Type_ &Variable, double const Timedelta ) con
     auto const valuechange { (
         m_valuechangemodifier == nullptr ?
             m_valuechange :
-            m_valuechange / *( m_valuechangemodifier ) ) };
+            m_valuechange / *m_valuechangemodifier ) };
     Variable += ( valuechange * static_cast<float>( Timedelta ) );
     // clamp down to allowed value range
     Variable = glm::max( Variable, m_valuelimits[ value_limit::min ] );

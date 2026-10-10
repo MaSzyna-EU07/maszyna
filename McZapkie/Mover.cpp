@@ -592,7 +592,7 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 	}
 
 	auto &coupler{Couplers[ConnectNo]};
-	auto &othercoupler = ConnectTo->Couplers[(ConnectToNr != 2 ? ConnectToNr : coupler.ConnectedNr)];
+	auto &othercoupler = ConnectTo->Couplers[ConnectToNr != 2 ? ConnectToNr : coupler.ConnectedNr];
 	auto const distance{CouplerDist(this, ConnectTo) - (coupler.adapter_length + othercoupler.adapter_length)};
 
 
@@ -1836,7 +1836,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 
 		auto &coupler{Couplers[side]};
 		// NOTE: in the loop we actually update the state of the coupler on the opposite end of the vehicle
-		auto &oppositecoupler{Couplers[(side == end::front ? end::rear : end::front)]};
+		auto &oppositecoupler{Couplers[side == end::front ? end::rear : end::front]};
 
 		bool oppositecouplingispresent;
 		bool localpowerexportisenabled;
@@ -1953,7 +1953,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 			continue;
 		}
 
-		auto const &connectedothercoupler{coupler.Connected->Couplers[(coupler.ConnectedNr == end::front ? end::rear : end::front)]};
+		auto const &connectedothercoupler{coupler.Connected->Couplers[coupler.ConnectedNr == end::front ? end::rear : end::front]};
 		auto const *connectedothercoupling = Coupling == coupling::highvoltage ? &connectedothercoupler.power_high :
 		                                     Coupling == coupling::power110v   ? &connectedothercoupler.power_110v :
 		                                     Coupling == coupling::power24v    ? &connectedothercoupler.power_24v :
@@ -4917,7 +4917,7 @@ void TMoverParameters::ComputeConstans(void)
 	// drag calculation
 	{
 		// NOTE: draft effect of previous vehicle is simplified and doesn't have much to do with reality
-		auto const *previousvehicle{Couplers[(V >= 0.0 ? end::front : end::rear)].Connected};
+		auto const *previousvehicle{Couplers[V >= 0.0 ? end::front : end::rear].Connected};
 		auto dragarea{Dim.W * Dim.H};
 		if (previousvehicle)
 		{
@@ -5478,7 +5478,7 @@ double TMoverParameters::TractionForce(double dt)
 			if (EIMCtrlType > 0) // sterowanie cyfrowe
 				tmp = (DElist[0].RPM + (DElist[MainCtrlPosNo].RPM - DElist[0].RPM) * std::max(0.0, eimic_real)) / 60.0;
 			else
-				tmp = DElist[(ControlPressureSwitch ? MainCtrlNoPowerPos() : MainCtrlPos)].RPM / 60.0;
+				tmp = DElist[ControlPressureSwitch ? MainCtrlNoPowerPos() : MainCtrlPos].RPM / 60.0;
 
 			if (true == HeatingAllow && HeatingPower > 0 && EngineHeatingRPM > 0)
 			{
@@ -12565,7 +12565,7 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 		auto const inputcab{(static_cast<int>(CValue1) & 0x40) != 0 ? 1 : 0};
 		auto const inputoperation{static_cast<int>(CValue1) & ~(0x80 | 0x40)};
 		auto const noswap{TrainType == dt_EZT || TrainType == dt_ET41};
-		auto swap{false == noswap && TestFlag(Couplers[(CValue2 == -1 ? end::rear : end::front)].CouplingFlag, coupling::control)};
+		auto swap{false == noswap && TestFlag(Couplers[CValue2 == -1 ? end::rear : end::front].CouplingFlag, coupling::control)};
 		if (auto const reversed{inputcab != (CabActive != -1 ? 1 : 0)}; reversed)
 		{
 			swap = !swap;
