@@ -6,7 +6,7 @@
 
 namespace gl
 {
-    class vao : object, public bindable<vao>
+    class vao : private object, public bindable<vao>
     {
 		struct attrib_params {
 			// TBD: should be shared_ptr? (when buffer is destroyed by owner VAO could still potentially exist)

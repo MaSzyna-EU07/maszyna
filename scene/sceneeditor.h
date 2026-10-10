@@ -26,7 +26,6 @@ struct node_snapshot {
 };
 
 inline bool operator==( node_snapshot const &Left, node_snapshot const &Right ) { return Left.node == Right.node && Left.data == Right.data; }
-inline bool operator!=( node_snapshot const &Left, node_snapshot const &Right ) { return !(Left == Right); }
 
 class basic_editor {
 

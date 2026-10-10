@@ -1882,9 +1882,9 @@ class TMoverParameters
 	double MED_Vmin = 0; // predkosc minimalna dla obliczen chwilowej sily hamowania EP w MED
 	double MED_Vref = 0; // predkosc referencyjna dla obliczen dostepnej sily hamowania EP w MED
 	double MED_amax{9.81}; // maksymalne opoznienie hamowania sluzbowego MED
-	bool MED_EPVC = 0; // czy korekcja sily hamowania EP, gdy nie ma dostepnego ED
+	bool MED_EPVC = false; // czy korekcja sily hamowania EP, gdy nie ma dostepnego ED
 	double MED_EPVC_Time = 7; // czas korekcji sily hamowania EP, gdy nie ma dostepnego ED
-	bool MED_Ncor = 0; // czy korekcja sily hamowania z uwzglednieniem nacisku
+	bool MED_Ncor = false; // czy korekcja sily hamowania z uwzglednieniem nacisku
 	double MED_MinBrakeReqED = 0; // minimalne zadanie sily hamowania uruchamiajace ED - ponizej tylko EP
 	double MED_FrED_factor = 1; // mnoznik sily hamowania ED do korekty blendingu
 	double MED_ED_Delay1 = 0; // opoznienie wdrazania hamowania ED (pierwszy raz)
