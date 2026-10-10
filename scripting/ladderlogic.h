@@ -60,7 +60,7 @@ class basic_controller {
 
 public:
 // methods
-    auto load( std::string const &Filename ) -> bool;
+    auto load( std::string_view Filename) -> bool;
     auto update( double const Timestep ) -> int;
     // finds element with specified name, potentially creating new element of specified type initialized with provided arguments. returns: handle to the element
     template<typename ...Args_>

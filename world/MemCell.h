@@ -21,7 +21,7 @@ public:
     explicit TMemCell( scene::node_data const &Nodedata );
 // methods
     void
-        UpdateValues( std::string const &szNewText, double const fNewValue1, double const fNewValue2, int const CheckMask );
+        UpdateValues( std::string_view szNewText, double const fNewValue1, double const fNewValue2, int const CheckMask );
     bool
         Load(cParser *parser);
     void
