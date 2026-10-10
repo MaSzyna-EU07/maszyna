@@ -1046,9 +1046,9 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 		for( int i = 0; i <= 20; ++i ) {
 
 			std::string parameters =
-			    mover.eimc_labels[ i ] + to_string( mover.eimc[ i ], 2, 9 )
+			    TMoverParameters::eimc_labels[ i ] + to_string( mover.eimc[ i ], 2, 9 )
 			    + " | "
-			    + mover.eimv_labels[ i ] + to_string( mover.eimv[ i ], 2, 9 );
+			    + TMoverParameters::eimv_labels[ i ] + to_string( mover.eimv[ i ], 2, 9 );
 
 			if( i < 10 ) {
 				parameters +=
@@ -1058,7 +1058,7 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 				parameters += "        med:";
 			}
 			else if( i >= 13 ) {
-				parameters += " | " + vehicle.MED_labels[ i - 13 ] + to_string( vehicle.MED[ 0 ][ i - 13 ], 2, 9 );
+				parameters += " | " + TDynamicObject::MED_labels[ i - 13 ] + to_string( vehicle.MED[ 0 ][ i - 13 ], 2, 9 );
 			}
 
             Output.emplace_back( parameters, Global.UITextColor );

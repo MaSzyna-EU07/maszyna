@@ -113,8 +113,8 @@ opengl33_particles::render() {
 		m_vao->setup_attrib(*m_buffer, 1, 4, GL_FLOAT, sizeof(particle_vertex), 12);
 		m_vao->setup_attrib(*m_buffer, 2, 2, GL_FLOAT, sizeof(particle_vertex), 28);
 
-		m_buffer->unbind(gl::buffer::ARRAY_BUFFER);
-		m_vao->unbind();
+		gl::buffer::unbind(gl::buffer::ARRAY_BUFFER);
+		gl::vao::unbind();
 	}
 
 	if (!m_shader) {
@@ -130,9 +130,9 @@ opengl33_particles::render() {
 
 	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_particlevertices.size()));
 
-	m_shader->unbind();
-	m_vao->unbind();
-	m_buffer->unbind(gl::buffer::ARRAY_BUFFER);
+	gl::program::unbind();
+	gl::vao::unbind();
+	gl::buffer::unbind(gl::buffer::ARRAY_BUFFER);
 
     return m_particlevertices.size() / 6;
 }

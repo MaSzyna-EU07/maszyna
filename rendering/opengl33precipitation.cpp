@@ -121,7 +121,7 @@ opengl33_precipitation::update() {
 		m_indexbuffer->upload(gl::buffer::ELEMENT_ARRAY_BUFFER, m_indices.data(), 0, m_indices.size() * sizeof( unsigned short ));
 		m_vao->setup_ebo(*m_indexbuffer);
 
-		m_vao->unbind();
+		gl::vao::unbind();
         // NOTE: vertex and index source data is superfluous past this point, but, eh
     }
 
@@ -155,5 +155,5 @@ opengl33_precipitation::render() {
 
     ::glDrawElements( GL_TRIANGLES, static_cast<GLsizei>( m_indices.size() ), GL_UNSIGNED_SHORT, reinterpret_cast<void const*>( 0 ) );
 
-    m_vao->unbind();
+    gl::vao::unbind();
 }
