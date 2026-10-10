@@ -127,8 +127,6 @@ void flip_dxt45_block(struct dxt45_block *block)
  */
 void flip_dxt1_image(void *data, int width, int height)
 {
-	int x;
-	int y;
 	struct dxt1_block temp1;
 	struct dxt1_block temp2;
 	auto blocks = (struct dxt1_block *)data;
@@ -136,9 +134,9 @@ void flip_dxt1_image(void *data, int width, int height)
 	width	= (width	+ 3) / 4;
 	height	= (height	+ 3) / 4;
 	
-	for (y = 0; y < height / 2; ++y)
+	for (int y = 0; y < height / 2; ++y)
 	{
-		for (x = 0; x < width; ++x)
+		for (int x = 0; x < width; ++x)
 		{
 			temp1						= blocks[y * width + x];
 			temp2						= blocks[(height - y - 1) * width + x];
@@ -158,8 +156,6 @@ void flip_dxt1_image(void *data, int width, int height)
  */
 void flip_dxt23_image(void *data, int width, int height)
 {
-	int x;
-	int y;
 	struct dxt23_block temp1;
 	struct dxt23_block temp2;
 	auto blocks = (struct dxt23_block *)data;
@@ -167,9 +163,9 @@ void flip_dxt23_image(void *data, int width, int height)
 	width	= (width	+ 3) / 4;
 	height	= (height	+ 3) / 4;
 	
-	for (y = 0; y < height / 2; ++y)
+	for (int y = 0; y < height / 2; ++y)
 	{
-		for (x = 0; x < width; ++x)
+		for (int x = 0; x < width; ++x)
 		{
 			temp1						= blocks[y * width + x];
 			temp2						= blocks[(height - y - 1) * width + x];
@@ -189,8 +185,6 @@ void flip_dxt23_image(void *data, int width, int height)
  */
 void flip_dxt45_image(void *data, int width, int height)
 {
-	int x;
-	int y;
 	struct dxt45_block temp1;
 	struct dxt45_block temp2;
 	auto blocks = (struct dxt45_block *)data;
@@ -198,9 +192,9 @@ void flip_dxt45_image(void *data, int width, int height)
 	width	= (width	+ 3) / 4;
 	height	= (height	+ 3) / 4;
 	
-	for (y = 0; y < height / 2; ++y)
+	for (int y = 0; y < height / 2; ++y)
 	{
-		for (x = 0; x < width; ++x)
+		for (int x = 0; x < width; ++x)
 		{
 			temp1						= blocks[y * width + x];
 			temp2						= blocks[(height - y - 1) * width + x];

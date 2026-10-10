@@ -565,11 +565,10 @@ void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) 
 {
 	float step = 1.0f / static_cast<float>(iSegCount) / quality;
 
-	float x;
 
 	glm::vec3 previous = FastGetPoint(0.0);
 
-	for (x = step; x <= 1.0f; x += step) {
+	for (float x = step; x <= 1.0f; x += step) {
 		out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 
 		previous = glm::vec3(FastGetPoint(x));
@@ -586,12 +585,11 @@ glm::vec3 TSegment::get_nearest_point(const glm::dvec3 &point, float quality) co
 {
 	float step = 1.0f / static_cast<float>(iSegCount) / quality;
 
-	float x;
 
 	glm::vec3 nearest;
 	float min = std::numeric_limits<float>::max();
 
-	for (x = step; x <= 1.0f; x += step) {
+	for (float x = step; x <= 1.0f; x += step) {
         glm::vec3 p1 = FastGetPoint(x);
 
         if (glm::vec3 p2 = FastGetPoint(glm::min(1.0f, x + step)); p1 != p2) {
