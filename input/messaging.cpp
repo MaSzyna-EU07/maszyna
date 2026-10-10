@@ -32,7 +32,7 @@ namespace multiplayer {
 std::uint32_t const EU07_MESSAGEHEADER { MAKE_ID4( 'E','U','0','7' ) };
 
 void
-Navigate(std::string const &ClassName, UINT Msg, WPARAM wParam, LPARAM lParam) {
+Navigate([[maybe_unused]] std::string const &ClassName, [[maybe_unused]] UINT Msg, [[maybe_unused]] WPARAM wParam, [[maybe_unused]] LPARAM lParam) {
 #ifdef _WIN32
     // wysłanie komunikatu do sterującego
     HWND h = FindWindow(ClassName.c_str(), 0); // można by to zapamiętać
@@ -198,7 +198,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
 }
 
 void
-WyslijEvent(const std::string &e, const std::string &d)
+WyslijEvent([[maybe_unused]] const std::string &e, [[maybe_unused]] const std::string &d)
 { // Ra: jeszcze do wyczyszczenia
 #ifdef _WIN32
     DaneRozkaz r;
@@ -219,7 +219,7 @@ WyslijEvent(const std::string &e, const std::string &d)
 }
 
 void
-WyslijUszkodzenia(const std::string &t, char fl)
+WyslijUszkodzenia([[maybe_unused]] const std::string &t, [[maybe_unused]] char fl)
 { // wysłanie informacji w postaci pojedynczego tekstu
 #ifdef _WIN32
     DaneRozkaz r;
@@ -239,7 +239,7 @@ WyslijUszkodzenia(const std::string &t, char fl)
 }
 
 void
-WyslijString(const std::string &t, int n)
+WyslijString([[maybe_unused]] const std::string &t, [[maybe_unused]] int n)
 { // wysłanie informacji w postaci pojedynczego tekstu
 #ifdef _WIN32
     DaneRozkaz r;
@@ -264,7 +264,7 @@ WyslijWolny(const std::string &t)
 }
 
 void
-WyslijNamiary(TDynamicObject const *Vehicle)
+WyslijNamiary([[maybe_unused]] TDynamicObject const *Vehicle)
 { // wysłanie informacji o pojeździe - (float), długość ramki będzie zwiększana w miarę potrzeby
 #ifdef _WIN32
     DaneRozkaz r;
@@ -395,7 +395,7 @@ WyslijObsadzone()
 }
 
 void
-WyslijParam(int nr, int fl)
+WyslijParam([[maybe_unused]] int nr, [[maybe_unused]] int fl)
 { // wysłanie parametrów symulacji w ramce (nr) z flagami (fl)
 #ifdef _WIN32
     DaneRozkaz r;

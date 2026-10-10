@@ -1483,7 +1483,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 // Oblicza przemieszczenie taboru - uproszczona wersja
 // *************************************************************************************************
 
-double TMoverParameters::FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot)
+double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Shape*/, TTrackParam & /*Track*/, TLocation const &NewLoc, TRotation const &NewRot)
 {
 	int b;
 	// T_MoverParameters::FastComputeMovement(dt, Shape, Track, NewLoc, NewRot);
@@ -1731,7 +1731,7 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 	}
 }
 
-void TMoverParameters::LowVoltagePowerCheck(double const Deltatime)
+void TMoverParameters::LowVoltagePowerCheck(double const /*Deltatime*/)
 {
 
 	auto const lowvoltagepower{Power24vIsAvailable || Power110vIsAvailable};
@@ -1756,7 +1756,7 @@ void TMoverParameters::LowVoltagePowerCheck(double const Deltatime)
 	}
 }
 
-void TMoverParameters::PowerCouplersCheck(double const Deltatime, coupling const Coupling)
+void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling const Coupling)
 {
 	if (Coupling != coupling::highvoltage && Coupling != coupling::power110v && Coupling != coupling::power24v)
 	{
@@ -2086,7 +2086,7 @@ void TMoverParameters::ConverterCheck(double const Timestep)
 };
 
 // heating system status check
-void TMoverParameters::HeatingCheck(double const Timestep)
+void TMoverParameters::HeatingCheck(double const /*Timestep*/)
 {
 
 	// update heating devices
@@ -2172,7 +2172,7 @@ void TMoverParameters::HeatingCheck(double const Timestep)
 }
 
 // water pump status check
-void TMoverParameters::WaterPumpCheck(double const Timestep)
+void TMoverParameters::WaterPumpCheck(double const /*Timestep*/)
 {
 	// NOTE: breaker override with start type is sm42 specific hack, replace with ability to define the presence of the breaker
 	WaterPump.is_active = true == (Power24vIsAvailable || Power110vIsAvailable) && true == WaterPump.breaker && false == WaterPump.is_disabled &&
@@ -2180,7 +2180,7 @@ void TMoverParameters::WaterPumpCheck(double const Timestep)
 }
 
 // water heater status check
-void TMoverParameters::WaterHeaterCheck(double const Timestep)
+void TMoverParameters::WaterHeaterCheck(double const /*Timestep*/)
 {
 
 	WaterHeater.is_active = false == WaterHeater.is_damaged && true == (Power24vIsAvailable || Power110vIsAvailable) && true == WaterHeater.is_enabled && true == WaterHeater.breaker &&
@@ -2195,7 +2195,7 @@ void TMoverParameters::WaterHeaterCheck(double const Timestep)
 }
 
 // fuel pump status update
-void TMoverParameters::FuelPumpCheck(double const Timestep)
+void TMoverParameters::FuelPumpCheck(double const /*Timestep*/)
 {
 
 	FuelPump.is_active = true == (Power24vIsAvailable || Power110vIsAvailable) && false == FuelPump.is_disabled &&
@@ -2294,7 +2294,7 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 	}
 }
 
-void TMoverParameters::PantographsCheck(double const Timestep)
+void TMoverParameters::PantographsCheck(double const /*Timestep*/)
 {
 
 	{
@@ -2332,7 +2332,7 @@ void TMoverParameters::PantographsCheck(double const Timestep)
 	}
 }
 
-void TMoverParameters::LightsCheck(double const Timestep)
+void TMoverParameters::LightsCheck(double const /*Timestep*/)
 {
 
 	auto &light{CompartmentLights};
@@ -4848,7 +4848,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 // yB: 20190906
 // Aktualizacja ciśnienia w hamulcu sprezynowym
 // *************************************************************************************************
-void TMoverParameters::UpdateSpringBrake(double dt)
+void TMoverParameters::UpdateSpringBrake(double /*dt*/)
 {
 	double BP = SpringBrake.PNBrakeConnection ? BrakePress : 0;
 	double MSP = SpringBrake.ShuttOff ? 0 : SpringBrake.MaxSetPressure;
@@ -5200,7 +5200,7 @@ double TMoverParameters::BrakeForceP(double press, double velocity)
 // Q: 20160713
 // oblicza siłę na styku koła i szyny
 // *************************************************************************************************
-double TMoverParameters::BrakeForce(TTrackParam const &Track)
+double TMoverParameters::BrakeForce(TTrackParam const & /*Track*/)
 {
 
 	double K{0};
@@ -11776,7 +11776,7 @@ TEngineType TMoverParameters::LoadFIZ_EngineDecode(std::string const &Engine)
 // Q: 20160717
 // *************************************************************************************************
 
-bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
+bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 {
 	WriteLog("check locomotive parameters...");
 	int b;

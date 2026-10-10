@@ -206,14 +206,14 @@ void ErrorLog(const char* str, logtype type)
 }
 
 
-void Error(const std::string &asMessage, bool box)
+void Error(const std::string &asMessage, bool /*box*/)
 {
     // if (box)
     //	MessageBox(NULL, asMessage.c_str(), string("EU07 " + Global.asRelease).c_str(), MB_OK);
     ErrorLog(asMessage.c_str());
 }
 
-void Error(const char *&asMessage, bool box)
+void Error(const char *&asMessage, bool /*box*/)
 {
     // if (box)
     //	MessageBox(NULL, asMessage, string("EU07 " + Global.asRelease).c_str(), MB_OK);

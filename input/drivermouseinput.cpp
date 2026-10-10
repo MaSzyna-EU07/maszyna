@@ -133,7 +133,7 @@ mouse_slider::release() {
 }
 
 void
-mouse_slider::on_move( double const Mousex, double const Mousey ) {
+mouse_slider::on_move( double const /*Mousex*/, double const Mousey ) {
 
     auto const controlsize { Global.window_size.y * EU07_CONTROLLER_MOUSESLIDERSIZE };
     auto const controledge { Global.window_size.y * 0.5 + controlsize * 0.5 };
@@ -276,7 +276,7 @@ drivermouse_input::move( double Mousex, double Mousey ) {
 }
 
 void
-drivermouse_input::scroll( double const Xoffset, double const Yoffset ) {
+drivermouse_input::scroll( double const /*Xoffset*/, double const Yoffset ) {
 
     if( Global.ctrlState ) {
         // ctrl + scroll wheel adjusts fov

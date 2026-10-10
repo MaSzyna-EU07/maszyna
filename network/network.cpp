@@ -79,7 +79,7 @@ void network::connection::catch_up()
 	send_messages(messages);
 }
 
-void network::connection::send_complete(std::shared_ptr<std::string> buf)
+void network::connection::send_complete(std::shared_ptr<std::string> /*buf*/)
 {
 	if (!is_client && state == CATCHING_UP) {
 		catch_up();

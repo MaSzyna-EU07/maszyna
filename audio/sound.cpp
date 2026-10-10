@@ -867,7 +867,7 @@ sound_source::empty() const {
 
 // returns true if the source is emitting any sound
 bool
-sound_source::is_playing( bool const Includesoundends ) const {
+sound_source::is_playing( bool const /*Includesoundends*/ ) const {
 
     auto isplaying { sound(sound_id::begin).playing > 0 || sound(sound_id::main).playing > 0 };
     if( false == isplaying
