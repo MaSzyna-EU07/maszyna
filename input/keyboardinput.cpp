@@ -412,7 +412,7 @@ keyboard_input::poll() {
     m_movementvertical = movementvertical;
 }
 
-std::unordered_map<int, std::string> keytonamemap = {
+std::unordered_map<int, std::string> const keytonamemap = {
     { GLFW_KEY_0, "0" }, { GLFW_KEY_1, "1" }, { GLFW_KEY_2, "2" }, { GLFW_KEY_3, "3" }, { GLFW_KEY_4, "4" },
     { GLFW_KEY_5, "5" }, { GLFW_KEY_6, "6" }, { GLFW_KEY_7, "7" }, { GLFW_KEY_8, "8" }, { GLFW_KEY_9, "9" },
     { GLFW_KEY_MINUS, "-" }, { GLFW_KEY_EQUAL, "=" },
