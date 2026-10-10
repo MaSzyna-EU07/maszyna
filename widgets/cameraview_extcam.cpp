@@ -62,8 +62,7 @@ void ui::cameraview_panel::render()
 
 	ImGui::SetNextWindowSizeConstraints(ImVec2(200, 200), ImVec2(2500, 2500), cameraview_window_callback);
 
-	auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
-	if (ImGui::Begin(panelname.c_str(), &is_open)) {
+	if (auto const panelname{(title.empty() ? m_name : title) + "###" + m_name}; ImGui::Begin(panelname.c_str(), &is_open)) {
 		render_contents();
 	}
 
@@ -90,7 +89,7 @@ void ui::cameraview_panel::render_contents()
 	texture->bind(0);
 
 	{
-		std::lock_guard<std::mutex> lock(mutex);
+		std::scoped_lock lock(mutex);
 		if (image_ptr) {
 
 			glActiveTexture(GL_TEXTURE0);
@@ -123,8 +122,8 @@ void ui::cameraview_panel::capture_func()
 	piped_proc proc(cmdline);
 
 	size_t frame_size = Global.extcam_res.x * Global.extcam_res.y * 3;
-	uint8_t *read_buffer = new uint8_t[frame_size];
-	uint8_t *active_buffer = new uint8_t[frame_size];
+	auto read_buffer = new uint8_t[frame_size];
+	auto active_buffer = new uint8_t[frame_size];
 
 	size_t bufpos = 0;
 
@@ -142,7 +141,7 @@ void ui::cameraview_panel::capture_func()
 
 		bufpos = 0;
 
-		std::lock_guard<std::mutex> lock(mutex);
+		std::scoped_lock lock(mutex);
 		image_ptr = read_buffer;
 		read_buffer = active_buffer;
 		active_buffer = image_ptr;
@@ -151,7 +150,7 @@ void ui::cameraview_panel::capture_func()
 		notify_var.notify_one();
 	}
 
-	std::lock_guard<std::mutex> lock(mutex);
+	std::scoped_lock lock(mutex);
 	image_ptr = nullptr;
 	delete[] read_buffer;
 	delete[] active_buffer;
@@ -165,15 +164,15 @@ void ui::cameraview_panel::record_func()
 
 	if (!rec_name.empty()) {
 		const std::string magic{"{RECORD}"};
-		size_t pos = cmdline.find(magic);
-		if (pos != -1)
-			cmdline.replace(pos, magic.size(), rec_name);
+		size_t magicpos = cmdline.find(magic);
+		if (magicpos != -1)
+			cmdline.replace(magicpos, magic.size(), rec_name);
 	}
 
 	piped_proc proc(cmdline, true);
 
 	size_t frame_size = Global.extcam_res.x * Global.extcam_res.y * 3;
-	uint8_t *read_buffer = new uint8_t[frame_size];
+	auto read_buffer = new uint8_t[frame_size];
 	uint32_t last_cnt = 0;
 	size_t bufpos = frame_size;
 
@@ -181,7 +180,7 @@ void ui::cameraview_panel::record_func()
 	while (record_state == RUNNING) {
 		if (bufpos == frame_size)
 		{
-			std::unique_lock<std::mutex> lock(mutex);
+			std::unique_lock lock(mutex);
 			auto r = notify_var.wait_for(lock, std::chrono::milliseconds(50), [this, last_cnt]{return last_cnt != frame_cnt;});
 			last_cnt = frame_cnt;
 			if (!image_ptr || !r)

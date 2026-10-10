@@ -34,14 +34,14 @@ int vk_to_glfw_key( int const Keycode ) {
 	char key = 0;
 
 	if (Keycode < 'A') {
-		key = Keycode;
+		key = static_cast<char>(Keycode);
 	} else if (Keycode <= 'Z') {
-		key = Keycode;
+		key = static_cast<char>(Keycode);
 		modifier = GLFW_MOD_SHIFT;
 	} else if (Keycode < 'a') {
-		key = Keycode;
+		key = static_cast<char>(Keycode);
 	} else if (Keycode <= 'z') {
-		key = Keycode - 32;
+		key = static_cast<char>(Keycode - 32);
 	} else {
 		ErrorLog("unknown key: " + std::to_string(Keycode));
 	}
@@ -66,7 +66,7 @@ bool TEventLauncher::Load(cParser *parser)
         }
         else {
             // this launcher may be activated by radio message
-            std::map<std::string, int> messages {
+            std::map<std::string, int, std::less<>> messages {
                 { "radio_call1", radio_message::call1 },
                 { "radio_call3", radio_message::call3 }
             };
@@ -138,8 +138,7 @@ bool TEventLauncher::Load(cParser *parser)
         iHour = int( DeltaTime - iMinute ) / 100; // godzina to setki
         DeltaTime = 0; // bez powtórzeń
         // potentially shift the provided time by requested offset
-        auto const timeoffset{ static_cast<int>( Global.ScenarioTimeOffset * 60 ) };
-        if( timeoffset != 0 ) {
+        if( auto const timeoffset{ static_cast<int>( Global.ScenarioTimeOffset * 60 ) }; timeoffset != 0 ) {
             auto const adjustedtime{ clamp_circular( iHour * 60 + iMinute + timeoffset, 24 * 60 ) };
             iHour = adjustedtime / 60 % 24;
             iMinute = adjustedtime % 60;
@@ -156,7 +155,7 @@ bool TEventLauncher::Load(cParser *parser)
     return true;
 }
 
-bool TEventLauncher::check_activation_key() {
+bool TEventLauncher::check_activation_key() const {
 	if (iKey <= 0)
 		return false;
 
@@ -164,7 +163,7 @@ bool TEventLauncher::check_activation_key() {
 
 	bool result = Console::Pressed(key);
 
-	char modifier = iKey >> 8;
+	auto modifier = static_cast<char>(iKey >> 8);
 	if (modifier & GLFW_MOD_SHIFT)
 		result &= Global.shiftState;
 	if (modifier & GLFW_MOD_CONTROL)
@@ -195,12 +194,10 @@ bool TEventLauncher::check_activation() {
     else {
         // jeśli nie cykliczny, to sprawdzić czas
         if( simulation::Time.data().wHour == iHour ) {
-            if( simulation::Time.data().wMinute == iMinute ) {
-                // zgodność czasu uruchomienia
-                if( UpdatedTime < 10 ) {
-                    UpdatedTime = 20; // czas do kolejnego wyzwolenia?
-                    bCond = true;
-                }
+            // zgodność czasu uruchomienia
+            if (simulation::Time.data().wMinute == iMinute && UpdatedTime < 10) {
+                UpdatedTime = 20; // czas do kolejnego wyzwolenia?
+                bCond = true;
             }
         }
         else {
@@ -211,7 +208,7 @@ bool TEventLauncher::check_activation() {
     return bCond;
 }
 
-bool TEventLauncher::check_conditions() {
+bool TEventLauncher::check_conditions() const {
 
     auto bCond { true };
 
@@ -239,7 +236,7 @@ bool TEventLauncher::IsRadioActivated() const {
 float
 TEventLauncher::radius_() {
 
-    return std::sqrt( dRadius );
+    return static_cast<float>(std::sqrt( dRadius ));
 }
 
 // serialize() subclass details, sends content of the subclass to provided stream
@@ -271,9 +268,8 @@ TEventLauncher::export_as_text_( std::ostream &Output ) const {
     // activation key
     if( iKey != 0 ) {
 		auto key { iKey & 0xff };
-		auto const modifier { iKey >> 8 };
 
-		if (key >= 'A' && key <= 'Z' && !(modifier & GLFW_MOD_SHIFT))
+		if (auto const modifier { iKey >> 8 }; key >= 'A' && key <= 'Z' && !(modifier & GLFW_MOD_SHIFT))
 			key += 32;
 
 		Output << (char)key;

@@ -47,7 +47,7 @@ void ui::vehicles_bank::parse_entry(const std::string &line)
 
 		if (line[0] == '!')
 			parse_category_entry(param);
-		else if (line[0] == '*' && line[1] == '*')
+		else if (line.starts_with("**"))
 			parse_texture_rule(target.substr(2), param);
 		else if (line[0] == '*')
 			parse_coupling_rule(target.substr(1), param);
@@ -60,23 +60,24 @@ void ui::vehicles_bank::parse_entry(const std::string &line)
 
 void ui::vehicles_bank::parse_category_entry(const std::string &param)
 {
+	using enum ui::vehicle_type;
 	static std::unordered_map<char, vehicle_type> type_map = {
-	    { 'e', vehicle_type::electric_loco },
-	    { 's', vehicle_type::diesel_loco },
-	    { 'p', vehicle_type::steam_loco },
-	    { 'a', vehicle_type::railcar },
-	    { 'z', vehicle_type::emu },
-	    { 'r', vehicle_type::utility },
-	    { 'd', vehicle_type::draisine },
-	    { 't', vehicle_type::tram },
-	    { 'c', vehicle_type::truck },
-	    { 'b', vehicle_type::bus },
-	    { 'o', vehicle_type::car },
-	    { 'h', vehicle_type::man },
-	    { 'f', vehicle_type::animal },
+	    { 'e', electric_loco },
+	    { 's', diesel_loco },
+	    { 'p', steam_loco },
+	    { 'a', railcar },
+	    { 'z', emu },
+	    { 'r', utility },
+	    { 'd', draisine },
+	    { 't', tram },
+	    { 'c', truck },
+	    { 'b', bus },
+	    { 'o', car },
+	    { 'h', man },
+	    { 'f', animal },
 	};
 
-	ctx_type = vehicle_type::unknown;
+	ctx_type = unknown;
 
 	std::istringstream stream(param);
 
@@ -86,16 +87,15 @@ void ui::vehicles_bank::parse_category_entry(const std::string &param)
 	if (tok.size() < 1)
 		return;
 
-	auto it = type_map.find(tok[0]);
-	if (it != type_map.end())
+	if (auto it = type_map.find(tok[0]); it != type_map.end())
 		ctx_type = it->second;
 	else if (tok[0] >= 'A' && tok[0] <= 'Z')
-		ctx_type = vehicle_type::carriage;
+		ctx_type = carriage;
 
 	std::string mini;
 	std::getline(stream, mini, ',');
 
-	category_icons.emplace(ctx_type, "textures/mini/" + ToLower(mini) + ".bmp");
+	category_icons.try_emplace(ctx_type, "textures/mini/" + ToLower(mini) + ".bmp");
 }
 
 void ui::vehicles_bank::parse_controllable_entry(const std::string &target, const std::string &param)
@@ -108,7 +108,9 @@ void ui::vehicles_bank::parse_texture_info(const std::string &target, const std:
 {
 	std::istringstream stream(param);
 
-	std::string model, mini, miniplus;
+	std::string model;
+	std::string mini;
+	std::string miniplus;
 
 	std::getline(stream, model, ',');
 	std::getline(stream, mini, ',');
@@ -122,12 +124,12 @@ void ui::vehicles_bank::parse_texture_info(const std::string &target, const std:
 	set.meta = meta;
 
 	if (!mini.empty())
-		group_icons.emplace(mini, std::move(deferred_image("textures/mini/" + ToLower(mini) + ".bmp")));
+		group_icons.try_emplace(mini, deferred_image("textures/mini/" + ToLower(mini) + ".bmp"));
 
 	if (!miniplus.empty())
-		set.mini = std::move(deferred_image("textures/mini/" + ToLower(miniplus) + ".bmp"));
+		set.mini = deferred_image("textures/mini/" + ToLower(miniplus) + ".bmp");
 	else if (!mini.empty())
-		set.mini = std::move(deferred_image("textures/mini/" + ToLower(mini) + ".bmp"));
+		set.mini = deferred_image("textures/mini/" + ToLower(mini) + ".bmp");
 
 	set.skin = ToLower(target);
 	erase_extension(set.skin);
@@ -143,7 +145,7 @@ void ui::vehicles_bank::parse_texture_info(const std::string &target, const std:
 	vehicle->matching_skinsets.push_back(std::make_shared<skin_set>(std::move(set)));
 }
 
-std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &str)
+std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &str) const
 {
 	std::istringstream stream(str);
 
@@ -171,19 +173,20 @@ std::shared_ptr<ui::skin_meta> ui::vehicles_bank::parse_meta(const std::string &
 	        ToLower("n:" + meta->name + ":i:" + meta->short_id + ":d:" + meta->location +
 	                ":r:" + meta->rev_date + ":c:" + meta->rev_company + ":t:" + meta->texture_author + ":p:" + meta->photo_author);
 
-	std::replace(std::begin(meta->location), std::end(meta->location), '_', ' ');
-	std::replace(std::begin(meta->rev_company), std::end(meta->rev_company), '_', ' ');
-	std::replace(std::begin(meta->texture_author), std::end(meta->texture_author), '_', ' ');
-	std::replace(std::begin(meta->photo_author), std::end(meta->photo_author), '_', ' ');
+	std::ranges::replace(meta->location, '_', ' ');
+	std::ranges::replace(meta->rev_company, '_', ' ');
+	std::ranges::replace(meta->texture_author, '_', ' ');
+	std::ranges::replace(meta->photo_author, '_', ' ');
 
 	if (!meta->rev_date.empty() && meta->rev_date != "?") {
-		std::istringstream stream(meta->rev_date);
-		std::string day, month;
+		std::istringstream datestream(meta->rev_date);
+		std::string day;
+		std::string month;
 
-		std::getline(stream, day, '.');
-		std::getline(stream, month, '.');
+		std::getline(datestream, day, '.');
+		std::getline(datestream, month, '.');
 
-		stream >> meta->rev_year;
+		datestream >> meta->rev_year;
 	}
 
 	return meta;
@@ -205,7 +208,8 @@ void ui::vehicles_bank::parse_coupling_rule(const std::string &target, const std
 	std::string connected;
 	std::getline(stream, connected, ',');
 
-	std::string param1, param2;
+	std::string param1;
+	std::string param2;
 	std::getline(stream, param1, ',');
 	std::getline(stream, param2, ',');
 
@@ -232,7 +236,8 @@ void ui::vehicles_bank::parse_texture_rule(const std::string &target, const std:
 
 		std::istringstream rule_stream(replace_rule);
 
-		std::string src, dst;
+		std::string src;
+		std::string dst;
 		std::getline(rule_stream, src, '-');
 		std::getline(rule_stream, dst, '-');
 
@@ -257,7 +262,7 @@ std::shared_ptr<ui::vehicle_desc> ui::vehicles_bank::get_vehicle(const std::stri
 		auto desc = std::make_shared<vehicle_desc>();
 		desc->type = ctx_type;
 		desc->path = path;
-		vehicles.emplace(path, desc);
+		vehicles.try_emplace(path, desc);
 		return desc;
 	}
 }

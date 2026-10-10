@@ -12,7 +12,6 @@ http://mozilla.org/MPL/2.0/.
 
 class TMdlContainer {
     friend class TModelsManager;
-private:
     TModel3d *LoadModel( std::string const &Name, bool const Dynamic );
     std::shared_ptr<TModel3d> Model { nullptr };
     std::string m_name;
@@ -26,8 +25,8 @@ public:
 
 private:
 // types:
-    typedef std::deque<TMdlContainer> modelcontainer_sequence;
-    typedef std::unordered_map<std::string, modelcontainer_sequence::size_type> stringmodelcontainerindex_map;
+    using modelcontainer_sequence = std::deque<TMdlContainer>;
+    using stringmodelcontainerindex_map = std::unordered_map<std::string, modelcontainer_sequence::size_type>;
 // members:
     static modelcontainer_sequence m_models;
     static stringmodelcontainerindex_map m_modelsmap;

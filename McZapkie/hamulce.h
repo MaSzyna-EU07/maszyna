@@ -272,10 +272,11 @@ class TReservoir
 
 	/// <summary>Default constructor — creates a 1 L reservoir at zero pressure.</summary>
 	TReservoir() = default;
+	virtual ~TReservoir() = default;
 };
 
 /// <summary>Pointer typedef for a reservoir instance.</summary>
-typedef TReservoir *PReservoir;
+using PReservoir = TReservoir *;
 
 /// <summary>
 /// Brake cylinder reservoir — overrides pressure functions to model the
@@ -290,15 +291,15 @@ class TBrakeCyl : public TReservoir
 	/// Returns absolute pressure inside the brake cylinder (P() * 0.1).
 	/// </summary>
 	/// <returns>Absolute cylinder pressure.</returns>
-	virtual double pa() /*override*/;
+	double pa() override;
 	/// <summary>
 	/// Returns gauge pressure inside the brake cylinder, modelling the
 	/// piston-stroke pressure curve (dead volume, linear stroke, fully extended).
 	/// </summary>
 	/// <returns>Cylinder pressure in bar.</returns>
-	virtual double P() /*override*/;
+	double P() override;
 	/// <summary>Default constructor.</summary>
-	TBrakeCyl() : TReservoir() {};
+	using TReservoir::TReservoir;
 };
 
 /// <summary>
@@ -399,7 +400,7 @@ class TBrake
 	/// Returns the piston force produced by the brake cylinder pressure.
 	/// </summary>
 	/// <returns>Force in arbitrary engine units (BCA * 100 * P).</returns>
-	double GetBCF(); // sila tlokowa z tloka
+	double GetBCF() const; // sila tlokowa z tloka
 	/// <summary>
 	/// Computes the airflow drawn from the high-pressure (8 bar / main) line for one step.
 	/// </summary>
@@ -408,16 +409,16 @@ class TBrake
 	/// <returns>Net flow from the high-pressure line.</returns>
 	virtual double GetHPFlow(double const HP, double const dt); // przeplyw - 8 bar
 	/// <summary>Returns brake cylinder gauge pressure [bar].</summary>
-	double GetBCP(); // cisnienie cylindrow hamulcowych
+	double GetBCP() const; // cisnienie cylindrow hamulcowych
 	/// <summary>
 	/// Returns brake cylinder pressure originating only from the pneumatic
 	/// (main) brake — used to drive the ED (electrodynamic) brake e.g. in EP09.
 	/// </summary>
 	virtual double GetEDBCP(); // cisnienie tylko z hamulca zasadniczego, uzywane do hamulca ED w EP09
 	/// <summary>Returns auxiliary reservoir (ZP) pressure [bar].</summary>
-	double GetBRP(); // cisnienie zbiornika pomocniczego
+	double GetBRP() const; // cisnienie zbiornika pomocniczego
 	/// <summary>Returns valve pre-chamber pressure [bar].</summary>
-	double GetVRP(); // cisnienie komory wstepnej rozdzielacza
+	double GetVRP() const; // cisnienie komory wstepnej rozdzielacza
 	/// <summary>Returns control reservoir (ZS) pressure [bar]; defaults to the auxiliary reservoir for valves without a dedicated ZS.</summary>
 	virtual double GetCRP(); // cisnienie zbiornika sterujacego
 	/// <summary>
@@ -441,7 +442,7 @@ class TBrake
 	virtual void SetEPS(double const nEPS); // hamulec EP
 	/// <summary>Sets the rapid step ratio. Default no-op; overridden where supported.</summary>
 	/// <param name="RMR">Rapid ratio.</param>
-	virtual void SetRM(double const RMR) {}; // ustalenie przelozenia rapida
+	virtual void SetRM(double const RMR) { /* no effect for this device type */ } // ustalenie przelozenia rapida
 	/// <summary>Sets the velocity threshold for the rapid step.</summary>
 	/// <param name="RVR">Velocity threshold (same unit as Vel passed to GetPF).</param>
 	virtual void SetRV(double const RVR)
@@ -455,20 +456,20 @@ class TBrake
 	/// <param name="TM">Tare (empty) mass.</param>
 	/// <param name="LM">Loaded mass.</param>
 	/// <param name="TBP">Brake cylinder pressure for the tare mass.</param>
-	virtual void SetLP(double const TM, double const LM, double const TBP) {}; // parametry przystawki wazacej
+	virtual void SetLP(double const TM, double const LM, double const TBP) { /* no effect for this device type */ } // parametry przystawki wazacej
 	/// <summary>Sets the auxiliary (local) brake target pressure.</summary>
 	/// <param name="P">Local brake pressure [bar].</param>
-	virtual void SetLBP(double const P) {}; // cisnienie z hamulca pomocniczego
+	virtual void SetLBP(double const P) { /* no effect for this device type */ } // cisnienie z hamulca pomocniczego
 	/// <summary>Updates the load-weighing pressure coefficient based on current vehicle mass.</summary>
 	/// <param name="mass">Current vehicle mass.</param>
-	virtual void PLC(double const mass) {}; // wspolczynnik cisnienia przystawki wazacej
+	virtual void PLC(double const mass) { /* no effect for this device type */ } // wspolczynnik cisnienia przystawki wazacej
 	/// <summary>
 	/// Engages the anti-slip brake function (set hold and/or release flags).
 	/// </summary>
 	/// <param name="state">Two-bit value: bit1 = hold (b_asb), bit0 = release (b_asb_unbrake).</param>
 	void ASB(int state); // hamulec przeciwposlizgowy
 	/// <summary>Returns the raw BrakeStatus flags (for sound/visual cues).</summary>
-	int GetStatus(); // flaga statusu, moze sie przydac do odglosow
+	int GetStatus() const; // flaga statusu, moze sie przydac do odglosow
 	/// <summary>Sets the anti-slip target pressure.</summary>
 	/// <param name="Press">Pressure [bar].</param>
 	void SetASBP(double const Press); // ustalenie cisnienia pp
@@ -497,13 +498,14 @@ class TBrake
 	/// brake when ED braking is sufficient. Default no-op; overridden where supported.
 	/// </summary>
 	/// <param name="EDstate">ED brake intensity (0..1).</param>
-	virtual void SetED(double const EDstate) {}; // stan hamulca ED do luzowania
+	virtual void SetED(double const EDstate) { /* no effect for this device type */ } // stan hamulca ED do luzowania
 	/// <summary>Sets the universal-button flags (see TUniversalBrake).</summary>
 	/// <param name="flag">Combined ub_* flags.</param>
 	virtual void SetUniversalFlag(int flag)
 	{
 		UniversalFlag = flag;
 	} // przycisk uniwersalny
+	virtual ~TBrake() = default;
 };
 
 /// <summary>
@@ -537,26 +539,26 @@ class TWest : public TBrake
 	/// <param name="LPP">Low pressure.</param>
 	/// <param name="BP">Initial cylinder pressure.</param>
 	/// <param name="BDF">Initial brake delay flag.</param>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>Sets the auxiliary brake target pressure and engages the DCV when above cylinder.</summary>
 	/// <param name="P">Pressure [bar].</param>
-	void SetLBP(double const P); // cisnienie z hamulca pomocniczego
+	void SetLBP(double const P) override; // cisnienie z hamulca pomocniczego
 	/// <summary>One-step distributor advance (Westinghouse logic).</summary>
 	/// <returns>Net flow exchanged with the brake pipe.</returns>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Returns the high-pressure flow drawn during the last GetPF step.</summary>
-	double GetHPFlow(double const HP, double const dt) /*override*/;
+	double GetHPFlow(double const HP, double const dt) override;
 	/// <summary>Recomputes the load-weighing pressure coefficient for the current mass.</summary>
 	/// <param name="mass">Vehicle mass.</param>
-	void PLC(double const mass); // wspolczynnik cisnienia przystawki wazacej
+	void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej
 	/// <summary>Sets the EP brake state and toggles the DCV / latches LBP from cylinder pressure on release.</summary>
 	/// <param name="nEPS">New EP intensity.</param>
-	void SetEPS(double const nEPS) /*override*/; // stan hamulca EP
+	void SetEPS(double const nEPS) override; // stan hamulca EP
 	/// <summary>Stores the load-weighing parameters (TareM, LoadM, TareBP).</summary>
-	void SetLP(double const TM, double const LM, double const TBP); // parametry przystawki wazacej
+	void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
 
 	/// <summary>Constructs the distributor by forwarding all parameters to TBrake.</summary>
-	inline TWest(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	using TBrake::TBrake;
 };
 
 /// <summary>
@@ -567,7 +569,6 @@ class TWest : public TBrake
 class TESt : public TBrake
 {
 
-  private:
   protected:
 	/// <summary>Control reservoir (ZS) — long-term reference pressure.</summary>
 	std::shared_ptr<TReservoir> CntrlRes; // zbiornik sterujący
@@ -576,15 +577,15 @@ class TESt : public TBrake
 
   public:
 	/// <summary>Initialises the ESt distributor; sizes the control reservoir (15 l) and computes BVM.</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>One-step distributor advance for the ESt baseline.</summary>
 	/// <returns>Net flow exchanged with the brake pipe.</returns>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Sets ESt-specific characteristic parameters (placeholder; used by some variants).</summary>
 	/// <param name="i_crc">Characteristic value.</param>
-	void EStParams(double i_crc); // parametry charakterystyczne dla ESt
+	void EStParams(double i_crc) const; // parametry charakterystyczne dla ESt
 	/// <summary>Returns the control reservoir (ZS) pressure.</summary>
-	double GetCRP() /*override*/;
+	double GetCRP() override;
 	/// <summary>
 	/// Updates BrakeStatus (b_on/b_hld) according to the relations between
 	/// pre-chamber, cylinder and control reservoir pressures (the main slide valve).
@@ -602,16 +603,16 @@ class TESt : public TBrake
 	/// </summary>
 	/// <param name="BP">Cylinder pressure (or impulse-chamber pressure).</param>
 	/// <returns>Dimensionless opening coefficient.</returns>
-	double CVs(double BP); // napelniacz sterujacego
+	double CVs(double BP) const; // napelniacz sterujacego
 	/// <summary>
 	/// Returns the effective opening factor of the auxiliary-reservoir filling
 	/// slide valve (ZP &lt;-&gt; pre-chamber path).
 	/// </summary>
 	/// <param name="BCP">Brake cylinder pressure.</param>
 	/// <returns>Dimensionless opening coefficient.</returns>
-	double BVs(double BCP); // napelniacz pomocniczego
+	double BVs(double BCP) const; // napelniacz pomocniczego
 	/// <summary>Vents the valve, brake and control reservoirs to zero.</summary>
-	void ForceEmptiness() /*override*/; // wymuszenie bycia pustym
+	void ForceEmptiness() override; // wymuszenie bycia pustym
 
 	/// <summary>Constructs the ESt distributor and creates the control reservoir.</summary>
 	inline TESt(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
@@ -627,16 +628,15 @@ class TESt : public TBrake
 class TESt3 : public TESt
 {
 
-  private:
 	// double CylFlowSpeed[2][2]; //zmienna nie uzywana
 
   public:
 	/// <summary>One-step distributor advance for ESt3 (G/P-dependent fill/release curves).</summary>
 	/// <returns>Net flow exchanged with the brake pipe.</returns>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 
 	/// <summary>Constructs the ESt3 distributor.</summary>
-	inline TESt3(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	using TESt::TESt;
 };
 
 /// <summary>
@@ -660,13 +660,13 @@ class TESt3AL2 : public TESt3
 
   public:
 	/// <summary>Initialises the impulse chamber on top of the ESt initialisation.</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>One-step distributor advance for ESt3/AL2 with load-weighing relay.</summary>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Recomputes LoadC for the current vehicle mass.</summary>
-	void PLC(double const mass); // wspolczynnik cisnienia przystawki wazacej
+	void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej
 	/// <summary>Stores the load-weighing parameters.</summary>
-	void SetLP(double const TM, double const LM, double const TBP); // parametry przystawki wazacej
+	void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
 
 	/// <summary>Constructs the distributor and creates the impulse chamber.</summary>
 	inline TESt3AL2(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt3(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
@@ -695,9 +695,9 @@ class TESt4R : public TESt
 
   public:
 	/// <summary>Initialises the ESt4R; sizes the impulse chamber and selects the R delay.</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>One-step distributor advance for ESt4R (rapid step active above velocity threshold).</summary>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 
 	/// <summary>Constructs the distributor and creates the impulse chamber.</summary>
 	inline TESt4R(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
@@ -713,7 +713,6 @@ class TESt4R : public TESt
 class TLSt : public TESt4R
 {
 
-  private:
 	// double CylFlowSpeed[2][2]; // zmienna nie używana
 
   protected:
@@ -726,24 +725,24 @@ class TLSt : public TESt4R
 
   public:
 	/// <summary>Initialises the LSt; resizes the valve and impulse reservoirs and presets pressures.</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>Sets the auxiliary brake target pressure for the DCV.</summary>
-	void SetLBP(double const P); // cisnienie z hamulca pomocniczego
+	void SetLBP(double const P) override; // cisnienie z hamulca pomocniczego
 	/// <summary>Sets the rapid step ratio (RM = 1 - RMR).</summary>
 	/// <param name="RMR">Reduction ratio (0 disables rapid, &gt; 0 enables).</param>
-	void SetRM(double const RMR); // ustalenie przelozenia rapida
+	void SetRM(double const RMR) override; // ustalenie przelozenia rapida
 	/// <summary>One-step distributor advance for LSt (DCV + rapid + ED release).</summary>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Computes the high-pressure inflow (replenishes the auxiliary reservoir from the main line).</summary>
-	double GetHPFlow(double const HP, double const dt) /*override*/; // przeplyw - 8 bar
+	double GetHPFlow(double const HP, double const dt) override; // przeplyw - 8 bar
 	/// <summary>Returns the brake-cylinder reference pressure used by the ED brake controller (CVP-BCP * BVM).</summary>
-	virtual double GetEDBCP(); // cisnienie tylko z hamulca zasadniczego, uzywane do hamulca ED w EP09
+	double GetEDBCP() override; // cisnienie tylko z hamulca zasadniczego, uzywane do hamulca ED w EP09
 	/// <summary>Sets the ED brake state used to relax the pneumatic brake.</summary>
 	/// <param name="EDstate">ED intensity (0..1).</param>
-	virtual void SetED(double const EDstate); // stan hamulca ED do luzowania
+	void SetED(double const EDstate) override; // stan hamulca ED do luzowania
 
 	/// <summary>Constructs the LSt distributor.</summary>
-	inline TLSt(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TESt4R(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	using TESt4R::TESt4R;
 };
 
 /// <summary>
@@ -774,15 +773,15 @@ class TEStED : public TLSt
 
   public:
 	/// <summary>Initialises the EStED — sets up Miedzypoj, ImplsRes and the nozzle characteristics.</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>One-step distributor advance for EStED (full EP09 logic with intermediate reservoir).</summary>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Returns ED-brake reference pressure (ImplsRes pressure scaled by load coefficient).</summary>
-	double GetEDBCP() /*override*/; // cisnienie tylko z hamulca zasadniczego, uzywane do hamulca ED
+	double GetEDBCP() override; // cisnienie tylko z hamulca zasadniczego, uzywane do hamulca ED
 	/// <summary>Recomputes LoadC for the current vehicle mass.</summary>
-	void PLC(double const mass); // wspolczynnik cisnienia przystawki wazacej
+	void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej
 	/// <summary>Stores the load-weighing parameters.</summary>
-	void SetLP(double const TM, double const LM, double const TBP); // parametry przystawki wazacej
+	void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
 
 	/// <summary>Constructs the distributor and creates the intermediate reservoir.</summary>
 	inline TEStED(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TLSt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
@@ -812,21 +811,21 @@ class TEStEP2 : public TLSt
 
   public:
 	/// <summary>Initialises the EP2-equipped distributor (impulse chamber, P delay).</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/; // inicjalizacja
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override; // inicjalizacja
 	/// <summary>One-step distributor advance with EP2 EP brake logic.</summary>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Recomputes LoadC for the current vehicle mass.</summary>
-	void PLC(double const mass); // wspolczynnik cisnienia przystawki wazacej
+	void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej
 	/// <summary>Sets EP intensity; if EP is active and LBP &lt; cylinder pressure, latches LBP from cylinder.</summary>
-	void SetEPS(double const nEPS) /*override*/; // stan hamulca EP
+	void SetEPS(double const nEPS) override; // stan hamulca EP
 	/// <summary>Stores the load-weighing parameters.</summary>
-	void SetLP(double const TM, double const LM, double const TBP); // parametry przystawki wazacej
+	void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
 	/// <summary>EP brake flow integration step. Override in EP1 for proportional control.</summary>
 	/// <param name="dt">Time step [s].</param>
 	void virtual EPCalc(double dt);
 
 	/// <summary>Constructs the EP2 distributor.</summary>
-	inline TEStEP2(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TLSt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa) {}
+	using TLSt::TLSt;
 };
 
 /// <summary>
@@ -839,15 +838,13 @@ class TEStEP1 : public TEStEP2
 
   public:
 	/// <summary>Proportional EP flow integration step (uses fractional part of EPS as the EP target).</summary>
-	void EPCalc(double dt);
+	void EPCalc(double dt) override;
 	/// <summary>Stores the EP intensity.</summary>
 	/// <param name="nEPS">Target EP value (integer part = direction, fractional part = magnitude).</param>
 	void SetEPS(double const nEPS) override; // stan hamulca EP
 
 	/// <summary>Constructs the EP1 distributor.</summary>
-	inline TEStEP1(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TEStEP2(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
-	{
-	}
+	using TEStEP2::TEStEP2;
 };
 
 /// <summary>
@@ -867,21 +864,21 @@ class TCV1 : public TBrake
 
   public:
 	/// <summary>Initialises the CV1 distributor (sizes ZS, sets pressures, computes BVM).</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>One-step distributor advance for the CV1 baseline.</summary>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Returns the control reservoir (ZS) pressure.</summary>
-	double GetCRP() /*override*/;
+	double GetCRP() override;
 	/// <summary>Updates BrakeStatus based on pre-chamber/cylinder/control reservoir relations and the releaser.</summary>
 	/// <param name="BCP">Cylinder (or impulse) pressure.</param>
 	/// <param name="dV1">In/out brake pipe flow correction.</param>
 	void CheckState(double const BCP, double &dV1);
 	/// <summary>Returns the ZS-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double CVs(double const BP);
+	double CVs(double const BP) const;
 	/// <summary>Returns the ZP-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double BVs(double const BCP);
+	double BVs(double const BCP) const;
 	/// <summary>Vents valve, brake and control reservoirs to zero.</summary>
-	void ForceEmptiness() /*override*/; // wymuszenie bycia pustym
+	void ForceEmptiness() override; // wymuszenie bycia pustym
 
 	/// <summary>Constructs the CV1 distributor and creates the control reservoir.</summary>
 	inline TCV1(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
@@ -922,13 +919,13 @@ class TCV1L_TR : public TCV1
 
   public:
 	/// <summary>Initialises the CV1-L-TR (sizes the impulse chamber on top of CV1::Init).</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>One-step distributor advance for CV1-L-TR (impulse chamber + DCV).</summary>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Sets the auxiliary brake target pressure for the DCV.</summary>
-	void SetLBP(double const P); // cisnienie z hamulca pomocniczego
+	void SetLBP(double const P) override; // cisnienie z hamulca pomocniczego
 	/// <summary>Computes the high-pressure (8 bar) inflow used to replenish the auxiliary reservoir.</summary>
-	double GetHPFlow(double const HP, double const dt) /*override*/; // przeplyw - 8 bar
+	double GetHPFlow(double const HP, double const dt) override; // przeplyw - 8 bar
 
 	/// <summary>Constructs the CV1-L-TR and creates the impulse chamber.</summary>
 	inline TCV1L_TR(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TCV1(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
@@ -971,31 +968,31 @@ class TKE : public TBrake
 
   public:
 	/// <summary>Initialises the KE distributor (control / impulse / auxiliary reservoirs and BVM).</summary>
-	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) /*override*/;
+	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>Sets the rapid step ratio (RM = 1 - RMR).</summary>
-	void SetRM(double const RMR); // ustalenie przelozenia rapida
+	void SetRM(double const RMR) override; // ustalenie przelozenia rapida
 	/// <summary>One-step distributor advance for the KE distributor.</summary>
-	double GetPF(double const PP, double const dt, double const Vel) /*override*/; // przeplyw miedzy komora wstepna i PG
+	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Computes the high-pressure (8 bar) inflow used to replenish the auxiliary reservoir.</summary>
-	double GetHPFlow(double const HP, double const dt) /*override*/; // przeplyw - 8 bar
+	double GetHPFlow(double const HP, double const dt) override; // przeplyw - 8 bar
 	/// <summary>Returns the control reservoir (ZS) pressure.</summary>
-	double GetCRP() /*override*/;
+	double GetCRP() override;
 	/// <summary>Updates BrakeStatus from cylinder/pre-chamber/control reservoir pressures (KE-specific thresholds).</summary>
 	void CheckState(double const BCP, double &dV1);
 	/// <summary>Drives the releaser logic for KE — bleeds the control reservoir while engaged.</summary>
 	void CheckReleaser(double const dt); // odluzniacz
 	/// <summary>ZS-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double CVs(double const BP); // napelniacz sterujacego
+	double CVs(double const BP) const; // napelniacz sterujacego
 	/// <summary>ZP-filling slide valve opening factor for the given cylinder pressure.</summary>
-	double BVs(double const BCP); // napelniacz pomocniczego
+	double BVs(double const BCP) const; // napelniacz pomocniczego
 	/// <summary>Recomputes LoadC for the current vehicle mass.</summary>
-	void PLC(double const mass); // wspolczynnik cisnienia przystawki wazacej
+	void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej
 	/// <summary>Stores the load-weighing parameters.</summary>
-	void SetLP(double const TM, double const LM, double const TBP); // parametry przystawki wazacej
+	void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
 	/// <summary>Sets the auxiliary brake target pressure for the DCV.</summary>
-	void SetLBP(double const P); // cisnienie z hamulca pomocniczego
+	void SetLBP(double const P) override; // cisnienie z hamulca pomocniczego
 	/// <summary>Vents valve, brake, control, impulse and secondary auxiliary reservoirs to zero.</summary>
-	void ForceEmptiness() /*override*/; // wymuszenie bycia pustym
+	void ForceEmptiness() override; // wymuszenie bycia pustym
 
 	/// <summary>Constructs the KE distributor and creates the control / impulse / secondary reservoirs.</summary>
 	inline TKE(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TBrake(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
@@ -1077,7 +1074,7 @@ class TDriverHandle
 	/// <param name="OverP">Unbrake over-pressure [bar].</param>
 	/// <param name="OMP">Overload (assimilation) max pressure [bar].</param>
 	/// <param name="OPD">Overload pressure decay rate [bar/s].</param>
-	virtual void SetParams(bool AO, bool MO, double, double, double OMP, double OPD) {}; // ustawianie jakichs parametrow dla zaworu
+	virtual void SetParams(bool AO, bool MO, double, double, double OMP, double OPD) { /* no effect for this device type */ } // ustawianie jakichs parametrow dla zaworu
 	/// <summary>Sets the manual overcharge button state.</summary>
 	/// <param name="Active">True while the button is pressed.</param>
 	virtual void OvrldButton(bool Active); // przycisk recznego przeladowania/asymilacji
@@ -1089,6 +1086,7 @@ class TDriverHandle
 	{
 		memset(Sounds, 0, sizeof(Sounds));
 	}
+	virtual ~TDriverHandle() = default;
 };
 
 /// <summary>
@@ -1107,12 +1105,12 @@ class TFV4a : public TDriverHandle
 
   public:
 	/// <summary>Computes brake pipe flow for the FV4a handle (uses BPT[] table).</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and RP to the supplied pressure.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TFV4a() : TDriverHandle() {}
+	using TDriverHandle::TDriverHandle;
 };
 
 /// <summary>
@@ -1143,27 +1141,27 @@ class TFV4aM : public TDriverHandle
 	/// Returns the brake pipe pressure target interpolated from BPT[] for the given handle position.
 	/// </summary>
 	/// <param name="pos">Handle position.</param>
-	double LPP_RP(double pos);
+	double LPP_RP(double pos) const;
 	/// <summary>Returns true if pos is within ±0.5 of i_pos (detent comparison).</summary>
-	bool EQ(double pos, double i_pos);
+	bool EQ(double pos, double i_pos) const;
 
   public:
 	/// <summary>Computes brake pipe flow for the FV4a/M handle (interpolated BPT, wave modelling, accelerator).</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and RP.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
-	void SetReductor(double nAdj) /*override*/;
+	void SetReductor(double nAdj) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 4).</summary>
-	double GetSound(int i) /*override*/;
+	double GetSound(int i) override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 	/// <summary>Returns the time chamber pressure (TP).</summary>
-	double GetCP();
+	double GetCP() override;
 	/// <summary>Returns the regulator pressure (5 + TP*0.08 + RedAdj).</summary>
-	double GetRP();
+	double GetRP() override;
 	/// <summary>Default constructor.</summary>
-	inline TFV4aM() : TDriverHandle() {}
+	using TDriverHandle::TDriverHandle;
 };
 
 /// <summary>
@@ -1193,32 +1191,31 @@ class TMHZ_EN57 : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns the brake pipe pressure target for the given handle position (piecewise).</summary>
-	double LPP_RP(double pos);
+	double LPP_RP(double pos) const;
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	bool EQ(double pos, double i_pos) const;
 
   public:
 	/// <summary>Computes brake pipe flow for MHZ_EN57 (covers handle positions -1..10 with EP/pneumatic mix).</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
-	void SetReductor(double nAdj) /*override*/;
+	void SetReductor(double nAdj) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 4).</summary>
-	double GetSound(int i) /*override*/;
+	double GetSound(int i) override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 	/// <summary>Returns the regulator pressure (RP).</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Returns the regulator target (5 + RedAdj).</summary>
-	double GetRP() /*override*/;
+	double GetRP() override;
 	/// <summary>Returns EP brake intensity for the given handle position.</summary>
-	double GetEP(double pos);
+	double GetEP(double pos) override;
 	/// <summary>Configures handle parameters (auto/manual overcharge, over-pressure, overcharge dynamics).</summary>
-	void SetParams(bool AO, bool MO, double OverP, double, double OMP, double OPD);
+	void SetParams(bool AO, bool MO, double OverP, double, double OMP, double OPD) override;
 	/// <summary>Default constructor.</summary>
-	inline TMHZ_EN57(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// MHZ_K5P — Knorr 5-position combined brake handle.
@@ -1232,7 +1229,6 @@ class TMHZ_K5P : public TDriverHandle
 	/// <summary>Time chamber pressure [bar].</summary>
 	double TP = 0.0; // zbiornik czasowy
 	/// <summary>Reductor reservoir pressure [bar].</summary>
-	double RP = 0.0; // zbiornik redukcyjny
 	/// <summary>Reductor adjustment offset.</summary>
 	double RedAdj = 0.0; // dostosowanie reduktora cisnienia (krecenie kapturkiem)
 	/// <summary>True while filling-stroke / release wave is active.</summary>
@@ -1249,29 +1245,28 @@ class TMHZ_K5P : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	bool EQ(double pos, double i_pos) const;
 
   public:
 	/// <summary>Computes brake pipe flow for the K5P 5-position handle (release / cut-off / brake / emergency).</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and enables the time chambers.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
-	void SetReductor(double nAdj) /*override*/;
+	void SetReductor(double nAdj) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 4).</summary>
-	double GetSound(int i) /*override*/;
+	double GetSound(int i) override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 	/// <summary>Returns CP.</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Returns the regulator target (5 + TP + RedAdj).</summary>
-	double GetRP() /*override*/;
+	double GetRP() override;
 	/// <summary>Configures handle parameters (auto/manual overcharge, over-pressure, filling-stroke factor, overcharge dynamics).</summary>
-	void SetParams(bool AO, bool MO, double, double, double OMP, double OPD); /*ovveride*/
+	void SetParams(bool AO, bool MO, double, double, double OMP, double OPD) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TMHZ_K5P(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// MHZ_6P — 6-position combined brake handle (similar logic to K5P with one more detent).
@@ -1285,7 +1280,6 @@ class TMHZ_6P : public TDriverHandle
 	/// <summary>Time chamber pressure [bar].</summary>
 	double TP = 0.0; // zbiornik czasowy
 	/// <summary>Reductor reservoir pressure [bar].</summary>
-	double RP = 0.0; // zbiornik redukcyjny
 	/// <summary>Reductor adjustment offset.</summary>
 	double RedAdj = 0.0; // dostosowanie reduktora cisnienia (krecenie kapturkiem)
 	/// <summary>True while filling-stroke / release wave is active.</summary>
@@ -1302,29 +1296,28 @@ class TMHZ_6P : public TDriverHandle
 	static double const pos_table[11]; //= { -2, 10, -1, 0, 0, 2, 9, 10, 0, 0, 0 };
 
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
-	bool EQ(double pos, double i_pos);
+	bool EQ(double pos, double i_pos) const;
 
   public:
 	/// <summary>Computes brake pipe flow for the 6P handle.</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and enables the time chambers.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
-	void SetReductor(double nAdj) /*override*/;
+	void SetReductor(double nAdj) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 4).</summary>
-	double GetSound(int i) /*override*/;
+	double GetSound(int i) override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 	/// <summary>Returns CP.</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Returns the regulator target (5 + TP + RedAdj).</summary>
-	double GetRP() /*override*/;
+	double GetRP() override;
 	/// <summary>Configures handle parameters (auto/manual overcharge, over-pressure, filling-stroke factor, overcharge dynamics).</summary>
-	void SetParams(bool AO, bool MO, double, double, double OMP, double OPD); /*ovveride*/
+	void SetParams(bool AO, bool MO, double, double, double OMP, double OPD) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TMHZ_6P(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /*    FBS2= class(TTDriverHandle)
           private
@@ -1372,17 +1365,17 @@ class TM394 : public TDriverHandle
 
   public:
 	/// <summary>Computes brake pipe flow for the M394 handle (uses BPT_394).</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and enables the time chamber.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
-	void SetReductor(double nAdj) /*override*/;
+	void SetReductor(double nAdj) override;
 	/// <summary>Returns CP.</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Returns max(5, CP) + RedAdj.</summary>
-	double GetRP() /*override*/;
+	double GetRP() override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 
 	/// <summary>Default constructor — sets the maximum handle position to 5.</summary>
 	inline TM394(void) : TDriverHandle()
@@ -1411,17 +1404,17 @@ class TH14K1 : public TDriverHandle
 
   public:
 	/// <summary>Computes brake pipe flow for the H14K1 handle.</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and enables the time chambers.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
-	void SetReductor(double nAdj) /*override*/;
+	void SetReductor(double nAdj) override;
 	/// <summary>Returns CP.</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Returns the regulator target (5 + RedAdj).</summary>
-	double GetRP() /*override*/;
+	double GetRP() override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 
 	/// <summary>Default constructor — sets the maximum handle position to 4.</summary>
 	inline TH14K1(void) : TDriverHandle()
@@ -1450,21 +1443,20 @@ class TSt113 : public TH14K1
 
   public:
 	/// <summary>Computes brake pipe flow for the St113 handle (with EP).</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Returns CP.</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Returns the regulator target (5 + RedAdj).</summary>
-	double GetRP() /*override*/;
+	double GetRP() override;
 	/// <summary>Returns the current EP intensity.</summary>
-	double GetEP() /*override*/;
+	double GetEP() override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 	/// <summary>Enables the time chambers (no pressure init).</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TSt113(void) : TH14K1() {}
-};
+	using TH14K1::TH14K1;};
 
 /// <summary>
 /// Test handle — minimal implementation used during development for verifying
@@ -1479,13 +1471,12 @@ class Ttest : public TDriverHandle
 
   public:
 	/// <summary>Computes brake pipe flow using the FV4a-style BPT table for testing.</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline Ttest(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// FD1 auxiliary brake handle — directly drives the cylinder pressure between
@@ -1505,18 +1496,17 @@ class TFD1 : public TDriverHandle
 	double Speed = 0.0; // szybkosc dzialania
 
 	/// <summary>Computes the auxiliary brake outflow for this step.</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises MaxBP and the action speed.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 	/// <summary>Returns the currently commanded cylinder pressure (BP).</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Sets the action speed multiplier.</summary>
 	void SetSpeed(double nSpeed);
 	//        procedure Init(press: real; MaxBP: real); overload;
 
 	/// <summary>Default constructor.</summary>
-	inline TFD1(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// H1405 — Knorr auxiliary brake handle (continuous, independent brake).
@@ -1532,16 +1522,15 @@ class TH1405 : public TDriverHandle
 
   public:
 	/// <summary>Computes the auxiliary brake outflow for this step (proportional to handle deflection).</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises MaxBP and enables the time chamber.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 	/// <summary>Returns the currently commanded cylinder pressure (BP).</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	//        procedure Init(press: real; MaxBP: real); overload;
 
 	/// <summary>Default constructor.</summary>
-	inline TH1405(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// FVel6 — combined EP + pneumatic brake handle (Czech, 6+1 positions).
@@ -1559,23 +1548,22 @@ class TFVel6 : public TDriverHandle
 
   public:
 	/// <summary>Computes brake pipe flow for FVel6 (continuous EP brake plus pneumatic emergency).</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Returns CP.</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Returns the regulator target (constant 5 bar).</summary>
-	double GetRP() /*override*/;
+	double GetRP() override;
 	/// <summary>Returns the current EP intensity.</summary>
-	double GetEP() /*override*/;
+	double GetEP() override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 2).</summary>
-	double GetSound(int i) /*override*/;
+	double GetSound(int i) override;
 	/// <summary>Enables the time chambers.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TFVel6(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// FVE408 — newer combined EP + pneumatic brake handle (10 positions).
@@ -1594,23 +1582,22 @@ class TFVE408 : public TDriverHandle
 
   public:
 	/// <summary>Computes brake pipe flow for the FVE408 handle.</summary>
-	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) /*override*/;
+	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Returns CP.</summary>
-	double GetCP() /*override*/;
+	double GetCP() override;
 	/// <summary>Returns the current EP intensity.</summary>
-	double GetEP() /*override*/;
+	double GetEP() override;
 	/// <summary>Returns the regulator target (constant 5 bar).</summary>
-	double GetRP() /*override*/;
+	double GetRP() override;
 	/// <summary>Returns pos_table[i].</summary>
-	double GetPos(int i) /*override*/;
+	double GetPos(int i) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 2).</summary>
-	double GetSound(int i) /*override*/;
+	double GetSound(int i) override;
 	/// <summary>Enables the time chamber, disables the EP-time chamber.</summary>
-	void Init(double Press) /*override*/;
+	void Init(double Press) override;
 
 	/// <summary>Default constructor.</summary>
-	inline TFVE408(void) : TDriverHandle() {}
-};
+	using TDriverHandle::TDriverHandle;};
 
 /// <summary>
 /// Pneumatic flow rate from one pressure to another through an orifice of area S.

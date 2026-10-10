@@ -47,11 +47,11 @@ TModelsManager::LoadModel(std::string const &Name, std::string const &virtualNam
     m_models.emplace_back();
     auto model = m_models.back().LoadModel( Name, dynamic );
     if( model != nullptr ) {
-		m_modelsmap.emplace( virtualName, m_models.size() - 1 );
+		m_modelsmap.try_emplace( virtualName, m_models.size() - 1 );
     }
     else {
         m_models.pop_back();
-		m_modelsmap.emplace( virtualName, null_handle );
+		m_modelsmap.try_emplace( virtualName, null_handle );
     }
     return model;
 }
@@ -95,17 +95,16 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
 		postfix = "^^" + std::to_string(uid);
 
 	// see if we have it in the databank
-	auto banklookup { find_in_databank( filename + postfix ) };
-    TModel3d *model { banklookup.second };
-    if( true == banklookup.first ) {
+	auto [banklookupfound, banklookupmodel]{ find_in_databank( filename + postfix ) };
+    TModel3d *model { banklookupmodel };
+    if( true == banklookupfound ) {
         Global.asCurrentTexturePath = buftp;
         return model;
     }
 
     // first load attempt, check if it's on disk
-    std::string disklookup { find_on_disk( filename ) };
 
-    if( false == disklookup.empty() ) {
+    if( std::string disklookup { find_on_disk( filename ) }; false == disklookup.empty() ) {
 		model = LoadModel( disklookup, disklookup + postfix, Dynamic ); // model nie znaleziony, to wczytać
     }
     else {
@@ -114,7 +113,7 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
             ErrorLog( "Bad file: failed to locate 3d model file \"" + filename + "\"", logtype::file );
         }
         // ...and link it with the error model slot
-		m_modelsmap.emplace( filename + postfix, null_handle );
+		m_modelsmap.try_emplace( filename + postfix, null_handle );
     }
     Global.asCurrentTexturePath = buftp; // odtworzenie ścieżki do tekstur
     return model; // NULL jeśli błąd

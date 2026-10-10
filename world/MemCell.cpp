@@ -25,7 +25,7 @@ http://mozilla.org/MPL/2.0/.
 
 TMemCell::TMemCell( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {}
 
-void TMemCell::UpdateValues( std::string const &szNewText, double const fNewValue1, double const fNewValue2, int const CheckMask )
+void TMemCell::UpdateValues( std::string_view szNewText, double const fNewValue1, double const fNewValue2, int const CheckMask )
 {
     if (CheckMask & basic_event::flags::mode_add)
     { // dodawanie wartości
@@ -51,48 +51,49 @@ void TMemCell::UpdateValues( std::string const &szNewText, double const fNewValu
 
 TCommandType TMemCell::CommandCheck()
 { // rozpoznanie komendy
+    using enum TCommandType;
     if( szText == "SetVelocity" ) // najpopularniejsze
     {
-        eCommand = TCommandType::cm_SetVelocity;
+        eCommand = cm_SetVelocity;
         bCommand = false; // ta komenda nie jest wysyłana
     }
     else if( szText == "ShuntVelocity" ) // w tarczach manewrowych
     {
-        eCommand = TCommandType::cm_ShuntVelocity;
+        eCommand = cm_ShuntVelocity;
         bCommand = false; // ta komenda nie jest wysyłana
     }
     else if( szText == "Change_direction" ) // zdarza się
     {
-        eCommand = TCommandType::cm_ChangeDirection;
+        eCommand = cm_ChangeDirection;
         bCommand = true; // do wysłania
     }
     else if( szText == "OutsideStation" ) // zdarza się
     {
-        eCommand = TCommandType::cm_OutsideStation;
+        eCommand = cm_OutsideStation;
         bCommand = false; // tego nie powinno być w komórce
     }
     else if( szText.starts_with("PassengerStopPoint:") ) // porównanie początków
     {
-        eCommand = TCommandType::cm_PassengerStopPoint;
+        eCommand = cm_PassengerStopPoint;
         bCommand = false; // tego nie powinno być w komórce
     }
     else if( szText == "SetProximityVelocity" ) // nie powinno tego być
     {
-        eCommand = TCommandType::cm_SetProximityVelocity;
+        eCommand = cm_SetProximityVelocity;
         bCommand = false; // ta komenda nie jest wysyłana
     }
     else if( szText == "Emergency_brake" )
     {
-        eCommand = TCommandType::cm_EmergencyBrake;
+        eCommand = cm_EmergencyBrake;
         bCommand = false;
     }
     else if( szText == "CabSignal" ) {
-        eCommand = TCommandType::cm_SecuritySystemMagnet;
+        eCommand = cm_SecuritySystemMagnet;
         bCommand = false;
     }
     else
     {
-        eCommand = TCommandType::cm_Unknown; // ciąg nierozpoznany (nie jest komendą)
+        eCommand = cm_Unknown; // ciąg nierozpoznany (nie jest komendą)
         bCommand = true; // do wysłania
     }
     return eCommand;
@@ -157,11 +158,11 @@ bool TMemCell::Compare( std::string const &szTestText, double const fTestValue1,
 
     if( TestFlag( CheckMask, basic_event::flags::text ) ) {
         // porównać teksty
-        auto range = szTestText.find( '*' );
+        auto wildcardpos = szTestText.find( '*' );
         auto const result { (
-            range == std::string::npos ?
+            wildcardpos == std::string::npos ?
                 compare( szText, szTestText, TextOperator ) :
-                compare( szText.substr( 0, range ), szTestText.substr( 0, range ), TextOperator ) ) };
+                compare( szText.substr( 0, wildcardpos ), szTestText.substr( 0, wildcardpos ), TextOperator ) ) };
         checkpassed |=    result;
         checkfailed |= !result;
     }
@@ -177,20 +178,22 @@ bool TMemCell::Compare( std::string const &szTestText, double const fTestValue1,
     }
 
     switch( Pass ) {
-        case comparison_pass::all:  { return checkfailed == false; }
-        case comparison_pass::any:  { return checkpassed == true; }
-        case comparison_pass::none: { return checkpassed == false; }
+        using enum comparison_pass;
+        case all:  { return checkfailed == false; }
+        case any:  { return checkpassed == true; }
+        case none: { return checkpassed == false; }
         default:                    { return false; }
     }
 };
 
 bool TMemCell::IsVelocity() const
 { // sprawdzenie, czy event odczytu tej komórki ma być do skanowania, czy do kolejkowania
-    if (eCommand == TCommandType::cm_SetVelocity)
+    using enum TCommandType;
+    if (eCommand == cm_SetVelocity)
         return true;
-    if (eCommand == TCommandType::cm_ShuntVelocity)
+    if (eCommand == cm_ShuntVelocity)
         return true;
-    return eCommand == TCommandType::cm_SetProximityVelocity;
+    return eCommand == cm_SetProximityVelocity;
 };
 
 void TMemCell::StopCommandSent()
@@ -258,7 +261,7 @@ TMemCell::export_as_text_( std::ostream &Output ) const {
 
 // legacy method, initializes traction after deserialization from scenario file
 void
-memory_table::InitCells() {
+memory_table::InitCells() const {
 
     for( auto *cell : m_items ) {
         // Ra: eventy komórek pamięci, wykonywane po wysłaniu komendy do zatrzymanego pojazdu
@@ -275,9 +278,9 @@ memory_table::InitCells() {
 
 // legacy method, sends content of all cells to the log
 void
-memory_table::log_all() {
+memory_table::log_all() const {
 
-    for( auto *cell : m_items ) {
+    for( auto const *cell : m_items ) {
         cell->LogValues();
     }
 }

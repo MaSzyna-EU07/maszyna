@@ -37,8 +37,7 @@ void network::tcp::connection::connected()
 void network::tcp::connection::read_header()
 {
 	asio::async_read(m_socket, asio::buffer(m_header_buffer),
-	                    std::bind(&connection::handle_header, this,
-	                              std::placeholders::_1, std::placeholders::_2));
+	                    std::bind_front(&connection::handle_header, this));
 }
 
 void network::tcp::connection::handle_header(const asio::error_code &err, size_t bytes_transferred)
@@ -54,8 +53,7 @@ void network::tcp::connection::handle_header(const asio::error_code &err, size_t
 		return;
 	}
 
-	uint32_t sig = sn_utils::ld_uint32(header);
-	if (sig != NETWORK_MAGIC) {
+	if (uint32_t sig = sn_utils::ld_uint32(header); sig != NETWORK_MAGIC) {
 		disconnect();
 		return;
 	}
@@ -68,7 +66,7 @@ void network::tcp::connection::handle_header(const asio::error_code &err, size_t
 	}
 
 	asio::async_read(m_socket, asio::buffer(m_body_buffer),
-	                 std::bind(&connection::handle_data, this, std::placeholders::_1, std::placeholders::_2));
+	                 std::bind_front(&connection::handle_data, this));
 }
 
 void network::tcp::connection::handle_data(const asio::error_code &err, size_t bytes_transferred)
@@ -91,9 +89,9 @@ void network::tcp::connection::handle_data(const asio::error_code &err, size_t b
 	read_header();
 }
 
-void network::tcp::connection::write_message(const message &msg, std::ostream &stream)
+void network::tcp::connection::write_message(const message &msg, std::ostream &stream) const
 {
-	size_t beg = (size_t)stream.tellp();
+	auto beg = (size_t)stream.tellp();
 
 	sn_utils::ls_uint32(stream, NETWORK_MAGIC);
 	sn_utils::ls_uint32(stream, 0);
@@ -106,14 +104,14 @@ void network::tcp::connection::write_message(const message &msg, std::ostream &s
 		return;
 	}
 	stream.seekp(beg + 4, std::ios_base::beg);
-	sn_utils::ls_uint32(stream, size);
+	sn_utils::ls_uint32(stream, static_cast<uint32_t>(size));
 
 	stream.seekp(0, std::ios_base::end);
 }
 
 void network::tcp::connection::send_messages(const std::vector<std::shared_ptr<message> > &messages)
 {
-	if (messages.size() == 0)
+	if (messages.empty())
 		return;
 
 	std::ostringstream stream;
@@ -138,7 +136,7 @@ void network::tcp::connection::send_message(const message &msg)
 network::tcp::server::server(std::shared_ptr<std::istream> buf, asio::io_context &io_ctx, const std::string &host, uint32_t port)
     : network::server(buf), m_acceptor(io_ctx), m_io_ctx(io_ctx)
 {
-	auto endpoint = asio::ip::tcp::endpoint(asio::ip::make_address(host), port);
+	auto endpoint = asio::ip::tcp::endpoint(asio::ip::make_address(host), static_cast<asio::ip::port_type>(port));
 	m_acceptor.open(endpoint.protocol());
 	m_acceptor.set_option(asio::socket_base::reuse_address(true));
 	m_acceptor.set_option(asio::ip::tcp::no_delay(true));
@@ -150,10 +148,10 @@ network::tcp::server::server(std::shared_ptr<std::istream> buf, asio::io_context
 
 void network::tcp::server::accept_conn()
 {
-    std::shared_ptr<connection> conn = std::make_shared<connection>(m_io_ctx);
-    conn->set_handler(std::bind(&server::handle_message, this, conn, std::placeholders::_1));
+    auto conn = std::make_shared<connection>(m_io_ctx);
+    conn->set_handler(std::bind_front(&server::handle_message, this, conn));
 
-    m_acceptor.async_accept(conn->m_socket, std::bind(&server::handle_accept, this, conn, std::placeholders::_1));
+    m_acceptor.async_accept(conn->m_socket, std::bind_front(&server::handle_accept, this, conn));
 }
 
 void network::tcp::server::handle_accept(std::shared_ptr<connection> conn, const asio::error_code &err)
@@ -175,7 +173,7 @@ void network::tcp::server::handle_accept(std::shared_ptr<connection> conn, const
 // ------------------
 
 network::tcp::client::client(asio::io_context &io_ctxx, const std::string &hostarg, uint32_t portarg)
-    : host(hostarg), port(portarg), io_ctx(io_ctxx)
+    : io_ctx(io_ctxx), host(hostarg), port(portarg)
 {
 }
 
@@ -184,21 +182,21 @@ void network::tcp::client::connect()
 	if (this->conn)
 		return;
 
-	std::shared_ptr<connection> conn = std::make_shared<connection>(io_ctx, true, resume_frame_counter);
-	conn->set_handler(std::bind(&client::handle_message, this, conn, std::placeholders::_1));
+	auto newconnection = std::make_shared<connection>(io_ctx, true, resume_frame_counter);
+	newconnection->set_handler(std::bind_front(&client::handle_message, this, newconnection));
 
 	asio::ip::tcp::endpoint endpoint(
-	            asio::ip::make_address(host), port);
-	conn->m_socket.open(endpoint.protocol());
-	conn->m_socket.set_option(asio::ip::tcp::no_delay(true));
-	conn->m_socket.async_connect(endpoint,
-	                    std::bind(&client::handle_accept, this, std::placeholders::_1));
+	            asio::ip::make_address(host), static_cast<asio::ip::port_type>(port));
+	newconnection->m_socket.open(endpoint.protocol());
+	newconnection->m_socket.set_option(asio::ip::tcp::no_delay(true));
+	newconnection->m_socket.async_connect(endpoint,
+	                    std::bind_front(&client::handle_accept, this));
 
-	this->conn = conn;
+	this->conn = newconnection;
 
 }
 
-void network::tcp::client::handle_accept(const asio::error_code &err)
+void network::tcp::client::handle_accept(const asio::error_code &err) const
 {
 	if (!err)
 	{
@@ -212,7 +210,7 @@ void network::tcp::client::handle_accept(const asio::error_code &err)
 }
 
 network::tcp::asio_manager::asio_manager() {
-	backend_list().emplace("tcp", this);
+	backend_list().try_emplace("tcp", this);
 }
 
 std::shared_ptr<network::server> network::tcp::asio_manager::create_server(std::shared_ptr<std::fstream> backbuffer, const std::string &conf) {

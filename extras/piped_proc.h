@@ -23,8 +23,8 @@ HANDLE pipe_wr = nullptr;
 #endif
 
 public:
-    piped_proc(std::string cmd, bool write = false);
+    explicit piped_proc(std::string const &cmd, bool write = false);
 	size_t read(unsigned char *buf, size_t len);
-	size_t write(unsigned char *buf, size_t len);
+	size_t write(unsigned char const *buf, size_t len);
 	~piped_proc();
 };

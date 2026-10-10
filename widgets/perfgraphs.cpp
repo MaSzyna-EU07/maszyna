@@ -19,7 +19,7 @@ void perfgraph_panel::render_contents() {
 		ImGui::EndCombo();
 	}
 
-	Timer::stopwatch *stopwatch = nullptr;
+	Timer::stopwatch const *stopwatch = nullptr;
 
 	if (current_timer == gfx_total)
 		stopwatch = &Timer::subsystem.gfx_total;
@@ -49,7 +49,7 @@ void perfgraph_panel::render_contents() {
 	if (!stopwatch)
 		return;
 
-	history[pos] = stopwatch->last().count() / 1000.0;
+	history[pos] = static_cast<float>(static_cast<double>(stopwatch->last().count()) / 1000.0);
 	const std::string label = std::to_string(history[pos]) + "ms";
 
 	pos++;
@@ -57,5 +57,5 @@ void perfgraph_panel::render_contents() {
 		pos = 0;
 
 	ImGui::SliderFloat(STR_C("Range"), &max, 0.1f, 250.0f);
-	ImGui::PlotLines("##timer", &history[0], history.size(), pos, label.c_str(), 0.0f, max, ImVec2(500, 200));
+	ImGui::PlotLines("##timer", &history[0], static_cast<int>(history.size()), static_cast<int>(pos), label.c_str(), 0.0f, max, ImVec2(500, 200));
 }

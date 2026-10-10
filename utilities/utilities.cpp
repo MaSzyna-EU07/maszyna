@@ -17,6 +17,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#include <sys/stat.h>
 #include <charconv>
 #include <ranges>
+#include <format>
 //#ifndef WIN32
 //#include <unistd.h>
 //#endif
@@ -127,14 +128,14 @@ bool ClearFlag(int &Flag, int const Value)
 double Random(double min, double max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_real_distribution requires min <= max (inverted bounds are UB)
-	std::uniform_real_distribution<double> dist(min, max);
+	std::uniform_real_distribution dist(min, max);
 	return dist(Global.random_engine);
 }
 
 int Random(int min, int max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_int_distribution requires min <= max (inverted bounds are UB)
-	std::uniform_int_distribution<int> dist(min, max);
+	std::uniform_int_distribution dist(min, max);
 	return dist(Global.random_engine);
 }
 
@@ -178,7 +179,7 @@ std::uint32_t seed_of(std::string const &Text)
 
 std::string generate_uuid_v4()
 {
-	std::uniform_int_distribution<int> dist(0, 255);
+	std::uniform_int_distribution dist(0, 255);
 
 	std::array<uint8_t, 16> bytes;
 	for (auto &b : bytes)
@@ -188,22 +189,18 @@ std::string generate_uuid_v4()
 	bytes[6] = bytes[6] & 0x0F | 0x40;
 	bytes[8] = bytes[8] & 0x3F | 0x80;
 
-	char buf[37]; // 36 znaków + \0
-	std::snprintf(buf, sizeof(buf),
-	              "%02x%02x%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x%02x%02x%02x%02x",
-	              bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
-
-	return std::string(buf);
+	return std::format("{:02x}{:02x}{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+	                   bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
 }
 
 double LocalRandom(double a, double b)
 {
 	if (b < a) { std::swap(a, b); } // std::uniform_real_distribution requires a <= b (inverted bounds are UB)
-	std::uniform_real_distribution<double> dist(a, b);
+	std::uniform_real_distribution dist(a, b);
 	return dist(Global.local_random_engine);
 }
 
@@ -252,23 +249,18 @@ std::string to_string(int Value, int width)
 
 std::string to_string(double Value, int precision)
 {
-	std::ostringstream o;
-	o << std::fixed << std::setprecision(precision) << Value;
-	return std::move(o).str();
+	return std::format("{:.{}f}", Value, precision);
 };
 
 std::string to_string(double const Value, int const Precision, int const Width)
 {
-	std::ostringstream o;
-	o << std::setw(Width) << std::fixed << std::setprecision(Precision) << Value;
-	return std::move(o).str();
+	return std::format("{:>{}.{}f}", Value, Width, Precision);
 };
 
 std::string to_hex_str(int const Value, int const Width)
 {
-	std::ostringstream o;
-	o << "0x" << std::uppercase << std::setfill('0') << std::setw(Width) << std::hex << Value;
-	return o.str();
+	// iostreams print negative values in hex as their unsigned representation
+	return std::format("0x{:0{}X}", static_cast<unsigned int>(Value), Width);
 };
 
 std::string const fractionlabels[] = {U8(" "), U8("¹"), U8("²"), U8("³"), U8("⁴"), U8("⁵"), U8("⁶"), U8("⁷"), U8("⁸"), U8("⁹")};
@@ -297,7 +289,7 @@ std::string ToLower(std::string const &text)
 {
 
 	auto lowercase{text};
-	std::transform(std::begin(text), std::end(text), std::begin(lowercase), [](unsigned char c) { return std::tolower(c); });
+	std::ranges::transform(text, std::begin(lowercase), [](unsigned char c) { return std::tolower(c); });
 	return lowercase;
 }
 
@@ -305,7 +297,7 @@ std::string ToUpper(std::string const &text)
 {
 
 	auto uppercase{text};
-	std::transform(std::begin(text), std::end(text), std::begin(uppercase), [](unsigned char c) { return std::toupper(c); });
+	std::ranges::transform(text, std::begin(uppercase), [](unsigned char c) { return std::toupper(c); });
 	return uppercase;
 }
 
@@ -421,7 +413,7 @@ void win1250_to_utf32(std::string const &Text, std::u32string &Output)
 }
 
 // Ra: tymczasowe rozwiązanie kwestii zagranicznych (czeskich) napisów
-char charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
+char const charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
                                 " ^^L$A|S^CS<--RZo±,l'uP.,as>L\"lz"
                                 "RAAAALCCCEEEEIIDDNNOOOOxRUUUUYTB"
                                 "raaaalccceeeeiiddnnoooo-ruuuuyt?";
@@ -607,7 +599,7 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 {
 
 	auto token{Input.getToken<std::string>(true, Break)};
-	std::replace(token.begin(), token.end(), '\\', '/');
+	std::ranges::replace(token, '\\', '/');
 	if (token != "[")
 	{
 		// simple case, single token
@@ -622,7 +614,7 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 	}
 	if (false == tokens.empty())
 	{
-		std::shuffle(std::begin(tokens), std::end(tokens), Global.random_engine);
+		std::ranges::shuffle(tokens, Global.random_engine);
 		return tokens.front();
 	}
 	else

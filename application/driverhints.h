@@ -12,7 +12,7 @@ enum class driver_hint {
 #ifdef DRIVER_HINT_CONTENT
 #define DRIVER_HINT_DEF(a, b) b,
 
-const char *driver_hints_texts[] =
+const char *const driver_hints_texts[] =
 {
     #include "application/driverhints_def.h"
 };

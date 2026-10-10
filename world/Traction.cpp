@@ -114,10 +114,9 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
     // SKB70-C, CuCd70-2C, KB95-2C, C95-C, C95-2C, YC95-2C, YpC95-2C, YC120-2C
     // YpC120-2C, YzC120-2C, YwsC120-2C, YC150-C150, YC150-2C150, C150-C150
     // C120-2C, 2C120-2C, 2C120-2C-1, 2C120-2C-2, 2C120-2C-3, 2C120-2C-4
-    auto const material = parser->getToken<std::string>();
     // 1=miedziana, rysuje się na zielono albo czerwono
     // 2=aluminiowa, rysuje się na czarno
-         if( material == "none" ) { Material = 0; }
+         if( auto const material = parser->getToken<std::string>(); material == "none" ) { Material = 0; }
     else if( material == "al" )   { Material = 2; }
     else                          { Material = 1; }
     parser->getTokens( 2 );
@@ -131,7 +130,7 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
     auto const minheight { parser->getToken<double>() };
     fHeightDifference = ( pPoint3.y - pPoint1.y + pPoint4.y - pPoint2.y ) * 0.5 - minheight;
     auto const segmentlength { parser->getToken<double>() };
-    iNumSections = segmentlength ? glm::length(pPoint1 - pPoint2) / segmentlength : 0;
+    iNumSections = segmentlength != 0.0 ? static_cast<int>(glm::length(pPoint1 - pPoint2) / segmentlength) : 0;
     parser->getTokens( 2 );
     *parser
         >> Wires
@@ -164,7 +163,7 @@ TTraction::endpoints() const {
 }
 
 std::size_t
-TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
+TTraction::create_geometry( gfx::geometrybank_handle const &Geometrybank ) {
     if( m_geometry != null_handle ) {
         return GfxRenderer->Vertices( m_geometry ).size() / 2;
     }
@@ -175,7 +174,8 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
     if( Wires == 2 )
         WireOffset = 0;
     // jezdny
-    gfx::basic_vertex startvertex, endvertex;
+    gfx::basic_vertex startvertex;
+    gfx::basic_vertex endvertex;
     startvertex.position =
         glm::vec3(
             pPoint1.x - ( pPoint2.z / ddp - pPoint1.z / ddp ) * WireOffset - m_origin.x,
@@ -189,7 +189,12 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
     vertices.emplace_back( startvertex );
     vertices.emplace_back( endvertex );
     // Nie wiem co 'Marcin
-    glm::dvec3 pt1, pt2, pt3, pt4, v1, v2;
+    glm::dvec3 pt1;
+    glm::dvec3 pt2;
+    glm::dvec3 pt3;
+    glm::dvec3 pt4;
+    glm::dvec3 v1;
+    glm::dvec3 v2;
     v1 = pPoint4 - pPoint3;
     v2 = pPoint2 - pPoint1;
     float step = 0;
@@ -207,7 +212,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 pPoint3.z - m_origin.z );
         for( int i = 0; i < iNumSections - 1; ++i ) {
             pt3 = pPoint3 + v1 * f;
-            t = 1 - std::fabs(f - mid) * 2;
+            t = static_cast<float>(1 - std::fabs(f - mid) * 2);
             if( Wires < 4
              || ( i != 0
                && i != iNumSections - 2 ) ) {
@@ -256,7 +261,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 pPoint3.z - m_origin.z );
         for( int i = 0; i < iNumSections - 1; ++i ) {
             pt3 = pPoint3 + v1 * f;
-            t = 1 - std::fabs(f - mid) * 2;
+            t = static_cast<float>(1 - std::fabs(f - mid) * 2);
             endvertex.position =
                 glm::vec3(
                     pt3.x - m_origin.x,
@@ -288,7 +293,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
         for( int i = 0; i < iNumSections - 1; ++i ) {
             pt3 = pPoint3 + v1 * f;
             pt4 = pPoint1 + v2 * f;
-            t = 1 - std::fabs(f - mid) * 2;
+            t = static_cast<float>(1 - std::fabs(f - mid) * 2);
             if( i % 2 == 0 ) {
                 startvertex.position =
                     glm::vec3(
@@ -338,12 +343,12 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
     auto const elementcount = vertices.size() / 2;
 
 	gfx::userdata_array empty_userdata{};
-    m_geometry = GfxRenderer->Insert( vertices, empty_userdata, Bank, GL_LINES );
+    m_geometry = GfxRenderer->Insert( vertices, empty_userdata, Geometrybank, GL_LINES );
 
     return elementcount;
 }
 
-int TTraction::TestPoint(glm::dvec3 const &Point)
+int TTraction::TestPoint(glm::dvec3 const &Point) const
 { // sprawdzanie, czy przęsła można połączyć
     if( hvNext[0] == nullptr
      && glm::all(glm::epsilonEqual(Point, pPoint1, 0.025)) ) {
@@ -410,7 +415,8 @@ void TTraction::ResistanceCalc(int d, double r, TTractionPowerSource *ps)
 { //(this) jest przęsłem zasilanym, o rezystancji (r), policzyć rezystancję zastępczą sąsiednich
     if (d >= 0)
     { // podążanie we wskazanym kierunku
-        TTraction *t = hvNext[d], *p;
+        TTraction *t = hvNext[d];
+        TTraction const *p;
         if (ps)
             psPower[d ^ 1] = ps; // podłączenie podanego
         else
@@ -432,7 +438,7 @@ void TTraction::ResistanceCalc(int d, double r, TTractionPowerSource *ps)
                 }
             }
             t->psPower[d] = ps; // skopiowanie wskaźnika zasilacza od danej strony
-            t->fResistance[d] = r; // wpisanie rezystancji w kierunku tego zasilacza
+            t->fResistance[d] = static_cast<float>(r); // wpisanie rezystancji w kierunku tego zasilacza
             r += t->fResistivity * glm::length(t->vParametric); // doliczenie oporu kolejnego odcinka
             p = t; // zapamiętanie dotychczasowego
             t = p->hvNext[d ^ 1]; // podążanie w tę samą stronę
@@ -457,17 +463,18 @@ void TTraction::PowerSet(TTractionPowerSource *ps)
     else
     { // ustalenie punktu zasilania (nie ma jeszcze połączeń między przęsłami)
         psPowered = ps; // ustawienie bezpośredniego zasilania dla przęsła
-        psPower[0] = psPower[1] = ps; // a to chyba nie jest dobry pomysł, bo nawet zasilane przęsło
+        psPower[0] = ps; // a to chyba nie jest dobry pomysł, bo nawet zasilane przęsło
+        psPower[1] = ps;
         // powinno mieć wskazania na inne
-        fResistance[0] = fResistance[1] = 0.0; // a liczy się tylko rezystancja zasilacza
+        fResistance[0] = 0.0; // a liczy się tylko rezystancja zasilacza
+        fResistance[1] = 0.0;
     }
 };
 
 double TTraction::VoltageGet(double u, double i)
 { // pobranie napięcia na przęśle po podłączeniu do niego rezystancji (res) - na razie jest to prąd
-    if (!psSection)
-        if (!psPowered)
-            return NominalVoltage; // jak nie ma zasilacza, to napięcie podane w przęśle
+    if (!psSection && !psPowered)
+        return NominalVoltage; // jak nie ma zasilacza, to napięcie podane w przęśle
     // na początek można założyć, że wszystkie podstacje mają to samo napięcie i nie płynie prąd
     // pomiędzy nimi
     // dla danego przęsła mamy 3 źródła zasilania
@@ -485,8 +492,12 @@ double TTraction::VoltageGet(double u, double i)
         return 0.0;
     }
 
-    double r0t, r1t, r0g, r1g;
-    double i0, i1;
+    double r0t;
+    double r1t;
+    double r0g;
+    double r1g;
+    double i0;
+    double i1;
     r0t = fResistance[0]; //średni pomysł, ale lepsze niż nic
     r1t = fResistance[1]; // bo nie uwzględnia spadków z innych pojazdów
     if (psPower[0] && psPower[1])
@@ -729,29 +740,25 @@ traction_table::InitTraction() {
                     break;
                 }
             }
-            if( traction->hvNext[ 0 ] ) {
-                // jeśli został podłączony
-                if( traction->psSection != nullptr
-                 && matchingtraction->psSection != nullptr ) {
-                    // tylko przęsło z izolatorem może nie mieć zasilania, bo ma 2, trzeba sprawdzać sąsiednie
-                    if( traction->psSection != matchingtraction->psSection ) {
-                        // połączone odcinki mają różne zasilacze
-                        // to może być albo podłączenie podstacji lub kabiny sekcyjnej do sekcji, albo błąd
-                        if( true == traction->psSection->bSection
-                         && false == matchingtraction->psSection->bSection ) {
-                            //(tmp->psSection) jest podstacją, a (Traction->psSection) nazwą sekcji
-                            matchingtraction->PowerSet( traction->psSection ); // zastąpienie wskazaniem sekcji
-                        }
-                        else if( false == traction->psSection->bSection
-                              && true == matchingtraction->psSection->bSection ) {
-                            //(Traction->psSection) jest podstacją, a (tmp->psSection) nazwą sekcji
-                            traction->PowerSet( matchingtraction->psSection ); // zastąpienie wskazaniem sekcji
-                        }
-                        else {
-                            // jeśli obie to sekcje albo obie podstacje, to będzie błąd
-                            ErrorLog( "Bad scenario: faulty traction power connection at location " + to_string( traction->pPoint1 ) );
-                        }
-                    }
+            // jeśli został podłączony
+            // tylko przęsło z izolatorem może nie mieć zasilania, bo ma 2, trzeba sprawdzać sąsiednie
+            if (traction->hvNext[ 0 ] && traction->psSection != nullptr
+                 && matchingtraction->psSection != nullptr && traction->psSection != matchingtraction->psSection) {
+                // połączone odcinki mają różne zasilacze
+                // to może być albo podłączenie podstacji lub kabiny sekcyjnej do sekcji, albo błąd
+                if( true == traction->psSection->bSection
+                 && false == matchingtraction->psSection->bSection ) {
+                    //(tmp->psSection) jest podstacją, a (Traction->psSection) nazwą sekcji
+                    matchingtraction->PowerSet( traction->psSection ); // zastąpienie wskazaniem sekcji
+                }
+                else if( false == traction->psSection->bSection
+                      && true == matchingtraction->psSection->bSection ) {
+                    //(Traction->psSection) jest podstacją, a (tmp->psSection) nazwą sekcji
+                    traction->PowerSet( matchingtraction->psSection ); // zastąpienie wskazaniem sekcji
+                }
+                else {
+                    // jeśli obie to sekcje albo obie podstacje, to będzie błąd
+                    ErrorLog( "Bad scenario: faulty traction power connection at location " + to_string( traction->pPoint1 ) );
                 }
             }
         }
@@ -768,28 +775,24 @@ traction_table::InitTraction() {
                     break;
                 }
             }
-            if( traction->hvNext[ 1 ] ) {
-                // jeśli został podłączony
-                if( traction->psSection != nullptr
-                 && matchingtraction->psSection != nullptr ) {
-                    // tylko przęsło z izolatorem może nie mieć zasilania, bo ma 2, trzeba sprawdzać sąsiednie
-                    if( traction->psSection != matchingtraction->psSection ) {
-                        // to może być albo podłączenie podstacji lub kabiny sekcyjnej do sekcji, albo błąd
-                        if( true == traction->psSection->bSection
-                         && false == matchingtraction->psSection->bSection ) {
-                            //(tmp->psSection) jest podstacją, a (Traction->psSection) nazwą sekcji
-                            matchingtraction->PowerSet( traction->psSection ); // zastąpienie wskazaniem sekcji
-                        }
-                        else if( false == traction->psSection->bSection
-                              && true == matchingtraction->psSection->bSection ) {
-                            //(Traction->psSection) jest podstacją, a (tmp->psSection) nazwą sekcji
-                            traction->PowerSet( matchingtraction->psSection ); // zastąpienie wskazaniem sekcji
-                        }
-                        else {
-                            // jeśli obie to sekcje albo obie podstacje, to będzie błąd
-                            ErrorLog( "Bad scenario: faulty traction power connection at location " + to_string( traction->pPoint2 ) );
-                        }
-                    }
+            // jeśli został podłączony
+            // tylko przęsło z izolatorem może nie mieć zasilania, bo ma 2, trzeba sprawdzać sąsiednie
+            if (traction->hvNext[ 1 ] && traction->psSection != nullptr
+                 && matchingtraction->psSection != nullptr && traction->psSection != matchingtraction->psSection) {
+                // to może być albo podłączenie podstacji lub kabiny sekcyjnej do sekcji, albo błąd
+                if( true == traction->psSection->bSection
+                 && false == matchingtraction->psSection->bSection ) {
+                    //(tmp->psSection) jest podstacją, a (Traction->psSection) nazwą sekcji
+                    matchingtraction->PowerSet( traction->psSection ); // zastąpienie wskazaniem sekcji
+                }
+                else if( false == traction->psSection->bSection
+                      && true == matchingtraction->psSection->bSection ) {
+                    //(Traction->psSection) jest podstacją, a (tmp->psSection) nazwą sekcji
+                    traction->PowerSet( matchingtraction->psSection ); // zastąpienie wskazaniem sekcji
+                }
+                else {
+                    // jeśli obie to sekcje albo obie podstacje, to będzie błąd
+                    ErrorLog( "Bad scenario: faulty traction power connection at location " + to_string( traction->pPoint2 ) );
                 }
             }
         }
@@ -822,8 +825,7 @@ traction_table::InitTraction() {
             }
             else if( traction->hvParallel == nullptr ) {
                 // jeśli jeszcze nie został włączony w kółko
-                auto *nTemp = find( traction->asParallel );
-                if( nTemp != nullptr ) {
+                if( auto *nTemp = find( traction->asParallel ); nTemp != nullptr ) {
                     // o ile zostanie znalezione przęsło o takiej nazwie
                     if( nTemp->hvParallel == nullptr ) {
                         // jeśli tamten jeszcze nie ma wskaźnika bieżni wspólnej

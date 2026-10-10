@@ -63,16 +63,16 @@ void trainingcard_panel::save_thread_func()
 		if (in_line.compare(0, magic.size(), magic) == 0)
 		{
 			temp << "<div><b>Miejsce: </b>" << (std::string(place.c_str())) << "</div><br />" << std::endl;
-			temp << "<div><b>Data: </b>" << (date) << "</div><br />" << std::endl;
-			temp << "<div><b>Czas: </b>" << (from) << " - " << (to) << "</div><br />" << std::endl;
-			temp << "<div><b>Imię (imiona) i nazwisko szkolonego: </b>" << (trainee_name) << "</div><br />" << std::endl;
-			temp << "<div><b>Data urodzenia: </b>" << (trainee_birthdate) << "</div><br />" << std::endl;
-			temp << "<div><b>Firma: </b>" << (trainee_company) << "</div><br />" << std::endl;
-			temp << "<div><b>Imię i nazwisko instruktora: </b>" << (instructor_name) << "</div><br />" << std::endl;
-			temp << "<div><b>Odcinek trasy: </b>" << (track_segment) << "</div><br />" << std::endl;
+			temp << "<div><b>Data: </b>" << date << "</div><br />" << std::endl;
+			temp << "<div><b>Czas: </b>" << from << " - " << to << "</div><br />" << std::endl;
+			temp << "<div><b>Imię (imiona) i nazwisko szkolonego: </b>" << trainee_name << "</div><br />" << std::endl;
+			temp << "<div><b>Data urodzenia: </b>" << trainee_birthdate << "</div><br />" << std::endl;
+			temp << "<div><b>Firma: </b>" << trainee_company << "</div><br />" << std::endl;
+			temp << "<div><b>Imię i nazwisko instruktora: </b>" << instructor_name << "</div><br />" << std::endl;
+			temp << "<div><b>Odcinek trasy: </b>" << track_segment << "</div><br />" << std::endl;
 			if (distance > 0.0f)
 				temp << "<div><b>Przebyta odległość: </b>" << std::round(distance) << " km</div><br />" << std::endl;
-			temp << "<div><b>Uwagi: </b><br />" << (remarks) << "</div>" << std::endl;
+			temp << "<div><b>Uwagi: </b><br />" << remarks << "</div>" << std::endl;
 		}
 		else
 		{
@@ -119,7 +119,7 @@ void trainingcard_panel::render_contents()
 		ImGui::EndPopup();
 	}
 
-	if (start_time_wall)
+	if (start_time_wall.has_value())
 	{
 		std::tm const tm = local_tm(*start_time_wall);
 		std::string rep = "Czas rozpoczęcia: " + std::to_string(tm.tm_year + 1900) + "-" + std::to_string(tm.tm_mon + 1) + "-" + std::to_string(tm.tm_mday) + " " + std::to_string(tm.tm_hour) +
@@ -154,7 +154,7 @@ void trainingcard_panel::render_contents()
 	ImGui::TextUnformatted("Uwagi");
 	ImGui::InputTextMultiline("##remarks", &remarks[0], remarks.size(), ImVec2(-1.0f, 200.0f));
 
-	if (!start_time_wall)
+	if (!start_time_wall.has_value())
 	{
 		if (ImGui::Button("Rozpocznij szkolenie"))
 		{
@@ -177,7 +177,7 @@ void trainingcard_panel::render_contents()
 		{
 			state.store(2);
 			if (simulation::Trains.sequence().size() > 0)
-				distance = simulation::Trains.sequence()[0]->Dynamic()->MoverParameters->DistCounter;
+				distance = static_cast<float>(simulation::Trains.sequence()[0]->Dynamic()->MoverParameters->DistCounter);
 
 			if (save_thread.joinable())
 				save_thread.join();
@@ -187,9 +187,9 @@ void trainingcard_panel::render_contents()
 	}
 }
 
-const std::string *trainingcard_panel::is_recording()
+const std::string *trainingcard_panel::is_recording() const
 {
-	if (!start_time_wall)
+	if (!start_time_wall.has_value())
 		return nullptr;
 
 	return &recording_timestamp;

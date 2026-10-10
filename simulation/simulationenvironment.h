@@ -38,7 +38,7 @@ public:
     // calculates current season of the year based on set simulation date
 	void compute_season( int const Yearday );
     // calculates current weather
-	void compute_weather();
+	void compute_weather() const;
     // data access
     inline auto const &
         sun() const {

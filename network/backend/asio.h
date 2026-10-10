@@ -18,13 +18,13 @@ namespace network::tcp
 		friend class client;
 
 	public:
-                connection(asio::io_context &io_ctx, bool client = false, size_t counter = 0);
+                explicit connection(asio::io_context &io_ctx, bool client = false, size_t counter = 0);
 		~connection();
 
-		virtual void connected() override;
-		virtual void disconnect() override;
-		virtual void send_messages(const std::vector<std::shared_ptr<message> > &messages) override;
-		virtual void send_message(const message &msg) override;
+		void connected() override;
+		void disconnect() override;
+		void send_messages(const std::vector<std::shared_ptr<message> > &messages) override;
+		void send_message(const message &msg) override;
 
 		asio::ip::tcp::socket m_socket;
 
@@ -32,7 +32,7 @@ namespace network::tcp
 		std::string m_header_buffer;
 		std::string m_body_buffer;
 
-		void write_message(const message &msg, std::ostream &stream);
+		void write_message(const message &msg, std::ostream &stream) const;
 		void send_data(std::shared_ptr<std::string> buffer);
 		void read_header();
 		void handle_header(const asio::error_code &err, size_t bytes_transferred);
@@ -55,13 +55,13 @@ namespace network::tcp
 	class client : public network::client
 	{
 	private:
-		void handle_accept(const asio::error_code &err);
+		void handle_accept(const asio::error_code &err) const;
 		asio::io_context &io_ctx;
 		std::string host;
 		uint32_t port;
 
 	protected:
-		virtual void connect() override;
+		void connect() override;
 
 	public:
 		client(asio::io_context &io_ctx, const std::string &host, uint32_t port);
@@ -73,9 +73,9 @@ namespace network::tcp
 	public:
 		asio_manager();
 
-		virtual std::shared_ptr<network::server> create_server(std::shared_ptr<std::fstream>, const std::string &conf) override;
-		virtual std::shared_ptr<network::client> create_client(const std::string &conf) override;
-		virtual void update() override;
+		std::shared_ptr<network::server> create_server(std::shared_ptr<std::fstream>, const std::string &conf) override;
+		std::shared_ptr<network::client> create_client(const std::string &conf) override;
+		void update() override;
 	};
 
 	asio_manager manager;

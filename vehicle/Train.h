@@ -59,7 +59,7 @@ private:
 };
 
 class control_mapper {
-    typedef std::unordered_map< TSubModel const *, std::string> submodelstring_map;
+    using submodelstring_map = std::unordered_map< TSubModel const *, std::string>;
     submodelstring_map m_controlnames;
     using stringset = std::unordered_set<std::string>;
     stringset m_names; // names of registered controls
@@ -71,7 +71,7 @@ public:
     std::string
         find( TSubModel const *Control ) const;
     bool
-        contains( std::string const Control ) const;
+        contains( std::string const &Control ) const;
 };
 
 class TTrain {
@@ -142,11 +142,11 @@ class TTrain {
         bool deserialize_mapping( cParser &Input );
     };
 
-	typedef std::vector<screen_entry> screenentry_sequence;
+	using screenentry_sequence = std::vector<screen_entry>;
 
 // methods
     bool CabChange(int iDirection);
-    bool ShowNextCurrent; // pokaz przd w podlaczonej lokomotywie (ET41)
+    bool ShowNextCurrent{false}; // pokaz przd w podlaczonej lokomotywie (ET41)
     bool InitializeCab(int NewCabNo, std::string const &asFileName);
     TTrain();
 	~TTrain();
@@ -181,8 +181,8 @@ class TTrain {
 
   private:
 // types
-    typedef void( *command_handler )( TTrain *Train, command_data const &Command );
-    typedef std::unordered_map<user_command, command_handler> commandhandler_map;
+    using command_handler = void (*)( TTrain *Train, command_data const &Command );
+    using commandhandler_map = std::unordered_map<user_command, command_handler>;
 // methods
     // clears state of all cabin controls
     void clear_cab_controls();
@@ -214,7 +214,7 @@ class TTrain {
     // update function subroutines
     void update_sounds( double const Deltatime );
     void update_sounds_runningnoise( sound_source &Sound );
-    void update_sounds_resonancenoise( sound_source &Sound );
+    void update_sounds_resonancenoise( sound_source &Sound ) const;
     void update_sounds_radio();
     inline
     end cab_to_end( int const End ) const {
@@ -817,31 +817,31 @@ public: // reszta może by?publiczna
     TButton btHaslerBrakes; // ciśnienie w cylindrach
     TButton btHaslerCurrent; // prąd na silnikach
 
-    std::optional<sound_source>
-        dsbNastawnikJazdy,
-        dsbNastawnikBocz,
-        dsbReverserKey,
-        dsbBuzzer, dsbBuzzerShp,
-        m_radiostop,
-        dsbSlipAlarm,
-        m_distancecounterclear,
-        dsbHasler,
-        dsbSwitch,
-        dsbPneumaticSwitch,
-        rsHiss,
-        rsHissU,
-        rsHissE,
-        rsHissX,
-        rsHissT,
-        rsSBHiss,
-        rsSBHissU,
-        rsBrake,
-        rsFadeSound,
-        rsRunningNoise,
-        rsResonanceNoise,
-        rsWindSound,
-        rsHuntingNoise,
-        m_rainsound;
+    std::optional<sound_source> dsbNastawnikJazdy;
+    std::optional<sound_source> dsbNastawnikBocz;
+    std::optional<sound_source> dsbReverserKey;
+    std::optional<sound_source> dsbBuzzer;
+    std::optional<sound_source> dsbBuzzerShp;
+    std::optional<sound_source> m_radiostop;
+    std::optional<sound_source> dsbSlipAlarm;
+    std::optional<sound_source> m_distancecounterclear;
+    std::optional<sound_source> dsbHasler;
+    std::optional<sound_source> dsbSwitch;
+    std::optional<sound_source> dsbPneumaticSwitch;
+    std::optional<sound_source> rsHiss;
+    std::optional<sound_source> rsHissU;
+    std::optional<sound_source> rsHissE;
+    std::optional<sound_source> rsHissX;
+    std::optional<sound_source> rsHissT;
+    std::optional<sound_source> rsSBHiss;
+    std::optional<sound_source> rsSBHissU;
+    std::optional<sound_source> rsBrake;
+    std::optional<sound_source> rsFadeSound;
+    std::optional<sound_source> rsRunningNoise;
+    std::optional<sound_source> rsResonanceNoise;
+    std::optional<sound_source> rsWindSound;
+    std::optional<sound_source> rsHuntingNoise;
+    std::optional<sound_source> m_rainsound;
     sound_source m_radiosound { sound_placement::internal, 2 * EU07_SOUND_CABCONTROLSCUTOFFRANGE }; // cached template for radio messages
     std::vector<std::pair<int, std::shared_ptr<sound_source>>> m_radiomessages; // list of currently played radio messages
 	std::vector<std::pair<std::reference_wrapper<std::optional<sound_source>>, glm::vec3>> CabSoundLocations; // list of offsets for manually located sounds;
@@ -857,14 +857,14 @@ public: // reszta może by?publiczna
     int iCabn { 0 }; // 0: mid, 1: front, 2: rear
     bool is_cab_initialized { false };
     // McZapkie: do poruszania sie po kabinie
-	glm::dvec3 pMechSittingPosition; // ABu 180404
+	glm::dvec3 pMechSittingPosition{0.0}; // ABu 180404
 	glm::dvec3 MirrorPosition(bool lewe);
-	glm::dvec3 pMechOffset; // base position of the driver in the cab
+	glm::dvec3 pMechOffset{0.0}; // base position of the driver in the cab
     glm::vec2 pMechViewAngle { 0.0, 0.0 }; // camera pitch and yaw values, preserved while in external view
 
 private:
-    double fBlinkTimer;
-    float fHaslerTimer;
+    double fBlinkTimer{0.0};
+    float fHaslerTimer{0.0f};
     float fConverterTimer; // hunter-261211: dla przekaznika
     float fMainRelayTimer; // hunter-141211: zalaczanie WSa z opoznieniem
 	float fBatteryTimer = {-1.f}; // Hirek: zalaczanie baterii z opoznieniem (tylko gdy zdefiniowano takie zachowanie w fiz)
@@ -879,7 +879,9 @@ private:
     float fHVoltage{ 0.0f }; // napi?cie dla dynamicznych ga?ek
     float fHCurrent[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f }; // pr?dy: suma i amperomierze 1,2,3
     float fEngine[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f }; // obroty te? trzeba pobra?
-    int iCarNo, iPowerNo, iUnitNo; // liczba pojazdow, czlonow napednych i jednostek spiętych ze sobą
+    int iCarNo;
+    int iPowerNo;
+    int iUnitNo; // liczba pojazdow, czlonow napednych i jednostek spiętych ze sobą
     bool bDoors[20][5]; // drzwi dla wszystkich czlonow; left+right, left, right, step_left, step_right
     int iUnits[20]; // numer jednostki
     int iDoorNo[20]; // liczba drzwi
@@ -896,7 +898,8 @@ private:
 	std::vector<std::tuple<bool, bool, int>> bCompressors;
     bool bHeat[8]; // grzanie
     // McZapkie: do syczenia
-    float fPPress, fNPress;
+    float fPPress{0.0f};
+    float fNPress{0.0f};
     bool m_mastercontrollerinuse { false };
     float m_mastercontrollerreturndelay { 0.f };
 	screenentry_sequence m_screens;
@@ -926,7 +929,7 @@ private:
     // plays provided sound from position of the radio
 	bool radio_message_played;
     void radio_message( sound_source *Message, int const Channel );
-    inline auto const RadioChannel() const { return Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1; }
+    inline auto RadioChannel() const { return Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1; }
     inline auto &RadioChannel() { return Dynamic()->Mechanik->iRadioChannel; }
     inline TDynamicObject *Dynamic() { return DynamicObject; };
     inline TDynamicObject const *Dynamic() const { return DynamicObject; };

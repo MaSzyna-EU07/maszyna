@@ -51,8 +51,7 @@ gamepad_input::init() {
     m_inputbuttons.clear();
     // NOTE: we're only checking for joystick_1 and rely for it to stay connected throughout.
     // not exactly flexible, but for quick hack it'll do
-    auto const name = glfwGetJoystickName( GLFW_JOYSTICK_1 );
-    if( name != nullptr ) {
+    if( auto const name = glfwGetJoystickName( GLFW_JOYSTICK_1 ); name != nullptr ) {
         WriteLog( "Connected gamepad: " + std::string( name ) );
         m_deviceid = GLFW_JOYSTICK_1;
     }
@@ -94,7 +93,7 @@ gamepad_input::poll() {
             if( button.state != buttons[ idx ] ) {
                 // button pressed or released, both are important
                 on_button(
-                    idx,
+                    static_cast<int>(idx),
                     buttons[idx] == 1 ? GLFW_PRESS : GLFW_RELEASE);
             }
             else {
@@ -102,7 +101,7 @@ gamepad_input::poll() {
                 if( button.state == GLFW_PRESS ) {
 
                     on_button(
-                        idx,
+                        static_cast<int>(idx),
                         GLFW_REPEAT );
                 }
             }
@@ -125,9 +124,9 @@ gamepad_input::poll() {
 }
 
 void
-gamepad_input::bind( std::vector< std::reference_wrapper<user_command> > &Targets, cParser &Input, std::unordered_map<std::string, user_command> const &Translator, std::string const Point ) {
+gamepad_input::bind( std::vector< std::reference_wrapper<user_command> > const &Targets, cParser &Input, std::unordered_map<std::string, user_command> const &Translator, std::string const &Point ) const {
 
-    for( auto &bindingtarget : Targets ) {
+    for( auto const &bindingtarget : Targets ) {
         // grab command(s) associated with the input pin
         auto const bindingcommandname{ Input.getToken<std::string>() };
         if( true == bindingcommandname.empty() ) {
@@ -154,12 +153,11 @@ bool
 gamepad_input::recall_bindings() {
 	std::string filePath = "eu07_input-gamepad.ini";
 
-	fs::path appPath = user_config_path("eu07_input-gamepad.ini");
-	if (!appPath.empty() && fs::exists(appPath))
+	if (fs::path appPath = user_config_path("eu07_input-gamepad.ini"); !appPath.empty() && fs::exists(appPath))
 		filePath = appPath.string();
 
 	// bindingparser tworzony zawsze, z wybran� �cie�k�
-	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
+	cParser bindingparser(filePath, cParser::buffer_FILE);
 
     if( false == bindingparser.ok() ) {
         return false;
@@ -169,7 +167,7 @@ gamepad_input::recall_bindings() {
     std::unordered_map<std::string, user_command> nametocommandmap;
     std::size_t commandid = 0;
     for( auto const &description : simulation::Commands_descriptions ) {
-        nametocommandmap.emplace(
+        nametocommandmap.try_emplace(
             description.name,
             static_cast<user_command>( commandid ) );
         ++commandid;
@@ -191,16 +189,16 @@ gamepad_input::recall_bindings() {
 
         std::string bindingpoint {};
         entryparser >> bindingpoint;
-        auto const splitbindingpoint { split_string_and_number( bindingpoint ) };
+        auto const [pointtype, pointindex]{ split_string_and_number( bindingpoint ) };
 
-        if( splitbindingpoint.first == "axis" ) {
+        if( pointtype == "axis" ) {
             // one or more sets of: [modeIDX] input type, parameters
             // [optional] modeIDX associates the set with control mode IDX
             // input types:
             // -- range commandname IDX; axis value is passed as paramIDX of commandname
             // -- 3state commandname commandname; positive axis value issues first commandname, negative value issues second commandname
 
-            auto const axisindex { splitbindingpoint.second };
+            auto const axisindex { pointindex };
             // sanity check, connected gamepad isn't guaranteed to have that many axes
             if( axisindex >= m_inputaxes.size() ) { continue; }
 
@@ -211,8 +209,7 @@ gamepad_input::recall_bindings() {
                 std::string key {};
                 entryparser >> key;
                 // check for potential mode indicator
-                auto const splitkey { split_string_and_number( key ) };
-                if( splitkey.first == "mode" ) {
+                if( auto const splitkey { split_string_and_number( key ) }; splitkey.first == "mode" ) {
                     // indicate we'll be processing specified mode
                     controlmode = splitkey.second;
                     continue;
@@ -231,12 +228,13 @@ gamepad_input::recall_bindings() {
                     std::get<0>( m_inputaxes[ axisindex ].bindings[ controlmode ] ) = bindingtype;
                     // retrieve regular commands associated with the axis and mode
                     switch( bindingtype ) {
-                        case input_type::value:
-                        case input_type::value_invert: {
+                        using enum gamepad_input::input_type;
+                        case value:
+                        case value_invert: {
                             bindingtargets.emplace_back( std::ref( std::get<1>( m_inputaxes[ axisindex ].bindings[ controlmode ] ) ) );
                             break;
                         }
-                        case input_type::threestate: {
+                        case threestate: {
                             bindingtargets.emplace_back( std::ref( std::get<1>( m_inputaxes[ axisindex ].bindings[ controlmode ] ) ) );
                             bindingtargets.emplace_back( std::ref( std::get<2>( m_inputaxes[ axisindex ].bindings[ controlmode ] ) ) );
                             break;
@@ -267,9 +265,9 @@ gamepad_input::recall_bindings() {
                 }
             }
         }
-        else if( splitbindingpoint.first == "button" ) {
+        else if( pointtype == "button" ) {
 
-            auto const buttonindex { splitbindingpoint.second };
+            auto const buttonindex { pointindex };
             // sanity check, connected gamepad isn't guaranteed to have that many buttons
             if( buttonindex >= m_inputbuttons.size() ) { continue; }
 
@@ -345,7 +343,8 @@ void
 gamepad_input::process_axes() {
 
     input_type inputtype;
-    user_command boundcommand1, boundcommand2;
+    user_command boundcommand1;
+    user_command boundcommand2;
     auto binding { std::tie( inputtype, boundcommand1, boundcommand2 ) };
 
     // since some commands can potentially collect values from two different axes we can't post them directly
@@ -369,20 +368,18 @@ gamepad_input::process_axes() {
                 auto const deltatime { Timer::GetDeltaTime() * 15.0 };
                 if( axis.state >= 0.0f ) {
                     // first bound command selected
-                    if( axis.accumulator < 0.0f ) {
-                        // we were issuing the other command, post notification that's no longer the case
-                        if( boundcommand2 != user_command::none ) {
-                            m_relay.post(
-                                boundcommand2,
-                                0, 0,
-                                GLFW_RELEASE,
-                                0 );
-                            axis.accumulator = 0.0f;
-                        }
+                    // we were issuing the other command, post notification that's no longer the case
+                    if (axis.accumulator < 0.0f && boundcommand2 != user_command::none) {
+                        m_relay.post(
+                            boundcommand2,
+                            0, 0,
+                            GLFW_RELEASE,
+                            0 );
+                        axis.accumulator = 0.0f;
                     }
                     if( boundcommand1 != user_command::none ) {
                         if( axis.state > m_deadzone ) {
-                            axis.accumulator += ( axis.state - m_deadzone ) / ( 1.0 - m_deadzone ) * deltatime;
+                            axis.accumulator += static_cast<float>(( axis.state - m_deadzone ) / ( 1.0 - m_deadzone ) * deltatime);
                             // we're making sure there's always a positive charge left in the accumulator,
                             // to more reliably decect when the stick goes from active to dead zone, below
                             while( axis.accumulator > 1.0f ) {
@@ -409,20 +406,18 @@ gamepad_input::process_axes() {
                 }
                 else {
                     // second bound command selected
-                    if( axis.accumulator > 0.0f ) {
-                        // we were issuing the other command, post notification that's no longer the case
-                        if( boundcommand1 != user_command::none ) {
-                            m_relay.post(
-                                boundcommand1,
-                                0, 0,
-                                GLFW_RELEASE,
-                                0 );
-                            axis.accumulator = 0.0f;
-                        }
+                    // we were issuing the other command, post notification that's no longer the case
+                    if (axis.accumulator > 0.0f && boundcommand1 != user_command::none) {
+                        m_relay.post(
+                            boundcommand1,
+                            0, 0,
+                            GLFW_RELEASE,
+                            0 );
+                        axis.accumulator = 0.0f;
                     }
                     if( boundcommand1 != user_command::none ) {
                         if( axis.state < -m_deadzone ) {
-                            axis.accumulator += ( axis.state + m_deadzone ) / ( 1.0 - m_deadzone ) * deltatime;
+                            axis.accumulator += static_cast<float>(( axis.state + m_deadzone ) / ( 1.0 - m_deadzone ) * deltatime);
                             // we're making sure there's always a positive charge left in the accumulator,
                             // to more reliably decect when the stick goes from active to dead zone, below
                             while( axis.accumulator < -1.0f ) {
@@ -464,19 +459,18 @@ gamepad_input::process_axes() {
                 else {
                     param = param > 0.0 ? (param - m_deadzone) / (1.0 - m_deadzone) : (param + m_deadzone) / (1.0 - m_deadzone);
                 }
-                if( param != 0.0 ) {
-                    if( inputtype == input_type::value_invert ) {
-                        param *= -1.0;
-                    }
+                if (param != 0.0 && inputtype == input_type::value_invert) {
+                    param *= -1.0;
                 }
                 // scale passed value according to command type
                 switch( boundcommand1 ) {
-                    case user_command::viewturn: {
+                    using enum user_command;
+                    case viewturn: {
                         param *= 10.0 * ( Timer::GetDeltaRenderTime() * 60.0 );
                         break;
                     }
-                    case user_command::movehorizontal:
-                    case user_command::movehorizontalfast: {
+                    case movehorizontal:
+                    case movehorizontalfast: {
                         // these expect value in -1:1 range
                         break;
                     }
@@ -494,17 +488,17 @@ gamepad_input::process_axes() {
         }
     }
     // issue remaining, assembled commands
-    for( auto const &command : commands ) {
-        auto const param1 { std::get<0>( command.second ) };
-        auto const param2 { std::get<1>( command.second ) };
-        auto &lastparams { m_lastcommandparams[ command.first ] };
+    for( auto const &[commandid, commandparams] : commands ) {
+        auto const param1 { std::get<0>( commandparams ) };
+        auto const param2 { std::get<1>( commandparams ) };
+        auto &lastparams { m_lastcommandparams[ commandid ] };
         if( param1 != 0.0 || std::get<0>(lastparams) != 0.0
          || param2 != 0.0 || std::get<1>(lastparams) != 0.0 ) {
             m_relay.post(
-                command.first,
+                commandid,
                 param1,
                 param2,
-                std::get<2>( command.second ),
+                std::get<2>( commandparams ),
                 // as we haven't yet implemented either item id system or multiplayer, the 'local' controlled vehicle and entity have temporary ids of 0
                 // TODO: pass correct entity id once the missing systems are in place
                 0 );

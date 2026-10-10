@@ -47,19 +47,19 @@ opengl_particles::update( opengl_camera const &Camera ) {
     // build billboard data for particles from visible sources
     auto const camerarotation { glm::mat3( Camera.modelview() ) };
     particle_vertex vertex;
-    for( auto const &source : sources ) {
+    for( auto const &[sourcekey, sourcedata] : sources ) {
 
         auto const particlecolor {
             glm::clamp(
-                source.second.color()
+                sourcedata.color()
                 * ( glm::vec3 { Global.DayLight.ambient } + 0.35f * glm::vec3{ Global.DayLight.diffuse } )
                 * 255.f,
                 glm::vec3{ 0.f }, glm::vec3{ 255.f } ) };
-        auto const &particles { source.second.sequence() };
+        auto const &particles { sourcedata.sequence() };
         // TODO: put sanity cap on the overall amount of particles that can be drawn
         auto const sizestep { 256.0 * billboard_vertices.size() };
         m_particlevertices.reserve(
-            sizestep * std::ceil( m_particlevertices.size() + ( particles.size() * billboard_vertices.size() ) / sizestep ) );
+            static_cast<std::size_t>( sizestep * std::ceil( static_cast<double>(m_particlevertices.size()) + ( static_cast<double>(particles.size() * billboard_vertices.size()) ) / sizestep ) ) );
         for( auto const &particle : particles ) {
             // TODO: particle color support
             vertex.color[ 0 ] = static_cast<std::uint_fast8_t>( particlecolor.r );
@@ -70,9 +70,9 @@ opengl_particles::update( opengl_camera const &Camera ) {
             auto const offset { glm::vec3{ particle.position - Camera.position() } };
             auto const rotation { glm::angleAxis( particle.rotation, glm::vec3{ 0.f, 0.f, 1.f } ) };
 
-            for( auto const &billboardvertex : billboard_vertices ) {
-                vertex.position = offset + ( rotation * billboardvertex.first * particle.size ) * camerarotation;
-                vertex.texture = billboardvertex.second;
+            for( auto const &[billboardoffset, billboardtexture] : billboard_vertices ) {
+                vertex.position = offset + ( rotation * billboardoffset * particle.size ) * camerarotation;
+                vertex.texture = billboardtexture;
 
                 m_particlevertices.emplace_back( vertex );
             }
@@ -147,7 +147,7 @@ opengl_particles::render( GLint const Textureunit ) {
     ::glTexCoordPointer( 2, GL_FLOAT, sizeof( particle_vertex ), reinterpret_cast<void const *>( sizeof( float ) * 3 + sizeof( std::uint8_t ) * 4 ) );
     ::glEnableClientState( GL_TEXTURE_COORD_ARRAY );
     // ...draw...
-    ::glDrawArrays( GL_QUADS, 0, m_particlevertices.size() );
+    ::glDrawArrays( GL_QUADS, 0, static_cast<GLsizei>(m_particlevertices.size()) );
     // ...and cleanup
     ::glPopClientAttrib();
     ::glBindBuffer( GL_ARRAY_BUFFER, 0 );

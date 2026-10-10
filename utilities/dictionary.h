@@ -23,11 +23,11 @@ struct dictionary_source {
     keyvaluepair_sequence<std::vector<glm::vec2>> vec2_lists;
 // constructors
     dictionary_source() = default;
-    dictionary_source( std::string const &Input );
+    explicit dictionary_source( std::string const &Input );
 // methods
     inline void insert( std::string const &Key, double const Value )      { floats.emplace_back( Key, Value ); }
     inline void insert( std::string const &Key, int const Value )         { integers.emplace_back( Key, Value ); }
     inline void insert( std::string const &Key, bool const Value )        { bools.emplace_back( Key, Value ); }
-    inline void insert( std::string const &Key, std::string const Value ) { strings.emplace_back( Key, Value ); }
-    inline void insert( std::string const &Key, std::vector<glm::vec2> const Value ) { vec2_lists.emplace_back( Key, Value ); }
+    inline void insert( std::string const &Key, std::string const &Value ) { strings.emplace_back( Key, Value ); }
+    inline void insert( std::string const &Key, std::vector<glm::vec2> const &Value ) { vec2_lists.emplace_back( Key, Value ); }
 };

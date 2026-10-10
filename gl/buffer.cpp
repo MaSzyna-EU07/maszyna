@@ -3,7 +3,7 @@
 
 GLenum gl::buffer::glenum_target(gl::buffer::targets target)
 {
-	static GLenum mapping[13] =
+	static std::array<GLenum, 13> const mapping =
     {
         GL_ARRAY_BUFFER,
         GL_ATOMIC_COUNTER_BUFFER,
@@ -22,7 +22,7 @@ GLenum gl::buffer::glenum_target(gl::buffer::targets target)
     return mapping[target];
 }
 
-void gl::buffer::bind(targets target)
+void gl::buffer::bind(targets target) const
 {
     if (binding_points[target] == *this)
         return;
@@ -31,7 +31,7 @@ void gl::buffer::bind(targets target)
     binding_points[target] = *this;
 }
 
-void gl::buffer::bind_base(targets target, GLuint index)
+void gl::buffer::bind_base(targets target, GLuint index) const
 {
     glBindBufferBase(glenum_target(target), index, *this);
     binding_points[target] = *this;
@@ -47,7 +47,7 @@ void gl::buffer::unbind(targets target)
 
 void gl::buffer::unbind()
 {
-	for (size_t i = 0; i < sizeof(binding_points) / sizeof(GLuint); i++)
+	for (size_t i = 0; i < std::size(binding_points); i++)
 		unbind((targets)i);
 }
 
@@ -87,7 +87,7 @@ void gl::buffer::download(targets target, void *data, int offset, GLsizeiptr siz
     }
     else
     {
-        void *glbuf = glMapBufferRange(glenum_target(target), offset, size, GL_MAP_READ_BIT);
+        void const *glbuf = glMapBufferRange(glenum_target(target), offset, size, GL_MAP_READ_BIT);
         memcpy(data, glbuf, size);
         glUnmapBuffer(glenum_target(target));
     }

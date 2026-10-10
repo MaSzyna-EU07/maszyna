@@ -70,38 +70,32 @@ static int const P_ed = 5;
 class TPrzekladnik : public TReservoir // przekladnik (powtarzacz)
 
 {
-  private:
   public:
     std::shared_ptr<TReservoir> BrakeRes;
     std::shared_ptr<TReservoir> Next;
 
-	TPrzekladnik() : TReservoir() {};
+	using TReservoir::TReservoir;
     virtual void Update(double dt);
 };
 
 class TRura : public TPrzekladnik // nieprzekladnik, rura laczaca
 
 {
-  private:
   public:
-	  TRura() : TPrzekladnik() {};
-    virtual double P(void) /*override*/;
-    virtual void Update(double dt) /*override*/;
+	  using TPrzekladnik::TPrzekladnik;
+    double P(void) override;
+    void Update(double dt) override;
 };
 
 class TPrzeciwposlizg : public TRura // przy napelnianiu - rura, przy poslizgu - upust
 
 {
   private:
-    bool Poslizg;
+    bool Poslizg{false};
 
   public:
     void SetPoslizg(bool flag);
-    void Update(double dt) /*override*/;
-	inline TPrzeciwposlizg() : TRura()
-	{
-		Poslizg = false;
-	}
+    void Update(double dt) override;
 };
 
 // przekladnik dwustopniowy
@@ -117,10 +111,8 @@ class TRapid : public TPrzekladnik {
   public:
     void SetRapidParams(double mult, double size);
     void SetRapidStatus(bool rs);
-    void Update(double dt) /*override*/;
-	inline TRapid() :
-		TPrzekladnik()
-	{}
+    void Update(double dt) override;
+	using TPrzekladnik::TPrzekladnik;
 };
 
 // AL2
@@ -131,10 +123,8 @@ class TPrzekCiagly : public TPrzekladnik {
 
   public:
     void SetMult(double m);
-    void Update(double dt) /*override*/;
-	inline TPrzekCiagly() :
-		TPrzekladnik()
-	{}
+    void Update(double dt) override;
+	using TPrzekladnik::TPrzekladnik;
 };
 
 // podwojny zawor zwrotny
@@ -145,20 +135,15 @@ class TPrzek_PZZ : public TPrzekladnik {
 
   public:
     void SetLBP(double P);
-    void Update(double dt) /*override*/;
-	inline TPrzek_PZZ() :
-		TPrzekladnik()
-	{}
+    void Update(double dt) override;
+	using TPrzekladnik::TPrzekladnik;
 };
 
 class TPrzekZalamany : public TPrzekladnik // Knicksventil
 
 {
-  private:
   public:
-	  TPrzekZalamany() :
-		  TPrzekladnik()
-	  {}
+	  using TPrzekladnik::TPrzekladnik;
 };
 
 // przy napelnianiu - rura, przy hamowaniu - upust
@@ -169,10 +154,8 @@ class TPrzekED : public TRura  {
 
   public:
     void SetP(double P);
-    void Update(double dt) /*override*/;
-	inline TPrzekED() :
-		TRura()
-	{}
+    void Update(double dt) override;
+	using TRura::TRura;
 };
 
 class TNESt3 : public TBrake {
@@ -206,22 +189,20 @@ class TNESt3 : public TBrake {
     double LBP = 0.0; // cisnienie hamulca pomocniczego
 
   public:
-	inline TNESt3(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) :
-           TBrake(       i_mbp,        i_bcr,        i_bcd,        i_brc,     i_bcn,     i_BD,     i_mat,     i_ba,     i_nbpa)
-	{}
-    void Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF ) /*override*/;
-    virtual double GetPF( double const PP, double const dt, double const Vel ) /*override*/; // przeplyw miedzy komora wstepna i PG
-    void EStParams(double i_crc); // parametry charakterystyczne dla ESt
-    virtual double GetCRP() /*override*/;
+	using TBrake::TBrake;
+    void Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF ) override;
+    double GetPF( double const PP, double const dt, double const Vel ) override; // przeplyw miedzy komora wstepna i PG
+    void EStParams(double i_crc) const; // parametry charakterystyczne dla ESt
+    double GetCRP() override;
     void CheckState(double const BCP, double &dV1); // glowny przyrzad rozrzadczy
     void CheckReleaser(double const dt); // odluzniacz
-    double CVs(double const BP); // napelniacz sterujacego
-    double BVs(double const BCP); // napelniacz pomocniczego
+    double CVs(double const BP) const; // napelniacz sterujacego
+    double BVs(double const BCP) const; // napelniacz pomocniczego
     void SetSize( int const size, std::string const &params ); // ustawianie dysz (rozmiaru ZR), przekladniki
-    void PLC(double const mass); // wspolczynnik cisnienia przystawki wazacej
-    void SetLP(double const TM, double const LM, double const TBP); // parametry przystawki wazacej
-    virtual void ForceEmptiness() /*override*/; // wymuszenie bycia pustym
-    void SetLBP(double const P); // cisnienie z hamulca pomocniczego
+    void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej
+    void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
+    void ForceEmptiness() override; // wymuszenie bycia pustym
+    void SetLBP(double const P) override; // cisnienie z hamulca pomocniczego
 };
 
 extern double d2A( double const d );

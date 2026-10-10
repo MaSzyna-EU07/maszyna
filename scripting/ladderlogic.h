@@ -27,7 +27,7 @@ public:
     };
 // constructors
     template<typename ...Args_>
-    basic_element( basic_element::type_e Type = basic_element::type_e::variable, Args_ ...Args );
+    explicit basic_element( basic_element::type_e Type = basic_element::type_e::variable, Args_ ...Args );
 // methods
     // data access
     auto input() -> int &;
@@ -60,7 +60,7 @@ class basic_controller {
 
 public:
 // methods
-    auto load( std::string const &Filename ) -> bool;
+    auto load( std::string_view Filename) -> bool;
     auto update( double const Timestep ) -> int;
     // finds element with specified name, potentially creating new element of specified type initialized with provided arguments. returns: handle to the element
     template<typename ...Args_>
@@ -100,7 +100,7 @@ private:
 // methods
     auto deserialize_operation( cParser &Input ) -> bool;
     // adds provided item to the collection. returns: true if there's no duplicate with the same name, false otherwise
-    auto insert( std::string const Name, basic_element Element ) -> element_handle;
+    auto insert( std::string const &Name, basic_element Element ) -> element_handle;
     // runs one cycle of current program. returns: error code or 0 if there's no error
     auto run() -> int;
     void log_error( std::string const &Error, int const Line = -1 ) const;
@@ -110,13 +110,13 @@ private:
         return Value == 0 ? 1 : 0; }
     // element access
     inline
-    auto element( element_handle const Element ) const -> basic_element const {
+    auto element( element_handle const Element ) const -> basic_element {
         return m_elements[ Element - 1 ]; }
     inline
     auto element( element_handle const Element ) -> basic_element & {
         return m_elements[ Element - 1 ]; }
 // members
-    static std::map<std::string, basic_controller::opcode_e> const m_operationcodemap;
+    static std::map<std::string, basic_controller::opcode_e, std::less<>> const m_operationcodemap;
     element_sequence m_elements; // collection of elements accessed by the plc program
     name_sequence m_elementnames;
     handle_sequence m_timerhandles; // indices of timer elements, timer update optimization helper
@@ -158,7 +158,7 @@ auto basic_controller::find_or_insert( std::string const &Name, basic_element::t
     auto index { 1 };
     for( auto const &name : m_elementnames ) {
         if( name == Name ) {
-            return index;
+            return static_cast<element_handle>(index);
         }
         ++index;
     }

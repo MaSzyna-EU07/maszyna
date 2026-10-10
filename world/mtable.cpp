@@ -14,7 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "utilities/utilities.h"
 
-double TTrainParameters::CheckTrainLatency()
+double TTrainParameters::CheckTrainLatency() const
 {
     if (LastStationLatency > 1.0 || LastStationLatency < 0)
         return LastStationLatency; /*spoznienie + lub do przodu - z tolerancja 1 min*/
@@ -22,7 +22,7 @@ double TTrainParameters::CheckTrainLatency()
         return 0;
 }
 
-double TTrainParameters::WatchMTable(double DistCounter)
+double TTrainParameters::WatchMTable(double DistCounter) const
 { // zwraca odleglość do najblizszej stacji z zatrzymaniem
     double dist;
 
@@ -105,7 +105,7 @@ bool TTrainParameters::UpdateMTable( scenario_time const &Time, std::string cons
     return UpdateMTable( Time.data().wHour, Time.data().wMinute + Time.data().wSecond * 0.0167, NewName );
 }
 
-bool TTrainParameters::UpdateMTable(double hh, double mm, std::string const &NewName)
+bool TTrainParameters::UpdateMTable(double hh, double mm, std::string_view NewName)
 /*odfajkowanie dojechania do stacji (NewName) i przeliczenie opóźnienia*/
 {
     bool OK;
@@ -163,7 +163,7 @@ void TTrainParameters::StationIndexInc()
     ++StationIndex;
 }
 
-bool TTrainParameters::IsTimeToGo(double hh, double mm)
+bool TTrainParameters::IsTimeToGo(double hh, double mm) const
 // sprawdzenie, czy można już odjechać z aktualnego zatrzymania
 // StationIndex to numer następnego po dodarciu do aktualnego
 {
@@ -205,7 +205,7 @@ TTrainParameters::TTrainParameters(std::string const &NewTrainName)
     NewName(NewTrainName);
 }
 
-void TTrainParameters::NewName(std::string const &NewTrainName)
+void TTrainParameters::NewName(std::string_view NewTrainName)
 /*wstępne ustawienie parametrów rozkładu jazdy*/
 {
     TrainName = NewTrainName;
@@ -217,9 +217,9 @@ void TTrainParameters::NewName(std::string const &NewTrainName)
     Direction = 1;
     Relation1 = "";
     Relation2 = "";
-    for (int i = 0; i < MaxTTableSize + 1; ++i)
+    for (auto &tableline : TimeTable)
     {
-        TimeTable[ i ] = TMTableLine();
+        tableline = TMTableLine();
     }
     TTVmax = 100; /*wykasowac*/
     BrakeRatio = 0;
@@ -227,7 +227,7 @@ void TTrainParameters::NewName(std::string const &NewTrainName)
     LocLoad = 0;
 }
 
-void TTrainParameters::UpdateVelocity(int StationCount, double vActual)
+void TTrainParameters::UpdateVelocity(int /*Stationcount*/, double vActual)
 // zapisywanie prędkości maksymalnej do wcześniejszych odcinków
 // wywoływane z numerem ostatniego przetworzonego przystanku
 {
@@ -235,7 +235,7 @@ void TTrainParameters::UpdateVelocity(int StationCount, double vActual)
     // TTVmax:=vActual;  {PROWIZORKA!!!}
     while (i >= 0 && TimeTable[i].vmax == -1)
     {
-        TimeTable[i].vmax = vActual; // prędkość dojazdu do przystanku i
+        TimeTable[i].vmax = static_cast<float>(vActual); // prędkość dojazdu do przystanku i
         --i; // ewentualnie do poprzedniego też
     }
 }
@@ -245,7 +245,7 @@ void TTrainParameters::UpdateVelocity(int StationCount, double vActual)
 //	return false;
 //}
 
-bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
+bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double vmax)
 // wczytanie pliku-tabeli z rozkładem przesuniętym o (fPlus); (vMax) nie ma znaczenia
 {
     std::string lines;
@@ -254,7 +254,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
     bool EndTable;
     double vActual;
 
-    int ConversionError = 0;
+    int conversionerror = 0;
     EndTable = false;
     if (TrainName == "")
     { // jeśli pusty rozkład
@@ -262,7 +262,6 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
     }
     else
     {
-        ConversionError = 666;
         vActual = -1;
         s = scnpath + TrainName + ".txt";
 		replace_slashes(s);
@@ -278,15 +277,15 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
             {
                 TTVmax = vmax; // Ra 2014-07: zamiast rozkładu można podać Vmax
                 UpdateVelocity(StationCount, vmax); // ograniczenie do prędkości startowej
-                ConversionError = 0;
+                conversionerror = 0;
             }
             else
-                ConversionError = -8; /*Ra: ten błąd jest niepotrzebny*/
+                conversionerror = -8; /*Ra: ten błąd jest niepotrzebny*/
         }
         else
         { /*analiza rozkładu jazdy*/
-            ConversionError = 0;
-            while (fin.good() && !(ConversionError != 0 || EndTable))
+            conversionerror = 0;
+            while (fin.good() && !(conversionerror != 0 || EndTable))
             {
                 std::getline(fin, lines); /*wczytanie linii*/
                 if (contains( lines, "___________________") ) /*linia pozioma górna*/
@@ -354,7 +353,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                         win1250_to_ascii( Relation1 );
                     }
                     else
-                        ConversionError = -5;
+                        conversionerror = -5;
                     while (fin >> s || !fin.bad())
                     {
                         if (s == "Relacja")
@@ -409,10 +408,10 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                             if (s == "[")
                                 fin >> s;
                             else
-                                ConversionError = -4;
+                                conversionerror = -4;
                             if (false == contains( s,"|") )
                             {
-                                record->km = atof(s.c_str());
+                                record->km = static_cast<float>(atof(s.c_str()));
                                 fin >> s;
                             }
                             if (contains( s,"|_____|")) /*zmiana predkosci szlakowej*/
@@ -439,12 +438,12 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 if (contains( s, hrsd) )
                                 {
                                     record->Ah = atoi( s.substr(0, s.find(hrsd)).c_str()); // godzina przyjazdu
-                                    record->Am = atof(s.substr(s.find(hrsd) + 1, s.length()).c_str()); // minuta przyjazdu
+                                    record->Am = static_cast<float>(atof(s.substr(s.find(hrsd) + 1, s.length()).c_str())); // minuta przyjazdu
                                 }
                                 else
                                 {
                                     record->Ah = TimeTable[StationCount - 1].Ah; // godzina z poprzedniej pozycji
-                                    record->Am = atof(s.c_str()); // bo tylko minuty podane
+                                    record->Am = static_cast<float>(atof(s.c_str())); // bo tylko minuty podane
                                 }
                             }
                             do
@@ -452,7 +451,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 fin >> s;
                             } while (!(s != "|" || fin.bad()));
                             if (s != "]")
-                                record->tm = atof(s.c_str());
+                                record->tm = static_cast<float>(atof(s.c_str()));
                             do
                             {
                                 fin >> s;
@@ -490,10 +489,10 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                     if( entry.front() != 'R' ) {
                                         continue;
                                     }
-                                    auto const entrysplit { split_string_and_number( entry ) };
-                                    if( entrysplit.first == "R"
-                                     && entrysplit.second <= 10 ) {
-                                        auto const radiochannel { entrysplit.second };
+                                    auto const [entrytype, entrynumber]{ split_string_and_number( entry ) };
+                                    if( entrytype == "R"
+                                     && entrynumber <= 10 ) {
+                                        auto const radiochannel { entrynumber };
                                         if( record->radio_channel == -1
                                          || radiochannel != activeradiochannel ) {
                                             // if the station has more than one radiochannel listed,
@@ -514,12 +513,12 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 if (contains( s, hrsd) )
                                 {
                                     record->Dh = atoi(s.substr(0, s.find(hrsd)).c_str()); // godzina odjazdu
-                                    record->Dm = atof(s.substr(s.find(hrsd) + 1, s.length()).c_str()); // minuta odjazdu
+                                    record->Dm = static_cast<float>(atof(s.substr(s.find(hrsd) + 1, s.length()).c_str())); // minuta odjazdu
                                 }
                                 else
                                 {
                                     record->Dh = TimeTable[StationCount - 1].Dh; // godzina z poprzedniej pozycji
-                                    record->Dm = atof(s.c_str()); // bo tylko minuty podane
+                                    record->Dm = static_cast<float>(atof(s.c_str())); // bo tylko minuty podane
                                 }
                             }
                             else
@@ -532,7 +531,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 fin >> s;
                             } while (!(s != "|" || fin.bad()));
                             if (s != "]")
-                                record->tm = atof(s.c_str());
+                                record->tm = static_cast<float>(atof(s.c_str()));
                             do
                             {
                                 fin >> s;
@@ -565,20 +564,16 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
             fin.close();
         }
     }
-    if (ConversionError == 0)
-    {
-        if (TimeTable[1].StationName == Relation1) // jeśli nazwa pierwszego zgodna z relacją
-            if (TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
-            { // to mamy zatrzymanie na pierwszym, a nie przelot
-                TimeTable[1].Ah = TimeTable[1].Dh;
-                TimeTable[1].Am = TimeTable[1].Dm;
-            }
+    // jeśli nazwa pierwszego zgodna z relacją
+    if (conversionerror == 0 && TimeTable[1].StationName == Relation1 && TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
+    { // to mamy zatrzymanie na pierwszym, a nie przelot
+        TimeTable[1].Ah = TimeTable[1].Dh;
+        TimeTable[1].Am = TimeTable[1].Dm;
     }
     //
     load_sounds();
     // potentially offset table times
-    auto const timeoffset { static_cast<int>( Global.ScenarioTimeOffset * 60 ) + iPlus };
-    if( timeoffset != 0 ) // jeżeli jest przesunięcie rozkładu
+    if( auto const timeoffset { static_cast<int>( Global.ScenarioTimeOffset * 60 ) + iPlus }; timeoffset != 0 ) // jeżeli jest przesunięcie rozkładu
     {
         long i_end = StationCount + 1;
         float adjustedtime; // do zwiększania czasu
@@ -586,19 +581,19 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
         {
             if (TimeTable[i].Ah >= 0)
             {
-                adjustedtime = clamp_circular<float>( TimeTable[i].Ah * 60 + TimeTable[i].Am + timeoffset, 24 * 60 ); // nowe minuty
+                adjustedtime = clamp_circular<float>( static_cast<float>(TimeTable[i].Ah * 60) + TimeTable[i].Am + static_cast<float>(timeoffset), 24 * 60 ); // nowe minuty
                 TimeTable[i].Am = int(60 * adjustedtime) % 3600 / 60.f;
                 TimeTable[i].Ah = int(adjustedtime / 60) % 24;
             }
             if (TimeTable[i].Dh >= 0)
             {
-                adjustedtime = clamp_circular<float>( TimeTable[i].Dh * 60 + TimeTable[i].Dm + timeoffset, 24 * 60 ); // nowe minuty
+                adjustedtime = clamp_circular<float>( static_cast<float>(TimeTable[i].Dh * 60) + TimeTable[i].Dm + static_cast<float>(timeoffset), 24 * 60 ); // nowe minuty
                 TimeTable[i].Dm = int(60 * adjustedtime) % 3600 / 60.f;
                 TimeTable[i].Dh = int(adjustedtime / 60) % 24;
             }
         }
     }
-    return ConversionError == 0;
+    return conversionerror == 0;
 }
 
 void
@@ -615,26 +610,26 @@ TTrainParameters::load_sounds() {
                 station.StationName.substr( 0, station.StationName.size() - 3 ) :
                 station.StationName ) };
 
-        auto const lookup {
+        auto const [filepath, fileextension]{
             FileExists(
                 { Global.asCurrentSceneryPath + stationname, std::string{ paths::sounds } + "sip/" + stationname },
                 { ".ogg", ".flac", ".wav" } ) };
-        if( lookup.first.empty() ) {
+        if( filepath.empty() ) {
             continue;
         }
         //  wczytanie dźwięku odjazdu w wersji radiowej (słychać tylko w kabinie)
         station.name_sound =
             sound_source{ sound_placement::engine, EU07_SOUND_CABANNOUNCEMENTCUTOFFRANGE }
-                .deserialize( lookup.first + lookup.second, sound_type::single );
+                .deserialize( filepath + fileextension, sound_type::single );
     }
 }
 
-bool TTrainParameters::DirectionChange()
+bool TTrainParameters::DirectionChange() const
 // sprawdzenie, czy po zatrzymaniu wykonać kolejne komendy
 {
-    if (StationIndex > 0 && StationIndex < StationCount) // dla ostatniej stacji nie
-        if (contains( TimeTable[StationIndex].StationWare, '@') )
-            return true;
+    // dla ostatniej stacji nie
+    if (StationIndex > 0 && StationIndex < StationCount && contains( TimeTable[StationIndex].StationWare, '@'))
+        return true;
     return false;
 }
 

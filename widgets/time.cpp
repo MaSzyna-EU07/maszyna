@@ -18,15 +18,16 @@ void ui::time_panel::render_contents()
 
 	if (ImGui::Button(STR_C("Apply")))
 	{
-        m_relay.post(user_command::setdatetime, (double)yearday, time * 60.0, 1, 0);
-		m_relay.post(user_command::setweather, fog, overcast, 1, 0);
-		m_relay.post(user_command::settemperature, temperature, overcast, 1, 0);
+        using enum user_command;
+        m_relay.post(setdatetime, (double)yearday, time * 60.0, 1, 0);
+		m_relay.post(setweather, fog, overcast, 1, 0);
+		m_relay.post(settemperature, temperature, overcast, 1, 0);
 	}
 }
 
 void ui::time_panel::open()
 {
-	auto &data = simulation::Time.data();
+	auto const &data = simulation::Time.data();
 	time = (float)data.wHour + (float)data.wMinute / 60.0f;
 
 	yearday = simulation::Time.year_day();

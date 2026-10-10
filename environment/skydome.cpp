@@ -53,8 +53,7 @@ CSkyDome::CSkyDome (int const Tesselation) :
     Generate();
 }
 
-CSkyDome::~CSkyDome() {
-}
+CSkyDome::~CSkyDome() = default;
 
 //******************************************************************************//
 
@@ -71,13 +70,13 @@ void CSkyDome::Generate() {
 
     for( int i = 0; i <= latitudes; ++i ) {
 
-        float const latitude = M_PI * ( -0.5f + (float)i / latitudes / 2 );  // half-sphere only
+        auto const latitude = static_cast<float>(M_PI * ( -0.5f + (float)i / static_cast<float>(latitudes) / 2 ));  // half-sphere only
         float const z = std::sin( latitude );
         float const zr = std::cos( latitude );
 
         for( int j = 0; j <= longitudes; ++j ) {
 
-            float const longitude = 2.0 * M_PI * (float)j / longitudes;
+            auto const longitude = static_cast<float>(2.0 * M_PI * (float)j / longitudes);
             float const x = std::cos( longitude );
             float const y = std::sin( longitude );
 /*
@@ -147,7 +146,7 @@ void CSkyDome::SetOvercastFactor( float const Overcast ) {
 	m_overcast = std::clamp( Overcast, 0.0f, 1.0f ) * 0.75f; // going above 0.65 makes the model go pretty bad, appearance-wise
 }
 
-void CSkyDome::GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity ) {
+void CSkyDome::GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity ) const {
 
 	Perez[ 0 ] = Distribution[ 0 ][ 0 ] * Turbidity + Distribution[ 0 ][ 1 ];
 	Perez[ 1 ] = Distribution[ 1 ][ 0 ] * Turbidity + Distribution[ 1 ][ 1 ];
@@ -156,7 +155,7 @@ void CSkyDome::GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float
 	Perez[ 4 ] = Distribution[ 4 ][ 0 ] * Turbidity + Distribution[ 4 ][ 1 ];
 }
 
-float CSkyDome::GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, const float Turbidity ) {
+float CSkyDome::GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, const float Turbidity ) const {
 
 	const float theta2 = Theta*Theta;
 	const float theta3 = Theta*theta2;
@@ -167,15 +166,15 @@ float CSkyDome::GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, cons
 
 }
 
-float CSkyDome::PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) {
+float CSkyDome::PerezFunctionO1( float const Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) const {
 
-	const float val = ( 1.0f + Perezcoeffs[ 0 ] * std::exp( Perezcoeffs[ 1 ] ) ) *
-						( 1.0f + Perezcoeffs[ 2 ] * std::exp( Perezcoeffs[ 3 ] * Thetasun ) + Perezcoeffs[ 4 ] * std::pow( std::cos( Thetasun ), 2 ) );
+	const auto val = static_cast<float>(( 1.0f + Perezcoeffs[ 0 ] * std::exp( Perezcoeffs[ 1 ] ) ) *
+						( 1.0f + Perezcoeffs[ 2 ] * std::exp( Perezcoeffs[ 3 ] * Thetasun ) + Perezcoeffs[ 4 ] * std::pow( std::cos( Thetasun ), 2 ) ));
 
 	return Zenithval / val;
 }
 
-float CSkyDome::PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) {
+float CSkyDome::PerezFunctionO2( float const Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) const {
 	// iCosTheta = 1.0f / cosf(theta)
 	// cosGamma2 = SQR( cosf( gamma ) )
 	return Zenithval * ( 1.0f + Perezcoeffs[ 0 ] * std::exp( Perezcoeffs[ 1 ] * Icostheta ) ) * 
@@ -188,7 +187,7 @@ void CSkyDome::RebuildColors() {
     auto gammacorrection = glm::mix( glm::vec3( 1.0f ), glm::vec3( 0.45f ), twilightfactor );
 
 	// get zenith luminance
-	float const chi = ( 4.0f / 9.0f - m_turbidity / 120.0f ) * ( M_PI - 2.0f * m_thetasun );
+	auto const chi = static_cast<float>(( 4.0f / 9.0f - m_turbidity / 120.0f ) * ( M_PI - 2.0f * m_thetasun ));
 	float zenithluminance = ( 4.0453f * m_turbidity - 4.9710f ) * std::tan( chi ) - 0.2155f * m_turbidity + 2.4192f;
 
 	// get x / y zenith
@@ -196,22 +195,26 @@ void CSkyDome::RebuildColors() {
 	float zenithy = GetZenith( m_zenithymatrix, m_thetasun, m_turbidity );
 
 	// get perez function parametrs
-	float perezluminance[5], perezx[5], perezy[5];  
-	GetPerez( perezluminance, m_distributionluminance, m_turbidity );
-	GetPerez( perezx, m_distributionxcomp, m_turbidity );
-	GetPerez( perezy, m_distributionycomp, m_turbidity );
+	std::array<float, 5> perezluminance{};
+	std::array<float, 5> perezx{};
+	std::array<float, 5> perezy{};
+	GetPerez( perezluminance.data(), m_distributionluminance, m_turbidity );
+	GetPerez( perezx.data(), m_distributionxcomp, m_turbidity );
+	GetPerez( perezy.data(), m_distributionycomp, m_turbidity );
 
 	// make some precalculation
-	zenithx = PerezFunctionO1( perezx, m_thetasun, zenithx );
-	zenithy = PerezFunctionO1( perezy, m_thetasun, zenithy );
-	zenithluminance = PerezFunctionO1( perezluminance, m_thetasun, zenithluminance );
+	zenithx = PerezFunctionO1( perezx.data(), m_thetasun, zenithx );
+	zenithy = PerezFunctionO1( perezy.data(), m_thetasun, zenithy );
+	zenithluminance = PerezFunctionO1( perezluminance.data(), m_thetasun, zenithluminance );
 
     // start with fresh average for the new pass
-    glm::vec3 averagecolor, averagehorizoncolor;
+    glm::vec3 averagecolor;
+    glm::vec3 averagehorizoncolor;
 
 	// trough all vertices
 	glm::vec3 vertex;
-	glm::vec3 color, colorconverter;
+	glm::vec3 color;
+	glm::vec3 colorconverter;
 
 	for ( unsigned int i = 0; i < m_vertices.size(); ++i ) {
 		// grab it
@@ -235,14 +238,14 @@ void CSkyDome::RebuildColors() {
 //				= 1.0f / cosf( arccos( vertex.y ) );
 //				= 1.0f / vertex.y;
 		float const icostheta = 1.0f / vertex.y;
-		float const cosgamma2 = std::pow( std::cos( gamma ), 2 );
+		auto const cosgamma2 = static_cast<float>(std::pow( std::cos( gamma ), 2 ));
 
 		// Compute x,y values  
-		float const x = PerezFunctionO2( perezx, icostheta, gamma, cosgamma2, zenithx );
-		float const y = PerezFunctionO2( perezy, icostheta, gamma, cosgamma2, zenithy );
+		float const x = PerezFunctionO2( perezx.data(), icostheta, gamma, cosgamma2, zenithx );
+		float const y = PerezFunctionO2( perezy.data(), icostheta, gamma, cosgamma2, zenithy );
 
 		// luminance(Y) for clear & overcast sky
-		float const yclear = std::max( 0.01f, PerezFunctionO2( perezluminance, icostheta, gamma, cosgamma2, zenithluminance ) );
+		float const yclear = std::max( 0.01f, PerezFunctionO2( perezluminance.data(), icostheta, gamma, cosgamma2, zenithluminance ) );
 		float const yover = std::max( 0.01f, zenithluminance * ( 1.0f + 2.0f * vertex.y ) / 3.0f );
 		
 		float const Y = std::lerp( yclear, yover, m_overcast );
@@ -271,7 +274,7 @@ void CSkyDome::RebuildColors() {
 
         // override the hue, based on sun height above the horizon. crude way to deal with model shortcomings
         // correction begins when the sun is higher than 10 degrees above the horizon, and fully in effect at 10+15 degrees
-        float const degreesabovehorizon = 90.0f - m_thetasun * ( 180.0f / M_PI );
+        auto const degreesabovehorizon = static_cast<float>(90.0f - m_thetasun * ( 180.0f / M_PI ));
         auto const sunbasedphase = std::clamp( 1.0f / 15.0f * ( degreesabovehorizon - 10.0f ), 0.0f, 1.0f );
         // correction is applied in linear manner from the bottom, becomes fully in effect for vertices with y = 0.50
         auto const heightbasedphase = std::clamp( vertex.y * 2.0f, 0.0f, 1.0f );

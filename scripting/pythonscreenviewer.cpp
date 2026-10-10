@@ -7,32 +7,31 @@
 
 void texture_window_resize(GLFWwindow *win, int w, int h)
 {
-    python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+    auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_window_size(win, w, h);
 }
 
 void texture_window_fb_resize(GLFWwindow *win, int w, int h)
 {
-	python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+	auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_window_fb_size(win, w, h);
 }
 
-void texture_window_mouse_button(GLFWwindow *win, int button, int action, int mods)
+void texture_window_mouse_button(GLFWwindow *win, int button, int action, int /*mods*/)
 {
-    python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+    auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_click(win, button, action);
 }
 
 void texture_window_cursor_pos(GLFWwindow *win, double x, double y)
 {
-    python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
+    auto texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_cursor_pos(win, x, y);
 }
 
-python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string surfacename)
+python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string const &surfacename)
+    : m_rt(rt), m_touchlist(touchlist)
 {
-	m_rt = rt;
-    m_touchlist = touchlist;
 
 	for (const auto &viewport : Global.python_viewports) {
 		if (viewport.surface == surfacename) {
@@ -49,7 +48,8 @@ python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::s
 			                                 monitor, false, Global.python_sharectx);
 
             {
-                int w, h;
+                int w;
+                int h;
                 glfwGetWindowSize(conf->window, &w, &h);
                 conf->window_size = glm::ivec2(w, h);
                 glfwGetFramebufferSize(conf->window, &w, &h);
@@ -79,7 +79,7 @@ python_screen_viewer::~python_screen_viewer()
 
 void python_screen_viewer::threadfunc()
 {
-	for (auto &window : m_windows) {
+	for (auto const &window : m_windows) {
 		glfwMakeContextCurrent(window->window);
 
 		glfwSwapInterval(Global.python_vsync ? 1 : 0);
@@ -90,7 +90,7 @@ void python_screen_viewer::threadfunc()
 		glActiveTexture(GL_TEXTURE0);
 
 		if (Global.python_sharectx) {
-			glBindTexture(GL_TEXTURE_2D, m_rt->shared_tex->get_id());
+			glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(m_rt->shared_tex->get_id()));
 		}
 		else {
 			GLuint tex;
@@ -115,13 +115,16 @@ void python_screen_viewer::threadfunc()
 	{
 		auto start_time = std::chrono::high_resolution_clock::now();
 
-		for (auto &window : m_windows) {
+		for (auto const &window : m_windows) {
 
 			unsigned char *image = nullptr;
-			int format, components, width, height;
+			int format;
+			int components;
+			int width;
+			int height;
 
 			if (!Global.python_sharectx) {
-				std::lock_guard<std::mutex> guard(m_rt->mutex);
+				std::scoped_lock guard(m_rt->mutex);
 
 				if (window->timestamp == m_rt->timestamp)
 					continue;
@@ -185,9 +188,9 @@ void python_screen_viewer::threadfunc()
 	}
 }
 
-void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int h)
+void python_screen_viewer::notify_window_fb_size(GLFWwindow const *window, int w, int h) const
 {
-    for (auto &conf : m_windows) {
+    for (auto const &conf : m_windows) {
         if (conf->window == window) {
             conf->fb_size.x = w;
             conf->fb_size.y = h;
@@ -196,9 +199,9 @@ void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int 
     }
 }
 
-void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h)
+void python_screen_viewer::notify_window_size(GLFWwindow const *window, int w, int h) const
 {
-	for (auto &conf : m_windows) {
+	for (auto const &conf : m_windows) {
 		if (conf->window == window) {
             conf->window_size.x = w;
             conf->window_size.y = h;
@@ -207,23 +210,23 @@ void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h)
 	}
 }
 
-void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, double x, double y)
+void python_screen_viewer::notify_cursor_pos(GLFWwindow const *window, double x, double y) const
 {
-    for (auto &conf : m_windows) {
+    for (auto const &conf : m_windows) {
         if (conf->window == window) {
-            conf->cursor_pos.x = x;
-            conf->cursor_pos.y = y;
+            conf->cursor_pos.x = static_cast<int>(x);
+            conf->cursor_pos.y = static_cast<int>(y);
             return;
         }
     }
 }
 
-void python_screen_viewer::notify_click(GLFWwindow *window, int button, int action)
+void python_screen_viewer::notify_click(GLFWwindow const *window, int button, int action) const
 {
     if (button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS)
         return;
 
-    for (auto &conf : m_windows) {
+    for (auto const &conf : m_windows) {
         if (conf->window == window) {
             auto pos = glm::vec2(conf->cursor_pos) / glm::vec2(conf->window_size);
             pos.y = 1.0f - pos.y;

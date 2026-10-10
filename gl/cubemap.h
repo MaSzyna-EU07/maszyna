@@ -12,8 +12,8 @@ namespace gl
         cubemap();
         ~cubemap();
 
-        void alloc(GLint format, int width, int height, GLenum components, GLenum type);
-        void bind(int unit);
-        void generate_mipmaps();
+        void alloc(GLint format, int width, int height, GLenum components, GLenum type) const;
+        void bind(int unit) const;
+        void generate_mipmaps() const;
     };
 }

@@ -136,7 +136,7 @@ keyboard_input::recall_bindings() {
 		// Fallback � plik w folderze symulatora
 		path = "eu07_input-keyboard.ini";
 	}
-	cParser bindingparser(path.c_str(), cParser::buffer_FILE);
+	cParser bindingparser(path, cParser::buffer_FILE);
 
 	bindingparser.skipComments = false;
     if( false == bindingparser.ok() ) {
@@ -147,7 +147,7 @@ keyboard_input::recall_bindings() {
     std::unordered_map<std::string, user_command> nametocommandmap;
     std::size_t commandid = 0;
     for( auto const &description : simulation::Commands_descriptions ) {
-        nametocommandmap.emplace(
+        nametocommandmap.try_emplace(
             description.name,
             static_cast<user_command>( commandid ) );
         ++commandid;
@@ -155,7 +155,7 @@ keyboard_input::recall_bindings() {
 	std::unordered_map<std::string, int> nametokeymap;
 
 	for (const std::pair<int, std::string> &key : keytonamemap) {
-		nametokeymap.emplace(key.second, key.first);
+		nametokeymap.try_emplace(key.second, key.first);
 	}
 
     // NOTE: to simplify things we expect one entry per line, and whole entry in one line
@@ -225,7 +225,7 @@ keyboard_input::recall_bindings() {
     return true;
 }
 
-void keyboard_input::dump_bindings()
+void keyboard_input::dump_bindings() const
 {
 	std::fstream stream("eu07_input-keyboard.ini",
 	             std::ios_base::binary | std::ios_base::trunc | std::ios_base::out);
@@ -239,8 +239,7 @@ void keyboard_input::dump_bindings()
 		stream << simulation::Commands_descriptions[static_cast<std::size_t>(binding.first)].name << ' ';
 
 		int keycode = std::get<int>(binding.second);
-		auto it = keytonamemap.find(keycode & 0xFFFF);
-		if (it != keytonamemap.end()) {
+		if (auto it = keytonamemap.find(keycode & 0xFFFF); it != keytonamemap.end()) {
 			if (keycode & keymodifier::control)
 				stream << "ctrl ";
 			if (keycode & keymodifier::shift)
@@ -284,7 +283,7 @@ keyboard_input::key( int const Key, int const Action ) {
     if( Key == -1 ) { return false; }
 
     // store key state
-    input::keys[ Key ] = Action;
+    input::keys[ Key ] = static_cast<char>( Action );
 
     if( true == is_movement_key( Key ) ) {
         // if the received key was one of movement keys, it's been handled and we don't need to bother further
@@ -298,8 +297,7 @@ keyboard_input::key( int const Key, int const Action ) {
         | ( modifier ? 0 : input::key_ctrl ? keymodifier::control : 0 );
 
     if( Action == GLFW_RELEASE ) {
-        auto const stored = m_modsforkeys.find( Key );
-        if( stored != m_modsforkeys.end() ) {
+        if( auto const stored = m_modsforkeys.find( Key ); stored != m_modsforkeys.end() ) {
             key = stored->second;
         }
         m_modsforkeys.erase( Key );
@@ -330,28 +328,29 @@ keyboard_input::key( int const Key ) const {
 
 void
 keyboard_input::bind() {
+	using enum user_command;
 	m_bindings.clear();
 
-    for( auto const &bindingsetup : m_bindingsetups ) {
+    for( auto const &[setupcommand, setupbinding] : m_bindingsetups ) {
 
-        m_bindings[ std::get<int>(bindingsetup.second) ] = bindingsetup.first;
+        m_bindings[ std::get<int>(setupbinding) ] = setupcommand;
     }
 
     // cache movement key bindings
-    m_bindingscache.forward = binding( user_command::moveforward );
-    m_bindingscache.back = binding( user_command::moveback );
-    m_bindingscache.left = binding( user_command::moveleft );
-    m_bindingscache.right = binding( user_command::moveright );
-    m_bindingscache.up = binding( user_command::moveup );
-    m_bindingscache.down = binding( user_command::movedown );
+    m_bindingscache.forward = binding( moveforward );
+    m_bindingscache.back = binding( moveback );
+    m_bindingscache.left = binding( moveleft );
+    m_bindingscache.right = binding( moveright );
+    m_bindingscache.up = binding( moveup );
+    m_bindingscache.down = binding( movedown );
 }
 
 int
 keyboard_input::binding( user_command const Command ) const {
 
-    for( auto const &binding : m_bindings ) {
-        if( binding.second == Command ) {
-            return binding.first;
+    for( auto const &[bindingkey, bindingcommand] : m_bindings ) {
+        if( bindingcommand == Command ) {
+            return bindingkey;
         }
     }
     return -1;
@@ -413,7 +412,7 @@ keyboard_input::poll() {
     m_movementvertical = movementvertical;
 }
 
-std::unordered_map<int, std::string> keytonamemap = {
+std::unordered_map<int, std::string> const keytonamemap = {
     { GLFW_KEY_0, "0" }, { GLFW_KEY_1, "1" }, { GLFW_KEY_2, "2" }, { GLFW_KEY_3, "3" }, { GLFW_KEY_4, "4" },
     { GLFW_KEY_5, "5" }, { GLFW_KEY_6, "6" }, { GLFW_KEY_7, "7" }, { GLFW_KEY_8, "8" }, { GLFW_KEY_9, "9" },
     { GLFW_KEY_MINUS, "-" }, { GLFW_KEY_EQUAL, "=" },

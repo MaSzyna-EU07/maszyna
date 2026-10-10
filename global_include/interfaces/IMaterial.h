@@ -19,42 +19,44 @@ struct IMaterial
 	virtual texture_handle GetTexture(int slot) const = 0;
 	static IMaterial *null_material()
 	{
-		static struct NullMaterial : public IMaterial
+		struct NullMaterial : public IMaterial
 		{
-			virtual void finalize(bool Loadnow) override {}
-			virtual bool update() override
+			void finalize(bool Loadnow) override { /* null implementation, nothing to do */ }
+			bool update() override
 			{
 				return false;
 			}
-			virtual float get_or_guess_opacity() const override
+			float get_or_guess_opacity() const override
 			{
 				return 1.f;
 			}
-			virtual bool is_translucent() const override
+			bool is_translucent() const override
 			{
 				return false;
 			}
-			virtual glm::vec2 GetSize() const override
+			glm::vec2 GetSize() const override
 			{
 				return {-1.f, -1.f};
 			}
-			virtual std::string GetName() const override
+			std::string GetName() const override
 			{
 				return "";
 			}
-			virtual std::optional<float> GetSelfillum() const override
+			std::optional<float> GetSelfillum() const override
 			{
 				return std::nullopt;
 			}
-			virtual int GetShadowRank() const override
+			int GetShadowRank() const override
 			{
 				return 0;
 			}
-			virtual texture_handle GetTexture(int slot) const override
+			texture_handle GetTexture(int slot) const override
 			{
 				return 0;
 			}
-		} null_material{};
+		};
+		static NullMaterial null_material{};
 		return &null_material;
 	}
+	virtual ~IMaterial() = default;
 };
