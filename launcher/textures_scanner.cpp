@@ -86,8 +86,7 @@ void ui::vehicles_bank::parse_category_entry(const std::string &param)
 	if (tok.size() < 1)
 		return;
 
-	auto it = type_map.find(tok[0]);
-	if (it != type_map.end())
+	if (auto it = type_map.find(tok[0]); it != type_map.end())
 		ctx_type = it->second;
 	else if (tok[0] >= 'A' && tok[0] <= 'Z')
 		ctx_type = vehicle_type::carriage;

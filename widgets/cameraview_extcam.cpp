@@ -62,8 +62,7 @@ void ui::cameraview_panel::render()
 
 	ImGui::SetNextWindowSizeConstraints(ImVec2(200, 200), ImVec2(2500, 2500), cameraview_window_callback);
 
-	auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
-	if (ImGui::Begin(panelname.c_str(), &is_open)) {
+	if (auto const panelname{(title.empty() ? m_name : title) + "###" + m_name}; ImGui::Begin(panelname.c_str(), &is_open)) {
 		render_contents();
 	}
 

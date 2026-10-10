@@ -817,8 +817,7 @@ command_queue::push( command_data const &Command, uint32_t const Recipient ) {
 }
 
 void command_queue::push_direct(const command_data &Command, const uint32_t Recipient) {
-	auto const &desc = simulation::Commands_descriptions[ static_cast<std::size_t>( Command.command ) ];
-	if (desc.mode == command_mode::continuous)
+	if (auto const &desc = simulation::Commands_descriptions[ static_cast<std::size_t>( Command.command ) ]; desc.mode == command_mode::continuous)
 	{
 		if (Command.action == GLFW_PRESS)
 			m_active_continuous.emplace(std::make_pair(Command.command, Recipient));
@@ -855,9 +854,8 @@ command_queue::pop( command_data &Command, uint32_t const Recipient ) {
 }
 
 bool command_queue::is_network_target(uint32_t const Recipient) const {
-	const command_target target = (command_target)(Recipient & ~0xffff);
 
-	if (target == command_target::entity)
+	if (const command_target target = (command_target)(Recipient & ~0xffff); target == command_target::entity)
 		return false;
 
 	return true;

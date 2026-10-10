@@ -176,8 +176,7 @@ scenario_time::julian_day() const {
     // for dates in Julian calendar
     int JD = K1 + K2 + m_time.wDay + 59;
     // for dates in Gregorian calendar; 2299160 is October 15th, 1582
-    const int gregorianswitchday = 2299160;
-    if( JD > gregorianswitchday ) {
+    if( const int gregorianswitchday = 2299160; JD > gregorianswitchday ) {
 
         int K3 = static_cast<int>(std::floor( std::floor( yy * 0.01 + 49 ) * 0.75 ) - 38);
         JD -= K3;

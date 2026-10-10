@@ -154,8 +154,7 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
             // the driver advertises support (see desktop comment above).
             // (Glad config doesn't generate GLAD_GL_EXT_gpu_shader5 -- query
             //  the live extension string the same way.)
-            static bool const have_gpu_shader5 = has_gl_extension("GL_EXT_gpu_shader5");
-            if (have_gpu_shader5)
+            if (static bool const have_gpu_shader5 = has_gl_extension("GL_EXT_gpu_shader5"); have_gpu_shader5)
                 str += "#extension GL_EXT_gpu_shader5 : enable\n";
             if (type == GL_GEOMETRY_SHADER)
                 str += "#extension GL_EXT_geometry_shader : require\n";

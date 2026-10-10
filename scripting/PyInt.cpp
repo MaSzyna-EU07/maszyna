@@ -181,8 +181,7 @@ void render_task::run()
 				int p1 = 0;
 				int p2 = 0;
 
-				size_t pos1 = cmd.find(';');
-				if (pos1 == std::string::npos)
+				if (size_t pos1 = cmd.find(';'); pos1 == std::string::npos)
 				{
 					baseCmd = cmd;
 				}
@@ -474,8 +473,7 @@ void python_taskqueue::release_lock() const
 auto python_taskqueue::fetch_renderer(std::string const Renderer) -> PyObject *
 {
 
-	auto const lookup{m_renderers.find(Renderer)};
-	if (lookup != std::end(m_renderers))
+	if (auto const lookup{m_renderers.find(Renderer)}; lookup != std::end(m_renderers))
 	{
 		return lookup->second;
 	}
@@ -623,11 +621,9 @@ void python_taskqueue::error()
 	{
 		// std err pythona jest buforowane
 		PyErr_Print();
-		auto *errortext{PyObject_CallMethod(m_stderr, const_cast<char *>("getvalue"), nullptr)};
-		if (errortext != nullptr)
+		if (auto *errortext{PyObject_CallMethod(m_stderr, const_cast<char *>("getvalue"), nullptr)}; errortext != nullptr)
 		{
-			const char *errstr = PyUnicode_AsUTF8(errortext);
-			if (errstr != nullptr)
+			if (const char *errstr = PyUnicode_AsUTF8(errortext); errstr != nullptr)
 				ErrorLog(errstr);
 			Py_DECREF(errortext);
 		}
@@ -650,11 +646,9 @@ void python_taskqueue::error()
 		{
 			ErrorLog("Python Interpreter: don't know how to handle null exception");
 		}
-		auto *typetext{PyObject_Str(type)};
-		if (typetext != nullptr)
+		if (auto *typetext{PyObject_Str(type)}; typetext != nullptr)
 		{
-			const char *s = PyUnicode_AsUTF8(typetext);
-			if (s)
+			if (const char *s = PyUnicode_AsUTF8(typetext); s)
 				ErrorLog(s);
 			Py_DECREF(typetext);
 		}
@@ -663,8 +657,7 @@ void python_taskqueue::error()
 			auto *valuetext{PyObject_Str(value)};
 			if (valuetext != nullptr)
 			{
-				const char *s = PyUnicode_AsUTF8(valuetext);
-				if (s)
+				if (const char *s = PyUnicode_AsUTF8(valuetext); s)
 					ErrorLog(s);
 				Py_DECREF(valuetext);
 			}
@@ -672,8 +665,7 @@ void python_taskqueue::error()
 		auto *tracebacktext{PyObject_Str(traceback)};
 		if (tracebacktext != nullptr)
 		{
-			const char *s = PyUnicode_AsUTF8(tracebacktext);
-			if (s)
+			if (const char *s = PyUnicode_AsUTF8(tracebacktext); s)
 				ErrorLog(s);
 			Py_DECREF(tracebacktext);
 		}

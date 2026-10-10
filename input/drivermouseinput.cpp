@@ -171,8 +171,7 @@ drivermouse_input::recall_bindings() {
 
     std::string filePath = "eu07_input-mouse.ini";
 
-	fs::path appPath = user_config_path("eu07_input-mouse.ini");
-	if (!appPath.empty() && fs::exists(appPath))
+	if (fs::path appPath = user_config_path("eu07_input-mouse.ini"); !appPath.empty() && fs::exists(appPath))
 		filePath = appPath.string();
 
     cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);

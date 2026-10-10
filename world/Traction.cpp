@@ -114,10 +114,9 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
     // SKB70-C, CuCd70-2C, KB95-2C, C95-C, C95-2C, YC95-2C, YpC95-2C, YC120-2C
     // YpC120-2C, YzC120-2C, YwsC120-2C, YC150-C150, YC150-2C150, C150-C150
     // C120-2C, 2C120-2C, 2C120-2C-1, 2C120-2C-2, 2C120-2C-3, 2C120-2C-4
-    auto const material = parser->getToken<std::string>();
     // 1=miedziana, rysuje się na zielono albo czerwono
     // 2=aluminiowa, rysuje się na czarno
-         if( material == "none" ) { Material = 0; }
+         if( auto const material = parser->getToken<std::string>(); material == "none" ) { Material = 0; }
     else if( material == "al" )   { Material = 2; }
     else                          { Material = 1; }
     parser->getTokens( 2 );
@@ -824,8 +823,7 @@ traction_table::InitTraction() {
             }
             else if( traction->hvParallel == nullptr ) {
                 // jeśli jeszcze nie został włączony w kółko
-                auto *nTemp = find( traction->asParallel );
-                if( nTemp != nullptr ) {
+                if( auto *nTemp = find( traction->asParallel ); nTemp != nullptr ) {
                     // o ile zostanie znalezione przęsło o takiej nazwie
                     if( nTemp->hvParallel == nullptr ) {
                         // jeśli tamten jeszcze nie ma wskaźnika bieżni wspólnej

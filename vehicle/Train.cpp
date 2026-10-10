@@ -3593,9 +3593,8 @@ void TTrain::OnCommand_pantographcompressorvalvetoggle(TTrain *Train, command_da
 void TTrain::OnCommand_pantographcompressorvalveenable(TTrain *Train, command_data const &Command)
 {
 
-	auto const valveispresent{Train->ggPantCompressorValve.SubModel != nullptr || (Train->mvOccupied == Train->mvPantographUnit && Train->iCabn == 0)};
 
-	if (false == valveispresent)
+	if (auto const valveispresent{Train->ggPantCompressorValve.SubModel != nullptr || (Train->mvOccupied == Train->mvPantographUnit && Train->iCabn == 0)}; false == valveispresent)
 	{
 		// tylko w maszynowym, unless actual device is present
 		return;
@@ -3614,9 +3613,8 @@ void TTrain::OnCommand_pantographcompressorvalveenable(TTrain *Train, command_da
 void TTrain::OnCommand_pantographcompressorvalvedisable(TTrain *Train, command_data const &Command)
 {
 
-	auto const valveispresent{Train->ggPantCompressorValve.SubModel != nullptr || (Train->mvOccupied == Train->mvPantographUnit && Train->iCabn == 0)};
 
-	if (false == valveispresent)
+	if (auto const valveispresent{Train->ggPantCompressorValve.SubModel != nullptr || (Train->mvOccupied == Train->mvPantographUnit && Train->iCabn == 0)}; false == valveispresent)
 	{
 		// tylko w maszynowym, unless actual device is present
 		return;
@@ -3636,8 +3634,7 @@ void TTrain::OnCommand_pantographcompressoractivate(TTrain *Train, command_data 
 {
 
 	// tylko w maszynowym, unless actual device is present
-	auto const switchispresent{Train->m_controlmapper.contains("pantcompressor_sw:") || (Train->mvOccupied == Train->mvPantographUnit && Train->iCabn == 0)};
-	if (false == switchispresent)
+	if (auto const switchispresent{Train->m_controlmapper.contains("pantcompressor_sw:") || (Train->mvOccupied == Train->mvPantographUnit && Train->iCabn == 0)}; false == switchispresent)
 	{
 		return;
 	}
@@ -5839,8 +5836,7 @@ void TTrain::OnCommand_modernlightdimmerincrease(TTrain *Train, command_data con
 		// update modern dimmer state
 
 		auto &dimPos = Train->mvOccupied->modernDimmerPosition;
-		auto dimCount = Train->mvOccupied->dimPositions.size();
-		if (dimPos + 1 < dimCount)
+		if (auto dimCount = Train->mvOccupied->dimPositions.size(); dimPos + 1 < dimCount)
 			dimPos++;
 		else if (Train->mvOccupied->modernDimmerCanCycle)
 			dimPos = 0; // return to 0
@@ -6810,8 +6806,7 @@ void TTrain::OnCommand_springbrakerelease(TTrain *Train, command_data const &Com
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
 
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
-		if (vehicle == nullptr)
+		if (auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)}; vehicle == nullptr)
 		{
 			return;
 		}
@@ -7247,9 +7242,8 @@ void TTrain::OnCommand_doorpermitpresetactivateprevious(TTrain *Train, command_d
 void TTrain::OnCommand_dooropenleft(TTrain *Train, command_data const &Command)
 {
 
-	auto const remoteopencontrol{Train->mvOccupied->Doors.open_control == control_t::driver || Train->mvOccupied->Doors.open_control == control_t::mixed};
 
-	if (false == remoteopencontrol)
+	if (auto const remoteopencontrol{Train->mvOccupied->Doors.open_control == control_t::driver || Train->mvOccupied->Doors.open_control == control_t::mixed}; false == remoteopencontrol)
 	{
 		return;
 	}
@@ -7289,9 +7283,8 @@ void TTrain::OnCommand_dooropenleft(TTrain *Train, command_data const &Command)
 void TTrain::OnCommand_doorcloseleft(TTrain *Train, command_data const &Command)
 {
 
-	auto const remoteclosecontrol{Train->mvOccupied->Doors.close_control == control_t::driver || Train->mvOccupied->Doors.close_control == control_t::mixed};
 
-	if (false == remoteclosecontrol)
+	if (auto const remoteclosecontrol{Train->mvOccupied->Doors.close_control == control_t::driver || Train->mvOccupied->Doors.close_control == control_t::mixed}; false == remoteclosecontrol)
 	{
 		return;
 	}
@@ -7422,9 +7415,8 @@ void TTrain::OnCommand_doortoggleright(TTrain *Train, command_data const &Comman
 void TTrain::OnCommand_dooropenright(TTrain *Train, command_data const &Command)
 {
 
-	auto const remoteopencontrol{Train->mvOccupied->Doors.open_control == control_t::driver || Train->mvOccupied->Doors.open_control == control_t::mixed};
 
-	if (false == remoteopencontrol)
+	if (auto const remoteopencontrol{Train->mvOccupied->Doors.open_control == control_t::driver || Train->mvOccupied->Doors.open_control == control_t::mixed}; false == remoteopencontrol)
 	{
 		return;
 	}
@@ -7465,9 +7457,8 @@ void TTrain::OnCommand_dooropenright(TTrain *Train, command_data const &Command)
 void TTrain::OnCommand_doorcloseright(TTrain *Train, command_data const &Command)
 {
 
-	auto const remoteclosecontrol{Train->mvOccupied->Doors.close_control == control_t::driver || Train->mvOccupied->Doors.close_control == control_t::mixed};
 
-	if (false == remoteclosecontrol)
+	if (auto const remoteclosecontrol{Train->mvOccupied->Doors.close_control == control_t::driver || Train->mvOccupied->Doors.close_control == control_t::mixed}; false == remoteclosecontrol)
 	{
 		return;
 	}
@@ -7522,9 +7513,8 @@ void TTrain::OnCommand_doorcloseright(TTrain *Train, command_data const &Command
 void TTrain::OnCommand_dooropenall(TTrain *Train, command_data const &Command)
 {
 
-	auto const remoteopencontrol{Train->mvOccupied->Doors.open_control == control_t::driver || Train->mvOccupied->Doors.open_control == control_t::mixed};
 
-	if (false == remoteopencontrol)
+	if (auto const remoteopencontrol{Train->mvOccupied->Doors.open_control == control_t::driver || Train->mvOccupied->Doors.open_control == control_t::mixed}; false == remoteopencontrol)
 	{
 		return;
 	}
@@ -7557,9 +7547,8 @@ void TTrain::OnCommand_dooropenall(TTrain *Train, command_data const &Command)
 void TTrain::OnCommand_doorcloseall(TTrain *Train, command_data const &Command)
 {
 
-	auto const remoteclosecontrol{Train->mvOccupied->Doors.close_control == control_t::driver || Train->mvOccupied->Doors.close_control == control_t::mixed};
 
-	if (false == remoteclosecontrol)
+	if (auto const remoteclosecontrol{Train->mvOccupied->Doors.close_control == control_t::driver || Train->mvOccupied->Doors.close_control == control_t::mixed}; false == remoteclosecontrol)
 	{
 		return;
 	}
@@ -8219,8 +8208,7 @@ void TTrain::OnCommand_cabchangeforward(TTrain *Train, command_data const &Comma
 	if (Command.action == GLFW_PRESS)
 	{
 		auto const *owner{(Train->DynamicObject->ctOwner != nullptr ? Train->DynamicObject->ctOwner : Train->DynamicObject->Mechanik)};
-		auto const movedirection{1};
-		if (false == Train->CabChange(movedirection))
+		if (auto const movedirection{1}; false == Train->CabChange(movedirection))
 		{
 			auto const exitdirection{(movedirection > 0 ? end::front : end::rear)};
 			if (TestFlag(Train->mvOccupied->Couplers[exitdirection].CouplingFlag, coupling::gangway))
@@ -8250,8 +8238,7 @@ void TTrain::OnCommand_cabchangebackward(TTrain *Train, command_data const &Comm
 	if (Command.action == GLFW_PRESS)
 	{
 		auto const *owner{(Train->DynamicObject->ctOwner != nullptr ? Train->DynamicObject->ctOwner : Train->DynamicObject->Mechanik)};
-		auto const movedirection{-1};
-		if (false == Train->CabChange(movedirection))
+		if (auto const movedirection{-1}; false == Train->CabChange(movedirection))
 		{
 			// current vehicle doesn't extend any farther in this direction, check if we there's one connected we can move to
 			auto const exitdirection{(movedirection > 0 ? end::front : end::rear)};
@@ -10897,8 +10884,7 @@ const TTrain::screenentry_sequence &TTrain::get_screens()
 void TTrain::radio_message(sound_source *Message, int const Channel)
 {
 
-	auto const soundrange{Message->range()};
-	if (soundrange > 0 && glm::length2(Message->location() - glm::dvec3{DynamicObject->GetPosition()}) > sq(soundrange))
+	if (auto const soundrange{Message->range()}; soundrange > 0 && glm::length2(Message->location() - glm::dvec3{DynamicObject->GetPosition()}) > sq(soundrange))
 	{
 		// skip message playback if the receiver is outside of the emitter's range
 		return;

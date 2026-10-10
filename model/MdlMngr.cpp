@@ -103,9 +103,8 @@ TModelsManager::GetModel(std::string const &Name, bool const Dynamic, bool const
     }
 
     // first load attempt, check if it's on disk
-    std::string disklookup { find_on_disk( filename ) };
 
-    if( false == disklookup.empty() ) {
+    if( std::string disklookup { find_on_disk( filename ) }; false == disklookup.empty() ) {
 		model = LoadModel( disklookup, disklookup + postfix, Dynamic ); // model nie znaleziony, to wczytać
     }
     else {

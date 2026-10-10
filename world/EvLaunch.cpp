@@ -138,8 +138,7 @@ bool TEventLauncher::Load(cParser *parser)
         iHour = int( DeltaTime - iMinute ) / 100; // godzina to setki
         DeltaTime = 0; // bez powtórzeń
         // potentially shift the provided time by requested offset
-        auto const timeoffset{ static_cast<int>( Global.ScenarioTimeOffset * 60 ) };
-        if( timeoffset != 0 ) {
+        if( auto const timeoffset{ static_cast<int>( Global.ScenarioTimeOffset * 60 ) }; timeoffset != 0 ) {
             auto const adjustedtime{ clamp_circular( iHour * 60 + iMinute + timeoffset, 24 * 60 ) };
             iHour = adjustedtime / 60 % 24;
             iMinute = adjustedtime % 60;
@@ -269,9 +268,8 @@ TEventLauncher::export_as_text_( std::ostream &Output ) const {
     // activation key
     if( iKey != 0 ) {
 		auto key { iKey & 0xff };
-		auto const modifier { iKey >> 8 };
 
-		if (key >= 'A' && key <= 'Z' && !(modifier & GLFW_MOD_SHIFT))
+		if (auto const modifier { iKey >> 8 }; key >= 'A' && key <= 'Z' && !(modifier & GLFW_MOD_SHIFT))
 			key += 32;
 
 		Output << (char)key;

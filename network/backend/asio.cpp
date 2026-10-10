@@ -54,8 +54,7 @@ void network::tcp::connection::handle_header(const asio::error_code &err, size_t
 		return;
 	}
 
-	uint32_t sig = sn_utils::ld_uint32(header);
-	if (sig != NETWORK_MAGIC) {
+	if (uint32_t sig = sn_utils::ld_uint32(header); sig != NETWORK_MAGIC) {
 		disconnect();
 		return;
 	}

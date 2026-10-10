@@ -1712,8 +1712,7 @@ double TLSt::GetPF(double const PP, double const dt, double const Vel)
 		SoundFlag |= sf_CylU;
 	}
 	// equivalent of checkreleaser() in the base class?
-	bool is_releasing = BrakeStatus & b_rls || UniversalFlag & TUniversalBrake::ub_Release;
-	if (is_releasing)
+	if (bool is_releasing = BrakeStatus & b_rls || UniversalFlag & TUniversalBrake::ub_Release; is_releasing)
 	{
 		if (CVP < 0.0)
 		{

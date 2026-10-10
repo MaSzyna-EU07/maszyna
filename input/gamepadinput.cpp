@@ -51,8 +51,7 @@ gamepad_input::init() {
     m_inputbuttons.clear();
     // NOTE: we're only checking for joystick_1 and rely for it to stay connected throughout.
     // not exactly flexible, but for quick hack it'll do
-    auto const name = glfwGetJoystickName( GLFW_JOYSTICK_1 );
-    if( name != nullptr ) {
+    if( auto const name = glfwGetJoystickName( GLFW_JOYSTICK_1 ); name != nullptr ) {
         WriteLog( "Connected gamepad: " + std::string( name ) );
         m_deviceid = GLFW_JOYSTICK_1;
     }
@@ -154,8 +153,7 @@ bool
 gamepad_input::recall_bindings() {
 	std::string filePath = "eu07_input-gamepad.ini";
 
-	fs::path appPath = user_config_path("eu07_input-gamepad.ini");
-	if (!appPath.empty() && fs::exists(appPath))
+	if (fs::path appPath = user_config_path("eu07_input-gamepad.ini"); !appPath.empty() && fs::exists(appPath))
 		filePath = appPath.string();
 
 	// bindingparser tworzony zawsze, z wybran� �cie�k�
@@ -211,8 +209,7 @@ gamepad_input::recall_bindings() {
                 std::string key {};
                 entryparser >> key;
                 // check for potential mode indicator
-                auto const splitkey { split_string_and_number( key ) };
-                if( splitkey.first == "mode" ) {
+                if( auto const splitkey { split_string_and_number( key ) }; splitkey.first == "mode" ) {
                     // indicate we'll be processing specified mode
                     controlmode = splitkey.second;
                     continue;
