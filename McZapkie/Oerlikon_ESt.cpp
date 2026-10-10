@@ -296,6 +296,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
 
 void TNESt3::EStParams( double const /*i_crc*/ ) const // parametry charakterystyczne dla ESt
 {
+	// no effect for this device type
 }
 
 void TNESt3::Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF )

@@ -558,7 +558,7 @@ bool TBrake::Releaser() const
 /// support the EP brake (TWest, TEStEP1/2, ...).
 /// </summary>
 /// <param name="nEPS">EP intensity.</param>
-void TBrake::SetEPS(double const nEPS) {}
+void TBrake::SetEPS(double const nEPS) { /* no effect for this device type */ }
 
 /// <summary>
 /// Sets the anti-slip brake state flags. Bit 1 of <paramref name="state"/>
@@ -1083,7 +1083,7 @@ void TESt::Init(double const PP, double const HPP, double const LPP, double cons
 /// derived variants and currently a no-op.
 /// </summary>
 /// <param name="i_crc">Characteristic value.</param>
-void TESt::EStParams(double const /*i_crc*/) const {}
+void TESt::EStParams(double const /*i_crc*/) const { /* no effect for this device type */ }
 
 /// <summary>Returns the control reservoir (ZS) pressure.</summary>
 double TESt::GetCRP()
@@ -2868,7 +2868,7 @@ void TDriverHandle::Init(double Press)
 
 /// <summary>Default reductor adjustment — no-op.</summary>
 /// <param name="nAdj">Pressure correction.</param>
-void TDriverHandle::SetReductor(double nAdj) {}
+void TDriverHandle::SetReductor(double nAdj) { /* no effect for this device type */ }
 
 /// <summary>Default cab-gauge pressure — 0.</summary>
 double TDriverHandle::GetCP()

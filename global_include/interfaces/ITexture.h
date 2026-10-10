@@ -45,8 +45,8 @@ struct ITexture
 			{
 				return 0;
 			}
-			void release() override {}
-			void make_stub() override {}
+			void release() override { /* null implementation, nothing to do */ }
+			void make_stub() override { /* null implementation, nothing to do */ }
 			std::string_view get_traits() const override
 			{
 				return "";
@@ -67,9 +67,9 @@ struct ITexture
 			{
 				return false;
 			}
-			void set_components_hint(int hint) override {}
-			void make_from_memory(size_t width, size_t height, const uint8_t *data) override {}
-			void update_from_memory(size_t width, size_t height, const uint8_t *data) override {}
+			void set_components_hint(int hint) override { /* null implementation, nothing to do */ }
+			void make_from_memory(size_t width, size_t height, const uint8_t *data) override { /* null implementation, nothing to do */ }
+			void update_from_memory(size_t width, size_t height, const uint8_t *data) override { /* null implementation, nothing to do */ }
 		} null_texture{};
 		return &null_texture;
 	}
