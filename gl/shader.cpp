@@ -73,11 +73,11 @@ void gl::shader::expand_includes(std::string &str, const std::string &basedir)
     size_t start_pos = 0;
 
     std::string magic = "#include";
-    while ((start_pos = str.find(magic, start_pos)) != str.npos)
+    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
     {
         size_t fp = str.find('<', start_pos);
         size_t fe = str.find('>', start_pos);
-        if (fp == str.npos || fe == str.npos)
+        if (fp == std::string::npos || fe == std::string::npos)
             return;
 
         std::string filename = str.substr(fp + 1, fe - fp - 1);
@@ -188,11 +188,11 @@ void gl::shader::parse_texture_entries(std::string &str)
     size_t start_pos = 0;
 
     std::string magic = "#texture";
-    while ((start_pos = str.find(magic, start_pos)) != str.npos)
+    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
     {
         size_t fp = str.find('(', start_pos);
         size_t fe = str.find(')', start_pos);
-        if (fp == str.npos || fe == str.npos)
+        if (fp == std::string::npos || fe == std::string::npos)
             return;
 
         std::istringstream ss(str.substr(fp + 1, fe - fp - 1));
@@ -242,11 +242,11 @@ void gl::shader::parse_param_entries(std::string &str)
     size_t start_pos = 0;
 
     std::string magic = "#param";
-    while ((start_pos = str.find(magic, start_pos)) != str.npos)
+    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
     {
         size_t fp = str.find('(', start_pos);
         size_t fe = str.find(')', start_pos);
-        if (fp == str.npos || fe == str.npos)
+        if (fp == std::string::npos || fe == std::string::npos)
             return;
 
         std::istringstream ss(str.substr(fp + 1, fe - fp - 1));
