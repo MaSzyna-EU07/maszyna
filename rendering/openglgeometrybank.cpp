@@ -90,23 +90,23 @@ opengl_vbogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream
             }
             ::glDrawRangeElementsBaseVertex(
                 chunk.type,
-                0, chunkrecord.vertex_count,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
-                chunkrecord.vertex_offset );
+                0, static_cast<GLuint>(chunkrecord.vertex_count),
+                static_cast<GLsizei>(chunkrecord.index_count), GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+                static_cast<GLint>(chunkrecord.vertex_offset) );
         }
         else {
             bind_streams( Units, Streams, chunkrecord.vertex_offset );
             ::glDrawRangeElements(
                 chunk.type,
-                0, chunkrecord.vertex_count,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ) );
+                0, static_cast<GLuint>(chunkrecord.vertex_count),
+                static_cast<GLsizei>(chunkrecord.index_count), GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ) );
         }
     }
     else {
         if( m_activestreams != Streams ) {
             bind_streams( Units, Streams );
         }
-        ::glDrawArrays( chunk.type, chunkrecord.vertex_offset, chunkrecord.vertex_count );
+        ::glDrawArrays( chunk.type, static_cast<GLint>(chunkrecord.vertex_offset), static_cast<GLsizei>(chunkrecord.vertex_count) );
     }
     // ...post-render cleanup
 /*

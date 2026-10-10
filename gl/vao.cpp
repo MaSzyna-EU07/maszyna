@@ -67,7 +67,7 @@ void gl::vao::bind()
 		}
 
 		for (size_t i = params.size(); i < 5; i++)
-			glDisableVertexAttribArray(i);
+			glDisableVertexAttribArray(static_cast<GLuint>(i));
 
 		if (ebo)
 			ebo->bind(gl::buffer::ELEMENT_ARRAY_BUFFER);
@@ -84,6 +84,6 @@ void gl::vao::unbind()
 	}
 	else {
 		for (size_t i = 0; i < 4; i++)
-			glDisableVertexAttribArray(i);
+			glDisableVertexAttribArray(static_cast<GLuint>(i));
 	}
 }

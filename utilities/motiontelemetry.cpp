@@ -146,15 +146,15 @@ void motiontelemetry::update()
 	}
 
 	float buffer[12] = { 0 };
-	buffer[0] = Timer::GetTime();
-	buffer[1] = velocity;
-	buffer[2] = local_acc.y;
-	buffer[3] = local_acc.z;
-	buffer[4] = local_acc.x;
-	buffer[5] = glm::degrees(rot.x);
-	buffer[6] = glm::degrees(rot.z);
-	buffer[7] = glm::degrees(rot.y);
-	buffer[8] = yaw_vel;
+	buffer[0] = static_cast<float>(Timer::GetTime());
+	buffer[1] = static_cast<float>(velocity);
+	buffer[2] = static_cast<float>(local_acc.y);
+	buffer[3] = static_cast<float>(local_acc.z);
+	buffer[4] = static_cast<float>(local_acc.x);
+	buffer[5] = static_cast<float>(glm::degrees(rot.x));
+	buffer[6] = static_cast<float>(glm::degrees(rot.z));
+	buffer[7] = static_cast<float>(glm::degrees(rot.y));
+	buffer[8] = static_cast<float>(yaw_vel);
 	buffer[9] = 1.0f;
 
 	if (send(sock, (char*)buffer, sizeof(buffer), 0) == -1)

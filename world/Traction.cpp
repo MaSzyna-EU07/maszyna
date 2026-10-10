@@ -131,7 +131,7 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
     auto const minheight { parser->getToken<double>() };
     fHeightDifference = ( pPoint3.y - pPoint1.y + pPoint4.y - pPoint2.y ) * 0.5 - minheight;
     auto const segmentlength { parser->getToken<double>() };
-    iNumSections = segmentlength ? glm::length(pPoint1 - pPoint2) / segmentlength : 0;
+    iNumSections = segmentlength != 0.0 ? static_cast<int>(glm::length(pPoint1 - pPoint2) / segmentlength) : 0;
     parser->getTokens( 2 );
     *parser
         >> Wires
@@ -213,7 +213,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 pPoint3.z - m_origin.z );
         for( int i = 0; i < iNumSections - 1; ++i ) {
             pt3 = pPoint3 + v1 * f;
-            t = 1 - std::fabs(f - mid) * 2;
+            t = static_cast<float>(1 - std::fabs(f - mid) * 2);
             if( Wires < 4
              || ( i != 0
                && i != iNumSections - 2 ) ) {
@@ -262,7 +262,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 pPoint3.z - m_origin.z );
         for( int i = 0; i < iNumSections - 1; ++i ) {
             pt3 = pPoint3 + v1 * f;
-            t = 1 - std::fabs(f - mid) * 2;
+            t = static_cast<float>(1 - std::fabs(f - mid) * 2);
             endvertex.position =
                 glm::vec3(
                     pt3.x - m_origin.x,
@@ -294,7 +294,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Bank ) {
         for( int i = 0; i < iNumSections - 1; ++i ) {
             pt3 = pPoint3 + v1 * f;
             pt4 = pPoint1 + v2 * f;
-            t = 1 - std::fabs(f - mid) * 2;
+            t = static_cast<float>(1 - std::fabs(f - mid) * 2);
             if( i % 2 == 0 ) {
                 startvertex.position =
                     glm::vec3(
@@ -439,7 +439,7 @@ void TTraction::ResistanceCalc(int d, double r, TTractionPowerSource *ps)
                 }
             }
             t->psPower[d] = ps; // skopiowanie wskaźnika zasilacza od danej strony
-            t->fResistance[d] = r; // wpisanie rezystancji w kierunku tego zasilacza
+            t->fResistance[d] = static_cast<float>(r); // wpisanie rezystancji w kierunku tego zasilacza
             r += t->fResistivity * glm::length(t->vParametric); // doliczenie oporu kolejnego odcinka
             p = t; // zapamiętanie dotychczasowego
             t = p->hvNext[d ^ 1]; // podążanie w tę samą stronę

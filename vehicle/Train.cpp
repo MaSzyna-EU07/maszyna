@@ -155,7 +155,7 @@ void TCab::Load(cParser &Parser)
 		Parser.getTokens();
 		Parser >> token;
 	}
-	CabPos1.x = std::stod(token);
+	CabPos1.x = static_cast<float>(std::stod(token));
 	Parser.getTokens(5, false);
 	Parser >> CabPos1.y >> CabPos1.z >> CabPos2.x >> CabPos2.y >> CabPos2.z;
 
@@ -983,7 +983,7 @@ bool TTrain::is_eztoer() const
 void TTrain::set_master_controller(double const Position)
 {
 
-	auto positionchange{std::min<int>(Position, mvControlled->CoupledCtrl ? mvControlled->MainCtrlPosNo + mvControlled->ScndCtrlPosNo : mvControlled->MainCtrlPosNo) -
+	auto positionchange{std::min<int>(static_cast<int>(Position), mvControlled->CoupledCtrl ? mvControlled->MainCtrlPosNo + mvControlled->ScndCtrlPosNo : mvControlled->MainCtrlPosNo) -
 	                    (mvControlled->CoupledCtrl ? mvControlled->MainCtrlPos + mvControlled->ScndCtrlPos : mvControlled->MainCtrlPos)};
 	while (positionchange < 0 && true == mvControlled->DecMainCtrl(1))
 	{
@@ -1039,7 +1039,7 @@ void TTrain::set_train_brake_speed(TDynamicObject *Vehicle, int const Speed)
 		{
 			if (ggBrakeProfileCtrl.SubModel != nullptr)
 			{
-				ggBrakeProfileCtrl.UpdateValue((mvOccupied->BrakeDelayFlag & bdelay_R) != 0 ? 2.0 : mvOccupied->BrakeDelayFlag - 1, dsbSwitch);
+				ggBrakeProfileCtrl.UpdateValue((mvOccupied->BrakeDelayFlag & bdelay_R) != 0 ? 2.0 : static_cast<float>(mvOccupied->BrakeDelayFlag - 1), dsbSwitch);
 			}
 			if (ggBrakeProfileG.SubModel != nullptr)
 			{
@@ -1683,7 +1683,7 @@ void TTrain::OnCommand_secondcontrollerdecreasefast(TTrain *Train, command_data 
 void TTrain::OnCommand_secondcontrollerset(TTrain *Train, command_data const &Command)
 {
 
-	auto const targetposition{std::min<int>(Command.param1, Train->mvControlled->ScndCtrlPosNo)};
+	auto const targetposition{std::min<int>(static_cast<int>(Command.param1), Train->mvControlled->ScndCtrlPosNo)};
 	// HACK: potentially animate push or pushtoggle control
 	if (Train->ggScndCtrl.is_push())
 	{
@@ -1729,7 +1729,7 @@ void TTrain::OnCommand_independentbrakeincrease(TTrain *Train, command_data cons
 			}
 			else
 			{
-				Train->mvOccupied->IncLocalBrakeLevel(useStepped ? 1 : Global.brake_speed * Command.time_delta * LocalBrakePosNo);
+				Train->mvOccupied->IncLocalBrakeLevel(useStepped ? 1 : static_cast<float>(Global.brake_speed * Command.time_delta * LocalBrakePosNo));
 				if (useStepped)
 				{
 					Train->m_mastercontrollerinuse = true;
@@ -1784,7 +1784,7 @@ void TTrain::OnCommand_independentbrakedecrease(TTrain *Train, command_data cons
 			}
 			else
 			{
-				Train->mvOccupied->DecLocalBrakeLevel(useStepped ? 1 : Global.brake_speed * Command.time_delta * LocalBrakePosNo);
+				Train->mvOccupied->DecLocalBrakeLevel(useStepped ? 1 : static_cast<float>(Global.brake_speed * Command.time_delta * LocalBrakePosNo));
 				if (useStepped)
 				{
 					Train->m_mastercontrollerinuse = true;
@@ -2455,7 +2455,7 @@ void TTrain::OnCommand_trainbrakeoperationmodeincrease(TTrain *Train, command_da
 			// next mode
 			Train->mvOccupied->BrakeOpModeFlag <<= 1;
 			// visual feedback
-			Train->ggBrakeOperationModeCtrl.UpdateValue(Train->mvOccupied->BrakeOpModeFlag > 0 ? std::log2(Train->mvOccupied->BrakeOpModeFlag) : 0); // audio fallback
+			Train->ggBrakeOperationModeCtrl.UpdateValue(Train->mvOccupied->BrakeOpModeFlag > 0 ? static_cast<float>(std::log2(Train->mvOccupied->BrakeOpModeFlag)) : 0); // audio fallback
 		}
 	}
 }
@@ -2471,7 +2471,7 @@ void TTrain::OnCommand_trainbrakeoperationmodedecrease(TTrain *Train, command_da
 			// previous mode
 			Train->mvOccupied->BrakeOpModeFlag >>= 1;
 			// visual feedback
-			Train->ggBrakeOperationModeCtrl.UpdateValue(Train->mvOccupied->BrakeOpModeFlag > 0 ? std::log2(Train->mvOccupied->BrakeOpModeFlag) : 0);
+			Train->ggBrakeOperationModeCtrl.UpdateValue(Train->mvOccupied->BrakeOpModeFlag > 0 ? static_cast<float>(std::log2(Train->mvOccupied->BrakeOpModeFlag)) : 0);
 		}
 	}
 }
@@ -2642,7 +2642,7 @@ void TTrain::OnCommand_wiperswitchincrease(TTrain *Train, command_data const &Co
 			Train->mvOccupied->wiperSwitchPos = Train->mvOccupied->WiperListSize - 1;
 
 		// Visual feedback
-		Train->ggWiperSw.UpdateValue(Train->mvOccupied->wiperSwitchPos, Train->dsbSwitch);
+		Train->ggWiperSw.UpdateValue(static_cast<float>(Train->mvOccupied->wiperSwitchPos), Train->dsbSwitch);
 	}
 }
 void TTrain::OnCommand_wiperswitchdecrease(TTrain *Train, command_data const &Command)
@@ -2654,7 +2654,7 @@ void TTrain::OnCommand_wiperswitchdecrease(TTrain *Train, command_data const &Co
 			Train->mvOccupied->wiperSwitchPos = 0;
 
 		// visual feedback
-		Train->ggWiperSw.UpdateValue(Train->mvOccupied->wiperSwitchPos, Train->dsbSwitch);
+		Train->ggWiperSw.UpdateValue(static_cast<float>(Train->mvOccupied->wiperSwitchPos), Train->dsbSwitch);
 	}
 }
 
@@ -3531,7 +3531,7 @@ void TTrain::change_pantograph_selection(int const Change)
 	auto const &presets{mvOccupied->PantsPreset.first};
 	auto &selection{mvOccupied->PantsPreset.second[cab_to_end()]};
 	auto const initialstate{selection};
-	selection = std::clamp(selection + Change, 0, std::max<int>(presets.size() - 1, 0));
+	selection = std::clamp(selection + Change, 0, std::max<int>(static_cast<int>(presets.size() - 1), 0));
 
 	if (selection == initialstate)
 	{
@@ -4674,7 +4674,7 @@ void TTrain::OnCommand_compressorpresetactivatenext(TTrain *Train, command_data 
 
 		Train->mvOccupied->ChangeCompressorPreset(Command.action == GLFW_PRESS ? Train->mvOccupied->CompressorListDefPos + 1 : Train->mvOccupied->CompressorListDefPos);
 		// visual feedback
-		Train->ggCompressorListButton.UpdateValue(Train->mvOccupied->CompressorListPos - 1, Train->dsbSwitch);
+		Train->ggCompressorListButton.UpdateValue(static_cast<float>(Train->mvOccupied->CompressorListPos - 1), Train->dsbSwitch);
 	}
 	else
 	{
@@ -4689,7 +4689,7 @@ void TTrain::OnCommand_compressorpresetactivatenext(TTrain *Train, command_data 
 			// active light preset is stored as value in range 1-LigthPosNo
 			Train->mvOccupied->ChangeCompressorPreset(Train->mvOccupied->CompressorListPos < Train->mvOccupied->CompressorListPosNo ? Train->mvOccupied->CompressorListPos + 1 : 1); // wrap mode
 			// visual feedback
-			Train->ggCompressorListButton.UpdateValue(Train->mvOccupied->CompressorListPos - 1, Train->dsbSwitch);
+			Train->ggCompressorListButton.UpdateValue(static_cast<float>(Train->mvOccupied->CompressorListPos - 1), Train->dsbSwitch);
 		}
 	}
 }
@@ -4720,7 +4720,7 @@ void TTrain::OnCommand_compressorpresetactivateprevious(TTrain *Train, command_d
 		// visual feedback
 		if (Train->ggCompressorListButton.SubModel != nullptr)
 		{
-			Train->ggCompressorListButton.UpdateValue(Train->mvOccupied->CompressorListPos - 1, Train->dsbSwitch);
+			Train->ggCompressorListButton.UpdateValue(static_cast<float>(Train->mvOccupied->CompressorListPos - 1), Train->dsbSwitch);
 		}
 	}
 }
@@ -4742,7 +4742,7 @@ void TTrain::OnCommand_compressorpresetactivatedefault(TTrain *Train, command_da
 	// visual feedback
 	if (Train->ggCompressorListButton.SubModel != nullptr)
 	{
-		Train->ggCompressorListButton.UpdateValue(Train->mvOccupied->CompressorListPos - 1, Train->dsbSwitch);
+		Train->ggCompressorListButton.UpdateValue(static_cast<float>(Train->mvOccupied->CompressorListPos - 1), Train->dsbSwitch);
 	}
 }
 
@@ -5216,11 +5216,11 @@ void TTrain::OnCommand_lightspresetactivatenext(TTrain *Train, command_data cons
 			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
-				Train->ggLightsButton.UpdateValue(Train->mvOccupied->LightsPos - 1, Train->dsbSwitch);
+				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(Train->mvOccupied->LightsPos - 1);
+				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
 			}
 		}
 	}
@@ -5253,11 +5253,11 @@ void TTrain::OnCommand_lightspresetactivateprevious(TTrain *Train, command_data 
 			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
-				Train->ggLightsButton.UpdateValue(Train->mvOccupied->LightsPos - 1, Train->dsbSwitch);
+				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(Train->mvOccupied->LightsPos - 1);
+				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
 			}
 		}
 	}
@@ -5287,8 +5287,8 @@ void TTrain::OnCommand_headlighttoggleleft(TTrain *Train, command_data const &Co
 void TTrain::OnCommand_lightsset(TTrain *Train, command_data const &Command)
 {
 	// set custom item in Lights inventory
-	Train->mvOccupied->Lights[end::front][17] = Command.param1;
-	Train->mvOccupied->Lights[end::rear][17] = Command.param2;
+	Train->mvOccupied->Lights[end::front][17] = static_cast<int>(Command.param1);
+	Train->mvOccupied->Lights[end::rear][17] = static_cast<int>(Command.param2);
 	Train->mvOccupied->LightsPos = 18; // nasza custom pozycja
 	Train->Dynamic()->SetLights();
 }
@@ -5904,7 +5904,7 @@ void TTrain::OnCommand_modernlightdimmerincrease(TTrain *Train, command_data con
 
 		// visual feedback
 		if (Train->ggModernLightDimSw.SubModel != nullptr)
-			Train->ggModernLightDimSw.UpdateValue(dimPos, Train->dsbSwitch);
+			Train->ggModernLightDimSw.UpdateValue(static_cast<float>(dimPos), Train->dsbSwitch);
 	}
 }
 void TTrain::OnCommand_modernlightdimmerdecrease(TTrain *Train, command_data const &Command)
@@ -5931,7 +5931,7 @@ void TTrain::OnCommand_modernlightdimmerdecrease(TTrain *Train, command_data con
 		Train->Dynamic()->SetLightDimmings();
 
 		if (Train->ggModernLightDimSw.SubModel != nullptr)
-			Train->ggModernLightDimSw.UpdateValue(dimPos, Train->dsbSwitch);
+			Train->ggModernLightDimSw.UpdateValue(static_cast<float>(dimPos), Train->dsbSwitch);
 	}
 }
 
@@ -7302,7 +7302,7 @@ void TTrain::OnCommand_doorpermitpresetactivatenext(TTrain *Train, command_data 
 
 		Train->mvOccupied->ChangeDoorPermitPreset(1);
 		// visual feedback
-		Train->ggDoorPermitPresetButton.UpdateValue(Train->mvOccupied->Doors.permit_preset, Train->dsbSwitch);
+		Train->ggDoorPermitPresetButton.UpdateValue(static_cast<float>(Train->mvOccupied->Doors.permit_preset), Train->dsbSwitch);
 	}
 }
 
@@ -7314,7 +7314,7 @@ void TTrain::OnCommand_doorpermitpresetactivateprevious(TTrain *Train, command_d
 
 		Train->mvOccupied->ChangeDoorPermitPreset(-1);
 		// visual feedback
-		Train->ggDoorPermitPresetButton.UpdateValue(Train->mvOccupied->Doors.permit_preset, Train->dsbSwitch);
+		Train->ggDoorPermitPresetButton.UpdateValue(static_cast<float>(Train->mvOccupied->Doors.permit_preset), Train->dsbSwitch);
 	}
 }
 
@@ -8141,7 +8141,7 @@ void TTrain::OnCommand_radiochannelset(TTrain *Train, command_data const &Comman
 	{
 		// on press or hold
 		Train->RadioChannel() = std::clamp((int)Command.param1, 1, 10);
-		Train->ggRadioChannelSelector.UpdateValue(Train->RadioChannel() - 1);
+		Train->ggRadioChannelSelector.UpdateValue(static_cast<float>(Train->RadioChannel() - 1));
 	}
 }
 
@@ -8281,7 +8281,7 @@ void TTrain::OnCommand_radiovolumeset(TTrain *Train, command_data const &Command
 	if (Command.action != GLFW_RELEASE)
 	{
 		// on press or hold
-		Train->m_radiovolume = std::clamp(Command.param1, 0.0, 1.0);
+		Train->m_radiovolume = static_cast<float>(std::clamp(Command.param1, 0.0, 1.0));
 		Train->ggRadioVolumeSelector.UpdateValue(Train->m_radiovolume);
 		audio::event_volume_change = true;
 	}
@@ -8440,7 +8440,7 @@ bool TTrain::Update(double const Deltatime)
 		// keep track of period the line breaker button is held down, to determine when/if circuit closes
 		if (mvControlled->MainSwitchCheck())
 		{
-			fMainRelayTimer += Deltatime;
+			fMainRelayTimer += static_cast<float>(Deltatime);
 		}
 	}
 	else
@@ -8480,7 +8480,7 @@ bool TTrain::Update(double const Deltatime)
 		{
 			continue;
 		}
-		doorpermittimer -= Deltatime;
+		doorpermittimer -= static_cast<float>(Deltatime);
 		if (doorpermittimer < 0.f)
 		{
 			mvOccupied->OperateDoors(static_cast<side>(idx), true);
@@ -8490,7 +8490,7 @@ bool TTrain::Update(double const Deltatime)
 	// train measurement timer
 	if (trainLenghtMeasureTimer >= 0.f)
 	{
-		trainLenghtMeasureTimer -= Deltatime;
+		trainLenghtMeasureTimer -= static_cast<float>(Deltatime);
 		if (trainLenghtMeasureTimer < 0.f)
 			trainLenghtMeasureTimer = -1.f;
 	}
@@ -8498,7 +8498,7 @@ bool TTrain::Update(double const Deltatime)
 	// battery timer
 	if (fBatteryTimer >= 0.f)
 	{
-		fBatteryTimer -= Deltatime;
+		fBatteryTimer -= static_cast<float>(Deltatime);
 		if (fBatteryTimer < 0.f)
 			fBatteryTimer = -1.f;
 	}
@@ -8559,7 +8559,7 @@ bool TTrain::Update(double const Deltatime)
 			*/
 			if (false == (m_mastercontrollerinuse || Global.ctrlState))
 			{
-				m_mastercontrollerreturndelay -= Deltatime;
+				m_mastercontrollerreturndelay -= static_cast<float>(Deltatime);
 				if (m_mastercontrollerreturndelay < 0.f)
 				{
 					m_mastercontrollerreturndelay = EU07_CONTROLLER_BASERETURNDELAY;
@@ -8592,9 +8592,9 @@ bool TTrain::Update(double const Deltatime)
 		if (ff != fTachoTimer) // jesli w tej sekundzie nie zmienial
 		{
 			if (fTachoVelocity >= 5) // jedzie
-				fTachoVelocityJump = fTachoVelocity + (2.0 - LocalRandom(3) + LocalRandom(3)) * 0.5;
+				fTachoVelocityJump = static_cast<float>(fTachoVelocity + (2.0 - LocalRandom(3) + LocalRandom(3)) * 0.5);
 			else if (fTachoVelocity < 5 && fTachoVelocity > 1)
-				fTachoVelocityJump = Random(0, 4); // tu ma sie bujac jak wariat i zatrzymac na jakiejs predkosci
+				fTachoVelocityJump = static_cast<float>(Random(0, 4)); // tu ma sie bujac jak wariat i zatrzymac na jakiejs predkosci
 			// fTachoVelocityJump = 0; // stoi
 			fTachoTimer = ff; // juz zmienil
 		}
@@ -8602,43 +8602,43 @@ bool TTrain::Update(double const Deltatime)
 	if (fTachoVelocity > 1) // McZapkie-270503: podkrecanie tachometru
 	{
 		// szybciej zacznij stukac
-		fTachoCount = std::min(maxtacho, fTachoCount + Deltatime * 3);
+		fTachoCount = static_cast<float>(std::min(maxtacho, fTachoCount + Deltatime * 3));
 	}
 	else if (fTachoCount > 0)
 	{
 		// schodz powoli - niektore haslery to ze 4 sekundy potrafia stukac
-		fTachoCount = std::max(0.0, fTachoCount - Deltatime * 0.66);
+		fTachoCount = static_cast<float>(std::max(0.0, fTachoCount - Deltatime * 0.66));
 	}
 
 	// Ra 2014-09: napięcia i prądy muszą być ustalone najpierw, bo wysyłane są ewentualnie na PoKeys
 	if (mvControlled->EngineType != TEngineType::DieselElectric && mvControlled->EngineType != TEngineType::ElectricInductionMotor)
 	{ // Ra 2014-09: czy taki rozdzia? ma sens?
-		fHVoltage = std::max(mvControlled->PantographVoltage,
-		                     mvControlled->GetTrainsetHighVoltage()); // Winger czy to nie jest zle?
+		fHVoltage = static_cast<float>(std::max(mvControlled->PantographVoltage,
+		                     mvControlled->GetTrainsetHighVoltage())); // Winger czy to nie jest zle?
 	}
 	// *mvControlled->Mains);
 	else
 	{
-		fHVoltage = mvControlled->EngineVoltage;
+		fHVoltage = static_cast<float>(mvControlled->EngineVoltage);
 	}
 	if (ShowNextCurrent)
 	{ // jeśli pokazywać drugi człon
 		if (mvSecond)
 		{ // o ile jest ten drugi
-			fHCurrent[0] = mvSecond->ShowCurrent(0) * 1.05;
-			fHCurrent[1] = mvSecond->ShowCurrent(1) * 1.05;
-			fHCurrent[2] = mvSecond->ShowCurrent(2) * 1.05;
-			fHCurrent[3] = mvSecond->ShowCurrent(3) * 1.05;
+			fHCurrent[0] = static_cast<float>(mvSecond->ShowCurrent(0) * 1.05);
+			fHCurrent[1] = static_cast<float>(mvSecond->ShowCurrent(1) * 1.05);
+			fHCurrent[2] = static_cast<float>(mvSecond->ShowCurrent(2) * 1.05);
+			fHCurrent[3] = static_cast<float>(mvSecond->ShowCurrent(3) * 1.05);
 		}
 		else
 			fHCurrent[0] = fHCurrent[1] = fHCurrent[2] = fHCurrent[3] = 0.0; // gdy nie ma człona
 	}
 	else
 	{ // normalne pokazywanie
-		fHCurrent[0] = mvControlled->ShowCurrent(0);
-		fHCurrent[1] = mvControlled->ShowCurrent(1);
-		fHCurrent[2] = mvControlled->ShowCurrent(2);
-		fHCurrent[3] = mvControlled->ShowCurrent(3);
+		fHCurrent[0] = static_cast<float>(mvControlled->ShowCurrent(0));
+		fHCurrent[1] = static_cast<float>(mvControlled->ShowCurrent(1));
+		fHCurrent[2] = static_cast<float>(mvControlled->ShowCurrent(2));
+		fHCurrent[3] = static_cast<float>(mvControlled->ShowCurrent(3));
 	}
 
 	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
@@ -8669,13 +8669,13 @@ bool TTrain::Update(double const Deltatime)
 	{
 		if (p)
 		{
-			fPress[i][0] = p->MoverParameters->BrakePress;
-			fPress[i][1] = p->MoverParameters->PipePress;
-			fPress[i][2] = p->MoverParameters->ScndPipePress;
-			fPress[i][3] = p->MoverParameters->CntrlPipePress;
-			fPress[i][4] = p->MoverParameters->Hamulec->GetBRP();
-			fPress[i][5] = (p->MoverParameters->TotalMass - p->MoverParameters->Mred) * 0.001;
-			fPress[i][6] = p->MoverParameters->SpringBrake.SBP;
+			fPress[i][0] = static_cast<float>(p->MoverParameters->BrakePress);
+			fPress[i][1] = static_cast<float>(p->MoverParameters->PipePress);
+			fPress[i][2] = static_cast<float>(p->MoverParameters->ScndPipePress);
+			fPress[i][3] = static_cast<float>(p->MoverParameters->CntrlPipePress);
+			fPress[i][4] = static_cast<float>(p->MoverParameters->Hamulec->GetBRP());
+			fPress[i][5] = static_cast<float>((p->MoverParameters->TotalMass - p->MoverParameters->Mred) * 0.001);
+			fPress[i][6] = static_cast<float>(p->MoverParameters->SpringBrake.SBP);
 			bBrakes[i][0] = p->MoverParameters->SpringBrake.IsActive;
 			bBrakes[i][1] = p->MoverParameters->SpringBrake.ShuttOff;
 			bDoors[i][1] = p->MoverParameters->Doors.instances[side::left].position > 0.f;
@@ -8708,19 +8708,19 @@ bool TTrain::Update(double const Deltatime)
 			bSlip[i] = p->MoverParameters->SlippingWheels;
 			if (in < 8 && p->MoverParameters->eimc[eimc_p_Pmax] > 1)
 			{
-				fEIMParams[1 + in][0] = p->MoverParameters->eimv[eimv_Fmax];
+				fEIMParams[1 + in][0] = static_cast<float>(p->MoverParameters->eimv[eimv_Fmax]);
 				fEIMParams[1 + in][1] = std::max(fEIMParams[1 + in][0], 0.f);
 				fEIMParams[1 + in][2] = -std::min(fEIMParams[1 + in][0], 0.f);
-				fEIMParams[1 + in][3] = p->MoverParameters->eimv[eimv_Fmax] / std::max(p->MoverParameters->eimv[eimv_Fful], 1.);
+				fEIMParams[1 + in][3] = static_cast<float>(p->MoverParameters->eimv[eimv_Fmax] / std::max(p->MoverParameters->eimv[eimv_Fful], 1.));
 				fEIMParams[1 + in][4] = std::max(fEIMParams[1 + in][3], 0.f);
 				fEIMParams[1 + in][5] = -std::min(fEIMParams[1 + in][3], 0.f);
-				fEIMParams[1 + in][6] = p->MoverParameters->eimv[eimv_If];
-				fEIMParams[1 + in][7] = p->MoverParameters->eimv[eimv_U];
-				fEIMParams[1 + in][8] = p->MoverParameters->Itot; // p->MoverParameters->eimv[eimv_Ipoj];
-				fEIMParams[1 + in][9] = p->MoverParameters->EngineVoltage;
+				fEIMParams[1 + in][6] = static_cast<float>(p->MoverParameters->eimv[eimv_If]);
+				fEIMParams[1 + in][7] = static_cast<float>(p->MoverParameters->eimv[eimv_U]);
+				fEIMParams[1 + in][8] = static_cast<float>(p->MoverParameters->Itot); // p->MoverParameters->eimv[eimv_Ipoj];
+				fEIMParams[1 + in][9] = static_cast<float>(p->MoverParameters->EngineVoltage);
 				fEIMParams[0][6] += fEIMParams[1 + in][8];
 				bMains[in] = p->MoverParameters->Mains;
-				fCntVol[in] = p->MoverParameters->BatteryVoltage;
+				fCntVol[in] = static_cast<float>(p->MoverParameters->BatteryVoltage);
 				bFuse[in] = p->MoverParameters->FuseFlag;
 				bBatt[in] = p->MoverParameters->Battery;
 				bConv[in] = p->MoverParameters->ConverterFlag;
@@ -8732,18 +8732,18 @@ bool TTrain::Update(double const Deltatime)
 			}
 			if (in < 8 && (p->MoverParameters->EngineType == TEngineType::DieselEngine || p->MoverParameters->EngineType == TEngineType::DieselElectric))
 			{
-				fDieselParams[1 + in][0] = p->MoverParameters->enrot * 60;
-				fDieselParams[1 + in][1] = p->MoverParameters->nrot;
-				fDieselParams[1 + in][2] = p->MoverParameters->RList[p->MoverParameters->MainCtrlPos].R;
-				fDieselParams[1 + in][3] = p->MoverParameters->dizel_fill;
-				fDieselParams[1 + in][4] = p->MoverParameters->RList[p->MoverParameters->MainCtrlPos].Mn;
-				fDieselParams[1 + in][5] = p->MoverParameters->dizel_engage;
+				fDieselParams[1 + in][0] = static_cast<float>(p->MoverParameters->enrot * 60);
+				fDieselParams[1 + in][1] = static_cast<float>(p->MoverParameters->nrot);
+				fDieselParams[1 + in][2] = static_cast<float>(p->MoverParameters->RList[p->MoverParameters->MainCtrlPos].R);
+				fDieselParams[1 + in][3] = static_cast<float>(p->MoverParameters->dizel_fill);
+				fDieselParams[1 + in][4] = static_cast<float>(p->MoverParameters->RList[p->MoverParameters->MainCtrlPos].Mn);
+				fDieselParams[1 + in][5] = static_cast<float>(p->MoverParameters->dizel_engage);
 				fDieselParams[1 + in][6] = p->MoverParameters->dizel_heat.Twy;
 				fDieselParams[1 + in][7] = p->MoverParameters->OilPump.pressure;
 				fDieselParams[1 + in][8] = p->MoverParameters->dizel_heat.Ts;
-				fDieselParams[1 + in][9] = p->MoverParameters->hydro_R_Fill;
+				fDieselParams[1 + in][9] = static_cast<float>(p->MoverParameters->hydro_R_Fill);
 				bMains[in] = p->MoverParameters->Mains;
-				fCntVol[in] = p->MoverParameters->BatteryVoltage;
+				fCntVol[in] = static_cast<float>(p->MoverParameters->BatteryVoltage);
 				bFuse[in] = p->MoverParameters->FuseFlag;
 				bBatt[in] = p->MoverParameters->Battery;
 				bConv[in] = p->MoverParameters->ConverterFlag;
@@ -8773,11 +8773,11 @@ bool TTrain::Update(double const Deltatime)
 	//        else
 	//            fEIMParams[0][3] =
 	//                mvControlled->eimv[eimv_Fzad] - mvOccupied->LocalBrakeRatio(); // procent zadany
-	fEIMParams[0][3] = mvOccupied->eimic_real;
+	fEIMParams[0][3] = static_cast<float>(mvOccupied->eimic_real);
 	fEIMParams[0][4] = std::max(fEIMParams[0][3], 0.f);
 	fEIMParams[0][5] = -std::min(fEIMParams[0][3], 0.f);
-	fEIMParams[0][1] = fEIMParams[0][4] * mvControlled->eimv[eimv_Fful];
-	fEIMParams[0][2] = fEIMParams[0][5] * mvControlled->eimv[eimv_Fful];
+	fEIMParams[0][1] = static_cast<float>(fEIMParams[0][4] * mvControlled->eimv[eimv_Fful]);
+	fEIMParams[0][2] = static_cast<float>(fEIMParams[0][5] * mvControlled->eimv[eimv_Fful]);
 	fEIMParams[0][0] = fEIMParams[0][1] - fEIMParams[0][2];
 	fEIMParams[0][7] = 0;
 	fEIMParams[0][8] = 0;
@@ -8816,7 +8816,7 @@ bool TTrain::Update(double const Deltatime)
 	// Ra 15-01: to musi stąd wylecieć - zależności nie mogą być w kabinie
 	if (mvControlled->ConverterFlag == true)
 	{
-		fConverterTimer += Deltatime;
+		fConverterTimer += static_cast<float>(Deltatime);
 		if (mvControlled->CompressorFlag == true && mvControlled->CompressorPower == 1 && (mvControlled->EngineType == TEngineType::ElectricSeriesMotor || mvControlled->TrainType == dt_EZT) &&
 		    DynamicObject->Controller == Humandriver // hunter-110212: poprawka dla EZT
 		    && false == DynamicObject->Mechanik->AIControllFlag)
@@ -8854,22 +8854,22 @@ bool TTrain::Update(double const Deltatime)
 			{
 				if (ggI1B.SubModel)
 				{
-					ggI1B.UpdateValue(tmp->MoverParameters->ShowCurrent(1));
+					ggI1B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(1)));
 					ggI1B.Update();
 				}
 				if (ggI2B.SubModel)
 				{
-					ggI2B.UpdateValue(tmp->MoverParameters->ShowCurrent(2));
+					ggI2B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(2)));
 					ggI2B.Update();
 				}
 				if (ggI3B.SubModel)
 				{
-					ggI3B.UpdateValue(tmp->MoverParameters->ShowCurrent(3));
+					ggI3B.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(3)));
 					ggI3B.Update();
 				}
 				if (ggItotalB.SubModel)
 				{
-					ggItotalB.UpdateValue(tmp->MoverParameters->ShowCurrent(0));
+					ggItotalB.UpdateValue(static_cast<float>(tmp->MoverParameters->ShowCurrent(0)));
 					ggItotalB.Update();
 				}
 				if (ggWater1TempB.SubModel)
@@ -8892,7 +8892,7 @@ bool TTrain::Update(double const Deltatime)
 		ggClockSInd.Update();
 		ggClockMInd.UpdateValue(simulation::Time.data().wMinute);
 		ggClockMInd.Update();
-		ggClockHInd.UpdateValue(simulation::Time.data().wHour + simulation::Time.data().wMinute / 60.0);
+		ggClockHInd.UpdateValue(static_cast<float>(simulation::Time.data().wHour + simulation::Time.data().wMinute / 60.0));
 		ggClockHInd.Update();
 	}
 
@@ -8912,7 +8912,7 @@ bool TTrain::Update(double const Deltatime)
 	{
 		if (mvControlled->DynamicBrakeFlag)
 		{
-			ggEngineVoltage.UpdateValue(std::abs(mvControlled->Im * 5));
+			ggEngineVoltage.UpdateValue(static_cast<float>(std::abs(mvControlled->Im * 5)));
 		}
 		else
 		{
@@ -8923,8 +8923,8 @@ bool TTrain::Update(double const Deltatime)
 				x = 2;
 			if (mvControlled->RList[mvControlled->MainCtrlActualPos].Mn > 0 && std::abs(mvControlled->Im) > 0)
 			{
-				ggEngineVoltage.UpdateValue(x * (std::abs(mvControlled->EngineVoltage) - mvControlled->RList[mvControlled->MainCtrlActualPos].R * std::abs(mvControlled->Im)) /
-				                            mvControlled->RList[mvControlled->MainCtrlActualPos].Mn);
+				ggEngineVoltage.UpdateValue(static_cast<float>(x * (std::abs(mvControlled->EngineVoltage) - mvControlled->RList[mvControlled->MainCtrlActualPos].R * std::abs(mvControlled->Im)) /
+				                            mvControlled->RList[mvControlled->MainCtrlActualPos].Mn));
 			}
 			else
 			{
@@ -8939,25 +8939,25 @@ bool TTrain::Update(double const Deltatime)
 	{
 		// NOTE: since we don't have functional converter object, we're faking it here by simple check whether converter is on
 		// TODO: implement object-based circuits and power systems model so we can have this working more properly
-		ggLVoltage.UpdateValue(std::max(mvOccupied->Power110vIsAvailable ? mvOccupied->NominalBatteryVoltage : 0.0, mvOccupied->Power24vIsAvailable ? mvOccupied->BatteryVoltage : 0.0));
+		ggLVoltage.UpdateValue(static_cast<float>(std::max(mvOccupied->Power110vIsAvailable ? mvOccupied->NominalBatteryVoltage : 0.0, mvOccupied->Power24vIsAvailable ? mvOccupied->BatteryVoltage : 0.0)));
 		ggLVoltage.Update();
 	}
 
 	if (mvControlled->EngineType == TEngineType::DieselElectric)
 	{ // ustawienie zmiennych dla silnika spalinowego
-		fEngine[1] = mvControlled->ShowEngineRotation(1);
-		fEngine[2] = mvControlled->ShowEngineRotation(2);
+		fEngine[1] = static_cast<float>(mvControlled->ShowEngineRotation(1));
+		fEngine[2] = static_cast<float>(mvControlled->ShowEngineRotation(2));
 	}
 
 	else if (mvControlled->EngineType == TEngineType::DieselEngine)
 	{ // albo dla innego spalinowego
-		fEngine[1] = mvControlled->ShowEngineRotation(1);
-		fEngine[2] = mvControlled->ShowEngineRotation(2);
-		fEngine[3] = mvControlled->ShowEngineRotation(3);
+		fEngine[1] = static_cast<float>(mvControlled->ShowEngineRotation(1));
+		fEngine[2] = static_cast<float>(mvControlled->ShowEngineRotation(2));
+		fEngine[3] = static_cast<float>(mvControlled->ShowEngineRotation(3));
 		if (ggMainGearStatus.SubModel)
 		{
 			if (mvControlled->Mains)
-				ggMainGearStatus.UpdateValue(1.1 - std::abs(mvControlled->dizel_automaticgearstatus));
+				ggMainGearStatus.UpdateValue(static_cast<float>(1.1 - std::abs(mvControlled->dizel_automaticgearstatus)));
 			else
 				ggMainGearStatus.UpdateValue(0.0);
 			ggMainGearStatus.Update();
@@ -9381,9 +9381,9 @@ bool TTrain::Update(double const Deltatime)
 		                            (mvControlled->DynamicBrakeCtrlPos > 0.0 ? mvControlled->DynamicBrakeCtrlPos * mvControlled->DynamicBrakeCtrlPosNo * -1 * brakerangemultiplier : 0.0) :
 		                            mvOccupied->LocalBrakePosA > 0.0 ? mvOccupied->LocalBrakePosA * LocalBrakePosNo * -1 * brakerangemultiplier :
 		                                                           0.0};
-		ggJointCtrl.UpdateValue(negativePart < 0.0        ? negativePart :
-		                        mvControlled->CoupledCtrl ? double(mvControlled->MainCtrlPos + mvControlled->ScndCtrlPos) :
-		                                                    double(mvControlled->MainCtrlPos),
+		ggJointCtrl.UpdateValue(negativePart < 0.0        ? static_cast<float>(negativePart) :
+		                        mvControlled->CoupledCtrl ? static_cast<float>(double(mvControlled->MainCtrlPos + mvControlled->ScndCtrlPos)) :
+		                                                    static_cast<float>(double(mvControlled->MainCtrlPos)),
 		                        dsbNastawnikJazdy);
 		ggJointCtrl.Update();
 	}
@@ -9402,20 +9402,20 @@ bool TTrain::Update(double const Deltatime)
 
 		if (mvControlled->CoupledCtrl)
 		{
-			ggMainCtrl.UpdateValue(double(mvControlled->MainCtrlPos + mvControlled->ScndCtrlPos), dsbNastawnikJazdy);
+			ggMainCtrl.UpdateValue(static_cast<float>(double(mvControlled->MainCtrlPos + mvControlled->ScndCtrlPos)), dsbNastawnikJazdy);
 		}
 		else
 		{
-			ggMainCtrl.UpdateValue(double(mvControlled->MainCtrlPos), dsbNastawnikJazdy);
+			ggMainCtrl.UpdateValue(static_cast<float>(double(mvControlled->MainCtrlPos)), dsbNastawnikJazdy);
 		}
 		ggMainCtrl.Update();
 	}
 	if (ggMainCtrlAct.SubModel != nullptr)
 	{
 		if (mvControlled->CoupledCtrl)
-			ggMainCtrlAct.UpdateValue(double(mvControlled->MainCtrlActualPos + mvControlled->ScndCtrlActualPos));
+			ggMainCtrlAct.UpdateValue(static_cast<float>(double(mvControlled->MainCtrlActualPos + mvControlled->ScndCtrlActualPos)));
 		else
-			ggMainCtrlAct.UpdateValue(double(mvControlled->MainCtrlActualPos));
+			ggMainCtrlAct.UpdateValue(static_cast<float>(double(mvControlled->MainCtrlActualPos)));
 		ggMainCtrlAct.Update();
 	}
 	if (ggScndCtrl.SubModel != nullptr)
@@ -9423,7 +9423,7 @@ bool TTrain::Update(double const Deltatime)
 		// Ra: od byte odejmowane boolean i konwertowane potem na double?
 		if (false == ggScndCtrl.is_push())
 		{
-			ggScndCtrl.UpdateValue(double(mvControlled->ScndCtrlPos - (mvControlled->TrainType == dt_ET42 && mvControlled->DynamicBrakeFlag)), dsbNastawnikBocz);
+			ggScndCtrl.UpdateValue(static_cast<float>(double(mvControlled->ScndCtrlPos - (mvControlled->TrainType == dt_ET42 && mvControlled->DynamicBrakeFlag))), dsbNastawnikBocz);
 		}
 		ggScndCtrl.Update();
 	}
@@ -9447,11 +9447,11 @@ bool TTrain::Update(double const Deltatime)
 	{
 		if (mvControlled->TrainType != dt_EZT)
 		{
-			ggDirKey.UpdateValue(double(mvControlled->DirActive), dsbReverserKey);
+			ggDirKey.UpdateValue(static_cast<float>(double(mvControlled->DirActive)), dsbReverserKey);
 		}
 		else
 		{
-			ggDirKey.UpdateValue(double(mvControlled->DirActive) + double(mvControlled->Imin == mvControlled->IminHi), dsbReverserKey);
+			ggDirKey.UpdateValue(static_cast<float>(double(mvControlled->DirActive) + double(mvControlled->Imin == mvControlled->IminHi)), dsbReverserKey);
 		}
 		ggDirKey.Update();
 	}
@@ -9492,7 +9492,7 @@ bool TTrain::Update(double const Deltatime)
 		{
 			// else //standardowa prodedura z kranem powiązanym z klawiaturą
 			// ggBrakeCtrl.UpdateValue(double(mvOccupied->BrakeCtrlPos));
-			ggBrakeCtrl.UpdateValue(mvOccupied->fBrakeCtrlPos);
+			ggBrakeCtrl.UpdateValue(static_cast<float>(mvOccupied->fBrakeCtrlPos));
 			ggBrakeCtrl.Update();
 		}
 	}
@@ -9513,7 +9513,7 @@ bool TTrain::Update(double const Deltatime)
 #endif
 		{
 			// standardowa prodedura z kranem powiązanym z klawiaturą
-			ggLocalBrake.UpdateValue(mvOccupied->LocalBrakePosA * LocalBrakePosNo);
+			ggLocalBrake.UpdateValue(static_cast<float>(mvOccupied->LocalBrakePosA * LocalBrakePosNo));
 		}
 		ggLocalBrake.Update();
 	}
@@ -9644,7 +9644,7 @@ bool TTrain::Update(double const Deltatime)
 	ggWhistleButton.Update();
 	if (DynamicObject->Mechanik != nullptr)
 	{
-		ggHelperButton.UpdateValue(DynamicObject->Mechanik->HelperState);
+		ggHelperButton.UpdateValue(static_cast<float>(DynamicObject->Mechanik->HelperState));
 	}
 	ggHelperButton.Update();
 
@@ -9795,22 +9795,22 @@ void TTrain::update_sounds(double const Deltatime)
 	{
 		// calculate rate of pressure drop in local brake cylinder, once it's been initialized
 		auto const brakepressuredifference{mvOccupied->LocBrakePress - m_lastlocalbrakepressure};
-		m_localbrakepressurechange = std::lerp(m_localbrakepressurechange, 10 * (brakepressuredifference / Deltatime), 0.1f);
+		m_localbrakepressurechange = static_cast<float>(std::lerp(m_localbrakepressurechange, 10 * (brakepressuredifference / Deltatime), 0.1f));
 	}
-	m_lastlocalbrakepressure = mvOccupied->LocBrakePress;
+	m_lastlocalbrakepressure = static_cast<float>(mvOccupied->LocBrakePress);
 	// local brake, release
 	if (rsSBHiss)
 	{
 		if (m_localbrakepressurechange < -0.05f && mvOccupied->LocBrakePress > mvOccupied->BrakePress - 0.05)
 		{
-			rsSBHiss->gain(std::clamp(rsSBHiss->m_amplitudeoffset + rsSBHiss->m_amplitudefactor * -m_localbrakepressurechange * 0.05, 0.0, 1.5));
+			rsSBHiss->gain(static_cast<float>(std::clamp(rsSBHiss->m_amplitudeoffset + rsSBHiss->m_amplitudefactor * -m_localbrakepressurechange * 0.05, 0.0, 1.5)));
 			rsSBHiss->play(sound_flags::exclusive | sound_flags::looping);
 		}
 		else
 		{
 			// don't stop the sound too abruptly
 			volume = std::max(0.0, rsSBHiss->gain() - 0.1 * Deltatime);
-			rsSBHiss->gain(volume);
+			rsSBHiss->gain(static_cast<float>(volume));
 			if (volume < 0.05)
 			{
 				rsSBHiss->stop();
@@ -9822,14 +9822,14 @@ void TTrain::update_sounds(double const Deltatime)
 	{
 		if (m_localbrakepressurechange > 0.05f)
 		{
-			rsSBHissU->gain(std::clamp(rsSBHissU->m_amplitudeoffset + rsSBHissU->m_amplitudefactor * m_localbrakepressurechange * 0.05, 0.0, 1.5));
+			rsSBHissU->gain(static_cast<float>(std::clamp(rsSBHissU->m_amplitudeoffset + rsSBHissU->m_amplitudefactor * m_localbrakepressurechange * 0.05, 0.0, 1.5)));
 			rsSBHissU->play(sound_flags::exclusive | sound_flags::looping);
 		}
 		else
 		{
 			// don't stop the sound too abruptly
 			volume = std::max(0.0, rsSBHissU->gain() - 0.1 * Deltatime);
-			rsSBHissU->gain(volume);
+			rsSBHissU->gain(static_cast<float>(volume));
 			if (volume < 0.05)
 			{
 				rsSBHissU->stop();
@@ -9848,7 +9848,7 @@ void TTrain::update_sounds(double const Deltatime)
 			volume = fPPress > 0 ? rsHiss->m_amplitudefactor * fPPress * 0.25 + rsHiss->m_amplitudeoffset : 0;
 			if (volume * brakevolumescale > 0.05)
 			{
-				rsHiss->gain(volume * brakevolumescale);
+				rsHiss->gain(static_cast<float>(volume * brakevolumescale));
 				rsHiss->play(sound_flags::exclusive | sound_flags::looping);
 			}
 			else
@@ -9863,7 +9863,7 @@ void TTrain::update_sounds(double const Deltatime)
 			volume = fNPress > 0 ? rsHissU->m_amplitudefactor * fNPress + rsHissU->m_amplitudeoffset : 0;
 			if (volume * brakevolumescale > 0.05)
 			{
-				rsHissU->gain(volume * brakevolumescale);
+				rsHissU->gain(static_cast<float>(volume * brakevolumescale));
 				rsHissU->play(sound_flags::exclusive | sound_flags::looping);
 			}
 			else
@@ -9877,7 +9877,7 @@ void TTrain::update_sounds(double const Deltatime)
 			volume = mvOccupied->Handle->GetSound(s_fv4a_e) * rsHissE->m_amplitudefactor + rsHissE->m_amplitudeoffset;
 			if (volume * brakevolumescale > 0.05)
 			{
-				rsHissE->gain(volume * brakevolumescale);
+				rsHissE->gain(static_cast<float>(volume * brakevolumescale));
 				rsHissE->play(sound_flags::exclusive | sound_flags::looping);
 			}
 			else
@@ -9891,7 +9891,7 @@ void TTrain::update_sounds(double const Deltatime)
 			volume = mvOccupied->Handle->GetSound(s_fv4a_x) * rsHissX->m_amplitudefactor + rsHissX->m_amplitudeoffset;
 			if (volume * brakevolumescale > 0.05)
 			{
-				rsHissX->gain(volume * brakevolumescale);
+				rsHissX->gain(static_cast<float>(volume * brakevolumescale));
 				rsHissX->play(sound_flags::exclusive | sound_flags::looping);
 			}
 			else
@@ -9905,7 +9905,7 @@ void TTrain::update_sounds(double const Deltatime)
 			volume = mvOccupied->Handle->GetSound(s_fv4a_t) * rsHissT->m_amplitudefactor + +rsHissT->m_amplitudeoffset;
 			if (volume * brakevolumescale > 0.05)
 			{
-				rsHissT->gain(volume * brakevolumescale);
+				rsHissT->gain(static_cast<float>(volume * brakevolumescale));
 				rsHissT->play(sound_flags::exclusive | sound_flags::looping);
 			}
 			else
@@ -9920,11 +9920,11 @@ void TTrain::update_sounds(double const Deltatime)
 		// upuszczanie z PG
 		if (rsHiss)
 		{
-			fPPress = (4.0f * fPPress + std::max(0.0, mvOccupied->dpMainValve)) / (4.0f + 1.0f);
+			fPPress = static_cast<float>((4.0f * fPPress + std::max(0.0, mvOccupied->dpMainValve)) / (4.0f + 1.0f));
 			volume = fPPress > 0.0f ? 2.0 * rsHiss->m_amplitudefactor * fPPress + rsHiss->m_amplitudeoffset : 0.0;
 			if (volume > 0.05)
 			{
-				rsHiss->gain(volume);
+				rsHiss->gain(static_cast<float>(volume));
 				rsHiss->play(sound_flags::exclusive | sound_flags::looping);
 			}
 			else
@@ -9935,11 +9935,11 @@ void TTrain::update_sounds(double const Deltatime)
 		// napelnianie PG
 		if (rsHissU)
 		{
-			fNPress = (4.0f * fNPress + std::min(0.0, mvOccupied->dpMainValve)) / (4.0f + 1.0f);
+			fNPress = static_cast<float>((4.0f * fNPress + std::min(0.0, mvOccupied->dpMainValve)) / (4.0f + 1.0f));
 			volume = fNPress < 0.0f ? -1.0 * rsHissU->m_amplitudefactor * fNPress + rsHissU->m_amplitudeoffset : 0.0;
 			if (volume > 0.01)
 			{
-				rsHissU->gain(volume);
+				rsHissU->gain(static_cast<float>(volume));
 				rsHissU->play(sound_flags::exclusive | sound_flags::looping);
 			}
 			else
@@ -9959,8 +9959,8 @@ void TTrain::update_sounds(double const Deltatime)
 			    std::clamp(mvOccupied->UnitBrakeForce / std::max(1.0, mvOccupied->BrakeForceR(1.0, mvOccupied->Vel) / (mvOccupied->NAxles * std::max(1, mvOccupied->NBpA))), 0.0, 1.0)};
 			// HACK: in external view mute the sound rather than stop it, in case there's an opening bookend it'd (re)play on sound restart after returning inside
 			volume = FreeFlyModeFlag ? 0.0 : rsBrake->m_amplitudeoffset + std::sqrt(brakeforceratio * std::lerp(0.4, 1.0, mvOccupied->Vel / (1 + mvOccupied->Vmax))) * rsBrake->m_amplitudefactor;
-			rsBrake->pitch(rsBrake->m_frequencyoffset + mvOccupied->Vel * rsBrake->m_frequencyfactor);
-			rsBrake->gain(volume);
+			rsBrake->pitch(static_cast<float>(rsBrake->m_frequencyoffset + mvOccupied->Vel * rsBrake->m_frequencyfactor));
+			rsBrake->gain(static_cast<float>(volume));
 			rsBrake->play(sound_flags::exclusive | sound_flags::looping);
 		}
 		else
@@ -10035,7 +10035,7 @@ void TTrain::update_sounds(double const Deltatime)
 			auto const huntingamount = std::lerp(
 			    0.0, 1.0, std::clamp((mvOccupied->Vel - DynamicObject->HuntingShake.fadein_begin) / (DynamicObject->HuntingShake.fadein_end - DynamicObject->HuntingShake.fadein_begin), 0.0, 1.0));
 
-			rsHuntingNoise->gain(rsHuntingNoise->gain() * huntingamount);
+			rsHuntingNoise->gain(static_cast<float>(rsHuntingNoise->gain() * huntingamount));
 		}
 		else
 		{
@@ -10050,7 +10050,7 @@ void TTrain::update_sounds(double const Deltatime)
 		{
 			if (m_rainsound->is_combined())
 			{
-				m_rainsound->pitch(Global.Overcast - 1.0);
+				m_rainsound->pitch(static_cast<float>(Global.Overcast - 1.0));
 			}
 			m_rainsound->gain(m_rainsound->m_amplitudeoffset + m_rainsound->m_amplitudefactor * 1.f);
 			m_rainsound->play(sound_flags::exclusive | sound_flags::looping);
@@ -10066,7 +10066,7 @@ void TTrain::update_sounds(double const Deltatime)
 		if (fTachoCount >= 3.f)
 		{
 			auto const frequency{(true == dsbHasler->is_combined() ? fTachoVelocity * 0.01 : dsbHasler->m_frequencyoffset + dsbHasler->m_frequencyfactor)};
-			dsbHasler->pitch(frequency);
+			dsbHasler->pitch(static_cast<float>(frequency));
 			dsbHasler->gain(dsbHasler->m_amplitudeoffset + dsbHasler->m_amplitudefactor);
 			dsbHasler->play(sound_flags::exclusive | sound_flags::looping);
 		}
@@ -10178,7 +10178,7 @@ void TTrain::update_sounds_resonancenoise(sound_source &Sound)
 
 	if (volume > 0.05)
 	{
-		Sound.pitch(frequency).gain(volume).play(sound_flags::exclusive | sound_flags::looping);
+		Sound.pitch(static_cast<float>(frequency)).gain(static_cast<float>(volume)).play(sound_flags::exclusive | sound_flags::looping);
 	}
 	else
 	{
@@ -10213,7 +10213,7 @@ void TTrain::update_sounds_runningnoise(sound_source &Sound)
 
 	if (volume > 0.05)
 	{
-		Sound.pitch(frequency).gain(volume).play(sound_flags::exclusive | sound_flags::looping);
+		Sound.pitch(static_cast<float>(frequency)).gain(static_cast<float>(volume)).play(sound_flags::exclusive | sound_flags::looping);
 	}
 	else
 	{
@@ -10236,7 +10236,7 @@ void TTrain::update_sounds_radio()
 	for (auto &message : m_radiomessages)
 	{
 		auto const volume{true == radioenabled && Dynamic()->Mechanik != nullptr && message.first == RadioChannel() ? m_radiovolume : 0.0};
-		message.second->gain(volume);
+		message.second->gain(static_cast<float>(volume));
 		radio_message_played |= true == radioenabled && Dynamic()->Mechanik != nullptr && message.first == RadioChannel();
 	}
 	// radiostop
@@ -10286,7 +10286,7 @@ void TTrain::add_distance(double const Distance)
 
 	if (true == meterenabled)
 	{
-		m_distancecounter += Distance * Occupied()->CabOccupied;
+		m_distancecounter += static_cast<float>(Distance * Occupied()->CabOccupied);
 	}
 	else
 	{
@@ -10391,7 +10391,7 @@ bool TTrain::LoadMMediaFile(std::string const &asFileName)
 
 			auto const soundconfig{lookup->second};
 			sound_source sound{std::get<sound_placement>(soundconfig), std::get<float>(soundconfig)};
-			sound.deserialize(parser, std::get<sound_type>(soundconfig), std::get<int>(soundconfig), std::get<double>(soundconfig));
+			sound.deserialize(parser, std::get<sound_type>(soundconfig), std::get<int>(soundconfig), static_cast<int>(std::get<double>(soundconfig)));
 			sound.owner(DynamicObject);
 			std::get<std::optional<sound_source> &>(soundconfig) = sound;
 		} while (token != "");
@@ -10416,23 +10416,23 @@ bool TTrain::LoadMMediaFile(std::string const &asFileName)
 		}
 		if (rsBrake)
 		{
-			rsBrake->m_frequencyfactor /= 1 + mvOccupied->Vmax;
+			rsBrake->m_frequencyfactor /= static_cast<float>(1 + mvOccupied->Vmax);
 		}
 		if (rsResonanceNoise)
 		{
-			rsResonanceNoise->m_frequencyfactor /= 1 + mvOccupied->Vmax;
+			rsResonanceNoise->m_frequencyfactor /= static_cast<float>(1 + mvOccupied->Vmax);
 		}
 		if (rsWindSound)
 		{
-			rsWindSound->m_frequencyfactor /= 1 + mvOccupied->Vmax;
+			rsWindSound->m_frequencyfactor /= static_cast<float>(1 + mvOccupied->Vmax);
 		}
 		if (rsRunningNoise)
 		{
-			rsRunningNoise->m_frequencyfactor /= 1 + mvOccupied->Vmax;
+			rsRunningNoise->m_frequencyfactor /= static_cast<float>(1 + mvOccupied->Vmax);
 		}
 		if (rsHuntingNoise)
 		{
-			rsHuntingNoise->m_frequencyfactor /= 1 + mvOccupied->Vmax;
+			rsHuntingNoise->m_frequencyfactor /= static_cast<float>(1 + mvOccupied->Vmax);
 		}
 	}
 	auto const nullvector{glm::vec3()};
@@ -11019,7 +11019,7 @@ void TTrain::radio_message(sound_source *Message, int const Channel)
 	auto &message = *m_radiomessages.back().second.get();
 	auto const radioenabled{true == mvOccupied->Radio && (mvOccupied->Power24vIsAvailable || mvOccupied->Power110vIsAvailable)};
 	auto const volume{true == radioenabled && Dynamic()->Mechanik != nullptr && Channel == RadioChannel() ? 1.0 : 0.0};
-	message.copy_sounds(*Message).gain(volume).play();
+	message.copy_sounds(*Message).gain(static_cast<float>(volume)).play();
 }
 
 // clears state of all cabin controls
@@ -11327,7 +11327,7 @@ void TTrain::set_cab_controls(int const Cab)
 	if (ggModernLightDimSw.SubModel != nullptr)
 	{
 		mvOccupied->modernDimmerPosition = mvOccupied->modernDimmerDefaultPosition;
-		ggModernLightDimSw.PutValue(mvOccupied->modernDimmerDefaultPosition);
+		ggModernLightDimSw.PutValue(static_cast<float>(mvOccupied->modernDimmerDefaultPosition));
 	}
 
 	// Init separate buttons
@@ -11343,7 +11343,7 @@ void TTrain::set_cab_controls(int const Cab)
 	// motor connectors
 	ggStLinOffButton.PutValue(mvControlled->StLinSwitchOff ? 1.f : 0.f);
 	// radio
-	ggRadioChannelSelector.PutValue((Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1) - 1);
+	ggRadioChannelSelector.PutValue(static_cast<float>((Dynamic()->Mechanik ? Dynamic()->Mechanik->iRadioChannel : 1) - 1));
 	// pantographs
 	/*
 	    if( mvOccupied->PantSwitchType != "impulse" ) {
@@ -11408,11 +11408,11 @@ void TTrain::set_cab_controls(int const Cab)
 	// compressor
 	ggCompressorButton.PutValue(mvControlled->CompressorAllow ? 1.f : 0.f);
 	ggCompressorLocalButton.PutValue(mvControlled->CompressorAllowLocal ? 1.f : 0.f);
-	ggCompressorListButton.PutValue(mvOccupied->CompressorListPos - 1);
+	ggCompressorListButton.PutValue(static_cast<float>(mvOccupied->CompressorListPos - 1));
 	// motor overload relay threshold / shunt mode
 	ggMaxCurrentCtrl.PutValue(true == mvControlled->ShuntModeAllow ? (true == mvControlled->ShuntMode ? 1.f : 0.f) : mvControlled->MotorOverloadRelayHighThreshold ? 1.f : 0.f);
 	// lights
-	ggLightsButton.PutValue(mvOccupied->LightsPos - 1);
+	ggLightsButton.PutValue(static_cast<float>(mvOccupied->LightsPos - 1));
 
 	auto const vehicleend{cab_to_end(Cab)};
 
@@ -11452,7 +11452,7 @@ void TTrain::set_cab_controls(int const Cab)
 	}
 	if (1 == DynamicObject->MoverParameters->modernDimmerPosition)
 	{
-		ggDimHeadlightsButton.PutValue(DynamicObject->MoverParameters->modernDimmerPosition);
+		ggDimHeadlightsButton.PutValue(static_cast<float>(DynamicObject->MoverParameters->modernDimmerPosition));
 	}
 	// cab lights
 	if (true == Cabine[Cab].bLightDim)
@@ -11474,7 +11474,7 @@ void TTrain::set_cab_controls(int const Cab)
 	{
 		ggDoorRightPermitButton.PutValue(mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::right : side::left)].open_permit ? 1.f : 0.f);
 	}
-	ggDoorPermitPresetButton.PutValue(mvOccupied->Doors.permit_preset);
+	ggDoorPermitPresetButton.PutValue(static_cast<float>(mvOccupied->Doors.permit_preset));
 	// door controls
 	ggDoorLeftButton.PutValue(mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::left : side::right)].is_closed ? 0.f : 1.f);
 	ggDoorRightButton.PutValue(mvOccupied->Doors.instances[(cab_to_end() == end::front ? side::right : side::left)].is_closed ? 0.f : 1.f);
@@ -11493,7 +11493,7 @@ void TTrain::set_cab_controls(int const Cab)
 	// brake acting time
 	if (ggBrakeProfileCtrl.SubModel != nullptr)
 	{
-		ggBrakeProfileCtrl.PutValue((mvOccupied->BrakeDelayFlag & bdelay_R) != 0 ? 2.f : mvOccupied->BrakeDelayFlag - 1);
+		ggBrakeProfileCtrl.PutValue((mvOccupied->BrakeDelayFlag & bdelay_R) != 0 ? 2.f : static_cast<float>(mvOccupied->BrakeDelayFlag - 1));
 	}
 	if (ggBrakeProfileG.SubModel != nullptr)
 	{
@@ -11506,12 +11506,12 @@ void TTrain::set_cab_controls(int const Cab)
 
 	if (ggWiperSw.SubModel != nullptr)
 	{
-		ggWiperSw.PutValue(mvOccupied->wiperSwitchPos);
+		ggWiperSw.PutValue(static_cast<float>(mvOccupied->wiperSwitchPos));
 	}
 
 	if (ggBrakeOperationModeCtrl.SubModel != nullptr)
 	{
-		ggBrakeOperationModeCtrl.PutValue(mvOccupied->BrakeOpModeFlag > 0 ? std::log2(mvOccupied->BrakeOpModeFlag) : 0);
+		ggBrakeOperationModeCtrl.PutValue(mvOccupied->BrakeOpModeFlag > 0 ? static_cast<float>(std::log2(mvOccupied->BrakeOpModeFlag)) : 0);
 	}
 	// alarm chain
 	ggAlarmChain.PutValue(mvControlled->AlarmChainFlag ? 1.f : 0.f);
@@ -12285,9 +12285,9 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 			if (DynamicObject->mdKabina)
 			{
 				// McZapkie-300302: zegarek
-				ggClockSInd.Init(DynamicObject->mdKabina->GetFromName("ClockShand"), nullptr, TGaugeAnimation::gt_Rotate, 1.0 / 60.0);
-				ggClockMInd.Init(DynamicObject->mdKabina->GetFromName("ClockMhand"), nullptr, TGaugeAnimation::gt_Rotate, 1.0 / 60.0);
-				ggClockHInd.Init(DynamicObject->mdKabina->GetFromName("ClockHhand"), nullptr, TGaugeAnimation::gt_Rotate, 1.0 / 12.0);
+				ggClockSInd.Init(DynamicObject->mdKabina->GetFromName("ClockShand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 60.0));
+				ggClockMInd.Init(DynamicObject->mdKabina->GetFromName("ClockMhand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 60.0));
+				ggClockHInd.Init(DynamicObject->mdKabina->GetFromName("ClockHhand"), nullptr, TGaugeAnimation::gt_Rotate, static_cast<float>(1.0 / 12.0));
 			}
 		}
 	}

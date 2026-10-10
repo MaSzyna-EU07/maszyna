@@ -43,7 +43,7 @@ void network::connection::connected()
 	if (is_client) {
 		client_hello msg;
 		msg.version = EU07_NETWORK_VERSION;
-		msg.start_packet = packet_counter;
+		msg.start_packet = static_cast<uint32_t>(packet_counter);
 		send_message(msg);
 	}
 }
@@ -188,9 +188,9 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 	}
 
 
-	float size = delta_queue.size() - consume_counter;
+	float size = static_cast<float>(delta_queue.size()) - consume_counter;
 	const auto& entry = delta_queue.front();
-	float mult = entry.render_dt / std::chrono::duration_cast<std::chrono::duration<float>>(frame_time).count();
+	float mult = static_cast<float>(entry.render_dt / std::chrono::duration_cast<std::chrono::duration<float>>(frame_time).count());
 
 	if (counter == 1 && size < MAX_BUFFER_SIZE * 2.0f) {
 		last_target = last_target * TARGET_MIX +

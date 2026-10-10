@@ -61,7 +61,7 @@ opengl33_particles::update( opengl_camera const &Camera ) {
 		// TODO: put sanity cap on the overall amount of particles that can be drawn
 		auto const sizestep { 256.0 * billboard_vertices.size() };
 		m_particlevertices.reserve(
-		    sizestep * std::ceil( m_particlevertices.size() + ( particles.size() * billboard_vertices.size() ) / sizestep ) );
+		    static_cast<std::size_t>( sizestep * std::ceil( static_cast<double>(m_particlevertices.size()) + ( static_cast<double>(particles.size() * billboard_vertices.size()) ) / sizestep ) ) );
 		for( auto const &particle : particles ) {
 			// TODO: particle color support
 			vertex.color[ 0 ] = particlecolor.r;
@@ -128,7 +128,7 @@ opengl33_particles::render() {
 	m_shader->bind();
 	m_vao->bind();
 
-	glDrawArrays(GL_TRIANGLES, 0, m_particlevertices.size());
+	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_particlevertices.size()));
 
 	m_shader->unbind();
 	m_vao->unbind();

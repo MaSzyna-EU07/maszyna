@@ -196,7 +196,7 @@ world_environment::update() {
     if( true == (FreeFlyModeFlag || Global.CabWindowOpen)
      && Global.Weather == "rain:" ) {
         if( m_rainsound.is_combined() ) {
-            m_rainsound.pitch( Global.Overcast - 1.0 );
+            m_rainsound.pitch( static_cast<float>(Global.Overcast - 1.0) );
         }
         m_rainsound
             .gain( m_rainsound.m_amplitudeoffset + m_rainsound.m_amplitudefactor * 1.f )
@@ -228,12 +228,12 @@ world_environment::update_wind() {
 
     m_wind.change_time -= timedelta;
     if( m_wind.change_time < 0 ) {
-        m_wind.change_time = Random( 5, 15 );
-        m_wind.velocity_change = Random( -0.2, 0.2 );
+        m_wind.change_time = static_cast<float>(Random( 5, 15 ));
+        m_wind.velocity_change = static_cast<float>(Random( -0.2, 0.2 ));
         if( Random() < 0.05 ) {
             // changes in wind direction should be less frequent than changes in wind speed
             // TBD, TODO: configuration-driven direction change frequency
-            m_wind.azimuth_change = Random( -5, 5 );
+            m_wind.azimuth_change = static_cast<float>(Random( -5, 5 ));
         }
         else {
             // keep direction change periods short, to avoid too drastic changes in direction

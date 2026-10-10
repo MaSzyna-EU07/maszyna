@@ -543,7 +543,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) {
                     return mvControlling->EIMDirectionChangeAllow(); },
-                mvControlling->MainCtrlMaxDirChangePos );
+                static_cast<float>(mvControlling->MainCtrlMaxDirChangePos) );
             break;
         }
         case driver_hint::tractiveforcedecrease: {
@@ -555,11 +555,11 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) {
                     return std::abs(mvControlling->Ft) <= Parameter; },
-                std::min(
+                static_cast<float>(std::min(
                     0.0,
                     std::max(
                         std::abs( mvControlling->Ft ) * 0.95,
-                        std::abs( mvControlling->Ft ) - 5.0 ) ) );
+                        std::abs( mvControlling->Ft ) - 5.0 ) )) );
             break;
         }
         case driver_hint::tractiveforceincrease: {
@@ -831,7 +831,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) {
                     return std::abs(mvControlling->Fb) <= Parameter; },
-                std::min( 0.0, 0.95 * std::abs( mvControlling->Fb ) ) ); // keep hint until 5% decrease
+                static_cast<float>(std::min( 0.0, 0.95 * std::abs( mvControlling->Fb ) )) ); // keep hint until 5% decrease
             break;
         }
         case driver_hint::brakingforceincrease: {
@@ -847,11 +847,11 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                 Action,
                 [this](float const Parameter) {
                     return std::abs(mvControlling->Fb) > Parameter || is_equal(mvOccupied->fBrakeCtrlPos, mvOccupied->Handle->GetPos(bh_EB), 0.2); },
-                std::max(
+                static_cast<float>(std::max(
                     0.0,
                     std::max(
                         std::abs( mvControlling->Fb ) * 1.05,
-                        std::abs( mvControlling->Fb ) + 5.0 ) ) );
+                        std::abs( mvControlling->Fb ) + 5.0 ) )) );
             break;
         }
         case driver_hint::brakingforcesetzero: { // releases both train and independent brake
@@ -1216,7 +1216,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         case driver_hint::couplingadapterattach: {
             // TODO: run also for potential settings-based virtual assistant
             if( AIControllFlag ) {
-                pVehicles[ end::front ]->attach_coupler_adapter( Actionparameter );
+                pVehicles[ end::front ]->attach_coupler_adapter( static_cast<int>(Actionparameter) );
             }
             hint(
                 Action,
@@ -1227,7 +1227,7 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         }
         case driver_hint::couplingadapterremove: {
             if( AIControllFlag || Global.AITrainman ) {
-                pVehicles[ end::front ]->remove_coupler_adapter( Actionparameter );
+                pVehicles[ end::front ]->remove_coupler_adapter( static_cast<int>(Actionparameter) );
             }
             hint(
                 Action,

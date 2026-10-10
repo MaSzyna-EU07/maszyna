@@ -13,8 +13,8 @@ http://mozilla.org/MPL/2.0/.
 void TSpring::Init(double nKs, double nKd) {
     Ks = nKs;
     Kd = nKd;
-    ks = Ks;
-    kd = Kd;
+    ks = static_cast<float>(Ks);
+    kd = static_cast<float>(Kd);
 }
 
 glm::dvec3 TSpring::ComputateForces(glm::dvec3 const &pPosition1, glm::dvec3 const &pPosition2) {

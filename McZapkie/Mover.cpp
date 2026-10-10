@@ -1930,17 +1930,17 @@ void TMoverParameters::PowerCouplersCheck(double const Deltatime, coupling const
 	{
 	case coupling::highvoltage:
 	{
-		couplervoltage = Couplers[end::front].power_high.voltage + Couplers[end::rear].power_high.voltage;
+		couplervoltage = static_cast<int>(Couplers[end::front].power_high.voltage + Couplers[end::rear].power_high.voltage);
 		break;
 	}
 	case coupling::power110v:
 	{
-		couplervoltage = Couplers[end::front].power_110v.voltage + Couplers[end::rear].power_110v.voltage;
+		couplervoltage = static_cast<int>(Couplers[end::front].power_110v.voltage + Couplers[end::rear].power_110v.voltage);
 		break;
 	}
 	case coupling::power24v:
 	{
-		couplervoltage = Couplers[end::front].power_24v.voltage + Couplers[end::rear].power_24v.voltage;
+		couplervoltage = static_cast<int>(Couplers[end::front].power_24v.voltage + Couplers[end::rear].power_24v.voltage);
 		break;
 	}
 	default:
@@ -2224,11 +2224,11 @@ void TMoverParameters::OilPumpCheck(double const Timestep)
 	if (OilPump.pressure < OilPump.pressure_target)
 	{
 		// TODO: scale change rate from 0.01-0.05 with oil/engine temperature/idle time
-		OilPump.pressure = std::min<float>(OilPump.pressure_target, OilPump.pressure + (enrot > 5.0 ? 0.05 : 0.035) * Timestep);
+		OilPump.pressure = std::min<float>(OilPump.pressure_target, static_cast<float>(OilPump.pressure + (enrot > 5.0 ? 0.05 : 0.035) * Timestep));
 	}
 	if (OilPump.pressure > OilPump.pressure_target)
 	{
-		OilPump.pressure = std::max<float>(OilPump.pressure_target, OilPump.pressure - (enrot > 5.0 ? 0.05 : 0.035) * 0.5 * Timestep);
+		OilPump.pressure = std::max<float>(OilPump.pressure_target, static_cast<float>(OilPump.pressure - (enrot > 5.0 ? 0.05 : 0.035) * 0.5 * Timestep));
 	}
 	OilPump.pressure = std::clamp(OilPump.pressure, 0.f, 1.5f);
 }
@@ -2245,7 +2245,7 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		{
 			if (stop)
 			{
-				blower.stop_timer += Timestep;
+				blower.stop_timer += static_cast<float>(Timestep);
 				if (blower.stop_timer > blower.sustain_time)
 				{
 					disable = true;
@@ -2285,11 +2285,11 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		if (revolutionstarget > 0.f)
 		{
 			auto const speedincreasecap{std::max(50.f, fan.speed * 0.05f * -1)}; // 5% of fixed revolution speed, or 50
-			fan.revolutions += std::clamp(revolutionstarget - fan.revolutions, speedincreasecap * -2, speedincreasecap) * Timestep;
+			fan.revolutions += static_cast<float>(std::clamp(revolutionstarget - fan.revolutions, speedincreasecap * -2, speedincreasecap) * Timestep);
 		}
 		else
 		{
-			fan.revolutions *= std::max(0.0, 1.0 - Timestep);
+			fan.revolutions *= static_cast<float>(std::max(0.0, 1.0 - Timestep));
 		}
 	}
 }
@@ -2798,7 +2798,7 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 	if (OK && SpeedCtrl && ScndCtrlPos == 1 && EngineType == TEngineType::DieselEngine)
 	{
 		// NOTE: round() already adds 0.5, are the ones added here as well correct?
-		SpeedCtrlValue = Round(Vel);
+		SpeedCtrlValue = static_cast<double>(Round(Vel));
 		SpeedCtrlUnit.IsActive = true;
 	}
 
@@ -4350,7 +4350,7 @@ void TMoverParameters::CompressorCheck(double dt)
 	EmergencyValveOpen = Compressor > (EmergencyValveOpen ? EmergencyValveOff : EmergencyValveOn);
 	if (EmergencyValveOpen)
 	{
-		float dV = PF(0, Compressor, EmergencyValveArea) * dt;
+		float dV = static_cast<float>(PF(0, Compressor, EmergencyValveArea) * dt);
 		CompressedVolume -= dV;
 	}
 
@@ -4737,7 +4737,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		if (DCEMUED_EP_min_Im > 0.001 && abs(Im) > DCEMUED_EP_min_Im && DynamicBrakeEMUStatus)
 			temp1 = 0;
 		Hamulec->SetEPS(temp1);
-		TUHEX_StageActual = EpForce;
+		TUHEX_StageActual = static_cast<int>(EpForce);
 		TUHEX_Active = TUHEX_StageActual > 0;
 		// Ra 2014-11: na tym się wysypuje, ale nie wiem, w jakich warunkach
 		SendCtrlToNext("Brake", EpForce, CabActive);
@@ -5425,7 +5425,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 			if (std::abs(CF) > coupler.FmaxC)
 			{
 				// coupler is stretched with excessive force, may break
-				coupler.stretch_duration += dt;
+				coupler.stretch_duration += static_cast<float>(dt);
 				// give coupler 1 sec of leeway to account for simulation glitches, before checking whether it breaks
 				// (arbitrary) chance to break grows from 10-100% over 10 sec period
 				if (Global.crash_damage && coupler.stretch_duration > 1.f && Random() < coupler.stretch_duration * 0.1f * dt)
@@ -5643,14 +5643,14 @@ double TMoverParameters::TractionForce(double dt)
 		{
 			// TBD, TODO: currently ignores RVentType, fix this?
 			RventRot += std::clamp(enrot - RventRot, -100.0, 50.0) * dt;
-			dizel_heat.rpmw += std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
-			dizel_heat.rpmw2 += std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
+			dizel_heat.rpmw += static_cast<float>(std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt);
+			dizel_heat.rpmw2 += static_cast<float>(std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt);
 		}
 		else
 		{
 			RventRot *= std::max(0.0, 1.0 - RVentSpeed * dt);
-			dizel_heat.rpmw *= std::max(0.0, 1.0 - dizel_heat.rpmw * dt);
-			dizel_heat.rpmw2 *= std::max(0.0, 1.0 - dizel_heat.rpmw2 * dt);
+			dizel_heat.rpmw *= static_cast<float>(std::max(0.0, 1.0 - dizel_heat.rpmw * dt));
+			dizel_heat.rpmw2 *= static_cast<float>(std::max(0.0, 1.0 - dizel_heat.rpmw2 * dt));
 		}
 		break;
 	}
@@ -5660,13 +5660,13 @@ double TMoverParameters::TractionForce(double dt)
 		// NOTE: we update only radiator fans, as vehicles with diesel engine don't have other ventilators
 		if (true == Mains)
 		{
-			dizel_heat.rpmw += std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt;
-			dizel_heat.rpmw2 += std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt;
+			dizel_heat.rpmw += static_cast<float>(std::clamp(dizel_heat.rpmwz - dizel_heat.rpmw, -100.f, 50.f) * dt);
+			dizel_heat.rpmw2 += static_cast<float>(std::clamp(dizel_heat.rpmwz2 - dizel_heat.rpmw2, -100.f, 50.f) * dt);
 		}
 		else
 		{
-			dizel_heat.rpmw *= std::max(0.0, 1.0 - dizel_heat.rpmw * dt);
-			dizel_heat.rpmw2 *= std::max(0.0, 1.0 - dizel_heat.rpmw2 * dt);
+			dizel_heat.rpmw *= static_cast<float>(std::max(0.0, 1.0 - dizel_heat.rpmw * dt));
+			dizel_heat.rpmw2 *= static_cast<float>(std::max(0.0, 1.0 - dizel_heat.rpmw2 * dt));
 		}
 		break;
 	}
@@ -6326,7 +6326,7 @@ double TMoverParameters::TractionForce(double dt)
 						SpeedCtrlTimer += dt;
 						if (SpeedCtrlTimer > SpeedCtrlDelay)
 						{
-							int NewSCAP = (float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax;
+							int NewSCAP = static_cast<int>((float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax);
 							if (NewSCAP != SpeedCtrlValue)
 							{
 								SpeedCtrlValue = NewSCAP;
@@ -6365,7 +6365,7 @@ double TMoverParameters::TractionForce(double dt)
 					{
 						PosRatio = 0;
 					}
-					PosRatio = Round(20.0 * PosRatio) / 20.0; // stopniowanie PN/ED
+					PosRatio = static_cast<double>(Round(20.0 * PosRatio)) / 20.0; // stopniowanie PN/ED
 					if (PosRatio < 19.5 / 20.0)
 						PosRatio *= 0.9;
 					Hamulec->SetED(std::max(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
@@ -8339,13 +8339,13 @@ void TMoverParameters::dizel_Heat(double const dt)
 	// silnik oddaje czesc ciepla do wody chlodzacej, a takze pewna niewielka czesc do otoczenia, modyfikowane przez okienko
 	auto const Qs{(Qd - dizel_heat.kfs * (dizel_heat.Ts - dizel_heat.Tsr) - dizel_heat.kfe * /* ( 0.3 + 0.7 * ( dizel_heat.okienko ? 1 : 0 ) ) * */ (dizel_heat.Ts - dizel_heat.Te))};
 	auto const dTss{Qs / Cs};
-	dizel_heat.Ts += dTss * dt;
+	dizel_heat.Ts += static_cast<float>(dTss * dt);
 
 	// oil heat transfers
 	// olej oddaje cieplo do wody gdy krazy przez wymiennik ciepla == wlaczona pompka lub silnik
 	auto const dTo{(dizel_heat.auxiliary_water_circuit ? (dizel_heat.kfo * (dizel_heat.Ts - dizel_heat.To) - dizel_heat.kfo2 * (dizel_heat.To - dizel_heat.Tsr2)) / (gwO * Co) :
 	                                                     (dizel_heat.kfo * (dizel_heat.Ts - dizel_heat.To) - dizel_heat.kfo2 * (dizel_heat.To - dizel_heat.Tsr)) / (gwO * Co))};
-	dizel_heat.To += dTo * dt;
+	dizel_heat.To += static_cast<float>(dTo * dt);
 
 	// heater
 	/*
@@ -8364,7 +8364,7 @@ void TMoverParameters::dizel_Heat(double const dt)
 		                               (true == Mains && BatteryVoltage > 0.75 * NominalBatteryVoltage /* && !bezpompy && !awaria_chlodzenia && !WS10 */
 		                                && dizel_heat.water_aux.config.temp_cooling > 0 && dizel_heat.temperatura2 > dizel_heat.water_aux.config.temp_cooling - (dizel_heat.water_aux.is_warm ? 8 : 0));
 		auto const PTC2{(dizel_heat.water_aux.is_warm /*or PTC2p*/ ? 1 : 0)};
-		dizel_heat.rpmwz2 = PTC2 * (dizel_heat.fan_speed >= 0 ? rpm * dizel_heat.fan_speed : dizel_heat.fan_speed * -1);
+		dizel_heat.rpmwz2 = static_cast<float>(PTC2 * (dizel_heat.fan_speed >= 0 ? rpm * dizel_heat.fan_speed : dizel_heat.fan_speed * -1));
 		dizel_heat.zaluzje2 = dizel_heat.water_aux.config.shutters ? PTC2 == 1 : true; // no shutters is an equivalent to having them open
 		auto const zaluzje2{(dizel_heat.zaluzje2 ? 1 : 0)};
 		// auxiliary water circuit heat transfer values
@@ -8376,8 +8376,8 @@ void TMoverParameters::dizel_Heat(double const dt)
 		// auxiliary water circuit heat transfers finalization
 		// NOTE: since primary circuit doesn't read data from the auxiliary one, we can pretty safely finalize auxiliary updates before touching the primary circuit
 		auto const Twe2{dizel_heat.Twy2 + dTch2 * dt};
-		dizel_heat.Twy2 = Twe2 + dTs2 * dt;
-		dizel_heat.Tsr2 = 0.5 * (dizel_heat.Twy2 + Twe2);
+		dizel_heat.Twy2 = static_cast<float>(Twe2 + dTs2 * dt);
+		dizel_heat.Tsr2 = static_cast<float>(0.5 * (dizel_heat.Twy2 + Twe2));
 		dizel_heat.temperatura2 = dizel_heat.Twy2;
 	}
 	// primary water circuit setup
@@ -8387,7 +8387,7 @@ void TMoverParameters::dizel_Heat(double const dt)
 	    true == dizel_heat.cooling || (true == Mains && BatteryVoltage > 0.75 * NominalBatteryVoltage /* && !bezpompy && !awaria_chlodzenia && !WS10 */
 	                                   && dizel_heat.water.config.temp_cooling > 0 && dizel_heat.temperatura1 > dizel_heat.water.config.temp_cooling - (dizel_heat.water.is_warm ? 8 : 0));
 	auto const PTC1{(dizel_heat.water.is_warm /*or PTC1p*/ ? 1 : 0)};
-	dizel_heat.rpmwz = PTC1 * (dizel_heat.fan_speed >= 0 ? rpm * dizel_heat.fan_speed : dizel_heat.fan_speed * -1);
+	dizel_heat.rpmwz = static_cast<float>(PTC1 * (dizel_heat.fan_speed >= 0 ? rpm * dizel_heat.fan_speed : dizel_heat.fan_speed * -1));
 	dizel_heat.zaluzje1 = dizel_heat.water.config.shutters ? PTC1 == 1 : true; // no shutters is an equivalent to having them open
 	auto const zaluzje1{(dizel_heat.zaluzje1 ? 1 : 0)};
 	// primary water circuit heat transfer values
@@ -8398,8 +8398,8 @@ void TMoverParameters::dizel_Heat(double const dt)
 	auto const dTch{Qch / (gw * Cw)};
 	// primary water circuit heat transfers finalization
 	auto const Twe{dizel_heat.Twy + dTch * dt};
-	dizel_heat.Twy = Twe + dTs * dt;
-	dizel_heat.Tsr = 0.5 * (dizel_heat.Twy + Twe);
+	dizel_heat.Twy = static_cast<float>(Twe + dTs * dt);
+	dizel_heat.Tsr = static_cast<float>(0.5 * (dizel_heat.Twy + Twe));
 	dizel_heat.temperatura1 = dizel_heat.Twy;
 	/*
 	    fuelConsumed = fuelConsumed + ( Ge * 0.5 );
@@ -8580,7 +8580,7 @@ bool TMoverParameters::LoadingDone(double const LSpeed, std::string const &Loadn
 			if (LoadAmount >= MaxLoad * (1.0 + OverLoadFactor) || CommandIn.Value1 <= 0)
 			{
 				LoadStatus = 4; // skończony załadunek
-				LoadAmount = std::min<float>(MaxLoad * (1.0 + OverLoadFactor), LoadAmount);
+				LoadAmount = std::min<float>(static_cast<float>(MaxLoad * (1.0 + OverLoadFactor)), LoadAmount);
 			}
 			ComputeMass();
 		}
@@ -8819,10 +8819,10 @@ void TMoverParameters::update_doors(double const Deltatime)
 			if (false == door.step_unfolding // no wait if no doorstep
 			    || Doors.step_type == 2)
 			{ // no wait for rotating doorstep
-				door.open_delay += Deltatime;
+				door.open_delay += static_cast<float>(Deltatime);
 				if (door.open_delay > Doors.open_delay)
 				{
-					door.position = std::min<float>(Doors.range, door.position + Doors.open_rate * Deltatime);
+					door.position = std::min<float>(Doors.range, static_cast<float>(door.position + Doors.open_rate * Deltatime));
 				}
 			}
 			door.close_delay = 0.f;
@@ -8830,10 +8830,10 @@ void TMoverParameters::update_doors(double const Deltatime)
 		if (true == door.is_closing)
 		{
 			// close door
-			door.close_delay += Deltatime;
+			door.close_delay += static_cast<float>(Deltatime);
 			if (door.close_delay > Doors.close_delay)
 			{
-				door.position = std::max<float>(0.f, door.position - Doors.close_rate * Deltatime);
+				door.position = std::max<float>(0.f, static_cast<float>(door.position - Doors.close_rate * Deltatime));
 			}
 			door.open_delay = 0.f;
 		}
@@ -8841,7 +8841,7 @@ void TMoverParameters::update_doors(double const Deltatime)
 		if (door.step_unfolding)
 		{
 			// unfold left doorstep
-			door.step_position = std::min<float>(1.f, door.step_position + Doors.step_rate * Deltatime);
+			door.step_position = std::min<float>(1.f, static_cast<float>(door.step_position + Doors.step_rate * Deltatime));
 		}
 		if (door.step_folding)
 		{
@@ -8851,12 +8851,12 @@ void TMoverParameters::update_doors(double const Deltatime)
 				// multi-unit vehicles typically fold the doorstep only after closing the door
 				if (door.position <= 0.f)
 				{
-					door.step_position = std::max<float>(0.f, door.step_position - Doors.step_rate * Deltatime);
+					door.step_position = std::max<float>(0.f, static_cast<float>(door.step_position - Doors.step_rate * Deltatime));
 				}
 			}
 			else
 			{
-				door.step_position = std::max<float>(0.f, door.step_position - Doors.step_rate * Deltatime);
+				door.step_position = std::max<float>(0.f, static_cast<float>(door.step_position - Doors.step_rate * Deltatime));
 			}
 		}
 	}
@@ -8879,7 +8879,7 @@ void TMoverParameters::update_doors(double const Deltatime)
 
 			if (door.auto_timer > 0.f)
 			{
-				door.auto_timer -= Deltatime;
+				door.auto_timer -= static_cast<float>(Deltatime);
 			}
 			// if there's load exchange in progress, reset the timer(s) for already open doors
 			if (door.auto_timer != -1.f && (LoadStatus & (2 | 1)) != 0)
@@ -10418,7 +10418,7 @@ void TMoverParameters::LoadFIZ_Dimensions(std::string const &line)
 	if (Dim.H <= 2.0)
 	{
 		// gdyby nie było parametru, lepsze to niż zero
-		Floor = Dim.H;
+		Floor = static_cast<float>(Dim.H);
 	}
 	else
 	{
@@ -10635,7 +10635,7 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 		{
 			// HACK: legacy position indices start from 1, so we deduct 1 to arrive at proper index into the array
 			extract_value(Doors.permit_preset, "DoorPermitListDefault", line, "1");
-			Doors.permit_preset = std::min<int>(Doors.permit_presets.size(), Doors.permit_preset) - 1;
+			Doors.permit_preset = std::min<int>(static_cast<int>(Doors.permit_presets.size()), Doors.permit_preset) - 1;
 		}
 	}
 
@@ -11113,7 +11113,7 @@ void TMoverParameters::LoadFIZ_Light(std::string const &line)
 
 	extract_value(NominalVoltage, "Volt", line, "");
 	extract_value(BatteryVoltage, "LMaxVoltage", line, "");
-	NominalBatteryVoltage = BatteryVoltage;
+	NominalBatteryVoltage = static_cast<float>(BatteryVoltage);
 }
 
 void TMoverParameters::LoadFIZ_Clima(std::string const &line)
@@ -12314,7 +12314,7 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 		if (DCEMUED_EP_min_Im > 0.001 && abs(Im) > DCEMUED_EP_min_Im && DynamicBrakeEMUStatus)
 			temp1 = 0;
 		Hamulec->SetEPS(temp1);
-		TUHEX_StageActual = CValue1;
+		TUHEX_StageActual = static_cast<int>(CValue1);
 		TUHEX_Active = TUHEX_StageActual > 0;
 		if (CValue1 < 0.001)
 			DynamicBrakeEMUStatus = true;
@@ -12324,7 +12324,7 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 	} // youby - odluzniacz hamulcow, przyda sie
 	else if (Command == "BrakeReleaser")
 	{
-		OK = BrakeReleaser(Round(CValue1)); // samo się przesyła dalej
+		OK = BrakeReleaser(static_cast<int>(Round(CValue1))); // samo się przesyła dalej
 		                                    // OK:=SendCtrlToNext(command,CValue1,CValue2); //to robiło kaskadę 2^n
 	}
 	else if (Command == "WaterPumpBreakerSwitch")
@@ -12535,7 +12535,7 @@ bool TMoverParameters::RunCommand(std::string Command, double CValue1, double CV
 	}
 	else if (Command == "RelayReset")
 	{
-		RelayReset(CValue1, range_t::local);
+		RelayReset(static_cast<int>(CValue1), range_t::local);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else if (Command == "ConverterSwitch") /*NBMX*/

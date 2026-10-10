@@ -99,10 +99,10 @@ namespace network
 		std::tuple<double, double, command_queue::commands_map> get_next_delta(int counter);
 		void send_commands(command_queue::commands_map commands);
 		int get_frame_counter() {
-			return resume_frame_counter;
+			return static_cast<int>(resume_frame_counter);
 		}
 		int get_awaiting_frames() {
-			return delta_queue.size();
+			return static_cast<int>(delta_queue.size());
 		}
 	};
 

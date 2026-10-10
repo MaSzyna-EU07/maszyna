@@ -6,12 +6,12 @@ headtrack::headtrack() = default;
 
 void headtrack::find_joy() {
     for (size_t i = GLFW_JOYSTICK_1; i <= GLFW_JOYSTICK_LAST; i++) {
-        if (!glfwJoystickPresent(i))
+        if (!glfwJoystickPresent(static_cast<int>(i)))
             continue;
 
-        std::string name(glfwGetJoystickName(i));
+        std::string name(glfwGetJoystickName(static_cast<int>(i)));
         if (name == Global.headtrack_conf.joy) {
-            joy_id = i;
+            joy_id = static_cast<int>(i);
             return;
         }
     }

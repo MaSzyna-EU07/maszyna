@@ -59,7 +59,7 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
             // calculate and cache full range points for each chunk, including crossfade sections:
             // on the far end the crossfade section extends to the threshold point of the next chunk...
             for( std::size_t idx = 0; idx < m_soundchunks.size() - 1; ++idx ) {
-                m_soundchunks[ idx ].second.fadeout = m_soundchunks[ idx + 1 ].second.threshold;
+                m_soundchunks[ idx ].second.fadeout = static_cast<float>(m_soundchunks[ idx + 1 ].second.threshold);
 /*
                 m_soundchunks[ idx ].second.fadeout =
                     interpolate<float>(
@@ -69,11 +69,11 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
 */
             }
             //  ...and on the other end from the threshold point back into the range of previous chunk
-            m_soundchunks.front().second.fadein = std::max( 0, m_soundchunks.front().second.threshold );
+            m_soundchunks.front().second.fadein = static_cast<float>(std::max( 0, m_soundchunks.front().second.threshold ));
 //            m_soundchunks.front().second.fadein = m_soundchunks.front().second.threshold;
             for( std::size_t idx = 1; idx < m_soundchunks.size(); ++idx ) {
                 auto const previouschunkwidth { m_soundchunks[ idx ].second.threshold - m_soundchunks[ idx - 1 ].second.threshold };
-                m_soundchunks[ idx ].second.fadein = m_soundchunks[ idx ].second.threshold - 0.01f * m_crossfaderange * previouschunkwidth;
+                m_soundchunks[ idx ].second.fadein = static_cast<float>(m_soundchunks[ idx ].second.threshold) - 0.01f * static_cast<float>(m_crossfaderange) * static_cast<float>(previouschunkwidth);
 /*
                 m_soundchunks[ idx ].second.fadein =
                     interpolate<float>(
@@ -82,7 +82,7 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
                         m_crossfaderange * 0.01f );
 */
             }
-            m_soundchunks.back().second.fadeout = std::max( Chunkrange, m_soundchunks.back().second.threshold );
+            m_soundchunks.back().second.fadeout = static_cast<float>(std::max( Chunkrange, m_soundchunks.back().second.threshold ));
 //            m_soundchunks.back().second.fadeout = m_soundchunks.back().second.threshold;
             // test if the chunk table contains any actual samples while at it
             for( auto &soundchunk : m_soundchunks ) {
@@ -761,7 +761,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
 
     // relative pitch adjustment
     // pitch of each chunk is modified based on ratio of the chunk's pitch to that of its neighbour
-    if( soundpoint < chunkdata.threshold ) {
+    if( soundpoint < static_cast<float>(chunkdata.threshold) ) {
 
         if( chunkindex > 0 ) {
             // interpolate between the pitch of previous chunk and this chunk's base pitch,
@@ -772,7 +772,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
                     previouschunkdata.pitch / chunkdata.pitch,
                     1.f,
                     std::clamp(
-                        ( soundpoint - previouschunkdata.threshold ) / ( chunkdata.threshold - previouschunkdata.threshold ),
+                        ( soundpoint - static_cast<float>(previouschunkdata.threshold) ) / ( static_cast<float>(chunkdata.threshold - previouschunkdata.threshold) ),
                         0.f, 1.f ) );
         }
     }
@@ -787,7 +787,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
                     1.f,
                     nextchunkdata.pitch / chunkdata.pitch,
                     std::clamp(
-                        ( soundpoint - chunkdata.threshold ) / ( nextchunkdata.threshold - chunkdata.threshold ),
+                        ( soundpoint - static_cast<float>(chunkdata.threshold) ) / ( static_cast<float>(nextchunkdata.threshold - chunkdata.threshold) ),
                         0.f, 1.f ) );
         }
         else {
@@ -801,7 +801,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
     if( chunkindex > 0 ) {
         // chunks other than the first can have fadein
         auto const fadeinwidth { chunkdata.threshold - chunkdata.fadein };
-        if( soundpoint < chunkdata.threshold ) {
+        if( soundpoint < static_cast<float>(chunkdata.threshold) ) {
             float lineargain =
                 std::lerp(
                     0.f, 1.f,
@@ -809,8 +809,8 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
                         ( soundpoint - chunkdata.fadein ) / fadeinwidth,
                         0.f, 1.f ) );
             m_properties.gain *=
-                lineargain /
-                (1 + (1 - lineargain) * -0.57); // approximation of logarytmic fade in
+                static_cast<float>(lineargain /
+                (1 + (1 - lineargain) * -0.57)); // approximation of logarytmic fade in
             return;
         }
     }
@@ -828,8 +828,8 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
                     std::clamp(
                         ( soundpoint - fadeoutstart ) / fadeoutwidth,
                         0.f, 1.f ) );
-            m_properties.gain *= (-lineargain + 1) /
-                                 (1 + lineargain * -0.57); // approximation of logarytmic fade out
+            m_properties.gain *= static_cast<float>((-lineargain + 1) /
+                                 (1 + lineargain * -0.57)); // approximation of logarytmic fade out
             return;
         }
     }

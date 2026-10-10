@@ -275,7 +275,7 @@ void uart_input::poll()
 
     /* handle baud change */
     if(status->active_baud_index != status->selected_baud_index) {
-        status->baud = std::stoul(uart_baudrates_list[status->selected_baud_index]);
+        status->baud = static_cast<int>(std::stoul(uart_baudrates_list[status->selected_baud_index]));
         status->active_baud_index = status->selected_baud_index;
         status->reset_stats();
         status->is_connected = false;
@@ -534,7 +534,7 @@ void uart_input::poll()
         auto const trainstate = t->get_state();
 
 		SYSTEMTIME time = simulation::Time.data();
-		uint16_t tacho = Global.iPause ? 0 : trainstate.velocity * conf.tachoscale;
+		uint16_t tacho = Global.iPause ? 0 : static_cast<uint16_t>(trainstate.velocity * conf.tachoscale);
 	    uint16_t tank_press = (uint16_t)std::min(conf.tankuart, trainstate.reservoir_pressure * 0.1f / conf.tankmax * conf.tankuart);
 	    uint16_t pipe_press = (uint16_t)std::min(conf.pipeuart, trainstate.pipe_pressure * 0.1f / conf.pipemax * conf.pipeuart);
 	    uint16_t brake_press = (uint16_t)std::min(conf.brakeuart, trainstate.brake_pressure * 0.1f / conf.brakemax * conf.brakeuart);
@@ -543,7 +543,7 @@ void uart_input::poll()
 	    uint16_t current1 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[0] / conf.currentmax * conf.currentuart);
 	    uint16_t current2 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[1] / conf.currentmax * conf.currentuart);
 	    uint16_t current3 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[2] / conf.currentmax * conf.currentuart);
-	    uint32_t odometer = trainstate.distance * 10000.0;
+	    uint32_t odometer = static_cast<uint32_t>(trainstate.distance * 10000.0);
         uint16_t lv_voltage = (uint16_t)std::min( conf.lvuart, trainstate.lv_voltage / conf.lvmax * conf.lvuart );
         if( trainstate.cab > 0 ) {
             // NOTE: moving from a cab to engine room doesn't change cab indicator

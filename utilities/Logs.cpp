@@ -33,14 +33,14 @@ std::string filename_date() {
     clock_gettime(CLOCK_REALTIME, &ts);
     std::tm const tm = local_tm(ts.tv_sec);
     std::tm const *tms = &tm;
-    st.wYear = tms->tm_year;
-    st.wMonth = tms->tm_mon;
-    st.wDayOfWeek = tms->tm_wday;
-    st.wDay = tms->tm_mday;
-    st.wHour = tms->tm_hour;
-    st.wMinute = tms->tm_min;
-    st.wSecond = tms->tm_sec;
-    st.wMilliseconds = ts.tv_nsec / 1000000;
+    st.wYear = static_cast<uint16_t>(tms->tm_year);
+    st.wMonth = static_cast<uint16_t>(tms->tm_mon);
+    st.wDayOfWeek = static_cast<uint16_t>(tms->tm_wday);
+    st.wDay = static_cast<uint16_t>(tms->tm_mday);
+    st.wHour = static_cast<uint16_t>(tms->tm_hour);
+    st.wMinute = static_cast<uint16_t>(tms->tm_min);
+    st.wSecond = static_cast<uint16_t>(tms->tm_sec);
+    st.wMilliseconds = static_cast<uint16_t>(ts.tv_nsec / 1000000);
 #elif _WIN32
     ::GetLocalTime( &st );
 #endif

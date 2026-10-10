@@ -177,7 +177,7 @@ void trainingcard_panel::render_contents()
 		{
 			state.store(2);
 			if (simulation::Trains.sequence().size() > 0)
-				distance = simulation::Trains.sequence()[0]->Dynamic()->MoverParameters->DistCounter;
+				distance = static_cast<float>(simulation::Trains.sequence()[0]->Dynamic()->MoverParameters->DistCounter);
 
 			if (save_thread.joinable())
 				save_thread.join();

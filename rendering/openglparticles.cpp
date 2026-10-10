@@ -59,7 +59,7 @@ opengl_particles::update( opengl_camera const &Camera ) {
         // TODO: put sanity cap on the overall amount of particles that can be drawn
         auto const sizestep { 256.0 * billboard_vertices.size() };
         m_particlevertices.reserve(
-            sizestep * std::ceil( m_particlevertices.size() + ( particles.size() * billboard_vertices.size() ) / sizestep ) );
+            static_cast<std::size_t>( sizestep * std::ceil( static_cast<double>(m_particlevertices.size()) + ( static_cast<double>(particles.size() * billboard_vertices.size()) ) / sizestep ) ) );
         for( auto const &particle : particles ) {
             // TODO: particle color support
             vertex.color[ 0 ] = static_cast<std::uint_fast8_t>( particlecolor.r );
@@ -147,7 +147,7 @@ opengl_particles::render( GLint const Textureunit ) {
     ::glTexCoordPointer( 2, GL_FLOAT, sizeof( particle_vertex ), reinterpret_cast<void const *>( sizeof( float ) * 3 + sizeof( std::uint8_t ) * 4 ) );
     ::glEnableClientState( GL_TEXTURE_COORD_ARRAY );
     // ...draw...
-    ::glDrawArrays( GL_QUADS, 0, m_particlevertices.size() );
+    ::glDrawArrays( GL_QUADS, 0, static_cast<GLsizei>(m_particlevertices.size()) );
     // ...and cleanup
     ::glPopClientAttrib();
     ::glBindBuffer( GL_ARRAY_BUFFER, 0 );

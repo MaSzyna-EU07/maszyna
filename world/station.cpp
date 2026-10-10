@@ -63,7 +63,7 @@ basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Sch
                 maintenancestop ? 0 :
                 std::min<float>(
                     parameters.LoadAmount,
-                    Random( parameters.MaxLoad * 0.15f * stationsizemodifier ) ) );
+                    static_cast<float>(Random( parameters.MaxLoad * 0.15f * stationsizemodifier )) ) );
             auto loadcount = static_cast<int>(
                 TestFlag( parameters.DamageFlag, dtrain_out ) ? 0 :
                 laststop ? 0 :

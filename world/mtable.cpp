@@ -235,7 +235,7 @@ void TTrainParameters::UpdateVelocity(int StationCount, double vActual)
     // TTVmax:=vActual;  {PROWIZORKA!!!}
     while (i >= 0 && TimeTable[i].vmax == -1)
     {
-        TimeTable[i].vmax = vActual; // prędkość dojazdu do przystanku i
+        TimeTable[i].vmax = static_cast<float>(vActual); // prędkość dojazdu do przystanku i
         --i; // ewentualnie do poprzedniego też
     }
 }
@@ -412,7 +412,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 ConversionError = -4;
                             if (false == contains( s,"|") )
                             {
-                                record->km = atof(s.c_str());
+                                record->km = static_cast<float>(atof(s.c_str()));
                                 fin >> s;
                             }
                             if (contains( s,"|_____|")) /*zmiana predkosci szlakowej*/
@@ -439,12 +439,12 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 if (contains( s, hrsd) )
                                 {
                                     record->Ah = atoi( s.substr(0, s.find(hrsd)).c_str()); // godzina przyjazdu
-                                    record->Am = atof(s.substr(s.find(hrsd) + 1, s.length()).c_str()); // minuta przyjazdu
+                                    record->Am = static_cast<float>(atof(s.substr(s.find(hrsd) + 1, s.length()).c_str())); // minuta przyjazdu
                                 }
                                 else
                                 {
                                     record->Ah = TimeTable[StationCount - 1].Ah; // godzina z poprzedniej pozycji
-                                    record->Am = atof(s.c_str()); // bo tylko minuty podane
+                                    record->Am = static_cast<float>(atof(s.c_str())); // bo tylko minuty podane
                                 }
                             }
                             do
@@ -452,7 +452,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 fin >> s;
                             } while (!(s != "|" || fin.bad()));
                             if (s != "]")
-                                record->tm = atof(s.c_str());
+                                record->tm = static_cast<float>(atof(s.c_str()));
                             do
                             {
                                 fin >> s;
@@ -514,12 +514,12 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 if (contains( s, hrsd) )
                                 {
                                     record->Dh = atoi(s.substr(0, s.find(hrsd)).c_str()); // godzina odjazdu
-                                    record->Dm = atof(s.substr(s.find(hrsd) + 1, s.length()).c_str()); // minuta odjazdu
+                                    record->Dm = static_cast<float>(atof(s.substr(s.find(hrsd) + 1, s.length()).c_str())); // minuta odjazdu
                                 }
                                 else
                                 {
                                     record->Dh = TimeTable[StationCount - 1].Dh; // godzina z poprzedniej pozycji
-                                    record->Dm = atof(s.c_str()); // bo tylko minuty podane
+                                    record->Dm = static_cast<float>(atof(s.c_str())); // bo tylko minuty podane
                                 }
                             }
                             else
@@ -532,7 +532,7 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
                                 fin >> s;
                             } while (!(s != "|" || fin.bad()));
                             if (s != "]")
-                                record->tm = atof(s.c_str());
+                                record->tm = static_cast<float>(atof(s.c_str()));
                             do
                             {
                                 fin >> s;
@@ -586,13 +586,13 @@ bool TTrainParameters::LoadTTfile(std::string scnpath, int iPlus, double vmax)
         {
             if (TimeTable[i].Ah >= 0)
             {
-                adjustedtime = clamp_circular<float>( TimeTable[i].Ah * 60 + TimeTable[i].Am + timeoffset, 24 * 60 ); // nowe minuty
+                adjustedtime = clamp_circular<float>( static_cast<float>(TimeTable[i].Ah * 60) + TimeTable[i].Am + static_cast<float>(timeoffset), 24 * 60 ); // nowe minuty
                 TimeTable[i].Am = int(60 * adjustedtime) % 3600 / 60.f;
                 TimeTable[i].Ah = int(adjustedtime / 60) % 24;
             }
             if (TimeTable[i].Dh >= 0)
             {
-                adjustedtime = clamp_circular<float>( TimeTable[i].Dh * 60 + TimeTable[i].Dm + timeoffset, 24 * 60 ); // nowe minuty
+                adjustedtime = clamp_circular<float>( static_cast<float>(TimeTable[i].Dh * 60) + TimeTable[i].Dm + static_cast<float>(timeoffset), 24 * 60 ); // nowe minuty
                 TimeTable[i].Dm = int(60 * adjustedtime) % 3600 / 60.f;
                 TimeTable[i].Dh = int(adjustedtime / 60) % 24;
             }

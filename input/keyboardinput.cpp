@@ -284,7 +284,7 @@ keyboard_input::key( int const Key, int const Action ) {
     if( Key == -1 ) { return false; }
 
     // store key state
-    input::keys[ Key ] = Action;
+    input::keys[ Key ] = static_cast<char>( Action );
 
     if( true == is_movement_key( Key ) ) {
         // if the received key was one of movement keys, it's been handled and we don't need to bother further

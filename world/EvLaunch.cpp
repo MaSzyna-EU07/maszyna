@@ -34,14 +34,14 @@ int vk_to_glfw_key( int const Keycode ) {
 	char key = 0;
 
 	if (Keycode < 'A') {
-		key = Keycode;
+		key = static_cast<char>(Keycode);
 	} else if (Keycode <= 'Z') {
-		key = Keycode;
+		key = static_cast<char>(Keycode);
 		modifier = GLFW_MOD_SHIFT;
 	} else if (Keycode < 'a') {
-		key = Keycode;
+		key = static_cast<char>(Keycode);
 	} else if (Keycode <= 'z') {
-		key = Keycode - 32;
+		key = static_cast<char>(Keycode - 32);
 	} else {
 		ErrorLog("unknown key: " + std::to_string(Keycode));
 	}
@@ -164,7 +164,7 @@ bool TEventLauncher::check_activation_key() {
 
 	bool result = Console::Pressed(key);
 
-	char modifier = iKey >> 8;
+	char modifier = static_cast<char>(iKey >> 8);
 	if (modifier & GLFW_MOD_SHIFT)
 		result &= Global.shiftState;
 	if (modifier & GLFW_MOD_CONTROL)
@@ -239,7 +239,7 @@ bool TEventLauncher::IsRadioActivated() const {
 float
 TEventLauncher::radius_() {
 
-    return std::sqrt( dRadius );
+    return static_cast<float>(std::sqrt( dRadius ));
 }
 
 // serialize() subclass details, sends content of the subclass to provided stream

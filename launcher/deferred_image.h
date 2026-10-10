@@ -33,7 +33,7 @@ public:
 			tex.create();
 
 			if (tex.get_is_ready())
-				return tex.get_id();
+				return static_cast<GLuint>(tex.get_id());
 		}
 
 		return invalid_id;

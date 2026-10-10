@@ -94,7 +94,7 @@ gamepad_input::poll() {
             if( button.state != buttons[ idx ] ) {
                 // button pressed or released, both are important
                 on_button(
-                    idx,
+                    static_cast<int>(idx),
                     buttons[idx] == 1 ? GLFW_PRESS : GLFW_RELEASE);
             }
             else {
@@ -102,7 +102,7 @@ gamepad_input::poll() {
                 if( button.state == GLFW_PRESS ) {
 
                     on_button(
-                        idx,
+                        static_cast<int>(idx),
                         GLFW_REPEAT );
                 }
             }
@@ -383,7 +383,7 @@ gamepad_input::process_axes() {
                     }
                     if( boundcommand1 != user_command::none ) {
                         if( axis.state > m_deadzone ) {
-                            axis.accumulator += ( axis.state - m_deadzone ) / ( 1.0 - m_deadzone ) * deltatime;
+                            axis.accumulator += static_cast<float>(( axis.state - m_deadzone ) / ( 1.0 - m_deadzone ) * deltatime);
                             // we're making sure there's always a positive charge left in the accumulator,
                             // to more reliably decect when the stick goes from active to dead zone, below
                             while( axis.accumulator > 1.0f ) {
@@ -423,7 +423,7 @@ gamepad_input::process_axes() {
                     }
                     if( boundcommand1 != user_command::none ) {
                         if( axis.state < -m_deadzone ) {
-                            axis.accumulator += ( axis.state + m_deadzone ) / ( 1.0 - m_deadzone ) * deltatime;
+                            axis.accumulator += static_cast<float>(( axis.state + m_deadzone ) / ( 1.0 - m_deadzone ) * deltatime);
                             // we're making sure there's always a positive charge left in the accumulator,
                             // to more reliably decect when the stick goes from active to dead zone, below
                             while( axis.accumulator < -1.0f ) {

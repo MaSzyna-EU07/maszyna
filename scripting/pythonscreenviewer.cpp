@@ -91,7 +91,7 @@ void python_screen_viewer::threadfunc()
 		glActiveTexture(GL_TEXTURE0);
 
 		if (Global.python_sharectx) {
-			glBindTexture(GL_TEXTURE_2D, m_rt->shared_tex->get_id());
+			glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(m_rt->shared_tex->get_id()));
 		}
 		else {
 			GLuint tex;
@@ -215,8 +215,8 @@ void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, double x, doubl
 {
     for (auto &conf : m_windows) {
         if (conf->window == window) {
-            conf->cursor_pos.x = x;
-            conf->cursor_pos.y = y;
+            conf->cursor_pos.x = static_cast<int>(x);
+            conf->cursor_pos.y = static_cast<int>(y);
             return;
         }
     }

@@ -141,7 +141,7 @@ basic_controller::deserialize_operation( cParser &Input ) -> bool {
     auto const lookup { m_operationcodemap.find( operationname ) };
     operation.code = lookup != m_operationcodemap.end() ? lookup->second : opcode_e::op_nop;
     if( lookup == m_operationcodemap.end() ) {
-        log_error( "contains unknown command \"" + operationname + "\"", Input.Line() - 1 );
+        log_error( "contains unknown command \"" + operationname + "\"", static_cast<int>(Input.Line() - 1) );
     }
 
     if( operation.code == opcode_e::op_nop ) { return true; }
