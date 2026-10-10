@@ -21,7 +21,7 @@ std::ofstream errors; // lista błędów "errors.txt", zawsze działa
 std::ofstream comms; // lista komunikatow "comms.txt", można go wyłączyć
 char logbuffer[ 256 ];
 
-char endstring[10] = "\n";
+char const endstring[10] = "\n";
 
 std::deque<std::string> log_scrollback;
 

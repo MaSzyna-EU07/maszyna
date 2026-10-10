@@ -408,7 +408,7 @@ commanddescription_sequence Commands_descriptions = {
 };
 
 // Maps of command and coresponding strings
-std::unordered_map<std::string, user_command> commandMap = {
+std::unordered_map<std::string, user_command> const commandMap = {
 	{"aidriverdisable", user_command::aidriverdisable},
 	{"jointcontrollerset", user_command::jointcontrollerset},
 	{"mastercontrollerincrease", user_command::mastercontrollerincrease},

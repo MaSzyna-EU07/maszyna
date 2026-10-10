@@ -10,7 +10,7 @@
 #include "simulation/simulationtime.h"
 #include "application/application.h"
 
-const char* uart_baudrates_list[] = {
+const char* const uart_baudrates_list[] = {
     "300",
     "1200",
     "2400",

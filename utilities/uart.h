@@ -3,7 +3,7 @@
 #include <libserialport.h>
 #include "input/command.h"
 
-extern const char* uart_baudrates_list[];
+extern const char* const uart_baudrates_list[];
 extern const size_t uart_baudrates_list_num;
 
 class uart_status {

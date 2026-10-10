@@ -18,7 +18,7 @@ namespace Mtable
 {
 
 static int const MaxTTableSize = 100; // można by to robić dynamicznie
-static char const *hrsd = ".";
+static char const *const hrsd = ".";
 
 // Ra: pozycja zerowa rozkładu chyba nie ma sensu
 // Ra: numeracja przystanków jest 1..StationCount

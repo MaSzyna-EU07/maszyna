@@ -421,7 +421,7 @@ void win1250_to_utf32(std::string const &Text, std::u32string &Output)
 }
 
 // Ra: tymczasowe rozwiązanie kwestii zagranicznych (czeskich) napisów
-char charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
+char const charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
                                 " ^^L$A|S^CS<--RZo±,l'uP.,as>L\"lz"
                                 "RAAAALCCCEEEEIIDDNNOOOOxRUUUUYTB"
                                 "raaaalccceeeeiiddnnoooo-ruuuuyt?";
