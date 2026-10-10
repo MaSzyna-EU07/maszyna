@@ -91,15 +91,11 @@ class TPrzeciwposlizg : public TRura // przy napelnianiu - rura, przy poslizgu -
 
 {
   private:
-    bool Poslizg;
+    bool Poslizg{false};
 
   public:
     void SetPoslizg(bool flag);
     void Update(double dt) override;
-	inline TPrzeciwposlizg() : TRura()
-	{
-		Poslizg = false;
-	}
 };
 
 // przekladnik dwustopniowy

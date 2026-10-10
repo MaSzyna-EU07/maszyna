@@ -357,21 +357,14 @@ end  ; */
 /// <param name="i_mat">Friction material id (bp_* constant, optionally OR'ed with bp_MHS).</param>
 /// <param name="i_ba">Number of braked axles.</param>
 /// <param name="i_nbpa">Number of blocks per axle.</param>
-TBrake::TBrake(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa)
+TBrake::TBrake(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) :
+	BCN(i_bcn), BCM(1), BCA(i_bcn * i_bcr * i_bcr * M_PI), BrakeDelays(i_BD), MaxBP(i_mbp), BA(i_ba), NBpA(i_nbpa), SizeBR(i_brc * 0.0128)
 {
 	// inherited:: Create;
-	MaxBP = i_mbp;
-	BCN = i_bcn;
-	BCM = 1;
-	BCA = i_bcn * i_bcr * i_bcr * M_PI;
-	BA = i_ba;
-	NBpA = i_nbpa;
-	BrakeDelays = i_BD;
 	BrakeDelayFlag = bdelay_P;
 	// 210.88
 	//  SizeBR:=i_bcn*i_bcr*i_bcr*i_bcd*40.17*MaxBP/(5-MaxBP);  //objetosc ZP w stosunku do cylindra
 	//  14" i cisnienia 4.2 atm
-	SizeBR = i_brc * 0.0128;
 	SizeBC = i_bcn * i_bcr * i_bcr * i_bcd * 210.88 * MaxBP / 4.2; // objetosc CH w stosunku do cylindra 14" i cisnienia 4.2 atm
 
 	BrakeCyl = std::make_shared<TBrakeCyl>();

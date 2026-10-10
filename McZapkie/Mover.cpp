@@ -464,7 +464,6 @@ TMoverParameters::TMoverParameters(double VelInitial, std::string TypeNameInit, 
 {
 	WriteLog("------------------------------------------------------");
 	WriteLog("init default physic values for " + NameInit + ", [" + TypeNameInit + "]");
-	Dim = TDimension();
 
 	// BrakeLevelSet(-2); //Pascal ustawia na 0, przestawimy na odcięcie (CHK jest jeszcze nie wczytane!)
 	iLights[0] = 0;

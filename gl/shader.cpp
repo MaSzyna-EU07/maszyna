@@ -303,9 +303,8 @@ void gl::shader::log_error(const std::string &str) const
     ErrorLog("bad shader: " + name + ": " + str, logtype::shader);
 }
 
-gl::shader::shader(const std::string &filename)
+gl::shader::shader(const std::string &filename) : name(filename)
 {
-    name = filename;
 
     auto [shadertype, shadersource] = process_source(filename, "shaders/");
 
