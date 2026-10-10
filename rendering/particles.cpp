@@ -332,7 +332,6 @@ smoke_source::initialize( smoke_particle &Particle ) {
 
     if( m_ownertype == owner_type::vehicle ) {
         Particle.opacity *= static_cast<float>(m_owner.vehicle->MoverParameters->dizel_fill);
-        auto const enginerevolutionsfactor { 1.5f }; // high engine revolutions increase initial particle velocity
         switch( m_owner.vehicle->MoverParameters->EngineType ) {
         case TEngineType::DieselElectric: {
                 if (m_owner.vehicle->MoverParameters->dizel_spinup == true)

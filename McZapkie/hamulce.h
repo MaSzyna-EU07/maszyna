@@ -1232,7 +1232,6 @@ class TMHZ_K5P : public TDriverHandle
 	/// <summary>Time chamber pressure [bar].</summary>
 	double TP = 0.0; // zbiornik czasowy
 	/// <summary>Reductor reservoir pressure [bar].</summary>
-	double RP = 0.0; // zbiornik redukcyjny
 	/// <summary>Reductor adjustment offset.</summary>
 	double RedAdj = 0.0; // dostosowanie reduktora cisnienia (krecenie kapturkiem)
 	/// <summary>True while filling-stroke / release wave is active.</summary>
@@ -1285,7 +1284,6 @@ class TMHZ_6P : public TDriverHandle
 	/// <summary>Time chamber pressure [bar].</summary>
 	double TP = 0.0; // zbiornik czasowy
 	/// <summary>Reductor reservoir pressure [bar].</summary>
-	double RP = 0.0; // zbiornik redukcyjny
 	/// <summary>Reductor adjustment offset.</summary>
 	double RedAdj = 0.0; // dostosowanie reduktora cisnienia (krecenie kapturkiem)
 	/// <summary>True while filling-stroke / release wave is active.</summary>

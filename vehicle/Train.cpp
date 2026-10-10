@@ -6886,7 +6886,6 @@ void TTrain::OnCommand_speedcontrolbutton(TTrain *Train, command_data const &Com
 {
 
 	auto const itemindex = static_cast<int>(Command.command) - static_cast<int>(user_command::speedcontrolbutton0);
-	auto &item = Train->ggSpeedCtrlButtons[itemindex];
 
 	if (Command.action == GLFW_PRESS)
 	{
@@ -11448,7 +11447,7 @@ void TTrain::set_cab_controls(int const Cab)
 	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
 	int flag = DynamicObject->MoverParameters->InverterControlCouplerFlag;
 	int itemstart = 0;
-	for (auto &item : ggInverterToggleButtons) // for each button
+	for ([[maybe_unused]] auto &item : ggInverterToggleButtons) // for each button
 	{
 		int itemindex = itemstart;
 		itemstart++;
