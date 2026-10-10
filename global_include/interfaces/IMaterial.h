@@ -19,7 +19,7 @@ struct IMaterial
 	virtual texture_handle GetTexture(int slot) const = 0;
 	static IMaterial *null_material()
 	{
-		static struct NullMaterial : public IMaterial
+		struct NullMaterial : public IMaterial
 		{
 			void finalize(bool Loadnow) override { /* null implementation, nothing to do */ }
 			bool update() override
@@ -54,7 +54,8 @@ struct IMaterial
 			{
 				return 0;
 			}
-		} null_material{};
+		};
+		static NullMaterial null_material{};
 		return &null_material;
 	}
 	virtual ~IMaterial() = default;

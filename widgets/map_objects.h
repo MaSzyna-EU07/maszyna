@@ -45,7 +45,8 @@ struct launcher : public map_object
 	enum type_e {
 		track_switch,
 		level_crossing
-	} type;
+	};
+	type_e type;
 
 	gfx::basic_vertex vertex() override {
 		return gfx::basic_vertex(location, glm::vec3(),

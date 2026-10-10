@@ -67,7 +67,8 @@ scenario_time::init(std::time_t timestamp) {
         long DaylightBias;
         SYSTEMTIME StandardDate;
         SYSTEMTIME DaylightDate;
-    } timezoneinfo = { -60, 0, -60, { 0, 10, 0, 5, 3, 0, 0, 0 }, { 0, 3, 0, 5, 2, 0, 0, 0 } };
+    };
+    registry_time_zone_info timezoneinfo = { -60, 0, -60, { 0, 10, 0, 5, 3, 0, 0, 0 }, { 0, 3, 0, 5, 2, 0, 0, 0 } };
 
     convert_transition_time( timezoneinfo.StandardDate );
     convert_transition_time( timezoneinfo.DaylightDate );
