@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/Logs.h"
 
+#include <format>
+
 #include "utilities/Globals.h"
 #include "winheaders.h"
 #include "utilities/utilities.h"
@@ -19,7 +21,6 @@ http://mozilla.org/MPL/2.0/.
 std::ofstream output; // standardowy "log.txt", można go wyłączyć
 std::ofstream errors; // lista błędów "errors.txt", zawsze działa
 std::ofstream comms; // lista komunikatow "comms.txt", można go wyłączyć
-char logbuffer[ 256 ];
 
 char const endstring[10] = "\n";
 
@@ -45,18 +46,14 @@ std::string filename_date() {
     ::GetLocalTime( &st );
 #endif
 
-    std::snprintf(
-        logbuffer,
-        sizeof(logbuffer),
-	    "%d%02d%02d_%02d%02d%03d",
+    return std::format(
+	    "{}{:02}{:02}_{:02}{:02}{:03}",
         st.wYear,
         st.wMonth,
         st.wDay,
         st.wHour,
 	    st.wMinute,
 	    st.wMilliseconds);
-
-    return std::string( logbuffer );
 }
 
 std::string filename_scenery() {
