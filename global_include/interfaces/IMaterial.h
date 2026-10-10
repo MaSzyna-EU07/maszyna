@@ -57,4 +57,5 @@ struct IMaterial
 		} null_material{};
 		return &null_material;
 	}
+	virtual ~IMaterial() = default;
 };

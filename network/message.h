@@ -21,6 +21,7 @@ struct message
 	message(type_e t) : type(t) {}
 	virtual void serialize(std::ostream &stream) const {}
 	virtual void deserialize(std::istream &stream) {}
+	virtual ~message() = default;
 };
 
 struct client_hello : public message

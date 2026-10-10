@@ -73,4 +73,5 @@ struct ITexture
 		} null_texture{};
 		return &null_texture;
 	}
+	virtual ~ITexture() = default;
 };
