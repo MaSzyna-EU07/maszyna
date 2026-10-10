@@ -3014,9 +3014,9 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	double const xpM{0.3}; // mnoznik membrany komory pod
 
 
-	for (int idx = 0; idx < 5; ++idx)
+	for (auto &soundvalue : Sounds)
 	{
-		Sounds[idx] = 0;
+		soundvalue = 0;
 	}
 
 	// na wszelki wypadek, zeby nie wyszlo poza zakres
@@ -3250,9 +3250,9 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 	double DP;
 	double pom;
 
-	for (int idx = 0; idx < 5; ++idx)
+	for (auto &soundvalue : Sounds)
 	{
-		Sounds[idx] = 0;
+		soundvalue = 0;
 	}
 
 
@@ -3456,9 +3456,9 @@ double TMHZ_K5P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	double DP;
 	double pom;
 
-	for (int idx = 0; idx < 5; ++idx)
+	for (auto &soundvalue : Sounds)
 	{
-		Sounds[idx] = 0;
+		soundvalue = 0;
 	}
 
 
@@ -3633,9 +3633,9 @@ double TMHZ_6P::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	double DP;
 	double pom;
 
-	for (int idx = 0; idx < 5; ++idx)
+	for (auto &soundvalue : Sounds)
 	{
-		Sounds[idx] = 0;
+		soundvalue = 0;
 	}
 
 
