@@ -294,7 +294,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     return dV - dV1;
 }
 
-void TNESt3::EStParams( double const i_crc ) // parametry charakterystyczne dla ESt
+void TNESt3::EStParams( double const /*i_crc*/ ) // parametry charakterystyczne dla ESt
 {
 }
 
@@ -331,7 +331,7 @@ double TNESt3::GetCRP()
     //  return Miedzypoj.P;
 }
 
-void TNESt3::CheckState(double const BCP, double &dV1) // glowny przyrzad rozrzadczy
+void TNESt3::CheckState(double const BCP, double & /*dV1*/) // glowny przyrzad rozrzadczy
 {
     double const BVP{ BrakeRes->P() }; //-> tu ma byc komora rozprezna
     double const VVP{ ValveRes->P() };
@@ -384,7 +384,7 @@ void TNESt3::CheckReleaser(double const dt) // odluzniacz
     }
 }
 
-double TNESt3::CVs(double const BP) // napelniacz sterujacego
+double TNESt3::CVs(double const /*BP*/) // napelniacz sterujacego
 {
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };

@@ -6072,7 +6072,7 @@ void TTrain::OnCommand_redmarkerdisablerearright(TTrain *Train, command_data con
 	}
 }
 
-void TTrain::OnCommand_redmarkerstoggle(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_redmarkerstoggle(TTrain * /*Train*/, command_data const &Command)
 {
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
@@ -6098,7 +6098,7 @@ void TTrain::OnCommand_redmarkerstoggle(TTrain *Train, command_data const &Comma
 	}
 }
 
-void TTrain::OnCommand_endsignalstoggle(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_endsignalstoggle(TTrain * /*Train*/, command_data const &Command)
 {
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
@@ -7793,7 +7793,7 @@ void TTrain::OnCommand_nearestcarcouplingdisconnect(TTrain *Train, command_data 
 	}
 }
 
-void TTrain::OnCommand_nearestcarcoupleradapterattach(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_nearestcarcoupleradapterattach(TTrain * /*Train*/, command_data const &Command)
 {
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)
@@ -7812,7 +7812,7 @@ void TTrain::OnCommand_nearestcarcoupleradapterattach(TTrain *Train, command_dat
 	}
 }
 
-void TTrain::OnCommand_nearestcarcoupleradapterremove(TTrain *Train, command_data const &Command)
+void TTrain::OnCommand_nearestcarcoupleradapterremove(TTrain * /*Train*/, command_data const &Command)
 {
 
 	if (true == Command.freefly && Command.action == GLFW_PRESS)

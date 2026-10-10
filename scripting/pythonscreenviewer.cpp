@@ -17,7 +17,7 @@ void texture_window_fb_resize(GLFWwindow *win, int w, int h)
     texwindow->notify_window_fb_size(win, w, h);
 }
 
-void texture_window_mouse_button(GLFWwindow *win, int button, int action, int mods)
+void texture_window_mouse_button(GLFWwindow *win, int button, int action, int /*mods*/)
 {
     python_screen_viewer *texwindow = (python_screen_viewer*)glfwGetWindowUserPointer(win);
     texwindow->notify_click(win, button, action);

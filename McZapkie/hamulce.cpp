@@ -854,7 +854,7 @@ void TESt::CheckReleaser(double const dt)
 /// </summary>
 /// <param name="BCP">Brake cylinder (or impulse-chamber) pressure.</param>
 /// <param name="dV1">In/out brake-pipe flow correction (unused in this base impl).</param>
-void TESt::CheckState(double const BCP, double &dV1)
+void TESt::CheckState(double const BCP, double & /*dV1*/)
 {
 
 	double const VVP{ValveRes->P()};
@@ -1086,7 +1086,7 @@ void TESt::Init(double const PP, double const HPP, double const LPP, double cons
 /// derived variants and currently a no-op.
 /// </summary>
 /// <param name="i_crc">Characteristic value.</param>
-void TESt::EStParams(double const i_crc) {}
+void TESt::EStParams(double const /*i_crc*/) {}
 
 /// <summary>Returns the control reservoir (ZS) pressure.</summary>
 double TESt::GetCRP()
@@ -2502,7 +2502,7 @@ void TKE::CheckReleaser(double const dt)
 /// </summary>
 /// <param name="BCP">Cylinder (or impulse-chamber) pressure.</param>
 /// <param name="dV1">In/out brake-pipe flow correction (unused here).</param>
-void TKE::CheckState(double const BCP, double &dV1)
+void TKE::CheckState(double const BCP, double & /*dV1*/)
 {
 	double VVP;
 	double BVP;
@@ -2604,7 +2604,7 @@ double TKE::CVs(double const BP)
 /// </summary>
 /// <param name="BCP">Impulse-chamber pressure.</param>
 /// <returns>Opening coefficient.</returns>
-double TKE::BVs(double const BCP)
+double TKE::BVs(double const /*BCP*/)
 {
 	double VVP;
 	double BVP;
