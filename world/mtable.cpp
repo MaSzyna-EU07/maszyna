@@ -105,7 +105,7 @@ bool TTrainParameters::UpdateMTable( scenario_time const &Time, std::string cons
     return UpdateMTable( Time.data().wHour, Time.data().wMinute + Time.data().wSecond * 0.0167, NewName );
 }
 
-bool TTrainParameters::UpdateMTable(double hh, double mm, std::string const &NewName)
+bool TTrainParameters::UpdateMTable(double hh, double mm, std::string_view NewName)
 /*odfajkowanie dojechania do stacji (NewName) i przeliczenie opóźnienia*/
 {
     bool OK;
@@ -205,7 +205,7 @@ TTrainParameters::TTrainParameters(std::string const &NewTrainName)
     NewName(NewTrainName);
 }
 
-void TTrainParameters::NewName(std::string const &NewTrainName)
+void TTrainParameters::NewName(std::string_view NewTrainName)
 /*wstępne ustawienie parametrów rozkładu jazdy*/
 {
     TrainName = NewTrainName;

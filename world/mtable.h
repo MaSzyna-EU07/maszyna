@@ -78,11 +78,11 @@ class TTrainParameters
     bool IsTimeToGo(double hh, double mm) const;
     // returns: difference between specified time and scheduled departure from current stop, in seconds
     double seconds_until_departure( double const Hour, double const Minute ) const;
-    bool UpdateMTable(double hh, double mm, std::string const &NewName);
+    bool UpdateMTable(double hh, double mm, std::string_view NewName);
     bool UpdateMTable( scenario_time const &Time, std::string const &NewName );
     bool RewindTimeTable( std::string actualStationName );
     explicit TTrainParameters( std::string const &NewTrainName = "none" );
-    void NewName(std::string const &NewTrainName);
+    void NewName(std::string_view NewTrainName);
     void UpdateVelocity(int StationCount, double vActual);
     bool LoadTTfile(std::string const &scnpath, int iPlus, double vmax);
     bool DirectionChange() const;

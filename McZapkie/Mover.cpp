@@ -8454,7 +8454,7 @@ bool TMoverParameters::AssignLoad(std::string const &Loadname, float const Amoun
 // Q: 20160713
 // Test zakończenia załadunku / rozładunku
 // *************************************************************************************************
-bool TMoverParameters::LoadingDone(double const LSpeed, std::string const &Loadname)
+bool TMoverParameters::LoadingDone(double const LSpeed, std::string_view Loadname)
 {
 
 	if (LSpeed == 0.0)
@@ -9005,7 +9005,7 @@ bool startLIGHTSLIST;
 bool startCOMPRESSORLIST;
 int LISTLINE;
 
-bool issection(std::string const &Name, std::string const &Input)
+bool issection(std::string_view Name, std::string_view Input)
 {
 
 	return Input.compare(0, Name.size(), Name) == 0;

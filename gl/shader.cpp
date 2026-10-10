@@ -7,7 +7,7 @@
 #include "glsl_common.h"
 #include "utilities/Logs.h"
 
-inline bool strcend(std::string const &value, std::string const &ending)
+inline bool strcend(std::string_view value, std::string_view ending)
 {
     if (ending.size() > value.size())
         return false;

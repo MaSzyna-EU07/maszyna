@@ -2518,7 +2518,7 @@ class TMoverParameters
 
 	/* funckje dla wagonow*/
 	bool AssignLoad(std::string const &Name, float const Amount = 0.f);
-	bool LoadingDone(double LSpeed, std::string const &Loadname);
+	bool LoadingDone(double LSpeed, std::string_view Loadname);
 	bool PermitDoors(side const Door, bool const State = true, range_t const Notify = range_t::consist);
 	void PermitDoors_(side const Door, bool const State = true);
 	bool ChangeDoorPermitPreset(int const Change, range_t const Notify = range_t::consist);

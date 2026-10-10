@@ -67,7 +67,7 @@ basic_controller::output( element_handle const Element ) const -> int {
 }
 
 auto
-basic_controller::load( std::string const &Filename ) -> bool {
+basic_controller::load( std::string_view Filename) -> bool {
 
     m_program.clear();
     m_updateaccumulator = 0.0;
