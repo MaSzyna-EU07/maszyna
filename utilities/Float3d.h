@@ -18,7 +18,7 @@ class float3
     float x;
     float y;
     float z;
-    float3(void){};
+    float3() = default;
     float3(float a, float b, float c)
     {
         x = a;
@@ -218,7 +218,7 @@ public:
 	void deserialize_float32(std::istream&);
 	void deserialize_float64(std::istream&);
 	void serialize_float32(std::ostream&);
-    float4x4(void){};
+    float4x4() = default;
     float4x4(const float f[16])
     {
         for (int i = 0; i < 16; ++i)

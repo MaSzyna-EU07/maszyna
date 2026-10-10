@@ -17,7 +17,7 @@ public:
 // constructors:
     null_geometrybank() = default;
 // destructor
-    ~null_geometrybank() {};
+    ~null_geometrybank() = default;
 
 private:
 // methods:
@@ -43,7 +43,7 @@ public:
 // constructors
     null_renderer() = default;
 // destructor
-    ~null_renderer() { }
+    ~null_renderer() = default;
 // methods
     bool
         Init( GLFWwindow *Window ) override { return true; }

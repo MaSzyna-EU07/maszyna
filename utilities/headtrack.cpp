@@ -2,10 +2,7 @@
 #include "utilities/headtrack.h"
 #include "utilities/Globals.h"
 
-headtrack::headtrack()
-{
-
-}
+headtrack::headtrack() = default;
 
 void headtrack::find_joy() {
     for (size_t i = GLFW_JOYSTICK_1; i <= GLFW_JOYSTICK_LAST; i++) {

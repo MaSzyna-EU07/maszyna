@@ -15,9 +15,7 @@ cMoon::cMoon() {
 	m_observer.temp = 15.0;							// ambient dry-bulb temperature, degrees C
 }
 
-cMoon::~cMoon() {
-
-}
+cMoon::~cMoon() = default;
 
 void
 cMoon::init() {

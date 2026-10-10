@@ -15,10 +15,7 @@ cSun::cSun() {
 	m_observer.temp = 15.0;							// ambient dry-bulb temperature, degrees C
 }
 
-cSun::~cSun()
-{
-
-}
+cSun::~cSun() = default;
 
 void
 cSun::init() {
