@@ -2116,7 +2116,7 @@ void TTrain::OnCommand_trainbrakeoperationtoggle(TTrain *Train, command_data con
 	if (Command.action == GLFW_PRESS)
 	{
 
-		auto *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
+		auto const *vehicle{Train->find_nearest_consist_vehicle(Command.freefly, Command.location)};
 		if (vehicle == nullptr)
 		{
 			return;
@@ -3464,7 +3464,7 @@ void TTrain::update_pantograph_valves()
 	using enum operation_t;
 
 	auto const &presets{mvOccupied->PantsPreset.first};
-	auto &selection{mvOccupied->PantsPreset.second[cab_to_end()]};
+	auto const &selection{mvOccupied->PantsPreset.second[cab_to_end()]};
 
 	auto const preset{presets[selection] - '0'};
 	auto const swapends{cab_to_end() != end::front};
@@ -8743,7 +8743,7 @@ bool TTrain::Update(double const Deltatime)
 
 	// youBy - prad w drugim czlonie: galaz lub calosc
 	{
-		TDynamicObject *tmp{nullptr};
+		TDynamicObject const *tmp{nullptr};
 		if (DynamicObject->NextConnected() && TestFlag(mvControlled->Couplers[end::rear].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == 1)
 			tmp = DynamicObject->NextConnected();
 		if (DynamicObject->PrevConnected() && TestFlag(mvControlled->Couplers[end::front].CouplingFlag, coupling::control) && mvOccupied->CabOccupied == -1)
@@ -9169,7 +9169,7 @@ bool TTrain::Update(double const Deltatime)
 	}
 
 	{ // yB - wskazniki drugiego czlonu
-		TDynamicObject *tmp{nullptr}; //=mvControlled->mvSecond; //Ra 2014-07: trzeba to jeszcze wyjąć z kabiny...
+		TDynamicObject const *tmp{nullptr}; //=mvControlled->mvSecond; //Ra 2014-07: trzeba to jeszcze wyjąć z kabiny...
 		// Ra 2014-07: no nie ma potrzeby szukać tego w każdej klatce
 		if (TestFlag(mvControlled->Couplers[1].CouplingFlag, coupling::control) && mvOccupied->CabOccupied > 0)
 			tmp = DynamicObject->NextConnected();
@@ -10120,7 +10120,7 @@ void TTrain::update_sounds_radio()
 	}
 	// adjust audibility of remaining messages based on current radio conditions
 	auto const radioenabled{true == mvOccupied->Radio && (mvOccupied->Power24vIsAvailable || mvOccupied->Power110vIsAvailable)};
-	for (auto &[messagechannel, messagesound] : m_radiomessages)
+	for (auto const &[messagechannel, messagesound] : m_radiomessages)
 	{
 		auto const volume{true == radioenabled && Dynamic()->Mechanik != nullptr && messagechannel == RadioChannel() ? m_radiovolume : 0.0};
 		messagesound->gain(static_cast<float>(volume));
@@ -10347,7 +10347,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	    dsbReverserKey, dsbNastawnikJazdy, dsbNastawnikBocz, dsbSwitch,        dsbPneumaticSwitch, rsHiss,         rsHissU,   rsHissE,   rsHissX,      rsHissT,      rsSBHiss,
 	    rsSBHissU,      rsFadeSound,       rsRunningNoise,   rsResonanceNoise, rsWindSound,        rsHuntingNoise, dsbHasler, dsbBuzzer, dsbBuzzerShp, dsbSlipAlarm, m_distancecounterclear,
 	    m_rainsound,    m_radiostop};
-	for (auto &sound : sounds)
+	for (auto const &sound : sounds)
 	{
 		if (sound.get())
 		{
@@ -10355,7 +10355,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 		}
 	}
 	m_radiosound.offset(nullvector);
-	for (auto &[soundsource, soundoffset] : CabSoundLocations)
+	for (auto const &[soundsource, soundoffset] : CabSoundLocations)
 	{
 		if (soundsource.get() && soundsource.get()->offset() == nullvector)
 		{
@@ -10650,7 +10650,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	    {m_rainsound, caboffset},
 	    {m_radiostop, m_radiosound.offset()},
 	};
-	for (auto &[soundsource, soundoffset] : soundlocations)
+	for (auto const &[soundsource, soundoffset] : soundlocations)
 	{
 		if (soundsource.get() && soundsource.get()->offset() == nullvector)
 		{
@@ -10658,7 +10658,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 		}
 	}
 	// second pass, in case some items received no positioning due to missing submodels etc
-	for (auto &[soundsource, soundoffset] : soundlocations)
+	for (auto const &[soundsource, soundoffset] : soundlocations)
 	{
 		if (soundsource.get() && soundsource.get()->offset() == nullvector)
 		{
@@ -11464,7 +11464,7 @@ void TTrain::set_cab_controls(int const Cab)
 	bool kier = DynamicObject->DirectionGet() * mvOccupied->CabOccupied > 0;
 	int flag = DynamicObject->MoverParameters->InverterControlCouplerFlag;
 	int itemstart = 0;
-	for ([[maybe_unused]] auto &item : ggInverterToggleButtons) // for each button
+	for ([[maybe_unused]] auto const &item : ggInverterToggleButtons) // for each button
 	{
 		int itemindex = itemstart;
 		itemstart++;

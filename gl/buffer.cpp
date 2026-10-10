@@ -87,7 +87,7 @@ void gl::buffer::download(targets target, void *data, int offset, GLsizeiptr siz
     }
     else
     {
-        void *glbuf = glMapBufferRange(glenum_target(target), offset, size, GL_MAP_READ_BIT);
+        void const *glbuf = glMapBufferRange(glenum_target(target), offset, size, GL_MAP_READ_BIT);
         memcpy(data, glbuf, size);
         glUnmapBuffer(glenum_target(target));
     }

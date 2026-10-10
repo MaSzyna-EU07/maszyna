@@ -1187,10 +1187,10 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 		return;
 	} // shouldn't normally happen but, eh
 
-	auto &thiscoupler{Couplers[End]};
+	auto const &thiscoupler{Couplers[End]};
 	auto *othervehicle{Neighbours[End].vehicle->MoverParameters};
 	auto const otherend{Neighbours[End].vehicle_end};
-	auto &othercoupler{othervehicle->Couplers[otherend]};
+	auto const &othercoupler{othervehicle->Couplers[otherend]};
 
 	auto velocity{V};
 	auto othervehiclevelocity{othervehicle->V};
@@ -1830,7 +1830,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 	for (auto side = 0; side < 2; ++side)
 	{
 
-		auto &thiscoupler{Couplers[side]};
+		auto const &thiscoupler{Couplers[side]};
 		// NOTE: in the loop we actually update the state of the coupler on the opposite end of the vehicle
 		auto &oppositecoupler{Couplers[side == end::front ? end::rear : end::front]};
 
@@ -2275,7 +2275,7 @@ void TMoverParameters::PantographsCheck(double const /*Timestep*/)
 	using enum start_t;
 
 	{
-		auto &valve{PantsValve};
+		auto const &valve{PantsValve};
 		auto const lowvoltagepower{valve.solenoid ? Power24vIsAvailable || Power110vIsAvailable : true};
 		auto const autostart{valve.start_type == automatic || valve.start_type == manualwithautofallback};
 		auto const manualcontrol{valve.start_type == manual || valve.start_type == manualwithautofallback};
@@ -6211,7 +6211,7 @@ double TMoverParameters::TractionForce(double dt)
 			if (true == Mains && !SecuritySystem.is_engine_blocked())
 			{
 				double ActiveInverters = 0.0;
-				for (auto &inv : Inverters)
+				for (auto const &inv : Inverters)
 				{
 					if (inv.IsActive)
 						ActiveInverters += 1.0;
@@ -8946,7 +8946,7 @@ double TMoverParameters::GetTrainsetVoltage(int const Coupling) const
 		{
 			continue;
 		}
-		auto *connectedpowercoupling = (Coupling & (coupling::highvoltage | coupling::heating)) != 0 ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_high :
+		auto const *connectedpowercoupling = (Coupling & (coupling::highvoltage | coupling::heating)) != 0 ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_high :
 		                               (Coupling & coupling::power110v) != 0                         ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_110v :
 		                               (Coupling & coupling::power24v) != 0                          ? &thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].power_24v :
 		                                                                                               nullptr;

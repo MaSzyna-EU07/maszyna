@@ -280,7 +280,7 @@ memory_table::InitCells() const {
 void
 memory_table::log_all() const {
 
-    for( auto *cell : m_items ) {
+    for( auto const *cell : m_items ) {
         cell->LogValues();
     }
 }

@@ -79,7 +79,7 @@ python_screen_viewer::~python_screen_viewer()
 
 void python_screen_viewer::threadfunc()
 {
-	for (auto &window : m_windows) {
+	for (auto const &window : m_windows) {
 		glfwMakeContextCurrent(window->window);
 
 		glfwSwapInterval(Global.python_vsync ? 1 : 0);
@@ -115,7 +115,7 @@ void python_screen_viewer::threadfunc()
 	{
 		auto start_time = std::chrono::high_resolution_clock::now();
 
-		for (auto &window : m_windows) {
+		for (auto const &window : m_windows) {
 
 			unsigned char *image = nullptr;
 			int format;
@@ -190,7 +190,7 @@ void python_screen_viewer::threadfunc()
 
 void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int h) const
 {
-    for (auto &conf : m_windows) {
+    for (auto const &conf : m_windows) {
         if (conf->window == window) {
             conf->fb_size.x = w;
             conf->fb_size.y = h;
@@ -201,7 +201,7 @@ void python_screen_viewer::notify_window_fb_size(GLFWwindow *window, int w, int 
 
 void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h) const
 {
-	for (auto &conf : m_windows) {
+	for (auto const &conf : m_windows) {
 		if (conf->window == window) {
             conf->window_size.x = w;
             conf->window_size.y = h;
@@ -212,7 +212,7 @@ void python_screen_viewer::notify_window_size(GLFWwindow *window, int w, int h) 
 
 void python_screen_viewer::notify_cursor_pos(GLFWwindow *window, double x, double y) const
 {
-    for (auto &conf : m_windows) {
+    for (auto const &conf : m_windows) {
         if (conf->window == window) {
             conf->cursor_pos.x = static_cast<int>(x);
             conf->cursor_pos.y = static_cast<int>(y);
@@ -226,7 +226,7 @@ void python_screen_viewer::notify_click(GLFWwindow *window, int button, int acti
     if (button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS)
         return;
 
-    for (auto &conf : m_windows) {
+    for (auto const &conf : m_windows) {
         if (conf->window == window) {
             auto pos = glm::vec2(conf->cursor_pos) / glm::vec2(conf->window_size);
             pos.y = 1.0f - pos.y;

@@ -339,7 +339,7 @@ void gl::program::init()
 
     for (auto [texturename, textureentry] : texture_conf)
     {
-        shader::texture_entry &e = textureentry;
+        shader::texture_entry const &e = textureentry;
         GLuint loc = glGetUniformLocation(*this, texturename.c_str());
         glUniform1i(loc, static_cast<GLint>(e.id));
     }

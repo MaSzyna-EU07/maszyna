@@ -42,7 +42,7 @@ public:
 	glm::ivec2 size() const
 	{
 		if (image != null_handle) {
-            auto &tex = GfxRenderer->Texture(image);
+            auto const &tex = GfxRenderer->Texture(image);
 			return glm::ivec2(tex.get_width(), tex.get_height());
 		}
 		return glm::ivec2();

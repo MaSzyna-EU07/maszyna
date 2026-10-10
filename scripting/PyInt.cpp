@@ -363,7 +363,7 @@ void python_taskqueue::exit()
 	// which the previous code did not do (cancel() is a no-op stub).
 	{
 		std::scoped_lock lock(m_tasks.mutex);
-		for (auto &task : m_tasks.data)
+		for (auto const &task : m_tasks.data)
 		{
 			task->cancel();
 		}
@@ -609,7 +609,7 @@ void python_taskqueue::update()
 {
 	std::scoped_lock lock(m_uploadtasks.mutex);
 
-	for (auto &task : m_uploadtasks.data)
+	for (auto const &task : m_uploadtasks.data)
 		task->upload();
 
 	m_uploadtasks.data.clear();
