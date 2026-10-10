@@ -27,8 +27,8 @@ struct client_hello : public message
 {
 	client_hello() : message(CLIENT_HELLO) {}
 
-	virtual void serialize(std::ostream &stream) const override;
-	virtual void deserialize(std::istream &stream) override;
+	void serialize(std::ostream &stream) const override;
+	void deserialize(std::istream &stream) override;
 
 	int32_t version{0};
 	uint32_t start_packet{0};
@@ -43,8 +43,8 @@ struct server_hello : public message
     int64_t config{0};
     std::string scenario;
 
-	virtual void serialize(std::ostream &stream) const override;
-	virtual void deserialize(std::istream &stream) override;
+	void serialize(std::ostream &stream) const override;
+	void deserialize(std::istream &stream) override;
 };
 
 struct request_command : public message
@@ -54,8 +54,8 @@ struct request_command : public message
 
 	command_queue::commands_map commands;
 
-	virtual void serialize(std::ostream &stream) const override;
-	virtual void deserialize(std::istream &stream) override;
+	void serialize(std::ostream &stream) const override;
+	void deserialize(std::istream &stream) override;
 };
 
 struct frame_info : public request_command
@@ -66,8 +66,8 @@ struct frame_info : public request_command
 	double dt{0.0};
 	double sync{0.0};
 
-	virtual void serialize(std::ostream &stream) const override;
-	virtual void deserialize(std::istream &stream) override;
+	void serialize(std::ostream &stream) const override;
+	void deserialize(std::istream &stream) override;
 };
 
 std::shared_ptr<message> deserialize_message(std::istream &stream);

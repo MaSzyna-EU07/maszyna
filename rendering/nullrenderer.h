@@ -150,7 +150,7 @@ public:
 
     static bool renderer_register;
 
-    virtual imgui_renderer *GetImguiRenderer()
+    imgui_renderer *GetImguiRenderer() override
 	{
 		return nullptr;
 	}

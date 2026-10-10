@@ -49,7 +49,7 @@ class TP10Bg: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -59,7 +59,7 @@ class TP10Bgu: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -69,7 +69,7 @@ class TP10yBg: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -79,7 +79,7 @@ class TP10yBgu: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -89,7 +89,7 @@ class TP10: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -99,7 +99,7 @@ class TFR513: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -109,7 +109,7 @@ class TFR510: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -119,7 +119,7 @@ class TCosid: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -129,7 +129,7 @@ class TDisk1: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
@@ -139,7 +139,7 @@ class TDisk2: public TFricMat
     
 {
 public:
-    double GetFC(double N, double Vel)/*override*/; 
+    double GetFC(double N, double Vel) override; 
   
 };
 
