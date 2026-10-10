@@ -41,6 +41,7 @@ class TFricMat
 public:
     virtual double GetFC(double N, double Vel); 
   
+    virtual ~TFricMat() = default;
 };
 
 

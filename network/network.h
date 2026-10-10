@@ -47,6 +47,7 @@ namespace network
 			DEAD
 		};
 		peer_state state;
+		virtual ~connection() = default;
 	};
 
 	class server
@@ -104,6 +105,7 @@ namespace network
 		int get_awaiting_frames() const {
 			return static_cast<int>(delta_queue.size());
 		}
+		virtual ~client() = default;
 	};
 
 	class backend_manager
@@ -112,6 +114,7 @@ namespace network
 		virtual std::shared_ptr<server> create_server(std::shared_ptr<std::fstream>, const std::string &conf) = 0;
 		virtual std::shared_ptr<client> create_client(const std::string &conf) = 0;
 		virtual void update() = 0;
+		virtual ~backend_manager() = default;
 	};
 
     // HACK: static initialization order fiasco fix

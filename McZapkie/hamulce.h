@@ -272,6 +272,7 @@ class TReservoir
 
 	/// <summary>Default constructor — creates a 1 L reservoir at zero pressure.</summary>
 	TReservoir() = default;
+	virtual ~TReservoir() = default;
 };
 
 /// <summary>Pointer typedef for a reservoir instance.</summary>
@@ -504,6 +505,7 @@ class TBrake
 	{
 		UniversalFlag = flag;
 	} // przycisk uniwersalny
+	virtual ~TBrake() = default;
 };
 
 /// <summary>
@@ -1086,6 +1088,7 @@ class TDriverHandle
 	{
 		memset(Sounds, 0, sizeof(Sounds));
 	}
+	virtual ~TDriverHandle() = default;
 };
 
 /// <summary>
