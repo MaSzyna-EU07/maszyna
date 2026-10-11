@@ -211,7 +211,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     double dV{ 0.0 };
     double dV1{ 0.0 };
 
-    double const nastG = static_cast<double>(BrakeDelayFlag & bdelay_G);
+    auto const nastG = static_cast<double>(BrakeDelayFlag & bdelay_G);
 
     // sprawdzanie stanu
     CheckState(BCP, dV1);
@@ -294,8 +294,9 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     return dV - dV1;
 }
 
-void TNESt3::EStParams( double const i_crc ) // parametry charakterystyczne dla ESt
+void TNESt3::EStParams( double const /*i_crc*/ ) const // parametry charakterystyczne dla ESt
 {
+	// no effect for this device type
 }
 
 void TNESt3::Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF )
@@ -318,7 +319,9 @@ void TNESt3::Init( double const PP, double const HPP, double const LPP, double c
 
     Zamykajacy = false;
 
-    if ( typeid(*FM) == typeid(TDisk1) || typeid(*FM) == typeid(TDisk2) ) // jesli zeliwo to schodz
+    auto const &frictionmaterial { *FM };
+    auto const &frictionmaterialtype { typeid( frictionmaterial ) };
+    if ( frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2) ) // jesli zeliwo to schodz
         RapidStaly = true;
     else
         RapidStaly = false;
@@ -331,9 +334,8 @@ double TNESt3::GetCRP()
     //  return Miedzypoj.P;
 }
 
-void TNESt3::CheckState(double const BCP, double &dV1) // glowny przyrzad rozrzadczy
+void TNESt3::CheckState(double const BCP, double & /*dV1*/) // glowny przyrzad rozrzadczy
 {
-    double const BVP{ BrakeRes->P() }; //-> tu ma byc komora rozprezna
     double const VVP{ ValveRes->P() };
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
@@ -355,14 +357,14 @@ void TNESt3::CheckState(double const BCP, double &dV1) // glowny przyrzad rozrza
     if( ( BrakeStatus & b_hld ) == 0 )
         SoundFlag |= sf_CylU;
 
-    if (VVP + 0.10 < CVP && BCP < 0.25) // poczatek hamowania
-        if (false == Przys_blok)
-        {
-            ValveRes->CreatePress(0.1 * VVP);
-            SoundFlag |= sf_Acc;
-            ValveRes->Act();
-            Przys_blok = true;
-        }
+    // poczatek hamowania
+    if (VVP + 0.10 < CVP && BCP < 0.25 && false == Przys_blok)
+    {
+        ValveRes->CreatePress(0.1 * VVP);
+        SoundFlag |= sf_Acc;
+        ValveRes->Act();
+        Przys_blok = true;
+    }
 
     if (BCP > 0.5)
         Zamykajacy = true;
@@ -384,7 +386,7 @@ void TNESt3::CheckReleaser(double const dt) // odluzniacz
     }
 }
 
-double TNESt3::CVs(double const BP) // napelniacz sterujacego
+double TNESt3::CVs(double const /*BP*/) const // napelniacz sterujacego
 {
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
@@ -398,7 +400,7 @@ double TNESt3::CVs(double const BP) // napelniacz sterujacego
         return Nozzles[dSm];
 }
 
-double TNESt3::BVs(double const BCP) // napelniacz pomocniczego
+double TNESt3::BVs(double const BCP) const // napelniacz pomocniczego
 {
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
@@ -637,9 +639,9 @@ void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie 
     Nozzles[dSm] = 0.9;
 
     // przeliczanie z mm^2 na l/m
-    for (int i = 0; i < dMAX; ++i)
+    for (auto &nozzle : Nozzles)
     {
-        Nozzles[i] = d2A(Nozzles[i]); //(/1000^2*pi/4*1000)
+        nozzle = d2A(nozzle); //(/1000^2*pi/4*1000)
     }
     for (int i = 1; i < 4; ++i)
     {

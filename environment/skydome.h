@@ -5,7 +5,7 @@
 
 class CSkyDome {
 public:
-    CSkyDome( int const Tesselation = 54 );
+    explicit CSkyDome( int const Tesselation = 54 );
 	~CSkyDome();
 	void Generate();
 	void RebuildColors();
@@ -20,8 +20,8 @@ public:
     void Update( glm::vec3 const &Sun );
 
     // retrieves average colour of the sky dome
-    glm::vec3 GetAverageColor() { return m_averagecolour * 8.f / 6.f; }
-    glm::vec3 GetAverageHorizonColor() { return m_averagehorizoncolour; }
+    glm::vec3 GetAverageColor() const { return m_averagecolour * 8.f / 6.f; }
+    glm::vec3 GetAverageHorizonColor() const { return m_averagehorizoncolour; }
 
     std::vector<glm::vec3> const & vertices() const {
         return m_vertices; }
@@ -35,7 +35,8 @@ public:
 private:
 	// shading parametrs
     glm::vec3 m_sundirection;
-    float m_thetasun, m_phisun;
+    float m_thetasun;
+    float m_phisun;
     float m_turbidity;
     bool m_linearexpcontrol;
     float m_expfactor;
@@ -59,9 +60,9 @@ private:
     static float m_zenithymatrix[ 3 ][ 4 ];
 	
 	// coloring
-	void GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity );
-	float GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, const float Turbidity );		
-	float PerezFunctionO1( float Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval );
-	float PerezFunctionO2( float Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval );
+	void GetPerez( float *Perez, float Distribution[ 5 ][ 2 ], const float Turbidity ) const;
+	float GetZenith( float Zenithmatrix[ 3 ][ 4 ], const float Theta, const float Turbidity ) const;		
+	float PerezFunctionO1( float const Perezcoeffs[ 5 ], const float Thetasun, const float Zenithval ) const;
+	float PerezFunctionO2( float const Perezcoeffs[ 5 ], const float Icostheta, const float Gamma, const float Cosgamma2, const float Zenithval ) const;
 };
 

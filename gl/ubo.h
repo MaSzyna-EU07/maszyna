@@ -29,7 +29,7 @@ namespace gl
         void update(const uint8_t *data, int offset, GLsizeiptr size);
         template <typename T> void update(const T &data, size_t offset = 0)
         {
-            update(reinterpret_cast<const uint8_t*>(&data), offset, sizeof(data));
+            update(reinterpret_cast<const uint8_t*>(&data), static_cast<int>(offset), sizeof(data));
         }
     };
 

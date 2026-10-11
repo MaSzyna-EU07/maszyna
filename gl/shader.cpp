@@ -7,7 +7,7 @@
 #include "glsl_common.h"
 #include "utilities/Logs.h"
 
-inline bool strcend(std::string const &value, std::string const &ending)
+inline bool strcend(std::string_view value, std::string_view ending)
 {
     if (ending.size() > value.size())
         return false;
@@ -41,7 +41,7 @@ bool has_gl_extension(char const *name) {
     GLint count = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &count);
     for (GLint i = 0; i < count; ++i) {
-        char const *ext = reinterpret_cast<char const *>(glGetStringi(GL_EXTENSIONS, i));
+        auto ext = reinterpret_cast<char const *>(glGetStringi(GL_EXTENSIONS, i));
         if (ext != nullptr && std::strcmp(ext, name) == 0) {
             return true;
         }
@@ -52,7 +52,7 @@ bool has_gl_extension(char const *name) {
 
 } // anonymous namespace
 
-std::string gl::shader::read_file(const std::string &filename)
+std::string gl::shader::read_file(const std::string &filename) const
 {
     std::stringstream stream;
     std::ifstream f;
@@ -73,11 +73,11 @@ void gl::shader::expand_includes(std::string &str, const std::string &basedir)
     size_t start_pos = 0;
 
     std::string magic = "#include";
-    while ((start_pos = str.find(magic, start_pos)) != str.npos)
+    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
     {
         size_t fp = str.find('<', start_pos);
         size_t fe = str.find('>', start_pos);
-        if (fp == str.npos || fe == str.npos)
+        if (fp == std::string::npos || fe == std::string::npos)
             return;
 
         std::string filename = str.substr(fp + 1, fe - fp - 1);
@@ -154,8 +154,7 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
             // the driver advertises support (see desktop comment above).
             // (Glad config doesn't generate GLAD_GL_EXT_gpu_shader5 -- query
             //  the live extension string the same way.)
-            static bool const have_gpu_shader5 = has_gl_extension("GL_EXT_gpu_shader5");
-            if (have_gpu_shader5)
+            if (static bool const have_gpu_shader5 = has_gl_extension("GL_EXT_gpu_shader5"); have_gpu_shader5)
                 str += "#extension GL_EXT_gpu_shader5 : enable\n";
             if (type == GL_GEOMETRY_SHADER)
                 str += "#extension GL_EXT_geometry_shader : require\n";
@@ -189,17 +188,17 @@ void gl::shader::parse_texture_entries(std::string &str)
     size_t start_pos = 0;
 
     std::string magic = "#texture";
-    while ((start_pos = str.find(magic, start_pos)) != str.npos)
+    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
     {
         size_t fp = str.find('(', start_pos);
         size_t fe = str.find(')', start_pos);
-        if (fp == str.npos || fe == str.npos)
+        if (fp == std::string::npos || fe == std::string::npos)
             return;
 
         std::istringstream ss(str.substr(fp + 1, fe - fp - 1));
         std::string token;
 
-        std::string name;
+        std::string uniformname;
         texture_entry conf;
 
         size_t arg = 0;
@@ -207,14 +206,14 @@ void gl::shader::parse_texture_entries(std::string &str)
         {
             std::istringstream token_ss(token);
             if (arg == 0)
-                token_ss >> name;
+                token_ss >> uniformname;
             else if (arg == 1)
                 token_ss >> conf.id;
             else if (arg == 2)
             {
                 std::string comp;
                 token_ss >> comp;
-                if (components_mapping.find(comp) == components_mapping.end())
+                if (!components_mapping.contains(comp))
                     log_error("unknown components: " + comp);
                 else
                     conf.components = components_mapping[comp];
@@ -224,12 +223,12 @@ void gl::shader::parse_texture_entries(std::string &str)
 
         if (arg == 3)
         {
-            if (name.empty())
+            if (uniformname.empty())
                 log_error("empty name");
             else if (conf.id >= gl::MAX_TEXTURES)
                 log_error("invalid texture binding: " + std::to_string(conf.id));
             else
-                texture_conf.emplace(std::make_pair(name, conf));
+                texture_conf.try_emplace(uniformname, conf);
         }
         else
             log_error("invalid argument count to #texture");
@@ -243,17 +242,17 @@ void gl::shader::parse_param_entries(std::string &str)
     size_t start_pos = 0;
 
     std::string magic = "#param";
-    while ((start_pos = str.find(magic, start_pos)) != str.npos)
+    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
     {
         size_t fp = str.find('(', start_pos);
         size_t fe = str.find(')', start_pos);
-        if (fp == str.npos || fe == str.npos)
+        if (fp == std::string::npos || fe == std::string::npos)
             return;
 
         std::istringstream ss(str.substr(fp + 1, fe - fp - 1));
         std::string token;
 
-        std::string name;
+        std::string uniformname;
         param_entry conf;
 
         size_t arg = 0;
@@ -261,7 +260,7 @@ void gl::shader::parse_param_entries(std::string &str)
         {
             std::istringstream token_ss(token);
             if (arg == 0)
-                token_ss >> name;
+                token_ss >> uniformname;
             else if (arg == 1)
                 token_ss >> conf.location;
             else if (arg == 2)
@@ -272,7 +271,7 @@ void gl::shader::parse_param_entries(std::string &str)
             {
                 std::string tok;
                 token_ss >> tok;
-                if (defaultparams_mapping.find(tok) == defaultparams_mapping.end())
+                if (!defaultparams_mapping.contains(tok))
                     log_error("unknown param default: " + tok);
                 conf.defaultparam = defaultparams_mapping[tok];
             }
@@ -281,7 +280,7 @@ void gl::shader::parse_param_entries(std::string &str)
 
         if (arg == 5)
         {
-            if (name.empty())
+            if (uniformname.empty())
                 log_error("empty name");
             else if (conf.location >= gl::MAX_PARAMS)
                 log_error("invalid param binding: " + std::to_string(conf.location));
@@ -290,7 +289,7 @@ void gl::shader::parse_param_entries(std::string &str)
             else if (conf.offset + conf.size > 4)
                 log_error("invalid size: " + std::to_string(conf.size));
             else
-                param_conf.emplace(std::make_pair(name, conf));
+                param_conf.try_emplace(uniformname, conf);
         }
         else
             log_error("invalid argument count to #param");
@@ -299,32 +298,31 @@ void gl::shader::parse_param_entries(std::string &str)
     }
 }
 
-void gl::shader::log_error(const std::string &str)
+void gl::shader::log_error(const std::string &str) const
 {
     ErrorLog("bad shader: " + name + ": " + str, logtype::shader);
 }
 
-gl::shader::shader(const std::string &filename)
+gl::shader::shader(const std::string &filename) : name(filename)
 {
-    name = filename;
 
-    std::pair<GLuint, std::string> source = process_source(filename, "shaders/");
+    auto [shadertype, shadersource] = process_source(filename, "shaders/");
 
-    const GLchar *cstr = source.second.c_str();
+    const GLchar *cstr = shadersource.c_str();
 
-    **this = glCreateShader(source.first);
-    glShaderSource(*this, 1, &cstr, 0);
+    **this = glCreateShader(shadertype);
+    glShaderSource(*this, 1, &cstr, nullptr);
     glCompileShader(*this);
 
     GLint status;
     glGetShaderiv(*this, GL_COMPILE_STATUS, &status);
     if (!status)
     {
-        GLchar info[512];
-        glGetShaderInfoLog(*this, 512, 0, info);
-        log_error(std::string(info));
+        std::array<GLchar, 512> info{};
+        glGetShaderInfoLog(*this, static_cast<GLsizei>(info.size()), nullptr, info.data());
+        log_error(std::string(info.data()));
 
-        throw shader_exception("failed to compile " + filename + ": " + std::string(info));
+        throw shader_exception("failed to compile " + filename + ": " + std::string(info.data()));
     }
 }
 
@@ -339,11 +337,11 @@ void gl::program::init()
 {
     bind();
 
-    for (auto it : texture_conf)
+    for (auto const &[texturename, textureentry] : texture_conf)
     {
-        shader::texture_entry &e = it.second;
-        GLuint loc = glGetUniformLocation(*this, it.first.c_str());
-        glUniform1i(loc, e.id);
+        shader::texture_entry const &e = textureentry;
+        GLuint loc = glGetUniformLocation(*this, texturename.c_str());
+        glUniform1i(loc, static_cast<GLint>(e.id));
     }
 
     glUniform1i(glGetUniformLocation(*this, "shadowmap"), gl::SHADOW_TEX);
@@ -370,7 +368,7 @@ gl::program::program()
     **this = glCreateProgram();
 }
 
-gl::program::program(std::vector<std::reference_wrapper<const gl::shader>> shaders) : program()
+gl::program::program(std::vector<std::reference_wrapper<const gl::shader>> const &shaders) : program()
 {
     for (const gl::shader &s : shaders)
         attach(s);
@@ -379,10 +377,10 @@ gl::program::program(std::vector<std::reference_wrapper<const gl::shader>> shade
 
 void gl::program::attach(const gl::shader &s)
 {
-    for (auto it : s.texture_conf)
-        texture_conf.emplace(std::make_pair(it.first, std::move(it.second)));
-    for (auto it : s.param_conf)
-        param_conf.emplace(std::make_pair(it.first, std::move(it.second)));
+    for (auto [texturename, textureentry] : s.texture_conf)
+        texture_conf.try_emplace(texturename, std::move(textureentry));
+    for (auto [paramname, paramentry] : s.param_conf)
+        param_conf.try_emplace(paramname, std::move(paramentry));
     glAttachShader(*this, *s);
 }
 
@@ -394,9 +392,9 @@ void gl::program::link()
     glGetProgramiv(*this, GL_LINK_STATUS, &status);
     if (!status)
     {
-        GLchar info[512];
-        glGetProgramInfoLog(*this, 512, 0, info);
-        throw shader_exception("failed to link program: " + std::string(info));
+        std::array<GLchar, 512> info{};
+        glGetProgramInfoLog(*this, static_cast<GLsizei>(info.size()), nullptr, info.data());
+        throw shader_exception("failed to link program: " + std::string(info.data()));
     }
 
     init();

@@ -56,7 +56,7 @@ public:
             return (
                 m_valuechangemodifier == nullptr ?
                     m_valuechange :
-                    m_valuechange / *( m_valuechangemodifier ) ); }
+                    m_valuechange / *m_valuechangemodifier ); }
 
 private:
 //types
@@ -122,7 +122,7 @@ private:
         glm::vec3 color { 16.f / 255.f };
 
         void deserialize( cParser &Input );
-        void initialize( smoke_particle &Particle );
+        void initialize( smoke_particle &Particle ) const;
     };
 
     using bounding_box = glm::dvec3[ 2 ]; // bounding box of owned particles
@@ -212,7 +212,7 @@ fixedstep_modifier<Type_>::update( Type_ &Variable, double const Timedelta ) con
     auto const valuechange { (
         m_valuechangemodifier == nullptr ?
             m_valuechange :
-            m_valuechange / *( m_valuechangemodifier ) ) };
+            m_valuechange / *m_valuechangemodifier ) };
     Variable += ( valuechange * static_cast<float>( Timedelta ) );
     // clamp down to allowed value range
     Variable = glm::max( Variable, m_valuelimits[ value_limit::min ] );

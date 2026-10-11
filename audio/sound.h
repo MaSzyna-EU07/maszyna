@@ -108,7 +108,7 @@ public:
         offset() const;
     // sound source name setter/getter
     void
-        name( std::string Name );
+        name( std::string const &Name );
     std::string const &
         name() const;
     // playback starting point shift setter/getter
@@ -137,12 +137,12 @@ public:
     bool
         has_bookends() const;
     // returns location of the sound source in simulation region space
-    glm::dvec3 const
+    glm::dvec3
         location() const;
     // returns defined range of the sound
     void
         range( float const Range );
-    float const
+    float
         range() const;
 
 // members
@@ -252,7 +252,7 @@ inline TDynamicObject const * sound_source::owner() const { return m_owner; }
 inline void sound_source::offset( glm::vec3 const Offset ) { m_offset = Offset; }
 inline glm::vec3 const & sound_source::offset() const { return m_offset; }
 // sound source name setter/getter
-inline void sound_source::name( std::string Name ) { m_name = Name; }
+inline void sound_source::name( std::string const &Name ) { m_name = Name; }
 inline std::string const & sound_source::name() const { return m_name; }
 // playback starting point shift setter/getter
 inline void sound_source::start( float const Offset ) { m_startoffset = Offset; }

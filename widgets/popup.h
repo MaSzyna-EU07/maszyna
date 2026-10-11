@@ -11,7 +11,7 @@ class popup
 	static int id;
 
   public:
-	popup(ui_panel &panel);
+	explicit popup(ui_panel &panel);
 	virtual ~popup();
 
     virtual bool render();

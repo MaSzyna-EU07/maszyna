@@ -12,8 +12,7 @@ bool vr_interface_factory::register_backend(const std::string &backend, vr_inter
 
 std::unique_ptr<vr_interface> vr_interface_factory::create(const std::string &backend)
 {
-    auto it = backends.find(backend);
-    if (it != backends.end())
+    if (auto it = backends.find(backend); it != backends.end())
         return it->second();
 
     ErrorLog("vr backend \"" + backend + "\" not found!");

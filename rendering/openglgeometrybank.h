@@ -58,7 +58,7 @@ private:
     void
         setup_buffer();
     void
-        bind_buffer();
+        bind_buffer() const;
     void
         delete_buffer();
     static
@@ -87,7 +87,7 @@ public:
     opengl_dlgeometrybank() = default;
 // destructor:
     ~opengl_dlgeometrybank() {
-        for( auto &chunkrecord : m_chunkrecords ) {
+        for( auto const &chunkrecord : m_chunkrecords ) {
             ::glDeleteLists( chunkrecord.list, 1 ); } }
 
 private:

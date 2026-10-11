@@ -14,7 +14,9 @@ http://mozilla.org/MPL/2.0/.
 class AirCoupler
 {
 private:
-    TSubModel *ModelOn, *ModelOff, *ModelxOn;
+    TSubModel *ModelOn;
+    TSubModel *ModelOff;
+    TSubModel *ModelxOn;
     bool On;
     bool xOn;
     void Update();
@@ -25,10 +27,10 @@ public:
     ///Reset members.
     void Clear();
     ///Looks for submodels.
-    void Init(std::string const &asName, TModel3d *Model);
+    void Init(std::string const &asName, TModel3d const *Model);
     ///Loads info about coupler.
     void Load(cParser *Parser, TModel3d *Model);
-    int GetStatus();
+    int GetStatus() const;
     inline void TurnOn() ///Turns on straight coupler.
     {
         On = true;

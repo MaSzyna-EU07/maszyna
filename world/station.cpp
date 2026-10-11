@@ -22,7 +22,7 @@ basic_station Station;
 
 // exchanges load with consist attached to specified vehicle, operating on specified schedule
 double
-basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Schedule, int const Platform ) {
+basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Schedule, int const Platform ) const {
 
     // TODO: filter out maintenance stops when determining first and last stop
     auto const firststop { Schedule.StationIndex == 1 };
@@ -63,7 +63,7 @@ basic_station::update_load( TDynamicObject *First, Mtable::TTrainParameters &Sch
                 maintenancestop ? 0 :
                 std::min<float>(
                     parameters.LoadAmount,
-                    Random( parameters.MaxLoad * 0.15f * stationsizemodifier ) ) );
+                    static_cast<float>(Random( parameters.MaxLoad * 0.15f * stationsizemodifier )) ) );
             auto loadcount = static_cast<int>(
                 TestFlag( parameters.DamageFlag, dtrain_out ) ? 0 :
                 laststop ? 0 :

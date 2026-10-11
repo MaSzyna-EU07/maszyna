@@ -35,7 +35,7 @@ public:
 	std::chrono::duration<float, std::milli>
         stop() {
 		    m_last = std::chrono::duration_cast<std::chrono::microseconds>( std::chrono::steady_clock::now() - m_start );
-			m_accumulator = 0.95f * m_accumulator + m_last.count() / 1000.f;
+			m_accumulator = 0.95f * m_accumulator + static_cast<float>(m_last.count()) / 1000.f;
 			return m_last; }
     float
         average() const {

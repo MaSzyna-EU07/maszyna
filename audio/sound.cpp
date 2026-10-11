@@ -47,19 +47,18 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
     if( Input.peek() == "{" ) {
         // block type config
         while( true == deserialize_mapping( Input ) ) {
-            ; // all work done by while()
+            // all work done by while()
         }
 
         if( false == m_soundchunks.empty() ) {
             // arrange loaded sound chunks in requested order
-            std::sort(
-                std::begin( m_soundchunks ), std::end( m_soundchunks ),
-                []( soundchunk_pair const &Left, soundchunk_pair const &Right ) {
+            std::ranges::sort(
+                m_soundchunks, []( soundchunk_pair const &Left, soundchunk_pair const &Right ) {
                     return Left.second.threshold < Right.second.threshold; } );
             // calculate and cache full range points for each chunk, including crossfade sections:
             // on the far end the crossfade section extends to the threshold point of the next chunk...
             for( std::size_t idx = 0; idx < m_soundchunks.size() - 1; ++idx ) {
-                m_soundchunks[ idx ].second.fadeout = m_soundchunks[ idx + 1 ].second.threshold;
+                m_soundchunks[ idx ].second.fadeout = static_cast<float>(m_soundchunks[ idx + 1 ].second.threshold);
 /*
                 m_soundchunks[ idx ].second.fadeout =
                     interpolate<float>(
@@ -69,11 +68,11 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
 */
             }
             //  ...and on the other end from the threshold point back into the range of previous chunk
-            m_soundchunks.front().second.fadein = std::max( 0, m_soundchunks.front().second.threshold );
+            m_soundchunks.front().second.fadein = static_cast<float>(std::max( 0, m_soundchunks.front().second.threshold ));
 //            m_soundchunks.front().second.fadein = m_soundchunks.front().second.threshold;
             for( std::size_t idx = 1; idx < m_soundchunks.size(); ++idx ) {
                 auto const previouschunkwidth { m_soundchunks[ idx ].second.threshold - m_soundchunks[ idx - 1 ].second.threshold };
-                m_soundchunks[ idx ].second.fadein = m_soundchunks[ idx ].second.threshold - 0.01f * m_crossfaderange * previouschunkwidth;
+                m_soundchunks[ idx ].second.fadein = static_cast<float>(m_soundchunks[ idx ].second.threshold) - 0.01f * static_cast<float>(m_crossfaderange) * static_cast<float>(previouschunkwidth);
 /*
                 m_soundchunks[ idx ].second.fadein =
                     interpolate<float>(
@@ -82,11 +81,11 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
                         m_crossfaderange * 0.01f );
 */
             }
-            m_soundchunks.back().second.fadeout = std::max( Chunkrange, m_soundchunks.back().second.threshold );
+            m_soundchunks.back().second.fadeout = static_cast<float>(std::max( Chunkrange, m_soundchunks.back().second.threshold ));
 //            m_soundchunks.back().second.fadeout = m_soundchunks.back().second.threshold;
             // test if the chunk table contains any actual samples while at it
-            for( auto &soundchunk : m_soundchunks ) {
-                if( soundchunk.first.buffer != null_handle ) {
+            for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
+                if( chunkbuffer.buffer != null_handle ) {
                     m_soundchunksempty = false;
                     break;
                 }
@@ -117,24 +116,18 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
             }
         }
 
-        if( Legacyparameters & sound_parameters::range ) {
-            if( Input.getTokens( 1, false ) ) {
-                Input >> m_range;
-            }
+        if (Legacyparameters & sound_parameters::range && Input.getTokens( 1, false )) {
+            Input >> m_range;
         }
-        if( Legacyparameters & sound_parameters::amplitude ) {
-            if( Input.getTokens( 2, false ) ) {
-                Input
-                    >> m_amplitudefactor
-                    >> m_amplitudeoffset;
-            }
+        if (Legacyparameters & sound_parameters::amplitude && Input.getTokens( 2, false )) {
+            Input
+                >> m_amplitudefactor
+                >> m_amplitudeoffset;
         }
-        if( Legacyparameters & sound_parameters::frequency ) {
-            if( Input.getTokens( 2, false ) ) {
-                Input
-                    >> m_frequencyfactor
-                    >> m_frequencyoffset;
-            }
+        if (Legacyparameters & sound_parameters::frequency && Input.getTokens( 2, false )) {
+            Input
+                >> m_frequencyfactor
+                >> m_frequencyoffset;
         }
     }
     // restore parser behaviour
@@ -225,9 +218,9 @@ sound_source::deserialize_mapping( cParser &Input ) {
         if( indexstart != std::string::npos ) {
             auto const index { std::stoi( key.substr( indexstart, indexend - indexstart ) ) };
             auto const pitch { Input.getToken<float>( false, "\n\r\t ,;" ) };
-            for( auto &chunk : m_soundchunks ) {
-                if( chunk.second.threshold == index ) {
-                    chunk.second.pitch = pitch > 0.f ? pitch : 1.f;
+            for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
+                if( chunkdata.threshold == index ) {
+                    chunkdata.pitch = pitch > 0.f ? pitch : 1.f;
                     break;
                 }
             }
@@ -240,13 +233,14 @@ sound_source::deserialize_mapping( cParser &Input ) {
         m_crossfaderange = std::clamp( m_crossfaderange, 0, 100 );
     }
     else if( key == "placement:" ) {
+        using enum sound_placement;
         auto const value { Input.getToken<std::string>( true, "\n\r\t ,;" ) };
-        std::map<std::string, sound_placement> const placements {
-            { "internal", sound_placement::internal },
-            { "engine", sound_placement::engine },
-            { "external", sound_placement::external },
-            { "custom", sound_placement::custom },
-            { "general", sound_placement::general } };
+        std::map<std::string, sound_placement, std::less<>> const placements {
+            { "internal", internal },
+            { "engine", engine },
+            { "external", external },
+            { "custom", custom },
+            { "general", general } };
         auto lookup{ placements.find( value ) };
         if( lookup != placements.end() ) {
             m_placement = lookup->second;
@@ -262,7 +256,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
     }
     else {
         // floating point properties
-        std::map<std::string, float &> const properties {
+        std::map<std::string, float &, std::less<>> const properties {
             { "frequencyfactor:", m_frequencyfactor },
             { "frequencyoffset:", m_frequencyoffset },
             { "amplitudefactor:", m_amplitudefactor },
@@ -339,8 +333,8 @@ sound_source::copy_sounds( sound_source const &Source ) {
     for( auto &sound : m_sounds ) {
         sound.playing = 0;
     }
-    for( auto &sound : m_soundchunks ) {
-        sound.first.playing = 0;
+    for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
+        chunkbuffer.playing = 0;
     }
     return *this;
 }
@@ -400,7 +394,7 @@ sound_source::play_basic() {
         // dispatch appropriate sound
         if( true == m_playbeginning
          && sound(sound_id::begin).buffer != null_handle) {
-            std::vector<sound_id> sounds { sound_id::begin, sound_id::main };
+            std::vector sounds { sound_id::begin, sound_id::main };
             insert( std::begin( sounds ), std::end( sounds ) );
             m_playbeginning = false;
         }
@@ -424,14 +418,14 @@ sound_source::play_combined() {
     auto const soundpoint { compute_combined_point() };
     for( std::uint32_t idx = 0; idx < m_soundchunks.size(); ++idx ) {
 
-        auto const &soundchunk { m_soundchunks[ idx ] };
+        auto const &[chunkbuffer, chunkdata]{ m_soundchunks[ idx ] };
         // a chunk covers range from fade in point, where it starts rising in volume over crossfade distance,
         // lasts until fadeout - crossfade distance point, past which it grows quiet until fade out point where it ends
-        if( soundpoint < soundchunk.second.fadein )  { break; }
-        if( soundpoint >= soundchunk.second.fadeout ) { continue; }
+        if( soundpoint < chunkdata.fadein )  { break; }
+        if( soundpoint >= chunkdata.fadeout ) { continue; }
         
-        if( soundchunk.first.buffer == null_handle || ( (m_flags & (sound_flags::exclusive | sound_flags::looping)) != 0
-           && soundchunk.first.playing > 0 ) ) {
+        if( chunkbuffer.buffer == null_handle || ( (m_flags & (sound_flags::exclusive | sound_flags::looping)) != 0
+           && chunkbuffer.playing > 0 ) ) {
             // combined sounds only play looped, single copy of each activated chunk
             continue;
         }
@@ -675,9 +669,9 @@ sound_source::update_combined( audio::openal_source &Source ) {
             // for sound chunks, test whether the chunk should still be active given current value of the controlling variable
             if( ( m_flags & ( sound_flags::exclusive | sound_flags::looping ) ) != 0 ) {
                 auto const soundpoint { compute_combined_point() };
-                auto const &soundchunk { m_soundchunks[ soundhandle ^ sound_id::chunk ] };
-                if( soundpoint < soundchunk.second.fadein
-                 || soundpoint >= soundchunk.second.fadeout ) {
+                auto const &[chunkbuffer, chunkdata]{ m_soundchunks[ soundhandle ^ sound_id::chunk ] };
+                if( soundpoint < chunkdata.fadein
+                 || soundpoint >= chunkdata.fadeout ) {
                     Source.stop();
                     update_counter( soundhandle, -1 );
                     return;
@@ -761,7 +755,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
 
     // relative pitch adjustment
     // pitch of each chunk is modified based on ratio of the chunk's pitch to that of its neighbour
-    if( soundpoint < chunkdata.threshold ) {
+    if( soundpoint < static_cast<float>(chunkdata.threshold) ) {
 
         if( chunkindex > 0 ) {
             // interpolate between the pitch of previous chunk and this chunk's base pitch,
@@ -772,7 +766,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
                     previouschunkdata.pitch / chunkdata.pitch,
                     1.f,
                     std::clamp(
-                        ( soundpoint - previouschunkdata.threshold ) / ( chunkdata.threshold - previouschunkdata.threshold ),
+                        ( soundpoint - static_cast<float>(previouschunkdata.threshold) ) / ( static_cast<float>(chunkdata.threshold - previouschunkdata.threshold) ),
                         0.f, 1.f ) );
         }
     }
@@ -787,7 +781,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
                     1.f,
                     nextchunkdata.pitch / chunkdata.pitch,
                     std::clamp(
-                        ( soundpoint - chunkdata.threshold ) / ( nextchunkdata.threshold - chunkdata.threshold ),
+                        ( soundpoint - static_cast<float>(chunkdata.threshold) ) / ( static_cast<float>(nextchunkdata.threshold - chunkdata.threshold) ),
                         0.f, 1.f ) );
         }
         else {
@@ -801,7 +795,7 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
     if( chunkindex > 0 ) {
         // chunks other than the first can have fadein
         auto const fadeinwidth { chunkdata.threshold - chunkdata.fadein };
-        if( soundpoint < chunkdata.threshold ) {
+        if( soundpoint < static_cast<float>(chunkdata.threshold) ) {
             float lineargain =
                 std::lerp(
                     0.f, 1.f,
@@ -809,8 +803,8 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
                         ( soundpoint - chunkdata.fadein ) / fadeinwidth,
                         0.f, 1.f ) );
             m_properties.gain *=
-                lineargain /
-                (1 + (1 - lineargain) * -0.57); // approximation of logarytmic fade in
+                static_cast<float>(lineargain /
+                (1 + (1 - lineargain) * -0.57)); // approximation of logarytmic fade in
             return;
         }
     }
@@ -828,8 +822,8 @@ sound_source::update_crossfade( sound_handle const Chunk ) {
                     std::clamp(
                         ( soundpoint - fadeoutstart ) / fadeoutwidth,
                         0.f, 1.f ) );
-            m_properties.gain *= (-lineargain + 1) /
-                                 (1 + lineargain * -0.57); // approximation of logarytmic fade out
+            m_properties.gain *= static_cast<float>((-lineargain + 1) /
+                                 (1 + lineargain * -0.57)); // approximation of logarytmic fade out
             return;
         }
     }
@@ -867,14 +861,14 @@ sound_source::empty() const {
 
 // returns true if the source is emitting any sound
 bool
-sound_source::is_playing( bool const Includesoundends ) const {
+sound_source::is_playing( bool const /*Includesoundends*/ ) const {
 
     auto isplaying { sound(sound_id::begin).playing > 0 || sound(sound_id::main).playing > 0 };
     if( false == isplaying
      && false == m_soundchunks.empty() ) {
         // for emitters with sample tables check also if any of the chunks is active
-        for( auto const &soundchunk : m_soundchunks ) {
-            if( soundchunk.first.playing > 0 ) {
+        for( auto const &[chunkbuffer, chunkdata] : m_soundchunks ) {
+            if( chunkbuffer.playing > 0 ) {
                 isplaying = true;
                 break; // one will do
             }
@@ -905,7 +899,7 @@ sound_source::has_bookends() const {
 }
 
 // returns location of the sound source in simulation region space
-glm::dvec3 const
+glm::dvec3
 sound_source::location() const {
 
     if( m_owner == nullptr ) {
@@ -927,7 +921,7 @@ sound_source::range( float const Range ) {
 }
 
 // returns defined range of the sound
-float const
+float
 sound_source::range() const {
 
     return m_range;
@@ -1016,7 +1010,7 @@ sound_source::update_soundproofing() {
 void
 sound_source::insert( sound_handle const Sound ) {
 
-    std::vector<sound_handle> sounds { Sound };
+    std::vector sounds { Sound };
     return insert( std::begin( sounds ), std::end( sounds ) );
 }
 
