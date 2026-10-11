@@ -92,16 +92,16 @@ double segment_distance2(glm::vec2 const &Point, glm::vec2 const &A, glm::vec2 c
 
 } // namespace
 
-editor_mode::track_hover editor_mode::track_under_cursor() const
+editor_mode::track_hover editor_mode::track_under_cursor(TTrack const *Only) const
 {
 	track_hover result;
 	auto const &io{ImGui::GetIO()};
 	screen_projection const projection;
 	glm::vec2 const mouse{io.MousePos.x, io.MousePos.y};
-	double best{kHoverPixels * kHoverPixels};
+	double best{Only != nullptr ? std::numeric_limits<double>::max() : kHoverPixels * kHoverPixels};
 	for (auto *track : simulation::Paths.sequence())
 	{
-		if (track == nullptr || false == rail(*track) || track->m_editorremoved)
+		if (track == nullptr || false == rail(*track) || track->m_editorremoved || (Only != nullptr && track != Only))
 			continue;
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		{

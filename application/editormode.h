@@ -1236,7 +1236,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		double since{0.0};
 	};
 	track_hover m_hover;
-	track_hover track_under_cursor() const;
+	track_hover track_under_cursor(TTrack const *Only = nullptr) const;
 	void update_track_hover();
 	void draw_track_hover() const;
 	struct track_intent

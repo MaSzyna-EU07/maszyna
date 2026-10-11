@@ -5477,7 +5477,11 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             break;
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && selected_track() != nullptr)
-            split_track_at(*selected_track(), Global.pCamera.Pos + GfxRenderer->Mouse_Position());
+        {
+            auto const under{track_under_cursor(selected_track())};
+            if (under.track != nullptr)
+                split_track_at(*under.track, under.point);
+        }
         break;
 
     case GLFW_KEY_F:
