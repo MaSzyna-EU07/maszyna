@@ -386,6 +386,19 @@ double editor_track::reverse_insert(double const Speed)
 	return Speed <= 100.0 ? 0.15 * Speed : 0.25 * Speed;
 }
 
+double editor_track::diverging_speed(double const Radius)
+{
+	if (Radius < 300.0)
+		return 40.0;
+	if (Radius < 500.0)
+		return 50.0;
+	if (Radius < 760.0)
+		return 60.0;
+	if (Radius < 1200.0)
+		return 80.0;
+	return Radius < 2500.0 ? 100.0 : 130.0;
+}
+
 namespace
 {
 
@@ -455,6 +468,35 @@ std::optional<reverse_fit> fit_reverse(glm::dvec2 const &Offset, glm::dvec2 cons
 
 } // namespace
 
+std::optional<double> editor_track::branch_shift(branch_end const &From, glm::dvec2 const &Slide, double const Radius, branch_end const &To, double const Kink)
+{
+	if (glm::length(From.direction) < 1e-9 || glm::length(To.direction) < 1e-9 || glm::length(Slide) < 1e-9)
+		return std::nullopt;
+	auto const slide{glm::normalize(Slide)};
+	auto const tangent{glm::normalize(From.direction)};
+	auto const into{glm::normalize(To.direction)};
+	auto const turn{signed_angle(tangent, into)};
+	auto const offset{plan_of(To.position) - plan_of(From.position)};
+	auto const across{cross(into, slide)};
+	if (std::abs(turn) > glm::radians(170.0))
+		return std::nullopt;
+	if (std::abs(turn) <= Kink)
+	{
+		if (std::abs(across) < 1e-6)
+			return std::nullopt;
+		return cross(into, offset) / across;
+	}
+	if (Radius < 1.0)
+		return std::nullopt;
+	auto const gap{offset - unit_chord(tangent, turn) * Radius};
+	if (std::abs(across) >= std::sin(glm::radians(1.0)))
+		return cross(into, gap) / across;
+	auto const determinant{cross(tangent, slide)};
+	if (std::abs(determinant) < 1e-6 || cross(gap, slide) / determinant < -0.01)
+		return std::nullopt;
+	return cross(tangent, gap) / determinant;
+}
+
 editor_track::branch_link editor_track::link_branch(branch_end const &From, double const Radius, branch_end const &To, double const Kink, double const Insert)
 {
 	branch_link result;
@@ -508,6 +550,7 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, doub
 		}
 		else if (false == reverse())
 		{
+			result.radius = Radius;
 			result.shortfall = std::max(0.01, -result.before);
 			return result;
 		}

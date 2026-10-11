@@ -1132,6 +1132,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		double along{0.0};
 		int forward{1};
 		int side{1};
+		double moved{0.0};
 		std::vector<segment_data> paths;
 		std::string reason;
 	};

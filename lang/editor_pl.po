@@ -5481,3 +5481,6 @@ msgstr ", między nimi prosta %.1f m"
 
 msgid ", sharper than the switch (R %.0f m)"
 msgstr ", ostrzej niż rozjazd (R %.0f m)"
+
+msgid ", the switch moved %.2f m"
+msgstr ", rozjazd przesunięty o %.2f m"

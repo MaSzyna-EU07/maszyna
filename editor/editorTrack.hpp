@@ -225,6 +225,8 @@ class editor_track
 	};
 	static double branch_radius(segment_data const &Diverging);
 	static double reverse_insert(double const Speed);
+	static double diverging_speed(double const Radius);
+	static std::optional<double> branch_shift(branch_end const &From, glm::dvec2 const &Slide, double const Radius, branch_end const &To, double const Kink);
 	static branch_link link_branch(branch_end const &From, double const Radius, branch_end const &To, double const Kink, double const Insert);
 
 	struct snap_target

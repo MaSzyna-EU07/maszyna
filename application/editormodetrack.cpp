@@ -5884,15 +5884,33 @@ bool editor_mode::plan_switch_link(switch_link &Plan) const
 	}
 	if (shape.length > line.length - 0.02)
 		return false;
+	auto const kink{glm::radians(m_joints.angle * 0.5)};
+	auto const plan = [&](double const Along) {
+		Plan.along = Along;
+		Plan.paths = place(Along);
+		if (Plan.paths.size() < 2)
+			return false;
+		auto const radius{editor_track::branch_radius(Plan.paths[1])};
+		Plan.link = editor_track::link_branch(branch_start(Plan.paths[1]), radius, branch_target(Plan.target), kink,
+		                                      editor_track::reverse_insert(std::min(editor_track::diverging_speed(radius), design_speed(nullptr, Plan.target.track))));
+		Plan.reason = link_problem(Plan.target, Plan.link);
+		return Plan.reason.empty();
+	};
 	auto const from{switch_from(line, shape.length, tool.along, Plan.forward, true)};
-	Plan.along = Plan.forward > 0 ? from : from + shape.length;
-	Plan.paths = place(Plan.along);
-	if (Plan.paths.size() < 2)
+	auto const snapped{Plan.forward > 0 ? from : from + shape.length};
+	auto const paths{place(snapped)};
+	if (paths.size() < 2)
 		return false;
-	Plan.link = editor_track::link_branch(branch_start(Plan.paths[1]), editor_track::branch_radius(Plan.paths[1]), branch_target(Plan.target), glm::radians(m_joints.angle * 0.5),
-	                                      editor_track::reverse_insert(design_speed(line.tracks.front(), Plan.target.track)));
-	Plan.reason = link_problem(Plan.target, Plan.link);
-	return Plan.reason.empty();
+	if (auto const shift{editor_track::branch_shift(branch_start(paths[1]), line.direction * static_cast<double>(Plan.forward), editor_track::branch_radius(paths[1]), branch_target(Plan.target), kink)})
+	{
+		auto const along{snapped + *shift * Plan.forward};
+		auto const begin{Plan.forward > 0 ? along : along - shape.length};
+		Plan.moved = std::abs(*shift);
+		if (begin >= -1e-6 && begin + shape.length <= line.length + 1e-6 && plan(along) && false == Plan.link.reverse)
+			return true;
+	}
+	Plan.moved = 0.0;
+	return plan(snapped);
 }
 
 void editor_mode::insert_linked_switch(switch_link const &Plan)
@@ -5908,7 +5926,10 @@ void editor_mode::insert_linked_switch(switch_link const &Plan)
 	straight_refresh();
 	m_switch.status.clear();
 	switch_placed(placed);
-	m_switch.status = link_summary(Plan.target, Plan.link, editor_track::branch_radius(Plan.paths[1])) + (m_switch.status.empty() ? std::string{} : "\n" + m_switch.status);
+	auto summary{link_summary(Plan.target, Plan.link, editor_track::branch_radius(Plan.paths[1]))};
+	if (Plan.moved >= 0.005)
+		summary += format(STR_C(", the switch moved %.2f m"), Plan.moved);
+	m_switch.status = summary + (m_switch.status.empty() ? std::string{} : "\n" + m_switch.status);
 	ui()->set_status(m_switch.status, false);
 }
 
@@ -5922,7 +5943,9 @@ bool editor_mode::plan_branch_link(editor_track::branch_link &Link, std::string 
 	if (std::find(tool.line.begin(), tool.line.end(), target.track) != tool.line.end())
 		return false;
 	auto const &diverging{tool.track->m_paths[1]};
-	Link = editor_track::link_branch(branch_start(diverging), editor_track::branch_radius(diverging), branch_target(target), glm::radians(m_joints.angle * 0.5), editor_track::reverse_insert(design_speed(tool.track, target.track)));
+	auto const radius{editor_track::branch_radius(diverging)};
+	Link = editor_track::link_branch(branch_start(diverging), radius, branch_target(target), glm::radians(m_joints.angle * 0.5),
+	                                 editor_track::reverse_insert(std::min(editor_track::diverging_speed(radius), design_speed(tool.track, target.track))));
 	Reason = link_problem(target, Link);
 	return Reason.empty();
 }
