@@ -130,11 +130,11 @@ struct gizmo_frame
 		projection = editor_mode::projection_matrix(io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f);
 	}
 	// moves the gizmo, placed at the point given in world space, with snapping to the step when ctrl is held
-	bool manipulate(ImGuizmo::OPERATION const Operation, glm::mat4 &Gizmo, float const Snap, glm::mat4 *Delta = nullptr) const
+	bool manipulate(ImGuizmo::OPERATION const Operation, glm::mat4 &Gizmo, float const Snap, glm::mat4 *Delta = nullptr, ImGuizmo::MODE const Mode = ImGuizmo::WORLD) const
 	{
 		glm::vec3 snapvalue(Snap);
 		float const *snap = Global.ctrlState && Snap > 0.0f ? &snapvalue.x : nullptr;
 		drawn = ImGui::GetFrameCount();
-		return ImGuizmo::Manipulate(&view[0][0], &projection[0][0], Operation, ImGuizmo::WORLD, &Gizmo[0][0], Delta != nullptr ? &(*Delta)[0][0] : nullptr, snap);
+		return ImGuizmo::Manipulate(&view[0][0], &projection[0][0], Operation, Mode, &Gizmo[0][0], Delta != nullptr ? &(*Delta)[0][0] : nullptr, snap);
 	}
 };

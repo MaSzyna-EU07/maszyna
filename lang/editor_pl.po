@@ -5268,3 +5268,39 @@ msgstr "kładzie prostą dotąd i idzie dalej od jej końca"
 
 msgid "type the radius"
 msgstr "wpisz promień"
+
+msgid "moves the control point, the joined track keeps the tangent"
+msgstr "przesuwa punkt kontrolny, dołączony tor zachowuje styczność"
+
+msgid "turns the control vector, the joined track keeps the tangent"
+msgstr "obraca wektor kontrolny, dołączony tor zachowuje styczność"
+
+msgid "length of the control vector"
+msgstr "długość wektora kontrolnego"
+
+msgid "turns the track about the point, the joined tracks follow"
+msgstr "obraca tor wokół punktu, dołączone tory idą za nim"
+
+msgid "lengthens the track at this end, the curve keeps its radius"
+msgstr "wydłuża tor na tym końcu, łuk zachowuje promień"
+
+msgid "turns the track, the joined tracks follow"
+msgstr "obraca tor, dołączone tory idą za nim"
+
+msgid "lengthens the track at its free end, the curve keeps its radius"
+msgstr "wydłuża tor na wolnym końcu, łuk zachowuje promień"
+
+msgid "gizmo: move, turn, lengthen"
+msgstr "gizmo: przesuń, obróć, wydłuż"
+
+msgid "control %.2f m   azimuth %.2f deg"
+msgstr "wektor %.2f m   azymut %.2f°"
+
+msgid "   turned %+.2f deg"
+msgstr "   obrót %+.2f°"
+
+msgid "turned %+.2f deg"
+msgstr "obrót %+.2f°"
+
+msgid "along the switch"
+msgstr "wzdłuż rozjazdu"

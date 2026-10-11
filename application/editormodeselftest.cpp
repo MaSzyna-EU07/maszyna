@@ -1127,6 +1127,138 @@ void editor_mode::selftest_step()
 			}
 			WriteLog(format("SELFTEST joints: %d issues around the points, %zu in all", around, m_joints.issues.size()));
 		}
+		else if (command == "gizmo")
+		{
+			std::string action;
+			words >> action;
+			auto *track{selected_track()};
+			if (track == nullptr)
+			{
+				WriteLog("SELFTEST gizmo: nothing selected");
+				continue;
+			}
+			if (action == "set")
+			{
+				m_track_set.clear();
+				for (std::string name; words >> name;)
+					if (auto *each{simulation::Paths.find(name)}; each != nullptr)
+						m_track_set.push_back(each);
+				m_track_set_pivot = track_set_centre();
+				WriteLog(format("SELFTEST gizmo set: %zu tracks, centre %.3f %.3f", m_track_set.size(), m_track_set_pivot.x, m_track_set_pivot.z));
+			}
+			else if (action == "setturn")
+			{
+				double degrees{0.0};
+				words >> degrees;
+				if (track_set_begin(true))
+				{
+					track_set_turn(glm::radians(degrees));
+					track_set_end();
+				}
+			}
+			else if (action == "op")
+			{
+				std::string operation;
+				words >> operation;
+				choose_work_area(work_area::tracks);
+				m_gizmo_op = operation == "rotate" ? gizmo_operation::rotate : operation == "scale" ? gizmo_operation::scale : gizmo_operation::translate;
+				int path{-1};
+				std::string kind;
+				words >> path >> kind;
+				m_track_point = {};
+				if (path >= 0)
+					m_track_point = {path, kind == "c1" ? editor_track::point_kind::control1 : kind == "c2" ? editor_track::point_kind::control2 : kind == "end" ? editor_track::point_kind::end : editor_track::point_kind::start};
+			}
+			else if (action == "begin")
+			{
+				std::string operation, kind;
+				int path{-1};
+				words >> operation >> path >> kind;
+				m_track_point = {};
+				if (path >= 0)
+					m_track_point = {path, kind == "c1" ? editor_track::point_kind::control1 : kind == "c2" ? editor_track::point_kind::control2 : kind == "end" ? editor_track::point_kind::end : editor_track::point_kind::start};
+				auto const wanted{operation == "rotate" ? gizmo_operation::rotate : operation == "scale" ? gizmo_operation::scale : gizmo_operation::translate};
+				auto const previous{m_gizmo_op};
+				m_gizmo_op = wanted;
+				auto const chosen{track_gizmo_operation(*track, m_track_point.valid())};
+				m_gizmo_op = previous;
+				track_gizmo_begin(*track, m_track_point.valid(), chosen);
+				WriteLog(format("SELFTEST gizmo begin %s: %s, %zu tracks dragged, %zu joints, %zu partners%s", operation.c_str(), chosen == gizmo_operation::rotate ? "rotate" : chosen == gizmo_operation::scale ? "scale" : "translate", m_track_drag.size(), m_track_joints.size(),
+				                m_track_gizmo_drag.partners.size(), m_track_gizmo_drag.fixed != glm::dvec3{} ? ", fixed direction" : ""));
+			}
+			else if (action == "turn")
+			{
+				double degrees{0.0};
+				words >> degrees;
+				track_gizmo_turn(*track, glm::radians(degrees));
+			}
+			else if (action == "length")
+			{
+				double length{0.0};
+				words >> length;
+				track_gizmo_length(*track, length);
+				WriteLog(format("SELFTEST gizmo length %.3f of %.3f, %zu pieces", m_track_gizmo_drag.stretch, m_track_gizmo_drag.length, m_track_gizmo_drag.pieces));
+			}
+			else if (action == "control")
+			{
+				glm::dvec3 control{0.0};
+				words >> control.x >> control.y >> control.z;
+				track_gizmo_control(*track, control);
+			}
+			else if (action == "offset")
+			{
+				glm::dvec3 offset{0.0};
+				words >> offset.x >> offset.y >> offset.z;
+				if (m_track_point.valid())
+				{
+					auto const position{editor_track::point_position(*track, m_track_point) + offset};
+					editor_track::move_point(*track, m_track_point, position);
+					for (auto const &connection : m_track_drag_points)
+						editor_track::move_point(*connection.first, connection.second, position);
+				}
+				else
+				{
+					editor_track::translate(*track, offset);
+					editor_track::follow(*track, m_track_joints);
+				}
+				m_track_dirty = true;
+			}
+			else if (action == "end")
+				track_gizmo_end(*track);
+			else if (action == "show")
+			{
+				std::vector<TTrack *> shown{track};
+				for (auto *neighbour : editor_track::neighbours(*track))
+					shown.push_back(neighbour);
+				WriteLog(format("SELFTEST gizmo %s prev %s next %s", track->name().c_str(), track->trPrev != nullptr ? track->trPrev->name().c_str() : "-", track->trNext != nullptr ? track->trNext->name().c_str() : "-"));
+				for (auto *each : shown)
+					for (int i = 0; i < static_cast<int>(each->m_paths.size()); ++i)
+					{
+						auto const &path{each->m_paths[i]};
+						auto const &a{path.points[segment_data::point::start]};
+						auto const &b{path.points[segment_data::point::end]};
+						auto const &c1{path.points[segment_data::point::control1]};
+						auto const &c2{path.points[segment_data::point::control2]};
+						WriteLog(format("SELFTEST gizmo path %s[%d] %.3f %.3f %.3f -> %.3f %.3f %.3f, c1 %.3f %.3f %.3f, c2 %.3f %.3f %.3f, L %.3f, R %.1f, rolls %.2f %.2f", each->name().c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, c1.x, c1.y, c1.z, c2.x, c2.y, c2.z,
+						                geometry::bezier{path}.plan_length(), path.radius, path.rolls[0], path.rolls[1]));
+					}
+				for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
+					for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
+					{
+						geometry::bezier const own{track->m_paths[i]};
+						bool const start{kind == editor_track::point_kind::start};
+						auto const out{start ? -own.first(0.0) : own.first(1.0)};
+						for (auto const &partner : editor_track::partners(*track, {i, kind}))
+						{
+							geometry::bezier const theirs{partner.first->m_paths[partner.second.path]};
+							auto const in{partner.second.kind == editor_track::point_kind::start ? theirs.first(0.0) : -theirs.first(1.0)};
+							auto const angle{glm::degrees(std::acos(std::clamp(glm::dot(glm::normalize(out), glm::normalize(in)), -1.0, 1.0)))};
+							auto const gap{glm::distance(editor_track::point_position(*track, {i, kind}), editor_track::point_position(*partner.first, partner.second))};
+							WriteLog(format("SELFTEST gizmo joint %s[%d].%s - %s[%d]: kink %.4f deg, gap %.4f m", track->name().c_str(), i, start ? "start" : "end", partner.first->name().c_str(), partner.second.path, angle, gap));
+						}
+					}
+			}
+		}
 		else if (command == "deletetrack")
 		{
 			delete_selected_track();

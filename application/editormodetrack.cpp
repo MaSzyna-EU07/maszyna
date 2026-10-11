@@ -262,6 +262,137 @@ void compound_from(editor_track::curve const &Curve, alignment::vertex &Vertex)
 		Vertex.arcs.push_back({std::round(Curve.arcs[i].radius), std::round(Curve.arcs[i].transition), Curve.arcs[i].turn});
 }
 
+std::vector<segment_data> stretched(segment_data const &Path, bool const Atend, double const Length)
+{
+	auto const path{Atend ? Path : turned_around(Path)};
+	bezier const curve{path};
+	auto const &start{path.points[segment_data::point::start]};
+	auto const &end{path.points[segment_data::point::end]};
+	auto const first{plan_of(curve.first(0.0))};
+	auto const last{plan_of(curve.first(1.0))};
+	if (glm::length(first) < 1e-9 || glm::length(last) < 1e-9)
+		return {};
+	glm::dvec2 const direction{glm::normalize(first)};
+	auto const grade{grade_of(curve.first(0.0))};
+	auto const original{curve.plan_length()};
+	auto const turn{signed_angle(direction, glm::normalize(last))};
+	auto const lateral{cross(direction, plan_of(end - start))};
+	std::vector<segment_data> pieces;
+	float radius{0.0f};
+	if (std::abs(turn) < 1e-4 && std::abs(lateral) < 0.01)
+		pieces = straight_piece(start, direction, grade, Length);
+	else
+	{
+		auto const arcradius{original / std::abs(turn)};
+		int const side{turn > 0.0 ? 1 : -1};
+		auto const arc{arc_pieces(start, direction, grade, arcradius, std::abs(turn), side)};
+		if (std::abs(turn) > 1e-4 && plan_distance(arc.back().points[segment_data::point::end], end) < 0.05 && plan_distance(arc.front().points[segment_data::point::start], start) < 1e-6)
+		{
+			pieces = arc_pieces(start, direction, grade, arcradius, std::min(Length / arcradius, glm::radians(330.0)), side);
+			radius = path.radius;
+		}
+		else
+		{
+			auto const scale{Length / std::max(original, 1e-6)};
+			segment_data piece{path};
+			piece.points[segment_data::point::end] = start + (end - start) * scale;
+			piece.points[segment_data::point::control1] *= scale;
+			piece.points[segment_data::point::control2] *= scale;
+			piece.radius *= static_cast<float>(scale);
+			return {Atend ? piece : turned_around(piece)};
+		}
+	}
+	double chainage{0.0};
+	for (auto &piece : pieces)
+	{
+		auto const piecelength{bezier{piece}.plan_length()};
+		auto const from{static_cast<float>(std::clamp(chainage / original, 0.0, 1.0))};
+		auto const to{static_cast<float>(std::clamp((chainage + piecelength) / original, 0.0, 1.0))};
+		piece.rolls = {glm::mix(path.rolls[0], path.rolls[1], from), glm::mix(path.rolls[0], path.rolls[1], to)};
+		piece.radius = radius;
+		chainage += piecelength;
+	}
+	if (false == Atend)
+	{
+		std::reverse(pieces.begin(), pieces.end());
+		for (auto &piece : pieces)
+			piece = turned_around(piece);
+	}
+	return pieces;
+}
+
+bool stretch_end(TTrack const &Track, editor_track::point_ref const &Point, int &Path, bool &Atend)
+{
+	if (Track.eType != tt_Normal || false == editor_track::is_supported(Track) || Track.m_paths.empty())
+		return false;
+	auto const last{static_cast<int>(Track.m_paths.size()) - 1};
+	if (Point.valid())
+	{
+		if (false == editor_track::is_end(Point.kind) || Point.path > last)
+			return false;
+		Path = Point.path;
+		Atend = Point.kind == editor_track::point_kind::end;
+		auto const position{editor_track::point_position(Track, Point)};
+		for (int i = 0; i <= last; ++i)
+			if (i != Path && (plan_distance(Track.m_paths[i].points[segment_data::point::start], position) < geometry::same_point || plan_distance(Track.m_paths[i].points[segment_data::point::end], position) < geometry::same_point))
+				return false;
+		return true;
+	}
+	bool const startfree{false == editor_track::is_connected(Track, {0, editor_track::point_kind::start})};
+	bool const endfree{false == editor_track::is_connected(Track, {last, editor_track::point_kind::end})};
+	Atend = endfree || false == startfree;
+	Path = Atend ? last : 0;
+	return true;
+}
+
+std::pair<glm::dvec3, glm::dvec3> stretch_axis(segment_data const &Path, bool const Atend)
+{
+	bezier const curve{Path};
+	auto const tangent{Atend ? curve.first(1.0) : -curve.first(0.0)};
+	return {Path.points[Atend ? segment_data::point::end : segment_data::point::start], glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec3{}};
+}
+
+bool mouse_along(glm::dvec3 const &Origin, glm::dvec3 const &Axis, double &Along)
+{
+	screen_projection const projection;
+	glm::dvec3 origin, direction;
+	projection.ray(ImGui::GetIO().MousePos, origin, direction);
+	auto const b{glm::dot(Axis, direction)};
+	auto const denominator{1.0 - b * b};
+	if (denominator < 1e-6)
+		return false;
+	auto const w{Origin - origin};
+	Along = (b * glm::dot(direction, w) - glm::dot(Axis, w)) / denominator;
+	return true;
+}
+
+glm::mat4 gizmo_along(glm::dvec3 const &Position, glm::dvec3 const &Axis)
+{
+	auto gizmo{glm::translate(glm::mat4(1.0f), glm::vec3(Position))};
+	if (glm::length(Axis) < 1e-9)
+		return gizmo;
+	auto const z{glm::normalize(Axis)};
+	auto x{glm::cross(glm::dvec3{0.0, 1.0, 0.0}, z)};
+	x = glm::length(x) > 1e-6 ? glm::normalize(x) : glm::dvec3{1.0, 0.0, 0.0};
+	auto const y{glm::cross(z, x)};
+	gizmo[0] = glm::vec4(glm::vec3(x), 0.0f);
+	gizmo[1] = glm::vec4(glm::vec3(y), 0.0f);
+	gizmo[2] = glm::vec4(glm::vec3(z), 0.0f);
+	return gizmo;
+}
+
+editor_track::point_ref stretch_remap(editor_track::point_ref Point, int const Path, std::size_t const Pieces)
+{
+	if (false == Point.valid() || Point.path < Path)
+		return Point;
+	auto const extra{static_cast<int>(Pieces) - 1};
+	if (Point.path > Path)
+		Point.path += extra;
+	else if (Point.kind == editor_track::point_kind::end || Point.kind == editor_track::point_kind::control2)
+		Point.path += extra;
+	return Point;
+}
+
 }
 
 TTrack *editor_mode::selected_track() const
@@ -395,6 +526,214 @@ void editor_mode::draw_track_overlay() const
 	}
 }
 
+editor_mode::gizmo_operation editor_mode::track_gizmo_operation(TTrack const &Track, bool const Pointmode) const
+{
+	if (m_gizmo_op == gizmo_operation::translate || (Pointmode && false == editor_track::is_end(m_track_point.kind)))
+		return m_gizmo_op;
+	if (m_gizmo_op == gizmo_operation::rotate)
+		return gizmo_operation::rotate;
+	int path{0};
+	bool atend{true};
+	return stretch_end(Track, Pointmode ? m_track_point : editor_track::point_ref{}, path, atend) ? gizmo_operation::scale : gizmo_operation::translate;
+}
+
+glm::mat4 editor_mode::track_gizmo_frame(TTrack const &Track, bool const Pointmode, gizmo_operation const Operation) const
+{
+	auto anchor{Pointmode ? editor_track::point_position(Track, m_track_point) : editor_track::pivot(Track)};
+	glm::dvec3 axis{0.0};
+	if (Operation == gizmo_operation::scale)
+	{
+		int path{0};
+		bool atend{true};
+		if (Pointmode && false == editor_track::is_end(m_track_point.kind))
+			axis = anchor - editor_track::point_position(Track, editor_track::end_of(m_track_point));
+		else if (stretch_end(Track, Pointmode ? m_track_point : editor_track::point_ref{}, path, atend))
+			std::tie(anchor, axis) = stretch_axis(Track.m_paths[path], atend);
+	}
+	return gizmo_along(anchor - glm::dvec3{GfxRenderer->Camera_Position()}, axis);
+}
+
+void editor_mode::track_gizmo_hold()
+{
+	auto &drag{m_track_gizmo_drag};
+	drag.held.clear();
+	for (auto *track : m_track_drag)
+	{
+		if (drag.operation == gizmo_operation::scale && false == drag.control && track == selected_track())
+			continue;
+		auto held{editor_track::hold_controls(*track)};
+		if (false == held.empty())
+			drag.held.emplace_back(track, std::move(held));
+	}
+}
+
+void editor_mode::track_gizmo_settle()
+{
+	for (auto &entry : m_track_gizmo_drag.held)
+		editor_track::settle_controls(*entry.first, entry.second);
+	m_track_gizmo_drag.held.clear();
+}
+
+void editor_mode::track_gizmo_stretch(TTrack &Track, double const Length)
+{
+	auto &drag{m_track_gizmo_drag};
+	auto const pieces{stretched(drag.paths[drag.path], drag.atend, Length)};
+	if (pieces.empty())
+		return;
+	auto paths{drag.paths};
+	paths.erase(paths.begin() + drag.path);
+	paths.insert(paths.begin() + drag.path, pieces.begin(), pieces.end());
+	Track.m_paths = std::move(paths);
+	drag.pieces = pieces.size();
+	drag.stretch = Length;
+	if (drag.point.valid())
+		m_track_point = stretch_remap(drag.point, drag.path, drag.pieces);
+	auto joints{m_track_joints};
+	for (auto &joint : joints)
+		joint.own = stretch_remap(joint.own, drag.path, drag.pieces);
+	editor_track::follow(Track, joints);
+	m_track_dirty = true;
+}
+
+void editor_mode::track_gizmo_control(TTrack &Track, glm::dvec3 Control)
+{
+	auto const &drag{m_track_gizmo_drag};
+	if (drag.fixed != glm::dvec3{})
+		Control = drag.fixed * std::max(0.5, glm::dot(Control, drag.fixed));
+	if (glm::length(Control) < 0.5)
+		Control = glm::length(Control) > 1e-9 ? glm::normalize(Control) * 0.5 : drag.axis * 0.5;
+	editor_track::move_point(Track, drag.point, editor_track::point_position(Track, editor_track::end_of(drag.point)) + Control);
+	editor_track::align_controls(Track, drag.point, drag.partners);
+	m_track_dirty = true;
+}
+
+void editor_mode::track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_operation const Operation)
+{
+	bool const controlmode{Pointmode && false == editor_track::is_end(m_track_point.kind)};
+	auto &drag{m_track_gizmo_drag};
+	m_track_gizmo_using = true;
+	m_track_pivot = editor_track::pivot(Track);
+	m_track_drag = {&Track};
+	m_track_drag_points.clear();
+	m_track_joints.clear();
+	m_track_snap = {};
+	drag = {};
+	drag.operation = Operation;
+	drag.control = controlmode;
+	drag.point = Pointmode ? m_track_point : editor_track::point_ref{};
+	bool const whole{false == Pointmode || (false == controlmode && Operation != gizmo_operation::translate)};
+	if (whole && m_track_drag_connected)
+	{
+		m_track_joints = editor_track::joints(Track);
+		for (auto const &joint : m_track_joints)
+			if (std::find(m_track_drag.begin(), m_track_drag.end(), joint.other) == m_track_drag.end())
+				m_track_drag.emplace_back(joint.other);
+	}
+	if (Pointmode && false == controlmode && Operation == gizmo_operation::translate && m_track_drag_connected)
+	{
+		for (auto const &connection : editor_track::connected_points(Track, editor_track::point_position(Track, m_track_point)))
+		{
+			std::string reason;
+			if (false == editor_track::can_edit_geometry(*connection.first, reason))
+				continue;
+			m_track_drag_points.emplace_back(connection);
+			if (std::find(m_track_drag.begin(), m_track_drag.end(), connection.first) == m_track_drag.end())
+				m_track_drag.emplace_back(connection.first);
+		}
+	}
+	if (controlmode)
+	{
+		for (auto const &partner : editor_track::partners(Track, editor_track::end_of(m_track_point)))
+		{
+			std::string reason;
+			auto const &path{partner.first->m_paths[partner.second.path]};
+			if (partner.first->eType != tt_Normal || false == editor_track::can_edit_geometry(*partner.first, reason))
+			{
+				bool const start{partner.second.kind == editor_track::point_kind::start};
+				auto const theirs{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
+				auto const chord{path.points[start ? segment_data::point::end : segment_data::point::start] - path.points[start ? segment_data::point::start : segment_data::point::end]};
+				auto const along{theirs != glm::dvec3{} ? theirs : chord};
+				if (glm::length(along) > 1e-9)
+					drag.fixed = -glm::normalize(along);
+				continue;
+			}
+			if (false == m_track_drag_connected && partner.first != &Track)
+				continue;
+			drag.partners.push_back(partner);
+			if (std::find(m_track_drag.begin(), m_track_drag.end(), partner.first) == m_track_drag.end())
+				m_track_drag.emplace_back(partner.first);
+		}
+	}
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	for (auto *dragged : m_track_drag)
+		states.emplace_back(dragged, editor_track::capture(*dragged));
+	push_track_snapshot(std::move(states));
+	track_gizmo_hold();
+	if (controlmode)
+	{
+		drag.origin = editor_track::point_position(Track, m_track_point);
+		auto const control{drag.origin - editor_track::point_position(Track, editor_track::end_of(m_track_point))};
+		drag.length = glm::length(control);
+		drag.axis = drag.length > 1e-9 ? control / drag.length : glm::dvec3{0.0, 0.0, 1.0};
+	}
+	else if (Operation == gizmo_operation::scale)
+	{
+		stretch_end(Track, drag.point, drag.path, drag.atend);
+		drag.paths = Track.m_paths;
+		std::tie(drag.origin, drag.axis) = stretch_axis(Track.m_paths[drag.path], drag.atend);
+		drag.length = bezier{Track.m_paths[drag.path]}.plan_length();
+	}
+	drag.stretch = drag.length;
+}
+
+void editor_mode::track_gizmo_turn(TTrack &Track, double const Angle)
+{
+	auto &drag{m_track_gizmo_drag};
+	auto const step{std::remainder(Angle - drag.angle, 2.0 * glm::pi<double>())};
+	if (std::abs(step) < 1e-9 || (drag.control && drag.fixed != glm::dvec3{}))
+		return;
+	drag.angle += step;
+	if (drag.control)
+	{
+		auto const control{editor_track::point_position(Track, drag.point) - editor_track::point_position(Track, editor_track::end_of(drag.point))};
+		auto const plan{turned(plan_of(control), -step)};
+		track_gizmo_control(Track, {plan.x, control.y, plan.y});
+		return;
+	}
+	editor_track::rotate_y(Track, drag.point.valid() ? editor_track::point_position(Track, drag.point) : m_track_pivot, step);
+	editor_track::follow(Track, m_track_joints);
+	m_track_dirty = true;
+}
+
+void editor_mode::track_gizmo_length(TTrack &Track, double Length)
+{
+	auto &drag{m_track_gizmo_drag};
+	Length = std::max(drag.control ? 0.5 : 1.0, Length);
+	if (std::abs(Length - drag.stretch) < 1e-6)
+		return;
+	if (drag.control)
+	{
+		drag.stretch = Length;
+		track_gizmo_control(Track, drag.axis * Length);
+	}
+	else if (drag.path >= 0)
+		track_gizmo_stretch(Track, Length);
+}
+
+void editor_mode::track_gizmo_end(TTrack &Track)
+{
+	if (m_track_snap.track != nullptr && m_track_gizmo_drag.operation == gizmo_operation::translate && m_track_point.valid())
+		editor_track::snap_point(Track, m_track_point, m_track_snap, m_track_align_tangent);
+	track_gizmo_settle();
+	m_track_dirty = true;
+	m_track_snap = {};
+	commit_track_drag(true);
+	m_track_gizmo_using = false;
+	m_track_drag.clear();
+	m_track_drag_points.clear();
+	m_track_joints.clear();
+}
+
 void editor_mode::render_track_gizmo()
 {
 	auto *track = selected_track();
@@ -405,54 +744,49 @@ void editor_mode::render_track_gizmo()
 		return;
 	}
 	bool const pointmode = ui()->mode() == nodebank_panel::TRACK && m_track_point.valid() && m_track_point.path < static_cast<int>(track->m_paths.size());
+	bool const controlmode = pointmode && false == editor_track::is_end(m_track_point.kind);
 
 	gizmo_frame const frame;
+	auto &drag{m_track_gizmo_drag};
+	auto const operation{m_track_gizmo_using ? drag.operation : track_gizmo_operation(*track, pointmode)};
 
 	if (false == m_track_gizmo_using)
-	{
-		auto const anchor = pointmode ? editor_track::point_position(*track, m_track_point) : editor_track::pivot(*track);
-		m_track_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - frame.camera));
-	}
+		m_track_gizmo = track_gizmo_frame(*track, pointmode, operation);
 
 	glm::mat4 delta(1.0f);
-	frame.manipulate(ImGuizmo::TRANSLATE, m_track_gizmo, m_gizmo_snap, &delta);
+	auto const gizmo{operation == gizmo_operation::rotate ? ImGuizmo::ROTATE_Y : operation == gizmo_operation::scale ? ImGuizmo::SCALE_Z : ImGuizmo::TRANSLATE};
+	ImGuizmo::AllowAxisFlip(operation != gizmo_operation::scale);
+	frame.manipulate(gizmo, m_track_gizmo, operation == gizmo_operation::rotate ? 5.0f : operation == gizmo_operation::scale ? 0.0f : m_gizmo_snap, &delta, operation == gizmo_operation::scale ? ImGuizmo::LOCAL : ImGuizmo::WORLD);
+	ImGuizmo::AllowAxisFlip(true);
 
 	if (ImGuizmo::IsUsing())
 	{
 		if (false == m_track_gizmo_using)
 		{
-			m_track_gizmo_using = true;
-			m_track_pivot = editor_track::pivot(*track);
-			m_track_drag = {track};
-			m_track_drag_points.clear();
-			m_track_joints.clear();
-			m_track_snap = {};
-			if (false == pointmode && m_track_drag_connected)
-			{
-				m_track_joints = editor_track::joints(*track);
-				for (auto const &joint : m_track_joints)
-					if (std::find(m_track_drag.begin(), m_track_drag.end(), joint.other) == m_track_drag.end())
-						m_track_drag.emplace_back(joint.other);
-			}
-			if (pointmode && editor_track::is_end(m_track_point.kind) && m_track_drag_connected)
-			{
-				for (auto const &connection : editor_track::connected_points(*track, editor_track::point_position(*track, m_track_point)))
-				{
-					std::string neighbourreason;
-					if (false == editor_track::can_edit_geometry(*connection.first, neighbourreason))
-						continue;
-					m_track_drag_points.emplace_back(connection);
-					if (std::find(m_track_drag.begin(), m_track_drag.end(), connection.first) == m_track_drag.end())
-						m_track_drag.emplace_back(connection.first);
-				}
-			}
-			std::vector<std::pair<TTrack *, editor_track::state>> states;
-			for (auto *dragged : m_track_drag)
-				states.emplace_back(dragged, editor_track::capture(*dragged));
-			push_track_snapshot(std::move(states));
+			track_gizmo_begin(*track, pointmode, operation);
+			if (operation == gizmo_operation::scale && false == mouse_along(drag.origin, drag.axis, drag.grabbed))
+				drag.grabbed = 0.0;
 		}
 
-		if (pointmode)
+		if (operation == gizmo_operation::rotate)
+			track_gizmo_turn(*track, std::atan2(static_cast<double>(m_track_gizmo[2][0]), static_cast<double>(m_track_gizmo[0][0])));
+		else if (operation == gizmo_operation::scale)
+		{
+			double along{0.0};
+			if (mouse_along(drag.origin, drag.axis, along))
+			{
+				auto length{drag.length + along - drag.grabbed};
+				if (Global.ctrlState && m_gizmo_snap > 0.0f)
+					length = std::round(length / m_gizmo_snap) * m_gizmo_snap;
+				track_gizmo_length(*track, length);
+			}
+		}
+		else if (controlmode)
+		{
+			glm::dvec3 const position = frame.camera + glm::dvec3(m_track_gizmo[3]);
+			track_gizmo_control(*track, position - editor_track::point_position(*track, editor_track::end_of(m_track_point)));
+		}
+		else if (pointmode)
 		{
 			glm::dvec3 const position = frame.camera + glm::dvec3(m_track_gizmo[3]);
 			editor_track::move_point(*track, m_track_point, position);
@@ -480,19 +814,7 @@ void editor_mode::render_track_gizmo()
 		commit_track_drag(false);
 	}
 	else if (m_track_gizmo_using)
-	{
-		if (m_track_snap.track != nullptr && pointmode)
-		{
-			editor_track::snap_point(*track, m_track_point, m_track_snap, m_track_align_tangent);
-			m_track_dirty = true;
-		}
-		m_track_snap = {};
-		commit_track_drag(true);
-		m_track_gizmo_using = false;
-		m_track_drag.clear();
-		m_track_drag_points.clear();
-		m_track_joints.clear();
-	}
+		track_gizmo_end(*track);
 }
 
 void editor_mode::commit_track_drag(bool const Force)
@@ -3605,12 +3927,24 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"Drag", "moves the point, level"}, {"Over a free end", "the end joins it"}, {"Release", "done"}, {"Esc", "done"}};
 	else if (m_track_point.valid())
 	{
-		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", "moves the point along the axes"}, {"Esc", "releases the point"}};
+		char const *action{"moves the point along the axes"};
+		if (false == editor_track::is_end(m_track_point.kind))
+			action = m_gizmo_op == gizmo_operation::rotate ? "turns the control vector, the joined track keeps the tangent" : m_gizmo_op == gizmo_operation::scale ? "length of the control vector" : "moves the control point, the joined track keeps the tangent";
+		else if (m_gizmo_op == gizmo_operation::rotate)
+			action = "turns the track about the point, the joined tracks follow";
+		else if (m_gizmo_op == gizmo_operation::scale && selected != nullptr && track_gizmo_operation(*selected, true) == gizmo_operation::scale)
+			action = "lengthens the track at this end, the curve keeps its radius";
+		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", action}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Esc", "releases the point"}};
 		gizmo = true;
 	}
 	else
 	{
-		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", "moves the whole track"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"L", "new track, also from a free end"}, {"Esc", "deselects"}, {"Del", "deletes the track"}};
+		char const *action{"moves the whole track"};
+		if (m_gizmo_op == gizmo_operation::rotate)
+			action = "turns the track, the joined tracks follow";
+		else if (m_gizmo_op == gizmo_operation::scale && selected != nullptr && track_gizmo_operation(*selected, false) == gizmo_operation::scale)
+			action = "lengthens the track at its free end, the curve keeps its radius";
+		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", action}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"L", "new track, also from a free end"}, {"Esc", "deselects"}, {"Del", "deletes the track"}};
 		gizmo = true;
 	}
 	if (auto const *meaning{typed_meaning()}; meaning != nullptr)
@@ -3736,9 +4070,31 @@ std::string editor_mode::track_readout() const
 		return format("L %.3f m (%+.3f)   azimuth %.4f deg", plan_distance(state.preview_start, state.preview_end), plan_distance(state.preview_start, state.preview_end) - grabbed.length,
 		              azimuth(state.preview_start, state.preview_end));
 	}
+	if (m_track_set_using && m_track_gizmo_drag.operation == gizmo_operation::rotate)
+		return format(STR_C("turned %+.2f deg"), glm::degrees(m_track_gizmo_drag.angle));
 	auto const *track{selected_track()};
 	if (m_track_gizmo_using && track != nullptr)
 	{
+		auto const &drag{m_track_gizmo_drag};
+		if (drag.control)
+		{
+			auto const control{editor_track::point_position(*track, m_track_point) - editor_track::point_position(*track, editor_track::end_of(m_track_point))};
+			auto text{format(STR_C("control %.2f m   azimuth %.2f deg"), glm::length(control), azimuth(glm::dvec3{0.0}, control))};
+			if (drag.operation == gizmo_operation::rotate)
+				text += format(STR_C("   turned %+.2f deg"), glm::degrees(drag.angle));
+			if (drag.fixed != glm::dvec3{})
+				text += "\n" + STR("along the switch");
+			return text;
+		}
+		if (drag.operation == gizmo_operation::scale && drag.path >= 0)
+		{
+			auto text{format("L %.3f m (%+.3f)", drag.stretch, drag.stretch - drag.length)};
+			if (drag.path < static_cast<int>(drag.paths.size()) && std::abs(drag.paths[drag.path].radius) > 0.5f)
+				text += format("   R %.1f m", std::abs(drag.paths[drag.path].radius));
+			return text;
+		}
+		if (drag.operation == gizmo_operation::rotate)
+			return format(STR_C("turned %+.2f deg"), glm::degrees(drag.angle));
 		if (m_track_point.valid() && m_track_point.path < static_cast<int>(track->m_paths.size()))
 		{
 			auto const &path{track->m_paths[m_track_point.path]};

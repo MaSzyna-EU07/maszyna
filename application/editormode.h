@@ -638,6 +638,36 @@ class editor_mode : public application_mode, private editor_track::observer
 	glm::dvec3 m_track_pivot{0.0};
 	glm::mat4 m_track_gizmo{1.0f};
 	bool m_track_gizmo_using{false};
+	struct track_gizmo_drag
+	{
+		gizmo_operation operation{gizmo_operation::translate};
+		bool control{false};
+		double angle{0.0};
+		int path{-1};
+		bool atend{true};
+		std::size_t pieces{1};
+		std::vector<segment_data> paths;
+		editor_track::point_ref point;
+		glm::dvec3 origin{0.0};
+		glm::dvec3 axis{0.0};
+		double grabbed{0.0};
+		double length{0.0};
+		double stretch{0.0};
+		std::vector<std::pair<TTrack *, editor_track::point_ref>> partners;
+		glm::dvec3 fixed{0.0};
+		std::vector<std::pair<TTrack *, std::vector<int>>> held;
+	};
+	track_gizmo_drag m_track_gizmo_drag;
+	gizmo_operation track_gizmo_operation(TTrack const &Track, bool const Pointmode) const;
+	glm::mat4 track_gizmo_frame(TTrack const &Track, bool const Pointmode, gizmo_operation const Operation) const;
+	void track_gizmo_hold();
+	void track_gizmo_settle();
+	void track_gizmo_stretch(TTrack &Track, double const Length);
+	void track_gizmo_control(TTrack &Track, glm::dvec3 Control);
+	void track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_operation const Operation);
+	void track_gizmo_turn(TTrack &Track, double const Angle);
+	void track_gizmo_length(TTrack &Track, double Length);
+	void track_gizmo_end(TTrack &Track);
 	bool m_track_dirty{false};
 	std::chrono::steady_clock::time_point m_track_last_commit;
 	editor_track::state m_track_field_before;
@@ -1204,6 +1234,11 @@ class editor_mode : public application_mode, private editor_track::observer
 	glm::dvec3 m_track_set_pivot{0.0};
 	std::vector<std::pair<TTrack *, std::vector<editor_track::joint>>> m_track_set_joints;
 	bool in_track_set(TTrack const *Track) const;
+	bool track_set_begin(bool const Rotate);
+	void track_set_turn(double const Angle);
+	void track_set_move(glm::dvec3 const &Offset);
+	void track_set_end();
+	glm::dvec3 track_set_centre() const;
 	void track_set_toggle(TTrack &Track);
 	void track_set_prune();
 	void start_track_box();

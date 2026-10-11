@@ -1281,6 +1281,79 @@ void editor_mode::render_track_set_ui()
 	ImGui::Separator();
 }
 
+bool editor_mode::track_set_begin(bool const Rotate)
+{
+	std::string reason;
+	if (false == tracks_editable(m_track_set, reason))
+	{
+		ui()->set_status(reason, true);
+		return false;
+	}
+	m_track_set_using = true;
+	m_track_gizmo_drag = {};
+	m_track_gizmo_drag.operation = Rotate ? gizmo_operation::rotate : gizmo_operation::translate;
+	m_track_drag = m_track_set;
+	m_track_set_joints.clear();
+	for (auto *track : m_track_set)
+	{
+		auto joints{editor_track::joints(*track)};
+		joints.erase(std::remove_if(joints.begin(), joints.end(), [&](editor_track::joint const &Joint) { return in_track_set(Joint.other); }), joints.end());
+		for (auto const &joint : joints)
+			if (std::find(m_track_drag.begin(), m_track_drag.end(), joint.other) == m_track_drag.end())
+				m_track_drag.push_back(joint.other);
+		m_track_set_joints.emplace_back(track, std::move(joints));
+	}
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	for (auto *track : m_track_drag)
+		states.emplace_back(track, editor_track::capture(*track));
+	push_track_snapshot(std::move(states));
+	track_gizmo_hold();
+	return true;
+}
+
+void editor_mode::track_set_turn(double const Angle)
+{
+	auto &drag{m_track_gizmo_drag};
+	auto const step{std::remainder(Angle - drag.angle, 2.0 * glm::pi<double>())};
+	if (std::abs(step) < 1e-9)
+		return;
+	drag.angle += step;
+	for (auto &entry : m_track_set_joints)
+		editor_track::rotate_y(*entry.first, m_track_set_pivot, step);
+	for (auto &entry : m_track_set_joints)
+		editor_track::follow(*entry.first, entry.second);
+	m_track_dirty = true;
+}
+
+void editor_mode::track_set_move(glm::dvec3 const &Offset)
+{
+	for (auto &entry : m_track_set_joints)
+	{
+		editor_track::translate(*entry.first, Offset);
+		editor_track::follow(*entry.first, entry.second);
+	}
+	m_track_dirty = true;
+}
+
+void editor_mode::track_set_end()
+{
+	track_gizmo_settle();
+	m_track_dirty = true;
+	commit_track_drag(true);
+	m_track_set_using = false;
+	m_track_drag.clear();
+	m_track_set_joints.clear();
+	straight_refresh();
+}
+
+glm::dvec3 editor_mode::track_set_centre() const
+{
+	glm::dvec3 centre{0.0};
+	for (auto const *track : m_track_set)
+		centre += editor_track::pivot(*track);
+	return m_track_set.empty() ? centre : centre / static_cast<double>(m_track_set.size());
+}
+
 void editor_mode::render_track_set_gizmo()
 {
 	track_set_prune();
@@ -1292,61 +1365,24 @@ void editor_mode::render_track_set_gizmo()
 	gizmo_frame const frame;
 	if (false == m_track_set_using)
 	{
-		glm::dvec3 centre{0.0};
-		for (auto const *track : m_track_set)
-			centre += editor_track::pivot(*track);
-		m_track_set_pivot = centre / static_cast<double>(m_track_set.size());
+		m_track_set_pivot = track_set_centre();
 		m_track_set_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(m_track_set_pivot - frame.camera));
 	}
+	auto const rotate{m_track_set_using ? m_track_gizmo_drag.operation == gizmo_operation::rotate : m_gizmo_op == gizmo_operation::rotate};
 	glm::mat4 delta(1.0f);
-	frame.manipulate(ImGuizmo::TRANSLATE, m_track_set_gizmo, m_gizmo_snap, &delta);
+	frame.manipulate(rotate ? ImGuizmo::ROTATE_Y : ImGuizmo::TRANSLATE, m_track_set_gizmo, rotate ? 5.0f : m_gizmo_snap, &delta);
 	if (ImGuizmo::IsUsing())
 	{
-		if (false == m_track_set_using)
-		{
-			std::string reason;
-			if (false == tracks_editable(m_track_set, reason))
-			{
-				ui()->set_status(reason, true);
-				return;
-			}
-			m_track_set_using = true;
-			m_track_drag = m_track_set;
-			m_track_set_joints.clear();
-			for (auto *track : m_track_set)
-			{
-				auto joints{editor_track::joints(*track)};
-				joints.erase(std::remove_if(joints.begin(), joints.end(), [&](editor_track::joint const &Joint) { return in_track_set(Joint.other); }), joints.end());
-				for (auto const &joint : joints)
-					if (std::find(m_track_drag.begin(), m_track_drag.end(), joint.other) == m_track_drag.end())
-						m_track_drag.push_back(joint.other);
-				m_track_set_joints.emplace_back(track, std::move(joints));
-			}
-			std::vector<std::pair<TTrack *, editor_track::state>> states;
-			for (auto *track : m_track_drag)
-				states.emplace_back(track, editor_track::capture(*track));
-			push_track_snapshot(std::move(states));
-		}
-		glm::dvec3 const offset{delta[3]};
-		if (glm::length(offset) > 1e-9)
-		{
-			for (auto &entry : m_track_set_joints)
-			{
-				editor_track::translate(*entry.first, offset);
-				editor_track::follow(*entry.first, entry.second);
-			}
-			m_track_dirty = true;
-		}
+		if (false == m_track_set_using && false == track_set_begin(rotate))
+			return;
+		if (rotate)
+			track_set_turn(std::atan2(static_cast<double>(m_track_set_gizmo[2][0]), static_cast<double>(m_track_set_gizmo[0][0])));
+		else if (glm::dvec3 const offset{delta[3]}; glm::length(offset) > 1e-9)
+			track_set_move(offset);
 		commit_track_drag(false);
 	}
 	else if (m_track_set_using)
-	{
-		commit_track_drag(true);
-		m_track_set_using = false;
-		m_track_drag.clear();
-		m_track_set_joints.clear();
-		straight_refresh();
-	}
+		track_set_end();
 }
 
 void editor_mode::render_lineside_ui()

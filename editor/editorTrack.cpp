@@ -665,6 +665,89 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 	}
 }
 
+std::vector<int> editor_track::hold_controls(TTrack &Track)
+{
+	std::vector<int> result;
+	for (int i = 0; i < static_cast<int>(Track.m_paths.size()); ++i)
+	{
+		auto &path{Track.m_paths[i]};
+		auto &control1{path.points[segment_data::point::control1]};
+		auto &control2{path.points[segment_data::point::control2]};
+		if (control1 != glm::dvec3{} || control2 != glm::dvec3{})
+			continue;
+		auto const chord{path.points[segment_data::point::end] - path.points[segment_data::point::start]};
+		if (glm::length(chord) < 1e-6)
+			continue;
+		control1 = chord / 3.0;
+		control2 = -chord / 3.0;
+		result.push_back(i);
+	}
+	return result;
+}
+
+void editor_track::settle_controls(TTrack &Track, std::vector<int> const &Paths)
+{
+	for (auto const index : Paths)
+	{
+		if (index < 0 || index >= static_cast<int>(Track.m_paths.size()))
+			continue;
+		auto &path{Track.m_paths[index]};
+		auto const chord{path.points[segment_data::point::end] - path.points[segment_data::point::start]};
+		auto const length{glm::length(chord)};
+		if (length < 1e-6)
+			continue;
+		auto const axis{chord / length};
+		auto const &control1{path.points[segment_data::point::control1]};
+		auto const &control2{path.points[segment_data::point::control2]};
+		auto const off = [&](glm::dvec3 const &Control) { return glm::length(Control - axis * glm::dot(Control, axis)); };
+		if (glm::dot(control1, axis) <= 0.0 || glm::dot(control2, axis) >= 0.0 || off(control1) > 1e-3 || off(control2) > 1e-3)
+			continue;
+		path.points[segment_data::point::control1] = glm::dvec3{};
+		path.points[segment_data::point::control2] = glm::dvec3{};
+	}
+}
+
+editor_track::point_ref editor_track::end_of(point_ref const &Control)
+{
+	switch (Control.kind)
+	{
+	case point_kind::control1: return {Control.path, point_kind::start};
+	case point_kind::control2: return {Control.path, point_kind::end};
+	default: return Control;
+	}
+}
+
+std::vector<std::pair<TTrack *, editor_track::point_ref>> editor_track::partners(TTrack &Track, point_ref const &End)
+{
+	auto const position{point_position(Track, End)};
+	auto result{connected_points(Track, position)};
+	for (int i = 0; i < static_cast<int>(Track.m_paths.size()); ++i)
+	{
+		if (i == End.path)
+			continue;
+		for (auto const kind : {point_kind::start, point_kind::end})
+			if (glm::distance(Track.m_paths[i].points[point_index(kind)], position) < kSamePoint)
+				result.emplace_back(&Track, point_ref{i, kind});
+	}
+	return result;
+}
+
+void editor_track::align_controls(TTrack const &Track, point_ref const &Control, std::vector<std::pair<TTrack *, point_ref>> const &Partners)
+{
+	auto const own{point_position(Track, Control) - point_position(Track, end_of(Control))};
+	if (glm::length(own) < 1e-6)
+		return;
+	auto const direction{glm::normalize(own)};
+	for (auto const &partner : Partners)
+	{
+		auto &path{partner.first->m_paths[partner.second.path]};
+		bool const start{partner.second.kind == point_kind::start};
+		auto &control{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
+		auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 3.0};
+		control = -direction * length;
+	}
+}
+
 bool editor_track::is_connected(TTrack const &Track, point_ref const &Point)
 {
 	if (false == editor_track::is_end(Point.kind))
