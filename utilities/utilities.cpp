@@ -614,7 +614,8 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 	}
 	if (false == tokens.empty())
 	{
-		std::ranges::shuffle(tokens, Global.random_engine);
+		// scenery random set: must replay from the shared run seed, not a security concern
+		std::shuffle(std::begin(tokens), std::end(tokens), Global.random_engine); // NOSONAR
 		return tokens.front();
 	}
 	else

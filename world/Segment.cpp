@@ -317,8 +317,7 @@ TSegment::find_nearest_point( glm::dvec3 const &Point ) const {
                 distance = segmentdistance;
             }
         }
-        // 
-        return nearest;
+        return nearest; // NOSONAR initialised above, the PR analysis keeps a stale report of the old declaration
     }
 }
 
@@ -563,14 +562,14 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
 
 void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) const
 {
-	float step = 1.0f / static_cast<float>(iSegCount) / quality;
-
+	float step = 1.0f / iSegCount / quality;
+	auto const stepcount = static_cast<int>(static_cast<float>(iSegCount) * quality);
 
 	glm::vec3 previous = FastGetPoint(0.0);
 
-	for (int i = 1; static_cast<float>(i) * step <= 1.0f; ++i) {
-		float const x = static_cast<float>(i) * step;
-		out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
+	for (int i = 1; i <= stepcount; ++i) {
+		float const x = std::min(1.0f, static_cast<float>(i) * step);
+		out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
 
 		previous = glm::vec3(FastGetPoint(x));
 		out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
@@ -584,14 +583,14 @@ void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) 
 
 glm::vec3 TSegment::get_nearest_point(const glm::dvec3 &point, float quality) const
 {
-	float step = 1.0f / static_cast<float>(iSegCount) / quality;
-
+	float step = 1.0f / iSegCount / quality;
+	auto const stepcount = static_cast<int>(static_cast<float>(iSegCount) * quality);
 
 	glm::vec3 nearest;
 	float min = std::numeric_limits<float>::max();
 
-	for (int i = 1; static_cast<float>(i) * step <= 1.0f; ++i) {
-		float const x = static_cast<float>(i) * step;
+	for (int i = 1; i <= stepcount; ++i) {
+		float const x = std::min(1.0f, static_cast<float>(i) * step);
         glm::vec3 p1 = FastGetPoint(x);
 
         if (glm::vec3 p2 = FastGetPoint(glm::min(1.0f, x + step)); p1 != p2) {
