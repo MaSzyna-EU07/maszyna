@@ -116,6 +116,7 @@ class editor_track
 	static std::vector<joint> joints(TTrack const &Track);
 	// moves the joined ends to where the ends of the track are now, turning them as the track turned there
 	static void follow(TTrack const &Track, std::vector<joint> const &Joints);
+	static void follow_grade(TTrack const &Track, std::vector<joint> const &Joints);
 	static std::vector<int> hold_controls(TTrack &Track);
 	static void settle_controls(TTrack &Track, std::vector<int> const &Paths);
 	static std::vector<std::pair<TTrack *, point_ref>> partners(TTrack &Track, point_ref const &End);

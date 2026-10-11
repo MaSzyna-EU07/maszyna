@@ -5272,20 +5272,20 @@ msgstr "wpisz promień"
 msgid "moves the control point, the joined track keeps the tangent"
 msgstr "przesuwa punkt kontrolny, dołączony tor zachowuje styczność"
 
-msgid "turns the control vector, the joined track keeps the tangent"
-msgstr "obraca wektor kontrolny, dołączony tor zachowuje styczność"
+msgid "turns the control vector sideways or up, the joined track keeps the tangent"
+msgstr "obraca wektor kontrolny w bok lub w górę, dołączony tor zachowuje styczność"
 
 msgid "length of the control vector"
 msgstr "długość wektora kontrolnego"
 
-msgid "turns the track about the point, the joined tracks follow"
-msgstr "obraca tor wokół punktu, dołączone tory idą za nim"
+msgid "rings about the point: direction, grade, cant; the joined tracks follow"
+msgstr "pierścienie wokół punktu: kierunek, pochylenie, przechyłka; dołączone tory idą za nim"
 
 msgid "lengthens the track at this end, the curve keeps its radius"
 msgstr "wydłuża tor na tym końcu, łuk zachowuje promień"
 
-msgid "turns the track, the joined tracks follow"
-msgstr "obraca tor, dołączone tory idą za nim"
+msgid "rings: direction, grade, cant; the joined tracks follow"
+msgstr "pierścienie: kierunek, pochylenie, przechyłka; dołączone tory idą za nim"
 
 msgid "lengthens the track at its free end, the curve keeps its radius"
 msgstr "wydłuża tor na wolnym końcu, łuk zachowuje promień"
@@ -5304,3 +5304,12 @@ msgstr "obrót %+.2f°"
 
 msgid "along the switch"
 msgstr "wzdłuż rozjazdu"
+
+msgid "   grade %+.1f per mille"
+msgstr "   pochylenie %+.1f‰"
+
+msgid "grade changed by %+.1f per mille"
+msgstr "pochylenie zmienione o %+.1f‰"
+
+msgid "cant %.0f mm (%+.0f mm)"
+msgstr "przechyłka %.0f mm (%+.0f mm)"

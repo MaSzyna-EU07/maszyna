@@ -665,6 +665,19 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 	}
 }
 
+void editor_track::follow_grade(TTrack const &Track, std::vector<joint> const &Joints)
+{
+	for (auto const &joint : Joints)
+	{
+		if (joint.own.path >= static_cast<int>(Track.m_paths.size()) || joint.theirs.path >= static_cast<int>(joint.other->m_paths.size()))
+			continue;
+		geometry::bezier const own{Track.m_paths[joint.own.path]};
+		auto const outward{joint.own.kind == point_kind::start ? -own.first(0.0) : own.first(1.0)};
+		auto &control{joint.other->m_paths[joint.theirs.path].points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
+		control.y = geometry::grade_of(outward) * glm::length(geometry::plan_of(control));
+	}
+}
+
 std::vector<int> editor_track::hold_controls(TTrack &Track)
 {
 	std::vector<int> result;

@@ -1189,8 +1189,11 @@ void editor_mode::selftest_step()
 			else if (action == "turn")
 			{
 				double degrees{0.0};
-				words >> degrees;
-				track_gizmo_turn(*track, glm::radians(degrees));
+				std::string axis{"y"};
+				words >> degrees >> axis;
+				m_track_gizmo_drag.ring = axis == "x" ? 0 : axis == "z" ? 2 : 1;
+				track_gizmo_turn(*track, m_track_gizmo_drag.ring, glm::radians(degrees));
+				WriteLog(format("SELFTEST gizmo turn %s: %s", axis.c_str(), track_readout().c_str()));
 			}
 			else if (action == "length")
 			{

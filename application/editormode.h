@@ -657,6 +657,15 @@ class editor_mode : public application_mode, private editor_track::observer
 		glm::dvec3 fixed{0.0};
 		std::vector<std::pair<TTrack *, std::vector<int>>> held;
 		std::vector<TTrack *> extra;
+		int ring{-1};
+		glm::dmat3 basis{1.0};
+		glm::dvec3 pivot{0.0};
+		double grade{0.0};
+		double roll{0.0};
+		double roll0{0.0};
+		double pivot_chainage{0.0};
+		std::vector<double> chainages;
+		std::vector<double> lengths;
 	};
 	track_gizmo_drag m_track_gizmo_drag;
 	gizmo_operation track_gizmo_operation(TTrack const &Track, bool const Pointmode) const;
@@ -666,7 +675,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void track_gizmo_stretch(TTrack &Track, double const Length);
 	void track_gizmo_control(TTrack &Track, glm::dvec3 Control);
 	void track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_operation const Operation);
-	void track_gizmo_turn(TTrack &Track, double const Angle);
+	void track_gizmo_turn(TTrack &Track, int const Axis, double const Angle);
 	void track_gizmo_length(TTrack &Track, double Length);
 	void track_gizmo_end(TTrack &Track);
 	bool m_track_dirty{false};
