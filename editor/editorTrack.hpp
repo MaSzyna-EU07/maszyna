@@ -326,7 +326,7 @@ class editor_track
 	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name = {});
 	static TTrack *create_turntable(segment_data const &Path, TTrack const *Style, std::string const &Name);
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
-	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
+	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces, TTrack **Last = nullptr);
 	static void retire(TTrack &Track);
 
 	static std::string material_name(material_handle const Material);

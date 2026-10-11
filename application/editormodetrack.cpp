@@ -2943,9 +2943,9 @@ void editor_mode::route_apply()
 	{
 		auto pieces{alignment::pieces(route.result, route.design, chain.tracks.size())};
 		editor_track::keep_heights(chain, pieces);
-		relaid = editor_track::relay(chain, pieces);
+		relaid = editor_track::relay(chain, pieces, &to);
 	}
-	else if (false == route_relay_through_switches(chain, states, relaid))
+	else if (false == route_relay_through_switches(chain, states, relaid, to))
 	{
 		undo();
 		return;
@@ -2978,7 +2978,7 @@ void editor_mode::route_apply()
 }
 
 // the switches of the chain are moved as a whole onto the designed line, the regular paths between them re-laid
-bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created)
+bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, TTrack *&Last)
 {
 	auto &route{m_route};
 	auto const &result{route.result};
@@ -3100,7 +3100,10 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 	{
 		auto group{groups[i]};
 		editor_track::keep_heights(parts[i], group);
-		auto const added{editor_track::relay(parts[i], group)};
+		TTrack *last{nullptr};
+		auto const added{editor_track::relay(parts[i], group, &last)};
+		if (last != nullptr && parts[i].tracks.back() == Chain.tracks.back())
+			Last = last;
 		Created.insert(Created.end(), added.begin(), added.end());
 	}
 	return true;
@@ -4402,7 +4405,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	}
 	auto pieces{alignment::pieces(m_route.result, m_route.design, m_route.chain.tracks.size())};
 	editor_track::keep_heights(m_route.chain, pieces);
-	auto created{editor_track::relay(m_route.chain, pieces)};
+	auto created{editor_track::relay(m_route.chain, pieces, &m_route.to)};
 	editor_track::commit(tracks);
 	for (auto const &entry : splitstates)
 	{

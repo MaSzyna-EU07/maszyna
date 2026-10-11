@@ -814,7 +814,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_route_stored();
 	void route_update() { m_route.result = alignment::compute(m_route.design); }
 	void route_apply();
-	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);
+	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, TTrack *&Last);
 	void route_recommend(alignment::vertex &Vertex) const;
 	void draw_route_overlay() const;
 	void render_route_gizmo();

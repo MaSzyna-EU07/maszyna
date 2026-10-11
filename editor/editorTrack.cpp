@@ -2912,7 +2912,7 @@ void editor_track::move_straight(straight const &Line, glm::dvec3 const &Start, 
 	}
 }
 
-std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segment_data> const &Pieces)
+std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segment_data> const &Pieces, TTrack **Last)
 {
 	std::vector<TTrack *> created;
 	auto const count{Chain.tracks.size()};
@@ -2943,6 +2943,8 @@ std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segmen
 		tracks.push_back(track);
 	}
 	commit(tracks);
+	if (Last != nullptr)
+		*Last = tracks.back();
 	return created;
 }
 
