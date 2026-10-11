@@ -1095,4 +1095,4 @@ float editor_ui::rot_val()
 bool editor_ui::rot_from_last()
 {
 	return m_functionspanel.rot_from_last;
-}
+}
