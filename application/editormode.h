@@ -656,6 +656,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<std::pair<TTrack *, editor_track::point_ref>> partners;
 		glm::dvec3 fixed{0.0};
 		std::vector<std::pair<TTrack *, std::vector<int>>> held;
+		std::vector<TTrack *> extra;
 	};
 	track_gizmo_drag m_track_gizmo_drag;
 	gizmo_operation track_gizmo_operation(TTrack const &Track, bool const Pointmode) const;

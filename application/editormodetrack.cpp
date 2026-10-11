@@ -592,6 +592,39 @@ void editor_mode::track_gizmo_stretch(TTrack &Track, double const Length)
 	for (auto &joint : joints)
 		joint.own = stretch_remap(joint.own, drag.path, drag.pieces);
 	editor_track::follow(Track, joints);
+	std::vector<segment_data> rest;
+	if (Track.eType == tt_Normal && pieces.size() > 1)
+	{
+		auto const first{Track.m_paths.begin() + drag.path};
+		auto const keep{drag.atend ? first : first + (pieces.size() - 1)};
+		for (auto piece = first; piece != first + pieces.size(); ++piece)
+			if (piece != keep)
+				rest.push_back(*piece);
+		auto const kept{*keep};
+		Track.m_paths.erase(first, first + pieces.size());
+		Track.m_paths.insert(Track.m_paths.begin() + drag.path, kept);
+		if (drag.point.valid())
+			m_track_point = drag.point;
+	}
+	while (drag.extra.size() > rest.size())
+	{
+		auto *surplus{drag.extra.back()};
+		drag.extra.pop_back();
+		m_track_drag.erase(std::remove(m_track_drag.begin(), m_track_drag.end(), surplus), m_track_drag.end());
+		editor_track::retire(*surplus);
+	}
+	for (std::size_t i = 0; i < rest.size(); ++i)
+	{
+		if (i < drag.extra.size())
+		{
+			drag.extra[i]->m_paths = {rest[i]};
+			continue;
+		}
+		auto *created{editor_track::create_path(Track, rest[i])};
+		drag.extra.push_back(created);
+		m_track_drag.push_back(created);
+		editor_track::commit({created});
+	}
 	m_track_dirty = true;
 }
 
@@ -728,6 +761,12 @@ void editor_mode::track_gizmo_end(TTrack &Track)
 	m_track_dirty = true;
 	m_track_snap = {};
 	commit_track_drag(true);
+	if (false == m_track_gizmo_drag.extra.empty() && false == m_history.empty())
+	{
+		auto &created{m_history.back().created};
+		created.insert(created.end(), m_track_gizmo_drag.extra.begin(), m_track_gizmo_drag.extra.end());
+		m_track_gizmo_drag.extra.clear();
+	}
 	m_track_gizmo_using = false;
 	m_track_drag.clear();
 	m_track_drag_points.clear();
