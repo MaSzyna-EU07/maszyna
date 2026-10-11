@@ -809,6 +809,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base);
 	void render_switch_record(TTrack &Track);
 	void route_store();
+	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true);
+	bool digitize_chain(editor_track::chain const &Chain);
 	void render_route_stored();
 	void route_update() { m_route.result = alignment::compute(m_route.design); }
 	void route_apply();

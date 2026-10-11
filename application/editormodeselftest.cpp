@@ -1373,6 +1373,7 @@ void editor_mode::selftest_step()
 			for (auto const &piece : pieces)
 				created.push_back(editor_track::create_path(*tool.track, piece));
 			editor_track::commit(created);
+			digitize_drawn(created);
 			if (false == created.empty())
 				push_track_snapshot({}, created);
 			char const *const kinds[]{"none", "straight", "arc", "curve", "reverse curve", "free curve"};
@@ -1394,6 +1395,34 @@ void editor_mode::selftest_step()
 			}
 			if (false == created.empty())
 				WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
+		}
+		else if (command == "digitize")
+		{
+			glm::dvec3 point{0.0};
+			words >> point.x >> point.z;
+			TTrack *nearest{nullptr};
+			double distance{1e9};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+					continue;
+				auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)};
+				if (d < distance)
+				{
+					distance = d;
+					nearest = track;
+				}
+			}
+			auto const kept{nearest != nullptr && digitize_drawn({nearest}, false)};
+			WriteLog(format("SELFTEST digitize %s: %d", nearest != nullptr ? nearest->name().c_str() : "-", kept ? 1 : 0));
+		}
+		else if (command == "parallel")
+		{
+			words >> m_parallel.spacing >> m_parallel.side;
+			m_parallel.scope = 1;
+			m_parallel.built_for = nullptr;
+			parallel_build();
+			WriteLog("SELFTEST parallel: " + m_parallel.status + " " + m_parallel.error);
 		}
 		else if (command == "layclicks")
 		{

@@ -1590,6 +1590,17 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 
 	std::deque<std::pair<TTrack *, bool>> run{{&Track, true}};
 	auto const known = [&](TTrack const *Other) { return std::any_of(run.begin(), run.end(), [&](auto const &Member) { return Member.first == Other; }); };
+	auto const own_turn = [](TTrack const &Other, bool const Forward) {
+		auto const &path{Other.m_paths.front()};
+		auto const begin{plan_of(path_tangent(path, false))};
+		auto const finish{plan_of(path_tangent(path, true))};
+		if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9)
+			return 0.0;
+		auto const turn{signed_angle(glm::normalize(begin), glm::normalize(finish))};
+		return Forward ? turn : -turn;
+	};
+	auto const side{own_turn(Track, true)};
+	auto const reversing = [&](TTrack const &Other, bool const Forward) { return own_turn(Other, Forward) * side < 0.0 && std::abs(own_turn(Other, Forward)) > 1e-4; };
 	for (auto const throughend : {true, false})
 	{
 		TTrack *previous{&Track};
@@ -1603,7 +1614,7 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 				if (atstart == (extension.pNexts[0] == previous))
 					break;
 				auto *beyond{atstart ? extension.pNexts[0] : extension.pPrevs[0]};
-				if (false == curved(beyond) || known(beyond))
+				if (false == curved(beyond) || known(beyond) || reversing(*current, throughend == atstart))
 					break;
 				if (throughend)
 					run.emplace_back(current, atstart);
@@ -1616,6 +1627,8 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 			if (false == curved(current))
 				break;
 			auto const entersatstart{current->trPrev == previous};
+			if (reversing(*current, throughend == entersatstart))
+				break;
 			if (throughend)
 				run.emplace_back(current, entersatstart);
 			else
@@ -1813,7 +1826,7 @@ bool editor_track::find_run(TTrack &Track, double const Limit, chain &Chain, std
 	return find_chain(ends[1], ends[0], Chain, Error);
 }
 
-std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge)
+std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge, alignment::transition_shape const Shape)
 {
 	std::vector<line_vertex> result;
 	auto const count{Chain.tracks.size()};
@@ -1844,6 +1857,36 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 		for (auto i = First; i <= Last; ++i)
 			run.emplace_back(Chain.tracks[i], Chain.forward[i]);
 		analyse_curve(run, Gauge, vertex.shape);
+		auto &shape{vertex.shape};
+		if (false == shape.designed.has_value() && false == shape.compound && shape.reversals == 0)
+		{
+			auto const pieces = [&](double const Length, bool const Fromstart) {
+				std::size_t count{0};
+				double covered{0.0};
+				while (covered < Length - 1e-6 && count <= Last - First)
+				{
+					covered += Chain.tracks[Fromstart ? First + count : Last - count]->Length();
+					++count;
+				}
+				return count;
+			};
+			auto const in{shape.transition_in > 0.0 ? pieces(shape.transition_in, true) : 0};
+			auto const out{shape.transition_out > 0.0 ? pieces(shape.transition_out, false) : 0};
+			if (in + out <= Last - First)
+			{
+				auto const turn_of = [&](std::size_t const From, std::size_t const To) { return std::abs(std::accumulate(turns.begin() + From, turns.begin() + To + 1, 0.0)); };
+				auto const arc{turn_of(First + in, Last - out)};
+				if (arc > 1e-6 && arc < 2.0 * glm::pi<double>() - 1e-3)
+				{
+					shape.radius = glm::distance(point_in(First + in), point_out(Last - out)) / (2.0 * std::sin(arc * 0.5));
+					auto const length = [&](double const Turn) { return Shape == alignment::transition_shape::clothoid ? 2.0 * shape.radius * Turn : 2.0 * shape.radius * std::tan(Turn); };
+					if (in > 0)
+						shape.transition_in = length(turn_of(First, First + in - 1));
+					if (out > 0)
+						shape.transition_out = length(turn_of(Last - out + 1, Last));
+				}
+			}
+		}
 		result.push_back(vertex);
 	};
 	std::size_t i{0};

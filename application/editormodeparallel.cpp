@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 namespace
 {
@@ -30,6 +31,7 @@ namespace
 using geometry::bezier;
 using geometry::cross;
 using geometry::plan_of;
+using geometry::signed_angle;
 
 double const kParallelReach{5000.0}; // m each way along the line
 double const kSpacings[] = {3.5, 4.0, 4.5, 4.75, 5.0, 6.0};
@@ -74,6 +76,23 @@ double curvature(segment_data const &Path, bool const Atend)
 	auto const second{Atend ? 6.0 * (p1 - 2.0 * p2 + p3) : 6.0 * (p0 - 2.0 * p1 + p2)};
 	auto const speed{glm::length(first)};
 	return speed > 1e-9 ? cross(first, second) / (speed * speed * speed) : 0.0;
+}
+
+std::optional<double> arc_curvature(segment_data const &Path)
+{
+	auto const [control1, control2] = controls(Path);
+	auto const along{plan_of(control1)};
+	auto const back{-plan_of(control2)};
+	if (glm::length(along) < 1e-9 || glm::length(back) < 1e-9)
+		return std::nullopt;
+	auto const turn{signed_angle(glm::normalize(along), glm::normalize(back))};
+	if (std::abs(turn) < 1e-6)
+		return std::nullopt;
+	auto const radius{glm::length(plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start])) / (2.0 * std::sin(std::abs(turn) * 0.5))};
+	auto const control{4.0 / 3.0 * std::tan(std::abs(turn) * 0.25) * radius};
+	if (std::abs(glm::length(along) - control) > 1e-4 * control || std::abs(glm::length(back) - control) > 1e-4 * control)
+		return std::nullopt;
+	return std::copysign(1.0 / radius, turn);
 }
 
 glm::dvec2 direction(segment_data const &Path, bool const Atend)
@@ -188,8 +207,9 @@ void editor_mode::parallel_update()
 	{
 		auto const &source{sources[i].second};
 		auto const [control1, control2] = controls(source);
-		auto const startscale{1.0 - curvature(source, false) * offset};
-		auto const endscale{1.0 - curvature(source, true) * offset};
+		auto const arc{arc_curvature(source)};
+		auto const startscale{1.0 - (arc.has_value() ? *arc : curvature(source, false)) * offset};
+		auto const endscale{1.0 - (arc.has_value() ? *arc : curvature(source, true)) * offset};
 		if (startscale < 0.05 || endscale < 0.05)
 		{
 			tool.pieces.clear();
@@ -205,7 +225,7 @@ void editor_mode::parallel_update()
 		piece.rolls = source.rolls;
 		auto const middle{0.5 * (curvature(source, false) + curvature(source, true))};
 		if (source.radius != 0.0f && std::abs(middle) > 1e-7)
-			piece.radius = static_cast<float>(std::copysign(std::abs((1.0 - middle * offset) / middle), static_cast<double>(source.radius)));
+			piece.radius = static_cast<float>(std::copysign(std::abs(std::abs(static_cast<double>(source.radius)) - std::copysign(offset, middle)), static_cast<double>(source.radius)));
 		tool.length += bezier{piece}.plan_length();
 		tool.pieces.push_back(piece);
 		tool.styles.push_back(sources[i].first);
@@ -222,6 +242,7 @@ void editor_mode::parallel_build()
 	for (std::size_t i = 0; i < tool.pieces.size(); ++i)
 		created.push_back(editor_track::create_path(*tool.styles[i], tool.pieces[i]));
 	editor_track::commit(created);
+	digitize_drawn(created);
 	push_track_snapshot({}, created);
 	tool.status = format(STR_C("Parallel track of %zu paths, %.1f m, %.2f m away; Ctrl+Z takes it back"), created.size(), tool.length, tool.spacing);
 	if (scene::Layers.active() == null_handle)

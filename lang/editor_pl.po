@@ -5347,6 +5347,18 @@ msgstr "Zapisany projekt zostanie usunięty z "
 msgid "The paths stay as they are, the scenery no longer keeps a design for them"
 msgstr "Odcinki zostają bez zmian, sceneria przestaje przechowywać dla nich projekt"
 
+msgid "Keep the line as it lies"
+msgstr "Zachowaj linię tak, jak leży"
+
+msgid "Keeps the line through the selected path in the scenery as its paths lie, the way the drawn tracks are kept"
+msgstr "Zapisuje w scenerii linię przez wybrany odcinek tak, jak leżą jej odcinki, tak jak zapisywane są rysowane tory"
+
+msgid "The line is kept in the scenery with its straights, arcs and transition curves"
+msgstr "Linia jest zapisana w scenerii z prostymi, łukami i krzywymi przejściowymi"
+
+msgid "The paths don't make a line of straights, arcs and transition curves, nothing kept"
+msgstr "Odcinki nie tworzą linii z prostych, łuków i krzywych przejściowych, nic nie zapisano"
+
 msgid "The scenery keeps no type for this switch, it's read from its shape"
 msgstr "Sceneria nie przechowuje typu tego rozjazdu, jest odczytywany z jego kształtu"
 

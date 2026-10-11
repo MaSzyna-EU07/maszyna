@@ -37,6 +37,7 @@ http:
 #include <cstring>
 #include <functional>
 #include <iterator>
+#include <set>
 
 namespace
 {
@@ -94,6 +95,7 @@ float const kSnapPixels{16.0f};
 float const kDragPixels{5.0f};
 double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
 double const kLineReach{2000.0}; // how far each way the Curve tab follows the line
+double const kDrawnReach{100000.0};
 double const kJointRange{400.0}; // the ends of the paths are drawn for the tracks this close to the camera
 ImU32 const kJointColor{IM_COL32(255, 255, 255, 200)};
 int const kRailCategory{1};
@@ -2608,14 +2610,10 @@ alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve)
 	if (Curve.designed.has_value())
 		return *Curve.designed;
 	alignment::vertex vertex;
-	vertex.radius = Curve.radius > 0.0 ? std::max(10.0, std::round(Curve.radius)) : 1000.0;
-	route_recommend(vertex);
-	if (Curve.transition_in > 0.0)
-		vertex.transition_in = std::round(Curve.transition_in);
-	if (Curve.transition_out > 0.0)
-		vertex.transition_out = std::round(Curve.transition_out);
-	if (Curve.cant > 0.0)
-		vertex.cant = std::round(Curve.cant);
+	vertex.radius = Curve.radius > 0.0 ? std::max(1.0, Curve.radius) : 1000.0;
+	vertex.transition_in = std::max(0.0, Curve.transition_in);
+	vertex.transition_out = std::max(0.0, Curve.transition_out);
+	vertex.cant = std::max(0.0, Curve.cant);
 	vertex.reverse_turn = std::abs(Curve.turn) > glm::pi<double>();
 	compound_from(Curve, vertex);
 	return vertex;
@@ -2707,6 +2705,19 @@ void editor_mode::render_route_stored()
 		route.origin = km * 1000.0;
 	ImGui::PopItemWidth();
 	item_tooltip("Chainage of the start of the fragment, kept with the design in the scenery; the vertical profile of these paths counts from it");
+	if (route.designed == 0 && route.departed < 0 && false == route.chain.tracks.empty())
+	{
+		if (ImGui::SmallButton(STR_C("Keep the line as it lies")))
+		{
+			auto *track{route.chain.tracks[route.chain.tracks.size() / 2]};
+			auto const kept{digitize_drawn({track}, false)};
+			alignment_store::settle();
+			route_load(*track);
+			route.status += std::string{"\n"} + (kept ? STR_C("The line is kept in the scenery with its straights, arcs and transition curves") : STR_C("The paths don't make a line of straights, arcs and transition curves, nothing kept"));
+			return;
+		}
+		item_tooltip("Keeps the line through the selected path in the scenery as its paths lie, the way the drawn tracks are kept");
+	}
 	auto const &records{alignment_store::records()};
 	if (route.departed < 0 || route.departed >= static_cast<int>(records.size()))
 		return;
@@ -2739,6 +2750,83 @@ void editor_mode::route_store()
 	route.departure = 0.0;
 }
 
+bool editor_mode::digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone)
+{
+	std::vector<TTrack *> drawn;
+	for (auto *track : Created)
+		if (track != nullptr && track->eType == tt_Normal && false == track->m_editorremoved && false == track->m_paths.empty())
+			drawn.push_back(track);
+	if (drawn.empty() || scene::Layers.empty())
+		return false;
+	editor_track::chain chain;
+	std::string error;
+	if (editor_track::find_run(*drawn.front(), kDrawnReach, chain, error) && digitize_chain(chain))
+		return true;
+	if (Alone && editor_track::find_chain(drawn.front(), drawn.back(), chain, error) && chain.tracks.size() == drawn.size() && digitize_chain(chain))
+		return true;
+	WriteLog("Editor: the drawn paths don't make a line of straights, arcs and transition curves, no design kept for them", logtype::generic);
+	return false;
+}
+
+bool editor_mode::digitize_chain(editor_track::chain const &Chain)
+{
+	if (Chain.tracks.empty())
+		return false;
+	alignment::design design;
+	design.norms = m_route.design.norms;
+	design.shape = m_route.design.shape;
+	design.transition_pieces = m_route.design.transition_pieces;
+	design.arc_piece_angle = m_route.design.arc_piece_angle;
+	design.speed = Chain.velocity > 0.0 ? Chain.velocity : 100.0;
+	design.start = Chain.start;
+	design.end = Chain.end;
+	if (glm::length(plan_of(Chain.start_direction)) < 1e-9 || glm::length(plan_of(Chain.end_direction)) < 1e-9)
+		return false;
+	design.start_direction = glm::normalize(plan_of(Chain.start_direction));
+	design.end_direction = glm::normalize(plan_of(Chain.end_direction));
+	design.start_grade = grade_of(Chain.start_direction);
+	design.end_grade = grade_of(Chain.end_direction);
+	design.start_radius = Chain.start_radius;
+	design.end_radius = Chain.end_radius;
+	for (auto const &entry : editor_track::recognize_line(Chain, m_straights.tolerance, design.norms.gauge, design.shape))
+	{
+		if (entry.kink)
+			return false;
+		auto vertex{route_vertex_of(entry.shape)};
+		vertex.position = entry.position;
+		design.vertices.push_back(vertex);
+	}
+	if (design.vertices.size() >= 2)
+	{
+		design.vertices.front().offset = std::max(0.0, glm::dot(design.vertices.front().position - plan_of(design.start), design.start_direction));
+		design.vertices.back().offset = std::max(0.0, glm::dot(plan_of(design.end) - design.vertices.back().position, design.end_direction));
+	}
+	auto const result{alignment::compute(design)};
+	if (false == alignment_store::follows(result, Chain.tracks))
+		return false;
+	auto const &records{alignment_store::records()};
+	std::set<int> covered;
+	for (auto *track : Chain.tracks)
+		if (auto const found{alignment_store::on_track(*track)})
+			covered.insert(found->record);
+	double origin{0.0};
+	for (auto const index : covered)
+	{
+		auto const &old{records[index]};
+		auto const start{alignment_store::chainage_on(result, old.design.start)};
+		auto const end{alignment_store::chainage_on(result, old.design.end)};
+		if (false == start.has_value() || false == end.has_value())
+			return false;
+		if (index == *covered.begin() && *end > *start)
+			origin = old.origin - *start;
+	}
+	auto const layer{covered.empty() ? record_layer(*Chain.tracks.front()) : records[*covered.begin()].layer};
+	for (auto index{covered.rbegin()}; index != covered.rend(); ++index)
+		alignment_store::forget(*index);
+	alignment_store::store(design, result, origin, layer, "drawn");
+	return true;
+}
+
 bool editor_mode::route_from_line(TTrack &Track)
 {
 	auto &route{m_route};
@@ -2751,7 +2839,7 @@ bool editor_mode::route_from_line(TTrack &Track)
 	if (route.chain.tracks.empty())
 		return false;
 	auto &design{route.design};
-	auto const found{editor_track::recognize_line(route.chain, m_straights.tolerance, design.norms.gauge)};
+	auto const found{editor_track::recognize_line(route.chain, m_straights.tolerance, design.norms.gauge, design.shape)};
 	route.designed = 0;
 	if (false == found.empty())
 	{
@@ -4325,6 +4413,12 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 			states.push_back(entry);
 	}
 	created.insert(created.begin(), splitcreated.begin(), splitcreated.end());
+	{
+		auto changed{created};
+		for (auto const &entry : states)
+			changed.push_back(entry.first);
+		digitize_drawn(changed);
+	}
 	push_track_snapshot(std::move(states), std::move(created));
 	std::string error;
 	editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error, true);
@@ -5701,6 +5795,7 @@ void editor_mode::finish_extend()
 	for (auto const &piece : pieces)
 		created.push_back(editor_track::create_path(*style, piece));
 	editor_track::commit(created);
+	digitize_drawn(created);
 	push_track_snapshot({}, created);
 	m_node = created.back();
 	ui()->set_node(m_node);
@@ -5730,6 +5825,7 @@ void editor_mode::extend_add(int const Side)
 	for (auto const &piece : pieces)
 		created.push_back(editor_track::create_path(*tool.track, piece));
 	editor_track::commit(created);
+	digitize_drawn(created);
 	push_track_snapshot({}, created);
 	m_node = created.back();
 	ui()->set_node(m_node);
@@ -6055,6 +6151,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	for (auto const &piece : pieces)
 		created.push_back(style != nullptr ? editor_track::create_path(*style, piece) : editor_track::create_path(tool.style, piece));
 	editor_track::commit(created);
+	digitize_drawn(created);
 	push_track_snapshot({}, created);
 	tool.status = format(STR_C("Laid %zu paths, %.1f m"), created.size(), length);
 	if (false == error.empty())

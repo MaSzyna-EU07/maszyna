@@ -229,7 +229,7 @@ class editor_track
 		curve shape;
 		bool kink{false}; // the straights meet with no curve between them
 	};
-	static std::vector<line_vertex> recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge);
+	static std::vector<line_vertex> recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge, alignment::transition_shape const Shape = alignment::transition_shape::cubic_parabola);
 	// regular straight paths continuing a chain end in line, which the chain can take over
 	struct straight_run
 	{

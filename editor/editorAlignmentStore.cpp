@@ -382,10 +382,23 @@ std::vector<record> const &records()
 namespace
 {
 
-// the point on the line of the stored alignment, if it lies by it within the reach and not beyond its ends
-std::optional<hit> project(std::size_t const Index, glm::dvec2 const &Point, double const Reach)
+double approximation(geometry::bezier const &Curve)
 {
-	auto const &entry{g_records[Index]};
+	auto const begin{plan_of(Curve.first(0.0))};
+	auto const finish{plan_of(Curve.first(1.0))};
+	if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9)
+		return 0.0;
+	auto const turn{std::abs(geometry::signed_angle(glm::normalize(begin), glm::normalize(finish)))};
+	if (turn < 1e-6)
+		return 0.0;
+	auto const radius{geometry::plan_distance(Curve.point(0.0), Curve.point(1.0)) / (2.0 * std::sin(turn * 0.5))};
+	return 3.0e-4 * radius * std::pow(turn / (0.5 * 3.14159265358979323846), 6.0);
+}
+
+// the point on the line of the stored alignment, if it lies by it within the reach and not beyond its ends
+std::optional<hit> project(record const &Entry, std::size_t const Index, glm::dvec2 const &Point, double const Reach)
+{
+	auto const &entry{Entry};
 	auto const margin{Reach + kStep};
 	if (entry.samples.empty() || Point.x < entry.low.x - margin || Point.y < entry.low.y - margin || Point.x > entry.high.x + margin || Point.y > entry.high.y + margin)
 		return std::nullopt;
@@ -430,6 +443,31 @@ std::optional<hit> project(std::size_t const Index, glm::dvec2 const &Point, dou
 	return hit{static_cast<int>(Index), static_cast<int>(std::max<std::ptrdiff_t>(0, std::distance(elements.begin(), found) - 1)), chainage, offset};
 }
 
+std::optional<hit> project(std::size_t const Index, glm::dvec2 const &Point, double const Reach)
+{
+	return project(g_records[Index], Index, Point, Reach);
+}
+
+bool lies_along(record const &Entry, TTrack const &Track)
+{
+	if (Track.m_paths.empty())
+		return false;
+	geometry::bezier const curve{Track.m_paths.front()};
+	auto const reach{tolerance + approximation(curve)};
+	for (auto const t : {0.0, 0.25, 0.5, 0.75, 1.0})
+		if (false == project(Entry, 0, plan_of(curve.point(t)), t == 0.25 || t == 0.75 ? reach : tolerance).has_value())
+			return false;
+	return true;
+}
+
+record temporary(alignment::result const &Result)
+{
+	record entry;
+	entry.result = Result;
+	sample(entry);
+	return entry;
+}
+
 } // namespace
 
 std::optional<hit> at(glm::dvec3 const &Point, double const Reach)
@@ -451,6 +489,7 @@ std::optional<hit> on_track(TTrack const &Track, double const Reach)
 		return std::nullopt;
 	load();
 	geometry::bezier const curve{Track.m_paths.front()};
+	auto const reach{Reach + approximation(curve)};
 	std::optional<hit> best;
 	for (std::size_t r = 0; r < g_records.size(); ++r)
 	{
@@ -459,7 +498,7 @@ std::optional<hit> on_track(TTrack const &Track, double const Reach)
 			continue;
 		bool along{true};
 		for (auto const t : {0.0, 0.25, 0.75, 1.0})
-			along = along && project(r, plan_of(curve.point(t)), Reach).has_value();
+			along = along && project(r, plan_of(curve.point(t)), reach).has_value();
 		if (along)
 			best = middle;
 	}
@@ -484,9 +523,10 @@ std::optional<designed_vertex> vertex_of(std::vector<std::pair<TTrack *, bool>> 
 			if (member.first == nullptr || member.first->m_paths.empty())
 				return std::nullopt;
 			geometry::bezier const curve{member.first->m_paths.front()};
+			auto const reach{tolerance + approximation(curve)};
 			std::vector<hit> hits;
 			for (auto const t : {0.0, 0.25, 0.5, 0.75, 1.0})
-				if (auto const found{project(r, plan_of(curve.point(t)), tolerance)})
+				if (auto const found{project(r, plan_of(curve.point(t)), t == 0.25 || t == 0.75 ? reach : tolerance)})
 					hits.push_back(*found);
 			if (hits.size() < 5)
 			{
@@ -559,10 +599,29 @@ int departed(std::vector<TTrack *> const &Tracks, double &Departure)
 	return result;
 }
 
-int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer)
+bool follows(alignment::result const &Result, std::vector<TTrack *> const &Tracks)
+{
+	if (false == Result.valid || Result.elements.empty())
+		return false;
+	auto const entry{temporary(Result)};
+	return std::all_of(Tracks.begin(), Tracks.end(), [&](TTrack const *Track) { return Track != nullptr && lies_along(entry, *Track); });
+}
+
+std::optional<double> chainage_on(alignment::result const &Result, glm::dvec3 const &Point)
+{
+	if (false == Result.valid)
+		return std::nullopt;
+	auto const found{project(temporary(Result), 0, plan_of(Point), tolerance)};
+	if (false == found.has_value())
+		return std::nullopt;
+	return found->chainage;
+}
+
+int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source)
 {
 	load();
 	record entry;
+	entry.source = Source;
 	entry.design = Design;
 	entry.design.start_reserve = entry.design.end_reserve = 0.0;
 	entry.origin = Origin;
