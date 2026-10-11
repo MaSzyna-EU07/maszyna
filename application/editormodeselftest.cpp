@@ -1460,6 +1460,104 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog("SELFTEST " + command + ": " + tool.status + " " + m_straights.status);
 		return selftest_result::handled;
 	}
+	if (command == "switchlink" || command == "branchlink")
+	{
+		std::string label;
+		glm::dvec3 point{0.0};
+		glm::dvec3 target{0.0};
+		if (command == "switchlink")
+			words >> label;
+		words >> point.x >> point.z >> target.x >> target.z;
+		std::replace(label.begin(), label.end(), '_', ' ');
+		auto const log_link = [&](editor_track::branch_link const &Link, std::string const &Reason) {
+			WriteLog(format("SELFTEST %s plan: valid %d, shift %.3f m, R %.1f m, before %.3f m, after %.3f m, trim %.3f m, shortfall %.3f m, %zu pieces%s", command.c_str(), Link.valid ? 1 : 0, Link.shift, Link.radius, Link.before, Link.after, Link.trim,
+			                Link.shortfall, Link.pieces.size(), Reason.empty() ? "" : (", " + Reason).c_str()));
+			for (auto const &piece : Link.pieces)
+			{
+				auto const &a{piece.points[segment_data::point::start]};
+				auto const &b{piece.points[segment_data::point::end]};
+				WriteLog(format("SELFTEST %s piece: %.3f %.3f %.3f -> %.3f %.3f %.3f, L %.3f m, R %.1f m", command.c_str(), a.x, a.y, a.z, b.x, b.y, b.z, geometry::bezier{piece}.plan_length(), static_cast<double>(piece.radius)));
+			}
+		};
+		if (command == "switchlink")
+		{
+			show_track_tab(track_tab::turnout);
+			auto &tool{m_switch};
+			tool.templates = editor_track::standard_switch_templates();
+			tool.collected = true;
+			tool.armed = -1;
+			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+				if (tool.templates[i].label.rfind(label, 0) == 0)
+				{
+					tool.armed = i;
+					break;
+				}
+			TTrack *nearest{nullptr};
+			double distance{1e9};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+					continue;
+				auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)};
+				if (d < distance)
+				{
+					distance = d;
+					nearest = track;
+				}
+			}
+			if (tool.armed < 0 || nearest == nullptr)
+			{
+				WriteLog("SELFTEST switchlink: no template " + label + " or no path");
+				return selftest_result::handled;
+			}
+			m_node = nearest;
+			ui()->set_node(m_node);
+			m_cursor_override = point;
+			if (false == start_switch_placement())
+			{
+				m_cursor_override.reset();
+				WriteLog("SELFTEST switchlink: not started, " + tool.status);
+				return selftest_result::handled;
+			}
+			tool.mouse = glm::dvec3{target.x, tool.point.y, target.z};
+			switch_link plan;
+			plan_switch_link(plan);
+			log_link(plan.link, plan.reason);
+			finish_switch_placement();
+			m_cursor_override.reset();
+			WriteLog("SELFTEST switchlink: " + tool.status);
+			return selftest_result::handled;
+		}
+		TTrack *own{nullptr};
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && track->eType == tt_Switch && track->m_paths.size() == 2 && geometry::plan_distance(track->m_paths[1].points[segment_data::point::end], point) < 3.0)
+				own = track;
+		if (own == nullptr)
+		{
+			WriteLog("SELFTEST branchlink: no switch branch end there");
+			return selftest_result::handled;
+		}
+		editor_track::snap_target end;
+		end.track = own;
+		end.point = {1, editor_track::point_kind::end};
+		end.position = own->m_paths[1].points[segment_data::point::end];
+		if (false == start_extend(end))
+		{
+			WriteLog("SELFTEST branchlink: the branch end isn't free");
+			return selftest_result::handled;
+		}
+		m_extend.pressed = {-10000.f, -10000.f};
+		m_extend.mouse = glm::dvec3{target.x, m_extend.point.y, target.z};
+		m_extend.snap = editor_track::find_free_end(own, own->iCategoryFlag & 15, m_extend.mouse, 3.0, {own});
+		editor_track::branch_link link;
+		std::string reason;
+		plan_branch_link(link, reason);
+		log_link(link, reason);
+		finish_extend();
+		WriteLog(format("SELFTEST branchlink: switch now %.3f %.3f -> %.3f %.3f", own->m_paths[0].points[segment_data::point::start].x, own->m_paths[0].points[segment_data::point::start].z, own->m_paths[0].points[segment_data::point::end].x,
+		                own->m_paths[0].points[segment_data::point::end].z));
+		return selftest_result::handled;
+	}
 	if (command == "switchslide" || command == "switchreplace")
 	{
 		std::string name;

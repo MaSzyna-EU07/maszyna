@@ -204,6 +204,27 @@ class editor_track
 	static std::optional<straight_axis> main_axis(TTrack const &Switch);
 	static std::vector<segment_data> slid(TTrack const &Switch, double const Distance);
 
+	struct branch_end
+	{
+		glm::dvec3 position{0.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double grade{0.0};
+		double roll{0.0};
+	};
+	struct branch_link
+	{
+		bool valid{false};
+		double shift{0.0};
+		double trim{0.0};
+		double radius{0.0};
+		double before{0.0};
+		double after{0.0};
+		double shortfall{0.0};
+		std::vector<segment_data> pieces;
+	};
+	static double branch_radius(segment_data const &Diverging);
+	static branch_link link_branch(branch_end const &From, glm::dvec3 const &Slide, double const Radius, branch_end const &To, double const Kink);
+
 	struct snap_target
 	{
 		TTrack *track{nullptr};

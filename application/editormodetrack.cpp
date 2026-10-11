@@ -105,6 +105,28 @@ double const kJointRange{400.0}; // the ends of the paths are drawn for the trac
 ImU32 const kJointColor{IM_COL32(255, 255, 255, 200)};
 int const kRailCategory{1};
 
+editor_track::branch_end branch_start(segment_data const &Diverging)
+{
+	auto const tangent{bezier{Diverging}.first(1.0)};
+	return {Diverging.points[segment_data::point::end], plan_of(tangent), grade_of(tangent), static_cast<double>(Diverging.rolls[1])};
+}
+
+editor_track::branch_end branch_target(editor_track::snap_target const &Target)
+{
+	return {Target.position, plan_of(Target.direction), grade_of(Target.direction), Target.track != nullptr ? editor_track::joint_roll(*Target.track, Target.point) : 0.0};
+}
+
+std::string link_summary(editor_track::snap_target const &Target, editor_track::branch_link const &Link)
+{
+	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{"(noname)"}};
+	auto text{Link.radius > 0.0 ? format(STR_C("The branch leads into %s with an R %.0f m curve"), name.c_str(), Link.radius) : format(STR_C("The branch leads straight into %s"), name.c_str())};
+	if (std::abs(Link.shift) >= 0.005)
+		text += format(STR_C(", the switch moved %.2f m"), Link.shift);
+	if (Link.trim > 0.0)
+		text += format(STR_C(", %s shortened %.2f m"), name.c_str(), Link.trim);
+	return text;
+}
+
 std::optional<alignment::join_result> eased_join(alignment::join_request const &Request, editor_track::easing const &In, editor_track::easing const &Out)
 {
 	if (In.pieces.empty() && Out.pieces.empty())
@@ -3724,11 +3746,17 @@ std::string editor_mode::track_readout() const
 		}
 		editor_track::snap_target target;
 		auto const snapped{extend_snap(target) && target.track != nullptr};
+		editor_track::branch_link link;
+		std::string reason;
+		if (plan_branch_link(link, reason))
+			return link_summary(target, link);
 		if (snapped && pieces.empty())
 			return "no track fits to the end of " + name(target.track);
 		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) : format("L %.2f m   straight", length)};
 		if (snapped)
 			text += "\njoins " + name(target.track);
+		if (false == reason.empty())
+			text += "\n" + reason;
 		return text + "\n" + track_shaping(snapped);
 	}
 	if (m_lay.active)
@@ -4063,6 +4091,20 @@ bool editor_mode::start_extend(editor_track::snap_target const &End)
 	m_extend.origin = End;
 	m_extend.pressed = {io.MousePos.x, io.MousePos.y};
 	m_extend.active = true;
+	if (track->eType == tt_Switch && End.point.path == 1 && End.point.kind == editor_track::point_kind::end)
+	{
+		double low{0.0};
+		double high{0.0};
+		std::string reason;
+		auto const axis{editor_track::main_axis(*track)};
+		if (axis.has_value() && switch_slides(*track) && switch_room(*track, low, high, reason))
+		{
+			m_extend.slides = true;
+			m_extend.slide_low = low;
+			m_extend.slide_high = high - axis->length;
+		}
+		m_extend.line = editor_track::find_straight(*track, m_straights.tolerance).tracks;
+	}
 	return true;
 }
 
@@ -4301,6 +4343,13 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	editor_track::snap_target target;
 	if (extend_snap(target))
 	{
+		editor_track::branch_link link;
+		std::string reason;
+		if (plan_branch_link(link, reason))
+		{
+			m_join_last = {};
+			return link.pieces;
+		}
 		double length;
 		std::string error;
 		return join_pieces(tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}, tool.point, tool.direction, target, length, error);
@@ -4313,10 +4362,9 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 		auto const begin{plan_of(curve.first(0.0))};
 		auto const finish{plan_of(curve.first(1.0))};
 		auto const turn{glm::length(begin) > 1e-9 && glm::length(finish) > 1e-9 ? geometry::signed_angle(begin, finish) : 0.0};
-		if (std::abs(turn) > 1e-4)
+		if (auto const radius{editor_track::branch_radius(diverging)}; radius > 0.0)
 		{
 			int const side{turn > 0.0 ? 1 : -1};
-			auto const radius{curve.plan_length() / std::abs(turn)};
 			auto const &direction{tool.direction};
 			auto const centre{plan_of(tool.point) + glm::dvec2{-direction.y, direction.x} * (side * radius)};
 			auto const angle{geometry::signed_angle(plan_of(tool.point) - centre, plan_of(tool.mouse) - centre) * side};
@@ -4401,6 +4449,14 @@ void editor_mode::finish_extend()
 			m_track_point = m_extend.origin.point;
 		return;
 	}
+	std::string reason;
+	if (editor_track::branch_link link; plan_branch_link(link, reason))
+	{
+		finish_branch_link(link);
+		return;
+	}
+	if (false == reason.empty())
+		ui()->set_status(reason, true);
 	crossover_plan plan;
 	editor_track::snap_target target;
 	if (false == extend_snap(target) && plan_crossover(plan))
@@ -4924,6 +4980,11 @@ std::vector<segment_data> editor_mode::switch_preview() const
 		auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
 		return curved_switch_paths(tool.templates[tool.armed], tool.frame, tool.along, forward, side);
 	}
+	if (switch_link plan; plan_switch_link(plan))
+	{
+		plan.paths.insert(plan.paths.end(), plan.link.pieces.begin(), plan.link.pieces.end());
+		return plan.paths;
+	}
 	auto const &line{tool.line};
 	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
 	auto const forward{glm::dot(offset, line.direction) >= 0.0 ? 1 : -1};
@@ -5005,9 +5066,16 @@ bool editor_mode::start_switch_placement()
 void editor_mode::finish_switch_placement()
 {
 	auto &tool{m_switch};
+	switch_link plan;
+	auto const linked{plan_switch_link(plan)};
 	tool.placing = false;
 	if (tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
 		return;
+	if (linked)
+	{
+		insert_linked_switch(plan);
+		return;
+	}
 	if (tool.curved)
 	{
 		auto const sample{sample_at(tool.frame, tool.along)};
@@ -5023,6 +5091,8 @@ void editor_mode::finish_switch_placement()
 	glm::dvec2 const direction{tool.line.direction * static_cast<double>(forward)};
 	auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
 	insert_switch(tool.line, tool.along, forward, side);
+	if (false == plan.reason.empty())
+		ui()->set_status(plan.reason, true);
 }
 
 void editor_mode::insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side)
@@ -5276,6 +5346,11 @@ void editor_mode::draw_build_overlay() const
 			ImVec2 screen;
 			if (projection.project(target.position, screen))
 				drawlist->AddCircle(screen, 14.0f, IM_COL32(255, 60, 255, 255), 20, 3.0f);
+			editor_track::branch_link link;
+			std::string reason;
+			if (plan_branch_link(link, reason) && std::abs(link.shift) >= 0.005)
+				for (auto const &path : editor_track::slid(*m_extend.track, link.shift))
+					drawpath(path, overlay_color::grip);
 			for (auto const &piece : extend_pieces())
 				drawpath(piece, overlay_color::marked);
 		}
@@ -5292,8 +5367,19 @@ void editor_mode::draw_build_overlay() const
 		}
 	}
 	if (m_switch.placing)
+	{
 		for (auto const &piece : switch_preview())
 			drawpath(piece, overlay_color::marked);
+		switch_link plan;
+		auto const linked{plan_switch_link(plan)};
+		ImVec2 screen;
+		if (plan.target.track != nullptr && projection.project(plan.target.position, screen))
+		{
+			drawlist->AddCircle(screen, 14.0f, linked ? IM_COL32(255, 60, 255, 255) : overlay_color::invalid, 20, 3.0f);
+			if (false == linked && false == plan.reason.empty())
+				drawlist->AddText({screen.x + 18.0f, screen.y - 8.0f}, overlay_color::invalid, plan.reason.c_str());
+		}
+	}
 	if (m_lay.active)
 	{
 		auto const &lay{m_lay};
@@ -5754,6 +5840,162 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	Plan.insert.points[segment_data::point::start] = frog;
 	Plan.insert.points[segment_data::point::end] = Plan.paths[1].points[segment_data::point::end];
 	return true;
+}
+
+std::string editor_mode::link_problem(editor_track::snap_target const &Target, editor_track::branch_link const &Link) const
+{
+	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{"(noname)"}};
+	if (false == Link.valid)
+		return Link.shortfall > 0.0 ? format(STR_C("The branch can't lead into %s: the tracks are %.2f m too close for this switch with its curve"), name.c_str(), Link.shortfall) :
+		                              format(STR_C("The branch can't lead into %s"), name.c_str());
+	if (Link.trim > 0.0)
+	{
+		auto const &path{Target.track->m_paths[Target.point.path]};
+		if (has_controls(path) || geometry::chord_length(path) < Link.trim + 1.0)
+			return format(STR_C("%s would have to be shortened by %.2f m, it's too short or not straight"), name.c_str(), Link.trim);
+	}
+	return {};
+}
+
+bool editor_mode::plan_switch_link(switch_link &Plan) const
+{
+	auto const &tool{m_switch};
+	if (false == tool.placing || tool.curved || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()) || tool.line.tracks.empty() || tool.templates[tool.armed].double_slip)
+		return false;
+	auto const &shape{tool.templates[tool.armed]};
+	auto const &line{tool.line};
+	std::vector<TTrack const *> const exclude(line.tracks.begin(), line.tracks.end());
+	auto const category{line.tracks.front()->iCategoryFlag & 15};
+	auto const orient = [&](glm::dvec3 const &Toward) {
+		glm::dvec2 const offset{plan_of(Toward - tool.point)};
+		Plan.forward = glm::dot(offset, line.direction) >= 0.0 ? 1 : -1;
+		Plan.side = cross(line.direction * static_cast<double>(Plan.forward), offset) >= 0.0 ? 1 : -1;
+	};
+	auto const place = [&](double const Along) {
+		auto const point{line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * Along};
+		return editor_track::place_switch(shape, point, line.direction * static_cast<double>(Plan.forward), Plan.side, line.grade * Plan.forward);
+	};
+	auto const &io{ImGui::GetIO()};
+	if (false == m_cursor_override.has_value())
+		Plan.target = snap_free_end(tool.mouse, {io.MousePos.x, io.MousePos.y}, nullptr, category, exclude);
+	if (Plan.target.track == nullptr)
+		Plan.target = editor_track::find_free_end(nullptr, category, tool.mouse, kLaySnapRadius, exclude);
+	if (Plan.target.track != nullptr)
+		orient(Plan.target.position);
+	else
+	{
+		orient(tool.mouse);
+		auto const paths{place(tool.along)};
+		if (paths.size() < 2)
+			return false;
+		Plan.target = editor_track::find_free_end(nullptr, category, paths[1].points[segment_data::point::end], kLaySnapRadius, exclude);
+		if (Plan.target.track == nullptr)
+			return false;
+	}
+	auto const paths{place(tool.along)};
+	if (paths.size() < 2)
+		return false;
+	glm::dvec2 const direction{line.direction * static_cast<double>(Plan.forward)};
+	Plan.link = editor_track::link_branch(branch_start(paths[1]), {direction.x, line.grade * Plan.forward, direction.y}, editor_track::branch_radius(paths[1]), branch_target(Plan.target), glm::radians(m_joints.angle * 0.5));
+	Plan.reason = link_problem(Plan.target, Plan.link);
+	if (false == Plan.reason.empty())
+		return false;
+	Plan.along = tool.along + Plan.link.shift * Plan.forward;
+	auto const from{Plan.forward > 0 ? Plan.along : Plan.along - shape.length};
+	if (from < -1e-6 || from + shape.length > line.length + 1e-6)
+	{
+		Plan.reason = format(STR_C("The switch would have to move %.1f m, off the straight it stands on"), Plan.link.shift);
+		return false;
+	}
+	Plan.paths = place(Plan.along);
+	return true;
+}
+
+void editor_mode::insert_linked_switch(switch_link const &Plan)
+{
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	std::vector<TTrack *> removed;
+	if (false == place_switch_on_straight(m_switch.line, m_switch.templates[m_switch.armed], nullptr, Plan.along, Plan.forward, Plan.side, false, states, created, removed, switch_name_for_new()))
+		return;
+	auto const placed{created};
+	link_tracks(Plan.target, Plan.link, states, created);
+	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
+	straight_refresh();
+	m_switch.status.clear();
+	switch_placed(placed);
+	m_switch.status = link_summary(Plan.target, Plan.link) + (m_switch.status.empty() ? std::string{} : "\n" + m_switch.status);
+	ui()->set_status(m_switch.status, false);
+}
+
+bool editor_mode::plan_branch_link(editor_track::branch_link &Link, std::string &Reason) const
+{
+	auto const &tool{m_extend};
+	editor_track::snap_target target;
+	Reason.clear();
+	if (false == extend_snap(target) || tool.track == nullptr || tool.track->eType != tt_Switch || tool.track->m_paths.size() != 2 || tool.path != 1 || false == tool.atend)
+		return false;
+	if (std::find(tool.line.begin(), tool.line.end(), target.track) != tool.line.end())
+		return false;
+	auto const axis{editor_track::main_axis(*tool.track)};
+	if (false == axis.has_value())
+		return false;
+	auto const &main{tool.track->m_paths.front()};
+	auto const &diverging{tool.track->m_paths[1]};
+	auto const rise{grade_of(main.points[segment_data::point::end] - main.points[segment_data::point::start])};
+	Link = editor_track::link_branch(branch_start(diverging), {axis->direction.x, rise, axis->direction.y}, editor_track::branch_radius(diverging), branch_target(target), glm::radians(m_joints.angle * 0.5));
+	Reason = link_problem(target, Link);
+	if (false == Reason.empty())
+		return false;
+	if (std::abs(Link.shift) >= 0.005 && (false == tool.slides || Link.shift < tool.slide_low - 1e-6 || Link.shift > tool.slide_high + 1e-6))
+	{
+		Reason = format(STR_C("The switch would have to move %.1f m, there's no plain track for it there"), Link.shift);
+		return false;
+	}
+	return true;
+}
+
+void editor_mode::finish_branch_link(editor_track::branch_link const &Link)
+{
+	auto *own{m_extend.track};
+	auto const target{m_extend.snap};
+	m_extend.active = false;
+	auto link{Link};
+	bool const slides{std::abs(link.shift) >= 0.005};
+	if (slides && false == slide_switch(*own, link.shift))
+		return;
+	if (false == slides && false == link.pieces.empty())
+		link.pieces.front().points[segment_data::point::start] = own->m_paths[1].points[segment_data::point::end];
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	auto const linked{link_tracks(target, link, states, created)};
+	bool const changed{false == states.empty() || false == created.empty()};
+	push_track_snapshot(std::move(states), std::move(created));
+	if (slides && changed)
+		m_history.back().joined = true;
+	m_node = linked.empty() ? own : linked.back();
+	ui()->set_node(m_node);
+	straight_refresh();
+	ui()->set_status(link_summary(target, link), false);
+}
+
+std::vector<TTrack *> editor_mode::link_tracks(editor_track::snap_target const &Target, editor_track::branch_link const &Link, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created)
+{
+	auto *target{Target.track};
+	if (Link.trim > 0.0)
+	{
+		States.emplace_back(target, editor_track::capture(*target));
+		auto const run{glm::length(plan_of(Target.direction))};
+		editor_track::move_point(*target, Target.point, Target.position + Target.direction * (Link.trim / std::max(run, 1e-6)));
+		editor_track::commit({target});
+	}
+	std::vector<TTrack *> pieces;
+	for (auto const &piece : Link.pieces)
+		pieces.push_back(editor_track::create_path(*target, piece));
+	editor_track::commit(pieces);
+	digitize_drawn(pieces);
+	Created.insert(Created.end(), pieces.begin(), pieces.end());
+	return pieces;
 }
 
 std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, double const Radius, TTrack &Style, std::string const &Type)

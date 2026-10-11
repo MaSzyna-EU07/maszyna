@@ -10,12 +10,14 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorTrack.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorGroundFollow.hpp"
 
 #include "world/Track.h"
 #include "utilities/Globals.h"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -361,6 +363,116 @@ std::vector<segment_data> editor_track::slid(TTrack const &Switch, double const 
 		path.points[segment_data::point::end] += shift;
 	}
 	return paths;
+}
+
+double editor_track::branch_radius(segment_data const &Diverging)
+{
+	if (std::abs(Diverging.radius) > 0.5f)
+		return std::abs(Diverging.radius);
+	bezier const curve{Diverging};
+	auto const begin{plan_of(curve.first(0.0))};
+	auto const finish{plan_of(curve.first(1.0))};
+	if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9)
+		return 0.0;
+	auto const turn{std::abs(signed_angle(begin, finish))};
+	return turn > 1e-4 ? curve.plan_length() / turn : 0.0;
+}
+
+editor_track::branch_link editor_track::link_branch(branch_end const &From, glm::dvec3 const &Slide, double const Radius, branch_end const &To, double const Kink)
+{
+	branch_link result;
+	if (glm::length(From.direction) < 1e-9 || glm::length(To.direction) < 1e-9 || glm::length(plan_of(Slide)) < 1e-9)
+		return result;
+	auto const slide{glm::normalize(plan_of(Slide))};
+	auto const rise{Slide.y / glm::length(plan_of(Slide))};
+	auto const tangent{glm::normalize(From.direction)};
+	auto const into{glm::normalize(To.direction)};
+	auto const turn{signed_angle(tangent, into)};
+	auto const start{plan_of(From.position)};
+	auto const target{plan_of(To.position)};
+	auto const across{cross(into, slide)};
+	if (std::abs(turn) > glm::radians(170.0))
+		return result;
+	std::vector<segment_data> arc;
+	glm::dvec2 chord{0.0};
+	if (std::abs(turn) > Kink)
+	{
+		if (Radius < 1.0)
+			return result;
+		arc = arc_pieces(glm::dvec3{0.0}, tangent, 0.0, Radius, std::abs(turn), turn > 0.0 ? 1 : -1);
+		chord = plan_of(arc.back().points[segment_data::point::end]);
+		result.radius = Radius;
+	}
+	else if (std::abs(across) < 1e-6)
+		return result;
+	if (false == arc.empty() && std::abs(across) < std::sin(glm::radians(1.0)))
+	{
+		auto const gap{target - start - chord};
+		auto const determinant{cross(tangent, slide)};
+		if (std::abs(determinant) < 1e-6)
+			return result;
+		result.before = cross(gap, slide) / determinant;
+		result.shift = cross(tangent, gap) / determinant;
+		if (result.before < -0.01)
+		{
+			result.shortfall = -result.before * std::abs(std::sin(turn));
+			return result;
+		}
+		result.before = std::max(0.0, result.before);
+	}
+	else
+	{
+		result.shift = cross(into, target - start - chord) / across;
+		result.after = glm::dot(target - (start + slide * result.shift + chord), into);
+		if (result.after < -0.01)
+		{
+			result.trim = -result.after;
+			result.after = 0.0;
+		}
+	}
+	auto const origin{glm::dvec3{start.x, From.position.y, start.y} + glm::dvec3{slide.x, rise, slide.y} * result.shift};
+	auto const line = [](glm::dvec2 const &A, glm::dvec2 const &B) {
+		segment_data path;
+		path.points[segment_data::point::start] = {A.x, 0.0, A.y};
+		path.points[segment_data::point::end] = {B.x, 0.0, B.y};
+		return path;
+	};
+	auto cursor{plan_of(origin)};
+	if (result.before >= 0.01)
+	{
+		result.pieces.push_back(line(cursor, cursor + tangent * result.before));
+		cursor += tangent * result.before;
+	}
+	for (auto piece : arc)
+	{
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			piece.points[index] += glm::dvec3{cursor.x, 0.0, cursor.y};
+		result.pieces.push_back(piece);
+	}
+	cursor += chord;
+	if (result.after >= 0.01)
+		result.pieces.push_back(line(cursor, target));
+	else if (result.trim == 0.0 && false == result.pieces.empty())
+		result.pieces.back().points[segment_data::point::end] = {target.x, 0.0, target.y};
+	if (false == result.pieces.empty())
+	{
+		auto const height1{result.trim > 0.0 ? To.position.y + To.grade * result.trim : To.position.y};
+		ground_follow::follow(result.pieces, {origin.y, From.grade, height1, To.grade}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
+		std::vector<double> lengths;
+		double total{0.0};
+		for (auto const &piece : result.pieces)
+			total += lengths.emplace_back(bezier{piece}.plan_length());
+		double chainage{0.0};
+		for (std::size_t i = 0; i < result.pieces.size(); ++i)
+		{
+			auto const from{From.roll + (To.roll - From.roll) * chainage / std::max(total, 1e-6)};
+			chainage += lengths[i];
+			auto const to{From.roll + (To.roll - From.roll) * chainage / std::max(total, 1e-6)};
+			result.pieces[i].rolls = {static_cast<float>(from), static_cast<float>(to)};
+		}
+	}
+	result.valid = true;
+	return result;
 }
 
 void editor_track::edit::capture(TTrack &Track)
