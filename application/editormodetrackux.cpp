@@ -1307,6 +1307,7 @@ bool editor_mode::track_set_begin(bool const Rotate)
 	for (auto *track : m_track_drag)
 		states.emplace_back(track, editor_track::capture(*track));
 	push_track_snapshot(std::move(states));
+	records_watch_begin();
 	track_gizmo_hold();
 	return true;
 }
@@ -1340,6 +1341,7 @@ void editor_mode::track_set_end()
 	track_gizmo_settle();
 	m_track_dirty = true;
 	commit_track_drag(true);
+	records_watch_end();
 	m_track_set_using = false;
 	m_track_drag.clear();
 	m_track_set_joints.clear();

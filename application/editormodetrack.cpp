@@ -917,6 +917,7 @@ void editor_mode::track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_o
 	for (auto *dragged : m_track_drag)
 		states.emplace_back(dragged, editor_track::capture(*dragged));
 	push_track_snapshot(std::move(states));
+	records_watch_begin();
 	track_gizmo_hold();
 	for (auto &link : drag.switches)
 		for (auto &member : link.cluster)
@@ -1097,6 +1098,7 @@ void editor_mode::track_gizmo_end(TTrack &Track)
 		created.insert(created.end(), m_track_gizmo_drag.extra.begin(), m_track_gizmo_drag.extra.end());
 		m_track_gizmo_drag.extra.clear();
 	}
+	records_watch_end();
 	m_track_gizmo_using = false;
 	m_track_drag.clear();
 	m_track_drag_points.clear();
@@ -1237,6 +1239,146 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	snap.switch_records = switch_store::take_changes();
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
+}
+
+void editor_mode::records_watch_begin()
+{
+	auto &watch{m_record_watch};
+	watch = {};
+	watch.active = true;
+	watch.moving = m_track_drag;
+	for (auto const &link : m_track_gizmo_drag.switches)
+		for (auto const &member : link.cluster)
+			if (std::find(watch.moving.begin(), watch.moving.end(), member.first) == watch.moving.end())
+				watch.moving.push_back(member.first);
+	auto const lies_on = [](int const Record, TTrack const &Track) {
+		bezier const curve{Track.m_paths.front()};
+		for (auto const t : {0.0, 0.5, 1.0})
+			if (false == alignment_store::on_record(Record, curve.point(t), alignment_store::tolerance).has_value())
+				return false;
+		return true;
+	};
+	for (auto *track : watch.moving)
+	{
+		auto const &path{track->m_paths.front()};
+		watch.before.emplace_back(path.points[segment_data::point::start], path.points[segment_data::point::end]);
+		if (track->eType != tt_Normal)
+			continue;
+		if (auto const found{alignment_store::on_track(*track)})
+			watch.on[found->record].push_back(track);
+	}
+	for (auto const &entry : watch.on)
+	{
+		bool whole{true};
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && track->eType == tt_Normal && false == track->m_paths.empty() &&
+			    std::find(watch.moving.begin(), watch.moving.end(), track) == watch.moving.end() && lies_on(entry.first, *track))
+			{
+				whole = false;
+				break;
+			}
+		if (whole)
+			watch.whole.insert(entry.first);
+	}
+}
+
+// what the drag of the gizmo did to the kept alignments and switches: an alignment all of whose paths were moved or turned as a
+// whole goes along with them, paths pulled out of an alignment or given another cant are told about, as are switches bent out
+// of the shape of their type; switches moved as a whole take their records along
+void editor_mode::records_watch_end()
+{
+	auto &watch{m_record_watch};
+	if (false == watch.active)
+		return;
+	watch.active = false;
+	auto const index = [&](TTrack const *Track) { return static_cast<std::size_t>(std::find(watch.moving.begin(), watch.moving.end(), Track) - watch.moving.begin()); };
+	auto const chord = [](glm::dvec3 const &Start, glm::dvec3 const &End) {
+		auto const direction{plan_of(End - Start)};
+		return glm::length(direction) > 1e-9 ? glm::normalize(direction) : glm::dvec2{0.0, 1.0};
+	};
+	std::vector<std::string> notes;
+	int followed{0};
+	double departure{0.0}, cant{0.0};
+	int departed{0};
+	std::string layer;
+	for (auto const &[record, tracks] : watch.on)
+	{
+		if (watch.whole.count(record) > 0)
+		{
+			auto const &first{watch.before[index(tracks.front())]};
+			auto const &path{tracks.front()->m_paths.front()};
+			auto const from{chord(first.first, first.second)};
+			auto const to{chord(path.points[segment_data::point::start], path.points[segment_data::point::end])};
+			auto const angle{signed_angle(from, to)};
+			bool rigid{true};
+			for (auto *track : tracks)
+			{
+				auto const &was{watch.before[index(track)]};
+				auto const &now{track->m_paths.front()};
+				for (auto const &[old, current] : {std::pair{was.first, now.points[segment_data::point::start]}, std::pair{was.second, now.points[segment_data::point::end]}})
+					rigid = rigid && glm::distance(plan_of(path.points[segment_data::point::start]) + turned(plan_of(old) - plan_of(first.first), angle), plan_of(current)) <= 0.01;
+			}
+			if (rigid)
+			{
+				bool const moved{glm::distance(first.first, path.points[segment_data::point::start]) > 1e-4 || std::abs(angle) > 1e-7};
+				if (moved)
+				{
+					alignment_store::transform(record, first.first, from, path.points[segment_data::point::start], to);
+					++followed;
+				}
+				continue;
+			}
+		}
+		auto const &records{alignment_store::records()};
+		auto const gauge{records[record].design.norms.gauge};
+		for (auto *track : tracks)
+		{
+			if (track->m_editorremoved)
+				continue;
+			auto const &path{track->m_paths.front()};
+			bezier const curve{path};
+			double largest{0.0};
+			for (auto const t : {0.0, 0.5, 1.0})
+			{
+				auto const found{alignment_store::on_record(record, curve.point(t), 1000.0)};
+				largest = std::max(largest, found.has_value() ? found->offset : 1000.0);
+			}
+			if (largest > alignment_store::tolerance)
+			{
+				++departed;
+				departure = std::max(departure, largest);
+				layer = scene::Layers.layer(records[record].layer).name;
+				continue;
+			}
+			for (auto const end : {0, 1})
+				if (auto const found{alignment_store::on_record(record, curve.point(end), alignment_store::tolerance)})
+				{
+					auto const actual{gauge * std::sin(std::abs(glm::radians(static_cast<double>(path.rolls[end]))))};
+					cant = std::max(cant, std::abs(actual - alignment_store::cant_at(record, found->chainage)));
+				}
+		}
+	}
+	if (followed > 0)
+		notes.push_back(STR("The kept design of the line went along with its paths"));
+	if (departed > 0)
+		notes.push_back(format(STR_C("%d path(s) left the design kept in %s, by up to %.2f m: Ctrl+Z takes it back, the route design lays them by the design again or forgets it"), departed, layer.c_str(), departure));
+	if (cant > 5.0)
+		notes.push_back(format(STR_C("The cant differs from the kept design by up to %.0f mm"), cant));
+	switch_store::follow();
+	for (auto *track : watch.moving)
+		if (track->eType == tt_Switch && false == track->m_editorremoved)
+			if (auto const known{switch_store::named(*track)}; known.has_value() && false == switch_store::of(*track).has_value())
+				notes.push_back(format(STR_C("Switch %s lost the shape of its type %s: Ctrl+Z takes it back"), track->name().c_str(), switch_store::label(*known).c_str()));
+	records_to_history();
+	if (false == notes.empty())
+	{
+		std::string text;
+		for (auto const &note : notes)
+			text += (text.empty() ? "" : "\n") + note;
+		ui()->set_status(text, departed > 0 || cant > 5.0 || notes.size() > static_cast<std::size_t>(followed > 0 ? 1 : 0));
+		WriteLog("Editor: " + text, logtype::generic);
+	}
+	watch = {};
 }
 
 void editor_mode::records_to_history()
@@ -5291,6 +5433,7 @@ void editor_mode::point_drag_update()
 		for (auto *dragged : m_track_drag)
 			states.emplace_back(dragged, editor_track::capture(*dragged));
 		push_track_snapshot(std::move(states));
+		records_watch_begin();
 	}
 	screen_projection const projection;
 	glm::dvec3 position;
@@ -5324,6 +5467,7 @@ void editor_mode::point_drag_finish()
 	}
 	m_track_snap = {};
 	commit_track_drag(true);
+	records_watch_end();
 	m_track_drag.clear();
 	m_track_drag_points.clear();
 	m_track_joints.clear();

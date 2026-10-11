@@ -85,6 +85,12 @@ int departed(std::vector<TTrack *> const &Tracks, double &Departure);
 // keeps the design in the file of the layer, in place of the one with the same ends
 int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer);
 void forget(int const Index);
+// the point on the line of the stored alignment, if it lies by it within the reach
+std::optional<hit> on_record(int const Index, glm::dvec3 const &Point, double const Reach);
+// cant of the design at the chainage, mm
+double cant_at(int const Index, double const Chainage);
+// the stored alignment moved and turned in the plan the way the point and the direction were
+void transform(int const Index, glm::dvec3 const &From, glm::dvec2 const &Fromdirection, glm::dvec3 const &To, glm::dvec2 const &Todirection);
 // km of the point on the stored alignments, if it lies on one
 std::optional<double> chainage_at(glm::dvec3 const &Point);
 // the records as they were before the changes made since the last call, if there were any; the current ones become the base

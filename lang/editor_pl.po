@@ -5379,3 +5379,15 @@ msgstr "Kilometraż początku rozjazdu; brany z planu sytuacyjnego zapisanego w 
 
 msgid "Slip switches and crossings"
 msgstr "Rozjazdy krzyżowe i skrzyżowania"
+
+msgid "The kept design of the line went along with its paths"
+msgstr "Zapisany projekt linii przesunął się razem z jej odcinkami"
+
+msgid "%d path(s) left the design kept in %s, by up to %.2f m: Ctrl+Z takes it back, the route design lays them by the design again or forgets it"
+msgstr "Odcinki (%d) zeszły z projektu zapisanego w %s, maks. o %.2f m: Ctrl+Z cofa, projekt trasy ułoży je ponownie według projektu albo go zapomni"
+
+msgid "The cant differs from the kept design by up to %.0f mm"
+msgstr "Przechyłka różni się od zapisanego projektu maks. o %.0f mm"
+
+msgid "Switch %s lost the shape of its type %s: Ctrl+Z takes it back"
+msgstr "Rozjazd %s stracił kształt swojego typu %s: Ctrl+Z cofa"

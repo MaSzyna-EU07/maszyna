@@ -38,6 +38,10 @@ struct record
 	std::vector<std::string> parts; // the switch, the switches of a slip, the paths of a crossing
 	glm::dvec3 start{0.0}; // of the first part
 	glm::dvec2 direction{0.0, 1.0};
+	// ends of the main and the diverging track of the first part seen from its start: along, across, along, across. it stays the
+	// same as long as the switch is moved or turned as a whole, it changes when the switch gets bent out of its shape
+	glm::dvec4 shape{0.0};
+	bool shaped{false};
 	std::optional<double> km;
 	std::string number{"-"};
 	std::string source{"designed"}; // designed: from the catalogue, measured: copied from a switch of the scenery
@@ -46,8 +50,12 @@ struct record
 void reset();
 void load();
 std::vector<record> const &records();
-// the record of the switch, slip or crossing the track is a part of, while its first part starts where the record says
+// the record of the switch, slip or crossing the track is a part of, while its first part keeps the shape the record says
 std::optional<record> of(TTrack const &Track);
+// the record of the track by its name alone, also when the switch lost its shape
+std::optional<record> named(TTrack const &Track);
+// records whose switches were moved or turned as a whole take their new place and km; returns their names
+std::vector<std::string> follow();
 // radius of the diverging track: of the type, bent with the main track for an arc switch
 double branch_radius(record const &Record);
 // keeps the record in the file of the layer, in place of the one with the same name

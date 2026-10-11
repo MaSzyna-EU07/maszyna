@@ -36,6 +36,7 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -636,6 +637,17 @@ class editor_mode : public application_mode, private editor_track::observer
 	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	// changes of the kept alignments and switches go into the last step of the history, made just before them
 	void records_to_history();
+	// the paths a drag of the gizmo takes, to tell after it what became of the kept alignments and switches
+	struct record_watch
+	{
+		bool active{false};
+		std::vector<TTrack *> moving;
+		std::vector<std::pair<glm::dvec3, glm::dvec3>> before; // ends of the first path of each moving track
+		std::map<int, std::vector<TTrack *>> on; // the kept alignments and the moving paths on them
+		std::set<int> whole; // the kept alignments all of whose paths move
+	} m_record_watch;
+	void records_watch_begin();
+	void records_watch_end();
 	editor_track::point_ref m_track_point;
 	std::vector<TTrack *> m_track_drag;
 	std::vector<std::pair<TTrack *, editor_track::point_ref>> m_track_drag_points;

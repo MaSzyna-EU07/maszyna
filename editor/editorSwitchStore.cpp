@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSwitchStore.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorAlignmentStore.hpp"
 
 #include "world/Track.h"
 #include "simulation/simulation.h"
@@ -39,7 +40,8 @@ bool g_loaded{false};
 
 // format of the lines, coordinates in the space of the file:
 //   <switch|slip|crossing> <name> <type> <rail> <R> <n of 1:n> <hand L|R|-> <a> <b> <R of the main track, + right, - left, 0 straight>
-//     parts <count> <names>... start <x y z> dir <x z> km <km|-> number <label|-> source <designed|measured>
+//     parts <count> <names>... shape <main end along, across> <diverging end along, across> start <x y z> dir <x z>
+//     km <km|-> number <label|-> source <designed|measured>
 std::string word(std::string const &Text)
 {
 	if (Text.empty())
@@ -69,6 +71,32 @@ bool in_place(record const &Record, TTrack const &Track)
 	return geometry::plan_distance(Track.m_paths.front().points[segment_data::point::start], Record.start) <= kTolerance && glm::dot(direction_of(Track), Record.direction) > 0.9999;
 }
 
+glm::dvec4 measure(TTrack const &Track)
+{
+	auto const &main{Track.m_paths.front()};
+	auto const start{plan_of(main.points[segment_data::point::start])};
+	auto const along{direction_of(Track)};
+	glm::dvec2 const across{-along.y, along.x};
+	auto const local = [&](glm::dvec3 const &Point) {
+		auto const offset{plan_of(Point) - start};
+		return glm::dvec2{glm::dot(offset, along), glm::dot(offset, across)};
+	};
+	auto const mainend{local(main.points[segment_data::point::end])};
+	auto const branchend{Track.m_paths.size() > 1 ? local(Track.m_paths[1].points[segment_data::point::end]) : glm::dvec2{0.0}};
+	return {mainend.x, mainend.y, branchend.x, branchend.y};
+}
+
+bool in_shape(record const &Record, TTrack const &Track)
+{
+	if (false == Record.shaped)
+		return in_place(Record, Track);
+	auto const now{measure(Track)};
+	for (int i = 0; i < 4; ++i)
+		if (std::abs(now[i] - Record.shape[i]) > kTolerance)
+			return false;
+	return true;
+}
+
 void mark(scene::layer_handle const Layer)
 {
 	if (false == scene::Layers.valid(Layer))
@@ -89,6 +117,8 @@ void mark(scene::layer_handle const Layer)
 		                 entry.parts.size())};
 		for (auto const &part : entry.parts)
 			text += ' ' + word(part);
+		if (entry.shaped)
+			text += format(" shape %.4f %.4f %.4f %.4f", entry.shape.x, entry.shape.y, entry.shape.z, entry.shape.w);
 		text += format(" start %.4f %.4f %.4f dir %.9f %.9f km ", start.x, start.y, start.z, direction.x, direction.y);
 		text += entry.km.has_value() ? format("%.3f", *entry.km / 1000.0) : std::string{"-"};
 		text += " number " + word(entry.number) + " source " + word(entry.source);
@@ -135,7 +165,13 @@ void load()
 				line >> part;
 			glm::dvec3 start{0.0}, ahead{0.0};
 			glm::dvec2 direction{0.0, 1.0};
-			line >> keyword >> start.x >> start.y >> start.z >> keyword >> direction.x >> direction.y >> keyword >> km >> keyword >> entry.number >> keyword >> entry.source;
+			line >> keyword;
+			if (keyword == "shape")
+			{
+				line >> entry.shape.x >> entry.shape.y >> entry.shape.z >> entry.shape.w >> keyword;
+				entry.shaped = true;
+			}
+			line >> start.x >> start.y >> start.z >> keyword >> direction.x >> direction.y >> keyword >> km >> keyword >> entry.number >> keyword >> entry.source;
 			if (line.fail())
 				continue;
 			entry.start = context.to_world(start);
@@ -159,21 +195,49 @@ std::vector<record> const &records()
 	return g_records;
 }
 
-std::optional<record> of(TTrack const &Track)
+std::optional<record> named(TTrack const &Track)
 {
 	load();
 	auto const &name{Track.name()};
 	if (name.empty())
 		return std::nullopt;
 	for (auto const &entry : g_records)
-	{
-		if (std::find(entry.parts.begin(), entry.parts.end(), name) == entry.parts.end())
-			continue;
-		auto const *first{usable(entry.parts.front())};
-		if (first != nullptr && in_place(entry, *first))
+		if (std::find(entry.parts.begin(), entry.parts.end(), name) != entry.parts.end())
 			return entry;
-	}
 	return std::nullopt;
+}
+
+std::optional<record> of(TTrack const &Track)
+{
+	auto const found{named(Track)};
+	if (false == found.has_value())
+		return std::nullopt;
+	auto const *first{usable(found->parts.front())};
+	if (first == nullptr || false == in_shape(*found, *first))
+		return std::nullopt;
+	return found;
+}
+
+std::vector<std::string> follow()
+{
+	load();
+	std::vector<std::string> moved;
+	std::set<scene::layer_handle> layers;
+	for (auto &entry : g_records)
+	{
+		auto const *first{usable(entry.parts.front())};
+		if (first == nullptr || false == entry.shaped || false == in_shape(entry, *first) || in_place(entry, *first))
+			continue;
+		entry.start = first->m_paths.front().points[segment_data::point::start];
+		entry.direction = direction_of(*first);
+		entry.km = alignment_store::chainage_at(entry.start);
+		moved.push_back(entry.name);
+		layers.insert(entry.layer);
+	}
+	for (auto const layer : layers)
+		mark(layer);
+	g_changed = g_changed || false == moved.empty();
+	return moved;
 }
 
 double branch_radius(record const &Record)
@@ -188,6 +252,11 @@ double branch_radius(record const &Record)
 void put(record Entry, scene::layer_handle const Layer)
 {
 	load();
+	if (auto const *first{usable(Entry.parts.empty() ? std::string{} : Entry.parts.front())})
+	{
+		Entry.shape = measure(*first);
+		Entry.shaped = true;
+	}
 	auto const existing{std::find_if(g_records.begin(), g_records.end(), [&](record const &Other) { return Other.name == Entry.name && Other.kind == Entry.kind; })};
 	if (existing != g_records.end())
 	{
@@ -222,6 +291,7 @@ void forget(std::string const &Name)
 void tidy()
 {
 	load();
+	follow();
 	std::set<scene::layer_handle> layers;
 	for (auto &entry : g_records)
 	{

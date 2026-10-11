@@ -607,6 +607,49 @@ void forget(int const Index)
 	mark(layer);
 }
 
+std::optional<hit> on_record(int const Index, glm::dvec3 const &Point, double const Reach)
+{
+	load();
+	if (Index < 0 || Index >= static_cast<int>(g_records.size()))
+		return std::nullopt;
+	return project(static_cast<std::size_t>(Index), plan_of(Point), Reach);
+}
+
+double cant_at(int const Index, double const Chainage)
+{
+	load();
+	if (Index < 0 || Index >= static_cast<int>(g_records.size()))
+		return 0.0;
+	return alignment::evaluate(g_records[Index].result, Chainage).cant;
+}
+
+void transform(int const Index, glm::dvec3 const &From, glm::dvec2 const &Fromdirection, glm::dvec3 const &To, glm::dvec2 const &Todirection)
+{
+	load();
+	if (Index < 0 || Index >= static_cast<int>(g_records.size()))
+		return;
+	auto &entry{g_records[Index]};
+	auto const angle{geometry::signed_angle(glm::normalize(Fromdirection), glm::normalize(Todirection))};
+	auto const lift{To.y - From.y};
+	auto const place = [&](glm::dvec3 const &Point) {
+		auto const planar{plan_of(To) + geometry::turned(plan_of(Point) - plan_of(From), angle)};
+		return glm::dvec3{planar.x, Point.y + lift, planar.y};
+	};
+	auto &design{entry.design};
+	design.start = place(design.start);
+	design.end = place(design.end);
+	design.start_direction = geometry::turned(design.start_direction, angle);
+	design.end_direction = geometry::turned(design.end_direction, angle);
+	for (auto &vertex : design.vertices)
+		vertex.position = plan_of(place({vertex.position.x, 0.0, vertex.position.y}));
+	finish(entry);
+	entry.elements.clear();
+	for (auto const &e : entry.result.elements)
+		entry.elements.push_back(describe(e));
+	g_changed = true;
+	mark(entry.layer);
+}
+
 std::optional<double> chainage_at(glm::dvec3 const &Point)
 {
 	auto const found{at(Point)};
