@@ -5313,3 +5313,36 @@ msgstr "pochylenie zmienione o %+.1f‰"
 
 msgid "cant %.0f mm (%+.0f mm)"
 msgstr "przechyłka %.0f mm (%+.0f mm)"
+
+msgid "\nCurves read from the design kept in the scenery: %d"
+msgstr "\nŁuki odczytane z projektu zapisanego w scenerii: %d"
+
+msgid "\nCurves recognized from the paths, the scenery keeps no design for them"
+msgstr "\nŁuki rozpoznane z odcinków, sceneria nie ma dla nich zapisanego projektu"
+
+msgid "Km of the start"
+msgstr "Km początku"
+
+msgid "Chainage of the start of the fragment, kept with the design in the scenery; the vertical profile of these paths counts from it"
+msgstr "Kilometraż początku fragmentu, zapisywany z projektem w scenerii; profil podłużny tych odcinków liczy się od niego"
+
+msgid "The design kept in %s for this fragment departs from its paths by up to %.2f m"
+msgstr "Projekt zapisany w %s dla tego fragmentu odbiega od jego odcinków o maks. %.2f m"
+
+msgid "Take the kept design"
+msgstr "Weź zapisany projekt"
+
+msgid "The kept design is loaded, applying it lays the paths by it again"
+msgstr "Wczytano zapisany projekt, zastosowanie ułoży odcinki ponownie według niego"
+
+msgid "Loads the design kept in the scenery in place of the one read from the paths; nothing changes until it's applied"
+msgstr "Wczytuje projekt zapisany w scenerii w miejsce odczytanego z odcinków; nic się nie zmienia do zastosowania"
+
+msgid "Forget the kept design"
+msgstr "Zapomnij zapisany projekt"
+
+msgid "The kept design will be removed from "
+msgstr "Zapisany projekt zostanie usunięty z "
+
+msgid "The paths stay as they are, the scenery no longer keeps a design for them"
+msgstr "Odcinki zostają bez zmian, sceneria przestaje przechowywać dla nich projekt"

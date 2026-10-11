@@ -769,6 +769,10 @@ class editor_mode : public application_mode, private editor_track::observer
 		int vertex{-1};
 		int grip{-1};
 		bool single{true}; // one curve between its straights, instead of the whole line
+		double origin{0.0}; // km of the start, m
+		int designed{0}; // vertices whose parameters came from the alignment kept in the scenery
+		int departed{-1}; // alignment kept in the scenery near the fragment, which its paths no longer follow
+		double departure{0.0};
 	};
 	void render_route_ui();
 	bool render_route_parameters();
@@ -780,7 +784,11 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool route_from_curve(TTrack &Track);
 	bool route_from_line(TTrack &Track);
 	alignment::vertex route_vertex_of(editor_track::curve const &Curve) const;
-	bool route_load(TTrack &Track) { return m_route.single ? route_from_curve(Track) : route_from_line(Track); }
+	bool route_load(TTrack &Track);
+	void route_read_stored();
+	void route_take_stored(int const Index);
+	void route_store();
+	void render_route_stored();
 	void route_update() { m_route.result = alignment::compute(m_route.design); }
 	void route_apply();
 	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);

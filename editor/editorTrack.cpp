@@ -11,6 +11,7 @@ http:
 #include "editor/editorTrack.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorAlignmentStore.hpp"
 
 #include "world/Track.h"
 #include "vehicle/DynObj.h"
@@ -1754,6 +1755,26 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 			Curve.compound = true;
 			Curve.radius = arcs.front().radius;
 			Curve.arcs = arcs;
+		}
+	}
+	if (Curve.reversals == 0)
+	{
+		if (auto const designed{alignment_store::vertex_of(Run)})
+		{
+			auto const &shape{designed->shape};
+			Curve.designed = shape;
+			Curve.radius = shape.radius;
+			Curve.transition_in = shape.transition_in;
+			Curve.transition_out = shape.transition_out;
+			Curve.cant = shape.cant;
+			Curve.compound = shape.compound && false == shape.arcs.empty();
+			Curve.arcs.clear();
+			if (Curve.compound)
+			{
+				Curve.arcs.push_back({shape.radius, shape.share, 0.0});
+				for (auto const &arc : shape.arcs)
+					Curve.arcs.push_back({arc.radius, arc.share, arc.transition});
+			}
 		}
 	}
 	Curve.from = run.front().first;

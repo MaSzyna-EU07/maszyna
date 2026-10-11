@@ -28,6 +28,7 @@ extern char **environ;
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorGroundMesh.hpp"
 #include "editor/editorFormat.hpp"
+#include "editor/editorAlignmentStore.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIcons.hpp"
 #include "utilities/translation.h"
@@ -495,6 +496,7 @@ void editor_mode::editormode_input::poll()
 }
 
 editor_mode::editor_mode() {
+	alignment_store::reset();
 	m_userinterface = std::make_shared<editor_ui>();
 	// the area fill settings live in the node bank window, in the tab of the fill mode
 	ui()->set_fill_options([this]() { render_area_fill(); });

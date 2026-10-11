@@ -11,12 +11,14 @@ http:
 
 #include <array>
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 #include <glm/glm.hpp>
 
 #include "world/Segment.h"
+#include "editor/editorAlignment.hpp"
 #include "utilities/Classes.h"
 
 class TTrack;
@@ -212,6 +214,8 @@ class editor_track
 			double transition{0.0};
 		};
 		std::vector<arc_part> arcs;
+		// the parameters of the vertex in the alignment kept in the scenery, in the direction of the run, when the paths follow one
+		std::optional<alignment::vertex> designed;
 	};
 	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
 	// curve made of the given paths, each with the flag of being run from its start

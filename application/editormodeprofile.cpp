@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
+#include "editor/editorAlignmentStore.hpp"
 #include "editor/editorGeometry.hpp"
 
 #include "world/Track.h"
@@ -390,7 +391,16 @@ void editor_mode::profile_take(editor_track::route Route, TTrack *From, TTrack *
 	state.selected = -1;
 	profile_resample();
 	if (false == profile_restore())
+	{
 		profile_recognize();
+		if (false == state.samples.empty())
+		{
+			auto const km{alignment_store::chainage_at(state.samples.front().position)};
+			auto const further{alignment_store::chainage_at(editor_track::sampled_position(state.samples, std::min(state.route.length, 5.0)))};
+			if (km.has_value() && further.has_value() && *further > *km)
+				state.origin = *km;
+		}
+	}
 	profile_fit_view();
 }
 

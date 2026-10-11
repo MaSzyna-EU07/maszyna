@@ -13,6 +13,7 @@ http:
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
+#include "editor/editorAlignmentStore.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
 
@@ -2411,6 +2412,7 @@ bool editor_mode::route_from_curve(TTrack &Track)
 		return false;
 	auto &design{m_route.design};
 	auto vertex{route_vertex_of(curve)};
+	m_route.designed = curve.designed.has_value() ? 1 : 0;
 	if (curve.reversals == 0)
 	{
 		design.vertices = {vertex};
@@ -2430,6 +2432,8 @@ bool editor_mode::route_from_curve(TTrack &Track)
 
 alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve) const
 {
+	if (Curve.designed.has_value())
+		return *Curve.designed;
 	alignment::vertex vertex;
 	vertex.radius = Curve.radius > 0.0 ? std::max(10.0, std::round(Curve.radius)) : 1000.0;
 	route_recommend(vertex);
@@ -2442,6 +2446,110 @@ alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve)
 	vertex.reverse_turn = std::abs(Curve.turn) > glm::pi<double>();
 	compound_from(Curve, vertex);
 	return vertex;
+}
+
+bool editor_mode::route_load(TTrack &Track)
+{
+	m_route.designed = 0;
+	if (false == (m_route.single ? route_from_curve(Track) : route_from_line(Track)))
+		return false;
+	route_read_stored();
+	return true;
+}
+
+// the design kept in the scenery for the fragment takes the place of the one read from the paths; its chainage is carried on
+void editor_mode::route_read_stored()
+{
+	auto &route{m_route};
+	route.departed = -1;
+	route.departure = 0.0;
+	route.origin = 0.0;
+	if (route.chain.tracks.empty())
+		return;
+	auto const &chain{route.chain};
+	bool reversed;
+	auto const index{alignment_store::find(chain.start, chain.end, reversed)};
+	if (index >= 0 && false == reversed && false == route.single)
+	{
+		route_take_stored(index);
+	}
+	else if (auto const km{alignment_store::chainage_at(chain.start)})
+	{
+		auto const ahead{chain.start + glm::dvec3{route.design.start_direction.x, 0.0, route.design.start_direction.y}};
+		auto const further{alignment_store::chainage_at(ahead)};
+		if (further.has_value() && *further > *km)
+			route.origin = *km;
+	}
+	route.departed = alignment_store::departed(chain.tracks, route.departure);
+	if (route.designed > 0)
+		route.status += format(STR_C("\nCurves read from the design kept in the scenery: %d"), route.designed);
+	else if (false == route.design.vertices.empty())
+		route.status += STR_C("\nCurves recognized from the paths, the scenery keeps no design for them");
+}
+
+void editor_mode::route_take_stored(int const Index)
+{
+	auto &route{m_route};
+	auto const &records{alignment_store::records()};
+	if (Index < 0 || Index >= static_cast<int>(records.size()))
+		return;
+	auto const &stored{records[Index]};
+	auto &design{route.design};
+	design.vertices = stored.design.vertices;
+	design.shape = stored.design.shape;
+	design.speed = stored.design.speed;
+	design.norms = stored.design.norms;
+	design.transition_pieces = stored.design.transition_pieces;
+	design.arc_piece_angle = stored.design.arc_piece_angle;
+	route.designed = static_cast<int>(design.vertices.size());
+	route.origin = stored.origin;
+	route.vertex = route.grip = -1;
+	route_update();
+}
+
+void editor_mode::render_route_stored()
+{
+	auto &route{m_route};
+	ImGui::PushItemWidth(120.0f);
+	auto km{route.origin / 1000.0};
+	if (ImGui::InputDouble(STR_C("Km of the start"), &km, 0.0, 0.0, "%.3f"))
+		route.origin = km * 1000.0;
+	ImGui::PopItemWidth();
+	item_tooltip("Chainage of the start of the fragment, kept with the design in the scenery; the vertical profile of these paths counts from it");
+	auto const &records{alignment_store::records()};
+	if (route.departed < 0 || route.departed >= static_cast<int>(records.size()))
+		return;
+	auto const &layer{scene::Layers.layer(records[route.departed].layer).name};
+	ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), STR_C("The design kept in %s for this fragment departs from its paths by up to %.2f m"), layer.c_str(), route.departure);
+	if (ImGui::SmallButton(STR_C("Take the kept design")))
+	{
+		route_take_stored(route.departed);
+		route.status = STR_C("The kept design is loaded, applying it lays the paths by it again");
+	}
+	item_tooltip("Loads the design kept in the scenery in place of the one read from the paths; nothing changes until it's applied");
+	ImGui::SameLine();
+	if (ImGui::SmallButton(STR_C("Forget the kept design")))
+	{
+		alignment_store::forget(route.departed);
+		route.departed = -1;
+		route.status = STR_C("The kept design will be removed from ") + layer + STR_C(" on save");
+	}
+	item_tooltip("The paths stay as they are, the scenery no longer keeps a design for them");
+}
+
+void editor_mode::route_store()
+{
+	auto &route{m_route};
+	if (false == route.result.valid || route.chain.tracks.empty() || scene::Layers.empty())
+		return;
+	auto layer{scene::Layers.resolve(route.chain.tracks.front()->layer())};
+	if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
+		layer = scene::Layers.active();
+	if (false == scene::Layers.valid(layer))
+		layer = 1;
+	alignment_store::store(route.design, route.result, route.origin, layer);
+	route.departed = -1;
+	route.departure = 0.0;
 }
 
 bool editor_mode::route_from_line(TTrack &Track)
@@ -2457,6 +2565,7 @@ bool editor_mode::route_from_line(TTrack &Track)
 		return false;
 	auto &design{route.design};
 	auto const found{editor_track::recognize_line(route.chain, m_straights.tolerance, design.norms.gauge)};
+	route.designed = 0;
 	if (false == found.empty())
 	{
 		design.vertices.clear();
@@ -2471,6 +2580,8 @@ bool editor_mode::route_from_line(TTrack &Track)
 			else
 			{
 				vertex = route_vertex_of(entry.shape);
+				if (entry.shape.designed.has_value())
+					++route.designed;
 			}
 			vertex.position = entry.position;
 			design.vertices.push_back(vertex);
@@ -2583,6 +2694,7 @@ void editor_mode::route_apply()
 		}
 		route_update();
 	}
+	route_store();
 	route.status = STR_C("Re-laid ") + std::to_string(chain.tracks.size()) + STR_C(" paths") + (added > 0 ? STR_C(", added ") + std::to_string(added) : std::string{});
 	if (startextension > 0.0 || endextension > 0.0)
 		route.status += format(", the curve took over %.2f / %.2f m of the adjoining straights", startextension, endextension);
@@ -2935,6 +3047,7 @@ void editor_mode::render_route_ui()
 		return;
 	}
 	item_tooltip("Reads the curves of the line from the scenery again, dropping the changes not applied");
+	render_route_stored();
 	auto changed{render_route_vertices()};
 	if (ImGui::CollapsingHeader(STR_C("Design speed and limits")))
 		changed |= render_route_parameters();
@@ -3115,9 +3228,9 @@ void editor_mode::render_route_result()
 	if (ImGui::TreeNode(STR_C("Elements")))
 	{
 		ImGui::TextDisabled(STR_C("Straight available beyond the ends: %.2f / %.2f m"), design.start_reserve, design.end_reserve);
-		char const *kinds[] = {"straight", "transition", "curve", "transition"};
+		char const *kinds[] = {"straight", "transition", "curve", "transition", "spiral"};
 		for (auto const &e : result.elements)
-			ImGui::Text("%8.2f m  %-10s  L %8.2f m%s", e.chainage, kinds[static_cast<int>(e.kind)], e.length, e.kind == alignment::element_kind::straight ? "" : ("  R " + std::to_string(static_cast<int>(std::round(e.radius))) + " m").c_str());
+			ImGui::Text("km %s  %-10s  L %8.2f m%s", profile::format_chainage(m_route.origin + e.chainage).c_str(), kinds[static_cast<int>(e.kind)], e.length, e.kind == alignment::element_kind::straight ? "" : ("  R " + std::to_string(static_cast<int>(std::round(e.radius))) + " m").c_str());
 		ImGui::TreePop();
 	}
 

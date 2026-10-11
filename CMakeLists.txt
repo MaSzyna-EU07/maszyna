@@ -178,6 +178,7 @@ set(SOURCES
 "editor/editorTrack.cpp"
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
+"editor/editorAlignmentStore.cpp"
 "editor/editorSpeed.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"
@@ -698,4 +699,4 @@ if(ENABLE_AVX2)
     else()
         target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
     endif()
-endif()
+endif()

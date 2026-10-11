@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
 #include "editor/editorFormat.hpp"
+#include "editor/editorAlignmentStore.hpp"
 
 #include <cstdint>
 #include <cstdlib>
@@ -92,6 +93,11 @@ http://mozilla.org/MPL/2.0/.
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined
 //   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged
+//   route <x> <z> <single 0|1>          the route design of the path nearest the point, a curve or the whole line
+//   routevertex <i> <R> <L in> <L out> <cant>, routearc <i> <R> <L> <share>, routeshare <i> <share>, routekm <km>
+//   routeapply, routetake                as the buttons of the route design do it
+//   alignments                           logs the alignments kept in the scenery and the element under each path
+//   splitkind <kind>, nudgekind <kind> <dx> <dz>   the first path over an element of the kind split in two, or moved
 //   screenshot
 //   save
 //   log <text>
@@ -976,6 +982,207 @@ void editor_mode::selftest_step()
 			}
 			else
 				WriteLog("SELFTEST gauge " + name + ": no such track");
+		}
+		else if (command == "route")
+		{
+			glm::dvec3 point{0.0};
+			int single{1};
+			words >> point.x >> point.z >> single;
+			TTrack *nearest{nullptr};
+			double distance{1e9};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+					continue;
+				auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)};
+				if (d < distance)
+				{
+					distance = d;
+					nearest = track;
+				}
+			}
+			m_track_tab = track_tab::route;
+			m_route.single = (single != 0);
+			auto const loaded{nearest != nullptr && route_load(*nearest)};
+			WriteLog(format("SELFTEST route: %s from %s, %zu paths, %.3f m, %zu vertices, %d from the design, km %.3f, departed %d by %.3f m, valid %d", loaded ? "loaded" : "failed", nearest != nullptr ? nearest->name().c_str() : "-",
+			                m_route.chain.tracks.size(), m_route.chain.length, m_route.design.vertices.size(), m_route.designed, m_route.origin / 1000.0, m_route.departed, m_route.departure, m_route.result.valid ? 1 : 0));
+			WriteLog("SELFTEST route status: " + m_route.status + " " + m_route.error);
+			for (std::size_t i = 0; i < m_route.design.vertices.size(); ++i)
+			{
+				auto const &v{m_route.design.vertices[i]};
+				auto text{format("SELFTEST route vertex %zu: at %.3f %.3f offset %.3f R %.3f L %.3f / %.3f cant %.1f compound %d share %.4f", i, v.position.x, v.position.y, v.offset, v.radius, v.transition_in, v.transition_out, v.cant, v.compound ? 1 : 0, v.share)};
+				for (auto const &arc : v.arcs)
+					text += format(" [R %.3f L %.3f share %.4f]", arc.radius, arc.transition, arc.share);
+				WriteLog(text);
+			}
+		}
+		else if (command == "routevertex" || command == "routearc" || command == "routeshare")
+		{
+			int index{0};
+			words >> index;
+			if (index < 0 || index >= static_cast<int>(m_route.design.vertices.size()))
+			{
+				WriteLog("SELFTEST " + command + ": no vertex " + std::to_string(index));
+				continue;
+			}
+			auto &vertex{m_route.design.vertices[index]};
+			if (command == "routevertex")
+				words >> vertex.radius >> vertex.transition_in >> vertex.transition_out >> vertex.cant;
+			else if (command == "routeshare")
+				words >> vertex.share;
+			else
+			{
+				alignment::compound_arc arc;
+				words >> arc.radius >> arc.transition >> arc.share;
+				vertex.compound = true;
+				vertex.arcs.push_back(arc);
+			}
+			route_update();
+			std::string errors;
+			for (auto const &error : m_route.result.errors)
+				errors += " " + error;
+			WriteLog(format("SELFTEST %s: valid %d, %zu elements, extension %.3f / %.3f", command.c_str(), m_route.result.valid ? 1 : 0, m_route.result.elements.size(), m_route.result.start_extension, m_route.result.end_extension) + errors);
+		}
+		else if (command == "routekm")
+		{
+			double km{0.0};
+			words >> km;
+			m_route.origin = km * 1000.0;
+		}
+		else if (command == "routeapply" || command == "routetake")
+		{
+			if (command == "routeapply")
+				route_apply();
+			else
+				route_take_stored(m_route.departed);
+			WriteLog("SELFTEST " + command + ": " + m_route.status + " " + m_route.error);
+		}
+		else if (command == "alignments")
+		{
+			auto const &records{alignment_store::records()};
+			for (std::size_t r = 0; r < records.size(); ++r)
+			{
+				auto const &entry{records[r]};
+				WriteLog(format("SELFTEST alignment %zu in %s: km %.3f, %zu vertices, %zu elements, consistent %d, length %.3f", r, scene::Layers.layer(entry.layer).name.c_str(), entry.origin / 1000.0, entry.design.vertices.size(), entry.elements.size(), entry.consistent ? 1 : 0, entry.result.length));
+				for (auto const &e : entry.elements)
+					WriteLog(format("SELFTEST   element %s vertex %d km %.3f L %.3f R %.3f -> %.3f cant %.1f", e.kind.c_str(), e.vertex, (entry.origin + e.chainage) / 1000.0, e.length, e.radius_start, e.radius_end, e.cant));
+			}
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+					continue;
+				auto const found{alignment_store::on_track(*track)};
+				std::string text{"SELFTEST   path " + track->name() + ": "};
+				if (false == found.has_value())
+				{
+					auto const closest{alignment_store::at(geometry::bezier{track->m_paths.front()}.point(0.5), 1000.0)};
+					text += closest.has_value() ? format("off the alignments, %.3f m from alignment %d", closest->offset, closest->record) : std::string{"off the alignments"};
+				}
+				else
+				{
+					auto const e{alignment_store::describe(records[found->record].result.elements[found->element])};
+					text += format("alignment %d element %d %s R %.3f -> %.3f, offset %.4f", found->record, found->element, e.kind.c_str(), e.radius_start, e.radius_end, found->offset);
+				}
+				editor_track::curve curve;
+				if (editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
+					text += format(" | curve R %.3f L %.3f / %.3f cant %.1f compound %d arcs %zu %s", curve.radius, curve.transition_in, curve.transition_out, curve.cant, curve.compound ? 1 : 0, curve.arcs.size(), curve.designed.has_value() ? "designed" : "recognized");
+				WriteLog(text);
+			}
+		}
+		else if (command == "vprofile")
+		{
+			std::string from, to;
+			words >> from >> to;
+			auto *first{simulation::Paths.find(from)};
+			auto *last{simulation::Paths.find(to)};
+			if (first == nullptr || last == nullptr)
+			{
+				WriteLog("SELFTEST vprofile: no such paths");
+				continue;
+			}
+			m_profile.origin = 0.0;
+			profile_open(first, last);
+			WriteLog(format("SELFTEST vprofile: %zu spans, %.3f m, km of the start %.3f", m_profile.route.spans.size(), m_profile.route.length, m_profile.origin / 1000.0));
+		}
+		else if (command == "backwardcurve")
+		{
+			std::string name;
+			words >> name;
+			auto *track{simulation::Paths.find(name)};
+			editor_track::curve curve;
+			editor_track::chain chain;
+			std::string error;
+			if (track == nullptr || false == editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve) || false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
+			{
+				WriteLog("SELFTEST backwardcurve: no curve at " + name);
+				continue;
+			}
+			std::vector<std::pair<TTrack *, bool>> run;
+			for (std::size_t i = chain.tracks.size(); i > 0; --i)
+				run.emplace_back(chain.tracks[i - 1], false == chain.forward[i - 1]);
+			editor_track::curve backward;
+			editor_track::analyse_curve(run, m_route.design.norms.gauge, backward);
+			auto text{format("SELFTEST backwardcurve: %zu paths, R %.3f L %.3f / %.3f cant %.1f compound %d %s", run.size(), backward.radius, backward.transition_in, backward.transition_out, backward.cant, backward.compound ? 1 : 0, backward.designed.has_value() ? "designed" : "recognized")};
+			for (auto const &arc : backward.arcs)
+				text += format(" [R %.3f turn %.4f L %.3f]", arc.radius, arc.turn, arc.transition);
+			WriteLog(text);
+		}
+		else if (command == "splitkind" || command == "nudgekind")
+		{
+			std::string kind;
+			glm::dvec3 offset{0.0};
+			words >> kind >> offset.x >> offset.z;
+			auto const &records{alignment_store::records()};
+			TTrack *chosen{nullptr};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+					continue;
+				auto const found{alignment_store::on_track(*track)};
+				if (found.has_value() && alignment_store::describe(records[found->record].result.elements[found->element]).kind == kind)
+				{
+					chosen = track;
+					break;
+				}
+			}
+			if (chosen == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no path over " + kind);
+				continue;
+			}
+			if (command == "splitkind")
+			{
+				auto const before{editor_track::capture(*chosen)};
+				auto *created{editor_track::split_path(*chosen, 0.5)};
+				if (created != nullptr)
+					push_track_snapshot({{chosen, before}}, {created});
+				WriteLog("SELFTEST splitkind: " + chosen->name() + " split, the second half " + (created != nullptr ? created->name() : std::string{"-"}));
+			}
+			else
+			{
+				std::vector<std::pair<TTrack *, editor_track::state>> states{{chosen, editor_track::capture(*chosen)}};
+				std::vector<TTrack *> moved{chosen};
+				auto const &path{chosen->m_paths.front()};
+				for (auto const &end : {path.points[segment_data::point::start], path.points[segment_data::point::end]})
+					for (auto *neighbour : {chosen->trPrev, chosen->trNext})
+					{
+						if (neighbour == nullptr || neighbour->m_paths.empty() || std::find(moved.begin(), moved.end(), neighbour) != moved.end())
+							continue;
+						auto const &other{neighbour->m_paths.front()};
+						for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
+							if (glm::distance(other.points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end], end) < 0.01)
+							{
+								states.emplace_back(neighbour, editor_track::capture(*neighbour));
+								editor_track::move_point(*neighbour, {0, kind}, end + offset);
+								moved.push_back(neighbour);
+								break;
+							}
+					}
+				editor_track::translate(*chosen, offset);
+				editor_track::commit(moved);
+				push_track_snapshot(std::move(states), {});
+				WriteLog("SELFTEST nudgekind: " + chosen->name() + " moved with " + std::to_string(moved.size() - 1) + " joined ends");
+			}
 		}
 		else if (command == "join" || command == "layto")
 		{
