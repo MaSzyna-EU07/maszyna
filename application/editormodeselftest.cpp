@@ -1195,6 +1195,7 @@ void editor_mode::selftest_step()
 				words >> degrees >> axis;
 				m_track_gizmo_drag.ring = axis == "x" ? 0 : axis == "z" ? 2 : 1;
 				track_gizmo_turn(*track, m_track_gizmo_drag.ring, glm::radians(degrees));
+				track_gizmo_switches(*track);
 				WriteLog(format("SELFTEST gizmo turn %s: %s", axis.c_str(), track_readout().c_str()));
 			}
 			else if (action == "length")
@@ -1202,6 +1203,7 @@ void editor_mode::selftest_step()
 				double length{0.0};
 				words >> length;
 				track_gizmo_length(*track, length);
+				track_gizmo_switches(*track);
 				WriteLog(format("SELFTEST gizmo length %.3f of %.3f, %zu pieces", m_track_gizmo_drag.stretch, m_track_gizmo_drag.length, m_track_gizmo_drag.pieces));
 			}
 			else if (action == "control")
@@ -1209,6 +1211,7 @@ void editor_mode::selftest_step()
 				glm::dvec3 control{0.0};
 				words >> control.x >> control.y >> control.z;
 				track_gizmo_control(*track, control);
+				track_gizmo_switches(*track);
 			}
 			else if (action == "offset")
 			{
@@ -1223,6 +1226,7 @@ void editor_mode::selftest_step()
 					editor_track::translate(*track, offset);
 					editor_track::follow(*track, m_track_joints);
 				}
+				track_gizmo_switches(*track);
 				m_track_dirty = true;
 			}
 			else if (action == "end")

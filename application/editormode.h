@@ -671,8 +671,12 @@ class editor_mode : public application_mode, private editor_track::observer
 			TTrack *track{nullptr};
 			editor_track::point_ref own;
 			editor_track::point_ref theirs;
+			glm::dvec3 point{0.0};
+			glm::dvec3 tangent{0.0};
 			double roll{0.0};
-			std::vector<editor_track::joint> joints;
+			bool moved{false};
+			std::vector<std::pair<TTrack *, std::vector<segment_data>>> cluster;
+			std::vector<std::pair<TTrack *, std::vector<editor_track::joint>>> joints;
 		};
 		std::vector<switch_joint> switches;
 	};
@@ -684,6 +688,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void track_gizmo_stretch(TTrack &Track, double const Length);
 	void track_gizmo_control(TTrack &Track, glm::dvec3 Control);
 	void track_gizmo_point(TTrack &Track, glm::dvec3 const &Position);
+	void track_gizmo_switches(TTrack &Track);
 	void track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_operation const Operation);
 	void track_gizmo_turn(TTrack &Track, int const Axis, double const Angle);
 	void track_gizmo_length(TTrack &Track, double Length);
