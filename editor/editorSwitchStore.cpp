@@ -363,4 +363,29 @@ void restore(std::vector<record> Records)
 	settle();
 }
 
+void place(record &Entry, TTrack const &First)
+{
+	auto const &main{First.m_paths.front()};
+	geometry::bezier const curve{main};
+	Entry.start = main.points[segment_data::point::start];
+	auto const direction{geometry::plan_of(curve.first(0.0))};
+	Entry.direction = glm::length(direction) > 1e-12 ? glm::normalize(direction) : glm::dvec2{0.0, 1.0};
+	Entry.km = alignment_store::chainage_at(Entry.start);
+}
+
+void classify(record &Entry, TTrack const &Switch)
+{
+	geometry::bezier const main{Switch.m_paths[0]};
+	auto const &diverging{Switch.m_paths[1]};
+	Entry.hand = geometry::cross(Entry.direction, geometry::plan_of(diverging.points[segment_data::point::end] - Entry.start)) > 0.0 ? 'R' : 'L';
+	auto const first{geometry::plan_of(main.first(0.0))};
+	auto const last{geometry::plan_of(main.first(1.0))};
+	auto const turn{glm::length(first) > 1e-12 && glm::length(last) > 1e-12 ? geometry::signed_angle(glm::normalize(first), glm::normalize(last)) : 0.0};
+	Entry.main_radius = std::abs(turn) > 1e-6 ? main.plan_length() / turn : 0.0;
+	if (std::abs(Entry.main_radius) > 20000.0)
+		Entry.main_radius = 0.0;
+	if (Entry.type == "Rz" || Entry.type == "Rlj" || Entry.type == "Rld")
+		Entry.type = Entry.main_radius == 0.0 ? "Rz" : (Entry.main_radius > 0.0) == (Entry.hand == 'R') ? "Rlj" : "Rld";
+}
+
 } // namespace switch_store

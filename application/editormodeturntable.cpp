@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodeshared.h"
 #include "application/editorprojection.h"
 #include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
@@ -44,7 +45,6 @@ using geometry::signed_angle;
 
 double constexpr kRimTolerance{0.05};
 double constexpr kMinimumRadius{80.0};
-float constexpr kDragPixels{5.0f};
 
 glm::dvec2 heading_vector(double const Heading)
 {

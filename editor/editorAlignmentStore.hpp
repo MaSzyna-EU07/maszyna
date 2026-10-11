@@ -101,5 +101,8 @@ std::optional<std::vector<record>> take_changes();
 void settle();
 // puts the records back as they were, for undo and redo
 void restore(std::vector<record> Records);
+// layer the editor keeps the records of the track in: its own, unless it's a terrain file (.txtf), whose binary version
+// (.btf) the editor doesn't read the records from
+scene::layer_handle layer_of(TTrack const &Track);
 
 } // namespace alignment_store

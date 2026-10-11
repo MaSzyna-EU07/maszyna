@@ -44,6 +44,7 @@ using geometry::bezier;
 using geometry::chord_length;
 using geometry::cross;
 using geometry::plan_of;
+using geometry::reversed;
 using geometry::signed_angle;
 using geometry::turned;
 
@@ -92,17 +93,6 @@ double path_radius(segment_data const &Path, double const T)
 	auto const speed{std::hypot(first.x, first.z)};
 	auto const curvature{std::abs(first.x * second.z - first.z * second.x) / (speed * speed * speed)};
 	return curvature > 1e-7 ? 1.0 / curvature : 0.0;
-}
-
-segment_data reversed(segment_data const &Path)
-{
-	segment_data result{Path};
-	result.points[segment_data::point::start] = Path.points[segment_data::point::end];
-	result.points[segment_data::point::end] = Path.points[segment_data::point::start];
-	result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
-	result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
-	result.rolls = {-Path.rolls[1], -Path.rolls[0]};
-	return result;
 }
 
 bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool const Leaving, glm::dvec3 &Direction, double &Radius)

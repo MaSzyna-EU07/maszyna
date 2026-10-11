@@ -60,6 +60,8 @@ std::vector<std::string> follow();
 double branch_radius(record const &Record);
 // keeps the record in the file of the layer, in place of the one with the same name
 void put(record Entry, scene::layer_handle const Layer);
+void place(record &Entry, TTrack const &First);
+void classify(record &Entry, TTrack const &Switch);
 void forget(std::string const &Name);
 // on save: the records follow the renamed switches, the ones whose paths are gone are dropped
 void tidy();

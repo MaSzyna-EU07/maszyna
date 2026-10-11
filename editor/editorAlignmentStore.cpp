@@ -745,4 +745,15 @@ void restore(std::vector<record> Records)
 	settle();
 }
 
+scene::layer_handle layer_of(TTrack const &Track)
+{
+	auto const usable = [](scene::layer_handle const Layer) { return scene::Layers.valid(Layer) && scene::Layers.accepts(Layer) && false == scene::Layers.layer(Layer).name.ends_with(".txtf"); };
+	auto layer{scene::Layers.resolve(Track.layer())};
+	if (false == usable(layer))
+		layer = scene::Layers.active();
+	if (false == usable(layer))
+		layer = 1;
+	return layer;
+}
+
 } // namespace alignment_store

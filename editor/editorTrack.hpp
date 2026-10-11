@@ -126,6 +126,60 @@ class editor_track
 	static std::vector<std::pair<TTrack *, point_ref>> partners(TTrack &Track, point_ref const &End);
 	static void align_controls(TTrack const &Track, point_ref const &Control, std::vector<std::pair<TTrack *, point_ref>> const &Partners);
 	static point_ref end_of(point_ref const &Control);
+	static glm::dvec3 control_vector(TTrack const &Track, point_ref const &Control);
+	static glm::dvec3 outward(TTrack const &Track, point_ref const &Point);
+	static point_ref switch_main(TTrack const &Track, point_ref Point);
+	static std::size_t driven_paths(TTrack const &Track);
+	static double joint_roll(TTrack const &Track, point_ref const &Point);
+	static void roll_joined(TTrack &Other, point_ref const &Theirs, float const Roll);
+	static void match_rolls(TTrack const &Track, std::vector<joint> const &Joints);
+
+	struct path_end
+	{
+		int path{0};
+		bool atend{true};
+	};
+	static std::optional<path_end> stretch_end(TTrack const &Track, point_ref const &Point);
+	static std::vector<segment_data> stretched(segment_data const &Path, bool const Atend, double const Length);
+	static std::pair<glm::dvec3, glm::dvec3> end_axis(segment_data const &Path, bool const Atend);
+	static point_ref stretch_remap(point_ref Point, int const Path, std::size_t const Pieces);
+
+	struct middle_point
+	{
+		glm::dvec3 point{0.0};
+		glm::dvec3 tangent{0.0, 0.0, 1.0};
+		double chainage{0.0};
+	};
+	static middle_point middle(TTrack const &Track);
+
+	struct edit
+	{
+		std::vector<std::pair<TTrack *, state>> states;
+		std::vector<TTrack *> created;
+		std::vector<TTrack *> removed;
+		std::vector<TTrack *> changed;
+		void capture(TTrack &Track);
+	};
+
+	struct drive_spot
+	{
+		glm::dvec3 location{0.0};
+		double yaw{0.0};
+		glm::dvec2 tilt{0.0};
+		bool rightswitch{false};
+	};
+	static std::optional<drive_spot> drive_spot_of(TTrack const &Switch);
+
+	struct straight_axis
+	{
+		glm::dvec3 origin{0.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double length{0.0};
+		double along(glm::dvec3 const &Point) const;
+		double lateral(glm::dvec3 const &Point) const;
+	};
+	static std::optional<straight_axis> main_axis(TTrack const &Switch);
+	static std::vector<segment_data> slid(TTrack const &Switch, double const Distance);
 
 	struct snap_target
 	{

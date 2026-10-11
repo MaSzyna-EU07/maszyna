@@ -46,6 +46,7 @@ namespace
 using geometry::bezier;
 using geometry::plan_distance;
 using geometry::plan_of;
+using geometry::reversed;
 
 double const kSweepRouteReach{2000.0}; // m each way through the switches
 double const kSweepOutlineStep{1.0};
@@ -112,17 +113,6 @@ bool platform_distance()
 	EditorSettings.platform_edge(distances[chosen]);
 	EditorSettings.save();
 	return true;
-}
-
-segment_data reversed(segment_data const &Path)
-{
-	segment_data result{Path};
-	result.points[segment_data::point::start] = Path.points[segment_data::point::end];
-	result.points[segment_data::point::end] = Path.points[segment_data::point::start];
-	result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
-	result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
-	result.rolls = {-Path.rolls[1], -Path.rolls[0]};
-	return result;
 }
 
 bool same_piece(segment_data const &A, segment_data const &B)

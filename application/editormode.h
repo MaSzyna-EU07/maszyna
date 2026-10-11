@@ -707,8 +707,27 @@ class editor_mode : public application_mode, private editor_track::observer
 	void track_gizmo_control(TTrack &Track, glm::dvec3 Control);
 	void track_gizmo_point(TTrack &Track, glm::dvec3 const &Position);
 	void track_gizmo_switches(TTrack &Track);
+	void track_gizmo_conform(TTrack &Track) const;
+	bool track_gizmo_clustered(TTrack const *Track) const;
+	void track_gizmo_spill(TTrack &Track, std::size_t const Pieces);
+	void track_gizmo_carry(track_gizmo_drag::switch_joint &Link, glm::dvec3 const &Point, glm::dvec3 const &From, glm::dvec3 const &To, double const Grade);
+	void track_gizmo_roll_switch(track_gizmo_drag::switch_joint const &Link, double const Roll);
+	void track_gizmo_take_joints(TTrack &Track);
+	void track_gizmo_take_points(TTrack &Track);
+	void track_gizmo_take_partners(TTrack &Track);
+	void track_gizmo_take_switch_joints(TTrack &Track, bool const Controlmode);
+	track_gizmo_drag::switch_joint track_gizmo_link(TTrack &Track, editor_track::point_ref const &Own, std::pair<TTrack *, editor_track::point_ref> const &Connection, std::function<bool(TTrack const *)> const &Movable);
+	void track_gizmo_take_switches(TTrack &Track);
+	void track_gizmo_measure_rotation(TTrack &Track, bool const Pointmode);
+	void track_gizmo_measure(TTrack &Track, bool const Pointmode, gizmo_operation const Operation);
 	void track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_operation const Operation);
+	void track_gizmo_turn_direction(TTrack &Track, double const Angle);
+	void track_gizmo_turn_grade(TTrack &Track, double const Angle);
+	void track_gizmo_turn_cant(TTrack &Track, double const Angle);
 	void track_gizmo_turn(TTrack &Track, int const Axis, double const Angle);
+	void track_gizmo_rotated(TTrack &Track);
+	void track_gizmo_scaled(TTrack &Track);
+	void track_gizmo_moved_point(TTrack &Track, glm::dvec3 const &Position);
 	void track_gizmo_length(TTrack &Track, double Length);
 	void track_gizmo_end(TTrack &Track);
 	bool m_track_dirty{false};
@@ -807,7 +826,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void route_take_stored(int const Index);
 	void record_switch(TTrack &Track, editor_track::switch_template const &Shape);
 	void record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base);
-	void render_switch_record(TTrack &Track);
+	void render_switch_record(TTrack const &Track) const;
 	void route_store();
 	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true);
 	bool digitize_chain(editor_track::chain const &Chain);
@@ -956,6 +975,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	};
 	switch_tool m_switch;
 	bool switch_room(TTrack &Track, double &Low, double &High, std::string &Reason);
+	bool switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status);
 	bool move_switch_paths(TTrack &Track, std::vector<segment_data> const &Paths, std::string &Status);
 	bool slide_switch(TTrack &Track, double const Distance);
 	bool switch_slides(TTrack const &Track) const;
@@ -1406,10 +1426,16 @@ class editor_mode : public application_mode, private editor_track::observer
 	};
 	// includes of the templates whose file names the test accepts, with the location in p2..p4 and the rotation in p5
 	std::vector<standing_template> standing_templates(std::function<bool(std::string const &)> const &Accept) const;
-	bool find_switch_drive(TTrack const &Switch, standing_template &Drive, int &Family, int &Index);
+	struct switch_drive
+	{
+		standing_template standing;
+		int family{-1};
+		int index{0};
+	};
+	std::optional<switch_drive> find_switch_drive(TTrack const &Switch);
+	std::string missing_drive_variant(int const Family, bool const Rightswitch, bool const Driveright) const;
 	bool replace_switch_drive(TTrack &Switch, int Family, bool Flip);
 	void apply_switch_drive_choice(TTrack &Switch);
-	bool switch_drive_spot(TTrack const &Switch, glm::dvec3 &Location, double &Yaw, glm::dvec2 &Tilt, bool &Rightswitch) const;
 	void switch_drive_captured(TTrack const &Track);
 	void switch_drives_committed(std::vector<TTrack *> const &Tracks);
 	// places them in the active layer, as one step of the undo. returns: how many were placed
