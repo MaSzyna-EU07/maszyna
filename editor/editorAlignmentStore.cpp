@@ -264,6 +264,124 @@ void reset()
 	g_loaded = false;
 }
 
+namespace
+{
+
+std::optional<record> read_start(std::istringstream &Line, scene::layer_context const &Context, scene::layer_handle const Layer)
+{
+	record entry;
+	entry.layer = Layer;
+	glm::dvec3 start;
+	glm::dvec3 end;
+	Line >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z;
+	if (Line.fail())
+		return std::nullopt;
+	entry.design.start = Context.to_world(start);
+	entry.design.end = Context.to_world(end);
+	return entry;
+}
+
+std::optional<alignment::vertex> read_vertex(std::istringstream &Line, scene::layer_context const &Context)
+{
+	alignment::vertex vertex;
+	glm::dvec3 position{0.0};
+	int reverse{0};
+	int compound{0};
+	std::size_t arcs{0};
+	Line >> position.x >> position.z >> vertex.offset >> vertex.radius >> vertex.transition_in >> vertex.transition_out >> vertex.cant >> reverse >> compound >> vertex.share >> arcs;
+	for (std::size_t i = 0; i < arcs && false == Line.fail(); ++i)
+	{
+		alignment::compound_arc arc;
+		Line >> arc.radius >> arc.transition >> arc.share;
+		vertex.arcs.push_back(arc);
+	}
+	if (Line.fail())
+		return std::nullopt;
+	position = Context.to_world(position);
+	vertex.position = {position.x, position.z};
+	vertex.reverse_turn = (reverse != 0);
+	vertex.compound = (compound != 0);
+	return vertex;
+}
+
+void read_part(record &Entry, std::string const &Keyword, std::istringstream &Line, scene::layer_context const &Context)
+{
+	auto &design{Entry.design};
+	std::string word;
+	if (Keyword == "source")
+	{
+		std::string shape;
+		Line >> Entry.source >> word >> Entry.origin >> word >> shape >> word >> design.speed;
+		design.shape = shape == "clothoid" ? alignment::transition_shape::clothoid : alignment::transition_shape::cubic_parabola;
+	}
+	else if (Keyword == "ends")
+	{
+		glm::dvec2 startdirection;
+		glm::dvec2 enddirection;
+		Line >> startdirection.x >> startdirection.y >> enddirection.x >> enddirection.y >> design.start_grade >> design.end_grade >> design.start_radius >> design.end_radius;
+		design.start_direction = world_direction(Context, Context.to_local(design.start), startdirection);
+		design.end_direction = world_direction(Context, Context.to_local(design.end), enddirection);
+	}
+	else if (Keyword == "norms")
+	{
+		auto &norms{design.norms};
+		Line >> norms.gauge >> norms.unbalanced >> norms.cant_max >> norms.cant_rate >> norms.ramp_factor >> norms.jerk >> norms.tangent_min_time >> norms.arc_min >> norms.arc_min_factor;
+	}
+	else if (Keyword == "pieces")
+		Line >> design.transition_pieces >> design.arc_piece_angle;
+	else if (Keyword == "vertex")
+	{
+		if (auto const vertex{read_vertex(Line, Context)})
+			design.vertices.push_back(*vertex);
+	}
+	else if (Keyword == "element")
+	{
+		stored_element e;
+		Line >> e.kind >> e.vertex >> e.chainage >> e.length >> e.radius_start >> e.radius_end >> e.cant;
+		if (false == Line.fail())
+			Entry.elements.push_back(e);
+	}
+}
+
+void close_record(record &Entry, std::string const &Layer)
+{
+	finish(Entry);
+	if (false == Entry.result.valid || Entry.result.elements.empty())
+	{
+		WriteLog("Editor: a horizontal alignment in " + Layer + " doesn't make a line, left out", logtype::generic);
+		return;
+	}
+	Entry.consistent = agrees(Entry.elements, Entry.result.elements);
+	if (false == Entry.consistent)
+		WriteLog("Editor: the elements of a horizontal alignment in " + Layer + " differ from the ones its design makes now", logtype::generic);
+	g_records.push_back(std::move(Entry));
+}
+
+void load_layer(scene::layer_handle const Layer)
+{
+	auto const &context{scene::Layers.layer(Layer).context_insert()};
+	std::optional<record> current;
+	for (auto const &text : scene::Layers.marked(Layer, kMark))
+	{
+		std::istringstream line{text};
+		std::string keyword;
+		line >> keyword;
+		if (keyword == "alignment")
+			current = read_start(line, context, Layer);
+		else if (false == current.has_value())
+			continue;
+		else if (keyword == "end")
+		{
+			close_record(*current, scene::Layers.layer(Layer).name);
+			current.reset();
+		}
+		else
+			read_part(*current, keyword, line, context);
+	}
+}
+
+} // namespace
+
 void load()
 {
 	if (g_loaded || scene::Layers.empty())
@@ -271,102 +389,7 @@ void load()
 	g_loaded = true;
 	g_records.clear();
 	for (auto const layer : scene::Layers.marked_layers(kMark))
-	{
-		auto const &context{scene::Layers.layer(layer).context_insert()};
-		std::optional<record> current;
-		std::vector<std::string> made;
-		for (auto const &text : scene::Layers.marked(layer, kMark))
-		{
-			std::istringstream line{text};
-			std::string keyword, word;
-			line >> keyword;
-			if (keyword == "alignment")
-			{
-				record entry;
-				entry.layer = layer;
-				glm::dvec3 start, end;
-				line >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z;
-				if (line.fail())
-				{
-					current.reset();
-					continue;
-				}
-				entry.design.start = context.to_world(start);
-				entry.design.end = context.to_world(end);
-				current = entry;
-				continue;
-			}
-			if (false == current.has_value())
-				continue;
-			auto &entry{*current};
-			auto &design{entry.design};
-			if (keyword == "source")
-			{
-				std::string shape;
-				line >> entry.source >> word >> entry.origin >> word >> shape >> word >> design.speed;
-				design.shape = shape == "clothoid" ? alignment::transition_shape::clothoid : alignment::transition_shape::cubic_parabola;
-			}
-			else if (keyword == "ends")
-			{
-				glm::dvec2 startdirection, enddirection;
-				line >> startdirection.x >> startdirection.y >> enddirection.x >> enddirection.y >> design.start_grade >> design.end_grade >> design.start_radius >> design.end_radius;
-				design.start_direction = world_direction(context, context.to_local(design.start), startdirection);
-				design.end_direction = world_direction(context, context.to_local(design.end), enddirection);
-			}
-			else if (keyword == "norms")
-			{
-				auto &norms{design.norms};
-				line >> norms.gauge >> norms.unbalanced >> norms.cant_max >> norms.cant_rate >> norms.ramp_factor >> norms.jerk >> norms.tangent_min_time >> norms.arc_min >> norms.arc_min_factor;
-			}
-			else if (keyword == "pieces")
-			{
-				line >> design.transition_pieces >> design.arc_piece_angle;
-			}
-			else if (keyword == "vertex")
-			{
-				alignment::vertex vertex;
-				glm::dvec3 position{0.0};
-				int reverse{0}, compound{0};
-				std::size_t arcs{0};
-				line >> position.x >> position.z >> vertex.offset >> vertex.radius >> vertex.transition_in >> vertex.transition_out >> vertex.cant >> reverse >> compound >> vertex.share >> arcs;
-				for (std::size_t i = 0; i < arcs && false == line.fail(); ++i)
-				{
-					alignment::compound_arc arc;
-					line >> arc.radius >> arc.transition >> arc.share;
-					vertex.arcs.push_back(arc);
-				}
-				if (line.fail())
-					continue;
-				position = context.to_world(position);
-				vertex.position = {position.x, position.z};
-				vertex.reverse_turn = (reverse != 0);
-				vertex.compound = (compound != 0);
-				design.vertices.push_back(vertex);
-			}
-			else if (keyword == "element")
-			{
-				stored_element e;
-				line >> e.kind >> e.vertex >> e.chainage >> e.length >> e.radius_start >> e.radius_end >> e.cant;
-				if (false == line.fail())
-					entry.elements.push_back(e);
-			}
-			else if (keyword == "end")
-			{
-				finish(entry);
-				if (false == entry.result.valid || entry.result.elements.empty())
-				{
-					WriteLog("Editor: a horizontal alignment in " + scene::Layers.layer(layer).name + " doesn't make a line, left out", logtype::generic);
-					current.reset();
-					continue;
-				}
-				entry.consistent = agrees(entry.elements, entry.result.elements);
-				if (false == entry.consistent)
-					WriteLog("Editor: the elements of a horizontal alignment in " + scene::Layers.layer(layer).name + " differ from the ones its design makes now", logtype::generic);
-				g_records.push_back(std::move(entry));
-				current.reset();
-			}
-		}
-	}
+		load_layer(layer);
 	g_base = g_records;
 	g_changed = false;
 	if (false == g_records.empty())

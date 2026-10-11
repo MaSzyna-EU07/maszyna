@@ -18,6 +18,7 @@ http:
 #include <cstdio>
 #include <functional>
 #include <limits>
+#include <optional>
 
 namespace alignment
 {
@@ -932,133 +933,165 @@ void spread_rolls(std::vector<segment_data> &Pieces, double const Start, double 
 
 } // namespace
 
+namespace
+{
+
+struct join_frame
+{
+	join_request const &request;
+	glm::dvec2 start_direction;
+	glm::dvec2 end_direction;
+	glm::dvec2 chord;
+	double distance;
+	double tolerance;
+	double heading;
+	double rise;
+};
+
+std::optional<join_result> straight_join(join_frame const &Frame)
+{
+	auto const &a{Frame.request.start};
+	auto const &b{Frame.request.end};
+	if (std::abs(geometry::signed_angle(Frame.start_direction, Frame.chord)) > Frame.tolerance || std::abs(geometry::signed_angle(Frame.chord, Frame.end_direction)) > Frame.tolerance)
+		return std::nullopt;
+	join_result straight;
+	straight.kind = join_kind::straight;
+	segment_data path;
+	path.points[segment_data::point::start] = a.position;
+	path.points[segment_data::point::end] = b.position;
+	straight.pieces = {path};
+	spread_rolls(straight.pieces, a.roll, b.roll);
+	straight.length = glm::distance(a.position, b.position);
+	return straight;
+}
+
+std::optional<join_result> arc_join(join_frame const &Frame)
+{
+	auto const &a{Frame.request.start};
+	auto const &b{Frame.request.end};
+	auto const lateral{cross(Frame.start_direction, Frame.chord)};
+	if (std::abs(lateral) <= 1e-6)
+		return std::nullopt;
+	auto const angle{2.0 * std::atan2(std::abs(lateral), glm::dot(Frame.start_direction, Frame.chord))};
+	int const side{lateral > 0.0 ? 1 : -1};
+	auto const radius{Frame.distance * Frame.distance / (2.0 * std::abs(lateral))};
+	if (angle >= kPi - 1e-3 || std::abs(geometry::signed_angle(turned(Frame.start_direction, side * angle), Frame.end_direction)) > Frame.tolerance)
+		return std::nullopt;
+	join_result arc;
+	arc.kind = join_kind::arc;
+	arc.pieces = geometry::arc_pieces(a.position, Frame.start_direction, Frame.rise / (radius * angle), radius, angle, side);
+	arc.pieces.back().points[segment_data::point::end] = b.position;
+	spread_rolls(arc.pieces, a.roll, b.roll);
+	arc.radius = radius;
+	arc.length = radius * angle;
+	return arc;
+}
+
+design join_design(join_frame const &Frame, join_kind const Kind)
+{
+	auto const &request{Frame.request};
+	design shape;
+	shape.norms = request.norms;
+	shape.shape = request.shape;
+	shape.speed = request.speed;
+	shape.arc_piece_angle = 90.0;
+	shape.start = request.start.position;
+	shape.end = request.end.position;
+	shape.start_direction = Frame.start_direction;
+	shape.end_direction = Frame.end_direction;
+	shape.start_grade = Frame.rise / Frame.distance;
+	shape.end_grade = shape.start_grade;
+	vertex corner;
+	corner.radius = request.radius > 0.0 ? request.radius : 100000.0;
+	if (Kind == join_kind::curve)
+		shape.vertices = {corner};
+	else
+	{
+		corner.offset = Frame.distance / 3.0;
+		shape.vertices = {corner, corner};
+	}
+	return shape;
+}
+
+std::optional<join_result> fitted_join(join_frame const &Frame, join_kind const Kind)
+{
+	auto shape{join_design(Frame, Kind)};
+	auto const r{compute_recommended(shape, Frame.request.transitions)};
+	auto const sharp{std::any_of(r.curves.begin(), r.curves.end(), [](curve_report const &Report) { return Report.radius < 10.0; })};
+	if (false == r.valid || sharp || turning(r) > Frame.heading + kPi + 1e-6 || r.length > 3.0 * Frame.distance + 1.0)
+		return std::nullopt;
+	join_result curve;
+	curve.kind = Kind;
+	curve.pieces = pieces(r, shape, 0);
+	if (curve.pieces.empty())
+		return curve;
+	curve.pieces.front().rolls[0] = static_cast<float>(Frame.request.start.roll);
+	curve.pieces.back().rolls[1] = static_cast<float>(Frame.request.end.roll);
+	curve.length = r.length;
+	curve.speed = shape.speed;
+	curve.warnings = r.warnings;
+	curve.radius = r.curves.empty() ? 0.0 : std::numeric_limits<double>::max();
+	for (auto const &report : r.curves)
+	{
+		curve.radius = std::min(curve.radius, report.radius);
+		curve.transition = std::max({curve.transition, report.transition_in, report.transition_out});
+	}
+	for (auto const &e : r.elements)
+		curve.cant = std::max(curve.cant, e.cant);
+	return curve;
+}
+
+std::optional<join_result> curve_join(join_frame const &Frame)
+{
+	design probe;
+	probe.start = Frame.request.start.position;
+	probe.end = Frame.request.end.position;
+	probe.start_direction = Frame.start_direction;
+	probe.end_direction = Frame.end_direction;
+	glm::dvec2 intersection;
+	return fitted_join(Frame, tangent_intersection(probe, intersection) ? join_kind::curve : join_kind::reverse_curve);
+}
+
+join_result bezier_join(join_frame const &Frame)
+{
+	auto const &a{Frame.request.start};
+	auto const &b{Frame.request.end};
+	join_result fallback;
+	fallback.kind = join_kind::bezier;
+	auto const grade{Frame.rise / Frame.distance};
+	auto const handle{Frame.distance / 3.0};
+	segment_data path;
+	path.points[segment_data::point::start] = a.position;
+	path.points[segment_data::point::end] = b.position;
+	path.points[segment_data::point::control1] = glm::dvec3{Frame.start_direction.x, grade, Frame.start_direction.y} * handle;
+	path.points[segment_data::point::control2] = -glm::dvec3{Frame.end_direction.x, grade, Frame.end_direction.y} * handle;
+	fallback.pieces = {path};
+	spread_rolls(fallback.pieces, a.roll, b.roll);
+	fallback.length = Frame.distance;
+	return fallback;
+}
+
+} // namespace
+
 join_result join(join_request const &Request)
 {
-	join_result chosen;
 	auto const &a{Request.start};
 	auto const &b{Request.end};
 	auto const chord{plan_of(b.position) - plan_of(a.position)};
 	auto const distance{glm::length(chord)};
 	if (distance < 0.05 || glm::length(a.direction) < 1e-9 || glm::length(b.direction) < 1e-9)
-		return chosen;
+		return {};
 	auto const startdirection{glm::normalize(a.direction)};
 	auto const enddirection{glm::normalize(b.direction)};
-	auto const tolerance{glm::radians(Request.kink)};
-	auto const heading{std::abs(geometry::signed_angle(startdirection, enddirection))};
-	auto const rise{b.position.y - a.position.y};
+	join_frame const frame{Request, startdirection, enddirection, chord, distance, glm::radians(Request.kink), std::abs(geometry::signed_angle(startdirection, enddirection)), b.position.y - a.position.y};
 	std::vector<join_result> candidates;
-
-	if (std::abs(geometry::signed_angle(startdirection, chord)) <= tolerance && std::abs(geometry::signed_angle(chord, enddirection)) <= tolerance)
-	{
-		join_result straight;
-		straight.kind = join_kind::straight;
-		segment_data path;
-		path.points[segment_data::point::start] = a.position;
-		path.points[segment_data::point::end] = b.position;
-		straight.pieces = {path};
-		spread_rolls(straight.pieces, a.roll, b.roll);
-		straight.length = glm::distance(a.position, b.position);
-		candidates.push_back(straight);
-	}
-
-	auto const lateral{cross(startdirection, chord)};
-	auto const along{glm::dot(startdirection, chord)};
-	if (std::abs(lateral) > 1e-6)
-	{
-		auto const angle{2.0 * std::atan2(std::abs(lateral), along)};
-		int const side{lateral > 0.0 ? 1 : -1};
-		auto const radius{distance * distance / (2.0 * std::abs(lateral))};
-		if (angle < kPi - 1e-3 && std::abs(geometry::signed_angle(turned(startdirection, side * angle), enddirection)) <= tolerance)
-		{
-			join_result arc;
-			arc.kind = join_kind::arc;
-			arc.pieces = geometry::arc_pieces(a.position, startdirection, rise / (radius * angle), radius, angle, side);
-			arc.pieces.back().points[segment_data::point::end] = b.position;
-			spread_rolls(arc.pieces, a.roll, b.roll);
-			arc.radius = radius;
-			arc.length = radius * angle;
-			candidates.push_back(arc);
-		}
-	}
-
-	auto const fitted = [&](join_kind const Kind) {
-		join_result curve;
-		design shape;
-		shape.norms = Request.norms;
-		shape.shape = Request.shape;
-		shape.speed = Request.speed;
-		shape.arc_piece_angle = 90.0;
-		shape.start = a.position;
-		shape.end = b.position;
-		shape.start_direction = startdirection;
-		shape.end_direction = enddirection;
-		shape.start_grade = shape.end_grade = rise / distance;
-		vertex corner;
-		corner.radius = Request.radius > 0.0 ? Request.radius : 100000.0;
-		if (Kind == join_kind::curve)
-			shape.vertices = {corner};
-		else
-		{
-			corner.offset = distance / 3.0;
-			shape.vertices = {corner, corner};
-		}
-		auto const r{compute_recommended(shape, Request.transitions)};
-		auto const sharp{std::any_of(r.curves.begin(), r.curves.end(), [](curve_report const &Report) { return Report.radius < 10.0; })};
-		if (false == r.valid || sharp || turning(r) > heading + kPi + 1e-6 || r.length > 3.0 * distance + 1.0)
-			return curve;
-		curve.kind = Kind;
-		curve.pieces = pieces(r, shape, 0);
-		if (curve.pieces.empty())
-			return curve;
-		curve.pieces.front().rolls[0] = static_cast<float>(a.roll);
-		curve.pieces.back().rolls[1] = static_cast<float>(b.roll);
-		curve.length = r.length;
-		curve.speed = shape.speed;
-		curve.warnings = r.warnings;
-		curve.radius = std::numeric_limits<double>::max();
-		for (auto const &report : r.curves)
-		{
-			curve.radius = std::min(curve.radius, report.radius);
-			curve.transition = std::max({curve.transition, report.transition_in, report.transition_out});
-		}
-		for (auto const &e : r.elements)
-			curve.cant = std::max(curve.cant, e.cant);
-		if (r.curves.empty())
-			curve.radius = 0.0;
-		return curve;
-	};
-	design probe;
-	probe.start = a.position;
-	probe.end = b.position;
-	probe.start_direction = startdirection;
-	probe.end_direction = enddirection;
-	glm::dvec2 intersection;
-	if (tangent_intersection(probe, intersection))
-	{
-		if (auto curve{fitted(join_kind::curve)}; curve.kind != join_kind::none)
-			candidates.push_back(curve);
-	}
-	else if (auto curve{fitted(join_kind::reverse_curve)}; curve.kind != join_kind::none)
-		candidates.push_back(curve);
-
+	for (auto const &candidate : {straight_join(frame), arc_join(frame), curve_join(frame)})
+		if (candidate.has_value())
+			candidates.push_back(*candidate);
 	if (candidates.empty())
-	{
-		join_result fallback;
-		fallback.kind = join_kind::bezier;
-		auto const grade{rise / distance};
-		auto const handle{distance / 3.0};
-		segment_data path;
-		path.points[segment_data::point::start] = a.position;
-		path.points[segment_data::point::end] = b.position;
-		path.points[segment_data::point::control1] = glm::dvec3{startdirection.x, grade, startdirection.y} * handle;
-		path.points[segment_data::point::control2] = -glm::dvec3{enddirection.x, grade, enddirection.y} * handle;
-		fallback.pieces = {path};
-		spread_rolls(fallback.pieces, a.roll, b.roll);
-		fallback.length = distance;
-		candidates.push_back(fallback);
-	}
+		candidates.push_back(bezier_join(frame));
 	auto const count{static_cast<int>(candidates.size())};
-	chosen = candidates[((Request.variant % count) + count) % count];
+	auto chosen{candidates[((Request.variant % count) + count) % count]};
 	chosen.variants = count;
 	if (chosen.speed <= 0.0)
 		chosen.speed = Request.speed;
