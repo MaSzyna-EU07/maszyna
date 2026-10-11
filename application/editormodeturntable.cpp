@@ -1062,6 +1062,10 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 	auto const file{root + "_obrotnice.scm"};
 	std::ostringstream text;
 	auto tables{0};
+	std::vector<glm::dvec3> centres;
+	for (auto const *table : simulation::Paths.sequence())
+		if (table != nullptr && table->eType == tt_Table && false == table->m_editorremoved && false == table->m_paths.empty() && false == table->name().empty())
+			centres.push_back(centre_of(*table));
 	for (auto const *table : simulation::Paths.sequence())
 	{
 		if (table == nullptr || table->eType != tt_Table || table->m_editorremoved || table->m_paths.empty() || table->name().empty())
@@ -1136,7 +1140,11 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 				text << "event " << name << step << positions[i] << " multiple 0 " << name << ' ' << name << "_tor" << target << " condition memcompare * " << positions[i] << " * endevent\r\n";
 			}
 		}
-		text << "node -1 0 " << name << "_key eventlauncher " << at << " 150 t 0 " << name << "_next " << name << "_prev end\r\n";
+		auto range{150.0};
+		for (auto const &other : centres)
+			if (auto const distance{glm::distance(other, centre)}; distance > 0.5)
+				range = std::min(range, distance * 0.5);
+		text << "node -1 0 " << name << "_key eventlauncher " << at << ' ' << format("%.1f", range) << " t 0 " << name << "_next " << name << "_prev end\r\n";
 	}
 	auto const path{Global.asCurrentSceneryPath + file};
 	std::error_code error;
