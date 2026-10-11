@@ -16,6 +16,7 @@ LINEMARK = '//$e'
 FOLDER = 'scenery/tory/napedy'
 PATTERN = re.compile(r'^(ele1?|mech[12]?)-rz([lp])-([lp])((?:_[a-z]+)*)\.inc$')
 KINDS = {'ele': 'elektryczny', 'mech': 'mechaniczny'}
+DEFAULT = 'mech_komin'
 
 
 def examine(path, file):
@@ -48,7 +49,7 @@ def examine(path, file):
         'name: ' + family,
         'category: switch drive',
         'description: "' + description + '"',
-        'switch: {hand: %s, drive: %s}' % (hand, side),
+        'switch: {hand: %s, drive: %s%s}' % (hand, side, ', default: true' if family == DEFAULT else ''),
         'params:',
         '  - {id: 1, role: track, label: Switch}',
         '  - {id: 2, role: pos.x}',

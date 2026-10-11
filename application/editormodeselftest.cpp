@@ -405,6 +405,28 @@ void editor_mode::selftest_step()
 			m_switch.drive_side = side;
 			WriteLog("SELFTEST switchdrive: " + (index >= 0 && index < static_cast<int>(m_switch.drives.size()) ? m_switch.drives[index].name : std::string{"none"}));
 		}
+		else if (command == "drives")
+		{
+			std::string name;
+			words >> name;
+			scan_switch_drives();
+			std::string files;
+			for (auto const &standing : standing_templates([](std::string const &File) { return File.find("napedy/") != std::string::npos; }))
+				if (false == standing.values.empty() && standing.values[0] == name)
+					files += " " + standing.file;
+			for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+				if (scene::Layers.tracked(handle) && scene::Layers.instance(handle).file != nullptr && scene::Layers.instance(handle).file->find("napedy") != std::string::npos)
+					files += format(" [%d %s removed %d dead %d]", static_cast<int>(handle), scene::Layers.instance(handle).file->c_str(), scene::Layers.instance(handle).removed ? 1 : 0, scene::Layers.instance(handle).dead ? 1 : 0);
+			WriteLog("SELFTEST drives " + name + ": chosen " + (m_switch.drive >= 0 ? m_switch.drives[m_switch.drive].name : std::string{"none"}) + ", side " + std::to_string(m_switch.drive_side) + ", standing" + files + ", steps " + std::to_string(m_history.size()));
+		}
+		else if (command == "driveflip")
+		{
+			std::string name;
+			words >> name;
+			auto *track{simulation::Paths.find(name)};
+			auto const done{track != nullptr && flip_switch_drive(*track)};
+			WriteLog("SELFTEST driveflip " + name + ": " + (done ? "done " : "failed ") + m_switch.status);
+		}
 		else if (command == "drivetilt")
 		{
 			std::string name;

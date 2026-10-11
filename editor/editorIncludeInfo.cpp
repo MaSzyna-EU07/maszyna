@@ -250,6 +250,7 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 		{
 			Info.switch_hand = drive["hand"].as<std::string>("");
 			Info.switch_drive = drive["drive"].as<std::string>("");
+			Info.switch_default = drive["default"].as<bool>(false);
 		}
 		if (auto const signal{document["signal"]}; signal.IsDefined() && signal.IsMap())
 		{

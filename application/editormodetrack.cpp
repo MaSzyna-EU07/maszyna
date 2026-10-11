@@ -1927,7 +1927,12 @@ void editor_mode::render_turnout_ui()
 	render_track_name(*track);
 	render_switch_record(*track);
 	if ((simulation::Events.FindEvent(track->name() + "+") != nullptr && simulation::Events.FindEvent(track->name() + "-") != nullptr) || (m_track_name.track == track && m_track_name.uses.includes > 0))
+	{
 		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), track->name().c_str(), track->name().c_str());
+		if (ImGui::Button(STR_C("Drive to the other side")))
+			flip_switch_drive(*track);
+		item_tooltip("Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side");
+	}
 	else
 	{
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
@@ -5769,8 +5774,9 @@ void editor_mode::finish_extend()
 		std::vector<std::pair<TTrack *, editor_track::state>> states;
 		std::vector<TTrack *> created;
 		std::vector<TTrack *> removed;
-		if (false == place_switch_on_straight(plan.target, plan.shape, origin, plan.along, plan.direction, plan.side, false, states, created, removed))
+		if (false == place_switch_on_straight(plan.target, plan.shape, origin, plan.along, plan.direction, plan.side, false, states, created, removed, switch_name_for_new()))
 			return;
+		auto *placed{*std::find_if(created.begin(), created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
 		if (glm::distance(plan.insert.points[segment_data::point::start], plan.insert.points[segment_data::point::end]) > 0.01)
 		{
 			auto *insert{editor_track::create_path(*origin, plan.insert)};
@@ -5779,6 +5785,9 @@ void editor_mode::finish_extend()
 		}
 		push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 		straight_refresh();
+		if (place_switch_drive(*placed))
+			join_last_steps();
+		advance_switch_name();
 		return;
 	}
 	auto const pieces{extend_pieces()};
@@ -6552,8 +6561,13 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 	ui()->set_node(m_node);
 	if (slip)
 		return;
-	if (m_switch.drive >= 0)
-		place_switch_drive(**found);
+	if (place_switch_drive(**found))
+		join_last_steps();
+	advance_switch_name();
+}
+
+void editor_mode::advance_switch_name()
+{
 	std::string name{m_switch.name};
 	auto digits{name.size()};
 	while (digits > 0 && std::isdigit(static_cast<unsigned char>(name[digits - 1])))
@@ -6595,9 +6609,11 @@ void editor_mode::scan_switch_drives()
 			family = std::prev(tool.drives.end());
 		}
 		family->files[hand * 2 + drive] = entry.file;
+		family->preferred |= info.switch_default;
 	}
 	std::sort(tool.drives.begin(), tool.drives.end(), [](switch_tool::drive_family const &A, switch_tool::drive_family const &B) { return A.name < B.name; });
-	tool.drive = tool.drives.empty() ? -1 : 0;
+	auto const preferred{std::find_if(tool.drives.begin(), tool.drives.end(), [](switch_tool::drive_family const &Family) { return Family.preferred; })};
+	tool.drive = tool.drives.empty() ? -1 : preferred != tool.drives.end() ? static_cast<int>(preferred - tool.drives.begin()) : 0;
 }
 
 std::string editor_mode::switch_name_for_new() const
@@ -6615,6 +6631,7 @@ std::string editor_mode::switch_name_for_new() const
 bool editor_mode::place_switch_drive(TTrack &Switch)
 {
 	auto &tool{m_switch};
+	scan_switch_drives();
 	if (tool.drive < 0 || tool.drive >= static_cast<int>(tool.drives.size()) || Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
 		return false;
 	auto const &main{Switch.m_paths[0]};
@@ -6657,6 +6674,75 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 	}
 	tool.status = format(STR_C("Switch %s with the drive %s: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), item.file.c_str(), Switch.name().c_str(), Switch.name().c_str());
 	return true;
+}
+
+bool editor_mode::flip_switch_drive(TTrack &Switch)
+{
+	auto &tool{m_switch};
+	scan_switch_drives();
+	auto const plain = [](std::string Text) {
+		std::replace(Text.begin(), Text.end(), '\\', '/');
+		std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
+		return Text;
+	};
+	std::map<std::string, std::pair<int, int>> variants;
+	for (int family = 0; family < static_cast<int>(tool.drives.size()); ++family)
+		for (int index = 0; index < 4; ++index)
+			if (false == tool.drives[family].files[index].empty())
+				variants[plain(tool.drives[family].files[index])] = {family, index};
+	auto const name{plain(Switch.name())};
+	auto const standing{standing_templates([&](std::string const &File) { return variants.count(File) > 0; })};
+	auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_template const &Drive) { return plain(Drive.values[0]) == name; })};
+	if (found == standing.end())
+	{
+		tool.status = format(STR_C("No drive of the switch %s among the described drives"), Switch.name().c_str());
+		return false;
+	}
+	auto const [family, index]{variants[found->file]};
+	template_item item;
+	item.file = tool.drives[family].files[index ^ 1];
+	if (item.file.empty())
+	{
+		tool.status = format(STR_C("The drive %s has no variant with the drive on the other side"), tool.drives[family].name.c_str());
+		return false;
+	}
+	item.location = found->location;
+	item.yaw = found->yaw;
+	item.described = true;
+	item.track = Switch.name();
+	auto const angle = [&](std::size_t const Index) {
+		double value{0.0};
+		if (Index < found->values.size())
+			std::sscanf(found->values[Index].c_str(), "%lf", &value);
+		return value;
+	};
+	item.tilt = {angle(5), angle(6)};
+	if (remove_templates({found->instance}) == 0)
+	{
+		tool.status = STR_C("The drive of this switch can't be changed in its file");
+		return false;
+	}
+	std::string error;
+	if (place_templates({item}, error) == 0)
+	{
+		scene::Layers.removed(found->instance, false);
+		m_history.pop_back();
+		tool.status = STR_C("The drive couldn't be placed: ") + error;
+		return false;
+	}
+	join_last_steps();
+	tool.status = format((index ^ 1) & 1 ? STR_C("Switch %s: the drive %s, on the right now") : STR_C("Switch %s: the drive %s, on the left now"), Switch.name().c_str(), item.file.c_str());
+	return true;
+}
+
+void editor_mode::join_last_steps()
+{
+	if (m_history.size() < 2)
+		return;
+	auto last{std::move(m_history.back())};
+	m_history.pop_back();
+	auto &previous{m_history.back()};
+	previous.instances.insert(previous.instances.end(), last.instances.begin(), last.instances.end());
 }
 
 bool editor_mode::render_switch_drive_choice()

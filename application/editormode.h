@@ -933,6 +933,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		{
 			std::string name;
 			std::array<std::string, 4> files;
+			bool preferred{false};
 		};
 		std::vector<drive_family> drives;
 		bool drives_scanned{false};
@@ -964,6 +965,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	void scan_switch_drives();
 	std::string switch_name_for_new() const;
 	bool place_switch_drive(TTrack &Switch);
+	bool flip_switch_drive(TTrack &Switch);
+	void advance_switch_name();
+	void join_last_steps();
 	bool render_switch_drive_choice();
 	int m_turnout_template{0};
 	struct turntable_template
