@@ -1054,9 +1054,13 @@ void editor_mode::selftest_step()
 			auto const before{m_history.size()};
 			for (glm::dvec3 point{0.0}; words >> point.x >> point.z;)
 			{
-				point.y = m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
-				m_lay.mouse = point;
+				point.y = 5000.0;
+				std::vector<char> found;
+				auto const ground{ground_heights({point}, true, &found)};
+				point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
 				m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
+				m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
+				WriteLog(format("SELFTEST layclicks ground %.3f, track %.3f", point.y, m_lay.mouse.y));
 				lay_click();
 				WriteLog(format("SELFTEST layclicks %.1f %.1f: %s", point.x, point.z, m_lay.status.c_str()));
 			}
@@ -1064,6 +1068,7 @@ void editor_mode::selftest_step()
 			m_lay.active = active;
 			glm::dvec2 heading{0.0};
 			glm::dvec3 previous{0.0};
+			double slope{0.0};
 			bool first{true};
 			for (auto step{before}; step < m_history.size(); ++step)
 				for (auto const *track : m_history[step].created)
@@ -1073,8 +1078,11 @@ void editor_mode::selftest_step()
 					auto const begin{glm::normalize(geometry::plan_of(curve.first(0.0)))};
 					auto const &a{path.points[segment_data::point::start]};
 					auto const &b{path.points[segment_data::point::end]};
-					WriteLog(format("SELFTEST layclicks path %s: %.2f %.2f -> %.2f %.2f, L %.2f m, R %.1f m, kink %.4f deg, step %.4f m", track->name().c_str(), a.x, a.z, b.x, b.z, curve.plan_length(), static_cast<double>(path.radius),
-					                first ? 0.0 : glm::degrees(std::abs(geometry::signed_angle(heading, begin))), first ? 0.0 : glm::distance(previous, a)));
+					auto const rise = [](glm::dvec3 const &Tangent) { return Tangent.y / std::max(1e-9, glm::length(geometry::plan_of(Tangent))); };
+					WriteLog(format("SELFTEST layclicks path %s: %.2f %.2f -> %.2f %.2f, L %.2f m, R %.1f m, kink %.4f deg, step %.4f m, y %.3f -> %.3f, grade %.2f -> %.2f permille, grade break %.3f permille", track->name().c_str(), a.x, a.z, b.x, b.z, curve.plan_length(), static_cast<double>(path.radius),
+					                first ? 0.0 : glm::degrees(std::abs(geometry::signed_angle(heading, begin))), first ? 0.0 : glm::distance(previous, a), a.y, b.y, 1000.0 * rise(curve.first(0.0)), 1000.0 * rise(curve.first(1.0)),
+					                first ? 0.0 : 1000.0 * std::abs(rise(curve.first(0.0)) - slope)));
+					slope = rise(curve.first(1.0));
 					heading = glm::normalize(geometry::plan_of(curve.first(1.0)));
 					previous = b;
 					first = false;

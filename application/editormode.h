@@ -1144,6 +1144,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool switch_reach(glm::dvec3 const &Ground, glm::dvec3 &Point);
 	glm::dvec3 cursor_ground() const;
 	glm::dvec3 cursor_level(double const Height) const;
+	glm::dvec3 cursor_terrain(double const Height);
+	double bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style);
+	glm::dvec3 lay_bed(glm::dvec3 const &Point);
 	std::optional<glm::dvec3> m_cursor_override;
 	bool sweep_grabs(glm::dvec3 const &Point);
 	// menu of the path a click of the right mouse button lands on

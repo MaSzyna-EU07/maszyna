@@ -201,6 +201,56 @@ std::vector<segment_data> straight_piece(glm::dvec3 const &Point, glm::dvec2 con
 	return {path};
 }
 
+void follow_heights(std::vector<segment_data> &Pieces, double const Height0, double Grade0, double const Height1, double Grade1)
+{
+	std::vector<double> lengths;
+	double total{0.0};
+	for (auto const &piece : Pieces)
+		total += lengths.emplace_back(bezier{piece}.plan_length());
+	if (total < 1e-3)
+		return;
+	auto const chord{(Height1 - Height0) / total};
+	if (std::isnan(Grade0))
+		Grade0 = chord;
+	if (std::isnan(Grade1))
+		Grade1 = chord;
+	auto const height = [&](double const Chainage) {
+		auto const t{Chainage / total};
+		return (2.0 * t * t * t - 3.0 * t * t + 1.0) * Height0 + (t * t * t - 2.0 * t * t + t) * total * Grade0 + (3.0 * t * t - 2.0 * t * t * t) * Height1 + (t * t * t - t * t) * total * Grade1;
+	};
+	auto const grade = [&](double const Chainage) {
+		auto const t{Chainage / total};
+		return (6.0 * t * t - 6.0 * t) * (Height0 - Height1) / total + (3.0 * t * t - 4.0 * t + 1.0) * Grade0 + (3.0 * t * t - 2.0 * t) * Grade1;
+	};
+	double chainage{0.0};
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	{
+		auto &points{Pieces[i].points};
+		auto const length{lengths[i]};
+		auto const from{grade(chainage)};
+		auto const to{grade(chainage + length)};
+		auto &start{points[segment_data::point::start]};
+		auto &end{points[segment_data::point::end]};
+		auto &control1{points[segment_data::point::control1]};
+		auto &control2{points[segment_data::point::control2]};
+		start.y = height(chainage);
+		end.y = height(chainage + length);
+		chainage += length;
+		if (control1 != glm::dvec3{} || control2 != glm::dvec3{})
+		{
+			control1.y = from * glm::length(plan_of(control1));
+			control2.y = -to * glm::length(plan_of(control2));
+			continue;
+		}
+		auto const linear{(end.y - start.y) / std::max(length, 1e-6)};
+		if (length < 1e-3 || (std::abs(from - linear) < 1e-6 && std::abs(to - linear) < 1e-6))
+			continue;
+		auto const along{glm::normalize(plan_of(end - start)) * (length / 3.0)};
+		control1 = {along.x, from * length / 3.0, along.y};
+		control2 = {-along.x, -to * length / 3.0, -along.y};
+	}
+}
+
 std::vector<segment_data> arc_through(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec2 const &Offset)
 {
 	auto const along{glm::dot(Offset, Direction)};
@@ -3845,11 +3895,11 @@ void editor_mode::update_build_tools()
 	};
 	if (m_extend.active)
 	{
-		screen_projection const projection;
-		glm::dvec3 level;
-		m_extend.mouse = projection.on_level(io.MousePos, m_extend.point.y, level) && plan_distance(level, m_extend.point) < static_cast<double>(kMaxPlacementDistance) ? level : ground;
+		m_extend.mouse = cursor_terrain(m_extend.point.y);
 		typed_extend();
 		m_extend.snap = m_typed.empty() && m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
+		if (m_extend.snap.track == nullptr)
+			m_extend.mouse.y = bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
 		joining(m_extend.snap);
 	}
 	if (m_switch.placing)
@@ -3861,15 +3911,11 @@ void editor_mode::update_build_tools()
 	if (false == lay.active)
 		return;
 	// geometric ray, same as extend: Mouse_Position() is a delayed depth pick and lags the cursor
-	screen_projection const lay_projection;
-	double const height{false == lay.points.empty() ? lay.points.back().y : lay.start.track != nullptr ? lay.start.position.y : 0.0};
-	glm::dvec3 mouse{ground};
-	if (m_cursor_override.has_value())
-		mouse = glm::dvec3{m_cursor_override->x, height, m_cursor_override->z};
-	else if (false == lay_projection.on_level(io.MousePos, height, mouse))
-		mouse = ground;
-	lay.mouse = typed_lay(mouse);
+	double const height{false == lay.points.empty() ? lay.points.back().y : lay.start.track != nullptr ? lay.start.position.y : ground.y};
+	lay.mouse = typed_lay(cursor_terrain(height));
 	lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+	if (lay.mouse_snap.track == nullptr)
+		lay.mouse = lay_bed(lay.mouse);
 	if (false == m_extend.active)
 		joining(lay.points.empty() ? editor_track::snap_target{} : lay.mouse_snap);
 	if (lay.points.empty())
@@ -3964,6 +4010,52 @@ glm::dvec3 editor_mode::cursor_ground() const
 	if (projection.on_level(ImGui::GetIO().MousePos, 0.0, level))
 		return level;
 	return {ground.x, 0.0, ground.z};
+}
+
+glm::dvec3 editor_mode::cursor_terrain(double const Height)
+{
+	auto point{cursor_level(Height)};
+	for (int i = 0; i < 5; ++i)
+	{
+		std::vector<char> found;
+		auto const heights{ground_heights({point}, true, &found)};
+		if (found[0] == 0)
+			return point;
+		auto const next{cursor_level(heights[0])};
+		auto const settled{plan_distance(next, point) < 0.01};
+		point = {next.x, heights[0], next.z};
+		if (settled)
+			break;
+	}
+	return point;
+}
+
+double editor_mode::bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style)
+{
+	auto const [depth, half]{Style != nullptr ? profile_ballast(*Style) : std::pair<double, double>{0.2, 0.5 * 1.435 + 0.5 + 1.1}};
+	std::vector<glm::dvec3> points{Point};
+	if (glm::length(Direction) > 1e-6)
+	{
+		auto const side{glm::normalize(glm::dvec2{-Direction.y, Direction.x}) * half};
+		points.push_back(Point + glm::dvec3{side.x, 0.0, side.y});
+		points.push_back(Point - glm::dvec3{side.x, 0.0, side.y});
+	}
+	std::vector<char> found;
+	auto const heights{ground_heights(points, true, &found)};
+	auto toe{std::numeric_limits<double>::max()};
+	for (std::size_t i = 1; i < points.size(); ++i)
+		if (found[i] != 0)
+			toe = std::min(toe, heights[i]);
+	if (found[0] == 0)
+		return toe < std::numeric_limits<double>::max() ? toe + depth : Point.y;
+	return std::max(toe < std::numeric_limits<double>::max() ? toe + depth : heights[0] + depth, heights[0]);
+}
+
+glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point)
+{
+	auto const &tool{m_lay};
+	TTrack const *style{tool.start.track != nullptr ? tool.start.track : tool.copy_selected ? selected_track() : nullptr};
+	return {Point.x, bed_height(Point, tool.points.empty() ? glm::dvec2{0.0} : plan_of(Point - tool.points.back()), style), Point.z};
 }
 
 glm::dvec3 editor_mode::cursor_level(double const Height) const
@@ -4202,13 +4294,16 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 			auto pieces{arc_pieces(tool.point, direction, tool.grade, radius, std::min(angle, glm::pi<double>()), side)};
 			for (auto &piece : pieces)
 				piece.rolls = {diverging.rolls[1], diverging.rolls[1]};
+			follow_heights(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN());
 			return pieces;
 		}
 	}
 	auto radius{m_lay.radius};
 	if (auto const values{typed_values()}; false == values.empty() && (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc) && std::abs(values[0]) >= 1.0)
 		radius = std::abs(values[0]);
-	return layout_pieces(tool.point, tool.direction, tool.grade, tool.mouse, radius);
+	auto pieces{layout_pieces(tool.point, tool.direction, tool.grade, tool.mouse, radius)};
+	follow_heights(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN());
+	return pieces;
 }
 
 std::vector<segment_data> editor_mode::layout_pieces(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec3 const &Mouse, double const Radius) const
@@ -4541,7 +4636,11 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		m_join_last = {};
 		std::vector<segment_data> pieces;
 		if (tool.start.track != nullptr)
-			pieces = layout_pieces(Points[0], glm::normalize(leaving), -grade_of(tool.start.direction), Points[1], tool.radius);
+		{
+			auto const grade{-grade_of(tool.start.direction)};
+			pieces = layout_pieces(Points[0], glm::normalize(leaving), grade, Points[1], tool.radius);
+			follow_heights(pieces, Points[0].y, grade, Points[1].y, std::numeric_limits<double>::quiet_NaN());
+		}
 		else if (End.track == nullptr)
 		{
 			auto const length{glm::length(leaving)};
@@ -4552,6 +4651,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			auto const back{layout_pieces(End.position, glm::normalize(-plan_of(End.direction)), -grade_of(End.direction), Points[0], tool.radius)};
 			for (auto piece{back.rbegin()}; piece != back.rend(); ++piece)
 				pieces.push_back(turned_around(*piece));
+			follow_heights(pieces, Points[0].y, std::numeric_limits<double>::quiet_NaN(), End.position.y, grade_of(End.direction));
 		}
 		for (auto const &piece : pieces)
 			Length += bezier{piece}.plan_length();
@@ -4691,10 +4791,10 @@ void editor_mode::lay_click()
 	if (tool.points.empty())
 	{
 		tool.start = snap;
-		tool.points.push_back(snap.track != nullptr ? snap.position : placement_on_ground(tool.mouse));
+		tool.points.push_back(snap.track != nullptr ? snap.position : tool.mouse);
 		return;
 	}
-	auto const point{placement_on_ground(tool.mouse)};
+	auto const &point{tool.mouse};
 	if (plan_distance(point, tool.points.back()) < 1.0)
 		return;
 	m_typed.clear();
