@@ -181,7 +181,7 @@ void editor_mode::draw_track_hover() const
 bool editor_mode::track_gesture_on() const
 {
 	return mouseHold || m_track_set_using || m_track_box.active || m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || m_track_gizmo_using || m_route_gizmo_using || m_extend.active || m_switch.placing || m_straights.dragging || m_straights.tool_mouse ||
-	       m_point_drag.active || m_handle_drag.active || m_sweep.dragging || m_turntable.placing || m_signal.placing || m_signal.moving || ImGuizmo::IsUsing();
+	       m_point_drag.active || m_handle_drag.active || m_sweep.dragging || m_turntable.placing || m_signal.placing || m_signal.moving || m_switch.slide.active || ImGuizmo::IsUsing();
 }
 
 editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
@@ -343,6 +343,13 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::straight_tool, m_straights.tool == 1 ? "Click: break the straight here" : "Click: start of the shift");
 		}
 	}
+	if ((m_track_tab == track_tab::turnout || m_track_tab == track_tab::path) && m_hover.track != nullptr && switch_slides(*m_hover.track))
+	{
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.point;
+		return make(kind::switch_slide, "Click: edit this switch, drag: slide it along the straight");
+	}
 	if (selected != nullptr && false == selected->m_paths.empty())
 	{
 		glm::dvec3 point;
@@ -453,6 +460,15 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::turntable_fit: turntable_press(Intent); return;
 	case kind::signal_place:
 	case kind::signal_move: signal_press(Intent); return;
+	case kind::switch_slide:
+		if (Intent.track != nullptr)
+		{
+			if (m_track_tab == track_tab::path)
+				m_track_set.clear();
+			select_track(Intent.track);
+			switch_slide_start(*Intent.track);
+		}
+		return;
 	case kind::select:
 	case kind::none:
 	{

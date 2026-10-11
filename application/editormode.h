@@ -938,8 +938,29 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool drives_scanned{false};
 		int drive{-1};
 		int drive_side{0};
+		struct slide_state
+		{
+			bool active{false};
+			TTrack *track{nullptr};
+			glm::vec2 pressed{0.f};
+			double grip{0.0};
+			double low{0.0};
+			double high{0.0};
+			double distance{0.0};
+			std::vector<double> joints;
+		};
+		slide_state slide;
+		double slide_typed{0.0};
 	};
 	switch_tool m_switch;
+	bool switch_room(TTrack &Track, double &Low, double &High, std::string &Reason);
+	bool move_switch_paths(TTrack &Track, std::vector<segment_data> const &Paths, std::string &Status);
+	bool slide_switch(TTrack &Track, double const Distance);
+	bool switch_slides(TTrack const &Track) const;
+	void switch_slide_start(TTrack &Track);
+	void switch_slide_update();
+	void switch_slide_finish();
+	void draw_switch_slide() const;
 	void scan_switch_drives();
 	std::string switch_name_for_new() const;
 	bool place_switch_drive(TTrack &Switch);
@@ -1182,7 +1203,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};

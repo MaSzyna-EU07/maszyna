@@ -5403,3 +5403,21 @@ msgstr "Przechyłka różni się od zapisanego projektu maks. o %.0f mm"
 
 msgid "Switch %s lost the shape of its type %s: Ctrl+Z takes it back"
 msgstr "Rozjazd %s stracił kształt swojego typu %s: Ctrl+Z cofa"
+
+msgid "The switch would run into another switch or past the end of the straight"
+msgstr "Rozjazd wjechałby na inny rozjazd albo za koniec prostej"
+
+msgid "Switch %s moved %.2f m along the straight"
+msgstr "Rozjazd %s przesunięty o %.2f m wzdłuż prostej"
+
+msgid "Slide along the straight"
+msgstr "Przesuń wzdłuż prostej"
+
+msgid "Moves the switch along its straight by the distance typed, + towards the frog; the straight paths on both sides get shorter or longer. Dragging the switch with the mouse does the same"
+msgstr "Przesuwa rozjazd wzdłuż jego prostej o wpisaną odległość, + w stronę krzyżownicy; proste po obu stronach skracają się albo wydłużają. To samo robi przeciągnięcie rozjazdu myszą"
+
+msgid "Room on the straight: %.2f m back, %.2f m ahead"
+msgstr "Miejsce na prostej: %.2f m do tyłu, %.2f m do przodu"
+
+msgid "Click: edit this switch, drag: slide it along the straight"
+msgstr "Klik: edytuj ten rozjazd, przeciągnij: przesuń go wzdłuż prostej"

@@ -1418,6 +1418,8 @@ bool editor_mode::update()
             finish_track_box();
         update_track_hover();
         point_drag_update();
+        switch_slide_update();
+        draw_switch_slide();
         if (m_track_tab == track_tab::turntable)
             draw_turntable_overlay();
         if (m_track_tab == track_tab::signals)
@@ -5700,6 +5702,8 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     turntable_finish_placement();
                 if (m_signal.placing || m_signal.moving)
                     signal_release();
+                if (m_switch.slide.active)
+                    switch_slide_finish();
             }
 
             m_dragging = false;

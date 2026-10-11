@@ -1979,36 +1979,17 @@ void editor_mode::render_turnout_ui()
 		for (int i = 0; i < 2; ++i)
 			if (paths[i].rolls[0] == 0.f && paths[i].rolls[1] == 0.f)
 				paths[i].rolls = track->m_paths[i].rolls;
-		auto const joints{editor_track::joints(*track)};
-		std::vector<std::pair<TTrack *, editor_track::state>> states{{track, editor_track::capture(*track)}};
-		track->m_paths.assign(paths.begin(), paths.begin() + 2);
-		// the neighbours follow the ends which moved a little, those which went far are left loose
-		std::vector<editor_track::joint> following;
-		std::vector<TTrack *> changed{track};
-		std::string loose;
-		for (auto const &joint : joints)
+		std::string status;
+		if (false == move_switch_paths(*track, paths, status))
 		{
-			auto const &theirs{joint.other->m_paths[joint.theirs.path]};
-			auto const shift{glm::distance(editor_track::point_position(*track, joint.own), editor_track::point_position(*joint.other, joint.theirs))};
-			if (shift > 0.3 * bezier{theirs}.plan_length())
-			{
-				loose += (loose.empty() ? "" : ", ") + (joint.other->name().empty() ? std::string{"(noname)"} : joint.other->name());
-				continue;
-			}
-			following.push_back(joint);
-			if (std::find(changed.begin(), changed.end(), joint.other) == changed.end())
-			{
-				changed.push_back(joint.other);
-				states.emplace_back(joint.other, editor_track::capture(*joint.other));
-			}
+			ui()->set_status(status, true);
+			return;
 		}
-		push_track_snapshot(std::move(states));
-		editor_track::follow(*track, following);
-		editor_track::commit(changed);
 		record_switch(*track, Template);
 		records_to_history();
-		if (false == loose.empty())
-			ui()->set_status(STR_C("Too far from the new ends of the switch, left unjoined: ") + loose, true);
+		straight_refresh();
+		if (false == status.empty())
+			ui()->set_status(status, true);
 	};
 	int const side{offset > 0.0 ? 1 : -1};
 	if (ImGui::Button(STR_C("Replace the geometry with the template")))
@@ -2034,6 +2015,17 @@ void editor_mode::render_turnout_ui()
 		replace(own, -side);
 	}
 	item_tooltip("Mirrors the switch: the diverging track goes to the other side");
+	if (double low, high; switch_slides(*track) && switch_room(*track, low, high, m_switch.status))
+	{
+		ImGui::PushItemWidth(100.0f);
+		ImGui::InputDouble("##switchslide", &tool.slide_typed, 0.0, 0.0, "%.2f m");
+		ImGui::PopItemWidth();
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Slide along the straight")))
+			slide_switch(*track, std::clamp(tool.slide_typed, low, high - length));
+		item_tooltip("Moves the switch along its straight by the distance typed, + towards the frog; the straight paths on both sides get shorter or longer. Dragging the switch with the mouse does the same");
+		ImGui::TextDisabled(STR_C("Room on the straight: %.2f m back, %.2f m ahead"), -low, high - length);
+	}
 	ImGui::Separator();
 	render_path_parameters(*track);
 }
@@ -6787,6 +6779,334 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	auto const relaid{editor_track::relay(chain, pieces)};
 	Created.insert(Created.end(), relaid.begin(), relaid.end());
 	return true;
+}
+
+bool editor_mode::switch_room(TTrack &Track, double &Low, double &High, std::string &Reason)
+{
+	Low = 0.0;
+	High = 0.0;
+	if (Track.eType != tt_Switch || Track.m_paths.size() < 2)
+		return false;
+	auto const &main{Track.m_paths.front()};
+	if (main.points[segment_data::point::control1] != glm::dvec3{} || main.points[segment_data::point::control2] != glm::dvec3{})
+		return false;
+	auto const origin{main.points[segment_data::point::start]};
+	auto const axis{plan_of(main.points[segment_data::point::end] - origin)};
+	auto const length{glm::length(axis)};
+	if (length < 1e-3)
+		return false;
+	auto const direction{axis / length};
+	auto const line{editor_track::find_straight(Track, m_straights.tolerance)};
+	if (false == tracks_editable(line.tracks, Reason))
+		return false;
+	std::vector<std::tuple<double, double, bool>> spans;
+	for (std::size_t i = 0; i < line.tracks.size(); ++i)
+	{
+		if (line.tracks[i] == &Track)
+			continue;
+		auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
+		auto const a{glm::dot(plan_of(path.points[segment_data::point::start] - origin), direction)};
+		auto const b{glm::dot(plan_of(path.points[segment_data::point::end] - origin), direction)};
+		spans.emplace_back(std::min(a, b), std::max(a, b), line.tracks[i]->eType == tt_Normal);
+	}
+	std::sort(spans.begin(), spans.end());
+	double low{0.0}, high{length};
+	for (auto const &[from, to, plain] : spans)
+		if (from > length - 0.01)
+		{
+			if (false == plain || from > high + 0.01)
+				break;
+			high = std::max(high, to);
+		}
+	for (auto span{spans.rbegin()}; span != spans.rend(); ++span)
+	{
+		auto const &[from, to, plain] = *span;
+		if (to < 0.01)
+		{
+			if (false == plain || to < low - 0.01)
+				break;
+			low = std::min(low, from);
+		}
+	}
+	Low = low;
+	High = high;
+	return true;
+}
+
+bool editor_mode::move_switch_paths(TTrack &Track, std::vector<segment_data> const &Paths, std::string &Status)
+{
+	if (Paths.size() < 2 || Track.m_paths.size() < 2)
+		return false;
+	auto const old{Track.m_paths};
+	auto const &main{old.front()};
+	auto const origin{main.points[segment_data::point::start]};
+	auto const axis{plan_of(main.points[segment_data::point::end] - origin)};
+	auto const length{glm::length(axis)};
+	if (length < 1e-3)
+		return false;
+	auto const direction{axis / length};
+	auto const along = [&](glm::dvec3 const &Point) { return glm::dot(plan_of(Point - origin), direction); };
+	auto const lateral = [&](glm::dvec3 const &Point) { return std::abs(cross(direction, plan_of(Point - origin))); };
+	double low{0.0}, high{0.0};
+	std::string reason;
+	bool const online{switch_room(Track, low, high, reason)};
+	if (false == online && false == reason.empty())
+	{
+		Status = reason;
+		return false;
+	}
+	struct end_move
+	{
+		glm::dvec3 from;
+		glm::dvec3 to;
+		double shift;
+	};
+	std::vector<end_move> ends;
+	for (auto const index : {segment_data::point::start, segment_data::point::end})
+	{
+		auto const from{main.points[index]};
+		auto const to{Paths.front().points[index]};
+		if (false == online || glm::distance(from, to) < 0.005 || lateral(to) > m_straights.tolerance.offset)
+			continue;
+		auto const target{along(to)};
+		if (target < low - 0.01 || target > high + 0.01)
+		{
+			Status = STR_C("The switch would run into another switch or past the end of the straight");
+			return false;
+		}
+		ends.push_back({from, to, index == segment_data::point::start ? along(from) - target : target - along(from)});
+	}
+	std::stable_sort(ends.begin(), ends.end(), [](end_move const &A, end_move const &B) { return A.shift > B.shift; });
+	auto const joints{editor_track::joints(Track)};
+	std::vector<glm::dvec3> positions;
+	for (auto const &joint : joints)
+		positions.push_back(editor_track::point_position(Track, joint.own));
+	std::vector<bool> handled(joints.size(), false);
+	std::vector<std::pair<TTrack *, editor_track::state>> states{{&Track, editor_track::capture(Track)}};
+	std::vector<TTrack *> created;
+	std::vector<TTrack *> removed;
+	std::vector<TTrack *> changed{&Track};
+	auto const line{online ? editor_track::find_straight(Track, m_straights.tolerance) : editor_track::straight{}};
+	for (auto const &end : ends)
+	{
+		for (std::size_t i = 0; i < joints.size(); ++i)
+			if (glm::distance(positions[i], end.from) < geometry::same_point)
+				handled[i] = true;
+		if (end.shift > 0.0)
+		{
+			auto const a{line.along(end.from)};
+			auto const b{line.along(end.to)};
+			if (false == cut_straight(line, std::min(a, b), std::max(a, b), states, created, removed, nullptr))
+			{
+				Status = STR_C("The switch would overlap another switch, move it onto plain track");
+				return false;
+			}
+			continue;
+		}
+		TTrack const *style{nullptr};
+		bool filler{false};
+		for (auto const &connection : editor_track::connected_points(Track, end.from))
+		{
+			auto *other{connection.first};
+			if (other->m_editorremoved)
+				continue;
+			if (other->eType == tt_Normal && std::find(line.tracks.begin(), line.tracks.end(), other) != line.tracks.end())
+			{
+				if (std::find(changed.begin(), changed.end(), other) == changed.end())
+				{
+					states.emplace_back(other, editor_track::capture(*other));
+					changed.push_back(other);
+				}
+				editor_track::move_point(*other, connection.second, end.to);
+				continue;
+			}
+			filler = true;
+			if (style == nullptr && other->eType == tt_Normal)
+				style = other;
+		}
+		if (filler)
+		{
+			segment_data path;
+			path.points[segment_data::point::start] = end.to;
+			path.points[segment_data::point::end] = end.from;
+			auto *piece{editor_track::create_path(style != nullptr ? *style : Track, path)};
+			created.push_back(piece);
+			changed.push_back(piece);
+		}
+	}
+	Track.m_paths.assign(Paths.begin(), Paths.begin() + 2);
+	std::vector<editor_track::joint> following;
+	std::string loose;
+	for (std::size_t i = 0; i < joints.size(); ++i)
+	{
+		auto const &joint{joints[i]};
+		if (handled[i] || joint.other->m_editorremoved)
+			continue;
+		auto const &theirs{joint.other->m_paths[joint.theirs.path]};
+		auto const shift{glm::distance(editor_track::point_position(Track, joint.own), editor_track::point_position(*joint.other, joint.theirs))};
+		if (shift > 0.3 * bezier{theirs}.plan_length())
+		{
+			loose += (loose.empty() ? "" : ", ") + (joint.other->name().empty() ? std::string{"(noname)"} : joint.other->name());
+			continue;
+		}
+		following.push_back(joint);
+		if (std::find(changed.begin(), changed.end(), joint.other) == changed.end())
+		{
+			changed.push_back(joint.other);
+			states.emplace_back(joint.other, editor_track::capture(*joint.other));
+		}
+	}
+	editor_track::follow(Track, following);
+	editor_track::commit(changed);
+	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
+	if (false == loose.empty())
+		Status = STR_C("Too far from the new ends of the switch, left unjoined: ") + loose;
+	return true;
+}
+
+bool editor_mode::slide_switch(TTrack &Track, double const Distance)
+{
+	if (Track.m_paths.size() < 2 || std::abs(Distance) < 0.005)
+		return false;
+	auto const &main{Track.m_paths.front()};
+	auto const run{main.points[segment_data::point::end] - main.points[segment_data::point::start]};
+	auto const planlength{glm::length(plan_of(run))};
+	if (planlength < 1e-3)
+		return false;
+	auto const shift{run * (Distance / planlength)};
+	auto paths{Track.m_paths};
+	for (auto &path : paths)
+	{
+		path.points[segment_data::point::start] += shift;
+		path.points[segment_data::point::end] += shift;
+	}
+	std::string status;
+	if (false == move_switch_paths(Track, paths, status))
+	{
+		m_switch.status = status;
+		ui()->set_status(status, true);
+		return false;
+	}
+	switch_store::follow();
+	records_to_history();
+	straight_refresh();
+	m_switch.status = status.empty() ? format(STR_C("Switch %s moved %.2f m along the straight"), Track.name().c_str(), Distance) : status;
+	ui()->set_status(m_switch.status, false == status.empty());
+	return true;
+}
+
+bool editor_mode::switch_slides(TTrack const &Track) const
+{
+	return Track.eType == tt_Switch && Track.m_paths.size() == 2 && false == Track.m_editorremoved && Track.m_paths.front().points[segment_data::point::control1] == glm::dvec3{} && Track.m_paths.front().points[segment_data::point::control2] == glm::dvec3{};
+}
+
+void editor_mode::switch_slide_start(TTrack &Track)
+{
+	auto &slide{m_switch.slide};
+	slide = {};
+	std::string reason;
+	if (false == switch_room(Track, slide.low, slide.high, reason))
+	{
+		if (false == reason.empty())
+			ui()->set_status(reason, true);
+		return;
+	}
+	auto const &main{Track.m_paths.front()};
+	auto const origin{main.points[segment_data::point::start]};
+	auto const direction{glm::normalize(plan_of(main.points[segment_data::point::end] - origin))};
+	auto const &mouse{ImGui::GetIO().MousePos};
+	slide.active = true;
+	slide.track = &Track;
+	slide.pressed = {mouse.x, mouse.y};
+	slide.grip = glm::dot(plan_of(cursor_level(origin.y) - origin), direction);
+	auto const line{editor_track::find_straight(Track, m_straights.tolerance)};
+	for (std::size_t i = 0; i < line.tracks.size(); ++i)
+	{
+		if (line.tracks[i] == &Track)
+			continue;
+		auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			slide.joints.push_back(glm::dot(plan_of(path.points[index] - origin), direction));
+	}
+}
+
+void editor_mode::switch_slide_update()
+{
+	auto &slide{m_switch.slide};
+	if (false == slide.active)
+		return;
+	if (slide.track == nullptr || slide.track->m_editorremoved || slide.track->m_paths.size() < 2)
+	{
+		slide = {};
+		return;
+	}
+	auto const &main{slide.track->m_paths.front()};
+	auto const origin{main.points[segment_data::point::start]};
+	auto const axis{plan_of(main.points[segment_data::point::end] - origin)};
+	auto const length{glm::length(axis)};
+	auto const direction{axis / length};
+	auto distance{std::clamp(glm::dot(plan_of(cursor_level(origin.y) - origin), direction) - slide.grip, slide.low, slide.high - length)};
+	double best{1.0};
+	double snapped{distance};
+	for (auto const joint : slide.joints)
+		for (auto const end : {0.0, length})
+			if (auto const gap{std::abs(joint - (end + distance))}; gap < best && std::abs(joint - end) > 0.01)
+			{
+				best = gap;
+				snapped = joint - end;
+			}
+	slide.distance = std::clamp(snapped, slide.low, slide.high - length);
+}
+
+void editor_mode::switch_slide_finish()
+{
+	auto &slide{m_switch.slide};
+	if (false == slide.active)
+		return;
+	auto *track{slide.track};
+	auto const distance{slide.distance};
+	auto const &mouse{ImGui::GetIO().MousePos};
+	auto const dragged{glm::length(glm::vec2{mouse.x, mouse.y} - slide.pressed) > kDragPixels};
+	slide = {};
+	if (track != nullptr && false == track->m_editorremoved && dragged)
+		slide_switch(*track, distance);
+}
+
+void editor_mode::draw_switch_slide() const
+{
+	auto const &slide{m_switch.slide};
+	if (false == slide.active || slide.track == nullptr || slide.track->m_paths.size() < 2)
+		return;
+	auto const &mouse{ImGui::GetIO().MousePos};
+	if (glm::length(glm::vec2{mouse.x, mouse.y} - slide.pressed) <= kDragPixels)
+		return;
+	auto const &main{slide.track->m_paths.front()};
+	auto const run{main.points[segment_data::point::end] - main.points[segment_data::point::start]};
+	auto const shift{run * (slide.distance / std::max(1e-6, glm::length(plan_of(run))))};
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	for (auto path : slide.track->m_paths)
+	{
+		path.points[segment_data::point::start] += shift;
+		path.points[segment_data::point::end] += shift;
+		bezier const curve{path};
+		auto previous{curve.point(0.0)};
+		for (int i = 1; i <= 24; ++i)
+		{
+			auto const next{curve.point(i / 24.0)};
+			projection.line(drawlist, previous, next, overlay_color::marked, 3.0f);
+			previous = next;
+		}
+	}
+	ImVec2 at;
+	auto const start{main.points[segment_data::point::start] + shift};
+	if (false == projection.project(start, at))
+		return;
+	auto const km{alignment_store::chainage_at(start)};
+	auto const label{km.has_value() ? format("%+.2f m  km %.3f", slide.distance, *km / 1000.0) : format("%+.2f m", slide.distance)};
+	auto const size{ImGui::CalcTextSize(label.c_str())};
+	drawlist->AddRectFilled(ImVec2(at.x + 10.0f, at.y - 8.0f), ImVec2(at.x + 18.0f + size.x, at.y + 8.0f), IM_COL32(0, 0, 0, 180), 3.0f);
+	drawlist->AddText(ImVec2(at.x + 14.0f, at.y - 8.0f), overlay_color::highlight, label.c_str());
 }
 
 bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, std::string const &Name)

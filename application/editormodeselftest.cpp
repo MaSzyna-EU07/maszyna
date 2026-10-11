@@ -1244,6 +1244,75 @@ void editor_mode::selftest_step()
 			while (std::getline(lines, line))
 				WriteLog("SELFTEST btf kept: " + line);
 		}
+		else if (command == "switchslide" || command == "switchreplace")
+		{
+			std::string name;
+			words >> name;
+			auto *track{simulation::Paths.find(name)};
+			if (track == nullptr || track->eType != tt_Switch || track->m_paths.size() < 2)
+			{
+				WriteLog("SELFTEST " + command + ": no switch " + name);
+				continue;
+			}
+			if (command == "switchslide")
+			{
+				double distance{0.0};
+				words >> distance;
+				double low{0.0}, high{0.0};
+				std::string reason;
+				auto const room{switch_room(*track, low, high, reason)};
+				auto const done{slide_switch(*track, distance)};
+				WriteLog(format("SELFTEST switchslide %s %.3f: room %d %.3f .. %.3f, done %d, %s", name.c_str(), distance, room ? 1 : 0, low, high, done ? 1 : 0, m_switch.status.c_str()));
+				continue;
+			}
+			std::string label;
+			int side{1};
+			words >> label >> side;
+			std::replace(label.begin(), label.end(), '_', ' ');
+			auto const templates{editor_track::standard_switch_templates()};
+			auto const found{std::find_if(templates.begin(), templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
+			if (found == templates.end())
+			{
+				WriteLog("SELFTEST switchreplace: no template " + label);
+				continue;
+			}
+			auto const &main{track->m_paths[0]};
+			auto const origin{main.points[segment_data::point::start]};
+			auto const chord{geometry::plan_of(main.points[segment_data::point::end] - origin)};
+			auto const length{glm::length(chord)};
+			auto paths{editor_track::place_switch(*found, origin, chord / length, side, (main.points[segment_data::point::end].y - origin.y) / length)};
+			std::string status;
+			auto const done{paths.size() >= 2 && move_switch_paths(*track, paths, status)};
+			if (done)
+			{
+				record_switch(*track, *found);
+				records_to_history();
+				straight_refresh();
+			}
+			WriteLog(format("SELFTEST switchreplace %s %s: done %d, %s", name.c_str(), found->label.c_str(), done ? 1 : 0, status.c_str()));
+		}
+		else if (command == "pathsnear")
+		{
+			glm::dvec3 point{0.0};
+			double radius{100.0};
+			words >> point.x >> point.z >> radius;
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
+					continue;
+				for (std::size_t i = 0; i < track->m_paths.size(); ++i)
+				{
+					auto const &path{track->m_paths[i]};
+					auto const &a{path.points[segment_data::point::start]};
+					auto const &b{path.points[segment_data::point::end]};
+					if (geometry::plan_distance(a, point) > radius && geometry::plan_distance(b, point) > radius)
+						continue;
+					auto const &c1{path.points[segment_data::point::control1]};
+					auto const &c2{path.points[segment_data::point::control2]};
+					WriteLog(format("SELFTEST path %s/%zu %s: %.3f %.3f -> %.3f %.3f, c1 %.3f %.3f, c2 %.3f %.3f, %.3f m", track->name().c_str(), i, track->eType == tt_Switch ? "switch" : "normal", a.x, a.z, b.x, b.z, c1.x, c1.z, c2.x, c2.z, geometry::bezier{path}.plan_length()));
+				}
+			}
+		}
 		else if (command == "switches")
 		{
 			for (auto const &entry : switch_store::records())

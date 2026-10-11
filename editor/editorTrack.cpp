@@ -659,10 +659,23 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 	{
 		if (joint.own.path >= static_cast<int>(Track.m_paths.size()) || joint.theirs.path >= static_cast<int>(joint.other->m_paths.size()))
 			continue;
-		move_point(*joint.other, joint.theirs, point_position(Track, joint.own));
+		auto &path{joint.other->m_paths[joint.theirs.path]};
+		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
+		bool const straight{path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{}};
+		auto const fixed{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::end : segment_data::point::start]};
+		auto const before{plan_of(path.points[point_index(joint.theirs.kind)] - fixed)};
+		auto const target{point_position(Track, joint.own)};
+		move_point(*joint.other, joint.theirs, target);
 		auto const angle{signed_angle(joint.direction, end_direction(Track.m_paths[joint.own.path], joint.own.kind))};
+		if (straight && std::abs(angle) < 1e-6 && glm::length(before) > 1e-6)
+		{
+			auto const after{plan_of(target - fixed)};
+			auto const axis{glm::normalize(before)};
+			if (std::abs(axis.x * after.y - axis.y * after.x) < 1e-3 && glm::dot(axis, after) > 0.0)
+				continue;
+		}
 		auto const moved{turned(plan_of(joint.control), angle)};
-		joint.other->m_paths[joint.theirs.path].points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2] = {moved.x, joint.control.y, moved.y};
+		control = {moved.x, joint.control.y, moved.y};
 	}
 }
 
