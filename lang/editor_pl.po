@@ -2982,12 +2982,6 @@ msgstr "ułóż do kursora"
 msgid "Shift"
 msgstr "Shift"
 
-msgid "straight on in the direction of the track"
-msgstr "prosto w kierunku toru"
-
-msgid "straight, joins nothing"
-msgstr "prosto, bez łączenia"
-
 msgid "moves the whole track"
 msgstr "przesuwa cały tor"
 
@@ -3360,8 +3354,8 @@ msgstr "Wzdłuż trasy, tam gdzie go brak, powstają kawałki terenu edytora z w
 msgid "Puts back the terrain as it was before the last shaping, and takes away the terrain it made"
 msgstr "Przywraca teren sprzed ostatniego kształtowania i usuwa teren, który przy tym powstał"
 
-msgid "Click: start from this free end, drag: the curve of the switch goes on, Shift: straight"
-msgstr "Kliknij: zacznij od tego wolnego końca, przeciągnij: łuk rozjazdu biegnie dalej, Shift: prosta"
+msgid "Click: start from this free end, drag: the curve of the switch goes on"
+msgstr "Kliknij: zacznij od tego wolnego końca, przeciągnij: łuk rozjazdu biegnie dalej"
 
 msgid "%s and %d vehicle(s) behind it stand on %s. It isn't saved with the scenery"
 msgstr "%s i %d pojazd(ów) za nim stoją na %s. Nie zapisuje się ze scenerią"

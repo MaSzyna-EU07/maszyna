@@ -212,7 +212,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.position = lay.mouse_snap.position;
 			auto const diverging{lay.mouse_snap.track->eType == tt_Switch && lay.mouse_snap.point == editor_track::point_ref{1, editor_track::point_kind::end}};
 			if (lay.points.empty() && diverging)
-				return make(kind::lay_end, "Click: start from this free end, drag: the curve of the switch goes on, Shift: straight");
+				return make(kind::lay_end, "Click: start from this free end, drag: the curve of the switch goes on");
 			return make(kind::lay_end, lay.points.empty() ? "Click: start from this free end, drag: lead a track out of it" : "Click: join this end and lay");
 		}
 		intent.position = lay.mouse;
@@ -288,7 +288,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 				intent.snap.point = hit;
 				intent.snap.position = intent.position;
 				auto const diverging{selected->eType == tt_Switch && hit == editor_track::point_ref{1, editor_track::point_kind::end}};
-				return make(kind::extend_end, diverging ? "Drag: the curve of the switch goes on, Shift: straight; Ctrl+drag: move the end" : "Drag: a new track out of this end, as in laying; Ctrl+drag: move the end");
+				return make(kind::extend_end, diverging ? "Drag: the curve of the switch goes on; Ctrl+drag: move the end" : "Drag: a new track out of this end, as in laying; Ctrl+drag: move the end");
 			}
 		}
 	}
@@ -731,7 +731,7 @@ char const *editor_mode::typed_meaning() const
 {
 	auto const &straights{m_straights};
 	if (m_extend.active)
-		return m_track_layout == track_layout::straight || shift_straight() ? "type the length" : m_track_layout == track_layout::arc ? "type the radius, a space, the length" : "type the radius";
+		return m_track_layout == track_layout::straight ? "type the length" : m_track_layout == track_layout::arc ? "type the radius, a space, the length" : "type the radius";
 	if (straights.dragging)
 		return straights.handle == 2 ? "type the shift, + to the right" : "type the length";
 	if (straights.tool == 1 && (straights.tool_mouse || straights.tool_dragging))
@@ -800,9 +800,9 @@ void editor_mode::typed_extend()
 		return;
 	auto &tool{m_extend};
 	auto const &direction{tool.direction};
-	if (m_track_layout != track_layout::straight && m_track_layout != track_layout::arc && false == shift_straight())
+	if (m_track_layout != track_layout::straight && m_track_layout != track_layout::arc)
 		return;
-	if (m_track_layout == track_layout::straight || shift_straight())
+	if (m_track_layout == track_layout::straight)
 	{
 		auto const length{std::max(0.0, values[0])};
 		tool.mouse = {tool.point.x + direction.x * length, tool.mouse.y, tool.point.z + direction.y * length};

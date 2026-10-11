@@ -966,7 +966,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	void lay_finish(editor_track::snap_target const &End);
 	void lay_cancel();
 	void lay_enter();
-	bool lay_heading(glm::dvec2 &Heading) const;
 	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
 	alignment::result lay_shape(std::vector<glm::dvec3> const &Points, glm::dvec2 const &Startdirection, glm::dvec2 const &Enddirection, alignment::design &Design) const;
 	void render_switch_ui();
@@ -1019,11 +1018,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	TTrack const *m_join_track{nullptr};
 	editor_track::point_ref m_join_point;
 	mutable alignment::join_result m_join_last;
-	bool m_shift_wheel{false};
 	bool track_wheel(double const Offset);
 	std::string track_shaping(bool const Joined) const;
 	void render_layout_combo();
-	bool shift_straight() const;
 	double design_speed(TTrack const *From, TTrack const *To) const;
 	std::vector<segment_data> layout_pieces(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec3 const &Mouse, double const Radius) const;
 	std::vector<segment_data> join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
