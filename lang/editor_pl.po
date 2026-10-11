@@ -5213,3 +5213,73 @@ msgstr "Punkt znikania"
 
 msgid "Pedestrian crossing"
 msgstr "Przejście dla pieszych"
+
+# scenery editor: joining free ends, the shape from a free end on the wheel
+msgid "No curve fits between the ends, they are joined with a free curve"
+msgstr "Między końcami nie mieści się żaden łuk, połączono je krzywą swobodną"
+
+msgid "Arc, then straight"
+msgstr "Łuk, potem prosta"
+
+msgid "Straight, then arc"
+msgstr "Prosta, potem łuk"
+
+msgid "Arc through the cursor"
+msgstr "Łuk przez kursor"
+
+msgid "Shape from a free end"
+msgstr "Kształt z wolnego końca"
+
+msgid "What a drag or a click from a free end lays towards the cursor; Shift+wheel changes it, Ctrl+wheel the radius"
+msgstr "Co przeciągnięcie lub kliknięcie z wolnego końca kładzie w stronę kursora; Shift+kółko zmienia kształt, Ctrl+kółko promień"
+
+msgid "Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows"
+msgstr "Prędkość nowych torów i prędkość projektowa krzywych przejściowych oraz przechyłki; pierwszeństwo ma prędkość toru, do którego się dołącza, i nigdy nie wyższa, niż pozwala promień"
+
+msgid "R %.0f m   Ctrl+wheel: radius"
+msgstr "R %.0f m   Ctrl+kółko: promień"
+
+msgid "Ctrl+wheel: radius, Shift+wheel: arc / straight"
+msgstr "Ctrl+kółko: promień, Shift+kółko: łuk / prosta"
+
+msgid "Ctrl+wheel: radius, Shift+wheel: another shape"
+msgstr "Ctrl+kółko: promień, Shift+kółko: inny kształt"
+
+msgid "arc"
+msgstr "łuk"
+
+msgid "curve"
+msgstr "łuk z prostymi"
+
+msgid "reverse curve"
+msgstr "łuk odwrotny (S)"
+
+msgid "free curve"
+msgstr "krzywa swobodna"
+
+msgid "(auto)"
+msgstr "(auto)"
+
+msgid "   cant %.0f mm"
+msgstr "   przechyłka %.0f mm"
+
+msgid "   transitions %.0f m"
+msgstr "   krzywe przejściowe %.0f m"
+
+msgid "the shape chosen towards the cursor, to a free end: joins it"
+msgstr "wybrany kształt w stronę kursora, na wolny koniec: łączy z nim"
+
+msgid "Ctrl+wheel"
+msgstr "Ctrl+kółko"
+
+msgid "Shift+wheel"
+msgstr "Shift+kółko"
+
+msgid "arc / straight, at a free end: another shape"
+msgstr "łuk / prosta, na wolnym końcu: inny kształt"
+
+msgid "lay the shape up to here and go on from its end"
+msgstr "kładzie kształt dotąd i idzie dalej od jego końca"
+
+msgid "type the radius"
+msgstr "wpisz promień"

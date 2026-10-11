@@ -4994,6 +4994,8 @@ void editor_mode::ortho_pan_stop()
 
 void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
 {
+    if (false == ImGui::GetIO().WantCaptureMouse && track_wheel(Yoffset != 0.0 ? Yoffset : Xoffset))
+        return;
     if (false == Global.EditorOrtho || ImGui::GetIO().WantCaptureMouse)
         return;
     auto const before{Global.EditorOrthoExtent};

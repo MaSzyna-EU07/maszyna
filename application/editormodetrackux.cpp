@@ -731,7 +731,7 @@ char const *editor_mode::typed_meaning() const
 {
 	auto const &straights{m_straights};
 	if (m_extend.active)
-		return m_extend_freehand && false == ImGui::GetIO().KeyCtrl ? "type the radius, a space, the length" : "type the length";
+		return m_track_layout == track_layout::straight || shift_straight() ? "type the length" : m_track_layout == track_layout::arc ? "type the radius, a space, the length" : "type the radius";
 	if (straights.dragging)
 		return straights.handle == 2 ? "type the shift, + to the right" : "type the length";
 	if (straights.tool == 1 && (straights.tool_mouse || straights.tool_dragging))
@@ -800,7 +800,9 @@ void editor_mode::typed_extend()
 		return;
 	auto &tool{m_extend};
 	auto const &direction{tool.direction};
-	if (false == m_extend_freehand || ImGui::GetIO().KeyCtrl)
+	if (m_track_layout != track_layout::straight && m_track_layout != track_layout::arc && false == shift_straight())
+		return;
+	if (m_track_layout == track_layout::straight || shift_straight())
 	{
 		auto const length{std::max(0.0, values[0])};
 		tool.mouse = {tool.point.x + direction.x * length, tool.mouse.y, tool.point.z + direction.y * length};
@@ -817,7 +819,7 @@ void editor_mode::typed_extend()
 	auto angle{values.size() > 1 ? std::abs(values[1]) / radius : side * geometry::signed_angle(radial, glm::dvec2{tool.mouse.x, tool.mouse.z} - centre)};
 	if (angle < 0.0)
 		angle += 2.0 * glm::pi<double>();
-	angle = std::clamp(angle, 1e-3, 2.0 * glm::pi<double>() - 0.1);
+	angle = std::clamp(angle, 1e-3, glm::pi<double>());
 	auto const end{centre + geometry::turned(radial, side * angle)};
 	tool.mouse = {end.x, tool.mouse.y, end.y};
 }

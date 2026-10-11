@@ -88,6 +88,9 @@ http://mozilla.org/MPL/2.0/.
 //   terrainturn <palette entry> <degrees>  the textures of the palette entry turned
 //   terrainwater <index> <material> [size]    material and repeat of a body of water; terrainwaterdefault <material>
 //   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
+//   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
+//   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
+//   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged
 //   screenshot
 //   save
 //   log <text>
@@ -970,6 +973,99 @@ void editor_mode::selftest_step()
 			}
 			else
 				WriteLog("SELFTEST gauge " + name + ": no such track");
+		}
+		else if (command == "join" || command == "layto")
+		{
+			glm::dvec3 a{0.0}, b{0.0};
+			words >> a.x >> a.z >> b.x >> b.z;
+			auto const from{editor_track::find_free_end(nullptr, 1, a, 3.0, {})};
+			extend_tool tool;
+			if (from.track == nullptr || false == free_end(*from.track, from.point.path, from.point.kind == editor_track::point_kind::end, tool))
+			{
+				WriteLog("SELFTEST " + command + ": no free end at the first point");
+				continue;
+			}
+			std::vector<segment_data> pieces;
+			std::string error;
+			double length{0.0};
+			if (command == "join")
+			{
+				double radius{0.0};
+				int variant{0}, transitions{0};
+				words >> radius >> variant >> transitions;
+				auto const to{editor_track::find_free_end(nullptr, 1, b, 3.0, {from.track})};
+				if (to.track == nullptr)
+				{
+					WriteLog("SELFTEST join: no free end at the second point");
+					continue;
+				}
+				m_join_radius = radius;
+				m_join_variant = variant;
+				m_lay.transitions = transitions != 0;
+				pieces = join_pieces(tool.track, from.point, tool.point, tool.direction, to, length, error);
+			}
+			else
+			{
+				int layout{0};
+				words >> layout >> m_lay.radius;
+				m_track_layout = static_cast<track_layout>(std::clamp(layout, 0, 3));
+				m_extend = tool;
+				m_extend.active = true;
+				m_extend.mouse = {b.x, tool.point.y, b.z};
+				m_extend.snap = {};
+				pieces = extend_pieces();
+				m_extend.active = false;
+			}
+			std::vector<TTrack *> created;
+			for (auto const &piece : pieces)
+				created.push_back(editor_track::create_path(*tool.track, piece));
+			editor_track::commit(created);
+			if (false == created.empty())
+				push_track_snapshot({}, created);
+			char const *const kinds[]{"none", "straight", "arc", "curve", "reverse curve", "free curve"};
+			auto const &join{m_join_last};
+			WriteLog(format("SELFTEST %s: %s, %zu paths, R %.1f m, cant %.0f mm, transitions %.1f m, V %.0f km/h, variants %d%s", command.c_str(), kinds[static_cast<int>(join.kind)], pieces.size(), join.radius, join.cant,
+			                join.transition, join.speed, join.variants, error.empty() ? "" : (", " + error).c_str()));
+			auto heading{tool.direction};
+			glm::dvec3 previous{tool.point};
+			for (auto const *track : created)
+			{
+				auto const &path{track->m_paths.front()};
+				geometry::bezier const curve{path};
+				auto const begin{glm::normalize(geometry::plan_of(curve.first(0.0)))};
+				auto const finish{glm::normalize(geometry::plan_of(curve.first(1.0)))};
+				WriteLog(format("SELFTEST %s path %s: L %.2f m, R %.1f m, rolls %.2f %.2f, kink %.4f deg, step %.4f m", command.c_str(), track->name().c_str(), curve.plan_length(), static_cast<double>(path.radius),
+				                static_cast<double>(path.rolls[0]), static_cast<double>(path.rolls[1]), glm::degrees(std::abs(geometry::signed_angle(heading, begin))), glm::distance(previous, path.points[segment_data::point::start])));
+				heading = finish;
+				previous = path.points[segment_data::point::end];
+			}
+			if (false == created.empty())
+				WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
+		}
+		else if (command == "joints")
+		{
+			std::vector<glm::dvec3> points;
+			for (glm::dvec3 point{0.0}; words >> point.x >> point.z;)
+				points.push_back(point);
+			auto const scope{m_joints.scope};
+			m_joints.scope = 1;
+			joints_start();
+			while (m_joints.next < m_joints.queue.size())
+				joints_step();
+			m_joints.scope = scope;
+			char const *const kinds[]{"gap", "step", "kink", "cant jump", "grade break", "free end"};
+			int around{0};
+			for (auto const &issue : m_joints.issues)
+			{
+				if (issue.type == joint_issue::kind::open)
+					continue;
+				if (std::none_of(points.begin(), points.end(), [&](glm::dvec3 const &Point) { return geometry::plan_distance(Point, issue.position) < 5.0; }))
+					continue;
+				++around;
+				WriteLog(format("SELFTEST joints: %s %.3f at %.1f %.1f, %s / %s", kinds[static_cast<int>(issue.type)], issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-",
+				                issue.other != nullptr ? issue.other->name().c_str() : "-"));
+			}
+			WriteLog(format("SELFTEST joints: %d issues around the points, %zu in all", around, m_joints.issues.size()));
 		}
 		else if (command == "deletetrack")
 		{

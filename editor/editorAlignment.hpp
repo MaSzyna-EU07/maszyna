@@ -35,6 +35,8 @@ struct limits
 	double vertical_factor{0.4};
 	double vertical_min{2000.0};
 	double tangent_min_time{0.0};
+	double arc_min{20.0};
+	double arc_min_factor{0.4};
 };
 
 struct compound_arc
@@ -164,6 +166,8 @@ struct result
 };
 
 result compute(design const &Design);
+double speed_limit(double const Radius, limits const &Limits);
+result compute_recommended(design &Design, bool const Transitions);
 bool tangent_intersection(design const &Design, glm::dvec2 &Point);
 bool collinear(design const &Design);
 
@@ -183,5 +187,50 @@ std::size_t minimum_pieces(result const &Result, design const &Design);
 // one more than the breaks; Intervals receives the number of the interval of each piece
 std::vector<segment_data> pieces(result const &Result, design const &Design, std::size_t const Count, std::vector<double> const &Breaks = {}, std::vector<std::size_t> const &Counts = {},
                                  std::vector<std::size_t> *Intervals = nullptr);
+
+struct join_end
+{
+	glm::dvec3 position{0.0};
+	glm::dvec2 direction{0.0, 1.0};
+	double roll{0.0};
+};
+
+enum class join_kind
+{
+	none,
+	straight,
+	arc,
+	curve,
+	reverse_curve,
+	bezier
+};
+
+struct join_request
+{
+	join_end start;
+	join_end end;
+	double radius{0.0};
+	int variant{0};
+	bool transitions{false};
+	double speed{100.0};
+	double kink{0.1};
+	transition_shape shape{transition_shape::cubic_parabola};
+	limits norms;
+};
+
+struct join_result
+{
+	join_kind kind{join_kind::none};
+	std::vector<segment_data> pieces;
+	double length{0.0};
+	double radius{0.0};
+	double cant{0.0};
+	double transition{0.0};
+	double speed{0.0};
+	int variants{0};
+	std::vector<std::string> warnings;
+};
+
+join_result join(join_request const &Request);
 
 }

@@ -34,6 +34,7 @@ http:
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <iterator>
 
 namespace
 {
@@ -180,6 +181,37 @@ segment_data turned_around(segment_data const &Path)
 	result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
 	result.rolls = {-Path.rolls[1], -Path.rolls[0]};
 	return result;
+}
+
+double joint_roll(TTrack const &Track, editor_track::point_ref const &Point)
+{
+	if (Point.path < 0 || Point.path >= static_cast<int>(Track.m_paths.size()))
+		return 0.0;
+	auto const &path{Track.m_paths[Point.path]};
+	return Point.kind == editor_track::point_kind::start ? path.rolls[0] : -path.rolls[1];
+}
+
+std::vector<segment_data> straight_piece(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, double const Length)
+{
+	if (Length < 0.5)
+		return {};
+	segment_data path;
+	path.points[segment_data::point::start] = Point;
+	path.points[segment_data::point::end] = {Point.x + Direction.x * Length, Point.y + Grade * Length, Point.z + Direction.y * Length};
+	return {path};
+}
+
+std::vector<segment_data> arc_through(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec2 const &Offset)
+{
+	auto const along{glm::dot(Offset, Direction)};
+	auto const lateral{cross(Direction, Offset)};
+	auto const chord{glm::length(Offset)};
+	if (along <= 0.0 || chord < 0.5)
+		return {};
+	if (std::abs(lateral) < 0.005 * chord + 0.05)
+		return straight_piece(Point, Direction, Grade, along);
+	auto const angle{2.0 * std::atan2(std::abs(lateral), along)};
+	return arc_pieces(Point, Direction, Grade, chord / (2.0 * std::sin(angle * 0.5)), angle, lateral > 0.0 ? 1 : -1);
 }
 
 // curvature of the shape at Chainage, positive turning from x towards z
@@ -3466,7 +3498,11 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "straight along it, to another free end: a curve joining them"}, {"Parallel", "first select a straight, then a second track beside it in the panel"}, {"Esc", "stop laying"}};
 		else
 		{
-			hints = {{"LMB", m_lay.points.size() == 1 ? "end of the straight, or a vertex of a curve" : "next vertex of the curve"}, {"LMB on a free end", "join and lay"}, {"Enter", "lay up to the cursor"}, {"Backspace", "take back the point"}, {"Esc", "cancel"}};
+			bool const chained{m_lay.points.size() == 1 && m_lay.start.track != nullptr};
+			hints = {{"LMB", chained ? "lay the shape up to here and go on from its end" : m_lay.points.size() == 1 ? "end of the straight, or a vertex of a curve" : "next vertex of the curve"}, {"LMB on a free end", "join and lay"}, {"Ctrl+wheel", "radius"}};
+			if (chained || m_lay.mouse_snap.track != nullptr)
+				hints.push_back({"Shift+wheel", "arc / straight, at a free end: another shape"});
+			hints.insert(hints.end(), {{"Enter", "lay up to the cursor"}, {"Backspace", "take back the point"}, {"Esc", "cancel"}});
 			if (glm::dvec2 heading; lay_heading(heading))
 				hints.insert(hints.begin() + 1, {"Shift", "straight on in the direction of the track"});
 		}
@@ -3477,10 +3513,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		auto const step{std::min<std::size_t>(m_straights.detour.size(), 3)};
 		hints = {{"Shift+click", format("point %zu of 4: %s", step + 1, steps[step])}, {"Esc", "cancel"}};
 	}
-	else if (m_extend.active && m_extend_freehand)
-		hints = {{"Drag", "curve through the cursor, along the end: straight"}, {"Ctrl", "straight"}, {"Release", "build"}, {"Esc", "cancel"}};
 	else if (m_extend.active)
-		hints = {{"Drag", "straight along the end, to a free end: a curve joining it"}, {"Shift", "straight, joins nothing"}, {"Release", "build"}, {"Esc", "cancel"}};
+		hints = {{"Drag", "the shape chosen towards the cursor, to a free end: joins it"}, {"Ctrl+wheel", "radius"}, {"Shift+wheel", "arc / straight, at a free end: another shape"}, {"Shift", "straight, joins nothing"}, {"Release", "build"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
 		hints = {{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::lay)
@@ -3605,7 +3639,7 @@ std::string editor_mode::track_readout() const
 		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) : format("L %.2f m   straight", length)};
 		if (snapped)
 			text += "\njoins " + name(target.track);
-		return text;
+		return text + "\n" + track_shaping(snapped);
 	}
 	if (m_lay.active)
 	{
@@ -3634,6 +3668,10 @@ std::string editor_mode::track_readout() const
 			text += "\njoins " + name(lay.mouse_snap.track);
 		if (false == lay.preview_error.empty())
 			text += "\n" + lay.preview_error;
+		if (lay.points.size() == 1 && (lay.start.track != nullptr || lay.mouse_snap.track != nullptr))
+			text += "\n" + track_shaping(lay.mouse_snap.track != nullptr);
+		else if (false == lay.points.empty())
+			text += "\n" + format(STR_C("R %.0f m   Ctrl+wheel: radius"), lay.radius);
 		return text;
 	}
 	auto const &state{m_straights};
@@ -3695,6 +3733,32 @@ std::string editor_mode::track_readout() const
 		return format("moved %.3f m", glm::distance(editor_track::pivot(*track), m_track_pivot));
 	}
 	return {};
+}
+
+std::string editor_mode::track_shaping(bool const Joined) const
+{
+	if (false == Joined)
+	{
+		char const *const names[]{"Arc, then straight", "Straight, then arc", "Arc through the cursor", "Straight"};
+		auto text{std::string{STR_C(names[static_cast<int>(m_track_layout)])}};
+		if (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc)
+			text += format("   R %.0f m", m_lay.radius);
+		return text + "\n" + STR("Ctrl+wheel: radius, Shift+wheel: arc / straight");
+	}
+	auto const &join{m_join_last};
+	char const *const kinds[]{"", "straight", "arc", "curve", "reverse curve", "free curve"};
+	std::string text{STR_C(kinds[static_cast<int>(join.kind)])};
+	if (join.radius > 0.0)
+		text += format("   R %.0f m", join.radius) + (m_join_radius > 0.0 ? std::string{} : std::string{" "} + STR("(auto)"));
+	if (join.cant > 0.0)
+		text += format(STR_C("   cant %.0f mm"), join.cant);
+	if (join.transition > 0.0)
+		text += format(STR_C("   transitions %.0f m"), join.transition);
+	if (join.speed > 0.0 && (join.cant > 0.0 || join.transition > 0.0))
+		text += format("   V %.0f km/h", join.speed);
+	if (join.variants > 1)
+		text += format("   %d/%d", (m_join_variant % join.variants + join.variants) % join.variants + 1, join.variants);
+	return text + "\n" + STR("Ctrl+wheel: radius, Shift+wheel: another shape");
 }
 
 void editor_mode::draw_track_hints()
@@ -3775,13 +3839,24 @@ void editor_mode::update_build_tools()
 	auto const &io{ImGui::GetIO()};
 	glm::vec2 const cursor{io.MousePos.x, io.MousePos.y};
 	m_straights.detour_mouse = ground;
+	if (false == io.KeyShift)
+		m_shift_wheel = false;
+	auto const joining = [&](editor_track::snap_target const &Target) {
+		if (Target.track == m_join_track && Target.point == m_join_point)
+			return;
+		m_join_track = Target.track;
+		m_join_point = Target.point;
+		m_join_radius = 0.0;
+		m_join_variant = 0;
+	};
 	if (m_extend.active)
 	{
 		screen_projection const projection;
 		glm::dvec3 level;
 		m_extend.mouse = projection.on_level(io.MousePos, m_extend.point.y, level) && plan_distance(level, m_extend.point) < static_cast<double>(kMaxPlacementDistance) ? level : ground;
 		typed_extend();
-		m_extend.snap = m_typed.empty() && false == io.KeyShift && m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
+		m_extend.snap = m_typed.empty() && false == shift_straight() && m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
+		joining(m_extend.snap);
 	}
 	if (m_switch.placing)
 		m_switch.mouse = cursor_level(m_switch.point.y);
@@ -3800,7 +3875,7 @@ void editor_mode::update_build_tools()
 	else if (false == lay_projection.on_level(io.MousePos, height, mouse))
 		mouse = ground;
 	glm::dvec2 heading;
-	bool const straight{io.KeyShift && lay_heading(heading)};
+	bool const straight{shift_straight() && lay_heading(heading)};
 	if (straight)
 	{
 		auto const &last{lay.points.back()};
@@ -3809,6 +3884,8 @@ void editor_mode::update_build_tools()
 	}
 	lay.mouse = typed_lay(mouse);
 	lay.mouse_snap = straight ? editor_track::snap_target{} : m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+	if (false == m_extend.active)
+		joining(lay.points.empty() ? editor_track::snap_target{} : lay.mouse_snap);
 	if (lay.points.empty())
 		return;
 	auto points{lay.points};
@@ -4115,40 +4192,12 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	editor_track::snap_target target;
 	if (extend_snap(target))
 	{
-		alignment::design design;
-		design.norms = m_route.design.norms;
-		design.shape = m_route.design.shape;
-		design.arc_piece_angle = 90.0;
-		design.start = tool.point;
-		design.end = target.position;
-		design.start_direction = tool.direction;
-		design.end_direction = glm::normalize(plan_of(target.direction));
-		design.start_grade = tool.grade;
-		design.end_grade = grade_of(target.direction);
-		auto const speed{editor_track::velocity(*tool.track)};
-		design.speed = speed > 0.0 ? speed : 100.0;
-		if (false == alignment::collinear(design))
-		{
-			alignment::vertex vertex;
-			vertex.radius = 100000.0;
-			auto const recommended{alignment::recommend(design.speed, 1000.0, design.norms)};
-			vertex.transition_in = vertex.transition_out = recommended.transition;
-			glm::dvec2 intersection;
-			if (alignment::tangent_intersection(design, intersection))
-			{
-				design.vertices.push_back(vertex);
-			}
-			else
-			{
-				vertex.offset = plan_distance(design.start, design.end) / 3.0;
-				design.vertices = {vertex, vertex};
-			}
-		}
-		// a track which doesn't fit to the free end isn't built towards the cursor instead, it'd miss the end
-		auto const shape{alignment::compute(design)};
-		return shape.valid ? alignment::pieces(shape, design, 0) : result;
+		double length;
+		std::string error;
+		return join_pieces(tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}, tool.point, tool.direction, target, length, error);
 	}
-	if (false == ImGui::GetIO().KeyShift && tool.track != nullptr && tool.track->eType == tt_Switch && tool.track->m_paths.size() > 1 && tool.path == 1 && tool.atend)
+	m_join_last = {};
+	if (false == shift_straight() && tool.track != nullptr && tool.track->eType == tt_Switch && tool.track->m_paths.size() > 1 && tool.path == 1 && tool.atend)
 	{
 		auto const &diverging{tool.track->m_paths[1]};
 		bezier const curve{diverging};
@@ -4170,26 +4219,156 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 			return pieces;
 		}
 	}
-	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
+	if (shift_straight())
+		return straight_piece(tool.point, tool.direction, tool.grade, glm::dot(glm::dvec2{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z}, tool.direction));
+	auto radius{m_lay.radius};
+	if (auto const values{typed_values()}; false == values.empty() && (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc) && std::abs(values[0]) >= 1.0)
+		radius = std::abs(values[0]);
+	return layout_pieces(tool.point, tool.direction, tool.grade, tool.mouse, radius);
+}
+
+std::vector<segment_data> editor_mode::layout_pieces(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec3 const &Mouse, double const Radius) const
+{
+	glm::dvec2 const offset{Mouse.x - Point.x, Mouse.z - Point.z};
+	auto const along{glm::dot(offset, Direction)};
+	auto const lateral{cross(Direction, offset)};
 	auto const chord{glm::length(offset)};
 	if (chord < 0.5)
-		return result;
-	auto const &direction{tool.direction};
-	auto const along{glm::dot(offset, direction)};
-	auto const lateral{direction.x * offset.y - direction.y * offset.x};
-	auto const height = [&](double const Distance) { return tool.point.y + tool.grade * Distance; };
-	if (false == m_extend_freehand || ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeyShift || std::abs(lateral) < 0.005 * chord + 0.05)
+		return {};
+	if (m_track_layout == track_layout::straight)
+		return straight_piece(Point, Direction, Grade, along);
+	if (m_track_layout == track_layout::arc || std::abs(lateral) < 0.005 * chord + 0.05)
+		return arc_through(Point, Direction, Grade, offset);
+	int const side{lateral > 0.0 ? 1 : -1};
+	glm::dvec2 const normal{-Direction.y * side, Direction.x * side};
+	auto const radius{std::max(1.0, Radius)};
+	if (radius >= chord * chord / (2.0 * std::abs(lateral)))
+		return arc_through(Point, Direction, Grade, offset);
+	if (m_track_layout == track_layout::arc_straight)
 	{
-		if (along < 0.5)
-			return result;
-		segment_data path;
-		path.points[segment_data::point::start] = tool.point;
-		path.points[segment_data::point::end] = {tool.point.x + direction.x * along, height(along), tool.point.z + direction.y * along};
-		result.push_back(path);
-		return result;
+		auto const centre{plan_of(Point) + normal * radius};
+		auto const towards{plan_of(Mouse) - centre};
+		auto const distance{glm::length(towards)};
+		auto const spread{std::acos(std::clamp(radius / distance, -1.0, 1.0))};
+		auto const radial0{plan_of(Point) - centre};
+		double rest{-1.0};
+		double angle{0.0};
+		for (auto const sign : {1.0, -1.0})
+		{
+			auto const radial{turned(towards / distance, sign * spread) * radius};
+			auto turn{side * signed_angle(radial0, radial)};
+			if (turn < 0.0)
+				turn += 2.0 * glm::pi<double>();
+			auto const heading{turned(Direction, side * turn)};
+			auto const remaining{glm::dot(plan_of(Mouse) - centre - radial, heading)};
+			if (remaining > 0.0 && (rest < 0.0 || turn < angle))
+			{
+				rest = remaining;
+				angle = turn;
+			}
+		}
+		if (rest < 0.0 || angle > glm::pi<double>())
+			return {};
+		auto pieces{arc_pieces(Point, Direction, Grade, radius, angle, side)};
+		auto const tail{straight_piece(pieces.back().points[segment_data::point::end], turned(Direction, side * angle), Grade, rest)};
+		pieces.insert(pieces.end(), tail.begin(), tail.end());
+		return pieces;
 	}
-	auto const angle{2.0 * std::atan2(std::abs(lateral), along)};
-	return arc_pieces(tool.point, direction, tool.grade, chord / (2.0 * std::sin(angle * 0.5)), angle, lateral > 0.0 ? 1 : -1);
+	auto const across{radius - std::abs(lateral)};
+	if (std::abs(lateral) > 2.0 * radius)
+		return arc_through(Point, Direction, Grade, offset);
+	auto const lead{along - std::sqrt(std::max(0.0, radius * radius - across * across))};
+	if (lead < 0.5)
+		return arc_through(Point, Direction, Grade, offset);
+	auto const angle{2.0 * std::atan2(std::abs(lateral), along - lead)};
+	if (angle > glm::pi<double>())
+		return {};
+	auto pieces{straight_piece(Point, Direction, Grade, lead)};
+	auto const arc{arc_pieces(pieces.back().points[segment_data::point::end], Direction, Grade, radius, angle, side)};
+	pieces.insert(pieces.end(), arc.begin(), arc.end());
+	return pieces;
+}
+
+double editor_mode::design_speed(TTrack const *From, TTrack const *To) const
+{
+	double speed{0.0};
+	for (auto const *track : {From, To})
+	{
+		if (track == nullptr)
+			continue;
+		auto const velocity{editor_track::velocity(*track)};
+		if (velocity > 0.0)
+			speed = speed > 0.0 ? std::min(speed, velocity) : velocity;
+	}
+	if (speed <= 0.0)
+		speed = m_lay.style.velocity > 0.0 ? m_lay.style.velocity : 100.0;
+	return speed;
+}
+
+std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
+                                                   std::string &Error) const
+{
+	alignment::join_request request;
+	request.start.position = Start;
+	request.start.direction = Direction;
+	request.start.roll = From != nullptr ? -joint_roll(*From, Frompoint) : 0.0;
+	request.end.position = End.position;
+	request.end.direction = plan_of(End.direction);
+	request.end.roll = End.track != nullptr ? joint_roll(*End.track, End.point) : 0.0;
+	request.radius = m_join_radius;
+	request.variant = m_join_variant;
+	request.transitions = m_lay.transitions;
+	request.speed = design_speed(From, End.track);
+	request.kink = m_joints.angle * 0.5;
+	request.shape = m_route.design.shape;
+	request.norms = m_route.design.norms;
+	auto result{alignment::join(request)};
+	if (m_lay.transitions && result.kind != alignment::join_kind::straight && result.kind != alignment::join_kind::arc && glm::length(request.end.direction) > 1e-9)
+	{
+		auto const grade{(End.position.y - Start.y) / std::max(1.0, plan_distance(Start, End.position))};
+		auto const in{From != nullptr && From->eType == tt_Normal ? ease_out_of(*From, Start, grade, request.speed, request.norms) : easing{}};
+		auto const out{End.track != nullptr && End.track->eType == tt_Normal ? ease_out_of(*End.track, End.position, -grade, request.speed, request.norms) : easing{}};
+		if (false == in.pieces.empty() || false == out.pieces.empty())
+		{
+			auto middle{request};
+			if (false == in.pieces.empty())
+			{
+				middle.start.position = in.end;
+				middle.start.direction = in.direction;
+				middle.start.roll = in.pieces.back().rolls[1];
+			}
+			if (false == out.pieces.empty())
+			{
+				middle.end.position = out.end;
+				middle.end.direction = -out.direction;
+				middle.end.roll = -out.pieces.back().rolls[1];
+			}
+			auto const gap{plan_of(middle.end.position) - plan_of(middle.start.position)};
+			if (glm::length(gap) > 5.0 && glm::dot(glm::normalize(middle.start.direction), gap) > 0.0 && glm::dot(glm::normalize(middle.end.direction), gap) > 0.0)
+			{
+				auto eased{alignment::join(middle)};
+				if (eased.kind != alignment::join_kind::none && eased.kind != alignment::join_kind::bezier)
+				{
+					std::vector<segment_data> pieces{in.pieces};
+					pieces.insert(pieces.end(), eased.pieces.begin(), eased.pieces.end());
+					for (auto piece{out.pieces.rbegin()}; piece != out.pieces.rend(); ++piece)
+						pieces.push_back(turned_around(*piece));
+					eased.pieces = std::move(pieces);
+					eased.length += (in.pieces.empty() ? 0.0 : in.length) + (out.pieces.empty() ? 0.0 : out.length);
+					result = std::move(eased);
+				}
+			}
+		}
+	}
+	Length = result.length;
+	Error = result.kind == alignment::join_kind::bezier ? std::string{STR_C("No curve fits between the ends, they are joined with a free curve")} : std::string{};
+	m_join_last = result;
+	return result.pieces;
+}
+
+bool editor_mode::shift_straight() const
+{
+	return ImGui::GetIO().KeyShift && false == m_shift_wheel;
 }
 
 void editor_mode::finish_extend()
@@ -4299,8 +4478,70 @@ void editor_mode::render_extend_ui()
 	ImGui::SameLine();
 	if (ImGui::Button(STR_C("Curve right##extend"), ImVec2(100.0f, 0.0f)))
 		extend_add(-1);
-	ImGui::Checkbox(STR_C("Freehand"), &m_extend_freehand);
-	item_tooltip("Dragging from a free end draws a curve through the cursor; off: it draws a straight along the end");
+	ImGui::PushID("extend");
+	render_layout_combo();
+	ImGui::PopID();
+}
+
+void editor_mode::render_layout_combo()
+{
+	char const *const names[]{"Arc, then straight", "Straight, then arc", "Arc through the cursor", "Straight"};
+	auto current{static_cast<int>(m_track_layout)};
+	ImGui::PushItemWidth(200.0f);
+	if (ImGui::BeginCombo(STR_C("Shape from a free end"), STR_C(names[current])))
+	{
+		for (int i = 0; i < 4; ++i)
+			if (ImGui::Selectable(STR_C(names[i]), i == current))
+				m_track_layout = static_cast<track_layout>(i);
+		ImGui::EndCombo();
+	}
+	ImGui::PopItemWidth();
+	item_tooltip("What a drag or a click from a free end lays towards the cursor; Shift+wheel changes it, Ctrl+wheel the radius");
+}
+
+bool editor_mode::track_wheel(double const Offset)
+{
+	auto const &io{ImGui::GetIO()};
+	if ((false == io.KeyCtrl && false == io.KeyShift) || Offset == 0.0)
+		return false;
+	bool const laying{m_lay.active && false == m_lay.points.empty()};
+	if (false == m_extend.active && false == laying)
+		return false;
+	int const step{Offset > 0.0 ? 1 : -1};
+	editor_track::snap_target target;
+	bool const joined{m_extend.active ? extend_snap(target) : m_lay.mouse_snap.track != nullptr};
+	static double const radii[]{100.0, 150.0, 190.0, 250.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0, 3000.0, 4000.0, 6000.0};
+	auto const next_radius = [&](double const Current) {
+		if (step > 0)
+		{
+			for (auto const radius : radii)
+				if (radius > Current * 1.001)
+					return radius;
+			return std::end(radii)[-1];
+		}
+		for (auto radius{std::rbegin(radii)}; radius != std::rend(radii); ++radius)
+			if (*radius < Current * 0.999)
+				return *radius;
+		return radii[0];
+	};
+	if (io.KeyCtrl)
+	{
+		if (false == joined)
+			m_lay.radius = next_radius(m_lay.radius);
+		else if (m_join_radius <= 0.0)
+			m_join_radius = next_radius(m_join_last.radius > 0.0 ? m_join_last.radius : 500.0);
+		else if (step > 0 && m_join_radius >= std::end(radii)[-1])
+			m_join_radius = 0.0;
+		else
+			m_join_radius = next_radius(m_join_radius);
+		return true;
+	}
+	m_shift_wheel = true;
+	if (joined)
+		m_join_variant += step;
+	else
+		m_track_layout = static_cast<track_layout>((static_cast<int>(m_track_layout) + 4 - step) % 4);
+	return true;
 }
 
 std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const
@@ -4309,6 +4550,24 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	Length = 0.0;
 	if (Points.size() < 2)
 		return {};
+	if (Points.size() == 2 && (End.track != nullptr || tool.start.track != nullptr))
+	{
+		auto const leaving{tool.start.track != nullptr ? -plan_of(tool.start.direction) : plan_of(Points[1] - Points[0])};
+		if (glm::length(leaving) < 1e-6)
+		{
+			Error = STR_C("Two points lie on one another");
+			return {};
+		}
+		if (End.track != nullptr)
+			return join_pieces(tool.start.track, tool.start.point, Points[0], glm::normalize(leaving), End, Length, Error);
+		m_join_last = {};
+		auto const pieces{layout_pieces(Points[0], glm::normalize(leaving), -grade_of(tool.start.direction), Points[1], tool.radius)};
+		for (auto const &piece : pieces)
+			Length += bezier{piece}.plan_length();
+		if (pieces.empty())
+			Error = STR_C("The track can't be laid through these points");
+		return pieces;
+	}
 	auto const startdirection{tool.start.track != nullptr ? -plan_of(tool.start.direction) : plan_of(Points[1] - Points[0])};
 	auto const enddirection{End.track != nullptr ? plan_of(End.direction) : plan_of(Points.back() - Points[Points.size() - 2])};
 	if (glm::length(startdirection) < 1e-3 || glm::length(enddirection) < 1e-3)
@@ -4338,9 +4597,15 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			result.pieces.clear();
 		return result;
 	};
-	auto const in{eased(tool.start, 0.0, 1.0)};
-	auto const out{eased(End, shape.length, -1.0)};
-	if (false == in.pieces.empty() || false == out.pieces.empty())
+	auto const in{tool.transitions ? eased(tool.start, 0.0, 1.0) : easing{}};
+	auto const out{tool.transitions ? eased(End, shape.length, -1.0) : easing{}};
+	auto const room = [&]() {
+		auto const from{in.pieces.empty() ? Points.front() : in.end};
+		auto const to{out.pieces.empty() ? Points.back() : out.end};
+		auto const gap{plan_of(to) - plan_of(from)};
+		return glm::length(gap) > 5.0 && glm::dot(in.pieces.empty() ? design.start_direction : in.direction, gap) > 0.0 && glm::dot(out.pieces.empty() ? design.end_direction : -out.direction, gap) > 0.0;
+	};
+	if ((false == in.pieces.empty() || false == out.pieces.empty()) && room())
 	{
 		auto points{Points};
 		auto starting{design.start_direction};
@@ -4380,7 +4645,7 @@ alignment::result editor_mode::lay_shape(std::vector<glm::dvec3> const &Points, 
 	design = {};
 	design.norms = m_route.design.norms;
 	design.shape = m_route.design.shape;
-	design.speed = tool.style.velocity > 0.0 ? tool.style.velocity : 100.0;
+	design.speed = design_speed(tool.start.track, nullptr);
 	design.start = Points.front();
 	design.end = Points.back();
 	design.start_direction = Startdirection;
@@ -4388,12 +4653,6 @@ alignment::result editor_mode::lay_shape(std::vector<glm::dvec3> const &Points, 
 
 	alignment::vertex corner;
 	corner.radius = std::max(1.0, tool.radius);
-	if (tool.transitions)
-	{
-		auto const recommended{alignment::recommend(design.speed, corner.radius, design.norms)};
-		corner.cant = recommended.cant;
-		corner.transition_in = corner.transition_out = recommended.transition;
-	}
 	if (Points.size() == 2)
 	{
 		if (false == alignment::collinear(design))
@@ -4423,7 +4682,7 @@ alignment::result editor_mode::lay_shape(std::vector<glm::dvec3> const &Points, 
 			design.vertices.back().offset = std::max(1.0, glm::dot(plan_of(Points.back() - Points[Points.size() - 2]), design.end_direction));
 		}
 	}
-	return alignment::compute(design);
+	return alignment::compute_recommended(design, tool.transitions);
 }
 
 void editor_mode::lay_click()
@@ -4447,8 +4706,31 @@ void editor_mode::lay_click()
 	auto const point{placement_on_ground(tool.mouse)};
 	if (plan_distance(point, tool.points.back()) < 1.0)
 		return;
-	tool.points.push_back(point);
 	m_typed.clear();
+	if (tool.points.size() == 1 && tool.start.track != nullptr)
+	{
+		tool.points.push_back(tool.mouse);
+		lay_finish({});
+		if (false == tool.points.empty())
+		{
+			tool.points.pop_back();
+			return;
+		}
+		auto *last{dynamic_cast<TTrack *>(m_node)};
+		if (last == nullptr || last->m_paths.empty())
+			return;
+		auto const &path{last->m_paths.front()};
+		editor_track::snap_target next;
+		next.track = last;
+		next.point = {0, editor_track::point_kind::end};
+		next.position = path.points[segment_data::point::end];
+		auto const &control{path.points[segment_data::point::control2]};
+		next.direction = glm::normalize(control != glm::dvec3{} ? control : path.points[segment_data::point::start] - next.position);
+		tool.start = next;
+		tool.points = {next.position};
+		return;
+	}
+	tool.points.push_back(point);
 }
 
 void editor_mode::lay_finish(editor_track::snap_target const &End)
@@ -4569,8 +4851,9 @@ void editor_mode::render_lay_ui()
 	tool.radius = std::max(10.0, tool.radius);
 	ImGui::DragScalar(STR_C("Speed (km/h)"), ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
 	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
-	item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant");
+	item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
 	ImGui::PopItemWidth();
+	render_layout_combo();
 	if (false == ImGui::TreeNode(STR_C("More settings")))
 	{
 		render_lay_status();
