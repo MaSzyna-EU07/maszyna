@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorTrack.hpp"
+#include "editor/editorSwitchStore.hpp"
 
 #include "world/Track.h"
 
@@ -232,6 +233,10 @@ verdict check(TTrack &Track, int const Path, options const &Options)
 
 	auto const gauge{Options.norms.gauge / 1000.0};
 	bool const branch{Track.eType == tt_Switch && Path == 1};
+	double kept{0.0};
+	if (branch)
+		if (auto const known{switch_store::of(Track)})
+			kept = switch_store::branch_radius(*known);
 	auto const &own{Track.m_paths[Path]};
 	geometry::bezier const curve{own};
 	auto const before{continuations(Track, Path, false, curve.first(0.0), true)};
@@ -273,7 +278,7 @@ verdict check(TTrack &Track, int const Path, options const &Options)
 				if (sampled[i].span != own_span)
 					continue;
 				auto const &here{samples[i]};
-				auto const curvature{std::abs(here.curvature)};
+				auto const curvature{kept > 0.0 ? std::min(std::abs(here.curvature), 1.0 / kept) : std::abs(here.curvature)};
 				auto const cant{std::abs(here.cant)};
 				double safe{Options.top};
 				cause why{cause::none};

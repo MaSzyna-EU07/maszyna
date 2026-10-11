@@ -301,6 +301,8 @@ class editor_track
 		double a{0.0};
 		double b{0.0};
 		bool double_slip{false};
+		std::string type{"Rz"};
+		std::string rail{"-"};
 	};
 	static std::vector<switch_template> standard_switch_templates();
 	static std::vector<switch_template> find_switch_templates();

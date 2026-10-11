@@ -787,6 +787,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool route_load(TTrack &Track);
 	void route_read_stored();
 	void route_take_stored(int const Index);
+	void record_switch(TTrack &Track, editor_track::switch_template const &Shape);
+	void record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base);
+	void render_switch_record(TTrack &Track);
 	void route_store();
 	void render_route_stored();
 	void route_update() { m_route.result = alignment::compute(m_route.design); }

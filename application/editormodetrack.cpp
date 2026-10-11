@@ -14,6 +14,7 @@ http:
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
+#include "editor/editorSwitchStore.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
 
@@ -1751,8 +1752,9 @@ void editor_mode::render_turnout_ui()
 	auto const offset{glm::dot(end, normal)};
 	glm::dvec2 const tangent{glm::normalize(glm::dvec2{-control.x, -control.z})};
 	auto const angle{std::atan2(std::abs(tangent.x * axis.y - tangent.y * axis.x), glm::dot(tangent, axis))};
-	ImGui::Text(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("left") : STR_C("right"), std::abs(offset));
+	ImGui::Text(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
 	render_track_name(*track);
+	render_switch_record(*track);
 	if ((simulation::Events.FindEvent(track->name() + "+") != nullptr && simulation::Events.FindEvent(track->name() + "-") != nullptr) || (m_track_name.track == track && m_track_name.uses.includes > 0))
 		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), track->name().c_str(), track->name().c_str());
 	else
@@ -1832,6 +1834,7 @@ void editor_mode::render_turnout_ui()
 		push_track_snapshot(std::move(states));
 		editor_track::follow(*track, following);
 		editor_track::commit(changed);
+		record_switch(*track, Template);
 		if (false == loose.empty())
 			ui()->set_status(STR_C("Too far from the new ends of the switch, left unjoined: ") + loose, true);
 	};
@@ -2448,6 +2451,24 @@ alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve)
 	return vertex;
 }
 
+namespace
+{
+
+// layer the editor keeps the records of the track in: its own, unless it's a terrain file (.txtf), whose binary version
+// (.btf) the editor doesn't read the records from
+scene::layer_handle record_layer(TTrack const &Track)
+{
+	auto const usable = [](scene::layer_handle const Layer) { return scene::Layers.valid(Layer) && scene::Layers.accepts(Layer) && false == scene::Layers.layer(Layer).name.ends_with(".txtf"); };
+	auto layer{scene::Layers.resolve(Track.layer())};
+	if (false == usable(layer))
+		layer = scene::Layers.active();
+	if (false == usable(layer))
+		layer = 1;
+	return layer;
+}
+
+} // namespace
+
 bool editor_mode::route_load(TTrack &Track)
 {
 	m_route.designed = 0;
@@ -2542,12 +2563,7 @@ void editor_mode::route_store()
 	auto &route{m_route};
 	if (false == route.result.valid || route.chain.tracks.empty() || scene::Layers.empty())
 		return;
-	auto layer{scene::Layers.resolve(route.chain.tracks.front()->layer())};
-	if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
-		layer = scene::Layers.active();
-	if (false == scene::Layers.valid(layer))
-		layer = 1;
-	alignment_store::store(route.design, route.result, route.origin, layer);
+	alignment_store::store(route.design, route.result, route.origin, record_layer(*route.chain.tracks.front()));
 	route.departed = -1;
 	route.departure = 0.0;
 }
@@ -6120,6 +6136,138 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	switch_placed(placed);
 }
 
+namespace
+{
+
+void place_record(switch_store::record &Entry, TTrack const &First)
+{
+	auto const &main{First.m_paths.front()};
+	bezier const curve{main};
+	Entry.start = main.points[segment_data::point::start];
+	auto const direction{plan_of(curve.first(0.0))};
+	Entry.direction = glm::length(direction) > 1e-12 ? glm::normalize(direction) : glm::dvec2{0.0, 1.0};
+	Entry.km = alignment_store::chainage_at(Entry.start);
+}
+
+} // namespace
+
+// the switch is kept in the scenery with its type: of the catalogue template, of the switch of the scenery it was copied
+// from, or measured; on a curve it is an arc switch, one-sided when it diverges to the side the curve turns to
+void editor_mode::record_switch(TTrack &Track, editor_track::switch_template const &Shape)
+{
+	if (Track.eType != tt_Switch || Track.m_paths.size() < 2 || Track.name().empty() || scene::Layers.empty())
+		return;
+	switch_store::record entry;
+	if (Shape.source != nullptr)
+	{
+		if (auto const known{switch_store::of(*Shape.source)}; known.has_value() && known->kind == "switch")
+		{
+			entry = *known;
+			entry.number = "-";
+		}
+		else
+		{
+			entry.type = "-";
+			entry.radius = Shape.radius;
+			entry.ratio = Shape.ratio;
+			entry.source = "measured";
+		}
+	}
+	else
+	{
+		entry.type = Shape.type;
+		entry.rail = Shape.rail;
+		entry.radius = Shape.radius;
+		entry.ratio = Shape.ratio;
+		entry.a = Shape.a;
+		entry.b = Shape.b;
+		entry.source = "designed";
+	}
+	entry.kind = "switch";
+	entry.name = Track.name();
+	entry.parts = {entry.name};
+	place_record(entry, Track);
+	bezier const main{Track.m_paths[0]};
+	auto const &diverging{Track.m_paths[1]};
+	entry.hand = cross(entry.direction, plan_of(diverging.points[segment_data::point::end] - entry.start)) > 0.0 ? 'R' : 'L';
+	auto const first{plan_of(main.first(0.0))};
+	auto const last{plan_of(main.first(1.0))};
+	auto const turn{glm::length(first) > 1e-12 && glm::length(last) > 1e-12 ? signed_angle(glm::normalize(first), glm::normalize(last)) : 0.0};
+	entry.main_radius = std::abs(turn) > 1e-6 ? main.plan_length() / turn : 0.0;
+	if (std::abs(entry.main_radius) > 20000.0)
+		entry.main_radius = 0.0;
+	if (entry.type == "Rz" || entry.type == "Rlj" || entry.type == "Rld")
+		entry.type = entry.main_radius == 0.0 ? "Rz" : (entry.main_radius > 0.0) == (entry.hand == 'R') ? "Rlj" : "Rld";
+	switch_store::put(entry, record_layer(Track));
+}
+
+void editor_mode::record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base)
+{
+	if (Parts.empty() || scene::Layers.empty())
+		return;
+	switch_store::record entry;
+	entry.kind = Kind;
+	entry.name = Base;
+	entry.type = Type;
+	entry.radius = Radius;
+	entry.ratio = Angle > 1e-9 ? 1.0 / std::tan(Angle) : 0.0;
+	for (auto const *part : Parts)
+		if (part != nullptr && false == part->name().empty() && (Kind == "crossing" || part->eType == tt_Switch))
+			entry.parts.push_back(part->name());
+	if (entry.parts.empty())
+		return;
+	auto *first{simulation::Paths.find(entry.parts.front())};
+	if (first == nullptr || first->m_paths.empty())
+		return;
+	place_record(entry, *first);
+	switch_store::put(entry, record_layer(*first));
+}
+
+void editor_mode::render_switch_record(TTrack &Track)
+{
+	auto const known{switch_store::of(Track)};
+	if (false == known.has_value())
+	{
+		ImGui::TextDisabled("%s", STR_C("The scenery keeps no type for this switch, it's read from its shape"));
+		return;
+	}
+	auto entry{*known};
+	ImGui::Text(STR_C("Type kept in the scenery: %s"), switch_store::label(entry).c_str());
+	if (entry.kind == "switch" && entry.main_radius != 0.0)
+		ImGui::TextDisabled(STR_C("Diverging track R %.0f m: the R %.0f m of the type bent with the main track"), switch_store::branch_radius(entry), entry.radius);
+	if (entry.source == "measured")
+		ImGui::TextDisabled("%s", STR_C("Copied from a switch of the scenery: the size is measured from its shape"));
+	bool changed{false};
+	char number[32];
+	std::snprintf(number, sizeof(number), "%s", entry.number == "-" ? "" : entry.number.c_str());
+	ImGui::PushItemWidth(100.0f);
+	if (ImGui::InputText(STR_C("Number##switchnumber"), number, sizeof(number), ImGuiInputTextFlags_EnterReturnsTrue) || (ImGui::IsItemDeactivatedAfterEdit()))
+	{
+		entry.number = number[0] != '\0' ? number : "-";
+		changed = true;
+	}
+	item_tooltip("Number of the switch in the station, as the plans of the station give it");
+	ImGui::SameLine();
+	char rail[16];
+	std::snprintf(rail, sizeof(rail), "%s", entry.rail == "-" ? "" : entry.rail.c_str());
+	if (ImGui::InputText(STR_C("Rail##switchrail"), rail, sizeof(rail), ImGuiInputTextFlags_EnterReturnsTrue) || (ImGui::IsItemDeactivatedAfterEdit()))
+	{
+		entry.rail = rail[0] != '\0' ? rail : "-";
+		changed = true;
+	}
+	item_tooltip("Rail of the switch: 60E1, 49E1...");
+	auto km{entry.km.has_value() ? *entry.km / 1000.0 : 0.0};
+	if (ImGui::InputDouble(STR_C("Km of the start##switchkm"), &km, 0.0, 0.0, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue))
+	{
+		entry.km = km * 1000.0;
+		changed = true;
+	}
+	item_tooltip("Chainage of the start of the switch; taken from the horizontal alignment kept in the scenery when the switch lies on one");
+	ImGui::PopItemWidth();
+	if (changed)
+		switch_store::put(entry, entry.layer);
+}
+
 void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 {
 	auto const found{std::find_if(Created.begin(), Created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
@@ -6410,6 +6558,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	if (track != nullptr)
 	{
 		editor_track::commit({track});
+		record_switch(*track, shape);
 		Created.push_back(track);
 		m_switch.status = STR_C("Switch ") + track->name() + STR_C(" inserted");
 	}
@@ -6985,6 +7134,7 @@ std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, g
 	parts.push_back(editor_track::create_path(Style, arc(PointA, First, side, PointD, middle - split, middle + split)));
 	parts.push_back(editor_track::create_path(Style, arc(PointC, Second, -side, PointB, middle - split, middle + split)));
 	parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
+	record_slip(parts, "slip", "Rkpd", Radius, Angle, base);
 	return parts;
 }
 
@@ -7449,6 +7599,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	if (track != nullptr)
 	{
 		editor_track::commit({track});
+		record_switch(*track, shape);
 		created.push_back(track);
 		tool.status = STR_C("Switch ") + track->name() + STR_C(" inserted into the curve");
 	}

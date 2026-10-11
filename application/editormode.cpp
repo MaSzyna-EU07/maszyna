@@ -29,6 +29,7 @@ extern char **environ;
 #include "editor/editorGroundMesh.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
+#include "editor/editorSwitchStore.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIcons.hpp"
 #include "utilities/translation.h"
@@ -497,6 +498,7 @@ void editor_mode::editormode_input::poll()
 
 editor_mode::editor_mode() {
 	alignment_store::reset();
+	switch_store::reset();
 	m_userinterface = std::make_shared<editor_ui>();
 	// the area fill settings live in the node bank window, in the tab of the fill mode
 	ui()->set_fill_options([this]() { render_area_fill(); });
@@ -2904,6 +2906,7 @@ bool editor_mode::save()
 
     if (m_profile.changed)
         profile_store();
+    switch_store::tidy();
     infra_store();
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {

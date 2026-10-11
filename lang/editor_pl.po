@@ -5346,3 +5346,33 @@ msgstr "Zapisany projekt zostanie usunięty z "
 
 msgid "The paths stay as they are, the scenery no longer keeps a design for them"
 msgstr "Odcinki zostają bez zmian, sceneria przestaje przechowywać dla nich projekt"
+
+msgid "The scenery keeps no type for this switch, it's read from its shape"
+msgstr "Sceneria nie przechowuje typu tego rozjazdu, jest odczytywany z jego kształtu"
+
+msgid "Type kept in the scenery: %s"
+msgstr "Typ zapisany w scenerii: %s"
+
+msgid "Diverging track R %.0f m: the R %.0f m of the type bent with the main track"
+msgstr "Tor zwrotny R %.0f m: R %.0f m typu wygięte razem z torem zasadniczym"
+
+msgid "Copied from a switch of the scenery: the size is measured from its shape"
+msgstr "Skopiowany z rozjazdu scenerii: wymiary zmierzone z jego kształtu"
+
+msgid "Number##switchnumber"
+msgstr "Numer##switchnumber"
+
+msgid "Number of the switch in the station, as the plans of the station give it"
+msgstr "Numer rozjazdu na stacji, według planów stacji"
+
+msgid "Rail##switchrail"
+msgstr "Szyna##switchrail"
+
+msgid "Rail of the switch: 60E1, 49E1..."
+msgstr "Szyna rozjazdu: 60E1, 49E1..."
+
+msgid "Km of the start##switchkm"
+msgstr "Km początku##switchkm"
+
+msgid "Chainage of the start of the switch; taken from the horizontal alignment kept in the scenery when the switch lies on one"
+msgstr "Kilometraż początku rozjazdu; brany z planu sytuacyjnego zapisanego w scenerii, gdy rozjazd na nim leży"

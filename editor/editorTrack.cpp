@@ -2556,7 +2556,9 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 	{
 		switch_template slip;
 		slip.double_slip = true;
+		slip.type = "Rkpd";
 		slip.radius = slipping.first;
+		slip.ratio = std::stod(std::string{slipping.second}.substr(2));
 		slip.label = std::string{"Rkpd "} + slipping.second + " R" + std::to_string(static_cast<int>(slipping.first)) + " double slip (click at a crossing of two straights)";
 		result.push_back(slip);
 	}

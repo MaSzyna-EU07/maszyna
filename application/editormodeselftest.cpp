@@ -34,6 +34,9 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
+#include "editor/editorSwitchStore.hpp"
+#include "scene/sceneterrain.h"
+#include "editor/editorSpeed.hpp"
 
 #include <cstdint>
 #include <cstdlib>
@@ -98,6 +101,10 @@ http://mozilla.org/MPL/2.0/.
 //   routeapply, routetake                as the buttons of the route design do it
 //   alignments                           logs the alignments kept in the scenery and the element under each path
 //   splitkind <kind>, nudgekind <kind> <dx> <dz>   the first path over an element of the kind split in two, or moved
+//   switchplace <template> <x> <z> <direction> <side>   the catalogue template whose label starts so put into the straight
+//                                        nearest the point, or into the curve (switchcurve); slipplace <template> <x> <z>
+//   switches                             logs the switches kept in the scenery and the speed of each diverging track
+//   btfcheck <terrain file>              the .txtf converted to .btf, the editor lines the binary file keeps logged
 //   screenshot
 //   save
 //   log <text>
@@ -1126,6 +1133,111 @@ void editor_mode::selftest_step()
 			for (auto const &arc : backward.arcs)
 				text += format(" [R %.3f turn %.4f L %.3f]", arc.radius, arc.turn, arc.transition);
 			WriteLog(text);
+		}
+		else if (command == "switchplace" || command == "switchcurve" || command == "slipplace")
+		{
+			std::string label;
+			glm::dvec3 point{0.0};
+			int direction{1}, side{1};
+			words >> label >> point.x >> point.z >> direction >> side;
+			std::replace(label.begin(), label.end(), '_', ' ');
+			auto &tool{m_switch};
+			tool.templates = editor_track::standard_switch_templates();
+			tool.collected = true;
+			tool.armed = -1;
+			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+				if (tool.templates[i].label.rfind(label, 0) == 0)
+				{
+					tool.armed = i;
+					break;
+				}
+			TTrack *nearest{nullptr};
+			double distance{1e9};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+					continue;
+				auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)};
+				if (d < distance)
+				{
+					distance = d;
+					nearest = track;
+				}
+			}
+			if (tool.armed < 0 || nearest == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no template " + label + " or no path");
+				continue;
+			}
+			tool.status.clear();
+			if (command == "switchcurve")
+			{
+				editor_track::curve curve;
+				editor_track::chain chain;
+				std::string error;
+				if (false == editor_track::find_curve(*nearest, m_straights.tolerance, m_route.design.norms.gauge, curve) || false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
+				{
+					WriteLog("SELFTEST switchcurve: no curve");
+					continue;
+				}
+				tool.frame = sample_chain(chain);
+				tool.frame_tracks = chain.tracks;
+				tool.curved = true;
+				tool.along = nearest_station(tool.frame, point);
+				insert_curved_switch(direction, side);
+			}
+			else
+			{
+				auto const line{editor_track::find_straight(*nearest, m_straights.tolerance)};
+				if (command == "slipplace")
+				{
+					WriteLog(format("SELFTEST slipplace: straight from %s, %zu paths, start %.3f %.3f, %.3f m", nearest->name().c_str(), line.tracks.size(), line.start.x, line.start.z, line.length));
+					insert_double_slip(line, point, tool.templates[tool.armed]);
+				}
+				else
+					insert_switch(line, std::clamp(line.along(point), 0.0, line.length), direction, side);
+			}
+			WriteLog("SELFTEST " + command + ": " + tool.status + " " + m_straights.status);
+		}
+		else if (command == "btfcheck")
+		{
+			std::string name;
+			words >> name;
+			auto const textfile{Global.asCurrentSceneryPath + name + ".txtf"};
+			auto const binaryfile{Global.asCurrentSceneryPath + name + ".btf"};
+			auto const written{scene::terrain_file::prepare(textfile, binaryfile) == scene::terrain_file::state::binary};
+			auto const kept{scene::terrain_file::extra(binaryfile)};
+			WriteLog(format("SELFTEST btfcheck: binary %d, %zu bytes of the editor lines kept", written ? 1 : 0, kept.size()));
+			std::istringstream lines{kept};
+			std::string line;
+			while (std::getline(lines, line))
+				WriteLog("SELFTEST btf kept: " + line);
+		}
+		else if (command == "switches")
+		{
+			for (auto const &entry : switch_store::records())
+			{
+				std::string parts;
+				for (auto const &part : entry.parts)
+					parts += part + " ";
+				WriteLog(format("SELFTEST switch record %s %s: %s, R %.3f 1:%.3f hand %c a %.3f b %.3f main R %.3f, branch R %.3f, km %s, number %s, %s, parts %s", entry.kind.c_str(), entry.name.c_str(), switch_store::label(entry).c_str(), entry.radius, entry.ratio, entry.hand, entry.a,
+				                entry.b, entry.main_radius, switch_store::branch_radius(entry), entry.km.has_value() ? format("%.3f", *entry.km / 1000.0).c_str() : "-", entry.number.c_str(), entry.source.c_str(), parts.c_str()));
+			}
+			speed_check::options options;
+			options.norms = m_route.design.norms;
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->m_paths.size() < 2)
+					continue;
+				auto const known{switch_store::of(*track)};
+				geometry::bezier const branch{track->m_paths[1]};
+				auto const first{branch.first(0.3)};
+				auto const second{branch.second(0.3)};
+				auto const planar{std::abs(first.x * second.z - first.z * second.x) / std::pow(first.x * first.x + first.z * first.z, 1.5)};
+				auto const verdict{speed_check::check(*track, 1, options)};
+				WriteLog(format("SELFTEST switch %s: %s, branch R at 0.3 %.3f, path R %.3f, branch speed %.1f km/h at R %.1f", track->name().c_str(), known.has_value() ? switch_store::label(*known).c_str() : "no record", planar > 1e-9 ? 1.0 / planar : 0.0,
+				                track->m_paths[1].radius, verdict.safe, verdict.radius));
+			}
 		}
 		else if (command == "splitkind" || command == "nudgekind")
 		{

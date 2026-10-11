@@ -179,6 +179,7 @@ set(SOURCES
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
 "editor/editorAlignmentStore.cpp"
+"editor/editorSwitchStore.cpp"
 "editor/editorSpeed.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"

@@ -1,0 +1,61 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#pragma once
+
+#include <optional>
+#include <string>
+#include <vector>
+#include <glm/glm.hpp>
+
+#include "scene/scenelayers.h"
+
+class TTrack;
+
+// switches placed in the track editor, kept in the scenery files as "//$r" comment lines: their type, size and side, the
+// paths a slip or a crossing is made of, their km and number, so a switch is known again without guessing from its shape
+namespace switch_store
+{
+
+struct record
+{
+	scene::layer_handle layer{null_handle};
+	std::string kind{"switch"}; // switch, slip, crossing
+	std::string name; // the switch, or the base name of a slip or a crossing
+	std::string type{"Rz"}; // Rz, Rlj, Rld, Rkp, Rkpd, Skrz, - when unknown
+	std::string rail{"-"};
+	double radius{0.0}; // of the diverging track of the straight switch the type is made of
+	double ratio{0.0}; // n of 1:n
+	char hand{'-'}; // L, R as seen along the switch from its start
+	double a{0.0}, b{0.0};
+	double main_radius{0.0}; // of the main track, signed: + to the right, - to the left, 0 straight
+	std::vector<std::string> parts; // the switch, the switches of a slip, the paths of a crossing
+	glm::dvec3 start{0.0}; // of the first part
+	glm::dvec2 direction{0.0, 1.0};
+	std::optional<double> km;
+	std::string number{"-"};
+	std::string source{"designed"}; // designed: from the catalogue, measured: copied from a switch of the scenery
+};
+
+void reset();
+void load();
+std::vector<record> const &records();
+// the record of the switch, slip or crossing the track is a part of, while its first part starts where the record says
+std::optional<record> of(TTrack const &Track);
+// radius of the diverging track: of the type, bent with the main track for an arc switch
+double branch_radius(record const &Record);
+// keeps the record in the file of the layer, in place of the one with the same name
+void put(record Entry, scene::layer_handle const Layer);
+void forget(std::string const &Name);
+// on save: the records follow the renamed switches, the ones whose paths are gone are dropped
+void tidy();
+// "Rz 60E1-500-1:12 L", as the type is written on the lists of the switches
+std::string label(record const &Record);
+
+} // namespace switch_store
