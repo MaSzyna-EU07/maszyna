@@ -90,6 +90,7 @@ http://mozilla.org/MPL/2.0/.
 //   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
+//   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined
 //   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged
 //   screenshot
 //   save
@@ -1041,6 +1042,43 @@ void editor_mode::selftest_step()
 			}
 			if (false == created.empty())
 				WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
+		}
+		else if (command == "layclicks")
+		{
+			int layout{0};
+			words >> layout >> m_lay.radius;
+			m_track_layout = static_cast<track_layout>(std::clamp(layout, 0, 3));
+			auto const active{m_lay.active};
+			m_lay.active = true;
+			lay_cancel();
+			auto const before{m_history.size()};
+			for (glm::dvec3 point{0.0}; words >> point.x >> point.z;)
+			{
+				point.y = m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+				m_lay.mouse = point;
+				m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
+				lay_click();
+				WriteLog(format("SELFTEST layclicks %.1f %.1f: %s", point.x, point.z, m_lay.status.c_str()));
+			}
+			lay_cancel();
+			m_lay.active = active;
+			glm::dvec2 heading{0.0};
+			glm::dvec3 previous{0.0};
+			bool first{true};
+			for (auto step{before}; step < m_history.size(); ++step)
+				for (auto const *track : m_history[step].created)
+				{
+					auto const &path{track->m_paths.front()};
+					geometry::bezier const curve{path};
+					auto const begin{glm::normalize(geometry::plan_of(curve.first(0.0)))};
+					auto const &a{path.points[segment_data::point::start]};
+					auto const &b{path.points[segment_data::point::end]};
+					WriteLog(format("SELFTEST layclicks path %s: %.2f %.2f -> %.2f %.2f, L %.2f m, R %.1f m, kink %.4f deg, step %.4f m", track->name().c_str(), a.x, a.z, b.x, b.z, curve.plan_length(), static_cast<double>(path.radius),
+					                first ? 0.0 : glm::degrees(std::abs(geometry::signed_angle(heading, begin))), first ? 0.0 : glm::distance(previous, a)));
+					heading = glm::normalize(geometry::plan_of(curve.first(1.0)));
+					previous = b;
+					first = false;
+				}
 		}
 		else if (command == "joints")
 		{

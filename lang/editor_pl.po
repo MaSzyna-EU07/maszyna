@@ -29,12 +29,6 @@ msgstr "Pokaż inspektor"
 msgid "The curve can't be read from this path, edit it as a single path"
 msgstr "Z tego odcinka nie da się odczytać łuku, edytuj go jako pojedynczy odcinek"
 
-msgid "end of the straight, or a vertex of a curve"
-msgstr "koniec prostej albo wierzchołek łuku"
-
-msgid "next vertex of the curve"
-msgstr "kolejny wierzchołek łuku"
-
 msgid "Laying track: LMB adds the points"
 msgstr "Układanie toru: LPM dodaje punkty"
 
@@ -2934,9 +2928,6 @@ msgstr "Rozjazd: wybierz typ z listy"
 msgid "Drag from a free end"
 msgstr "Przeciągnij z wolnego końca"
 
-msgid "straight along it, to another free end: a curve joining them"
-msgstr "prosta wzdłuż niego, do innego wolnego końca: łuk łączący"
-
 msgid "moves the point, level"
 msgstr "przesuwa punkt w poziomie"
 
@@ -5236,9 +5227,6 @@ msgstr "Co przeciągnięcie lub kliknięcie z wolnego końca kładzie w stronę 
 msgid "Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows"
 msgstr "Prędkość nowych torów i prędkość projektowa krzywych przejściowych oraz przechyłki; pierwszeństwo ma prędkość toru, do którego się dołącza, i nigdy nie wyższa, niż pozwala promień"
 
-msgid "R %.0f m   Ctrl+wheel: radius"
-msgstr "R %.0f m   Ctrl+kółko: promień"
-
 msgid "Ctrl+wheel: radius, Shift+wheel: arc / straight"
 msgstr "Ctrl+kółko: promień, Shift+kółko: łuk / prosta"
 
@@ -5280,6 +5268,9 @@ msgstr "łuk / prosta, na wolnym końcu: inny kształt"
 
 msgid "lay the shape up to here and go on from its end"
 msgstr "kładzie kształt dotąd i idzie dalej od jego końca"
+
+msgid "lay the straight up to here and go on from its end"
+msgstr "kładzie prostą dotąd i idzie dalej od jej końca"
 
 msgid "type the radius"
 msgstr "wpisz promień"
