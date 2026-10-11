@@ -567,6 +567,8 @@ std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &P
     for (std::size_t i = 0; i < Points.size(); ++i)
     {
         auto const &p = Points[i];
+        if (false == std::isfinite(p.x) || false == std::isfinite(p.y) || false == std::isfinite(p.z))
+            continue;
         std::pair<int, int> const key{static_cast<int>(std::floor(p.x / ground_tile_size)), static_cast<int>(std::floor(p.z / ground_tile_size))};
         auto &tile = ground_tiles[key];
         bool const missing = (tile.grid == nullptr);

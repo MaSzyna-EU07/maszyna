@@ -3866,9 +3866,11 @@ void editor_mode::update_build_tools()
 		m_join_radius = 0.0;
 		m_join_variant = 0;
 	};
+	bool const pointing{m_cursor_override.has_value() || ImGui::IsMousePosValid()};
 	if (m_extend.active)
 	{
-		m_extend.mouse = cursor_terrain(m_extend.point.y);
+		if (pointing)
+			m_extend.mouse = cursor_terrain(m_extend.point.y);
 		typed_extend();
 		m_extend.snap = m_typed.empty() && m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
 		if (m_extend.snap.track == nullptr)
@@ -3885,7 +3887,8 @@ void editor_mode::update_build_tools()
 		return;
 	// geometric ray, same as extend: Mouse_Position() is a delayed depth pick and lags the cursor
 	double const height{false == lay.points.empty() ? lay.points.back().y : lay.start.track != nullptr ? lay.start.position.y : ground.y};
-	lay.mouse = typed_lay(cursor_terrain(height));
+	if (pointing)
+		lay.mouse = typed_lay(cursor_terrain(height));
 	lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
 	if (lay.mouse_snap.track == nullptr)
 		lay.mouse = lay_bed(lay.mouse);
@@ -3988,7 +3991,7 @@ glm::dvec3 editor_mode::cursor_ground() const
 glm::dvec3 editor_mode::cursor_terrain(double const Height)
 {
 	auto point{cursor_level(Height)};
-	for (int i = 0; i < 5; ++i)
+	for (int i = 0; i < 5 && std::isfinite(point.x) && std::isfinite(point.z); ++i)
 	{
 		std::vector<char> found;
 		auto const heights{ground_heights({point}, true, &found)};
