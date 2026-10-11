@@ -39,7 +39,7 @@ opengl_precipitation::create( int const Tesselation ) {
     std::uint16_t index = 0;
 
 //    auto const radius { 25.f }; // cylinder radius
-    std::vector<float> radii { 25.f, 10.f, 5.f, 1.f };
+    std::vector radii { 25.f, 10.f, 5.f, 1.f };
     for( auto radius : radii ) {
 
         for( int i = 0; i <= latitudes; ++i ) {

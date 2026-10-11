@@ -11,13 +11,13 @@ TTranscripts Transcripts;
 
 // dodanie linii do tabeli, (show) i (hide) w [s] od aktualnego czasu
 void
-TTranscripts::AddLine( std::string const &txt, float show, float hide, bool it ) {
+TTranscripts::AddLine( std::string_view txt, float show, float hide, bool it ) {
 
     if( show == hide ) { return; } // komentarz jest ignorowany
 
     // TODO: replace the timeangledeg mess with regular time points math
-    show = Global.fTimeAngleDeg + show / 240.0; // jeśli doba to 360, to 1s będzie równe 1/240
-    hide = Global.fTimeAngleDeg + hide / 240.0;
+    show = static_cast<float>(Global.fTimeAngleDeg + show / 240.0); // jeśli doba to 360, to 1s będzie równe 1/240
+    hide = static_cast<float>(Global.fTimeAngleDeg + hide / 240.0);
 
     TTranscript transcript;
 	transcript.asText = txt;
@@ -34,7 +34,7 @@ TTranscripts::AddLine( std::string const &txt, float show, float hide, bool it )
 
 // dodanie tekstów, długość dźwięku, czy istotne
 void
-TTranscripts::Add( std::string const &txt, bool backgorund ) {
+TTranscripts::Add( std::string const &txt, bool /*backgorund*/ ) {
 
     if( true == txt.empty() ) { return; }
 
@@ -42,20 +42,21 @@ TTranscripts::Add( std::string const &txt, bool backgorund ) {
     cParser parser( asciitext );
     while( true == parser.getTokens( 3, false, "[]\n" ) ) {
 
-        float begin{ 0.f }, end{ 0.f };
+        float begin{ 0.f };
+        float end{ 0.f };
         std::string transcript;
         parser
             >> begin
             >> end
             >> transcript;
-        AddLine( transcript, 0.10 * begin, 0.12 * end, false );
+        AddLine( transcript, static_cast<float>(0.10 * begin), static_cast<float>(0.12 * end), false );
     }
     // try to handle malformed(?) cases with no show/hide times
     std::string transcript; parser >> transcript;
     while( false == transcript.empty() ) {
 
         //        WriteLog( "Transcript text with no display/hide times: \"" + transcript + "\"" );
-        AddLine( transcript, 0.0, 0.12 * transcript.size(), false );
+        AddLine( transcript, 0.0, static_cast<float>(0.12 * static_cast<double>(transcript.size())), false );
         transcript = ""; parser >> transcript;
     }
 }

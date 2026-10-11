@@ -49,19 +49,19 @@ opengl33_particles::update( opengl_camera const &Camera ) {
 	// build billboard data for particles from visible sources
 	auto const camerarotation { glm::mat3( Camera.modelview() ) };
 	particle_vertex vertex;
-	for( auto const &source : sources ) {
+	for( auto const &[sourcekey, sourcedata] : sources ) {
 
 		auto const particlecolor {
 			glm::clamp(
-			    source.second.color()
+			    sourcedata.color()
 			    * ( glm::vec3 { Global.DayLight.ambient }
                 + 0.35f * glm::vec3{ Global.DayLight.diffuse } ) * simulation::Environment.light_intensity(),
 			    glm::vec3{ 0.f }, glm::vec3{ 1.f } ) };
-		auto const &particles { source.second.sequence() };
+		auto const &particles { sourcedata.sequence() };
 		// TODO: put sanity cap on the overall amount of particles that can be drawn
 		auto const sizestep { 256.0 * billboard_vertices.size() };
 		m_particlevertices.reserve(
-		    sizestep * std::ceil( m_particlevertices.size() + ( particles.size() * billboard_vertices.size() ) / sizestep ) );
+		    static_cast<std::size_t>( sizestep * std::ceil( static_cast<double>(m_particlevertices.size()) + ( static_cast<double>(particles.size() * billboard_vertices.size()) ) / sizestep ) ) );
 		for( auto const &particle : particles ) {
 			// TODO: particle color support
 			vertex.color[ 0 ] = particlecolor.r;
@@ -72,9 +72,9 @@ opengl33_particles::update( opengl_camera const &Camera ) {
 			auto const offset { glm::vec3{ particle.position - Camera.position() } };
 			auto const rotation { glm::angleAxis( particle.rotation, glm::vec3{ 0.f, 0.f, 1.f } ) };
 
-			for( auto const &billboardvertex : billboard_vertices ) {
-				vertex.position = offset + ( rotation * billboardvertex.first * particle.size ) * camerarotation;
-				vertex.texture = billboardvertex.second;
+			for( auto const &[billboardoffset, billboardtexture] : billboard_vertices ) {
+				vertex.position = offset + ( rotation * billboardoffset * particle.size ) * camerarotation;
+				vertex.texture = billboardtexture;
 
 				m_particlevertices.emplace_back( vertex );
 			}
@@ -113,14 +113,14 @@ opengl33_particles::render() {
 		m_vao->setup_attrib(*m_buffer, 1, 4, GL_FLOAT, sizeof(particle_vertex), 12);
 		m_vao->setup_attrib(*m_buffer, 2, 2, GL_FLOAT, sizeof(particle_vertex), 28);
 
-		m_buffer->unbind(gl::buffer::ARRAY_BUFFER);
-		m_vao->unbind();
+		gl::buffer::unbind(gl::buffer::ARRAY_BUFFER);
+		gl::vao::unbind();
 	}
 
 	if (!m_shader) {
 		gl::shader vert("smoke.vert");
 		gl::shader frag("smoke.frag");
-		gl::program *prog = new gl::program({vert, frag});
+		auto prog = new gl::program({vert, frag});
 		m_shader = std::unique_ptr<gl::program>(prog);
 	}
 
@@ -128,11 +128,11 @@ opengl33_particles::render() {
 	m_shader->bind();
 	m_vao->bind();
 
-	glDrawArrays(GL_TRIANGLES, 0, m_particlevertices.size());
+	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_particlevertices.size()));
 
-	m_shader->unbind();
-	m_vao->unbind();
-	m_buffer->unbind(gl::buffer::ARRAY_BUFFER);
+	gl::program::unbind();
+	gl::vao::unbind();
+	gl::buffer::unbind(gl::buffer::ARRAY_BUFFER);
 
     return m_particlevertices.size() / 6;
 }

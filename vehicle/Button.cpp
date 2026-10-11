@@ -51,7 +51,7 @@ void TButton::Load( cParser &Parser, TDynamicObject const *Owner ) {
         // TODO: rework the base part into yaml-compatible flow style mapping
         submodelname = Parser.getToken<std::string>( false );
         while( true == Load_mapping( Parser ) ) {
-            ; // all work done by while()
+            // all work done by while()
         }
     }
 
@@ -123,9 +123,8 @@ TButton::Turn( bool const State ) {
 void TButton::Update( bool const Power ) {
     // TODO: remove passing manually power state when LD is in place
 
-    auto const state { Power && ( bData ? *bData : m_state ) };
 
-    if( state != m_state ) {
+    if( auto const state { Power && ( bData ? *bData : m_state ) }; state != m_state ) {
 
         m_state = state;
         play();

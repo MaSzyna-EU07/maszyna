@@ -21,7 +21,7 @@ public:
     explicit TMemCell( scene::node_data const &Nodedata );
 // methods
     void
-        UpdateValues( std::string const &szNewText, double const fNewValue1, double const fNewValue2, int const CheckMask );
+        UpdateValues( std::string_view szNewText, double const fNewValue1, double const fNewValue2, int const CheckMask );
     bool
         Load(cParser *parser);
     void
@@ -61,11 +61,11 @@ public:
 private:
 // methods
     // serialize() subclass details, sends content of the subclass to provided stream
-    void serialize_( std::ostream &Output ) const;
+    void serialize_( std::ostream &Output ) const override;
     // deserialize() subclass details, restores content of the subclass from provided stream
-    void deserialize_( std::istream &Input );
+    void deserialize_( std::istream &Input ) override;
     // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
-    void export_as_text_( std::ostream &Output ) const;
+    void export_as_text_( std::ostream &Output ) const override;
 
 // members
     // content
@@ -85,10 +85,10 @@ class memory_table : public basic_table<TMemCell> {
 public:
     // legacy method, initializes traction after deserialization from scenario file
     void
-        InitCells();
+        InitCells() const;
     // legacy method, sends content of all cells to the log
     void
-        log_all();
+        log_all() const;
 };
 
 //---------------------------------------------------------------------------

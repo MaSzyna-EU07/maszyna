@@ -31,7 +31,7 @@ void gl::vao::setup_attrib(gl::buffer &buffer, int attrib, int size, int type, i
 	else {
         if (attrib == 0)
             params.clear();
-		params.push_back({buffer, attrib, size, type, stride, offset});
+		params.emplace_back(buffer, attrib, size, type, stride, offset);
 		active = nullptr;
 	}
 }
@@ -60,14 +60,14 @@ void gl::vao::bind()
 		glBindVertexArray(*this);
 	}
 	else {
-		for (attrib_params &param : params) {
+		for (attrib_params const &param : params) {
 			param.buffer.bind(gl::buffer::ARRAY_BUFFER);
 			glVertexAttribPointer(param.attrib, param.size, param.type, GL_FALSE, param.stride, reinterpret_cast<void*>(param.offset));
 			glEnableVertexAttribArray(param.attrib);
 		}
 
 		for (size_t i = params.size(); i < 5; i++)
-			glDisableVertexAttribArray(i);
+			glDisableVertexAttribArray(static_cast<GLuint>(i));
 
 		if (ebo)
 			ebo->bind(gl::buffer::ELEMENT_ARRAY_BUFFER);
@@ -84,6 +84,6 @@ void gl::vao::unbind()
 	}
 	else {
 		for (size_t i = 0; i < 4; i++)
-			glDisableVertexAttribArray(i);
+			glDisableVertexAttribArray(static_cast<GLuint>(i));
 	}
 }

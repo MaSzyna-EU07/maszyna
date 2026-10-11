@@ -15,9 +15,7 @@ cMoon::cMoon() {
 	m_observer.temp = 15.0;							// ambient dry-bulb temperature, degrees C
 }
 
-cMoon::~cMoon() {
-
-}
+cMoon::~cMoon() = default;
 
 void
 cMoon::init() {
@@ -74,8 +72,8 @@ float cMoon::getIntensity() {
 void cMoon::setLocation( float const Longitude, float const Latitude ) {
 
 	// convert fraction from geographical base of 6o minutes
-	m_observer.longitude = (int)Longitude + (Longitude - (int)Longitude) * 100.0 / 60.0;
-	m_observer.latitude = (int)Latitude + (Latitude - (int)Latitude) * 100.0 / 60.0 ;
+	m_observer.longitude = (int)Longitude + (Longitude - static_cast<float>((int)Longitude)) * 100.0 / 60.0;
+	m_observer.latitude = (int)Latitude + (Latitude - static_cast<float>((int)Latitude)) * 100.0 / 60.0 ;
 }
 
 // sets current time, overriding one acquired from the system clock
@@ -103,9 +101,9 @@ void cMoon::move() {
 
     SYSTEMTIME localtime = simulation::Time.data(); // time for the calculation
 
-    if( m_observer.hour >= 0 ) { localtime.wHour = m_observer.hour; }
-    if( m_observer.minute >= 0 ) { localtime.wMinute = m_observer.minute; }
-    if( m_observer.second >= 0 ) { localtime.wSecond = m_observer.second; }
+    if( m_observer.hour >= 0 ) { localtime.wHour = static_cast<uint16_t>(m_observer.hour); }
+    if( m_observer.minute >= 0 ) { localtime.wMinute = static_cast<uint16_t>(m_observer.minute); }
+    if( m_observer.second >= 0 ) { localtime.wSecond = static_cast<uint16_t>(m_observer.second); }
 
     double localut =
         localtime.wHour
@@ -158,7 +156,6 @@ void cMoon::move() {
     double const yeclip = m_body.distance * ( std::sin( degtorad * longascnode ) * std::cos( vpluswinrad ) + std::cos( degtorad * longascnode ) * std::sin( vpluswinrad ) * std::cos( degtorad * inclination ) );
     double const zeclip = m_body.distance * std::sin( vpluswinrad ) * std::sin( degtorad * inclination );
     // ecliptic coordinates
-    double ecliplat = radtodeg * std::atan2( zeclip, std::sqrt( xeclip*xeclip + yeclip*yeclip ) );
     m_body.eclong = clamp_circular( radtodeg * std::atan2( yeclip, xeclip ) );
     // distance
     m_body.distance = std::sqrt( xeclip*xeclip + yeclip*yeclip + zeclip*zeclip );
@@ -174,17 +171,13 @@ void cMoon::move() {
     m_body.mnlong = clamp_circular( longascnode + perigeearg + m_body.mnanom );
     // Moon's mean elongation:       D   =  Lm - Ls
     double const mnelong = clamp_circular( m_body.mnlong - sunmnlong );
-    // Moon's argument of latitude:  F   =  Lm - N
-    double const arglat = clamp_circular( m_body.mnlong - longascnode );
     // longitude perturbations
     double const pertevection = -1.274 * std::sin( degtorad * ( m_body.mnanom - 2.0 * mnelong ) ); // Evection
     double const pertvariation = +0.658 * std::sin( degtorad * ( 2.0 * mnelong ) ); // Variation
     double const pertyearlyeqt = -0.186 * std::sin( degtorad * sunmnanom ); // Yearly equation
     // latitude perturbations
-    double const pertlat = -0.173 * std::sin( degtorad * ( arglat - 2.0 * mnelong ) );
 
     m_body.eclong += pertevection + pertvariation + pertyearlyeqt;
-    ecliplat += pertlat;
     // declination
 	m_body.declin = radtodeg * std::asin( std::sin (m_body.oblecl * degtorad) * std::sin(m_body.eclong * degtorad) );
 
@@ -267,7 +260,6 @@ void cMoon::refract() {
 
 void cMoon::irradiance() {
 
-	static double radtodeg = 57.295779513;					// converts from radians to degrees
 	static double degtorad = 0.0174532925;					// converts from degrees to radians
 
 	m_body.dayang = ( simulation::Time.year_day() - 1 ) * 360.0 / 365.0;
@@ -299,7 +291,7 @@ cMoon::phase() {
 		m_phase = 50;
 	else {
 		// calculate moon's age in days from new moon
-		float ip = normalize( ( simulation::Time.julian_day() - 2451550.1f ) / 29.530588853f );
+		float ip = normalize( ( static_cast<float>(simulation::Time.julian_day()) - 2451550.1f ) / 29.530588853f );
 		m_phase = ip * 29.53f;
 	}
 }
@@ -308,7 +300,7 @@ cMoon::phase() {
 float
 cMoon::normalize( const float Value ) const {
 
-    float value = Value - floor( Value );
+    auto value = static_cast<float>(Value - floor( Value ));
     if( value < 0.f ) { ++value; }
 
     return value;

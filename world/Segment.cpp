@@ -67,8 +67,8 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     CPointIn = NewCPointIn;
     Point2 = NewPoint2;
     // poprawienie przechyłki
-    fRoll1 = glm::radians(fNewRoll1); // Ra: przeliczone jest bardziej przydatne do obliczeń
-    fRoll2 = glm::radians(fNewRoll2);
+    fRoll1 = static_cast<float>(glm::radians(fNewRoll1)); // Ra: przeliczone jest bardziej przydatne do obliczeń
+    fRoll2 = static_cast<float>(glm::radians(fNewRoll2));
     bCurve = bIsCurve;
     if (Global.bRollFix)
     { // Ra: poprawianie przechyłki
@@ -85,7 +85,7 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
             Point1.y += w1; // modyfikacja musi być przed policzeniem dalszych parametrów
             if (bCurve)
                 CPointOut.y += w1; // prosty ma wektory jednostkowe
-            pOwner->MovedUp1(w1); // zwrócić trzeba informację o podwyższeniu podsypki
+            pOwner->MovedUp1(static_cast<float>(w1)); // zwrócić trzeba informację o podwyższeniu podsypki
         }
         if (fRoll2 != 0.f)
         {
@@ -125,7 +125,7 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
         fStep = fLength / ( 3.0 * Global.SplineFidelity );
     }
 //    iSegCount = static_cast<int>( std::ceil( fLength / fStep ) ); // potrzebne do VBO
-    iSegCount = pOwner->eType == tt_Switch ? 6 * Global.SplineFidelity : static_cast<int>(std::ceil(fLength / fStep)); // potrzebne do VBO
+    iSegCount = pOwner->eType == tt_Switch ? static_cast<int>(6 * Global.SplineFidelity) : static_cast<int>(std::ceil(fLength / fStep)); // potrzebne do VBO
 
     fStep = fLength / iSegCount; // update step to equalize size of individual pieces
 
@@ -242,7 +242,7 @@ double TSegment::FastGetTFromS(double const s) const
 	double const h01 = -2.0 * u3 + 3.0 * u2;
 	double const t = ( ( 1.0 - h01 )         * fTsBuffer[ i ] +
 					   ( u3 - 2.0 * u2 + u ) * fTsSlope [ i ] +
-					   ( h01 )               * fTsBuffer[ i + 1 ] +
+					   h01               * fTsBuffer[ i + 1 ] +
 					   ( u3 - u2 )           * fTsSlope [ i + 1 ] );
 	return t;
 }
@@ -263,10 +263,11 @@ double TSegment::ComputeLength() const // McZapkie-150503: dlugosc miedzy punkta
     // Ra: koniec rekurencji jeśli po podziale suma długości nie różni się więcej niż 0.5mm od
     // poprzedniej
     // Ra: ewentualnie rozpoznać łuk okręgu płaskiego i liczyć ze wzoru na długość łuku
-    double t, l = 0;
+    double t;
+    double l = 0;
 	glm::dvec3 last{0, 0, 0}; // długość liczona po przesunięciu odcinka do początku układu
 	glm::dvec3 tmp = Point2 - Point1;
-    int m = 20.0 * glm::length(tmp); // było zawsze do 10000, teraz jest liczone odcinkami po około 5cm
+    auto m = static_cast<int>(20.0 * glm::length(tmp)); // było zawsze do 10000, teraz jest liczone odcinkami po około 5cm
     for (int i = 1; i <= m; i++)
     {
         t = double(i) / double(m); // wyznaczenie parametru na krzywej z przedziału (0,1>
@@ -334,7 +335,7 @@ glm::dvec3 TSegment::GetDirection(double const fDistance) const
     return FastGetPoint(t2) - FastGetPoint(t1);
 }
 
-glm::dvec3 TSegment::FastGetDirection(double fDistance, double fOffset)
+glm::dvec3 TSegment::FastGetDirection(double fDistance, double fOffset) const
 { // takie toporne liczenie pochodnej dla parametru 0.0÷1.0
     double t1 = fDistance - fOffset;
     if (t1 <= 0.0)
@@ -371,22 +372,22 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
         auto const t = FastGetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera na parametr (t)
         position = FastGetPoint( t );
         // przechyłka w danym miejscu (zmienia się liniowo)
-        rotation.x = std::lerp( fRoll1, fRoll2, t );
+        rotation.x = static_cast<float>(std::lerp( fRoll1, fRoll2, t ));
         // pochodna
         auto const tangent = GetFirstDerivative( t );
         // pochylenie krzywej (w pionie)
-        rotation.y = std::atan( tangent.y );
+        rotation.y = static_cast<float>(std::atan( tangent.y ));
         // kierunek krzywej w planie
-        rotation.z = -std::atan2( tangent.x, tangent.z );
+        rotation.z = static_cast<float>(-std::atan2( tangent.x, tangent.z ));
     }
     else {
         // wyliczenie dla odcinka prostego jest prostsze
         auto const t = fDistance / fLength; // zerowych torów nie ma
         position = FastGetPoint( t );
         // przechyłka w danym miejscu (zmienia się liniowo)
-        rotation.x = std::lerp( fRoll1, fRoll2, t );
-        rotation.y = fStoop; // pochylenie toru prostego
-        rotation.z = fDirection; // kierunek toru w planie
+        rotation.x = static_cast<float>(std::lerp( fRoll1, fRoll2, t ));
+        rotation.y = static_cast<float>(fStoop); // pochylenie toru prostego
+        rotation.z = static_cast<float>(fDirection); // kierunek toru w planie
     }
 };
 
@@ -404,20 +405,35 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
     if( fTsBuffer.empty() )
         return false; // prowizoryczne zabezpieczenie przed wysypem - ustalić faktyczną przyczynę
 
-    glm::vec3 pos1, pos2, dir, parallel1, parallel2, pt, norm;
-    float s, step, fOffset, tv1, tv2, t, fEnd;
+    glm::vec3 pos1;
+    glm::vec3 pos2;
+    glm::vec3 dir;
+    glm::vec3 parallel1;
+    glm::vec3 parallel2;
+    glm::vec3 pt;
+    glm::vec3 norm;
+    float s;
+    float step;
+    float fOffset;
+    float tv1;
+    float tv2;
+    float t;
+    float fEnd;
     auto const iNumShapePoints = Transition ? ShapePoints.size() / 2 : ShapePoints.size();
-    float const texturelength = fTextureLength * Texturescale;
-    float const texturescale = Texturescale;
+    auto const texturelength = static_cast<float>(fTextureLength * Texturescale);
+    auto const texturescale = static_cast<float>(Texturescale);
 
-    float m1, jmm1, m2, jmm2; // pozycje względne na odcinku 0...1 (ale nie parametr Beziera)
-    step = fStep;
+    float m1;
+    float jmm1;
+    float m2;
+    float jmm2; // pozycje względne na odcinku 0...1 (ale nie parametr Beziera)
+    step = static_cast<float>(fStep);
     tv1 = 1.0; // Ra: to by można było wyliczać dla odcinka, wyglądało by lepiej
-    s = fStep * iSkip; // iSkip - ile odcinków z początku pominąć
+    s = static_cast<float>(fStep * iSkip); // iSkip - ile odcinków z początku pominąć
     int i = iSkip; // domyślnie 0
-    t = fTsBuffer[ i ]; // tabela wattości t dla segmentów
+    t = static_cast<float>(fTsBuffer[ i ]); // tabela wattości t dla segmentów
     // BUG: length of spline can be 0, we should skip geometry generation for such cases
-    fOffset = 0.1 / fLength; // pierwsze 10cm
+    fOffset = static_cast<float>(0.1 / fLength); // pierwsze 10cm
     pos1 = glm::dvec3{ FastGetPoint( t ) - Origin }; // wektor początku segmentu
     dir = glm::dvec3{ FastGetDirection( t, fOffset ) }; // wektor kierunku
     parallel1 = glm::vec3{ -dir.z, 0.f, dir.x }; // wektor poprzeczny
@@ -428,11 +444,11 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
     parallel1 = glm::normalize( parallel1 );
     if( iEnd == 0 )
         iEnd = iSegCount;
-    fEnd = fLength * double( iEnd ) / double( iSegCount );
+    fEnd = static_cast<float>(fLength * double( iEnd ) / double( iSegCount ));
 /*
     m2 = s / fEnd;
 */
-    m2 = static_cast<float>( i - iSkip ) / ( iEnd - iSkip );
+    m2 = static_cast<float>( i - iSkip ) / ( static_cast<float>(iEnd - iSkip) );
 
     jmm2 = 1.f - m2;
 
@@ -445,7 +461,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
 /*
         m2 = s / fEnd;
 */
-        m2 = static_cast<float>( i - iSkip ) / ( iEnd - iSkip );
+        m2 = static_cast<float>( i - iSkip ) / ( static_cast<float>(iEnd - iSkip) );
 
         jmm2 = 1.f - m2; // nowa pozycja
         if( i == iEnd ) { // gdy przekroczyliśmy koniec - stąd dziury w torach...
@@ -462,7 +478,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
         tv1 = clamp_circular( tv1, 1.0f );
         tv2 = tv1 - step / texturelength; // mapowanie na końcu segmentu
 
-        t = fTsBuffer[ i ]; // szybsze od GetTFromS(s);
+        t = static_cast<float>(fTsBuffer[ i ]); // szybsze od GetTFromS(s);
         pos2 = glm::dvec3{ FastGetPoint( t ) - Origin };
         dir = glm::dvec3{ FastGetDirection( t, fOffset ) }; // nowy wektor kierunku
         parallel2 = glm::vec3{ -dir.z, 0.f, dir.x }; // wektor poprzeczny
@@ -486,13 +502,12 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm1 * ShapePoints[ j ].texture.x + m1 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv1 } );
                 }
-                if( p ) // jeśli jest wskaźnik do tablicy
-                    if( *p )
-                        if( !j ) // to dla pierwszego punktu
-                        {
-                            **p = pt;
-                            ( *p )++;
-                        } // zapamiętanie brzegu jezdni
+                // jeśli jest wskaźnik do tablicy
+                if (p && *p && !j) // to dla pierwszego punktu
+                {
+                    **p = pt;
+                    ( *p )++;
+                } // zapamiętanie brzegu jezdni
                 // dla trapezu drugi koniec ma inne współrzędne
                 pt = parallel2 * ( jmm2 * ( ShapePoints[ j ].position.x - fOffsetX.first ) + m2 * ( ShapePoints[ j + iNumShapePoints ].position.x - fOffsetX.second ) ) + pos2;
                 pt.y += jmm2 * ShapePoints[ j ].position.y + m2 * ShapePoints[ j + iNumShapePoints ].position.y;
@@ -505,13 +520,12 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm2 * ShapePoints[ j ].texture.x + m2 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv2 } );
                 }
-                if( p ) // jeśli jest wskaźnik do tablicy
-                    if( *p )
-                        if( !j ) // to dla pierwszego punktu
-                            if( i == iSegCount ) {
-                                **p = pt;
-                                ( *p )++;
-                            } // zapamiętanie brzegu jezdni
+                // jeśli jest wskaźnik do tablicy
+                // to dla pierwszego punktu
+                if (p && *p && !j && i == iSegCount) {
+                    **p = pt;
+                    ( *p )++;
+                } // zapamiętanie brzegu jezdni
             }
         }
         else {
@@ -549,39 +563,38 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
 
 void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) const
 {
-	float step = 1.0f / iSegCount / quality;
+	float step = 1.0f / static_cast<float>(iSegCount) / quality;
 
-	float x;
 
 	glm::vec3 previous = FastGetPoint(0.0);
 
-	for (x = step; x <= 1.0f; x += step) {
-		out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
+	for (int i = 1; static_cast<float>(i) * step <= 1.0f; ++i) {
+		float const x = static_cast<float>(i) * step;
+		out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 
 		previous = glm::vec3(FastGetPoint(x));
-		out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
+		out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 	}
 
-	out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
+	out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 
 	previous = glm::vec3(FastGetPoint(1.0));
-	out.push_back(gfx::basic_vertex(previous, glm::vec3(0.0f), glm::vec2(0.0f)));
+	out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 }
 
 glm::vec3 TSegment::get_nearest_point(const glm::dvec3 &point, float quality) const
 {
-	float step = 1.0f / iSegCount / quality;
+	float step = 1.0f / static_cast<float>(iSegCount) / quality;
 
-	float x;
 
 	glm::vec3 nearest;
 	float min = std::numeric_limits<float>::max();
 
-	for (x = step; x <= 1.0f; x += step) {
+	for (int i = 1; static_cast<float>(i) * step <= 1.0f; ++i) {
+		float const x = static_cast<float>(i) * step;
         glm::vec3 p1 = FastGetPoint(x);
-        glm::vec3 p2 = FastGetPoint(glm::min(1.0f, x + step));
 
-        if (p1 != p2) {
+        if (glm::vec3 p2 = FastGetPoint(glm::min(1.0f, x + step)); p1 != p2) {
             float l2 = glm::distance2(p1, p2);
             float t = glm::max(0.0f, glm::min(1.0f, glm::dot((glm::vec3)point - p1, p2 - p1) / l2));
             glm::vec3 proj = p1 + t * (p2 - p1);

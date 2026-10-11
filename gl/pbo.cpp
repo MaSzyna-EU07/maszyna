@@ -12,7 +12,7 @@ void gl::pbo::request_read(int x, int y, int lx, int ly, int pixsize, GLenum for
     sync.reset();
 
     bind(PIXEL_PACK_BUFFER);
-    glReadPixels(x, y, lx, ly, format, type, 0);
+    glReadPixels(x, y, lx, ly, format, type, nullptr);
     unbind(PIXEL_PACK_BUFFER);
 
     sync.emplace();

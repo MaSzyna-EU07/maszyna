@@ -14,8 +14,8 @@ namespace network
 	public:
 		server_manager();
 
-		void push_delta(double render_dt, double dt, double sync, const command_queue::commands_map &commands);
-		command_queue::commands_map pop_commands();
+		void push_delta(double render_dt, double dt, double sync, const command_queue::commands_map &commands) const;
+		command_queue::commands_map pop_commands() const;
 		void create_server(const std::string &backend, const std::string &conf);
 	};
 

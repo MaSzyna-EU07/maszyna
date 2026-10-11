@@ -56,7 +56,7 @@ public:
     void
         poll();
     inline
-    user_command const
+    user_command
         command() const {
             return m_command; }
     bindingsetup_sequence&
@@ -67,7 +67,7 @@ public:
     std::string
         binding_hint( user_command const Command ) const;
     void
-        dump_bindings();
+        dump_bindings() const;
 
 // members
 	static std::unordered_map<int, std::string> keytonamemap;

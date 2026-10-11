@@ -31,7 +31,7 @@ class trainingcard_panel : public ui_panel
 	~trainingcard_panel();
 
 	void render_contents() override;
-	const std::string *is_recording();
+	const std::string *is_recording() const;
 
 	std::string recording_timestamp;
 };
