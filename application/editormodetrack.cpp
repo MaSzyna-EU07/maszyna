@@ -419,6 +419,21 @@ double roll_into(TTrack const &Track, editor_track::point_ref const &Point)
 	return Point.kind == editor_track::point_kind::start ? path.rolls[0] : -path.rolls[1];
 }
 
+void match_rolls(TTrack const &Track, std::vector<editor_track::joint> const &Joints)
+{
+	for (auto const &joint : Joints)
+	{
+		if (joint.own.path >= static_cast<int>(Track.m_paths.size()) || joint.theirs.path >= static_cast<int>(joint.other->m_paths.size()))
+			continue;
+		auto const roll{static_cast<float>(roll_into(Track, joint.own))};
+		auto &theirs{joint.other->m_paths[joint.theirs.path]};
+		if (joint.theirs.kind == editor_track::point_kind::start)
+			theirs.rolls[0] = -roll;
+		else
+			theirs.rolls[1] = roll;
+	}
+}
+
 editor_track::point_ref switch_main(TTrack const &Track, editor_track::point_ref Point)
 {
 	if (Track.eType == tt_Switch && Point.valid() && Point.path > 0)
@@ -788,6 +803,31 @@ void editor_mode::track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_o
 				m_track_drag.emplace_back(joint.other);
 		}
 	}
+	if (Operation == gizmo_operation::rotate && m_track_drag_connected)
+	{
+		for (int i = 0; i < static_cast<int>(Track.m_paths.size()); ++i)
+			for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
+			{
+				editor_track::point_ref const own{i, kind};
+				for (auto const &connection : editor_track::connected_points(Track, editor_track::point_position(Track, own)))
+				{
+					auto *other{connection.first};
+					std::string reason;
+					if (other->eType != tt_Switch || other->m_paths.size() != 2 || false == editor_track::can_edit_geometry(*other, reason))
+						continue;
+					if (std::any_of(drag.switches.begin(), drag.switches.end(), [&](auto const &Link) { return Link.track == other; }))
+						continue;
+					auto joints{editor_track::joints(*other)};
+					joints.erase(std::remove_if(joints.begin(), joints.end(), [&](editor_track::joint const &Joint) { return Joint.other == &Track; }), joints.end());
+					if (std::find(m_track_drag.begin(), m_track_drag.end(), other) == m_track_drag.end())
+						m_track_drag.emplace_back(other);
+					for (auto const &joint : joints)
+						if (std::find(m_track_drag.begin(), m_track_drag.end(), joint.other) == m_track_drag.end())
+							m_track_drag.emplace_back(joint.other);
+					drag.switches.push_back({other, own, connection.second, roll_into(Track, own), std::move(joints)});
+				}
+			}
+	}
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	for (auto *dragged : m_track_drag)
 		states.emplace_back(dragged, editor_track::capture(*dragged));
@@ -925,16 +965,26 @@ void editor_mode::track_gizmo_turn(TTrack &Track, int const Axis, double const A
 		editor_track::follow(Track, m_track_joints);
 		editor_track::follow_grade(Track, m_track_joints);
 	}
-	for (auto const &joint : m_track_joints)
+	match_rolls(Track, m_track_joints);
+	for (auto const &link : drag.switches)
 	{
-		if (joint.own.path >= static_cast<int>(Track.m_paths.size()) || joint.theirs.path >= static_cast<int>(joint.other->m_paths.size()))
+		auto const roll{roll_into(Track, link.own)};
+		if (std::abs(roll - link.roll) < 1e-6)
 			continue;
-		auto const roll{static_cast<float>(roll_into(Track, joint.own))};
-		auto &theirs{joint.other->m_paths[joint.theirs.path]};
-		if (joint.theirs.kind == editor_track::point_kind::start)
-			theirs.rolls[0] = -roll;
-		else
-			theirs.rolls[1] = roll;
+		auto &main{link.track->m_paths[0]};
+		bool const start{link.theirs.kind == editor_track::point_kind::start};
+		auto value{start ? -roll : roll};
+		if (link.theirs.path != 0)
+		{
+			auto const t{start ? 0.0 : 1.0};
+			if (glm::dot(plan_of(bezier{link.track->m_paths[link.theirs.path]}.first(t)), plan_of(bezier{main}.first(t))) < 0.0)
+				value = -value;
+		}
+		main.rolls = {static_cast<float>(value), static_cast<float>(value)};
+		editor_track::conform_switch(*link.track);
+		editor_track::follow(*link.track, link.joints);
+		editor_track::follow_grade(*link.track, link.joints);
+		match_rolls(*link.track, link.joints);
 	}
 	for (auto const &partner : drag.partners)
 	{

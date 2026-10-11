@@ -666,6 +666,15 @@ class editor_mode : public application_mode, private editor_track::observer
 		double pivot_chainage{0.0};
 		std::vector<double> chainages;
 		std::vector<double> lengths;
+		struct switch_joint
+		{
+			TTrack *track{nullptr};
+			editor_track::point_ref own;
+			editor_track::point_ref theirs;
+			double roll{0.0};
+			std::vector<editor_track::joint> joints;
+		};
+		std::vector<switch_joint> switches;
 	};
 	track_gizmo_drag m_track_gizmo_drag;
 	gizmo_operation track_gizmo_operation(TTrack const &Track, bool const Pointmode) const;
