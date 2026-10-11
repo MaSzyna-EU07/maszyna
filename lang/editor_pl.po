@@ -5272,8 +5272,8 @@ msgstr "wpisz promień"
 msgid "moves the control point, the joined track keeps the tangent"
 msgstr "przesuwa punkt kontrolny, dołączony tor zachowuje styczność"
 
-msgid "turns the control vector sideways or up, the joined track keeps the tangent"
-msgstr "obraca wektor kontrolny w bok lub w górę, dołączony tor zachowuje styczność"
+msgid "turns the control vector sideways or up, cant at its end, the joined track keeps the tangent"
+msgstr "obraca wektor kontrolny w bok lub w górę, przechyłka na jego końcu, dołączony tor zachowuje styczność"
 
 msgid "length of the control vector"
 msgstr "długość wektora kontrolnego"

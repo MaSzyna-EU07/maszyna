@@ -778,10 +778,11 @@ void editor_mode::track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_o
 			drag.lengths.push_back(bezier{path}.plan_length());
 			along += drag.lengths.back();
 		}
-		if (drag.point.valid() && editor_track::is_end(drag.point.kind) && drag.point.path < static_cast<int>(drag.chainages.size()))
+		auto const end{editor_track::end_of(drag.point)};
+		if (end.valid() && end.path < static_cast<int>(drag.chainages.size()))
 		{
-			drag.pivot_chainage = drag.chainages[drag.point.path] + (drag.point.kind == editor_track::point_kind::end ? drag.lengths[drag.point.path] : 0.0);
-			drag.roll0 = drag.point.kind == editor_track::point_kind::start ? Track.m_paths[drag.point.path].rolls[0] : Track.m_paths[drag.point.path].rolls[1];
+			drag.pivot_chainage = drag.chainages[end.path] + (end.kind == editor_track::point_kind::end ? drag.lengths[end.path] : 0.0);
+			drag.roll0 = end.kind == editor_track::point_kind::start ? Track.m_paths[end.path].rolls[0] : Track.m_paths[end.path].rolls[1];
 		}
 		else
 		{
@@ -852,9 +853,8 @@ void editor_mode::track_gizmo_turn(TTrack &Track, int const Axis, double const A
 		m_track_dirty = true;
 		return;
 	}
-	if (drag.control)
-		return;
-	auto target{glm::degrees(Angle)};
+	auto const end{editor_track::end_of(drag.point)};
+	auto target{glm::degrees(drag.point.kind == editor_track::point_kind::control2 ? -Angle : Angle)};
 	if (snap)
 		target = glm::degrees(std::asin(std::clamp(std::round(1500.0 * std::sin(glm::radians(drag.roll0 + target)) / 5.0) * 5.0 / 1500.0, -1.0, 1.0))) - drag.roll0;
 	auto const step{static_cast<float>(target - drag.roll)};
@@ -864,9 +864,9 @@ void editor_mode::track_gizmo_turn(TTrack &Track, int const Axis, double const A
 	for (int i = 0; i < static_cast<int>(Track.m_paths.size()); ++i)
 	{
 		auto &path{Track.m_paths[i]};
-		if (false == drag.point.valid() || (i == drag.point.path && drag.point.kind == editor_track::point_kind::start))
+		if (false == end.valid() || (i == end.path && end.kind == editor_track::point_kind::start))
 			path.rolls[0] += step;
-		if (false == drag.point.valid() || (i == drag.point.path && drag.point.kind == editor_track::point_kind::end))
+		if (false == end.valid() || (i == end.path && end.kind == editor_track::point_kind::end))
 			path.rolls[1] += step;
 	}
 	for (auto const &joint : m_track_joints)
@@ -876,6 +876,15 @@ void editor_mode::track_gizmo_turn(TTrack &Track, int const Axis, double const A
 		auto const roll{static_cast<float>(roll_into(Track, joint.own))};
 		auto &theirs{joint.other->m_paths[joint.theirs.path]};
 		if (joint.theirs.kind == editor_track::point_kind::start)
+			theirs.rolls[0] = -roll;
+		else
+			theirs.rolls[1] = roll;
+	}
+	for (auto const &partner : drag.partners)
+	{
+		auto const roll{static_cast<float>(roll_into(Track, end))};
+		auto &theirs{partner.first->m_paths[partner.second.path]};
+		if (partner.second.kind == editor_track::point_kind::start)
 			theirs.rolls[0] = -roll;
 		else
 			theirs.rolls[1] = roll;
@@ -940,7 +949,7 @@ void editor_mode::render_track_gizmo()
 	glm::mat4 delta(1.0f);
 	auto gizmo{operation == gizmo_operation::scale ? ImGuizmo::SCALE_Z : ImGuizmo::TRANSLATE};
 	if (operation == gizmo_operation::rotate)
-		gizmo = controlmode ? ImGuizmo::ROTATE_X | ImGuizmo::ROTATE_Y : ImGuizmo::ROTATE_X | ImGuizmo::ROTATE_Y | ImGuizmo::ROTATE_Z;
+		gizmo = ImGuizmo::ROTATE_X | ImGuizmo::ROTATE_Y | ImGuizmo::ROTATE_Z;
 	ImGuizmo::AllowAxisFlip(operation != gizmo_operation::scale);
 	frame.manipulate(gizmo, m_track_gizmo, operation == gizmo_operation::translate ? m_gizmo_snap : 0.0f, &delta, operation == gizmo_operation::translate ? ImGuizmo::WORLD : ImGuizmo::LOCAL);
 	ImGuizmo::AllowAxisFlip(true);
@@ -4126,7 +4135,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	{
 		char const *action{"moves the point along the axes"};
 		if (false == editor_track::is_end(m_track_point.kind))
-			action = m_gizmo_op == gizmo_operation::rotate ? "turns the control vector sideways or up, the joined track keeps the tangent" : m_gizmo_op == gizmo_operation::scale ? "length of the control vector" : "moves the control point, the joined track keeps the tangent";
+			action = m_gizmo_op == gizmo_operation::rotate ? "turns the control vector sideways or up, cant at its end, the joined track keeps the tangent" : m_gizmo_op == gizmo_operation::scale ? "length of the control vector" : "moves the control point, the joined track keeps the tangent";
 		else if (m_gizmo_op == gizmo_operation::rotate)
 			action = "rings about the point: direction, grade, cant; the joined tracks follow";
 		else if (m_gizmo_op == gizmo_operation::scale && selected != nullptr && track_gizmo_operation(*selected, true) == gizmo_operation::scale)
@@ -4281,6 +4290,8 @@ std::string editor_mode::track_readout() const
 				text += format(STR_C("   turned %+.2f deg"), glm::degrees(drag.angle));
 			if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
 				text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control) * (glm::dot(level(control), drag.basis[2]) >= 0.0 ? 1.0 : -1.0));
+			if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
+				text += "   " + format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
 			if (drag.fixed != glm::dvec3{})
 				text += "\n" + STR("along the switch");
 			return text;
