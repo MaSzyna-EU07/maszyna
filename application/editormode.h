@@ -36,6 +36,7 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <set>
 #include <string>
 #include <vector>
@@ -1804,6 +1805,20 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool quitting{false};
 	};
 	selftest m_selftest;
+	enum class selftest_result
+	{
+		unhandled,
+		handled,
+		pause
+	};
+	selftest_result selftest_scene(std::string const &command, std::istringstream &words);
+	selftest_result selftest_sweep(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track(std::string const &command, std::istringstream &words);
+	selftest_result selftest_switch(std::string const &command, std::istringstream &words);
+	selftest_result selftest_join(std::string const &command, std::istringstream &words);
+	selftest_result selftest_signal(std::string const &command, std::istringstream &words);
+	selftest_result selftest_terrain(std::string const &command, std::istringstream &words);
+	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
 	// a value typed during a gesture, taken instead of the one the cursor gives
 	std::string m_typed;
