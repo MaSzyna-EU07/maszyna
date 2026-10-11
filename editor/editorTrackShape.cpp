@@ -21,6 +21,8 @@ namespace
 {
 
 using geometry::arc_pieces;
+using geometry::arc_through;
+using geometry::has_controls;
 using geometry::bezier;
 using geometry::cross;
 using geometry::grade_of;
@@ -29,6 +31,7 @@ using geometry::plan_of;
 using geometry::reversed;
 using geometry::signed_angle;
 using geometry::straight_piece;
+using geometry::turned;
 
 std::vector<segment_data> scaled(segment_data const &Path, bool const Atend, double const Length, double const Original)
 {
@@ -55,6 +58,89 @@ void spread_rolls(std::vector<segment_data> &Pieces, segment_data const &Path, d
 		piece.radius = Radius;
 		chainage += piecelength;
 	}
+}
+
+std::vector<segment_data> arc_then_straight(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec3 const &Target, double const Radius, int const Side)
+{
+	glm::dvec2 const normal{-Direction.y * Side, Direction.x * Side};
+	auto const centre{plan_of(Point) + normal * Radius};
+	auto const towards{plan_of(Target) - centre};
+	auto const distance{glm::length(towards)};
+	auto const spread{std::acos(std::clamp(Radius / distance, -1.0, 1.0))};
+	auto const radial0{plan_of(Point) - centre};
+	double rest{-1.0};
+	double angle{0.0};
+	for (auto const sign : {1.0, -1.0})
+	{
+		auto const radial{turned(towards / distance, sign * spread) * Radius};
+		auto turn{Side * signed_angle(radial0, radial)};
+		if (turn < 0.0)
+			turn += 2.0 * glm::pi<double>();
+		auto const heading{turned(Direction, Side * turn)};
+		auto const remaining{glm::dot(plan_of(Target) - centre - radial, heading)};
+		if (remaining > 0.0 && (rest < 0.0 || turn < angle))
+		{
+			rest = remaining;
+			angle = turn;
+		}
+	}
+	if (rest < 0.0 || angle > glm::pi<double>())
+		return {};
+	auto pieces{arc_pieces(Point, Direction, Grade, Radius, angle, Side)};
+	auto const tail{straight_piece(pieces.back().points[segment_data::point::end], turned(Direction, Side * angle), Grade, rest)};
+	pieces.insert(pieces.end(), tail.begin(), tail.end());
+	return pieces;
+}
+
+std::vector<segment_data> straight_then_arc(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec2 const &Offset, double const Radius, int const Side)
+{
+	auto const along{glm::dot(Offset, Direction)};
+	auto const lateral{std::abs(cross(Direction, Offset))};
+	if (lateral > 2.0 * Radius)
+		return arc_through(Point, Direction, Grade, Offset);
+	auto const across{Radius - lateral};
+	auto const lead{along - std::sqrt(std::max(0.0, Radius * Radius - across * across))};
+	if (lead < 0.5)
+		return arc_through(Point, Direction, Grade, Offset);
+	auto const angle{2.0 * std::atan2(lateral, along - lead)};
+	if (angle > glm::pi<double>())
+		return {};
+	auto pieces{straight_piece(Point, Direction, Grade, lead)};
+	auto const arc{arc_pieces(pieces.back().points[segment_data::point::end], Direction, Grade, Radius, angle, Side)};
+	pieces.insert(pieces.end(), arc.begin(), arc.end());
+	return pieces;
+}
+
+void lay_transition(editor_track::easing &Result, glm::dvec3 const &Joint, glm::dvec2 Direction, double const Grade, double const Roll)
+{
+	auto const curvature{Result.curvature};
+	auto const length{Result.length};
+	auto const count{static_cast<int>(std::ceil(length / 10.0))};
+	auto const piece{length / count};
+	glm::dvec3 point{Joint};
+	for (int i = 0; i < count; ++i)
+	{
+		segment_data part;
+		part.points[segment_data::point::start] = point;
+		auto const from{Direction};
+		int const steps{static_cast<int>(std::ceil(piece / 0.05))};
+		auto const step{piece / steps};
+		for (int j = 0; j < steps; ++j)
+		{
+			auto const along{i * piece + (j + 0.5) * step};
+			auto const angle{curvature * (1.0 - along / length) * step};
+			auto const half{turned(Direction, angle * 0.5)};
+			point += glm::dvec3{half.x * step, Grade * step, half.y * step};
+			Direction = turned(Direction, angle);
+		}
+		part.points[segment_data::point::end] = point;
+		part.points[segment_data::point::control1] = glm::dvec3{from.x, Grade, from.y} * (piece / 3.0);
+		part.points[segment_data::point::control2] = -glm::dvec3{Direction.x, Grade, Direction.y} * (piece / 3.0);
+		part.rolls = {static_cast<float>(Roll * (1.0 - i * piece / length)), static_cast<float>(Roll * (1.0 - (i + 1) * piece / length))};
+		Result.pieces.push_back(part);
+	}
+	Result.end = point;
+	Result.direction = Direction;
 }
 
 } // namespace
@@ -283,4 +369,77 @@ void editor_track::edit::capture(TTrack &Track)
 		return;
 	states.emplace_back(&Track, editor_track::capture(Track));
 	changed.push_back(&Track);
+}
+
+std::vector<segment_data> editor_track::layout_pieces(layout const Kind, glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec3 const &Target, double const Radius)
+{
+	glm::dvec2 const offset{Target.x - Point.x, Target.z - Point.z};
+	auto const along{glm::dot(offset, Direction)};
+	auto const lateral{cross(Direction, offset)};
+	auto const chord{glm::length(offset)};
+	if (chord < 0.5)
+		return {};
+	if (Kind == layout::straight)
+		return straight_piece(Point, Direction, Grade, along);
+	if (Kind == layout::arc || std::abs(lateral) < 0.005 * chord + 0.05)
+		return arc_through(Point, Direction, Grade, offset);
+	int const side{lateral > 0.0 ? 1 : -1};
+	auto const radius{std::max(1.0, Radius)};
+	if (radius >= chord * chord / (2.0 * std::abs(lateral)))
+		return arc_through(Point, Direction, Grade, offset);
+	if (Kind == layout::arc_straight)
+		return arc_then_straight(Point, Direction, Grade, Target, radius, side);
+	return straight_then_arc(Point, Direction, Grade, offset, radius, side);
+}
+
+editor_track::easing editor_track::ease_out_of(TTrack const &Neighbour, glm::dvec3 const &Joint, double const Grade, double const Speed, alignment::limits const &Limits)
+{
+	easing result;
+	for (auto const &path : Neighbour.m_paths)
+		for (auto const atend : {false, true})
+		{
+			if (glm::distance(path.points[atend ? segment_data::point::end : segment_data::point::start], Joint) > 0.05)
+				continue;
+			if (false == has_controls(path))
+				return result;
+			bezier const curve{path};
+			auto const first{curve.first(atend ? 1.0 : 0.0)};
+			auto const second{curve.second(atend ? 1.0 : 0.0)};
+			auto const speed{std::hypot(first.x, first.z)};
+			if (speed < 1e-9)
+				return result;
+			auto const sign{atend ? 1.0 : -1.0};
+			auto const curvature{sign * (first.x * second.z - first.z * second.x) / (speed * speed * speed)};
+			glm::dvec2 const direction{sign * first.x / speed, sign * first.z / speed};
+			auto const roll{atend ? static_cast<double>(path.rolls[1]) : -static_cast<double>(path.rolls[0])};
+			result.curvature = curvature;
+			if (std::abs(curvature) < 1e-4)
+				return result;
+			result.length = std::max(20.0, alignment::recommend(Speed, 1.0 / std::abs(curvature), Limits).transition);
+			lay_transition(result, Joint, direction, Grade, roll);
+			return result;
+		}
+	return result;
+}
+
+bool editor_track::eases_room(easing const &In, easing const &Out, glm::dvec3 const &Start, glm::dvec2 const &Startdirection, glm::dvec3 const &End, glm::dvec2 const &Enddirection)
+{
+	auto const from{In.pieces.empty() ? Start : In.end};
+	auto const to{Out.pieces.empty() ? End : Out.end};
+	auto const gap{plan_of(to) - plan_of(from)};
+	return glm::length(gap) > 5.0 && glm::dot(In.pieces.empty() ? Startdirection : In.direction, gap) > 0.0 && glm::dot(Out.pieces.empty() ? Enddirection : -Out.direction, gap) > 0.0;
+}
+
+std::vector<segment_data> editor_track::eased_pieces(easing const &In, std::vector<segment_data> const &Middle, easing const &Out)
+{
+	auto pieces{In.pieces};
+	pieces.insert(pieces.end(), Middle.begin(), Middle.end());
+	for (auto piece{Out.pieces.rbegin()}; piece != Out.pieces.rend(); ++piece)
+		pieces.push_back(reversed(*piece));
+	return pieces;
+}
+
+double editor_track::eased_length(easing const &In, double const Middle, easing const &Out)
+{
+	return Middle + (In.pieces.empty() ? 0.0 : In.length) + (Out.pieces.empty() ? 0.0 : Out.length);
 }

@@ -1137,13 +1137,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	// adds a straight (Side 0) or a curve to the left (1) or the right (-1) at the free end of the selected track
 	void extend_add(int const Side);
 	void render_extend_ui();
-	enum class track_layout
-	{
-		arc_straight,
-		straight_arc,
-		arc,
-		straight
-	};
+	using track_layout = editor_track::layout;
 	track_layout m_track_layout{track_layout::arc_straight};
 	double m_join_radius{0.0};
 	int m_join_variant{0};
@@ -1154,7 +1148,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::string track_shaping(bool const Joined) const;
 	void render_layout_combo();
 	double design_speed(TTrack const *From, TTrack const *To) const;
-	std::vector<segment_data> layout_pieces(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec3 const &Mouse, double const Radius) const;
 	std::vector<segment_data> join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
 	                                      std::string &Error) const;
 	double m_extend_length{25.0};

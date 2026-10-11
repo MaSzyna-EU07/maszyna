@@ -152,6 +152,29 @@ class editor_track
 	};
 	static middle_point middle(TTrack const &Track);
 
+	enum class layout
+	{
+		arc_straight,
+		straight_arc,
+		arc,
+		straight
+	};
+	static std::vector<segment_data> layout_pieces(layout const Kind, glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec3 const &Target, double const Radius);
+
+	// the curve a track ends with at Joint, as it goes on beyond the joint, and a transition curve leading out of it to the straight
+	struct easing
+	{
+		double curvature{0.0}; // positive turning from x towards z
+		double length{0.0};
+		glm::dvec3 end{0.0};
+		glm::dvec2 direction{0.0};
+		std::vector<segment_data> pieces;
+	};
+	static easing ease_out_of(TTrack const &Neighbour, glm::dvec3 const &Joint, double const Grade, double const Speed, alignment::limits const &Limits);
+	static bool eases_room(easing const &In, easing const &Out, glm::dvec3 const &Start, glm::dvec2 const &Startdirection, glm::dvec3 const &End, glm::dvec2 const &Enddirection);
+	static std::vector<segment_data> eased_pieces(easing const &In, std::vector<segment_data> const &Middle, easing const &Out);
+	static double eased_length(easing const &In, double const Middle, easing const &Out);
+
 	struct edit
 	{
 		std::vector<std::pair<TTrack *, state>> states;
