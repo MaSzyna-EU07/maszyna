@@ -1146,6 +1146,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	glm::dvec3 cursor_level(double const Height) const;
 	glm::dvec3 cursor_terrain(double const Height);
 	double bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style) const;
+	double nearby_ground(glm::dvec3 const &Point) const;
+	static std::pair<double, double> trackbed(TTrack const *Style);
 	std::vector<double> bed_heights(std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions, TTrack const *Style) const;
 	void follow_ground(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const;
 	glm::dvec3 lay_bed(glm::dvec3 const &Point);
