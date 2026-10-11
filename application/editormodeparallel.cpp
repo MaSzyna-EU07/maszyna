@@ -373,11 +373,9 @@ bool editor_mode::parallel_preview_visible() const
 {
 	if (m_parallel.pieces.empty() || parallel_source() != m_parallel.built_for)
 		return false;
-	if (m_track_tab == track_tab::lay)
-		return m_lay.points.empty();
-	if (m_track_tab == track_tab::path)
+	if (m_track_tab == track_tab::parallel)
 		return true;
-	return m_track_tab == track_tab::lineside && m_parallel.open;
+	return m_track_tab == track_tab::path && parallel_target() != nullptr;
 }
 
 void editor_mode::draw_parallel_preview() const

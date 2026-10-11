@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #include "editor/editorIcons.hpp"
+#include "editor/editorSettings.hpp"
 #include "rendering/renderer.h"
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
@@ -168,8 +169,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		add(track_tab::path, icon::select, false);
 		add(track_tab::lay, icon::lay_track, false);
 		add(track_tab::turnout, icon::turnout, false);
-		add(track_tab::straights, icon::straight, false);
-		add(track_tab::route, icon::curve, false);
+		add(track_tab::parallel, icon::parallel, false);
 		add(track_tab::turntable, icon::turntable, false);
 		add(track_tab::signals, icon::signal, true);
 		add(track_tab::lineside, icon::objects, false);
@@ -177,7 +177,17 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
 			                   m_vehicle.expand = false == vehicle;
 		                   }});
-		add(track_tab::profile, icon::profile, true);
+		auto const advanced{m_track_tab == track_tab::straights || m_track_tab == track_tab::route || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra || m_gauge.open};
+		auto const more{EditorSettings.track_tools_more()};
+		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("The tools that correct a line already laid: straight, curve, profile, speed, joints, infrastructure, structure gauge"), more, [more]() {
+			                   EditorSettings.track_tools_more(false == more);
+			                   EditorSettings.save();
+		                   }, true});
+		if (false == more && false == advanced)
+			break;
+		add(track_tab::straights, icon::straight, true);
+		add(track_tab::route, icon::curve, false);
+		add(track_tab::profile, icon::profile, false);
 		add(track_tab::speed, icon::speed, false);
 		add(track_tab::joints, icon::joints, false);
 		add(track_tab::infra, icon::infra, false);

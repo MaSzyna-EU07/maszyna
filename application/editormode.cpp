@@ -4612,7 +4612,8 @@ void editor_mode::render_first_steps()
 	    "Joining: press on a free end (magenta ring) and drag onto another free end",
 	    "T: switch. Click a straight, then press on it and drag: along sets the direction, sideways the side",
 	    "Ctrl+Z takes a step back, Backspace while laying takes back the last piece",
-	    "Ctrl+S saves the scenery"};
+	    "Ctrl+S saves the scenery",
+	    "Drive it: Vehicle in the toolbar, pick a locomotive from the list, LMB on the track, then Place and drive"};
 	ImGui::SetNextWindowSize(ImVec2(440.0f * Global.ui_scale, 0.0f), ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowPos(ImVec2(8.0f, ImGui::GetIO().DisplaySize.y - 8.0f), ImGuiCond_FirstUseEver, ImVec2(0.0f, 1.0f));
 	ImGui::SetNextWindowBgAlpha(1.0f);
@@ -4706,7 +4707,8 @@ void editor_mode::render_shortcuts_window()
 	      {"Shift+wheel", "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"},
 	      {"0-9 while laying", "Type the length (or the radius) of the next piece, Enter lays it"},
 	      {"Alt held while laying", "The direction in steps of 15 degrees"},
-	      {"Shift+LMB on a track in L", "Choose it for a parallel track"},
+	      {"N", "Parallel track: LMB on a straight, then the side and the spacing"},
+	      {"Shift+LMB on a track in L", "The Parallel tool (N) with it"},
 	      {"Enter / Backspace", "Laying track: lay up to the cursor / take the last piece back"},
 	      {"Del", "Delete the selected tracks"}}},
 	    {"Roads",

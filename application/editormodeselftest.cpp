@@ -722,7 +722,7 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 	{
 		std::string tab;
 		words >> tab;
-		show_track_tab(track_tab::lineside);
+		show_track_tab(tab == "parallel" ? track_tab::parallel : track_tab::lineside);
 		(tab == "vehicle" ? m_vehicle.expand : tab == "hekto" ? m_hekto.expand : tab == "fouling" ? m_fouling.expand : m_parallel.expand) = true;
 		return selftest_result::handled;
 	}
@@ -1709,6 +1709,16 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		}
 		if (false == created.empty())
 			WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
+		return selftest_result::handled;
+	}
+	if (command == "tracktab")
+	{
+		std::string key;
+		words >> key;
+		for (auto const &mode : track_modes())
+			if (key == mode.key)
+				show_track_tab(mode.tab);
+		WriteLog(format("SELFTEST tracktab %s: %s", key.c_str(), track_mode_name().c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "laychain")

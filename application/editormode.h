@@ -252,7 +252,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_help_menu();
 	void render_shortcuts_window();
 	bool m_shortcuts_open{false};
-	enum class first_step { tracks, lay, laid, wheel, join, turnout, undo, save, count };
+	enum class first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, count };
 	void render_first_steps();
 	void first_step_done(first_step const Step);
 	bool m_first_steps_open{false};
@@ -837,7 +837,11 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true);
 	bool digitize_chain(editor_track::chain const &Chain);
 	void render_route_stored();
-	void route_update() { m_route.result = alignment::compute(m_route.design); }
+	void route_update()
+	{
+		m_route.design.norms.checked = false == m_norms_free;
+		m_route.result = alignment::compute(m_route.design);
+	}
 	void route_apply();
 	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, TTrack *&Last);
 	void route_recommend(alignment::vertex &Vertex) const;
@@ -1108,6 +1112,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	lay_tool m_lay;
 	bool m_norms_free{true};
 	alignment::limits laying_norms() const;
+	bool render_norms_choice();
 	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse) const;
 	void lay_after_history(bool const Undo);
 	void lay_back();
@@ -1193,7 +1198,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void update_build_tools();
 	void draw_build_overlay() const;
 	// modes of the track editor, one at a time: path is the plain selection
-	enum class track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals };
+	enum class track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals, parallel };
 	struct track_mode
 	{
 		char const *label;
@@ -1201,7 +1206,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		track_tab tab;
 		char const *tooltip;
 	};
-	static std::array<track_mode, 12> const &track_modes();
+	static std::array<track_mode, 13> const &track_modes();
 	// the objects along the track: a tab for each tool
 	int m_lineside_tab{0};
 	void render_lineside_ui();

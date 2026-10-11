@@ -522,12 +522,13 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 13> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 12> const modes{{
+	static std::array<track_mode, 13> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters"},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track"},
 	    {"Switch", "T", track_tab::turnout, "Puts switches into the selected straight or curve, edits the geometry of the selected switch"},
+	    {"Parallel", "N", track_tab::parallel, "A second track beside a straight: LMB on the straight, then the side and the spacing"},
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it"},
 	    {"Straight", "G", track_tab::straights, "The whole straight through the selected path: drag its ends or the middle, break it, shift it"},
 	    {"Curve", "C", track_tab::route, "The line through the path, switch to switch: vertices with the radii, transitions and cant of the curves"},
@@ -659,6 +660,7 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::lineside:
 		return STR_C("Objects along the track");
 	case track_tab::infra: return STR_C("Infrastructure along the track");
+	case track_tab::parallel: return m_parallel.pieces.empty() ? STR_C("Parallel track: LMB on a straight") : STR_C("Parallel track: the side and the spacing in the panel, then Lay");
 	case track_tab::signals:
 		if (m_signal.moving)
 			return STR_C("Signal: drag along the track, release to put it there");
@@ -733,6 +735,9 @@ void editor_mode::render_track_tool_options()
 	{
 	case track_tab::lay:
 		render_lay_ui();
+		break;
+	case track_tab::parallel:
+		render_parallel_ui();
 		break;
 	case track_tab::turnout:
 		if (track != nullptr && track->eType == tt_Switch)
@@ -2340,6 +2345,8 @@ void editor_mode::render_route_gizmo()
 void editor_mode::render_route_ui()
 {
 	auto &route{m_route};
+	render_norms_choice();
+	ImGui::Separator();
 	if (false == route.error.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", route.error.c_str());
 	if (route.chain.tracks.empty())
@@ -2489,15 +2496,17 @@ bool editor_mode::render_route_vertex(int const Index)
 	vertex.transition_in = std::max(0.0, vertex.transition_in);
 	vertex.transition_out = std::max(0.0, vertex.transition_out);
 	vertex.cant = std::max(0.0, vertex.cant);
-	if (ImGui::SmallButton(STR_C("Apply recommended for V")))
+	if (false == m_norms_free)
 	{
-		route_recommend(vertex);
-		changed = true;
+		if (ImGui::SmallButton(STR_C("Apply recommended for V")))
+		{
+			route_recommend(vertex);
+			changed = true;
+		}
+		item_tooltip("Cant and transitions recommended for the design speed and the radius");
+		auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
+		ImGui::TextDisabled(STR_C("For %.0f km/h: R min %.0f m, cant %.0f mm (equilibrium %.0f, min %.0f), transition %.0f m"), design.speed, recommended.radius_min, recommended.cant, recommended.cant_equilibrium, recommended.cant_min, recommended.transition);
 	}
-	item_tooltip("Cant and transitions recommended for the design speed and the radius");
-
-	auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
-	ImGui::TextDisabled(STR_C("For %.0f km/h: R min %.0f m, cant %.0f mm (equilibrium %.0f, min %.0f), transition %.0f m"), design.speed, recommended.radius_min, recommended.cant, recommended.cant_equilibrium, recommended.cant_min, recommended.transition);
 	if (ImGui::TreeNode(STR_C("Details")))
 	{
 		for (auto const &curve : route.result.curves)
@@ -3653,7 +3662,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	if (m_lay.active)
 	{
 		if (m_lay.points.empty())
-			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "the shape chosen towards the cursor, to a free end: joins it"}, {"Shift+click a straight", "a parallel track beside it, in the panel"}, {"Alt", "the direction in steps of 15 degrees"}, {"Esc", "stop laying"}};
+			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "the shape chosen towards the cursor, to a free end: joins it"}, {"Shift+click a straight", "the Parallel tool (N) with it"}, {"Alt", "the direction in steps of 15 degrees"}, {"Esc", "stop laying"}};
 		else
 		{
 			bool const chained{m_lay.start.track != nullptr};
@@ -3697,6 +3706,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB on a row", "show the path"}};
 	else if (m_track_window_open && m_track_tab == track_tab::lineside)
 		hints = {{"LMB on a track", "the line the objects go along"}};
+	else if (m_track_window_open && m_track_tab == track_tab::parallel)
+		hints = {{"LMB on a straight", "the track the new one goes beside, green in the view"}, {"Esc", "back to Select"}};
 	else if (m_track_window_open && m_track_tab == track_tab::signals && (m_signal.placing || m_signal.moving))
 		hints = {{"Drag along", m_signal.moving ? "moves the signal along the track" : "the trains it faces run that way"}, {"Release", "done"}, {"Esc", "cancel"}};
 	else if (m_track_window_open && m_track_tab == track_tab::signals)
@@ -4614,9 +4625,6 @@ void editor_mode::render_extend_ui()
 	ImGui::SameLine();
 	if (ImGui::Button(STR_C("Curve right##extend"), ImVec2(100.0f, 0.0f)))
 		extend_add(-1);
-	ImGui::PushID("extend");
-	render_layout_combo();
-	ImGui::PopID();
 }
 
 void editor_mode::render_layout_combo()
@@ -5042,47 +5050,61 @@ alignment::limits editor_mode::laying_norms() const
 	return norms;
 }
 
+bool editor_mode::render_norms_choice()
+{
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted(STR_C("Norms:"));
+	auto changed{false};
+	char const *names[]{STR_C("free"), STR_C("PKP PLK")};
+	for (int i = 0; i < 2; ++i)
+	{
+		ImGui::SameLine();
+		auto const chosen{m_norms_free == (i == 0)};
+		if (chosen)
+			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+		if (ImGui::Button(names[i], ImVec2(90.0f, 0.0f)) && false == chosen)
+		{
+			m_norms_free = i == 0;
+			m_lay.transitions = false == m_norms_free;
+			changed = true;
+		}
+		if (chosen)
+			ImGui::PopStyleColor();
+		item_tooltip(i == 0 ? "Plain arcs with no transition curves and no cant, no warnings about the norms: the track goes where it's clicked"
+		                    : "Transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms");
+	}
+	if (changed && false == m_route.chain.tracks.empty())
+		route_update();
+	return changed;
+}
+
 void editor_mode::render_lay_ui()
 {
 	auto &tool{m_lay};
-	{
-		int norms{m_norms_free ? 0 : 1};
-		char const *names[]{STR_C("free"), STR_C("PKP PLK")};
-		ImGui::PushItemWidth(120.0f);
-		if (ImGui::Combo(STR_C("Norms"), &norms, names, IM_ARRAYSIZE(names)))
-		{
-			m_norms_free = norms == 0;
-			tool.transitions = false == m_norms_free;
-		}
-		ImGui::PopItemWidth();
-		item_tooltip("Free: plain arcs with no transition curves and no cant, no warnings about the norms, the track goes where it's clicked.\nPKP PLK: transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms");
-	}
+	render_norms_choice();
+	ImGui::Separator();
+	ImGui::PushItemWidth(120.0f);
+	ImGui::DragScalar(STR_C("Curve radius (m)"), ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
+	item_tooltip("Drag to change, Ctrl+click to type the value. While laying: Ctrl+wheel");
+	tool.radius = std::max(10.0, tool.radius);
+	ImGui::DragScalar(STR_C("Speed (km/h)"), ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
+	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
+	item_tooltip(m_norms_free ? "Speed limit of the new paths; the speed of the track joined comes first"
+	                          : "Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
+	ImGui::PopItemWidth();
+	render_layout_combo();
 	if (auto *track{selected_track()}; track != nullptr)
 	{
 		std::string reason;
 		if (editor_track::can_edit_geometry(*track, reason))
 			render_extend_ui();
 	}
-	if (ImGui::CollapsingHeader(STR_C("Parallel track"), ImGuiTreeNodeFlags_DefaultOpen))
-		render_parallel_ui();
-	ImGui::Separator();
-	ImGui::PushItemWidth(120.0f);
-	ImGui::DragScalar(STR_C("Curve radius (m)"), ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
-	item_tooltip("Drag to change, Ctrl+click to type the value");
-	tool.radius = std::max(10.0, tool.radius);
-	ImGui::DragScalar(STR_C("Speed (km/h)"), ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
-	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
-	item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
-	ImGui::PopItemWidth();
-	render_layout_combo();
 	if (false == ImGui::TreeNode(STR_C("More settings")))
 	{
 		render_lay_status();
 		return;
 	}
 	ImGui::PushItemWidth(120.0f);
-	ImGui::Checkbox(STR_C("Transition curves and cant"), &tool.transitions);
-	item_tooltip("Lengths and the cant recommended for the speed and the radius; off: plain circular arcs with no cant");
 	ImGui::DragScalar(STR_C("Longest path (m)"), ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
 	tool.piece_length = std::clamp(tool.piece_length, 5.0, 1000.0);
 	ImGui::PopItemWidth();

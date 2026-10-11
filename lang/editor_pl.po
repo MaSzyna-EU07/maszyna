@@ -5634,3 +5634,60 @@ msgstr "Shift+LPM na torze w L"
 
 msgid "Choose it for a parallel track"
 msgstr "Wybiera go pod tor równoległy"
+
+msgid "A second track beside a straight: LMB on the straight, then the side and the spacing"
+msgstr "Drugi tor obok prostej: LPM na prostej, potem strona i rozstaw"
+
+msgid "Parallel track: LMB on a straight"
+msgstr "Tor równoległy: LPM na prostej"
+
+msgid "Parallel track: the side and the spacing in the panel, then Lay"
+msgstr "Tor równoległy: strona i rozstaw w panelu, potem Ułóż"
+
+msgid "LMB on a straight"
+msgstr "LPM na prostej"
+
+msgid "the track the new one goes beside, green in the view"
+msgstr "tor, obok którego pójdzie nowy, zielony w widoku"
+
+msgid "Click: the straight the new track goes beside"
+msgstr "Klik: prosta, obok której pójdzie nowy tor"
+
+msgid "More"
+msgstr "Więcej"
+
+msgid "Less"
+msgstr "Mniej"
+
+msgid "The tools that correct a line already laid: straight, curve, profile, speed, joints, infrastructure, structure gauge"
+msgstr "Narzędzia do poprawiania ułożonej linii: prosta, łuk, profil, prędkość, styki, infrastruktura, skrajnia"
+
+msgid "Norms:"
+msgstr "Normy:"
+
+msgid "Plain arcs with no transition curves and no cant, no warnings about the norms: the track goes where it's clicked"
+msgstr "Zwykłe łuki bez krzywych przejściowych i przechyłki, bez ostrzeżeń o normach: tor idzie tam, gdzie klikniesz"
+
+msgid "Transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms"
+msgstr "Krzywe przejściowe i przechyłka dla prędkości projektowej, ostrzeżenia, gdy promień, przechyłka albo przejściówki nie spełniają norm"
+
+msgid "Drag to change, Ctrl+click to type the value. While laying: Ctrl+wheel"
+msgstr "Przeciągnij, by zmienić, Ctrl+klik, by wpisać. W trakcie układania: Ctrl+kółko"
+
+msgid "Speed limit of the new paths; the speed of the track joined comes first"
+msgstr "Ograniczenie prędkości nowych odcinków; pierwszeństwo ma prędkość dołączanego toru"
+
+msgid "Drive it: Vehicle in the toolbar, pick a locomotive from the list, LMB on the track, then Place and drive"
+msgstr "Przejedź się: Pojazd na pasku narzędzi, wybierz lokomotywę z listy, LPM na torze, potem Postaw i jedź"
+
+msgid "the Parallel tool (N) with it"
+msgstr "narzędzie Równoległy (N) z nią"
+
+msgid "Parallel track: LMB on a straight, then the side and the spacing"
+msgstr "Tor równoległy: LPM na prostej, potem strona i rozstaw"
+
+msgid "The Parallel tool (N) with it"
+msgstr "Narzędzie Równoległy (N) z tym torem"
+
+msgid "Click: the Parallel tool (N) with this track"
+msgstr "Klik: narzędzie Równoległy (N) z tym torem"

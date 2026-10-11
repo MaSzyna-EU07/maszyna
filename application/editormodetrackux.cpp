@@ -222,7 +222,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 				intent.track = under.track;
 				intent.path = under.path;
 				if (shift)
-					return make(kind::select, "Click: choose this track, the parallel track goes beside it");
+					return make(kind::select, "Click: the Parallel tool (N) with this track");
 				return make(kind::lay, "Click: start on the ground beside this track. Shift+click: a parallel track to it, T: a switch into it");
 			}
 		return make(kind::lay, lay.points.empty() ? "Click: start of the new track" : "Click: lay the track to here");
@@ -381,6 +381,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		case track_tab::turnout: return make(kind::select, m_hover.track->eType == tt_Switch ? "Click: edit this switch" : m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: choose this track, then press and drag on it for the switch");
 		case track_tab::profile: return make(kind::select, "Click: the grade line through this track");
 		case track_tab::lineside: return make(kind::select, "Click: the line the objects go along");
+		case track_tab::parallel: return make(kind::select, "Click: the straight the new track goes beside");
 		default: return make(kind::select, "Click: select");
 		}
 	}
@@ -498,6 +499,8 @@ void editor_mode::track_press(track_intent const &Intent)
 				}
 			}
 			select_track(track != nullptr ? track : node);
+			if (m_track_tab == track_tab::lay && track != nullptr)
+				show_track_tab(track_tab::parallel);
 		});
 		return;
 	}
@@ -1422,10 +1425,9 @@ void editor_mode::render_lineside_ui()
 		bool *expand;
 		std::function<void()> render;
 	};
-	std::array<tab, 4> const tabs{{
+	std::array<tab, 3> const tabs{{
 	    {"Hectometre posts", &m_hekto.open, &m_hekto.expand, [this]() { render_hekto_ui(); }},
 	    {"Fouling points", &m_fouling.open, &m_fouling.expand, [this]() { render_fouling_ui(); }},
-	    {"Parallel track", &m_parallel.open, &m_parallel.expand, [this]() { render_parallel_ui(); }},
 	    {"Vehicle", &m_vehicle.open, &m_vehicle.expand, [this]() { render_vehicle_ui(); }},
 	}};
 	if (selected_track() == nullptr)

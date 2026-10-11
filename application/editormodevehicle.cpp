@@ -174,6 +174,7 @@ bool editor_mode::vehicle_place()
 		return false;
 	}
 	tool.placed = head;
+	first_step_done(first_step::drive);
 	tool.status = format(STR_C("%s and %d vehicle(s) behind it stand on %s. It isn't saved with the scenery"), head.c_str(), static_cast<int>(vehicles.size()) - 1, tool.track->name().empty() ? "(noname)" : tool.track->name().c_str());
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	return true;
