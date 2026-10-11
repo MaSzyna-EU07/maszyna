@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 
 #include "imgui/imgui_impl_glfw.h"
+#include "imgui/imgui_internal.h"
 
 GLFWwindow *ui_layer::m_window{nullptr};
 GLFWwindow *ui_layer::m_keywindow{nullptr};
@@ -174,6 +175,10 @@ void create_viewport_window(ImGuiViewport *Viewport)
 	imgui_create_window(Viewport);
 	if (Viewport->PlatformHandle != nullptr)
 		glfwSetKeyCallback(static_cast<GLFWwindow *>(Viewport->PlatformHandle), ui_layer::viewport_key_callback);
+#ifdef _WIN32
+	if (Viewport->PlatformHandleRaw != nullptr)
+		::SetWindowLongPtr(static_cast<HWND>(Viewport->PlatformHandleRaw), GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(ImGui::GetMainViewport()->PlatformHandleRaw));
+#endif
 }
 } // namespace
 
@@ -283,6 +288,8 @@ bool ui_layer::init(GLFWwindow *Window)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     m_imguiio = &ImGui::GetIO();
+	ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = ImGuiKey_None;
+	ImGui::GetCurrentContext()->ConfigNavWindowingKeyPrev = ImGuiKey_None;
 	// imgui.ini is read with the first frame, which may be of another mode than the editor
 	editor_ui::register_settings();
 
@@ -395,6 +402,7 @@ bool ui_layer::init(GLFWwindow *Window)
 	if (Global.ui_viewports && viewportsupport)
 	{
 		m_imguiio->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+		m_imguiio->ConfigViewportsNoTaskBarIcon = true;
 		auto &platformio{ImGui::GetPlatformIO()};
 		imgui_create_window = platformio.Platform_CreateWindow;
 		platformio.Platform_CreateWindow = create_viewport_window;
