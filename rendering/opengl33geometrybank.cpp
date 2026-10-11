@@ -259,6 +259,66 @@ opengl33_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry,
     return prims * InstanceCount;
 }
 
+// draw_batch() subclass details — neighbouring non-indexed chunks of the same type are sent with a single GL call.
+// The chunks are drawn in the supplied order, same as with a draw_() call for each of them.
+std::size_t
+opengl33_vaogeometrybank::draw_batch_( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams )
+{
+    std::size_t count { 0 };
+
+    if( !glMultiDrawArrays ) {
+        // GLES context doesn't provide the call
+        for( ; First != Last; ++First ) { count += draw_( *First, Units, Streams ); }
+        return count;
+    }
+
+    setup_buffer();
+
+    std::array<GLint, 64> offsets;
+    std::array<GLsizei, 64> sizes;
+    GLsizei pending { 0 };
+    unsigned int pendingtype { 0 };
+
+    auto const flush = [ & ]() {
+        if( pending == 0 ) { return; }
+        m_vao->bind();
+        if( pending == 1 ) { ::glDrawArrays( pendingtype, offsets[ 0 ], sizes[ 0 ] ); }
+        else               { ::glMultiDrawArrays( pendingtype, offsets.data(), sizes.data(), pending ); }
+        pending = 0;
+    };
+
+    for( ; First != Last; ++First ) {
+
+        auto const &chunkrecord = m_chunkrecords.at( First->chunk - 1 );
+        if( ( false == chunkrecord.is_good )
+         || ( chunkrecord.index_count > 0 ) ) {
+            // chunks which wait for upload of their data and indexed chunks take the regular route
+            flush();
+            count += draw_( *First, Units, Streams );
+            continue;
+        }
+
+        auto const type { gfx::geometry_bank::chunk( *First ).type };
+        if( ( pending == static_cast<GLsizei>( offsets.size() ) )
+         || ( ( pending > 0 ) && ( type != pendingtype ) ) ) {
+            flush();
+        }
+        pendingtype = type;
+        offsets[ pending ] = static_cast<GLint>( chunkrecord.vertex_offset );
+        sizes[ pending ] = static_cast<GLsizei>( chunkrecord.vertex_count );
+        ++pending;
+
+        switch( type ) {
+            case GL_TRIANGLES:      { count += chunkrecord.vertex_count / 3; break; }
+            case GL_TRIANGLE_STRIP: { count += ( chunkrecord.vertex_count > 2 ? chunkrecord.vertex_count - 2 : 0 ); break; }
+            default:                { break; }
+        }
+    }
+    flush();
+
+    return count;
+}
+
 // release () subclass details
 void
 opengl33_vaogeometrybank::release_() {

@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/glsl_common.h"
 #include "gl/pbo.h"
 #include "gl/query.h"
+#include "rendering/opengl33terrain.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl33_renderer : public gfx_renderer {
@@ -81,6 +82,10 @@ class opengl33_renderer : public gfx_renderer {
         Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
     IMaterial const *
         Material( material_handle const Material ) const override;
+    material_handle
+        Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement ) override;
+    void
+        Terrain_Release( material_handle const Material ) override;
     // shader methods
     auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override;
     // texture methods
@@ -105,6 +110,8 @@ class opengl33_renderer : public gfx_renderer {
         Pick_Node() const override { return m_picksceneryitem; }
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
+    bool
+        Mouse_Hit() const override { return m_mousehit; }
     glm::mat4
         Camera_View_Matrix() const override { return glm::mat4( glm::mat3( m_colorpass.pass_camera.modelview() ) ); }
     glm::mat4
@@ -128,6 +135,7 @@ class opengl33_renderer : public gfx_renderer {
     std::string const &
         info_stats() const override;
 	  void MakeScreenshot() override;
+    bool Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) override;
 
 
 
@@ -282,6 +290,11 @@ class opengl33_renderer : public gfx_renderer {
 	// instanced_drawcall in draw_stats and contributes Instances.size() to the
 	// instances counter. Instances are still individually frustum/distance culled.
 	void Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances );
+	// adds the bucketed instances of a scene cell to the frame-level buckets drawn by Render_Instanced(),
+	// less the ones the copies of their bounds show to be out of sight in the current render pass
+	void Queue_Instances( scene::basic_cell const *Cell );
+	// makes the copies of the bounds of the instances held by a bucket of a scene cell
+	void Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket );
 	bool Render(TDynamicObject *Dynamic);
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
@@ -297,6 +310,10 @@ class opengl33_renderer : public gfx_renderer {
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
     bool Render_coupler_adapter( TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha = false );
+	// releases gl textures used only by vehicles farther than gfx.textures.releasedistance times the draw range
+	void Update_Texture_Release();
+	// textures used by materials of the sub-models of specified model, replaceable skins excluded
+	std::vector<texture_handle> const &Model_Textures( TModel3d *Model );
 	void Render(TMemCell *Memcell);
 	void Render_particles();
 	void Render_precipitation();
@@ -306,6 +323,7 @@ class opengl33_renderer : public gfx_renderer {
 	void Render_Alpha(TAnimModel *Instance);
 	void Render_Alpha(TTraction *Traction);
     void Render_Alpha(scene::lines_node const &Lines);
+	void Render_editor_overlay();
 	bool Render_Alpha(TDynamicObject *Dynamic);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
@@ -322,11 +340,22 @@ class opengl33_renderer : public gfx_renderer {
 
 	void draw_debug_ui();
 
+	// model previews
+	// extends provided bounds with the geometry of the submodel and its siblings and children visible in a preview
+	void Preview_Bounds( TSubModel const *Submodel, glm::dmat4 const &Transform, glm::dvec3 &Min, glm::dvec3 &Max ) const;
+	// prepares the offscreen targets of model previews for square images of specified size
+	bool Preview_Targets( int const Size );
+	// draws the instance on its own with the current render pass settings
+	void Preview_Model( TAnimModel *Instance, float const Squaredistance, bool const Alpha );
+	// draws the lit instance into the hdr preview target, marking in its stencil the pixels covered by the model
+	void Preview_Color( TAnimModel *Instance, float const Squaredistance, int const Size, glm::dvec3 const &Eye, glm::mat4 const &View, glm::mat4 const &Projection, bool const Shadows );
+
 	// members
 	GLFWwindow *m_window{nullptr}; // main window
 	gfx::geometrybank_manager m_geometry;
 	material_manager m_materials;
 	texture_manager m_textures;
+	opengl33_terrain_materials m_terrainmaterials{m_materials, m_textures};
 	opengl33_light m_sunlight;
 	opengllight_array m_lights;
 	/*
@@ -344,6 +373,8 @@ class opengl33_renderer : public gfx_renderer {
 	glm::mat4 m_shadowtexturematrix; // conversion from camera-centric world space to light-centric clip space
 
 	int m_environmentcubetextureface{0}; // helper, currently processed cube map face
+	int m_environmentupdateface{6}; // cube map face the environment map update in progress draws next; 6: no update in progress
+	bool m_environmentready{false}; // the environment map was drawn whole at least once
 	double m_environmentupdatetime{0}; // time of the most recent environment map update
 	glm::dvec3 m_environmentupdatelocation; // coordinates of most recent environment map update
     opengl33_skydome m_skydomerenderer;
@@ -379,6 +410,13 @@ class opengl33_renderer : public gfx_renderer {
 	// of once per cell -- collapsing many tiny instanced draws into a few large
 	// batches. Reused every pass; the vectors are emptied (not freed) at the top of Render(scene::basic_region*).
 	scene::basic_cell::instance_bucket_map m_frame_instance_buckets;
+	// textures used by vehicle models, for the release of far textures
+	std::unordered_map<TModel3d const *, std::vector<texture_handle>> m_modeltextures;
+	// geometry of neighbouring tracks of a cell which share the material, gathered to be drawn together. reused by each Render(path_sequence)
+	std::vector<gfx::geometrybank_handle> m_pathbatch;
+	// copies of instance bounds kept by the buckets of scene cells are good as long as they carry this number.
+	// it changes with each frame drawn with the scenery editor active, as the editor moves and resizes instances in place
+	unsigned int m_instanceboundsversion { 1 };
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;
@@ -387,6 +425,7 @@ class opengl33_renderer : public gfx_renderer {
     std::vector<scene::basic_node *> m_picksceneryitems;
     scene::basic_node *m_picksceneryitem{nullptr};
     glm::vec3 m_worldmousecoordinates { 0.f };
+    bool m_mousehit { false };
 #ifdef EU07_USE_DEBUG_CAMERA
 	renderpass_config m_worldcamera; // debug item
 #endif
@@ -400,6 +439,7 @@ class opengl33_renderer : public gfx_renderer {
 	glm::mat4 perspective_projection(const viewport_proj_config &c, float n, float f, glm::mat4 &frustum);
     glm::mat4 ortho_projection(float left, float right, float bottom, float top, float z_near, float z_far);
     glm::mat4 ortho_frustumtest_projection(float left, float right, float bottom, float top, float z_near, float z_far);
+	void editor_ortho_projection(viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum);
 
     std::vector<std::function<void(TSubModel const *, glm::vec2)>> m_control_pick_requests;
     std::vector<std::function<void(scene::basic_node *)>> m_node_pick_requests;
@@ -449,6 +489,9 @@ class opengl33_renderer : public gfx_renderer {
 	std::unordered_map<std::string, std::shared_ptr<gl::program>> m_shaders;
 
 	std::unique_ptr<gl::program> m_line_shader;
+	gfx::geometrybank_handle m_editor_overlay_bank;
+	std::vector<gfx::geometry_handle> m_editor_overlay_geometry;
+	unsigned int m_editor_overlay_revision{0};
 	std::unique_ptr<gl::program> m_freespot_shader;
     std::unique_ptr<gl::program> m_billboard_shader;
     std::unique_ptr<gl::program> m_celestial_shader;
@@ -521,6 +564,19 @@ class opengl33_renderer : public gfx_renderer {
     std::unique_ptr<vr_interface> vr;
     bool debug_ui_active = false;
 
+	// offscreen targets of model previews
+	struct preview_targets
+	{
+		int size { 0 };
+		std::unique_ptr<opengl_texture> hdr_tex;
+		std::unique_ptr<gl::renderbuffer> hdr_rbds; // depth and stencil, the stencil marks pixels covered by the model
+		std::unique_ptr<gl::framebuffer> hdr_fb;
+		std::unique_ptr<opengl_texture> ldr_tex;
+		std::unique_ptr<gl::framebuffer> ldr_fb;
+	} m_preview;
+	// set while a preview is drawn: submodels faded out entirely are skipped, instead of being drawn invisible over the stencil
+	bool m_previewing { false };
+
     static bool renderer_register;
 
 	class opengl33_imgui_renderer : public imgui_renderer
@@ -529,6 +585,8 @@ class opengl33_renderer : public gfx_renderer {
 		virtual void Shutdown() override;
 		virtual void BeginFrame() override;
 		virtual void Render() override;
+		virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height) override;
+		virtual void Release_Image(std::uint64_t const Image) override;
 	} m_imgui_renderer;
 
   virtual imgui_renderer* GetImguiRenderer() override {

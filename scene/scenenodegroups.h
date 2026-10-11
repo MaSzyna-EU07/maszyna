@@ -29,8 +29,9 @@ public:
     node_groups() = default;
 // methods
     // requests creation of a new node group. returns: handle to the group
+    // nested groups are flattened into the outer one, unless Separate: then the group stands by itself (group ... endgroup)
     group_handle
-        create();
+        create( bool const Separate = false );
     // indicates creation of current group ended. returns: handle to the parent group or null_handle if group stack is empty
     group_handle
         close();
@@ -50,6 +51,26 @@ public:
     scene::basic_group &
         group( scene::group_handle const Group ) {
             return m_groupmap[ Group ]; }
+    // groups made in the scenery editor. the nodes leave the groups they were in. returns: handle to the new group
+    group_handle
+        make( std::vector<scene::basic_node *> const &Nodes );
+    // the nodes of the group are left on their own
+    void
+        dissolve( scene::group_handle const Group );
+    // the node, about to be deleted, leaves its group
+    void
+        remove( scene::basic_node *Node );
+    // groups made or dissolved in the editor are written anew when the scenery is saved: the definitions of their nodes are
+    // taken out of where they are, a group's written as one block between group and endgroup, a dissolved one's nodes each on its own
+    bool
+        relocating( scene::basic_node const *Node ) const;
+    std::vector<scene::group_handle>
+        rewritten() const;
+    std::vector<scene::basic_node *>
+        loose() const;
+    // the scenery files match the groups now
+    void
+        saved();
     // sends basic content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output, bool const Dirty ) const;
@@ -66,9 +87,14 @@ private:
         create_handle();
     bool
         assign_cross_switch(map::track_switch&sw, std::string &sw_name, const std::string &id, size_t idx);
+    // the node leaves the group it's in
+    void
+        leave( scene::basic_node *Node );
 // members
     group_map m_groupmap; // map of established node groups
     std::stack<scene::group_handle> m_activegroup; // helper, group to be assigned to newly created nodes
+    std::set<scene::group_handle> m_rewrite; // groups made in the editor, to be written as blocks on save
+    std::set<scene::basic_node const *> m_loose; // nodes of groups dissolved in the editor, to be written on their own on save
 };
 
 extern node_groups Groups;

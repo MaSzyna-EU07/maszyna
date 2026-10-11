@@ -30,6 +30,7 @@ struct trainset_desc {
 
 	float offset { 0.f };
 	float velocity { 0.f };
+	bool reversed { false };
 
 	std::vector<dynamic_desc> vehicles;
 };

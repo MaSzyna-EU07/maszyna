@@ -348,6 +348,10 @@ private:
     void control_tractive_and_braking_force();
     void control_releaser();
     void control_main_pipe();
+    void update_brake_charging();
+    bool is_brake_charging_done() const;
+    double consist_max_crp() const;
+    bool is_departure_blocked( double const Delay ) const;
     void control_relays();
     void control_motor_connectors();
     void control_tractive_force();
@@ -450,6 +454,9 @@ private:
     double ReactionTime = 0.0; // czas reakcji Ra: czego i na co? świadomości AI
     double fBrakeTime = 0.0; // wpisana wartość jest zmniejszana do 0, gdy ujemna należy zmienić nastawę hamulca
     double BrakeChargingCooldown{}; // prevents the ai from trying to charge the train brake too frequently
+    double BrakeChargingStart = -1.0;
+    std::unordered_map<TDynamicObject const *, double> BrakeChargingPipeOverchargeStart;
+    double DepartBlockedStart = -1.0;
     TBrakeSystem BrakeSystem = TBrakeSystem::Individual; //type of main brake
     bool ForcePNBrake = false; //is it necessary to use PN brake instead of EP brake
     int DynamicBrakeTest = 0; //is it necessary to make brake test while driving

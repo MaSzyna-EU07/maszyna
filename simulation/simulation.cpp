@@ -16,6 +16,9 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Event.h"
 #include "world/MemCell.h"
 #include "world/Track.h"
+#include "world/Road.h"
+#include "world/Sweep.h"
+#include "world/RoadPoint.h"
 #include "world/Traction.h"
 #include "world/TractionPower.h"
 #include "audio/sound.h"
@@ -24,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/lightarray.h"
 #include "rendering/particles.h"
 #include "scene/scene.h"
+#include "scene/scenelayers.h"
 #include "vehicle/Train.h"
 #include "application/application.h"
 #include "utilities/Logs.h"
@@ -35,6 +39,10 @@ state_manager State;
 event_manager Events;
 memory_table Memory;
 path_table Paths;
+road_table Roads;
+sweep_table Sweeps;
+junction_table Junctions;
+roadpoint_table Roadpoints;
 traction_table Traction;
 powergridsource_table Powergrid;
 instance_table Instances;
@@ -113,6 +121,9 @@ state_manager::update( double const Deltatime, int Iterationcount ) {
     TAnimModel::AnimUpdate( totaltime ); // wykonanie zakolejkowanych animacji
 
     simulation::Powergrid.update( totaltime );
+    // road junctions, level crossings and the points road vehicles appear at; ahead of the vehicles, so the drivers act on what these decide
+    simulation::Junctions.update( totaltime );
+    simulation::Roadpoints.update( totaltime );
     simulation::Vehicles.update( Deltatime, Iterationcount );
 }
 
@@ -492,13 +503,77 @@ TAnimModel * state_manager::create_model(const std::string &src, const std::stri
 	return m_serializer.create_model(src, name, position);
 }
 
+std::vector<TDynamicObject *> state_manager::insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed) {
+	return m_serializer.insert_trainset(Name, Path, Offset, Vehicles, Reversed);
+}
+
 TEventLauncher * state_manager::create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position) {
 	return m_serializer.create_eventlauncher(src, name, position);
 }
 
+std::pair<int, int> state_manager::preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance) {
+	return m_serializer.preview_include(Directive, Context, Layer, Instance);
+}
+
+std::pair<int, int> state_manager::rebuild_include(scene::instance_handle const Instance, std::vector<TAnimModel *> &Retired) {
+	if (false == scene::Layers.tracked(Instance)) {
+		return { 0, 0 };
+	}
+	auto const &included { scene::Layers.instance(Instance) };
+	// the models the include was loaded with don't match it anymore.
+	// NOTE: done ahead of retiring the models made by the editor, which are told from the loaded ones by their preview flag
+	scene::Layers.rebuilt(Instance);
+	for (auto *model : Instances.sequence()) {
+		if (model == nullptr || model->m_instance != Instance || false == model->m_preview) {
+			continue;
+		}
+		if (false == included.removed) {
+			scene::Layers.count(model->layer(), scene::layer_item::model, -1);
+		}
+		Region->erase(model);
+		scene::Hierarchy.erase(model->uuid.to_string());
+		model->visible(false);
+		model->m_preview = false;
+		Retired.emplace_back(model);
+	}
+	if (included.dead) {
+		return { 0, 0 };
+	}
+	auto const layer { scene::Layers.resolve(included.layer) };
+	auto const result { m_serializer.preview_include(scene::Layers.directive(Instance), included.context, layer, Instance) };
+	// what's shown for an include which is out of sight at the moment goes out of sight as well
+	auto const layerhidden { scene::Layers.valid(layer) && false == scene::Layers.layer(layer).visible };
+	if (included.removed || layerhidden) {
+		for (auto *model : Instances.sequence()) {
+			if (model == nullptr || model->m_instance != Instance || false == model->m_preview) {
+				continue;
+			}
+			if (included.removed) {
+				scene::Layers.count(model->layer(), scene::layer_item::model, -1);
+			}
+			if (model->visible()) {
+				model->visible(false);
+				model->m_layerhidden = true;
+			}
+		}
+	}
+	return result;
+}
+
 void state_manager::delete_model(TAnimModel *model) {
+	scene::Layers.count(model->layer(), scene::layer_item::model, -1);
+	scene::Layers.forget(model);
 	Region->erase(model);
 	Instances.purge(model);
+}
+
+bool state_manager::rename_model(TAnimModel *model, std::string const &name) {
+	if (model == nullptr || false == Instances.rename(model, name)) {
+		return false;
+	}
+	model->m_name = (name == "none" ? std::string{} : name);
+	scene::Layers.renamed(model);
+	return true;
 }
 
 void state_manager::delete_eventlauncher(TEventLauncher *launcher) {

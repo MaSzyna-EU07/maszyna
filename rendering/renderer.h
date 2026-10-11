@@ -21,6 +21,17 @@ namespace gl
 class program;
 }
 
+namespace gfx
+{
+// material painted over the heightmap terrain, and the size (metres) its textures are repeated at; 0: the size given by the material, or 8 m
+struct terrain_layer
+{
+	material_handle material{null_handle};
+	float size{0.f};
+	float rotation{0.f}; // degrees the textures are turned by
+};
+} // namespace gfx
+
 class gfx_renderer {
 
 public:
@@ -58,6 +69,14 @@ public:
     virtual auto Fetch_Material( std::string const &Filename, bool const Loadnow = true ) -> material_handle = 0;
     virtual void Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
     virtual auto Material( material_handle const Material ) const -> IMaterial const * = 0;
+    // heightmap terrain: material of a chunk blending the materials of up to 8 layers by their weights.
+    // Weights: (Samples + 1)^2 values per layer, planar, rows of growing z, the weights of a sample adding up to 255; null with a single layer.
+    // Placement: corner of the chunk (x, z) in the texture coordinates of its mesh, and the size of the chunk.
+    // Reuse: a material made by this call before, to be filled anew, or null_handle.
+    // returns: the material. backends which can't blend give back the material of the layer covering the most
+    virtual auto Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement ) -> material_handle;
+    // gives back a material made by Terrain_Material, once its chunk is gone
+    virtual void Terrain_Release( material_handle const Material ) {}
     // shader methods
     virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> = 0;
     // texture methods
@@ -73,6 +92,7 @@ public:
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
+    virtual auto Mouse_Hit() const -> bool { return true; }
     // editor helpers: matrices/position of the most recent color pass camera.
     // the view matrix is camera-relative (rotation only, camera at origin), matching the
     // camera-relative rendering used by the engine; build object matrices relative to Camera_Position().
@@ -92,6 +112,10 @@ public:
     // imgui renderer
 	  virtual class imgui_renderer *GetImguiRenderer() = 0;
 	  virtual void MakeScreenshot() = 0;
+    // draws the model of a scenery instance on its own into a square image of Size pixels on white background, the model
+    // seen in perspective from the front, side and above and filling the image less Margin pixels at each edge.
+    // Image receives rgb rows, top row first. returns false if the backend can't make previews or there's nothing to draw
+    virtual auto Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) -> bool { return false; }
 };
 
 class gfx_renderer_factory
@@ -116,6 +140,13 @@ class imgui_renderer
 	virtual void Shutdown() = 0;
 	virtual void BeginFrame() = 0;
 	virtual void Render() = 0;
+	// images of the user interface itself (e.g. the previews of the node bank), apart from the textures of the scene: rgba, rows
+	// from the top, in srgb. returns: id for ImGui::Image, 0 if the renderer can't make them
+	virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+	{
+		return 0;
+	}
+	virtual void Release_Image(std::uint64_t const Image) {}
 };
 
 extern std::unique_ptr<gfx_renderer> GfxRenderer;

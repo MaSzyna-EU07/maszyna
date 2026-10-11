@@ -385,6 +385,8 @@ private:
 		virtual void Shutdown() override;
 		virtual void BeginFrame() override;
 		virtual void Render() override;
+		virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height) override;
+		virtual void Release_Image(std::uint64_t const Image) override;
 	} m_imgui_renderer;
 
 	virtual imgui_renderer *GetImguiRenderer() override

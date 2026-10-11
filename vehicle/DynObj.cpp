@@ -1422,7 +1422,7 @@ TDynamicObject * TDynamicObject::ABuScanNearestObject(glm::vec3 pos, TTrack *Tra
             ActDist += CurrDist;
             if (ScanDir > 0) // do przodu
             {
-                if (Track->iNextDirection)
+                if (Track->iNextDirection) // NOSONAR
                 {
                     Track = Track->CurrentNext();
                     ScanDir = -ScanDir;
@@ -1432,7 +1432,7 @@ TDynamicObject * TDynamicObject::ABuScanNearestObject(glm::vec3 pos, TTrack *Tra
             }
             else // do tyłu
             {
-                if (Track->iPrevDirection)
+                if (Track->iPrevDirection) // NOSONAR
                     Track = Track->CurrentPrev();
                 else
                 {
@@ -1917,11 +1917,11 @@ void TDynamicObject::place_on_track(TTrack *Track, double fDist, bool Reversed)
 	switch (iNumAxles) {
 	    // Ra: pojazdy wstawiane są na tor początkowy, a potem przesuwane
 	case 2: // ustawianie osi na torze
-		Axle0.Init(Track, this, iDirection ? 1 : -1);
 		Axle0.Reset();
+		Axle0.Init(Track, this, iDirection ? 1 : -1);
 		Axle0.Move((iDirection ? fDist : -fDist) + fAxleDistHalf, false);
-		Axle1.Init(Track, this, iDirection ? 1 : -1);
 		Axle1.Reset();
+		Axle1.Init(Track, this, iDirection ? 1 : -1);
 		Axle1.Move((iDirection ? fDist : -fDist) - fAxleDistHalf, false); // false, żeby nie generować eventów
 		break;
 	}
@@ -2275,7 +2275,8 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
 
     if (MoverParameters->CategoryFlag & 2) // jeśli samochód
     { // ustawianie samochodow na poboczu albo na środku drogi
-        if( Track->fTrackWidth < 3.5 ) // jeśli droga wąska
+        if( Track->fTrackWidth < 3.5 // jeśli droga wąska
+         || Track->m_road != nullptr ) // a lane of a road node is one-way, the vehicle keeps to its middle
             MoverParameters->OffsetTrackH = 0.0; // to stawiamy na środku, niezależnie od stanu
         // ruchu
         else if( driveractive ) {// od 3.5m do 8.0m jedzie po środku pasa, dla

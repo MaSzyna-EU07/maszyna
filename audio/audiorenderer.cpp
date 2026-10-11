@@ -305,6 +305,13 @@ openal_renderer::buffer( audio::buffer_handle const Buffer ) const {
     return m_buffers.buffer( Buffer );
 }
 
+// makes buffers of all sound files still decoded in the background, waiting for them
+void
+openal_renderer::complete_buffers() {
+
+    m_buffers.update( true );
+}
+
 // initializes the service
 bool
 openal_renderer::init() {
@@ -349,6 +356,9 @@ openal_renderer::erase( sound_source const *Controller ) {
 // updates state of all active emitters
 void
 openal_renderer::update( double const Deltatime ) {
+
+    // buffers of sound files decoded in the background since the last update
+    m_buffers.update();
 
     ALenum err = alGetError();
     if (err != AL_NO_ERROR)

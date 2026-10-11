@@ -1243,6 +1243,26 @@ multi_event::init() {
     }
 }
 
+std::vector<basic_event *> multi_event::children() const {
+    std::vector<basic_event *> result;
+    for (auto const &childevent : m_children) {
+        if (std::get<basic_event *>(childevent) != nullptr) {
+            result.push_back(std::get<basic_event *>(childevent));
+        }
+    }
+    return result;
+}
+
+std::vector<scene::basic_node *> basic_event::target_nodes() const {
+    std::vector<scene::basic_node *> result;
+    for (auto const &target : m_targets) {
+        if (std::get<scene::basic_node *>(target) != nullptr) {
+            result.push_back(std::get<scene::basic_node *>(target));
+        }
+    }
+    return result;
+}
+
 std::vector<std::string> multi_event::dump_children_names() const {
     std::vector<std::string> result;
     for (auto const &childevent : m_children) {

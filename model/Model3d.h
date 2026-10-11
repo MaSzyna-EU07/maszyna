@@ -272,6 +272,12 @@ class TModel3d
     friend opengl33_renderer;
 
 public:
+    // submodels which scenery instances of the model refer to by name
+    struct instance_submodels {
+        std::array<TSubModel *, 8> lights_on {}; // Light_On00 - Light_On07
+        std::array<TSubModel *, 8> lights_off {}; // Light_Off00 - Light_Off07
+        std::array<TSubModel *, 4> variants {}; // winter_variant, spring_variant, summer_variant, autumn_variant
+    };
     TSubModel *Root { nullptr }; // drzewo submodeli
     uint32_t iFlags { 0 }; // Ra: czy submodele mają przezroczyste tekstury
 public: // Ra: tymczasowo
@@ -286,6 +292,8 @@ private:
 	std::string asBinary; // nazwa pod którą zapisać model binarny
     std::string m_filename;
     nameoffset_sequence m_smokesources; // list of particle sources defined in the model
+    instance_submodels m_instancesubmodels; // filled on first use, see instance_parts()
+    bool m_instancesubmodelslocated { false };
 
 public:
     TModel3d() = default;
@@ -294,6 +302,9 @@ public:
         return Root ? Root->m_boundingradius : 0.f; }
 	inline TSubModel * GetSMRoot() { return Root; };
 	TSubModel * GetFromName(std::string const &Name) const;
+    // returns submodels which scenery instances of the model refer to by name. the search for a name goes through the whole
+    // submodel tree, so it's done once for the model instead of once for each of its instances
+    instance_submodels const & instance_parts();
 	TSubModel * AddToNamed(const char *Name, TSubModel *SubModel);
     nameoffset_sequence const & find_smoke_sources();
 	void AddTo(TSubModel *tmp, TSubModel *SubModel);

@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "launcher/vehicle_picker.h"
 #include "launcher/textures_scanner.h"
 #include "launcher/scenery_scanner.h"
+#include "launcher/scenery_wizard.h"
 
 class launcher_ui : public ui_layer {
 public:
@@ -33,6 +34,7 @@ private:
 	ui::scenerylist_panel m_scenerylist_panel;
 	ui::keymapper_panel m_keymapper_panel;
 	ui::vehiclepicker_panel m_vehiclepicker_panel;
+	ui::scenerywizard_panel m_scenerywizard_panel;
 
 	ui_panel *m_current_panel;
 };
