@@ -2552,6 +2552,26 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		entry.label = std::string{definition.name} + "  a " + std::to_string(a).substr(0, std::to_string(a).find('.') + 4) + " b " + std::to_string(b).substr(0, std::to_string(b).find('.') + 4) + (estimated ? " (b est.)" : "");
 		result.push_back(entry);
 	}
+	for (auto const &slipping : {std::pair<double, char const *>{190.0, "1:9"}, {300.0, "1:9"}})
+	{
+		switch_template slip;
+		slip.double_slip = true;
+		slip.type = "Rkp";
+		slip.radius = slipping.first;
+		slip.ratio = std::stod(std::string{slipping.second}.substr(2));
+		slip.label = std::string{"Rkp "} + slipping.second + " R" + std::to_string(static_cast<int>(slipping.first)) + " single slip (click at a crossing of two straights, on the side of the joined tracks)";
+		result.push_back(slip);
+	}
+	for (auto const &crossing : {std::pair<double, char const *>{16.615, "1:9"}, {20.797, "1:12"}})
+	{
+		switch_template plain;
+		plain.double_slip = true;
+		plain.type = "Skrz";
+		plain.a = crossing.first;
+		plain.ratio = std::stod(std::string{crossing.second}.substr(2));
+		plain.label = std::string{"Skrz "} + crossing.second + " crossing (click at a crossing of two straights)";
+		result.push_back(plain);
+	}
 	for (auto const &slipping : {std::pair<double, char const *>{190.0, "1:9"}, {300.0, "1:9"}, {500.0, "1:12"}})
 	{
 		switch_template slip;

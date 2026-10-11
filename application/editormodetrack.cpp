@@ -6726,7 +6726,7 @@ void editor_mode::render_switch_ui()
 	{
 		if (tool.armed >= 0 && tool.armed < static_cast<int>(tool.templates.size()) && tool.templates[tool.armed].double_slip)
 			ImGui::SetNextItemOpen(true);
-		if (ImGui::CollapsingHeader(STR_C("Double slip switches")))
+		if (ImGui::CollapsingHeader(STR_C("Slip switches and crossings")))
 		{
 			ImGui::TextDisabled("%s", STR_C("Only at a crossing of two straights"));
 			list(true);
@@ -7073,7 +7073,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	return true;
 }
 
-std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, double const Radius, TTrack &Style)
+std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, double const Radius, TTrack &Style, std::string const &Type)
 {
 	auto const at = [](glm::dvec2 const &Planar, double const Y) { return glm::dvec3{Planar.x, Y, Planar.y}; };
 	auto const straight = [](glm::dvec3 const &Start, glm::dvec3 const &End) {
@@ -7120,21 +7120,39 @@ std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, g
 	auto const centreC{at(Crossing - Second * gap, Height)};
 	auto const centreD{at(Crossing + Second * gap, Height)};
 	std::string base;
-	for (int i = 1; base.empty() || simulation::Paths.find(base + "_a") != nullptr; ++i)
-		base = "editor_dks" + std::to_string(i);
+	auto const prefix{Type == "Skrz" ? "editor_skrz" : Type == "Rkp" ? "editor_dkp" : "editor_dks"};
+	for (int i = 1; base.empty() || simulation::Paths.find(base + "_a") != nullptr || simulation::Paths.find(base + "_d") != nullptr; ++i)
+		base = prefix + std::to_string(i);
+	std::vector<TTrack *> parts;
+	if (Type == "Skrz")
+	{
+		// the two tracks just cross, their ends far from the crossing
+		parts.push_back(editor_track::create_path(Style, straight(PointA, PointB)));
+		parts.push_back(editor_track::create_path(Style, straight(PointC, PointD)));
+		parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
+		record_slip(parts, "crossing", Type, 0.0, Angle, base);
+		return parts;
+	}
 	editor_track::switch_template shape;
 	shape.length = glm::distance(plan_of(PointA), Crossing);
-	std::vector<TTrack *> parts;
+	bool const single{Type == "Rkp"};
 	parts.push_back(editor_track::create_switch(shape, {straight(PointA, centreA), arc(PointA, First, side, PointD, 0.0, middle - split)}, Style, base + "_a"));
-	parts.push_back(editor_track::create_switch(shape, {straight(PointB, centreB), reversed(arc(PointC, Second, -side, PointB, middle + split, Angle))}, Style, base + "_b"));
-	parts.push_back(editor_track::create_switch(shape, {straight(PointC, centreC), arc(PointC, Second, -side, PointB, 0.0, middle - split)}, Style, base + "_c"));
+	if (single)
+		parts.push_back(editor_track::create_path(Style, straight(PointB, centreB)));
+	else
+		parts.push_back(editor_track::create_switch(shape, {straight(PointB, centreB), reversed(arc(PointC, Second, -side, PointB, middle + split, Angle))}, Style, base + "_b"));
+	if (single)
+		parts.push_back(editor_track::create_path(Style, straight(PointC, centreC)));
+	else
+		parts.push_back(editor_track::create_switch(shape, {straight(PointC, centreC), arc(PointC, Second, -side, PointB, 0.0, middle - split)}, Style, base + "_c"));
 	parts.push_back(editor_track::create_switch(shape, {straight(PointD, centreD), reversed(arc(PointA, First, side, PointD, middle + split, Angle))}, Style, base + "_d"));
 	parts.push_back(editor_track::create_path(Style, straight(centreA, centreB)));
 	parts.push_back(editor_track::create_path(Style, straight(centreC, centreD)));
 	parts.push_back(editor_track::create_path(Style, arc(PointA, First, side, PointD, middle - split, middle + split)));
-	parts.push_back(editor_track::create_path(Style, arc(PointC, Second, -side, PointB, middle - split, middle + split)));
+	if (false == single)
+		parts.push_back(editor_track::create_path(Style, arc(PointC, Second, -side, PointB, middle - split, middle + split)));
 	parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
-	record_slip(parts, "slip", "Rkpd", Radius, Angle, base);
+	record_slip(parts, "slip", Type, Radius, Angle, base);
 	return parts;
 }
 
@@ -7147,7 +7165,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 		for (auto *section : sections)
 			for (auto const &cell : section->m_cells)
 				for (auto *track : cell.m_paths)
-					if (track->eType == tt_Switch && false == track->m_editorremoved && track->DoubleSlip() && glm::distance(plan_of(track->location()), plan_of(Point)) < 25.0)
+					if (Shape.type == "Rkpd" && track->eType == tt_Switch && false == track->m_editorremoved && track->DoubleSlip() && glm::distance(plan_of(track->location()), plan_of(Point)) < 25.0)
 						return replace_double_slip(*track, Shape);
 	}
 	TTrack *other{nullptr};
@@ -7198,7 +7216,8 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	if (glm::dot(first, direction) < 0.0)
 		direction = -direction;
 	auto const angle{std::atan2(std::abs(cross(first, direction)), glm::dot(first, direction))};
-	if (angle < glm::radians(0.5) || angle > glm::radians(30.0))
+	bool const plain{Shape.type == "Skrz"};
+	if (angle < glm::radians(0.5) || angle > glm::radians(plain ? 89.0 : 30.0))
 	{
 		state.status = STR_C("The straights cross at an angle unsuitable for a double slip");
 		return false;
@@ -7207,8 +7226,17 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	auto const alongsecond{glm::dot(crossing - plan_of(second.start), second.direction)};
 	auto const available{std::min({alongfirst, Line.length - alongfirst, alongsecond, second.length - alongsecond}) - 0.5};
 	auto radius{Shape.radius};
-	auto half{radius * std::tan(angle * 0.5)};
-	if (half > available)
+	auto half{plain ? Shape.a : radius * std::tan(angle * 0.5)};
+	if (plain && half > available)
+	{
+		half = available;
+		if (half < 2.0)
+		{
+			state.status = STR_C("Not enough straight track around the crossing");
+			return false;
+		}
+	}
+	else if (half > available)
 	{
 		half = available;
 		radius = half / std::tan(angle * 0.5);
@@ -7253,7 +7281,11 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 		}
 		return false;
 	}
-	auto const parts{build_double_slip(pointA, pointB, pointC, pointD, crossing, heightfirst(alongfirst), first, direction, angle, radius, style != nullptr ? *style : *Line.tracks.front())};
+	auto &styled{style != nullptr ? *style : *Line.tracks.front()};
+	// a single slip joins the pair of the tracks on the side of the click
+	auto const nearer{glm::distance((plan_of(pointA) + plan_of(pointD)) * 0.5, plan_of(Point)) <= glm::distance((plan_of(pointC) + plan_of(pointB)) * 0.5, plan_of(Point))};
+	auto const parts{Shape.type == "Rkp" && false == nearer ? build_double_slip(pointC, pointD, pointA, pointB, crossing, heightfirst(alongfirst), direction, first, angle, radius, styled, Shape.type)
+	                                                        : build_double_slip(pointA, pointB, pointC, pointD, crossing, heightfirst(alongfirst), first, direction, angle, radius, styled, Shape.type)};
 	editor_track::commit(parts);
 	created.insert(created.end(), parts.begin(), parts.end());
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
