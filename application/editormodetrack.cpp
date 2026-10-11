@@ -155,6 +155,8 @@ std::string link_summary(editor_track::snap_target const &Target, editor_track::
 		text += format(STR_C(", sharper than the switch (R %.0f m)"), Switchradius);
 	if (Link.trim > 0.0)
 		text += format(STR_C(", %s shortened %.2f m"), name.c_str(), Link.trim);
+	else if (Link.trim < 0.0)
+		text += format(STR_C(", %s lengthened %.2f m"), name.c_str(), -Link.trim);
 	return text;
 }
 
@@ -5838,13 +5840,14 @@ std::string editor_mode::link_problem(editor_track::snap_target const &Target, e
 	if (false == Link.valid)
 		return Link.shortfall > 0.0 ? format(STR_C("The branch can't lead into %s: the R %.0f m curve needs %.2f m more room"), name.c_str(), Link.radius, Link.shortfall) :
 		                              format(STR_C("The branch can't lead into %s"), name.c_str());
-	if (Link.trim > 0.0)
-	{
-		auto const &path{Target.track->m_paths[Target.point.path]};
-		if (has_controls(path) || geometry::chord_length(path) < Link.trim + 1.0)
-			return format(STR_C("%s would have to be shortened by %.2f m, it's too short or not straight"), name.c_str(), Link.trim);
-	}
+	if (Link.trim > 0.0 && (false == stretchable(Target) || geometry::chord_length(Target.track->m_paths[Target.point.path]) < Link.trim + 1.0))
+		return format(STR_C("%s would have to be shortened by %.2f m, it's too short or not straight"), name.c_str(), Link.trim);
 	return {};
+}
+
+bool editor_mode::stretchable(editor_track::snap_target const &Target) const
+{
+	return Target.track != nullptr && Target.track->eType == tt_Normal && Target.track->m_paths.size() == 1 && editor_track::is_straight(*Target.track, m_straights.tolerance);
 }
 
 bool editor_mode::plan_switch_link(switch_link &Plan) const
@@ -5892,7 +5895,7 @@ bool editor_mode::plan_switch_link(switch_link &Plan) const
 			return false;
 		auto const radius{editor_track::branch_radius(Plan.paths[1])};
 		Plan.link = editor_track::link_branch(branch_start(Plan.paths[1]), radius, branch_target(Plan.target), kink,
-		                                      editor_track::reverse_insert(std::min(editor_track::diverging_speed(radius), design_speed(nullptr, Plan.target.track))));
+		                                      editor_track::reverse_insert(std::min(editor_track::diverging_speed(radius), design_speed(nullptr, Plan.target.track))), stretchable(Plan.target));
 		Plan.reason = link_problem(Plan.target, Plan.link);
 		return Plan.reason.empty();
 	};
@@ -5945,7 +5948,7 @@ bool editor_mode::plan_branch_link(editor_track::branch_link &Link, std::string 
 	auto const &diverging{tool.track->m_paths[1]};
 	auto const radius{editor_track::branch_radius(diverging)};
 	Link = editor_track::link_branch(branch_start(diverging), radius, branch_target(target), glm::radians(m_joints.angle * 0.5),
-	                                 editor_track::reverse_insert(std::min(editor_track::diverging_speed(radius), design_speed(tool.track, target.track))));
+	                                 editor_track::reverse_insert(std::min(editor_track::diverging_speed(radius), design_speed(tool.track, target.track))), stretchable(target));
 	Reason = link_problem(target, Link);
 	return Reason.empty();
 }
@@ -5969,11 +5972,13 @@ void editor_mode::finish_branch_link(editor_track::branch_link const &Link)
 std::vector<TTrack *> editor_mode::link_tracks(editor_track::snap_target const &Target, editor_track::branch_link const &Link, TTrack const &Style, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created)
 {
 	auto *target{Target.track};
-	if (Link.trim > 0.0)
+	if (Link.trim != 0.0)
 	{
 		States.emplace_back(target, editor_track::capture(*target));
-		auto const run{glm::length(plan_of(Target.direction))};
-		editor_track::move_point(*target, Target.point, Target.position + Target.direction * (Link.trim / std::max(run, 1e-6)));
+		editor_track::move_point(*target, Target.point, Link.landing);
+		auto &path{target->m_paths[Target.point.path]};
+		path.points[segment_data::point::control1] = glm::dvec3{0.0};
+		path.points[segment_data::point::control2] = glm::dvec3{0.0};
 		editor_track::commit({target});
 	}
 	std::vector<TTrack *> pieces;

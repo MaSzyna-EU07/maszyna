@@ -497,7 +497,7 @@ std::optional<double> editor_track::branch_shift(branch_end const &From, glm::dv
 	return cross(tangent, gap) / determinant;
 }
 
-editor_track::branch_link editor_track::link_branch(branch_end const &From, double const Radius, branch_end const &To, double const Kink, double const Insert)
+editor_track::branch_link editor_track::link_branch(branch_end const &From, double const Radius, branch_end const &To, double const Kink, double const Insert, bool const Stretch)
 {
 	branch_link result;
 	if (glm::length(From.direction) < 1e-9 || glm::length(To.direction) < 1e-9 || Radius < 1.0)
@@ -555,7 +555,7 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, doub
 			return result;
 		}
 	}
-	if (result.after < -0.01)
+	if (result.after < -0.01 || (Stretch && result.after >= 0.01))
 	{
 		result.trim = -result.after;
 		result.after = 0.0;
@@ -592,7 +592,7 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, doub
 		result.pieces.back().points[segment_data::point::end] = {target.x, 0.0, target.y};
 	if (false == result.pieces.empty())
 	{
-		auto const height1{result.trim > 0.0 ? To.position.y + To.grade * result.trim : To.position.y};
+		auto const height1{To.position.y + To.grade * result.trim};
 		ground_follow::follow(result.pieces, {From.position.y, From.grade, height1, To.grade}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
 		std::vector<double> lengths;
 		double total{0.0};
@@ -607,6 +607,7 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, doub
 			result.pieces[i].rolls = {static_cast<float>(from), static_cast<float>(to)};
 		}
 	}
+	result.landing = result.pieces.empty() ? From.position : result.pieces.back().points[segment_data::point::end];
 	result.valid = true;
 	return result;
 }

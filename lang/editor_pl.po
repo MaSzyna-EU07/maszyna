@@ -5464,6 +5464,9 @@ msgstr "Odgałęzienie wchodzi w %s prostą"
 msgid ", %s shortened %.2f m"
 msgstr ", %s skrócony o %.2f m"
 
+msgid ", %s lengthened %.2f m"
+msgstr ", %s wydłużony o %.2f m"
+
 msgid "The branch can't lead into %s: the R %.0f m curve needs %.2f m more room"
 msgstr "Odgałęzienie nie wejdzie w %s: łuk R %.0f m potrzebuje %.2f m więcej miejsca"
 
