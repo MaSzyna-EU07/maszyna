@@ -413,7 +413,11 @@ void editor_mode::selftest_step()
 			std::string files;
 			for (auto const &standing : standing_templates([](std::string const &File) { return File.find("napedy/") != std::string::npos; }))
 				if (false == standing.values.empty() && standing.values[0] == name)
+				{
 					files += " " + standing.file;
+					for (std::size_t i = 1; i < standing.values.size(); ++i)
+						files += (i == 1 ? " (" : " ") + standing.values[i] + (i + 1 == standing.values.size() ? ")" : "");
+				}
 			for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 				if (scene::Layers.tracked(handle) && scene::Layers.instance(handle).file != nullptr && scene::Layers.instance(handle).file->find("napedy") != std::string::npos)
 					files += format(" [%d %s removed %d dead %d]", static_cast<int>(handle), scene::Layers.instance(handle).file->c_str(), scene::Layers.instance(handle).removed ? 1 : 0, scene::Layers.instance(handle).dead ? 1 : 0);

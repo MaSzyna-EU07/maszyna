@@ -1407,6 +1407,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::vector<standing_template> standing_templates(std::function<bool(std::string const &)> const &Accept) const;
 	bool find_switch_drive(TTrack const &Switch, standing_template &Drive, int &Family, int &Index);
 	bool replace_switch_drive(TTrack &Switch, int Family, bool Flip);
+	bool switch_drive_spot(TTrack const &Switch, glm::dvec3 &Location, double &Yaw, glm::dvec2 &Tilt, bool &Rightswitch) const;
+	void switch_drive_captured(TTrack const &Track);
+	void switch_drives_committed(std::vector<TTrack *> const &Tracks);
 	// places them in the active layer, as one step of the undo. returns: how many were placed
 	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error);
 	// moves them, as one step of the undo
@@ -1940,6 +1943,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::vector<std::pair<scene::layer_handle, std::string>> m_bindings_unresolved; // lines kept as they are
 	bool m_bindings_loaded{false};
 	std::vector<infra::object_state> m_infra_buffer; // states of the objects before the change in progress
+	std::vector<std::pair<scene::instance_handle, std::string>> m_drive_buffer;
 	bool m_infra_suspended{false};
 	void infra_load();
 	void infra_store();

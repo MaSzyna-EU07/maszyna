@@ -1239,6 +1239,8 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	infra_attach(snap);
 	snap.alignments = alignment_store::take_changes();
 	snap.switch_records = switch_store::take_changes();
+	snap.directives.insert(snap.directives.end(), m_drive_buffer.begin(), m_drive_buffer.end());
+	m_drive_buffer.clear();
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
 }
@@ -1478,6 +1480,7 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	for (auto const &entry : Snapshot.infra)
 		infra_restore_state(entry);
 	m_infra_buffer.clear();
+	m_drive_buffer.clear();
 	m_infra_suspended = false;
 	if (false == m_route.chain.tracks.empty())
 	{
@@ -6649,22 +6652,106 @@ std::string editor_mode::switch_name_for_new() const
 	}
 }
 
+bool editor_mode::switch_drive_spot(TTrack const &Switch, glm::dvec3 &Location, double &Yaw, glm::dvec2 &Tilt, bool &Rightswitch) const
+{
+	if (Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
+		return false;
+	auto const &main{Switch.m_paths[0]};
+	auto const &diverging{Switch.m_paths[1]};
+	auto const start{main.points[segment_data::point::start]};
+	auto const &control{main.points[segment_data::point::control1]};
+	auto const along{control != glm::dvec3{} ? control : main.points[segment_data::point::end] - start};
+	auto heading{plan_of(along)};
+	if (glm::length(heading) < 1e-9)
+		return false;
+	heading = glm::normalize(heading);
+	glm::dvec2 const right{-heading.y, heading.x};
+	Rightswitch = glm::dot(plan_of(diverging.points[segment_data::point::end] - start), right) > 0.0;
+	Location = start;
+	auto const yaw{glm::degrees(std::atan2(heading.x, heading.y))};
+	Yaw = yaw < 0.0 ? yaw + 360.0 : yaw;
+	auto const run{glm::length(plan_of(along))};
+	auto const roll{static_cast<double>(main.rolls[0])};
+	Tilt = {-glm::degrees(std::atan(along.y / run)), roll};
+	if (Global.bRollFix)
+		Location.y += 0.75 * std::abs(std::sin(glm::radians(roll)));
+	return true;
+}
+
+void editor_mode::switch_drive_captured(TTrack const &Track)
+{
+	if (Track.eType != tt_Switch || m_infra_suspended)
+		return;
+	standing_template drive;
+	int family{-1};
+	int variant{0};
+	if (false == find_switch_drive(Track, drive, family, variant))
+		return;
+	if (std::any_of(m_drive_buffer.begin(), m_drive_buffer.end(), [&](auto const &Entry) { return Entry.first == drive.instance; }))
+		return;
+	m_drive_buffer.emplace_back(drive.instance, scene::Layers.directive(drive.instance));
+}
+
+void editor_mode::switch_drives_committed(std::vector<TTrack *> const &Tracks)
+{
+	if (m_infra_suspended)
+		return;
+	for (auto *track : Tracks)
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch)
+			continue;
+		standing_template drive;
+		int family{-1};
+		int variant{0};
+		glm::dvec3 location;
+		double yaw;
+		glm::dvec2 tilt;
+		bool rightswitch;
+		if (false == find_switch_drive(*track, drive, family, variant) || false == switch_drive_spot(*track, location, yaw, tilt, rightswitch))
+			continue;
+		auto const &included{scene::Layers.instance(drive.instance)};
+		include_info info;
+		std::string error;
+		if (included.file == nullptr || false == editor_includes::load(*included.file, info, error))
+			continue;
+		auto const local{location - included.context.offset};
+		auto values{drive.values};
+		for (auto const &parameter : info.parameters)
+		{
+			if (parameter.id < 1 || parameter.id > static_cast<int>(values.size()))
+				continue;
+			auto &value{values[parameter.id - 1]};
+			if (parameter.role == "pos.x")
+				value = editor_includes::number(local.x);
+			else if (parameter.role == "pos.y")
+				value = editor_includes::number(local.y);
+			else if (parameter.role == "pos.z")
+				value = editor_includes::number(local.z);
+			else if (parameter.role == "rot.y")
+				value = editor_includes::number(yaw);
+			else if (parameter.role == "rot.x")
+				value = editor_includes::number(tilt.x);
+			else if (parameter.role == "rot.z")
+				value = editor_includes::number(tilt.y);
+		}
+		auto const directive{editor_includes::compose_directive(*included.file, values)};
+		if (directive != scene::Layers.directive(drive.instance))
+			set_include_directive(drive.instance, directive);
+	}
+}
+
 bool editor_mode::place_switch_drive(TTrack &Switch)
 {
 	auto &tool{m_switch};
 	scan_switch_drives();
 	if (tool.drive < 0 || tool.drive >= static_cast<int>(tool.drives.size()) || Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
 		return false;
-	auto const &main{Switch.m_paths[0]};
-	auto const &diverging{Switch.m_paths[1]};
-	auto const start{main.points[segment_data::point::start]};
-	auto const &control{main.points[segment_data::point::control1]};
-	auto heading{plan_of(control != glm::dvec3{} ? control : main.points[segment_data::point::end] - start)};
-	if (glm::length(heading) < 1e-9)
+	glm::dvec3 location;
+	double yaw;
+	glm::dvec2 tilt;
+	bool rightswitch;
+	if (false == switch_drive_spot(Switch, location, yaw, tilt, rightswitch))
 		return false;
-	heading = glm::normalize(heading);
-	glm::dvec2 const right{-heading.y, heading.x};
-	bool const rightswitch{glm::dot(plan_of(diverging.points[segment_data::point::end] - start), right) > 0.0};
 	bool const driveright{(tool.drive_side == 0) == rightswitch};
 	auto const &family{tool.drives[tool.drive]};
 	template_item item;
@@ -6674,19 +6761,11 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 		tool.status = format(STR_C("The drive %s has no variant for a %s switch with the drive on the %s"), family.name.c_str(), rightswitch ? STR_C("right") : STR_C("left"), driveright ? STR_C("right") : STR_C("left"));
 		return false;
 	}
-	item.location = start;
-	auto yaw{glm::degrees(std::atan2(heading.x, heading.y))};
-	item.yaw = yaw < 0.0 ? yaw + 360.0 : yaw;
+	item.location = location;
+	item.yaw = yaw;
 	item.described = true;
 	item.track = Switch.name();
-	{
-		auto const along{control != glm::dvec3{} ? control : main.points[segment_data::point::end] - start};
-		auto const run{glm::length(plan_of(along))};
-		auto const roll{static_cast<double>(main.rolls[0])};
-		item.tilt = {run > 1e-9 ? -glm::degrees(std::atan(along.y / run)) : 0.0, roll};
-		if (Global.bRollFix)
-			item.location.y += 0.75 * std::abs(std::sin(glm::radians(roll)));
-	}
+	item.tilt = tilt;
 	standing_template standing;
 	int present{-1};
 	int variant{0};

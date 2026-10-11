@@ -1128,6 +1128,7 @@ void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh
 void editor_mode::track_captured(TTrack const &Track)
 {
 	sweeps_captured(Track);
+	switch_drive_captured(Track);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	infra_load();
@@ -1166,6 +1167,7 @@ void editor_mode::track_captured(TTrack const &Track)
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
 	sweeps_committed(Tracks);
+	switch_drives_committed(Tracks);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	infra_load();
