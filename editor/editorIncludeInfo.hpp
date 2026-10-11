@@ -38,6 +38,7 @@ struct include_info
 	std::string switch_hand; // a switch drive: side of the diverging track, left or right, looking from the start of the switch
 	std::string switch_drive; // and the side the drive stands on
 	bool switch_default{false}; // the drive put with a new switch until another is picked
+	double switch_height{0.0};
 	double turntable_length{0.0};
 	int turntable_angles{0};
 	int turntable_positions{0};

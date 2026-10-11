@@ -933,6 +933,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		{
 			std::string name;
 			std::array<std::string, 4> files;
+			std::array<double, 4> heights{};
 			bool preferred{false};
 		};
 		std::vector<drive_family> drives;

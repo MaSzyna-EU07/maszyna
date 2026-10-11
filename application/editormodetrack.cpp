@@ -6633,6 +6633,7 @@ void editor_mode::scan_switch_drives()
 			family = std::prev(tool.drives.end());
 		}
 		family->files[hand * 2 + drive] = entry.file;
+		family->heights[hand * 2 + drive] = info.switch_height;
 		family->preferred |= info.switch_default;
 	}
 	std::sort(tool.drives.begin(), tool.drives.end(), [](switch_tool::drive_family const &A, switch_tool::drive_family const &B) { return A.name < B.name; });
@@ -6714,6 +6715,7 @@ void editor_mode::switch_drives_committed(std::vector<TTrack *> const &Tracks)
 		std::string error;
 		if (included.file == nullptr || false == editor_includes::load(*included.file, info, error))
 			continue;
+		location.y += m_switch.drives[family].heights[variant];
 		auto const local{location - included.context.offset};
 		auto values{drive.values};
 		for (auto const &parameter : info.parameters)
@@ -6754,14 +6756,15 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 		return false;
 	bool const driveright{(tool.drive_side == 0) == rightswitch};
 	auto const &family{tool.drives[tool.drive]};
+	auto const index{(rightswitch ? 2 : 0) + (driveright ? 1 : 0)};
 	template_item item;
-	item.file = family.files[(rightswitch ? 2 : 0) + (driveright ? 1 : 0)];
+	item.file = family.files[index];
 	if (item.file.empty())
 	{
 		tool.status = format(STR_C("The drive %s has no variant for a %s switch with the drive on the %s"), family.name.c_str(), rightswitch ? STR_C("right") : STR_C("left"), driveright ? STR_C("right") : STR_C("left"));
 		return false;
 	}
-	item.location = location;
+	item.location = location + glm::dvec3{0.0, family.heights[index], 0.0};
 	item.yaw = yaw;
 	item.described = true;
 	item.track = Switch.name();
@@ -6840,7 +6843,11 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	}
 	if (drive_file(item.file) == found.file)
 		return false;
-	item.location = found.location;
+	glm::dvec3 location;
+	double yaw;
+	glm::dvec2 tilt;
+	bool rightswitch;
+	item.location = switch_drive_spot(Switch, location, yaw, tilt, rightswitch) ? location + glm::dvec3{0.0, tool.drives[family].heights[index], 0.0} : found.location;
 	item.yaw = found.yaw;
 	item.described = true;
 	item.track = Switch.name();
