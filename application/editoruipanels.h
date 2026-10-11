@@ -304,4 +304,4 @@ class functions_panel : public ui_panel
 	scene::group_handle m_grouphandle{null_handle}; // scene group bound to the panel
 	std::string m_groupprefix;
 	std::vector<text_line> m_grouplines;
-};
+};
