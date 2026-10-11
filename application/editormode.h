@@ -1405,6 +1405,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	};
 	// includes of the templates whose file names the test accepts, with the location in p2..p4 and the rotation in p5
 	std::vector<standing_template> standing_templates(std::function<bool(std::string const &)> const &Accept) const;
+	bool find_switch_drive(TTrack const &Switch, standing_template &Drive, int &Family, int &Index);
+	bool replace_switch_drive(TTrack &Switch, int Family, bool Flip);
 	// places them in the active layer, as one step of the undo. returns: how many were placed
 	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error);
 	// moves them, as one step of the undo

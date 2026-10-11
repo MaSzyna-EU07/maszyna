@@ -1926,13 +1926,34 @@ void editor_mode::render_turnout_ui()
 	ImGui::Text(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
 	render_track_name(*track);
 	render_switch_record(*track);
-	if ((simulation::Events.FindEvent(track->name() + "+") != nullptr && simulation::Events.FindEvent(track->name() + "-") != nullptr) || (m_track_name.track == track && m_track_name.uses.includes > 0))
+	standing_template drive;
+	int family{-1};
+	int variant{0};
+	if (find_switch_drive(*track, drive, family, variant))
 	{
 		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), track->name().c_str(), track->name().c_str());
-		if (ImGui::Button(STR_C("Drive to the other side")))
+		ImGui::PushItemWidth(200.0f);
+		if (ImGui::BeginCombo(STR_C("Drive##standing"), m_switch.drives[family].name.c_str()))
+		{
+			for (int i = 0; i < static_cast<int>(m_switch.drives.size()); ++i)
+				if (ImGui::Selectable(m_switch.drives[i].name.c_str(), family == i) && i != family)
+					replace_switch_drive(*track, i, false);
+			ImGui::EndCombo();
+		}
+		ImGui::PopItemWidth();
+		item_tooltip("Puts another drive in place of the drive of this switch, on the same side");
+		int side{((variant >> 1) == (variant & 1)) ? 0 : 1};
+		ImGui::SameLine();
+		auto const before{side};
+		ImGui::RadioButton(STR_C("diverging side##standing"), &side, 0);
+		ImGui::SameLine();
+		ImGui::RadioButton(STR_C("other side##standing"), &side, 1);
+		if (side != before)
 			flip_switch_drive(*track);
 		item_tooltip("Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side");
 	}
+	else if ((simulation::Events.FindEvent(track->name() + "+") != nullptr && simulation::Events.FindEvent(track->name() + "-") != nullptr) || (m_track_name.track == track && m_track_name.uses.includes > 0))
+		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), track->name().c_str(), track->name().c_str());
 	else
 	{
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
@@ -6666,6 +6687,11 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 		if (Global.bRollFix)
 			item.location.y += 0.75 * std::abs(std::sin(glm::radians(roll)));
 	}
+	standing_template standing;
+	int present{-1};
+	int variant{0};
+	if (find_switch_drive(Switch, standing, present, variant))
+		return replace_switch_drive(Switch, tool.drive, (variant & 1) != (driveright ? 1 : 0));
 	std::string error;
 	if (place_templates({item}, error) == 0)
 	{
@@ -6676,15 +6702,21 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 	return true;
 }
 
-bool editor_mode::flip_switch_drive(TTrack &Switch)
+namespace
+{
+std::string drive_file(std::string Text)
+{
+	std::replace(Text.begin(), Text.end(), '\\', '/');
+	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
+	return Text;
+}
+} // namespace
+
+bool editor_mode::find_switch_drive(TTrack const &Switch, standing_template &Drive, int &Family, int &Index)
 {
 	auto &tool{m_switch};
 	scan_switch_drives();
-	auto const plain = [](std::string Text) {
-		std::replace(Text.begin(), Text.end(), '\\', '/');
-		std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
-		return Text;
-	};
+	auto const &plain{drive_file};
 	std::map<std::string, std::pair<int, int>> variants;
 	for (int family = 0; family < static_cast<int>(tool.drives.size()); ++family)
 		for (int index = 0; index < 4; ++index)
@@ -6692,32 +6724,55 @@ bool editor_mode::flip_switch_drive(TTrack &Switch)
 				variants[plain(tool.drives[family].files[index])] = {family, index};
 	auto const name{plain(Switch.name())};
 	auto const standing{standing_templates([&](std::string const &File) { return variants.count(File) > 0; })};
-	auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_template const &Drive) { return plain(Drive.values[0]) == name; })};
+	auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_template const &Standing) { return plain(Standing.values[0]) == name; })};
 	if (found == standing.end())
+		return false;
+	Drive = *found;
+	std::tie(Family, Index) = variants[found->file];
+	return true;
+}
+
+bool editor_mode::flip_switch_drive(TTrack &Switch)
+{
+	return replace_switch_drive(Switch, -1, true);
+}
+
+bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool const Flip)
+{
+	auto &tool{m_switch};
+	standing_template found;
+	int family{-1};
+	int index{0};
+	if (false == find_switch_drive(Switch, found, family, index))
 	{
 		tool.status = format(STR_C("No drive of the switch %s among the described drives"), Switch.name().c_str());
 		return false;
 	}
-	auto const [family, index]{variants[found->file]};
+	if (Family >= 0)
+		family = Family;
+	if (Flip)
+		index ^= 1;
 	template_item item;
-	item.file = tool.drives[family].files[index ^ 1];
+	item.file = tool.drives[family].files[index];
 	if (item.file.empty())
 	{
-		tool.status = format(STR_C("The drive %s has no variant with the drive on the other side"), tool.drives[family].name.c_str());
+		tool.status = Flip ? format(STR_C("The drive %s has no variant with the drive on the other side"), tool.drives[family].name.c_str()) : format(STR_C("The drive %s has no variant for a %s switch with the drive on the %s"), tool.drives[family].name.c_str(), index & 2 ? STR_C("right") : STR_C("left"), index & 1 ? STR_C("right") : STR_C("left"));
 		return false;
 	}
-	item.location = found->location;
-	item.yaw = found->yaw;
+	if (drive_file(item.file) == found.file)
+		return false;
+	item.location = found.location;
+	item.yaw = found.yaw;
 	item.described = true;
 	item.track = Switch.name();
 	auto const angle = [&](std::size_t const Index) {
 		double value{0.0};
-		if (Index < found->values.size())
-			std::sscanf(found->values[Index].c_str(), "%lf", &value);
+		if (Index < found.values.size())
+			std::sscanf(found.values[Index].c_str(), "%lf", &value);
 		return value;
 	};
 	item.tilt = {angle(5), angle(6)};
-	if (remove_templates({found->instance}) == 0)
+	if (remove_templates({found.instance}) == 0)
 	{
 		tool.status = STR_C("The drive of this switch can't be changed in its file");
 		return false;
@@ -6725,13 +6780,13 @@ bool editor_mode::flip_switch_drive(TTrack &Switch)
 	std::string error;
 	if (place_templates({item}, error) == 0)
 	{
-		scene::Layers.removed(found->instance, false);
+		scene::Layers.removed(found.instance, false);
 		m_history.pop_back();
 		tool.status = STR_C("The drive couldn't be placed: ") + error;
 		return false;
 	}
 	join_last_steps();
-	tool.status = format((index ^ 1) & 1 ? STR_C("Switch %s: the drive %s, on the right now") : STR_C("Switch %s: the drive %s, on the left now"), Switch.name().c_str(), item.file.c_str());
+	tool.status = format(index & 1 ? STR_C("Switch %s: the drive %s, on the right now") : STR_C("Switch %s: the drive %s, on the left now"), Switch.name().c_str(), item.file.c_str());
 	return true;
 }
 

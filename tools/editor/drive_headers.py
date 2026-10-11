@@ -16,7 +16,7 @@ LINEMARK = '//$e'
 FOLDER = 'scenery/tory/napedy'
 PATTERN = re.compile(r'^(ele1?|mech[12]?)-rz([lp])-([lp])((?:_[a-z]+)*)\.inc$')
 KINDS = {'ele': 'elektryczny', 'mech': 'mechaniczny'}
-DEFAULT = 'mech_komin'
+DEFAULT = 'ele'
 
 
 def examine(path, file):

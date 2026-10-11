@@ -427,6 +427,15 @@ void editor_mode::selftest_step()
 			auto const done{track != nullptr && flip_switch_drive(*track)};
 			WriteLog("SELFTEST driveflip " + name + ": " + (done ? "done " : "failed ") + m_switch.status);
 		}
+		else if (command == "driveput" || command == "drivefamily")
+		{
+			std::string name;
+			int family{-1};
+			words >> name >> family;
+			auto *track{simulation::Paths.find(name)};
+			auto const done{track != nullptr && (command == "driveput" ? place_switch_drive(*track) : replace_switch_drive(*track, family, false))};
+			WriteLog("SELFTEST " + command + " " + name + ": " + (done ? "done " : "failed ") + m_switch.status);
+		}
 		else if (command == "drivetilt")
 		{
 			std::string name;

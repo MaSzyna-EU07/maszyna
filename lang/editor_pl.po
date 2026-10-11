@@ -5422,8 +5422,17 @@ msgstr "Miejsce na prostej: %.2f m do tyłu, %.2f m do przodu"
 msgid "Click: edit this switch, drag: slide it along the straight"
 msgstr "Klik: edytuj ten rozjazd, przeciągnij: przesuń go wzdłuż prostej"
 
-msgid "Drive to the other side"
-msgstr "Napęd na drugą stronę"
+msgid "Drive##standing"
+msgstr "Napęd##standing"
+
+msgid "Puts another drive in place of the drive of this switch, on the same side"
+msgstr "Stawia inny napęd w miejsce napędu tej zwrotnicy, po tej samej stronie"
+
+msgid "diverging side##standing"
+msgstr "od toru zwrotnego##standing"
+
+msgid "other side##standing"
+msgstr "z drugiej strony##standing"
 
 msgid "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"
 msgstr "Stawia napęd zwrotnicy po drugiej stronie toru: ten sam napęd, jego wariant na drugą stronę"
@@ -5442,3 +5451,4 @@ msgstr "Zwrotnica %s: napęd %s, teraz po prawej"
 
 msgid "Switch %s: the drive %s, on the left now"
 msgstr "Zwrotnica %s: napęd %s, teraz po lewej"
+
