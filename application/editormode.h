@@ -414,7 +414,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	// the chunk of the terrain (if any) covering the given world point
 	editor_terrain *terrain_at(double X, double Z);
 	// the chunks of the terrain held in memory
-	std::vector<editor_terrain *> active_terrains();
+	std::vector<editor_terrain *> active_terrains() const;
 	// samples the selected model instance's geometry into the chunks of the terrain it covers, then removes it
 	void capture_terrain();
 	bool m_terrain_open{false};       // the terrain is the field of work, chosen in the toolbar
@@ -1145,7 +1145,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	glm::dvec3 cursor_ground() const;
 	glm::dvec3 cursor_level(double const Height) const;
 	glm::dvec3 cursor_terrain(double const Height);
-	double bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style);
+	double bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style) const;
+	std::vector<double> bed_heights(std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions, TTrack const *Style) const;
+	void follow_ground(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const;
 	glm::dvec3 lay_bed(glm::dvec3 const &Point);
 	std::optional<glm::dvec3> m_cursor_override;
 	bool sweep_grabs(glm::dvec3 const &Point);
@@ -2018,7 +2020,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void road_profile(std::vector<segment_data> &Pieces, double const *Firstgrade, double const *Lastgrade, bool const Fresh);
 	// height of the ground under each of the points, with the roads not taken for the ground. a point with nothing under it keeps its height
 	// Found: set for the points which have the ground under them
-	std::vector<double> ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found = nullptr);
+	std::vector<double> ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found = nullptr) const;
 	void push_road_snapshot(editor_road::record Record);
 	void restore_road_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	road_tool m_roadtool;

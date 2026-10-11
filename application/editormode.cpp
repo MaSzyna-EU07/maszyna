@@ -548,7 +548,7 @@ editor_mode::~editor_mode()
 	editor_track::observe(nullptr);
 }
 
-std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found)
+std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found) const
 {
     std::vector<double> heights;
     heights.reserve(Points.size());
@@ -2449,7 +2449,7 @@ editor_terrain *editor_mode::terrain_at(double X, double Z)
     return m_streamer.terrain_at(X, Z);
 }
 
-std::vector<editor_terrain *> editor_mode::active_terrains()
+std::vector<editor_terrain *> editor_mode::active_terrains() const
 {
     std::vector<editor_terrain *> out;
     out.reserve(m_streamer.resident());

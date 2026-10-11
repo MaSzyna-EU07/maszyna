@@ -1070,6 +1070,8 @@ void editor_mode::selftest_step()
 			glm::dvec3 previous{0.0};
 			double slope{0.0};
 			bool first{true};
+			double hanging{0.0}, buried{0.0};
+			int paths{0};
 			for (auto step{before}; step < m_history.size(); ++step)
 				for (auto const *track : m_history[step].created)
 				{
@@ -1086,7 +1088,19 @@ void editor_mode::selftest_step()
 					heading = glm::normalize(geometry::plan_of(curve.first(1.0)));
 					previous = b;
 					first = false;
+					auto const count{std::max(1, static_cast<int>(std::ceil(curve.plan_length() / 2.0)))};
+					for (int k = 0; k <= count; ++k)
+					{
+						auto const t{curve.parameter(curve.plan_length() * k / count)};
+						auto const target{bed_heights({curve.point(t) + glm::dvec3{0.0, 50.0, 0.0}}, {geometry::plan_of(curve.first(t))}, track).front()};
+						if (std::isnan(target))
+							continue;
+						hanging = std::max(hanging, curve.point(t).y - target);
+						buried = std::max(buried, target - curve.point(t).y);
+					}
+					++paths;
 				}
+			WriteLog(format("SELFTEST layclicks %d paths, ballast foot over the ground up to %.3f m, under it up to %.3f m", paths, hanging, buried));
 		}
 		else if (command == "joints")
 		{

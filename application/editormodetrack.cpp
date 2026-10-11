@@ -201,54 +201,27 @@ std::vector<segment_data> straight_piece(glm::dvec3 const &Point, glm::dvec2 con
 	return {path};
 }
 
-void follow_heights(std::vector<segment_data> &Pieces, double const Height0, double Grade0, double const Height1, double Grade1)
+double hermite(double const Length, double const Height0, double const Grade0, double const Height1, double const Grade1, double const T, double &Grade)
 {
-	std::vector<double> lengths;
-	double total{0.0};
-	for (auto const &piece : Pieces)
-		total += lengths.emplace_back(bezier{piece}.plan_length());
-	if (total < 1e-3)
-		return;
-	auto const chord{(Height1 - Height0) / total};
-	if (std::isnan(Grade0))
-		Grade0 = chord;
-	if (std::isnan(Grade1))
-		Grade1 = chord;
-	auto const height = [&](double const Chainage) {
-		auto const t{Chainage / total};
-		return (2.0 * t * t * t - 3.0 * t * t + 1.0) * Height0 + (t * t * t - 2.0 * t * t + t) * total * Grade0 + (3.0 * t * t - 2.0 * t * t * t) * Height1 + (t * t * t - t * t) * total * Grade1;
-	};
-	auto const grade = [&](double const Chainage) {
-		auto const t{Chainage / total};
-		return (6.0 * t * t - 6.0 * t) * (Height0 - Height1) / total + (3.0 * t * t - 4.0 * t + 1.0) * Grade0 + (3.0 * t * t - 2.0 * t) * Grade1;
-	};
-	double chainage{0.0};
-	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	auto const t2{T * T};
+	auto const t3{t2 * T};
+	Grade = (6.0 * t2 - 6.0 * T) * (Height0 - Height1) / Length + (3.0 * t2 - 4.0 * T + 1.0) * Grade0 + (3.0 * t2 - 2.0 * T) * Grade1;
+	return (2.0 * t3 - 3.0 * t2 + 1.0) * Height0 + (t3 - 2.0 * t2 + T) * Length * Grade0 + (3.0 * t2 - 2.0 * t3) * Height1 + (t3 - t2) * Length * Grade1;
+}
+
+segment_data part_of(segment_data const &Piece, double const From, double const To)
+{
+	bezier const curve{Piece};
+	segment_data result{Piece};
+	result.points[segment_data::point::start] = curve.point(From);
+	result.points[segment_data::point::end] = curve.point(To);
+	if (Piece.points[segment_data::point::control1] != glm::dvec3{} || Piece.points[segment_data::point::control2] != glm::dvec3{})
 	{
-		auto &points{Pieces[i].points};
-		auto const length{lengths[i]};
-		auto const from{grade(chainage)};
-		auto const to{grade(chainage + length)};
-		auto &start{points[segment_data::point::start]};
-		auto &end{points[segment_data::point::end]};
-		auto &control1{points[segment_data::point::control1]};
-		auto &control2{points[segment_data::point::control2]};
-		start.y = height(chainage);
-		end.y = height(chainage + length);
-		chainage += length;
-		if (control1 != glm::dvec3{} || control2 != glm::dvec3{})
-		{
-			control1.y = from * glm::length(plan_of(control1));
-			control2.y = -to * glm::length(plan_of(control2));
-			continue;
-		}
-		auto const linear{(end.y - start.y) / std::max(length, 1e-6)};
-		if (length < 1e-3 || (std::abs(from - linear) < 1e-6 && std::abs(to - linear) < 1e-6))
-			continue;
-		auto const along{glm::normalize(plan_of(end - start)) * (length / 3.0)};
-		control1 = {along.x, from * length / 3.0, along.y};
-		control2 = {-along.x, -to * length / 3.0, -along.y};
+		result.points[segment_data::point::control1] = curve.first(From) * ((To - From) / 3.0);
+		result.points[segment_data::point::control2] = -curve.first(To) * ((To - From) / 3.0);
 	}
+	result.rolls = {glm::mix(Piece.rolls[0], Piece.rolls[1], static_cast<float>(From)), glm::mix(Piece.rolls[0], Piece.rolls[1], static_cast<float>(To))};
+	return result;
 }
 
 std::vector<segment_data> arc_through(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec2 const &Offset)
@@ -4030,25 +4003,174 @@ glm::dvec3 editor_mode::cursor_terrain(double const Height)
 	return point;
 }
 
-double editor_mode::bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style)
+std::vector<double> editor_mode::bed_heights(std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions, TTrack const *Style) const
 {
 	auto const [depth, half]{Style != nullptr ? profile_ballast(*Style) : std::pair<double, double>{0.2, 0.5 * 1.435 + 0.5 + 1.1}};
-	std::vector<glm::dvec3> points{Point};
-	if (glm::length(Direction) > 1e-6)
+	std::vector<glm::dvec3> probes;
+	probes.reserve(Points.size() * 3);
+	for (std::size_t i = 0; i < Points.size(); ++i)
 	{
-		auto const side{glm::normalize(glm::dvec2{-Direction.y, Direction.x}) * half};
-		points.push_back(Point + glm::dvec3{side.x, 0.0, side.y});
-		points.push_back(Point - glm::dvec3{side.x, 0.0, side.y});
+		auto const &direction{Directions[i]};
+		auto const side{glm::length(direction) > 1e-6 ? glm::normalize(glm::dvec2{-direction.y, direction.x}) * half : glm::dvec2{0.0}};
+		probes.push_back(Points[i]);
+		probes.push_back(Points[i] + glm::dvec3{side.x, 0.0, side.y});
+		probes.push_back(Points[i] - glm::dvec3{side.x, 0.0, side.y});
 	}
 	std::vector<char> found;
-	auto const heights{ground_heights(points, true, &found)};
-	auto toe{std::numeric_limits<double>::max()};
-	for (std::size_t i = 1; i < points.size(); ++i)
-		if (found[i] != 0)
-			toe = std::min(toe, heights[i]);
-	if (found[0] == 0)
-		return toe < std::numeric_limits<double>::max() ? toe + depth : Point.y;
-	return std::max(toe < std::numeric_limits<double>::max() ? toe + depth : heights[0] + depth, heights[0]);
+	auto const heights{ground_heights(probes, true, &found)};
+	std::vector<double> result(Points.size(), std::numeric_limits<double>::quiet_NaN());
+	for (std::size_t i = 0; i < Points.size(); ++i)
+	{
+		auto const axis{found[3 * i] != 0 ? heights[3 * i] : std::numeric_limits<double>::quiet_NaN()};
+		auto toe{std::numeric_limits<double>::infinity()};
+		for (std::size_t j = 3 * i + 1; j < 3 * i + 3; ++j)
+			if (found[j] != 0)
+				toe = std::min(toe, heights[j]);
+		if (std::isfinite(toe))
+			result[i] = std::isnan(axis) ? toe + depth : std::max(toe + depth, axis);
+		else if (false == std::isnan(axis))
+			result[i] = axis + depth;
+	}
+	return result;
+}
+
+double editor_mode::bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style) const
+{
+	auto const height{bed_heights({Point}, {Direction}, Style).front()};
+	return std::isnan(height) ? Point.y : height;
+}
+
+void editor_mode::follow_ground(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const
+{
+	double constexpr step{2.0};
+	double constexpr tolerance{0.1};
+	double constexpr spacing{10.0};
+	std::vector<double> lengths;
+	double total{0.0};
+	for (auto const &piece : Pieces)
+		total += lengths.emplace_back(bezier{piece}.plan_length(256));
+	if (total < 1e-3)
+		return;
+	std::vector<double> chainages;
+	std::vector<glm::dvec3> points;
+	std::vector<glm::dvec2> directions;
+	double reached{0.0};
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	{
+		bezier const curve{Pieces[i]};
+		auto const count{std::max(1, static_cast<int>(std::ceil(lengths[i] / step)))};
+		for (int k = (i == 0 ? 1 : 0); k < count; ++k)
+		{
+			auto const along{lengths[i] * k / count};
+			auto const t{curve.parameter(along)};
+			auto const chainage{reached + along};
+			auto point{curve.point(t)};
+			point.y = Height0 + (Height1 - Height0) * chainage / total + 50.0;
+			chainages.push_back(chainage);
+			points.push_back(point);
+			directions.push_back(plan_of(curve.first(t)));
+		}
+		reached += lengths[i];
+	}
+	auto const targets{bed_heights(points, directions, Style)};
+	std::vector<double> knots{0.0, total};
+	std::vector<double> heights{Height0, Height1};
+	auto const slopes = [&]() {
+		auto const last{knots.size() - 1};
+		std::vector<double> result(knots.size());
+		for (std::size_t i = 0; i <= last; ++i)
+		{
+			auto const a{i == 0 ? 0 : i - 1};
+			auto const b{i == last ? last : i + 1};
+			result[i] = (heights[b] - heights[a]) / (knots[b] - knots[a]);
+		}
+		if (false == std::isnan(Grade0))
+			result.front() = Grade0;
+		if (false == std::isnan(Grade1))
+			result.back() = Grade1;
+		return result;
+	};
+	auto slope{slopes()};
+	auto const at = [&](double const Chainage, double &Grade) {
+		auto const next{static_cast<std::size_t>(std::upper_bound(knots.begin(), knots.end(), Chainage) - knots.begin())};
+		auto const i{std::clamp<std::size_t>(next, 1, knots.size() - 1) - 1};
+		auto const length{knots[i + 1] - knots[i]};
+		return hermite(length, heights[i], slope[i], heights[i + 1], slope[i + 1], std::clamp((Chainage - knots[i]) / length, 0.0, 1.0), Grade);
+	};
+	for (std::size_t pass = 0; pass < chainages.size(); ++pass)
+	{
+		auto worst{tolerance};
+		auto pick{chainages.size()};
+		for (std::size_t j = 0; j < chainages.size(); ++j)
+		{
+			if (std::isnan(targets[j]))
+				continue;
+			double grade;
+			auto const miss{std::abs(at(chainages[j], grade) - targets[j])};
+			if (miss <= worst)
+				continue;
+			auto const next{std::upper_bound(knots.begin(), knots.end(), chainages[j])};
+			if (next == knots.end() || *next - chainages[j] < spacing || chainages[j] - *std::prev(next) < spacing)
+				continue;
+			worst = miss;
+			pick = j;
+		}
+		if (pick == chainages.size())
+			break;
+		auto const where{std::upper_bound(knots.begin(), knots.end(), chainages[pick]) - knots.begin()};
+		knots.insert(knots.begin() + where, chainages[pick]);
+		heights.insert(heights.begin() + where, targets[pick]);
+		slope = slopes();
+	}
+	std::vector<segment_data> result;
+	std::vector<std::pair<double, double>> spans;
+	double from{0.0};
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	{
+		bezier const curve{Pieces[i]};
+		auto const to{from + lengths[i]};
+		double cut{from};
+		double parameter{0.0};
+		for (auto const knot : knots)
+		{
+			if (knot < cut + 0.5 || knot > to - 0.5)
+				continue;
+			auto const next{curve.parameter(knot - from)};
+			result.push_back(part_of(Pieces[i], parameter, next));
+			spans.emplace_back(cut, knot);
+			cut = knot;
+			parameter = next;
+		}
+		result.push_back(parameter > 0.0 ? part_of(Pieces[i], parameter, 1.0) : Pieces[i]);
+		spans.emplace_back(cut, to);
+		from = to;
+	}
+	for (std::size_t i = 0; i < result.size(); ++i)
+	{
+		auto &points{result[i].points};
+		auto const [a, b]{spans[i]};
+		auto const length{b - a};
+		double begin, end;
+		auto &start{points[segment_data::point::start]};
+		auto &finish{points[segment_data::point::end]};
+		auto &control1{points[segment_data::point::control1]};
+		auto &control2{points[segment_data::point::control2]};
+		start.y = at(a, begin);
+		finish.y = at(b, end);
+		if (control1 != glm::dvec3{} || control2 != glm::dvec3{})
+		{
+			control1.y = begin * glm::length(plan_of(control1));
+			control2.y = -end * glm::length(plan_of(control2));
+			continue;
+		}
+		auto const linear{(finish.y - start.y) / std::max(length, 1e-6)};
+		if (length < 1e-3 || (std::abs(begin - linear) < 1e-6 && std::abs(end - linear) < 1e-6))
+			continue;
+		auto const along{glm::normalize(plan_of(finish - start)) * (length / 3.0)};
+		control1 = {along.x, begin * length / 3.0, along.y};
+		control2 = {-along.x, -end * length / 3.0, -along.y};
+	}
+	Pieces = std::move(result);
 }
 
 glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point)
@@ -4294,7 +4416,7 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 			auto pieces{arc_pieces(tool.point, direction, tool.grade, radius, std::min(angle, glm::pi<double>()), side)};
 			for (auto &piece : pieces)
 				piece.rolls = {diverging.rolls[1], diverging.rolls[1]};
-			follow_heights(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN());
+			follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
 			return pieces;
 		}
 	}
@@ -4302,7 +4424,7 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	if (auto const values{typed_values()}; false == values.empty() && (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc) && std::abs(values[0]) >= 1.0)
 		radius = std::abs(values[0]);
 	auto pieces{layout_pieces(tool.point, tool.direction, tool.grade, tool.mouse, radius)};
-	follow_heights(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN());
+	follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
 	return pieces;
 }
 
@@ -4639,19 +4761,20 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		{
 			auto const grade{-grade_of(tool.start.direction)};
 			pieces = layout_pieces(Points[0], glm::normalize(leaving), grade, Points[1], tool.radius);
-			follow_heights(pieces, Points[0].y, grade, Points[1].y, std::numeric_limits<double>::quiet_NaN());
+			follow_ground(pieces, Points[0].y, grade, Points[1].y, std::numeric_limits<double>::quiet_NaN(), tool.start.track);
 		}
 		else if (End.track == nullptr)
 		{
 			auto const length{glm::length(leaving)};
 			pieces = straight_piece(Points[0], glm::normalize(leaving), (Points[1].y - Points[0].y) / length, length);
+			follow_ground(pieces, Points[0].y, std::numeric_limits<double>::quiet_NaN(), Points[1].y, std::numeric_limits<double>::quiet_NaN(), tool.copy_selected ? selected_track() : nullptr);
 		}
 		else if (glm::length(plan_of(End.direction)) > 1e-6)
 		{
 			auto const back{layout_pieces(End.position, glm::normalize(-plan_of(End.direction)), -grade_of(End.direction), Points[0], tool.radius)};
 			for (auto piece{back.rbegin()}; piece != back.rend(); ++piece)
 				pieces.push_back(turned_around(*piece));
-			follow_heights(pieces, Points[0].y, std::numeric_limits<double>::quiet_NaN(), End.position.y, grade_of(End.direction));
+			follow_ground(pieces, Points[0].y, std::numeric_limits<double>::quiet_NaN(), End.position.y, grade_of(End.direction), End.track);
 		}
 		for (auto const &piece : pieces)
 			Length += bezier{piece}.plan_length();
