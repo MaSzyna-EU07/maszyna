@@ -1072,9 +1072,6 @@ class editor_mode : public application_mode, private editor_track::observer
 		editor_track::snap_target origin;
 		editor_track::snap_target snap;
 		glm::vec2 pressed{0.f};
-		bool slides{false};
-		double slide_low{0.0};
-		double slide_high{0.0};
 		std::vector<TTrack *> line;
 	};
 	extend_tool m_extend;
@@ -1143,7 +1140,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool plan_branch_link(editor_track::branch_link &Link, std::string &Reason) const;
 	void finish_branch_link(editor_track::branch_link const &Link);
 	std::string link_problem(editor_track::snap_target const &Target, editor_track::branch_link const &Link) const;
-	std::vector<TTrack *> link_tracks(editor_track::snap_target const &Target, editor_track::branch_link const &Link, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);
+	std::vector<TTrack *> link_tracks(editor_track::snap_target const &Target, editor_track::branch_link const &Link, TTrack const &Style, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);
 	bool cut_straight(editor_track::straight const &Line, double const From, double const To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack **Style);
 	bool insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape);
 	bool replace_double_slip(TTrack &Part, editor_track::switch_template const &Shape);

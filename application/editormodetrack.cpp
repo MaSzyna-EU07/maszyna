@@ -116,12 +116,43 @@ editor_track::branch_end branch_target(editor_track::snap_target const &Target)
 	return {Target.position, plan_of(Target.direction), grade_of(Target.direction), Target.track != nullptr ? editor_track::joint_roll(*Target.track, Target.point) : 0.0};
 }
 
-std::string link_summary(editor_track::snap_target const &Target, editor_track::branch_link const &Link)
+double switch_from(editor_track::straight const &Line, double const Length, double const Along, int const Direction, bool const Snap)
+{
+	auto from{std::clamp(Direction > 0 ? Along : Along - Length, 0.0, Line.length - Length)};
+	if (false == Snap)
+		return from;
+	std::vector<double> joints{0.0, Line.length};
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			joints.push_back(Line.along(path.points[index]));
+	}
+	auto const nearest = [&](double const Value) {
+		double best{Value};
+		for (auto const joint : joints)
+			if (std::abs(joint - Value) < std::abs(best - Value) || best == Value)
+				best = std::abs(joint - Value) < 1.0 ? joint : best;
+		return best;
+	};
+	auto const snappedstart{nearest(from)};
+	auto const snappedend{nearest(from + Length)};
+	if (snappedstart != from)
+		from = snappedstart;
+	else if (snappedend != from + Length)
+		from = snappedend - Length;
+	return std::clamp(from, 0.0, Line.length - Length);
+}
+
+std::string link_summary(editor_track::snap_target const &Target, editor_track::branch_link const &Link, double const Switchradius)
 {
 	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{"(noname)"}};
-	auto text{Link.radius > 0.0 ? format(STR_C("The branch leads into %s with an R %.0f m curve"), name.c_str(), Link.radius) : format(STR_C("The branch leads straight into %s"), name.c_str())};
-	if (std::abs(Link.shift) >= 0.005)
-		text += format(STR_C(", the switch moved %.2f m"), Link.shift);
+	auto text{Link.reverse ? format(STR_C("The branch leads into %s with reverse curves R %.0f m"), name.c_str(), Link.radius) :
+	          Link.radius > 0.0 ? format(STR_C("The branch leads into %s with an R %.0f m curve"), name.c_str(), Link.radius) : format(STR_C("The branch leads straight into %s"), name.c_str())};
+	if (Link.insert > 0.0)
+		text += format(STR_C(", a straight of %.1f m between them"), Link.insert);
+	if (Link.reverse && Link.radius < Switchradius - 0.5)
+		text += format(STR_C(", sharper than the switch (R %.0f m)"), Switchradius);
 	if (Link.trim > 0.0)
 		text += format(STR_C(", %s shortened %.2f m"), name.c_str(), Link.trim);
 	return text;
@@ -3749,7 +3780,7 @@ std::string editor_mode::track_readout() const
 		editor_track::branch_link link;
 		std::string reason;
 		if (plan_branch_link(link, reason))
-			return link_summary(target, link);
+			return link_summary(target, link, editor_track::branch_radius(m_extend.track->m_paths[1]));
 		if (snapped && pieces.empty())
 			return "no track fits to the end of " + name(target.track);
 		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) : format("L %.2f m   straight", length)};
@@ -4092,19 +4123,7 @@ bool editor_mode::start_extend(editor_track::snap_target const &End)
 	m_extend.pressed = {io.MousePos.x, io.MousePos.y};
 	m_extend.active = true;
 	if (track->eType == tt_Switch && End.point.path == 1 && End.point.kind == editor_track::point_kind::end)
-	{
-		double low{0.0};
-		double high{0.0};
-		std::string reason;
-		auto const axis{editor_track::main_axis(*track)};
-		if (axis.has_value() && switch_slides(*track) && switch_room(*track, low, high, reason))
-		{
-			m_extend.slides = true;
-			m_extend.slide_low = low;
-			m_extend.slide_high = high - axis->length;
-		}
 		m_extend.line = editor_track::find_straight(*track, m_straights.tolerance).tracks;
-	}
 	return true;
 }
 
@@ -5260,31 +5279,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 		m_switch.status = format(STR_C("The straight is %.1f m long, too short for the %.1f m switch"), Line.length, shape.length);
 		return false;
 	}
-	auto from{std::clamp(Direction > 0 ? Along : Along - shape.length, 0.0, Line.length - shape.length)};
-	if (Snap)
-	{
-		std::vector<double> joints{0.0, Line.length};
-		for (std::size_t i = 0; i < Line.tracks.size(); ++i)
-		{
-			auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
-			for (auto const index : {segment_data::point::start, segment_data::point::end})
-				joints.push_back(Line.along(path.points[index]));
-		}
-		auto const nearest = [&](double const Value) {
-			double best{Value};
-			for (auto const joint : joints)
-				if (std::abs(joint - Value) < std::abs(best - Value) || best == Value)
-					best = std::abs(joint - Value) < 1.0 ? joint : best;
-			return best;
-		};
-		auto const snappedstart{nearest(from)};
-		auto const snappedend{nearest(from + shape.length)};
-		if (snappedstart != from)
-			from = snappedstart;
-		else if (snappedend != from + shape.length)
-			from = snappedend - shape.length;
-		from = std::clamp(from, 0.0, Line.length - shape.length);
-	}
+	auto const from{switch_from(Line, shape.length, Along, Direction, Snap)};
 	auto const to{from + shape.length};
 	auto const origin{Direction > 0 ? from : to};
 	TTrack *first{nullptr};
@@ -5346,11 +5341,6 @@ void editor_mode::draw_build_overlay() const
 			ImVec2 screen;
 			if (projection.project(target.position, screen))
 				drawlist->AddCircle(screen, 14.0f, IM_COL32(255, 60, 255, 255), 20, 3.0f);
-			editor_track::branch_link link;
-			std::string reason;
-			if (plan_branch_link(link, reason) && std::abs(link.shift) >= 0.005)
-				for (auto const &path : editor_track::slid(*m_extend.track, link.shift))
-					drawpath(path, overlay_color::grip);
 			for (auto const &piece : extend_pieces())
 				drawpath(piece, overlay_color::marked);
 		}
@@ -5846,7 +5836,7 @@ std::string editor_mode::link_problem(editor_track::snap_target const &Target, e
 {
 	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{"(noname)"}};
 	if (false == Link.valid)
-		return Link.shortfall > 0.0 ? format(STR_C("The branch can't lead into %s: the tracks are %.2f m too close for this switch with its curve"), name.c_str(), Link.shortfall) :
+		return Link.shortfall > 0.0 ? format(STR_C("The branch can't lead into %s: the R %.0f m curve needs %.2f m more room"), name.c_str(), Link.radius, Link.shortfall) :
 		                              format(STR_C("The branch can't lead into %s"), name.c_str());
 	if (Link.trim > 0.0)
 	{
@@ -5892,23 +5882,17 @@ bool editor_mode::plan_switch_link(switch_link &Plan) const
 		if (Plan.target.track == nullptr)
 			return false;
 	}
-	auto const paths{place(tool.along)};
-	if (paths.size() < 2)
+	if (shape.length > line.length - 0.02)
 		return false;
-	glm::dvec2 const direction{line.direction * static_cast<double>(Plan.forward)};
-	Plan.link = editor_track::link_branch(branch_start(paths[1]), {direction.x, line.grade * Plan.forward, direction.y}, editor_track::branch_radius(paths[1]), branch_target(Plan.target), glm::radians(m_joints.angle * 0.5));
-	Plan.reason = link_problem(Plan.target, Plan.link);
-	if (false == Plan.reason.empty())
-		return false;
-	Plan.along = tool.along + Plan.link.shift * Plan.forward;
-	auto const from{Plan.forward > 0 ? Plan.along : Plan.along - shape.length};
-	if (from < -1e-6 || from + shape.length > line.length + 1e-6)
-	{
-		Plan.reason = format(STR_C("The switch would have to move %.1f m, off the straight it stands on"), Plan.link.shift);
-		return false;
-	}
+	auto const from{switch_from(line, shape.length, tool.along, Plan.forward, true)};
+	Plan.along = Plan.forward > 0 ? from : from + shape.length;
 	Plan.paths = place(Plan.along);
-	return true;
+	if (Plan.paths.size() < 2)
+		return false;
+	Plan.link = editor_track::link_branch(branch_start(Plan.paths[1]), editor_track::branch_radius(Plan.paths[1]), branch_target(Plan.target), glm::radians(m_joints.angle * 0.5),
+	                                      editor_track::reverse_insert(design_speed(line.tracks.front(), Plan.target.track)));
+	Plan.reason = link_problem(Plan.target, Plan.link);
+	return Plan.reason.empty();
 }
 
 void editor_mode::insert_linked_switch(switch_link const &Plan)
@@ -5919,12 +5903,12 @@ void editor_mode::insert_linked_switch(switch_link const &Plan)
 	if (false == place_switch_on_straight(m_switch.line, m_switch.templates[m_switch.armed], nullptr, Plan.along, Plan.forward, Plan.side, false, states, created, removed, switch_name_for_new()))
 		return;
 	auto const placed{created};
-	link_tracks(Plan.target, Plan.link, states, created);
+	link_tracks(Plan.target, Plan.link, Plan.target.track->eType == tt_Normal ? *Plan.target.track : *m_switch.line.tracks.front(), states, created);
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
 	m_switch.status.clear();
 	switch_placed(placed);
-	m_switch.status = link_summary(Plan.target, Plan.link) + (m_switch.status.empty() ? std::string{} : "\n" + m_switch.status);
+	m_switch.status = link_summary(Plan.target, Plan.link, editor_track::branch_radius(Plan.paths[1])) + (m_switch.status.empty() ? std::string{} : "\n" + m_switch.status);
 	ui()->set_status(m_switch.status, false);
 }
 
@@ -5937,22 +5921,10 @@ bool editor_mode::plan_branch_link(editor_track::branch_link &Link, std::string 
 		return false;
 	if (std::find(tool.line.begin(), tool.line.end(), target.track) != tool.line.end())
 		return false;
-	auto const axis{editor_track::main_axis(*tool.track)};
-	if (false == axis.has_value())
-		return false;
-	auto const &main{tool.track->m_paths.front()};
 	auto const &diverging{tool.track->m_paths[1]};
-	auto const rise{grade_of(main.points[segment_data::point::end] - main.points[segment_data::point::start])};
-	Link = editor_track::link_branch(branch_start(diverging), {axis->direction.x, rise, axis->direction.y}, editor_track::branch_radius(diverging), branch_target(target), glm::radians(m_joints.angle * 0.5));
+	Link = editor_track::link_branch(branch_start(diverging), editor_track::branch_radius(diverging), branch_target(target), glm::radians(m_joints.angle * 0.5), editor_track::reverse_insert(design_speed(tool.track, target.track)));
 	Reason = link_problem(target, Link);
-	if (false == Reason.empty())
-		return false;
-	if (std::abs(Link.shift) >= 0.005 && (false == tool.slides || Link.shift < tool.slide_low - 1e-6 || Link.shift > tool.slide_high + 1e-6))
-	{
-		Reason = format(STR_C("The switch would have to move %.1f m, there's no plain track for it there"), Link.shift);
-		return false;
-	}
-	return true;
+	return Reason.empty();
 }
 
 void editor_mode::finish_branch_link(editor_track::branch_link const &Link)
@@ -5960,26 +5932,18 @@ void editor_mode::finish_branch_link(editor_track::branch_link const &Link)
 	auto *own{m_extend.track};
 	auto const target{m_extend.snap};
 	m_extend.active = false;
-	auto link{Link};
-	bool const slides{std::abs(link.shift) >= 0.005};
-	if (slides && false == slide_switch(*own, link.shift))
-		return;
-	if (false == slides && false == link.pieces.empty())
-		link.pieces.front().points[segment_data::point::start] = own->m_paths[1].points[segment_data::point::end];
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
-	auto const linked{link_tracks(target, link, states, created)};
-	bool const changed{false == states.empty() || false == created.empty()};
+	auto const &style{target.track->eType == tt_Normal || m_extend.line.empty() ? *target.track : *m_extend.line.front()};
+	auto const linked{link_tracks(target, Link, style, states, created)};
 	push_track_snapshot(std::move(states), std::move(created));
-	if (slides && changed)
-		m_history.back().joined = true;
 	m_node = linked.empty() ? own : linked.back();
 	ui()->set_node(m_node);
 	straight_refresh();
-	ui()->set_status(link_summary(target, link), false);
+	ui()->set_status(link_summary(target, Link, editor_track::branch_radius(own->m_paths[1])), false);
 }
 
-std::vector<TTrack *> editor_mode::link_tracks(editor_track::snap_target const &Target, editor_track::branch_link const &Link, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created)
+std::vector<TTrack *> editor_mode::link_tracks(editor_track::snap_target const &Target, editor_track::branch_link const &Link, TTrack const &Style, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created)
 {
 	auto *target{Target.track};
 	if (Link.trim > 0.0)
@@ -5991,7 +5955,7 @@ std::vector<TTrack *> editor_mode::link_tracks(editor_track::snap_target const &
 	}
 	std::vector<TTrack *> pieces;
 	for (auto const &piece : Link.pieces)
-		pieces.push_back(editor_track::create_path(*target, piece));
+		pieces.push_back(editor_track::create_path(Style, piece));
 	editor_track::commit(pieces);
 	digitize_drawn(pieces);
 	Created.insert(Created.end(), pieces.begin(), pieces.end());

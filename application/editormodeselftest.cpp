@@ -1470,7 +1470,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		words >> point.x >> point.z >> target.x >> target.z;
 		std::replace(label.begin(), label.end(), '_', ' ');
 		auto const log_link = [&](editor_track::branch_link const &Link, std::string const &Reason) {
-			WriteLog(format("SELFTEST %s plan: valid %d, shift %.3f m, R %.1f m, before %.3f m, after %.3f m, trim %.3f m, shortfall %.3f m, %zu pieces%s", command.c_str(), Link.valid ? 1 : 0, Link.shift, Link.radius, Link.before, Link.after, Link.trim,
+			WriteLog(format("SELFTEST %s plan: valid %d, R %.1f m, before %.3f m, after %.3f m, trim %.3f m, shortfall %.3f m, %zu pieces%s", command.c_str(), Link.valid ? 1 : 0, Link.radius, Link.before, Link.after, Link.trim,
 			                Link.shortfall, Link.pieces.size(), Reason.empty() ? "" : (", " + Reason).c_str()));
 			for (auto const &piece : Link.pieces)
 			{

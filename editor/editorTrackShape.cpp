@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 
 namespace
 {
@@ -378,78 +379,170 @@ double editor_track::branch_radius(segment_data const &Diverging)
 	return turn > 1e-4 ? curve.plan_length() / turn : 0.0;
 }
 
-editor_track::branch_link editor_track::link_branch(branch_end const &From, glm::dvec3 const &Slide, double const Radius, branch_end const &To, double const Kink)
+double editor_track::reverse_insert(double const Speed)
+{
+	if (Speed <= 60.0)
+		return 6.0;
+	return Speed <= 100.0 ? 0.15 * Speed : 0.25 * Speed;
+}
+
+namespace
+{
+
+double constexpr kPi{3.14159265358979323846};
+double constexpr kHalfPi{0.5 * kPi};
+double constexpr kReverseNoInsert{106.5};
+
+glm::dvec2 unit_chord(glm::dvec2 const &Heading, double const Angle)
+{
+	glm::dvec2 const left{-Heading.y, Heading.x};
+	return Heading * std::sin(std::abs(Angle)) + left * ((Angle > 0.0 ? 1.0 : -1.0) * (1.0 - std::cos(Angle)));
+}
+
+struct reverse_fit
+{
+	double radius{0.0};
+	double first{0.0};
+	double second{0.0};
+};
+
+std::optional<reverse_fit> fit_reverse(glm::dvec2 const &Offset, glm::dvec2 const &Tangent, double const Turn, double const Insert)
+{
+	auto const residual = [&](double const First, double &Radius) {
+		auto const heading{turned(Tangent, First)};
+		auto const chord{unit_chord(Tangent, First) + unit_chord(heading, Turn - First)};
+		auto const rest{Offset - heading * Insert};
+		Radius = glm::dot(chord, rest) / std::max(glm::dot(chord, chord), 1e-12);
+		return cross(chord, rest);
+	};
+	auto const usable = [&](double const First) { return std::abs(First) > 1e-4 && std::abs(Turn - First) > 1e-4 && (First > 0.0) != (Turn - First > 0.0) && std::abs(Turn - First) <= kHalfPi; };
+	std::optional<reverse_fit> best;
+	int constexpr steps{2000};
+	double radius{0.0};
+	auto previous{-kHalfPi};
+	auto before{residual(previous, radius)};
+	for (int i = 1; i <= steps; ++i)
+	{
+		auto const first{-kHalfPi + kPi * i / steps};
+		auto const now{residual(first, radius)};
+		if (usable(previous) && usable(first) && (before > 0.0) != (now > 0.0))
+		{
+			auto low{previous};
+			auto high{first};
+			auto lowvalue{before};
+			for (int k = 0; k < 60; ++k)
+			{
+				auto const middle{0.5 * (low + high)};
+				auto const value{residual(middle, radius)};
+				if ((value > 0.0) == (lowvalue > 0.0))
+				{
+					low = middle;
+					lowvalue = value;
+				}
+				else
+					high = middle;
+			}
+			auto const root{0.5 * (low + high)};
+			residual(root, radius);
+			if (radius >= 1.0 && (false == best.has_value() || radius > best->radius))
+				best = reverse_fit{radius, root, Turn - root};
+		}
+		previous = first;
+		before = now;
+	}
+	return best;
+}
+
+} // namespace
+
+editor_track::branch_link editor_track::link_branch(branch_end const &From, double const Radius, branch_end const &To, double const Kink, double const Insert)
 {
 	branch_link result;
-	if (glm::length(From.direction) < 1e-9 || glm::length(To.direction) < 1e-9 || glm::length(plan_of(Slide)) < 1e-9)
+	if (glm::length(From.direction) < 1e-9 || glm::length(To.direction) < 1e-9 || Radius < 1.0)
 		return result;
-	auto const slide{glm::normalize(plan_of(Slide))};
-	auto const rise{Slide.y / glm::length(plan_of(Slide))};
 	auto const tangent{glm::normalize(From.direction)};
 	auto const into{glm::normalize(To.direction)};
 	auto const turn{signed_angle(tangent, into)};
 	auto const start{plan_of(From.position)};
 	auto const target{plan_of(To.position)};
-	auto const across{cross(into, slide)};
+	auto const offset{target - start};
 	if (std::abs(turn) > glm::radians(170.0))
 		return result;
-	std::vector<segment_data> arc;
-	glm::dvec2 chord{0.0};
-	if (std::abs(turn) > Kink)
-	{
-		if (Radius < 1.0)
-			return result;
-		arc = arc_pieces(glm::dvec3{0.0}, tangent, 0.0, Radius, std::abs(turn), turn > 0.0 ? 1 : -1);
-		chord = plan_of(arc.back().points[segment_data::point::end]);
-		result.radius = Radius;
-	}
-	else if (std::abs(across) < 1e-6)
-		return result;
-	if (false == arc.empty() && std::abs(across) < std::sin(glm::radians(1.0)))
-	{
-		auto const gap{target - start - chord};
-		auto const determinant{cross(tangent, slide)};
-		if (std::abs(determinant) < 1e-6)
-			return result;
-		result.before = cross(gap, slide) / determinant;
-		result.shift = cross(tangent, gap) / determinant;
-		if (result.before < -0.01)
+	std::vector<std::pair<double, int>> arcs;
+	auto const reverse = [&]() {
+		auto fit{fit_reverse(offset, tangent, turn, 0.0)};
+		if (false == fit.has_value() || 2.0 / fit->radius > 1.0 / kReverseNoInsert)
 		{
-			result.shortfall = -result.before * std::abs(std::sin(turn));
-			return result;
+			fit = fit_reverse(offset, tangent, turn, Insert);
+			result.insert = Insert;
 		}
-		result.before = std::max(0.0, result.before);
+		if (false == fit.has_value())
+			return false;
+		result.reverse = true;
+		result.radius = fit->radius;
+		result.before = 0.0;
+		result.after = 0.0;
+		result.shortfall = 0.0;
+		arcs = {{std::abs(fit->first), fit->first > 0.0 ? 1 : -1}, {std::abs(fit->second), fit->second > 0.0 ? 1 : -1}};
+		return true;
+	};
+	if (std::abs(turn) <= Kink)
+	{
+		auto const lateral{cross(tangent, offset)};
+		result.after = glm::dot(tangent, offset);
+		if (std::abs(lateral) >= 0.005 && false == reverse())
+			return result;
 	}
 	else
 	{
-		result.shift = cross(into, target - start - chord) / across;
-		result.after = glm::dot(target - (start + slide * result.shift + chord), into);
-		if (result.after < -0.01)
+		auto const determinant{cross(tangent, into)};
+		auto const reach{cross(offset, into) / determinant};
+		auto const tangentlength{Radius * std::tan(std::abs(turn) * 0.5)};
+		result.before = reach - tangentlength;
+		result.after = cross(tangent, offset) / determinant - tangentlength;
+		if (reach > 0.0 && result.before >= -0.01)
 		{
-			result.trim = -result.after;
-			result.after = 0.0;
+			result.before = std::max(0.0, result.before);
+			arcs = {{std::abs(turn), turn > 0.0 ? 1 : -1}};
+			result.radius = Radius;
+		}
+		else if (false == reverse())
+		{
+			result.shortfall = std::max(0.01, -result.before);
+			return result;
 		}
 	}
-	auto const origin{glm::dvec3{start.x, From.position.y, start.y} + glm::dvec3{slide.x, rise, slide.y} * result.shift};
+	if (result.after < -0.01)
+	{
+		result.trim = -result.after;
+		result.after = 0.0;
+	}
 	auto const line = [](glm::dvec2 const &A, glm::dvec2 const &B) {
 		segment_data path;
 		path.points[segment_data::point::start] = {A.x, 0.0, A.y};
 		path.points[segment_data::point::end] = {B.x, 0.0, B.y};
 		return path;
 	};
-	auto cursor{plan_of(origin)};
+	auto cursor{start};
+	auto heading{tangent};
 	if (result.before >= 0.01)
 	{
 		result.pieces.push_back(line(cursor, cursor + tangent * result.before));
 		cursor += tangent * result.before;
 	}
-	for (auto piece : arc)
+	for (std::size_t i = 0; i < arcs.size(); ++i)
 	{
-		for (auto const index : {segment_data::point::start, segment_data::point::end})
-			piece.points[index] += glm::dvec3{cursor.x, 0.0, cursor.y};
-		result.pieces.push_back(piece);
+		auto const [angle, side]{arcs[i]};
+		if (i > 0 && result.insert >= 0.01)
+		{
+			result.pieces.push_back(line(cursor, cursor + heading * result.insert));
+			cursor += heading * result.insert;
+		}
+		auto const pieces{arc_pieces({cursor.x, 0.0, cursor.y}, heading, 0.0, result.radius, angle, side)};
+		result.pieces.insert(result.pieces.end(), pieces.begin(), pieces.end());
+		cursor = plan_of(pieces.back().points[segment_data::point::end]);
+		heading = turned(heading, side * angle);
 	}
-	cursor += chord;
 	if (result.after >= 0.01)
 		result.pieces.push_back(line(cursor, target));
 	else if (result.trim == 0.0 && false == result.pieces.empty())
@@ -457,7 +550,7 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, glm:
 	if (false == result.pieces.empty())
 	{
 		auto const height1{result.trim > 0.0 ? To.position.y + To.grade * result.trim : To.position.y};
-		ground_follow::follow(result.pieces, {origin.y, From.grade, height1, To.grade}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
+		ground_follow::follow(result.pieces, {From.position.y, From.grade, height1, To.grade}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
 		std::vector<double> lengths;
 		double total{0.0};
 		for (auto const &piece : result.pieces)

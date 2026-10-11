@@ -5455,21 +5455,17 @@ msgstr "Zwrotnica %s: napęd %s, teraz po lewej"
 msgid "Switch %s without a drive now"
 msgstr "Zwrotnica %s jest teraz bez napędu"
 
-
 msgid "The branch leads into %s with an R %.0f m curve"
 msgstr "Odgałęzienie wchodzi w %s łukiem R %.0f m"
 
 msgid "The branch leads straight into %s"
 msgstr "Odgałęzienie wchodzi w %s prostą"
 
-msgid ", the switch moved %.2f m"
-msgstr ", rozjazd przesunięty o %.2f m"
-
 msgid ", %s shortened %.2f m"
 msgstr ", %s skrócony o %.2f m"
 
-msgid "The branch can't lead into %s: the tracks are %.2f m too close for this switch with its curve"
-msgstr "Odgałęzienie nie wejdzie w %s: tory są o %.2f m za blisko dla tego rozjazdu z łukiem"
+msgid "The branch can't lead into %s: the R %.0f m curve needs %.2f m more room"
+msgstr "Odgałęzienie nie wejdzie w %s: łuk R %.0f m potrzebuje %.2f m więcej miejsca"
 
 msgid "The branch can't lead into %s"
 msgstr "Odgałęzienie nie wejdzie w %s"
@@ -5477,8 +5473,11 @@ msgstr "Odgałęzienie nie wejdzie w %s"
 msgid "%s would have to be shortened by %.2f m, it's too short or not straight"
 msgstr "%s trzeba by skrócić o %.2f m, a jest za krótki albo nie jest prosty"
 
-msgid "The switch would have to move %.1f m, off the straight it stands on"
-msgstr "Rozjazd musiałby się przesunąć o %.1f m, poza prostą, na której stoi"
+msgid "The branch leads into %s with reverse curves R %.0f m"
+msgstr "Odgałęzienie wchodzi w %s łukami odwrotnymi R %.0f m"
 
-msgid "The switch would have to move %.1f m, there's no plain track for it there"
-msgstr "Rozjazd musiałby się przesunąć o %.1f m, a tam nie ma zwykłego toru"
+msgid ", a straight of %.1f m between them"
+msgstr ", między nimi prosta %.1f m"
+
+msgid ", sharper than the switch (R %.0f m)"
+msgstr ", ostrzej niż rozjazd (R %.0f m)"

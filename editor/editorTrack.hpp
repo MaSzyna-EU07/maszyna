@@ -214,16 +214,18 @@ class editor_track
 	struct branch_link
 	{
 		bool valid{false};
-		double shift{0.0};
 		double trim{0.0};
 		double radius{0.0};
 		double before{0.0};
 		double after{0.0};
 		double shortfall{0.0};
+		bool reverse{false};
+		double insert{0.0};
 		std::vector<segment_data> pieces;
 	};
 	static double branch_radius(segment_data const &Diverging);
-	static branch_link link_branch(branch_end const &From, glm::dvec3 const &Slide, double const Radius, branch_end const &To, double const Kink);
+	static double reverse_insert(double const Speed);
+	static branch_link link_branch(branch_end const &From, double const Radius, branch_end const &To, double const Kink, double const Insert);
 
 	struct snap_target
 	{
