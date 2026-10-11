@@ -63,7 +63,8 @@ local_point transition_point(transition_shape const Shape, double const Length, 
 	auto const angle = [&](double const S) { return S * S / (2.0 * Radius * Length); };
 	int const steps{std::max(8, static_cast<int>(std::ceil(distance / 0.5)) * 2)};
 	double const h{distance / steps};
-	double x{0.0}, y{0.0};
+	double x{0.0};
+	double y{0.0};
 	for (int i = 0; i <= steps; ++i)
 	{
 		double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
@@ -81,7 +82,8 @@ local_point spiral_point(double const Start, double const End, double const Leng
 	auto const heading = [&](double const S) { return Start * S + (End - Start) * S * S / (2.0 * std::max(Length, 1e-9)); };
 	int const steps{std::max(8, static_cast<int>(std::ceil(Distance / 0.5)) * 2)};
 	double const h{Distance / steps};
-	double x{0.0}, y{0.0};
+	double x{0.0};
+	double y{0.0};
 	for (int i = 0; i <= steps; ++i)
 	{
 		double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
@@ -127,7 +129,9 @@ compound_curve build_compound(double const Deflection, std::vector<compound_arc>
 		segments.push_back({curvatures[i], curvatures[i], share * arcs / curvatures[i]});
 	}
 	segments.push_back({curvatures.back(), 0.0, Lengthout * f});
-	double x{0.0}, y{0.0}, heading{0.0};
+	double x{0.0};
+	double y{0.0};
+	double heading{0.0};
 	for (auto const &segment : segments)
 	{
 		if (segment[2] < 1e-6)
@@ -440,7 +444,8 @@ result fit_between(design const &Design)
 		};
 		if (angles(1.0) > deflection)
 		{
-			double low{0.0}, high{1.0};
+			double low{0.0};
+			double high{1.0};
 			for (int i = 0; i < 50; ++i)
 			{
 				auto const middle{(low + high) * 0.5};
@@ -490,7 +495,8 @@ result fit_between(design const &Design)
 		auto const fits_budget = [&](double const Radius) {
 			if (transition_point(Design.shape, fit.transition_in, Radius, 1.0).angle + transition_point(Design.shape, fit.transition_out, Radius, 1.0).angle > fit.deflection)
 				return false;
-			double tangentin, tangentout;
+			double tangentin;
+			double tangentout;
 			fit.tangents(Radius, tangentin, tangentout);
 			return tangentin <= budgetin && tangentout <= budgetout;
 		};
@@ -535,7 +541,8 @@ result fit_between(design const &Design)
 		if (fit.radius * (fit.deflection - angles(1.0)) < minimum - 1e-6)
 		{
 			auto const target{fit.deflection - minimum / fit.radius};
-			double low{0.0}, high{1.0};
+			double low{0.0};
+			double high{1.0};
 			for (int i = 0; i < 50; ++i)
 			{
 				auto const middle{(low + high) * 0.5};
@@ -695,7 +702,8 @@ result fit_between(design const &Design)
 		if (lengthin > 0.0)
 		{
 			curve.kind = element_kind::transition_in;
-			curve.transition = curve.length = lengthin;
+			curve.length = lengthin;
+			curve.transition = curve.length;
 			curve.origin = curvestart;
 			curve.direction = directionin;
 			curve.normal = normalin;
@@ -714,7 +722,8 @@ result fit_between(design const &Design)
 		if (lengthout > 0.0)
 		{
 			curve.kind = element_kind::transition_out;
-			curve.transition = curve.length = lengthout;
+			curve.length = lengthout;
+			curve.transition = curve.length;
 			curve.origin = curveend;
 			curve.direction = -directionout;
 			curve.normal = normalout;
@@ -827,13 +836,15 @@ result compute(design const &Design)
 	auto const endextension{first.end_extension > 1e-4 ? first.end_extension : 0.0};
 	if (false == first.errors.empty() || (startextension == 0.0 && endextension == 0.0))
 	{
-		first.start_extension = first.end_extension = 0.0;
+		first.start_extension = 0.0;
+		first.end_extension = 0.0;
 		return first;
 	}
 	auto extended{Design};
 	extended.start = along_end(Design.start, Design.start_direction, Design.start_grade, -startextension);
 	extended.end = along_end(Design.end, Design.end_direction, Design.end_grade, endextension);
-	extended.start_reserve = extended.end_reserve = 0.0;
+	extended.start_reserve = 0.0;
+	extended.end_reserve = 0.0;
 	if (extended.vertices.size() >= 2)
 	{
 		extended.vertices.front().offset += startextension;
@@ -859,7 +870,8 @@ result compute_recommended(design &Design, bool const Transitions)
 	for (auto &vertex : Design.vertices)
 	{
 		vertex.cant = 0.0;
-		vertex.transition_in = vertex.transition_out = 0.0;
+		vertex.transition_in = 0.0;
+		vertex.transition_out = 0.0;
 	}
 	auto r{compute(Design)};
 	if (false == Transitions || false == r.valid)
@@ -880,7 +892,8 @@ result compute_recommended(design &Design, bool const Transitions)
 				auto const recommended{recommend(allowed, curve.radius, attempt.norms)};
 				auto const length{recommended.transition * share};
 				auto &vertex{attempt.vertices[curve.vertex]};
-				vertex.transition_in = vertex.transition_out = length;
+				vertex.transition_out = length;
+				vertex.transition_in = vertex.transition_out;
 				vertex.cant = std::min({recommended.cant, length * 1000.0 / (attempt.norms.ramp_factor * allowed), attempt.norms.cant_rate * 3.6 * length / allowed});
 				vertex.cant = vertex.cant < 5.0 ? 0.0 : std::floor(vertex.cant / 5.0) * 5.0;
 				slowest = std::min(slowest, allowed);
@@ -1183,7 +1196,8 @@ station evaluate(result const &Result, double const Chainage)
 	auto const s{std::clamp(Chainage, 0.0, Result.length)};
 	auto const &e{element_at(Result, s)};
 	auto const distance{std::clamp(s - e.chainage, 0.0, e.length)};
-	glm::dvec2 position, direction;
+	glm::dvec2 position;
+	glm::dvec2 direction;
 	element_point(e, Result.shape, distance, position, direction);
 	result.position = {position.x, elevation(Result, s), position.y};
 	result.direction = glm::normalize(glm::dvec3{direction.x, grade(Result, s), direction.y});
@@ -1206,7 +1220,8 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	struct span
 	{
 		std::size_t element;
-		double from, to;
+		double from;
+		double to;
 		bool generic{false};
 		double start{0.0};
 		double end{0.0};
@@ -1333,10 +1348,14 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 			continue;
 		}
 		auto const &e{Result.elements[piece.element]};
-		glm::dvec2 p0, p3, d0, d3;
+		glm::dvec2 p0;
+		glm::dvec2 p3;
+		glm::dvec2 d0;
+		glm::dvec2 d3;
 		element_point(e, Design.shape, piece.from, p0, d0);
 		element_point(e, Design.shape, piece.to, p3, d3);
-		glm::dvec2 p1, p2;
+		glm::dvec2 p1;
+		glm::dvec2 p2;
 		switch (e.kind)
 		{
 		case element_kind::straight:

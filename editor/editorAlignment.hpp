@@ -132,8 +132,10 @@ struct curve_report
 	double tangent_in{0.0};
 	double tangent_out{0.0};
 	double unbalanced{0.0};
-	double cant_rate_in{0.0}, cant_rate_out{0.0};
-	double jerk_in{0.0}, jerk_out{0.0};
+	double cant_rate_in{0.0};
+	double cant_rate_out{0.0};
+	double jerk_in{0.0};
+	double jerk_out{0.0};
 	recommendation recommended;
 };
 

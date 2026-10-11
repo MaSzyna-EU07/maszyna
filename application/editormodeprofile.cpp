@@ -126,7 +126,9 @@ void editor_mode::profile_library_load()
 			{
 				stored_profile entry;
 				entry.layer = layer;
-				glm::dvec3 start, end, middle;
+				glm::dvec3 start;
+				glm::dvec3 end;
+				glm::dvec3 middle;
 				line >> entry.length >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z >> middle.x >> middle.y >> middle.z;
 				if (line.fail())
 				{
@@ -145,7 +147,8 @@ void editor_mode::profile_library_load()
 			std::string word;
 			if (keyword == "speed")
 			{
-				int start{1}, end{1};
+				int start{1};
+				int end{1};
 				line >> entry.line.speed >> word >> entry.origin >> word >> start >> end;
 				entry.line.join_start = (start != 0);
 				entry.line.join_end = (end != 0);
@@ -385,8 +388,10 @@ void editor_mode::profile_open_run(TTrack &Track)
 void editor_mode::profile_take(editor_track::route Route, TTrack *From, TTrack *To)
 {
 	auto &state{m_profile};
-	state.from = state.picked_from = From;
-	state.to = state.picked_to = To;
+	state.picked_from = From;
+	state.from = state.picked_from;
+	state.picked_to = To;
+	state.to = state.picked_to;
 	state.route = std::move(Route);
 	state.selected = -1;
 	profile_resample();
@@ -474,7 +479,8 @@ void editor_mode::profile_fit_ground()
 	state.selected = -1;
 	state.error.clear();
 	profile_check();
-	double fill{0.0}, cut{0.0};
+	double fill{0.0};
+	double cut{0.0};
 	for (std::size_t i = 0; i < state.samples.size(); ++i)
 	{
 		if (false == std::isfinite(state.terrain[i]))
@@ -514,7 +520,8 @@ std::pair<int, int> editor_mode::profile_generate_ground(std::vector<std::pair<d
 	auto const cells{heightmap::cells_for(m_terrain_spacing)};
 	auto const cellsize{size / cells};
 	auto const side{static_cast<std::size_t>(cells) + 1};
-	int made{0}, skipped{0};
+	int made{0};
+	int skipped{0};
 	for (auto const &key : keys)
 	{
 		if (m_streamer.exists(key))
@@ -636,7 +643,8 @@ void editor_mode::profile_shape_ground()
 	}
 	modifier.points.push_back(points.back());
 
-	double fill{0.0}, cut{0.0};
+	double fill{0.0};
+	double cut{0.0};
 	for (std::size_t i = 0; i < samples.size(); ++i)
 	{
 		if (i >= state.terrain.size() || false == std::isfinite(state.terrain[i]))
@@ -947,7 +955,9 @@ void editor_mode::profile_after_undo()
 	{
 		state.route = {};
 		state.samples.clear();
-		state.selected = state.dragging = state.curve_grip = -1;
+		state.selected = -1;
+		state.dragging = -1;
+		state.curve_grip = -1;
 		return;
 	}
 	profile_resample();
@@ -1480,7 +1490,8 @@ void editor_mode::render_profile_canvas(float const Height)
 void editor_mode::profile_fit_exaggeration(profile_view const &View)
 {
 	auto &state{m_profile};
-	double low{std::numeric_limits<double>::max()}, high{std::numeric_limits<double>::lowest()};
+	double low{std::numeric_limits<double>::max()};
+	double high{std::numeric_limits<double>::lowest()};
 	for (auto const &sample : state.samples)
 	{
 		low = std::min(low, sample.position.y);
@@ -1492,7 +1503,10 @@ void editor_mode::profile_fit_exaggeration(profile_view const &View)
 		high = std::max(high, point.elevation);
 	}
 	if (low > high)
-		low = high = 0.0;
+	{
+		low = 0.0;
+		high = 0.0;
+	}
 	auto const range{std::max(1.0, (high - low) * 1.3)};
 	state.exaggeration = static_cast<float>(std::clamp(View.across / (range / View.height), 1.0, 500.0));
 	state.view_centre = (low + high) * 0.5;
@@ -1584,9 +1598,15 @@ bool editor_mode::profile_canvas_edit(profile_view const &View, bool const Hover
 		auto const point{hit_point()};
 		auto const grip{point < 0 ? hit_grip() : -1};
 		if (point >= 0)
-			state.selected = state.dragging = point;
+		{
+			state.dragging = point;
+			state.selected = state.dragging;
+		}
 		else if (grip >= 0)
-			state.selected = state.curve_grip = grip;
+		{
+			state.curve_grip = grip;
+			state.selected = state.curve_grip;
+		}
 		else
 			state.selected = -1;
 	}

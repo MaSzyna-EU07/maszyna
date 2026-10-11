@@ -424,7 +424,8 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		{
 			m_route.chain = {};
 			m_route.result = {};
-			m_route.vertex = m_route.grip = -1;
+			m_route.vertex = -1;
+			m_route.grip = -1;
 		}
 		else
 		{
@@ -602,7 +603,13 @@ void editor_mode::render_track_inspector()
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
 	m_joints.open = m_track_window_open && m_track_tab == track_tab::joints;
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
-		m_sweep.open = m_hekto.open = m_fouling.open = m_parallel.open = m_vehicle.open = false;
+	{
+		m_sweep.open = false;
+		m_hekto.open = false;
+		m_fouling.open = false;
+		m_parallel.open = false;
+		m_vehicle.open = false;
+	}
 	ui()->set_track(m_track_window_open);
 	if (false == m_track_window_open)
 	{
@@ -1531,7 +1538,8 @@ bool editor_mode::route_from_curve(TTrack &Track)
 	{
 		m_route.chain = {};
 		m_route.result = {};
-		m_route.vertex = m_route.grip = -1;
+		m_route.vertex = -1;
+		m_route.grip = -1;
 		m_route.error = STR_C("No curve here: LMB on a curve");
 		return false;
 	}
@@ -1630,7 +1638,8 @@ void editor_mode::route_take_stored(int const Index)
 	design.arc_piece_angle = stored.design.arc_piece_angle;
 	route.designed = static_cast<int>(design.vertices.size());
 	route.origin = stored.origin;
-	route.vertex = route.grip = -1;
+	route.vertex = -1;
+	route.grip = -1;
 	route_update();
 }
 
@@ -1788,7 +1797,9 @@ bool editor_mode::route_from_line(TTrack &Track)
 			if (entry.kink)
 			{
 				vertex.radius = std::max(10.0, std::round(alignment::recommend(design.speed, 1000.0, design.norms).radius_min / 10.0) * 10.0);
-				vertex.transition_in = vertex.transition_out = vertex.cant = 0.0;
+				vertex.transition_in = 0.0;
+				vertex.transition_out = 0.0;
+				vertex.cant = 0.0;
 			}
 			else
 			{
@@ -3164,7 +3175,8 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	{
 		TTrack *track;
 		int path;
-		double from, to;
+		double from;
+		double to;
 		bool forward;
 	};
 	auto line{Line};
@@ -3184,9 +3196,11 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		}
 		std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
 	};
-	int first{-1}, last{-1};
+	int first{-1};
+	int last{-1};
 	auto const select = [&](double const End) {
-		first = last = -1;
+		first = -1;
+		last = -1;
 		for (int i = 0; i < static_cast<int>(spans.size()); ++i)
 		{
 			if (spans[i].to > From && spans[i].from < End)
@@ -3213,12 +3227,14 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 					best = i;
 			if (best < 0)
 			{
-				first = last = -1;
+				first = -1;
+				last = -1;
 				return;
 			}
 			middle = best;
 		}
-		int low{middle}, high{middle};
+		int low{middle};
+		int high{middle};
 		while (low > first && spans[low - 1].track->eType == tt_Normal)
 			--low;
 		while (high < last && spans[high + 1].track->eType == tt_Normal)
@@ -3320,7 +3336,8 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		state.status = m_route.error;
 		return;
 	}
-	m_route.design.start_reserve = m_route.design.end_reserve = 0.0;
+	m_route.design.start_reserve = 0.0;
+	m_route.design.end_reserve = 0.0;
 	for (auto &vertex : m_route.design.vertices)
 	{
 		vertex.radius = Radius;
@@ -3696,7 +3713,8 @@ std::string editor_mode::track_readout() const
 	};
 	if (m_extend.active)
 	{
-		double length{0.0}, radius{0.0};
+		double length{0.0};
+		double radius{0.0};
 		auto const pieces{extend_pieces()};
 		for (auto const &piece : pieces)
 		{
@@ -5089,7 +5107,8 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	{
 		TTrack *track;
 		int path;
-		double from, to;
+		double from;
+		double to;
 		bool forward;
 	};
 	std::vector<span> spans;
@@ -5101,7 +5120,8 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 		spans.push_back({Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b), a < b});
 	}
 	std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
-	int first{-1}, last{-1};
+	int first{-1};
+	int last{-1};
 	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
 	{
 		if (spans[i].to > from + 1e-3 && spans[i].from < to - 1e-3)
@@ -5367,7 +5387,10 @@ void editor_mode::render_switch_ui()
 			auto label{entry.source != nullptr ? STR("Scenery: ") + entry.label + "  (" + std::to_string(entry.count) + "x)" : "PLK: " + entry.label};
 			label += "##switch" + std::to_string(i);
 			if (ImGui::Selectable(label.c_str(), tool.armed == i))
-				tool.armed = tool.last = i;
+			{
+				tool.last = i;
+				tool.armed = tool.last;
+			}
 		}
 	};
 	ImGui::TextDisabled("%s", STR_C("Switch template"));
@@ -5477,7 +5500,8 @@ void editor_mode::apply_detour()
 	struct span
 	{
 		TTrack *track;
-		double from, to;
+		double from;
+		double to;
 	};
 	std::vector<span> spans;
 	for (std::size_t i = 0; i < line.tracks.size(); ++i)
@@ -5488,7 +5512,8 @@ void editor_mode::apply_detour()
 		spans.push_back({line.tracks[i], std::min(a, b), std::max(a, b)});
 	}
 	std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
-	int first{-1}, last{-1};
+	int first{-1};
+	int last{-1};
 	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
 	{
 		if (spans[i].to > from && spans[i].from < to && spans[i].track->eType == tt_Normal)
@@ -5501,7 +5526,8 @@ void editor_mode::apply_detour()
 		{
 			if (spans[i].from > stations[3])
 				break;
-			first = last = -1;
+			first = -1;
+			last = -1;
 		}
 	}
 	if (first < 0)
@@ -5523,7 +5549,10 @@ void editor_mode::apply_detour()
 	vertex.radius = radius;
 	route_recommend(vertex);
 	if (false == state.auto_transitions)
-		vertex.transition_in = vertex.transition_out = state.transition;
+	{
+		vertex.transition_out = state.transition;
+		vertex.transition_in = vertex.transition_out;
+	}
 	design.vertices.clear();
 	auto first_vertex{vertex};
 	first_vertex.offset = std::max(0.1, stations[0] - startalong);
@@ -6181,7 +6210,8 @@ std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_
 		glm::dvec2 const chord{end.x - start.x, end.z - start.z};
 		auto const localstart{glm::normalize(control1 != glm::dvec3{} ? plan_of(control1) : chord)};
 		auto const localend{glm::normalize(control2 != glm::dvec3{} ? -plan_of(control2) : chord)};
-		glm::dvec2 startdirection, enddirection;
+		glm::dvec2 startdirection;
+		glm::dvec2 enddirection;
 		auto const p0{map(start, startdirection, localstart)};
 		auto const p3{map(end, enddirection, localend)};
 		auto path{hermite(p0, startdirection, p3, enddirection)};

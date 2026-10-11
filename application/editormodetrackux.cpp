@@ -893,7 +893,8 @@ void editor_mode::start_track_box()
 {
 	auto const &io{ImGui::GetIO()};
 	m_track_box.active = true;
-	m_track_box.from = m_track_box.to = {io.MousePos.x, io.MousePos.y};
+	m_track_box.to = {io.MousePos.x, io.MousePos.y};
+	m_track_box.from = m_track_box.to;
 	m_track_box.hovered = m_hover.track;
 }
 

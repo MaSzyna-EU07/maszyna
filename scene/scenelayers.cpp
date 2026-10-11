@@ -1108,7 +1108,8 @@ void node_layers::rebuilt(instance_handle const Instance)
 std::string scene::node_layers::check_sources() const
 {
 	std::map<scene::layer_handle, std::string> files;
-	std::size_t good{0}, bad{0};
+	std::size_t good{0};
+	std::size_t bad{0};
 	std::string report;
 	for (auto const &[node, source] : m_sources)
 	{

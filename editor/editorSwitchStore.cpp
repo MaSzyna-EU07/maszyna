@@ -151,7 +151,9 @@ void load()
 			std::istringstream line{text};
 			record entry;
 			entry.layer = layer;
-			std::string keyword, hand, km;
+			std::string keyword;
+			std::string hand;
+			std::string km;
 			std::size_t count{0};
 			line >> entry.kind;
 			if (entry.kind != "switch" && entry.kind != "slip" && entry.kind != "crossing")
@@ -163,7 +165,8 @@ void load()
 			entry.parts.resize(count);
 			for (auto &part : entry.parts)
 				line >> part;
-			glm::dvec3 start{0.0}, ahead{0.0};
+			glm::dvec3 start{0.0};
+			glm::dvec3 ahead{0.0};
 			glm::dvec2 direction{0.0, 1.0};
 			line >> keyword;
 			if (keyword == "shape")

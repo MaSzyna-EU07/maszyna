@@ -47,7 +47,8 @@ struct record
 	alignment::result result; // made of the design
 	std::vector<stored_element> elements; // as written in the file
 	bool consistent{true}; // the design makes the elements written in the file
-	glm::dvec2 low{0.0}, high{0.0};
+	glm::dvec2 low{0.0};
+	glm::dvec2 high{0.0};
 	std::vector<glm::dvec2> samples;
 };
 

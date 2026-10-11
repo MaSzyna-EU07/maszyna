@@ -33,7 +33,8 @@ struct record
 	double radius{0.0}; // of the diverging track of the straight switch the type is made of
 	double ratio{0.0}; // n of 1:n
 	char hand{'-'}; // L, R as seen along the switch from its start
-	double a{0.0}, b{0.0};
+	double a{0.0};
+	double b{0.0};
 	double main_radius{0.0}; // of the main track, signed: + to the right, - to the left, 0 straight
 	std::vector<std::string> parts; // the switch, the switches of a slip, the paths of a crossing
 	glm::dvec3 start{0.0}; // of the first part

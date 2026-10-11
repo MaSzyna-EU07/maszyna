@@ -2242,7 +2242,8 @@ void editor_mode::render_orthophoto_ui()
     {
         config.north = m_orthophoto_origin_edit.x;
         config.east = m_orthophoto_origin_edit.y;
-        changed = persist = true;
+        changed = true;
+        persist = true;
     }
     if (m_georeference)
     {
@@ -2253,9 +2254,12 @@ void editor_mode::render_orthophoto_ui()
             ImGui::SameLine();
             if (ImGui::SmallButton(STR_C("Use it")))
             {
-                config.north = m_orthophoto_origin_edit.x = m_georeference_origin.x;
-                config.east = m_orthophoto_origin_edit.y = m_georeference_origin.y;
-                changed = persist = true;
+                m_orthophoto_origin_edit.x = m_georeference_origin.x;
+                config.north = m_orthophoto_origin_edit.x;
+                m_orthophoto_origin_edit.y = m_georeference_origin.y;
+                config.east = m_orthophoto_origin_edit.y;
+                changed = true;
+                persist = true;
             }
         }
     }
@@ -2287,7 +2291,10 @@ void editor_mode::render_orthophoto_ui()
     };
 
     if (ImGui::Checkbox(STR_C("Fit to terrain"), &config.drape))
-        changed = persist = true;
+    {
+        changed = true;
+        persist = true;
+    }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip(STR_C("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, heightmap terrain).\n"
                           "Places without any ground use the height below."));
@@ -2321,7 +2328,10 @@ void editor_mode::render_orthophoto_ui()
     end_disabled(config.drape);
 
     if (ImGui::Checkbox(STR_C("Covered by objects and terrain"), &config.in_scene))
-        changed = persist = true;
+    {
+        changed = true;
+        persist = true;
+    }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip(STR_C("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
                           "It is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\n"
@@ -2344,21 +2354,26 @@ void editor_mode::render_orthophoto_ui()
         if (ImGui::Selectable(STR_C("Newest"), config.year == 0))
         {
             config.year = 0;
-            changed = persist = true;
+            changed = true;
+            persist = true;
         }
         for (int year = thisyear; year >= editor_orthophoto::oldest_year; --year)
         {
             if (ImGui::Selectable(std::to_string(year).c_str(), config.year == year))
             {
                 config.year = year;
-                changed = persist = true;
+                changed = true;
+                persist = true;
             }
         }
         ImGui::EndCombo();
     }
 
     if (ImGui::Checkbox(STR_C("4K tiles where available"), &config.hires))
-        changed = persist = true;
+    {
+        changed = true;
+        persist = true;
+    }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip(STR_C("4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\n"
                           "Areas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory."));
@@ -2926,7 +2941,9 @@ bool editor_mode::save()
     if (result.success && trailing.size() == 3)
     {
         std::istringstream header{trailing.front()};
-        std::string keyword, timetable, track;
+        std::string keyword;
+        std::string timetable;
+        std::string track;
         double offset{0.0};
         header >> keyword >> timetable >> track >> offset;
         if (auto *path{simulation::Paths.find(track)}; path != nullptr && simulation::Vehicles.find("wmb10-6457") == nullptr)
@@ -3060,7 +3077,8 @@ void editor_mode::apply_include()
     auto const directive = editor_includes::compose_directive(m_include.target, m_include.values);
     if (directive == before)
         return;
-    std::string read_before, read_after;
+    std::string read_before;
+    std::string read_after;
     if (false == m_include.info.signal_read.empty())
     {
         std::string file;
@@ -3450,7 +3468,8 @@ void editor_mode::read_georeference()
         // Rainsted writes the origin of the scenery as: //$g <system> <easting> <northing>, in kilometres
         std::istringstream words(line.substr(mark + 4));
         std::string system;
-        double east{0.0}, north{0.0};
+        double east{0.0};
+        double north{0.0};
         if (false == static_cast<bool>(words >> system >> east >> north) || system.find("1992") == std::string::npos)
             continue;
         auto const scale = (east < 10000.0 && north < 10000.0) ? 1000.0 : 1.0;
@@ -5011,7 +5030,8 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
     auto const before{Global.EditorOrthoExtent};
     auto const after{std::clamp(before * static_cast<float>(std::pow(0.85, Yoffset)), 5.0f, 5000.0f)};
     screen_projection const projection;
-    glm::dvec3 origin, direction;
+    glm::dvec3 origin;
+    glm::dvec3 direction;
     projection.ray(ImGui::GetIO().MousePos, origin, direction);
     auto const scale{static_cast<double>(after) / static_cast<double>(before)};
     Camera.Pos.x = origin.x + (Camera.Pos.x - origin.x) * scale;

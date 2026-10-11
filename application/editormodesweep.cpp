@@ -286,7 +286,10 @@ void editor_mode::sweep_measure()
 		if (platform_model(model))
 			platform_edge(tool.settings, model, 0.0);
 		else
-			tool.settings.platform = tool.settings.widen = false;
+		{
+			tool.settings.platform = false;
+			tool.settings.widen = false;
+		}
 	}
 	tool.model_length = 0.0;
 	if (model.empty())
@@ -544,7 +547,8 @@ bool editor_mode::sweep_press_at(glm::dvec3 const &Point, bool const Anywhere)
 	if (tool.settings.side_anchor == 0)
 		tool.settings.side_anchor = 1;
 	tool.anchor = std::round(station * 10.0) / 10.0;
-	tool.settings.from = tool.settings.to = tool.anchor;
+	tool.settings.to = tool.anchor;
+	tool.settings.from = tool.settings.to;
 	tool.dragging = true;
 	return true;
 }
@@ -1083,7 +1087,8 @@ bool editor_mode::bend_source_of_selection(bend_source &Source) const
 		return false;
 	auto info{m_include.info};
 	editor_includes::suggest(m_include.target, info);
-	glm::dvec3 position{0.0}, rotation{0.0};
+	glm::dvec3 position{0.0};
+	glm::dvec3 rotation{0.0};
 	Source.parameters = m_include.values;
 	for (std::size_t i = 0; i < Source.parameters.size(); ++i)
 	{
@@ -1146,7 +1151,8 @@ bool editor_mode::bend_definition(bend_source const &Source, TTrack &Track, swee
 	State.parameters = Source.parameters;
 	State.scale = Source.scale;
 	State.face = false;
-	State.platform = State.widen = platform_model(Source.file);
+	State.widen = platform_model(Source.file);
+	State.platform = State.widen;
 	State.side_anchor = tool.side_anchor;
 	State.height_anchor = tool.height_anchor;
 	State.point = tool.point;
@@ -1181,7 +1187,9 @@ bool editor_mode::bend_definition(bend_source const &Source, TTrack &Track, swee
 	State.flip = (glm::dot(direction, forward) < 0.0) != tool.turned;
 	State.lateral = lateral != 0.0 ? lateral : 1e-3;
 	define();
-	glm::dvec3 low, high, shift;
+	glm::dvec3 low;
+	glm::dvec3 high;
+	glm::dvec3 shift;
 	if (false == probe.bounds(low, high, shift))
 	{
 		tool.status = STR("The model has no triangles to bend, or it can't be loaded");
@@ -1453,7 +1461,9 @@ double editor_mode::bend_fixed(sweep_node const &Sweep, glm::dvec3 const &Point)
 {
 	auto const from{Sweep.distance_at(Sweep.start())};
 	auto const stretch{Sweep.distance_at(Sweep.end()) - from};
-	glm::dvec3 low, high, shift;
+	glm::dvec3 low;
+	glm::dvec3 high;
+	glm::dvec3 shift;
 	if (false == Sweep.bounds(low, high, shift))
 		return from;
 	switch (m_bend.along_anchor)
@@ -1470,7 +1480,9 @@ double editor_mode::bend_fixed(sweep_node const &Sweep, glm::dvec3 const &Point)
 
 void editor_mode::bend_stretch(sweep_node const &Sweep, double const Fixed, double const Length, glm::dvec3 const &Point, sweep_node::state &State) const
 {
-	glm::dvec3 low, high, shift;
+	glm::dvec3 low;
+	glm::dvec3 high;
+	glm::dvec3 shift;
 	auto first{Fixed};
 	switch (m_bend.along_anchor)
 	{
@@ -1497,7 +1509,9 @@ void editor_mode::bend_reanchor(sweep_node::state &State, int const Side, int co
 	scene::node_data data;
 	sweep_node probe{data};
 	probe.define(State);
-	glm::dvec3 low, high, before;
+	glm::dvec3 low;
+	glm::dvec3 high;
+	glm::dvec3 before;
 	if (false == probe.bounds(low, high, before))
 		return;
 	auto const stretch{probe.distance_at(probe.end()) - probe.distance_at(probe.start())};
@@ -1525,7 +1539,9 @@ void editor_mode::bend_reanchor(sweep_node::state &State, int const Side, int co
 
 glm::dvec3 editor_mode::bend_marker(sweep_node const &Sweep) const
 {
-	glm::dvec3 low, high, shift;
+	glm::dvec3 low;
+	glm::dvec3 high;
+	glm::dvec3 shift;
 	if (false == Sweep.bounds(low, high, shift))
 		return glm::dvec3{0.0};
 	auto const &state{Sweep.definition()};
@@ -1544,7 +1560,9 @@ void editor_mode::bend_pick(glm::dvec3 const &Point)
 	tool.picking = false;
 	if (auto *sweep{tool.edited}; sweep != nullptr && false == sweep->m_editorremoved)
 	{
-		glm::dvec3 low, high, shift;
+		glm::dvec3 low;
+		glm::dvec3 high;
+		glm::dvec3 shift;
 		if (false == sweep->bounds(low, high, shift))
 			return;
 		auto const &state{sweep->definition()};
@@ -1562,7 +1580,9 @@ void editor_mode::bend_pick(glm::dvec3 const &Point)
 		                       Point.y - at.position.y - state.height - sweep->rise(at) - shift.z};
 		auto const raw{glm::inverse(axes_matrix(*sweep)) * local / state.scale};
 		tool.point = raw;
-		tool.along_anchor = tool.side_anchor = tool.height_anchor = 4;
+		tool.along_anchor = 4;
+		tool.side_anchor = 4;
+		tool.height_anchor = 4;
 		auto next{state};
 		bend_reanchor(next, 4, 4, raw);
 		bend_edit(next);
@@ -1574,7 +1594,9 @@ void editor_mode::bend_pick(glm::dvec3 const &Point)
 			return;
 		auto const local{glm::dvec3(glm::inverse(source.transform) * glm::dvec4(Point, 1.0))};
 		tool.point = local / source.scale;
-		tool.along_anchor = tool.side_anchor = tool.height_anchor = 4;
+		tool.along_anchor = 4;
+		tool.side_anchor = 4;
+		tool.height_anchor = 4;
 		tool.signature.clear();
 	}
 	tool.status = format(STR_C("Reference point %.2f %.2f %.2f in the model"), tool.point.x, tool.point.y, tool.point.z);
@@ -1617,7 +1639,9 @@ void editor_mode::render_bend()
 	if (auto *sweep{tool.edited})
 	{
 		auto state{sweep->definition()};
-		glm::dvec3 low, high, shift;
+		glm::dvec3 low;
+		glm::dvec3 high;
+		glm::dvec3 shift;
 		auto const measured{sweep->bounds(low, high, shift)};
 		auto const own{measured ? high.x - low.x : 0.0};
 		auto const from{sweep->distance_at(sweep->start())};
@@ -1976,7 +2000,8 @@ void editor_mode::bend_drag_update()
 	};
 	if (tool.dragging == 2)
 	{
-		glm::dvec3 origin, direction;
+		glm::dvec3 origin;
+		glm::dvec3 direction;
 		projection.ray(mouse, origin, direction);
 		glm::dvec3 normal{Global.pCamera.Pos.x - tool.drag_anchor.x, 0.0, Global.pCamera.Pos.z - tool.drag_anchor.z};
 		if (glm::length(normal) < 1e-6)
@@ -2028,7 +2053,9 @@ sweep_node *editor_mode::sweep_under(glm::dvec3 const &Point) const
 		auto const station{sweep->project(Point, lateral)};
 		if (station < sweep->start() - 0.5 || station > sweep->end() + 0.5)
 			continue;
-		glm::dvec3 low, high, shift;
+		glm::dvec3 low;
+		glm::dvec3 high;
+		glm::dvec3 shift;
 		if (false == sweep->bounds(low, high, shift))
 			continue;
 		auto const at{sweep->frame_at(station)};

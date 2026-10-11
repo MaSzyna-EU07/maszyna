@@ -658,8 +658,11 @@ std::optional<infra::binding> read_binding(std::string const &Text, scene::layer
 {
 	double const tolerance{0.05};
 	std::istringstream line{Text};
-	std::string kindname, key;
-	int group{0}, turns{0}, count{0};
+	std::string kindname;
+	std::string key;
+	int group{0};
+	int turns{0};
+	int count{0};
 	glm::dvec3 location;
 	line >> kindname >> group >> location.x >> location.y >> location.z >> key >> turns >> count;
 	if (line.fail() || count < 1 || count > 4)
@@ -707,7 +710,8 @@ std::optional<infra::binding> read_binding(std::string const &Text, scene::layer
 	for (int i = 0; i < count && found; ++i)
 	{
 		int path{0};
-		glm::dvec3 start, end;
+		glm::dvec3 start;
+		glm::dvec3 end;
 		line >> path >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z;
 		start = Context.to_world(start);
 		end = Context.to_world(end);
@@ -865,7 +869,10 @@ void editor_mode::infra_recognize()
 		state.error = (state.scope == 2 ? STR_C("Open the vertical profile of a route first") : state.scope == 3 ? STR_C("The scenery has no paths the editor can handle") : STR_C("Select a path first"));
 		return;
 	}
-	state.read = state.overruled = state.unread = state.elsewhere = 0;
+	state.read = 0;
+	state.overruled = 0;
+	state.unread = 0;
+	state.elsewhere = 0;
 	track_index index;
 	std::unordered_set<std::string> names;
 	std::unordered_set<TTrack const *> const scope(state.tracks.begin(), state.tracks.end());

@@ -57,7 +57,8 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	auto &test{m_selftest};
 	if (command == "camera")
 	{
-		glm::dvec3 from, to;
+		glm::dvec3 from;
+		glm::dvec3 to;
 		words >> from.x >> from.y >> from.z >> to.x >> to.y >> to.z;
 		auto const look{glm::normalize(to - from)};
 		Camera.Pos = from;
@@ -79,7 +80,9 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	if (command == "frames")
 	{
 		std::string name;
-		double from{0.0}, to{0.0}, step{0.1};
+		double from{0.0};
+		double to{0.0};
+		double step{0.1};
 		words >> name >> from >> to >> step;
 		auto *sweep{simulation::Sweeps.find(name)};
 		if (sweep == nullptr)
@@ -292,7 +295,8 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		state.skin = source.skin;
 		state.scale = source.scale;
 		probe.define(state);
-		glm::dvec3 boxlow{std::numeric_limits<double>::max()}, boxhigh{-std::numeric_limits<double>::max()};
+		glm::dvec3 boxlow{std::numeric_limits<double>::max()};
+		glm::dvec3 boxhigh{-std::numeric_limits<double>::max()};
 		for (auto const &item : probe.items())
 		{
 			auto const transform{source.transform * glm::scale(glm::dmat4(1.0), source.scale) * item.transform};
@@ -325,7 +329,9 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	}
 	if (command == "key")
 	{
-		std::string key, action, mods;
+		std::string key;
+		std::string action;
+		std::string mods;
 		words >> key >> action >> mods;
 		if (key == "RMB")
 			m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT, action == "press" ? GLFW_PRESS : GLFW_RELEASE);
@@ -459,7 +465,8 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 	}
 	if (command == "drag")
 	{
-		glm::dvec3 from{0.0}, to{0.0};
+		glm::dvec3 from{0.0};
+		glm::dvec3 to{0.0};
 		words >> from.x >> from.z >> to.x >> to.z;
 		m_sweep.open = true;
 		if (false == sweep_press_at(from, false))
@@ -690,11 +697,14 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 			WriteLog("SELFTEST bendprobe: nothing bent");
 			return selftest_result::handled;
 		}
-		glm::dvec3 low, high, shift;
+		glm::dvec3 low;
+		glm::dvec3 high;
+		glm::dvec3 shift;
 		sweep->bounds(low, high, shift);
 		auto const &state{sweep->definition()};
 		auto const marker{bend_marker(*sweep)};
-		glm::dvec3 boxlow{std::numeric_limits<double>::max()}, boxhigh{-std::numeric_limits<double>::max()};
+		glm::dvec3 boxlow{std::numeric_limits<double>::max()};
+		glm::dvec3 boxhigh{-std::numeric_limits<double>::max()};
 		std::size_t vertices{0};
 		for (auto const &shape : sweep->create_shapes())
 			for (auto const &vertex : shape.data().vertices)
@@ -865,7 +875,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 	}
 	if (command == "lay")
 	{
-		std::string name, side;
+		std::string name;
+		std::string side;
 		words >> name >> side;
 		auto *track{simulation::Paths.find(name)};
 		if (track == nullptr || track->m_paths.empty())
@@ -1018,7 +1029,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 	}
 	if (command == "vprofile")
 	{
-		std::string from, to;
+		std::string from;
+		std::string to;
 		words >> from >> to;
 		auto *first{simulation::Paths.find(from)};
 		auto *last{simulation::Paths.find(to)};
@@ -1226,8 +1238,10 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 {
 	if (command == "curvedswitch")
 	{
-		std::string name, label;
-		glm::dvec3 at{0.0}, toward{0.0};
+		std::string name;
+		std::string label;
+		glm::dvec3 at{0.0};
+		glm::dvec3 toward{0.0};
 		words >> name >> at.x >> at.z >> toward.x >> toward.z >> label;
 		m_node = simulation::Paths.find(name);
 		ui()->set_node(m_node);
@@ -1270,7 +1284,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		{
 			auto const t{i * 0.125};
 			auto const point{other.point(t)};
-			double best{std::numeric_limits<double>::max()}, along{0.0};
+			double best{std::numeric_limits<double>::max()};
+			double along{0.0};
 			for (int k = 0; k <= 2000; ++k)
 				if (auto const distance{geometry::plan_distance(main.point(k / 2000.0), point)}; distance < best)
 				{
@@ -1292,7 +1307,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	}
 	if (command == "switchdrive")
 	{
-		int index{-1}, side{0};
+		int index{-1};
+		int side{0};
 		words >> index >> side;
 		scan_switch_drives();
 		m_switch.drive = index;
@@ -1302,7 +1318,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	}
 	if (command == "drivechoice")
 	{
-		int index{-1}, side{0};
+		int index{-1};
+		int side{0};
 		words >> index >> side;
 		scan_switch_drives();
 		m_switch.drive = index;
@@ -1380,7 +1397,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	{
 		std::string label;
 		glm::dvec3 point{0.0};
-		int direction{1}, side{1};
+		int direction{1};
+		int side{1};
 		words >> label >> point.x >> point.z >> direction >> side;
 		std::replace(label.begin(), label.end(), '_', ' ');
 		auto &tool{m_switch};
@@ -1456,7 +1474,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		{
 			double distance{0.0};
 			words >> distance;
-			double low{0.0}, high{0.0};
+			double low{0.0};
+			double high{0.0};
 			std::string reason;
 			auto const room{switch_room(*track, low, high, reason)};
 			auto const done{slide_switch(*track, distance)};
@@ -1524,7 +1543,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 {
 	if (command == "join" || command == "layto")
 	{
-		glm::dvec3 a{0.0}, b{0.0};
+		glm::dvec3 a{0.0};
+		glm::dvec3 b{0.0};
 		words >> a.x >> a.z >> b.x >> b.z;
 		auto const from{editor_track::find_free_end(nullptr, 1, a, 3.0, {})};
 		extend_tool tool;
@@ -1539,7 +1559,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		if (command == "join")
 		{
 			double radius{0.0};
-			int variant{0}, transitions{0};
+			int variant{0};
+			int transitions{0};
 			words >> radius >> variant >> transitions;
 			auto const to{editor_track::find_free_end(nullptr, 1, b, 3.0, {from.track})};
 			if (to.track == nullptr)
@@ -1619,7 +1640,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		glm::dvec3 previous{0.0};
 		double slope{0.0};
 		bool first{true};
-		double hanging{0.0}, buried{0.0};
+		double hanging{0.0};
+		double buried{0.0};
 		int paths{0};
 		for (auto step{before}; step < m_history.size(); ++step)
 			for (auto const *track : m_history[step].created)
@@ -1722,7 +1744,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		}
 		else if (action == "begin")
 		{
-			std::string operation, kind;
+			std::string operation;
+			std::string kind;
 			int path{-1};
 			words >> operation >> path >> kind;
 			m_track_point = {};
@@ -1975,7 +1998,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "orthophoto")
 	{
 		auto config{m_orthophoto.settings()};
-		int fit{1}, inscene{0};
+		int fit{1};
+		int inscene{0};
 		words >> config.north >> config.east >> config.radius >> fit >> inscene;
 		config.drape = fit != 0;
 		config.in_scene = inscene != 0;
@@ -1992,7 +2016,10 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	}
 	if (command == "terrainsculpt" || command == "terrainpaint" || command == "terrainlevel")
 	{
-		double x{0.0}, z{0.0}, radius{10.0}, value{1.0};
+		double x{0.0};
+		double z{0.0};
+		double radius{10.0};
+		double value{1.0};
 		int mode{0};
 		words >> x >> z >> radius >> value >> mode;
 		auto const changed{command == "terrainsculpt" ? m_streamer.sculpt(x, z, radius, value)
@@ -2006,10 +2033,13 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	{
 		heightmap::modifier modifier;
 		heightmap::corridor_point a, b;
-		double formation{0.0}, halfwidth{3.5};
+		double formation{0.0};
+		double halfwidth{3.5};
 		words >> modifier.name >> a.position.x >> a.position.y >> b.position.x >> b.position.y >> formation >> halfwidth;
-		a.formation = b.formation = formation;
-		a.half_width = b.half_width = halfwidth;
+		b.formation = formation;
+		a.formation = b.formation;
+		b.half_width = halfwidth;
+		a.half_width = b.half_width;
 		modifier.points = {a, b};
 		m_streamer.modifier(std::move(modifier));
 		forget_ground();
@@ -2022,7 +2052,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		words >> layer >> m_paint_feather >> m_paint_rotation;
 		m_terrain_layer = layer;
 		m_paint_outline.clear();
-		double x, z;
+		double x;
+		double z;
 		while (words >> x >> z)
 			m_paint_outline.emplace_back(x, 0.0, z);
 		fill_terrain_area();
@@ -2051,7 +2082,9 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	}
 	if (command == "terrainrestore")
 	{
-		double x{0.0}, z{0.0}, radius{10.0};
+		double x{0.0};
+		double z{0.0};
+		double radius{10.0};
 		words >> x >> z >> radius;
 		auto const changed{m_streamer.restore_stitching(x, z, radius, 1.0)};
 		forget_ground();
@@ -2069,7 +2102,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	}
 	if (command == "terrainselect")
 	{
-		int cx{0}, cz{0};
+		int cx{0};
+		int cz{0};
 		std::string add;
 		words >> cx >> cz >> add;
 		if (add != "add")
@@ -2130,7 +2164,9 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	}
 	if (command == "terrainprobe")
 	{
-		double x{0.0}, z{0.0}, height{0.0};
+		double x{0.0};
+		double z{0.0};
+		double height{0.0};
 		words >> x >> z;
 		auto const *chunk{m_streamer.terrain_at(x, z)};
 		std::string materials;
@@ -2146,7 +2182,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		if (chunk != nullptr)
 		{
 			auto const &data{chunk->data()};
-			double base{0.0}, adjust{0.0};
+			double base{0.0};
+			double adjust{0.0};
 			if (false == data.base.empty())
 				base = data.height_in(data.base, x, z);
 			if (false == data.adjust.empty())
@@ -2171,7 +2208,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		load_ground_files();
 		for (auto const &source : m_ground_conversion.files)
 		{
-			glm::dvec3 low{1e30}, high{-1e30};
+			glm::dvec3 low{1e30};
+			glm::dvec3 high{-1e30};
 			for (auto index = source.first; index < source.first + source.count; ++index)
 				for (auto const &vertex : m_ground_conversion.triangles[index])
 				{

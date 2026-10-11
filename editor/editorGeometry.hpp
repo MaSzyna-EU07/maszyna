@@ -90,7 +90,10 @@ inline std::vector<segment_data> arc_pieces(glm::dvec3 const &Point, glm::dvec2 
 // path as a cubic Bezier curve; a path without control points is a straight with evenly spread parameter
 struct bezier
 {
-	glm::dvec3 p0, p1, p2, p3;
+	glm::dvec3 p0;
+	glm::dvec3 p1;
+	glm::dvec3 p2;
+	glm::dvec3 p3;
 
 	explicit bezier(segment_data const &Path)
 	{

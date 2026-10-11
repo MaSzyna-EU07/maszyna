@@ -772,7 +772,8 @@ editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground
 			intent.position = end.position;
 			return make(kind::turntable_fit, STR("Click: lead this track to the turntable"));
 		}
-		double heading, length;
+		double heading;
+		double length;
 		if (turntable_exit_at(cursor_level(centre.y), heading, length))
 		{
 			tool.heading = heading;

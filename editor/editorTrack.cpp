@@ -1460,7 +1460,8 @@ bool editor_track::is_straight(TTrack const &Track, straight_tolerance const &To
 	auto const &end{path.points[segment_data::point::end]};
 	auto const length{glm::length(plan_of(end - start))};
 	auto const direction{glm::normalize(plan_of(end - start))};
-	bool foundbefore, foundafter;
+	bool foundbefore;
+	bool foundafter;
 	auto const before{direction_at(*Track.trPrev, start, true, foundbefore)};
 	auto const after{direction_at(*Track.trNext, end, false, foundafter)};
 	if (false == foundbefore || false == foundafter)
@@ -1532,8 +1533,10 @@ editor_track::straight editor_track::find_straight(TTrack &Track, straight_toler
 		}
 	}
 
-	double low{0.0}, high{0.0};
-	glm::dvec3 lowpoint{origin}, highpoint{origin};
+	double low{0.0};
+	double high{0.0};
+	glm::dvec3 lowpoint{origin};
+	glm::dvec3 highpoint{origin};
 	for (auto const &member : run)
 	{
 		result.tracks.push_back(member.first);
@@ -1744,7 +1747,10 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 	for (std::size_t i = run.size(); i > 0 && varying[i - 1]; --i)
 		Curve.transition_out += lengths[i - 1];
 	if (Curve.transition_in + Curve.transition_out >= std::accumulate(lengths.begin(), lengths.end(), 0.0))
-		Curve.transition_in = Curve.transition_out = 0.0;
+	{
+		Curve.transition_in = 0.0;
+		Curve.transition_out = 0.0;
+	}
 	Curve.radius = smallest;
 	std::vector<curve::arc_part> arcs;
 	double between{0.0};
@@ -2799,7 +2805,8 @@ void editor_track::move_straight(straight const &Line, glm::dvec3 const &Start, 
 
 	struct interval
 	{
-		double from, to;
+		double from;
+		double to;
 		bool rigid;
 	};
 	std::vector<interval> intervals;
@@ -2817,7 +2824,8 @@ void editor_track::move_straight(straight const &Line, glm::dvec3 const &Start, 
 	std::sort(intervals.begin(), intervals.end(), [](interval const &A, interval const &B) { return A.from < B.from; });
 	auto const scale{Line.length - rigidlength > 1e-6 ? (newlength - rigidlength) / (Line.length - rigidlength) : 1.0};
 	auto const remap = [&](double const Along) {
-		double mapped{0.0}, previous{0.0};
+		double mapped{0.0};
+		double previous{0.0};
 		for (auto const &span : intervals)
 		{
 			if (Along <= span.from)

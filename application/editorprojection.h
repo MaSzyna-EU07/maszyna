@@ -91,7 +91,8 @@ class screen_projection
 	// where the ray through the point of the screen crosses the level of the height; false if it runs along it or away
 	bool on_level(ImVec2 const &Screen, double const Height, glm::dvec3 &Point) const
 	{
-		glm::dvec3 origin, direction;
+		glm::dvec3 origin;
+		glm::dvec3 direction;
 		ray(Screen, origin, direction);
 		if (std::abs(direction.y) < 1e-6)
 			return false;

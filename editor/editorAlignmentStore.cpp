@@ -75,7 +75,8 @@ void sample(record &Record)
 	auto const count{static_cast<std::size_t>(std::ceil(length / kStep))};
 	for (std::size_t i = 0; i <= count; ++i)
 		Record.samples.push_back(plan_of(alignment::evaluate(Record.result, std::min(length, i * kStep)).position));
-	Record.low = Record.high = Record.samples.empty() ? glm::dvec2{0.0} : Record.samples.front();
+	Record.high = Record.samples.empty() ? glm::dvec2{0.0} : Record.samples.front();
+	Record.low = Record.high;
 	for (auto const &point : Record.samples)
 	{
 		Record.low = glm::min(Record.low, point);
@@ -152,7 +153,9 @@ alignment::vertex reversed_vertex(alignment::vertex Vertex)
 	{
 		struct part
 		{
-			double radius, share, transition;
+			double radius;
+			double share;
+			double transition;
 		};
 		std::vector<part> parts{{Vertex.radius, Vertex.share, 0.0}};
 		for (auto const &arc : Vertex.arcs)
@@ -234,7 +237,8 @@ stored_element describe(alignment::element const &Element)
 		result.radius_end = sign * Element.radius;
 		break;
 	case alignment::element_kind::arc:
-		result.radius_start = result.radius_end = sign * Element.radius;
+		result.radius_end = sign * Element.radius;
+		result.radius_start = result.radius_end;
 		break;
 	case alignment::element_kind::transition_out:
 		result.radius_start = sign * Element.radius;
@@ -646,7 +650,8 @@ int store(alignment::design const &Design, alignment::result const &Result, doub
 	record entry;
 	entry.source = Source;
 	entry.design = Design;
-	entry.design.start_reserve = entry.design.end_reserve = 0.0;
+	entry.design.start_reserve = 0.0;
+	entry.design.end_reserve = 0.0;
 	entry.origin = Origin;
 	finish(entry);
 	if (false == entry.result.valid)
