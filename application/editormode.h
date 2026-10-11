@@ -674,6 +674,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void track_gizmo_settle();
 	void track_gizmo_stretch(TTrack &Track, double const Length);
 	void track_gizmo_control(TTrack &Track, glm::dvec3 Control);
+	void track_gizmo_point(TTrack &Track, glm::dvec3 const &Position);
 	void track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_operation const Operation);
 	void track_gizmo_turn(TTrack &Track, int const Axis, double const Angle);
 	void track_gizmo_length(TTrack &Track, double Length);

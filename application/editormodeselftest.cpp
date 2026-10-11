@@ -357,7 +357,9 @@ void editor_mode::selftest_step()
 				auto const lateral{(point.x - base.x) * -direction.y + (point.z - base.z) * direction.x};
 				auto const &path{track->m_paths[0]};
 				auto const roll{glm::radians(path.rolls[0] + (path.rolls[1] - path.rolls[0]) * along)};
-				auto const cone{base.y - lateral * std::tan(roll)};
+				auto const tangent{main.first(along)};
+				auto const beyond{(point.x - base.x) * direction.x + (point.z - base.z) * direction.y};
+				auto const cone{base.y + beyond * tangent.y / glm::length(geometry::plan_of(tangent)) - lateral * std::tan(roll)};
 				text += format(" [t %.3f off %.3f dy %.4f]", t, lateral, point.y - cone);
 			}
 			WriteLog("SELFTEST conecheck " + name + ":" + text);
@@ -1214,10 +1216,7 @@ void editor_mode::selftest_step()
 				words >> offset.x >> offset.y >> offset.z;
 				if (m_track_point.valid())
 				{
-					auto const position{editor_track::point_position(*track, m_track_point) + offset};
-					editor_track::move_point(*track, m_track_point, position);
-					for (auto const &connection : m_track_drag_points)
-						editor_track::move_point(*connection.first, connection.second, position);
+					track_gizmo_point(*track, editor_track::point_position(*track, m_track_point) + offset);
 				}
 				else
 				{

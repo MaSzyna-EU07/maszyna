@@ -678,6 +678,129 @@ void editor_track::follow_grade(TTrack const &Track, std::vector<joint> const &J
 	}
 }
 
+namespace
+{
+
+struct surface_foot
+{
+	double t{0.0};
+	double along{0.0};
+	double lateral{0.0};
+	glm::dvec3 base{0.0};
+	glm::dvec2 direction{0.0, 1.0};
+	double grade{0.0};
+};
+
+surface_foot foot_on(segment_data const &Path, glm::dvec3 const &Position)
+{
+	bezier const curve{Path};
+	auto const distance = [&](double const T) { return glm::distance(plan_of(curve.point(T)), plan_of(Position)); };
+	int constexpr samples{200};
+	double best{std::numeric_limits<double>::max()};
+	int nearest{0};
+	for (int i = 0; i <= samples; ++i)
+		if (auto const d{distance(static_cast<double>(i) / samples)}; d < best)
+		{
+			best = d;
+			nearest = i;
+		}
+	auto low{std::max(0, nearest - 1) / static_cast<double>(samples)};
+	auto high{std::min(samples, nearest + 1) / static_cast<double>(samples)};
+	for (int i = 0; i < 40; ++i)
+	{
+		auto const a{low + (high - low) / 3.0};
+		auto const b{high - (high - low) / 3.0};
+		if (distance(a) < distance(b))
+			high = b;
+		else
+			low = a;
+	}
+	surface_foot foot;
+	foot.t = std::clamp((low + high) * 0.5, 0.0, 1.0);
+	foot.base = curve.point(foot.t);
+	auto const tangent{curve.first(foot.t)};
+	auto const plan{plan_of(tangent)};
+	auto const run{glm::length(plan)};
+	if (run > 1e-9)
+	{
+		foot.direction = plan / run;
+		foot.grade = tangent.y / run;
+	}
+	auto const offset{plan_of(Position) - plan_of(foot.base)};
+	foot.along = glm::dot(offset, foot.direction);
+	foot.lateral = glm::dot(offset, glm::dvec2{-foot.direction.y, foot.direction.x});
+	return foot;
+}
+
+double foot_roll(segment_data const &Path, surface_foot const &Foot)
+{
+	return Path.rolls[0] + (Path.rolls[1] - Path.rolls[0]) * Foot.t;
+}
+
+double surface_height(segment_data const &Path, surface_foot const &Foot)
+{
+	return Foot.base.y + Foot.along * Foot.grade - Foot.lateral * std::tan(glm::radians(foot_roll(Path, Foot)));
+}
+
+} // namespace
+
+void editor_track::conform_switch(TTrack &Track)
+{
+	if (Track.eType != tt_Switch || Track.m_paths.size() != 2)
+		return;
+	auto const &main{Track.m_paths[0]};
+	auto &path{Track.m_paths[1]};
+	auto &start{path.points[segment_data::point::start]};
+	auto &end{path.points[segment_data::point::end]};
+	auto &control1{path.points[segment_data::point::control1]};
+	auto &control2{path.points[segment_data::point::control2]};
+	if (control1 == glm::dvec3{} && control2 == glm::dvec3{})
+	{
+		control1 = (end - start) / 3.0;
+		control2 = (start - end) / 3.0;
+	}
+	auto const height = [&](glm::dvec3 const &Point) { return surface_height(main, foot_on(main, Point)); };
+	auto const slope = [&](glm::dvec3 const &Point, glm::dvec3 const &Control) {
+		auto const plan{plan_of(Control)};
+		auto const run{glm::length(plan)};
+		if (run < 1e-9)
+			return 0.0;
+		double constexpr step{0.05};
+		glm::dvec3 const offset{plan.x / run * step, 0.0, plan.y / run * step};
+		return (4.0 * height(Point + offset) - 3.0 * height(Point) - height(Point + 2.0 * offset)) / (2.0 * step) * run;
+	};
+	start.y = height(start);
+	end.y = height(end);
+	control1.y = slope(start, control1);
+	control2.y = slope(end, control2);
+	bezier const curve{path};
+	for (int i = 0; i < 2; ++i)
+	{
+		auto const foot{foot_on(main, i == 0 ? start : end)};
+		auto const along{glm::dot(plan_of(curve.first(i)), foot.direction) >= 0.0 ? 1.0 : -1.0};
+		path.rolls[i] = static_cast<float>(foot_roll(main, foot) * along);
+	}
+}
+
+double editor_track::switch_station(TTrack const &Track, glm::dvec3 const &Position)
+{
+	if (Track.m_paths.empty())
+		return 0.0;
+	auto const &main{Track.m_paths[0]};
+	auto const foot{foot_on(main, Position)};
+	bezier const curve{main};
+	int constexpr steps{64};
+	double length{0.0};
+	auto previous{plan_of(curve.point(0.0))};
+	for (int i = 1; i <= steps; ++i)
+	{
+		auto const next{plan_of(curve.point(foot.t * i / steps))};
+		length += glm::distance(previous, next);
+		previous = next;
+	}
+	return length + foot.along;
+}
+
 std::vector<int> editor_track::hold_controls(TTrack &Track)
 {
 	std::vector<int> result;
@@ -757,7 +880,8 @@ void editor_track::align_controls(TTrack const &Track, point_ref const &Control,
 		bool const start{partner.second.kind == point_kind::start};
 		auto &control{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
 		auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 3.0};
-		control = -direction * length;
+		auto const same{partner.first == &Track && partner.second.kind == end_of(Control).kind};
+		control = (same ? direction : -direction) * length;
 	}
 }
 
