@@ -405,6 +405,19 @@ void editor_mode::selftest_step()
 			m_switch.drive_side = side;
 			WriteLog("SELFTEST switchdrive: " + (index >= 0 && index < static_cast<int>(m_switch.drives.size()) ? m_switch.drives[index].name : std::string{"none"}));
 		}
+		else if (command == "drivechoice")
+		{
+			int index{-1}, side{0};
+			words >> index >> side;
+			scan_switch_drives();
+			m_switch.drive = index;
+			m_switch.drive_side = side;
+			m_switch.status.clear();
+			auto *track{selected_track()};
+			if (track != nullptr && track->eType == tt_Switch && false == track->m_editorremoved)
+				apply_switch_drive_choice(*track);
+			WriteLog("SELFTEST drivechoice: " + (track != nullptr ? track->name() : std::string{"no switch"}) + ", " + m_switch.status);
+		}
 		else if (command == "drives")
 		{
 			std::string name;

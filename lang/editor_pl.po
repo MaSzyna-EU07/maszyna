@@ -5452,3 +5452,6 @@ msgstr "Zwrotnica %s: napęd %s, teraz po prawej"
 msgid "Switch %s: the drive %s, on the left now"
 msgstr "Zwrotnica %s: napęd %s, teraz po lewej"
 
+msgid "Switch %s without a drive now"
+msgstr "Zwrotnica %s jest teraz bez napędu"
+

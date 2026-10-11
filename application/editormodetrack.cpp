@@ -6814,6 +6814,20 @@ bool editor_mode::find_switch_drive(TTrack const &Switch, standing_template &Dri
 	return true;
 }
 
+void editor_mode::apply_switch_drive_choice(TTrack &Switch)
+{
+	if (m_switch.drive >= 0)
+	{
+		place_switch_drive(Switch);
+		return;
+	}
+	standing_template found;
+	int family{-1};
+	int variant{0};
+	if (find_switch_drive(Switch, found, family, variant) && remove_templates({found.instance}) > 0)
+		m_switch.status = format(STR_C("Switch %s without a drive now"), Switch.name().c_str());
+}
+
 bool editor_mode::flip_switch_drive(TTrack &Switch)
 {
 	return replace_switch_drive(Switch, -1, true);
@@ -7562,7 +7576,9 @@ void editor_mode::render_switch_ui()
 	ImGui::InputTextWithHint(STR_C("Name##switchname"), switch_name_for_new().c_str(), tool.name, sizeof(tool.name));
 	ImGui::PopItemWidth();
 	item_tooltip("Name of the next switch, its drive events are named after it; empty: the next free z1, z2...; a number at the end goes up with each switch");
-	render_switch_drive_choice();
+	if (render_switch_drive_choice())
+		if (auto *track{selected_track()}; track != nullptr && track->eType == tt_Switch && false == track->m_editorremoved)
+			apply_switch_drive_choice(*track);
 	if (false == tool.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", tool.status.c_str());
 	if (ImGui::SmallButton(STR_C("Collect from the scenery")))
