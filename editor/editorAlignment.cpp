@@ -656,9 +656,9 @@ result fit_between(design const &Design)
 			report.unbalanced = unbalanced_acceleration(Design.speed, sharpest, std::max(0.0, vertex.cant), Design.norms);
 			report.recommended = recommend(Design.speed, sharpest, Design.norms);
 			r.curves.push_back(report);
-			if (sharpest < report.recommended.radius_min - 1e-6)
+			if (Design.norms.checked && sharpest < report.recommended.radius_min - 1e-6)
 				r.warnings.emplace_back(format("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h", k + 1, sharpest, report.recommended.radius_min, Design.speed));
-			if (report.unbalanced > Design.norms.unbalanced + 1e-6)
+			if (Design.norms.checked && report.unbalanced > Design.norms.unbalanced + 1e-6)
 				r.warnings.emplace_back(format("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2", k + 1, report.unbalanced, Design.norms.unbalanced));
 			continue;
 		}
@@ -756,6 +756,8 @@ result fit_between(design const &Design)
 		r.curves.push_back(report);
 
 		auto const &norms{Design.norms};
+		if (false == norms.checked)
+			continue;
 		if (radius < report.recommended.radius_min - 1e-6)
 			r.warnings.emplace_back(format("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h", k + 1, radius, report.recommended.radius_min, Design.speed));
 		if (curve.cant > norms.cant_max + 1e-6)
@@ -782,7 +784,7 @@ result fit_between(design const &Design)
 	push_straight(cursor, lastdirection, tail);
 	r.length = chainage;
 
-	if (Design.norms.tangent_min_time > 0.0)
+	if (Design.norms.checked && Design.norms.tangent_min_time > 0.0)
 	{
 		auto const minimum{Design.norms.tangent_min_time * Design.speed / 3.6};
 		for (std::size_t i = 1; i + 1 < r.elements.size(); ++i)

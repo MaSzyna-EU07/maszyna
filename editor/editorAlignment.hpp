@@ -37,6 +37,7 @@ struct limits
 	double tangent_min_time{0.0};
 	double arc_min{20.0};
 	double arc_min_factor{0.4};
+	bool checked{true};
 };
 
 struct compound_arc

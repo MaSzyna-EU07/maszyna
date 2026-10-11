@@ -1111,9 +1111,9 @@ void editor_mode::render_path_parameters(TTrack &Track)
 		editor_track::velocity(*track, velocity);
 	item_tooltip("Speed limit of the path for the AI drivers and the timetable, -1: no limit of its own");
 	finish_edit(rebuild::none);
-	char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
+	char const *environments[] = {STR_C("flat"), STR_C("mountains"), STR_C("canyon"), STR_C("tunnel"), STR_C("bridge"), STR_C("bank")};
 	int environment = std::clamp(static_cast<int>(track->eEnvironment), 0, 5);
-	if (ImGui::Combo("Environment", &environment, environments, IM_ARRAYSIZE(environments)))
+	if (ImGui::Combo(STR_C("Environment"), &environment, environments, IM_ARRAYSIZE(environments)))
 	{
 		track->eEnvironment = static_cast<TEnvironmentType>(environment);
 		apply_now(rebuild::none);
@@ -1267,7 +1267,8 @@ void editor_mode::render_path_circuits(TTrack &Track)
 
 	int overheadmode{track->fOverhead < 0.f ? 0 : track->fOverhead == 0.f ? 1 : 2};
 	ImGui::PushItemWidth(220.0f);
-	if (ImGui::Combo("Overhead line", &overheadmode, "Normal\0No current, coasting\0Pantographs lowered, speed limit\0"))
+	char const *overheadmodes[] = {STR_C("Normal"), STR_C("No current, coasting"), STR_C("Pantographs lowered, speed limit")};
+	if (ImGui::Combo(STR_C("Overhead line"), &overheadmode, overheadmodes, IM_ARRAYSIZE(overheadmodes)))
 	{
 		editor_track::overhead(*track, overheadmode == 0 ? -1.f : overheadmode == 1 ? 0.f : std::max(1.f, track->fOverhead > 0.f ? track->fOverhead : 40.f));
 		changed(before, false);
@@ -2373,8 +2374,8 @@ bool editor_mode::render_route_parameters()
 	item_tooltip("Speed the cant, the transitions and the recommended radius are designed for");
 	design.speed = std::max(1.0, design.speed);
 	int shape = static_cast<int>(design.shape);
-	char const *shapes[] = {"Cubic parabola", "Clothoid"};
-	if (ImGui::Combo("Transition curve", &shape, shapes, IM_ARRAYSIZE(shapes)))
+	char const *shapes[] = {STR_C("Cubic parabola"), STR_C("Clothoid")};
+	if (ImGui::Combo(STR_C("Transition curve"), &shape, shapes, IM_ARRAYSIZE(shapes)))
 	{
 		design.shape = static_cast<alignment::transition_shape>(shape);
 		changed = true;
@@ -3652,14 +3653,14 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	if (m_lay.active)
 	{
 		if (m_lay.points.empty())
-			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "the shape chosen towards the cursor, to a free end: joins it"}, {"Parallel", "first select a straight, then a second track beside it in the panel"}, {"Esc", "stop laying"}};
+			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "the shape chosen towards the cursor, to a free end: joins it"}, {"Shift+click a straight", "a parallel track beside it, in the panel"}, {"Alt", "the direction in steps of 15 degrees"}, {"Esc", "stop laying"}};
 		else
 		{
 			bool const chained{m_lay.start.track != nullptr};
 			hints = {{"LMB", chained ? "lay the shape up to here and go on from its end" : "lay the straight up to here and go on from its end"}, {"LMB on a free end", "join and lay"}};
 			if (chained || m_lay.mouse_snap.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "arc / straight, at a free end: another shape"}});
-			hints.insert(hints.end(), {{"Enter", "lay up to the cursor"}, {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "cancel"}});
+			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees"}, {"Enter", "lay up to the cursor"}, {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "cancel"}});
 		}
 	}
 	else if (false == m_straights.detour.empty())
@@ -3844,6 +3845,8 @@ std::string editor_mode::track_readout() const
 			text += "\n" + lay.preview_error;
 		if (lay.points.size() == 1 && (lay.start.track != nullptr || lay.mouse_snap.track != nullptr))
 			text += "\n" + track_shaping(lay.mouse_snap.track != nullptr && lay.start.track != nullptr);
+		if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
+			text += format("\naz %.0f deg", azimuth(lay.points.back(), lay.mouse));
 		if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
 			text += "\n" + lay.status;
 		return text;
@@ -4074,6 +4077,8 @@ void editor_mode::update_build_tools()
 	double const height{false == lay.points.empty() ? lay.points.back().y : lay.start.track != nullptr ? lay.start.position.y : ground.y};
 	if (pointing)
 		lay.mouse = typed_lay(cursor_terrain(height));
+	if (pointing && ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
+		lay.mouse = lay_angle_snap(lay.mouse);
 	lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
 	if (lay.mouse_snap.track == nullptr)
 		lay.mouse = lay_bed(lay.mouse);
@@ -4463,7 +4468,7 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 	request.speed = design_speed(From, End.track);
 	request.kink = m_joints.angle * 0.5;
 	request.shape = m_route.design.shape;
-	request.norms = m_route.design.norms;
+	request.norms = laying_norms();
 	auto result{alignment::join(request)};
 	if (m_lay.transitions && result.kind != alignment::join_kind::straight && result.kind != alignment::join_kind::arc && glm::length(request.end.direction) > 1e-9)
 	{
@@ -4784,7 +4789,7 @@ alignment::result editor_mode::lay_shape(std::vector<glm::dvec3> const &Points, 
 {
 	auto const &tool{m_lay};
 	design = {};
-	design.norms = m_route.design.norms;
+	design.norms = laying_norms();
 	design.shape = m_route.design.shape;
 	design.speed = design_speed(tool.start.track, nullptr);
 	design.start = Points.front();
@@ -5008,9 +5013,50 @@ void editor_mode::lay_back()
 		tool.start = {};
 }
 
+glm::dvec3 editor_mode::lay_angle_snap(glm::dvec3 const &Mouse) const
+{
+	auto const &last{m_lay.points.back()};
+	glm::dvec2 const offset{Mouse.x - last.x, Mouse.z - last.z};
+	auto const length{glm::length(offset)};
+	if (length < 1.0)
+		return Mouse;
+	auto const leaving{m_lay.start.track != nullptr ? -plan_of(m_lay.start.direction) : glm::dvec2{0.0}};
+	glm::dvec2 const reference{glm::length(leaving) > 1e-6 ? glm::normalize(leaving) : glm::dvec2{0.0, 1.0}};
+	auto const step{glm::radians(15.0)};
+	auto const heading{turned(reference, std::round(signed_angle(reference, offset / length) / step) * step) * length};
+	return {last.x + heading.x, Mouse.y, last.z + heading.y};
+}
+
+editor_mode::track_hover editor_mode::split_spot() const
+{
+	auto const *selected{selected_track()};
+	if (selected == nullptr || ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse)
+		return {};
+	return track_under_cursor(selected, 20.0f);
+}
+
+alignment::limits editor_mode::laying_norms() const
+{
+	auto norms{m_route.design.norms};
+	norms.checked = false == m_norms_free;
+	return norms;
+}
+
 void editor_mode::render_lay_ui()
 {
 	auto &tool{m_lay};
+	{
+		int norms{m_norms_free ? 0 : 1};
+		char const *names[]{STR_C("free"), STR_C("PKP PLK")};
+		ImGui::PushItemWidth(120.0f);
+		if (ImGui::Combo(STR_C("Norms"), &norms, names, IM_ARRAYSIZE(names)))
+		{
+			m_norms_free = norms == 0;
+			tool.transitions = false == m_norms_free;
+		}
+		ImGui::PopItemWidth();
+		item_tooltip("Free: plain arcs with no transition curves and no cant, no warnings about the norms, the track goes where it's clicked.\nPKP PLK: transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms");
+	}
 	if (auto *track{selected_track()}; track != nullptr)
 	{
 		std::string reason;
@@ -5424,6 +5470,16 @@ void editor_mode::draw_build_overlay() const
 				projection.line(drawlist, origin + glm::dvec3{i * cell, 0.0, j * cell}, origin + glm::dvec3{(i + 1) * cell, 0.0, j * cell}, colour, 1.0f);
 		}
 	}
+	if (m_track_tab == track_tab::path && false == m_lay.active && false == m_track_gizmo_using)
+		if (auto const spot{split_spot()}; spot.track != nullptr)
+		{
+			ImVec2 at;
+			if (projection.project(spot.point, at))
+			{
+				drawlist->AddCircle(at, 6.0f, overlay_color::highlight, 12, 1.5f);
+				drawlist->AddText({at.x + 9.0f, at.y - 18.0f}, overlay_color::highlight, STR_C("K: split here"));
+			}
+		}
 	auto const &display{ImGui::GetIO().DisplaySize};
 	for (auto const *track : simulation::Paths.sequence())
 	{

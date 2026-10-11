@@ -92,13 +92,13 @@ double segment_distance2(glm::vec2 const &Point, glm::vec2 const &A, glm::vec2 c
 
 } // namespace
 
-editor_mode::track_hover editor_mode::track_under_cursor(TTrack const *Only) const
+editor_mode::track_hover editor_mode::track_under_cursor(TTrack const *Only, float const Pixels) const
 {
 	track_hover result;
 	auto const &io{ImGui::GetIO()};
 	screen_projection const projection;
 	glm::vec2 const mouse{io.MousePos.x, io.MousePos.y};
-	double best{Only != nullptr ? std::numeric_limits<double>::max() : kHoverPixels * kHoverPixels};
+	double best{Pixels > 0.0f ? Pixels * Pixels : Only != nullptr ? std::numeric_limits<double>::max() : kHoverPixels * kHoverPixels};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == rail(*track) || track->m_editorremoved || (Only != nullptr && track != Only))
@@ -216,6 +216,15 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::lay_end, lay.points.empty() ? "Click: start from this free end, drag: lead a track out of it" : "Click: join this end and lay");
 		}
 		intent.position = lay.mouse;
+		if (lay.points.empty())
+			if (auto const under{track_under_cursor()}; under.track != nullptr)
+			{
+				intent.track = under.track;
+				intent.path = under.path;
+				if (shift)
+					return make(kind::select, "Click: choose this track, the parallel track goes beside it");
+				return make(kind::lay, "Click: start on the ground beside this track. Shift+click: a parallel track to it, T: a switch into it");
+			}
 		return make(kind::lay, lay.points.empty() ? "Click: start of the new track" : "Click: lay the track to here");
 	}
 	if (m_track_tab == track_tab::turntable)

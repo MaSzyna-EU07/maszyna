@@ -1092,7 +1092,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::string preview_error;
 		double preview_length{0.0};
 		double radius{500.0};
-		bool transitions{true};
+		bool transitions{false};
 		double piece_length{100.0};
 		bool copy_selected{false};
 		editor_track::path_style style;
@@ -1106,6 +1106,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<step> chain;
 	};
 	lay_tool m_lay;
+	bool m_norms_free{true};
+	alignment::limits laying_norms() const;
+	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse) const;
 	void lay_after_history(bool const Undo);
 	void lay_back();
 	void render_lay_ui();
@@ -1250,7 +1253,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		double since{0.0};
 	};
 	track_hover m_hover;
-	track_hover track_under_cursor(TTrack const *Only = nullptr) const;
+	track_hover track_under_cursor(TTrack const *Only = nullptr, float const Pixels = 0.0f) const;
+	track_hover split_spot() const;
 	void update_track_hover();
 	void draw_track_hover() const;
 	struct track_intent

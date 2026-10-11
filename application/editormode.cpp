@@ -3516,7 +3516,7 @@ void editor_mode::render_view_menu()
         toggle_ortho();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
-    ImGui::MenuItem("Show lanes", nullptr, &m_roadtool.lanes);
+    ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", "Draws the lanes of the roads with the ways the vehicles take through the junctions");
     if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.open))
@@ -4705,6 +4705,8 @@ void editor_mode::render_shortcuts_window()
 	      {"Ctrl+wheel", "Laying: radius"},
 	      {"Shift+wheel", "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"},
 	      {"0-9 while laying", "Type the length (or the radius) of the next piece, Enter lays it"},
+	      {"Alt held while laying", "The direction in steps of 15 degrees"},
+	      {"Shift+LMB on a track in L", "Choose it for a parallel track"},
 	      {"Enter / Backspace", "Laying track: lay up to the cursor / take the last piece back"},
 	      {"Del", "Delete the selected tracks"}}},
 	    {"Roads",
@@ -4742,7 +4744,7 @@ void editor_mode::render_shortcuts_window()
 
 void editor_mode::render_gizmo_options()
 {
-    if (ImGui::Button(Global.EditorOrtho ? "3D view (O)" : "Top view, orthographic (O)"))
+    if (ImGui::Button(Global.EditorOrtho ? STR_C("3D view (O)") : STR_C("Top view, orthographic (O)")))
         toggle_ortho();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", Global.EditorOrtho ? STR_C("Wheel zooms. Hold the wheel and drag to pan.") : STR_C("Top-down orthographic view"));
@@ -4785,7 +4787,7 @@ void editor_mode::render_gizmo_options()
     {
         auto const located = editor_includes::parameter_with_role(m_include.info, "pos.x") != 0 || editor_includes::parameter_with_role(m_include.info, "pos.y") != 0 ||
                              editor_includes::parameter_with_role(m_include.info, "pos.z") != 0;
-        ImGui::TextDisabled("%s", false == located             ? "Include selected, no position parameters described" :
+        ImGui::TextDisabled("%s", false == located             ? STR_C("Include selected, no position parameters described") :
                                   false == m_include.placement ? STR_C("Include selected, no gizmo under rotate or scale") :
                                                                  STR_C("Include selected, axes as its template allows"));
     }
@@ -5399,11 +5401,11 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_F4: choose_work_area(work_area::roads); break;
         case GLFW_KEY_F5: choose_work_area(work_area::terrain); break;
         // the edit modes in the order of the toolbar; in the track mode the digits typed as a value were taken already
-        case GLFW_KEY_1: choose_edit_mode(nodebank_panel::MODIFY); break;
-        case GLFW_KEY_2: choose_edit_mode(nodebank_panel::ADD); break;
-        case GLFW_KEY_3: choose_edit_mode(nodebank_panel::BRUSH); break;
-        case GLFW_KEY_4: choose_edit_mode(nodebank_panel::FILL); break;
-        case GLFW_KEY_5: choose_edit_mode(nodebank_panel::COPY); break;
+        case GLFW_KEY_1: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::MODIFY); break;
+        case GLFW_KEY_2: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::ADD); break;
+        case GLFW_KEY_3: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::BRUSH); break;
+        case GLFW_KEY_4: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::FILL); break;
+        case GLFW_KEY_5: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::COPY); break;
         default: handled = false; break;
         }
         if (handled)
@@ -5552,7 +5554,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && selected_track() != nullptr)
         {
-            auto const under{track_under_cursor(selected_track())};
+            auto const under{split_spot()};
             if (under.track != nullptr)
                 split_track_at(*under.track, under.point);
         }

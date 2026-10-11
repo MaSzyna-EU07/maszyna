@@ -15,7 +15,7 @@ msgid "Select  Esc"
 msgstr "Wybór  Esc"
 
 msgid "Lay track  L"
-msgstr "Układaj tor  L"
+msgstr "Układanie toru  L"
 
 msgid "Switch  T"
 msgstr "Rozjazd  T"
@@ -5559,3 +5559,78 @@ msgstr "0-9 w trakcie układania"
 
 msgid "Type the length (or the radius) of the next piece, Enter lays it"
 msgstr "Wpisz długość (lub promień) następnego odcinka, Enter go kładzie"
+
+msgid "canyon"
+msgstr "jar"
+
+msgid "tunnel"
+msgstr "tunel"
+
+msgid "bridge"
+msgstr "most"
+
+msgid "bank"
+msgstr "nasyp"
+
+msgid "Normal"
+msgstr "Normalna"
+
+msgid "No current, coasting"
+msgstr "Bez napięcia, jazda z rozpędu"
+
+msgid "Pantographs lowered, speed limit"
+msgstr "Opuszczone pantografy, ograniczenie prędkości"
+
+msgid "Overhead line"
+msgstr "Sieć trakcyjna"
+
+msgid "Transition curve"
+msgstr "Krzywa przejściowa"
+
+msgid "Include selected, no position parameters described"
+msgstr "Zaznaczony include, bez opisanych parametrów położenia"
+
+msgid "3D view (O)"
+msgstr "Widok 3D (O)"
+
+msgid "free"
+msgstr "swobodne"
+
+msgid "PKP PLK"
+msgstr "PKP PLK"
+
+msgid "Norms"
+msgstr "Normy"
+
+msgid "Free: plain arcs with no transition curves and no cant, no warnings about the norms, the track goes where it's clicked.\nPKP PLK: transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms"
+msgstr "Swobodne: zwykłe łuki bez krzywych przejściowych i przechyłki, bez ostrzeżeń o normach, tor idzie tam, gdzie klikniesz.\nPKP PLK: krzywe przejściowe i przechyłka dla prędkości projektowej, ostrzeżenia, gdy promień, przechyłka lub krzywe przejściowe nie spełniają norm"
+
+msgid "Click: choose this track, the parallel track goes beside it"
+msgstr "Klik: wybierz ten tor, obok niego pójdzie tor równoległy"
+
+msgid "Click: start on the ground beside this track. Shift+click: a parallel track to it, T: a switch into it"
+msgstr "Klik: początek na terenie obok tego toru. Shift+klik: tor równoległy do niego, T: rozjazd w nim"
+
+msgid "K: split here"
+msgstr "K: podziel tutaj"
+
+msgid "Shift+click a straight"
+msgstr "Shift+klik na prostej"
+
+msgid "a parallel track beside it, in the panel"
+msgstr "tor równoległy obok niej, w panelu"
+
+msgid "the direction in steps of 15 degrees"
+msgstr "kierunek co 15 stopni"
+
+msgid "Alt held while laying"
+msgstr "Wciśnięty Alt w trakcie układania"
+
+msgid "The direction in steps of 15 degrees"
+msgstr "Kierunek co 15 stopni"
+
+msgid "Shift+LMB on a track in L"
+msgstr "Shift+LPM na torze w L"
+
+msgid "Choose it for a parallel track"
+msgstr "Wybiera go pod tor równoległy"
