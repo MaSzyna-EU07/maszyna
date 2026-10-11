@@ -17,6 +17,7 @@ FOLDER = 'scenery/tory/napedy'
 PATTERN = re.compile(r'^(ele1?|mech[12]?)-rz([lp])-([lp])((?:_[a-z]+)*)\.inc$')
 KINDS = {'ele': 'elektryczny', 'mech': 'mechaniczny'}
 DEFAULT = 'ele'
+HEIGHTS = {'ele': 0.05, 'ele1': 0.05}
 
 
 def examine(path, file):
@@ -49,7 +50,7 @@ def examine(path, file):
         'name: ' + family,
         'category: switch drive',
         'description: "' + description + '"',
-        'switch: {hand: %s, drive: %s, height: 0%s}' % (hand, side, ', default: true' if family == DEFAULT else ''),
+        'switch: {hand: %s, drive: %s, height: %s%s}' % (hand, side, HEIGHTS.get(family, 0), ', default: true' if family == DEFAULT else ''),
         'params:',
         '  - {id: 1, role: track, label: Switch}',
         '  - {id: 2, role: pos.x}',
