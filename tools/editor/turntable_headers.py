@@ -8,35 +8,23 @@ without --write it only reports what it would write; --zip packs every described
 import os
 import re
 import sys
-import tarfile
-import time
-import zipfile
 
-LINEMARK = '//$e'
+from editor_headers import LINEMARK, body_lines, decode, load, options, pack, write
+
 FOLDER = 'scenery'
 ROTATION = re.compile(r'^event\s+\S*tor(\d+)rot\s+animation\s+\S+\s+\S+\s+rotate\s+\S+\s+\S+\s+\S+\s+(\S+)', re.I | re.M)
 MODEL = re.compile(r'model\s+0\s+0\s+0\s+0\s+\S*?obrotnica(\d+)m\.t3d\s+\(p6\)', re.I)
 
 
-def decode(raw):
-    try:
-        text = raw.decode('utf-8')
-        encoding = 'utf-8' if raw.startswith(b'\xef\xbb\xbf') or max(raw, default=0) > 127 else 'cp1250'
-    except UnicodeDecodeError:
-        text = raw.decode('cp1250')
-        encoding = 'cp1250'
-    return text, encoding
-
-
 def examine(path, relative):
-    raw = open(path, 'rb').read()  # NOSONAR
+    raw = load(path)
     if re.search(rb'tor\d+rot\s+animation', raw, re.I) is None:
         return None, None
     text, encoding = decode(raw)
     marks = [line for line in text.splitlines() if line.startswith(LINEMARK)]
     if any('category: turntable' in line for line in marks):
         return {'raw': raw, 'header': None, 'described': True}, ''
-    body = '\n'.join(line for line in text.splitlines() if not line.startswith(LINEMARK))
+    body = '\n'.join(body_lines(text))
     lower = body.lower()
     if 'origin (p2) (p3) (p4)' not in lower or 'rotate 0 (p5) 0' not in lower:
         return None, 'not origin (p2) (p3) (p4) rotate 0 (p5) 0'
@@ -75,28 +63,12 @@ def examine(path, relative):
     return {'raw': raw, 'text': text, 'encoding': encoding, 'header': header, 'described': False, 'length': length, 'angles': angles}, ''
 
 
-def rewrite(info):
-    if info['header'] is None:
-        return info['raw']
-    text = info['text']
-    eol = '\r\n' if '\r\n' in text else '\n'
-    bom = text.startswith('﻿')
-    if bom:
-        text = text[1:]
-    kept = [line for line in text.split(eol) if not line.startswith(LINEMARK)]
-    block = [LINEMARK + ' ' + line for line in info['header']]
-    out = eol.join(block + kept)
-    return (('﻿' if bom else '') + out).encode(info['encoding'])
-
-
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
+    chosen = options(sys.argv, __doc__)
+    if chosen is None:
         return 1
-    data = sys.argv[1]
+    data, writing, target = chosen
     folder = os.path.join(data, FOLDER)
-    write = '--write' in sys.argv
-    pack = sys.argv[sys.argv.index('--zip') + 1] if '--zip' in sys.argv else None
     done = []
     skipped = []
     for root, _, files in os.walk(folder):
@@ -119,22 +91,10 @@ def main():
         print('skipped %s: %s' % (file, reason))
     fresh = [(file, info) for file, info in done if not info['described']]
     print('%d described now, %d already described, %d skipped' % (len(fresh), len(done) - len(fresh), len(skipped)))
-    if write and fresh:
-        backup = os.path.join(data, 'editor_backup')
-        os.makedirs(backup, exist_ok=True)
-        archive = os.path.join(backup, 'turntables_%s.tar' % time.strftime('%Y%m%d_%H%M%S'))
-        with tarfile.open(archive, 'w') as tar:
-            for file, _ in fresh:
-                tar.add(os.path.join(folder, file), arcname=FOLDER + '/' + file)
-        for file, info in fresh:
-            with open(os.path.join(folder, file), 'wb') as out:
-                out.write(rewrite(info))
-        print('written, originals in ' + archive)
-    if pack:
-        with zipfile.ZipFile(pack, 'w', zipfile.ZIP_DEFLATED) as out:
-            for file, info in done:
-                out.writestr(FOLDER + '/' + file, rewrite(info))
-        print('packed into ' + pack)
+    if writing and fresh:
+        write(data, FOLDER, 'turntables', fresh)
+    if target:
+        pack(target, FOLDER, done)
     return 0
 
 
