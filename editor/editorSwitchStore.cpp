@@ -33,6 +33,8 @@ std::string const kMark{"//$r"};
 double const kTolerance{0.02};
 
 std::vector<record> g_records;
+std::vector<record> g_base; // as they were before the changes not yet in the undo history
+bool g_changed{false};
 bool g_loaded{false};
 
 // format of the lines, coordinates in the space of the file:
@@ -100,6 +102,8 @@ void mark(scene::layer_handle const Layer)
 void reset()
 {
 	g_records.clear();
+	g_base.clear();
+	g_changed = false;
 	g_loaded = false;
 }
 
@@ -143,6 +147,8 @@ void load()
 			g_records.push_back(std::move(entry));
 		}
 	}
+	g_base = g_records;
+	g_changed = false;
 	if (false == g_records.empty())
 		WriteLog("Editor: " + std::to_string(g_records.size()) + " switch record(s) read from the scenery", logtype::generic);
 }
@@ -189,11 +195,13 @@ void put(record Entry, scene::layer_handle const Layer)
 		if (Entry.number == "-")
 			Entry.number = existing->number;
 		*existing = std::move(Entry);
+		g_changed = true;
 		mark(existing->layer);
 		return;
 	}
 	Entry.layer = Layer;
 	g_records.push_back(std::move(Entry));
+	g_changed = true;
 	mark(g_records.back().layer);
 }
 
@@ -204,7 +212,9 @@ void forget(std::string const &Name)
 	for (auto const &entry : g_records)
 		if (entry.name == Name)
 			layers.insert(entry.layer);
+	auto const count{g_records.size()};
 	g_records.erase(std::remove_if(g_records.begin(), g_records.end(), [&](record const &Entry) { return Entry.name == Name; }), g_records.end());
+	g_changed = g_changed || g_records.size() != count;
 	for (auto const layer : layers)
 		mark(layer);
 }
@@ -234,6 +244,7 @@ void tidy()
 	g_records.erase(std::remove_if(g_records.begin(), g_records.end(), gone), g_records.end());
 	for (auto const layer : layers)
 		mark(layer);
+	g_changed = g_changed || false == layers.empty();
 }
 
 std::string label(record const &Record)
@@ -252,6 +263,34 @@ std::string label(record const &Record)
 	if (Record.main_radius != 0.0)
 		text += format(", Rg %.0f", std::abs(Record.main_radius));
 	return text;
+}
+
+std::optional<std::vector<record>> take_changes()
+{
+	if (false == g_changed)
+		return std::nullopt;
+	auto before{std::move(g_base)};
+	g_base = g_records;
+	g_changed = false;
+	return before;
+}
+
+void settle()
+{
+	g_base = g_records;
+	g_changed = false;
+}
+
+void restore(std::vector<record> Records)
+{
+	std::set<scene::layer_handle> layers;
+	for (auto const *list : {&g_records, &Records})
+		for (auto const &entry : *list)
+			layers.insert(entry.layer);
+	g_records = std::move(Records);
+	for (auto const layer : layers)
+		mark(layer);
+	settle();
 }
 
 } // namespace switch_store

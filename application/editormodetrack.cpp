@@ -1233,8 +1233,23 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	snap.created = std::move(Created);
 	snap.removed = std::move(Removed);
 	infra_attach(snap);
+	snap.alignments = alignment_store::take_changes();
+	snap.switch_records = switch_store::take_changes();
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
+}
+
+void editor_mode::records_to_history()
+{
+	auto alignments{alignment_store::take_changes()};
+	auto switches{switch_store::take_changes()};
+	if (m_history.empty() || m_history.back().action != EditorSnapshot::Action::TrackEdit)
+		return;
+	auto &last{m_history.back()};
+	if (alignments.has_value() && false == last.alignments.has_value())
+		last.alignments = std::move(alignments);
+	if (switches.has_value() && false == last.switch_records.has_value())
+		last.switch_records = std::move(switches);
 }
 
 bool editor_mode::tracks_editable(std::vector<TTrack *> const &Tracks, std::string &Reason)
@@ -1281,6 +1296,18 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		current.profile_library = std::move(m_profiles);
 		m_profiles = Snapshot.profile_library;
 		profile_library_mark(std::move(layers));
+	}
+	alignment_store::settle();
+	switch_store::settle();
+	if (Snapshot.alignments.has_value())
+	{
+		current.alignments = alignment_store::records();
+		alignment_store::restore(*Snapshot.alignments);
+	}
+	if (Snapshot.switch_records.has_value())
+	{
+		current.switch_records = switch_store::records();
+		switch_store::restore(*Snapshot.switch_records);
 	}
 	Opposite.push_back(std::move(current));
 
@@ -1835,6 +1862,7 @@ void editor_mode::render_turnout_ui()
 		editor_track::follow(*track, following);
 		editor_track::commit(changed);
 		record_switch(*track, Template);
+		records_to_history();
 		if (false == loose.empty())
 			ui()->set_status(STR_C("Too far from the new ends of the switch, left unjoined: ") + loose, true);
 	};
@@ -2552,6 +2580,7 @@ void editor_mode::render_route_stored()
 	if (ImGui::SmallButton(STR_C("Forget the kept design")))
 	{
 		alignment_store::forget(route.departed);
+		alignment_store::settle();
 		route.departed = -1;
 		route.status = STR_C("The kept design will be removed from ") + layer + STR_C(" on save");
 	}
@@ -2711,6 +2740,7 @@ void editor_mode::route_apply()
 		route_update();
 	}
 	route_store();
+	records_to_history();
 	route.status = STR_C("Re-laid ") + std::to_string(chain.tracks.size()) + STR_C(" paths") + (added > 0 ? STR_C(", added ") + std::to_string(added) : std::string{});
 	if (startextension > 0.0 || endextension > 0.0)
 		route.status += format(", the curve took over %.2f / %.2f m of the adjoining straights", startextension, endextension);
@@ -4313,6 +4343,8 @@ void editor_mode::delete_selected_track()
 		return;
 	}
 	// retired first, so the infrastructure it carried and moves elsewhere is in the same undo step
+	if (auto const known{switch_store::of(*track)})
+		switch_store::forget(known->name);
 	editor_track::retire(*track);
 	// a switch leaves its main track behind, so the line isn't broken, unless Shift asks for all of it
 	std::vector<TTrack *> created;
@@ -6265,7 +6297,10 @@ void editor_mode::render_switch_record(TTrack &Track)
 	item_tooltip("Chainage of the start of the switch; taken from the horizontal alignment kept in the scenery when the switch lies on one");
 	ImGui::PopItemWidth();
 	if (changed)
+	{
 		switch_store::put(entry, entry.layer);
+		switch_store::settle();
+	}
 }
 
 void editor_mode::switch_placed(std::vector<TTrack *> const &Created)

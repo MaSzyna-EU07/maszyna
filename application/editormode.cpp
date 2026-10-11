@@ -2907,6 +2907,7 @@ bool editor_mode::save()
     if (m_profile.changed)
         profile_store();
     switch_store::tidy();
+    switch_store::settle();
     infra_store();
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {

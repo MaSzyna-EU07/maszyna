@@ -104,6 +104,7 @@ http://mozilla.org/MPL/2.0/.
 //   switchplace <template> <x> <z> <direction> <side>   the catalogue template whose label starts so put into the straight
 //                                        nearest the point, or into the curve (switchcurve); slipplace <template> <x> <z>
 //   switches                             logs the switches kept in the scenery and the speed of each diverging track
+//   deletetrack <name>, deletekind <kind>   the path deleted as Del does it, or the first path over an element of the kind
 //   btfcheck <terrain file>              the .txtf converted to .btf, the editor lines the binary file keeps logged
 //   screenshot
 //   save
@@ -1198,6 +1199,36 @@ void editor_mode::selftest_step()
 					insert_switch(line, std::clamp(line.along(point), 0.0, line.length), direction, side);
 			}
 			WriteLog("SELFTEST " + command + ": " + tool.status + " " + m_straights.status);
+		}
+		else if (command == "deletetrack" || command == "deletekind")
+		{
+			std::string name;
+			words >> name;
+			TTrack *chosen{nullptr};
+			if (command == "deletetrack")
+				chosen = simulation::Paths.find(name);
+			else
+				for (auto *track : simulation::Paths.sequence())
+				{
+					if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+						continue;
+					auto const found{alignment_store::on_track(*track)};
+					if (found.has_value() && alignment_store::describe(alignment_store::records()[found->record].result.elements[found->element]).kind == name)
+					{
+						chosen = track;
+						break;
+					}
+				}
+			if (chosen == nullptr || chosen->m_editorremoved)
+			{
+				WriteLog("SELFTEST " + command + ": no path " + name);
+				continue;
+			}
+			m_node = chosen;
+			ui()->set_node(m_node);
+			auto const deleted{chosen->name()};
+			delete_selected_track();
+			WriteLog("SELFTEST " + command + ": " + deleted + " deleted");
 		}
 		else if (command == "btfcheck")
 		{

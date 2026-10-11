@@ -21,6 +21,8 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorTrack.hpp"
 #include "editor/editorAlignment.hpp"
+#include "editor/editorAlignmentStore.hpp"
+#include "editor/editorSwitchStore.hpp"
 #include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
 #include "editor/editorProfile.hpp"
@@ -168,6 +170,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<infra::object_state> infra; // objects which followed the paths
 		bool profiles{false}; // the stored grade line designs changed too, these were the ones before
 		std::vector<stored_profile> profile_library;
+		std::optional<std::vector<alignment_store::record>> alignments; // the kept horizontal alignments changed too, these were the ones before
+		std::optional<std::vector<switch_store::record>> switch_records; // the kept switches changed too, these were the ones before
 		std::vector<array_copy> copies; // models an array added to the one it was made of
 		bool joined{false}; // undone and redone together with the change before it
 		std::shared_ptr<terrain_streamer::change const> terrain; // the heightmap terrain from before the change (Action::Terrain)
@@ -630,6 +634,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	static bool tracks_editable(std::vector<TTrack *> const &Tracks, std::string &Reason);
 	void trim_history();
 	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
+	// changes of the kept alignments and switches go into the last step of the history, made just before them
+	void records_to_history();
 	editor_track::point_ref m_track_point;
 	std::vector<TTrack *> m_track_drag;
 	std::vector<std::pair<TTrack *, editor_track::point_ref>> m_track_drag_points;

@@ -87,5 +87,11 @@ int store(alignment::design const &Design, alignment::result const &Result, doub
 void forget(int const Index);
 // km of the point on the stored alignments, if it lies on one
 std::optional<double> chainage_at(glm::dvec3 const &Point);
+// the records as they were before the changes made since the last call, if there were any; the current ones become the base
+std::optional<std::vector<record>> take_changes();
+// the current records become the base, the changes made so far aren't a part of the undo history
+void settle();
+// puts the records back as they were, for undo and redo
+void restore(std::vector<record> Records);
 
 } // namespace alignment_store

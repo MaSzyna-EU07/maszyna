@@ -57,5 +57,11 @@ void forget(std::string const &Name);
 void tidy();
 // "Rz 60E1-500-1:12 L", as the type is written on the lists of the switches
 std::string label(record const &Record);
+// the records as they were before the changes made since the last call, if there were any; the current ones become the base
+std::optional<std::vector<record>> take_changes();
+// the current records become the base, the changes made so far aren't a part of the undo history
+void settle();
+// puts the records back as they were, for undo and redo
+void restore(std::vector<record> Records);
 
 } // namespace switch_store

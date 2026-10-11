@@ -33,6 +33,8 @@ std::string const kMark{"//$h"};
 double const kStep{1.0};
 
 std::vector<record> g_records;
+std::vector<record> g_base; // as they were before the changes not yet in the undo history
+bool g_changed{false};
 bool g_loaded{false};
 
 // format of the lines, coordinates in the space of the file:
@@ -257,6 +259,8 @@ stored_element describe(alignment::element const &Element)
 void reset()
 {
 	g_records.clear();
+	g_base.clear();
+	g_changed = false;
 	g_loaded = false;
 }
 
@@ -363,6 +367,8 @@ void load()
 			}
 		}
 	}
+	g_base = g_records;
+	g_changed = false;
 	if (false == g_records.empty())
 		WriteLog("Editor: " + std::to_string(g_records.size()) + " horizontal alignment(s) read from the scenery", logtype::generic);
 }
@@ -585,6 +591,7 @@ int store(alignment::design const &Design, alignment::result const &Result, doub
 		g_records.push_back(std::move(entry));
 		index = static_cast<int>(g_records.size()) - 1;
 	}
+	g_changed = true;
 	mark(g_records[index].layer);
 	return index;
 }
@@ -596,6 +603,7 @@ void forget(int const Index)
 		return;
 	auto const layer{g_records[Index].layer};
 	g_records.erase(g_records.begin() + Index);
+	g_changed = true;
 	mark(layer);
 }
 
@@ -605,6 +613,34 @@ std::optional<double> chainage_at(glm::dvec3 const &Point)
 	if (false == found.has_value())
 		return std::nullopt;
 	return g_records[found->record].origin + found->chainage;
+}
+
+std::optional<std::vector<record>> take_changes()
+{
+	if (false == g_changed)
+		return std::nullopt;
+	auto before{std::move(g_base)};
+	g_base = g_records;
+	g_changed = false;
+	return before;
+}
+
+void settle()
+{
+	g_base = g_records;
+	g_changed = false;
+}
+
+void restore(std::vector<record> Records)
+{
+	std::set<scene::layer_handle> layers;
+	for (auto const *list : {&g_records, &Records})
+		for (auto const &entry : *list)
+			layers.insert(entry.layer);
+	g_records = std::move(Records);
+	for (auto const layer : layers)
+		mark(layer);
+	settle();
 }
 
 } // namespace alignment_store
