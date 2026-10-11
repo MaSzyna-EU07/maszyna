@@ -54,6 +54,9 @@ public:
 	int palette() const { return m_palette; }
 	void palette(int Palette) { m_palette = Palette; }
 
+	bool first_steps() const { return m_first_steps; }
+	void first_steps(bool Show) { m_first_steps = Show; }
+
 private:
 	movement_scheme m_movement{movement_scheme::wsad};
 	orthophoto_settings m_orthophoto;
@@ -63,6 +66,7 @@ private:
 	bool m_nodebank_previews{true};
 	int m_nodebank_card{96};
 	int m_palette{0};
+	bool m_first_steps{true};
 };
 
 // global editor settings instance

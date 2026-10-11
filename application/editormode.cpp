@@ -931,6 +931,7 @@ void editor_mode::restore_terrain(EditorSnapshot &Snapshot)
 
 void editor_mode::undo_last()
 {
+    first_step_done(first_step::undo);
     // a change of the terrain made a moment ago is a step of its own before it's taken back
     m_history_busy = true;
     terrain_history_step();
@@ -1478,6 +1479,7 @@ bool editor_mode::update()
     render_new_scenery_popup();
     render_open_scenery_popup();
     render_shortcuts_window();
+    render_first_steps();
     render_orthophoto_window();
     render_environment_window();
     draw_selection_overlay();
@@ -2906,6 +2908,7 @@ bool editor_mode::save()
         ui()->set_status(STR("The scenery wasn't opened for editing. Start the simulator with: -edit <scenery file>"), true);
         return false;
     }
+    first_step_done(first_step::save);
 
     // the heightmap terrain is kept in files of its own, the scenery only needs the directive which loads it
     std::vector<std::string> rootstatements;
@@ -4582,7 +4585,64 @@ void editor_mode::render_help_menu()
 	ImGui::MenuItem(STR_C("Keyboard shortcuts"), "F1", &m_shortcuts_open);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
+	ImGui::MenuItem(STR_C("First steps"), nullptr, &m_first_steps_open);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Laying the first track, step by step"));
 	ImGui::EndMenu();
+}
+
+void editor_mode::first_step_done(first_step const Step)
+{
+	m_first_steps_done[static_cast<std::size_t>(Step)] = true;
+}
+
+void editor_mode::render_first_steps()
+{
+	if (false == m_first_steps_open)
+		return;
+	if (ui()->mode() == nodebank_panel::TRACK)
+		first_step_done(first_step::tracks);
+	if (m_lay.active)
+		first_step_done(first_step::lay);
+	static char const *const steps[]{
+	    "F3: the Tracks field of work",
+	    "L: lay track",
+	    "Click on the ground, then once more: a straight. Each next click lays a piece and goes on from its end, Esc ends",
+	    "While laying on: Ctrl+wheel changes the radius, Shift+wheel the shape (arc then straight, straight then arc, arc, straight). The plain wheel zooms",
+	    "Joining: press on a free end (magenta ring) and drag onto another free end",
+	    "T: switch. Click a straight, then press on it and drag: along sets the direction, sideways the side",
+	    "Ctrl+Z takes a step back, Backspace while laying takes back the last piece",
+	    "Ctrl+S saves the scenery"};
+	ImGui::SetNextWindowSize(ImVec2(440.0f * Global.ui_scale, 0.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowPos(ImVec2(8.0f, ImGui::GetIO().DisplaySize.y - 8.0f), ImGuiCond_FirstUseEver, ImVec2(0.0f, 1.0f));
+	ImGui::SetNextWindowBgAlpha(1.0f);
+	if (ImGui::Begin((std::string(STR_C("First steps")) + "###firststeps").c_str(), &m_first_steps_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::PushTextWrapPos(420.0f * Global.ui_scale);
+		ImGui::TextDisabled("%s", STR_C("The ticks fill in by themselves, the window doesn't stop anything"));
+		for (std::size_t i = 0; i < m_first_steps_done.size(); ++i)
+		{
+			bool const done{m_first_steps_done[i]};
+			ImGui::TextColored(done ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s", done ? "[x]" : "[ ]");
+			ImGui::SameLine();
+			if (done)
+				ImGui::TextDisabled("%s", STR_C(steps[i]));
+			else
+				ImGui::TextWrapped("%s", STR_C(steps[i]));
+		}
+		ImGui::Separator();
+		ImGui::TextDisabled("%s", STR_C("RMB held + W S A D: fly the camera, F: fly to the selected, F1: all the keys"));
+		if (ui()->mode() == nodebank_panel::TRACK && false == GfxRenderer->Mouse_Hit())
+			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No ground under the cursor: track goes onto the level 0 plane, drawn as a grid. Terrain: F5"));
+		ImGui::PopTextWrapPos();
+		bool show{EditorSettings.first_steps()};
+		if (ImGui::Checkbox(STR_C("Show when the editor opens"), &show))
+		{
+			EditorSettings.first_steps(show);
+			EditorSettings.save();
+		}
+	}
+	ImGui::End();
 }
 
 void editor_mode::render_shortcuts_window()
@@ -4640,7 +4700,12 @@ void editor_mode::render_shortcuts_window()
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
 	      {"RMB on a track", "What can be done with it"},
 	      {"K", "Split the selected track at the cursor"},
-	      {"Enter / Backspace", "Laying track: finish / take the last point back"},
+	      {"L, LMB, LMB...", "Lay track: each click lays a piece and goes on from its end"},
+	      {"Drag from a free end", "Lead a track out of it; onto another free end: join the two"},
+	      {"Ctrl+wheel", "Laying: radius"},
+	      {"Shift+wheel", "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"},
+	      {"0-9 while laying", "Type the length (or the radius) of the next piece, Enter lays it"},
+	      {"Enter / Backspace", "Laying track: lay up to the cursor / take the last piece back"},
 	      {"Del", "Delete the selected tracks"}}},
 	    {"Roads",
 	     {{"Esc", "Finish the road being built"},
@@ -5150,6 +5215,19 @@ void editor_mode::enter()
             WriteLog("Editor: camera at the first track, " + track->name());
             break;
         }
+        if (false == m_saved_camera.has_value() && simulation::Paths.sequence().empty())
+        {
+            std::vector<char> found;
+            auto const ground{ground_heights({glm::dvec3{0.0, 5000.0, 0.0}}, true, &found).front()};
+            Camera.Pos = glm::dvec3{0.0, (found.front() != 0 ? ground : 0.0) + 60.0, 60.0};
+            Camera.Angle = glm::vec3(glm::radians(-45.0f), 0.0f, 0.0f);
+            Camera.m_owner = nullptr;
+            FreeFlyModeFlag = true;
+            Global.pCamera = Camera;
+            choose_work_area(work_area::tracks);
+            WriteLog("Editor: camera over the origin of the empty scenery");
+        }
+        m_first_steps_open = EditorSettings.first_steps();
     }
 
     Global.ControlPicking = true;
@@ -5458,11 +5536,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && !m_fill_points.empty())
             m_fill_points.pop_back();
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active && !m_lay.points.empty())
-        {
-            m_lay.points.pop_back();
-            if (m_lay.points.empty())
-                m_lay.start = {};
-        }
+            lay_back();
         break;
 
     case GLFW_KEY_ENTER:

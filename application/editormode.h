@@ -252,6 +252,11 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_help_menu();
 	void render_shortcuts_window();
 	bool m_shortcuts_open{false};
+	enum class first_step { tracks, lay, laid, wheel, join, turnout, undo, save, count };
+	void render_first_steps();
+	void first_step_done(first_step const Step);
+	bool m_first_steps_open{false};
+	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
 	// deletes what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks (Del)
 	void delete_selected();
 	void delete_model(TAnimModel *Model, bool const Joined);
@@ -1092,8 +1097,17 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool copy_selected{false};
 		editor_track::path_style style;
 		std::string status;
+		double status_time{-100.0};
+		struct step
+		{
+			editor_track::snap_target start;
+			glm::dvec3 point{0.0};
+		};
+		std::vector<step> chain;
 	};
 	lay_tool m_lay;
+	void lay_after_history(bool const Undo);
+	void lay_back();
 	void render_lay_ui();
 	void render_lay_status();
 	void lay_click();

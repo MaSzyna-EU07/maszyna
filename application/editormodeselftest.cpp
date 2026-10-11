@@ -1711,6 +1711,43 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
 		return selftest_result::handled;
 	}
+	if (command == "laychain")
+	{
+		int layout{0};
+		words >> layout >> m_lay.radius;
+		m_track_layout = static_cast<track_layout>(std::clamp(layout, 0, 3));
+		m_lay.active = true;
+		lay_cancel();
+		auto const report = [&](std::string const &Step) {
+			auto const *start{m_lay.start.track};
+			WriteLog(format("SELFTEST laychain %s: chain %zu, points %zu, start %s%s at %.2f %.2f, history %zu, status %s", Step.c_str(), m_lay.chain.size(), m_lay.points.size(), start != nullptr ? start->name().c_str() : "-", start != nullptr && start->m_editorremoved ? " (removed)" : "",
+			                m_lay.points.empty() ? 0.0 : m_lay.points.front().x, m_lay.points.empty() ? 0.0 : m_lay.points.front().z, m_history.size(), m_lay.status.c_str()));
+		};
+		for (std::string word; words >> word;)
+		{
+			if (word == "b")
+				lay_back();
+			else if (word == "u")
+				undo_last();
+			else if (word == "r")
+				redo_last();
+			else
+			{
+				glm::dvec3 point{std::strtod(word.c_str(), nullptr), 5000.0, 0.0};
+				words >> point.z;
+				std::vector<char> found;
+				auto const ground{ground_heights({point}, true, &found)};
+				point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+				m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
+				m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
+				lay_click();
+				word += format(" %.1f", point.z);
+			}
+			report(word);
+		}
+		lay_cancel();
+		return selftest_result::handled;
+	}
 	if (command == "layclicks")
 	{
 		int layout{0};

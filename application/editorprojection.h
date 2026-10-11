@@ -23,6 +23,7 @@ ImU32 constexpr marked{IM_COL32(255, 210, 60, 255)};
 ImU32 constexpr grip{IM_COL32(60, 230, 90, 255)};
 ImU32 constexpr selected{IM_COL32(40, 220, 255, 255)};
 ImU32 constexpr invalid{IM_COL32(255, 60, 60, 255)};
+ImU32 constexpr warning{IM_COL32(255, 140, 40, 255)};
 ImU32 constexpr highlight{IM_COL32(255, 255, 255, 255)};
 } // namespace overlay_color
 

@@ -216,7 +216,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::lay_end, lay.points.empty() ? "Click: start from this free end, drag: lead a track out of it" : "Click: join this end and lay");
 		}
 		intent.position = lay.mouse;
-		return make(kind::lay, lay.points.empty() ? "Click: start of the new track" : "Click: next point");
+		return make(kind::lay, lay.points.empty() ? "Click: start of the new track" : "Click: lay the track to here");
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
@@ -369,7 +369,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		{
 		case track_tab::straights: return make(kind::select, "Click: the whole straight through this track");
 		case track_tab::route: return make(kind::select, "Click: the curve of this track with its straights");
-		case track_tab::turnout: return make(kind::select, m_hover.track->eType == tt_Switch ? "Click: edit this switch" : m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: put a switch into this track");
+		case track_tab::turnout: return make(kind::select, m_hover.track->eType == tt_Switch ? "Click: edit this switch" : m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: choose this track, then press and drag on it for the switch");
 		case track_tab::profile: return make(kind::select, "Click: the grade line through this track");
 		case track_tab::lineside: return make(kind::select, "Click: the line the objects go along");
 		default: return make(kind::select, "Click: select");

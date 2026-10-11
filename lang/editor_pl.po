@@ -29,8 +29,8 @@ msgstr "Pokaż inspektor"
 msgid "The curve can't be read from this path, edit it as a single path"
 msgstr "Z tego odcinka nie da się odczytać łuku, edytuj go jako pojedynczy odcinek"
 
-msgid "Laying track: LMB adds the points"
-msgstr "Układanie toru: LPM dodaje punkty"
+msgid "Laying track: each click lays a piece, Esc ends"
+msgstr "Układanie toru: każdy klik kładzie odcinek, Esc kończy"
 
 msgid "Switch: drag to set its direction and side"
 msgstr "Rozjazd: przeciągnij, aby ustawić kierunek i stronę"
@@ -2835,8 +2835,8 @@ msgstr "Klik: dołącz do tego końca i ułóż"
 msgid "Click: start of the new track"
 msgstr "Klik: początek nowego toru"
 
-msgid "Click: next point"
-msgstr "Klik: następny punkt"
+msgid "Click: lay the track to here"
+msgstr "Klik: połóż tor do tego miejsca"
 
 msgid "Press: where the model starts, drag to its end"
 msgstr "Wciśnij: początek modelu, przeciągnij do jego końca"
@@ -2901,8 +2901,8 @@ msgstr "Klik: edytuj ten rozjazd"
 msgid "Click: choose this track, then the type of the switch"
 msgstr "Klik: wybierz ten tor, potem typ rozjazdu"
 
-msgid "Click: put a switch into this track"
-msgstr "Klik: wstaw rozjazd w ten tor"
+msgid "Click: choose this track, then press and drag on it for the switch"
+msgstr "Klik: wybierz ten tor, potem wciśnij i przeciągnij na nim, by wstawić rozjazd"
 
 msgid "Click: the grade line through this track"
 msgstr "Klik: niweleta przez ten tor"
@@ -4948,8 +4948,8 @@ msgstr "Skróty klawiszowe"
 msgid "Lay track / switch / turntable"
 msgstr "Układanie toru / rozjazd / obrotnica"
 
-msgid "Laying track: finish / take the last point back"
-msgstr "Układanie toru: zakończ / cofnij ostatni punkt"
+msgid "Laying track: lay up to the cursor / take the last piece back"
+msgstr "Układanie toru: połóż do kursora / cofnij ostatni odcinek"
 
 msgid "Leave the editor"
 msgstr "Wyjście z edytora"
@@ -5487,3 +5487,75 @@ msgstr ", ostrzej niż rozjazd (R %.0f m)"
 
 msgid ", the switch moved %.2f m"
 msgstr ", rozjazd przesunięty o %.2f m"
+
+msgid "take back the last piece"
+msgstr "cofnij ostatni odcinek"
+
+msgid "The last piece was taken back"
+msgstr "Ostatni odcinek cofnięty"
+
+msgid "R %.0f m doesn't reach the cursor, the arc goes through it with R %.0f m"
+msgstr "R %.0f m nie sięga kursora, łuk przechodzi przez niego z R %.0f m"
+
+msgid "First steps"
+msgstr "Pierwsze kroki"
+
+msgid "Laying the first track, step by step"
+msgstr "Pierwszy tor krok po kroku"
+
+msgid "The ticks fill in by themselves, the window doesn't stop anything"
+msgstr "Kroki odhaczają się same, okno niczego nie blokuje"
+
+msgid "F3: the Tracks field of work"
+msgstr "F3: dział Tory"
+
+msgid "L: lay track"
+msgstr "L: układanie toru"
+
+msgid "Click on the ground, then once more: a straight. Each next click lays a piece and goes on from its end, Esc ends"
+msgstr "Kliknij na terenie, potem jeszcze raz: prosta. Każdy kolejny klik kładzie odcinek i ciągnie tor dalej z jego końca, Esc kończy"
+
+msgid "While laying on: Ctrl+wheel changes the radius, Shift+wheel the shape (arc then straight, straight then arc, arc, straight). The plain wheel zooms"
+msgstr "W trakcie układania: Ctrl+kółko zmienia promień, Shift+kółko kształt (łuk i prosta, prosta i łuk, łuk, prosta). Samo kółko przybliża widok"
+
+msgid "Joining: press on a free end (magenta ring) and drag onto another free end"
+msgstr "Łączenie: wciśnij na wolnym końcu (różowy pierścień) i przeciągnij na inny wolny koniec"
+
+msgid "T: switch. Click a straight, then press on it and drag: along sets the direction, sideways the side"
+msgstr "T: rozjazd. Kliknij prostą, potem wciśnij na niej i przeciągnij: wzdłuż ustala kierunek, w bok stronę"
+
+msgid "Ctrl+Z takes a step back, Backspace while laying takes back the last piece"
+msgstr "Ctrl+Z cofa krok, Backspace w trakcie układania cofa ostatni odcinek"
+
+msgid "Ctrl+S saves the scenery"
+msgstr "Ctrl+S zapisuje scenerię"
+
+msgid "RMB held + W S A D: fly the camera, F: fly to the selected, F1: all the keys"
+msgstr "Wciśnięty PPM + W S A D: lot kamerą, F: leć do zaznaczonego, F1: wszystkie klawisze"
+
+msgid "No ground under the cursor: track goes onto the level 0 plane, drawn as a grid. Terrain: F5"
+msgstr "Pod kursorem nie ma terenu: tor trafia na płaszczyznę na wysokości 0, widoczną jako siatka. Teren: F5"
+
+msgid "Show when the editor opens"
+msgstr "Pokazuj po otwarciu edytora"
+
+msgid "L, LMB, LMB..."
+msgstr "L, LPM, LPM..."
+
+msgid "Lay track: each click lays a piece and goes on from its end"
+msgstr "Układanie toru: każdy klik kładzie odcinek i ciągnie tor dalej z jego końca"
+
+msgid "Lead a track out of it; onto another free end: join the two"
+msgstr "Wyprowadza z niego tor; na inny wolny koniec: łączy oba"
+
+msgid "Laying: radius"
+msgstr "Układanie: promień"
+
+msgid "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"
+msgstr "Układanie: łuk i prosta, prosta i łuk, łuk, prosta; na wolnym końcu: inny sposób połączenia"
+
+msgid "0-9 while laying"
+msgstr "0-9 w trakcie układania"
+
+msgid "Type the length (or the radius) of the next piece, Enter lays it"
+msgstr "Wpisz długość (lub promień) następnego odcinka, Enter go kładzie"

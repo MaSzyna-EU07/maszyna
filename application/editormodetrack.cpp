@@ -77,6 +77,27 @@ double piece_plan_radius(segment_data const &Path)
 	return curve.plan_length() / turn;
 }
 
+std::string lines_of(std::vector<std::string> const &Texts)
+{
+	std::string text;
+	for (auto const &line : Texts)
+		text += (text.empty() ? "" : "\n") + line;
+	return text;
+}
+
+std::string narrowed(std::vector<segment_data> const &Pieces, editor_track::layout const Layout, double const Radius)
+{
+	if (Layout != editor_track::layout::arc_straight && Layout != editor_track::layout::straight_arc)
+		return {};
+	double sharpest{0.0};
+	for (auto const &piece : Pieces)
+		if (auto const radius{piece_plan_radius(piece)}; radius >= 0.5 && (sharpest == 0.0 || radius < sharpest))
+			sharpest = radius;
+	if (sharpest == 0.0 || sharpest >= Radius * 0.99)
+		return {};
+	return format(STR_C("R %.0f m doesn't reach the cursor, the arc goes through it with R %.0f m"), Radius, sharpest);
+}
+
 std::string describe(editor_track::straight const &Line)
 {
 	return format("L %.2f m  az %.4f deg  i %.2f per mille  %zu paths", Line.length, Line.azimuth, Line.grade * 1000.0, Line.tracks.size());
@@ -489,6 +510,7 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		}
 	}
 
+	lay_after_history(Undo);
 	m_track_snap = {};
 	m_track_dirty = false;
 	m_track_point = {};
@@ -531,6 +553,7 @@ void editor_mode::show_track_tab(track_tab const Tab)
 	m_straights.tool = 0;
 	m_lay.points.clear();
 	m_lay.start = {};
+	m_lay.chain.clear();
 	m_lay.preview.clear();
 	m_lay.status.clear();
 	m_lay.active = Tab == track_tab::lay;
@@ -614,7 +637,7 @@ std::string editor_mode::track_mode_name() const
 		return STR_C("Select: LMB on a path");
 	switch (m_track_tab)
 	{
-	case track_tab::lay: return m_extend.active ? STR_C("Laying track: new path from the free end") : STR_C("Laying track: LMB adds the points");
+	case track_tab::lay: return m_extend.active ? STR_C("Laying track: new path from the free end") : STR_C("Laying track: each click lays a piece, Esc ends");
 	case track_tab::turnout:
 		if (m_switch.placing)
 			return STR_C("Switch: drag to set its direction and side");
@@ -3636,7 +3659,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints = {{"LMB", chained ? "lay the shape up to here and go on from its end" : "lay the straight up to here and go on from its end"}, {"LMB on a free end", "join and lay"}};
 			if (chained || m_lay.mouse_snap.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "arc / straight, at a free end: another shape"}});
-			hints.insert(hints.end(), {{"Enter", "lay up to the cursor"}, {"Backspace", "take back the point"}, {"Esc", "cancel"}});
+			hints.insert(hints.end(), {{"Enter", "lay up to the cursor"}, {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "cancel"}});
 		}
 	}
 	else if (false == m_straights.detour.empty())
@@ -3821,6 +3844,8 @@ std::string editor_mode::track_readout() const
 			text += "\n" + lay.preview_error;
 		if (lay.points.size() == 1 && (lay.start.track != nullptr || lay.mouse_snap.track != nullptr))
 			text += "\n" + track_shaping(lay.mouse_snap.track != nullptr && lay.start.track != nullptr);
+		if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
+			text += "\n" + lay.status;
 		return text;
 	}
 	auto const &state{m_straights};
@@ -4449,7 +4474,13 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 			result = std::move(*eased);
 	}
 	Length = result.length;
-	Error = result.kind == alignment::join_kind::bezier ? std::string{STR_C("No curve fits between the ends, they are joined with a free curve")} : std::string{};
+	std::vector<std::string> notes;
+	for (auto const &warning : result.warnings)
+		if (m_join_radius > 0.0 || warning.find("R reduced") == std::string::npos)
+			notes.push_back(warning);
+	if (result.kind == alignment::join_kind::bezier)
+		notes.insert(notes.begin(), STR_C("No curve fits between the ends, they are joined with a free curve"));
+	Error = lines_of(notes);
 	m_join_last = result;
 	return result.pieces;
 }
@@ -4514,6 +4545,9 @@ void editor_mode::finish_extend()
 	editor_track::commit(created);
 	digitize_drawn(created);
 	push_track_snapshot({}, created);
+	first_step_done(first_step::laid);
+	if (target.track != nullptr)
+		first_step_done(first_step::join);
 	m_node = created.back();
 	ui()->set_node(m_node);
 	straight_refresh();
@@ -4621,6 +4655,7 @@ bool editor_mode::track_wheel(double const Offset)
 				return *radius;
 		return radii[0];
 	};
+	first_step_done(first_step::wheel);
 	if (io.KeyCtrl)
 	{
 		if (false == joined)
@@ -4662,6 +4697,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		{
 			auto const grade{-grade_of(tool.start.direction)};
 			pieces = editor_track::layout_pieces(m_track_layout, Points[0], glm::normalize(leaving), grade, Points[1], tool.radius);
+			Error = narrowed(pieces, m_track_layout, tool.radius);
 			follow_ground(pieces, Points[0].y, grade, Points[1].y, std::numeric_limits<double>::quiet_NaN(), tool.start.track);
 		}
 		else if (End.track == nullptr)
@@ -4675,6 +4711,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			auto const back{editor_track::layout_pieces(m_track_layout, End.position, glm::normalize(-plan_of(End.direction)), -grade_of(End.direction), Points[0], tool.radius)};
 			for (auto piece{back.rbegin()}; piece != back.rend(); ++piece)
 				pieces.push_back(reversed(*piece));
+			Error = narrowed(pieces, m_track_layout, tool.radius);
 			follow_ground(pieces, Points[0].y, std::numeric_limits<double>::quiet_NaN(), End.position.y, grade_of(End.direction), End.track);
 		}
 		for (auto const &piece : pieces)
@@ -4697,7 +4734,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		Error = shape.errors.empty() ? std::string{STR_C("The track can't be laid through these points")} : shape.errors.front();
 		return {};
 	}
-	Error = shape.warnings.empty() ? std::string{} : shape.warnings.front();
+	Error = lines_of(shape.warnings);
 	auto const count = [&](alignment::result const &Shape, alignment::design const &Design) {
 		return std::max(alignment::minimum_pieces(Shape, Design), static_cast<std::size_t>(std::ceil(Shape.length / std::max(5.0, tool.piece_length))));
 	};
@@ -4734,7 +4771,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		if (easedshape.valid)
 		{
 			Length = editor_track::eased_length(in, easedshape.length, out);
-			Error = easedshape.warnings.empty() ? std::string{} : easedshape.warnings.front();
+			Error = lines_of(easedshape.warnings);
 			return editor_track::eased_pieces(in, alignment::pieces(easedshape, easeddesign, count(easedshape, easeddesign)), out);
 		}
 		Error = STR("The curvature changes abruptly where the track joins, there's no room for a transition curve") + (easedshape.errors.empty() ? std::string{} : ": " + easedshape.errors.front());
@@ -4803,6 +4840,7 @@ void editor_mode::lay_click()
 	}
 	if (tool.points.empty())
 	{
+		tool.chain.clear();
 		tool.start = snap;
 		tool.points.push_back(snap.track != nullptr ? snap.position : tool.mouse);
 		return;
@@ -4813,6 +4851,7 @@ void editor_mode::lay_click()
 	m_typed.clear();
 	if (tool.points.size() == 1)
 	{
+		lay_tool::step const previous{tool.start, tool.points.front()};
 		tool.points.push_back(tool.mouse);
 		lay_finish({});
 		if (false == tool.points.empty())
@@ -4830,6 +4869,7 @@ void editor_mode::lay_click()
 		next.position = path.points[segment_data::point::end];
 		auto const &control{path.points[segment_data::point::control2]};
 		next.direction = glm::normalize(control != glm::dvec3{} ? control : path.points[segment_data::point::start] - next.position);
+		tool.chain.push_back(previous);
 		tool.start = next;
 		tool.points = {next.position};
 		return;
@@ -4843,6 +4883,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	double length;
 	std::string error;
 	auto const pieces{lay_pieces(tool.points, End, length, error)};
+	tool.status_time = ImGui::GetTime();
 	if (pieces.empty())
 	{
 		tool.status = error.empty() ? std::string{STR_C("Click at least two points")} : error;
@@ -4859,6 +4900,9 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	editor_track::commit(created);
 	digitize_drawn(created);
 	push_track_snapshot({}, created);
+	first_step_done(first_step::laid);
+	if (End.track != nullptr)
+		first_step_done(first_step::join);
 	tool.status = format(STR_C("Laid %zu paths, %.1f m"), created.size(), length);
 	if (false == error.empty())
 		tool.status += "\n" + error;
@@ -4921,7 +4965,47 @@ void editor_mode::lay_cancel()
 	auto &tool{m_lay};
 	tool.points.clear();
 	tool.start = {};
+	tool.chain.clear();
 	tool.preview.clear();
+}
+
+void editor_mode::lay_after_history(bool const Undo)
+{
+	auto &tool{m_lay};
+	if (tool.points.empty())
+		return;
+	if (false == Undo)
+	{
+		lay_cancel();
+		return;
+	}
+	while (tool.start.track != nullptr && tool.start.track->m_editorremoved)
+	{
+		if (tool.chain.empty())
+		{
+			lay_cancel();
+			return;
+		}
+		tool.start = tool.chain.back().start;
+		tool.points = {tool.chain.back().point};
+		tool.chain.pop_back();
+	}
+}
+
+void editor_mode::lay_back()
+{
+	auto &tool{m_lay};
+	if (false == tool.chain.empty())
+	{
+		undo_last();
+		tool.status = STR_C("The last piece was taken back");
+		tool.status_time = ImGui::GetTime();
+		return;
+	}
+	if (false == tool.points.empty())
+		tool.points.pop_back();
+	if (tool.points.empty())
+		tool.start = {};
 }
 
 void editor_mode::render_lay_ui()
@@ -5136,8 +5220,8 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 	if (found == Created.end())
 		return;
 	auto const slip{std::count_if(Created.begin(), Created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; }) > 1};
-	m_switch.armed = -1;
 	m_switch.placing = false;
+	first_step_done(first_step::turnout);
 	m_track_point = {};
 	m_node = *found;
 	ui()->set_node(m_node);
@@ -5319,6 +5403,27 @@ void editor_mode::draw_build_overlay() const
 			previous = next;
 		}
 	};
+	if (false == GfxRenderer->Mouse_Hit() && false == ImGui::GetIO().WantCaptureMouse)
+	{
+		auto const centre{m_lay.active ? m_lay.mouse : cursor_ground()};
+		double const cell{10.0};
+		int const reach{10};
+		glm::dvec3 const origin{std::round(centre.x / cell) * cell, centre.y, std::round(centre.z / cell) * cell};
+		for (int i = -reach; i <= reach; ++i)
+		{
+			auto const major{std::fmod(std::abs(origin.x / cell + i), 10.0) < 0.5};
+			auto const colour{major ? IM_COL32(255, 255, 255, 70) : IM_COL32(255, 255, 255, 35)};
+			for (int j = -reach; j < reach; ++j)
+				projection.line(drawlist, origin + glm::dvec3{i * cell, 0.0, j * cell}, origin + glm::dvec3{i * cell, 0.0, (j + 1) * cell}, colour, 1.0f);
+		}
+		for (int j = -reach; j <= reach; ++j)
+		{
+			auto const major{std::fmod(std::abs(origin.z / cell + j), 10.0) < 0.5};
+			auto const colour{major ? IM_COL32(255, 255, 255, 70) : IM_COL32(255, 255, 255, 35)};
+			for (int i = -reach; i < reach; ++i)
+				projection.line(drawlist, origin + glm::dvec3{i * cell, 0.0, j * cell}, origin + glm::dvec3{(i + 1) * cell, 0.0, j * cell}, colour, 1.0f);
+		}
+	}
 	auto const &display{ImGui::GetIO().DisplaySize};
 	for (auto const *track : simulation::Paths.sequence())
 	{
@@ -5377,7 +5482,7 @@ void editor_mode::draw_build_overlay() const
 		auto const &lay{m_lay};
 		auto const piece_colour = [&](segment_data const &Path) {
 			if (false == lay.preview_error.empty())
-				return overlay_color::invalid;
+				return overlay_color::warning;
 			return piece_plan_radius(Path) < 0.5 ? IM_COL32(255, 255, 255, 230) : overlay_color::marked;
 		};
 		for (auto const &piece : lay.preview)
