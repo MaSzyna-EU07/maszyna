@@ -1090,6 +1090,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		m_profile.origin = 0.0;
 		profile_open(first, last);
 		WriteLog(format("SELFTEST vprofile: %zu spans, %.3f m, km of the start %.3f", m_profile.route.spans.size(), m_profile.route.length, m_profile.origin / 1000.0));
+		for (auto const &zone : m_profile.context.switches)
+			WriteLog(format("SELFTEST vprofile zone %.3f %.3f %s", zone.from, zone.to, zone.name.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "backwardcurve")

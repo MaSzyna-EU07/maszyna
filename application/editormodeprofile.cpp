@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorSwitchStore.hpp"
 
 #include "world/Track.h"
 #include "scene/scenelayers.h"
@@ -430,9 +431,26 @@ void editor_mode::profile_resample()
 	context.length = state.route.length;
 	if (samples.empty())
 		return;
+	std::optional<switch_store::record> open;
 	for (auto const &span : state.route.spans)
-		if (span.track->eType != tt_Normal)
+	{
+		if (auto const found{switch_store::named(*span.track)})
+		{
+			if (open.has_value() && open->name == found->name && span.from - context.switches.back().to <= std::max(found->a + found->b, context.switches.back().to - context.switches.back().from))
+			{
+				context.switches.back().to = span.to;
+				continue;
+			}
+			auto const label{switch_store::label(*found)};
+			context.switches.push_back({span.from, span.to, found->number != "-" ? found->number + ' ' + label : label});
+			open = found;
+		}
+		else if (span.track->eType != tt_Normal)
+		{
 			context.switches.push_back({span.from, span.to, span.track->name()});
+			open.reset();
+		}
+	}
 	context.start_elevation = samples.front().position.y;
 	context.end_elevation = samples.back().position.y;
 	context.start_joined = editor_track::adjoining_grade(state.route, false, context.start_grade);
