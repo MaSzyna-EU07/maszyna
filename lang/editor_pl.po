@@ -38,26 +38,26 @@ msgstr "Rozjazd: przeciągnij, aby ustawić kierunek i stronę"
 msgid "Switch: press and drag on the selected track"
 msgstr "Rozjazd: wciśnij i przeciągnij na wybranym torze"
 
-msgid "Straight: shift around, Shift+click the points"
-msgstr "Prosta: objazd, Shift+klik w punkty"
+msgid "Plan, straight: shift around, Shift+click the points"
+msgstr "Plan, prosta: objazd, Shift+klik w punkty"
 
 msgid "New path from the free end"
 msgstr "Nowy odcinek z wolnego końca"
 
-msgid "Straight: break, LMB on the straight"
-msgstr "Prosta: załamanie, LPM na prostej"
+msgid "Plan, straight: break, LMB on the straight"
+msgstr "Plan, prosta: załamanie, LPM na prostej"
 
-msgid "Straight: S-curve, LMB on the straight"
-msgstr "Prosta: przesunięcie (esowanie), LPM na prostej"
+msgid "Plan, straight: S-curve, LMB on the straight"
+msgstr "Plan, prosta: przesunięcie (esowanie), LPM na prostej"
 
-msgid "Straight: drag its ends or the middle"
-msgstr "Prosta: przeciągaj końce lub środek"
+msgid "Plan, straight: drag its ends or the middle"
+msgstr "Plan, prosta: przeciągaj końce lub środek"
 
 msgid "Select: LMB on a path"
 msgstr "Wybór: LPM na odcinku"
 
-msgid "Curve: drag the vertices and the radius grips"
-msgstr "Łuk: przeciągaj wierzchołki i uchwyty promienia"
+msgid "Plan, curve: drag the vertices and the radius grips"
+msgstr "Plan, łuk: przeciągaj wierzchołki i uchwyty promienia"
 
 msgid "Switch: move and turn it with the gizmo"
 msgstr "Rozjazd: przesuwaj i obracaj gizmem"
@@ -5727,3 +5727,36 @@ msgstr "Nie trafi do scenerii; pojazdy zostają do ponownego wczytania scenerii"
 
 msgid "%d trainset(s) written to the scenery"
 msgstr "Zapisano %d skład(ów) do scenerii"
+
+msgid "Plan"
+msgstr "Plan"
+
+msgid "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too"
+msgstr "Plan ułożonej linii: LPM na prostej – ciągniesz jej końce lub środek, na łuku – wierzchołek i promień. Działa też C"
+
+msgid "The checks of a line laid: profile, speed, joints, infrastructure, structure gauge"
+msgstr "Kontrole ułożonej linii: profil, prędkość, styki, infrastruktura, skrajnia"
+
+msgid "its ends and the middle to drag"
+msgstr "jej końce i środek do ciągnięcia"
+
+msgid "its vertex and radius to drag"
+msgstr "jego wierzchołek i promień do ciągnięcia"
+
+msgid "G (C)"
+msgstr "G (C)"
+
+msgid "Plan: a straight, its ends and the middle; a curve, its vertex and radius"
+msgstr "Plan: prosta – jej końce i środek; łuk – wierzchołek i promień"
+
+msgid "Realistic"
+msgstr "Realistyczna"
+
+msgid "A real place: the centre is picked on the map, the editor opens with the orthophoto under it, seen from above"
+msgstr "Prawdziwe miejsce: środek wybierasz na mapie, edytor otwiera się z ortofotomapą pod spodem, w widoku z góry"
+
+msgid "Fictional"
+msgstr "Fikcyjna"
+
+msgid "No place on the map, no orthophoto: an empty plane seen from above"
+msgstr "Bez miejsca na mapie i bez ortofotomapy: pusta płaszczyzna w widoku z góry"

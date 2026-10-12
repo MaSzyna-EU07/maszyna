@@ -163,11 +163,12 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			if (found == modes.end())
 				return;
 			// a tool chosen again gives way to the select one
-			auto const chosen{m_track_tab == Tab && false == (Tab == track_tab::lineside && vehicle)};
+			auto const chosen{(m_track_tab == Tab || (Tab == track_tab::straights && track_plan_tab())) && false == (Tab == track_tab::lineside && vehicle)};
 			Buttons.push_back({Picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
 		};
 		add(track_tab::path, icon::select, false);
 		add(track_tab::lay, icon::lay_track, false);
+		add(track_tab::straights, icon::curve, false);
 		add(track_tab::turnout, icon::turnout, false);
 		add(track_tab::parallel, icon::parallel, false);
 		add(track_tab::turntable, icon::turntable, false);
@@ -177,17 +178,15 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
 			                   m_vehicle.expand = false == vehicle;
 		                   }});
-		auto const advanced{m_track_tab == track_tab::straights || m_track_tab == track_tab::route || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra || m_gauge.open};
+		auto const advanced{m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra || m_gauge.open};
 		auto const more{EditorSettings.track_tools_more()};
-		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("The tools that correct a line already laid: straight, curve, profile, speed, joints, infrastructure, structure gauge"), more, [more]() {
+		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("The checks of a line laid: profile, speed, joints, infrastructure, structure gauge"), more, [more]() {
 			                   EditorSettings.track_tools_more(false == more);
 			                   EditorSettings.save();
 		                   }, true});
 		if (false == more && false == advanced)
 			break;
-		add(track_tab::straights, icon::straight, true);
-		add(track_tab::route, icon::curve, false);
-		add(track_tab::profile, icon::profile, false);
+		add(track_tab::profile, icon::profile, true);
 		add(track_tab::speed, icon::speed, false);
 		add(track_tab::joints, icon::joints, false);
 		add(track_tab::infra, icon::infra, false);

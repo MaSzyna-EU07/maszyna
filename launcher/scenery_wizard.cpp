@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorOrthophoto.hpp"
+#include "editor/editorSettings.hpp"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
@@ -270,7 +271,18 @@ void ui::scenerywizard_panel::render_form()
 {
 	ImGui::TextUnformatted(STR_C("New scenery"));
 	ImGui::Separator();
-	ImGui::TextWrapped("%s", STR_C("Find the place on the map: the wheel zooms, dragging moves the map. A click sets the centre of the scenery, its point 0 0 0."));
+	if (ImGui::RadioButton(STR_C("Realistic"), m_realistic))
+		m_realistic = true;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("A real place: the centre is picked on the map, the editor opens with the orthophoto under it, seen from above"));
+	ImGui::SameLine();
+	if (ImGui::RadioButton(STR_C("Fictional"), false == m_realistic))
+		m_realistic = false;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("No place on the map, no orthophoto: an empty plane seen from above"));
+	ImGui::Spacing();
+	if (m_realistic)
+		ImGui::TextWrapped("%s", STR_C("Find the place on the map: the wheel zooms, dragging moves the map. A click sets the centre of the scenery, its point 0 0 0."));
 	ImGui::Spacing();
 
 	ImGui::SetNextItemWidth(-1.f);
@@ -293,6 +305,7 @@ void ui::scenerywizard_panel::render_form()
 	ImGui::InputTextWithHint("##title", STR_C("title, written in the file"), m_title, sizeof(m_title));
 	ImGui::Spacing();
 
+	ImGui::BeginDisabled(false == m_realistic);
 	ImGui::TextUnformatted(STR_C("Centre of the scenery, PUWG 1992"));
 	double east{m_point.x / 1000.0};
 	double north{m_point.y / 1000.0};
@@ -335,11 +348,13 @@ void ui::scenerywizard_panel::render_form()
 	}
 	ImGui::Spacing();
 	ImGui::TextWrapped("%s", STR_C("The scenery keeps the centre as its geographic reference (//$g PUWG1992): the orthophoto of the editor lies under it, in place."));
+	ImGui::EndDisabled();
 	ImGui::Spacing();
 
-	auto const ready{named && false == exists && m_picked};
+	auto const placed{m_picked || false == m_realistic};
+	auto const ready{named && false == exists && placed};
 	if (false == ready)
-		ImGui::TextDisabled("%s", m_picked ? STR_C("Give the file a name") : STR_C("Click the centre on the map"));
+		ImGui::TextDisabled("%s", placed ? STR_C("Give the file a name") : STR_C("Click the centre on the map"));
 	if (ImGui::Button(STR_C("Create and open in the editor"), ImVec2(-1.f, 0.f)) && ready)
 		create_scenery();
 	if (false == m_status.empty())
@@ -366,7 +381,23 @@ bool ui::scenerywizard_panel::create_scenery()
 	std::strftime(date, sizeof(date), "%Y-%m-%d", std::localtime(&now));
 	char reference[96];
 	std::snprintf(reference, sizeof(reference), "//$g PUWG1992 %.3f %.3f", m_point.x / 1000.0, m_point.y / 1000.0);
-	output << reference << "\r\n";
+	if (m_realistic)
+	{
+		auto const &stored{EditorSettings.orthophoto()};
+		editor_orthophoto::config map;
+		map.radius = stored.radius;
+		map.height = stored.height;
+		map.opacity = stored.opacity;
+		map.year = stored.year;
+		map.hires = stored.hires;
+		map.drape = stored.drape;
+		map.lift = stored.lift;
+		map.in_scene = stored.in_scene;
+		output << reference << "\r\n";
+		output << "//$o " << editor_orthophoto::mark(map, true, false) << "\r\n";
+	}
+	else
+		std::snprintf(reference, sizeof(reference), "fictional");
 	if (m_title[0] != '\0')
 		output << "// " << m_title << "\r\n";
 	output << "// created in the editor " << date << "\r\n\r\n";

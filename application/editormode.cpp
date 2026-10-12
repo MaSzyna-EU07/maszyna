@@ -2197,6 +2197,14 @@ void editor_mode::load_orthophoto_settings()
         config.north = m_georeference_origin.x;
         config.east = m_georeference_origin.y;
     }
+    auto enabled{m_orthophoto.enabled()};
+    m_orthophoto_mark.clear();
+    if (auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")}; false == marked.empty() && editor_orthophoto::read_mark(marked.front(), config, enabled))
+    {
+        m_orthophoto_mark = marked.front();
+        m_orthophoto.enabled(enabled);
+        WriteLog(format("Editor: the map settings of the scenery, orthophoto %s", enabled ? "on" : "off"));
+    }
     m_orthophoto.settings(config);
     m_orthophoto_origin_edit = {config.north, config.east};
 }
@@ -2933,6 +2941,11 @@ bool editor_mode::save()
     {
         m_saved_camera = std::make_pair(glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle});
         scene::Layers.mark(scene::layer_handle{1}, "//$c", {format("%.3f %.3f %.3f %.5f %.5f", Camera.Pos.x, Camera.Pos.y, Camera.Pos.z, Camera.Angle.x, Camera.Angle.y)});
+    }
+    if (auto const map{editor_orthophoto::mark(m_orthophoto.settings(), m_orthophoto.enabled(), m_orthophoto.settings().north != 0.0 || m_orthophoto.settings().east != 0.0)}; false == m_orthophoto_scenery.empty() && map != m_orthophoto_mark && (m_orthophoto.enabled() || false == m_orthophoto_mark.empty()))
+    {
+        m_orthophoto_mark = map;
+        scene::Layers.mark(scene::layer_handle{1}, "//$o", {map});
     }
     auto const terrainadded{false == rootstatements.empty()};
     auto const controls{turntable_controls(rootstatements)};
@@ -4707,7 +4720,7 @@ void editor_mode::render_shortcuts_window()
 	    {"Tracks",
 	     {{"Esc", "Select tool; cancels what's going on first"},
 	      {"L / T / U", "Lay track / switch / turntable"},
-	      {"G / C", "Straight / curve"},
+	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
 	      {"H / B", "Signals / objects along the track"},
 	      {"P / V / J / I", "Profile / speed / joints / infrastructure"},
 	      {"Ctrl+F", "Find a track by its name"},
@@ -5236,10 +5249,15 @@ void editor_mode::enter()
         {
             std::vector<char> found;
             auto const ground{ground_heights({glm::dvec3{0.0, 5000.0, 0.0}}, true, &found).front()};
-            Camera.Pos = glm::dvec3{0.0, (found.front() != 0 ? ground : 0.0) + 60.0, 60.0};
+            Camera.Pos = glm::dvec3{0.0, (found.front() != 0 ? ground : 0.0) + 60.0, 0.0};
             Camera.Angle = glm::vec3(glm::radians(-45.0f), 0.0f, 0.0f);
             Camera.m_owner = nullptr;
             FreeFlyModeFlag = true;
+            if (false == Global.EditorOrtho)
+            {
+                Global.EditorOrthoExtent = 150.0f;
+                toggle_ortho();
+            }
             Global.pCamera = Camera;
             choose_work_area(work_area::tracks);
             WriteLog("Editor: camera over the origin of the empty scenery");

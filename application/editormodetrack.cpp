@@ -259,12 +259,17 @@ void editor_mode::select_track(scene::basic_node *Node)
 		return;
 	m_track_window_open = true;
 	m_track_mode_notice.clear();
+	if (track_plan_tab() && plan_tab_for(track) != m_track_tab)
+	{
+		show_track_tab(plan_tab_for(track));
+		return;
+	}
 	// the mode stays as it is, the path is taken up by it if it can be
 	switch (m_track_tab)
 	{
 	case track_tab::straights:
-		if (track->eType == tt_Switch || false == editor_track::is_straight(*track, m_straights.tolerance))
-			m_track_mode_notice = STR_C("The selected path isn't straight: C edits it as a curve, Esc goes back to Select");
+		if (track->eType == tt_Switch)
+			m_track_mode_notice = STR_C("Switches aren't a part of a line: T edits the switch, Esc goes back to Select");
 		break;
 	case track_tab::route:
 		if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end())
@@ -522,16 +527,15 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 13> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 13> const modes{{
+	static std::array<track_mode, 12> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters"},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track"},
+	    {"Plan", "G", track_tab::straights, "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too"},
 	    {"Switch", "T", track_tab::turnout, "Puts switches into the selected straight or curve, edits the geometry of the selected switch"},
 	    {"Parallel", "N", track_tab::parallel, "A second track beside a straight: LMB on the straight, then the side and the spacing"},
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it"},
-	    {"Straight", "G", track_tab::straights, "The whole straight through the selected path: drag its ends or the middle, break it, shift it"},
-	    {"Curve", "C", track_tab::route, "The line through the path, switch to switch: vertices with the radii, transitions and cant of the curves"},
 	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by"},
 	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, trainsets"},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line"},
@@ -542,8 +546,9 @@ std::array<editor_mode::track_mode, 13> const &editor_mode::track_modes()
 	return modes;
 }
 
-void editor_mode::show_track_tab(track_tab const Tab)
+void editor_mode::show_track_tab(track_tab const Wanted)
 {
+	auto const Tab{Wanted == track_tab::straights || Wanted == track_tab::route ? plan_tab_for(selected_track()) : Wanted};
 	m_track_window_open = true;
 	m_roadtool.window = false;
 	if (Tab == m_track_tab)
@@ -567,8 +572,8 @@ void editor_mode::show_track_tab(track_tab const Tab)
 		arm_switch();
 		break;
 	case track_tab::straights:
-		if (track != nullptr && (track->eType == tt_Switch || false == editor_track::is_straight(*track, m_straights.tolerance)))
-			m_track_mode_notice = STR_C("The selected path isn't straight: LMB on a straight");
+		if (track != nullptr && track->eType == tt_Switch)
+			m_track_mode_notice = STR_C("Switches aren't a part of a line: LMB on a plain path");
 		break;
 	case track_tab::route:
 		if (track != nullptr && std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) == m_route.chain.tracks.end())
@@ -615,15 +620,26 @@ void editor_mode::arm_switch()
 
 bool editor_mode::track_shortcut(int const Key)
 {
+	auto const key{Key == GLFW_KEY_C ? GLFW_KEY_G : Key};
 	for (auto const &mode : track_modes())
 	{
-		if (mode.key[1] != '\0' || Key != GLFW_KEY_A + (mode.key[0] - 'A'))
+		if (mode.key[1] != '\0' || key != GLFW_KEY_A + (mode.key[0] - 'A'))
 			continue;
 		// the key of the mode on leaves it
-		show_track_tab(m_track_window_open && m_track_tab == mode.tab ? track_tab::path : mode.tab);
+		auto const on{m_track_tab == mode.tab || (mode.tab == track_tab::straights && track_plan_tab())};
+		show_track_tab(m_track_window_open && on ? track_tab::path : mode.tab);
 		return true;
 	}
 	return false;
+}
+
+editor_mode::track_tab editor_mode::plan_tab_for(TTrack const *Track) const
+{
+	if (Track == nullptr)
+		return track_plan_tab() ? m_track_tab : track_tab::straights;
+	if (Track->eType == tt_Normal && editor_track::is_supported(*Track) && false == editor_track::is_straight(*Track, m_straights.tolerance))
+		return track_tab::route;
+	return track_tab::straights;
 }
 
 bool editor_mode::track_busy() const
@@ -647,13 +663,13 @@ std::string editor_mode::track_mode_name() const
 		return STR_C("Switch: press and drag on the selected track");
 	case track_tab::straights:
 		if (false == m_straights.detour.empty())
-			return STR_C("Straight: shift around, Shift+click the points");
+			return STR_C("Plan, straight: shift around, Shift+click the points");
 		if (m_straights.tool == 1)
-			return STR_C("Straight: break, LMB on the straight");
+			return STR_C("Plan, straight: break, LMB on the straight");
 		if (m_straights.tool == 2)
-			return STR_C("Straight: S-curve, LMB on the straight");
-		return STR_C("Straight: drag its ends or the middle");
-	case track_tab::route: return STR_C("Curve: drag the vertices and the radius grips");
+			return STR_C("Plan, straight: S-curve, LMB on the straight");
+		return STR_C("Plan, straight: drag its ends or the middle");
+	case track_tab::route: return STR_C("Plan, curve: drag the vertices and the radius grips");
 	case track_tab::profile: return STR_C("Vertical profile: edit the grade line in the profile window");
 	case track_tab::speed: return STR_C("Speed check: LMB on a row shows the path");
 	case track_tab::joints: return STR_C("Joints: LMB on a row shows the place");
@@ -3735,14 +3751,14 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints = {{"Drag the diamond", "snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Esc", "cancel"}};
 	}
 	else if (m_track_tab == track_tab::straights && m_straights.current.tracks.empty())
-		hints = {{"LMB on a straight track", "selects the whole straight"}};
+		hints = {{"LMB on a straight", "its ends and the middle to drag"}, {"LMB on a curve", "its vertex and radius to drag"}};
 	else if (m_track_tab == track_tab::straights)
 	{
 		hints = {{"Drag a square", "moves an end, the curves at it follow"}, {"Drag the diamond", "shifts sideways; close: snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Ctrl+drag", "breaks the straight"}, {"Shift+click x4", "shifts a piece around an obstacle"}, {"Alt+click", "adds another straight to move together"}};
 		gizmo = true;
 	}
 	else if (m_track_tab == track_tab::route && m_route.chain.tracks.empty())
-		hints = {{"LMB on a curve", "loads it with the straights at its ends"}};
+		hints = {{"LMB on a straight", "its ends and the middle to drag"}, {"LMB on a curve", "its vertex and radius to drag"}};
 	else if (m_track_tab == track_tab::route)
 		hints = {{"Drag yellow", "moves a vertex, the curve follows"}, {"Drag green", "changes the radius"}, {"Apply", "writes the design into the tracks"}, {"Esc", "release the vertex"}};
 	else if (selected == nullptr)
@@ -4070,8 +4086,7 @@ void editor_mode::update_build_tools()
 	{
 		if (pointing)
 			m_extend.mouse = cursor_terrain(m_extend.point.y);
-		typed_extend();
-		m_extend.snap = m_typed.empty() && m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
+		m_extend.snap = m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
 		if (m_extend.snap.track == nullptr)
 			m_extend.mouse.y = bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
 		joining(m_extend.snap);
@@ -4504,7 +4519,7 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 void editor_mode::finish_extend()
 {
 	auto const &io{ImGui::GetIO()};
-	if (glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_extend.pressed) < kDragPixels && m_typed.empty())
+	if (glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_extend.pressed) < kDragPixels)
 	{
 		m_extend.active = false;
 		if (m_lay.active && m_lay.points.empty() && m_extend.origin.track != nullptr)

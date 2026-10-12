@@ -837,7 +837,7 @@ bool node_layers::pending() const
 namespace
 {
 // marks of the lines the editor keeps track of
-std::array<char const *, 5> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c"};
+std::array<char const *, 6> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o"};
 } // namespace
 
 void node_layers::scan(layer_handle const Layer)

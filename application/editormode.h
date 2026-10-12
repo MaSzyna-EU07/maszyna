@@ -521,6 +521,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void save_orthophoto_settings();
 	editor_orthophoto m_orthophoto;
 	std::string m_orthophoto_scenery;            // scenery whose origin is loaded
+	std::string m_orthophoto_mark;
 	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends
 
 	// hierarchy management
@@ -1206,7 +1207,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		track_tab tab;
 		char const *tooltip;
 	};
-	static std::array<track_mode, 13> const &track_modes();
+	static std::array<track_mode, 12> const &track_modes();
+	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
+	track_tab plan_tab_for(TTrack const *Track) const;
 	// the objects along the track: a tab for each tool
 	int m_lineside_tab{0};
 	void render_lineside_ui();
@@ -1217,7 +1220,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	// the track tools in the tool options window, and the selected path in the inspector
 	void render_track_tool_options();
 	void render_track_selection();
-	void show_track_tab(track_tab const Tab);
+	void show_track_tab(track_tab const Wanted);
 	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
 	bool track_busy() const; // something going on in the mode, which Esc drops before it leaves the mode
@@ -1878,7 +1881,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	char const *typed_meaning() const;
 	std::vector<double> typed_values() const;
 	bool typed_key(int const Key);
-	void typed_extend();
 	glm::dvec3 typed_lay(glm::dvec3 const &Mouse) const;
 	void typed_turn();
 	bool m_route_tab{true};

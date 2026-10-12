@@ -149,6 +149,12 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		save();
 		return selftest_result::handled;
 	}
+	if (command == "mapstate")
+	{
+		auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")};
+		WriteLog(format("SELFTEST mapstate orthophoto %d top %d extent %.0f mark %s", m_orthophoto.enabled() ? 1 : 0, Global.EditorOrtho ? 1 : 0, Global.EditorOrthoExtent, marked.empty() ? "-" : marked.front().c_str()));
+		return selftest_result::handled;
+	}
 	if (command == "trainset")
 	{
 		std::string name;
@@ -2426,6 +2432,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 //   checkspans                           logs whether the text the scenery files hold at each node's place starts and ends it
 //   spread <track> <stop 0..2> <reach>   logs the paths the spread from the track takes
 //   newscenery                           the editor starts again with the wizard of a new scenery
+//   mapstate                             logs the orthophoto, the top view and the //$o line of the scenery
 //   trainset <track> <vehicle path> <skin> <facing> [km/h]  the trainset tool puts the vehicle in the middle of the track
 //   vehicles                             logs each vehicle: its head, facing, and what its couplers hold
 //   terrainmode                          the terrain field of work, with its texture browser

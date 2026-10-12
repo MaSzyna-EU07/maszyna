@@ -677,6 +677,57 @@ bool editor_orthophoto::owns(gfx::geometry_handle const &Geometry)
 	return Geometry.bank != 0 && std::find(scene_banks.begin(), scene_banks.end(), Geometry.bank) != scene_banks.end();
 }
 
+std::string editor_orthophoto::mark(config const &Config, bool const Enabled, bool const Origin)
+{
+	char text[256];
+	std::snprintf(text, sizeof(text), "on %d year %d opacity %.2f radius %d height %.2f drape %d lift %.2f hires %d scene %d", Enabled ? 1 : 0, Config.year, Config.opacity, Config.radius, Config.height, Config.drape ? 1 : 0, Config.lift, Config.hires ? 1 : 0, Config.in_scene ? 1 : 0);
+	std::string result{text};
+	if (Origin)
+	{
+		std::snprintf(text, sizeof(text), " origin %.2f %.2f", Config.north, Config.east);
+		result += text;
+	}
+	return result;
+}
+
+bool editor_orthophoto::read_mark(std::string const &Text, config &Config, bool &Enabled)
+{
+	std::istringstream words{Text};
+	std::string key;
+	auto found{false};
+	while (words >> key)
+	{
+		if (key == "on")
+			words >> Enabled;
+		else if (key == "year")
+			words >> Config.year;
+		else if (key == "opacity")
+			words >> Config.opacity;
+		else if (key == "radius")
+			words >> Config.radius;
+		else if (key == "height")
+			words >> Config.height;
+		else if (key == "drape")
+			words >> Config.drape;
+		else if (key == "lift")
+			words >> Config.lift;
+		else if (key == "hires")
+			words >> Config.hires;
+		else if (key == "scene")
+			words >> Config.in_scene;
+		else if (key == "origin")
+			words >> Config.north >> Config.east;
+		else
+			continue;
+		if (words.fail())
+			return found;
+		found = true;
+	}
+	Config.radius = std::clamp(Config.radius, 0, max_radius);
+	Config.opacity = std::clamp(Config.opacity, 0.0f, 1.0f);
+	return found;
+}
+
 void editor_orthophoto::enabled(bool State)
 {
 	if (State == m_enabled)

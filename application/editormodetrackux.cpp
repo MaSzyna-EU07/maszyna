@@ -376,8 +376,8 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.position = m_hover.point;
 		switch (m_track_tab)
 		{
-		case track_tab::straights: return make(kind::select, "Click: the whole straight through this track");
-		case track_tab::route: return make(kind::select, "Click: the curve of this track with its straights");
+		case track_tab::straights:
+		case track_tab::route: return make(kind::select, m_hover.track->eType != tt_Switch && editor_track::is_straight(*m_hover.track, m_straights.tolerance) ? "Click: the whole straight through this track" : "Click: the curve of this track with its straights");
 		case track_tab::turnout: return make(kind::select, m_hover.track->eType == tt_Switch ? "Click: edit this switch" : m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: choose this track, then press and drag on it for the switch");
 		case track_tab::profile: return make(kind::select, "Click: the grade line through this track");
 		case track_tab::lineside: return make(kind::select, "Click: the line the objects go along");
@@ -649,10 +649,8 @@ void editor_mode::render_track_context()
 	ImGui::Separator();
 	if (ImGui::MenuItem(STR_C("Switch"), "T", false, normal || track->eType == tt_Switch))
 		show_track_tab(track_tab::turnout);
-	if (ImGui::MenuItem(STR_C("Whole straight"), "G", false, normal && editor_track::is_straight(*track, m_straights.tolerance)))
+	if (ImGui::MenuItem(STR_C("Plan"), "G", false, normal))
 		show_track_tab(track_tab::straights);
-	if (ImGui::MenuItem(STR_C("Curve"), "C", false, normal))
-		show_track_tab(track_tab::route);
 	if (ImGui::MenuItem(STR_C("Parallel track"), "L", false, normal))
 		show_track_tab(track_tab::lay);
 	if (ImGui::MenuItem(STR_C("Place a vehicle here")))
@@ -758,8 +756,6 @@ void editor_mode::render_track_search()
 char const *editor_mode::typed_meaning() const
 {
 	auto const &straights{m_straights};
-	if (m_extend.active)
-		return m_track_layout == track_layout::straight ? "type the length" : m_track_layout == track_layout::arc ? "type the radius, a space, the length" : "type the radius";
 	if (straights.dragging)
 		return straights.handle == 2 ? "type the shift, + to the right" : "type the length";
 	if (straights.tool == 1 && (straights.tool_mouse || straights.tool_dragging))
@@ -819,37 +815,6 @@ bool editor_mode::typed_key(int const Key)
 	if (m_typed.size() < 24)
 		m_typed += character;
 	return true;
-}
-
-void editor_mode::typed_extend()
-{
-	auto const values{typed_values()};
-	if (values.empty())
-		return;
-	auto &tool{m_extend};
-	auto const &direction{tool.direction};
-	if (m_track_layout != track_layout::straight && m_track_layout != track_layout::arc)
-		return;
-	if (m_track_layout == track_layout::straight)
-	{
-		auto const length{std::max(0.0, values[0])};
-		tool.mouse = {tool.point.x + direction.x * length, tool.mouse.y, tool.point.z + direction.y * length};
-		return;
-	}
-	auto const radius{std::abs(values[0])};
-	if (radius < 1.0)
-		return;
-	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
-	double const side{geometry::cross(direction, offset) >= 0.0 ? 1.0 : -1.0};
-	glm::dvec2 const point{tool.point.x, tool.point.z};
-	glm::dvec2 const centre{point + glm::dvec2{-direction.y, direction.x} * (side * radius)};
-	auto const radial{point - centre};
-	auto angle{values.size() > 1 ? std::abs(values[1]) / radius : side * geometry::signed_angle(radial, glm::dvec2{tool.mouse.x, tool.mouse.z} - centre)};
-	if (angle < 0.0)
-		angle += 2.0 * glm::pi<double>();
-	angle = std::clamp(angle, 1e-3, glm::pi<double>());
-	auto const end{centre + geometry::turned(radial, side * angle)};
-	tool.mouse = {end.x, tool.mouse.y, end.y};
 }
 
 glm::dvec3 editor_mode::typed_lay(glm::dvec3 const &Mouse) const
