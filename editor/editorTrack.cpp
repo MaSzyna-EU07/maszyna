@@ -434,6 +434,11 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks)
 	}
 	for (auto *track : Tracks)
 	{
+		for (auto &path : track->m_paths)
+			if (false == path.pieces.empty() &&
+			    (glm::distance(path.pieces.front().points[segment_data::point::start], path.points[segment_data::point::start]) > 0.02 ||
+			     glm::distance(path.pieces.back().points[segment_data::point::end], path.points[segment_data::point::end]) > 0.02))
+				path.pieces.clear();
 		track->init_segments(false);
 		track->update_location();
 		track->m_area.radius = -1.f;
@@ -504,6 +509,7 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 		return;
 
 	auto &path{Track.m_paths[Point.path]};
+	path.pieces.clear();
 	switch (Point.kind)
 	{
 	case point_kind::start:
@@ -540,10 +546,7 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 void editor_track::translate(TTrack &Track, glm::dvec3 const &Offset)
 {
 	for (auto &path : Track.m_paths)
-	{
-		path.points[segment_data::point::start] += Offset;
-		path.points[segment_data::point::end] += Offset;
-	}
+		path.translate(Offset);
 }
 
 void editor_track::rotate_y(TTrack &Track, glm::dvec3 const &Pivot, double const Angle)
@@ -553,12 +556,7 @@ void editor_track::rotate_y(TTrack &Track, glm::dvec3 const &Pivot, double const
 	auto const rotate = [&](glm::dvec3 const &Vector) { return glm::dvec3{Vector.x * c + Vector.z * s, Vector.y, -Vector.x * s + Vector.z * c}; };
 
 	for (auto &path : Track.m_paths)
-	{
-		for (auto const index : {segment_data::point::start, segment_data::point::end})
-			path.points[index] = Pivot + rotate(path.points[index] - Pivot);
-		for (auto const index : {segment_data::point::control1, segment_data::point::control2})
-			path.points[index] = rotate(path.points[index]);
-	}
+		path.transform([&](glm::dvec3 const &Point) { return Pivot + rotate(Point - Pivot); }, rotate);
 }
 
 glm::dvec3 editor_track::pivot(TTrack const &Track)
@@ -753,16 +751,6 @@ void editor_track::conform_switch(TTrack &Track)
 	if (Track.eType != tt_Switch || Track.m_paths.size() != 2)
 		return;
 	auto const &main{Track.m_paths[0]};
-	auto &path{Track.m_paths[1]};
-	auto &start{path.points[segment_data::point::start]};
-	auto &end{path.points[segment_data::point::end]};
-	auto &control1{path.points[segment_data::point::control1]};
-	auto &control2{path.points[segment_data::point::control2]};
-	if (control1 == glm::dvec3{} && control2 == glm::dvec3{})
-	{
-		control1 = (end - start) / 3.0;
-		control2 = (start - end) / 3.0;
-	}
 	auto const height = [&](glm::dvec3 const &Point) { return surface_height(main, foot_on(main, Point)); };
 	auto const slope = [&](glm::dvec3 const &Point, glm::dvec3 const &Control) {
 		auto const plan{plan_of(Control)};
@@ -773,17 +761,32 @@ void editor_track::conform_switch(TTrack &Track)
 		glm::dvec3 const offset{plan.x / run * step, 0.0, plan.y / run * step};
 		return (4.0 * height(Point + offset) - 3.0 * height(Point) - height(Point + 2.0 * offset)) / (2.0 * step) * run;
 	};
-	start.y = height(start);
-	end.y = height(end);
-	control1.y = slope(start, control1);
-	control2.y = slope(end, control2);
-	bezier const curve{path};
-	for (int i = 0; i < 2; ++i)
-	{
-		auto const foot{foot_on(main, i == 0 ? start : end)};
-		auto const along{glm::dot(plan_of(curve.first(i)), foot.direction) >= 0.0 ? 1.0 : -1.0};
-		path.rolls[i] = static_cast<float>(foot_roll(main, foot) * along);
-	}
+	auto const conform = [&](segment_data &Path) {
+		auto &start{Path.points[segment_data::point::start]};
+		auto &end{Path.points[segment_data::point::end]};
+		auto &control1{Path.points[segment_data::point::control1]};
+		auto &control2{Path.points[segment_data::point::control2]};
+		if (control1 == glm::dvec3{} && control2 == glm::dvec3{})
+		{
+			control1 = (end - start) / 3.0;
+			control2 = (start - end) / 3.0;
+		}
+		start.y = height(start);
+		end.y = height(end);
+		control1.y = slope(start, control1);
+		control2.y = slope(end, control2);
+		bezier const curve{Path};
+		for (int i = 0; i < 2; ++i)
+		{
+			auto const foot{foot_on(main, i == 0 ? start : end)};
+			auto const along{glm::dot(plan_of(curve.first(i)), foot.direction) >= 0.0 ? 1.0 : -1.0};
+			Path.rolls[i] = static_cast<float>(foot_roll(main, foot) * along);
+		}
+	};
+	auto &path{Track.m_paths[1]};
+	conform(path);
+	for (auto &piece : path.pieces)
+		conform(piece);
 }
 
 double editor_track::switch_station(TTrack const &Track, glm::dvec3 const &Position)
@@ -2545,10 +2548,7 @@ std::vector<editor_track::switch_template> editor_track::find_switch_templates()
 			auto const &path{track->m_paths[i]};
 			auto &local{entry.local[i]};
 			local = path;
-			local.points[segment_data::point::start] = tolocal(path.points[segment_data::point::start] - origin);
-			local.points[segment_data::point::end] = tolocal(path.points[segment_data::point::end] - origin);
-			local.points[segment_data::point::control1] = tolocal(path.points[segment_data::point::control1]);
-			local.points[segment_data::point::control2] = tolocal(path.points[segment_data::point::control2]);
+			local.transform([&](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
 		}
 		if (glm::length(plan_of(entry.local[1].points[segment_data::point::start])) > kSamePoint)
 			continue;
@@ -2556,9 +2556,11 @@ std::vector<editor_track::switch_template> editor_track::find_switch_templates()
 		{
 			for (auto &path : entry.local)
 			{
-				for (auto &point : path.points)
-					point.x = -point.x;
+				auto const mirror = [](glm::dvec3 const &Point) { return glm::dvec3{-Point.x, Point.y, Point.z}; };
+				path.transform(mirror, mirror);
 				path.rolls = {-path.rolls[0], -path.rolls[1]};
+				for (auto &piece : path.pieces)
+					piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
 			}
 		}
 		entry.length = entry.local[0].points[segment_data::point::end].z;
@@ -2594,12 +2596,13 @@ std::vector<segment_data> editor_track::place_switch(switch_template const &Temp
 	for (auto const &local : Template.local)
 	{
 		segment_data path{local};
-		path.points[segment_data::point::start] = Origin + vector(local.points[segment_data::point::start]);
-		path.points[segment_data::point::end] = Origin + vector(local.points[segment_data::point::end]);
-		path.points[segment_data::point::control1] = vector(local.points[segment_data::point::control1]);
-		path.points[segment_data::point::control2] = vector(local.points[segment_data::point::control2]);
+		path.transform([&](glm::dvec3 const &Point) { return Origin + vector(Point); }, vector);
 		if (Side < 0)
+		{
 			path.rolls = {-local.rolls[0], -local.rolls[1]};
+			for (auto &piece : path.pieces)
+				piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
+		}
 		result.push_back(path);
 	}
 	return result;
@@ -2644,6 +2647,21 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		diverging.points[segment_data::point::control1] = {0.0, 0.0, a * 2.0 / 3.0};
 		diverging.points[segment_data::point::control2] = {-offset * 2.0 / 3.0, 0.0, -b * 2.0 / 3.0};
 		diverging.radius = static_cast<float>(definition.radius);
+		auto const tangent{definition.radius * std::tan(angle * 0.5)};
+		glm::dvec3 const arcend{tangent * std::sin(angle), 0.0, tangent + tangent * std::cos(angle)};
+		if (glm::distance(arcend, diverging.points[segment_data::point::end]) > 0.5)
+		{
+			auto const handle{4.0 / 3.0 * definition.radius * std::tan(angle * 0.25)};
+			segment_data arc;
+			arc.points[segment_data::point::end] = arcend;
+			arc.points[segment_data::point::control1] = {0.0, 0.0, handle};
+			arc.points[segment_data::point::control2] = {-handle * std::sin(angle), 0.0, -handle * std::cos(angle)};
+			arc.radius = static_cast<float>(definition.radius);
+			segment_data straight;
+			straight.points[segment_data::point::start] = arcend;
+			straight.points[segment_data::point::end] = diverging.points[segment_data::point::end];
+			diverging.pieces = {arc, straight};
+		}
 		entry.label = std::string{definition.name} + "  a " + std::to_string(a).substr(0, std::to_string(a).find('.') + 4) + " b " + std::to_string(b).substr(0, std::to_string(b).find('.') + 4) + (estimated ? " (b est.)" : "");
 		result.push_back(entry);
 	}

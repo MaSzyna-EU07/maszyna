@@ -965,10 +965,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 	auto const path_text = [](TTrack &Path, glm::dvec3 const &Offset) {
 		auto const paths{Path.m_paths};
 		for (auto &path : Path.m_paths)
-		{
-			path.points[segment_data::point::start] -= Offset;
-			path.points[segment_data::point::end] -= Offset;
-		}
+			path.translate(-Offset);
 		std::string text;
 		Path.export_as_text(text);
 		Path.m_paths = paths;

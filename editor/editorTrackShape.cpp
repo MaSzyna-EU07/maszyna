@@ -359,10 +359,7 @@ std::vector<segment_data> editor_track::slid(TTrack const &Switch, double const 
 	auto const shift{run * (Distance / planlength)};
 	auto paths{Switch.m_paths};
 	for (auto &path : paths)
-	{
-		path.points[segment_data::point::start] += shift;
-		path.points[segment_data::point::end] += shift;
-	}
+		path.translate(shift);
 	return paths;
 }
 

@@ -1657,6 +1657,68 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog(format("SELFTEST switchreplace %s %s: done %d, %s", name.c_str(), found->label.c_str(), done ? 1 : 0, status.c_str()));
 		return selftest_result::handled;
 	}
+	if (command == "switchpieces" || command == "switchbreak")
+	{
+		double radius{0.0};
+		double ratio{0.0};
+		std::string name;
+		if (command == "switchpieces")
+			words >> radius >> ratio;
+		words >> name;
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->m_paths.size() < 2 || track->SwitchExtension == nullptr)
+				continue;
+			if (false == name.empty() ? track->name() != name : track->m_paths[1].pieces.empty())
+				continue;
+			if (command == "switchbreak")
+			{
+				auto &pieces{track->m_paths[1].pieces};
+				if (pieces.size() < 2)
+					continue;
+				pieces[0].points[segment_data::point::end].x += 0.3;
+				editor_track::commit({track});
+				WriteLog(format("SELFTEST switchbreak %s: path 2 %.3f m, %zu pieces in use, %zu kept", track->name().c_str(), track->SwitchExtension->Segments[1]->GetLength(), track->SwitchExtension->Segments[1]->PieceCount(), pieces.size()));
+				return selftest_result::handled;
+			}
+			auto const &segment{*track->SwitchExtension->Segments[1]};
+			auto const &main{track->m_paths[0]};
+			auto const &branch{track->m_paths[1]};
+			auto const origin{segment.FastGetPoint(0.0)};
+			auto const plan{glm::normalize(geometry::plan_of(main.points[segment_data::point::end] - main.points[segment_data::point::start]))};
+			glm::dvec3 const along{plan.x, 0.0, plan.y};
+			auto const reach{branch.points[segment_data::point::end] - branch.points[segment_data::point::start]};
+			auto const hand{along.x * reach.z - along.z * reach.x > 0.0 ? 1.0 : -1.0};
+			auto const normal{glm::dvec3{-along.z, 0.0, along.x} * hand};
+			auto const centre{origin + normal * radius};
+			auto const angle{std::atan(1.0 / ratio)};
+			auto const arc{radius * angle};
+			auto const heading0{-std::atan2(along.x, along.z)};
+			glm::dvec3 position;
+			glm::vec3 rotation;
+			double worst{0.0};
+			for (int i = 0; i <= 10; ++i)
+			{
+				segment.RaPositionGet(arc * i / 10.0, position, rotation);
+				worst = std::max(worst, std::abs(geometry::plan_distance(position, centre) - radius));
+			}
+			segment.RaPositionGet(arc, position, rotation);
+			auto const expected{centre - normal * radius * std::cos(angle) + along * radius * std::sin(angle)};
+			auto const turn{std::abs(std::remainder(rotation.z - heading0, glm::two_pi<double>()))};
+			double low{1e9};
+			double high{-1e9};
+			for (int i = 0; i <= 10; ++i)
+			{
+				segment.RaPositionGet(arc + 0.05 + (segment.GetLength() - arc - 0.1) * i / 10.0, position, rotation);
+				low = std::min(low, static_cast<double>(rotation.z));
+				high = std::max(high, static_cast<double>(rotation.z));
+			}
+			segment.RaPositionGet(arc, position, rotation);
+			WriteLog(format("SELFTEST switchpieces %s: path 2 %.3f m in %zu pieces (%zu kept), arc %.3f m, arc end off %.4f m, turn there %.5f (angle %.5f), axis off the arc %.4f m, straight heading spread %.6f, end %.3f %.3f", track->name().c_str(),
+			                segment.GetLength(), segment.PieceCount(), branch.pieces.size(), arc, geometry::plan_distance(position, expected), turn, angle, worst, high - low, segment.FastGetPoint(1.0).x, segment.FastGetPoint(1.0).z));
+		}
+		return selftest_result::handled;
+	}
 	if (command == "switches")
 	{
 		for (auto const &entry : switch_store::records())
@@ -2483,6 +2545,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 //   splitkind <kind>, nudgekind <kind> <dx> <dz>   the first path over an element of the kind split in two, or moved
 //   switchplace <template> <x> <z> <direction> <side>   the catalogue template whose label starts so put into the straight
 //                                        nearest the point, or into the curve (switchcurve); slipplace <template> <x> <z>
+//   switchpieces <R> <n> [name]          logs the diverging path made of pieces of each switch: length, the arc R of 1:n against the axis
+//   switchbreak [name]                   the first piece of the diverging path moved off its neighbour, the switch committed
 //   switches                             logs the switches kept in the scenery and the speed of each diverging track
 //   deletetrack <name>, deletekind <kind>   the path deleted as Del does it, or the first path over an element of the kind
 //   btfcheck <terrain file>              the .txtf converted to .btf, the editor lines the binary file keeps logged

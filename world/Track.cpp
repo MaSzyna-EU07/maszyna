@@ -45,6 +45,40 @@ const int iProsto3[4] = {1, -1, 2, 1}; // segmenty do jazdy prosto
 const int iEnds3[13] = {3, 0, 2, 1, 2, 0, -1, 1, 0, 2, 0, 3, 1}; // numer sąsiedniego toru na końcu segmentu "-1"
 TIsolated *TIsolated::pRoot = nullptr;
 
+namespace {
+
+// a part of a switch path, shaped like the path itself: heights on the rail heads, straights made of their own points
+void init_switch_piece( TSegment &Segment, segment_data const &Piece, bool const Rail ) {
+
+    auto p1 { Piece.points[ segment_data::point::start ] };
+    auto cp1 { Piece.points[ segment_data::point::control1 ] };
+    auto cp2 { Piece.points[ segment_data::point::control2 ] };
+    auto p2 { Piece.points[ segment_data::point::end ] };
+    if( Rail ) {
+        p1.y += 0.18;
+        p2.y += 0.18;
+    }
+    if( glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 )
+     || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) ) {
+        cp1 = cp2 = glm::dvec3( 0, 0, 0 );
+    }
+    auto const straight { cp1 == glm::dvec3() && cp2 == glm::dvec3() };
+    auto const segsize { (
+        Piece.radius != 0.f ?
+            std::clamp( std::abs( Piece.radius ) * ( 0.02 / Global.SplineFidelity ), 2.0 / Global.SplineFidelity, 10.0 / Global.SplineFidelity ) :
+        straight ?
+            10.0 :
+            std::clamp( glm::length( p1 - p2 ) * 0.1, 2.0 / Global.SplineFidelity, 10.0 / Global.SplineFidelity ) ) };
+    if( straight ) {
+        Segment.Init( p1, p2, segsize, Piece.rolls[ 0 ], Piece.rolls[ 1 ] );
+    }
+    else {
+        Segment.Init( p1, p1 + cp1, p2 + cp2, p2, segsize, Piece.rolls[ 0 ], Piece.rolls[ 1 ] );
+    }
+}
+
+} // namespace
+
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
 
@@ -518,8 +552,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         }
     }
 
-    init_segments( true );
-
     // optional attributes
     parser->getTokens();
     *parser >> token;
@@ -668,12 +700,30 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
                 // called after segment initialisation so the path geometry is final.
             }
         }
+        else if( str == "pieces1" || str == "pieces2" ) {
+            // consecutive parts of a path, kept after the path itself for versions which know only the path
+            auto const index { static_cast<std::size_t>( str.back() - '1' ) };
+            auto const count { parser->getToken<int>() };
+            std::vector<segment_data> pieces;
+            for( int piece = 0; piece < count; ++piece ) {
+                pieces.emplace_back();
+                pieces.back().deserialize( *parser, pOrigin );
+            }
+            if( index < m_paths.size() ) {
+                m_paths[ index ].pieces = std::move( pieces );
+            }
+            else {
+                ErrorLog( "Bad track: \"" + str + "\" defined for track \"" + m_name + "\" which has no such path" );
+            }
+        }
         else
             ErrorLog("Bad track: unknown property: \"" + str + "\" defined for track \"" + m_name + "\"");
         parser->getTokens();
         *parser >> token;
 		str = token;
     }
+
+    init_segments( true );
     // alternatywny zapis nazwy odcinka izolowanego - po znaku "@" w nazwie toru
     if ((i = m_name.find("@")) != std::string::npos && i < m_name.length())
     {
@@ -955,6 +1005,35 @@ void TTrack::init_segments( bool const Initial ) {
                 SwitchExtension->Segments[3]->Init(p4, p4 + cp4, p1 + cp1, p1, segsize, r4, r1); // z punktu 4 do 1
                 SwitchExtension->Segments[4]->Init(p1, p1 + cp1, p3 + cp3, p3, segsize, r1, r3); // z punktu 1 do 3
                 SwitchExtension->Segments[5]->Init(p3, p3 + cp3, p2 + cp2, p2, segsize, r3, r2); // z punktu 3 do 2
+            }
+        }
+
+        if( eType == tt_Switch ) {
+            for( std::size_t index = 0; index < 2; ++index ) {
+                auto const &pieces { m_paths[ index ].pieces };
+                if( pieces.empty() ) {
+                    continue;
+                }
+                auto joined {
+                    glm::distance( pieces.front().points[ segment_data::point::start ], m_paths[ index ].points[ segment_data::point::start ] ) < 0.02
+                 && glm::distance( pieces.back().points[ segment_data::point::end ], m_paths[ index ].points[ segment_data::point::end ] ) < 0.02 };
+                for( std::size_t piece = 1; piece < pieces.size(); ++piece ) {
+                    joined = joined && glm::distance( pieces[ piece - 1 ].points[ segment_data::point::end ], pieces[ piece ].points[ segment_data::point::start ] ) < 0.02;
+                }
+                if( false == joined ) {
+                    ErrorLog( "Bad track: pieces of path " + std::to_string( index + 1 ) + " of switch \"" + m_name + "\" don't join its ends, the path is used instead" );
+                    continue;
+                }
+                auto const texheight { fTexHeight1 };
+                auto const texheightoffset { fTexHeightOffset };
+                std::vector<std::shared_ptr<TSegment>> chain;
+                for( auto const &piece : pieces ) {
+                    chain.emplace_back( std::make_shared<TSegment>( this ) );
+                    init_switch_piece( *chain.back(), piece, ( iCategoryFlag & 1 ) != 0 );
+                }
+                fTexHeight1 = texheight;
+                fTexHeightOffset = texheightoffset;
+                SwitchExtension->Segments[ index ]->InitChain( std::move( chain ) );
             }
         }
 
@@ -2431,6 +2510,29 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     }
     if( fVerticalRadius != 0.f ) {
         Output << "vradius " << fVerticalRadius << ' ';
+    }
+    for( std::size_t index = 0; index < m_paths.size(); ++index ) {
+        auto const &pieces { m_paths[ index ].pieces };
+        if( pieces.empty() ) {
+            continue;
+        }
+        auto const piecesprecision { Output.precision( std::numeric_limits<double>::digits10 ) };
+        Output << "pieces" << index + 1 << ' ' << pieces.size() << ' ';
+        for( auto const &piece : pieces ) {
+            for( auto const point : { segment_data::point::start, segment_data::point::control1, segment_data::point::control2, segment_data::point::end } ) {
+                Output
+                    << piece.points[ point ].x << ' '
+                    << piece.points[ point ].y << ' '
+                    << piece.points[ point ].z << ' ';
+                if( point == segment_data::point::start ) {
+                    Output << piece.rolls[ 0 ] << ' ';
+                }
+            }
+            Output
+                << piece.rolls[ 1 ] << ' '
+                << piece.radius << ' ';
+        }
+        Output.precision( piecesprecision );
     }
     if( eType == tt_Switch
      && SwitchExtension->m_material3 != null_handle) {

@@ -1035,12 +1035,13 @@ void editor_mode::render_turnout_ui()
 			auto &local{own.local[i]};
 			local = track->m_paths[i];
 			auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), normal) * side, Vector.y, glm::dot(plan_of(Vector), axis)}; };
-			local.points[segment_data::point::start] = tolocal(track->m_paths[i].points[segment_data::point::start] - origin);
-			local.points[segment_data::point::end] = tolocal(track->m_paths[i].points[segment_data::point::end] - origin);
-			local.points[segment_data::point::control1] = tolocal(track->m_paths[i].points[segment_data::point::control1]);
-			local.points[segment_data::point::control2] = tolocal(track->m_paths[i].points[segment_data::point::control2]);
+			local.transform([&](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
 			if (side < 0)
+			{
 				local.rolls = {-local.rolls[0], -local.rolls[1]};
+				for (auto &piece : local.pieces)
+					piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
+			}
 		}
 		replace(own, -side);
 	}
@@ -6069,12 +6070,13 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 		auto &local{shape.local[i]};
 		local = path;
 		auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), perpendicular) * side, Vector.y, glm::dot(plan_of(Vector), axis)}; };
-		local.points[segment_data::point::start] = tolocal(path.points[segment_data::point::start] - origin);
-		local.points[segment_data::point::end] = tolocal(path.points[segment_data::point::end] - origin);
-		local.points[segment_data::point::control1] = tolocal(path.points[segment_data::point::control1]);
-		local.points[segment_data::point::control2] = tolocal(path.points[segment_data::point::control2]);
+		local.transform([&](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
 		if (side < 0.0)
+		{
 			local.rolls = {-local.rolls[0], -local.rolls[1]};
+			for (auto &piece : local.pieces)
+				piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
+		}
 	}
 	Plan.shape = shape;
 	auto const station{line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * Plan.along};

@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "rendering/geometrybank.h"
 #include <glm/glm.hpp>
+#include <memory>
+#include <vector>
 
 struct map_colored_paths {
 	std::vector<gfx::geometrybank_handle> switches;
@@ -32,10 +34,21 @@ struct segment_data {
     std::array<glm::dvec3, 4> points {};
     std::array<float, 2> rolls {};
     float radius {};
+    std::vector<segment_data> pieces; // consecutive parts of the path, which then is their approximation for older versions
 // constructors
     segment_data() = default;
 // methods
     void deserialize( cParser &Input, glm::dvec3 const &Offset );
+    void translate( glm::dvec3 const &Offset );
+    // maps the ends of the path and of its pieces with Point and their control vectors with Vector
+    template <typename Pointmap, typename Vectormap>
+    void transform( Pointmap const &Point, Vectormap const &Vector ) {
+        for( auto const index : { point::start, point::end } ) {
+            points[ index ] = Point( points[ index ] ); }
+        for( auto const index : { point::control1, point::control2 } ) {
+            points[ index ] = Vector( points[ index ] ); }
+        for( auto &piece : pieces ) {
+            piece.transform( Point, Vector ); } }
 };
 
 class TSegment
@@ -58,6 +71,8 @@ class TSegment
 	glm::dvec3 vB;
 	glm::dvec3 vC; // współczynniki wielomianów trzeciego stopnia vD==Point1
     TTrack *pOwner = nullptr; // wskaźnik na właściciela
+    std::vector<std::shared_ptr<TSegment>> m_pieces; // parts of a path made of several curves, parametrized by distance
+    std::vector<double> m_starts; // distance from Point1 to the start of each part
 
     glm::dvec3 GetFirstDerivative(double const fTime) const;
 	double RombergIntegral(double const fA, double const fB) const;
@@ -66,6 +81,7 @@ class TSegment
 	double FastGetTFromS(double const s) const;
 	glm::dvec3 RaInterpolate(double const t) const;
 	glm::dvec3 RaInterpolate0(double const t) const;
+    std::size_t piece_at(double const s) const;
 
 public:
     bool bCurve = false;
@@ -73,6 +89,11 @@ public:
     explicit TSegment(TTrack *owner);
     bool Init(glm::dvec3 NewPoint1, glm::dvec3 NewPoint2, double fNewStep, double fNewRoll1 = 0, double fNewRoll2 = 0);
 	bool Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 NewCPointIn, glm::dvec3 &NewPoint2, double fNewStep, double fNewRoll1 = 0, double fNewRoll2 = 0, bool bIsCurve = true);
+    bool InitChain(std::vector<std::shared_ptr<TSegment>> Pieces);
+    inline
+    std::size_t
+        PieceCount() const {
+            return m_pieces.size(); };
     double
         ComputeLength() const; // McZapkie-150503
     // finds point on segment closest to specified point in 3d space. returns: point on segment as value in range 0-1
@@ -118,6 +139,9 @@ public:
     inline
     float
         GetRoll(double const Distance) const {
+            if( false == m_pieces.empty() ) {
+                auto const piece { piece_at( Distance ) };
+                return m_pieces[ piece ]->GetRoll( Distance - m_starts[ piece ] ); }
             return std::lerp( fRoll1, fRoll2, static_cast<float>(Distance / fLength) ); }
     inline
     void

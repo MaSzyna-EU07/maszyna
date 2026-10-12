@@ -33,6 +33,16 @@ segment_data::deserialize( cParser &Input, glm::dvec3 const &Offset ) {
 }
 
 
+void
+segment_data::translate( glm::dvec3 const &Offset ) {
+
+    points[ segment_data::point::start ] += Offset;
+    points[ segment_data::point::end ] += Offset;
+    for( auto &piece : pieces ) {
+        piece.translate( Offset );
+    }
+}
+
 TSegment::TSegment(TTrack *owner) :
                    pOwner( owner )
 {}
@@ -62,6 +72,8 @@ bool TSegment::Init(glm::dvec3 NewPoint1, glm::dvec3 NewPoint2, double fNewStep,
 
 bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 NewCPointIn, glm::dvec3 &NewPoint2, double fNewStep, double fNewRoll1, double fNewRoll2, bool bIsCurve)
 { // wersja uniwersalna (dla krzywej i prostego)
+    m_pieces.clear();
+    m_starts.clear();
     Point1 = NewPoint1;
     CPointOut = NewCPointOut;
     CPointIn = NewCPointIn;
@@ -131,6 +143,45 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
 
 	InitTFromSInterpolateData();
     return true;
+}
+
+bool TSegment::InitChain(std::vector<std::shared_ptr<TSegment>> Pieces)
+{
+    if( Pieces.empty() )
+        return false;
+    m_pieces = std::move( Pieces );
+    m_starts.clear();
+    fLength = 0.0;
+    iSegCount = 0;
+    for( auto const &piece : m_pieces ) {
+        m_starts.push_back( fLength );
+        fLength += piece->fLength;
+        iSegCount += piece->iSegCount;
+    }
+    auto const &first { *m_pieces.front() };
+    auto const &last { *m_pieces.back() };
+    Point1 = first.Point1;
+    CPointOut = first.CPointOut;
+    CPointIn = last.CPointIn;
+    Point2 = last.Point2;
+    fRoll1 = first.fRoll1;
+    fRoll2 = last.fRoll2;
+    bCurve = true;
+    fDirection = -std::atan2(Point2.x - Point1.x, Point2.z - Point1.z);
+    fStoop = std::atan2(Point2.y - Point1.y, fLength);
+    fStep = fLength / iSegCount;
+    fTsBuffer.resize( iSegCount + 1 );
+    for( int i = 0; i <= iSegCount; ++i ) {
+        fTsBuffer[ i ] = static_cast<double>( i ) / iSegCount;
+    }
+    fTsSlope.assign( iSegCount + 1, fStep / fLength );
+    return true;
+}
+
+std::size_t TSegment::piece_at(double const s) const
+{
+    auto const next { std::upper_bound( std::begin( m_starts ), std::end( m_starts ), s ) };
+    return next == std::begin( m_starts ) ? 0 : static_cast<std::size_t>( std::distance( std::begin( m_starts ), next ) - 1 );
 }
 
 void TSegment::InitTFromSInterpolateData()
@@ -235,6 +286,8 @@ double TSegment::FastGetTFromS(double const s) const
 	// NOTE: for s outside <0, fLength> the result is extrapolated
 	// outside <0, 1>, which is the expected behavior (see e.g. usage
 	// in GetDirection())
+	if( false == m_pieces.empty() )
+		return s / fLength;
 	int const i = std::clamp(static_cast<int>(s / fStep), 0, iSegCount - 1); // interval index
 	double const u = (s - i * fStep) / fStep; // position within interval (possibly outside)
 	double const u2 = u * u;
@@ -263,6 +316,8 @@ double TSegment::ComputeLength() const // McZapkie-150503: dlugosc miedzy punkta
     // Ra: koniec rekurencji jeśli po podziale suma długości nie różni się więcej niż 0.5mm od
     // poprzedniej
     // Ra: ewentualnie rozpoznać łuk okręgu płaskiego i liczyć ze wzoru na długość łuku
+    if( false == m_pieces.empty() )
+        return fLength;
     double t;
     double l = 0;
 	glm::dvec3 last{0, 0, 0}; // długość liczona po przesunięciu odcinka do początku układu
@@ -366,7 +421,11 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
 */
 
 void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
-    if (bCurve) {
+    if( false == m_pieces.empty() ) {
+        auto const piece { piece_at( fDistance ) };
+        m_pieces[ piece ]->RaPositionGet( fDistance - m_starts[ piece ], position, rotation );
+    }
+    else if (bCurve) {
         // można by wprowadzić uproszczony wzór dla okręgów płaskich
         auto const t = FastGetTFromS(fDistance); // aproksymacja dystansu na krzywej Beziera na parametr (t)
         position = FastGetPoint( t );
@@ -393,6 +452,12 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
 glm::dvec3 TSegment::FastGetPoint(double const t) const
 {
     // return (bCurve?std::lerp(t,Point1,CPointOut,CPointIn,Point2):((1.0-t)*Point1+(t)*Point2));
+    if( false == m_pieces.empty() ) {
+        auto const distance { t * fLength };
+        auto const index { piece_at( distance ) };
+        auto const &piece { *m_pieces[ index ] };
+        return piece.FastGetPoint( piece.FastGetTFromS( distance - m_starts[ index ] ) );
+    }
     return true == bCurve || iSegCount != 1 ? RaInterpolate(t) : glm::mix(Point1, Point2, t);
 }
 
