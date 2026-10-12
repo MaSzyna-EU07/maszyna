@@ -1852,6 +1852,17 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 		straight[i] = is_straight(*Chain.tracks[i], Tolerance);
 		turns[i] = signed_angle(tangent_in(i), tangent_out(i));
 	}
+	auto const kLongestTurn{0.85 * glm::pi<double>()};
+	auto const curvature = [&](std::size_t const Index, double const T) {
+		auto const radius{path_radius(path(Index), T)};
+		return radius > 0.0 ? 1.0 / radius : 0.0;
+	};
+	auto const eases = [&](std::size_t const Index, bool const Atend) {
+		double peak{0.0};
+		for (auto const t : {0.0, 0.25, 0.5, 0.75, 1.0})
+			peak = std::max(peak, curvature(Index, t));
+		return peak > 0.0 && curvature(Index, Chain.forward[Index] == Atend ? 1.0 : 0.0) < 0.05 * peak;
+	};
 	auto const add_curve = [&](std::size_t const First, std::size_t const Last) {
 		auto const a{point_in(First)};
 		auto const b{point_out(Last)};
@@ -1881,14 +1892,29 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 			};
 			auto const in{shape.transition_in > 0.0 ? pieces(shape.transition_in, true) : 0};
 			auto const out{shape.transition_out > 0.0 ? pieces(shape.transition_out, false) : 0};
-			if (in + out <= Last - First)
+			auto const turn_of = [&](std::size_t const From, std::size_t const To) { return std::abs(std::accumulate(turns.begin() + From, turns.begin() + To + 1, 0.0)); };
+			auto const length = [&](double const Turn) { return Shape == alignment::transition_shape::clothoid ? 2.0 * shape.radius * Turn : 2.0 * shape.radius * std::tan(Turn); };
+			if (Last > First && shape.transition_in <= 0.0 && shape.transition_out <= 0.0 && eases(First, false) && eases(Last, true))
 			{
-				auto const turn_of = [&](std::size_t const From, std::size_t const To) { return std::abs(std::accumulate(turns.begin() + From, turns.begin() + To + 1, 0.0)); };
+				auto joint{First};
+				for (auto k = First; k < Last; ++k)
+					if (curvature(k, Chain.forward[k] ? 1.0 : 0.0) > curvature(joint, Chain.forward[joint] ? 1.0 : 0.0))
+						joint = k;
+				double tangentin;
+				double tangentout;
+				if (alignment::spiral_tangents(Shape, turn_of(First, joint), turn_of(joint + 1, Last), tangentin, tangentout))
+				{
+					shape.radius = 0.5 * (glm::distance(vertex.position, a) / tangentin + glm::distance(b, vertex.position) / tangentout);
+					shape.transition_in = length(turn_of(First, joint));
+					shape.transition_out = length(turn_of(joint + 1, Last));
+				}
+			}
+			else if (in + out <= Last - First)
+			{
 				auto const arc{turn_of(First + in, Last - out)};
 				if (arc > 1e-6 && arc < 2.0 * glm::pi<double>() - 1e-3)
 				{
 					shape.radius = glm::distance(point_in(First + in), point_out(Last - out)) / (2.0 * std::sin(arc * 0.5));
-					auto const length = [&](double const Turn) { return Shape == alignment::transition_shape::clothoid ? 2.0 * shape.radius * Turn : 2.0 * shape.radius * std::tan(Turn); };
 					if (in > 0)
 						shape.transition_in = length(turn_of(First, First + in - 1));
 					if (out > 0)
@@ -1921,11 +1947,28 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 			// a reverse curve: the next one starts here
 			if (current != 0 && sign != 0 && current != sign)
 				break;
+			if (i > first && (eases(i - 1, true) || eases(i, false)))
+				break;
 			if (current != 0)
 				sign = current;
 			++i;
 		}
-		add_curve(first, i - 1);
+		auto const total{std::abs(std::accumulate(turns.begin() + first, turns.begin() + i, 0.0))};
+		auto const parts{std::max(1.0, std::ceil(total / kLongestTurn))};
+		auto start{first};
+		double turned{0.0};
+		double part{1.0};
+		for (auto k = first; k + 1 < i && part < parts; ++k)
+		{
+			turned += std::abs(turns[k]);
+			if (turned >= total * part / parts)
+			{
+				add_curve(start, k);
+				start = k + 1;
+				part += 1.0;
+			}
+		}
+		add_curve(start, i - 1);
 	}
 	return result;
 }

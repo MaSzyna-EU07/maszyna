@@ -173,6 +173,7 @@ double speed_limit(double const Radius, limits const &Limits);
 result compute_recommended(design &Design, bool const Transitions);
 bool tangent_intersection(design const &Design, glm::dvec2 &Point);
 bool collinear(design const &Design);
+bool spiral_tangents(transition_shape const Shape, double const TurnIn, double const TurnOut, double &TangentIn, double &TangentOut);
 
 struct station
 {

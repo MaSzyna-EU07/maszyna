@@ -1868,9 +1868,15 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	double closest{std::numeric_limits<double>::max()};
 	TTrack *farthest{nullptr};
 	bool fits{false};
-	for (auto const shape : {preferred, other})
+	for (auto const attempt : {0, 1, 2, 3})
 	{
+		auto const shape{attempt % 2 == 0 ? preferred : other};
 		design.shape = shape;
+		if (attempt == 2)
+		{
+			design.norms.arc_min = 0.0;
+			design.norms.arc_min_factor = 0.0;
+		}
 		design.vertices.clear();
 		for (auto const &entry : editor_track::recognize_line(Chain, m_straights.tolerance, design.norms.gauge, shape))
 		{
@@ -1905,7 +1911,7 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	if (false == fits)
 	{
 		if (Reason != nullptr)
-			*Reason = closest < 1000.0 ? format(STR_C("the curves read from the paths leave path %s by %.2f m"), name(farthest).c_str(), closest) : std::string{STR_C("the paths don't make a line of straights, arcs and transition curves")};
+			*Reason = closest < std::numeric_limits<double>::max() ? format(STR_C("the curves read from the paths leave path %s by %.2f m"), name(farthest).c_str(), closest) : std::string{STR_C("the paths don't make a line of straights, arcs and transition curves")};
 		return false;
 	}
 	auto const &records{alignment_store::records()};

@@ -1130,6 +1130,24 @@ bool tangent_intersection(design const &Design, glm::dvec2 &Point)
 	return true;
 }
 
+bool spiral_tangents(transition_shape const Shape, double const TurnIn, double const TurnOut, double &TangentIn, double &TangentOut)
+{
+	auto const length = [&](double const Turn) { return Shape == transition_shape::clothoid ? 2.0 * Turn : 2.0 * std::tan(Turn); };
+	if (TurnIn <= 0.0 || TurnOut <= 0.0 || TurnIn >= 0.5 * kPi || TurnOut >= 0.5 * kPi)
+		return false;
+	auto const in{transition_point(Shape, length(TurnIn), 1.0, 1.0)};
+	auto const out{transition_point(Shape, length(TurnOut), 1.0, 1.0)};
+	auto const deflection{in.angle + out.angle};
+	if (deflection >= kPi - 1e-3)
+		return false;
+	glm::dvec2 const direction{std::cos(deflection), std::sin(deflection)};
+	glm::dvec2 const normal{-direction.y, direction.x};
+	auto const end{glm::dvec2{in.x, in.y} + direction * out.x - normal * out.y};
+	TangentOut = end.y / std::sin(deflection);
+	TangentIn = end.x - TangentOut * std::cos(deflection);
+	return TangentIn > 0.0 && TangentOut > 0.0;
+}
+
 bool collinear(design const &Design)
 {
 	auto const offset{plan_of(Design.end) - plan_of(Design.start)};
