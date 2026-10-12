@@ -41,7 +41,7 @@ bool g_loaded{false};
 
 // format of the lines, coordinates in the space of the file:
 //   alignment <start x y z> <end x y z>
-//   source <designed> origin <chainage of the start> shape <parabola|clothoid> speed <km/h>
+//   source <designed> origin <chainage of the start> shape <parabola|clothoid> speed <km/h> [fit <m>]
 //   ends <start direction x z> <end direction x z> <start grade> <end grade> <start R> <end R>
 //   norms <gauge> <unbalanced> <cant max> <cant rate> <ramp factor> <jerk> <straight between curves, s> <arc min> <arc min factor>
 //   pieces <pieces of a transition> <angle of an arc piece>
@@ -88,15 +88,18 @@ void sample(record &Record)
 
 bool agrees(std::vector<stored_element> const &Stored, std::vector<alignment::element> const &Made)
 {
-	if (Stored.size() != Made.size())
+	std::vector<stored_element> stored;
+	std::vector<stored_element> made;
+	std::copy_if(Stored.begin(), Stored.end(), std::back_inserter(stored), [](stored_element const &E) { return E.length > 0.01; });
+	for (auto const &e : Made)
+		if (e.length > 0.01)
+			made.push_back(describe(e));
+	if (stored.size() != made.size())
 		return false;
-	for (std::size_t i = 0; i < Stored.size(); ++i)
-	{
-		auto const made{describe(Made[i])};
-		if (Stored[i].kind != made.kind || std::abs(Stored[i].chainage - made.chainage) > 0.01 || std::abs(Stored[i].length - made.length) > 0.01 ||
-		    std::abs(Stored[i].radius_start - made.radius_start) > 0.01 || std::abs(Stored[i].radius_end - made.radius_end) > 0.01)
+	for (std::size_t i = 0; i < stored.size(); ++i)
+		if (stored[i].kind != made[i].kind || std::abs(stored[i].chainage - made[i].chainage) > 0.01 || std::abs(stored[i].length - made[i].length) > 0.01 ||
+		    std::abs(stored[i].radius_start - made[i].radius_start) > 0.01 || std::abs(stored[i].radius_end - made[i].radius_end) > 0.01)
 			return false;
-	}
 	return true;
 }
 
@@ -118,7 +121,7 @@ void mark(scene::layer_handle const Layer)
 			lines.emplace_back("# horizontal alignments designed in the track editor, the simulation skips these lines");
 		auto const &design{entry.design};
 		lines.push_back("alignment " + local(design.start) + ' ' + local(design.end));
-		lines.push_back(format("source %s origin %.4f shape %s speed %.1f", entry.source.c_str(), entry.origin, shape_name(design.shape), design.speed));
+		lines.push_back(format("source %s origin %.4f shape %s speed %.1f", entry.source.c_str(), entry.origin, shape_name(design.shape), design.speed) + (entry.fit > 0.0 ? format(" fit %.3f", entry.fit) : std::string{}));
 		auto const startdirection{local_direction(context, design.start, design.start_direction)};
 		auto const enddirection{local_direction(context, design.end, design.end_direction)};
 		lines.push_back(format("ends %.9f %.9f %.9f %.9f %.6f %.6f %.3f %.3f", startdirection.x, startdirection.y, enddirection.x, enddirection.y, design.start_grade, design.end_grade, design.start_radius, design.end_radius));
@@ -319,6 +322,8 @@ void read_part(record &Entry, std::string const &Keyword, std::istringstream &Li
 		std::string shape;
 		Line >> Entry.source >> word >> Entry.origin >> word >> shape >> word >> design.speed;
 		design.shape = shape == "clothoid" ? alignment::transition_shape::clothoid : alignment::transition_shape::cubic_parabola;
+		if (Line >> word && word == "fit")
+			Line >> Entry.fit;
 	}
 	else if (Keyword == "ends")
 	{
@@ -428,7 +433,8 @@ double approximation(geometry::bezier const &Curve)
 std::optional<hit> project(record const &Entry, std::size_t const Index, glm::dvec2 const &Point, double const Reach)
 {
 	auto const &entry{Entry};
-	auto const margin{Reach + kStep};
+	auto const reach{Reach + entry.fit};
+	auto const margin{reach + kStep};
 	if (entry.samples.empty() || Point.x < entry.low.x - margin || Point.y < entry.low.y - margin || Point.x > entry.high.x + margin || Point.y > entry.high.y + margin)
 		return std::nullopt;
 	std::size_t nearest{0};
@@ -458,13 +464,13 @@ std::optional<hit> project(record const &Entry, std::size_t const Index, glm::dv
 	}
 	auto const chainage{(low + high) * 0.5};
 	auto const offset{away(chainage)};
-	if (offset > Reach)
+	if (offset > reach)
 		return std::nullopt;
 	if (chainage < 1e-3 || chainage > entry.result.length - 1e-3)
 	{
 		auto const end{alignment::evaluate(entry.result, chainage)};
 		auto const outward{glm::dot(Point - plan_of(end.position), glm::normalize(plan_of(end.direction))) * (chainage < 1e-3 ? -1.0 : 1.0)};
-		if (outward > tolerance)
+		if (outward > tolerance + entry.fit)
 			return std::nullopt;
 	}
 	auto const &elements{entry.result.elements};
@@ -659,7 +665,7 @@ int departed(std::vector<TTrack *> const &Tracks, double &Departure)
 			for (std::size_t r = 0; r < g_records.size(); ++r)
 			{
 				auto const found{project(r, plan_of(curve.point(t)), reach)};
-				if (false == found.has_value() || found->offset <= tolerance || found->offset <= Departure)
+				if (false == found.has_value() || found->offset <= tolerance + g_records[r].fit || found->offset <= Departure)
 					continue;
 				auto known{gaps.find(r)};
 				if (known == gaps.end())
@@ -724,11 +730,12 @@ std::optional<double> chainage_on(alignment::result const &Result, glm::dvec3 co
 	return found->chainage;
 }
 
-int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source)
+int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source, double const Fit)
 {
 	load();
 	record entry;
 	entry.source = Source;
+	entry.fit = Fit;
 	entry.design = Design;
 	entry.design.start_reserve = 0.0;
 	entry.design.end_reserve = 0.0;

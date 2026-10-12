@@ -121,6 +121,7 @@ double const kLaySnapRadius{5.0};
 float const kSnapPixels{16.0f};
 double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
 double const kLineReach{2000.0}; // how far each way the Curve tab follows the line
+double const kDigitizeFit{0.5};
 double const kDrawnReach{100000.0};
 double const kJointRange{400.0}; // the ends of the paths are drawn for the tracks this close to the camera
 ImU32 const kJointColor{IM_COL32(255, 255, 255, 200)};
@@ -1865,6 +1866,8 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	auto const preferred{m_route.design.shape};
 	auto const other{preferred == alignment::transition_shape::clothoid ? alignment::transition_shape::cubic_parabola : alignment::transition_shape::clothoid};
 	alignment::result result;
+	alignment::design best;
+	alignment::result bestresult;
 	double closest{std::numeric_limits<double>::max()};
 	TTrack *farthest{nullptr};
 	bool fits{false};
@@ -1906,7 +1909,17 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 		{
 			closest = away;
 			farthest = worst;
+			best = design;
+			bestresult = result;
 		}
+	}
+	double fit{0.0};
+	if (false == fits && closest <= kDigitizeFit)
+	{
+		design = best;
+		result = bestresult;
+		fit = closest;
+		fits = true;
 	}
 	if (false == fits)
 	{
@@ -1933,7 +1946,7 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	auto const layer{covered.empty() ? alignment_store::layer_of(*Chain.tracks.front()) : records[*covered.begin()].layer};
 	for (auto index{covered.rbegin()}; index != covered.rend(); ++index)
 		alignment_store::forget(*index);
-	alignment_store::store(design, result, origin, layer, "drawn");
+	alignment_store::store(design, result, origin, layer, "drawn", fit);
 	return true;
 }
 

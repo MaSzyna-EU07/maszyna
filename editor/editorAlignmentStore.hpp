@@ -47,6 +47,7 @@ struct record
 	alignment::result result; // made of the design
 	std::vector<stored_element> elements; // as written in the file
 	bool consistent{true}; // the design makes the elements written in the file
+	double fit{0.0};
 	glm::dvec2 low{0.0};
 	glm::dvec2 high{0.0};
 	std::vector<glm::dvec2> samples;
@@ -84,7 +85,7 @@ int find(glm::dvec3 const &Start, glm::dvec3 const &End, bool &Reversed);
 // stored alignment near the tracks, whose line they no longer follow; Departure receives the largest distance
 int departed(std::vector<TTrack *> const &Tracks, double &Departure);
 // keeps the design in the file of the layer, in place of the one with the same ends
-int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source = "designed");
+int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source = "designed", double const Fit = 0.0);
 bool follows(alignment::result const &Result, std::vector<TTrack *> const &Tracks);
 double deviation(alignment::result const &Result, std::vector<TTrack *> const &Tracks, TTrack *&Worst);
 std::optional<double> chainage_on(alignment::result const &Result, glm::dvec3 const &Point);
