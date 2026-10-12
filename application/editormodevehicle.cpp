@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
+#include "application/editormodeshared.h"
 #include "application/application.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
@@ -175,7 +176,28 @@ bool editor_mode::vehicle_place()
 	}
 	tool.placed = head;
 	first_step_done(first_step::drive);
-	tool.status = format(STR_C("%s and %d vehicle(s) behind it stand on %s. It isn't saved with the scenery"), head.c_str(), static_cast<int>(vehicles.size()) - 1, tool.track->name().empty() ? "(noname)" : tool.track->name().c_str());
+	auto const trackname{tool.track->name().empty() ? std::string{"(noname)"} : tool.track->name()};
+	tool.status = format(STR_C("%s and %d vehicle(s) behind it stand on %s"), head.c_str(), static_cast<int>(vehicles.size()) - 1, trackname.c_str());
+	if (tool.write && tool.track->name().empty())
+		tool.status += ". " + std::string{STR_C("The track has no name, the trainset can't be written to the scenery")};
+	else if (tool.write)
+	{
+		std::string timetable{tool.timetable};
+		timetable.erase(std::remove_if(timetable.begin(), timetable.end(), [](unsigned char const Character) { return std::isspace(Character) != 0; }), timetable.end());
+		vehicle_tool::trainset entry{head, tool.track->name(), {}};
+		entry.lines.push_back("trainset " + (timetable.empty() ? std::string{"none"} : timetable) + " " + tool.track->name() + " " + to_string(offset, 2) + " " + to_string(tool.velocity, 0));
+		if (against)
+			entry.lines.push_back("reversed");
+		std::istringstream lines{nodes};
+		for (std::string line; std::getline(lines, line);)
+			if (false == line.empty())
+				entry.lines.push_back(line);
+		entry.lines.push_back("endtrainset");
+		tool.trainsets.push_back(std::move(entry));
+		tool.status += ". " + std::string{STR_C("Written to the scenery as a trainset on save (Ctrl+S)")};
+	}
+	else
+		tool.status += ". " + std::string{STR_C("Only to drive, it isn't written to the scenery")};
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	return true;
 }
@@ -198,7 +220,7 @@ void editor_mode::render_vehicle_ui()
 		tool.bank = std::make_shared<ui::vehicles_bank>();
 		tool.bank->scan_textures();
 	}
-	ImGui::TextDisabled("%s", STR_C("A vehicle to drive, placed where RMB on the track was clicked, or in the middle of the path.\nIt isn't written to the scenery files"));
+	ImGui::TextDisabled("%s", STR_C("A trainset on the track, placed where the track was clicked, or in the middle of the path"));
 	ImGui::SetNextItemWidth(-1.0f);
 	ImGui::InputTextWithHint("##vehiclesearch", STR_C("search: name, series, skin"), tool.search, sizeof(tool.search));
 	ImGui::Checkbox(STR_C("Only the ones with a cab"), &tool.controllable_only);
@@ -273,6 +295,17 @@ void editor_mode::render_vehicle_ui()
 	ImGui::RadioButton(STR_C("With a driver, to drive"), &tool.driver, 0);
 	ImGui::SameLine();
 	ImGui::RadioButton(STR_C("Nobody, parked"), &tool.driver, 1);
+	ImGui::Checkbox(STR_C("Write to the scenery as a trainset"), &tool.write);
+	item_tooltip("On: the trainset is written to the scenery on save (Ctrl+S). Off: only to drive now, gone when the scenery is loaded again");
+	if (tool.write)
+	{
+		ImGui::PushItemWidth(120.0f);
+		ImGui::InputText(STR_C("Timetable"), tool.timetable, sizeof(tool.timetable));
+		item_tooltip("The timetable the train runs by; none: no timetable, it waits for orders");
+		ImGui::DragScalar(STR_C("Speed at the start (km/h)"), ImGuiDataType_Double, &tool.velocity, 1.0f, nullptr, nullptr, "%.0f");
+		tool.velocity = std::clamp(tool.velocity, 0.0, 400.0);
+		ImGui::PopItemWidth();
+	}
 	if (tool.consist.empty() && (tool.vehicle == nullptr || tool.skin == nullptr))
 		ImGui::TextDisabled("%s", STR_C("Pick a vehicle from the list"));
 	else
@@ -288,6 +321,23 @@ void editor_mode::render_vehicle_ui()
 	}
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
+	if (tool.trainsets.empty())
+		return;
+	ImGui::Separator();
+	ImGui::TextDisabled(STR_C("%d trainset(s) to write on save:"), static_cast<int>(tool.trainsets.size()));
+	std::optional<std::size_t> drop;
+	for (std::size_t i = 0; i < tool.trainsets.size(); ++i)
+	{
+		ImGui::PushID(static_cast<int>(i));
+		if (ImGui::SmallButton("x"))
+			drop = i;
+		item_tooltip("Not written to the scenery; the vehicles stay until the scenery is loaded again");
+		ImGui::SameLine();
+		ImGui::Text("%s  (%s)", tool.trainsets[i].head.c_str(), tool.trainsets[i].track.c_str());
+		ImGui::PopID();
+	}
+	if (drop)
+		tool.trainsets.erase(tool.trainsets.begin() + static_cast<std::ptrdiff_t>(*drop));
 }
 
 void editor_mode::draw_vehicle_marker() const

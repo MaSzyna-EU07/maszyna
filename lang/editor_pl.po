@@ -2506,8 +2506,8 @@ msgstr "co można z nim zrobić"
 msgid "Vehicle on the track"
 msgstr "Pojazd na torze"
 
-msgid "A vehicle to drive, placed where RMB on the track was clicked, or in the middle of the path.\nIt isn't written to the scenery files"
-msgstr "Pojazd do jazdy, stawiany tam, gdzie kliknięto PPM na torze, albo w połowie odcinka.\nNie jest zapisywany do plików scenerii"
+msgid "A trainset on the track, placed where the track was clicked, or in the middle of the path"
+msgstr "Skład na torze, stawiany tam, gdzie kliknięto tor, albo w połowie odcinka"
 
 msgid "search: name, series, skin"
 msgstr "szukaj: nazwa, seria, malowanie"
@@ -2755,8 +2755,8 @@ msgstr "Parzyste hektometry po prawej, nieparzyste po lewej"
 msgid "Objects"
 msgstr "Obiekty"
 
-msgid "Along the track: hectometre posts, fouling point markers, a vehicle to drive"
-msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, pojazd do jazdy"
+msgid "Along the track: hectometre posts, fouling point markers, trainsets"
+msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, składy"
 
 msgid "Model along the track: release where it ends"
 msgstr "Model wzdłuż toru: puść tam, gdzie się kończy"
@@ -3357,8 +3357,8 @@ msgstr "Przywraca teren sprzed ostatniego kształtowania i usuwa teren, który p
 msgid "Click: start from this free end, drag: the curve of the switch goes on"
 msgstr "Kliknij: zacznij od tego wolnego końca, przeciągnij: łuk rozjazdu biegnie dalej"
 
-msgid "%s and %d vehicle(s) behind it stand on %s. It isn't saved with the scenery"
-msgstr "%s i %d pojazd(ów) za nim stoją na %s. Nie zapisuje się ze scenerią"
+msgid "%s and %d vehicle(s) behind it stand on %s"
+msgstr "%s i %d pojazd(ów) za nim stoją na %s"
 
 msgid "Add to the train"
 msgstr "Dodaj do składu"
@@ -4837,8 +4837,8 @@ msgstr "LPM wyrównuje teren pod pędzlem"
 msgid "LMB adds a chunk next to the clicked one, Shift+LMB deletes it"
 msgstr "LPM dodaje kafel obok klikniętego, Shift+LPM go usuwa"
 
-msgid "A vehicle to drive, put on the selected track; it isn't written to the scenery files"
-msgstr "Pojazd do jazdy, stawiany na zaznaczonym torze; nie trafia do plików scenerii"
+msgid "A trainset on the selected track: written to the scenery on save, and to drive at once"
+msgstr "Skład na zaznaczonym torze: zapisywany do scenerii przy zapisie, od razu do jazdy"
 
 msgid "%zu groups taken apart"
 msgstr "Rozgrupowano grup: %zu"
@@ -5677,8 +5677,8 @@ msgstr "Przeciągnij, by zmienić, Ctrl+klik, by wpisać. W trakcie układania: 
 msgid "Speed limit of the new paths; the speed of the track joined comes first"
 msgstr "Ograniczenie prędkości nowych odcinków; pierwszeństwo ma prędkość dołączanego toru"
 
-msgid "Drive it: Vehicle in the toolbar, pick a locomotive from the list, LMB on the track, then Place and drive"
-msgstr "Przejedź się: Pojazd na pasku narzędzi, wybierz lokomotywę z listy, LPM na torze, potem Postaw i jedź"
+msgid "Drive it: Trainset in the toolbar, pick a locomotive from the list, LMB on the track, then Place and drive"
+msgstr "Przejedź się: Skład na pasku narzędzi, wybierz lokomotywę z listy, LPM na torze, potem Postaw i jedź"
 
 msgid "the Parallel tool (N) with it"
 msgstr "narzędzie Równoległy (N) z nią"
@@ -5691,3 +5691,39 @@ msgstr "Narzędzie Równoległy (N) z tym torem"
 
 msgid "Click: the Parallel tool (N) with this track"
 msgstr "Klik: narzędzie Równoległy (N) z tym torem"
+
+msgid "Trainset"
+msgstr "Skład"
+
+msgid "The track has no name, the trainset can't be written to the scenery"
+msgstr "Tor nie ma nazwy, składu nie da się zapisać do scenerii"
+
+msgid "Written to the scenery as a trainset on save (Ctrl+S)"
+msgstr "Trafi do scenerii jako trainset przy zapisie (Ctrl+S)"
+
+msgid "Only to drive, it isn't written to the scenery"
+msgstr "Tylko do jazdy, nie trafia do scenerii"
+
+msgid "Write to the scenery as a trainset"
+msgstr "Zapisz do scenerii jako trainset"
+
+msgid "On: the trainset is written to the scenery on save (Ctrl+S). Off: only to drive now, gone when the scenery is loaded again"
+msgstr "Włączone: skład trafia do scenerii przy zapisie (Ctrl+S). Wyłączone: tylko do jazdy teraz, znika po ponownym wczytaniu scenerii"
+
+msgid "Timetable"
+msgstr "Rozkład"
+
+msgid "The timetable the train runs by; none: no timetable, it waits for orders"
+msgstr "Rozkład jazdy pociągu; none: bez rozkładu, czeka na polecenia"
+
+msgid "Speed at the start (km/h)"
+msgstr "Prędkość na starcie (km/h)"
+
+msgid "%d trainset(s) to write on save:"
+msgstr "%d skład(ów) do zapisania:"
+
+msgid "Not written to the scenery; the vehicles stay until the scenery is loaded again"
+msgstr "Nie trafi do scenerii; pojazdy zostają do ponownego wczytania scenerii"
+
+msgid "%d trainset(s) written to the scenery"
+msgstr "Zapisano %d skład(ów) do scenerii"

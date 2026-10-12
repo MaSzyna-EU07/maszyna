@@ -2937,11 +2937,24 @@ bool editor_mode::save()
     auto const terrainadded{false == rootstatements.empty()};
     auto const controls{turntable_controls(rootstatements)};
     std::vector<std::string> trailing;
-    starter_trainset(trailing);
+    std::erase_if(m_vehicle.trainsets, [](auto const &Trainset) {
+        auto const *track{simulation::Paths.find(Trainset.track)};
+        return track == nullptr || track->m_editorremoved;
+    });
+    auto const placed{m_vehicle.trainsets.size()};
+    for (auto const &trainset : m_vehicle.trainsets)
+        trailing.insert(trailing.end(), trainset.lines.begin(), trainset.lines.end());
+    if (placed == 0)
+        starter_trainset(trailing);
     auto const result = scene::Layers.save(rootstatements, trailing);
     if (result.success && controls)
         m_turntable_included = true;
-    if (result.success && trailing.size() == 3)
+    if (result.success && placed > 0)
+    {
+        m_vehicle.trainsets.clear();
+        m_vehicle.status = format(STR_C("%d trainset(s) written to the scenery"), static_cast<int>(placed));
+    }
+    if (result.success && placed == 0 && trailing.size() == 3)
     {
         std::istringstream header{trailing.front()};
         std::string keyword;
@@ -4613,7 +4626,7 @@ void editor_mode::render_first_steps()
 	    "T: switch. Click a straight, then press on it and drag: along sets the direction, sideways the side",
 	    "Ctrl+Z takes a step back, Backspace while laying takes back the last piece",
 	    "Ctrl+S saves the scenery",
-	    "Drive it: Vehicle in the toolbar, pick a locomotive from the list, LMB on the track, then Place and drive"};
+	    "Drive it: Trainset in the toolbar, pick a locomotive from the list, LMB on the track, then Place and drive"};
 	ImGui::SetNextWindowSize(ImVec2(440.0f * Global.ui_scale, 0.0f), ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowPos(ImVec2(8.0f, ImGui::GetIO().DisplaySize.y - 8.0f), ImGuiCond_FirstUseEver, ImVec2(0.0f, 1.0f));
 	ImGui::SetNextWindowBgAlpha(1.0f);

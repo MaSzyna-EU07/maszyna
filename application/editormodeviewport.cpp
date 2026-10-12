@@ -173,7 +173,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		add(track_tab::turntable, icon::turntable, false);
 		add(track_tab::signals, icon::signal, true);
 		add(track_tab::lineside, icon::objects, false);
-		Buttons.push_back({icon::vehicle, STR_C("Vehicle"), nullptr, STR_C("A vehicle to drive, put on the selected track; it isn't written to the scenery files"), vehicle, [this, vehicle]() {
+		Buttons.push_back({icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {
 			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
 			                   m_vehicle.expand = false == vehicle;
 		                   }});

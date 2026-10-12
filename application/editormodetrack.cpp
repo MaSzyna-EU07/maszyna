@@ -533,7 +533,7 @@ std::array<editor_mode::track_mode, 13> const &editor_mode::track_modes()
 	    {"Straight", "G", track_tab::straights, "The whole straight through the selected path: drag its ends or the middle, break it, shift it"},
 	    {"Curve", "C", track_tab::route, "The line through the path, switch to switch: vertices with the radii, transitions and cant of the curves"},
 	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by"},
-	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, a vehicle to drive"},
+	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, trainsets"},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line"},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows"},
 	    {"Joints", "J", track_tab::joints, "Ends of the paths which almost meet, steps, kinks, jumps of the cant and of the grade at the joints"},

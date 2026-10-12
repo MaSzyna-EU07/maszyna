@@ -1428,7 +1428,7 @@ void editor_mode::render_lineside_ui()
 	std::array<tab, 3> const tabs{{
 	    {"Hectometre posts", &m_hekto.open, &m_hekto.expand, [this]() { render_hekto_ui(); }},
 	    {"Fouling points", &m_fouling.open, &m_fouling.expand, [this]() { render_fouling_ui(); }},
-	    {"Vehicle", &m_vehicle.open, &m_vehicle.expand, [this]() { render_vehicle_ui(); }},
+	    {"Trainset", &m_vehicle.open, &m_vehicle.expand, [this]() { render_vehicle_ui(); }},
 	}};
 	if (selected_track() == nullptr)
 		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("LMB on a track: the line the objects go along"));

@@ -1581,7 +1581,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_fouling_ui();
 	void draw_fouling_overlay() const;
 
-	// a vehicle put on the selected path, to be driven: it isn't written to the scenery files
+	// a trainset put on the selected path, written to the scenery on save, or only to be driven
 	struct vehicle_tool
 	{
 		bool open{false};
@@ -1605,6 +1605,16 @@ class editor_mode : public application_mode, private editor_track::observer
 		};
 		std::vector<consist_vehicle> consist;
 		int facing{1};
+		bool write{true};
+		char timetable[64]{"none"};
+		double velocity{0.0};
+		struct trainset
+		{
+			std::string head;
+			std::string track;
+			std::vector<std::string> lines;
+		};
+		std::vector<trainset> trainsets;
 	};
 	vehicle_tool m_vehicle;
 	void vehicle_start(TTrack &Track, glm::dvec3 const &Point);

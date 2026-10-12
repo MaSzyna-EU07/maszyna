@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "world/Sweep.h"
 #include "input/keyboardinput.h"
+#include "launcher/textures_scanner.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
@@ -146,6 +147,29 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	if (command == "save")
 	{
 		save();
+		return selftest_result::handled;
+	}
+	if (command == "trainset")
+	{
+		std::string name;
+		std::string vehicle;
+		std::string skin;
+		int facing{1};
+		words >> name >> vehicle >> skin >> facing >> m_vehicle.velocity;
+		auto *track{simulation::Paths.find(name)};
+		if (track == nullptr)
+			return selftest_result::handled;
+		auto desc{std::make_shared<ui::vehicle_desc>()};
+		desc->path = vehicle;
+		auto set{std::make_shared<ui::skin_set>()};
+		set->skin = skin;
+		m_vehicle.consist.clear();
+		m_vehicle.vehicle = desc;
+		m_vehicle.skin = set;
+		vehicle_start(*track, geometry::bezier{track->m_paths.front()}.point(0.5));
+		m_vehicle.facing = facing;
+		auto const placed{vehicle_place()};
+		WriteLog(format("SELFTEST trainset %s placed %d pending %d: %s", name.c_str(), placed ? 1 : 0, static_cast<int>(m_vehicle.trainsets.size()), m_vehicle.status.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "selectmodel")
@@ -2402,6 +2426,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 //   checkspans                           logs whether the text the scenery files hold at each node's place starts and ends it
 //   spread <track> <stop 0..2> <reach>   logs the paths the spread from the track takes
 //   newscenery                           the editor starts again with the wizard of a new scenery
+//   trainset <track> <vehicle path> <skin> <facing> [km/h]  the trainset tool puts the vehicle in the middle of the track
 //   vehicles                             logs each vehicle: its head, facing, and what its couplers hold
 //   terrainmode                          the terrain field of work, with its texture browser
 //   terrainsculpt <x> <z> <radius> <metres>, terrainpaint <x> <z> <radius> <palette entry>,
