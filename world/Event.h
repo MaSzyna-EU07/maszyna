@@ -719,6 +719,17 @@ private:
     basic_table<TEventLauncher> m_radiodrivenlaunchers;
     eventlauncher_sequence m_launcherqueue;
 	command_relay m_relay;
+
+
+public:
+    // data access
+    event_sequence &
+        sequence() {
+        return m_events; }
+    event_sequence const &
+        sequence() const {
+        return m_events; }
+
 };
 
 
