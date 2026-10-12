@@ -13,11 +13,13 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorGeometry.hpp"
 
 #include "world/Track.h"
+#include "simulation/simulation.h"
 #include "utilities/Logs.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 
@@ -475,16 +477,55 @@ std::optional<hit> project(std::size_t const Index, glm::dvec2 const &Point, dou
 	return project(g_records[Index], Index, Point, Reach);
 }
 
-bool lies_along(record const &Entry, TTrack const &Track)
+bool lies_along(record const &Entry, segment_data const &Path)
 {
-	if (Track.m_paths.empty())
-		return false;
-	geometry::bezier const curve{Track.m_paths.front()};
+	geometry::bezier const curve{Path};
 	auto const reach{tolerance + approximation(curve)};
 	for (auto const t : {0.0, 0.25, 0.5, 0.75, 1.0})
 		if (false == project(Entry, 0, plan_of(curve.point(t)), t == 0.25 || t == 0.75 ? reach : tolerance).has_value())
 			return false;
 	return true;
+}
+
+bool lies_along(record const &Entry, TTrack const &Track)
+{
+	return false == Track.m_paths.empty() && lies_along(Entry, Track.m_paths.front());
+}
+
+std::vector<std::pair<double, double>> bare(std::size_t const Index)
+{
+	auto const &entry{g_records[Index]};
+	auto const margin{tolerance + kStep};
+	auto const inside = [&](glm::dvec2 const &Point) { return Point.x >= entry.low.x - margin && Point.y >= entry.low.y - margin && Point.x <= entry.high.x + margin && Point.y <= entry.high.y + margin; };
+	std::vector<std::pair<double, double>> covered;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		for (auto const &path : track->m_paths)
+		{
+			auto const start{plan_of(path.points[segment_data::point::start])};
+			auto const end{plan_of(path.points[segment_data::point::end])};
+			if (false == inside(start) || false == inside(end) || false == lies_along(entry, path))
+				continue;
+			auto const from{project(entry, Index, start, tolerance)};
+			auto const to{project(entry, Index, end, tolerance)};
+			if (from.has_value() && to.has_value())
+				covered.emplace_back(std::min(from->chainage, to->chainage), std::max(from->chainage, to->chainage));
+		}
+	}
+	std::sort(covered.begin(), covered.end());
+	std::vector<std::pair<double, double>> gaps;
+	double reached{0.0};
+	for (auto const &[from, to] : covered)
+	{
+		if (from - reached > 0.5)
+			gaps.emplace_back(reached, from);
+		reached = std::max(reached, to);
+	}
+	if (entry.result.length - reached > 0.5)
+		gaps.emplace_back(reached, entry.result.length);
+	return gaps;
 }
 
 record temporary(alignment::result const &Result)
@@ -608,22 +649,61 @@ int departed(std::vector<TTrack *> const &Tracks, double &Departure)
 	Departure = 0.0;
 	double const reach{5.0};
 	int result{-1};
+	std::map<std::size_t, std::vector<std::pair<double, double>>> gaps;
 	for (auto *track : Tracks)
 	{
 		if (track == nullptr || track->m_paths.empty() || on_track(*track).has_value())
 			continue;
 		geometry::bezier const curve{track->m_paths.front()};
 		for (auto const t : {0.0, 0.25, 0.5, 0.75, 1.0})
-		{
-			auto const found{at(curve.point(t), reach)};
-			if (found.has_value() && found->offset > tolerance && found->offset > Departure)
+			for (std::size_t r = 0; r < g_records.size(); ++r)
 			{
+				auto const found{project(r, plan_of(curve.point(t)), reach)};
+				if (false == found.has_value() || found->offset <= tolerance || found->offset <= Departure)
+					continue;
+				auto known{gaps.find(r)};
+				if (known == gaps.end())
+					known = gaps.emplace(r, bare(r)).first;
+				if (std::none_of(known->second.begin(), known->second.end(), [&](auto const &Gap) { return found->chainage >= Gap.first - tolerance && found->chainage <= Gap.second + tolerance; }))
+					continue;
 				Departure = found->offset;
 				result = found->record;
 			}
-		}
 	}
 	return result;
+}
+
+double deviation(alignment::result const &Result, std::vector<TTrack *> const &Tracks, TTrack *&Worst)
+{
+	Worst = nullptr;
+	if (false == Result.valid || Result.elements.empty())
+		return std::numeric_limits<double>::max();
+	auto const entry{temporary(Result)};
+	double largest{0.0};
+	for (auto *track : Tracks)
+	{
+		if (track == nullptr || track->m_paths.empty())
+			continue;
+		geometry::bezier const curve{track->m_paths.front()};
+		auto const allowance{approximation(curve)};
+		for (auto const t : {0.0, 0.25, 0.5, 0.75, 1.0})
+		{
+			auto const point{plan_of(curve.point(t))};
+			auto const found{project(entry, 0, point, 1000.0)};
+			auto offset{found.has_value() ? found->offset : std::numeric_limits<double>::max()};
+			if (false == found.has_value())
+				for (auto const &sample : entry.samples)
+					offset = std::min(offset, glm::distance(sample, point));
+			if (t == 0.25 || t == 0.75)
+				offset = std::max(0.0, offset - allowance);
+			if (offset > largest)
+			{
+				largest = offset;
+				Worst = track;
+			}
+		}
+	}
+	return largest;
 }
 
 bool follows(alignment::result const &Result, std::vector<TTrack *> const &Tracks)

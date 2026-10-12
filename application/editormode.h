@@ -836,7 +836,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_switch_record(TTrack const &Track) const;
 	void route_store();
 	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true);
-	bool digitize_chain(editor_track::chain const &Chain);
+	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr);
+	void digitize_all();
 	void render_route_stored();
 	void route_update()
 	{

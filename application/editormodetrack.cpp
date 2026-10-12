@@ -1661,9 +1661,22 @@ void editor_mode::route_read_stored()
 	route.origin = 0.0;
 	if (route.chain.tracks.empty())
 		return;
-	auto const &chain{route.chain};
+	auto const chain{route.chain};
 	bool reversed;
-	auto const index{alignment_store::find(chain.start, chain.end, reversed)};
+	auto index{alignment_store::find(chain.start, chain.end, reversed)};
+	route.departed = alignment_store::departed(chain.tracks, route.departure);
+	auto const loose{std::any_of(chain.tracks.begin(), chain.tracks.end(), [](TTrack const *Track) { return false == alignment_store::on_track(*Track).has_value(); })};
+	bool digitized{false};
+	std::string failure;
+	if (index < 0 && route.departed < 0 && loose && false == route.single)
+	{
+		if (digitize_chain(chain, &failure))
+		{
+			alignment_store::settle();
+			index = alignment_store::find(chain.start, chain.end, reversed);
+			digitized = true;
+		}
+	}
 	if (index >= 0 && false == reversed && false == route.single)
 	{
 		route_take_stored(index);
@@ -1675,8 +1688,13 @@ void editor_mode::route_read_stored()
 		if (further.has_value() && *further > *km)
 			route.origin = *km;
 	}
-	route.departed = alignment_store::departed(chain.tracks, route.departure);
-	if (route.designed > 0)
+	if (digitized && route.designed == 0)
+		route.status += STR_C("\nThe line is digitized now, a straight");
+	else if (digitized)
+		route.status += format(STR_C("\nThe line is digitized now, curves kept in the scenery: %d"), route.designed);
+	else if (false == failure.empty())
+		route.status += STR_C("\nThe line can't be digitized: ") + failure;
+	else if (route.designed > 0)
 		route.status += format(STR_C("\nCurves read from the design kept in the scenery: %d"), route.designed);
 	else if (false == route.design.vertices.empty())
 		route.status += STR_C("\nCurves recognized from the paths, the scenery keeps no design for them");
@@ -1712,19 +1730,12 @@ void editor_mode::render_route_stored()
 		route.origin = km * 1000.0;
 	ImGui::PopItemWidth();
 	item_tooltip("Chainage of the start of the fragment, kept with the design in the scenery; the vertical profile of these paths counts from it");
-	if (route.designed == 0 && route.departed < 0 && false == route.chain.tracks.empty())
+	if (ImGui::SmallButton(STR_C("Digitize all the tracks")))
 	{
-		if (ImGui::SmallButton(STR_C("Keep the line as it lies")))
-		{
-			auto *track{route.chain.tracks[route.chain.tracks.size() / 2]};
-			auto const kept{digitize_drawn({track}, false)};
-			alignment_store::settle();
-			route_load(*track);
-			route.status += std::string{"\n"} + (kept ? STR_C("The line is kept in the scenery with its straights, arcs and transition curves") : STR_C("The paths don't make a line of straights, arcs and transition curves, nothing kept"));
-			return;
-		}
-		item_tooltip("Keeps the line through the selected path in the scenery as its paths lie, the way the drawn tracks are kept");
+		digitize_all();
+		return;
 	}
+	item_tooltip("Every line of the scenery not digitized yet is kept in it with its straights, arcs and transition curves, the way the drawn tracks are kept; the paths stay as they are");
 	auto const &records{alignment_store::records()};
 	if (route.departed < 0 || route.departed >= static_cast<int>(records.size()))
 		return;
@@ -1775,13 +1786,69 @@ bool editor_mode::digitize_drawn(std::vector<TTrack *> const &Created, bool cons
 	return false;
 }
 
-bool editor_mode::digitize_chain(editor_track::chain const &Chain)
+void editor_mode::digitize_all()
+{
+	std::set<TTrack const *> visited;
+	int kept{0};
+	int failed{0};
+	std::string first;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty() || false == editor_track::is_supported(*track) || visited.count(track) > 0)
+			continue;
+		if (alignment_store::on_track(*track).has_value())
+			continue;
+		editor_track::chain chain;
+		std::string error;
+		if (false == editor_track::find_run(*track, kDrawnReach, chain, error) || chain.tracks.empty())
+		{
+			visited.insert(track);
+			continue;
+		}
+		visited.insert(chain.tracks.begin(), chain.tracks.end());
+		std::string reason;
+		if (digitize_chain(chain, &reason))
+		{
+			++kept;
+			continue;
+		}
+		++failed;
+		if (false == reason.empty())
+		{
+			WriteLog("Editor: digitizing - " + reason, logtype::generic);
+			if (first.empty())
+				first = reason;
+		}
+	}
+	alignment_store::settle();
+	auto text{format(STR_C("Lines digitized: %d, not digitized: %d"), kept, failed)};
+	if (false == first.empty())
+		text += STR_C(", the first: ") + first;
+	WriteLog("Editor: " + text, logtype::generic);
+	ui()->set_status(text, failed > 0);
+	if (false == m_route.chain.tracks.empty())
+		route_load(*m_route.chain.tracks[m_route.chain.tracks.size() / 2]);
+}
+
+bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *Reason)
 {
 	if (Chain.tracks.empty())
 		return false;
+	auto const name = [](TTrack const *Track) { return Track == nullptr || Track->name().empty() ? std::string{"(noname)"} : Track->name(); };
+	auto const nearest = [&](glm::dvec2 const &Point) {
+		TTrack *found{nullptr};
+		double distance{std::numeric_limits<double>::max()};
+		for (auto *track : Chain.tracks)
+			for (auto const end : {segment_data::point::start, segment_data::point::end})
+				if (auto const d{glm::distance(plan_of(track->m_paths.front().points[end]), Point)}; d < distance)
+				{
+					distance = d;
+					found = track;
+				}
+		return found;
+	};
 	alignment::design design;
 	design.norms = m_route.design.norms;
-	design.shape = m_route.design.shape;
 	design.transition_pieces = m_route.design.transition_pieces;
 	design.arc_piece_angle = m_route.design.arc_piece_angle;
 	design.speed = Chain.velocity > 0.0 ? Chain.velocity : 100.0;
@@ -1795,22 +1862,52 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain)
 	design.end_grade = grade_of(Chain.end_direction);
 	design.start_radius = Chain.start_radius;
 	design.end_radius = Chain.end_radius;
-	for (auto const &entry : editor_track::recognize_line(Chain, m_straights.tolerance, design.norms.gauge, design.shape))
+	auto const preferred{m_route.design.shape};
+	auto const other{preferred == alignment::transition_shape::clothoid ? alignment::transition_shape::cubic_parabola : alignment::transition_shape::clothoid};
+	alignment::result result;
+	double closest{std::numeric_limits<double>::max()};
+	TTrack *farthest{nullptr};
+	bool fits{false};
+	for (auto const shape : {preferred, other})
 	{
-		if (entry.kink)
-			return false;
-		auto vertex{route_vertex_of(entry.shape)};
-		vertex.position = entry.position;
-		design.vertices.push_back(vertex);
+		design.shape = shape;
+		design.vertices.clear();
+		for (auto const &entry : editor_track::recognize_line(Chain, m_straights.tolerance, design.norms.gauge, shape))
+		{
+			if (entry.kink)
+			{
+				if (Reason != nullptr)
+					*Reason = format(STR_C("the straights meet with no curve at path %s"), name(nearest(entry.position)).c_str());
+				return false;
+			}
+			auto vertex{route_vertex_of(entry.shape)};
+			vertex.position = entry.position;
+			design.vertices.push_back(vertex);
+		}
+		if (design.vertices.size() >= 2)
+		{
+			design.vertices.front().offset = std::max(0.0, glm::dot(design.vertices.front().position - plan_of(design.start), design.start_direction));
+			design.vertices.back().offset = std::max(0.0, glm::dot(plan_of(design.end) - design.vertices.back().position, design.end_direction));
+		}
+		result = alignment::compute(design);
+		if (alignment_store::follows(result, Chain.tracks))
+		{
+			fits = true;
+			break;
+		}
+		TTrack *worst{nullptr};
+		if (auto const away{alignment_store::deviation(result, Chain.tracks, worst)}; away < closest)
+		{
+			closest = away;
+			farthest = worst;
+		}
 	}
-	if (design.vertices.size() >= 2)
+	if (false == fits)
 	{
-		design.vertices.front().offset = std::max(0.0, glm::dot(design.vertices.front().position - plan_of(design.start), design.start_direction));
-		design.vertices.back().offset = std::max(0.0, glm::dot(plan_of(design.end) - design.vertices.back().position, design.end_direction));
-	}
-	auto const result{alignment::compute(design)};
-	if (false == alignment_store::follows(result, Chain.tracks))
+		if (Reason != nullptr)
+			*Reason = closest < 1000.0 ? format(STR_C("the curves read from the paths leave path %s by %.2f m"), name(farthest).c_str(), closest) : std::string{STR_C("the paths don't make a line of straights, arcs and transition curves")};
 		return false;
+	}
 	auto const &records{alignment_store::records()};
 	std::set<int> covered;
 	for (auto *track : Chain.tracks)

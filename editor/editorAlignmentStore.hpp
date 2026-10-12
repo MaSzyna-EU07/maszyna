@@ -86,6 +86,7 @@ int departed(std::vector<TTrack *> const &Tracks, double &Departure);
 // keeps the design in the file of the layer, in place of the one with the same ends
 int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source = "designed");
 bool follows(alignment::result const &Result, std::vector<TTrack *> const &Tracks);
+double deviation(alignment::result const &Result, std::vector<TTrack *> const &Tracks, TTrack *&Worst);
 std::optional<double> chainage_on(alignment::result const &Result, glm::dvec3 const &Point);
 void forget(int const Index);
 // the point on the line of the stored alignment, if it lies by it within the reach

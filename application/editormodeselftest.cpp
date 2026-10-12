@@ -1036,6 +1036,12 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		WriteLog("SELFTEST " + command + ": " + m_route.status + " " + m_route.error);
 		return selftest_result::handled;
 	}
+	if (command == "digitizeall")
+	{
+		digitize_all();
+		WriteLog(format("SELFTEST digitizeall: %zu alignments", alignment_store::records().size()));
+		return selftest_result::handled;
+	}
 	if (command == "alignments")
 	{
 		auto const &records{alignment_store::records()};
@@ -2471,6 +2477,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 //   routevertex <i> <R> <L in> <L out> <cant>, routearc <i> <R> <L> <share>, routeshare <i> <share>, routekm <km>
 //   routeapply, routetake                as the buttons of the route design do it
 //   alignments                           logs the alignments kept in the scenery and the element under each path
+//   digitizeall                          every line not digitized yet kept in the scenery, as the button of the route design does it
 //   splitkind <kind>, nudgekind <kind> <dx> <dz>   the first path over an element of the kind split in two, or moved
 //   switchplace <template> <x> <z> <direction> <side>   the catalogue template whose label starts so put into the straight
 //                                        nearest the point, or into the curve (switchcurve); slipplace <template> <x> <z>
