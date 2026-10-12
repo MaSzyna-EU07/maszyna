@@ -149,6 +149,18 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		save();
 		return selftest_result::handled;
 	}
+	if (command == "ortho")
+	{
+		float extent{0.0f};
+		words >> extent;
+		choose_work_area(work_area::tracks);
+		if (false == Global.EditorOrtho)
+			toggle_ortho();
+		if (extent > 0.0f)
+			Global.EditorOrthoExtent = std::clamp(extent, 5.0f, 50000.0f);
+		WriteLog(format("SELFTEST ortho extent %.0f", Global.EditorOrthoExtent));
+		return selftest_result::handled;
+	}
 	if (command == "mapstate")
 	{
 		auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")};

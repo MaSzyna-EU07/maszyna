@@ -665,7 +665,7 @@ std::string editor_mode::track_mode_name() const
 		if (false == m_straights.detour.empty())
 			return STR_C("Plan, straight: shift around, Shift+click the points");
 		if (m_straights.tool == 1)
-			return STR_C("Plan, straight: break, LMB on the straight");
+			return STR_C("Plan, straight: break, press on the straight and drag");
 		if (m_straights.tool == 2)
 			return STR_C("Plan, straight: S-curve, LMB on the straight");
 		return STR_C("Plan, straight: drag its ends or the middle");
@@ -2292,42 +2292,24 @@ void editor_mode::render_route_gizmo()
 	auto &route{m_route};
 	auto const count{static_cast<int>(route.design.vertices.size())};
 	bool const grip{route.grip >= 0 && route.grip < count && route.grip < static_cast<int>(route.result.vertex_chainages.size())};
-	if ((false == grip && (route.vertex < 0 || route.vertex >= count)) || false == m_gizmo_enabled)
+	if (false == grip && (route.vertex < 0 || route.vertex >= count))
 	{
-		m_route_gizmo_using = false;
+		m_route_dragging = false;
 		return;
 	}
 
-	gizmo_frame const frame;
-
 	auto const position{grip ? alignment::evaluate(route.result, route.result.vertex_chainages[route.grip]).position : route_vertex_position(route.vertex)};
 	glm::dvec3 moved{position};
-	bool held{false};
-	if (m_handle_drag.active)
+	if (false == handle_drag_step(moved))
 	{
-		held = handle_drag_step(moved);
-		if (false == held && false == m_route_gizmo_using)
-			return;
-	}
-	else
-	{
-		if (false == m_route_gizmo_using)
-			m_route_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(position - frame.camera));
-		frame.manipulate(ImGuizmo::TRANSLATE, m_route_gizmo, m_gizmo_snap);
-		held = ImGuizmo::IsUsing();
-		moved = frame.camera + glm::dvec3(m_route_gizmo[3]);
-	}
-
-	if (false == held)
-	{
-		if (m_route_gizmo_using)
+		if (m_route_dragging)
 		{
-			m_route_gizmo_using = false;
+			m_route_dragging = false;
 			route_apply();
 		}
 		return;
 	}
-	m_route_gizmo_using = true;
+	m_route_dragging = true;
 	if (grip)
 	{
 		auto &vertex{route.design.vertices[route.grip]};
@@ -3079,38 +3061,18 @@ void editor_mode::render_straight_gizmo()
 		typed_turn();
 		return;
 	}
-	if (state.tool_placed && m_gizmo_enabled)
-	{
-		render_straight_tool_gizmo();
-		return;
-	}
 	auto const &line{state.dragging ? state.drag_line : current_straight()};
-	if (state.handle < 0 || line.tracks.empty() || false == m_gizmo_enabled)
+	if (state.handle < 0 || line.tracks.empty())
 	{
 		state.dragging = false;
 		return;
 	}
 
-	gizmo_frame const frame;
-
 	glm::dvec3 const anchors[] = {line.start, line.end, (line.start + line.end) * 0.5};
-	auto const anchor{anchors[state.handle]};
-	glm::dvec3 handled{anchor};
-	bool held{false};
-	if (m_handle_drag.active)
-	{
-		held = handle_drag_step(handled);
-		if (false == held && false == state.dragging)
-			return;
-	}
-	else
-	{
-		if (false == state.dragging)
-			state.gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(anchor - frame.camera));
-		frame.manipulate(ImGuizmo::TRANSLATE, state.gizmo, m_gizmo_snap);
-		held = ImGuizmo::IsUsing();
-		handled = frame.camera + glm::dvec3(state.gizmo[3]);
-	}
+	glm::dvec3 handled{anchors[state.handle]};
+	bool const held{handle_drag_step(handled)};
+	if (false == held && false == state.dragging)
+		return;
 
 	if (held)
 	{
@@ -3523,30 +3485,8 @@ bool editor_mode::place_straight_tool()
 	auto const reach{std::min(50.0, std::max(1.0, line.length - along))};
 	state.tool_handle = state.tool_point + axis * reach;
 	state.tool_placed = true;
-	state.tool_dragging = false;
 	state.handle = -1;
 	return true;
-}
-
-void editor_mode::render_straight_tool_gizmo()
-{
-	auto &state{m_straights};
-	gizmo_frame const frame;
-	if (false == state.tool_dragging)
-		state.tool_gizmo = glm::translate(glm::mat4(1.0f), glm::vec3(state.tool_handle - frame.camera));
-	frame.manipulate(ImGuizmo::TRANSLATE, state.tool_gizmo, 0.0f);
-	if (ImGuizmo::IsUsing())
-	{
-		state.tool_dragging = true;
-		auto const moved{frame.camera + glm::dvec3(state.tool_gizmo[3])};
-		state.tool_handle = {moved.x, state.tool_handle.y, moved.z};
-		typed_turn();
-	}
-	else if (state.tool_dragging)
-	{
-		state.tool_dragging = false;
-		apply_straight_tool();
-	}
 }
 
 void editor_mode::apply_straight_tool()
@@ -3596,11 +3536,11 @@ void editor_mode::apply_straight_tool()
 void editor_mode::start_straight_gesture(int const Tool)
 {
 	auto &state{m_straights};
-	auto const previous{state.tool};
+	state.tool_before = state.tool;
 	state.tool = Tool;
 	if (false == place_straight_tool())
 	{
-		state.tool = previous;
+		state.tool = state.tool_before;
 		return;
 	}
 	state.tool_mouse = true;
@@ -3611,7 +3551,7 @@ void editor_mode::finish_straight_gesture()
 	auto &state{m_straights};
 	state.tool_mouse = false;
 	apply_straight_tool();
-	state.tool = 0;
+	state.tool = state.tool_before;
 	state.tool_placed = false;
 }
 
@@ -3879,7 +3819,7 @@ std::string editor_mode::track_readout() const
 		return text;
 	}
 	auto const &state{m_straights};
-	if (state.tool_placed && state.tool_dragging)
+	if (state.tool_placed && state.tool_mouse)
 	{
 		auto const &line{state.tool_line};
 		auto const offset{plan_of(state.tool_handle - state.tool_point)};
@@ -4304,7 +4244,7 @@ bool editor_mode::handle_drag_step(glm::dvec3 &Position)
 	drag.moved = true;
 	screen_projection const projection;
 	glm::dvec3 level;
-	if (projection.on_level(io.MousePos, drag.height, level) && glm::distance(level, glm::dvec3{Global.pCamera.Pos}) <= static_cast<double>(kMaxPlacementDistance))
+	if (projection.on_level(io.MousePos, drag.height, level) && (Global.editor_tracks || glm::distance(level, glm::dvec3{Global.pCamera.Pos}) <= static_cast<double>(kMaxPlacementDistance)))
 		drag.position = level + drag.offset;
 	Position = drag.position;
 	return true;
@@ -4377,7 +4317,7 @@ void editor_mode::point_drag_update()
 	}
 	screen_projection const projection;
 	glm::dvec3 position;
-	if (false == projection.on_level(io.MousePos, drag.height, position) || glm::distance(position, glm::dvec3{Global.pCamera.Pos}) > static_cast<double>(kMaxPlacementDistance))
+	if (false == projection.on_level(io.MousePos, drag.height, position) || (false == Global.editor_tracks && glm::distance(position, glm::dvec3{Global.pCamera.Pos}) > static_cast<double>(kMaxPlacementDistance)))
 		return;
 	m_track_snap = {};
 	if (editor_track::is_end(m_track_point.kind) && m_track_drag_points.empty())

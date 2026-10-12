@@ -399,7 +399,7 @@ void editor_mode::render_toolbar_tools()
 void editor_mode::render_viewport_gizmo()
 {
 	// the gizmo moves the models and the tracks; on the terrain the mouse is the brush's
-	if (false == m_gizmo_enabled || current_work_area() == work_area::terrain)
+	if (false == m_gizmo_enabled || current_work_area() == work_area::terrain || (ui()->mode() == nodebank_panel::TRACK && track_plan_tab()))
 		return;
 	auto const tooltip{STR_C("What the handles of the gizmo on the selection do when dragged; Ctrl held snaps the values")};
 	std::array<tool_button, 4> const buttons{{

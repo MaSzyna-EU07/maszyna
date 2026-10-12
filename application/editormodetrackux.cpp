@@ -38,8 +38,11 @@ namespace
 {
 
 using geometry::bezier;
+using geometry::plan_of;
 
 float const kHoverPixels{12.0f};
+float const kFarHoverPixels{16.0f};
+double const kLinesFrom{0.5};
 double const kHoverLabelDelay{0.35}; // s the cursor rests on a path before its data shows up
 double const kFocusDistance{25.0};
 auto const kContextClick{std::chrono::milliseconds(350)};
@@ -81,6 +84,19 @@ char const *type_of(TTrack const &Track)
 	}
 }
 
+double ortho_metres_per_pixel()
+{
+	auto const height{ImGui::GetIO().DisplaySize.y};
+	return Global.EditorOrtho && height > 0.0f ? 2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(height) : 0.0;
+}
+
+bool plan_near(bezier const &Curve, glm::dvec2 const &Point, double const Reach)
+{
+	auto const centre{(plan_of(Curve.p0) + plan_of(Curve.p1) + plan_of(Curve.p2) + plan_of(Curve.p3)) * 0.25};
+	auto const radius{std::max({glm::distance(centre, plan_of(Curve.p0)), glm::distance(centre, plan_of(Curve.p1)), glm::distance(centre, plan_of(Curve.p2)), glm::distance(centre, plan_of(Curve.p3))})};
+	return glm::distance(centre, Point) <= radius + Reach;
+}
+
 double segment_distance2(glm::vec2 const &Point, glm::vec2 const &A, glm::vec2 const &B, double &T)
 {
 	auto const ab{B - A};
@@ -98,7 +114,14 @@ editor_mode::track_hover editor_mode::track_under_cursor(TTrack const *Only, flo
 	auto const &io{ImGui::GetIO()};
 	screen_projection const projection;
 	glm::vec2 const mouse{io.MousePos.x, io.MousePos.y};
-	double best{Pixels > 0.0f ? Pixels * Pixels : Only != nullptr ? std::numeric_limits<double>::max() : kHoverPixels * kHoverPixels};
+	auto const metres{ortho_metres_per_pixel()};
+	auto const hover{metres >= kLinesFrom ? kFarHoverPixels : kHoverPixels};
+	double best{Pixels > 0.0f ? Pixels * Pixels : Only != nullptr ? std::numeric_limits<double>::max() : hover * hover};
+	glm::dvec3 origin;
+	glm::dvec3 direction;
+	projection.ray(io.MousePos, origin, direction);
+	bool const cull{metres > 0.0 && Only == nullptr};
+	auto const reach{cull ? std::sqrt(best) * metres : 0.0};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == rail(*track) || track->m_editorremoved || (Only != nullptr && track != Only))
@@ -106,6 +129,8 @@ editor_mode::track_hover editor_mode::track_under_cursor(TTrack const *Only, flo
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		{
 			bezier const curve{track->m_paths[i]};
+			if (cull && false == plan_near(curve, plan_of(origin), reach))
+				continue;
 			auto const count{std::clamp(static_cast<int>(curve.plan_length() / 3.0), 6, 64)};
 			auto previous{curve.point(0.0)};
 			ImVec2 from;
@@ -140,7 +165,7 @@ void editor_mode::update_track_hover()
 {
 	if (typed_meaning() == nullptr)
 		m_typed.clear();
-	bool const blocked{ImGui::GetIO().WantCaptureMouse || mouseHold || m_track_set_using || m_track_box.active || m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || m_track_gizmo_using || m_route_gizmo_using || m_extend.active || m_switch.placing ||
+	bool const blocked{ImGui::GetIO().WantCaptureMouse || mouseHold || m_track_set_using || m_track_box.active || m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || m_track_gizmo_using || m_route_dragging || m_extend.active || m_switch.placing ||
 	                   m_straights.dragging || m_lay.active};
 	if (blocked)
 	{
@@ -150,6 +175,37 @@ void editor_mode::update_track_hover()
 	auto found{track_under_cursor()};
 	found.since = found.track == m_hover.track ? m_hover.since : ImGui::GetTime();
 	m_hover = found;
+}
+
+void editor_mode::draw_track_lines() const
+{
+	auto const metres{ortho_metres_per_pixel()};
+	if (metres < kLinesFrom)
+		return;
+	auto const &io{ImGui::GetIO()};
+	screen_projection const projection;
+	glm::dvec2 const centre{Global.pCamera.Pos.x, Global.pCamera.Pos.z};
+	auto const reach{0.5 * metres * std::hypot(static_cast<double>(io.DisplaySize.x), static_cast<double>(io.DisplaySize.y))};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || false == rail(*track))
+			continue;
+		for (auto const &path : track->m_paths)
+		{
+			bezier const curve{path};
+			if (false == plan_near(curve, centre, reach))
+				continue;
+			auto const count{std::clamp(static_cast<int>(curve.plan_length(4) / metres / 8.0), 1, 32)};
+			auto previous{curve.point(0.0)};
+			for (int k = 1; k <= count; ++k)
+			{
+				auto const next{curve.point(static_cast<double>(k) / count)};
+				projection.line(drawlist, previous, next, IM_COL32(235, 235, 235, 150), 1.5f);
+				previous = next;
+			}
+		}
+	}
 }
 
 void editor_mode::draw_track_hover() const
@@ -180,7 +236,7 @@ void editor_mode::draw_track_hover() const
 
 bool editor_mode::track_gesture_on() const
 {
-	return mouseHold || m_track_set_using || m_track_box.active || m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || m_track_gizmo_using || m_route_gizmo_using || m_extend.active || m_switch.placing || m_straights.dragging || m_straights.tool_mouse ||
+	return mouseHold || m_track_set_using || m_track_box.active || m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || m_track_gizmo_using || m_route_dragging || m_extend.active || m_switch.placing || m_straights.dragging || m_straights.tool_mouse ||
 	       m_point_drag.active || m_handle_drag.active || m_sweep.dragging || m_turntable.placing || m_signal.placing || m_signal.moving || m_switch.slide.active || ImGuizmo::IsUsing();
 }
 
@@ -349,7 +405,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		if (m_straights.tool != 0 && false == line.tracks.empty())
 		{
 			intent.position = line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * std::clamp(line.along(ground), 0.0, line.length);
-			return make(kind::straight_tool, m_straights.tool == 1 ? "Click: break the straight here" : "Click: start of the shift");
+			return make(kind::straight_tool, m_straights.tool == 1 ? "Press: break the straight here, drag to turn the rest" : "Click: start of the shift");
 		}
 	}
 	if ((m_track_tab == track_tab::turnout || m_track_tab == track_tab::path) && m_hover.track != nullptr && switch_slides(*m_hover.track))
@@ -445,7 +501,12 @@ void editor_mode::track_press(track_intent const &Intent)
 	}
 	case kind::straight_break: start_straight_gesture(1); return;
 	case kind::detour: add_detour_point(); return;
-	case kind::straight_tool: place_straight_tool(); return;
+	case kind::straight_tool:
+		if (m_straights.tool == 1)
+			start_straight_gesture(1);
+		else
+			place_straight_tool();
+		return;
 	case kind::straight_handle:
 		m_straights.handle = Intent.index;
 		handle_drag_start(Intent.position);
@@ -758,7 +819,7 @@ char const *editor_mode::typed_meaning() const
 	auto const &straights{m_straights};
 	if (straights.dragging)
 		return straights.handle == 2 ? "type the shift, + to the right" : "type the length";
-	if (straights.tool == 1 && (straights.tool_mouse || straights.tool_dragging))
+	if (straights.tool == 1 && straights.tool_mouse)
 		return "type the turn in degrees, + to the right";
 	if (m_lay.active && false == m_lay.points.empty())
 		return "type the length of the next leg, Enter adds the point";

@@ -1407,6 +1407,8 @@ bool editor_mode::update()
     render_viewport_overlays();
 
     render_track_inspector();
+    if (ui()->mode() == nodebank_panel::TRACK)
+        draw_track_lines();
     if (selected_track())
         draw_track_overlay();
     if (route_active())
@@ -4780,7 +4782,7 @@ void editor_mode::render_gizmo_options()
     {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120.0f);
-        ImGui::SliderFloat(STR_C("Extent (m), wheel / MMB pan"), &Global.EditorOrthoExtent, 5.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat(STR_C("Extent (m), wheel / MMB pan"), &Global.EditorOrthoExtent, 5.0f, 50000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Wheel zooms. Hold the wheel and drag to pan."));
     }
@@ -4825,6 +4827,18 @@ void editor_mode::render_gizmo_options()
 
 void editor_mode::render_gizmo()
 {
+    if (straights_active())
+    {
+        render_straight_gizmo();
+        return;
+    }
+
+    if (route_active())
+    {
+        render_route_gizmo();
+        return;
+    }
+
     // the transform gizmo is suppressed while editing terrain, so the brush/chunk tool owns the mouse
     if (!m_gizmo_enabled || terrain_brush() || terrain_clicking())
     {
@@ -4835,18 +4849,6 @@ void editor_mode::render_gizmo()
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && m_track_set.size() >= 2)
     {
         render_track_set_gizmo();
-        return;
-    }
-
-    if (straights_active())
-    {
-        render_straight_gizmo();
-        return;
-    }
-
-    if (route_active())
-    {
-        render_route_gizmo();
         return;
     }
 
@@ -5123,7 +5125,7 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
     if (false == Global.EditorOrtho || ImGui::GetIO().WantCaptureMouse)
         return;
     auto const before{Global.EditorOrthoExtent};
-    auto const after{std::clamp(before * static_cast<float>(std::pow(0.85, Yoffset)), 5.0f, 5000.0f)};
+    auto const after{std::clamp(before * static_cast<float>(std::pow(0.85, Yoffset)), 5.0f, 50000.0f)};
     screen_projection const projection;
     glm::dvec3 origin;
     glm::dvec3 direction;
@@ -5288,7 +5290,7 @@ void editor_mode::exit()
     m_track_snap = {};
     m_track_point = {};
     m_route = {};
-    m_route_gizmo_using = false;
+    m_route_dragging = false;
     if (Global.EditorOrtho)
         toggle_ortho();
 

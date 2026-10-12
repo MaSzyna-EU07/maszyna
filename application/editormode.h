@@ -876,7 +876,6 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<std::pair<TTrack *, editor_track::state>> drag_states;
 		glm::dvec3 preview_start{0.0};
 		glm::dvec3 preview_end{0.0};
-		glm::mat4 gizmo{1.0f};
 		glm::dvec3 edit_start{0.0};
 		glm::dvec3 edit_end{0.0};
 		double edit_length{0.0};
@@ -886,17 +885,16 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool auto_transitions{true};
 		double transition{0.0};
 		int tool{0};
+		int tool_before{0};
 		bool tool_mouse{false};
 		std::vector<glm::dvec3> detour;
 		editor_track::straight detour_line;
 		glm::dvec3 detour_mouse{0.0};
 		bool tool_placed{false};
-		bool tool_dragging{false};
 		double tool_at{0.0};
 		glm::dvec3 tool_point{0.0};
 		glm::dvec3 tool_handle{0.0};
 		editor_track::straight tool_line;
-		glm::mat4 tool_gizmo{1.0f};
 		std::string status;
 	};
 	void render_straights_ui();
@@ -908,7 +906,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	void straights_apply(std::vector<editor_track::straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	bool in_straight_set(editor_track::straight const &Line) const;
 	bool place_straight_tool();
-	void render_straight_tool_gizmo();
 	void apply_straight_tool();
 	double straight_tool_radius(editor_track::straight const &Line) const;
 	void straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius);
@@ -1264,6 +1261,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	track_hover track_under_cursor(TTrack const *Only = nullptr, float const Pixels = 0.0f) const;
 	track_hover split_spot() const;
 	void update_track_hover();
+	void draw_track_lines() const;
 	void draw_track_hover() const;
 	struct track_intent
 	{
@@ -2114,8 +2112,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_infra_bound();
 	void draw_infra_overlay() const;
 
-	bool m_route_gizmo_using{false};
-	glm::mat4 m_route_gizmo{1.0f};
+	bool m_route_dragging{false};
 	float m_track_snap_radius{1.0f};
 	bool m_track_align_tangent{true};
 	bool m_track_drag_connected{true};

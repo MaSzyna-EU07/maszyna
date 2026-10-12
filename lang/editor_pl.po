@@ -44,8 +44,8 @@ msgstr "Plan, prosta: objazd, Shift+klik w punkty"
 msgid "New path from the free end"
 msgstr "Nowy odcinek z wolnego końca"
 
-msgid "Plan, straight: break, LMB on the straight"
-msgstr "Plan, prosta: załamanie, LPM na prostej"
+msgid "Plan, straight: break, press on the straight and drag"
+msgstr "Plan, prosta: załamanie, wciśnij LPM na prostej i ciągnij"
 
 msgid "Plan, straight: S-curve, LMB on the straight"
 msgstr "Plan, prosta: przesunięcie (esowanie), LPM na prostej"
@@ -2867,9 +2867,6 @@ msgstr "Wciśnij: załam prostą tutaj, przeciągnij, by obrócić resztę"
 
 msgid "Click: next point of the shift around an obstacle"
 msgstr "Klik: następny punkt objazdu przeszkody"
-
-msgid "Click: break the straight here"
-msgstr "Klik: załam prostą tutaj"
 
 msgid "Click: start of the shift"
 msgstr "Klik: początek przesunięcia"
