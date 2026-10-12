@@ -35,7 +35,7 @@ namespace network
 		virtual void send_message(const message &msg) = 0;
 		virtual void send_messages(const std::vector<std::shared_ptr<message>> &messages) = 0;
 
-		connection(bool client = false, size_t counter = 0);
+		explicit connection(bool client = false, size_t counter = 0);
 		void set_handler(std::function<void(const message &msg)> handler);
 
 		virtual void disconnect() = 0;
@@ -47,6 +47,7 @@ namespace network
 			DEAD
 		};
 		peer_state state;
+		virtual ~connection() = default;
 	};
 
 	class server
@@ -62,7 +63,7 @@ namespace network
 		command_queue::commands_map client_commands_queue;
 
 	public:
-		server(std::shared_ptr<std::istream> buf);
+		explicit server(std::shared_ptr<std::istream> buf);
 		void push_delta(const frame_info &msg);
 		command_queue::commands_map pop_commands();
 	};
@@ -97,13 +98,14 @@ namespace network
 	public:
 		void update();
 		std::tuple<double, double, command_queue::commands_map> get_next_delta(int counter);
-		void send_commands(command_queue::commands_map commands);
-		int get_frame_counter() {
-			return resume_frame_counter;
+		void send_commands(command_queue::commands_map const &commands) const;
+		int get_frame_counter() const {
+			return static_cast<int>(resume_frame_counter);
 		}
-		int get_awaiting_frames() {
-			return delta_queue.size();
+		int get_awaiting_frames() const {
+			return static_cast<int>(delta_queue.size());
 		}
+		virtual ~client() = default;
 	};
 
 	class backend_manager
@@ -112,6 +114,7 @@ namespace network
 		virtual std::shared_ptr<server> create_server(std::shared_ptr<std::fstream>, const std::string &conf) = 0;
 		virtual std::shared_ptr<client> create_client(const std::string &conf) = 0;
 		virtual void update() = 0;
+		virtual ~backend_manager() = default;
 	};
 
     // HACK: static initialization order fiasco fix

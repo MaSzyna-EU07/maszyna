@@ -87,7 +87,7 @@ jobs:
             --config $env:CONFIG_WIN `
             --parallel
 
-      - name: Copy shaders
+      - name: Copy shaders and translations
         shell: pwsh
         run: |
           $output = "build/bin/$env:CONFIG_WIN"
@@ -100,6 +100,17 @@ jobs:
           Copy-Item `
             -Path "shaders/*" `
             -Destination "$output/shaders" `
+            -Recurse `
+            -Force
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "$output/lang" | Out-Null
+
+          Copy-Item `
+            -Path "lang/*" `
+            -Destination "$output/lang" `
             -Recurse `
             -Force
 
@@ -238,10 +249,11 @@ jobs:
 
           "$PYTHON_HOME/bin/python" -c "from PIL import Image; print('Pillow:', Image.__version__)"
           
-      - name: Copy shaders
+      - name: Copy shaders and translations
         run: |
-          mkdir -p build/bin/shaders
+          mkdir -p build/bin/shaders build/bin/lang
           cp -R shaders/. build/bin/shaders/
+          cp -R lang/. build/bin/lang/
 
       - name: Upload Linux build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -251,3 +263,80 @@ jobs:
             build/bin/
           if-no-files-found: error
           retention-days: 14
+
+
+  # ============================================================
+  # Public download: release assets need no GitHub account
+  # ============================================================
+
+  publish:
+    name: Publish public download
+    needs: [windows, linux]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: maszyna-windows-x64-${{ env.CONFIG_WIN }}
+          path: dist/maszyna-windows-x64
+
+      - name: Download Linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: maszyna-linux-x64-${{ env.CONFIG_LINUX }}
+          path: dist/maszyna-linux-x64
+
+      - name: Pack
+        run: |
+          cd dist
+
+          find maszyna-linux-x64 -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && chmod +x "$1"' _ {} \;
+          if [ -d maszyna-linux-x64/linuxpython64/bin ]; then
+            chmod +x maszyna-linux-x64/linuxpython64/bin/*
+          fi
+
+          (cd maszyna-windows-x64 && zip -qr9 ../maszyna-windows-x64.zip .)
+          tar -czf maszyna-linux-x64.tar.gz -C maszyna-linux-x64 .
+          ls -la
+
+      - name: Publish rolling release of the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          slug="$(printf '%s' "$BRANCH" | tr '/ ' '--' | tr -cd '[:alnum:]._-')"
+          tag="build-$slug"
+          base="${{ github.server_url }}/${{ github.repository }}/releases/download/$tag"
+
+          notes="$(printf '%s\n' \
+            "Automatic build of branch \`$BRANCH\`, commit $SHA, replaced by every push to the branch." \
+            "" \
+            "Download without a GitHub account:" \
+            "- Windows: $base/maszyna-windows-x64.zip" \
+            "- Linux: $base/maszyna-linux-x64.tar.gz" \
+            "" \
+            "Unpack over a MaSzyna installation (the game data isn't included). Build log: $RUN_URL")"
+
+          gh release delete "$tag" --yes --cleanup-tag || true
+          gh release create "$tag" \
+            dist/maszyna-windows-x64.zip \
+            dist/maszyna-linux-x64.tar.gz \
+            --target "$SHA" \
+            --prerelease \
+            --latest=false \
+            --title "Build: $BRANCH" \
+            --notes "$notes"
+
+          echo "### Public download" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Windows: $base/maszyna-windows-x64.zip" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Linux: $base/maszyna-linux-x64.tar.gz" >> "$GITHUB_STEP_SUMMARY"

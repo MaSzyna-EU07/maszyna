@@ -43,6 +43,14 @@ class vehicle_table;
 class train_table;
 struct light_array;
 class particle_manager;
+class road_node; // kawałek drogi, z którego powstają pasy ruchu
+class road_table;
+class sweep_node; // model ułożony wzdłuż krzywej: wygięty albo powtarzany
+class sweep_table;
+class junction_node;
+class junction_table;
+class roadpoint_node; // przejazd kolejowy albo miejsce, w którym pojazdy drogowe się pojawiają lub znikają
+class roadpoint_table;
 struct dictionary_source;
 class trainset_desc;
 class scenery_desc;
@@ -56,6 +64,8 @@ namespace scene {
 struct node_data;
 class basic_node;
 using group_handle = std::size_t;
+using layer_handle = std::uint16_t;
+using instance_handle = std::uint32_t;
 }
 
 namespace Mtable

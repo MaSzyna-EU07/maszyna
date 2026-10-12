@@ -21,7 +21,7 @@ public:
 protected:
 // methods
     void
-        default_bindings();
+        default_bindings() override;
 };
 
 //---------------------------------------------------------------------------

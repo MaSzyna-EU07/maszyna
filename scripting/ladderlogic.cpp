@@ -67,7 +67,7 @@ basic_controller::output( element_handle const Element ) const -> int {
 }
 
 auto
-basic_controller::load( std::string const &Filename ) -> bool {
+basic_controller::load( std::string_view Filename) -> bool {
 
     m_program.clear();
     m_updateaccumulator = 0.0;
@@ -111,7 +111,7 @@ basic_controller::update( double const Timestep ) -> int {
     return run();
 }
 
-std::map<std::string, basic_controller::opcode_e> const basic_controller::m_operationcodemap = {
+std::map<std::string, basic_controller::opcode_e, std::less<>> const basic_controller::m_operationcodemap = {
     { "ld", opcode_e::op_ld }, { "ldi", opcode_e::op_ldi },
     { "and", opcode_e::op_and }, { "ani", opcode_e::op_ani }, { "anb", opcode_e::op_anb },
     { "or", opcode_e::op_or }, { "ori", opcode_e::op_ori }, { "orb", opcode_e::op_orb },
@@ -130,10 +130,9 @@ basic_controller::deserialize_operation( cParser &Input ) -> bool {
     cParser operationparser( operationdata, cParser::buffer_TEXT );
     // HACK: operation potentially contains 1-2 parameters so we try to grab the whole set
     operationparser.getTokens( 3, "\t " );
-    std::string
-        operationname,
-        operationelement,
-        operationparameter;
+    std::string operationname;
+    std::string operationelement;
+    std::string operationparameter;
     operationparser
         >> operationname
         >> operationelement
@@ -142,7 +141,7 @@ basic_controller::deserialize_operation( cParser &Input ) -> bool {
     auto const lookup { m_operationcodemap.find( operationname ) };
     operation.code = lookup != m_operationcodemap.end() ? lookup->second : opcode_e::op_nop;
     if( lookup == m_operationcodemap.end() ) {
-        log_error( "contains unknown command \"" + operationname + "\"", Input.Line() - 1 );
+        log_error( "contains unknown command \"" + operationname + "\"", static_cast<int>(Input.Line() - 1) );
     }
 
     if( operation.code == opcode_e::op_nop ) { return true; }
@@ -155,8 +154,8 @@ basic_controller::deserialize_operation( cParser &Input ) -> bool {
     }
 
     if( false == operationparameter.empty() ) {
-        auto const parameter{ split_string_and_number( operationparameter ) };
-        operation.parameter1 = static_cast<short>( parameter.second );
+        auto const [parametertype, parameterindex]{ split_string_and_number( operationparameter ) };
+        operation.parameter1 = static_cast<short>( parameterindex );
     }
 
     m_program.emplace_back( operation );
@@ -165,7 +164,7 @@ basic_controller::deserialize_operation( cParser &Input ) -> bool {
 }
 
 auto
-basic_controller::insert( std::string const Name, basic_element Element ) -> element_handle {
+basic_controller::insert( std::string const &Name, basic_element Element ) -> element_handle {
 
     m_elements.push_back( Element );
     m_elementnames.push_back( Name );
@@ -301,6 +300,8 @@ basic_controller::run() -> int {
                         }
                         break;
                     }
+                    default:
+                        break;
                 }
                 // accumulator was published at least once, next ld(i) operation will start a new rung
                 m_popstack = true;
@@ -316,7 +317,6 @@ basic_controller::run() -> int {
                     break;
                 }
                 auto &target { element( operation.element ) };
-                auto const initialstate { target.input() };
                 target.input() = m_accumulator.back();
                 // additional operations for advanced element types
                 switch( (basic_element::type_e)target.data.index() ) {
@@ -334,6 +334,8 @@ basic_controller::run() -> int {
 */
                         break;
                     }
+                    default:
+                        break;
                 }
                 // accumulator was published at least once, next ld(i) operation will start a new rung
                 m_popstack = true;
@@ -356,9 +358,14 @@ basic_controller::run() -> int {
                         std::get<basic_element::counter>(target.data).count_value = 0;
                         break;
                     }
+                    default:
+                        break;
                 }
                 // accumulator was published at least once, next ld(i) operation will start a new rung
                 m_popstack = true;
+                break;
+            }
+            default: {
                 break;
             }
         }
@@ -381,17 +388,18 @@ basic_controller::log_error( std::string const &Error, int const Line ) const {
 
 auto
 basic_controller::guess_element_type_from_name( std::string const &Name ) const -> basic_element::type_e {
+    using enum plc::basic_element::type_e;
 
-    auto const name { split_string_and_number( Name ) };
+    auto const [nametype, nameindex]{ split_string_and_number( Name ) };
 
-    if( name.first == "t" || name.first == "ton" || name.first.find("timer.") == 0 ) {
-        return basic_element::type_e::timer;
+    if( nametype == "t" || nametype == "ton" || nametype.find("timer.") == 0 ) {
+        return timer;
     }
-    if( name.first == "c" || name.first.find("counter.") == 0 ) {
-        return basic_element::type_e::counter;
+    if( nametype == "c" || nametype.find("counter.") == 0 ) {
+        return counter;
     }
 
-    return basic_element::type_e::variable;
+    return variable;
 }
 
 } // plc

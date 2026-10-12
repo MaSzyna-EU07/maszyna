@@ -78,7 +78,8 @@ void ui::vehiclepicker_panel::render_contents()
 		}
 
 		if (ImGui::BeginChild("box2")) {
-			ImGuiListClipper clipper(model_list.size());
+			ImGuiListClipper clipper;
+			clipper.Begin(model_list.size());
 			while (clipper.Step())
 				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 					auto group = model_list[i];
@@ -109,7 +110,8 @@ void ui::vehiclepicker_panel::render_contents()
 		}
 
 		if (ImGui::BeginChild("box2")) {
-			ImGuiListClipper clipper(model_list.size());
+			ImGuiListClipper clipper;
+			clipper.Begin(model_list.size());
 			while (clipper.Step())
 				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 					auto &desc = model_list[i];
@@ -141,7 +143,8 @@ void ui::vehiclepicker_panel::render_contents()
 		                   skinset_list.end());
 
 	if (ImGui::BeginChild("box3")) {
-		ImGuiListClipper clipper(skinset_list.size());
+		ImGuiListClipper clipper;
+		clipper.Begin(skinset_list.size());
 		while (clipper.Step())
 			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 				auto skin = skinset_list[i];

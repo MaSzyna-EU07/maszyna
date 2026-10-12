@@ -764,7 +764,7 @@ enum class TLocalBrake
 	HydraulicBrake
 };
 /// <summary>Brake delay parameter table (apply/release for passenger and freight).</summary>
-typedef double TBrakeDelayTable[4];
+using TBrakeDelayTable = double[4];
 
 /// <summary>One row of the brake pressure / pipe pressure / flow-speed table for a brake handle position.</summary>
 struct TBrakePressure
@@ -780,7 +780,7 @@ struct TBrakePressure
 };
 
 /// <summary>Brake pressure table indexed by handle position.</summary>
-typedef std::map<int, TBrakePressure> TBrakePressureTable;
+using TBrakePressureTable = std::map<int, TBrakePressure>;
 
 /// <summary>Engine / drive type.</summary>
 enum class TEngineType
@@ -989,11 +989,11 @@ struct TTransducer
 struct TPowerParameters
 {
 	/// <summary>Maximum source voltage [V].</summary>
-	double MaxVoltage;
+	double MaxVoltage{0.0};
 	/// <summary>Maximum source current [A].</summary>
-	double MaxCurrent;
+	double MaxCurrent{0.0};
 	/// <summary>Internal resistance [Ω].</summary>
-	double IntR;
+	double IntR{0.001};
 	/// <summary>Type of source (selects which union member is meaningful).</summary>
 	TPowerSource SourceType;
 	union
@@ -1029,9 +1029,6 @@ struct TPowerParameters
 	};
 	inline TPowerParameters()
 	{
-		MaxVoltage = 0.0;
-		MaxCurrent = 0.0;
-		IntR = 0.001;
 		SourceType = TPowerSource::NotDefined;
 		PowerType = TPowerType::NoPower;
 		RPowerCable.PowerTrans = TPowerType::NoPower;
@@ -1048,7 +1045,7 @@ struct TScheme
 	bool AutoSwitch = false; /*czy dana pozycja nastawniana jest recznie czy autom.*/
 	int ScndAct = 0; /*jesli ma bocznik w nastawniku, to ktory bocznik na ktorej pozycji*/
 };
-typedef TScheme TSchemeTable[ResArraySize + 1]; /*tablica rezystorow rozr.*/
+using TSchemeTable = TScheme[ResArraySize + 1]; /*tablica rezystorow rozr.*/
 struct TDEScheme
 {
 	double RPM = 0.0; /*obroty diesla*/
@@ -1056,13 +1053,13 @@ struct TDEScheme
 	double Umax = 0.0; /*napiecie maksymalne*/
 	double Imax = 0.0; /*prad maksymalny*/
 };
-typedef TDEScheme TDESchemeTable[33]; /*tablica WWList dla silnikow spalinowych*/
+using TDESchemeTable = TDEScheme[33]; /*tablica WWList dla silnikow spalinowych*/
 struct TFFScheme
 {
 	double v = 0.0; // parametr wejsciowy
 	double freq = 0.0; // wyjscie: czestotliwosc falownika
 };
-typedef TFFScheme TFFSchemeTable[33];
+using TFFSchemeTable = TFFScheme[33];
 
 struct TWiperScheme
 {
@@ -1071,7 +1068,7 @@ struct TWiperScheme
 	double interval = 0.0; // interwal pracy wycieraczki
 	double outBackDelay = 0.0; // czas po jakim wycieraczka zacznie wracac z konca do poczatku
 };
-typedef TWiperScheme TWiperSchemeTable[16];
+using TWiperSchemeTable = TWiperScheme[16];
 
 struct TShuntScheme
 {
@@ -1080,33 +1077,23 @@ struct TShuntScheme
 	double Pmin = 0.0;
 	double Pmax = 0.0;
 };
-typedef TShuntScheme TShuntSchemeTable[33];
+using TShuntSchemeTable = TShuntScheme[33];
 struct TMPTRelay
 { /*lista przekaznikow bocznikowania*/
 	double Iup = 0.0;
 	double Idown = 0.0;
 };
-typedef TMPTRelay TMPTRelayTable[MotorParametersArraySize + 1]; // indexed like MotorParam
+using TMPTRelayTable = TMPTRelay[MotorParametersArraySize + 1]; // indexed like MotorParam
 
 struct TMotorParameters
 {
-	double mfi;
-	double mIsat;
-	double mfi0; // aproksymacja M(I) silnika} {dla dizla mIsat=przekladnia biegu
-	double fi;
-	double Isat;
-	double fi0; // aproksymacja E(n)=fi*n}    {dla dizla fi, mfi: predkosci przelozenia biegu <->
-	bool AutoSwitch;
-	TMotorParameters()
-	{
-		mfi = 0.0;
-		mIsat = 0.0;
-		mfi0 = 0.0;
-		fi = 0.0;
-		Isat = 0.0;
-		fi0 = 0.0;
-		AutoSwitch = false;
-	}
+	double mfi{0.0};
+	double mIsat{0.0};
+	double mfi0{0.0}; // aproksymacja M(I) silnika} {dla dizla mIsat=przekladnia biegu
+	double fi{0.0};
+	double Isat{0.0};
+	double fi0{0.0}; // aproksymacja E(n)=fi*n}    {dla dizla fi, mfi: predkosci przelozenia biegu <->
+	bool AutoSwitch{false};
 };
 
 struct TUniversalCtrl
@@ -1240,7 +1227,7 @@ struct TCoupling
 	{
 		return adapter_type != TCouplerType::NoCoupler;
 	}
-	inline TCouplerType const type() const
+	inline TCouplerType type() const
 	{
 		return adapter_type == TCouplerType::NoCoupler ? CouplerType : adapter_type;
 	}
@@ -1465,7 +1452,8 @@ class TMoverParameters
 		{
 			float temp_min{-1}; // lowest accepted temperature
 			float temp_max{-1}; // highest accepted temperature
-		} config;
+		};
+		heater_config_t config;
 		// ld inputs
 		bool breaker{false}; // device is allowed to operate
 		bool is_enabled{false}; // device is requested to operate
@@ -1500,12 +1488,17 @@ class TMoverParameters
 				float temp_cooling{-1}; // active cooling activation point
 				float temp_flow{-1}; // fluid flow activation point
 				bool shutters{false}; // the radiator has shutters to assist the cooling
-			} config;
+			};
+			circuit_config_t config;
 			bool is_cold{false}; // fluid is too cold
 			bool is_warm{false}; // fluid is too hot
 			bool is_hot{false}; // fluid temperature crossed cooling threshold
 			bool is_flowing{false}; // fluid is being pushed through the circuit
-		} water, water_aux, oil, engine;
+		};
+		fluid_circuit_t water;
+		fluid_circuit_t water_aux;
+		fluid_circuit_t oil;
+		fluid_circuit_t engine;
 		// output, state of affected devices
 		bool PA{false}; // malfunction flag
 		float rpmw{0.0}; // current main circuit fan revolutions
@@ -1889,9 +1882,9 @@ class TMoverParameters
 	double MED_Vmin = 0; // predkosc minimalna dla obliczen chwilowej sily hamowania EP w MED
 	double MED_Vref = 0; // predkosc referencyjna dla obliczen dostepnej sily hamowania EP w MED
 	double MED_amax{9.81}; // maksymalne opoznienie hamowania sluzbowego MED
-	bool MED_EPVC = 0; // czy korekcja sily hamowania EP, gdy nie ma dostepnego ED
+	bool MED_EPVC = false; // czy korekcja sily hamowania EP, gdy nie ma dostepnego ED
 	double MED_EPVC_Time = 7; // czas korekcji sily hamowania EP, gdy nie ma dostepnego ED
-	bool MED_Ncor = 0; // czy korekcja sily hamowania z uwzglednieniem nacisku
+	bool MED_Ncor = false; // czy korekcja sily hamowania z uwzglednieniem nacisku
 	double MED_MinBrakeReqED = 0; // minimalne zadanie sily hamowania uruchamiajace ED - ponizej tylko EP
 	double MED_FrED_factor = 1; // mnoznik sily hamowania ED do korekty blendingu
 	double MED_ED_Delay1 = 0; // opoznienie wdrazania hamowania ED (pierwszy raz)
@@ -2099,7 +2092,7 @@ class TMoverParameters
 	int CabActive = 0; // numer kabiny, z której jest sterowanie: 1 lub -1; w przeciwnym razie brak sterowania - rozrzad
 	int CabOccupied = 0; // numer kabiny, w ktorej jest obsada (zwykle jedna na skład) // TODO: move to TController
 	bool CabMaster = false; // czy pojazd jest nadrzędny w składzie
-	inline bool IsCabMaster()
+	inline bool IsCabMaster() const
 	{
 		return CabActive == CabOccupied && CabMaster;
 	} // czy aktualna kabina jest na pewno tą, z której można sterować
@@ -2294,8 +2287,7 @@ class TMoverParameters
 	bool AIHintPantUpIfIdle{true}; // whether raise both pantographs if idling for a while
 	double AIHintLocalBrakeAccFactor{1.05}; // suggested acceleration weight for local brake operation
 
-  public:
-	TMoverParameters(double VelInitial, std::string TypeNameInit, std::string NameInit, int Cab);
+	TMoverParameters(double VelInitial, std::string const &TypeNameInit, std::string const &NameInit, int Cab);
 	// obsługa sprzęgów
 	static double CouplerDist(TMoverParameters const *Left, TMoverParameters const *Right);
 	static double Distance(const TLocation &Loc1, const TLocation &Loc2, const TDimension &Dim1, const TDimension &Dim2);
@@ -2307,7 +2299,7 @@ class TMoverParameters
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;
-	inline double IsVehicleEIMBrakingFactor()
+	inline double IsVehicleEIMBrakingFactor() const
 	{
 		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : eimv[eimv_Ipoj] < 0 ? -1.0 : 1.0;
 	}
@@ -2319,32 +2311,32 @@ class TMoverParameters
 	bool CurrentSwitch(bool const State);
 	bool IsMotorOverloadRelayHighThresholdOn() const;
 	void UpdateBatteryVoltage(double dt);
-	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc,
+	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam const &Track, TTractionParam const &ElectricTraction, TLocation const &NewLoc,
 	                       TRotation const &NewRot); // oblicza przesuniecie pojazdu
 	double FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot); // oblicza przesuniecie pojazdu - wersja zoptymalizowana
 	void compute_movement_(double const Deltatime);
-	double ShowEngineRotation(int VehN);
+	double ShowEngineRotation(int VehN) const;
 
 	// Q *******************************************************************************************
 	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
 	double GetTrainsetHighVoltage() const;
 	bool switch_physics(bool const State);
-	double LocalBrakeRatio(void);
-	double ManualBrakeRatio(void);
-	double PipeRatio(void); /*ile napelniac*/
-	double RealPipeRatio(void); /*jak szybko*/
+	double LocalBrakeRatio(void) const;
+	double ManualBrakeRatio(void) const;
+	double PipeRatio(void) const; /*ile napelniac*/
+	double RealPipeRatio(void) const; /*jak szybko*/
 	double BrakeVP(void) const;
 	double EngineRPMRatio() const; // returns current engine revolutions as percentage of max engine revolutions, in range 0-1
 	double EngineIdleRPM() const;
 	double EngineMaxRPM() const;
 
 	/*! przesylanie komend sterujacych*/
-	bool SendCtrlToNext(std::string const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
-	bool SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
-	double GetExternalCommand(std::string &Command);
-	bool RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
+	bool SendCtrlToNext(std::string const &CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
+	bool SetInternalCommand(std::string const &NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
+	double GetExternalCommand(std::string &Command) const;
+	bool RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
 	bool RunInternalCommand();
-	void PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
+	void PutCommand(std::string const &NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
 	bool CabActivisation(bool const Enforce = false);
 	bool CabDeactivisation(bool const Enforce = false);
 	bool CabActivisationAuto(bool const Enforce = false);
@@ -2363,7 +2355,7 @@ class TMoverParameters
 	/*! pomocniczy nastawnik:*/
 	bool IncScndCtrl(int CtrlSpeed);
 	bool DecScndCtrl(int CtrlSpeed);
-	int GetVirtualScndPos();
+	int GetVirtualScndPos() const;
 	bool IsScndCtrlNoPowerPos() const;
 	bool IsScndCtrlMaxPowerPos() const;
 
@@ -2430,7 +2422,7 @@ class TMoverParameters
 	double TractionForce(double dt);
 	double FrictionForce() const;
 	double BrakeForceR(double ratio, double velocity);
-	double BrakeForceP(double press, double velocity);
+	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);
 	double CouplerForce(int const End, double dt);
 	void CollisionDetect(int const End, double const dt);
@@ -2488,8 +2480,8 @@ class TMoverParameters
 	/*funkcje uzalezniajace sile pociagowa od predkosci: v2n, n2r, current, momentum*/
 	double v2n(void);
 	double Current(double n, double U);
-	double Momentum(double I);
-	double MomentumF(double I, double Iw, int SCP);
+	double Momentum(double I) const;
+	double MomentumF(double I, double Iw, int SCP) const;
 
 	bool CutOffEngine(void); // odlaczenie udszkodzonych silnikow
 	/*funkcje automatycznego rozruchu np EN57*/
@@ -2526,7 +2518,7 @@ class TMoverParameters
 
 	/* funckje dla wagonow*/
 	bool AssignLoad(std::string const &Name, float const Amount = 0.f);
-	bool LoadingDone(double LSpeed, std::string const &Loadname);
+	bool LoadingDone(double LSpeed, std::string_view Loadname);
 	bool PermitDoors(side const Door, bool const State = true, range_t const Notify = range_t::consist);
 	void PermitDoors_(side const Door, bool const State = true);
 	bool ChangeDoorPermitPreset(int const Change, range_t const Notify = range_t::consist);
@@ -2541,7 +2533,7 @@ class TMoverParameters
 	bool ChangeOffsetH(double DeltaOffset);
 
 	/*funkcje ladujace pliki opisujace pojazd*/
-	bool LoadFIZ(std::string chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
+	bool LoadFIZ(std::string const &chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
 	std::string EngineDescription(int what) const;
 
@@ -2577,10 +2569,10 @@ class TMoverParameters
 	void LoadFIZ_LightsList(std::string const &Input);
 	void LoadFIZ_DimmerList(std::string const &Input);
 	void LoadFIZ_CompressorList(std::string const &Input);
-	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const Prefix, std::string const &Input);
-	TPowerType LoadFIZ_PowerDecode(std::string const &Power);
-	TPowerSource LoadFIZ_SourceDecode(std::string const &Source);
-	TEngineType LoadFIZ_EngineDecode(std::string const &Engine);
+	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const &Prefix, std::string const &Input);
+	TPowerType LoadFIZ_PowerDecode(std::string const &Power) const;
+	TPowerSource LoadFIZ_SourceDecode(std::string const &Source) const;
+	TEngineType LoadFIZ_EngineDecode(std::string const &Engine) const;
 	bool readMPT0(std::string const &line);
 	bool readMPT(std::string const &line); // Q 20160717
 	bool readMPTElectricSeries(std::string const &line);

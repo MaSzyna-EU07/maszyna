@@ -255,6 +255,19 @@ bool driver_mode::update()
 
 		// variable step simulation time routines
 
+		if (false == Global.editor_enter_vehicle.empty())
+		{
+			auto const name{std::move(Global.editor_enter_vehicle)};
+			Global.editor_enter_vehicle.clear();
+			if (auto *dynamic{simulation::Vehicles.find(name)})
+			{
+				if (false == FreeFlyModeFlag)
+					InOutKey();
+				m_relay.post(user_command::entervehicle, 0.0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, dynamic->GetPosition(), &dynamic->name());
+				change_train = dynamic->name();
+			}
+		}
+
 		if (!change_train.empty())
 		{
 			TTrain *train = simulation::Trains.find(change_train);
@@ -412,6 +425,14 @@ bool driver_mode::update()
 
 	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview";
 
+	if (m_editorpending)
+	{
+		// edit session starts in the editor. the switch is made after the initial update on purpose, so the
+		// simulation state is set up the same way as when the editor is entered by hand right after the load
+		m_editorpending = false;
+		Application.push_mode(eu07_application::mode::editor);
+	}
+
 	return true;
 }
 
@@ -458,6 +479,8 @@ void driver_mode::enter()
 	Timer::ResetTimers();
 
 	set_picking(!Global.captureonstart);
+
+	m_editorpending = Global.editor_session;
 }
 
 // maintenance method, called when the mode is deactivated
@@ -681,7 +704,7 @@ void driver_mode::update_camera(double const Deltatime)
 
 			auto const lr{m_input.keyboard.key(GLFW_KEY_LEFT) != GLFW_RELEASE};
 			// Camera.Yaw powinno być wyzerowane, aby po powrocie patrzeć do przodu
-			Camera.Pos = controlled->GetPosition() + simulation::Train->MirrorPosition(lr); // pozycja lusterka
+			Camera.Pos = controlled->GetPosition() + simulation::Train->MirrorPosition(lr); // pozycja lusterka // NOSONAR
 			Camera.Angle.y = 0; // odchylenie na bok od Camera.LookAt
 			if (simulation::Train->Occupied()->CabOccupied == 0)
 			{

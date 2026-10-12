@@ -38,7 +38,7 @@ opengl_camera::visible( TDynamicObject const *Dynamic ) const {
 
     // sphere test is faster than AABB, so we'll use it here
     // we're giving vehicles some extra padding, to allow for things like shared bogeys extending past the main body
-    return ( m_frustum.sphere_inside( Dynamic->GetPosition(), Dynamic->radius() * 1.25 ) > 0.0f );
+    return ( m_frustum.sphere_inside( Dynamic->GetPosition(), static_cast<float>(Dynamic->radius() * 1.25) ) > 0.0f );
 }
 
 // debug helper, draws shape of frustum in world space

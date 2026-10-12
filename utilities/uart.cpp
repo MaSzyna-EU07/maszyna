@@ -10,7 +10,7 @@
 #include "simulation/simulationtime.h"
 #include "application/application.h"
 
-const char* uart_baudrates_list[] = {
+const char* const uart_baudrates_list[] = {
     "300",
     "1200",
     "2400",
@@ -28,7 +28,7 @@ const char* uart_baudrates_list[] = {
     "2000000"
 };
 
-const size_t uart_baudrates_list_num = sizeof(uart_baudrates_list) / sizeof(uart_baudrates_list[0]);
+const size_t uart_baudrates_list_num = std::size(uart_baudrates_list);
 
 void uart_status::reset_stats() {
     packets_sent = 0;
@@ -193,10 +193,9 @@ uart_input::recall_bindings() {
     m_inputbindings.clear();
 	std::string filePath = "eu07_input-uart.ini";
 
-	fs::path appPath = user_config_path("eu07_input-uart.ini");
-	if (!appPath.empty() && fs::exists(appPath))
+	if (fs::path appPath = user_config_path("eu07_input-uart.ini"); !appPath.empty() && fs::exists(appPath))
 		filePath = appPath.string();
-	cParser bindingparser(filePath.c_str(), cParser::buffer_FILE);
+	cParser bindingparser(filePath, cParser::buffer_FILE);
 	if (false == bindingparser.ok())
 	{
         return false;
@@ -206,7 +205,7 @@ uart_input::recall_bindings() {
     std::unordered_map<std::string, user_command> nametocommandmap;
     std::size_t commandid = 0;
     for( auto const &description : simulation::Commands_descriptions ) {
-        nametocommandmap.emplace(
+        nametocommandmap.try_emplace(
             description.name,
             static_cast<user_command>( commandid ) );
         ++commandid;
@@ -275,7 +274,7 @@ void uart_input::poll()
 
     /* handle baud change */
     if(status->active_baud_index != status->selected_baud_index) {
-        status->baud = std::stoul(uart_baudrates_list[status->selected_baud_index]);
+        status->baud = static_cast<int>(std::stoul(uart_baudrates_list[status->selected_baud_index]));
         status->active_baud_index = status->selected_baud_index;
         status->reset_stats();
         status->is_connected = false;
@@ -283,7 +282,7 @@ void uart_input::poll()
     }
 
     /* handle port change */
-    if(status->available_ports.size() > 0 && status->selected_port_index >= 0 && status->active_port_index != status->selected_port_index) {
+    if(!status->available_ports.empty() && status->selected_port_index >= 0 && status->active_port_index != status->selected_port_index) {
         status->port_name = status->available_ports[status->selected_port_index];
         status->active_port_index = status->selected_port_index;
         status->reset_stats();
@@ -467,7 +466,7 @@ void uart_input::poll()
         }
         if( true == conf.trainenable ) {
             // train brake
-            double const position { (float)( ( (uint16_t)buffer[ 8 ] | (uint16_t)buffer[9] << 8 ) - conf.mainbrakemin ) / ( conf.mainbrakemax - conf.mainbrakemin ) };
+            double const position { ( ( (uint16_t)buffer[ 8 ] | (uint16_t)buffer[9] << 8 ) - conf.mainbrakemin ) / ( conf.mainbrakemax - conf.mainbrakemin ) };
             relay.post(
                 user_command::trainbrakeset,
                 position,
@@ -478,7 +477,7 @@ void uart_input::poll()
         }
         if( true == conf.localenable ) {
             // independent brake
-            double const position { (float)( ( (uint16_t)buffer[ 10 ] | (uint16_t)buffer[11] << 8 ) - conf.localbrakemin ) / ( conf.localbrakemax - conf.localbrakemin ) };
+            double const position { ( ( (uint16_t)buffer[ 10 ] | (uint16_t)buffer[11] << 8 ) - conf.localbrakemin ) / ( conf.localbrakemax - conf.localbrakemin ) };
             relay.post(
                 user_command::independentbrakeset,
                 position,
@@ -497,7 +496,7 @@ void uart_input::poll()
             );
         }
         if( true == conf.radiovolumeenable ) {
-            int8_t requested_volume = static_cast<int8_t>((buffer[12] & 0xF0) >> 4);
+            auto requested_volume = static_cast<int8_t>((buffer[12] & 0xF0) >> 4);
             relay.post(
                 user_command::radiovolumeset,
                 requested_volume == 0xF ? 1.0 : requested_volume * (1.0 / 15.0),
@@ -509,7 +508,7 @@ void uart_input::poll()
 		if (true == conf.dynamicenable)
 		{
 			// dynamic brake 8 bit
-			double const position{(float)(buffer[13] - conf.dynamicbrakemin) / (conf.dynamicbrakemax - conf.dynamicbrakemin)};
+			double const position{(buffer[13] - conf.dynamicbrakemin) / (conf.dynamicbrakemax - conf.dynamicbrakemin)};
 
 			relay.post(
                 user_command::dynamicbrakecontrollerset,
@@ -534,17 +533,17 @@ void uart_input::poll()
         auto const trainstate = t->get_state();
 
 		SYSTEMTIME time = simulation::Time.data();
-		uint16_t tacho = Global.iPause ? 0 : trainstate.velocity * conf.tachoscale;
-	    uint16_t tank_press = (uint16_t)std::min(conf.tankuart, trainstate.reservoir_pressure * 0.1f / conf.tankmax * conf.tankuart);
-	    uint16_t pipe_press = (uint16_t)std::min(conf.pipeuart, trainstate.pipe_pressure * 0.1f / conf.pipemax * conf.pipeuart);
-	    uint16_t brake_press = (uint16_t)std::min(conf.brakeuart, trainstate.brake_pressure * 0.1f / conf.brakemax * conf.brakeuart);
-        uint16_t pantograph_press = (uint16_t)std::min(conf.pantographuart, trainstate.pantograph_pressure * 0.1f / conf.pantographmax * conf.pantographuart );
-        uint16_t hv_voltage = (uint16_t)std::min(conf.hvuart, trainstate.hv_voltage / conf.hvmax * conf.hvuart);
-	    uint16_t current1 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[0] / conf.currentmax * conf.currentuart);
-	    uint16_t current2 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[1] / conf.currentmax * conf.currentuart);
-	    uint16_t current3 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[2] / conf.currentmax * conf.currentuart);
-	    uint32_t odometer = trainstate.distance * 10000.0;
-        uint16_t lv_voltage = (uint16_t)std::min( conf.lvuart, trainstate.lv_voltage / conf.lvmax * conf.lvuart );
+		uint16_t tacho = Global.iPause ? 0 : static_cast<uint16_t>(trainstate.velocity * conf.tachoscale);
+	    auto tank_press = (uint16_t)std::min(conf.tankuart, trainstate.reservoir_pressure * 0.1f / conf.tankmax * conf.tankuart);
+	    auto pipe_press = (uint16_t)std::min(conf.pipeuart, trainstate.pipe_pressure * 0.1f / conf.pipemax * conf.pipeuart);
+	    auto brake_press = (uint16_t)std::min(conf.brakeuart, trainstate.brake_pressure * 0.1f / conf.brakemax * conf.brakeuart);
+        auto pantograph_press = (uint16_t)std::min(conf.pantographuart, trainstate.pantograph_pressure * 0.1f / conf.pantographmax * conf.pantographuart );
+        auto hv_voltage = (uint16_t)std::min(conf.hvuart, trainstate.hv_voltage / conf.hvmax * conf.hvuart);
+	    auto current1 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[0] / conf.currentmax * conf.currentuart);
+	    auto current2 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[1] / conf.currentmax * conf.currentuart);
+	    auto current3 = (uint16_t)std::min(conf.currentuart, trainstate.hv_current[2] / conf.currentmax * conf.currentuart);
+	    uint32_t odometer = static_cast<uint32_t>(trainstate.distance * 10000.0);
+        auto lv_voltage = (uint16_t)std::min( conf.lvuart, trainstate.lv_voltage / conf.lvmax * conf.lvuart );
         if( trainstate.cab > 0 ) {
             // NOTE: moving from a cab to engine room doesn't change cab indicator
             m_trainstatecab = trainstate.cab - 1;

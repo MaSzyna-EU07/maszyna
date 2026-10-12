@@ -5,7 +5,7 @@ class headtrack
     int joy_id = -1;
 
     void find_joy();
-    float get_axis(const float *data, int count, int axis, float mul);
+    float get_axis(const float *data, int count, int axis, float mul) const;
 
 public:
     headtrack();

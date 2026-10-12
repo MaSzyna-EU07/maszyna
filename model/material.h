@@ -139,6 +139,9 @@ public:
 
     material_handle
         create( std::string const &Filename, bool const Loadnow );
+    // material described by provided text (the content of a .mat file), not kept in a file. returns: handle to the material or null_handle
+    material_handle
+        create_from_text( std::string const &Name, std::string const &Definition );
     opengl_material const &
         material( material_handle const Material ) const { return m_materials[ Material ]; }
     opengl_material &

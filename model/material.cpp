@@ -640,6 +640,28 @@ material_manager::create( std::string const &Filename, bool const Loadnow ) {
     return materialhandle;
 };
 
+material_handle
+material_manager::create_from_text( std::string const &Name, std::string const &Definition ) {
+
+    opengl_material material;
+    cParser materialparser( Definition, cParser::buffer_TEXT );
+    if( false == material.deserialize( materialparser, true ) ) {
+        return null_handle;
+    }
+    material.name = Name;
+    try {
+        material.finalize( true );
+    }
+    catch( gl::shader_exception const &e ) {
+        ErrorLog( "invalid shader: " + std::string( e.what() ) );
+        return null_handle;
+    }
+    auto const materialhandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( material ) );
+    // not listed under its name: the name isn't a file which could be asked for
+    return materialhandle;
+}
+
 void
 material_manager::on_weather_change() {
 

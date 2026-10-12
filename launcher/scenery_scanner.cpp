@@ -95,6 +95,10 @@ void scenery_scanner::parse_trainset(cParser &parser)
 	parser >> trainset.name >> trainset.track >> trainset.offset >> trainset.velocity;
 
 	parser.getTokens();
+	if (parser.peek() == "reversed") {
+		trainset.reversed = true;
+		parser.getTokens();
+	}
 	while (parser.peek() == "node") {
 		trainset.vehicles.emplace_back();
 		dynamic_desc &dyn = trainset.vehicles.back();

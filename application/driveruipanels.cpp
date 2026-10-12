@@ -1,4 +1,4 @@
-﻿/*
+/*
 This Source Code Form is subject to the
 terms of the Mozilla Public License, v.
 2.0. If a copy of the MPL was not
@@ -56,7 +56,7 @@ void drivingaid_panel::update()
     }
 
     auto const *mover = controlled->MoverParameters;
-    auto const *driver = controlled->Mechanik;
+    auto const *vehicledriver = controlled->Mechanik;
     auto const *owner = controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik;
 
     {
@@ -66,11 +66,12 @@ void drivingaid_panel::update()
         {
             // grade
             std::string gradetext;
-            auto const reverser{(mover->DirActive > 0 ? 1 : -1)};
-            auto const grade{controlled->VectorFront().y * 100 * (controlled->DirectionGet() == reverser ? 1 : -1) * reverser};
-            if (std::abs(grade) >= 0.125)
-            {
-                std::snprintf(m_buffer.data(), m_buffer.size(), STR_C(" Grade: %.2f%%%%"), grade);
+            auto const reverser { ( mover->DirActive > 0 ? 1 : -1 ) };
+            if( auto const grade { controlled->VectorFront().y * 100 * ( controlled->DirectionGet() == reverser ? 1 : -1 ) * reverser }; std::abs( grade ) >= 0.25 ) {
+                std::snprintf(
+                    m_buffer.data(), m_buffer.size(),
+				    STR_C(" Grade: %.1f%%%%"),
+                    grade );
                 gradetext = m_buffer.data();
             }
             // next speed limit
@@ -90,12 +91,9 @@ void drivingaid_panel::update()
                 }
                 // then take into account speed change ahead, compare it with speed after potentially clearing last limit
                 // lower of these two takes priority; otherwise limit lasts at least until potential last limit is cleared
-                auto const noactivespeedlimit{owner->VelLimitLastDist.second < 0};
-                auto const speedatproximitydistance{min_speed(schedulespeedlimit, static_cast<int>(owner->VelNext))};
-                if (speedatproximitydistance == nextspeedlimit)
-                {
-                    if (noactivespeedlimit)
-                    {
+                auto const noactivespeedlimit { owner->VelLimitLastDist.second < 0 };
+                if( auto const speedatproximitydistance { min_speed( schedulespeedlimit, static_cast<int>( owner->VelNext ) ) }; speedatproximitydistance == nextspeedlimit ) {
+                    if( noactivespeedlimit ) {
                         nextspeedlimit = speedatproximitydistance;
                         nextspeedlimitdistance = owner->ActualProximityDist;
                     }
@@ -143,7 +141,16 @@ void drivingaid_panel::update()
             expandedtext = m_buffer.data();
         }
         // base data and optional bits put together
-        std::snprintf(m_buffer.data(), m_buffer.size(), STR_C("Throttle: %3d+%d %c%s"), mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : driver->Controlling()->MainCtrlPos, mover->EIMCtrlType > 0 ? driver->Controlling()->MainCtrlPos : driver->Controlling()->ScndCtrlPos, mover->SpeedCtrlUnit.IsActive ? 'T' : mover->DirActive > 0 ? 'D' : mover->DirActive < 0 ? 'R' : 'N', expandedtext.c_str());
+        std::snprintf(
+            m_buffer.data(), m_buffer.size(),
+            STR_C("Throttle: %3d+%d %c%s"),
+            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : vehicledriver->Controlling()->MainCtrlPos,
+            mover->EIMCtrlType > 0 ? vehicledriver->Controlling()->MainCtrlPos : vehicledriver->Controlling()->ScndCtrlPos,
+            mover->SpeedCtrlUnit.IsActive ? 'T' :
+		              mover->DirActive > 0          ? 'D' :
+		              mover->DirActive < 0          ? 'R' :
+		                                              'N',
+            expandedtext.c_str());
 
         text_lines.emplace_back(m_buffer.data(), Global.UITextColor);
     }
@@ -246,9 +253,7 @@ void scenario_panel::render()
     {
         ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x, size_min.y), ImVec2S(size_max.x, size_max.y));
     }
-    auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
-    if (true == ImGui::Begin(panelname.c_str(), &is_open, flags))
-    {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // potential assignment section
         auto const *owner{(m_nearest->Mechanik != nullptr && m_nearest->Mechanik->primary() ? m_nearest->Mechanik : m_nearest->ctOwner)};
         if (owner != nullptr)
@@ -261,23 +266,20 @@ void scenario_panel::render()
             }
         }
         // current task
-        for (auto const &line: text_lines)
-        {
-            ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
+        for( auto const &line : text_lines ) {
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
         // hints
-        if (owner != nullptr)
-        {
-            if (true == ImGui::CollapsingHeader(STR_C("Hints"), ImGuiTreeNodeFlags_DefaultOpen))
-            {
-                for (auto const &hint: owner->m_hints)
-                {
-                    auto const isdone{std::get<TController::hintpredicate>(hint)(std::get<float>(hint))};
-                    auto const hintcolor{(isdone ? colors::uitextgreen : Global.UITextColor)};
-                    ImGui::PushStyleColor(ImGuiCol_Text, {hintcolor.r, hintcolor.g, hintcolor.b, hintcolor.a});
-                    ImGui::TextWrapped(Translations.lookup_c(driver_hints_texts[(size_t) std::get<driver_hint>(hint)], true), std::get<float>(hint));
-                    ImGui::PopStyleColor();
-                }
+        if (owner != nullptr && true == ImGui::CollapsingHeader( STR_C("Hints"), ImGuiTreeNodeFlags_DefaultOpen )) {
+            for( auto const &hint : owner->m_hints ) {
+                auto const isdone { std::get<TController::hintpredicate>( hint )( std::get<float>( hint ) ) };
+                auto const hintcolor{ (
+                    isdone ?
+                        colors::uitextgreen :
+                        Global.UITextColor ) };
+                ImGui::PushStyleColor( ImGuiCol_Text, { hintcolor.r, hintcolor.g, hintcolor.b, hintcolor.a } );
+                ImGui::TextWrapped( Translations.lookup_c(driver_hints_texts[(size_t)std::get<driver_hint>( hint )], true), std::get<float>( hint ) );
+                ImGui::PopStyleColor();
             }
         }
     }
@@ -349,25 +351,23 @@ void timetable_panel::update()
         if (owner->is_train())
         {
             // consist data
-            auto consistmass{owner->fMass};
-            auto consistlength{owner->fLength};
-            if (false == owner->is_dmu() && false == owner->is_emu())
-            {
-                //odejmij lokomotywy czynne, a przynajmniej aktualną
-                consistmass -= owner->pVehicle->MoverParameters->TotalMass;
-                // subtract potential other half of a two-part vehicle
-                auto const *previous{owner->pVehicle->Prev(coupling::permanent)};
-                if (previous != nullptr)
-                {
-                    consistmass -= previous->MoverParameters->TotalMass;
-                }
-                auto const *next{owner->pVehicle->Next(coupling::permanent)};
-                if (next != nullptr)
-                {
-                    consistmass -= next->MoverParameters->TotalMass;
-                }
-            }
-            std::snprintf(m_buffer.data(), m_buffer.size(), STR_C("Consist weight: %d t (specified) %d t (actual)\nConsist length: %d m"), static_cast<int>(table.LocLoad), static_cast<int>(consistmass / 1000), static_cast<int>(consistlength));
+            auto consistmass { owner->fMass };
+            auto consistlength { owner->fLength };
+            if( false == owner->is_dmu()
+             && false == owner->is_emu() ) {
+				//odejmij lokomotywy czynne, a przynajmniej aktualną
+				consistmass -= owner->pVehicle->MoverParameters->TotalMass;
+				// subtract potential other half of a two-part vehicle
+				if( auto const *previous { owner->pVehicle->Prev( coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
+				auto const *next { owner->pVehicle->Next( coupling::permanent ) };
+				if( next != nullptr ) { consistmass -= next->MoverParameters->TotalMass; }
+			}
+            std::snprintf(
+                m_buffer.data(), m_buffer.size(),
+                STR_C("Consist weight: %d t (specified) %d t (actual)\nConsist length: %d m"),
+                static_cast<int>( table.LocLoad ),
+                static_cast<int>( consistmass / 1000 ),
+                static_cast<int>( consistlength ) );
 
             text_lines.emplace_back(m_buffer.data(), Global.UITextColor);
             text_lines.emplace_back("", Global.UITextColor);
@@ -404,25 +404,47 @@ void timetable_panel::update()
                     vmax += to_string(tableline->vmax, 0);
                     vmax = vmax.substr(vmax.size() - 3, 3); // z wyrównaniem do prawej
                 }
-                auto const station{(Bezogonkow(tableline->StationName, true) + "                                  ").substr(0, 34)};
-                auto const location{((tableline->km > 0.0 ? to_string(tableline->km, 2) : "") + "                                  ").substr(0, 34 - tableline->StationWare.size())};
-                auto const arrival{(tableline->Ah >= 0 ? std::to_string(int(100 + tableline->Ah)).substr(1, 2) + ":" + to_minutes_str(tableline->Am, true, 3) : U8("  │   "))};
-                auto const departure{(tableline->Dh >= 0 ? std::to_string(int(100 + tableline->Dh)).substr(1, 2) + ":" + to_minutes_str(tableline->Dm, true, 3) : U8("  │   "))};
-                auto const candepart{
-                    (table.StationStart < table.StationIndex && i < table.StationIndex && (tableline->Ah < 0 // pass-through, always valid
-                                                                                           || tableline->is_maintenance // maintenance stop, always valid
-                                                                                           || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= tableline->Dh * 60 + tableline->Dm))
-                };
-                auto const loadchangeinprogress{(static_cast<int>(std::ceil(-1.0 * owner->fStopTime)) > 0)};
-                auto const isatpassengerstop{true == owner->IsAtPassengerStop && vehicle->MoverParameters->Vel < 1.0};
-                auto const traveltime{(i < 2 ? "   " : tableline->Ah >= 0 ? to_minutes_str(CompareTime(table.TimeTable[i - 1].Dh, table.TimeTable[i - 1].Dm, tableline->Ah, tableline->Am), false, 3) : to_minutes_str(std::max(0.0, CompareTime(table.TimeTable[i - 1].Dh, table.TimeTable[i - 1].Dm, tableline->Dh, tableline->Dm) - 0.5), false, 3))};
-                auto const linecolor{
-                    (i != table.StationStart ? Global.UITextColor : loadchangeinprogress ? colors::uitextred : candepart ? colors::uitextgreen : // czas minął i odjazd był, to nazwa stacji będzie na zielono
-                                                                                                                   isatpassengerstop ? colors::uitextorange : Global.UITextColor)
-                };
-                std::string const trackcount{(tableline->TrackNo == 1 ? U8(" ┃  ") : U8(" ║  "))};
-                m_tablelines.emplace_back(U8("│ ") + vmax + U8(" │ ") + station + trackcount + arrival + U8(" │ ") + traveltime + U8(" │"), linecolor);
-                m_tablelines.emplace_back(U8("│     │ ") + location + tableline->StationWare + trackcount + departure + U8(" │     │"), linecolor);
+                auto const station { (
+                    Bezogonkow( tableline->StationName, true )
+                    + "                                  " )
+                    .substr( 0, 34 ) };
+                auto const location { (
+                    ( tableline->km > 0.0 ?
+                        to_string( tableline->km, 2 ) :
+                        "" )
+                    + "                                  " )
+                    .substr( 0, 34 - tableline->StationWare.size() ) };
+                auto const arrival { (
+                    tableline->Ah >= 0 ?
+                        std::to_string( int( 100 + tableline->Ah ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Am, true, 3 ) :
+                        U8("  │   ") ) };
+                auto const departure { (
+                    tableline->Dh >= 0 ?
+                        std::to_string( int( 100 + tableline->Dh ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Dm, true, 3 ) :
+                        U8("  │   ") ) };
+                auto const candepart { (
+                       table.StationStart < table.StationIndex
+                    && i < table.StationIndex
+                    && ( tableline->Ah < 0 // pass-through, always valid
+                      || tableline->is_maintenance // maintenance stop, always valid
+                      || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= static_cast<float>(tableline->Dh * 60) + tableline->Dm ) ) };
+                auto const loadchangeinprogress { ( static_cast<int>(std::ceil(-1.0 * owner->fStopTime)) > 0 ) };
+                auto const isatpassengerstop { true == owner->IsAtPassengerStop && vehicle->MoverParameters->Vel < 1.0 };
+                auto const traveltime { (
+                    i < 2 ? "   " :
+                    tableline->Ah >= 0 ? to_minutes_str( static_cast<float>(CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Ah, tableline->Am )), false, 3 ) :
+                    to_minutes_str( static_cast<float>(std::max( 0.0, CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Dh, tableline->Dm ) - 0.5 )), false, 3 ) ) };
+                auto const linecolor { (
+                    i != table.StationStart ? Global.UITextColor :
+                    loadchangeinprogress ? colors::uitextred :
+                    candepart ? colors::uitextgreen : // czas minął i odjazd był, to nazwa stacji będzie na zielono
+                    isatpassengerstop ? colors::uitextorange :
+                    Global.UITextColor ) };
+                std::string const trackcount{ ( tableline->TrackNo == 1 ? U8(" ┃  ") : U8(" ║  " )) };
+                m_tablelines.emplace_back(U8("│ ") + vmax + U8(" │ ") + station + trackcount + arrival + U8(" │ ") + traveltime + U8(" │"),
+                    linecolor );
+                m_tablelines.emplace_back(U8("│     │ ") + location + tableline->StationWare + trackcount + departure + U8(" │     │"),
+                    linecolor );
                 // divider/footer
                 if (i < table.StationCount)
                 {
@@ -465,19 +487,14 @@ void timetable_panel::render()
     {
         ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x * horizontalScale, size_min.y), ImVec2S(size_max.x * horizontalScale, size_max.y));
     }
-    auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
-    if (true == ImGui::Begin(panelname.c_str(), &is_open, flags))
-    {
-        for (auto const &line: text_lines)
-        {
-            ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+        for( auto const &line : text_lines ) {
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
-        if (is_expanded)
-        {
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(1, 0));
-            for (auto const &line: m_tablelines)
-            {
-                ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
+        if( is_expanded ) {
+            ImGui::PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( 1, 0 ) );
+            for( auto const &line : m_tablelines ) {
+                ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
             }
             ImGui::PopStyleVar();
         }
@@ -556,26 +573,16 @@ void debug_panel::render()
     {
         ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x, size_min.y), ImVec2S(size_max.x, size_max.y));
     }
-    auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
-    if (true == ImGui::Begin(panelname.c_str(), &is_open, flags))
-    {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // header section
-        for (auto const &line: text_lines)
-        {
-            ImGui::TextColored(ImVec4(line.color.r, line.color.g, line.color.b, line.color.a), line.data.c_str());
+        for( auto const &line : text_lines ) {
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
         // sections
         ImGui::Separator();
-        if (true == render_section("Vehicle", m_vehiclelines))
-        {
-            if (DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0)
-            {
-                if (true == ImGui::Button("Stop and repair consist"))
-                {
-                    command_relay relay;
-                    relay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
-                }
-            }
+        if (true == render_section( "Vehicle", m_vehiclelines ) && DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 && true == ImGui::Button( "Stop and repair consist" )) {
+            command_relay commandrelay;
+            commandrelay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
         }
         render_section("Vehicle Engine", m_enginelines);
         render_section("Vehicle AI", m_ailines);
@@ -592,26 +599,23 @@ void debug_panel::render()
         render_section_settings();
         render_section_developer(); // Developer tools
 #ifdef WITH_UART
-        if (true == render_section("UART", m_uartlines))
-        {
-            int ports_num = UartStatus.available_ports.size();
-            char **avlports = new char *[ports_num];
-            for (int i = 0; i < ports_num; i++)
-            {
+        if(true == render_section( "UART", m_uartlines)) {
+            auto ports_num = static_cast<int>(UartStatus.available_ports.size());
+            auto avlports = new char*[ports_num];
+            for (int i=0; i < ports_num; i++) {
                 avlports[i] = (char *) UartStatus.available_ports[i].c_str();
             }
             ImGui::Combo("Port", &UartStatus.selected_port_index, avlports, ports_num);
-            ImGui::Combo("Baud", &UartStatus.selected_baud_index, uart_baudrates_list, uart_baudrates_list_num);
+            ImGui::Combo("Baud", &UartStatus.selected_baud_index, uart_baudrates_list, static_cast<int>(uart_baudrates_list_num));
             ImGui::Checkbox("Enabled", &UartStatus.enabled);
         }
 #endif
         // toggles
         ImGui::Separator();
         bool flag = DebugModeFlag;
-        if (ImGui::Checkbox("Debug Mode", &flag))
-        {
-            command_relay relay;
-            relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
+        if (ImGui::Checkbox("Debug Mode", &flag)) {
+            command_relay commandrelay;
+            commandrelay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
         }
     }
 
@@ -632,45 +636,59 @@ bool debug_panel::render_section_scenario()
     }
     // fog slider
     {
-        auto fogrange = std::log(Global.fFogEnd);
-        if (ImGui::SliderFloat((to_string(std::exp(fogrange), 0, 5) + " m###fogend").c_str(), &fogrange, std::log(10.0f), std::log(50000.0f), "Fog distance"))
-        {
-            command_relay relay;
-            relay.post(user_command::setweather, std::clamp(std::exp(fogrange), 10.0f, 50000.0f), Global.Overcast, GLFW_PRESS, 0);
+        auto fogrange = std::log( Global.fFogEnd );
+        if( ImGui::SliderFloat(
+            ( to_string( std::exp( fogrange ), 0, 5 ) + " m###fogend" ).c_str(), &fogrange, std::log( 10.0f ), std::log( 50000.0f ), "Fog distance" ) ) {
+            command_relay commandrelay;
+            commandrelay.post(
+                user_command::setweather,
+                std::clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
+                Global.Overcast,
+                GLFW_PRESS, 0 );
         }
     }
-    {
-        auto Airtemperature = Global.AirTemperature;
-        if (ImGui::SliderFloat((to_string(Airtemperature, 1) + " deg C###Airtemperature").c_str(), &Airtemperature, -35.0f, 40.0f, "Air Temperature"))
-        {
-            command_relay relay;
-            relay.post(user_command::settemperature, std::clamp(Airtemperature, -35.0f, 40.0f), Global.Overcast, GLFW_PRESS, 0);
-        }
-    }
+	{
+		auto Airtemperature = Global.AirTemperature;
+		if (ImGui::SliderFloat(
+		        (to_string(Airtemperature, 1) + " deg C###Airtemperature").c_str(),
+		        &Airtemperature, -35.0f, 40.0f, "Air Temperature"))
+		{
+			command_relay commandrelay;
+            commandrelay.post(
+                user_command::settemperature, 
+                std::clamp(Airtemperature, -35.0f, 40.0f),
+			           Global.Overcast,
+                GLFW_PRESS, 0 );
+		}
+	}
     // cloud cover slider
     {
-        if (ImGui::SliderFloat((to_string(Global.Overcast, 2, 5) + " (" + Global.Weather + ")###overcast").c_str(), &Global.Overcast, 0.0f, 2.0f, "Cloud cover"))
-        {
-            command_relay relay;
-            relay.post(user_command::setweather, Global.fFogEnd, std::clamp(Global.Overcast, 0.0f, 2.0f), GLFW_PRESS, 0);
+        if( ImGui::SliderFloat(
+            ( to_string( Global.Overcast, 2, 5 ) + " (" + Global.Weather + ")###overcast" ).c_str(), &Global.Overcast, 0.0f, 2.0f, "Cloud cover" ) ) {
+            command_relay commandrelay;
+            commandrelay.post(
+                user_command::setweather,
+                Global.fFogEnd,
+                std::clamp( Global.Overcast, 0.0f, 2.0f ),
+                GLFW_PRESS, 0 );
         }
     }
     // day of year slider
     {
-        if (ImGui::SliderFloat((to_string(Global.fMoveLight, 0, 5) + " (" + Global.Season + ")###movelight").c_str(), &Global.fMoveLight, 0.0f, 364.0f, "Day of year"))
-        {
-            command_relay relay;
-            relay.post(user_command::setdatetime, std::clamp(Global.fMoveLight, 0.0f, 365.0f), simulation::Time.data().wHour * 60 + simulation::Time.data().wMinute, GLFW_PRESS, 0);
+        if( ImGui::SliderFloat(
+            ( to_string( Global.fMoveLight, 0, 5 ) + " (" + Global.Season + ")###movelight" ).c_str(), &Global.fMoveLight, 0.0f, 364.0f, "Day of year" ) ) {
+            command_relay commandrelay;
+            commandrelay.post(
+                user_command::setdatetime,
+                std::clamp( Global.fMoveLight, 0.0f, 365.0f ),
+                simulation::Time.data().wHour * 60 + simulation::Time.data().wMinute,
+                GLFW_PRESS, 0 );
         }
     }
     // dynamic material update checkbox
-    ImGui::Checkbox("Update Item Materials", &Global.UpdateMaterials);
-    if (DebugModeFlag)
-    {
-        if (ImGui::Checkbox("Force Daylight", &Global.FakeLight))
-        {
-            simulation::Environment.on_daylight_change();
-        }
+    ImGui::Checkbox( "Update Item Materials", &Global.UpdateMaterials );
+    if (DebugModeFlag && ImGui::Checkbox( "Force Daylight", &Global.FakeLight )) {
+        simulation::Environment.on_daylight_change();
     }
     // advanced options, only visible in debug mode
     if (DebugModeFlag)
@@ -681,11 +699,17 @@ bool debug_panel::render_section_scenario()
             ImGui::TextUnformatted("CAUTION: time change will affect simulation state");
             ImGui::PopStyleColor();
             auto time = simulation::Time.data().wHour * 60 + simulation::Time.data().wMinute;
-            auto const timestring{std::string(std::to_string(int(100 + simulation::Time.data().wHour)).substr(1, 2) + ":" + std::string(std::to_string(int(100 + simulation::Time.data().wMinute)).substr(1, 2)))};
-            if (ImGui::SliderInt((timestring + " (" + Global.Period + ")###simulationtime").c_str(), &time, 0, 1439, "Time of day"))
-            {
-                command_relay relay;
-                relay.post(user_command::setdatetime, Global.fMoveLight, std::clamp(time, 0, 1439), GLFW_PRESS, 0);
+            auto const timestring {
+                std::string( std::to_string( int( 100 + simulation::Time.data().wHour ) ).substr( 1, 2 )
+                    + ":"
+                    + std::string( std::to_string( int( 100 + simulation::Time.data().wMinute ) ).substr( 1, 2 ) ) ) };
+            if( ImGui::SliderInt( ( timestring + " (" + Global.Period + ")###simulationtime" ).c_str(), &time, 0, 1439, "Time of day" ) ) {
+                command_relay commandrelay;
+                commandrelay.post(
+                    user_command::setdatetime,
+                    Global.fMoveLight,
+                    std::clamp( time, 0, 1439 ),
+                    GLFW_PRESS, 0 );
             }
         }
         // time acceleration
@@ -783,15 +807,31 @@ void debug_panel::update_section_vehicle(std::vector<text_line> &Output)
 
     Output.emplace_back(textline, Global.UITextColor);
 
-    std::snprintf(m_buffer.data(), m_buffer.size(), STR_C("Brakes:\n train: %.2f (mode: %d, delay: %s, load flag: %d)\n independent: %.2f (%.2f), manual: %.2f, spring: %.2f\nBrake cylinder pressures:\n train: %.2f, independent: %.2f, status: 0x%.2x\nPipe pressures:\n brake: %.2f (hat: %.2f), main: %.2f, control: %.2f\nTank pressures:\n auxiliary: %.2f, main: %.2f, control: %.2f"),
-                  // brakes
-                  mover.fBrakeCtrlPos, mover.BrakeOpModeFlag, update_vehicle_brake().c_str(), mover.LoadFlag, mover.LocalBrakePosA, mover.LocalBrakePosAEIM, mover.ManualBrakePos / static_cast<float>(ManualBrakePosNo), mover.SpringBrake.Activate ? 1.f : 0.f,
-                  // cylinders
-                  mover.BrakePress, mover.LocBrakePress, mover.Hamulec->GetBrakeStatus(),
-                  // pipes
-                  mover.PipePress, mover.BrakeCtrlPos2, mover.ScndPipePress, mover.CntrlPipePress,
-                  // tanks
-                  mover.Hamulec->GetBRP(), mover.Compressor, mover.Hamulec->GetCRP());
+    std::snprintf(
+        m_buffer.data(), m_buffer.size(),
+        STR_C("Brakes:\n train: %.2f (mode: %d, delay: %s, load flag: %d)\n independent: %.2f (%.2f), manual: %.2f, spring: %.2f\nBrake cylinder pressures:\n train: %.2f, independent: %.2f, status: 0x%.2x\nPipe pressures:\n brake: %.2f (hat: %.2f), main: %.2f, control: %.2f\nTank pressures:\n auxiliary: %.2f, main: %.2f, control: %.2f"),
+        // brakes
+        mover.fBrakeCtrlPos,
+        mover.BrakeOpModeFlag,
+        update_vehicle_brake().c_str(),
+        mover.LoadFlag,
+        mover.LocalBrakePosA,
+        mover.LocalBrakePosAEIM,
+        static_cast<float>(mover.ManualBrakePos) / static_cast<float>(ManualBrakePosNo),
+        mover.SpringBrake.Activate ? 1.f : 0.f,
+        // cylinders
+        mover.BrakePress,
+        mover.LocBrakePress,
+        mover.Hamulec->GetBrakeStatus(),
+        // pipes
+        mover.PipePress,
+        mover.BrakeCtrlPos2,
+        mover.ScndPipePress,
+        mover.CntrlPipePress,
+        // tanks
+        mover.Hamulec->GetBRP(),
+        mover.Compressor,
+        mover.Hamulec->GetCRP() );
 
     textline = m_buffer.data();
 
@@ -836,15 +876,14 @@ void debug_panel::update_section_vehicle(std::vector<text_line> &Output)
         Output.emplace_back(textline, Global.UITextColor);
     }
 
-    if (!std::isnan(last_time))
-    {
-        double dt = Timer::GetTime() - last_time;
-        AccN_jerk_graph.update((mover.AccN - last_AccN) / dt);
-        AccN_acc_graph.update(mover.AccN);
-    }
+	if (!std::isnan(last_time)) {
+		double dt = Timer::GetTime() - last_time;
+		AccN_jerk_graph.update(static_cast<float>((mover.AccN - last_AccN) / dt));
+		AccN_acc_graph.update(static_cast<float>(mover.AccN));
+	}
 
-    last_AccN = mover.AccN;
-    last_time = Timer::GetTime();
+	last_AccN = static_cast<float>(mover.AccN);
+	last_time = Timer::GetTime();
 }
 
 void debug_panel::graph_data::update(float val)
@@ -858,12 +897,11 @@ void debug_panel::graph_data::update(float val)
     last_val = val;
 }
 
-void debug_panel::graph_data::render()
-{
-    ImGui::PushID(this);
-    ImGui::SliderFloat(STR_C("##Range"), &range, 0.5f, 60.0f, "%.1f");
-    ImGui::PlotLines("##plot", data.data(), data.size(), pos, nullptr, 0.0f, range, ImVec2(0, 100));
-    ImGui::PopID();
+void debug_panel::graph_data::render() {
+	ImGui::PushID(this);
+	ImGui::SliderFloat(STR_C("##Range"), &range, 0.5f, 60.0f, "%.1f");
+	ImGui::PlotLines("##plot", data.data(), static_cast<int>(data.size()), static_cast<int>(pos), nullptr, 0.0f, range, ImVec2(0, 100));
+	ImGui::PopID();
 }
 
 std::string debug_panel::update_vehicle_coupler(int const Side)
@@ -896,27 +934,17 @@ std::string debug_panel::update_vehicle_brake() const
 
     std::vector<std::pair<int, std::string> > delays{{bdelay_G, "G"}, {bdelay_P, "P"}, {bdelay_R, "R"}, {bdelay_M, "+Mg"}};
 
-    for (auto const &delay: delays)
-    {
-        if ((mover.BrakeDelayFlag & delay.first) == delay.first)
-        {
-            brakedelay += delay.second;
-        }
-    }
+	for( auto const &[delayflag, delayname] : delays ) {
+		if( ( mover.BrakeDelayFlag & delayflag ) == delayflag ) {
+			brakedelay += delayname;
+		}
+	}
 
     return brakedelay;
 }
 
-void debug_panel::update_section_engine(std::vector<text_line> &Output)
-{
-    if (m_input.vehicle == nullptr)
-    {
-        return;
-    }
-    if (m_input.mover == nullptr)
-    {
-        return;
-    }
+void
+debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 
     auto const &vehicle{*m_input.vehicle};
     auto const &mover{*m_input.mover};
@@ -942,7 +970,26 @@ void debug_panel::update_section_engine(std::vector<text_line> &Output)
                 parameters += " | " + vehicle.MED_labels[i - 13] + to_string(vehicle.MED[0][i - 13], 2, 9);
             }
 
-            Output.emplace_back(parameters, Global.UITextColor);
+		Output.emplace_back( "      eimc:            eimv:            press:", Global.UITextColor );
+		for( int i = 0; i <= 20; ++i ) {
+
+			std::string parameters =
+			    TMoverParameters::eimc_labels[ i ] + to_string( mover.eimc[ i ], 2, 9 )
+			    + " | "
+			    + TMoverParameters::eimv_labels[ i ] + to_string( mover.eimv[ i ], 2, 9 );
+
+			if( i < 10 ) {
+				parameters +=
+                    m_input.train != nullptr && m_input.train->Dynamic() == m_input.vehicle ? " | " + TTrain::fPress_labels[i] + to_string(m_input.train->fPress[i][0], 2, 9) : "";
+			}
+			else if( i == 12 ) {
+				parameters += "        med:";
+			}
+			else if( i >= 13 ) {
+				parameters += " | " + TDynamicObject::MED_labels[ i - 13 ] + to_string( vehicle.MED[ 0 ][ i - 13 ], 2, 9 );
+			}
+
+            Output.emplace_back( parameters, Global.UITextColor );
         }
         Output.emplace_back("Inverter:\n frequency: " + to_string(mover.InverterFrequency, 2), Global.UITextColor);
     }
@@ -956,33 +1003,45 @@ void debug_panel::update_section_engine(std::vector<text_line> &Output)
         }
 
         std::string parameterstext = "param       value";
-        std::vector<std::pair<std::string, double> > const paramvalues{{"  rpm: ", mover.enrot * 60.0}, {"efill: ", mover.dizel_fill}, {"etorq: ", mover.dizel_Torque}, {"power: ", mover.dizel_Power}, {"f_act: ", mover.dizel_FuelConsumptionActual}, {"f_tot: ", mover.dizel_FuelConsumptedTotal}, {"fmean: ", fuel_mean}, {"creal: ", mover.dizel_engage}, {"cdesi: ", mover.dizel_engagestate}, {"cdelt: ", mover.dizel_engagedeltaomega}, {"gears: ", mover.dizel_automaticgearstatus}};
-        for (auto const &parameter: paramvalues)
-        {
-            parameterstext += "\n" + parameter.first + to_string(parameter.second, 2, 9);
+        std::vector< std::pair <std::string, double> > const paramvalues {
+			{ "  rpm: ", mover.enrot * 60.0 },
+			{ "efill: ", mover.dizel_fill },
+            { "etorq: ", mover.dizel_Torque },
+			{ "power: ", mover.dizel_Power },
+			{ "f_act: ", mover.dizel_FuelConsumptionActual },
+			{ "f_tot: ", mover.dizel_FuelConsumptedTotal },
+			{ "fmean: ", fuel_mean },
+            { "creal: ", mover.dizel_engage },
+            { "cdesi: ", mover.dizel_engagestate },
+            { "cdelt: ", mover.dizel_engagedeltaomega },
+            { "gears: ", mover.dizel_automaticgearstatus} };
+        for( auto const &[parametername, parametervalue] : paramvalues ) {
+            parameterstext += "\n" + parametername + to_string( parametervalue, 2, 9 );
         }
         Output.emplace_back(parameterstext, Global.UITextColor);
 
         parameterstext = "hydro      value";
-        std::vector<std::pair<std::string, double> > const hydrovalues{{"hTCnI: ", mover.hydro_TC_nIn}, {"hTCnO: ", mover.hydro_TC_nOut}, {"hTCTM: ", mover.hydro_TC_TMRatio}, {"hTCTI: ", mover.hydro_TC_TorqueIn}, {"hTCTO: ", mover.hydro_TC_TorqueOut}, {"hTCfl: ", mover.hydro_TC_Fill}, {"hRtFl: ", mover.hydro_R_Fill}, {" hRtn: ", mover.hydro_R_n}, {"hRtTq: ", mover.hydro_R_Torque}};
-        for (auto const &parameter: hydrovalues)
-        {
-            parameterstext += "\n" + parameter.first + to_string(parameter.second, 2, 9);
-        }
-        Output.emplace_back(parameterstext, Global.UITextColor);
-    }
+        std::vector< std::pair <std::string, double> > const hydrovalues {
+            { "hTCnI: ", mover.hydro_TC_nIn },
+            { "hTCnO: ", mover.hydro_TC_nOut },
+            { "hTCTM: ", mover.hydro_TC_TMRatio },
+            { "hTCTI: ", mover.hydro_TC_TorqueIn },
+            { "hTCTO: ", mover.hydro_TC_TorqueOut },
+            { "hTCfl: ", mover.hydro_TC_Fill },
+            { "hRtFl: ", mover.hydro_R_Fill } ,
+			{ " hRtn: ", mover.hydro_R_n } ,
+			{ "hRtTq: ", mover.hydro_R_Torque }
+
+		};
+		for( auto const &[parametername, parametervalue] : hydrovalues ) {
+			parameterstext += "\n" + parametername + to_string( parametervalue, 2, 9 );
+		}
+		Output.emplace_back( parameterstext, Global.UITextColor );
+	}
 }
 
-void debug_panel::update_section_ai(std::vector<text_line> &Output)
-{
-    if (m_input.mover == nullptr)
-    {
-        return;
-    }
-    if (m_input.mechanik == nullptr)
-    {
-        return;
-    }
+void
+debug_panel::update_section_ai( std::vector<text_line> &Output ) const {
 
     auto const &mover{*m_input.mover};
     auto const &mechanik{*m_input.mechanik};
@@ -1031,17 +1090,14 @@ void debug_panel::update_section_ai(std::vector<text_line> &Output)
     std::vector<std::pair<double, std::string> > const restrictions{{mechanik.VelSignalLast, "signal"}, {mechanik.VelLimitLast, "limit"}, {mechanik.VelRoad, "road"}, {mechanik.VelRestricted, "restricted"}, {mover.RunningTrack.Velmax, "track"}};
 
     std::string restrictionstext;
-    for (auto const &restriction: restrictions)
-    {
-        if (restriction.first < 0.0)
-        {
-            continue;
-        }
-        if (false == restrictionstext.empty())
-        {
+    for( auto const &[restrictionspeed, restrictionsource] : restrictions ) {
+        if( restrictionspeed < 0.0 ) { continue; }
+        if( false == restrictionstext.empty() ) {
             restrictionstext += ", ";
         }
-        restrictionstext += to_string(restriction.first, 0) + " (" + restriction.second + ")";
+        restrictionstext +=
+            to_string( restrictionspeed, 0 )
+            + " (" + restrictionsource + ")";
     }
 
     if (false == restrictionstext.empty())
@@ -1079,12 +1135,8 @@ void debug_panel::update_section_ai(std::vector<text_line> &Output)
     Output.emplace_back(textline, Global.UITextColor);
 }
 
-void debug_panel::update_section_scantable(std::vector<text_line> &Output)
-{
-    if (m_input.mechanik == nullptr)
-    {
-        return;
-    }
+void
+debug_panel::update_section_scantable( std::vector<text_line> &Output ) const {
 
     Output.emplace_back("Flags:       Dist:    Vel:  Name:", Global.UITextColor);
 
@@ -1110,9 +1162,9 @@ void debug_panel::update_section_scantable(std::vector<text_line> &Output)
 }
 
 #ifdef WITH_UART
-void debug_panel::update_section_uart(std::vector<text_line> &Output)
-{
-    uart_status *status = &UartStatus;
+void
+debug_panel::update_section_uart( std::vector<text_line> &Output ) const {
+    uart_status const *status = &UartStatus;
 
     Output.emplace_back(("Port: " + status->port_name).c_str(), Global.UITextColor);
     Output.emplace_back(("Baud: " + std::to_string(status->baud)).c_str(), Global.UITextColor);
@@ -1129,16 +1181,20 @@ void debug_panel::update_section_uart(std::vector<text_line> &Output)
 }
 #endif
 
-void debug_panel::update_section_scenario(std::vector<text_line> &Output)
-{
-    auto textline = "vehicles: " + to_string(Timer::subsystem.sim_dynamics.average(), 2) + " msec" + " update total: " + to_string(Timer::subsystem.sim_total.average(), 2) + " msec";
+void
+debug_panel::update_section_scenario( std::vector<text_line> &Output ) const {
 
     Output.emplace_back(textline, Global.UITextColor);
     // current luminance level
-    textline = "Light level: " + to_string(Global.fLuminance, 3) + (Global.FakeLight ? "(*)" : "") + to_string(Global.SunAngle, 2);
-    textline += "\nWind: azimuth " + to_string(simulation::Environment.wind_azimuth(), 0) // ma być azymut, czyli 0 na północy i rośnie na wschód
-            + " " + std::string("N NEE SES SWW NW").substr(0 + 2 * std::floor(std::fmod(8 + (glm::radians(simulation::Environment.wind_azimuth()) + 0.5 * M_PI_4) / M_PI_4, 8)), 2) + ", " + to_string(glm::length(simulation::Environment.wind()), 1) + " m/s";
-    textline += "\nAir temperature: " + to_string(Global.AirTemperature, 1) + " deg C";
+	textline = "Light level: " + to_string( Global.fLuminance, 3 ) + ( Global.FakeLight ? "(*)" : "" )+ to_string(Global.SunAngle,2);
+    textline +=
+        "\nWind: azimuth "
+        + to_string( simulation::Environment.wind_azimuth(), 0 ) // ma być azymut, czyli 0 na północy i rośnie na wschód
+        + " "
+        + std::string( "N NEE SES SWW NW" )
+        .substr( static_cast<std::size_t>( 2 * std::floor( std::fmod( 8 + ( glm::radians( simulation::Environment.wind_azimuth() ) + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ) ), 2 )
+        + ", " + to_string( glm::length( simulation::Environment.wind() ), 1 ) + " m/s";
+    textline += "\nAir temperature: " + to_string( Global.AirTemperature, 1 ) + " deg C";
 
     Output.emplace_back(textline, Global.UITextColor);
 }
@@ -1148,30 +1204,37 @@ void debug_panel::update_section_eventqueue(std::vector<text_line> &Output)
     std::string textline;
 
     // current event queue
-    auto const time{Timer::GetTime()};
-    auto const *event{simulation::Events.begin()};
-    auto const searchfilter{std::string(m_eventsearch.data())};
+    auto const time { Timer::GetTime() };
+    auto const *queuedevent { simulation::Events.begin() };
+    auto const searchfilter { std::string( m_eventsearch.data() ) };
 
     Output.emplace_back("Delay:   Event:", Global.UITextColor);
 
-    while (event != nullptr && Output.size() < 30)
-    {
-        if (false == event->m_ignored && false == event->m_passive && (false == m_eventqueueactivevehicleonly || event->m_activator == m_input.vehicle))
-        {
-            auto const label{event->m_name + (event->m_activator ? " (by: " + event->m_activator->asName + ")" : "")};
+	while( queuedevent != nullptr
+	    && Output.size() < 30 ) {
 
-            if (false == searchfilter.empty() && false == contains(label, searchfilter))
-            {
-                event = event->m_next;
+		if( false == queuedevent->m_ignored
+		 && false == queuedevent->m_passive
+		 && ( false == m_eventqueueactivevehicleonly
+		   || queuedevent->m_activator == m_input.vehicle ) ) {
+
+            auto const label { queuedevent->m_name + ( queuedevent->m_activator ? " (by: " + queuedevent->m_activator->asName + ")" : "" ) };
+
+            if( false == searchfilter.empty()
+             && false == contains(label, searchfilter) ) {
+                queuedevent = queuedevent->m_next;
                 continue;
             }
 
-            auto const delay{"   " + to_string(std::max(0.0, event->m_launchtime - time), 1)};
-            textline = delay.substr(delay.length() - 6) + "   " + label + (event->m_sibling ? " (joint event)" : "");
+            auto const delay { "   " + to_string( std::max( 0.0, queuedevent->m_launchtime - time ), 1 ) };
+            textline =
+                delay.substr( delay.length() - 6 )
+                + "   "
+                + label + ( queuedevent->m_sibling ? " (joint event)" : "" );
 
             Output.emplace_back(textline, Global.UITextColor);
         }
-        event = event->m_next;
+        queuedevent = queuedevent->m_next;
     }
     if (Output.size() == 1)
     {
@@ -1180,10 +1243,8 @@ void debug_panel::update_section_eventqueue(std::vector<text_line> &Output)
     }
 }
 
-void debug_panel::update_section_powergrid(std::vector<text_line> &Output)
-{
-    auto const lowpowercolor{glm::vec4(164.0f / 255.0f, 132.0f / 255.0f, 84.0f / 255.0f, 1.f)};
-    auto const nopowercolor{glm::vec4(164.0f / 255.0f, 84.0f / 255.0f, 84.0f / 255.0f, 1.f)};
+void
+debug_panel::update_section_powergrid( std::vector<text_line> &Output ) const {
 
     Output.emplace_back("Name:               Output: Current: Timeout:", Global.UITextColor);
 
@@ -1213,12 +1274,8 @@ void debug_panel::update_section_powergrid(std::vector<text_line> &Output)
     }
 }
 
-void debug_panel::update_section_camera(std::vector<text_line> &Output)
-{
-    if (m_input.camera == nullptr)
-    {
-        return;
-    }
+void
+debug_panel::update_section_camera( std::vector<text_line> &Output ) const {
 
     auto const &camera{*m_input.camera};
 
@@ -1230,20 +1287,18 @@ void debug_panel::update_section_camera(std::vector<text_line> &Output)
     textline = "Azimuth: " + to_string(180.0 - glm::degrees(camera.Angle.y), 0) // ma być azymut, czyli 0 na północy i rośnie na wschód
                + " " + std::string("S SEE NEN NWW SW").substr(0 + 2 * floor(fmod(8 + (camera.Angle.y + 0.5 * M_PI_4) / M_PI_4, 8)), 2);
 
-    Output.emplace_back(textline, Global.UITextColor);
+	textline =
+	    "Azimuth: "
+	    + to_string( 180.0 - glm::degrees( camera.Angle.y ), 0 ) // ma być azymut, czyli 0 na północy i rośnie na wschód
+	    + " "
+	    + std::string( "S SEE NEN NWW SW" )
+	    .substr( static_cast<std::size_t>( 2 * floor( fmod( 8 + ( camera.Angle.y + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ) ), 2 );
+
+	Output.emplace_back( textline, Global.UITextColor );
 }
 
-void debug_panel::update_section_renderer(std::vector<text_line> &Output)
-{
-    // gfx renderer data
-    auto textline = "FoV: " + to_string(Global.FieldOfView / Global.ZoomFactor, 1) + ", Draw range: " + to_string(Global.BaseDrawRange * Global.fDistanceFactor, 0) + "m"
-                    //                + "; sectors: " + std::to_string( GfxRenderer->m_drawcount )
-                    //                + ", FPS: " + to_string( Timer::GetFPS(), 2 );
-                    + ", FPS: " + std::to_string(static_cast<int>(std::round(GfxRenderer->Framerate()))) + (Global.VSync ? " (vsync on)" : "");
-    if (Global.iSlowMotion)
-    {
-        textline += " (slowmotion " + std::to_string(Global.iSlowMotion) + ")";
-    }
+void
+debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 
     Output.emplace_back(textline, Global.UITextColor);
 
@@ -1313,19 +1368,19 @@ bool debug_panel::render_section(std::string const &Header, std::vector<text_lin
     return render_section(Lines);
 }
 
-bool debug_panel::render_section(std::vector<text_line> const &Lines)
-{
-    for (auto const &line: Lines)
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, {line.color.r, line.color.g, line.color.b, line.color.a});
-        ImGui::TextUnformatted(line.data.c_str());
+bool
+debug_panel::render_section( std::vector<text_line> const &Lines ) const {
+
+    for( auto const &line : Lines ) {
+        ImGui::PushStyleColor( ImGuiCol_Text, { line.color.r, line.color.g, line.color.b, line.color.a } );
+        ImGui::TextUnformatted( line.data.c_str() );
         ImGui::PopStyleColor();
         //        ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
     }
     return true;
 }
 
-bool debug_panel::render_section_developer()
+bool debug_panel::render_section_developer() const
 {
     if (false == ImGui::CollapsingHeader("Developer tools"))
         return false;
@@ -1340,25 +1395,19 @@ bool debug_panel::render_section_developer()
     return true;
 }
 
-bool debug_panel::render_section_settings()
-{
-    if (false == ImGui::CollapsingHeader("Settings"))
-    {
-        return false;
-    }
+bool
+debug_panel::render_section_settings() const {
 
     ImGui::PushStyleColor(ImGuiCol_Text, {Global.UITextColor.r, Global.UITextColor.g, Global.UITextColor.b, Global.UITextColor.a});
     ImGui::TextUnformatted("Graphics");
     ImGui::PopStyleColor();
     // reflection fidelity
-    ImGui::SliderInt((std::to_string(Global.reflectiontune.fidelity) + "###reflectionfidelity").c_str(), &Global.reflectiontune.fidelity, 0, 2, "Reflection fidelity");
-    ImGui::SliderInt((std::to_string(Global.gfx_shadow_rank_cutoff) + "###shadowrankcutoff").c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks");
-    if (ImGui::SliderFloat((to_string(std::abs(Global.gfx_shadow_angle_min), 2) + "###shadowanglecutoff").c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2, "Shadow angle cutoff"))
-    {
-        Global.gfx_shadow_angle_min = quantize(Global.gfx_shadow_angle_min, 0.05f);
-    };
-    if (DebugModeFlag)
-    {
+    ImGui::SliderInt( ( std::to_string( Global.reflectiontune.fidelity ) + "###reflectionfidelity" ).c_str(), &Global.reflectiontune.fidelity, 0, 2, "Reflection fidelity" );
+    ImGui::SliderInt( ( std::to_string( Global.gfx_shadow_rank_cutoff ) + "###shadowrankcutoff" ).c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks" );
+    if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2f, "Shadow angle cutoff" ) ) {
+        Global.gfx_shadow_angle_min = quantize( Global.gfx_shadow_angle_min, 0.05f );
+    }
+    if( DebugModeFlag ) {
         // sky sliders
         {
             ImGui::SliderFloat((to_string(Global.m_skysaturationcorrection, 2, 5) + "###skysaturation").c_str(), &Global.m_skysaturationcorrection, 0.0f, 3.0f, "Sky saturation");
@@ -1388,10 +1437,9 @@ bool debug_panel::render_section_settings()
     if (simulation::Train)
     {
         float val = simulation::Train->get_radiovolume();
-        if (ImGui::SliderFloat((std::to_string(static_cast<int>(val * 100)) + "%###volumeradio").c_str(), &val, 0.0f, 1.0f, "Vehicle radio volume"))
-        {
-            command_relay relay;
-            relay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
+        if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( val * 100 ) ) + "%###volumeradio" ).c_str(), &val, 0.0f, 1.0f, "Vehicle radio volume" ) ) {
+            command_relay commandrelay;
+            commandrelay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
         }
     }
 
@@ -1440,9 +1488,7 @@ void transcripts_panel::render()
     {
         ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x, size_min.y), ImVec2S(size_max.x, size_max.y));
     }
-    auto const panelname{(title.empty() ? m_name : title) + "###" + m_name};
-    if (true == ImGui::Begin(panelname.c_str(), &is_open, flags))
-    {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // header section
         for (auto const &line: text_lines)
         {

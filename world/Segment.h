@@ -42,10 +42,12 @@ struct segment_data {
 class TSegment
 { // aproksymacja toru (zwrotnica ma dwa takie, jeden z nich jest aktywny)
   private:
-    glm::dvec3 Point1, CPointOut, CPointIn, Point2;
-    float
-        fRoll1 { 0.f },
-        fRoll2 { 0.f }; // przechyłka na końcach
+    glm::dvec3 Point1;
+    glm::dvec3 CPointOut;
+    glm::dvec3 CPointIn;
+    glm::dvec3 Point2;
+    float fRoll1 { 0.f };
+    float fRoll2 { 0.f }; // przechyłka na końcach
     double fLength { -1.0 }; // długość policzona
     std::vector<double> fTsBuffer; // wartości parametru krzywej t dla równych odcinków s
     std::vector<double> fTsSlope; // nachylenie dt/du (= dt/ds * fStep) w tych samych punktach
@@ -53,7 +55,9 @@ class TSegment
     int iSegCount = 0; // ilość odcinków do rysowania krzywej
     double fDirection = 0.0; // Ra: kąt prostego w planie; dla łuku kąt od Point1
     double fStoop = 0.0; // Ra: kąt wzniesienia; dla łuku od Point1
-	glm::dvec3 vA, vB, vC; // współczynniki wielomianów trzeciego stopnia vD==Point1
+	glm::dvec3 vA;
+	glm::dvec3 vB;
+	glm::dvec3 vC; // współczynniki wielomianów trzeciego stopnia vD==Point1
     TTrack *pOwner = nullptr; // wskaźnik na właściciela
 
     glm::dvec3 GetFirstDerivative(double const fTime) const;
@@ -67,7 +71,7 @@ class TSegment
 public:
     bool bCurve = false;
 
-    TSegment(TTrack *owner);
+    explicit TSegment(TTrack *owner);
     bool Init(glm::dvec3 NewPoint1, glm::dvec3 NewPoint2, double fNewStep, double fNewRoll1 = 0, double fNewRoll2 = 0);
 	bool Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 NewCPointIn, glm::dvec3 &NewPoint2, double fNewStep, double fNewRoll1 = 0, double fNewRoll2 = 0, bool bIsCurve = true);
     double
@@ -90,7 +94,7 @@ public:
         GetDirection() const {
             return CPointOut; };
 	glm::dvec3
-        FastGetDirection(double const fDistance, double const fOffset);
+        FastGetDirection(double const fDistance, double const fOffset) const;
 /*
     Math3D::vector3
         GetPoint(double const fDistance) const;

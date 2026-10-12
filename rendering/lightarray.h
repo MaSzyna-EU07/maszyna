@@ -36,7 +36,7 @@ public:
         update();
 
 // types
-    typedef std::vector<light_record> lightrecord_array;
+    using lightrecord_array = std::vector<light_record>;
 
 // members
     lightrecord_array data;

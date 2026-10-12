@@ -100,7 +100,7 @@ inline double LocalRandom(double b)
 inline double BorlandTime()
 {
 	auto timesinceepoch = std::time(nullptr);
-	return timesinceepoch / (24.0 * 60 * 60);
+	return static_cast<double>(timesinceepoch) / (24.0 * 60 * 60);
 	/*
 	    // std alternative
 	    auto timesinceepoch = std::chrono::system_clock::now().time_since_epoch();
@@ -176,8 +176,7 @@ inline std::string extract_value(std::string const &Key, std::string const &Inpu
 	// NOTE, HACK: the leading space allows to uniformly look for " variable=" substring
 	std::string const input{" " + Input};
 	std::string value;
-	auto lookup = input.find(" " + Key + "=");
-	if (lookup != std::string::npos)
+	if (auto lookup = input.find(" " + Key + "="); lookup != std::string::npos)
 	{
 		value = input.substr(input.find_first_not_of(' ', lookup + Key.size() + 2));
 		lookup = value.find(' ');
@@ -315,7 +314,7 @@ template <typename T> T clamp_power_of_two(T Value, T const Min = T(1), T const 
 template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
 {
 
-	return Step * std::round(Value / Step);
+	return static_cast<Type_>(Step * std::round(Value / Step));
 }
 
 template <typename T> T min_speed(T const Left, T const Right)
@@ -427,12 +426,12 @@ class condition_variable
 	// methods
 	void wait()
 	{
-		std::unique_lock<std::mutex> lock(m_mutex);
+		std::unique_lock lock(m_mutex);
 		m_condition.wait(lock, [this]() { return m_spurious == false; });
 	}
 	template <class Rep_, class Period_> void wait_for(const std::chrono::duration<Rep_, Period_> &Time)
 	{
-		std::unique_lock<std::mutex> lock(m_mutex);
+		std::unique_lock lock(m_mutex);
 		m_condition.wait_for(lock, Time, [this]() { return m_spurious == false; });
 	}
 	void notify_one()
@@ -447,7 +446,7 @@ class condition_variable
 	}
 	void spurious(bool const Spurious)
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_spurious = Spurious;
 	}
 

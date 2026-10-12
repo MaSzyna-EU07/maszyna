@@ -29,7 +29,7 @@ public:
 	static void ls_float32(std::ostream&, float);
 	static void ls_float64(std::ostream&, double);
     static void s_uint8(std::ostream&, uint8_t);
-    static void s_str(std::ostream&, std::string);
+    static void s_str(std::ostream&, std::string const &);
     static void s_bool(std::ostream&, bool);
     static void s_dvec3(std::ostream&, glm::dvec3 const &);
 	static void s_vec3(std::ostream&, glm::vec3 const &);

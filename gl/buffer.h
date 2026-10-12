@@ -34,8 +34,8 @@ namespace gl
         buffer();
         ~buffer();
 
-        void bind(targets target);
-        void bind_base(targets target, GLuint index);
+        void bind(targets target) const;
+        void bind_base(targets target, GLuint index) const;
         static void unbind(targets target);
 		static void unbind();
 

@@ -33,6 +33,8 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #endif
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);
+int export_btf_standalone(std::string in, std::string out);
+int generate_nodebank_previews(int Argc, char *Argv[]);
 
 #include <ctime>
 #include <string>
@@ -97,6 +99,36 @@ int main(int argc, char *argv[])
 		int flags = std::stoi(std::string(argv[4]));
 		int dynamic = std::stoi(std::string(argv[5]));
 		export_e3d_standalone(in, out, flags, dynamic);
+	}
+	// standalone generation of preview images of the node bank models: -generate-nodebank-previews [options]
+	else if (argc >= 2 && std::string(argv[1]) == "-generate-nodebank-previews")
+	{
+		auto const result{generate_nodebank_previews(argc, argv)};
+		fflush(stdout);
+		fflush(stderr);
+		std::_Exit(result);
+	}
+	// standalone conversion of text terrain file to binary format: -btf -s <text file> [-o <binary file>]
+	else if (argc >= 4 && std::string(argv[1]) == "-btf")
+	{
+		std::string in;
+		std::string out;
+		for (int i = 2; i + 1 < argc; i += 2)
+		{
+			std::string const option(argv[i]);
+			if (option == "-s")
+			{
+				in = argv[i + 1];
+			}
+			else if (option == "-o")
+			{
+				out = argv[i + 1];
+			}
+		}
+		auto const result{export_btf_standalone(in, out)};
+		fflush(stdout);
+		fflush(stderr);
+		std::_Exit(result);
 	}
 	else
 	{

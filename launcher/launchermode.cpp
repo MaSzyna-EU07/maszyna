@@ -29,7 +29,7 @@ void launcher_mode::enter()
 
 void launcher_mode::exit()
 {
-
+	// nothing to do
 }
 
 void launcher_mode::on_key(const int Key, const int Scancode, const int Action, const int Mods)

@@ -11,8 +11,9 @@ launcher_ui::launcher_ui() : m_scenery_scanner(m_vehicles_bank), m_scenerylist_p
 	add_external_panel(&m_scenerylist_panel);
 	add_external_panel(&m_keymapper_panel);
 	add_external_panel(&m_vehiclepicker_panel);
+	add_external_panel(&m_scenerywizard_panel);
 
-	open_panel(&m_scenerylist_panel);
+	open_panel(Global.editor_session ? static_cast<ui_panel *>(&m_scenerywizard_panel) : &m_scenerylist_panel);
 	m_suppress_menu = true;
 
 }
@@ -50,6 +51,9 @@ void launcher_ui::render_()
 		if (ImGui::Button(STR_C("Keymapper"), topbar_button_size))
 			open_panel(&m_keymapper_panel);
 		ImGui::SameLine();
+		if (ImGui::Button(STR_C("New scenery"), topbar_button_size))
+			open_panel(&m_scenerywizard_panel);
+		ImGui::SameLine();
         if (ImGui::Button(STR_C("Quit"), topbar_button_size))
             Application.queue_quit(false);
 	}
@@ -61,6 +65,7 @@ void launcher_ui::close_panels()
 	m_scenerylist_panel.is_open = false;
 	m_vehiclepicker_panel.is_open = false;
 	m_keymapper_panel.is_open = false;
+	m_scenerywizard_panel.is_open = false;
 }
 
 void launcher_ui::open_panel(ui_panel* panel)
