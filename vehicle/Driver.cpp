@@ -5906,7 +5906,7 @@ TController::determine_consist_state() {
                     isbraking || bp > 0.4 : // ensure the brakes are sufficiently released when starting to move
                     // once in motion a brake down to 0.4 bar counts as released (UIC), even if its distributor
                     // is still in the lap position while the brake pipe recharges
-                    ( isbraking && bp > 0.4 ) || vehicle->Fb * 0.001 > 10.0 ) {
+                    ( isbraking && bp > 0.4 ) || vehicle->Fb > 10000.0 ) { // 10 kN
                 Ready = false;
             }
             // Ra: odluźnianie przeładowanych lokomotyw, ciągniętych na zimno - prowizorka...
