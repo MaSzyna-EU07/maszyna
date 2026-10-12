@@ -3645,14 +3645,6 @@ namespace
         }
         return out;
     }
-    case tt_Normal:
-    case tt_Table:
-    default: {
-        if( Track.Segment ) { out.push_back( Track.Segment.get() ); }
-        break;
-    }
-    }
-    return out;
 }
 
 // Local-space transform (relative to Origin) of the sleeper at distance S along the Segment,
@@ -3705,7 +3697,6 @@ std::optional<glm::mat4> sleeper_transform( TSegment const &Segment, double cons
         m = glm::translate( m, Offset );
     }
     return m;
-}
 } // anonymous namespace
 
 // Resolves the sleeper model + (optional) replacable skin via the global model/material

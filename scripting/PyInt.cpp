@@ -243,7 +243,7 @@ auto python_taskqueue::init() -> bool
 #ifdef _WIN32
 	const wchar_t *pythonhome = sizeof(void *) == 8 ? L"python64" : L"python";
 #elif __linux__
-	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"linuxpython64" : L"linuxpython";
+	const wchar_t *pythonhome = L"/usr";
 #elif __APPLE__
 	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"macpython64" : L"macpython";
 #endif
@@ -311,6 +311,11 @@ auto python_taskqueue::init() -> bool
 	stringioclassname = stringiomodule != nullptr ? PyObject_GetAttrString(stringiomodule, "StringIO") : nullptr;
 	stringioobject = stringioclassname != nullptr ? PyObject_CallObject(stringioclassname, nullptr) : nullptr;
 	m_stderr = {(stringioobject == nullptr ? nullptr : PySys_SetObject("stderr", stringioobject) != 0 ? nullptr : stringioobject)};
+
+    PyRun_SimpleString(
+    "import sys\n"
+    "sys.path.insert(0, '/home/dombi/venvs/maszyna/lib/python3.14/site-packages')\n"
+);
 
 	if (false == run_file("abstractscreenrenderer"))
 	{
