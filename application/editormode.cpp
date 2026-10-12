@@ -4786,6 +4786,8 @@ void editor_mode::render_gizmo_options()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Wheel zooms. Hold the wheel and drag to pan."));
     }
+    if (ui()->mode() == nodebank_panel::TRACK && track_plan_tab())
+        return;
     ImGui::Checkbox(STR_C("Enabled"), &m_gizmo_enabled);
     if (!m_gizmo_enabled)
         return;
@@ -4821,7 +4823,7 @@ void editor_mode::render_gizmo_options()
                                   false == m_include.placement ? STR_C("Include selected, no gizmo under rotate or scale") :
                                                                  STR_C("Include selected, axes as its template allows"));
     }
-    else if (!m_node)
+    else if (!m_node && ui()->mode() != nodebank_panel::TRACK)
         ImGui::TextDisabled(STR_C("No node selected"));
 }
 

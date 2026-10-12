@@ -651,43 +651,27 @@ bool editor_mode::track_busy() const
 std::string editor_mode::track_mode_name() const
 {
 	if (false == m_track_window_open)
-		return STR_C("Select: LMB on a path");
+		return STR_C("Select");
 	switch (m_track_tab)
 	{
-	case track_tab::lay: return m_extend.active ? STR_C("Laying track: new path from the free end") : STR_C("Laying track: each click lays a piece, Esc ends");
-	case track_tab::turnout:
-		if (m_switch.placing)
-			return STR_C("Switch: drag to set its direction and side");
-		if (m_switch.armed < 0)
-			return selected_track() != nullptr && selected_track()->eType == tt_Switch ? STR_C("Switch: the selected one. Another: LMB on a track, then its type") : STR_C("Switch: choose its type from the list");
-		return STR_C("Switch: press and drag on the selected track");
+	case track_tab::lay: return STR_C("Lay track");
+	case track_tab::turnout: return STR_C("Switch");
 	case track_tab::straights:
-		if (false == m_straights.detour.empty())
-			return STR_C("Plan, straight: shift around, Shift+click the points");
+		if (false == m_straights.detour.empty() || m_straights.tool == 2)
+			return STR_C("Plan, straight: S-curve");
 		if (m_straights.tool == 1)
-			return STR_C("Plan, straight: break, press on the straight and drag");
-		if (m_straights.tool == 2)
-			return STR_C("Plan, straight: S-curve, LMB on the straight");
-		return STR_C("Plan, straight: drag its ends or the middle");
-	case track_tab::route: return STR_C("Plan, curve: drag the vertices and the radius grips");
-	case track_tab::profile: return STR_C("Vertical profile: edit the grade line in the profile window");
-	case track_tab::speed: return STR_C("Speed check: LMB on a row shows the path");
-	case track_tab::joints: return STR_C("Joints: LMB on a row shows the place");
-	case track_tab::lineside:
-		return STR_C("Objects along the track");
-	case track_tab::infra: return STR_C("Infrastructure along the track");
-	case track_tab::parallel: return m_parallel.pieces.empty() ? STR_C("Parallel track: LMB on a straight") : STR_C("Parallel track: the side and the spacing in the panel, then Lay");
-	case track_tab::signals:
-		if (m_signal.moving)
-			return STR_C("Signal: drag along the track, release to put it there");
-		if (m_signal.placing)
-			return STR_C("Signal: drag along the track sets the direction of the trains, release to place it");
-		return signal_armed() != nullptr ? STR_C("Signal: LMB by the track places it on that side") : STR_C("Signal: choose its type below");
-	case track_tab::turntable:
-		if (m_turntable.placing)
-			return STR_C("Turntable: drag to turn the bridge, release to place it");
-		return m_turntable.table != nullptr ? STR_C("Turntable: LMB around it leads a track out, on a free end fits that track") : STR_C("Turntable: LMB places a new one");
-	default: return m_point_drag.moved ? STR_C("Select: moving the point") : selected_track() != nullptr ? STR_C("Select: drag the points of the path") : STR_C("Select: LMB on a path");
+			return STR_C("Plan, straight: break");
+		return STR_C("Plan, straight");
+	case track_tab::route: return STR_C("Plan, curve");
+	case track_tab::profile: return STR_C("Vertical profile");
+	case track_tab::speed: return STR_C("Speed check");
+	case track_tab::joints: return STR_C("Joints");
+	case track_tab::lineside: return STR_C("Objects along the track");
+	case track_tab::infra: return STR_C("Infrastructure");
+	case track_tab::parallel: return STR_C("Parallel track");
+	case track_tab::signals: return STR_C("Signal");
+	case track_tab::turntable: return STR_C("Turntable");
+	default: return STR_C("Select");
 	}
 }
 
@@ -790,7 +774,7 @@ void editor_mode::render_track_selection()
 	auto *track{selected_track()};
 	if (track == nullptr)
 	{
-		ImGui::TextDisabled("%s", STR_C("LMB on a path in the view selects it"));
+		ImGui::TextDisabled("%s", STR_C("Nothing selected"));
 		return;
 	}
 	char const *type = track->eType == tt_Normal ? "normal" : track->eType == tt_Switch ? "switch" : track->eType == tt_Cross ? "cross" : track->eType == tt_Table ? "turntable" : track->eType == tt_Tributary ? "tributary" : "unknown";
@@ -803,17 +787,8 @@ void editor_mode::render_track_selection()
 
 void editor_mode::render_track_guide()
 {
-	auto const hints{track_key_hints(false)};
-	auto *drawlist{ImGui::GetWindowDrawList()};
-	auto const &style{ImGui::GetStyle()};
-	drawlist->ChannelsSplit(2);
-	drawlist->ChannelsSetCurrent(1);
-	auto const origin{ImGui::GetCursorScreenPos()};
-	ImGui::SetCursorScreenPos(ImVec2(origin.x + 8.0f, origin.y + 6.0f));
-	ImGui::BeginGroup();
-	auto const mode{track_mode_name()};
-	ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", mode.c_str());
-	ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize("(?)").x - 8.0f);
+	ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", track_mode_name().c_str());
+	ImGui::SameLine();
 	ImGui::TextDisabled("(?)");
 	if (ImGui::IsItemHovered())
 	{
@@ -822,27 +797,12 @@ void editor_mode::render_track_guide()
 			text += std::string{hint.key} + "   " + hint.action + "\n";
 		ImGui::SetTooltip("%s", text.c_str());
 	}
-	float keywidth{0.0f};
-	for (auto const &hint : hints)
-		keywidth = std::max(keywidth, ImGui::CalcTextSize(hint.key).x);
-	auto const left{ImGui::GetCursorPosX()};
-	for (auto const &hint : hints)
+	if (false == m_track_mode_notice.empty())
 	{
-		ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.25f, 1.0f), "%s", hint.key);
-		ImGui::SameLine(left + keywidth + 12.0f);
 		ImGui::PushTextWrapPos(ImGui::GetWindowContentRegionMax().x - 8.0f);
-		ImGui::TextUnformatted(hint.action.c_str());
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", m_track_mode_notice.c_str());
 		ImGui::PopTextWrapPos();
 	}
-	if (false == m_track_mode_notice.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", m_track_mode_notice.c_str());
-	ImGui::EndGroup();
-	auto const bottom{ImGui::GetItemRectMax().y + 6.0f};
-	drawlist->ChannelsSetCurrent(0);
-	drawlist->AddRectFilled(origin, ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x, bottom), IM_COL32(40, 70, 110, 110), style.FrameRounding + 3.0f);
-	drawlist->ChannelsMerge();
-	ImGui::SetCursorScreenPos(ImVec2(origin.x, bottom + style.ItemSpacing.y));
-	ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
 void editor_mode::render_track_name(TTrack &Track)
@@ -2912,7 +2872,7 @@ void editor_mode::render_straight_ui()
 	};
 	toolbutton(STR_C("Break"), 1, STR_C("Turns the rest of the straight from a point, a curve goes at the break (Ctrl+drag in the view does the same)"));
 	ImGui::SameLine();
-	toolbutton(STR_C("S-curve"), 2, STR_C("Shifts the rest of the straight sideways through two curves"));
+	toolbutton(STR_C("S-curve"), 2, STR_C("Shifts a piece of the straight sideways around an obstacle and back: four clicks on the straight (Shift+click in the view does the same)"));
 	ImGui::SameLine();
 	bool const member{in_straight_set(line)};
 	if (ImGui::Button(member ? STR_C("Leave the group") : STR_C("Move with others")))
@@ -3618,13 +3578,13 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	if (m_lay.active)
 	{
 		if (m_lay.points.empty())
-			hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Drag from a free end", "the shape chosen towards the cursor, to a free end: joins it"}, {"Shift+click a straight", "the Parallel tool (N) with it"}, {"Alt", "the direction in steps of 15 degrees"}, {"Esc", "stop laying"}};
+			hints = {{"LMB", "start, on the ground or at a free end"}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees"}, {"Esc", "stop laying"}};
 		else
 		{
 			bool const chained{m_lay.start.track != nullptr};
-			hints = {{"LMB", chained ? "lay the shape up to here and go on from its end" : "lay the straight up to here and go on from its end"}, {"LMB on a free end", "join and lay"}};
+			hints = {{"LMB", chained ? "lay the shape up to here" : "lay the straight up to here"}, {"LMB on a free end", "join and lay"}};
 			if (chained || m_lay.mouse_snap.track != nullptr)
-				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "arc / straight, at a free end: another shape"}});
+				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
 			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees"}, {"Enter", "lay up to the cursor"}, {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "cancel"}});
 		}
 	}
@@ -3632,17 +3592,17 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	{
 		char const *const steps[] = {"leave the axis", "shifted", "start back", "back on the axis"};
 		auto const step{std::min<std::size_t>(m_straights.detour.size(), 3)};
-		hints = {{"Shift+click", format("point %zu of 4: %s", step + 1, steps[step])}, {"Esc", "cancel"}};
+		hints = {{m_straights.tool == 2 ? "LMB" : "Shift+click", format("point %zu of 4: %s", step + 1, steps[step])}, {"Esc", "cancel"}};
 	}
 	else if (m_extend.active)
-		hints = {{"Drag", "the shape chosen towards the cursor, to a free end: joins it"}, {"Ctrl+wheel", "radius"}, {"Shift+wheel", "arc / straight, at a free end: another shape"}, {"Release", "build"}, {"Esc", "cancel"}};
+		hints = {{"Drag", "lays the shape to the cursor, to a free end: joins it"}, {"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}, {"Release", "build"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
 		hints = {{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::lay)
-		hints = {{"LMB", "start of the new track, on the ground or at a free end"}, {"Esc", "back to Select"}};
+		hints = {{"LMB", "start, on the ground or at a free end"}};
 	else if (m_track_tab == track_tab::turnout && (selected_track() == nullptr || selected_track()->eType == tt_Switch))
 	{
-		hints = {{"LMB on a track", "choose the straight or the curve to put the switch in"}};
+		hints = {{"LMB on a track", "the straight or the curve for the switch"}};
 		if (selected != nullptr)
 		{
 			hints.push_back({"Gizmo", "move the selected switch"});
@@ -3651,35 +3611,43 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		}
 	}
 	else if (m_track_tab == track_tab::turnout && m_switch.armed < 0)
-		hints = {{"List below", "choose the type of the switch to put in"}, {"LMB on a track", "choose the straight or the curve"}, {"Esc", "back to Select"}};
+		hints = {{"List in the panel", "the type of the switch"}, {"LMB on a track", "another track"}};
 	else if (m_track_tab == track_tab::turnout)
-		hints = {{"1. List below", "choose the type of the switch"}, {"2. Press+drag", "on the selected track where the switch starts: along sets the direction, sideways the side"}, {"LMB elsewhere", "choose another track"}};
+		hints = {{"Press+drag on the track", "along: direction, sideways: side"}, {"List in the panel", "the type of the switch"}, {"LMB on another track", "choose it"}};
 	else if (m_track_tab == track_tab::profile && m_profile.route.spans.empty())
 		hints = {{"LMB on a track", "loads the grade line of its line"}};
 	else if (m_track_tab == track_tab::profile)
-		hints = {{"Drag a point", "in the profile window: changes the grade"}, {"Double click", "on the line: adds a point"}, {"Apply", "writes the heights into the tracks"}};
+		hints = {{"Drag a point", "changes the grade"}, {"Double click", "adds a point"}, {"Apply", "writes the heights into the tracks"}};
 	else if (m_track_window_open && m_track_tab == track_tab::speed)
 		hints = {{"LMB on a row", "show the path"}};
 	else if (m_track_window_open && m_track_tab == track_tab::lineside)
 		hints = {{"LMB on a track", "the line the objects go along"}};
 	else if (m_track_window_open && m_track_tab == track_tab::parallel)
-		hints = {{"LMB on a straight", "the track the new one goes beside, green in the view"}, {"Esc", "back to Select"}};
+		hints = {{"LMB on a straight", "the new track goes beside it"}};
 	else if (m_track_window_open && m_track_tab == track_tab::signals && (m_signal.placing || m_signal.moving))
 		hints = {{"Drag along", m_signal.moving ? "moves the signal along the track" : "the trains it faces run that way"}, {"Release", "done"}, {"Esc", "cancel"}};
+	else if (m_track_window_open && m_track_tab == track_tab::signals && signal_armed() == nullptr)
+		hints = {{"List in the panel", "the type of the signal"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
 	else if (m_track_window_open && m_track_tab == track_tab::signals)
 	{
-		hints = {{"LMB by a track", "places the signal on that side, facing the trains which have it on their right"}, {"Press+drag along", "the trains it faces run the way of the drag"}, {"LMB on a signal", "selects it"}, {"Drag a signal", "moves it along the track"}};
+		hints = {{"LMB by a track", "places the signal on that side"}, {"Press+drag along", "the trains it faces run that way"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
 		if (m_signal.selected != 0)
 			hints.push_back({"Del", "removes the selected signal with its event"});
 	}
+	else if (m_track_window_open && m_track_tab == track_tab::turntable && m_turntable.placing)
+		hints = {{"Drag", "turns the bridge"}, {"Release", "places the turntable"}, {"Esc", "cancel"}};
+	else if (m_track_window_open && m_track_tab == track_tab::turntable && m_turntable.table != nullptr)
+		hints = {{"LMB around it", "leads a track out"}, {"LMB on a free end", "fits that track to the turntable"}};
+	else if (m_track_window_open && m_track_tab == track_tab::turntable)
+		hints = {{"LMB", "places a new turntable"}};
 	else if (m_track_window_open && m_track_tab == track_tab::joints)
 		hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
 	else if (m_track_window_open && m_track_tab == track_tab::infra)
 		hints = {{"LMB", "select a path"}};
 	else if (m_track_tab == track_tab::straights && m_straights.tool == 1)
-		hints = {{"LMB on the straight", "where it breaks, then drag the handle to turn the rest"}, {"Esc", "cancel"}};
+		hints = {{"Press+drag on the straight", "breaks it there and turns the rest"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::straights && m_straights.tool == 2)
-		hints = {{"LMB on the straight", "where the shift starts, then drag the handle: sideways the shift, along its length"}, {"Esc", "cancel"}};
+		hints = {{"LMB on the straight", "point 1 of 4: leave the axis"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::straights && m_straights.dragging && m_straights.handle == 2)
 	{
 		auto const offer{straight_parallel_offer(m_straights.drag_line, m_straights.preview_start - m_straights.drag_line.start)};
@@ -3688,19 +3656,18 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		else if (offer.nearby)
 			hints = {{"Near another straight", format(STR_C("snap at %.2f m  (%.1f°)"), offer.spacing, offer.angle)}, {"Esc", "cancel"}};
 		else
-			hints = {{"Drag the diamond", "snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Esc", "cancel"}};
+			hints = {{"Close to another straight", "snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Esc", "cancel"}};
 	}
 	else if (m_track_tab == track_tab::straights && m_straights.current.tracks.empty())
 		hints = {{"LMB on a straight", "its ends and the middle to drag"}, {"LMB on a curve", "its vertex and radius to drag"}};
 	else if (m_track_tab == track_tab::straights)
 	{
-		hints = {{"Drag a square", "moves an end, the curves at it follow"}, {"Drag the diamond", "shifts sideways; close: snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Ctrl+drag", "breaks the straight"}, {"Shift+click x4", "shifts a piece around an obstacle"}, {"Alt+click", "adds another straight to move together"}};
-		gizmo = true;
+		hints = {{"Drag an end", "the curves at it follow"}, {"Drag the middle", "shifts sideways, snaps parallel"}, {"Ctrl+drag", "breaks the straight"}, {"Shift+click x4", "shifts a piece around an obstacle"}, {"Alt+click", "adds another straight to move together"}};
 	}
 	else if (m_track_tab == track_tab::route && m_route.chain.tracks.empty())
 		hints = {{"LMB on a straight", "its ends and the middle to drag"}, {"LMB on a curve", "its vertex and radius to drag"}};
 	else if (m_track_tab == track_tab::route)
-		hints = {{"Drag yellow", "moves a vertex, the curve follows"}, {"Drag green", "changes the radius"}, {"Apply", "writes the design into the tracks"}, {"Esc", "release the vertex"}};
+		hints = {{"Drag a vertex", "the curve follows"}, {"Drag the radius grip", "changes the radius"}, {"Apply", "writes the design into the tracks"}, {"Esc", "release the vertex"}};
 	else if (selected == nullptr)
 		hints = {{"LMB on a track", "selects it"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"RMB on a track", "what can be done with it"}, {"L", "lay a new track"}};
 	else if (m_point_drag.moved)
@@ -3735,6 +3702,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints.push_back({"Ctrl", format("gizmo snaps by %.2f m", m_gizmo_snap)});
 		hints.push_back({"K", "split the path under the cursor"});
 		hints.push_back({"O", "top view"});
+		hints.push_back({"Esc", "back to Select"});
 		if (Global.EditorOrtho)
 			hints.push_back({"Hold the wheel", "pans the view"});
 		hints.push_back({"Ctrl+Z", "undo"});
@@ -3942,7 +3910,6 @@ void editor_mode::draw_track_hints()
 	float const margin{12.0f};
 	float const gap{14.0f};
 	float const pad{4.0f};
-	float const lineheight{ImGui::GetTextLineHeight() + 2.0f * pad + 4.0f};
 	auto const chip = [&](ImVec2 const At, char const *Text, ImU32 const Background, ImU32 const Foreground) {
 		auto const size{ImGui::CalcTextSize(Text)};
 		drawlist->AddRectFilled(ImVec2(At.x, At.y - 2.0f), ImVec2(At.x + size.x + 2.0f * pad, At.y + size.y + 2.0f), Background, 3.0f);
@@ -3952,44 +3919,33 @@ void editor_mode::draw_track_hints()
 	auto const width_of = [&](key_hint const &Hint) { return ImGui::CalcTextSize(Hint.key).x + 2.0f * pad + 5.0f + ImGui::CalcTextSize(Hint.action.c_str()).x; };
 
 	auto hints{track_key_hints(false)};
-	if (hints.size() > 4)
-		hints.resize(4);
-	// in the part of the window the 3d view is seen in, between the docked windows
-	auto const left{editor_ui::view_min().x + margin};
-	auto const bottom{editor_ui::view_max().y};
-	auto const available{(editor_ui::view_max().x - editor_ui::view_min().x) * 0.6f - 2.0f * margin};
 	auto const mode{track_mode_name()};
-	std::vector<std::vector<key_hint const *>> lines(1);
-	float used{ImGui::CalcTextSize(mode.c_str()).x + 2.0f * pad + gap};
-	for (auto const &hint : hints)
+	auto const left{editor_ui::view_min().x + margin};
+	auto const available{editor_ui::view_max().x - editor_ui::view_min().x - 2.0f * margin};
+	float width{ImGui::CalcTextSize(mode.c_str()).x + 2.0f * pad};
+	std::size_t shown{0};
+	for (; shown < std::min<std::size_t>(hints.size(), 3); ++shown)
 	{
-		auto const width{width_of(hint)};
-		if (false == lines.back().empty() && used + gap + width > available)
-		{
-			lines.emplace_back();
-			used = 0.0f;
-		}
-		used += (lines.back().empty() ? 0.0f : gap) + width;
-		lines.back().push_back(&hint);
+		auto const next{width + gap + width_of(hints[shown])};
+		if (next > available)
+			break;
+		width = next;
 	}
-	auto y{bottom - margin - lineheight * static_cast<float>(lines.size()) + pad};
-	for (std::size_t i = 0; i < lines.size(); ++i, y += lineheight)
+	auto const height{ImGui::GetTextLineHeight()};
+	auto const y{editor_ui::view_max().y - margin - height};
+	ImVec2 const from{left - 6.0f, y - pad - 2.0f};
+	ImVec2 const to{left + width + 6.0f, y + height + pad};
+	auto const hovered{io.MousePos.x > from.x - 40.0f && io.MousePos.x < to.x + 40.0f && io.MousePos.y > from.y - 40.0f && io.MousePos.y < to.y + 40.0f};
+	auto const fade = [hovered](ImU32 const Colour) { return hovered ? (Colour & ~IM_COL32_A_MASK) | (((Colour >> IM_COL32_A_SHIFT) & 0xFF) / 4 << IM_COL32_A_SHIFT) : Colour; };
+	drawlist->AddRectFilled(from, to, fade(IM_COL32(0, 0, 0, 160)), 4.0f);
+	auto x{left};
+	x += chip(ImVec2(x, y), mode.c_str(), fade(IM_COL32(60, 140, 230, 235)), fade(IM_COL32(255, 255, 255, 255)));
+	for (std::size_t i = 0; i < shown; ++i)
 	{
-		float width{i == 0 ? ImGui::CalcTextSize(mode.c_str()).x + 2.0f * pad : 0.0f};
-		for (auto const *hint : lines[i])
-			width += (width > 0.0f ? gap : 0.0f) + width_of(*hint);
-		drawlist->AddRectFilled(ImVec2(left - 6.0f, y - pad - 2.0f), ImVec2(left + width + 6.0f, y + lineheight - pad - 2.0f), IM_COL32(0, 0, 0, 160), 4.0f);
-		auto x{left};
-		if (i == 0)
-			x += chip(ImVec2(x, y), mode.c_str(), IM_COL32(60, 140, 230, 235), IM_COL32(255, 255, 255, 255));
-		for (auto const *hint : lines[i])
-		{
-			if (x > left)
-				x += gap;
-			x += chip(ImVec2(x, y), hint->key, IM_COL32(255, 210, 60, 220), IM_COL32(20, 20, 20, 255)) + 5.0f;
-			drawlist->AddText(ImVec2(x, y), IM_COL32(255, 255, 255, 230), hint->action.c_str());
-			x += ImGui::CalcTextSize(hint->action.c_str()).x;
-		}
+		x += gap;
+		x += chip(ImVec2(x, y), hints[i].key, fade(IM_COL32(255, 210, 60, 220)), fade(IM_COL32(20, 20, 20, 255))) + 5.0f;
+		drawlist->AddText(ImVec2(x, y), fade(IM_COL32(255, 255, 255, 230)), hints[i].action.c_str());
+		x += ImGui::CalcTextSize(hints[i].action.c_str()).x;
 	}
 
 	auto readout{track_readout()};
