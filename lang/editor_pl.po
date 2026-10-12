@@ -5185,8 +5185,8 @@ msgstr "Zdigitalizuj wszystkie tory"
 msgid "Every line of the scenery not digitized yet is kept in it with its straights, arcs and transition curves, the way the drawn tracks are kept; the paths stay as they are"
 msgstr "Każda jeszcze niezdigitalizowana linia scenerii zostaje w niej zapisana z prostymi, łukami i krzywymi przejściowymi, tak jak rysowane tory; tory zostają tak, jak leżą"
 
-msgid "Lines digitized: %d, not digitized: %d"
-msgstr "Zdigitalizowane linie: %d, niezdigitalizowane: %d"
+msgid "Lines digitized: %d, paths left out: %d"
+msgstr "Zdigitalizowane linie: %d, pominięte tory: %d"
 
 msgid ", the first: "
 msgstr ", pierwsza: "
@@ -5196,6 +5196,12 @@ msgstr "\nLinia zdigitalizowana: prosta"
 
 msgid "\nThe line is digitized now, curves kept in the scenery: %d"
 msgstr "\nLinia zdigitalizowana, łuki zapisane w scenerii: %d"
+
+msgid "\nThe line is digitized in parts: %d, paths left out: %d"
+msgstr "\nLinia zdigitalizowana w częściach: %d, pominięte tory: %d"
+
+msgid "\nPaths left out of the digitized line: %d"
+msgstr "\nTory pominięte w zdigitalizowanej linii: %d"
 
 msgid "\nThe line can't be digitized: "
 msgstr "\nNie da się zdigitalizować linii: "

@@ -96,9 +96,10 @@ bool agrees(std::vector<stored_element> const &Stored, std::vector<alignment::el
 			made.push_back(describe(e));
 	if (stored.size() != made.size())
 		return false;
+	auto const close = [](double const A, double const B) { return std::abs(A - B) <= 0.01 + 1e-3 * std::abs(A); };
 	for (std::size_t i = 0; i < stored.size(); ++i)
 		if (stored[i].kind != made[i].kind || std::abs(stored[i].chainage - made[i].chainage) > 0.01 || std::abs(stored[i].length - made[i].length) > 0.01 ||
-		    std::abs(stored[i].radius_start - made[i].radius_start) > 0.01 || std::abs(stored[i].radius_end - made[i].radius_end) > 0.01)
+		    false == close(stored[i].radius_start, made[i].radius_start) || false == close(stored[i].radius_end, made[i].radius_end))
 			return false;
 	return true;
 }

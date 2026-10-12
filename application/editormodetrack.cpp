@@ -1649,12 +1649,12 @@ bool editor_mode::route_load(TTrack &Track)
 	m_route.designed = 0;
 	if (false == (m_route.single ? route_from_curve(Track) : route_from_line(Track)))
 		return false;
-	route_read_stored();
+	route_read_stored(Track);
 	return true;
 }
 
 // the design kept in the scenery for the fragment takes the place of the one read from the paths; its chainage is carried on
-void editor_mode::route_read_stored()
+void editor_mode::route_read_stored(TTrack &Track)
 {
 	auto &route{m_route};
 	route.departed = -1;
@@ -1668,14 +1668,23 @@ void editor_mode::route_read_stored()
 	route.departed = alignment_store::departed(chain.tracks, route.departure);
 	auto const loose{std::any_of(chain.tracks.begin(), chain.tracks.end(), [](TTrack const *Track) { return false == alignment_store::on_track(*Track).has_value(); })};
 	bool digitized{false};
+	int parts{0};
+	int skipped{0};
 	std::string failure;
 	if (index < 0 && route.departed < 0 && loose && false == route.single)
 	{
-		if (digitize_chain(chain, &failure))
+		parts = digitize_parts(chain, &failure, skipped);
+		if (parts == 1 && skipped == 0)
 		{
 			alignment_store::settle();
 			index = alignment_store::find(chain.start, chain.end, reversed);
 			digitized = true;
+		}
+		else if (parts > 0)
+		{
+			alignment_store::settle();
+			route_from_line(Track);
+			route.departed = alignment_store::departed(route.chain.tracks, route.departure);
 		}
 	}
 	if (index >= 0 && false == reversed && false == route.single)
@@ -1693,6 +1702,10 @@ void editor_mode::route_read_stored()
 		route.status += STR_C("\nThe line is digitized now, a straight");
 	else if (digitized)
 		route.status += format(STR_C("\nThe line is digitized now, curves kept in the scenery: %d"), route.designed);
+	else if (parts > 0)
+		route.status += format(STR_C("\nThe line is digitized in parts: %d, paths left out: %d"), parts, skipped) + (failure.empty() ? std::string{} : " - " + failure);
+	else if (skipped > 0 && loose && skipped < static_cast<int>(chain.tracks.size()))
+		route.status += format(STR_C("\nPaths left out of the digitized line: %d"), skipped) + (failure.empty() ? std::string{} : " - " + failure);
 	else if (false == failure.empty())
 		route.status += STR_C("\nThe line can't be digitized: ") + failure;
 	else if (route.designed > 0)
@@ -1808,21 +1821,12 @@ void editor_mode::digitize_all()
 		}
 		visited.insert(chain.tracks.begin(), chain.tracks.end());
 		std::string reason;
-		if (digitize_chain(chain, &reason))
-		{
-			++kept;
-			continue;
-		}
-		++failed;
-		if (false == reason.empty())
-		{
-			WriteLog("Editor: digitizing - " + reason, logtype::generic);
-			if (first.empty())
-				first = reason;
-		}
+		kept += digitize_parts(chain, &reason, failed);
+		if (first.empty())
+			first = reason;
 	}
 	alignment_store::settle();
-	auto text{format(STR_C("Lines digitized: %d, not digitized: %d"), kept, failed)};
+	auto text{format(STR_C("Lines digitized: %d, paths left out: %d"), kept, failed)};
 	if (false == first.empty())
 		text += STR_C(", the first: ") + first;
 	WriteLog("Editor: " + text, logtype::generic);
@@ -1831,7 +1835,40 @@ void editor_mode::digitize_all()
 		route_load(*m_route.chain.tracks[m_route.chain.tracks.size() / 2]);
 }
 
-bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *Reason)
+int editor_mode::digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped)
+{
+	auto const count{Chain.tracks.size()};
+	if (count == 0 || std::all_of(Chain.tracks.begin(), Chain.tracks.end(), [](TTrack const *Track) { return alignment_store::on_track(*Track).has_value(); }))
+		return 0;
+	TTrack *culprit{nullptr};
+	std::string reason;
+	if (digitize_chain(Chain, &reason, &culprit))
+		return 1;
+	if (count == 1)
+	{
+		++Skipped;
+		reason = (Chain.tracks.front()->name().empty() ? std::string{"(noname)"} : Chain.tracks.front()->name()) + ": " + reason;
+		WriteLog("Editor: digitizing - " + reason, logtype::generic);
+		if (Reason != nullptr && Reason->empty())
+			*Reason = reason;
+		return 0;
+	}
+	auto const found{static_cast<std::size_t>(std::find(Chain.tracks.begin(), Chain.tracks.end(), culprit) - Chain.tracks.begin())};
+	auto const split{found < count ? std::max<std::size_t>(1, found) : count / 2};
+	int parts{0};
+	for (auto const &[first, last] : {std::pair<std::size_t, std::size_t>{0, split - 1}, std::pair<std::size_t, std::size_t>{split, count - 1}})
+	{
+		editor_track::chain part;
+		std::string error;
+		if (editor_track::find_chain(Chain.tracks[first], Chain.tracks[last], part, error) && part.tracks.size() == last - first + 1)
+			parts += digitize_parts(part, Reason, Skipped);
+		else
+			Skipped += static_cast<int>(last - first + 1);
+	}
+	return parts;
+}
+
+bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *Reason, TTrack **Culprit)
 {
 	if (Chain.tracks.empty())
 		return false;
@@ -1887,6 +1924,8 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 			{
 				if (Reason != nullptr)
 					*Reason = format(STR_C("the straights meet with no curve at path %s"), name(nearest(entry.position)).c_str());
+				if (Culprit != nullptr)
+					*Culprit = nearest(entry.position);
 				return false;
 			}
 			auto vertex{route_vertex_of(entry.shape)};
@@ -1923,6 +1962,8 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	}
 	if (false == fits)
 	{
+		if (Culprit != nullptr)
+			*Culprit = farthest;
 		if (Reason != nullptr)
 			*Reason = closest < std::numeric_limits<double>::max() ? format(STR_C("the curves read from the paths leave path %s by %.2f m"), name(farthest).c_str(), closest) : std::string{STR_C("the paths don't make a line of straights, arcs and transition curves")};
 		return false;

@@ -829,14 +829,15 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool route_from_line(TTrack &Track);
 	alignment::vertex route_vertex_of(editor_track::curve const &Curve) const;
 	bool route_load(TTrack &Track);
-	void route_read_stored();
+	void route_read_stored(TTrack &Track);
 	void route_take_stored(int const Index);
 	void record_switch(TTrack &Track, editor_track::switch_template const &Shape);
 	void record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base);
 	void render_switch_record(TTrack const &Track) const;
 	void route_store();
 	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true);
-	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr);
+	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr, TTrack **Culprit = nullptr);
+	int digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped);
 	void digitize_all();
 	void render_route_stored();
 	void route_update()
