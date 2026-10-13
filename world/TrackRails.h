@@ -20,6 +20,7 @@ double constexpr nose_tip { 0.012 };
 double constexpr middle_angle { 0.35 };
 double constexpr wide_angle { 0.785 };
 
+void forget();
 // how far a wing rail reaches past the crossing point of the rails
 double wing_reach( double const Slope );
 double check_length( double const Slope );

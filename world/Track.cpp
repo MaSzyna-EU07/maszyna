@@ -171,10 +171,14 @@ void TIsolated::Modify(int i, TDynamicObject *o)
 };
 
 // tworzenie nowego odcinka ruchu
-TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {}
+TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {
+
+    track_rails::forget();
+}
 
 TTrack::~TTrack()
 { // likwidacja odcinka
+    track_rails::forget();
 	if( eType == tt_Cross ) {
 		delete SwitchExtension->vPoints; // skrzyżowanie może mieć punkty
 	}
@@ -1359,6 +1363,7 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 // wypełnianie tablic VBO
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
+    track_rails::forget();
     Geometry1.clear();
     Geometry2.clear();
     GeometryCut1.clear();
