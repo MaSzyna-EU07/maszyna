@@ -2633,6 +2633,53 @@ TTrack::rail_dimensions() const {
             result.head = std::max( result.head, static_cast<double>( point.x ) );
         }
     }
+    std::vector<std::size_t> heads, lips;
+    for( std::size_t i = 0; i < count; ++i ) {
+        auto const &point { profile[ i ].position };
+        if( point.y > top - 0.015 ) {
+            ( point.x < -0.02 ? lips : heads ).push_back( i );
+        }
+    }
+    if( heads.empty() || lips.empty() ) {
+        return result;
+    }
+    auto const first { heads.back() < lips.front() ? heads.back() : lips.back() };
+    auto const last { heads.back() < lips.front() ? lips.front() : heads.front() };
+    if( first >= last || ( heads.back() > lips.front() && lips.back() > heads.front() ) ) {
+        return result;
+    }
+    auto groove { 1e9 };
+    for( auto i { first + 1 }; i < last; ++i ) {
+        groove = std::min( groove, static_cast<double>( profile[ i ].position.y ) );
+    }
+    if( groove > top ) {
+        return result;
+    }
+    result.grooved = true;
+    result.groove = groove;
+    result.lip = -1e9;
+    result.liptop = -1e9;
+    for( auto const i : lips ) {
+        result.lip = std::max( result.lip, static_cast<double>( profile[ i ].position.x ) );
+        result.liptop = std::max( result.liptop, static_cast<double>( profile[ i ].position.y ) );
+    }
+    result.rim = 1e9;
+    result.crown = -1e9;
+    auto const reach = [&]( double const X ) {
+        result.rim = std::min( result.rim, X );
+        result.crown = std::max( result.crown, X ); };
+    for( std::size_t i = 0; i < count; ++i ) {
+        auto const &point { profile[ i ].position };
+        if( point.y > groove + 1e-4 ) {
+            reach( point.x );
+        }
+        if( i + 1 < count ) {
+            auto const &next { profile[ i + 1 ].position };
+            if( ( point.y - groove ) * ( next.y - groove ) < 0.0 ) {
+                reach( point.x + ( next.x - point.x ) * ( groove - point.y ) / ( next.y - point.y ) );
+            }
+        }
+    }
     return result;
 }
 
