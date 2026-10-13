@@ -1212,7 +1212,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
         for( std::size_t i = 0; i < part.edge.size() && i < part.gauge.size(); ++i ) {
             auto const low { std::min( part.edge[ i ].y, part.gauge[ i ].y ) };
             auto const high { std::max( part.edge[ i ].y, part.gauge[ i ].y ) };
-            if( low < size.head && high > 0.0 ) {
+            if( low - tread_fade < size.head && high + tread_fade > 0.0 ) {
                 from = std::min( from, part.edge[ i ].x );
                 to = std::max( to, part.edge[ i ].x );
             }
@@ -1295,12 +1295,12 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 acute( plan, crossing.at, toward, slope,
                     wing_extension( *this, checks, crossing.path, crossing.side, crossing.at, toward, slope, *crossing.track, crossing.otherpath, crossing.otherside, crossing.otherat, crossing.aligned ? -toward : toward ), size );
                 auto const nose { toward < 0.0 ? plan.cuts.back().start : plan.cuts.back().end };
-                auto const shared { crossing.at - toward * ( rolled_band + size.head ) / slope };
+                auto const shared { crossing.at - toward * ( rolled_band + size.head + tread_fade ) / slope };
                 tread( crossing.path, crossing.side, { std::min( nose, shared ), std::max( nose, shared ) }, *crossing.track, crossing.otherpath, toward > 0.0 ? 1 : -1, crossing.otherside );
             }
             else {
                 obtuse( plan, crossing.at, crossing.into, size );
-                auto const reach { ( rolled_band + size.head ) / std::max( std::tan( crossing.angle ), 0.01 ) + 0.2 };
+                auto const reach { ( rolled_band + size.head + tread_fade ) / std::max( std::tan( crossing.angle ), 0.01 ) + 0.2 };
                 tread( crossing.path, crossing.side, { crossing.at - reach, crossing.at + reach }, *crossing.track, crossing.otherpath, 0, crossing.otherside );
             }
         }
@@ -1421,7 +1421,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 acute( plans[ path ][ frog.side[ path ] > 0 ], frog.at[ path ], -1.0, slope,
                     wing_extension( *this, checks, path, frog.side[ path ], frog.at[ path ], -1.0, slope, *this, 1 - path, frog.side[ 1 - path ], frog.at[ 1 - path ], 1.0 ), size );
                 auto const nose { plans[ path ][ frog.side[ path ] > 0 ].cuts.back().start };
-                auto const shared { frog.at[ path ] + ( rolled_band + size.head ) / slope };
+                auto const shared { frog.at[ path ] + ( rolled_band + size.head + tread_fade ) / slope };
                 tread( path, frog.side[ path ], { std::min( nose, shared ), std::max( nose, shared ) }, *this, 1 - path, -1, frog.side[ 1 - path ] );
             }
         }
@@ -1506,6 +1506,14 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     auto const &treads { Layout.treads[ Path ][ Side > 0 ] };
     material_handle current { null_handle };
     std::vector<material_handle> tints;
+    static auto const marked { std::getenv( "EU07_EDITOR_TREADS" ) != nullptr };
+    auto const paint = [&]( material_handle const Material, glm::vec3 const &Colour ) {
+        auto const tinted { tint_material( Material, Colour ) };
+        if( tinted != Material ) {
+            tints.push_back( tinted );
+        }
+        return tinted; };
+    std::vector<glm::dvec2> const unramped;
     auto const sink = [&]( bool const Matte ) -> geometryhandle_sequence & {
         if( current == null_handle ) {
             return Matte ? Cuts : Geometry;
@@ -1605,6 +1613,33 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     }
     auto const strip = [&]( std::size_t const First, std::size_t const Last ) {
         return gfx::vertex_array( Profile.begin() + First, Profile.begin() + Last + 1 ); };
+    auto const shifted = []( std::vector<glm::dvec2> Knots, double const Lateral ) {
+        for( auto &knot : Knots ) {
+            knot.y += Lateral;
+        }
+        return Knots; };
+    auto const crossings = [&]( std::vector<glm::dvec2> const &A, std::vector<glm::dvec2> const &B, double const Start, double const End, double const Margin, std::vector<double> &Splits ) {
+        if( A.empty() || B.empty() ) {
+            return;
+        }
+        std::vector<double> stations;
+        for( auto const *knots : { &A, &B } ) {
+            for( auto const &knot : *knots ) {
+                stations.push_back( knot.x );
+            }
+        }
+        std::sort( stations.begin(), stations.end() );
+        for( std::size_t i = 1; i < stations.size(); ++i ) {
+            auto const before { level( A, stations[ i - 1 ] ) - level( B, stations[ i - 1 ] ) };
+            auto const after { level( A, stations[ i ] ) - level( B, stations[ i ] ) };
+            if( before * after < 0.0 ) {
+                auto const distance { stations[ i - 1 ] + ( stations[ i ] - stations[ i - 1 ] ) * before / ( before - after ) };
+                if( distance > Start + Margin && distance < End - Margin ) {
+                    Splits.push_back( distance );
+                }
+            }
+        }
+    };
     auto const running = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Rolled, bool const Capstart, bool const Capend ) {
         gfx::vertex_array vertices;
         if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner ) ) {
@@ -1619,37 +1654,39 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             low = std::min( low, static_cast<double>( Side * point.position.x - halfwidth ) );
             high = std::max( high, static_cast<double>( Side * point.position.x - halfwidth ) );
         }
-        std::vector<glm::dvec2> inner;
-        for( auto const &knot : Rolled ) {
-            inner.emplace_back( knot.x, knot.y - blend );
-        }
+        auto const inner { shifted( Rolled, -blend ) };
         std::vector<double> splits { Start, End };
-        for( auto const edge : { low, high, low + blend, high + blend } ) {
-            for( std::size_t i = 1; i < Rolled.size(); ++i ) {
-                auto const &a { Rolled[ i - 1 ] };
-                auto const &b { Rolled[ i ] };
-                if( ( a.y - edge ) * ( b.y - edge ) < 0.0 ) {
-                    auto const distance { a.x + ( edge - a.y ) / ( b.y - a.y ) * ( b.x - a.x ) };
-                    if( distance > Start && distance < End ) {
-                        splits.push_back( distance );
-                    }
-                }
+        std::vector<glm::dvec2> const lowline { { Start, low }, { End, low } };
+        std::vector<glm::dvec2> const highline { { Start, high }, { End, high } };
+        for( auto const *knots : { &Rolled, &inner } ) {
+            for( auto const *limit : { &lowline, &highline, &Extents, &Inner } ) {
+                crossings( *knots, *limit, Start, End, 0.0, splits );
             }
         }
         std::sort( splits.begin(), splits.end() );
         auto const shiny { bound( Extents, inner, true ) };
         auto const blended { bound( Extents, Rolled, true ) };
         for( std::size_t i = 1; i < splits.size(); ++i ) {
-            auto const reach { level( Rolled, 0.5 * ( splits[ i - 1 ] + splits[ i ] ) ) };
-            if( reach - blend > low ) {
+            auto const middle { 0.5 * ( splits[ i - 1 ] + splits[ i ] ) };
+            auto const reach { level( Rolled, middle ) };
+            auto const least { std::max( low, Inner.empty() ? low : level( Inner, middle ) ) };
+            auto const most { std::min( high, Extents.empty() ? high : level( Extents, middle ) ) };
+            auto const shown = [&]( double const Lowest, double const Highest ) {
+                return Highest > Lowest + 1e-6 && Highest > least && Lowest < most; };
+            if( shown( -1e9, reach - blend ) ) {
                 piece( splits[ i - 1 ], splits[ i ], Offsets, shiny, false, false, top, true, Inner );
             }
-            if( reach > low && reach - blend < high ) {
-                piece( splits[ i - 1 ], splits[ i ], Offsets, blended, false, false, top, false, bound( inner, Inner, false ), Rolled );
+            auto const plain { current };
+            auto const own { current == null_handle ? rail_material( Path ) : current };
+            if( shown( reach - blend, reach ) ) {
+                current = ( marked ? paint( own, { 1.f, 1.f, 0.f } ) : plain );
+                piece( splits[ i - 1 ], splits[ i ], Offsets, blended, false, false, top, false, bound( inner, Inner, false ), marked ? unramped : Rolled );
             }
-            if( reach < high ) {
+            if( shown( reach, 1e9 ) ) {
+                current = ( marked ? paint( own, { 1.f, 0.f, 1.f } ) : plain );
                 piece( splits[ i - 1 ], splits[ i ], Offsets, Extents, false, false, top, false, bound( Rolled, Inner, false ) );
             }
+            current = plain;
         }
     };
     auto const treaded = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, bool const Capstart, bool const Capend, rail_tread const &Span ) {
@@ -1671,19 +1708,13 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         auto const &upper { Span.below ? Span.edge : Span.gauge };
         auto const own { rail_material( Path ) };
         auto const colour { 0.5f * ( tread_colour( Span.material, tread_band() ) + tread_colour( own, tread_band() ) ) };
-        auto const tint = [&]( material_handle const Material ) {
-            auto const tinted { tint_material( Material, colour ) };
-            if( tinted != Material ) {
-                tints.push_back( tinted );
-            }
-            return tinted; };
-        auto const owntint { tint( own ) };
-        auto const sharedtint { tint( Span.material ) };
-        auto const shifted = []( std::vector<glm::dvec2> Knots, double const Lateral ) {
-            for( auto &knot : Knots ) {
-                knot.y += Lateral;
-            }
-            return Knots; };
+        auto const tint = [&]( material_handle const Material, glm::vec3 const &Mark ) {
+            return paint( Material, marked ? Mark : colour ); };
+        auto const owntint { tint( own, { 1.f, 0.f, 0.f } ) };
+        auto const sharedtint { tint( Span.material, { 0.f, 1.f, 0.f } ) };
+        auto const shared { marked ? tint( Span.material, { 0.f, 0.f, 1.f } ) : Span.material };
+        auto const ramp = [&]( std::vector<glm::dvec2> const &Knots ) -> std::vector<glm::dvec2> const & {
+            return marked ? unramped : Knots; };
         std::vector<glm::dvec2> centre;
         {
             std::vector<double> stations;
@@ -1702,20 +1733,14 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         auto const lowfade { bound( shifted( lower, tread_fade ), centre, true ) };
         auto const highfade { bound( shifted( upper, -tread_fade ), centre, false ) };
         std::vector<double> splits { Start, End };
+        std::vector<glm::dvec2> const lowline { { Start, low }, { End, low } };
+        std::vector<glm::dvec2> const highline { { Start, high }, { End, high } };
         for( auto const *knots : { &lower, &upper, &lowfade, &highfade, &beneath, &beyond } ) {
-            for( auto const edge : { low, high } ) {
-                for( std::size_t i = 1; i < knots->size(); ++i ) {
-                    auto const &a { ( *knots )[ i - 1 ] };
-                    auto const &b { ( *knots )[ i ] };
-                    if( ( a.y - edge ) * ( b.y - edge ) < 0.0 ) {
-                        auto const distance { a.x + ( edge - a.y ) / ( b.y - a.y ) * ( b.x - a.x ) };
-                        if( distance > Start + 0.001 && distance < End - 0.001 ) {
-                            splits.push_back( distance );
-                        }
-                    }
-                }
+            for( auto const *limit : { &lowline, &highline, &Extents, &Inner } ) {
+                crossings( *knots, *limit, Start, End, 0.001, splits );
             }
         }
+        crossings( shifted( lower, 2.0 * tread_fade ), upper, Start, End, 0.001, splits );
         std::sort( splits.begin(), splits.end() );
         for( std::size_t i = 1; i < splits.size(); ++i ) {
             auto const a { splits[ i - 1 ] };
@@ -1725,31 +1750,35 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             auto const to { level( upper, middle ) };
             auto const inner { level( lowfade, middle ) };
             auto const outer { level( highfade, middle ) };
-            if( from - tread_fade > low ) {
+            auto const least { std::max( low, Inner.empty() ? low : level( Inner, middle ) ) };
+            auto const most { std::min( high, Extents.empty() ? high : level( Extents, middle ) ) };
+            auto const shown = [&]( double const Lowest, double const Highest ) {
+                return Highest > Lowest + 1e-6 && Highest > least && Lowest < most; };
+            if( shown( -1e9, from - tread_fade ) ) {
                 current = null_handle;
                 piece( a, b, Offsets, bound( Extents, beneath, true ), false, false, top, true, Inner );
             }
-            if( from > low && from - tread_fade < high ) {
+            if( shown( from - tread_fade, from ) ) {
                 current = owntint;
-                piece( a, b, Offsets, bound( Extents, lower, true ), false, false, top, false, bound( Inner, beneath, false ), lower, false, 0.f, -1.f, tread_fade );
+                piece( a, b, Offsets, bound( Extents, lower, true ), false, false, top, false, bound( Inner, beneath, false ), ramp( lower ), false, 0.f, -1.f, tread_fade );
             }
-            if( inner > low && from < high ) {
+            if( shown( from, inner ) ) {
                 current = sharedtint;
-                piece( a, b, Offsets, bound( Extents, lowfade, true ), false, false, top, false, bound( Inner, lower, false ), lower, false, 0.f, -1.f, -tread_fade );
+                piece( a, b, Offsets, bound( Extents, lowfade, true ), false, false, top, false, bound( Inner, lower, false ), ramp( lower ), false, 0.f, -1.f, -tread_fade );
             }
-            if( outer > low && inner < high ) {
-                current = Span.material;
-                piece( a, b, Offsets, bound( Extents, highfade, true ), false, false, top, true, bound( Inner, lowfade, false ) );
+            if( shown( inner, outer ) ) {
+                current = shared;
+                piece( a, b, Offsets, bound( Extents, highfade, true ), false, false, top, false == marked, bound( Inner, lowfade, false ) );
             }
-            if( to > low && outer < high ) {
+            if( shown( outer, to ) ) {
                 current = sharedtint;
-                piece( a, b, Offsets, bound( Extents, upper, true ), false, false, top, false, bound( Inner, highfade, false ), upper, false, 0.f, -1.f, tread_fade );
+                piece( a, b, Offsets, bound( Extents, upper, true ), false, false, top, false, bound( Inner, highfade, false ), ramp( upper ), false, 0.f, -1.f, tread_fade );
             }
-            if( to + tread_fade > low && to < high ) {
+            if( shown( to, to + tread_fade ) ) {
                 current = owntint;
-                piece( a, b, Offsets, bound( Extents, beyond, true ), false, false, top, false, bound( Inner, upper, false ), upper, false, 0.f, -1.f, -tread_fade );
+                piece( a, b, Offsets, bound( Extents, beyond, true ), false, false, top, false, bound( Inner, upper, false ), ramp( upper ), false, 0.f, -1.f, -tread_fade );
             }
-            if( to + tread_fade < high ) {
+            if( shown( to + tread_fade, 1e9 ) ) {
                 current = null_handle;
                 piece( a, b, Offsets, Extents, false, false, top, true, bound( Inner, beyond, false ) );
             }
