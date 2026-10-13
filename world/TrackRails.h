@@ -34,4 +34,7 @@ gfx::userdata_array worn_userdata( std::size_t const Count );
 // the ends of rails left open: at track ends with nothing joined, blade tips, the gap of a frog
 void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry );
 
+glm::dvec3 rail_point( TTrack const &Track, int const Path, int const Side, double const Distance, double const Lateral );
+void rail_offset( TTrack const &Track, int const Path, int const Side, glm::dvec3 const &Point, double &Distance, double &Lateral );
+
 } // namespace track_rails
