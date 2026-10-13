@@ -1530,83 +1530,32 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                         Geometry.emplace_back( GfxRenderer->Insert( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
                     }
                 };
-                if (SwitchExtension->RightSwitch)
-                { // nowa wersja z SPKS, ale odwrotnie lewa/prawa
-                    gfx::vertex_array vertices;
-                    if( m_material1 ) {
-                        auto const texturelength { texture_length( m_material1 ) };
-                        // left blade
-                        // composed from two parts: transition from blade to regular rail, and regular rail
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { SwitchExtension->fOffset2, SwitchExtension->fOffset2 / 2 } );
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { SwitchExtension->fOffset2 / 2, 0.f } );
-                        cut_faces( vertices, nnumPts, true, false, GeometryCut1 );
-                        Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // fixed parts
-                        fixed_rail( 0, rpts1, 1, texturelength, Geometry1, GeometryCut1 );
-                        if( jointlength > 0 ) {
-                            // part of the diverging rail touched by wheels of vehicle going straight
-                            SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, 0, jointlength );
-                            Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                            vertices.clear();
-                        }
-                        // other rail, full length
-                        whole_rail( 0, rpts2, -1, texturelength, Geometry1, GeometryCut1 );
+                gfx::vertex_array vertices;
+                for( int path = 0; path < 2; ++path ) {
+                    auto const material { path ? m_material2 : m_material1 };
+                    if( material == 0 ) {
+                        continue;
                     }
-                    if( m_material2 ) {
-                        auto const texturelength { texture_length( m_material2 ) };
-                        // right blade
-                        // composed from two parts: transition from blade to regular rail, and regular rail
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -fMaxOffset + SwitchExtension->fOffset1, ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2 } );
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2, 0.f } );
-                        cut_faces( vertices, nnumPts, true, false, GeometryCut2 );
-                        Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
+                    auto &geometry { path ? Geometry2 : Geometry1 };
+                    auto &cuts { path ? GeometryCut2 : GeometryCut1 };
+                    auto const texturelength { texture_length( material ) };
+                    auto const side { blade_side( path ) };
+                    auto const &rail { side > 0 ? rpts1 : rpts2 };
+                    loft_blade( path, rail, side > 0 ? rpts3 : rpts4, texturelength, vertices );
+                    cut_faces( vertices, nnumPts, true, false, cuts );
+                    geometry.emplace_back( GfxRenderer->Insert( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
+                    vertices.clear();
+                    // fixed parts
+                    // szyna za iglicą
+                    fixed_rail( path, rail, side, texturelength, geometry, cuts );
+                    if( path == 0 && jointlength > 0 ) {
+                        // part of the diverging rail touched by wheels of vehicle going straight
+                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rail, false, texturelength, 1.0, 0, jointlength );
+                        geometry.emplace_back( GfxRenderer->Insert( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
                         vertices.clear();
-                        // fixed parts
-                        fixed_rail( 1, rpts2, -1, texturelength, Geometry2, GeometryCut2 );
-                        // diverging rail, potentially minus part touched by wheels of vehicle going straight
-                        whole_rail( 1, rpts1, 1, texturelength, Geometry2, GeometryCut2 );
                     }
-                }
-                else
-                { // lewa działa lepiej niż prawa
-                    gfx::vertex_array vertices;
-                    if( m_material1 ) {
-                        auto const texturelength { texture_length( m_material1 ) };
-                        // right blade
-                        // composed from two parts: transition from blade to regular rail, and regular rail
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -SwitchExtension->fOffset2, -SwitchExtension->fOffset2 / 2 } );
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { -SwitchExtension->fOffset2 / 2, 0.f } );
-                        cut_faces( vertices, nnumPts, true, false, GeometryCut1 );
-                        Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // fixed parts
-                        // prawa szyna za iglicą
-                        fixed_rail( 0, rpts2, -1, texturelength, Geometry1, GeometryCut1 );
-                        if( jointlength > 0 ) {
-                            // part of the diverging rail touched by wheels of vehicle going straight
-                            SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, 0, jointlength );
-                            Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                            vertices.clear();
-                        }
-                        // other rail, full length
-                        whole_rail( 0, rpts1, 1, texturelength, Geometry1, GeometryCut1 );
-                    }
-                    if( m_material2 ) {
-                        auto const texturelength { texture_length( m_material2 ) };
-                        // left blade
-                        // composed from two parts: transition from blade to regular rail, and regular rail
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { fMaxOffset - SwitchExtension->fOffset1, ( fMaxOffset - SwitchExtension->fOffset1 ) / 2 } );
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { ( fMaxOffset - SwitchExtension->fOffset1 ) / 2, 0.f } );
-                        cut_faces( vertices, nnumPts, true, false, GeometryCut2 );
-                        Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // fixed parts
-                        // lewa szyna za iglicą
-                        fixed_rail( 1, rpts1, 1, texturelength, Geometry2, GeometryCut2 );
-                        // diverging rail, potentially minus part touched by wheels of vehicle going straight
-                        whole_rail( 1, rpts2, -1, texturelength, Geometry2, GeometryCut2 );
-                    }
+                    // other rail, full length; on the diverging path potentially minus part touched by wheels of vehicle going straight
+                    whole_rail( path, side > 0 ? rpts2 : rpts1, -side, texturelength, geometry, cuts );
                 }
             }
             // auto-generated switch trackbed
@@ -2098,6 +2047,20 @@ void TTrack::RaAnimListAdd(TTrack *t)
     }
 };
 
+int TTrack::blade_side( int const Path ) const {
+
+    return ( SwitchExtension->RightSwitch == ( Path == 0 ) ? 1 : -1 );
+}
+
+void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::vertex_array const &Blade, float const Texturelength, gfx::vertex_array &Vertices ) const {
+
+    auto const offset { blade_side( Path ) * ( Path == 0 ? SwitchExtension->fOffset2 : fMaxOffset - SwitchExtension->fOffset1 ) };
+    auto const bladelength { track_rails::blade_steps( *this ) };
+    // composed from two parts: transition from blade to regular rail, and regular rail
+    SwitchExtension->Segments[ Path ]->RenderLoft( Vertices, m_origin, Blade, true, Texturelength, 1.0, 0, bladelength / 2, { offset, offset / 2 } );
+    SwitchExtension->Segments[ Path ]->RenderLoft( Vertices, m_origin, Rail, false, Texturelength, 1.0, bladelength / 2, bladelength, { offset / 2, 0.f } );
+}
+
 TTrack * TTrack::RaAnimate()
 { // wykonanie rekurencyjne animacji, wywoływane przed wyświetleniem sektora
     // zwraca wskaźnik toru wymagającego dalszej animacji
@@ -2143,7 +2106,6 @@ TTrack * TTrack::RaAnimate()
             gfx::vertex_array rpts3, rpts4;
             create_track_blade_profile( rpts3, rpts4 );
             gfx::vertex_array vertices;
-            auto const bladelength { track_rails::blade_steps( *this ) };
             auto const nnumPts { track_rail_profile( m_profile1.second ).size() / 2 };
             auto const replace_blade = [&]( geometryhandle_sequence const &Geometry, geometryhandle_sequence const &Cuts ) {
                 if( false == Cuts.empty() ) {
@@ -2154,42 +2116,14 @@ TTrack * TTrack::RaAnimate()
                 }
                 GfxRenderer->Replace( vertices, empty_userdata, Geometry[ 0 ], GL_TRIANGLE_STRIP );
                 vertices.clear(); };
-            if (SwitchExtension->RightSwitch)
-            { // nowa wersja z SPKS, ale odwrotnie lewa/prawa
-                if( m_material1 ) {
-                    auto const texturelength { texture_length( m_material1 ) };
-                    // left blade
-                    // composed from two parts: transition from blade to regular rail, and regular rail
-                    SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { SwitchExtension->fOffset2, SwitchExtension->fOffset2 / 2 } );
-                    SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { SwitchExtension->fOffset2 / 2, 0.f } );
-                    replace_blade( Geometry1, GeometryCut1 );
+            for( int path = 0; path < 2; ++path ) {
+                auto const material { path ? m_material2 : m_material1 };
+                if( material == 0 ) {
+                    continue;
                 }
-                if( m_material2 ) {
-                    auto const texturelength { texture_length( m_material2 ) };
-                    // right blade
-                    // composed from two parts: transition from blade to regular rail, and regular rail
-                    SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -fMaxOffset + SwitchExtension->fOffset1, ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2 } );
-                    SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2, 0.f } );
-                    replace_blade( Geometry2, GeometryCut2 );
-                }
-            }
-            else { // lewa działa lepiej niż prawa
-                if( m_material1 ) {
-                    auto const texturelength { texture_length( m_material1 ) };
-                    // right blade
-                    // composed from two parts: transition from blade to regular rail, and regular rail
-                    SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -SwitchExtension->fOffset2, -SwitchExtension->fOffset2 / 2 } );
-                    SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { -SwitchExtension->fOffset2 / 2, 0.f } );
-                    replace_blade( Geometry1, GeometryCut1 );
-                }
-                if( m_material2 ) {
-                    auto const texturelength { texture_length( m_material2 ) };
-                    // left blade
-                    // composed from two parts: transition from blade to regular rail, and regular rail
-                    SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { fMaxOffset - SwitchExtension->fOffset1, ( fMaxOffset - SwitchExtension->fOffset1 ) / 2 } );
-                    SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { ( fMaxOffset - SwitchExtension->fOffset1 ) / 2, 0.f } );
-                    replace_blade( Geometry2, GeometryCut2 );
-                }
+                auto const side { blade_side( path ) };
+                loft_blade( path, side > 0 ? rpts1 : rpts2, side > 0 ? rpts3 : rpts4, texture_length( material ), vertices );
+                replace_blade( path ? Geometry2 : Geometry1, path ? GeometryCut2 : GeometryCut1 );
             }
         }
     }

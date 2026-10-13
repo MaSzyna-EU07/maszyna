@@ -469,6 +469,8 @@ private:
     rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank );
     // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
     bool lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
+    int blade_side( int const Path ) const;
+    void loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::vertex_array const &Blade, float const Texturelength, gfx::vertex_array &Vertices ) const;
 // members
     static profiles_array m_profiles; // shared database of path element profiles
     static profiles_map m_profilesmap;
