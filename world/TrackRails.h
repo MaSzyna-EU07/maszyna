@@ -16,7 +16,9 @@ namespace track_rails {
 double constexpr flangeway { 0.045 };
 double constexpr blend { 0.015 };
 double constexpr tread_fade { 0.02 };
-double constexpr rolled_band { 0.1 };
+double constexpr wheel_width { 0.14 };
+double constexpr back_to_back { 1.36 };
+double constexpr rolled_band { wheel_width - ( 1.435 - back_to_back ) / 2.0 };
 double constexpr nose_tip { 0.012 };
 double constexpr middle_angle { 0.35 };
 double constexpr wide_angle { 0.785 };
