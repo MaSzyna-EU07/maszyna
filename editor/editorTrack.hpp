@@ -49,6 +49,7 @@ class editor_track
 		material_handle material1{0};
 		material_handle material2{0};
 		material_handle material3{0};
+		bool frogs{false};
 		float texlength{4.f};
 		float texheight{0.6f};
 		float texwidth{0.9f};
