@@ -558,10 +558,12 @@ std::vector<TTrack::rail_crossing> TTrack::rail_crossings( bool const Joined ) {
             for( int neighbourpath = 0; neighbourpath < ( neighbour->eType == tt_Switch ? 2 : 1 ); ++neighbourpath ) {
                 auto const &neighboursegment { path_segment( *neighbour, neighbourpath ) };
                 auto const neighbourlength { neighboursegment.GetLength() };
-                auto const atstart { glm::length( neighboursegment.FastGetPoint_0() - joint ) < 0.5 };
-                if( false == atstart && glm::length( neighboursegment.FastGetPoint_1() - joint ) >= 0.5 ) {
+                auto const tostart { glm::length( neighboursegment.FastGetPoint_0() - joint ) };
+                auto const toend { glm::length( neighboursegment.FastGetPoint_1() - joint ) };
+                if( std::min( tostart, toend ) > 0.05 ) {
                     continue;
                 }
+                auto const atstart { tostart <= toend };
                 auto const same { atstart == ( end == 1 ) };
                 for( auto const &crossing : theirs ) {
                     if( crossing.path != neighbourpath || crossing.track == this ) {
@@ -1162,13 +1164,28 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         if( A.empty() || B.empty() ) {
             return ( A.empty() ? B : A );
         }
-        std::vector<glm::dvec2> result;
+        std::vector<double> stations;
         for( auto const *knots : { &A, &B } ) {
             for( auto const &knot : *knots ) {
-                result.emplace_back( knot.x, std::min( level( A, knot.x ), level( B, knot.x ) ) );
+                stations.push_back( knot.x );
             }
         }
-        std::sort( result.begin(), result.end(), []( glm::dvec2 const &L, glm::dvec2 const &R ) { return L.x < R.x; } );
+        std::sort( stations.begin(), stations.end() );
+        auto const count { stations.size() };
+        for( std::size_t i = 1; i < count; ++i ) {
+            auto const a { stations[ i - 1 ] };
+            auto const b { stations[ i ] };
+            auto const before { level( A, a ) - level( B, a ) };
+            auto const after { level( A, b ) - level( B, b ) };
+            if( before * after < 0.0 ) {
+                stations.push_back( a + ( b - a ) * before / ( before - after ) );
+            }
+        }
+        std::sort( stations.begin(), stations.end() );
+        std::vector<glm::dvec2> result;
+        for( auto const station : stations ) {
+            result.emplace_back( station, std::min( level( A, station ), level( B, station ) ) );
+        }
         return result; };
     // the running surface on top of the head is split along the edge of the wheel treads, the part of it out of their reach goes matte; the rest of the profile and the end faces are laid whole
     std::size_t topfirst { Profile.size() };
