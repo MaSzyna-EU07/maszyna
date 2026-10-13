@@ -3327,6 +3327,32 @@ opengl_renderer::Render( scene::basic_cell::path_sequence::const_iterator First,
             }
         }
     }
+    // cut faces of rails
+    if( ( m_renderpass.draw_mode == rendermode::color )
+     || ( m_renderpass.draw_mode == rendermode::reflections ) ) {
+        for( auto first { First }; first != Last; ++first ) {
+
+            auto const track { *first };
+
+            if( false == track->m_visible ) {
+                continue;
+            }
+            for( auto const &cuts : { std::make_pair( track->m_materialcut1, &track->GeometryCut1 ), std::make_pair( track->m_materialcut2, &track->GeometryCut2 ) } ) {
+                if( ( cuts.first == null_handle )
+                 || ( cuts.second->empty() ) ) {
+                    continue;
+                }
+                if( track->eEnvironment != e_flat ) {
+                    setup_environment_light( track->eEnvironment );
+                }
+                Bind_Material( cuts.first );
+                m_geometry.draw( std::begin( *cuts.second ), std::end( *cuts.second ) );
+                if( track->eEnvironment != e_flat ) {
+                    setup_environment_light();
+                }
+            }
+        }
+    }
     // post-render reset
     switch( m_renderpass.draw_mode ) {
         case rendermode::shadows:

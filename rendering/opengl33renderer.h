@@ -78,6 +78,8 @@ class opengl33_renderer : public gfx_renderer {
     // material methods
     material_handle
         Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
+    material_handle
+        Matte_Material( material_handle const Material ) override;
     void
         Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
     IMaterial const *

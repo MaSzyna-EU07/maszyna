@@ -142,6 +142,9 @@ public:
     // material described by provided text (the content of a .mat file), not kept in a file. returns: handle to the material or null_handle
     material_handle
         create_from_text( std::string const &Name, std::string const &Definition );
+    // copy of provided material with its specular highlights and reflections damped. returns: handle to the copy, made once per material
+    material_handle
+        create_matte( material_handle const Material );
     opengl_material const &
         material( material_handle const Material ) const { return m_materials[ Material ]; }
     opengl_material &
@@ -170,6 +173,7 @@ private:
 	  // members:
     material_sequence m_materials;
     index_map m_materialmappings;
+    std::unordered_map<material_handle, material_handle> m_mattes;
 };
 
 //---------------------------------------------------------------------------

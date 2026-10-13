@@ -662,6 +662,54 @@ material_manager::create_from_text( std::string const &Name, std::string const &
     return materialhandle;
 }
 
+material_handle
+material_manager::create_matte( material_handle const Material ) {
+
+    if( Material == null_handle || Material >= m_materials.size() ) {
+        return Material;
+    }
+    auto const lookup { m_mattes.find( Material ) };
+    if( lookup != m_mattes.end() ) {
+        return lookup->second;
+    }
+    auto const &source { m_materials[ Material ] };
+    opengl_material matte;
+    matte.textures = source.textures;
+    matte.texture_variants = source.texture_variants;
+    matte.params = source.params;
+    matte.params_state = source.params_state;
+    matte.shader = source.shader;
+    matte.opacity = source.opacity;
+    matte.selfillum = source.selfillum;
+    matte.glossiness = 0.1f;
+    matte.shadow_rank = source.shadow_rank;
+    matte.name = source.name + ":matte";
+    matte.size = source.size;
+    matte.is_good = source.is_good;
+    matte.path = source.path;
+    if( matte.shader ) {
+        for( auto const &[ key, value ] : std::vector<std::pair<std::string, glm::vec4>>{ { "weathering", glm::vec4{ 1.f } } } ) {
+            auto const entry { matte.shader->param_conf.find( key ) };
+            if( entry == matte.shader->param_conf.end() ) {
+                continue;
+            }
+            for( std::size_t i = 0; i < entry->second.size; ++i ) {
+                matte.params[ entry->second.location ][ entry->second.offset + i ] = value[ static_cast<glm::length_t>( i ) ];
+            }
+            matte.params_state.erase(
+                std::remove_if(
+                    std::begin( matte.params_state ), std::end( matte.params_state ),
+                    [&]( gl::shader::param_entry const &State ) {
+                        return State.location == entry->second.location && State.offset == entry->second.offset; } ),
+                std::end( matte.params_state ) );
+        }
+    }
+    auto const mattehandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( matte ) );
+    m_mattes.emplace( Material, mattehandle );
+    return mattehandle;
+}
+
 void
 material_manager::on_weather_change() {
 
