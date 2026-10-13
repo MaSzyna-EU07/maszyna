@@ -930,17 +930,15 @@ std::vector<glm::dvec2> wing_extension( TTrack &Track, TTrack::check_rail_set co
 }
 
 // acute frog: the rail coming from the throat bends out as a wing rail, the rail going on behind the gap is a leg of the nose
-void acute( TTrack::rail_plan &Plan, double const At, double const Toward, double const Slope, bool const Nose, std::vector<glm::dvec2> const &Extension, TTrack::rail_size const &Size ) {
+void acute( TTrack::rail_plan &Plan, double const At, double const Toward, double const Slope, std::vector<glm::dvec2> const &Extension, TTrack::rail_size const &Size ) {
 
-    auto const railhead { Size.head };
-    auto const apart { Size.high + 0.1 };
+    auto const half { Slope / ( 1.0 + std::sqrt( 1.0 + Slope * Slope ) ) };
+    auto const tip { 0.5 * nose_tip };
+    auto const apart { Size.high + 0.01 };
     auto const throat { At + Toward * flangeway / Slope };
     auto const flare { At - Toward * wing_reach( Slope ) };
-    auto const tip { Nose ? nose_tip : railhead + 0.002 };
-    auto const nose { At - Toward * tip / Slope };
-    auto const blunt { At - Toward * apart / Slope };
-    auto const reach = [&]( double const Apart ) {
-        return Nose ? Apart : Apart - railhead + 0.002; };
+    auto const nose { At - Toward * tip / half };
+    auto const blunt { At - Toward * apart / half };
     std::vector<glm::dvec2> wing { { throat, 0.0 }, { flare, std::abs( flare - throat ) * Slope } };
     wing.insert( wing.end(), Extension.begin(), Extension.end() );
     auto const wingend { Extension.empty() ? flare : Extension.back().x };
@@ -956,11 +954,11 @@ void acute( TTrack::rail_plan &Plan, double const At, double const Toward, doubl
         cut.endoffsets = wing;
         cut.endrolled = rolled;
         cut.start = nose;
-        cut.startextents = { { nose, reach( tip ) }, { blunt, reach( apart ) } };
+        cut.startextents = { { nose, tip }, { blunt, apart } };
     }
     else {
         cut.end = nose;
-        cut.endextents = { { blunt, reach( apart ) }, { nose, reach( tip ) } };
+        cut.endextents = { { blunt, apart }, { nose, tip } };
         cut.start = wingend;
         cut.startoffsets = wing;
         cut.startrolled = rolled;
@@ -1201,7 +1199,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 auto const toward { crossing.into > 0.0 ? 1.0 : -1.0 };
                 auto const slope { std::tan( crossing.angle ) };
                 wingends[ crossing.path ][ crossing.side > 0 ].emplace_back( crossing.at - toward * wing_reach( slope ), -toward );
-                acute( plan, crossing.at, toward, slope, crossing.nose,
+                acute( plan, crossing.at, toward, slope,
                     wing_extension( *this, checks, crossing.path, crossing.side, crossing.at, toward, slope, *crossing.track, crossing.otherpath, crossing.otherside, crossing.otherat, crossing.aligned ? -toward : toward ), size );
                 auto const nose { toward < 0.0 ? plan.cuts.back().start : plan.cuts.back().end };
                 auto const shared { crossing.at - toward * ( rolled_band + size.head ) / slope };
@@ -1325,7 +1323,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                     continue;
                 }
                 wingends[ path ][ frog.side[ path ] > 0 ].emplace_back( frog.at[ path ] + wing_reach( slope ), 1.0 );
-                acute( plans[ path ][ frog.side[ path ] > 0 ], frog.at[ path ], -1.0, slope, path == 0,
+                acute( plans[ path ][ frog.side[ path ] > 0 ], frog.at[ path ], -1.0, slope,
                     wing_extension( *this, checks, path, frog.side[ path ], frog.at[ path ], -1.0, slope, *this, 1 - path, frog.side[ 1 - path ], frog.at[ 1 - path ], 1.0 ), size );
                 auto const nose { plans[ path ][ frog.side[ path ] > 0 ].cuts.back().start };
                 auto const shared { frog.at[ path ] + ( rolled_band + size.head ) / slope };
