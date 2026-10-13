@@ -348,6 +348,8 @@ public:
         double to { 0.0 };
         double flarefrom { 0.0 };
         double flareto { 0.0 };
+        double frombend { 0.0 };
+        double tobend { 0.0 };
     };
     using check_rail_set = std::array<std::array<std::vector<check_rail>, 2>, 2>; // path, right side
     // the check rails beside the rails of each path, kept clear of the blades and the rails of other paths running inside them
@@ -361,6 +363,8 @@ public:
         std::vector<glm::dvec2> endrolled, startrolled; // how far out from the gauge line the wheels roll on the head, of the part coming from below and of the part going on
         glm::dvec2 endmiter { 0.0 };
         glm::dvec2 startmiter { 0.0 };
+        double endbend { 0.0 };
+        double startbend { 0.0 };
         std::vector<glm::dvec2> endinner, startinner;
         bool endcap { true };
         bool startcap { true };
