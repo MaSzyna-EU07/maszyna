@@ -735,7 +735,7 @@ TTrack::switch_frog TTrack::frog() const {
     if( eType != tt_Switch || false == cut_rails( *this ) ) {
         return result;
     }
-    result.side[ 0 ] = ( SwitchExtension->RightSwitch ? 1 : -1 );
+    result.side[ 0 ] = blade_side( 0 );
     result.side[ 1 ] = -result.side[ 0 ];
     auto const halfwidth { 0.5 * std::abs( fTrackWidth ) };
     std::vector<glm::dvec2> lines[ 2 ];
