@@ -954,15 +954,11 @@ std::vector<glm::dvec2> wing_extension( TTrack &Track, TTrack::check_rail_set co
 }
 
 // acute frog: the rail coming from the throat bends out as a wing rail, the rail going on behind the gap is a leg of the nose
-void acute( TTrack::rail_plan &Plan, double const At, double const Toward, double const Slope, std::vector<glm::dvec2> const &Extension, TTrack::rail_size const &Size ) {
+void acute( TTrack::rail_plan &Plan, double const At, double const Toward, double const Slope, std::vector<glm::dvec2> const &Extension, std::vector<glm::dvec2> const &Legs ) {
 
-    auto const half { Slope / ( 1.0 + std::sqrt( 1.0 + Slope * Slope ) ) };
-    auto const tip { 0.5 * nose_tip };
-    auto const apart { Size.high + 0.01 };
     auto const throat { At + Toward * flangeway / Slope };
     auto const flare { At - Toward * wing_reach( Slope ) };
-    auto const nose { At - Toward * tip / half };
-    auto const blunt { At - Toward * apart / half };
+    auto const nose { Toward < 0.0 ? Legs.front().x : Legs.back().x };
     std::vector<glm::dvec2> wing { { throat, 0.0 }, { flare, std::abs( flare - throat ) * Slope } };
     wing.insert( wing.end(), Extension.begin(), Extension.end() );
     auto const wingend { Extension.empty() ? flare : Extension.back().x };
@@ -978,11 +974,11 @@ void acute( TTrack::rail_plan &Plan, double const At, double const Toward, doubl
         cut.endoffsets = wing;
         cut.endrolled = rolled;
         cut.start = nose;
-        cut.startextents = { { nose, tip }, { blunt, apart } };
+        cut.startextents = Legs;
     }
     else {
         cut.end = nose;
-        cut.endextents = { { blunt, apart }, { nose, tip } };
+        cut.endextents = Legs;
         cut.start = wingend;
         cut.startoffsets = wing;
         cut.startrolled = rolled;
@@ -1090,44 +1086,53 @@ struct frame_corner {
     double facing { 0.0 };
 };
 
+double lateral( gauge_line const &Line, int const Side, glm::dvec3 const &Point, double &Distance ) {
+
+    glm::dvec3 point, tangent;
+    for( int step = 0; step < 8; ++step ) {
+        Line.at( Distance, point, tangent );
+        Distance += glm::dot( plan( Point - point ), glm::normalize( plan( tangent ) ) );
+    }
+    Line.at( Distance, point, tangent );
+    return -glm::dot( plan( Point - point ), plan( Line.normal( Distance, Side ) ) );
+}
+
+double nearest_distance( gauge_line const &Line, glm::dvec3 const &Point ) {
+
+    auto result { Line.distances.front() };
+    auto nearest { std::numeric_limits<double>::max() };
+    for( std::size_t i = 0; i < Line.points.size(); ++i ) {
+        auto const gap { glm::length( plan( Line.points[ i ] - Point ) ) };
+        if( gap < nearest ) {
+            nearest = gap;
+            result = Line.distances[ i ];
+        }
+    }
+    return result;
+}
+
 std::vector<glm::dvec2> tread_edge( TTrack const &Track, int const Path, int const Side, TTrack const &Other, int const Otherpath, int const Otherside, double const From, double const To, bool &Below, std::vector<glm::dvec2> &Gauge ) {
 
     auto const &ours { rail_line( Track, Path, Side > 0, false ) };
     auto const &theirs { rail_line( Other, Otherpath, Otherside > 0, false ) };
-    auto const project = [&]( gauge_line const &Line, int const Lineside, glm::dvec3 const &Point, double &Distance ) {
-        glm::dvec3 point, tangent;
-        for( int step = 0; step < 8; ++step ) {
-            Line.at( Distance, point, tangent );
-            Distance += glm::dot( plan( Point - point ), glm::normalize( plan( tangent ) ) );
-        }
-        Line.at( Distance, point, tangent );
-        return -glm::dot( plan( Point - point ), plan( Line.normal( Distance, Lineside ) ) ); };
     glm::dvec3 point, tangent;
     ours.at( From, point, tangent );
-    auto otherat { theirs.distances.front() };
-    auto nearest { std::numeric_limits<double>::max() };
-    for( std::size_t i = 0; i < theirs.points.size(); ++i ) {
-        auto const gap { glm::length( plan( theirs.points[ i ] - point ) ) };
-        if( gap < nearest ) {
-            nearest = gap;
-            otherat = theirs.distances[ i ];
-        }
-    }
+    auto otherat { nearest_distance( theirs, point ) };
     std::vector<glm::dvec2> knots;
     auto below { 0 };
     auto const count { std::max( 2, static_cast<int>( std::ceil( ( To - From ) / 0.1 ) ) + 1 ) };
     for( int i = 0; i < count; ++i ) {
         auto distance { glm::mix( From, To, static_cast<double>( i ) / ( count - 1 ) ) };
         ours.at( distance, point, tangent );
-        project( theirs, Otherside, point, otherat );
+        lateral( theirs, Otherside, point, otherat );
         glm::dvec3 line;
         theirs.at( otherat, line, tangent );
         auto const normal { theirs.normal( otherat, Otherside ) };
         auto at { distance };
-        auto const gauge { project( ours, Side, line, at ) };
+        auto const gauge { lateral( ours, Side, line, at ) };
         Gauge.emplace_back( at, gauge );
         at = distance;
-        auto const edge { project( ours, Side, line - normal * rolled_band, at ) };
+        auto const edge { lateral( ours, Side, line - normal * rolled_band, at ) };
         below += ( gauge < edge ? 1 : -1 );
         knots.emplace_back( at, edge );
     }
@@ -1135,6 +1140,44 @@ std::vector<glm::dvec2> tread_edge( TTrack const &Track, int const Path, int con
     std::sort( knots.begin(), knots.end(), byposition );
     std::sort( Gauge.begin(), Gauge.end(), byposition );
     Below = ( below > 0 );
+    return knots;
+}
+
+std::vector<glm::dvec2> nose_extents( TTrack const &Track, int const Path, int const Side, TTrack const &Other, int const Otherpath, int const Otherside, double const At, double const Toward, double const Slope, TTrack::rail_size const &Size ) {
+
+    auto const half { Slope / ( 1.0 + std::sqrt( 1.0 + Slope * Slope ) ) };
+    auto const tip { 0.5 * nose_tip };
+    auto const apart { Size.high + 0.01 };
+    auto const nose { At - Toward * tip / half };
+    auto const blunt { At - Toward * apart / half };
+    std::vector<glm::dvec2> straight { { std::min( nose, blunt ), Toward < 0.0 ? tip : apart }, { std::max( nose, blunt ), Toward < 0.0 ? apart : tip } };
+    auto const &ours { rail_line( Track, Path, Side > 0, false ) };
+    auto const &theirs { rail_line( Other, Otherpath, Otherside > 0, false ) };
+    glm::dvec3 point, tangent;
+    ours.at( nose, point, tangent );
+    auto otherat { nearest_distance( theirs, point ) };
+    auto extent { tip };
+    auto const step { 0.1 };
+    auto const limit { static_cast<int>( std::ceil( 3.0 * std::abs( blunt - nose ) / step ) ) };
+    std::vector<glm::dvec2> knots;
+    for( int i = 0; i <= limit; ++i ) {
+        auto const distance { nose - Toward * step * i };
+        ours.at( distance, point, tangent );
+        auto const normal { ours.normal( distance, Side ) };
+        for( int iteration = 0; iteration < 6; ++iteration ) {
+            extent += 0.5 * ( lateral( theirs, Otherside, point - normal * extent, otherat ) - extent );
+        }
+        if( extent >= apart && false == knots.empty() ) {
+            auto const &last { knots.back() };
+            knots.emplace_back( glm::mix( last.x, distance, ( apart - last.y ) / ( extent - last.y ) ), apart );
+            break;
+        }
+        knots.emplace_back( distance, std::max( extent, 0.0 ) );
+    }
+    if( knots.size() < 2 || knots.back().y < apart ) {
+        return straight;
+    }
+    std::sort( knots.begin(), knots.end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
     return knots;
 }
 
@@ -1293,7 +1336,8 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 auto const slope { std::tan( crossing.angle ) };
                 wingends[ crossing.path ][ crossing.side > 0 ].emplace_back( crossing.at - toward * wing_reach( slope ), -toward );
                 acute( plan, crossing.at, toward, slope,
-                    wing_extension( *this, checks, crossing.path, crossing.side, crossing.at, toward, slope, *crossing.track, crossing.otherpath, crossing.otherside, crossing.otherat, crossing.aligned ? -toward : toward ), size );
+                    wing_extension( *this, checks, crossing.path, crossing.side, crossing.at, toward, slope, *crossing.track, crossing.otherpath, crossing.otherside, crossing.otherat, crossing.aligned ? -toward : toward ),
+                    nose_extents( *this, crossing.path, crossing.side, *crossing.track, crossing.otherpath, crossing.otherside, crossing.at, toward, slope, size ) );
                 auto const nose { toward < 0.0 ? plan.cuts.back().start : plan.cuts.back().end };
                 auto const shared { crossing.at - toward * ( rolled_band + size.head + tread_fade ) / slope };
                 tread( crossing.path, crossing.side, { std::min( nose, shared ), std::max( nose, shared ) }, *crossing.track, crossing.otherpath, toward > 0.0 ? 1 : -1, crossing.otherside );
@@ -1419,7 +1463,8 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 }
                 wingends[ path ][ frog.side[ path ] > 0 ].emplace_back( frog.at[ path ] + wing_reach( slope ), 1.0 );
                 acute( plans[ path ][ frog.side[ path ] > 0 ], frog.at[ path ], -1.0, slope,
-                    wing_extension( *this, checks, path, frog.side[ path ], frog.at[ path ], -1.0, slope, *this, 1 - path, frog.side[ 1 - path ], frog.at[ 1 - path ], 1.0 ), size );
+                    wing_extension( *this, checks, path, frog.side[ path ], frog.at[ path ], -1.0, slope, *this, 1 - path, frog.side[ 1 - path ], frog.at[ 1 - path ], 1.0 ),
+                    nose_extents( *this, path, frog.side[ path ], *this, 1 - path, frog.side[ 1 - path ], frog.at[ path ], -1.0, slope, size ) );
                 auto const nose { plans[ path ][ frog.side[ path ] > 0 ].cuts.back().start };
                 auto const shared { frog.at[ path ] + ( rolled_band + size.head + tread_fade ) / slope };
                 tread( path, frog.side[ path ], { std::min( nose, shared ), std::max( nose, shared ) }, *this, 1 - path, -1, frog.side[ 1 - path ] );
