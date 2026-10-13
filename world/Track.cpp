@@ -2626,6 +2626,7 @@ TTrack::rail_dimensions() const {
         result.high = std::max( result.high, static_cast<double>( point.x ) );
     }
     result.height = top - bottom;
+    result.crest = top;
     result.head = 0.0;
     for( std::size_t i = 0; i < count; ++i ) {
         auto const &point { profile[ i ].position };
@@ -2633,6 +2634,7 @@ TTrack::rail_dimensions() const {
             result.head = std::max( result.head, static_cast<double>( point.x ) );
         }
     }
+    result.tread = result.head;
     std::vector<std::size_t> heads, lips;
     for( std::size_t i = 0; i < count; ++i ) {
         auto const &point { profile[ i ].position };
@@ -2662,6 +2664,18 @@ TTrack::rail_dimensions() const {
     for( auto const i : lips ) {
         result.lip = std::max( result.lip, static_cast<double>( profile[ i ].position.x ) );
         result.liptop = std::max( result.liptop, static_cast<double>( profile[ i ].position.y ) );
+    }
+    result.tread = -1e9;
+    for( auto const i : heads ) {
+        if( profile[ i ].position.y > top - 0.0005 ) {
+            result.tread = std::max( result.tread, static_cast<double>( profile[ i ].position.x ) );
+        }
+    }
+    result.ledge = 1e9;
+    for( auto const i : lips ) {
+        if( profile[ i ].position.y > result.liptop - 0.0005 ) {
+            result.ledge = std::min( result.ledge, static_cast<double>( profile[ i ].position.x ) );
+        }
     }
     result.rim = 1e9;
     result.crown = -1e9;
