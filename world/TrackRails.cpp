@@ -197,15 +197,20 @@ material_handle cut_material( material_handle const Material ) {
     return unrolled ? GfxRenderer->Fetch_Material( "editor_unrolled" ) : GfxRenderer->Matte_Material( Material );
 }
 
-float tread_brightness( material_handle const Material, glm::vec2 const &Band ) {
+material_handle tint_material( material_handle const Material, glm::vec3 const &Colour ) {
 
-    static std::map<std::tuple<material_handle, float, float>, float> brightness;
+    return GfxRenderer->Tinted_Material( Material, Colour );
+}
+
+std::pair<float, glm::vec3> const &tread_sample( material_handle const Material, glm::vec2 const &Band ) {
+
+    static std::map<std::tuple<material_handle, float, float>, std::pair<float, glm::vec3>> samples;
     auto const key { std::make_tuple( Material, Band.x, Band.y ) };
-    if( auto const lookup { brightness.find( key ) }; lookup != brightness.end() ) {
+    if( auto const lookup { samples.find( key ) }; lookup != samples.end() ) {
         return lookup->second;
     }
-    auto &result { brightness[ key ] };
-    result = -1.f;
+    auto &result { samples[ key ] };
+    result = { -1.f, glm::vec3{ 0.f } };
     if( Material == null_handle ) {
         return result;
     }
@@ -221,9 +226,11 @@ float tread_brightness( material_handle const Material, glm::vec2 const &Band ) 
         auto const last { std::clamp( static_cast<int>( std::ceil( std::max( Band.x, Band.y ) * Width ) ) - 1, first, Width - 1 ) };
         return std::pair{ first, last }; };
     auto sum { 0.0 };
+    glm::dvec3 colour { 0.0 };
     std::size_t count { 0 };
     auto const add = [&]( float const Red, float const Green, float const Blue ) {
         sum += 0.2126 * Red + 0.7152 * Green + 0.0722 * Blue;
+        colour += glm::pow( glm::dvec3{ Red, Green, Blue } / 255.0, glm::dvec3{ 2.2 } );
         ++count; };
     if( type == ".dds" ) {
         std::ifstream input( file, std::ios::binary );
@@ -283,9 +290,19 @@ float tread_brightness( material_handle const Material, glm::vec2 const &Band ) 
         }
     }
     if( count > 0 ) {
-        result = static_cast<float>( sum / count );
+        result = { static_cast<float>( sum / count ), glm::vec3{ colour / static_cast<double>( count ) } };
     }
     return result;
+}
+
+float tread_brightness( material_handle const Material, glm::vec2 const &Band ) {
+
+    return tread_sample( Material, Band ).first;
+}
+
+glm::vec3 tread_colour( material_handle const Material, glm::vec2 const &Band ) {
+
+    return tread_sample( Material, Band ).second;
 }
 
 // in the colour of the top of the rail foot
@@ -1481,6 +1498,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     auto const length { segment.GetLength() };
     auto const &treads { Layout.treads[ Path ][ Side > 0 ] };
     material_handle current { null_handle };
+    std::vector<material_handle> tints;
     auto const sink = [&]( bool const Matte ) -> geometryhandle_sequence & {
         if( current == null_handle ) {
             return Matte ? Cuts : Geometry;
@@ -1491,11 +1509,12 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         if( eType == tt_Switch && current == m_material2 ) {
             return Matte ? GeometryCut2 : Geometry2;
         }
+        auto const tinted { std::find( tints.begin(), tints.end(), current ) != tints.end() };
         auto found { std::find_if( GeometryTreads.begin(), GeometryTreads.end(), [&]( tread_geometry const &Tread ) { return Tread.material == current; } ) };
         if( found == GeometryTreads.end() ) {
-            found = GeometryTreads.insert( GeometryTreads.end(), { current, cut_material( current ), {}, {} } );
+            found = GeometryTreads.insert( GeometryTreads.end(), { current, tinted ? current : cut_material( current ), {}, {} } );
         }
-        return Matte ? found->cuts : found->geometry; };
+        return Matte && false == tinted ? found->cuts : found->geometry; };
     auto const texturelength = [&]() {
         return ( current == null_handle ? Texturelength : texture_length( current ) ); };
     auto const aim = [&]( std::vector<rail_tread> const &Spans, double const Middle ) -> rail_tread const * {
@@ -1509,10 +1528,10 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         return nullptr;
     };
     // parts no wheel rolls on go in the matte material of the cut faces
-    auto const piece = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, bool const Capstart, bool const Capend, gfx::vertex_array const &Shape, bool const Rolled, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Ramp = {}, bool const Walls = false, float const Lift = 0.f, float const Wallu = -1.f ) {
+    auto const piece = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, bool const Capstart, bool const Capend, gfx::vertex_array const &Shape, bool const Rolled, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Ramp = {}, bool const Walls = false, float const Lift = 0.f, float const Wallu = -1.f, double const Fade = blend ) {
         gfx::vertex_array vertices;
         gfx::userdata_array userdata;
-        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : blend, Walls, Wallu ) ) {
+        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : Fade, Walls, Wallu ) ) {
             cut_faces( vertices, Shape.size(), Capstart, Capend, Drawing.bank, sink( true ) );
             gfx::vertex_array triangles;
             gfx::userdata_array triangleuserdata;
@@ -1643,8 +1662,40 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         }
         auto const &lower { Span.below ? Span.gauge : Span.edge };
         auto const &upper { Span.below ? Span.edge : Span.gauge };
+        auto const own { rail_material( Path ) };
+        auto const colour { 0.5f * ( tread_colour( Span.material, tread_band() ) + tread_colour( own, tread_band() ) ) };
+        auto const tint = [&]( material_handle const Material ) {
+            auto const tinted { tint_material( Material, colour ) };
+            if( tinted != Material ) {
+                tints.push_back( tinted );
+            }
+            return tinted; };
+        auto const owntint { tint( own ) };
+        auto const sharedtint { tint( Span.material ) };
+        auto const shifted = []( std::vector<glm::dvec2> Knots, double const Lateral ) {
+            for( auto &knot : Knots ) {
+                knot.y += Lateral;
+            }
+            return Knots; };
+        std::vector<glm::dvec2> centre;
+        {
+            std::vector<double> stations;
+            for( auto const *knots : { &lower, &upper } ) {
+                for( auto const &knot : *knots ) {
+                    stations.push_back( knot.x );
+                }
+            }
+            std::sort( stations.begin(), stations.end() );
+            for( auto const station : stations ) {
+                centre.emplace_back( station, 0.5 * ( level( lower, station ) + level( upper, station ) ) );
+            }
+        }
+        auto const beneath { shifted( lower, -tread_fade ) };
+        auto const beyond { shifted( upper, tread_fade ) };
+        auto const lowfade { bound( shifted( lower, tread_fade ), centre, true ) };
+        auto const highfade { bound( shifted( upper, -tread_fade ), centre, false ) };
         std::vector<double> splits { Start, End };
-        for( auto const *knots : { &lower, &upper } ) {
+        for( auto const *knots : { &lower, &upper, &lowfade, &highfade, &beneath, &beyond } ) {
             for( auto const edge : { low, high } ) {
                 for( std::size_t i = 1; i < knots->size(); ++i ) {
                     auto const &a { ( *knots )[ i - 1 ] };
@@ -1659,22 +1710,41 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             }
         }
         std::sort( splits.begin(), splits.end() );
-        auto const inside { bound( Extents, upper, true ) };
         for( std::size_t i = 1; i < splits.size(); ++i ) {
-            auto const middle { 0.5 * ( splits[ i - 1 ] + splits[ i ] ) };
+            auto const a { splits[ i - 1 ] };
+            auto const b { splits[ i ] };
+            auto const middle { 0.5 * ( a + b ) };
             auto const from { level( lower, middle ) };
             auto const to { level( upper, middle ) };
-            if( from > low ) {
+            auto const inner { level( lowfade, middle ) };
+            auto const outer { level( highfade, middle ) };
+            if( from - tread_fade > low ) {
                 current = null_handle;
-                piece( splits[ i - 1 ], splits[ i ], Offsets, bound( Extents, lower, true ), false, false, top, true, Inner );
+                piece( a, b, Offsets, bound( Extents, beneath, true ), false, false, top, true, Inner );
             }
-            if( to > low && from < high ) {
+            if( from > low && from - tread_fade < high ) {
+                current = owntint;
+                piece( a, b, Offsets, bound( Extents, lower, true ), false, false, top, false, bound( Inner, beneath, false ), lower, false, 0.f, -1.f, tread_fade );
+            }
+            if( inner > low && from < high ) {
+                current = sharedtint;
+                piece( a, b, Offsets, bound( Extents, lowfade, true ), false, false, top, false, bound( Inner, lower, false ), lower, false, 0.f, -1.f, -tread_fade );
+            }
+            if( outer > low && inner < high ) {
                 current = Span.material;
-                piece( splits[ i - 1 ], splits[ i ], Offsets, inside, false, false, top, true, bound( Inner, lower, false ) );
+                piece( a, b, Offsets, bound( Extents, highfade, true ), false, false, top, true, bound( Inner, lowfade, false ) );
             }
-            if( to < high ) {
+            if( to > low && outer < high ) {
+                current = sharedtint;
+                piece( a, b, Offsets, bound( Extents, upper, true ), false, false, top, false, bound( Inner, highfade, false ), upper, false, 0.f, -1.f, tread_fade );
+            }
+            if( to + tread_fade > low && to < high ) {
+                current = owntint;
+                piece( a, b, Offsets, bound( Extents, beyond, true ), false, false, top, false, bound( Inner, upper, false ), upper, false, 0.f, -1.f, -tread_fade );
+            }
+            if( to + tread_fade < high ) {
                 current = null_handle;
-                piece( splits[ i - 1 ], splits[ i ], Offsets, Extents, false, false, top, true, bound( Inner, upper, false ) );
+                piece( a, b, Offsets, Extents, false, false, top, true, bound( Inner, beyond, false ) );
             }
         }
         current = null_handle;

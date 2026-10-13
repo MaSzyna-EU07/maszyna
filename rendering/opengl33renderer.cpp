@@ -2231,6 +2231,12 @@ material_handle opengl33_renderer::Matte_Material(material_handle const Material
 	return m_materials.create_matte(Material);
 }
 
+material_handle opengl33_renderer::Tinted_Material(material_handle const Material, glm::vec3 const &Colour)
+{
+
+	return m_materials.create_tinted(Material, Colour);
+}
+
 std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &name)
 {
 	auto it = m_shaders.find(name);

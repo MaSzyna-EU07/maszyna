@@ -15,6 +15,7 @@ namespace track_rails {
 
 double constexpr flangeway { 0.045 };
 double constexpr blend { 0.015 };
+double constexpr tread_fade { 0.02 };
 double constexpr rolled_band { 0.1 };
 double constexpr nose_tip { 0.012 };
 double constexpr middle_angle { 0.35 };
@@ -30,6 +31,8 @@ int blade_steps( TTrack const &Track );
 double blade_length( TTrack const &Track, int const Path );
 material_handle cut_material( material_handle const Material );
 float tread_brightness( material_handle const Material, glm::vec2 const &Band );
+glm::vec3 tread_colour( material_handle const Material, glm::vec2 const &Band );
+material_handle tint_material( material_handle const Material, glm::vec3 const &Colour );
 // triangles closing the first and/or the last cross-section of a lofted strip, made of pairs of points for each of Ring profile points, both sides of each
 void cap_loft( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::vertex_array &Triangles );
 gfx::userdata_array worn_userdata( std::size_t const Count );

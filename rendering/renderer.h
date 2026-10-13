@@ -71,6 +71,7 @@ public:
     virtual auto Material( material_handle const Material ) const -> IMaterial const * = 0;
     // the same material with its highlights damped, for faces which aren't polished like the surfaces they are cut from. backends which can't make one give back the material itself
     virtual auto Matte_Material( material_handle const Material ) -> material_handle { return Material; }
+    virtual auto Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) -> material_handle { return Material; }
     // heightmap terrain: material of a chunk blending the materials of up to 8 layers by their weights.
     // Weights: (Samples + 1)^2 values per layer, planar, rows of growing z, the weights of a sample adding up to 255; null with a single layer.
     // Placement: corner of the chunk (x, z) in the texture coordinates of its mesh, and the size of the chunk.

@@ -145,6 +145,8 @@ public:
     // copy of provided material with its specular highlights and reflections damped. returns: handle to the copy, made once per material
     material_handle
         create_matte( material_handle const Material );
+    material_handle
+        create_tinted( material_handle const Material, glm::vec3 const &Colour );
     opengl_material const &
         material( material_handle const Material ) const { return m_materials[ Material ]; }
     opengl_material &
@@ -174,6 +176,7 @@ private:
     material_sequence m_materials;
     index_map m_materialmappings;
     std::unordered_map<material_handle, material_handle> m_mattes;
+    std::map<std::tuple<material_handle, float, float, float>, material_handle> m_tints;
 };
 
 //---------------------------------------------------------------------------

@@ -721,7 +721,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                 }
             }
             Ring.emplace_back( pt, glm::normalize( norm ), glm::vec2{ shape.texture.x, 0.f } );
-            Wear.push_back( Rampwidth > 0.0 ? static_cast<float>( std::clamp( ( outside - worn + Rampwidth ) / Rampwidth, 0.0, 1.0 ) ) : 1.f );
+            Wear.push_back( Rampwidth != 0.0 ? static_cast<float>( std::clamp( ( Rampwidth > 0.0 ? outside - worn : worn - outside ) / std::abs( Rampwidth ) + 1.0, 0.0, 1.0 ) ) : 1.f );
         }
     };
 
