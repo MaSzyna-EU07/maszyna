@@ -5213,3 +5213,9 @@ msgstr "Punkt znikania"
 
 msgid "Pedestrian crossing"
 msgstr "Przejście dla pieszych"
+
+msgid "Frog and check rails made from the rails"
+msgstr "Krzyżownica i kierownice z szyn"
+
+msgid "Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\nOff for a switch whose include has its own model of them"
+msgstr "Tnie szyny rozjazdu na krzyżownicy i układa szyny skrzydłowe i kierownice, dla profili szyn S60, UIC60 i S39.\nWyłącz dla rozjazdu, którego include ma ich własny model"
