@@ -315,6 +315,7 @@ public:
         int otherside { 0 }; // rail profile of the other rail, 1 right, -1 left
         double otherat { 0.0 }; // distance of the crossing along the other path
         bool aligned { true }; // both paths run the same way at the crossing
+        TTrack *owner { nullptr };
     };
     std::vector<rail_crossing> rail_crossings( bool const Joined = true );
     // the size of the rail profile, out from the gauge face: positive outwards, the side of the head away from the track
@@ -323,6 +324,12 @@ public:
         double height { 0.172 };
         double low { -0.0385 }; // the reach of the profile inwards
         double high { 0.1115 }; // the reach of the profile outwards
+        bool grooved { false };
+        double groove { 0.0 };
+        double lip { 0.0 };
+        double rim { 0.0 };
+        double crown { 0.0 };
+        double liptop { 0.0 };
     };
     rail_size rail_dimensions() const;
     // a check rail beside a rail, how far its ends turn away from the running rail
@@ -344,6 +351,9 @@ public:
         std::vector<glm::dvec2> endrolled, startrolled; // how far out from the gauge line the wheels roll on the head, of the part coming from below and of the part going on
         glm::dvec2 endmiter { 0.0 };
         glm::dvec2 startmiter { 0.0 };
+        std::vector<glm::dvec2> endinner, startinner;
+        bool endcap { true };
+        bool startcap { true };
     };
     struct rail_plan {
         std::vector<rail_cut> cuts;
@@ -358,8 +368,25 @@ public:
         glm::dvec2 frommiter { 0.0 };
         glm::dvec2 tomiter { 0.0 };
     };
+    struct rail_band {
+        double at { 0.0 };
+        double into { 0.0 };
+        double facing { 0.0 };
+        double from { 0.0 };
+        double to { 0.0 };
+        bool whole { true };
+    };
+    struct rail_fill {
+        double from { 0.0 };
+        double to { 0.0 };
+        std::vector<glm::dvec2> inner, outer;
+        bool capfrom { false };
+        bool capto { false };
+    };
     struct rail_layout {
         rail_plan plans[ 2 ][ 2 ]; // path, right side
+        std::vector<rail_band> bands[ 2 ][ 2 ];
+        std::vector<rail_fill> fills[ 2 ][ 2 ];
         std::vector<guard_rail> guards[ 2 ][ 2 ];
         std::vector<glm::dvec2> wingends[ 2 ][ 2 ]; // ends of the wing rails of other rails running along each rail, and which way they run there
         check_rail_set checks;
@@ -465,6 +492,7 @@ private:
         rail_size size;
         float halfwidth { 0.f };
         gfx::vertex_array checkshapes[ 2 ];
+        gfx::vertex_array plates[ 2 ];
     };
     rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank );
     // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
