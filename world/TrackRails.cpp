@@ -1066,7 +1066,7 @@ struct frame_corner {
     double facing { 0.0 };
 };
 
-std::vector<glm::dvec2> tread_edge( TTrack const &Track, int const Path, int const Side, TTrack const &Other, int const Otherpath, int const Otherside, double const From, double const To, bool &Below ) {
+std::vector<glm::dvec2> tread_edge( TTrack const &Track, int const Path, int const Side, TTrack const &Other, int const Otherpath, int const Otherside, double const From, double const To, bool &Below, std::vector<glm::dvec2> &Gauge ) {
 
     auto const &ours { rail_line( Track, Path, Side > 0, false ) };
     auto const &theirs { rail_line( Other, Otherpath, Otherside > 0, false ) };
@@ -1101,12 +1101,15 @@ std::vector<glm::dvec2> tread_edge( TTrack const &Track, int const Path, int con
         auto const normal { theirs.normal( otherat, Otherside ) };
         auto at { distance };
         auto const gauge { project( ours, Side, line, at ) };
+        Gauge.emplace_back( at, gauge );
         at = distance;
         auto const edge { project( ours, Side, line - normal * rolled_band, at ) };
         below += ( gauge < edge ? 1 : -1 );
         knots.emplace_back( at, edge );
     }
-    std::sort( knots.begin(), knots.end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
+    auto const byposition = []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; };
+    std::sort( knots.begin(), knots.end(), byposition );
+    std::sort( Gauge.begin(), Gauge.end(), byposition );
     Below = ( below > 0 );
     return knots;
 }
@@ -1179,13 +1182,15 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
             return;
         }
         rail_tread part { Span.x, Span.y, material, Anchor };
-        part.edge = tread_edge( *this, Path, Side, Other, Otherpath, Otherside, Span.x, Span.y, part.below );
+        part.edge = tread_edge( *this, Path, Side, Other, Otherpath, Otherside, Span.x, Span.y, part.below, part.gauge );
         auto from { 1e9 };
         auto to { -1e9 };
-        for( auto const &knot : part.edge ) {
-            if( part.below ? knot.y > 0.0 : knot.y < size.head ) {
-                from = std::min( from, knot.x );
-                to = std::max( to, knot.x );
+        for( std::size_t i = 0; i < part.edge.size() && i < part.gauge.size(); ++i ) {
+            auto const low { std::min( part.edge[ i ].y, part.gauge[ i ].y ) };
+            auto const high { std::max( part.edge[ i ].y, part.gauge[ i ].y ) };
+            if( low < size.head && high > 0.0 ) {
+                from = std::min( from, part.edge[ i ].x );
+                to = std::max( to, part.edge[ i ].x );
             }
         }
         part.from = std::max( Span.x, from - 0.1 );
@@ -1271,6 +1276,8 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
             }
             else {
                 obtuse( plan, crossing.at, crossing.into, size );
+                auto const reach { ( rolled_band + size.head ) / std::max( std::tan( crossing.angle ), 0.01 ) + 0.2 };
+                tread( crossing.path, crossing.side, { crossing.at - reach, crossing.at + reach }, *crossing.track, crossing.otherpath, 0, crossing.otherside );
             }
         }
         for( auto &pathguards : guards ) {
@@ -1634,31 +1641,40 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             low = std::min( low, static_cast<double>( Side * point.position.x - halfwidth ) );
             high = std::max( high, static_cast<double>( Side * point.position.x - halfwidth ) );
         }
+        auto const &lower { Span.below ? Span.gauge : Span.edge };
+        auto const &upper { Span.below ? Span.edge : Span.gauge };
         std::vector<double> splits { Start, End };
-        for( auto const edge : { low, high } ) {
-            for( std::size_t i = 1; i < Span.edge.size(); ++i ) {
-                auto const &a { Span.edge[ i - 1 ] };
-                auto const &b { Span.edge[ i ] };
-                if( ( a.y - edge ) * ( b.y - edge ) < 0.0 ) {
-                    auto const distance { a.x + ( edge - a.y ) / ( b.y - a.y ) * ( b.x - a.x ) };
-                    if( distance > Start + 0.001 && distance < End - 0.001 ) {
-                        splits.push_back( distance );
+        for( auto const *knots : { &lower, &upper } ) {
+            for( auto const edge : { low, high } ) {
+                for( std::size_t i = 1; i < knots->size(); ++i ) {
+                    auto const &a { ( *knots )[ i - 1 ] };
+                    auto const &b { ( *knots )[ i ] };
+                    if( ( a.y - edge ) * ( b.y - edge ) < 0.0 ) {
+                        auto const distance { a.x + ( edge - a.y ) / ( b.y - a.y ) * ( b.x - a.x ) };
+                        if( distance > Start + 0.001 && distance < End - 0.001 ) {
+                            splits.push_back( distance );
+                        }
                     }
                 }
             }
         }
         std::sort( splits.begin(), splits.end() );
-        auto const below { bound( Extents, Span.edge, true ) };
-        auto const above { bound( Inner, Span.edge, false ) };
+        auto const inside { bound( Extents, upper, true ) };
         for( std::size_t i = 1; i < splits.size(); ++i ) {
-            auto const edge { level( Span.edge, 0.5 * ( splits[ i - 1 ] + splits[ i ] ) ) };
-            if( edge > low ) {
-                current = ( Span.below ? Span.material : null_handle );
-                piece( splits[ i - 1 ], splits[ i ], Offsets, below, false, false, top, true, Inner );
+            auto const middle { 0.5 * ( splits[ i - 1 ] + splits[ i ] ) };
+            auto const from { level( lower, middle ) };
+            auto const to { level( upper, middle ) };
+            if( from > low ) {
+                current = null_handle;
+                piece( splits[ i - 1 ], splits[ i ], Offsets, bound( Extents, lower, true ), false, false, top, true, Inner );
             }
-            if( edge < high ) {
-                current = ( Span.below ? null_handle : Span.material );
-                piece( splits[ i - 1 ], splits[ i ], Offsets, Extents, false, false, top, true, above );
+            if( to > low && from < high ) {
+                current = Span.material;
+                piece( splits[ i - 1 ], splits[ i ], Offsets, inside, false, false, top, true, bound( Inner, lower, false ) );
+            }
+            if( to < high ) {
+                current = null_handle;
+                piece( splits[ i - 1 ], splits[ i ], Offsets, Extents, false, false, top, true, bound( Inner, upper, false ) );
             }
         }
         current = null_handle;
