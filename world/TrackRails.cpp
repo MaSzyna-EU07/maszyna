@@ -17,6 +17,27 @@ http://mozilla.org/MPL/2.0/.
 
 namespace {
 
+glm::dvec2 plan( glm::dvec3 const &V ) {
+
+    return glm::dvec2{ V.x, V.z };
+}
+
+double cross( glm::dvec2 const &A, glm::dvec2 const &B ) {
+
+    return A.x * B.y - A.y * B.x;
+}
+
+bool meet( glm::dvec2 const &A0, glm::dvec2 const &A, glm::dvec2 const &B0, glm::dvec2 const &B, double const Parallel, double &U, double &V ) {
+
+    auto const denominator { cross( A, B ) };
+    if( std::abs( denominator ) < Parallel ) {
+        return false;
+    }
+    U = cross( B0 - A0, B ) / denominator;
+    V = cross( B0 - A0, A ) / denominator;
+    return true;
+}
+
 // gauge line of a rail: the running edge of its head, along a path and on past its ends along the tangents
 struct gauge_line {
     TSegment const *segment { nullptr };
@@ -64,10 +85,10 @@ gauge_line make_gauge_line( TSegment const &Segment, double const Offset, double
     for( int i = 0; i <= count; ++i ) {
         add( From + ( length - From ) * i / count );
     }
-    line.low = line.high = glm::dvec2{ line.points.front().x, line.points.front().z };
+    line.low = line.high = plan( line.points.front() );
     for( auto const &point : line.points ) {
-        line.low = glm::min( line.low, glm::dvec2{ point.x, point.z } );
-        line.high = glm::max( line.high, glm::dvec2{ point.x, point.z } );
+        line.low = glm::min( line.low, plan( point ) );
+        line.high = glm::max( line.high, plan( point ) );
     }
     return line;
 }
@@ -324,11 +345,10 @@ glm::dvec3 rail_point( TTrack const &Track, int const Path, int const Side, doub
 void rail_offset( TTrack const &Track, int const Path, int const Side, glm::dvec3 const &Point, double &Distance, double &Lateral ) {
 
     auto const line { make_gauge_line( path_segment( Track, Path ), Side * 0.5 * std::abs( Track.fTrackWidth ), 0.0 ) };
-    auto const flat = []( glm::dvec3 const &V ) { return glm::dvec2{ V.x, V.z }; };
     Distance = line.distances.front();
     auto nearest { std::numeric_limits<double>::max() };
     for( std::size_t i = 0; i < line.points.size(); ++i ) {
-        auto const gap { glm::length( flat( line.points[ i ] - Point ) ) };
+        auto const gap { glm::length( plan( line.points[ i ] - Point ) ) };
         if( gap < nearest ) {
             nearest = gap;
             Distance = line.distances[ i ];
@@ -337,10 +357,10 @@ void rail_offset( TTrack const &Track, int const Path, int const Side, glm::dvec
     glm::dvec3 point, tangent;
     for( int step = 0; step < 8; ++step ) {
         line.at( Distance, point, tangent );
-        Distance += glm::dot( flat( Point - point ), glm::normalize( flat( tangent ) ) );
+        Distance += glm::dot( plan( Point - point ), glm::normalize( plan( tangent ) ) );
     }
     line.at( Distance, point, tangent );
-    Lateral = -glm::dot( flat( Point - point ), flat( line.normal( Distance, Side ) ) );
+    Lateral = -glm::dot( plan( Point - point ), plan( line.normal( Distance, Side ) ) );
 }
 
 } // namespace track_rails
@@ -407,10 +427,6 @@ std::vector<TTrack::rail_crossing> TTrack::rail_crossings( bool const Joined ) {
                 }
             }
         }
-        auto const cross = []( glm::dvec2 const &A, glm::dvec2 const &B ) {
-            return A.x * B.y - A.y * B.x; };
-        auto const plan = []( glm::dvec3 const &V ) {
-            return glm::dvec2{ V.x, V.z }; };
         auto const bend = [&]( gauge_line const &Line, double const At ) {
             glm::dvec3 point, before, after;
             Line.at( At - 1.0, point, before );
@@ -452,12 +468,10 @@ std::vector<TTrack::rail_crossing> TTrack::rail_crossings( bool const Joined ) {
                                      || alow.y > std::max( b0.y, b0.y + b.y ) + reach || std::min( b0.y, b0.y + b.y ) - reach > ahigh.y ) {
                                         continue;
                                     }
-                                    auto const denominator { cross( a, b ) };
-                                    if( std::abs( denominator ) < 1e-12 ) {
+                                    double u, v;
+                                    if( false == meet( a0, a, b0, b, 1e-12, u, v ) ) {
                                         continue;
                                     }
-                                    auto const u { cross( b0 - a0, b ) / denominator };
-                                    auto const v { cross( b0 - a0, a ) / denominator };
                                     if( u < -0.01 || u > 1.01 || v < -0.01 || v > 1.01 ) {
                                         continue;
                                     }
@@ -618,7 +632,6 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
     }
     auto const halfwidth { 0.5 * std::abs( fTrackWidth ) };
     auto const clearance { 0.046 + 0.04 * size.head / 0.0735 + size.head };
-    auto const flat = []( glm::dvec3 const &V ) { return glm::dvec2{ V.x, V.z }; };
     for( int path = 0; path < ( eType == tt_Switch ? 2 : 1 ); ++path ) {
         auto const &segment { path_segment( *this, path ) };
         auto const length { segment.GetLength() };
@@ -642,8 +655,8 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
             }
             // check rails keep clear of the blades and the rails of the other path of a switch running inside the rail, here and in a switch joined at an end, and of the blade tips
             std::vector<glm::dvec2> blocks;
-            auto const start { flat( segment.FastGetPoint_0() ) };
-            auto const end { flat( segment.FastGetPoint_1() ) };
+            auto const start { plan( segment.FastGetPoint_0() ) };
+            auto const end { plan( segment.FastGetPoint_1() ) };
             std::vector<gauge_line> others;
             auto const add_path = [&]( TSegment const &Other ) {
                 others.push_back( make_gauge_line( Other, -halfwidth, 0.0 ) );
@@ -656,7 +669,7 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
                 if( neighbour == nullptr || neighbour == this || neighbour->eType != tt_Switch || neighbour->SwitchExtension == nullptr ) {
                     continue;
                 }
-                auto const tip { flat( neighbour->SwitchExtension->Segments[ 0 ]->FastGetPoint_0() ) };
+                auto const tip { plan( neighbour->SwitchExtension->Segments[ 0 ]->FastGetPoint_0() ) };
                 if( glm::distance( start, tip ) < 0.1 ) {
                     blocks.emplace_back( -1e9, 0.3 );
                     continue;
@@ -668,7 +681,7 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
                 for( int otherpath = 0; otherpath < 2; ++otherpath ) {
                     auto const &other { *neighbour->SwitchExtension->Segments[ otherpath ] };
                     auto const continues = [&]( glm::dvec2 const &Point ) {
-                        return glm::distance( Point, flat( other.FastGetPoint_0() ) ) < 0.1 || glm::distance( Point, flat( other.FastGetPoint_1() ) ) < 0.1; };
+                        return glm::distance( Point, plan( other.FastGetPoint_0() ) ) < 0.1 || glm::distance( Point, plan( other.FastGetPoint_1() ) ) < 0.1; };
                     if( false == continues( start ) && false == continues( end ) ) {
                         add_path( other );
                     }
@@ -680,20 +693,17 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
                     for( auto s { check.from }; s <= check.to; s += 0.1 ) {
                         glm::dvec3 point, tangent;
                         ours.at( s, point, tangent );
-                        auto const gauge { flat( point ) };
-                        auto const inward { flat( ours.normal( s, side ) ) };
+                        auto const gauge { plan( point ) };
+                        auto const inward { plan( ours.normal( s, side ) ) };
                         auto blocked { false };
                         for( auto const &other : others ) {
                             for( std::size_t i = 1; i < other.points.size() && false == blocked; ++i ) {
-                                auto const a { flat( other.points[ i - 1 ] ) };
-                                auto const edge { flat( other.points[ i ] ) - a };
-                                auto const determinant { inward.x * edge.y - inward.y * edge.x };
-                                if( std::abs( determinant ) < 1e-9 ) {
+                                auto const a { plan( other.points[ i - 1 ] ) };
+                                auto const edge { plan( other.points[ i ] ) - a };
+                                double t, u;
+                                if( false == meet( gauge, inward, a, edge, 1e-9, t, u ) ) {
                                     continue;
                                 }
-                                auto const offset { a - gauge };
-                                auto const t { ( offset.x * edge.y - offset.y * edge.x ) / determinant };
-                                auto const u { ( offset.x * inward.y - offset.y * inward.x ) / determinant };
                                 blocked = ( u > -1e-6 && u < 1.0 + 1e-6 && t > -0.05 && t < clearance );
                             }
                         }
@@ -754,8 +764,6 @@ TTrack::switch_frog TTrack::frog() const {
             distances[ path ].push_back( distance );
         }
     }
-    auto const cross = []( glm::dvec2 const &A, glm::dvec2 const &B ) {
-        return A.x * B.y - A.y * B.x; };
     for( std::size_t i = 1; i < lines[ 0 ].size() && false == result.valid; ++i ) {
         if( distances[ 0 ][ i ] <= result.blades[ 0 ] ) {
             continue;
@@ -768,12 +776,10 @@ TTrack::switch_frog TTrack::frog() const {
             }
             auto const b0 { lines[ 1 ][ j - 1 ] };
             auto const b { lines[ 1 ][ j ] - b0 };
-            auto const denominator { cross( a, b ) };
-            if( std::abs( denominator ) < 1e-12 ) {
+            double u, v;
+            if( false == meet( a0, a, b0, b, 1e-12, u, v ) ) {
                 continue;
             }
-            auto const u { cross( b0 - a0, b ) / denominator };
-            auto const v { cross( b0 - a0, a ) / denominator };
             if( u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0 ) {
                 continue;
             }
@@ -804,11 +810,6 @@ TTrack::switch_frog TTrack::frog() const {
 }
 
 namespace {
-
-glm::dvec2 plan( glm::dvec3 const &V ) {
-
-    return glm::dvec2{ V.x, V.z };
-}
 
 // a wing rail ending right beside a check rail of the rail it runs along goes on in its place up to the far end of it, past the end of the wing
 std::vector<glm::dvec2> wing_extension( TTrack &Track, TTrack::check_rail_set const &Checks, int const Path, int const Side, double const At, double const Toward, double const Slope, TTrack &Partner, int const Partnerpath, int const Partnerside, double const Partnerat, double const Partnerdirection ) {
