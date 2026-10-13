@@ -439,9 +439,19 @@ std::vector<TTrack::rail_crossing> TTrack::rail_crossings( bool const Joined ) {
                             for( std::size_t i = 1; i < line.points.size(); ++i ) {
                                 auto const a0 { plan( line.points[ i - 1 ] ) };
                                 auto const a { plan( line.points[ i ] ) - a0 };
+                                auto const alow { glm::min( a0, a0 + a ) - 0.02 * glm::length( a ) - 1e-6 };
+                                auto const ahigh { glm::max( a0, a0 + a ) + 0.02 * glm::length( a ) + 1e-6 };
+                                if( alow.x > theirs.high.x + 1.0 || theirs.low.x - 1.0 > ahigh.x || alow.y > theirs.high.y + 1.0 || theirs.low.y - 1.0 > ahigh.y ) {
+                                    continue;
+                                }
                                 for( std::size_t j = 1; j < theirs.points.size(); ++j ) {
                                     auto const b0 { plan( theirs.points[ j - 1 ] ) };
                                     auto const b { plan( theirs.points[ j ] ) - b0 };
+                                    auto const reach { 0.02 * glm::length( b ) };
+                                    if( alow.x > std::max( b0.x, b0.x + b.x ) + reach || std::min( b0.x, b0.x + b.x ) - reach > ahigh.x
+                                     || alow.y > std::max( b0.y, b0.y + b.y ) + reach || std::min( b0.y, b0.y + b.y ) - reach > ahigh.y ) {
+                                        continue;
+                                    }
                                     auto const denominator { cross( a, b ) };
                                     if( std::abs( denominator ) < 1e-12 ) {
                                         continue;

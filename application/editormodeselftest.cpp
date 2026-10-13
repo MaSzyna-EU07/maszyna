@@ -354,11 +354,20 @@ void editor_mode::selftest_step()
 			{
 				if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
 					continue;
-				track->plan_rails(true);
+				track->rail_crossings(false);
 				++tracks;
 			}
-			auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()};
-			WriteLog(format("SELFTEST railtime: the rails of %d tracks laid out in %.1f ms", tracks, elapsed));
+			auto const crossed{std::chrono::steady_clock::now()};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
+					continue;
+				track->plan_rails(true);
+			}
+			auto const finished{std::chrono::steady_clock::now()};
+			auto const crossings{std::chrono::duration<double, std::milli>(crossed - started).count()};
+			auto const elapsed{std::chrono::duration<double, std::milli>(finished - started).count()};
+			WriteLog(format("SELFTEST railtime: the rails of %d tracks laid out in %.1f ms, of which their crossings %.1f ms", tracks, elapsed, crossings));
 		}
 		else if (command == "crossings")
 		{
