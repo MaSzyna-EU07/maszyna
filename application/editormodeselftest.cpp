@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "world/Track.h"
+#include "world/TrackRails.h"
 #include "world/MemCell.h"
 #include "world/Event.h"
 #include "vehicle/DynObj.h"
@@ -45,6 +46,7 @@ http://mozilla.org/MPL/2.0/.
 //   camera <x> <y> <z> <x> <y> <z>        from the first point, looking at the second
 //   select <track name>
 //   frog [name]                          logs where the inner rails of each switch cross: distance on both paths, 1:n, throat, nose, check rails
+//   guards [name]                        logs each guard rail and what each of its ends and breaks is cut along; a fault when a cut is not along a rail or a glued end not on the guard rail of the other track
 //   crossings [name]                     logs where rails of tracks cross rails of other tracks, checks that each acute crossing has one partner and one nose
 //   frogkey name [on|off]                sets or clears the frogs key of a switch (one undo step); logs the key, whether it is written, the frog and the crossings
 //   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds
@@ -238,6 +240,109 @@ void editor_mode::selftest_step()
 			WriteLog(format("SELFTEST frogkey %s: key %d, written %d, frog %d, crossings %zu, profile '%s'", name.c_str(), track->SwitchExtension->m_frogs ? 1 : 0, text.str().find(" frogs ") != std::string::npos ? 1 : 0,
 			    track->frog().valid ? 1 : 0, track->rail_crossings().size(), track->m_profile1.first.c_str()));
 			}
+		}
+		else if (command == "guards")
+		{
+			std::string name;
+			words >> name;
+			int count{0};
+			int faults{0};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
+					continue;
+				if (false == name.empty() && track->name() != name)
+					continue;
+				auto const layout{track->plan_rails(true)};
+				auto const size{track->rail_dimensions()};
+				auto const guardoffset{-(track_rails::flangeway + size.head)};
+				double const laterals[2]{size.low + guardoffset, track_rails::flangeway + size.head + size.low - 0.002 + guardoffset};
+				for (int path = 0; path < 2; ++path)
+				{
+					for (int right = 0; right < 2; ++right)
+					{
+						auto const side{right ? 1 : -1};
+						auto const length{track->eType == tt_Switch ? track->SwitchExtension->Segments[path]->GetLength() : track->Segment->GetLength()};
+						auto const drawn = [&](glm::dvec2 const &Miter, double const Square) {
+							auto const at{Miter.y == 0.0 ? Square : Miter.x + Miter.y * 0.5 * (laterals[0] + laterals[1])};
+							return at > 0.0 && at < length;
+						};
+						for (auto const &guard : layout.guards[path][right])
+						{
+							if (false == drawn(guard.frommiter, guard.from) && false == drawn(guard.tomiter, guard.to) && (guard.to <= 0.0 || guard.from >= length))
+								continue;
+							++count;
+							std::string text;
+							auto const end = [&](glm::dvec2 const &Miter, bool const Flared, bool const Glued) {
+								if (Miter.y == 0.0)
+									return std::string{Flared ? "flared" : "square"};
+								if (false == drawn(Miter, 0.0))
+									return std::string{"past the end of the track"};
+								glm::dvec3 points[2];
+								for (int i = 0; i < 2; ++i)
+									points[i] = track_rails::rail_point(*track, path, side, Miter.x + Miter.y * laterals[i], laterals[i]);
+								auto best{1e9};
+								double lateral{0.0}, along{0.0};
+								TTrack *against{nullptr};
+								int againstpath{0}, againstside{0};
+								for (auto *other : layout.crossed)
+									for (int otherpath = 0; otherpath < (other->eType == tt_Switch ? 2 : 1); ++otherpath)
+										for (auto const otherside : {-1, 1})
+										{
+											double d[2], l[2];
+											for (int i = 0; i < 2; ++i)
+												track_rails::rail_offset(*other, otherpath, otherside, points[i], d[i], l[i]);
+											if (std::abs(l[0]) > 0.5 || std::abs(l[1]) > 0.5 || std::abs(l[0] - l[1]) >= best)
+												continue;
+											best = std::abs(l[0] - l[1]);
+											lateral = 0.5 * (l[0] + l[1]);
+											along = 0.5 * (d[0] + d[1]);
+											against = other;
+											againstpath = otherpath;
+											againstside = otherside;
+										}
+								if (against == nullptr)
+								{
+									++faults;
+									return std::string{"cut along nothing FAULT"};
+								}
+								auto result{format("along %s/%d%+d at %.3f m, %.1f mm off its gauge line, skew %.1f mm", against->name().c_str(), againstpath, againstside, along, lateral * 1000.0, best * 1000.0)};
+								auto fault{best > 0.002};
+								if (Glued)
+								{
+									auto const theirsize{against->rail_dimensions()};
+									auto const theiroffset{-(track_rails::flangeway + theirsize.head)};
+									double const theirlaterals[2]{theirsize.low + theiroffset, track_rails::flangeway + theirsize.head + theirsize.low - 0.002 + theiroffset};
+									auto const reach = [&](glm::dvec2 const &Miter, double const Square, bool const Latest) {
+										if (Miter.y == 0.0)
+											return Square;
+										auto const a{Miter.x + Miter.y * theirlaterals[0]};
+										auto const b{Miter.x + Miter.y * theirlaterals[1]};
+										return Latest ? std::max(a, b) : std::min(a, b);
+									};
+									auto covered{false};
+									for (auto const &theirs : against->plan_rails(true).guards[againstpath][againstside > 0])
+										covered |= (along > reach(theirs.frommiter, theirs.from, false) - 0.002 && along < reach(theirs.tomiter, theirs.to, true) + 0.002);
+									result += covered ? ", on its guard rail" : ", no guard rail there";
+									fault |= (false == covered || std::abs(lateral + track_rails::flangeway) > 0.002);
+								}
+								if (fault)
+								{
+									++faults;
+									result += " FAULT";
+								}
+								return result;
+							};
+							text += "from " + end(guard.frommiter, guard.flarefrom, false == guard.flarefrom) + "; to " + end(guard.tomiter, guard.flareto, false == guard.flareto);
+							for (auto const &cut : guard.plan.cuts)
+								if (cut.end > 0.0 && cut.start < length)
+									text += format("; break %.3f-%.3f: ", cut.end, cut.start) + end(cut.endmiter, false, false) + " / " + end(cut.startmiter, false, false);
+							WriteLog(format("SELFTEST guard %s path %d side %+d %.3f-%.3f m: %s", track->name().c_str(), path, side, guard.from, guard.to, text.c_str()));
+						}
+					}
+				}
+			}
+			WriteLog(format("SELFTEST guards: %d guard rails, %d faults", count, faults));
 		}
 		else if (command == "crossings")
 		{

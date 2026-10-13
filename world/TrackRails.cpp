@@ -289,6 +289,36 @@ void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool con
     }
 }
 
+glm::dvec3 rail_point( TTrack const &Track, int const Path, int const Side, double const Distance, double const Lateral ) {
+
+    auto const line { make_gauge_line( path_segment( Track, Path ), Side * 0.5 * std::abs( Track.fTrackWidth ), 0.0 ) };
+    glm::dvec3 point, tangent;
+    line.at( Distance, point, tangent );
+    return point - line.normal( Distance, Side ) * Lateral;
+}
+
+void rail_offset( TTrack const &Track, int const Path, int const Side, glm::dvec3 const &Point, double &Distance, double &Lateral ) {
+
+    auto const line { make_gauge_line( path_segment( Track, Path ), Side * 0.5 * std::abs( Track.fTrackWidth ), 0.0 ) };
+    auto const flat = []( glm::dvec3 const &V ) { return glm::dvec2{ V.x, V.z }; };
+    Distance = line.distances.front();
+    auto nearest { std::numeric_limits<double>::max() };
+    for( std::size_t i = 0; i < line.points.size(); ++i ) {
+        auto const gap { glm::length( flat( line.points[ i ] - Point ) ) };
+        if( gap < nearest ) {
+            nearest = gap;
+            Distance = line.distances[ i ];
+        }
+    }
+    glm::dvec3 point, tangent;
+    for( int step = 0; step < 8; ++step ) {
+        line.at( Distance, point, tangent );
+        Distance += glm::dot( flat( Point - point ), glm::normalize( flat( tangent ) ) );
+    }
+    line.at( Distance, point, tangent );
+    Lateral = -glm::dot( flat( Point - point ), flat( line.normal( Distance, Side ) ) );
+}
+
 } // namespace track_rails
 
 using namespace track_rails;
