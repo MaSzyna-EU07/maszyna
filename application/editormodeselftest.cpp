@@ -47,6 +47,7 @@ http://mozilla.org/MPL/2.0/.
 //   select <track name>
 //   frog [name]                          logs where the inner rails of each switch cross: distance on both paths, 1:n, throat, nose, check rails
 //   guards [name]                        logs each guard rail and what each of its ends and breaks is cut along; a fault when a cut is not along a rail or a glued end not on the guard rail of the other track
+//   railtime                             lays out the rails of every track, as when its geometry is made, and logs how long it took
 //   crossings [name]                     logs where rails of tracks cross rails of other tracks, checks that each acute crossing has one partner and one nose
 //   frogkey name [on|off]                sets or clears the frogs key of a switch (one undo step); logs the key, whether it is written, the frog and the crossings
 //   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds
@@ -343,6 +344,21 @@ void editor_mode::selftest_step()
 				}
 			}
 			WriteLog(format("SELFTEST guards: %d guard rails, %d faults", count, faults));
+		}
+		else if (command == "railtime")
+		{
+			track_rails::forget();
+			auto const started{std::chrono::steady_clock::now()};
+			int tracks{0};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
+					continue;
+				track->plan_rails(true);
+				++tracks;
+			}
+			auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()};
+			WriteLog(format("SELFTEST railtime: the rails of %d tracks laid out in %.1f ms", tracks, elapsed));
 		}
 		else if (command == "crossings")
 		{
