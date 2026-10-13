@@ -288,11 +288,13 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // Diffuse colour is applied once, to the albedo; the light terms below are not scaled by it again
     texturecolor *= material_diffuse();
     float weathered = (param[2].w > 0.0 ? clamp(param[2].w * UserData.x, 0.0, 1.0) : 0.0);
-    float polished = weathered * smoothstep(0.03, 0.12, dot(texturecolor, vec3(0.2126, 0.7152, 0.0722)));
+    float tinted = (param[2].w < 0.0 ? clamp(-param[2].w * UserData.x, 0.0, 1.0) : 0.0);
+    float polished = max(weathered * smoothstep(0.03, 0.12, dot(texturecolor, vec3(0.2126, 0.7152, 0.0722))), tinted);
     float weatheredluma = min(dot(texturecolor, vec3(0.2126, 0.7152, 0.0722)), 0.05);
     vec3 unused = texturecolor * (weatheredluma / max(dot(texturecolor, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
     unused = mix(unused, vec3(1.0, 0.82, 0.74) * (weatheredluma / 0.8525), 0.5);
     texturecolor = mix(texturecolor, unused, smoothstep(0.0, 0.4, weathered));
+    texturecolor = (tinted > 0.0 ? mix(texturecolor, param[2].rgb, tinted) : texturecolor);
     specularity = mix(specularity, min(specularity, 0.03), smoothstep(0.0, 0.4, polished));
     metalic = mix(metalic, 0.0, polished);
     glossiness = mix(glossiness, min(glossiness, 0.06 * abs(param[1].w)), polished);
