@@ -399,6 +399,8 @@ public:
         double to { 0.0 };
         material_handle material { 0 };
         int anchor { 0 };
+        std::vector<glm::dvec2> edge;
+        bool below { false };
     };
     struct rail_layout {
         rail_plan plans[ 2 ][ 2 ]; // path, right side
