@@ -1,0 +1,2 @@
+// expect: error malformed file
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": 5, "type": "logic.not" } ] }

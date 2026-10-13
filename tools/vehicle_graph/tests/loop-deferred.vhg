@@ -1,0 +1,15 @@
+// expect: ok
+// the same self-holding circuit as loop.vhg, closed through a unit delay
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [
+	{ "id": "start", "type": "cab.switch" },
+	{ "id": "hold", "type": "logic.or" },
+	{ "id": "coil", "type": "logic.and" },
+	{ "id": "stop", "type": "logic.const", "params": { "value": 1 } },
+	{ "id": "contact", "type": "logic.delay" }
+], "connections": [
+	{ "from": "start.pos", "to": "hold.a" },
+	{ "from": "contact.q", "to": "hold.b" },
+	{ "from": "hold.q", "to": "coil.a" },
+	{ "from": "stop.q", "to": "coil.b" },
+	{ "from": "coil.q", "to": "contact.a" }
+] }

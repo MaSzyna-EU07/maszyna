@@ -1,0 +1,4 @@
+// expect: error has more than one source
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [
+	{ "id": "a", "type": "cab.switch" }, { "id": "b", "type": "cab.switch" }, { "id": "n", "type": "logic.not" }
+], "connections": [ { "from": "a.pos", "to": "n.a" }, { "from": "b.pos", "to": "n.a" } ] }

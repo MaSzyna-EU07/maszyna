@@ -1,0 +1,95 @@
+// cab logic of an electric locomotive with resistor starting, modelled after the 303E (ET22) .fiz.
+// stage 1 of the vehicle graph: only logic and cab blocks are available, so the pantographs and the high voltage
+// are represented by timers and constants. the physical blocks replace them in the next stages
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "303E (logic test)" },
+	"settings": { "low_voltage_simulation": false },
+	"nodes": [
+		{ "id": "bat", "type": "cab.switch", "title": "Battery", "params": { "behaviour": "bistable", "submodel": "battery_sw:", "command": "batterytoggle" } },
+		{ "id": "pant_f", "type": "cab.switch", "title": "Front pantograph", "params": { "behaviour": "bistable", "submodel": "pantfront_sw:", "command": "pantographtogglefront" } },
+		{ "id": "pant_r", "type": "cab.switch", "title": "Rear pantograph", "params": { "behaviour": "bistable", "submodel": "pantrear_sw:", "command": "pantographtogglerear" } },
+		{ "id": "ws_on", "type": "cab.switch", "title": "Line breaker on", "params": { "behaviour": "monostable", "animation": "move", "step": 4, "submodel": "main_on_bt:", "command": "linebreakerclose" } },
+		{ "id": "ws_off", "type": "cab.switch", "title": "Line breaker off", "params": { "behaviour": "monostable", "animation": "move", "step": 4, "submodel": "main_off_bt:", "command": "linebreakeropen" } },
+		{ "id": "conv_sw", "type": "cab.switch", "title": "Converter", "params": { "behaviour": "bistable", "submodel": "converter_sw:", "command": "convertertoggle" } },
+		{ "id": "comp_sw", "type": "cab.switch", "title": "Compressor", "params": { "behaviour": "bistable", "submodel": "compressor_sw:", "command": "compressortoggle" } },
+		{ "id": "reverser", "type": "cab.switch", "title": "Reverser", "params": { "behaviour": "multi", "positions": 3, "min": -1, "max": 1, "default": 0, "labels": "back;0;forward", "step": 45, "offset": -45, "submodel": "dirkey:" } },
+		{ "id": "mainctrl", "type": "cab.switch", "title": "Master controller", "params": { "behaviour": "multi", "positions": 44, "min": 0, "max": 43, "default": 0, "step": 6, "submodel": "mainctrl:" } },
+
+		{ "id": "pant_any", "type": "logic.or", "title": "Any pantograph selected" },
+		{ "id": "pant_air", "type": "logic.and", "title": "Pantograph valve powered" },
+		{ "id": "pant_up", "type": "logic.ton", "title": "Pantograph raising", "params": { "time": 4.0 } },
+		{ "id": "hv_nominal", "type": "logic.const", "title": "Catenary voltage", "params": { "value": 3000 } },
+		{ "id": "hv", "type": "logic.math", "title": "Voltage behind the pantographs", "params": { "op": "mul" } },
+		{ "id": "hv_ok", "type": "logic.hyst", "title": "Voltage above minimum", "params": { "lo": 1800, "hi": 1900 } },
+
+		{ "id": "ws_close", "type": "logic.and", "title": "Closing allowed" },
+		{ "id": "ws_close2", "type": "logic.and", "title": "Closing with voltage" },
+		{ "id": "ws_lost", "type": "logic.nand", "title": "Battery or voltage missing" },
+		{ "id": "ws_open", "type": "logic.or", "title": "Opening" },
+		{ "id": "ws", "type": "logic.sr", "title": "Line breaker", "params": { "reset_priority": true } },
+		{ "id": "ws_lamp_on", "type": "logic.not", "title": "Line breaker open" },
+
+		{ "id": "conv_run", "type": "logic.and", "title": "Converter powered" },
+		{ "id": "conv", "type": "logic.ton", "title": "Converter starting", "params": { "time": 3.0 } },
+		{ "id": "conv_lamp_on", "type": "logic.not", "title": "Converter off" },
+		{ "id": "comp", "type": "logic.and", "title": "Compressor running" },
+
+		{ "id": "dir_set", "type": "logic.compare", "title": "Direction selected", "params": { "op": "ne", "value": 0 } },
+		{ "id": "power_req", "type": "logic.compare", "title": "Controller above zero", "params": { "op": "gt", "value": 0 } },
+		{ "id": "line_req", "type": "logic.and", "title": "Line contactors requested" },
+		{ "id": "line", "type": "logic.and", "title": "Line contactors closed" },
+		{ "id": "line_lamp_on", "type": "logic.not", "title": "Line contactors open" },
+
+		{ "id": "lamp_ws", "type": "fb.lamp", "title": "Line breaker lamp", "params": { "color": "red", "submodel": "i-mainbreaker:" } },
+		{ "id": "lamp_conv", "type": "fb.lamp", "title": "Converter lamp", "params": { "color": "yellow", "submodel": "i-converteroverload:" } },
+		{ "id": "lamp_line", "type": "fb.lamp", "title": "Line contactors lamp", "params": { "color": "green", "submodel": "i-stlinoff:" } },
+		{ "id": "v_hv", "type": "fb.gauge", "title": "High voltage", "params": { "min": 0, "max": 4000, "unit": "V", "angle_min": 0, "angle_max": 270, "submodel": "hvoltage:" } },
+		{ "id": "snd_conv", "type": "fb.sound", "title": "Converter", "params": { "file": "przetwornica.wav", "placement": "engine", "loop": true } },
+		{ "id": "snd_comp", "type": "fb.sound", "title": "Compressor", "params": { "file": "sprezarka.wav", "placement": "engine", "loop": true } }
+	],
+	"connections": [
+		{ "from": "pant_f.pos", "to": "pant_any.a" },
+		{ "from": "pant_r.pos", "to": "pant_any.b" },
+		{ "from": "pant_any.q", "to": "pant_air.a" },
+		{ "from": "bat.pos", "to": "pant_air.b" },
+		{ "from": "pant_air.q", "to": "pant_up.a" },
+		{ "from": "hv_nominal.q", "to": "hv.a" },
+		{ "from": "pant_up.q", "to": "hv.b" },
+		{ "from": "hv.q", "to": "hv_ok.a" },
+		{ "from": "hv.q", "to": "v_hv.value" },
+
+		{ "from": "ws_on.pos", "to": "ws_close.a" },
+		{ "from": "bat.pos", "to": "ws_close.b" },
+		{ "from": "ws_close.q", "to": "ws_close2.a" },
+		{ "from": "hv_ok.q", "to": "ws_close2.b" },
+		{ "from": "bat.pos", "to": "ws_lost.a" },
+		{ "from": "hv_ok.q", "to": "ws_lost.b" },
+		{ "from": "ws_off.pos", "to": "ws_open.a" },
+		{ "from": "ws_lost.q", "to": "ws_open.b" },
+		{ "from": "ws_close2.q", "to": "ws.s" },
+		{ "from": "ws_open.q", "to": "ws.r" },
+		{ "from": "ws.q", "to": "ws_lamp_on.a" },
+		{ "from": "ws_lamp_on.q", "to": "lamp_ws.on" },
+
+		{ "from": "ws.q", "to": "conv_run.a" },
+		{ "from": "conv_sw.pos", "to": "conv_run.b" },
+		{ "from": "conv_run.q", "to": "conv.a" },
+		{ "from": "conv.q", "to": "conv_lamp_on.a" },
+		{ "from": "conv_lamp_on.q", "to": "lamp_conv.on" },
+		{ "from": "conv.q", "to": "comp.a" },
+		{ "from": "comp_sw.pos", "to": "comp.b" },
+		{ "from": "conv.q", "to": "snd_conv.play" },
+		{ "from": "comp.q", "to": "snd_comp.play" },
+
+		{ "from": "reverser.pos", "to": "dir_set.a" },
+		{ "from": "mainctrl.pos", "to": "power_req.a" },
+		{ "from": "dir_set.q", "to": "line_req.a" },
+		{ "from": "power_req.q", "to": "line_req.b" },
+		{ "from": "line_req.q", "to": "line.a" },
+		{ "from": "ws.q", "to": "line.b" },
+		{ "from": "line.q", "to": "line_lamp_on.a" },
+		{ "from": "line_lamp_on.q", "to": "lamp_line.on" }
+	]
+}

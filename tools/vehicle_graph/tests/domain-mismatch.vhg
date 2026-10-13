@@ -1,0 +1,3 @@
+// expect: error joins different domains
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "a", "type": "cab.switch" }, { "id": "lamp", "type": "fb.lamp" } ],
+  "connections": [ { "from": "a.pos", "to": "lamp.supply" } ] }

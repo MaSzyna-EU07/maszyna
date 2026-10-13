@@ -1,0 +1,17 @@
+# events for: -graph-run 303e-logic.vhg -script 303e-logic.script
+# <time, s> <operation> <target> [value]
+# operations on cab switches: press, release, toggle, inc, dec, set <position>, value <value>
+# operations on signals: force <node.port> <value>, unforce <node.port>
+0.0   toggle  bat
+0.5   toggle  pant_f
+6.0   press   ws_on
+6.3   release ws_on
+7.0   toggle  conv_sw
+8.0   toggle  comp_sw
+11.0  inc     reverser
+11.5  inc     mainctrl
+11.6  inc     mainctrl
+14.0  press   ws_off
+14.2  release ws_off
+15.0  toggle  pant_f
+17.0  toggle  bat

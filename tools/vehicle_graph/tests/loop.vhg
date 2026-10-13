@@ -1,0 +1,12 @@
+// expect: error loop without a deferred block
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [
+	{ "id": "start", "type": "cab.switch" },
+	{ "id": "hold", "type": "logic.or" },
+	{ "id": "coil", "type": "logic.and" },
+	{ "id": "stop", "type": "logic.const", "params": { "value": 1 } }
+], "connections": [
+	{ "from": "start.pos", "to": "hold.a" },
+	{ "from": "coil.q", "to": "hold.b" },
+	{ "from": "hold.q", "to": "coil.a" },
+	{ "from": "stop.q", "to": "coil.b" }
+] }

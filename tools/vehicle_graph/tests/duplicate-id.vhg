@@ -1,0 +1,2 @@
+// expect: error duplicate node id
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "a", "type": "logic.not" }, { "id": "a", "type": "logic.not" } ] }

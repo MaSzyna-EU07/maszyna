@@ -1,0 +1,3 @@
+// expect: error isn't an output
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "a", "type": "logic.not" }, { "id": "b", "type": "logic.not" } ],
+  "connections": [ { "from": "a.a", "to": "b.a" } ] }

@@ -1,0 +1,39 @@
+// expect: ok
+// every logic block driven by forced inputs; see blocks.script
+{
+	"format": "maszyna-vehicle-graph", "version": 2,
+	"nodes": [
+		{ "id": "x", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "y", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "and", "type": "logic.and" }, { "id": "or", "type": "logic.or" }, { "id": "xor", "type": "logic.xor" },
+		{ "id": "nand", "type": "logic.nand" }, { "id": "nor", "type": "logic.nor" }, { "id": "not", "type": "logic.not" },
+		{ "id": "sr", "type": "logic.sr" },
+		{ "id": "sr_set", "type": "logic.sr", "params": { "reset_priority": false } },
+		{ "id": "ton", "type": "logic.ton", "params": { "time": 0.5 } },
+		{ "id": "tof", "type": "logic.tof", "params": { "time": 0.5 } },
+		{ "id": "delay", "type": "logic.delay", "params": { "initial": 7 } },
+		{ "id": "hyst", "type": "logic.hyst", "params": { "lo": 2, "hi": 4 } },
+		{ "id": "le", "type": "logic.compare", "params": { "op": "le", "value": 3 } },
+		{ "id": "div", "type": "logic.math", "params": { "op": "div" } },
+		{ "id": "min", "type": "logic.math", "params": { "op": "min" } },
+		{ "id": "sel", "type": "logic.select" },
+		{ "id": "button", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "lever", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 5, "min": -2, "max": 2, "default": 0, "spring": true } }
+	],
+	"connections": [
+		{ "from": "x.q", "to": "and.a" }, { "from": "y.q", "to": "and.b" },
+		{ "from": "x.q", "to": "or.a" }, { "from": "y.q", "to": "or.b" },
+		{ "from": "x.q", "to": "xor.a" }, { "from": "y.q", "to": "xor.b" },
+		{ "from": "x.q", "to": "nand.a" }, { "from": "y.q", "to": "nand.b" },
+		{ "from": "x.q", "to": "nor.a" }, { "from": "y.q", "to": "nor.b" },
+		{ "from": "x.q", "to": "not.a" },
+		{ "from": "x.q", "to": "sr.s" }, { "from": "y.q", "to": "sr.r" },
+		{ "from": "x.q", "to": "sr_set.s" }, { "from": "y.q", "to": "sr_set.r" },
+		{ "from": "x.q", "to": "ton.a" }, { "from": "x.q", "to": "tof.a" },
+		{ "from": "x.q", "to": "delay.a" },
+		{ "from": "x.q", "to": "hyst.a" }, { "from": "x.q", "to": "le.a" },
+		{ "from": "x.q", "to": "div.a" }, { "from": "y.q", "to": "div.b" },
+		{ "from": "x.q", "to": "min.a" }, { "from": "y.q", "to": "min.b" },
+		{ "from": "button.pos", "to": "sel.sel" }, { "from": "x.q", "to": "sel.a" }, { "from": "lever.pos", "to": "sel.b" }
+	]
+}

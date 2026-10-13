@@ -57,7 +57,9 @@ file(GLOB HEADERS "*.h"
 "model/*.h"
 "utilities/*.h"
 "world/*.h"
-"vehicle/*.h")
+"vehicle/*.h"
+"vehicle/graph/*.h"
+"vehicle/graph/blocks/*.h")
 
 set(GLOBAL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GLOBAL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/global_include")
@@ -109,6 +111,15 @@ set(SOURCES
 "vehicle/Driver.cpp"
 "application/driverhints.cpp"
 "vehicle/DynObj.cpp"
+"vehicle/graph/graph_types.cpp"
+"vehicle/graph/graph_block.cpp"
+"vehicle/graph/graph_catalog.cpp"
+"vehicle/graph/graph_format.cpp"
+"vehicle/graph/graph_template.cpp"
+"vehicle/graph/graph_instance.cpp"
+"vehicle/graph/graph_standalone.cpp"
+"vehicle/graph/blocks/logic.cpp"
+"vehicle/graph/blocks/cab.cpp"
 "EU07.cpp"
 "export_e3d_standalone.cpp"
 "export_btf_standalone.cpp"

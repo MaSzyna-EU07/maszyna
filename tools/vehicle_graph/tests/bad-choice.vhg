@@ -1,0 +1,2 @@
+// expect: error has to be one of
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "sw", "type": "cab.switch", "params": { "behaviour": "bistabilny" } } ] }

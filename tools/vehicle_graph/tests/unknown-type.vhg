@@ -1,0 +1,2 @@
+// expect: error unknown block type
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "x", "type": "el.flux_capacitor" } ] }

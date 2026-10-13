@@ -1,0 +1,2 @@
+// expect: error has to be a number
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "sw", "type": "cab.switch", "params": { "positions": "3" } } ] }

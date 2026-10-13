@@ -1,0 +1,2 @@
+// expect: error unsupported file version 1
+{ "format": "maszyna-vehicle-graph", "version": 1, "nodes": [] }

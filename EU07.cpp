@@ -20,6 +20,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 
 #include "application/application.h"
 #include "utilities/Logs.h"
+#include "vehicle/graph/graph_standalone.h"
 #include <cstdlib>
 #ifdef WITHDUMPGEN
 #ifdef _WIN32
@@ -126,6 +127,22 @@ int main(int argc, char *argv[])
 			}
 		}
 		auto const result{export_btf_standalone(in, out)};
+		fflush(stdout);
+		fflush(stderr);
+		std::_Exit(result);
+	}
+	// standalone check and run of a vehicle graph: -graph-run <file.vhg> [-script <events>] [-o <results.csv>] [-dt <step>] [-t <duration>] [-every <steps>]
+	else if (argc >= 2 && std::string(argv[1]) == "-graph-run")
+	{
+		auto const result{vgraph::graph_run_standalone(argc, argv)};
+		fflush(stdout);
+		fflush(stderr);
+		std::_Exit(result);
+	}
+	// export of the vehicle graph block catalog for the external editor: -graph-catalog [-o <file.json>]
+	else if (argc >= 2 && std::string(argv[1]) == "-graph-catalog")
+	{
+		auto const result{vgraph::graph_catalog_standalone(argc >= 4 && std::string(argv[2]) == "-o" ? argv[3] : "")};
 		fflush(stdout);
 		fflush(stderr);
 		std::_Exit(result);

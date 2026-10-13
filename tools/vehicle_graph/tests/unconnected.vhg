@@ -1,0 +1,2 @@
+// expect: warning required input "a" isn't connected
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "n", "type": "logic.not" } ] }
