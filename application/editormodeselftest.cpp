@@ -49,7 +49,7 @@ http://mozilla.org/MPL/2.0/.
 //   guards [name]                        logs each guard rail and what each of its ends and breaks is cut along; a fault when a cut is not along a rail or a glued end not on the guard rail of the other track
 //   railtime                             lays out the rails of every track, as when its geometry is made, and logs how long it took
 //   switches <0|1>                       sets every switch to the path and moves its blades there at once
-//   crossings [name]                     logs where rails of tracks cross rails of other tracks, checks that each acute crossing has one partner and one nose
+//   crossings [name]                     logs where rails of tracks cross rails of other tracks and of what kind (acute, obtuse, middle acute or obtuse, wide), checks that each acute crossing has one partner and one nose
 //   frogkey name [on|off]                sets or clears the frogs key of a switch (one undo step); logs the key, whether it is written, the frog and the crossings
 //   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds
 //   sweep <key>=<value>...               model, params (separated by commas), lateral, height, side (origin, near, far,
@@ -170,9 +170,10 @@ void editor_mode::selftest_step()
 				glm::dvec3 point, across;
 				track->SwitchExtension->Segments[0]->plan_frame(frog.at[0], point, across);
 				auto const gauge{point + across * (frog.side[0] * 0.5 * std::abs(track->fTrackWidth))};
-				auto const check{0.5 * std::clamp(0.5 * n, 3.6, 9.0)};
+				auto const slope{std::tan(frog.angle)};
+				auto const check{0.5 * track_rails::check_length(slope)};
 				WriteLog(format("SELFTEST frog %s: crossing at %.3f / %.3f m (%.3f %.3f %.3f), 1:%.2f, side %d, blades %.3f / %.3f m, throat %.3f, nose %.3f, wing end %.3f, check rails %.3f-%.3f / %.3f-%.3f m", track->name().c_str(),
-				    frog.at[0], frog.at[1], gauge.x, gauge.y, gauge.z, n, frog.side[0], frog.blades[0], frog.blades[1], frog.at[0] - 0.045 * n, frog.at[0] + 0.012 * n, frog.at[0] + 0.15 * n,
+				    frog.at[0], frog.at[1], gauge.x, gauge.y, gauge.z, n, frog.side[0], frog.blades[0], frog.blades[1], frog.at[0] - track_rails::flangeway / slope, frog.at[0] + track_rails::nose_tip / slope, frog.at[0] + track_rails::wing_reach(slope),
 				    frog.at[0] - 0.25 - check, frog.at[0] - 0.25 + check, frog.at[1] - 0.25 - check, frog.at[1] - 0.25 + check));
 			}
 		}
@@ -394,6 +395,7 @@ void editor_mode::selftest_step()
 			int tracks{0};
 			int found{0};
 			int acutes{0};
+			int middles{0};
 			int mismatched{0};
 			for (auto *track : simulation::Paths.sequence())
 			{
@@ -405,7 +407,9 @@ void editor_mode::selftest_step()
 				for (auto const &crossing : track->rail_crossings())
 				{
 					++found;
-					auto const kind{crossing.angle > 0.785 ? "wide" : crossing.facing < 0.0 ? "acute" : "obtuse"};
+					auto const middle{crossing.angle > track_rails::middle_angle && crossing.angle <= track_rails::wide_angle};
+					middles += middle ? 1 : 0;
+					auto const kind{crossing.angle > track_rails::wide_angle ? "wide" : crossing.facing < 0.0 ? (middle ? "middle acute" : "acute") : (middle ? "middle obtuse" : "obtuse")};
 					WriteLog(format("SELFTEST crossing %s path %d side %d at %.3f m: %s with %s, 1:%.2f, into %.3f, facing %.3f, nose %d", track->name().c_str(), crossing.path, crossing.side, crossing.at, kind,
 					    crossing.track->name().c_str(), 1.0 / std::tan(crossing.angle), crossing.into, crossing.facing, crossing.nose ? 1 : 0));
 				}
@@ -417,7 +421,7 @@ void editor_mode::selftest_step()
 				};
 				for (auto const &crossing : track->rail_crossings(false))
 				{
-					if (crossing.angle > 0.785 || crossing.facing >= 0.0)
+					if (crossing.angle > track_rails::wide_angle || crossing.facing >= 0.0)
 						continue;
 					++acutes;
 					auto const here{gauge(track, crossing)};
@@ -425,7 +429,7 @@ void editor_mode::selftest_step()
 					auto noses{crossing.nose ? 1 : 0};
 					for (auto const &other : crossing.track->rail_crossings(false))
 					{
-						if (other.track != track || other.angle > 0.785 || other.facing >= 0.0)
+						if (other.track != track || other.angle > track_rails::wide_angle || other.facing >= 0.0)
 							continue;
 						auto const there{gauge(crossing.track, other)};
 						if (glm::length(glm::dvec2{there.x - here.x, there.z - here.z}) > 0.05)
@@ -439,7 +443,7 @@ void editor_mode::selftest_step()
 				}
 			}
 			auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()};
-			WriteLog(format("SELFTEST crossings: %d rail crossings on %d tracks, %d acute, %d mismatched, %.1f ms", found, tracks, acutes, mismatched, elapsed));
+			WriteLog(format("SELFTEST crossings: %d rail crossings on %d tracks, %d of them middle, %d acute, %d mismatched, %.1f ms", found, tracks, middles, acutes, mismatched, elapsed));
 		}
 		else if (command == "sweep")
 		{
