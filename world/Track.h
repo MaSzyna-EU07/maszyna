@@ -189,6 +189,13 @@ public:
     material_handle m_materialcut2 = 0; // matte variant of texture 2, for the cut faces of rails of the other switch path
     geometryhandle_sequence GeometryCut1; // cut faces of rails textured with texture 1, the blade tip first for a switch
     geometryhandle_sequence GeometryCut2; // cut faces of rails textured with texture 2, the blade tip first
+    struct tread_geometry {
+        material_handle material { 0 };
+        material_handle matte { 0 };
+        geometryhandle_sequence geometry;
+        geometryhandle_sequence cuts;
+    };
+    std::vector<tread_geometry> GeometryTreads;
 
     std::vector<segment_data> m_paths; // source data for owned paths
     bool m_editorremoved { false };
@@ -387,11 +394,17 @@ public:
         bool capto { false };
         double lift { 0.0 };
     };
+    struct rail_tread {
+        double from { 0.0 };
+        double to { 0.0 };
+        material_handle material { 0 };
+    };
     struct rail_layout {
         rail_plan plans[ 2 ][ 2 ]; // path, right side
         std::vector<rail_band> bands[ 2 ][ 2 ];
         std::vector<rail_fill> fills[ 2 ][ 2 ];
         std::vector<glm::dvec2> blocks[ 2 ][ 2 ];
+        std::vector<rail_tread> treads[ 2 ][ 2 ];
         std::vector<guard_rail> guards[ 2 ][ 2 ];
         std::vector<glm::dvec2> wingends[ 2 ][ 2 ]; // ends of the wing rails of other rails running along each rail, and which way they run there
         check_rail_set checks;
@@ -504,6 +517,9 @@ private:
     // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
     bool lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
     int blade_side( int const Path ) const;
+    material_handle rail_material( int const Path ) const;
+    glm::vec2 tread_band() const;
+    material_handle shared_tread( int const Path, TTrack const &Other, int const Otherpath ) const;
     void loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::vertex_array const &Blade, float const Texturelength, gfx::vertex_array &Vertices ) const;
 // members
     static profiles_array m_profiles; // shared database of path element profiles

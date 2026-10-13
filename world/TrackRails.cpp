@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "scene/scene.h"
 #include "rendering/renderer.h"
+#include "stb/stb_image.h"
 
 namespace {
 
@@ -194,6 +195,97 @@ material_handle cut_material( material_handle const Material ) {
 
     static auto const unrolled { std::getenv( "EU07_EDITOR_UNROLLED" ) != nullptr };
     return unrolled ? GfxRenderer->Fetch_Material( "editor_unrolled" ) : GfxRenderer->Matte_Material( Material );
+}
+
+float tread_brightness( material_handle const Material, glm::vec2 const &Band ) {
+
+    static std::map<std::tuple<material_handle, float, float>, float> brightness;
+    auto const key { std::make_tuple( Material, Band.x, Band.y ) };
+    if( auto const lookup { brightness.find( key ) }; lookup != brightness.end() ) {
+        return lookup->second;
+    }
+    auto &result { brightness[ key ] };
+    result = -1.f;
+    if( Material == null_handle ) {
+        return result;
+    }
+    auto const texture { GfxRenderer->Material( Material )->GetTexture( 0 ) };
+    if( texture == null_handle ) {
+        return result;
+    }
+    auto const &image { GfxRenderer->Texture( texture ) };
+    auto const type { std::string( image.get_type() ) };
+    auto const file { std::string( image.get_name() ) + type };
+    auto const columns = [&]( int const Width ) {
+        auto const first { std::clamp( static_cast<int>( std::floor( std::min( Band.x, Band.y ) * Width ) ), 0, Width - 1 ) };
+        auto const last { std::clamp( static_cast<int>( std::ceil( std::max( Band.x, Band.y ) * Width ) ) - 1, first, Width - 1 ) };
+        return std::pair{ first, last }; };
+    auto sum { 0.0 };
+    std::size_t count { 0 };
+    auto const add = [&]( float const Red, float const Green, float const Blue ) {
+        sum += 0.2126 * Red + 0.7152 * Green + 0.0722 * Blue;
+        ++count; };
+    if( type == ".dds" ) {
+        std::ifstream input( file, std::ios::binary );
+        std::array<unsigned char, 128> header {};
+        if( input.read( reinterpret_cast<char *>( header.data() ), header.size() ) && std::equal( header.begin(), header.begin() + 4, "DDS " ) ) {
+            auto const word = [&]( std::size_t const Offset ) {
+                return static_cast<std::uint32_t>( header[ Offset ] ) | static_cast<std::uint32_t>( header[ Offset + 1 ] ) << 8 | static_cast<std::uint32_t>( header[ Offset + 2 ] ) << 16 | static_cast<std::uint32_t>( header[ Offset + 3 ] ) << 24; };
+            auto const height { static_cast<int>( word( 12 ) ) };
+            auto const width { static_cast<int>( word( 16 ) ) };
+            auto const fourcc { word( 84 ) };
+            auto const blocksize { fourcc == 0x31545844u ? 8 : ( fourcc == 0x33545844u || fourcc == 0x35545844u ) ? 16 : 0 };
+            if( blocksize > 0 && width > 0 && height > 0 ) {
+                auto const wide { ( width + 3 ) / 4 };
+                auto const high { ( height + 3 ) / 4 };
+                std::vector<unsigned char> data( static_cast<std::size_t>( wide ) * high * blocksize );
+                if( input.read( reinterpret_cast<char *>( data.data() ), data.size() ) ) {
+                    auto const [ first, last ] { columns( width ) };
+                    auto const unpack = []( unsigned const Color ) {
+                        return glm::vec3{ ( ( Color >> 11 ) & 31 ) * 255.f / 31.f, ( ( Color >> 5 ) & 63 ) * 255.f / 63.f, ( Color & 31 ) * 255.f / 31.f }; };
+                    for( int row = 0; row < high; ++row ) {
+                        for( int column = first / 4; column <= last / 4; ++column ) {
+                            auto const *block { &data[ ( static_cast<std::size_t>( row ) * wide + column ) * blocksize + ( blocksize - 8 ) ] };
+                            auto const low { static_cast<unsigned>( block[ 0 ] | block[ 1 ] << 8 ) };
+                            auto const top { static_cast<unsigned>( block[ 2 ] | block[ 3 ] << 8 ) };
+                            auto const opaque { blocksize == 16 || low > top };
+                            glm::vec3 const colors[ 4 ] {
+                                unpack( low ),
+                                unpack( top ),
+                                opaque ? ( 2.f * unpack( low ) + unpack( top ) ) / 3.f : 0.5f * ( unpack( low ) + unpack( top ) ),
+                                opaque ? ( unpack( low ) + 2.f * unpack( top ) ) / 3.f : glm::vec3{ 0.f } };
+                            auto const bits { static_cast<std::uint32_t>( block[ 4 ] ) | static_cast<std::uint32_t>( block[ 5 ] ) << 8 | static_cast<std::uint32_t>( block[ 6 ] ) << 16 | static_cast<std::uint32_t>( block[ 7 ] ) << 24 };
+                            for( int texel = 0; texel < 16; ++texel ) {
+                                auto const x { column * 4 + texel % 4 };
+                                auto const index { ( bits >> ( 2 * texel ) ) & 3 };
+                                if( x < first || x > last || ( false == opaque && index == 3 ) ) {
+                                    continue;
+                                }
+                                add( colors[ index ].r, colors[ index ].g, colors[ index ].b );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else {
+        int width, height, components;
+        if( auto *pixels { stbi_load( file.c_str(), &width, &height, &components, 4 ) } ) {
+            auto const [ first, last ] { columns( width ) };
+            for( int y = 0; y < height; ++y ) {
+                for( int x = first; x <= last; ++x ) {
+                    auto const *pixel { &pixels[ ( static_cast<std::size_t>( y ) * width + x ) * 4 ] };
+                    add( pixel[ 0 ], pixel[ 1 ], pixel[ 2 ] );
+                }
+            }
+            stbi_image_free( pixels );
+        }
+    }
+    if( count > 0 ) {
+        result = static_cast<float>( sum / count );
+    }
+    return result;
 }
 
 // in the colour of the top of the rail foot
@@ -978,6 +1070,47 @@ struct frame_corner {
 
 } // namespace
 
+material_handle TTrack::rail_material( int const Path ) const {
+
+    return ( Path == 1 && eType == tt_Switch ? m_material2 : m_material1 );
+}
+
+glm::vec2 TTrack::tread_band() const {
+
+    glm::vec2 band { 0.45f, 0.55f };
+    if( m_profiles.empty() ) {
+        return band;
+    }
+    auto const &outline { track_rail_profile( m_profile1.second ) };
+    auto const count { outline.size() / 2 };
+    auto top { -1e9f };
+    for( std::size_t i = 0; i < count; ++i ) {
+        top = std::max( top, outline[ i ].position.y );
+    }
+    glm::vec2 found { 1e9f, -1e9f };
+    for( std::size_t i = 0; i < count; ++i ) {
+        if( outline[ i ].position.y > top - 0.0005f ) {
+            found = { std::min( found.x, outline[ i ].texture.s ), std::max( found.y, outline[ i ].texture.s ) };
+        }
+    }
+    if( found.x > found.y ) {
+        return band;
+    }
+    auto const middle { 0.5f * ( found.x + found.y ) };
+    auto const half { std::max( 0.5f * ( found.y - found.x ), 0.01f ) };
+    return { middle - half, middle + half };
+}
+
+material_handle TTrack::shared_tread( int const Path, TTrack const &Other, int const Otherpath ) const {
+
+    auto const own { rail_material( Path ) };
+    auto const theirs { Other.rail_material( Otherpath ) };
+    if( theirs == null_handle || theirs == own ) {
+        return own;
+    }
+    return ( track_rails::tread_brightness( theirs, Other.tread_band() ) > track_rails::tread_brightness( own, tread_band() ) ? theirs : own );
+}
+
 TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
 
     rail_layout layout;
@@ -993,6 +1126,21 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
     auto &guards { layout.guards };
     auto &wingends { layout.wingends };
     auto const guardoffset { -( flangeway + railhead ) };
+    auto const tread = [&]( int const Path, int const Side, glm::dvec2 const &Span, TTrack const &Other, int const Otherpath ) {
+        auto const material { shared_tread( Path, Other, Otherpath ) };
+        if( material != rail_material( Path ) && Span.y > Span.x ) {
+            layout.treads[ Path ][ Side > 0 ].push_back( { Span.x, Span.y, material } );
+        }
+    };
+    auto const across = [&]( rail_crossing const &Crossing, rail_size const &Other ) {
+        glm::dvec2 span { 1e9, -1e9 };
+        for( auto const theirs : { Other.grooved ? Other.ledge : 0.0, Other.grooved ? Other.tread : Other.head } ) {
+            for( auto const ours : { size.grooved ? size.ledge : 0.0, size.grooved ? size.tread : size.head } ) {
+                auto const distance { Crossing.at + ( Crossing.facing * ours - theirs ) / Crossing.into };
+                span = { std::min( span.x, distance ), std::max( span.y, distance ) };
+            }
+        }
+        return span; };
     std::vector<frame_corner> corners;
     if( Crossings ) {
         for( auto const &crossing : crossings ) {
@@ -1008,11 +1156,16 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                     std::vector<rail_fill> vee;
                     vee_fill( vee, crossing.at, crossing.into, crossing.facing, size, theirs, true );
                     vee_fill( vee, crossing.at, crossing.into, crossing.facing, size, theirs, false );
-                    layout.blocks[ crossing.path ][ crossing.side > 0 ].emplace_back( std::min( vee[ 0 ].from, vee[ 1 ].from ), std::max( vee[ 0 ].to, vee[ 1 ].to ) );
+                    glm::dvec2 const block { std::min( vee[ 0 ].from, vee[ 1 ].from ), std::max( vee[ 0 ].to, vee[ 1 ].to ) };
+                    layout.blocks[ crossing.path ][ crossing.side > 0 ].push_back( block );
+                    tread( crossing.path, crossing.side, block, *crossing.track, crossing.otherpath );
                     if( through ) {
                         auto &fills { layout.fills[ crossing.path ][ crossing.side > 0 ] };
                         fills.insert( fills.end(), vee.begin(), vee.end() );
                     }
+                }
+                else if( through ) {
+                    tread( crossing.path, crossing.side, across( crossing, theirs ), *crossing.track, crossing.otherpath );
                 }
                 continue;
             }
@@ -1023,6 +1176,9 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 auto const other { crossing.track->rail_dimensions() };
                 auto const through { goes_through( *this, *crossing.track ) };
                 wide( plan, crossing.at, crossing.into, crossing.facing, through ? 0.0 : -other.head, flangeway, 0.0, railhead );
+                if( through ) {
+                    tread( crossing.path, crossing.side, across( crossing, other ), *crossing.track, crossing.otherpath );
+                }
                 auto const reach { ( flangeway + railhead + 0.3 ) / std::abs( crossing.into ) };
                 auto &spans { guards[ crossing.path ][ crossing.side > 0 ] };
                 TTrack::guard_rail guard { crossing.at - reach, crossing.at + reach };
@@ -1047,8 +1203,12 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 wingends[ crossing.path ][ crossing.side > 0 ].emplace_back( crossing.at - toward * wing_reach( slope ), -toward );
                 acute( plan, crossing.at, toward, slope, crossing.nose,
                     wing_extension( *this, checks, crossing.path, crossing.side, crossing.at, toward, slope, *crossing.track, crossing.otherpath, crossing.otherside, crossing.otherat, crossing.aligned ? -toward : toward ), size );
+                auto const nose { toward < 0.0 ? plan.cuts.back().start : plan.cuts.back().end };
+                std::vector<rail_fill> vee;
+                vee_fill( vee, crossing.at, crossing.into, crossing.facing, size, crossing.track->rail_dimensions(), true );
+                tread( crossing.path, crossing.side, { std::min( nose, vee.front().from ), std::max( nose, vee.front().to ) }, *crossing.track, crossing.otherpath );
                 if( crossing.nose ) {
-                    vee_fill( layout.fills[ crossing.path ][ crossing.side > 0 ], crossing.at, crossing.into, crossing.facing, size, crossing.track->rail_dimensions(), true );
+                    layout.fills[ crossing.path ][ crossing.side > 0 ].push_back( vee.front() );
                 }
             }
             else {
@@ -1135,6 +1295,11 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
             }
         }
     }
+    if( eType == tt_Switch && cut_rails( *this ) ) {
+        for( int path = 0; path < 2; ++path ) {
+            tread( path, -blade_side( path ), { 0.0, 0.5 * blade_length( *this, path ) }, *this, 1 - path );
+        }
+    }
     if( eType == tt_Switch ) {
         auto const frog { this->frog() };
         if( frog.valid ) {
@@ -1155,7 +1320,9 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                     std::vector<rail_fill> vee;
                     vee_fill( vee, frog.at[ path ], into, facing, size, size, true );
                     vee_fill( vee, frog.at[ path ], into, facing, size, size, false );
-                    layout.blocks[ path ][ frog.side[ path ] > 0 ].emplace_back( std::min( vee[ 0 ].from, vee[ 1 ].from ), std::max( vee[ 0 ].to, vee[ 1 ].to ) );
+                    glm::dvec2 const block { std::min( vee[ 0 ].from, vee[ 1 ].from ), std::max( vee[ 0 ].to, vee[ 1 ].to ) };
+                    layout.blocks[ path ][ frog.side[ path ] > 0 ].push_back( block );
+                    tread( path, frog.side[ path ], block, *this, 1 - path );
                     if( path == 0 ) {
                         fills.insert( fills.end(), vee.begin(), vee.end() );
                     }
@@ -1164,8 +1331,12 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 wingends[ path ][ frog.side[ path ] > 0 ].emplace_back( frog.at[ path ] + wing_reach( slope ), 1.0 );
                 acute( plans[ path ][ frog.side[ path ] > 0 ], frog.at[ path ], -1.0, slope, path == 0,
                     wing_extension( *this, checks, path, frog.side[ path ], frog.at[ path ], -1.0, slope, *this, 1 - path, frog.side[ 1 - path ], frog.at[ 1 - path ], 1.0 ), size );
+                auto const nose { plans[ path ][ frog.side[ path ] > 0 ].cuts.back().start };
+                std::vector<rail_fill> vee;
+                vee_fill( vee, frog.at[ path ], into, facing, size, size, true );
+                tread( path, frog.side[ path ], { std::min( nose, vee.front().from ), std::max( nose, vee.front().to ) }, *this, 1 - path );
                 if( path == 0 ) {
-                    vee_fill( fills, frog.at[ path ], into, facing, size, size, true );
+                    fills.push_back( vee.front() );
                 }
             }
         }
@@ -1247,12 +1418,40 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     auto const &segment { path_segment( *this, Path ) };
     auto const &plan { Layout.plans[ Path ][ Side > 0 ] };
     auto const length { segment.GetLength() };
+    auto const &treads { Layout.treads[ Path ][ Side > 0 ] };
+    material_handle current { null_handle };
+    auto const sink = [&]( bool const Matte ) -> geometryhandle_sequence & {
+        if( current == null_handle ) {
+            return Matte ? Cuts : Geometry;
+        }
+        if( current == m_material1 ) {
+            return Matte ? GeometryCut1 : Geometry1;
+        }
+        if( eType == tt_Switch && current == m_material2 ) {
+            return Matte ? GeometryCut2 : Geometry2;
+        }
+        auto found { std::find_if( GeometryTreads.begin(), GeometryTreads.end(), [&]( tread_geometry const &Tread ) { return Tread.material == current; } ) };
+        if( found == GeometryTreads.end() ) {
+            found = GeometryTreads.insert( GeometryTreads.end(), { current, cut_material( current ), {}, {} } );
+        }
+        return Matte ? found->cuts : found->geometry; };
+    auto const texturelength = [&]() {
+        return ( current == null_handle ? Texturelength : texture_length( current ) ); };
+    auto const aim = [&]( std::vector<rail_tread> const &Spans, double const Middle ) {
+        current = null_handle;
+        for( auto const &span : Spans ) {
+            if( Middle > span.from && Middle < span.to ) {
+                current = span.material;
+                break;
+            }
+        }
+    };
     // parts no wheel rolls on go in the matte material of the cut faces
     auto const piece = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, bool const Capstart, bool const Capend, gfx::vertex_array const &Shape, bool const Rolled, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Ramp = {}, bool const Walls = false, float const Lift = 0.f, float const Wallu = -1.f ) {
         gfx::vertex_array vertices;
         gfx::userdata_array userdata;
-        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, Texturelength, Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : blend, Walls, Wallu ) ) {
-            cut_faces( vertices, Shape.size(), Capstart, Capend, Drawing.bank, Cuts );
+        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : blend, Walls, Wallu ) ) {
+            cut_faces( vertices, Shape.size(), Capstart, Capend, Drawing.bank, sink( true ) );
             gfx::vertex_array triangles;
             gfx::userdata_array triangleuserdata;
             auto const ring { 2 * Shape.size() };
@@ -1267,7 +1466,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
                     }
                 }
             }
-            ( Rolled ? Geometry : Cuts ).emplace_back( GfxRenderer->Insert( triangles, Rolled ? empty_userdata : triangleuserdata, Drawing.bank, GL_TRIANGLES ) );
+            sink( false == Rolled ).emplace_back( GfxRenderer->Insert( triangles, Rolled ? empty_userdata : triangleuserdata, Drawing.bank, GL_TRIANGLES ) );
         }
     };
     auto const level = []( std::vector<glm::dvec2> const &Knots, double const Distance ) {
@@ -1320,8 +1519,8 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         return gfx::vertex_array( Profile.begin() + First, Profile.begin() + Last + 1 ); };
     auto const running = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Rolled, bool const Capstart, bool const Capend ) {
         gfx::vertex_array vertices;
-        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, Texturelength, Start, End, Offsets, Extents, 0.f, Inner ) ) {
-            cut_faces( vertices, Profile.size(), Capstart, Capend, Drawing.bank, Cuts );
+        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner ) ) {
+            cut_faces( vertices, Profile.size(), Capstart, Capend, Drawing.bank, sink( true ) );
         }
         piece( Start, End, Offsets, Extents, false, false, strip( 0, topfirst ), true, Inner );
         piece( Start, End, Offsets, Extents, false, false, strip( toplast, Profile.size() - 1 ), true, Inner );
@@ -1470,11 +1669,13 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         auto const a { std::max( fill.from, From ) };
         auto const b { std::min( fill.to, length ) };
         if( b - a > 0.01 ) {
+            aim( treads, 0.5 * ( a + b ) );
             piece( a, b, {}, fill.outer, a == fill.from && fill.capfrom, b == fill.to && fill.capto, Drawing.plates[ Side > 0 ? 0 : 1 ], true, fill.inner, {}, true, static_cast<float>( fill.lift ) );
+            current = null_handle;
         }
     }
     auto const &bands { Layout.bands[ Path ][ Side > 0 ] };
-    if( plan.cuts.empty() && bands.empty() ) {
+    if( plan.cuts.empty() && bands.empty() && treads.empty() ) {
         return false;
     }
     auto const byposition = []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; };
@@ -1509,7 +1710,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         ( outwards ? cut.endinner : cut.endextents ) = endknots;
         ( outwards ? cut.startextents : cut.startinner ) = startknots;
         return cut; };
-    auto const lay = [&]( gfx::vertex_array const &Shape, std::vector<rail_cut> cuts, bool const Wheels, float const Wallu = -1.f ) {
+    auto const lay = [&]( gfx::vertex_array const &Shape, std::vector<rail_cut> cuts, bool const Wheels, std::vector<rail_tread> const &Spans, float const Wallu = -1.f ) {
         std::sort( cuts.begin(), cuts.end(), []( rail_cut const &A, rail_cut const &B ) { return A.at < B.at; } );
         auto start { -1e9 };
         auto startcap { true };
@@ -1534,12 +1735,30 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             auto const capstart { start > From ? startcap : Openstart };
             auto const capend { end < length ? cuts[ i ].endcap : Openend };
             if( b - a > 0.01 ) {
-                if( false == Wheels || rolled.empty() || topfirst >= toplast ) {
-                    piece( a, b, pieceoffsets, pieceextents, capstart, capend, Shape, true, pieceinner, {}, false == Wheels, 0.f, Wallu );
+                std::vector<double> splits;
+                for( auto const &span : Spans ) {
+                    for( auto const edge : { span.from, span.to } ) {
+                        if( edge > a + 0.01 && edge < b - 0.01 ) {
+                            splits.push_back( edge );
+                        }
+                    }
                 }
-                else {
-                    running( a, b, pieceoffsets, pieceextents, pieceinner, rolled, capstart, capend );
+                std::sort( splits.begin(), splits.end() );
+                splits.erase( std::unique( splits.begin(), splits.end(), []( double const A, double const B ) { return B - A < 0.002; } ), splits.end() );
+                splits.insert( splits.begin(), a );
+                splits.push_back( b );
+                for( std::size_t k = 1; k < splits.size(); ++k ) {
+                    auto const first { k == 1 };
+                    auto const last { k + 1 == splits.size() };
+                    aim( Spans, 0.5 * ( splits[ k - 1 ] + splits[ k ] ) );
+                    if( false == Wheels || rolled.empty() || topfirst >= toplast ) {
+                        piece( splits[ k - 1 ], splits[ k ], pieceoffsets, pieceextents, first && capstart, last && capend, Shape, true, pieceinner, {}, false == Wheels, 0.f, Wallu );
+                    }
+                    else {
+                        running( splits[ k - 1 ], splits[ k ], pieceoffsets, pieceextents, pieceinner, rolled, first && capstart, last && capend );
+                    }
                 }
+                current = null_handle;
             }
             if( i < cuts.size() ) {
                 rolledfrom = cuts[ i ].startrolled;
@@ -1559,7 +1778,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         for( auto const &band : bands ) {
             cuts.push_back( band_cut( band, reach ) );
         }
-        lay( Profile, cuts, true );
+        lay( Profile, cuts, true, treads );
         return true;
     }
     auto const height = [&]( std::size_t const Index ) {
@@ -1661,7 +1880,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             wholecuts.push_back( band_cut( band, bodyreach ) );
         }
     }
-    lay( body, wholecuts, false );
+    lay( body, wholecuts, false, {} );
     auto const wallu { floortextures > 0 ? floortexture / floortextures : -1.f };
     for( std::size_t k = 0; k < tops.size(); ++k ) {
         auto const reach { reaches( tops[ k ] ) };
@@ -1708,8 +1927,17 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             }
         }
         if( merged.empty() ) {
-            lay( tops[ k ], cuts, false, wallu );
+            lay( tops[ k ], cuts, false, treads, wallu );
             continue;
+        }
+        std::vector<rail_tread> blocktreads;
+        for( auto const &span : merged ) {
+            for( auto const &tread : treads ) {
+                if( tread.from < span.y && tread.to > span.x ) {
+                    blocktreads.push_back( { span.x, span.y, tread.material } );
+                    break;
+                }
+            }
         }
         auto const seam = []( double const At, double const End, double const Start ) {
             rail_cut cut;
@@ -1731,8 +1959,8 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
                 seam( 0.5 * ( merged[ m ].y + merged[ m + 1 ].x ), merged[ m ].y, merged[ m + 1 ].x ) :
                 seam( merged[ m ].y + 0.001, merged[ m ].y, 1e9 ) );
         }
-        lay( tops[ k ], outside, false, wallu );
-        lay( flats[ k ], inside, false, wallu );
+        lay( tops[ k ], outside, false, treads, wallu );
+        lay( flats[ k ], inside, false, blocktreads, wallu );
     }
     return true;
 }
