@@ -629,7 +629,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     std::sort( stations.begin(), stations.end() );
     stations.erase( std::unique( stations.begin(), stations.end(), []( double const A, double const B ) { return B - A < 0.001; } ), stations.end() );
 
-    auto const ring = [&]( double const Distance, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
+    auto const ring = [&]( double const Distance, double const Middle, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
         glm::dvec3 point;
         glm::dvec3 across;
         plan_frame( Distance, point, across );
@@ -642,6 +642,8 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         auto const offset { sample( Offsets, Distance, 0.0 ) };
         auto const extent { sample( Extents, Distance, 1e6 ) };
         auto const innerextent { sample( Inner, Distance, -1e6 ) };
+        auto const middleextent { sample( Extents, Middle, 1e6 ) };
+        auto const middleinner { sample( Inner, Middle, -1e6 ) };
         glm::vec3 outerwall { 0.f }, innerwall { 0.f };
         if( Walls ) {
             auto const delta { 0.001 };
@@ -666,7 +668,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             return ShapePoints[ A ].position.x == ShapePoints[ B ].position.x && ShapePoints[ A ].position.y == ShapePoints[ B ].position.y; };
         auto const clamped = [&]( std::size_t const Index ) {
             auto const outside { reach( Index ) };
-            return ( outside > extent ? 1 : outside < innerextent ? -1 : 0 ); };
+            return ( outside > middleextent ? 1 : outside < middleinner ? -1 : 0 ); };
         for( std::size_t j = 0; j < count; ++j ) {
             auto shape { ShapePoints[ j ] };
             auto outside { reach( j ) };
@@ -675,7 +677,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             if( side != 0 ) {
                 auto const limit { side > 0 ? extent : innerextent };
                 auto const open = [&]( std::size_t const Index ) {
-                    return Index < count && ( side > 0 ? reach( Index ) <= extent : reach( Index ) >= innerextent ); };
+                    return Index < count && ( side > 0 ? reach( Index ) <= middleextent : reach( Index ) >= middleinner ); };
                 auto first { j };
                 auto last { j };
                 if( Walls ) {
@@ -704,6 +706,32 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                     moved = neighbour;
                     break;
                 }
+                if( moved == count ) {
+                    auto top { -1e6f };
+                    auto bottom { 1e6f };
+                    auto ends { 0 };
+                    for( auto const step : { -1, 1 } ) {
+                        auto index { static_cast<std::ptrdiff_t>( j ) };
+                        while( index + step >= 0 && index + step < static_cast<std::ptrdiff_t>( count ) && clamped( static_cast<std::size_t>( index + step ) ) == side ) {
+                            index += step;
+                        }
+                        auto const neighbour { index + step };
+                        if( neighbour < 0 || false == open( static_cast<std::size_t>( neighbour ) ) ) {
+                            continue;
+                        }
+                        auto const t { static_cast<float>( ( limit - reach( static_cast<std::size_t>( neighbour ) ) ) / ( reach( static_cast<std::size_t>( index ) ) - reach( static_cast<std::size_t>( neighbour ) ) ) ) };
+                        auto const height { glm::mix( ShapePoints[ neighbour ].position.y, ShapePoints[ index ].position.y, t ) };
+                        top = std::max( top, height );
+                        bottom = std::min( bottom, height );
+                        ++ends;
+                    }
+                    if( ends > 0 ) {
+                        shape.position.y = std::min( shape.position.y, top );
+                    }
+                    if( ends > 1 ) {
+                        shape.position.y = std::max( shape.position.y, bottom );
+                    }
+                }
                 outside = limit;
                 auto const onwall { paired ? ( false == open( partner ) && clamped( partner ) == side ) : moved == count };
                 if( onwall ) {
@@ -728,10 +756,11 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     auto const texturelength { static_cast<float>( fTextureLength ) };
     std::vector<gfx::basic_vertex> ring1, ring2;
     std::vector<float> wear1, wear2;
-    ring( stations.front(), ring1, wear1 );
     float tv1 { clamp_circular( 1.f - static_cast<float>( std::fmod( From, fTextureLength ) / fTextureLength ), 1.0f ) };
     for( std::size_t i = 1; i < stations.size(); ++i ) {
-        ring( stations[ i ], ring2, wear2 );
+        auto const middle { 0.5 * ( stations[ i - 1 ] + stations[ i ] ) };
+        ring( stations[ i - 1 ], middle, ring1, wear1 );
+        ring( stations[ i ], middle, ring2, wear2 );
         tv1 = clamp_circular( tv1, 1.0f );
         auto const tv2 { tv1 - static_cast<float>( stations[ i ] - stations[ i - 1 ] ) / texturelength };
         for( std::size_t j = 0; j < ring1.size(); ++j ) {
@@ -742,8 +771,6 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                 Userdata->push_back( { glm::vec4{ wear2[ j ], 0.f, 0.f, 0.f } } );
             }
         }
-        std::swap( ring1, ring2 );
-        std::swap( wear1, wear2 );
         tv1 = tv2;
     }
     return true;
