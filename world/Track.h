@@ -400,6 +400,7 @@ public:
         material_handle material { 0 };
         int anchor { 0 };
         std::vector<glm::dvec2> edge;
+        std::vector<glm::dvec2> gauge;
         bool below { false };
     };
     struct rail_layout {
