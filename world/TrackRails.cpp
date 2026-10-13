@@ -1126,10 +1126,10 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
     auto &guards { layout.guards };
     auto &wingends { layout.wingends };
     auto const guardoffset { -( flangeway + railhead ) };
-    auto const tread = [&]( int const Path, int const Side, glm::dvec2 const &Span, TTrack const &Other, int const Otherpath ) {
+    auto const tread = [&]( int const Path, int const Side, glm::dvec2 const &Span, TTrack const &Other, int const Otherpath, int const Anchor = 0 ) {
         auto const material { shared_tread( Path, Other, Otherpath ) };
         if( material != rail_material( Path ) && Span.y > Span.x ) {
-            layout.treads[ Path ][ Side > 0 ].push_back( { Span.x, Span.y, material } );
+            layout.treads[ Path ][ Side > 0 ].push_back( { Span.x, Span.y, material, Anchor } );
         }
     };
     auto const across = [&]( rail_crossing const &Crossing, rail_size const &Other ) {
@@ -1204,12 +1204,8 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 acute( plan, crossing.at, toward, slope, crossing.nose,
                     wing_extension( *this, checks, crossing.path, crossing.side, crossing.at, toward, slope, *crossing.track, crossing.otherpath, crossing.otherside, crossing.otherat, crossing.aligned ? -toward : toward ), size );
                 auto const nose { toward < 0.0 ? plan.cuts.back().start : plan.cuts.back().end };
-                std::vector<rail_fill> vee;
-                vee_fill( vee, crossing.at, crossing.into, crossing.facing, size, crossing.track->rail_dimensions(), true );
-                tread( crossing.path, crossing.side, { std::min( nose, vee.front().from ), std::max( nose, vee.front().to ) }, *crossing.track, crossing.otherpath );
-                if( crossing.nose ) {
-                    layout.fills[ crossing.path ][ crossing.side > 0 ].push_back( vee.front() );
-                }
+                auto const shared { crossing.at - toward * ( rolled_band + size.head ) / slope };
+                tread( crossing.path, crossing.side, { std::min( nose, shared ), std::max( nose, shared ) }, *crossing.track, crossing.otherpath, toward > 0.0 ? 1 : -1 );
             }
             else {
                 obtuse( plan, crossing.at, crossing.into, size );
@@ -1297,7 +1293,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
     }
     if( eType == tt_Switch && cut_rails( *this ) ) {
         for( int path = 0; path < 2; ++path ) {
-            tread( path, -blade_side( path ), { 0.0, 0.5 * blade_length( *this, path ) }, *this, 1 - path );
+            tread( path, -blade_side( path ), { 0.0, 0.25 * blade_length( *this, 1 - path ) }, *this, 1 - path );
         }
     }
     if( eType == tt_Switch ) {
@@ -1332,12 +1328,8 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 acute( plans[ path ][ frog.side[ path ] > 0 ], frog.at[ path ], -1.0, slope, path == 0,
                     wing_extension( *this, checks, path, frog.side[ path ], frog.at[ path ], -1.0, slope, *this, 1 - path, frog.side[ 1 - path ], frog.at[ 1 - path ], 1.0 ), size );
                 auto const nose { plans[ path ][ frog.side[ path ] > 0 ].cuts.back().start };
-                std::vector<rail_fill> vee;
-                vee_fill( vee, frog.at[ path ], into, facing, size, size, true );
-                tread( path, frog.side[ path ], { std::min( nose, vee.front().from ), std::max( nose, vee.front().to ) }, *this, 1 - path );
-                if( path == 0 ) {
-                    fills.push_back( vee.front() );
-                }
+                auto const shared { frog.at[ path ] + ( rolled_band + size.head ) / slope };
+                tread( path, frog.side[ path ], { std::min( nose, shared ), std::max( nose, shared ) }, *this, 1 - path, -1 );
             }
         }
     }
@@ -1735,8 +1727,16 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             auto const capstart { start > From ? startcap : Openstart };
             auto const capend { end < length ? cuts[ i ].endcap : Openend };
             if( b - a > 0.01 ) {
-                std::vector<double> splits;
+                std::vector<rail_tread> active;
                 for( auto const &span : Spans ) {
+                    if( span.anchor == 0
+                     || ( span.anchor > 0 && b > span.from + 0.01 && b < span.to + 0.01 )
+                     || ( span.anchor < 0 && a > span.from - 0.01 && a < span.to - 0.01 ) ) {
+                        active.push_back( span );
+                    }
+                }
+                std::vector<double> splits;
+                for( auto const &span : active ) {
                     for( auto const edge : { span.from, span.to } ) {
                         if( edge > a + 0.01 && edge < b - 0.01 ) {
                             splits.push_back( edge );
@@ -1750,7 +1750,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
                 for( std::size_t k = 1; k < splits.size(); ++k ) {
                     auto const first { k == 1 };
                     auto const last { k + 1 == splits.size() };
-                    aim( Spans, 0.5 * ( splits[ k - 1 ] + splits[ k ] ) );
+                    aim( active, 0.5 * ( splits[ k - 1 ] + splits[ k ] ) );
                     if( false == Wheels || rolled.empty() || topfirst >= toplast ) {
                         piece( splits[ k - 1 ], splits[ k ], pieceoffsets, pieceextents, first && capstart, last && capend, Shape, true, pieceinner, {}, false == Wheels, 0.f, Wallu );
                     }

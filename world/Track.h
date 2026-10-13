@@ -398,6 +398,7 @@ public:
         double from { 0.0 };
         double to { 0.0 };
         material_handle material { 0 };
+        int anchor { 0 };
     };
     struct rail_layout {
         rail_plan plans[ 2 ][ 2 ]; // path, right side
