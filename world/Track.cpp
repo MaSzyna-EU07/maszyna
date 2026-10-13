@@ -2145,6 +2145,15 @@ TTrack * TTrack::RaAnimate()
             gfx::vertex_array vertices;
             auto const bladelength { track_rails::blade_steps( *this ) };
             auto const nnumPts { track_rail_profile( m_profile1.second ).size() / 2 };
+            auto const replace_blade = [&]( geometryhandle_sequence const &Geometry, geometryhandle_sequence const &Cuts ) {
+                if( false == Cuts.empty() ) {
+                    gfx::vertex_array triangles;
+                    track_rails::cap_loft( vertices, nnumPts, true, false, triangles );
+                    auto userdata { track_rails::worn_userdata( triangles.size() ) };
+                    GfxRenderer->Replace( triangles, userdata, Cuts[ 0 ], GL_TRIANGLES );
+                }
+                GfxRenderer->Replace( vertices, empty_userdata, Geometry[ 0 ], GL_TRIANGLE_STRIP );
+                vertices.clear(); };
             if (SwitchExtension->RightSwitch)
             { // nowa wersja z SPKS, ale odwrotnie lewa/prawa
                 if( m_material1 ) {
@@ -2153,14 +2162,7 @@ TTrack * TTrack::RaAnimate()
                     // composed from two parts: transition from blade to regular rail, and regular rail
                     SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { SwitchExtension->fOffset2, SwitchExtension->fOffset2 / 2 } );
                     SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { SwitchExtension->fOffset2 / 2, 0.f } );
-					if( false == GeometryCut1.empty() ) {
-						gfx::vertex_array triangles;
-						track_rails::cap_loft( vertices, nnumPts, true, false, triangles );
-						auto userdata { track_rails::worn_userdata( triangles.size() ) };
-						GfxRenderer->Replace(triangles, userdata, GeometryCut1[0], GL_TRIANGLES);
-					}
-					GfxRenderer->Replace(vertices, empty_userdata, Geometry1[0], GL_TRIANGLE_STRIP);
-                    vertices.clear();
+                    replace_blade( Geometry1, GeometryCut1 );
                 }
                 if( m_material2 ) {
                     auto const texturelength { texture_length( m_material2 ) };
@@ -2168,14 +2170,7 @@ TTrack * TTrack::RaAnimate()
                     // composed from two parts: transition from blade to regular rail, and regular rail
                     SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -fMaxOffset + SwitchExtension->fOffset1, ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2 } );
                     SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2, 0.f } );
-					if( false == GeometryCut2.empty() ) {
-						gfx::vertex_array triangles;
-						track_rails::cap_loft( vertices, nnumPts, true, false, triangles );
-						auto userdata { track_rails::worn_userdata( triangles.size() ) };
-						GfxRenderer->Replace(triangles, userdata, GeometryCut2[0], GL_TRIANGLES);
-					}
-					GfxRenderer->Replace(vertices, empty_userdata, Geometry2[0], GL_TRIANGLE_STRIP);
-                    vertices.clear();
+                    replace_blade( Geometry2, GeometryCut2 );
                 }
             }
             else { // lewa działa lepiej niż prawa
@@ -2185,14 +2180,7 @@ TTrack * TTrack::RaAnimate()
                     // composed from two parts: transition from blade to regular rail, and regular rail
                     SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -SwitchExtension->fOffset2, -SwitchExtension->fOffset2 / 2 } );
                     SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { -SwitchExtension->fOffset2 / 2, 0.f } );
-					if( false == GeometryCut1.empty() ) {
-						gfx::vertex_array triangles;
-						track_rails::cap_loft( vertices, nnumPts, true, false, triangles );
-						auto userdata { track_rails::worn_userdata( triangles.size() ) };
-						GfxRenderer->Replace(triangles, userdata, GeometryCut1[0], GL_TRIANGLES);
-					}
-					GfxRenderer->Replace(vertices, empty_userdata, Geometry1[0], GL_TRIANGLE_STRIP);
-                    vertices.clear();
+                    replace_blade( Geometry1, GeometryCut1 );
                 }
                 if( m_material2 ) {
                     auto const texturelength { texture_length( m_material2 ) };
@@ -2200,14 +2188,7 @@ TTrack * TTrack::RaAnimate()
                     // composed from two parts: transition from blade to regular rail, and regular rail
                     SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { fMaxOffset - SwitchExtension->fOffset1, ( fMaxOffset - SwitchExtension->fOffset1 ) / 2 } );
                     SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { ( fMaxOffset - SwitchExtension->fOffset1 ) / 2, 0.f } );
-					if( false == GeometryCut2.empty() ) {
-						gfx::vertex_array triangles;
-						track_rails::cap_loft( vertices, nnumPts, true, false, triangles );
-						auto userdata { track_rails::worn_userdata( triangles.size() ) };
-						GfxRenderer->Replace(triangles, userdata, GeometryCut2[0], GL_TRIANGLES);
-					}
-					GfxRenderer->Replace(vertices, empty_userdata, Geometry2[0], GL_TRIANGLE_STRIP);
-                    vertices.clear();
+                    replace_blade( Geometry2, GeometryCut2 );
                 }
             }
         }

@@ -48,6 +48,7 @@ http://mozilla.org/MPL/2.0/.
 //   frog [name]                          logs where the inner rails of each switch cross: distance on both paths, 1:n, throat, nose, check rails
 //   guards [name]                        logs each guard rail and what each of its ends and breaks is cut along; a fault when a cut is not along a rail or a glued end not on the guard rail of the other track
 //   railtime                             lays out the rails of every track, as when its geometry is made, and logs how long it took
+//   switches <0|1>                       sets every switch to the path and moves its blades there at once
 //   crossings [name]                     logs where rails of tracks cross rails of other tracks, checks that each acute crossing has one partner and one nose
 //   frogkey name [on|off]                sets or clears the frogs key of a switch (one undo step); logs the key, whether it is written, the frog and the crossings
 //   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds
@@ -344,6 +345,22 @@ void editor_mode::selftest_step()
 				}
 			}
 			WriteLog(format("SELFTEST guards: %d guard rails, %d faults", count, faults));
+		}
+		else if (command == "switches")
+		{
+			int path{0};
+			words >> path;
+			int count{0};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
+					continue;
+				track->Switch(path);
+				track->SwitchExtension->fOffset = track->SwitchExtension->fDesiredOffset;
+				track->RaAnimate();
+				++count;
+			}
+			WriteLog(format("SELFTEST switches: %d switches set to path %d", count, path));
 		}
 		else if (command == "railtime")
 		{
