@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "rendering/geometrybank.h"
 #include <glm/glm.hpp>
+#include <optional>
 
 struct map_colored_paths {
 	std::vector<gfx::geometrybank_handle> switches;
@@ -58,6 +59,7 @@ class TSegment
 	glm::dvec3 vB;
 	glm::dvec3 vC; // współczynniki wielomianów trzeciego stopnia vD==Point1
     TTrack *pOwner = nullptr; // wskaźnik na właściciela
+    std::optional<std::pair<glm::dvec3, glm::dvec3>> m_joints[ 2 ];
 
     glm::dvec3 GetFirstDerivative(double const fTime) const;
 	double RombergIntegral(double const fA, double const fB) const;
@@ -128,6 +130,15 @@ public:
 
     bool
         RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, bool const Transition, double fTextureLength, double Texturescale = 1.0, int iSkip = 0, int iEnd = 0, std::pair<float, float> fOffsetX = {0.f, 0.f}, glm::vec3 **p = nullptr, bool bRender = true );
+    // the profile lofted from distance From to To, moved outwards by Offsets and cut on its outer side to Extents beyond the gauge line, both as (distance, value) knots
+    bool
+        RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, int const Side, float const Halfwidth, double const fTextureLength, double const From, double const To, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents = {}, float const Lift = 0.f, std::vector<glm::dvec2> const &Inner = {}, gfx::userdata_array *Userdata = nullptr, std::vector<glm::dvec2> const &Ramp = {}, double const Rampwidth = 0.0 ) const;
+    // point of the path and the unit vector across it towards the right rail profile, at a distance from Point1
+    void
+        plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
+    void
+        set_joint( int const End, std::optional<std::pair<glm::dvec3, glm::dvec3>> const &Joint ) {
+            m_joints[ End ] = Joint; }
 /*
     void
         Render();
