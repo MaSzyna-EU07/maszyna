@@ -122,6 +122,11 @@ TSegment const &path_segment( TTrack const &Track, int const Path ) {
     return ( Track.eType == tt_Switch ? *Track.SwitchExtension->Segments[ Path ] : *Track.Segment );
 }
 
+double knuckle_bend( double const Into ) {
+
+    return std::abs( Into ) / ( 1.0 + std::sqrt( std::max( 0.0, 1.0 - Into * Into ) ) );
+}
+
 // a check rail starting right beside the end of a wing rail running along the same rail, which the wing rail goes on in place of; the far end of it
 bool replaced_check( std::vector<TTrack::check_rail> const &Checks, double const Wingend, double const Direction, double &Far ) {
 
@@ -712,6 +717,8 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
         bool flareto { true };
         double shortest { 1.5 };
         double flare { 0.02 };
+        double frombend { 0.0 };
+        double tobend { 0.0 };
     };
     std::vector<planned> plans[ 2 ][ 2 ];
     check_rail_set result;
@@ -731,10 +738,10 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
             acute( plans[ crossing.path ][ crossing.side < 0 ], crossing.at, crossing.into > 0.0 ? 1.0 : -1.0, std::tan( crossing.angle ), 0.02 );
         }
         else if( crossing.into > 0.0 ) {
-            plans[ crossing.path ][ crossing.side > 0 ].push_back( { crossing.at - 0.03, crossing.at + 1.2, false, true, 0.5, 0.02 } );
+            plans[ crossing.path ][ crossing.side > 0 ].push_back( { crossing.at, crossing.at + 1.2, false, true, 0.5, 0.02, -knuckle_bend( crossing.into ), 0.0 } );
         }
         else {
-            plans[ crossing.path ][ crossing.side > 0 ].push_back( { crossing.at - 1.2, crossing.at + 0.03, true, false, 0.5, 0.02 } );
+            plans[ crossing.path ][ crossing.side > 0 ].push_back( { crossing.at - 1.2, crossing.at, true, false, 0.5, 0.02, 0.0, knuckle_bend( crossing.into ) } );
         }
     }
     if( eType == tt_Switch ) {
@@ -762,6 +769,7 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
                     if( checks[ i ].to > checks[ i - 1 ].to ) {
                         checks[ i - 1 ].to = checks[ i ].to;
                         checks[ i - 1 ].flareto = checks[ i ].flareto;
+                        checks[ i - 1 ].tobend = checks[ i ].tobend;
                     }
                     checks[ i - 1 ].shortest = std::min( checks[ i - 1 ].shortest, checks[ i ].shortest );
                     checks[ i - 1 ].flare = std::max( checks[ i - 1 ].flare, checks[ i ].flare );
@@ -834,7 +842,9 @@ TTrack::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Cr
                     result[ path ][ right ].push_back( {
                         From, To,
                         ( From > check.from || check.flarefrom ) ? check.flare : 0.0,
-                        ( To < check.to || check.flareto ) ? check.flare : 0.0 } ); };
+                        ( To < check.to || check.flareto ) ? check.flare : 0.0,
+                        From > check.from ? 0.0 : check.frombend,
+                        To < check.to ? 0.0 : check.tobend } ); };
                 auto from { check.from };
                 for( auto const &block : blocks ) {
                     if( block.y <= from || block.x >= check.to ) {
@@ -992,10 +1002,12 @@ void obtuse( TTrack::rail_plan &Plan, double const At, double const Into, TTrack
     auto const gap { flangeway / std::abs( Into ) };
     auto const full { Size.high + 0.0135 };
     auto const taper { ( flangeway + full ) / std::abs( Into ) };
+    auto const bend { knuckle_bend( Into ) };
     TTrack::rail_cut cut;
     cut.at = At;
     if( Into > 0.0 ) {
         cut.end = At;
+        cut.endbend = -bend;
         cut.start = At + gap;
         cut.startextents = { { At + gap, 0.006 }, { At + taper, full } };
     }
@@ -1003,6 +1015,7 @@ void obtuse( TTrack::rail_plan &Plan, double const At, double const Into, TTrack
         cut.end = At - gap;
         cut.endextents = { { At - taper, full }, { At - gap, 0.006 } };
         cut.start = At;
+        cut.startbend = bend;
     }
     Plan.cuts.push_back( cut );
 }
@@ -1588,10 +1601,16 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         return nullptr;
     };
     // parts no wheel rolls on go in the matte material of the cut faces
+    glm::dvec2 bendfrom { 0.0 };
+    glm::dvec2 bendto { 0.0 };
+    auto const bends = [&]( double const Start, double const End ) {
+        return glm::dvec2 {
+            std::abs( Start - bendfrom.x ) < 1e-6 ? bendfrom.y : 0.0,
+            std::abs( End - bendto.x ) < 1e-6 ? bendto.y : 0.0 }; };
     auto const piece = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, bool const Capstart, bool const Capend, gfx::vertex_array const &Shape, bool const Rolled, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Ramp = {}, bool const Walls = false, float const Lift = 0.f, float const Wallu = -1.f, double const Fade = blend ) {
         gfx::vertex_array vertices;
         gfx::userdata_array userdata;
-        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : Fade, Walls, Wallu ) ) {
+        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : Fade, Walls, Wallu, bends( Start, End ) ) ) {
             cut_faces( vertices, Shape.size(), Capstart, Capend, Drawing.bank, sink( true ) );
             gfx::vertex_array triangles;
             gfx::userdata_array triangleuserdata;
@@ -1687,7 +1706,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     };
     auto const running = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Rolled, bool const Capstart, bool const Capend ) {
         gfx::vertex_array vertices;
-        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner ) ) {
+        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner, nullptr, {}, 0.0, false, -1.f, bends( Start, End ) ) ) {
             cut_faces( vertices, Profile.size(), Capstart, Capend, Drawing.bank, sink( true ) );
         }
         piece( Start, End, Offsets, Extents, false, false, strip( 0, topfirst ), true, Inner );
@@ -1737,7 +1756,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     auto const treaded = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, bool const Capstart, bool const Capend, rail_tread const &Span ) {
         current = null_handle;
         gfx::vertex_array vertices;
-        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner ) ) {
+        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner, nullptr, {}, 0.0, false, -1.f, bends( Start, End ) ) ) {
             cut_faces( vertices, Profile.size(), Capstart, Capend, Drawing.bank, sink( true ) );
         }
         piece( Start, End, Offsets, Extents, false, false, strip( 0, topfirst ), true, Inner );
@@ -1929,7 +1948,10 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         else {
             offsets.push_back( { to, 0.0 } );
         }
+        bendfrom = { a, a == from ? check.frombend : 0.0 };
+        bendto = { b, b == to ? check.tobend : 0.0 };
         piece( a, b, offsets, {}, a > 0.0 || from >= 0.0, to <= length, shape, false, {} );
+        bendfrom = bendto = glm::dvec2 { 0.0 };
     }
     for( auto const &fill : Layout.fills[ Path ][ Side > 0 ] ) {
         auto const a { std::max( fill.from, From ) };
@@ -1980,6 +2002,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         std::sort( cuts.begin(), cuts.end(), []( rail_cut const &A, rail_cut const &B ) { return A.at < B.at; } );
         auto start { -1e9 };
         auto startcap { true };
+        auto startbend { 0.0 };
         std::vector<glm::dvec2> rolledfrom;
         std::vector<glm::dvec2> offsets, extents, inner;
         for( std::size_t i = 0; i <= cuts.size(); ++i ) {
@@ -2000,6 +2023,8 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             auto const rolled { i < cuts.size() ? bound( rolledfrom, cuts[ i ].endrolled, true ) : rolledfrom };
             auto const capstart { start > From ? startcap : Openstart };
             auto const capend { end < length ? cuts[ i ].endcap : Openend };
+            bendfrom = { a, start > From ? startbend : 0.0 };
+            bendto = { b, end < length ? cuts[ i ].endbend : 0.0 };
             if( b - a > 0.01 ) {
                 std::vector<rail_tread> active;
                 for( auto const &span : Spans ) {
@@ -2037,10 +2062,12 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
                 }
                 current = null_handle;
             }
+            bendfrom = bendto = glm::dvec2 { 0.0 };
             if( i < cuts.size() ) {
                 rolledfrom = cuts[ i ].startrolled;
                 start = cuts[ i ].start;
                 startcap = cuts[ i ].startcap;
+                startbend = cuts[ i ].startbend;
                 offsets = cuts[ i ].startoffsets;
                 extents = cuts[ i ].startextents;
                 inner = cuts[ i ].startinner;
