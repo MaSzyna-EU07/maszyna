@@ -196,7 +196,13 @@ void editor_mode::selftest_step()
 				std::uint64_t hash{1469598103934665603ull};
 				std::size_t count{0};
 				int chunks{0};
-				for (auto const *sequence : {&track->Geometry1, &track->Geometry2, &track->GeometryCut1, &track->GeometryCut2})
+				std::vector<TTrack::geometryhandle_sequence const *> sequences{&track->Geometry1, &track->Geometry2, &track->GeometryCut1, &track->GeometryCut2};
+				for (auto const &tread : track->GeometryTreads)
+				{
+					sequences.push_back(&tread.geometry);
+					sequences.push_back(&tread.cuts);
+				}
+				for (auto const *sequence : sequences)
 				{
 					for (auto const &geometry : *sequence)
 					{

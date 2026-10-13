@@ -4235,6 +4235,8 @@ void opengl33_renderer::Render(TTrack *Track)
 
 		draw(std::begin(Track->Geometry1), std::end(Track->Geometry1));
 		draw(std::begin(Track->Geometry2), std::end(Track->Geometry2));
+		for (auto &tread : Track->GeometryTreads)
+			draw(std::begin(tread.geometry), std::end(tread.geometry));
 		if (Track->eType == tt_Switch)
 			draw(Track->SwitchExtension->Geometry3);
 		break;
@@ -4493,7 +4495,13 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			{
 				continue;
 			}
-			for (auto const &cuts : {std::make_pair(track->m_materialcut1, &track->GeometryCut1), std::make_pair(track->m_materialcut2, &track->GeometryCut2)})
+			std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{track->m_materialcut1, &track->GeometryCut1}, {track->m_materialcut2, &track->GeometryCut2}};
+			for (auto &tread : track->GeometryTreads)
+			{
+				parts.emplace_back(tread.material, &tread.geometry);
+				parts.emplace_back(tread.matte, &tread.cuts);
+			}
+			for (auto const &cuts : parts)
 			{
 				if ((cuts.first == null_handle) || cuts.second->empty())
 				{

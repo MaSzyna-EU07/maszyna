@@ -1368,6 +1368,7 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
     Geometry2.clear();
     GeometryCut1.clear();
     GeometryCut2.clear();
+    GeometryTreads.clear();
     if( SwitchExtension ) {
         SwitchExtension->Geometry3 = gfx::geometry_handle{};
     }
@@ -1536,15 +1537,22 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                     if( material == 0 ) {
                         continue;
                     }
+                    auto const side { blade_side( path ) };
+                    loft_blade( path, side > 0 ? rpts1 : rpts2, side > 0 ? rpts3 : rpts4, texture_length( material ), vertices );
+                    cut_faces( vertices, nnumPts, true, false, path ? GeometryCut2 : GeometryCut1 );
+                    ( path ? Geometry2 : Geometry1 ).emplace_back( GfxRenderer->Insert( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
+                    vertices.clear();
+                }
+                for( int path = 0; path < 2; ++path ) {
+                    auto const material { path ? m_material2 : m_material1 };
+                    if( material == 0 ) {
+                        continue;
+                    }
                     auto &geometry { path ? Geometry2 : Geometry1 };
                     auto &cuts { path ? GeometryCut2 : GeometryCut1 };
                     auto const texturelength { texture_length( material ) };
                     auto const side { blade_side( path ) };
                     auto const &rail { side > 0 ? rpts1 : rpts2 };
-                    loft_blade( path, rail, side > 0 ? rpts3 : rpts4, texturelength, vertices );
-                    cut_faces( vertices, nnumPts, true, false, cuts );
-                    geometry.emplace_back( GfxRenderer->Insert( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
-                    vertices.clear();
                     // fixed parts
                     // szyna za iglicą
                     fixed_rail( path, rail, side, texturelength, geometry, cuts );

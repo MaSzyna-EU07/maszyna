@@ -3140,6 +3140,10 @@ opengl_renderer::Render( TTrack *Track ) {
                 Bind_Material( Track->m_material2 );
                 m_geometry.draw( std::begin( Track->Geometry2 ), std::end( Track->Geometry2 ) );
             }
+            for( auto const &tread : Track->GeometryTreads ) {
+                Bind_Material( tread.material );
+                m_geometry.draw( std::begin( tread.geometry ), std::end( tread.geometry ) );
+            }
             if( ( Track->eType == tt_Switch )
              && ( Track->SwitchExtension->m_material3 != 0 ) ) {
                 Bind_Material( Track->SwitchExtension->m_material3 );
@@ -3337,7 +3341,12 @@ opengl_renderer::Render( scene::basic_cell::path_sequence::const_iterator First,
             if( false == track->m_visible ) {
                 continue;
             }
-            for( auto const &cuts : { std::make_pair( track->m_materialcut1, &track->GeometryCut1 ), std::make_pair( track->m_materialcut2, &track->GeometryCut2 ) } ) {
+            std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence const *>> parts { { track->m_materialcut1, &track->GeometryCut1 }, { track->m_materialcut2, &track->GeometryCut2 } };
+            for( auto const &tread : track->GeometryTreads ) {
+                parts.emplace_back( tread.material, &tread.geometry );
+                parts.emplace_back( tread.matte, &tread.cuts );
+            }
+            for( auto const &cuts : parts ) {
                 if( ( cuts.first == null_handle )
                  || ( cuts.second->empty() ) ) {
                     continue;
