@@ -330,6 +330,9 @@ public:
         double rim { 0.0 };
         double crown { 0.0 };
         double liptop { 0.0 };
+        double crest { 0.0 };
+        double tread { 0.0735 };
+        double ledge { 0.0 };
     };
     rail_size rail_dimensions() const;
     // a check rail beside a rail, how far its ends turn away from the running rail
@@ -382,11 +385,13 @@ public:
         std::vector<glm::dvec2> inner, outer;
         bool capfrom { false };
         bool capto { false };
+        double lift { 0.0 };
     };
     struct rail_layout {
         rail_plan plans[ 2 ][ 2 ]; // path, right side
         std::vector<rail_band> bands[ 2 ][ 2 ];
         std::vector<rail_fill> fills[ 2 ][ 2 ];
+        std::vector<glm::dvec2> blocks[ 2 ][ 2 ];
         std::vector<guard_rail> guards[ 2 ][ 2 ];
         std::vector<glm::dvec2> wingends[ 2 ][ 2 ]; // ends of the wing rails of other rails running along each rail, and which way they run there
         check_rail_set checks;
@@ -493,6 +498,7 @@ private:
         float halfwidth { 0.f };
         gfx::vertex_array checkshapes[ 2 ];
         gfx::vertex_array plates[ 2 ];
+        float platetexture { 0.f };
     };
     rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank );
     // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before

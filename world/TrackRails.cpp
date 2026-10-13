@@ -158,6 +158,7 @@ void forget() {
     ++stamp;
 }
 
+
 double wing_reach( double const Slope ) {
 
     return 0.15 / Slope + 0.3;
@@ -925,8 +926,8 @@ TTrack::rail_band groove_band( double const At, double const Into, double const 
     auto const seam { 0.001 };
     TTrack::rail_band band { At, Into, Facing };
     band.whole = ( false == Through );
-    band.from = ( Through ? 0.0 : seam - std::max( Other.head, Other.crown ) );
-    band.to = ( Through ? ( Other.grooved ? -Other.lip : flangeway ) : -Other.rim - seam );
+    band.from = ( Through ? 0.0 : seam - Other.tread );
+    band.to = ( Through ? ( Other.grooved ? -Other.lip : flangeway ) : -Other.ledge - seam );
     return band;
 }
 
@@ -935,23 +936,30 @@ void vee_fill( std::vector<TTrack::rail_fill> &Fills, double const At, double co
     auto const seam { 0.001 };
     auto const sign { Outwards ? 1.0 : -1.0 };
     auto const edge { Outwards ? std::max( Own.head, Own.crown ) : Own.rim };
+    auto const flat { Outwards ? Own.tread : Own.ledge };
     auto const inside { Outwards == ( Facing > 0.0 ) };
     auto const closest { inside ? -Other.rim : -std::max( Other.head, Other.crown ) };
+    auto const rounded { inside ? Other.ledge - Other.rim : std::max( Other.head, Other.crown ) - Other.tread };
     auto const own { Outwards ? Own.high - edge : edge - Own.low };
     auto const other { inside ? Other.rim - Other.low : Other.high - std::max( Other.head, Other.crown ) };
-    auto const gap { own + other / std::max( std::abs( Facing ), 0.1 ) };
+    auto const slant { std::max( std::abs( Facing ), 0.1 ) };
+    auto const gap { own + other / slant };
     auto const meets = [&]( double const Width ) {
         return At + ( closest + Facing * ( edge + sign * Width ) ) / Into; };
     auto const apex { meets( 0.0 ) };
     auto const end { meets( gap ) };
+    auto const reach { seam + rounded / slant };
     TTrack::rail_fill fill;
     fill.from = std::min( apex, end );
     fill.to = std::max( apex, end );
     fill.capfrom = ( end < apex );
     fill.capto = ( end > apex );
-    std::vector<glm::dvec2> line { { apex, edge + sign * seam }, { end, edge + sign * ( gap + seam ) } };
+    if( Own.grooved ) {
+        fill.lift = std::min( Outwards ? Own.crest : Own.liptop, inside ? Other.liptop : Other.crest ) - Own.liptop;
+    }
+    std::vector<glm::dvec2> line { { apex, edge + sign * reach }, { end, edge + sign * ( gap + reach ) } };
     std::sort( line.begin(), line.end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
-    std::vector<glm::dvec2> fixed { { fill.from, edge - sign * seam }, { fill.to, edge - sign * seam } };
+    std::vector<glm::dvec2> fixed { { fill.from, flat - sign * seam }, { fill.to, flat - sign * seam } };
     fill.outer = ( Outwards ? line : fixed );
     fill.inner = ( Outwards ? fixed : line );
     Fills.push_back( fill );
@@ -996,9 +1004,15 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
             if( size.grooved || theirs.grooved ) {
                 auto const through { size.grooved != theirs.grooved ? size.grooved : goes_through( crossing.owner ? *crossing.owner : *this, *crossing.track ) };
                 layout.bands[ crossing.path ][ crossing.side > 0 ].push_back( groove_band( crossing.at, crossing.into, crossing.facing, through, theirs ) );
-                if( through && size.grooved && theirs.grooved && crossing.angle <= middle_angle ) {
-                    vee_fill( layout.fills[ crossing.path ][ crossing.side > 0 ], crossing.at, crossing.into, crossing.facing, size, theirs, true );
-                    vee_fill( layout.fills[ crossing.path ][ crossing.side > 0 ], crossing.at, crossing.into, crossing.facing, size, theirs, false );
+                if( size.grooved && theirs.grooved && crossing.angle <= middle_angle ) {
+                    std::vector<rail_fill> vee;
+                    vee_fill( vee, crossing.at, crossing.into, crossing.facing, size, theirs, true );
+                    vee_fill( vee, crossing.at, crossing.into, crossing.facing, size, theirs, false );
+                    layout.blocks[ crossing.path ][ crossing.side > 0 ].emplace_back( std::min( vee[ 0 ].from, vee[ 1 ].from ), std::max( vee[ 0 ].to, vee[ 1 ].to ) );
+                    if( through ) {
+                        auto &fills { layout.fills[ crossing.path ][ crossing.side > 0 ] };
+                        fills.insert( fills.end(), vee.begin(), vee.end() );
+                    }
                 }
                 continue;
             }
@@ -1138,9 +1152,12 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 auto &fills { layout.fills[ path ][ frog.side[ path ] > 0 ] };
                 if( size.grooved ) {
                     layout.bands[ path ][ frog.side[ path ] > 0 ].push_back( groove_band( frog.at[ path ], into, facing, path == 0, size ) );
+                    std::vector<rail_fill> vee;
+                    vee_fill( vee, frog.at[ path ], into, facing, size, size, true );
+                    vee_fill( vee, frog.at[ path ], into, facing, size, size, false );
+                    layout.blocks[ path ][ frog.side[ path ] > 0 ].emplace_back( std::min( vee[ 0 ].from, vee[ 1 ].from ), std::max( vee[ 0 ].to, vee[ 1 ].to ) );
                     if( path == 0 ) {
-                        vee_fill( fills, frog.at[ path ], into, facing, size, size, true );
-                        vee_fill( fills, frog.at[ path ], into, facing, size, size, false );
+                        fills.insert( fills.end(), vee.begin(), vee.end() );
                     }
                     continue;
                 }
@@ -1191,6 +1208,17 @@ TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &
                 texture = outline[ i ].texture.s;
             }
         }
+        if( drawing.size.grooved ) {
+            auto sum { 0.f };
+            auto points { 0 };
+            for( std::size_t i = 0; i < outline.size() / 2; ++i ) {
+                if( outline[ i ].position.y > highest - 0.0005f && outline[ i ].position.x > -0.02f ) {
+                    sum += outline[ i ].texture.s;
+                    ++points;
+                }
+            }
+            texture = sum / std::max( points, 1 );
+        }
         auto const top { static_cast<float>( ( drawing.size.grooved ? drawing.size.liptop : highest ) - 0.0005 ) };
         auto const bottom { static_cast<float>( -drawing.size.height ) };
         gfx::vertex_array plate {
@@ -1200,6 +1228,7 @@ TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &
             {{ -1.f, top, 0.f }, {  0.f, 1.f, 0.f }, { texture, 0.f }},
             {{ -1.f, top, 0.f }, { -1.f, 0.f, 0.f }, { texture, 0.f }},
             {{ -1.f, bottom, 0.f }, { -1.f, 0.f, 0.f }, { texture, 0.f }} };
+        drawing.platetexture = texture;
         create_track_rail_profile( drawing.plates[ 0 ], drawing.plates[ 1 ], &plate );
         for( auto &shape : drawing.plates ) {
             shape.resize( plate.size() );
@@ -1219,10 +1248,10 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     auto const &plan { Layout.plans[ Path ][ Side > 0 ] };
     auto const length { segment.GetLength() };
     // parts no wheel rolls on go in the matte material of the cut faces
-    auto const piece = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, bool const Capstart, bool const Capend, gfx::vertex_array const &Shape, bool const Rolled, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Ramp = {}, bool const Walls = false ) {
+    auto const piece = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, bool const Capstart, bool const Capend, gfx::vertex_array const &Shape, bool const Rolled, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Ramp = {}, bool const Walls = false, float const Lift = 0.f, float const Wallu = -1.f ) {
         gfx::vertex_array vertices;
         gfx::userdata_array userdata;
-        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, Texturelength, Start, End, Offsets, Extents, 0.f, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : blend, Walls ) ) {
+        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, Texturelength, Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : blend, Walls, Wallu ) ) {
             cut_faces( vertices, Shape.size(), Capstart, Capend, Drawing.bank, Cuts );
             gfx::vertex_array triangles;
             gfx::userdata_array triangleuserdata;
@@ -1441,7 +1470,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         auto const a { std::max( fill.from, From ) };
         auto const b { std::min( fill.to, length ) };
         if( b - a > 0.01 ) {
-            piece( a, b, {}, fill.outer, a == fill.from && fill.capfrom, b == fill.to && fill.capto, Drawing.plates[ Side > 0 ? 0 : 1 ], true, fill.inner, {}, true );
+            piece( a, b, {}, fill.outer, a == fill.from && fill.capfrom, b == fill.to && fill.capto, Drawing.plates[ Side > 0 ? 0 : 1 ], true, fill.inner, {}, true, static_cast<float>( fill.lift ) );
         }
     }
     auto const &bands { Layout.bands[ Path ][ Side > 0 ] };
@@ -1480,7 +1509,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         ( outwards ? cut.endinner : cut.endextents ) = endknots;
         ( outwards ? cut.startextents : cut.startinner ) = startknots;
         return cut; };
-    auto const lay = [&]( gfx::vertex_array const &Shape, std::vector<rail_cut> cuts, bool const Wheels ) {
+    auto const lay = [&]( gfx::vertex_array const &Shape, std::vector<rail_cut> cuts, bool const Wheels, float const Wallu = -1.f ) {
         std::sort( cuts.begin(), cuts.end(), []( rail_cut const &A, rail_cut const &B ) { return A.at < B.at; } );
         auto start { -1e9 };
         auto startcap { true };
@@ -1506,7 +1535,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             auto const capend { end < length ? cuts[ i ].endcap : Openend };
             if( b - a > 0.01 ) {
                 if( false == Wheels || rolled.empty() || topfirst >= toplast ) {
-                    piece( a, b, pieceoffsets, pieceextents, capstart, capend, Shape, true, pieceinner, {}, false == Wheels );
+                    piece( a, b, pieceoffsets, pieceextents, capstart, capend, Shape, true, pieceinner, {}, false == Wheels, 0.f, Wallu );
                 }
                 else {
                     running( a, b, pieceoffsets, pieceextents, pieceinner, rolled, capstart, capend );
@@ -1543,7 +1572,15 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         point.position = glm::mix( Profile[ A ].position, Profile[ B ].position, t );
         point.texture = glm::mix( Profile[ A ].texture, Profile[ B ].texture, t );
         return point; };
-    std::vector<gfx::vertex_array> tops;
+    auto const flattened = [&]( std::size_t const Index ) {
+        auto point { Profile[ Index ] };
+        auto const &file { outline[ Side > 0 ? Index : count - 1 - Index ].position };
+        if( file.y > size.crest - 0.0005 || ( file.x < -0.02 && file.y > size.liptop - 0.0005 ) ) {
+            point.normal = { 0.f, 1.f, 0.f };
+            point.texture.x = Drawing.platetexture;
+        }
+        return point; };
+    std::vector<gfx::vertex_array> tops, flats;
     gfx::vertex_array body;
     std::vector<std::size_t> floors;
     auto floortexture { 0.f };
@@ -1562,33 +1599,47 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         while( i + 1 < count && above( i + 1 ) ) {
             ++i;
         }
-        gfx::vertex_array top;
+        gfx::vertex_array top, flat;
         if( first > 0 ) {
             if( height( first - 1 ) > -1e-4 ) {
                 top.push_back( Profile[ first - 1 ] );
+                flat.push_back( flattened( first - 1 ) );
             }
             else {
                 top.push_back( floorpoint( first - 1, first ) );
+                flat.push_back( top.back() );
                 body.push_back( top.back() );
                 floors.push_back( body.size() );
                 body.push_back( top.back() );
             }
         }
-        top.insert( top.end(), Profile.begin() + first, Profile.begin() + i + 1 );
+        for( auto k { first }; k <= i; ++k ) {
+            top.push_back( Profile[ k ] );
+            flat.push_back( flattened( k ) );
+        }
         if( i + 1 < count ) {
             if( height( i + 1 ) > -1e-4 ) {
                 top.push_back( Profile[ i + 1 ] );
+                flat.push_back( flattened( i + 1 ) );
             }
             else {
                 top.push_back( floorpoint( i, i + 1 ) );
+                flat.push_back( top.back() );
                 floors.push_back( body.size() );
                 body.push_back( top.back() );
                 body.push_back( top.back() );
             }
         }
-        top.insert( top.begin(), top.front() );
-        top.push_back( top.back() );
+        for( auto *strip : { &top, &flat } ) {
+            gfx::vertex_array doubled { strip->front(), strip->front() };
+            for( std::size_t k = 1; k + 1 < strip->size(); ++k ) {
+                doubled.insert( doubled.end(), 2, ( *strip )[ k ] );
+            }
+            doubled.insert( doubled.end(), 2, strip->back() );
+            *strip = doubled;
+        }
         tops.push_back( top );
+        flats.push_back( flat );
     }
     if( floors.size() > 1 ) {
         auto const across { body[ floors.back() ].position - body[ floors.front() ].position };
@@ -1611,13 +1662,77 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         }
     }
     lay( body, wholecuts, false );
-    for( auto const &top : tops ) {
-        auto const reach { reaches( top ) };
+    auto const wallu { floortextures > 0 ? floortexture / floortextures : -1.f };
+    for( std::size_t k = 0; k < tops.size(); ++k ) {
+        auto const reach { reaches( tops[ k ] ) };
+        auto const head { reach.x + reach.y > 0.0 };
+        auto edge { head ? 1e9 : -1e9 };
+        for( auto const &point : tops[ k ] ) {
+            if( point.position.y > ( head ? size.crest : size.liptop ) - 0.0005 ) {
+                auto const across { static_cast<double>( Side * point.position.x - halfwidth ) };
+                edge = ( head ? std::min( edge, across ) : std::max( edge, across ) );
+            }
+        }
         std::vector<rail_cut> cuts { plan.cuts };
         for( auto const &band : bands ) {
-            cuts.push_back( band_cut( band, reach ) );
+            auto cut { band_cut( band, reach ) };
+            if( false == band.whole && std::abs( band.facing ) >= 1e-3 && std::abs( edge ) < 1.0 ) {
+                auto const blunt { edge + ( head ? nose_tip : -nose_tip ) };
+                if( head == ( band.facing / band.into > 0.0 ) ) {
+                    cut.start = std::max( cut.start, band.at + ( ( band.into > 0.0 ? band.to : band.from ) + band.facing * blunt ) / band.into );
+                    cut.startcap = true;
+                }
+                else {
+                    cut.end = std::min( cut.end, band.at + ( ( band.into > 0.0 ? band.from : band.to ) + band.facing * blunt ) / band.into );
+                    cut.endcap = true;
+                }
+            }
+            cuts.push_back( cut );
         }
-        lay( top, cuts, false );
+        std::vector<glm::dvec2> spans { Layout.blocks[ Path ][ Side > 0 ] };
+        for( auto const &cut : cuts ) {
+            for( auto &span : spans ) {
+                if( cut.at > span.x && cut.at < span.y ) {
+                    span = { std::min( span.x, cut.end ), std::max( span.y, cut.start ) };
+                }
+            }
+        }
+        std::sort( spans.begin(), spans.end(), byposition );
+        std::vector<glm::dvec2> merged;
+        for( auto const &span : spans ) {
+            if( false == merged.empty() && span.x <= merged.back().y ) {
+                merged.back().y = std::max( merged.back().y, span.y );
+            }
+            else {
+                merged.push_back( span );
+            }
+        }
+        if( merged.empty() ) {
+            lay( tops[ k ], cuts, false, wallu );
+            continue;
+        }
+        auto const seam = []( double const At, double const End, double const Start ) {
+            rail_cut cut;
+            cut.at = At;
+            cut.end = End;
+            cut.start = Start;
+            cut.endcap = false;
+            cut.startcap = false;
+            return cut; };
+        std::vector<rail_cut> outside, inside;
+        for( auto const &cut : cuts ) {
+            auto const within { std::any_of( merged.begin(), merged.end(), [&]( glm::dvec2 const &Span ) { return cut.at > Span.x && cut.at < Span.y; } ) };
+            ( within ? inside : outside ).push_back( cut );
+        }
+        inside.push_back( seam( merged.front().x - 0.001, -1e9, merged.front().x ) );
+        for( std::size_t m = 0; m < merged.size(); ++m ) {
+            outside.push_back( seam( 0.5 * ( merged[ m ].x + merged[ m ].y ), merged[ m ].x, merged[ m ].y ) );
+            inside.push_back( m + 1 < merged.size() ?
+                seam( 0.5 * ( merged[ m ].y + merged[ m + 1 ].x ), merged[ m ].y, merged[ m + 1 ].x ) :
+                seam( merged[ m ].y + 0.001, merged[ m ].y, 1e9 ) );
+        }
+        lay( tops[ k ], outside, false, wallu );
+        lay( flats[ k ], inside, false, wallu );
     }
     return true;
 }
