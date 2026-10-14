@@ -73,7 +73,11 @@ definition definition::load(std::string const &Name) {
 		throw std::runtime_error("no test vehicle definition " + path);
 	}
 	definition result;
-	auto const json{nlohmann::ordered_json::parse(file, nullptr, true, true)};
+	// not brace-initialised: json{other} makes an array of other with GCC and Clang (the initializer list constructor wins)
+	auto const json = nlohmann::ordered_json::parse(file, nullptr, true, true);
+	if (false == json.is_object()) {
+		throw std::runtime_error("test vehicle definition " + path + " isn't a JSON object");
+	}
 	for (auto const &[section, keys] : json.items()) {
 		// keys starting with _ are comments
 		if (section.starts_with('_')) {
