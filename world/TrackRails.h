@@ -34,6 +34,8 @@ gfx::userdata_array worn_userdata( std::size_t const Count );
 void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry );
 
 TSegment const &path_segment( TTrack const &Track, int const Path );
+int path_count( TTrack const &Track );
+TTrack *path_neighbour( TTrack const &Track, int const Path, int const End );
 double knuckle_bend( double const Into );
 bool replaced_check( std::vector<check_rail> const &Checks, double const Wingend, double const Direction, double &Far );
 gauge_line const &rail_line( TTrack const &Track, int const Path, int const Side, bool const Blades );

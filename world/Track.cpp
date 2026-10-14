@@ -1381,20 +1381,20 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
 void TTrack::share_joints() {
 
-    for( int path = 0; path < ( eType == tt_Switch ? 2 : 1 ); ++path ) {
+    for( int path = 0; path < track_rails::path_count( *this ); ++path ) {
         auto *segment { eType == tt_Switch ? SwitchExtension->Segments[ path ].get() : Segment.get() };
         if( segment == nullptr ) {
             continue;
         }
         for( int end = 0; end < 2; ++end ) {
             std::optional<std::pair<glm::dvec3, glm::dvec3>> joint;
-            auto *neighbour { eType == tt_Switch ? ( end ? SwitchExtension->pNexts[ path ] : SwitchExtension->pPrevs[ path ] ) : ( end ? trNext : trPrev ) };
+            auto *neighbour { track_rails::path_neighbour( *this, path, end ) };
             if( neighbour != nullptr && neighbour != this && ( neighbour->iCategoryFlag & 15 ) == ( iCategoryFlag & 15 ) ) {
                 glm::dvec3 point;
                 glm::dvec3 across;
                 segment->plan_frame( end ? segment->GetLength() : 0.0, point, across );
                 auto closest { 0.2 };
-                for( int theirpath = 0; theirpath < ( neighbour->eType == tt_Switch ? 2 : 1 ); ++theirpath ) {
+                for( int theirpath = 0; theirpath < track_rails::path_count( *neighbour ); ++theirpath ) {
                     auto const *theirs { neighbour->eType == tt_Switch ? neighbour->SwitchExtension->Segments[ theirpath ].get() : neighbour->Segment.get() };
                     if( theirs == nullptr ) {
                         continue;
