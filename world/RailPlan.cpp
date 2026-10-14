@@ -99,14 +99,12 @@ void obtuse( track_rails::rail_plan &Plan, double const At, double const Into, t
     Plan.cuts.push_back( cut );
 }
 
-// crossing at a wide angle: running rails are broken for the flanges of the other track, the ones of the track not going through also where the head of the other rail lies; guard rails give way to the running rails and flangeways of the other track, the ones of the track not going through also to its guard rails
+// a guard rail of a crossing at a middle angle gives way to the running rail and the flangeway of the other track
 struct wide_cut {
     double from { 0.0 };
     double to { 0.0 };
     double inner { 0.0 };
     double outer { 0.0 };
-    knots::line fromline;
-    knots::line toline;
 };
 
 void wide( track_rails::rail_plan &Plan, track_rails::rail_crossing const &Crossing, wide_cut const &Cut ) {
@@ -122,29 +120,26 @@ void wide( track_rails::rail_plan &Plan, track_rails::rail_crossing const &Cross
     cut.start = at + std::max( low, high );
     cut.endmiter = { at + ( into > 0.0 ? Cut.from - 0.005 : Cut.to + 0.005 ) / into, facing / into };
     cut.startmiter = { at + ( into > 0.0 ? Cut.to + 0.005 : Cut.from - 0.005 ) / into, facing / into };
-    auto const glue = [&]( knots::line const &Line, double const Edge, double &Position, glm::dvec2 &Miter, double &Bend, knots::line &Fit, bool &Cap ) {
-        if( Line.empty() ) {
-            return;
-        }
-        Position = at + Edge / into;
-        Miter = {};
-        Bend = facing / into;
-        for( auto const &knot : Line ) {
-            Fit.emplace_back( knot.x, ( knot.y - Edge ) / into );
-        }
-        Cap = false; };
-    glue( into > 0.0 ? Cut.fromline : Cut.toline, into > 0.0 ? Cut.from : Cut.to, cut.end, cut.endmiter, cut.endbend, cut.endfit, cut.endcap );
-    glue( into > 0.0 ? Cut.toline : Cut.fromline, into > 0.0 ? Cut.to : Cut.from, cut.start, cut.startmiter, cut.startbend, cut.startfit, cut.startcap );
     Plan.cuts.push_back( cut );
 }
 
-std::vector<glm::dvec2> glue_line( std::vector<glm::dvec2> const &Outline, double const Base ) {
+track_rails::rail_cut corner_cut( track_rails::rail_crossing const &Crossing, double const Face, double const Toward, double const Head, double const Other ) {
 
-    std::vector<glm::dvec2> line;
-    for( auto const &knot : Outline ) {
-        line.emplace_back( knot.x, Base - knot.y );
-    }
-    return line;
+    auto const mitre = [&]( double const Edge, double const Flange ) {
+        auto const slope { Flange * Other / ( Toward * Head ) };
+        return glm::dvec2 { Crossing.at + ( Edge - Face * slope ) / Crossing.into, ( slope + Crossing.facing ) / Crossing.into }; };
+    auto const rail { mitre( 0.0, 1.0 ) };
+    auto const guard { mitre( flangeway, -1.0 ) };
+    auto const rising { Crossing.into > 0.0 };
+    track_rails::rail_cut cut;
+    cut.at = Crossing.at;
+    cut.endmiter = ( rising ? rail : guard );
+    cut.startmiter = ( rising ? guard : rail );
+    cut.end = cut.endmiter.x + cut.endmiter.y * Face;
+    cut.start = cut.startmiter.x + cut.startmiter.y * Face;
+    cut.endbend = cut.endmiter.y;
+    cut.startbend = cut.startmiter.y;
+    return cut;
 }
 
 track_rails::rail_fill guard_fill( track_rails::guard_rail const &Guard, track_rails::rail_size const &Size ) {
@@ -443,15 +438,12 @@ void TTrack::rail_planner::cross_grooved( rail_crossing const &Crossing, rail_si
 
 void TTrack::rail_planner::cross_wide( rail_crossing const &Crossing, rail_size const &Other ) {
 
-    auto const through { goes_through( m_track, *Crossing.track ) };
-    wide( plan_of( Crossing ), Crossing, { through ? 0.0 : -Other.head, flangeway, 0.0, m_size.head, through ? knots::line {} : glue_line( Other.field, 0.0 ) } );
-    if( through ) {
-        add_tread( Crossing.path, Crossing.side, shared_span( Crossing, Other ), *Crossing.track, Crossing.otherpath );
-    }
+    plan_of( Crossing ).cuts.push_back( corner_cut( Crossing, 0.0, -1.0, m_size.head, Other.head ) );
+    add_tread( Crossing.path, Crossing.side, shared_span( Crossing, Other ), *Crossing.track, Crossing.otherpath );
     auto const reach { ( flangeway + m_size.head + guard_reach ) / std::abs( Crossing.into ) };
     track_rails::guard_rail guard { Crossing.at - reach, Crossing.at + reach };
-    guard.through = through;
-    wide( guard.plan, Crossing, { -Other.head, through ? flangeway : flangeway + Other.head, m_guardoffset, m_guardoffset + m_size.head, glue_line( Other.field, 0.0 ), through ? knots::line {} : glue_line( Other.gauge, flangeway + Other.head ) } );
+    guard.through = goes_through( m_track, *Crossing.track );
+    guard.plan.cuts.push_back( corner_cut( Crossing, -flangeway, 1.0, m_size.head, Other.head ) );
     merge_guard( m_layout.guards[ Crossing.path ][ Crossing.side > 0 ], guard );
 }
 

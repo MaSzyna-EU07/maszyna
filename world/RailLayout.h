@@ -72,7 +72,6 @@ struct rail_size {
     double ledge { 0.0 };
     double web { 0.0365 };
     double neck { -0.0467 };
-    knots::line field, gauge;
 };
 // a check rail beside a rail, how far its ends turn away from the running rail
 struct check_rail {
@@ -95,7 +94,6 @@ struct rail_cut {
     glm::dvec2 startmiter { 0.0 };
     double endbend { 0.0 };
     double startbend { 0.0 };
-    knots::line endfit, startfit;
     knots::line endinner, startinner;
     bool endcap { true };
     bool startcap { true };
