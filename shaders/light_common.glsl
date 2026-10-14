@@ -36,6 +36,11 @@ float length2(vec3 v)
         return dot(v, v);
 }
 
+#ifdef PARALLAX
+float parallax_occlusion = 0.0;
+float parallax_shadow = 0.0;
+#endif
+
 float calc_shadow()
 {
 #if SHADOWMAP_ENABLED
@@ -289,6 +294,9 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // Sun, headlights and emission are added afterwards so they are NOT
     // attenuated by AMBIENT_SCALE - this only dims the indirect term.
     fragcolor *= AMBIENT_SCALE;
+#ifdef PARALLAX
+    fragcolor *= 1.0 - parallax_occlusion;
+#endif
 
     vec3 emissioncolor = vec3(emission);
 
@@ -331,6 +339,9 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     float shadow1 = 0.0;
     if (shadowtone < 1.0)
         shadow1 = (1.0 - shadowtone) * clamp(calc_shadow(), 0.0, 1.0);
+#ifdef PARALLAX
+    shadow1 = max(shadow1, parallax_shadow);
+#endif
 
     // Sun HDR scale -> SUN_DIFFUSE_SCALE (default 2.5). Controls how
     // bright sun-lit (unshaded) faces get. Lower this if surfaces in
