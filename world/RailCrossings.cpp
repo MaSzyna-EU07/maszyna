@@ -126,6 +126,12 @@ bool replaced_check( std::vector<check_rail> const &Checks, double const Wingend
     return false;
 }
 
+bool replaced_by_wing( check_rail const &Check, knots::line const &Wingends ) {
+
+    auto farend { 0.0 };
+    return std::any_of( Wingends.begin(), Wingends.end(), [&]( glm::dvec2 const &Wing ) { return replaced_check( { Check }, Wing.x, Wing.y, farend ); } );
+}
+
 // gauge line of a rail of a track, along a path of a switch from past its blades when Blades
 gauge_line const &rail_line( TTrack const &Track, int const Path, int const Side, bool const Blades ) {
 

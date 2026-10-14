@@ -142,17 +142,10 @@ track_rails::rail_cut corner_cut( track_rails::rail_crossing const &Crossing, do
     return cut;
 }
 
-std::vector<track_rails::rail_fill> guard_fills( track_rails::guard_rail const &Guard, track_rails::rail_size const &Size ) {
+std::vector<track_rails::rail_fill> spacer_fills( track_rails::rail_fill const &Whole, double const From, double const To, knots::line const &Castings ) {
 
-    auto const offset { Size.web - ( flangeway + Size.head ) };
-    auto const flare { std::min( guard_flare, 0.25 * ( Guard.to - Guard.from ) ) };
-    track_rails::rail_fill whole;
-    whole.web = true;
-    whole.lift = ( Guard.through ? 0.0 : -0.001 );
-    whole.inner = { { Guard.from, offset - ( Guard.flarefrom ? 0.02 : 0.0 ) }, { Guard.from + flare, offset }, { Guard.to - flare, offset }, { Guard.to, offset - ( Guard.flareto ? 0.02 : 0.0 ) } };
-    whole.outer = { { Guard.from, Size.web }, { Guard.to, Size.web } };
     knots::line pieces;
-    for( auto const &casting : Guard.castings ) {
+    for( auto const &casting : Castings ) {
         if( false == pieces.empty() && casting.x <= pieces.back().y ) {
             pieces.back().y = std::max( pieces.back().y, casting.y );
         }
@@ -161,14 +154,14 @@ std::vector<track_rails::rail_fill> guard_fills( track_rails::guard_rail const &
         }
     }
     knots::line spacers;
-    auto const place = [&]( double const From, double const To, double const Step ) {
-        auto const count { static_cast<int>( std::floor( ( To - From - 0.5 * spacer_length ) / spacer_pitch ) ) };
+    auto const place = [&]( double const Start, double const End, double const Step ) {
+        auto const count { static_cast<int>( std::floor( ( End - Start - 0.5 * spacer_length ) / spacer_pitch ) ) };
         for( int i = 1; i <= count; ++i ) {
-            auto const at { ( Step > 0.0 ? From : To ) + Step * i * spacer_pitch };
+            auto const at { ( Step > 0.0 ? Start : End ) + Step * i * spacer_pitch };
             spacers.emplace_back( at - 0.5 * spacer_length, at + 0.5 * spacer_length );
         } };
-    auto const first { Guard.from + spacer_length };
-    auto const last { Guard.to - spacer_length };
+    auto const first { From + spacer_length };
+    auto const last { To - spacer_length };
     if( pieces.empty() ) {
         place( first - spacer_pitch, last, 1.0 );
     }
@@ -184,9 +177,9 @@ std::vector<track_rails::rail_fill> guard_fills( track_rails::guard_rail const &
     pieces.insert( pieces.end(), spacers.begin(), spacers.end() );
     std::vector<track_rails::rail_fill> fills;
     for( auto const &piece : pieces ) {
-        auto fill { whole };
-        fill.from = std::max( piece.x, Guard.from );
-        fill.to = std::min( piece.y, Guard.to );
+        auto fill { Whole };
+        fill.from = std::max( piece.x, From );
+        fill.to = std::min( piece.y, To );
         fill.capfrom = true;
         fill.capto = true;
         if( fill.to - fill.from > 0.01 ) {
@@ -194,6 +187,29 @@ std::vector<track_rails::rail_fill> guard_fills( track_rails::guard_rail const &
         }
     }
     return fills;
+}
+
+std::vector<track_rails::rail_fill> guard_fills( track_rails::guard_rail const &Guard, track_rails::rail_size const &Size ) {
+
+    auto const offset { Size.web - ( flangeway + Size.head ) };
+    auto const flare { std::min( guard_flare, 0.25 * ( Guard.to - Guard.from ) ) };
+    track_rails::rail_fill whole;
+    whole.web = true;
+    whole.lift = ( Guard.through ? 0.0 : -0.001 );
+    whole.inner = { { Guard.from, offset - ( Guard.flarefrom ? 0.02 : 0.0 ) }, { Guard.from + flare, offset }, { Guard.to - flare, offset }, { Guard.to, offset - ( Guard.flareto ? 0.02 : 0.0 ) } };
+    whole.outer = { { Guard.from, Size.web }, { Guard.to, Size.web } };
+    return spacer_fills( whole, Guard.from, Guard.to, Guard.castings );
+}
+
+std::vector<track_rails::rail_fill> check_fills( track_rails::check_rail const &Check, track_rails::rail_size const &Size ) {
+
+    auto const from { Check.from + check_flare( Check ) };
+    auto const to { Check.to - check_flare( Check ) };
+    track_rails::rail_fill whole;
+    whole.web = true;
+    whole.inner = { { from, -check_flangeway }, { to, -check_flangeway } };
+    whole.outer = { { from, Size.web }, { to, Size.web } };
+    return spacer_fills( whole, from, to, {} );
 }
 
 bool goes_through( TTrack const &Track, TTrack const &Other ) {
@@ -467,6 +483,16 @@ rail_layout TTrack::rail_planner::lay_out() {
     }
     if( m_track.eType == tt_Switch ) {
         switch_frog();
+    }
+    for( int path = 0; path < 2; ++path ) {
+        for( int side = 0; side < 2; ++side ) {
+            for( auto const &check : m_layout.checks[ path ][ side ] ) {
+                if( false == replaced_by_wing( check, m_layout.wingends[ path ][ side ] ) ) {
+                    auto const fills { check_fills( check, m_size ) };
+                    m_layout.fills[ path ][ side ].insert( m_layout.fills[ path ][ side ].end(), fills.begin(), fills.end() );
+                }
+            }
+        }
     }
     return m_layout;
 }

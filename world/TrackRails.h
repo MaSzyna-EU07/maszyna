@@ -38,6 +38,7 @@ int path_count( TTrack const &Track );
 TTrack *path_neighbour( TTrack const &Track, int const Path, int const End );
 double knuckle_bend( double const Into );
 bool replaced_check( std::vector<check_rail> const &Checks, double const Wingend, double const Direction, double &Far );
+bool replaced_by_wing( check_rail const &Check, knots::line const &Wingends );
 gauge_line const &rail_line( TTrack const &Track, int const Path, int const Side, bool const Blades );
 check_rail_set const &rail_checks( TTrack &Track );
 glm::dvec3 rail_point( TTrack const &Track, int const Path, int const Side, double const Distance, double const Lateral );
