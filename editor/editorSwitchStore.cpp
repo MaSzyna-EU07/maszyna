@@ -156,7 +156,7 @@ void load()
 			std::string km;
 			std::size_t count{0};
 			line >> entry.kind;
-			if (entry.kind != "switch" && entry.kind != "slip" && entry.kind != "crossing" && entry.kind != "double")
+			if (entry.kind != "switch" && entry.kind != "slip" && entry.kind != "crossing" && entry.kind != "double" && entry.kind != "connection")
 				continue;
 			line >> entry.name >> entry.type >> entry.rail >> entry.radius >> entry.ratio >> hand >> entry.a >> entry.b >> entry.main_radius >> keyword >> count;
 			if (line.fail() || keyword != "parts" || count > 64)
@@ -205,9 +205,22 @@ std::optional<record> named(TTrack const &Track)
 	if (name.empty())
 		return std::nullopt;
 	for (auto const &entry : g_records)
-		if (std::find(entry.parts.begin(), entry.parts.end(), name) != entry.parts.end())
+		if (entry.kind != "connection" && std::find(entry.parts.begin(), entry.parts.end(), name) != entry.parts.end())
 			return entry;
 	return std::nullopt;
+}
+
+std::vector<record> connections(TTrack const &Track)
+{
+	load();
+	std::vector<record> result;
+	auto const &name{Track.name()};
+	if (name.empty())
+		return result;
+	for (auto const &entry : g_records)
+		if (entry.kind == "connection" && std::find(entry.parts.begin(), entry.parts.end(), name) != entry.parts.end())
+			result.push_back(entry);
+	return result;
 }
 
 std::optional<record> of(TTrack const &Track)

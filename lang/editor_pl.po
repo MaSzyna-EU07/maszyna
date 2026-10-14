@@ -6010,3 +6010,168 @@ msgstr "Część toru zwrotnego jest krótsza niż 5 cm"
 msgid "A radius of the diverging track is under 10 m"
 msgstr "Promień toru zwrotnego jest mniejszy niż 10 m"
 
+msgid "%s laid, switches %s"
+msgstr "Ułożono: %s, zwrotnice %s"
+
+msgid "%s: %d switches, spacing %.2f m"
+msgstr "%s: zwrotnic %d, rozstaw %.2f m"
+
+msgid ", aligning curve R %.0f m"
+msgstr ", łuk wyrównujący R %.0f m"
+
+msgid ", crossing 1:%.2f"
+msgstr ", skrzyżowanie 1:%.2f"
+
+msgid ", mathematical points %.2f m apart"
+msgstr ", punkty matematyczne co %.2f m"
+
+msgid ", straight inserts"
+msgstr ", wstawki proste"
+
+msgid ", tracks at"
+msgstr ", tory w odległości"
+
+msgid "A connection is laid between straights"
+msgstr "Połączenie układa się między prostymi"
+
+msgid "A connection is made of ordinary switches, not of slips, crossings or double switches"
+msgstr "Połączenie składa się z rozjazdów zwyczajnych, nie z krzyżowych, skrzyżowań ani podwójnych"
+
+msgid "A connection of tracks laid whole: press on a straight and drag onto the other track. Its switches are cut into the tracks with the inserts between them and get their drives; Shift+wheel while dragging: another kind, Ctrl+wheel: R of the aligning curve"
+msgstr "Połączenie torów układane w całości: wciśnij na prostej i przeciągnij na drugi tor. Zwrotnice są wcinane w tory razem ze wstawkami między nimi i dostają napędy; Shift+kółko podczas przeciągania: inny rodzaj, Ctrl+kółko: R łuku wyrównującego"
+
+msgid "A scissors crossover needs parallel tracks and switches of the same angle"
+msgstr "Nożyce wymagają torów równoległych i rozjazdów o tym samym skosie"
+
+msgid "A switch of the connection doesn't fit where it was planned, its straight is too short"
+msgstr "Zwrotnica połączenia nie mieści się tam, gdzie ją zaplanowano, jej prosta jest za krótka"
+
+msgid "A switch of the connection goes where its track isn't a plain straight"
+msgstr "Zwrotnica połączenia wypada tam, gdzie tor nie jest zwykłą prostą"
+
+msgid "A switch of the connection runs off the end of its straight"
+msgstr "Zwrotnica połączenia wychodzi poza koniec swojej prostej"
+
+msgid "Aligning curve R, m##connectionradius"
+msgstr "R łuku wyrównującego, m##connectionradius"
+
+msgid "Alt+wheel"
+msgstr "Alt+kółko"
+
+msgid "Connection##switchconnection"
+msgstr "Połączenie##switchconnection"
+
+msgid "Crossover"
+msgstr "Przejście rozjazdowe"
+
+msgid "Distances between the tracks of the fan from this track on, such as 4.75;4.75;5.0; used when the drag doesn't end on a parallel track, otherwise the parallel tracks up to that one make the fan"
+msgstr "Odległości między torami wachlarza od tego toru, np. 4.75;4.75;5.0; używane, gdy przeciąganie nie kończy się na torze równoległym, w przeciwnym razie wachlarz tworzą tory równoległe aż do tamtego"
+
+msgid "Double crossover"
+msgstr "Podwójne przejście rozjazdowe"
+
+msgid "Drag onto the other track"
+msgstr "Przeciągnij na drugi tor"
+
+msgid "Gap between the switches, m##connectiongap"
+msgstr "Odstęp między zwrotnicami, m##connectiongap"
+
+msgid "Give the spacings of the tracks of the ladder"
+msgstr "Podaj rozstawy torów ulicy zwrotnicowej"
+
+msgid "Length of the new tracks of the fan where there are none to lead onto"
+msgstr "Długość nowych torów wachlarza tam, gdzie nie ma torów do połączenia"
+
+msgid "New tracks, m##connectionstub"
+msgstr "Nowe tory, m##connectionstub"
+
+msgid "Of the curve between switches of different angles or on tracks that aren't parallel, and at the end of a ladder; 0: the radius of the sharper switch"
+msgstr "Łuku między rozjazdami o różnych skosach lub na torach nierównoległych oraz na końcu ulicy zwrotnicowej; 0: promień ostrzejszego rozjazdu"
+
+msgid "Other switches##connectionsecond"
+msgstr "Pozostałe zwrotnice##connectionsecond"
+
+msgid "Otherwise the two crossovers meet on the other track; Alt+wheel while dragging switches it"
+msgstr "W przeciwnym razie oba przejścia spotykają się na drugim torze; Alt+kółko podczas przeciągania to przełącza"
+
+msgid "R of the aligning curve"
+msgstr "R łuku wyrównującego"
+
+msgid "Scissors crossover"
+msgstr "Nożyce"
+
+msgid "Single switch"
+msgstr "Pojedynczy rozjazd"
+
+msgid "Spacings, m##connectionspacings"
+msgstr "Rozstawy, m##connectionspacings"
+
+msgid "Straight between the starts of the two switches meeting on one track"
+msgstr "Prosta między początkami dwóch zwrotnic spotykających się na jednym torze"
+
+msgid "Switch ladder"
+msgstr "Ulica zwrotnicowa"
+
+msgid "Template of the switches on the other track and along a ladder; the first switch is the one chosen on the list above"
+msgstr "Szablon zwrotnic na drugim torze i wzdłuż ulicy zwrotnicowej; pierwsza zwrotnica to ta wybrana na liście powyżej"
+
+msgid "The aligning curve R %.0f m with %.0f m straights doesn't fit between the switches"
+msgstr "Łuk wyrównujący R %.0f m z prostymi %.0f m nie mieści się między zwrotnicami"
+
+msgid "The diverging track runs along the other track"
+msgstr "Tor zwrotny biegnie wzdłuż drugiego toru"
+
+msgid "The diverging tracks meet at %.2f deg, a straight insert can't join them"
+msgstr "Tory zwrotne spotykają się pod kątem %.2f°, wstawka prosta ich nie połączy"
+
+msgid "The same as the first one"
+msgstr "Taka sama jak pierwsza"
+
+msgid "The spacings of the tracks of a ladder have to be at least 1 m"
+msgstr "Rozstawy torów ulicy zwrotnicowej muszą mieć co najmniej 1 m"
+
+msgid "The straight between the curves of the switches is %.2f m, under %.0f m"
+msgstr "Prosta między łukami zwrotnic ma %.2f m, mniej niż %.0f m"
+
+msgid "The switch on the other track runs off the end of its straight"
+msgstr "Zwrotnica na drugim torze wychodzi poza koniec swojej prostej"
+
+msgid "The switch template has no diverging track"
+msgstr "Szablon rozjazdu nie ma toru zwrotnego"
+
+msgid "The switches can't face each other across these tracks"
+msgstr "Zwrotnice nie mogą stanąć naprzeciw siebie na tych torach"
+
+msgid "The switches meet on this track##connectiontogether"
+msgstr "Zwrotnice spotykają się na tym torze##connectiontogether"
+
+msgid "The switches of the two crossovers overlap, the gap between them has to be longer"
+msgstr "Zwrotnice obu przejść nachodzą na siebie, odstęp między nimi musi być dłuższy"
+
+msgid "The tracks are %.2f m too close for these switches"
+msgstr "Tory są o %.2f m za blisko dla tych rozjazdów"
+
+msgid "The tracks are too close for a scissors crossover with these switches, its switches overlap"
+msgstr "Tory są za blisko dla nożyc z tymi rozjazdami, ich zwrotnice nachodzą na siebie"
+
+msgid "The tracks are too close for the crossing of a scissors crossover: %.2f m more spacing is needed"
+msgstr "Tory są za blisko dla skrzyżowania nożyc: potrzeba o %.2f m większego rozstawu"
+
+msgid "The tracks of a fan have to be parallel, on one side and at least 1 m apart"
+msgstr "Tory wachlarza muszą być równoległe, po jednej stronie i co najmniej 1 m od siebie"
+
+msgid "Track %d of the fan is %.2f m too close to the previous one for these switches"
+msgstr "Tor %d wachlarza jest o %.2f m za blisko poprzedniego dla tych rozjazdów"
+
+msgid "Track %d of the fan reaches into the ladder, it has to start %.2f m further on"
+msgstr "Tor %d wachlarza wchodzi w ulicę zwrotnicową, musi zaczynać się %.2f m dalej"
+
+msgid "another kind"
+msgstr "inny rodzaj"
+
+msgid "the connection there"
+msgstr "połączenie tam"
+
+msgid "where a double crossover meets"
+msgstr "gdzie spotyka się podwójne przejście"
+

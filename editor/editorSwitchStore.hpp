@@ -26,7 +26,7 @@ namespace switch_store
 struct record
 {
 	scene::layer_handle layer{null_handle};
-	std::string kind{"switch"}; // switch, slip, crossing, double
+	std::string kind{"switch"}; // switch, slip, crossing, double, connection
 	std::string name; // the switch, or the base name of a slip or a crossing
 	std::string type{"Rz"}; // Rz, Rlj, Rld, Rkp, Rkpd, Skrz, Rpd, Rpj, - when unknown
 	std::string rail{"-"};
@@ -55,6 +55,8 @@ std::vector<record> const &records();
 std::optional<record> of(TTrack const &Track);
 // the record of the track by its name alone, also when the switch lost its shape
 std::optional<record> named(TTrack const &Track);
+// the connections of switches the switch is a part of
+std::vector<record> connections(TTrack const &Track);
 // records whose switches were moved or turned as a whole take their new place and km; returns their names
 std::vector<std::string> follow();
 // radius of the diverging track: of the type, bent with the main track for an arc switch

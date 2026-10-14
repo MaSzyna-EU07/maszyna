@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTerrainStreamer.hpp"
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorTrack.hpp"
+#include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -998,8 +999,22 @@ class editor_mode : public application_mode, private editor_track::observer
 		};
 		slide_state slide;
 		double slide_typed{0.0};
+		int connection{-1};
+		int connection_second{-1};
+		double connection_radius{0.0};
+		double connection_gap{6.0};
+		bool connection_together{false};
+		char connection_spacings[64]{"4.75;4.75;5.0"};
+		double connection_stub{25.0};
 	};
 	switch_tool m_switch;
+	bool plan_connection(connection::request &Request, connection::result &Result) const;
+	void insert_connection();
+	void render_connection_ui();
+	std::string connection_readout(connection::result const &Plan) const;
+	editor_track::straight straight_near(glm::dvec3 const &Point, std::vector<TTrack const *> const &Exclude, double const Reach) const;
+	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
+	void record_connection(connection::kind const Kind, std::vector<TTrack *> const &Switches, connection::result const &Plan, editor_track::switch_template const &Shape);
 	bool switch_room(TTrack &Track, double &Low, double &High, std::string &Reason);
 	bool switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status);
 	bool move_switch_paths(TTrack &Track, std::vector<segment_data> const &Paths, std::string &Status);

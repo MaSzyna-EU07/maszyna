@@ -278,6 +278,26 @@ void editor_mode::record_double(TTrack &First, TTrack &Second, editor_track::swi
 	switch_store::put(entry, alignment_store::layer_of(First));
 }
 
+void editor_mode::record_connection(connection::kind const Kind, std::vector<TTrack *> const &Switches, connection::result const &Plan, editor_track::switch_template const &Shape)
+{
+	if (Switches.empty() || Switches.front()->eType != tt_Switch || Switches.front()->m_paths.size() < 2 || scene::Layers.empty())
+		return;
+	auto entry{switch_entry(Shape)};
+	entry.kind = "connection";
+	entry.name = Switches.front()->name();
+	for (auto const *track : Switches)
+		if (track->name().empty())
+			return;
+		else
+			entry.parts.push_back(track->name());
+	switch_store::place(entry, *Switches.front());
+	switch_store::classify(entry, *Switches.front());
+	entry.type = connection::word(Kind);
+	entry.a = Plan.spacing;
+	entry.b = Plan.straights.empty() ? 0.0 : Plan.straights.front();
+	switch_store::put(entry, alignment_store::layer_of(*Switches.front()));
+}
+
 std::optional<editor_mode::double_switch> editor_mode::double_of(TTrack const &Track) const
 {
 	auto const of_switch = [](TTrack const &Switch) -> std::optional<double_switch> {

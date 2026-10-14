@@ -3863,7 +3863,9 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_extend.active)
 		hints = {{"Drag", "lays the shape to the cursor, to a free end: joins it"}, {"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}, {"Release", "build"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
-		hints = {{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}};
+		hints = m_switch.connection >= 0 && false == m_switch.curved ?
+		            std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}} :
+		            std::vector<key_hint>{{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::lay)
 		hints = {{"LMB", "start, on the ground or at a free end"}};
 	else if (m_track_tab == track_tab::turnout && (selected_track() == nullptr || selected_track()->eType == tt_Switch))
@@ -4823,6 +4825,25 @@ void editor_mode::render_layout_combo()
 bool editor_mode::track_wheel(double const Offset)
 {
 	auto const &io{ImGui::GetIO()};
+	if (m_switch.placing && m_switch.connection >= 0 && Offset != 0.0 && (io.KeyCtrl || io.KeyShift || io.KeyAlt))
+	{
+		auto &tool{m_switch};
+		int const step{Offset > 0.0 ? 1 : -1};
+		if (io.KeyShift)
+			tool.connection = (tool.connection + step + connection::kind_count) % connection::kind_count;
+		else if (io.KeyCtrl)
+		{
+			static double const radii[]{0.0, 150.0, 190.0, 250.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0, 3000.0};
+			int index{0};
+			for (int i = 0; i < static_cast<int>(std::size(radii)); ++i)
+				if (radii[i] <= tool.connection_radius + 1e-6)
+					index = i;
+			tool.connection_radius = radii[std::clamp(index + step, 0, static_cast<int>(std::size(radii)) - 1)];
+		}
+		else
+			tool.connection_together = false == tool.connection_together;
+		return true;
+	}
 	if ((false == io.KeyCtrl && false == io.KeyShift) || Offset == 0.0)
 		return false;
 	bool const laying{m_lay.active && false == m_lay.points.empty()};
@@ -5416,6 +5437,18 @@ bool editor_mode::start_switch_placement()
 void editor_mode::finish_switch_placement()
 {
 	auto &tool{m_switch};
+	if (tool.connection >= 0)
+	{
+		if (false == tool.curved)
+		{
+			insert_connection();
+			return;
+		}
+		tool.placing = false;
+		tool.status = STR_C("A connection is laid between straights");
+		ui()->set_status(tool.status, true);
+		return;
+	}
 	switch_link plan;
 	auto const linked{plan_switch_link(plan)};
 	tool.placing = false;
@@ -5765,7 +5798,40 @@ void editor_mode::draw_build_overlay() const
 				drawpath(piece, overlay_color::marked);
 		}
 	}
-	if (m_switch.placing)
+	if (m_switch.placing && m_switch.connection >= 0 && false == m_switch.curved)
+	{
+		connection::request request;
+		connection::result plan;
+		auto const valid{plan_connection(request, plan)};
+		if (valid)
+		{
+			for (auto const &entry : plan.switches)
+				for (auto const &path : entry.paths)
+					drawpath(path, overlay_color::marked);
+			for (auto const &insert : plan.inserts)
+				drawpath(insert, overlay_color::grip);
+			if (plan.crossing)
+				for (int i = 0; i < 4; i += 2)
+				{
+					segment_data path;
+					path.points[segment_data::point::start] = plan.ends[i];
+					path.points[segment_data::point::end] = plan.ends[i + 1];
+					drawpath(path, overlay_color::grip);
+				}
+		}
+		else
+			for (auto const &piece : switch_preview())
+				drawpath(piece, overlay_color::invalid);
+		ImVec2 screen;
+		auto const text{valid ? connection_readout(plan) : plan.error.empty() ? std::string{STR_C("Drag onto the other track")} : plan.error};
+		if (projection.project(m_switch.mouse, screen))
+		{
+			auto const size{ImGui::CalcTextSize(text.c_str())};
+			drawlist->AddRectFilled(ImVec2(screen.x + 14.0f, screen.y + 10.0f), ImVec2(screen.x + 22.0f + size.x, screen.y + 14.0f + size.y), IM_COL32(0, 0, 0, 180), 3.0f);
+			drawlist->AddText(ImVec2(screen.x + 18.0f, screen.y + 12.0f), valid ? (plan.warning.empty() ? overlay_color::highlight : overlay_color::warning) : overlay_color::invalid, text.c_str());
+		}
+	}
+	else if (m_switch.placing)
 	{
 		for (auto const &piece : switch_preview())
 			drawpath(piece, overlay_color::marked);
@@ -5892,6 +5958,7 @@ void editor_mode::render_switch_ui()
 			list(true);
 		}
 	}
+	render_connection_ui();
 	ImGui::PushItemWidth(120.0f);
 	ImGui::InputTextWithHint(STR_C("Name##switchname"), switch_name_for_new().c_str(), tool.name, sizeof(tool.name));
 	ImGui::PopItemWidth();
@@ -6164,9 +6231,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	if (std::abs(lateral) < 0.01)
 		return false;
 	auto const side{lateral > 0.0 ? 1.0 : -1.0};
-	auto const normal{perpendicular * side};
-	auto const offset{std::abs(lateral)};
-	auto const &control{diverging.points[segment_data::point::control2]};
+	auto const &control{(diverging.pieces.empty() ? diverging : diverging.pieces.back()).points[segment_data::point::control2]};
 	auto const tangent{glm::normalize(control != glm::dvec3{} ? -plan_of(control) : plan_of(frog - origin))};
 	auto const angle{std::atan2(std::abs(cross(axis, tangent)), glm::dot(axis, tangent))};
 	if (angle < 1e-4)
@@ -6204,22 +6269,6 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	auto const &line{Plan.target};
 	if (line.tracks.empty() || std::abs(cross(line.direction, axis)) > std::sin(glm::radians(1.0)))
 		return false;
-	auto const distance{glm::dot(plan_of(line.start) - plan_of(origin), normal)};
-	auto const remaining{distance - 2.0 * offset};
-	if (remaining < 0.01)
-		return false;
-	auto const length{remaining / std::sin(angle)};
-	glm::dvec2 const crossing{axis * std::cos(angle) + normal * std::sin(angle)};
-	auto const alongfrog{glm::dot(plan_of(frog - origin), axis)};
-	auto const otherfrog{plan_of(frog) + crossing * length};
-	auto const otherorigin{otherfrog + axis * alongfrog + normal * offset};
-	Plan.along = glm::dot(otherorigin - plan_of(line.start), line.direction);
-	if (Plan.along < 0.0 || Plan.along > line.length)
-		return false;
-	Plan.direction = glm::dot(-axis, line.direction) > 0.0 ? 1 : -1;
-	glm::dvec2 const direction{line.direction * static_cast<double>(Plan.direction)};
-	Plan.side = glm::dot(glm::dvec2{-direction.y, direction.x}, -normal) > 0.0 ? 1 : -1;
-
 	editor_track::switch_template shape;
 	shape.source = tool.track;
 	shape.length = glm::dot(plan_of(main.points[segment_data::point::end] - origin), axis);
@@ -6238,11 +6287,14 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 		}
 	}
 	Plan.shape = shape;
-	auto const station{line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * Plan.along};
-	Plan.paths = editor_track::place_switch(shape, station, direction, Plan.side, line.grade * Plan.direction);
-	Plan.insert = segment_data{};
-	Plan.insert.points[segment_data::point::start] = frog;
-	Plan.insert.points[segment_data::point::end] = Plan.paths[1].points[segment_data::point::end];
+	auto const faced{connection::face(frog, tangent, connection::of(line), 1, shape)};
+	if (false == faced.valid)
+		return false;
+	Plan.along = faced.partner.along;
+	Plan.direction = faced.partner.forward;
+	Plan.side = faced.partner.side;
+	Plan.paths = faced.partner.paths;
+	Plan.insert = faced.insert;
 	return true;
 }
 
@@ -6265,7 +6317,7 @@ bool editor_mode::stretchable(editor_track::snap_target const &Target) const
 bool editor_mode::plan_switch_link(switch_link &Plan) const
 {
 	auto const &tool{m_switch};
-	if (false == tool.placing || tool.curved || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()) || tool.line.tracks.empty() || tool.templates[tool.armed].double_slip)
+	if (false == tool.placing || tool.curved || tool.connection >= 0 || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()) || tool.line.tracks.empty() || tool.templates[tool.armed].double_slip)
 		return false;
 	auto const &shape{tool.templates[tool.armed]};
 	auto const &line{tool.line};

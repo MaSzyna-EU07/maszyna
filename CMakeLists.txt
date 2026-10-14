@@ -183,6 +183,8 @@ set(SOURCES
 "editor/editorAlignmentStore.cpp"
 "editor/editorSwitchStore.cpp"
 "editor/editorSwitchDesign.cpp"
+"editor/editorConnections.cpp"
+"application/editormodeconnection.cpp"
 "editor/editorSpeed.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"

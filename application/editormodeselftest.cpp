@@ -1317,6 +1317,107 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog("SELFTEST curvedswitch " + (tool.armed >= 0 ? tool.templates[tool.armed].label : std::string{}) + ": " + tool.status);
 		return selftest_result::handled;
 	}
+	if (command == "connection" || command == "connectionplan")
+	{
+		std::string kindword;
+		std::string label;
+		std::string second;
+		glm::dvec3 at{0.0};
+		glm::dvec3 toward{0.0};
+		words >> kindword >> at.x >> at.z >> toward.x >> toward.z >> label >> second;
+		connection::kind kind{connection::kind::crossover};
+		if (false == connection::parse(kindword, kind))
+		{
+			WriteLog("SELFTEST connection: unknown kind " + kindword);
+			return selftest_result::handled;
+		}
+		auto &tool{m_switch};
+		for (std::string key; words >> key;)
+		{
+			if (key == "radius")
+				words >> tool.connection_radius;
+			else if (key == "gap")
+				words >> tool.connection_gap;
+			else if (key == "together")
+				words >> tool.connection_together;
+			else if (key == "stub")
+				words >> tool.connection_stub;
+			else if (key == "spacings")
+			{
+				std::string value;
+				words >> value;
+				std::snprintf(tool.connection_spacings, sizeof(tool.connection_spacings), "%s", value.c_str());
+			}
+		}
+		show_track_tab(track_tab::turnout);
+		arm_switch();
+		auto const find = [&](std::string Label) {
+			std::replace(Label.begin(), Label.end(), '_', ' ');
+			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+				if (false == Label.empty() && Label != "-" && false == tool.templates[i].double_slip && false == tool.templates[i].twofold() && tool.templates[i].label.find(Label) != std::string::npos)
+					return i;
+			return -1;
+		};
+		auto const first{find(label)};
+		if (first < 0)
+		{
+			WriteLog("SELFTEST connection: no template " + label);
+			return selftest_result::handled;
+		}
+		tool.armed = first;
+		tool.connection_second = find(second);
+		tool.connection = static_cast<int>(kind);
+		auto const line{straight_near(at, {}, 3.0)};
+		if (line.tracks.empty())
+		{
+			WriteLog("SELFTEST connection: no straight at the start");
+			return selftest_result::handled;
+		}
+		m_node = line.tracks.front();
+		ui()->set_node(m_node);
+		m_cursor_override = at;
+		auto const started{start_switch_placement()};
+		m_cursor_override.reset();
+		if (false == started)
+		{
+			WriteLog("SELFTEST connection: not started, " + tool.status);
+			return selftest_result::handled;
+		}
+		tool.mouse = glm::dvec3{toward.x, tool.point.y, toward.z};
+		connection::request request;
+		connection::result plan;
+		auto const valid{plan_connection(request, plan)};
+		WriteLog("SELFTEST connection " + kindword + ": " + (valid ? connection_readout(plan) : "invalid, " + plan.error));
+		for (auto const &entry : plan.switches)
+		{
+			auto const &start{entry.paths[0].points[segment_data::point::start]};
+			auto const &end{entry.paths[1].points[segment_data::point::end]};
+			WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d%s: %.3f %.3f %.3f -> branch end %.3f %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, entry.second ? " (second)" : "", start.x, start.y, start.z, end.x, end.y,
+			                end.z));
+		}
+		for (auto const &insert : plan.inserts)
+		{
+			auto const &start{insert.points[segment_data::point::start]};
+			auto const &end{insert.points[segment_data::point::end]};
+			WriteLog(format("SELFTEST connection insert %.3f %.3f %.3f -> %.3f %.3f %.3f, %.3f m, R %.1f", start.x, start.y, start.z, end.x, end.y, end.z, geometry::bezier{insert}.plan_length(), std::abs(insert.radius)));
+		}
+		if (command == "connectionplan" || false == valid)
+		{
+			tool.placing = false;
+			return selftest_result::handled;
+		}
+		insert_connection();
+		WriteLog("SELFTEST connection built: " + tool.status);
+		for (auto const &entry : switch_store::records())
+			if (entry.kind == "connection")
+			{
+				std::string parts;
+				for (auto const &part : entry.parts)
+					parts += ' ' + part;
+				WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
+			}
+		return selftest_result::handled;
+	}
 	if (command == "conecheck")
 	{
 		std::string name;
