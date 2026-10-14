@@ -639,8 +639,9 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         auto const position { glm::vec3{ point - Origin } };
         auto const parallel { glm::vec3{ across } };
         auto const offset { knots::sample( Span.offsets, Distance, 0.0 ) };
-        auto const extent { knots::sample( Span.extents, Distance, 1e6 ) };
-        auto const innerextent { knots::sample( Span.inner, Distance, -1e6 ) };
+        auto const inward { Distance + std::copysign( 1e-6, Middle - Distance ) };
+        auto const extent { knots::sample( Span.extents, inward, 1e6 ) };
+        auto const innerextent { knots::sample( Span.inner, inward, -1e6 ) };
         auto const middleextent { knots::sample( Span.extents, Middle, 1e6 ) };
         auto const middleinner { knots::sample( Span.inner, Middle, -1e6 ) };
         glm::vec3 outerwall { 0.f }, innerwall { 0.f };
@@ -710,7 +711,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                         continue;
                     }
                     auto const &other { ShapePoints[ neighbour ] };
-                    auto const t { static_cast<float>( ( limit - reach( neighbour ) ) / ( side > 0 ? std::max( outside - reach( neighbour ), 1e-6 ) : std::min( outside - reach( neighbour ), -1e-6 ) ) ) };
+                    auto const t { std::clamp( static_cast<float>( ( limit - reach( neighbour ) ) / ( side > 0 ? std::max( outside - reach( neighbour ), 1e-6 ) : std::min( outside - reach( neighbour ), -1e-6 ) ) ), 0.f, 1.f ) };
                     shape.position.y = glm::mix( other.position.y, shape.position.y, t );
                     shape.texture.x = glm::mix( other.texture.x, shape.texture.x, t );
                     auto const blend { glm::mix( other.normal, shape.normal, t ) };
@@ -744,7 +745,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                         shape.position.y = std::max( shape.position.y, bottom );
                     }
                 }
-                outside = limit;
+                outside = ( side > 0 ? std::min( outside, limit ) : std::max( outside, limit ) );
                 auto const onwall { paired ? ( false == open( partner ) && clamped( partner ) == side ) : moved == count };
                 if( onwall ) {
                     wall = ( side > 0 ? outerwall : innerwall );
