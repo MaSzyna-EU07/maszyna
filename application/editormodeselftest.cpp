@@ -154,7 +154,7 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		float extent{0.0f};
 		words >> extent;
 		choose_work_area(work_area::tracks);
-		if (false == Global.EditorOrtho)
+		if (Global.EditorOrtho == extent < 0.0f)
 			toggle_ortho();
 		if (extent > 0.0f)
 			Global.EditorOrthoExtent = std::clamp(extent, 5.0f, 50000.0f);
@@ -1317,7 +1317,60 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog("SELFTEST curvedswitch " + (tool.armed >= 0 ? tool.templates[tool.armed].label : std::string{}) + ": " + tool.status);
 		return selftest_result::handled;
 	}
-	if (command == "connection" || command == "connectionplan")
+	if (command == "designer")
+	{
+		std::string list;
+		int index{0};
+		words >> list >> index;
+		auto &designer{m_switch_designer};
+		designer.open = list != "close";
+		designer.from_catalogue = list != "own";
+		designer.selected = index;
+		return selftest_result::handled;
+	}
+	if (command == "release")
+	{
+		m_switch.placing = false;
+		lay_cancel();
+		m_cursor_override.reset();
+		return selftest_result::handled;
+	}
+	if (command == "hover")
+	{
+		glm::dvec3 at{0.0};
+		if (words >> at.x >> at.z)
+			m_cursor_override = at;
+		else
+			m_cursor_override.reset();
+		return selftest_result::handled;
+	}
+	if (command == "layhold")
+	{
+		int layout{0};
+		words >> layout >> m_lay.radius;
+		m_track_layout = static_cast<track_layout>(std::clamp(layout, 0, 3));
+		m_lay.active = true;
+		lay_cancel();
+		std::vector<glm::dvec3> points;
+		for (glm::dvec3 point{0.0}; words >> point.x >> point.z;)
+			points.push_back(point);
+		for (std::size_t i = 0; i + 1 < points.size(); ++i)
+		{
+			auto point{points[i]};
+			point.y = 5000.0;
+			std::vector<char> found;
+			auto const ground{ground_heights({point}, true, &found)};
+			point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+			m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
+			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
+			lay_click();
+		}
+		if (false == points.empty())
+			m_cursor_override = points.back();
+		WriteLog("SELFTEST layhold: " + m_lay.status);
+		return selftest_result::handled;
+	}
+	if (command == "connection" || command == "connectionplan" || command == "connectionhold")
 	{
 		std::string kindword;
 		std::string label;
@@ -1326,7 +1379,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		glm::dvec3 toward{0.0};
 		words >> kindword >> at.x >> at.z >> toward.x >> toward.z >> label >> second;
 		connection::kind kind{connection::kind::crossover};
-		if (false == connection::parse(kindword, kind))
+		if (kindword != "single" && false == connection::parse(kindword, kind))
 		{
 			WriteLog("SELFTEST connection: unknown kind " + kindword);
 			return selftest_result::handled;
@@ -1366,7 +1419,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		}
 		tool.armed = first;
 		tool.connection_second = find(second);
-		tool.connection = static_cast<int>(kind);
+		tool.connection = kindword == "single" ? -1 : static_cast<int>(kind);
 		auto const line{straight_near(at, {}, 3.0)};
 		if (line.tracks.empty())
 		{
@@ -1384,6 +1437,12 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			return selftest_result::handled;
 		}
 		tool.mouse = glm::dvec3{toward.x, tool.point.y, toward.z};
+		if (command == "connectionhold")
+		{
+			m_cursor_override = toward;
+			WriteLog("SELFTEST connectionhold: " + tool.status);
+			return selftest_result::handled;
+		}
 		connection::request request;
 		connection::result plan;
 		auto const valid{plan_connection(request, plan)};
