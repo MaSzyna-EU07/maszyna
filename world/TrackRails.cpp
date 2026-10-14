@@ -997,7 +997,7 @@ void acute( TTrack::rail_plan &Plan, double const At, double const Toward, doubl
 }
 
 // obtuse crossing: the rail ends where it meets the other one and starts again pointed past its flangeway, a check rail beside the point guards the gap
-void obtuse( TTrack::rail_plan &Plan, std::vector<TTrack::rail_fill> &Fills, double const At, double const Into, TTrack::rail_size const &Size, TTrack::rail_size const &Other ) {
+void obtuse( TTrack::rail_plan &Plan, double const At, double const Into, TTrack::rail_size const &Size ) {
 
     auto const gap { flangeway / std::abs( Into ) };
     auto const full { Size.high + 0.0135 };
@@ -1018,22 +1018,6 @@ void obtuse( TTrack::rail_plan &Plan, std::vector<TTrack::rail_fill> &Fills, dou
         cut.startbend = bend;
     }
     Plan.cuts.push_back( cut );
-    auto const slope { std::abs( Into ) };
-    auto const toward { Into > 0.0 ? 1.0 : -1.0 };
-    auto const web { gap + Size.web / slope };
-    auto const reach { gap + ( taper - gap ) * ( Size.head - 0.006 ) / ( full - 0.006 ) };
-    TTrack::rail_fill fill;
-    fill.web = true;
-    fill.from = std::min( At, At + toward * reach );
-    fill.to = std::max( At, At + toward * reach );
-    fill.capfrom = true;
-    fill.capto = true;
-    fill.inner = { { At, 0.0 }, { At + toward * gap, 0.0 }, { At + toward * web, Size.web }, { At + toward * reach, Size.web } };
-    fill.outer = { { At, Other.web }, { At + toward * reach, slope * reach + Other.web } };
-    for( auto *knots : { &fill.inner, &fill.outer } ) {
-        std::sort( knots->begin(), knots->end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
-    }
-    Fills.push_back( fill );
 }
 
 // crossing at a wide angle: running rails are broken for the flanges of the other track, the ones of the track not going through also where the head of the other rail lies; guard rails give way to the running rails and flangeways of the other track, the ones of the track not going through also to its guard rails
@@ -1390,7 +1374,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 tread( crossing.path, crossing.side, { std::min( nose, shared ), std::max( nose, shared ) }, *crossing.track, crossing.otherpath, toward > 0.0 ? 1 : -1, crossing.otherside );
             }
             else {
-                obtuse( plan, layout.fills[ crossing.path ][ crossing.side > 0 ], crossing.at, crossing.into, size, theirs );
+                obtuse( plan, crossing.at, crossing.into, size );
                 auto const reach { ( rolled_band + size.head + tread_fade ) / std::max( std::tan( crossing.angle ), 0.01 ) + 0.2 };
                 tread( crossing.path, crossing.side, { crossing.at - reach, crossing.at + reach }, *crossing.track, crossing.otherpath, 0, crossing.otherside );
             }
