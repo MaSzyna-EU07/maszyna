@@ -997,7 +997,7 @@ void acute( TTrack::rail_plan &Plan, double const At, double const Toward, doubl
 }
 
 // obtuse crossing: the rail ends where it meets the other one and starts again pointed past its flangeway, a check rail beside the point guards the gap
-void obtuse( TTrack::rail_plan &Plan, double const At, double const Into, TTrack::rail_size const &Size ) {
+void obtuse( TTrack::rail_plan &Plan, std::vector<TTrack::rail_fill> &Fills, double const At, double const Into, TTrack::rail_size const &Size, TTrack::rail_size const &Other ) {
 
     auto const gap { flangeway / std::abs( Into ) };
     auto const full { Size.high + 0.0135 };
@@ -1018,6 +1018,21 @@ void obtuse( TTrack::rail_plan &Plan, double const At, double const Into, TTrack
         cut.startbend = bend;
     }
     Plan.cuts.push_back( cut );
+    auto const slope { std::abs( Into ) };
+    auto const toward { Into > 0.0 ? 1.0 : -1.0 };
+    auto const web { gap + Size.web / slope };
+    TTrack::rail_fill fill;
+    fill.web = true;
+    fill.from = std::min( At, At + toward * taper );
+    fill.to = std::max( At, At + toward * taper );
+    fill.capfrom = true;
+    fill.capto = true;
+    fill.inner = { { At, 0.0 }, { At + toward * gap, 0.0 }, { At + toward * web, Size.web }, { At + toward * taper, Size.web } };
+    fill.outer = { { At, Other.web }, { At + toward * taper, slope * taper + Other.web } };
+    for( auto *knots : { &fill.inner, &fill.outer } ) {
+        std::sort( knots->begin(), knots->end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
+    }
+    Fills.push_back( fill );
 }
 
 // crossing at a wide angle: running rails are broken for the flanges of the other track, the ones of the track not going through also where the head of the other rail lies; guard rails give way to the running rails and flangeways of the other track, the ones of the track not going through also to its guard rails
@@ -1356,7 +1371,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 tread( crossing.path, crossing.side, { std::min( nose, shared ), std::max( nose, shared ) }, *crossing.track, crossing.otherpath, toward > 0.0 ? 1 : -1, crossing.otherside );
             }
             else {
-                obtuse( plan, crossing.at, crossing.into, size );
+                obtuse( plan, layout.fills[ crossing.path ][ crossing.side > 0 ], crossing.at, crossing.into, size, theirs );
                 auto const reach { ( rolled_band + size.head + tread_fade ) / std::max( std::tan( crossing.angle ), 0.01 ) + 0.2 };
                 tread( crossing.path, crossing.side, { crossing.at - reach, crossing.at + reach }, *crossing.track, crossing.otherpath, 0, crossing.otherside );
             }
@@ -1546,6 +1561,26 @@ TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &
         create_track_rail_profile( drawing.plates[ 0 ], drawing.plates[ 1 ], &plate );
         for( auto &shape : drawing.plates ) {
             shape.resize( plate.size() );
+        }
+        auto const neck { static_cast<float>( drawing.size.neck ) };
+        auto webtexture { texture };
+        for( std::size_t i = 0; i < outline.size() / 2; ++i ) {
+            auto const &point { outline[ i ] };
+            if( point.position.y < neck && point.normal.y > 0.9f ) {
+                webtexture = point.texture.s;
+                break;
+            }
+        }
+        gfx::vertex_array filler {
+            {{  1.f, bottom, 0.f }, {  1.f, 0.f, 0.f }, { webtexture, 0.f }},
+            {{  1.f, neck, 0.f }, {  1.f, 0.f, 0.f }, { webtexture, 0.f }},
+            {{  1.f, neck, 0.f }, {  0.f, 1.f, 0.f }, { webtexture, 0.f }},
+            {{ -1.f, neck, 0.f }, {  0.f, 1.f, 0.f }, { webtexture, 0.f }},
+            {{ -1.f, neck, 0.f }, { -1.f, 0.f, 0.f }, { webtexture, 0.f }},
+            {{ -1.f, bottom, 0.f }, { -1.f, 0.f, 0.f }, { webtexture, 0.f }} };
+        create_track_rail_profile( drawing.fillers[ 0 ], drawing.fillers[ 1 ], &filler );
+        for( auto &shape : drawing.fillers ) {
+            shape.resize( filler.size() );
         }
     }
     return drawing;
@@ -1957,8 +1992,12 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         auto const a { std::max( fill.from, From ) };
         auto const b { std::min( fill.to, length ) };
         if( b - a > 0.01 ) {
-            aim( treads, 0.5 * ( a + b ) );
-            piece( a, b, {}, fill.outer, a == fill.from && fill.capfrom, b == fill.to && fill.capto, Drawing.plates[ Side > 0 ? 0 : 1 ], true, fill.inner, {}, true, static_cast<float>( fill.lift ) );
+            current = null_handle;
+            if( false == fill.web ) {
+                aim( treads, 0.5 * ( a + b ) );
+            }
+            auto const &shapes { fill.web ? Drawing.fillers : Drawing.plates };
+            piece( a, b, {}, fill.outer, a == fill.from && fill.capfrom, b == fill.to && fill.capto, shapes[ Side > 0 ? 0 : 1 ], true, fill.inner, {}, true, static_cast<float>( fill.lift ) );
             current = null_handle;
         }
     }

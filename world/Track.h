@@ -340,6 +340,8 @@ public:
         double crest { 0.0 };
         double tread { 0.0735 };
         double ledge { 0.0 };
+        double web { 0.0365 };
+        double neck { -0.0467 };
     };
     rail_size rail_dimensions() const;
     // a check rail beside a rail, how far its ends turn away from the running rail
@@ -397,6 +399,7 @@ public:
         bool capfrom { false };
         bool capto { false };
         double lift { 0.0 };
+        bool web { false };
     };
     struct rail_tread {
         double from { 0.0 };
@@ -519,6 +522,7 @@ private:
         float halfwidth { 0.f };
         gfx::vertex_array checkshapes[ 2 ];
         gfx::vertex_array plates[ 2 ];
+        gfx::vertex_array fillers[ 2 ];
         float platetexture { 0.f };
     };
     rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank );
