@@ -1335,6 +1335,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens();
         Parser >> RenderCabShadowsRange;
     }
+    else if (Token == "gfx.cab.ambient")
+    {
+        Parser.getTokens();
+        Parser >> gfx_cab_ambient;
+    }
     else if (Token == "gfx.smoke")
     {
         // smoke visualization toggle
@@ -1600,6 +1605,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << shadowtune.range << " "
         << 0 << "\n";
     export_as_text( Output, "gfx.shadows.cab.range", RenderCabShadowsRange );
+    export_as_text( Output, "gfx.cab.ambient", gfx_cab_ambient );
     export_as_text( Output, "gfx.smoke", Smoke );
     export_as_text( Output, "gfx.smoke.fidelity", SmokeFidelity );
     export_as_text( Output, "smoothtraction", bSmoothTraction );

@@ -109,7 +109,7 @@ vec3 AgxLook(vec3 val)
 
     vec3 offset = vec3(0.0);
     vec3 slope = vec3(1.0);
-    vec3 power = vec3(1.6);
+    vec3 power = mix(vec3(1.0), vec3(1.6), smoothstep(0.0, 0.4, luma));
     float sat = 0.9;
 
 #if AGX_LOOK == 1

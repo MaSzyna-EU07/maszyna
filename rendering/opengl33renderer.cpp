@@ -3939,6 +3939,8 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
             }
 
             auto const old_ambient { light_ubs.ambient };
+            light_ubs.ambient *= Global.gfx_cab_ambient;
+            light_ubo->update( light_ubs );
             auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place

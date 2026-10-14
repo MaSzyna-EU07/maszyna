@@ -159,6 +159,7 @@ struct global_settings {
     bool RenderShadows{ true };
 	bool applicationQuitOrder{false};
     int RenderCabShadowsRange{ 0 };
+    float gfx_cab_ambient{ 1.0f };
     struct shadowtune_t {
         unsigned int map_size{ 2048 };
         float range{ 250.f };
