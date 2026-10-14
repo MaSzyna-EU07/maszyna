@@ -43,6 +43,18 @@ std::vector<std::string> split_labels(std::string const &Text)
 
 } // namespace
 
+int cab_of(block_setup const &Setup)
+{
+	auto const index{find_param(Setup.param_defs, "cab")};
+	if (index < 0)
+	{
+		return 0;
+	}
+	// "any", "1", "2", "0" (the engine room)
+	auto const &value{Setup.params[index].text};
+	return value == "1" ? 1 : value == "2" ? 2 : value == "0" ? -1 : 0;
+}
+
 // cab_switch
 
 cab_switch::cab_switch(block_setup const &Setup)
@@ -50,7 +62,10 @@ cab_switch::cab_switch(block_setup const &Setup)
       m_positioncount(std::max(1, static_cast<int>(std::lround(number(Setup, param::positions))))), m_min(number(Setup, param::min)), m_max(number(Setup, param::max)),
       m_spring(boolean(Setup, param::spring)), m_labels(split_labels(text(Setup, param::labels))), m_animation(static_cast<animation_type>(choice(Setup, param::animation))),
       m_step(number(Setup, param::step)), m_offset(number(Setup, param::offset)), m_smoothing(number(Setup, param::smoothing)), m_submodel(text(Setup, param::submodel)),
-      m_keyincrease(text(Setup, param::key_inc)), m_keydecrease(text(Setup, param::key_dec)), m_command(text(Setup, param::command)), m_hardwarename(text(Setup, param::hw_name))
+      m_soundincrease(text(Setup, param::sound_inc)), m_sounddecrease(text(Setup, param::sound_dec)),
+      m_soundpositions(text(Setup, param::sound_positions)),
+      m_keyincrease(text(Setup, param::key_inc)), m_keydecrease(text(Setup, param::key_dec)), m_command(text(Setup, param::command)), m_hardwarename(text(Setup, param::hw_name)),
+      m_cab(cab_of(Setup))
 {
 	// the default is given as a value, as the author sees it; the switch starts at the position closest to it
 	auto const defaultvalue{number(Setup, param::default_value)};
@@ -59,6 +74,7 @@ cab_switch::cab_switch(block_setup const &Setup)
 		m_defaultposition = clamp_position(static_cast<int>(std::lround((defaultvalue - m_min) / (m_max - m_min) * (m_positioncount - 1))));
 	}
 	m_position = m_defaultposition;
+	m_display = static_cast<float>(m_position);
 }
 
 int cab_switch::clamp_position(int const Position) const
@@ -84,6 +100,7 @@ void cab_switch::update(frame &Frame)
 {
 	set(Frame, port::value, value_at(m_position));
 	set(Frame, port::index, m_position);
+	m_display = static_cast<float>(m_position);
 }
 
 void cab_switch::increase()
@@ -181,10 +198,14 @@ block_type cab_switch::describe()
 	    number_param("offset", 0.0, "deg/mm"),
 	    number_param("smoothing", 0.2, "s"),
 	    text_param("submodel"),
+	    text_param("sound_inc"),
+	    text_param("sound_dec"),
+	    text_param("sound_positions"),
 	    text_param("key_inc"),
 	    text_param("key_dec"),
 	    text_param("command"),
 	    text_param("hw_name"),
+	    cab_param(),
 	};
 	type.create = make_block<cab_switch>;
 	return type;
@@ -194,7 +215,8 @@ block_type cab_switch::describe()
 
 cab_lamp::cab_lamp(block_setup const &Setup)
     : block(Setup), m_supplied(is_connected(Setup, port::supply)), m_blink(boolean(Setup, param::blink)), m_blinkperiod(std::max(0.01, number(Setup, param::blink_period))),
-      m_minvoltage(number(Setup, param::min_voltage)), m_power(std::max(0.0, number(Setup, param::power))), m_submodel(text(Setup, param::submodel))
+      m_minvoltage(number(Setup, param::min_voltage)), m_power(std::max(0.0, number(Setup, param::power))), m_submodel(text(Setup, param::submodel)),
+      m_soundon(text(Setup, param::sound_on)), m_soundoff(text(Setup, param::sound_off)), m_cab(cab_of(Setup))
 {
 }
 
@@ -233,6 +255,9 @@ block_type cab_lamp::describe()
 	    number_param("min_voltage", 70.0, "V"),
 	    number_param("power", 2.0, "W"),
 	    text_param("submodel"),
+	    text_param("sound_on"),
+	    text_param("sound_off"),
+	    cab_param(),
 	};
 	type.create = make_block<cab_lamp>;
 	return type;
@@ -243,7 +268,7 @@ block_type cab_lamp::describe()
 cab_gauge::cab_gauge(block_setup const &Setup, bool const Twoneedles)
     : block(Setup), m_twoneedles(Twoneedles), m_min(number(Setup, param::min)), m_max(number(Setup, param::max)), m_anglemin(number(Setup, param::angle_min)),
       m_anglemax(number(Setup, param::angle_max)), m_smoothing(number(Setup, param::smoothing)), m_submodel(text(Setup, param::submodel)),
-      m_submodel2(Twoneedles ? text(Setup, param::submodel2) : std::string{})
+      m_submodel2(Twoneedles ? text(Setup, param::submodel2) : std::string{}), m_cab(cab_of(Setup))
 {
 	m_values[0] = m_values[1] = static_cast<float>(std::min(m_min, m_max));
 }
@@ -292,6 +317,7 @@ block_type cab_gauge::describe(bool const Twoneedles)
 	{
 		type.params.push_back(text_param("submodel2"));
 	}
+	type.params.push_back(cab_param());
 	if (Twoneedles)
 	{
 		type.create = [](block_setup const &Setup) -> std::unique_ptr<block> { return std::make_unique<cab_gauge>(Setup, true); };
@@ -308,7 +334,7 @@ block_type cab_gauge::describe(bool const Twoneedles)
 vehicle_sound::vehicle_sound(block_setup const &Setup)
     : block(Setup), m_file(text(Setup, param::file)), m_basevolume(number(Setup, param::volume)), m_basepitch(number(Setup, param::pitch)), m_loop(boolean(Setup, param::loop)),
       m_placement(static_cast<placement_type>(choice(Setup, param::placement))), m_range(number(Setup, param::range)),
-      m_offset{number(Setup, param::offset_x), number(Setup, param::offset_y), number(Setup, param::offset_z)}
+      m_offset{number(Setup, param::offset_x), number(Setup, param::offset_y), number(Setup, param::offset_z)}, m_cab(cab_of(Setup))
 {
 }
 
@@ -364,8 +390,32 @@ block_type vehicle_sound::describe()
 	    number_param("offset_x", 0.0, "m"),
 	    number_param("offset_y", 0.0, "m"),
 	    number_param("offset_z", 0.0, "m"),
+	    cab_param(),
 	};
 	type.create = make_block<vehicle_sound>;
+	return type;
+}
+
+// cab_export
+
+cab_export::cab_export(block_setup const &Setup) : block(Setup), m_name(text(Setup, 0)), m_kind(static_cast<kind_type>(choice(Setup, 1))) {}
+
+void cab_export::update(frame &Frame)
+{
+	m_value = get(Frame, port::value);
+}
+
+block_type cab_export::describe()
+{
+	block_type type;
+	type.id = "fb.export";
+	type.category = "indicators";
+	type.name = "Screen value";
+	type.description = "Publishes the value for the python screens of the cab, as an entry of the train state with the given name.";
+	type.origin = block_origin::cab;
+	type.ports = {signal_in("value", value_type::real)};
+	type.params = {text_param("name"), choice_param("kind", {"float", "int", "bool"}, "float")};
+	type.create = make_block<cab_export>;
 	return type;
 }
 
@@ -376,6 +426,7 @@ void register_cab_blocks(catalog &Catalog)
 	Catalog.add(cab_gauge::describe(false));
 	Catalog.add(cab_gauge::describe(true));
 	Catalog.add(vehicle_sound::describe());
+	Catalog.add(cab_export::describe());
 }
 
 } // namespace vgraph

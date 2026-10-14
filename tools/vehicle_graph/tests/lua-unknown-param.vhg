@@ -1,0 +1,2 @@
+// expect: warning unknown parameter "lua.missing"
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "b", "type": "lua.block", "params": { "lua.missing": 2 }, "lua": "block \"x\" { params = { k = 1 }, update = function(self, i, o, dt) end }\n" } ] }

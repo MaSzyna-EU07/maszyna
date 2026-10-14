@@ -1233,6 +1233,9 @@ struct TCoupling
 	power_coupling power_24v;
 
 	int sounds{0}; // sounds emitted by the coupling devices
+	// end cocks of the brake pipe and the feed pipe; operated by the vehicle graph (if.pg, if.pz), always open for the .fiz vehicles
+	bool BrakePipeCock{true};
+	bool FeedPipeCock{true};
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
 	std::string control_type; // abstraction of control coupling interface and communication standard
 
@@ -1295,6 +1298,92 @@ struct inverter
 	bool Failure_Drive = false;
 	bool Failure_Const = false;
 };
+
+namespace vgraph
+{
+class graph_instance;
+class graph_template;
+} // namespace vgraph
+
+// brake equipment of a vehicle, created from its parameters. shared by CheckLocomotiveParameters and the vehicle graph
+struct brake_valve_setup
+{
+	TBrakeValve valve{TBrakeValve::NoValve};
+	double max_brake_press{0.0}; // MaxBrakePress[3]
+	double tare_max_brake_press{0.0}; // MaxBrakePress[1]
+	double cylinder_radius{0.0};
+	double cylinder_stroke{0.0};
+	double valve_volume{0.0};
+	int cylinder_count{0};
+	int delays{0};
+	int method{0};
+	int axles{0};
+	int blocks_per_axle{0};
+	double mass{0.0};
+	double load_brake_mass{0.0}; // MBPM
+	double rapid_mult{1.0};
+	int valve_size{0};
+	std::string valve_params;
+};
+std::shared_ptr<TBrake> make_brake_valve(brake_valve_setup const &Setup);
+std::shared_ptr<TDriverHandle> make_driver_handle(TBrakeHandle Handle);
+std::shared_ptr<TDriverHandle> make_local_brake_handle(TBrakeHandle Handle, double MaxPressure, bool Emu);
+
+// force of the pneumatic brake rigging, from the cylinder pressure. shared by TMoverParameters::BrakeForce and the vehicle graph
+struct brake_rigging_setup
+{
+	double press_to_force{0.0}; // P2FTrans, kN/bar
+	double cylinder_spring{0.0}; // BrakeCylSpring
+	double cylinder_mult{0.0}; // BrakeCylMult[0]
+	double slack_adjuster{0.0}; // BrakeSlckAdj
+	double rigging_efficiency{1.0}; // BrakeRigEff
+	int cylinder_count{0}; // BrakeCylNo
+	int axles{0}; // braked axles
+	int blocks_per_axle{0}; // NBpA
+};
+// force pressing one brake shoe, kN. K: additional force (manual, spring brake), kN; Ntotal: shoe force with hysteresis,
+// kept between the calls
+double brake_rigging_shoe_force(brake_rigging_setup const &Setup, double K, double BrakePress, double &Ntotal);
+
+// series dc motor equations, shared by TMoverParameters and the vehicle graph
+// current of the motors in traction for supply voltage U and motor revolutions n, Mn motors in series, Rz total resistance
+double series_motor_current(double U, double n, double Mn, double Rz, TMotorParameters const &Param);
+// torque of a motor for current I
+double series_motor_momentum(double I, TMotorParameters const &Param);
+
+// induction motor with inverter, shared by TMoverParameters and the vehicle graph
+struct induction_motor_inputs
+{
+	double demand{0.0}; // PosRatio: set value of the force, -1..1
+	double rate{4.0}; // rate factor of the set value ramp (tmp)
+	bool dynamic_brake{false}; // DynamicBrakeFlag
+	double engine_voltage{0.0};
+	double enrot{0.0}; // motor revolutions, rev/s
+	double vel{0.0}; // km/h
+	double v{0.0}; // m/s, signed
+	int dir_absolute{0};
+	int dir_active{0};
+	int powered_axles{0};
+	double inverters_ratio{1.0};
+	double ratio{1.0}; // transmission ratio
+	double efficiency{1.0};
+	double wheel_diameter{1.0};
+	bool log_force{false}; // EIMCLogForce
+	double max_voltage{0.0}; // EnginePowerSource.CollectorParameters.MaxV
+	double dt{0.0};
+};
+struct induction_motor_outputs
+{
+	double Im{0.0};
+	double Itot{0.0};
+	double EnginePower{0.0};
+	double Mm{0.0};
+	double Mw{0.0};
+	double Fw{0.0};
+	double Ft{0.0};
+};
+// eimc: constants of the drive, eimv: values of the drive (in/out), eimv_pr and Vadd: state kept between the calls
+void induction_motor_update(induction_motor_inputs const &Input, double const *eimc, double *eimv, double &eimv_pr, double &Vadd, induction_motor_outputs &Output);
 
 class TMoverParameters
 { // Ra: wrapper na kod pascalowy, przejmujący jego funkcje  Q: 20160824 - juz nie wrapper a klasa bazowa :)
@@ -2419,6 +2508,8 @@ class TMoverParameters
 	void CompressorCheck(double dt); /*wlacza, wylacza kompresor, laduje zbiornik*/
 	void UpdatePantVolume(double dt); // Ra
 	void UpdateScndPipePressure(double dt);
+	// air flow between the feed pipes of the vehicle and its neighbours; returns the flow into the own pipe
+	double ScndPipeExchange(double dt);
 	void UpdateSpringBrake(double dt);
 	double GetDVc(double dt);
 
@@ -2543,6 +2634,27 @@ class TMoverParameters
 	/*funkcje ladujace pliki opisujace pojazd*/
 	bool LoadFIZ(std::string chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
+	// vehicle graph (vehicle/graph): the vehicle is defined by a .vhg file in place of the .fiz. LoadGraph reads the file,
+	// fills the body and the parameters of the equipment the blocks use, and is followed by CheckLocomotiveParameters as LoadFIZ
+	bool LoadGraph(std::string const &File);
+	// as above, for a graph already loaded; used also by the standalone runner (-graph-run). entries of the body the graph
+	// doesn't give are taken from the body sections of Fizfile, when it's given and exists
+	bool AssignGraph(std::shared_ptr<vgraph::graph_template const> const &Template, std::string const &Fizfile = {});
+	// subsystems of a graph vehicle, run by compute_movement_ in place of the .fiz ones
+	void compute_movement_graph_(double const Deltatime);
+	// tractive and brake force of a graph vehicle, from the last update of its graph
+	void graph_forces(double &Tractive, double &Brake) const;
+	// null for the .fiz vehicles
+	std::shared_ptr<vgraph::graph_instance> Graph;
+#ifdef VGRAPH_SHADOW_CHECK
+	// the code extracted to the functions shared with the vehicle graph, kept in its original form (Mover_shadow.cpp).
+	// each call of an extracted function is repeated with the original code on copies of the state, and the
+	// differences are logged
+	double shadow_series_motor_current(double U, double n, double Mn, double Rz, int SP) const;
+	double shadow_brake_rigging_shoe_force(double K, double &Ntotal) const;
+	void shadow_induction_motor(double PosRatio, double tmp, double dt, double *Eimv, double &Eimvpr, double &Vaddcopy, induction_motor_outputs &Output) const;
+	void shadow_compare(char const *What, double Original, double Extracted) const;
+#endif
 	std::string EngineDescription(int what) const;
 
   private:

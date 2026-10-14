@@ -1,0 +1,16 @@
+# events for: -graph-run multisystem.vhg -script multisystem.script
+# options: -every 50
+# dc pantograph up, dc breaker closed, then the pantograph lowered: the relay drops and the breaker opens
+0.5   toggle  up_dc
+4.0   press   ws_btn
+4.5   release ws_btn
+8.0   toggle  up_dc
+# ac pantograph up, ac breaker closed: 25 kV through the transformer gives 3000 V on the bus
+9.0   toggle  up_ac
+12.0  press   ws_btn
+12.5  release ws_btn
+# both systems at once (preview only), then the ac pantograph lowered: mains stays closed with the dc breaker
+16.0  toggle  up_dc
+19.0  press   ws_btn
+19.5  release ws_btn
+22.0  toggle  up_ac

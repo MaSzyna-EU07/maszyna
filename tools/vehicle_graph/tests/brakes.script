@@ -1,0 +1,7 @@
+# events for: -graph-run brakes.vhg -script brakes.script
+# options: -every 100
+# braked start: running position charges the pipe and releases the brake; then service braking and release
+0.0   value   brake 0
+90.0  value   brake 3
+120.0 value   brake 0
+170.0 value   brake 0

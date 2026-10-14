@@ -1,0 +1,9 @@
+# events for: -graph-run anim.vhg -script anim.script
+# the first step starts at the input (45 deg), then the blind follows it with the smoothing of TGauge (0.5 s);
+# inputs outside min..max are clamped; smoothing shorter than two steps jumps, like TGauge
+0.0  force x.q 0.5
+0.5  force x.q 1
+2.0  force x.q 3
+2.5  force x.q -1
+3.0  force on.q 1
+4.0  force on.q 0

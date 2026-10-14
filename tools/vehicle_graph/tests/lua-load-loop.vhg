@@ -1,0 +1,2 @@
+// expect: error instruction budget exceeded
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "b", "type": "lua.block", "lua": "while true do end\n" } ] }

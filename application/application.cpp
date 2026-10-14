@@ -1168,6 +1168,15 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			else
 				editwithoutscenery = true;
 		}
+		else if (token == "-graph-preview")
+		{
+			// live preview server of the vehicle graph editor, on the default or the specified port
+			Global.vehiclegraph_preview = true;
+			if (i + 1 < Argc && Argv[i + 1][0] >= '0' && Argv[i + 1][0] <= '9')
+			{
+				Global.vehiclegraph_preview_port = std::atoi(Argv[++i]);
+			}
+		}
 		else if (token == "-seed")
 		{
 			// a number is the seed; anything else is a word that stands for one. said in the
@@ -1183,7 +1192,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
 			          << " [-edit [sceneryfilepath]]"
-			          << " [-seed number|word]" << std::endl;
+			          << " [-seed number|word]"
+			          << " [-graph-preview [port]]" << std::endl;
 			return -1;
 		}
 	}

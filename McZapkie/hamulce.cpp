@@ -342,6 +342,45 @@ begin
 
 end  ; */
 
+// friction material of the brake shoes or discs; shared with the vehicle graph
+std::shared_ptr<TFricMat> make_friction_material(int const Material)
+{
+	std::shared_ptr<TFricMat> result;
+	switch (Material)
+	{
+	case bp_P10Bg:
+		result = std::make_shared<TP10Bg>();
+		break;
+	case bp_P10Bgu:
+		result = std::make_shared<TP10Bgu>();
+		break;
+	case bp_FR513:
+		result = std::make_shared<TFR513>();
+		break;
+	case bp_FR510:
+		result = std::make_shared<TFR510>();
+		break;
+	case bp_Cosid:
+		result = std::make_shared<TCosid>();
+		break;
+	case bp_P10yBg:
+		result = std::make_shared<TP10yBg>();
+		break;
+	case bp_P10yBgu:
+		result = std::make_shared<TP10yBgu>();
+		break;
+	case bp_D1:
+		result = std::make_shared<TDisk1>();
+		break;
+	case bp_D2:
+		result = std::make_shared<TDisk2>();
+		break;
+	default: // domyslnie
+		result = std::make_shared<TP10>();
+	}
+	return result;
+}
+
 /// <summary>
 /// Constructs the brake unit: stores parameters, creates the cylinder /
 /// auxiliary reservoir / valve pre-chamber, sizes them for the requested
@@ -384,39 +423,7 @@ TBrake::TBrake(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn
 	ValveRes->CreateCap(0.25);
 
 	// materialy cierne
-	i_mat = i_mat & 255 - bp_MHS;
-	switch (i_mat)
-	{
-	case bp_P10Bg:
-		FM = std::make_shared<TP10Bg>();
-		break;
-	case bp_P10Bgu:
-		FM = std::make_shared<TP10Bgu>();
-		break;
-	case bp_FR513:
-		FM = std::make_shared<TFR513>();
-		break;
-	case bp_FR510:
-		FM = std::make_shared<TFR510>();
-		break;
-	case bp_Cosid:
-		FM = std::make_shared<TCosid>();
-		break;
-	case bp_P10yBg:
-		FM = std::make_shared<TP10yBg>();
-		break;
-	case bp_P10yBgu:
-		FM = std::make_shared<TP10yBgu>();
-		break;
-	case bp_D1:
-		FM = std::make_shared<TDisk1>();
-		break;
-	case bp_D2:
-		FM = std::make_shared<TDisk2>();
-		break;
-	default: // domyslnie
-		FM = std::make_shared<TP10>();
-	}
+	FM = make_friction_material(i_mat & 255 - bp_MHS);
 }
 
 /// <summary>

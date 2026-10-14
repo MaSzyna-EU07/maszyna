@@ -1,0 +1,10 @@
+// nested module of modules/latch.vhgm
+{
+	"format": "maszyna-vehicle-graph", "version": 2,
+	"nodes": [
+		{ "id": "a", "type": "module.input", "params": { "type": "bool" } },
+		{ "id": "not", "type": "logic.not" },
+		{ "id": "q", "type": "module.output", "params": { "type": "bool" } }
+	],
+	"connections": [ { "from": "a.out", "to": "not.a" }, { "from": "not.q", "to": "q.in" } ]
+}

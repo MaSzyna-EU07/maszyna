@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "widgets/time.h"
 #include "widgets/trainingcard.h"
 #include "widgets/perfgraphs.h"
+#include "widgets/vehiclegraph.h"
 #include "widgets/cameraview_extcam.h"
 
 class driver_ui : public ui_layer {
@@ -69,4 +70,5 @@ private:
 	ui::map_panel m_mappanel;
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
+	ui::vehiclegraph_panel m_vehiclegraphpanel;
 };

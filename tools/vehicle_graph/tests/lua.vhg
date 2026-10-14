@@ -1,0 +1,21 @@
+// expect: ok
+// lua blocks: ports and parameters from the script, rate, state, deterministic random, sandbox, isolation of the blocks,
+// a runtime error and an endless loop stopping only their own blocks; see lua.script
+{
+	"format": "maszyna-vehicle-graph", "version": 2,
+	"nodes": [
+		{ "id": "meddler", "type": "lua.block", "lua": "-- tries to leak into the other blocks of the vehicle\nshared = 1\nmath.floor = nil\nstring.upper = nil\nblock \"meddler\" {\n  outputs = { ok = \"bool\" },\n  update = function(self, i, o, dt) o.ok = true end,\n}\n" },
+		{ "id": "probe", "type": "lua.block", "params": { "lua.gain": 3 }, "lua": "-- the environment of this block is its own, and the sandbox has no files, system or code loading\nassert(shared == nil, \"globals leak between blocks\")\nassert(math.floor ~= nil and string.upper ~= nil, \"libraries leak between blocks\")\nassert(io == nil and os == nil and require == nil and loadstring == nil and dofile == nil and load == nil and debug == nil, \"sandbox\")\nblock \"probe\" {\n  inputs  = { a = \"bool\", n = \"int\", x = \"float\" },\n  outputs = { q = \"bool\", count = \"int\", y = \"float\", r = \"float\", acc = \"float\", kept = \"float\" },\n  params  = { gain = 2.0, label = \"text\" },\n  state   = { count = 0, acc = 0.0 },\n  rate    = 10,\n  update = function(self, i, o, dt)\n    self.count = self.count + 1\n    self.acc = self.acc + dt\n    o.q = i.a and i.n >= 2\n    o.count = self.count + 0.4\n    o.y = i.x * self.gain\n    o.r = math.random(1, 6) + math.random()\n    o.acc = self.acc\n    if self.count == 1 then o.kept = 7 end\n    if self.count == 3 then print(\"third update, label\", self.label) end\n    if i.x < 0 then error(\"negative input\") end\n  end,\n}\n" },
+		{ "id": "looper", "type": "lua.block", "lua": "block \"looper\" {\n  inputs  = { go = \"bool\" },\n  outputs = { alive = \"float\" },\n  state   = { n = 0 },\n  update = function(self, i, o, dt)\n    self.n = self.n + 1\n    o.alive = self.n\n    while i.go do end\n  end,\n}\n" },
+		{ "id": "a_sw", "type": "cab.switch" },
+		{ "id": "n_sw", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 4, "min": 0, "max": 3 } },
+		{ "id": "go_sw", "type": "cab.switch" },
+		{ "id": "x", "type": "logic.const", "params": { "value": 0 } }
+	],
+	"connections": [
+		{ "from": "a_sw.pos", "to": "probe.a" },
+		{ "from": "n_sw.index", "to": "probe.n" },
+		{ "from": "x.q", "to": "probe.x" },
+		{ "from": "go_sw.pos", "to": "looper.go" }
+	]
+}

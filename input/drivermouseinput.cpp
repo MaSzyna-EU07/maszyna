@@ -338,7 +338,7 @@ drivermouse_input::button( int const Button, int const Action ) {
                 // NOTE: basic keyboard controls don't have any parameters
                 // as we haven't yet implemented either item id system or multiplayer, the 'local' controlled vehicle and entity have temporary ids of 0
                 // TODO: pass correct entity id once the missing systems are in place
-				m_relay.post( mousecommand, 0, 0, Action, 0 );
+				post( mousecommand, Action );
                 mousecommand = user_command::none;
             }
             else {
@@ -373,9 +373,14 @@ drivermouse_input::button( int const Button, int const Action ) {
                         control->screen_touch_list->emplace_back(pos);
                     }
 
-                    auto const controlbindings { bindings( simulation::Train->GetLabel( control ) ) };
+                    auto const label { simulation::Train->GetLabel( control ) };
+                    auto const controlbindings { bindings( label ) };
                     // if the recognized element under the cursor has a command associated with the pressed button, notify the recipient
                     mousecommand = Button == GLFW_MOUSE_BUTTON_LEFT ? controlbindings.first : controlbindings.second;
+                    if( mousecommand == user_command::vehiclegraphcontrol ) {
+                        m_graphcontrol = label.substr( 6 );
+                        m_graphdirection = ( Button == GLFW_MOUSE_BUTTON_LEFT ? 1.0 : -1.0 );
+                    }
 
                     if( mousecommand == user_command::none ) {
                         // if we don't have any recognized element under the cursor and the right button was pressed, enter view panning mode
@@ -428,9 +433,9 @@ drivermouse_input::button( int const Button, int const Action ) {
 					// NOTE: basic keyboard controls don't have any parameters
 					// NOTE: as we haven't yet implemented either item id system or multiplayer, the 'local' controlled vehicle and entity have temporary ids of 0
 					// TODO: pass correct entity id once the missing systems are in place
-					m_relay.post( mousecommand, 0, 0, Action, 0 );
+					post( mousecommand, Action );
 					if (!pickwaiting) // already depressed
-						m_relay.post( mousecommand, 0, 0, GLFW_RELEASE, 0 );
+						post( mousecommand, GLFW_RELEASE );
 					m_updateaccumulator = -0.25; // prevent potential command repeat right after issuing one
 				} );
         }
@@ -459,13 +464,13 @@ drivermouse_input::poll() {
             // NOTE: basic keyboard controls don't have any parameters
             // as we haven't yet implemented either item id system or multiplayer, the 'local' controlled vehicle and entity have temporary ids of 0
             // TODO: pass correct entity id once the missing systems are in place
-			m_relay.post( m_mousecommandleft, 0, 0, GLFW_REPEAT, 0 );
+			post( m_mousecommandleft, GLFW_REPEAT );
         }
         if( m_mousecommandright != user_command::none ) {
             // NOTE: basic keyboard controls don't have any parameters
             // as we haven't yet implemented either item id system or multiplayer, the 'local' controlled vehicle and entity have temporary ids of 0
             // TODO: pass correct entity id once the missing systems are in place
-			m_relay.post( m_mousecommandright, 0, 0, GLFW_REPEAT, 0 );
+			post( m_mousecommandright, GLFW_REPEAT );
         }
         m_updateaccumulator -= updaterate;
     }
@@ -477,10 +482,28 @@ drivermouse_input::command() const {
     return m_slider.command() != user_command::none ? m_slider.command() : m_mousecommandleft != user_command::none ? m_mousecommandleft : m_mousecommandright;
 }
 
+void
+drivermouse_input::post( user_command const Command, int const Action ) {
+
+    if( Command == user_command::vehiclegraphcontrol ) {
+        m_relay.post( Command, m_graphdirection, 0, Action, 0, glm::vec3( 0.0f ), &m_graphcontrol );
+    }
+    else {
+        // NOTE: basic keyboard controls don't have any parameters
+        // as we haven't yet implemented either item id system or multiplayer, the 'local' controlled vehicle and entity have temporary ids of 0
+        // TODO: pass correct entity id once the missing systems are in place
+        m_relay.post( Command, 0, 0, Action, 0 );
+    }
+}
+
 // returns pair of bindings associated with specified cab control
 std::pair<user_command, user_command>
 drivermouse_input::bindings( std::string const &Control ) const {
 
+    if( Control.starts_with( "graph:" ) ) {
+        // controls of vehicle graphs, operated with both buttons
+        return { user_command::vehiclegraphcontrol, user_command::vehiclegraphcontrol };
+    }
     auto const lookup{ m_buttonbindings.find( Control ) };
 
     if( lookup != m_buttonbindings.end() )

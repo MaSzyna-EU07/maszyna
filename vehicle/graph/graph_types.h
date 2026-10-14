@@ -74,7 +74,8 @@ enum class param_type : std::uint8_t
 	number,
 	boolean,
 	text,
-	choice
+	choice,
+	table // rows of numbers, e.g. the resistor table of a series motor
 };
 
 std::string_view to_string(param_type Type);
@@ -86,11 +87,13 @@ struct param_value
 	double number{0.0};
 	bool boolean{false};
 	std::string text; // also holds the choice id
+	std::vector<std::vector<double>> rows; // table parameters only
 
 	static param_value make_number(double Value);
 	static param_value make_boolean(bool Value);
 	static param_value make_text(std::string Value);
 	static param_value make_choice(std::string Value);
+	static param_value make_table(std::vector<std::vector<double>> Rows);
 };
 
 struct port_def
@@ -111,6 +114,11 @@ struct param_def
 	std::string unit;
 	param_value default_value;
 	std::vector<std::string> choices; // choice parameters only, stable ascii ids
+	std::vector<std::string> columns; // table parameters only: names of the columns, empty for rows of free width
+	// .fiz entry the parameter stands for, if any, e.g. "Brake:" and "MaxBP". the simulator writes such parameters
+	// to the vehicle body (TMoverParameters) with the code reading the .fiz files
+	std::string fiz_section;
+	std::string fiz_key;
 };
 
 enum class severity : std::uint8_t
@@ -126,6 +134,10 @@ struct diagnostic
 	std::string node;
 	std::string message;
 };
+
+// index of the port or parameter with the specified key, or -1
+int find_port(std::vector<port_def> const &Ports, std::string_view Key);
+int find_param(std::vector<param_def> const &Params, std::string_view Key);
 
 bool has_errors(std::vector<diagnostic> const &Diagnostics);
 std::string to_string(diagnostic const &Diagnostic);

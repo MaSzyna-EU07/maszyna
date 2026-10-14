@@ -1,0 +1,25 @@
+# events for: -graph-run vectron.vhg -script vectron.script -state ready
+# options: -state ready -every 100
+# start up from the cab, release the spring brake, drive off with half of the power, brake electrically, then stop
+# with the train brake
+0.0   toggle  bat
+0.2   toggle  sb_release
+1.0   press   pant_raise
+1.3   release pant_raise
+1.5   press   ca_reset
+1.7   release ca_reset
+2.0   press   shp_reset
+2.2   release shp_reset
+17.0  inc     main_sw
+17.5  release main_sw
+29.0  inc     reverser
+30.0  set     lever 23
+40.0  set     lever 15
+45.0  set     lever 5
+50.0  press   ca_reset
+50.3  release ca_reset
+55.0  set     lever 15
+56.0  value   brake 9
+75.0  press   ca_reset
+75.3  release ca_reset
+90.0  value   brake 0

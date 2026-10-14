@@ -33,6 +33,9 @@ public:
     bool Init( std::string const &asName, TModel3d const *pModel, bool bNewOn = false );
     void Load( cParser &Parser, TDynamicObject const *Owner );
     void AssignBool(bool const *bValue);
+    // sounds of a lamp defined outside the .mmd file (vehicle graph), in the format of soundinc: and sounddec:,
+    // played when the lamp lights and goes out. assign them after Init(), to place them at the submodel
+    void AssignSounds( std::string const &Increase, std::string const &Decrease, TDynamicObject const *Owner );
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
 	void gain(float new_volume);

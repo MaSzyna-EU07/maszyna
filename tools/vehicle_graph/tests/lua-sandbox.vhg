@@ -1,0 +1,2 @@
+// expect: error attempt to index
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "b", "type": "lua.block", "lua": "local f = io.open(\"file.txt\")\nblock \"x\" { update = function(self, i, o, dt) end }\n" } ] }

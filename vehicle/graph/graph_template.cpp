@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/graph/graph_template.h"
 #include "vehicle/graph/graph_catalog.h"
+#include "vehicle/graph/graph_body.h"
 
 #include <functional>
 #include <queue>
@@ -85,6 +86,28 @@ bool resolve_param(param_def const &Definition, param_value const &Value, param_
 		Result = param_value::make_choice(Value.text);
 		return true;
 	}
+	case param_type::table:
+	{
+		if (Value.type != param_type::table)
+		{
+			Problem = "has to be a table: an array of rows, each an array of numbers";
+			return false;
+		}
+		if (false == Definition.columns.empty())
+		{
+			for (std::size_t rowindex = 0; rowindex < Value.rows.size(); ++rowindex)
+			{
+				if (Value.rows[rowindex].size() != Definition.columns.size())
+				{
+					Problem = "row " + std::to_string(rowindex + 1) + " has " + std::to_string(Value.rows[rowindex].size()) + " values, expected " +
+					          std::to_string(Definition.columns.size()) + " (" + join_choices(Definition.columns) + ")";
+					return false;
+				}
+			}
+		}
+		Result = Value;
+		return true;
+	}
 	default:
 	{
 		Problem = "has unsupported type";
@@ -107,8 +130,45 @@ std::shared_ptr<graph_template const> graph_template::compile(document const &Do
 	auto result{std::make_shared<graph_template>()};
 	result->m_name = Document.name;
 	result->m_lowvoltage = Document.low_voltage_simulation;
-	result->m_body = Document.body;
 	result->m_profiles = Document.profiles;
+
+	// body of the vehicle
+	for (auto const &entry : Document.body)
+	{
+		auto const *field{find_body_field(entry.first)};
+		if (field == nullptr)
+		{
+			report(Diagnostics, severity::warning, "", "unknown body parameter \"" + entry.first + "\" was ignored");
+			continue;
+		}
+		param_def definition;
+		definition.key = field->key;
+		definition.type = field->type;
+		definition.choices = field->choices;
+		param_value value;
+		std::string problem;
+		if (false == resolve_param(definition, entry.second, value, problem))
+		{
+			report(Diagnostics, severity::error, "", "body parameter \"" + entry.first + "\" " + problem);
+			continue;
+		}
+		result->m_body.emplace_back(entry.first, std::move(value));
+	}
+	// interface profiles
+	for (auto const &profile : Document.profiles)
+	{
+		auto const &known{known_profiles()};
+		auto const lookup{std::find_if(std::begin(known), std::end(known), [&](profile_info const &Info) { return Info.id == profile.first; })};
+		if (lookup == std::end(known))
+		{
+			report(Diagnostics, severity::warning, "", "unknown interface profile \"" + profile.first + "\" was ignored");
+		}
+		else if (profile.second > lookup->version)
+		{
+			report(Diagnostics, severity::error, "",
+			       "interface profile \"" + profile.first + "\" version " + std::to_string(profile.second) + " is newer than the supported version " + std::to_string(lookup->version));
+		}
+	}
 
 	// nodes and their parameters
 	std::unordered_map<std::string, int> nodeindices;
@@ -126,21 +186,41 @@ std::shared_ptr<graph_template const> graph_template::compile(document const &Do
 		node.id = desc.id;
 		node.title = desc.title;
 		node.type = type;
-		node.params.reserve(type->params.size());
-		for (auto const &definition : type->params)
+		node.script = desc.script;
+		if (type->resolve != nullptr)
+		{
+			std::string problem;
+			if (false == type->resolve(desc, node.ports, node.param_defs, problem))
+			{
+				report(Diagnostics, severity::error, desc.id, problem);
+				unresolvednodes.emplace(desc.id, true);
+				continue;
+			}
+		}
+		else
+		{
+			node.ports = type->ports;
+			node.param_defs = type->params;
+		}
+		if (type->id == "lua.block")
+		{
+			result->m_useslua = true;
+		}
+		node.params.reserve(node.param_defs.size());
+		for (auto const &definition : node.param_defs)
 		{
 			node.params.push_back(definition.default_value);
 		}
 		for (auto const &param : desc.params)
 		{
-			auto const paramindex{type->param_index(param.first)};
+			auto const paramindex{find_param(node.param_defs, param.first)};
 			if (paramindex < 0)
 			{
 				report(Diagnostics, severity::warning, desc.id, "unknown parameter \"" + param.first + "\" of block type \"" + type->id + "\" was ignored");
 				continue;
 			}
 			std::string problem;
-			if (false == resolve_param(type->params[paramindex], param.second, node.params[paramindex], problem))
+			if (false == resolve_param(node.param_defs[paramindex], param.second, node.params[paramindex], problem))
 			{
 				report(Diagnostics, severity::error, desc.id, "parameter \"" + param.first + "\" " + problem);
 			}
@@ -150,17 +230,33 @@ std::shared_ptr<graph_template const> graph_template::compile(document const &Do
 	}
 
 	auto &nodes{result->m_nodes};
+	// blocks standing for parts of the vehicle the simulator has only one of
+	{
+		std::unordered_map<std::string, std::string> singles;
+		for (auto const &node : nodes)
+		{
+			if (false == node.type->single)
+			{
+				continue;
+			}
+			auto const insert{singles.emplace(node.type->id, node.id)};
+			if (false == insert.second)
+			{
+				report(Diagnostics, severity::error, node.id, "the graph can have only one block of type \"" + node.type->id + "\"; the other one is \"" + insert.first->second + "\"");
+			}
+		}
+	}
 	auto &signaldefaults{result->m_signaldefaults};
 	auto &linkcount{result->m_linkcount};
 
 	// outputs own their slots and links
 	for (auto &node : nodes)
 	{
-		node.slots.assign(node.type->ports.size(), -1);
-		node.connected.assign(node.type->ports.size(), 0);
-		for (std::size_t portindex = 0; portindex < node.type->ports.size(); ++portindex)
+		node.slots.assign(node.ports.size(), -1);
+		node.connected.assign(node.ports.size(), 0);
+		for (std::size_t portindex = 0; portindex < node.ports.size(); ++portindex)
 		{
-			auto const &port{node.type->ports[portindex]};
+			auto const &port{node.ports[portindex]};
 			if (port.direction != port_direction::out)
 			{
 				continue;
@@ -181,7 +277,7 @@ std::shared_ptr<graph_template const> graph_template::compile(document const &Do
 	std::vector<std::vector<endpoint>> sources(nodes.size());
 	for (std::size_t nodeindex = 0; nodeindex < nodes.size(); ++nodeindex)
 	{
-		sources[nodeindex].resize(nodes[nodeindex].type->ports.size());
+		sources[nodeindex].resize(nodes[nodeindex].ports.size());
 	}
 	std::vector<std::vector<int>> edges(nodes.size()); // ordering constraints: source node -> consumer node
 	bool lowvoltageignored{false};
@@ -203,20 +299,22 @@ std::shared_ptr<graph_template const> graph_template::compile(document const &Do
 		auto const tonode{tolookup->second};
 		auto const &fromtype{*nodes[fromnode].type};
 		auto const &totype{*nodes[tonode].type};
-		auto const fromport{fromtype.port_index(connection.from_port)};
-		auto const toport{totype.port_index(connection.to_port)};
-		if (fromport < 0 || fromtype.ports[fromport].direction != port_direction::out)
+		auto const &fromports{nodes[fromnode].ports};
+		auto const &toports{nodes[tonode].ports};
+		auto const fromport{find_port(fromports, connection.from_port)};
+		auto const toport{find_port(toports, connection.to_port)};
+		if (fromport < 0 || fromports[fromport].direction != port_direction::out)
 		{
 			report(Diagnostics, severity::error, connection.from_node, "connection " + label + ": \"" + connection.from_port + "\" isn't an output of block type \"" + fromtype.id + "\"");
 			continue;
 		}
-		if (toport < 0 || totype.ports[toport].direction != port_direction::in)
+		if (toport < 0 || toports[toport].direction != port_direction::in)
 		{
 			report(Diagnostics, severity::error, connection.to_node, "connection " + label + ": \"" + connection.to_port + "\" isn't an input of block type \"" + totype.id + "\"");
 			continue;
 		}
-		auto const fromdomain{fromtype.ports[fromport].dom};
-		auto const todomain{totype.ports[toport].dom};
+		auto const fromdomain{fromports[fromport].dom};
+		auto const todomain{toports[toport].dom};
 		if (fromdomain != todomain)
 		{
 			report(Diagnostics, severity::error, connection.to_node,
@@ -249,9 +347,9 @@ std::shared_ptr<graph_template const> graph_template::compile(document const &Do
 	for (std::size_t nodeindex = 0; nodeindex < nodes.size(); ++nodeindex)
 	{
 		auto &node{nodes[nodeindex]};
-		for (std::size_t portindex = 0; portindex < node.type->ports.size(); ++portindex)
+		for (std::size_t portindex = 0; portindex < node.ports.size(); ++portindex)
 		{
-			auto const &port{node.type->ports[portindex]};
+			auto const &port{node.ports[portindex]};
 			if (port.direction != port_direction::in)
 			{
 				continue;
@@ -379,8 +477,8 @@ int graph_template::find_signal(std::string_view const Endpoint) const
 		return -1;
 	}
 	auto const &node{m_nodes[nodeindex]};
-	auto const portindex{node.type->port_index(Endpoint.substr(dot + 1))};
-	if (portindex < 0 || node.type->ports[portindex].dom != domain::signal)
+	auto const portindex{find_port(node.ports, Endpoint.substr(dot + 1))};
+	if (portindex < 0 || node.ports[portindex].dom != domain::signal)
 	{
 		return -1;
 	}
@@ -394,7 +492,17 @@ std::shared_ptr<graph_template const> load_graph(std::string const &Path, std::v
 	{
 		return nullptr;
 	}
-	return graph_template::compile(graph, catalog::get(), Diagnostics);
+	auto const separator{Path.find_last_of("/\\")};
+	if (false == expand_modules(graph, separator == std::string::npos ? std::string{} : Path.substr(0, separator + 1), Diagnostics))
+	{
+		return nullptr;
+	}
+	auto result{graph_template::compile(graph, catalog::get(), Diagnostics)};
+	if (result != nullptr)
+	{
+		std::const_pointer_cast<graph_template>(result)->m_path = Path;
+	}
+	return result;
 }
 
 std::vector<std::pair<std::string, int>> graph_template::signal_outputs() const
@@ -402,9 +510,9 @@ std::vector<std::pair<std::string, int>> graph_template::signal_outputs() const
 	std::vector<std::pair<std::string, int>> result;
 	for (auto const &node : m_nodes)
 	{
-		for (std::size_t portindex = 0; portindex < node.type->ports.size(); ++portindex)
+		for (std::size_t portindex = 0; portindex < node.ports.size(); ++portindex)
 		{
-			auto const &port{node.type->ports[portindex]};
+			auto const &port{node.ports[portindex]};
 			if (port.direction == port_direction::out && port.dom == domain::signal)
 			{
 				result.emplace_back(node.id + "." + port.key, node.slots[portindex]);

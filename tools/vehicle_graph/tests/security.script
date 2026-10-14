@@ -1,0 +1,6 @@
+# events for: -graph-run security.vhg -script security.script
+# options: -state ready -every 50
+8.0   press   reset
+8.2   release reset
+30.0  press   reset
+30.2  release reset

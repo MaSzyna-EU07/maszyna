@@ -1,0 +1,4 @@
+// expect: error has no input "set"
+{ "format": "maszyna-vehicle-graph", "version": 2,
+  "nodes": [ { "id": "c", "type": "logic.const" }, { "id": "m", "type": "module", "params": { "file": "modules/latch.vhgm" } } ],
+  "connections": [ { "from": "c.q", "to": "m.set" } ] }

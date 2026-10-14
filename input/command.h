@@ -403,6 +403,9 @@ enum class user_command
 	wiperswitchincrease,
 	wiperswitchdecrease,
 	lightsset,
+	// operates a control of a vehicle defined by a graph; the payload names the control (the id of its cab.switch block),
+	// param1 is the direction: positive for the left mouse button or increase, negative for the right one or decrease
+	vehiclegraphcontrol,
 	none = -1
 };
 

@@ -1,0 +1,12 @@
+# events for: -graph-run diesel-hydro.vhg -script diesel-hydro.script
+# options: -every 50
+# start the engine and wait at idle, drive off on a low controller position, then full power through the lockup speed,
+# then the controller to zero (coasting, engine braking through the lockup clutch), then stop the engine
+1.0   press   starter
+1.5   release starter
+10.0  value   throttle 0.3
+25.0  value   throttle 1
+90.0  value   throttle 0
+105.0 press   stop
+105.5 release stop
+120.0 value   throttle 0

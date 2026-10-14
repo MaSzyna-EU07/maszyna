@@ -1,0 +1,59 @@
+// expect: ok
+// two-system vehicle (3 kV dc and 25 kV ac): voltage relays recognize the system on each pantograph, each system has
+// its own line breaker, the ac branch has a transformer, both branches feed one bus with the converter (230 V~ auxiliary
+// circuit for the compressor, 110 V= low voltage for a lamp). body:mains is closed when any of the breakers is
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "multi-system test" },
+	"settings": { "low_voltage_simulation": true },
+	"body": { "mass": 80000, "length": 16, "wheel_diameter": 1.25, "axle_arrangement": "Bo'Bo'", "vmax": 120, "power": 4000 },
+	"nodes": [
+		{ "id": "up_dc", "type": "cab.switch", "params": { "behaviour": "bistable" } },
+		{ "id": "up_ac", "type": "cab.switch", "params": { "behaviour": "bistable" } },
+		{ "id": "ws_btn", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "p_dc", "type": "el.pantograph", "params": { "index": 0, "raise_time": 2, "lower_time": 1, "min_pressure": 0, "preview_voltage": 3000 } },
+		{ "id": "p_ac", "type": "el.pantograph", "params": { "index": 1, "raise_time": 2, "lower_time": 1, "min_pressure": 0, "preview_voltage": 25000 } },
+		{ "id": "r_dc", "type": "el.voltage_relay", "params": { "min_voltage": 2200, "max_voltage": 4000, "delay": 0.5 } },
+		{ "id": "r_ac", "type": "el.voltage_relay", "params": { "min_voltage": 17500, "max_voltage": 30000, "delay": 0.5 } },
+		{ "id": "c_dc", "type": "logic.and" },
+		{ "id": "c_ac", "type": "logic.and" },
+		{ "id": "ws_dc", "type": "el.hsb", "params": { "trip_current": 0, "close_time": 0.2, "min_voltage": 2200, "init_time": 0 } },
+		{ "id": "ws_ac", "type": "el.hsb", "params": { "trip_current": 0, "close_time": 0.2, "min_voltage": 17500, "init_time": 0 } },
+		{ "id": "tr", "type": "el.transformer", "params": { "ratio": 0.12, "eff": 0.96 } },
+		{ "id": "bus", "type": "el.junction" },
+		{ "id": "conv_on", "type": "logic.const", "params": { "value": 1 } },
+		{ "id": "conv", "type": "el.converter", "params": { "power": 20000, "start_time": 1, "min_voltage": 2000, "out_voltage": 230, "nn_voltage": 110, "aux_kind": "ac1" } },
+		{ "id": "comp", "type": "pn.compressor", "params": { "power": 12000, "min_voltage": 200 } },
+		{ "id": "res", "type": "pn.reservoir", "params": { "volume": 0.8 } },
+		{ "id": "gov", "type": "pn.governor", "params": { "min": 7.5, "max": 8.5 } },
+		{ "id": "lamp", "type": "fb.lamp", "params": { "power": 220, "min_voltage": 70 } }
+	],
+	"connections": [
+		{ "from": "up_dc.pos", "to": "p_dc.raise" },
+		{ "from": "up_ac.pos", "to": "p_ac.raise" },
+		{ "from": "p_dc.wn", "to": "r_dc.in" },
+		{ "from": "p_ac.wn", "to": "r_ac.in" },
+		{ "from": "p_dc.wn", "to": "ws_dc.in" },
+		{ "from": "p_ac.wn", "to": "ws_ac.in" },
+		{ "from": "ws_btn.pos", "to": "c_dc.a" },
+		{ "from": "r_dc.ok", "to": "c_dc.b" },
+		{ "from": "ws_btn.pos", "to": "c_ac.a" },
+		{ "from": "r_ac.ok", "to": "c_ac.b" },
+		{ "from": "c_dc.q", "to": "ws_dc.close" },
+		{ "from": "r_dc.ok", "to": "ws_dc.hold" },
+		{ "from": "c_ac.q", "to": "ws_ac.close" },
+		{ "from": "r_ac.ok", "to": "ws_ac.hold" },
+		{ "from": "ws_ac.out", "to": "tr.in" },
+		{ "from": "ws_dc.out", "to": "bus.a" },
+		{ "from": "tr.out", "to": "bus.b" },
+		{ "from": "bus.out", "to": "conv.wn" },
+		{ "from": "conv_on.q", "to": "conv.on" },
+		{ "from": "conv.aux", "to": "comp.power" },
+		{ "from": "gov.need", "to": "comp.on" },
+		{ "from": "comp.air", "to": "res.in" },
+		{ "from": "res.p", "to": "gov.p" },
+		{ "from": "conv.nn", "to": "lamp.supply" },
+		{ "from": "conv.run", "to": "lamp.on" }
+	]
+}

@@ -446,6 +446,29 @@ void TGauge::AssignState( bool const *State ) {
     m_stateinput = State;
 }
 
+void TGauge::AssignSounds( std::string const &Increase, std::string const &Decrease, std::string const &Positions, TDynamicObject const *Owner ) {
+
+    if( false == Increase.empty() ) {
+        m_soundfxincrease.deserialize( Increase, sound_type::single );
+    }
+    if( false == Decrease.empty() ) {
+        m_soundfxdecrease.deserialize( Decrease, sound_type::single );
+    }
+    if( false == Positions.empty() ) {
+        // the same entries as in the block of a control in the .mmd file
+        cParser parser { Positions };
+        scratch_data scratchpad;
+        while( true == Load_mapping( parser, scratchpad ) ) {
+            ; // all work done by while()
+        }
+    }
+    m_soundfxincrease.owner( Owner );
+    m_soundfxdecrease.owner( Owner );
+    for( auto &soundfxrecord : m_soundfxvalues ) {
+        soundfxrecord.second.owner( Owner );
+    }
+}
+
 float TGauge::GetScaledValue() const {
 
     return false == m_interpolatescale ? m_value * m_scale + m_offset : m_value * std::lerp(m_scale, m_endscale, std::clamp(m_value / m_endvalue, 0.f, 1.f)) + m_offset;

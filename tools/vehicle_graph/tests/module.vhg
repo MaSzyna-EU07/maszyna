@@ -1,0 +1,23 @@
+// expect: ok
+// two instances of a module (with a nested module): ids "<module>/<block>", inputs, outputs, a passed input
+{
+	"format": "maszyna-vehicle-graph", "version": 2,
+	"nodes": [
+		{ "id": "btn_on", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "btn_off", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "k1", "type": "module", "params": { "file": "modules/latch.vhgm" } },
+		{ "id": "k2", "type": "module", "params": { "file": "modules\\latch.vhgm" } },
+		{ "id": "c", "type": "logic.const", "params": { "value": 7 } },
+		{ "id": "sum", "type": "logic.math", "params": { "op": "add" } },
+		{ "id": "lamp", "type": "fb.lamp" },
+		{ "id": "lamp2", "type": "fb.lamp" }
+	],
+	"connections": [
+		{ "from": "btn_on.pos", "to": "k1.on" }, { "from": "btn_off.pos", "to": "k1.off" },
+		{ "from": "k1.q", "to": "lamp.on" },
+		{ "from": "k1.nq", "to": "k2.on" }, { "from": "k1.q", "to": "k2.off" },
+		{ "from": "c.q", "to": "k1.note" },
+		{ "from": "k1.echo", "to": "sum.a" }, { "from": "k2.echo", "to": "sum.b" },
+		{ "from": "k1.nq2", "to": "lamp2.on" }
+	]
+}

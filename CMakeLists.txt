@@ -85,6 +85,7 @@ option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
 option(ENABLE_AVX2 "Enable AVX2 instruction set (requires AVX2-capable CPU, Haswell/2013 or newer)" ON)
 option(ADD_VERSION_SUFFIX "Add date and commit hash to the executable name" ON)
+option(VGRAPH_SHADOW_CHECK "Run the code extracted from Mover for the vehicle graph side by side with its original form, and log the differences" OFF)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 # vcpkg init
@@ -118,8 +119,23 @@ set(SOURCES
 "vehicle/graph/graph_template.cpp"
 "vehicle/graph/graph_instance.cpp"
 "vehicle/graph/graph_standalone.cpp"
+"vehicle/graph/graph_lua.cpp"
 "vehicle/graph/blocks/logic.cpp"
 "vehicle/graph/blocks/cab.cpp"
+"vehicle/graph/blocks/lua_block.cpp"
+"vehicle/graph/graph_body.cpp"
+"vehicle/graph/graph_vehicle.cpp"
+"vehicle/graph/blocks/vehicle.cpp"
+"vehicle/graph/blocks/pneumatic.cpp"
+"vehicle/graph/blocks/security.cpp"
+"vehicle/graph/blocks/electric.cpp"
+"vehicle/graph/blocks/drive.cpp"
+"vehicle/graph/blocks/diesel.cpp"
+"vehicle/graph/blocks/interfaces.cpp"
+"vehicle/graph/blocks/module.cpp"
+"vehicle/graph/graph_train.cpp"
+"vehicle/graph/graph_preview.cpp"
+"McZapkie/Mover_shadow.cpp"
 "EU07.cpp"
 "export_e3d_standalone.cpp"
 "export_btf_standalone.cpp"
@@ -253,6 +269,7 @@ set(SOURCES
 "widgets/vehicleparams.cpp"
 "widgets/trainingcard.cpp"
 "widgets/perfgraphs.cpp"
+"widgets/vehiclegraph.cpp"
 
 "${DEPS_DIR}/glad/src/glad.c"
 "${DEPS_DIR}/dds-ktx/src/dds-ktx.c"
@@ -329,6 +346,10 @@ endif()
 if (WITH_OPENVR)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_OPENVR")
 	set(SOURCES ${SOURCES} "vr/openvr_imp.cpp")
+endif()
+
+if (VGRAPH_SHADOW_CHECK)
+	set(DEFINITIONS ${DEFINITIONS} "VGRAPH_SHADOW_CHECK")
 endif()
 
 if (WITH_LUA)

@@ -1,0 +1,2 @@
+// expect: error has no update
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "b", "type": "lua.block", "lua": "block \"x\" { inputs = { a = \"bool\" } }\n" } ] }

@@ -6,7 +6,10 @@ usage: run_tests.py <simulator executable> [--update]
 - every tests/*.vhg file starts with a line "// expect: ok", "// expect: error <text>" or "// expect: warning <text>",
   and is checked against the output of -graph-run;
 - every <name>.vhg with a <name>.script, in both directories, is run twice, and both results have to be identical (determinism)
-  and equal to <name>.expected.csv. --update writes the current results as the expected ones.
+  and equal to <name>.expected.csv. --update writes the current results as the expected ones. A script line
+  "# options: ..." adds options of -graph-run, e.g. "# options: -state ready -every 100";
+- the results are compared with the expected ones with a relative tolerance of 1e-6, as the vehicle body computations may
+  differ in the last digits between compilers.
 """
 
 import pathlib
@@ -43,14 +46,47 @@ def check_file(executable, path):
     return None
 
 
+def script_options(script):
+    for line in script.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# options:"):
+            return line[len("# options:"):].split()
+    return []
+
+
+def same_results(expected, actual, tolerance=1e-6):
+    expected_lines = expected.decode("utf-8").splitlines()
+    actual_lines = actual.decode("utf-8").splitlines()
+    if len(expected_lines) != len(actual_lines):
+        return False
+    for expected_line, actual_line in zip(expected_lines, actual_lines):
+        if expected_line == actual_line:
+            continue
+        expected_cells = expected_line.split(";")
+        actual_cells = actual_line.split(";")
+        if len(expected_cells) != len(actual_cells):
+            return False
+        for expected_cell, actual_cell in zip(expected_cells, actual_cells):
+            if expected_cell == actual_cell:
+                continue
+            try:
+                a = float(expected_cell)
+                b = float(actual_cell)
+            except ValueError:
+                return False
+            if abs(a - b) > tolerance * max(1.0, abs(a), abs(b)):
+                return False
+    return True
+
+
 def check_example(executable, path, update):
     script = path.with_suffix(".script")
     expected = path.with_suffix(".expected.csv")
+    options = script_options(script)
     results = []
     with tempfile.TemporaryDirectory() as directory:
         for attempt in range(2):
             output = pathlib.Path(directory) / f"run{attempt}.csv"
-            code, log = run(executable, path, "-script", script, "-every", 10, "-o", output)
+            code, log = run(executable, path, "-script", script, "-every", 10, *options, "-o", output)
             if code != 0:
                 return f"{path.name}: run failed:\n{log}"
             # git may check the expected files out with windows line endings
@@ -62,7 +98,7 @@ def check_example(executable, path, update):
         return None
     if not expected.exists():
         return f"{path.name}: missing {expected.name}, run with --update to create it"
-    if expected.read_bytes().replace(b"\r\n", b"\n") != results[0]:
+    if not same_results(expected.read_bytes().replace(b"\r\n", b"\n"), results[0]):
         return f"{path.name}: results differ from {expected.name}"
     return None
 

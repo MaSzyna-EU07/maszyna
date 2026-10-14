@@ -1,0 +1,36 @@
+// expect: ok
+// brake pipe of a locomotive with 400 m of train behind it: the FV4a valve charges it from the braked state,
+// then the LSt distributor brakes and releases with the pipe. the main reservoir is kept by the compressor
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "brake test" },
+	"body": { "mass": 80000, "length": 16, "wheel_diameter": 1.25, "axle_arrangement": "Bo'Bo'", "coupler_allowed_flag": 3 },
+	"profiles": { "brake_pipe": 1 },
+	"nodes": [
+		{ "id": "brake", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 9, "min": -2, "max": 6, "default": 0 } },
+		{ "id": "on", "type": "logic.const", "params": { "value": 1 } },
+		{ "id": "comp", "type": "pn.compressor", "params": { "flow": 0.06, "max_pressure": 9 } },
+		{ "id": "gov", "type": "pn.governor", "params": { "min": 7.5, "max": 8.5 } },
+		{ "id": "comp_on", "type": "logic.and" },
+		{ "id": "res", "type": "pn.reservoir", "params": { "volume": 0.8 } },
+		{ "id": "fv4a", "type": "br.handle", "params": { "type": "FV4a" } },
+		{ "id": "pipe", "type": "br.pipe", "params": { "preview_train_length": 400 } },
+		{ "id": "dist", "type": "br.distributor", "params": { "type": "LSt", "mode": "P", "max_bp": 4.0, "cyl_count": 4, "cyl_radius": 0.1524, "cyl_dist": 0.1, "volume": 150,
+			"delay1": 15, "delay2": 4, "delay3": 25, "delay4": 13 } },
+		{ "id": "rig", "type": "br.rigging", "params": { "bcm": 4.0, "bcs": 1, "bsa": 0.5, "bre": 0.85, "nbpa": 2, "material": "P10-Bgu" } }
+	],
+	"connections": [
+		{ "from": "on.q", "to": "comp_on.a" },
+		{ "from": "gov.need", "to": "comp_on.b" },
+		{ "from": "comp_on.q", "to": "comp.on" },
+		{ "from": "comp.air", "to": "res.in" },
+		{ "from": "res.p", "to": "gov.p" },
+		{ "from": "res.out", "to": "fv4a.zg" },
+		{ "from": "brake.pos", "to": "fv4a.pos" },
+		{ "from": "fv4a.pg", "to": "pipe.in" },
+		{ "from": "pipe.dist", "to": "dist.pg" },
+		{ "from": "res.pz", "to": "dist.feed" },
+		{ "from": "dist.bc", "to": "rig.bc" }
+	]
+}

@@ -19,6 +19,8 @@ namespace vgraph
 {
 
 struct block_type;
+struct body_state;
+class lua_host;
 
 // state of a physical connection. the output writes the forward value; every connected input adds its share
 // of the back value to back_next, which becomes visible to the output in the next step. thanks to this one step lag
@@ -35,19 +37,26 @@ struct frame
 {
 	double dt{0.0};
 	double time{0.0}; // time elapsed since the start of the instance, after this step
+	std::uint64_t step{0}; // number of the step, counted from 1; for the blocks combining their effects on the body (shared_value)
 	bool low_voltage{false}; // graph wide switch: simulate the low voltage circuits, or treat them as always powered
 	double *signals{nullptr};
 	std::uint8_t const *forced{nullptr}; // signal slots with value forced from outside, writes from blocks are ignored
 	link_state *links{nullptr};
+	body_state *body{nullptr}; // the vehicle body; never null during update
 };
 
 // everything a block factory needs to create a block of the given node
 struct block_setup
 {
 	block_type const &type;
-	std::vector<param_value> const &params; // in the order of the type's parameter definitions
-	std::vector<int> const &slots; // in the order of the type's port definitions; signal slot or link index
-	std::vector<std::uint8_t> const &connected; // in the order of the type's port definitions
+	std::vector<port_def> const &ports; // ports of the node: the type's, or resolved for the node (lua blocks)
+	std::vector<param_def> const &param_defs; // parameter definitions of the node, as above
+	std::vector<param_value> const &params; // in the order of param_defs
+	std::vector<int> const &slots; // in the order of ports; signal slot or link index
+	std::vector<std::uint8_t> const &connected; // in the order of ports
+	std::string const &node_id;
+	std::string const &script; // source of a lua block
+	lua_host *lua{nullptr}; // lua state of the graph instance; null when the graph has no lua blocks
 };
 
 // base of all blocks. a block reads and writes its ports through slot indices resolved when the graph was compiled
@@ -62,6 +71,9 @@ public:
 	// called after all blocks were updated, by the blocks of types marked as deferred. a deferred block publishes its
 	// outputs here, so they become visible to other blocks in the next step; this is what allows feedback loops
 	virtual void commit(frame &) {}
+	// called after all blocks were updated and before the deferred ones commit, by the blocks of types marked as late.
+	// used by the blocks which have to see the effects of the whole step, e.g. the brake pipe applying all the flows
+	virtual void late_update(frame &) {}
 
 	// internal state shown by the inspector and written by the standalone runner, e.g. whether a lamp is lit
 	virtual std::size_t state_count() const
@@ -132,6 +144,7 @@ protected:
 	static double number(block_setup const &Setup, std::size_t Param);
 	static bool boolean(block_setup const &Setup, std::size_t Param);
 	static std::string const &text(block_setup const &Setup, std::size_t Param);
+	static std::vector<std::vector<double>> const &table(block_setup const &Setup, std::size_t Param);
 	// index of the parameter's value in the list of choices of its definition
 	static int choice(block_setup const &Setup, std::size_t Param);
 

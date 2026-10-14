@@ -31,9 +31,14 @@ std::string const &block::text(block_setup const &Setup, std::size_t const Param
 	return Setup.params[Param].text;
 }
 
+std::vector<std::vector<double>> const &block::table(block_setup const &Setup, std::size_t const Param)
+{
+	return Setup.params[Param].rows;
+}
+
 int block::choice(block_setup const &Setup, std::size_t const Param)
 {
-	auto const &choices{Setup.type.params[Param].choices};
+	auto const &choices{Setup.param_defs[Param].choices};
 	auto const &value{Setup.params[Param].text};
 	for (std::size_t idx = 0; idx < choices.size(); ++idx)
 	{

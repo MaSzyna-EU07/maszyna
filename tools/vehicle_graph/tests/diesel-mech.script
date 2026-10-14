@@ -1,0 +1,18 @@
+# events for: -graph-run diesel-mech.vhg -script diesel-mech.script
+# options: -every 50
+# start the engine and wait at idle; raise the speed, select the first gear and drive off with the clutch half engaged,
+# engage it fully, shift up through the gears, then throttle back
+# (engine braking) and shift to neutral (coasting, the engine back at idle)
+1.0   press   starter
+1.5   release starter
+9.0   value   throttle 0.5
+10.0  value   pedal 0.5
+10.0  set     gear 1
+25.0  value   pedal 1
+25.0  value   throttle 1
+30.0  set     gear 2
+45.0  set     gear 3
+60.0  set     gear 4
+85.0  value   throttle 0
+95.0  set     gear 0
+105.0 value   throttle 0

@@ -356,6 +356,9 @@ struct global_settings {
 
 	std::vector<std::pair<std::string, std::string>> network_servers;
 	std::optional<std::pair<std::string, std::string>> network_client;
+	// live preview server of the vehicle graph editor (vehicle/graph/graph_preview.h)
+	bool vehiclegraph_preview{false};
+	int vehiclegraph_preview_port{7420};
 	float desync = 0.0f;
 
 	std::unordered_map<int, std::string> trainset_overrides;

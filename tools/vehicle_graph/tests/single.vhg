@@ -1,0 +1,2 @@
+// expect: error the graph can have only one block of type "br.pipe"
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "a", "type": "br.pipe" }, { "id": "b", "type": "br.pipe" } ] }

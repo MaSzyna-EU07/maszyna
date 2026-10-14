@@ -1,0 +1,2 @@
+// expect: error is both an input and an output
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "b", "type": "lua.block", "lua": "block \"x\" { inputs = { a = \"bool\" }, outputs = { a = \"bool\" }, update = function(self, i, o, dt) end }\n" } ] }

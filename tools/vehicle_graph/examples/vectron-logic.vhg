@@ -1,7 +1,7 @@
 // cab logic of an electric locomotive with induction motors, modelled after the Vectron .fiz.
 // stage 1 of the vehicle graph: only logic and cab blocks are available, so the pantograph, the main circuit
-// and the inverters are represented by timers and constants. the combined power/brake lever is split into
-// a traction demand and an electrodynamic brake demand, which will drive the inverter blocks in the next stages
+// and the inverters are represented by timers and constants. the combined power/brake lever goes through a lua
+// block, which gives a traction demand and an electrodynamic brake demand for the inverter blocks of the next stages
 {
 	"format": "maszyna-vehicle-graph",
 	"version": 2,
@@ -15,7 +15,6 @@
 		{ "id": "main_sw", "type": "cab.switch", "title": "Main switch", "params": { "behaviour": "multi", "positions": 3, "min": -1, "max": 1, "default": 0, "spring": true, "labels": "off;0;on", "step": 40, "offset": -40, "submodel": "main_sw:" } },
 		{ "id": "reverser", "type": "cab.switch", "title": "Direction", "params": { "behaviour": "multi", "positions": 3, "min": -1, "max": 1, "default": 0, "labels": "back;0;forward", "step": 45, "offset": -45, "submodel": "dirkey:" } },
 		{ "id": "lever", "type": "cab.switch", "title": "Power/brake lever", "params": { "behaviour": "multi", "positions": 31, "min": -1, "max": 1, "default": 0, "step": 2, "offset": -30, "submodel": "jointctrl:" } },
-
 		{ "id": "pant_cmd", "type": "logic.sr", "title": "Pantographs commanded up" },
 		{ "id": "pant_cmd_on", "type": "logic.and", "title": "Raising with battery" },
 		{ "id": "pant_cmd_off", "type": "logic.nand", "title": "Lowering or battery off" },
@@ -24,7 +23,6 @@
 		{ "id": "hv_nominal", "type": "logic.const", "title": "Catenary voltage", "params": { "value": 3000 } },
 		{ "id": "hv", "type": "logic.math", "title": "Voltage behind the pantograph", "params": { "op": "mul" } },
 		{ "id": "hv_ok", "type": "logic.hyst", "title": "Voltage above minimum", "params": { "lo": 1800, "hi": 1900 } },
-
 		{ "id": "ms_on_req", "type": "logic.compare", "title": "Main switch to on", "params": { "op": "gt", "value": 0 } },
 		{ "id": "ms_off_req", "type": "logic.compare", "title": "Main switch to off", "params": { "op": "lt", "value": 0 } },
 		{ "id": "ms_init", "type": "logic.ton", "title": "Main circuit initialisation", "params": { "time": 10.0 } },
@@ -33,24 +31,15 @@
 		{ "id": "ms_open", "type": "logic.or", "title": "Opening" },
 		{ "id": "ms", "type": "logic.sr", "title": "Main circuit breaker" },
 		{ "id": "ms_lamp_on", "type": "logic.not", "title": "Main circuit open" },
-
-		{ "id": "zero", "type": "logic.const", "title": "Zero", "params": { "value": 0 } },
-		{ "id": "minus_one", "type": "logic.const", "title": "Minus one", "params": { "value": -1 } },
-		{ "id": "lever_pos", "type": "logic.math", "title": "Traction part", "params": { "op": "max" } },
-		{ "id": "lever_neg", "type": "logic.math", "title": "Lever inverted", "params": { "op": "mul" } },
-		{ "id": "lever_brake", "type": "logic.math", "title": "Brake part", "params": { "op": "max" } },
 		{ "id": "dir_set", "type": "logic.compare", "title": "Direction selected", "params": { "op": "ne", "value": 0 } },
 		{ "id": "drive_ok", "type": "logic.and", "title": "Ready to drive" },
-		{ "id": "traction", "type": "logic.select", "title": "Traction demand" },
-		{ "id": "ed_brake", "type": "logic.select", "title": "ED brake demand" },
-
+		{ "id": "demand", "type": "lua.block", "title": "Power/brake demand", "params": { "lua.ramp_up": 0.5, "lua.ramp_down": 1.0 }, "lua": "-- combined power/brake lever of the Vectron: forward of zero sets the traction demand, back of zero the\n-- electrodynamic brake demand. both follow the lever with limited rates, and drop to zero when the locomotive\n-- isn't ready to drive (no direction selected or main circuit open)\nlocal function approach(value, target, up, down, dt)\n  if target > value then\n    return math.min(target, value + up * dt)\n  end\n  return math.max(target, value - down * dt)\nend\n\nblock \"power_brake\" {\n  inputs  = { lever = \"float\", ready = \"bool\" },\n  outputs = { traction = \"float\", ed_brake = \"float\" },\n  params  = { ramp_up = 0.5, ramp_down = 1.0 },   -- per second\n  state   = { t = 0.0, b = 0.0 },\n\n  update = function(self, i, o, dt)\n    local want_t, want_b = 0.0, 0.0\n    if i.ready then\n      want_t = math.max(i.lever, 0.0)\n      want_b = math.max(-i.lever, 0.0)\n    end\n    self.t = approach(self.t, want_t, self.ramp_up, self.ramp_down, dt)\n    self.b = approach(self.b, want_b, self.ramp_up, self.ramp_down, dt)\n    o.traction = self.t\n    o.ed_brake = self.b\n  end,\n}\n" },
 		{ "id": "lamp_ms", "type": "fb.lamp", "title": "Main circuit lamp", "params": { "color": "red", "submodel": "i-mainbreaker:" } },
 		{ "id": "lamp_pant", "type": "fb.lamp", "title": "Pantograph lamp", "params": { "color": "yellow", "blink": true, "blink_period": 1.0, "submodel": "i-pantraising:" } },
 		{ "id": "pant_moving", "type": "logic.and", "title": "Pantograph moving" },
 		{ "id": "pant_not_up", "type": "logic.not", "title": "Pantograph not up yet" },
 		{ "id": "v_hv", "type": "fb.gauge", "title": "Catenary voltage", "params": { "min": 0, "max": 4000, "unit": "V", "angle_min": 0, "angle_max": 270, "submodel": "hvoltage:" } },
 		{ "id": "v_demand", "type": "fb.gauge", "title": "Traction demand", "params": { "min": 0, "max": 1, "angle_min": 0, "angle_max": 270, "submodel": "tractionforce:" } },
-
 		{ "id": "snd_base", "type": "logic.const", "title": "Idle volume", "params": { "value": 0.3 } },
 		{ "id": "snd_gain", "type": "logic.math", "title": "Volume rising with demand", "params": { "op": "add" } },
 		{ "id": "snd_inverter", "type": "fb.sound", "title": "Inverters", "params": { "file": "vectron-inverter.wav", "placement": "engine", "loop": true } }
@@ -72,7 +61,6 @@
 		{ "from": "pant_cmd.q", "to": "pant_moving.a" },
 		{ "from": "pant_not_up.q", "to": "pant_moving.b" },
 		{ "from": "pant_moving.q", "to": "lamp_pant.on" },
-
 		{ "from": "main_sw.pos", "to": "ms_on_req.a" },
 		{ "from": "main_sw.pos", "to": "ms_off_req.a" },
 		{ "from": "hv_ok.q", "to": "ms_init.a" },
@@ -86,27 +74,15 @@
 		{ "from": "ms_open.q", "to": "ms.r" },
 		{ "from": "ms.q", "to": "ms_lamp_on.a" },
 		{ "from": "ms_lamp_on.q", "to": "lamp_ms.on" },
-
-		{ "from": "lever.pos", "to": "lever_pos.a" },
-		{ "from": "zero.q", "to": "lever_pos.b" },
-		{ "from": "lever.pos", "to": "lever_neg.a" },
-		{ "from": "minus_one.q", "to": "lever_neg.b" },
-		{ "from": "lever_neg.q", "to": "lever_brake.a" },
-		{ "from": "zero.q", "to": "lever_brake.b" },
+		{ "from": "lever.pos", "to": "demand.lever" },
 		{ "from": "reverser.pos", "to": "dir_set.a" },
 		{ "from": "dir_set.q", "to": "drive_ok.a" },
+		{ "from": "drive_ok.q", "to": "demand.ready" },
 		{ "from": "ms.q", "to": "drive_ok.b" },
-		{ "from": "drive_ok.q", "to": "traction.sel" },
-		{ "from": "zero.q", "to": "traction.a" },
-		{ "from": "lever_pos.q", "to": "traction.b" },
-		{ "from": "drive_ok.q", "to": "ed_brake.sel" },
-		{ "from": "zero.q", "to": "ed_brake.a" },
-		{ "from": "lever_brake.q", "to": "ed_brake.b" },
-		{ "from": "traction.q", "to": "v_demand.value" },
-
+		{ "from": "demand.traction", "to": "v_demand.value" },
 		{ "from": "ms.q", "to": "snd_inverter.play" },
 		{ "from": "snd_base.q", "to": "snd_gain.a" },
-		{ "from": "traction.q", "to": "snd_gain.b" },
+		{ "from": "demand.traction", "to": "snd_gain.b" },
 		{ "from": "snd_gain.q", "to": "snd_inverter.volume" }
 	]
 }

@@ -150,6 +150,21 @@ void TButton::AssignBool(bool const *bValue) {
     bData = bValue;
 }
 
+void TButton::AssignSounds( std::string const &Increase, std::string const &Decrease, TDynamicObject const *Owner ) {
+
+    if( false == Increase.empty() ) {
+        m_soundfxincrease.deserialize( Increase, sound_type::single );
+    }
+    if( false == Decrease.empty() ) {
+        m_soundfxdecrease.deserialize( Decrease, sound_type::single );
+    }
+    m_soundfxincrease.owner( Owner );
+    m_soundfxdecrease.owner( Owner );
+    auto const offset { model_offset() };
+    m_soundfxincrease.offset( offset );
+    m_soundfxdecrease.offset( offset );
+}
+
 void
 TButton::play() {
     if( m_state == true ) { m_soundfxincrease.play(); }

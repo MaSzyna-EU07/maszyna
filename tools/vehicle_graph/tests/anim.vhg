@@ -1,0 +1,19 @@
+// expect: ok
+// blocks of the vehicle's external model (veh.anim, veh.visible); without models only their state is computed. see anim.script
+{
+	"format": "maszyna-vehicle-graph", "version": 2,
+	"body": { "mass": 20000, "length": 14, "wheel_diameter": 0.9, "axle_arrangement": "2'2'", "vmax": 100 },
+	"nodes": [
+		{ "id": "x", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "on", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "blind", "type": "veh.anim", "params": { "submodel": "roleta", "animation": "rotate", "scale": 90, "smoothing": 0.5 } },
+		{ "id": "flap", "type": "veh.anim", "params": { "model": "lowpoly", "submodel": "klapa", "animation": "move", "min": -1, "max": 1, "scale": 400, "offset": 10, "smoothing": 0 } },
+		{ "id": "quick", "type": "veh.anim", "params": { "submodel": "x", "smoothing": 0.015 } },
+		{ "id": "beacon", "type": "veh.visible", "params": { "submodel": "lampa_on", "submodel_off": "lampa_off", "blink": true, "blink_period": 0.4 } },
+		{ "id": "sign", "type": "veh.visible", "params": { "submodel": "tablica" } }
+	],
+	"connections": [
+		{ "from": "x.q", "to": "blind.value" }, { "from": "x.q", "to": "flap.value" }, { "from": "x.q", "to": "quick.value" },
+		{ "from": "on.q", "to": "beacon.on" }, { "from": "on.q", "to": "sign.on" }
+	]
+}

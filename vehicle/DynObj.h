@@ -22,6 +22,12 @@ http://mozilla.org/MPL/2.0/.
 #include "audio/sound.h"
 #include "world/Spring.h"
 
+namespace vgraph
+{
+class block;
+class vehicle_sound;
+} // namespace vgraph
+
 #include <vector>
 
 #define EU07_SOUND_BOGIESOUNDS
@@ -565,6 +571,23 @@ private:
     bool m_startjoltplayed { false };
     std::array<coupler_sounds, 2> m_couplersounds; // always front and rear
     std::vector<pantograph_sounds> m_pantographsounds; // typically 2 but can be less (or more?)
+    // sounds of a vehicle defined by a graph (fb.sound blocks), in place of the sounds of the .mmd
+    struct graph_sound {
+        vgraph::vehicle_sound const *block;
+        sound_source sound;
+        bool active { false };
+    };
+    std::vector<graph_sound> m_graphsounds;
+    // submodels of the external model driven by the veh.anim and veh.visible blocks of a graph vehicle
+    struct graph_animation {
+        enum class kind_type { rotate, move, visible };
+        vgraph::block const *block;
+        std::size_t state; // index of the block's state applied to the submodels
+        kind_type kind;
+        TSubModel *submodel; // animated, or shown when the state is on
+        TSubModel *submodel_off; // shown when the state is off; visibility only, optional
+    };
+    std::vector<graph_animation> m_graphanimations;
     std::vector<door_sounds> m_doorsounds; // can expect symmetrical arrangement, but don't count on it
     bool m_doorlocks { false }; // sound helper, current state of door locks
     sound_source sHorn1 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
@@ -703,6 +726,13 @@ private:
     void Move(double fDistance);
     void FastMove(double fDistance);
     void RenderSounds();
+    // creates the sounds of the fb.sound blocks of a graph vehicle
+    void create_graph_sounds();
+    void render_graph_sounds();
+    // finds the submodels of the veh.anim and veh.visible blocks of a graph vehicle
+    void create_graph_animations();
+    // applies the state of these blocks to the shared model, right before the vehicle is drawn
+    void update_graph_animations();
     inline glm::dvec3 GetPosition() const {
         return vPosition; };
     // converts location from vehicle coordinates frame to world frame

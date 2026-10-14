@@ -1,0 +1,2 @@
+{ "format": "maszyna-vehicle-graph", "version": 2,
+  "nodes": [ { "id": "again", "type": "module", "params": { "file": "self.vhgm" } } ] }

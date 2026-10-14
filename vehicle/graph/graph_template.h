@@ -34,9 +34,12 @@ public:
 		std::string id;
 		std::string title;
 		block_type const *type{nullptr};
-		std::vector<param_value> params; // in the order of the type's parameter definitions
-		std::vector<int> slots; // in the order of the type's port definitions: signal slot, or link index for physical ports
-		std::vector<std::uint8_t> connected; // in the order of the type's port definitions: whether the port has a connection
+		std::vector<port_def> ports; // the type's ports, or the ones resolved for this node (lua blocks)
+		std::vector<param_def> param_defs; // the type's parameters, or the ones resolved for this node
+		std::vector<param_value> params; // in the order of param_defs
+		std::vector<int> slots; // in the order of ports: signal slot, or link index for physical ports
+		std::vector<std::uint8_t> connected; // in the order of ports: whether the port has a connection
+		std::string script; // source of a lua block
 	};
 
 	// checks the document and builds the template. problems are appended to the diagnostics; returns null on errors
@@ -45,6 +48,11 @@ public:
 	std::string const &name() const
 	{
 		return m_name;
+	}
+	// the file the graph was loaded from, if any
+	std::string const &path() const
+	{
+		return m_path;
 	}
 	bool low_voltage_simulation() const
 	{
@@ -83,14 +91,23 @@ public:
 	int find_signal(std::string_view Endpoint) const;
 	// names of signal outputs in "node.port" form, with their slots, in the order of nodes and ports
 	std::vector<std::pair<std::string, int>> signal_outputs() const;
+	// whether any node needs the lua state
+	bool uses_lua() const
+	{
+		return m_useslua;
+	}
 
 private:
+	friend std::shared_ptr<graph_template const> load_graph(std::string const &Path, std::vector<diagnostic> &Diagnostics);
+
 	std::string m_name;
+	std::string m_path;
 	bool m_lowvoltage{false};
 	std::vector<node_entry> m_nodes;
 	std::vector<int> m_order;
 	std::vector<double> m_signaldefaults;
 	std::size_t m_linkcount{0};
+	bool m_useslua{false};
 	std::vector<named_value> m_body;
 	std::vector<std::pair<std::string, int>> m_profiles;
 };

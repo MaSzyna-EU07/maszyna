@@ -1,0 +1,2 @@
+// expect: warning unknown body parameter "weight" was ignored
+{ "format": "maszyna-vehicle-graph", "version": 2, "body": { "mass": 1000, "weight": 3 }, "nodes": [ { "id": "c", "type": "logic.const" } ] }

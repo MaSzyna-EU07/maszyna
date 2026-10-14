@@ -37,6 +37,7 @@ driver_ui::driver_ui()
 	add_external_panel(&m_logpanel);
 	add_external_panel(&m_perfgraphpanel);
 	add_external_panel(&m_cameraviewpanel);
+	add_external_panel(&m_vehiclegraphpanel);
 	m_logpanel.is_open = false;
 
 	m_aidpanel.title = STR("Driving Aid");
@@ -81,6 +82,7 @@ void driver_ui::render_menu_contents()
 		ImGui::MenuItem(m_vehiclelist.name().c_str(), nullptr, &m_vehiclelist.is_open);
 		ImGui::MenuItem(m_trainingcardpanel.name().c_str(), nullptr, &m_trainingcardpanel.is_open);
 		ImGui::MenuItem(m_cameraviewpanel.name().c_str(), nullptr, &m_cameraviewpanel.is_open);
+		ImGui::MenuItem(m_vehiclegraphpanel.name().c_str(), nullptr, &m_vehiclegraphpanel.is_open);
 		if (DebugModeFlag)
 			ImGui::MenuItem(m_perfgraphpanel.name().c_str(), nullptr, &m_perfgraphpanel.is_open);
 

@@ -1,0 +1,2 @@
+// expect: error interface profile "brake_pipe" version 2 is newer than the supported version 1
+{ "format": "maszyna-vehicle-graph", "version": 2, "profiles": { "brake_pipe": 2 }, "nodes": [ { "id": "c", "type": "logic.const" } ] }

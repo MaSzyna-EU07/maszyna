@@ -1,0 +1,2 @@
+// expect: error row 2 has 3 values, expected 5
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "m", "type": "drive.dc_series", "params": { "rlist": [[0, 0, 0, 0, 0], [1, 2.5, 1]] } } ] }

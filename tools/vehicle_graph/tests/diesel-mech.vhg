@@ -1,0 +1,32 @@
+// expect: ok
+// diesel locomotive with a mechanical transmission: engine, friction clutch with a four speed gearbox, final drive.
+// start the engine, raise the speed, select the first gear and drive off with the clutch half engaged (slipping), then
+// engage it fully and shift up; the gearbox releases and engages the clutch itself for the shifts
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "diesel mechanical test" },
+	"body": { "mass": 60000, "length": 14, "wheel_diameter": 1.0, "axle_arrangement": "B'B'", "power": 400, "vmax": 100, "bearing": "roll" },
+	"nodes": [
+		{ "id": "starter", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "throttle", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 11, "min": 0, "max": 1, "default": 0 } },
+		{ "id": "gear", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 5, "min": 0, "max": 4, "default": 0 } },
+		{ "id": "pedal", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 3, "min": 0, "max": 1, "default": 1 } },
+		{ "id": "reverser", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 3, "min": -1, "max": 1, "default": 1 } },
+		{ "id": "engine", "type": "drive.diesel", "params": { "idle_rpm": 600, "max_rpm": 1500, "m_max": 3000, "rpm_m_max": 1100, "m_nmax": 2600 } },
+		{ "id": "box", "type": "drive.gearbox", "params": { "gears": [[1, 3.0], [2, 2.0], [3, 1.4], [4, 1.0]], "clutch_torque": 5000, "inertia": 10 } },
+		{ "id": "final", "type": "drive.gear", "params": { "ratio": 3.0, "eff": 0.97 } },
+		{ "id": "axles", "type": "drive.axle", "params": { "powered_axles": 1 } },
+		{ "id": "vs", "type": "veh.state" }
+	],
+	"connections": [
+		{ "from": "starter.pos", "to": "engine.start" },
+		{ "from": "throttle.pos", "to": "engine.demand" },
+		{ "from": "gear.pos", "to": "box.gear" },
+		{ "from": "reverser.pos", "to": "box.dir" },
+		{ "from": "pedal.pos", "to": "box.clutch" },
+		{ "from": "engine.shaft", "to": "box.in" },
+		{ "from": "box.out", "to": "final.in" },
+		{ "from": "final.out", "to": "axles.shaft" }
+	]
+}

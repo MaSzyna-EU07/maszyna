@@ -278,6 +278,27 @@ double TableInterpolation(std::map<double, double> &Map, double Parameter)
 	return lower->second + (Parameter - lower->first) * ratio;
 }
 
+// current of the series motors in traction, for supply voltage U and revolutions n; shared with the vehicle graph
+double series_motor_current(double const U, double const n, double const Mn, double const Rz, TMotorParameters const &Param)
+{
+	double MotorCurrent;
+	double const U1 = U + Mn * n * Param.fi0 * Param.fi; // napiecie z korekta
+	double const Isf = Sign(U1) * Param.Isat;
+	double const Delta = square(Isf * Rz + Mn * Param.fi * n - U1) + 4.0 * U1 * Isf * Rz; // 105 * 1.67 + Mn * 140.9 * 20.532 - U1
+	if (U > 0)
+		MotorCurrent = (U1 - Isf * Rz - Mn * Param.fi * n + std::sqrt(Delta)) / (2.0 * Rz);
+	else
+		MotorCurrent = (U1 - Isf * Rz - Mn * Param.fi * n - std::sqrt(Delta)) / (2.0 * Rz);
+	return MotorCurrent;
+}
+
+// torque of a series motor for current I; shared with the vehicle graph
+double series_motor_momentum(double const I, TMotorParameters const &Param)
+{
+	//     Momentum:=mfi*I*(1-1.0/(Abs(I)/mIsat+1));
+	return Param.mfi * I * (abs(I) / (abs(I) + Param.mIsat) - Param.mfi0);
+}
+
 // *************************************************************************************************
 // Q: 20160716
 // Obliczanie natężenie prądu w silnikach
@@ -290,11 +311,10 @@ double TMoverParameters::Current(double n, double U)
 	// jest takze mozliwosc uszkodzenia silnika wskutek nietypowych parametrow
 
 	double R, MotorCurrent;
-	double Rz, Delta, Isf;
+	double Rz;
 	double Mn; // przujmuje int, ale dla poprawnosci obliczeń
 	double Bn;
 	int SP = 0;
-	double U1; // napiecie z korekta
 
 	MotorCurrent = 0;
 	// i dzialanie hamulca ED w EP09
@@ -398,23 +418,12 @@ double TMoverParameters::Current(double n, double U)
 			}
 			else
 			{
-				U1 = U + Mn * n * motor_param(SP).fi0 * motor_param(SP).fi;
-				//          writepaslog("U1             ", FloatToStr(U1));
-				//          writepaslog("Isat           ", FloatToStr(MotorParam[SP].Isat));
-				//          writepaslog("fi             ", FloatToStr(MotorParam[SP].fi));
-				Isf = Sign(U1) * motor_param(SP).Isat;
-				//          writepaslog("Isf            ", FloatToStr(Isf));
-				Delta = square(Isf * Rz + Mn * motor_param(SP).fi * n - U1) + 4.0 * U1 * Isf * Rz; // 105 * 1.67 + Mn * 140.9 * 20.532 - U1
-				//          DeltaQ = Isf * Rz + Mn * MotorParam[SP].fi * n - U1 + 4 * U1 * Isf * Rz;
-				//          writepaslog("Delta          ", FloatToStr(Delta));
-				//          writepaslog("DeltaQ         ", FloatToStr(DeltaQ));
-				//          writepaslog("U              ", FloatToStr(U));
 				if (Mains)
 				{
-					if (U > 0)
-						MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n + std::sqrt(Delta)) / (2.0 * Rz);
-					else
-						MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n - std::sqrt(Delta)) / (2.0 * Rz);
+					MotorCurrent = series_motor_current(U, n, Mn, Rz, motor_param(SP));
+#ifdef VGRAPH_SHADOW_CHECK
+					shadow_compare("series_motor_current", shadow_series_motor_current(U, n, Mn, Rz, SP), MotorCurrent);
+#endif
 				}
 				else
 					MotorCurrent = 0;
@@ -1467,8 +1476,11 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze
 	compute_movement_(dt);
 
-	// security system
-	SecuritySystemCheck(dt1);
+	// security system; a graph vehicle has it as a block of its graph
+	if (nullptr == Graph)
+	{
+		SecuritySystemCheck(dt1);
+	}
 
 	return d;
 };
@@ -1540,6 +1552,12 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape &Shape
 // updates shared between 'fast' and regular movement computation methods
 void TMoverParameters::compute_movement_(double const Deltatime)
 {
+	if (Graph)
+	{
+		// the subsystems of a graph vehicle are blocks of its graph
+		compute_movement_graph_(Deltatime);
+		return;
+	}
 
 	// sprawdzanie i ewentualnie wykonywanie->kasowanie poleceń
 	if (LoadStatus > 0) // czas doliczamy tylko jeśli trwa (roz)ładowanie
@@ -4781,41 +4799,11 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 	}
 
 	const double Spz = 0.5067;
-	TMoverParameters *c;
-	double dv1, dv2, dV;
+	double dV;
 
 	UpdateSpringBrake(dt);
 
-	dv1 = 0;
-	dv2 = 0;
-
-	// sprzeg 1
-	if (Couplers[0].Connected != nullptr)
-		if (TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic))
-		{
-			c = Couplers[0].Connected; // skrot
-			dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-			if (dv1 * dv1 > 0.00000000000001)
-				c->switch_physics(true);
-			c->Pipe2->Flow(-dv1);
-		}
-	// sprzeg 2
-	if (Couplers[1].Connected != nullptr)
-		if (TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
-		{
-			c = Couplers[1].Connected; // skrot
-			dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-			if (dv2 * dv2 > 0.00000000000001)
-				c->switch_physics(true);
-			c->Pipe2->Flow(-dv2);
-		}
-	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr)
-		if (TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
-		{
-			dV = 0.00025 * dt * PF(Couplers[0].Connected->ScndPipePress, Couplers[1].Connected->ScndPipePress, Spz * 0.25);
-			Couplers[0].Connected->Pipe2->Flow(+dV);
-			Couplers[1].Connected->Pipe2->Flow(-dV);
-		}
+	auto const dv12{ScndPipeExchange(dt)};
 
 	Pipe2->Flow(Hamulec->GetHPFlow(ScndPipePress, dt));
 	// NOTE: condition disabled to allow the air flow from the main hose to the main tank as well
@@ -4825,7 +4813,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 		CompressedVolume += dV / 1000.0;
 		Pipe2->Flow(-dV);
 	}
-	Pipe2->Flow(dv1 + dv2);
+	Pipe2->Flow(dv12);
 	Pipe2->Act();
 	ScndPipePress = Pipe2->P();
 
@@ -4835,6 +4823,49 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 		Pipe2->CreatePress(-1);
 		Pipe2->Act();
 	}
+}
+
+// air flow between the feed pipes of this vehicle and its neighbours. the flows into the neighbours are applied to their
+// pipes; the returned flow into the own pipe is left to the caller
+double TMoverParameters::ScndPipeExchange(double dt)
+{
+	const double Spz = 0.5067;
+	TMoverParameters *c;
+	double dv1, dv2, dV;
+
+	dv1 = 0;
+	dv2 = 0;
+
+	// sprzeg 1
+	if (Couplers[0].Connected != nullptr)
+		if (TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && Couplers[0].FeedPipeCock && Couplers[0].Connected->Couplers[Couplers[0].ConnectedNr].FeedPipeCock)
+		{
+			c = Couplers[0].Connected; // skrot
+			dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
+			if (dv1 * dv1 > 0.00000000000001)
+				c->switch_physics(true);
+			c->Pipe2->Flow(-dv1);
+		}
+	// sprzeg 2
+	if (Couplers[1].Connected != nullptr)
+		if (TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic) && Couplers[1].FeedPipeCock && Couplers[1].Connected->Couplers[Couplers[1].ConnectedNr].FeedPipeCock)
+		{
+			c = Couplers[1].Connected; // skrot
+			dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
+			if (dv2 * dv2 > 0.00000000000001)
+				c->switch_physics(true);
+			c->Pipe2->Flow(-dv2);
+		}
+	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr)
+		if (TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic) && Couplers[0].FeedPipeCock &&
+		    Couplers[1].FeedPipeCock)
+		{
+			dV = 0.00025 * dt * PF(Couplers[0].Connected->ScndPipePress, Couplers[1].Connected->ScndPipePress, Spz * 0.25);
+			Couplers[0].Connected->Pipe2->Flow(+dV);
+			Couplers[1].Connected->Pipe2->Flow(-dV);
+		}
+
+	return dv1 + dv2;
 }
 
 // *************************************************************************************************
@@ -4881,7 +4912,7 @@ double TMoverParameters::GetDVc(double dt)
 	dv2 = 0;
 	// sprzeg 1
 	if (Couplers[0].Connected != nullptr)
-		if (TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic))
+		if (TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic) && Couplers[0].BrakePipeCock && Couplers[0].Connected->Couplers[Couplers[0].ConnectedNr].BrakePipeCock)
 		{ //*0.85
 			c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
 			dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
@@ -4891,7 +4922,7 @@ double TMoverParameters::GetDVc(double dt)
 		}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr)
-		if (TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
+		if (TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic) && Couplers[1].BrakePipeCock && Couplers[1].Connected->Couplers[Couplers[1].ConnectedNr].BrakePipeCock)
 		{
 			c = Couplers[1].Connected; // skrot
 			dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
@@ -5059,7 +5090,11 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		LastRelayTime += dt;
 	}
 
-	if (EngineType == TEngineType::ElectricSeriesMotor) // potem ulepszyc! pantogtrafy!
+	if (Graph)
+	{
+		// EngineVoltage of a graph vehicle is set by its drive blocks
+	}
+	else if (EngineType == TEngineType::ElectricSeriesMotor) // potem ulepszyc! pantogtrafy!
 	{ // Ra 2014-03: uwzględnienie kierunku jazdy w napięciu na silnikach, a powinien być zdefiniowany nawrotnik
 		EngineVoltage = Mains ? EnginePowerSourceVoltage() : 0.0;
 		if (CabActive == 0)
@@ -5076,15 +5111,23 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		EngineVoltage = Power > 1.0 ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
 	}
 
-	FTrain = Power > 0 ? TractionForce(dt) : 0;
 	double FT_factor = 1.0;
-	if (EngineType == TEngineType::ElectricInductionMotor && InvertersRatio > 0.0)
+	if (Graph)
 	{
-		FT_factor = 1.0 / InvertersRatio;
-		FTrain *= FT_factor;
+		// sums of the drive.axle and br.rigging blocks, from the last update of the graph
+		graph_forces(FTrain, Fb);
 	}
+	else
+	{
+		FTrain = Power > 0 ? TractionForce(dt) : 0;
+		if (EngineType == TEngineType::ElectricInductionMotor && InvertersRatio > 0.0)
+		{
+			FT_factor = 1.0 / InvertersRatio;
+			FTrain *= FT_factor;
+		}
 
-	Fb = BrakeForce(RunningTrack);
+		Fb = BrakeForce(RunningTrack);
+	}
 	// poslizg
 	auto Fwheels{FTrain - Fb * Sign(V)};
 	if (Vel > 0.1 // crude trap, to prevent braked stationary vehicles from passing fb > mass * adhesive test
@@ -5190,6 +5233,32 @@ double TMoverParameters::BrakeForceP(double press, double velocity)
 // Q: 20160713
 // oblicza siłę na styku koła i szyny
 // *************************************************************************************************
+// force pressing one brake shoe, kN, from the cylinder pressure and the additional force K (manual, spring brake);
+// shared with the vehicle graph. Ntotal keeps the hysteresis of the shoe force between the calls
+double brake_rigging_shoe_force(brake_rigging_setup const &Setup, double K, double const BrakePress, double &Ntotal)
+{
+	double u = (BrakePress * Setup.press_to_force - Setup.cylinder_spring) * Setup.cylinder_mult - Setup.slack_adjuster;
+	if (u * Setup.rigging_efficiency > Ntotal) // histereza na nacisku klockow
+		Ntotal = u * Setup.rigging_efficiency;
+	else
+	{
+		u = (BrakePress * Setup.press_to_force - Setup.cylinder_spring) * Setup.cylinder_mult - Setup.slack_adjuster;
+		if (u * (2.0 - Setup.rigging_efficiency) < Ntotal) // histereza na nacisku klockow
+			Ntotal = u * (2.0 - Setup.rigging_efficiency);
+	}
+
+	auto const NBrakeAxles{Setup.axles};
+	auto const NBpA{Setup.blocks_per_axle};
+
+	if (NBrakeAxles * NBpA > 0)
+	{
+		if (Ntotal > 0) // nie luz
+			K += Ntotal; // w kN
+		K *= static_cast<double>(Setup.cylinder_count) / (NBrakeAxles * static_cast<double>(NBpA)); // w kN na os
+	}
+	return K;
+}
+
 double TMoverParameters::BrakeForce(TTrackParam const &Track)
 {
 
@@ -5221,24 +5290,26 @@ double TMoverParameters::BrakeForce(TTrackParam const &Track)
 	if (SpringBrake.IsReady)
 		K += std::max(0.0, SpringBrake.MinForcePressure - SpringBrake.Cylinder->P()) * SpringBrake.MaxBrakeForce;
 
-	u = (BrakePress * P2FTrans - BrakeCylSpring) * BrakeCylMult[0] - BrakeSlckAdj;
-	if (u * BrakeRigEff > Ntotal) // histereza na nacisku klockow
-		Ntotal = u * BrakeRigEff;
-	else
-	{
-		u = (BrakePress * P2FTrans - BrakeCylSpring) * BrakeCylMult[0] - BrakeSlckAdj;
-		if (u * (2.0 - BrakeRigEff) < Ntotal) // histereza na nacisku klockow
-			Ntotal = u * (2.0 - BrakeRigEff);
-	}
-
+	brake_rigging_setup rigging;
+	rigging.press_to_force = P2FTrans;
+	rigging.cylinder_spring = BrakeCylSpring;
+	rigging.cylinder_mult = BrakeCylMult[0];
+	rigging.slack_adjuster = BrakeSlckAdj;
+	rigging.rigging_efficiency = BrakeRigEff;
+	rigging.cylinder_count = BrakeCylNo;
+	rigging.axles = NAxles;
+	rigging.blocks_per_axle = NBpA;
+#ifdef VGRAPH_SHADOW_CHECK
+	auto shadowntotal{Ntotal};
+	auto const shadowk{shadow_brake_rigging_shoe_force(K, shadowntotal)};
+#endif
+	K = brake_rigging_shoe_force(rigging, K, BrakePress, Ntotal);
+#ifdef VGRAPH_SHADOW_CHECK
+	shadow_compare("brake_rigging_shoe_force", shadowk, K);
+	shadow_compare("brake_rigging_shoe_force Ntotal", shadowntotal, Ntotal);
+#endif
 	auto const NBrakeAxles{NAxles};
 
-	if (NBrakeAxles * NBpA > 0)
-	{
-		if (Ntotal > 0) // nie luz
-			K += Ntotal; // w kN
-		K *= static_cast<double>(BrakeCylNo) / (NBrakeAxles * static_cast<double>(NBpA)); // w kN na os
-	}
 	if (BrakeSystem == TBrakeSystem::Pneumatic || BrakeSystem == TBrakeSystem::ElectroPneumatic)
 	{
 		u = Hamulec->GetFC(Vel, K);
@@ -6417,51 +6488,54 @@ double TMoverParameters::TractionForce(double dt)
 					eimv_pr = 0;
 				}
 
-				eimv_pr += std::max(std::min(PosRatio - eimv_pr, 0.02), -0.02) * 12 * tmp /*2{+4*byte(PosRatio<eimv_pr)*/ * dt; // wartość zadana/procent czegoś
-
-				if (DynamicBrakeFlag)
-					tmp = eimc[eimc_f_Uzh];
-				else
-					tmp = eimc[eimc_f_Uzmax];
-
-				auto f_cfu{DynamicBrakeFlag ? eimc[eimc_f_cfuH] : eimc[eimc_f_cfu]};
-
-				eimv[eimv_Uzsmax] = std::min(EngineVoltage - eimc[eimc_f_DU], tmp);
-				eimv[eimv_fkr] = eimv[eimv_Uzsmax] / f_cfu;
-				if (eimv_pr < 0)
 				{
-					eimv[eimv_Pmax] = eimc[eimc_p_Ph];
-				}
-				else
-				{
-					eimv[eimv_Pmax] = std::min(eimc[eimc_p_Pmax], 0.001 * EngineVoltage * (eimc[eimc_p_Imax] - eimc[eimc_f_I0]) * Pirazy2 * eimc[eimc_s_cim] / eimc[eimc_s_p] / eimc[eimc_s_cfu]);
-				}
-				eimv[eimv_FMAXMAX] = 0.001 *
-				                     square(std::min(1.0, eimv[eimv_fkr] / std::max(abs(enrot) * eimc[eimc_s_p] + eimc[eimc_s_dfmax] * eimv[eimv_ks], eimc[eimc_s_dfmax])) * f_cfu / eimc[eimc_s_cfu]) *
-				                     (eimc[eimc_s_dfmax] * eimc[eimc_s_dfic] * eimc[eimc_s_cim]) * Transmision.Ratio * NPoweredAxles * 2.0 / WheelDiameter;
-				if (eimv_pr < 0)
-				{
-					eimv[eimv_Fful] = std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(eimc[eimc_p_Fh], eimv[eimv_FMAXMAX]));
-					eimv[eimv_Fmax] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * eimv_pr, eimv[eimv_FMAXMAX]));
-					double pr = eimv_pr;
-					if (EIMCLogForce)
-						pr = -log(1 - 4 * pr) / log(5);
-					eimv[eimv_Fr] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * pr, eimv[eimv_FMAXMAX]));
-					if (InvertersRatio < 1.0)
-						eimv[eimv_Fful] = 0;
-					//*std::min(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
-				}
-				else
-				{
-					eimv[eimv_Fful] = std::min(std::min(3.6 * eimv[eimv_Pmax] / std::max(Vel, 1.), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
-					//           if(not Flat)then
-					eimv[eimv_Fmax] = eimv[eimv_Fful] * eimv_pr;
-					//           else
-					//             eimv[eimv_Fmax]:=std::min(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
-					double pr = eimv_pr;
-					if (EIMCLogForce)
-						pr = log(1 + 4 * pr) / log(5);
-					eimv[eimv_Fr] = eimv[eimv_Fful] * pr;
+					induction_motor_inputs input;
+					input.demand = PosRatio;
+					input.rate = tmp;
+					input.dynamic_brake = DynamicBrakeFlag;
+					input.engine_voltage = EngineVoltage;
+					input.enrot = enrot;
+					input.vel = Vel;
+					input.v = V;
+					input.dir_absolute = DirAbsolute;
+					input.dir_active = DirActive;
+					input.powered_axles = NPoweredAxles;
+					input.inverters_ratio = InvertersRatio;
+					input.ratio = Transmision.Ratio;
+					input.efficiency = Transmision.Efficiency;
+					input.wheel_diameter = WheelDiameter;
+					input.log_force = EIMCLogForce;
+					input.max_voltage = EnginePowerSource.CollectorParameters.MaxV;
+					input.dt = dt;
+					induction_motor_outputs output;
+#ifdef VGRAPH_SHADOW_CHECK
+					double shadoweimv[21];
+					std::copy(std::begin(eimv), std::end(eimv), std::begin(shadoweimv));
+					auto shadoweimvpr{eimv_pr};
+					auto shadowvadd{Vadd};
+					induction_motor_outputs shadowoutput;
+					shadow_induction_motor(PosRatio, tmp, dt, shadoweimv, shadoweimvpr, shadowvadd, shadowoutput);
+#endif
+					induction_motor_update(input, eimc, eimv, eimv_pr, Vadd, output);
+#ifdef VGRAPH_SHADOW_CHECK
+					for (int idx = 0; idx < 21; ++idx)
+					{
+						shadow_compare("induction_motor_update eimv", shadoweimv[idx], eimv[idx]);
+					}
+					shadow_compare("induction_motor_update eimv_pr", shadoweimvpr, eimv_pr);
+					shadow_compare("induction_motor_update Vadd", shadowvadd, Vadd);
+					shadow_compare("induction_motor_update Im", shadowoutput.Im, output.Im);
+					shadow_compare("induction_motor_update Itot", shadowoutput.Itot, output.Itot);
+					shadow_compare("induction_motor_update EnginePower", shadowoutput.EnginePower, output.EnginePower);
+					shadow_compare("induction_motor_update Ft", shadowoutput.Ft, output.Ft);
+#endif
+					Im = output.Im;
+					Itot = output.Itot;
+					EnginePower = output.EnginePower;
+					Mm = output.Mm;
+					Mw = output.Mw;
+					Fw = output.Fw;
+					Ft = output.Ft;
 				}
 				for (auto &inv : Inverters)
 				{
@@ -6469,34 +6543,6 @@ double TMoverParameters::TractionForce(double dt)
 					inv.Error = inv.Failure_Const || (inv.Failure_Drive && inv.Request != 0);
 					inv.IsActive = inv.Activate && !inv.Error;
 				}
-				eimv[eimv_ks] = eimv[eimv_Fr] / eimv[eimv_FMAXMAX];
-				eimv[eimv_df] = eimv[eimv_ks] * eimc[eimc_s_dfmax];
-				eimv[eimv_fp] = DirAbsolute * enrot * eimc[eimc_s_p] + eimv[eimv_df]; // do przemyslenia dzialanie pp z tmpV
-				//         eimv[eimv_U]:=std::max(eimv[eimv_Uzsmax],std::min(eimc[eimc_f_cfu]*eimv[eimv_fp],eimv[eimv_Uzsmax]));
-				//         eimv[eimv_pole]:=eimv[eimv_U]/(eimv[eimv_fp]*eimc[eimc_s_cfu]);
-				if (abs(eimv[eimv_fp]) <= eimv[eimv_fkr])
-					eimv[eimv_pole] = f_cfu / eimc[eimc_s_cfu];
-				else
-					eimv[eimv_pole] = eimv[eimv_Uzsmax] / eimc[eimc_s_cfu] / abs(eimv[eimv_fp]);
-				eimv[eimv_U] = eimv[eimv_pole] * eimv[eimv_fp] * eimc[eimc_s_cfu];
-				eimv[eimv_Ic] = (eimv[eimv_fp] - DirAbsolute * enrot * eimc[eimc_s_p]) * eimc[eimc_s_dfic] * eimv[eimv_pole];
-				eimv[eimv_If] = eimv[eimv_Ic] * eimc[eimc_s_icif];
-				eimv[eimv_M] = eimv[eimv_pole] * eimv[eimv_Ic] * eimc[eimc_s_cim];
-				eimv[eimv_Ipoj] = eimv[eimv_Ic] * NPoweredAxles * InvertersRatio * eimv[eimv_U] / (EngineVoltage - eimc[eimc_f_DU]) + eimc[eimc_f_I0];
-				eimv[eimv_Pm] = DirActive * eimv[eimv_M] * NPoweredAxles * InvertersRatio * enrot * Pirazy2 / 1000;
-				eimv[eimv_Pe] = eimv[eimv_Ipoj] * EngineVoltage / 1000;
-				eimv[eimv_eta] = eimv[eimv_Pm] / eimv[eimv_Pe];
-
-				Im = eimv[eimv_If];
-				if (eimv[eimv_Ipoj] >= 0)
-					Vadd *= 1.0 - 2.0 * dt;
-				else if (std::abs(EngineVoltage) < EnginePowerSource.CollectorParameters.MaxV)
-					Vadd *= 1.0 - dt;
-				else
-					Vadd = std::max(Vadd * (1.0 - 0.2 * dt), 0.007 * (std::abs(EngineVoltage) - (EnginePowerSource.CollectorParameters.MaxV - 100)));
-				Itot = eimv[eimv_Ipoj] * (0.01 + std::min(0.99, 0.99 - Vadd));
-
-				EnginePower = abs(eimv[eimv_Ic] * eimv[eimv_U] * NPoweredAxles) / 1000;
 				// power inverters
 				auto const tmpV{std::abs(eimv[eimv_fp])};
 				auto const useFFEDList = FFEDListSize > 0 && DynamicBrakeFlag;
@@ -6518,11 +6564,6 @@ double TMoverParameters::TractionForce(double dt)
 					InverterFrequency = 0.0;
 				}
 
-				Mm = eimv[eimv_M] * DirAbsolute;
-				Mw = Mm * Transmision.Ratio * Transmision.Efficiency;
-				Fw = Mw * 2.0 / WheelDiameter;
-				Ft = Fw * NPoweredAxles * InvertersRatio;
-				eimv[eimv_Fr] = DirAbsolute * Ft / 1000;
 			} // mains
 			else
 			{
@@ -6571,6 +6612,92 @@ double TMoverParameters::TractionForce(double dt)
 	}
 
 	return Ft;
+}
+
+// induction motor and inverter of the ElectricInductionMotor drive: from the set value of the force to the torque and the
+// tractive force; shared with the vehicle graph
+void induction_motor_update(induction_motor_inputs const &Input, double const *eimc, double *eimv, double &eimv_pr, double &Vadd, induction_motor_outputs &Output)
+{
+	double tmp;
+	eimv_pr += std::max(std::min(Input.demand - eimv_pr, 0.02), -0.02) * 12 * Input.rate /*2{+4*byte(Input.demand<eimv_pr)*/ * Input.dt; // wartość zadana/procent czegoś
+
+	if (Input.dynamic_brake)
+		tmp = eimc[eimc_f_Uzh];
+	else
+		tmp = eimc[eimc_f_Uzmax];
+
+	auto f_cfu{Input.dynamic_brake ? eimc[eimc_f_cfuH] : eimc[eimc_f_cfu]};
+
+	eimv[eimv_Uzsmax] = std::min(Input.engine_voltage - eimc[eimc_f_DU], tmp);
+	eimv[eimv_fkr] = eimv[eimv_Uzsmax] / f_cfu;
+	if (eimv_pr < 0)
+	{
+		eimv[eimv_Pmax] = eimc[eimc_p_Ph];
+	}
+	else
+	{
+		eimv[eimv_Pmax] = std::min(eimc[eimc_p_Pmax], 0.001 * Input.engine_voltage * (eimc[eimc_p_Imax] - eimc[eimc_f_I0]) * Pirazy2 * eimc[eimc_s_cim] / eimc[eimc_s_p] / eimc[eimc_s_cfu]);
+	}
+	eimv[eimv_FMAXMAX] = 0.001 *
+	                     square(std::min(1.0, eimv[eimv_fkr] / std::max(abs(Input.enrot) * eimc[eimc_s_p] + eimc[eimc_s_dfmax] * eimv[eimv_ks], eimc[eimc_s_dfmax])) * f_cfu / eimc[eimc_s_cfu]) *
+	                     (eimc[eimc_s_dfmax] * eimc[eimc_s_dfic] * eimc[eimc_s_cim]) * Input.ratio * Input.powered_axles * 2.0 / Input.wheel_diameter;
+	if (eimv_pr < 0)
+	{
+		eimv[eimv_Fful] = std::min(eimc[eimc_p_Ph] * 3.6 / (Input.vel != 0.0 ? Input.vel : 0.001), std::min(eimc[eimc_p_Fh], eimv[eimv_FMAXMAX]));
+		eimv[eimv_Fmax] = -Sign(Input.v) * Input.dir_absolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Input.vel != 0.0 ? Input.vel : 0.001), std::min(-eimc[eimc_p_Fh] * eimv_pr, eimv[eimv_FMAXMAX]));
+		double pr = eimv_pr;
+		if (Input.log_force)
+			pr = -log(1 - 4 * pr) / log(5);
+		eimv[eimv_Fr] = -Sign(Input.v) * Input.dir_absolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Input.vel != 0.0 ? Input.vel : 0.001), std::min(-eimc[eimc_p_Fh] * pr, eimv[eimv_FMAXMAX]));
+		if (Input.inverters_ratio < 1.0)
+			eimv[eimv_Fful] = 0;
+		//*std::min(1,(Input.vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
+	}
+	else
+	{
+		eimv[eimv_Fful] = std::min(std::min(3.6 * eimv[eimv_Pmax] / std::max(Input.vel, 1.), eimc[eimc_p_F0] - Input.vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
+		//           if(not Flat)then
+		eimv[eimv_Fmax] = eimv[eimv_Fful] * eimv_pr;
+		//           else
+		//             eimv[eimv_Fmax]:=std::min(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
+		double pr = eimv_pr;
+		if (Input.log_force)
+			pr = log(1 + 4 * pr) / log(5);
+		eimv[eimv_Fr] = eimv[eimv_Fful] * pr;
+	}
+	eimv[eimv_ks] = eimv[eimv_Fr] / eimv[eimv_FMAXMAX];
+	eimv[eimv_df] = eimv[eimv_ks] * eimc[eimc_s_dfmax];
+	eimv[eimv_fp] = Input.dir_absolute * Input.enrot * eimc[eimc_s_p] + eimv[eimv_df]; // do przemyslenia dzialanie pp z tmpV
+	//         eimv[eimv_U]:=std::max(eimv[eimv_Uzsmax],std::min(eimc[eimc_f_cfu]*eimv[eimv_fp],eimv[eimv_Uzsmax]));
+	//         eimv[eimv_pole]:=eimv[eimv_U]/(eimv[eimv_fp]*eimc[eimc_s_cfu]);
+	if (abs(eimv[eimv_fp]) <= eimv[eimv_fkr])
+		eimv[eimv_pole] = f_cfu / eimc[eimc_s_cfu];
+	else
+		eimv[eimv_pole] = eimv[eimv_Uzsmax] / eimc[eimc_s_cfu] / abs(eimv[eimv_fp]);
+	eimv[eimv_U] = eimv[eimv_pole] * eimv[eimv_fp] * eimc[eimc_s_cfu];
+	eimv[eimv_Ic] = (eimv[eimv_fp] - Input.dir_absolute * Input.enrot * eimc[eimc_s_p]) * eimc[eimc_s_dfic] * eimv[eimv_pole];
+	eimv[eimv_If] = eimv[eimv_Ic] * eimc[eimc_s_icif];
+	eimv[eimv_M] = eimv[eimv_pole] * eimv[eimv_Ic] * eimc[eimc_s_cim];
+	eimv[eimv_Ipoj] = eimv[eimv_Ic] * Input.powered_axles * Input.inverters_ratio * eimv[eimv_U] / (Input.engine_voltage - eimc[eimc_f_DU]) + eimc[eimc_f_I0];
+	eimv[eimv_Pm] = Input.dir_active * eimv[eimv_M] * Input.powered_axles * Input.inverters_ratio * Input.enrot * Pirazy2 / 1000;
+	eimv[eimv_Pe] = eimv[eimv_Ipoj] * Input.engine_voltage / 1000;
+	eimv[eimv_eta] = eimv[eimv_Pm] / eimv[eimv_Pe];
+
+	Output.Im = eimv[eimv_If];
+	if (eimv[eimv_Ipoj] >= 0)
+		Vadd *= 1.0 - 2.0 * Input.dt;
+	else if (std::abs(Input.engine_voltage) < Input.max_voltage)
+		Vadd *= 1.0 - Input.dt;
+	else
+		Vadd = std::max(Vadd * (1.0 - 0.2 * Input.dt), 0.007 * (std::abs(Input.engine_voltage) - (Input.max_voltage - 100)));
+	Output.Itot = eimv[eimv_Ipoj] * (0.01 + std::min(0.99, 0.99 - Vadd));
+
+	Output.EnginePower = abs(eimv[eimv_Ic] * eimv[eimv_U] * Input.powered_axles) / 1000;
+	Output.Mm = eimv[eimv_M] * Input.dir_absolute;
+	Output.Mw = Output.Mm * Input.ratio * Input.efficiency;
+	Output.Fw = Output.Mw * 2.0 / Input.wheel_diameter;
+	Output.Ft = Output.Fw * Input.powered_axles * Input.inverters_ratio;
+	eimv[eimv_Fr] = Input.dir_absolute * Output.Ft / 1000;
 }
 
 // *************************************************************************************************
@@ -6761,8 +6888,10 @@ double TMoverParameters::Momentum(double I)
 		if (!(RList[MainCtrlActualPos].ScndAct == 255))
 			SP = RList[MainCtrlActualPos].ScndAct;
 
-	//     Momentum:=mfi*I*(1-1.0/(Abs(I)/mIsat+1));
-	return motor_param(SP).mfi * I * (abs(I) / (abs(I) + motor_param(SP).mIsat) - motor_param(SP).mfi0);
+#ifdef VGRAPH_SHADOW_CHECK
+	shadow_compare("series_motor_momentum", motor_param(SP).mfi * I * (abs(I) / (abs(I) + motor_param(SP).mIsat) - motor_param(SP).mfi0), series_motor_momentum(I, motor_param(SP)));
+#endif
+	return series_motor_momentum(I, motor_param(SP));
 }
 
 // *************************************************************************************************
@@ -11741,6 +11870,176 @@ TEngineType TMoverParameters::LoadFIZ_EngineDecode(std::string const &Engine)
 // Q: 20160717
 // *************************************************************************************************
 
+// *************************************************************************************************
+// brake equipment factories, shared by CheckLocomotiveParameters and the vehicle graph
+// *************************************************************************************************
+std::shared_ptr<TBrake> make_brake_valve(brake_valve_setup const &Setup)
+{
+	std::shared_ptr<TBrake> result;
+	switch (Setup.valve)
+	{
+	case TBrakeValve::W:
+	case TBrakeValve::K:
+	{
+		WriteLog("XBT W, K");
+		result = std::make_shared<TWest>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		if (Setup.load_brake_mass < 2) // jesli przystawka wazaca
+			result->SetLP(0, Setup.max_brake_press, 0);
+		else
+			result->SetLP(Setup.mass, Setup.load_brake_mass, Setup.tare_max_brake_press);
+		break;
+	}
+	case TBrakeValve::KE:
+	{
+		WriteLog("XBT WKE");
+		result = std::make_shared<TKE>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		result->SetRM(Setup.rapid_mult);
+		if (Setup.load_brake_mass < 2) // jesli przystawka wazaca
+			result->SetLP(0, Setup.max_brake_press, 0);
+		else
+			result->SetLP(Setup.mass, Setup.load_brake_mass, Setup.tare_max_brake_press);
+		break;
+	}
+	case TBrakeValve::NESt3:
+	case TBrakeValve::ESt3:
+	case TBrakeValve::ESt3AL2:
+	case TBrakeValve::ESt4:
+	{
+		WriteLog("XBT NESt3, ESt3, ESt3AL2, ESt4");
+		result = std::make_shared<TNESt3>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		static_cast<TNESt3 *>(result.get())->SetSize(Setup.valve_size, Setup.valve_params);
+		if (Setup.load_brake_mass < 2) // jesli przystawka wazaca
+			result->SetLP(0, Setup.max_brake_press, 0);
+		else
+			result->SetLP(Setup.mass, Setup.load_brake_mass, Setup.tare_max_brake_press);
+		break;
+	}
+	case TBrakeValve::LSt:
+	{
+		WriteLog("XBT LSt");
+		result = std::make_shared<TLSt>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		result->SetRM(Setup.rapid_mult);
+		break;
+	}
+	case TBrakeValve::EStED:
+	{
+		WriteLog("XBT EStED");
+		result = std::make_shared<TEStED>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		result->SetRM(Setup.rapid_mult);
+		if (Setup.load_brake_mass < 2)
+		{
+			// jesli przystawka wazaca
+			result->SetLP(0, Setup.max_brake_press, 0);
+		}
+		else
+		{
+			result->SetLP(Setup.mass, Setup.load_brake_mass, Setup.tare_max_brake_press);
+		}
+		break;
+	}
+	case TBrakeValve::EP2:
+	{
+		WriteLog("XBT EP2");
+		result = std::make_shared<TEStEP2>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		result->SetLP(Setup.mass, Setup.load_brake_mass, Setup.tare_max_brake_press);
+		break;
+	}
+	case TBrakeValve::EP1:
+	{
+		WriteLog("XBT EP1");
+		result = std::make_shared<TEStEP1>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		result->SetLP(Setup.mass, Setup.load_brake_mass, Setup.tare_max_brake_press);
+		result->SetRM(Setup.rapid_mult);
+		break;
+	}
+	case TBrakeValve::CV1:
+	{
+		WriteLog("XBT CV1");
+		result = std::make_shared<TCV1>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		break;
+	}
+	case TBrakeValve::CV1_L_TR:
+	{
+		WriteLog("XBT CV1_L_T");
+		result = std::make_shared<TCV1L_TR>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+		break;
+	}
+	default:
+		result = std::make_shared<TBrake>(Setup.max_brake_press, Setup.cylinder_radius, Setup.cylinder_stroke, Setup.valve_volume, Setup.cylinder_count, Setup.delays, Setup.method, Setup.axles, Setup.blocks_per_axle);
+	}
+	return result;
+}
+
+std::shared_ptr<TDriverHandle> make_driver_handle(TBrakeHandle const Handle)
+{
+	std::shared_ptr<TDriverHandle> result;
+	switch (Handle)
+	{
+	case TBrakeHandle::FV4a:
+		result = std::make_shared<TFV4aM>();
+		break;
+	case TBrakeHandle::MHZ_EN57:
+	case TBrakeHandle::MHZ_K8P:
+		result = std::make_shared<TMHZ_EN57>();
+		break;
+	case TBrakeHandle::FVel6:
+		result = std::make_shared<TFVel6>();
+		break;
+	case TBrakeHandle::FVE408:
+		result = std::make_shared<TFVE408>();
+		break;
+	case TBrakeHandle::testH:
+		result = std::make_shared<Ttest>();
+		break;
+	case TBrakeHandle::M394:
+		result = std::make_shared<TM394>();
+		break;
+	case TBrakeHandle::Knorr:
+		result = std::make_shared<TH14K1>();
+		break;
+	case TBrakeHandle::St113:
+		result = std::make_shared<TSt113>();
+		break;
+	case TBrakeHandle::MHZ_K5P:
+		result = std::make_shared<TMHZ_K5P>();
+		break;
+	case TBrakeHandle::MHZ_6P:
+		result = std::make_shared<TMHZ_6P>();
+		break;
+	default:
+		result = std::make_shared<TDriverHandle>();
+	}
+	return result;
+}
+
+std::shared_ptr<TDriverHandle> make_local_brake_handle(TBrakeHandle const Handle, double const MaxPressure, bool const Emu)
+{
+	std::shared_ptr<TDriverHandle> result;
+	switch (Handle)
+	{
+	case TBrakeHandle::FD1:
+	{
+		result = std::make_shared<TFD1>();
+		result->Init(MaxPressure);
+		if (Emu)
+		{
+
+			dynamic_cast<TFD1 *>(result.get())->SetSpeed(3.5);
+		}
+		break;
+	}
+	case TBrakeHandle::Knorr:
+	{
+		result = std::make_shared<TH1405>();
+		result->Init(MaxPressure);
+		break;
+	}
+	default:
+		result = std::make_shared<TDriverHandle>();
+	}
+	return result;
+}
+
 bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
 {
 	WriteLog("check locomotive parameters...");
@@ -11793,161 +12092,34 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int Dir)
 	}
 	// WriteLog("BVV = "  + FloatToStr(BrakeVVolume));
 
-	switch (BrakeValve)
 	{
-	case TBrakeValve::W:
-	case TBrakeValve::K:
-	{
-		WriteLog("XBT W, K");
-		Hamulec = std::make_shared<TWest>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		if (MBPM < 2) // jesli przystawka wazaca
-			Hamulec->SetLP(0, MaxBrakePress[3], 0);
-		else
-			Hamulec->SetLP(Mass, MBPM, MaxBrakePress[1]);
-		break;
-	}
-	case TBrakeValve::KE:
-	{
-		WriteLog("XBT WKE");
-		Hamulec = std::make_shared<TKE>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		Hamulec->SetRM(RapidMult);
-		if (MBPM < 2) // jesli przystawka wazaca
-			Hamulec->SetLP(0, MaxBrakePress[3], 0);
-		else
-			Hamulec->SetLP(Mass, MBPM, MaxBrakePress[1]);
-		break;
-	}
-	case TBrakeValve::NESt3:
-	case TBrakeValve::ESt3:
-	case TBrakeValve::ESt3AL2:
-	case TBrakeValve::ESt4:
-	{
-		WriteLog("XBT NESt3, ESt3, ESt3AL2, ESt4");
-		Hamulec = std::make_shared<TNESt3>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		static_cast<TNESt3 *>(Hamulec.get())->SetSize(BrakeValveSize, BrakeValveParams);
-		if (MBPM < 2) // jesli przystawka wazaca
-			Hamulec->SetLP(0, MaxBrakePress[3], 0);
-		else
-			Hamulec->SetLP(Mass, MBPM, MaxBrakePress[1]);
-		break;
-	}
-	case TBrakeValve::LSt:
-	{
-		WriteLog("XBT LSt");
-		Hamulec = std::make_shared<TLSt>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		Hamulec->SetRM(RapidMult);
-		break;
-	}
-	case TBrakeValve::EStED:
-	{
-		WriteLog("XBT EStED");
-		Hamulec = std::make_shared<TEStED>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		Hamulec->SetRM(RapidMult);
-		if (MBPM < 2)
-		{
-			// jesli przystawka wazaca
-			Hamulec->SetLP(0, MaxBrakePress[3], 0);
-		}
-		else
-		{
-			Hamulec->SetLP(Mass, MBPM, MaxBrakePress[1]);
-		}
-		break;
-	}
-	case TBrakeValve::EP2:
-	{
-		WriteLog("XBT EP2");
-		Hamulec = std::make_shared<TEStEP2>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		Hamulec->SetLP(Mass, MBPM, MaxBrakePress[1]);
-		break;
-	}
-	case TBrakeValve::EP1:
-	{
-		WriteLog("XBT EP1");
-		Hamulec = std::make_shared<TEStEP1>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		Hamulec->SetLP(Mass, MBPM, MaxBrakePress[1]);
-		Hamulec->SetRM(RapidMult);
-		break;
-	}
-	case TBrakeValve::CV1:
-	{
-		WriteLog("XBT CV1");
-		Hamulec = std::make_shared<TCV1>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		break;
-	}
-	case TBrakeValve::CV1_L_TR:
-	{
-		WriteLog("XBT CV1_L_T");
-		Hamulec = std::make_shared<TCV1L_TR>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
-		break;
-	}
-	default:
-		Hamulec = std::make_shared<TBrake>(MaxBrakePress[3], BrakeCylRadius, BrakeCylDist, BrakeVVolume, BrakeCylNo, BrakeDelays, BrakeMethod, NAxles, NBpA);
+		brake_valve_setup setup;
+		setup.valve = BrakeValve;
+		setup.max_brake_press = MaxBrakePress[3];
+		setup.tare_max_brake_press = MaxBrakePress[1];
+		setup.cylinder_radius = BrakeCylRadius;
+		setup.cylinder_stroke = BrakeCylDist;
+		setup.valve_volume = BrakeVVolume;
+		setup.cylinder_count = BrakeCylNo;
+		setup.delays = BrakeDelays;
+		setup.method = BrakeMethod;
+		setup.axles = NAxles;
+		setup.blocks_per_axle = NBpA;
+		setup.mass = Mass;
+		setup.load_brake_mass = MBPM;
+		setup.rapid_mult = RapidMult;
+		setup.valve_size = BrakeValveSize;
+		setup.valve_params = BrakeValveParams;
+		Hamulec = make_brake_valve(setup);
 	}
 
 	Hamulec->SetASBP(MaxBrakePress[4]);
 	Hamulec->SetRV(RapidVel);
 
-	switch (BrakeHandle)
-	{
-	case TBrakeHandle::FV4a:
-		Handle = std::make_shared<TFV4aM>();
-		break;
-	case TBrakeHandle::MHZ_EN57:
-	case TBrakeHandle::MHZ_K8P:
-		Handle = std::make_shared<TMHZ_EN57>();
-		break;
-	case TBrakeHandle::FVel6:
-		Handle = std::make_shared<TFVel6>();
-		break;
-	case TBrakeHandle::FVE408:
-		Handle = std::make_shared<TFVE408>();
-		break;
-	case TBrakeHandle::testH:
-		Handle = std::make_shared<Ttest>();
-		break;
-	case TBrakeHandle::M394:
-		Handle = std::make_shared<TM394>();
-		break;
-	case TBrakeHandle::Knorr:
-		Handle = std::make_shared<TH14K1>();
-		break;
-	case TBrakeHandle::St113:
-		Handle = std::make_shared<TSt113>();
-		break;
-	case TBrakeHandle::MHZ_K5P:
-		Handle = std::make_shared<TMHZ_K5P>();
-		break;
-	case TBrakeHandle::MHZ_6P:
-		Handle = std::make_shared<TMHZ_6P>();
-		break;
-	default:
-		Handle = std::make_shared<TDriverHandle>();
-	}
+	Handle = make_driver_handle(BrakeHandle);
 	Handle->SetParams(Handle_AutomaticOverload, Handle_ManualOverload, Handle_GenericDoubleParameter1, Handle_GenericDoubleParameter2, Handle_OverloadMaxPressure, Handle_OverloadPressureDecrease);
 
-	switch (BrakeLocHandle)
-	{
-	case TBrakeHandle::FD1:
-	{
-		LocHandle = std::make_shared<TFD1>();
-		LocHandle->Init(MaxBrakePress[0]);
-		if (TrainType == dt_EZT)
-		{
-
-			dynamic_cast<TFD1 *>(LocHandle.get())->SetSpeed(3.5);
-		}
-		break;
-	}
-	case TBrakeHandle::Knorr:
-	{
-		LocHandle = std::make_shared<TH1405>();
-		LocHandle->Init(MaxBrakePress[0]);
-		break;
-	}
-	default:
-		LocHandle = std::make_shared<TDriverHandle>();
-	}
+	LocHandle = make_local_brake_handle(BrakeLocHandle, MaxBrakePress[0], TrainType == dt_EZT);
 
 	if (true == TestFlag(BrakeDelays, bdelay_G) && (false == TestFlag(BrakeDelays, bdelay_R) || Power > 1.0)) // ustalanie srednicy przewodu glownego (lokomotywa lub napędowy
 		Spg = 0.792;
@@ -12830,6 +13002,12 @@ double TMoverParameters::ShowCurrentP(int AmpN) const
 
 bool TMoverParameters::reload_FIZ()
 {
+	if (Graph)
+	{
+		// the .vhg of a graph vehicle is reloaded by the preview server of the graph editor
+		WriteLog("[DEV] " + Name + " is defined by a vehicle graph, it has no .fiz to reload");
+		return true;
+	}
 	WriteLog("[DEV] Reloading FIZ for " + Name);
 	// pause simulation
 	Global.iPause |= 0b1000;

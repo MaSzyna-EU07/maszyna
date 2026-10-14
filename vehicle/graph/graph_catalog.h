@@ -18,6 +18,8 @@ http://mozilla.org/MPL/2.0/.
 namespace vgraph
 {
 
+struct node_desc;
+
 // where the behaviour of a block comes from; shown by the editor
 enum class block_origin : std::uint8_t
 {
@@ -42,9 +44,18 @@ struct block_type
 	// outputs of a deferred block are published after the whole step, so connections leaving it don't take part
 	// in ordering the blocks, and loops passing through it are allowed
 	bool deferred{false};
+	// late_update() is called for the blocks of this type after all blocks were updated
+	bool late{false};
+	// at most one block of this type in a graph, because it stands for a part of the vehicle the simulator has only one of
+	bool single{false};
 	std::vector<port_def> ports;
 	std::vector<param_def> params;
 	block_factory create{nullptr};
+	// blocks whose ports and parameters depend on the node, e.g. lua blocks described by their script. the resolver
+	// fills the node's ports and parameters in place of the ones above; returns false with the reason on failure
+	bool dynamic_ports{false};
+	using port_resolver = bool (*)(node_desc const &Node, std::vector<port_def> &Ports, std::vector<param_def> &Params, std::string &Error);
+	port_resolver resolve{nullptr};
 
 	int port_index(std::string_view Key) const;
 	int param_index(std::string_view Key) const;
@@ -82,9 +93,23 @@ param_def number_param(std::string Key, double Default, std::string Unit = "");
 param_def boolean_param(std::string Key, bool Default);
 param_def text_param(std::string Key, std::string Default = "");
 param_def choice_param(std::string Key, std::vector<std::string> Choices, std::string Default);
+param_def table_param(std::string Key, std::vector<std::string> Columns);
+// marks the parameter as standing for the specified .fiz entry, e.g. fiz(number_param("max_bp", 0.0, "bar"), "Brake:", "MaxBP")
+param_def fiz(param_def Definition, std::string Section, std::string Key);
+// placement of cab controls and indicators: the cab whose model holds the submodel
+param_def cab_param();
 
 // registration functions of the block families, called once when the catalog is built
 void register_logic_blocks(catalog &Catalog);
 void register_cab_blocks(catalog &Catalog);
+void register_script_blocks(catalog &Catalog);
+void register_vehicle_blocks(catalog &Catalog);
+void register_pneumatic_blocks(catalog &Catalog);
+void register_security_blocks(catalog &Catalog);
+void register_electric_blocks(catalog &Catalog);
+void register_drive_blocks(catalog &Catalog);
+void register_diesel_blocks(catalog &Catalog);
+void register_interface_blocks(catalog &Catalog);
+void register_module_blocks(catalog &Catalog);
 
 } // namespace vgraph

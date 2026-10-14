@@ -371,6 +371,7 @@ private:
 // members
 public:
     bool AIControllFlag = false; // rzeczywisty/wirtualny maszynista
+    bool m_graphvehiclewarning { false }; // the AI was told it can't drive the graph vehicle
     int iOverheadZero = 0; // suma bitowa jezdy bezprądowej, bity ustawiane przez pojazdy z podniesionymi pantografami
     int iOverheadDown = 0; // suma bitowa opuszczenia pantografów, bity ustawiane przez pojazdy z podniesionymi pantografami
     double BrakeCtrlPosition = 0.0; // intermediate position of main brake controller

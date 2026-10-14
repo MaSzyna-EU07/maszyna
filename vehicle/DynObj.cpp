@@ -28,6 +28,9 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Traction.h"
 #include "audio/sound.h"
 #include "model/MdlMngr.h"
+#include "vehicle/graph/graph_instance.h"
+#include "vehicle/graph/graph_catalog.h"
+#include "vehicle/graph/blocks/cab.h"
 #include "model/Model3d.h"
 #include "rendering/renderer.h"
 #include "application/uitranscripts.h"
@@ -830,6 +833,10 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
     // model jest współdzielony przez pojazdy, a pora roku może się zmienić w trakcie symulacji
     if (Global.UpdateMaterials)
         on_season_update();
+
+    if( false == m_graphanimations.empty() ) {
+        update_graph_animations();
+    }
 
     if (ObjSqrDist < 400 * 400 ) // gdy bliżej niż 400m
     {
@@ -1984,7 +1991,15 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     // utworzenie parametrów fizyki
     MoverParameters = new TMoverParameters(iDirection ? fVel : -fVel, Type_Name, asName, Cab);
     // McZapkie: TypeName musi byc nazwą CHK/MMD pojazdu
-    if (!MoverParameters->LoadFIZ(asBaseDir))
+    // a vehicle graph (.vhg) next to the .mmd defines the vehicle in place of the .fiz
+    auto const graphfile { asBaseDir + Type_Name + std::string{ vgraph::file_extension } };
+    if( FileExists( graphfile ) ) {
+        if( false == MoverParameters->LoadGraph( graphfile ) ) {
+            ErrorLog( "Bad vehicle: failed to load vehicle graph from file \"" + BaseDir + "/" + Type_Name + std::string{ vgraph::file_extension } + "\"" );
+            return 0.0;
+        }
+    }
+    else if (!MoverParameters->LoadFIZ(asBaseDir))
     { // jak wczytanie CHK się nie uda, to błąd
         if (ConversionError == 666)
             ErrorLog( "Bad vehicle: failed to locate definition file \"" + BaseDir + "/" + Type_Name + ".fiz" + "\"" );
@@ -2314,6 +2329,10 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     // wczytywanie z pliku nazwatypu.mmd, w tym model
     erase_extension( asReplacableSkin );
     LoadMMediaFile(Type_Name, asReplacableSkin);
+    if( MoverParameters->Graph ) {
+        create_graph_sounds();
+        create_graph_animations();
+    }
     // McZapkie-100402: wyszukiwanie submodeli sprzegów
     btCoupler1.Init( "coupler1", mdModel ); // false - ma być wyłączony
     btCoupler2.Init( "coupler2", mdModel );
@@ -3193,6 +3212,10 @@ bool TDynamicObject::Update(double dt, double dt1)
     tmpTraction.TractionResistivity = 0.3;
 
     MoverParameters->PantographVoltage = tmpTraction.TractionVoltage;
+    if( MoverParameters->Graph ) {
+        // the headlights of a graph vehicle are dimmed by its graph (veh.lights)
+        DimHeadlights = MoverParameters->Graph->body().headlights_dimmed;
+    }
     // McZapkie: predkosc w torze przekazac do TrackParam
     // McZapkie: Vel ma wymiar [km/h] (absolutny), V ma wymiar [m/s], taka przyjalem notacje
     tp.Velmax = MyTrack->VelocityGet();
@@ -4353,13 +4376,170 @@ void TDynamicObject::TurnOff()
 	btMechanik2.Turn( false );
     btShutters1.Turn( false );
     btShutters2.Turn( false );
+    // elements of a graph vehicle back in their default (off) state, which the other vehicles sharing the model see
+    for( auto const &item : m_graphanimations ) {
+        if( item.kind != graph_animation::kind_type::visible ) { continue; }
+        if( item.submodel != nullptr )     { item.submodel->iVisible = 0; }
+        if( item.submodel_off != nullptr ) { item.submodel_off->iVisible = 1; }
+    }
 };
 
 // przeliczanie dźwięków, bo będzie słychać bez wyświetlania sektora z pojazdem
+void TDynamicObject::create_graph_sounds() {
+
+    m_graphsounds.clear();
+    auto &graph { *MoverParameters->Graph };
+    auto const &nodes { graph.definition().nodes() };
+    for( std::size_t idx = 0; idx < nodes.size(); ++idx ) {
+        auto const *block { dynamic_cast<vgraph::vehicle_sound const *>( &graph.node_block( idx ) ) };
+        if( block == nullptr || block->file().empty() ) { continue; }
+        // the same placements as the sounds of the .mmd files
+        auto const placement {
+            block->placement() == vgraph::vehicle_sound::placement_type::internal ? sound_placement::internal :
+            block->placement() == vgraph::vehicle_sound::placement_type::engine ? sound_placement::engine :
+            block->placement() == vgraph::vehicle_sound::placement_type::external ? sound_placement::external :
+            block->placement() == vgraph::vehicle_sound::placement_type::external_ambient ? sound_placement::external_ambient :
+            sound_placement::general };
+        sound_source sound { placement, static_cast<float>( block->range() > 0.0 ? block->range() : EU07_SOUND_RUNNINGNOISECUTOFFRANGE ) };
+        sound.deserialize( block->file(), sound_type::single );
+        sound.owner( this );
+        sound.offset( { static_cast<float>( block->offset_x() ), static_cast<float>( block->offset_y() ), static_cast<float>( block->offset_z() ) } );
+        m_graphsounds.push_back( { block, sound } );
+    }
+}
+
+void TDynamicObject::render_graph_sounds() {
+
+    for( auto &item : m_graphsounds ) {
+        auto const &block { *item.block };
+        auto &sound { item.sound };
+        auto const activated { block.playing() && false == item.active };
+        item.active = block.playing();
+        if( false == item.active ) {
+            if( block.loop() && sound.is_playing() ) {
+                sound.stop();
+            }
+            continue;
+        }
+        sound.gain( block.volume() );
+        sound.pitch( block.pitch() );
+        if( block.loop() ) {
+            sound.play( sound_flags::exclusive | sound_flags::looping );
+        }
+        else if( activated ) {
+            // other sounds play once per activation of the input
+            sound.play( sound_flags::exclusive );
+        }
+    }
+}
+
+// the models are shared by all vehicles of the same type (TModelsManager), so the submodels hold the state of whichever
+// vehicle set them last. the renderers call ABuLittleUpdate() for every vehicle right before drawing its models, with
+// TSubModel::iInstance set to that vehicle, and TurnOff() after drawing them when btnOn is set:
+// - SetRotate() and SetTranslate() stamp the submodel with iInstance (iAnimOwner), and the renderer applies the transform
+//   only while drawing the same instance, so a vehicle which doesn't set it draws the submodel at rest, as for the doors;
+// - visibility has no owner, so like the TButtons of the lights the elements are shown in ABuLittleUpdate() only for
+//   the vehicle being drawn, and TurnOff() puts them back into the off state, which is also the state they're left in here
+void TDynamicObject::create_graph_animations() {
+
+    m_graphanimations.clear();
+    auto &graph { *MoverParameters->Graph };
+    auto const &nodes { graph.definition().nodes() };
+    for( std::size_t idx = 0; idx < nodes.size(); ++idx ) {
+        auto const &node { nodes[ idx ] };
+        auto const isanimation { node.type->id == "veh.anim" };
+        if( false == isanimation && node.type->id != "veh.visible" ) { continue; }
+        // parameters by their keys, so this doesn't depend on the block classes
+        auto const param = [&]( std::string_view const Key ) -> std::string const & {
+            static std::string const none;
+            for( std::size_t paramidx = 0; paramidx < node.param_defs.size(); ++paramidx ) {
+                if( node.param_defs[ paramidx ].key == Key ) {
+                    return node.params[ paramidx ].text;
+                }
+            }
+            return none;
+        };
+        auto const &submodelname { param( "submodel" ) };
+        auto const &submodeloffname { isanimation ? std::string{} : param( "submodel_off" ) };
+        if( submodelname.empty() && submodeloffname.empty() ) { continue; }
+        auto const lowpoly { param( "model" ) == "lowpoly" };
+        auto const *model { lowpoly ? mdLowPolyInt : mdModel };
+        if( model == nullptr ) {
+            ErrorLog( "Bad model: block \"" + node.id + "\" of the vehicle graph uses the " + ( lowpoly ? "low poly interior" : "vehicle" ) + " model, which \"" + name() + "\" doesn't have", logtype::model );
+            continue;
+        }
+        auto const find = [&]( std::string const &Name ) -> TSubModel * {
+            if( Name.empty() ) { return nullptr; }
+            auto *submodel { model->GetFromName( Name ) };
+            if( submodel == nullptr ) {
+                ErrorLog( "Bad model: failed to locate sub-model \"" + Name + "\" of block \"" + node.id + "\" in the " + ( lowpoly ? "low poly interior" : "vehicle" ) + " model of \"" + name() + "\"", logtype::model );
+            }
+            return submodel;
+        };
+        graph_animation item;
+        item.block = &graph.node_block( idx );
+        item.kind = (
+            false == isanimation ? graph_animation::kind_type::visible :
+            param( "animation" ) == "move" ? graph_animation::kind_type::move :
+            graph_animation::kind_type::rotate );
+        item.state = 0;
+        auto const statename { isanimation ? "anim" : "on" };
+        for( std::size_t stateidx = 0; stateidx < item.block->state_count(); ++stateidx ) {
+            if( std::string_view{ item.block->state_name( stateidx ) } == statename ) {
+                item.state = stateidx;
+            }
+        }
+        item.submodel = find( submodelname );
+        item.submodel_off = find( submodeloffname );
+        if( item.submodel == nullptr && item.submodel_off == nullptr ) { continue; }
+        if( item.kind == graph_animation::kind_type::visible ) {
+            // the off state, like TButton::Init()
+            if( item.submodel != nullptr )     { item.submodel->iVisible = 0; }
+            if( item.submodel_off != nullptr ) { item.submodel_off->iVisible = 1; }
+        }
+        m_graphanimations.push_back( item );
+    }
+}
+
+void TDynamicObject::update_graph_animations() {
+
+    for( auto const &item : m_graphanimations ) {
+        auto const value { item.block->state_value( item.state ) };
+        switch( item.kind ) {
+            case graph_animation::kind_type::rotate: {
+                // degrees about the y axis, as TGauge (gt_Rotate)
+                item.submodel->SetRotate( float3( 0, 1, 0 ), static_cast<float>( value ) );
+                break;
+            }
+            case graph_animation::kind_type::move: {
+                // millimetres along the z axis, as TGauge (gt_Move)
+                item.submodel->SetTranslate( float3( 0, 0, static_cast<float>( value * 0.001 ) ) );
+                break;
+            }
+            default: {
+                auto const on { value > 0.5 };
+                if( item.submodel != nullptr )     { item.submodel->iVisible = on; }
+                if( item.submodel_off != nullptr ) { item.submodel_off->iVisible = !on; }
+                if( on ) {
+                    // restored by TurnOff() after drawing
+                    btnOn = true;
+                }
+                break;
+            }
+        }
+    }
+}
+
 void TDynamicObject::RenderSounds() {
 
     if( false == simulation::is_ready ) { return; }
     if( Global.iPause != 0 )            { return; }
+
+    if( MoverParameters->Graph ) {
+        // a graph vehicle has only the sounds of its graph
+        render_graph_sounds();
+        return;
+    }
 
     if( m_startjoltplayed
      && ( std::abs(MoverParameters->AccSVBased) < 0.01
@@ -5919,6 +6099,14 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 
         } // models
 
+		else if( token == "sounds:" && MoverParameters->Graph ) {
+			// sounds of a graph vehicle are defined by its graph
+			do {
+				token = "";
+				parser.getTokens(); parser >> token;
+			} while( token != ""
+				  && token != "endsounds" );
+		}
 		else if( token == "sounds:" ) {
 			// dzwieki
 			do {

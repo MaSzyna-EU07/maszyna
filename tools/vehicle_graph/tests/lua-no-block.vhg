@@ -1,0 +1,2 @@
+// expect: error doesn't call block
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "b", "type": "lua.block", "lua": "local x = 1\n" } ] }

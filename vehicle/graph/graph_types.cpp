@@ -75,6 +75,8 @@ std::string_view to_string(param_type const Type)
 		return "text";
 	case param_type::choice:
 		return "choice";
+	case param_type::table:
+		return "table";
 	default:
 		return "number";
 	}
@@ -110,6 +112,38 @@ param_value param_value::make_choice(std::string Value)
 	result.type = param_type::choice;
 	result.text = std::move(Value);
 	return result;
+}
+
+param_value param_value::make_table(std::vector<std::vector<double>> Rows)
+{
+	param_value result;
+	result.type = param_type::table;
+	result.rows = std::move(Rows);
+	return result;
+}
+
+int find_port(std::vector<port_def> const &Ports, std::string_view const Key)
+{
+	for (std::size_t idx = 0; idx < Ports.size(); ++idx)
+	{
+		if (Ports[idx].key == Key)
+		{
+			return static_cast<int>(idx);
+		}
+	}
+	return -1;
+}
+
+int find_param(std::vector<param_def> const &Params, std::string_view const Key)
+{
+	for (std::size_t idx = 0; idx < Params.size(); ++idx)
+	{
+		if (Params[idx].key == Key)
+		{
+			return static_cast<int>(idx);
+		}
+	}
+	return -1;
 }
 
 bool has_errors(std::vector<diagnostic> const &Diagnostics)

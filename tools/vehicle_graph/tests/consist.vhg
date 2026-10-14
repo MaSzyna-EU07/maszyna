@@ -1,0 +1,31 @@
+// expect: ok
+// train lines of the multiple unit control (if.line); run as a consist of four vehicles (see consist.script):
+// 1 this, 2 this reversed, 3 consist-short.vhg (without the lines "nastawnik" and "suma"), 4 this
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "train line test" },
+	"body": { "mass": 40000, "length": 20 },
+	"nodes": [
+		{ "id": "dir", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "l_dir", "type": "if.line", "params": { "name": "kierunek", "combine": "maxabs", "reverse": true } },
+		{ "id": "ctrl", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "ctrl_act", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "l_ctrl", "type": "if.line", "params": { "name": "nastawnik", "combine": "max" } },
+		{ "id": "l_ctrl_min", "type": "if.line", "params": { "name": "nastawnik", "combine": "min" } },
+		{ "id": "door_l", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "door_r", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "l_door_l", "type": "if.line", "params": { "name": "drzwi_lewe", "pair": "drzwi_prawe", "combine": "or" } },
+		{ "id": "l_door_r", "type": "if.line", "params": { "name": "drzwi_prawe", "pair": "drzwi_lewe", "combine": "or" } },
+		{ "id": "one", "type": "logic.const", "params": { "value": 1 } },
+		{ "id": "l_sum", "type": "if.line", "params": { "name": "suma", "combine": "sum", "coupling": "permanent" } }
+	],
+	"connections": [
+		{ "from": "dir.q", "to": "l_dir.in" },
+		{ "from": "ctrl.q", "to": "l_ctrl.in" },
+		{ "from": "ctrl_act.q", "to": "l_ctrl.active" },
+		{ "from": "door_l.q", "to": "l_door_l.in" },
+		{ "from": "door_r.q", "to": "l_door_r.in" },
+		{ "from": "one.q", "to": "l_sum.in" }
+	]
+}

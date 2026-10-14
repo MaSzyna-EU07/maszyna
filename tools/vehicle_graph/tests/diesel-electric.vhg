@@ -1,0 +1,37 @@
+// expect: ok
+// diesel-electric locomotive: engine, main generator, four series dc traction motors in parallel. the controller sets
+// both the engine speed and the excitation of the generator; the motors are connected from its first position.
+// start the engine, raise the controller step by step: the generator voltage rises with the excitation and the speed
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "diesel electric test" },
+	"body": { "mass": 72000, "length": 14.24, "wheel_diameter": 1.0, "axle_arrangement": "Bo'Bo'", "power": 588, "vmax": 90, "bearing": "roll" },
+	"nodes": [
+		{ "id": "starter", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "throttle", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 11, "min": 0, "max": 1, "default": 0 } },
+		{ "id": "reverser", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 3, "min": -1, "max": 1, "default": 1 } },
+		{ "id": "power", "type": "logic.compare", "params": { "op": "gt", "value": 0 } },
+		{ "id": "engine", "type": "drive.diesel", "params": { "idle_rpm": 600, "max_rpm": 1500 } },
+		{ "id": "gen", "type": "drive.generator", "params": { "u_max": 750, "i_max": 2400, "p_max": 330, "nominal_rpm": 1500, "eff": 0.93, "field_time": 0.5, "inertia": 20 } },
+		{ "id": "motors", "type": "drive.dc_series", "params": {
+			"winding_res": 0.05, "circuit_res": 0.02, "volt": 750, "imax_lo": 900, "imax_hi": 900, "trip_delay": 1.0,
+			"mpt": [[0, 3.6, 200, 0.0, 22.6, 200, 0.0]],
+			"rlist": [[0, 0, 0, 0, 0], [1, 0, 4, 1, 0]] } },
+		{ "id": "final", "type": "drive.gear", "params": { "ratio": 5.0, "eff": 0.97 } },
+		{ "id": "axles", "type": "drive.axle", "params": { "powered_axles": 4 } },
+		{ "id": "vs", "type": "veh.state" }
+	],
+	"connections": [
+		{ "from": "starter.pos", "to": "engine.start" },
+		{ "from": "throttle.pos", "to": "engine.demand" },
+		{ "from": "throttle.pos", "to": "gen.excitation" },
+		{ "from": "throttle.pos", "to": "power.a" },
+		{ "from": "power.q", "to": "motors.position" },
+		{ "from": "reverser.pos", "to": "motors.dir" },
+		{ "from": "engine.shaft", "to": "gen.in" },
+		{ "from": "gen.out", "to": "motors.wn" },
+		{ "from": "motors.shaft", "to": "final.in" },
+		{ "from": "final.out", "to": "axles.shaft" }
+	]
+}

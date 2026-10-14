@@ -1,0 +1,2 @@
+// expect: error body parameter "mass" has to be a number
+{ "format": "maszyna-vehicle-graph", "version": 2, "body": { "mass": "heavy" }, "nodes": [ { "id": "c", "type": "logic.const" } ] }

@@ -1,0 +1,3 @@
+// expect: error uses itself
+{ "format": "maszyna-vehicle-graph", "version": 2,
+  "nodes": [ { "id": "m", "type": "module", "params": { "file": "modules/self.vhgm" } } ] }

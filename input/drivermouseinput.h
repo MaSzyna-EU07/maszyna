@@ -92,6 +92,9 @@ private:
     // potentially replaces supplied command with a more relevant one
     user_command
         adjust_command( user_command Command );
+    // posts the command; commands of vehicle graph controls carry the name of the control
+    void
+        post( user_command const Command, int const Action );
 
 // members
     command_relay m_relay;
@@ -109,6 +112,9 @@ private:
     glm::dvec2 m_varyingpollrateorigin; // helper, cursor position when the command was initiated
     std::array<int, GLFW_MOUSE_BUTTON_LAST> m_buttons;
     bool m_pickwaiting;
+    // control of a vehicle graph under the cursor (label "graph:<id>"), and the direction given by the mouse button
+    std::string m_graphcontrol;
+    double m_graphdirection { 0.0 };
 };
 
 //---------------------------------------------------------------------------

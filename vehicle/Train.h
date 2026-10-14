@@ -22,6 +22,11 @@ http://mozilla.org/MPL/2.0/.
 
 #undef snprintf // pyint.h->python
 
+namespace vgraph
+{
+class cab_switch;
+} // namespace vgraph
+
 // typedef enum {st_Off, st_Starting, st_On, st_ShuttingDown} T4State;
 
 const double fCzuwakBlink = 0.15;
@@ -38,6 +43,8 @@ public:
     void Update( bool const Power );
     TGauge &Gauge( int n = -1 ); // pobranie adresu obiektu
     TButton &Button( int n = -1 ); // pobranie adresu obiektu
+    // removes the controls and indicators read from the .mmd, which graph vehicles don't use
+    void ClearControls();
 // members
 	glm::vec3 CabPos1{0, 1, 1};
 	glm::vec3 CabPos2{0, 1, -1};
@@ -193,6 +200,12 @@ class TTrain {
     bool initialize_gauge(cParser &Parser, std::string const &Label, int const Cabindex);
     // initializes a button matching provided label. returns: true if the label was found, false otherwise
     bool initialize_button(cParser &Parser, std::string const &Label, int const Cabindex);
+    // vehicle graph: creates the controls and indicators of the cab from the cab blocks of the graph, in place of the ones of the .mmd
+    void initialize_graph_controls(int const Cabindex);
+    // vehicle graph: passes the command to the controls of the graph. returns: true if a control took it
+    bool graph_command(command_data const &Command);
+    // vehicle graph: adds the values of the fb.export blocks to the state for the python screens
+    void export_graph_values(dictionary_source &Dictionary) const;
     // helper, returns true for EMU with oerlikon brake
     bool is_eztoer() const;
     // locates nearest vehicle belonging to the consist
@@ -520,6 +533,12 @@ class TTrain {
     int m_linebreakerstate { 0 }; // 0: open, 1: closed, 2: freshly closed (and yes this is awful way to go about it)
     static const commandhandler_map m_commandhandlers;
     control_mapper m_controlmapper;
+    // vehicle graph: controls operated by the commands of the simulator (command, key_inc, key_dec parameters of cab.switch)
+    struct graph_command_binding {
+        vgraph::cab_switch *control;
+        int operation; // 0: press/release, 1: increase, -1: decrease
+    };
+    std::unordered_map<user_command, std::vector<graph_command_binding>> m_graphcommands;
 
 public: // reszta może by?publiczna
 

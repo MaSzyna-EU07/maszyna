@@ -55,6 +55,10 @@ public:
     void AssignBool(bool *bValue);
     void UpdateValue();
     void AssignState( bool const *State );
+    // sounds of a control defined outside the cab section of the .mmd file (vehicle graph): Increase and Decrease in the
+    // format of soundinc: and sounddec:, Positions as the soundN: entries of a control block (e.g. "sound0: a.wav sound1: b.wav").
+    // to take their place in the cab from the submodel, assign them before Init()
+    void AssignSounds( std::string const &Increase, std::string const &Decrease, std::string const &Positions, TDynamicObject const *Owner );
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
     TGaugeType type() const;

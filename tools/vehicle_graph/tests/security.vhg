@@ -1,0 +1,30 @@
+// expect: ok
+// vigilance device at 50 km/h without acknowledgement: lamp after the aware delay, buzzer after the sound delay,
+// then emergency braking through the brake pipe; acknowledged in time once, then left alone
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "security test" },
+	"body": { "mass": 80000, "length": 16, "wheel_diameter": 1.25, "axle_arrangement": "Bo'Bo'", "vmax": 120 },
+	"nodes": [
+		{ "id": "reset", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "speed", "type": "logic.const", "params": { "value": 50 } },
+		{ "id": "power", "type": "logic.const", "params": { "value": 1 } },
+		{ "id": "ca", "type": "sec.ca", "params": { "aware": true, "cab_signal": false, "aware_delay": 10, "sound_delay": 2, "emergency_delay": 3, "min_speed": 10 } },
+		{ "id": "res", "type": "pn.reservoir", "params": { "volume": 0.8 } },
+		{ "id": "gov", "type": "pn.governor", "params": { "min": 7.5, "max": 8.5 } },
+		{ "id": "brake", "type": "logic.const", "params": { "value": 0 } },
+		{ "id": "fv4a", "type": "br.handle", "params": { "type": "FV4a" } },
+		{ "id": "pipe", "type": "br.pipe" }
+	],
+	"connections": [
+		{ "from": "speed.q", "to": "ca.v" },
+		{ "from": "power.q", "to": "ca.power" },
+		{ "from": "reset.pos", "to": "ca.reset" },
+		{ "from": "ca.brake", "to": "pipe.vent" },
+		{ "from": "res.out", "to": "fv4a.zg" },
+		{ "from": "brake.q", "to": "fv4a.pos" },
+		{ "from": "fv4a.pg", "to": "pipe.in" },
+		{ "from": "res.p", "to": "gov.p" }
+	]
+}

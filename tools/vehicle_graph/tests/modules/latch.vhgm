@@ -1,0 +1,25 @@
+// module for tests/module.vhg: a latching relay with an inverted output (from a nested module), an input
+// passed straight to an output, and a nested module with its input left unconnected (it sees the default value)
+{
+	"format": "maszyna-vehicle-graph", "version": 2,
+	"vehicle": { "name": "latch" },
+	"nodes": [
+		{ "id": "on", "type": "module.input", "params": { "type": "bool", "label": "close" } },
+		{ "id": "off", "type": "module.input", "params": { "type": "bool", "label": "open" } },
+		{ "id": "note", "type": "module.input", "params": { "type": "float", "default": 2 } },
+		{ "id": "sr", "type": "logic.sr" },
+		{ "id": "inv", "type": "module", "params": { "file": "inverter.vhgm" } },
+		{ "id": "inv2", "type": "module", "params": { "file": "inverter.vhgm" } },
+		{ "id": "q", "type": "module.output", "params": { "type": "bool" } },
+		{ "id": "nq", "type": "module.output", "params": { "type": "bool" } },
+		{ "id": "echo", "type": "module.output", "params": { "type": "float" } },
+		{ "id": "nq2", "type": "module.output", "params": { "type": "bool" } }
+	],
+	"connections": [
+		{ "from": "on.out", "to": "sr.s" }, { "from": "off.out", "to": "sr.r" },
+		{ "from": "sr.q", "to": "q.in" },
+		{ "from": "sr.q", "to": "inv.a" }, { "from": "inv.q", "to": "nq.in" },
+		{ "from": "note.out", "to": "echo.in" },
+		{ "from": "inv2.q", "to": "nq2.in" }
+	]
+}

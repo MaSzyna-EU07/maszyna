@@ -1,0 +1,3 @@
+// expect: error can't open file
+{ "format": "maszyna-vehicle-graph", "version": 2,
+  "nodes": [ { "id": "m", "type": "module", "params": { "file": "modules/none.vhgm" } } ] }

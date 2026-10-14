@@ -1,0 +1,35 @@
+// expect: ok
+// diesel locomotive with a hydraulic transmission: engine, torque converter with a lockup clutch, final drive.
+// start the engine, select the direction, raise the controller: the converter fills and the locomotive drives off; above
+// the lockup speed the converter is bridged; with the controller at zero the locomotive coasts with the
+// engine braking through the lockup clutch; stopping the engine releases the lockup clutch and drains the converter
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "diesel hydraulic test" },
+	"body": { "mass": 64000, "length": 14.2, "wheel_diameter": 1.0, "axle_arrangement": "B'B'", "power": 400, "vmax": 90, "bearing": "roll" },
+	"nodes": [
+		{ "id": "starter", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "stop", "type": "cab.switch", "params": { "behaviour": "monostable" } },
+		{ "id": "throttle", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 11, "min": 0, "max": 1, "default": 0 } },
+		{ "id": "reverser", "type": "cab.switch", "params": { "behaviour": "multi", "positions": 3, "min": -1, "max": 1, "default": 1 } },
+		{ "id": "power", "type": "logic.compare", "params": { "op": "gt", "value": 0 } },
+		{ "id": "engine", "type": "drive.diesel", "params": { "idle_rpm": 600, "max_rpm": 1500 } },
+		{ "id": "tc", "type": "drive.hydro", "params": { "idle_rpm": 600, "lockup_speed": 60, "unlock_speed": 50, "fill_rate": 0.5, "drain_rate": 1.0 } },
+		{ "id": "final", "type": "drive.gear", "params": { "ratio": 3.6, "eff": 0.97 } },
+		{ "id": "axles", "type": "drive.axle", "params": { "powered_axles": 1 } },
+		{ "id": "vs", "type": "veh.state" }
+	],
+	"connections": [
+		{ "from": "starter.pos", "to": "engine.start" },
+		{ "from": "stop.pos", "to": "engine.stop" },
+		{ "from": "throttle.pos", "to": "engine.demand" },
+		{ "from": "throttle.pos", "to": "power.a" },
+		{ "from": "power.q", "to": "tc.power" },
+		{ "from": "engine.running", "to": "tc.running" },
+		{ "from": "reverser.pos", "to": "tc.dir" },
+		{ "from": "engine.shaft", "to": "tc.in" },
+		{ "from": "tc.out", "to": "final.in" },
+		{ "from": "final.out", "to": "axles.shaft" }
+	]
+}

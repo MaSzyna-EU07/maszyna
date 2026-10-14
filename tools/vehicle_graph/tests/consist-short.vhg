@@ -1,0 +1,15 @@
+// expect: ok
+// vehicle of the consist test (consist.vhg) with the direction and door lines only: the lines "nastawnik" and "suma"
+// end at it
+{
+	"format": "maszyna-vehicle-graph",
+	"version": 2,
+	"vehicle": { "name": "train line test, short" },
+	"body": { "mass": 40000, "length": 20 },
+	"nodes": [
+		{ "id": "l_dir", "type": "if.line", "params": { "name": "kierunek", "combine": "maxabs", "reverse": true } },
+		{ "id": "l_door_l", "type": "if.line", "params": { "name": "drzwi_lewe", "pair": "drzwi_prawe", "combine": "or" } },
+		{ "id": "l_door_r", "type": "if.line", "params": { "name": "drzwi_prawe", "pair": "drzwi_lewe", "combine": "or" } }
+	],
+	"connections": []
+}

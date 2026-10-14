@@ -1,0 +1,33 @@
+# events for: -graph-run 303e.vhg -script 303e.script -state ready
+# options: -state ready -every 100
+# start up from the cab, drive off with the resistors, run on position 20, then brake with the train brake to a stop
+0.0   toggle  bat
+0.5   toggle  pant_f
+1.0   press   ca_reset
+1.3   release ca_reset
+6.0   press   ws_on
+6.3   release ws_on
+7.0   toggle  conv_sw
+11.0  toggle  comp_sw
+12.0  inc     reverser
+13.0  inc     reverser
+14.0  inc     mainctrl
+15.0  inc     mainctrl
+16.0  inc     mainctrl
+18.0  inc     mainctrl
+20.0  inc     mainctrl
+22.0  inc     mainctrl
+24.0  set     mainctrl 8
+27.0  set     mainctrl 10
+30.0  set     mainctrl 12
+34.0  set     mainctrl 14
+38.0  set     mainctrl 16
+42.0  set     mainctrl 18
+46.0  set     mainctrl 20
+50.0  press   ca_reset
+50.3  release ca_reset
+70.0  set     mainctrl 0
+71.0  value   brake 3
+100.0 press   ca_reset
+100.3 release ca_reset
+130.0 value   brake 0

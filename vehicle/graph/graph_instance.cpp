@@ -18,16 +18,24 @@ graph_instance::graph_instance(std::shared_ptr<graph_template const> Template)
     : m_template(std::move(Template)), m_signals(m_template->signal_defaults()), m_forced(m_signals.size(), 0), m_links(m_template->link_count())
 {
 	auto const &nodes{m_template->nodes()};
+	if (m_template->uses_lua())
+	{
+		m_lua = std::make_unique<lua_host>();
+	}
 	m_blocks.reserve(nodes.size());
 	for (auto const &node : nodes)
 	{
-		block_setup const setup{*node.type, node.params, node.slots, node.connected};
+		block_setup const setup{*node.type, node.ports, node.param_defs, node.params, node.slots, node.connected, node.id, node.script, m_lua.get()};
 		m_blocks.emplace_back(node.type->create(setup));
 	}
 	m_order.reserve(nodes.size());
 	for (auto const nodeindex : m_template->order())
 	{
 		m_order.push_back(m_blocks[nodeindex].get());
+		if (nodes[nodeindex].type->late)
+		{
+			m_late.push_back(m_blocks[nodeindex].get());
+		}
 		if (nodes[nodeindex].type->deferred)
 		{
 			m_deferred.push_back(m_blocks[nodeindex].get());
@@ -41,25 +49,39 @@ graph_instance::graph_instance(std::shared_ptr<graph_template const> Template)
 	}
 }
 
+// blocks release their references to the lua state before it's closed
+graph_instance::~graph_instance()
+{
+	m_blocks.clear();
+	m_lua.reset();
+}
+
 frame graph_instance::make_frame(double const Deltatime)
 {
 	frame result;
 	result.dt = Deltatime;
 	result.time = m_time;
+	result.step = m_step;
 	result.low_voltage = m_template->low_voltage_simulation();
 	result.signals = m_signals.data();
 	result.forced = m_forced.data();
 	result.links = m_links.data();
+	result.body = &m_body;
 	return result;
 }
 
 void graph_instance::update(double const Deltatime)
 {
 	m_time += Deltatime;
+	++m_step;
 	auto frame{make_frame(Deltatime)};
 	for (auto *item : m_order)
 	{
 		item->update(frame);
+	}
+	for (auto *item : m_late)
+	{
+		item->late_update(frame);
 	}
 	for (auto *item : m_deferred)
 	{

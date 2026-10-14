@@ -1,0 +1,2 @@
+// expect: error unknown type "double"
+{ "format": "maszyna-vehicle-graph", "version": 2, "nodes": [ { "id": "b", "type": "lua.block", "lua": "block \"x\" { inputs = { a = \"double\" }, update = function(self, i, o, dt) end }\n" } ] }

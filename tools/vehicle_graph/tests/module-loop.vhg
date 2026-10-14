@@ -1,0 +1,5 @@
+// expect: error form a loop
+// a loop through a module needs a deferred block too, as in the graph itself
+{ "format": "maszyna-vehicle-graph", "version": 2,
+  "nodes": [ { "id": "m", "type": "module", "params": { "file": "modules/inverter.vhgm" } } ],
+  "connections": [ { "from": "m.q", "to": "m.a" } ] }

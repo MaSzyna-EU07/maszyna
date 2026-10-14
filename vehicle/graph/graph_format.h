@@ -27,6 +27,7 @@ struct node_desc
 	std::string type;
 	std::string title;
 	std::vector<named_value> params; // as stored in the file; checked against the catalog when the graph is compiled
+	std::string script; // source of a lua block ("lua" in the file)
 };
 
 struct connection_desc
@@ -49,6 +50,16 @@ struct document
 	std::vector<node_desc> nodes;
 	std::vector<connection_desc> connections;
 };
+
+// type of the nodes standing for modules: graphs of logic kept in their own files (by convention .vhgm) and used as
+// one block. the "file" parameter names the module file, relative to the file of the graph using it
+inline constexpr std::string_view module_type{"module"};
+
+// replaces the module nodes of the document with the blocks of their modules, read from their files relative to
+// Directory (with a trailing separator, or empty). the blocks get ids "<module node id>/<id in the module>", and the
+// connections of the module node are passed to the blocks connected to its module.input and module.output blocks.
+// modules can use other modules. problems are appended to the diagnostics; returns false on errors
+bool expand_modules(document &Document, std::string const &Directory, std::vector<diagnostic> &Diagnostics);
 
 // parses the content of a .vhg file. problems are appended to the diagnostics; returns false on errors
 bool parse_document(std::string const &Text, document &Document, std::vector<diagnostic> &Diagnostics);

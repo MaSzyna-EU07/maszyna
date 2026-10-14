@@ -4833,6 +4833,14 @@ TController::Update( double const Timedelta ) {
     // uruchamiać przynajmniej raz na sekundę
     if( ( iDrivigFlags & movePrimary ) == 0 ) { return; } // pasywny nic nie robi
     if( false == simulation::is_ready )       { return; }
+    if( AIControllFlag && mvOccupied->Graph ) {
+        // the AI can't drive a vehicle defined by a graph (.vhg) yet; the vehicle is left as its graph keeps it
+        if( false == m_graphvehiclewarning ) {
+            WriteLog( "Warning: AI driver can't operate vehicle graph of \"" + mvOccupied->Name + "\"; the vehicle is left to the player" );
+            m_graphvehiclewarning = true;
+        }
+        return;
+    }
 
     update_timers( Timedelta );
     update_logs( Timedelta );

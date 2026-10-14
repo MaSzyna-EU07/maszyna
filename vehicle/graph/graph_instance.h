@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "vehicle/graph/graph_block.h"
+#include "vehicle/graph/graph_body.h"
+#include "vehicle/graph/graph_lua.h"
 #include "vehicle/graph/graph_template.h"
 
 #include <memory>
@@ -24,6 +26,7 @@ class graph_instance
 {
 public:
 	explicit graph_instance(std::shared_ptr<graph_template const> Template);
+	~graph_instance();
 
 	// advances the graph by the specified time. the order of evaluation is fixed, and there's no other source
 	// of time or randomness, so the same inputs always produce the same results
@@ -36,6 +39,15 @@ public:
 	double time() const
 	{
 		return m_time;
+	}
+	// state of the vehicle body shared with the blocks; filled by the owner of the graph before every step
+	body_state &body()
+	{
+		return m_body;
+	}
+	body_state const &body() const
+	{
+		return m_body;
 	}
 
 	// block of the node with the specified index (see graph_template::nodes())
@@ -54,6 +66,10 @@ public:
 	{
 		return m_signals[Slot];
 	}
+	link_state const &link(int Index) const
+	{
+		return m_links[Index];
+	}
 	// keeps the slot at the specified value regardless of what its block writes, until released
 	void force(int Slot, double Value);
 	void release(int Slot);
@@ -66,13 +82,18 @@ private:
 	frame make_frame(double Deltatime);
 
 	std::shared_ptr<graph_template const> m_template;
+	// lua state of the vehicle, created when the graph has lua blocks. declared before the blocks, so it outlives them
+	std::unique_ptr<lua_host> m_lua;
 	std::vector<std::unique_ptr<block>> m_blocks; // in the order of the template's nodes
 	std::vector<block *> m_order; // blocks in the order of evaluation
+	std::vector<block *> m_late; // blocks updated again after all the others
 	std::vector<block *> m_deferred; // blocks publishing their outputs after the step
 	std::vector<double> m_signals;
 	std::vector<std::uint8_t> m_forced;
 	std::vector<link_state> m_links;
+	body_state m_body;
 	double m_time{0.0};
+	std::uint64_t m_step{0};
 };
 
 } // namespace vgraph

@@ -1,0 +1,12 @@
+# events for: -graph-run diesel-electric.vhg -script diesel-electric.script
+# options: -every 50
+# start the engine and wait at idle, then raise the controller in steps (engine speed and excitation) and back to zero
+# (the generator voltage falls, the engine returns to idle)
+1.0   press   starter
+1.5   release starter
+10.0  value   throttle 0.1
+15.0  value   throttle 0.3
+25.0  value   throttle 0.6
+40.0  value   throttle 1
+100.0 value   throttle 0
+120.0 value   throttle 0

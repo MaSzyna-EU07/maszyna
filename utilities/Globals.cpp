@@ -911,6 +911,19 @@ bool global_settings::ConfigParseNetwork(cParser& Parser, const std::string& tok
         return true;
     }
 
+    if (token == "vehiclegraph_preview")
+    {
+        // live preview server of the vehicle graph editor
+        ParseOne(Parser, vehiclegraph_preview);
+        return true;
+    }
+
+    if (token == "vehiclegraph_preview_port")
+    {
+        ParseOne(Parser, vehiclegraph_preview_port);
+        return true;
+    }
+
     return false;
 }
 

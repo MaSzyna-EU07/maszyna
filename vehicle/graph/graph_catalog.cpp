@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/graph/graph_catalog.h"
+#include "vehicle/graph/graph_body.h"
+#include "input/command.h"
 
 #include <nlohmann/json.hpp>
 
@@ -66,6 +68,15 @@ catalog const &catalog::get()
 		catalog result;
 		register_logic_blocks(result);
 		register_cab_blocks(result);
+		register_script_blocks(result);
+		register_vehicle_blocks(result);
+		register_pneumatic_blocks(result);
+		register_security_blocks(result);
+		register_electric_blocks(result);
+		register_drive_blocks(result);
+		register_diesel_blocks(result);
+		register_interface_blocks(result);
+		register_module_blocks(result);
 		return result;
 	}()};
 	return instance;
@@ -100,6 +111,15 @@ nlohmann::json to_json(param_value const &Value)
 	case param_type::text:
 	case param_type::choice:
 		return Value.text;
+	case param_type::table:
+	{
+		auto result{nlohmann::json::array()};
+		for (auto const &row : Value.rows)
+		{
+			result.push_back(row);
+		}
+		return result;
+	}
 	default:
 		return Value.number;
 	}
@@ -142,6 +162,16 @@ std::string catalog::export_json() const
 		item["description"] = type.description;
 		item["origin"] = std::string{to_string(type.origin)};
 		item["deferred"] = type.deferred;
+		if (type.single)
+		{
+			// at most one block of this type in a graph
+			item["single"] = true;
+		}
+		if (type.dynamic_ports)
+		{
+			// ports and parameters come from the node, e.g. from the script of a lua block
+			item["dynamic_ports"] = true;
+		}
 		auto &ports = (item["ports"] = nlohmann::ordered_json::array());
 		for (auto const &port : type.ports)
 		{
@@ -182,10 +212,93 @@ std::string catalog::export_json() const
 			{
 				paramitem["choices"] = param.choices;
 			}
+			if (param.type == param_type::table)
+			{
+				paramitem["columns"] = param.columns;
+			}
+			if (false == param.fiz_key.empty())
+			{
+				paramitem["fiz"] = param.fiz_section + " " + param.fiz_key;
+			}
 			params.push_back(std::move(paramitem));
 		}
 		blocks.push_back(std::move(item));
 	}
+
+	// parameters of the vehicle body, for the form of the editor
+	auto &body = (root["body"] = nlohmann::ordered_json::array());
+	for (auto const &field : body_schema())
+	{
+		nlohmann::ordered_json item;
+		item["key"] = field.key;
+		item["type"] = std::string{to_string(field.type)};
+		if (false == field.unit.empty())
+		{
+			item["unit"] = field.unit;
+		}
+		item["default"] = to_json(field.default_value);
+		if (field.type == param_type::choice)
+		{
+			item["choices"] = field.choices;
+		}
+		item["fiz"] = field.fiz_section + " " + field.fiz_key;
+		body.push_back(std::move(item));
+	}
+	auto &profiles = (root["profiles"] = nlohmann::ordered_json::array());
+	for (auto const &profile : known_profiles())
+	{
+		nlohmann::ordered_json item;
+		item["id"] = std::string{profile.id};
+		item["version"] = profile.version;
+		profiles.push_back(std::move(item));
+	}
+	// commands of the simulator, which the cab switches can be bound to (by name), for the pickers of the editor
+	auto &commands = (root["commands"] = nlohmann::ordered_json::array());
+	{
+		std::vector<std::pair<std::size_t, std::string>> names;
+		for (auto const &entry : simulation::commandMap)
+		{
+			if (entry.second != user_command::none)
+			{
+				names.emplace_back(static_cast<std::size_t>(entry.second), entry.first);
+			}
+		}
+		// in the order of the command list, which groups the related commands
+		std::sort(std::begin(names), std::end(names));
+		for (auto const &name : names)
+		{
+			nlohmann::ordered_json item;
+			item["name"] = name.second;
+			if (name.first < simulation::Commands_descriptions.size())
+			{
+				auto const &description{simulation::Commands_descriptions[name.first]};
+				switch (description.target)
+				{
+				case command_target::userinterface:
+					item["target"] = "userinterface";
+					break;
+				case command_target::vehicle:
+					item["target"] = "vehicle";
+					break;
+				case command_target::signal:
+					item["target"] = "signal";
+					break;
+				case command_target::entity:
+					item["target"] = "entity";
+					break;
+				case command_target::simulation:
+					item["target"] = "simulation";
+					break;
+				default:
+					break;
+				}
+				item["mode"] = (description.mode == command_mode::continuous ? "continuous" : "oneoff");
+			}
+			commands.push_back(std::move(item));
+		}
+	}
+	// live preview server of the simulator, see the README
+	root["preview"] = "protocol 1";
 	return root.dump(1, '\t');
 }
 
@@ -268,6 +381,29 @@ param_def choice_param(std::string Key, std::vector<std::string> Choices, std::s
 	result.choices = std::move(Choices);
 	result.default_value = param_value::make_choice(std::move(Default));
 	return result;
+}
+
+param_def table_param(std::string Key, std::vector<std::string> Columns)
+{
+	param_def result;
+	result.key = std::move(Key);
+	result.type = param_type::table;
+	result.columns = std::move(Columns);
+	result.default_value = param_value::make_table({});
+	return result;
+}
+
+param_def fiz(param_def Definition, std::string Section, std::string Key)
+{
+	Definition.fiz_section = std::move(Section);
+	Definition.fiz_key = std::move(Key);
+	return Definition;
+}
+
+param_def cab_param()
+{
+	// "0": the engine room (cab0definition: of the .mmd files)
+	return choice_param("cab", {"any", "1", "2", "0"}, "any");
 }
 
 } // namespace vgraph

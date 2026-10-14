@@ -1623,6 +1623,10 @@ class TFVE408 : public TDriverHandle
 /// <param name="DP">Soft-clip pressure delta — softens flow for tiny PH-PL differences (default 0.25).</param>
 /// <returns>Volumetric flow rate (signed; positive = P1-&gt;P2 direction).</returns>
 extern double PF(double const P1, double const P2, double const S, double const DP = 0.25);
+
+// friction material of the brake shoes or discs, one of the bp_* constants without bp_MHS
+std::shared_ptr<TFricMat> make_friction_material(int Material);
+
 /// <summary>
 /// Variant of <see cref="PF"/> that uses the dimensionless pressure ratio (sg)
 /// for the soft-clip threshold instead of an absolute pressure delta.
