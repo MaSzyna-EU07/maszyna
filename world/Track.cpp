@@ -2635,6 +2635,36 @@ TTrack::rail_dimensions() const {
     }
     result.height = top - bottom;
     result.crest = top;
+    std::size_t firsttop { count };
+    std::size_t lasttop { 0 };
+    for( std::size_t i = 0; i < count; ++i ) {
+        if( profile[ i ].position.y > top - 1e-4 ) {
+            firsttop = std::min( firsttop, i );
+            lasttop = std::max( lasttop, i );
+        }
+    }
+    std::vector<glm::dvec2> sides[ 2 ];
+    for( std::size_t i = 0; i < count; ++i ) {
+        auto const &point { profile[ i ].position };
+        if( i <= firsttop ) {
+            sides[ 0 ].emplace_back( point.y, point.x );
+        }
+        if( i >= lasttop ) {
+            sides[ 1 ].emplace_back( point.y, point.x );
+        }
+    }
+    for( auto &side : sides ) {
+        std::sort( side.begin(), side.end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
+    }
+    auto const mean = []( std::vector<glm::dvec2> const &Side ) {
+        auto sum { 0.0 };
+        for( auto const &knot : Side ) {
+            sum += knot.y;
+        }
+        return sum / std::max<std::size_t>( Side.size(), 1 ); };
+    auto const fieldfirst { mean( sides[ 0 ] ) > mean( sides[ 1 ] ) };
+    result.field = sides[ fieldfirst ? 0 : 1 ];
+    result.gauge = sides[ fieldfirst ? 1 : 0 ];
     auto const middle { top - 0.5 * result.height };
     auto webfrom { 1e9 };
     auto webto { -1e9 };

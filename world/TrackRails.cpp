@@ -1021,7 +1021,7 @@ void obtuse( TTrack::rail_plan &Plan, double const At, double const Into, TTrack
 }
 
 // crossing at a wide angle: running rails are broken for the flanges of the other track, the ones of the track not going through also where the head of the other rail lies; guard rails give way to the running rails and flangeways of the other track, the ones of the track not going through also to its guard rails
-void wide( TTrack::rail_plan &Plan, double const At, double const Into, double const Facing, double const From, double const To, double const Inner, double const Outer ) {
+void wide( TTrack::rail_plan &Plan, double const At, double const Into, double const Facing, double const From, double const To, double const Inner, double const Outer, std::vector<glm::dvec2> const &Fromline = {}, std::vector<glm::dvec2> const &Toline = {} ) {
 
     auto const low { ( From + std::min( Inner * Facing, Outer * Facing ) - 0.005 ) / Into };
     auto const high { ( To + std::max( Inner * Facing, Outer * Facing ) + 0.005 ) / Into };
@@ -1031,7 +1031,29 @@ void wide( TTrack::rail_plan &Plan, double const At, double const Into, double c
     cut.start = At + std::max( low, high );
     cut.endmiter = { At + ( Into > 0.0 ? From - 0.005 : To + 0.005 ) / Into, Facing / Into };
     cut.startmiter = { At + ( Into > 0.0 ? To + 0.005 : From - 0.005 ) / Into, Facing / Into };
+    auto const glue = [&]( std::vector<glm::dvec2> const &Line, double const Edge, double &Position, glm::dvec2 &Miter, double &Bend, std::vector<glm::dvec2> &Fit, bool &Cap ) {
+        if( Line.empty() ) {
+            return;
+        }
+        Position = At + Edge / Into;
+        Miter = {};
+        Bend = Facing / Into;
+        for( auto const &knot : Line ) {
+            Fit.emplace_back( knot.x, ( knot.y - Edge ) / Into );
+        }
+        Cap = false; };
+    glue( Into > 0.0 ? Fromline : Toline, Into > 0.0 ? From : To, cut.end, cut.endmiter, cut.endbend, cut.endfit, cut.endcap );
+    glue( Into > 0.0 ? Toline : Fromline, Into > 0.0 ? To : From, cut.start, cut.startmiter, cut.startbend, cut.startfit, cut.startcap );
     Plan.cuts.push_back( cut );
+}
+
+std::vector<glm::dvec2> glue_line( std::vector<glm::dvec2> const &Outline, double const Base ) {
+
+    std::vector<glm::dvec2> line;
+    for( auto const &knot : Outline ) {
+        line.emplace_back( knot.x, Base - knot.y );
+    }
+    return line;
 }
 
 TTrack::rail_fill guard_fill( TTrack::guard_rail const &Guard, TTrack::rail_size const &Size ) {
@@ -1338,7 +1360,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
             if( crossing.angle > wide_angle ) {
                 auto const other { crossing.track->rail_dimensions() };
                 auto const through { goes_through( *this, *crossing.track ) };
-                wide( plan, crossing.at, crossing.into, crossing.facing, through ? 0.0 : -other.head, flangeway, 0.0, railhead );
+                wide( plan, crossing.at, crossing.into, crossing.facing, through ? 0.0 : -other.head, flangeway, 0.0, railhead, through ? std::vector<glm::dvec2>{} : glue_line( other.field, 0.0 ) );
                 if( through ) {
                     tread( crossing.path, crossing.side, across( crossing, other ), *crossing.track, crossing.otherpath );
                 }
@@ -1346,7 +1368,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 auto &spans { guards[ crossing.path ][ crossing.side > 0 ] };
                 TTrack::guard_rail guard { crossing.at - reach, crossing.at + reach };
                 guard.through = through;
-                wide( guard.plan, crossing.at, crossing.into, crossing.facing, -other.head, through ? flangeway : flangeway + other.head, guardoffset, guardoffset + railhead );
+                wide( guard.plan, crossing.at, crossing.into, crossing.facing, -other.head, through ? flangeway : flangeway + other.head, guardoffset, guardoffset + railhead, glue_line( other.field, 0.0 ), through ? std::vector<glm::dvec2>{} : glue_line( other.gauge, flangeway + other.head ) );
                 auto merged { false };
                 for( auto &span : spans ) {
                     if( guard.from < span.to + 2.0 && guard.to > span.from - 2.0 ) {
@@ -1652,10 +1674,14 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         return glm::dvec2 {
             std::abs( Start - bendfrom.x ) < 1e-6 ? bendfrom.y : 0.0,
             std::abs( End - bendto.x ) < 1e-6 ? bendto.y : 0.0 }; };
+    std::pair<double, std::vector<glm::dvec2>> fitfrom, fitto;
+    std::vector<glm::dvec2> const unfitted;
+    auto const fitted = [&]( std::pair<double, std::vector<glm::dvec2>> const &Fit, double const Distance ) -> std::vector<glm::dvec2> const & {
+        return ( std::abs( Distance - Fit.first ) < 1e-6 ? Fit.second : unfitted ); };
     auto const piece = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, bool const Capstart, bool const Capend, gfx::vertex_array const &Shape, bool const Rolled, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Ramp = {}, bool const Walls = false, float const Lift = 0.f, float const Wallu = -1.f, double const Fade = blend ) {
         gfx::vertex_array vertices;
         gfx::userdata_array userdata;
-        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : Fade, Walls, Wallu, bends( Start, End ) ) ) {
+        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, Lift, Inner, Rolled ? nullptr : &userdata, Ramp, Ramp.empty() ? 0.0 : Fade, Walls, Wallu, bends( Start, End ), fitted( fitfrom, Start ), fitted( fitto, End ) ) ) {
             cut_faces( vertices, Shape.size(), Capstart, Capend, Drawing.bank, sink( true ) );
             gfx::vertex_array triangles;
             gfx::userdata_array triangleuserdata;
@@ -1751,7 +1777,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     };
     auto const running = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Rolled, bool const Capstart, bool const Capend ) {
         gfx::vertex_array vertices;
-        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner, nullptr, {}, 0.0, false, -1.f, bends( Start, End ) ) ) {
+        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner, nullptr, {}, 0.0, false, -1.f, bends( Start, End ), fitted( fitfrom, Start ), fitted( fitto, End ) ) ) {
             cut_faces( vertices, Profile.size(), Capstart, Capend, Drawing.bank, sink( true ) );
         }
         piece( Start, End, Offsets, Extents, false, false, strip( 0, topfirst ), true, Inner );
@@ -1801,7 +1827,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
     auto const treaded = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, bool const Capstart, bool const Capend, rail_tread const &Span ) {
         current = null_handle;
         gfx::vertex_array vertices;
-        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner, nullptr, {}, 0.0, false, -1.f, bends( Start, End ) ) ) {
+        if( segment.RenderLoftSpan( vertices, m_origin, Profile, Side, halfwidth, texturelength(), Start, End, Offsets, Extents, 0.f, Inner, nullptr, {}, 0.0, false, -1.f, bends( Start, End ), fitted( fitfrom, Start ), fitted( fitto, End ) ) ) {
             cut_faces( vertices, Profile.size(), Capstart, Capend, Drawing.bank, sink( true ) );
         }
         piece( Start, End, Offsets, Extents, false, false, strip( 0, topfirst ), true, Inner );
@@ -1946,9 +1972,11 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         std::sort( cuts.begin(), cuts.end(), []( rail_cut const &A, rail_cut const &B ) { return A.at < B.at; } );
         auto start { guard.from };
         auto startmiter { guard.frommiter };
+        rail_cut startcut;
         for( std::size_t i = 0; i <= cuts.size(); ++i ) {
             auto const end { i < cuts.size() ? cuts[ i ].end : guard.to };
             auto const endmiter { i < cuts.size() ? cuts[ i ].endmiter : guard.tomiter };
+            auto const endcut { i < cuts.size() ? cuts[ i ] : rail_cut {} };
             auto const a { std::max( { mitered( startmiter, start, false ), From, 0.0 } ) };
             auto const b { std::min( { mitered( endmiter, end, true ), length, mitered( guard.tomiter, guard.to, true ) } ) };
             if( b - a > 0.01 ) {
@@ -1959,11 +1987,20 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
                         ( ending == ( miter.y < 0.0 ) ? uppers : lowers ).emplace_back( 1.0 / miter.y, -miter.x / miter.y - guardoffset );
                     }
                 }
-                piece( a, b, offsets, envelope( uppers, true, a, b ), true, true, Profile, false, envelope( lowers, false, a, b ) );
+                auto const glued { a == start && false == startcut.startfit.empty() };
+                auto const gluedend { b == end && false == endcut.endfit.empty() };
+                bendfrom = { a, glued ? startcut.startbend : 0.0 };
+                bendto = { b, gluedend ? endcut.endbend : 0.0 };
+                fitfrom = { a, glued ? startcut.startfit : unfitted };
+                fitto = { b, gluedend ? endcut.endfit : unfitted };
+                piece( a, b, offsets, envelope( uppers, true, a, b ), false == glued, false == gluedend, Profile, false, envelope( lowers, false, a, b ) );
+                bendfrom = bendto = glm::dvec2 { 0.0 };
+                fitfrom = fitto = {};
             }
             if( i < cuts.size() && cuts[ i ].start > start ) {
                 start = cuts[ i ].start;
                 startmiter = cuts[ i ].startmiter;
+                startcut = cuts[ i ];
             }
         }
     }
@@ -2052,6 +2089,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         auto start { -1e9 };
         auto startcap { true };
         auto startbend { 0.0 };
+        std::vector<glm::dvec2> startfit;
         std::vector<glm::dvec2> rolledfrom;
         std::vector<glm::dvec2> offsets, extents, inner;
         for( std::size_t i = 0; i <= cuts.size(); ++i ) {
@@ -2074,6 +2112,8 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             auto const capend { end < length ? cuts[ i ].endcap : Openend };
             bendfrom = { a, start > From ? startbend : 0.0 };
             bendto = { b, end < length ? cuts[ i ].endbend : 0.0 };
+            fitfrom = { a, start > From ? startfit : unfitted };
+            fitto = { b, end < length ? cuts[ i ].endfit : unfitted };
             if( b - a > 0.01 ) {
                 std::vector<rail_tread> active;
                 for( auto const &span : Spans ) {
@@ -2112,11 +2152,13 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
                 current = null_handle;
             }
             bendfrom = bendto = glm::dvec2 { 0.0 };
+            fitfrom = fitto = {};
             if( i < cuts.size() ) {
                 rolledfrom = cuts[ i ].startrolled;
                 start = cuts[ i ].start;
                 startcap = cuts[ i ].startcap;
                 startbend = cuts[ i ].startbend;
+                startfit = cuts[ i ].startfit;
                 offsets = cuts[ i ].startoffsets;
                 extents = cuts[ i ].startextents;
                 inner = cuts[ i ].startinner;
