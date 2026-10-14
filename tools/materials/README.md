@@ -80,6 +80,8 @@ python3 tools/materials/validate_materials.py ~/pctga dynamic --fallback <katalo
 | `--info` | pokazuje też informacje, nie tylko błędy i uwagi |
 | `-j N` | liczba procesów, domyślnie wszystkie rdzenie; cały pctga trwa ok. 80 s |
 
+Sprawdza pliki `.mat` (w pctga są w `dynamic` i `textures`); tekstury bez `.mat` idą na samym diffuse i nie ma czego w nich sprawdzać. Woda (`shader: water`) ma stałe lustro, jej duży `param_specular` daje odblask słońca i jest tylko informacją.
+
 Wynik: dla każdego materiału z problemem ścieżka `.mat`, shader i lista komunikatów, na końcu podsumowanie.
 
 - `BLAD` – trzeba poprawić (np. połysk niemetalu kilkanaście razy za mocny, brak tekstury, nieistniejący shader).
@@ -93,4 +95,4 @@ Walidator czyta pliki shaderów i z nich rozpoznaje, co każdy shader robi ze sp
 1. Uruchom walidator na swoim katalogu pojazdu, np. `dynamic/pkp/sa103`.
 2. Najpierw `BLAD`: zwykle R w specgloss (niemetal ok. 15/255) albo `param_specular` (zostaw 1, siłę połysku daje R).
 3. Potem `UWAGA`: G (gładkość) według tabeli wartości docelowych, B tylko 0 albo 255, metal z jasnym diffuse.
-4. Poprawiaj źródłowe TGA i uruchom walidator jeszcze raz. Z TGA będą robione tekstury BC7, które zastąpią obecne DDS, więc poprawki w DDS przepadną.
+4. Poprawiaj źródłowe TGA i uruchom walidator jeszcze raz. Z TGA będą robione tekstury BC7 (diffuse, specgloss i normalmapy), które zastąpią obecne DDS, więc poprawki w DDS przepadną. BC7 nie ma bloków DXT, więc szum widoczny w specgloss i alfie normalmapy to szum z TGA, nie z kompresji.

@@ -253,7 +253,9 @@ def check(mat, values, nested, shaders, resolver, images, rel):
 
     if ps is None and shader['spec'] != 'none':
         add(INFO, 'param_specular nie ustawiony, bierze jasnosc specular submodelu z e3d/t3d')
-    if ps is not None and ps > PARAM_SPECULAR_MAX:
+    if ps is not None and ps > PARAM_SPECULAR_MAX and shadername.lower().startswith('water'):
+        add(INFO, 'param_specular %g w shaderze %s: odblask slonca na lustrze wody, poza norma' % (ps, shadername))
+    elif ps is not None and ps > PARAM_SPECULAR_MAX:
         add(ERROR if ps > 2 * PARAM_SPECULAR_MAX else WARN,
             'param_specular %g mnozy polysk %gx (norma 1, sile niesie R; w starszych shaderach rozjasnia tez w reflektorach)' % (ps, ps))
     psv = ps if ps is not None else 1.0
