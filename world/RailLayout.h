@@ -28,6 +28,8 @@ double constexpr rolled_band { wheel_width - ( 1.435 - back_to_back ) / 2.0 };
 double constexpr nose_tip { 0.012 };
 double constexpr middle_angle { 0.35 };
 double constexpr wide_angle { 0.785 };
+double constexpr guard_reach { 1.0 };
+double constexpr guard_flare { 0.6 };
 
 // where the inner rails of the two paths of a switch cross, found from their gauge lines behind the blades
 struct switch_frog {
