@@ -1,15 +1,19 @@
 # Norma materiałów
 
-Wartości, przy których tekstury wyglądają poprawnie w obecnych shaderach (`shaders/light_common.glsl`, GGX z roughness = 1 − G).
+Wartości, przy których tekstury wyglądają poprawnie w shaderach opengl33 (`shaders/light_common.glsl`, GGX z roughness = 1 − G).
 `validate_materials.py` sprawdza .mat i tekstury według tej normy.
+
+Norma i opis niżej dotyczą shaderów z gałęzi `fix/cab-lighting` (commit 2ecf589d i nowsze). Na `master` shadery liczą jeszcze po staremu, różnice są opisane przy każdym punkcie. Wartości tekstur z tabel są dobre dla obu wersji, bo stare shadery różnią się tylko połyskiem przy niskim słońcu, reflektorami i `param_glossiness`.
 
 ## Jak shader liczy piksel
 
 - albedo = diffuse (sRGB) × kolor diffuse submodelu
 - słońce rozproszone = 1.5 · (N·L)^1.25 · albedo · (1 − B)
-- połysk słońca = GGX(roughness) · R · `param_specular`, dla metalu dodatkowo × albedo; bez Fresnela i bez N·L
+- połysk słońca = GGX(roughness) · N·L · R · `param_specular`, dla metalu dodatkowo × albedo; bez Fresnela
 - otoczenie = cubemapa(roughness) · EnvBRDF(F0, roughness) · alfa normalmapy · `param_reflection`, F0 = 0.04 dla niemetalu, albedo dla metalu
-- reflektory = (N·L + 0.1) · (1 + `param_specular`) · albedo
+- reflektory: rozproszone 1.35 · (N·L + 0.1) · albedo, połysk jak od słońca (GGX · N·L · R · `param_specular`)
+
+Do poprawek z gałęzi fix/cab-lighting połysk nie miał N·L (przy niskim słońcu nie gasł), a reflektory mnożyły jasność przez (1 + `param_specular`).
 
 ## Kanały
 
@@ -43,7 +47,7 @@ Wartości, przy których tekstury wyglądają poprawnie w obecnych shaderach (`s
 
 Zasady:
 
-- `param_specular` = 1. Większy rozjaśnia też obiekt w reflektorach (×(1 + `param_specular`)).
+- `param_specular` = 1; siłę połysku niesie R.
 - Niemetal: R·`param_specular` 0.02–0.12. R = 255 daje połysk ~17× za mocny; obniżanie G zamiast R tylko rozmywa odblask, a nie go ścisza.
 - Metal: B = 255, jasny diffuse (liniowo ≥ 0.2, sRGB ≥ ~125) i alfa normalmapy wysoko. Ciemny diffuse albo niska alfa = czarny metal.
 - Bez szumu w R, G, B i alfie normalmapy: w słońcu iskrzy.
@@ -53,13 +57,40 @@ Zasady:
 | shader | roughness | połysk słońca |
 |---|---|---|
 | brak `shader:` / `default`, `reflmap` | 0.04 (lustro, tylko otoczenie × `param_reflection`) | brak |
-| `normalmap`, `parallax`, `detail_*` | 1 − 1/`param_glossiness` (większa wartość = bardziej matowo) | `param_specular` · (r+g+b)/2 diffuse |
-| `shadowlessnormalmap`, `sunlessnormalmap`, `default_detail`, `rain_windscreen` | zawsze 0.04 | `param_specular` · (r+g+b)/2 diffuse |
+| `normalmap`, `parallax`, `detail_*`, `shadowlessnormalmap`, `sunlessnormalmap`, `default_detail` | (2 / (`param_glossiness` + 2))^¼ jak wykładnik Phonga: 10 (domyślnie) → 0.64, 75 → 0.40, 1000 → 0.21 | `param_specular` · (r+g+b)/2 diffuse |
+| `rain_windscreen` | zawsze 0.04 | `param_specular` · (r+g+b)/2 diffuse |
+
+Przed fix/cab-lighting `normalmap`, `parallax` i `detail_*` miały roughness 1 − 1/`param_glossiness` (większa wartość = bardziej matowo), a `shadowlessnormalmap`, `sunlessnormalmap` i `default_detail` zawsze 0.04. Walidator rozpoznaje obie wersje z plików shaderów.
 
 ## Walidator
 
+Wymaga Pythona 3 z `numpy` i `Pillow` (`pip install numpy pillow`).
+
 ```
-python3 tools/materials/validate_materials.py ~/Projects/pctga dynamic --fallback <katalog gry> --csv wyniki.csv
+python3 tools/materials/validate_materials.py <katalog z assetami> [podkatalogi...] [opcje]
+python3 tools/materials/validate_materials.py ~/pctga dynamic --fallback <katalog gry> --shaders <repo>/shaders --csv wyniki.csv
 ```
 
-`BLAD` – trzeba poprawić, `UWAGA` – prawie na pewno źle wygląda, `--info` pokazuje też informacje.
+| opcja | znaczenie |
+|---|---|
+| podkatalogi | co sprawdzić względem katalogu z assetami, domyślnie `dynamic`; może być węższe, np. `dynamic/pkp/sa103` |
+| `--fallback DIR` | drugi katalog gry, w którym szukać tekstur, których nie ma w pierwszym (można podać kilka razy) |
+| `--shaders DIR` | shadery, według których liczyć; domyślnie `shaders/` z tego repo. Podaj shadery gry albo `fix/cab-lighting`, żeby ocena zgadzała się z tym, co widać w symulatorze |
+| `--csv FILE` | wyniki do pliku CSV: material, shader, poziom, opis |
+| `--info` | pokazuje też informacje, nie tylko błędy i uwagi |
+| `-j N` | liczba procesów, domyślnie wszystkie rdzenie; cały pctga trwa ok. 80 s |
+
+Wynik: dla każdego materiału z problemem ścieżka `.mat`, shader i lista komunikatów, na końcu podsumowanie.
+
+- `BLAD` – trzeba poprawić (np. połysk niemetalu kilkanaście razy za mocny, brak tekstury, nieistniejący shader).
+- `UWAGA` – prawie na pewno źle wygląda (lustro na niemetalu, ciemny metal, szum w specgloss).
+- `info` – tylko z `--info`, rzeczy do wiadomości.
+
+Walidator czyta pliki shaderów i z nich rozpoznaje, co każdy shader robi ze specgloss, `param_glossiness`, `param_specular` i `param_reflection`, więc działa i dla starych, i dla nowych shaderów.
+
+### Jak poprawiać
+
+1. Uruchom walidator na swoim katalogu pojazdu, np. `dynamic/pkp/sa103`.
+2. Najpierw `BLAD`: zwykle R w specgloss (niemetal ok. 15/255) albo `param_specular` (zostaw 1, siłę połysku daje R).
+3. Potem `UWAGA`: G (gładkość) według tabeli wartości docelowych, B tylko 0 albo 255, metal z jasnym diffuse.
+4. Poprawiaj źródłowe TGA, nie DDS, i uruchom walidator jeszcze raz.

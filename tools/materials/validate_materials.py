@@ -6,9 +6,9 @@ The norm (see tools/materials/README.md):
   specgloss G                   1 - perceptual roughness (param_glossiness cancels out when >= 1)
   specgloss B                   metalness, 0 or 1; a metal takes its colour from the diffuse texture
   normalmap A                   reflectivity, 1 where the surface reflects, lower only in cavities
-  param_specular                1, it also scales the headlights (1 + param_specular)
+  param_specular                1, the strength of the highlight lives in R
 
-usage: validate_materials.py GAMEDIR [SUBDIR ...] [--fallback DIR ...] [--shaders DIR] [--csv FILE]
+usage: validate_materials.py GAMEDIR [SUBDIR ...] [--fallback DIR ...] [--shaders DIR] [--csv FILE] [--info] [-j N]
 """
 
 import argparse
@@ -82,7 +82,7 @@ class Shaders:
             info = {
                 'textures': textures,
                 'reflection_default': params.get('reflection', 'one'),
-                'gloss': 'specgloss' if 'specgloss' in gloss else ('param' if 'param' in gloss else 'unset'),
+                'gloss': 'specgloss' if 'specgloss' in gloss else ('phong' if 'phong_glossiness' in gloss else ('param' if 'param' in gloss else 'unset')),
                 'spec': 'specgloss' if 'specgloss' in spec else ('diffuse' if 'tex_color' in spec else ('none' if spec.strip() in ('', '0.0') else 'const')),
                 'metal': bool(re.search(r'metalic\s*=\s*[^;]*specgloss', text)),
                 'reflectivity': 'normalmap' if re.search(r'reflectivity\s*=[^;]*normal', text) else ('reflmap' if re.search(r'reflectivity\s*=[^;]*reflmap', text) else 'param'),
@@ -254,7 +254,7 @@ def check(mat, values, nested, shaders, resolver, images, rel):
         add(INFO, 'param_specular nie ustawiony, bierze jasnosc specular submodelu z e3d/t3d')
     if ps is not None and ps > PARAM_SPECULAR_MAX:
         add(ERROR if ps > 2 * PARAM_SPECULAR_MAX else WARN,
-            'param_specular %g: reflektory swieca na nim %gx mocniej niz przy 1' % (ps, (1 + ps) / 2))
+            'param_specular %g mnozy polysk %gx (norma 1, sile niesie R; w starszych shaderach rozjasnia tez w reflektorach)' % (ps, ps))
     psv = ps if ps is not None else 1.0
 
     def image(name):
@@ -328,12 +328,16 @@ def check(mat, values, nested, shaders, resolver, images, rel):
             roughness = 0.04
         elif shader['gloss'] == 'unset':
             roughness = min(max(1 - 1 / max(pg_effective, 1), 0.04), 1)
+        elif shader['gloss'] == 'phong':
+            roughness = min(max((2 / (pg_effective + 2)) ** 0.25, 0.04), 1)
         if shader['spec'] == 'diffuse' and diffuse is not None:
             lin = srgb_to_linear(diffuse[..., :3])
             e = pct((lin.sum(axis=2) * 0.5)[opaque], 50) * psv
             if e > DIELECTRIC_SPEC[1] and roughness is not None and roughness < 0.7:
                 suggestion = DIELECTRIC_SPEC[1] / 2 / max(e / psv, 1e-3)
                 kind = 'lustrzany punkt (shader %s zawsze ma roughness 0.04)' % shadername if shader['gloss'] == 'param' else 'roughness %.2f z param_glossiness %g' % (roughness, pg_effective)
+                if shader['gloss'] == 'phong' and pg is None:
+                    kind += ' (domyslne glossiness 10)'
                 add(WARN, 'polysk z jasnosci diffuse %.2f, %s; param_specular ok. %.2f' % (e, kind, suggestion))
         if shader['gloss'] == 'unset' and pg is not None and pg_effective <= 2:
             add(INFO, 'param_glossiness %g w shaderze %s: tu wieksza wartosc = bardziej matowo (roughness %.2f)' % (pg, shadername, roughness))
