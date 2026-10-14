@@ -96,7 +96,12 @@ set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
 "world/Track.cpp"
-"world/TrackRails.cpp"
+"world/GaugeLine.cpp"
+"world/RailCrossings.cpp"
+"world/RailMaterials.cpp"
+"world/RailProfile.cpp"
+"world/RailPlan.cpp"
+"world/RailLayer.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
 "world/RoadPoint.cpp"
@@ -736,4 +741,4 @@ if(WITH_TESTS)
 	# Visual Studio builds rerun them with the next change of the game)
 	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
 		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
-endif()
+endif()

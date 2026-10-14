@@ -10,10 +10,12 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "world/Track.h"
+#include "world/GaugeLine.h"
 
 namespace track_rails {
 
 void forget();
+rail_size measure_rail( gfx::vertex_array const &Profile );
 // how far a wing rail reaches past the crossing point of the rails
 double wing_reach( double const Slope );
 double check_length( double const Slope );
@@ -31,6 +33,11 @@ gfx::userdata_array worn_userdata( std::size_t const Count );
 // the ends of rails left open: at track ends with nothing joined, blade tips, the gap of a frog
 void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry );
 
+TSegment const &path_segment( TTrack const &Track, int const Path );
+double knuckle_bend( double const Into );
+bool replaced_check( std::vector<check_rail> const &Checks, double const Wingend, double const Direction, double &Far );
+gauge_line const &rail_line( TTrack const &Track, int const Path, int const Side, bool const Blades );
+check_rail_set const &rail_checks( TTrack &Track );
 glm::dvec3 rail_point( TTrack const &Track, int const Path, int const Side, double const Distance, double const Lateral );
 void rail_offset( TTrack const &Track, int const Path, int const Side, glm::dvec3 const &Point, double &Distance, double &Lateral );
 
