@@ -255,6 +255,8 @@ def check(mat, values, nested, shaders, resolver, images, rel):
         add(INFO, 'param_specular nie ustawiony, bierze jasnosc specular submodelu z e3d/t3d')
     if ps is not None and ps > PARAM_SPECULAR_MAX and shadername.lower().startswith('water'):
         add(INFO, 'param_specular %g w shaderze %s: odblask slonca na lustrze wody, poza norma' % (ps, shadername))
+    elif ps is not None and ps > PARAM_SPECULAR_MAX and shader['spec'] == 'none':
+        add(INFO, 'param_specular %g w shaderze %s bez polysku slonca: nic nie zmienia (w starszych shaderach rozjasnia w reflektorach)' % (ps, shadername))
     elif ps is not None and ps > PARAM_SPECULAR_MAX:
         add(ERROR if ps > 2 * PARAM_SPECULAR_MAX else WARN,
             'param_specular %g mnozy polysk %gx (norma 1, sile niesie R; w starszych shaderach rozjasnia tez w reflektorach)' % (ps, ps))
@@ -387,6 +389,9 @@ def check_group(mats):
     images = WORKER['images']
     for mat in mats:
         rel = os.path.relpath(mat, WORKER['gamedir'])
+        if ',' not in os.path.basename(mat) and os.path.isfile(mat[:-4] + ',1.mat'):
+            results.append((rel, '-', [(INFO, 'nieuzywany: skora %s ma wersje ,1 ,2..., ktore gra bierze zamiast niego' % os.path.basename(mat)[:-4])]))
+            continue
         try:
             values, nested = parse_mat(mat)
             shadername, findings = check(mat, values, nested, WORKER['shaders'], WORKER['resolver'], images, rel)

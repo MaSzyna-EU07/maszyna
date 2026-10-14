@@ -80,7 +80,7 @@ python3 tools/materials/validate_materials.py ~/pctga dynamic --fallback <katalo
 | `--info` | pokazuje też informacje, nie tylko błędy i uwagi |
 | `-j N` | liczba procesów, domyślnie wszystkie rdzenie; cały pctga trwa ok. 80 s |
 
-Sprawdza pliki `.mat` (w pctga są w `dynamic` i `textures`); tekstury bez `.mat` idą na samym diffuse i nie ma czego w nich sprawdzać. Woda (`shader: water`) ma stałe lustro, jej duży `param_specular` daje odblask słońca i jest tylko informacją.
+Sprawdza pliki `.mat` (w pctga są w `dynamic` i `textures`); tekstury bez `.mat` idą na samym diffuse i nie ma czego w nich sprawdzać. `.mat` skóry bez sufiksu, obok którego są wersje `,1`, `,2`…, gra pomija (bierze wersje z sufiksem, `material_data::assign` w `vehicle/DynObj.cpp`), więc walidator oznacza go jako nieużywany. `param_specular` w shaderze bez połysku słońca (np. `default` szyb) nic nie zmienia i jest tylko informacją. Woda (`shader: water`) ma stałe lustro, jej duży `param_specular` daje odblask słońca i jest tylko informacją.
 
 Wynik: dla każdego materiału z problemem ścieżka `.mat`, shader i lista komunikatów, na końcu podsumowanie.
 
