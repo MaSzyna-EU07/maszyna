@@ -1483,6 +1483,7 @@ bool editor_mode::update()
     render_shortcuts_window();
     render_first_steps();
     render_orthophoto_window();
+    render_switch_designer();
     render_environment_window();
     draw_selection_overlay();
     render_context_menu();

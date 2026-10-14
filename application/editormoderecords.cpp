@@ -264,6 +264,68 @@ void editor_mode::record_switch(TTrack &Track, editor_track::switch_template con
 	switch_store::put(entry, alignment_store::layer_of(Track));
 }
 
+// a double switch is kept as one record of its two switches, with the type, the size and the side of the first one
+void editor_mode::record_double(TTrack &First, TTrack &Second, editor_track::switch_template const &Shape)
+{
+	if (First.eType != tt_Switch || Second.eType != tt_Switch || First.m_paths.size() < 2 || First.name().empty() || Second.name().empty() || scene::Layers.empty())
+		return;
+	auto entry{switch_entry(Shape)};
+	entry.kind = "double";
+	entry.name = First.name();
+	entry.parts = {First.name(), Second.name()};
+	switch_store::place(entry, First);
+	switch_store::classify(entry, First);
+	switch_store::put(entry, alignment_store::layer_of(First));
+}
+
+std::optional<editor_mode::double_switch> editor_mode::double_of(TTrack const &Track) const
+{
+	auto const of_switch = [](TTrack const &Switch) -> std::optional<double_switch> {
+		if (Switch.eType != tt_Switch || Switch.m_editorremoved)
+			return std::nullopt;
+		auto const known{switch_store::named(Switch)};
+		if (false == known.has_value() || known->kind != "double" || known->parts.size() != 2)
+			return std::nullopt;
+		auto *first{simulation::Paths.find(known->parts[0])};
+		auto *second{simulation::Paths.find(known->parts[1])};
+		for (auto const *part : {first, second})
+			if (part == nullptr || part->m_editorremoved || part->eType != tt_Switch || part->m_paths.size() != 2)
+				return std::nullopt;
+		if (first == second)
+			return std::nullopt;
+		auto const start{second->m_paths.front().points[segment_data::point::start]};
+		for (auto const &[other, point] : editor_track::connected_points(*first, first->m_paths.front().points[segment_data::point::end]))
+		{
+			if (other->m_editorremoved || other->eType != tt_Normal || other->m_paths.size() != 1)
+				continue;
+			auto const &path{other->m_paths.front()};
+			auto const opposite{path.points[point.kind == editor_track::point_kind::start ? segment_data::point::end : segment_data::point::start]};
+			if (glm::distance(opposite, start) < geometry::same_point)
+				return double_switch{first, other, second};
+		}
+		return std::nullopt;
+	};
+	if (Track.eType == tt_Switch)
+		return of_switch(Track);
+	if (Track.eType != tt_Normal || Track.m_editorremoved || Track.m_paths.size() != 1)
+		return std::nullopt;
+	for (auto const index : {segment_data::point::start, segment_data::point::end})
+		for (auto const &[other, point] : editor_track::connected_points(Track, Track.m_paths.front().points[index]))
+			if (other->eType == tt_Switch)
+				if (auto const found{of_switch(*other)}; found.has_value() && found->link == &Track)
+					return found;
+	return std::nullopt;
+}
+
+std::vector<segment_data> editor_mode::double_paths(double_switch const &Set)
+{
+	auto link{Set.link->m_paths.front()};
+	auto const joint{Set.first->m_paths.front().points[segment_data::point::end]};
+	if (glm::distance(link.points[segment_data::point::start], joint) > glm::distance(link.points[segment_data::point::end], joint))
+		link = geometry::reversed(link);
+	return {Set.first->m_paths[0], Set.first->m_paths[1], Set.second->m_paths[0], Set.second->m_paths[1], link};
+}
+
 void editor_mode::record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base)
 {
 	if (Parts.empty() || scene::Layers.empty())

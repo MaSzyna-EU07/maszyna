@@ -405,6 +405,27 @@ void editor_mode::track_gizmo_take_switches(TTrack &Track)
 		}
 }
 
+void editor_mode::track_gizmo_take_double(TTrack &Track)
+{
+	auto const set{double_of(Track)};
+	if (false == set.has_value() || Track.eType != tt_Switch)
+		return;
+	auto *other{&Track == set->first ? set->second : set->first};
+	if (false == editable(*set->link) || false == editable(*other) || track_gizmo_clustered(set->link))
+		return;
+	editor_track::point_ref const own{0, &Track == set->first ? editor_track::point_kind::end : editor_track::point_kind::start};
+	auto const position{editor_track::point_position(Track, own)};
+	for (auto const &connection : editor_track::connected_points(Track, position))
+	{
+		if (connection.first != set->link)
+			continue;
+		std::erase_if(m_track_joints, [&](editor_track::joint const &Joint) { return Joint.other == set->link; });
+		auto const movable = [&](TTrack const *Each) { return Each == set->link || Each == other; };
+		m_track_gizmo_drag.switches.push_back(track_gizmo_link(Track, own, connection, movable));
+		return;
+	}
+}
+
 void editor_mode::track_gizmo_measure_rotation(TTrack &Track, bool const Pointmode)
 {
 	auto &drag{m_track_gizmo_drag};
@@ -482,6 +503,8 @@ void editor_mode::track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_o
 		track_gizmo_take_partners(Track);
 	if (false == whole && Track.eType == tt_Switch && m_track_drag_connected)
 		track_gizmo_take_switch_joints(Track, controlmode);
+	if (whole)
+		track_gizmo_take_double(Track);
 	if (m_track_drag_connected)
 		track_gizmo_take_switches(Track);
 	std::vector<std::pair<TTrack *, editor_track::state>> states;

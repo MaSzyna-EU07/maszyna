@@ -1625,7 +1625,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			double low{0.0};
 			double high{0.0};
 			std::string reason;
-			auto const room{switch_room(*track, low, high, reason)};
+			auto const set{double_of(*track)};
+			double length{0.0};
+			auto const room{set.has_value() ? double_room(*set, low, high, length, reason) : switch_room(*track, low, high, reason)};
 			auto const done{slide_switch(*track, distance)};
 			WriteLog(format("SELFTEST switchslide %s %.3f: room %d %.3f .. %.3f, done %d, %s", name.c_str(), distance, room ? 1 : 0, low, high, done ? 1 : 0, m_switch.status.c_str()));
 			return selftest_result::handled;
@@ -1641,14 +1643,24 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			WriteLog("SELFTEST switchreplace: no template " + label);
 			return selftest_result::handled;
 		}
+		auto const set{double_of(*track)};
+		if (set.has_value())
+			track = set->first;
 		auto const &main{track->m_paths[0]};
 		auto const origin{main.points[segment_data::point::start]};
 		auto const chord{geometry::plan_of(main.points[segment_data::point::end] - origin)};
 		auto const length{glm::length(chord)};
 		auto paths{editor_track::place_switch(*found, origin, chord / length, side, (main.points[segment_data::point::end].y - origin.y) / length)};
 		std::string status;
-		auto const done{paths.size() >= 2 && move_switch_paths(*track, paths, status)};
-		if (done)
+		auto const done{set.has_value() ? found->twofold() && paths.size() >= 5 && move_double_paths(*set, paths, status) : paths.size() >= 2 && move_switch_paths(*track, paths, status)};
+		if (done && set.has_value())
+		{
+			record_double(*set->first, *set->second, *found);
+			switch_store::follow();
+			records_to_history();
+			straight_refresh();
+		}
+		else if (done)
 		{
 			record_switch(*track, *found);
 			records_to_history();
@@ -1716,6 +1728,61 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			segment.RaPositionGet(arc, position, rotation);
 			WriteLog(format("SELFTEST switchpieces %s: path 2 %.3f m in %zu pieces (%zu kept), arc %.3f m, arc end off %.4f m, turn there %.5f (angle %.5f), axis off the arc %.4f m, straight heading spread %.6f, end %.3f %.3f", track->name().c_str(),
 			                segment.GetLength(), segment.PieceCount(), branch.pieces.size(), arc, geometry::plan_distance(position, expected), turn, angle, worst, high - low, segment.FastGetPoint(1.0).x, segment.FastGetPoint(1.0).z));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "switchlinks")
+	{
+		auto const name_of = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : Track->name().empty() ? std::string{"(noname)"} : Track->name(); };
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
+				continue;
+			auto const &extension{*track->SwitchExtension};
+			WriteLog(format("SELFTEST switchlinks %s: prev %s / %s, next %s / %s, lengths %.3f / %.3f m", track->name().c_str(), name_of(extension.pPrevs[0]).c_str(), name_of(extension.pPrevs[1]).c_str(), name_of(extension.pNexts[0]).c_str(), name_of(extension.pNexts[1]).c_str(),
+			                extension.Segments[0]->GetLength(), extension.Segments[1]->GetLength()));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "switchtemplates")
+	{
+		for (auto const &entry : editor_track::standard_switch_templates())
+		{
+			if (entry.double_slip)
+				continue;
+			auto const paths{editor_track::place_switch(entry, glm::dvec3{0.0}, glm::dvec2{0.0, 1.0}, 1, 0.0)};
+			double gap{0.0};
+			double kink{0.0};
+			std::size_t pieces{0};
+			for (auto const &path : paths)
+			{
+				pieces += path.pieces.size();
+				for (std::size_t i = 0; i + 1 < path.pieces.size(); ++i)
+				{
+					auto const &one{path.pieces[i]};
+					auto const &two{path.pieces[i + 1]};
+					gap = std::max(gap, glm::distance(one.points[segment_data::point::end], two.points[segment_data::point::start]));
+					geometry::bezier const a{one};
+					geometry::bezier const b{two};
+					auto const ta{glm::normalize(geometry::plan_of(a.first(1.0)))};
+					auto const tb{glm::normalize(geometry::plan_of(b.first(0.0)))};
+					kink = std::max(kink, std::abs(geometry::signed_angle(ta, tb)));
+				}
+				if (false == path.pieces.empty())
+					gap = std::max({gap, glm::distance(path.pieces.front().points[segment_data::point::start], path.points[segment_data::point::start]), glm::distance(path.pieces.back().points[segment_data::point::end], path.points[segment_data::point::end])});
+			}
+			std::string ends;
+			for (auto const &path : paths)
+				ends += format(" (%.3f %.3f)", path.points[segment_data::point::end].x, path.points[segment_data::point::end].z);
+			std::string starts;
+			for (std::size_t i = 1; i < paths.size() && i <= 3; i += 2)
+			{
+				geometry::bezier const first{paths[i].pieces.empty() ? paths[i] : paths[i].pieces.front()};
+				auto const tangent{glm::normalize(geometry::plan_of(first.first(0.0)))};
+				starts += format(" %.4f", glm::degrees(std::abs(geometry::signed_angle(glm::dvec2{0.0, 1.0}, tangent))));
+			}
+			WriteLog(format("SELFTEST switchtemplate %s: %s%s, L %.3f 1:%.3f R %.1f a %.3f b %.3f stagger %.3f, %zu paths, %zu pieces, gap %.6f m, kink %.6f deg, start deg%s, ends%s", entry.label.c_str(), entry.type.c_str(), entry.own ? " own" : "", entry.length, entry.ratio, entry.radius, entry.a, entry.b, entry.stagger, paths.size(), pieces, gap,
+			                glm::degrees(kink), starts.c_str(), ends.c_str()));
 		}
 		return selftest_result::handled;
 	}
