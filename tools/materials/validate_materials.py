@@ -52,6 +52,7 @@ class Shaders:
     def __init__(self, directory):
         self.directory = directory
         self.cache = {}
+        self.metal_fix = 'metal_dark' in self.source('light_common.glsl')
 
     def source(self, name):
         path = os.path.join(self.directory, name)
@@ -306,12 +307,16 @@ def check(mat, values, nested, shaders, resolver, images, rel):
                 if diffuse is not None:
                     albedo = srgb_to_linear(diffuse[..., :3]) @ np.array([0.2126, 0.7152, 0.0722])
                     a50 = pct(albedo[metal], 50)
-                    if a50 < METAL_ALBEDO_MIN:
+                    if a50 < METAL_ALBEDO_MIN and shaders.metal_fix:
+                        add(WARN, 'metal z ciemnym diffuse (liniowo %.2f, norma >= %.1f): shader liczy go jak lakier z R 0.06; metal - rozjasnij diffuse, lakier - ustaw B = 0' % (a50, METAL_ALBEDO_MIN))
+                    elif a50 < METAL_ALBEDO_MIN:
                         add(ERROR if a50 < METAL_ALBEDO_MIN / 2 else WARN,
                             'metal z ciemnym diffuse (liniowo %.2f, norma >= %.1f): wyjdzie czarny' % (a50, METAL_ALBEDO_MIN))
                 normal = image('normalmap') if shader['reflectivity'] == 'normalmap' else None
                 if normal is not None:
                     reflect = float(np.median(normal[..., 3][metal])) * pr
+                    if shaders.metal_fix:
+                        reflect = max(reflect, 0.5)
                     if reflect < METAL_REFLECTIVITY_MIN:
                         add(WARN, 'metal z odbiciem %.2f (alfa normalmapy * param_reflection, norma >= %.1f): bez otoczenia jest ciemny' % (reflect, METAL_REFLECTIVITY_MIN))
             middle = ((B > 0.15) & (B < 0.85) & mask)

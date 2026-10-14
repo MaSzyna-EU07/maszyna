@@ -10,7 +10,7 @@ Norma i opis niżej dotyczą shaderów z gałęzi `fix/cab-lighting` (commit 2ec
 - albedo = diffuse (sRGB) × kolor diffuse submodelu
 - słońce rozproszone = 1.5 · (N·L)^1.25 · albedo · (1 − B)
 - połysk słońca = GGX(roughness) · N·L · R · `param_specular`, dla metalu dodatkowo × albedo; bez Fresnela
-- otoczenie = cubemapa(roughness) · EnvBRDF(F0, roughness) · alfa normalmapy · `param_reflection`, F0 = 0.04 dla niemetalu, albedo dla metalu
+- otoczenie = cubemapa(roughness) · EnvBRDF(F0, roughness) · alfa normalmapy · `param_reflection`, F0 = 0.04 dla niemetalu, albedo dla metalu; metal odbija co najmniej w połowie, niezależnie od alfy
 - reflektory: rozproszone 1.35 · (N·L + 0.1) · albedo, połysk jak od słońca (GGX · N·L · R · `param_specular`)
 
 Do poprawek z gałęzi fix/cab-lighting połysk nie miał N·L (przy niskim słońcu nie gasł), a reflektory mnożyły jasność przez (1 + `param_specular`).
@@ -22,7 +22,7 @@ Do poprawek z gałęzi fix/cab-lighting połysk nie miał N·L (przy niskim sło
 | diffuse | RGB | kolor (sRGB); dla metalu jego kolor odbicia |
 | specgloss | R | siła połysku słońca, liniowo, mnożona przez `param_specular` |
 | specgloss | G | gładkość, roughness = 1 − G (α = roughness²); `param_glossiness` ≥ 1 się skraca |
-| specgloss | B | metal: 0 albo 1; metal nie ma diffuse, cały kolor bierze z odbicia |
+| specgloss | B | metal: 0 albo 1; metal nie ma diffuse, cały kolor bierze z odbicia; „metal” ciemniejszy niż liniowo 0.2 shader liczy częściowo, a poniżej 0.02 całkiem, jak lakier z R 0.06 |
 | normalmap | RG | normalna (B pomijany, Z liczony) |
 | normalmap | A | odbicie otoczenia; 255 tam, gdzie powierzchnia odbija, mniej tylko we wnękach |
 
@@ -49,7 +49,7 @@ Zasady:
 
 - `param_specular` = 1; siłę połysku niesie R.
 - Niemetal: R·`param_specular` 0.02–0.12. R = 255 daje połysk ~17× za mocny; obniżanie G zamiast R tylko rozmywa odblask, a nie go ścisza.
-- Metal: B = 255, jasny diffuse (liniowo ≥ 0.2, sRGB ≥ ~125) i alfa normalmapy wysoko. Ciemny diffuse albo niska alfa = czarny metal.
+- Metal: B = 255, jasny diffuse (liniowo ≥ 0.2, sRGB ≥ ~125) i alfa normalmapy wysoko. Ciemnego „metalu” shader nie zostawia czarnego, tylko liczy go jak lakier (diffuse wraca, połysk 0.06), a odbicie metalu ma co najmniej 0.5. Na masterze ciemny diffuse albo niska alfa dają czarny metal.
 - Bez szumu w R, G, B i alfie normalmapy: w słońcu iskrzy.
 
 ## Shadery bez specgloss
@@ -93,4 +93,4 @@ Walidator czyta pliki shaderów i z nich rozpoznaje, co każdy shader robi ze sp
 1. Uruchom walidator na swoim katalogu pojazdu, np. `dynamic/pkp/sa103`.
 2. Najpierw `BLAD`: zwykle R w specgloss (niemetal ok. 15/255) albo `param_specular` (zostaw 1, siłę połysku daje R).
 3. Potem `UWAGA`: G (gładkość) według tabeli wartości docelowych, B tylko 0 albo 255, metal z jasnym diffuse.
-4. Poprawiaj źródłowe TGA, nie DDS, i uruchom walidator jeszcze raz.
+4. Poprawiaj źródłowe TGA i uruchom walidator jeszcze raz. Z TGA będą robione tekstury BC7, które zastąpią obecne DDS, więc poprawki w DDS przepadną.
