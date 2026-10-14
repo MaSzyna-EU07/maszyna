@@ -38,13 +38,13 @@ uniform sampler2D detailnormalmap;
 #include <apply_fog.glsl>
 #include <tonemapping.glsl>
 
-vec2 ParallaxMapping(vec2 f_coord, vec3 viewDir);
+#include <parallax.glsl>
 
 void main()
 {
 	//parallax mapping
 	vec3 viewDir = normalize(-TangentFragPos); //tangent view pos - tangent frag pos
-	vec2 f_coord_p = ParallaxMapping(f_coord, viewDir);
+	vec2 f_coord_p = ParallaxMapping(f_coord, viewDir, param[2].z, param[2].w);
 	vec4 normal_map = texture(normalmap, f_coord_p);
 	vec4 detailnormal_map = texture(detailnormalmap, f_coord_p * param[2].x);
 	vec4 tex_color = texture(diffuse, f_coord_p);
@@ -87,48 +87,3 @@ void main()
 	}
 #endif
 }
-
-vec2 ParallaxMapping(vec2 f_coord, vec3 viewDir)
-{
-	float pos_len = length(f_pos.xyz);
-
-	if (pos_len > 100.0) {
-		return f_coord;
-	}
-
-#if EXTRAEFFECTS_ENABLED
-	const float minLayers = 8.0;
-	const float maxLayers = 32.0;
-	float LayersWeight = pos_len / 20.0;
-	vec2  currentTexCoords = f_coord;
-	float currentDepthMapValue = texture(normalmap, currentTexCoords).b;
-	LayersWeight = min(abs(dot(vec3(0.0, 0.0, 1.0), viewDir)),LayersWeight);
-	float numLayers = mix(maxLayers, minLayers, clamp(LayersWeight, 0.0, 1.0)); // number of depth layers
-	float layerDepth = 1.0 / numLayers; // calculate the size of each layer
-	float currentLayerDepth = 0.0; // depth of current layer
-	vec2 P = viewDir.xy * param[2].z; // the amount to shift the texture coordinates per layer (from vector P)
-	vec2 deltaTexCoords = P / numLayers;
-
-	  
-	while(currentLayerDepth < currentDepthMapValue)
-	{
-		currentTexCoords -= deltaTexCoords;		// shift texture coordinates along direction of P
-		currentDepthMapValue = texture(normalmap, currentTexCoords).b;		// get depthmap value at current texture coordinates
-		currentLayerDepth += layerDepth;  		// get depth of next layer
-	}
-	
-	vec2 prevTexCoords = currentTexCoords + deltaTexCoords; // get texture coordinates before collision (reverse operations)
-
-	float afterDepth  = currentDepthMapValue - currentLayerDepth; // get depth after and before collision for linear interpolation
-	float beforeDepth = texture(normalmap, prevTexCoords).b - currentLayerDepth + layerDepth;
-	 
-	float weight = afterDepth / (afterDepth - beforeDepth); // interpolation of texture coordinates
-	vec2 finalTexCoords = prevTexCoords * weight + currentTexCoords * (1.0 - weight);
-
-	return finalTexCoords;
-#else
-	float height = texture(normalmap, f_coord).b;
-	vec2 p = viewDir.xy / viewDir.z * (height * (param[2].z - param[2].w) * 0.2);
-	return f_coord - p;
-#endif
-} 
