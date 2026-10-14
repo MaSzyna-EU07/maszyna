@@ -3,7 +3,7 @@
 Wartości, przy których tekstury wyglądają poprawnie w shaderach opengl33 (`shaders/light_common.glsl`, GGX z roughness = 1 − G).
 `validate_materials.py` sprawdza .mat i tekstury według tej normy.
 
-Norma i opis niżej dotyczą shaderów z gałęzi `fix/cab-lighting` (commit 2ecf589d i nowsze). Na `master` shadery liczą jeszcze po staremu, różnice są opisane przy każdym punkcie. Wartości tekstur z tabel są dobre dla obu wersji, bo stare shadery różnią się tylko połyskiem przy niskim słońcu, reflektorami i `param_glossiness`.
+Norma i opis niżej dotyczą shaderów z tej gałęzi (`fix/cab-lighting`: GTAO, parallax mapping, połysk z N·L, reflektory, `param_glossiness` jako wykładnik Phonga, ciemny metal). Na `master` shadery liczą jeszcze po staremu, różnice są opisane przy każdym punkcie. Wartości tekstur z tabel są dobre dla obu wersji, bo stare shadery różnią się tylko połyskiem przy niskim słońcu, reflektorami, `param_glossiness` i ciemnym metalem.
 
 ## Jak shader liczy piksel
 
@@ -13,7 +13,7 @@ Norma i opis niżej dotyczą shaderów z gałęzi `fix/cab-lighting` (commit 2ec
 - otoczenie = cubemapa(roughness) · EnvBRDF(F0, roughness) · alfa normalmapy · `param_reflection`, F0 = 0.04 dla niemetalu, albedo dla metalu; metal odbija co najmniej w połowie, niezależnie od alfy
 - reflektory: rozproszone 1.35 · (N·L + 0.1) · albedo, połysk jak od słońca (GGX · N·L · R · `param_specular`)
 
-Do poprawek z gałęzi fix/cab-lighting połysk nie miał N·L (przy niskim słońcu nie gasł), a reflektory mnożyły jasność przez (1 + `param_specular`).
+Na `master` połysk nie miał N·L (przy niskim słońcu nie gasł), a reflektory mnożyły jasność przez (1 + `param_specular`).
 
 ## Kanały
 
@@ -60,7 +60,7 @@ Zasady:
 | `normalmap`, `parallax`, `detail_*`, `shadowlessnormalmap`, `sunlessnormalmap`, `default_detail` | (2 / (`param_glossiness` + 2))^¼ jak wykładnik Phonga: 10 (domyślnie) → 0.64, 75 → 0.40, 1000 → 0.21 | `param_specular` · (r+g+b)/2 diffuse |
 | `rain_windscreen` | zawsze 0.04 | `param_specular` · (r+g+b)/2 diffuse |
 
-Przed fix/cab-lighting `normalmap`, `parallax` i `detail_*` miały roughness 1 − 1/`param_glossiness` (większa wartość = bardziej matowo), a `shadowlessnormalmap`, `sunlessnormalmap` i `default_detail` zawsze 0.04. Walidator rozpoznaje obie wersje z plików shaderów.
+Na `master` `normalmap`, `parallax` i `detail_*` miały roughness 1 − 1/`param_glossiness` (większa wartość = bardziej matowo), a `shadowlessnormalmap`, `sunlessnormalmap` i `default_detail` zawsze 0.04. Walidator rozpoznaje obie wersje z plików shaderów.
 
 ## Walidator
 
@@ -75,7 +75,7 @@ python3 tools/materials/validate_materials.py ~/pctga dynamic --fallback <katalo
 |---|---|
 | podkatalogi | co sprawdzić względem katalogu z assetami, domyślnie `dynamic`; może być węższe, np. `dynamic/pkp/sa103` |
 | `--fallback DIR` | drugi katalog gry, w którym szukać tekstur, których nie ma w pierwszym (można podać kilka razy) |
-| `--shaders DIR` | shadery, według których liczyć; domyślnie `shaders/` z tego repo. Podaj shadery gry albo `fix/cab-lighting`, żeby ocena zgadzała się z tym, co widać w symulatorze |
+| `--shaders DIR` | shadery, według których liczyć; domyślnie `shaders/` z tego repo. Gdy gra ma inne shadery niż repo, podaj jej katalog `shaders`, żeby ocena zgadzała się z tym, co widać w symulatorze |
 | `--csv FILE` | wyniki do pliku CSV: material, shader, poziom, opis |
 | `--info` | pokazuje też informacje, nie tylko błędy i uwagi |
 | `-j N` | liczba procesów, domyślnie wszystkie rdzenie; cały pctga trwa ok. 80 s |
