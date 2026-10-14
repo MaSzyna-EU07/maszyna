@@ -1880,7 +1880,8 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
             << "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
             << "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
             << "Security Wheelslip "
-            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg]"
+            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
+            << "VehicleVelocity[km/h]"
             << "\r\n";
         LogFile << std::fixed << std::setprecision( 4 );
 #endif
@@ -4817,7 +4818,9 @@ void TController::PhysicsLog()
             << mvControlling->dizel_heat.Ts << " "
             << mvControlling->dizel_heat.To << " "
             << mvControlling->dizel_heat.temperatura1 << " "
-            << mvControlling->dizel_heat.temperatura2
+            << mvControlling->dizel_heat.temperatura2 << " "
+            // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+            << mvOccupied->V * 3.6
             << "\r\n";
 #endif
 #if LOGPRESS == 1
