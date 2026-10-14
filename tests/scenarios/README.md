@@ -59,6 +59,7 @@ scenery is newer.
 | `base_scenery` | scenery file in the game's `scenery/` dir |
 | `strip_trainsets` | drop the base scenery's trainsets (default `true`) |
 | `time` | replace the scenery start time, `HH:MM` |
+| `track_friction` | set the friction of every track of the base scenery (default in the sceneries is 0.15), e.g. for slippery rail |
 | `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire) |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
 | `duration` | seconds of simulation to record |

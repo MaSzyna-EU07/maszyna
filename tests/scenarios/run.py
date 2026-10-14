@@ -86,6 +86,12 @@ def set_start_time(text: str, hhmm: str) -> str:
     return re.sub(r"(?im)^(\s*time\s+)\d{1,2}:\d{2}", lambda m: m.group(1) + hhmm, text, count=1)
 
 
+def set_track_friction(text: str, friction: float) -> str:
+    """Sets the friction of every track: node <range> <range> <name> track <type> <length> <gauge> <friction> ..."""
+    return re.sub(r"(?im)^(\s*node\s+\S+\s+\S+\s+\S+\s+track\s+\S+\s+\S+\s+\S+\s+)[-\d.]+",
+                  lambda m: m.group(1) + f"{friction}", text)
+
+
 def fill_vars(fragment: str, values: dict, keep=frozenset()) -> str:
     """Replaces {{name}} with the case's value; a list value becomes one line per item."""
     def value(m):
@@ -107,6 +113,8 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
         text, _ = split_trainsets(text)
     if "time" in case:
         text = set_start_time(text, case["time"])
+    if "track_friction" in case:
+        text = set_track_friction(text, case["track_friction"])
     fragment = (CASES_DIR / case["fragment"]).read_bytes().decode("latin-1")
     # vars first: {{vehicle}} inside a var's value gets filled in the second pass
     fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle"})
