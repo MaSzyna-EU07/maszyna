@@ -214,6 +214,13 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	m_pfx_ssao_blur  = std::make_unique<gl::postfx>("ssao_blur");
 	m_pfx_ssao_apply = std::make_unique<gl::postfx>("ssao_apply");
 
+	if (Global.gfx_postfx_gtao_enabled)
+	{
+		m_pfx_gtao       = std::make_unique<gl::postfx>("gtao");
+		m_pfx_gtao_blur  = std::make_unique<gl::postfx>("gtao_blur");
+		m_pfx_gtao_apply = std::make_unique<gl::postfx>("gtao_apply");
+	}
+
 	// Generate hemisphere kernel (z > 0 = toward surface normal)
 	std::uniform_real_distribution<float> rnd(0.0f, 1.0f);
 	std::default_random_engine gen(42); // NOSONAR fixed seed on purpose, SSAO kernel has to be identical every run
@@ -503,7 +510,7 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 		vp.msaa_fb->attach(*vp.msaa_rbc, GL_COLOR_ATTACHMENT0);
 		vp.msaa_fb->attach(*vp.msaa_rbd, GL_DEPTH_ATTACHMENT);
 
-		if (Global.gfx_postfx_chromaticaberration_enabled || Global.gfx_postfx_motionblur_enabled || Global.gfx_postfx_ssao_enabled)
+		if (Global.gfx_postfx_chromaticaberration_enabled || Global.gfx_postfx_motionblur_enabled || Global.gfx_postfx_ssao_enabled || Global.gfx_postfx_gtao_enabled)
 		{
 			vp.main_tex = std::make_unique<opengl_texture>();
 			vp.main_tex->alloc_rendertarget(Global.gfx_format_color, GL_RGB, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
@@ -564,6 +571,24 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 			vp.ssao_blur_fb = std::make_unique<gl::framebuffer>();
 			vp.ssao_blur_fb->attach(*vp.ssao_blur_tex, GL_COLOR_ATTACHMENT0);
 			if (!vp.ssao_blur_fb->is_complete()) { ErrorLog("ssao blur framebuffer setup failed"); return false; }
+		}
+
+		if (Global.gfx_postfx_gtao_enabled)
+		{
+			int gtao_w = std::max(1, vp.width  / 2);
+			int gtao_h = std::max(1, vp.height / 2);
+
+			vp.gtao_tex = std::make_unique<opengl_texture>();
+			vp.gtao_tex->alloc_rendertarget(GL_R8, GL_RED, gtao_w, gtao_h, 1, 1, GL_CLAMP_TO_EDGE);
+			vp.gtao_fb = std::make_unique<gl::framebuffer>();
+			vp.gtao_fb->attach(*vp.gtao_tex, GL_COLOR_ATTACHMENT0);
+			if (!vp.gtao_fb->is_complete()) { ErrorLog("gtao framebuffer setup failed"); return false; }
+
+			vp.gtao_blur_tex = std::make_unique<opengl_texture>();
+			vp.gtao_blur_tex->alloc_rendertarget(GL_R8, GL_RED, gtao_w, gtao_h, 1, 1, GL_CLAMP_TO_EDGE);
+			vp.gtao_blur_fb = std::make_unique<gl::framebuffer>();
+			vp.gtao_blur_fb->attach(*vp.gtao_blur_tex, GL_COLOR_ATTACHMENT0);
+			if (!vp.gtao_blur_fb->is_complete()) { ErrorLog("gtao blur framebuffer setup failed"); return false; }
 		}
 
 		if (!vp.main2_fb->is_complete())
@@ -1042,12 +1067,8 @@ if (!Global.gfx_skippipeline)
 				vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT0);
 				vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT1);
 				vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_DEPTH_BUFFER_BIT, GL_DEPTH_ATTACHMENT);
-
-				model_ubs.param[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
-				model_ubo->update(model_ubs);
-				m_pfx_motionblur->apply({vp.main_tex.get(), vp.main_texv.get(), vp.main_texd.get()}, vp.main2_fb.get());
 			}
-			else if (Global.gfx_postfx_ssao_enabled)
+			else if (Global.gfx_postfx_ssao_enabled || Global.gfx_postfx_gtao_enabled)
 			{
 				// resolve color+depth so SSAO can sample the depth texture
 				vp.main_fb->clear(GL_COLOR_BUFFER_BIT);
@@ -1059,6 +1080,42 @@ if (!Global.gfx_skippipeline)
 			{
 				vp.main2_fb->clear(GL_COLOR_BUFFER_BIT);
 				vp.msaa_fb->blit_to(vp.main2_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT0);
+			}
+
+			if (Global.gfx_postfx_gtao_enabled)
+			{
+				int gtao_w = std::max(1, vp.width  / 2);
+				int gtao_h = std::max(1, vp.height / 2);
+				bool const blend { glIsEnabled(GL_BLEND) == GL_TRUE };
+
+				glDisable(GL_BLEND);
+				model_ubs.param[0] = glm::vec4(Global.gfx_postfx_gtao_radius, Global.gfx_postfx_gtao_intensity, static_cast<float>(Global.gfx_postfx_gtao_directions), static_cast<float>(Global.gfx_postfx_gtao_steps));
+				model_ubs.param[1] = glm::vec4((GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control) ? 1.f : 0.f, 1000.f, 0.f, 0.f);
+				model_ubo->update(model_ubs);
+				glViewport(0, 0, gtao_w, gtao_h);
+				m_pfx_gtao->apply({ vp.main_texd.get() }, vp.gtao_fb.get());
+				m_pfx_gtao_blur->apply({ vp.gtao_tex.get(), vp.main_texd.get() }, vp.gtao_blur_fb.get());
+
+				glViewport(0, 0, vp.width, vp.height);
+				vp.main_fb->setup_drawing(1);
+				glEnable(GL_BLEND);
+				glBlendFunc(GL_ZERO, GL_SRC_COLOR);
+				m_pfx_gtao_apply->apply({ vp.gtao_blur_tex.get() }, vp.main_fb.get(), false);
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				if (!blend)
+					glDisable(GL_BLEND);
+			}
+
+			if (Global.gfx_postfx_motionblur_enabled)
+			{
+				model_ubs.param[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
+				model_ubo->update(model_ubs);
+				m_pfx_motionblur->apply({vp.main_tex.get(), vp.main_texv.get(), vp.main_texd.get()}, vp.main2_fb.get());
+			}
+			else if (Global.gfx_postfx_gtao_enabled && !Global.gfx_postfx_ssao_enabled)
+			{
+				vp.main2_fb->clear(GL_COLOR_BUFFER_BIT);
+				vp.main_fb->blit_to(vp.main2_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT0);
 			}
 
 			// SSAO: depth -> occlusion -> blur -> modulate color into main2_fb

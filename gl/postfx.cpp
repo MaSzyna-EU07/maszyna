@@ -26,11 +26,12 @@ void gl::postfx::apply(opengl_texture &src, framebuffer *dst)
     apply({&src}, dst);
 }
 
-void gl::postfx::apply(std::vector<opengl_texture *> src, framebuffer *dst)
+void gl::postfx::apply(std::vector<opengl_texture *> src, framebuffer *dst, bool clear)
 {
     if (dst)
     {
-        dst->clear(GL_COLOR_BUFFER_BIT);
+        if (clear)
+            dst->clear(GL_COLOR_BUFFER_BIT);
         dst->bind();
     }
     else

@@ -1442,6 +1442,31 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_postfx_chromaticaberration_enabled;
     }
+    else if (Token == "gfx.postfx.gtao.enabled")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_postfx_gtao_enabled;
+    }
+    else if (Token == "gfx.postfx.gtao.radius")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_postfx_gtao_radius;
+    }
+    else if (Token == "gfx.postfx.gtao.intensity")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_postfx_gtao_intensity;
+    }
+    else if (Token == "gfx.postfx.gtao.directions")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_postfx_gtao_directions;
+    }
+    else if (Token == "gfx.postfx.gtao.steps")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_postfx_gtao_steps;
+    }
     else if (Token == "gfx.format.color")
     {
         Parser.getTokens(1);
@@ -1753,6 +1778,11 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );
     // TODO: export gfx_postfx_motionblur_format
     export_as_text( Output, "gfx.postfx.chromaticaberration.enabled", gfx_postfx_chromaticaberration_enabled );
+    export_as_text( Output, "gfx.postfx.gtao.enabled", gfx_postfx_gtao_enabled );
+    export_as_text( Output, "gfx.postfx.gtao.radius", gfx_postfx_gtao_radius );
+    export_as_text( Output, "gfx.postfx.gtao.intensity", gfx_postfx_gtao_intensity );
+    export_as_text( Output, "gfx.postfx.gtao.directions", gfx_postfx_gtao_directions );
+    export_as_text( Output, "gfx.postfx.gtao.steps", gfx_postfx_gtao_steps );
     // TODO: export gfx_format_color
     // TODO: export gfx_format_depth
     export_as_text( Output, "gfx.skiprendering", gfx_skiprendering );

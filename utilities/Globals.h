@@ -293,6 +293,11 @@ struct global_settings {
     GLenum gfx_format_color = GL_RGB16F;
     GLenum gfx_format_depth = GL_DEPTH_COMPONENT32F;
     bool gfx_postfx_chromaticaberration_enabled = true;
+    bool gfx_postfx_gtao_enabled = true;
+    float gfx_postfx_gtao_radius = 0.35f;
+    float gfx_postfx_gtao_intensity = 2.0f;
+    int gfx_postfx_gtao_directions = 2;
+    int gfx_postfx_gtao_steps = 8;
     bool gfx_skippipeline = false;
     bool gfx_extraeffects = true;
     bool gfx_shadergamma = false;
