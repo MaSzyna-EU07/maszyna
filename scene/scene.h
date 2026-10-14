@@ -26,7 +26,6 @@ http://mozilla.org/MPL/2.0/.
 #include "input/command.h"
 #include "utilities/utilities.h"
 
-class opengl_renderer;
 class opengl33_renderer;
 
 namespace scene {
@@ -96,7 +95,6 @@ struct terrain_block {
 // TBD, TODO: replace with quadtree scheme?
 class basic_cell {
 
-    friend opengl_renderer;
     friend opengl33_renderer;
 
 public:
@@ -294,7 +292,6 @@ public:
 // basic scene partitioning structure, holds terrain geometry and collection of cells
 class basic_section {
 
-    friend opengl_renderer;
     friend opengl33_renderer;
 
 public:
@@ -418,7 +415,6 @@ public:
 // top-level of scene spatial structure, holds collection of sections
 class basic_region {
 
-    friend opengl_renderer;
     friend opengl33_renderer;
 
 public:

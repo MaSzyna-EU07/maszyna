@@ -283,7 +283,10 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
 
     if (token == "usevbo")
     {
-        ParseOne(Parser, bUseVBO);
+        // only the removed legacy renderer had a non-VBO path; read and ignore so old eu07.ini files still load
+        bool usevbo{true};
+        ParseOne(Parser, usevbo);
+        WriteLog("eu07.ini: \"usevbo\" is no longer supported and was ignored");
         return true;
     }
 
@@ -323,8 +326,12 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
             GfxRenderer = "experimental";
         }
 
-        BasicRenderer = GfxRenderer == "simple";
-        LegacyRenderer = !NvRenderer && GfxRenderer != "default";
+        if (GfxRenderer != "default" && GfxRenderer != "experimental")
+        {
+            // the legacy OpenGL 2.1 renderer ("legacy", "simple" and other values) was removed
+            WriteLog("eu07.ini: gfxrenderer \"" + GfxRenderer + "\" is no longer supported, using \"default\"");
+            GfxRenderer = "default";
+        }
         return true;
     }
 
@@ -1574,7 +1581,6 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "defaultext", szDefaultExt );
     export_as_text( Output, "newaircouplers", bnewAirCouplers );
     export_as_text( Output, "anisotropicfiltering", AnisotropicFiltering );
-    export_as_text( Output, "usevbo", bUseVBO );
     export_as_text( Output, "feedbackmode", iFeedbackMode );
     export_as_text( Output, "feedbackport", iFeedbackPort );
     export_as_text( Output, "multiplayer", iMultiplayer );

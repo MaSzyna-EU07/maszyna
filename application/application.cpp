@@ -1252,7 +1252,7 @@ int eu07_application::init_glfw()
 		monitor = glfwGetPrimaryMonitor();
 
 	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
-	if ((Global.gfx_skippipeline || Global.LegacyRenderer) && Global.iMultisampling > 0)
+	if (Global.gfx_skippipeline && Global.iMultisampling > 0)
 	{
 		glfwWindowHint(GLFW_SAMPLES, 1 << Global.iMultisampling);
 	}
@@ -1265,39 +1265,23 @@ int eu07_application::init_glfw()
 	}
 	else
 	{
-		if (!Global.LegacyRenderer)
+		// activate core profile for opengl 3.3 renderer
+		if (!Global.gfx_usegles)
 		{
-			Global.bUseVBO = true;
-			// activate core profile for opengl 3.3 renderer
-			if (!Global.gfx_usegles)
-			{
-				glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-				glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-				glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-				glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-			}
-			else
-			{
-#ifdef GLFW_CONTEXT_CREATION_API
-				if (m_glfwversion >= 30200)
-					glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-#endif
-				glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-				glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-				glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-			}
+			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+			glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 		}
 		else
 		{
-			if (Global.gfx_usegles)
-			{
-				ErrorLog("legacy renderer not supported in gles mode");
-				return -1;
-			}
-			Global.gfx_shadergamma = false;
-			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+#ifdef GLFW_CONTEXT_CREATION_API
+			if (m_glfwversion >= 30200)
+				glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
+#endif
+			glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 		}
 
 		if (Global.gfx_gldebug)
@@ -1396,20 +1380,15 @@ int eu07_application::init_ui()
 int eu07_application::init_gfx()
 {
 
-	if (Global.GfxRenderer == "default")
-	{
-		// default render path
-		GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
-	}
-	else if (Global.GfxRenderer == "experimental")
+	// NOTE: global_settings maps unsupported gfxrenderer values (e.g. the removed "legacy") to "default"
+	if (Global.GfxRenderer == "experimental")
 	{
 		GfxRenderer = gfx_renderer_factory::get_instance()->create(Global.GfxRenderer);
 	}
 	else
 	{
-		// legacy render path
-		GfxRenderer = gfx_renderer_factory::get_instance()->create("legacy");
-		Global.DisabledLogTypes |= static_cast<unsigned int>(logtype::material);
+		// default render path
+		GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
 	}
 
 	if (!GfxRenderer)

@@ -153,9 +153,7 @@ struct global_settings {
     int DynamicLightCount{ 7 };
     bool ScaleSpecularValues{ true };
     std::string GfxRenderer{ "default" };
-    bool LegacyRenderer{ false };
     bool NvRenderer{ false };
-    bool BasicRenderer{ false };
     bool RenderShadows{ true };
 	bool applicationQuitOrder{false};
     int RenderCabShadowsRange{ 0 };
@@ -169,7 +167,6 @@ struct global_settings {
         float range_instances{ 750.f };
         float range_vehicles{ 250.f };
     } reflectiontune;
-    bool bUseVBO{ true }; // czy jest VBO w karcie graficznej (czy użyć)
     float AnisotropicFiltering{ 8.f }; // requested level of anisotropic filtering. TODO: move it to renderer object
     float FieldOfView{ 45.f }; // vertical field of view for the camera. TODO: move it to the renderer
     bool EditorOrtho{ false };

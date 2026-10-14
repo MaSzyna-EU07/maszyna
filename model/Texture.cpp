@@ -1374,28 +1374,6 @@ opengl_texture::set_filtering() const
         // anisotropic filtering
         ::glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, Global.AnisotropicFiltering );
     }
-
-    if( Global.LegacyRenderer ) {
-
-        bool sharpen{ false };
-        for( auto const &trait : traits ) {
-
-            switch( trait ) {
-
-                case '#': { sharpen = true; break; }
-                default:  {                 break; }
-            }
-        }
-
-        if( true == sharpen ) {
-            // #: sharpen more
-            ::glTexEnvf( GL_TEXTURE_FILTER_CONTROL, GL_TEXTURE_LOD_BIAS, -2.0f );
-        }
-        else {
-            // regular texture sharpening
-            ::glTexEnvf( GL_TEXTURE_FILTER_CONTROL, GL_TEXTURE_LOD_BIAS, -1.0f );
-        }
-    }
 }
 
 void

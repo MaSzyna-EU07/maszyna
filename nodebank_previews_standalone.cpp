@@ -306,9 +306,7 @@ int generate_nodebank_previews(int Argc, char *Argv[])
 
 	// the full renderer, drawing offscreen
 	Global.GfxRenderer = "default";
-	Global.LegacyRenderer = false;
 	Global.NvRenderer = false;
-	Global.BasicRenderer = false;
 	Global.gfx_usegles = false;
 	Global.gfx_skippipeline = false;
 	Global.gfx_postfx_motionblur_enabled = false;

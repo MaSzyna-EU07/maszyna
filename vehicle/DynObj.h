@@ -188,7 +188,6 @@ struct material_data {
 
 class TDynamicObject { // klasa pojazdu
 
-    friend opengl_renderer;
     friend opengl33_renderer;
 
 public:

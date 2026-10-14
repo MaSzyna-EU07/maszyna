@@ -164,8 +164,6 @@ private:
 // holds all particle emitters defined in the scene and updates their state
 class particle_manager {
 
-    friend opengl_renderer;
-
 public:
 // types
     using source_sequence = std::vector<smoke_source>;

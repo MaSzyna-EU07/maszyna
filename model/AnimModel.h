@@ -107,7 +107,6 @@ class TAnimContainer : public std::enable_shared_from_this<TAnimContainer>
 // opakowanie modelu, określające stan egzemplarza
 class TAnimModel : public scene::basic_node {
 
-    friend opengl_renderer;
     friend opengl33_renderer;
     friend itemproperties_panel;
 

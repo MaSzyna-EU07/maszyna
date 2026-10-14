@@ -68,7 +68,6 @@ if (APPLE)
 endif()
 
 option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
-option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
@@ -225,7 +224,6 @@ set(SOURCES
 "utilities/headtrack.cpp"
 "scripting/ladderlogic.cpp"
 "rendering/geometrybank.cpp"
-"rendering/openglcolor.cpp"
 "simulation/simulationsounds.cpp"
 "rendering/openglcamera.cpp"
 
@@ -284,9 +282,7 @@ set(SOURCES
 
 set(DEFINITIONS)
 set(SOURCES ${SOURCES} "imgui/imgui_impl_opengl3.cpp")
-set(SOURCES ${SOURCES} "imgui/imgui_impl_opengl2.cpp")
 set_source_files_properties("imgui/imgui_impl_opengl3.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
-set_source_files_properties("imgui/imgui_impl_opengl2.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 
 if (WITH_CRASHPAD)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_CRASHPAD")
@@ -339,17 +335,6 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl33terrain.cpp"
             "rendering/opengl33renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
-endif()
-
-if (WITH_OPENGL_LEGACY)
-        set(SOURCES ${SOURCES}
-            "rendering/openglgeometrybank.cpp"
-            "rendering/opengllight.cpp"
-            "rendering/openglskydome.cpp"
-            "rendering/openglprecipitation.cpp"
-            "rendering/openglparticles.cpp"
-            "rendering/openglrenderer.cpp")
-		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_LEGACY")
 endif()
 
 add_subdirectory("${DEPS_DIR}/glfw/" EXCLUDE_FROM_ALL)

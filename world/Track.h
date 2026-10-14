@@ -151,7 +151,6 @@ private:
 // trajektoria ruchu - opakowanie
 class TTrack : public scene::basic_node
 {
-    friend opengl_renderer;
     friend opengl33_renderer;
     // NOTE: temporary arrangement
     friend itemproperties_panel;
