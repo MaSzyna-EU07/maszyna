@@ -71,9 +71,13 @@ scenery is newer.
 the one whose physicslog is checked. Other vehicles of the consist take names made from it,
 e.g. `{{vehicle}}_s`. The td.scn cases share two fragments, `td_timetable.scn` (route set,
 train runs to Przystanek) and `td_red_signal.scn` (no route, exit signal at stop), and differ
-only in `vars.consist`.
+only in `vars.consist`. `td_red_signal_moving.scn` is the red signal one with the train
+starting at `vars.velocity` km/h; with `track_friction` 0.03 it locks the wheels when braking.
 
-Checks (speeds in km/h, times in seconds of physicslog time, distances in metres):
+Checks (speeds in km/h, times in seconds of physicslog time, distances in metres). Most use
+the physicslog Velocity column, which is the wheel speed: it stays at 0 while the wheels are
+locked in a skid. The ones marked *vehicle speed* use the vehicle speed column at the end of
+the row instead, logged by builds from this branch on.
 
 - `starts` `min_speed`, `within`: reaches `min_speed` within `within` seconds.
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
@@ -86,6 +90,12 @@ Checks (speeds in km/h, times in seconds of physicslog time, distances in metres
 - `distance` `min`, `max`: total distance travelled. The physicslog has no position, so the
   distance comes from integrating the speed; on td.scn every vehicle's first stop after
   Stacja1 came out at 1400 m (+-3), and the red signal stop at 140 m.
+- `slips` `within`: the lead vehicle's wheels slip or lock at some point (within `within`
+  seconds if given), so a slippery rail case does what it's meant to.
+- `slip_clears` `moving_speed`, `stop_speed`, `within` (*vehicle speed*): once stopped after
+  moving off, the wheels stop slipping within `within` seconds.
+- `holds_still` `moving_speed`, `stop_speed`, `max_distance` (*vehicle speed*): once stopped
+  after moving off, moves no more than `max_distance` metres, e.g. no creeping on locked wheels.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`.

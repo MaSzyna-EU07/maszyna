@@ -12,6 +12,6 @@
     { "type": "starts", "min_speed": 20, "within": 150 },
     { "type": "max_speed", "limit": 90, "tolerance": 3 },
     { "type": "brakes", "min_pressure": 0.5 },
-    { "type": "stops", "moving_speed": 20, "stop_speed": 0.5, "hold": 5 }
+    { "type": "stops", "moving_speed": 20, "stop_speed": 0.5, "hold": 2 }
   ]
 }

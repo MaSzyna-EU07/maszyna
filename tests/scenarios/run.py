@@ -43,8 +43,11 @@ OUT_DIR = HERE / "out"
 # physicslog columns, see TController::PhysicsLog() in vehicle/Driver.cpp.
 # Velocity is in km/h and pressures in bar, despite the header saying m/s and MPa.
 COL_TIME = 0
-COL_VELOCITY = 1
+COL_VELOCITY = 1  # wheel speed: stays at 0 while the wheels are locked in a skid
 COL_BRAKE_PRESS = 8
+COL_COMMAND = 16  # text, read as None
+COL_WHEELSLIP = 20
+COL_VEHICLE_VELOCITY = 25  # signed vehicle speed, km/h; only in builds which log it
 
 # settings layered over the user's eu07.ini for a test run
 TEST_INI = """\
@@ -145,7 +148,7 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
 
 
 def read_physicslog(path: Path) -> list[list[float]]:
-    """Returns rows of numeric columns up to BrakePress; skips the header and partial lines."""
+    """Returns rows of columns, None for the text ones; skips the header and partial lines."""
     rows = []
     try:
         lines = path.read_text(errors="replace").splitlines()
@@ -156,9 +159,15 @@ def read_physicslog(path: Path) -> list[list[float]]:
         if len(parts) <= COL_BRAKE_PRESS:
             continue  # line still being written
         try:
-            rows.append([float(p) for p in parts[: COL_BRAKE_PRESS + 1]])
+            row = [float(p) for p in parts[: COL_BRAKE_PRESS + 1]]
         except ValueError:
             continue
+        for p in parts[COL_BRAKE_PRESS + 1:]:
+            try:
+                row.append(float(p))
+            except ValueError:
+                row.append(None)
+        rows.append(row)
     return rows
 
 
@@ -331,7 +340,60 @@ def check_distance(rows, max=None, min=None):
     return ok, f"travelled {d:.0f} m (wanted {bounds})"
 
 
+def check_slips(rows, within=None):
+    """The lead vehicle's wheels slip (or lock in a skid) at some point, e.g. to make sure a slippery rail case does what it's meant to."""
+    for r in rows:
+        if within is not None and r[COL_TIME] > within:
+            break
+        if len(r) > COL_WHEELSLIP and r[COL_WHEELSLIP]:
+            return True, f"wheels slipping at t={r[COL_TIME]:.1f}s, v={r[COL_VELOCITY]:.1f} km/h"
+    return False, "the wheels never slipped"
+
+
+def check_holds_still(rows, moving_speed, stop_speed, max_distance):
+    """Once stopped after moving off, the vehicle doesn't creep. Uses the vehicle speed rather than the
+    wheel speed, so it also catches a vehicle sliding on locked wheels."""
+    if not rows or len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+        return False, "the physicslog has no vehicle speed column, the build is too old"
+    speed = [abs(r[COL_VEHICLE_VELOCITY]) for r in rows]
+    start = next((i for i, v in enumerate(speed) if v >= moving_speed), None)
+    if start is None:
+        return False, f"never reached {moving_speed} km/h"
+    stop = next((i for i in range(start, len(rows)) if speed[i] <= stop_speed), None)
+    if stop is None:
+        return False, f"never came down to {stop_speed} km/h"
+    d, top, top_t = 0.0, 0.0, rows[stop][COL_TIME]
+    for i in range(stop + 1, len(rows)):
+        d += (speed[i - 1] + speed[i]) / 2 / 3.6 * (rows[i][COL_TIME] - rows[i - 1][COL_TIME])
+        if speed[i] > top:
+            top, top_t = speed[i], rows[i][COL_TIME]
+    held = rows[-1][COL_TIME] - rows[stop][COL_TIME]
+    detail = f"stopped at t={rows[stop][COL_TIME]:.1f}s, then moved {d:.3f} m in {held:.0f}s, top {top:.4f} km/h at t={top_t:.1f}s"
+    return d <= max_distance, detail
+
+
+def check_slip_clears(rows, moving_speed, stop_speed, within):
+    """Once the vehicle has stopped after moving off, its wheels stop slipping within `within` seconds
+    (a vehicle left skidding on locked wheels keeps its brakes capped by the sliding adhesion)."""
+    if not rows or len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+        return False, "the physicslog has no vehicle speed column, the build is too old"
+    start = next((i for i, r in enumerate(rows) if abs(r[COL_VEHICLE_VELOCITY]) >= moving_speed), None)
+    if start is None:
+        return False, f"never reached {moving_speed} km/h"
+    stop = next((i for i in range(start, len(rows)) if abs(rows[i][COL_VEHICLE_VELOCITY]) <= stop_speed), None)
+    if stop is None:
+        return False, f"never came down to {stop_speed} km/h"
+    deadline = rows[stop][COL_TIME] + within
+    late = [r for r in rows[stop:] if r[COL_TIME] > deadline and r[COL_WHEELSLIP]]
+    if late:
+        return False, f"stopped at t={rows[stop][COL_TIME]:.1f}s, wheels still slipping at t={late[0][COL_TIME]:.1f}s ({len(late)} rows after the {within}s grace)"
+    return True, f"stopped at t={rows[stop][COL_TIME]:.1f}s, no slipping after t={deadline:.1f}s"
+
+
 CHECKS = {
+    "slips": check_slips,
+    "slip_clears": check_slip_clears,
+    "holds_still": check_holds_still,
     "starts": check_starts,
     "max_speed": check_max_speed,
     "brakes": check_brakes,
