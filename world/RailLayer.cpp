@@ -299,6 +299,8 @@ struct grooved_profile {
     float wallu { -1.f };
 };
 
+glm::vec3 const plain_mark { 0.f, 1.f, 1.f };
+
 bool treads_marked() {
 
     static auto const marked { std::getenv( "EU07_EDITOR_TREADS" ) != nullptr };
@@ -480,6 +482,7 @@ private:
     grooved_profile split_grooved( gfx::vertex_array const &Outline ) const;
     std::vector<rail_cut> top_cuts( gfx::vertex_array const &Top ) const;
     void running( rail_piece const &Whole, knots::line const &Rolled, piece_ends const &Ends );
+    void plain( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends );
     void treaded( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends );
     gfx::vertex_array lay_sides( rail_piece const &Whole, piece_ends const &Ends );
     void lay_top( gfx::vertex_array const &Top, rail_piece const &Whole, glm::dvec2 const &Reach, std::vector<double> const &Splits, std::vector<top_band> const &Bands, std::function<std::vector<double>( double )> const &Edges, piece_ends const &Ends );
@@ -640,7 +643,10 @@ void TTrack::rail_layer::lay_treads( rail_piece const &Whole, std::vector<rail_t
         part.capfrom = ( k == 1 && Whole.capfrom );
         part.capto = ( k + 1 == splits.size() && Whole.capto );
         auto const *tread { tread_at( Treads, 0.5 * ( part.from + part.to ) ) };
-        if( tread != nullptr && m_topfirst < m_toplast ) {
+        if( tread != nullptr && m_topfirst < m_toplast && tread->edge.empty() ) {
+            plain( part, *tread, ends );
+        }
+        else if( tread != nullptr && m_topfirst < m_toplast ) {
             treaded( part, *tread, ends );
         }
         else {
@@ -717,7 +723,7 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
             for( std::size_t k = 1; k < splits.size(); ++k ) {
                 auto const *tread { tread_at( active, 0.5 * ( splits[ k - 1 ] + splits[ k ] ) ) };
                 rail_piece const whole {
-                    .material = tread_material( tread ),
+                    .material = ( tread != nullptr && treads_marked() ? paint( tread->material, plain_mark ) : tread_material( tread ) ),
                     .from = splits[ k - 1 ],
                     .to = splits[ k ],
                     .offsets = pieceoffsets,
@@ -944,6 +950,17 @@ void TTrack::rail_layer::running( rail_piece const &Whole, knots::line const &Ro
             auto const rolled { knots::sample( Rolled, Middle, 0.0 ) };
             return std::vector<double> { rolled - blend, rolled }; },
         Ends );
+}
+
+void TTrack::rail_layer::plain( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends ) {
+
+    Whole.material = null_handle;
+    auto const top { lay_sides( Whole, Ends ) };
+    Whole.material = ( treads_marked() ? paint( Tread.material, plain_mark ) : Tread.material );
+    Whole.capfrom = false;
+    Whole.capto = false;
+    Whole.rolled = true;
+    piece( top, Whole, Ends );
 }
 
 void TTrack::rail_layer::treaded( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends ) {
