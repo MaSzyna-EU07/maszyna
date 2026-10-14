@@ -8,7 +8,7 @@
 #include "gl/framebuffer.h"
 #include "rendering/frustum.h"
 #ifdef WITH_OPENGL_MODERN
-#include "rendering/opengl33renderer.h"
+#include "rendering/opengl46/opengl46renderer.h"
 #endif
 
 namespace ui

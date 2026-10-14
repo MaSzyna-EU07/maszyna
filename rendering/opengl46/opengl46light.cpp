@@ -9,14 +9,14 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 
-#include "rendering/opengl33light.h"
+#include "rendering/opengl46/opengl46light.h"
 
-void opengl33_light::apply_intensity(float const Factor) {
+void opengl46_light::apply_intensity(float const Factor) {
 
 	factor = Factor;
 }
 
-void opengl33_light::apply_angle() const { /* nothing to do */ }
+void opengl46_light::apply_angle() const { /* nothing to do */ }
 
 
 //---------------------------------------------------------------------------

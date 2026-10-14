@@ -13,13 +13,13 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/shader.h"
 #include "gl/buffer.h"
 
-class opengl33_skydome {
+class opengl46_skydome {
 
 public:
 // constructors
-    opengl33_skydome() = default;
+    opengl46_skydome() = default;
 // destructor
-    ~opengl33_skydome() = default;
+    ~opengl46_skydome() = default;
 // methods
     // updates data stores on the opengl end. NOTE: unbinds buffers
     void update();

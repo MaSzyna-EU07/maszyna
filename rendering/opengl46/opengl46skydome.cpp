@@ -8,11 +8,11 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "rendering/opengl33skydome.h"
+#include "rendering/opengl46/opengl46skydome.h"
 
 #include "simulation/simulationenvironment.h"
 
-void opengl33_skydome::update() {
+void opengl46_skydome::update() {
 
     if (!m_shader) {
 
@@ -55,7 +55,7 @@ void opengl33_skydome::update() {
 }
 
 // render skydome to screen
-void opengl33_skydome::render() {
+void opengl46_skydome::render() {
 
     if( ( !m_shader) || ( !m_vao ) ) { return; }
 

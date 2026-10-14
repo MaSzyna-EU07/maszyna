@@ -17,13 +17,13 @@ namespace gfx {
 
 // opengl vao/vbo-based variant of the geometry bank
 
-class opengl33_vaogeometrybank : public geometry_bank {
+class opengl46_vaogeometrybank : public geometry_bank {
 
 public:
 // constructors:
-    opengl33_vaogeometrybank() = default;
+    opengl46_vaogeometrybank() = default;
 // destructor
-    ~opengl33_vaogeometrybank() {
+    ~opengl46_vaogeometrybank() {
         delete_buffer(); }
 // methods:
     static

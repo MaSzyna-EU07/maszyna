@@ -8,9 +8,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "rendering/opengl33terrain.h"
+#include "rendering/opengl46/opengl46terrain.h"
 
-#include "rendering/opengl33geometrybank.h"
+#include "rendering/opengl46/opengl46geometrybank.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 
@@ -39,7 +39,7 @@ void set_anisotropy(GLenum const Target)
 
 } // namespace
 
-bool opengl33_terrain_materials::init()
+bool opengl46_terrain_materials::init()
 {
 	if (m_state != 0)
 		return m_state > 0;
@@ -91,7 +91,7 @@ bool opengl33_terrain_materials::init()
 	return true;
 }
 
-texture_handle opengl33_terrain_materials::make_texture(std::string const &Name, GLenum const Target)
+texture_handle opengl46_terrain_materials::make_texture(std::string const &Name, GLenum const Target)
 {
 	auto const handle{m_textures.create(Name, false, GL_RGBA)};
 	auto &texture{m_textures.texture(handle)};
@@ -107,7 +107,7 @@ texture_handle opengl33_terrain_materials::make_texture(std::string const &Name,
 	return handle;
 }
 
-void opengl33_terrain_materials::make_storage(texture_array &Array, int const Layers)
+void opengl46_terrain_materials::make_storage(texture_array &Array, int const Layers)
 {
 	auto &texture{m_textures.texture(Array.handle)};
 	bind_for_upload(texture);
@@ -124,7 +124,7 @@ void opengl33_terrain_materials::make_storage(texture_array &Array, int const La
 	texture.data_components = GL_RGBA;
 }
 
-int opengl33_terrain_materials::layer_index(gfx::terrain_layer const &Layer)
+int opengl46_terrain_materials::layer_index(gfx::terrain_layer const &Layer)
 {
 	for (auto const &existing : m_layers)
 		if (existing.material == Layer.material && existing.size == Layer.size)
@@ -167,7 +167,7 @@ int opengl33_terrain_materials::layer_index(gfx::terrain_layer const &Layer)
 	return entry.index;
 }
 
-std::size_t opengl33_terrain_materials::acquire_slot(material_handle const Reuse)
+std::size_t opengl46_terrain_materials::acquire_slot(material_handle const Reuse)
 {
 	if (Reuse != null_handle)
 	{
@@ -234,7 +234,7 @@ std::size_t opengl33_terrain_materials::acquire_slot(material_handle const Reuse
 	return index;
 }
 
-material_handle opengl33_terrain_materials::make(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement)
+material_handle opengl46_terrain_materials::make(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement)
 {
 	if (Layers.empty() || false == init())
 		return null_handle;
@@ -303,7 +303,7 @@ material_handle opengl33_terrain_materials::make(material_handle const Reuse, st
 	return entry.material;
 }
 
-void opengl33_terrain_materials::release(material_handle const Material)
+void opengl46_terrain_materials::release(material_handle const Material)
 {
 	auto const lookup{m_slotof.find(Material)};
 	if (lookup == m_slotof.end() || false == m_slots[lookup->second].used)
@@ -312,7 +312,7 @@ void opengl33_terrain_materials::release(material_handle const Material)
 	m_free.push_back(lookup->second);
 }
 
-bool opengl33_terrain_materials::copy_layer(layer &Layer)
+bool opengl46_terrain_materials::copy_layer(layer &Layer)
 {
 	auto const &material{m_materials.material(Layer.material)};
 	auto const slot = [&](char const *Name, int const Fallback) {
@@ -378,7 +378,7 @@ bool opengl33_terrain_materials::copy_layer(layer &Layer)
 	return true;
 }
 
-void opengl33_terrain_materials::update()
+void opengl46_terrain_materials::update()
 {
 	if (false == m_pending || m_state <= 0)
 		return;
@@ -430,5 +430,5 @@ void opengl33_terrain_materials::update()
 		::glDisable(GL_FRAMEBUFFER_SRGB);
 	::glDepthMask(GL_TRUE);
 	opengl_texture::reset_unit_cache();
-	gfx::opengl33_vaogeometrybank::reset();
+	gfx::opengl46_vaogeometrybank::reset();
 }

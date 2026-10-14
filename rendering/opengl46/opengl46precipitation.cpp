@@ -8,18 +8,18 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "rendering/opengl33precipitation.h"
+#include "rendering/opengl46/opengl46precipitation.h"
 
 #include "utilities/Globals.h"
 #include "rendering/renderer.h"
 #include "simulation/simulationenvironment.h"
 
-opengl33_precipitation::~opengl33_precipitation() {
+opengl46_precipitation::~opengl46_precipitation() {
     // TODO: release allocated resources
 }
 
 void
-opengl33_precipitation::create( int const Tesselation ) {
+opengl46_precipitation::create( int const Tesselation ) {
 
     m_vertices.clear();
     m_uvs.clear();
@@ -86,7 +86,7 @@ opengl33_precipitation::create( int const Tesselation ) {
 }
 
 void 
-opengl33_precipitation::update() {
+opengl46_precipitation::update() {
 
 	if (!m_shader)
 	{
@@ -143,7 +143,7 @@ opengl33_precipitation::update() {
 }
 
 void
-opengl33_precipitation::render() {
+opengl46_precipitation::render() {
 
     if( !m_shader ) { return; }
     if( !m_vao )    { return; }

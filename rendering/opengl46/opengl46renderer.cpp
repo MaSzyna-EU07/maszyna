@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "rendering/opengl33renderer.h"
+#include "rendering/opengl46/opengl46renderer.h"
 #include "utilities/color.h"
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
@@ -19,7 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "application/application.h"
 #include "model/AnimModel.h"
-#include "rendering/opengl33geometrybank.h"
+#include "rendering/opengl46/opengl46geometrybank.h"
 #include "rendering/screenshot.h"
 #include "rendering/editoroverlay.h"
 #include <imgui/imgui_impl_opengl3.h>
@@ -94,7 +94,7 @@ ErrorCallback( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei l
         + message );
 }
 
-bool opengl33_renderer::Init(GLFWwindow *Window)
+bool opengl46_renderer::Init(GLFWwindow *Window)
 {
     if (Global.gfx_gldebug && GLAD_GL_KHR_debug) {
         glEnable( GL_DEBUG_OUTPUT );
@@ -125,12 +125,12 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	Global.DayLight.diffuse[1] = 0.9490196f;  // 242 / 255
 	Global.DayLight.diffuse[2] = 0.9058824f;  // 231 / 255
 	Global.DayLight.is_directional = true;
-	m_sunlight.id = opengl33_renderer::sunlight;
+	m_sunlight.id = opengl46_renderer::sunlight;
 
 	// create dynamic light pool
 	for (int idx = 0; idx < Global.DynamicLightCount; ++idx)
 	{
-		opengl33_light light;
+		opengl46_light light;
 		light.id = 1 + idx;
 
 		light.is_directional = false;
@@ -380,12 +380,12 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
     return true;
 }
 
-void opengl33_renderer::Shutdown()
+void opengl46_renderer::Shutdown()
 {
     vr.reset();
 }
 
-bool opengl33_renderer::AddViewport(const global_settings::extraviewport_config &conf)
+bool opengl46_renderer::AddViewport(const global_settings::extraviewport_config &conf)
 {
     viewport_config *vp;
 
@@ -410,7 +410,7 @@ bool opengl33_renderer::AddViewport(const global_settings::extraviewport_config 
 	return ret;
 }
 
-bool opengl33_renderer::init_viewport(viewport_config &vp)
+bool opengl46_renderer::init_viewport(viewport_config &vp)
 {
     if (vp.initialized)
         return true;
@@ -552,7 +552,7 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 	return true;
 }
 
-std::unique_ptr<gl::program> opengl33_renderer::make_shader(std::string v, std::string f)
+std::unique_ptr<gl::program> opengl46_renderer::make_shader(std::string v, std::string f)
 {
 	gl::shader vert(v);
 	gl::shader frag(f);
@@ -560,7 +560,7 @@ std::unique_ptr<gl::program> opengl33_renderer::make_shader(std::string v, std::
 	return std::unique_ptr<gl::program>(prog);
 }
 
-bool opengl33_renderer::Render()
+bool opengl46_renderer::Render()
 {
 	Timer::subsystem.gfx_total.start();
 
@@ -620,12 +620,12 @@ bool opengl33_renderer::Render()
     Timer::subsystem.gfx_total.stop();
 
     // swapbuffers() could unbind current buffers so we prepare for it on our end
-    gfx::opengl33_vaogeometrybank::reset();
+    gfx::opengl46_vaogeometrybank::reset();
 
     return true; // for now always succeed
 }
 
-void opengl33_renderer::SwapBuffers()
+void opengl46_renderer::SwapBuffers()
 {
 	Timer::subsystem.gfx_swap.start();
 
@@ -692,7 +692,7 @@ void opengl33_renderer::SwapBuffers()
         + "particles: " + to_string( m_colorpass.draw_stats.particles, 7 );
 }
 
-void opengl33_renderer::draw_debug_ui()
+void opengl46_renderer::draw_debug_ui()
 {
 	if (!debug_ui_active)
 		return;
@@ -722,7 +722,7 @@ void opengl33_renderer::draw_debug_ui()
 }
 
 // runs jobs needed to generate graphics for specified render pass
-void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
+void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 {
 	setup_pass(vp, m_renderpass, Mode);
     switch (m_renderpass.draw_mode)
@@ -1252,7 +1252,7 @@ if (!Global.gfx_skippipeline)
 }
 
 
-bool opengl33_renderer::Render_interior( bool const Alpha ) {
+bool opengl46_renderer::Render_interior( bool const Alpha ) {
     // TODO: early frustum based cull, camera might be pointing elsewhere
     std::vector< std::pair<float, TDynamicObject *> > dynamics;
     auto *dynamic { simulation::Train->Dynamic() };
@@ -1286,7 +1286,7 @@ bool opengl33_renderer::Render_interior( bool const Alpha ) {
     return true;
 }
 
-bool opengl33_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha ) {
+bool opengl46_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha ) {
 
     if( Dynamic->mdLowPolyInt == nullptr ) { return false; }
 
@@ -1362,7 +1362,7 @@ bool opengl33_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squ
     return true;
 }
 
-bool opengl33_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha ) {
+bool opengl46_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha ) {
 
     if( Dynamic->m_coupleradapters[ End ] == nullptr ) { return false; }
 
@@ -1387,7 +1387,7 @@ bool opengl33_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float c
 }
 
 // creates dynamic environment cubemap
-bool opengl33_renderer::Render_reflections(viewport_config &vp)
+bool opengl46_renderer::Render_reflections(viewport_config &vp)
 {
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
 
@@ -1428,7 +1428,7 @@ bool opengl33_renderer::Render_reflections(viewport_config &vp)
 
 // based on
 // https://csc.lsu.edu/~kooima/articles/genperspective/index.html
-glm::mat4 opengl33_renderer::perspective_projection(const viewport_proj_config &c,
+glm::mat4 opengl46_renderer::perspective_projection(const viewport_proj_config &c,
                                                   float n, float f, glm::mat4 &frustum)
 {
 	glm::vec3 vr, vu, vn;
@@ -1483,7 +1483,7 @@ glm::mat4 opengl33_renderer::perspective_projection(const viewport_proj_config &
 	return glm::translate(R * M, -c.pe);
 }
 
-glm::mat4 opengl33_renderer::perspective_projection_raw(float fovy, float aspect, float znear, float zfar)
+glm::mat4 opengl46_renderer::perspective_projection_raw(float fovy, float aspect, float znear, float zfar)
 {
     if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
     {
@@ -1509,7 +1509,7 @@ glm::mat4 opengl33_renderer::perspective_projection_raw(float fovy, float aspect
                glm::perspective(fovy, aspect, znear, zfar);
 }
 
-glm::mat4 opengl33_renderer::ortho_projection(float l, float r, float b, float t, float znear, float zfar)
+glm::mat4 opengl46_renderer::ortho_projection(float l, float r, float b, float t, float znear, float zfar)
 {
 	glm::mat4 proj = glm::ortho(l, r, b, t, znear, zfar);
 	if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
@@ -1533,14 +1533,14 @@ glm::mat4 opengl33_renderer::ortho_projection(float l, float r, float b, float t
 		       proj;
 }
 
-glm::mat4 opengl33_renderer::ortho_frustumtest_projection(float l, float r, float b, float t, float znear, float zfar)
+glm::mat4 opengl46_renderer::ortho_frustumtest_projection(float l, float r, float b, float t, float znear, float zfar)
 {
 	// for frustum calculation, use standard opengl matrix
 	return glm::ortho(l, r, b, t, znear, zfar);
 }
 
 // the main viewport of the editor in the orthographic view replaces the perspective projection
-void opengl33_renderer::editor_ortho_projection(viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum)
+void opengl46_renderer::editor_ortho_projection(viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum)
 {
 	if (false == (EditorModeFlag && Global.EditorOrtho && Viewport.main))
 		return;
@@ -1550,7 +1550,7 @@ void opengl33_renderer::editor_ortho_projection(viewport_config const &Viewport,
 	Frustum = ortho_frustumtest_projection(-width, width, -height, height, -Zfar, Zfar);
 }
 
-void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode,
+void opengl46_renderer::setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode,
                                  float const Znear, float const Zfar, bool const Ignoredebug)
 {
 	Config.draw_mode = Mode;
@@ -1762,7 +1762,7 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 	camera.update_frustum(frustumtest_proj);
 }
 
-void opengl33_renderer::setup_matrices()
+void opengl46_renderer::setup_matrices()
 {
     OpenGLMatrices.mode(GL_PROJECTION);
 	OpenGLMatrices.load_matrix(m_renderpass.pass_camera.projection());
@@ -1771,7 +1771,7 @@ void opengl33_renderer::setup_matrices()
     OpenGLMatrices.load_matrix(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
 }
 
-void opengl33_renderer::setup_drawing(bool const Alpha)
+void opengl46_renderer::setup_drawing(bool const Alpha)
 {
 	if (Alpha)
 	{
@@ -1812,13 +1812,13 @@ void opengl33_renderer::setup_drawing(bool const Alpha)
 	}
 }
 
-void opengl33_renderer::setup_shadow_unbind_map()
+void opengl46_renderer::setup_shadow_unbind_map()
 {
     opengl_texture::unbind( gl::SHADOW_TEX );
 }
 
 // binds shadow map and updates shadow map uniform data
-void opengl33_renderer::setup_shadow_bind_map()
+void opengl46_renderer::setup_shadow_bind_map()
 {
     if( false == Global.gfx_shadowmap_enabled ) { return; }
 
@@ -1862,12 +1862,12 @@ void opengl33_renderer::setup_shadow_bind_map()
 	scene_ubo->update(scene_ubs);
 }
 
-void opengl33_renderer::setup_shadow_color( glm::vec4 const &Shadowcolor ) {
+void opengl46_renderer::setup_shadow_color( glm::vec4 const &Shadowcolor ) {
 
     model_ubs.shadow_tone = glm::pow( Shadowcolor.x, 2.2f );
 }
 
-void opengl33_renderer::setup_env_map(gl::cubemap *tex)
+void opengl46_renderer::setup_env_map(gl::cubemap *tex)
 {
 	if (tex)
 	{
@@ -1883,7 +1883,7 @@ void opengl33_renderer::setup_env_map(gl::cubemap *tex)
 	opengl_texture::reset_unit_cache();
 }
 
-void opengl33_renderer::setup_environment_light(TEnvironmentType const Environment)
+void opengl46_renderer::setup_environment_light(TEnvironmentType const Environment)
 {
 
 	switch (Environment)
@@ -1913,7 +1913,7 @@ void opengl33_renderer::setup_environment_light(TEnvironmentType const Environme
 	}
 }
 
-void opengl33_renderer::setup_sunlight_intensity( float const Factor ) {
+void opengl46_renderer::setup_sunlight_intensity( float const Factor ) {
 
     m_sunlight.apply_intensity( Factor );
     light_ubs.lights[ 0 ].intensity = m_sunlight.factor * (1.0f - Global.Overcast * 0.33f);
@@ -1921,7 +1921,7 @@ void opengl33_renderer::setup_sunlight_intensity( float const Factor ) {
     light_ubo->update( light_ubs );
 }
 
-bool opengl33_renderer::Render(world_environment *Environment)
+bool opengl46_renderer::Render(world_environment *Environment)
 {
     m_shadowcolor = colors::white; // prevent shadow from affecting sky
     setup_shadow_color( m_shadowcolor );
@@ -1946,7 +1946,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
         m_skydomerenderer.update();
         m_skydomerenderer.render();
         // skydome uses a custom vbo which could potentially confuse the main geometry system. hardly elegant but, eh
-        gfx::opengl33_vaogeometrybank::reset();
+        gfx::opengl46_vaogeometrybank::reset();
     }
     glPopMatrix();
 
@@ -2120,20 +2120,20 @@ bool opengl33_renderer::Render(world_environment *Environment)
 
 // geometry methods
 // creates a new geometry bank. returns: handle to the bank or NULL
-gfx::geometrybank_handle opengl33_renderer::Create_Bank()
+gfx::geometrybank_handle opengl46_renderer::Create_Bank()
 {
-        return m_geometry.register_bank(std::make_unique<gfx::opengl33_vaogeometrybank>());
+        return m_geometry.register_bank(std::make_unique<gfx::opengl46_vaogeometrybank>());
 }
 
 // creates a new indexed geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
-gfx::geometry_handle opengl33_renderer::Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type)
+gfx::geometry_handle opengl46_renderer::Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type)
 {
     // NOTE: we expect indexed geometry to come with calculated tangents
     return m_geometry.create_chunk( Indices, Vertices, Userdata, Geometry, Type );
 }
 
 // creates a new geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
-gfx::geometry_handle opengl33_renderer::Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type)
+gfx::geometry_handle opengl46_renderer::Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type)
 {
 	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
 
@@ -2141,7 +2141,7 @@ gfx::geometry_handle opengl33_renderer::Insert(gfx::vertex_array &Vertices, gfx:
 }
 
 // replaces data of specified chunk with the supplied vertex data, starting from specified offset
-bool opengl33_renderer::Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset)
+bool opengl46_renderer::Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset)
 {
 	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
 
@@ -2149,7 +2149,7 @@ bool opengl33_renderer::Replace(gfx::vertex_array &Vertices, gfx::userdata_array
 }
 
 // adds supplied vertex data at the end of specified chunk
-bool opengl33_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type)
+bool opengl46_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type)
 {
 	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
 
@@ -2157,30 +2157,30 @@ bool opengl33_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array 
 }
 
 // provides direct access to index data of specfied chunk
-gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const 
+gfx::index_array const & opengl46_renderer::Indices(gfx::geometry_handle const &Geometry) const 
 {
     return m_geometry.indices(Geometry);
 }
 
 // provides direct access to vertex data of specfied chunk
-gfx::vertex_array const &opengl33_renderer::Vertices(gfx::geometry_handle const &Geometry) const
+gfx::vertex_array const &opengl46_renderer::Vertices(gfx::geometry_handle const &Geometry) const
 {
 	return m_geometry.vertices(Geometry);
 }
 
-gfx::userdata_array const &opengl33_renderer::UserData(const gfx::geometry_handle &Geometry) const
+gfx::userdata_array const &opengl46_renderer::UserData(const gfx::geometry_handle &Geometry) const
 {
 	return m_geometry.userdata(Geometry);
 }
 
 // material methods
-material_handle opengl33_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
+material_handle opengl46_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
 {
 
 	return m_materials.create(Filename, Loadnow);
 }
 
-std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &name)
+std::shared_ptr<gl::program> opengl46_renderer::Fetch_Shader(const std::string &name)
 {
 	auto it = m_shaders.find(name);
 	if (it == m_shaders.end())
@@ -2193,7 +2193,7 @@ std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &
 	return m_shaders[name];
 }
 
-void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel const *sm, lighting_data const *lighting )
+void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel const *sm, lighting_data const *lighting )
 {
 	if (Material != null_handle)
 	{
@@ -2349,7 +2349,7 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 		Bind_Material(m_invalid_material);
 }
 
-void opengl33_renderer::Bind_Material_Shadow(material_handle const Material)
+void opengl46_renderer::Bind_Material_Shadow(material_handle const Material)
 {
 	if (Material != null_handle)
 	{
@@ -2369,12 +2369,12 @@ void opengl33_renderer::Bind_Material_Shadow(material_handle const Material)
     }
 }
 
-IMaterial const *opengl33_renderer::Material(material_handle const Material) const
+IMaterial const *opengl46_renderer::Material(material_handle const Material) const
 {
 	return &m_materials.material(Material);
 }
 
-material_handle opengl33_renderer::Terrain_Material(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement)
+material_handle opengl46_renderer::Terrain_Material(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement)
 {
 	auto const material{m_terrainmaterials.make(Reuse, Layers, Samples, Weights, Placement)};
 	if (material != null_handle)
@@ -2383,54 +2383,54 @@ material_handle opengl33_renderer::Terrain_Material(material_handle const Reuse,
 	return gfx_renderer::Terrain_Material(Reuse, Layers, Samples, Weights, Placement);
 }
 
-void opengl33_renderer::Terrain_Release(material_handle const Material)
+void opengl46_renderer::Terrain_Release(material_handle const Material)
 {
 	m_terrainmaterials.release(Material);
 }
 
-opengl_material &opengl33_renderer::Material(material_handle const Material)
+opengl_material &opengl46_renderer::Material(material_handle const Material)
 {
 	return m_materials.material(Material);
 }
 
-opengl_material const & opengl33_renderer::Material( TSubModel const * Submodel ) const {
+opengl_material const & opengl46_renderer::Material( TSubModel const * Submodel ) const {
 
     return m_materials.material( submodel_material( Submodel ) );
 }
 
-texture_handle opengl33_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
+texture_handle opengl46_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
 {
 	return m_textures.create(Filename, Loadnow, format_hint);
 }
 
-void opengl33_renderer::Bind_Texture( texture_handle const Texture )
+void opengl46_renderer::Bind_Texture( texture_handle const Texture )
 {
     return Bind_Texture( 0, Texture );
 }
 
-void opengl33_renderer::Bind_Texture(std::size_t const Unit, texture_handle const Texture)
+void opengl46_renderer::Bind_Texture(std::size_t const Unit, texture_handle const Texture)
 {
 	m_textures.bind(Unit, Texture);
 }
 
-ITexture &opengl33_renderer::Texture(texture_handle const Texture)
+ITexture &opengl46_renderer::Texture(texture_handle const Texture)
 {
 
 	return m_textures.texture(Texture);
 }
 
-ITexture const &opengl33_renderer::Texture(texture_handle const Texture) const
+ITexture const &opengl46_renderer::Texture(texture_handle const Texture) const
 {
 
 	return m_textures.texture(Texture);
 }
 
-void opengl33_renderer::Update_AnimModel(TAnimModel *model)
+void opengl46_renderer::Update_AnimModel(TAnimModel *model)
 {
 	model->RaAnimate(m_framestamp);
 }
 
-void opengl33_renderer::Render(scene::basic_region *Region)
+void opengl46_renderer::Render(scene::basic_region *Region)
 {
 
 	m_sectionqueue.clear();
@@ -2526,7 +2526,7 @@ void opengl33_renderer::Render(scene::basic_region *Region)
 	}
 }
 
-void opengl33_renderer::Render(section_sequence::iterator First, section_sequence::iterator Last)
+void opengl46_renderer::Render(section_sequence::iterator First, section_sequence::iterator Last)
 {
 
 	switch (m_renderpass.draw_mode)
@@ -2637,7 +2637,7 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 	}
 }
 
-void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::iterator Last)
+void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::iterator Last)
 {
 
 	// cache initial iterator for the second sweep
@@ -2881,7 +2881,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	}
 }
 
-void opengl33_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
+void opengl46_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
 {
 	if (begin == end)
 	{
@@ -2892,12 +2892,12 @@ void opengl33_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::ite
 	m_geometry.draw_batch(first, first + std::distance(begin, end));
 }
 
-void opengl33_renderer::Draw_Geometry(const gfx::geometrybank_handle &handle)
+void opengl46_renderer::Draw_Geometry(const gfx::geometrybank_handle &handle)
 {
 	m_geometry.draw(handle);
 }
 
-void opengl33_renderer::draw(const gfx::geometry_handle &handle)
+void opengl46_renderer::draw(const gfx::geometry_handle &handle)
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
 	model_ubo->update(model_ubs);
@@ -2912,7 +2912,7 @@ void opengl33_renderer::draw(const gfx::geometry_handle &handle)
 	}
 }
 
-void opengl33_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it, std::vector<gfx::geometrybank_handle>::iterator end)
+void opengl46_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it, std::vector<gfx::geometrybank_handle>::iterator end)
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
 	model_ubo->update(model_ubs);
@@ -2920,7 +2920,7 @@ void opengl33_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it,
 	Draw_Geometry(it, end);
 }
 
-void opengl33_renderer::Render(scene::shape_node const &Shape, bool const Ignorerange)
+void opengl46_renderer::Render(scene::shape_node const &Shape, bool const Ignorerange)
 {
 	auto const &data{Shape.data()};
 
@@ -2988,7 +2988,7 @@ void opengl33_renderer::Render(scene::shape_node const &Shape, bool const Ignore
 	++m_renderpass.draw_stats.drawcalls;
 }
 
-void opengl33_renderer::Render(TAnimModel *Instance)
+void opengl46_renderer::Render(TAnimModel *Instance)
 {
 
 	if (false == Instance->m_visible) { return; }
@@ -3091,7 +3091,7 @@ void opengl33_renderer::Render(TAnimModel *Instance)
 // Render_Instanced() culls each instance it's given. the tests it makes are repeated here on the copies of instance
 // bounds kept by the buckets, with some slack for the single precision of the copies, and the instances which fail are
 // left out: the instances themselves are fetched only when there's a chance for them to be drawn
-void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
+void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 {
 	// the editor moves and resizes the instances in place, the copies can't be relied on while it's active
 	auto const usebounds { false == EditorModeFlag };
@@ -3139,7 +3139,7 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 }
 
 // makes the copies of the bounds of the instances held by a bucket of a scene cell
-void opengl33_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket )
+void opengl46_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket )
 {
 	// a submodel is drawn only closer than its fSquareMaxDist, see Render( TSubModel * ). past the largest of these
 	// there's nothing of the model left to draw, which makes it another limit of the range of its instances
@@ -3178,7 +3178,7 @@ void opengl33_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::ba
 // (accumulated by the matrix stack starting from identity, NOT the camera/instance frame).
 //
 // Batch size is capped at MAX_INSTANCES_PER_BATCH (256). Larger groups are split.
-void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances )
+void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances )
 {
 	if( Model == nullptr ) { return; }
 	if( Instances.empty() ) { return; }
@@ -3381,7 +3381,7 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 //   - the track has no sleepermodel
 //   - the track is farther than Global.SleeperDistance meters from the camera
 // releases gl textures used only by vehicles farther than gfx.textures.releasedistance times the draw range
-void opengl33_renderer::Update_Texture_Release()
+void opengl46_renderer::Update_Texture_Release()
 {
 	if (m_colorpass.draw_range <= 0.f)
 	{
@@ -3439,7 +3439,7 @@ void opengl33_renderer::Update_Texture_Release()
 }
 
 // textures used by materials of the sub-models of specified model, replaceable skins excluded
-std::vector<texture_handle> const &opengl33_renderer::Model_Textures(TModel3d *Model)
+std::vector<texture_handle> const &opengl46_renderer::Model_Textures(TModel3d *Model)
 {
 	auto const lookup{m_modeltextures.find(Model)};
 	if (lookup != m_modeltextures.end())
@@ -3493,7 +3493,7 @@ std::vector<texture_handle> const &opengl33_renderer::Model_Textures(TModel3d *M
 	return textures;
 }
 
-void opengl33_renderer::Render_Sleepers( TTrack *Track )
+void opengl46_renderer::Render_Sleepers( TTrack *Track )
 {
 	if( Track == nullptr ) { return; }
 	if( false == Track->m_sleeper_enabled ) { return; }
@@ -3677,7 +3677,7 @@ void opengl33_renderer::Render_Sleepers( TTrack *Track )
 	m_renderpass.draw_stats.models    += static_cast<int>( total );
 }
 
-bool opengl33_renderer::Render(TDynamicObject *Dynamic)
+bool opengl46_renderer::Render(TDynamicObject *Dynamic)
 {
 	glDebug("Render TDynamicObject");
 
@@ -3853,7 +3853,7 @@ bool opengl33_renderer::Render(TDynamicObject *Dynamic)
 }
 
 // rendering kabiny gdy jest oddzielnym modelem i ma byc wyswietlana
-bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha)
+bool opengl46_renderer::Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha)
 {
 
 	if (Dynamic == nullptr)
@@ -3947,7 +3947,7 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
 	return true;
 }
 
-bool opengl33_renderer::Render(TModel3d *Model, material_data const *Material, float const Squaredistance)
+bool opengl46_renderer::Render(TModel3d *Model, material_data const *Material, float const Squaredistance)
 {
 
 	auto alpha = (Material != nullptr ? Material->textures_alpha : 0x30300030);
@@ -3973,7 +3973,7 @@ bool opengl33_renderer::Render(TModel3d *Model, material_data const *Material, f
 	return true;
 }
 
-bool opengl33_renderer::Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle)
+bool opengl46_renderer::Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle)
 {
 	::glPushMatrix();
 	::glTranslated(Position.x, Position.y, Position.z);
@@ -3991,7 +3991,7 @@ bool opengl33_renderer::Render(TModel3d *Model, material_data const *Material, f
 	return result;
 }
 
-void opengl33_renderer::Render(TSubModel *Submodel)
+void opengl46_renderer::Render(TSubModel *Submodel)
 {
 	glDebug("Render TSubModel");
 
@@ -4160,7 +4160,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 			Render(Submodel->Next); // dalsze rekurencyjnie
 }
 
-void opengl33_renderer::Render(TTrack *Track)
+void opengl46_renderer::Render(TTrack *Track)
 {
 	if ((Track->m_material1 == 0) && (Track->m_material2 == 0) && (Track->eType != tt_Switch || Track->SwitchExtension->m_material3 == 0))
 	{
@@ -4196,7 +4196,7 @@ void opengl33_renderer::Render(TTrack *Track)
 }
 
 // experimental, does track rendering in two passes, to take advantage of reduced texture switching
-void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last)
+void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last)
 {
 
 	// setup
@@ -4465,7 +4465,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	}
 }
 
-void opengl33_renderer::Render(TMemCell *Memcell)
+void opengl46_renderer::Render(TMemCell *Memcell)
 {
 
 	::glPushMatrix();
@@ -4497,7 +4497,7 @@ void opengl33_renderer::Render(TMemCell *Memcell)
 	::glPopMatrix();
 }
 
-void opengl33_renderer::Render_particles()
+void opengl46_renderer::Render_particles()
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
 	model_ubo->update(model_ubs);
@@ -4507,7 +4507,7 @@ void opengl33_renderer::Render_particles()
     m_renderpass.draw_stats.particles = m_particlerenderer.render();
 }
 
-void opengl33_renderer::Render_vr_models()
+void opengl46_renderer::Render_vr_models()
 {
     if (!vr)
         return;
@@ -4526,7 +4526,7 @@ void opengl33_renderer::Render_vr_models()
     ::glPopMatrix();
 }
 
-void opengl33_renderer::Render_precipitation()
+void opengl46_renderer::Render_precipitation()
 {
 	if (Global.Overcast <= 1.f)
 	{
@@ -4580,7 +4580,7 @@ void opengl33_renderer::Render_precipitation()
 	::glPopMatrix();
 }
 
-void opengl33_renderer::Render_Alpha(scene::basic_region *Region)
+void opengl46_renderer::Render_Alpha(scene::basic_region *Region)
 {
 
 	// sort the nodes based on their distance to viewer
@@ -4589,7 +4589,7 @@ void opengl33_renderer::Render_Alpha(scene::basic_region *Region)
 	Render_Alpha(std::rbegin(m_cellqueue), std::rend(m_cellqueue));
 }
 
-void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell_sequence::reverse_iterator Last)
+void opengl46_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell_sequence::reverse_iterator Last)
 {
 
 	// NOTE: this method is launched only during color pass therefore we don't bother with mode test here
@@ -4679,7 +4679,7 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 	}
 }
 
-void opengl33_renderer::Render_Alpha(TAnimModel *Instance)
+void opengl46_renderer::Render_Alpha(TAnimModel *Instance)
 {
 
 	if (false == Instance->m_visible) { return; }
@@ -4741,7 +4741,7 @@ void opengl33_renderer::Render_Alpha(TAnimModel *Instance)
 	}
 }
 
-void opengl33_renderer::Render_Alpha(TTraction *Traction)
+void opengl46_renderer::Render_Alpha(TTraction *Traction)
 {
 	glDebug("Render_Alpha TTraction");
 
@@ -4786,7 +4786,7 @@ void opengl33_renderer::Render_Alpha(TTraction *Traction)
 		glLineWidth(1.0f);
 }
 
-void opengl33_renderer::Render_editor_overlay()
+void opengl46_renderer::Render_editor_overlay()
 {
 	if (false == EditorModeFlag || EditorOverlay.batches.empty())
 		return;
@@ -4835,7 +4835,7 @@ void opengl33_renderer::Render_editor_overlay()
 	::glPopMatrix();
 }
 
-void opengl33_renderer::Render_Alpha(scene::lines_node const &Lines)
+void opengl46_renderer::Render_Alpha(scene::lines_node const &Lines)
 {
 	glDebug("Render_Alpha scene::lines_node");
 
@@ -4868,7 +4868,7 @@ void opengl33_renderer::Render_Alpha(scene::lines_node const &Lines)
 		glLineWidth(1.0f);
 }
 
-bool opengl33_renderer::Render_Alpha(TDynamicObject *Dynamic)
+bool opengl46_renderer::Render_Alpha(TDynamicObject *Dynamic)
 {
 	if (!Global.render_cab && Global.pCamera.m_owner == Dynamic)
 		return false;
@@ -4949,7 +4949,7 @@ bool opengl33_renderer::Render_Alpha(TDynamicObject *Dynamic)
 	return true;
 }
 
-bool opengl33_renderer::Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance)
+bool opengl46_renderer::Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance)
 {
 
 	auto alpha = (Material != nullptr ? Material->textures_alpha : 0x30300030);
@@ -4975,7 +4975,7 @@ bool opengl33_renderer::Render_Alpha(TModel3d *Model, material_data const *Mater
 	return true;
 }
 
-bool opengl33_renderer::Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle)
+bool opengl46_renderer::Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle)
 {
 	::glPushMatrix();
 	::glTranslated(Position.x, Position.y, Position.z);
@@ -4994,7 +4994,7 @@ bool opengl33_renderer::Render_Alpha(TModel3d *Model, material_data const *Mater
 }
 
 // characters of a text display, laid out in a row. the text can be encoded in utf-8 or in windows-1250
-void opengl33_renderer::Render_Alpha_text(TSubModel *Submodel)
+void opengl46_renderer::Render_Alpha_text(TSubModel *Submodel)
 {
 	if (TSubModel::pasText == nullptr)
 	{
@@ -5008,7 +5008,7 @@ void opengl33_renderer::Render_Alpha_text(TSubModel *Submodel)
 	}
 }
 
-void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
+void opengl46_renderer::Render_Alpha(TSubModel *Submodel)
 {
 	// renderowanie przezroczystych przez DL
 	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist) && (false == m_previewing || Submodel->fVisible > 0.f))
@@ -5250,7 +5250,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 			Render_Alpha(Submodel->Next);
 };
 
-bool opengl33_renderer::Debug_Ui_State(std::optional<bool> param)
+bool opengl46_renderer::Debug_Ui_State(std::optional<bool> param)
 {
     if (param) {
         debug_ui_active = *param;
@@ -5260,7 +5260,7 @@ bool opengl33_renderer::Debug_Ui_State(std::optional<bool> param)
 }
 
 // utility methods
-void opengl33_renderer::Update_Pick_Control()
+void opengl46_renderer::Update_Pick_Control()
 {
 	if (!m_picking_pbo->is_busy())
 	{
@@ -5305,7 +5305,7 @@ void opengl33_renderer::Update_Pick_Control()
 	}
 }
 
-void opengl33_renderer::Update_Pick_Node()
+void opengl46_renderer::Update_Pick_Node()
 {
 	if (!m_picking_node_pbo->is_busy())
 	{
@@ -5344,7 +5344,7 @@ void opengl33_renderer::Update_Pick_Node()
 	}
 }
 
-void opengl33_renderer::Pick_Control_Callback(std::function<void(TSubModel const *, const glm::vec2 pos)> callback)
+void opengl46_renderer::Pick_Control_Callback(std::function<void(TSubModel const *, const glm::vec2 pos)> callback)
 {
   if (!Global.render_cab) {
     callback(nullptr, glm::vec2());
@@ -5353,12 +5353,12 @@ void opengl33_renderer::Pick_Control_Callback(std::function<void(TSubModel const
 	m_control_pick_requests.push_back(callback);
 }
 
-void opengl33_renderer::Pick_Node_Callback(std::function<void(scene::basic_node *)> callback)
+void opengl46_renderer::Pick_Node_Callback(std::function<void(scene::basic_node *)> callback)
 {
 	m_node_pick_requests.push_back(callback);
 }
 
-glm::dvec3 opengl33_renderer::Update_Mouse_Position()
+glm::dvec3 opengl46_renderer::Update_Mouse_Position()
 {
 	if (!m_depth_pointer_pbo->is_busy())
 	{
@@ -5411,7 +5411,7 @@ glm::dvec3 opengl33_renderer::Update_Mouse_Position()
 	return m_colorpass.pass_camera.position() + glm::dvec3{m_worldmousecoordinates};
 }
 
-void opengl33_renderer::Update(double const Deltatime)
+void opengl46_renderer::Update(double const Deltatime)
 {
 	Update_Pick_Control();
 	Update_Pick_Node();
@@ -5500,19 +5500,19 @@ void opengl33_renderer::Update(double const Deltatime)
 }
 
 // debug performance string
-std::string const &opengl33_renderer::info_times() const
+std::string const &opengl46_renderer::info_times() const
 {
 
 	return m_debugtimestext;
 }
 
-std::string const &opengl33_renderer::info_stats() const
+std::string const &opengl46_renderer::info_stats() const
 {
 
 	return m_debugstatstext;
 }
 
-void opengl33_renderer::MakeScreenshot()
+void opengl46_renderer::MakeScreenshot()
 {
 	screenshot_manager::make_screenshot();
 }
@@ -5530,7 +5530,7 @@ float const preview_fieldofview{30.f};
 float const preview_background{16.f};
 } // namespace
 
-void opengl33_renderer::Preview_Bounds(TSubModel const *Submodel, glm::dmat4 const &Transform, glm::dvec3 &Min, glm::dvec3 &Max) const
+void opengl46_renderer::Preview_Bounds(TSubModel const *Submodel, glm::dmat4 const &Transform, glm::dvec3 &Min, glm::dvec3 &Max) const
 {
 	// same walk as the one of Render(TSubModel *) bar the range checks, which leave out parts only for the bounds to be smaller
 	for (auto const *submodel{Submodel}; submodel != nullptr; submodel = submodel->Next)
@@ -5557,7 +5557,7 @@ void opengl33_renderer::Preview_Bounds(TSubModel const *Submodel, glm::dmat4 con
 	}
 }
 
-bool opengl33_renderer::Preview_Targets(int const Size)
+bool opengl46_renderer::Preview_Targets(int const Size)
 {
 	if (m_preview.size == Size)
 	{
@@ -5597,7 +5597,7 @@ bool opengl33_renderer::Preview_Targets(int const Size)
 	return true;
 }
 
-void opengl33_renderer::Preview_Model(TAnimModel *Instance, float const Squaredistance, bool const Alpha)
+void opengl46_renderer::Preview_Model(TAnimModel *Instance, float const Squaredistance, bool const Alpha)
 {
 	// the placement of Render(TAnimModel *), without its range and visibility tests
 	::glPushMatrix();
@@ -5619,7 +5619,7 @@ void opengl33_renderer::Preview_Model(TAnimModel *Instance, float const Squaredi
 	::glPopMatrix();
 }
 
-void opengl33_renderer::Preview_Color(TAnimModel *Instance, float const Squaredistance, int const Size, glm::dvec3 const &Eye, glm::mat4 const &View, glm::mat4 const &Projection, bool const Shadows)
+void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredistance, int const Size, glm::dvec3 const &Eye, glm::mat4 const &View, glm::mat4 const &Projection, bool const Shadows)
 {
 	m_renderpass.draw_mode = rendermode::color;
 	m_renderpass.pass_camera.position() = Eye;
@@ -5687,7 +5687,7 @@ void opengl33_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 	setup_shadow_unbind_map();
 }
 
-bool opengl33_renderer::Render_Preview(TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image)
+bool opengl46_renderer::Render_Preview(TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image)
 {
 	if ((Instance == nullptr) || (Instance->pModel == nullptr) || (Size <= 0) || (Margin < 0) || (Margin * 2 >= Size))
 	{
@@ -5714,7 +5714,7 @@ bool opengl33_renderer::Render_Preview(TAnimModel *Instance, int const Size, int
 
 	glfwMakeContextCurrent(m_window);
 	opengl_texture::reset_unit_cache();
-	gfx::opengl33_vaogeometrybank::reset();
+	gfx::opengl46_vaogeometrybank::reset();
 	m_previewing = true;
 	// lights and visibility of the submodels, for this instance
 	Instance->RaAnimate(m_framestamp);
@@ -5860,7 +5860,7 @@ bool opengl33_renderer::Render_Preview(TAnimModel *Instance, int const Size, int
 		glDisable(GL_FRAMEBUFFER_SRGB);
 	opengl_texture::reset_unit_cache();
 	// the post processing binds its own vertex array, which the geometry banks don't know about
-	gfx::opengl33_vaogeometrybank::reset();
+	gfx::opengl46_vaogeometrybank::reset();
 
 	auto const targetpixels{static_cast<std::size_t>(targetsize) * targetsize};
 	std::vector<std::uint8_t> colors(targetpixels * 4);
@@ -5924,7 +5924,7 @@ bool opengl33_renderer::Render_Preview(TAnimModel *Instance, int const Size, int
 	return true;
 }
 
-void opengl33_renderer::Update_Lights(light_array &Lights)
+void opengl46_renderer::Update_Lights(light_array &Lights)
 {
 	glDebug("Update_Lights");
 
@@ -6088,7 +6088,7 @@ void opengl33_renderer::Update_Lights(light_array &Lights)
 	light_ubo->update(light_ubs);
 }
 
-bool opengl33_renderer::Init_caps()
+bool opengl46_renderer::Init_caps()
 {
 	std::string gl_renderer((char *)glGetString(GL_RENDERER));
 	std::string gl_vendor((char *)glGetString(GL_VENDOR));
@@ -6185,46 +6185,46 @@ bool opengl33_renderer::Init_caps()
 	return true;
 }
 
-glm::vec3 opengl33_renderer::pick_color(std::size_t const Index)
+glm::vec3 opengl46_renderer::pick_color(std::size_t const Index)
 {
 	return glm::vec3{((Index & 0xff0000) >> 16) / 255.0f, ((Index & 0x00ff00) >> 8) / 255.0f, (Index & 0x0000ff) / 255.0f};
 }
 
-std::size_t opengl33_renderer::pick_index(glm::ivec3 const &Color)
+std::size_t opengl46_renderer::pick_index(glm::ivec3 const &Color)
 {
 	return Color.b + (Color.g * 256) + (Color.r * 256 * 256);
 }
 
-std::unique_ptr<gfx_renderer> opengl33_renderer::create_func()
+std::unique_ptr<gfx_renderer> opengl46_renderer::create_func()
 {
-    return std::unique_ptr<gfx_renderer>(new opengl33_renderer());
+    return std::unique_ptr<gfx_renderer>(new opengl46_renderer());
 }
 
-bool opengl33_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("modern", opengl33_renderer::create_func);
+bool opengl46_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("modern", opengl46_renderer::create_func);
 
-bool opengl33_renderer::opengl33_imgui_renderer::Init()
+bool opengl46_renderer::opengl46_imgui_renderer::Init()
 {
 	crashreport_add_info("imgui_ver", "gl3");
 	return ImGui_ImplOpenGL3_Init("#version 330 core");
 }
 
-void opengl33_renderer::opengl33_imgui_renderer::Shutdown()
+void opengl46_renderer::opengl46_imgui_renderer::Shutdown()
 {
 	ImGui_ImplOpenGL3_Shutdown();
 }
 
-void opengl33_renderer::opengl33_imgui_renderer::BeginFrame()
+void opengl46_renderer::opengl46_imgui_renderer::BeginFrame()
 {
 	ImGui_ImplOpenGL3_NewFrame();
 }
 
-void opengl33_renderer::opengl33_imgui_renderer::Render()
+void opengl46_renderer::opengl46_imgui_renderer::Render()
 {
 	gl::buffer::unbind(gl::buffer::ARRAY_BUFFER);
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-std::uint64_t opengl33_renderer::opengl33_imgui_renderer::Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+std::uint64_t opengl46_renderer::opengl46_imgui_renderer::Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
 {
 	// the ui colours are made linear in its shaders, the image is too, by sampling it as srgb. the bindings the renderer
 	// keeps track of are put back as they were
@@ -6248,7 +6248,7 @@ std::uint64_t opengl33_renderer::opengl33_imgui_renderer::Create_Image(std::uint
 	return image;
 }
 
-void opengl33_renderer::opengl33_imgui_renderer::Release_Image(std::uint64_t const Image)
+void opengl46_renderer::opengl46_imgui_renderer::Release_Image(std::uint64_t const Image)
 {
 	auto const image{static_cast<GLuint>(Image)};
 	glDeleteTextures(1, &image);

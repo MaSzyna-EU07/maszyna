@@ -16,7 +16,7 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
 #ifdef WITH_OPENGL_MODERN
-    opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
+    opengl46_renderer *gl33 = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
     if (!gl33) {
         ErrorLog("map not supported on old renderer");
         return;
@@ -144,7 +144,7 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	scene_ubo->bind_uniform();
 
 #ifdef WITH_OPENGL_MODERN
-    opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
+    opengl46_renderer *gl33 = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
 
     gl33->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
 
@@ -421,7 +421,7 @@ void ui::handle_map_object_hover(std::shared_ptr<map::map_object> &obj)
 			for (int i = 0; i < iMaxNumLights; i++)
 			{
 #ifdef WITH_OPENGL_MODERN
-                dynamic_cast<opengl33_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
+                dynamic_cast<opengl46_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
 #endif
 				auto state = model->LightGet(i);
 				if (!state)
@@ -477,7 +477,7 @@ void ui::semaphore_window::render_content()
 		for (int i = 0; i < iMaxNumLights; i++)
 		{
 #ifdef WITH_OPENGL_MODERN
-            dynamic_cast<opengl33_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
+            dynamic_cast<opengl46_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
 #endif
 			auto state = model->LightGet(i);
 			if (!state)

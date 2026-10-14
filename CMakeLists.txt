@@ -49,6 +49,7 @@ file(GLOB HEADERS "*.h"
 "simulation/*.h"
 "scene/*.h"
 "rendering/*.h"
+"rendering/opengl46/*.h"
 "audio/*.h"
 "environment/*.h"
 "application/*.h"
@@ -327,13 +328,13 @@ endif()
 
 if (WITH_OPENGL_MODERN)
         set(SOURCES ${SOURCES}
-            "rendering/opengl33geometrybank.cpp"
-            "rendering/opengl33light.cpp"
-            "rendering/opengl33skydome.cpp"
-            "rendering/opengl33precipitation.cpp"
-            "rendering/opengl33particles.cpp"
-            "rendering/opengl33terrain.cpp"
-            "rendering/opengl33renderer.cpp")
+            "rendering/opengl46/opengl46geometrybank.cpp"
+            "rendering/opengl46/opengl46light.cpp"
+            "rendering/opengl46/opengl46skydome.cpp"
+            "rendering/opengl46/opengl46precipitation.cpp"
+            "rendering/opengl46/opengl46particles.cpp"
+            "rendering/opengl46/opengl46terrain.cpp"
+            "rendering/opengl46/opengl46renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
 endif()
 

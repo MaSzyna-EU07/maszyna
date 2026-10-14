@@ -17,12 +17,12 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/precipitation.h"
 #include "audio/sound.h"
 
-class opengl33_renderer;
+class opengl46_renderer;
 
 // wrapper for environment elements -- sky, sun, stars, clouds etc
 class world_environment {
 
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
 public:
 // methods

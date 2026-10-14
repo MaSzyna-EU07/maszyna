@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "rendering/opengl33geometrybank.h"
+#include "rendering/opengl46/opengl46geometrybank.h"
 
 #include "utilities/Logs.h"
 
@@ -18,7 +18,7 @@ namespace gfx {
 
 // create() subclass details
 void
-opengl33_vaogeometrybank::create_( gfx::geometry_handle const &Geometry ) {
+opengl46_vaogeometrybank::create_( gfx::geometry_handle const &Geometry ) {
     // adding a chunk means we'll be (re)building the buffer, which will fill the chunk records, amongst other things.
     // thus we don't need to initialize the values here
     m_chunkrecords.emplace_back( chunk_record() );
@@ -28,7 +28,7 @@ opengl33_vaogeometrybank::create_( gfx::geometry_handle const &Geometry ) {
 
 // replace() subclass details
 void
-opengl33_vaogeometrybank::replace_( gfx::geometry_handle const &Geometry ) {
+opengl46_vaogeometrybank::replace_( gfx::geometry_handle const &Geometry ) {
 
     auto &chunkrecord = m_chunkrecords[ Geometry.chunk - 1 ];
     chunkrecord.is_good = false;
@@ -41,7 +41,7 @@ opengl33_vaogeometrybank::replace_( gfx::geometry_handle const &Geometry ) {
     }
 }
 
-void opengl33_vaogeometrybank::setup_buffer()
+void opengl46_vaogeometrybank::setup_buffer()
 {
     if( m_vertexbuffer ) { return; }
     // if there's no buffer, we'll have to make one
@@ -106,7 +106,7 @@ void opengl33_vaogeometrybank::setup_buffer()
 }
 
 void
-opengl33_vaogeometrybank::setup_attrib(size_t offset)
+opengl46_vaogeometrybank::setup_attrib(size_t offset)
 {
     m_vao->setup_attrib( *m_vertexbuffer, 0, 3, GL_FLOAT, sizeof( basic_vertex ), offsetof(basic_vertex, position) + offset * sizeof( basic_vertex ) );
     // NOTE: normal and color streams share the data
@@ -115,7 +115,7 @@ opengl33_vaogeometrybank::setup_attrib(size_t offset)
 	m_vao->setup_attrib( *m_vertexbuffer, 3, 4, GL_FLOAT, sizeof( basic_vertex ), offsetof(basic_vertex, tangent) + offset * sizeof( basic_vertex ) );
 }
 
-void opengl33_vaogeometrybank::setup_userdata(size_t offset) {
+void opengl46_vaogeometrybank::setup_userdata(size_t offset) {
 	const size_t offset_evaluated = m_vertex_count * sizeof(basic_vertex) + offset * sizeof( vertex_userdata );
 	m_vao->setup_attrib( *m_vertexbuffer, 4, 4, GL_FLOAT, sizeof( vertex_userdata ), offsetof(vertex_userdata, data) + offset_evaluated );}
 
@@ -123,7 +123,7 @@ void opengl33_vaogeometrybank::setup_userdata(size_t offset) {
 // NOTE: units and stream parameters are unused, but they're part of (legacy) interface
 // TBD: specialized bank/manager pair without the cruft?
 std::size_t
-opengl33_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams )
+opengl46_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams )
 {
     setup_buffer();
 
@@ -183,7 +183,7 @@ opengl33_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stre
 // draw_instanced() subclass details — single GL instanced draw for InstanceCount instances.
 // The vertex shader reads per-instance modelview from instance_ubo[gl_InstanceID].
 std::size_t
-opengl33_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams )
+opengl46_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams )
 {
     setup_buffer();
 
@@ -246,7 +246,7 @@ opengl33_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry,
 // draw_batch() subclass details — neighbouring non-indexed chunks of the same type are sent with a single GL call.
 // The chunks are drawn in the supplied order, same as with a draw_() call for each of them.
 std::size_t
-opengl33_vaogeometrybank::draw_batch_( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams )
+opengl46_vaogeometrybank::draw_batch_( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams )
 {
     std::size_t count { 0 };
 
@@ -305,13 +305,13 @@ opengl33_vaogeometrybank::draw_batch_( gfx::geometry_handle const *First, gfx::g
 
 // release () subclass details
 void
-opengl33_vaogeometrybank::release_() {
+opengl46_vaogeometrybank::release_() {
 
     delete_buffer();
 }
 
 void
-opengl33_vaogeometrybank::delete_buffer() {
+opengl46_vaogeometrybank::delete_buffer() {
 
 	m_vao.reset();
 	m_vertexbuffer.reset();

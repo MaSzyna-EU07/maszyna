@@ -20,7 +20,7 @@ class TTractionPowerSource;
 
 class TTraction : public scene::basic_node
 {
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
   public: // na razie
     TTractionPowerSource *psPower[ 2 ] { nullptr, nullptr }; // najbliższe zasilacze z obu kierunków

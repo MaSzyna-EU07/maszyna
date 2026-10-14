@@ -8,7 +8,7 @@
 
 class cStars {
 
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
 public:
 // types:

@@ -16,10 +16,10 @@ http://mozilla.org/MPL/2.0/.
 class opengl_camera;
 
 // particle data visualizer
-class opengl33_particles {
+class opengl46_particles {
 public:
 // constructors
-	opengl33_particles() = default;
+	opengl46_particles() = default;
 
 // methods
 	void

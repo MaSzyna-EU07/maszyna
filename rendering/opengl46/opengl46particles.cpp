@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "rendering/opengl33particles.h"
+#include "rendering/opengl46/opengl46particles.h"
 
 #include "rendering/particles.h"
 #include "rendering/openglcamera.h"
@@ -26,7 +26,7 @@ std::vector<std::pair<glm::vec3, glm::vec2>> const billboard_vertices {
 };
 
 void
-opengl33_particles::update( opengl_camera const &Camera ) {
+opengl46_particles::update( opengl_camera const &Camera ) {
 
 	if (!Global.Smoke)
 		return;
@@ -100,7 +100,7 @@ opengl33_particles::update( opengl_camera const &Camera ) {
 }
 
 std::size_t
-opengl33_particles::render() {
+opengl46_particles::render() {
 
     if( false == Global.Smoke ) { return 0; }
 	if( m_buffercapacity == 0 ) { return 0; }

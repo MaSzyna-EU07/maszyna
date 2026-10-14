@@ -13,13 +13,13 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/vao.h"
 #include "gl/shader.h"
 
-class opengl33_precipitation {
+class opengl46_precipitation {
 
 public:
 // constructors
-    opengl33_precipitation() = default;
+    opengl46_precipitation() = default;
 // destructor
-	~opengl33_precipitation();
+	~opengl46_precipitation();
 // methods
     void
         update();

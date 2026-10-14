@@ -11,10 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "rendering/renderer.h"
 #include "rendering/openglcamera.h"
-#include "rendering/opengl33light.h"
-#include "rendering/opengl33particles.h"
-#include "rendering/opengl33skydome.h"
-#include "rendering/opengl33precipitation.h"
+#include "rendering/opengl46/opengl46light.h"
+#include "rendering/opengl46/opengl46particles.h"
+#include "rendering/opengl46/opengl46skydome.h"
+#include "rendering/opengl46/opengl46precipitation.h"
 #include "simulation/simulationenvironment.h"
 #include "scene/scene.h"
 #include "world/MemCell.h"
@@ -29,15 +29,15 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/glsl_common.h"
 #include "gl/pbo.h"
 #include "gl/query.h"
-#include "rendering/opengl33terrain.h"
+#include "rendering/opengl46/opengl46terrain.h"
 
 // bare-bones render controller, in lack of anything better yet
-class opengl33_renderer : public gfx_renderer {
+class opengl46_renderer : public gfx_renderer {
   public:
 // constructors
-    opengl33_renderer() = default;
+    opengl46_renderer() = default;
 // destructor
-    ~opengl33_renderer() {}
+    ~opengl46_renderer() {}
 // methods
     bool
         Init( GLFWwindow *Window ) override;
@@ -260,7 +260,7 @@ class opengl33_renderer : public gfx_renderer {
 
 	viewport_config *m_current_viewport = nullptr;
 
-	typedef std::vector<opengl33_light> opengllight_array;
+	typedef std::vector<opengl46_light> opengllight_array;
 
 	// methods
     std::unique_ptr<gl::program> make_shader(std::string v, std::string f);
@@ -355,8 +355,8 @@ class opengl33_renderer : public gfx_renderer {
 	gfx::geometrybank_manager m_geometry;
 	material_manager m_materials;
 	texture_manager m_textures;
-	opengl33_terrain_materials m_terrainmaterials{m_materials, m_textures};
-	opengl33_light m_sunlight;
+	opengl46_terrain_materials m_terrainmaterials{m_materials, m_textures};
+	opengl46_light m_sunlight;
 	opengllight_array m_lights;
 	/*
 	    float m_sunandviewangle; // cached dot product of sunlight and camera vectors
@@ -377,9 +377,9 @@ class opengl33_renderer : public gfx_renderer {
 	bool m_environmentready{false}; // the environment map was drawn whole at least once
 	double m_environmentupdatetime{0}; // time of the most recent environment map update
 	glm::dvec3 m_environmentupdatelocation; // coordinates of most recent environment map update
-    opengl33_skydome m_skydomerenderer;
-    opengl33_precipitation m_precipitationrenderer;
-    opengl33_particles m_particlerenderer; // particle visualization subsystem
+    opengl46_skydome m_skydomerenderer;
+    opengl46_precipitation m_precipitationrenderer;
+    opengl46_particles m_particlerenderer; // particle visualization subsystem
 
 	unsigned int m_framestamp; // id of currently rendered gfx frame
 	float m_framerate;
@@ -576,7 +576,7 @@ class opengl33_renderer : public gfx_renderer {
 
     static bool renderer_register;
 
-	class opengl33_imgui_renderer : public imgui_renderer
+	class opengl46_imgui_renderer : public imgui_renderer
 	{
 		virtual bool Init() override;
 		virtual void Shutdown() override;

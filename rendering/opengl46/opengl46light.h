@@ -11,7 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "rendering/light.h"
 
-struct opengl33_light : public basic_light {
+struct opengl46_light : public basic_light {
 
 	GLuint id{(GLuint)-1};
 
@@ -20,7 +20,7 @@ struct opengl33_light : public basic_light {
 	void apply_intensity(float const Factor = 1.0f);
 	void apply_angle() const;
 
-	opengl33_light &operator=(basic_light const &Right) {
+	opengl46_light &operator=(basic_light const &Right) {
 		basic_light::operator=(Right);
 		return *this; }
 };

@@ -23,10 +23,10 @@ http://mozilla.org/MPL/2.0/.
 // materials of the heightmap terrain for the opengl 3.3 renderer (shader mat_terrain).
 // the textures of the layer materials are copied into texture arrays shared by all chunks; each chunk gets a material
 // of its own, with textures holding the weights of its layers and a table of what its layers are
-class opengl33_terrain_materials
+class opengl46_terrain_materials
 {
   public:
-	opengl33_terrain_materials(material_manager &Materials, texture_manager &Textures) : m_materials(Materials), m_textures(Textures) {}
+	opengl46_terrain_materials(material_manager &Materials, texture_manager &Textures) : m_materials(Materials), m_textures(Textures) {}
 
 	// see gfx_renderer::Terrain_Material. returns null_handle if the terrain shader can't be used
 	material_handle make(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement);
