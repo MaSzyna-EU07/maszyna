@@ -444,7 +444,7 @@ void editor_mode::selftest_step()
 					WriteLog(format("SELFTEST crossing %s path %d side %d at %.3f m: %s with %s, 1:%.2f, into %.3f, facing %.3f, nose %d", track->name().c_str(), crossing.path, crossing.side, crossing.at, kind,
 					    crossing.track->name().c_str(), 1.0 / std::tan(crossing.angle), crossing.into, crossing.facing, crossing.nose ? 1 : 0));
 				}
-				auto const gauge = [](TTrack *Track, TTrack::rail_crossing const &Crossing) {
+				auto const gauge = [](TTrack *Track, track_rails::rail_crossing const &Crossing) {
 					auto const &segment{Track->eType == tt_Switch ? *Track->SwitchExtension->Segments[Crossing.path] : *Track->Segment};
 					glm::dvec3 point, across;
 					segment.plan_frame(Crossing.at, point, across);

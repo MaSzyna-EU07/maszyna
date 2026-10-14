@@ -2610,10 +2610,10 @@ TTrack::track_rail_profile( int const Profile ) {
     return m_profiles[ Profile ];
 }
 
-TTrack::rail_size
+track_rails::rail_size
 TTrack::rail_dimensions() const {
 
-    rail_size result;
+    track_rails::rail_size result;
     if( m_profiles.empty() ) {
         return result;
     }
