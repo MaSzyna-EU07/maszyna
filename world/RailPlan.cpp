@@ -471,7 +471,9 @@ void TTrack::rail_planner::cross_wide( rail_crossing const &Crossing, rail_size 
     track_rails::guard_rail guard { Crossing.at - reach, Crossing.at + reach };
     guard.through = goes_through( m_track, *Crossing.track );
     guard.plan.cuts.push_back( corner_cut( Crossing, -flangeway, 1.0, m_size.head, Other.head ) );
-    guard.treads.push_back( wide_tread( Crossing, material, m_guardoffset, m_size.head, Other.head ) );
+    auto const theirs { Crossing.track->rail_material( Crossing.otherpath ) };
+    guard.treads.push_back( wide_tread( Crossing, theirs != null_handle ? theirs : m_track.rail_material( Crossing.path ), m_guardoffset, m_size.head, Other.head ) );
+    guard.treads.back().fade = 0.0;
     merge_guard( m_layout.guards[ Crossing.path ][ Crossing.side > 0 ], guard );
 }
 
