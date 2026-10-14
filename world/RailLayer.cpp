@@ -233,310 +233,324 @@ TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &
     return drawing;
 }
 
-bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
+namespace {
 
-    gfx::userdata_array empty_userdata;
-    auto const &size { Drawing.size };
-    auto const halfwidth { Drawing.halfwidth };
-    auto const railhead { size.head };
-    auto const guardoffset { -( flangeway + railhead ) };
-    auto const &segment { path_segment( *this, Path ) };
-    auto const &plan { Layout.plans[ Path ][ Side > 0 ] };
-    auto const length { segment.GetLength() };
-    auto const &treads { Layout.treads[ Path ][ Side > 0 ] };
-    material_handle current { null_handle };
-    std::vector<material_handle> tints;
+struct piece_ends {
+    double from { 0.0 };
+    double to { 0.0 };
+    loft_end fromend;
+    loft_end toend;
+};
+
+struct rail_piece {
+    material_handle material { null_handle };
+    double from { 0.0 };
+    double to { 0.0 };
+    knots::line offsets;
+    knots::line extents;
+    knots::line inner;
+    bool capfrom { false };
+    bool capto { false };
+    bool rolled { true };
+    knots::line ramp;
+    double fade { blend };
+    bool walls { false };
+    float lift { 0.f };
+    float wallu { -1.f };
+};
+
+struct top_band {
+    material_handle material { null_handle };
+    knots::line extents;
+    knots::line inner;
+    bool rolled { true };
+    knots::line ramp;
+    double fade { blend };
+};
+
+struct grooved_profile {
+    gfx::vertex_array body;
+    std::vector<gfx::vertex_array> tops;
+    std::vector<gfx::vertex_array> flats;
+    float wallu { -1.f };
+};
+
+bool treads_marked() {
+
     static auto const marked { std::getenv( "EU07_EDITOR_TREADS" ) != nullptr };
-    auto const paint = [&]( material_handle const Material, glm::vec3 const &Colour ) {
-        auto const tinted { tint_material( Material, Colour ) };
-        if( tinted != Material ) {
-            tints.push_back( tinted );
-        }
-        return tinted; };
-    std::vector<glm::dvec2> const unramped;
-    auto const sink = [&]( bool const Matte ) -> geometryhandle_sequence & {
-        if( current == null_handle ) {
-            return Matte ? Cuts : Geometry;
-        }
-        if( current == m_material1 ) {
-            return Matte ? GeometryCut1 : Geometry1;
-        }
-        if( eType == tt_Switch && current == m_material2 ) {
-            return Matte ? GeometryCut2 : Geometry2;
-        }
-        auto const tinted { std::find( tints.begin(), tints.end(), current ) != tints.end() };
-        auto found { std::find_if( GeometryTreads.begin(), GeometryTreads.end(), [&]( tread_geometry const &Tread ) { return Tread.material == current; } ) };
-        if( found == GeometryTreads.end() ) {
-            found = GeometryTreads.insert( GeometryTreads.end(), { current, tinted ? current : cut_material( current ), {}, {} } );
-        }
-        return Matte && false == tinted ? found->cuts : found->geometry; };
-    auto const texturelength = [&]() {
-        return ( current == null_handle ? Texturelength : texture_length( current ) ); };
-    auto const aim = [&]( std::vector<rail_tread> const &Spans, double const Middle ) -> rail_tread const * {
-        current = null_handle;
-        for( auto const &span : Spans ) {
-            if( Middle > span.from && Middle < span.to ) {
-                current = span.material;
-                return &span;
-            }
-        }
-        return nullptr;
-    };
-    // parts no wheel rolls on go in the matte material of the cut faces
-    glm::dvec2 bendfrom { 0.0 };
-    glm::dvec2 bendto { 0.0 };
-    auto const bends = [&]( double const Start, double const End ) {
-        return glm::dvec2 {
-            std::abs( Start - bendfrom.x ) < 1e-6 ? bendfrom.y : 0.0,
-            std::abs( End - bendto.x ) < 1e-6 ? bendto.y : 0.0 }; };
-    std::pair<double, std::vector<glm::dvec2>> fitfrom, fitto;
-    std::vector<glm::dvec2> const unfitted;
-    auto const fitted = [&]( std::pair<double, std::vector<glm::dvec2>> const &Fit, double const Distance ) -> std::vector<glm::dvec2> const & {
-        return ( std::abs( Distance - Fit.first ) < 1e-6 ? Fit.second : unfitted ); };
-    auto const span = [&]( double const Start, double const End, knots::line const &Offsets, knots::line const &Extents, knots::line const &Inner ) {
-        loft_span result;
-        result.side = Side;
-        result.halfwidth = halfwidth;
-        result.texturelength = texturelength();
-        result.from = Start;
-        result.to = End;
-        result.offsets = Offsets;
-        result.extents = Extents;
-        result.inner = Inner;
-        auto const bent { bends( Start, End ) };
-        result.fromend = { bent.x, fitted( fitfrom, Start ) };
-        result.toend = { bent.y, fitted( fitto, End ) };
-        return result; };
-    auto const piece = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, bool const Capstart, bool const Capend, gfx::vertex_array const &Shape, bool const Rolled, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Ramp = {}, bool const Walls = false, float const Lift = 0.f, float const Wallu = -1.f, double const Fade = blend ) {
-        gfx::vertex_array vertices;
-        gfx::userdata_array userdata;
-        auto loft { span( Start, End, Offsets, Extents, Inner ) };
-        loft.lift = Lift;
-        loft.userdata = ( Rolled ? nullptr : &userdata );
-        loft.ramp = Ramp;
-        loft.rampwidth = ( Ramp.empty() ? 0.0 : Fade );
-        loft.walls = Walls;
-        loft.wallu = Wallu;
-        if( Shape.size() > 1 && segment.RenderLoftSpan( vertices, m_origin, Shape, loft ) ) {
-            cut_faces( vertices, Shape.size(), Capstart, Capend, Drawing.bank, sink( true ) );
-            gfx::vertex_array triangles;
-            gfx::userdata_array triangleuserdata;
-            auto const ring { 2 * Shape.size() };
-            for( std::size_t block = 0; block + ring <= vertices.size(); block += ring ) {
-                for( std::size_t j = 0; j + 1 < Shape.size(); ++j ) {
-                    for( auto const index : { 0, 1, 2, 1, 3, 2 } ) {
-                        auto const vertex { block + 2 * j + index };
-                        triangles.push_back( vertices[ vertex ] );
-                        if( false == Rolled ) {
-                            triangleuserdata.push_back( userdata[ vertex ] );
-                        }
-                    }
-                }
-            }
-            sink( false == Rolled ).emplace_back( GfxRenderer->Insert( triangles, Rolled ? empty_userdata : triangleuserdata, Drawing.bank, GL_TRIANGLES ) );
-        }
-    };
-    // the running surface on top of the head is split along the edge of the wheel treads, the part of it out of their reach goes matte; the rest of the profile and the end faces are laid whole
-    std::size_t topfirst { Profile.size() };
-    std::size_t toplast { 0 };
-    for( std::size_t j = 0; j < Profile.size(); ++j ) {
-        if( Profile[ j ].position.y > static_cast<float>( -0.087 * size.height ) ) {
-            topfirst = std::min( topfirst, j );
-            toplast = std::max( toplast, j );
+    return marked;
+}
+
+void sort_cuts( std::vector<rail_cut> &Cuts ) {
+
+    std::sort( Cuts.begin(), Cuts.end(), []( rail_cut const &A, rail_cut const &B ) { return A.at < B.at; } );
+}
+
+void add_meetings( knots::line const &A, knots::line const &B, double const Start, double const End, double const Margin, std::vector<double> &Splits ) {
+
+    for( auto const distance : knots::meetings( A, B ) ) {
+        if( distance > Start + Margin && distance < End - Margin ) {
+            Splits.push_back( distance );
         }
     }
-    auto const strip = [&]( std::size_t const First, std::size_t const Last ) {
-        return gfx::vertex_array( Profile.begin() + First, Profile.begin() + Last + 1 ); };
-    auto const crossings = []( knots::line const &A, knots::line const &B, double const Start, double const End, double const Margin, std::vector<double> &Splits ) {
-        for( auto const distance : knots::meetings( A, B ) ) {
-            if( distance > Start + Margin && distance < End - Margin ) {
-                Splits.push_back( distance );
-            }
+}
+
+std::vector<double> cross_splits( rail_piece const &Whole, glm::dvec2 const &Reach, std::initializer_list<knots::line const *> const Edges, double const Margin ) {
+
+    std::vector<double> result { Whole.from, Whole.to };
+    knots::line const lowline { { Whole.from, Reach.x }, { Whole.to, Reach.x } };
+    knots::line const highline { { Whole.from, Reach.y }, { Whole.to, Reach.y } };
+    for( auto const *edge : Edges ) {
+        for( auto const *limit : { &lowline, &highline, &Whole.extents, &Whole.inner } ) {
+            add_meetings( *edge, *limit, Whole.from, Whole.to, Margin, result );
         }
-    };
-    auto const running = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, std::vector<glm::dvec2> const &Rolled, bool const Capstart, bool const Capend ) {
-        gfx::vertex_array vertices;
-        if( segment.RenderLoftSpan( vertices, m_origin, Profile, span( Start, End, Offsets, Extents, Inner ) ) ) {
-            cut_faces( vertices, Profile.size(), Capstart, Capend, Drawing.bank, sink( true ) );
-        }
-        piece( Start, End, Offsets, Extents, false, false, strip( 0, topfirst ), true, Inner );
-        piece( Start, End, Offsets, Extents, false, false, strip( toplast, Profile.size() - 1 ), true, Inner );
-        auto const top { strip( topfirst, toplast ) };
-        auto low { 1e9 };
-        auto high { -1e9 };
-        for( auto const &point : top ) {
-            low = std::min( low, static_cast<double>( Side * point.position.x - halfwidth ) );
-            high = std::max( high, static_cast<double>( Side * point.position.x - halfwidth ) );
-        }
-        auto const inner { knots::shifted( Rolled, -blend ) };
-        std::vector<double> splits { Start, End };
-        std::vector<glm::dvec2> const lowline { { Start, low }, { End, low } };
-        std::vector<glm::dvec2> const highline { { Start, high }, { End, high } };
-        for( auto const *knots : { &Rolled, &inner } ) {
-            for( auto const *limit : { &lowline, &highline, &Extents, &Inner } ) {
-                crossings( *knots, *limit, Start, End, 0.0, splits );
-            }
-        }
-        std::sort( splits.begin(), splits.end() );
-        auto const shiny { knots::bound( Extents, inner, true ) };
-        auto const blended { knots::bound( Extents, Rolled, true ) };
-        for( std::size_t i = 1; i < splits.size(); ++i ) {
-            auto const middle { 0.5 * ( splits[ i - 1 ] + splits[ i ] ) };
-            auto const reach { knots::sample( Rolled, middle, 0.0 ) };
-            auto const least { std::max( low, Inner.empty() ? low : knots::sample( Inner, middle, 0.0 ) ) };
-            auto const most { std::min( high, Extents.empty() ? high : knots::sample( Extents, middle, 0.0 ) ) };
-            auto const shown = [&]( double const Lowest, double const Highest ) {
-                return Highest > Lowest + 1e-6 && Highest > least && Lowest < most; };
-            if( shown( -1e9, reach - blend ) ) {
-                piece( splits[ i - 1 ], splits[ i ], Offsets, shiny, false, false, top, true, Inner );
-            }
-            auto const plain { current };
-            auto const own { current == null_handle ? rail_material( Path ) : current };
-            if( shown( reach - blend, reach ) ) {
-                current = ( marked ? paint( own, { 1.f, 1.f, 0.f } ) : plain );
-                piece( splits[ i - 1 ], splits[ i ], Offsets, blended, false, false, top, false, knots::bound( inner, Inner, false ), marked ? unramped : Rolled );
-            }
-            if( shown( reach, 1e9 ) ) {
-                current = ( marked ? paint( own, { 1.f, 0.f, 1.f } ) : plain );
-                piece( splits[ i - 1 ], splits[ i ], Offsets, Extents, false, false, top, false, knots::bound( Rolled, Inner, false ) );
-            }
-            current = plain;
-        }
-    };
-    auto const treaded = [&]( double const Start, double const End, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, std::vector<glm::dvec2> const &Inner, bool const Capstart, bool const Capend, rail_tread const &Span ) {
-        current = null_handle;
-        gfx::vertex_array vertices;
-        if( segment.RenderLoftSpan( vertices, m_origin, Profile, span( Start, End, Offsets, Extents, Inner ) ) ) {
-            cut_faces( vertices, Profile.size(), Capstart, Capend, Drawing.bank, sink( true ) );
-        }
-        piece( Start, End, Offsets, Extents, false, false, strip( 0, topfirst ), true, Inner );
-        piece( Start, End, Offsets, Extents, false, false, strip( toplast, Profile.size() - 1 ), true, Inner );
-        auto const top { strip( topfirst, toplast ) };
-        auto low { 1e9 };
-        auto high { -1e9 };
-        for( auto const &point : top ) {
-            low = std::min( low, static_cast<double>( Side * point.position.x - halfwidth ) );
-            high = std::max( high, static_cast<double>( Side * point.position.x - halfwidth ) );
-        }
-        auto const &lower { Span.below ? Span.gauge : Span.edge };
-        auto const &upper { Span.below ? Span.edge : Span.gauge };
-        auto const own { rail_material( Path ) };
-        auto const colour { 0.5f * ( tread_colour( Span.material, tread_band() ) + tread_colour( own, tread_band() ) ) };
-        auto const tint = [&]( material_handle const Material, glm::vec3 const &Mark ) {
-            return paint( Material, marked ? Mark : colour ); };
-        auto const owntint { tint( own, { 1.f, 0.f, 0.f } ) };
-        auto const sharedtint { tint( Span.material, { 0.f, 1.f, 0.f } ) };
-        auto const shared { marked ? tint( Span.material, { 0.f, 0.f, 1.f } ) : Span.material };
-        auto const ramp = [&]( std::vector<glm::dvec2> const &Knots ) -> std::vector<glm::dvec2> const & {
-            return marked ? unramped : Knots; };
-        auto const centre { knots::middle( lower, upper ) };
-        auto const beneath { knots::shifted( lower, -tread_fade ) };
-        auto const beyond { knots::shifted( upper, tread_fade ) };
-        auto const lowfade { knots::bound( knots::shifted( lower, tread_fade ), centre, true ) };
-        auto const highfade { knots::bound( knots::shifted( upper, -tread_fade ), centre, false ) };
-        std::vector<double> splits { Start, End };
-        std::vector<glm::dvec2> const lowline { { Start, low }, { End, low } };
-        std::vector<glm::dvec2> const highline { { Start, high }, { End, high } };
-        for( auto const *knots : { &lower, &upper, &lowfade, &highfade, &beneath, &beyond } ) {
-            for( auto const *limit : { &lowline, &highline, &Extents, &Inner } ) {
-                crossings( *knots, *limit, Start, End, 0.001, splits );
-            }
-        }
-        crossings( knots::shifted( lower, 2.0 * tread_fade ), upper, Start, End, 0.001, splits );
-        std::sort( splits.begin(), splits.end() );
-        for( std::size_t i = 1; i < splits.size(); ++i ) {
-            auto const a { splits[ i - 1 ] };
-            auto const b { splits[ i ] };
-            auto const middle { 0.5 * ( a + b ) };
-            auto const from { knots::sample( lower, middle, 0.0 ) };
-            auto const to { knots::sample( upper, middle, 0.0 ) };
-            auto const inner { knots::sample( lowfade, middle, 0.0 ) };
-            auto const outer { knots::sample( highfade, middle, 0.0 ) };
-            auto const least { std::max( low, Inner.empty() ? low : knots::sample( Inner, middle, 0.0 ) ) };
-            auto const most { std::min( high, Extents.empty() ? high : knots::sample( Extents, middle, 0.0 ) ) };
-            auto const shown = [&]( double const Lowest, double const Highest ) {
-                return Highest > Lowest + 1e-6 && Highest > least && Lowest < most; };
-            if( shown( -1e9, from - tread_fade ) ) {
-                current = null_handle;
-                piece( a, b, Offsets, knots::bound( Extents, beneath, true ), false, false, top, true, Inner );
-            }
-            if( shown( from - tread_fade, from ) ) {
-                current = owntint;
-                piece( a, b, Offsets, knots::bound( Extents, lower, true ), false, false, top, false, knots::bound( Inner, beneath, false ), ramp( lower ), false, 0.f, -1.f, tread_fade );
-            }
-            if( shown( from, inner ) ) {
-                current = sharedtint;
-                piece( a, b, Offsets, knots::bound( Extents, lowfade, true ), false, false, top, false, knots::bound( Inner, lower, false ), ramp( lower ), false, 0.f, -1.f, -tread_fade );
-            }
-            if( shown( inner, outer ) ) {
-                current = shared;
-                piece( a, b, Offsets, knots::bound( Extents, highfade, true ), false, false, top, false == marked, knots::bound( Inner, lowfade, false ) );
-            }
-            if( shown( outer, to ) ) {
-                current = sharedtint;
-                piece( a, b, Offsets, knots::bound( Extents, upper, true ), false, false, top, false, knots::bound( Inner, highfade, false ), ramp( upper ), false, 0.f, -1.f, tread_fade );
-            }
-            if( shown( to, to + tread_fade ) ) {
-                current = owntint;
-                piece( a, b, Offsets, knots::bound( Extents, beyond, true ), false, false, top, false, knots::bound( Inner, upper, false ), ramp( upper ), false, 0.f, -1.f, -tread_fade );
-            }
-            if( shown( to + tread_fade, 1e9 ) ) {
-                current = null_handle;
-                piece( a, b, Offsets, Extents, false, false, top, true, knots::bound( Inner, beyond, false ) );
-            }
-        }
-        current = null_handle;
-    };
-    for( auto const &guard : Layout.guards[ Path ][ Side > 0 ] ) {
-        auto const flare { std::min( 0.3, 0.25 * ( guard.to - guard.from ) ) };
-        std::vector<glm::dvec2> offsets;
-        if( guard.flarefrom ) {
-            offsets.insert( offsets.end(), { { guard.from, guardoffset - 0.02 }, { guard.from + flare, guardoffset } } );
-        }
-        else {
-            offsets.push_back( { guard.from, guardoffset } );
-        }
-        if( guard.flareto ) {
-            offsets.insert( offsets.end(), { { guard.to - flare, guardoffset }, { guard.to, guardoffset - 0.02 } } );
-        }
-        else {
-            offsets.push_back( { guard.to, guardoffset } );
-        }
-        auto const top { flangeway + railhead + size.low - 0.002 };
-        auto const mitered = [&]( glm::dvec2 const &Miter, double const Square, bool const Latest ) {
-            if( Miter.y == 0.0 ) {
-                return Square;
-            }
-            auto const inside { Miter.x + Miter.y * ( size.low + guardoffset ) };
-            auto const outside { Miter.x + Miter.y * ( top + guardoffset ) };
-            return Latest ? std::max( inside, outside ) : std::min( inside, outside ); };
-        auto const envelope = [&]( std::vector<glm::dvec2> const &Lines, bool const Upper, double const A, double const B ) {
-            std::vector<glm::dvec2> knots;
-            if( Lines.empty() ) {
-                return knots;
-            }
-            std::vector<double> stations { A, B };
-            for( std::size_t i = 0; i < Lines.size(); ++i ) {
-                for( std::size_t j = i + 1; j < Lines.size(); ++j ) {
-                    if( std::abs( Lines[ i ].x - Lines[ j ].x ) > 1e-12 ) {
-                        auto const d { ( Lines[ j ].y - Lines[ i ].y ) / ( Lines[ i ].x - Lines[ j ].x ) };
-                        if( d > A && d < B ) {
-                            stations.push_back( d );
-                        }
-                    }
+    }
+    std::sort( result.begin(), result.end() );
+    return result;
+}
+
+knots::line flared( double const From, double const To, double const Flare, double const Base, double const Fromdepth, double const Todepth ) {
+
+    knots::line result;
+    if( Fromdepth > 0.0 ) {
+        result.insert( result.end(), { { From, Base - Fromdepth }, { From + Flare, Base } } );
+    }
+    else {
+        result.push_back( { From, Base } );
+    }
+    if( Todepth > 0.0 ) {
+        result.insert( result.end(), { { To - Flare, Base }, { To, Base - Todepth } } );
+    }
+    else {
+        result.push_back( { To, Base } );
+    }
+    return result;
+}
+
+knots::line envelope( knots::line const &Lines, bool const Upper, double const A, double const B ) {
+
+    knots::line result;
+    if( Lines.empty() ) {
+        return result;
+    }
+    std::vector<double> stations { A, B };
+    for( std::size_t i = 0; i < Lines.size(); ++i ) {
+        for( std::size_t j = i + 1; j < Lines.size(); ++j ) {
+            if( std::abs( Lines[ i ].x - Lines[ j ].x ) > 1e-12 ) {
+                auto const d { ( Lines[ j ].y - Lines[ i ].y ) / ( Lines[ i ].x - Lines[ j ].x ) };
+                if( d > A && d < B ) {
+                    stations.push_back( d );
                 }
             }
-            std::sort( stations.begin(), stations.end() );
-            for( auto const d : stations ) {
-                auto value { Upper ? 1e6 : -1e6 };
-                for( auto const &line : Lines ) {
-                    value = Upper ? std::min( value, line.x * d + line.y ) : std::max( value, line.x * d + line.y );
-                }
-                knots.emplace_back( d, value );
+        }
+    }
+    std::sort( stations.begin(), stations.end() );
+    for( auto const d : stations ) {
+        auto value { Upper ? 1e6 : -1e6 };
+        for( auto const &line : Lines ) {
+            value = Upper ? std::min( value, line.x * d + line.y ) : std::max( value, line.x * d + line.y );
+        }
+        result.emplace_back( d, value );
+    }
+    return result;
+}
+
+rail_cut band_cut( rail_band const &Band, glm::dvec2 const &Reach ) {
+
+    rail_cut cut;
+    cut.at = Band.at;
+    auto const before { Band.into > 0.0 ? Band.from : Band.to };
+    auto const after { Band.into > 0.0 ? Band.to : Band.from };
+    auto const meets = [&]( double const Edge, double const Across ) {
+        return glm::dvec2{ Band.at + ( Edge + Band.facing * Across ) / Band.into, Across }; };
+    if( std::abs( Band.facing ) < 1e-3 ) {
+        cut.end = meets( before, 0.0 ).x;
+        cut.start = meets( after, 0.0 ).x;
+        return cut;
+    }
+    knots::line endknots { meets( before, Reach.x ), meets( before, Reach.y ) };
+    knots::line startknots { meets( after, Reach.x ), meets( after, Reach.y ) };
+    knots::sort( endknots );
+    knots::sort( startknots );
+    cut.end = endknots.back().x;
+    cut.start = startknots.front().x;
+    cut.endcap = false;
+    cut.startcap = false;
+    auto const outwards { Band.facing / Band.into > 0.0 };
+    ( outwards ? cut.endinner : cut.endextents ) = endknots;
+    ( outwards ? cut.startextents : cut.startinner ) = startknots;
+    return cut;
+}
+
+rail_cut seam( double const At, double const End, double const Start ) {
+
+    rail_cut cut;
+    cut.at = At;
+    cut.end = End;
+    cut.start = Start;
+    cut.endcap = false;
+    cut.startcap = false;
+    return cut;
+}
+
+knots::line merged_blocks( knots::line Blocks, std::vector<rail_cut> const &Cuts ) {
+
+    for( auto const &cut : Cuts ) {
+        for( auto &block : Blocks ) {
+            if( cut.at > block.x && cut.at < block.y ) {
+                block = { std::min( block.x, cut.end ), std::max( block.y, cut.start ) };
             }
-            return knots; };
+        }
+    }
+    knots::sort( Blocks );
+    knots::line result;
+    for( auto const &block : Blocks ) {
+        if( false == result.empty() && block.x <= result.back().y ) {
+            result.back().y = std::max( result.back().y, block.y );
+        }
+        else {
+            result.push_back( block );
+        }
+    }
+    return result;
+}
+
+rail_tread const *tread_at( std::vector<rail_tread> const &Treads, double const Middle ) {
+
+    for( auto const &tread : Treads ) {
+        if( Middle > tread.from && Middle < tread.to ) {
+            return &tread;
+        }
+    }
+    return nullptr;
+}
+
+material_handle tread_material( rail_tread const *Tread ) {
+
+    return ( Tread != nullptr ? Tread->material : null_handle );
+}
+
+} // namespace
+
+class TTrack::rail_layer {
+
+public:
+// constructors
+    rail_layer( TTrack &Track, rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
+// methods
+    bool lay();
+
+private:
+// methods
+    template <typename Type_>
+    Type_ const &ours( Type_ const ( &Sides )[ 2 ][ 2 ] ) const {
+        return Sides[ m_path ][ m_side > 0 ]; }
+    std::vector<rail_tread> const &treads() const {
+        return ours( m_layout.treads ); }
+    void lay_guards();
+    void lay_checks();
+    void lay_fills();
+    void lay_cuts( gfx::vertex_array const &Shape, std::vector<rail_cut> Cuts, bool const Wheels, std::vector<rail_tread> const &Treads, float const Wallu = -1.f );
+    void lay_grooved( gfx::vertex_array const &Outline );
+    grooved_profile split_grooved( gfx::vertex_array const &Outline ) const;
+    std::vector<rail_cut> top_cuts( gfx::vertex_array const &Top ) const;
+    void running( rail_piece const &Whole, knots::line const &Rolled, piece_ends const &Ends );
+    void treaded( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends );
+    gfx::vertex_array lay_sides( rail_piece const &Whole, piece_ends const &Ends );
+    void lay_top( gfx::vertex_array const &Top, rail_piece const &Whole, glm::dvec2 const &Reach, std::vector<double> const &Splits, std::vector<top_band> const &Bands, std::function<std::vector<double>( double )> const &Edges, piece_ends const &Ends );
+    void piece( gfx::vertex_array const &Shape, rail_piece const &Piece, piece_ends const &Ends = {} );
+    loft_span span( rail_piece const &Piece, piece_ends const &Ends ) const;
+    double texture_length( material_handle const Material ) const;
+    geometryhandle_sequence &sink( material_handle const Material, bool const Matte );
+    material_handle paint( material_handle const Material, glm::vec3 const &Colour );
+    glm::dvec2 reaches( gfx::vertex_array const &Shape ) const;
+    gfx::vertex_array strip( std::size_t const First, std::size_t const Last ) const;
+// members
+    TTrack &m_track;
+    rail_layout const &m_layout;
+    rail_drawing const &m_drawing;
+    int const m_path;
+    gfx::vertex_array const &m_profile;
+    int const m_side;
+    float const m_texturelength;
+    double const m_from;
+    bool const m_openstart;
+    bool const m_openend;
+    geometryhandle_sequence &m_geometry;
+    geometryhandle_sequence &m_cuts;
+    TSegment const &m_segment;
+    double const m_length;
+    double const m_guardoffset;
+    std::size_t m_topfirst;
+    std::size_t m_toplast { 0 };
+    std::vector<material_handle> m_tints;
+};
+
+TTrack::rail_layer::rail_layer( TTrack &Track, rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) :
+    m_track { Track },
+    m_layout { Layout },
+    m_drawing { Drawing },
+    m_path { Path },
+    m_profile { Profile },
+    m_side { Side },
+    m_texturelength { Texturelength },
+    m_from { From },
+    m_openstart { Openstart },
+    m_openend { Openend },
+    m_geometry { Geometry },
+    m_cuts { Cuts },
+    m_segment { path_segment( Track, Path ) },
+    m_length { m_segment.GetLength() },
+    m_guardoffset { -( flangeway + Drawing.size.head ) },
+    m_topfirst { Profile.size() } {
+    // the running surface on top of the head is split along the edge of the wheel treads, the part of it out of their reach goes matte; the rest of the profile and the end faces are laid whole
+    for( std::size_t j = 0; j < Profile.size(); ++j ) {
+        if( Profile[ j ].position.y > static_cast<float>( -0.087 * Drawing.size.height ) ) {
+            m_topfirst = std::min( m_topfirst, j );
+            m_toplast = std::max( m_toplast, j );
+        }
+    }
+}
+
+bool TTrack::rail_layer::lay() {
+
+    lay_guards();
+    lay_checks();
+    lay_fills();
+    auto const &plan { ours( m_layout.plans ) };
+    auto const &bands { ours( m_layout.bands ) };
+    if( plan.cuts.empty() && bands.empty() && treads().empty() ) {
+        return false;
+    }
+    auto const &outline { track_rail_profile( m_track.m_profile1.second ) };
+    if( false == m_drawing.size.grooved || outline.size() != 2 * m_profile.size() ) {
+        auto cuts { plan.cuts };
+        auto const reach { reaches( m_profile ) };
+        for( auto const &band : bands ) {
+            cuts.push_back( band_cut( band, reach ) );
+        }
+        lay_cuts( m_profile, cuts, true, treads() );
+        return true;
+    }
+    lay_grooved( outline );
+    return true;
+}
+
+void TTrack::rail_layer::lay_guards() {
+
+    auto const &size { m_drawing.size };
+    auto const top { flangeway + size.head + size.low - 0.002 };
+    auto const mitered = [&]( glm::dvec2 const &Miter, double const Square, bool const Latest ) {
+        if( Miter.y == 0.0 ) {
+            return Square;
+        }
+        auto const inside { Miter.x + Miter.y * ( size.low + m_guardoffset ) };
+        auto const outside { Miter.x + Miter.y * ( top + m_guardoffset ) };
+        return Latest ? std::max( inside, outside ) : std::min( inside, outside ); };
+    for( auto const &guard : ours( m_layout.guards ) ) {
+        auto const offsets { flared( guard.from, guard.to, std::min( 0.3, 0.25 * ( guard.to - guard.from ) ), m_guardoffset, guard.flarefrom ? 0.02 : 0.0, guard.flareto ? 0.02 : 0.0 ) };
         auto cuts { guard.plan.cuts };
-        std::sort( cuts.begin(), cuts.end(), []( rail_cut const &A, rail_cut const &B ) { return A.at < B.at; } );
+        sort_cuts( cuts );
         auto start { guard.from };
         auto startmiter { guard.frommiter };
         rail_cut startcut;
@@ -544,25 +558,22 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             auto const end { i < cuts.size() ? cuts[ i ].end : guard.to };
             auto const endmiter { i < cuts.size() ? cuts[ i ].endmiter : guard.tomiter };
             auto const endcut { i < cuts.size() ? cuts[ i ] : rail_cut {} };
-            auto const a { std::max( { mitered( startmiter, start, false ), From, 0.0 } ) };
-            auto const b { std::min( { mitered( endmiter, end, true ), length, mitered( guard.tomiter, guard.to, true ) } ) };
+            auto const a { std::max( { mitered( startmiter, start, false ), m_from, 0.0 } ) };
+            auto const b { std::min( { mitered( endmiter, end, true ), m_length, mitered( guard.tomiter, guard.to, true ) } ) };
             if( b - a > 0.01 ) {
-                std::vector<glm::dvec2> uppers { { 0.0, top } };
-                std::vector<glm::dvec2> lowers;
+                knots::line uppers { { 0.0, top } };
+                knots::line lowers;
                 for( auto const &[ miter, ending ] : { std::pair{ startmiter, false }, std::pair{ endmiter, true } } ) {
                     if( miter.y != 0.0 ) {
-                        ( ending == ( miter.y < 0.0 ) ? uppers : lowers ).emplace_back( 1.0 / miter.y, -miter.x / miter.y - guardoffset );
+                        ( ending == ( miter.y < 0.0 ) ? uppers : lowers ).emplace_back( 1.0 / miter.y, -miter.x / miter.y - m_guardoffset );
                     }
                 }
                 auto const glued { a == start && false == startcut.startfit.empty() };
                 auto const gluedend { b == end && false == endcut.endfit.empty() };
-                bendfrom = { a, glued ? startcut.startbend : 0.0 };
-                bendto = { b, gluedend ? endcut.endbend : 0.0 };
-                fitfrom = { a, glued ? startcut.startfit : unfitted };
-                fitto = { b, gluedend ? endcut.endfit : unfitted };
-                piece( a, b, offsets, envelope( uppers, true, a, b ), false == glued, false == gluedend, Profile, false, envelope( lowers, false, a, b ) );
-                bendfrom = bendto = glm::dvec2 { 0.0 };
-                fitfrom = fitto = {};
+                piece(
+                    m_profile,
+                    { .from = a, .to = b, .offsets = offsets, .extents = envelope( uppers, true, a, b ), .inner = envelope( lowers, false, a, b ), .capfrom = false == glued, .capto = false == gluedend, .rolled = false },
+                    { a, b, { glued ? startcut.startbend : 0.0, glued ? startcut.startfit : knots::line {} }, { gluedend ? endcut.endbend : 0.0, gluedend ? endcut.endfit : knots::line {} } } );
             }
             if( i < cuts.size() && cuts[ i ].start > start ) {
                 start = cuts[ i ].start;
@@ -571,198 +582,200 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             }
         }
     }
-    auto const &shape { Drawing.checkshapes[ Side > 0 ? 0 : 1 ] };
-    for( auto const &check : Layout.checks[ Path ][ Side > 0 ] ) {
-        auto const replaced { std::any_of( Layout.wingends[ Path ][ Side > 0 ].begin(), Layout.wingends[ Path ][ Side > 0 ].end(), [&]( glm::dvec2 const &Wing ) {
+}
+
+void TTrack::rail_layer::lay_checks() {
+
+    auto const &shape { m_drawing.checkshapes[ m_side > 0 ? 0 : 1 ] };
+    auto const &wingends { ours( m_layout.wingends ) };
+    for( auto const &check : m_layout.checks[ m_path ][ m_side > 0 ] ) {
+        auto const replaced { std::any_of( wingends.begin(), wingends.end(), [&]( glm::dvec2 const &Wing ) {
             auto farend { 0.0 };
             return replaced_check( { check }, Wing.x, Wing.y, farend ); } ) };
-        auto const from { check.from };
-        auto const to { check.to };
-        auto const a { std::max( from, From ) };
-        auto const b { std::min( to, length ) };
+        auto const a { std::max( check.from, m_from ) };
+        auto const b { std::min( check.to, m_length ) };
         if( replaced || b - a <= 0.01 ) {
             continue;
         }
-        auto const flare { std::min( 0.6, 0.4 * ( to - from ) ) };
-        std::vector<glm::dvec2> offsets;
-        if( check.flarefrom > 0.0 ) {
-            offsets.insert( offsets.end(), { { from, -check.flarefrom }, { from + flare, 0.0 } } );
-        }
-        else {
-            offsets.push_back( { from, 0.0 } );
-        }
-        if( check.flareto > 0.0 ) {
-            offsets.insert( offsets.end(), { { to - flare, 0.0 }, { to, -check.flareto } } );
-        }
-        else {
-            offsets.push_back( { to, 0.0 } );
-        }
-        bendfrom = { a, a == from ? check.frombend : 0.0 };
-        bendto = { b, b == to ? check.tobend : 0.0 };
-        piece( a, b, offsets, {}, a > 0.0 || from >= 0.0, to <= length, shape, false, {} );
-        bendfrom = bendto = glm::dvec2 { 0.0 };
+        piece(
+            shape,
+            { .from = a, .to = b, .offsets = flared( check.from, check.to, std::min( 0.6, 0.4 * ( check.to - check.from ) ), 0.0, check.flarefrom, check.flareto ), .capfrom = a > 0.0 || check.from >= 0.0, .capto = check.to <= m_length, .rolled = false },
+            { a, b, { a == check.from ? check.frombend : 0.0 }, { b == check.to ? check.tobend : 0.0 } } );
     }
-    for( auto const &fill : Layout.fills[ Path ][ Side > 0 ] ) {
-        auto const a { std::max( fill.from, From ) };
-        auto const b { std::min( fill.to, length ) };
+}
+
+void TTrack::rail_layer::lay_fills() {
+
+    for( auto const &fill : ours( m_layout.fills ) ) {
+        auto const a { std::max( fill.from, m_from ) };
+        auto const b { std::min( fill.to, m_length ) };
         if( b - a > 0.01 ) {
-            current = null_handle;
-            if( false == fill.web ) {
-                aim( treads, 0.5 * ( a + b ) );
-            }
-            auto const &shapes { fill.web ? Drawing.fillers : Drawing.plates };
-            piece( a, b, {}, fill.outer, a == fill.from && fill.capfrom, b == fill.to && fill.capto, shapes[ Side > 0 ? 0 : 1 ], true, fill.inner, {}, true, static_cast<float>( fill.lift ) );
-            current = null_handle;
+            auto const &shapes { fill.web ? m_drawing.fillers : m_drawing.plates };
+            piece(
+                shapes[ m_side > 0 ? 0 : 1 ],
+                { .material = ( fill.web ? null_handle : tread_material( tread_at( treads(), 0.5 * ( a + b ) ) ) ), .from = a, .to = b, .extents = fill.outer, .inner = fill.inner, .capfrom = a == fill.from && fill.capfrom, .capto = b == fill.to && fill.capto, .walls = true, .lift = static_cast<float>( fill.lift ) } );
         }
     }
-    auto const &bands { Layout.bands[ Path ][ Side > 0 ] };
-    if( plan.cuts.empty() && bands.empty() && treads.empty() ) {
-        return false;
+}
+
+void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<rail_cut> Cuts, bool const Wheels, std::vector<rail_tread> const &Treads, float const Wallu ) {
+
+    sort_cuts( Cuts );
+    auto start { -1e9 };
+    auto startcap { true };
+    auto startbend { 0.0 };
+    knots::line startfit;
+    knots::line rolledfrom;
+    knots::line offsets, extents, inner;
+    for( std::size_t i = 0; i <= Cuts.size(); ++i ) {
+        auto const end { i < Cuts.size() ? Cuts[ i ].end : 1e9 };
+        auto pieceoffsets { offsets };
+        auto pieceextents { extents };
+        auto pieceinner { inner };
+        if( i < Cuts.size() ) {
+            pieceoffsets.insert( pieceoffsets.end(), Cuts[ i ].endoffsets.begin(), Cuts[ i ].endoffsets.end() );
+            pieceextents.insert( pieceextents.end(), Cuts[ i ].endextents.begin(), Cuts[ i ].endextents.end() );
+            pieceinner.insert( pieceinner.end(), Cuts[ i ].endinner.begin(), Cuts[ i ].endinner.end() );
+        }
+        knots::sort( pieceoffsets );
+        knots::sort( pieceextents );
+        knots::sort( pieceinner );
+        auto const a { std::max( start, m_from ) };
+        auto const b { std::min( end, m_length ) };
+        auto const rolled { i < Cuts.size() ? knots::bound( rolledfrom, Cuts[ i ].endrolled, true ) : rolledfrom };
+        auto const capstart { start > m_from ? startcap : m_openstart };
+        auto const capend { end < m_length ? Cuts[ i ].endcap : m_openend };
+        piece_ends const ends {
+            a, b,
+            { start > m_from ? startbend : 0.0, start > m_from ? startfit : knots::line {} },
+            { end < m_length ? Cuts[ i ].endbend : 0.0, end < m_length ? Cuts[ i ].endfit : knots::line {} } };
+        if( b - a > 0.01 ) {
+            std::vector<rail_tread> active;
+            for( auto const &tread : Treads ) {
+                if( tread.anchor == 0
+                 || ( tread.anchor > 0 && b > tread.from + 0.01 && b < tread.to + 0.01 )
+                 || ( tread.anchor < 0 && a > tread.from - 0.01 && a < tread.to - 0.01 ) ) {
+                    active.push_back( tread );
+                }
+            }
+            std::vector<double> splits;
+            for( auto const &tread : active ) {
+                for( auto const edge : { tread.from, tread.to } ) {
+                    if( edge > a + 0.01 && edge < b - 0.01 ) {
+                        splits.push_back( edge );
+                    }
+                }
+            }
+            std::sort( splits.begin(), splits.end() );
+            splits.erase( std::unique( splits.begin(), splits.end(), []( double const A, double const B ) { return B - A < 0.002; } ), splits.end() );
+            splits.insert( splits.begin(), a );
+            splits.push_back( b );
+            for( std::size_t k = 1; k < splits.size(); ++k ) {
+                auto const *tread { tread_at( active, 0.5 * ( splits[ k - 1 ] + splits[ k ] ) ) };
+                rail_piece const whole {
+                    .material = tread_material( tread ),
+                    .from = splits[ k - 1 ],
+                    .to = splits[ k ],
+                    .offsets = pieceoffsets,
+                    .extents = pieceextents,
+                    .inner = pieceinner,
+                    .capfrom = k == 1 && capstart,
+                    .capto = k + 1 == splits.size() && capend,
+                    .walls = false == Wheels,
+                    .wallu = Wallu };
+                if( Wheels && tread != nullptr && false == tread->edge.empty() && m_topfirst < m_toplast ) {
+                    treaded( whole, *tread, ends );
+                }
+                else if( false == Wheels || rolled.empty() || m_topfirst >= m_toplast ) {
+                    piece( Shape, whole, ends );
+                }
+                else {
+                    running( whole, rolled, ends );
+                }
+            }
+        }
+        if( i < Cuts.size() ) {
+            rolledfrom = Cuts[ i ].startrolled;
+            start = Cuts[ i ].start;
+            startcap = Cuts[ i ].startcap;
+            startbend = Cuts[ i ].startbend;
+            startfit = Cuts[ i ].startfit;
+            offsets = Cuts[ i ].startoffsets;
+            extents = Cuts[ i ].startextents;
+            inner = Cuts[ i ].startinner;
+        }
     }
-    auto const byposition = []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; };
-    auto const reaches = [&]( gfx::vertex_array const &Shape ) {
-        glm::dvec2 result { 1e9, -1e9 };
-        for( auto const &point : Shape ) {
-            auto const reach { static_cast<double>( Side * point.position.x - halfwidth ) };
-            result = { std::min( result.x, reach ), std::max( result.y, reach ) };
+}
+
+void TTrack::rail_layer::lay_grooved( gfx::vertex_array const &Outline ) {
+
+    auto const grooved { split_grooved( Outline ) };
+    auto const &bands { ours( m_layout.bands ) };
+    auto wholecuts { ours( m_layout.plans ).cuts };
+    auto const bodyreach { reaches( grooved.body ) };
+    for( auto const &band : bands ) {
+        if( band.whole ) {
+            wholecuts.push_back( band_cut( band, bodyreach ) );
         }
-        return result; };
-    auto const band_cut = [&]( rail_band const &Band, glm::dvec2 const &Reach ) {
-        rail_cut cut;
-        cut.at = Band.at;
-        auto const before { Band.into > 0.0 ? Band.from : Band.to };
-        auto const after { Band.into > 0.0 ? Band.to : Band.from };
-        auto const meets = [&]( double const Edge, double const Reach ) {
-            return glm::dvec2{ Band.at + ( Edge + Band.facing * Reach ) / Band.into, Reach }; };
-        if( std::abs( Band.facing ) < 1e-3 ) {
-            cut.end = meets( before, 0.0 ).x;
-            cut.start = meets( after, 0.0 ).x;
-            return cut;
-        }
-        std::vector<glm::dvec2> endknots { meets( before, Reach.x ), meets( before, Reach.y ) };
-        std::vector<glm::dvec2> startknots { meets( after, Reach.x ), meets( after, Reach.y ) };
-        std::sort( endknots.begin(), endknots.end(), byposition );
-        std::sort( startknots.begin(), startknots.end(), byposition );
-        cut.end = endknots.back().x;
-        cut.start = startknots.front().x;
-        cut.endcap = false;
-        cut.startcap = false;
-        auto const outwards { Band.facing / Band.into > 0.0 };
-        ( outwards ? cut.endinner : cut.endextents ) = endknots;
-        ( outwards ? cut.startextents : cut.startinner ) = startknots;
-        return cut; };
-    auto const lay = [&]( gfx::vertex_array const &Shape, std::vector<rail_cut> cuts, bool const Wheels, std::vector<rail_tread> const &Spans, float const Wallu = -1.f ) {
-        std::sort( cuts.begin(), cuts.end(), []( rail_cut const &A, rail_cut const &B ) { return A.at < B.at; } );
-        auto start { -1e9 };
-        auto startcap { true };
-        auto startbend { 0.0 };
-        std::vector<glm::dvec2> startfit;
-        std::vector<glm::dvec2> rolledfrom;
-        std::vector<glm::dvec2> offsets, extents, inner;
-        for( std::size_t i = 0; i <= cuts.size(); ++i ) {
-            auto const end { i < cuts.size() ? cuts[ i ].end : 1e9 };
-            auto pieceoffsets { offsets };
-            auto pieceextents { extents };
-            auto pieceinner { inner };
-            if( i < cuts.size() ) {
-                pieceoffsets.insert( pieceoffsets.end(), cuts[ i ].endoffsets.begin(), cuts[ i ].endoffsets.end() );
-                pieceextents.insert( pieceextents.end(), cuts[ i ].endextents.begin(), cuts[ i ].endextents.end() );
-                pieceinner.insert( pieceinner.end(), cuts[ i ].endinner.begin(), cuts[ i ].endinner.end() );
-            }
-            std::sort( pieceoffsets.begin(), pieceoffsets.end(), byposition );
-            std::sort( pieceextents.begin(), pieceextents.end(), byposition );
-            std::sort( pieceinner.begin(), pieceinner.end(), byposition );
-            auto const a { std::max( start, From ) };
-            auto const b { std::min( end, length ) };
-            auto const rolled { i < cuts.size() ? knots::bound( rolledfrom, cuts[ i ].endrolled, true ) : rolledfrom };
-            auto const capstart { start > From ? startcap : Openstart };
-            auto const capend { end < length ? cuts[ i ].endcap : Openend };
-            bendfrom = { a, start > From ? startbend : 0.0 };
-            bendto = { b, end < length ? cuts[ i ].endbend : 0.0 };
-            fitfrom = { a, start > From ? startfit : unfitted };
-            fitto = { b, end < length ? cuts[ i ].endfit : unfitted };
-            if( b - a > 0.01 ) {
-                std::vector<rail_tread> active;
-                for( auto const &span : Spans ) {
-                    if( span.anchor == 0
-                     || ( span.anchor > 0 && b > span.from + 0.01 && b < span.to + 0.01 )
-                     || ( span.anchor < 0 && a > span.from - 0.01 && a < span.to - 0.01 ) ) {
-                        active.push_back( span );
-                    }
-                }
-                std::vector<double> splits;
-                for( auto const &span : active ) {
-                    for( auto const edge : { span.from, span.to } ) {
-                        if( edge > a + 0.01 && edge < b - 0.01 ) {
-                            splits.push_back( edge );
-                        }
-                    }
-                }
-                std::sort( splits.begin(), splits.end() );
-                splits.erase( std::unique( splits.begin(), splits.end(), []( double const A, double const B ) { return B - A < 0.002; } ), splits.end() );
-                splits.insert( splits.begin(), a );
-                splits.push_back( b );
-                for( std::size_t k = 1; k < splits.size(); ++k ) {
-                    auto const first { k == 1 };
-                    auto const last { k + 1 == splits.size() };
-                    auto const *span { aim( active, 0.5 * ( splits[ k - 1 ] + splits[ k ] ) ) };
-                    if( Wheels && span != nullptr && false == span->edge.empty() && topfirst < toplast ) {
-                        treaded( splits[ k - 1 ], splits[ k ], pieceoffsets, pieceextents, pieceinner, first && capstart, last && capend, *span );
-                    }
-                    else if( false == Wheels || rolled.empty() || topfirst >= toplast ) {
-                        piece( splits[ k - 1 ], splits[ k ], pieceoffsets, pieceextents, first && capstart, last && capend, Shape, true, pieceinner, {}, false == Wheels, 0.f, Wallu );
-                    }
-                    else {
-                        running( splits[ k - 1 ], splits[ k ], pieceoffsets, pieceextents, pieceinner, rolled, first && capstart, last && capend );
-                    }
-                }
-                current = null_handle;
-            }
-            bendfrom = bendto = glm::dvec2 { 0.0 };
-            fitfrom = fitto = {};
-            if( i < cuts.size() ) {
-                rolledfrom = cuts[ i ].startrolled;
-                start = cuts[ i ].start;
-                startcap = cuts[ i ].startcap;
-                startbend = cuts[ i ].startbend;
-                startfit = cuts[ i ].startfit;
-                offsets = cuts[ i ].startoffsets;
-                extents = cuts[ i ].startextents;
-                inner = cuts[ i ].startinner;
-            }
-        }
-    };
-    auto const &outline { track_rail_profile( m_profile1.second ) };
-    auto const count { Profile.size() };
-    if( false == size.grooved || outline.size() != 2 * count ) {
-        auto cuts { plan.cuts };
-        auto const reach { reaches( Profile ) };
-        for( auto const &band : bands ) {
-            cuts.push_back( band_cut( band, reach ) );
-        }
-        lay( Profile, cuts, true, treads );
-        return true;
     }
+    lay_cuts( grooved.body, wholecuts, false, {} );
+    for( std::size_t k = 0; k < grooved.tops.size(); ++k ) {
+        auto const cuts { top_cuts( grooved.tops[ k ] ) };
+        auto const merged { merged_blocks( ours( m_layout.blocks ), cuts ) };
+        if( merged.empty() ) {
+            lay_cuts( grooved.tops[ k ], cuts, false, treads(), grooved.wallu );
+            continue;
+        }
+        std::vector<rail_tread> blocktreads;
+        for( auto const &span : merged ) {
+            for( auto const &tread : treads() ) {
+                if( tread.from < span.y && tread.to > span.x ) {
+                    blocktreads.push_back( { span.x, span.y, tread.material } );
+                    break;
+                }
+            }
+        }
+        std::vector<rail_cut> outside, inside;
+        for( auto const &cut : cuts ) {
+            auto const within { std::any_of( merged.begin(), merged.end(), [&]( glm::dvec2 const &Span ) { return cut.at > Span.x && cut.at < Span.y; } ) };
+            ( within ? inside : outside ).push_back( cut );
+        }
+        inside.push_back( seam( merged.front().x - 0.001, -1e9, merged.front().x ) );
+        for( std::size_t m = 0; m < merged.size(); ++m ) {
+            outside.push_back( seam( 0.5 * ( merged[ m ].x + merged[ m ].y ), merged[ m ].x, merged[ m ].y ) );
+            inside.push_back( m + 1 < merged.size() ?
+                seam( 0.5 * ( merged[ m ].y + merged[ m + 1 ].x ), merged[ m ].y, merged[ m + 1 ].x ) :
+                seam( merged[ m ].y + 0.001, merged[ m ].y, 1e9 ) );
+        }
+        lay_cuts( grooved.tops[ k ], outside, false, treads(), grooved.wallu );
+        lay_cuts( grooved.flats[ k ], inside, false, blocktreads, grooved.wallu );
+    }
+}
+
+grooved_profile TTrack::rail_layer::split_grooved( gfx::vertex_array const &Outline ) const {
+
+    auto const &size { m_drawing.size };
+    auto const count { m_profile.size() };
     auto const height = [&]( std::size_t const Index ) {
-        return static_cast<double>( outline[ Side > 0 ? Index : count - 1 - Index ].position.y ) - size.groove; };
+        return static_cast<double>( Outline[ m_side > 0 ? Index : count - 1 - Index ].position.y ) - size.groove; };
     auto const above = [&]( std::size_t const Index ) {
         return height( Index ) > 1e-4; };
     auto const floorpoint = [&]( std::size_t const A, std::size_t const B ) {
         auto const t { static_cast<float>( height( A ) / ( height( A ) - height( B ) ) ) };
-        auto point { Profile[ above( A ) ? A : B ] };
-        point.position = glm::mix( Profile[ A ].position, Profile[ B ].position, t );
-        point.texture = glm::mix( Profile[ A ].texture, Profile[ B ].texture, t );
+        auto point { m_profile[ above( A ) ? A : B ] };
+        point.position = glm::mix( m_profile[ A ].position, m_profile[ B ].position, t );
+        point.texture = glm::mix( m_profile[ A ].texture, m_profile[ B ].texture, t );
         return point; };
     auto const flattened = [&]( std::size_t const Index ) {
-        auto point { Profile[ Index ] };
-        auto const &file { outline[ Side > 0 ? Index : count - 1 - Index ].position };
+        auto point { m_profile[ Index ] };
+        auto const &file { Outline[ m_side > 0 ? Index : count - 1 - Index ].position };
         if( file.y > size.crest - 0.0005 || ( file.x < -0.02 && file.y > size.liptop - 0.0005 ) ) {
             point.normal = { 0.f, 1.f, 0.f };
-            point.texture.x = Drawing.platetexture;
+            point.texture.x = m_drawing.platetexture;
         }
         return point; };
-    std::vector<gfx::vertex_array> tops, flats;
-    gfx::vertex_array body;
+    grooved_profile result;
+    auto &body { result.body };
     std::vector<std::size_t> floors;
     auto floortexture { 0.f };
     auto floortextures { 0 };
@@ -770,10 +783,10 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         if( false == above( i ) ) {
             if( height( i ) > -1e-4 ) {
                 floors.push_back( body.size() );
-                floortexture += Profile[ i ].texture.x;
+                floortexture += m_profile[ i ].texture.x;
                 ++floortextures;
             }
-            body.push_back( Profile[ i ] );
+            body.push_back( m_profile[ i ] );
             continue;
         }
         auto const first { i };
@@ -783,7 +796,7 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
         gfx::vertex_array top, flat;
         if( first > 0 ) {
             if( height( first - 1 ) > -1e-4 ) {
-                top.push_back( Profile[ first - 1 ] );
+                top.push_back( m_profile[ first - 1 ] );
                 flat.push_back( flattened( first - 1 ) );
             }
             else {
@@ -795,12 +808,12 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             }
         }
         for( auto k { first }; k <= i; ++k ) {
-            top.push_back( Profile[ k ] );
+            top.push_back( m_profile[ k ] );
             flat.push_back( flattened( k ) );
         }
         if( i + 1 < count ) {
             if( height( i + 1 ) > -1e-4 ) {
-                top.push_back( Profile[ i + 1 ] );
+                top.push_back( m_profile[ i + 1 ] );
                 flat.push_back( flattened( i + 1 ) );
             }
             else {
@@ -819,8 +832,8 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             doubled.insert( doubled.end(), 2, strip->back() );
             *strip = doubled;
         }
-        tops.push_back( top );
-        flats.push_back( flat );
+        result.tops.push_back( top );
+        result.flats.push_back( flat );
     }
     if( floors.size() > 1 ) {
         auto const across { body[ floors.back() ].position - body[ floors.front() ].position };
@@ -835,95 +848,241 @@ bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, i
             }
         }
     }
-    std::vector<rail_cut> wholecuts { plan.cuts };
-    auto const bodyreach { reaches( body ) };
-    for( auto const &band : bands ) {
-        if( band.whole ) {
-            wholecuts.push_back( band_cut( band, bodyreach ) );
-        }
-    }
-    lay( body, wholecuts, false, {} );
-    auto const wallu { floortextures > 0 ? floortexture / floortextures : -1.f };
-    for( std::size_t k = 0; k < tops.size(); ++k ) {
-        auto const reach { reaches( tops[ k ] ) };
-        auto const head { reach.x + reach.y > 0.0 };
-        auto edge { head ? 1e9 : -1e9 };
-        for( auto const &point : tops[ k ] ) {
-            if( point.position.y > ( head ? size.crest : size.liptop ) - 0.0005 ) {
-                auto const across { static_cast<double>( Side * point.position.x - halfwidth ) };
-                edge = ( head ? std::min( edge, across ) : std::max( edge, across ) );
-            }
-        }
-        std::vector<rail_cut> cuts { plan.cuts };
-        for( auto const &band : bands ) {
-            auto cut { band_cut( band, reach ) };
-            if( false == band.whole && std::abs( band.facing ) >= 1e-3 && std::abs( edge ) < 1.0 ) {
-                auto const blunt { edge + ( head ? nose_tip : -nose_tip ) };
-                if( head == ( band.facing / band.into > 0.0 ) ) {
-                    cut.start = std::max( cut.start, band.at + ( ( band.into > 0.0 ? band.to : band.from ) + band.facing * blunt ) / band.into );
-                    cut.startcap = true;
-                }
-                else {
-                    cut.end = std::min( cut.end, band.at + ( ( band.into > 0.0 ? band.from : band.to ) + band.facing * blunt ) / band.into );
-                    cut.endcap = true;
-                }
-            }
-            cuts.push_back( cut );
-        }
-        std::vector<glm::dvec2> spans { Layout.blocks[ Path ][ Side > 0 ] };
-        for( auto const &cut : cuts ) {
-            for( auto &span : spans ) {
-                if( cut.at > span.x && cut.at < span.y ) {
-                    span = { std::min( span.x, cut.end ), std::max( span.y, cut.start ) };
-                }
-            }
-        }
-        std::sort( spans.begin(), spans.end(), byposition );
-        std::vector<glm::dvec2> merged;
-        for( auto const &span : spans ) {
-            if( false == merged.empty() && span.x <= merged.back().y ) {
-                merged.back().y = std::max( merged.back().y, span.y );
-            }
-            else {
-                merged.push_back( span );
-            }
-        }
-        if( merged.empty() ) {
-            lay( tops[ k ], cuts, false, treads, wallu );
-            continue;
-        }
-        std::vector<rail_tread> blocktreads;
-        for( auto const &span : merged ) {
-            for( auto const &tread : treads ) {
-                if( tread.from < span.y && tread.to > span.x ) {
-                    blocktreads.push_back( { span.x, span.y, tread.material } );
-                    break;
-                }
-            }
-        }
-        auto const seam = []( double const At, double const End, double const Start ) {
-            rail_cut cut;
-            cut.at = At;
-            cut.end = End;
-            cut.start = Start;
-            cut.endcap = false;
-            cut.startcap = false;
-            return cut; };
-        std::vector<rail_cut> outside, inside;
-        for( auto const &cut : cuts ) {
-            auto const within { std::any_of( merged.begin(), merged.end(), [&]( glm::dvec2 const &Span ) { return cut.at > Span.x && cut.at < Span.y; } ) };
-            ( within ? inside : outside ).push_back( cut );
-        }
-        inside.push_back( seam( merged.front().x - 0.001, -1e9, merged.front().x ) );
-        for( std::size_t m = 0; m < merged.size(); ++m ) {
-            outside.push_back( seam( 0.5 * ( merged[ m ].x + merged[ m ].y ), merged[ m ].x, merged[ m ].y ) );
-            inside.push_back( m + 1 < merged.size() ?
-                seam( 0.5 * ( merged[ m ].y + merged[ m + 1 ].x ), merged[ m ].y, merged[ m + 1 ].x ) :
-                seam( merged[ m ].y + 0.001, merged[ m ].y, 1e9 ) );
-        }
-        lay( tops[ k ], outside, false, treads, wallu );
-        lay( flats[ k ], inside, false, blocktreads, wallu );
-    }
-    return true;
+    result.wallu = ( floortextures > 0 ? floortexture / floortextures : -1.f );
+    return result;
 }
 
+std::vector<rail_cut> TTrack::rail_layer::top_cuts( gfx::vertex_array const &Top ) const {
+
+    auto const &size { m_drawing.size };
+    auto const reach { reaches( Top ) };
+    auto const head { reach.x + reach.y > 0.0 };
+    auto edge { head ? 1e9 : -1e9 };
+    for( auto const &point : Top ) {
+        if( point.position.y > ( head ? size.crest : size.liptop ) - 0.0005 ) {
+            auto const across { static_cast<double>( m_side * point.position.x - m_drawing.halfwidth ) };
+            edge = ( head ? std::min( edge, across ) : std::max( edge, across ) );
+        }
+    }
+    auto cuts { ours( m_layout.plans ).cuts };
+    for( auto const &band : ours( m_layout.bands ) ) {
+        auto cut { band_cut( band, reach ) };
+        if( false == band.whole && std::abs( band.facing ) >= 1e-3 && std::abs( edge ) < 1.0 ) {
+            auto const blunt { edge + ( head ? nose_tip : -nose_tip ) };
+            if( head == ( band.facing / band.into > 0.0 ) ) {
+                cut.start = std::max( cut.start, band.at + ( ( band.into > 0.0 ? band.to : band.from ) + band.facing * blunt ) / band.into );
+                cut.startcap = true;
+            }
+            else {
+                cut.end = std::min( cut.end, band.at + ( ( band.into > 0.0 ? band.from : band.to ) + band.facing * blunt ) / band.into );
+                cut.endcap = true;
+            }
+        }
+        cuts.push_back( cut );
+    }
+    return cuts;
+}
+
+void TTrack::rail_layer::running( rail_piece const &Whole, knots::line const &Rolled, piece_ends const &Ends ) {
+
+    auto const top { lay_sides( Whole, Ends ) };
+    auto const reach { reaches( top ) };
+    auto const inner { knots::shifted( Rolled, -blend ) };
+    auto const splits { cross_splits( Whole, reach, { &Rolled, &inner }, 0.0 ) };
+    auto const marked { treads_marked() };
+    auto const own { Whole.material == null_handle ? m_track.rail_material( m_path ) : Whole.material };
+    lay_top(
+        top, Whole, reach, splits,
+        {
+            { Whole.material, knots::bound( Whole.extents, inner, true ), Whole.inner },
+            { marked ? paint( own, { 1.f, 1.f, 0.f } ) : Whole.material, knots::bound( Whole.extents, Rolled, true ), knots::bound( inner, Whole.inner, false ), false, marked ? knots::line {} : Rolled },
+            { marked ? paint( own, { 1.f, 0.f, 1.f } ) : Whole.material, Whole.extents, knots::bound( Rolled, Whole.inner, false ), false } },
+        [&]( double const Middle ) {
+            auto const rolled { knots::sample( Rolled, Middle, 0.0 ) };
+            return std::vector<double> { rolled - blend, rolled }; },
+        Ends );
+}
+
+void TTrack::rail_layer::treaded( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends ) {
+
+    Whole.material = null_handle;
+    auto const top { lay_sides( Whole, Ends ) };
+    auto const reach { reaches( top ) };
+    auto const &lower { Tread.below ? Tread.gauge : Tread.edge };
+    auto const &upper { Tread.below ? Tread.edge : Tread.gauge };
+    auto const marked { treads_marked() };
+    auto const own { m_track.rail_material( m_path ) };
+    auto const colour { 0.5f * ( tread_colour( Tread.material, m_track.tread_band() ) + tread_colour( own, m_track.tread_band() ) ) };
+    auto const tint = [&]( material_handle const Material, glm::vec3 const &Mark ) {
+        return paint( Material, marked ? Mark : colour ); };
+    auto const owntint { tint( own, { 1.f, 0.f, 0.f } ) };
+    auto const sharedtint { tint( Tread.material, { 0.f, 1.f, 0.f } ) };
+    auto const shared { marked ? tint( Tread.material, { 0.f, 0.f, 1.f } ) : Tread.material };
+    auto const ramp = [&]( knots::line const &Knots ) {
+        return marked ? knots::line {} : Knots; };
+    auto const centre { knots::middle( lower, upper ) };
+    auto const beneath { knots::shifted( lower, -tread_fade ) };
+    auto const beyond { knots::shifted( upper, tread_fade ) };
+    auto const lowfade { knots::bound( knots::shifted( lower, tread_fade ), centre, true ) };
+    auto const highfade { knots::bound( knots::shifted( upper, -tread_fade ), centre, false ) };
+    auto splits { cross_splits( Whole, reach, { &lower, &upper, &lowfade, &highfade, &beneath, &beyond }, 0.001 ) };
+    add_meetings( knots::shifted( lower, 2.0 * tread_fade ), upper, Whole.from, Whole.to, 0.001, splits );
+    std::sort( splits.begin(), splits.end() );
+    lay_top(
+        top, Whole, reach, splits,
+        {
+            { null_handle, knots::bound( Whole.extents, beneath, true ), Whole.inner },
+            { owntint, knots::bound( Whole.extents, lower, true ), knots::bound( Whole.inner, beneath, false ), false, ramp( lower ), tread_fade },
+            { sharedtint, knots::bound( Whole.extents, lowfade, true ), knots::bound( Whole.inner, lower, false ), false, ramp( lower ), -tread_fade },
+            { shared, knots::bound( Whole.extents, highfade, true ), knots::bound( Whole.inner, lowfade, false ), false == marked },
+            { sharedtint, knots::bound( Whole.extents, upper, true ), knots::bound( Whole.inner, highfade, false ), false, ramp( upper ), tread_fade },
+            { owntint, knots::bound( Whole.extents, beyond, true ), knots::bound( Whole.inner, upper, false ), false, ramp( upper ), -tread_fade },
+            { null_handle, Whole.extents, knots::bound( Whole.inner, beyond, false ) } },
+        [&]( double const Middle ) {
+            auto const from { knots::sample( lower, Middle, 0.0 ) };
+            auto const to { knots::sample( upper, Middle, 0.0 ) };
+            return std::vector<double> { from - tread_fade, from, knots::sample( lowfade, Middle, 0.0 ), knots::sample( highfade, Middle, 0.0 ), to, to + tread_fade }; },
+        Ends );
+}
+
+gfx::vertex_array TTrack::rail_layer::lay_sides( rail_piece const &Whole, piece_ends const &Ends ) {
+
+    gfx::vertex_array vertices;
+    if( m_segment.RenderLoftSpan( vertices, m_track.m_origin, m_profile, span( Whole, Ends ) ) ) {
+        cut_faces( vertices, m_profile.size(), Whole.capfrom, Whole.capto, m_drawing.bank, sink( Whole.material, true ) );
+    }
+    auto side { Whole };
+    side.capfrom = false;
+    side.capto = false;
+    piece( strip( 0, m_topfirst ), side, Ends );
+    piece( strip( m_toplast, m_profile.size() - 1 ), side, Ends );
+    return strip( m_topfirst, m_toplast );
+}
+
+void TTrack::rail_layer::lay_top( gfx::vertex_array const &Top, rail_piece const &Whole, glm::dvec2 const &Reach, std::vector<double> const &Splits, std::vector<top_band> const &Bands, std::function<std::vector<double>( double )> const &Edges, piece_ends const &Ends ) {
+
+    for( std::size_t i = 1; i < Splits.size(); ++i ) {
+        auto const middle { 0.5 * ( Splits[ i - 1 ] + Splits[ i ] ) };
+        auto const least { std::max( Reach.x, knots::sample( Whole.inner, middle, Reach.x ) ) };
+        auto const most { std::min( Reach.y, knots::sample( Whole.extents, middle, Reach.y ) ) };
+        auto edges { Edges( middle ) };
+        edges.insert( edges.begin(), -1e9 );
+        edges.push_back( 1e9 );
+        for( std::size_t k = 0; k < Bands.size(); ++k ) {
+            auto const &band { Bands[ k ] };
+            if( edges[ k + 1 ] > edges[ k ] + 1e-6 && edges[ k + 1 ] > least && edges[ k ] < most ) {
+                piece(
+                    Top,
+                    { .material = band.material, .from = Splits[ i - 1 ], .to = Splits[ i ], .offsets = Whole.offsets, .extents = band.extents, .inner = band.inner, .rolled = band.rolled, .ramp = band.ramp, .fade = band.fade },
+                    Ends );
+            }
+        }
+    }
+}
+
+void TTrack::rail_layer::piece( gfx::vertex_array const &Shape, rail_piece const &Piece, piece_ends const &Ends ) {
+
+    gfx::vertex_array vertices;
+    gfx::userdata_array userdata;
+    auto loft { span( Piece, Ends ) };
+    loft.userdata = ( Piece.rolled ? nullptr : &userdata );
+    if( Shape.size() < 2 || false == m_segment.RenderLoftSpan( vertices, m_track.m_origin, Shape, loft ) ) {
+        return;
+    }
+    cut_faces( vertices, Shape.size(), Piece.capfrom, Piece.capto, m_drawing.bank, sink( Piece.material, true ) );
+    gfx::vertex_array triangles;
+    gfx::userdata_array triangleuserdata;
+    auto const ring { 2 * Shape.size() };
+    for( std::size_t block = 0; block + ring <= vertices.size(); block += ring ) {
+        for( std::size_t j = 0; j + 1 < Shape.size(); ++j ) {
+            for( auto const index : { 0, 1, 2, 1, 3, 2 } ) {
+                auto const vertex { block + 2 * j + index };
+                triangles.push_back( vertices[ vertex ] );
+                if( false == Piece.rolled ) {
+                    triangleuserdata.push_back( userdata[ vertex ] );
+                }
+            }
+        }
+    }
+    sink( Piece.material, false == Piece.rolled ).emplace_back( GfxRenderer->Insert( triangles, triangleuserdata, m_drawing.bank, GL_TRIANGLES ) );
+}
+
+loft_span TTrack::rail_layer::span( rail_piece const &Piece, piece_ends const &Ends ) const {
+
+    loft_span result;
+    result.side = m_side;
+    result.halfwidth = m_drawing.halfwidth;
+    result.texturelength = texture_length( Piece.material );
+    result.from = Piece.from;
+    result.to = Piece.to;
+    result.offsets = Piece.offsets;
+    result.extents = Piece.extents;
+    result.inner = Piece.inner;
+    result.lift = Piece.lift;
+    result.ramp = Piece.ramp;
+    result.rampwidth = ( Piece.ramp.empty() ? 0.0 : Piece.fade );
+    result.walls = Piece.walls;
+    result.wallu = Piece.wallu;
+    if( std::abs( Piece.from - Ends.from ) < 1e-6 ) {
+        result.fromend = Ends.fromend;
+    }
+    if( std::abs( Piece.to - Ends.to ) < 1e-6 ) {
+        result.toend = Ends.toend;
+    }
+    return result;
+}
+
+double TTrack::rail_layer::texture_length( material_handle const Material ) const {
+
+    return ( Material == null_handle ? m_texturelength : m_track.texture_length( Material ) );
+}
+
+// parts no wheel rolls on go in the matte material of the cut faces
+TTrack::geometryhandle_sequence &TTrack::rail_layer::sink( material_handle const Material, bool const Matte ) {
+
+    if( Material == null_handle ) {
+        return Matte ? m_cuts : m_geometry;
+    }
+    if( Material == m_track.m_material1 ) {
+        return Matte ? m_track.GeometryCut1 : m_track.Geometry1;
+    }
+    if( m_track.eType == tt_Switch && Material == m_track.m_material2 ) {
+        return Matte ? m_track.GeometryCut2 : m_track.Geometry2;
+    }
+    auto const tinted { std::find( m_tints.begin(), m_tints.end(), Material ) != m_tints.end() };
+    auto &treads { m_track.GeometryTreads };
+    auto found { std::find_if( treads.begin(), treads.end(), [&]( tread_geometry const &Tread ) { return Tread.material == Material; } ) };
+    if( found == treads.end() ) {
+        found = treads.insert( treads.end(), { Material, tinted ? Material : cut_material( Material ), {}, {} } );
+    }
+    return Matte && false == tinted ? found->cuts : found->geometry;
+}
+
+material_handle TTrack::rail_layer::paint( material_handle const Material, glm::vec3 const &Colour ) {
+
+    auto const tinted { tint_material( Material, Colour ) };
+    if( tinted != Material ) {
+        m_tints.push_back( tinted );
+    }
+    return tinted;
+}
+
+glm::dvec2 TTrack::rail_layer::reaches( gfx::vertex_array const &Shape ) const {
+
+    glm::dvec2 result { 1e9, -1e9 };
+    for( auto const &point : Shape ) {
+        auto const reach { static_cast<double>( m_side * point.position.x - m_drawing.halfwidth ) };
+        result = { std::min( result.x, reach ), std::max( result.y, reach ) };
+    }
+    return result;
+}
+
+gfx::vertex_array TTrack::rail_layer::strip( std::size_t const First, std::size_t const Last ) const {
+
+    return gfx::vertex_array( m_profile.begin() + First, m_profile.begin() + Last + 1 );
+}
+
+bool TTrack::lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
+
+    return rail_layer( *this, Layout, Drawing, Path, Profile, Side, Texturelength, From, Openstart, Openend, Geometry, Cuts ).lay();
+}
