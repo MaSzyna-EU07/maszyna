@@ -169,15 +169,15 @@ using namespace track_rails;
 
 namespace {
 
-gfx::vertex_array box_profile( float const Bottom, float const Top, float const Texture ) {
+gfx::vertex_array box_profile( float const Bottom, float const Top, float const Texture, float const Spread = 0.f ) {
 
     return {
-        {{  1.f, Bottom, 0.f }, {  1.f, 0.f, 0.f }, { Texture, 0.f }},
-        {{  1.f, Top, 0.f }, {  1.f, 0.f, 0.f }, { Texture, 0.f }},
-        {{  1.f, Top, 0.f }, {  0.f, 1.f, 0.f }, { Texture, 0.f }},
-        {{ -1.f, Top, 0.f }, {  0.f, 1.f, 0.f }, { Texture, 0.f }},
-        {{ -1.f, Top, 0.f }, { -1.f, 0.f, 0.f }, { Texture, 0.f }},
-        {{ -1.f, Bottom, 0.f }, { -1.f, 0.f, 0.f }, { Texture, 0.f }} };
+        {{  1.f, Bottom, 0.f }, {  1.f, 0.f, 0.f }, { Texture + Spread, 0.f }},
+        {{  1.f, Top, 0.f }, {  1.f, 0.f, 0.f }, { Texture + Spread, 0.f }},
+        {{  1.f, Top, 0.f }, {  0.f, 1.f, 0.f }, { Texture + Spread, 0.f }},
+        {{ -1.f, Top, 0.f }, {  0.f, 1.f, 0.f }, { Texture - Spread, 0.f }},
+        {{ -1.f, Top, 0.f }, { -1.f, 0.f, 0.f }, { Texture - Spread, 0.f }},
+        {{ -1.f, Bottom, 0.f }, { -1.f, 0.f, 0.f }, { Texture - Spread, 0.f }} };
 }
 
 } // namespace
@@ -243,7 +243,16 @@ TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &
                 break;
             }
         }
-        sides( box_profile( bottom, neck, webtexture ), drawing.fillers );
+        glm::vec2 across { 1e9f, -1e9f };
+        glm::vec2 band { 1e9f, -1e9f };
+        for( std::size_t i = 0; i < outline.size() / 2; ++i ) {
+            if( outline[ i ].position.y > highest - 0.0005f ) {
+                across = { std::min( across.x, outline[ i ].position.x ), std::max( across.y, outline[ i ].position.x ) };
+                band = { std::min( band.x, outline[ i ].texture.s ), std::max( band.y, outline[ i ].texture.s ) };
+            }
+        }
+        auto const spread { across.y > across.x ? ( band.y - band.x ) / ( across.y - across.x ) : 0.f };
+        sides( box_profile( bottom, neck, webtexture, spread ), drawing.fillers );
     }
     return drawing;
 }

@@ -142,20 +142,58 @@ track_rails::rail_cut corner_cut( track_rails::rail_crossing const &Crossing, do
     return cut;
 }
 
-track_rails::rail_fill guard_fill( track_rails::guard_rail const &Guard, track_rails::rail_size const &Size ) {
+std::vector<track_rails::rail_fill> guard_fills( track_rails::guard_rail const &Guard, track_rails::rail_size const &Size ) {
 
     auto const offset { Size.web - ( flangeway + Size.head ) };
     auto const flare { std::min( guard_flare, 0.25 * ( Guard.to - Guard.from ) ) };
-    track_rails::rail_fill fill;
-    fill.web = true;
-    fill.from = Guard.from;
-    fill.to = Guard.to;
-    fill.capfrom = true;
-    fill.capto = true;
-    fill.lift = ( Guard.through ? 0.0 : -0.001 );
-    fill.inner = { { Guard.from, offset - ( Guard.flarefrom ? 0.02 : 0.0 ) }, { Guard.from + flare, offset }, { Guard.to - flare, offset }, { Guard.to, offset - ( Guard.flareto ? 0.02 : 0.0 ) } };
-    fill.outer = { { Guard.from, Size.web }, { Guard.to, Size.web } };
-    return fill;
+    track_rails::rail_fill whole;
+    whole.web = true;
+    whole.lift = ( Guard.through ? 0.0 : -0.001 );
+    whole.inner = { { Guard.from, offset - ( Guard.flarefrom ? 0.02 : 0.0 ) }, { Guard.from + flare, offset }, { Guard.to - flare, offset }, { Guard.to, offset - ( Guard.flareto ? 0.02 : 0.0 ) } };
+    whole.outer = { { Guard.from, Size.web }, { Guard.to, Size.web } };
+    knots::line pieces;
+    for( auto const &casting : Guard.castings ) {
+        if( false == pieces.empty() && casting.x <= pieces.back().y ) {
+            pieces.back().y = std::max( pieces.back().y, casting.y );
+        }
+        else {
+            pieces.push_back( casting );
+        }
+    }
+    knots::line spacers;
+    auto const place = [&]( double const From, double const To, double const Step ) {
+        auto const count { static_cast<int>( std::floor( ( To - From - 0.5 * spacer_length ) / spacer_pitch ) ) };
+        for( int i = 1; i <= count; ++i ) {
+            auto const at { ( Step > 0.0 ? From : To ) + Step * i * spacer_pitch };
+            spacers.emplace_back( at - 0.5 * spacer_length, at + 0.5 * spacer_length );
+        } };
+    auto const first { Guard.from + spacer_length };
+    auto const last { Guard.to - spacer_length };
+    if( pieces.empty() ) {
+        place( first - spacer_pitch, last, 1.0 );
+    }
+    else {
+        place( first, pieces.front().x, -1.0 );
+        for( std::size_t i = 1; i < pieces.size(); ++i ) {
+            auto const middle { 0.5 * ( pieces[ i - 1 ].y + pieces[ i ].x ) };
+            place( pieces[ i - 1 ].y, middle, 1.0 );
+            place( middle, pieces[ i ].x, -1.0 );
+        }
+        place( pieces.back().y, last, 1.0 );
+    }
+    pieces.insert( pieces.end(), spacers.begin(), spacers.end() );
+    std::vector<track_rails::rail_fill> fills;
+    for( auto const &piece : pieces ) {
+        auto fill { whole };
+        fill.from = std::max( piece.x, Guard.from );
+        fill.to = std::min( piece.y, Guard.to );
+        fill.capfrom = true;
+        fill.capto = true;
+        if( fill.to - fill.from > 0.01 ) {
+            fills.push_back( fill );
+        }
+    }
+    return fills;
 }
 
 bool goes_through( TTrack const &Track, TTrack const &Other ) {
@@ -217,6 +255,14 @@ track_rails::rail_tread wide_tread( track_rails::rail_crossing const &Crossing, 
     auto const facing { std::abs( Crossing.facing ) > 0.02 ? Crossing.facing : std::copysign( 0.02, Crossing.facing ) };
     auto const slope { Crossing.into / facing };
     track_rails::rail_tread tread { 1e9, -1e9, Material };
+    if( std::abs( slope ) > square_slope ) {
+        for( auto const edge : { 0.0, -Reach } ) {
+            auto const distance { Crossing.at + ( edge + Crossing.facing * ( Base + 0.5 * Head ) ) / Crossing.into };
+            tread.from = std::min( tread.from, distance );
+            tread.to = std::max( tread.to, distance );
+        }
+        return tread;
+    }
     for( auto const across : { Base, Base + Head } ) {
         for( auto const edge : { tread_fade, -Reach - tread_fade } ) {
             auto const distance { Crossing.at + ( edge + Crossing.facing * across ) / Crossing.into };
@@ -317,6 +363,8 @@ void merge_guard( std::vector<track_rails::guard_rail> &Guards, track_rails::gua
             span.plan.cuts.insert( span.plan.cuts.end(), Guard.plan.cuts.begin(), Guard.plan.cuts.end() );
             span.through = ( span.through && Guard.through );
             span.treads.insert( span.treads.end(), Guard.treads.begin(), Guard.treads.end() );
+            span.castings.insert( span.castings.end(), Guard.castings.begin(), Guard.castings.end() );
+            knots::sort( span.castings );
             return;
         }
     }
@@ -405,7 +453,8 @@ rail_layout TTrack::rail_planner::lay_out() {
         for( int path = 0; path < 2; ++path ) {
             for( int side = 0; side < 2; ++side ) {
                 for( auto const &guard : m_layout.guards[ path ][ side ] ) {
-                    m_layout.fills[ path ][ side ].push_back( guard_fill( guard, m_size ) );
+                    auto const fills { guard_fills( guard, m_size ) };
+                    m_layout.fills[ path ][ side ].insert( m_layout.fills[ path ][ side ].end(), fills.begin(), fills.end() );
                 }
             }
         }
@@ -470,9 +519,11 @@ void TTrack::rail_planner::cross_wide( rail_crossing const &Crossing, rail_size 
     auto const reach { ( flangeway + m_size.head + guard_reach ) / std::abs( Crossing.into ) };
     track_rails::guard_rail guard { Crossing.at - reach, Crossing.at + reach };
     guard.through = goes_through( m_track, *Crossing.track );
+    auto const casting { ( flangeway + Other.head + casting_reach ) / std::abs( Crossing.into ) };
+    guard.castings.emplace_back( Crossing.at - casting, Crossing.at + casting );
     guard.plan.cuts.push_back( corner_cut( Crossing, -flangeway, 1.0, m_size.head, Other.head ) );
     auto const theirs { Crossing.track->rail_material( Crossing.otherpath ) };
-    guard.treads.push_back( wide_tread( Crossing, theirs != null_handle ? theirs : m_track.rail_material( Crossing.path ), m_guardoffset, m_size.head, Other.head ) );
+    guard.treads.push_back( wide_tread( Crossing, theirs != null_handle ? theirs : m_track.rail_material( Crossing.path ), m_guardoffset, m_size.head, rolled_band ) );
     guard.treads.back().fade = 0.0;
     merge_guard( m_layout.guards[ Crossing.path ][ Crossing.side > 0 ], guard );
 }

@@ -30,6 +30,10 @@ double constexpr middle_angle { 0.35 };
 double constexpr wide_angle { 0.785 };
 double constexpr guard_reach { 1.0 };
 double constexpr guard_flare { 0.6 };
+double constexpr casting_reach { 0.3 };
+double constexpr square_slope { 3.0 };
+double constexpr spacer_length { 0.12 };
+double constexpr spacer_pitch { 0.5 };
 
 // where the inner rails of the two paths of a switch cross, found from their gauge lines behind the blades
 struct switch_frog {
@@ -122,6 +126,7 @@ struct guard_rail {
     glm::dvec2 tomiter { 0.0 };
     bool through { true };
     std::vector<rail_tread> treads;
+    knots::line castings;
 };
 struct rail_band {
     double at { 0.0 };
