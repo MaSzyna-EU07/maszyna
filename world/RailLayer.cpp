@@ -607,19 +607,15 @@ void TTrack::rail_layer::lay_guards() {
 void TTrack::rail_layer::lay_checks() {
 
     auto const &shape { m_drawing.checkshapes[ m_side > 0 ? 0 : 1 ] };
-    auto const &wingends { ours( m_layout.wingends ) };
     for( auto const &check : m_layout.checks[ m_path ][ m_side > 0 ] ) {
-        auto const replaced { std::any_of( wingends.begin(), wingends.end(), [&]( glm::dvec2 const &Wing ) {
-            auto farend { 0.0 };
-            return replaced_check( { check }, Wing.x, Wing.y, farend ); } ) };
         auto const a { std::max( check.from, m_from ) };
         auto const b { std::min( check.to, m_length ) };
-        if( replaced || b - a <= 0.01 ) {
+        if( replaced_by_wing( check, ours( m_layout.wingends ) ) || b - a <= 0.01 ) {
             continue;
         }
         piece(
             shape,
-            { .from = a, .to = b, .offsets = flared( check.from, check.to, std::min( 0.6, 0.4 * ( check.to - check.from ) ), 0.0, check.flarefrom, check.flareto ), .capfrom = a > 0.0 || check.from >= 0.0, .capto = check.to <= m_length, .rolled = false },
+            { .from = a, .to = b, .offsets = flared( check.from, check.to, check_flare( check ), 0.0, check.flarefrom, check.flareto ), .capfrom = a > 0.0 || check.from >= 0.0, .capto = check.to <= m_length, .rolled = false },
             { a, b, { a == check.from ? check.frombend : 0.0 }, { b == check.to ? check.tobend : 0.0 } } );
     }
 }

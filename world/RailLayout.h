@@ -34,6 +34,7 @@ double constexpr casting_reach { 0.3 };
 double constexpr square_slope { 3.0 };
 double constexpr spacer_length { 0.12 };
 double constexpr spacer_pitch { 0.5 };
+double constexpr check_flangeway { 0.041 };
 
 // where the inner rails of the two paths of a switch cross, found from their gauge lines behind the blades
 struct switch_frog {
@@ -87,6 +88,10 @@ struct check_rail {
     double tobend { 0.0 };
 };
 using check_rail_set = std::array<std::array<std::vector<check_rail>, 2>, 2>; // path, right side
+inline double check_flare( check_rail const &Check ) {
+
+    return std::min( guard_flare, 0.4 * ( Check.to - Check.from ) );
+}
 // a rail broken where another one crosses it: the part coming from below ends at end, the part going on starts at start
 struct rail_cut {
     double at { 0.0 };
