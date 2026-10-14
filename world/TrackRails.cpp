@@ -1021,14 +1021,15 @@ void obtuse( TTrack::rail_plan &Plan, std::vector<TTrack::rail_fill> &Fills, dou
     auto const slope { std::abs( Into ) };
     auto const toward { Into > 0.0 ? 1.0 : -1.0 };
     auto const web { gap + Size.web / slope };
+    auto const reach { gap + ( taper - gap ) * ( Size.head - 0.006 ) / ( full - 0.006 ) };
     TTrack::rail_fill fill;
     fill.web = true;
-    fill.from = std::min( At, At + toward * taper );
-    fill.to = std::max( At, At + toward * taper );
+    fill.from = std::min( At, At + toward * reach );
+    fill.to = std::max( At, At + toward * reach );
     fill.capfrom = true;
     fill.capto = true;
-    fill.inner = { { At, 0.0 }, { At + toward * gap, 0.0 }, { At + toward * web, Size.web }, { At + toward * taper, Size.web } };
-    fill.outer = { { At, Other.web }, { At + toward * taper, slope * taper + Other.web } };
+    fill.inner = { { At, 0.0 }, { At + toward * gap, 0.0 }, { At + toward * web, Size.web }, { At + toward * reach, Size.web } };
+    fill.outer = { { At, Other.web }, { At + toward * reach, slope * reach + Other.web } };
     for( auto *knots : { &fill.inner, &fill.outer } ) {
         std::sort( knots->begin(), knots->end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
     }
