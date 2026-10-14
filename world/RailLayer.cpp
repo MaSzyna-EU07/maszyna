@@ -14,7 +14,90 @@ http://mozilla.org/MPL/2.0/.
 
 namespace track_rails {
 
+namespace {
+
 // in the colour of the top of the rail foot
+glm::vec2 cap_texture( std::vector<gfx::basic_vertex> const &Ring, std::vector<glm::dvec2> const &Plan ) {
+
+    auto bottom { 0.0 }, top { 0.0 };
+    for( auto const &point : Plan ) {
+        bottom = std::min( bottom, point.y );
+        top = std::max( top, point.y );
+    }
+    auto web { Ring[ 0 ].texture };
+    auto nearest { std::numeric_limits<double>::max() };
+    for( std::size_t j = 0; j < Ring.size() / 2; ++j ) {
+        auto const distance { std::abs( Plan[ j ].y - 0.5 * ( bottom + top ) ) };
+        if( distance < nearest ) {
+            nearest = distance;
+            web = Ring[ j ].texture;
+        }
+    }
+    auto lowest { std::numeric_limits<double>::max() };
+    for( std::size_t j = 0; j < Ring.size() / 2; ++j ) {
+        if( Ring[ j ].normal.y > 0.5f && Plan[ j ].y < lowest ) {
+            lowest = Plan[ j ].y;
+            web = Ring[ j ].texture;
+        }
+    }
+    return web;
+}
+
+std::vector<std::array<std::size_t, 3>> ear_clip( std::vector<glm::dvec2> const &Polygon ) {
+
+    auto const cross = []( glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &C ) {
+        return ( B.x - A.x ) * ( C.y - A.y ) - ( B.y - A.y ) * ( C.x - A.x ); };
+    double area { 0.0 };
+    for( std::size_t j = 0; j < Polygon.size(); ++j ) {
+        auto const &a { Polygon[ j ] };
+        auto const &b { Polygon[ ( j + 1 ) % Polygon.size() ] };
+        area += a.x * b.y - b.x * a.y;
+    }
+    auto const orientation { area < 0.0 ? -1.0 : 1.0 };
+    std::vector<std::size_t> left( Polygon.size() );
+    for( std::size_t j = 0; j < Polygon.size(); ++j ) {
+        left[ j ] = j;
+    }
+    std::vector<std::array<std::size_t, 3>> triangles;
+    while( left.size() > 3 ) {
+        auto ear { left.size() };
+        for( std::size_t j = 0; j < left.size() && ear == left.size(); ++j ) {
+            auto const &a { Polygon[ left[ ( j + left.size() - 1 ) % left.size() ] ] };
+            auto const &b { Polygon[ left[ j ] ] };
+            auto const &c { Polygon[ left[ ( j + 1 ) % left.size() ] ] };
+            auto const turn { cross( a, b, c ) * orientation };
+            if( turn < -1e-12 ) {
+                continue;
+            }
+            auto inside { false };
+            if( turn > 1e-12 ) {
+                for( auto const k : left ) {
+                    auto const &p { Polygon[ k ] };
+                    if( p == a || p == b || p == c ) {
+                        continue;
+                    }
+                    if( cross( a, b, p ) * orientation > 1e-12 && cross( b, c, p ) * orientation > 1e-12 && cross( c, a, p ) * orientation > 1e-12 ) {
+                        inside = true;
+                        break;
+                    }
+                }
+            }
+            if( false == inside ) {
+                ear = j;
+            }
+        }
+        if( ear == left.size() ) {
+            ear = 0;
+        }
+        triangles.push_back( { left[ ( ear + left.size() - 1 ) % left.size() ], left[ ear ], left[ ( ear + 1 ) % left.size() ] } );
+        left.erase( left.begin() + ear );
+    }
+    triangles.push_back( { left[ 0 ], left[ 1 ], left[ 2 ] } );
+    return triangles;
+}
+
+} // namespace
+
 void cap_loft( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::vertex_array &Triangles ) {
 
     if( Ring < 3 || Strip.size() < 2 * Ring ) {
@@ -48,77 +131,12 @@ void cap_loft( gfx::vertex_array const &Strip, std::size_t const Ring, bool cons
         }
         across = glm::normalize( across );
         std::vector<glm::dvec2> plan;
-        auto bottom { 0.0 }, top { 0.0 };
         for( auto const &vertex : ring ) {
             auto const offset { vertex.position - ring[ 0 ].position };
             plan.emplace_back( glm::dot( offset, across ), offset.y );
-            bottom = std::min<double>( bottom, offset.y );
-            top = std::max<double>( top, offset.y );
         }
-        auto web { ring[ 0 ].texture };
-        auto nearest { std::numeric_limits<double>::max() };
-        for( std::size_t j = 0; j < Ring / 2; ++j ) {
-            auto const distance { std::abs( plan[ j ].y - 0.5 * ( bottom + top ) ) };
-            if( distance < nearest ) {
-                nearest = distance;
-                web = ring[ j ].texture;
-            }
-        }
-        auto lowest { std::numeric_limits<double>::max() };
-        for( std::size_t j = 0; j < Ring / 2; ++j ) {
-            if( ring[ j ].normal.y > 0.5f && plan[ j ].y < lowest ) {
-                lowest = plan[ j ].y;
-                web = ring[ j ].texture;
-            }
-        }
-        auto const cross = []( glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &C ) {
-            return ( B.x - A.x ) * ( C.y - A.y ) - ( B.y - A.y ) * ( C.x - A.x ); };
-        double area { 0.0 };
-        for( std::size_t j = 0; j < plan.size(); ++j ) {
-            auto const &a { plan[ j ] };
-            auto const &b { plan[ ( j + 1 ) % plan.size() ] };
-            area += a.x * b.y - b.x * a.y;
-        }
-        auto const orientation { area < 0.0 ? -1.0 : 1.0 };
-        std::vector<std::size_t> left( Ring );
-        for( std::size_t j = 0; j < Ring; ++j ) {
-            left[ j ] = j;
-        }
-        std::vector<std::array<std::size_t, 3>> triangles;
-        while( left.size() > 3 ) {
-            auto ear { left.size() };
-            for( std::size_t j = 0; j < left.size() && ear == left.size(); ++j ) {
-                auto const &a { plan[ left[ ( j + left.size() - 1 ) % left.size() ] ] };
-                auto const &b { plan[ left[ j ] ] };
-                auto const &c { plan[ left[ ( j + 1 ) % left.size() ] ] };
-                auto const turn { cross( a, b, c ) * orientation };
-                if( turn < -1e-12 ) {
-                    continue;
-                }
-                auto inside { false };
-                if( turn > 1e-12 ) {
-                    for( auto const k : left ) {
-                        auto const &p { plan[ k ] };
-                        if( p == a || p == b || p == c ) {
-                            continue;
-                        }
-                        if( cross( a, b, p ) * orientation > 1e-12 && cross( b, c, p ) * orientation > 1e-12 && cross( c, a, p ) * orientation > 1e-12 ) {
-                            inside = true;
-                            break;
-                        }
-                    }
-                }
-                if( false == inside ) {
-                    ear = j;
-                }
-            }
-            if( ear == left.size() ) {
-                ear = 0;
-            }
-            triangles.push_back( { left[ ( ear + left.size() - 1 ) % left.size() ], left[ ear ], left[ ( ear + 1 ) % left.size() ] } );
-            left.erase( left.begin() + ear );
-        }
-        triangles.push_back( { left[ 0 ], left[ 1 ], left[ 2 ] } );
+        auto const web { cap_texture( ring, plan ) };
+        auto const triangles { ear_clip( plan ) };
         for( auto const &triangle : triangles ) {
             for( auto const &order : { std::array<int, 3>{ 0, 1, 2 }, std::array<int, 3>{ 0, 2, 1 } } ) {
                 for( auto const k : order ) {
