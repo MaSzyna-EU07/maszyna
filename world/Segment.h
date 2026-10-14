@@ -24,7 +24,6 @@ struct map_colored_paths {
 
 struct loft_end {
     double bend { 0.0 };
-    knots::line fit;
 };
 
 struct loft_span {

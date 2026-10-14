@@ -568,11 +568,9 @@ void TTrack::rail_layer::lay_guards() {
         sort_cuts( cuts );
         auto start { guard.from };
         auto startmiter { guard.frommiter };
-        rail_cut startcut;
         for( std::size_t i = 0; i <= cuts.size(); ++i ) {
             auto const end { i < cuts.size() ? cuts[ i ].end : guard.to };
             auto const endmiter { i < cuts.size() ? cuts[ i ].endmiter : guard.tomiter };
-            auto const endcut { i < cuts.size() ? cuts[ i ] : rail_cut {} };
             auto const a { std::max( { mitered( startmiter, start, false ), m_from, 0.0 } ) };
             auto const b { std::min( { mitered( endmiter, end, true ), m_length, mitered( guard.tomiter, guard.to, true ) } ) };
             if( b - a > 0.01 ) {
@@ -583,17 +581,14 @@ void TTrack::rail_layer::lay_guards() {
                         ( ending == ( miter.y < 0.0 ) ? uppers : lowers ).emplace_back( 1.0 / miter.y, -miter.x / miter.y - m_guardoffset );
                     }
                 }
-                auto const glued { a == start && false == startcut.startfit.empty() };
-                auto const gluedend { b == end && false == endcut.endfit.empty() };
                 piece(
                     m_profile,
-                    { .from = a, .to = b, .offsets = offsets, .extents = envelope( uppers, true, a, b ), .inner = envelope( lowers, false, a, b ), .capfrom = false == glued, .capto = false == gluedend, .rolled = false },
-                    { a, b, { glued ? startcut.startbend : 0.0, glued ? startcut.startfit : knots::line {} }, { gluedend ? endcut.endbend : 0.0, gluedend ? endcut.endfit : knots::line {} } } );
+                    { .from = a, .to = b, .offsets = offsets, .extents = envelope( uppers, true, a, b ), .inner = envelope( lowers, false, a, b ), .capfrom = true, .capto = true, .rolled = false },
+                    { a, b, {}, {} } );
             }
             if( i < cuts.size() && cuts[ i ].start > start ) {
                 start = cuts[ i ].start;
                 startmiter = cuts[ i ].startmiter;
-                startcut = cuts[ i ];
             }
         }
     }
@@ -639,7 +634,6 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
     auto start { -1e9 };
     auto startcap { true };
     auto startbend { 0.0 };
-    knots::line startfit;
     knots::line rolledfrom;
     knots::line offsets, extents, inner;
     for( std::size_t i = 0; i <= Cuts.size(); ++i ) {
@@ -662,8 +656,8 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
         auto const capend { end < m_length ? Cuts[ i ].endcap : m_openend };
         piece_ends const ends {
             a, b,
-            { start > m_from ? startbend : 0.0, start > m_from ? startfit : knots::line {} },
-            { end < m_length ? Cuts[ i ].endbend : 0.0, end < m_length ? Cuts[ i ].endfit : knots::line {} } };
+            { start > m_from ? startbend : 0.0 },
+            { end < m_length ? Cuts[ i ].endbend : 0.0 } };
         if( b - a > 0.01 ) {
             std::vector<rail_tread> active;
             for( auto const &tread : Treads ) {
@@ -714,7 +708,6 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
             start = Cuts[ i ].start;
             startcap = Cuts[ i ].startcap;
             startbend = Cuts[ i ].startbend;
-            startfit = Cuts[ i ].startfit;
             offsets = Cuts[ i ].startoffsets;
             extents = Cuts[ i ].startextents;
             inner = Cuts[ i ].startinner;

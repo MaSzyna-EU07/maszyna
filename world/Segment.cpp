@@ -616,23 +616,13 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     }
     std::sort( stations.begin(), stations.end() );
     stations.erase( std::unique( stations.begin(), stations.end(), []( double const A, double const B ) { return B - A < 0.001; } ), stations.end() );
-    if( Span.fromend.bend != 0.0 || Span.toend.bend != 0.0 || false == Span.fromend.fit.empty() || false == Span.toend.fit.empty() ) {
+    if( Span.fromend.bend != 0.0 || Span.toend.bend != 0.0 ) {
         auto widest { 0.0 };
         for( auto const &point : ShapePoints ) {
             widest = std::max( widest, std::abs( static_cast<double>( Span.side * point.position.x - Span.halfwidth ) ) );
         }
-        auto offsetmost { 0.0 };
-        for( auto const &knot : Span.offsets ) {
-            offsetmost = std::max( offsetmost, std::abs( knot.y ) );
-        }
-        auto const margin = [&]( loft_end const &End ) {
-            auto fitmost { 0.0 };
-            for( auto const &knot : End.fit ) {
-                fitmost = std::max( fitmost, std::abs( knot.y ) );
-            }
-            return std::abs( End.bend ) * ( End.fit.empty() ? widest : widest + offsetmost ) + fitmost + 0.001; };
-        auto const frommargin { margin( Span.fromend ) };
-        auto const tomargin { margin( Span.toend ) };
+        auto const frommargin { std::abs( Span.fromend.bend ) * widest + 0.001 };
+        auto const tomargin { std::abs( Span.toend.bend ) * widest + 0.001 };
         stations.erase( std::remove_if( stations.begin(), stations.end(), [&]( double const Distance ) {
             return ( Distance > Span.from && Distance < Span.to )
                 && ( Distance < Span.from + frommargin || Distance > Span.to - tomargin ); } ), stations.end() );
@@ -671,17 +661,14 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         static loft_end const unshaped;
         auto const &shaped { Distance <= Span.from ? Span.fromend : Distance >= Span.to ? Span.toend : unshaped };
         auto const bend { shaped.bend };
-        auto const &fit { shaped.fit };
         auto along { glm::vec3 { 0.f } };
-        auto forward { glm::vec3 { 0.f } };
-        if( bend != 0.0 || false == fit.empty() ) {
+        if( bend != 0.0 ) {
             glm::dvec3 ahead, behind, unused;
             plan_frame( std::min( Distance + 0.001, static_cast<double>( fLength ) ), ahead, unused );
             plan_frame( std::max( Distance - 0.001, 0.0 ), behind, unused );
             auto const tangent { glm::dvec3 { ahead.x - behind.x, 0.0, ahead.z - behind.z } };
             if( glm::length2( tangent ) > 0.0 ) {
-                forward = glm::vec3 { glm::normalize( tangent ) };
-                along = forward * static_cast<float>( bend );
+                along = glm::vec3 { glm::normalize( tangent ) } * static_cast<float>( bend );
             }
         }
         Ring.clear();
@@ -763,7 +750,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                     wall = ( side > 0 ? outerwall : innerwall );
                 }
             }
-            auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position + along * static_cast<float>( outside + offset ) + forward * static_cast<float>( knots::sample( fit, shape.position.y, 0.0 ) ) };
+            auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position + along * static_cast<float>( outside + offset ) };
             pt.y += shape.position.y + Span.lift;
             auto norm { shape.normal.x * parallel };
             norm.y += shape.normal.y;
