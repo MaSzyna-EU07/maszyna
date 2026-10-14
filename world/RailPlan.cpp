@@ -150,7 +150,7 @@ std::vector<glm::dvec2> glue_line( std::vector<glm::dvec2> const &Outline, doubl
 track_rails::rail_fill guard_fill( track_rails::guard_rail const &Guard, track_rails::rail_size const &Size ) {
 
     auto const offset { Size.web - ( flangeway + Size.head ) };
-    auto const flare { std::min( 0.3, 0.25 * ( Guard.to - Guard.from ) ) };
+    auto const flare { std::min( guard_flare, 0.25 * ( Guard.to - Guard.from ) ) };
     track_rails::rail_fill fill;
     fill.web = true;
     fill.from = Guard.from;
@@ -448,7 +448,7 @@ void TTrack::rail_planner::cross_wide( rail_crossing const &Crossing, rail_size 
     if( through ) {
         add_tread( Crossing.path, Crossing.side, shared_span( Crossing, Other ), *Crossing.track, Crossing.otherpath );
     }
-    auto const reach { ( flangeway + m_size.head + 0.3 ) / std::abs( Crossing.into ) };
+    auto const reach { ( flangeway + m_size.head + guard_reach ) / std::abs( Crossing.into ) };
     track_rails::guard_rail guard { Crossing.at - reach, Crossing.at + reach };
     guard.through = through;
     wide( guard.plan, Crossing, { -Other.head, through ? flangeway : flangeway + Other.head, m_guardoffset, m_guardoffset + m_size.head, glue_line( Other.field, 0.0 ), through ? knots::line {} : glue_line( Other.gauge, flangeway + Other.head ) } );

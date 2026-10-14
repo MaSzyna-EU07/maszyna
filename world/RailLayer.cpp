@@ -563,7 +563,7 @@ void TTrack::rail_layer::lay_guards() {
         auto const outside { Miter.x + Miter.y * ( top + m_guardoffset ) };
         return Latest ? std::max( inside, outside ) : std::min( inside, outside ); };
     for( auto const &guard : ours( m_layout.guards ) ) {
-        auto const offsets { flared( guard.from, guard.to, std::min( 0.3, 0.25 * ( guard.to - guard.from ) ), m_guardoffset, guard.flarefrom ? 0.02 : 0.0, guard.flareto ? 0.02 : 0.0 ) };
+        auto const offsets { flared( guard.from, guard.to, std::min( guard_flare, 0.25 * ( guard.to - guard.from ) ), m_guardoffset, guard.flarefrom ? 0.02 : 0.0, guard.flareto ? 0.02 : 0.0 ) };
         auto cuts { guard.plan.cuts };
         sort_cuts( cuts );
         auto start { guard.from };
