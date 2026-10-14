@@ -77,6 +77,7 @@ option(WITH_ZMQ "Compile with cppzmq" OFF)
 option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
 option(USE_LTO "Use link-time optimization" OFF)
+option(WITH_TESTS "Build and run the unit tests with the game, a failing test fails the build" ON)
 option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" OFF)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
@@ -95,6 +96,7 @@ set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
 "world/Track.cpp"
+"world/TrackRails.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
 "world/RoadPoint.cpp"
@@ -119,15 +121,10 @@ set(SOURCES
 "vehicle/Gauge.cpp"
 "utilities/Globals.cpp"
 "utilities/Logs.cpp"
-"McZapkie/friction.cpp"
-"McZapkie/hamulce.cpp"
-"McZapkie/Mover.cpp"
-"McZapkie/Oerlikon_ESt.cpp"
 "model/MdlMngr.cpp"
 "world/MemCell.cpp"
 "model/Model3d.cpp"
 "world/mtable.cpp"
-"utilities/parser.cpp"
 "rendering/nullrenderer.cpp"
 "rendering/renderer.cpp"
 "model/ResourceManager.cpp"
@@ -159,7 +156,6 @@ set(SOURCES
 "audio/audio.cpp"
 "audio/audiorenderer.cpp"
 "utilities/motiontelemetry.cpp"
-"utilities/utilities.cpp"
 "application/uitranscripts.cpp"
 "world/station.cpp"
 "application/application.cpp"
@@ -232,7 +228,6 @@ set(SOURCES
 "utilities/dictionary.cpp"
 "rendering/particles.cpp"
 "utilities/headtrack.cpp"
-"scripting/ladderlogic.cpp"
 "rendering/geometrybank.cpp"
 "rendering/openglcolor.cpp"
 "simulation/simulationsounds.cpp"
@@ -462,11 +457,34 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     add_compile_options("/utf-8")
 endif()
 
+# the build settings of the game: include dirs, definitions, compile options and libraries. the game,
+# its core library and the unit tests all build with the same ones
+add_library(eu07_settings INTERFACE)
+
+# the parts of the simulation the game shares with the unit tests: the vehicle physics, the vehicle
+# definition parser and the helpers they use. built once, and tested as the game uses them
+set(CORE_SOURCES
+"McZapkie/friction.cpp"
+"McZapkie/hamulce.cpp"
+"McZapkie/Mover.cpp"
+"McZapkie/Oerlikon_ESt.cpp"
+"utilities/parser.cpp"
+"utilities/utilities.cpp"
+"scripting/ladderlogic.cpp"
+"vehicle/handover.cpp"
+)
+add_library(eu07_core STATIC ${CORE_SOURCES})
+target_link_libraries(eu07_core PUBLIC eu07_settings)
+set_target_properties(eu07_core PROPERTIES
+	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+	FOLDER "libraries")
+
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+target_link_libraries(${PROJECT_NAME} eu07_core)
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE ${DEFINITIONS})
+target_compile_definitions(eu07_settings INTERFACE ${DEFINITIONS})
 
-target_include_directories(${PROJECT_NAME} PRIVATE
+target_include_directories(eu07_settings INTERFACE
 	"."
 	"Console"
 	"McZapkie"
@@ -487,7 +505,7 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	# /wd4996: disable "deprecation" warnings
 	# /wd4244: disable warnings for conversion with possible loss of data
 	# /wd5033: disable because it is all over Python headers
-	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "/wd4996 /wd4244 /wd5033")
+	target_compile_options(eu07_settings INTERFACE /wd4996 /wd4244 /wd5033)
 	set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/LARGEADDRESSAWARE")
 endif()
 
@@ -503,7 +521,7 @@ set_target_properties( ${PROJECT_NAME}
 
 check_cxx_symbol_exists(__GNUC__ "" COMPILER_HAVE_GNUC)
 if (COMPILER_HAVE_GNUC)
-	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "-fvisibility=hidden")
+	target_compile_options(eu07_settings INTERFACE -fvisibility=hidden)
 endif()
 
 if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
@@ -511,6 +529,7 @@ if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
 
 	if (USE_PCH)
 		target_precompile_headers(${PROJECT_NAME} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h>")
+		target_precompile_headers(eu07_core PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h>")
 		set_source_files_properties("/glad/src/glad.c" "ref/dds-ktx/src/dds-ktx.c" "ref/zstd/zstd.c" "stb/stb_image.c"
 			"imgui/imgui.cpp" "imgui/imgui_demo.cpp" "imgui/imgui_draw.cpp" "imgui/imgui_widgets.cpp" "imgui/imgui_tables.cpp" "imgui/imgui_impl_glfw.cpp" "imgui/ImGuizmo.cpp"
 			PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
@@ -518,12 +537,12 @@ if(NOT ${CMAKE_VERSION} VERSION_LESS "3.16.0")
 endif()
 
 if (USE_LTO)
-	set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+	set_property(TARGET ${PROJECT_NAME} eu07_core PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
 if (WITH_OPENVR)
-	target_include_directories(${PROJECT_NAME} PRIVATE ${OPENVR_INCLUDE_DIR})
-	target_link_libraries(${PROJECT_NAME} ${OPENVR_LIBRARY})
+	target_include_directories(eu07_settings INTERFACE ${OPENVR_INCLUDE_DIR})
+	target_link_libraries(eu07_settings INTERFACE ${OPENVR_LIBRARY})
 endif()
 
 if (WITH_CRASHPAD)
@@ -538,12 +557,12 @@ if (WITH_CRASHPAD)
 	endif()
 endif()
 
-target_link_libraries(${PROJECT_NAME} glfw)
+target_link_libraries(eu07_settings INTERFACE glfw)
 
 if(WITH_PYTHON)
 	find_package(Python3 3.14 REQUIRED COMPONENTS Development)
-	target_include_directories(${PROJECT_NAME} PRIVATE ${Python3_INCLUDE_DIRS})
-	target_link_libraries(${PROJECT_NAME} ${Python3_LIBRARIES})
+	target_include_directories(eu07_settings INTERFACE ${Python3_INCLUDE_DIRS})
+	target_link_libraries(eu07_settings INTERFACE ${Python3_LIBRARIES})
 
 	if(WIN32)
 		# Python3_ROOT_DIR is only an input hint and is not populated by
@@ -561,78 +580,78 @@ endif()
 
 if (NOT WIN32)
 	find_package(PNG 1.6 REQUIRED)
-	target_link_libraries(${PROJECT_NAME} PNG::PNG)
+	target_link_libraries(eu07_settings INTERFACE PNG::PNG)
 else()
 	include_directories(${PNG_INCLUDE_DIRS})
-	target_link_libraries(${PROJECT_NAME} ${PNG_LIBRARIES})
+	target_link_libraries(eu07_settings INTERFACE ${PNG_LIBRARIES})
 endif()
 
 find_package(Threads REQUIRED)
-target_link_libraries(${PROJECT_NAME} Threads::Threads)
+target_link_libraries(eu07_settings INTERFACE Threads::Threads)
 
 find_package(GLM REQUIRED)
-target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR})
+target_include_directories(eu07_settings INTERFACE ${GLM_INCLUDE_DIR})
 
 # JSON lib
 add_subdirectory(ref/json)
-target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json)
-target_include_directories(${PROJECT_NAME} PRIVATE ${NLOHMANN_JSON_INCLUDE_INSTALL_DIR})
+target_link_libraries(eu07_settings INTERFACE nlohmann_json::nlohmann_json)
+target_include_directories(eu07_settings INTERFACE ${NLOHMANN_JSON_INCLUDE_INSTALL_DIR})
 
 
 
 if (WITH_DISCORD_RPC)
 	add_subdirectory(ref/discord-rpc)
 	set_target_properties(discord-rpc PROPERTIES FOLDER "libraries")
-	target_link_libraries(${PROJECT_NAME} discord-rpc)
+	target_link_libraries(eu07_settings INTERFACE discord-rpc)
 
 	# Add the include directory so the compiler can find discord_rpc.h
-	target_include_directories(${PROJECT_NAME} PUBLIC
+	target_include_directories(eu07_settings INTERFACE
 		"${CMAKE_CURRENT_SOURCE_DIR}/ref/discord-rpc/include"
 	)
 
-	target_compile_definitions(${PROJECT_NAME} PUBLIC WITH_DISCORD_RPC=1)
+	target_compile_definitions(eu07_settings INTERFACE WITH_DISCORD_RPC=1)
 else()
-	target_compile_definitions(${PROJECT_NAME} PUBLIC WITH_DISCORD_RPC=0)
+	target_compile_definitions(eu07_settings INTERFACE WITH_DISCORD_RPC=0)
 endif()
 
 find_package(OpenAL REQUIRED)
 if (TARGET OpenAL::OpenAL)
-	target_link_libraries(${PROJECT_NAME} OpenAL::OpenAL)
+	target_link_libraries(eu07_settings INTERFACE OpenAL::OpenAL)
 else()
-	target_include_directories(${PROJECT_NAME} PRIVATE ${OPENAL_INCLUDE_DIR})
-	target_link_libraries(${PROJECT_NAME} ${OPENAL_LIBRARY})
+	target_include_directories(eu07_settings INTERFACE ${OPENAL_INCLUDE_DIR})
+	target_link_libraries(eu07_settings INTERFACE ${OPENAL_LIBRARY})
 endif()
 
 find_package(SndFile REQUIRED)
-target_link_libraries(${PROJECT_NAME} SndFile::sndfile)
+target_link_libraries(eu07_settings INTERFACE SndFile::sndfile)
 
 if (WITH_LUA)
 	find_package(LuaJIT REQUIRED)
-	target_include_directories(${PROJECT_NAME} PRIVATE ${LUAJIT_INCLUDE_DIR})
-	target_link_libraries(${PROJECT_NAME} ${LUAJIT_LIBRARIES})
+	target_include_directories(eu07_settings INTERFACE ${LUAJIT_INCLUDE_DIR})
+	target_link_libraries(eu07_settings INTERFACE ${LUAJIT_LIBRARIES})
 endif()
 
 if (WITH_UART)
 	find_package(libserialport REQUIRED)
-	target_include_directories(${PROJECT_NAME} PRIVATE ${libserialport_INCLUDE_DIR})
-	target_link_libraries(${PROJECT_NAME} ${libserialport_LIBRARY})
+	target_include_directories(eu07_settings INTERFACE ${libserialport_INCLUDE_DIR})
+	target_link_libraries(eu07_settings INTERFACE ${libserialport_LIBRARY})
 endif()
 
 find_package(ASIO REQUIRED)
-target_link_libraries(${PROJECT_NAME} asio::asio)
+target_link_libraries(eu07_settings INTERFACE asio::asio)
 
 if (WIN32)
-	target_link_libraries(${PROJECT_NAME} ws2_32)
+	target_link_libraries(eu07_settings INTERFACE ws2_32)
 endif()
 
 # http client of the editor's geoportal orthophoto layer: WinHTTP on Windows, libcurl elsewhere when available
 if (WIN32)
-	target_link_libraries(${PROJECT_NAME} winhttp)
+	target_link_libraries(eu07_settings INTERFACE winhttp)
 else()
 	find_package(CURL QUIET)
 	if (CURL_FOUND)
-		target_link_libraries(${PROJECT_NAME} CURL::libcurl)
-		target_compile_definitions(${PROJECT_NAME} PRIVATE EU07_WITH_CURL)
+		target_link_libraries(eu07_settings INTERFACE CURL::libcurl)
+		target_compile_definitions(eu07_settings INTERFACE EU07_WITH_CURL)
 	else()
 		message(STATUS "libcurl not found: the editor's orthophoto layer will only show cached tiles")
 	endif()
@@ -640,8 +659,8 @@ endif()
 
 if (WITH_ZMQ)
 	find_package(cppzmq REQUIRED)
-	target_include_directories(${PROJECT_NAME} PRIVATE ${cppzmq_INCLUDE_DIR})
-	target_link_libraries(${PROJECT_NAME} ${cppzmq_LIBRARY})
+	target_include_directories(eu07_settings INTERFACE ${cppzmq_INCLUDE_DIR})
+	target_link_libraries(eu07_settings INTERFACE ${cppzmq_LIBRARY})
 endif()
 
 if (WIN32)
@@ -672,7 +691,7 @@ endif ()
 if (NOT TARGET yaml-cpp)
 	add_subdirectory("betterRenderer/thirdparty/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)
 endif ()
-target_link_libraries(${PROJECT_NAME} yaml-cpp)
+target_link_libraries(eu07_settings INTERFACE yaml-cpp)
 
 
 # Enable compiling with debug symbols
@@ -687,7 +706,7 @@ if(GENERATE_PDB)
         add_link_options(/DEBUG /MAP)
 
         # Ensure that the PCH is built with the correct runtime library for each configuration
-        set_target_properties(${PROJECT_NAME} PROPERTIES
+        set_target_properties(${PROJECT_NAME} eu07_core PROPERTIES
             COMPILE_OPTIONS "$<$<CONFIG:Debug>:/MDd>$<$<CONFIG:Release>:/MD>")
     else()
         # GCC/Clang (ensure -g is set for all configurations)
@@ -703,8 +722,27 @@ endif()
 if(ENABLE_AVX2)
     message(STATUS "Enabling AVX2 instruction set.")
     if (MSVC)
-        target_compile_options(${PROJECT_NAME} PRIVATE /arch:AVX2)
+        target_compile_options(eu07_settings INTERFACE /arch:AVX2)
     else()
-        target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
+        target_compile_options(eu07_settings INTERFACE -mavx2)
     endif()
+endif()
+
+if(WITH_TESTS)
+	enable_testing()
+	add_subdirectory(tests/unit)
+	# the unit tests run at the end of building the game, once it's linked: a failing one fails the build
+	# (and removes the game binary, so the next build links it again and reruns them)
+	add_dependencies(${PROJECT_NAME} eu07_unit_tests)
+	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND}
+			-DTESTS=$<TARGET_FILE:eu07_unit_tests>
+			-DGAME=$<TARGET_FILE:${PROJECT_NAME}>
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake"
+		COMMENT "Running the unit tests"
+		VERBATIM)
+	# a change of the tests alone links the game again, so they run (Ninja and Makefile generators;
+	# Visual Studio builds rerun them with the next change of the game)
+	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
+		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
 endif()

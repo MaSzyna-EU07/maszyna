@@ -1870,6 +1870,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	selftest_result selftest_sweep(std::string const &command, std::istringstream &words);
 	selftest_result selftest_track(std::string const &command, std::istringstream &words);
 	selftest_result selftest_switch(std::string const &command, std::istringstream &words);
+	selftest_result selftest_rails(std::string const &command, std::istringstream &words);
 	selftest_result selftest_join(std::string const &command, std::istringstream &words);
 	selftest_result selftest_signal(std::string const &command, std::istringstream &words);
 	selftest_result selftest_terrain(std::string const &command, std::istringstream &words);

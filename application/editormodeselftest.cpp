@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "world/Track.h"
+#include "world/TrackRails.h"
 #include "world/MemCell.h"
 #include "world/Event.h"
 #include "vehicle/DynObj.h"
@@ -47,7 +48,7 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &command, std::istringstream &words)
 {
-	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain})
+	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain})
 		if (auto const result{(this->*group)(command, words)}; result != selftest_result::unhandled)
 			return result;
 	return selftest_result::unhandled;
@@ -2483,10 +2484,330 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	return selftest_result::unhandled;
 }
 
+editor_mode::selftest_result editor_mode::selftest_rails(std::string const &command, std::istringstream &words)
+{
+	if (command == "frog")
+	{
+		std::string name;
+		words >> name;
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
+				continue;
+			if (false == name.empty() && track->name() != name)
+				continue;
+			auto const frog{track->frog()};
+			if (false == frog.valid)
+			{
+				WriteLog(format("SELFTEST frog %s: no frog, paths %.3f and %.3f m, blades %.3f m", track->name().c_str(), track->SwitchExtension->Segments[0]->GetLength(), track->SwitchExtension->Segments[1]->GetLength(), frog.blades[0]));
+				continue;
+			}
+			auto const n{1.0 / std::tan(frog.angle)};
+			glm::dvec3 point, across;
+			track->SwitchExtension->Segments[0]->plan_frame(frog.at[0], point, across);
+			auto const gauge{point + across * (frog.side[0] * 0.5 * std::abs(track->fTrackWidth))};
+			auto const slope{std::tan(frog.angle)};
+			auto const check{0.5 * track_rails::check_length(slope)};
+			WriteLog(format("SELFTEST frog %s: crossing at %.3f / %.3f m (%.3f %.3f %.3f), 1:%.2f, side %d, blades %.3f / %.3f m, throat %.3f, nose %.3f, wing end %.3f, check rails %.3f-%.3f / %.3f-%.3f m", track->name().c_str(),
+			    frog.at[0], frog.at[1], gauge.x, gauge.y, gauge.z, n, frog.side[0], frog.blades[0], frog.blades[1], frog.at[0] - track_rails::flangeway / slope, frog.at[0] + track_rails::nose_tip / slope, frog.at[0] + track_rails::wing_reach(slope),
+			    frog.at[0] - 0.25 - check, frog.at[0] - 0.25 + check, frog.at[1] - 0.25 - check, frog.at[1] - 0.25 + check));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "geomhash")
+	{
+		std::string name;
+		words >> name;
+		auto const mix = [](std::uint64_t &Hash, float const Value) {
+			Hash = (Hash ^ static_cast<std::uint64_t>(static_cast<std::int64_t>(std::llround(Value * 1e4)))) * 1099511628211ull;
+		};
+		std::uint64_t total{1469598103934665603ull};
+		std::size_t vertices{0};
+		int tracks{0};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
+				continue;
+			if (false == name.empty() && track->name() != name)
+				continue;
+			std::uint64_t hash{1469598103934665603ull};
+			std::size_t count{0};
+			int chunks{0};
+			std::vector<TTrack::geometryhandle_sequence const *> sequences{&track->Geometry1, &track->Geometry2, &track->GeometryCut1, &track->GeometryCut2};
+			for (auto const &tread : track->GeometryTreads)
+			{
+				sequences.push_back(&tread.geometry);
+				sequences.push_back(&tread.cuts);
+			}
+			for (auto const *sequence : sequences)
+			{
+				for (auto const &geometry : *sequence)
+				{
+					++chunks;
+					for (auto const &vertex : GfxRenderer->Vertices(geometry))
+					{
+						for (int i = 0; i < 3; ++i)
+						{
+							mix(hash, vertex.position[i]);
+							mix(hash, vertex.normal[i]);
+						}
+						mix(hash, vertex.texture.x);
+						mix(hash, vertex.texture.y);
+						++count;
+					}
+				}
+				mix(hash, -1.f);
+			}
+			WriteLog(format("SELFTEST geom %s: chunks %d, vertices %zu, hash %016llx", track->name().c_str(), chunks, count, static_cast<unsigned long long>(hash)));
+			total = (total ^ hash) * 1099511628211ull;
+			vertices += count;
+			++tracks;
+		}
+		WriteLog(format("SELFTEST geom total: tracks %d, vertices %zu, hash %016llx", tracks, vertices, static_cast<unsigned long long>(total)));
+		return selftest_result::handled;
+	}
+	if (command == "frogkey")
+	{
+		std::string name, value;
+		words >> name >> value;
+		auto *track{simulation::Paths.find(name)};
+		if (track == nullptr || track->eType != tt_Switch || track->SwitchExtension == nullptr)
+			WriteLog(format("SELFTEST frogkey %s: no such switch", name.c_str()));
+		else
+		{
+		if (value == "on" || value == "off")
+		{
+			auto const before{editor_track::capture(*track)};
+			track->SwitchExtension->m_frogs = (value == "on");
+			push_track_snapshot({{track, before}});
+			editor_track::commit_parameters(*track);
+		}
+		std::ostringstream text;
+		track->export_as_text(text);
+		WriteLog(format("SELFTEST frogkey %s: key %d, written %d, frog %d, crossings %zu, profile '%s'", name.c_str(), track->SwitchExtension->m_frogs ? 1 : 0, text.str().find(" frogs ") != std::string::npos ? 1 : 0,
+		    track->frog().valid ? 1 : 0, track->rail_crossings().size(), track->m_profile1.first.c_str()));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "guards")
+	{
+		std::string name;
+		words >> name;
+		int count{0};
+		int faults{0};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
+				continue;
+			if (false == name.empty() && track->name() != name)
+				continue;
+			auto const layout{track->plan_rails(true)};
+			auto const size{track->rail_dimensions()};
+			auto const guardoffset{-(track_rails::flangeway + size.head)};
+			double const laterals[2]{size.low + guardoffset, track_rails::flangeway + size.head + size.low - 0.002 + guardoffset};
+			for (int path = 0; path < 2; ++path)
+			{
+				for (int right = 0; right < 2; ++right)
+				{
+					auto const side{right ? 1 : -1};
+					auto const length{track->eType == tt_Switch ? track->SwitchExtension->Segments[path]->GetLength() : track->Segment->GetLength()};
+					auto const drawn = [&](glm::dvec2 const &Miter, double const Square) {
+						auto const at{Miter.y == 0.0 ? Square : Miter.x + Miter.y * 0.5 * (laterals[0] + laterals[1])};
+						return at > 0.0 && at < length;
+					};
+					for (auto const &guard : layout.guards[path][right])
+					{
+						if (false == drawn(guard.frommiter, guard.from) && false == drawn(guard.tomiter, guard.to) && (guard.to <= 0.0 || guard.from >= length))
+							continue;
+						++count;
+						std::string text;
+						auto const end = [&](glm::dvec2 const &Miter, bool const Flared, bool const Glued) {
+							if (Miter.y == 0.0)
+								return std::string{Flared ? "flared" : "square"};
+							if (false == drawn(Miter, 0.0))
+								return std::string{"past the end of the track"};
+							glm::dvec3 points[2];
+							for (int i = 0; i < 2; ++i)
+								points[i] = track_rails::rail_point(*track, path, side, Miter.x + Miter.y * laterals[i], laterals[i]);
+							auto best{1e9};
+							double lateral{0.0}, along{0.0};
+							TTrack *against{nullptr};
+							int againstpath{0}, againstside{0};
+							for (auto *other : layout.crossed)
+								for (int otherpath = 0; otherpath < (other->eType == tt_Switch ? 2 : 1); ++otherpath)
+									for (auto const otherside : {-1, 1})
+									{
+										double d[2], l[2];
+										for (int i = 0; i < 2; ++i)
+											track_rails::rail_offset(*other, otherpath, otherside, points[i], d[i], l[i]);
+										if (std::abs(l[0]) > 0.5 || std::abs(l[1]) > 0.5 || std::abs(l[0] - l[1]) >= best)
+											continue;
+										best = std::abs(l[0] - l[1]);
+										lateral = 0.5 * (l[0] + l[1]);
+										along = 0.5 * (d[0] + d[1]);
+										against = other;
+										againstpath = otherpath;
+										againstside = otherside;
+									}
+							if (against == nullptr)
+							{
+								++faults;
+								return std::string{"cut along nothing FAULT"};
+							}
+							auto result{format("along %s/%d%+d at %.3f m, %.1f mm off its gauge line, skew %.1f mm", against->name().c_str(), againstpath, againstside, along, lateral * 1000.0, best * 1000.0)};
+							auto fault{best > 0.002};
+							if (Glued)
+							{
+								auto const theirsize{against->rail_dimensions()};
+								auto const theiroffset{-(track_rails::flangeway + theirsize.head)};
+								double const theirlaterals[2]{theirsize.low + theiroffset, track_rails::flangeway + theirsize.head + theirsize.low - 0.002 + theiroffset};
+								auto const reach = [&](glm::dvec2 const &Miter, double const Square, bool const Latest) {
+									if (Miter.y == 0.0)
+										return Square;
+									auto const a{Miter.x + Miter.y * theirlaterals[0]};
+									auto const b{Miter.x + Miter.y * theirlaterals[1]};
+									return Latest ? std::max(a, b) : std::min(a, b);
+								};
+								auto covered{false};
+								for (auto const &theirs : against->plan_rails(true).guards[againstpath][againstside > 0])
+									covered |= (along > reach(theirs.frommiter, theirs.from, false) - 0.002 && along < reach(theirs.tomiter, theirs.to, true) + 0.002);
+								result += covered ? ", on its guard rail" : ", no guard rail there";
+								fault |= (false == covered || std::abs(lateral + track_rails::flangeway) > 0.002);
+							}
+							if (fault)
+							{
+								++faults;
+								result += " FAULT";
+							}
+							return result;
+						};
+						text += "from " + end(guard.frommiter, guard.flarefrom, false == guard.flarefrom) + "; to " + end(guard.tomiter, guard.flareto, false == guard.flareto);
+						for (auto const &cut : guard.plan.cuts)
+							if (cut.end > 0.0 && cut.start < length)
+								text += format("; break %.3f-%.3f: ", cut.end, cut.start) + end(cut.endmiter, false, false) + " / " + end(cut.startmiter, false, false);
+						WriteLog(format("SELFTEST guard %s path %d side %+d %.3f-%.3f m: %s", track->name().c_str(), path, side, guard.from, guard.to, text.c_str()));
+					}
+				}
+			}
+		}
+		WriteLog(format("SELFTEST guards: %d guard rails, %d faults", count, faults));
+		return selftest_result::handled;
+	}
+	if (command == "throw")
+	{
+		int path{0};
+		words >> path;
+		int count{0};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
+				continue;
+			track->Switch(path);
+			track->SwitchExtension->fOffset = track->SwitchExtension->fDesiredOffset;
+			track->RaAnimate();
+			++count;
+		}
+		WriteLog(format("SELFTEST switches: %d switches set to path %d", count, path));
+		return selftest_result::handled;
+	}
+	if (command == "railtime")
+	{
+		track_rails::forget();
+		auto const started{std::chrono::steady_clock::now()};
+		int tracks{0};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
+				continue;
+			track->rail_crossings(false);
+			++tracks;
+		}
+		auto const crossed{std::chrono::steady_clock::now()};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
+				continue;
+			track->plan_rails(true);
+		}
+		auto const finished{std::chrono::steady_clock::now()};
+		auto const crossings{std::chrono::duration<double, std::milli>(crossed - started).count()};
+		auto const elapsed{std::chrono::duration<double, std::milli>(finished - started).count()};
+		WriteLog(format("SELFTEST railtime: the rails of %d tracks laid out in %.1f ms, of which their crossings %.1f ms", tracks, elapsed, crossings));
+		return selftest_result::handled;
+	}
+	if (command == "crossings")
+	{
+		std::string name;
+		words >> name;
+		auto const started{std::chrono::steady_clock::now()};
+		int tracks{0};
+		int found{0};
+		int acutes{0};
+		int middles{0};
+		int mismatched{0};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != 1)
+				continue;
+			if (false == name.empty() && track->name() != name)
+				continue;
+			++tracks;
+			for (auto const &crossing : track->rail_crossings())
+			{
+				++found;
+				auto const middle{crossing.angle > track_rails::middle_angle && crossing.angle <= track_rails::wide_angle};
+				middles += middle ? 1 : 0;
+				auto const kind{crossing.angle > track_rails::wide_angle ? "wide" : crossing.facing < 0.0 ? (middle ? "middle acute" : "acute") : (middle ? "middle obtuse" : "obtuse")};
+				WriteLog(format("SELFTEST crossing %s path %d side %d at %.3f m: %s with %s, 1:%.2f, into %.3f, facing %.3f, nose %d", track->name().c_str(), crossing.path, crossing.side, crossing.at, kind,
+				    crossing.track->name().c_str(), 1.0 / std::tan(crossing.angle), crossing.into, crossing.facing, crossing.nose ? 1 : 0));
+			}
+			auto const gauge = [](TTrack *Track, TTrack::rail_crossing const &Crossing) {
+				auto const &segment{Track->eType == tt_Switch ? *Track->SwitchExtension->Segments[Crossing.path] : *Track->Segment};
+				glm::dvec3 point, across;
+				segment.plan_frame(Crossing.at, point, across);
+				return point + across * (Crossing.side * 0.5 * std::abs(Track->fTrackWidth));
+			};
+			for (auto const &crossing : track->rail_crossings(false))
+			{
+				if (crossing.angle > track_rails::wide_angle || crossing.facing >= 0.0)
+					continue;
+				++acutes;
+				auto const here{gauge(track, crossing)};
+				auto partners{0};
+				auto noses{crossing.nose ? 1 : 0};
+				for (auto const &other : crossing.track->rail_crossings(false))
+				{
+					if (other.track != track || other.angle > track_rails::wide_angle || other.facing >= 0.0)
+						continue;
+					auto const there{gauge(crossing.track, other)};
+					if (glm::length(glm::dvec2{there.x - here.x, there.z - here.z}) > 0.05)
+						continue;
+					++partners;
+					noses += other.nose ? 1 : 0;
+				}
+				if (partners != 1 || noses != 1)
+					++mismatched;
+				WriteLog(format("SELFTEST acute %s %s path %d side %d at %.3f m with %s (%.2f %.2f %.2f): partners %d, noses %d", partners != 1 || noses != 1 ? "mismatch" : "ok", track->name().c_str(), crossing.path, crossing.side, crossing.at, crossing.track->name().c_str(), here.x, here.y, here.z, partners, noses));
+			}
+		}
+		auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()};
+		WriteLog(format("SELFTEST crossings: %d rail crossings on %d tracks, %d of them middle, %d acute, %d mismatched, %.1f ms", found, tracks, middles, acutes, mismatched, elapsed));
+		return selftest_result::handled;
+	}
+	return selftest_result::unhandled;
+}
+
 // the script is a text file, one action a line:
 //   wait <frames>
 //   camera <x> <y> <z> <x> <y> <z>        from the first point, looking at the second
 //   select <track name>
+//   frog [name]                          logs where the inner rails of each switch cross: distance on both paths, 1:n, throat, nose, check rails
+//   guards [name]                        logs each guard rail and what each of its ends and breaks is cut along; a fault when a cut is not along a rail or a glued end not on the guard rail of the other track
+//   railtime                             lays out the rails of every track, as when its geometry is made, and logs how long it took
+//   throw <0|1>                          sets every switch to the path and moves its blades there at once
+//   crossings [name]                     logs where rails of tracks cross rails of other tracks and of what kind (acute, obtuse, middle acute or obtuse, wide), checks that each acute crossing has one partner and one nose
+//   frogkey name [on|off]                sets or clears the frogs key of a switch (one undo step); logs the key, whether it is written, the frog and the crossings
+//   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds
 //   sweep <key>=<value>...               model, params (separated by commas), lateral, height, side (origin, near, far,
 //                                        centre), top (origin, bottom, top, edge), mode (bend, repeat), step,
 //                                        length (original, all, or metres), from, to, widen (0, 1), face (0, 1), tilt (0, 1)

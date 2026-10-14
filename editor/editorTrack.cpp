@@ -136,6 +136,7 @@ editor_track::state editor_track::capture(TTrack const &Track)
 	result.material1 = Track.m_material1;
 	result.material2 = Track.m_material2;
 	result.material3 = Track.SwitchExtension ? Track.SwitchExtension->m_material3 : null_handle;
+	result.frogs = Track.SwitchExtension && Track.SwitchExtension->m_frogs;
 	result.texlength = Track.fTexLength;
 	result.texheight = texture_height(Track);
 	result.texwidth = Track.fTexWidth;
@@ -225,6 +226,7 @@ void editor_track::apply(TTrack &Track, state const &State)
 	{
 		Track.SwitchExtension->fVelocity = State.switchvelocity;
 		Track.SwitchExtension->m_material3 = State.material3;
+		Track.SwitchExtension->m_frogs = State.frogs;
 	}
 	Track.fTrackWidth = State.width;
 	Track.fTrackWidth2 = State.width;
@@ -2780,6 +2782,7 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 		write_ending(text, Style);
 		track = load_path(text.str(), Style, Name);
 	}
+	track->SwitchExtension->m_frogs = true;
 	track->m_paths.assign(Paths.begin(), Paths.begin() + 2);
 	return track;
 }
@@ -3200,12 +3203,34 @@ void editor_track::retire(TTrack &Track)
 		update_transition(*neighbour);
 		rebuild_geometry(*neighbour);
 	}
+	auto crossings{Track.m_crossings};
+	for (auto *crossing : Track.m_crossings)
+		for (auto *neighbour : neighbours(*crossing))
+			if (std::find(crossings.begin(), crossings.end(), neighbour) == crossings.end())
+				crossings.push_back(neighbour);
+	for (auto *crossing : crossings)
+		if (crossing != &Track && false == crossing->m_editorremoved)
+			rebuild_geometry(*crossing);
 	if (s_observer != nullptr)
 		s_observer->track_retired(Track);
 }
 
 void editor_track::rebuild_geometry(TTrack &Track)
 {
-	auto &section{simulation::Region->section(Track.location())};
-	Track.rebuild_geometry(section.m_geometrycreated ? section.m_geometrybank : gfx::geometrybank_handle{});
+	auto const rebuild = [](TTrack &Path) {
+		auto &section{simulation::Region->section(Path.location())};
+		Path.rebuild_geometry(section.m_geometrycreated ? section.m_geometrybank : gfx::geometrybank_handle{});
+	};
+	auto crossings{Track.m_crossings};
+	rebuild(Track);
+	for (auto *crossing : Track.m_crossings)
+		if (std::find(crossings.begin(), crossings.end(), crossing) == crossings.end())
+			crossings.push_back(crossing);
+	for (std::size_t i = 0, count = crossings.size(); i < count; ++i)
+		for (auto *neighbour : neighbours(*crossings[i]))
+			if (std::find(crossings.begin(), crossings.end(), neighbour) == crossings.end())
+				crossings.push_back(neighbour);
+	for (auto *crossing : crossings)
+		if (crossing != &Track && false == crossing->m_editorremoved)
+			rebuild(*crossing);
 }

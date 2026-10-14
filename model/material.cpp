@@ -662,6 +662,100 @@ material_manager::create_from_text( std::string const &Name, std::string const &
     return materialhandle;
 }
 
+namespace {
+
+opengl_material
+variant_of( opengl_material const &Source, std::string const &Suffix ) {
+
+    opengl_material variant;
+    variant.textures = Source.textures;
+    variant.texture_variants = Source.texture_variants;
+    variant.params = Source.params;
+    variant.params_state = Source.params_state;
+    variant.shader = Source.shader;
+    variant.opacity = Source.opacity;
+    variant.selfillum = Source.selfillum;
+    variant.shadow_rank = Source.shadow_rank;
+    variant.name = Source.name + Suffix;
+    variant.size = Source.size;
+    variant.is_good = Source.is_good;
+    variant.path = Source.path;
+    return variant;
+}
+
+} // namespace
+
+material_handle
+material_manager::create_matte( material_handle const Material ) {
+
+    if( Material == null_handle || Material >= m_materials.size() ) {
+        return Material;
+    }
+    auto const lookup { m_mattes.find( Material ) };
+    if( lookup != m_mattes.end() ) {
+        return lookup->second;
+    }
+    auto matte { variant_of( m_materials[ Material ], ":matte" ) };
+    matte.glossiness = 0.1f;
+    if( matte.shader ) {
+        for( auto const &[ key, value ] : std::vector<std::pair<std::string, glm::vec4>>{ { "weathering", glm::vec4{ 1.f } } } ) {
+            auto const entry { matte.shader->param_conf.find( key ) };
+            if( entry == matte.shader->param_conf.end() ) {
+                continue;
+            }
+            for( std::size_t i = 0; i < entry->second.size; ++i ) {
+                matte.params[ entry->second.location ][ entry->second.offset + i ] = value[ static_cast<glm::length_t>( i ) ];
+            }
+            matte.params_state.erase(
+                std::remove_if(
+                    std::begin( matte.params_state ), std::end( matte.params_state ),
+                    [&]( gl::shader::param_entry const &State ) {
+                        return State.location == entry->second.location && State.offset == entry->second.offset; } ),
+                std::end( matte.params_state ) );
+        }
+    }
+    auto const mattehandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( matte ) );
+    m_mattes.emplace( Material, mattehandle );
+    return mattehandle;
+}
+
+material_handle
+material_manager::create_tinted( material_handle const Material, glm::vec3 const &Colour ) {
+
+    if( Material == null_handle || Material >= m_materials.size() || !m_materials[ Material ].shader ) {
+        return Material;
+    }
+    auto const key { std::make_tuple( Material, Colour.r, Colour.g, Colour.b ) };
+    if( auto const lookup { m_tints.find( key ) }; lookup != m_tints.end() ) {
+        return lookup->second;
+    }
+    auto const &conf { m_materials[ Material ].shader->param_conf };
+    auto const weathering { conf.find( "weathering" ) };
+    if( weathering == conf.end()
+     || weathering->second.offset != 3
+     || std::any_of(
+            std::begin( conf ), std::end( conf ),
+            [&]( auto const &Entry ) {
+                return Entry.first != weathering->first && Entry.second.location == weathering->second.location; } ) ) {
+        return Material;
+    }
+    auto tinted { variant_of( m_materials[ Material ], ":tinted" ) };
+    tinted.glossiness = m_materials[ Material ].glossiness;
+    auto const location { weathering->second.location };
+    tinted.params[ location ] = glm::vec4{ Colour, -1.f };
+    tinted.params_state.erase(
+        std::remove_if(
+            std::begin( tinted.params_state ), std::end( tinted.params_state ),
+            [&]( gl::shader::param_entry const &State ) {
+                return State.location == location; } ),
+        std::end( tinted.params_state ) );
+    auto const tintedhandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( tinted ) );
+    m_tints.emplace( key, tintedhandle );
+    return tintedhandle;
+}
+
 void
 material_manager::on_weather_change() {
 

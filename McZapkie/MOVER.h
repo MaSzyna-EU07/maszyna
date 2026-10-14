@@ -13,6 +13,8 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include "hamulce.h"
 #include "scripting/ladderlogic.h"
+
+class cParser;
 /*
 MaSzyna EU07 locomotive simulator
 Copyright (C) 2001-2004  Maciej Czapkiewicz and others
@@ -2534,10 +2536,12 @@ class TMoverParameters
 
 	/*funkcje ladujace pliki opisujace pojazd*/
 	bool LoadFIZ(std::string const &chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
+	bool LoadFIZ_Text(std::string const &Text); // the same, from text in the .fiz format
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
 	std::string EngineDescription(int what) const;
 
   private:
+	bool LoadFIZ_Parse(cParser &Parser); // reads the definition from either of the above
 	void LoadFIZ_Param(std::string const &line);
 	void LoadFIZ_Load(std::string const &line);
 	void LoadFIZ_Dimensions(std::string const &line);

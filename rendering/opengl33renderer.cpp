@@ -2225,6 +2225,18 @@ material_handle opengl33_renderer::Fetch_Material(std::string const &Filename, b
 	return m_materials.create(Filename, Loadnow);
 }
 
+material_handle opengl33_renderer::Matte_Material(material_handle const Material)
+{
+
+	return m_materials.create_matte(Material);
+}
+
+material_handle opengl33_renderer::Tinted_Material(material_handle const Material, glm::vec3 const &Colour)
+{
+
+	return m_materials.create_tinted(Material, Colour);
+}
+
 std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &name)
 {
 	auto it = m_shaders.find(name);
@@ -4229,6 +4241,8 @@ void opengl33_renderer::Render(TTrack *Track)
 
 		draw(std::begin(Track->Geometry1), std::end(Track->Geometry1));
 		draw(std::begin(Track->Geometry2), std::end(Track->Geometry2));
+		for (auto &tread : Track->GeometryTreads)
+			draw(std::begin(tread.geometry), std::end(tread.geometry));
 		if (Track->eType == tt_Switch)
 			draw(Track->SwitchExtension->Geometry3);
 		break;
@@ -4475,6 +4489,45 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		}
 	}
 	flush_batch();
+
+	// cut faces of rails, in matte variants of the rail materials
+	if ((m_renderpass.draw_mode == rendermode::color) || (m_renderpass.draw_mode == rendermode::reflections))
+	{
+		for (auto first{First}; first != Last; ++first)
+		{
+			auto const track{*first};
+
+			if (false == track->m_visible)
+			{
+				continue;
+			}
+			std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{track->m_materialcut1, &track->GeometryCut1}, {track->m_materialcut2, &track->GeometryCut2}};
+			for (auto &tread : track->GeometryTreads)
+			{
+				parts.emplace_back(tread.material, &tread.geometry);
+				parts.emplace_back(tread.matte, &tread.cuts);
+			}
+			for (auto const &cuts : parts)
+			{
+				if ((cuts.first == null_handle) || cuts.second->empty())
+				{
+					continue;
+				}
+				if (track->eEnvironment != e_flat)
+				{
+					flush_batch();
+					setup_environment_light(track->eEnvironment);
+					Bind_Material(cuts.first);
+					draw(std::begin(*cuts.second), std::end(*cuts.second));
+					setup_environment_light();
+					continue;
+				}
+				begin_batch(cuts.first);
+				m_pathbatch.insert(std::end(m_pathbatch), std::begin(*cuts.second), std::end(*cuts.second));
+			}
+		}
+		flush_batch();
+	}
 
 	// fourth pass: per-track sleeper models (sleepermodel optional directive).
 	// drawn after rails/trackbeds so depth pre-pass culling is favourable, and only in passes

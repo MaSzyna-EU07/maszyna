@@ -99,6 +99,7 @@ class TSwitchExtension
 	glm::dvec3 vTrans; // docelowa translacja przesuwnicy
     material_handle m_material3 = 0; // texture of auto generated switch trackbed
     gfx::geometry_handle Geometry3; // geometry of auto generated switch trackbed
+    bool m_frogs { false }; // the frog and check rails are made from the rails, for switches with no model of them in their includes
 
 	gfx::geometrybank_handle map_geometry[6]; // geometry for map visualisation
 };
@@ -184,9 +185,21 @@ public:
     using geometryhandle_sequence = std::vector<gfx::geometry_handle>;
     geometryhandle_sequence Geometry1; // geometry chunks textured with texture 1
     geometryhandle_sequence Geometry2; // geometry chunks textured with texture 2
+    material_handle m_materialcut1 = 0; // matte variant of texture 1, for the cut faces of rails
+    material_handle m_materialcut2 = 0; // matte variant of texture 2, for the cut faces of rails of the other switch path
+    geometryhandle_sequence GeometryCut1; // cut faces of rails textured with texture 1, the blade tip first for a switch
+    geometryhandle_sequence GeometryCut2; // cut faces of rails textured with texture 2, the blade tip first
+    struct tread_geometry {
+        material_handle material { 0 };
+        material_handle matte { 0 };
+        geometryhandle_sequence geometry;
+        geometryhandle_sequence cuts;
+    };
+    std::vector<tread_geometry> GeometryTreads;
 
     std::vector<segment_data> m_paths; // source data for owned paths
     bool m_editorremoved { false };
+    std::vector<TTrack *> m_crossings; // tracks whose rails cross the rails of this one, found when its geometry was made
     scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
     std::array<float, 3> m_routeweights { 0.f, 0.f, 0.f }; // odds of each route through a crossroads being picked by a driver, by the number of the route. all zero: even odds
 	int iterate_stamp = 0;
@@ -286,6 +299,130 @@ public:
     int RouteDraw() const;
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
     void init_segments( bool const Initial );
+    // where the inner rails of the two paths of a switch cross, found from their gauge lines behind the blades
+    struct switch_frog {
+        bool valid { false };
+        int side[ 2 ] {}; // rail profile of the crossing rail of each path, 1 right, -1 left
+        double at[ 2 ] {}; // distance of the crossing along each path
+        double blades[ 2 ] {}; // distance the blades take along each path
+        double angle { 0.0 };
+    };
+    switch_frog frog() const;
+    // where a rail of this track crosses a rail of another one, found from their gauge lines
+    struct rail_crossing {
+        TTrack *track { nullptr };
+        int path { 0 };
+        int side { 0 }; // rail profile of the crossing rail, 1 right, -1 left
+        double at { 0.0 }; // distance of the crossing along the path, past the ends where the track goes on
+        double angle { 0.0 };
+        double into { 0.0 }; // the path direction against the gauge normal of the other rail, above zero: going into the other track
+        double facing { 0.0 }; // the gauge normals of both rails against each other, below zero: an acute frog
+        bool nose { false }; // at an acute frog the rail goes on as the nose rail, the other one as the rail beside it
+        int otherpath { 0 };
+        int otherside { 0 }; // rail profile of the other rail, 1 right, -1 left
+        double otherat { 0.0 }; // distance of the crossing along the other path
+        bool aligned { true }; // both paths run the same way at the crossing
+        TTrack *owner { nullptr };
+    };
+    std::vector<rail_crossing> rail_crossings( bool const Joined = true );
+    // the size of the rail profile, out from the gauge face: positive outwards, the side of the head away from the track
+    struct rail_size {
+        double head { 0.0735 }; // how far the head reaches out
+        double height { 0.172 };
+        double low { -0.0385 }; // the reach of the profile inwards
+        double high { 0.1115 }; // the reach of the profile outwards
+        bool grooved { false };
+        double groove { 0.0 };
+        double lip { 0.0 };
+        double rim { 0.0 };
+        double crown { 0.0 };
+        double liptop { 0.0 };
+        double crest { 0.0 };
+        double tread { 0.0735 };
+        double ledge { 0.0 };
+        double web { 0.0365 };
+        double neck { -0.0467 };
+    };
+    rail_size rail_dimensions() const;
+    // a check rail beside a rail, how far its ends turn away from the running rail
+    struct check_rail {
+        double from { 0.0 };
+        double to { 0.0 };
+        double flarefrom { 0.0 };
+        double flareto { 0.0 };
+        double frombend { 0.0 };
+        double tobend { 0.0 };
+    };
+    using check_rail_set = std::array<std::array<std::vector<check_rail>, 2>, 2>; // path, right side
+    // the check rails beside the rails of each path, kept clear of the blades and the rails of other paths running inside them
+    check_rail_set check_rails( std::vector<rail_crossing> const &Crossings );
+    // a rail broken where another one crosses it: the part coming from below ends at end, the part going on starts at start
+    struct rail_cut {
+        double at { 0.0 };
+        double end { 0.0 };
+        double start { 0.0 };
+        std::vector<glm::dvec2> endoffsets, endextents, startoffsets, startextents;
+        std::vector<glm::dvec2> endrolled, startrolled; // how far out from the gauge line the wheels roll on the head, of the part coming from below and of the part going on
+        glm::dvec2 endmiter { 0.0 };
+        glm::dvec2 startmiter { 0.0 };
+        double endbend { 0.0 };
+        double startbend { 0.0 };
+        std::vector<glm::dvec2> endinner, startinner;
+        bool endcap { true };
+        bool startcap { true };
+    };
+    struct rail_plan {
+        std::vector<rail_cut> cuts;
+    };
+    // guard rails of a crossing at a wide angle: the rail profile laid inside the running rail across the flangeway, broken like the rails
+    struct guard_rail {
+        double from { 0.0 };
+        double to { 0.0 };
+        rail_plan plan;
+        bool flarefrom { true };
+        bool flareto { true };
+        glm::dvec2 frommiter { 0.0 };
+        glm::dvec2 tomiter { 0.0 };
+        bool through { true };
+    };
+    struct rail_band {
+        double at { 0.0 };
+        double into { 0.0 };
+        double facing { 0.0 };
+        double from { 0.0 };
+        double to { 0.0 };
+        bool whole { true };
+    };
+    struct rail_fill {
+        double from { 0.0 };
+        double to { 0.0 };
+        std::vector<glm::dvec2> inner, outer;
+        bool capfrom { false };
+        bool capto { false };
+        double lift { 0.0 };
+        bool web { false };
+    };
+    struct rail_tread {
+        double from { 0.0 };
+        double to { 0.0 };
+        material_handle material { 0 };
+        int anchor { 0 };
+        std::vector<glm::dvec2> edge;
+        std::vector<glm::dvec2> gauge;
+        bool below { false };
+    };
+    struct rail_layout {
+        rail_plan plans[ 2 ][ 2 ]; // path, right side
+        std::vector<rail_band> bands[ 2 ][ 2 ];
+        std::vector<rail_fill> fills[ 2 ][ 2 ];
+        std::vector<glm::dvec2> blocks[ 2 ][ 2 ];
+        std::vector<rail_tread> treads[ 2 ][ 2 ];
+        std::vector<guard_rail> guards[ 2 ][ 2 ];
+        std::vector<glm::dvec2> wingends[ 2 ][ 2 ]; // ends of the wing rails of other rails running along each rail, and which way they run there
+        check_rail_set checks;
+        std::vector<TTrack *> crossed; // tracks whose rails cross the rails of this one
+    };
+    rail_layout plan_rails( bool const Crossings );
     void update_location();
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
@@ -367,8 +504,10 @@ private:
     float texture_length( material_handle const Material );
     // creates profile for a part of current path
     void create_switch_trackbed( gfx::vertex_array &Output );
-    void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
+    void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const *Shape = nullptr );
     void create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
+    void profile_rolls( float &Roll1, float &Roll2 ) const;
+    void share_joints();
     void create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next );
     void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
     void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );
@@ -378,6 +517,23 @@ private:
     /// Safe to call multiple times; clears any previously cached transforms first.
     /// </summary>
     void build_sleeper_transforms();
+    struct rail_drawing {
+        gfx::geometrybank_handle bank;
+        rail_size size;
+        float halfwidth { 0.f };
+        gfx::vertex_array checkshapes[ 2 ];
+        gfx::vertex_array plates[ 2 ];
+        gfx::vertex_array fillers[ 2 ];
+        float platetexture { 0.f };
+    };
+    rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank );
+    // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
+    bool lay_rail( rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
+    int blade_side( int const Path ) const;
+    material_handle rail_material( int const Path ) const;
+    glm::vec2 tread_band() const;
+    material_handle shared_tread( int const Path, TTrack const &Other, int const Otherpath ) const;
+    void loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::vertex_array const &Blade, float const Texturelength, gfx::vertex_array &Vertices ) const;
 // members
     static profiles_array m_profiles; // shared database of path element profiles
     static profiles_map m_profilesmap;

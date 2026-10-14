@@ -965,6 +965,16 @@ void editor_mode::render_turnout_ui()
 		if (m_switch.drive >= 0 && ImGui::Button(STR_C("Put the drive by the switch")))
 			place_switch_drive(*track);
 	}
+	bool frogs{track->SwitchExtension->m_frogs};
+	if (ImGui::Checkbox(STR_C("Frog and check rails made from the rails"), &frogs))
+	{
+		auto const before{editor_track::capture(*track)};
+		track->SwitchExtension->m_frogs = frogs;
+		push_track_snapshot({{track, before}});
+		editor_track::commit_parameters(*track);
+	}
+	item_tooltip("Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\n"
+	             "Off for a switch whose include has its own model of them");
 	if (false == m_switch.status.empty())
 		ImGui::TextWrapped("%s", m_switch.status.c_str());
 	if (angle > 1e-6)

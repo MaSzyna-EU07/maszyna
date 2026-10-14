@@ -5742,3 +5742,8 @@ msgstr "stawia nową obrotnicę"
 
 msgid "Shifts a piece of the straight sideways around an obstacle and back: four clicks on the straight (Shift+click in the view does the same)"
 msgstr "Przesuwa kawałek prostej w bok, wokół przeszkody, i z powrotem: cztery kliknięcia na prostej (Shift+klik w widoku robi to samo)"
+msgid "Frog and check rails made from the rails"
+msgstr "Krzyżownica i kierownice z szyn"
+
+msgid "Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\nOff for a switch whose include has its own model of them"
+msgstr "Tnie szyny rozjazdu na krzyżownicy i układa szyny skrzydłowe i kierownice, dla profili szyn S60, UIC60 i S39.\nWyłącz dla rozjazdu, którego include ma ich własny model"
