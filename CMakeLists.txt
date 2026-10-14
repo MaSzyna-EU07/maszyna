@@ -95,7 +95,12 @@ set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
 "world/Track.cpp"
-"world/TrackRails.cpp"
+"world/GaugeLine.cpp"
+"world/RailCrossings.cpp"
+"world/RailMaterials.cpp"
+"world/RailProfile.cpp"
+"world/RailPlan.cpp"
+"world/RailLayer.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
 "world/RoadPoint.cpp"
@@ -699,4 +704,4 @@ if(ENABLE_AVX2)
     else()
         target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
     endif()
-endif()
+endif()
