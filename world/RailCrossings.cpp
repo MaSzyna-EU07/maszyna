@@ -17,12 +17,6 @@ using namespace track_rails;
 
 namespace {
 
-bool cut_profile( std::string Profile ) {
-
-    std::transform( Profile.begin(), Profile.end(), Profile.begin(), []( unsigned char const Char ) { return static_cast<char>( std::tolower( Char ) ); } );
-    return Profile.empty() || Profile == "default" || Profile == "s60" || Profile == "uic60" || Profile == "s39";
-}
-
 bool joined( TTrack const &Track, TTrack const &Other ) {
 
     auto const next = []( TTrack const &From, TTrack const &To ) {
@@ -85,7 +79,6 @@ bool cut_rails( TTrack const &Track ) {
     return ( Track.iCategoryFlag & 15 ) == 1
         && Track.m_material1 != null_handle
         && false == Track.m_editorremoved
-        && cut_profile( Track.m_profile1.first )
         && ( Track.eType == tt_Normal ? Track.Segment != nullptr :
              Track.eType == tt_Switch && Track.SwitchExtension && Track.SwitchExtension->m_frogs && Track.SwitchExtension->Segments[ 0 ] && Track.SwitchExtension->Segments[ 1 ] );
 }
