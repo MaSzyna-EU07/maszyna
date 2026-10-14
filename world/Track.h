@@ -342,6 +342,7 @@ public:
         double ledge { 0.0 };
         double web { 0.0365 };
         double neck { -0.0467 };
+        std::vector<glm::dvec2> field, gauge;
     };
     rail_size rail_dimensions() const;
     // a check rail beside a rail, how far its ends turn away from the running rail
@@ -367,6 +368,7 @@ public:
         glm::dvec2 startmiter { 0.0 };
         double endbend { 0.0 };
         double startbend { 0.0 };
+        std::vector<glm::dvec2> endfit, startfit;
         std::vector<glm::dvec2> endinner, startinner;
         bool endcap { true };
         bool startcap { true };
