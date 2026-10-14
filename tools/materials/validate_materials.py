@@ -183,6 +183,7 @@ class Images:
             if image.mode != 'RGBA':
                 image = image.convert('RGBA')
             channels = [np.asarray(c.resize((SIZE, SIZE), Image.BOX), dtype=np.float32) / 255 for c in image.split()]
+            channels.append(np.asarray(image.split()[2].resize((SIZE, SIZE), Image.NEAREST), dtype=np.float32) / 255)
             result = np.dstack(channels)
         except Exception as e:
             result = str(e)
@@ -323,8 +324,9 @@ def check(mat, values, nested, shaders, resolver, images, rel):
                         reflect = max(reflect, 0.5)
                     if reflect < METAL_REFLECTIVITY_MIN:
                         add(WARN, 'metal z odbiciem %.2f (alfa normalmapy * param_reflection, norma >= %.1f): bez otoczenia jest ciemny' % (reflect, METAL_REFLECTIVITY_MIN))
-            middle = ((B > 0.15) & (B < 0.85) & mask)
-            anymetal = ((B > 0.15) & mask)
+            Bn = sg[..., 4]
+            middle = ((Bn > 0.15) & (Bn < 0.85) & mask)
+            anymetal = ((Bn > 0.15) & mask)
             if anymetal.sum() > 0.01 * mask.sum() and middle.sum() > 0.3 * anymetal.sum():
                 add(WARN, 'B (metalicznosc) nie jest 0/1 na %d%% metalu' % (100 * middle.sum() / anymetal.sum()))
             bb = blur(B, 3)
