@@ -308,6 +308,21 @@ public:
         double angle { 0.0 };
     };
     switch_frog frog() const;
+    struct switch_blade {
+        bool valid { false };
+        bool rigid { false };
+        double tip { 0.0 };
+        double full { 0.0 };
+        double heel { 0.0 };
+        double drop { 0.0 };
+        double opening { 0.0 };
+        double openingat { 0.0 };
+        std::vector<glm::dvec2> gauge;
+        std::vector<glm::dvec2> extents;
+        std::vector<glm::dvec2> drops;
+        std::vector<glm::dvec2> bends;
+    };
+    switch_blade const &blade( int const Path ) const;
     // where a rail of this track crosses a rail of another one, found from their gauge lines
     struct rail_crossing {
         TTrack *track { nullptr };

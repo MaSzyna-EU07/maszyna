@@ -2486,6 +2486,73 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 
 editor_mode::selftest_result editor_mode::selftest_rails(std::string const &command, std::istringstream &words)
 {
+	if (command == "blade")
+	{
+		std::string name;
+		words >> name;
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
+				continue;
+			if (false == name.empty() && track->name() != name)
+				continue;
+			auto const vertices = [&]() {
+				return std::make_pair(track->Geometry1.empty() ? std::size_t{0} : GfxRenderer->Vertices(track->Geometry1[0]).size(), track->Geometry2.empty() ? std::size_t{0} : GfxRenderer->Vertices(track->Geometry2[0]).size());
+			};
+			auto const set = [&](int const Path) {
+				track->Switch(Path);
+				track->SwitchExtension->fOffset = track->SwitchExtension->fDesiredOffset;
+				track->RaAnimate();
+			};
+			set(0);
+			auto const straight{vertices()};
+			set(1);
+			auto const diverging{vertices()};
+			set(0);
+			auto const frog{track->frog()};
+			auto const radius{std::abs(track->m_paths.size() > 1 ? track->m_paths[1].radius : 0.f)};
+			for (int path = 0; path < 2; ++path)
+			{
+				auto const &shape{track->blade(path)};
+				auto const &segment{*track->SwitchExtension->Segments[path]};
+				auto const old{segment.GetLength() * track_rails::blade_steps(*track, path) / segment.RaSegCount()};
+				auto const throat{frog.valid ? frog.at[path] - track_rails::flangeway / std::tan(frog.angle) : 0.0};
+				auto const at = [&](double const Width) {
+					for (std::size_t i = 1; i < shape.gauge.size(); ++i)
+						if (shape.gauge[i].y >= Width)
+							return glm::mix(shape.gauge[i - 1].x, shape.gauge[i].x, (Width - shape.gauge[i - 1].y) / std::max(shape.gauge[i].y - shape.gauge[i - 1].y, 1e-9));
+					return -1.0;
+				};
+				auto const gauge = [&](double const Distance) {
+					for (std::size_t i = 1; i < shape.gauge.size(); ++i)
+						if (shape.gauge[i].x >= Distance)
+							return glm::mix(shape.gauge[i - 1].y, shape.gauge[i].y, (Distance - shape.gauge[i - 1].x) / std::max(shape.gauge[i].x - shape.gauge[i - 1].x, 1e-9));
+					return shape.gauge.empty() ? 0.0 : shape.gauge.back().y;
+				};
+				std::string samples;
+				auto worst{0.0};
+				for (auto const distance : {1.0, 2.0, 4.0, 6.0, 8.0, 10.0})
+				{
+					auto const analytic{radius > 0.f ? distance * distance / (2.0 * radius) : 0.0};
+					samples += format(" %.0f:%.4f/%.4f", distance, gauge(distance), analytic);
+					if (shape.valid && distance <= shape.heel)
+						worst = std::max(worst, std::abs(gauge(distance) - analytic));
+				}
+				std::string faults;
+				if (track_rails::cut_rails(*track) && false == shape.valid)
+					faults += " FAULT blade not cut from the rails";
+				if (shape.valid && shape.opening < track_rails::blade_clearance - 1e-4)
+					faults += " FAULT flangeway";
+				if (shape.valid && frog.valid && shape.heel >= throat)
+					faults += " FAULT heel past the throat";
+				if (straight != diverging)
+					faults += " FAULT vertex count changes";
+				WriteLog(format("SELFTEST blade %s path %d: %s, R %.0f, tip %.3f, 50mm %.3f, full head %.3f, heel %.3f (old %.3f), drop %.4f, opening %.4f at %.3f, throat %.3f, d(x)/x^2/2R%s, worst %.4f, vertices %zu/%zu %zu/%zu%s", track->name().c_str(), path, shape.valid ? (shape.rigid ? "geometric rigid" : "geometric") : "old", radius, shape.tip, at(track_rails::blade_lowered + track_rails::blade_gap), shape.full, shape.heel, old, shape.drop, shape.opening, shape.openingat,
+				                throat, samples.c_str(), worst, straight.first, diverging.first, straight.second, diverging.second, faults.c_str()));
+			}
+		}
+		return selftest_result::handled;
+	}
 	if (command == "frog")
 	{
 		std::string name;
@@ -2801,6 +2868,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 //   wait <frames>
 //   camera <x> <y> <z> <x> <y> <z>        from the first point, looking at the second
 //   select <track name>
+//   blade [name]                         logs the blades of each switch cut from the rails: tip, 50 mm head, full head, heel, drop of the head, open flangeway, the gauge lines apart against x^2/2R, vertices in both positions
 //   frog [name]                          logs where the inner rails of each switch cross: distance on both paths, 1:n, throat, nose, check rails
 //   guards [name]                        logs each guard rail and what each of its ends and breaks is cut along; a fault when a cut is not along a rail or a glued end not on the guard rail of the other track
 //   railtime                             lays out the rails of every track, as when its geometry is made, and logs how long it took

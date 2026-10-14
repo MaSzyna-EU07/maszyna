@@ -22,6 +22,12 @@ double constexpr rolled_band { wheel_width - ( 1.435 - back_to_back ) / 2.0 };
 double constexpr nose_tip { 0.012 };
 double constexpr middle_angle { 0.35 };
 double constexpr wide_angle { 0.785 };
+double constexpr blade_throw { 0.160 };
+double constexpr blade_clearance { 0.058 };
+double constexpr blade_point { 0.003 };
+double constexpr blade_gap { 0.0005 };
+double constexpr blade_lowered { 0.050 };
+double constexpr blade_spacing { 0.5 };
 
 void forget();
 // how far a wing rail reaches past the crossing point of the rails
@@ -29,7 +35,7 @@ double wing_reach( double const Slope );
 double check_length( double const Slope );
 // the rails of the track are cut where they cross other rails: plain tracks, and switches whose frog is made from the rails
 bool cut_rails( TTrack const &Track );
-int blade_steps( TTrack const &Track );
+int blade_steps( TTrack const &Track, int const Path );
 double blade_length( TTrack const &Track, int const Path );
 material_handle cut_material( material_handle const Material );
 float tread_brightness( material_handle const Material, glm::vec2 const &Band );

@@ -75,6 +75,7 @@ class TSegment
     std::vector<std::shared_ptr<TSegment>> m_pieces; // parts of a path made of several curves, parametrized by distance
     std::vector<double> m_starts; // distance from Point1 to the start of each part
     std::optional<std::pair<glm::dvec3, glm::dvec3>> m_joints[ 2 ];
+    double m_dense { 0.0 };
 
     glm::dvec3 GetFirstDerivative(double const fTime) const;
 	double RombergIntegral(double const fA, double const fB) const;
@@ -156,13 +157,16 @@ public:
         RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, bool const Transition, double fTextureLength, double Texturescale = 1.0, int iSkip = 0, int iEnd = 0, std::pair<float, float> fOffsetX = {0.f, 0.f}, glm::vec3 **p = nullptr, bool bRender = true );
     // the profile lofted from distance From to To, moved outwards by Offsets and cut on its outer side to Extents beyond the gauge line, both as (distance, value) knots
     bool
-        RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, int const Side, float const Halfwidth, double const fTextureLength, double const From, double const To, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents = {}, float const Lift = 0.f, std::vector<glm::dvec2> const &Inner = {}, gfx::userdata_array *Userdata = nullptr, std::vector<glm::dvec2> const &Ramp = {}, double const Rampwidth = 0.0, bool const Walls = false, float const Wallu = -1.f, glm::dvec2 const &Bends = glm::dvec2 { 0.0 } ) const;
+        RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, int const Side, float const Halfwidth, double const fTextureLength, double const From, double const To, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents = {}, float const Lift = 0.f, std::vector<glm::dvec2> const &Inner = {}, gfx::userdata_array *Userdata = nullptr, std::vector<glm::dvec2> const &Ramp = {}, double const Rampwidth = 0.0, bool const Walls = false, float const Wallu = -1.f, glm::dvec2 const &Bends = glm::dvec2 { 0.0 }, std::vector<glm::dvec2> const &Drops = {}, glm::dvec2 const &Head = glm::dvec2 { 0.0 } ) const;
     // point of the path and the unit vector across it towards the right rail profile, at a distance from Point1
     void
         plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
     void
         set_joint( int const End, std::optional<std::pair<glm::dvec3, glm::dvec3>> const &Joint ) {
             m_joints[ End ] = Joint; }
+    void
+        set_dense( double const Distance ) {
+            m_dense = Distance; }
 /*
     void
         Render();

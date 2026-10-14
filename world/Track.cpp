@@ -1588,7 +1588,9 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 create_track_blade_profile( rpts3, rpts4 );
                 // TODO, TBD: change all track geometry to triangles, to allow packing data in less, larger buffers
                 auto const nnumPts { track_rail_profile( m_profile1.second ).size() / 2 };
-                auto const bladelength { track_rails::blade_steps( *this ) };
+                auto const dense { std::max( blade( 0 ).valid ? blade( 0 ).heel : 0.0, blade( 1 ).valid ? blade( 1 ).heel : 0.0 ) };
+                SwitchExtension->Segments[ 0 ]->set_dense( dense );
+                SwitchExtension->Segments[ 1 ]->set_dense( dense );
                 // positive jointlength: the switch is typically used along the main track, negative: along the diverging track
                 // TODO: determine this from names of textures assigned to the tracks
 //                auto const jointlength { static_cast<int>( std::ceil( SwitchExtension->Segments[ 0 ]->RaSegCount() * 0.15 ) ) };
@@ -1598,7 +1600,12 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 auto const fixed_rail = [&]( int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
                     if( false == lay_rail( Path, Profile, Side, Texturelength, track_rails::blade_length( *this, Path ), false, false, Geometry, Cuts ) ) {
                         gfx::vertex_array vertices;
-                        SwitchExtension->Segments[ Path ]->RenderLoft( vertices, m_origin, Profile, false, Texturelength, 1.0, bladelength );
+                        if( auto const &shape { blade( Path ) }; shape.valid ) {
+                            SwitchExtension->Segments[ Path ]->RenderLoftSpan( vertices, m_origin, Profile, Side, 0.5f * std::abs( fTrackWidth ), Texturelength, shape.heel, SwitchExtension->Segments[ Path ]->GetLength(), {} );
+                        }
+                        else {
+                            SwitchExtension->Segments[ Path ]->RenderLoft( vertices, m_origin, Profile, false, Texturelength, 1.0, track_rails::blade_steps( *this, Path ) );
+                        }
                         Geometry.emplace_back( GfxRenderer->Insert( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
                     }
                 };
@@ -2141,8 +2148,19 @@ int TTrack::blade_side( int const Path ) const {
 
 void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::vertex_array const &Blade, float const Texturelength, gfx::vertex_array &Vertices ) const {
 
-    auto const offset { blade_side( Path ) * ( Path == 0 ? SwitchExtension->fOffset2 : fMaxOffset - SwitchExtension->fOffset1 ) };
-    auto const bladelength { track_rails::blade_steps( *this ) };
+    auto const opening { Path == 0 ? SwitchExtension->fOffset2 : fMaxOffset - SwitchExtension->fOffset1 };
+    auto const offset { blade_side( Path ) * opening };
+    if( auto const &shape { blade( Path ) }; shape.valid ) {
+        auto const thrown { track_rails::blade_throw * std::clamp( static_cast<double>( opening ) / ( fMaxOffset + SwitchExtension->fOffsetDelay ), 0.0, 1.0 ) };
+        std::vector<glm::dvec2> offsets;
+        for( auto const &bend : shape.bends ) {
+            offsets.emplace_back( bend.x, -thrown * bend.y );
+        }
+        auto const size { rail_dimensions() };
+        SwitchExtension->Segments[ Path ]->RenderLoftSpan( Vertices, m_origin, Rail, blade_side( Path ), 0.5f * std::abs( fTrackWidth ), Texturelength, shape.tip, shape.heel, offsets, shape.extents, 0.f, {}, nullptr, {}, 0.0, true, -1.f, glm::dvec2 { 0.0 }, shape.drops, { size.neck, size.crest } );
+        return;
+    }
+    auto const bladelength { track_rails::blade_steps( *this, Path ) };
     // composed from two parts: transition from blade to regular rail, and regular rail
     SwitchExtension->Segments[ Path ]->RenderLoft( Vertices, m_origin, Blade, true, Texturelength, 1.0, 0, bladelength / 2, { offset, offset / 2 } );
     SwitchExtension->Segments[ Path ]->RenderLoft( Vertices, m_origin, Rail, false, Texturelength, 1.0, bladelength / 2, bladelength, { offset / 2, 0.f } );

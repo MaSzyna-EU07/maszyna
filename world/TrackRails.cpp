@@ -147,6 +147,7 @@ struct rails_memo {
     std::optional<std::vector<TTrack::rail_crossing>> own;
     std::optional<std::vector<TTrack::rail_crossing>> joined;
     std::optional<TTrack::check_rail_set> checks;
+    std::optional<TTrack::switch_blade> blades[ 2 ];
 };
 std::unordered_map<TTrack const *, rails_memo> memos;
 unsigned int memostamp { 0 };
@@ -192,15 +193,18 @@ bool cut_rails( TTrack const &Track ) {
              Track.eType == tt_Switch && Track.SwitchExtension && Track.SwitchExtension->m_frogs && Track.SwitchExtension->Segments[ 0 ] && Track.SwitchExtension->Segments[ 1 ] );
 }
 
-int blade_steps( TTrack const &Track ) {
+int blade_steps( TTrack const &Track, int const Path ) {
 
-    return static_cast<int>( std::ceil( Track.SwitchExtension->Segments[ 0 ]->RaSegCount() * 0.65 ) );
+    return static_cast<int>( std::ceil( Track.SwitchExtension->Segments[ Path ]->RaSegCount() * 0.65 ) );
 }
 
 double blade_length( TTrack const &Track, int const Path ) {
 
+    if( auto const &shape { Track.blade( Path ) }; shape.valid ) {
+        return shape.heel;
+    }
     auto const &segment { *Track.SwitchExtension->Segments[ Path ] };
-    return segment.GetLength() * blade_steps( Track ) / segment.RaSegCount();
+    return segment.GetLength() * blade_steps( Track, Path ) / segment.RaSegCount();
 }
 
 material_handle cut_material( material_handle const Material ) {
@@ -1211,6 +1215,129 @@ std::vector<glm::dvec2> nose_extents( TTrack const &Track, int const Path, int c
 }
 
 } // namespace
+
+TTrack::switch_blade const &TTrack::blade( int const Path ) const {
+
+    auto &cached { memo_of( *this ).blades[ Path ] };
+    if( cached.has_value() ) {
+        return *cached;
+    }
+    cached = switch_blade {};
+    auto &result { *cached };
+    if( eType != tt_Switch || false == cut_rails( *this ) || m_profiles.empty() ) {
+        return result;
+    }
+    auto const side { blade_side( Path ) };
+    auto const &ours { rail_line( *this, Path, side > 0, false ) };
+    auto const &theirs { rail_line( *this, 1 - Path, side > 0, false ) };
+    auto const size { rail_dimensions() };
+    auto const length { std::min( SwitchExtension->Segments[ Path ]->GetLength(), SwitchExtension->Segments[ 1 - Path ]->GetLength() ) };
+    auto const count { std::max( 2, static_cast<int>( std::ceil( length / 0.1 ) ) ) };
+    auto &gauge { result.gauge };
+    glm::dvec3 point, tangent;
+    ours.at( 0.0, point, tangent );
+    auto otherat { nearest_distance( theirs, point ) };
+    for( int i = 0; i <= count; ++i ) {
+        auto const distance { length * i / count };
+        ours.at( distance, point, tangent );
+        lateral( theirs, side, point, otherat );
+        glm::dvec3 line;
+        theirs.at( otherat, line, tangent );
+        auto at { distance };
+        auto const gap { lateral( ours, side, line, at ) };
+        gauge.emplace_back( at, gap );
+    }
+    std::sort( gauge.begin(), gauge.end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
+    if( std::abs( gauge.front().y ) > 0.002 ) {
+        return result;
+    }
+    auto const reach = [&]( double const Width ) {
+        for( std::size_t i = 1; i < gauge.size(); ++i ) {
+            if( gauge[ i ].y >= Width ) {
+                auto const &a { gauge[ i - 1 ] };
+                auto const &b { gauge[ i ] };
+                return glm::mix( a.x, b.x, std::clamp( ( Width - a.y ) / std::max( b.y - a.y, 1e-9 ), 0.0, 1.0 ) );
+            }
+        }
+        return -1.0; };
+    result.tip = reach( blade_point );
+    result.full = reach( size.head + blade_gap );
+    auto const clear { reach( size.head + blade_clearance ) };
+    auto const foot { reach( size.high + blade_gap ) };
+    auto const limit { 0.9 * length };
+    if( result.tip < 0.0 || result.full < 0.0 || clear < 0.0 || clear > limit ) {
+        return result;
+    }
+    auto const bend = [&]( double const Distance, double const Heel ) {
+        auto const u { std::clamp( ( Heel - Distance ) / std::max( Heel - result.tip, 1e-6 ), 0.0, 1.0 ) };
+        return ( result.rigid ? u : u * u * ( 3.0 - u ) * 0.5 ); };
+    auto const opening = [&]( double const Heel, double &At ) {
+        auto least { 1e9 };
+        for( auto const &sample : gauge ) {
+            if( sample.x < result.tip || sample.x > Heel ) {
+                continue;
+            }
+            auto const gap { std::max( 0.0, sample.y - size.head ) + blade_throw * bend( sample.x, Heel ) };
+            if( gap < least ) {
+                least = gap;
+                At = sample.x;
+            }
+        }
+        return least; };
+    auto at { 0.0 };
+    if( opening( limit, at ) < blade_clearance ) {
+        result.rigid = true;
+        if( opening( limit, at ) < blade_clearance ) {
+            return result;
+        }
+    }
+    auto low { clear };
+    auto high { limit };
+    for( int step = 0; step < 40; ++step ) {
+        auto const middle { 0.5 * ( low + high ) };
+        ( opening( middle, at ) >= blade_clearance ? high : low ) = middle;
+    }
+    result.heel = high;
+    result.opening = opening( result.heel, result.openingat );
+    for( std::size_t i = 1; i < gauge.size() && gauge[ i ].x <= result.heel; ++i ) {
+        if( gauge[ i ].y < gauge[ i - 1 ].y - 1e-4 ) {
+            return result;
+        }
+    }
+    auto const &profile { track_rail_profile( m_profile1.second ) };
+    auto const half { profile.size() / 2 };
+    auto bladetop { -1e9 };
+    for( auto i { half }; i < profile.size(); ++i ) {
+        bladetop = std::max( bladetop, static_cast<double>( profile[ i ].position.y ) );
+    }
+    result.drop = ( half > 0 ? std::max( 0.0, size.crest - bladetop ) : 0.0 );
+    auto const level = [&]( double const Distance ) {
+        for( std::size_t i = 1; i < gauge.size(); ++i ) {
+            if( gauge[ i ].x >= Distance ) {
+                auto const &a { gauge[ i - 1 ] };
+                auto const &b { gauge[ i ] };
+                return glm::mix( a.y, b.y, std::clamp( ( Distance - a.x ) / std::max( b.x - a.x, 1e-9 ), 0.0, 1.0 ) );
+            }
+        }
+        return gauge.back().y; };
+    auto const lowered { reach( blade_lowered + blade_gap ) };
+    auto const cutto { std::min( result.heel, foot >= 0.0 ? foot + blade_spacing : result.heel ) };
+    for( auto distance { result.tip }; distance < cutto + 0.5 * blade_spacing; distance += blade_spacing ) {
+        auto const at { std::min( distance, cutto ) };
+        auto const width { level( at ) - blade_gap };
+        result.extents.emplace_back( at, width );
+        if( result.drop > 0.0 && ( lowered < 0.0 || at <= lowered + blade_spacing ) ) {
+            result.drops.emplace_back( at, result.drop * std::clamp( 1.0 - width / blade_lowered, 0.0, 1.0 ) );
+        }
+    }
+    auto const steps { std::max( 1, static_cast<int>( std::ceil( ( result.heel - result.tip ) / blade_spacing ) ) ) };
+    for( int i = 0; i <= steps; ++i ) {
+        auto const distance { glm::mix( result.tip, result.heel, static_cast<double>( i ) / steps ) };
+        result.bends.emplace_back( distance, bend( distance, result.heel ) );
+    }
+    result.valid = true;
+    return result;
+}
 
 material_handle TTrack::rail_material( int const Path ) const {
 

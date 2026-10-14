@@ -645,7 +645,7 @@ void TSegment::plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 
     Across = glm::normalize( Across );
 }
 
-bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, int const Side, float const Halfwidth, double const fTextureLength, double const From, double const To, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, float const Lift, std::vector<glm::dvec2> const &Inner, gfx::userdata_array *Userdata, std::vector<glm::dvec2> const &Ramp, double const Rampwidth, bool const Walls, float const Wallu, glm::dvec2 const &Bends ) const {
+bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, int const Side, float const Halfwidth, double const fTextureLength, double const From, double const To, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, float const Lift, std::vector<glm::dvec2> const &Inner, gfx::userdata_array *Userdata, std::vector<glm::dvec2> const &Ramp, double const Rampwidth, bool const Walls, float const Wallu, glm::dvec2 const &Bends, std::vector<glm::dvec2> const &Drops, glm::dvec2 const &Head ) const {
 
     if( fTsBuffer.empty() || To - From < 0.001 || ShapePoints.empty() )
         return false;
@@ -667,7 +667,10 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     for( auto distance { std::ceil( From / step ) * step }; distance < To; distance += step ) {
         stations.push_back( distance );
     }
-    for( auto const *knots : { &Offsets, &Extents, &Inner } ) {
+    for( auto distance { std::ceil( From / 0.5 ) * 0.5 }; distance < std::min( To, m_dense ); distance += 0.5 ) {
+        stations.push_back( distance );
+    }
+    for( auto const *knots : { &Offsets, &Extents, &Inner, &Drops } ) {
         for( auto const &knot : *knots ) {
             if( knot.x > From && knot.x < To ) {
                 stations.push_back( knot.x );
@@ -733,6 +736,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             innerwall = glm::vec3{ glm::normalize( tangent * slope( Inner, -1e6 ) - outward ) };
         }
         auto const worn { sample( Ramp, Distance, -1e6 ) };
+        auto const drop { sample( Drops, Distance, 0.0 ) };
         auto const bend { Distance <= From ? Bends.x : Distance >= To ? Bends.y : 0.0 };
         auto along { glm::vec3 { 0.f } };
         if( bend != 0.0 ) {
@@ -822,6 +826,9 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                 if( onwall ) {
                     wall = ( side > 0 ? outerwall : innerwall );
                 }
+            }
+            if( drop > 0.0 && shape.position.y > Head.x && Head.y > Head.x ) {
+                shape.position.y -= static_cast<float>( drop * ( shape.position.y - Head.x ) / ( Head.y - Head.x ) );
             }
             auto pt { parallel * static_cast<float>( Side * ( Halfwidth + outside + offset ) ) + position + along * static_cast<float>( outside + offset ) };
             pt.y += shape.position.y + Lift;
