@@ -101,6 +101,16 @@ struct rail_cut {
 struct rail_plan {
     std::vector<rail_cut> cuts;
 };
+struct rail_tread {
+    double from { 0.0 };
+    double to { 0.0 };
+    material_handle material { 0 };
+    int anchor { 0 };
+    knots::line edge;
+    knots::line gauge;
+    bool below { false };
+    double fade { tread_fade };
+};
 // guard rails of a crossing at a wide angle: the rail profile laid inside the running rail across the flangeway, broken like the rails
 struct guard_rail {
     double from { 0.0 };
@@ -111,6 +121,7 @@ struct guard_rail {
     glm::dvec2 frommiter { 0.0 };
     glm::dvec2 tomiter { 0.0 };
     bool through { true };
+    std::vector<rail_tread> treads;
 };
 struct rail_band {
     double at { 0.0 };
@@ -128,15 +139,6 @@ struct rail_fill {
     bool capto { false };
     double lift { 0.0 };
     bool web { false };
-};
-struct rail_tread {
-    double from { 0.0 };
-    double to { 0.0 };
-    material_handle material { 0 };
-    int anchor { 0 };
-    knots::line edge;
-    knots::line gauge;
-    bool below { false };
 };
 struct rail_layout {
     rail_plan plans[ 2 ][ 2 ]; // path, right side

@@ -465,6 +465,7 @@ private:
     void lay_guards();
     void lay_checks();
     void lay_fills();
+    void lay_treads( rail_piece const &Whole, std::vector<rail_tread> const &Treads );
     void lay_cuts( gfx::vertex_array const &Shape, std::vector<rail_cut> Cuts, bool const Wheels, std::vector<rail_tread> const &Treads, float const Wallu = -1.f );
     void lay_grooved( gfx::vertex_array const &Outline );
     grooved_profile split_grooved( gfx::vertex_array const &Outline ) const;
@@ -581,10 +582,7 @@ void TTrack::rail_layer::lay_guards() {
                         ( ending == ( miter.y < 0.0 ) ? uppers : lowers ).emplace_back( 1.0 / miter.y, -miter.x / miter.y - m_guardoffset );
                     }
                 }
-                piece(
-                    m_profile,
-                    { .from = a, .to = b, .offsets = offsets, .extents = envelope( uppers, true, a, b ), .inner = envelope( lowers, false, a, b ), .capfrom = true, .capto = true, .rolled = false },
-                    { a, b, {}, {} } );
+                lay_treads( { .from = a, .to = b, .offsets = offsets, .extents = envelope( uppers, true, a, b ), .inner = envelope( lowers, false, a, b ), .capfrom = true, .capto = true, .rolled = false }, guard.treads );
             }
             if( i < cuts.size() && cuts[ i ].start > start ) {
                 start = cuts[ i ].start;
@@ -611,6 +609,34 @@ void TTrack::rail_layer::lay_checks() {
             shape,
             { .from = a, .to = b, .offsets = flared( check.from, check.to, std::min( 0.6, 0.4 * ( check.to - check.from ) ), 0.0, check.flarefrom, check.flareto ), .capfrom = a > 0.0 || check.from >= 0.0, .capto = check.to <= m_length, .rolled = false },
             { a, b, { a == check.from ? check.frombend : 0.0 }, { b == check.to ? check.tobend : 0.0 } } );
+    }
+}
+
+void TTrack::rail_layer::lay_treads( rail_piece const &Whole, std::vector<rail_tread> const &Treads ) {
+
+    std::vector<double> splits { Whole.from, Whole.to };
+    for( auto const &tread : Treads ) {
+        for( auto const edge : { tread.from, tread.to } ) {
+            if( edge > Whole.from + 0.01 && edge < Whole.to - 0.01 ) {
+                splits.push_back( edge );
+            }
+        }
+    }
+    std::sort( splits.begin(), splits.end() );
+    piece_ends const ends { Whole.from, Whole.to };
+    for( std::size_t k = 1; k < splits.size(); ++k ) {
+        auto part { Whole };
+        part.from = splits[ k - 1 ];
+        part.to = splits[ k ];
+        part.capfrom = ( k == 1 && Whole.capfrom );
+        part.capto = ( k + 1 == splits.size() && Whole.capto );
+        auto const *tread { tread_at( Treads, 0.5 * ( part.from + part.to ) ) };
+        if( tread != nullptr && m_topfirst < m_toplast ) {
+            treaded( part, *tread, ends );
+        }
+        else {
+            piece( m_profile, part, ends );
+        }
     }
 }
 
@@ -923,33 +949,34 @@ void TTrack::rail_layer::treaded( rail_piece Whole, rail_tread const &Tread, pie
     auto const colour { 0.5f * ( tread_colour( Tread.material, m_track.tread_band() ) + tread_colour( own, m_track.tread_band() ) ) };
     auto const tint = [&]( material_handle const Material, glm::vec3 const &Mark ) {
         return paint( Material, marked ? Mark : colour ); };
-    auto const owntint { tint( own, { 1.f, 0.f, 0.f } ) };
+    auto const owntint { Whole.rolled ? tint( own, { 1.f, 0.f, 0.f } ) : null_handle };
     auto const sharedtint { tint( Tread.material, { 0.f, 1.f, 0.f } ) };
     auto const shared { marked ? tint( Tread.material, { 0.f, 0.f, 1.f } ) : Tread.material };
     auto const ramp = [&]( knots::line const &Knots ) {
         return marked ? knots::line {} : Knots; };
+    auto const fade { Tread.fade };
     auto const centre { knots::middle( lower, upper ) };
-    auto const beneath { knots::shifted( lower, -tread_fade ) };
-    auto const beyond { knots::shifted( upper, tread_fade ) };
-    auto const lowfade { knots::bound( knots::shifted( lower, tread_fade ), centre, true ) };
-    auto const highfade { knots::bound( knots::shifted( upper, -tread_fade ), centre, false ) };
+    auto const beneath { knots::shifted( lower, -fade ) };
+    auto const beyond { knots::shifted( upper, fade ) };
+    auto const lowfade { knots::bound( knots::shifted( lower, fade ), centre, true ) };
+    auto const highfade { knots::bound( knots::shifted( upper, -fade ), centre, false ) };
     auto splits { cross_splits( Whole, reach, { &lower, &upper, &lowfade, &highfade, &beneath, &beyond }, 0.001 ) };
-    add_meetings( knots::shifted( lower, 2.0 * tread_fade ), upper, Whole.from, Whole.to, 0.001, splits );
+    add_meetings( knots::shifted( lower, 2.0 * fade ), upper, Whole.from, Whole.to, 0.001, splits );
     std::sort( splits.begin(), splits.end() );
     lay_top(
         top, Whole, reach, splits,
         {
-            { null_handle, knots::bound( Whole.extents, beneath, true ), Whole.inner },
-            { owntint, knots::bound( Whole.extents, lower, true ), knots::bound( Whole.inner, beneath, false ), false, ramp( lower ), tread_fade },
-            { sharedtint, knots::bound( Whole.extents, lowfade, true ), knots::bound( Whole.inner, lower, false ), false, ramp( lower ), -tread_fade },
+            { null_handle, knots::bound( Whole.extents, beneath, true ), Whole.inner, Whole.rolled },
+            { owntint, knots::bound( Whole.extents, lower, true ), knots::bound( Whole.inner, beneath, false ), false, ramp( lower ), fade },
+            { sharedtint, knots::bound( Whole.extents, lowfade, true ), knots::bound( Whole.inner, lower, false ), false, ramp( lower ), -fade },
             { shared, knots::bound( Whole.extents, highfade, true ), knots::bound( Whole.inner, lowfade, false ), false == marked },
-            { sharedtint, knots::bound( Whole.extents, upper, true ), knots::bound( Whole.inner, highfade, false ), false, ramp( upper ), tread_fade },
-            { owntint, knots::bound( Whole.extents, beyond, true ), knots::bound( Whole.inner, upper, false ), false, ramp( upper ), -tread_fade },
-            { null_handle, Whole.extents, knots::bound( Whole.inner, beyond, false ) } },
+            { sharedtint, knots::bound( Whole.extents, upper, true ), knots::bound( Whole.inner, highfade, false ), false, ramp( upper ), fade },
+            { owntint, knots::bound( Whole.extents, beyond, true ), knots::bound( Whole.inner, upper, false ), false, ramp( upper ), -fade },
+            { null_handle, Whole.extents, knots::bound( Whole.inner, beyond, false ), Whole.rolled } },
         [&]( double const Middle ) {
             auto const from { knots::sample( lower, Middle, 0.0 ) };
             auto const to { knots::sample( upper, Middle, 0.0 ) };
-            return std::vector<double> { from - tread_fade, from, knots::sample( lowfade, Middle, 0.0 ), knots::sample( highfade, Middle, 0.0 ), to, to + tread_fade }; },
+            return std::vector<double> { from - fade, from, knots::sample( lowfade, Middle, 0.0 ), knots::sample( highfade, Middle, 0.0 ), to, to + fade }; },
         Ends );
 }
 
@@ -1011,6 +1038,9 @@ void TTrack::rail_layer::piece( gfx::vertex_array const &Shape, rail_piece const
                 }
             }
         }
+    }
+    if( triangles.empty() ) {
+        return;
     }
     sink( Piece.material, false == Piece.rolled ).emplace_back( GfxRenderer->Insert( triangles, triangleuserdata, m_drawing.bank, GL_TRIANGLES ) );
 }
