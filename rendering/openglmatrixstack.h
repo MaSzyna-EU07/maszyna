@@ -12,6 +12,14 @@ http://mozilla.org/MPL/2.0/.
 #include <stack>
 #include <vector>
 
+// matrix modes of the fixed pipeline, which isn't part of the core profile; the stack below keeps them on the cpu side
+#ifndef GL_MODELVIEW
+#define GL_MODELVIEW 0x1700
+#endif
+#ifndef GL_PROJECTION
+#define GL_PROJECTION 0x1701
+#endif
+
 // encapsulation of the fixed pipeline opengl matrix stack
 class opengl_matrices {
 
@@ -82,8 +90,9 @@ public:
 
 private:
 // methods:
+    // the core profile has no fixed pipeline matrices to upload to; the renderer passes the matrices to its shaders itself
     void
-        upload() { ::glLoadMatrixf( glm::value_ptr( m_stack.back() ) ); }
+        upload() {}
 
 // members:
     std::vector<glm::mat4> m_stack;
@@ -110,8 +119,7 @@ public:
                 case GL_MODELVIEW:  { m_mode = stack_mode::gl_modelview; break; }
                 case GL_PROJECTION: { m_mode = stack_mode::gl_projection; break; }
                 case GL_TEXTURE:    { m_mode = stack_mode::gl_texture; break; }
-                default:            { break; } }
-            if( m_upload ) {::glMatrixMode( Mode ); } }
+                default:            { break; } } }
     glm::mat4 const &
         data( GLuint const Mode = -1 ) const {
             switch( Mode ) {

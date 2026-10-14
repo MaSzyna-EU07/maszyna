@@ -148,22 +148,12 @@ opengl46_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stre
     }
     // render
     if( chunkrecord.index_count > 0 ) {
-        if (glDrawRangeElementsBaseVertex) {
-            m_vao->bind();
-            ::glDrawRangeElementsBaseVertex(
-                chunk.type,
-                0, chunkrecord.vertex_count,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
-                chunkrecord.vertex_offset );
-        }
-        else {
-            setup_attrib(chunkrecord.vertex_offset);
-            m_vao->bind();
-            ::glDrawRangeElements(
-                chunk.type,
-                0, chunkrecord.vertex_count,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ) );
-        }
+        m_vao->bind();
+        ::glDrawRangeElementsBaseVertex(
+            chunk.type,
+            0, chunkrecord.vertex_count,
+            chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+            chunkrecord.vertex_offset );
     }
     else {
         m_vao->bind();
@@ -208,25 +198,13 @@ opengl46_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry,
     GLsizei const inst_count = static_cast<GLsizei>(InstanceCount);
 
     if( chunkrecord.index_count > 0 ) {
-        // GLES 3.0 context doesn't provide the base vertex variant, same fallbacks as in draw_()
-        if( glDrawElementsInstancedBaseVertex ) {
-            m_vao->bind();
-            ::glDrawElementsInstancedBaseVertex(
-                chunk.type,
-                chunkrecord.index_count, GL_UNSIGNED_INT,
-                reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
-                inst_count,
-                chunkrecord.vertex_offset );
-        }
-        else {
-            setup_attrib( chunkrecord.vertex_offset );
-            m_vao->bind();
-            ::glDrawElementsInstanced(
-                chunk.type,
-                chunkrecord.index_count, GL_UNSIGNED_INT,
-                reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
-                inst_count );
-        }
+        m_vao->bind();
+        ::glDrawElementsInstancedBaseVertex(
+            chunk.type,
+            chunkrecord.index_count, GL_UNSIGNED_INT,
+            reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+            inst_count,
+            chunkrecord.vertex_offset );
     }
     else {
         m_vao->bind();
@@ -249,12 +227,6 @@ std::size_t
 opengl46_vaogeometrybank::draw_batch_( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams )
 {
     std::size_t count { 0 };
-
-    if( !glMultiDrawArrays ) {
-        // GLES context doesn't provide the call
-        for( ; First != Last; ++First ) { count += draw_( *First, Units, Streams ); }
-        return count;
-    }
 
     setup_buffer();
 

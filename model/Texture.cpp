@@ -424,8 +424,6 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 		set_filtering();
 		glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap_mode_s);
 		glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap_mode_t);
-		if (!glGenerateMipmap)
-			glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
 	}
 	else
 	{
@@ -925,19 +923,7 @@ opengl_texture::bind(size_t unit) {
 
     if (units[unit] == id)
         return true;
-    if (GLAD_GL_ARB_direct_state_access)
-    {
-        glBindTextureUnit(unit, id);
-    }
-    else
-    {
-        if (unit != m_activeunit)
-        {
-            glActiveTexture(GL_TEXTURE0 + unit);
-            m_activeunit = unit;
-        }
-        glBindTexture(target, id);
-    }
+    glBindTextureUnit(unit, id);
     units[unit] = id;
 
     return true;
@@ -946,20 +932,7 @@ opengl_texture::bind(size_t unit) {
 void
 opengl_texture::unbind(size_t unit)
 {
-    if (GLAD_GL_ARB_direct_state_access)
-    {
-        glBindTextureUnit(unit, 0);
-    }
-    else
-    {
-        if (unit != m_activeunit)
-        {
-            glActiveTexture(GL_TEXTURE0 + unit);
-            m_activeunit = unit;
-        }
-        //todo: for other targets
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
+    glBindTextureUnit(unit, 0);
     units[unit] = 0;
 }
 
@@ -1052,10 +1025,6 @@ opengl_texture::create( bool const Static ) {
             GLint internal_format = mapping[components][components_hint];
 
             auto blocksize_it = precompressed_formats.find(internal_format);
-
-            if ( data_mapcount == 1 && !glGenerateMipmap ) {
-                glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
-            }
 
             for( int maplevel = 0; maplevel < data_mapcount; ++maplevel ) {
 
@@ -1228,8 +1197,7 @@ opengl_texture::set_filtering() const
     ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
     ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
 
-    if (Global.AnisotropicFiltering >= 0
-     && ( GLAD_GL_EXT_texture_filter_anisotropic ||  GLAD_GL_ARB_texture_filter_anisotropic) ) {
+    if (Global.AnisotropicFiltering >= 0) {
         // anisotropic filtering
         ::glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, Global.AnisotropicFiltering );
     }

@@ -141,8 +141,9 @@ std::vector<std::string> nodebank_entries()
 }
 
 // creates the hidden window with the gl context for the renderer. on a computer without a graphics driver able to provide
-// gl 3.3 the software rasterizer of mesa can take over: on linux mesa picks it by itself, on windows its opengl32.dll
-// (with the libraries it needs) is looked for in the mesa folder
+// gl 4.6 the software rasterizer of mesa can take over: on linux mesa picks it by itself, on windows its opengl32.dll
+// (with the libraries it needs) is looked for in the mesa folder.
+// llvmpipe implements everything gl 4.6 adds, but reports 4.5 (no formal 4.6 conformance), hence the version override
 GLFWwindow *create_context(bool const Software)
 {
 	if (Software)
@@ -150,8 +151,12 @@ GLFWwindow *create_context(bool const Software)
 #ifdef _WIN32
 		auto const folder{std::filesystem::absolute("mesa")};
 		::SetDllDirectoryW(folder.wstring().c_str());
+		::_putenv_s("MESA_GL_VERSION_OVERRIDE", "4.6");
+		::_putenv_s("MESA_GLSL_VERSION_OVERRIDE", "460");
 #else
 		::setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
+		::setenv("MESA_GL_VERSION_OVERRIDE", "4.6", 1);
+		::setenv("MESA_GLSL_VERSION_OVERRIDE", "460", 1);
 #endif
 	}
 	if (glfwInit() == GLFW_FALSE)
@@ -162,8 +167,8 @@ GLFWwindow *create_context(bool const Software)
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 	if (Global.gfx_gldebug)
 		glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 	auto *window{glfwCreateWindow(64, 64, "eu07 previews", nullptr, nullptr)};
@@ -332,16 +337,16 @@ int generate_nodebank_previews(int Argc, char *Argv[])
 	auto *window{create_context(settings.software)};
 	if ((window == nullptr) && (false == settings.software))
 	{
-		report("no gl 3.3 context from the graphics driver, trying the software renderer");
+		report("no gl 4.6 context from the graphics driver, trying the software renderer");
 		settings.software = true;
 		window = create_context(true);
 	}
 	if (window == nullptr)
 	{
 #ifdef _WIN32
-		report("failed to create gl 3.3 context. for computers without a capable graphics driver put opengl32.dll of mesa (with the libraries it comes with) in the mesa folder", true);
+		report("failed to create gl 4.6 context. for computers without a capable graphics driver put opengl32.dll of mesa (with the libraries it comes with) in the mesa folder", true);
 #else
-		report("failed to create gl 3.3 context. without a display run it through xvfb-run", true);
+		report("failed to create gl 4.6 context. without a display run it through xvfb-run", true);
 #endif
 		return finish(1);
 	}

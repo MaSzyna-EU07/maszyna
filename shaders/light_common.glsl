@@ -44,7 +44,6 @@ float calc_shadow()
 	for (cascade = 0U; cascade < MAX_CASCADES; cascade++)
 		if (distance <= cascade_end[cascade])
 			break;
-	float dist_casc = distance / cascade_end[cascade];
 	// Normal offset: sample the shadow map from a point pushed along the surface normal
 	// by a fraction of the cascade's texel footprint. A constant depth bias can't keep up
 	// with large texels (far cascades, small shadow maps) on surfaces at a grazing angle
@@ -65,18 +64,7 @@ float calc_shadow()
 		
 
 	float bias = 0.00005f * float(cascade + 1U);
-	vec2 texel = vec2(1.0) / vec2(textureSize(shadowmap, 0));
-	//float radius = 1.0; f_light_pos[cascade].w; //0.5 + 2.0 * max(abs(2.0 * coords.x - 1.0), abs(2.0 * coords.y - 1.0));
-	float radius = 1.0;
-	float minradius = 0.0;
-	if (cascade == 0U)
-		minradius = 1.0;
-	if (cascade < MAX_CASCADES - 1U)
-		radius = mix(minradius, f_light_pos[cascade+1U].w/f_light_pos[cascade].w, dist_casc);
-	else
-		radius = 0.5;
 
-#if defined(GL_ARB_gpu_shader5) || defined(GL_EXT_gpu_shader5) || __VERSION__ >= 400
 	// Fast path: 4 textureGather() calls cover a 4x4 texel block. Raw gathered
 	// comparisons must be weighted by the sub-texel position (bilinear weights),
 	// otherwise the result is constant across each shadow map texel and shadow
@@ -99,18 +87,6 @@ float calc_shadow()
 	             + dot(g01, vec4((1.0 - f.x) * f.y, f.y, 1.0, 1.0 - f.x))
 	             + dot(g11, vec4(f.y, f.x * f.y, f.x, 1.0));
 	return shadow / 9.0;
-#else
-	// Fallback for drivers without textureGather on shadow samplers
-	// (notably GLES 3.0 and any 3.3 desktop driver that doesn't expose
-	// GL_ARB_texture_gather). Identical to the previous implementation.
-	float shadow = 0.0;
-	for (float y = -1.5; y <= 1.5; y += 1.0)
-		for (float x = -1.5; x <= 1.5; x += 1.0)
-			shadow += texture(shadowmap, vec4(coords.xy + vec2(x, y) * radius * texel, cascade, coords.z + bias) );
-	shadow /= 16.0;
-
-	return shadow;
-#endif
 #else
 	return 0.0;
 #endif

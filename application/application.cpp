@@ -1201,6 +1201,33 @@ int eu07_application::init_locale()
 	return 0;
 }
 
+// the context of the required version couldn't be created. a context with default settings tells which version the
+// driver does provide, so the user can be told what is missing
+static std::string describe_gl_driver()
+{
+	glfwDefaultWindowHints();
+	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+	auto *probe = glfwCreateWindow(64, 64, "eu07 opengl probe", nullptr, nullptr);
+	if (probe == nullptr)
+		return "no OpenGL context";
+
+	glfwMakeContextCurrent(probe);
+	std::string description;
+	auto const getstring = reinterpret_cast<PFNGLGETSTRINGPROC>(glfwGetProcAddress("glGetString"));
+	if (getstring != nullptr)
+	{
+		auto const text = [&](GLenum const Name) {
+			auto const *value = reinterpret_cast<char const *>(getstring(Name));
+			return std::string(value != nullptr ? value : "?");
+		};
+		description = "OpenGL " + text(GL_VERSION) + ", " + text(GL_RENDERER) + " (" + text(GL_VENDOR) + ")";
+	}
+	glfwMakeContextCurrent(nullptr);
+	glfwDestroyWindow(probe);
+
+	return description.empty() ? "unknown OpenGL version" : description;
+}
+
 int eu07_application::init_glfw()
 {
 	{
@@ -1244,11 +1271,12 @@ int eu07_application::init_glfw()
 	}
 	else
 	{
-		// activate core profile for opengl 3.3 renderer
+		// activate core profile for opengl 4.6 renderer
+		// NOTE: the hints stay in effect for the additional windows and shared contexts created later through window()
 		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 
 		if (Global.gfx_gldebug)
 			glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
@@ -1268,6 +1296,21 @@ int eu07_application::init_glfw()
 
 	if (mainwindow == nullptr)
 	{
+		if (needs_ogl())
+		{
+			char const *glfwerror = nullptr;
+			glfwGetError(&glfwerror);
+			std::string const reason = (glfwerror != nullptr ? glfwerror : "unknown error");
+			auto const driver = describe_gl_driver();
+			ErrorLog("Bad init: failed to create OpenGL 4.6 core profile context (" + reason + "); the graphics card/driver provides: " + driver);
+#ifdef _WIN32
+			auto const message = "MaSzyna requires OpenGL 4.6 (core profile), but the OpenGL 4.6 context could not be created.\n\n"
+			                     "Your graphics card/driver provides:\n" + driver + "\n\n"
+			                     "Details: " + reason + "\n\n"
+			                     "Update the graphics driver or use a graphics card with OpenGL 4.6 support.";
+			MessageBoxA(nullptr, message.c_str(), "MaSzyna", MB_ICONERROR | MB_OK);
+#endif
+		}
 		ErrorLog("Bad init: failed to create glfw window");
 		return -1;
 	}

@@ -96,7 +96,7 @@ ErrorCallback( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei l
 
 bool opengl46_renderer::Init(GLFWwindow *Window)
 {
-    if (Global.gfx_gldebug && GLAD_GL_KHR_debug) {
+    if (Global.gfx_gldebug) {
         glEnable( GL_DEBUG_OUTPUT );
         glEnable( GL_DEBUG_OUTPUT_SYNCHRONOUS );
         glDebugMessageControl( GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE );
@@ -438,10 +438,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 
 	glDepthFunc(GL_GEQUAL);
 
-	if (GLAD_GL_ARB_clip_control)
-		glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
-	else if (GLAD_GL_EXT_clip_control)
-		glClipControlEXT(GL_LOWER_LEFT_EXT, GL_ZERO_TO_ONE_EXT);
+	glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 
 	glEnable(GL_PROGRAM_POINT_SIZE);
 
@@ -1459,78 +1456,43 @@ glm::mat4 opengl46_renderer::perspective_projection(const viewport_proj_config &
 	glm::mat4 R = frustum;
     frustum = glm::translate(frustum * M, -c.pe);
 
-	if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control) {
-		// when clip_control available, use projection matrix with 1..0 Z range and infinite zfar
-		R[2][2] = -1.0f;
-		R[3][2] = -2.0f * n;
-		R = glm::mat4( //
-		           1.0f, 0.0f, 0.0f, 0.0f, //
-		           0.0f, 1.0f, 0.0f, 0.0f, //
-		           0.0f, 0.0f, -0.5f, 0.0f, //
-		           0.0f, 0.0f, 0.5f, 1.0f //
-		           ) * R;
-	} else {
-		// or use standard matrix but with 1..-1 Z range
-		// (reverse Z don't give any extra precision without clip_control, but it is used anyway for consistency)
-		R = glm::mat4(
-		           1.0f, 0.0f, 0.0f, 0.0f, //
-		           0.0f, 1.0f, 0.0f, 0.0f, //
-		           0.0f, 0.0f, -1.0f, 0.0f, //
-		           0.0f, 0.0f, 0.0f, 1.0f //
-		           ) * R;
-	}
+	// clip_control: projection matrix with 1..0 Z range and infinite zfar
+	R[2][2] = -1.0f;
+	R[3][2] = -2.0f * n;
+	R = glm::mat4( //
+	           1.0f, 0.0f, 0.0f, 0.0f, //
+	           0.0f, 1.0f, 0.0f, 0.0f, //
+	           0.0f, 0.0f, -0.5f, 0.0f, //
+	           0.0f, 0.0f, 0.5f, 1.0f //
+	           ) * R;
 
 	return glm::translate(R * M, -c.pe);
 }
 
 glm::mat4 opengl46_renderer::perspective_projection_raw(float fovy, float aspect, float znear, float zfar)
 {
-    if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
-    {
-        const float f = 1.0f / std::tan(fovy / 2.0f);
+    const float f = 1.0f / std::tan(fovy / 2.0f);
 
-        // when clip_control available, use projection matrix with 1..0 Z range and infinite zfar
-        return glm::mat4( //
-            f / aspect, 0.0f, 0.0f, 0.0f, //
-            0.0f, f, 0.0f, 0.0f, //
-            0.0f, 0.0f, 0.0f, -1.0f, //
-            0.0f, 0.0f, znear, 0.0f //
-        );
-    }
-    else
-        // or use standard matrix but with 1..-1 Z range
-        // (reverse Z don't give any extra precision without clip_control, but it is used anyway for consistency)
-        return glm::mat4( //
-                   1.0f, 0.0f, 0.0f, 0.0f, //
-                   0.0f, 1.0f, 0.0f, 0.0f, //
-                   0.0f, 0.0f, -1.0f, 0.0f, //
-                   0.0f, 0.0f, 0.0f, 1.0f //
-                   ) *
-               glm::perspective(fovy, aspect, znear, zfar);
+    // clip_control: projection matrix with 1..0 Z range and infinite zfar
+    return glm::mat4( //
+        f / aspect, 0.0f, 0.0f, 0.0f, //
+        0.0f, f, 0.0f, 0.0f, //
+        0.0f, 0.0f, 0.0f, -1.0f, //
+        0.0f, 0.0f, znear, 0.0f //
+    );
 }
 
 glm::mat4 opengl46_renderer::ortho_projection(float l, float r, float b, float t, float znear, float zfar)
 {
 	glm::mat4 proj = glm::ortho(l, r, b, t, znear, zfar);
-	if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
-		// when clip_control available, use projection matrix with 1..0 Z range
-		return glm::mat4( //
-		           1.0f, 0.0f, 0.0f, 0.0f, //
-		           0.0f, 1.0f, 0.0f, 0.0f, //
-		           0.0f, 0.0f, -0.5f, 0.0f, //
-		           0.0f, 0.0f, 0.5f, 1.0f //
-		           ) *
-		       proj;
-	else
-		// or use standard matrix but with 1..-1 Z range
-		// (reverse Z don't give any extra precision without clip_control, but it is used anyway for consistency)
-		return glm::mat4( //
-		           1.0f, 0.0f, 0.0f, 0.0f, //
-		           0.0f, 1.0f, 0.0f, 0.0f, //
-		           0.0f, 0.0f, -1.0f, 0.0f, //
-		           0.0f, 0.0f, 0.0f, 1.0f //
-		           ) *
-		       proj;
+	// clip_control: projection matrix with 1..0 Z range
+	return glm::mat4( //
+	           1.0f, 0.0f, 0.0f, 0.0f, //
+	           0.0f, 1.0f, 0.0f, 0.0f, //
+	           0.0f, 0.0f, -0.5f, 0.0f, //
+	           0.0f, 0.0f, 0.5f, 1.0f //
+	           ) *
+	       proj;
 }
 
 glm::mat4 opengl46_renderer::ortho_frustumtest_projection(float l, float r, float b, float t, float znear, float zfar)
@@ -1826,22 +1788,13 @@ void opengl46_renderer::setup_shadow_bind_map()
 
 	glm::mat4 coordmove;
 
-	if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
-		// transform 1..-1 NDC xy coordinates to 1..0
-		coordmove = glm::mat4( //
-			0.5, 0.0, 0.0, 0.0, //
-			0.0, 0.5, 0.0, 0.0, //
-			0.0, 0.0, 1.0, 0.0, //
-			0.5, 0.5, 0.0, 1.0 //
-		);
-	else
-		// without clip_control we also need to transform z
-		coordmove = glm::mat4( //
-			0.5, 0.0, 0.0, 0.0, //
-			0.0, 0.5, 0.0, 0.0, //
-			0.0, 0.0, 0.5, 0.0, //
-			0.5, 0.5, 0.5, 1.0 //
-		);
+	// transform 1..-1 NDC xy coordinates to 1..0 (with clip_control z is already 1..0)
+	coordmove = glm::mat4( //
+		0.5, 0.0, 0.0, 0.0, //
+		0.0, 0.5, 0.0, 0.0, //
+		0.0, 0.0, 1.0, 0.0, //
+		0.5, 0.5, 0.0, 1.0 //
+	);
 
     for( auto idx = 0; idx < m_shadowpass.size(); ++idx ) {
 
@@ -2310,38 +2263,24 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 		        material.textures :
 		        material.GetTextures(TSubModel::VariantId(sm))};
 
-		if (GLAD_GL_ARB_multi_bind)
-		{
-			GLuint lastdiff = 0;
-			size_t i;
-			for (i = 0; i < gl::MAX_TEXTURES; i++)
-				if (materialtextures[i] != null_handle)
-				{
-					opengl_texture &tex = m_textures.mark_as_used(materialtextures[i]);
-					tex.create();
-					if (opengl_texture::units[i] != tex.id)
-					{
-						opengl_texture::units[i] = tex.id;
-						lastdiff = i + 1;
-					}
-				}
-				else
-					break;
-
-			if (lastdiff)
-				glBindTextures(0, lastdiff, &opengl_texture::units[0]);
-		}
-		else
-		{
-			size_t unit = 0;
-			for (auto &tex : materialtextures)
+		GLuint lastdiff = 0;
+		size_t i;
+		for (i = 0; i < gl::MAX_TEXTURES; i++)
+			if (materialtextures[i] != null_handle)
 			{
-				if (tex == null_handle)
-					break;
-				m_textures.bind(unit, tex);
-				unit++;
+				opengl_texture &tex = m_textures.mark_as_used(materialtextures[i]);
+				tex.create();
+				if (opengl_texture::units[i] != tex.id)
+				{
+					opengl_texture::units[i] = tex.id;
+					lastdiff = i + 1;
+				}
 			}
-		}
+			else
+				break;
+
+		if (lastdiff)
+			glBindTextures(0, lastdiff, &opengl_texture::units[0]);
 
 		material.shader->bind();
 	}
@@ -5397,13 +5336,9 @@ glm::dvec3 opengl46_renderer::Update_Mouse_Position()
 
 		if (pointdepth != std::numeric_limits<float>::max())
 		{
-			m_mousehit = (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control) ? pointdepth > 0.0f : pointdepth < 1.0f;
-			if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control) {
-				if (pointdepth > 0.0f)
-					m_worldmousecoordinates = glm::unProjectZO(glm::vec3(bufferpos, pointdepth), glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview())), m_colorpass.pass_camera.projection(),
-					                                           glm::vec4(0, 0, Global.gfx_framebuffer_width, Global.gfx_framebuffer_height));
-			} else if (pointdepth < 1.0f)
-				m_worldmousecoordinates = glm::unProjectNO(glm::vec3(bufferpos, pointdepth), glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview())), m_colorpass.pass_camera.projection(),
+			m_mousehit = pointdepth > 0.0f;
+			if (pointdepth > 0.0f)
+				m_worldmousecoordinates = glm::unProjectZO(glm::vec3(bufferpos, pointdepth), glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview())), m_colorpass.pass_camera.projection(),
 				                                           glm::vec4(0, 0, Global.gfx_framebuffer_width, Global.gfx_framebuffer_height));
 		}
 	}
@@ -5944,22 +5879,13 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
 
     // set up helpers
    	glm::mat4 coordmove;
-	if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
-		// transform 1..-1 NDC xy coordinates to 1..0
-		coordmove = glm::mat4( //
-			0.5, 0.0, 0.0, 0.0, //
-			0.0, 0.5, 0.0, 0.0, //
-			0.0, 0.0, 1.0, 0.0, //
-			0.5, 0.5, 0.0, 1.0 //
-		);
-	else
-		// without clip_control we also need to transform z
-		coordmove = glm::mat4( //
-			0.5, 0.0, 0.0, 0.0, //
-			0.0, 0.5, 0.0, 0.0, //
-			0.0, 0.0, 0.5, 0.0, //
-			0.5, 0.5, 0.5, 1.0 //
-		);
+	// transform 1..-1 NDC xy coordinates to 1..0 (with clip_control z is already 1..0)
+	coordmove = glm::mat4( //
+		0.5, 0.0, 0.0, 0.0, //
+		0.0, 0.5, 0.0, 0.0, //
+		0.0, 0.0, 1.0, 0.0, //
+		0.5, 0.5, 0.0, 1.0 //
+	);
     glm::mat4 mv = OpenGLMatrices.data( GL_MODELVIEW );
 
     // fill vehicle headlights data
@@ -6120,9 +6046,9 @@ bool opengl46_renderer::Init_caps()
 
 	crashreport_add_info("gl_family", "desktop");
 
-	if (!GLAD_GL_VERSION_3_3)
+	if (!GLAD_GL_VERSION_4_6)
 	{
-		ErrorLog("requires OpenGL >= 3.3!");
+		ErrorLog("requires OpenGL >= 4.6!");
 		return false;
 	}
 
@@ -6131,18 +6057,6 @@ bool opengl46_renderer::Init_caps()
 
 	if (!GLAD_GL_EXT_texture_compression_s3tc)
 		ErrorLog("EXT_texture_compression_s3tc not supported!");
-
-	if (GLAD_GL_ARB_texture_filter_anisotropic)
-		WriteLog("ARB_texture_filter_anisotropic supported!");
-
-	if (GLAD_GL_ARB_multi_bind)
-		WriteLog("ARB_multi_bind supported!");
-
-	if (GLAD_GL_ARB_direct_state_access)
-		WriteLog("ARB_direct_state_access supported!");
-
-	if (GLAD_GL_ARB_clip_control)
-		WriteLog("ARB_clip_control supported!");
 
 	glGetError();
 	glLineWidth(2.0f);
@@ -6205,7 +6119,7 @@ bool opengl46_renderer::renderer_register = gfx_renderer_factory::get_instance()
 bool opengl46_renderer::opengl46_imgui_renderer::Init()
 {
 	crashreport_add_info("imgui_ver", "gl3");
-	return ImGui_ImplOpenGL3_Init("#version 330 core");
+	return ImGui_ImplOpenGL3_Init("#version 460 core");
 }
 
 void opengl46_renderer::opengl46_imgui_renderer::Shutdown()
