@@ -127,45 +127,21 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
     else
         throw shader_exception("unknown shader " + filename);
 
-    if (!Global.gfx_usegles)
-    {
-        str += "#version 330 core\n";
-        // textureGather() on sampler2DArrayShadow is core in GLSL 4.0. On 3.30
-        // desktop it requires GL_ARB_gpu_shader5 -- the older
-        // GL_ARB_texture_gather (2010) only adds the non-shadow and the plain
-        // sampler2DShadow overloads, NOT the sampler2DArrayShadow one we need
-        // for cascaded shadow PCF. Some drivers advertise texture_gather but
-        // reject the shadow-array overload because the spec for it lives in
-        // gpu_shader5; so emit only when gpu_shader5 is advertised. When the
-        // extension is missing, calc_shadow() in light_common.glsl falls back
-        // to the original 16-tap hardware-PCF loop via #ifndef.
-        // (Project's glad config doesn't generate GLAD_GL_ARB_gpu_shader5,
-        //  so we query the live extension list -- see has_gl_extension above.)
-        static bool const have_gpu_shader5 = has_gl_extension("GL_ARB_gpu_shader5");
-        if (have_gpu_shader5)
-            str += "#extension GL_ARB_gpu_shader5 : enable\n";
-    }
-    else
-    {
-        if (GLAD_GL_ES_VERSION_3_1) {
-            str += "#version 310 es\n";
-            // GLES 3.1 lacks textureGather on shadow samplers in core; the
-            // EXT_gpu_shader5 extension adds it. Only emit the directive when
-            // the driver advertises support (see desktop comment above).
-            // (Glad config doesn't generate GLAD_GL_EXT_gpu_shader5 -- query
-            //  the live extension string the same way.)
-            if (static bool const have_gpu_shader5 = has_gl_extension("GL_EXT_gpu_shader5"); have_gpu_shader5)
-                str += "#extension GL_EXT_gpu_shader5 : enable\n";
-            if (type == GL_GEOMETRY_SHADER)
-                str += "#extension GL_EXT_geometry_shader : require\n";
-        } else {
-            str += "#version 300 es\n";
-        }
-        str += "precision highp float;\n";
-        str += "precision highp int;\n";
-        str += "precision highp sampler2DShadow;\n";
-        str += "precision highp sampler2DArrayShadow;\n";
-    }
+    str += "#version 330 core\n";
+    // textureGather() on sampler2DArrayShadow is core in GLSL 4.0. On 3.30
+    // desktop it requires GL_ARB_gpu_shader5 -- the older
+    // GL_ARB_texture_gather (2010) only adds the non-shadow and the plain
+    // sampler2DShadow overloads, NOT the sampler2DArrayShadow one we need
+    // for cascaded shadow PCF. Some drivers advertise texture_gather but
+    // reject the shadow-array overload because the spec for it lives in
+    // gpu_shader5; so emit only when gpu_shader5 is advertised. When the
+    // extension is missing, calc_shadow() in light_common.glsl falls back
+    // to the original 16-tap hardware-PCF loop via #ifndef.
+    // (Project's glad config doesn't generate GLAD_GL_ARB_gpu_shader5,
+    //  so we query the live extension list -- see has_gl_extension above.)
+    static bool const have_gpu_shader5 = has_gl_extension("GL_ARB_gpu_shader5");
+    if (have_gpu_shader5)
+        str += "#extension GL_ARB_gpu_shader5 : enable\n";
     // expose the shader stage to glsl_common so vertex-only built-ins
     // (gl_InstanceID, effective_modelview, etc.) can be guarded out of
     // fragment/geometry compilations.

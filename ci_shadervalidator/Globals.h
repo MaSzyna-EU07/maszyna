@@ -7,7 +7,6 @@ struct _global
         bool gfx_skippipeline;
         bool gfx_extraeffects;
         bool gfx_shadergamma;
-        bool gfx_usegles;
 };
 
 extern _global Global;

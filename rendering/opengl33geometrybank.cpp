@@ -156,13 +156,6 @@ opengl33_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stre
                 chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
                 chunkrecord.vertex_offset );
         }
-        else if (glDrawElementsBaseVertexOES) {
-            m_vao->bind();
-            ::glDrawElementsBaseVertexOES(
-                chunk.type,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
-                chunkrecord.vertex_offset );
-        }
         else {
             setup_attrib(chunkrecord.vertex_offset);
             m_vao->bind();
@@ -219,15 +212,6 @@ opengl33_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry,
         if( glDrawElementsInstancedBaseVertex ) {
             m_vao->bind();
             ::glDrawElementsInstancedBaseVertex(
-                chunk.type,
-                chunkrecord.index_count, GL_UNSIGNED_INT,
-                reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
-                inst_count,
-                chunkrecord.vertex_offset );
-        }
-        else if( glDrawElementsInstancedBaseVertexOES ) {
-            m_vao->bind();
-            ::glDrawElementsInstancedBaseVertexOES(
                 chunk.type,
                 chunkrecord.index_count, GL_UNSIGNED_INT,
                 reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),

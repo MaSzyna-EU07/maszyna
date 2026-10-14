@@ -169,8 +169,6 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
         m_celestial_shader = make_shader("celestial.vert", "celestial.frag");
         m_hiddenarea_shader = make_shader("hiddenarea.vert", "hiddenarea.frag");
         m_copy_shader = make_shader("quad.vert", "copy.frag");
-		if (Global.gfx_usegles)
-			m_depth_pointer_shader = make_shader("quad.vert", "gles_depthpointer.frag");
 		m_invalid_material = Fetch_Material("invalid");
 	}
 	catch (gl::shader_exception const &e)
@@ -203,7 +201,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	}
 
 	int samples = 1 << Global.iMultisampling;
-	if (!Global.gfx_usegles && samples > 1)
+	if (samples > 1)
 		glEnable(GL_MULTISAMPLE);
 
 	m_pfx_motionblur = std::make_unique<gl::postfx>("motionblur");
@@ -357,7 +355,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
     }
 
 	m_depth_pointer_pbo = std::make_unique<gl::pbo>();
-	if (!Global.gfx_usegles && Global.iMultisampling)
+	if (Global.iMultisampling)
 	{
 		m_depth_pointer_rb = std::make_unique<gl::renderbuffer>();
         m_depth_pointer_rb->alloc(depth_pointer_format, 1, 1);
@@ -371,36 +369,9 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
             return false;
         }
 	}
-	else if (Global.gfx_usegles)
-	{
-		m_depth_pointer_tex = std::make_unique<opengl_texture>();
 
-        m_depth_pointer_tex->alloc_rendertarget(depth_pointer_format, GL_DEPTH_COMPONENT, Global.gfx_framebuffer_width, Global.gfx_framebuffer_height);
-
-		m_depth_pointer_rb = std::make_unique<gl::renderbuffer>();
-		m_depth_pointer_rb->alloc(GL_R16UI, Global.gfx_framebuffer_width, Global.gfx_framebuffer_height);
-
-		m_depth_pointer_fb = std::make_unique<gl::framebuffer>();
-		m_depth_pointer_fb->attach(*m_depth_pointer_tex, GL_DEPTH_ATTACHMENT);
-
-		m_depth_pointer_fb2 = std::make_unique<gl::framebuffer>();
-		m_depth_pointer_fb2->attach(*m_depth_pointer_rb, GL_COLOR_ATTACHMENT0);
-
-        if( !m_depth_pointer_fb->is_complete() ) {
-            ErrorLog( "depth pointer framebuffer setup failed" );
-            return false;
-        }
-
-        if( !m_depth_pointer_fb2->is_complete() ) {
-            ErrorLog( "depth pointer framebuffer2 setup failed" );
-            return false;
-        }
-	}
-
-    if (!Global.gfx_usegles) {
-        m_timequery.emplace(gl::query::TIME_ELAPSED);
-        m_timequery->begin();
-    }
+    m_timequery.emplace(gl::query::TIME_ELAPSED);
+    m_timequery->begin();
 
 	WriteLog("picking objects created");
 
@@ -463,10 +434,7 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glEnable(GL_BLEND);
 
-	if (!Global.gfx_usegles)
-		glClearDepth(0.0f);
-	else
-		glClearDepthf(0.0f);
+	glClearDepth(0.0f);
 
 	glDepthFunc(GL_GEQUAL);
 
@@ -475,8 +443,7 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 	else if (GLAD_GL_EXT_clip_control)
 		glClipControlEXT(GL_LOWER_LEFT_EXT, GL_ZERO_TO_ONE_EXT);
 
-	if (!Global.gfx_usegles)
-		glEnable(GL_PROGRAM_POINT_SIZE);
+	glEnable(GL_PROGRAM_POINT_SIZE);
 
 	if (!gl::vao::use_vao)
 	{
@@ -597,13 +564,10 @@ bool opengl33_renderer::Render()
 {
 	Timer::subsystem.gfx_total.start();
 
-	if (!Global.gfx_usegles)
-	{
-		std::optional<int64_t> result = m_timequery->result();
-		if (result) {
-			m_gllasttime = *result;
-			m_timequery->begin();
-		}
+	std::optional<int64_t> result = m_timequery->result();
+	if (result) {
+		m_gllasttime = *result;
+		m_timequery->begin();
 	}
 
 	// fetch simulation data
@@ -645,15 +609,12 @@ bool opengl33_renderer::Render()
 	    "mainloop total: " + to_string(Timer::subsystem.mainloop_total.average(), 2) + "ms\n";
 
 */
-	if (!Global.gfx_usegles)
-	{
-		m_timequery->end();
+	m_timequery->end();
 
 /*
-		if (m_gllasttime)
-			m_debugtimestext += "gpu: " + to_string((double)(m_gllasttime / 1000ULL) / 1000.0, 3) + "ms";
+	if (m_gllasttime)
+		m_debugtimestext += "gpu: " + to_string((double)(m_gllasttime / 1000ULL) / 1000.0, 3) + "ms";
 */
-	}
 
     ++m_framestamp;
     Timer::subsystem.gfx_total.stop();
@@ -691,10 +652,8 @@ void opengl33_renderer::SwapBuffers()
             " reflections: " + to_string( Timer::subsystem.gfx_reflections.average(), 2 ) + " ms\n";
     }
     m_debugtimestext += " swap: " + to_string( Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n";
-    if( !Global.gfx_usegles ) {
-        if (m_gllasttime)
-            m_debugtimestext += "gpu frame total: " + to_string((double)(m_gllasttime / 1000ULL) / 1000.0, 3) + " ms\n";
-    }
+    if (m_gllasttime)
+        m_debugtimestext += "gpu frame total: " + to_string((double)(m_gllasttime / 1000ULL) / 1000.0, 3) + " ms\n";
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();
@@ -846,13 +805,10 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		if (m_widelines_supported)
 			glLineWidth(1.0f);
 
-		if (!Global.gfx_usegles)
-		{
-			if (Global.bWireFrame)
-				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-			else
-				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		}
+		if (Global.bWireFrame)
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		else
+			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
         setup_shadow_unbind_map();
 		setup_env_map(nullptr);
@@ -904,7 +860,7 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		}
 		else
 		{
-			if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+			if (!Global.gfx_shadergamma)
 				glEnable(GL_FRAMEBUFFER_SRGB);
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glViewport(0, 0, target_size.x, target_size.y);
@@ -1030,8 +986,7 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         setup_shadow_unbind_map();
 		setup_env_map(nullptr);
 
-		if (!Global.gfx_usegles)
-			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 if (!Global.gfx_skippipeline)
 		{
@@ -1077,7 +1032,7 @@ if (!Global.gfx_skippipeline)
 				m_pfx_ssao_apply->apply({ vp.main_tex.get(), vp.ssao_blur_tex.get() }, vp.main2_fb.get());
 			}
 
-			if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+			if (!Global.gfx_shadergamma)
 				glEnable(GL_FRAMEBUFFER_SRGB);
 
             gl::framebuffer *target = nullptr;
@@ -1122,7 +1077,7 @@ if (!Global.gfx_skippipeline)
             opengl_texture::reset_unit_cache();
 		}
 
-		if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+		if (!Global.gfx_shadergamma)
 			glDisable(GL_FRAMEBUFFER_SRGB);
 
 		glDebug("uilayer render");
@@ -5184,16 +5139,9 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 
 						// main draw call
 						if (Submodel->occlusion_query) {
-							if (!Global.gfx_usegles) {
-								glBeginConditionalRender(*Submodel->occlusion_query, GL_QUERY_WAIT);
-								draw(m_billboardgeometry);
-								glEndConditionalRender();
-							}
-							else {
-								auto result = Submodel->occlusion_query->result();
-								if (result && *result)
-									draw(m_billboardgeometry);
-							}
+							glBeginConditionalRender(*Submodel->occlusion_query, GL_QUERY_WAIT);
+							draw(m_billboardgeometry);
+							glEndConditionalRender();
 						}
 						else
 							draw(m_billboardgeometry);
@@ -5424,65 +5372,27 @@ glm::dvec3 opengl33_renderer::Update_Mouse_Position()
 
 		float pointdepth = std::numeric_limits<float>::max();
 
-		if (!Global.gfx_usegles)
+		m_depth_pointer_pbo->read_data(1, 1, &pointdepth, 4);
+
+		if (!Global.iMultisampling)
 		{
-			m_depth_pointer_pbo->read_data(1, 1, &pointdepth, 4);
+			m_depth_pointer_pbo->request_read(bufferpos.x, bufferpos.y, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
+		}
+		else if (Global.gfx_skippipeline)
+		{
+			gl::framebuffer::blit(nullptr, m_depth_pointer_fb.get(), bufferpos.x, bufferpos.y, 1, 1, GL_DEPTH_BUFFER_BIT, 0);
 
-			if (!Global.iMultisampling)
-			{
-				m_depth_pointer_pbo->request_read(bufferpos.x, bufferpos.y, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
-			}
-			else if (Global.gfx_skippipeline)
-			{
-				gl::framebuffer::blit(nullptr, m_depth_pointer_fb.get(), bufferpos.x, bufferpos.y, 1, 1, GL_DEPTH_BUFFER_BIT, 0);
-
-				m_depth_pointer_fb->bind();
-				m_depth_pointer_pbo->request_read(0, 0, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
-				m_depth_pointer_fb->unbind();
-			}
-			else
-			{
-				gl::framebuffer::blit(m_viewports.front()->msaa_fb.get(), m_depth_pointer_fb.get(), bufferpos.x, bufferpos.y, 1, 1, GL_DEPTH_BUFFER_BIT, 0);
-
-				m_depth_pointer_fb->bind();
-				m_depth_pointer_pbo->request_read(0, 0, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
-				m_viewports.front()->msaa_fb->bind();
-			}
+			m_depth_pointer_fb->bind();
+			m_depth_pointer_pbo->request_read(0, 0, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
+			m_depth_pointer_fb->unbind();
 		}
 		else
 		{
-			unsigned int data[4];
-			if (m_depth_pointer_pbo->read_data(1, 1, data, 16))
-				pointdepth = (double)data[0] / 65535.0;
+			gl::framebuffer::blit(m_viewports.front()->msaa_fb.get(), m_depth_pointer_fb.get(), bufferpos.x, bufferpos.y, 1, 1, GL_DEPTH_BUFFER_BIT, 0);
 
-			if (Global.gfx_skippipeline)
-			{
-				gl::framebuffer::blit(nullptr, m_depth_pointer_fb.get(), 0, 0, Global.gfx_framebuffer_width, Global.gfx_framebuffer_height, GL_DEPTH_BUFFER_BIT, 0);
-
-				m_empty_vao->bind();
-				m_depth_pointer_tex->bind(0);
-				m_depth_pointer_shader->bind();
-				m_depth_pointer_fb2->bind();
-				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-				m_depth_pointer_pbo->request_read(bufferpos.x, bufferpos.y, 1, 1, 16, GL_RGBA_INTEGER, GL_UNSIGNED_INT);
-				m_depth_pointer_shader->unbind();
-				m_empty_vao->unbind();
-				m_depth_pointer_fb2->unbind();
-			}
-			else
-			{
-				gl::framebuffer::blit(m_viewports.front()->msaa_fb.get(), m_depth_pointer_fb.get(), 0, 0, Global.gfx_framebuffer_width, Global.gfx_framebuffer_height, GL_DEPTH_BUFFER_BIT, 0);
-
-				m_empty_vao->bind();
-				m_depth_pointer_tex->bind(0);
-				m_depth_pointer_shader->bind();
-				m_depth_pointer_fb2->bind();
-				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-				m_depth_pointer_pbo->request_read(bufferpos.x, bufferpos.y, 1, 1, 16, GL_RGBA_INTEGER, GL_UNSIGNED_INT);
-				m_depth_pointer_shader->unbind();
-				m_empty_vao->unbind();
-				m_viewports.front()->msaa_fb->bind();
-			}
+			m_depth_pointer_fb->bind();
+			m_depth_pointer_pbo->request_read(0, 0, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
+			m_viewports.front()->msaa_fb->bind();
 		}
 
 		if (pointdepth != std::numeric_limits<float>::max())
@@ -5760,8 +5670,7 @@ void opengl33_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 	glClearStencil(0);
 	glStencilMask(0xFF);
 	m_preview.hdr_fb->clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-	if (!Global.gfx_usegles)
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glEnable(GL_DEPTH_TEST);
 	// every fragment which made it past the alpha test marks the pixel as covered, translucent ones included
 	glEnable(GL_STENCIL_TEST);
@@ -5944,10 +5853,10 @@ bool opengl33_renderer::Render_Preview(TAnimModel *Instance, int const Size, int
 	// the image itself
 	Preview_Color(Instance, squaredistance, targetsize, eye, view, cropped(), shadows);
 	glViewport(0, 0, targetsize, targetsize);
-	if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+	if (!Global.gfx_shadergamma)
 		glEnable(GL_FRAMEBUFFER_SRGB);
 	m_pfx_tonemapping->apply(*m_preview.hdr_tex, m_preview.ldr_fb.get());
-	if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+	if (!Global.gfx_shadergamma)
 		glDisable(GL_FRAMEBUFFER_SRGB);
 	opengl_texture::reset_unit_cache();
 	// the post processing binds its own vertex array, which the geometry banks don't know about
@@ -6209,53 +6118,31 @@ bool opengl33_renderer::Init_caps()
 	}
 	WriteLog("--------");
 
-	if (!Global.gfx_usegles)
+	crashreport_add_info("gl_family", "desktop");
+
+	if (!GLAD_GL_VERSION_3_3)
 	{
-		crashreport_add_info("gl_family", "desktop");
-
-		if (!GLAD_GL_VERSION_3_3)
-		{
-			ErrorLog("requires OpenGL >= 3.3!");
-			return false;
-		}
-
-		if (!GLAD_GL_EXT_texture_sRGB)
-			ErrorLog("EXT_texture_sRGB not supported!");
-
-		if (!GLAD_GL_EXT_texture_compression_s3tc)
-			ErrorLog("EXT_texture_compression_s3tc not supported!");
-
-		if (GLAD_GL_ARB_texture_filter_anisotropic)
-			WriteLog("ARB_texture_filter_anisotropic supported!");
-
-		if (GLAD_GL_ARB_multi_bind)
-			WriteLog("ARB_multi_bind supported!");
-
-		if (GLAD_GL_ARB_direct_state_access)
-			WriteLog("ARB_direct_state_access supported!");
-
-		if (GLAD_GL_ARB_clip_control)
-			WriteLog("ARB_clip_control supported!");
+		ErrorLog("requires OpenGL >= 3.3!");
+		return false;
 	}
-	else
-	{
-		crashreport_add_info("gl_family", "gles");
 
-		if (!GLAD_GL_ES_VERSION_3_0)
-		{
-			ErrorLog("requires OpenGL ES >= 3.0!");
-			return false;
-		}
+	if (!GLAD_GL_EXT_texture_sRGB)
+		ErrorLog("EXT_texture_sRGB not supported!");
 
-		if (GLAD_GL_EXT_texture_filter_anisotropic)
-			WriteLog("EXT_texture_filter_anisotropic supported!");
+	if (!GLAD_GL_EXT_texture_compression_s3tc)
+		ErrorLog("EXT_texture_compression_s3tc not supported!");
 
-		if (GLAD_GL_EXT_clip_control)
-			WriteLog("EXT_clip_control supported!");
+	if (GLAD_GL_ARB_texture_filter_anisotropic)
+		WriteLog("ARB_texture_filter_anisotropic supported!");
 
-		if (GLAD_GL_EXT_geometry_shader)
-			WriteLog("EXT_geometry_shader supported!");
-	}
+	if (GLAD_GL_ARB_multi_bind)
+		WriteLog("ARB_multi_bind supported!");
+
+	if (GLAD_GL_ARB_direct_state_access)
+		WriteLog("ARB_direct_state_access supported!");
+
+	if (GLAD_GL_ARB_clip_control)
+		WriteLog("ARB_clip_control supported!");
 
 	glGetError();
 	glLineWidth(2.0f);
@@ -6318,10 +6205,7 @@ bool opengl33_renderer::renderer_register = gfx_renderer_factory::get_instance()
 bool opengl33_renderer::opengl33_imgui_renderer::Init()
 {
 	crashreport_add_info("imgui_ver", "gl3");
-	if (Global.gfx_usegles)
-		return ImGui_ImplOpenGL3_Init("#version 300 es\nprecision highp float;");
-	else
-		return ImGui_ImplOpenGL3_Init("#version 330 core");
+	return ImGui_ImplOpenGL3_Init("#version 330 core");
 }
 
 void opengl33_renderer::opengl33_imgui_renderer::Shutdown()

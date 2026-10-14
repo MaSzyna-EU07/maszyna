@@ -377,14 +377,16 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     if (token == "compresstex")
     {
         Parser.getTokens(1);
-        if (!gfx_usegles)
-            Parser >> compress_tex;
+        Parser >> compress_tex;
         return true;
     }
 
     if (token == "gfx.angleplatform")
     {
-        ParseOne(Parser, gfx_angleplatform, 1);
+        // the OpenGL ES / ANGLE path was removed; read and ignore so old eu07.ini files still load
+        std::string angleplatform;
+        ParseOne(Parser, angleplatform, 1);
+        WriteLog("eu07.ini: \"gfx.angleplatform\" is no longer supported and was ignored");
         return true;
     }
 
@@ -1489,8 +1491,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
     }
     else if (Token == "gfx.usegles")
     {
+        // the OpenGL ES / ANGLE path was removed; read and ignore so old eu07.ini files still load
+        bool usegles{false};
         Parser.getTokens(1);
-        Parser >> gfx_usegles;
+        Parser >> usegles;
+        WriteLog("eu07.ini: \"gfx.usegles\" is no longer supported and was ignored");
     }
     else if (Token == "gfx.shadergamma")
     {

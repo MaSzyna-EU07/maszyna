@@ -1209,27 +1209,6 @@ int eu07_application::init_glfw()
 		m_glfwversion = glfw_major * 10000 + glfw_minor * 100 + glfw_minor;
 	}
 
-#ifdef GLFW_ANGLE_PLATFORM_TYPE
-	if (m_glfwversion >= 30400)
-	{
-		int platform = GLFW_ANGLE_PLATFORM_TYPE_NONE;
-		if (Global.gfx_angleplatform == "opengl")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_OPENGL;
-		else if (Global.gfx_angleplatform == "opengles")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_OPENGLES;
-		else if (Global.gfx_angleplatform == "d3d9")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_D3D9;
-		else if (Global.gfx_angleplatform == "d3d11")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_D3D11;
-		else if (Global.gfx_angleplatform == "vulkan")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_VULKAN;
-		else if (Global.gfx_angleplatform == "metal")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_METAL;
-
-		glfwInitHint(GLFW_ANGLE_PLATFORM_TYPE, platform);
-	}
-#endif
-
 	if (glfwInit() == GLFW_FALSE)
 	{
 		ErrorLog("Bad init: failed to initialize glfw");
@@ -1266,23 +1245,10 @@ int eu07_application::init_glfw()
 	else
 	{
 		// activate core profile for opengl 3.3 renderer
-		if (!Global.gfx_usegles)
-		{
-			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-			glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-		}
-		else
-		{
-#ifdef GLFW_CONTEXT_CREATION_API
-			if (m_glfwversion >= 30200)
-				glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-#endif
-			glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-		}
+		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 
 		if (Global.gfx_gldebug)
 			glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
@@ -1347,21 +1313,10 @@ void eu07_application::init_callbacks()
 
 int eu07_application::init_ogl()
 {
-	if (!Global.gfx_usegles)
+	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
-		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-		{
-			ErrorLog("Bad init: failed to initialize glad");
-			return -1;
-		}
-	}
-	else
-	{
-		if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress))
-		{
-			ErrorLog("Bad init: failed to initialize glad");
-			return -1;
-		}
+		ErrorLog("Bad init: failed to initialize glad");
+		return -1;
 	}
 
 	return 0;

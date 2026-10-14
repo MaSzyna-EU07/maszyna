@@ -70,13 +70,6 @@ bool check_shader_confs(std::string filename)
 	bool suc = true;
 
 	std::cout << "desktop GL: " << std::flush;
-	Global.gfx_usegles = false;
-	if (!check_shader_allopts(filename))
-		suc = false;
-
-	std::cout << "; GLES: " << std::flush;
-	GLAD_GL_ES_VERSION_3_1 = 1;
-	Global.gfx_usegles = true;
 	if (!check_shader_allopts(filename))
 		suc = false;
 

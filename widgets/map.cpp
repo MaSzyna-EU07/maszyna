@@ -30,12 +30,10 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 	gl::shader frag("map.frag");
 
 	m_track_shader = std::unique_ptr<gl::program>(new gl::program({vert, frag}));
-	if (!Global.gfx_usegles || GLAD_GL_EXT_geometry_shader) {
-		gl::shader poi_frag("map_poi.frag");
-		gl::shader poi_geom("map_poi.geom");
-		m_poi_shader = std::unique_ptr<gl::program>(new gl::program({vert, poi_frag, poi_geom}));
-        m_icon_atlas = GfxRenderer->Fetch_Texture("map_icons");
-	}
+	gl::shader poi_frag("map_poi.frag");
+	gl::shader poi_geom("map_poi.geom");
+	m_poi_shader = std::unique_ptr<gl::program>(new gl::program({vert, poi_frag, poi_geom}));
+    m_icon_atlas = GfxRenderer->Fetch_Texture("map_icons");
 
 	m_tex = std::make_unique<opengl_texture>();
     m_tex->alloc_rendertarget(GL_RGB8, GL_RGB, fb_size, fb_size);
@@ -174,11 +172,9 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
     scene_ubo->update(scene_ubs);
     gl33->Draw_Geometry(m_colored_paths.highlighted.begin(), m_colored_paths.highlighted.end());
 
-	if (!Global.gfx_usegles || GLAD_GL_EXT_geometry_shader) {
-        gl33->Bind_Texture(0, m_icon_atlas);
-		m_poi_shader->bind();
-        scene_ubs.cascade_end = glm::vec4(1.0f / (surface_size / 200.0f), 1.0f, 0.0f);
-	}
+    gl33->Bind_Texture(0, m_icon_atlas);
+	m_poi_shader->bind();
+    scene_ubs.cascade_end = glm::vec4(1.0f / (surface_size / 200.0f), 1.0f, 0.0f);
 
 	if (map::Objects.poi_dirty) {
 		map::Objects.poi_dirty = false;

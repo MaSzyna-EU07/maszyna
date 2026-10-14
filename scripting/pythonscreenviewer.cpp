@@ -98,7 +98,7 @@ void python_screen_viewer::threadfunc()
 			glBindTexture(GL_TEXTURE_2D, tex);
 		}
 
-		if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+		if (!Global.gfx_shadergamma)
 			glEnable(GL_FRAMEBUFFER_SRGB);
 
 		gl::program::unbind();

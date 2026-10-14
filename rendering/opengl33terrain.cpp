@@ -368,13 +368,10 @@ bool opengl33_terrain_materials::copy_layer(layer &Layer)
 			::glClearBufferfv(GL_COLOR, 0, defaults[i].data());
 			continue;
 		}
-		if (false == Global.gfx_usegles)
-		{
-			if (array.srgb)
-				::glEnable(GL_FRAMEBUFFER_SRGB);
-			else
-				::glDisable(GL_FRAMEBUFFER_SRGB);
-		}
+		if (array.srgb)
+			::glEnable(GL_FRAMEBUFFER_SRGB);
+		else
+			::glDisable(GL_FRAMEBUFFER_SRGB);
 		m_copy->apply(*sources[i], m_framebuffer.get());
 	}
 	Layer.copied = true;
@@ -390,7 +387,7 @@ void opengl33_terrain_materials::update()
 	auto const scissor{::glIsEnabled(GL_SCISSOR_TEST)};
 	auto const cull{::glIsEnabled(GL_CULL_FACE)};
 	auto const depth{::glIsEnabled(GL_DEPTH_TEST)};
-	auto const srgb{(false == Global.gfx_usegles) && ::glIsEnabled(GL_FRAMEBUFFER_SRGB)};
+	auto const srgb{::glIsEnabled(GL_FRAMEBUFFER_SRGB)};
 	::glDisable(GL_BLEND);
 	::glDisable(GL_SCISSOR_TEST);
 	::glDisable(GL_CULL_FACE);
@@ -427,13 +424,10 @@ void opengl33_terrain_materials::update()
 		::glEnable(GL_DEPTH_TEST);
 	else
 		::glDisable(GL_DEPTH_TEST);
-	if (false == Global.gfx_usegles)
-	{
-		if (srgb)
-			::glEnable(GL_FRAMEBUFFER_SRGB);
-		else
-			::glDisable(GL_FRAMEBUFFER_SRGB);
-	}
+	if (srgb)
+		::glEnable(GL_FRAMEBUFFER_SRGB);
+	else
+		::glDisable(GL_FRAMEBUFFER_SRGB);
 	::glDepthMask(GL_TRUE);
 	opengl_texture::reset_unit_cache();
 	gfx::opengl33_vaogeometrybank::reset();
