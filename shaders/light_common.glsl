@@ -375,6 +375,11 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     fragcolor *= pow(gtao.x, gtao_params.y) * min((0.75 + 0.25 * gtao_bent.y) / (0.75 + 0.25 * gtao_normal.y), 1.0);
 #endif
 
+    float metal_dark = metalic * (1.0 - smoothstep(0.02, 0.2, dot(texturecolor, vec3(0.2126, 0.7152, 0.0722))));
+    metalic -= metal_dark;
+    specularity = mix(specularity, min(specularity, 0.06), metal_dark);
+    reflectivity = max(reflectivity, 0.5 * metalic);
+
     vec3 emissioncolor = vec3(emission);
 
     vec3 view_dir = normalize(-f_pos.xyz);
