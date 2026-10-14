@@ -30,6 +30,17 @@ http://mozilla.org/MPL/2.0/.
 
 #define EU07_DEFERRED_TEXTURE_UPLOAD
 
+#ifndef FOURCC_DX10
+#define FOURCC_DX10 (MAKEFOURCC('D','X','1','0'))
+#endif
+// BC7, core since GL 4.2 (ARB_texture_compression_bptc), the bundled glad is generated for 3.3
+#ifndef GL_COMPRESSED_RGBA_BPTC_UNORM
+#define GL_COMPRESSED_RGBA_BPTC_UNORM 0x8E8C
+#endif
+#ifndef GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM
+#define GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM 0x8E8D
+#endif
+
 // texture data read by a worker thread. the texture itself is only touched by the main thread,
 // which takes the data over when the texture is created on the gl side
 struct texture_request {
@@ -156,6 +167,142 @@ private:
     bool m_stop { false };
 };
 
+// dxgi formats and alpha modes of the dds dx10 extended header
+constexpr std::uint32_t dxgi_format_bc7_typeless { 97 };
+constexpr std::uint32_t dxgi_format_bc7_unorm { 98 };
+constexpr std::uint32_t dxgi_format_bc7_unorm_srgb { 99 };
+constexpr std::uint32_t dds_alpha_mode_unknown { 0 };
+constexpr std::uint32_t dds_alpha_mode_opaque { 3 };
+
+// returns Count bits starting at bit Offset of a 128-bit BC7 block
+std::uint32_t bc7_bits( unsigned char const *Block, int const Offset, int const Count ) {
+    std::uint32_t result { 0 };
+    for( int bit = 0; bit < Count; ++bit ) {
+        auto const idx { Offset + bit };
+        result |= ( ( Block[ idx >> 3 ] >> ( idx & 7 ) ) & 1u ) << bit;
+    }
+    return result; }
+
+// expands a BC7 endpoint of given precision to 8 bits
+std::uint32_t bc7_expand( std::uint32_t const Value, int const Bits ) {
+    return ( Value << ( 8 - Bits ) ) | ( Value >> ( 2 * Bits - 8 ) ); }
+
+// checks whether any texel of a BC7 block can come out noticeably translucent.
+// it looks at the endpoints the alpha is interpolated between, so a translucent block is never reported as opaque
+bool bc7_block_has_alpha( unsigned char const *Block ) {
+    // encoders sharing p-bits between colour and alpha (modes 6 and 7) can leave opaque alpha at 254 or 251
+    constexpr std::uint32_t opaque { 250 };
+    if( Block[ 0 ] == 0 ) {
+        // reserved mode, decodes to transparent black
+        return true;
+    }
+    int mode { 0 };
+    while( ( Block[ 0 ] & ( 1 << mode ) ) == 0 ) {
+        ++mode;
+    }
+    switch( mode ) {
+        case 4:
+        case 5: {
+            // single subset with separate alpha endpoints. rotation swaps alpha with one of the colour channels
+            auto const rotation { static_cast<int>( bc7_bits( Block, mode + 1, 2 ) ) };
+            auto const colourbits { mode == 4 ? 5 : 7 };
+            auto const alphabits { mode == 4 ? 6 : 8 };
+            auto const bits { rotation == 0 ? alphabits : colourbits };
+            auto const start { rotation == 0 ? 8 + 6 * colourbits : 8 + 2 * colourbits * ( rotation - 1 ) };
+            for( int endpoint = 0; endpoint < 2; ++endpoint ) {
+                if( bc7_expand( bc7_bits( Block, start + endpoint * bits, bits ), bits ) < opaque ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        case 6: {
+            // 7-bit alpha endpoints, each extended with its own p-bit
+            for( int endpoint = 0; endpoint < 2; ++endpoint ) {
+                auto const alpha { ( bc7_bits( Block, 49 + endpoint * 7, 7 ) << 1 ) | bc7_bits( Block, 63 + endpoint, 1 ) };
+                if( alpha < opaque ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        case 7: {
+            // two subsets, 5-bit alpha endpoints extended with their p-bits to 6 bits
+            for( int endpoint = 0; endpoint < 4; ++endpoint ) {
+                auto const alpha { ( bc7_bits( Block, 74 + endpoint * 5, 5 ) << 1 ) | bc7_bits( Block, 94 + endpoint, 1 ) };
+                if( bc7_expand( alpha, 6 ) < opaque ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        default: {
+            // modes 0-3 don't store alpha
+            return false;
+        }
+    } }
+
+// picks data components of a BC7 texture. a BC7 file doesn't tell whether alpha is used the way DXT1/DXT5 do,
+// so unless the dx10 header states the alpha mode, a small mipmap is checked for translucent texels.
+// the mipmap is always read from the file, so the result doesn't depend on whether the texture data is streamed
+GLint bc7_components( std::istream &File, std::streamoff const Start, std::size_t const Datasize, unsigned int Width, unsigned int Height, unsigned int const Mapcount, std::uint32_t const Alphamode ) {
+
+    if( Alphamode == dds_alpha_mode_opaque ) { return GL_RGB; }
+    if( Alphamode != dds_alpha_mode_unknown ) { return GL_RGBA; }
+
+    // up to 256x256, small enough to read quickly while translucent areas a few texels wide still show in it
+    auto const blocks = [ & ]() { return static_cast<std::size_t>( ( Width + 3 ) / 4 ) * ( ( Height + 3 ) / 4 ); };
+    std::size_t offset { 0 };
+    for( unsigned int level = 1; ( level < Mapcount ) && ( std::max( Width, Height ) > 256 ); ++level ) {
+        offset += blocks() * 16;
+        Width = std::max( Width / 2, 1u );
+        Height = std::max( Height / 2, 1u );
+    }
+    std::vector<unsigned char> probe( blocks() * 16 );
+    if( offset + probe.size() > Datasize ) {
+        // malformed file, err on the side of translucency like DXT5 does
+        return GL_RGBA;
+    }
+    auto const position { File.tellg() };
+    File.seekg( Start + static_cast<std::streamoff>( offset ) );
+    File.read( reinterpret_cast<char *>( probe.data() ), probe.size() );
+    auto const readok { File.good() };
+    File.clear();
+    File.seekg( position );
+    if( false == readok ) {
+        return GL_RGBA;
+    }
+    for( std::size_t block = 0; block < probe.size(); block += 16 ) {
+        if( bc7_block_has_alpha( &probe[ block ] ) ) {
+            return GL_RGBA;
+        }
+    }
+    return GL_RGB; }
+
+// BC7 is core since GL 4.2, older contexts and GLES need the extension. requires current gl context
+bool bptc_supported() {
+    static bool const supported = []() {
+        if( ( false == Global.gfx_usegles )
+         && ( ( GLVersion.major > 4 ) || ( ( GLVersion.major == 4 ) && ( GLVersion.minor >= 2 ) ) ) ) {
+            return true;
+        }
+        GLint count { 0 };
+        ::glGetIntegerv( GL_NUM_EXTENSIONS, &count );
+        for( GLint idx = 0; idx < count; ++idx ) {
+            auto const *extension { reinterpret_cast<char const *>( ::glGetStringi( GL_EXTENSIONS, idx ) ) };
+            if( extension == nullptr ) {
+                continue;
+            }
+            std::string_view const name { extension };
+            if( ( name == "GL_ARB_texture_compression_bptc" )
+             || ( name == "GL_EXT_texture_compression_bptc" ) ) {
+                return true;
+            }
+        }
+        return false;
+    }();
+    return supported; }
+
 } // namespace
 
 std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> opengl_texture::units = { 0 };
@@ -171,6 +318,8 @@ std::unordered_map<GLint, int> opengl_texture::precompressed_formats =
     { GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, 8 },
     { GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, 16 },
     { GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, 16 },
+    { GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM, 16 },
+    { GL_COMPRESSED_RGBA_BPTC_UNORM, 16 },
 };
 
 std::unordered_map<GLint, GLint> opengl_texture::drivercompressed_formats =
@@ -210,6 +359,12 @@ std::unordered_map<GLint, std::unordered_map<GLint, GLint>> opengl_texture::mapp
                                           { GL_RGB,        GL_COMPRESSED_RGBA_S3TC_DXT5_EXT },
                                           { GL_RG,         GL_COMPRESSED_RGBA_S3TC_DXT5_EXT },
                                           { GL_RED,        GL_COMPRESSED_RGBA_S3TC_DXT5_EXT } } },
+    { GL_COMPRESSED_RGBA_BPTC_UNORM,    { { GL_SRGB_ALPHA, GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM },
+                                          { GL_SRGB,       GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM },
+                                          { GL_RGBA,       GL_COMPRESSED_RGBA_BPTC_UNORM },
+                                          { GL_RGB,        GL_COMPRESSED_RGBA_BPTC_UNORM },
+                                          { GL_RG,         GL_COMPRESSED_RGBA_BPTC_UNORM },
+                                          { GL_RED,        GL_COMPRESSED_RGBA_BPTC_UNORM } } },
     { GL_RGBA,                          { { GL_SRGB_ALPHA, GL_SRGB8_ALPHA8 },
                                           { GL_SRGB,       GL_SRGB8 },
                                           { GL_RGBA,       GL_RGBA8 },
@@ -651,9 +806,26 @@ opengl_texture::load_DDS() {
 	DDSURFACEDESC2 ddsd = deserialize_ddsd(file);
 	filesize -= 124;
 
+    // formats without a legacy fourcc code (BC7) are described by the dx10 extended header
+    std::uint32_t dxgiformat { 0 };
+    std::uint32_t alphamode { dds_alpha_mode_unknown };
+    if( ddsd.ddpfPixelFormat.dwFourCC == FOURCC_DX10 ) {
+        dxgiformat = sn_utils::ld_uint32( file );
+        sn_utils::ld_uint32( file ); // resource dimension
+        sn_utils::ld_uint32( file ); // misc flags
+        auto const arraysize { sn_utils::ld_uint32( file ) };
+        alphamode = sn_utils::ld_uint32( file ) & 0x7; // misc flags 2, the lowest bits hold the alpha mode
+        filesize -= 20;
+        if( arraysize > 1 ) {
+            WriteLog( "Bad texture: texture arrays aren't supported, in file \"" + name + "\"", logtype::texture );
+            data_state = resource_state::failed;
+            return;
+        }
+    }
+
     //
-    // This .dds loader supports the loading of compressed formats DXT1, DXT3
-    // and DXT5.
+    // This .dds loader supports the loading of compressed formats DXT1, DXT3,
+    // DXT5 and BC7.
     //
 
     switch (ddsd.ddpfPixelFormat.dwFourCC)
@@ -671,6 +843,17 @@ opengl_texture::load_DDS() {
     case FOURCC_DXT5:
         // DXT5's compression ratio is 4:1
         data_format = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+        break;
+
+    case FOURCC_DX10:
+        if( ( dxgiformat != dxgi_format_bc7_typeless )
+         && ( dxgiformat != dxgi_format_bc7_unorm )
+         && ( dxgiformat != dxgi_format_bc7_unorm_srgb ) ) {
+            data_state = resource_state::failed;
+            return;
+        }
+        // BC7's compression ratio is 4:1. srgb is picked by the material, same as for DXTn
+        data_format = GL_COMPRESSED_RGBA_BPTC_UNORM;
         break;
 
     default:
@@ -709,13 +892,26 @@ opengl_texture::load_DDS() {
         data_state = resource_state::failed;
         return;
     }
+    // dds data with top-left origin is flipped block by block. BC7 blocks can't be flipped that way,
+    // BC7 textures have to be stored with bottom-left origin regardless of the setting
+    bool const flip { Global.dds_upper_origin && ( data_format != GL_COMPRESSED_RGBA_BPTC_UNORM ) };
+    if( Global.dds_upper_origin && ( false == flip ) ) {
+        WriteLog( "Warning: BC7 texture \"" + name + "\" can't be flipped for ddsupperorigin, it's loaded as stored", logtype::texture );
+    }
+    GLint const components { (
+        data_format == GL_COMPRESSED_RGBA_BPTC_UNORM ?
+            bc7_components( file, static_cast<std::streamoff>( file.tellg() ) + offset, datasize, data_width, data_height, data_mapcount, alphamode ) :
+        ddsd.ddpfPixelFormat.dwFourCC == FOURCC_DXT1 ?
+            GL_RGB :
+            GL_RGBA ) };
+
     if( true == Global.gfx_texture_streaming ) {
         // the data is read by a worker thread, everything else about the texture is known already
         request = std::make_shared<texture_request>();
         request->file = name + type;
         request->offset = static_cast<std::size_t>( file.tellg() ) + offset;
         request->size = datasize;
-        request->flip = Global.dds_upper_origin;
+        request->flip = flip;
         request->fourcc = ddsd.ddpfPixelFormat.dwFourCC;
         request->width = data_width;
         request->height = data_height;
@@ -723,8 +919,7 @@ opengl_texture::load_DDS() {
         request->blocksize = blockSize;
         texture_loader::instance().submit( request );
 
-        data_components =
-            ddsd.ddpfPixelFormat.dwFourCC == FOURCC_DXT1 ? GL_RGB : GL_RGBA;
+        data_components = components;
 
         data_state = resource_state::loading;
 
@@ -744,7 +939,7 @@ opengl_texture::load_DDS() {
 
 	// we're storing texture data internally with bottom-left origin,
 	// while DDS stores it with top-left origin. we need to flip it.
-	if (Global.dds_upper_origin)
+	if (flip)
 	{
         char *mipmap = (char*)&data[0];
         int mapcount = data_mapcount,
@@ -766,8 +961,7 @@ opengl_texture::load_DDS() {
         }
 	}
 
-    data_components =
-        ddsd.ddpfPixelFormat.dwFourCC == FOURCC_DXT1 ? GL_RGB : GL_RGBA;
+    data_components = components;
 
     data_state = resource_state::good;
 
@@ -1096,6 +1290,16 @@ opengl_texture::create( bool const Static ) {
     if( data_state != resource_state::good && !is_rendertarget ) {
         // don't bother until we have useful texture data
         // and it isn't rendertarget texture without loaded data
+        return false;
+    }
+
+    if( ( data_format == GL_COMPRESSED_RGBA_BPTC_UNORM )
+     && ( false == bptc_supported() ) ) {
+        ErrorLog( "Bad texture: \"" + name + "\" uses BC7 compression, which the graphics driver doesn't support", logtype::texture );
+        data = std::vector<unsigned char>();
+        data_state = resource_state::failed;
+        // NOTE: temporary workaround for texture assignment errors, same as in load()
+        id = 0;
         return false;
     }
 
