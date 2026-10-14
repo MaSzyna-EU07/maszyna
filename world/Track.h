@@ -383,6 +383,7 @@ public:
         bool flareto { true };
         glm::dvec2 frommiter { 0.0 };
         glm::dvec2 tomiter { 0.0 };
+        bool through { true };
     };
     struct rail_band {
         double at { 0.0 };
