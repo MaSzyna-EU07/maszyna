@@ -2635,6 +2635,28 @@ TTrack::rail_dimensions() const {
     }
     result.height = top - bottom;
     result.crest = top;
+    auto const middle { top - 0.5 * result.height };
+    auto webfrom { 1e9 };
+    auto webto { -1e9 };
+    for( std::size_t i = 0; i + 1 < count; ++i ) {
+        auto const &a { profile[ i ].position };
+        auto const &b { profile[ i + 1 ].position };
+        if( a.y != b.y && ( a.y - middle ) * ( b.y - middle ) <= 0.0 ) {
+            auto const x { a.x + ( b.x - a.x ) * ( middle - a.y ) / ( b.y - a.y ) };
+            webfrom = std::min( webfrom, x );
+            webto = std::max( webto, x );
+        }
+    }
+    if( webfrom < webto ) {
+        result.web = 0.5 * ( webfrom + webto );
+        result.neck = top;
+        for( std::size_t i = 0; i < count; ++i ) {
+            auto const &point { profile[ i ].position };
+            if( point.y > middle && ( point.x < webfrom - 0.0005 || point.x > webto + 0.0005 ) ) {
+                result.neck = std::min( result.neck, static_cast<double>( point.y ) );
+            }
+        }
+    }
     result.head = 0.0;
     for( std::size_t i = 0; i < count; ++i ) {
         auto const &point { profile[ i ].position };
