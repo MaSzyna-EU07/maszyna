@@ -413,6 +413,7 @@ private:
     // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
     bool lay_rail( track_rails::rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
     class rail_layer;
+    class rail_planner;
     int blade_side( int const Path ) const;
     material_handle rail_material( int const Path ) const;
     glm::vec2 tread_band() const;
