@@ -13,12 +13,37 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/geometrybank.h"
 #include <glm/glm.hpp>
 #include <optional>
+#include "world/Knots.h"
 
 struct map_colored_paths {
 	std::vector<gfx::geometrybank_handle> switches;
 	std::vector<gfx::geometrybank_handle> occupied;
 	std::vector<gfx::geometrybank_handle> future;
     std::vector<gfx::geometrybank_handle> highlighted;
+};
+
+struct loft_end {
+    double bend { 0.0 };
+    knots::line fit;
+};
+
+struct loft_span {
+    int side { 1 };
+    float halfwidth { 0.f };
+    double texturelength { 1.0 };
+    double from { 0.0 };
+    double to { 0.0 };
+    knots::line offsets;
+    knots::line extents;
+    knots::line inner;
+    float lift { 0.f };
+    gfx::userdata_array *userdata { nullptr };
+    knots::line ramp;
+    double rampwidth { 0.0 };
+    bool walls { false };
+    float wallu { -1.f };
+    loft_end fromend;
+    loft_end toend;
 };
 
 struct segment_data {
@@ -132,7 +157,7 @@ public:
         RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, bool const Transition, double fTextureLength, double Texturescale = 1.0, int iSkip = 0, int iEnd = 0, std::pair<float, float> fOffsetX = {0.f, 0.f}, glm::vec3 **p = nullptr, bool bRender = true );
     // the profile lofted from distance From to To, moved outwards by Offsets and cut on its outer side to Extents beyond the gauge line, both as (distance, value) knots
     bool
-        RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, int const Side, float const Halfwidth, double const fTextureLength, double const From, double const To, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents = {}, float const Lift = 0.f, std::vector<glm::dvec2> const &Inner = {}, gfx::userdata_array *Userdata = nullptr, std::vector<glm::dvec2> const &Ramp = {}, double const Rampwidth = 0.0, bool const Walls = false, float const Wallu = -1.f, glm::dvec2 const &Bends = glm::dvec2 { 0.0 }, std::vector<glm::dvec2> const &Fitfrom = {}, std::vector<glm::dvec2> const &Fitto = {} ) const;
+        RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, loft_span const &Span ) const;
     // point of the path and the unit vector across it towards the right rail profile, at a distance from Point1
     void
         plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
