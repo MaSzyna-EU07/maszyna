@@ -149,8 +149,28 @@ void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool con
 
 using namespace track_rails;
 
+namespace {
+
+gfx::vertex_array box_profile( float const Bottom, float const Top, float const Texture ) {
+
+    return {
+        {{  1.f, Bottom, 0.f }, {  1.f, 0.f, 0.f }, { Texture, 0.f }},
+        {{  1.f, Top, 0.f }, {  1.f, 0.f, 0.f }, { Texture, 0.f }},
+        {{  1.f, Top, 0.f }, {  0.f, 1.f, 0.f }, { Texture, 0.f }},
+        {{ -1.f, Top, 0.f }, {  0.f, 1.f, 0.f }, { Texture, 0.f }},
+        {{ -1.f, Top, 0.f }, { -1.f, 0.f, 0.f }, { Texture, 0.f }},
+        {{ -1.f, Bottom, 0.f }, { -1.f, 0.f, 0.f }, { Texture, 0.f }} };
+}
+
+} // namespace
+
 TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &Bank ) {
 
+    auto const sides = [&]( gfx::vertex_array const &Shape, gfx::vertex_array ( &Sides )[ 2 ] ) {
+        create_track_rail_profile( Sides[ 0 ], Sides[ 1 ], &Shape );
+        for( auto &side : Sides ) {
+            side.resize( Shape.size() );
+        } };
     rail_drawing drawing;
     drawing.bank = Bank;
     drawing.size = rail_dimensions();
@@ -170,10 +190,7 @@ TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &
         point.position.x = -0.041f + ( point.position.x + 0.041f ) * static_cast<float>( drawing.size.head / 0.0735 );
         point.position.y *= static_cast<float>( drawing.size.height / 0.172 );
     }
-    create_track_rail_profile( drawing.checkshapes[ 0 ], drawing.checkshapes[ 1 ], &checkshape );
-    for( auto &shape : drawing.checkshapes ) {
-        shape.resize( checkshape.size() );
-    }
+    sides( checkshape, drawing.checkshapes );
     if( false == m_profiles.empty() ) {
         auto const &outline { track_rail_profile( m_profile1.second ) };
         auto texture { 0.f };
@@ -197,18 +214,8 @@ TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &
         }
         auto const top { static_cast<float>( ( drawing.size.grooved ? drawing.size.liptop : highest ) - 0.0005 ) };
         auto const bottom { static_cast<float>( -drawing.size.height ) };
-        gfx::vertex_array plate {
-            {{  1.f, bottom, 0.f }, {  1.f, 0.f, 0.f }, { texture, 0.f }},
-            {{  1.f, top, 0.f }, {  1.f, 0.f, 0.f }, { texture, 0.f }},
-            {{  1.f, top, 0.f }, {  0.f, 1.f, 0.f }, { texture, 0.f }},
-            {{ -1.f, top, 0.f }, {  0.f, 1.f, 0.f }, { texture, 0.f }},
-            {{ -1.f, top, 0.f }, { -1.f, 0.f, 0.f }, { texture, 0.f }},
-            {{ -1.f, bottom, 0.f }, { -1.f, 0.f, 0.f }, { texture, 0.f }} };
         drawing.platetexture = texture;
-        create_track_rail_profile( drawing.plates[ 0 ], drawing.plates[ 1 ], &plate );
-        for( auto &shape : drawing.plates ) {
-            shape.resize( plate.size() );
-        }
+        sides( box_profile( bottom, top, texture ), drawing.plates );
         auto const neck { static_cast<float>( drawing.size.neck ) };
         auto webtexture { texture };
         for( std::size_t i = 0; i < outline.size() / 2; ++i ) {
@@ -218,17 +225,7 @@ TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &
                 break;
             }
         }
-        gfx::vertex_array filler {
-            {{  1.f, bottom, 0.f }, {  1.f, 0.f, 0.f }, { webtexture, 0.f }},
-            {{  1.f, neck, 0.f }, {  1.f, 0.f, 0.f }, { webtexture, 0.f }},
-            {{  1.f, neck, 0.f }, {  0.f, 1.f, 0.f }, { webtexture, 0.f }},
-            {{ -1.f, neck, 0.f }, {  0.f, 1.f, 0.f }, { webtexture, 0.f }},
-            {{ -1.f, neck, 0.f }, { -1.f, 0.f, 0.f }, { webtexture, 0.f }},
-            {{ -1.f, bottom, 0.f }, { -1.f, 0.f, 0.f }, { webtexture, 0.f }} };
-        create_track_rail_profile( drawing.fillers[ 0 ], drawing.fillers[ 1 ], &filler );
-        for( auto &shape : drawing.fillers ) {
-            shape.resize( filler.size() );
-        }
+        sides( box_profile( bottom, neck, webtexture ), drawing.fillers );
     }
     return drawing;
 }
