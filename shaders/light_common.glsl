@@ -92,6 +92,7 @@ float metalic = 0.0;
 const float AMBIENT_SCALE       = 0.65;
 const float SUN_DIFFUSE_SCALE   = 1.5;
 const float SUN_NDOTL_SHARPNESS = 1.25;
+const float HEADLIGHT_DIFFUSE_SCALE = 1.35;
 
 float length2(vec3 v)
 {
@@ -102,6 +103,13 @@ float length2(vec3 v)
 float parallax_occlusion = 0.0;
 float parallax_shadow = 0.0;
 #endif
+
+float phong_glossiness()
+{
+    float exponent = abs(param[1].w);
+    float roughness = sqrt(sqrt(2.0 / (exponent + 2.0)));
+    return (1.0 - roughness) * max(exponent, 1.0);
+}
 
 float calc_shadow()
 {
@@ -217,7 +225,7 @@ float G_Smith(float NdotV, float NdotL, float roughness)
 //
 //   diffuse  – Lambert N·L (Fresnel-weighted diffuse is handled per-material
 //              in apply_lights, so we return raw N·L here).
-//   specular – Cook-Torrance GGX: D·G / (4·NdotL·NdotV).
+//   specular – Cook-Torrance GGX times the cosine of the light: D·G·NdotL / (4·NdotL·NdotV).
 //              The Fresnel factor (F) is intentionally omitted here;
 //              apply_lights already carries a per-material Fresnel term
 //              that is applied to env reflections and can be routed to
@@ -244,11 +252,11 @@ vec2 calc_light(vec3 light_dir, vec3 fragnormal)
     float roughness = clamp(1.0 - glossiness / max(abs(param[1].w), 1.0), 0.04, 1.0);
 
     // Cook-Torrance specular (no Fresnel — see above):
-    //   f_spec = D(N,H,α) · G(N,V,L,α) / (4 · NdotL · NdotV)
+    //   f_spec · NdotL = D(N,H,α) · G(N,V,L,α) / (4 · NdotV)
     float D = D_GGX(NdotH, roughness);
     float G = G_Smith(NdotV, NdotL, roughness);
     float specular_v = (NdotL > 0.0)
-        ? (D * G) / max(4.0 * NdotL * NdotV, 1e-4)
+        ? (D * G) / max(4.0 * NdotV, 1e-4)
         : 0.0;
 
     return vec2(diffuse_v, specular_v);
@@ -300,7 +308,7 @@ vec2 calc_headlights(light_s light, vec3 fragnormal)
 	// Tighter wrap (was +0.25): faces angled away from the headlight cone
 	// fall off to dark much faster, so cab/exterior surfaces read with a
 	// clear directional shape instead of a flat half-lit wash.
-	vec2 part = vec2(1.0) * clamp(dot(fragnormal, light_dir) + 0.10, 0.0, 1.0);
+	vec2 part = vec2(clamp(dot(fragnormal, light_dir) + 0.10, 0.0, 1.0), calc_light(light_dir, fragnormal).y);
 	float distance = length(light.pos - f_pos.xyz);
 	float atten = 1.0f / (1.0f + light.linear * distance + light.quadratic * (distance * distance));
 	atten *= mix(1.0, 0.0, clamp((coords.z - 0.998) * 500.0, 0.0, 1.0));
@@ -420,11 +428,13 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // direct sun read as too hot/burnt; raise it for more punch.
     fragcolor += lights[0].color * SUN_DIFFUSE_SCALE * (1.0 - shadow1) * diffuseamount;
 
+    vec3 headlightspecular = vec3(0.0);
     for (uint i = 1U; i < lights_count; i++)
     {
         light_s light = lights[i];
         vec2 part = calc_headlights(light, fragnormal);
-        fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
+        fragcolor += light.color * part.x * HEADLIGHT_DIFFUSE_SCALE * light.intensity;
+        headlightspecular += light.color * part.y * light.intensity;
     }
 
     float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity
@@ -432,7 +442,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     if (shadowtone < 1.0)
         specularamount *= clamp(1.0 - shadow1, 0.0, 1.0);
 
-    vec3 specularcolor = specularamount * lights[0].color;
+    vec3 specularcolor = specularamount * lights[0].color + headlightspecular * param[1].y * specularity;
 
     // Env reflection tracked separately — must NOT go through the albedo multiply
     // below. Gated by the pre-integrated env BRDF (env_spec) so reflection energy

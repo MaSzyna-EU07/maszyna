@@ -63,6 +63,7 @@ void main()
 	float reflectivity = reflblend > 1.0 ? param[1].z * 1.0 : param[1].z * reflblend;
 	float specularity = (tex_color.r + tex_color.g + tex_color.b) * 0.5;
 	
+	glossiness = phong_glossiness();
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
 	vec4 color = vec4(apply_fog(fragcolor), tex_color.a * alpha_mult);
 #if POSTFX_ENABLED
