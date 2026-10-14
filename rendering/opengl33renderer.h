@@ -255,6 +255,10 @@ class opengl33_renderer : public gfx_renderer {
 		std::unique_ptr<opengl_texture>  gtao_blur_tex;
 		std::unique_ptr<gl::framebuffer> gtao_fb;
 		std::unique_ptr<gl::framebuffer> gtao_blur_fb;
+		bool gtao_history = false;
+		glm::mat4 gtao_projection;
+		glm::dmat4 gtao_view;
+		std::unordered_map<void const *, glm::dmat4> gtao_models;
 
         // LDR backbuffer for offscreen rendering
         std::unique_ptr<gl::framebuffer> backbuffer_fb;
@@ -283,6 +287,7 @@ class opengl33_renderer : public gfx_renderer {
 	void Render_pass(viewport_config &vp, rendermode const Mode);
 	// creates dynamic environment cubemap
 	bool Render_reflections(viewport_config &vp);
+	void setup_gtao_motion(TDynamicObject const *Dynamic);
 	bool Render(world_environment *Environment);
 	void Render(scene::basic_region *Region);
 	void Render(section_sequence::iterator First, section_sequence::iterator Last);
@@ -520,7 +525,10 @@ class opengl33_renderer : public gfx_renderer {
 
 	std::unique_ptr<gl::postfx>      m_pfx_gtao;
 	std::unique_ptr<gl::postfx>      m_pfx_gtao_blur;
-	std::unique_ptr<gl::postfx>      m_pfx_gtao_apply;
+	viewport_config *m_gtao_vp = nullptr;
+	glm::mat4 m_gtao_projection;
+	glm::dmat4 m_gtao_view;
+	std::unordered_map<void const *, glm::dmat4> m_gtao_models;
 
 	std::unique_ptr<gl::program> m_shadow_shader;
 	std::unique_ptr<gl::program> m_alpha_shadow_shader;

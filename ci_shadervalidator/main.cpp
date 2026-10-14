@@ -45,6 +45,7 @@ bool check_shader_allopts(std::string filename)
 	Global.gfx_postfx_motionblur_enabled = true;
 	Global.gfx_skippipeline = false;
 	Global.gfx_extraeffects = true;
+	Global.gfx_postfx_gtao_enabled = true;
 	Global.gfx_shadergamma = true;
 	if (!check_shader(filename))
 		suc = false;
@@ -55,6 +56,7 @@ bool check_shader_allopts(std::string filename)
 	Global.gfx_postfx_motionblur_enabled = false;
 	Global.gfx_skippipeline = true;
 	Global.gfx_extraeffects = false;
+	Global.gfx_postfx_gtao_enabled = false;
 	Global.gfx_shadergamma = false;
 	if (!check_shader(filename))
 		suc = false;

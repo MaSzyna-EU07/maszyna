@@ -7,6 +7,8 @@ uniform sampler2D depth_tex;
 
 #include <common>
 
+#include <gtao_common.glsl>
+
 const float PI = 3.14159265;
 const float HALF_PI = 1.57079633;
 
@@ -28,7 +30,7 @@ void main()
 	vec2 size = vec2(textureSize(depth_tex, 0));
 	ivec2 center = ivec2(f_coords * size);
 	if (texelFetch(depth_tex, center, 0).r <= 0.0) {
-		out_color = vec4(1.0);
+		out_color = vec4(1.0, 60000.0, 0.0, 0.0);
 		return;
 	}
 
@@ -45,7 +47,7 @@ void main()
 	float radius = param[0].x;
 	float pixels = radius * projection[1][1] * 0.5 * size.y / -P.z;
 	if (pixels < 2.0) {
-		out_color = vec4(1.0);
+		out_color = vec4(1.0, -P.z, octahedral_encode(mat3(inv_view) * N));
 		return;
 	}
 	pixels = min(pixels, size.y * 0.25);
@@ -59,6 +61,7 @@ void main()
 	float jitter = fract(noise * 1.61803399);
 
 	float visibility = 0.0;
+	vec3 bent = vec3(0.0);
 	for (int d = 0; d < directions; ++d)
 	{
 		float phi = (float(d) + noise) * PI / float(directions);
@@ -95,8 +98,12 @@ void main()
 		float arc0 = (cosn + 2.0 * h0 * sin(n) - cos(2.0 * h0 - n)) * 0.25;
 		float arc1 = (cosn + 2.0 * h1 * sin(n) - cos(2.0 * h1 - n)) * 0.25;
 		visibility += projectedlength * (arc0 + arc1);
+		float middle = 0.5 * (h0 + h1);
+		bent += (V * cos(middle) + normalize(ortho) * sin(middle)) * projectedlength * (arc0 + arc1);
 	}
 	visibility = clamp(visibility / float(directions), 0.0, 1.0);
 	float fade = smoothstep(param[1].y * 0.75, param[1].y, -P.z);
-	out_color = vec4(mix(visibility, 1.0, fade));
+	bent = (dot(bent, bent) > 1e-8 ? normalize(bent) : N);
+	bent = normalize(mix(bent, N, fade));
+	out_color = vec4(mix(visibility, 1.0, fade), -P.z, octahedral_encode(mat3(inv_view) * bent));
 }

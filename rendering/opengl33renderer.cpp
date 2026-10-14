@@ -218,7 +218,6 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	{
 		m_pfx_gtao       = std::make_unique<gl::postfx>("gtao");
 		m_pfx_gtao_blur  = std::make_unique<gl::postfx>("gtao_blur");
-		m_pfx_gtao_apply = std::make_unique<gl::postfx>("gtao_apply");
 	}
 
 	// Generate hemisphere kernel (z > 0 = toward surface normal)
@@ -579,16 +578,17 @@ bool opengl33_renderer::init_viewport(viewport_config &vp)
 			int gtao_h = std::max(1, vp.height / 2);
 
 			vp.gtao_tex = std::make_unique<opengl_texture>();
-			vp.gtao_tex->alloc_rendertarget(GL_R8, GL_RED, gtao_w, gtao_h, 1, 1, GL_CLAMP_TO_EDGE);
+			vp.gtao_tex->alloc_rendertarget(GL_RGBA16F, GL_RGBA, gtao_w, gtao_h, 1, 1, GL_CLAMP_TO_EDGE);
 			vp.gtao_fb = std::make_unique<gl::framebuffer>();
 			vp.gtao_fb->attach(*vp.gtao_tex, GL_COLOR_ATTACHMENT0);
 			if (!vp.gtao_fb->is_complete()) { ErrorLog("gtao framebuffer setup failed"); return false; }
 
 			vp.gtao_blur_tex = std::make_unique<opengl_texture>();
-			vp.gtao_blur_tex->alloc_rendertarget(GL_R8, GL_RED, gtao_w, gtao_h, 1, 1, GL_CLAMP_TO_EDGE);
+			vp.gtao_blur_tex->alloc_rendertarget(GL_RGBA16F, GL_RGBA, gtao_w, gtao_h, 1, 1, GL_CLAMP_TO_EDGE);
 			vp.gtao_blur_fb = std::make_unique<gl::framebuffer>();
 			vp.gtao_blur_fb->attach(*vp.gtao_blur_tex, GL_COLOR_ATTACHMENT0);
 			if (!vp.gtao_blur_fb->is_complete()) { ErrorLog("gtao blur framebuffer setup failed"); return false; }
+			vp.gtao_history = false;
 		}
 
 		if (!vp.main2_fb->is_complete())
@@ -977,6 +977,17 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
 
+		if (Global.gfx_postfx_gtao_enabled && !Global.gfx_skippipeline && vp.gtao_blur_tex)
+		{
+			m_gtao_vp = &vp;
+			m_gtao_projection = scene_ubs.projection;
+			m_gtao_view = glm::dmat4{ glm::dmat3{ glm::mat3{ m_renderpass.pass_camera.modelview() } } } * glm::translate(glm::dmat4{ 1.0 }, -m_renderpass.pass_camera.position());
+			m_gtao_models.clear();
+			vp.gtao_blur_tex->bind(gl::GTAO_TEX);
+			scene_ubs.gtao_params = glm::vec4(vp.gtao_history ? 1.f : 0.f, Global.gfx_postfx_gtao_intensity, 0.f, 0.f);
+			setup_gtao_motion(nullptr);
+		}
+
         if( Global.gfx_shadowmap_enabled )
             setup_shadow_bind_map();
 
@@ -1049,6 +1060,13 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
 		Timer::subsystem.gfx_color.stop();
 
+		if (m_gtao_vp != nullptr)
+		{
+			scene_ubs.gtao_params.x = 0.f;
+			scene_ubo->update(scene_ubs);
+			opengl_texture::unbind(gl::GTAO_TEX);
+		}
+
         // store draw stats
         m_colorpass.draw_stats = m_renderpass.draw_stats;
 
@@ -1094,17 +1112,20 @@ if (!Global.gfx_skippipeline)
 				model_ubo->update(model_ubs);
 				glViewport(0, 0, gtao_w, gtao_h);
 				m_pfx_gtao->apply({ vp.main_texd.get() }, vp.gtao_fb.get());
-				m_pfx_gtao_blur->apply({ vp.gtao_tex.get(), vp.main_texd.get() }, vp.gtao_blur_fb.get());
-
+				m_pfx_gtao_blur->apply({ vp.gtao_tex.get() }, vp.gtao_blur_fb.get());
 				glViewport(0, 0, vp.width, vp.height);
-				vp.main_fb->setup_drawing(1);
-				glEnable(GL_BLEND);
-				glBlendFunc(GL_ZERO, GL_SRC_COLOR);
-				m_pfx_gtao_apply->apply({ vp.gtao_blur_tex.get() }, vp.main_fb.get(), false);
-				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				if (!blend)
-					glDisable(GL_BLEND);
+				if (blend)
+					glEnable(GL_BLEND);
+
+				if (m_gtao_vp == &vp)
+				{
+					vp.gtao_projection = m_gtao_projection;
+					vp.gtao_view = m_gtao_view;
+					vp.gtao_models = std::move(m_gtao_models);
+					vp.gtao_history = true;
+				}
 			}
+			m_gtao_vp = nullptr;
 
 			if (Global.gfx_postfx_motionblur_enabled)
 			{
@@ -1406,6 +1427,7 @@ bool opengl33_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squ
         ::glPushMatrix();
         ::glTranslated( originoffset.x, originoffset.y, originoffset.z );
 		::glMultMatrixd( glm::value_ptr(Dynamic->mMatrix) );
+        setup_gtao_motion( Dynamic );
     }
     // HACK: reduce light level for vehicle interior if there's strong global lighting source
     if( false == Alpha ) {
@@ -1454,6 +1476,7 @@ bool opengl33_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squ
         }
 
         ::glPopMatrix();
+        setup_gtao_motion( nullptr );
 
         // TODO: check if this reset is needed. In theory each object should render all parts based on its own instance data anyway?
         if( Dynamic->btnOn ) {
@@ -1489,6 +1512,24 @@ bool opengl33_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float c
 }
 
 // creates dynamic environment cubemap
+void opengl33_renderer::setup_gtao_motion(TDynamicObject const *Dynamic)
+{
+	if (m_gtao_vp == nullptr || m_renderpass.draw_mode != rendermode::color)
+		return;
+
+	glm::dmat4 motion{ 1.0 };
+	if (Dynamic != nullptr)
+	{
+		glm::dmat4 const model{ glm::translate(glm::dmat4{ 1.0 }, Dynamic->GetPosition()) * Dynamic->mMatrix };
+		m_gtao_models[Dynamic] = model;
+		auto const previous{ m_gtao_vp->gtao_models.find(Dynamic) };
+		if (previous != m_gtao_vp->gtao_models.end())
+			motion = previous->second * glm::inverse(model);
+	}
+	scene_ubs.gtao_reprojection = m_gtao_vp->gtao_projection * glm::mat4{ m_gtao_vp->gtao_view * motion * glm::inverse(m_gtao_view) };
+	scene_ubo->update(reinterpret_cast<uint8_t const *>(&scene_ubs.gtao_reprojection), static_cast<int>(offsetof(gl::scene_ubs, gtao_reprojection)), sizeof(glm::mat4) + sizeof(glm::vec4));
+}
+
 bool opengl33_renderer::Render_reflections(viewport_config &vp)
 {
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
@@ -3859,6 +3900,7 @@ bool opengl33_renderer::Render(TDynamicObject *Dynamic)
 	::glPushMatrix();
 	::glTranslated(originoffset.x, originoffset.y, originoffset.z);
 	::glMultMatrixd(glm::value_ptr(Dynamic->mMatrix));
+	setup_gtao_motion(Dynamic);
 
 	switch (m_renderpass.draw_mode)
 	{
@@ -3944,6 +3986,7 @@ bool opengl33_renderer::Render(TDynamicObject *Dynamic)
 	}
 
 	::glPopMatrix();
+	setup_gtao_motion(nullptr);
 
 	model_ubs.future = future_stack;
 
@@ -3983,6 +4026,7 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
 		auto const originoffset = Dynamic->GetPosition() - m_renderpass.pass_camera.position();
 		::glTranslated(originoffset.x, originoffset.y, originoffset.z);
 		::glMultMatrixd(glm::value_ptr(Dynamic->mMatrix));
+		setup_gtao_motion(Dynamic);
 
         switch (m_renderpass.draw_mode)
 		{
@@ -4046,6 +4090,7 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
 		}
 		// post-render restore
 		::glPopMatrix();
+		setup_gtao_motion(nullptr);
 	}
 
 	return true;
@@ -5008,6 +5053,7 @@ bool opengl33_renderer::Render_Alpha(TDynamicObject *Dynamic)
 
 	::glTranslated(originoffset.x, originoffset.y, originoffset.z);
 	::glMultMatrixd(glm::value_ptr(Dynamic->mMatrix));
+	setup_gtao_motion(Dynamic);
 
 	if (Dynamic->fShade > 0.0f)
 	{
@@ -5044,6 +5090,7 @@ bool opengl33_renderer::Render_Alpha(TDynamicObject *Dynamic)
 	}
 
 	::glPopMatrix();
+	setup_gtao_motion(nullptr);
 
 	model_ubs.future = future_stack;
 

@@ -347,6 +347,7 @@ void gl::program::init()
     glUniform1i(glGetUniformLocation(*this, "shadowmap"), gl::SHADOW_TEX);
     glUniform1i(glGetUniformLocation(*this, "envmap"), gl::ENV_TEX);
     glUniform1i(glGetUniformLocation(*this, "headlightmap"), gl::HEADLIGHT_TEX);
+    glUniform1i(glGetUniformLocation(*this, "gtaomap"), gl::GTAO_TEX);
 
 	GLuint index;
 

@@ -4,6 +4,68 @@ uniform sampler2DArrayShadow shadowmap;
 #endif
 uniform sampler2D headlightmap;
 
+#if GTAO_ENABLED
+uniform sampler2D gtaomap;
+
+#include <gtao_common.glsl>
+
+vec4 gtao_sample()
+{
+	vec4 none = vec4(1.0, 0.0, 0.0, 0.0);
+	if (gtao_params.x < 0.5)
+		return none;
+	vec4 clip = gtao_reprojection * vec4(f_pos.xyz, 1.0);
+	if (clip.w <= 0.0)
+		return none;
+	vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
+		return none;
+	ivec2 size = textureSize(gtaomap, 0);
+	vec2 position = uv * vec2(size) - 0.5;
+	ivec2 base = ivec2(floor(position));
+	vec2 f = position - vec2(base);
+	float visibility = 0.0;
+	vec3 bent = vec3(0.0);
+	float weights = 0.0;
+	for (int i = 0; i < 4; ++i)
+	{
+		ivec2 offset = ivec2(i & 1, i >> 1);
+		vec4 tap = texelFetch(gtaomap, clamp(base + offset, ivec2(0), size - 1), 0);
+		float difference = abs(tap.g - clip.w) / (clip.w * 0.08 + 0.05);
+		float weight = (offset.x == 1 ? f.x : 1.0 - f.x) * (offset.y == 1 ? f.y : 1.0 - f.y) * max(1.0 - difference, 0.0);
+		visibility += tap.r * weight;
+		bent += octahedral_decode(tap.ba) * weight;
+		weights += weight;
+	}
+	if (weights < 1e-3 || dot(bent, bent) < 1e-8)
+		return none;
+	return vec4(clamp(visibility / weights, 0.0, 1.0), normalize(bent));
+}
+
+float gtao_cone_overlap(float cos1, float cos2, float cosd)
+{
+	float r1 = acos(cos1);
+	float r2 = acos(cos2);
+	float d = acos(clamp(cosd, -1.0, 1.0));
+	float smaller = 1.0 - max(cos1, cos2);
+	if (min(r1, r2) <= max(r1, r2) - d)
+		return smaller;
+	if (r1 + r2 <= d)
+		return 0.0;
+	float delta = abs(r1 - r2);
+	return smaller * smoothstep(0.0, 1.0, 1.0 - clamp((d - delta) / max(r1 + r2 - delta, 1e-4), 0.0, 1.0));
+}
+
+float gtao_specular(vec4 gtao, vec3 normal, vec3 reflected, float roughness)
+{
+	vec3 bent = (dot(gtao.yzw, gtao.yzw) > 0.5 ? gtao.yzw : normal);
+	float coslobe = clamp(exp2(-3.32193 * roughness * roughness), 0.0, 0.999);
+	float occluded = gtao_cone_overlap(sqrt(clamp(1.0 - gtao.x, 0.0, 1.0)), coslobe, dot(bent, reflected));
+	float open = gtao_cone_overlap(0.0, coslobe, dot(normal, reflected));
+	return mix(1.0, clamp(occluded / max(open, 1e-5), 0.0, 1.0), smoothstep(0.9, 0.5, gtao.x));
+}
+#endif
+
 #include <envmapping.glsl>
 #include <conversion.glsl>
 
@@ -298,6 +360,13 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     fragcolor *= 1.0 - parallax_occlusion;
 #endif
 
+#if GTAO_ENABLED
+    vec4 gtao = gtao_sample();
+    vec3 gtao_normal = mat3(inv_view) * fragnormal;
+    vec3 gtao_bent = (dot(gtao.yzw, gtao.yzw) > 0.5 ? gtao.yzw : gtao_normal);
+    fragcolor *= pow(gtao.x, gtao_params.y) * min((0.75 + 0.25 * gtao_bent.y) / (0.75 + 0.25 * gtao_normal.y), 1.0);
+#endif
+
     vec3 emissioncolor = vec3(emission);
 
     vec3 view_dir = normalize(-f_pos.xyz);
@@ -314,6 +383,9 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // mirroring the sky. `env_spec` is the colour to multiply the cubemap by.
     vec3 env_spec = EnvBRDFApprox(F0, env_roughness, NdotV);
     float env_spec_w = max(env_spec.r, max(env_spec.g, env_spec.b));
+#if GTAO_ENABLED
+    env_spec *= gtao_specular(gtao, gtao_normal, normalize(mat3(inv_view) * reflect(f_pos.xyz, fragnormal)), env_roughness);
+#endif
 
     // Tint texture toward fully-saturated under strong env, weighted by the
     // env BRDF (so a rough/matte surface no longer gets washed toward env hue)

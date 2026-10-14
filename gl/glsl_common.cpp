@@ -11,6 +11,7 @@ void gl::glsl_common_setup()
     "#define MOTIONBLUR_ENABLED " + std::to_string((int)Global.gfx_postfx_motionblur_enabled) + "\n" +
     "#define POSTFX_ENABLED " + std::to_string((int)!Global.gfx_skippipeline) + "\n" +
     "#define EXTRAEFFECTS_ENABLED " + std::to_string((int)Global.gfx_extraeffects) + "\n" +
+    "#define GTAO_ENABLED " + std::to_string((int)(Global.gfx_postfx_gtao_enabled && !Global.gfx_skippipeline)) + "\n" +
     "#define MAX_LIGHTS " + std::to_string(MAX_LIGHTS) + "U\n" +
     "#define MAX_CASCADES " + std::to_string(MAX_CASCADES) + "U\n" +
     "#define MAX_PARAMS " + std::to_string(MAX_PARAMS) + "U\n" +
@@ -77,6 +78,8 @@ void gl::glsl_common_setup()
 		vec4 wiper_pos;
 		vec4 wiper_timer_out;
 		vec4 wiper_timer_return;
+		mat4 gtao_reprojection;
+		vec4 gtao_params;
     };
 
     // Per-instance modelview matrices for GPU-instanced draws.

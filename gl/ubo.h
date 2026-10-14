@@ -46,6 +46,7 @@ namespace gl
     const size_t SHADOW_TEX = MAX_TEXTURES + 0;
     const size_t ENV_TEX = MAX_TEXTURES + 1;
     const size_t HEADLIGHT_TEX = MAX_TEXTURES + 2;
+    const size_t GTAO_TEX = MAX_TEXTURES + 3;
 
     struct scene_ubs
     {
@@ -58,9 +59,11 @@ namespace gl
     	glm::vec4 wiper_pos;
     	glm::vec4 wiper_timer_out;
     	glm::vec4 wiper_timer_return;
+        glm::mat4 gtao_reprojection { 1.f };
+        glm::vec4 gtao_params { 0.f };
     };
 
-    static_assert(sizeof(scene_ubs) == 400, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 480, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
