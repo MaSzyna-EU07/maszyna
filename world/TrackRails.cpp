@@ -1049,6 +1049,22 @@ void wide( TTrack::rail_plan &Plan, double const At, double const Into, double c
     Plan.cuts.push_back( cut );
 }
 
+TTrack::rail_fill guard_fill( TTrack::guard_rail const &Guard, TTrack::rail_size const &Size ) {
+
+    auto const offset { Size.web - ( flangeway + Size.head ) };
+    auto const flare { std::min( 0.3, 0.25 * ( Guard.to - Guard.from ) ) };
+    TTrack::rail_fill fill;
+    fill.web = true;
+    fill.from = Guard.from;
+    fill.to = Guard.to;
+    fill.capfrom = true;
+    fill.capto = true;
+    fill.lift = ( Guard.through ? 0.0 : -0.001 );
+    fill.inner = { { Guard.from, offset - ( Guard.flarefrom ? 0.02 : 0.0 ) }, { Guard.from + flare, offset }, { Guard.to - flare, offset }, { Guard.to, offset - ( Guard.flareto ? 0.02 : 0.0 ) } };
+    fill.outer = { { Guard.from, Size.web }, { Guard.to, Size.web } };
+    return fill;
+}
+
 bool goes_through( TTrack const &Track, TTrack const &Other ) {
 
     if( Track.name() != Other.name() ) {
@@ -1344,6 +1360,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                 auto const reach { ( flangeway + railhead + 0.3 ) / std::abs( crossing.into ) };
                 auto &spans { guards[ crossing.path ][ crossing.side > 0 ] };
                 TTrack::guard_rail guard { crossing.at - reach, crossing.at + reach };
+                guard.through = through;
                 wide( guard.plan, crossing.at, crossing.into, crossing.facing, -other.head, through ? flangeway : flangeway + other.head, guardoffset, guardoffset + railhead );
                 auto merged { false };
                 for( auto &span : spans ) {
@@ -1351,6 +1368,7 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                         span.from = std::min( span.from, guard.from );
                         span.to = std::max( span.to, guard.to );
                         span.plan.cuts.insert( span.plan.cuts.end(), guard.plan.cuts.begin(), guard.plan.cuts.end() );
+                        span.through = ( span.through && guard.through );
                         merged = true;
                         break;
                     }
@@ -1391,6 +1409,13 @@ TTrack::rail_layout TTrack::plan_rails( bool const Crossings ) {
                             guard.to = std::max( guard.to, opposite.y );
                         }
                     }
+                }
+            }
+        }
+        for( int path = 0; path < 2; ++path ) {
+            for( int side = 0; side < 2; ++side ) {
+                for( auto const &guard : guards[ path ][ side ] ) {
+                    layout.fills[ path ][ side ].push_back( guard_fill( guard, size ) );
                 }
             }
         }
