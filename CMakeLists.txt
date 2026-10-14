@@ -77,6 +77,7 @@ option(WITH_ZMQ "Compile with cppzmq" OFF)
 option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
 option(USE_LTO "Use link-time optimization" OFF)
+option(WITH_TESTS "Build and run the unit tests with the game, a failing test fails the build" ON)
 option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" OFF)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
@@ -715,3 +716,22 @@ if(ENABLE_AVX2)
         target_compile_options(eu07_settings INTERFACE -mavx2)
     endif()
 endif()
+
+if(WITH_TESTS)
+	enable_testing()
+	add_subdirectory(tests/unit)
+	# the unit tests run at the end of building the game, once it's linked: a failing one fails the build
+	# (and removes the game binary, so the next build links it again and reruns them)
+	add_dependencies(${PROJECT_NAME} eu07_unit_tests)
+	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND}
+			-DTESTS=$<TARGET_FILE:eu07_unit_tests>
+			-DGAME=$<TARGET_FILE:${PROJECT_NAME}>
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake"
+		COMMENT "Running the unit tests"
+		VERBATIM)
+	# a change of the tests alone links the game again, so they run (Ninja and Makefile generators;
+	# Visual Studio builds rerun them with the next change of the game)
+	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
+		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
+endif()
