@@ -14,7 +14,7 @@ void gl::glsl_common_setup()
     "#define MAX_LIGHTS " + std::to_string(MAX_LIGHTS) + "U\n" +
     "#define MAX_CASCADES " + std::to_string(MAX_CASCADES) + "U\n" +
     "#define MAX_PARAMS " + std::to_string(MAX_PARAMS) + "U\n" +
-    "#define MAX_INSTANCES_PER_BATCH " + std::to_string(MAX_INSTANCES_PER_BATCH) + "U\n" +
+    "#define INSTANCE_SSBO_BINDING " + std::to_string(INSTANCE_SSBO_BINDING) + "\n" +
     "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +
     "#define CLUSTER_GRID_X " + std::to_string(CLUSTER_GRID_X) + "\n" +
     "#define CLUSTER_GRID_Y " + std::to_string(CLUSTER_GRID_Y) + "\n" +
@@ -184,24 +184,21 @@ void gl::glsl_common_setup()
 		vec4 wiper_timer_return;
     };
 
-    // Per-instance modelview matrices for GPU-instanced draws.
-    // The UBO itself is declared in every stage so the binding stays valid,
-    // but the helper functions reference gl_InstanceID which is vertex-only,
-    // so they are guarded behind STAGE_VERTEX.
-    layout (std140) uniform instance_ubo
+    #ifdef STAGE_VERTEX
+    // Per-instance modelview matrices for GPU-instanced draws, element 0 is identity.
+    // Draws which aren't instanced have gl_BaseInstance == 0 and gl_InstanceID == 0,
+    // so effective_modelview() reduces to model_ubo.modelview. For instanced draws
+    // the C++ side uploads camera-space root transforms of the instances and draws
+    // them from base instance onwards, with model_ubo.modelview set to the submodel-local
+    // chain (computed from identity, NOT from the camera/instance), so the product
+    // gives the correct final transform per instance per submodel.
+    layout(std430, binding = INSTANCE_SSBO_BINDING) readonly buffer instance_ssbo
     {
-        mat4 instance_modelview[MAX_INSTANCES_PER_BATCH];
+        mat4 instance_modelview[];
     };
 
-    #ifdef STAGE_VERTEX
-    // For non-instanced draws gl_InstanceID == 0 and slot 0 is permanently set
-    // to identity, so effective_modelview() reduces to model_ubo.modelview.
-    // For instanced draws the C++ side uploads camera-space root transforms for
-    // instances 0..N-1 and sets model_ubo.modelview to the submodel-local chain
-    // (computed from identity, NOT from the camera/instance), so the product
-    // gives the correct final transform per instance per submodel.
     mat4 effective_modelview() {
-        return instance_modelview[gl_InstanceID] * modelview;
+        return instance_modelview[gl_BaseInstance + gl_InstanceID] * modelview;
     }
     mat3 effective_modelviewnormal() {
         // instance_modelview can include per-instance scale (uniform or per-axis),
@@ -209,7 +206,7 @@ void gl::glsl_common_setup()
         // case. Compute the correct normal matrix via transpose(inverse(...)).
         // For pure rotation+translation this still produces the rotation matrix
         // (one extra mat3 inverse per vertex — modern GPUs handle it cheaply).
-        mat3 instance_mv3 = mat3(instance_modelview[gl_InstanceID]);
+        mat3 instance_mv3 = mat3(instance_modelview[gl_BaseInstance + gl_InstanceID]);
         mat3 instance_normal = transpose(inverse(instance_mv3));
         return instance_normal * modelviewnormal;
     }

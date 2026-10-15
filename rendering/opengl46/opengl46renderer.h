@@ -305,17 +305,25 @@ class opengl46_renderer : public gfx_renderer {
 	void Render(cell_sequence::iterator First, cell_sequence::iterator Last);
     void Render(scene::shape_node const &Shape, bool const Ignorerange);
 	void Render(TAnimModel *Instance);
+	// an instance of a bucket of a scene cell, queued to be drawn by Render_Instanced()
+	struct queued_instance {
+		scene::basic_cell::instance_bucket const *bucket;
+		std::size_t index; // of the instance and its record in the bucket
+	};
 	// batched render path for many TAnimModel instances that share the same TModel3d.
-	// Caller guarantees every instance has m_instanceable == true (no per-instance lights,
-	// no submodel animation, no replacable skins). Each call counts as one
-	// instanced_drawcall in draw_stats and contributes Instances.size() to the
-	// instances counter. Instances are still individually frustum/distance culled.
-	void Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances );
+	// Caller guarantees every instance was instanceable when bucketed (no per-instance lights,
+	// no submodel animation, same replacable skins); the records of the instances tell which
+	// ones still are. Instances are individually frustum/distance culled by their records, the
+	// TAnimModel itself is read only for the first instance drawn. Each lod band drawn counts as
+	// one instanced_drawcall in draw_stats; the instances drawn are added to the instances counter.
+	void Render_Instanced( TModel3d *Model, std::vector<queued_instance> const &Instances );
 	// adds the bucketed instances of a scene cell to the frame-level buckets drawn by Render_Instanced(),
-	// less the ones the copies of their bounds show to be out of sight in the current render pass
+	// less the ones their records show to be out of sight in the current render pass
 	void Queue_Instances( scene::basic_cell const *Cell );
-	// makes the copies of the bounds of the instances held by a bucket of a scene cell
-	void Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket );
+	// makes the records of the instances held by a bucket of a scene cell, with locations relative to Origin
+	void Update_Instance_Records( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket, glm::dvec3 const &Origin );
+	// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
+	std::uint32_t Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count );
 	bool Render(TDynamicObject *Dynamic);
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
@@ -455,14 +463,16 @@ class opengl46_renderer : public gfx_renderer {
 	// Render_Instanced() runs once per unique model across the whole pass instead
 	// of once per cell -- collapsing many tiny instanced draws into a few large
 	// batches. Reused every pass; the vectors are emptied (not freed) at the top of Render(scene::basic_region*).
-	scene::basic_cell::instance_bucket_map m_frame_instance_buckets;
+	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<queued_instance>, scene::basic_cell::instance_bucket_key_hash> m_frame_instance_buckets;
 	// textures used by vehicle models, for the release of far textures
 	std::unordered_map<TModel3d const *, std::vector<texture_handle>> m_modeltextures;
 	// geometry of neighbouring tracks of a cell which share the material, gathered to be drawn together. reused by each Render(path_sequence)
 	std::vector<gfx::geometrybank_handle> m_pathbatch;
-	// copies of instance bounds kept by the buckets of scene cells are good as long as they carry this number.
-	// it changes with each frame drawn with the scenery editor active, as the editor moves and resizes instances in place
-	unsigned int m_instanceboundsversion { 1 };
+	// instance records kept by the buckets of scene cells are good as long as they carry this number.
+	// it changes with each frame drawn with the scenery editor active, as the editor moves and resizes instances in place,
+	// and whenever scene::node_state_version does, as instances are shown, hidden or drawn on their own
+	unsigned int m_instancerecordsversion { 1 };
+	unsigned int m_nodestateversion { 0 }; // scene::node_state_version which m_instancerecordsversion was last checked against
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;
@@ -506,18 +516,20 @@ class opengl46_renderer : public gfx_renderer {
 	std::unique_ptr<gl::ubo> scene_ubo;
 	std::unique_ptr<gl::ubo> model_ubo;
 	std::unique_ptr<gl::ssbo> light_ssbo;
-	// per-instance modelview UBO for GPU-instanced draws.
-	// Slot 0 is initialized once to identity and never overwritten by non-instanced
-	// rendering, so existing draws (where gl_InstanceID==0) compute identity*modelview
-	// in the vertex shader and behave exactly as before. Render_Instanced uploads
-	// per-instance camera-space root matrices to slots 0..N-1, calls glDrawElementsInstanced*,
-	// then restores slot 0 to identity for subsequent non-instanced draws.
-	std::unique_ptr<gl::ubo> instance_ubo;
+	// per-instance modelview matrices of GPU-instanced draws, one buffer for each of the last frames, used in turn so
+	// a frame doesn't write to the buffer the gpu may still read for an earlier one. element 0 of each is identity
+	// and never overwritten: draws which aren't instanced (gl_BaseInstance == gl_InstanceID == 0) compute
+	// identity*modelview in the vertex shader. Render_Instanced and Render_Sleepers append the camera-space root
+	// matrices of their instances past the ones placed earlier in the frame, and draw them from that base instance
+	std::array<std::unique_ptr<gl::ssbo>, 3> m_instancebuffers;
+	std::size_t m_instancebufferindex { 0 }; // the buffer of the current frame
+	std::size_t m_instancebufferfill { 1 }; // matrices placed in it so far, identity included
 	// when > 0, the renderer is inside a Render_Instanced() call. The draw(handle)
-	// method routes to glDrawElementsInstanced* with this many instances rather
-	// than a single regular draw. The vertex shader reads per-instance modelview
-	// from instance_ubo[gl_InstanceID]. Reset to 0 by Render_Instanced() on exit.
+	// method routes to glDrawElementsInstanced* with this many instances from
+	// m_current_instance_base onwards rather than a single regular draw. The vertex shader reads
+	// per-instance modelview from instance_ssbo[gl_BaseInstance + gl_InstanceID]. Reset to 0 on exit.
 	std::size_t m_current_instance_count { 0 };
+	std::uint32_t m_current_instance_base { 0 };
 	// persistent scratch buffer for Render_Instanced(): holds the per-instance
 	// camera-space root modelview matrices for the batch currently being built.
 	// Kept as a member rather than a function-local so its heap allocation is

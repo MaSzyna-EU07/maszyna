@@ -327,9 +327,9 @@ geometry_bank::draw( gfx::geometry_handle const &Geometry, gfx::stream_units con
 
 // draws geometry stored in specified chunk InstanceCount times via instanced draw call
 std::size_t
-geometry_bank::draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) {
+geometry_bank::draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams ) {
     if( InstanceCount == 0 ) { return 0; }
-    return draw_instanced_( Geometry, Units, InstanceCount, Streams );
+    return draw_instanced_( Geometry, Units, InstanceCount, BaseInstance, Streams );
 }
 
 // draws geometry stored in supplied sequence of chunks of the bank
@@ -432,7 +432,7 @@ geometrybank_manager::draw( gfx::geometry_handle const &Geometry, unsigned int c
 
 // draws geometry stored in specified chunk InstanceCount times via instanced draw call
 void
-geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, unsigned int const Streams ) {
+geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams ) {
 
     if( Geometry == null_handle ) { return; }
     if( InstanceCount == 0 ) { return; }
@@ -440,7 +440,7 @@ geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std:
     auto &bankrecord = bank( Geometry );
 
     bankrecord.second = m_garbagecollector.timestamp();
-    m_primitivecount += bankrecord.first->draw_instanced( Geometry, m_units, InstanceCount, Streams );
+    m_primitivecount += bankrecord.first->draw_instanced( Geometry, m_units, InstanceCount, BaseInstance, Streams );
 }
 
 // draws geometry stored in supplied sequence of chunks

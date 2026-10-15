@@ -552,6 +552,7 @@ std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name
 		// containers are added by events after the instance was loaded and bucketed;
 		// the instanced path skips RaAnimate(), so this instance has to be drawn on its own
 		m_instanceable = false;
+		++scene::node_state_version;
 		return tmp;
     }
 	return nullptr;
@@ -781,6 +782,7 @@ void TAnimModel::SkinSet( int const Index, material_handle const Material ) {
     m_materialdata.replacable_skins[ std::clamp( Index, 1, 4 ) ] = Material;
     // the instance stays in the bucket of its old skin set, where it would get the textures of the batch
     m_instanceable = false;
+    ++scene::node_state_version;
 }
 
 void TAnimModel::AnimUpdate(double dt)

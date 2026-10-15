@@ -179,7 +179,11 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	model_ubo = std::make_unique<gl::ubo>(sizeof(gl::model_ubs), 1, GL_STREAM_DRAW);
 	light_ssbo = std::make_unique<gl::ssbo>(sizeof(gl::light_data), gl::LIGHT_SSBO_BINDING);
 	light_ssbo->bind_base();
-	instance_ubo = std::make_unique<gl::ubo>(sizeof(gl::instance_ubs), 3, GL_STREAM_DRAW);
+	for (auto &buffer : m_instancebuffers)
+	{
+		// grows when a frame needs more
+		buffer = std::make_unique<gl::ssbo>(static_cast<GLsizeiptr>(16384 * sizeof(glm::mat4)), gl::INSTANCE_SSBO_BINDING);
+	}
 
 	try
 	{
@@ -203,13 +207,15 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	model_ubo->update(model_ubs);
 	scene_ubo->update(scene_ubs);
 
-	// initialize instance_ubo slot 0 to identity. This is the matrix sampled by
-	// gl_InstanceID==0 in non-instanced draws, so existing rendering paths
+	// element 0 of the instance buffers is identity. This is the matrix sampled by
+	// non-instanced draws, so existing rendering paths
 	// continue to multiply effective_modelview = identity * modelview = modelview.
+	for (auto &buffer : m_instancebuffers)
 	{
-		glm::mat4 identity( 1.0f );
-		instance_ubo->update( reinterpret_cast<uint8_t const*>(&identity), 0, sizeof(identity) );
+		glm::mat4 const identity(1.0f);
+		buffer->update(identity);
 	}
+	m_instancebuffers[m_instancebufferindex]->bind_base();
 
 	int samples = 1 << Global.iMultisampling;
 	if (samples > 1)
@@ -630,10 +636,16 @@ bool opengl46_renderer::Render()
     opengl_texture::reset_unit_cache();
 	// textures of new heightmap terrain layers go to the arrays the terrain shader reads them from
 	m_terrainmaterials.update();
-	if( EditorModeFlag ) {
-		// the editor moves and resizes model instances in place, which leaves the copies of their bounds out of date
-		++m_instanceboundsversion;
+	if( ( EditorModeFlag ) || ( m_nodestateversion != scene::node_state_version ) ) {
+		// the editor moves and resizes model instances in place, events show and hide them and make them drawn on
+		// their own: the instance records are out of date
+		++m_instancerecordsversion;
+		m_nodestateversion = scene::node_state_version;
 	}
+	// instanced draws of the frame place their matrices in the next of the instance buffers, the one used the longest ago
+	m_instancebufferindex = ( m_instancebufferindex + 1 ) % m_instancebuffers.size();
+	m_instancebufferfill = 1;
+	m_instancebuffers[ m_instancebufferindex ]->bind_base();
 
 	m_renderpass.draw_mode = rendermode::none; // force setup anew
 	m_renderpass.draw_stats = debug_stats();
@@ -729,6 +741,8 @@ void opengl46_renderer::SwapBuffers()
         + " instanced:" + to_string( m_colorpass.draw_stats.instances, 7 ) + " +" + to_string( shadowstats.instances, 7 )
         + " =" + to_string( m_colorpass.draw_stats.instances + shadowstats.instances, 7 )
         + " (" + std::to_string( m_colorpass.draw_stats.instanced_drawcalls + shadowstats.instanced_drawcalls ) + " batches)\n"
+        + " instance buffer: " + std::to_string( m_instancebufferfill - 1 ) + " matrices, "
+        + std::to_string( m_instancebuffers[ m_instancebufferindex ]->size() / 1024 ) + " KiB\n"
         + " inst-pool:" + std::to_string( TAnimModel::s_instanceable_total )
         + "/" + std::to_string( TAnimModel::s_classified_total )
         + " rej(noModel/lights/anim/animSubM): "
@@ -2999,7 +3013,7 @@ void opengl46_renderer::draw(const gfx::geometry_handle &handle)
 	if( m_current_instance_count > 0 ) {
 		// inside Render_Instanced(): one GL instanced draw replaces what would
 		// otherwise be N regular draws (one per instance) at this submodel
-		m_geometry.draw_instanced( handle, m_current_instance_count );
+		m_geometry.draw_instanced( handle, m_current_instance_count, m_current_instance_base );
 	}
 	else {
 		m_geometry.draw( handle );
@@ -3182,13 +3196,13 @@ void opengl46_renderer::Render(TAnimModel *Instance)
 }
 
 // adds the bucketed instances of a scene cell to the frame-level buckets, for Render_Instanced() to draw.
-// Render_Instanced() culls each instance it's given. the tests it makes are repeated here on the copies of instance
-// bounds kept by the buckets, with some slack for the single precision of the copies, and the instances which fail are
-// left out: the instances themselves are fetched only when there's a chance for them to be drawn
+// Render_Instanced() culls each instance it's given by its record. the tests it makes are repeated here, with some slack
+// for the single precision of the records, and the instances which fail are left out of the queue
 void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 {
-	// the editor moves and resizes the instances in place, the copies can't be relied on while it's active
-	auto const usebounds { false == EditorModeFlag };
+	// the editor moves and resizes the instances in place. the records are made anew for each frame then,
+	// but aren't relied on to leave instances out of the queue
+	auto const userecords { false == EditorModeFlag };
 	auto const reflections { m_renderpass.draw_mode == rendermode::reflections };
 	// same choices as in Render_Instanced(): shadows measure the distance from the real camera, reflections
 	// ignore zoom and distance factor, test the plain distance against their own range and add the fidelity offset
@@ -3198,42 +3212,39 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 	auto const distanceoffset { reflections ? sq( static_cast<double>( EU07_REFLECTIONFIDELITYOFFSET ) ) : 0.0 };
 	auto const slack { 1.001 };
 	auto const distancelimit { slack * ( reflections ? sq( static_cast<double>( Global.reflectiontune.range_instances ) ) : sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) };
-	// up close the rounding of the copies is too large a part of the distance for the slack to cover it
+	// up close the rounding of the records is too large a part of the distance for the slack to cover it
 	auto const distancetested { sq( 64.0 ) };
 
 	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
-		auto const &instances { bucket.second.instances };
-		if( false == usebounds ) {
-			auto &dest { m_frame_instance_buckets[ bucket.first ] };
-			dest.insert( dest.end(), instances.begin(), instances.end() );
-			continue;
+		auto const &instancebucket { bucket.second };
+		if( ( instancebucket.recordsversion != m_instancerecordsversion )
+		 || ( instancebucket.records.size() != instancebucket.instances.size() ) ) {
+			Update_Instance_Records( bucket.first.pModel, instancebucket, Cell->m_area.center );
 		}
-		if( ( bucket.second.boundsversion != m_instanceboundsversion )
-		 || ( bucket.second.bounds.size() != instances.size() ) ) {
-			Update_Instance_Bounds( bucket.first.pModel, bucket.second );
-		}
-		auto const &bounds { bucket.second.bounds };
-		std::vector<TAnimModel *> *dest { nullptr }; // looked up when there's something to put in it
-		for( std::size_t idx = 0; idx < bounds.size(); ++idx ) {
-			auto const &instancebounds { bounds[ idx ] };
-			auto const center { glm::dvec3{ instancebounds.center } };
-			auto const distancesquared { glm::length2( center - cameraposition ) };
-			if( distancesquared > distancetested ) {
-				auto const scaleddistancesquared { distancesquared * distancescale };
-				if( scaleddistancesquared > distancelimit ) { continue; }
-				if( scaleddistancesquared + distanceoffset >= slack * instancebounds.rangesquaredmax ) { continue; }
+		auto const &records { instancebucket.records };
+		std::vector<queued_instance> *dest { nullptr }; // looked up when there's something to put in it
+		for( std::size_t idx = 0; idx < records.size(); ++idx ) {
+			if( userecords ) {
+				auto const &record { records[ idx ] };
+				auto const center { instancebucket.recordorigin + glm::dvec3{ record.position } };
+				auto const distancesquared { glm::length2( center - cameraposition ) };
+				if( distancesquared > distancetested ) {
+					auto const scaleddistancesquared { distancesquared * distancescale };
+					if( scaleddistancesquared > distancelimit ) { continue; }
+					if( scaleddistancesquared + distanceoffset >= slack * std::min( instancebucket.lodrangesquared, record.rangesquaredmax ) ) { continue; }
+				}
+				if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ center, record.radius } ) ) { continue; }
 			}
-			if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ center, instancebounds.radius } ) ) { continue; }
 			if( dest == nullptr ) {
 				dest = &m_frame_instance_buckets[ bucket.first ];
 			}
-			dest->emplace_back( instances[ idx ] );
+			dest->push_back( { &instancebucket, idx } );
 		}
 	}
 }
 
-// makes the copies of the bounds of the instances held by a bucket of a scene cell
-void opengl46_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket )
+// makes the records of the instances held by a bucket of a scene cell, with locations relative to Origin
+void opengl46_renderer::Update_Instance_Records( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket, glm::dvec3 const &Origin )
 {
 	// a submodel is drawn only closer than its fSquareMaxDist, see Render( TSubModel * ). past the largest of these
 	// there's nothing of the model left to draw, which makes it another limit of the range of its instances
@@ -3248,31 +3259,63 @@ void opengl46_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::ba
 		m_instance_lodpending.push_back( submodel->Child );
 		m_instance_lodpending.push_back( submodel->Next );
 	}
+	Bucket.lodrangesquared = lodrangesquared;
+	Bucket.recordorigin = Origin;
 
-	Bucket.bounds.clear();
-	Bucket.bounds.reserve( Bucket.instances.size() );
-	for( auto const *instance : Bucket.instances ) {
-		scene::basic_cell::instance_bounds instancebounds;
+	auto const tofloat = []( double const Value ) {
+		return static_cast<float>( std::min( Value, static_cast<double>( std::numeric_limits<float>::max() ) ) ); };
+
+	Bucket.records.clear();
+	Bucket.records.reserve( Bucket.instances.size() );
+	for( auto *instance : Bucket.instances ) {
+		scene::basic_cell::instance_record record;
 		if( instance != nullptr ) {
-			instancebounds.center = glm::vec3{ instance->m_area.center };
-			instancebounds.radius = instance->m_area.radius;
-			instancebounds.rangesquaredmax = std::min( lodrangesquared, static_cast<float>( std::min( instance->m_rangesquaredmax, static_cast<double>( std::numeric_limits<float>::max() ) ) ) );
+			record.position = glm::vec3{ instance->location() - Origin };
+			record.radius = instance->radius();
+			record.rangesquaredmin = tofloat( instance->m_rangesquaredmin );
+			record.rangesquaredmax = tofloat( instance->m_rangesquaredmax );
+			record.flags =
+				( instance->visible() ? scene::basic_cell::instance_visible : 0u )
+				| ( instance->m_instanceable ? scene::basic_cell::instance_instanceable : 0u );
+			auto const &rotationscale { instance->rotation_scale() };
+			for( int column = 0; column < 3; ++column ) {
+				record.rotationscale[ column ] = rotationscale[ column ];
+			}
 		}
-		Bucket.bounds.emplace_back( instancebounds );
+		// an empty slot keeps its record without flags, and isn't drawn
+		Bucket.records.emplace_back( record );
 	}
-	Bucket.boundsversion = m_instanceboundsversion;
+	Bucket.recordsversion = m_instancerecordsversion;
+}
+
+// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
+std::uint32_t opengl46_renderer::Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count )
+{
+	auto &buffer { m_instancebuffers[ m_instancebufferindex ] };
+	auto const needed { static_cast<GLsizeiptr>( ( m_instancebufferfill + Count ) * sizeof( glm::mat4 ) ) };
+	if( needed > buffer->size() ) {
+		// the draws issued with the replaced buffer keep it until the gpu is done with them. the new one starts with identity
+		buffer->resize( std::max( needed, 2 * buffer->size() ) );
+		glm::mat4 const identity( 1.0f );
+		buffer->update( identity );
+		buffer->bind_base();
+		m_instancebufferfill = 1;
+	}
+	auto const base { static_cast<std::uint32_t>( m_instancebufferfill ) };
+	buffer->update( Modelviews, static_cast<GLintptr>( base * sizeof( glm::mat4 ) ), static_cast<GLsizeiptr>( Count * sizeof( glm::mat4 ) ) );
+	m_instancebufferfill += Count;
+	return base;
 }
 
 // True GPU-instanced render path for a group of TAnimModel instances sharing the same
-// TModel3d. The submodel tree is walked ONCE per batch; at every submodel that draws
-// geometry we issue a single glDrawElementsInstancedBaseVertex(N) covering all visible
-// instances. The vertex shader multiplies effective_modelview = instance_modelview[gl_InstanceID]
-// * model_ubs.modelview, where instance_modelview[i] is the camera-space root transform
-// of instance i (precomputed below) and model_ubs.modelview is the submodel-local chain
-// (accumulated by the matrix stack starting from identity, NOT the camera/instance frame).
-//
-// Batch size is capped at MAX_INSTANCES_PER_BATCH (256). Larger groups are split.
-void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimModel *> const &Instances )
+// TModel3d. The submodel tree is walked ONCE per lod band; at every submodel that draws
+// geometry we issue a single glDrawElementsInstancedBaseVertexBaseInstance(N) covering all
+// visible instances of the band. The vertex shader multiplies effective_modelview =
+// instance_modelview[gl_BaseInstance + gl_InstanceID] * model_ubs.modelview, where
+// instance_modelview[i] is the camera-space root transform of an instance (precomputed below)
+// and model_ubs.modelview is the submodel-local chain (accumulated by the matrix stack starting
+// from identity, NOT the camera/instance frame).
+void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<queued_instance> const &Instances )
 {
 	if( Model == nullptr ) { return; }
 	if( Instances.empty() ) { return; }
@@ -3287,7 +3330,8 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	// whose materials are all excluded by the shadow rank cutoff (e.g. grass) would otherwise go through
 	// the whole per-instance culling and the batched draws in every shadow pass, only for every submodel
 	// to be skipped in Render(TSubModel*)
-	auto const *skins { Instances.front() != nullptr && Instances.front()->Material() != nullptr ? Instances.front()->Material()->replacable_skins : nullptr };
+	auto const *frontinstance { Instances.front().bucket->instances[ Instances.front().index ] };
+	auto const *skins { frontinstance != nullptr && frontinstance->Material() != nullptr ? frontinstance->Material()->replacable_skins : nullptr };
 	bool castsshadow { m_renderpass.draw_mode != rendermode::shadows };
 	m_instance_lodbounds.clear();
 	m_instance_lodpending.clear();
@@ -3310,9 +3354,9 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	m_instance_lodbounds.erase( std::unique( m_instance_lodbounds.begin(), m_instance_lodbounds.end() ), m_instance_lodbounds.end() );
 	auto const bandcount { m_instance_lodbounds.size() + 1 };
 
-	// 1. Visibility / distance cull. Collect surviving instances with their precomputed
-	// camera-space root modelview matrices and lod bands. m_instance_survivors and the other
-	// scratch vectors are persistent members reused across every Render_Instanced() call:
+	// 1. Visibility / distance cull, by the records of the instances. Collect surviving instances with
+	// their precomputed camera-space root modelview matrices and lod bands. m_instance_survivors and the
+	// other scratch vectors are persistent members reused across every Render_Instanced() call:
 	// clear() drops the contents but keeps the allocated capacity, so after the first few
 	// frames this stops calling malloc/free entirely.
 	m_instance_survivors.clear();
@@ -3324,55 +3368,58 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	// per-instance transform has been pushed yet.
 	glm::mat4 const view_matrix = OpenGLMatrices.data( GL_MODELVIEW );
 
-	bool prepared_shared_state = false; // RaPrepare() runs once per bucket
+	TAnimModel *batch_instance { nullptr }; // the first instance drawn; its RaPrepare() and material serve the whole bucket
 	material_data const *batch_material { nullptr };
 	float farthest_distancesquared { 0.f };
 
-	for( auto *Instance : Instances ) {
-		if( Instance == nullptr ) { continue; }
+	for( auto const &queued : Instances ) {
+		auto const &record { queued.bucket->records[ queued.index ] };
 		// instances which lost their instanceable status after being bucketed (animation or skin
 		// assigned by an event) are drawn by the per-node path
-		if( false == Instance->m_instanceable ) { continue; }
-		if( false == Instance->m_visible ) { continue; }
-		if( false == m_renderpass.pass_camera.visible( Instance->m_area ) ) { continue; }
+		if( ( record.flags & scene::basic_cell::instance_instanceable ) == 0 ) { continue; }
+		if( ( record.flags & scene::basic_cell::instance_visible ) == 0 ) { continue; }
+		glm::dvec3 const location { queued.bucket->recordorigin + glm::dvec3{ record.position } };
+		if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ location, record.radius } ) ) { continue; }
 
 		double distancesquared;
 		switch( m_renderpass.draw_mode ) {
 		case rendermode::shadows:
-			distancesquared = glm::length2( ( Instance->location() - m_renderpass.viewport_camera.position() ) / (double)Global.ZoomFactor ) / Global.fDistanceFactor;
+			distancesquared = glm::length2( ( location - m_renderpass.viewport_camera.position() ) / (double)Global.ZoomFactor ) / Global.fDistanceFactor;
 			break;
 		case rendermode::reflections:
-			distancesquared = glm::length2( ( Instance->location() - m_renderpass.pass_camera.position() ) );
+			distancesquared = glm::length2( ( location - m_renderpass.pass_camera.position() ) );
 			if( distancesquared > Global.reflectiontune.range_instances * Global.reflectiontune.range_instances ) { continue; }
 			distancesquared += sq( EU07_REFLECTIONFIDELITYOFFSET );
 			break;
 		default:
-			distancesquared = glm::length2( ( Instance->location() - m_renderpass.pass_camera.position() ) / (double)Global.ZoomFactor ) / Global.fDistanceFactor;
+			distancesquared = glm::length2( ( location - m_renderpass.pass_camera.position() ) / (double)Global.ZoomFactor ) / Global.fDistanceFactor;
 			break;
 		}
-		if( ( distancesquared < Instance->m_rangesquaredmin )
-		 || ( distancesquared >= Instance->m_rangesquaredmax ) ) { continue; }
+		if( ( distancesquared < record.rangesquaredmin )
+		 || ( distancesquared >= record.rangesquaredmax ) ) { continue; }
 
 		auto const drawdistancethreshold { m_renderpass.draw_range + 250 };
 		if( distancesquared > sq( drawdistancethreshold ) ) { continue; }
 
-		auto const radiussquared { Instance->radius() * Instance->radius() };
+		auto const radiussquared { record.radius * record.radius };
 		if( radiussquared * Global.ZoomFactor / distancesquared < 0.003 * 0.003 ) { continue; }
 
-		if( !prepared_shared_state ) {
-			Instance->RaPrepare();
-			prepared_shared_state = true;
-			batch_material = Instance->Material();
+		if( batch_instance == nullptr ) {
+			batch_instance = queued.bucket->instances[ queued.index ];
+			batch_instance->RaPrepare();
+			batch_material = batch_instance->Material();
 		}
-		Instance->m_framestamp = m_framestamp;
 
 		// Build the camera-relative root modelview for this instance:
 		//   mv = view * translate(instance_pos - camera_pos) * rotate(instance_angles) * scale(m_scale)
-		// The rotation and scale part is cached by the instance, the translation goes into its last
+		// The rotation and scale part comes from the record, the translation goes into its last
 		// column. The scale is folded in so the GPU-instanced path produces visually identical output
 		// to the regular per-instance path; the shader applies it via effective_modelview = instance_mv * model_local.
-		glm::mat4 root { Instance->rotation_scale() };
-		root[ 3 ] = glm::vec4( glm::vec3( Instance->location() - m_renderpass.pass_camera.position() ), 1.f );
+		glm::mat4 const root {
+			record.rotationscale[ 0 ],
+			record.rotationscale[ 1 ],
+			record.rotationscale[ 2 ],
+			glm::vec4( glm::vec3( location - m_renderpass.pass_camera.position() ), 1.f ) };
 
 		auto const distance { static_cast<float>( distancesquared ) };
 		farthest_distancesquared = std::max( farthest_distancesquared, distance );
@@ -3384,7 +3431,7 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 
 	if( m_instance_survivors.empty() ) { return; }
 
-	// group the modelviews by lod band into a contiguous array, for the UBO upload. every distance in
+	// group the modelviews by lod band into a contiguous array, for the upload. every distance in
 	// a band selects the same lod; the nearest one represents the band.
 	// within a band the instances are additionally ordered roughly near-to-far, in distance slots. dense
 	// alpha tested foliage then gets the most out of the early depth test, as the nearest instances fill
@@ -3409,55 +3456,43 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	for( auto const &survivor : m_instance_survivors ) {
 		m_instance_modelviews[ m_instance_bandcursors[ survivor.band ]++ ] = survivor.modelview;
 	}
+	// all bands go to the instance buffer at once, each band is drawn from its own base instance
+	auto const baseinstance { Upload_Instance_Modelviews( m_instance_modelviews.data(), m_instance_modelviews.size() ) };
 
 	auto alpha = ( batch_material != nullptr ? batch_material->textures_alpha : 0x30300030 );
 	alpha ^= 0x0F0F000F;
 
-	// 2. Walk the submodel tree once per sub-batch. The submodel-local matrix
+	// 2. Walk the submodel tree once per lod band. The submodel-local matrix
 	// stack starts at identity; the per-instance camera transform comes from
-	// instance_modelview[gl_InstanceID] in the shader.
+	// instance_modelview[gl_BaseInstance + gl_InstanceID] in the shader.
 	for( std::size_t band = 0; band < bandcount; ++band ) {
 
-		std::size_t offset_idx = m_instance_bandstarts[ band * distanceslots ];
+		std::size_t const band_start = m_instance_bandstarts[ band * distanceslots ];
 		std::size_t const band_end = m_instance_bandstarts[ ( band + 1 ) * distanceslots ];
-		while( offset_idx < band_end ) {
-			std::size_t const this_batch = std::min<std::size_t>( band_end - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
+		if( band_start == band_end ) { continue; }
 
-			// 2a. Upload N modelviews to instance_ubo[0..N-1].
-			instance_ubo->update(
-				reinterpret_cast<uint8_t const *>( m_instance_modelviews.data() + offset_idx ),
-				0,
-				static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
+		// 2a. Push identity onto the matrix stack so submodel transforms
+		// accumulate from identity, not from camera/instance space.
+		::glPushMatrix();
+		::glLoadIdentity();
 
-			// 2b. Push identity onto the matrix stack so submodel transforms
-			// accumulate from identity, not from camera/instance space.
-			::glPushMatrix();
-			::glLoadIdentity();
+		// 2b. Configure the existing TModel3d/TSubModel render path. Setting
+		// m_current_instance_count routes draw(handle) calls to draw_instanced.
+		m_current_instance_count = band_end - band_start;
+		m_current_instance_base = baseinstance + static_cast<std::uint32_t>( band_start );
 
-			// 2c. Configure the existing TModel3d/TSubModel render path. Setting
-			// m_current_instance_count routes draw(handle) calls to draw_instanced.
-			m_current_instance_count = this_batch;
+		Model->Root->fSquareDist = m_instance_banddistances[ band ]; // shared global, used by submodel LOD
+		Model->Root->ReplacableSet( ( batch_material != nullptr ? batch_material->replacable_skins : nullptr ), alpha );
+		Model->Root->pRoot = Model;
 
-			Model->Root->fSquareDist = m_instance_banddistances[ band ]; // shared global, used by submodel LOD
-			Model->Root->ReplacableSet( ( batch_material != nullptr ? batch_material->replacable_skins : nullptr ), alpha );
-			Model->Root->pRoot = Model;
+		Render( Model->Root );
 
-			Render( Model->Root );
+		m_current_instance_count = 0;
+		m_current_instance_base = 0;
 
-			m_current_instance_count = 0;
+		::glPopMatrix();
 
-			::glPopMatrix();
-
-			offset_idx += this_batch;
-			++m_renderpass.draw_stats.instanced_drawcalls;
-		}
-	}
-	// 3. Restore instance_modelview[0] to identity so subsequent
-	// non-instanced draws continue to compute identity * modelview.
-	// done once the last batch is out, as everything drawn up to that point is instanced
-	{
-		glm::mat4 const identity( 1.0f );
-		instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
+		++m_renderpass.draw_stats.instanced_drawcalls;
 	}
 
 	m_renderpass.draw_stats.instances += static_cast<int>( m_instance_survivors.size() );
@@ -3467,8 +3502,8 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 // Renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) using the
 // existing GPU-instanced submodel pipeline. The track owns a vector of pre-baked
 // local-space matrices; we compose each with `view * translate(track_origin - camera)`
-// to get a camera-space modelview, then issue batched glDrawElementsInstancedBaseVertex
-// calls -- one batch per MAX_INSTANCES_PER_BATCH sleepers.
+// to get a camera-space modelview, then issue glDrawElementsInstancedBaseVertexBaseInstance
+// calls -- one per LOD band of the sleepers.
 //
 // Skipped entirely when:
 //   - Global.SleeperDistance == 0 (sleeper rendering globally disabled)
@@ -3665,7 +3700,7 @@ void opengl46_renderer::Render_Sleepers( TTrack *Track )
 		[]( std::pair<float, glm::mat4> const &Left, std::pair<float, glm::mat4> const &Right ) {
 			return Left.first < Right.first; } );
 
-	// contiguous copy of the sorted modelview matrices, for the UBO upload.
+	// contiguous copy of the sorted modelview matrices, for the upload.
 	// Per-sleeper distances stay available as survivors[i].first, in lockstep.
 	std::vector<glm::mat4> instance_modelviews;
 	instance_modelviews.reserve( survivors.size() );
@@ -3705,12 +3740,12 @@ void opengl46_renderer::Render_Sleepers( TTrack *Track )
 	}
 
 	// Phase 3 -- draw. Walk the sorted survivors one LOD band at a time. Each
-	// band is submitted as one or more instanced draws (split only when it
-	// exceeds MAX_INSTANCES_PER_BATCH); every draw in the band uses an in-band
-	// fSquareDist, so each sleeper renders at the LOD its own distance selects
-	// while instancing stays fully in effect.
+	// band is submitted as one instanced draw from its own base instance; every
+	// draw uses an in-band fSquareDist, so each sleeper renders at the LOD its own
+	// distance selects while instancing stays fully in effect.
 	auto *Model = Track->m_sleeper_model;
 	std::size_t const total = instance_modelviews.size();
+	auto const baseinstance { Upload_Instance_Modelviews( instance_modelviews.data(), total ) };
 	std::size_t band_start = 0;
 	while( band_start < total ) {
 		// the band ends at the first sleeper distance that reaches the next LOD
@@ -3728,42 +3763,27 @@ void opengl46_renderer::Render_Sleepers( TTrack *Track )
 		// sleeper is used as the representative fSquareDist.
 		float const band_distancesquared = survivors[ band_start ].first;
 
-		std::size_t offset_idx = band_start;
-		while( offset_idx < band_end ) {
-			std::size_t const this_batch = std::min<std::size_t>( band_end - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
+		::glPushMatrix();
+		::glLoadIdentity();
 
-			instance_ubo->update(
-				reinterpret_cast<uint8_t const *>( instance_modelviews.data() + offset_idx ),
-				0,
-				static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
+		m_current_instance_count = band_end - band_start;
+		m_current_instance_base = baseinstance + static_cast<std::uint32_t>( band_start );
 
-			::glPushMatrix();
-			::glLoadIdentity();
+		Model->Root->fSquareDist = band_distancesquared;
+		auto alpha = ( has_skin ? sleeper_material.textures_alpha : 0x30300030 );
+		alpha ^= 0x0F0F000F;
+		Model->Root->ReplacableSet( ( has_skin ? sleeper_material.replacable_skins : nullptr ), alpha );
+		Model->Root->pRoot = Model;
 
-			m_current_instance_count = this_batch;
+		Render( Model->Root );
 
-			Model->Root->fSquareDist = band_distancesquared;
-			auto alpha = ( has_skin ? sleeper_material.textures_alpha : 0x30300030 );
-			alpha ^= 0x0F0F000F;
-			Model->Root->ReplacableSet( ( has_skin ? sleeper_material.replacable_skins : nullptr ), alpha );
-			Model->Root->pRoot = Model;
+		m_current_instance_count = 0;
+		m_current_instance_base = 0;
 
-			Render( Model->Root );
+		::glPopMatrix();
 
-			m_current_instance_count = 0;
+		++m_renderpass.draw_stats.instanced_drawcalls;
 
-			::glPopMatrix();
-
-			// restore instance_modelview[0] to identity so subsequent non-instanced draws
-			// continue to compute identity * modelview (mirroring Render_Instanced).
-			{
-				glm::mat4 const identity( 1.0f );
-				instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
-			}
-
-			offset_idx += this_batch;
-			++m_renderpass.draw_stats.instanced_drawcalls;
-		}
 		band_start = band_end;
 	}
 

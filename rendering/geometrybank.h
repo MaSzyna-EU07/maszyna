@@ -119,8 +119,8 @@ public:
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // draws geometry stored in specified chunk
     auto draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
-    // draws geometry stored in specified chunk N times via glDrawElementsInstanced*
-    auto draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams = basic_streams ) -> std::size_t;
+    // draws geometry stored in specified chunk N times via glDrawElementsInstanced*, as instances BaseInstance and onwards
+    auto draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in supplied sequence of chunks of the bank, in their order. the bank is free to combine them into fewer draw calls
     auto draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in supplied list of chunks
@@ -185,7 +185,7 @@ private:
     // draw() subclass details
     virtual auto draw_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t = 0;
     // draw_instanced() subclass details. Default implementation falls back to N regular draws.
-    virtual auto draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) -> std::size_t {
+    virtual auto draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams ) -> std::size_t {
         std::size_t count { 0 };
         for( std::size_t i = 0; i < InstanceCount; ++i ) { count += draw_( Geometry, Units, Streams ); }
         return count; }
@@ -223,8 +223,8 @@ public:
     // draws geometry stored in specified chunk
     void draw( gfx::geometry_handle const &Geometry, unsigned int const Streams = basic_streams );
     // draws geometry stored in specified chunk InstanceCount times via GPU instancing.
-    // The shader reads per-instance modelview matrices from instance_ubo[gl_InstanceID].
-    void draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, unsigned int const Streams = basic_streams );
+    // The shader reads per-instance modelview matrices from instance_ssbo[gl_BaseInstance + gl_InstanceID].
+    void draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams = basic_streams );
     // draws geometry stored in supplied sequence of chunks, in their order. neighbouring chunks of the same bank are passed to it together
     void draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, unsigned int const Streams = basic_streams );
     template <typename Iterator_>

@@ -104,17 +104,6 @@ namespace gl
 
     static_assert(sizeof(model_ubs) == 208 + 16 * MAX_PARAMS, "bad size of ubs");
 
-    // maximum number of instances per single GPU-instanced draw call.
-    // 256 mat4 = 16 KiB, the guaranteed minimum UBO size. Bigger batches must split.
-    const size_t MAX_INSTANCES_PER_BATCH = 256;
-
-    struct instance_ubs
-    {
-        glm::mat4 instance_modelview[MAX_INSTANCES_PER_BATCH];
-    };
-
-    static_assert(sizeof(instance_ubs) == 64 * MAX_INSTANCES_PER_BATCH, "bad size of instance_ubs");
-
     // layout std430 (shader storage buffers)
     // structs must match with GLSL, offsets checked below
 
@@ -294,6 +283,10 @@ namespace gl
     const GLuint EXPOSURE_SSBO_BINDING = 6;
     const GLuint ATMOSPHERE_RESULT_SSBO_BINDING = 7;
     const GLuint ATMOSPHERE_UBO_BINDING = 4;
+
+    // binding point of the per-instance modelview matrices of instanced draws (glsl: instance_ssbo, mat4 per instance).
+    // element 0 is identity, the matrix of every draw which isn't instanced
+    const GLuint INSTANCE_SSBO_BINDING = 8;
 
     // number of coefficients of the spherical harmonics of order 2 (bands 0..2)
     const size_t SKY_SH_COEFFICIENTS = 9;

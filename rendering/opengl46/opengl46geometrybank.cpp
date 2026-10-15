@@ -171,9 +171,9 @@ opengl46_vaogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stre
 }
 
 // draw_instanced() subclass details — single GL instanced draw for InstanceCount instances.
-// The vertex shader reads per-instance modelview from instance_ubo[gl_InstanceID].
+// The vertex shader reads per-instance modelview from instance_ssbo[gl_BaseInstance + gl_InstanceID].
 std::size_t
-opengl46_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams )
+opengl46_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams )
 {
     setup_buffer();
 
@@ -199,16 +199,17 @@ opengl46_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry,
 
     if( chunkrecord.index_count > 0 ) {
         m_vao->bind();
-        ::glDrawElementsInstancedBaseVertex(
+        ::glDrawElementsInstancedBaseVertexBaseInstance(
             chunk.type,
             chunkrecord.index_count, GL_UNSIGNED_INT,
             reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
             inst_count,
-            chunkrecord.vertex_offset );
+            chunkrecord.vertex_offset,
+            BaseInstance );
     }
     else {
         m_vao->bind();
-        ::glDrawArraysInstanced( chunk.type, chunkrecord.vertex_offset, chunkrecord.vertex_count, inst_count );
+        ::glDrawArraysInstancedBaseInstance( chunk.type, chunkrecord.vertex_offset, chunkrecord.vertex_count, inst_count, BaseInstance );
     }
 
     auto const vertexcount { ( chunkrecord.index_count > 0 ? chunkrecord.index_count : chunkrecord.vertex_count ) };
