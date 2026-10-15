@@ -243,7 +243,7 @@ auto python_taskqueue::init() -> bool
 #ifdef _WIN32
 	const wchar_t *pythonhome = sizeof(void *) == 8 ? L"python64" : L"python";
 #elif __linux__
-	const wchar_t *pythonhome = L"/usr";
+	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"linuxpython64" : L"linuxpython";
 #elif __APPLE__
 	const wchar_t *pythonhome = (sizeof(void *) == 8) ? L"macpython64" : L"macpython";
 #endif
