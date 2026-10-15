@@ -46,24 +46,41 @@ int modifier_of(int const Key)
 	return Key == GLFW_KEY_LEFT_CONTROL ? GLFW_MOD_CONTROL : Key == GLFW_KEY_LEFT_SHIFT ? GLFW_MOD_SHIFT : Key == GLFW_KEY_LEFT_ALT ? GLFW_MOD_ALT : 0;
 }
 
-} // namespace
-
-void scripted_input::modifiers() const
+void modifiers(int const Mods)
 {
 	auto &io{ImGui::GetIO()};
-	io.AddKeyEvent(ImGuiMod_Ctrl, (m_mods & GLFW_MOD_CONTROL) != 0);
-	io.AddKeyEvent(ImGuiMod_Shift, (m_mods & GLFW_MOD_SHIFT) != 0);
-	io.AddKeyEvent(ImGuiMod_Alt, (m_mods & GLFW_MOD_ALT) != 0);
+	io.AddKeyEvent(ImGuiMod_Ctrl, (Mods & GLFW_MOD_CONTROL) != 0);
+	io.AddKeyEvent(ImGuiMod_Shift, (Mods & GLFW_MOD_SHIFT) != 0);
+	io.AddKeyEvent(ImGuiMod_Alt, (Mods & GLFW_MOD_ALT) != 0);
+}
+
+} // namespace
+
+void scripted_input::queue(std::function<void()> Event)
+{
+	s_driving = true;
+	m_events.emplace_back(std::move(Event));
+}
+
+void scripted_input::deliver()
+{
+	auto const events{std::move(m_events)};
+	m_events.clear();
+	for (auto const &event : events)
+		event();
 }
 
 void scripted_input::mouse_to(glm::dvec2 const &Screen)
 {
-	if (false == m_mouse.has_value())
-		ui_layer::cursor_enter_callback(1);
+	bool const entered{m_mouse.has_value()};
 	m_mouse = Screen;
-	ui_layer::cursor_pos_callback(Screen.x, Screen.y);
-	Global.cursor_pos = glm::ivec2(Screen);
-	Application.on_cursor_pos(Screen.x, Screen.y);
+	queue([Screen, entered]() {
+		if (false == entered)
+			ui_layer::cursor_enter_callback(1);
+		ui_layer::cursor_pos_callback(Screen.x, Screen.y);
+		Global.cursor_pos = glm::ivec2(Screen);
+		Application.on_cursor_pos(Screen.x, Screen.y);
+	});
 }
 
 bool scripted_input::dispatch(std::string const &Command, std::istringstream &Words)
@@ -82,16 +99,21 @@ bool scripted_input::dispatch(std::string const &Command, std::istringstream &Wo
 		std::string action;
 		Words >> which >> action;
 		auto const button{which == "right" ? GLFW_MOUSE_BUTTON_RIGHT : which == "middle" ? GLFW_MOUSE_BUTTON_MIDDLE : GLFW_MOUSE_BUTTON_LEFT};
-		Application.on_mouse_button(button, action == "release" ? GLFW_RELEASE : GLFW_PRESS, m_mods);
-		modifiers();
+		auto const state{action == "release" ? GLFW_RELEASE : GLFW_PRESS};
+		queue([button, state, mods = m_mods]() {
+			Application.on_mouse_button(button, state, mods);
+			modifiers(mods);
+		});
 		return true;
 	}
 	if (Command == "wheel")
 	{
 		double offset{0.0};
 		Words >> offset;
-		Application.on_scroll(0.0, offset);
-		modifiers();
+		queue([offset, mods = m_mods]() {
+			Application.on_scroll(0.0, offset);
+			modifiers(mods);
+		});
 		return true;
 	}
 	if (Command == "press" || Command == "release" || Command == "tap")
@@ -107,14 +129,18 @@ bool scripted_input::dispatch(std::string const &Command, std::istringstream &Wo
 		if (Command != "release")
 		{
 			m_mods |= modifier_of(key);
-			Application.on_key(key, 0, GLFW_PRESS, m_mods);
-			modifiers();
+			queue([key, mods = m_mods]() {
+				Application.on_key(key, 0, GLFW_PRESS, mods);
+				modifiers(mods);
+			});
 		}
 		if (Command != "press")
 		{
 			m_mods &= ~modifier_of(key);
-			Application.on_key(key, 0, GLFW_RELEASE, m_mods);
-			modifiers();
+			queue([key, mods = m_mods]() {
+				Application.on_key(key, 0, GLFW_RELEASE, mods);
+				modifiers(mods);
+			});
 		}
 		return true;
 	}
@@ -129,7 +155,7 @@ bool scripted_input::dispatch(std::string const &Command, std::istringstream &Wo
 			unsigned int code{extra == 0 ? lead : lead & (0x3Fu >> extra)};
 			for (int k = 1; k <= extra && index + k < text.size(); ++k)
 				code = (code << 6) | (static_cast<unsigned char>(text[index + k]) & 0x3Fu);
-			Application.on_char(code);
+			queue([code]() { Application.on_char(code); });
 			index += extra + 1;
 		}
 		return true;

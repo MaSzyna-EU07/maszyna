@@ -6232,6 +6232,7 @@ void editor_mode::render_change_history(){
 
 void editor_mode::on_event_poll()
 {
+    m_selftest.input.deliver();
     // game-engine style camera: WSAD/EQ only fly the camera while the right mouse button is held.
     // when it's released the keyboard is free for gizmo shortcuts, and we flush a zero-movement
     // command once so the camera doesn't keep coasting on the last velocity it was given.

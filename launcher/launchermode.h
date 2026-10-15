@@ -32,7 +32,7 @@ public:
 	void on_mouse_button( int const Button, int const Action, int const Mods ) override { /* not handled by the launcher */ }
 	void on_scroll( double const Xoffset, double const Yoffset ) override { /* not handled by the launcher */ }
 	void on_window_resize( int w, int h ) override;
-	void on_event_poll() override { /* not handled by the launcher */ }
+	void on_event_poll() override { m_script.deliver(); }
 	bool is_command_processor() const override { return false; }
 
 private:
