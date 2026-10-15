@@ -15,6 +15,7 @@ void gl::glsl_common_setup()
     "#define MAX_CASCADES " + std::to_string(MAX_CASCADES) + "U\n" +
     "#define MAX_PARAMS " + std::to_string(MAX_PARAMS) + "U\n" +
     "#define MAX_INSTANCES_PER_BATCH " + std::to_string(MAX_INSTANCES_PER_BATCH) + "U\n" +
+    "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +
     R"STRING(
     const uint LIGHT_SPOT = 0U;
     const uint LIGHT_POINT = 1U;
@@ -42,15 +43,18 @@ void gl::glsl_common_setup()
             vec4 headlight_weights;
     };
 
-    layout(std140) uniform light_ubo
+    // storage blocks are guaranteed only in fragment and compute shaders (GL 4.6 minimum for the other stages is 0)
+    #if defined(STAGE_FRAGMENT) || defined(STAGE_COMPUTE)
+    layout(std430, binding = LIGHT_SSBO_BINDING) readonly buffer light_ssbo
     {
             vec3 ambient;
 
             vec3 fog_color;
             uint lights_count;
 
-            light_s lights[MAX_LIGHTS];
+            light_s lights[];
     };
+    #endif
 
     layout (std140) uniform model_ubo
     {

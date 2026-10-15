@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/lightarray.h"
 #include "vr/vr_interface.h"
 #include "gl/ubo.h"
+#include "gl/ssbo.h"
 #include "gl/framebuffer.h"
 #include "gl/renderbuffer.h"
 #include "gl/postfx.h"
@@ -450,7 +451,7 @@ class opengl46_renderer : public gfx_renderer {
 
 	std::unique_ptr<gl::ubo> scene_ubo;
 	std::unique_ptr<gl::ubo> model_ubo;
-	std::unique_ptr<gl::ubo> light_ubo;
+	std::unique_ptr<gl::ssbo> light_ssbo;
 	// per-instance modelview UBO for GPU-instanced draws.
 	// Slot 0 is initialized once to identity and never overwritten by non-instanced
 	// rendering, so existing draws (where gl_InstanceID==0) compute identity*modelview
@@ -486,7 +487,7 @@ class opengl46_renderer : public gfx_renderer {
 	std::vector<float> m_instance_banddistances;
 	gl::scene_ubs scene_ubs;
 	gl::model_ubs model_ubs;
-	gl::light_ubs light_ubs;
+	gl::light_data light_data;
 
 	std::unordered_map<std::string, std::shared_ptr<gl::program>> m_shaders;
 

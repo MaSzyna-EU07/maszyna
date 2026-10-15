@@ -179,16 +179,17 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 
 	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), 0);
 	model_ubo = std::make_unique<gl::ubo>(sizeof(gl::model_ubs), 1, GL_STREAM_DRAW);
-	light_ubo = std::make_unique<gl::ubo>(sizeof(gl::light_ubs), 2);
+	light_ssbo = std::make_unique<gl::ssbo>(sizeof(gl::light_data), gl::LIGHT_SSBO_BINDING);
+	light_ssbo->bind_base();
 	instance_ubo = std::make_unique<gl::ubo>(sizeof(gl::instance_ubs), 3, GL_STREAM_DRAW);
 
 	// better initialize with 0 to not crash driver/whole system
 	// when we forget
-	memset(&light_ubs, 0, sizeof(light_ubs));
+	memset(&light_data, 0, sizeof(light_data));
 	memset(&model_ubs, 0, sizeof(model_ubs));
 	memset(&scene_ubs, 0, sizeof(scene_ubs));
 
-	light_ubo->update(light_ubs);
+	light_ssbo->update(light_data);
 	model_ubo->update(model_ubs);
 	scene_ubo->update(scene_ubs);
 
@@ -453,7 +454,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 
 	model_ubo->bind_uniform();
 	scene_ubo->bind_uniform();
-	light_ubo->bind_uniform();
+	light_ssbo->bind_base();
 
 	if (!Global.gfx_skippipeline)
 	{
@@ -1868,9 +1869,9 @@ void opengl46_renderer::setup_environment_light(TEnvironmentType const Environme
 void opengl46_renderer::setup_sunlight_intensity( float const Factor ) {
 
     m_sunlight.apply_intensity( Factor );
-    light_ubs.lights[ 0 ].intensity = m_sunlight.factor * (1.0f - Global.Overcast * 0.33f);
-    light_ubs.ambient = m_sunlight.ambient * m_sunlight.factor;
-    light_ubo->update( light_ubs );
+    light_data.lights[ 0 ].intensity = m_sunlight.factor * (1.0f - Global.Overcast * 0.33f);
+    light_data.ambient = m_sunlight.ambient * m_sunlight.factor;
+    light_ssbo->update( light_data );
 }
 
 bool opengl46_renderer::Render(world_environment *Environment)
@@ -3831,12 +3832,12 @@ bool opengl46_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
 				setup_sunlight_intensity(Dynamic->fShade);
             }
 
-            auto const old_ambient { light_ubs.ambient };
+            auto const old_ambient { light_data.ambient };
             auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place
-                light_ubs.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) );
-                light_ubo->update( light_ubs );
+                light_data.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) );
+                light_ssbo->update( light_data );
             }
 
 			// render
@@ -3851,7 +3852,7 @@ bool opengl46_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
 				Render(Dynamic->mdKabina, Dynamic->Material(), 0.0);
 			}
 			// post-render restore
-            light_ubs.ambient = old_ambient;
+            light_data.ambient = old_ambient;
             setup_sunlight_intensity();
 
 			break;
@@ -5564,15 +5565,15 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 	scene_ubo->bind_uniform();
 	// the sun is the only light, and there's no fog
 	auto const &modelview{OpenGLMatrices.data(GL_MODELVIEW)};
-	light_ubs.ambient = m_sunlight.ambient;
-	light_ubs.fog_color = glm::vec3{1.f};
-	light_ubs.lights_count = 1;
-	light_ubs.lights[0].type = gl::light_element_ubs::DIR;
-	light_ubs.lights[0].dir = modelview * glm::vec4(m_sunlight.direction, 0.0f);
-	light_ubs.lights[0].color = m_sunlight.diffuse;
-	light_ubs.lights[0].ambient = 0.0f;
-	light_ubs.lights[0].intensity = 1.0f;
-	light_ubo->update(light_ubs);
+	light_data.ambient = m_sunlight.ambient;
+	light_data.fog_color = glm::vec3{1.f};
+	light_data.lights_count = 1;
+	light_data.lights[0].type = gl::light_element::DIR;
+	light_data.lights[0].dir = modelview * glm::vec4(m_sunlight.direction, 0.0f);
+	light_data.lights[0].color = m_sunlight.diffuse;
+	light_data.lights[0].ambient = 0.0f;
+	light_data.lights[0].intensity = 1.0f;
+	light_ssbo->update(light_data);
 	model_ubs.fog_density = 0.f;
 	model_ubs.future = glm::mat4();
 	model_ubs.emission = 0.f;
@@ -5914,11 +5915,11 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
 		renderlight->apply_intensity( ( scenelight.count * 0.5 ) * ( scenelight.owner->DimHeadlights ? 0.5 : 1.0 ) );
 		renderlight->apply_angle();
 
-		gl::light_element_ubs *light = &light_ubs.lights[light_i];
+		gl::light_element *light = &light_data.lights[light_i];
 
 		light->pos = mv * glm::vec4(renderlight->position, 1.0f);
 		light->dir = mv * glm::vec4(renderlight->direction, 0.0f);
-		light->type = gl::light_element_ubs::HEADLIGHTS;
+		light->type = gl::light_element::HEADLIGHTS;
 		light->in_cutoff = headlight_config.in_cutoff;
 		light->out_cutoff = headlight_config.out_cutoff;
 		light->color = renderlight->diffuse * renderlight->factor;
@@ -5979,16 +5980,16 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
 		++light_i;
 		++renderlight;
 	}
-    light_ubs.lights_count = light_i;
+    light_data.lights_count = light_i;
     // fill sunlight data
-    light_ubs.ambient = m_sunlight.ambient * m_sunlight.factor;// *simulation::Environment.light_intensity();
-	light_ubs.lights[0].type = gl::light_element_ubs::DIR;
-	light_ubs.lights[0].dir = mv * glm::vec4(m_sunlight.direction, 0.0f);
-	light_ubs.lights[0].color = m_sunlight.diffuse * m_sunlight.factor * simulation::Environment.light_intensity();
-	light_ubs.lights[0].ambient = 0.0f;
-	light_ubs.lights[0].intensity = 1.0f;
+    light_data.ambient = m_sunlight.ambient * m_sunlight.factor;// *simulation::Environment.light_intensity();
+	light_data.lights[0].type = gl::light_element::DIR;
+	light_data.lights[0].dir = mv * glm::vec4(m_sunlight.direction, 0.0f);
+	light_data.lights[0].color = m_sunlight.diffuse * m_sunlight.factor * simulation::Environment.light_intensity();
+	light_data.lights[0].ambient = 0.0f;
+	light_data.lights[0].intensity = 1.0f;
     // fill fog data
-	light_ubs.fog_color = Global.FogColor;
+	light_data.fog_color = Global.FogColor;
 	if (Global.fFogEnd > 0)
 	{
 		m_fogrange = Global.fFogEnd / std::max(1.f, Global.Overcast * 2.f);
@@ -6000,7 +6001,7 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
     }
     // ship config data to the gpu
 	model_ubo->update(model_ubs);
-	light_ubo->update(light_ubs);
+	light_ssbo->update(light_data);
 }
 
 bool opengl46_renderer::Init_caps()

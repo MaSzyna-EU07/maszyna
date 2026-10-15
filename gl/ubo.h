@@ -4,6 +4,7 @@
 #include "bindable.h"
 #include "buffer.h"
 #include <glm/glm.hpp>
+#include <cstddef>
 
 #define UBS_PAD(x) uint8_t PAD[x]
 
@@ -103,7 +104,14 @@ namespace gl
 
     static_assert(sizeof(instance_ubs) == 64 * MAX_INSTANCES_PER_BATCH, "bad size of instance_ubs");
 
-    struct light_element_ubs
+    // layout std430 (shader storage buffers)
+    // structs must match with GLSL, offsets checked below
+
+    // binding points of the shader storage blocks: layout(std430, binding = ...) in glsl_common
+    const GLuint LIGHT_SSBO_BINDING = 0;
+
+    // one light source, element of light_ssbo.lights[] (GLSL: light_s)
+    struct light_element
     {
         enum type_e
         {
@@ -132,11 +140,27 @@ namespace gl
         glm::vec4 headlight_weights;
     };
 
-    static_assert(sizeof(light_element_ubs) == 144, "bad size of ubs");
+    // std430 array stride of a struct is its size rounded up to its alignment (16, from mat4/vec4)
+    static_assert(sizeof(light_element) == 144, "bad size of light_element");
+    static_assert(sizeof(light_element) % 16 == 0, "light_element must be a whole std430 array stride");
+    static_assert(offsetof(light_element, pos) == 0, "bad layout of light_element");
+    static_assert(offsetof(light_element, type) == 12, "bad layout of light_element");
+    static_assert(offsetof(light_element, dir) == 16, "bad layout of light_element");
+    static_assert(offsetof(light_element, in_cutoff) == 28, "bad layout of light_element");
+    static_assert(offsetof(light_element, color) == 32, "bad layout of light_element");
+    static_assert(offsetof(light_element, out_cutoff) == 44, "bad layout of light_element");
+    static_assert(offsetof(light_element, linear) == 48, "bad layout of light_element");
+    static_assert(offsetof(light_element, quadratic) == 52, "bad layout of light_element");
+    static_assert(offsetof(light_element, intensity) == 56, "bad layout of light_element");
+    static_assert(offsetof(light_element, ambient) == 60, "bad layout of light_element");
+    static_assert(offsetof(light_element, headlight_projection) == 64, "bad layout of light_element");
+    static_assert(offsetof(light_element, headlight_weights) == 128, "bad layout of light_element");
 
+    // capacity of light_data.lights; slot 0 is the sun
     const size_t MAX_LIGHTS = 8;
 
-    struct light_ubs
+    // contents of light_ssbo: global lighting header followed by the light array
+    struct light_data
     {
         packed_vec3 ambient;
 		UBS_PAD(4);
@@ -144,10 +168,14 @@ namespace gl
         packed_vec3 fog_color;
         uint32_t lights_count;
 
-        light_element_ubs lights[MAX_LIGHTS];
+        light_element lights[MAX_LIGHTS];
     };
 
-    static_assert(sizeof(light_ubs) == 32 + sizeof(light_element_ubs) * MAX_LIGHTS, "bad size of ubs");
+    static_assert(offsetof(light_data, ambient) == 0, "bad layout of light_data");
+    static_assert(offsetof(light_data, fog_color) == 16, "bad layout of light_data");
+    static_assert(offsetof(light_data, lights_count) == 28, "bad layout of light_data");
+    static_assert(offsetof(light_data, lights) == 32, "bad layout of light_data");
+    static_assert(sizeof(light_data) == 32 + sizeof(light_element) * MAX_LIGHTS, "bad size of light_data");
 
 #pragma pack(pop)
 }
