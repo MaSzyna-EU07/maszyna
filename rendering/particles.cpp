@@ -162,8 +162,15 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
         glm::dvec3{ std::numeric_limits<double>::max() },
         glm::dvec3{ std::numeric_limits<double>::lowest() } };
 
+    // a vehicle taken off the tracks (gone through a portal, or waiting in the pool of the road traffic) puffs no more,
+    // the particles it already let out fade away as usual
+    auto const nospawn {
+        false == Global.Smoke
+     || true == Onlydespawn
+     || ( m_ownertype == owner_type::vehicle && false == m_owner.vehicle->bEnabled ) };
+
     m_spawncount = (
-        ( ( false == Global.Smoke ) || ( true == Onlydespawn ) ) ?
+        ( true == nospawn ) ?
             0.f :
             std::min<float>(
                 static_cast<float>(m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity )),
@@ -179,7 +186,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
 		if (m_owner.vehicle->MoverParameters->dizel_spinup == true)
 		{
 			m_spawncount =
-			    ((false == Global.Smoke) || (true == Onlydespawn)) ?
+			    (true == nospawn) ?
 			        0.f :
 			        std::min<float>(
 			            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
@@ -191,7 +198,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
 			    m_owner.vehicle->MoverParameters->Im == 0)
 			{
 				m_spawncount =
-				    ((false == Global.Smoke) || (true == Onlydespawn)) ?
+				    (true == nospawn) ?
 				        0.f :
 				        std::min<float>(
 				            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
@@ -201,7 +208,7 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
 			{
 
 				m_spawncount =
-				    ((false == Global.Smoke) || (true == Onlydespawn)) ?
+				    (true == nospawn) ?
 				        0.f :
 				        std::min<float>(
 				            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
