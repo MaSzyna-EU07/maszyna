@@ -96,6 +96,40 @@ before the shading (a depth prepass), which is planned later.
 | `gfx.postfx.ao.bounce` | `0.3` | 0..1: albedo of the surfaces assumed for the light that comes back after more bounces (brightens the occlusion a little) |
 | `gfx.postfx.ao.quality slices steps` | `3 4` | directions searched around each pixel (1..8) and samples on each side of a direction (1..16) |
 
+### Lamps
+
+With the clustered lights on, lamps light their surroundings, besides the sun and the vehicle headlights. Without the
+clustered lights (`gfx.lights.clustered no`) none of this happens and the cab is lit as before. The switches and
+scales can also be changed in the **Light clusters** debug window.
+
+- **Light points of models** (`freespotlight` submodels: street and platform lamps, signals, lamps of vehicles) are taken
+  the way the experimental renderer takes them. A point which is visible, has self-illumination (`SelfIllum` `true`, or a
+  threshold the light level is below) shines as a spot light along the -z axis of its submodel, in the cone of its glare
+  (`FalloffAngle`, full brightness within `HotspotAngle`), in its colour; `hotspotpower` scales it. Lamps of scenery
+  models switched with `Light_On` / `Light_Off` (`lights` of the model node, events) turn their light points on and off
+  with them. Nothing in the models has to change; a light point without self-illumination stays a glare only.
+- **Lit compartments of vehicles** (the `cab`, `corridor`/`korytarz` and `compartment`/`przedzial` sections of the low
+  poly interior) give a point light in the middle of the section, in the colour of the interior light, unless the
+  section holds light points of its own (these light it then, through its self-illumination).
+- **The cab lamp** of the occupied cab is a point light under the top of the cab model. Before, it added to the ambient
+  light of the whole cab and weakened the shadows of the sun in it; now a share of that ambient light is kept for the light
+  which bounces around the cab (`gfx.lights.cab.bounce`), and the sun shadows stay.
+
+The lamps of models and compartments fade in from the light level at which scenery lamps switch on (`ls_Dark`) to full
+darkness; in daylight they are not gathered at all. None of these lights casts shadows yet, so they also light what is
+behind walls within their reach; that reach is kept short for compartments and the cab.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.lights.scenery yes/no` | `yes` | light points of scenery models light their surroundings |
+| `gfx.lights.vehicles yes/no` | `yes` | light points of vehicles and their lit compartments light their surroundings |
+| `gfx.lights.cab yes/no` | `yes` | the cab lamp is a point light; `no`: it adds to the ambient light of the cab, as before |
+| `gfx.lights.freespot.intensity` | `10` | brightness of a light point (the experimental renderer uses the same default) |
+| `gfx.lights.compartment.intensity` | `1.0` | brightness of the light of a lit compartment |
+| `gfx.lights.cab.intensity` | `1.5` | brightness of the cab lamp |
+| `gfx.lights.cab.bounce` | `0.3` | 0..1: share of the former ambient light of the cab lamp kept with the lamp on |
+| `gfx.lights.range` | `300` | distance from the camera the lamps of models and vehicles are gathered from, metres |
+
 ### Changed option
 
 `dynamiclights` (0..7) used to limit the number of headlight sets that light the surroundings. It is still
@@ -104,7 +138,8 @@ read, but it only takes effect with `gfx.lights.clustered no`.
 ## What looks different from the previous renderer
 
 - **No limit of 7 lit headlights.** All lit headlights within 1 km take part in the lighting (each lit end
-  of a vehicle counts separately), up to 255 in the buffer and 64 reaching any one part of the view. Beyond
+  of a vehicle counts separately), up to 1023 lights in the buffer (headlights, lamps and the cab lamp) and 64 reaching
+  any one part of the view. Beyond
   these capacities the farthest and dimmest lights are dropped, and the statistics show how many.
 - **Outside the beam texture a headlight adds nothing.** Before, the edge of the texture was stretched
   beyond the beam, which could leave a faint glow around vehicles. This also applies with
@@ -127,7 +162,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   time, and `cluster lists:` the size of the lists and the number of dropped (cluster, light) pairs
   (`overflow`, with its peak). A non-zero overflow means some cluster held more than 64 lights.
 - **Light clusters** window (in debug mode, menu *Windows*, item *Headlight config* opens the renderer debug
-  windows): the switch for clustered lights, the heat map, the grid state and the same counters.
+  windows): the switch for clustered lights, the heat map, the grid state and the same counters, and the switches and
+  scales of the lamps with their counts. Shift+F12 shows the lamps in the `local lights:` row: how many were gathered (from
+  scenery models, vehicles and compartments, and the cab lamp), how many were placed in the light buffer of the main view
+  (those that may light something in view) and did not fit, and the cpu time of gathering them.
 - **Sky and exposure** window (next to the Light clusters window): the switches and scales above, the share of the
   atmosphere, the colours of the sun, ambient light and fog in use, and the measured luminance and exposure.
   Shift+F12 shows the GPU time of `atmosphere:` (look-up tables, only when the sun moved or the weather changed),

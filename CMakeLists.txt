@@ -337,6 +337,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46sky.cpp"
             "rendering/opengl46/opengl46exposure.cpp"
             "rendering/opengl46/opengl46ao.cpp"
+            "rendering/opengl46/opengl46locallights.cpp"
             "rendering/opengl46/opengl46precipitation.cpp"
             "rendering/opengl46/opengl46particles.cpp"
             "rendering/opengl46/opengl46terrain.cpp"

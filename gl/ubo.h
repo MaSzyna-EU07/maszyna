@@ -169,7 +169,7 @@ namespace gl
 
     // capacity of light_data.lights; slot 0 is the sun. a buffer size, not a limit of the shaders: they take the
     // number of lights from the header
-    const size_t MAX_LIGHTS = 256;
+    const size_t MAX_LIGHTS = 1024;
 
     // contents of light_ssbo: global lighting header followed by the light array
     struct light_data

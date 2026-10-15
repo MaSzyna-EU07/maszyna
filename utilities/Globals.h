@@ -332,6 +332,16 @@ struct global_settings {
     float gfx_postfx_ao_bounce { 0.3f }; // albedo of the surfaces assumed for the light coming back after more bounces
     int gfx_postfx_ao_slices { 3 }; // directions searched around each pixel
     int gfx_postfx_ao_steps { 4 }; // samples on each side of a direction
+    // local lights of the opengl 4.6 renderer, besides the sun and the vehicle headlights (debug window "Light clusters").
+    // they go through the light clusters, so they need gfx_lights_clustered
+    bool gfx_lights_scenery { true }; // light points (freespot lights) of scenery models light their surroundings
+    bool gfx_lights_vehicles { true }; // light points of vehicles and their lit compartments light their surroundings
+    bool gfx_lights_cab { true }; // the lamp of the occupied cab is a point light instead of an addition to the ambient light
+    float gfx_lights_freespot_intensity { 10.f }; // brightness of a light point of a model
+    float gfx_lights_compartment_intensity { 1.f }; // brightness of the light of a lit vehicle compartment
+    float gfx_lights_cab_intensity { 1.5f }; // brightness of the cab lamp
+    float gfx_lights_cab_bounce { 0.3f }; // share of the former ambient light of the cab lamp kept, for the light which bounces around the cab
+    float gfx_lights_range { 300.f }; // distance from the camera the lights of models and vehicles are taken from, metres
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;

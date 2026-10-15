@@ -617,6 +617,14 @@ bool opengl46_renderer::Render()
 		// used, the directional part of the ambient light
 		m_fogcolor = Global.FogColor;
 		m_sky.update(m_sunlight, m_fogcolor, simulation::Environment.skydome(), simulation::Environment.sun().getDirection(), simulation::Environment.sun().getAngle());
+		// lamps of models and vehicles around the camera and the cab lamp, for the views of the frame to take into their light buffers
+		if ((false == Global.gfx_skiprendering) && (simulation::Region != nullptr))
+			m_locallights.gather(Global.pCamera.Pos, *simulation::Region, m_geometry, m_framestamp);
+	}
+	else
+	{
+		// a scenery is being loaded: the cells, instances and models the lights were taken from may be gone
+		m_locallights.reset();
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -739,7 +747,8 @@ void opengl46_renderer::SwapBuffers()
         + "particles: " + to_string( m_colorpass.draw_stats.particles, 7 )
         + "\nlights:    " + to_string( static_cast<int>( m_lights_lit ), 7 )
         + " (" + std::to_string( m_lights_dropped ) + " over capacity), "
-        + ( Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string( std::max( Global.DynamicLightCount, 0 ) ) );
+        + ( Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string( std::max( Global.DynamicLightCount, 0 ) ) )
+        + "\n" + m_locallights.info();
     if( auto const cullstats = ( m_viewports.empty() || !( Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap ) ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
         m_debugstatstext +=
             "\ncluster lists: " + std::to_string( cullstats->index_count )
@@ -778,13 +787,15 @@ void opengl46_renderer::draw_debug_ui()
             auto const &params{clusters->params()};
             ImGui::Text("grid %u x %u x %u, %s", gl::CLUSTER_GRID_X, gl::CLUSTER_GRID_Y, gl::CLUSTER_GRID_Z, params.valid ? "built" : "none (orthographic view)");
             ImGui::Text("near %.3f m, far %.1f m", params.znear, params.zfar);
-            ImGui::Text("lights %u (sun excluded), %u over capacity of %u", m_lights_lit, m_lights_dropped, static_cast<unsigned>(gl::MAX_LIGHTS - 1));
+            ImGui::Text("headlights %u, %u over capacity of %u", m_lights_lit, m_lights_dropped, static_cast<unsigned>(gl::MAX_LIGHTS - 1));
             if (auto const cullstats = clusters->stats())
             {
                 ImGui::Text("index list %u of %u", cullstats->index_count, gl::CLUSTER_COUNT * gl::MAX_LIGHTS_PER_CLUSTER);
                 ImGui::Text("overflow: %u lights dropped from full clusters (limit %u each), peak %u", cullstats->overflow_count, gl::MAX_LIGHTS_PER_CLUSTER, cullstats->overflow_peak);
             }
         }
+        ImGui::Separator();
+        m_locallights.draw_debug_ui();
     }
     ImGui::End();
 
@@ -1019,7 +1030,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			glDebug("render opaque cab");
             model_ubs.future = glm::mat4();
             auto const *vehicle{ simulation::Train->Dynamic() };
-            if( vehicle->InteriorLightLevel > 0.f ) {
+            // the lamp lighting the shadows of the sun, unless it is a light of its own
+            if( ( vehicle->InteriorLightLevel > 0.f ) && ( false == m_cablamplit ) ) {
                 setup_shadow_color( glm::min( colors::white, m_shadowcolor + glm::vec4( vehicle->InteriorLight * vehicle->InteriorLightLevel, 1.f ) ) );
             }
             Render_cab( vehicle, vehicle->InteriorLightLevel, false );
@@ -1052,7 +1064,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		{
 			model_ubs.future = glm::mat4();
             auto *vehicle { simulation::Train->Dynamic() };
-            if( vehicle->InteriorLightLevel > 0.f ) {
+            if( ( vehicle->InteriorLightLevel > 0.f ) && ( false == m_cablamplit ) ) {
                 setup_shadow_color( glm::min( colors::white, m_shadowcolor + glm::vec4( vehicle->InteriorLight * vehicle->InteriorLightLevel, 1.f ) ) );
             }
 			if (Global.Overcast > 1.0f)
@@ -3978,8 +3990,10 @@ bool opengl46_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
             auto const old_ambient { light_data.ambient };
             auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
             if( Lightlevel > 0.f ) {
-                // crude way to light the cabin, until we have something more complete in place
-                light_data.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) );
+                // crude way to light the cabin, until we have something more complete in place. with the lamp of the cab among the
+                // lights a share of it is kept for the light which bounces around the cab
+                auto const share { m_cablamplit ? Global.gfx_lights_cab_bounce : 1.f };
+                light_data.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) * share );
                 upload_light_header();
             }
 
@@ -6039,6 +6053,18 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
     size_t light_i = 1;
     m_lights_dropped = 0;
 
+    // the lights other than the headlights are only taken from the lists of the clusters. the lamp of the occupied cab goes first:
+    // it is next to the camera, and it is not to be the one left out of a full cluster
+    auto const locallights{Headlights && Clustered};
+    m_cablamplit = false;
+    if( locallights ) {
+        if( auto const *lamp{ m_locallights.cab_lamp() } ) {
+            Write_Local_Light( light_data.lights[ light_i++ ], *lamp, camera, mv );
+            m_cablamplit = true;
+        }
+    }
+    auto const headlightsstart{light_i};
+
     for (auto const &scenelight : Lights.data)
 	{
 		if (!Headlights || scenelight.intensity == 0.f) {
@@ -6137,11 +6163,28 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
 
 		++light_i;
 	}
+    m_lights_lit = static_cast<uint32_t>(light_i - headlightsstart);
+    // lamps of models and vehicles, the most important first, those which may be seen lighting something in this view
+    if( locallights ) {
+        uint32_t placed{ 0 };
+        uint32_t dropped{ 0 };
+        for( auto const &local : m_locallights.lights() ) {
+            if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ local.position, local.range } ) ) {
+                continue;
+            }
+            if( light_i >= gl::MAX_LIGHTS ) {
+                ++dropped;
+                continue;
+            }
+            Write_Local_Light( light_data.lights[ light_i++ ], local, camera, mv );
+            ++placed;
+        }
+        m_locallights.placed( placed, dropped );
+    }
     // every light is there for the clusters to be culled from, while the shading loop over the lights keeps to the number
-    // of them it always went through
+    // of headlights it always went through (without the clusters only the headlights are written, from the first slot on)
     light_data.lights_total = static_cast<uint32_t>(light_i);
-    m_lights_lit = static_cast<uint32_t>(light_i - 1);
-    light_data.lights_count = 1 + std::min<uint32_t>(static_cast<uint32_t>(light_i - 1), static_cast<uint32_t>(std::max(Global.DynamicLightCount, 0)));
+    light_data.lights_count = 1 + std::min<uint32_t>(m_lights_lit, static_cast<uint32_t>(std::max(Global.DynamicLightCount, 0)));
     light_data.lights_clustered = Clustered ? 1 : 0;
     light_data.env_ggx = ( Global.gfx_envmap_ggx && m_envmap_bound ) ? 1 : 0;
     // fill sunlight data
@@ -6167,6 +6210,29 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
 	model_ubo->update(model_ubs);
 	// the header and the lights in use, the rest of the buffer is not read
 	light_ssbo->update(&light_data, 0, offsetof(gl::light_data, lights) + sizeof(gl::light_element) * light_i);
+}
+
+void opengl46_renderer::Write_Local_Light(gl::light_element &Light, opengl46_local_lights::light const &Source, glm::dvec3 const &Camera, glm::mat4 const &View)
+{
+	// a cone wider than a half of the space is no limit for the culling, but the shading still fades the light out of it
+	Light.type = gl::light_element::SPOT;
+	Light.pos = View * glm::vec4(glm::vec3{Source.position - Camera}, 1.0f);
+	Light.dir = glm::normalize(glm::vec3{View * glm::vec4(Source.direction, 0.0f)});
+	Light.in_cutoff = Source.cos_inner;
+	Light.out_cutoff = Source.cos_outer;
+	if (Source.cos_outer <= -1.f)
+	{
+		// all around
+		Light.type = gl::light_element::POINT;
+	}
+	Light.color = Source.color;
+	Light.intensity = 1.0f;
+	Light.ambient = 0.0f;
+	// the shading takes the light to end at 1 / sqrt(quadratic)
+	Light.linear = 0.0f;
+	Light.quadratic = 1.0f / sq(std::max(Source.range, 0.01f));
+	Light.headlight_projection = glm::mat4{1.0f};
+	Light.headlight_weights = glm::vec4{0.0f};
 }
 
 void opengl46_renderer::Update_Clusters(viewport_config &vp, glm::ivec2 const &Targetsize)

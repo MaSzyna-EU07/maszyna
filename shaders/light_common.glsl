@@ -229,6 +229,29 @@ vec2 calc_headlights(light_s light, vec3 fragnormal, vec3 dpdx, vec3 dpdy)
 	return part * atten * lightintensity;
 }
 
+// closest distance (squared) the light of a lamp is computed for: nearer the inverse square would grow without a limit
+const float LOCAL_LIGHT_MIN_DISTANCE2 = 0.01;
+
+// light of a lamp (point or spot light: the lamps of models and vehicles, the cab lamp) reaching the fragment, x the diffuse
+// and y the specular part. it falls off with the square of the distance, and smoothly to nothing at the range of the light,
+// 1 / sqrt(quadratic), past which the culling of the clusters does not take it. a spot light fades from its inner cone to the
+// outer one
+vec2 calc_local_light(light_s light, vec3 fragnormal)
+{
+	vec3 tolight = light.pos - f_pos.xyz;
+	float distance2 = dot(tolight, tolight);
+	vec3 light_dir = tolight * inversesqrt(max(distance2, 1e-8));
+	float edge = clamp(1.0 - distance2 * distance2 * (light.quadratic * light.quadratic), 0.0, 1.0);
+	float atten = edge * edge / max(distance2, LOCAL_LIGHT_MIN_DISTANCE2);
+	if (light.type == LIGHT_SPOT)
+		atten *= smoothstep(light.out_cutoff, light.in_cutoff, dot(-light_dir, normalize(light.dir)));
+	if (atten <= 0.0)
+		return vec2(0.0);
+	vec2 part = calc_light(light_dir, fragnormal);
+	// the highlight of a tiny light on a polished surface is kept within what the image can take
+	return vec2(part.x, min(part.y, 16.0) * part.x) * atten;
+}
+
 // index of the light cluster the fragment is in, see gl/cluster_grid.h: its screen tile and slice of depth. the depth is the clip
 // space w, which is 1 / gl_FragCoord.w. a tile is kept in the grid, as the far edge of the render target and rounding
 // right below it give one past the last
@@ -240,9 +263,9 @@ uint fragment_cluster()
 	return uint(tile.x + CLUSTER_GRID_X * (tile.y + CLUSTER_GRID_Y * slice));
 }
 
-// adds the light of the headlights which reach the fragment to its colour. these are the ones in the list of its cluster
+// adds the light of the headlights and lamps which reach the fragment to its colour. these are the ones in the list of its cluster
 // when the lights are clustered (the sun is not on the list, the callers take care of it), and the first lights_count - 1 of
-// lights[] otherwise
+// lights[] otherwise, which are headlights only
 vec3 add_headlights(vec3 fragcolor, vec3 fragnormal)
 {
 	// worked out before the loops, which the fragments of a quad do not leave together
@@ -255,7 +278,7 @@ vec3 add_headlights(vec3 fragcolor, vec3 fragnormal)
 		for (uint i = 0U; i < range.count; i++)
 		{
 			light_s light = lights[cluster_light_indices[range.offset + i]];
-			vec2 part = calc_headlights(light, fragnormal, dpdx, dpdy);
+			vec2 part = (light.type == LIGHT_HEADLIGHTS) ? calc_headlights(light, fragnormal, dpdx, dpdy) : calc_local_light(light, fragnormal);
 			fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
 		}
 	}

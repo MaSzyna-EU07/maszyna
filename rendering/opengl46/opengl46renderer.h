@@ -35,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46sky.h"
 #include "rendering/opengl46/opengl46exposure.h"
 #include "rendering/opengl46/opengl46ao.h"
+#include "rendering/opengl46/opengl46locallights.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer {
@@ -351,8 +352,11 @@ class opengl46_renderer : public gfx_renderer {
 	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
 	// writes the lighting of the pass about to be drawn to the light buffer: the sun, the ambient light and the fog, and the headlights of Lights
 	// unless Headlights is false, as in the pass which draws the environment map, where lights of vehicles would only get baked into the map.
-	// Clustered tells the shading to take the headlights from the lists of the clusters (see Cull_Lights()) and not to go through the first few
+	// Clustered tells the shading to take the headlights from the lists of the clusters (see Cull_Lights()) and not to go through the first few.
+	// with Headlights and Clustered the cab lamp (first) and the lamps of models and vehicles (after the headlights) are written as well
 	void Update_Lights(light_array &Lights, bool const Headlights = true, bool const Clustered = false);
+	// writes a light of a model or a vehicle, or the cab lamp, to the slot of the light buffer, in the view space of the pass
+	void Write_Local_Light(gl::light_element &Light, opengl46_local_lights::light const &Source, glm::dvec3 const &Camera, glm::mat4 const &View);
 	// brings the light cluster grid of the viewport up to date with the projection of the color pass being drawn.
 	// Targetsize is the size in pixels of what the pass draws to, which gl_FragCoord of the shading counts in
 	void Update_Clusters(viewport_config &vp, glm::ivec2 const &Targetsize);
@@ -481,6 +485,10 @@ class opengl46_renderer : public gfx_renderer {
 	// headlights placed in the light buffer by the last Update_Lights(), and those which are on but did not fit in it
 	uint32_t m_lights_lit = 0;
 	uint32_t m_lights_dropped = 0;
+	// lights of models and vehicles and the cab lamp, gathered once per frame for the light clusters
+	opengl46_local_lights m_locallights;
+	// the last Update_Lights() placed the cab lamp in the light buffer: the cab is lit by it, not by an addition to the ambient light
+	bool m_cablamplit = false;
 
     double m_precipitationrotation;
 

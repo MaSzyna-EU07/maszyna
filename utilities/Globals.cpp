@@ -1593,6 +1593,14 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         Parser >> gfx_postfx_ao_slices >> gfx_postfx_ao_steps;
         gfx_postfx_ao_slices = std::clamp( gfx_postfx_ao_slices, 1, 8 );
         gfx_postfx_ao_steps = std::clamp( gfx_postfx_ao_steps, 1, 16 ); }
+    else if( Token == "gfx.lights.scenery" ) { readswitch( gfx_lights_scenery ); }
+    else if( Token == "gfx.lights.vehicles" ) { readswitch( gfx_lights_vehicles ); }
+    else if( Token == "gfx.lights.cab" ) { readswitch( gfx_lights_cab ); }
+    else if( Token == "gfx.lights.freespot.intensity" ) { readvalue( gfx_lights_freespot_intensity, 0.f, 1000.f ); }
+    else if( Token == "gfx.lights.compartment.intensity" ) { readvalue( gfx_lights_compartment_intensity, 0.f, 100.f ); }
+    else if( Token == "gfx.lights.cab.intensity" ) { readvalue( gfx_lights_cab_intensity, 0.f, 100.f ); }
+    else if( Token == "gfx.lights.cab.bounce" ) { readvalue( gfx_lights_cab_bounce, 0.f, 1.f ); }
+    else if( Token == "gfx.lights.range" ) { readvalue( gfx_lights_range, 0.f, 2000.f ); }
     else { return false; }
 
     return true;
@@ -1859,6 +1867,14 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.postfx.ao.strength", gfx_postfx_ao_strength );
     export_as_text( Output, "gfx.postfx.ao.bounce", gfx_postfx_ao_bounce );
     Output << "gfx.postfx.ao.quality " << gfx_postfx_ao_slices << " " << gfx_postfx_ao_steps << "\n";
+    export_as_text( Output, "gfx.lights.scenery", gfx_lights_scenery );
+    export_as_text( Output, "gfx.lights.vehicles", gfx_lights_vehicles );
+    export_as_text( Output, "gfx.lights.cab", gfx_lights_cab );
+    export_as_text( Output, "gfx.lights.freespot.intensity", gfx_lights_freespot_intensity );
+    export_as_text( Output, "gfx.lights.compartment.intensity", gfx_lights_compartment_intensity );
+    export_as_text( Output, "gfx.lights.cab.intensity", gfx_lights_cab_intensity );
+    export_as_text( Output, "gfx.lights.cab.bounce", gfx_lights_cab_bounce );
+    export_as_text( Output, "gfx.lights.range", gfx_lights_range );
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );

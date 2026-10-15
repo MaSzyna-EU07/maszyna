@@ -44,8 +44,9 @@ float light_range(light_s light)
 		float denominator = b + sqrt(b * b - 4.0 * a * c);
 		return (denominator > 1e-12) ? min(-2.0 * c / denominator, UNLIMITED_RANGE) : UNLIMITED_RANGE;
 	}
-	// point and spot lights fall off with the square of the distance
-	return sqrt(k);
+	// point and spot lights fall off with the square of the distance; the shading ends them at 1 / sqrt(quadratic) where it is set
+	float range = sqrt(k);
+	return (light.quadratic > 0.0) ? min(range, inversesqrt(light.quadratic)) : range;
 }
 
 bool sphere_touches_box(vec3 center, float radius, vec3 lower, vec3 upper)
@@ -103,8 +104,9 @@ bool light_reaches_box(light_s light, float range, vec3 lower, vec3 upper)
 	if (light.type == LIGHT_HEADLIGHTS)
 		return box_in_headlight_beam(light.headlight_projection, center, extent);
 
-	if (light.type == LIGHT_SPOT)
-		// the cone is tested against the sphere around the box, which lets some of the corners through
+	if ((light.type == LIGHT_SPOT) && (light.out_cutoff > 0.0))
+		// the cone is tested against the sphere around the box, which lets some of the corners through. a cone wider than
+		// a half of the space is taken as the whole sphere
 		return sphere_touches_cone(center - light.pos, length(extent), normalize(light.dir), light.out_cutoff);
 
 	return true;

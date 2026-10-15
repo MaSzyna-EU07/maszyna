@@ -1,6 +1,6 @@
 # Clustered lighting
 
-How the OpenGL 4.6 renderer (`rendering/opengl46/`) gives the shaders the lights of vehicle headlights.
+How the OpenGL 4.6 renderer (`rendering/opengl46/`) gives the shaders the lights of vehicle headlights and lamps.
 For the settings and what changed for players see [opengl46-renderer.md](opengl46-renderer.md).
 
 ## Idea
@@ -29,13 +29,13 @@ The UBO numbers go together with the scene (0), model (1) and instance (3) block
 space of their own. Layouts of the structures are checked with `static_assert`s on sizes and offsets in
 `gl/ubo.h`, and have to stay equal to the blocks in `gl/glsl_common.cpp`.
 
-Sizes: `MAX_LIGHTS` = 256 (the sun and 255 headlights), `MAX_LIGHTS_PER_CLUSTER` = 64. The buffers have a
+Sizes: `MAX_LIGHTS` = 1024 (the sun and 1023 headlights and lamps), `MAX_LIGHTS_PER_CLUSTER` = 64. The buffers have a
 fixed size, so changing the resolution, the field of view or the draw range only makes the grid parameters
 and boxes be recomputed.
 
 `gl::light_data.lights_total` is the number of lights written to `lights[]`, which the culling reads.
 `lights_count` is the length of the plain loop over the lights (the sun and the first `dynamiclights` headlights) used
-when the lights are not clustered. `lights_clustered` is set per pass and tells the shading which one to use.
+when the lights are not clustered; then only headlights are written, from slot 1 on. `lights_clustered` is set per pass and tells the shading which one to use.
 
 ## Frame order
 
@@ -44,9 +44,11 @@ In `Render_pass()` for the color pass of a view (`opengl46_renderer.cpp`):
 1. `Update_Clusters(vp)`: `cluster_grid::update()` compares the projection and near / far plane with those the
    boxes were built for. When they differ, `cluster_build.comp` recomputes the boxes (one invocation per
    cluster, 54 work groups of 64). This is the "clusters" timer.
-2. `Update_Lights(...)`: sorts the lights of the scene (`simulation::Lights`) by distance squared over
-   intensity, skips the lights that are off or farther than 1 km, writes each lit headlight to `lights[]`
-   in view space, and uploads the header and the part of the array in use.
+2. `Update_Lights(...)`: with clusters, writes the cab lamp first (slot 1), when it is on. Then it sorts the lights of
+   the scene (`simulation::Lights`) by distance squared over intensity, skips the lights that are off or farther than
+   1 km and writes each lit headlight to `lights[]` in view space. With clusters the lamps of models and vehicles follow
+   (`opengl46_local_lights`, in their order of importance), those whose sphere is in the view frustum of the pass, while
+   there is room. Then it uploads the header and the part of the array in use.
 3. `Cull_Lights(vp)`: the CPU zeroes the counters, then `cluster_cull.comp` runs (one invocation per cluster, 54
    work groups of 64): it tests every light against the box of its cluster and writes the indices of the ones
    that reach it. Then `glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT)`. This is the
@@ -80,6 +82,26 @@ reverse-Z with the far plane at infinity, so the `znear` / `zfar` of the pass bo
 - Box: `x`, `y` and `w` of the clip space are affine in the view-space position, so the eight corners of a
   cluster (`ndc.xy` times `w` at the near and far side of the slice) map back to view space through the
   inverse of the corresponding 3x3 part of the projection. The box is the min and max of the corners.
+
+## Lamps
+
+`opengl46_local_lights` (`rendering/opengl46/opengl46locallights.*`) gathers the other lights once per frame, in
+`Render()`, before the views are drawn, within `gfx.lights.range` of the camera:
+
+- light points (`TP_FREESPOTLIGHT`) of scenery models: the instances on the translucent lists of the cells around the camera
+  whose model has light points (that list is kept per cell and made anew when the list of the cell changes, and every frame
+  while the editor is on). For each, `RaAnimate()` and `RaPrepare()` set the state of the shared model, as the render does,
+  and the submodel tree is gone through the way `Render_Alpha(TSubModel *)` goes through it (visibility, lod ranges,
+  transforms, animations). A point which is lit (emission above 0 and the light level below its `fLight`) becomes a spot light
+  along its -z axis, with the cone of its glare;
+- the same for vehicles within the range, after `ABuLittleUpdate()`, with their main model, attachments and low poly interior,
+  and a point light in the middle of each lit section of the low poly interior which has no light points of its own;
+- the cab lamp: a point light under the top of the bounds of the cab model, when the cab is drawn and its lamp is on.
+
+Lamps are `POINT` or `SPOT` lights. The shading (`calc_local_light()`) lets them fall off with the square of the
+distance (no nearer than 10 cm) and to nothing at their range, which is written as `quadratic` = 1 / range^2 and
+which the culling takes as the end of the light. A spot light fades from `in_cutoff` to `out_cutoff` (cosines of the half
+angles); the culling tests a cone only when it is narrower than a half of the space.
 
 ## Culling
 
@@ -122,9 +144,8 @@ guarantee any storage blocks in the vertex and geometry stages.
   The work group size in the shaders and the number of groups dispatched both come from `CLUSTER_*_GROUP_SIZE`.
 - Check the shaders with `ci_shadervalidator` (see [opengl46-renderer.md](opengl46-renderer.md)); CI does it for
   changes in `shaders/` and `gl/`.
-- Only vehicle headlights feed `lights[]` today. The culling already knows `SPOT`, `POINT` and `DIR`, but
-  `add_headlights()` runs `calc_headlights()` for every listed light, so a new kind of light also needs
-  its own branch there.
+- A new kind of light needs its branch in `add_headlights()` (today `HEADLIGHTS` goes to `calc_headlights()`, the others
+  to `calc_local_light()`) and in `light_range()` / `light_reaches_box()` of `cluster_cull.comp`.
 
 ## Not covered
 
