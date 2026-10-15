@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "cluster_grid.h"
 
+#include <algorithm>
 #include <cstring>
 
 gl::cluster_grid::cluster_grid()
@@ -15,6 +16,17 @@ gl::cluster_grid::cluster_grid()
 	m_ranges.update(empty.data(), 0, static_cast<GLsizeiptr>(empty.size()));
 	m_counters.update(cluster_counters{});
 	m_params_buffer.update(m_params);
+}
+
+gl::cluster_grid::~cluster_grid()
+{
+	for (auto &slot : m_readback)
+	{
+		// fences first, they belong to the copies
+		slot.copied.reset();
+		if (slot.buffer != 0)
+			glDeleteBuffers(1, &slot.buffer);
+	}
 }
 
 void gl::cluster_grid::bind()
@@ -63,4 +75,54 @@ void gl::cluster_grid::build(program &build_program)
 	// the boxes are read by compute passes which follow, from the same shader storage buffer
 	memory_barrier(GL_SHADER_STORAGE_BARRIER_BIT);
 	m_boxes_stale = false;
+}
+
+void gl::cluster_grid::cull(program &cull_program)
+{
+	collect_stats();
+
+	bind();
+	// the counters are the allocator of the index list and the count of dropped lights: every pass starts them anew
+	m_counters.update(cluster_counters{});
+	cull_program.dispatch((CLUSTER_COUNT + CLUSTER_CULL_GROUP_SIZE - 1) / CLUSTER_CULL_GROUP_SIZE);
+	// the clusters are read by the shading, and the counters by the copy below and then by the next pass writing them
+	memory_barrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+
+	// a copy of the counters for the cpu to read when the gpu gets there; if it is far behind, this frame is not reported
+	if (m_readback_used < READBACK_SLOTS)
+	{
+		auto &slot{m_readback[(m_readback_first + m_readback_used) % READBACK_SLOTS]};
+		if (slot.buffer == 0)
+		{
+			glCreateBuffers(1, &slot.buffer);
+			glNamedBufferStorage(slot.buffer, sizeof(cluster_counters), nullptr, GL_CLIENT_STORAGE_BIT);
+		}
+		glCopyNamedBufferSubData(m_counters, slot.buffer, 0, 0, sizeof(cluster_counters));
+		slot.copied = std::make_unique<fence>();
+		++m_readback_used;
+	}
+}
+
+void gl::cluster_grid::collect_stats()
+{
+	// oldest first, as long as the gpu has finished the copies
+	while (m_readback_used > 0)
+	{
+		auto &slot{m_readback[m_readback_first]};
+		if (!slot.copied->is_signalled())
+			break;
+
+		cluster_counters counters{};
+		glGetNamedBufferSubData(slot.buffer, 0, sizeof(counters), &counters);
+		slot.copied.reset();
+
+		cull_stats stats{};
+		stats.index_count = counters.index_count;
+		stats.overflow_count = counters.overflow_count;
+		stats.overflow_peak = std::max(counters.overflow_count, m_stats ? m_stats->overflow_peak : 0U);
+		m_stats = stats;
+
+		m_readback_first = (m_readback_first + 1) % READBACK_SLOTS;
+		--m_readback_used;
+	}
 }

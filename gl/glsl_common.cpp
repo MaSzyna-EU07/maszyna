@@ -22,6 +22,7 @@ void gl::glsl_common_setup()
     "#define CLUSTER_COUNT " + std::to_string(CLUSTER_COUNT) + "\n" +
     "#define MAX_LIGHTS_PER_CLUSTER " + std::to_string(MAX_LIGHTS_PER_CLUSTER) + "\n" +
     "#define CLUSTER_BUILD_GROUP_SIZE " + std::to_string(CLUSTER_BUILD_GROUP_SIZE) + "\n" +
+    "#define CLUSTER_CULL_GROUP_SIZE " + std::to_string(CLUSTER_CULL_GROUP_SIZE) + "\n" +
     "#define CLUSTER_UBO_BINDING " + std::to_string(CLUSTER_UBO_BINDING) + "\n" +
     "#define CLUSTER_AABB_SSBO_BINDING " + std::to_string(CLUSTER_AABB_SSBO_BINDING) + "\n" +
     "#define CLUSTER_RANGE_SSBO_BINDING " + std::to_string(CLUSTER_RANGE_SSBO_BINDING) + "\n" +
@@ -59,8 +60,11 @@ void gl::glsl_common_setup()
     layout(std430, binding = LIGHT_SSBO_BINDING) readonly buffer light_ssbo
     {
             vec3 ambient;
+            // lights stored in lights[], what the cluster culling goes through
+            uint lights_total;
 
             vec3 fog_color;
+            // lights the shading loop goes through
             uint lights_count;
 
             light_s lights[];

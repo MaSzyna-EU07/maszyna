@@ -272,8 +272,6 @@ class opengl46_renderer : public gfx_renderer {
 
 	viewport_config *m_current_viewport = nullptr;
 
-	typedef std::vector<opengl46_light> opengllight_array;
-
 	// methods
     std::unique_ptr<gl::program> make_shader(std::string v, std::string f);
 	bool Init_caps();
@@ -286,6 +284,8 @@ class opengl46_renderer : public gfx_renderer {
     void setup_env_map(gl::cubemap *tex);
 	void setup_environment_light(TEnvironmentType const Environment = e_flat);
     void setup_sunlight_intensity( float const Factor = 1.f);
+    // sends the header of the light buffer and the sun to the gpu
+    void upload_light_header();
 	// runs jobs needed to generate graphics for specified render pass
 	void Render_pass(viewport_config &vp, rendermode const Mode);
 	// creates dynamic environment cubemap
@@ -344,6 +344,8 @@ class opengl46_renderer : public gfx_renderer {
 	void Update_Lights(light_array &Lights);
 	// brings the light cluster grid of the viewport up to date with the projection of the color pass being drawn
 	void Update_Clusters(viewport_config &vp);
+	// assigns the lights set up by Update_Lights() to the clusters of the viewport; run after it, before the scene is drawn
+	void Cull_Lights(viewport_config &vp);
 	// debug view: tints the finished image of the viewport with the cluster of every pixel. Target is the framebuffer
 	// holding the image (null for the default one), Targetsize its size
 	void Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize);
@@ -374,7 +376,6 @@ class opengl46_renderer : public gfx_renderer {
 	texture_manager m_textures;
 	opengl46_terrain_materials m_terrainmaterials{m_materials, m_textures};
 	opengl46_light m_sunlight;
-	opengllight_array m_lights;
 	/*
 	    float m_sunandviewangle; // cached dot product of sunlight and camera vectors
     */
@@ -451,6 +452,11 @@ class opengl46_renderer : public gfx_renderer {
 	GLuint64 m_gllasttime = 0;
 	// gpu time of the light cluster compute passes; the debug panel shows it once a pass measures it
 	gl::gpu_timer m_clusterstimer;
+	// gpu time of assigning the lights to the clusters, done every frame
+	gl::gpu_timer m_cullstimer;
+	// headlights placed in the light buffer by the last Update_Lights(), and those which are on but did not fit in it
+	uint32_t m_lights_lit = 0;
+	uint32_t m_lights_dropped = 0;
 
     double m_precipitationrotation;
 
@@ -517,6 +523,7 @@ class opengl46_renderer : public gfx_renderer {
     std::unique_ptr<gl::program> m_hiddenarea_shader;
     std::unique_ptr<gl::program> m_copy_shader;
     std::unique_ptr<gl::program> m_cluster_build_shader;
+    std::unique_ptr<gl::program> m_cluster_cull_shader;
     std::unique_ptr<gl::program> m_cluster_heatmap_shader;
 
     std::unique_ptr<gl::vao> m_empty_vao;

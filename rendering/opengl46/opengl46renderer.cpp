@@ -127,16 +127,6 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	Global.DayLight.is_directional = true;
 	m_sunlight.id = opengl46_renderer::sunlight;
 
-	// create dynamic light pool
-	for (int idx = 0; idx < Global.DynamicLightCount; ++idx)
-	{
-		opengl46_light light;
-		light.id = 1 + idx;
-
-		light.is_directional = false;
-
-		m_lights.emplace_back(light);
-	}
 	// preload some common textures
 	WriteLog("Loading common gfx data...");
 	m_glaretexture = Fetch_Texture("fx/lightglare");
@@ -172,6 +162,10 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
         {
             gl::shader cluster_build("cluster_build.comp");
             m_cluster_build_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{cluster_build});
+        }
+        {
+            gl::shader cluster_cull("cluster_cull.comp");
+            m_cluster_cull_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{cluster_cull});
         }
         m_cluster_heatmap_shader = make_shader("quad.vert", "cluster_heatmap.frag");
 		m_invalid_material = Fetch_Material("invalid");
@@ -661,6 +655,8 @@ void opengl46_renderer::SwapBuffers()
         m_debugtimestext += "gpu frame total: " + to_string((double)(m_gllasttime / 1000ULL) / 1000.0, 3) + " ms\n";
     if (auto const clusterstime = m_clusterstimer.result())
         m_debugtimestext += " clusters: " + to_string(static_cast<double>(*clusterstime) / 1000000.0, 3) + " ms\n";
+    if (auto const culltime = m_cullstimer.result())
+        m_debugtimestext += " cull: " + to_string(static_cast<double>(*culltime) / 1000000.0, 3) + " ms\n";
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();
@@ -696,7 +692,15 @@ void opengl46_renderer::SwapBuffers()
         + " =" + to_string( m_colorpass.draw_stats.shapes + shadowstats.shapes, 7 ) + "\n"
         + " traction: " + to_string( m_colorpass.draw_stats.traction, 7 ) + "\n"
         + " lines:    " + to_string( m_colorpass.draw_stats.lines, 7 ) + "\n"
-        + "particles: " + to_string( m_colorpass.draw_stats.particles, 7 );
+        + "particles: " + to_string( m_colorpass.draw_stats.particles, 7 )
+        + "\nlights:    " + to_string( static_cast<int>( m_lights_lit ), 7 )
+        + " (" + std::to_string( m_lights_dropped ) + " over capacity)";
+    if( auto const cullstats = ( m_viewports.empty() ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
+        m_debugstatstext +=
+            "\ncluster lists: " + std::to_string( cullstats->index_count )
+            + ", overflow " + std::to_string( cullstats->overflow_count )
+            + " (peak " + std::to_string( cullstats->overflow_peak ) + ")";
+    }
 }
 
 void opengl46_renderer::draw_debug_ui()
@@ -728,6 +732,12 @@ void opengl46_renderer::draw_debug_ui()
             auto const &params{clusters->params()};
             ImGui::Text("grid %u x %u x %u, %s", gl::CLUSTER_GRID_X, gl::CLUSTER_GRID_Y, gl::CLUSTER_GRID_Z, params.valid ? "built" : "none (orthographic view)");
             ImGui::Text("near %.3f m, far %.1f m", params.znear, params.zfar);
+            ImGui::Text("lights %u (sun excluded), %u over capacity of %u", m_lights_lit, m_lights_dropped, static_cast<unsigned>(gl::MAX_LIGHTS - 1));
+            if (auto const cullstats = clusters->stats())
+            {
+                ImGui::Text("index list %u of %u", cullstats->index_count, gl::CLUSTER_COUNT * gl::MAX_LIGHTS_PER_CLUSTER);
+                ImGui::Text("overflow: %u lights dropped from full clusters (limit %u each), peak %u", cullstats->overflow_count, gl::MAX_LIGHTS_PER_CLUSTER, cullstats->overflow_peak);
+            }
         }
     }
     ImGui::End();
@@ -918,6 +928,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
         Update_Clusters( vp );
         Update_Lights( simulation::Lights );
+        Cull_Lights( vp );
 
 		glDebug("render environment");
 
@@ -1896,7 +1907,14 @@ void opengl46_renderer::setup_sunlight_intensity( float const Factor ) {
     m_sunlight.apply_intensity( Factor );
     light_data.lights[ 0 ].intensity = m_sunlight.factor * (1.0f - Global.Overcast * 0.33f);
     light_data.ambient = m_sunlight.ambient * m_sunlight.factor;
-    light_ssbo->update( light_data );
+    upload_light_header();
+}
+
+// the lighting values which change from object to object within a pass (the sun in tunnels, the ambient light in a cab):
+// the header of the light buffer and the sun in its first slot. the headlights are written once per pass by Update_Lights()
+void opengl46_renderer::upload_light_header()
+{
+    light_ssbo->update( &light_data, 0, offsetof( gl::light_data, lights ) + sizeof( gl::light_element ) );
 }
 
 bool opengl46_renderer::Render(world_environment *Environment)
@@ -3862,7 +3880,7 @@ bool opengl46_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place
                 light_data.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) );
-                light_ssbo->update( light_data );
+                upload_light_header();
             }
 
 			// render
@@ -5592,13 +5610,14 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 	auto const &modelview{OpenGLMatrices.data(GL_MODELVIEW)};
 	light_data.ambient = m_sunlight.ambient;
 	light_data.fog_color = glm::vec3{1.f};
+	light_data.lights_total = 1;
 	light_data.lights_count = 1;
 	light_data.lights[0].type = gl::light_element::DIR;
 	light_data.lights[0].dir = modelview * glm::vec4(m_sunlight.direction, 0.0f);
 	light_data.lights[0].color = m_sunlight.diffuse;
 	light_data.lights[0].ambient = 0.0f;
 	light_data.lights[0].intensity = 1.0f;
-	light_ssbo->update(light_data);
+	upload_light_header();
 	model_ubs.fog_density = 0.f;
 	model_ubs.future = glm::mat4();
 	model_ubs.emission = 0.f;
@@ -5903,16 +5922,15 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
 	);
     glm::mat4 mv = OpenGLMatrices.data( GL_MODELVIEW );
 
-    // fill vehicle headlights data
-    auto renderlight = m_lights.begin();
+    // fill vehicle headlights data, for every light which is on
+    // the light is worked out in a scratch object, nothing of it is kept for the next one
+    opengl46_light renderlight;
+    renderlight.is_directional = false;
     size_t light_i = 1;
+    m_lights_dropped = 0;
 
     for (auto const &scenelight : Lights.data)
 	{
-		if (renderlight == m_lights.end()) {
-			// we ran out of lights to assign
-			break;
-		}
 		if (scenelight.intensity == 0.f) {
 			// all lights past this one are bound to be off
 			break;
@@ -5923,9 +5941,14 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
 			// but there could still be weaker lights which are closer, so keep looking
 			continue;
 		}
+		if (light_i >= gl::MAX_LIGHTS) {
+			// the buffer is full, and the lights come in the order of importance
+			++m_lights_dropped;
+			continue;
+		}
 		// if the light passed tests so far, it's good enough
-		renderlight->position = lightoffset;
-		renderlight->direction = scenelight.direction;
+		renderlight.position = lightoffset;
+		renderlight.direction = scenelight.direction;
 
 		auto luminance = static_cast<float>(Global.fLuminance);
 		// adjust luminance level based on vehicle's location, e.g. tunnels
@@ -5934,20 +5957,20 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
 		{
 			luminance *= environment;
 		}
-		renderlight->diffuse = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color - glm::vec3{luminance}), renderlight->diffuse[3]};
-		renderlight->ambient = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color * glm::vec3{scenelight.intensity} - glm::vec3{luminance}), renderlight->ambient[3]};
+		renderlight.diffuse = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color - glm::vec3{luminance}), renderlight.diffuse[3]};
+		renderlight.ambient = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color * glm::vec3{scenelight.intensity} - glm::vec3{luminance}), renderlight.ambient[3]};
 
-		renderlight->apply_intensity( ( scenelight.count * 0.5 ) * ( scenelight.owner->DimHeadlights ? 0.5 : 1.0 ) );
-		renderlight->apply_angle();
+		renderlight.apply_intensity( ( scenelight.count * 0.5 ) * ( scenelight.owner->DimHeadlights ? 0.5 : 1.0 ) );
+		renderlight.apply_angle();
 
 		gl::light_element *light = &light_data.lights[light_i];
 
-		light->pos = mv * glm::vec4(renderlight->position, 1.0f);
-		light->dir = mv * glm::vec4(renderlight->direction, 0.0f);
+		light->pos = mv * glm::vec4(renderlight.position, 1.0f);
+		light->dir = mv * glm::vec4(renderlight.direction, 0.0f);
 		light->type = gl::light_element::HEADLIGHTS;
 		light->in_cutoff = headlight_config.in_cutoff;
 		light->out_cutoff = headlight_config.out_cutoff;
-		light->color = renderlight->diffuse * renderlight->factor;
+		light->color = renderlight.diffuse * renderlight.factor;
 		light->linear = headlight_config.falloff_linear / 10.0f;
 		light->quadratic = headlight_config.falloff_quadratic / 100.0f;
 		light->ambient = headlight_config.ambient;
@@ -6003,9 +6026,12 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
         light->headlight_weights = { scenelight.state, 0.f };
 
 		++light_i;
-		++renderlight;
 	}
-    light_data.lights_count = light_i;
+    // every light is there for the clusters to be culled from, while the shading loop over the lights keeps to the number
+    // of them it always went through
+    light_data.lights_total = static_cast<uint32_t>(light_i);
+    m_lights_lit = static_cast<uint32_t>(light_i - 1);
+    light_data.lights_count = 1 + std::min<uint32_t>(static_cast<uint32_t>(light_i - 1), static_cast<uint32_t>(std::max(Global.DynamicLightCount, 0)));
     // fill sunlight data
     light_data.ambient = m_sunlight.ambient * m_sunlight.factor;// *simulation::Environment.light_intensity();
 	light_data.lights[0].type = gl::light_element::DIR;
@@ -6026,7 +6052,8 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
     }
     // ship config data to the gpu
 	model_ubo->update(model_ubs);
-	light_ssbo->update(light_data);
+	// the header and the lights in use, the rest of the buffer is not read
+	light_ssbo->update(&light_data, 0, offsetof(gl::light_data, lights) + sizeof(gl::light_element) * light_i);
 }
 
 void opengl46_renderer::Update_Clusters(viewport_config &vp)
@@ -6042,6 +6069,20 @@ void opengl46_renderer::Update_Clusters(viewport_config &vp)
 		grid.build(*m_cluster_build_shader);
 		m_clusterstimer.end();
 	}
+}
+
+void opengl46_renderer::Cull_Lights(viewport_config &vp)
+{
+	glDebug("Cull_Lights");
+
+	auto &grid{*vp.clusters};
+	// without a grid (orthographic view) there is nothing to cull the lights into
+	if (!grid.valid())
+		return;
+
+	m_cullstimer.begin();
+	grid.cull(*m_cluster_cull_shader);
+	m_cullstimer.end();
 }
 
 void opengl46_renderer::Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize)
@@ -6159,7 +6200,6 @@ bool opengl46_renderer::Init_caps()
 		m_shadowbuffersize = std::min(m_shadowbuffersize, texturesize);
 		WriteLog("shadows map size capped at " + std::to_string(m_shadowbuffersize) + "p");
 	}
-	Global.DynamicLightCount = std::min(Global.DynamicLightCount, (int)gl::MAX_LIGHTS - 1); // reserve 1 slot for sun
 
 	if (Global.iMultisampling)
 	{

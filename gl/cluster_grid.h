@@ -1,7 +1,12 @@
 #pragma once
 
+#include <array>
+#include <memory>
+#include <optional>
+
 #include <glm/glm.hpp>
 
+#include "fence.h"
 #include "ssbo.h"
 #include "ubo.h"
 #include "shader.h"
@@ -19,7 +24,21 @@ namespace gl
 	class cluster_grid
 	{
 	  public:
+		// what the culling pass reports about a frame
+		struct cull_stats
+		{
+			// entries of the shared index list in use
+			uint32_t index_count = 0;
+			// (cluster, light) pairs dropped because the cluster was full
+			uint32_t overflow_count = 0;
+			// highest overflow_count seen since the grid was created
+			uint32_t overflow_peak = 0;
+		};
+
 		cluster_grid();
+		~cluster_grid();
+		cluster_grid(const cluster_grid &) = delete;
+		cluster_grid &operator=(const cluster_grid &) = delete;
 
 		void bind();
 
@@ -29,6 +48,11 @@ namespace gl
 		// recomputes the boxes of the clusters in view space with the program made from cluster_build.comp.
 		// binds the grid, and leaves the boxes ready to be read by the compute passes which follow
 		void build(program &build_program);
+		// assigns the lights of light_ssbo to the clusters with the program made from cluster_cull.comp: zeroes the
+		// counters, fills the (offset, count) of every cluster and the index list, and leaves them ready to be
+		// read by the shading and the debug view which follow. the boxes have to be current (update(), build()) and the
+		// grid valid. also queues the counters for reading back, see stats()
+		void cull(program &cull_program);
 
 		// false if the last update found no grid possible for the pass (orthographic projection)
 		bool valid() const
@@ -38,6 +62,12 @@ namespace gl
 		const cluster_ubs &params() const
 		{
 			return m_params;
+		}
+		// counters of the most recent culling pass whose result has reached the cpu, which takes a few frames
+		// (read back without waiting for the gpu); empty until there is one
+		std::optional<cull_stats> stats() const
+		{
+			return m_stats;
 		}
 
 	  private:
@@ -53,5 +83,19 @@ namespace gl
 
 		cluster_ubs m_params{};
 		bool m_boxes_stale = true;
+
+		// counters copied for reading back: a queue of buffers, each with the fence of the copy into it
+		static constexpr size_t READBACK_SLOTS = 4;
+		struct readback_slot
+		{
+			GLuint buffer = 0;
+			std::unique_ptr<fence> copied;
+		};
+		void collect_stats();
+		std::array<readback_slot, READBACK_SLOTS> m_readback;
+		// oldest slot in use and the number of slots in use
+		size_t m_readback_first = 0;
+		size_t m_readback_used = 0;
+		std::optional<cull_stats> m_stats;
 	};
 } // namespace gl

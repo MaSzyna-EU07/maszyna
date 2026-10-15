@@ -156,22 +156,26 @@ namespace gl
     static_assert(offsetof(light_element, headlight_projection) == 64, "bad layout of light_element");
     static_assert(offsetof(light_element, headlight_weights) == 128, "bad layout of light_element");
 
-    // capacity of light_data.lights; slot 0 is the sun
-    const size_t MAX_LIGHTS = 8;
+    // capacity of light_data.lights; slot 0 is the sun. a buffer size, not a limit of the shaders: they take the
+    // number of lights from the header
+    const size_t MAX_LIGHTS = 256;
 
     // contents of light_ssbo: global lighting header followed by the light array
     struct light_data
     {
         packed_vec3 ambient;
-		UBS_PAD(4);
+        // number of lights stored in lights[] (the sun included): what the light clusters are culled from
+        uint32_t lights_total;
 
         packed_vec3 fog_color;
+        // number of lights (the sun included) the shading loop over lights[] goes through
         uint32_t lights_count;
 
         light_element lights[MAX_LIGHTS];
     };
 
     static_assert(offsetof(light_data, ambient) == 0, "bad layout of light_data");
+    static_assert(offsetof(light_data, lights_total) == 12, "bad layout of light_data");
     static_assert(offsetof(light_data, fog_color) == 16, "bad layout of light_data");
     static_assert(offsetof(light_data, lights_count) == 28, "bad layout of light_data");
     static_assert(offsetof(light_data, lights) == 32, "bad layout of light_data");
@@ -186,8 +190,9 @@ namespace gl
     const GLuint CLUSTER_COUNT = CLUSTER_GRID_X * CLUSTER_GRID_Y * CLUSTER_GRID_Z;
     // capacity of the light list of a single cluster
     const GLuint MAX_LIGHTS_PER_CLUSTER = 64;
-    // work group size of cluster_build.comp, which handles one cluster per invocation
+    // work group size of cluster_build.comp and cluster_cull.comp, which handle one cluster per invocation
     const GLuint CLUSTER_BUILD_GROUP_SIZE = 64;
+    const GLuint CLUSTER_CULL_GROUP_SIZE = 64;
 
     // binding points of the cluster buffers: layout(binding = ...) in glsl_common.
     // the uniform block numbers go together with scene (0), model (1) and instance (3) blocks
@@ -247,8 +252,9 @@ namespace gl
     static_assert(offsetof(cluster_range, offset) == 0, "bad layout of cluster_range");
     static_assert(offsetof(cluster_range, count) == 4, "bad layout of cluster_range");
 
-    // layout std430: cluster_counter_ssbo. index_count is the allocator of the shared index list, overflow_count
-    // the number of lights dropped from clusters which were full
+    // layout std430: cluster_counter_ssbo, zeroed before every culling pass. index_count is the allocator of the shared
+    // index list, overflow_count the number of (cluster, light) pairs dropped because the cluster already held
+    // MAX_LIGHTS_PER_CLUSTER lights
     struct cluster_counters
     {
         uint32_t index_count;
