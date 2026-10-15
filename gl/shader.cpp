@@ -86,6 +86,8 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
         type = GL_FRAGMENT_SHADER;
     else if (strcend(filename, ".geom"))
         type = GL_GEOMETRY_SHADER;
+    else if (strcend(filename, ".comp"))
+        type = GL_COMPUTE_SHADER;
     else
         throw shader_exception("unknown shader " + filename);
 
@@ -96,6 +98,7 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
     if (type == GL_VERTEX_SHADER)        str += "#define STAGE_VERTEX 1\n";
     else if (type == GL_FRAGMENT_SHADER) str += "#define STAGE_FRAGMENT 1\n";
     else if (type == GL_GEOMETRY_SHADER) str += "#define STAGE_GEOMETRY 1\n";
+    else if (type == GL_COMPUTE_SHADER)  str += "#define STAGE_COMPUTE 1\n";
     str += "vec4 FBOUT(vec4 x) { return " + (Global.gfx_shadergamma ? std::string("vec4(pow(x.rgb, vec3(1.0 / 2.2)), x.a)") : std::string("x")) + "; }\n";
 
     str += read_file(basedir + filename);
