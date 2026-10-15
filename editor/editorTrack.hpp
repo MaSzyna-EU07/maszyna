@@ -19,6 +19,7 @@ http:
 
 #include "world/Segment.h"
 #include "editor/editorAlignment.hpp"
+#include "editor/editorSwitchDesign.hpp"
 #include "utilities/Classes.h"
 
 class TTrack;
@@ -407,8 +408,16 @@ class editor_track
 		bool double_slip{false};
 		std::string type{"Rz"};
 		std::string rail{"-"};
+		// the second switch of a double one, starting on the main track of the first at the stagger
+		std::array<segment_data, 2> second;
+		segment_data link; // plain track from the main track of the first switch to the start of the second one
+		double stagger{0.0};
+		bool own{false};
+		int design{-1}; // in the list of the designs the template was built from
+		bool twofold() const { return stagger > 0.0; }
 	};
 	static std::vector<switch_template> standard_switch_templates();
+	static std::optional<switch_template> template_of(switch_design::design const &Design, std::string &Error);
 	static std::vector<switch_template> find_switch_templates();
 	static TTrack *load_path(std::string const &Text, TTrack const &Template, std::string const &Name = {});
 	static TTrack *create_path(TTrack const &Style, segment_data const &Path);

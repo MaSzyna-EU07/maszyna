@@ -57,6 +57,13 @@ using geometry::level;
 using geometry::reversed;
 using geometry::straight_piece;
 
+std::string template_label(editor_track::switch_template const &Template)
+{
+	if (Template.source != nullptr)
+		return STR("Scenery: ") + Template.label + "  (" + std::to_string(Template.count) + "x)";
+	return (Template.own ? STR("Own: ") : std::string{"PLK: "}) + Template.label;
+}
+
 double constexpr kParallelFindAngle{15.0}; // deg, neighbours counted as beside the straight
 double constexpr kParallelSnapAngle{5.0}; // deg, close enough to snap parallel
 double constexpr kParallelSnapWindow{0.45}; // m from 4.00 / 4.50 / 4.75 m
@@ -910,6 +917,9 @@ void editor_mode::render_turnout_ui()
 	auto *track{selected_track()};
 	if (track == nullptr || track->eType != tt_Switch || track->m_paths.size() < 2)
 		return;
+	auto const set{double_of(*track)};
+	if (set.has_value())
+		track = set->first;
 	auto const &main{track->m_paths[0]};
 	auto const &diverging{track->m_paths[1]};
 	auto const origin{main.points[segment_data::point::start]};
@@ -928,43 +938,59 @@ void editor_mode::render_turnout_ui()
 	auto const offset{glm::dot(end, normal)};
 	glm::dvec2 const tangent{glm::normalize(glm::dvec2{-control.x, -control.z})};
 	auto const angle{std::atan2(std::abs(tangent.x * axis.y - tangent.y * axis.x), glm::dot(tangent, axis))};
-	ImGui::Text(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
+	if (set.has_value())
+	{
+		auto const &second{set->second->m_paths.front()};
+		ImGui::Text(STR_C("Double switch %s + %s: length %.3f m, the second switch starts %.3f m on"), set->first->name().c_str(), set->second->name().c_str(), glm::dot(plan_of(second.points[segment_data::point::end] - origin), axis), glm::dot(plan_of(second.points[segment_data::point::start] - origin), axis));
+		ImGui::TextDisabled(STR_C("First switch: diverging %s, end offset %.3f m"), offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
+	}
+	else
+		ImGui::Text(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
 	render_track_name(*track);
 	render_switch_record(*track);
-	if (auto const drive{find_switch_drive(*track)})
-	{
-		auto const family{drive->family};
-		auto const variant{drive->index};
-		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), track->name().c_str(), track->name().c_str());
-		ImGui::PushItemWidth(200.0f);
-		if (ImGui::BeginCombo(STR_C("Drive##standing"), m_switch.drives[family].name.c_str()))
+	auto const drive_ui = [&](TTrack &Switch) {
+		ImGui::PushID(&Switch);
+		if (set.has_value())
+			ImGui::TextUnformatted(Switch.name().c_str());
+		if (auto const drive{find_switch_drive(Switch)})
 		{
-			for (int i = 0; i < static_cast<int>(m_switch.drives.size()); ++i)
-				if (ImGui::Selectable(m_switch.drives[i].name.c_str(), family == i) && i != family)
-					replace_switch_drive(*track, i, false);
-			ImGui::EndCombo();
+			auto const family{drive->family};
+			auto const variant{drive->index};
+			ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str());
+			ImGui::PushItemWidth(200.0f);
+			if (ImGui::BeginCombo(STR_C("Drive##standing"), m_switch.drives[family].name.c_str()))
+			{
+				for (int i = 0; i < static_cast<int>(m_switch.drives.size()); ++i)
+					if (ImGui::Selectable(m_switch.drives[i].name.c_str(), family == i) && i != family)
+						replace_switch_drive(Switch, i, false);
+				ImGui::EndCombo();
+			}
+			ImGui::PopItemWidth();
+			item_tooltip("Puts another drive in place of the drive of this switch, on the same side");
+			int side{((variant >> 1) == (variant & 1)) ? 0 : 1};
+			ImGui::SameLine();
+			auto const before{side};
+			ImGui::RadioButton(STR_C("diverging side##standing"), &side, 0);
+			ImGui::SameLine();
+			ImGui::RadioButton(STR_C("other side##standing"), &side, 1);
+			if (side != before)
+				flip_switch_drive(Switch);
+			item_tooltip("Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side");
 		}
-		ImGui::PopItemWidth();
-		item_tooltip("Puts another drive in place of the drive of this switch, on the same side");
-		int side{((variant >> 1) == (variant & 1)) ? 0 : 1};
-		ImGui::SameLine();
-		auto const before{side};
-		ImGui::RadioButton(STR_C("diverging side##standing"), &side, 0);
-		ImGui::SameLine();
-		ImGui::RadioButton(STR_C("other side##standing"), &side, 1);
-		if (side != before)
-			flip_switch_drive(*track);
-		item_tooltip("Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side");
-	}
-	else if ((simulation::Events.FindEvent(track->name() + "+") != nullptr && simulation::Events.FindEvent(track->name() + "-") != nullptr) || (m_track_name.track == track && m_track_name.uses.includes > 0))
-		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), track->name().c_str(), track->name().c_str());
-	else
-	{
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
-		render_switch_drive_choice();
-		if (m_switch.drive >= 0 && ImGui::Button(STR_C("Put the drive by the switch")))
-			place_switch_drive(*track);
-	}
+		else if ((simulation::Events.FindEvent(Switch.name() + "+") != nullptr && simulation::Events.FindEvent(Switch.name() + "-") != nullptr) || (m_track_name.track == &Switch && m_track_name.uses.includes > 0))
+			ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str());
+		else
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
+			render_switch_drive_choice();
+			if (m_switch.drive >= 0 && ImGui::Button(STR_C("Put the drive by the switch")))
+				place_switch_drive(Switch);
+		}
+		ImGui::PopID();
+	};
+	drive_ui(*track);
+	if (set.has_value())
+		drive_ui(*set->second);
 	bool frogs{track->SwitchExtension->m_frogs};
 	if (ImGui::Checkbox(STR_C("Frog and check rails made from the rails"), &frogs))
 	{
@@ -989,9 +1015,10 @@ void editor_mode::render_turnout_ui()
 	if (tool.templates.empty())
 		return;
 	m_turnout_template = std::clamp(m_turnout_template, 0, static_cast<int>(tool.templates.size()) - 1);
-	if (tool.templates[m_turnout_template].double_slip)
+	auto const fits = [&](editor_track::switch_template const &Template) { return false == Template.double_slip && Template.twofold() == set.has_value(); };
+	if (false == fits(tool.templates[m_turnout_template]))
 	{
-		auto const ordinary{std::find_if(tool.templates.begin(), tool.templates.end(), [](auto const &Template) { return false == Template.double_slip; })};
+		auto const ordinary{std::find_if(tool.templates.begin(), tool.templates.end(), fits)};
 		if (ordinary == tool.templates.end())
 			return;
 		m_turnout_template = static_cast<int>(ordinary - tool.templates.begin());
@@ -1002,18 +1029,43 @@ void editor_mode::render_turnout_ui()
 	{
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 		{
-			if (tool.templates[i].double_slip)
+			if (false == fits(tool.templates[i]))
 				continue;
-			auto const label{(tool.templates[i].source != nullptr ? "Scenery: " : "PLK: ") + tool.templates[i].label};
+			auto const label{template_label(tool.templates[i])};
 			if (ImGui::Selectable(label.c_str(), i == m_turnout_template))
 				m_turnout_template = i;
 		}
 		ImGui::EndCombo();
 	}
 	ImGui::PopItemWidth();
+	auto const finish_set = [&](std::string const &Status) {
+		switch_store::follow();
+		records_to_history();
+		straight_refresh();
+		if (false == Status.empty())
+			ui()->set_status(Status, true);
+	};
 	auto const replace = [&](editor_track::switch_template const &Template, int const Side) {
 		auto const grade{length > 0.0 ? (main.points[segment_data::point::end].y - origin.y) / length : 0.0};
 		auto paths{editor_track::place_switch(Template, origin, axis, Side, grade)};
+		if (set.has_value())
+		{
+			if (paths.size() < 5)
+				return;
+			auto const before{double_paths(*set)};
+			for (std::size_t i = 0; i < paths.size(); ++i)
+				if (paths[i].rolls[0] == 0.f && paths[i].rolls[1] == 0.f)
+					paths[i].rolls = before[i < 4 ? i & ~std::size_t{1} : 4].rolls;
+			std::string status;
+			if (false == move_double_paths(*set, paths, status))
+			{
+				ui()->set_status(status, true);
+				return;
+			}
+			record_double(*set->first, *set->second, Template);
+			finish_set(status);
+			return;
+		}
 		if (paths.size() < 2)
 			return;
 		for (int i = 0; i < 2; ++i)
@@ -1036,7 +1088,30 @@ void editor_mode::render_turnout_ui()
 		replace(tool.templates[m_turnout_template], side);
 	item_tooltip("Keeps the start and the direction of the switch, takes the shape of the chosen template");
 	ImGui::SameLine();
-	if (ImGui::Button(STR_C("Flip the side")))
+	if (set.has_value() && ImGui::Button(STR_C("Flip the side")))
+	{
+		auto const mirror = [&](glm::dvec3 const &Vector) {
+			auto const across{glm::dot(plan_of(Vector), normal)};
+			return glm::dvec3{Vector.x - 2.0 * across * normal.x, Vector.y, Vector.z - 2.0 * across * normal.y};
+		};
+		auto paths{double_paths(*set)};
+		for (auto &path : paths)
+			path.transform([&](glm::dvec3 const &Point) { return origin + mirror(Point - origin); }, mirror);
+		std::string status;
+		if (false == move_double_paths(*set, paths, status))
+			ui()->set_status(status, true);
+		else
+		{
+			if (auto entry{switch_store::named(*set->first)})
+			{
+				switch_store::place(*entry, *set->first);
+				switch_store::classify(*entry, *set->first);
+				switch_store::put(*entry, alignment_store::layer_of(*set->first));
+			}
+			finish_set(status);
+		}
+	}
+	else if (false == set.has_value() && ImGui::Button(STR_C("Flip the side")))
 	{
 		editor_track::switch_template own;
 		own.source = track;
@@ -1056,16 +1131,16 @@ void editor_mode::render_turnout_ui()
 		replace(own, -side);
 	}
 	item_tooltip("Mirrors the switch: the diverging track goes to the other side");
-	if (double low, high; switch_slides(*track) && switch_room(*track, low, high, m_switch.status))
+	if (double low, high, reach{length}; switch_slides(*track) && (set.has_value() ? switch_slides(*set->second) && double_room(*set, low, high, reach, m_switch.status) : switch_room(*track, low, high, m_switch.status)))
 	{
 		ImGui::PushItemWidth(100.0f);
 		ImGui::InputDouble("##switchslide", &tool.slide_typed, 0.0, 0.0, "%.2f m");
 		ImGui::PopItemWidth();
 		ImGui::SameLine();
 		if (ImGui::Button(STR_C("Slide along the straight")))
-			slide_switch(*track, std::clamp(tool.slide_typed, low, high - length));
+			slide_switch(*track, std::clamp(tool.slide_typed, low, high - reach));
 		item_tooltip("Moves the switch along its straight by the distance typed, + towards the frog; the straight paths on both sides get shorter or longer. Dragging the switch with the mouse does the same");
-		ImGui::TextDisabled(STR_C("Room on the straight: %.2f m back, %.2f m ahead"), -low, high - length);
+		ImGui::TextDisabled(STR_C("Room on the straight: %.2f m back, %.2f m ahead"), -low, high - reach);
 	}
 	ImGui::Separator();
 	render_path_parameters(*track);
@@ -3708,6 +3783,39 @@ void editor_mode::delete_selected_track()
 		ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
 		return;
 	}
+	if (auto const set{double_of(*track)})
+	{
+		for (auto *part : {set->first, set->link, set->second})
+			if (false == part->Dynamics.empty())
+			{
+				ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
+				return;
+			}
+		if (auto const known{switch_store::named(*set->first)})
+			switch_store::forget(known->name);
+		auto main{set->first->m_paths.front()};
+		main.points[segment_data::point::end] = set->second->m_paths.front().points[segment_data::point::end];
+		auto const velocity{speed_check::path_velocity(*set->first, 0)};
+		for (auto *part : {set->first, set->link, set->second})
+			editor_track::retire(*part);
+		std::vector<TTrack *> created;
+		if (false == Global.shiftState)
+		{
+			auto *straight{editor_track::create_path(*set->first, main)};
+			editor_track::velocity(*straight, velocity);
+			editor_track::commit({straight});
+			created.push_back(straight);
+			ui()->set_status(STR_C("The double switch is replaced by its main track, Shift+Del removes all of it"), false);
+		}
+		push_track_snapshot({}, created, {set->first, set->link, set->second});
+		if (std::any_of(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), [&](TTrack const *Each) { return Each == set->first || Each == set->link || Each == set->second; }))
+			m_route = {};
+		m_node = nullptr;
+		ui()->set_node(nullptr);
+		m_track_point = {};
+		straight_refresh();
+		return;
+	}
 	// retired first, so the infrastructure it carried and moves elsewhere is in the same undo step
 	if (auto const known{switch_store::of(*track)})
 		switch_store::forget(known->name);
@@ -3765,7 +3873,9 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_extend.active)
 		hints = {{"Drag", "lays the shape to the cursor, to a free end: joins it"}, {"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}, {"Release", "build"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
-		hints = {{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}};
+		hints = m_switch.connection >= 0 && false == m_switch.curved ?
+		            std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}} :
+		            std::vector<key_hint>{{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::lay)
 		hints = {{"LMB", "start, on the ground or at a free end"}};
 	else if (m_track_tab == track_tab::turnout && (selected_track() == nullptr || selected_track()->eType == tt_Switch))
@@ -4725,6 +4835,25 @@ void editor_mode::render_layout_combo()
 bool editor_mode::track_wheel(double const Offset)
 {
 	auto const &io{ImGui::GetIO()};
+	if (m_switch.placing && m_switch.connection >= 0 && Offset != 0.0 && (io.KeyCtrl || io.KeyShift || io.KeyAlt))
+	{
+		auto &tool{m_switch};
+		int const step{Offset > 0.0 ? 1 : -1};
+		if (io.KeyShift)
+			tool.connection = (tool.connection + step + connection::kind_count) % connection::kind_count;
+		else if (io.KeyCtrl)
+		{
+			static double const radii[]{0.0, 150.0, 190.0, 250.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0, 3000.0};
+			int index{0};
+			for (int i = 0; i < static_cast<int>(std::size(radii)); ++i)
+				if (radii[i] <= tool.connection_radius + 1e-6)
+					index = i;
+			tool.connection_radius = radii[std::clamp(index + step, 0, static_cast<int>(std::size(radii)) - 1)];
+		}
+		else
+			tool.connection_together = false == tool.connection_together;
+		return true;
+	}
 	if ((false == io.KeyCtrl && false == io.KeyShift) || Offset == 0.0)
 		return false;
 	bool const laying{m_lay.active && false == m_lay.points.empty()};
@@ -5318,6 +5447,18 @@ bool editor_mode::start_switch_placement()
 void editor_mode::finish_switch_placement()
 {
 	auto &tool{m_switch};
+	if (tool.connection >= 0)
+	{
+		if (false == tool.curved)
+		{
+			insert_connection();
+			return;
+		}
+		tool.placing = false;
+		tool.status = STR_C("A connection is laid between straights");
+		ui()->set_status(tool.status, true);
+		return;
+	}
 	switch_link plan;
 	auto const linked{plan_switch_link(plan)};
 	tool.placing = false;
@@ -5373,7 +5514,25 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 	m_node = *found;
 	ui()->set_node(m_node);
 	if (slip)
+	{
+		auto const known{switch_store::named(**found)};
+		if (false == known.has_value() || known->kind != "double")
+			return;
+		std::vector<std::string> driven;
+		for (auto *track : Created)
+			if (track != nullptr && track->eType == tt_Switch && place_switch_drive(*track))
+			{
+				join_last_steps();
+				driven.push_back(track->name());
+			}
+		if (driven.size() == 2)
+		{
+			m_switch.status = format(STR_C("Double switch %s + %s with drives: events %s+, %s- and %s+, %s- switch them, also in the map"), driven[0].c_str(), driven[1].c_str(), driven[0].c_str(), driven[0].c_str(), driven[1].c_str(), driven[1].c_str());
+			ui()->set_status(m_switch.status, false);
+		}
+		advance_switch_name();
 		return;
+	}
 	if (place_switch_drive(**found))
 		join_last_steps();
 	advance_switch_name();
@@ -5524,17 +5683,42 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
 	glm::dvec2 const direction{Line.direction * static_cast<double>(Direction)};
 	auto const paths{editor_track::place_switch(shape, point(origin), direction, Side, Line.grade * Direction)};
-	auto *track{editor_track::create_switch(shape, paths, Style != nullptr ? *Style : *first, Name)};
-	if (track != nullptr)
-	{
-		editor_track::commit({track});
-		record_switch(*track, shape);
-		Created.push_back(track);
-		m_switch.status = STR_C("Switch ") + track->name() + STR_C(" inserted");
-	}
-	else
-		m_switch.status = STR_C("The switch couldn't be created from this template");
+	auto const made{create_switch_set(shape, paths, Style != nullptr ? *Style : *first, Name)};
+	Created.insert(Created.end(), made.begin(), made.end());
 	return true;
+}
+
+std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_template const &Shape, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name)
+{
+	if (Shape.twofold() && Paths.size() >= 5)
+	{
+		auto firstshape{Shape};
+		firstshape.length = glm::distance(Paths[0].points[segment_data::point::start], Paths[0].points[segment_data::point::end]);
+		auto secondshape{Shape};
+		secondshape.length = Shape.length - Shape.stagger;
+		auto *one{editor_track::create_switch(firstshape, Paths, Style, Name)};
+		auto *two{one != nullptr ? editor_track::create_switch(secondshape, {Paths[2], Paths[3]}, Style, Name + "b") : nullptr};
+		auto *link{two != nullptr ? editor_track::create_path(Style, Paths[4]) : nullptr};
+		if (link == nullptr)
+		{
+			m_switch.status = STR_C("The switch couldn't be created from this template");
+			return {};
+		}
+		editor_track::commit({one, two, link});
+		record_double(*one, *two, Shape);
+		m_switch.status = format(STR_C("Double switch %s with its second switch %s inserted"), one->name().c_str(), two->name().c_str());
+		return {one, two, link};
+	}
+	auto *track{editor_track::create_switch(Shape, Paths, Style, Name)};
+	if (track == nullptr)
+	{
+		m_switch.status = STR_C("The switch couldn't be created from this template");
+		return {};
+	}
+	editor_track::commit({track});
+	record_switch(*track, Shape);
+	m_switch.status = STR_C("Switch ") + track->name() + STR_C(" inserted");
+	return {track};
 }
 
 void editor_mode::draw_build_overlay() const
@@ -5542,12 +5726,16 @@ void editor_mode::draw_build_overlay() const
 	screen_projection const projection;
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	auto const drawpath = [&](segment_data const &Path, ImU32 const Color) {
-		auto previous{bezier{Path}.point(0.0)};
-		for (int i = 1; i <= 24; ++i)
+		for (auto const &piece : Path.pieces.empty() ? std::vector<segment_data>{Path} : Path.pieces)
 		{
-			auto const next{bezier{Path}.point(i / 24.0)};
-			projection.line(drawlist, previous, next, Color, 3.0f);
-			previous = next;
+			bezier const curve{piece};
+			auto previous{curve.point(0.0)};
+			for (int i = 1; i <= 24; ++i)
+			{
+				auto const next{curve.point(i / 24.0)};
+				projection.line(drawlist, previous, next, Color, 3.0f);
+				previous = next;
+			}
 		}
 	};
 	if (false == GfxRenderer->Mouse_Hit() && false == ImGui::GetIO().WantCaptureMouse)
@@ -5620,7 +5808,40 @@ void editor_mode::draw_build_overlay() const
 				drawpath(piece, overlay_color::marked);
 		}
 	}
-	if (m_switch.placing)
+	if (m_switch.placing && m_switch.connection >= 0 && false == m_switch.curved)
+	{
+		connection::request request;
+		connection::result plan;
+		auto const valid{plan_connection(request, plan)};
+		if (valid)
+		{
+			for (auto const &entry : plan.switches)
+				for (auto const &path : entry.paths)
+					drawpath(path, overlay_color::marked);
+			for (auto const &insert : plan.inserts)
+				drawpath(insert, overlay_color::grip);
+			if (plan.crossing)
+				for (int i = 0; i < 4; i += 2)
+				{
+					segment_data path;
+					path.points[segment_data::point::start] = plan.ends[i];
+					path.points[segment_data::point::end] = plan.ends[i + 1];
+					drawpath(path, overlay_color::grip);
+				}
+		}
+		else
+			for (auto const &piece : switch_preview())
+				drawpath(piece, overlay_color::invalid);
+		ImVec2 screen;
+		auto const text{valid ? connection_readout(plan) : plan.error.empty() ? std::string{STR_C("Drag onto the other track")} : plan.error};
+		if (projection.project(m_switch.mouse, screen))
+		{
+			auto const size{ImGui::CalcTextSize(text.c_str())};
+			drawlist->AddRectFilled(ImVec2(screen.x + 14.0f, screen.y + 10.0f), ImVec2(screen.x + 22.0f + size.x, screen.y + 14.0f + size.y), IM_COL32(0, 0, 0, 180), 3.0f);
+			drawlist->AddText(ImVec2(screen.x + 18.0f, screen.y + 12.0f), valid ? (plan.warning.empty() ? overlay_color::highlight : overlay_color::warning) : overlay_color::invalid, text.c_str());
+		}
+	}
+	else if (m_switch.placing)
 	{
 		for (auto const &piece : switch_preview())
 			drawpath(piece, overlay_color::marked);
@@ -5724,7 +5945,7 @@ void editor_mode::render_switch_ui()
 			auto const &entry{tool.templates[i]};
 			if (entry.double_slip != Slips)
 				continue;
-			auto label{entry.source != nullptr ? STR("Scenery: ") + entry.label + "  (" + std::to_string(entry.count) + "x)" : "PLK: " + entry.label};
+			auto label{template_label(entry)};
 			label += "##switch" + std::to_string(i);
 			if (ImGui::Selectable(label.c_str(), tool.armed == i))
 			{
@@ -5747,6 +5968,7 @@ void editor_mode::render_switch_ui()
 			list(true);
 		}
 	}
+	render_connection_ui();
 	ImGui::PushItemWidth(120.0f);
 	ImGui::InputTextWithHint(STR_C("Name##switchname"), switch_name_for_new().c_str(), tool.name, sizeof(tool.name));
 	ImGui::PopItemWidth();
@@ -5765,6 +5987,10 @@ void editor_mode::render_switch_ui()
 		arm_switch();
 	}
 	item_tooltip("Looks for the switches of the scenery, to use their shapes as the templates");
+	ImGui::SameLine();
+	if (ImGui::SmallButton(STR_C("Template editor...")))
+		m_switch_designer.open = true;
+	item_tooltip("Own switch templates: diverging tracks of straights, arcs and transition curves, double switches");
 }
 
 std::vector<glm::dvec3> editor_mode::detour_outline() const
@@ -6015,9 +6241,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	if (std::abs(lateral) < 0.01)
 		return false;
 	auto const side{lateral > 0.0 ? 1.0 : -1.0};
-	auto const normal{perpendicular * side};
-	auto const offset{std::abs(lateral)};
-	auto const &control{diverging.points[segment_data::point::control2]};
+	auto const &control{(diverging.pieces.empty() ? diverging : diverging.pieces.back()).points[segment_data::point::control2]};
 	auto const tangent{glm::normalize(control != glm::dvec3{} ? -plan_of(control) : plan_of(frog - origin))};
 	auto const angle{std::atan2(std::abs(cross(axis, tangent)), glm::dot(axis, tangent))};
 	if (angle < 1e-4)
@@ -6055,22 +6279,6 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	auto const &line{Plan.target};
 	if (line.tracks.empty() || std::abs(cross(line.direction, axis)) > std::sin(glm::radians(1.0)))
 		return false;
-	auto const distance{glm::dot(plan_of(line.start) - plan_of(origin), normal)};
-	auto const remaining{distance - 2.0 * offset};
-	if (remaining < 0.01)
-		return false;
-	auto const length{remaining / std::sin(angle)};
-	glm::dvec2 const crossing{axis * std::cos(angle) + normal * std::sin(angle)};
-	auto const alongfrog{glm::dot(plan_of(frog - origin), axis)};
-	auto const otherfrog{plan_of(frog) + crossing * length};
-	auto const otherorigin{otherfrog + axis * alongfrog + normal * offset};
-	Plan.along = glm::dot(otherorigin - plan_of(line.start), line.direction);
-	if (Plan.along < 0.0 || Plan.along > line.length)
-		return false;
-	Plan.direction = glm::dot(-axis, line.direction) > 0.0 ? 1 : -1;
-	glm::dvec2 const direction{line.direction * static_cast<double>(Plan.direction)};
-	Plan.side = glm::dot(glm::dvec2{-direction.y, direction.x}, -normal) > 0.0 ? 1 : -1;
-
 	editor_track::switch_template shape;
 	shape.source = tool.track;
 	shape.length = glm::dot(plan_of(main.points[segment_data::point::end] - origin), axis);
@@ -6089,11 +6297,14 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 		}
 	}
 	Plan.shape = shape;
-	auto const station{line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * Plan.along};
-	Plan.paths = editor_track::place_switch(shape, station, direction, Plan.side, line.grade * Plan.direction);
-	Plan.insert = segment_data{};
-	Plan.insert.points[segment_data::point::start] = frog;
-	Plan.insert.points[segment_data::point::end] = Plan.paths[1].points[segment_data::point::end];
+	auto const faced{connection::face(frog, tangent, connection::of(line), 1, shape)};
+	if (false == faced.valid)
+		return false;
+	Plan.along = faced.partner.along;
+	Plan.direction = faced.partner.forward;
+	Plan.side = faced.partner.side;
+	Plan.paths = faced.partner.paths;
+	Plan.insert = faced.insert;
 	return true;
 }
 
@@ -6116,7 +6327,7 @@ bool editor_mode::stretchable(editor_track::snap_target const &Target) const
 bool editor_mode::plan_switch_link(switch_link &Plan) const
 {
 	auto const &tool{m_switch};
-	if (false == tool.placing || tool.curved || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()) || tool.line.tracks.empty() || tool.templates[tool.armed].double_slip)
+	if (false == tool.placing || tool.curved || tool.connection >= 0 || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()) || tool.line.tracks.empty() || tool.templates[tool.armed].double_slip)
 		return false;
 	auto const &shape{tool.templates[tool.armed]};
 	auto const &line{tool.line};
@@ -6697,13 +6908,11 @@ std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_
 		path.points[segment_data::point::control2] = {-Enddirection.x * handle, -(End.y - Start.y) / 3.0, -Enddirection.y * handle};
 		return path;
 	};
-	std::vector<segment_data> result;
-	for (auto const &local : Shape.local)
-	{
-		auto const &start{local.points[segment_data::point::start]};
-		auto const &end{local.points[segment_data::point::end]};
-		auto const &control1{local.points[segment_data::point::control1]};
-		auto const &control2{local.points[segment_data::point::control2]};
+	auto const bend = [&](segment_data const &Local) {
+		auto const &start{Local.points[segment_data::point::start]};
+		auto const &end{Local.points[segment_data::point::end]};
+		auto const &control1{Local.points[segment_data::point::control1]};
+		auto const &control2{Local.points[segment_data::point::control2]};
 		glm::dvec2 const chord{end.x - start.x, end.z - start.z};
 		auto const localstart{glm::normalize(control1 != glm::dvec3{} ? plan_of(control1) : chord)};
 		auto const localend{glm::normalize(control2 != glm::dvec3{} ? -plan_of(control2) : chord)};
@@ -6729,19 +6938,35 @@ std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_
 		auto const rollstart{sample_at(Frame, Station + Direction * start.z).roll * Direction};
 		auto const rollend{sample_at(Frame, Station + Direction * end.z).roll * Direction};
 		path.rolls = {static_cast<float>(rollstart), static_cast<float>(rollend)};
-		path.radius = local.radius;
+		path.radius = Local.radius;
 		{
 			bezier const curve{path};
 			auto const begin{plan_of(curve.first(0.0))};
 			auto const finish{plan_of(curve.first(1.0))};
 			auto const turn{glm::length(begin) > 1e-9 && glm::length(finish) > 1e-9 ? geometry::signed_angle(begin, finish) : 0.0};
-			if (local.radius != 0.f && std::abs(turn) > 1e-6)
-				path.radius = static_cast<float>(std::copysign(curve.plan_length() / std::abs(turn), static_cast<double>(local.radius)));
+			if (Local.radius != 0.f && std::abs(turn) > 1e-6)
+				path.radius = static_cast<float>(std::copysign(curve.plan_length() / std::abs(turn), static_cast<double>(Local.radius)));
 		}
+		return path;
+	};
+	std::vector<segment_data> locals{Shape.local.begin(), Shape.local.end()};
+	if (Shape.twofold())
+	{
+		locals.insert(locals.end(), Shape.second.begin(), Shape.second.end());
+		locals.push_back(Shape.link);
+	}
+	std::vector<segment_data> result;
+	for (std::size_t i = 0; i < locals.size(); ++i)
+	{
+		auto const &local{locals[i]};
+		auto path{bend(local)};
+		for (auto const &piece : local.pieces)
+			path.pieces.push_back(bend(piece));
+		// the main tracks follow the curve they are laid into
+		if (i % 2 == 0)
+			path.radius = sample_at(Frame, Station + Direction * 0.5 * (local.points[segment_data::point::start].z + local.points[segment_data::point::end].z)).radius;
 		result.push_back(path);
 	}
-	if (false == result.empty())
-		result.front().radius = sample_at(Frame, Station).radius;
 	return result;
 }
 
@@ -6799,16 +7024,10 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 		}
 	}
 	auto const paths{curved_switch_paths(shape, tool.frame, station, Direction, Side)};
-	auto *track{editor_track::create_switch(shape, paths, *tool.frame_tracks.front(), switch_name_for_new())};
-	if (track != nullptr)
-	{
-		editor_track::commit({track});
-		record_switch(*track, shape);
-		created.push_back(track);
-		tool.status = STR_C("Switch ") + track->name() + STR_C(" inserted into the curve");
-	}
-	else
-		tool.status = STR_C("The switch couldn't be created from this template");
+	auto const made{create_switch_set(shape, paths, *tool.frame_tracks.front(), switch_name_for_new())};
+	created.insert(created.end(), made.begin(), made.end());
+	if (made.size() == 1)
+		tool.status = STR_C("Switch ") + made.front()->name() + STR_C(" inserted into the curve");
 	auto const placed{created};
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();

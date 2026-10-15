@@ -25,6 +25,7 @@ http:
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 #include "utilities/parser.h"
+#include "utilities/Logs.h"
 
 #include <algorithm>
 #include <cmath>
@@ -2595,77 +2596,72 @@ std::vector<segment_data> editor_track::place_switch(switch_template const &Temp
 		auto const planar{Direction * Local.z + normal * (Local.x * side)};
 		return glm::dvec3{planar.x, Local.y + Grade * Local.z, planar.y};
 	};
-	for (auto const &local : Template.local)
-	{
-		segment_data path{local};
+	auto const put = [&](segment_data const &Local) {
+		segment_data path{Local};
 		path.transform([&](glm::dvec3 const &Point) { return Origin + vector(Point); }, vector);
 		if (Side < 0)
 		{
-			path.rolls = {-local.rolls[0], -local.rolls[1]};
+			path.rolls = {-Local.rolls[0], -Local.rolls[1]};
 			for (auto &piece : path.pieces)
 				piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
 		}
 		result.push_back(path);
+	};
+	for (auto const &local : Template.local)
+		put(local);
+	if (Template.twofold())
+	{
+		for (auto const &local : Template.second)
+			put(local);
+		put(Template.link);
 	}
 	return result;
 }
 
+std::optional<editor_track::switch_template> editor_track::template_of(switch_design::design const &Design, std::string &Error)
+{
+	auto const shape{switch_design::build(Design, Error)};
+	if (shape.paths.size() < 2)
+		return std::nullopt;
+	switch_template entry;
+	entry.type = Design.type;
+	entry.rail = Design.rail.empty() ? std::string{"-"} : Design.rail;
+	entry.length = shape.length;
+	entry.ratio = shape.ratio;
+	entry.radius = shape.radius;
+	entry.a = shape.a;
+	entry.b = shape.b;
+	entry.own = Design.own;
+	entry.local = {shape.paths[0], shape.paths[1]};
+	entry.local[1].radius = static_cast<float>(shape.radius);
+	if (shape.paths.size() >= 5)
+	{
+		entry.second = {shape.paths[2], shape.paths[3]};
+		entry.link = shape.paths[4];
+		entry.stagger = shape.stagger;
+	}
+	auto const decimals = [](double const Value) { return format("%.3f", Value); };
+	entry.label = Design.name + "  a " + decimals(entry.a) + " b " + decimals(entry.b) + (Design.note.empty() ? std::string{} : " " + Design.note);
+	return entry;
+}
+
 std::vector<editor_track::switch_template> editor_track::standard_switch_templates()
 {
-	struct definition
-	{
-		char const *name;
-		double radius;
-		double ratio;
-		double a;
-		double b;
-	};
-	definition const definitions[] = {
-		{"Rz 1:9 R190", 190.0, 9.0, 10.523, 16.615},
-		{"Rz 1:9 R300", 300.0, 9.0, 16.615, 16.615},
-		{"Rz 1:12 R500", 500.0, 12.0, 20.797, 0.0},
-		{"Rz 1:14 R760", 760.0, 14.0, 0.0, 0.0},
-		{"Rz 1:18,5 R1200", 1200.0, 18.5, 32.409, 34.943},
-		{"Rz 1:26,5 R2500", 2500.0, 26.5, 0.0, 0.0},
-	};
 	std::vector<switch_template> result;
-	for (auto const &definition : definitions)
+	auto designs{switch_design::catalogue()};
+	auto const own{switch_design::own()};
+	designs.insert(designs.end(), own.begin(), own.end());
+	for (std::size_t i = 0; i < designs.size(); ++i)
 	{
-		auto const angle{std::atan(1.0 / definition.ratio)};
-		auto const a{definition.a > 0.0 ? definition.a : definition.radius * std::tan(angle * 0.5)};
-		auto const estimated{definition.b <= 0.0};
-		auto const b{estimated ? 1.87 * definition.ratio : definition.b};
-		auto const offset{b * std::tan(angle)};
-		switch_template entry;
-		entry.a = a;
-		entry.b = b;
-		entry.length = a + b;
-		entry.ratio = definition.ratio;
-		entry.radius = definition.radius;
-		auto &main{entry.local[0]};
-		main.points[segment_data::point::end] = {0.0, 0.0, a + b};
-		auto &diverging{entry.local[1]};
-		diverging.points[segment_data::point::end] = {offset, 0.0, a + b};
-		diverging.points[segment_data::point::control1] = {0.0, 0.0, a * 2.0 / 3.0};
-		diverging.points[segment_data::point::control2] = {-offset * 2.0 / 3.0, 0.0, -b * 2.0 / 3.0};
-		diverging.radius = static_cast<float>(definition.radius);
-		auto const tangent{definition.radius * std::tan(angle * 0.5)};
-		glm::dvec3 const arcend{tangent * std::sin(angle), 0.0, tangent + tangent * std::cos(angle)};
-		if (glm::distance(arcend, diverging.points[segment_data::point::end]) > 0.5)
+		std::string error;
+		auto entry{template_of(designs[i], error)};
+		if (false == entry.has_value())
 		{
-			auto const handle{4.0 / 3.0 * definition.radius * std::tan(angle * 0.25)};
-			segment_data arc;
-			arc.points[segment_data::point::end] = arcend;
-			arc.points[segment_data::point::control1] = {0.0, 0.0, handle};
-			arc.points[segment_data::point::control2] = {-handle * std::sin(angle), 0.0, -handle * std::cos(angle)};
-			arc.radius = static_cast<float>(definition.radius);
-			segment_data straight;
-			straight.points[segment_data::point::start] = arcend;
-			straight.points[segment_data::point::end] = diverging.points[segment_data::point::end];
-			diverging.pieces = {arc, straight};
+			WriteLog("Editor: switch template \"" + designs[i].name + "\" left out: " + error, logtype::generic);
+			continue;
 		}
-		entry.label = std::string{definition.name} + "  a " + std::to_string(a).substr(0, std::to_string(a).find('.') + 4) + " b " + std::to_string(b).substr(0, std::to_string(b).find('.') + 4) + (estimated ? " (b est.)" : "");
-		result.push_back(entry);
+		entry->design = static_cast<int>(i);
+		result.push_back(std::move(*entry));
 	}
 	for (auto const &slipping : {std::pair<double, char const *>{190.0, "1:9"}, {300.0, "1:9"}})
 	{

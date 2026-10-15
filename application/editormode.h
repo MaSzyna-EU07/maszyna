@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTerrainStreamer.hpp"
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorTrack.hpp"
+#include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -725,6 +726,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void track_gizmo_take_switch_joints(TTrack &Track, bool const Controlmode);
 	track_gizmo_drag::switch_joint track_gizmo_link(TTrack &Track, editor_track::point_ref const &Own, std::pair<TTrack *, editor_track::point_ref> const &Connection, std::function<bool(TTrack const *)> const &Movable);
 	void track_gizmo_take_switches(TTrack &Track);
+	// the other switch of a double switch and the track between them go with the moved or turned switch as a whole
+	void track_gizmo_take_double(TTrack &Track);
 	void track_gizmo_measure_rotation(TTrack &Track, bool const Pointmode);
 	void track_gizmo_measure(TTrack &Track, bool const Pointmode, gizmo_operation const Operation);
 	void track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_operation const Operation);
@@ -832,6 +835,19 @@ class editor_mode : public application_mode, private editor_track::observer
 	void route_read_stored(TTrack &Track);
 	void route_take_stored(int const Index);
 	void record_switch(TTrack &Track, editor_track::switch_template const &Shape);
+	void record_double(TTrack &First, TTrack &Second, editor_track::switch_template const &Shape);
+	// the two switches of a double switch and the plain track between them, found from any of the three
+	struct double_switch
+	{
+		TTrack *first{nullptr};
+		TTrack *link{nullptr};
+		TTrack *second{nullptr};
+	};
+	std::optional<double_switch> double_of(TTrack const &Track) const;
+	// the paths of the set in the order editor_track::place_switch gives them
+	static std::vector<segment_data> double_paths(double_switch const &Set);
+	// the switch of the template, or the two switches of a double one with the plain track between them, committed and recorded
+	std::vector<TTrack *> create_switch_set(editor_track::switch_template const &Shape, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name);
 	void record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base);
 	void render_switch_record(TTrack const &Track) const;
 	void route_store();
@@ -978,15 +994,33 @@ class editor_mode : public application_mode, private editor_track::observer
 			double low{0.0};
 			double high{0.0};
 			double distance{0.0};
+			double length{0.0};
 			std::vector<double> joints;
 		};
 		slide_state slide;
 		double slide_typed{0.0};
+		int connection{-1};
+		int connection_second{-1};
+		double connection_radius{0.0};
+		double connection_gap{6.0};
+		bool connection_together{false};
+		char connection_spacings[64]{"4.75;4.75;5.0"};
+		double connection_stub{25.0};
 	};
 	switch_tool m_switch;
+	bool plan_connection(connection::request &Request, connection::result &Result) const;
+	void insert_connection();
+	void render_connection_ui();
+	std::string connection_readout(connection::result const &Plan) const;
+	editor_track::straight straight_near(glm::dvec3 const &Point, std::vector<TTrack const *> const &Exclude, double const Reach) const;
+	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
+	void record_connection(connection::kind const Kind, std::vector<TTrack *> const &Switches, connection::result const &Plan, editor_track::switch_template const &Shape);
 	bool switch_room(TTrack &Track, double &Low, double &High, std::string &Reason);
 	bool switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status);
 	bool move_switch_paths(TTrack &Track, std::vector<segment_data> const &Paths, std::string &Status);
+	// room on the straight of the whole double switch along the axis of its first switch, and the length of the set
+	bool double_room(double_switch const &Set, double &Low, double &High, double &Length, std::string &Reason);
+	bool move_double_paths(double_switch const &Set, std::vector<segment_data> const &Paths, std::string &Status);
 	bool slide_switch(TTrack &Track, double const Distance);
 	bool switch_slides(TTrack const &Track) const;
 	void switch_slide_start(TTrack &Track);
@@ -1213,6 +1247,29 @@ class editor_mode : public application_mode, private editor_track::observer
 	int m_lineside_tab{0};
 	void render_lineside_ui();
 	void arm_switch();
+	// the window of the switch templates: the catalogue and the own ones, made of straights, arcs and transition curves
+	struct switch_designer
+	{
+		bool open{false};
+		bool loaded{false};
+		std::vector<switch_design::design> catalogue;
+		std::vector<switch_design::design> own;
+		bool from_catalogue{true};
+		int selected{-1};
+		bool dirty{false};
+		bool stretched{true};
+		double quick_radius{300.0};
+		double quick_ratio{9.0};
+		double quick_straight{0.0};
+		double blade_length{5.0};
+		double blade_gap{0.15};
+		std::string status;
+	};
+	switch_designer m_switch_designer;
+	void switch_designs_load();
+	// the list of the switch tool built again with the own templates, keeping the armed one or arming the one whose label starts with Arm
+	void switch_templates_refresh(std::string const &Arm = {});
+	void render_switch_designer();
 	bool m_track_window_open{false};
 	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
 	void render_track_inspector();

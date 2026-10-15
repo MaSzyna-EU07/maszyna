@@ -155,7 +155,7 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		float extent{0.0f};
 		words >> extent;
 		choose_work_area(work_area::tracks);
-		if (false == Global.EditorOrtho)
+		if (Global.EditorOrtho == extent < 0.0f)
 			toggle_ortho();
 		if (extent > 0.0f)
 			Global.EditorOrthoExtent = std::clamp(extent, 5.0f, 50000.0f);
@@ -1318,6 +1318,166 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog("SELFTEST curvedswitch " + (tool.armed >= 0 ? tool.templates[tool.armed].label : std::string{}) + ": " + tool.status);
 		return selftest_result::handled;
 	}
+	if (command == "designer")
+	{
+		std::string list;
+		int index{0};
+		words >> list >> index;
+		auto &designer{m_switch_designer};
+		designer.open = list != "close";
+		designer.from_catalogue = list != "own";
+		designer.selected = index;
+		return selftest_result::handled;
+	}
+	if (command == "release")
+	{
+		m_switch.placing = false;
+		lay_cancel();
+		m_cursor_override.reset();
+		return selftest_result::handled;
+	}
+	if (command == "hover")
+	{
+		glm::dvec3 at{0.0};
+		if (words >> at.x >> at.z)
+			m_cursor_override = at;
+		else
+			m_cursor_override.reset();
+		return selftest_result::handled;
+	}
+	if (command == "layhold")
+	{
+		int layout{0};
+		words >> layout >> m_lay.radius;
+		m_track_layout = static_cast<track_layout>(std::clamp(layout, 0, 3));
+		m_lay.active = true;
+		lay_cancel();
+		std::vector<glm::dvec3> points;
+		for (glm::dvec3 point{0.0}; words >> point.x >> point.z;)
+			points.push_back(point);
+		for (std::size_t i = 0; i + 1 < points.size(); ++i)
+		{
+			auto point{points[i]};
+			point.y = 5000.0;
+			std::vector<char> found;
+			auto const ground{ground_heights({point}, true, &found)};
+			point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+			m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
+			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
+			lay_click();
+		}
+		if (false == points.empty())
+			m_cursor_override = points.back();
+		WriteLog("SELFTEST layhold: " + m_lay.status);
+		return selftest_result::handled;
+	}
+	if (command == "connection" || command == "connectionplan" || command == "connectionhold")
+	{
+		std::string kindword;
+		std::string label;
+		std::string second;
+		glm::dvec3 at{0.0};
+		glm::dvec3 toward{0.0};
+		words >> kindword >> at.x >> at.z >> toward.x >> toward.z >> label >> second;
+		connection::kind kind{connection::kind::crossover};
+		if (kindword != "single" && false == connection::parse(kindword, kind))
+		{
+			WriteLog("SELFTEST connection: unknown kind " + kindword);
+			return selftest_result::handled;
+		}
+		auto &tool{m_switch};
+		for (std::string key; words >> key;)
+		{
+			if (key == "radius")
+				words >> tool.connection_radius;
+			else if (key == "gap")
+				words >> tool.connection_gap;
+			else if (key == "together")
+				words >> tool.connection_together;
+			else if (key == "stub")
+				words >> tool.connection_stub;
+			else if (key == "spacings")
+			{
+				std::string value;
+				words >> value;
+				std::snprintf(tool.connection_spacings, sizeof(tool.connection_spacings), "%s", value.c_str());
+			}
+		}
+		show_track_tab(track_tab::turnout);
+		arm_switch();
+		auto const find = [&](std::string Label) {
+			std::replace(Label.begin(), Label.end(), '_', ' ');
+			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+				if (false == Label.empty() && Label != "-" && false == tool.templates[i].double_slip && false == tool.templates[i].twofold() && tool.templates[i].label.find(Label) != std::string::npos)
+					return i;
+			return -1;
+		};
+		auto const first{find(label)};
+		if (first < 0)
+		{
+			WriteLog("SELFTEST connection: no template " + label);
+			return selftest_result::handled;
+		}
+		tool.armed = first;
+		tool.connection_second = find(second);
+		tool.connection = kindword == "single" ? -1 : static_cast<int>(kind);
+		auto const line{straight_near(at, {}, 3.0)};
+		if (line.tracks.empty())
+		{
+			WriteLog("SELFTEST connection: no straight at the start");
+			return selftest_result::handled;
+		}
+		m_node = line.tracks.front();
+		ui()->set_node(m_node);
+		m_cursor_override = at;
+		auto const started{start_switch_placement()};
+		m_cursor_override.reset();
+		if (false == started)
+		{
+			WriteLog("SELFTEST connection: not started, " + tool.status);
+			return selftest_result::handled;
+		}
+		tool.mouse = glm::dvec3{toward.x, tool.point.y, toward.z};
+		if (command == "connectionhold")
+		{
+			m_cursor_override = toward;
+			WriteLog("SELFTEST connectionhold: " + tool.status);
+			return selftest_result::handled;
+		}
+		connection::request request;
+		connection::result plan;
+		auto const valid{plan_connection(request, plan)};
+		WriteLog("SELFTEST connection " + kindword + ": " + (valid ? connection_readout(plan) : "invalid, " + plan.error));
+		for (auto const &entry : plan.switches)
+		{
+			auto const &start{entry.paths[0].points[segment_data::point::start]};
+			auto const &end{entry.paths[1].points[segment_data::point::end]};
+			WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d%s: %.3f %.3f %.3f -> branch end %.3f %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, entry.second ? " (second)" : "", start.x, start.y, start.z, end.x, end.y,
+			                end.z));
+		}
+		for (auto const &insert : plan.inserts)
+		{
+			auto const &start{insert.points[segment_data::point::start]};
+			auto const &end{insert.points[segment_data::point::end]};
+			WriteLog(format("SELFTEST connection insert %.3f %.3f %.3f -> %.3f %.3f %.3f, %.3f m, R %.1f", start.x, start.y, start.z, end.x, end.y, end.z, geometry::bezier{insert}.plan_length(), std::abs(insert.radius)));
+		}
+		if (command == "connectionplan" || false == valid)
+		{
+			tool.placing = false;
+			return selftest_result::handled;
+		}
+		insert_connection();
+		WriteLog("SELFTEST connection built: " + tool.status);
+		for (auto const &entry : switch_store::records())
+			if (entry.kind == "connection")
+			{
+				std::string parts;
+				for (auto const &part : entry.parts)
+					parts += ' ' + part;
+				WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
+			}
+		return selftest_result::handled;
+	}
 	if (command == "conecheck")
 	{
 		std::string name;
@@ -1626,7 +1786,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			double low{0.0};
 			double high{0.0};
 			std::string reason;
-			auto const room{switch_room(*track, low, high, reason)};
+			auto const set{double_of(*track)};
+			double length{0.0};
+			auto const room{set.has_value() ? double_room(*set, low, high, length, reason) : switch_room(*track, low, high, reason)};
 			auto const done{slide_switch(*track, distance)};
 			WriteLog(format("SELFTEST switchslide %s %.3f: room %d %.3f .. %.3f, done %d, %s", name.c_str(), distance, room ? 1 : 0, low, high, done ? 1 : 0, m_switch.status.c_str()));
 			return selftest_result::handled;
@@ -1642,14 +1804,24 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			WriteLog("SELFTEST switchreplace: no template " + label);
 			return selftest_result::handled;
 		}
+		auto const set{double_of(*track)};
+		if (set.has_value())
+			track = set->first;
 		auto const &main{track->m_paths[0]};
 		auto const origin{main.points[segment_data::point::start]};
 		auto const chord{geometry::plan_of(main.points[segment_data::point::end] - origin)};
 		auto const length{glm::length(chord)};
 		auto paths{editor_track::place_switch(*found, origin, chord / length, side, (main.points[segment_data::point::end].y - origin.y) / length)};
 		std::string status;
-		auto const done{paths.size() >= 2 && move_switch_paths(*track, paths, status)};
-		if (done)
+		auto const done{set.has_value() ? found->twofold() && paths.size() >= 5 && move_double_paths(*set, paths, status) : paths.size() >= 2 && move_switch_paths(*track, paths, status)};
+		if (done && set.has_value())
+		{
+			record_double(*set->first, *set->second, *found);
+			switch_store::follow();
+			records_to_history();
+			straight_refresh();
+		}
+		else if (done)
 		{
 			record_switch(*track, *found);
 			records_to_history();
@@ -1717,6 +1889,61 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			segment.RaPositionGet(arc, position, rotation);
 			WriteLog(format("SELFTEST switchpieces %s: path 2 %.3f m in %zu pieces (%zu kept), arc %.3f m, arc end off %.4f m, turn there %.5f (angle %.5f), axis off the arc %.4f m, straight heading spread %.6f, end %.3f %.3f", track->name().c_str(),
 			                segment.GetLength(), segment.PieceCount(), branch.pieces.size(), arc, geometry::plan_distance(position, expected), turn, angle, worst, high - low, segment.FastGetPoint(1.0).x, segment.FastGetPoint(1.0).z));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "switchlinks")
+	{
+		auto const name_of = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : Track->name().empty() ? std::string{"(noname)"} : Track->name(); };
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
+				continue;
+			auto const &extension{*track->SwitchExtension};
+			WriteLog(format("SELFTEST switchlinks %s: prev %s / %s, next %s / %s, lengths %.3f / %.3f m", track->name().c_str(), name_of(extension.pPrevs[0]).c_str(), name_of(extension.pPrevs[1]).c_str(), name_of(extension.pNexts[0]).c_str(), name_of(extension.pNexts[1]).c_str(),
+			                extension.Segments[0]->GetLength(), extension.Segments[1]->GetLength()));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "switchtemplates")
+	{
+		for (auto const &entry : editor_track::standard_switch_templates())
+		{
+			if (entry.double_slip)
+				continue;
+			auto const paths{editor_track::place_switch(entry, glm::dvec3{0.0}, glm::dvec2{0.0, 1.0}, 1, 0.0)};
+			double gap{0.0};
+			double kink{0.0};
+			std::size_t pieces{0};
+			for (auto const &path : paths)
+			{
+				pieces += path.pieces.size();
+				for (std::size_t i = 0; i + 1 < path.pieces.size(); ++i)
+				{
+					auto const &one{path.pieces[i]};
+					auto const &two{path.pieces[i + 1]};
+					gap = std::max(gap, glm::distance(one.points[segment_data::point::end], two.points[segment_data::point::start]));
+					geometry::bezier const a{one};
+					geometry::bezier const b{two};
+					auto const ta{glm::normalize(geometry::plan_of(a.first(1.0)))};
+					auto const tb{glm::normalize(geometry::plan_of(b.first(0.0)))};
+					kink = std::max(kink, std::abs(geometry::signed_angle(ta, tb)));
+				}
+				if (false == path.pieces.empty())
+					gap = std::max({gap, glm::distance(path.pieces.front().points[segment_data::point::start], path.points[segment_data::point::start]), glm::distance(path.pieces.back().points[segment_data::point::end], path.points[segment_data::point::end])});
+			}
+			std::string ends;
+			for (auto const &path : paths)
+				ends += format(" (%.3f %.3f)", path.points[segment_data::point::end].x, path.points[segment_data::point::end].z);
+			std::string starts;
+			for (std::size_t i = 1; i < paths.size() && i <= 3; i += 2)
+			{
+				geometry::bezier const first{paths[i].pieces.empty() ? paths[i] : paths[i].pieces.front()};
+				auto const tangent{glm::normalize(geometry::plan_of(first.first(0.0)))};
+				starts += format(" %.4f", glm::degrees(std::abs(geometry::signed_angle(glm::dvec2{0.0, 1.0}, tangent))));
+			}
+			WriteLog(format("SELFTEST switchtemplate %s: %s%s, L %.3f 1:%.3f R %.1f a %.3f b %.3f stagger %.3f, %zu paths, %zu pieces, gap %.6f m, kink %.6f deg, start deg%s, ends%s", entry.label.c_str(), entry.type.c_str(), entry.own ? " own" : "", entry.length, entry.ratio, entry.radius, entry.a, entry.b, entry.stagger, paths.size(), pieces, gap,
+			                glm::degrees(kink), starts.c_str(), ends.c_str()));
 		}
 		return selftest_result::handled;
 	}

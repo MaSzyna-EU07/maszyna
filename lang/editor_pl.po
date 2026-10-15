@@ -5747,3 +5747,436 @@ msgstr "Krzyżownica i kierownice z szyn"
 
 msgid "Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\nOff for a switch whose include has its own model of them"
 msgstr "Tnie szyny rozjazdu na krzyżownicy i układa szyny skrzydłowe i kierownice, dla profili szyn S60, UIC60 i S39.\nWyłącz dla rozjazdu, którego include ma ich własny model"
+
+msgid "1:n##quickratio"
+msgstr "1:n##quickratio"
+
+msgid "across x%.1f"
+msgstr "w poprzek x%.1f"
+
+msgid "a##designa"
+msgstr "a##designa"
+
+msgid "A double switch is laid as two switches: the first one with its diverging track and the main track up to the second one, which starts there with the other diverging track"
+msgstr "Rozjazd podwójny kładzie się jako dwie zwrotnice: pierwszą z jej torem zwrotnym i torem zasadniczym aż do drugiej, która zaczyna się tam z drugim torem zwrotnym"
+
+msgid "A new own template, an Rz 1:9 R190 to start from"
+msgstr "Nowy własny szablon, na początek Rz 1:9 R190"
+
+msgid "Angle 1:%.3f (%.4f deg), sharpest R %.1f m, a %.3f m, b %.3f m"
+msgstr "Skos 1:%.3f (%.4f°), najmniejszy R %.1f m, a %.3f m, b %.3f m"
+
+msgid "Angle from l and z"
+msgstr "Kąt z l i z"
+
+msgid "+ Arc"
+msgstr "+ Łuk"
+
+msgid "Arc"
+msgstr "Łuk"
+
+msgid "b##designb"
+msgstr "b##designb"
+
+msgid "Blade angle, deg##designentry"
+msgstr "Kąt iglicy, °##designentry"
+
+msgid "Blade angle, deg##designentry2"
+msgstr "Kąt iglicy, °##designentry2"
+
+msgid "Choose a template on the left. The catalogue ones can be copied to own templates and changed there. A template is a straight main track and the diverging track from the start of the switch as a chain of straights, arcs and transition curves; a double switch is two switches, the second one starting on the main track of the first."
+msgstr "Wybierz szablon po lewej. Katalogowe można skopiować do własnych i tam zmieniać. Szablon to prosty tor zasadniczy i tor zwrotny od początku rozjazdu jako ciąg prostych, łuków i krzywych przejściowych; rozjazd podwójny to dwie zwrotnice, druga zaczyna się na torze zasadniczym pierwszej."
+
+msgid " (copy)"
+msgstr " (kopia)"
+
+msgid "Copy to own templates"
+msgstr "Kopiuj do własnych szablonów"
+
+msgid "Distance from the start of the first switch to the start of the second one, along the main track"
+msgstr "Odległość od początku pierwszej zwrotnicy do początku drugiej, wzdłuż toru zasadniczego"
+
+msgid "Double switch %s + %s: length %.3f m, the second switch starts %.3f m on"
+msgstr "Rozjazd podwójny %s + %s: długość %.3f m, druga zwrotnica zaczyna się po %.3f m"
+
+msgid "Double switch %s + %s with drives: events %s+, %s- and %s+, %s- switch them, also in the map"
+msgstr "Rozjazd podwójny %s + %s z napędami: zdarzenia %s+, %s- i %s+, %s- je przestawiają, także w mapie"
+
+msgid "Double switch %s with its second switch %s inserted"
+msgstr "Wstawiono rozjazd podwójny %s z drugą zwrotnicą %s"
+
+msgid "Draws the offsets from the main track larger, so the shape of the diverging track can be seen"
+msgstr "Rysuje odsunięcia od toru zasadniczego większe, żeby było widać kształt toru zwrotnego"
+
+msgid "Fill in"
+msgstr "Wypełnij"
+
+msgid "First switch: diverging %s, end offset %.3f m"
+msgstr "Pierwsza zwrotnica: zwrotny w %s, odsunięcie końca %.3f m"
+
+msgid "From the point where the tangents meet to the end, as the catalogue gives it; 0: the main track less a"
+msgstr "Od punktu przecięcia stycznych do końca, jak podaje katalog; 0: tor zasadniczy minus a"
+
+msgid "From the start of the switch (the joint before the blades) to the tip of the blade; the diverging track runs along the main one there"
+msgstr "Od początku rozjazdu (styku przediglicowego) do ostrza iglicy; tor zwrotny biegnie tam wzdłuż zasadniczego"
+
+msgid "From the start to the point where the tangents of both tracks meet, as the catalogue gives it; 0: from the geometry"
+msgstr "Od początku do punktu przecięcia stycznych obu torów, jak podaje katalog; 0: z geometrii"
+
+msgid "Keeps the own templates in eu07_switch_templates.txt in the configuration directory of the simulator and puts them on the list of the switch tool"
+msgstr "Zapisuje własne szablony w eu07_switch_templates.txt w katalogu konfiguracji symulatora i dodaje je do listy narzędzia rozjazdów"
+
+msgid "Length %.3f m, the diverging track ends %.3f m beside the main one, in %zu pieces"
+msgstr "Długość %.3f m, tor zwrotny kończy się %.3f m obok zasadniczego, w %zu kawałkach"
+
+msgid "Length of the main track, 0: as far as the diverging tracks reach"
+msgstr "Długość toru zasadniczego, 0: tak daleko, jak sięgają tory zwrotne"
+
+msgid "Length of the part, measured along it"
+msgstr "Długość części, mierzona wzdłuż niej"
+
+msgid "l, m##bladelength"
+msgstr "l, m##bladelength"
+
+msgid "Main track, m##designmain"
+msgstr "Tor zasadniczy, m##designmain"
+
+msgid "m##length"
+msgstr "m##length"
+
+msgid "Name##designname"
+msgstr "Nazwa##designname"
+
+msgid "Otherwise the second switch diverges the same way as the first, to the other side for Rpd, to the same side for Rpj"
+msgstr "W przeciwnym razie druga zwrotnica odgałęzia się tak samo jak pierwsza, w drugą stronę dla Rpd, w tę samą dla Rpj"
+
+msgid "Own: "
+msgstr "Własny: "
+
+msgid "Own switch templates: diverging tracks of straights, arcs and transition curves, double switches"
+msgstr "Własne szablony rozjazdów: tory zwrotne z prostych, łuków i krzywych przejściowych, rozjazdy podwójne"
+
+msgid "Place this switch"
+msgstr "Postaw ten rozjazd"
+
+msgid "Pre-blade stretch, m##designlead"
+msgstr "Odcinek przediglicowy, m##designlead"
+
+msgid "Pre-blade stretch, m##designlead2"
+msgstr "Odcinek przediglicowy, m##designlead2"
+
+msgid "Radius at the end of the transition curve, 0: into a straight; the curvature changes evenly along it"
+msgstr "Promień na końcu krzywej przejściowej, 0: w prostą; krzywizna zmienia się wzdłuż niej równomiernie"
+
+msgid "Radius at the start of the transition curve, 0: from a straight"
+msgstr "Promień na początku krzywej przejściowej, 0: z prostej"
+
+msgid "Radius of the arc; negative turns back towards the main track"
+msgstr "Promień łuku; ujemny skręca z powrotem ku torowi zasadniczemu"
+
+msgid "Rail##designrail"
+msgstr "Szyna##designrail"
+
+msgid "Rail of the switch kept in its record: 60E1, 49E1..."
+msgstr "Szyna rozjazdu zapisywana w jego rekordzie: 60E1, 49E1..."
+
+msgid "Removes the template; Save keeps the change"
+msgstr "Usuwa szablon; Zapisz utrwala zmianę"
+
+msgid "Replaces the parts with an arc of R up to the angle 1:n and the straight after it, the shape of an ordinary switch"
+msgstr "Zastępuje części łukiem R do skosu 1:n i prostą za nim, kształtem rozjazdu zwyczajnego"
+
+msgid "R from##radius1"
+msgstr "R od##radius1"
+
+msgid "Rpd double, to both sides"
+msgstr "Rpd podwójny dwustronny"
+
+msgid "Rpj double, to one side"
+msgstr "Rpj podwójny jednostronny"
+
+msgid "R##quickradius"
+msgstr "R##quickradius"
+
+msgid "R##radius"
+msgstr "R##radius"
+
+msgid "Rz ordinary"
+msgstr "Rz zwyczajny"
+
+msgid "Save *"
+msgstr "Zapisz *"
+
+msgid "Saved, the templates are on the list of the switch tool"
+msgstr "Zapisano, szablony są na liście narzędzia rozjazdów"
+
+msgid "Saves the own templates and chooses this one in the switch tool: then click a straight and drag to the side the switch goes"
+msgstr "Zapisuje własne szablony i wybiera ten w narzędziu rozjazdów: potem kliknij prostą i przeciągnij w stronę, w którą idzie rozjazd"
+
+msgid "Second switch starts at, m##stagger"
+msgstr "Druga zwrotnica zaczyna się po, m##stagger"
+
+msgid "sin angle = z / l: l the length of a straight blade, z the gap between the running edges of the stock rail and the blade at its heel"
+msgstr "sin kąta = z / l: l długość iglicy prostej, z odstęp krawędzi tocznych opornicy i iglicy w osadzie"
+
+msgid "A catalogue template can't be changed"
+msgstr "Szablonu katalogowego nie można zmieniać"
+
+msgid "Catalogue (read only)"
+msgstr "Katalog (tylko do odczytu)"
+
+msgid "Diverging track from the start of the switch"
+msgstr "Tor zwrotny od początku rozjazdu"
+
+msgid "(none yet)"
+msgstr "(jeszcze brak)"
+
+msgid "Own templates"
+msgstr "Własne szablony"
+
+msgid "Straight blade:"
+msgstr "Iglica prosta:"
+
+msgid "+ Straight"
+msgstr "+ Prosta"
+
+msgid "straight after, m##quickstraight"
+msgstr "prosta za łukiem, m##quickstraight"
+
+msgid "Stretch across"
+msgstr "Rozciągnij w poprzek"
+
+msgid "Switch templates"
+msgstr "Szablony rozjazdów"
+
+msgid "Template editor..."
+msgstr "Edytor szablonów..."
+
+msgid "The angle at which the blade meets the stock rail at its tip: the diverging track starts there at this angle instead of tangentially. Curved blades a fraction of a degree, straight blades 1 to 2 degrees; 0: tangential"
+msgstr "Kąt oparcia iglicy o opornicę przy ostrzu: tor zwrotny zaczyna się tam pod tym kątem zamiast stycznie. Iglice krzywe ułamek stopnia, proste 1 do 2 stopni; 0: stycznie"
+
+msgid "The catalogue switches start tangentially at the joint before the blades: without the pre-blade stretch and the angle of the blade, which a copy can be given"
+msgstr "Rozjazdy katalogowe zaczynają się stycznie na styku przediglicowym: bez odcinka przediglicowego i kąta iglicy, które można nadać kopii"
+
+msgid "The double switch is replaced by its main track, Shift+Del removes all of it"
+msgstr "Rozjazd podwójny zastąpiono jego torem zasadniczym, Shift+Del usuwa całość"
+
+msgid "The second switch has a diverging track of its own"
+msgstr "Druga zwrotnica ma własny tor zwrotny"
+
+msgid "Tip of the blade %.3f m from the start, the diverging track leaves there at %.4f deg"
+msgstr "Ostrze iglicy %.3f m od początku, tor zwrotny odchodzi tam pod kątem %.4f°"
+
+msgid "to##radius2"
+msgstr "do##radius2"
+
+msgid "+ Transition curve"
+msgstr "+ Krzywa przejściowa"
+
+msgid "Type##designtype"
+msgstr "Typ##designtype"
+
+msgid "z, m##bladegap"
+msgstr "z, m##bladegap"
+
+msgid "Unknown type of switch"
+msgstr "Nieznany typ rozjazdu"
+
+msgid "The pre-blade stretch has to be between 0 and 30 m"
+msgstr "Odcinek przediglicowy musi mieć od 0 do 30 m"
+
+msgid "The angle of the blade has to be between 0 and 5 degrees"
+msgstr "Kąt iglicy musi wynosić od 0 do 5 stopni"
+
+msgid "The diverging track has to leave to the side at an angle between 0 and 45 degrees"
+msgstr "Tor zwrotny musi odchodzić w bok pod kątem od 0 do 45 stopni"
+
+msgid "The main track is shorter than 1 m"
+msgstr "Tor zasadniczy jest krótszy niż 1 m"
+
+msgid "The second switch has to start at least 1 m along the main track and 1 m before the end of the diverging track"
+msgstr "Druga zwrotnica musi zaczynać się co najmniej 1 m od początku toru zasadniczego i 1 m przed końcem toru zwrotnego"
+
+msgid "The pre-blade stretch of the second switch has to be at most 30 m and the angle of its blade at most 5 degrees"
+msgstr "Odcinek przediglicowy drugiej zwrotnicy może mieć najwyżej 30 m, a kąt jej iglicy najwyżej 5 stopni"
+
+msgid "The diverging track of the second switch has to leave to the side at an angle between 0 and 45 degrees"
+msgstr "Tor zwrotny drugiej zwrotnicy musi odchodzić w bok pod kątem od 0 do 45 stopni"
+
+msgid "The main track ends less than 1 m after the start of the second switch"
+msgstr "Tor zasadniczy kończy się mniej niż 1 m za początkiem drugiej zwrotnicy"
+
+msgid "The diverging track has no parts"
+msgstr "Tor zwrotny nie ma części"
+
+msgid "A part of the diverging track is shorter than 5 cm"
+msgstr "Część toru zwrotnego jest krótsza niż 5 cm"
+
+msgid "A radius of the diverging track is under 10 m"
+msgstr "Promień toru zwrotnego jest mniejszy niż 10 m"
+
+msgid "%s laid, switches %s"
+msgstr "Ułożono: %s, zwrotnice %s"
+
+msgid "%s: %d switches, spacing %.2f m"
+msgstr "%s: zwrotnic %d, rozstaw %.2f m"
+
+msgid ", aligning curve R %.0f m"
+msgstr ", łuk wyrównujący R %.0f m"
+
+msgid ", crossing 1:%.2f"
+msgstr ", skrzyżowanie 1:%.2f"
+
+msgid ", mathematical points %.2f m apart"
+msgstr ", punkty matematyczne co %.2f m"
+
+msgid ", straight inserts"
+msgstr ", wstawki proste"
+
+msgid ", tracks at"
+msgstr ", tory w odległości"
+
+msgid "A connection is laid between straights"
+msgstr "Połączenie układa się między prostymi"
+
+msgid "A connection is made of ordinary switches, not of slips, crossings or double switches"
+msgstr "Połączenie składa się z rozjazdów zwyczajnych, nie z krzyżowych, skrzyżowań ani podwójnych"
+
+msgid "A connection of tracks laid whole: press on a straight and drag onto the other track. Its switches are cut into the tracks with the inserts between them and get their drives; Shift+wheel while dragging: another kind, Ctrl+wheel: R of the aligning curve"
+msgstr "Połączenie torów układane w całości: wciśnij na prostej i przeciągnij na drugi tor. Zwrotnice są wcinane w tory razem ze wstawkami między nimi i dostają napędy; Shift+kółko podczas przeciągania: inny rodzaj, Ctrl+kółko: R łuku wyrównującego"
+
+msgid "A scissors crossover needs parallel tracks and switches of the same angle"
+msgstr "Nożyce wymagają torów równoległych i rozjazdów o tym samym skosie"
+
+msgid "A switch of the connection doesn't fit where it was planned, its straight is too short"
+msgstr "Zwrotnica połączenia nie mieści się tam, gdzie ją zaplanowano, jej prosta jest za krótka"
+
+msgid "A switch of the connection goes where its track isn't a plain straight"
+msgstr "Zwrotnica połączenia wypada tam, gdzie tor nie jest zwykłą prostą"
+
+msgid "A switch of the connection runs off the end of its straight"
+msgstr "Zwrotnica połączenia wychodzi poza koniec swojej prostej"
+
+msgid "Aligning curve R, m##connectionradius"
+msgstr "R łuku wyrównującego, m##connectionradius"
+
+msgid "Alt+wheel"
+msgstr "Alt+kółko"
+
+msgid "Connection##switchconnection"
+msgstr "Połączenie##switchconnection"
+
+msgid "Crossover"
+msgstr "Przejście rozjazdowe"
+
+msgid "Distances between the tracks of the fan from this track on, such as 4.75;4.75;5.0; used when the drag doesn't end on a parallel track, otherwise the parallel tracks up to that one make the fan"
+msgstr "Odległości między torami wachlarza od tego toru, np. 4.75;4.75;5.0; używane, gdy przeciąganie nie kończy się na torze równoległym, w przeciwnym razie wachlarz tworzą tory równoległe aż do tamtego"
+
+msgid "Double crossover"
+msgstr "Podwójne przejście rozjazdowe"
+
+msgid "Drag onto the other track"
+msgstr "Przeciągnij na drugi tor"
+
+msgid "Gap between the switches, m##connectiongap"
+msgstr "Odstęp między zwrotnicami, m##connectiongap"
+
+msgid "Give the spacings of the tracks of the ladder"
+msgstr "Podaj rozstawy torów ulicy zwrotnicowej"
+
+msgid "Length of the new tracks of the fan where there are none to lead onto"
+msgstr "Długość nowych torów wachlarza tam, gdzie nie ma torów do połączenia"
+
+msgid "New tracks, m##connectionstub"
+msgstr "Nowe tory, m##connectionstub"
+
+msgid "Of the curve between switches of different angles or on tracks that aren't parallel, and at the end of a ladder; 0: the radius of the sharper switch"
+msgstr "Łuku między rozjazdami o różnych skosach lub na torach nierównoległych oraz na końcu ulicy zwrotnicowej; 0: promień ostrzejszego rozjazdu"
+
+msgid "Other switches##connectionsecond"
+msgstr "Pozostałe zwrotnice##connectionsecond"
+
+msgid "Otherwise the two crossovers meet on the other track; Alt+wheel while dragging switches it"
+msgstr "W przeciwnym razie oba przejścia spotykają się na drugim torze; Alt+kółko podczas przeciągania to przełącza"
+
+msgid "R of the aligning curve"
+msgstr "R łuku wyrównującego"
+
+msgid "Scissors crossover"
+msgstr "Nożyce"
+
+msgid "Single switch"
+msgstr "Pojedynczy rozjazd"
+
+msgid "Spacings, m##connectionspacings"
+msgstr "Rozstawy, m##connectionspacings"
+
+msgid "Straight between the starts of the two switches meeting on one track"
+msgstr "Prosta między początkami dwóch zwrotnic spotykających się na jednym torze"
+
+msgid "Switch ladder"
+msgstr "Ulica zwrotnicowa"
+
+msgid "Template of the switches on the other track and along a ladder; the first switch is the one chosen on the list above"
+msgstr "Szablon zwrotnic na drugim torze i wzdłuż ulicy zwrotnicowej; pierwsza zwrotnica to ta wybrana na liście powyżej"
+
+msgid "The aligning curve R %.0f m with %.0f m straights doesn't fit between the switches"
+msgstr "Łuk wyrównujący R %.0f m z prostymi %.0f m nie mieści się między zwrotnicami"
+
+msgid "The diverging track runs along the other track"
+msgstr "Tor zwrotny biegnie wzdłuż drugiego toru"
+
+msgid "The diverging tracks meet at %.2f deg, a straight insert can't join them"
+msgstr "Tory zwrotne spotykają się pod kątem %.2f°, wstawka prosta ich nie połączy"
+
+msgid "The same as the first one"
+msgstr "Taka sama jak pierwsza"
+
+msgid "The spacings of the tracks of a ladder have to be at least 1 m"
+msgstr "Rozstawy torów ulicy zwrotnicowej muszą mieć co najmniej 1 m"
+
+msgid "The straight between the curves of the switches is %.2f m, under %.0f m"
+msgstr "Prosta między łukami zwrotnic ma %.2f m, mniej niż %.0f m"
+
+msgid "The switch on the other track runs off the end of its straight"
+msgstr "Zwrotnica na drugim torze wychodzi poza koniec swojej prostej"
+
+msgid "The switch template has no diverging track"
+msgstr "Szablon rozjazdu nie ma toru zwrotnego"
+
+msgid "The switches can't face each other across these tracks"
+msgstr "Zwrotnice nie mogą stanąć naprzeciw siebie na tych torach"
+
+msgid "The switches meet on this track##connectiontogether"
+msgstr "Zwrotnice spotykają się na tym torze##connectiontogether"
+
+msgid "The switches of the two crossovers overlap, the gap between them has to be longer"
+msgstr "Zwrotnice obu przejść nachodzą na siebie, odstęp między nimi musi być dłuższy"
+
+msgid "The tracks are %.2f m too close for these switches"
+msgstr "Tory są o %.2f m za blisko dla tych rozjazdów"
+
+msgid "The tracks are too close for a scissors crossover with these switches, its switches overlap"
+msgstr "Tory są za blisko dla nożyc z tymi rozjazdami, ich zwrotnice nachodzą na siebie"
+
+msgid "The tracks are too close for the crossing of a scissors crossover: %.2f m more spacing is needed"
+msgstr "Tory są za blisko dla skrzyżowania nożyc: potrzeba o %.2f m większego rozstawu"
+
+msgid "The tracks of a fan have to be parallel, on one side and at least 1 m apart"
+msgstr "Tory wachlarza muszą być równoległe, po jednej stronie i co najmniej 1 m od siebie"
+
+msgid "Track %d of the fan is %.2f m too close to the previous one for these switches"
+msgstr "Tor %d wachlarza jest o %.2f m za blisko poprzedniego dla tych rozjazdów"
+
+msgid "Track %d of the fan reaches into the ladder, it has to start %.2f m further on"
+msgstr "Tor %d wachlarza wchodzi w ulicę zwrotnicową, musi zaczynać się %.2f m dalej"
+
+msgid "another kind"
+msgstr "inny rodzaj"
+
+msgid "the connection there"
+msgstr "połączenie tam"
+
+msgid "where a double crossover meets"
+msgstr "gdzie spotyka się podwójne przejście"
+

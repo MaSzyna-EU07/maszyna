@@ -26,9 +26,9 @@ namespace switch_store
 struct record
 {
 	scene::layer_handle layer{null_handle};
-	std::string kind{"switch"}; // switch, slip, crossing
+	std::string kind{"switch"}; // switch, slip, crossing, double, connection
 	std::string name; // the switch, or the base name of a slip or a crossing
-	std::string type{"Rz"}; // Rz, Rlj, Rld, Rkp, Rkpd, Skrz, - when unknown
+	std::string type{"Rz"}; // Rz, Rlj, Rld, Rkp, Rkpd, Skrz, Rpd, Rpj, - when unknown
 	std::string rail{"-"};
 	double radius{0.0}; // of the diverging track of the straight switch the type is made of
 	double ratio{0.0}; // n of 1:n
@@ -36,7 +36,7 @@ struct record
 	double a{0.0};
 	double b{0.0};
 	double main_radius{0.0}; // of the main track, signed: + to the right, - to the left, 0 straight
-	std::vector<std::string> parts; // the switch, the switches of a slip, the paths of a crossing
+	std::vector<std::string> parts; // the switch, the switches of a slip or of a double switch, the paths of a crossing
 	glm::dvec3 start{0.0}; // of the first part
 	glm::dvec2 direction{0.0, 1.0};
 	// ends of the main and the diverging track of the first part seen from its start: along, across, along, across. it stays the
@@ -55,6 +55,8 @@ std::vector<record> const &records();
 std::optional<record> of(TTrack const &Track);
 // the record of the track by its name alone, also when the switch lost its shape
 std::optional<record> named(TTrack const &Track);
+// the connections of switches the switch is a part of
+std::vector<record> connections(TTrack const &Track);
 // records whose switches were moved or turned as a whole take their new place and km; returns their names
 std::vector<std::string> follow();
 // radius of the diverging track: of the type, bent with the main track for an arc switch
