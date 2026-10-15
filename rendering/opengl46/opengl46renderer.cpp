@@ -799,9 +799,6 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         scene_ubo->update(scene_ubs);
 		scene_ubo->bind_uniform();
 
-		if (m_widelines_supported)
-			glLineWidth(1.0f);
-
 		if (Global.bWireFrame)
 			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 		else
@@ -4702,8 +4699,6 @@ void opengl46_renderer::Render_Alpha(TTraction *Traction)
 	// setup
 	auto const distance{static_cast<float>(std::sqrt(distancesquared))};
 	auto const linealpha = 20.f * Traction->WireThickness / std::max(0.5f * Traction->radius() + 1.f, distance - (0.5f * Traction->radius()));
-	if (m_widelines_supported)
-		glLineWidth(std::clamp(0.5f * linealpha + Traction->WireThickness * Traction->radius() / 1000.f, 1.f, 1.75f));
 
 	// render
 
@@ -4720,9 +4715,6 @@ void opengl46_renderer::Render_Alpha(TTraction *Traction)
 	// debug data
 	++m_renderpass.draw_stats.traction;
 	++m_renderpass.draw_stats.drawcalls;
-
-	if (m_widelines_supported)
-		glLineWidth(1.0f);
 }
 
 void opengl46_renderer::Render_editor_overlay()
@@ -4789,8 +4781,6 @@ void opengl46_renderer::Render_Alpha(scene::lines_node const &Lines)
 	auto const distance{static_cast<float>(std::sqrt(distancesquared))};
 	auto const linealpha =
 	    (data.line_width > 0.f ? 10.f * data.line_width / std::max(0.5f * data.area.radius + 1.f, distance - (0.5f * data.area.radius)) : 1.f); // negative width means the lines are always opague
-	if (m_widelines_supported)
-		glLineWidth(std::clamp(0.5f * linealpha + data.line_width * data.area.radius / 1000.f, 1.f, 8.f));
 
 	model_ubs.param[0] = glm::vec4(glm::vec3(data.lighting.diffuse * m_sunlight.ambient), glm::min(1.0f, linealpha));
 
@@ -4802,9 +4792,6 @@ void opengl46_renderer::Render_Alpha(scene::lines_node const &Lines)
 
 	++m_renderpass.draw_stats.lines;
 	++m_renderpass.draw_stats.drawcalls;
-
-	if (m_widelines_supported)
-		glLineWidth(1.0f);
 }
 
 bool opengl46_renderer::Render_Alpha(TDynamicObject *Dynamic)
@@ -6057,16 +6044,6 @@ bool opengl46_renderer::Init_caps()
 
 	if (!GLAD_GL_EXT_texture_compression_s3tc)
 		ErrorLog("EXT_texture_compression_s3tc not supported!");
-
-	glGetError();
-	glLineWidth(2.0f);
-	if (!glGetError())
-	{
-		WriteLog("wide lines supported!");
-		m_widelines_supported = true;
-	}
-	else
-		WriteLog("warning: wide lines not supported");
 
 	WriteLog("--------");
 

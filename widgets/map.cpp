@@ -66,11 +66,6 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 		}
 	}
 
-    glGetError();
-    glLineWidth(2.0f);
-    if (!glGetError())
-        m_widelines_supported = true;
-
 	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), 0);
 
 	init_done = true;
@@ -134,8 +129,6 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	}
 
 	m_track_shader->bind();
-    if (m_widelines_supported)
-        glLineWidth(1.5f);
 	glViewport(0, 0, surface_size.x, surface_size.y);
 
 	scene_ubs.projection = transform;
@@ -148,26 +141,18 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 
     gl33->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
 
-    if (m_widelines_supported)
-        glLineWidth(4.5f);
     scene_ubs.cascade_end = glm::vec4(0.7f, 0.7f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
     gl33->Draw_Geometry(m_colored_paths.future.begin(), m_colored_paths.future.end());
 
-    if (m_widelines_supported)
-        glLineWidth(3.0f);
     scene_ubs.cascade_end = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
     gl33->Draw_Geometry(m_colored_paths.switches.begin(), m_colored_paths.switches.end());
 
-    if (m_widelines_supported)
-        glLineWidth(1.5f);
     scene_ubs.cascade_end = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
     gl33->Draw_Geometry(m_colored_paths.occupied.begin(), m_colored_paths.occupied.end());
 
-    if (m_widelines_supported)
-        glLineWidth(4.0f);
     scene_ubs.cascade_end = glm::vec4(0.3f, 0.3f, 1.0f, 0.0f);
     scene_ubo->update(scene_ubs);
     gl33->Draw_Geometry(m_colored_paths.highlighted.begin(), m_colored_paths.highlighted.end());

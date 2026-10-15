@@ -542,8 +542,6 @@ class opengl46_renderer : public gfx_renderer {
 
     bool m_blendingenabled;
 
-	bool m_widelines_supported;
-
 	struct headlight_config_s
 	{
 		float in_cutoff = 1.005f;
