@@ -8,9 +8,11 @@
 layout(local_size_x = CLUSTER_CULL_GROUP_SIZE) in;
 
 // a light is taken to end where its brightest possible contribution drops under this, a fraction of
-// what the display can tell apart. no light reaches further than MAX_RANGE, as with the 1 km filter on the cpu side
+// what the display can tell apart. there is no other limit: the 1 km filter on the cpu side is about the distance of a light
+// from the camera, not about how far it reaches, and the shading lights a surface at any distance
 const float MIN_CONTRIBUTION = 1.0 / 1024.0;
-const float MAX_RANGE = 1000.0;
+// reach of a light whose contribution does not fall off with the distance; its square still fits in a float
+const float UNLIMITED_RANGE = 1.0e18;
 // the boxes and the light data are floats: planes of the headlight projection let this much (in meters) of a box through
 const float PLANE_MARGIN = 0.05;
 
@@ -40,10 +42,10 @@ float light_range(light_s light)
 		float b = light.linear;
 		float c = 1.0 - k;
 		float denominator = b + sqrt(b * b - 4.0 * a * c);
-		return (denominator > 1e-12) ? min(-2.0 * c / denominator, MAX_RANGE) : MAX_RANGE;
+		return (denominator > 1e-12) ? min(-2.0 * c / denominator, UNLIMITED_RANGE) : UNLIMITED_RANGE;
 	}
 	// point and spot lights fall off with the square of the distance
-	return min(sqrt(k), MAX_RANGE);
+	return sqrt(k);
 }
 
 bool sphere_touches_box(vec3 center, float radius, vec3 lower, vec3 upper)
