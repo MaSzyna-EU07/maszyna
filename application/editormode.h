@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorProfile.hpp"
 #include "editor/editorInfra.hpp"
 #include "editor/editorGauge.hpp"
+#include "editor/editorClips.hpp"
 #include "application/scriptedinput.h"
 #include "world/Sweep.h"
 
@@ -254,11 +255,14 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_help_menu();
 	void render_shortcuts_window();
 	bool m_shortcuts_open{false};
-	enum class first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, count };
+	enum class first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, count };
 	void render_first_steps();
 	void first_step_done(first_step const Step);
 	bool m_first_steps_open{false};
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
+	int m_tutorial_page{0};
+	double m_tutorial_since{0.0};
+	editor_clips::clip m_tutorial_clip;
 	// deletes what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks (Del)
 	void delete_selected();
 	void delete_model(TAnimModel *Model, bool const Joined);

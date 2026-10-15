@@ -189,6 +189,7 @@ set(SOURCES
 "editor/editorOrthophoto.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
+"editor/editorClips.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
 "application/editormodetrackgizmo.cpp"

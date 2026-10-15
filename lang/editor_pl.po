@@ -6204,3 +6204,195 @@ msgstr "połączenie tam"
 msgid "where a double crossover meets"
 msgstr "gdzie spotyka się podwójne przejście"
 
+msgid "Tutorial"
+msgstr "Samouczek"
+
+msgid "Seven short lessons with clips: the camera, laying track, curves, joining, switches, fixing, saving"
+msgstr "Siedem krótkich lekcji z filmikami: kamera, układanie toru, łuki, łączenie, rozjazdy, poprawki, zapis"
+
+msgid "Lesson %d of %d"
+msgstr "Lekcja %d z %d"
+
+msgid "Click: play it from the start"
+msgstr "Klik: od początku"
+
+msgid "Mouse and keys"
+msgstr "Mysz i klawisze"
+
+msgid "Try it"
+msgstr "Spróbuj"
+
+msgid "< Back"
+msgstr "< Wstecz"
+
+msgid "Next >"
+msgstr "Dalej >"
+
+msgid "Close"
+msgstr "Zamknij"
+
+msgid "Looking around"
+msgstr "Rozglądanie się"
+
+msgid "Hold the right button and move the mouse: look around"
+msgstr "Trzymaj prawy przycisk i ruszaj myszą: rozglądasz się"
+
+msgid "With the right button held: fly forwards, back and to the sides; E and Q: up and down"
+msgstr "Z wciśniętym prawym przyciskiem: lot do przodu, do tyłu i na boki; E i Q: w górę i w dół"
+
+msgid "The top view, and back to 3D"
+msgstr "Widok z góry i z powrotem 3D"
+
+msgid "In the top view: zoom in and out where the cursor points"
+msgstr "W widoku z góry: przybliża i oddala tam, gdzie wskazuje kursor"
+
+msgid "In the top view: hold the wheel and drag to move the map"
+msgstr "W widoku z góry: wciśnij kółko i przeciągnij, żeby przesunąć mapę"
+
+msgid "Fly to what is selected"
+msgstr "Lot do zaznaczonego"
+
+msgid "Look around with the right button held"
+msgstr "Rozejrzyj się z wciśniętym prawym przyciskiem"
+
+msgid "Switch to the top view"
+msgstr "Przełącz na widok z góry"
+
+msgid "Laying track"
+msgstr "Układanie toru"
+
+msgid "The Tracks field of work"
+msgstr "Dział Tory"
+
+msgid "The lay tool"
+msgstr "Narzędzie Układanie"
+
+msgid "A click on the ground: the first point; the next click: a straight up to it"
+msgstr "Klik na ziemi: pierwszy punkt; następny klik: prosta do niego"
+
+msgid "Each next click lays a piece on from the end of the last one"
+msgstr "Każdy kolejny klik układa kawałek dalej, od końca poprzedniego"
+
+msgid "Takes the last piece back"
+msgstr "Cofa ostatni kawałek"
+
+msgid "Ends laying"
+msgstr "Kończy układanie"
+
+msgid "Open the Tracks field of work"
+msgstr "Otwórz dział Tory"
+
+msgid "Turn the lay tool on"
+msgstr "Włącz układanie"
+
+msgid "Lay a track"
+msgstr "Ułóż tor"
+
+msgid "Curves"
+msgstr "Łuki"
+
+msgid "The radius of the curve, while laying on from an end"
+msgstr "Promień łuku, gdy układasz dalej od końca toru"
+
+msgid "The shape: arc then straight, straight then arc, arc, straight"
+msgstr "Kształt: łuk i prosta, prosta i łuk, sam łuk, prosta"
+
+msgid "Held: the direction turns in steps of 15 degrees"
+msgstr "Trzymany: kierunek zmienia się co 15 stopni"
+
+msgid "Type the length of the next piece, Enter lays it"
+msgstr "Wpisz długość następnego kawałka, Enter go układa"
+
+msgid "Alone it zooms, as everywhere"
+msgstr "Samo kółko przybliża, jak wszędzie"
+
+msgid "Change the radius with Ctrl+wheel"
+msgstr "Zmień promień: Ctrl+kółko"
+
+msgid "Change the shape with Shift+wheel"
+msgstr "Zmień kształt: Shift+kółko"
+
+msgid "Joining tracks"
+msgstr "Łączenie torów"
+
+msgid "Press on a free end (a magenta ring) and drag: a new track goes out of it"
+msgstr "Wciśnij na wolnym końcu (różowe kółko) i przeciągnij: wychodzi z niego nowy tor"
+
+msgid "Let go on another free end: a curve joins the two tracks"
+msgstr "Puść na innym wolnym końcu: łuk połączy oba tory"
+
+msgid "While over the other end: the radius of the joining curve"
+msgstr "Nad drugim końcem: promień łuku, który je łączy"
+
+msgid "While over the other end: another way to join"
+msgstr "Nad drugim końcem: inny sposób połączenia"
+
+msgid "Join two free ends"
+msgstr "Połącz dwa wolne końce"
+
+msgid "The switch tool; the type of the switch is chosen in its list"
+msgstr "Narzędzie Rozjazd; typ rozjazdu wybierasz z jego listy"
+
+msgid "Click a straight track: the switch goes into it"
+msgstr "Kliknij prosty tor: w niego wejdzie rozjazd"
+
+msgid "Press on it and drag: along sets the direction, sideways the side"
+msgstr "Wciśnij na nim i przeciągnij: wzdłuż ustala kierunek, w bok stronę"
+
+msgid "Back to selecting"
+msgstr "Powrót do zaznaczania"
+
+msgid "Put a switch into a track"
+msgstr "Wstaw rozjazd w tor"
+
+msgid "Selecting and fixing"
+msgstr "Zaznaczanie i poprawki"
+
+msgid "The select tool"
+msgstr "Narzędzie Zaznacz"
+
+msgid "Click a track: it is selected, with its points"
+msgstr "Kliknij tor: zostaje zaznaczony, widać jego punkty"
+
+msgid "Drag a point: the end or the curve follows"
+msgstr "Przeciągnij punkt: koniec albo łuk idzie za nim"
+
+msgid "Move, turn or scale with the gizmo"
+msgstr "Przesuwanie, obracanie, skalowanie gizmem"
+
+msgid "A click on a track: what can be done with it"
+msgstr "Klik na torze: co można z nim zrobić"
+
+msgid "Deletes the selected"
+msgstr "Usuwa zaznaczone"
+
+msgid "Takes the last change back; Ctrl+Y brings it back again"
+msgstr "Cofa ostatnią zmianę; Ctrl+Y ją przywraca"
+
+msgid "Select a track"
+msgstr "Zaznacz tor"
+
+msgid "Take a change back"
+msgstr "Cofnij zmianę"
+
+msgid "Saving and driving"
+msgstr "Zapis i jazda"
+
+msgid "Saves the scenery"
+msgstr "Zapisuje scenerię"
+
+msgid "Trainset in the toolbar: pick a locomotive from the list, click the track, then Place and drive"
+msgstr "Skład na pasku narzędzi: wybierz lokomotywę z listy, kliknij tor, potem Postaw i jedź"
+
+msgid "Drive on the new track"
+msgstr "Przejedź się po nowym torze"
+
+msgid "Lay track (L)"
+msgstr "Układaj tor (L)"
+
+msgid "The switch tool (T)"
+msgstr "Narzędzie Rozjazd (T)"
+
+msgid "The select tool (Esc)"
+msgstr "Zaznaczanie (Esc)"
+

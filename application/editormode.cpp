@@ -4614,9 +4614,9 @@ void editor_mode::render_help_menu()
 	ImGui::MenuItem(STR_C("Keyboard shortcuts"), "F1", &m_shortcuts_open);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
-	ImGui::MenuItem(STR_C("First steps"), nullptr, &m_first_steps_open);
+	ImGui::MenuItem(STR_C("Tutorial"), nullptr, &m_first_steps_open);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Laying the first track, step by step"));
+		ImGui::SetTooltip("%s", STR_C("Seven short lessons with clips: the camera, laying track, curves, joining, switches, fixing, saving"));
 	ImGui::EndMenu();
 }
 
@@ -4625,46 +4625,305 @@ void editor_mode::first_step_done(first_step const Step)
 	m_first_steps_done[static_cast<std::size_t>(Step)] = true;
 }
 
+namespace
+{
+
+ImU32 const kTutorialLit{IM_COL32(90, 175, 255, 255)};
+
+float tutorial_mouse(ImDrawList &List, ImVec2 const At, float const Height, std::string const &Part)
+{
+	auto const width{std::round(Height * 0.68f)};
+	auto const line{ImGui::GetColorU32(ImGuiCol_Text)};
+	auto const thickness{std::max(1.0f, Height * 0.07f)};
+	auto const rounding{width * 0.5f};
+	auto const split{At.y + std::round(Height * 0.45f)};
+	auto const middle{At.x + width * 0.5f};
+	ImVec2 const high{At.x + width, At.y + Height};
+	if (Part == "LMB")
+		List.AddRectFilled(At, ImVec2(middle, split), kTutorialLit, rounding, ImDrawFlags_RoundCornersTopLeft);
+	if (Part == "RMB")
+		List.AddRectFilled(ImVec2(middle, At.y), ImVec2(high.x, split), kTutorialLit, rounding, ImDrawFlags_RoundCornersTopRight);
+	List.AddRect(At, high, line, rounding, 0, thickness);
+	List.AddLine(ImVec2(At.x, split), ImVec2(high.x, split), line, thickness);
+	List.AddLine(ImVec2(middle, At.y), ImVec2(middle, split), line, thickness);
+	auto const wheel{std::max(3.0f, std::round(width * 0.24f))};
+	ImVec2 const wheel_low{middle - wheel * 0.5f, At.y + Height * 0.1f};
+	ImVec2 const wheel_high{middle + wheel * 0.5f, At.y + Height * 0.36f};
+	List.AddRectFilled(wheel_low, wheel_high, (Part == "MMB" || Part == "wheel") ? kTutorialLit : ImGui::GetColorU32(ImGuiCol_WindowBg), wheel * 0.5f);
+	List.AddRect(wheel_low, wheel_high, line, wheel * 0.5f, 0, thickness * 0.8f);
+	auto right{high.x};
+	auto const arrow{Height * 0.16f};
+	if (Part == "wheel")
+	{
+		auto const x{right + arrow * 1.6f};
+		List.AddTriangleFilled(ImVec2(x - arrow, At.y + arrow * 1.8f), ImVec2(x + arrow, At.y + arrow * 1.8f), ImVec2(x, At.y + arrow * 0.3f), kTutorialLit);
+		List.AddTriangleFilled(ImVec2(x - arrow, high.y - arrow * 1.8f), ImVec2(x + arrow, high.y - arrow * 1.8f), ImVec2(x, high.y - arrow * 0.3f), kTutorialLit);
+		right = x + arrow;
+	}
+	if (Part == "move")
+	{
+		auto const reach{Height * 0.42f};
+		ImVec2 const centre{right + arrow * 0.8f + reach, At.y + Height * 0.5f};
+		List.AddLine(ImVec2(centre.x - reach + arrow, centre.y), ImVec2(centre.x + reach - arrow, centre.y), kTutorialLit, thickness);
+		List.AddLine(ImVec2(centre.x, centre.y - reach + arrow), ImVec2(centre.x, centre.y + reach - arrow), kTutorialLit, thickness);
+		List.AddTriangleFilled(ImVec2(centre.x - reach, centre.y), ImVec2(centre.x - reach + arrow * 1.4f, centre.y - arrow), ImVec2(centre.x - reach + arrow * 1.4f, centre.y + arrow), kTutorialLit);
+		List.AddTriangleFilled(ImVec2(centre.x + reach, centre.y), ImVec2(centre.x + reach - arrow * 1.4f, centre.y + arrow), ImVec2(centre.x + reach - arrow * 1.4f, centre.y - arrow), kTutorialLit);
+		List.AddTriangleFilled(ImVec2(centre.x, centre.y - reach), ImVec2(centre.x + arrow, centre.y - reach + arrow * 1.4f), ImVec2(centre.x - arrow, centre.y - reach + arrow * 1.4f), kTutorialLit);
+		List.AddTriangleFilled(ImVec2(centre.x, centre.y + reach), ImVec2(centre.x - arrow, centre.y + reach - arrow * 1.4f), ImVec2(centre.x + arrow, centre.y + reach - arrow * 1.4f), kTutorialLit);
+		right = centre.x + reach;
+	}
+	return right - At.x;
+}
+
+float tutorial_key(ImDrawList &List, ImVec2 const At, float const Height, std::string const &Text)
+{
+	auto const size{ImGui::CalcTextSize(Text.c_str())};
+	auto const width{std::max(std::round(size.x + Height * 0.6f), Height)};
+	auto const rounding{Height * 0.2f};
+	ImVec2 const high{At.x + width, At.y + Height};
+	List.AddRectFilled(At, high, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+	List.AddRect(At, high, ImGui::GetColorU32(ImGuiCol_TextDisabled), rounding, 0, std::max(1.0f, Height * 0.06f));
+	List.AddText(ImVec2(std::round(At.x + (width - size.x) * 0.5f), std::round(At.y + (Height - size.y) * 0.5f)), ImGui::GetColorU32(ImGuiCol_Text), Text.c_str());
+	return width;
+}
+
+void tutorial_input(char const *Keys, char const *Text, float const Column)
+{
+	auto &list{*ImGui::GetWindowDrawList()};
+	auto const at{ImGui::GetCursorScreenPos()};
+	auto const height{std::round(ImGui::GetTextLineHeight() * 1.45f)};
+	auto const gap{std::round(height * 0.2f)};
+	float x{0.0f};
+	std::istringstream words{Keys};
+	for (std::string word; words >> word;)
+	{
+		ImVec2 const place{at.x + x, at.y};
+		if (word == "+")
+		{
+			auto const size{ImGui::CalcTextSize("+")};
+			list.AddText(ImVec2(place.x, std::round(at.y + (height - size.y) * 0.5f)), ImGui::GetColorU32(ImGuiCol_TextDisabled), "+");
+			x += size.x + gap;
+		}
+		else if (word == "LMB" || word == "RMB" || word == "MMB" || word == "wheel" || word == "move")
+			x += tutorial_mouse(list, place, height, word) + gap;
+		else
+			x += tutorial_key(list, place, height, word) + gap;
+	}
+	ImGui::Dummy(ImVec2(std::max(x, Column), height));
+	ImGui::SameLine();
+	ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((height - ImGui::GetTextLineHeight()) * 0.5f));
+	ImGui::TextWrapped("%s", STR_C(Text));
+}
+
+} // namespace
+
 void editor_mode::render_first_steps()
 {
 	if (false == m_first_steps_open)
+	{
+		if (false == m_tutorial_clip.path().empty())
+			m_tutorial_clip.close();
 		return;
+	}
 	if (ui()->mode() == nodebank_panel::TRACK)
 		first_step_done(first_step::tracks);
 	if (m_lay.active)
 		first_step_done(first_step::lay);
-	static char const *const steps[]{
-	    "F3: the Tracks field of work",
-	    "L: lay track",
-	    "Click on the ground, then once more: a straight. Each next click lays a piece and goes on from its end, Esc ends",
-	    "While laying on: Ctrl+wheel changes the radius, Shift+wheel the shape (arc then straight, straight then arc, arc, straight). The plain wheel zooms",
-	    "Joining: press on a free end (magenta ring) and drag onto another free end",
-	    "T: switch. Click a straight, then press on it and drag: along sets the direction, sideways the side",
-	    "Ctrl+Z takes a step back, Backspace while laying takes back the last piece",
-	    "Ctrl+S saves the scenery",
-	    "Drive it: Trainset in the toolbar, pick a locomotive from the list, LMB on the track, then Place and drive"};
-	ImGui::SetNextWindowSize(ImVec2(440.0f * Global.ui_scale, 0.0f), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowPos(ImVec2(8.0f, ImGui::GetIO().DisplaySize.y - 8.0f), ImGuiCond_FirstUseEver, ImVec2(0.0f, 1.0f));
-	ImGui::SetNextWindowBgAlpha(1.0f);
-	if (ImGui::Begin((std::string(STR_C("First steps")) + "###firststeps").c_str(), &m_first_steps_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
+	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && selected_track() != nullptr)
+		first_step_done(first_step::select);
+	enum class trial { none, top, lay, turnout, select };
+	struct input
 	{
-		ImGui::PushTextWrapPos(420.0f * Global.ui_scale);
-		ImGui::TextDisabled("%s", STR_C("The ticks fill in by themselves, the window doesn't stop anything"));
-		for (std::size_t i = 0; i < m_first_steps_done.size(); ++i)
+		char const *keys;
+		char const *text;
+	};
+	struct goal
+	{
+		first_step step;
+		char const *text;
+	};
+	struct lesson
+	{
+		char const *title;
+		char const *clip;
+		std::vector<input> inputs;
+		std::vector<goal> goals;
+		trial action;
+	};
+	static std::vector<lesson> const lessons{
+	    {"Looking around",
+	     "camera",
+	     {{"RMB + move", "Hold the right button and move the mouse: look around"},
+	      {"RMB + W S A D", "With the right button held: fly forwards, back and to the sides; E and Q: up and down"},
+	      {"O", "The top view, and back to 3D"},
+	      {"wheel", "In the top view: zoom in and out where the cursor points"},
+	      {"MMB + move", "In the top view: hold the wheel and drag to move the map"},
+	      {"F", "Fly to what is selected"}},
+	     {{first_step::look, "Look around with the right button held"}, {first_step::top, "Switch to the top view"}},
+	     trial::top},
+	    {"Laying track",
+	     "lay",
+	     {{"F3", "The Tracks field of work"},
+	      {"L", "The lay tool"},
+	      {"LMB", "A click on the ground: the first point; the next click: a straight up to it"},
+	      {"LMB", "Each next click lays a piece on from the end of the last one"},
+	      {"Backspace", "Takes the last piece back"},
+	      {"Esc", "Ends laying"}},
+	     {{first_step::tracks, "Open the Tracks field of work"}, {first_step::lay, "Turn the lay tool on"}, {first_step::laid, "Lay a track"}},
+	     trial::lay},
+	    {"Curves",
+	     "curves",
+	     {{"Ctrl + wheel", "The radius of the curve, while laying on from an end"},
+	      {"Shift + wheel", "The shape: arc then straight, straight then arc, arc, straight"},
+	      {"Alt", "Held: the direction turns in steps of 15 degrees"},
+	      {"0 1 2 3", "Type the length of the next piece, Enter lays it"},
+	      {"wheel", "Alone it zooms, as everywhere"}},
+	     {{first_step::wheel, "Change the radius with Ctrl+wheel"}, {first_step::shape, "Change the shape with Shift+wheel"}},
+	     trial::lay},
+	    {"Joining tracks",
+	     "join",
+	     {{"LMB + move", "Press on a free end (a magenta ring) and drag: a new track goes out of it"},
+	      {"LMB", "Let go on another free end: a curve joins the two tracks"},
+	      {"Ctrl + wheel", "While over the other end: the radius of the joining curve"},
+	      {"Shift + wheel", "While over the other end: another way to join"}},
+	     {{first_step::join, "Join two free ends"}},
+	     trial::lay},
+	    {"Switches",
+	     "switch",
+	     {{"T", "The switch tool; the type of the switch is chosen in its list"},
+	      {"LMB", "Click a straight track: the switch goes into it"},
+	      {"LMB + move", "Press on it and drag: along sets the direction, sideways the side"},
+	      {"Esc", "Back to selecting"}},
+	     {{first_step::turnout, "Put a switch into a track"}},
+	     trial::turnout},
+	    {"Selecting and fixing",
+	     "edit",
+	     {{"Esc", "The select tool"},
+	      {"LMB", "Click a track: it is selected, with its points"},
+	      {"LMB + move", "Drag a point: the end or the curve follows"},
+	      {"Q W E", "Move, turn or scale with the gizmo"},
+	      {"RMB", "A click on a track: what can be done with it"},
+	      {"Del", "Deletes the selected"},
+	      {"Ctrl + Z", "Takes the last change back; Ctrl+Y brings it back again"}},
+	     {{first_step::select, "Select a track"}, {first_step::undo, "Take a change back"}},
+	     trial::select},
+	    {"Saving and driving",
+	     nullptr,
+	     {{"Ctrl + S", "Saves the scenery"}, {"LMB", "Trainset in the toolbar: pick a locomotive from the list, click the track, then Place and drive"}},
+	     {{first_step::save, "Save the scenery"}, {first_step::drive, "Drive on the new track"}},
+	     trial::none},
+	};
+	auto const done = [&](lesson const &Lesson) {
+		return std::all_of(Lesson.goals.begin(), Lesson.goals.end(), [&](goal const &Goal) { return m_first_steps_done[static_cast<std::size_t>(Goal.step)]; });
+	};
+	m_tutorial_page = std::clamp(m_tutorial_page, 0, static_cast<int>(lessons.size()) - 1);
+	auto const &lesson{lessons[m_tutorial_page]};
+	if (lesson.clip == nullptr)
+		m_tutorial_clip.close();
+	else if (auto const path{std::string{"lang/editor_tutorial/"} + lesson.clip + ".gif"}; path != m_tutorial_clip.path())
+	{
+		m_tutorial_clip.open(path);
+		m_tutorial_since = ImGui::GetTime();
+	}
+	auto const scale{Global.ui_scale};
+	auto const width{520.0f * scale};
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+	ImGui::SetNextWindowBgAlpha(1.0f);
+	if (ImGui::Begin((std::string(STR_C("Tutorial")) + "###tutorial").c_str(), &m_first_steps_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+		ImGui::TextDisabled(STR_C("Lesson %d of %d"), m_tutorial_page + 1, static_cast<int>(lessons.size()));
+		ImGui::SameLine();
+		ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", STR_C(lesson.title));
+		if (lesson.clip != nullptr && false == m_tutorial_clip.missing())
 		{
-			bool const done{m_first_steps_done[i]};
-			ImGui::TextColored(done ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s", done ? "[x]" : "[ ]");
-			ImGui::SameLine();
-			if (done)
-				ImGui::TextDisabled("%s", STR_C(steps[i]));
+			auto const height{width * 320.0f / 520.0f};
+			if (auto const texture{m_tutorial_clip.texture(ImGui::GetTime() - m_tutorial_since)}; texture != 0)
+			{
+				ImGui::Image(static_cast<ImTextureID>(texture), ImVec2(width, width * m_tutorial_clip.height() / std::max(1, m_tutorial_clip.width())));
+				if (ImGui::IsItemClicked())
+					m_tutorial_since = ImGui::GetTime();
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("Click: play it from the start"));
+			}
 			else
-				ImGui::TextWrapped("%s", STR_C(steps[i]));
+			{
+				auto const at{ImGui::GetCursorScreenPos()};
+				ImGui::GetWindowDrawList()->AddRectFilled(at, ImVec2(at.x + width, at.y + height), ImGui::GetColorU32(ImGuiCol_FrameBg));
+				ImGui::Dummy(ImVec2(width, height));
+			}
 		}
-		ImGui::Separator();
-		ImGui::TextDisabled("%s", STR_C("RMB held + W S A D: fly the camera, F: fly to the selected, F1: all the keys"));
-		if (ui()->mode() == nodebank_panel::TRACK && false == GfxRenderer->Mouse_Hit())
+		ImGui::SeparatorText(STR_C("Mouse and keys"));
+		for (auto const &entry : lesson.inputs)
+			tutorial_input(entry.keys, entry.text, 150.0f * scale);
+		ImGui::SeparatorText(STR_C("Try it"));
+		for (auto const &entry : lesson.goals)
+		{
+			bool const reached{m_first_steps_done[static_cast<std::size_t>(entry.step)]};
+			ImGui::TextColored(reached ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s", reached ? "[x]" : "[ ]");
+			ImGui::SameLine();
+			if (reached)
+				ImGui::TextDisabled("%s", STR_C(entry.text));
+			else
+				ImGui::TextWrapped("%s", STR_C(entry.text));
+		}
+		if (m_tutorial_page == 1 && ui()->mode() == nodebank_panel::TRACK && false == GfxRenderer->Mouse_Hit())
 			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No ground under the cursor: track goes onto the level 0 plane, drawn as a grid. Terrain: F5"));
+		switch (lesson.action)
+		{
+		case trial::top:
+			if (ImGui::Button(Global.EditorOrtho ? STR_C("3D view (O)") : STR_C("Top view, orthographic (O)")))
+				toggle_ortho();
+			break;
+		case trial::lay:
+		case trial::turnout:
+		case trial::select:
+		{
+			auto const tab{lesson.action == trial::lay ? track_tab::lay : lesson.action == trial::turnout ? track_tab::turnout : track_tab::path};
+			auto const on{ui()->mode() == nodebank_panel::TRACK && m_track_tab == tab};
+			ImGui::BeginDisabled(on);
+			if (ImGui::Button(lesson.action == trial::lay ? STR_C("Lay track (L)") : lesson.action == trial::turnout ? STR_C("The switch tool (T)") : STR_C("The select tool (Esc)")))
+			{
+				choose_work_area(work_area::tracks);
+				show_track_tab(tab);
+			}
+			ImGui::EndDisabled();
+			break;
+		}
+		default: break;
+		}
 		ImGui::PopTextWrapPos();
+		ImGui::Separator();
+		ImGui::BeginDisabled(m_tutorial_page == 0);
+		if (ImGui::Button(STR_C("< Back")))
+			--m_tutorial_page;
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+		auto const dot{ImGui::GetFrameHeight()};
+		for (int index = 0; index < static_cast<int>(lessons.size()); ++index)
+		{
+			ImGui::PushID(index);
+			auto const at{ImGui::GetCursorScreenPos()};
+			if (ImGui::InvisibleButton("##lesson", ImVec2(dot * 0.8f, dot)))
+				m_tutorial_page = index;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C(lessons[index].title));
+			ImVec2 const centre{at.x + dot * 0.4f, at.y + dot * 0.5f};
+			auto const colour{done(lessons[index]) ? IM_COL32(100, 230, 100, 255) : ImGui::GetColorU32(ImGuiCol_TextDisabled)};
+			if (index == m_tutorial_page)
+				ImGui::GetWindowDrawList()->AddCircle(centre, dot * 0.3f, kTutorialLit, 0, 2.0f);
+			ImGui::GetWindowDrawList()->AddCircleFilled(centre, dot * 0.17f, colour);
+			ImGui::PopID();
+			ImGui::SameLine(0.0f, 0.0f);
+		}
+		ImGui::SameLine();
+		if (m_tutorial_page + 1 < static_cast<int>(lessons.size()))
+		{
+			if (ImGui::Button(STR_C("Next >")))
+				++m_tutorial_page;
+		}
+		else if (ImGui::Button(STR_C("Close")))
+			m_first_steps_open = false;
 		bool show{EditorSettings.first_steps()};
 		if (ImGui::Checkbox(STR_C("Show when the editor opens"), &show))
 		{
@@ -5089,6 +5348,7 @@ void editor_mode::toggle_ortho()
     Global.EditorOrtho = !Global.EditorOrtho;
     if (Global.EditorOrtho)
     {
+        first_step_done(first_step::top);
         m_ortho_pitch = Camera.Angle.x;
         Camera.Angle.x = -M_PI_2;
         Camera.Angle.z = 0.0;
@@ -5979,6 +6239,7 @@ void editor_mode::on_event_poll()
     if (flying)
     {
         m_input.poll();
+        first_step_done(first_step::look);
     }
     else if (m_camera_flying)
     {

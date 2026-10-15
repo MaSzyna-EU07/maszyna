@@ -4883,7 +4883,7 @@ bool editor_mode::track_wheel(double const Offset)
 				return *radius;
 		return radii[0];
 	};
-	first_step_done(first_step::wheel);
+	first_step_done(io.KeyCtrl ? first_step::wheel : first_step::shape);
 	if (io.KeyCtrl)
 	{
 		if (false == joined)
