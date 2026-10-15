@@ -463,7 +463,17 @@ bool is_blank(image const &Image)
 bool load_standard(http_client &Client, tile_request const &Request, image &Out, std::string &Error, stop_check const &Stop)
 {
 	std::vector<std::uint8_t> data;
-	return fetch(Client, wms_url(Request, false, standard_pixels, false), cache_file(Request, false, std::to_string(standard_pixels) + ".jpg"), data, Error, Stop) && decode(data, Out, Error);
+	auto const path{cache_file(Request, false, std::to_string(standard_pixels) + ".jpg")};
+	for (int attempt = 0; attempt < 2; ++attempt)
+	{
+		if (!fetch(Client, wms_url(Request, false, standard_pixels, false), path, data, Error, Stop) || !decode(data, Out, Error))
+			return false;
+		if (!is_blank(Out))
+			return true;
+		std::error_code ec;
+		fs::remove(path, ec);
+	}
+	return true;
 }
 
 // returns false on failure (to be retried later); Empty is set when the place has no imagery
