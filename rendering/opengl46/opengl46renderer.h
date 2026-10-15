@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vr/vr_interface.h"
 #include "gl/ubo.h"
 #include "gl/ssbo.h"
+#include "gl/cluster_grid.h"
 #include "gl/framebuffer.h"
 #include "gl/renderbuffer.h"
 #include "gl/postfx.h"
@@ -206,6 +207,10 @@ class opengl46_renderer : public gfx_renderer {
 		opengl_camera viewport_camera;
 		rendermode draw_mode{rendermode::none};
 		float draw_range{0.0f};
+		// depth range of the projection of a color pass; the far plane is only the end of the range which is drawn,
+		// as the projection matrix itself has none
+		float znear{0.0f};
+		float zfar{0.0f};
     debug_stats draw_stats;
 	};
 
@@ -255,6 +260,12 @@ class opengl46_renderer : public gfx_renderer {
         // LDR backbuffer for offscreen rendering
         std::unique_ptr<gl::framebuffer> backbuffer_fb;
         std::unique_ptr<opengl_texture> backbuffer_tex;
+
+        // light cluster grid of the viewport
+        std::unique_ptr<gl::cluster_grid> clusters;
+        // depth of the finished scene resolved from the msaa buffer, for the cluster heatmap; made when it is first needed
+        std::unique_ptr<gl::framebuffer> clusters_depth_fb;
+        std::unique_ptr<opengl_texture> clusters_depth_tex;
 
         bool initialized = false;
 	};
@@ -331,6 +342,11 @@ class opengl46_renderer : public gfx_renderer {
 	void Render_Alpha(TSubModel *Submodel);
 	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
 	void Update_Lights(light_array &Lights);
+	// brings the light cluster grid of the viewport up to date with the projection of the color pass being drawn
+	void Update_Clusters(viewport_config &vp);
+	// debug view: tints the finished image of the viewport with the cluster of every pixel. Target is the framebuffer
+	// holding the image (null for the default one), Targetsize its size
+	void Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize);
 	glm::vec3 pick_color(std::size_t const Index);
 	std::size_t pick_index(glm::ivec3 const &Color);
 
@@ -500,6 +516,8 @@ class opengl46_renderer : public gfx_renderer {
     std::unique_ptr<gl::program> m_celestial_shader;
     std::unique_ptr<gl::program> m_hiddenarea_shader;
     std::unique_ptr<gl::program> m_copy_shader;
+    std::unique_ptr<gl::program> m_cluster_build_shader;
+    std::unique_ptr<gl::program> m_cluster_heatmap_shader;
 
     std::unique_ptr<gl::vao> m_empty_vao;
 

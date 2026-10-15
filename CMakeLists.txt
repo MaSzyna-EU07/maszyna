@@ -259,6 +259,7 @@ set(SOURCES
 "gl/pbo.cpp"
 "gl/query.cpp"
 "gl/ssbo.cpp"
+"gl/cluster_grid.cpp"
 
 "imgui/imgui.cpp"
 "imgui/imgui_demo.cpp"

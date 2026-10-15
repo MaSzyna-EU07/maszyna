@@ -283,6 +283,7 @@ struct global_settings {
     int gfx_framebuffer_height = -1;
     bool gfx_shadowmap_enabled = true;
     bool gfx_envmap_enabled = true;
+    bool gfx_lights_clusterheatmap = false; // debug view of the light clusters
     bool gfx_postfx_motionblur_enabled = true;
     float gfx_postfx_motionblur_shutter = 0.01f;
     GLenum gfx_postfx_motionblur_format = GL_RG16F;

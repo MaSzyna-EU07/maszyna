@@ -1421,6 +1421,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_envmap_enabled;
     }
+    else if (Token == "gfx.lights.clusterheatmap")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_lights_clusterheatmap;
+    }
     else if (Token == "gfx.postfx.motionblur.enabled")
     {
         Parser.getTokens(1);
@@ -1754,6 +1759,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     // TODO: export fpslimit
     export_as_text( Output, "randomseed", Global.random_seed );
     export_as_text( Output, "gfx.envmap.enabled", gfx_envmap_enabled );
+    export_as_text( Output, "gfx.lights.clusterheatmap", gfx_lights_clusterheatmap );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );
     // TODO: export gfx_postfx_motionblur_format

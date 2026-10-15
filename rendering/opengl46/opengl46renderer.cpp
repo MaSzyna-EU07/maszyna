@@ -169,6 +169,11 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
         m_celestial_shader = make_shader("celestial.vert", "celestial.frag");
         m_hiddenarea_shader = make_shader("hiddenarea.vert", "hiddenarea.frag");
         m_copy_shader = make_shader("quad.vert", "copy.frag");
+        {
+            gl::shader cluster_build("cluster_build.comp");
+            m_cluster_build_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{cluster_build});
+        }
+        m_cluster_heatmap_shader = make_shader("quad.vert", "cluster_heatmap.frag");
 		m_invalid_material = Fetch_Material("invalid");
 	}
 	catch (gl::shader_exception const &e)
@@ -456,6 +461,8 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 	scene_ubo->bind_uniform();
 	light_ssbo->bind_base();
 
+	vp.clusters = std::make_unique<gl::cluster_grid>();
+
 	if (!Global.gfx_skippipeline)
 	{
 		vp.msaa_rbc = std::make_unique<gl::renderbuffer>();
@@ -713,6 +720,18 @@ void opengl46_renderer::draw_debug_ui()
 	}
 	ImGui::End();
 
+    if (ImGui::Begin("Light clusters"))
+    {
+        ImGui::Checkbox("heatmap", &Global.gfx_lights_clusterheatmap);
+        if (auto const &clusters{m_viewports.front()->clusters})
+        {
+            auto const &params{clusters->params()};
+            ImGui::Text("grid %u x %u x %u, %s", gl::CLUSTER_GRID_X, gl::CLUSTER_GRID_Y, gl::CLUSTER_GRID_Z, params.valid ? "built" : "none (orthographic view)");
+            ImGui::Text("near %.3f m, far %.1f m", params.znear, params.zfar);
+        }
+    }
+    ImGui::End();
+
     ImGui::SetNextWindowSize(ImVec2S(400, 400));
     if (ImGui::Begin("Pickbuffer") && m_pick_tex) {
 		ImGui::Image((ImTextureID)(intptr_t)(m_pick_tex->id), ImGui::GetContentRegionAvail(), ImVec2(0, 1.0), ImVec2(1.0, 0));
@@ -897,6 +916,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			future = glm::translate(mv, -glm::vec3(vehicle->get_future_movement())) * glm::inverse(mv);
 		}
 
+        Update_Clusters( vp );
         Update_Lights( simulation::Lights );
 
 		glDebug("render environment");
@@ -1048,6 +1068,9 @@ if (!Global.gfx_skippipeline)
                 glViewport(0, 0, target_size.x, target_size.y);
                 m_pfx_tonemapping->apply( *vp.main2_tex, target );
             }
+
+            if (Global.gfx_lights_clusterheatmap && vp.clusters->valid())
+                Render_cluster_heatmap(vp, target, target_size);
 
             if (vr) {
                 if (vp.proj_type == viewport_config::vr_left)
@@ -1587,6 +1610,8 @@ void opengl46_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 		auto const znear = ( Znear > 1.f ? Znear : Znear > 0.f ? Znear * zfar : 0.1f * Global.ZoomFactor);
 		if (EditorModeFlag && Viewport.main)
 			zfar = editor_track_view_range(zfar, true);
+		Config.znear = znear;
+		Config.zfar = zfar;
 
 		camera.projection() = perspective_projection(Viewport.projection, znear, zfar, frustumtest_proj);
 		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
@@ -6002,6 +6027,78 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
     // ship config data to the gpu
 	model_ubo->update(model_ubs);
 	light_ssbo->update(light_data);
+}
+
+void opengl46_renderer::Update_Clusters(viewport_config &vp)
+{
+	glDebug("Update_Clusters");
+
+	auto &grid{*vp.clusters};
+	grid.bind();
+	// the boxes of the clusters depend only on the projection and the depth range, so they are rebuilt only when those change
+	if (grid.update(OpenGLMatrices.data(GL_PROJECTION), m_renderpass.znear, m_renderpass.zfar, glm::vec2{static_cast<float>(vp.width), static_cast<float>(vp.height)}))
+	{
+		m_clusterstimer.begin();
+		grid.build(*m_cluster_build_shader);
+		m_clusterstimer.end();
+	}
+}
+
+void opengl46_renderer::Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize)
+{
+	glDebug("Render_cluster_heatmap");
+
+	if (!vp.msaa_fb)
+		return;
+
+	if (!vp.clusters_depth_fb)
+	{
+		auto texture{std::make_unique<opengl_texture>()};
+		texture->alloc_rendertarget(Global.gfx_format_depth, GL_DEPTH_COMPONENT, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
+		// render target textures of depth are made for the shadow sampler; here the values themselves are read
+		glTextureParameteri(texture->id, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+		glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+		auto framebuffer{std::make_unique<gl::framebuffer>()};
+		framebuffer->attach(*texture, GL_DEPTH_ATTACHMENT);
+		// depth only
+		framebuffer->setup_drawing(0);
+		if (!framebuffer->is_complete())
+		{
+			ErrorLog("cluster heatmap framebuffer setup failed");
+			Global.gfx_lights_clusterheatmap = false;
+			return;
+		}
+		vp.clusters_depth_tex = std::move(texture);
+		vp.clusters_depth_fb = std::move(framebuffer);
+	}
+
+	// the depth of the scene is still in the msaa buffer, the post processing worked on its colour
+	vp.msaa_fb->blit_to(vp.clusters_depth_fb.get(), vp.width, vp.height, GL_DEPTH_BUFFER_BIT, GL_DEPTH_ATTACHMENT);
+
+	if (Target)
+		Target->bind();
+	else
+		gl::framebuffer::unbind();
+	glViewport(0, 0, Targetsize.x, Targetsize.y);
+
+	vp.clusters->bind();
+	m_cluster_heatmap_shader->bind();
+	m_empty_vao->bind();
+	vp.clusters_depth_tex->bind(0);
+
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+	auto const blending{glIsEnabled(GL_BLEND) == GL_TRUE};
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	if (!blending)
+		glDisable(GL_BLEND);
+	vp.clusters_depth_tex->unbind(0);
 }
 
 bool opengl46_renderer::Init_caps()

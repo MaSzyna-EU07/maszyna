@@ -16,6 +16,17 @@ void gl::glsl_common_setup()
     "#define MAX_PARAMS " + std::to_string(MAX_PARAMS) + "U\n" +
     "#define MAX_INSTANCES_PER_BATCH " + std::to_string(MAX_INSTANCES_PER_BATCH) + "U\n" +
     "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_GRID_X " + std::to_string(CLUSTER_GRID_X) + "\n" +
+    "#define CLUSTER_GRID_Y " + std::to_string(CLUSTER_GRID_Y) + "\n" +
+    "#define CLUSTER_GRID_Z " + std::to_string(CLUSTER_GRID_Z) + "\n" +
+    "#define CLUSTER_COUNT " + std::to_string(CLUSTER_COUNT) + "\n" +
+    "#define MAX_LIGHTS_PER_CLUSTER " + std::to_string(MAX_LIGHTS_PER_CLUSTER) + "\n" +
+    "#define CLUSTER_BUILD_GROUP_SIZE " + std::to_string(CLUSTER_BUILD_GROUP_SIZE) + "\n" +
+    "#define CLUSTER_UBO_BINDING " + std::to_string(CLUSTER_UBO_BINDING) + "\n" +
+    "#define CLUSTER_AABB_SSBO_BINDING " + std::to_string(CLUSTER_AABB_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_RANGE_SSBO_BINDING " + std::to_string(CLUSTER_RANGE_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_INDEX_SSBO_BINDING " + std::to_string(CLUSTER_INDEX_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_COUNTER_SSBO_BINDING " + std::to_string(CLUSTER_COUNTER_SSBO_BINDING) + "\n" +
     R"STRING(
     const uint LIGHT_SPOT = 0U;
     const uint LIGHT_POINT = 1U;
@@ -53,6 +64,60 @@ void gl::glsl_common_setup()
             uint lights_count;
 
             light_s lights[];
+    };
+    #endif
+
+    // light clusters, see gl/cluster_grid.h
+    struct cluster_aabb_s
+    {
+            vec4 lower;
+            vec4 upper;
+    };
+
+    struct cluster_range_s
+    {
+            uint offset;
+            uint count;
+    };
+
+    #if defined(STAGE_FRAGMENT) || defined(STAGE_COMPUTE)
+    // parameters of the grid for the pass being drawn
+    layout(std140, binding = CLUSTER_UBO_BINDING) uniform cluster_ubo
+    {
+            mat4 cluster_projection;
+            float cluster_znear;
+            float cluster_zfar;
+            float cluster_slice_scale;
+            float cluster_slice_bias;
+            vec2 cluster_viewport_size;
+            uint cluster_valid;
+    };
+
+    // the compute passes fill the cluster buffers, shading only reads them
+    #ifdef STAGE_COMPUTE
+    #define CLUSTER_SSBO_ACCESS
+    layout(std430, binding = CLUSTER_AABB_SSBO_BINDING) buffer cluster_aabb_ssbo
+    {
+            cluster_aabb_s cluster_aabbs[];
+    };
+
+    layout(std430, binding = CLUSTER_COUNTER_SSBO_BINDING) buffer cluster_counter_ssbo
+    {
+            uint cluster_index_count;
+            uint cluster_overflow_count;
+    };
+    #else
+    #define CLUSTER_SSBO_ACCESS readonly
+    #endif
+
+    layout(std430, binding = CLUSTER_RANGE_SSBO_BINDING) CLUSTER_SSBO_ACCESS buffer cluster_range_ssbo
+    {
+            cluster_range_s cluster_ranges[];
+    };
+
+    layout(std430, binding = CLUSTER_INDEX_SSBO_BINDING) CLUSTER_SSBO_ACCESS buffer cluster_index_ssbo
+    {
+            uint cluster_light_indices[];
     };
     #endif
 

@@ -177,5 +177,87 @@ namespace gl
     static_assert(offsetof(light_data, lights) == 32, "bad layout of light_data");
     static_assert(sizeof(light_data) == 32 + sizeof(light_element) * MAX_LIGHTS, "bad size of light_data");
 
+    // light clusters (see gl/cluster_grid.h): the view frustum is cut into CLUSTER_GRID_X x CLUSTER_GRID_Y screen
+    // tiles and CLUSTER_GRID_Z depth slices, spaced exponentially between the near and far plane of the pass.
+    // cluster index = x + CLUSTER_GRID_X * (y + CLUSTER_GRID_Y * z), with x and y counted from the lower left corner
+    const GLuint CLUSTER_GRID_X = 16;
+    const GLuint CLUSTER_GRID_Y = 9;
+    const GLuint CLUSTER_GRID_Z = 24;
+    const GLuint CLUSTER_COUNT = CLUSTER_GRID_X * CLUSTER_GRID_Y * CLUSTER_GRID_Z;
+    // capacity of the light list of a single cluster
+    const GLuint MAX_LIGHTS_PER_CLUSTER = 64;
+    // work group size of cluster_build.comp, which handles one cluster per invocation
+    const GLuint CLUSTER_BUILD_GROUP_SIZE = 64;
+
+    // binding points of the cluster buffers: layout(binding = ...) in glsl_common.
+    // the uniform block numbers go together with scene (0), model (1) and instance (3) blocks
+    const GLuint CLUSTER_UBO_BINDING = 2;
+    const GLuint CLUSTER_AABB_SSBO_BINDING = 1;
+    const GLuint CLUSTER_RANGE_SSBO_BINDING = 2;
+    const GLuint CLUSTER_INDEX_SSBO_BINDING = 3;
+    const GLuint CLUSTER_COUNTER_SSBO_BINDING = 4;
+
+    // layout std140: grid parameters for the pass it was built for (GLSL: cluster_ubo)
+    struct cluster_ubs
+    {
+        glm::mat4 projection;
+        float znear;
+        float zfar;
+        // depth slice of a point with clip space w: floor(log(w) * slice_scale + slice_bias), znear..zfar covers all slices
+        float slice_scale;
+        float slice_bias;
+        // size of the render target the tiles are laid over, in pixels
+        float viewport_width;
+        float viewport_height;
+        // 0 if there is no grid for the pass (orthographic projection)
+        uint32_t valid;
+        UBS_PAD(4);
+    };
+
+    static_assert(sizeof(cluster_ubs) == 96, "bad size of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, projection) == 0, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, znear) == 64, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, zfar) == 68, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, slice_scale) == 72, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, slice_bias) == 76, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, viewport_width) == 80, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, viewport_height) == 84, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, valid) == 88, "bad layout of cluster_ubs");
+
+    // layout std430: bounding box of a cluster in view space, element of cluster_aabb_ssbo (GLSL: cluster_aabb_s), w unused
+    struct cluster_aabb
+    {
+        glm::vec4 lower;
+        glm::vec4 upper;
+    };
+
+    static_assert(sizeof(cluster_aabb) == 32, "bad size of cluster_aabb");
+    static_assert(offsetof(cluster_aabb, lower) == 0, "bad layout of cluster_aabb");
+    static_assert(offsetof(cluster_aabb, upper) == 16, "bad layout of cluster_aabb");
+
+    // layout std430: lights of a cluster, element of cluster_range_ssbo (GLSL: cluster_range_s). the lights are
+    // light_data.lights indices stored in the cluster_index_ssbo list from offset on
+    struct cluster_range
+    {
+        uint32_t offset;
+        uint32_t count;
+    };
+
+    static_assert(sizeof(cluster_range) == 8, "bad size of cluster_range");
+    static_assert(offsetof(cluster_range, offset) == 0, "bad layout of cluster_range");
+    static_assert(offsetof(cluster_range, count) == 4, "bad layout of cluster_range");
+
+    // layout std430: cluster_counter_ssbo. index_count is the allocator of the shared index list, overflow_count
+    // the number of lights dropped from clusters which were full
+    struct cluster_counters
+    {
+        uint32_t index_count;
+        uint32_t overflow_count;
+    };
+
+    static_assert(sizeof(cluster_counters) == 8, "bad size of cluster_counters");
+    static_assert(offsetof(cluster_counters, index_count) == 0, "bad layout of cluster_counters");
+    static_assert(offsetof(cluster_counters, overflow_count) == 4, "bad layout of cluster_counters");
+
 #pragma pack(pop)
 }
