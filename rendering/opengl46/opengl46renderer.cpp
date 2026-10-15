@@ -694,8 +694,9 @@ void opengl46_renderer::SwapBuffers()
         + " lines:    " + to_string( m_colorpass.draw_stats.lines, 7 ) + "\n"
         + "particles: " + to_string( m_colorpass.draw_stats.particles, 7 )
         + "\nlights:    " + to_string( static_cast<int>( m_lights_lit ), 7 )
-        + " (" + std::to_string( m_lights_dropped ) + " over capacity)";
-    if( auto const cullstats = ( m_viewports.empty() ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
+        + " (" + std::to_string( m_lights_dropped ) + " over capacity), "
+        + ( Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string( std::max( Global.DynamicLightCount, 0 ) ) );
+    if( auto const cullstats = ( m_viewports.empty() || !( Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap ) ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
         m_debugstatstext +=
             "\ncluster lists: " + std::to_string( cullstats->index_count )
             + ", overflow " + std::to_string( cullstats->overflow_count )
@@ -726,6 +727,7 @@ void opengl46_renderer::draw_debug_ui()
 
     if (ImGui::Begin("Light clusters"))
     {
+        ImGui::Checkbox("clustered lights (off: the first dynamiclights headlights)", &Global.gfx_lights_clustered);
         ImGui::Checkbox("heatmap", &Global.gfx_lights_clusterheatmap);
         if (auto const &clusters{m_viewports.front()->clusters})
         {
@@ -926,9 +928,17 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			future = glm::translate(mv, -glm::vec3(vehicle->get_future_movement())) * glm::inverse(mv);
 		}
 
-        Update_Clusters( vp );
-        Update_Lights( simulation::Lights );
-        Cull_Lights( vp );
+        // the cluster grid and its lists of lights are kept up only while something reads them: the shading or the heatmap.
+        // the lists exist for a perspective view; without them the shading goes through the first few lights, as does the pass
+        // the environment map is drawn in
+        auto const clusterlists{ Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap };
+        if( clusterlists ) {
+            Update_Clusters( vp );
+        }
+        Update_Lights( simulation::Lights, true, Global.gfx_lights_clustered && vp.clusters->valid() );
+        if( clusterlists ) {
+            Cull_Lights( vp );
+        }
 
 		glDebug("render environment");
 
@@ -1201,6 +1211,10 @@ if (!Global.gfx_skippipeline)
 		setup_env_map(m_empty_cubemap.get());
 
 		setup_matrices();
+		// the light buffer holds what the last color pass left in it, in the view space of its camera, while the face is drawn
+		// in its own. the lights go in anew; the map is a cache of the surroundings which lasts for seconds, so the headlights
+		// of the vehicles around are left out of it and the cost of the pass does not depend on how many of them are on
+		Update_Lights(simulation::Lights, false);
 
 		// render
         // environment...
@@ -5612,6 +5626,7 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 	light_data.fog_color = glm::vec3{1.f};
 	light_data.lights_total = 1;
 	light_data.lights_count = 1;
+	light_data.lights_clustered = 0;
 	light_data.lights[0].type = gl::light_element::DIR;
 	light_data.lights[0].dir = modelview * glm::vec4(m_sunlight.direction, 0.0f);
 	light_data.lights[0].color = m_sunlight.diffuse;
@@ -5893,7 +5908,7 @@ bool opengl46_renderer::Render_Preview(TAnimModel *Instance, int const Size, int
 	return true;
 }
 
-void opengl46_renderer::Update_Lights(light_array &Lights)
+void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights, bool const Clustered)
 {
 	glDebug("Update_Lights");
 
@@ -5901,15 +5916,18 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
 
 	// arrange the light array from closest to farthest from current position of the camera
 	auto const camera = m_colorpass.pass_camera.position();
-	std::sort(
-        std::begin(Lights.data), std::end(Lights.data),
-        [&camera](light_array::light_record const &Left, light_array::light_record const &Right) {
-		    // move lights which are off at the end...
-		    if (Left.intensity  == 0.f) { return false; }
-		    if (Right.intensity == 0.f) { return true; }
-		    // ...otherwise prefer closer and/or brigher light sources
-		    return (glm::length2(camera - Left.position) / Left.intensity) < (glm::length2(camera - Right.position) / Right.intensity);
-    	});
+	if (Headlights)
+	{
+		std::sort(
+			std::begin(Lights.data), std::end(Lights.data),
+			[&camera](light_array::light_record const &Left, light_array::light_record const &Right) {
+				// move lights which are off at the end...
+				if (Left.intensity  == 0.f) { return false; }
+				if (Right.intensity == 0.f) { return true; }
+				// ...otherwise prefer closer and/or brigher light sources
+				return (glm::length2(camera - Left.position) / Left.intensity) < (glm::length2(camera - Right.position) / Right.intensity);
+			});
+	}
 
     // set up helpers
    	glm::mat4 coordmove;
@@ -5931,7 +5949,7 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
 
     for (auto const &scenelight : Lights.data)
 	{
-		if (scenelight.intensity == 0.f) {
+		if (!Headlights || scenelight.intensity == 0.f) {
 			// all lights past this one are bound to be off
 			break;
 		}
@@ -6032,6 +6050,7 @@ void opengl46_renderer::Update_Lights(light_array &Lights)
     light_data.lights_total = static_cast<uint32_t>(light_i);
     m_lights_lit = static_cast<uint32_t>(light_i - 1);
     light_data.lights_count = 1 + std::min<uint32_t>(static_cast<uint32_t>(light_i - 1), static_cast<uint32_t>(std::max(Global.DynamicLightCount, 0)));
+    light_data.lights_clustered = Clustered ? 1 : 0;
     // fill sunlight data
     light_data.ambient = m_sunlight.ambient * m_sunlight.factor;// *simulation::Environment.light_intensity();
 	light_data.lights[0].type = gl::light_element::DIR;

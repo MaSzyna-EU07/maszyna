@@ -194,7 +194,10 @@ vec2 calc_dir_light(light_s light, vec3 fragnormal)
 	return calc_light(light_dir, fragnormal);
 }
 
-vec2 calc_headlights(light_s light, vec3 fragnormal)
+// dpdx and dpdy are the change of the view space position of the fragment from a pixel to the next one. the beam texture is
+// sampled with gradients worked out from them instead of the ones of the hardware: those are undefined where the fragments of
+// a quad do not go through the same lights, which is what happens at the edges of the clusters
+vec2 calc_headlights(light_s light, vec3 fragnormal, vec3 dpdx, vec3 dpdy)
 {
 	vec4 headlightpos = light.headlight_projection * f_pos;
 	vec3 coords = headlightpos.xyz / headlightpos.w;
@@ -202,6 +205,10 @@ vec2 calc_headlights(light_s light, vec3 fragnormal)
 	if (coords.z > 1.0)
 		return vec2(0.0);
 	if (coords.z < 0.0)
+		return vec2(0.0);
+	// the beam is what the projection takes in. beyond its sides the texture would be clamped to its edge, and near the projector
+	// (where a pixel spans many texels) its coarsest levels spill the average of the whole beam over the surroundings
+	if (coords.x < 0.0 || coords.x > 1.0 || coords.y < 0.0 || coords.y > 1.0)
 		return vec2(0.0);
 
 	vec3 light_dir = normalize(light.pos - f_pos.xyz);
@@ -212,9 +219,56 @@ vec2 calc_headlights(light_s light, vec3 fragnormal)
 	float distance = length(light.pos - f_pos.xyz);
 	float atten = 1.0f / (1.0f + light.linear * distance + light.quadratic * (distance * distance));
 	atten *= mix(1.0, 0.0, clamp((coords.z - 0.998) * 500.0, 0.0, 1.0));
-	vec3 lights = textureProj(headlightmap, headlightpos).rgb * light.headlight_weights.rgb;
+	vec2 beamcoords = headlightpos.xy / headlightpos.w;
+	vec4 dheadlightposdx = light.headlight_projection * vec4(dpdx, 0.0);
+	vec4 dheadlightposdy = light.headlight_projection * vec4(dpdy, 0.0);
+	vec2 dbeamdx = (dheadlightposdx.xy - beamcoords * dheadlightposdx.w) / headlightpos.w;
+	vec2 dbeamdy = (dheadlightposdy.xy - beamcoords * dheadlightposdy.w) / headlightpos.w;
+	vec3 lights = textureGrad(headlightmap, beamcoords, dbeamdx, dbeamdy).rgb * light.headlight_weights.rgb;
 	float lightintensity = max(max(lights.r, lights.g), lights.b);
 	return part * atten * lightintensity;
+}
+
+// index of the light cluster the fragment is in, see gl/cluster_grid.h: its screen tile and slice of depth. the depth is the clip
+// space w, which is 1 / gl_FragCoord.w. a tile is kept in the grid, as the far edge of the render target and rounding
+// right below it give one past the last
+uint fragment_cluster()
+{
+	ivec2 tile = ivec2(gl_FragCoord.xy * (vec2(CLUSTER_GRID_X, CLUSTER_GRID_Y) / cluster_viewport_size));
+	tile = clamp(tile, ivec2(0), ivec2(CLUSTER_GRID_X - 1, CLUSTER_GRID_Y - 1));
+	int slice = clamp(int(floor(cluster_slice_bias - log(gl_FragCoord.w) * cluster_slice_scale)), 0, CLUSTER_GRID_Z - 1);
+	return uint(tile.x + CLUSTER_GRID_X * (tile.y + CLUSTER_GRID_Y * slice));
+}
+
+// adds the light of the headlights which reach the fragment to its colour. these are the ones in the list of its cluster
+// when the lights are clustered (the sun is not on the list, the callers take care of it), and the first lights_count - 1 of
+// lights[] otherwise
+vec3 add_headlights(vec3 fragcolor, vec3 fragnormal)
+{
+	// worked out before the loops, which the fragments of a quad do not leave together
+	vec3 dpdx = dFdx(f_pos.xyz);
+	vec3 dpdy = dFdy(f_pos.xyz);
+
+	if (lights_clustered != 0U)
+	{
+		cluster_range_s range = cluster_ranges[fragment_cluster()];
+		for (uint i = 0U; i < range.count; i++)
+		{
+			light_s light = lights[cluster_light_indices[range.offset + i]];
+			vec2 part = calc_headlights(light, fragnormal, dpdx, dpdy);
+			fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
+		}
+	}
+	else
+	{
+		for (uint i = 1U; i < lights_count; i++)
+		{
+			light_s light = lights[i];
+			vec2 part = calc_headlights(light, fragnormal, dpdx, dpdy);
+			fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
+		}
+	}
+	return fragcolor;
 }
 
 // -----------------------------------------------------------------------
@@ -312,12 +366,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // direct sun read as too hot/burnt; raise it for more punch.
     fragcolor += lights[0].color * SUN_DIFFUSE_SCALE * (1.0 - shadow1) * diffuseamount;
 
-    for (uint i = 1U; i < lights_count; i++)
-    {
-        light_s light = lights[i];
-        vec2 part = calc_headlights(light, fragnormal);
-        fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
-    }
+    fragcolor = add_headlights(fragcolor, fragnormal);
 
     float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity
                          * clamp(1.0 - shadowtone, 0.0, 1.0);

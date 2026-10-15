@@ -64,8 +64,10 @@ void gl::glsl_common_setup()
             uint lights_total;
 
             vec3 fog_color;
-            // lights the shading loop goes through
+            // lights the shading loop goes through when the lights are not clustered
             uint lights_count;
+            // 1 if the shading takes the lights from the list of the cluster of a fragment, see cluster_ubo
+            uint lights_clustered;
 
             light_s lights[];
     };

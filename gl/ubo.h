@@ -168,8 +168,13 @@ namespace gl
         uint32_t lights_total;
 
         packed_vec3 fog_color;
-        // number of lights (the sun included) the shading loop over lights[] goes through
+        // number of lights (the sun included) the shading loop over lights[] goes through when the lights are not clustered
         uint32_t lights_count;
+        // 1 if the shading takes the lights of a fragment from the list of its cluster (lights_count is not used then), 0 if not.
+        // set per pass: the cluster grid exists only for the color pass of a perspective view
+        uint32_t lights_clustered;
+        // lights[] begins at a multiple of 16 bytes
+        uint32_t padding[3];
 
         light_element lights[MAX_LIGHTS];
     };
@@ -178,8 +183,9 @@ namespace gl
     static_assert(offsetof(light_data, lights_total) == 12, "bad layout of light_data");
     static_assert(offsetof(light_data, fog_color) == 16, "bad layout of light_data");
     static_assert(offsetof(light_data, lights_count) == 28, "bad layout of light_data");
-    static_assert(offsetof(light_data, lights) == 32, "bad layout of light_data");
-    static_assert(sizeof(light_data) == 32 + sizeof(light_element) * MAX_LIGHTS, "bad size of light_data");
+    static_assert(offsetof(light_data, lights_clustered) == 32, "bad layout of light_data");
+    static_assert(offsetof(light_data, lights) == 48, "bad layout of light_data");
+    static_assert(sizeof(light_data) == 48 + sizeof(light_element) * MAX_LIGHTS, "bad size of light_data");
 
     // light clusters (see gl/cluster_grid.h): the view frustum is cut into CLUSTER_GRID_X x CLUSTER_GRID_Y screen
     // tiles and CLUSTER_GRID_Z depth slices, spaced exponentially between the near and far plane of the pass.

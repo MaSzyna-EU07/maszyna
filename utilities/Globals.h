@@ -283,6 +283,7 @@ struct global_settings {
     int gfx_framebuffer_height = -1;
     bool gfx_shadowmap_enabled = true;
     bool gfx_envmap_enabled = true;
+    bool gfx_lights_clustered = true; // headlights from the light lists of the clusters (no limit of lit headlights) or the first dynamiclights of them
     bool gfx_lights_clusterheatmap = false; // debug view of the light clusters
     bool gfx_postfx_motionblur_enabled = true;
     float gfx_postfx_motionblur_shutter = 0.01f;

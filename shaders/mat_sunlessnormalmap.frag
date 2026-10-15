@@ -66,22 +66,7 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
 	float specularamount = (sunlight.y * param[1].y * specularity) * lights[0].intensity;
 	glossiness = abs(param[1].w);
 
-	for (uint i = 1U; i < lights_count; i++)
-	{
-		light_s light = lights[i];
-		vec2 part = vec2(0.0);
-
-//		if (light.type == LIGHT_SPOT)
-//			part = calc_spot_light(light, fragnormal);
-//		else if (light.type == LIGHT_POINT)
-//			part = calc_point_light(light, fragnormal);
-//		else if (light.type == LIGHT_DIR)
-//			part = calc_dir_light(light, fragnormal);
-//		else if (light.type == LIGHT_HEADLIGHTS)
-			part = calc_headlights(light, fragnormal);
-
-		fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
-	}
+	fragcolor = add_headlights(fragcolor, fragnormal);
 
 	if (shadowtone < 1.0)
 	{

@@ -341,7 +341,10 @@ class opengl46_renderer : public gfx_renderer {
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
 	void Render_Alpha(TSubModel *Submodel);
 	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
-	void Update_Lights(light_array &Lights);
+	// writes the lighting of the pass about to be drawn to the light buffer: the sun, the ambient light and the fog, and the headlights of Lights
+	// unless Headlights is false, as in the pass which draws the environment map, where lights of vehicles would only get baked into the map.
+	// Clustered tells the shading to take the headlights from the lists of the clusters (see Cull_Lights()) and not to go through the first few
+	void Update_Lights(light_array &Lights, bool const Headlights = true, bool const Clustered = false);
 	// brings the light cluster grid of the viewport up to date with the projection of the color pass being drawn
 	void Update_Clusters(viewport_config &vp);
 	// assigns the lights set up by Update_Lights() to the clusters of the viewport; run after it, before the scene is drawn
