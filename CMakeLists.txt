@@ -214,6 +214,7 @@ set(SOURCES
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
 "application/editormodeselftest.cpp"
+"application/scriptedinput.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
 "application/editoruipanels.cpp"

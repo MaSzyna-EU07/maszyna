@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorProfile.hpp"
 #include "editor/editorInfra.hpp"
 #include "editor/editorGauge.hpp"
+#include "application/scriptedinput.h"
 #include "world/Sweep.h"
 
 #include <array>
@@ -1915,6 +1916,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::size_t next{0};
 		int wait{0};
 		bool quitting{false};
+		scripted_input input;
 	};
 	selftest m_selftest;
 	enum class selftest_result

@@ -69,6 +69,29 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		m_focus_active = false;
 		return selftest_result::handled;
 	}
+	if (command == "selectat")
+	{
+		glm::dvec3 point{0.0};
+		words >> point.x >> point.z;
+		TTrack *nearest{nullptr};
+		double distance{1e9};
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
+				continue;
+			auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)};
+			if (d < distance)
+			{
+				distance = d;
+				nearest = track;
+			}
+		}
+		m_node = distance < 3.0 ? nearest : nullptr;
+		m_track_point = {};
+		ui()->set_node(m_node);
+		WriteLog(format("SELFTEST selectat %.1f %.1f: %s", point.x, point.z, m_node != nullptr ? m_node->name().c_str() : "nothing"));
+		return selftest_result::handled;
+	}
 	if (command == "select")
 	{
 		std::string name;
@@ -139,6 +162,48 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		}
 		return selftest_result::handled;
 	}
+	if (command == "mouseat")
+	{
+		glm::dvec3 at{0.0};
+		words >> at.x >> at.y >> at.z;
+		ImVec2 projected;
+		if (false == screen_projection{}.project(at, projected))
+		{
+			WriteLog("SELFTEST mouseat: behind the camera");
+			return selftest_result::handled;
+		}
+		test.input.mouse_to(glm::dvec2{projected.x, projected.y});
+		WriteLog(format("SELFTEST mouse %.0f %.0f", projected.x, projected.y));
+		return selftest_result::handled;
+	}
+	if (command == "glide")
+	{
+		glm::dvec3 at{0.0};
+		int steps{8};
+		int every{2};
+		std::string shots;
+		words >> at.x >> at.y >> at.z >> steps >> every >> shots;
+		ImVec2 projected;
+		if (false == screen_projection{}.project(at, projected))
+			return selftest_result::handled;
+		glm::dvec2 const from{test.input.mouse().value_or(glm::dvec2{projected.x, projected.y})};
+		glm::dvec2 const to{projected.x, projected.y};
+		std::vector<std::string> expanded;
+		for (int step = 1; step <= std::max(1, steps); ++step)
+		{
+			auto const t{static_cast<double>(step) / std::max(1, steps)};
+			auto const eased{t * t * (3.0 - 2.0 * t)};
+			auto const point{glm::mix(from, to, eased)};
+			expanded.push_back(format("mouse %.1f %.1f", point.x, point.y));
+			expanded.push_back("wait " + std::to_string(std::max(1, every)));
+			if (shots == "shot")
+				expanded.push_back("screenshot");
+		}
+		test.lines.insert(test.lines.begin() + static_cast<std::ptrdiff_t>(test.next), expanded.begin(), expanded.end());
+		return selftest_result::handled;
+	}
+	if (test.input.dispatch(command, words))
+		return selftest_result::handled;
 	if (command == "screenshot")
 	{
 		Application.queue_screenshot();
@@ -1697,6 +1762,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			tool.templates = editor_track::standard_switch_templates();
 			tool.collected = true;
 			tool.armed = -1;
+			tool.connection = -1;
 			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 				if (tool.templates[i].label.rfind(label, 0) == 0)
 				{
@@ -2174,9 +2240,9 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		int around{0};
 		for (auto const &issue : m_joints.issues)
 		{
-			if (issue.type == joint_issue::kind::open)
+			if (false == points.empty() && issue.type == joint_issue::kind::open)
 				continue;
-			if (std::none_of(points.begin(), points.end(), [&](glm::dvec3 const &Point) { return geometry::plan_distance(Point, issue.position) < 5.0; }))
+			if (false == points.empty() && std::none_of(points.begin(), points.end(), [&](glm::dvec3 const &Point) { return geometry::plan_distance(Point, issue.position) < 5.0; }))
 				continue;
 			++around;
 			WriteLog(format("SELFTEST joints: %s %.3f at %.1f %.1f, %s / %s", kinds[static_cast<int>(issue.type)], issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-",
@@ -3095,6 +3161,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 //   wait <frames>
 //   camera <x> <y> <z> <x> <y> <z>        from the first point, looking at the second
 //   select <track name>
+//   selectat <x> <z>                     the path nearest the point, within 3 m, as a click on it
 //   blade [name]                         logs the blades of each switch cut from the rails: tip, 50 mm head, full head, heel, drop of the head, open flangeway, the gauge lines apart against x^2/2R, vertices in both positions
 //   frog [name]                          logs where the inner rails of each switch cross: distance on both paths, 1:n, throat, nose, check rails
 //   guards [name]                        logs each guard rail and what each of its ends and breaks is cut along; a fault when a cut is not along a rail or a glued end not on the guard rail of the other track
@@ -3152,7 +3219,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined
-//   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged
+//   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged, every issue with free ends without points
 //   route <x> <z> <single 0|1>          the route design of the path nearest the point, a curve or the whole line
 //   routevertex <i> <R> <L in> <L out> <cant>, routearc <i> <R> <L> <share>, routeshare <i> <share>, routekm <km>
 //   routeapply, routetake                as the buttons of the route design do it
@@ -3166,6 +3233,12 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 //   switches                             logs the switches kept in the scenery and the speed of each diverging track
 //   deletetrack <name>, deletekind <kind>   the path deleted as Del does it, or the first path over an element of the kind
 //   btfcheck <terrain file>              the .txtf converted to .btf, the editor lines the binary file keeps logged
+//   mouse <x> <y>, mouseat <x> <y> <z>   the cursor moved to the point of the window, or to where the point of the scene is seen, as the mouse moves it
+//   glide <x> <y> <z> <steps> <frames> [shot]   the cursor led to where the point is seen in steps, frames apart, a screenshot after each step with shot
+//   button <left|right|middle> <press|release>, wheel <offset>   the buttons and the wheel of the mouse, with the keys held
+//   press <key>, release <key>, tap <key>   a key held, let go, or both (ctrl, shift, alt, esc, enter, backspace, del, space, tab, a..z, 0..9, f1..f12)
+//   softcursor <0|1>                     the cursor drawn into the picture, for screenshots
+//   type <text>                          the characters typed into the text field with the focus
 //   screenshot
 //   save
 //   log <text>

@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/applicationmode.h"
+#include "application/scriptedinput.h"
 
 class launcher_mode : public application_mode {
 
@@ -33,4 +34,7 @@ public:
 	void on_window_resize( int w, int h ) override;
 	void on_event_poll() override { /* not handled by the launcher */ }
 	bool is_command_processor() const override { return false; }
+
+private:
+	input_script m_script{"EU07_LAUNCHER_SELFTEST"};
 };
