@@ -645,50 +645,38 @@ void TSegment::plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 
     Across = glm::normalize( Across );
 }
 
-bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, int const Side, float const Halfwidth, double const fTextureLength, double const From, double const To, std::vector<glm::dvec2> const &Offsets, std::vector<glm::dvec2> const &Extents, float const Lift, std::vector<glm::dvec2> const &Inner, gfx::userdata_array *Userdata, std::vector<glm::dvec2> const &Ramp, double const Rampwidth, bool const Walls, float const Wallu, glm::dvec2 const &Bends, std::vector<glm::dvec2> const &Drops, glm::dvec2 const &Head ) const {
+bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, loft_span const &Span ) const {
 
-    if( fTsBuffer.empty() || To - From < 0.001 || ShapePoints.empty() )
+    if( fTsBuffer.empty() || Span.to - Span.from < 0.001 || ShapePoints.empty() )
         return false;
 
-    auto const sample = []( std::vector<glm::dvec2> const &Knots, double const Distance, double const Default ) {
-        if( Knots.empty() )
-            return Default;
-        if( Distance <= Knots.front().x )
-            return Knots.front().y;
-        for( std::size_t i = 1; i < Knots.size(); ++i ) {
-            if( Distance <= Knots[ i ].x ) {
-                return glm::mix( Knots[ i - 1 ].y, Knots[ i ].y, ( Distance - Knots[ i - 1 ].x ) / std::max( Knots[ i ].x - Knots[ i - 1 ].x, 1e-6 ) );
-            }
-        }
-        return Knots.back().y; };
-
-    std::vector<double> stations { From, To };
+    std::vector<double> stations { Span.from, Span.to };
     auto const step { std::max( fStep, 0.2 ) };
-    for( auto distance { std::ceil( From / step ) * step }; distance < To; distance += step ) {
+    for( auto distance { std::ceil( Span.from / step ) * step }; distance < Span.to; distance += step ) {
         stations.push_back( distance );
     }
-    for( auto distance { std::ceil( From / 0.5 ) * 0.5 }; distance < std::min( To, m_dense ); distance += 0.5 ) {
+    for( auto distance { std::ceil( Span.from / 0.5 ) * 0.5 }; distance < std::min( Span.to, m_dense ); distance += 0.5 ) {
         stations.push_back( distance );
     }
-    for( auto const *knots : { &Offsets, &Extents, &Inner, &Drops } ) {
-        for( auto const &knot : *knots ) {
-            if( knot.x > From && knot.x < To ) {
+    for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops } ) {
+        for( auto const &knot : *line ) {
+            if( knot.x > Span.from && knot.x < Span.to ) {
                 stations.push_back( knot.x );
             }
         }
     }
-    for( auto const *knots : { &Extents, &Inner } ) {
-        for( std::size_t i = 1; i < knots->size(); ++i ) {
-            auto const &a { ( *knots )[ i - 1 ] };
-            auto const &b { ( *knots )[ i ] };
+    for( auto const *line : { &Span.extents, &Span.inner } ) {
+        for( std::size_t i = 1; i < line->size(); ++i ) {
+            auto const &a { ( *line )[ i - 1 ] };
+            auto const &b { ( *line )[ i ] };
             if( std::abs( b.y - a.y ) < 1e-9 ) {
                 continue;
             }
             for( auto const &point : ShapePoints ) {
-                auto const reach { static_cast<double>( Side * point.position.x - Halfwidth ) };
+                auto const reach { static_cast<double>( Span.side * point.position.x - Span.halfwidth ) };
                 auto const t { ( reach - a.y ) / ( b.y - a.y ) };
                 auto const distance { glm::mix( a.x, b.x, t ) };
-                if( t > 0.0 && t < 1.0 && distance > From && distance < To ) {
+                if( t > 0.0 && t < 1.0 && distance > Span.from && distance < Span.to ) {
                     stations.push_back( distance );
                 }
             }
@@ -696,14 +684,16 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     }
     std::sort( stations.begin(), stations.end() );
     stations.erase( std::unique( stations.begin(), stations.end(), []( double const A, double const B ) { return B - A < 0.001; } ), stations.end() );
-    if( Bends.x != 0.0 || Bends.y != 0.0 ) {
+    if( Span.fromend.bend != 0.0 || Span.toend.bend != 0.0 ) {
         auto widest { 0.0 };
         for( auto const &point : ShapePoints ) {
-            widest = std::max( widest, std::abs( static_cast<double>( Side * point.position.x - Halfwidth ) ) );
+            widest = std::max( widest, std::abs( static_cast<double>( Span.side * point.position.x - Span.halfwidth ) ) );
         }
+        auto const frommargin { std::abs( Span.fromend.bend ) * widest + 0.001 };
+        auto const tomargin { std::abs( Span.toend.bend ) * widest + 0.001 };
         stations.erase( std::remove_if( stations.begin(), stations.end(), [&]( double const Distance ) {
-            return ( Distance > From && Distance < From + std::abs( Bends.x ) * widest + 0.001 )
-                || ( Distance < To && Distance > To - std::abs( Bends.y ) * widest - 0.001 ); } ), stations.end() );
+            return ( Distance > Span.from && Distance < Span.to )
+                && ( Distance < Span.from + frommargin || Distance > Span.to - tomargin ); } ), stations.end() );
     }
 
     auto const ring = [&]( double const Distance, double const Middle, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
@@ -716,28 +706,31 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         }
         auto const position { glm::vec3{ point - Origin } };
         auto const parallel { glm::vec3{ across } };
-        auto const offset { sample( Offsets, Distance, 0.0 ) };
-        auto const extent { sample( Extents, Distance, 1e6 ) };
-        auto const innerextent { sample( Inner, Distance, -1e6 ) };
-        auto const middleextent { sample( Extents, Middle, 1e6 ) };
-        auto const middleinner { sample( Inner, Middle, -1e6 ) };
+        auto const offset { knots::sample( Span.offsets, Distance, 0.0 ) };
+        auto const inward { Distance + std::copysign( 1e-6, Middle - Distance ) };
+        auto const extent { knots::sample( Span.extents, inward, 1e6 ) };
+        auto const innerextent { knots::sample( Span.inner, inward, -1e6 ) };
+        auto const middleextent { knots::sample( Span.extents, Middle, 1e6 ) };
+        auto const middleinner { knots::sample( Span.inner, Middle, -1e6 ) };
         glm::vec3 outerwall { 0.f }, innerwall { 0.f };
-        if( Walls ) {
+        if( Span.walls ) {
             auto const delta { 0.001 };
             glm::dvec3 ahead, behind, unused;
             plan_frame( std::min( Distance + delta, static_cast<double>( fLength ) ), ahead, unused );
             plan_frame( std::max( Distance - delta, 0.0 ), behind, unused );
             auto tangent { glm::dvec3{ ahead.x - behind.x, 0.0, ahead.z - behind.z } };
             tangent = ( glm::length2( tangent ) > 0.0 ? glm::normalize( tangent ) : glm::dvec3{ 0.0 } );
-            auto const outward { glm::dvec3{ across } * static_cast<double>( Side ) };
-            auto const slope = [&]( std::vector<glm::dvec2> const &Knots, double const Default ) {
-                return ( sample( Knots, Distance + delta, Default ) - sample( Knots, Distance - delta, Default ) + sample( Offsets, Distance + delta, 0.0 ) - sample( Offsets, Distance - delta, 0.0 ) ) / ( 2.0 * delta ); };
-            outerwall = glm::vec3{ glm::normalize( outward - tangent * slope( Extents, 1e6 ) ) };
-            innerwall = glm::vec3{ glm::normalize( tangent * slope( Inner, -1e6 ) - outward ) };
+            auto const outward { glm::dvec3{ across } * static_cast<double>( Span.side ) };
+            auto const slope = [&]( knots::line const &Knots, double const Default ) {
+                return ( knots::sample( Knots, Distance + delta, Default ) - knots::sample( Knots, Distance - delta, Default ) + knots::sample( Span.offsets, Distance + delta, 0.0 ) - knots::sample( Span.offsets, Distance - delta, 0.0 ) ) / ( 2.0 * delta ); };
+            outerwall = glm::vec3{ glm::normalize( outward - tangent * slope( Span.extents, 1e6 ) ) };
+            innerwall = glm::vec3{ glm::normalize( tangent * slope( Span.inner, -1e6 ) - outward ) };
         }
-        auto const worn { sample( Ramp, Distance, -1e6 ) };
-        auto const drop { sample( Drops, Distance, 0.0 ) };
-        auto const bend { Distance <= From ? Bends.x : Distance >= To ? Bends.y : 0.0 };
+        auto const worn { knots::sample( Span.ramp, Distance, -1e6 ) };
+        auto const drop { knots::sample( Span.drops, Distance, 0.0 ) };
+        static loft_end const unshaped;
+        auto const &shaped { Distance <= Span.from ? Span.fromend : Distance >= Span.to ? Span.toend : unshaped };
+        auto const bend { shaped.bend };
         auto along { glm::vec3 { 0.f } };
         if( bend != 0.0 ) {
             glm::dvec3 ahead, behind, unused;
@@ -745,14 +738,14 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             plan_frame( std::max( Distance - 0.001, 0.0 ), behind, unused );
             auto const tangent { glm::dvec3 { ahead.x - behind.x, 0.0, ahead.z - behind.z } };
             if( glm::length2( tangent ) > 0.0 ) {
-                along = glm::vec3 { glm::normalize( tangent ) * bend };
+                along = glm::vec3 { glm::normalize( tangent ) } * static_cast<float>( bend );
             }
         }
         Ring.clear();
         Wear.clear();
         auto const count { ShapePoints.size() };
         auto const reach = [&]( std::size_t const Index ) {
-            return static_cast<double>( Side * ShapePoints[ Index ].position.x - Halfwidth ); };
+            return static_cast<double>( Span.side * ShapePoints[ Index ].position.x - Span.halfwidth ); };
         auto const twin = [&]( std::size_t const A, std::size_t const B ) {
             return ShapePoints[ A ].position.x == ShapePoints[ B ].position.x && ShapePoints[ A ].position.y == ShapePoints[ B ].position.y; };
         auto const clamped = [&]( std::size_t const Index ) {
@@ -769,7 +762,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                     return Index < count && ( side > 0 ? reach( Index ) <= middleextent : reach( Index ) >= middleinner ); };
                 auto first { j };
                 auto last { j };
-                if( Walls ) {
+                if( Span.walls ) {
                     while( first > 0 && twin( first - 1, j ) ) {
                         --first;
                     }
@@ -787,7 +780,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                         continue;
                     }
                     auto const &other { ShapePoints[ neighbour ] };
-                    auto const t { static_cast<float>( ( limit - reach( neighbour ) ) / ( side > 0 ? std::max( outside - reach( neighbour ), 1e-6 ) : std::min( outside - reach( neighbour ), -1e-6 ) ) ) };
+                    auto const t { std::clamp( static_cast<float>( ( limit - reach( neighbour ) ) / ( side > 0 ? std::max( outside - reach( neighbour ), 1e-6 ) : std::min( outside - reach( neighbour ), -1e-6 ) ) ), 0.f, 1.f ) };
                     shape.position.y = glm::mix( other.position.y, shape.position.y, t );
                     shape.texture.x = glm::mix( other.texture.x, shape.texture.x, t );
                     auto const blend { glm::mix( other.normal, shape.normal, t ) };
@@ -821,34 +814,34 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                         shape.position.y = std::max( shape.position.y, bottom );
                     }
                 }
-                outside = limit;
+                outside = ( side > 0 ? std::min( outside, limit ) : std::max( outside, limit ) );
                 auto const onwall { paired ? ( false == open( partner ) && clamped( partner ) == side ) : moved == count };
                 if( onwall ) {
                     wall = ( side > 0 ? outerwall : innerwall );
                 }
             }
-            if( drop > 0.0 && shape.position.y > Head.x && Head.y > Head.x ) {
-                shape.position.y -= static_cast<float>( drop * ( shape.position.y - Head.x ) / ( Head.y - Head.x ) );
+            if( drop > 0.0 && shape.position.y > Span.head.x && Span.head.y > Span.head.x ) {
+                shape.position.y -= static_cast<float>( drop * ( shape.position.y - Span.head.x ) / ( Span.head.y - Span.head.x ) );
             }
-            auto pt { parallel * static_cast<float>( Side * ( Halfwidth + outside + offset ) ) + position + along * static_cast<float>( outside + offset ) };
-            pt.y += shape.position.y + Lift;
+            auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position + along * static_cast<float>( outside + offset ) };
+            pt.y += shape.position.y + Span.lift;
             auto norm { shape.normal.x * parallel };
             norm.y += shape.normal.y;
             if( glm::length2( wall ) > 0.f ) {
                 norm = wall;
-                if( Wallu >= 0.f ) {
-                    shape.texture.x = Wallu;
+                if( Span.wallu >= 0.f ) {
+                    shape.texture.x = Span.wallu;
                 }
             }
             Ring.emplace_back( pt, glm::normalize( norm ), glm::vec2{ shape.texture.x, 0.f } );
-            Wear.push_back( Rampwidth != 0.0 ? static_cast<float>( std::clamp( ( Rampwidth > 0.0 ? outside - worn : worn - outside ) / std::abs( Rampwidth ) + 1.0, 0.0, 1.0 ) ) : 1.f );
+            Wear.push_back( Span.rampwidth != 0.0 ? static_cast<float>( std::clamp( ( Span.rampwidth > 0.0 ? outside - worn : worn - outside ) / std::abs( Span.rampwidth ) + 1.0, 0.0, 1.0 ) ) : 1.f );
         }
     };
 
-    auto const texturelength { static_cast<float>( fTextureLength ) };
+    auto const texturelength { static_cast<float>( Span.texturelength ) };
     std::vector<gfx::basic_vertex> ring1, ring2;
     std::vector<float> wear1, wear2;
-    float tv1 { clamp_circular( 1.f - static_cast<float>( std::fmod( From, fTextureLength ) / fTextureLength ), 1.0f ) };
+    float tv1 { clamp_circular( 1.f - static_cast<float>( std::fmod( Span.from, Span.texturelength ) / Span.texturelength ), 1.0f ) };
     for( std::size_t i = 1; i < stations.size(); ++i ) {
         auto const middle { 0.5 * ( stations[ i - 1 ] + stations[ i ] ) };
         ring( stations[ i - 1 ], middle, ring1, wear1 );
@@ -858,9 +851,9 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         for( std::size_t j = 0; j < ring1.size(); ++j ) {
             Output.emplace_back( ring1[ j ].position, ring1[ j ].normal, glm::vec2{ ring1[ j ].texture.x, tv1 } );
             Output.emplace_back( ring2[ j ].position, ring2[ j ].normal, glm::vec2{ ring2[ j ].texture.x, tv2 } );
-            if( Userdata != nullptr ) {
-                Userdata->push_back( { glm::vec4{ wear1[ j ], 0.f, 0.f, 0.f } } );
-                Userdata->push_back( { glm::vec4{ wear2[ j ], 0.f, 0.f, 0.f } } );
+            if( Span.userdata != nullptr ) {
+                Span.userdata->push_back( { glm::vec4{ wear1[ j ], 0.f, 0.f, 0.f } } );
+                Span.userdata->push_back( { glm::vec4{ wear2[ j ], 0.f, 0.f, 0.f } } );
             }
         }
         tv1 = tv2;

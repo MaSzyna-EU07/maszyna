@@ -2881,7 +2881,17 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 		auto const mix = [](std::uint64_t &Hash, float const Value) {
 			Hash = (Hash ^ static_cast<std::uint64_t>(static_cast<std::int64_t>(std::llround(Value * 1e4)))) * 1099511628211ull;
 		};
+		auto const exact = [](std::uint64_t &Hash, float const Value) {
+			std::uint32_t bits;
+			std::memcpy(&bits, &Value, sizeof(bits));
+			Hash = (Hash ^ bits) * 1099511628211ull;
+		};
+		auto const named = [](std::uint64_t &Hash, material_handle const Material) {
+			for (auto const letter : (Material != null_handle ? GfxRenderer->Material(Material)->GetName() : std::string{}) + '|')
+				Hash = (Hash ^ static_cast<unsigned char>(letter)) * 1099511628211ull;
+		};
 		std::uint64_t total{1469598103934665603ull};
+		std::uint64_t exacttotal{1469598103934665603ull};
 		std::size_t vertices{0};
 		int tracks{0};
 		for (auto *track : simulation::Paths.sequence())
@@ -2891,6 +2901,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 			if (false == name.empty() && track->name() != name)
 				continue;
 			std::uint64_t hash{1469598103934665603ull};
+			std::uint64_t exacthash{1469598103934665603ull};
 			std::size_t count{0};
 			int chunks{0};
 			std::vector<TTrack::geometryhandle_sequence const *> sequences{&track->Geometry1, &track->Geometry2, &track->GeometryCut1, &track->GeometryCut2};
@@ -2898,6 +2909,8 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 			{
 				sequences.push_back(&tread.geometry);
 				sequences.push_back(&tread.cuts);
+				named(exacthash, tread.material);
+				named(exacthash, tread.matte);
 			}
 			for (auto const *sequence : sequences)
 			{
@@ -2910,20 +2923,32 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 						{
 							mix(hash, vertex.position[i]);
 							mix(hash, vertex.normal[i]);
+							exact(exacthash, vertex.position[i]);
+							exact(exacthash, vertex.normal[i]);
 						}
 						mix(hash, vertex.texture.x);
 						mix(hash, vertex.texture.y);
+						exact(exacthash, vertex.texture.x);
+						exact(exacthash, vertex.texture.y);
 						++count;
 					}
+					for (auto const &userdata : GfxRenderer->UserData(geometry))
+					{
+						for (int i = 0; i < 4; ++i)
+							exact(exacthash, userdata.data[i]);
+					}
+					exact(exacthash, -2.f);
 				}
 				mix(hash, -1.f);
+				exact(exacthash, -1.f);
 			}
-			WriteLog(format("SELFTEST geom %s: chunks %d, vertices %zu, hash %016llx", track->name().c_str(), chunks, count, static_cast<unsigned long long>(hash)));
+			WriteLog(format("SELFTEST geom %s: chunks %d, vertices %zu, hash %016llx, exact %016llx", track->name().c_str(), chunks, count, static_cast<unsigned long long>(hash), static_cast<unsigned long long>(exacthash)));
 			total = (total ^ hash) * 1099511628211ull;
+			exacttotal = (exacttotal ^ exacthash) * 1099511628211ull;
 			vertices += count;
 			++tracks;
 		}
-		WriteLog(format("SELFTEST geom total: tracks %d, vertices %zu, hash %016llx", tracks, vertices, static_cast<unsigned long long>(total)));
+		WriteLog(format("SELFTEST geom total: tracks %d, vertices %zu, hash %016llx, exact %016llx", tracks, vertices, static_cast<unsigned long long>(total), static_cast<unsigned long long>(exacttotal)));
 		return selftest_result::handled;
 	}
 	if (command == "frogkey")
@@ -3121,7 +3146,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 				WriteLog(format("SELFTEST crossing %s path %d side %d at %.3f m: %s with %s, 1:%.2f, into %.3f, facing %.3f, nose %d", track->name().c_str(), crossing.path, crossing.side, crossing.at, kind,
 				    crossing.track->name().c_str(), 1.0 / std::tan(crossing.angle), crossing.into, crossing.facing, crossing.nose ? 1 : 0));
 			}
-			auto const gauge = [](TTrack *Track, TTrack::rail_crossing const &Crossing) {
+			auto const gauge = [](TTrack *Track, track_rails::rail_crossing const &Crossing) {
 				auto const &segment{Track->eType == tt_Switch ? *Track->SwitchExtension->Segments[Crossing.path] : *Track->Segment};
 				glm::dvec3 point, across;
 				segment.plan_frame(Crossing.at, point, across);
@@ -3169,7 +3194,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 //   throw <0|1>                          sets every switch to the path and moves its blades there at once
 //   crossings [name]                     logs where rails of tracks cross rails of other tracks and of what kind (acute, obtuse, middle acute or obtuse, wide), checks that each acute crossing has one partner and one nose
 //   frogkey name [on|off]                sets or clears the frogs key of a switch (one undo step); logs the key, whether it is written, the frog and the crossings
-//   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds
+//   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds; exact: the bits of every value, userdata and tread materials too
 //   sweep <key>=<value>...               model, params (separated by commas), lateral, height, side (origin, near, far,
 //                                        centre), top (origin, bottom, top, edge), mode (bend, repeat), step,
 //                                        length (original, all, or metres), from, to, widen (0, 1), face (0, 1), tilt (0, 1)

@@ -10,26 +10,12 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "world/Track.h"
+#include "world/GaugeLine.h"
 
 namespace track_rails {
 
-double constexpr flangeway { 0.045 };
-double constexpr blend { 0.015 };
-double constexpr tread_fade { 0.02 };
-double constexpr wheel_width { 0.14 };
-double constexpr back_to_back { 1.36 };
-double constexpr rolled_band { wheel_width - ( 1.435 - back_to_back ) / 2.0 };
-double constexpr nose_tip { 0.012 };
-double constexpr middle_angle { 0.35 };
-double constexpr wide_angle { 0.785 };
-double constexpr blade_throw { 0.160 };
-double constexpr blade_clearance { 0.058 };
-double constexpr blade_point { 0.003 };
-double constexpr blade_gap { 0.0005 };
-double constexpr blade_lowered { 0.050 };
-double constexpr blade_spacing { 0.5 };
-
 void forget();
+rail_size measure_rail( gfx::vertex_array const &Profile );
 // how far a wing rail reaches past the crossing point of the rails
 double wing_reach( double const Slope );
 double check_length( double const Slope );
@@ -47,6 +33,14 @@ gfx::userdata_array worn_userdata( std::size_t const Count );
 // the ends of rails left open: at track ends with nothing joined, blade tips, the gap of a frog
 void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry );
 
+TSegment const &path_segment( TTrack const &Track, int const Path );
+int path_count( TTrack const &Track );
+TTrack *path_neighbour( TTrack const &Track, int const Path, int const End );
+double knuckle_bend( double const Into );
+bool replaced_check( std::vector<check_rail> const &Checks, double const Wingend, double const Direction, double &Far );
+bool replaced_by_wing( check_rail const &Check, knots::line const &Wingends );
+gauge_line const &rail_line( TTrack const &Track, int const Path, int const Side, bool const Blades );
+check_rail_set const &rail_checks( TTrack &Track );
 glm::dvec3 rail_point( TTrack const &Track, int const Path, int const Side, double const Distance, double const Lateral );
 void rail_offset( TTrack const &Track, int const Path, int const Side, glm::dvec3 const &Point, double &Distance, double &Lateral );
 
