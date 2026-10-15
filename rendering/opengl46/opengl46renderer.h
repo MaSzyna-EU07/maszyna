@@ -278,7 +278,7 @@ class opengl46_renderer : public gfx_renderer {
 	void setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode, float const Znear = 0.f, float const Zfar = 1.f, bool const Ignoredebug = false);
 	void setup_matrices();
     void setup_drawing(bool const Alpha = false);
-    void setup_shadow_unbind_map();
+    void setup_shadow_empty_map();
     void setup_shadow_bind_map();
     void setup_shadow_color( glm::vec4 const &Shadowcolor );
     void setup_env_map(gl::cubemap *tex);
@@ -561,6 +561,7 @@ class opengl46_renderer : public gfx_renderer {
 
 	std::unique_ptr<gl::framebuffer> m_shadow_fb;
 	std::unique_ptr<opengl_texture> m_shadow_tex;
+	std::unique_ptr<opengl_texture> m_shadow_empty_tex; // what the shadow sampler reads when there is no shadow map in place
 
     std::unique_ptr<gl::pbo> m_picking_pbo;
     std::unique_ptr<gl::pbo> m_picking_node_pbo;

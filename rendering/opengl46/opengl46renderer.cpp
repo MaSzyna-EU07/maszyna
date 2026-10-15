@@ -288,6 +288,15 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_shadow_fb = std::make_unique<gl::framebuffer>();
 		m_shadow_tex = std::make_unique<opengl_texture>();
 		m_shadow_tex->alloc_rendertarget(Global.gfx_format_depth, GL_DEPTH_COMPONENT, m_shadowbuffersize, m_shadowbuffersize, m_shadowpass.size());
+		// only the shadow sampler reads through the depth comparison; depth targets read as plain values must not have it
+		glTextureParameteri(m_shadow_tex->id, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+		// stand-in for the shadow map, for the shaders which are drawn without one: a shadow sampler with no depth texture
+		// to read from is undefined. the stand-in is cleared to the far end, so it shadows nothing
+		m_shadow_empty_tex = std::make_unique<opengl_texture>();
+		m_shadow_empty_tex->alloc_rendertarget(Global.gfx_format_depth, GL_DEPTH_COMPONENT, 1, 1, m_shadowpass.size());
+		glTextureParameteri(m_shadow_empty_tex->id, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+		float const farthest{0.f};
+		glClearTexImage(m_shadow_empty_tex->id, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
 		m_shadow_fb->attach(*m_shadow_tex, GL_DEPTH_ATTACHMENT, 0);
         m_shadow_fb->setup_drawing(0);
 
@@ -838,7 +847,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		else
 			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-        setup_shadow_unbind_map();
+        setup_shadow_empty_map();
 		setup_env_map(nullptr);
 
 		if (Global.gfx_shadowmap_enabled && vp.main)
@@ -1021,7 +1030,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         // store draw stats
         m_colorpass.draw_stats = m_renderpass.draw_stats;
 
-        setup_shadow_unbind_map();
+        setup_shadow_empty_map();
 		setup_env_map(nullptr);
 
 		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -1220,7 +1229,7 @@ if (!Global.gfx_skippipeline)
         // environment...
 		setup_drawing(true);
 
-        setup_shadow_unbind_map();
+        setup_shadow_empty_map();
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
@@ -1824,9 +1833,12 @@ void opengl46_renderer::setup_drawing(bool const Alpha)
 	}
 }
 
-void opengl46_renderer::setup_shadow_unbind_map()
+// puts the empty shadow map in place of the shadow map
+void opengl46_renderer::setup_shadow_empty_map()
 {
-    opengl_texture::unbind( gl::SHADOW_TEX );
+    if( false == Global.gfx_shadowmap_enabled ) { return; }
+
+    m_shadow_empty_tex->bind( gl::SHADOW_TEX );
 }
 
 // binds shadow map and updates shadow map uniform data
@@ -5643,7 +5655,7 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 	}
 	else
 	{
-		setup_shadow_unbind_map();
+		setup_shadow_empty_map();
 		setup_shadow_color(colors::white);
 	}
 	setup_env_map(nullptr);
@@ -5668,7 +5680,7 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 	setup_drawing(false);
 
 	glDisable(GL_STENCIL_TEST);
-	setup_shadow_unbind_map();
+	setup_shadow_empty_map();
 }
 
 bool opengl46_renderer::Render_Preview(TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image)
@@ -6115,8 +6127,7 @@ void opengl46_renderer::Render_cluster_heatmap(viewport_config &vp, gl::framebuf
 	{
 		auto texture{std::make_unique<opengl_texture>()};
 		texture->alloc_rendertarget(Global.gfx_format_depth, GL_DEPTH_COMPONENT, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
-		// render target textures of depth are made for the shadow sampler; here the values themselves are read
-		glTextureParameteri(texture->id, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+		// the values themselves are read, texel by texel
 		glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
