@@ -86,7 +86,9 @@ reverse-Z with the far plane at infinity, so the `znear` / `zfar` of the pass bo
 `cluster_cull.comp` handles one cluster per invocation and goes through `lights[1 .. lights_total)`.
 
 - A light's reach is the distance where its brightest possible contribution falls under `MIN_CONTRIBUTION`
-  (1/1024) of the display range, at most `MAX_RANGE` (1000 m, as the 1 km filter on the CPU). Headlights are tested against
+  (1/1024) of the display range. There is no fixed limit on top of that: the 1 km filter on the CPU is the distance
+  of a light from the camera, and the shading lights a surface at any distance, so a headlight without falloff
+  reaches every cluster in its beam. Headlights are tested against
   that sphere and against the frustum of their projection (four side planes and the near plane, with 5 cm of margin);
   point lights against a sphere; spot lights against a sphere and a cone; directional lights reach everything.
 - A cluster takes up to 64 lights. The ones that come first in `lights[]` win, which is the order from

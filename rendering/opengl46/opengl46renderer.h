@@ -345,8 +345,9 @@ class opengl46_renderer : public gfx_renderer {
 	// unless Headlights is false, as in the pass which draws the environment map, where lights of vehicles would only get baked into the map.
 	// Clustered tells the shading to take the headlights from the lists of the clusters (see Cull_Lights()) and not to go through the first few
 	void Update_Lights(light_array &Lights, bool const Headlights = true, bool const Clustered = false);
-	// brings the light cluster grid of the viewport up to date with the projection of the color pass being drawn
-	void Update_Clusters(viewport_config &vp);
+	// brings the light cluster grid of the viewport up to date with the projection of the color pass being drawn.
+	// Targetsize is the size in pixels of what the pass draws to, which gl_FragCoord of the shading counts in
+	void Update_Clusters(viewport_config &vp, glm::ivec2 const &Targetsize);
 	// assigns the lights set up by Update_Lights() to the clusters of the viewport; run after it, before the scene is drawn
 	void Cull_Lights(viewport_config &vp);
 	// debug view: tints the finished image of the viewport with the cluster of every pixel. Target is the framebuffer

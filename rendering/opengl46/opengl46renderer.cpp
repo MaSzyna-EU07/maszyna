@@ -464,6 +464,10 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 	light_ssbo->bind_base();
 
 	vp.clusters = std::make_unique<gl::cluster_grid>();
+	// the material shaders declare the cluster blocks whether they read them or not, and drawing with an active storage
+	// block without a buffer behind it is undefined. the context starts with these buffers in place; every pass which
+	// uses a grid binds its own
+	vp.clusters->bind();
 
 	if (!Global.gfx_skippipeline)
 	{
@@ -941,7 +945,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         // the environment map is drawn in
         auto const clusterlists{ Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap };
         if( clusterlists ) {
-            Update_Clusters( vp );
+            // the tiles are laid over what the scene is drawn to: the buffers of the viewport, or the window itself without the post processing pipeline
+            Update_Clusters( vp, Global.gfx_skippipeline ? target_size : glm::ivec2{ vp.width, vp.height } );
         }
         Update_Lights( simulation::Lights, true, Global.gfx_lights_clustered && vp.clusters->valid() );
         if( clusterlists ) {
@@ -6086,14 +6091,14 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
 	light_ssbo->update(&light_data, 0, offsetof(gl::light_data, lights) + sizeof(gl::light_element) * light_i);
 }
 
-void opengl46_renderer::Update_Clusters(viewport_config &vp)
+void opengl46_renderer::Update_Clusters(viewport_config &vp, glm::ivec2 const &Targetsize)
 {
 	glDebug("Update_Clusters");
 
 	auto &grid{*vp.clusters};
 	grid.bind();
 	// the boxes of the clusters depend only on the projection and the depth range, so they are rebuilt only when those change
-	if (grid.update(OpenGLMatrices.data(GL_PROJECTION), m_renderpass.znear, m_renderpass.zfar, glm::vec2{static_cast<float>(vp.width), static_cast<float>(vp.height)}))
+	if (grid.update(OpenGLMatrices.data(GL_PROJECTION), m_renderpass.znear, m_renderpass.zfar, glm::vec2{Targetsize}))
 	{
 		m_clusterstimer.begin();
 		grid.build(*m_cluster_build_shader);
