@@ -718,7 +718,10 @@ void editor_mode::render_track_gizmo()
 	if (operation == gizmo_operation::rotate)
 		gizmo = ImGuizmo::ROTATE_X | ImGuizmo::ROTATE_Y | ImGuizmo::ROTATE_Z;
 	ImGuizmo::AllowAxisFlip(operation != gizmo_operation::scale);
+	if (m_point_drag.active)
+		ImGuizmo::Enable(false);
 	frame.manipulate(gizmo, m_track_gizmo, operation == gizmo_operation::translate ? m_gizmo_snap : 0.0f, &delta, operation == gizmo_operation::translate ? ImGuizmo::WORLD : ImGuizmo::LOCAL);
+	ImGuizmo::Enable(true);
 	ImGuizmo::AllowAxisFlip(true);
 
 	if (false == ImGuizmo::IsUsing())
