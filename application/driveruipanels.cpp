@@ -1447,8 +1447,6 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 		        textline += "NVRHI on ";
             }
 
-	        textline += ", VBO";
-
 	        textline += " ";
 
             if( false == Global.LastGLError.empty() ) {

@@ -1230,12 +1230,6 @@ static std::string describe_gl_driver()
 
 int eu07_application::init_glfw()
 {
-	{
-		int glfw_major, glfw_minor, glfw_rev;
-		glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);
-		m_glfwversion = glfw_major * 10000 + glfw_minor * 100 + glfw_minor;
-	}
-
 	if (glfwInit() == GLFW_FALSE)
 	{
 		ErrorLog("Bad init: failed to initialize glfw");

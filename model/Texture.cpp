@@ -1198,7 +1198,7 @@ opengl_texture::set_filtering() const
 
     if (Global.AnisotropicFiltering >= 0) {
         // anisotropic filtering
-        ::glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, Global.AnisotropicFiltering );
+        ::glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, Global.AnisotropicFiltering );
     }
 }
 

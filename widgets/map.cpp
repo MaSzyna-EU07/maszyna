@@ -16,8 +16,8 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
 #ifdef WITH_OPENGL_MODERN
-    opengl46_renderer *gl33 = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
-    if (!gl33) {
+    opengl46_renderer *renderer = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
+    if (!renderer) {
         ErrorLog("map not supported on old renderer");
         return;
     }
@@ -137,27 +137,27 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	scene_ubo->bind_uniform();
 
 #ifdef WITH_OPENGL_MODERN
-    opengl46_renderer *gl33 = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
+    opengl46_renderer *renderer = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
 
-    gl33->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
+    renderer->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
 
     scene_ubs.cascade_end = glm::vec4(0.7f, 0.7f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.future.begin(), m_colored_paths.future.end());
+    renderer->Draw_Geometry(m_colored_paths.future.begin(), m_colored_paths.future.end());
 
     scene_ubs.cascade_end = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.switches.begin(), m_colored_paths.switches.end());
+    renderer->Draw_Geometry(m_colored_paths.switches.begin(), m_colored_paths.switches.end());
 
     scene_ubs.cascade_end = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.occupied.begin(), m_colored_paths.occupied.end());
+    renderer->Draw_Geometry(m_colored_paths.occupied.begin(), m_colored_paths.occupied.end());
 
     scene_ubs.cascade_end = glm::vec4(0.3f, 0.3f, 1.0f, 0.0f);
     scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.highlighted.begin(), m_colored_paths.highlighted.end());
+    renderer->Draw_Geometry(m_colored_paths.highlighted.begin(), m_colored_paths.highlighted.end());
 
-    gl33->Bind_Texture(0, m_icon_atlas);
+    renderer->Bind_Texture(0, m_icon_atlas);
 	m_poi_shader->bind();
     scene_ubs.cascade_end = glm::vec4(1.0f / (surface_size / 200.0f), 1.0f, 0.0f);
 
@@ -167,7 +167,7 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	}
 
 	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(simulation::Region->get_map_poi_geometry());
+    renderer->Draw_Geometry(simulation::Region->get_map_poi_geometry());
 #endif
 
 	if (Global.iMultisampling)

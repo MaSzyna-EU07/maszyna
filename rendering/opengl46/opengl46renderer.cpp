@@ -108,7 +108,6 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		return false;
 
 	WriteLog("preparing renderer..");
-    OpenGLMatrices.upload() = false; // set matrix stack in virtual mode
 
 	m_window = Window;
 
@@ -495,7 +494,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 				vp.main_texv = std::make_unique<opengl_texture>();
 				vp.main_texv->alloc_rendertarget(Global.gfx_postfx_motionblur_format, GL_RG, vp.width, vp.height);
 				vp.main_fb->attach(*vp.main_texv, GL_COLOR_ATTACHMENT1);
-			} else
+			}
 
 			if( !vp.main_fb->is_complete() ) {
 				ErrorLog( "main framebuffer setup failed" );

@@ -2,7 +2,6 @@
 
 #include <fstream>
 #include <sstream>
-#include <cstring>
 #include "shader.h"
 #include "glsl_common.h"
 #include "utilities/Logs.h"

@@ -24,8 +24,6 @@ inline std::vector<glm::vec4> const ndcfrustumshapepoints //
         {-1,  1, 1, 1}, // z-far
     };
 
-inline std::vector<std::size_t> const frustumshapepoinstorder { 0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7 };
-
 // generic frustum class. used to determine if objects are inside current view area
 
 class cFrustum {

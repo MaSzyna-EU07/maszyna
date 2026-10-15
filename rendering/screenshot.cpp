@@ -42,7 +42,8 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
 
 void screenshot_manager::make_screenshot()
 {
-    auto img = new char[Global.fb_size.x * Global.fb_size.y * 4];
+    // rows are tightly packed RGB: the renderer sets GL_PACK_ALIGNMENT to 1
+    auto img = new char[Global.fb_size.x * Global.fb_size.y * 3];
     glReadPixels(0, 0, Global.fb_size.x, Global.fb_size.y, GL_RGB, GL_UNSIGNED_BYTE, (GLvoid*)img);
 	//m7t: use pbo
 	

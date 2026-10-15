@@ -34,7 +34,7 @@ void bind_for_upload(opengl_texture const &Texture)
 void set_anisotropy(GLenum const Target)
 {
 	if (Global.AnisotropicFiltering >= 0)
-		::glTexParameterf(Target, GL_TEXTURE_MAX_ANISOTROPY_EXT, Global.AnisotropicFiltering);
+		::glTexParameterf(Target, GL_TEXTURE_MAX_ANISOTROPY, Global.AnisotropicFiltering);
 }
 
 } // namespace
