@@ -53,6 +53,9 @@ public:
     inline
     std::vector<glm::vec4> &
         frustum_points() { return m_frustumpoints; }
+    inline
+    cFrustum const &
+        frustum() const { return m_frustum; }
     // transforms provided set of clip space points to world space
     template <class Iterator_>
     void

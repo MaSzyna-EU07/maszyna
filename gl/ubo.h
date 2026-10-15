@@ -374,5 +374,44 @@ namespace gl
 
     static_assert(sizeof(atmosphere_result) == 16 * (SKY_SH_COEFFICIENTS + 4), "bad size of atmosphere_result");
 
+    // culling of model instances in compute passes (instance_cull.comp, instance_cull_offsets.comp). binding points of
+    // the shader storage blocks, apart from the ones bound for the shading so the passes don't disturb them
+    const GLuint INSTANCE_RECORD_SSBO_BINDING = 9; // scene::basic_cell::instance_record of the queued buckets
+    const GLuint INSTANCE_JOB_SSBO_BINDING = 10; // instance_cull_job, one per queued bucket
+    const GLuint INSTANCE_GROUP_SSBO_BINDING = 11; // instance_cull_group, one per model and skins
+    const GLuint INSTANCE_LOD_SSBO_BINDING = 12; // sorted lod bounds (squared distances) of the groups
+    const GLuint INSTANCE_COUNTER_SSBO_BINDING = 13; // header, then count[entries] and cursor[entries]
+    const GLuint INSTANCE_OUTPUT_SSBO_BINDING = 14; // modelview matrices of the instances which passed, by entry
+    const GLuint INSTANCE_CULL_GROUP_SIZE = 64;
+    const GLuint INSTANCE_OFFSETS_GROUP_SIZE = 1024;
+    // uints of the header of the counter buffer: frame number, survivors in total, entries, unused.
+    // an entry is a lod band of a group: survivors of group g in band b are counted at entry entryfirst(g) + b
+    const GLuint INSTANCE_COUNTER_HEADER = 4;
+
+    // layout std430: a bucket of a scene cell queued in the pass (GLSL: instance_cull_job)
+    struct instance_cull_job
+    {
+        packed_vec3 origin; // origin of the records of the bucket, relative to the camera of the pass
+        uint32_t first; // first record of the bucket in the record buffer
+        packed_vec3 distanceorigin; // the same origin, relative to the camera the distance is measured from
+        uint32_t count; // records of the bucket
+        uint32_t group;
+        uint32_t candidatestart; // records of the jobs before this one
+        uint32_t pad[2];
+    };
+
+    static_assert(sizeof(instance_cull_job) == 48, "bad size of instance_cull_job");
+
+    // layout std430: instances of one model with one set of skins, the unit drawn together (GLSL: instance_cull_group)
+    struct instance_cull_group
+    {
+        uint32_t lodfirst; // first bound in the lod buffer
+        uint32_t lodcount; // bounds; the group has lodcount + 1 bands
+        uint32_t entryfirst; // first entry of the counters
+        uint32_t pad;
+    };
+
+    static_assert(sizeof(instance_cull_group) == 16, "bad size of instance_cull_group");
+
 #pragma pack(pop)
 }

@@ -67,6 +67,10 @@ public:
         cube_inside( float3 const &Center, float const Size ) const { return cube_inside( Center.x, Center.y, Center.z, Size ); }
     bool
         cube_inside( float const X, float const Y, float const Z, float const Size ) const;
+    // A, B, C and D of the planes, in world coordinates
+    inline
+    auto const &
+        planes() const { return m_frustum; }
 
 private:
 // types:

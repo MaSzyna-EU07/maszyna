@@ -188,6 +188,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	try
 	{
 		m_sky.init();
+		m_instancecull.init();
 		m_exposure.init();
 		m_ao.init();
 	}
@@ -721,6 +722,7 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += m_sky.info_times();
     m_debugtimestext += m_exposure.info_times();
     m_debugtimestext += m_ao.info_times();
+    m_debugtimestext += m_instancecull.info_times();
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();
@@ -762,7 +764,8 @@ void opengl46_renderer::SwapBuffers()
         + "\nlights:    " + to_string( static_cast<int>( m_lights_lit ), 7 )
         + " (" + std::to_string( m_lights_dropped ) + " over capacity), "
         + ( Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string( std::max( Global.DynamicLightCount, 0 ) ) )
-        + "\n" + m_locallights.info();
+        + "\n" + m_locallights.info()
+        + m_instancecull.info();
     if( auto const cullstats = ( m_viewports.empty() || !( Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap ) ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
         m_debugstatstext +=
             "\ncluster lists: " + std::to_string( cullstats->index_count )
@@ -820,6 +823,15 @@ void opengl46_renderer::draw_debug_ui()
         m_exposure.draw_debug_ui();
         ImGui::Separator();
         m_ao.draw_debug_ui(!m_viewports.empty() && m_viewports.front()->ssao_tex != nullptr);
+    }
+    ImGui::End();
+
+    if (ImGui::Begin("Instance culling"))
+    {
+        ImGui::Checkbox("cull instances on the gpu too, compare with the cpu (gfx.gpucull)", &Global.gfx_gpucull);
+        auto const info{m_instancecull.info()};
+        if (!info.empty())
+            ImGui::TextUnformatted(info.c_str() + 1);
     }
     ImGui::End();
 
@@ -2548,6 +2560,30 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 	for( auto &bucket : m_frame_instance_buckets ) {
 		bucket.second.clear();
 	}
+	// the gpu culling runs along the first color pass of the main viewport of a frame, for its result to be compared
+	// with the one of the cpu
+	m_instancecullpass = false;
+	if( ( Global.gfx_gpucull )
+	 && ( m_renderpass.draw_mode == rendermode::color )
+	 && ( m_current_viewport != nullptr )
+	 && ( m_current_viewport->main )
+	 && ( m_instancecullframe != m_framestamp ) ) {
+		m_instancecullframe = m_framestamp;
+		m_instancecullpass = true;
+		// the same choices as in Render_Instanced()
+		auto const reflections { m_renderpass.draw_mode == rendermode::reflections };
+		opengl46_instance_cull::pass_setup setup;
+		setup.frame = m_framestamp;
+		setup.camera = m_renderpass.pass_camera.position();
+		setup.distancecamera = ( m_renderpass.draw_mode == rendermode::shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() );
+		setup.frustum = &m_renderpass.pass_camera.frustum();
+		setup.distancescale = ( reflections ? 1.f : static_cast<float>( 1.0 / ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.fDistanceFactor ) ) ) );
+		setup.distanceoffset = ( reflections ? static_cast<float>( sq( EU07_REFLECTIONFIDELITYOFFSET ) ) : 0.f );
+		setup.distancerange = ( reflections ? static_cast<float>( sq( Global.reflectiontune.range_instances ) ) : std::numeric_limits<float>::max() );
+		setup.drawrange = static_cast<float>( sq( m_renderpass.draw_range + 250 ) );
+		setup.zoom = Global.ZoomFactor;
+		m_instancecull.begin_pass( setup );
+	}
 	// build a list of region sections to render
 	glm::vec3 const cameraposition{m_renderpass.pass_camera.position()};
 	auto const camerax = static_cast<int>(std::floor(cameraposition.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
@@ -2982,10 +3018,21 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	// still happens inside Render_Instanced(), so correctness is unchanged -- only
 	// the number of calls and glBufferSubData round-trips drops sharply.
 	// (For pickscenery/pickcontrols modes the map stays empty, so this is a no-op.)
+	if( m_instancecullpass ) {
+		// the view of the pass is in place here, the one Render_Instanced() takes
+		m_instancecull.dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
+	}
 	for( auto &bucket : m_frame_instance_buckets ) {
 		if( bucket.second.empty() ) { continue; }
-		Render_Instanced( bucket.first.pModel, bucket.second );
+		Render_Instanced( bucket.first.pModel, bucket.second, ( m_instancecullpass ? &m_instance_bandcounts : nullptr ) );
+		if( m_instancecullpass ) {
+			m_instancecull.cpu_result( bucket.first, m_instance_bandcounts );
+		}
 		bucket.second.clear();
+	}
+	if( m_instancecullpass ) {
+		m_instancecull.end_pass();
+		m_instancecullpass = false;
 	}
 }
 
@@ -3221,6 +3268,10 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 		 || ( instancebucket.records.size() != instancebucket.instances.size() ) ) {
 			Update_Instance_Records( bucket.first.pModel, instancebucket, Cell->m_area.center );
 		}
+		if( m_instancecullpass ) {
+			// the gpu tests every instance of the bucket, the way Render_Instanced() does
+			m_instancecull.add_bucket( bucket.first, instancebucket );
+		}
 		auto const &records { instancebucket.records };
 		std::vector<queued_instance> *dest { nullptr }; // looked up when there's something to put in it
 		for( std::size_t idx = 0; idx < records.size(); ++idx ) {
@@ -3270,7 +3321,7 @@ void opengl46_renderer::Update_Instance_Records( TModel3d const *Model, scene::b
 	for( auto *instance : Bucket.instances ) {
 		scene::basic_cell::instance_record record;
 		if( instance != nullptr ) {
-			record.position = glm::vec3{ instance->location() - Origin };
+			record.position = packed_vec3{ instance->location() - Origin };
 			record.radius = instance->radius();
 			record.rangesquaredmin = tofloat( instance->m_rangesquaredmin );
 			record.rangesquaredmax = tofloat( instance->m_rangesquaredmax );
@@ -3286,6 +3337,7 @@ void opengl46_renderer::Update_Instance_Records( TModel3d const *Model, scene::b
 		Bucket.records.emplace_back( record );
 	}
 	Bucket.recordsversion = m_instancerecordsversion;
+	Bucket.gpustale = true;
 }
 
 // places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
@@ -3315,8 +3367,9 @@ std::uint32_t opengl46_renderer::Upload_Instance_Modelviews( glm::mat4 const *Mo
 // instance_modelview[i] is the camera-space root transform of an instance (precomputed below)
 // and model_ubs.modelview is the submodel-local chain (accumulated by the matrix stack starting
 // from identity, NOT the camera/instance frame).
-void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<queued_instance> const &Instances )
+void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<queued_instance> const &Instances, std::vector<std::uint32_t> *Bandcounts )
 {
+	if( Bandcounts != nullptr ) { Bandcounts->clear(); }
 	if( Model == nullptr ) { return; }
 	if( Instances.empty() ) { return; }
 
@@ -3353,6 +3406,7 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<queued_in
 	std::sort( m_instance_lodbounds.begin(), m_instance_lodbounds.end() );
 	m_instance_lodbounds.erase( std::unique( m_instance_lodbounds.begin(), m_instance_lodbounds.end() ), m_instance_lodbounds.end() );
 	auto const bandcount { m_instance_lodbounds.size() + 1 };
+	if( Bandcounts != nullptr ) { Bandcounts->assign( bandcount, 0 ); }
 
 	// 1. Visibility / distance cull, by the records of the instances. Collect surviving instances with
 	// their precomputed camera-space root modelview matrices and lod bands. m_instance_survivors and the
@@ -3455,6 +3509,11 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<queued_in
 	m_instance_modelviews.resize( m_instance_survivors.size() );
 	for( auto const &survivor : m_instance_survivors ) {
 		m_instance_modelviews[ m_instance_bandcursors[ survivor.band ]++ ] = survivor.modelview;
+	}
+	if( Bandcounts != nullptr ) {
+		for( std::size_t band = 0; band < bandcount; ++band ) {
+			( *Bandcounts )[ band ] = static_cast<std::uint32_t>( m_instance_bandstarts[ ( band + 1 ) * distanceslots ] - m_instance_bandstarts[ band * distanceslots ] );
+		}
 	}
 	// all bands go to the instance buffer at once, each band is drawn from its own base instance
 	auto const baseinstance { Upload_Instance_Modelviews( m_instance_modelviews.data(), m_instance_modelviews.size() ) };

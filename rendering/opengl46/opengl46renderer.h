@@ -36,6 +36,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46exposure.h"
 #include "rendering/opengl46/opengl46ao.h"
 #include "rendering/opengl46/opengl46locallights.h"
+#include "rendering/opengl46/opengl46instancecull.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer {
@@ -316,7 +317,8 @@ class opengl46_renderer : public gfx_renderer {
 	// ones still are. Instances are individually frustum/distance culled by their records, the
 	// TAnimModel itself is read only for the first instance drawn. Each lod band drawn counts as
 	// one instanced_drawcall in draw_stats; the instances drawn are added to the instances counter.
-	void Render_Instanced( TModel3d *Model, std::vector<queued_instance> const &Instances );
+	// Bandcounts, when given, gets the number of instances drawn in each lod band.
+	void Render_Instanced( TModel3d *Model, std::vector<queued_instance> const &Instances, std::vector<std::uint32_t> *Bandcounts = nullptr );
 	// adds the bucketed instances of a scene cell to the frame-level buckets drawn by Render_Instanced(),
 	// less the ones their records show to be out of sight in the current render pass
 	void Queue_Instances( scene::basic_cell const *Cell );
@@ -473,6 +475,12 @@ class opengl46_renderer : public gfx_renderer {
 	// and whenever scene::node_state_version does, as instances are shown, hidden or drawn on their own
 	unsigned int m_instancerecordsversion { 1 };
 	unsigned int m_nodestateversion { 0 }; // scene::node_state_version which m_instancerecordsversion was last checked against
+	// culling of instances in compute passes, run along the first color pass of the main viewport of a frame
+	// when Global.gfx_gpucull is set; for now its result is only compared with the one of the cpu
+	opengl46_instance_cull m_instancecull;
+	bool m_instancecullpass { false }; // the current pass feeds it
+	unsigned int m_instancecullframe { ~0u }; // frame it last ran in
+	std::vector<std::uint32_t> m_instance_bandcounts; // reported by Render_Instanced() for the comparison
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;

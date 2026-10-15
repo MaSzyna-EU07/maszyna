@@ -242,7 +242,7 @@ public:
     // pass rejects most of them. the renderer makes the copies and goes by them, and reads the instance itself only
     // for the first one of a batch drawn. the layout follows std430, for the copies to be handed to the gpu as they are
     struct instance_record {
-        glm::vec3 position { 0.f }; // location of the instance, relative to the origin of the records of its bucket
+        packed_vec3 position { 0.f }; // location of the instance, relative to the origin of the records of its bucket
         float radius { 0.f };
         float rangesquaredmin { 0.f }; // visibility range of the instance
         float rangesquaredmax { 0.f };
@@ -251,6 +251,9 @@ public:
         glm::vec4 rotationscale[ 3 ] {}; // columns of rotation and scale of the instance, w unused
     };
     static_assert( sizeof( instance_record ) == 80, "instance_record has to keep its std430 layout" );
+    static_assert( offsetof( instance_record, radius ) == 12, "instance_record has to keep its std430 layout" );
+    static_assert( offsetof( instance_record, flags ) == 24, "instance_record has to keep its std430 layout" );
+    static_assert( offsetof( instance_record, rotationscale ) == 32, "instance_record has to keep its std430 layout" );
     enum instance_record_flags : std::uint32_t {
         instance_visible = 1 << 0,
         instance_instanceable = 1 << 1, // false once an event gave the instance animations or a skin of its own
@@ -262,6 +265,12 @@ public:
         mutable glm::dvec3 recordorigin { 0.0 }; // the records hold locations relative to it
         mutable float lodrangesquared { 0.f }; // past it no submodel of the model of the bucket is drawn
         mutable unsigned int recordsversion { 0 };
+        // place of the records in the record buffer of the gpu culling: first record, room, and the generation of
+        // the buffer it is good for. gpustale: the records changed since they were sent
+        mutable std::uint32_t gpufirst { 0 };
+        mutable std::uint32_t gpucapacity { 0 };
+        mutable unsigned int gpugeneration { 0 };
+        mutable bool gpustale { true };
     };
     using instance_bucketdata_map = std::unordered_map< instance_bucket_key, instance_bucket, instance_bucket_key_hash >;
     using sound_sequence = std::vector<sound_source *>;
