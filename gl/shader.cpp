@@ -336,3 +336,9 @@ void gl::program::bind(GLuint i)
 {
     glUseProgram(i);
 }
+
+void gl::program::dispatch(GLuint groups_x, GLuint groups_y, GLuint groups_z)
+{
+    bind();
+    glDispatchCompute(groups_x, groups_y, groups_z);
+}

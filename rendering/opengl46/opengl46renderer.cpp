@@ -651,6 +651,8 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += " swap: " + to_string( Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n";
     if (m_gllasttime)
         m_debugtimestext += "gpu frame total: " + to_string((double)(m_gllasttime / 1000ULL) / 1000.0, 3) + " ms\n";
+    if (auto const clusterstime = m_clusterstimer.result())
+        m_debugtimestext += " clusters: " + to_string(static_cast<double>(*clusterstime) / 1000000.0, 3) + " ms\n";
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();

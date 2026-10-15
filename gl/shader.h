@@ -94,6 +94,9 @@ namespace gl
         void attach(const shader &);
         void link();
 
+        // for a program linked from a compute shader only: binds it and runs the given number of work groups
+        void dispatch(GLuint groups_x, GLuint groups_y = 1, GLuint groups_z = 1);
+
         std::unordered_map<std::string, shader::texture_entry> texture_conf;
         std::unordered_map<std::string, shader::param_entry> param_conf;
 
