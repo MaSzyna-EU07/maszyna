@@ -16,16 +16,17 @@ public:
 	void test_case_start(doctest::TestCaseData const &) override { reseed(); }
 	void test_case_reenter(doctest::TestCaseData const &) override { reseed(); }
 
-	void report_query(doctest::QueryData const &) override {}
-	void test_run_start() override {}
-	void test_run_end(doctest::TestRunStats const &) override {}
-	void test_case_end(doctest::CurrentTestCaseStats const &) override {}
-	void test_case_exception(doctest::TestCaseException const &) override {}
-	void subcase_start(doctest::SubcaseSignature const &) override {}
-	void subcase_end() override {}
-	void log_assert(doctest::AssertData const &) override {}
-	void log_message(doctest::MessageData const &) override {}
-	void test_case_skipped(doctest::TestCaseData const &) override {}
+	// the rest of doctest's reporter interface: a listener reports nothing, the console reporter does that
+	void report_query(doctest::QueryData const &) override { /* nothing to report */ }
+	void test_run_start() override { /* nothing to report */ }
+	void test_run_end(doctest::TestRunStats const &) override { /* nothing to report */ }
+	void test_case_end(doctest::CurrentTestCaseStats const &) override { /* nothing to report */ }
+	void test_case_exception(doctest::TestCaseException const &) override { /* nothing to report */ }
+	void subcase_start(doctest::SubcaseSignature const &) override { /* nothing to report */ }
+	void subcase_end() override { /* nothing to report */ }
+	void log_assert(doctest::AssertData const &) override { /* nothing to report */ }
+	void log_message(doctest::MessageData const &) override { /* nothing to report */ }
+	void test_case_skipped(doctest::TestCaseData const &) override { /* nothing to report */ }
 
 private:
 	static void reseed() {

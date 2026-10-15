@@ -15,7 +15,7 @@ struct section_format {
 
 // the sections TMoverParameters::LoadFIZ() reads, see its issection() calls. a section missing here
 // would be silently skipped by the loader, and the test would run on the defaults instead
-std::map<std::string, section_format> const sections{
+std::map<std::string, section_format, std::less<>> const sections{
     {"Param", {'.'}},
     {"Load", {':'}},
     {"Dimensions", {':'}},
@@ -49,7 +49,7 @@ std::map<std::string, section_format> const sections{
 section_format const &format_of(std::string const &Section) {
 	auto const lookup{sections.find(Section)};
 	if (lookup == sections.end()) {
-		throw std::runtime_error("unknown vehicle definition section " + Section + ", see tests/unit/vehicle.cpp");
+		throw definition_error("unknown vehicle definition section " + Section + ", see tests/unit/vehicle.cpp");
 	}
 	return lookup->second;
 }
@@ -64,19 +64,34 @@ std::string value_text(nlohmann::ordered_json const &Value) {
 	return Value.dump();
 }
 
+// the rows of a table section, each a list of values, and the line closing them
+std::string table_text(std::string const &Section, section_format const &Format, nlohmann::ordered_json const &Rows) {
+	if (Format.table_end == nullptr) {
+		throw definition_error("vehicle definition section " + Section + " has no rows");
+	}
+	std::string text;
+	for (auto const &row : Rows) {
+		for (auto const &value : row) {
+			text += value_text(value) + " ";
+		}
+		text += "\n";
+	}
+	return text + Format.table_end + "\n";
+}
+
 } // namespace
 
 definition definition::load(std::string const &Name) {
 	auto const path{std::string{EU07_UNIT_TESTS_DATA} + "/" + Name + ".json"};
 	std::ifstream file(path);
 	if (false == file.is_open()) {
-		throw std::runtime_error("no test vehicle definition " + path);
+		throw definition_error("no test vehicle definition " + path);
 	}
 	definition result;
 	// not brace-initialised: json{other} makes an array of other with GCC and Clang (the initializer list constructor wins)
 	auto const json = nlohmann::ordered_json::parse(file, nullptr, true, true);
 	if (false == json.is_object()) {
-		throw std::runtime_error("test vehicle definition " + path + " isn't a JSON object");
+		throw definition_error("test vehicle definition " + path + " isn't a JSON object");
 	}
 	for (auto const &[section, keys] : json.items()) {
 		// keys starting with _ are comments
@@ -118,18 +133,8 @@ std::string definition::text() const {
 			}
 		}
 		text += "\n";
-		// table sections give their rows as a list of rows, each a list of values
 		if (keys.contains("rows")) {
-			if (format.table_end == nullptr) {
-				throw std::runtime_error("vehicle definition section " + section + " has no rows");
-			}
-			for (auto const &row : keys["rows"]) {
-				for (auto const &value : row) {
-					text += value_text(value) + " ";
-				}
-				text += "\n";
-			}
-			text += std::string{format.table_end} + "\n";
+			text += table_text(section, format, keys["rows"]);
 		}
 	}
 	return text;
@@ -139,13 +144,13 @@ vehicle::vehicle(definition const &Definition, double Velocity, std::string cons
 	// the same steps as TDynamicObject::Init()
 	m_mover = std::make_unique<TMoverParameters>(Velocity, Name, Name, 0);
 	if (false == m_mover->LoadFIZ_Text(Definition.text())) {
-		throw std::runtime_error("the test vehicle definition didn't load");
+		throw definition_error("the test vehicle definition didn't load");
 	}
 	m_mover->AssignLoad("", 0.f);
 	m_mover->ComputeMass();
 	auto const driveractive{Velocity != 0.0};
 	if (false == m_mover->CheckLocomotiveParameters(driveractive, Velocity >= 0.0 ? 1 : -1)) {
-		throw std::runtime_error("parameters mismatch in the test vehicle definition");
+		throw definition_error("parameters mismatch in the test vehicle definition");
 	}
 	m_mover->MainCtrlPos = m_mover->MainCtrlNoPowerPos();
 	m_mover->LocalBrakePosA = 0.0;

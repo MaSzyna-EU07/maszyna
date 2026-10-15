@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -8,6 +9,12 @@
 #include "McZapkie/MOVER.h"
 
 namespace test {
+
+// thrown for a test vehicle definition which can't be used: missing, malformed, or not taken by the loader
+class definition_error : public std::runtime_error {
+public:
+	using std::runtime_error::runtime_error;
+};
 
 // definition of a test vehicle: one of the JSON files in tests/unit/data, with the sections and keys
 // of the game's vehicle definitions, changed by the test where it needs to:
@@ -53,7 +60,7 @@ public:
 	// advances the physics by Seconds in steps of Dt
 	void run(double Seconds, track const &Track = {}, double Dt = 0.01);
 
-	// vehicle speed [km/h], signed
+	// vehicle speed in kilometres per hour, negative when moving backwards
 	double speed() const { return m_mover->V * 3.6; }
 
 private:

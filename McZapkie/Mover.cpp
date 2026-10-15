@@ -9588,7 +9588,7 @@ bool TMoverParameters::LoadFIZ_Text(std::string const &Text)
 	return LoadFIZ_Parse(fizparser);
 }
 
-bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser)
+bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser) // NOSONAR the former body of LoadFIZ(), moved as it was; splitting it up is a change of its own
 {
 	LISTLINE = 0;
 	startBPT = false;
