@@ -126,7 +126,6 @@ class map_panel : public ui_panel
     // float get_vehicle_rotation();
 	glm::dvec3 get_vehicle_velocity();
 	void render_map_texture(glm::mat4 transform, glm::vec2 surface_size);
-    void render_grid(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size);
 	void render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size);
 	void render_vehicles_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size);
 	void render_stops_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size);

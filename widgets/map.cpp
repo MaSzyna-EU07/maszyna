@@ -235,90 +235,6 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
     gl::program::unbind();
 }
 
-void ui::map_panel::render_grid(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size)
-{
-    float grid_size;
-
-    if (zoom > 1.0f)
-        grid_size = 10.0f;
-    else if (zoom > 0.1f)
-        grid_size = 100.0f;
-    else if (zoom > 0.01f)
-        grid_size = 1000.0f;
-    else if (zoom > 0.001f)
-        grid_size = 10000.0f;
-    else
-        return;
-
-    // Odwracamy transform tylko raz.
-    const glm::mat4 inverse_transform = glm::inverse(transform);
-
-    // Cztery narożniki viewportu w NDC.
-    const glm::vec4 ndc_corners[] = {
-        {-10.0f, 0.0f, -1.0f, 1.0f},
-        { 10.0f, 0.0f, -1.0f, 1.0f},
-        { 10.0f, 0.0f,  1.0f, 1.0f},
-        {-10.0f, 0.0f,  1.0f, 1.0f}
-    };
-
-    float min_x = std::numeric_limits<float>::max();
-    float max_x = std::numeric_limits<float>::lowest();
-    float min_z = std::numeric_limits<float>::max();
-    float max_z = std::numeric_limits<float>::lowest();
-
-    for (const glm::vec4 &ndc : ndc_corners)
-    {
-        const glm::vec4 world = inverse_transform * ndc;
-
-        min_x = std::min(min_x, world.x);
-        max_x = std::max(max_x, world.x);
-        min_z = std::min(min_z, world.z);
-        max_z = std::max(max_z, world.z);
-    }
-
-    // Pierwsza linia siatki widoczna w zakresie.
-    const float first_x = std::floor(min_x / grid_size) * grid_size;
-    const float first_z = std::floor(min_z / grid_size) * grid_size;
-
-    ImDrawList *draw_list = ImGui::GetWindowDrawList();
-
-    const ImU32 color = IM_COL32(255, 255, 255, 40);
-
-    auto world_to_screen = [&](float x, float z)
-    {
-        const glm::vec4 ndc =
-            transform * glm::vec4(x, 0.0f, z, 1.0f);
-
-        const glm::vec2 pos =
-            (glm::vec2(ndc.x, -ndc.z) * 0.5f + 0.5f) * surface_size;
-
-        return ImVec2(
-            origin.x + pos.x,
-            origin.y + pos.y
-        );
-    };
-
-    // Południki - X stałe, Z zmienne.
-    for (float x = first_x; x <= max_x; x += grid_size)
-    {
-        draw_list->AddLine(
-            world_to_screen(x, min_z),
-            world_to_screen(x, max_z),
-            color
-        );
-    }
-
-    // Równoleżniki - Z stałe, X zmienne.
-    for (float z = first_z; z <= max_z; z += grid_size)
-    {
-        draw_list->AddLine(
-            world_to_screen(min_x, z),
-            world_to_screen(max_x, z),
-            color
-        );
-    }
-}
-
 void ui::map_panel::render_vehicles_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size)
 {
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 1.0f, 0.7f, 1.0f));
@@ -398,8 +314,7 @@ void ui::map_panel::render_stops_labels(glm::mat4 transform, ImVec2 origin, glm:
 
 void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size)
 {
-    render_grid(transform,origin,surface_size);
-    render_vehicles_labels(transform, origin, surface_size);
+	render_vehicles_labels(transform, origin, surface_size);
     render_stops_labels(transform, origin, surface_size);
 }
 
