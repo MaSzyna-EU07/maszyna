@@ -5564,8 +5564,10 @@ void TController::TakeControl( bool const Aidriver, bool const Forcevehiclecheck
         pVehicle->Controller = AIdriver;
         // the AI doesn't operate the headlight dimmer, drop the state left by the human driver
         // so the lights set by the AI aren't hidden (dimmer in off position) or dimmed
-        pVehicle->HeadlightsAoff = pVehicle->HeadlightsBoff = false;
-        pVehicle->DimHeadlights = pVehicle->HighBeamLights = false;
+        pVehicle->HeadlightsAoff = false;
+        pVehicle->HeadlightsBoff = false;
+        pVehicle->DimHeadlights = false;
+        pVehicle->HighBeamLights = false;
 		control_lights();   // reinicjalizacja swiatel
 		mvOccupied->CabActivisation(true);
         iDirection = 0; // kierunek jazdy trzeba dopiero zgadnąć

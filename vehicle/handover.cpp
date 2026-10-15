@@ -30,14 +30,17 @@ void release_ai_controls(TMoverParameters &Occupied, TMoverParameters &Controlli
 }
 
 int light_selector_position(TMoverParameters const &Occupied, int const Lightstable, int const Headlights, int const Inventory) {
-	if (Occupied.LightsPosNo <= 0) {
+	// the selector size comes from the vehicle definition, the table holds a fixed number of positions
+	auto const positioncount{std::min(Occupied.LightsPosNo, static_cast<int>(std::size(Occupied.Lights[0])))};
+	if (positioncount <= 0 || Lightstable < 0 || Lightstable >= static_cast<int>(std::size(Occupied.Lights))) {
 		return Occupied.LightsPos;
 	}
-	auto const lightsmatch{[&](int const Position) { return (Occupied.Lights[Lightstable][Position - 1] & Inventory) == Headlights; }};
-	if (Occupied.LightsPos >= 1 && Occupied.LightsPos <= Occupied.LightsPosNo && lightsmatch(Occupied.LightsPos)) {
+	auto const &lights{Occupied.Lights[Lightstable]};
+	auto const lightsmatch{[&lights, Inventory, Headlights](int const Position) { return (lights[Position - 1] & Inventory) == Headlights; }};
+	if (Occupied.LightsPos >= 1 && Occupied.LightsPos <= positioncount && lightsmatch(Occupied.LightsPos)) {
 		return Occupied.LightsPos;
 	}
-	for (auto position = 1; position <= Occupied.LightsPosNo; ++position) {
+	for (auto position = 1; position <= positioncount; ++position) {
 		if (lightsmatch(position)) {
 			return position;
 		}
@@ -49,7 +52,7 @@ int dimmer_position(TMoverParameters const &Occupied, bool const Headlightson) {
 	auto const &positions{Occupied.dimPositions};
 	auto const current{Occupied.modernDimmerPosition};
 	auto const count{static_cast<int>(positions.size())};
-	auto const isoff{[&](int const Position) { return Position < 0 || Position >= count || positions[Position].isOff; }};
+	auto const isoff{[&positions, count](int const Position) { return Position < 0 || Position >= count || positions[Position].isOff; }};
 
 	if (false == Occupied.enableModernDimmer || false == Headlightson || false == isoff(current)) {
 		return current;

@@ -109,6 +109,24 @@ TEST_CASE("handover: the light selector moves to the position giving the head li
 	}
 }
 
+TEST_CASE("handover: the light selector stays within its table") {
+	auto cab{cab_vehicle()};
+
+	SUBCASE("selector bigger than the table, as a vehicle definition can declare") {
+		// only the positions the table holds are looked at, the rest can't match
+		for (auto &table : cab->Lights) {
+			std::fill(std::begin(table) + cab->LightsPosNo, std::end(table), 0);
+		}
+		cab->LightsPosNo = 100;
+		CHECK(handover::light_selector_position(cab.mover(), end::front, pc1, allheadlights) == 2);
+		CHECK(handover::light_selector_position(cab.mover(), end::front, light::headlight_left, allheadlights) == 1);
+	}
+	SUBCASE("table other than the front or rear one: the selector stays") {
+		CHECK(handover::light_selector_position(cab.mover(), -1, pc1, allheadlights) == 1);
+		CHECK(handover::light_selector_position(cab.mover(), 2, pc1, allheadlights) == 1);
+	}
+}
+
 TEST_CASE("handover: the light selector already matching the lights stays") {
 	auto cab{cab_vehicle()};
 	cab->LightsPos = 2; // Pc1
