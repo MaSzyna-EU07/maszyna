@@ -6411,3 +6411,6 @@ msgstr "zaczyna od końca %s"
 msgid "moved %.3f m"
 msgstr "przesunięto o %.3f m"
 
+msgid "Tool options, Gizmo, Enabled unticked: the track can't be moved, turned or stretched by chance; its points still drag"
+msgstr "Opcje narzędzia, Gizmo, bez Włączone: toru nie przesuniesz, nie obrócisz ani nie rozciągniesz przypadkiem; punkty dalej się ciągną"
+
