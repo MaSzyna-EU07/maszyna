@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
 #include "vehicle/Train.h"
+#include "vehicle/handover.h"
 #include "world/mtable.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
@@ -5561,6 +5562,10 @@ void TController::TakeControl( bool const Aidriver, bool const Forcevehiclecheck
     { // teraz AI prowadzi
         AIControllFlag = AIdriver;
         pVehicle->Controller = AIdriver;
+        // the AI doesn't operate the headlight dimmer, drop the state left by the human driver
+        // so the lights set by the AI aren't hidden (dimmer in off position) or dimmed
+        pVehicle->HeadlightsAoff = pVehicle->HeadlightsBoff = false;
+        pVehicle->DimHeadlights = pVehicle->HighBeamLights = false;
 		control_lights();   // reinicjalizacja swiatel
 		mvOccupied->CabActivisation(true);
         iDirection = 0; // kierunek jazdy trzeba dopiero zgadnąć
@@ -5598,10 +5603,23 @@ void TController::TakeControl( bool const Aidriver, bool const Forcevehiclecheck
     }
     else
     { // a teraz użytkownik
-		if (!is_train() || !is_car()) // gasimy swiatla jesli przejmujemy odstawione
+		if (eAction == TAction::actSleep || OrderCurrentGet() == Wait_for_orders) // gasimy swiatla jesli przejmujemy odstawione
 			pVehicle->RaLightsSet(0, 0);
+        auto const aiwasdriving { AIControllFlag == AIdriver };
+        if( aiwasdriving ) {
+            // the horn, sandbox, departure signal and brake releaser the AI may have latched are momentary for the human driver
+            handover::release_ai_controls( *mvOccupied, *mvControlling );
+            fWarningDuration = 0.0;
+            remove_hint( driver_hint::hornon );
+            // the AI sets the lights directly, leave the selector in matching position so it doesn't revert them later
+            sync_lights_selector();
+        }
         AIControllFlag = Humandriver;
         pVehicle->Controller = Humandriver;
+        if( aiwasdriving ) {
+            // same with the headlight dimmer, which is only applied for the human driver
+            sync_lights_dimmer();
+        }
         if( eAction == TAction::actSleep ) {
             eAction = TAction::actUnknown;
         }
@@ -6327,6 +6345,57 @@ TController::control_handles() {
     default: {
         break;
     } } // enginetype
+}
+
+// moves the light preset selector to the position matching the lights set directly by the AI,
+// otherwise the next SetLights() call (e.g. from CheckVehicles()) reverts them to the untouched selector position
+void
+TController::sync_lights_selector() {
+
+    if( mvOccupied->LightsPosNo <= 0 ) { return; }
+
+    auto const *headvehicle { pVehicles[ end::front ] };
+    if( headvehicle == nullptr ) { return; }
+    // same choice of the light table as in TDynamicObject::SetLights()
+    auto const lightstable { ( mvOccupied->CabOccupied * pVehicle->DirectionGet() >= 0 ? end::front : end::rear ) };
+    // same choice of the lit vehicle end as in TDynamicObject::RaLightsSet()
+    auto const headend { ( headvehicle->iDirection > 0 ? end::front : end::rear ) };
+    auto const position { handover::light_selector_position(
+        *mvOccupied, lightstable, headvehicle->MoverParameters->iLights[ headend ], headvehicle->LightList( headend ) ) };
+    if( position == mvOccupied->LightsPos ) { return; }
+
+    mvOccupied->LightsPos = position;
+    // visual feedback
+    auto *train { simulation::Trains.find( pVehicle->name() ) };
+    if( train != nullptr ) {
+        train->ggLightsButton.PutValue( static_cast<float>( position - 1 ) );
+    }
+}
+
+// re-applies the headlight dimmer state after the AI handed the vehicle over to the human driver,
+// moving the dimmer out of the off position if it'd hide the head lights set by the AI
+void
+TController::sync_lights_dimmer() {
+
+    if( mvOccupied->dimPositions.empty() ) { return; }
+
+    auto const *headvehicle { pVehicles[ end::front ] };
+    auto const headend { ( headvehicle != nullptr && headvehicle->iDirection > 0 ? end::front : end::rear ) };
+    auto const headlightson {
+        headvehicle != nullptr
+     && ( headvehicle->MoverParameters->iLights[ headend ] & ( light::headlight_left | light::headlight_right | light::headlight_upper ) ) != 0 };
+
+    auto const position { handover::dimmer_position( *mvOccupied, headlightson ) };
+    if( position != mvOccupied->modernDimmerPosition ) {
+        mvOccupied->modernDimmerPosition = position;
+        // visual feedback
+        auto *train { simulation::Trains.find( pVehicle->name() ) };
+        if( train != nullptr ) {
+            train->ggModernLightDimSw.PutValue( static_cast<float>( position ) );
+        }
+    }
+    if( position < 0 || position >= static_cast<int>( mvOccupied->dimPositions.size() ) ) { return; } // SetLightDimmings() doesn't check the range
+    pVehicle->SetLightDimmings();
 }
 
 // activate consist lamp codes
