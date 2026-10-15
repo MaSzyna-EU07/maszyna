@@ -1,5 +1,4 @@
 #if SHADOWMAP_ENABLED
-in vec4 f_light_pos[MAX_CASCADES];
 uniform sampler2DArrayShadow shadowmap;
 #endif
 uniform sampler2D headlightmap;
