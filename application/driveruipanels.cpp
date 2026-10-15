@@ -156,7 +156,7 @@ void drivingaid_panel::update()
         }
         auto const basicbraking{mover->fBrakeCtrlPos};
         auto const eimicbraking{std::max(0.0, -100.0 * mover->eimic_real)};
-        std::snprintf(m_buffer.data(), m_buffer.size(), STR_C("Brakes: %5.1f+%-2.0f%c%s"),
+        std::snprintf(m_buffer.data(), m_buffer.size(), STR_C("Brakes: %5.1f+%-2.1f%c%s"),
                       //            ( mover->EIMCtrlType == 0 ? basicbraking : mover->EIMCtrlType == 3 ? ( mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking ) : eimicbraking ),
                       mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking, mover->LocalBrakePosA * LocalBrakePosNo, mover->SlippingWheels ? '!' : ' ', expandedtext.c_str());
 
