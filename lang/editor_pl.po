@@ -4690,6 +4690,9 @@ msgstr "Tory i rozjazdy, sygnalizatory, obiekty wzdłuż toru, kontrole linii"
 msgid "Roads and junctions, level crossings, the points where the traffic comes and goes"
 msgstr "Drogi i skrzyżowania, przejazdy, punkty pojawiania się i znikania ruchu"
 
+msgid "Heightmap terrain: chunks, sculpting, painting, water, orthophoto"
+msgstr "Teren z mapy wysokości: kafle, rzeźbienie, malowanie, woda, ortofotomapa"
+
 msgid "Terrain patches and chunks, sculpting, streaming, orthophoto"
 msgstr "Płaty i kafle terenu, rzeźbienie, strumieniowanie, ortofotomapa"
 
