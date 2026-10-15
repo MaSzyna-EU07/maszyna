@@ -32,6 +32,8 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/pbo.h"
 #include "gl/query.h"
 #include "rendering/opengl46/opengl46terrain.h"
+#include "rendering/opengl46/opengl46sky.h"
+#include "rendering/opengl46/opengl46exposure.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer {
@@ -261,6 +263,9 @@ class opengl46_renderer : public gfx_renderer {
         std::unique_ptr<gl::framebuffer> backbuffer_fb;
         std::unique_ptr<opengl_texture> backbuffer_tex;
 
+        // levels of the bloom of the post processing; null without the pipeline
+        std::unique_ptr<opengl46_exposure::bloom_chain> bloom;
+
         // light cluster grid of the viewport
         std::unique_ptr<gl::cluster_grid> clusters;
         // depth of the finished scene resolved from the msaa buffer, for the cluster heatmap; made when it is first needed
@@ -380,6 +385,14 @@ class opengl46_renderer : public gfx_renderer {
 	texture_manager m_textures;
 	opengl46_terrain_materials m_terrainmaterials{m_materials, m_textures};
 	opengl46_light m_sunlight;
+	// fog colour of the frame: the one of the simulation, or of the atmosphere (see opengl46_sky::update())
+	glm::vec3 m_fogcolor{0.f};
+	// light of the sky: directional ambient light, atmosphere, prefiltered environment map
+	opengl46_sky m_sky;
+	// automatic exposure and bloom of the post processing
+	opengl46_exposure m_exposure;
+	// true while the environment map bound for the shading is the real one (not the empty stand-in of the reflection pass)
+	bool m_envmap_bound{false};
 	/*
 	    float m_sunandviewangle; // cached dot product of sunlight and camera vectors
     */

@@ -1534,12 +1534,53 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_shadow_rank_cutoff;
         gfx_shadow_rank_cutoff = std::clamp(gfx_shadow_rank_cutoff, 1, 3);
     }
+    else if (ConfigParse_gfx_sky(Parser, Token))
+    {
+        // parsed
+    }
     else
     {
         tokenparsed = false;
     }
 
     return tokenparsed;
+}
+
+bool
+global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const Token ) {
+
+    // switches take yes/no (or true/false, 1/0), scales take a number. a missing entry keeps the default
+    auto const readswitch = [&]( bool &Value ) {
+        Parser.getTokens( 1 );
+        Parser >> Value; };
+    auto const readvalue = [&]( float &Value, float const Min, float const Max ) {
+        Parser.getTokens( 1 );
+        Parser >> Value;
+        Value = std::clamp( Value, Min, Max ); };
+
+    if( Token == "gfx.ambient.sh" ) { readswitch( gfx_ambient_sh ); }
+    else if( Token == "gfx.ambient.sh.strength" ) { readvalue( gfx_ambient_sh_strength, 0.f, 2.f ); }
+    else if( Token == "gfx.ambient.groundalbedo" ) { readvalue( gfx_ambient_groundalbedo, 0.f, 1.f ); }
+    else if( Token == "gfx.envmap.ggx" ) { readswitch( gfx_envmap_ggx ); }
+    else if( Token == "gfx.atmosphere" ) { readswitch( gfx_atmosphere ); }
+    else if( Token == "gfx.atmosphere.sky" ) { readvalue( gfx_atmosphere_sky, 0.f, 16.f ); }
+    else if( Token == "gfx.atmosphere.ambient" ) { readvalue( gfx_atmosphere_ambient, 0.f, 16.f ); }
+    else if( Token == "gfx.atmosphere.sun" ) { readvalue( gfx_atmosphere_sun, 0.f, 16.f ); }
+    else if( Token == "gfx.atmosphere.haze" ) { readvalue( gfx_atmosphere_haze, 0.f, 32.f ); }
+    else if( Token == "gfx.atmosphere.altitude" ) { readvalue( gfx_atmosphere_altitude, 0.f, 9000.f ); }
+    else if( Token == "gfx.postfx.autoexposure" ) { readswitch( gfx_postfx_autoexposure ); }
+    else if( Token == "gfx.postfx.autoexposure.key" ) { readvalue( gfx_postfx_autoexposure_key, 0.001f, 100.f ); }
+    else if( Token == "gfx.postfx.autoexposure.min" ) { readvalue( gfx_postfx_autoexposure_min, -16.f, 0.f ); }
+    else if( Token == "gfx.postfx.autoexposure.max" ) { readvalue( gfx_postfx_autoexposure_max, 0.f, 16.f ); }
+    else if( Token == "gfx.postfx.autoexposure.speed.dark" ) { readvalue( gfx_postfx_autoexposure_speed_dark, 0.01f, 100.f ); }
+    else if( Token == "gfx.postfx.autoexposure.speed.bright" ) { readvalue( gfx_postfx_autoexposure_speed_bright, 0.01f, 100.f ); }
+    else if( Token == "gfx.postfx.autoexposure.compensation" ) { readvalue( gfx_postfx_autoexposure_compensation, -16.f, 16.f ); }
+    else if( Token == "gfx.postfx.bloom" ) { readswitch( gfx_postfx_bloom ); }
+    else if( Token == "gfx.postfx.bloom.intensity" ) { readvalue( gfx_postfx_bloom_intensity, 0.f, 1.f ); }
+    else if( Token == "gfx.postfx.bloom.threshold" ) { readvalue( gfx_postfx_bloom_threshold, 0.f, 1000.f ); }
+    else { return false; }
+
+    return true;
 }
 
 void
@@ -1778,6 +1819,26 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.shadergamma", gfx_shadergamma );
     export_as_text( Output, "gfx.shadow.angle.min", gfx_shadow_angle_min );
     export_as_text( Output, "gfx.shadow.rank.cutoff", gfx_shadow_rank_cutoff );
+    export_as_text( Output, "gfx.ambient.sh", gfx_ambient_sh );
+    export_as_text( Output, "gfx.ambient.sh.strength", gfx_ambient_sh_strength );
+    export_as_text( Output, "gfx.ambient.groundalbedo", gfx_ambient_groundalbedo );
+    export_as_text( Output, "gfx.envmap.ggx", gfx_envmap_ggx );
+    export_as_text( Output, "gfx.atmosphere", gfx_atmosphere );
+    export_as_text( Output, "gfx.atmosphere.sky", gfx_atmosphere_sky );
+    export_as_text( Output, "gfx.atmosphere.ambient", gfx_atmosphere_ambient );
+    export_as_text( Output, "gfx.atmosphere.sun", gfx_atmosphere_sun );
+    export_as_text( Output, "gfx.atmosphere.haze", gfx_atmosphere_haze );
+    export_as_text( Output, "gfx.atmosphere.altitude", gfx_atmosphere_altitude );
+    export_as_text( Output, "gfx.postfx.autoexposure", gfx_postfx_autoexposure );
+    export_as_text( Output, "gfx.postfx.autoexposure.key", gfx_postfx_autoexposure_key );
+    export_as_text( Output, "gfx.postfx.autoexposure.min", gfx_postfx_autoexposure_min );
+    export_as_text( Output, "gfx.postfx.autoexposure.max", gfx_postfx_autoexposure_max );
+    export_as_text( Output, "gfx.postfx.autoexposure.speed.dark", gfx_postfx_autoexposure_speed_dark );
+    export_as_text( Output, "gfx.postfx.autoexposure.speed.bright", gfx_postfx_autoexposure_speed_bright );
+    export_as_text( Output, "gfx.postfx.autoexposure.compensation", gfx_postfx_autoexposure_compensation );
+    export_as_text( Output, "gfx.postfx.bloom", gfx_postfx_bloom );
+    export_as_text( Output, "gfx.postfx.bloom.intensity", gfx_postfx_bloom_intensity );
+    export_as_text( Output, "gfx.postfx.bloom.threshold", gfx_postfx_bloom_threshold );
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );

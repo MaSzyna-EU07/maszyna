@@ -302,6 +302,29 @@ struct global_settings {
     float gfx_shadow_angle_min { -0.2f };
     int gfx_shadow_rank_cutoff { 3 };
 
+    // sky light and exposure of the opengl 4.6 renderer. the switches can also be changed at run time in the debug window
+    // "Sky and exposure"; the scales are multipliers of the calibrated defaults (1 = as calibrated)
+    bool gfx_ambient_sh { true }; // the ambient light depends on where a surface faces: the sky above, the ground below
+    float gfx_ambient_sh_strength { 1.f }; // 0 = uniform ambient light as before, 1 = full directional difference
+    float gfx_ambient_groundalbedo { 0.1f }; // how much light the ground below the horizon gives back
+    bool gfx_envmap_ggx { true }; // rough reflections from the environment map prefiltered with the GGX lobe
+    bool gfx_atmosphere { true }; // sky, sun, ambient light and fog colour from the physical atmosphere (Hillaire 2020)
+    float gfx_atmosphere_sky { 1.f }; // brightness of the drawn sky and of the fog
+    float gfx_atmosphere_ambient { 1.f }; // brightness of the ambient light
+    float gfx_atmosphere_sun { 1.f }; // brightness of the sunlight
+    float gfx_atmosphere_haze { 1.f }; // amount of aerosols (mie scattering) on a clear day; grows with the overcast
+    float gfx_atmosphere_altitude { 200.f }; // height of the scenery above the sea level, in metres
+    bool gfx_postfx_autoexposure { true }; // the exposure follows the brightness of the image, within limits
+    float gfx_postfx_autoexposure_key { 0.3f }; // average luminance of the image the exposure is set for
+    float gfx_postfx_autoexposure_min { -1.f }; // lowest exposure correction, EV (darkening of bright images)
+    float gfx_postfx_autoexposure_max { 0.5f }; // highest exposure correction, EV (brightening of dark images, tunnels)
+    float gfx_postfx_autoexposure_speed_dark { 1.f }; // rate of adaptation to a darker image, 1/s
+    float gfx_postfx_autoexposure_speed_bright { 3.f }; // rate of adaptation to a brighter image, 1/s
+    float gfx_postfx_autoexposure_compensation { 0.f }; // fixed exposure correction, EV, applied with and without the adaptation
+    bool gfx_postfx_bloom { true }; // glow around bright parts of the image
+    float gfx_postfx_bloom_intensity { 0.04f }; // share of the blurred image in the result
+    float gfx_postfx_bloom_threshold { 0.f }; // luminance below which nothing glows, 0 = everything contributes
+
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;
     bool ui_viewports = true; // panels of the ui can be dragged out of the simulator window, into windows of their own
@@ -375,6 +398,8 @@ struct global_settings {
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
+	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*)
+	bool ConfigParse_gfx_sky( cParser &parser, std::string_view const Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;

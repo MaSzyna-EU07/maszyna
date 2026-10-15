@@ -308,12 +308,39 @@ vec3 material_diffuse()
     return (value > 0.0 ? diffusecolor * (param[1].x / value) : vec3(0.0));
 }
 
+// directional part of the sky ambient light (sky_ssbo, bands 1 and 2 of the spherical harmonics) for a world space direction
+vec3 sky_ambient_directional(vec3 n)
+{
+    return sky_ambient_sh[1].rgb * (0.488603 * n.y)
+         + sky_ambient_sh[2].rgb * (0.488603 * n.z)
+         + sky_ambient_sh[3].rgb * (0.488603 * n.x)
+         + sky_ambient_sh[4].rgb * (1.092548 * n.x * n.y)
+         + sky_ambient_sh[5].rgb * (1.092548 * n.y * n.z)
+         + sky_ambient_sh[6].rgb * (0.315392 * (3.0 * n.z * n.z - 1.0))
+         + sky_ambient_sh[7].rgb * (1.092548 * n.x * n.z)
+         + sky_ambient_sh[8].rgb * (0.546274 * (n.x * n.x - n.y * n.y));
+}
+
+// adds the directional part of the sky light to the ambient light the material starts from (the uniform ambient, or a share
+// of it, like the water takes). the same share of the directional part is added, so with the directional part at zero
+// (gfx.ambient.sh off) the result is what it always was
+vec3 add_sky_ambient(vec3 basecolor, vec3 fragnormal)
+{
+    if (sky_ambient_factor == 0.0)
+        return basecolor;
+    float share = dot(basecolor, vec3(1.0)) / max(dot(ambient, vec3(1.0)), 1e-4);
+    vec3 worldnormal = normalize(mat3(inv_view) * fragnormal);
+    return max(basecolor + sky_ambient_directional(worldnormal) * (sky_ambient_factor * share), vec3(0.0));
+}
+
 // [0] - diffuse, [1] - specular
 // do magic here
 vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
 {
     // Diffuse colour is applied once, to the albedo; the light terms below are not scaled by it again
     texturecolor *= material_diffuse();
+    // the sky lights the faces turned up and towards the bright part of the sky more than the ones turned to the ground
+    fragcolor = add_sky_ambient(fragcolor, fragnormal);
     // Scale ambient before it gets tinted by the texture.
     // Sun, headlights and emission are added afterwards so they are NOT
     // attenuated by AMBIENT_SCALE - this only dims the indirect term.
@@ -326,9 +353,8 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     vec3 F0 = mix(vec3(0.04), texturecolor, metalic);
     vec3 fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
 
-    const float MAX_REFLECTION_LOD = 8.0;
     float env_roughness = 1.0 - clamp(glossiness / max(abs(param[1].w), 1.0), 0.0, 1.0);
-    vec3 envcolor = envmap_color_lod(fragnormal, env_roughness * MAX_REFLECTION_LOD);
+    vec3 envcolor = envmap_color_rough(fragnormal, env_roughness);
 
     // Pre-integrated env BRDF: roughness/F0/view-dependent specular scale.
     // Replaces the old raw `fresnel` weighting so matte surfaces stop

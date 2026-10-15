@@ -260,6 +260,7 @@ set(SOURCES
 "gl/query.cpp"
 "gl/ssbo.cpp"
 "gl/cluster_grid.cpp"
+"gl/readback.cpp"
 
 "imgui/imgui.cpp"
 "imgui/imgui_demo.cpp"
@@ -333,6 +334,8 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46geometrybank.cpp"
             "rendering/opengl46/opengl46light.cpp"
             "rendering/opengl46/opengl46skydome.cpp"
+            "rendering/opengl46/opengl46sky.cpp"
+            "rendering/opengl46/opengl46exposure.cpp"
             "rendering/opengl46/opengl46precipitation.cpp"
             "rendering/opengl46/opengl46particles.cpp"
             "rendering/opengl46/opengl46terrain.cpp"
@@ -686,4 +689,4 @@ if(ENABLE_AVX2)
     else()
         target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
     endif()
-endif()
+endif()

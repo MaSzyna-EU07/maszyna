@@ -181,6 +181,17 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	light_ssbo->bind_base();
 	instance_ubo = std::make_unique<gl::ubo>(sizeof(gl::instance_ubs), 3, GL_STREAM_DRAW);
 
+	try
+	{
+		m_sky.init();
+		m_exposure.init();
+	}
+	catch (gl::shader_exception const &e)
+	{
+		ErrorLog("invalid shader: " + std::string(e.what()));
+		return false;
+	}
+
 	// better initialize with 0 to not crash driver/whole system
 	// when we forget
 	memset(&light_data, 0, sizeof(light_data));
@@ -462,6 +473,8 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 	model_ubo->bind_uniform();
 	scene_ubo->bind_uniform();
 	light_ssbo->bind_base();
+	m_sky.bind();
+	m_exposure.bind();
 
 	vp.clusters = std::make_unique<gl::cluster_grid>();
 	// the material shaders declare the cluster blocks whether they read them or not, and drawing with an active storage
@@ -546,6 +559,11 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 
 		if (!vp.main2_fb->is_complete())
 			return false;
+
+		// made whether the bloom is on or not, it can be switched on in the debug window
+		vp.bloom = opengl46_exposure::make_bloom_chain(vp.width, vp.height);
+		if (!vp.bloom)
+			ErrorLog("bloom framebuffer setup failed, no bloom");
 	}
 
     if (vp.custom_backbuffer)
@@ -588,6 +606,10 @@ bool opengl46_renderer::Render()
 		// quantize sun angle to reduce shadow crawl
 		auto const quantizationstep{0.004f};
 		m_sunlight.direction = glm::normalize(quantizationstep * glm::roundEven(m_sunlight.direction * (1.f / quantizationstep)));
+		// the light of the sky for the render: colours of the sun, ambient light and fog from the atmosphere where it is
+		// used, the directional part of the ambient light
+		m_fogcolor = Global.FogColor;
+		m_sky.update(m_sunlight, m_fogcolor, simulation::Environment.skydome(), simulation::Environment.sun().getDirection(), simulation::Environment.sun().getAngle());
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -669,6 +691,8 @@ void opengl46_renderer::SwapBuffers()
         m_debugtimestext += " clusters: " + to_string(static_cast<double>(*clusterstime) / 1000000.0, 3) + " ms\n";
     if (auto const culltime = m_cullstimer.result())
         m_debugtimestext += " cull: " + to_string(static_cast<double>(*culltime) / 1000000.0, 3) + " ms\n";
+    m_debugtimestext += m_sky.info_times();
+    m_debugtimestext += m_exposure.info_times();
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();
@@ -753,6 +777,14 @@ void opengl46_renderer::draw_debug_ui()
                 ImGui::Text("overflow: %u lights dropped from full clusters (limit %u each), peak %u", cullstats->overflow_count, gl::MAX_LIGHTS_PER_CLUSTER, cullstats->overflow_peak);
             }
         }
+    }
+    ImGui::End();
+
+    if (ImGui::Begin("Sky and exposure"))
+    {
+        m_sky.draw_debug_ui();
+        ImGui::Separator();
+        m_exposure.draw_debug_ui();
     }
     ImGui::End();
 
@@ -873,6 +905,9 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			Timer::subsystem.gfx_reflections.start();
             if (Render_reflections(vp))
 				m_renderpass = m_colorpass; // restore color pass settings
+			// the prefiltered map is made with every update of the environment map, or once the switch is turned on
+			if (Global.gfx_envmap_ggx && m_environmentready && (m_sky.prefiltered() == nullptr))
+				m_sky.prefilter(*m_env_tex);
 			Timer::subsystem.gfx_reflections.stop();
 			setup_env_map(m_env_tex.get());
 		}
@@ -956,6 +991,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		glDebug("render environment");
 
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+		// back to the rotation of the camera after the faces of the environment map, which are drawn with their own
+		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
 
@@ -1083,6 +1120,22 @@ if (!Global.gfx_skippipeline)
 				m_pfx_ssao_apply->apply({ vp.main_tex.get(), vp.ssao_blur_tex.get() }, vp.main2_fb.get());
 			}
 
+			// the exposure follows the main view; the other viewports use it too
+			if (Global.gfx_postfx_autoexposure && vp.main)
+				m_exposure.measure(*vp.main2_tex, Timer::GetDeltaRenderTime());
+			opengl_texture *bloomtexture{nullptr};
+			std::size_t bloomlevels{0};
+			if (Global.gfx_postfx_bloom && vp.bloom)
+			{
+				bloomtexture = m_exposure.bloom(*vp.bloom, *vp.main2_tex, *model_ubo, model_ubs);
+				bloomlevels = vp.bloom->sizes.size();
+			}
+			model_ubs.param[0] = m_exposure.tonemap_params(bloomlevels);
+			model_ubo->update(model_ubs);
+			std::vector<opengl_texture *> tonemapinput{vp.main2_tex.get()};
+			if (bloomtexture != nullptr)
+				tonemapinput.push_back(bloomtexture);
+
 			if (!Global.gfx_shadergamma)
 				glEnable(GL_FRAMEBUFFER_SRGB);
 
@@ -1093,14 +1146,14 @@ if (!Global.gfx_skippipeline)
             if( Global.gfx_postfx_chromaticaberration_enabled ) {
                 glViewport(0, 0, vp.width, vp.height);
                 vp.main_fb->setup_drawing(1);
-                m_pfx_tonemapping->apply( *vp.main2_tex, vp.main_fb.get() );
+                m_pfx_tonemapping->apply( tonemapinput, vp.main_fb.get() );
 
                 glViewport(0, 0, target_size.x, target_size.y);
                 m_pfx_chromaticaberration->apply( *vp.main_tex, target );
             }
             else {
                 glViewport(0, 0, target_size.x, target_size.y);
-                m_pfx_tonemapping->apply( *vp.main2_tex, target );
+                m_pfx_tonemapping->apply( tonemapinput, target );
             }
 
             if (Global.gfx_lights_clusterheatmap && vp.clusters->valid())
@@ -1235,6 +1288,8 @@ if (!Global.gfx_skippipeline)
 
         setup_shadow_empty_map();
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+		// world space directions of the shading of the face (the sky, the directional ambient light)
+		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
 		// opaque parts...
@@ -1478,6 +1533,8 @@ bool opengl46_renderer::Render_reflections(viewport_config &vp)
 	{
 		m_env_tex->generate_mipmaps();
 		m_environmentready = true;
+		if (Global.gfx_envmap_ggx)
+			m_sky.prefilter(*m_env_tex);
 	}
 	m_env_fb->detach(GL_COLOR_ATTACHMENT0);
 
@@ -1899,6 +1956,15 @@ void opengl46_renderer::setup_env_map(gl::cubemap *tex)
 		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 		glActiveTexture(GL_TEXTURE0);
 	}
+	// rough reflections read the prefiltered map along with the real environment map; with the empty stand-in (the reflection
+	// pass) or without the map the shading keeps to the mipmaps of what is bound
+	auto const *prefiltered{(tex != nullptr && tex == m_env_tex.get()) ? m_sky.prefiltered() : nullptr};
+	m_envmap_bound = (prefiltered != nullptr);
+	if (prefiltered != nullptr)
+		prefiltered->bind(GL_TEXTURE0 + gl::ENV_GGX_TEX);
+	else if (m_empty_cubemap)
+		m_empty_cubemap->bind(GL_TEXTURE0 + gl::ENV_GGX_TEX);
+	glActiveTexture(GL_TEXTURE0);
 	opengl_texture::reset_unit_cache();
 }
 
@@ -1937,6 +2003,7 @@ void opengl46_renderer::setup_sunlight_intensity( float const Factor ) {
     m_sunlight.apply_intensity( Factor );
     light_data.lights[ 0 ].intensity = m_sunlight.factor * (1.0f - Global.Overcast * 0.33f);
     light_data.ambient = m_sunlight.ambient * m_sunlight.factor;
+    light_data.sky_ambient_factor = ( Global.gfx_ambient_sh ? m_sunlight.factor : 0.f );
     upload_light_header();
 }
 
@@ -1967,10 +2034,14 @@ bool opengl46_renderer::Render(world_environment *Environment)
     {
         glScalef( 500.0f, 500.0f, 500.0f );
         model_ubs.set_modelview( OpenGLMatrices.data( GL_MODELVIEW ) );
+        auto const atmosphere{ m_sky.atmosphere_weight() > 0.f };
+        if( atmosphere ) {
+            m_sky.setup_sky( model_ubs );
+        }
         model_ubo->update( model_ubs );
 
         m_skydomerenderer.update();
-        m_skydomerenderer.render();
+        m_skydomerenderer.render( atmosphere );
         // skydome uses a custom vbo which could potentially confuse the main geometry system. hardly elegant but, eh
         gfx::opengl46_vaogeometrybank::reset();
     }
@@ -2002,6 +2073,7 @@ bool opengl46_renderer::Render(world_environment *Environment)
     auto const fogfactor{std::clamp(Global.fFogEnd / 2000.f, 0.f, 1.f)}; // stronger fog reduces opacity of the celestial bodies
 	float const duskfactor = 1.0f - std::clamp(std::abs(Environment->m_sun.getAngle()), 0.0f, 12.0f) / 12.0f;
 	glm::vec3 suncolor = glm::mix(glm::vec3(1.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
+	suncolor = m_sky.sun_disc_color(suncolor);
 
 	// sun
 	{
@@ -5643,6 +5715,9 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 	light_data.lights_total = 1;
 	light_data.lights_count = 1;
 	light_data.lights_clustered = 0;
+	// a uniform ambient light, as the preview always had
+	light_data.sky_ambient_factor = 0.f;
+	light_data.env_ggx = 0;
 	light_data.lights[0].type = gl::light_element::DIR;
 	light_data.lights[0].dir = modelview * glm::vec4(m_sunlight.direction, 0.0f);
 	light_data.lights[0].color = m_sunlight.diffuse;
@@ -5855,6 +5930,9 @@ bool opengl46_renderer::Render_Preview(TAnimModel *Instance, int const Size, int
 	glViewport(0, 0, targetsize, targetsize);
 	if (!Global.gfx_shadergamma)
 		glEnable(GL_FRAMEBUFFER_SRGB);
+	// no bloom, no automatic exposure
+	model_ubs.param[0] = glm::vec4{0.f, 0.f, 1.f, 0.f};
+	model_ubo->update(model_ubs);
 	m_pfx_tonemapping->apply(*m_preview.hdr_tex, m_preview.ldr_fb.get());
 	if (!Global.gfx_shadergamma)
 		glDisable(GL_FRAMEBUFFER_SRGB);
@@ -6067,15 +6145,17 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
     m_lights_lit = static_cast<uint32_t>(light_i - 1);
     light_data.lights_count = 1 + std::min<uint32_t>(static_cast<uint32_t>(light_i - 1), static_cast<uint32_t>(std::max(Global.DynamicLightCount, 0)));
     light_data.lights_clustered = Clustered ? 1 : 0;
+    light_data.env_ggx = ( Global.gfx_envmap_ggx && m_envmap_bound ) ? 1 : 0;
     // fill sunlight data
     light_data.ambient = m_sunlight.ambient * m_sunlight.factor;// *simulation::Environment.light_intensity();
+    light_data.sky_ambient_factor = ( Global.gfx_ambient_sh ? m_sunlight.factor : 0.f );
 	light_data.lights[0].type = gl::light_element::DIR;
 	light_data.lights[0].dir = mv * glm::vec4(m_sunlight.direction, 0.0f);
 	light_data.lights[0].color = m_sunlight.diffuse * m_sunlight.factor * simulation::Environment.light_intensity();
 	light_data.lights[0].ambient = 0.0f;
 	light_data.lights[0].intensity = 1.0f;
     // fill fog data
-	light_data.fog_color = Global.FogColor;
+	light_data.fog_color = m_fogcolor;
 	if (Global.fFogEnd > 0)
 	{
 		m_fogrange = Global.fFogEnd / std::max(1.f, Global.Overcast * 2.f);

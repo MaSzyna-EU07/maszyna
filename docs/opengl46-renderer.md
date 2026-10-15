@@ -49,6 +49,38 @@ Old `eu07.ini` files still load. These entries are read and ignored, with a line
 | `gfx.lights.clustered yes/no` | `yes` | `yes`: every lit vehicle headlight within 1 km lights the surroundings (see below). `no`: the shading goes through the first `dynamiclights` headlights only, as the old renderer did; useful to compare images or to work around a problem |
 | `gfx.lights.clusterheatmap yes/no` | `no` | debug view: the number of lights in each cluster, drawn over the image |
 
+### Sky light and exposure
+
+All of these are optional; a missing entry takes the default. The switches can also be changed while the simulator
+runs, in the **Sky and exposure** debug window. With every switch set to `no` the image is as before these options
+existed.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.ambient.sh yes/no` | `yes` | the ambient light depends on where a surface faces: more from the bright part of the sky, less from the ground below. The average stays the ambient light the simulation works out |
+| `gfx.ambient.sh.strength` | `1.0` | 0..2: how much the ambient light differs between directions (0 = uniform, as before) |
+| `gfx.ambient.groundalbedo` | `0.1` | 0..1: how much light the ground below the horizon gives back (to the directional ambient light and to the atmosphere) |
+| `gfx.envmap.ggx yes/no` | `yes` | rough reflections read the environment map prefiltered with the GGX lobe (made in a compute pass after each update of the map) instead of its plain mipmaps |
+| `gfx.atmosphere yes/no` | `yes` | the sky, the colour of the sunlight, the ambient light and the fog colour come from a physical model of the atmosphere (Hillaire 2020) during the day; the old sky takes over between 10 degrees of sun elevation and 6 degrees below the horizon, and at night. Render only: the simulation keeps its own values |
+| `gfx.atmosphere.sky` | `1.0` | brightness of the drawn sky and of the fog colour (1 = calibrated against the old sky) |
+| `gfx.atmosphere.ambient` | `1.0` | brightness of the ambient light from the atmosphere |
+| `gfx.atmosphere.sun` | `1.0` | brightness of the sunlight from the atmosphere |
+| `gfx.atmosphere.haze` | `1.0` | amount of aerosols on a clear day (whiter, hazier sky); the weather adds to it with the overcast |
+| `gfx.atmosphere.altitude` | `200` | height of the scenery above the sea level, metres |
+| `gfx.postfx.autoexposure yes/no` | `yes` | the exposure follows the average brightness of the image (luminance histogram, compute pass) |
+| `gfx.postfx.autoexposure.key` | `0.3` | average luminance of the image the exposure is set for |
+| `gfx.postfx.autoexposure.min` | `-1.0` | the most the exposure darkens a bright image, EV |
+| `gfx.postfx.autoexposure.max` | `0.5` | the most the exposure brightens a dark image, EV. Kept low on purpose: tunnels and the night are not meant to be brightened much |
+| `gfx.postfx.autoexposure.speed.dark` | `1.0` | rate of adaptation to a darker image, 1/s |
+| `gfx.postfx.autoexposure.speed.bright` | `3.0` | rate of adaptation to a brighter image, 1/s |
+| `gfx.postfx.autoexposure.compensation` | `0.0` | fixed exposure correction, EV; applies also with the automatic exposure off |
+| `gfx.postfx.bloom yes/no` | `yes` | glow around bright parts of the image |
+| `gfx.postfx.bloom.intensity` | `0.04` | share of the glow in the image |
+| `gfx.postfx.bloom.threshold` | `0.0` | luminance below which nothing glows; 0 = everything contributes a little (physically based) |
+
+The automatic exposure and the bloom need the post processing pipeline (`gfx.skippipeline no`, the default).
+Model previews of the editor use none of these.
+
 ### Changed option
 
 `dynamiclights` (0..7) used to limit the number of headlight sets that light the surroundings. It is still
@@ -81,6 +113,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   (`overflow`, with its peak). A non-zero overflow means some cluster held more than 64 lights.
 - **Light clusters** window (in debug mode, menu *Windows*, item *Headlight config* opens the renderer debug
   windows): the switch for clustered lights, the heat map, the grid state and the same counters.
+- **Sky and exposure** window (next to the Light clusters window): the switches and scales above, the share of the
+  atmosphere, the colours of the sun, ambient light and fog in use, and the measured luminance and exposure.
+  Shift+F12 shows the GPU time of `atmosphere:` (look-up tables, only when the sun moved or the weather changed),
+  `envmap ggx:` (prefiltering, with each update of the environment map), `exposure:` and `bloom:`.
 - `gfx.gldebug yes` turns on the OpenGL debug output (`KHR_debug`); messages go to the log.
 
 ## Building

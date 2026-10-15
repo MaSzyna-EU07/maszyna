@@ -23,8 +23,9 @@ public:
 // methods
     // updates data stores on the opengl end. NOTE: unbinds buffers
     void update();
-    // draws the skydome
-    void render();
+    // draws the skydome. with Atmosphere the colours come from the tables of the physical atmosphere (sky_atmosphere.frag),
+    // which the caller binds along with the parameters of the shader
+    void render( bool const Atmosphere = false );
 
 private:
 // members
@@ -32,5 +33,6 @@ private:
 	std::optional<gl::buffer> m_indexbuffer;
 	std::optional<gl::buffer> m_coloursbuffer;
 	std::optional<gl::program> m_shader;
+	std::optional<gl::program> m_atmosphereshader;
 	std::optional<gl::vao> m_vao;
 };

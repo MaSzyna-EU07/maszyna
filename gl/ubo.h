@@ -47,6 +47,17 @@ namespace gl
     const size_t SHADOW_TEX = MAX_TEXTURES + 0;
     const size_t ENV_TEX = MAX_TEXTURES + 1;
     const size_t HEADLIGHT_TEX = MAX_TEXTURES + 2;
+    // environment map prefiltered with the GGX lobe, see envmapping.glsl
+    const size_t ENV_GGX_TEX = MAX_TEXTURES + 3;
+    // the prefiltered map: size of its first level and the number of levels. level k holds the reflection of a surface of
+    // perceptual roughness ENVMAP_GGX_ROUGHNESS_MIN + (1 - ENVMAP_GGX_ROUGHNESS_MIN) * k / (ENVMAP_GGX_LEVELS - 1); smoother
+    // surfaces read the mipmaps of the plain map, which differ little from the lobe there
+    const size_t ENVMAP_GGX_SIZE = 256;
+    const size_t ENVMAP_GGX_LEVELS = 7;
+    const float ENVMAP_GGX_ROUGHNESS_MIN = 0.2f;
+    const size_t ENVMAP_GGX_GROUP_SIZE = 8;
+    // sky-view table of the atmosphere (sky_atmosphere.frag). past the units the texture cache keeps track of, bound directly
+    const size_t SKY_VIEW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 0;
 
     struct scene_ubs
     {
@@ -173,8 +184,13 @@ namespace gl
         // 1 if the shading takes the lights of a fragment from the list of its cluster (lights_count is not used then), 0 if not.
         // set per pass: the cluster grid exists only for the color pass of a perspective view
         uint32_t lights_clustered;
+        // scale of the directional part of the sky ambient light (sky_ssbo): the factor the ambient light of the object
+        // is scaled with (tunnels), 0 where the ambient light is not the sky's (model previews)
+        float sky_ambient_factor;
+        // 1 if the shading reads rough reflections from the prefiltered environment map, 0 if from the mipmaps of the plain one
+        uint32_t env_ggx;
         // lights[] begins at a multiple of 16 bytes
-        uint32_t padding[3];
+        uint32_t padding;
 
         light_element lights[MAX_LIGHTS];
     };
@@ -184,6 +200,8 @@ namespace gl
     static_assert(offsetof(light_data, fog_color) == 16, "bad layout of light_data");
     static_assert(offsetof(light_data, lights_count) == 28, "bad layout of light_data");
     static_assert(offsetof(light_data, lights_clustered) == 32, "bad layout of light_data");
+    static_assert(offsetof(light_data, sky_ambient_factor) == 36, "bad layout of light_data");
+    static_assert(offsetof(light_data, env_ggx) == 40, "bad layout of light_data");
     static_assert(offsetof(light_data, lights) == 48, "bad layout of light_data");
     static_assert(sizeof(light_data) == 48 + sizeof(light_element) * MAX_LIGHTS, "bad size of light_data");
 
@@ -270,6 +288,98 @@ namespace gl
     static_assert(sizeof(cluster_counters) == 8, "bad size of cluster_counters");
     static_assert(offsetof(cluster_counters, index_count) == 0, "bad layout of cluster_counters");
     static_assert(offsetof(cluster_counters, overflow_count) == 4, "bad layout of cluster_counters");
+
+    // binding points of the sky, exposure and atmosphere buffers: layout(binding = ...) in glsl_common
+    const GLuint SKY_SSBO_BINDING = 5;
+    const GLuint EXPOSURE_SSBO_BINDING = 6;
+    const GLuint ATMOSPHERE_RESULT_SSBO_BINDING = 7;
+    const GLuint ATMOSPHERE_UBO_BINDING = 4;
+
+    // number of coefficients of the spherical harmonics of order 2 (bands 0..2)
+    const size_t SKY_SH_COEFFICIENTS = 9;
+
+    // layout std430: directional part of the sky ambient light (GLSL: sky_ssbo). the coefficients of the real spherical
+    // harmonics of the light a surface facing a world space direction gets, in units of light_data.ambient, without the
+    // constant band (that one is light_data.ambient itself); rgb used, w is padding
+    struct sky_data
+    {
+        glm::vec4 ambient_sh[SKY_SH_COEFFICIENTS];
+    };
+
+    static_assert(sizeof(sky_data) == 144, "bad size of sky_data");
+
+    // layout std430: luminance histogram of the image and the exposure worked out from it (GLSL: exposure_ssbo)
+    const GLuint EXPOSURE_HISTOGRAM_BINS = 256;
+    const GLuint EXPOSURE_HISTOGRAM_GROUP_SIZE = 16;
+
+    struct exposure_data
+    {
+        uint32_t histogram[EXPOSURE_HISTOGRAM_BINS];
+        // luminance the exposure is adapted to, the time-smoothed average of the image
+        float adapted_luminance;
+        // multiplier the tonemapping applies to the image
+        float exposure;
+        // average luminance of the last image
+        float average_luminance;
+        // 0 until the first average was taken, the adaptation starts from it
+        uint32_t valid;
+    };
+
+    static_assert(sizeof(exposure_data) == 4 * EXPOSURE_HISTOGRAM_BINS + 16, "bad size of exposure_data");
+    static_assert(offsetof(exposure_data, adapted_luminance) == 4 * EXPOSURE_HISTOGRAM_BINS, "bad layout of exposure_data");
+
+    // sizes of the look-up tables of the atmosphere (Hillaire 2020)
+    const GLuint ATMOSPHERE_TRANSMITTANCE_WIDTH = 256;
+    const GLuint ATMOSPHERE_TRANSMITTANCE_HEIGHT = 64;
+    const GLuint ATMOSPHERE_MULTISCATTERING_SIZE = 32;
+    const GLuint ATMOSPHERE_SKYVIEW_WIDTH = 192;
+    const GLuint ATMOSPHERE_SKYVIEW_HEIGHT = 108;
+    // work group of atmosphere_ambient.comp, which projects the sky on the spherical harmonics in one group
+    const GLuint ATMOSPHERE_AMBIENT_GROUP_SIZE = 256;
+    // binding points of the look-up tables in the compute passes (images and samplers)
+    const GLuint ATMOSPHERE_TRANSMITTANCE_UNIT = 0;
+    const GLuint ATMOSPHERE_MULTISCATTERING_UNIT = 1;
+    const GLuint ATMOSPHERE_SKYVIEW_UNIT = 2;
+
+    // layout std140: parameters of the atmosphere (GLSL: atmosphere_ubo). distances in kilometres, coefficients per kilometre
+    struct atmosphere_ubs
+    {
+        // rgb: rayleigh scattering, w: rayleigh scale height
+        glm::vec4 rayleigh;
+        // x: mie scattering, y: mie extinction, z: mie scale height, w: mie phase asymmetry
+        glm::vec4 mie;
+        // rgb: ozone absorption, w: altitude of the middle of the ozone layer
+        glm::vec4 ozone;
+        // rgb: albedo of the ground, w: half width of the ozone layer
+        glm::vec4 ground;
+        // world space direction towards the sun (y up), w unused
+        glm::vec4 sun_direction;
+        float bottom_radius;
+        float top_radius;
+        // distance of the observer from the centre of the planet
+        float observer_radius;
+        float padding;
+    };
+
+    static_assert(sizeof(atmosphere_ubs) == 96, "bad size of atmosphere_ubs");
+
+    // layout std430: what atmosphere_ambient.comp works out for the cpu (GLSL: atmosphere_result_ssbo). radiance with
+    // the sun of illuminance 1
+    struct atmosphere_result
+    {
+        // radiance arriving at the observer from every direction, ground included, as real spherical harmonics (world, y up)
+        glm::vec4 radiance_sh[SKY_SH_COEFFICIENTS];
+        // transmittance of the atmosphere towards the sun at the observer
+        glm::vec4 sun_transmittance;
+        // average radiance of the sky just above the horizon
+        glm::vec4 horizon;
+        // average radiance of the upper hemisphere
+        glm::vec4 average;
+        // transmittance of the atmosphere straight up from the observer: the colour of the sun high in the sky
+        glm::vec4 zenith_transmittance;
+    };
+
+    static_assert(sizeof(atmosphere_result) == 16 * (SKY_SH_COEFFICIENTS + 4), "bad size of atmosphere_result");
 
 #pragma pack(pop)
 }

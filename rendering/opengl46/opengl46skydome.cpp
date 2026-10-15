@@ -19,6 +19,8 @@ void opengl46_skydome::update() {
         gl::shader vert("vbocolor.vert");
         gl::shader frag("color.frag");
 		m_shader.emplace(std::vector<std::reference_wrapper<const gl::shader>>({vert, frag}));
+        gl::shader atmospherefrag("sky_atmosphere.frag");
+		m_atmosphereshader.emplace(std::vector<std::reference_wrapper<const gl::shader>>({vert, atmospherefrag}));
     }
 
     auto &skydome { simulation::Environment.skydome() };
@@ -55,11 +57,16 @@ void opengl46_skydome::update() {
 }
 
 // render skydome to screen
-void opengl46_skydome::render() {
+void opengl46_skydome::render( bool const Atmosphere ) {
 
     if( ( !m_shader) || ( !m_vao ) ) { return; }
 
-    m_shader->bind();
+    if( Atmosphere && m_atmosphereshader ) {
+        m_atmosphereshader->bind();
+    }
+    else {
+        m_shader->bind();
+    }
     m_vao->bind();
 
     auto const &skydome { simulation::Environment.skydome() };

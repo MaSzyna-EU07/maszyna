@@ -28,6 +28,25 @@ void gl::glsl_common_setup()
     "#define CLUSTER_RANGE_SSBO_BINDING " + std::to_string(CLUSTER_RANGE_SSBO_BINDING) + "\n" +
     "#define CLUSTER_INDEX_SSBO_BINDING " + std::to_string(CLUSTER_INDEX_SSBO_BINDING) + "\n" +
     "#define CLUSTER_COUNTER_SSBO_BINDING " + std::to_string(CLUSTER_COUNTER_SSBO_BINDING) + "\n" +
+    "#define ENVMAP_GGX_LEVELS " + std::to_string(ENVMAP_GGX_LEVELS) + "\n" +
+    "#define ENVMAP_GGX_ROUGHNESS_MIN " + std::to_string(ENVMAP_GGX_ROUGHNESS_MIN) + "\n" +
+    "#define ENVMAP_GGX_GROUP_SIZE " + std::to_string(ENVMAP_GGX_GROUP_SIZE) + "\n" +
+    "#define SKY_SSBO_BINDING " + std::to_string(SKY_SSBO_BINDING) + "\n" +
+    "#define EXPOSURE_SSBO_BINDING " + std::to_string(EXPOSURE_SSBO_BINDING) + "\n" +
+    "#define EXPOSURE_HISTOGRAM_BINS " + std::to_string(EXPOSURE_HISTOGRAM_BINS) + "\n" +
+    "#define EXPOSURE_HISTOGRAM_GROUP_SIZE " + std::to_string(EXPOSURE_HISTOGRAM_GROUP_SIZE) + "\n" +
+    "#define ATMOSPHERE_UBO_BINDING " + std::to_string(ATMOSPHERE_UBO_BINDING) + "\n" +
+    "#define ATMOSPHERE_RESULT_SSBO_BINDING " + std::to_string(ATMOSPHERE_RESULT_SSBO_BINDING) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_WIDTH " + std::to_string(ATMOSPHERE_TRANSMITTANCE_WIDTH) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_HEIGHT " + std::to_string(ATMOSPHERE_TRANSMITTANCE_HEIGHT) + "\n" +
+    "#define ATMOSPHERE_MULTISCATTERING_SIZE " + std::to_string(ATMOSPHERE_MULTISCATTERING_SIZE) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_WIDTH " + std::to_string(ATMOSPHERE_SKYVIEW_WIDTH) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_HEIGHT " + std::to_string(ATMOSPHERE_SKYVIEW_HEIGHT) + "\n" +
+    "#define ATMOSPHERE_AMBIENT_GROUP_SIZE " + std::to_string(ATMOSPHERE_AMBIENT_GROUP_SIZE) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_UNIT " + std::to_string(ATMOSPHERE_TRANSMITTANCE_UNIT) + "\n" +
+    "#define ATMOSPHERE_MULTISCATTERING_UNIT " + std::to_string(ATMOSPHERE_MULTISCATTERING_UNIT) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_UNIT " + std::to_string(ATMOSPHERE_SKYVIEW_UNIT) + "\n" +
+    "#define SKY_VIEW_TEX " + std::to_string(SKY_VIEW_TEX) + "\n" +
     R"STRING(
     const uint LIGHT_SPOT = 0U;
     const uint LIGHT_POINT = 1U;
@@ -68,8 +87,19 @@ void gl::glsl_common_setup()
             uint lights_count;
             // 1 if the shading takes the lights from the list of the cluster of a fragment, see cluster_ubo
             uint lights_clustered;
+            // scale of the directional part of the sky ambient light, see sky_ssbo
+            float sky_ambient_factor;
+            // 1 if rough reflections come from the prefiltered environment map
+            uint env_ggx;
 
             light_s lights[];
+    };
+
+    // directional part of the sky ambient light: real spherical harmonics (bands 1 and 2, band 0 is ambient) of the light
+    // a surface facing a world space direction gets, in units of ambient. see gl::sky_data
+    layout(std430, binding = SKY_SSBO_BINDING) readonly buffer sky_ssbo
+    {
+            vec4 sky_ambient_sh[9];
     };
     #endif
 
