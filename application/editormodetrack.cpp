@@ -4028,10 +4028,10 @@ std::string editor_mode::track_readout() const
 		if (plan_branch_link(link, reason))
 			return link_summary(target, link, editor_track::branch_radius(m_extend.track->m_paths[1]));
 		if (snapped && pieces.empty())
-			return "no track fits to the end of " + name(target.track);
+			return format(STR_C("no track fits to the end of %s"), name(target.track).c_str());
 		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) : format("L %.2f m   straight", length)};
 		if (snapped)
-			text += "\njoins " + name(target.track);
+			text += "\n" + format(STR_C("joins %s"), name(target.track).c_str());
 		if (false == reason.empty())
 			text += "\n" + reason;
 		return text + "\n" + track_shaping(snapped);
@@ -4041,7 +4041,7 @@ std::string editor_mode::track_readout() const
 		auto const &lay{m_lay};
 		std::string text;
 		if (lay.points.empty())
-			text = lay.mouse_snap.track != nullptr ? "starts at the end of " + name(lay.mouse_snap.track) : "start";
+			text = lay.mouse_snap.track != nullptr ? format(STR_C("starts at the end of %s"), name(lay.mouse_snap.track).c_str()) : std::string{STR_C("start")};
 		else if (false == lay.preview.empty())
 		{
 			double radius{0.0};
@@ -4060,7 +4060,7 @@ std::string editor_mode::track_readout() const
 				text = format("L %.1f m   %s", lay.preview_length, STR_C("straight"));
 		}
 		if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
-			text += "\njoins " + name(lay.mouse_snap.track);
+			text += "\n" + format(STR_C("joins %s"), name(lay.mouse_snap.track).c_str());
 		if (false == lay.preview_error.empty())
 			text += "\n" + lay.preview_error;
 		if (lay.points.size() == 1 && (lay.start.track != nullptr || lay.mouse_snap.track != nullptr))
@@ -4154,10 +4154,10 @@ std::string editor_mode::track_readout() const
 			if (path.radius != 0.0f)
 				text += format("   R %.1f m", std::abs(path.radius));
 			if (m_track_snap.track != nullptr)
-				text += "\njoins " + name(m_track_snap.track);
+				text += "\n" + format(STR_C("joins %s"), name(m_track_snap.track).c_str());
 			return text;
 		}
-		return format("moved %.3f m", glm::distance(editor_track::pivot(*track), m_track_pivot));
+		return format(STR_C("moved %.3f m"), glm::distance(editor_track::pivot(*track), m_track_pivot));
 	}
 	return {};
 }

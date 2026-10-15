@@ -6396,3 +6396,15 @@ msgstr "Narzędzie Rozjazd (T)"
 msgid "The select tool (Esc)"
 msgstr "Zaznaczanie (Esc)"
 
+msgid "no track fits to the end of %s"
+msgstr "żaden tor nie pasuje do końca %s"
+
+msgid "joins %s"
+msgstr "łączy z %s"
+
+msgid "starts at the end of %s"
+msgstr "zaczyna od końca %s"
+
+msgid "moved %.3f m"
+msgstr "przesunięto o %.3f m"
+
