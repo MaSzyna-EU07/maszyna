@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46terrain.h"
 #include "rendering/opengl46/opengl46sky.h"
 #include "rendering/opengl46/opengl46exposure.h"
+#include "rendering/opengl46/opengl46ao.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer {
@@ -253,11 +254,13 @@ class opengl46_renderer : public gfx_renderer {
 		std::unique_ptr<gl::framebuffer> main2_fb;
 		std::unique_ptr<opengl_texture> main2_tex;
 
-		// ssao
+		// ambient occlusion, half size: raw and smoothed (gtao), or the ssao and its blur (older ssao)
 		std::unique_ptr<opengl_texture>  ssao_tex;
 		std::unique_ptr<opengl_texture>  ssao_blur_tex;
 		std::unique_ptr<gl::framebuffer> ssao_fb;
 		std::unique_ptr<gl::framebuffer> ssao_blur_fb;
+		// main_tex alone, for the ambient occlusion to be applied to it before the motion blur (main_fb holds the depth it reads)
+		std::unique_ptr<gl::framebuffer> ao_apply_fb;
 
         // LDR backbuffer for offscreen rendering
         std::unique_ptr<gl::framebuffer> backbuffer_fb;
@@ -358,6 +361,8 @@ class opengl46_renderer : public gfx_renderer {
 	// debug view: tints the finished image of the viewport with the cluster of every pixel. Target is the framebuffer
 	// holding the image (null for the default one), Targetsize its size
 	void Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize);
+	// ambient occlusion from the resolved depth (vp.main_texd), multiplied into the image of Target. Mode: Global.gfx_postfx_ao
+	void Render_ambient_occlusion(viewport_config &vp, gl::framebuffer &Target, int const Mode);
 	glm::vec3 pick_color(std::size_t const Index);
 	std::size_t pick_index(glm::ivec3 const &Color);
 
@@ -391,6 +396,8 @@ class opengl46_renderer : public gfx_renderer {
 	opengl46_sky m_sky;
 	// automatic exposure and bloom of the post processing
 	opengl46_exposure m_exposure;
+	// screen space ambient occlusion of the post processing
+	opengl46_ao m_ao;
 	// true while the environment map bound for the shading is the real one (not the empty stand-in of the reflection pass)
 	bool m_envmap_bound{false};
 	/*
@@ -554,7 +561,6 @@ class opengl46_renderer : public gfx_renderer {
 	// postfx ssao
 	std::unique_ptr<gl::postfx>      m_pfx_ssao;
 	std::unique_ptr<gl::postfx>      m_pfx_ssao_blur;
-	std::unique_ptr<gl::postfx>      m_pfx_ssao_apply;
 	std::unique_ptr<opengl_texture> m_ssao_noise_tex;
 	glm::vec3                        m_ssao_kernel[32];
 

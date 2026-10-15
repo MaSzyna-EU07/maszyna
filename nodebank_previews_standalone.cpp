@@ -315,7 +315,7 @@ int generate_nodebank_previews(int Argc, char *Argv[])
 	Global.gfx_skippipeline = false;
 	Global.gfx_postfx_motionblur_enabled = false;
 	Global.gfx_postfx_chromaticaberration_enabled = false;
-	Global.gfx_postfx_ssao_enabled = false;
+	Global.gfx_postfx_ao = 0;
 	Global.gfx_envmap_enabled = false;
 	Global.gfx_shadowmap_enabled = settings.shadows;
 	Global.shadowtune.map_size = std::max(Global.shadowtune.map_size, 2048u);

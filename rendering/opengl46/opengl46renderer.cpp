@@ -185,6 +185,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	{
 		m_sky.init();
 		m_exposure.init();
+		m_ao.init();
 	}
 	catch (gl::shader_exception const &e)
 	{
@@ -220,7 +221,6 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 
 	m_pfx_ssao       = std::make_unique<gl::postfx>("ssao");
 	m_pfx_ssao_blur  = std::make_unique<gl::postfx>("ssao_blur");
-	m_pfx_ssao_apply = std::make_unique<gl::postfx>("ssao_apply");
 
 	// Generate hemisphere kernel (z > 0 = toward surface normal)
 	std::uniform_real_distribution<float> rnd(0.0f, 1.0f);
@@ -494,7 +494,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 		vp.msaa_fb->attach(*vp.msaa_rbc, GL_COLOR_ATTACHMENT0);
 		vp.msaa_fb->attach(*vp.msaa_rbd, GL_DEPTH_ATTACHMENT);
 
-		if (Global.gfx_postfx_chromaticaberration_enabled || Global.gfx_postfx_motionblur_enabled || Global.gfx_postfx_ssao_enabled)
+		if (Global.gfx_postfx_chromaticaberration_enabled || Global.gfx_postfx_motionblur_enabled || Global.gfx_postfx_ao != 0)
 		{
 			vp.main_tex = std::make_unique<opengl_texture>();
 			vp.main_tex->alloc_rendertarget(Global.gfx_format_color, GL_RGB, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
@@ -539,7 +539,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 		vp.main2_fb = std::make_unique<gl::framebuffer>();
 		vp.main2_fb->attach(*vp.main2_tex, GL_COLOR_ATTACHMENT0);
 
-		if (Global.gfx_postfx_ssao_enabled)
+		if (Global.gfx_postfx_ao != 0)
 		{
 			int ssao_w = std::max(1, vp.width  / 2);
 			int ssao_h = std::max(1, vp.height / 2);
@@ -555,6 +555,13 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 			vp.ssao_blur_fb = std::make_unique<gl::framebuffer>();
 			vp.ssao_blur_fb->attach(*vp.ssao_blur_tex, GL_COLOR_ATTACHMENT0);
 			if (!vp.ssao_blur_fb->is_complete()) { ErrorLog("ssao blur framebuffer setup failed"); return false; }
+
+			if (Global.gfx_postfx_motionblur_enabled)
+			{
+				vp.ao_apply_fb = std::make_unique<gl::framebuffer>();
+				vp.ao_apply_fb->attach(*vp.main_tex, GL_COLOR_ATTACHMENT0);
+				if (!vp.ao_apply_fb->is_complete()) { ErrorLog("ambient occlusion framebuffer setup failed"); return false; }
+			}
 		}
 
 		if (!vp.main2_fb->is_complete())
@@ -693,6 +700,7 @@ void opengl46_renderer::SwapBuffers()
         m_debugtimestext += " cull: " + to_string(static_cast<double>(*culltime) / 1000000.0, 3) + " ms\n";
     m_debugtimestext += m_sky.info_times();
     m_debugtimestext += m_exposure.info_times();
+    m_debugtimestext += m_ao.info_times();
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();
@@ -785,6 +793,8 @@ void opengl46_renderer::draw_debug_ui()
         m_sky.draw_debug_ui();
         ImGui::Separator();
         m_exposure.draw_debug_ui();
+        ImGui::Separator();
+        m_ao.draw_debug_ui(!m_viewports.empty() && m_viewports.front()->ssao_tex != nullptr);
     }
     ImGui::End();
 
@@ -1078,6 +1088,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
 if (!Global.gfx_skippipeline)
 		{
+			// the targets of the ambient occlusion are there only when it was on at the start
+			auto const aomode{(vp.ssao_tex != nullptr) ? Global.gfx_postfx_ao : 0};
 			if (Global.gfx_postfx_motionblur_enabled)
 			{
 				vp.main_fb->clear(GL_COLOR_BUFFER_BIT);
@@ -1086,38 +1098,24 @@ if (!Global.gfx_skippipeline)
 				vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT1);
 				vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_DEPTH_BUFFER_BIT, GL_DEPTH_ATTACHMENT);
 
+				// the occlusion goes into the image before the blur, which smears both alike
+				if (aomode != 0)
+					Render_ambient_occlusion(vp, *vp.ao_apply_fb, aomode);
+
 				model_ubs.param[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
 				model_ubo->update(model_ubs);
 				m_pfx_motionblur->apply({vp.main_tex.get(), vp.main_texv.get(), vp.main_texd.get()}, vp.main2_fb.get());
-			}
-			else if (Global.gfx_postfx_ssao_enabled)
-			{
-				// resolve color+depth so SSAO can sample the depth texture
-				vp.main_fb->clear(GL_COLOR_BUFFER_BIT);
-				vp.main_fb->setup_drawing(1);
-				vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT0);
-				vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_DEPTH_BUFFER_BIT, GL_DEPTH_ATTACHMENT);
 			}
 			else
 			{
 				vp.main2_fb->clear(GL_COLOR_BUFFER_BIT);
 				vp.msaa_fb->blit_to(vp.main2_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT0);
-			}
-
-			// SSAO: depth -> occlusion -> blur -> modulate color into main2_fb
-			if (Global.gfx_postfx_ssao_enabled && !Global.gfx_postfx_motionblur_enabled)
-			{
-				int ssao_w = std::max(1, vp.width  / 2);
-				int ssao_h = std::max(1, vp.height / 2);
-
-				// (kernel is generated procedurally in the shader; no UBO upload needed)
-				glViewport(0, 0, ssao_w, ssao_h);
-				m_pfx_ssao     ->apply({ vp.main_texd.get(), m_ssao_noise_tex.get() }, vp.ssao_fb.get());
-				m_pfx_ssao_blur->apply({ vp.ssao_tex.get()  }, vp.ssao_blur_fb.get());
-
-				glViewport(0, 0, vp.width, vp.height);
-				vp.main2_fb->clear(GL_COLOR_BUFFER_BIT);
-				m_pfx_ssao_apply->apply({ vp.main_tex.get(), vp.ssao_blur_tex.get() }, vp.main2_fb.get());
+				if (aomode != 0)
+				{
+					// the depth for the occlusion to read, the image stays in main2
+					vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_DEPTH_BUFFER_BIT, GL_DEPTH_ATTACHMENT);
+					Render_ambient_occlusion(vp, *vp.main2_fb, aomode);
+				}
 			}
 
 			// the exposure follows the main view; the other viewports use it too
@@ -6198,6 +6196,26 @@ void opengl46_renderer::Cull_Lights(viewport_config &vp)
 	m_cullstimer.begin();
 	grid.cull(*m_cluster_cull_shader);
 	m_cullstimer.end();
+}
+
+void opengl46_renderer::Render_ambient_occlusion(viewport_config &vp, gl::framebuffer &Target, int const Mode)
+{
+	glDebug("ambient occlusion");
+	// the projection the depth was drawn with
+	auto const &projection{m_colorpass.pass_camera.projection()};
+	if (Mode == 1)
+	{
+		// the older ssao, which reads the projection from the scene uniforms
+		glViewport(0, 0, vp.ssao_tex->get_width(), vp.ssao_tex->get_height());
+		m_pfx_ssao->apply({vp.main_texd.get(), m_ssao_noise_tex.get()}, vp.ssao_fb.get());
+		m_pfx_ssao_blur->apply({vp.ssao_tex.get()}, vp.ssao_blur_fb.get());
+	}
+	else
+	{
+		m_ao.compute(*vp.main_texd, *vp.ssao_tex, *vp.ssao_blur_tex, projection);
+	}
+	glViewport(0, 0, vp.width, vp.height);
+	m_ao.apply(Mode, *vp.main_texd, *vp.ssao_blur_tex, Target, projection);
 }
 
 void opengl46_renderer::Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize)

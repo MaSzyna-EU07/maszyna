@@ -81,6 +81,21 @@ existed.
 The automatic exposure and the bloom need the post processing pipeline (`gfx.skippipeline no`, the default).
 Model previews of the editor use none of these.
 
+### Ambient occlusion
+
+Darkening of creases, corners and the ground under objects, worked out from the depth of the image (screen space)
+and multiplied into the image before the motion blur and the tonemapping. It works with and without motion blur.
+It darkens all light alike, the sun and the headlights included; limiting it to the ambient light needs the depth
+before the shading (a depth prepass), which is planned later.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.postfx.ao gtao/ssao/no` | `gtao` | `gtao` (or `yes`): ground truth ambient occlusion (Jimenez et al. 2016), at half the resolution with a depth aware smoothing and upsampling. `ssao`: the older, experimental ssao. `no`: none, and no targets are made for it; the mode can then not be turned on in the debug window |
+| `gfx.postfx.ao.radius` | `1.5` | 0.1..10: reach of the occluders, metres |
+| `gfx.postfx.ao.strength` | `1.0` | 0..4: power the occlusion is raised to; 1 = as computed, 0 = none |
+| `gfx.postfx.ao.bounce` | `0.3` | 0..1: albedo of the surfaces assumed for the light that comes back after more bounces (brightens the occlusion a little) |
+| `gfx.postfx.ao.quality slices steps` | `3 4` | directions searched around each pixel (1..8) and samples on each side of a direction (1..16) |
+
 ### Changed option
 
 `dynamiclights` (0..7) used to limit the number of headlight sets that light the surroundings. It is still
@@ -96,7 +111,7 @@ read, but it only takes effect with `gfx.lights.clustered no`.
   `gfx.lights.clustered no`.
 - **Reflections (environment map)** are lit with the sun as seen from the reflection itself, and vehicle
   headlights no longer light the scene in them.
-- **Motion blur and SSAO** read the real depth of the scene. Before, the depth texture was read in a way the
+- **Motion blur and ambient occlusion** read the real depth of the scene. Before, the depth texture was read in a way the
   specification leaves undefined, and the result depended on the driver.
 - **Lines are 1 pixel wide**, as they always were on this kind of context. The widths the code asked for
   (catenary wires, map tracks) never took effect.
@@ -116,7 +131,8 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
 - **Sky and exposure** window (next to the Light clusters window): the switches and scales above, the share of the
   atmosphere, the colours of the sun, ambient light and fog in use, and the measured luminance and exposure.
   Shift+F12 shows the GPU time of `atmosphere:` (look-up tables, only when the sun moved or the weather changed),
-  `envmap ggx:` (prefiltering, with each update of the environment map), `exposure:` and `bloom:`.
+  `envmap ggx:` (prefiltering, with each update of the environment map), `exposure:` and `bloom:`. The same window holds
+  the ambient occlusion mode and its settings; Shift+F12 shows its time as `ambient occlusion:` (gtao only).
 - `gfx.gldebug yes` turns on the OpenGL debug output (`KHR_debug`); messages go to the log.
 
 ## Building

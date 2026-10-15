@@ -324,6 +324,14 @@ struct global_settings {
     bool gfx_postfx_bloom { true }; // glow around bright parts of the image
     float gfx_postfx_bloom_intensity { 0.04f }; // share of the blurred image in the result
     float gfx_postfx_bloom_threshold { 0.f }; // luminance below which nothing glows, 0 = everything contributes
+    // screen space ambient occlusion of the opengl 4.6 renderer, applied to the image (debug window "Sky and exposure").
+    // 0 off, 1 the older ssao, 2 ground truth ambient occlusion; when 0 at the start the targets are not made at all
+    int gfx_postfx_ao { 2 };
+    float gfx_postfx_ao_radius { 1.5f }; // reach of the occluders, metres
+    float gfx_postfx_ao_strength { 1.f }; // power the occlusion is raised to, 1 = as computed, 0 = none
+    float gfx_postfx_ao_bounce { 0.3f }; // albedo of the surfaces assumed for the light coming back after more bounces
+    int gfx_postfx_ao_slices { 3 }; // directions searched around each pixel
+    int gfx_postfx_ao_steps { 4 }; // samples on each side of a direction
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;
@@ -333,7 +341,6 @@ struct global_settings {
 
 	std::string exec_on_exit;
     std::string prepend_scn;
-	bool gfx_postfx_ssao_enabled {false};
 
 	struct extraviewport_config {
 		std::string monitor;
@@ -398,7 +405,7 @@ struct global_settings {
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
-	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*)
+	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*, gfx.postfx.ao*)
 	bool ConfigParse_gfx_sky( cParser &parser, std::string_view const Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void

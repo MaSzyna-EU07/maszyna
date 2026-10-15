@@ -1,0 +1,152 @@
+// ground truth ambient occlusion (Jimenez et al. 2016, "Practical realtime strategies for accurate indirect occlusion";
+// integration as in Intel XeGTAO) at half the resolution of the image. for every pixel, a few slices through the
+// hemisphere around the view direction; in each the horizons on both sides are searched in the depth buffer and the
+// cosine weighted visible arc between them is integrated against the normal rebuilt from the depth.
+// one invocation per pixel of the half size target. the pattern of the slice directions and steps repeats every 4x4
+// pixels; gtao_denoise.comp averages it out
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// depth of the scene at full resolution: reversed, 1 at the near plane, 0 at infinity (the sky)
+layout(binding = 0) uniform sampler2D depth_tex;
+layout(binding = 0, r8) writeonly uniform image2D ao_target;
+
+layout(location = 0) uniform mat4 inv_projection;
+// x: radius in metres, y: projection[0][0] times half the width of the target in pixels
+layout(location = 1) uniform vec2 params;
+// the row of the projection which gives the clip w of a view space position
+layout(location = 2) uniform vec4 clipw_row;
+// x: number of slices, y: steps on each side of a slice
+layout(location = 3) uniform ivec2 quality;
+
+const float PI = 3.14159265;
+const float HALF_PI = 1.57079633;
+// share of the radius over which the weight of an occluder falls to nothing
+const float FALLOFF_RANGE = 0.615;
+
+// depth of the pixel of the half size target: the top left one of the four full size pixels it covers, so the
+// application (postfx_ssao_apply.frag) finds the same depth for it
+float half_depth(ivec2 texel)
+{
+	ivec2 full_size = textureSize(depth_tex, 0);
+	return texelFetch(depth_tex, min(texel * 2, full_size - 1), 0).r;
+}
+
+vec3 view_position(ivec2 texel, float depth)
+{
+	ivec2 full_size = textureSize(depth_tex, 0);
+	vec2 uv = (vec2(texel * 2) + 0.5) / vec2(full_size);
+	vec4 position = inv_projection * vec4(uv * 2.0 - 1.0, depth, 1.0);
+	return position.xyz / position.w;
+}
+
+// 4x4 ordered pattern, values 0..15
+const float BAYER[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(ao_target);
+	if (texel.x >= size.x || texel.y >= size.y)
+		return;
+
+	float depth = half_depth(texel);
+	if (depth <= 0.0)
+	{
+		imageStore(ao_target, texel, vec4(1.0));
+		return;
+	}
+	vec3 position = view_position(texel, depth);
+	vec3 view = normalize(-position);
+
+	// normal from the neighbours: on each axis the one closer in depth, so edges of objects do not bend it
+	vec3 left = view_position(texel - ivec2(1, 0), half_depth(texel - ivec2(1, 0)));
+	vec3 right = view_position(texel + ivec2(1, 0), half_depth(texel + ivec2(1, 0)));
+	vec3 down = view_position(texel - ivec2(0, 1), half_depth(texel - ivec2(0, 1)));
+	vec3 up = view_position(texel + ivec2(0, 1), half_depth(texel + ivec2(0, 1)));
+	vec3 dx = (abs(right.z - position.z) < abs(position.z - left.z)) ? right - position : position - left;
+	vec3 dy = (abs(up.z - position.z) < abs(position.z - down.z)) ? up - position : position - down;
+	vec3 normal = normalize(cross(dx, dy));
+	if (dot(normal, view) < 0.0)
+		normal = -normal;
+
+	float radius = params.x;
+	float clipw = dot(clipw_row, vec4(position, 1.0));
+	float screenradius = params.y * radius / max(clipw, 1e-6);
+	// smaller than a pixel: nothing to find
+	if (screenradius < 1.0)
+	{
+		imageStore(ao_target, texel, vec4(1.0));
+		return;
+	}
+	screenradius = min(screenradius, 256.0);
+
+	float falloffrange = FALLOFF_RANGE * radius;
+	float falloffmul = -1.0 / falloffrange;
+	float falloffadd = (radius - falloffrange) / falloffrange + 1.0;
+
+	int pattern = (texel.x & 3) + 4 * (texel.y & 3);
+	float slicenoise = (BAYER[pattern] + 0.5) / 16.0;
+	float stepnoise = fract(float(pattern) * 0.618034 + 0.25);
+
+	int slices = max(quality.x, 1);
+	int steps = max(quality.y, 1);
+	float visibility = 0.0;
+	for (int slice = 0; slice < slices; ++slice)
+	{
+		float angle = (float(slice) + slicenoise) * PI / float(slices);
+		vec2 omega = vec2(cos(angle), sin(angle));
+		vec3 direction = vec3(omega, 0.0);
+		vec3 orthodirection = direction - dot(direction, view) * view;
+		vec3 axis = normalize(cross(orthodirection, view));
+		vec3 projectednormal = normal - axis * dot(normal, axis);
+		float projectedlength = length(projectednormal);
+		if (projectedlength < 1e-4)
+			continue;
+		float signnormal = sign(dot(orthodirection, projectednormal));
+		float cosnormal = clamp(dot(projectednormal, view) / projectedlength, 0.0, 1.0);
+		float n = signnormal * acos(cosnormal);
+
+		float lowcos0 = cos(n + HALF_PI);
+		float lowcos1 = cos(n - HALF_PI);
+		float horizoncos0 = lowcos0;
+		float horizoncos1 = lowcos1;
+
+		for (int step = 0; step < steps; ++step)
+		{
+			// denser near the pixel, where the occluders matter most
+			float s = (float(step) + stepnoise) / float(steps);
+			s = s * s;
+			vec2 offset = omega * max(s * screenradius, float(step) + 1.0);
+			for (int side = 0; side < 2; ++side)
+			{
+				ivec2 sampletexel = texel + ivec2(round(side == 0 ? offset : -offset));
+				if (any(lessThan(sampletexel, ivec2(0))) || any(greaterThanEqual(sampletexel, size)))
+					continue;
+				float sampledepth = half_depth(sampletexel);
+				if (sampledepth <= 0.0)
+					continue;
+				vec3 delta = view_position(sampletexel, sampledepth) - position;
+				float distance = length(delta);
+				if (distance < 1e-5)
+					continue;
+				float horizoncos = dot(delta / distance, view);
+				float weight = clamp(distance * falloffmul + falloffadd, 0.0, 1.0);
+				if (side == 0)
+					horizoncos0 = max(horizoncos0, mix(lowcos0, horizoncos, weight));
+				else
+					horizoncos1 = max(horizoncos1, mix(lowcos1, horizoncos, weight));
+			}
+		}
+
+		float h0 = -acos(clamp(horizoncos1, -1.0, 1.0));
+		float h1 = acos(clamp(horizoncos0, -1.0, 1.0));
+		h0 = n + clamp(h0 - n, -HALF_PI, HALF_PI);
+		h1 = n + clamp(h1 - n, -HALF_PI, HALF_PI);
+		float arc0 = (cosnormal + 2.0 * h0 * sin(n) - cos(2.0 * h0 - n)) * 0.25;
+		float arc1 = (cosnormal + 2.0 * h1 * sin(n) - cos(2.0 * h1 - n)) * 0.25;
+		visibility += projectedlength * (arc0 + arc1);
+	}
+	visibility = clamp(visibility / float(slices), 0.0, 1.0);
+	imageStore(ao_target, texel, vec4(visibility));
+}

@@ -1578,6 +1578,21 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.postfx.bloom" ) { readswitch( gfx_postfx_bloom ); }
     else if( Token == "gfx.postfx.bloom.intensity" ) { readvalue( gfx_postfx_bloom_intensity, 0.f, 1.f ); }
     else if( Token == "gfx.postfx.bloom.threshold" ) { readvalue( gfx_postfx_bloom_threshold, 0.f, 1000.f ); }
+    else if( Token == "gfx.postfx.ao" ) {
+        // yes/gtao: ground truth ambient occlusion, ssao: the older one, anything else: off
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        gfx_postfx_ao = ( mode == "yes" || mode == "true" || mode == "1" || mode == "gtao" ) ? 2 : ( mode == "ssao" ) ? 1 : 0; }
+    else if( Token == "gfx.postfx.ao.radius" ) { readvalue( gfx_postfx_ao_radius, 0.1f, 10.f ); }
+    else if( Token == "gfx.postfx.ao.strength" ) { readvalue( gfx_postfx_ao_strength, 0.f, 4.f ); }
+    else if( Token == "gfx.postfx.ao.bounce" ) { readvalue( gfx_postfx_ao_bounce, 0.f, 1.f ); }
+    else if( Token == "gfx.postfx.ao.quality" ) {
+        // slices and steps per side
+        Parser.getTokens( 2, false );
+        Parser >> gfx_postfx_ao_slices >> gfx_postfx_ao_steps;
+        gfx_postfx_ao_slices = std::clamp( gfx_postfx_ao_slices, 1, 8 );
+        gfx_postfx_ao_steps = std::clamp( gfx_postfx_ao_steps, 1, 16 ); }
     else { return false; }
 
     return true;
@@ -1839,6 +1854,11 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.postfx.bloom", gfx_postfx_bloom );
     export_as_text( Output, "gfx.postfx.bloom.intensity", gfx_postfx_bloom_intensity );
     export_as_text( Output, "gfx.postfx.bloom.threshold", gfx_postfx_bloom_threshold );
+    export_as_text( Output, "gfx.postfx.ao", std::string{ gfx_postfx_ao == 2 ? "gtao" : gfx_postfx_ao == 1 ? "ssao" : "no" } );
+    export_as_text( Output, "gfx.postfx.ao.radius", gfx_postfx_ao_radius );
+    export_as_text( Output, "gfx.postfx.ao.strength", gfx_postfx_ao_strength );
+    export_as_text( Output, "gfx.postfx.ao.bounce", gfx_postfx_ao_bounce );
+    Output << "gfx.postfx.ao.quality " << gfx_postfx_ao_slices << " " << gfx_postfx_ao_steps << "\n";
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );
