@@ -4787,7 +4787,8 @@ void editor_mode::render_gizmo_options()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Wheel zooms. Hold the wheel and drag to pan."));
     }
-    if (ui()->mode() == nodebank_panel::TRACK && track_plan_tab())
+    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::signals &&
+        m_track_tab != track_tab::lineside)
         return;
     ImGui::Checkbox(STR_C("Enabled"), &m_gizmo_enabled);
     if (!m_gizmo_enabled)

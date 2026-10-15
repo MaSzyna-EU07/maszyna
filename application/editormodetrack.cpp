@@ -114,10 +114,10 @@ char const *point_label(editor_track::point_kind const Kind)
 {
 	switch (Kind)
 	{
-	case editor_track::point_kind::start: return "Start";
-	case editor_track::point_kind::control1: return "Control 1";
-	case editor_track::point_kind::control2: return "Control 2";
-	default: return "End";
+	case editor_track::point_kind::start: return STR_C("Start");
+	case editor_track::point_kind::control1: return STR_C("Control 1");
+	case editor_track::point_kind::control2: return STR_C("Control 2");
+	default: return STR_C("End");
 	}
 }
 
@@ -1494,6 +1494,13 @@ void editor_mode::render_path_ui()
 	bool const geometry = editor_track::can_edit_geometry(*track, reason);
 	if (false == geometry)
 		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), STR_C("Geometry locked: %s"), reason.c_str());
+	if (track->eType == tt_Switch)
+	{
+		ImGui::TextWrapped("%s", STR_C("A switch: the turnout tool sets its geometry, side and drive"));
+		if (ImGui::Button(STR_C("Edit the switch (T)")))
+			show_track_tab(track_tab::turnout);
+		item_tooltip("Opens the turnout tool with this switch");
+	}
 
 	auto const before = editor_track::capture(*track);
 	enum class rebuild { none, parameters, geometry };
@@ -1512,7 +1519,7 @@ void editor_mode::render_path_ui()
 		}
 	};
 
-	if (ImGui::CollapsingHeader(STR_C("Geometry"), ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::CollapsingHeader(track->eType == tt_Switch ? STR_C("Geometry of the paths") : STR_C("Geometry"), track->eType == tt_Switch ? 0 : ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		{
@@ -5188,6 +5195,7 @@ void editor_mode::lay_cancel()
 	tool.start = {};
 	tool.chain.clear();
 	tool.preview.clear();
+	tool.status.clear();
 }
 
 void editor_mode::lay_after_history(bool const Undo)

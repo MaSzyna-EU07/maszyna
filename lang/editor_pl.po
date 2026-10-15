@@ -915,6 +915,30 @@ msgstr "Odcinek %d"
 msgid "(+) joined with another track, (-) a free end"
 msgstr "(+) połączony z innym torem, (-) wolny koniec"
 
+msgid "Start"
+msgstr "Początek"
+
+msgid "Control 1"
+msgstr "Wektor 1"
+
+msgid "Control 2"
+msgstr "Wektor 2"
+
+msgid "End"
+msgstr "Koniec"
+
+msgid "A switch: the turnout tool sets its geometry, side and drive"
+msgstr "To rozjazd: geometrię, stronę i napęd ustawia narzędzie Rozjazd"
+
+msgid "Edit the switch (T)"
+msgstr "Edytuj rozjazd (T)"
+
+msgid "Opens the turnout tool with this switch"
+msgstr "Otwiera narzędzie Rozjazd z tym rozjazdem"
+
+msgid "Geometry of the paths"
+msgstr "Geometria odcinków"
+
 msgid "Start (%.2f, %.2f, %.2f)  End (%.2f, %.2f, %.2f)"
 msgstr "Początek (%.2f, %.2f, %.2f)  Koniec (%.2f, %.2f, %.2f)"
 
@@ -1270,7 +1294,7 @@ msgid "Click at least two points"
 msgstr "Kliknij co najmniej dwa punkty"
 
 msgid "Laid %zu paths, %.1f m"
-msgstr "Ułożono %zu torów, %.1f m"
+msgstr "Ułożone odcinki: %zu, razem %.1f m"
 
 msgid "The curvature changes abruptly where the track joins, there's no room for a transition curve"
 msgstr "Na styku z torem krzywizna zmienia się skokowo, nie ma miejsca na krzywą przejściową"
