@@ -144,9 +144,11 @@ vec3 lamp_light(light_s light, vec3 position)
 // of a cell (start, unit direction, length; view space). point samples of a lamp next to the ray change many times over with
 // where in the cell they fall (the light falls off with the square of the distance), so the falloff of a lamp is integrated
 // along the segment and only the rest of its light (the cone, the edge of its reach, the phase) is sampled, at two points the
-// integral spreads by itself (equi-angular sampling, Kulla & Fajardo 2012). the distance of the lamp from the ray is kept to
-// at least half the width of the cell there: the light of a lamp seen within a cell is spread over the cell. Part: where
-// between the two halves of the segment the points are (0-1)
+// integral spreads by itself (equi-angular sampling, Kulla & Fajardo 2012). next to the lamp the light is spread over the size
+// of a cell: the distance of the lamp from the ray grows by the width of the cell there, and the cone of a spot light starts
+// that far behind the lamp. the point sampled moves within the cell from frame to frame, and the ray of the cell would pass at
+// almost no distance from the lamp in one frame and a cell away in the next, above the tip of the cone and below it. Part:
+// where between the two halves of the segment the points are (0-1)
 vec3 lamp_scattering(light_s lamp, vec3 start, vec3 direction, float span, float cellwidth, float part)
 {
 	vec3 sum = vec3(0.0);
@@ -162,15 +164,20 @@ vec3 lamp_scattering(light_s lamp, vec3 start, vec3 direction, float span, float
 	}
 	float closest = dot(lamp.pos - start, direction);
 	vec3 nearest = start + direction * closest;
-	float reach = max(length(lamp.pos - nearest), max(0.5 * cellwidth * max(-nearest.z, 0.0), 1e-3));
+	float width = max(cellwidth * max(-nearest.z, 0.0), 1e-3);
+	float reach = sqrt(dot(lamp.pos - nearest, lamp.pos - nearest) + width * width);
+	light_s cone = lamp;
+	if (lamp.type == LIGHT_SPOT)
+		cone.pos -= normalize(lamp.dir) * width;
 	float first = atan(-closest, reach);
 	float last = atan(span - closest, reach);
 	for (int i = 0; i < 2; i++)
 	{
 		vec3 position = start + direction * (closest + reach * tan(mix(first, last, (float(i) + part) * 0.5)));
-		vec3 tolight = lamp.pos - position;
+		vec3 tolight = cone.pos - position;
 		// the light without its falloff, which the integral holds
-		sum += lamp_light(lamp, position) * max(dot(tolight, tolight), 0.01) * henyey_greenstein(dot(normalize(-tolight), -direction), 0.4);
+		vec3 fromlamp = position - lamp.pos;
+		sum += lamp_light(cone, position) * max(dot(tolight, tolight), 0.01) * henyey_greenstein(dot(fromlamp, -direction) * inversesqrt(max(dot(fromlamp, fromlamp), 1e-8)), 0.4);
 	}
 	return sum * (0.5 * (last - first) / (reach * max(span, 1e-4)));
 }
