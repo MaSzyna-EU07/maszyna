@@ -343,6 +343,9 @@ struct global_settings {
     float gfx_lights_cab_intensity { 1.5f }; // brightness of the cab lamp
     float gfx_lights_cab_bounce { 0.3f }; // share of the former ambient light of the cab lamp kept, for the light which bounces around the cab
     float gfx_lights_range { 300.f }; // distance from the camera the lights of models and vehicles are taken from, metres
+    // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
+    // occupied cab, its shadows cast by the cab
+    int gfx_lights_shadows { 2 };
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;

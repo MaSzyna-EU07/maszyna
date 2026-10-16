@@ -116,8 +116,22 @@ scales can also be changed in the **Light clusters** debug window.
   which bounces around the cab (`gfx.lights.cab.bounce`), and the sun shadows stay.
 
 The lamps of models and compartments fade in from the light level at which scenery lamps switch on (`ls_Dark`) to full
-darkness; in daylight they are not gathered at all. None of these lights casts shadows yet, so they also light what is
-behind walls within their reach; that reach is kept short for compartments and the cab.
+darkness; in daylight they are not gathered at all. Of these lights only the cab lamp casts shadows (see below); the others
+also light what is behind walls within their reach, which is kept short for compartments.
+
+**Shadows of the cab lamp** (`gfx.lights.shadows`): the cab casts shadows in the light of its lamp, the desk, the seats,
+the levers and the walls (light leaves the cab only through the windows, glass doesn't stop it). They come from a cube
+shadow map around the lamp, drawn with the opaque parts of the cab model only. The map is kept in the space of the cab, so
+it stays right as the vehicle moves; it is drawn anew every few frames, for the moving parts of the cab, and at once when
+the lamp turns on or the cab changes. All six faces are drawn in one go, so drawing it costs about as much as drawing the
+cab once more. Nothing is drawn with the lamp off (in the daylight it is). The level:
+
+| Level | Map | Drawn | Edges |
+|---|---|---|---|
+| `no` (0) | none | never | lamp without shadows, as before |
+| `low` (1) | 512 x 512 per face, 6 MB | every 4th frame | hard (2x2 filter) |
+| `medium` (2, default) | 1024 x 1024 per face, 24 MB | every 2nd frame | soft, 4 samples |
+| `high` (3) | 1024 x 1024 per face, 24 MB | every frame | softer, 8 samples |
 
 | Entry | Default | Meaning |
 |---|---|---|
@@ -129,6 +143,7 @@ behind walls within their reach; that reach is kept short for compartments and t
 | `gfx.lights.cab.intensity` | `1.5` | brightness of the cab lamp |
 | `gfx.lights.cab.bounce` | `0.3` | 0..1: share of the former ambient light of the cab lamp kept with the lamp on |
 | `gfx.lights.range` | `300` | distance from the camera the lamps of models and vehicles are gathered from, metres |
+| `gfx.lights.shadows` | `medium` | `no`/`low`/`medium`/`high` (or 0..3): shadows of the cab lamp, see above |
 
 ### Changed option
 
@@ -165,7 +180,9 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   windows): the switch for clustered lights, the heat map, the grid state and the same counters, and the switches and
   scales of the lamps with their counts. Shift+F12 shows the lamps in the `local lights:` row: how many were gathered (from
   scenery models, vehicles and compartments, and the cab lamp), how many were placed in the light buffer of the main view
-  (those that may light something in view) and did not fit, and the cpu time of gathering them.
+  (those that may light something in view) and did not fit, and the cpu time of gathering them. The `lamp shadows:` row
+  gives the size of the cube map, whether it holds the cab lamp, the draw calls and cpu time of its last drawing, and the
+  timings the GPU time of drawing it (`lamp shadows:`); the level can be changed in the window.
 - **Sky and exposure** window (next to the Light clusters window): the switches and scales above, the share of the
   atmosphere, the colours of the sun, ambient light and fog in use, and the measured luminance and exposure.
   Shift+F12 shows the GPU time of `atmosphere:` (look-up tables, only when the sun moved or the weather changed),

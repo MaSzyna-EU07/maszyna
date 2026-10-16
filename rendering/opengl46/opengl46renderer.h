@@ -36,6 +36,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46exposure.h"
 #include "rendering/opengl46/opengl46ao.h"
 #include "rendering/opengl46/opengl46locallights.h"
+#include "rendering/opengl46/opengl46localshadows.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 
 // bare-bones render controller, in lack of anything better yet
@@ -300,6 +301,8 @@ class opengl46_renderer : public gfx_renderer {
 	void Render_pass(viewport_config &vp, rendermode const Mode);
 	// creates dynamic environment cubemap
 	bool Render_reflections(viewport_config &vp);
+	// draws the cube shadow maps of the lamps which need it in this frame (the cab lamp: the cab)
+	void Render_local_shadows();
 	bool Render(world_environment *Environment);
 	void Render(scene::basic_region *Region);
 	void Render(section_sequence::iterator First, section_sequence::iterator Last);
@@ -507,6 +510,10 @@ class opengl46_renderer : public gfx_renderer {
 	opengl46_local_lights m_locallights;
 	// the last Update_Lights() placed the cab lamp in the light buffer: the cab is lit by it, not by an addition to the ambient light
 	bool m_cablamplit = false;
+	// cube shadow maps of the lamps
+	opengl46_local_shadows m_localshadows;
+	// the shadow pass draws to a cube shadow map, with the programs of m_localshadows
+	bool m_cubeshadows = false;
 
     double m_precipitationrotation;
 

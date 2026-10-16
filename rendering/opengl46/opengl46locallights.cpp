@@ -333,8 +333,10 @@ void opengl46_local_lights::gather_cab_lamp(gfx::geometrybank_manager const &Geo
 	auto const lamp{glm::vec3{bounds.center.x, std::max(bounds.center.y, bounds.center.y + bounds.extent.y - 0.25f), bounds.center.z}};
 	m_cablamp = light{};
 	m_cablamp.position = vehicle->GetWorldPosition(glm::dvec3{lamp});
+	m_cablampvehicle = vehicle;
+	m_cablamplocal = lamp;
 	m_cablamp.color = to_linear(vehicle->InteriorLight) * (level * Global.gfx_lights_cab_intensity);
-	// within the cab: with no shadows the lamp would light the track below and the body of the vehicle around it
+	// within the cab: without shadows (gfx.lights.shadows) the lamp would light the track below and the body of the vehicle around it
 	m_cablamp.range = std::clamp(glm::length(bounds.extent) * 1.25f, 2.5f, 8.f);
 	m_cablampon = (max_component(m_cablamp.color) > 0.f);
 }

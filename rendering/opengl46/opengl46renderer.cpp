@@ -191,6 +191,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_instancecull.init();
 		m_exposure.init();
 		m_ao.init();
+		m_localshadows.init();
 	}
 	catch (gl::shader_exception const &e)
 	{
@@ -723,6 +724,7 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += m_exposure.info_times();
     m_debugtimestext += m_ao.info_times();
     m_debugtimestext += m_instancecull.info_times();
+    m_debugtimestext += m_localshadows.info_times();
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();
@@ -765,6 +767,7 @@ void opengl46_renderer::SwapBuffers()
         + " (" + std::to_string( m_lights_dropped ) + " over capacity), "
         + ( Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string( std::max( Global.DynamicLightCount, 0 ) ) )
         + "\n" + m_locallights.info()
+        + m_localshadows.info()
         + m_instancecull.info();
     if( auto const cullstats = ( m_viewports.empty() || !( Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap ) ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
         m_debugstatstext +=
@@ -813,6 +816,8 @@ void opengl46_renderer::draw_debug_ui()
         }
         ImGui::Separator();
         m_locallights.draw_debug_ui();
+        ImGui::Separator();
+        m_localshadows.draw_debug_ui();
     }
     ImGui::End();
 
@@ -931,6 +936,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
         setup_shadow_empty_map();
 		setup_env_map(nullptr);
+		// the cube shadow maps of the lamps, or the stand-in for them
+		m_localshadows.bind();
 
 		if (Global.gfx_shadowmap_enabled && vp.main)
 		{
@@ -958,6 +965,9 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			Timer::subsystem.gfx_reflections.stop();
 			setup_env_map(m_env_tex.get());
 		}
+
+		if (vp.main)
+			Render_local_shadows();
 
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -2478,12 +2488,21 @@ void opengl46_renderer::Bind_Material_Shadow(material_handle const Material)
 		if (material.textures[0] != null_handle)
 		{
 			m_textures.bind(0, material.textures[0]);
-			m_alpha_shadow_shader->bind();
+			if (m_cubeshadows)
+				m_localshadows.program(true).bind();
+			else
+				m_alpha_shadow_shader->bind();
 		}
+        else if (m_cubeshadows) {
+            m_localshadows.program(false).bind();
+        }
         else {
             m_shadow_shader->bind();
         }
 	}
+    else if (m_cubeshadows) {
+        m_localshadows.program(false).bind();
+    }
     else {
         m_shadow_shader->bind();
     }
@@ -6138,8 +6157,22 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
     m_cablamplit = false;
     if( locallights ) {
         if( auto const *lamp{ m_locallights.cab_lamp() } ) {
-            Write_Local_Light( light_data.lights[ light_i++ ], *lamp, camera, mv );
+            auto &light{ light_data.lights[ light_i++ ] };
+            Write_Local_Light( light, *lamp, camera, mv );
             m_cablamplit = true;
+            auto const *vehicle{ m_locallights.cab_lamp_vehicle() };
+            if( m_localshadows.ready( vehicle ) ) {
+                // view space to the space of the map: the space of the cab model, with the lamp at the origin. the vehicle is
+                // where it is now, the map stays right as it moves
+                auto const toworld{ glm::dmat4{ glm::transpose( glm::mat3{ mv } ) } };
+                auto const tomap{
+                    glm::translate( glm::dmat4{ 1.0 }, -glm::dvec3{ m_localshadows.lamp() } )
+                    * glm::inverse( vehicle->mMatrix )
+                    * glm::translate( glm::dmat4{ 1.0 }, camera - vehicle->GetPosition() )
+                    * toworld };
+                light.headlight_projection = glm::mat4{ tomap };
+                light.headlight_weights = m_localshadows.weights();
+            }
         }
     }
     auto const headlightsstart{light_i};
@@ -6311,7 +6344,32 @@ void opengl46_renderer::Write_Local_Light(gl::light_element &Light, opengl46_loc
 	Light.linear = 0.0f;
 	Light.quadratic = 1.0f / sq(std::max(Source.range, 0.01f));
 	Light.headlight_projection = glm::mat4{1.0f};
-	Light.headlight_weights = glm::vec4{0.0f};
+	// no shadow map
+	Light.headlight_weights = glm::vec4{-1.0f, 0.0f, 0.0f, 0.0f};
+}
+
+void opengl46_renderer::Render_local_shadows()
+{
+	// only the light buffers with the lamps read the maps
+	auto const *vehicle{Global.gfx_lights_clustered ? m_locallights.cab_lamp_vehicle() : nullptr};
+	if (false == m_localshadows.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), m_locallights.cab_lamp_local(), m_framestamp))
+		return;
+
+	glDebug("render lamp shadows");
+	// the cab drawn by the shadow pass, with the programs of the cube map. the camera is put at the vehicle, which Render_cab()
+	// places the cab relative to, and the modelview takes the cab model to the space of the map
+	m_renderpass.draw_mode = rendermode::shadows;
+	m_renderpass.pass_camera.position() = vehicle->GetPosition();
+	m_renderpass.draw_stats = {};
+	OpenGLMatrices.mode(GL_MODELVIEW);
+	OpenGLMatrices.load_matrix(glm::mat4{glm::translate(glm::dmat4{1.0}, -glm::dvec3{m_localshadows.lamp()}) * glm::inverse(vehicle->mMatrix)});
+	m_localshadows.begin();
+	m_cubeshadows = true;
+	Render_cab(vehicle, 0.0f, false);
+	m_cubeshadows = false;
+	m_localshadows.end(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	m_renderpass = m_colorpass;
+	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
 }
 
 void opengl46_renderer::Update_Clusters(viewport_config &vp, glm::ivec2 const &Targetsize)

@@ -1606,6 +1606,16 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.lights.cab.intensity" ) { readvalue( gfx_lights_cab_intensity, 0.f, 100.f ); }
     else if( Token == "gfx.lights.cab.bounce" ) { readvalue( gfx_lights_cab_bounce, 0.f, 1.f ); }
     else if( Token == "gfx.lights.range" ) { readvalue( gfx_lights_range, 0.f, 2000.f ); }
+    else if( Token == "gfx.lights.shadows" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_lights_shadows =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
     else { return false; }
 
     return true;
@@ -1881,6 +1891,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.lights.cab.intensity", gfx_lights_cab_intensity );
     export_as_text( Output, "gfx.lights.cab.bounce", gfx_lights_cab_bounce );
     export_as_text( Output, "gfx.lights.range", gfx_lights_range );
+    export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );

@@ -58,6 +58,8 @@ namespace gl
     const size_t ENVMAP_GGX_GROUP_SIZE = 8;
     // sky-view table of the atmosphere (sky_atmosphere.frag). past the units the texture cache keeps track of, bound directly
     const size_t SKY_VIEW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 0;
+    // cube shadow maps of the lamps (cube map array, depth compared; opengl46_local_shadows). bound directly, like the one above
+    const size_t LOCAL_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 1;
 
     struct scene_ubs
     {
@@ -136,6 +138,10 @@ namespace gl
 		float intensity;
 		float ambient;
 
+        // HEADLIGHTS: view space to the space of the beam texture, and the weights of its channels.
+        // SPOT and POINT (lamps): view space to the space of the cube shadow map of the lamp (origin at the lamp), and
+        // x: layer of the cube map array the map is in, below 0 when the lamp has no shadows; y: near plane of the map;
+        // z: size of a texel of the map one metre from the lamp; w: radius of the filter, in texels
         glm::mat4 headlight_projection;
         glm::vec4 headlight_weights;
     };

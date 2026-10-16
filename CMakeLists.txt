@@ -338,6 +338,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46exposure.cpp"
             "rendering/opengl46/opengl46ao.cpp"
             "rendering/opengl46/opengl46locallights.cpp"
+            "rendering/opengl46/opengl46localshadows.cpp"
             "rendering/opengl46/opengl46instancecull.cpp"
             "rendering/opengl46/opengl46precipitation.cpp"
             "rendering/opengl46/opengl46particles.cpp"

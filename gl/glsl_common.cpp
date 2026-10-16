@@ -56,6 +56,7 @@ void gl::glsl_common_setup()
     "#define ATMOSPHERE_MULTISCATTERING_UNIT " + std::to_string(ATMOSPHERE_MULTISCATTERING_UNIT) + "\n" +
     "#define ATMOSPHERE_SKYVIEW_UNIT " + std::to_string(ATMOSPHERE_SKYVIEW_UNIT) + "\n" +
     "#define SKY_VIEW_TEX " + std::to_string(SKY_VIEW_TEX) + "\n" +
+    "#define LOCAL_SHADOW_TEX " + std::to_string(LOCAL_SHADOW_TEX) + "\n" +
     R"STRING(
     const uint LIGHT_SPOT = 0U;
     const uint LIGHT_POINT = 1U;

@@ -69,6 +69,15 @@ class opengl46_local_lights
 	{
 		return m_cablampon ? &m_cablamp : nullptr;
 	}
+	// the vehicle of the cab lamp and the position of the lamp in the space of its cab model (mdKabina), when the lamp is on
+	TDynamicObject const *cab_lamp_vehicle() const
+	{
+		return m_cablampon ? m_cablampvehicle : nullptr;
+	}
+	glm::vec3 const &cab_lamp_local() const
+	{
+		return m_cablamplocal;
+	}
 	// counts of the last pass which wrote the lights to the light buffer: placed, and left out for the lack of room
 	void placed(std::uint32_t const Placed, std::uint32_t const Dropped)
 	{
@@ -110,6 +119,8 @@ class opengl46_local_lights
 	std::vector<light> m_lights;
 	light m_cablamp;
 	bool m_cablampon{false};
+	TDynamicObject const *m_cablampvehicle{nullptr};
+	glm::vec3 m_cablamplocal{0.f};
 	std::unordered_map<TModel3d const *, bool> m_modellights; // whether the model has light points
 	std::unordered_map<scene::basic_cell const *, cell_data> m_cells;
 	std::unordered_map<TSubModel const *, section_data> m_sections; // compartments, by their submodel

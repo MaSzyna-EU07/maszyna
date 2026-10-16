@@ -2,6 +2,8 @@
 uniform sampler2DArrayShadow shadowmap;
 #endif
 uniform sampler2D headlightmap;
+// cube shadow maps of the lamps, see gl::LOCAL_SHADOW_TEX and opengl46_local_shadows
+layout(binding = LOCAL_SHADOW_TEX) uniform samplerCubeArrayShadow local_shadowmap;
 
 #include <envmapping.glsl>
 #include <conversion.glsl>
@@ -232,10 +234,58 @@ vec2 calc_headlights(light_s light, vec3 fragnormal, vec3 dpdx, vec3 dpdy)
 // closest distance (squared) the light of a lamp is computed for: nearer the inverse square would grow without a limit
 const float LOCAL_LIGHT_MIN_DISTANCE2 = 0.01;
 
+// one comparison with the cube shadow map at the point of the space of the map, moved towards the lamp by Bias (metres)
+float local_light_shadow_tap(vec3 position, float layer, float near, float bias)
+{
+	vec3 axes = abs(position);
+	float major = max(axes.x, max(axes.y, axes.z));
+	return texture(local_shadowmap, vec4(position, layer), near / max(major - bias, near));
+}
+
+// share of the light of a lamp with a cube shadow map (headlight_weights.x is its layer) which reaches the fragment, 0..1.
+// the map holds n / d of the closest surface, d the distance along the axis of the face, n the near plane: the farther, the
+// smaller (as the depth of the scene, reverse z). the comparison gives 1 where the map holds a value at least as large as
+// the reference, i.e. a surface at most as far: in shadow
+float local_light_shadow(light_s light, vec3 fragnormal)
+{
+	// the space of the map: origin at the lamp, axes of the model the shadows are cast by
+	vec3 position = (light.headlight_projection * vec4(f_pos.xyz, 1.0)).xyz;
+	vec3 normal = normalize(mat3(light.headlight_projection) * fragnormal);
+	float distance = length(position);
+	// a texel of the map is as large as this here. the point is moved along the normal by about a texel, which keeps a surface
+	// from shadowing itself at grazing angles, and the reference is moved towards the lamp by a part of a texel
+	float texel = light.headlight_weights.z * distance;
+	vec3 tolamp = -position / max(distance, 1e-4);
+	float NdotL = clamp(dot(normal, tolamp), 0.0, 1.0);
+	position += normal * (texel * (0.5 + 1.5 * (1.0 - NdotL)));
+	float bias = texel * 1.5;
+	float layer = light.headlight_weights.x;
+	float radius = light.headlight_weights.w;
+	if (radius <= 0.0)
+		return local_light_shadow_tap(position, layer, light.headlight_weights.y, bias);
+	// a disc of samples in the plane of the surface, each compared with its own distance: points of the surface itself, which
+	// samples spread across the direction to the lamp would not be at grazing angles. rotated per pixel to turn the banding into noise
+	vec3 side = normalize(cross(normal, (abs(normal.y) < 0.99) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+	vec3 up = cross(normal, side);
+	float angle = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+	vec2 rotation = vec2(cos(angle), sin(angle));
+	float spread = texel * radius;
+	const vec2 disc[8] = vec2[](vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621),
+	                            vec2(0.962, -0.195), vec2(0.473, -0.480), vec2(0.519, 0.767), vec2(0.185, -0.893));
+	int count = (radius > 1.5) ? 8 : 4;
+	float shadow = 0.0;
+	for (int i = 0; i < count; i++)
+	{
+		vec2 offset = vec2(disc[i].x * rotation.x - disc[i].y * rotation.y, disc[i].x * rotation.y + disc[i].y * rotation.x) * spread;
+		shadow += local_light_shadow_tap(position + side * offset.x + up * offset.y, layer, light.headlight_weights.y, bias);
+	}
+	return shadow / float(count);
+}
+
 // light of a lamp (point or spot light: the lamps of models and vehicles, the cab lamp) reaching the fragment, x the diffuse
 // and y the specular part. it falls off with the square of the distance, and smoothly to nothing at the range of the light,
 // 1 / sqrt(quadratic), past which the culling of the clusters does not take it. a spot light fades from its inner cone to the
-// outer one
+// outer one. a lamp with a shadow map is held back by what is between it and the fragment
 vec2 calc_local_light(light_s light, vec3 fragnormal)
 {
 	vec3 tolight = light.pos - f_pos.xyz;
@@ -245,6 +295,8 @@ vec2 calc_local_light(light_s light, vec3 fragnormal)
 	float atten = edge * edge / max(distance2, LOCAL_LIGHT_MIN_DISTANCE2);
 	if (light.type == LIGHT_SPOT)
 		atten *= smoothstep(light.out_cutoff, light.in_cutoff, dot(-light_dir, normalize(light.dir)));
+	if ((atten > 0.0) && (light.headlight_weights.x >= 0.0) && (dot(fragnormal, light_dir) > 0.0))
+		atten *= 1.0 - local_light_shadow(light, fragnormal);
 	if (atten <= 0.0)
 		return vec2(0.0);
 	vec2 part = calc_light(light_dir, fragnormal);
