@@ -52,6 +52,9 @@ TEST_CASE("brakes: service braking stops a heavier wagon too") {
   and a test on a half-defined vehicle tests the definition rather than the simulation.
 - The random numbers of the simulation are reseeded before every test case, so a test gives the
   same result alone or among the others.
+- Logic which lives in classes too big to set up in a test (the AI driver, the cab) goes into free
+  functions on the vehicle state the class calls, and the test calls them the same way: see
+  `vehicle/handover.h`, which `TController::TakeControl()` uses, and `test_handover.cpp`.
 - `vehicle` creates the vehicle the way `TDynamicObject::Init()` does and steps it the way the
   simulation loop does, on a straight track of the given friction and gradient. Coupled vehicles
   aren't supported yet.
