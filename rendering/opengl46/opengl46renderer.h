@@ -303,6 +303,10 @@ class opengl46_renderer : public gfx_renderer {
 	bool Render_reflections(viewport_config &vp);
 	// draws the cube shadow maps of the lamps which need it in this frame (the cab lamp: the cab)
 	void Render_local_shadows();
+	// draws the parts of the cube shadow maps of the scenery lamps which need it in this frame
+	void Render_lamp_shadows();
+	// one part of the map of a scenery lamp: the scenery, or the vehicles by it (and Cab, the occupied cab) over a copy of it
+	void Render_lamp_shadow(std::size_t const Slot, bool const Vehicles, TDynamicObject *Cab);
 	bool Render(world_environment *Environment);
 	void Render(scene::basic_region *Region);
 	void Render(section_sequence::iterator First, section_sequence::iterator Last);
@@ -514,6 +518,12 @@ class opengl46_renderer : public gfx_renderer {
 	opengl46_local_shadows m_localshadows;
 	// the shadow pass draws to a cube shadow map, with the programs of m_localshadows
 	bool m_cubeshadows = false;
+	// the shadow pass draws the kept scenery part of the map of a lamp: no vehicles, and not the model of the lamp itself
+	bool m_cubescenery = false;
+	TAnimModel const *m_cubeskipinstance = nullptr;
+	// vehicles near the camera which cast the shadows of scenery lamps, and those of them by the lamp being drawn
+	std::vector<TDynamicObject *> m_lampshadowvehicles;
+	std::vector<TDynamicObject *> m_lampshadowslot;
 
     double m_precipitationrotation;
 

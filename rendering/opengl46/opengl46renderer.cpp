@@ -633,6 +633,7 @@ bool opengl46_renderer::Render()
 	{
 		// a scenery is being loaded: the cells, instances and models the lights were taken from may be gone
 		m_locallights.reset();
+		m_localshadows.reset_lamps();
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -644,6 +645,9 @@ bool opengl46_renderer::Render()
 		++m_instancerecordsversion;
 		m_nodestateversion = scene::node_state_version;
 	}
+	// scenery lamps which get shadows in this frame. their maps hold the scenery as of the version of the instance records
+	if (simulation::is_ready && (false == Global.gfx_skiprendering))
+		m_localshadows.update_lamps(m_locallights.lights(), Global.pCamera.Pos, m_instancerecordsversion, m_framestamp);
 	// instanced draws of the frame place their matrices in the next of the instance buffers, the one used the longest ago
 	m_instancebufferindex = ( m_instancebufferindex + 1 ) % m_instancebuffers.size();
 	m_instancebufferfill = 1;
@@ -967,7 +971,10 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		}
 
 		if (vp.main)
+		{
 			Render_local_shadows();
+			Render_lamp_shadows();
+		}
 
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -2966,14 +2973,18 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 			for (auto *instance : cell->m_instancesopaque)
 			{
 				if( instance->m_instanceable ) { continue; } // already handled via bucket
+				// the model of a lamp would shadow everything in the map of the lamp
+				if( instance == m_cubeskipinstance ) { continue; }
 				Render(instance);
 			}
-			// opaque parts of vehicles
-			for (auto *path : cell->m_paths)
-			{
-				for (auto *dynamic : path->Dynamics)
+			// opaque parts of vehicles. the kept scenery part of the map of a lamp is drawn without them
+			if( false == m_cubescenery ) {
+				for (auto *path : cell->m_paths)
 				{
-					Render(dynamic);
+					for (auto *dynamic : path->Dynamics)
+					{
+						Render(dynamic);
+					}
 				}
 			}
 			break;
@@ -6278,6 +6289,7 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
     m_lights_lit = static_cast<uint32_t>(light_i - headlightsstart);
     // lamps of models and vehicles, the most important first, those which may be seen lighting something in this view
     if( locallights ) {
+        auto const toworld{ glm::dmat4{ glm::transpose( glm::mat3{ mv } ) } };
         uint32_t placed{ 0 };
         uint32_t dropped{ 0 };
         for( auto const &local : m_locallights.lights() ) {
@@ -6288,7 +6300,16 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
                 ++dropped;
                 continue;
             }
-            Write_Local_Light( light_data.lights[ light_i++ ], local, camera, mv );
+            auto &light{ light_data.lights[ light_i++ ] };
+            Write_Local_Light( light, local, camera, mv );
+            std::size_t slot;
+            if( auto const *lamp{ m_localshadows.lamp( local, slot ) } ) {
+                // view space to the space of the map: world axes with the lamp at the origin
+                light.headlight_projection = glm::mat4{ glm::translate( glm::dmat4{ 1.0 }, camera - lamp->position ) * toworld };
+                light.headlight_weights = m_localshadows.lamp_weights( slot );
+                // the map is in the array of the scenery lamps
+                light.linear = 1.0f;
+            }
             ++placed;
         }
         m_locallights.placed( placed, dropped );
@@ -6368,6 +6389,118 @@ void opengl46_renderer::Render_local_shadows()
 	Render_cab(vehicle, 0.0f, false);
 	m_cubeshadows = false;
 	m_localshadows.end(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	m_renderpass = m_colorpass;
+	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
+}
+
+void opengl46_renderer::Render_lamp_shadows()
+{
+	auto const &lamps{m_localshadows.lamps()};
+	if (lamps.empty() || (false == Global.gfx_lights_clustered))
+		return;
+
+	// vehicles near the camera cast the shadows of the lamps, and the occupied cab
+	m_lampshadowvehicles.clear();
+	auto const vehiclesrange{static_cast<double>(Global.gfx_lights_shadows_vehicles_range)};
+	if (vehiclesrange > 0.0)
+	{
+		for (auto *vehicle : simulation::Vehicles.sequence())
+		{
+			if (glm::length(vehicle->GetPosition() - Global.pCamera.Pos) <= vehiclesrange + vehicle->radius())
+				m_lampshadowvehicles.emplace_back(vehicle);
+		}
+	}
+	TDynamicObject *cab{nullptr};
+	if ((vehiclesrange > 0.0) && (false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr))
+	{
+		cab = simulation::Train->Dynamic();
+		if ((cab != nullptr) && ((false == cab->bDisplayCab) || (cab->mdKabina == nullptr) || (cab->mdKabina == cab->mdModel)))
+			cab = nullptr;
+	}
+
+	auto timing{false};
+	for (auto const idx : lamps)
+	{
+		auto const &slot{m_localshadows.slot(idx)};
+		if (m_localshadows.scenery_wanted(idx))
+		{
+			if (false == timing)
+			{
+				m_localshadows.lamps_timer_begin();
+				timing = true;
+			}
+			Render_lamp_shadow(idx, false, nullptr);
+		}
+		if (false == slot.scenery)
+			continue;
+		// the vehicles by the lamp, within its reach
+		m_lampshadowslot.clear();
+		for (auto *vehicle : m_lampshadowvehicles)
+		{
+			if (glm::length(vehicle->GetPosition() - slot.position) <= slot.range + vehicle->radius())
+				m_lampshadowslot.emplace_back(vehicle);
+		}
+		auto *slotcab{(cab != nullptr) && (glm::length(cab->GetPosition() - slot.position) <= slot.range + cab->radius()) ? cab : nullptr};
+		if (m_lampshadowslot.empty() && (slotcab == nullptr))
+		{
+			m_localshadows.no_vehicles(idx);
+			continue;
+		}
+		if (false == m_localshadows.vehicles_wanted(idx, m_framestamp))
+			continue;
+		if (false == timing)
+		{
+			m_localshadows.lamps_timer_begin();
+			timing = true;
+		}
+		Render_lamp_shadow(idx, true, slotcab);
+	}
+	if (timing)
+		m_localshadows.lamps_timer_end();
+}
+
+void opengl46_renderer::Render_lamp_shadow(std::size_t const Slot, bool const Vehicles, TDynamicObject *Cab)
+{
+	auto const &slot{m_localshadows.slot(Slot)};
+	glDebug("render lamp shadows");
+	// the shadow pass from the lamp, in world axes: the camera of the pass is the lamp, its frustum the box of its reach. the
+	// distances which pick the details of the models are measured from the real camera, as in the shadows of the sun
+	m_renderpass = m_colorpass;
+	m_renderpass.draw_mode = rendermode::shadows;
+	m_renderpass.draw_range = slot.range;
+	m_renderpass.draw_stats = {};
+	auto &camera{m_renderpass.pass_camera};
+	camera.position() = slot.position;
+	camera.modelview() = glm::mat4{glm::translate(glm::dmat4{1.0}, -slot.position)};
+	auto const reach{slot.range};
+	camera.projection() = glm::ortho(-reach, reach, -reach, reach, -reach, reach);
+	camera.update_frustum();
+	OpenGLMatrices.mode(GL_MODELVIEW);
+	OpenGLMatrices.load_matrix(glm::mat4{1.f});
+
+	m_localshadows.begin_lamp(Slot, Vehicles, m_instancerecordsversion, m_framestamp);
+	m_cubeshadows = true;
+	if (Vehicles)
+	{
+		for (auto *vehicle : m_lampshadowslot)
+		{
+			Render(vehicle);
+		}
+		if (Cab != nullptr)
+		{
+			Render_cab(Cab, 0.0f, false);
+		}
+	}
+	else
+	{
+		m_cubescenery = true;
+		m_cubeskipinstance = static_cast<TAnimModel const *>(slot.owner);
+		Render(simulation::Region);
+		m_cubeskipinstance = nullptr;
+		m_cubescenery = false;
+	}
+	m_cubeshadows = false;
+	m_localshadows.end_lamp(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
 	m_renderpass = m_colorpass;
 	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
 }

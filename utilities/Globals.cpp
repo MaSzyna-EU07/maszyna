@@ -1616,6 +1616,16 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
             ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
             ( level == "high" || level == "3" ) ? 3 :
             0; }
+    else if( Token == "gfx.lights.shadows.lamps" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_shadows_lamps;
+        gfx_lights_shadows_lamps = std::clamp( gfx_lights_shadows_lamps, 0, 32 ); }
+    else if( Token == "gfx.lights.shadows.lamps.size" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_shadows_lamps_size;
+        gfx_lights_shadows_lamps_size = std::clamp( gfx_lights_shadows_lamps_size, 128, 2048 ); }
+    else if( Token == "gfx.lights.shadows.lamps.range" ) { readvalue( gfx_lights_shadows_lamps_range, 0.f, 1000.f ); }
+    else if( Token == "gfx.lights.shadows.vehicles.range" ) { readvalue( gfx_lights_shadows_vehicles_range, 0.f, 1000.f ); }
     else { return false; }
 
     return true;
@@ -1892,6 +1902,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.lights.cab.bounce", gfx_lights_cab_bounce );
     export_as_text( Output, "gfx.lights.range", gfx_lights_range );
     export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.lights.shadows.lamps", gfx_lights_shadows_lamps );
+    export_as_text( Output, "gfx.lights.shadows.lamps.size", gfx_lights_shadows_lamps_size );
+    export_as_text( Output, "gfx.lights.shadows.lamps.range", gfx_lights_shadows_lamps_range );
+    export_as_text( Output, "gfx.lights.shadows.vehicles.range", gfx_lights_shadows_vehicles_range );
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );

@@ -220,7 +220,9 @@ void opengl46_local_lights::gather_instance(TAnimModel *Instance, glm::dvec3 con
 
 	auto const count{m_lights.size()};
 	auto const placement{glm::translate(glm::dmat4{1.0}, Instance->location()) * glm::dmat4{Instance->rotation_scale()}};
+	m_walkowner = Instance;
 	walk(Instance->pModel->Root, glm::mat4{1.f}, placement, Brightness);
+	m_walkowner = nullptr;
 	m_scenerycount += static_cast<std::uint32_t>(m_lights.size() - count);
 }
 
@@ -401,6 +403,11 @@ void opengl46_local_lights::add_light_point(TSubModel const &Submodel, glm::mat4
 	lightpoint.cos_outer = std::clamp(Submodel.fCosFalloffAngle, -1.f, 0.999f);
 	lightpoint.cos_inner = std::clamp(std::max(Submodel.fCosHotspotAngle, lightpoint.cos_outer + 0.05f), lightpoint.cos_outer + 0.001f, 1.f);
 	lightpoint.range = light_range(color);
+	if (m_walkowner != nullptr)
+	{
+		lightpoint.owner = m_walkowner;
+		lightpoint.part = &Submodel;
+	}
 	m_lights.emplace_back(lightpoint);
 }
 

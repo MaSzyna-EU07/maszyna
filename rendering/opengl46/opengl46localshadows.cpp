@@ -26,12 +26,65 @@ GLint const NEAR_LOCATION{0};
 GLint const LAYER_LOCATION{1};
 // layer of the map of the cab lamp in the array
 int const CAB_SLOT{0};
+// a lamp which moved farther than this (an animated submodel) has its scenery drawn anew, metres
+double const LAMP_MOVED{0.01};
+// lamps with a shorter reach aren't worth a map, metres
+float const LAMP_RANGE_MIN{1.f};
+
+// cube map array of depth maps compared to the reference, one level, Cubes cubes of Size x Size faces
+GLuint make_cube_array(int const Size, int const Cubes)
+{
+	GLuint texture{0};
+	glCreateTextures(GL_TEXTURE_CUBE_MAP_ARRAY, 1, &texture);
+	glTextureStorage3D(texture, 1, GL_DEPTH_COMPONENT32F, Size, Size, 6 * Cubes);
+	// one level: the lookups need no derivatives, also in the loops over the lights the fragments of a quad don't go through together
+	glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTextureParameteri(texture, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTextureParameteri(texture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTextureParameteri(texture, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTextureParameteri(texture, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+	// 1 (shadow) where the map holds n / d at least as large as the reference: a surface at most as far from the lamp
+	glTextureParameteri(texture, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+	return texture;
+}
+
+// framebuffer drawing to all layers of the depth texture (the geometry shader picks the face); 0 if it can't be made
+GLuint make_framebuffer(GLuint const Texture)
+{
+	GLuint framebuffer{0};
+	glCreateFramebuffers(1, &framebuffer);
+	glNamedFramebufferTexture(framebuffer, GL_DEPTH_ATTACHMENT, Texture, 0);
+	glNamedFramebufferDrawBuffer(framebuffer, GL_NONE);
+	glNamedFramebufferReadBuffer(framebuffer, GL_NONE);
+	if (glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	{
+		glDeleteFramebuffers(1, &framebuffer);
+		return 0;
+	}
+	return framebuffer;
+}
+
+// the state of the drawing to a cube map
+void setup_drawing(GLuint const Framebuffer, int const Size)
+{
+	// the framebuffer is bound past the cache of gl::framebuffer, which the end of the drawing resets
+	gl::framebuffer::unbind();
+	glBindFramebuffer(GL_FRAMEBUFFER, Framebuffer);
+	glViewport(0, 0, Size, Size);
+	glDisable(GL_BLEND);
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
+	// one sided walls (of cabs, of buildings) face the lamp, they are to cast shadows as well
+	glDisable(GL_CULL_FACE);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
 
 } // namespace
 
 opengl46_local_shadows::~opengl46_local_shadows()
 {
 	release();
+	release_lamps();
 	if (m_empty != 0)
 		glDeleteTextures(1, &m_empty);
 }
@@ -50,8 +103,7 @@ void opengl46_local_shadows::init()
 	}
 	glProgramUniform1f(*m_program, NEAR_LOCATION, SHADOW_NEAR);
 	glProgramUniform1f(*m_alpha_program, NEAR_LOCATION, SHADOW_NEAR);
-	glProgramUniform1i(*m_program, LAYER_LOCATION, CAB_SLOT * 6);
-	glProgramUniform1i(*m_alpha_program, LAYER_LOCATION, CAB_SLOT * 6);
+	set_layer(CAB_SLOT * 6);
 
 	// a shadow sampler with no depth texture to read from is undefined, also where the shading doesn't read it
 	glCreateTextures(GL_TEXTURE_CUBE_MAP_ARRAY, 1, &m_empty);
@@ -64,18 +116,24 @@ void opengl46_local_shadows::init()
 	glClearTexImage(m_empty, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
 }
 
+void opengl46_local_shadows::set_layer(int const Layer)
+{
+	glProgramUniform1i(*m_program, LAYER_LOCATION, Layer);
+	glProgramUniform1i(*m_alpha_program, LAYER_LOCATION, Layer);
+}
+
 opengl46_local_shadows::level_setup opengl46_local_shadows::setup(int const Level)
 {
 	switch (Level)
 	{
 	case 1:
-		return {512, 4, 0.f};
+		return {512, 4, 0.f, 1};
 	case 2:
-		return {1024, 2, 1.f};
+		return {1024, 2, 1.f, 1};
 	case 3:
-		return {1024, 1, 2.f};
+		return {1024, 1, 2.f, 2};
 	default:
-		return {0, 0, 0.f};
+		return {0, 0, 0.f, 0};
 	}
 }
 
@@ -84,23 +142,9 @@ void opengl46_local_shadows::allocate(int const Size)
 	release();
 	if (Size <= 0)
 		return;
-	glCreateTextures(GL_TEXTURE_CUBE_MAP_ARRAY, 1, &m_texture);
-	glTextureStorage3D(m_texture, 1, GL_DEPTH_COMPONENT32F, Size, Size, 6 * (CAB_SLOT + 1));
-	// one level: the lookups need no derivatives, also in the loops over the lights the fragments of a quad don't go through together
-	glTextureParameteri(m_texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTextureParameteri(m_texture, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTextureParameteri(m_texture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTextureParameteri(m_texture, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTextureParameteri(m_texture, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-	// 1 (shadow) where the map holds n / d at least as large as the reference: a surface at most as far from the lamp
-	glTextureParameteri(m_texture, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-
-	glCreateFramebuffers(1, &m_framebuffer);
-	// all layers: the geometry shader picks the face
-	glNamedFramebufferTexture(m_framebuffer, GL_DEPTH_ATTACHMENT, m_texture, 0);
-	glNamedFramebufferDrawBuffer(m_framebuffer, GL_NONE);
-	glNamedFramebufferReadBuffer(m_framebuffer, GL_NONE);
-	if (glCheckNamedFramebufferStatus(m_framebuffer, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	m_texture = make_cube_array(Size, CAB_SLOT + 1);
+	m_framebuffer = make_framebuffer(m_texture);
+	if (m_framebuffer == 0)
 	{
 		ErrorLog("lamp shadow map framebuffer setup failed, the lamps have no shadows");
 		release();
@@ -123,9 +167,44 @@ void opengl46_local_shadows::release()
 	m_valid = false;
 }
 
+void opengl46_local_shadows::allocate_lamps(int const Count, int const Size)
+{
+	release_lamps();
+	if ((Count <= 0) || (Size <= 0))
+		return;
+	// the scenery parts and the working copies
+	m_lampstexture = make_cube_array(Size, 2 * Count);
+	m_lampsframebuffer = make_framebuffer(m_lampstexture);
+	if (m_lampsframebuffer == 0)
+	{
+		ErrorLog("scenery lamp shadow map framebuffer setup failed, the scenery lamps have no shadows");
+		release_lamps();
+		Global.gfx_lights_shadows_lamps = 0;
+		return;
+	}
+	m_lampssize = Size;
+	m_slots.assign(static_cast<std::size_t>(Count), lamp_slot{});
+	WriteLog("scenery lamp shadow maps: " + std::to_string(Count) + " x " + std::to_string(Size) + " x " + std::to_string(Size) + " cube (" +
+	         std::to_string(2 * Count * 6 * Size / 1024 * Size * 4 / 1024) + " MB)");
+}
+
+void opengl46_local_shadows::release_lamps()
+{
+	if (m_lampsframebuffer != 0)
+		glDeleteFramebuffers(1, &m_lampsframebuffer);
+	if (m_lampstexture != 0)
+		glDeleteTextures(1, &m_lampstexture);
+	m_lampsframebuffer = 0;
+	m_lampstexture = 0;
+	m_lampssize = 0;
+	m_slots.clear();
+	m_wanted.clear();
+}
+
 void opengl46_local_shadows::bind()
 {
 	glBindTextureUnit(gl::LOCAL_SHADOW_TEX, (m_texture != 0) ? m_texture : m_empty);
+	glBindTextureUnit(gl::LOCAL_SHADOW_LAMPS_TEX, (m_lampstexture != 0) ? m_lampstexture : m_empty);
 }
 
 bool opengl46_local_shadows::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Lamp, unsigned int const Framestamp)
@@ -165,16 +244,8 @@ void opengl46_local_shadows::begin()
 {
 	m_cpustart = std::chrono::steady_clock::now();
 	m_timer.begin();
-	// the framebuffer is bound past the cache of gl::framebuffer, which end() resets
-	gl::framebuffer::unbind();
-	glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
-	glViewport(0, 0, m_size, m_size);
-	glDisable(GL_BLEND);
-	glDepthMask(GL_TRUE);
-	glEnable(GL_DEPTH_TEST);
-	// one sided walls of the cab face the lamp, they are to cast shadows as well
-	glDisable(GL_CULL_FACE);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	set_layer(CAB_SLOT * 6);
+	setup_drawing(m_framebuffer, m_size);
 	float const farthest{0.f};
 	glClearNamedFramebufferfv(m_framebuffer, GL_DEPTH, 0, &farthest);
 }
@@ -197,27 +268,253 @@ glm::vec4 opengl46_local_shadows::weights() const
 	return glm::vec4{static_cast<float>(CAB_SLOT), SHADOW_NEAR, 2.f / static_cast<float>(std::max(m_size, 1)), setup(m_level).radius};
 }
 
+void opengl46_local_shadows::update_lamps(std::vector<opengl46_local_lights::light> const &Lights, glm::dvec3 const &Camera, std::uint64_t const Version, unsigned int const Framestamp)
+{
+	m_frame = Framestamp;
+	m_wanted.clear();
+	auto const level{std::clamp(Global.gfx_lights_shadows, 0, 3)};
+	auto const count{level > 0 ? Global.gfx_lights_shadows_lamps : 0};
+	auto const size{count > 0 ? Global.gfx_lights_shadows_lamps_size : 0};
+	if ((static_cast<std::size_t>(count) != m_slots.size()) || (size != m_lampssize))
+	{
+		allocate_lamps(count, size);
+	}
+	if (m_slots.empty())
+	{
+		return;
+	}
+	m_sceneryleft = setup(level).sceneryperframe;
+	auto const reach{static_cast<double>(Global.gfx_lights_shadows_lamps_range)};
+	// the lights come the most important first: the first ones within reach get the slots
+	std::vector<opengl46_local_lights::light const *> picked;
+	for (auto const &light : Lights)
+	{
+		if (picked.size() >= m_slots.size())
+		{
+			break;
+		}
+		if ((light.owner == nullptr) || (light.range < LAMP_RANGE_MIN) || (glm::length(light.position - Camera) > reach))
+		{
+			continue;
+		}
+		picked.emplace_back(&light);
+	}
+	// lamps which already have a slot keep it
+	std::vector<opengl46_local_lights::light const *> unplaced;
+	for (auto const *light : picked)
+	{
+		auto placed{false};
+		for (std::size_t idx = 0; idx < m_slots.size(); ++idx)
+		{
+			auto &slot{m_slots[idx]};
+			if ((slot.owner == light->owner) && (slot.part == light->part) && (slot.wantedframe != Framestamp))
+			{
+				if (glm::length(slot.position - light->position) > LAMP_MOVED)
+				{
+					slot.scenery = false;
+					slot.vehicles = false;
+				}
+				slot.position = light->position;
+				slot.range = light->range;
+				slot.wantedframe = Framestamp;
+				m_wanted.emplace_back(idx);
+				placed = true;
+				break;
+			}
+		}
+		if (false == placed)
+		{
+			unplaced.emplace_back(light);
+		}
+	}
+	// the others take the slots of lamps no longer picked
+	for (auto const *light : unplaced)
+	{
+		for (std::size_t idx = 0; idx < m_slots.size(); ++idx)
+		{
+			auto &slot{m_slots[idx]};
+			if (slot.wantedframe == Framestamp)
+			{
+				continue;
+			}
+			slot = lamp_slot{};
+			slot.owner = light->owner;
+			slot.part = light->part;
+			slot.position = light->position;
+			slot.range = light->range;
+			slot.wantedframe = Framestamp;
+			m_wanted.emplace_back(idx);
+			break;
+		}
+	}
+	// the scene changed (events, the editor): the scenery parts are out of date
+	for (auto &slot : m_slots)
+	{
+		if (slot.scenery && (slot.version != Version))
+		{
+			slot.scenery = false;
+			slot.vehicles = false;
+		}
+	}
+}
+
+void opengl46_local_shadows::reset_lamps()
+{
+	for (auto &slot : m_slots)
+	{
+		slot = lamp_slot{};
+	}
+	m_wanted.clear();
+}
+
+bool opengl46_local_shadows::scenery_wanted(std::size_t const Slot)
+{
+	if (m_slots[Slot].scenery || (m_sceneryleft <= 0))
+	{
+		return false;
+	}
+	--m_sceneryleft;
+	return true;
+}
+
+bool opengl46_local_shadows::vehicles_wanted(std::size_t const Slot, unsigned int const Framestamp) const
+{
+	auto const &slot{m_slots[Slot]};
+	return slot.scenery && ((false == slot.vehicles) || (Framestamp - slot.vehiclesframe >= setup(m_level).interval));
+}
+
+void opengl46_local_shadows::begin_lamp(std::size_t const Slot, bool const Vehicles, std::uint64_t const Version, unsigned int const Framestamp)
+{
+	auto &slot{m_slots[Slot]};
+	auto const scenerycube{static_cast<int>(Slot)};
+	auto const workingcube{static_cast<int>(m_slots.size() + Slot)};
+	if (Vehicles)
+	{
+		// the vehicles go over the scenery
+		glCopyImageSubData(m_lampstexture, GL_TEXTURE_CUBE_MAP_ARRAY, 0, 0, 0, scenerycube * 6, m_lampstexture, GL_TEXTURE_CUBE_MAP_ARRAY, 0, 0, 0, workingcube * 6, m_lampssize, m_lampssize, 6);
+		slot.vehicles = true;
+		slot.vehiclesframe = Framestamp;
+		++m_lampsvehicles;
+	}
+	else
+	{
+		float const farthest{0.f};
+		glClearTexSubImage(m_lampstexture, 0, 0, 0, scenerycube * 6, m_lampssize, m_lampssize, 6, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
+		slot.scenery = true;
+		slot.version = Version;
+		slot.vehicles = false;
+		++m_lampsscenery;
+	}
+	set_layer((Vehicles ? workingcube : scenerycube) * 6);
+	setup_drawing(m_lampsframebuffer, m_lampssize);
+}
+
+void opengl46_local_shadows::end_lamp(std::uint32_t const Drawcalls)
+{
+	glEnable(GL_CULL_FACE);
+	gl::framebuffer::unbind();
+	set_layer(CAB_SLOT * 6);
+	m_lampsframedrawcalls += Drawcalls;
+}
+
+void opengl46_local_shadows::lamps_timer_begin()
+{
+	m_lampsframedrawcalls = 0;
+	m_cpustart = std::chrono::steady_clock::now();
+	m_lampstimer.begin();
+	m_lampstiming = true;
+}
+
+void opengl46_local_shadows::lamps_timer_end()
+{
+	if (false == m_lampstiming)
+	{
+		return;
+	}
+	m_lampstimer.end();
+	m_lampstiming = false;
+	m_lampsdrawcalls = m_lampsframedrawcalls;
+	auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - m_cpustart).count()};
+	m_lampscputime = (m_lampscputime == 0.0 ? elapsed : m_lampscputime * 0.9 + elapsed * 0.1);
+}
+
+opengl46_local_shadows::lamp_slot const *opengl46_local_shadows::lamp(opengl46_local_lights::light const &Light, std::size_t &Slot) const
+{
+	if (Light.owner == nullptr)
+	{
+		return nullptr;
+	}
+	for (auto const idx : m_wanted)
+	{
+		auto const &slot{m_slots[idx]};
+		if ((slot.owner == Light.owner) && (slot.part == Light.part))
+		{
+			if (false == slot.scenery)
+			{
+				return nullptr;
+			}
+			Slot = idx;
+			return &slot;
+		}
+	}
+	return nullptr;
+}
+
+glm::vec4 opengl46_local_shadows::lamp_weights(std::size_t const Slot) const
+{
+	auto const cube{m_slots[Slot].vehicles ? m_slots.size() + Slot : Slot};
+	return glm::vec4{static_cast<float>(cube), SHADOW_NEAR, 2.f / static_cast<float>(std::max(m_lampssize, 1)), setup(m_level).radius};
+}
+
 std::string opengl46_local_shadows::info_times()
 {
 	std::string text;
 	if (auto const time = m_timer.result())
 		text += " lamp shadows: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms\n";
+	if (auto const time = m_lampstimer.result())
+		text += " scenery lamp shadows: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms\n";
 	return text;
 }
 
 std::string opengl46_local_shadows::info() const
 {
-	if (m_size == 0)
-		return "";
-	return "\nlamp shadows: " + std::to_string(m_size) + " cube, " + (m_valid ? "cab lamp" : "none") + ", " + std::to_string(m_drawcalls) + " drawcalls, cpu " + to_string(m_cputime, 2) +
-	       " ms";
+	std::string text;
+	if (m_size != 0)
+	{
+		text += "\nlamp shadows: " + std::to_string(m_size) + " cube, " + (m_valid ? "cab lamp" : "none") + ", " + std::to_string(m_drawcalls) + " drawcalls, cpu " + to_string(m_cputime, 2) +
+		        " ms";
+	}
+	if (false == m_slots.empty())
+	{
+		auto withvehicles{0};
+		auto ready{0};
+		for (auto const idx : m_wanted)
+		{
+			ready += (m_slots[idx].scenery ? 1 : 0);
+			withvehicles += (m_slots[idx].vehicles ? 1 : 0);
+		}
+		text += "\nscenery lamp shadows: " + std::to_string(m_wanted.size()) + " of " + std::to_string(m_slots.size()) + " slots (" + std::to_string(ready) + " ready, " +
+		        std::to_string(withvehicles) + " with vehicles), drawn " + std::to_string(m_lampsscenery) + " scenery + " + std::to_string(m_lampsvehicles) + " vehicles, " +
+		        std::to_string(m_lampsdrawcalls) + " drawcalls, cpu " + to_string(m_lampscputime, 2) + " ms";
+	}
+	return text;
 }
 
 void opengl46_local_shadows::draw_debug_ui()
 {
 	char const *levels[]{"no", "low (512, every 4th frame)", "medium (1024, every 2nd frame)", "high (1024, every frame, softer)"};
 	ImGui::Combo("lamp shadows (gfx.lights.shadows)", &Global.gfx_lights_shadows, levels, IM_ARRAYSIZE(levels));
-	if (m_size == 0)
-		return;
-	ImGui::Text("cube %d x %d, %s, drawn %u times, %u drawcalls, %.2f ms (cpu)", m_size, m_size, m_valid ? "cab lamp" : "no lamp", m_updatecount, m_drawcalls, m_cputime);
+	if (m_size != 0)
+	{
+		ImGui::Text("cab: cube %d x %d, %s, drawn %u times, %u drawcalls, %.2f ms (cpu)", m_size, m_size, m_valid ? "cab lamp" : "no lamp", m_updatecount, m_drawcalls, m_cputime);
+	}
+	ImGui::SliderInt("scenery lamps with shadows (gfx.lights.shadows.lamps)", &Global.gfx_lights_shadows_lamps, 0, 32);
+	ImGui::SliderFloat("their reach from the camera, m (.lamps.range)", &Global.gfx_lights_shadows_lamps_range, 0.f, 500.f);
+	ImGui::SliderFloat("vehicles casting them, from the camera, m (.vehicles.range)", &Global.gfx_lights_shadows_vehicles_range, 0.f, 500.f);
+	if (false == m_slots.empty())
+	{
+		auto const text{info()};
+		auto const line{text.rfind('\n')};
+		ImGui::TextUnformatted(text.c_str() + (line == std::string::npos ? 0 : line + 1));
+	}
 }

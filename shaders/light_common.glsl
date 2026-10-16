@@ -4,6 +4,8 @@ uniform sampler2DArrayShadow shadowmap;
 uniform sampler2D headlightmap;
 // cube shadow maps of the lamps, see gl::LOCAL_SHADOW_TEX and opengl46_local_shadows
 layout(binding = LOCAL_SHADOW_TEX) uniform samplerCubeArrayShadow local_shadowmap;
+// the same for the lamps of scenery models, the lights with linear 1
+layout(binding = LOCAL_SHADOW_LAMPS_TEX) uniform samplerCubeArrayShadow local_shadowmap_lamps;
 
 #include <envmapping.glsl>
 #include <conversion.glsl>
@@ -234,12 +236,14 @@ vec2 calc_headlights(light_s light, vec3 fragnormal, vec3 dpdx, vec3 dpdy)
 // closest distance (squared) the light of a lamp is computed for: nearer the inverse square would grow without a limit
 const float LOCAL_LIGHT_MIN_DISTANCE2 = 0.01;
 
-// one comparison with the cube shadow map at the point of the space of the map, moved towards the lamp by Bias (metres)
-float local_light_shadow_tap(vec3 position, float layer, float near, float bias)
+// one comparison with the cube shadow map at the point of the space of the map, moved towards the lamp by Bias (metres). the
+// map is in the array of the scenery lamps when Lamps, in the one of the cab lamp otherwise
+float local_light_shadow_tap(vec3 position, float layer, float near, float bias, bool lamps)
 {
 	vec3 axes = abs(position);
 	float major = max(axes.x, max(axes.y, axes.z));
-	return texture(local_shadowmap, vec4(position, layer), near / max(major - bias, near));
+	float reference = near / max(major - bias, near);
+	return lamps ? texture(local_shadowmap_lamps, vec4(position, layer), reference) : texture(local_shadowmap, vec4(position, layer), reference);
 }
 
 // share of the light of a lamp with a cube shadow map (headlight_weights.x is its layer) which reaches the fragment, 0..1.
@@ -261,8 +265,9 @@ float local_light_shadow(light_s light, vec3 fragnormal)
 	float bias = texel * 1.5;
 	float layer = light.headlight_weights.x;
 	float radius = light.headlight_weights.w;
+	bool lamps = (light.linear > 0.5);
 	if (radius <= 0.0)
-		return local_light_shadow_tap(position, layer, light.headlight_weights.y, bias);
+		return local_light_shadow_tap(position, layer, light.headlight_weights.y, bias, lamps);
 	// a disc of samples in the plane of the surface, each compared with its own distance: points of the surface itself, which
 	// samples spread across the direction to the lamp would not be at grazing angles. rotated per pixel to turn the banding into noise
 	vec3 side = normalize(cross(normal, (abs(normal.y) < 0.99) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
@@ -277,7 +282,7 @@ float local_light_shadow(light_s light, vec3 fragnormal)
 	for (int i = 0; i < count; i++)
 	{
 		vec2 offset = vec2(disc[i].x * rotation.x - disc[i].y * rotation.y, disc[i].x * rotation.y + disc[i].y * rotation.x) * spread;
-		shadow += local_light_shadow_tap(position + side * offset.x + up * offset.y, layer, light.headlight_weights.y, bias);
+		shadow += local_light_shadow_tap(position + side * offset.x + up * offset.y, layer, light.headlight_weights.y, bias, lamps);
 	}
 	return shadow / float(count);
 }

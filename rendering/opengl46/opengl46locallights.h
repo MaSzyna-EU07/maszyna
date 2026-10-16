@@ -47,6 +47,10 @@ class opengl46_local_lights
 		float cos_outer{-1.f}; // cosine of the half angle of the cone; not above 0: the light is not limited to a cone
 		float cos_inner{-1.f}; // cosine of the half angle within which the light is at its full brightness; above cos_outer
 		float range{0.f}; // distance at which the light ends, metres
+		// light point of a scenery model: the instance and the submodel it comes from, which name the lamp from frame to frame
+		// (opengl46_local_shadows keeps the shadow maps of scenery lamps by them). nullptr for the other lights
+		void const *owner{nullptr};
+		void const *part{nullptr};
 	};
 
 	opengl46_local_lights() = default;
@@ -125,6 +129,7 @@ class opengl46_local_lights
 	std::unordered_map<scene::basic_cell const *, cell_data> m_cells;
 	std::unordered_map<TSubModel const *, section_data> m_sections; // compartments, by their submodel
 	std::unordered_map<TModel3d const *, section_data> m_models; // bounds of cab models
+	TAnimModel const *m_walkowner{nullptr}; // scenery instance whose light points walk() goes through; nullptr for vehicles
 	bool m_editorseen{false}; // the editor was on in the last frame: the instance lists of the cells may have changed
 	// statistics
 	std::uint32_t m_scenerycount{0};

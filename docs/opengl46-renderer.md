@@ -116,8 +116,9 @@ scales can also be changed in the **Light clusters** debug window.
   which bounces around the cab (`gfx.lights.cab.bounce`), and the sun shadows stay.
 
 The lamps of models and compartments fade in from the light level at which scenery lamps switch on (`ls_Dark`) to full
-darkness; in daylight they are not gathered at all. Of these lights only the cab lamp casts shadows (see below); the others
-also light what is behind walls within their reach, which is kept short for compartments.
+darkness; in daylight they are not gathered at all. The cab lamp and the lamps of scenery models nearest to the camera cast
+shadows (see below); the others (lamps of vehicles, compartments, farther scenery lamps) also light what is behind walls
+within their reach, which is kept short for compartments.
 
 **Shadows of the cab lamp** (`gfx.lights.shadows`): the cab casts shadows in the light of its lamp, the desk, the seats,
 the levers and the walls (light leaves the cab only through the windows, glass doesn't stop it). They come from a cube
@@ -133,6 +134,20 @@ cab once more. Nothing is drawn with the lamp off (in the daylight it is). The l
 | `medium` (2, default) | 1024 x 1024 per face, 24 MB | every 2nd frame | soft, 4 samples |
 | `high` (3) | 1024 x 1024 per face, 24 MB | every frame | softer, 8 samples |
 
+**Shadows of scenery lamps** (with `gfx.lights.shadows` above `no`): the street, platform and other lamps of scenery models
+nearest to the camera (`gfx.lights.shadows.lamps` of them, within `gfx.lights.shadows.lamps.range` of the camera) cast the
+shadows of the scenery around them, of the vehicles near the camera and of the occupied cab: light from a lamp outside comes
+into the cab only through the windows. Each such lamp has a cube shadow map in world axes around it, in two parts:
+- the scenery (terrain, tracks, models; not the model of the lamp itself, which would shadow everything), drawn once when the
+  lamp gets its map and again only when the scene changes (events showing or hiding models, the editor). At most one map is
+  drawn per frame (two at `high`), so lamps coming into reach get their shadows over a few frames;
+- a copy of the scenery with the vehicles within `gfx.lights.shadows.vehicles.range` of the camera (and the cab) added,
+  made every few frames (as for the cab lamp) while any of them is within the reach of the lamp. A vehicle farther from
+  the camera casts no shadow of the lamps; with no vehicle near a lamp nothing is drawn for it.
+
+Lamps of vehicles and lit compartments cast no shadows. The memory taken is 2 maps per lamp: with the defaults (8 lamps,
+512 x 512 per face) about 100 MB of video memory.
+
 | Entry | Default | Meaning |
 |---|---|---|
 | `gfx.lights.scenery yes/no` | `yes` | light points of scenery models light their surroundings |
@@ -143,7 +158,11 @@ cab once more. Nothing is drawn with the lamp off (in the daylight it is). The l
 | `gfx.lights.cab.intensity` | `1.5` | brightness of the cab lamp |
 | `gfx.lights.cab.bounce` | `0.3` | 0..1: share of the former ambient light of the cab lamp kept with the lamp on |
 | `gfx.lights.range` | `300` | distance from the camera the lamps of models and vehicles are gathered from, metres |
-| `gfx.lights.shadows` | `medium` | `no`/`low`/`medium`/`high` (or 0..3): shadows of the cab lamp, see above |
+| `gfx.lights.shadows` | `medium` | `no`/`low`/`medium`/`high` (or 0..3): shadows of the cab lamp and the scenery lamps, see above |
+| `gfx.lights.shadows.lamps` | `8` | 0..32: how many scenery lamps nearest to the camera cast shadows; 0: none |
+| `gfx.lights.shadows.lamps.size` | `512` | 128..2048: size of a face of the shadow map of a scenery lamp |
+| `gfx.lights.shadows.lamps.range` | `100` | distance from the camera within which scenery lamps cast shadows, metres |
+| `gfx.lights.shadows.vehicles.range` | `50` | distance from the camera within which vehicles (and the occupied cab) cast the shadows of scenery lamps, metres; 0: only the scenery does |
 
 ### Changed option
 
@@ -182,7 +201,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   scenery models, vehicles and compartments, and the cab lamp), how many were placed in the light buffer of the main view
   (those that may light something in view) and did not fit, and the cpu time of gathering them. The `lamp shadows:` row
   gives the size of the cube map, whether it holds the cab lamp, the draw calls and cpu time of its last drawing, and the
-  timings the GPU time of drawing it (`lamp shadows:`); the level can be changed in the window.
+  timings the GPU time of drawing it (`lamp shadows:`); the level can be changed in the window. The `scenery lamp shadows:`
+  row gives the lamps with maps (of the slots, how many ready, how many with vehicles), how many scenery parts and vehicle
+  copies were drawn so far, and the draw calls and cpu time of the last frame which drew any; the timings show their GPU time
+  (`scenery lamp shadows:`). The count and both ranges can be changed in the window too.
 - **Sky and exposure** window (next to the Light clusters window): the switches and scales above, the share of the
   atmosphere, the colours of the sun, ambient light and fog in use, and the measured luminance and exposure.
   Shift+F12 shows the GPU time of `atmosphere:` (look-up tables, only when the sun moved or the weather changed),
