@@ -39,6 +39,9 @@ layout(location = 8) uniform vec2 previous_slicing;
 // where in its cell the cell is sampled this frame across the view (0-1), as slicing.w is along the depth
 layout(location = 9) uniform vec2 jitter;
 
+// how many times brighter or darker than this frame the light of the history may be
+const float FOG_HISTORY_REACH = 4.0;
+
 // ray of the view space through a point of the view (0-1), one metre of the depth long
 vec3 view_ray(vec2 coords)
 {
@@ -138,6 +141,41 @@ vec3 lamp_light(light_s light, vec3 position)
 	return light.color * (atten * light.intensity);
 }
 
+// light of a lamp or of the beam of headlights scattered towards the camera, the average per metre along a segment of the ray
+// of a cell (start, unit direction, length; view space). point samples of a lamp next to the ray change many times over with
+// where in the cell they fall (the light falls off with the square of the distance), so the falloff of a lamp is integrated
+// along the segment and only the rest of its light (the cone, the edge of its reach, the phase) is sampled, at two points the
+// integral spreads by itself (equi-angular sampling, Kulla & Fajardo 2012). the distance of the lamp from the ray is kept to
+// at least half the width of the cell there: the light of a lamp seen within a cell is spread over the cell. Part: where
+// between the two halves of the segment the points are (0-1)
+vec3 lamp_scattering(light_s lamp, vec3 start, vec3 direction, float span, float cellwidth, float part)
+{
+	vec3 sum = vec3(0.0);
+	if (lamp.type == LIGHT_HEADLIGHTS)
+	{
+		// the beam falls off slowly, two points spread evenly along the segment
+		for (int i = 0; i < 2; i++)
+		{
+			vec3 position = start + direction * (span * (float(i) + part) * 0.5);
+			sum += lamp_light(lamp, position) * henyey_greenstein(dot(normalize(position - lamp.pos), -direction), 0.4);
+		}
+		return sum * 0.5;
+	}
+	float closest = dot(lamp.pos - start, direction);
+	vec3 nearest = start + direction * closest;
+	float reach = max(length(lamp.pos - nearest), max(0.5 * cellwidth * max(-nearest.z, 0.0), 1e-3));
+	float first = atan(-closest, reach);
+	float last = atan(span - closest, reach);
+	for (int i = 0; i < 2; i++)
+	{
+		vec3 position = start + direction * (closest + reach * tan(mix(first, last, (float(i) + part) * 0.5)));
+		vec3 tolight = lamp.pos - position;
+		// the light without its falloff, which the integral holds
+		sum += lamp_light(lamp, position) * max(dot(tolight, tolight), 0.01) * henyey_greenstein(dot(normalize(-tolight), -direction), 0.4);
+	}
+	return sum * (0.5 * (last - first) / (reach * max(span, 1e-4)));
+}
+
 void main()
 {
 	ivec3 cell = ivec3(gl_GlobalInvocationID);
@@ -146,7 +184,14 @@ void main()
 	vec3 offset = cell_offset(cell);
 	vec2 coords = (vec2(cell.xy) + offset.xy) / vec2(grid.xy);
 	float depth = slice_depth(float(cell.z) + offset.z);
-	vec3 view = view_ray(coords) * depth;
+	vec3 ray = view_ray(coords);
+	vec3 view = ray * depth;
+	// the segment of the ray through the cell, for the light which changes within the cell
+	float raylength = length(ray);
+	vec3 raydirection = ray / raylength;
+	float front = slice_depth(float(cell.z));
+	vec3 start = ray * front;
+	float span = (slice_depth(float(cell.z) + 1.0) - front) * raylength;
 	vec3 world = mat3(view_to_world) * view;
 	float height = weather_camera.x + world.y;
 
@@ -168,7 +213,11 @@ void main()
 		// the light of the sky and the sun, held back by the shadows
 		float sunlit = cloud_shadow(world);
 		if (options.z > 0.5 && sunlit > 0.0)
-			sunlit *= 1.0 - sun_shadow(view);
+		{
+			// two points of the segment, one in each half: a shaft of light no longer comes and goes with the one point sampled
+			float shadow = sun_shadow(start + raydirection * (span * 0.5 * offset.z)) + sun_shadow(start + raydirection * (span * 0.5 * (offset.z + 1.0)));
+			sunlit *= 1.0 - 0.5 * shadow;
+		}
 		vec3 light = fog_whiten(fog_color_world(direction), (ground + clouds) / extinction) * fog_light_factor(sunlit);
 		// lamps and headlights of the cluster of the cell
 		if (options.y > 0.0 && lights_clustered != 0U && cluster_valid != 0U)
@@ -176,18 +225,14 @@ void main()
 			ivec2 tile = clamp(ivec2(coords * vec2(CLUSTER_GRID_X, CLUSTER_GRID_Y)), ivec2(0), ivec2(CLUSTER_GRID_X - 1, CLUSTER_GRID_Y - 1));
 			int slice = clamp(int(floor(cluster_slice_bias + log(depth) * cluster_slice_scale)), 0, CLUSTER_GRID_Z - 1);
 			cluster_range_s range = cluster_ranges[uint(tile.x + CLUSTER_GRID_X * (tile.y + CLUSTER_GRID_Y * slice))];
-			vec3 tocamera = -normalize(view);
+			float cellwidth = length(view_ray(coords + vec2(1.0 / float(grid.x), 0.0)) - ray);
 			vec3 lamps = vec3(0.0);
 			for (uint i = 0U; i < range.count; i++)
 			{
 				uint index = cluster_light_indices[range.offset + i];
 				if (int(index) == cablamp)
 					continue;
-				light_s lamp = lights[index];
-				vec3 incoming = lamp_light(lamp, view);
-				if (dot(incoming, incoming) <= 0.0)
-					continue;
-				lamps += incoming * henyey_greenstein(dot(normalize(view - lamp.pos), tocamera), 0.4);
+				lamps += lamp_scattering(lights[index], start, raydirection, span, cellwidth, offset.z);
 			}
 			light += lamps * options.y;
 		}
@@ -206,7 +251,13 @@ void main()
 			float previousslice = log(max((clip.w + FOG_VOLUME_BIAS) / (previous_slicing.x + FOG_VOLUME_BIAS), 1e-6)) * previous_slicing.y;
 			vec3 previous = vec3(clip.xy / clip.w * 0.5 + 0.5, previousslice / float(grid.z));
 			if (all(greaterThanEqual(previous, vec3(0.0))) && all(lessThanEqual(previous, vec3(1.0))))
-				result = mix(textureLod(fog_history, previous, 0.0), result, share);
+			{
+				// the light of the history kept within a factor of this frame's: where a lamp went away (the headlights of a passing
+				// train) or came, the light doesn't trail over many frames. the factor is wide, so the sampling itself stays blended
+				vec4 history = textureLod(fog_history, previous, 0.0);
+				history.rgb = clamp(history.rgb, result.rgb * (1.0 / FOG_HISTORY_REACH), result.rgb * FOG_HISTORY_REACH);
+				result = mix(history, result, share);
+			}
 		}
 	}
 	if (any(isnan(result)))

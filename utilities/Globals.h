@@ -377,7 +377,7 @@ struct global_settings {
     float gfx_fog_lights { 1.f };
     bool gfx_fog_shadows { true };
     bool gfx_fog_temporal { true };
-    float gfx_fog_temporal_share { 0.1f };
+    float gfx_fog_temporal_share { 0.2f };
     // volumetric clouds, 0 none, 1-4 the quality (low, medium, high, ultra); the farthest they are drawn (metres); the shadows
     // they cast (a map around the camera: its size in texels and in metres)
     int gfx_clouds { 2 };
