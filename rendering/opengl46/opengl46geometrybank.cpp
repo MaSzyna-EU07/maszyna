@@ -222,6 +222,58 @@ opengl46_vaogeometrybank::draw_instanced_( gfx::geometry_handle const &Geometry,
     return prims * InstanceCount;
 }
 
+// indirect_source() subclass details — the chunk is uploaded first if needed, as by a draw, so that an indirect draw
+// command made from what this tells finds it in place
+bool
+opengl46_vaogeometrybank::indirect_source_( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source )
+{
+    setup_buffer();
+
+    auto &chunkrecord = m_chunkrecords.at(Geometry.chunk - 1);
+    if( chunkrecord.vertex_count == 0 ) { return false; }
+
+    auto const &chunk = gfx::geometry_bank::chunk( Geometry );
+    if( !chunkrecord.is_good ) {
+        m_vao->bind();
+        if( chunkrecord.index_count > 0 ) {
+            m_indexbuffer->upload( gl::buffer::ELEMENT_ARRAY_BUFFER, chunk.indices.data(), chunkrecord.index_offset * sizeof( gfx::basic_index ), chunkrecord.index_count * sizeof( gfx::basic_index ) );
+        }
+        m_vertexbuffer->upload( gl::buffer::ARRAY_BUFFER, chunk.vertices.data(), chunkrecord.vertex_offset * sizeof( gfx::basic_vertex ), chunkrecord.vertex_count * sizeof( gfx::basic_vertex ) );
+        if( chunkrecord.has_userdata ) {
+            m_vertexbuffer->upload( gl::buffer::ARRAY_BUFFER, chunk.userdata.data(),
+                static_cast<int>(m_vertex_count * sizeof(gfx::basic_vertex) + chunkrecord.vertex_offset * sizeof(gfx::vertex_userdata)),
+                static_cast<int>(chunkrecord.vertex_count * sizeof(gfx::vertex_userdata)) );
+        }
+        chunkrecord.is_good = true;
+    }
+
+    Source.indexed = ( chunkrecord.index_count > 0 );
+    Source.count = static_cast<std::uint32_t>( Source.indexed ? chunkrecord.index_count : chunkrecord.vertex_count );
+    Source.first = static_cast<std::uint32_t>( Source.indexed ? chunkrecord.index_offset : chunkrecord.vertex_offset );
+    Source.basevertex = static_cast<std::int32_t>( Source.indexed ? chunkrecord.vertex_offset : 0 );
+    Source.type = chunk.type;
+    return true;
+}
+
+// draw_indirect() subclass details — the command comes from the bound draw indirect buffer
+void
+opengl46_vaogeometrybank::draw_indirect_( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const /*Streams*/ )
+{
+    setup_buffer();
+
+    auto const &chunkrecord = m_chunkrecords.at(Geometry.chunk - 1);
+    if( chunkrecord.vertex_count == 0 ) { return; }
+
+    auto const &chunk = gfx::geometry_bank::chunk( Geometry );
+    m_vao->bind();
+    if( chunkrecord.index_count > 0 ) {
+        ::glDrawElementsIndirect( chunk.type, GL_UNSIGNED_INT, reinterpret_cast<void const *>( Offset ) );
+    }
+    else {
+        ::glDrawArraysIndirect( chunk.type, reinterpret_cast<void const *>( Offset ) );
+    }
+}
+
 // draw_batch() subclass details — neighbouring non-indexed chunks of the same type are sent with a single GL call.
 // The chunks are drawn in the supplied order, same as with a draw_() call for each of them.
 std::size_t

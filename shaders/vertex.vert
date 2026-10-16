@@ -6,6 +6,9 @@ layout(location = 4) in vec4 v_userdata;
 
 #include <common>
 
+// the depth prepass (depthprepass.vert) works the position out the same way, and has to get the same depth
+invariant gl_Position;
+
 out vec3 f_normal;
 flat out vec3 f_normal_raw;
 out vec2 f_coord;

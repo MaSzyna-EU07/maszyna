@@ -391,11 +391,16 @@ namespace gl
     const GLuint INSTANCE_LOD_SSBO_BINDING = 12; // sorted lod bounds (squared distances) of the groups
     const GLuint INSTANCE_COUNTER_SSBO_BINDING = 13; // header, then count[entries] and cursor[entries]
     const GLuint INSTANCE_OUTPUT_SSBO_BINDING = 14; // modelview matrices of the instances which passed, by entry
+    const GLuint INSTANCE_COMMAND_SSBO_BINDING = 15; // indirect draw commands of the entries (instance_cull_commands.comp)
     const GLuint INSTANCE_CULL_GROUP_SIZE = 64;
     const GLuint INSTANCE_OFFSETS_GROUP_SIZE = 1024;
-    // uints of the header of the counter buffer: frame number, survivors in total, entries, unused.
+    const GLuint INSTANCE_COMMAND_GROUP_SIZE = 64;
+    // uints of the header of the counter buffer: frame number, survivors in total, entries, instances left out as hidden
+    // behind the depth already drawn (occlusion test).
     // an entry is a lod band of a group: survivors of group g in band b are counted at entry entryfirst(g) + b
     const GLuint INSTANCE_COUNTER_HEADER = 4;
+    // work group of the passes which make the depth pyramid of the occlusion test (hiz_build.comp), 8x8
+    const GLuint HIZ_GROUP_SIZE = 8;
 
     // layout std430: a bucket of a scene cell queued in the pass (GLSL: instance_cull_job)
     struct instance_cull_job
@@ -421,6 +426,24 @@ namespace gl
     };
 
     static_assert(sizeof(instance_cull_group) == 16, "bad size of instance_cull_group");
+
+    // layout std430: an indirect draw of the submodel of a group in one of its lod bands. the first five fields are the
+    // command of glDrawElementsIndirect (count, instance count, first index, base vertex, base instance), or with indexed 0
+    // the one of glDrawArraysIndirect (count, instance count, first vertex, base instance). the cpu fills in what it knows
+    // of the geometry, instance_cull_commands.comp the instances, from the counts of the entry
+    struct instance_draw_command
+    {
+        uint32_t count;
+        uint32_t instancecount;
+        uint32_t first;
+        uint32_t basevertex; // the base instance of an array draw
+        uint32_t baseinstance;
+        uint32_t entry;
+        uint32_t indexed;
+        uint32_t pad;
+    };
+
+    static_assert(sizeof(instance_draw_command) == 32, "bad size of instance_draw_command");
 
 #pragma pack(pop)
 }

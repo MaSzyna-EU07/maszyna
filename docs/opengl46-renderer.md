@@ -164,6 +164,25 @@ Lamps of vehicles and lit compartments cast no shadows. The memory taken is 2 ma
 | `gfx.lights.shadows.lamps.range` | `100` | distance from the camera within which scenery lamps cast shadows, metres |
 | `gfx.lights.shadows.vehicles.range` | `50` | distance from the camera within which vehicles (and the occupied cab) cast the shadows of scenery lamps, metres; 0: only the scenery does |
 
+### Models drawn from the GPU
+
+Many models of the scenery (trees, bushes, poles, fences: models without lights and animations) are drawn in batches, one
+batch per model and level of detail. Which of them are drawn, and at which level of detail, can be worked out on the
+processor (as before) or on the graphics card. On the graphics card the processor no longer goes through the models one by
+one, so with dense vegetation it is much less loaded. Only the main view is drawn this way; shadows, reflections and other
+views go as before.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.gpucull` | `no` | `no`: on the processor, as before. `yes`: on the graphics card, and the models are drawn from its result. `compare`: on the processor, which draws, and on the graphics card too, for the results to be compared (debugging) |
+| `gfx.gpucull.occlusion yes/no` | `yes` | with `gfx.gpucull yes`: models hidden whole behind what was drawn before them (the cab, the terrain, buildings and other models drawn on their own, vehicles) are left out |
+| `gfx.depthprepass yes/no` | `yes` | with `gfx.gpucull yes`: the depth of the models is drawn first, so the colour is worked out only for what stays in view (dense foliage) |
+
+The occlusion test does not take models drawn this way as covering each other: a tree hidden behind another tree is still
+drawn (its colour is not worked out with the depth prepass on). Models whose material is not one of the usual ones (parallax,
+water and the like) are left out of the depth prepass and drawn as before. All three can be changed while the simulator
+runs, in the **Instance culling** debug window.
+
 ### Changed option
 
 `dynamiclights` (0..7) used to limit the number of headlight sets that light the surroundings. It is still
@@ -210,6 +229,11 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   Shift+F12 shows the GPU time of `atmosphere:` (look-up tables, only when the sun moved or the weather changed),
   `envmap ggx:` (prefiltering, with each update of the environment map), `exposure:` and `bloom:`. The same window holds
   the ambient occlusion mode and its settings; Shift+F12 shows its time as `ambient occlusion:` (gtao only).
+- **Instance culling** window: the mode of `gfx.gpucull` and the two switches above. With `gfx.gpucull yes` Shift+F12 shows
+  `gpu cull:` (models drawn and hidden by the occlusion test, as counted on the graphics card a few frames before, the levels
+  of detail, the draw calls with those of the depth prepass, and the processor time of the whole step) and the timings
+  `instance cull:`, `occlusion depth:` (the depth pyramid of the test) and `depth prepass:`. With `compare` it shows how many
+  models both counted and how many levels of detail differ.
 - `gfx.gldebug yes` turns on the OpenGL debug output (`KHR_debug`); messages go to the log.
 
 ## Building

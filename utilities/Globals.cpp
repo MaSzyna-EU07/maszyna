@@ -1428,8 +1428,21 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
     }
     else if (Token == "gfx.gpucull")
     {
+        // yes: culled and drawn from the gpu, compare: culled on both, drawn by the cpu, anything else: cpu
         Parser.getTokens(1);
-        Parser >> gfx_gpucull;
+        std::string mode;
+        Parser >> mode;
+        gfx_gpucull = (mode == "yes" || mode == "true" || mode == "1") ? 1 : (mode == "compare" || mode == "2") ? 2 : 0;
+    }
+    else if (Token == "gfx.gpucull.occlusion")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_occlusion;
+    }
+    else if (Token == "gfx.depthprepass")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_depthprepass;
     }
     else if (Token == "gfx.lights.clusterheatmap")
     {
@@ -1855,7 +1868,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.envmap.enabled", gfx_envmap_enabled );
     export_as_text( Output, "gfx.lights.clustered", gfx_lights_clustered );
     export_as_text( Output, "gfx.lights.clusterheatmap", gfx_lights_clusterheatmap );
-    export_as_text( Output, "gfx.gpucull", gfx_gpucull );
+    export_as_text( Output, "gfx.gpucull", std::string{ gfx_gpucull == 1 ? "yes" : gfx_gpucull == 2 ? "compare" : "no" } );
+    export_as_text( Output, "gfx.gpucull.occlusion", gfx_gpucull_occlusion );
+    export_as_text( Output, "gfx.depthprepass", gfx_depthprepass );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );
     // TODO: export gfx_postfx_motionblur_format

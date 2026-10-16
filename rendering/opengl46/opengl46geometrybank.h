@@ -59,6 +59,12 @@ private:
     // draw_batch() subclass details — issues glMultiDrawArrays for runs of non-indexed chunks of the same type
     auto
         draw_batch_( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
+    // indirect_source() subclass details — uploads the chunk if needed, tells its place in the buffers
+    auto
+        indirect_source_( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source ) -> bool override;
+    // draw_indirect() subclass details — issues glDrawElementsIndirect or glDrawArraysIndirect
+    void
+        draw_indirect_( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams ) override;
     // release() subclass details
     void
         release_() override;

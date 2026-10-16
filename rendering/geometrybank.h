@@ -61,6 +61,16 @@ struct stream_units {
 
 using basic_index = std::uint32_t;
 
+// where a chunk lies in the buffers of its bank, for an indirect draw command made on the cpu: count of indices (or of
+// vertices), first index (or vertex), base vertex, whether the draw is indexed, and the primitive type
+struct indirect_source {
+    std::uint32_t count { 0 };
+    std::uint32_t first { 0 };
+    std::int32_t basevertex { 0 };
+    bool indexed { false };
+    unsigned int type { 0 };
+};
+
 using vertex_array = std::vector<basic_vertex>;
 using userdata_array = std::vector<vertex_userdata>;
 using index_array = std::vector<basic_index>;
@@ -123,6 +133,11 @@ public:
     auto draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in supplied sequence of chunks of the bank, in their order. the bank is free to combine them into fewer draw calls
     auto draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
+    // makes the data of specified chunk ready for drawing and tells where it lies. returns: false if there's nothing to draw
+    auto indirect_source( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source ) -> bool;
+    // draws geometry stored in specified chunk with the command at Offset (bytes) in the bound draw indirect buffer,
+    // a glDrawElementsIndirect one for an indexed chunk, glDrawArraysIndirect otherwise
+    void draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams = basic_streams );
     // draws geometry stored in supplied list of chunks
     template <typename Iterator_>
     auto draw( Iterator_ First, Iterator_ Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) ->std::size_t {
@@ -194,6 +209,9 @@ private:
         std::size_t count { 0 };
         for( ; First != Last; ++First ) { count += draw_( *First, Units, Streams ); }
         return count; }
+    // indirect_source() and draw_indirect() subclass details. by default the bank can't draw indirectly
+    virtual auto indirect_source_( gfx::geometry_handle const & /*Geometry*/, gfx::indirect_source & /*Source*/ ) -> bool { return false; }
+    virtual void draw_indirect_( gfx::geometry_handle const & /*Geometry*/, std::intptr_t const /*Offset*/, unsigned int const /*Streams*/ ) {}
     // resource release subclass details
     virtual void release_() = 0;
 };
@@ -227,6 +245,10 @@ public:
     void draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams = basic_streams );
     // draws geometry stored in supplied sequence of chunks, in their order. neighbouring chunks of the same bank are passed to it together
     void draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, unsigned int const Streams = basic_streams );
+    // makes the data of specified chunk ready for an indirect draw and tells where it lies. returns: false if there's nothing to draw
+    auto indirect_source( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source ) -> bool;
+    // draws geometry stored in specified chunk with the command at Offset (bytes) in the bound draw indirect buffer
+    void draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams = basic_streams );
     template <typename Iterator_>
     void draw( Iterator_ First, Iterator_ Last, unsigned int const Streams = basic_streams ) {
             while( First != Last ) { 

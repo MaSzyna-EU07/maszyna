@@ -38,6 +38,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46locallights.h"
 #include "rendering/opengl46/opengl46localshadows.h"
 #include "rendering/opengl46/opengl46instancecull.h"
+#include "rendering/opengl46/opengl46hiz.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer {
@@ -333,6 +334,13 @@ class opengl46_renderer : public gfx_renderer {
 	void Update_Instance_Records( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket, glm::dvec3 const &Origin );
 	// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
 	std::uint32_t Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count );
+	// draws the instances queued in the pass from the result of the gpu culling (Global.gfx_gpucull 1): makes the depth
+	// pyramid of the occlusion test, runs the culling, walks the submodel trees of the groups once per lod band to record
+	// the draws (m_indirectdraws, m_indirectcommands), has their instances filled in, then draws them with indirect draws,
+	// their depth first (Global.gfx_depthprepass)
+	void Render_Instances_Indirect();
+	// how the depth prepass treats the material: 0 left out, 1 drawn without alpha test, 2 with the alpha test of the diffuse texture
+	int Prepass_Class( material_handle const Material );
 	bool Render(TDynamicObject *Dynamic);
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
@@ -483,11 +491,35 @@ class opengl46_renderer : public gfx_renderer {
 	unsigned int m_instancerecordsversion { 1 };
 	unsigned int m_nodestateversion { 0 }; // scene::node_state_version which m_instancerecordsversion was last checked against
 	// culling of instances in compute passes, run along the first color pass of the main viewport of a frame
-	// when Global.gfx_gpucull is set; for now its result is only compared with the one of the cpu
+	// when Global.gfx_gpucull is set: the instances of the pass are drawn from its result (1), or the result is compared
+	// with the one of the cpu (2)
 	opengl46_instance_cull m_instancecull;
 	bool m_instancecullpass { false }; // the current pass feeds it
 	unsigned int m_instancecullframe { ~0u }; // frame it last ran in
 	std::vector<std::uint32_t> m_instance_bandcounts; // reported by Render_Instanced() for the comparison
+	// depth pyramid for the occlusion test of the gpu culling
+	opengl46_hiz m_hiz;
+	// a draw recorded from the walk of the submodel tree of a group in one lod band (Render_Instances_Indirect()), to be
+	// replayed once the instances of its command are known: the state the walk left for it and what it bound
+	struct indirect_draw {
+		gl::model_ubs ubs;
+		material_handle material;
+		TSubModel const *submodel;
+		gfx::geometry_handle geometry;
+		unsigned int type; // primitive
+		bool blending; // drawn with the transparency hack of submodels faded out
+	};
+	std::vector<indirect_draw> m_indirectdraws;
+	std::vector<gl::instance_draw_command> m_indirectcommands; // in the order of m_indirectdraws
+	bool m_indirectrecording { false }; // draw() and Bind_Material() record instead of drawing
+	std::uint32_t m_indirectentry { 0 }; // entry (group and lod band) recorded
+	material_handle m_indirectmaterial { null_handle }; // what the last Bind_Material() bound while recording
+	TSubModel const *m_indirectsubmodel { nullptr };
+	// depth prepass: programs and the class of the material programs (see Prepass_Class())
+	std::unique_ptr<gl::program> m_prepass_shader;
+	std::unique_ptr<gl::program> m_prepass_alpha_shader;
+	std::unordered_map<gl::program const *, int> m_prepassclasses;
+	gl::gpu_timer m_prepasstimer;
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;

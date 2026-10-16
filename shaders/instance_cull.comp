@@ -1,7 +1,9 @@
 // culls the model instances of the buckets queued in a render pass and assigns them their lod bands, with the tests
 // opengl46_renderer::Render_Instanced() makes on the cpu. one invocation per record of a queued bucket.
 // stage 0 counts the instances which pass, per entry (lod band of a group); after instance_cull_offsets.comp turned the
-// counts into the first slots of the entries, stage 1 writes their modelview matrices there, in no particular order
+// counts into the first slots of the entries, stage 1 writes their modelview matrices there, in no particular order.
+// with the occlusion test on, an instance whose bounding sphere lies whole behind the depth already drawn in the pass
+// (the farthest depth of the pyramid over the part of the view it takes, see hiz_build.comp) is left out as well
 
 #include <common>
 
@@ -75,6 +77,14 @@ layout(location = 7) uniform vec4 distance_params;
 layout(location = 8) uniform vec4 size_params;
 // x: jobs, y: records in all jobs, z: entries, w: stage
 layout(location = 9) uniform uvec4 counts;
+// occlusion test: projection of the pass, x: on, y: levels of the pyramid, zw: size of its first level
+layout(location = 10) uniform mat4 hiz_projection;
+layout(location = 14) uniform ivec4 hiz_params;
+// xy: size of the depth the pyramid was made from, pixels
+layout(location = 15) uniform vec4 hiz_screen;
+
+// depth pyramid, farthest (smallest, reversed) depth per texel
+layout(binding = 0) uniform sampler2D hiz;
 
 const uint INSTANCE_VISIBLE = 1u;
 const uint INSTANCE_INSTANCEABLE = 2u;
@@ -95,6 +105,50 @@ uint find_job(uint candidate)
 			high = middle - 1u;
 	}
 	return low;
+}
+
+// whether a sphere (view space) lies whole behind the depth in the pyramid over the rectangle of the view it takes
+bool occluded(vec3 center, float radius)
+{
+	vec2 low = vec2(1.0);
+	vec2 high = vec2(-1.0);
+	float nearest = 0.0;
+	for (int corner = 0; corner < 8; ++corner)
+	{
+		vec3 offset = vec3(((corner & 1) != 0) ? radius : -radius, ((corner & 2) != 0) ? radius : -radius, ((corner & 4) != 0) ? radius : -radius);
+		vec4 clip = hiz_projection * vec4(center + offset, 1.0);
+		// reaches the plane of the camera: no rectangle to test
+		if (clip.w <= 1e-3)
+			return false;
+		vec3 ndc = clip.xyz / clip.w;
+		low = min(low, ndc.xy);
+		high = max(high, ndc.xy);
+		nearest = max(nearest, ndc.z);
+	}
+	if (any(greaterThan(low, vec2(1.0))) || any(lessThan(high, vec2(-1.0))) || (nearest >= 1.0))
+		return false;
+
+	// pixels of the rectangle, then texels of the first level: each covers 2x2 pixels
+	ivec2 size = hiz_params.zw;
+	ivec2 pixelfirst = ivec2(clamp((low * 0.5 + 0.5) * hiz_screen.xy, vec2(0.0), hiz_screen.xy - 1.0));
+	ivec2 pixellast = ivec2(clamp((high * 0.5 + 0.5) * hiz_screen.xy, vec2(0.0), hiz_screen.xy - 1.0));
+	ivec2 first = min(pixelfirst / 2, size - 1);
+	ivec2 last = min(pixellast / 2, size - 1);
+	// the level where the rectangle takes at most 2x2 texels
+	int level = 0;
+	while ((level < hiz_params.y - 1) && any(greaterThan((last >> level) - (first >> level), ivec2(1))))
+		++level;
+	ivec2 levelsize = max(size >> level, ivec2(1));
+	first = min(first >> level, levelsize - 1);
+	last = min(last >> level, levelsize - 1);
+
+	float farthest = 1.0;
+	for (int y = first.y; y <= last.y; ++y)
+	{
+		for (int x = first.x; x <= last.x; ++x)
+			farthest = min(farthest, texelFetch(hiz, ivec2(x, y), level).r);
+	}
+	return nearest < farthest;
 }
 
 void main()
@@ -128,6 +182,12 @@ void main()
 		return;
 	if (record.radius * record.radius * size_params.x / distancesquared < MIN_SCREEN_SIZE * MIN_SCREEN_SIZE)
 		return;
+	if ((hiz_params.x != 0) && occluded((view * vec4(location, 1.0)).xyz, record.radius))
+	{
+		if (counts.w == 0u)
+			atomicAdd(counters[3], 1u);
+		return;
+	}
 
 	// band: the number of lod bounds the distance reached, like upper_bound over the sorted bounds
 	instance_cull_group group = groups[job.group];

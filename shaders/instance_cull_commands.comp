@@ -1,0 +1,39 @@
+// fills in the instances of the indirect draw commands of the entries, after stage 1 of instance_cull.comp wrote the
+// modelview matrices of the instances which passed. one invocation per command: the instance count is the count of its
+// entry, the base instance the first slot of the entry in the output (its cursor, advanced by stage 1, less the count)
+
+#include <common>
+
+layout(local_size_x = INSTANCE_COMMAND_GROUP_SIZE) in;
+
+layout(std430, binding = INSTANCE_COUNTER_SSBO_BINDING) readonly buffer instance_counter_ssbo
+{
+	uint counters[];
+};
+
+// gl::instance_draw_command, eight uints each: count, instance count, first, base vertex (base instance of an array
+// draw), base instance, entry, indexed, unused
+layout(std430, binding = INSTANCE_COMMAND_SSBO_BINDING) buffer instance_command_ssbo
+{
+	uint commands[];
+};
+
+// x: commands, y: entries
+layout(location = 0) uniform uvec4 counts;
+
+void main()
+{
+	uint command = gl_GlobalInvocationID.x;
+	if (command >= counts.x)
+		return;
+
+	uint field = command * 8u;
+	uint entry = commands[field + 5u];
+	uint count = counters[INSTANCE_COUNTER_HEADER + entry];
+	uint base = counters[INSTANCE_COUNTER_HEADER + counts.y + entry] - count;
+	commands[field + 1u] = count;
+	if (commands[field + 6u] != 0u)
+		commands[field + 4u] = base;
+	else
+		commands[field + 3u] = base;
+}

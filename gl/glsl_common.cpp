@@ -21,8 +21,11 @@ void gl::glsl_common_setup()
     "#define INSTANCE_LOD_SSBO_BINDING " + std::to_string(INSTANCE_LOD_SSBO_BINDING) + "\n" +
     "#define INSTANCE_COUNTER_SSBO_BINDING " + std::to_string(INSTANCE_COUNTER_SSBO_BINDING) + "\n" +
     "#define INSTANCE_OUTPUT_SSBO_BINDING " + std::to_string(INSTANCE_OUTPUT_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_COMMAND_SSBO_BINDING " + std::to_string(INSTANCE_COMMAND_SSBO_BINDING) + "\n" +
     "#define INSTANCE_CULL_GROUP_SIZE " + std::to_string(INSTANCE_CULL_GROUP_SIZE) + "\n" +
     "#define INSTANCE_OFFSETS_GROUP_SIZE " + std::to_string(INSTANCE_OFFSETS_GROUP_SIZE) + "\n" +
+    "#define INSTANCE_COMMAND_GROUP_SIZE " + std::to_string(INSTANCE_COMMAND_GROUP_SIZE) + "\n" +
+    "#define HIZ_GROUP_SIZE " + std::to_string(HIZ_GROUP_SIZE) + "\n" +
     "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
     "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +
     "#define CLUSTER_GRID_X " + std::to_string(CLUSTER_GRID_X) + "\n" +

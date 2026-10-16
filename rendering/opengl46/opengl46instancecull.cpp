@@ -10,7 +10,9 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 
+#include "model/AnimModel.h"
 #include "model/Model3d.h"
+#include "model/Texture.h"
 #include "rendering/frustum.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
@@ -37,6 +39,7 @@ void opengl46_instance_cull::init()
 	};
 	m_cull_program = make_compute("instance_cull.comp");
 	m_offsets_program = make_compute("instance_cull_offsets.comp");
+	m_commands_program = make_compute("instance_cull_commands.comp");
 
 	auto const readbacksize{static_cast<GLsizeiptr>((gl::INSTANCE_COUNTER_HEADER + READBACK_ENTRIES) * sizeof(std::uint32_t))};
 	m_records = std::make_unique<gl::ssbo>(65536 * RECORD_SIZE, gl::INSTANCE_RECORD_SSBO_BINDING);
@@ -46,6 +49,7 @@ void opengl46_instance_cull::init()
 	// the readback copies a fixed size from it
 	m_counters = std::make_unique<gl::ssbo>(readbacksize, gl::INSTANCE_COUNTER_SSBO_BINDING);
 	m_output = std::make_unique<gl::ssbo>(65536 * sizeof(glm::mat4), gl::INSTANCE_OUTPUT_SSBO_BINDING);
+	m_commands = std::make_unique<gl::ssbo>(4096 * sizeof(gl::instance_draw_command), gl::INSTANCE_COMMAND_SSBO_BINDING);
 	m_readback = std::make_unique<gl::readback>(readbacksize);
 	m_readbackdata.resize(gl::INSTANCE_COUNTER_HEADER + READBACK_ENTRIES);
 }
@@ -60,6 +64,7 @@ void opengl46_instance_cull::begin_pass(pass_setup const &Setup)
 	m_buckets.clear();
 	m_joblist.clear();
 	m_grouplist.clear();
+	m_drawgroups.clear();
 	m_lodlist.clear();
 	m_groupmap.clear();
 	m_cpucounts.clear();
@@ -67,10 +72,18 @@ void opengl46_instance_cull::begin_pass(pass_setup const &Setup)
 	m_entries = 0;
 }
 
-void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket)
+void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area)
 {
 	if (!m_inpass || Bucket.records.empty() || Key.pModel == nullptr)
 		return;
+
+	// range of the squared distances the instances of the bucket can be at, scaled as in the culling, with some slack for
+	// its single precision: the draws are made only for the lod bands within it
+	auto const centerdistance{glm::length(Area.center - m_setup.distancecamera)};
+	auto const nearest{std::max(0.0, centerdistance - Area.radius)};
+	auto const farthest{centerdistance + Area.radius};
+	auto const distancemin{static_cast<float>(0.999 * (nearest * nearest * m_setup.distancescale + m_setup.distanceoffset))};
+	auto const distancemax{static_cast<float>(1.001 * (farthest * farthest * m_setup.distancescale + m_setup.distanceoffset))};
 
 	auto lookup{m_groupmap.find(Key)};
 	if (lookup == m_groupmap.end())
@@ -96,10 +109,46 @@ void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key c
 		m_lodlist.erase(std::unique(m_lodlist.begin() + lodfirst, m_lodlist.end()), m_lodlist.end());
 		auto const lodcount{static_cast<std::uint32_t>(m_lodlist.size()) - lodfirst};
 
-		group_data const group{static_cast<std::uint32_t>(m_grouplist.size()), m_entries, lodcount + 1};
+		group_data const group{static_cast<std::uint32_t>(m_grouplist.size()), m_entries, lodcount + 1, distancemin, distancemax};
 		m_grouplist.push_back({lodfirst, lodcount, m_entries, 0});
 		m_entries += group.entrycount;
 		lookup = m_groupmap.emplace(Key, group).first;
+		if (m_setup.drawing)
+		{
+			// any instance of the group serves; it's only prepared and asked for its material
+			TAnimModel *instance{nullptr};
+			for (auto *candidate : Bucket.instances)
+			{
+				if (candidate != nullptr)
+				{
+					instance = candidate;
+					break;
+				}
+			}
+			m_drawgroups.push_back({&lookup->first, instance, lodfirst, lodcount, group.entryfirst, distancemin, distancemax});
+		}
+	}
+	else
+	{
+		lookup->second.distancemin = std::min(lookup->second.distancemin, distancemin);
+		lookup->second.distancemax = std::max(lookup->second.distancemax, distancemax);
+		if (m_setup.drawing)
+		{
+			auto &drawgroup{m_drawgroups[lookup->second.index]};
+			drawgroup.distancemin = lookup->second.distancemin;
+			drawgroup.distancemax = lookup->second.distancemax;
+			if (drawgroup.instance == nullptr)
+			{
+				for (auto *candidate : Bucket.instances)
+				{
+					if (candidate != nullptr)
+					{
+						drawgroup.instance = candidate;
+						break;
+					}
+				}
+			}
+		}
 	}
 
 	place(Bucket);
@@ -161,8 +210,9 @@ void opengl46_instance_cull::place(scene::basic_cell::instance_bucket const &Buc
 	allocate(Bucket);
 }
 
-void opengl46_instance_cull::dispatch(glm::mat4 const &View)
+void opengl46_instance_cull::dispatch(glm::mat4 const &View, occlusion_setup const *Occlusion)
 {
+	m_occlusion = false;
 	if (!m_inpass || m_joblist.empty())
 		return;
 
@@ -203,6 +253,19 @@ void opengl46_instance_cull::dispatch(glm::mat4 const &View)
 	glProgramUniform4f(*m_cull_program, 7, m_setup.distancescale, m_setup.distanceoffset, m_setup.distancerange, m_setup.drawrange);
 	glProgramUniform4f(*m_cull_program, 8, m_setup.zoom, 0.f, 0.f, 0.f);
 	glProgramUniform4ui(*m_offsets_program, 0, m_entries, 0, 0, 0);
+	// the occlusion test only when the instances are drawn from the result, the cpu doesn't make it
+	m_occlusion = (m_setup.drawing && (Occlusion != nullptr) && (Occlusion->pyramid != 0));
+	if (m_occlusion)
+	{
+		glProgramUniformMatrix4fv(*m_cull_program, 10, 1, GL_FALSE, glm::value_ptr(Occlusion->projection));
+		glProgramUniform4i(*m_cull_program, 14, 1, Occlusion->levels, Occlusion->size.x, Occlusion->size.y);
+		glProgramUniform4f(*m_cull_program, 15, Occlusion->screen.x, Occlusion->screen.y, 0.f, 0.f);
+		glBindTextureUnit(0, Occlusion->pyramid);
+	}
+	else
+	{
+		glProgramUniform4i(*m_cull_program, 14, 0, 0, 0, 0);
+	}
 
 	// one invocation per record; past the count limit of one dimension the groups go into rows
 	auto const groups{(m_candidates + gl::INSTANCE_CULL_GROUP_SIZE - 1) / gl::INSTANCE_CULL_GROUP_SIZE};
@@ -220,10 +283,47 @@ void opengl46_instance_cull::dispatch(glm::mat4 const &View)
 	// the output and the counts go to draws, indirect draws and the copy for the cpu
 	gl::memory_barrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
 	m_timer.end();
+	if (m_occlusion)
+	{
+		glBindTextureUnit(0, 0);
+		opengl_texture::reset_unit_cache();
+	}
 
 	m_readback->push(*m_counters);
 	m_cpucounts.assign(m_entries, 0);
 	m_dispatched = true;
+}
+
+void opengl46_instance_cull::fill_commands(std::vector<gl::instance_draw_command> const &Commands)
+{
+	m_commandcount = static_cast<std::uint32_t>(Commands.size());
+	if (!m_dispatched || Commands.empty())
+		return;
+
+	auto const size{static_cast<GLsizeiptr>(Commands.size() * sizeof(gl::instance_draw_command))};
+	reserve(*m_commands, size);
+	m_commands->update(Commands.data(), 0, size);
+	m_counters->bind_base();
+	m_commands->bind_base();
+	glProgramUniform4ui(*m_commands_program, 0, m_commandcount, m_entries, 0, 0);
+	m_commands_program->dispatch((m_commandcount + gl::INSTANCE_COMMAND_GROUP_SIZE - 1) / gl::INSTANCE_COMMAND_GROUP_SIZE);
+	// the commands go to indirect draws, the matrices to the vertex shaders
+	gl::memory_barrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+}
+
+void opengl46_instance_cull::bind_draw()
+{
+	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, *m_commands);
+	// the way gl::ssbo binds, leaving the general binding point alone
+	GLuint const output{*m_output};
+	glBindBuffersBase(GL_SHADER_STORAGE_BUFFER, gl::INSTANCE_SSBO_BINDING, 1, &output);
+}
+
+void opengl46_instance_cull::draw_result(std::uint32_t const Draws, std::uint32_t const Prepassdraws, double const Cputime)
+{
+	m_draws = Draws;
+	m_prepassdraws = Prepassdraws;
+	m_cputime = Cputime;
 }
 
 void opengl46_instance_cull::cpu_result(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts)
@@ -240,7 +340,8 @@ void opengl46_instance_cull::cpu_result(scene::basic_cell::instance_bucket_key c
 
 void opengl46_instance_cull::end_pass()
 {
-	if (m_dispatched)
+	// the cpu counts are there to compare with only when the cpu drew
+	if (m_dispatched && !m_setup.drawing)
 	{
 		std::uint64_t total{0};
 		for (auto const count : m_cpucounts)
@@ -260,17 +361,22 @@ void opengl46_instance_cull::collect()
 		return;
 
 	auto const frame{m_readbackdata[0]};
-	while (!m_cpupasses.empty() && m_cpupasses.front().frame != frame)
-		m_cpupasses.pop_front();
-	if (m_cpupasses.empty())
-		return;
-
-	auto const &cpu{m_cpupasses.front()};
 	comparison result;
 	result.frame = frame;
 	result.gputotal = m_readbackdata[1];
-	result.cputotal = cpu.total;
 	result.entries = m_readbackdata[2];
+	result.occluded = m_readbackdata[3];
+	while (!m_cpupasses.empty() && m_cpupasses.front().frame != frame)
+		m_cpupasses.pop_front();
+	if (m_cpupasses.empty())
+	{
+		// drawn from the gpu: nothing to compare with
+		m_last = result;
+		return;
+	}
+
+	auto const &cpu{m_cpupasses.front()};
+	result.cputotal = cpu.total;
 	result.compared = std::min<std::uint32_t>({result.entries, READBACK_ENTRIES, static_cast<std::uint32_t>(cpu.counts.size())});
 	for (std::uint32_t entry = 0; entry < result.compared; ++entry)
 	{
@@ -292,8 +398,16 @@ void opengl46_instance_cull::collect()
 
 std::string opengl46_instance_cull::info()
 {
-	if (!Global.gfx_gpucull)
+	if (Global.gfx_gpucull == 0)
 		return {};
+	if (Global.gfx_gpucull == 1)
+	{
+		if (m_last.frame == 0)
+			return "\ngpu cull: no result yet";
+		return "\ngpu cull: " + std::to_string(m_last.gputotal) + " instances drawn, " + std::to_string(m_last.occluded) + " hidden by occlusion" +
+		       (m_occlusion ? "" : " (test off)") + ", " + std::to_string(m_last.entries) + " bands; " + std::to_string(m_draws) + " indirect draws (+" +
+		       std::to_string(m_prepassdraws) + " depth prepass), cpu " + to_string(m_cputime, 3) + " ms";
+	}
 	if (m_comparedframes == 0)
 		return "\ngpu cull: no result yet";
 	return "\ngpu cull: " + std::to_string(m_last.gputotal) + " instances (cpu " + std::to_string(m_last.cputotal) + "), " + std::to_string(m_last.entries) + " bands, " +
@@ -304,7 +418,7 @@ std::string opengl46_instance_cull::info()
 std::string opengl46_instance_cull::info_times()
 {
 	std::string text;
-	if (!Global.gfx_gpucull)
+	if (Global.gfx_gpucull == 0)
 		return text;
 	if (auto const time = m_timer.result())
 		text += " instance cull: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms\n";

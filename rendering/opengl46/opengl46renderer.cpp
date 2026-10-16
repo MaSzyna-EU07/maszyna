@@ -167,6 +167,8 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
             m_cluster_cull_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{cluster_cull});
         }
         m_cluster_heatmap_shader = make_shader("quad.vert", "cluster_heatmap.frag");
+        m_prepass_shader = make_shader("depthprepass.vert", "depthprepass.frag");
+        m_prepass_alpha_shader = make_shader("depthprepass.vert", "depthprepass_alpha.frag");
 		m_invalid_material = Fetch_Material("invalid");
 	}
 	catch (gl::shader_exception const &e)
@@ -189,6 +191,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	{
 		m_sky.init();
 		m_instancecull.init();
+		m_hiz.init();
 		m_exposure.init();
 		m_ao.init();
 		m_localshadows.init();
@@ -728,6 +731,11 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += m_exposure.info_times();
     m_debugtimestext += m_ao.info_times();
     m_debugtimestext += m_instancecull.info_times();
+    if( Global.gfx_gpucull == 1 ) {
+        m_debugtimestext += m_hiz.info_times();
+        if( auto const prepasstime = m_prepasstimer.result() )
+            m_debugtimestext += " depth prepass: " + to_string( static_cast<double>( *prepasstime ) / 1000000.0, 3 ) + " ms\n";
+    }
     m_debugtimestext += m_localshadows.info_times();
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
@@ -837,7 +845,13 @@ void opengl46_renderer::draw_debug_ui()
 
     if (ImGui::Begin("Instance culling"))
     {
-        ImGui::Checkbox("cull instances on the gpu too, compare with the cpu (gfx.gpucull)", &Global.gfx_gpucull);
+        char const *modes[]{"cpu", "gpu, drawn from its result", "cpu, compared with the gpu"};
+        ImGui::Combo("instance culling (gfx.gpucull)", &Global.gfx_gpucull, modes, IM_ARRAYSIZE(modes));
+        if (Global.gfx_gpucull == 1)
+        {
+            ImGui::Checkbox("leave out instances hidden behind the depth drawn before them (gfx.gpucull.occlusion)", &Global.gfx_gpucull_occlusion);
+            ImGui::Checkbox("draw the depth of the instances before their colour (gfx.depthprepass)", &Global.gfx_depthprepass);
+        }
         auto const info{m_instancecull.info()};
         if (!info.empty())
             ImGui::TextUnformatted(info.c_str() + 1);
@@ -2454,6 +2468,14 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 		else
 			model_ubs.alpha_mult = 1.0f;
 
+		if (m_indirectrecording)
+		{
+			// the walk of Render_Instances_Indirect() only notes what would be bound, it's bound when the draw is made
+			m_indirectmaterial = Material;
+			m_indirectsubmodel = sm;
+			return;
+		}
+
 		// materials which declare texture variants provide a different texture set per model instance,
 		// picked from the seed of the rendered instance and the variant group of the submodel
 		auto const &materialtextures{
@@ -2586,10 +2608,10 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 	for( auto &bucket : m_frame_instance_buckets ) {
 		bucket.second.clear();
 	}
-	// the gpu culling runs along the first color pass of the main viewport of a frame, for its result to be compared
-	// with the one of the cpu
+	// the gpu culling runs along the first color pass of the main viewport of a frame. its result is drawn (Global.gfx_gpucull 1),
+	// or compared with the one of the cpu, which draws (2)
 	m_instancecullpass = false;
-	if( ( Global.gfx_gpucull )
+	if( ( Global.gfx_gpucull != 0 )
 	 && ( m_renderpass.draw_mode == rendermode::color )
 	 && ( m_current_viewport != nullptr )
 	 && ( m_current_viewport->main )
@@ -2608,6 +2630,7 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 		setup.distancerange = ( reflections ? static_cast<float>( sq( Global.reflectiontune.range_instances ) ) : std::numeric_limits<float>::max() );
 		setup.drawrange = static_cast<float>( sq( m_renderpass.draw_range + 250 ) );
 		setup.zoom = Global.ZoomFactor;
+		setup.drawing = ( Global.gfx_gpucull == 1 );
 		m_instancecull.begin_pass( setup );
 	}
 	// build a list of region sections to render
@@ -3049,8 +3072,14 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	// the number of calls and glBufferSubData round-trips drops sharply.
 	// (For pickscenery/pickcontrols modes the map stays empty, so this is a no-op.)
 	if( m_instancecullpass ) {
-		// the view of the pass is in place here, the one Render_Instanced() takes
-		m_instancecull.dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
+		if( m_instancecull.drawing() ) {
+			// the buckets of the pass weren't queued for the cpu, which leaves the loop below empty
+			Render_Instances_Indirect();
+		}
+		else {
+			// the view of the pass is in place here, the one Render_Instanced() takes
+			m_instancecull.dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
+		}
 	}
 	for( auto &bucket : m_frame_instance_buckets ) {
 		if( bucket.second.empty() ) { continue; }
@@ -3085,6 +3114,15 @@ void opengl46_renderer::Draw_Geometry(const gfx::geometrybank_handle &handle)
 void opengl46_renderer::draw(const gfx::geometry_handle &handle)
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+	if( m_indirectrecording ) {
+		// the walk of Render_Instances_Indirect(): the draw is made later, from the gpu culling, with this state
+		gfx::indirect_source source;
+		if( m_geometry.indirect_source( handle, source ) ) {
+			m_indirectcommands.push_back( { source.count, 0, source.first, static_cast<std::uint32_t>( source.basevertex ), 0, m_indirectentry, ( source.indexed ? 1u : 0u ), 0 } );
+			m_indirectdraws.push_back( { model_ubs, m_indirectmaterial, m_indirectsubmodel, handle, source.type, m_blendingenabled } );
+		}
+		return;
+	}
 	model_ubo->update(model_ubs);
 
 	if( m_current_instance_count > 0 ) {
@@ -3300,7 +3338,9 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 		}
 		if( m_instancecullpass ) {
 			// the gpu tests every instance of the bucket, the way Render_Instanced() does
-			m_instancecull.add_bucket( bucket.first, instancebucket );
+			m_instancecull.add_bucket( bucket.first, instancebucket, Cell->m_area );
+			// and when the instances are drawn from its result, the cpu has nothing more to do with them
+			if( m_instancecull.drawing() ) { continue; }
 		}
 		auto const &records { instancebucket.records };
 		std::vector<queued_instance> *dest { nullptr }; // looked up when there's something to put in it
@@ -3586,6 +3626,165 @@ void opengl46_renderer::Render_Instanced( TModel3d *Model, std::vector<queued_in
 
 	m_renderpass.draw_stats.instances += static_cast<int>( m_instance_survivors.size() );
 	m_renderpass.draw_stats.models += static_cast<int>( m_instance_survivors.size() );
+}
+
+// how the depth prepass treats the material. the colour program of the material decides: the ones which test the alpha of the
+// diffuse texture against the opacity (mat_default.frag and the like) get the same test, the ones which never discard a
+// fragment get none, and any other (parallax, water, clouds, unknown) is left out and writes its depth in the colour pass
+int opengl46_renderer::Prepass_Class( material_handle const Material )
+{
+	if( Material == null_handle ) { return 0; }
+	auto const &material { m_materials.material( Material ) };
+	if( ( false == material.is_good ) || ( material.shader == nullptr ) ) { return 0; }
+	auto const lookup { m_prepassclasses.find( material.shader.get() ) };
+	if( lookup != m_prepassclasses.end() ) { return lookup->second; }
+
+	// names the programs are fetched by: mat_<name>.frag
+	static std::unordered_set<std::string> const alphatested {
+		"default", "default_1", "default_2", "default_detail", "default_specgloss",
+		"detail_normalmap", "detail_normalmap_specgloss", "normalmap", "normalmap_specgloss",
+		"reflmap", "reflmap_specgloss", "shadowlessnormalmap", "shadowlessnormalmap_specgloss",
+		"sunlessnormalmap", "sunlessnormalmap_specgloss" };
+	static std::unordered_set<std::string> const solid { "colored", "default_0" };
+	auto prepassclass { 0 };
+	for( auto const &shader : m_shaders ) {
+		if( shader.second.get() != material.shader.get() ) { continue; }
+		prepassclass = ( alphatested.count( shader.first ) > 0 ? 2 : solid.count( shader.first ) > 0 ? 1 : 0 );
+		break;
+	}
+	m_prepassclasses.emplace( material.shader.get(), prepassclass );
+	return prepassclass;
+}
+
+// draws the instances queued in the pass from the result of the gpu culling.
+// the submodel trees are walked the way Render_Instanced() walks them, once per lod band of each group, but the walk only
+// records the draws (draw() and Bind_Material() note what they would do, see m_indirectrecording): the instances of a band
+// are known only on the gpu, so each draw becomes an indirect draw command whose instances the gpu fills in.
+// bands no instance of the group can fall in, by the distance of the cells which hold them, are left out
+void opengl46_renderer::Render_Instances_Indirect()
+{
+	auto const cpustart { std::chrono::steady_clock::now() };
+	auto *viewport { m_current_viewport };
+
+	// occlusion test against the depth drawn so far in the pass: cab, terrain, shapes, tracks, vehicles, other models
+	opengl46_instance_cull::occlusion_setup occlusion;
+	auto const useocclusion {
+		Global.gfx_gpucull_occlusion
+		&& ( false == Global.gfx_skippipeline )
+		&& ( viewport != nullptr )
+		&& ( viewport->msaa_fb != nullptr ) };
+	if( useocclusion ) {
+		m_hiz.build( *viewport->msaa_fb, viewport->width, viewport->height );
+		occlusion.pyramid = m_hiz.texture();
+		occlusion.size = m_hiz.size();
+		occlusion.levels = m_hiz.levels();
+		occlusion.screen = glm::vec2{ m_hiz.source_size() };
+		occlusion.projection = OpenGLMatrices.data( GL_PROJECTION );
+	}
+	m_instancecull.dispatch( OpenGLMatrices.data( GL_MODELVIEW ), ( useocclusion ? &occlusion : nullptr ) );
+
+	// the draws, recorded while the gpu culls
+	m_indirectdraws.clear();
+	m_indirectcommands.clear();
+	auto const &lodbounds { m_instancecull.lod_bounds() };
+	m_indirectrecording = true;
+	for( auto const &group : m_instancecull.draw_groups() ) {
+		auto *model { group.key->pModel };
+		if( ( model == nullptr ) || ( model->Root == nullptr ) || ( group.instance == nullptr ) ) { continue; }
+		group.instance->RaPrepare();
+		auto const *material { group.instance->Material() };
+		auto alpha { material != nullptr ? material->textures_alpha : 0x30300030 };
+		alpha ^= 0x0F0F000F;
+		for( std::uint32_t band = 0; band <= group.lodcount; ++band ) {
+			// a band holds the squared distances from its lower bound up to the next one; any of them selects the same lod
+			auto const bandmin { band == 0 ? 0.f : lodbounds[ group.lodfirst + band - 1 ] };
+			auto const bandmax { band == group.lodcount ? std::numeric_limits<float>::max() : lodbounds[ group.lodfirst + band ] };
+			if( ( bandmin > group.distancemax ) || ( bandmax <= group.distancemin ) ) { continue; }
+			m_indirectentry = group.entryfirst + band;
+			::glPushMatrix();
+			::glLoadIdentity();
+			model->Root->fSquareDist = bandmin;
+			model->Root->ReplacableSet( ( material != nullptr ? material->replacable_skins : nullptr ), alpha );
+			model->Root->pRoot = model;
+			Render( model->Root );
+			::glPopMatrix();
+		}
+	}
+	m_indirectrecording = false;
+
+	m_instancecull.fill_commands( m_indirectcommands );
+	std::uint32_t prepassdraws { 0 };
+	if( false == m_indirectdraws.empty() ) {
+		m_instancecull.bind_draw();
+		auto const commandoffset = []( std::size_t const Index ) {
+			return static_cast<std::intptr_t>( Index * sizeof( gl::instance_draw_command ) ); };
+
+		if( Global.gfx_depthprepass && ( false == Global.bWireFrame ) ) {
+			// the depth first: the colour pass shades only what stays in view. the depth goes a little farther than the
+			// surface, so the colour pass, which tests and writes its depth as usual, is sure to pass where it's the same
+			m_prepasstimer.begin();
+			setup_drawing( false );
+			::glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+			::glEnable( GL_POLYGON_OFFSET_FILL );
+			::glPolygonOffset( -1.f, -1.f );
+			// the draws without the alpha test first, then the ones with it, one program each
+			for( auto prepassclass = 1; prepassclass <= 2; ++prepassclass ) {
+				auto &program { prepassclass == 1 ? *m_prepass_shader : *m_prepass_alpha_shader };
+				auto bound { false };
+				for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
+					auto const &draw { m_indirectdraws[ index ] };
+					if( ( draw.blending ) || ( draw.ubs.opacity < 0.f ) ) { continue; }
+					if( ( draw.type != GL_TRIANGLES ) && ( draw.type != GL_TRIANGLE_STRIP ) && ( draw.type != GL_TRIANGLE_FAN ) ) { continue; }
+					if( Prepass_Class( draw.material ) != prepassclass ) { continue; }
+					if( prepassclass == 2 ) {
+						// the diffuse texture of the colour pass, the same choice as Bind_Material() makes
+						auto const &material { m_materials.material( draw.material ) };
+						auto const &textures {
+							material.texture_variants.empty() ?
+								material.textures :
+								material.GetTextures( TSubModel::VariantId( draw.submodel ) ) };
+						if( textures[ 0 ] == null_handle ) { continue; }
+						m_textures.bind( 0, textures[ 0 ] );
+					}
+					if( false == bound ) {
+						program.bind();
+						bound = true;
+					}
+					model_ubs = draw.ubs;
+					model_ubo->update( model_ubs );
+					m_geometry.draw_indirect( draw.geometry, commandoffset( index ) );
+					++prepassdraws;
+				}
+			}
+			::glDisable( GL_POLYGON_OFFSET_FILL );
+			::glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+			m_prepasstimer.end();
+		}
+
+		for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
+			auto const &draw { m_indirectdraws[ index ] };
+			if( draw.blending ) { setup_drawing( true ); }
+			Bind_Material( draw.material, draw.submodel );
+			model_ubs = draw.ubs;
+			model_ubo->update( model_ubs );
+			m_geometry.draw_indirect( draw.geometry, commandoffset( index ) );
+			if( draw.blending ) { setup_drawing( false ); }
+		}
+		model_ubs.emission = 0.0f;
+
+		::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
+		m_instancebuffers[ m_instancebufferindex ]->bind_base();
+	}
+
+	m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( m_indirectdraws.size() );
+	m_renderpass.draw_stats.drawcalls += static_cast<int>( prepassdraws );
+	// the count of the frame the gpu reported last
+	m_renderpass.draw_stats.instances += static_cast<int>( m_instancecull.last_count() );
+	m_renderpass.draw_stats.models += static_cast<int>( m_instancecull.last_count() );
+	m_instancecull.draw_result(
+		static_cast<std::uint32_t>( m_indirectdraws.size() ),
+		prepassdraws,
+		std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count() );
 }
 
 // Renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) using the

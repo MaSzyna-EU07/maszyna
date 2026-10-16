@@ -339,6 +339,20 @@ geometry_bank::draw_batch( gfx::geometry_handle const *First, gfx::geometry_hand
     return draw_batch_( First, Last, Units, Streams );
 }
 
+// makes the data of specified chunk ready for drawing and tells where it lies
+bool
+geometry_bank::indirect_source( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source ) {
+    // template method implementation
+    return indirect_source_( Geometry, Source );
+}
+
+// draws geometry stored in specified chunk with the command at Offset in the bound draw indirect buffer
+void
+geometry_bank::draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams ) {
+    // template method implementation
+    draw_indirect_( Geometry, Offset, Streams );
+}
+
 // frees subclass-specific resources associated with the bank, typically called when the bank wasn't in use for a period of time
 void
 geometry_bank::release() {
@@ -467,6 +481,30 @@ geometrybank_manager::draw_batch( gfx::geometry_handle const *First, gfx::geomet
 
         First = last;
     }
+}
+
+// makes the data of specified chunk ready for an indirect draw and tells where it lies
+bool
+geometrybank_manager::indirect_source( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source ) {
+
+    if( Geometry == null_handle ) { return false; }
+
+    auto &bankrecord = bank( Geometry );
+
+    bankrecord.second = m_garbagecollector.timestamp();
+    return bankrecord.first->indirect_source( Geometry, Source );
+}
+
+// draws geometry stored in specified chunk with the command at Offset in the bound draw indirect buffer
+void
+geometrybank_manager::draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams ) {
+
+    if( Geometry == null_handle ) { return; }
+
+    auto &bankrecord = bank( Geometry );
+
+    bankrecord.second = m_garbagecollector.timestamp();
+    bankrecord.first->draw_indirect( Geometry, Offset, Streams );
 }
 
 // provides direct access to index data of specfied chunk
