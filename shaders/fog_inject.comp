@@ -149,6 +149,7 @@ vec3 lamp_light(light_s light, vec3 position)
 // that far behind the lamp. the point sampled moves within the cell from frame to frame, and the ray of the cell would pass at
 // almost no distance from the lamp in one frame and a cell away in the next, above the tip of the cone and below it. Part:
 // where between the two halves of the segment the points are (0-1)
+vec3 lamp_segment(light_s lamp, light_s cone, vec3 start, vec3 direction, float span, float width, float part);
 vec3 lamp_scattering(light_s lamp, vec3 start, vec3 direction, float span, float cellwidth, float part)
 {
 	vec3 sum = vec3(0.0);
@@ -165,10 +166,32 @@ vec3 lamp_scattering(light_s lamp, vec3 start, vec3 direction, float span, float
 	float closest = dot(lamp.pos - start, direction);
 	vec3 nearest = start + direction * closest;
 	float width = max(cellwidth * max(-nearest.z, 0.0), 1e-3);
-	float reach = sqrt(dot(lamp.pos - nearest, lamp.pos - nearest) + width * width);
 	light_s cone = lamp;
 	if (lamp.type == LIGHT_SPOT)
 		cone.pos -= normalize(lamp.dir) * width;
+	if (dot(lamp.pos - nearest, lamp.pos - nearest) < 9.0 * width * width)
+	{
+		// a lamp within a few cells of the ray: the light of the cell is taken along four rays spread over the cell, so it
+		// doesn't depend on which side of the lamp the ray of this frame passes
+		vec3 across = normalize(cross(direction, vec3(0.0, 1.0, 0.0) + vec3(1e-4, 0.0, 0.0)));
+		vec3 up = cross(across, direction);
+		for (int k = 0; k < 4; k++)
+		{
+			vec2 shift = (vec2(float(k & 1), float(k >> 1)) - 0.5) * 0.5 * width;
+			sum += lamp_segment(lamp, cone, start + across * shift.x + up * shift.y, direction, span, width, part);
+		}
+		return sum * 0.25;
+	}
+	return lamp_segment(lamp, cone, start, direction, span, width, part);
+}
+
+// lamp_scattering() along one ray: Cone the lamp with the tip of its cone moved behind it, Width the width of the cell at the lamp
+vec3 lamp_segment(light_s lamp, light_s cone, vec3 start, vec3 direction, float span, float width, float part)
+{
+	vec3 sum = vec3(0.0);
+	float closest = dot(lamp.pos - start, direction);
+	vec3 nearest = start + direction * closest;
+	float reach = sqrt(dot(lamp.pos - nearest, lamp.pos - nearest) + width * width);
 	float first = atan(-closest, reach);
 	float last = atan(span - closest, reach);
 	for (int i = 0; i < 2; i++)
