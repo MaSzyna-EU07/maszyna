@@ -116,7 +116,7 @@ void opengl46_exposure::measure(opengl_texture &Image, double const Deltatime)
 	opengl_texture::reset_unit_cache();
 }
 
-opengl_texture *opengl46_exposure::bloom(bloom_chain &Chain, opengl_texture &Image, gl::ubo &Modelubo, gl::model_ubs &Model)
+opengl_texture *opengl46_exposure::bloom(bloom_chain &Chain, opengl_texture &Image, gl::stream_ubo &Modelubo, gl::model_ubs &Model)
 {
 	m_bloom_timer.begin();
 	// down, the first step from the image itself

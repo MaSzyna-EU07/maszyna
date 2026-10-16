@@ -178,14 +178,19 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	}
 
 	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), 0);
-	model_ubo = std::make_unique<gl::ubo>(sizeof(gl::model_ubs), 1, GL_STREAM_DRAW);
+	model_ubo = std::make_unique<gl::stream_ubo>(sizeof(gl::model_ubs), 1, Global.gfx_bufferstreaming);
 	light_ssbo = std::make_unique<gl::ssbo>(sizeof(gl::light_data), gl::LIGHT_SSBO_BINDING);
 	light_ssbo->bind_base();
-	for (auto &buffer : m_instancebuffers)
 	{
-		// grows when a frame needs more
-		buffer = std::make_unique<gl::ssbo>(static_cast<GLsizeiptr>(16384 * sizeof(glm::mat4)), gl::INSTANCE_SSBO_BINDING);
+		// element 0 of the instance buffers is identity. This is the matrix sampled by
+		// non-instanced draws, so existing rendering paths
+		// continue to multiply effective_modelview = identity * modelview = modelview.
+		// the buffers grow when a frame needs more
+		glm::mat4 const identity(1.0f);
+		m_instancestream = std::make_unique<gl::frame_stream>(
+			static_cast<GLsizeiptr>(16384 * sizeof(glm::mat4)), static_cast<GLsizeiptr>(sizeof(glm::mat4)), Global.gfx_bufferstreaming, &identity, static_cast<GLsizeiptr>(sizeof(identity)));
 	}
+	WriteLog(std::string("Model data streaming: ") + (model_ubo->streamed() ? "persistently mapped buffers" : "glBufferSubData"));
 
 	try
 	{
@@ -213,15 +218,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	model_ubo->update(model_ubs);
 	scene_ubo->update(scene_ubs);
 
-	// element 0 of the instance buffers is identity. This is the matrix sampled by
-	// non-instanced draws, so existing rendering paths
-	// continue to multiply effective_modelview = identity * modelview = modelview.
-	for (auto &buffer : m_instancebuffers)
-	{
-		glm::mat4 const identity(1.0f);
-		buffer->update(identity);
-	}
-	m_instancebuffers[m_instancebufferindex]->bind_base();
+	Bind_Instance_Stream();
 
 	int samples = 1 << Global.iMultisampling;
 	if (samples > 1)
@@ -659,10 +656,11 @@ bool opengl46_renderer::Render()
 	// scenery lamps which get shadows in this frame. their maps hold the scenery as of the version of the instance records
 	if (simulation::is_ready && (false == Global.gfx_skiprendering))
 		m_localshadows.update_lamps(m_locallights.lights(), Global.pCamera.Pos, m_instancerecordsversion, m_framestamp);
-	// instanced draws of the frame place their matrices in the next of the instance buffers, the one used the longest ago
-	m_instancebufferindex = ( m_instancebufferindex + 1 ) % m_instancebuffers.size();
-	m_instancebufferfill = 1;
-	m_instancebuffers[ m_instancebufferindex ]->bind_base();
+	// instanced draws of the frame place their matrices in the next of the instance buffers, the one used the longest ago;
+	// the same for the model blocks of the draws
+	m_instancestream->next_frame();
+	Bind_Instance_Stream();
+	model_ubo->next_frame();
 
 	m_renderpass.draw_mode = rendermode::none; // force setup anew
 	m_renderpass.draw_stats = debug_stats();
@@ -676,6 +674,8 @@ bool opengl46_renderer::Render()
 	}
 
 	glfwMakeContextCurrent(m_window);
+	model_ubo->bind_uniform();
+	Bind_Instance_Stream();
 
 	gl::framebuffer::unbind();
 
@@ -766,8 +766,14 @@ void opengl46_renderer::SwapBuffers()
         + " instanced:" + to_string( m_colorpass.draw_stats.instances, 7 ) + " +" + to_string( shadowstats.instances, 7 )
         + " =" + to_string( m_colorpass.draw_stats.instances + shadowstats.instances, 7 )
         + " (" + std::to_string( m_colorpass.draw_stats.instanced_drawcalls + shadowstats.instanced_drawcalls ) + " batches)\n"
-        + " instance buffer: " + std::to_string( m_instancebufferfill - 1 ) + " matrices, "
-        + std::to_string( m_instancebuffers[ m_instancebufferindex ]->size() / 1024 ) + " KiB\n"
+        + " instance buffer: " + std::to_string( m_instancestream->used() / static_cast<GLsizeiptr>( sizeof( glm::mat4 ) ) ) + " matrices, "
+        + std::to_string( m_instancestream->size() / 1024 ) + " KiB\n"
+        + " model blocks: " + std::to_string( model_ubo->updates() )
+        + ( model_ubo->streamed() ?
+            ", " + std::to_string( model_ubo->stream()->used() / 1024 ) + "/" + std::to_string( model_ubo->stream()->size() / 1024 ) + " KiB, streamed (waits "
+                + std::to_string( model_ubo->stream()->waits() + m_instancestream->waits() ) + ", grown "
+                + std::to_string( model_ubo->stream()->grows() + m_instancestream->grows() ) + ")\n" :
+            ", glBufferSubData\n" )
         + " inst-pool:" + std::to_string( TAnimModel::s_instanceable_total )
         + "/" + std::to_string( TAnimModel::s_classified_total )
         + " rej(noModel/lights/anim/animSubM): "
@@ -900,6 +906,9 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		{
 			glfwMakeContextCurrent(vp.window);
 			m_current_viewport = &vp;
+			// the streamed model block and the instance buffer of the frame move with every update, bindings are per context
+			model_ubo->bind_uniform();
+			Bind_Instance_Stream();
 		}
 
 		if ((!simulation::is_ready) || (Global.gfx_skiprendering))
@@ -3432,20 +3441,19 @@ void opengl46_renderer::Update_Instance_Records( TModel3d const *Model, scene::b
 // places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
 std::uint32_t opengl46_renderer::Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count )
 {
-	auto &buffer { m_instancebuffers[ m_instancebufferindex ] };
-	auto const needed { static_cast<GLsizeiptr>( ( m_instancebufferfill + Count ) * sizeof( glm::mat4 ) ) };
-	if( needed > buffer->size() ) {
+	auto const generation { m_instancestream->generation() };
+	auto const offset { m_instancestream->push( Modelviews, static_cast<GLsizeiptr>( Count * sizeof( glm::mat4 ) ) ) };
+	if( m_instancestream->generation() != generation ) {
 		// the draws issued with the replaced buffer keep it until the gpu is done with them. the new one starts with identity
-		buffer->resize( std::max( needed, 2 * buffer->size() ) );
-		glm::mat4 const identity( 1.0f );
-		buffer->update( identity );
-		buffer->bind_base();
-		m_instancebufferfill = 1;
+		Bind_Instance_Stream();
 	}
-	auto const base { static_cast<std::uint32_t>( m_instancebufferfill ) };
-	buffer->update( Modelviews, static_cast<GLintptr>( base * sizeof( glm::mat4 ) ), static_cast<GLsizeiptr>( Count * sizeof( glm::mat4 ) ) );
-	m_instancebufferfill += Count;
-	return base;
+	return static_cast<std::uint32_t>( offset / static_cast<GLintptr>( sizeof( glm::mat4 ) ) );
+}
+
+void opengl46_renderer::Bind_Instance_Stream() const
+{
+	GLuint const buffer { m_instancestream->buffer() };
+	::glBindBuffersBase( GL_SHADER_STORAGE_BUFFER, gl::INSTANCE_SSBO_BINDING, 1, &buffer );
 }
 
 // True GPU-instanced render path for a group of TAnimModel instances sharing the same
@@ -3792,7 +3800,7 @@ void opengl46_renderer::Render_Instances_Indirect()
 		model_ubs.emission = 0.0f;
 
 		::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
-		m_instancebuffers[ m_instancebufferindex ]->bind_base();
+		Bind_Instance_Stream();
 	}
 
 	m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( m_indirectdraws.size() );

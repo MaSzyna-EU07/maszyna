@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "gl/ubo.h"
 #include "gl/ssbo.h"
+#include "gl/streambuffer.h"
 #include "gl/shader.h"
 #include "gl/postfx.h"
 #include "gl/framebuffer.h"
@@ -56,7 +57,7 @@ class opengl46_exposure
 	void measure(opengl_texture &Image, double const Deltatime);
 	// takes the image down and up the chain; returns the result, which the tonemapping blends in. leaves the viewport
 	// and the framebuffer binding changed. Model is the model_ubs the post processing shaders read the parameters from
-	opengl_texture *bloom(bloom_chain &Chain, opengl_texture &Image, gl::ubo &Modelubo, gl::model_ubs &Model);
+	opengl_texture *bloom(bloom_chain &Chain, opengl_texture &Image, gl::stream_ubo &Modelubo, gl::model_ubs &Model);
 	// parameters of the tonemapping (postfx_tonemapping.frag), with bloom from a chain of Bloomlevels levels (0: none)
 	glm::vec4 tonemap_params(std::size_t const Bloomlevels) const;
 	// lines for the gpu times of the debug panel

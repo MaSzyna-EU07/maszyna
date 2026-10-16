@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vr/vr_interface.h"
 #include "gl/ubo.h"
 #include "gl/ssbo.h"
+#include "gl/streambuffer.h"
 #include "gl/cluster_grid.h"
 #include "gl/framebuffer.h"
 #include "gl/renderbuffer.h"
@@ -343,6 +344,8 @@ class opengl46_renderer : public gfx_renderer {
 	void Update_Instance_Records( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket, glm::dvec3 const &Origin );
 	// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
 	std::uint32_t Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count );
+	// binds the instance buffer of the frame for the vertex shaders (INSTANCE_SSBO_BINDING)
+	void Bind_Instance_Stream() const;
 	// draws the instances queued in the pass from the result of the gpu culling (Global.gfx_gpucull 1): makes the depth
 	// pyramid of the occlusion test, runs the culling, walks the submodel trees of the groups once per lod band to record
 	// the draws (m_indirectdraws, m_indirectcommands), has their instances filled in, then draws them with indirect draws,
@@ -587,16 +590,17 @@ class opengl46_renderer : public gfx_renderer {
 	std::unique_ptr<gl::shader> m_vertex_shader;
 
 	std::unique_ptr<gl::ubo> scene_ubo;
-	std::unique_ptr<gl::ubo> model_ubo;
+	// the model block of every draw, streamed (Global.gfx_bufferstreaming): each update to its own place in the buffer of
+	// the frame instead of glBufferSubData of the one block
+	std::unique_ptr<gl::stream_ubo> model_ubo;
 	std::unique_ptr<gl::ssbo> light_ssbo;
 	// per-instance modelview matrices of GPU-instanced draws, one buffer for each of the last frames, used in turn so
 	// a frame doesn't write to the buffer the gpu may still read for an earlier one. element 0 of each is identity
 	// and never overwritten: draws which aren't instanced (gl_BaseInstance == gl_InstanceID == 0) compute
 	// identity*modelview in the vertex shader. Render_Instanced and Render_Sleepers append the camera-space root
-	// matrices of their instances past the ones placed earlier in the frame, and draw them from that base instance
-	std::array<std::unique_ptr<gl::ssbo>, 3> m_instancebuffers;
-	std::size_t m_instancebufferindex { 0 }; // the buffer of the current frame
-	std::size_t m_instancebufferfill { 1 }; // matrices placed in it so far, identity included
+	// matrices of their instances past the ones placed earlier in the frame, and draw them from that base instance.
+	// persistently mapped with Global.gfx_bufferstreaming
+	std::unique_ptr<gl::frame_stream> m_instancestream;
 	// when > 0, the renderer is inside a Render_Instanced() call. The draw(handle)
 	// method routes to glDrawElementsInstanced* with this many instances from
 	// m_current_instance_base onwards rather than a single regular draw. The vertex shader reads

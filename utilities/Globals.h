@@ -290,6 +290,9 @@ struct global_settings {
     int gfx_gpucull = 0;
     bool gfx_gpucull_occlusion = true; // with gfx_gpucull 1: instances hidden behind the depth drawn before them are left out
     bool gfx_depthprepass = true; // with gfx_gpucull 1: the depth of the instances is drawn before their colour
+    // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,
+    // one for each of the last frames, instead of with glBufferSubData. read at the start
+    bool gfx_bufferstreaming = true;
     bool gfx_postfx_motionblur_enabled = true;
     float gfx_postfx_motionblur_shutter = 0.01f;
     GLenum gfx_postfx_motionblur_format = GL_RG16F;

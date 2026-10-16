@@ -246,6 +246,18 @@ drawn (its colour is not worked out with the depth prepass on). Models whose mat
 water and the like) are left out of the depth prepass and drawn as before. All three can be changed while the simulator
 runs, in the **Instance culling** debug window.
 
+### Model data of the draws
+
+Before every draw the renderer hands the graphics card the data of the drawn part of the model (its position in the view, its
+colours and parameters), and before batches of models the positions of the copies in the batch. With `gfx.bufferstreaming`
+on, these go to buffers the processor writes to directly, a new place for every draw, one buffer for each of the last three
+frames; before, every draw replaced the data of the one block with a separate copy through the driver. The picture is the
+same either way.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.bufferstreaming yes/no` | `yes` | `yes`: the data of the draws is written to persistently mapped buffers. `no`: as before (`glBufferSubData`), for comparison or when a driver misbehaves. Read at the start |
+
 ### Changed option
 
 `dynamiclights` (0..7) used to limit the number of headlight sets that light the surroundings. It is still
@@ -305,6 +317,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   of detail, the draw calls with those of the depth prepass, and the processor time of the whole step) and the timings
   `instance cull:`, `occlusion depth:` (the depth pyramid of the test) and `depth prepass:`. With `compare` it shows how many
   models both counted and how many levels of detail differ.
+- Shift+F12 shows the `instance buffer:` row (positions of copies written in the frame and the size of the buffer) and the
+  `model blocks:` row: how many blocks of model data the frame wrote, with `gfx.bufferstreaming yes` also how much of the
+  buffer of the frame they took, how many times a frame had to wait for the graphics card to finish with a buffer before
+  writing to it (`waits`, should stay at 0) and how many times a buffer had to grow (`grown`, a few times after the start).
 - `gfx.gldebug yes` turns on the OpenGL debug output (`KHR_debug`); messages go to the log.
 
 ## Building

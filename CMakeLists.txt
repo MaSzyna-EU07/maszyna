@@ -262,6 +262,7 @@ set(SOURCES
 "gl/pbo.cpp"
 "gl/query.cpp"
 "gl/ssbo.cpp"
+"gl/streambuffer.cpp"
 "gl/cluster_grid.cpp"
 "gl/readback.cpp"
 
