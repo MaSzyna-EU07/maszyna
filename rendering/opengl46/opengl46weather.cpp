@@ -519,16 +519,21 @@ void opengl46_weather::render_view(glm::mat4 const &Projection, glm::mat4 const 
 	{
 		m_fog_timer.begin();
 		auto const farthest{std::max(Global.gfx_fog_range, FOG_VOLUME_NEAR * 4.f)};
-		// the cells are sampled at another depth in every frame, in the Halton sequence of 2 (fog_inject.comp moves the depth of
-		// every cell by a value of its own)
-		auto const jitter{[](int Frame) {
-			float value{0.f}, fraction{0.5f};
-			for (Frame = (Frame % 64) + 1; Frame > 0; Frame /= 2, fraction *= 0.5f)
-				value += fraction * static_cast<float>(Frame % 2);
+		// the cells are sampled at another point in every frame: along the depth in the Halton sequence of 2, across the view in
+		// those of 3 and 5 (fog_inject.comp moves the point of every cell by a value of its own)
+		auto const halton = [](int Index, int const Base) {
+			float value{0.f}, fraction{1.f};
+			for (; Index > 0; Index /= Base)
+			{
+				fraction /= static_cast<float>(Base);
+				value += fraction * static_cast<float>(Index % Base);
+			}
 			return value;
-		}(m_frame)};
+		};
 		auto const temporal{Global.gfx_fog_temporal && continuity(m_previous_fog)};
-		glm::vec4 const slicing{FOG_VOLUME_NEAR, farthest, static_cast<float>(m_fog_grid.z) / std::log((farthest + gl::FOG_VOLUME_BIAS) / (FOG_VOLUME_NEAR + gl::FOG_VOLUME_BIAS)), temporal ? jitter : 0.5f};
+		auto const sample{(m_frame % 64) + 1};
+		glm::vec3 const jitter{temporal ? glm::vec3{halton(sample, 3), halton(sample, 5), halton(sample, 2)} : glm::vec3{0.5f}};
+		glm::vec4 const slicing{FOG_VOLUME_NEAR, farthest, static_cast<float>(m_fog_grid.z) / std::log((farthest + gl::FOG_VOLUME_BIAS) / (FOG_VOLUME_NEAR + gl::FOG_VOLUME_BIAS)), jitter.z};
 		bind_noise();
 		auto const next{1 - m_fog_current};
 		glBindImageTexture(0, m_fog_scattering[next], 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
@@ -545,6 +550,7 @@ void opengl46_weather::render_view(glm::mat4 const &Projection, glm::mat4 const 
 		glProgramUniform4f(*m_inject_program, 6, share, Global.gfx_fog_lights, sunshadows ? 1.f : 0.f, Global.gfx_fog_shadows ? 1.f : 0.f);
 		glProgramUniform1i(*m_inject_program, 7, Cablamp);
 		glProgramUniform2f(*m_inject_program, 8, m_previous_fog.slicing.x, m_previous_fog.slicing.z);
+		glProgramUniform2f(*m_inject_program, 9, jitter.x, jitter.y);
 		m_inject_program->dispatch(groups(m_fog_grid.x), groups(m_fog_grid.y), static_cast<GLuint>(m_fog_grid.z));
 		glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 

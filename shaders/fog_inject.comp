@@ -2,10 +2,10 @@
 // depth), how dense the fog is and how much light it scatters towards the camera. the density: the haze, the patches of the
 // ground fog, the low clouds; the light: the colour the fog has towards the horizon (weather_common.glsl), less what the
 // shadows of the sun and of the clouds hold back, and the lamps and headlights of the light clusters. blended with the
-// previous frame, found where the cell was then; the cells are sampled at another depth every frame, each cell going through
-// the depths from a place of its own, so the volume doesn't flicker as a whole. across the view the cells are sampled in their
-// middle: moved across, the ray of a cell crosses the edges of the cones of lamps somewhere else every frame, which the blending
-// doesn't smooth out (the edges of the cells are smoothed when the fog is read, fog_volume.glsl)
+// previous frame, found where the cell was then; the cells are sampled at another point every frame, each cell going through
+// the points from a place of its own, so the volume doesn't flicker as a whole, and the blending smooths what a cell holds over
+// its whole size: a beam doesn't swim over the grid of the cells as the camera moves and turns. what the cell takes the lights
+// from doesn't depend on the point (the clusters of the middle of the cell)
 // rgb: light scattered towards the camera per metre, a: extinction per metre
 
 #include <common>
@@ -38,9 +38,8 @@ layout(location = 6) uniform vec4 options;
 layout(location = 7) uniform int cablamp;
 // x: near, y: slices / log((far + FOG_VOLUME_BIAS) / (near + FOG_VOLUME_BIAS)) of the previous frame
 layout(location = 8) uniform vec2 previous_slicing;
-
-// how many times brighter or darker than this frame the light of the history may be
-const float FOG_HISTORY_REACH = 4.0;
+// where in its cell the cell is sampled this frame across the view (0-1), as slicing.w is along the depth
+layout(location = 9) uniform vec2 jitter;
 
 // ray of the view space through a point of the view (0-1), one metre of the depth long
 vec3 view_ray(vec2 coords)
@@ -56,8 +55,8 @@ float slice_depth(float slice)
 	return (slicing.x + FOG_VOLUME_BIAS) * exp(slice / slicing.z) - FOG_VOLUME_BIAS;
 }
 
-// where in the cell it is sampled this frame, 0-1 on each axis: across the view the middle, along the depth the point of the
-// sequence of the frames moved by a value of the cell's own (pcg3d hash), the middle without the blending
+// where in the cell it is sampled this frame, 0-1 on each axis: the point of the sequence of the frames moved by a value of
+// the cell's own (pcg3d hash), the middle without the blending
 vec3 cell_offset(ivec3 cell)
 {
 	if (options.x >= 1.0)
@@ -70,7 +69,7 @@ vec3 cell_offset(ivec3 cell)
 	v.x += v.y * v.z;
 	v.y += v.z * v.x;
 	v.z += v.x * v.y;
-	return vec3(0.5, 0.5, fract(slicing.w + float(v.z >> 8U) * (1.0 / 16777216.0)));
+	return fract(vec3(jitter, slicing.w) + vec3(v >> 8U) * (1.0 / 16777216.0));
 }
 
 float henyey_greenstein(float cosangle, float g)
@@ -219,20 +218,36 @@ void main()
 			sunlit *= 1.0 - 0.5 * shadow;
 		}
 		vec3 light = fog_whiten(fog_color_world(direction), (ground + clouds) / extinction) * fog_light_factor(sunlit);
-		// lamps and headlights of the cluster of the cell
+		// lamps and headlights of the clusters the segment of the cell goes through, each part of the segment with the lights of
+		// its own cluster. the lights of the cluster of the point sampled would change with the point, frame to frame, where the
+		// cell reaches into two clusters which don't hold the same lights (a full cluster leaves the least important out)
 		if (options.y > 0.0 && lights_clustered != 0U && cluster_valid != 0U)
 		{
-			ivec2 tile = clamp(ivec2(coords * vec2(CLUSTER_GRID_X, CLUSTER_GRID_Y)), ivec2(0), ivec2(CLUSTER_GRID_X - 1, CLUSTER_GRID_Y - 1));
-			int slice = clamp(int(floor(cluster_slice_bias + log(depth) * cluster_slice_scale)), 0, CLUSTER_GRID_Z - 1);
-			cluster_range_s range = cluster_ranges[uint(tile.x + CLUSTER_GRID_X * (tile.y + CLUSTER_GRID_Y * slice))];
+			vec2 middle = (vec2(cell.xy) + 0.5) / vec2(grid.xy);
+			ivec2 tile = clamp(ivec2(middle * vec2(CLUSTER_GRID_X, CLUSTER_GRID_Y)), ivec2(0), ivec2(CLUSTER_GRID_X - 1, CLUSTER_GRID_Y - 1));
+			float back = front + span / raylength;
+			int first = clamp(int(floor(cluster_slice_bias + log(max(front, 1e-4)) * cluster_slice_scale)), 0, CLUSTER_GRID_Z - 1);
+			int last = clamp(int(floor(cluster_slice_bias + log(max(back, 1e-4)) * cluster_slice_scale)), first, min(first + 3, CLUSTER_GRID_Z - 1));
 			float cellwidth = length(view_ray(coords + vec2(1.0 / float(grid.x), 0.0)) - ray);
 			vec3 lamps = vec3(0.0);
-			for (uint i = 0U; i < range.count; i++)
+			for (int slice = first; slice <= last; slice++)
 			{
-				uint index = cluster_light_indices[range.offset + i];
-				if (int(index) == cablamp)
+				float partfront = (slice == first) ? front : exp((float(slice) - cluster_slice_bias) / cluster_slice_scale);
+				float partback = (slice == last) ? back : exp((float(slice + 1) - cluster_slice_bias) / cluster_slice_scale);
+				float partspan = max(partback - partfront, 0.0) * raylength;
+				if (partspan <= 0.0)
 					continue;
-				lamps += lamp_scattering(lights[index], start, raydirection, span, cellwidth, offset.z);
+				vec3 partstart = ray * partfront;
+				cluster_range_s range = cluster_ranges[uint(tile.x + CLUSTER_GRID_X * (tile.y + CLUSTER_GRID_Y * slice))];
+				vec3 partlamps = vec3(0.0);
+				for (uint i = 0U; i < range.count; i++)
+				{
+					uint index = cluster_light_indices[range.offset + i];
+					if (int(index) == cablamp)
+						continue;
+					partlamps += lamp_scattering(lights[index], partstart, raydirection, partspan, cellwidth, offset.z);
+				}
+				lamps += partlamps * (partspan / max(span, 1e-4));
 			}
 			light += lamps * options.y;
 		}
@@ -251,13 +266,7 @@ void main()
 			float previousslice = log(max((clip.w + FOG_VOLUME_BIAS) / (previous_slicing.x + FOG_VOLUME_BIAS), 1e-6)) * previous_slicing.y;
 			vec3 previous = vec3(clip.xy / clip.w * 0.5 + 0.5, previousslice / float(grid.z));
 			if (all(greaterThanEqual(previous, vec3(0.0))) && all(lessThanEqual(previous, vec3(1.0))))
-			{
-				// the light of the history kept within a factor of this frame's: where a lamp went away (the headlights of a passing
-				// train) or came, the light doesn't trail over many frames. the factor is wide, so the sampling itself stays blended
-				vec4 history = textureLod(fog_history, previous, 0.0);
-				history.rgb = clamp(history.rgb, result.rgb * (1.0 / FOG_HISTORY_REACH), result.rgb * FOG_HISTORY_REACH);
-				result = mix(history, result, share);
-			}
+				result = mix(textureLod(fog_history, previous, 0.0), result, share);
 		}
 	}
 	if (any(isnan(result)))
