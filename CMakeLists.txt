@@ -647,8 +647,9 @@ if(WIN32 AND WITH_PYTHON)
 		TARGET ${PROJECT_NAME} POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_LIBDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/Lib"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
+		# Lib with its site-packages is huge, the script copies it only when the Python install has changed
+		COMMAND ${CMAKE_COMMAND} "-DPY_LIBDIR=${EU07_PY_LIBDIR}" "-DPY_DLLSDIR=${EU07_PY_DLLSDIR}" "-DDEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/CMake_modules/CopyPythonRuntime.cmake"
 	)
 endif()
 
