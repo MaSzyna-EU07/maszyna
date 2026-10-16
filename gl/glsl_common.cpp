@@ -63,6 +63,18 @@ void gl::glsl_common_setup()
     "#define LOCAL_SHADOW_LAMPS_TEX " + std::to_string(LOCAL_SHADOW_LAMPS_TEX) + "\n" +
     "#define HEADLIGHT_SHADOW_TEX " + std::to_string(HEADLIGHT_SHADOW_TEX) + "\n" +
     "#define MAX_HEADLIGHT_SHADOWS " + std::to_string(MAX_HEADLIGHT_SHADOWS) + "U\n" +
+    "#define FOG_VOLUME_TEX " + std::to_string(FOG_VOLUME_TEX) + "\n" +
+    "#define CLOUD_SHADOW_TEX " + std::to_string(CLOUD_SHADOW_TEX) + "\n" +
+    "#define CLOUD_TEX " + std::to_string(CLOUD_TEX) + "\n" +
+    "#define CLOUD_SHAPE_TEX " + std::to_string(CLOUD_SHAPE_TEX) + "\n" +
+    "#define CLOUD_DETAIL_TEX " + std::to_string(CLOUD_DETAIL_TEX) + "\n" +
+    "#define CLOUD_COVERAGE_TEX " + std::to_string(CLOUD_COVERAGE_TEX) + "\n" +
+    "#define CLOUD_HISTORY_TEX " + std::to_string(CLOUD_HISTORY_TEX) + "\n" +
+    "#define WEATHER_UBO_BINDING " + std::to_string(WEATHER_UBO_BINDING) + "\n" +
+    "#define WEATHER_SCRATCH_SSBO_BINDING " + std::to_string(WEATHER_SCRATCH_SSBO_BINDING) + "\n" +
+    "#define MAX_CLOUD_LAYERS " + std::to_string(MAX_CLOUD_LAYERS) + "\n" +
+    "#define FOG_HORIZON_SAMPLES " + std::to_string(FOG_HORIZON_SAMPLES) + "\n" +
+    "#define WEATHER_GROUP_SIZE " + std::to_string(WEATHER_GROUP_SIZE) + "\n" +
     R"STRING(
     const uint LIGHT_SPOT = 0U;
     const uint LIGHT_POINT = 1U;

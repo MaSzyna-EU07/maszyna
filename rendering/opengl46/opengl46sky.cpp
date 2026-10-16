@@ -306,7 +306,9 @@ void opengl46_sky::update(opengl46_light &Sunlight, glm::vec3 &Fogcolor, CSkyDom
 		m_white_balance = balance / std::max(luminance(balance), 1e-4f);
 
 		// the atmosphere has no clouds: the overcast takes away the sunlight, greys the sky and evens out its light
-		auto const sun{glm::vec3{result.sun_transmittance} * m_white_balance * (ATMOSPHERE_SUN_SCALE * Global.gfx_atmosphere_sun) * (1.f - 0.65f * m_overcast)};
+		// with the shadows of the clouds the sun is held back where they are, not everywhere
+		auto const overcastsun{m_cloud_shadows ? 1.f : (1.f - 0.65f * m_overcast)};
+		auto const sun{glm::vec3{result.sun_transmittance} * m_white_balance * (ATMOSPHERE_SUN_SCALE * Global.gfx_atmosphere_sun) * overcastsun};
 		auto const ambientscale{ATMOSPHERE_AMBIENT_SCALE * Global.gfx_atmosphere_ambient};
 		auto const ambient{desaturate(glm::vec3{result.radiance_sh[0]} * SH_Y00 * m_white_balance * ambientscale, 0.5f * m_overcast)};
 		m_sky_scale = ATMOSPHERE_SKY_SCALE * Global.gfx_atmosphere_sky;
@@ -349,7 +351,8 @@ void opengl46_sky::update(opengl46_light &Sunlight, glm::vec3 &Fogcolor, CSkyDom
 void opengl46_sky::setup_sky(gl::model_ubs &Model) const
 {
 	glBindTextureUnit(gl::SKY_VIEW_TEX, m_skyview_table);
-	Model.param[0] = glm::vec4{m_weight, m_sky_scale, 0.75f * m_overcast, m_sky_flat_luminance};
+	// the volumetric clouds make the overcast sky themselves
+	Model.param[0] = glm::vec4{m_weight, m_sky_scale, m_clouds ? 0.f : 0.75f * m_overcast, m_sky_flat_luminance};
 	Model.param[1] = glm::vec4{m_white_balance, 0.f};
 }
 

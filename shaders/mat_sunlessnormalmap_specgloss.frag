@@ -72,14 +72,16 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     // surfaces (uses SUN_NDOTL_SHARPNESS from light_common.glsl).
     float sun_NdotL = pow(sunlight.x, SUN_NDOTL_SHARPNESS);
     float diffuseamount = sun_NdotL * lights[0].intensity;
+    // the clouds hold back the sun where their shadow falls, as the shadow map does
+    float cloudsun = cloud_shadow(mat3(inv_view) * f_pos.xyz);
 
-    float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity;
+    float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity * cloudsun;
 
     fragcolor = add_headlights(fragcolor, fragnormal);
 
     if (shadowtone < 1.0)
     {
-        float shadow = calc_shadow();
+        float shadow = max(calc_shadow(), 1.0 - cloudsun);
         specularamount *= clamp(1.0 - shadow, 0.0, 1.0);
         fragcolor = mix(fragcolor, fragcolor * shadowtone, clamp(diffuseamount * shadow, 0.0, 1.0));
     }

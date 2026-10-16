@@ -187,6 +187,44 @@ shadows of the sun, see `headlight shadows:` in Shift+F12); with the vehicle on 
 | `gfx.lights.shadows.headlights` | `2` | 0..4: how many sets of headlights (vehicle ends) cast shadows; 0: none |
 | `gfx.lights.shadows.headlights.range` | `250` | 10..1000: distance ahead of the vehicle within which things cast the shadows of its headlights, metres |
 
+### Weather
+
+The clouds, the fog and the stars are drawn from the weather of the simulation (a `weather` section of the scenery, or its
+`atmo` section as before, see `weather.md`). The cloud model of the `sky` section and the starry dome (`skydome_stars.t3d`)
+are no longer loaded.
+
+- **Clouds** are ray marched through layers of the genera of aviation reports (cumulus, cumulonimbus, stratus, cirrus...),
+  each with its own shape, height and depth, moving with the wind. The main view gets them at a fraction of its resolution
+  and blended over frames; reflections and the other views read a panorama of the sky with them, renewed in bands over a few
+  frames. Low clouds hide the hills and the far scenery they are in.
+- **Cloud shadows**: the clouds cast their shadows on the ground, the models, the vehicles and into the fog, from a map
+  around the camera along the sun (or the moon). With them on, the overcast no longer dims the sun and softens its shadows
+  as a whole: the sun is dimmed where the clouds are, and shines in the gaps.
+- **Fog**: the haze, thinning out with the height, and the ground fog of the weather. `volumetric`: a volume over the view
+  (froxels) holds the light the fog scatters, the sun with the shadows of the terrain, models and clouds in it (shafts of
+  light), and the lamps and headlights; past its depth the fog is worked out along the ray. `analytic`: the same fog along
+  the ray only, without the shafts and the lamps, as the old fog was drawn; it takes the same weather and looks the same
+  from afar, so the two can be switched without changing anything else. The colour of the fog comes from the sky around the
+  horizon, towards and away from the sun.
+- **Stars** come from a catalogue built into the simulator (about 9100 stars down to magnitude 6.5), with their colours,
+  turned with the sidereal time and the latitude of the scenery, dimmed near the horizon, by the fog and the clouds.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.fog` | `volumetric` | `volumetric` (`yes`) or `analytic` (`old`, `no`), see above |
+| `gfx.fog.quality` | `medium` | `low`/`medium`/`high`/`ultra` (or 1..4): the size of the fog volume, 80x45x48 to 240x135x128 cells |
+| `gfx.fog.range` | `1500` | 100..10000: the depth of the fog volume, metres; farther, the fog is worked out along the ray |
+| `gfx.fog.lights` | `1.0` | 0..10: the brightness of the lamps and headlights in the fog; 0: none |
+| `gfx.fog.shadows yes/no` | `yes` | the sun and the headlights cast their shadows into the fog (shafts of light) |
+| `gfx.fog.temporal yes/no` | `yes` | the fog volume is blended over frames (smoother, a little lag in quick turns) |
+| `gfx.clouds` | `medium` | `no`, or the quality `low`/`medium`/`high`/`ultra` (or 1..4): the resolution and the number of steps of the clouds. `no`: no clouds are drawn, the overcast dims the sun as before |
+| `gfx.clouds.distance` | `40000` | 5000..200000: the farthest the clouds are drawn, metres |
+| `gfx.clouds.shadows yes/no` | `yes` | the clouds cast shadows, see above |
+| `gfx.clouds.shadows.size` | `512` | 64..2048: the size of the cloud shadow map, texels |
+| `gfx.clouds.shadows.range` | `16000` | 1000..100000: the side of the cloud shadow map, metres; farther the clouds cast no shadows |
+| `gfx.stars yes/no` | `yes` | the stars of the catalogue |
+| `gfx.stars.brightness` | `1.0` | 0..16: their brightness |
+
 ### Models drawn from the GPU
 
 Many models of the scenery (trees, bushes, poles, fences: models without lights and animations) are drawn in batches, one
@@ -255,6 +293,11 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   Shift+F12 shows the GPU time of `atmosphere:` (look-up tables, only when the sun moved or the weather changed),
   `envmap ggx:` (prefiltering, with each update of the environment map), `exposure:` and `bloom:`. The same window holds
   the ambient occlusion mode and its settings; Shift+F12 shows its time as `ambient occlusion:` (gtao only).
+- **Weather** window (next to the Sky and exposure window): the switches above, the fog range in use, the share of the sun
+  in the light of the fog and how much light the clouds let through on average; below them the weather: a report (METAR)
+  of it, which can be edited and applied with a time of change, and the layers of clouds, the fog, the precipitation and
+  the wind, which change at once. These changes are of this computer only. Shift+F12 shows the GPU time of `clouds:` (the
+  main view), `clouds panorama:` (a band of the panorama), `cloud shadows:` and `fog volume:`.
 - **Instance culling** window: the mode of `gfx.gpucull` and the two switches above. With `gfx.gpucull yes` Shift+F12 shows
   `gpu cull:` (models drawn and hidden by the occlusion test, as counted on the graphics card a few frames before, the levels
   of detail, the draw calls with those of the depth prepass, and the processor time of the whole step) and the timings

@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/query.h"
 #include "rendering/opengl46/opengl46terrain.h"
 #include "rendering/opengl46/opengl46sky.h"
+#include "rendering/opengl46/opengl46weather.h"
 #include "rendering/opengl46/opengl46exposure.h"
 #include "rendering/opengl46/opengl46ao.h"
 #include "rendering/opengl46/opengl46locallights.h"
@@ -431,6 +432,8 @@ class opengl46_renderer : public gfx_renderer {
 	glm::vec3 m_fogcolor{0.f};
 	// light of the sky: directional ambient light, atmosphere, prefiltered environment map
 	opengl46_sky m_sky;
+	// fog, clouds and their shadows, stars
+	opengl46_weather m_weather;
 	// automatic exposure and bloom of the post processing
 	opengl46_exposure m_exposure;
 	// screen space ambient occlusion of the post processing

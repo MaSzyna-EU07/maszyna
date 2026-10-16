@@ -54,6 +54,31 @@ class opengl46_sky
 	{
 		return m_weight;
 	}
+	// the sky-view table of the atmosphere, its white balance, brightness and the overcast it was drawn with, for the colours of
+	// the fog (opengl46_weather)
+	GLuint skyview_table() const
+	{
+		return m_skyview_table;
+	}
+	glm::vec3 const &white_balance() const
+	{
+		return m_white_balance;
+	}
+	float sky_scale() const
+	{
+		return m_sky_scale;
+	}
+	float overcast() const
+	{
+		return m_overcast;
+	}
+	// the volumetric clouds are drawn over the sky (it doesn't take the overcast look then), and their shadows hold back the
+	// sunlight (it isn't dimmed by the overcast then)
+	void set_clouds(bool const Clouds, bool const Shadows)
+	{
+		m_clouds = Clouds;
+		m_cloud_shadows = Shadows;
+	}
 	// sets the shader parameters of the sky drawn with the atmosphere (sky_atmosphere.frag) and binds its table
 	void setup_sky(gl::model_ubs &Model) const;
 	// colour of the sun disc, the old one blended with the colour the atmosphere gives it
@@ -110,6 +135,8 @@ class opengl46_sky
 	glm::vec3 m_white_balance{1.f};
 	float m_sky_scale{0.f};
 	float m_overcast{0.f};
+	bool m_clouds{false};
+	bool m_cloud_shadows{false};
 	float m_sky_flat_luminance{0.f};
 	glm::vec3 m_sun_disc_color{1.f};
 	glm::vec3 m_sunlight{0.f};

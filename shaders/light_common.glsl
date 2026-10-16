@@ -11,6 +11,7 @@ layout(binding = HEADLIGHT_SHADOW_TEX) uniform sampler2DArrayShadow headlight_sh
 
 #include <envmapping.glsl>
 #include <conversion.glsl>
+#include <weather_common.glsl>
 
 float glossiness = 1.0;
 float metalic = 0.0;
@@ -510,7 +511,9 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // panels, vehicle bodies and terrain reads as a clear edge rather
     // than a soft Lambertian ramp. Tunable via SUN_NDOTL_SHARPNESS.
     float sun_NdotL = pow(sunlight.x, SUN_NDOTL_SHARPNESS);
-    float diffuseamount = sun_NdotL * lights[0].intensity;
+    // the clouds hold back the sun (the moon at night) where their shadow falls
+    float cloudsun = cloud_shadow(mat3(inv_view) * f_pos.xyz);
+    float diffuseamount = sun_NdotL * lights[0].intensity * cloudsun;
 
     float shadow1 = 0.0;
     if (shadowtone < 1.0)
@@ -523,7 +526,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
 
     fragcolor = add_headlights(fragcolor, fragnormal);
 
-    float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity
+    float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity * cloudsun
                          * clamp(1.0 - shadowtone, 0.0, 1.0);
     if (shadowtone < 1.0)
         specularamount *= clamp(1.0 - shadow1, 0.0, 1.0);

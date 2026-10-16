@@ -3,9 +3,13 @@
 // close they are and by how close their distance is to that of the pixel, so the occlusion does not spill over the
 // edges of objects. each pixel of the occlusion stands for the top left one of the four full size pixels it covers
 // params.x: 0 ground truth ambient occlusion, 1 the older ssao (its own fixed curve)
-// params.y: strength, a power of the occlusion (1 = as computed); params.z: albedo assumed by the multiple bounce term
+// params.y: strength, a power of the occlusion (1 = as computed); params.z: albedo assumed by the multiple bounce term.
+// the fog in front of a surface hides its occlusion as it hides the surface (fog_volume.glsl)
 
 in vec2 f_coords;
+
+#include <common>
+#include <fog_volume.glsl>
 layout(location = 0) out vec4 out_color;
 
 layout(binding = 0) uniform sampler2D depth_tex;
@@ -14,12 +18,17 @@ layout(binding = 1) uniform sampler2D ao_tex;
 layout(location = 0) uniform mat4 inv_projection;
 layout(location = 1) uniform vec4 params;
 
-float view_distance(ivec2 pixel, float depth)
+vec3 view_position(ivec2 pixel, float depth)
 {
 	ivec2 full_size = textureSize(depth_tex, 0);
 	vec2 uv = (vec2(pixel) + 0.5) / vec2(full_size);
 	vec4 position = inv_projection * vec4(uv * 2.0 - 1.0, depth, 1.0);
-	return length(position.xyz / position.w);
+	return position.xyz / position.w;
+}
+
+float view_distance(ivec2 pixel, float depth)
+{
+	return length(view_position(pixel, depth));
 }
 
 // light which comes back after more than one bounce off surfaces of the given albedo, fit of Jimenez et al. 2016
@@ -76,5 +85,7 @@ void main()
 		ao = pow(ao, params.y);
 		ao = multi_bounce(ao, params.z);
 	}
+	// what the fog lets through of the surface is what is left to occlude
+	ao = mix(1.0, ao, fog_along_view(view_position(pixel, depth), gl_FragCoord.xy).a);
 	out_color = vec4(vec3(ao), 1.0);
 }

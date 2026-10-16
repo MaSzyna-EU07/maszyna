@@ -1644,6 +1644,41 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         Parser >> gfx_lights_shadows_headlights;
         gfx_lights_shadows_headlights = std::clamp( gfx_lights_shadows_headlights, 0, 4 ); }
     else if( Token == "gfx.lights.shadows.headlights.range" ) { readvalue( gfx_lights_shadows_headlights_range, 10.f, 1000.f ); }
+    else if( Token == "gfx.fog" ) {
+        // volumetric (yes) or analytic (no, old): the same weather either way
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        gfx_fog = ( mode == "analytic" || mode == "old" || mode == "no" || mode == "false" || mode == "0" ) ? 0 : 1; }
+    else if( Token == "gfx.fog.quality" ) {
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_fog_quality = ( level == "low" || level == "1" ) ? 1 : ( level == "high" || level == "3" ) ? 3 : ( level == "ultra" || level == "4" ) ? 4 : 2; }
+    else if( Token == "gfx.fog.range" ) { readvalue( gfx_fog_range, 100.f, 10000.f ); }
+    else if( Token == "gfx.fog.lights" ) { readvalue( gfx_fog_lights, 0.f, 10.f ); }
+    else if( Token == "gfx.fog.shadows" ) { readswitch( gfx_fog_shadows ); }
+    else if( Token == "gfx.fog.temporal" ) { readswitch( gfx_fog_temporal ); }
+    else if( Token == "gfx.clouds" ) {
+        // no, or the quality: low, medium (yes), high, ultra
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_clouds =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            ( level == "ultra" || level == "4" ) ? 4 :
+            0; }
+    else if( Token == "gfx.clouds.distance" ) { readvalue( gfx_clouds_distance, 5000.f, 200000.f ); }
+    else if( Token == "gfx.clouds.shadows" ) { readswitch( gfx_clouds_shadows ); }
+    else if( Token == "gfx.clouds.shadows.size" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_clouds_shadows_size;
+        gfx_clouds_shadows_size = std::clamp( gfx_clouds_shadows_size, 64, 2048 ); }
+    else if( Token == "gfx.clouds.shadows.range" ) { readvalue( gfx_clouds_shadows_range, 1000.f, 100000.f ); }
+    else if( Token == "gfx.stars" ) { readswitch( gfx_stars ); }
+    else if( Token == "gfx.stars.brightness" ) { readvalue( gfx_stars_brightness, 0.f, 16.f ); }
     else { return false; }
 
     return true;
@@ -1928,6 +1963,19 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.lights.shadows.vehicles.range", gfx_lights_shadows_vehicles_range );
     export_as_text( Output, "gfx.lights.shadows.headlights", gfx_lights_shadows_headlights );
     export_as_text( Output, "gfx.lights.shadows.headlights.range", gfx_lights_shadows_headlights_range );
+    export_as_text( Output, "gfx.fog", std::string{ gfx_fog == 1 ? "volumetric" : "analytic" } );
+    export_as_text( Output, "gfx.fog.quality", std::string{ gfx_fog_quality == 1 ? "low" : gfx_fog_quality == 3 ? "high" : gfx_fog_quality == 4 ? "ultra" : "medium" } );
+    export_as_text( Output, "gfx.fog.range", gfx_fog_range );
+    export_as_text( Output, "gfx.fog.lights", gfx_fog_lights );
+    export_as_text( Output, "gfx.fog.shadows", gfx_fog_shadows );
+    export_as_text( Output, "gfx.fog.temporal", gfx_fog_temporal );
+    export_as_text( Output, "gfx.clouds", std::string{ gfx_clouds == 1 ? "low" : gfx_clouds == 2 ? "medium" : gfx_clouds == 3 ? "high" : gfx_clouds == 4 ? "ultra" : "no" } );
+    export_as_text( Output, "gfx.clouds.distance", gfx_clouds_distance );
+    export_as_text( Output, "gfx.clouds.shadows", gfx_clouds_shadows );
+    export_as_text( Output, "gfx.clouds.shadows.size", gfx_clouds_shadows_size );
+    export_as_text( Output, "gfx.clouds.shadows.range", gfx_clouds_shadows_range );
+    export_as_text( Output, "gfx.stars", gfx_stars );
+    export_as_text( Output, "gfx.stars.brightness", gfx_stars_brightness );
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );

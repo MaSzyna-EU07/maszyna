@@ -1,0 +1,213 @@
+// clouds of the weather (opengl46_weather): density of the layers of weather_common.glsl, made of three tiling noises.
+// the shape noise (3d, clouds_noise.comp) gives the lumps of a cloud, the detail noise (3d) eats into their edges, the coverage
+// noise (2d) spreads the clouds of a layer over the sky so they take up its coverage. positions are world offsets from the
+// camera, in metres, y up; the earth curves away from the camera, so far clouds sink below the horizon
+#include <weather_common.glsl>
+
+layout(binding = CLOUD_SHAPE_TEX) uniform sampler3D cloud_shape_noise;
+layout(binding = CLOUD_DETAIL_TEX) uniform sampler3D cloud_detail_noise;
+layout(binding = CLOUD_COVERAGE_TEX) uniform sampler2D cloud_coverage_noise;
+
+const float CLOUD_EARTH_RADIUS = 6360000.0;
+
+float cloud_remap(float value, float low, float high, float newlow, float newhigh)
+{
+	return newlow + (value - low) / max(high - low, 1e-5) * (newhigh - newlow);
+}
+
+// height of a point above the ground reference, the earth curving down with the square of the distance
+float cloud_height(vec3 position)
+{
+	return weather_camera.x + position.y - dot(position.xz, position.xz) * (0.5 / CLOUD_EARTH_RADIUS);
+}
+
+// distances along a ray (unit Direction from the camera) where it is at Height: the height goes as
+// camera + up * t - (1 - up^2) / (2 R) * t^2. returns the number of crossings ahead (0-2), sorted into T
+int cloud_ray_height(float up, float height, out vec2 t)
+{
+	t = vec2(-1.0);
+	float a = (1.0 - up * up) * (0.5 / CLOUD_EARTH_RADIUS);
+	float b = -up;
+	float c = height - weather_camera.x;
+	// a t^2 + b t + c = 0
+	if (a < 1e-12)
+	{
+		if (abs(b) < 1e-8)
+			return 0;
+		float root = -c / b;
+		t = vec2(root, -1.0);
+		return root > 0.0 ? 1 : 0;
+	}
+	float discriminant = b * b - 4.0 * a * c;
+	if (discriminant < 0.0)
+		return 0;
+	float q = -0.5 * (b + (b >= 0.0 ? 1.0 : -1.0) * sqrt(discriminant));
+	float r0 = q / a;
+	float r1 = (abs(q) > 1e-12) ? c / q : r0;
+	vec2 roots = vec2(min(r0, r1), max(r0, r1));
+	if (roots.y <= 0.0)
+		return 0;
+	if (roots.x <= 0.0)
+	{
+		t = vec2(roots.y, -1.0);
+		return 1;
+	}
+	t = roots;
+	return 2;
+}
+
+// the first stretch of a ray within the heights of a layer, x to y; y <= x when it never gets there
+vec2 cloud_layer_segment(float up, float base, float top)
+{
+	vec2 tb, tt;
+	int nb = cloud_ray_height(up, base, tb);
+	int nt = cloud_ray_height(up, top, tt);
+	// the crossings in order; the ray goes in and out of the layer at each
+	float crossings[4];
+	int count = 0;
+	for (int i = 0; i < nb; i++)
+		crossings[count++] = tb[i];
+	for (int i = 0; i < nt; i++)
+		crossings[count++] = tt[i];
+	for (int i = 1; i < count; i++)
+		for (int j = i; j > 0 && crossings[j - 1] > crossings[j]; j--)
+		{
+			float swap = crossings[j];
+			crossings[j] = crossings[j - 1];
+			crossings[j - 1] = swap;
+		}
+	bool inside = (weather_camera.x >= base) && (weather_camera.x <= top);
+	float start = 0.0;
+	for (int i = 0; i < count; i++)
+	{
+		if (inside)
+			return vec2(start, crossings[i]);
+		inside = true;
+		start = crossings[i];
+	}
+	return inside ? vec2(start, 1e9) : vec2(0.0, -1.0);
+}
+
+// the position in the noise of a layer: the camera's place in it and the offset from the camera, stretched along the wind
+vec2 cloud_noise_plane(cloud_layer_s layer, vec2 offset)
+{
+	vec2 wind = cloud_wind.xy;
+	float along = dot(offset, wind);
+	vec2 across = offset - wind * along;
+	return across + wind * (along / max(layer.motion.w, 1.0));
+}
+
+// share of the layer filled at a place, x: the soft mask of the coverage, y: how far into a cloud area (0 at its edge)
+vec2 cloud_coverage(cloud_layer_s layer, vec2 offset)
+{
+	vec2 coords = (layer.extra.zw + cloud_noise_plane(layer, offset)) * layer.motion.z;
+	float noise = textureLod(cloud_coverage_noise, coords + layer.extra.y, 0.0).r;
+	float coverage = layer.shape.x;
+	float threshold = 1.0 - coverage;
+	float mask = smoothstep(threshold - 0.06, threshold + 0.06, noise);
+	float depth = clamp((noise - threshold) / max(coverage, 0.05), 0.0, 1.0);
+	return vec2(mask, depth);
+}
+
+// extinction (1/m) of a volumetric layer at a point; Detail eats the edges with the small noise
+float cloud_layer_density(int index, vec3 position, float height, bool detail)
+{
+	cloud_layer_s layer = cloud_layers[index];
+	float h = (height - layer.heights.x) * layer.heights.z;
+	if (h <= 0.0 || h >= 1.0)
+		return 0.0;
+	vec2 coverage = cloud_coverage(layer, position.xz);
+	// the anvil spreads the top of the storm clouds out of their area
+	if (layer.profile.w > 0.0)
+	{
+		float anvil = layer.profile.w * smoothstep(0.7, 0.92, h) * (1.0 - smoothstep(0.97, 1.0, h));
+		coverage.x = max(coverage.x, anvil * smoothstep(0.0, 0.5, coverage.y + 0.35));
+		coverage.y = max(coverage.y, anvil * 0.6);
+	}
+	if (coverage.x <= 0.0)
+		return 0.0;
+	// the tops of the single clouds are of different heights, the larger ones (deeper in their area) the taller
+	float top = mix(1.0 - layer.profile.z, 1.0, coverage.y);
+	float gradient = smoothstep(0.0, layer.profile.x, h) * (1.0 - smoothstep(top * layer.profile.y, top, h));
+	if (gradient <= 0.0)
+		return 0.0;
+	vec2 plane = layer.motion.xy + cloud_noise_plane(layer, position.xz);
+	vec3 coords = vec3(plane.x, height + layer.extra.y * 4096.0, plane.y) * layer.shape.z;
+	vec4 shape = textureLod(cloud_shape_noise, coords, 0.0);
+	float worley = shape.g * 0.625 + shape.b * 0.25 + shape.a * 0.125;
+	float base = clamp(cloud_remap(shape.r, worley - 1.0, 1.0, 0.0, 1.0), 0.0, 1.0);
+	// the sheets (little erosion) keep few holes, the heaps are made of lumps
+	base = mix(1.0, base, clamp(layer.shape.w * 2.5, 0.25, 1.0));
+	float density = clamp(cloud_remap(base * gradient, 1.0 - coverage.x, 1.0, 0.0, 1.0), 0.0, 1.0) * coverage.x;
+	if (detail && density > 0.0 && layer.shape.w > 0.0)
+	{
+		vec4 small = textureLod(cloud_detail_noise, coords * 6.0, 0.0);
+		float fbm = small.r * 0.625 + small.g * 0.25 + small.b * 0.125;
+		// wispy at the base, billowing at the top
+		float erosion = mix(fbm, 1.0 - fbm, clamp(h * 4.0, 0.0, 1.0));
+		density = clamp(cloud_remap(density, erosion * layer.shape.w * 0.5, 1.0, 0.0, 1.0), 0.0, 1.0);
+	}
+	return density * layer.shape.y;
+}
+
+// the same without the detail, cheaper, for the shadows and the fog
+float cloud_density_coarse(vec3 position)
+{
+	float height = cloud_height(position);
+	float density = 0.0;
+	for (int i = 0; i < int(weather_camera.w); i++)
+	{
+		if (cloud_layers[i].extra.x > 0.5)
+			continue;
+		density += cloud_layer_density(i, position, height, false);
+	}
+	return density;
+}
+
+// optical depth of a flat layer (cirrus and the like) where a ray crosses its middle, Up the vertical part of the ray there
+float cloud_flat_depth(int index, vec3 position)
+{
+	cloud_layer_s layer = cloud_layers[index];
+	vec2 coverage = cloud_coverage(layer, position.xz);
+	if (coverage.x <= 0.0)
+		return 0.0;
+	vec2 plane = layer.motion.xy + cloud_noise_plane(layer, position.xz);
+	vec2 coords = plane * layer.shape.z;
+	// strands and ripples out of slices of the noise
+	vec4 shape = textureLod(cloud_shape_noise, vec3(coords, 0.37 + layer.extra.y), 0.0);
+	vec4 small = textureLod(cloud_detail_noise, vec3(coords * 4.0, 0.61), 0.0);
+	float strands = clamp(cloud_remap(shape.r * 0.7 + small.r * 0.3, 0.35 * layer.shape.w + (1.0 - coverage.x) * 0.5, 1.0, 0.0, 1.0), 0.0, 1.0);
+	return strands * coverage.x * layer.shape.y;
+}
+
+// the shadow of the clouds at a point: what they let through towards the key light. Steps per layer
+float cloud_transmittance_to_sun(vec3 position, int steps)
+{
+	vec3 sun = weather_sun_direction.xyz;
+	if (sun.y <= 0.01)
+		return fog_light.y;
+	float height = cloud_height(position);
+	float depth = 0.0;
+	for (int i = 0; i < int(weather_camera.w); i++)
+	{
+		cloud_layer_s layer = cloud_layers[i];
+		if (layer.extra.x > 0.5)
+		{
+			float middle = 0.5 * (layer.heights.x + layer.heights.y);
+			if (middle > height)
+				depth += cloud_flat_depth(i, position + sun * ((middle - height) / sun.y)) / sun.y;
+			continue;
+		}
+		float enter = max(layer.heights.x - height, 0.0) / sun.y;
+		float leave = (layer.heights.y - height) / sun.y;
+		if (leave <= 0.0)
+			continue;
+		float step = (leave - enter) / float(steps);
+		for (int s = 0; s < steps; s++)
+		{
+			vec3 point = position + sun * (enter + step * (float(s) + 0.5));
+			depth += cloud_layer_density(i, point, cloud_height(point), false) * step;
+		}
+	}
+	return exp(-depth);
+}

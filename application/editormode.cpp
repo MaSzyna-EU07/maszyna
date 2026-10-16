@@ -36,6 +36,7 @@ extern char **environ;
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "widgets/weatherpanel.h"
 #include "utilities/Timer.h"
 #include "Console.h"
 #include "rendering/renderer.h"
@@ -3556,6 +3557,9 @@ void editor_mode::render_environment_window()
             Global.AirTemperature = std::clamp(temperature, -35.0f, 40.0f);
             simulation::Environment.compute_weather();
         }
+        // the layers of clouds, the fog and a weather report, as the weather section of a scenery describes them
+        if (ImGui::CollapsingHeader(STR_C("Clouds, fog and weather report")))
+            ui::weather_controls(simulation::Environment.weather());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s", STR_C("Seen in the editor only; the scenery keeps its own time and weather"));
         ImGui::PopStyleColor();

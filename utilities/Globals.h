@@ -362,6 +362,27 @@ struct global_settings {
     // cast them, metres
     int gfx_lights_shadows_headlights { 2 };
     float gfx_lights_shadows_headlights_range { 250.f };
+    // weather of the opengl 4.6 renderer (debug window "Weather"); the weather itself comes from the scenery, see
+    // environment/weather.h. fog: 1 volumetric (a volume over the view with the shafts of the sun, the shadows of the clouds and
+    // the light of lamps and headlights, worked out along the ray past it), 0 analytic (the same fog along the ray only, the way
+    // the old one was drawn); the quality of the volume 1-4 (low, medium, high, ultra), its depth (metres), the brightness of the
+    // lamps in it (0: none), whether the sun and the headlights cast their shadows into it, blending over frames
+    int gfx_fog { 1 };
+    int gfx_fog_quality { 2 };
+    float gfx_fog_range { 1500.f };
+    float gfx_fog_lights { 1.f };
+    bool gfx_fog_shadows { true };
+    bool gfx_fog_temporal { true };
+    // volumetric clouds, 0 none, 1-4 the quality (low, medium, high, ultra); the farthest they are drawn (metres); the shadows
+    // they cast (a map around the camera: its size in texels and in metres)
+    int gfx_clouds { 2 };
+    float gfx_clouds_distance { 40000.f };
+    bool gfx_clouds_shadows { true };
+    int gfx_clouds_shadows_size { 512 };
+    float gfx_clouds_shadows_range { 16000.f };
+    // stars from the catalogue, and their brightness
+    bool gfx_stars { true };
+    float gfx_stars_brightness { 1.f };
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;

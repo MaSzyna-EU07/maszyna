@@ -1,0 +1,179 @@
+// the fog volume of the main view, first pass: in every cell of a grid laid over the view (slices spaced exponentially in the
+// depth), how dense the fog is and how much light it scatters towards the camera. the density: the haze, the patches of the
+// ground fog, the low clouds; the light: the colour the fog has towards the horizon (weather_common.glsl), less what the
+// shadows of the sun and of the clouds hold back, and the lamps and headlights of the light clusters. blended with the
+// previous frame, found where the cell was then; the cells are sampled at another depth every frame.
+// rgb: light scattered towards the camera per metre, a: extinction per metre
+
+#include <common>
+#include <clouds_common.glsl>
+
+layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, local_size_z = 1) in;
+
+layout(rgba16f, binding = 0) uniform writeonly image3D fog_scattering;
+layout(binding = CLOUD_HISTORY_TEX) uniform sampler3D fog_history;
+
+#if SHADOWMAP_ENABLED
+uniform sampler2DArrayShadow shadowmap;
+#endif
+uniform sampler2D headlightmap;
+layout(binding = HEADLIGHT_SHADOW_TEX) uniform sampler2DArrayShadow headlight_shadowmap;
+
+layout(location = 0) uniform ivec3 grid;
+layout(location = 1) uniform mat4 inverse_projection;
+layout(location = 2) uniform mat4 view_to_world;
+// x: near, y: far, z: slices / log(far / near), w: where in its slice the cell is sampled this frame (0-1)
+layout(location = 3) uniform vec4 slicing;
+// world axes to the clip space of the previous frame, the camera of the previous frame at the origin
+layout(location = 4) uniform mat4 previous_projection_view;
+layout(location = 5) uniform vec3 previous_camera;
+// x: share of this frame (1 without history), y: brightness of the lamps in the fog (0: none), z: 1 when the sun casts shadows
+// into the fog, w: 1 when the headlights cast shadows into it
+layout(location = 6) uniform vec4 options;
+// the light of the cab lamp, which lights no fog (the air of the cab is clear), or -1
+layout(location = 7) uniform int cablamp;
+// x: near, y: slices / log(far / near) of the previous frame
+layout(location = 8) uniform vec2 previous_slicing;
+
+float henyey_greenstein(float cosangle, float g)
+{
+	float g2 = g * g;
+	return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosangle, 1e-4), 1.5);
+}
+
+// share of the sunlight the shadow map holds back at a point of the view space, one comparison
+float sun_shadow(vec3 position)
+{
+#if SHADOWMAP_ENABLED
+	float span_distance = dot(position, position);
+	uint cascade;
+	for (cascade = 0U; cascade < MAX_CASCADES; cascade++)
+		if (span_distance <= cascade_end[cascade])
+			break;
+	if (cascade >= MAX_CASCADES)
+		return 0.0;
+	vec4 lightpos = lightview[cascade] * vec4(position, 1.0);
+	vec3 coords = lightpos.xyz / lightpos.w;
+	if (coords.z < 0.0 || any(lessThan(coords.xy, vec2(0.0))) || any(greaterThan(coords.xy, vec2(1.0))))
+		return 0.0;
+	return texture(shadowmap, vec4(coords.xy, float(cascade), coords.z + 0.0001 * float(cascade + 1U)));
+#else
+	return 0.0;
+#endif
+}
+
+// light of a lamp or of the beam of headlights at a point of the view space, before the phase
+vec3 lamp_light(light_s light, vec3 position)
+{
+	if (light.type == LIGHT_HEADLIGHTS)
+	{
+		vec4 projected = light.headlight_projection * vec4(position, 1.0);
+		vec3 coords = projected.xyz / projected.w;
+		if (coords.z < 0.0 || coords.z > 1.0 || any(lessThan(coords.xy, vec2(0.0))) || any(greaterThan(coords.xy, vec2(1.0))))
+			return vec3(0.0);
+		float span_distance = length(light.pos - position);
+		float atten = 1.0 / (1.0 + light.linear * span_distance + light.quadratic * span_distance * span_distance);
+		atten *= mix(1.0, 0.0, clamp((coords.z - 0.998) * 500.0, 0.0, 1.0));
+		vec3 beam = textureLod(headlightmap, coords.xy, 1.0).rgb * light.headlight_weights.rgb;
+		float intensity = max(max(beam.r, beam.g), beam.b);
+		if ((options.w > 0.5) && (light.headlight_weights.w > 0.5) && (intensity > 0.0))
+		{
+			// the shadow map of the beam, as in light_common.glsl without the offset along a normal
+			uint map = uint(light.headlight_weights.w - 0.5);
+			vec4 shadowpos = headlight_shadow[map] * vec4(position, 1.0);
+			if (shadowpos.w > 0.0)
+			{
+				vec2 shadowcoords = shadowpos.xy / shadowpos.w;
+				if (all(greaterThanEqual(shadowcoords, vec2(0.0))) && all(lessThanEqual(shadowcoords, vec2(1.0))))
+				{
+					float texel = headlight_shadow_params[map].x * shadowpos.w;
+					float reference = shadowpos.z / max(shadowpos.w - texel * 1.5, 1e-3);
+					intensity *= 1.0 - texture(headlight_shadowmap, vec4(shadowcoords, float(map), reference));
+				}
+			}
+		}
+		return light.color * (atten * intensity * light.intensity);
+	}
+	vec3 tolight = light.pos - position;
+	float distance2 = dot(tolight, tolight);
+	float edge = clamp(1.0 - distance2 * distance2 * (light.quadratic * light.quadratic), 0.0, 1.0);
+	float atten = edge * edge / max(distance2, 0.01);
+	if (light.type == LIGHT_SPOT)
+		atten *= smoothstep(light.out_cutoff, light.in_cutoff, dot(-tolight * inversesqrt(max(distance2, 1e-8)), normalize(light.dir)));
+	return light.color * (atten * light.intensity);
+}
+
+void main()
+{
+	ivec3 cell = ivec3(gl_GlobalInvocationID);
+	if (any(greaterThanEqual(cell, grid)))
+		return;
+	vec2 coords = (vec2(cell.xy) + 0.5) / vec2(grid.xy);
+	vec4 near = inverse_projection * vec4(coords * 2.0 - 1.0, 1.0, 1.0);
+	vec3 ray = near.xyz / near.w;
+	ray /= -ray.z;
+	float depth = slicing.x * exp((float(cell.z) + slicing.w) / slicing.z);
+	vec3 view = ray * depth;
+	vec3 world = mat3(view_to_world) * view;
+	float height = weather_camera.x + world.y;
+
+	// density
+	float haze = fog_haze.x * exp(-fog_haze.y * max(height, 0.0));
+	float ground = fog_ground.x * exp(-fog_ground.y * max(height - fog_ground.z, 0.0));
+	if (ground > 0.0 && fog_ground.w > 0.0)
+	{
+		float patches = textureLod(cloud_shape_noise, (world + fog_noise.xyz) * fog_noise.w, 0.0).g;
+		ground *= mix(1.0, clamp((patches - 0.3) * 2.6, 0.0, 2.2), fog_ground.w);
+	}
+	float clouds = cloud_density_coarse(world);
+	float extinction = haze + ground + clouds;
+
+	vec4 result = vec4(0.0);
+	if (extinction > 1e-7)
+	{
+		vec3 direction = normalize(world);
+		// the light of the sky and the sun, held back by the shadows
+		float sunlit = cloud_shadow(world);
+		if (options.z > 0.5 && sunlit > 0.0)
+			sunlit *= 1.0 - sun_shadow(view);
+		vec3 light = fog_whiten(fog_color_world(direction), (ground + clouds) / extinction) * fog_light_factor(sunlit);
+		// lamps and headlights of the cluster of the cell
+		if (options.y > 0.0 && lights_clustered != 0U && cluster_valid != 0U)
+		{
+			ivec2 tile = clamp(ivec2(coords * vec2(CLUSTER_GRID_X, CLUSTER_GRID_Y)), ivec2(0), ivec2(CLUSTER_GRID_X - 1, CLUSTER_GRID_Y - 1));
+			int slice = clamp(int(floor(cluster_slice_bias + log(depth) * cluster_slice_scale)), 0, CLUSTER_GRID_Z - 1);
+			cluster_range_s range = cluster_ranges[uint(tile.x + CLUSTER_GRID_X * (tile.y + CLUSTER_GRID_Y * slice))];
+			vec3 tocamera = -normalize(view);
+			vec3 lamps = vec3(0.0);
+			for (uint i = 0U; i < range.count; i++)
+			{
+				uint index = cluster_light_indices[range.offset + i];
+				if (int(index) == cablamp)
+					continue;
+				light_s lamp = lights[index];
+				vec3 incoming = lamp_light(lamp, view);
+				if (dot(incoming, incoming) <= 0.0)
+					continue;
+				lamps += incoming * henyey_greenstein(dot(normalize(view - lamp.pos), tocamera), 0.4);
+			}
+			light += lamps * options.y;
+		}
+		result = vec4(light * fog_haze.w * extinction, extinction);
+	}
+
+	// the previous frame, where the cell was then
+	float share = options.x;
+	if (share < 1.0)
+	{
+		vec4 clip = previous_projection_view * vec4(world - previous_camera, 1.0);
+		if (clip.w > 0.0)
+		{
+			vec3 previous = vec3(clip.xy / clip.w * 0.5 + 0.5, log(max(clip.w / previous_slicing.x, 1e-6)) * previous_slicing.y / float(grid.z));
+			if (all(greaterThanEqual(previous, vec3(0.0))) && all(lessThanEqual(previous, vec3(1.0))))
+				result = mix(textureLod(fog_history, previous, 0.0), result, share);
+		}
+	}
+	if (any(isnan(result)))
+		result = vec4(0.0);
+	imageStore(fog_scattering, cell, result);
+}

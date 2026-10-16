@@ -65,6 +65,16 @@ namespace gl
     // shadow maps of the headlights of vehicles (2d array, depth compared; opengl46_local_shadows), and how many of them there may be
     const size_t HEADLIGHT_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 3;
     const size_t MAX_HEADLIGHT_SHADOWS = 4;
+    // weather (opengl46_weather): the fog of the main view (3d, apply_fog.glsl) and the shadows the clouds cast (2d), read by the
+    // shading. bound directly, like the ones above
+    const size_t FOG_VOLUME_TEX = MAX_TEXTURES + HELPER_TEXTURES + 4;
+    const size_t CLOUD_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 5;
+    // the clouds drawn into the sky, and the noise the clouds and the fog are made of; bound by the passes which read them
+    const size_t CLOUD_TEX = MAX_TEXTURES + HELPER_TEXTURES + 6;
+    const size_t CLOUD_SHAPE_TEX = MAX_TEXTURES + HELPER_TEXTURES + 7;
+    const size_t CLOUD_DETAIL_TEX = MAX_TEXTURES + HELPER_TEXTURES + 8;
+    const size_t CLOUD_COVERAGE_TEX = MAX_TEXTURES + HELPER_TEXTURES + 9;
+    const size_t CLOUD_HISTORY_TEX = MAX_TEXTURES + HELPER_TEXTURES + 10;
 
     struct scene_ubs
     {
@@ -391,6 +401,55 @@ namespace gl
     };
 
     static_assert(sizeof(atmosphere_result) == 16 * (SKY_SH_COEFFICIENTS + 4), "bad size of atmosphere_result");
+
+    // weather of the opengl 4.6 renderer (opengl46_weather, weather_common.glsl): fog, clouds, their shadows
+    const GLuint WEATHER_UBO_BINDING = 5;
+    // layers of clouds drawn, see weather_conditions::max_cloud_layers
+    const size_t MAX_CLOUD_LAYERS = 4;
+    // colours of the fog towards the horizon, by the angle from the azimuth of the sun (0-180 degrees)
+    const size_t FOG_HORIZON_SAMPLES = 32;
+    // work groups of the weather passes: 8x8 for the images, 8x8x1 for the fog volume
+    const GLuint WEATHER_GROUP_SIZE = 8;
+
+    // layout std140: one layer of clouds (GLSL: cloud_layer_s), see weather_common.glsl
+    struct cloud_layer_ubs
+    {
+        glm::vec4 heights;
+        glm::vec4 shape;
+        glm::vec4 profile;
+        glm::vec4 motion;
+        glm::vec4 extra;
+    };
+
+    static_assert(sizeof(cloud_layer_ubs) == 80, "bad size of cloud_layer_ubs");
+
+    // layout std140: the weather for the shading and the weather passes (GLSL: weather_ubo), see weather_common.glsl
+    struct weather_ubs
+    {
+        glm::vec4 fog_haze;
+        glm::vec4 fog_ground;
+        glm::vec4 fog_noise;
+        glm::vec4 fog_light;
+        glm::vec4 fog_volume_params;
+        glm::vec4 fog_volume_target;
+        glm::vec4 weather_camera;
+        glm::vec4 weather_sun_direction;
+        glm::vec4 weather_sun_color;
+        glm::vec4 weather_ambient;
+        glm::vec4 cloud_shadow_params;
+        glm::vec4 cloud_wind;
+        cloud_layer_ubs cloud_layers[MAX_CLOUD_LAYERS];
+        // filled on the gpu (fog_horizon.comp) while the atmosphere is used, by the cpu otherwise
+        glm::vec4 fog_horizon[FOG_HORIZON_SAMPLES];
+    };
+
+    static_assert(offsetof(weather_ubs, cloud_layers) == 192, "bad layout of weather_ubs");
+    static_assert(offsetof(weather_ubs, fog_horizon) == 192 + 80 * MAX_CLOUD_LAYERS, "bad layout of weather_ubs");
+    static_assert(sizeof(weather_ubs) == 192 + 80 * MAX_CLOUD_LAYERS + 16 * FOG_HORIZON_SAMPLES, "bad size of weather_ubs");
+
+    // the weather buffer is written by fog_horizon.comp as a storage block bound here for the pass. the point is one of the
+    // instance culling, which binds its buffers before every use
+    const GLuint WEATHER_SCRATCH_SSBO_BINDING = 9;
 
     // culling of model instances in compute passes (instance_cull.comp, instance_cull_offsets.comp). binding points of
     // the shader storage blocks, apart from the ones bound for the shading so the passes don't disturb them

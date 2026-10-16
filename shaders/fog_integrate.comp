@@ -1,0 +1,44 @@
+// the fog volume of the main view, second pass: the light and extinction of the cells (fog_inject.comp) added up along the rays
+// of the view, front to back, into what the fog adds and lets through from the camera to the far side of every slice
+// (apply_fog.glsl). the light of a cell is integrated over its length as Hillaire (2015) does it, so it doesn't grow with
+// the size of the cell
+
+#include <common>
+
+layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, local_size_z = 1) in;
+
+layout(binding = CLOUD_HISTORY_TEX) uniform sampler3D fog_scattering;
+layout(rgba16f, binding = 0) uniform writeonly image3D fog_integrated;
+
+layout(location = 0) uniform ivec3 grid;
+layout(location = 1) uniform mat4 inverse_projection;
+// x: near, y: far, z: slices / log(far / near)
+layout(location = 3) uniform vec4 slicing;
+
+void main()
+{
+	ivec2 column = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(column, grid.xy)))
+		return;
+	vec2 coords = (vec2(column) + 0.5) / vec2(grid.xy);
+	vec4 near = inverse_projection * vec4(coords * 2.0 - 1.0, 1.0, 1.0);
+	vec3 ray = near.xyz / near.w;
+	// metres along the ray per metre of the depth
+	float stretch = length(ray / -ray.z);
+
+	vec3 light = vec3(0.0);
+	float transmittance = 1.0;
+	float front = slicing.x;
+	for (int slice = 0; slice < grid.z; slice++)
+	{
+		float back = slicing.x * exp(float(slice + 1) / slicing.z);
+		float span = (back - front) * stretch;
+		front = back;
+		vec4 cell = texelFetch(fog_scattering, ivec3(column, slice), 0);
+		float extinction = max(cell.a, 1e-7);
+		float through = exp(-extinction * span);
+		light += transmittance * cell.rgb * ((1.0 - through) / extinction);
+		transmittance *= through;
+		imageStore(fog_integrated, ivec3(column, slice), vec4(light, transmittance));
+	}
+}

@@ -190,6 +190,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	try
 	{
 		m_sky.init();
+		m_weather.init();
 		m_instancecull.init();
 		m_hiz.init();
 		m_exposure.init();
@@ -485,6 +486,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 	scene_ubo->bind_uniform();
 	light_ssbo->bind_base();
 	m_sky.bind();
+	m_weather.bind();
 	m_exposure.bind();
 
 	vp.clusters = std::make_unique<gl::cluster_grid>();
@@ -627,7 +629,12 @@ bool opengl46_renderer::Render()
 		// the light of the sky for the render: colours of the sun, ambient light and fog from the atmosphere where it is
 		// used, the directional part of the ambient light
 		m_fogcolor = Global.FogColor;
+		// the volumetric clouds of the previous frame tell the sky whether to look overcast and dim the sun itself
+		m_sky.set_clouds(m_weather.clouds_drawn(), m_weather.cloud_shadows());
 		m_sky.update(m_sunlight, m_fogcolor, simulation::Environment.skydome(), simulation::Environment.sun().getDirection(), simulation::Environment.sun().getAngle());
+		// fog, clouds and stars of the weather, in the light of the sky worked out above
+		if (false == Global.gfx_skiprendering)
+			m_weather.update(m_sky, -m_sunlight.direction, glm::vec3{m_sunlight.diffuse} * simulation::Environment.light_intensity(), glm::vec3{m_sunlight.ambient}, m_fogcolor, Global.pCamera.Pos);
 		// lamps of models and vehicles around the camera and the cab lamp, for the views of the frame to take into their light buffers
 		if ((false == Global.gfx_skiprendering) && (simulation::Region != nullptr))
 			m_locallights.gather(Global.pCamera.Pos, *simulation::Region, m_geometry, m_framestamp);
@@ -729,6 +736,7 @@ void opengl46_renderer::SwapBuffers()
     if (auto const culltime = m_cullstimer.result())
         m_debugtimestext += " cull: " + to_string(static_cast<double>(*culltime) / 1000000.0, 3) + " ms\n";
     m_debugtimestext += m_sky.info_times();
+    m_debugtimestext += m_weather.info_times();
     m_debugtimestext += m_exposure.info_times();
     m_debugtimestext += m_ao.info_times();
     m_debugtimestext += m_instancecull.info_times();
@@ -831,6 +839,12 @@ void opengl46_renderer::draw_debug_ui()
         m_locallights.draw_debug_ui();
         ImGui::Separator();
         m_localshadows.draw_debug_ui();
+    }
+    ImGui::End();
+
+    if (ImGui::Begin("Weather"))
+    {
+        m_weather.draw_debug_ui();
     }
     ImGui::End();
 
@@ -1066,6 +1080,19 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         Update_Lights( simulation::Lights, true, Global.gfx_lights_clustered && vp.clusters->valid() );
         if( clusterlists ) {
             Cull_Lights( vp );
+        }
+
+        // the clouds of the view and the fog volume, which take the lights of the clusters and the shadow map of the pass
+        {
+            auto const fogtarget{ Global.gfx_skippipeline ? target_size : glm::ivec2{ vp.width, vp.height } };
+            if( vp.main ) {
+                if( Global.gfx_shadowmap_enabled )
+                    setup_shadow_bind_map();
+                m_weather.render_view(
+                    OpenGLMatrices.data( GL_PROJECTION ), glm::mat4{ m_colorpass.pass_camera.modelview() }, m_colorpass.pass_camera.position(), fogtarget,
+                    ( m_cablamplit && Global.gfx_lights_clustered && vp.clusters->valid() ) ? 1 : -1 );
+            }
+            m_weather.setup_pass( vp.main, fogtarget );
         }
 
 		glDebug("render environment");
@@ -1344,6 +1371,8 @@ if (!Global.gfx_skippipeline)
 		m_env_fb->bind();
 
 		setup_env_map(m_empty_cubemap.get());
+		// the fog volume is the one of the main view
+		m_weather.setup_pass(false, glm::ivec2{static_cast<int>(gl::ENVMAP_SIZE)});
 
 		setup_matrices();
 		// the light buffer holds what the last color pass left in it, in the view space of its camera, while the face is drawn
@@ -2096,6 +2125,9 @@ bool opengl46_renderer::Render(world_environment *Environment)
 
     Bind_Material(null_handle);
 	::glPushMatrix();
+	// the sky gets its fog all at once, laid over it with the clouds (opengl46_weather::draw_sky)
+	auto const fogdensity{model_ubs.fog_density};
+	model_ubs.fog_density = 0.f;
 
 	// skydome
 	// drawn with 500m radius to blend in if the fog range is low
@@ -2118,28 +2150,18 @@ bool opengl46_renderer::Render(world_environment *Environment)
 
     ::glBlendFunc( GL_SRC_ALPHA, GL_ONE );
 
-    // stars
-	if (Environment->m_stars.m_stars != nullptr && Global.fFogEnd > 500.f)
-	{
-		// setup
-		::glPushMatrix();
-		::glRotatef(Environment->m_stars.m_latitude, 1.f, 0.f, 0.f); // ustawienie osi OY na północ
-		::glRotatef(-std::fmod((float)Global.fTimeAngleDeg, 360.f), 0.f, 1.f, 0.f); // obrót dobowy osi OX
+	auto const &modelview = OpenGLMatrices.data(GL_MODELVIEW);
 
-        // render
-        Render(Environment->m_stars.m_stars, nullptr, 1.0);
-
-		// post-render cleanup
-		::glPopMatrix();
-	}
+    // stars of the catalogue, turned by the sidereal time; the fog and the clouds go over them
+    m_weather.draw_stars(modelview, Environment->m_sun.getAngle(), Environment->m_sun.getSiderealTime(), Environment->m_sun.getLatitude());
+    ::glBlendFunc( GL_SRC_ALPHA, GL_ONE );
 
 	// celestial bodies
 	m_celestial_shader->bind();
 	m_empty_vao->bind();
 
-	auto const &modelview = OpenGLMatrices.data(GL_MODELVIEW);
-
-    auto const fogfactor{std::clamp(Global.fFogEnd / 2000.f, 0.f, 1.f)}; // stronger fog reduces opacity of the celestial bodies
+    // the fog and the clouds laid over the sky hide the sun and the moon; without the clouds the overcast fades them
+    auto const overcastfactor{m_weather.clouds_drawn() ? 1.f : std::clamp(1.5f - Global.Overcast, 0.f, 1.f)};
 	float const duskfactor = 1.0f - std::clamp(std::abs(Environment->m_sun.getAngle()), 0.0f, 12.0f) / 12.0f;
 	glm::vec3 suncolor = glm::mix(glm::vec3(1.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
 	suncolor = m_sky.sun_disc_color(suncolor);
@@ -2147,7 +2169,7 @@ bool opengl46_renderer::Render(world_environment *Environment)
 	// sun
 	{
 		Bind_Texture(0, m_suntexture);
-		glm::vec4 color(suncolor.x, suncolor.y, suncolor.z, std::clamp(1.5f - Global.Overcast, 0.f, 1.f) * fogfactor);
+		glm::vec4 color(suncolor.x, suncolor.y, suncolor.z, overcastfactor);
 		auto const sunvector = Environment->m_sun.getDirection();
 
         /*float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
@@ -2166,7 +2188,7 @@ bool opengl46_renderer::Render(world_environment *Environment)
     	glm::vec3 mooncolor(1.0f, 0.9490196f, 0.9058824f);
 		glm::vec4 color(mooncolor.r, mooncolor.g, mooncolor.b,
 		                // fade the moon if it's near the sun in the sky, especially during the day
-		                std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(Environment->m_sun.getDirection(), Environment->m_moon.getDirection()))) * fogfactor);
+		                std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(Environment->m_sun.getDirection(), Environment->m_moon.getDirection()))) * overcastfactor);
 
 		auto const moonvector = Environment->m_moon.getDirection();
 
@@ -2241,31 +2263,19 @@ bool opengl46_renderer::Render(world_environment *Environment)
 
     ::glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
-  	// clouds
-	if (Environment->m_clouds.mdCloud)
+  	// clouds of the weather and the fog over the sky: of the main view in its colour pass, of the panorama around the camera in
+	// the other views and in the faces of the environment map
 	{
-		// setup
-		auto const color {
-			glm::clamp(
-			    ( glm::vec3 { Global.DayLight.ambient }
-                + 0.35f * glm::vec3{ Global.DayLight.diffuse } ) * simulation::Environment.light_intensity()
-                * 0.5f,
-			    glm::vec3{ 0.f }, glm::vec3{ 1.f } ) };
-
-		// write cloud color into material
-		TSubModel *mdl = Environment->m_clouds.mdCloud->Root;
-		if (mdl->m_material != null_handle)
-			m_materials.material(mdl->m_material).params[0] = glm::vec4(color * 2.5f, 1.0f);
-
-		// render
-		Render(Environment->m_clouds.mdCloud, nullptr, 100.0);
-		Render_Alpha(Environment->m_clouds.mdCloud, nullptr, 100.0);
-		// post-render cleanup
+		auto const mainview{(m_renderpass.draw_mode == rendermode::color) && (m_current_viewport != nullptr) && m_current_viewport->main};
+		m_empty_vao->bind();
+		m_weather.draw_sky(OpenGLMatrices.data(GL_PROJECTION), modelview, mainview);
 	}
 
 	gl::program::unbind();
 	gl::vao::unbind();
     ::glPopMatrix();
+	model_ubs.fog_density = fogdensity;
+	model_ubo->update(model_ubs);
 
 	m_sunlight.apply_angle();
 	m_sunlight.apply_intensity();
@@ -2277,8 +2287,9 @@ bool opengl46_renderer::Render(world_environment *Environment)
 		// turn on moon shadows after nautical twilight, if the moon is actually up
 		m_shadowcolor = colors::shadow;
 	}
-	// soften shadows depending on sky overcast factor
-	m_shadowcolor = glm::min(colors::white, m_shadowcolor + ((colors::white - colors::shadow) * Global.Overcast));
+	// soften shadows depending on sky overcast factor, unless the shadows of the clouds hold back the sun where they fall
+	if (false == m_weather.cloud_shadows())
+		m_shadowcolor = glm::min(colors::white, m_shadowcolor + ((colors::white - colors::shadow) * Global.Overcast));
 
     setup_shadow_color( m_shadowcolor);
 
@@ -6522,8 +6533,9 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
 	light_data.fog_color = m_fogcolor;
 	if (Global.fFogEnd > 0)
 	{
-		m_fogrange = Global.fFogEnd / std::max(1.f, Global.Overcast * 2.f);
-		model_ubs.fog_density = 1.0f / m_fogrange;
+		// the fog of the weather; the regular density is a reference the shading scales the fog of a draw with
+		m_fogrange = m_weather.fog_range();
+		model_ubs.fog_density = m_weather.fog_density();
 	}
     else
     {

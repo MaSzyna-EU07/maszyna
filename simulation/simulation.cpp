@@ -108,6 +108,16 @@ state_manager::init_scripting_interface() {
         simulation::Memory.insert( memorycell );
         simulation::Region->insert( memorycell );
     }
+    {
+        // the weather as a report: text a weather report (METAR) or entries of the weather section, value1 the time of the
+        // change in seconds. holds the report of the weather it goes to
+        auto *memorycell = new TMemCell( {
+            0, -1,
+            "__simulation.metar",
+            "memcell" } );
+        simulation::Memory.insert( memorycell );
+        simulation::Region->insert( memorycell );
+    }
 }
 
 // legacy method, calculates changes in simulation state over specified time
@@ -147,6 +157,7 @@ state_manager::update_scripting_interface() {
     auto *weather{ Memory.find( "__simulation.weather" ) };
     auto *time{ Memory.find( "__simulation.time" ) };
     auto *date{ Memory.find( "__simulation.date" ) };
+    auto *metar{ Memory.find( "__simulation.metar" ) };
 
     if( weather == nullptr || time == nullptr || date == nullptr ) {
         // scripting interface cells weren't created, nothing to synchronize
@@ -167,6 +178,20 @@ state_manager::update_scripting_interface() {
         m_scriptinginterface.weather = std::make_shared<TMemCell>( scene::node_data() );
         m_scriptinginterface.date = std::make_shared<TMemCell>( scene::node_data() );
         m_scriptinginterface.time = std::make_shared<TMemCell>( scene::node_data() );
+        m_scriptinginterface.metar.clear();
+    }
+
+    if( metar != nullptr ) {
+        if( ( true == simulation::is_ready )
+         && ( metar->Text() != m_scriptinginterface.metar ) ) {
+            // a script or an event put a report or weather entries in, the change takes value1 seconds
+            simulation::Environment.weather().apply_text( metar->Text(), static_cast<float>( metar->Value1() ) );
+        }
+        auto const report { to_metar( simulation::Environment.weather().target() ) };
+        if( report != metar->Text() ) {
+            metar->UpdateValues( report, 0, 0, basic_event::flags::text );
+        }
+        m_scriptinginterface.metar = report;
     }
 
     // update scripting interface
