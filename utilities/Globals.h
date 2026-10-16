@@ -357,6 +357,11 @@ struct global_settings {
     int gfx_lights_shadows_lamps_size { 512 };
     float gfx_lights_shadows_lamps_range { 100.f };
     float gfx_lights_shadows_vehicles_range { 50.f };
+    // shadows of the headlights of vehicles (a map drawn with the projector of the beam), with gfx_lights_shadows above 0: for how
+    // many sets of headlights at once (the most important ones, 0-4), and the distance ahead of the vehicle within which things
+    // cast them, metres
+    int gfx_lights_shadows_headlights { 2 };
+    float gfx_lights_shadows_headlights_range { 250.f };
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;

@@ -61,6 +61,8 @@ void gl::glsl_common_setup()
     "#define SKY_VIEW_TEX " + std::to_string(SKY_VIEW_TEX) + "\n" +
     "#define LOCAL_SHADOW_TEX " + std::to_string(LOCAL_SHADOW_TEX) + "\n" +
     "#define LOCAL_SHADOW_LAMPS_TEX " + std::to_string(LOCAL_SHADOW_LAMPS_TEX) + "\n" +
+    "#define HEADLIGHT_SHADOW_TEX " + std::to_string(HEADLIGHT_SHADOW_TEX) + "\n" +
+    "#define MAX_HEADLIGHT_SHADOWS " + std::to_string(MAX_HEADLIGHT_SHADOWS) + "U\n" +
     R"STRING(
     const uint LIGHT_SPOT = 0U;
     const uint LIGHT_POINT = 1U;
@@ -196,6 +198,9 @@ void gl::glsl_common_setup()
 		vec4 wiper_pos;
 		vec4 wiper_timer_out;
 		vec4 wiper_timer_return;
+        // shadow maps of the headlights, see gl::scene_ubs
+        mat4 headlight_shadow[MAX_HEADLIGHT_SHADOWS];
+        vec4 headlight_shadow_params[MAX_HEADLIGHT_SHADOWS];
     };
 
     #ifdef STAGE_VERTEX

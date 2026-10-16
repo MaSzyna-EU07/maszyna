@@ -637,6 +637,7 @@ bool opengl46_renderer::Render()
 		// a scenery is being loaded: the cells, instances and models the lights were taken from may be gone
 		m_locallights.reset();
 		m_localshadows.reset_lamps();
+		m_localshadows.reset_headlights();
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -988,6 +989,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		{
 			Render_local_shadows();
 			Render_lamp_shadows();
+			Render_headlight_shadows();
 		}
 
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -3006,6 +3008,9 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 				{
 					for (auto *dynamic : path->Dynamics)
 					{
+						// the vehicle of the headlights a map is drawn for would cover all of it
+						if (dynamic == m_shadowskipvehicle)
+							continue;
 						Render(dynamic);
 					}
 				}
@@ -6434,54 +6439,40 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
 		light->ambient = headlight_config.ambient;
 		light->intensity = headlight_config.intensity;
         // headlights-to-world projection
+        // NOTE: we strip transformations from camera projections to remove jitter that occurs
+        // with large (and unneded as we only need the offset) transformations back and forth
+        auto const worldcam{ glm::mat3{ m_renderpass.pass_camera.modelview() } };
         {
             // headlight projection is 1 km long box aligned with vehicle rotation and aimed slightly downwards
-            opengl_camera headlights;
-            auto const &ownerdimensions{ scenelight.owner->MoverParameters->Dim };
-            auto const up{ static_cast<glm::dvec3>( scenelight.owner->VectorUp() ) };
-            auto const size{ static_cast<float>( std::max( ownerdimensions.W, ownerdimensions.H ) * 1.0 ) }; // ensure square ratio
-            auto const cone{ 5.f };
-            auto const offset{ 75.f * ( 5.f / cone ) };
-            headlights.position() =
-                scenelight.owner->GetPosition()
-                - glm::dvec3(scenelight.direction * offset)
-                + up * ( size * 0.5 );
-/*
-            headlights.projection() = ortho_projection(
-                -size, size,
-                -size, size,
-                ownerdimensions.L * 0.5 - 0.5, 1000.0f );
-*/
-            headlights.projection() = perspective_projection_raw(
-                glm::radians( cone ),
-                1.0,
-                ownerdimensions.L * 0.5 + offset - 0.25, 1000.0f );
-            glm::dmat4 viewmatrix{ 1.0 };
-            viewmatrix *=
-                glm::lookAt(
-                    headlights.position(),
-                    headlights.position()
-                    - up * 1.0
-                    + glm::dvec3{ scenelight.direction * 1000.f },
-                    glm::dvec3{ 0.f, 1.f, 0.f } );
-            headlights.modelview() = viewmatrix;
+            glm::dvec3 projector;
+            glm::mat3 lightcam;
+            glm::mat4 depthproj;
+            float nearplane, fieldofview;
+            Headlight_Projector( scenelight, projector, lightcam, depthproj, nearplane, fieldofview );
             // calculate world->headlight space projection matrix
-            glm::mat4 const depthproj{ headlights.projection() };
-            // NOTE: we strip transformations from camera projections to remove jitter that occurs
-            // with large (and unneded as we only need the offset) transformations back and forth
-            auto const lightcam{ glm::mat3{ headlights.modelview() } };
-            auto const worldcam{ glm::mat3{ m_renderpass.pass_camera.modelview() } };
-
             light->headlight_projection =
                 coordmove
                 * depthproj
                 * glm::translate(
                     glm::mat4{ lightcam },
-                    glm::vec3{ m_renderpass.pass_camera.position() - headlights.position() } )
+                    glm::vec3{ m_renderpass.pass_camera.position() - projector } )
                 * glm::mat4{ glm::inverse( worldcam ) };
         }
         // headlights weights
         light->headlight_weights = { scenelight.state, 0.f };
+        // the shadow map of the headlights, if they have one: the same projection, from where the projector was when it was drawn
+        if( auto const shadowmap{ m_localshadows.headlight_map( scenelight.owner, scenelight.index ) }; shadowmap >= 0 ) {
+            auto const &slot{ m_localshadows.headlight( static_cast<std::size_t>( shadowmap ) ) };
+            scene_ubs.headlight_shadow[ shadowmap ] =
+                coordmove
+                * slot.projection
+                * glm::translate(
+                    glm::mat4{ slot.rotation },
+                    glm::vec3{ m_renderpass.pass_camera.position() - slot.projector } )
+                * glm::mat4{ glm::inverse( worldcam ) };
+            scene_ubs.headlight_shadow_params[ shadowmap ] = m_localshadows.headlight_params( static_cast<std::size_t>( shadowmap ) );
+            light->headlight_weights.w = static_cast<float>( shadowmap + 1 );
+        }
 
 		++light_i;
 	}
@@ -6700,6 +6691,159 @@ void opengl46_renderer::Render_lamp_shadow(std::size_t const Slot, bool const Ve
 	}
 	m_cubeshadows = false;
 	m_localshadows.end_lamp(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	m_renderpass = m_colorpass;
+	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
+}
+
+void opengl46_renderer::Headlight_Projector(light_array::light_record const &Light, glm::dvec3 &Position, glm::mat3 &Rotation, glm::mat4 &Projection, float &Near, float &Fieldofview)
+{
+	auto const &ownerdimensions{Light.owner->MoverParameters->Dim};
+	auto const up{static_cast<glm::dvec3>(Light.owner->VectorUp())};
+	auto const size{static_cast<float>(std::max(ownerdimensions.W, ownerdimensions.H) * 1.0)}; // ensure square ratio
+	auto const cone{5.f};
+	auto const offset{75.f * (5.f / cone)};
+	Position = Light.owner->GetPosition() - glm::dvec3(Light.direction * offset) + up * (size * 0.5);
+	Near = static_cast<float>(ownerdimensions.L * 0.5 + offset - 0.25);
+	Fieldofview = glm::radians(cone);
+/*
+	Projection = ortho_projection(
+		-size, size,
+		-size, size,
+		ownerdimensions.L * 0.5 - 0.5, 1000.0f );
+*/
+	Projection = perspective_projection_raw(Fieldofview, 1.0, Near, 1000.0f);
+	glm::dmat4 viewmatrix{1.0};
+	viewmatrix *= glm::lookAt(Position, Position - up * 1.0 + glm::dvec3{Light.direction * 1000.f}, glm::dvec3{0.f, 1.f, 0.f});
+	Rotation = glm::mat3{glm::mat4{viewmatrix}};
+}
+
+void opengl46_renderer::Render_headlight_shadows()
+{
+	// the headlights which shine, the most important first (in the order of Update_Lights()), whose beam may be seen within the
+	// reach of the shadows
+	m_headlightshadowpicked.clear();
+	auto const count{(std::clamp(Global.gfx_lights_shadows, 0, 3) > 0) ? std::clamp(Global.gfx_lights_shadows_headlights, 0, static_cast<int>(gl::MAX_HEADLIGHT_SHADOWS)) : 0};
+	if (count > 0)
+	{
+		m_headlightshadowcandidates.clear();
+		auto const camera{m_colorpass.pass_camera.position()};
+		auto const range{static_cast<double>(Global.gfx_lights_shadows_headlights_range)};
+		for (auto const &light : simulation::Lights.data)
+		{
+			if (light.intensity == 0.f)
+				continue;
+			// as in Update_Lights(): by day the light around takes the beam down to nothing
+			auto luminance{static_cast<float>(Global.fLuminance)};
+			if (light.owner->fShade > 0.f)
+				luminance *= light.owner->fShade;
+			auto const beam{light.color - glm::vec3{luminance}};
+			if (std::max(beam.r, std::max(beam.g, beam.b)) <= 0.f)
+				continue;
+			// the part of the beam the shadows are cast in: from the end of the vehicle to the reach ahead of it
+			auto const &dimensions{light.owner->MoverParameters->Dim};
+			auto const radius{range * 0.5 + std::max(dimensions.W, dimensions.H) + 2.0};
+			auto const centre{light.position + glm::dvec3{light.direction} * (range * 0.5 + 2.0)};
+			if (glm::length(centre - camera) - radius > range)
+				continue;
+			if (false == m_colorpass.pass_camera.visible(scene::bounding_area{centre, static_cast<float>(radius)}))
+				continue;
+			m_headlightshadowcandidates.emplace_back(static_cast<float>(glm::length2(camera - light.position)) / light.intensity, &light);
+		}
+		auto const picked{std::min(m_headlightshadowcandidates.size(), static_cast<std::size_t>(count))};
+		std::partial_sort(std::begin(m_headlightshadowcandidates), std::begin(m_headlightshadowcandidates) + picked, std::end(m_headlightshadowcandidates),
+		                  [](auto const &Left, auto const &Right) { return Left.first < Right.first; });
+		for (std::size_t idx = 0; idx < picked; ++idx)
+		{
+			m_headlightshadowpicked.emplace_back(m_headlightshadowcandidates[idx].second);
+		}
+	}
+	m_localshadows.update_headlights(m_headlightshadowpicked, m_framestamp);
+	// the maps may have been made anew, in place of the ones bound for this frame
+	m_localshadows.bind();
+	auto const &slots{m_localshadows.headlights()};
+	if (slots.empty())
+		return;
+
+	// the occupied cab, as in Render_lamp_shadows()
+	TDynamicObject *cab{nullptr};
+	if ((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr))
+	{
+		cab = simulation::Train->Dynamic();
+		if ((cab != nullptr) && ((false == cab->bDisplayCab) || (cab->mdKabina == nullptr) || (cab->mdKabina == cab->mdModel)))
+			cab = nullptr;
+	}
+	auto timing{false};
+	for (auto const idx : slots)
+	{
+		auto const &slot{m_localshadows.headlight(idx)};
+		light_array::light_record const *light{nullptr};
+		for (auto const *picked : m_headlightshadowpicked)
+		{
+			if ((picked->owner == slot.owner) && (picked->index == slot.index))
+			{
+				light = picked;
+				break;
+			}
+		}
+		if (light == nullptr)
+			continue;
+		glm::dvec3 projector;
+		glm::mat3 rotation;
+		glm::mat4 projection;
+		float nearplane, fieldofview;
+		Headlight_Projector(*light, projector, rotation, projection, nearplane, fieldofview);
+		// a vehicle on the move needs its map anew, the things around it and the vehicles passing by only now and then
+		auto const moved{(glm::length(projector - slot.projector) > 0.01) || (glm::dot(light->direction, slot.direction) < 0.99999f)};
+		if (false == m_localshadows.headlight_wanted(idx, moved, m_framestamp))
+			continue;
+		if (false == timing)
+		{
+			m_localshadows.headlights_timer_begin();
+			timing = true;
+		}
+		Render_headlight_shadow(idx, *light, cab);
+	}
+	if (timing)
+		m_localshadows.headlights_timer_end();
+}
+
+void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_array::light_record const &Light, TDynamicObject *Cab)
+{
+	glDebug("render headlight shadows");
+	glm::dvec3 projector;
+	glm::mat3 rotation;
+	glm::mat4 projection;
+	float nearplane, fieldofview;
+	Headlight_Projector(Light, projector, rotation, projection, nearplane, fieldofview);
+	auto const reach{nearplane + Global.gfx_lights_shadows_headlights_range};
+	// the shadow pass from the projector of the beam, with its projection. the distances which pick the details of the models
+	// are measured from the real camera, as in the shadows of the sun
+	m_renderpass = m_colorpass;
+	m_renderpass.draw_mode = rendermode::shadows;
+	m_renderpass.draw_range = reach;
+	m_renderpass.draw_stats = {};
+	auto &camera{m_renderpass.pass_camera};
+	camera.position() = projector;
+	camera.modelview() = glm::mat4{glm::dmat4{glm::dmat3{rotation}} * glm::translate(glm::dmat4{1.0}, -projector)};
+	camera.projection() = projection;
+	// the projection goes on to the infinity, what the shadows are cast by ends at their reach
+	camera.update_frustum(glm::perspective(fieldofview, 1.f, nearplane, reach));
+	setup_matrices();
+	auto const colorprojection{scene_ubs.projection};
+	scene_ubs.projection = projection;
+	scene_ubo->update(scene_ubs);
+
+	m_localshadows.begin_headlight(Slot, projector, rotation, projection, Light.direction, m_framestamp);
+	m_shadowskipvehicle = Light.owner;
+	Render(simulation::Region);
+	if ((Cab != nullptr) && (Cab != Light.owner) && (glm::length(Cab->GetPosition() - projector) <= reach + Cab->radius()))
+	{
+		Render_cab(Cab, 0.0f, false);
+	}
+	m_shadowskipvehicle = nullptr;
+	m_localshadows.end_headlight(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	scene_ubs.projection = colorprojection;
+	scene_ubo->update(scene_ubs);
 	m_renderpass = m_colorpass;
 	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
 }

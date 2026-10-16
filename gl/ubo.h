@@ -62,6 +62,9 @@ namespace gl
     const size_t LOCAL_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 1;
     // the same for the lamps of scenery models (a texture of its own: the maps have another size)
     const size_t LOCAL_SHADOW_LAMPS_TEX = MAX_TEXTURES + HELPER_TEXTURES + 2;
+    // shadow maps of the headlights of vehicles (2d array, depth compared; opengl46_local_shadows), and how many of them there may be
+    const size_t HEADLIGHT_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 3;
+    const size_t MAX_HEADLIGHT_SHADOWS = 4;
 
     struct scene_ubs
     {
@@ -74,9 +77,14 @@ namespace gl
     	glm::vec4 wiper_pos;
     	glm::vec4 wiper_timer_out;
     	glm::vec4 wiper_timer_return;
+        // view space of the pass to the space of the shadow map of a set of headlights (HEADLIGHTS lights with headlight_weights.w
+        // above 0 read the map w - 1): x, y 0..1 across the map, z / w the depth of the map, w the distance along the axis of the
+        // projector. and x: size of a texel of the map one metre from the projector, y: radius of the filter in texels
+        glm::mat4 headlight_shadow[MAX_HEADLIGHT_SHADOWS];
+        glm::vec4 headlight_shadow_params[MAX_HEADLIGHT_SHADOWS];
     };
 
-    static_assert(sizeof(scene_ubs) == 400, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 400 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
@@ -140,7 +148,8 @@ namespace gl
 		float intensity;
 		float ambient;
 
-        // HEADLIGHTS: view space to the space of the beam texture, and the weights of its channels.
+        // HEADLIGHTS: view space to the space of the beam texture, and the weights of its channels; w: 1 + the shadow map of the
+        // headlights (scene_ubs::headlight_shadow), 0 when they have none.
         // SPOT and POINT (lamps): view space to the space of the cube shadow map of the lamp (origin at the lamp), and
         // x: layer of the cube map array the map is in, below 0 when the lamp has no shadows; y: near plane of the map;
         // z: size of a texel of the map one metre from the lamp; w: radius of the filter, in texels. the map is in the array of

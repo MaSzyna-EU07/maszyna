@@ -6,6 +6,8 @@ uniform sampler2D headlightmap;
 layout(binding = LOCAL_SHADOW_TEX) uniform samplerCubeArrayShadow local_shadowmap;
 // the same for the lamps of scenery models, the lights with linear 1
 layout(binding = LOCAL_SHADOW_LAMPS_TEX) uniform samplerCubeArrayShadow local_shadowmap_lamps;
+// shadow maps of the headlights of vehicles, see gl::HEADLIGHT_SHADOW_TEX and gl::scene_ubs::headlight_shadow
+layout(binding = HEADLIGHT_SHADOW_TEX) uniform sampler2DArrayShadow headlight_shadowmap;
 
 #include <envmapping.glsl>
 #include <conversion.glsl>
@@ -198,6 +200,52 @@ vec2 calc_dir_light(light_s light, vec3 fragnormal)
 	return calc_light(light_dir, fragnormal);
 }
 
+// samples of the soft shadows of the lamps and headlights: a disc, rotated per pixel
+const vec2 SHADOW_DISC[8] = vec2[](vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621),
+                                   vec2(0.962, -0.195), vec2(0.473, -0.480), vec2(0.519, 0.767), vec2(0.185, -0.893));
+
+float shadow_disc_angle()
+{
+	return 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+}
+
+// share of the beam of headlights with a shadow map (Map, headlight_weights.w - 1 of the light) held back before the fragment,
+// 0..1. the map was drawn from the projector of the beam: x and y of the projection across it, z / w the depth (near plane over
+// the distance along the axis, as the reverse z of the scene), w the distance. the comparison gives 1 where the map holds a
+// value at least as large as the reference: a surface closer to the projector
+float headlight_beam_shadow(uint map, vec3 fragnormal, vec3 light_dir)
+{
+	mat4 tomap = headlight_shadow[map];
+	vec4 params = headlight_shadow_params[map];
+	// a texel of the map is as large as this here. the point is moved along the normal by about a texel, and the reference towards
+	// the projector by a part of one. only the back faces are in the map, which leaves the lit faces little to shadow themselves with
+	float texel = params.x * max((tomap * vec4(f_pos.xyz, 1.0)).w, 0.0);
+	float NdotL = clamp(dot(fragnormal, light_dir), 0.0, 1.0);
+	vec4 position = tomap * vec4(f_pos.xyz + fragnormal * (texel * (0.5 + 1.5 * (1.0 - NdotL))), 1.0);
+	if (position.w <= 0.0)
+		return 0.0;
+	vec2 coords = position.xy / position.w;
+	if (any(lessThan(coords, vec2(0.0))) || any(greaterThan(coords, vec2(1.0))))
+		return 0.0;
+	// nearer to the projector than its near plane (the vehicle itself) the reference is past anything in the map
+	float reference = position.z / max(position.w - texel * 1.5, 1e-3);
+	float layer = float(map);
+	float radius = params.y;
+	if (radius <= 0.0)
+		return texture(headlight_shadowmap, vec4(coords, layer, reference));
+	float angle = shadow_disc_angle();
+	vec2 rotation = vec2(cos(angle), sin(angle));
+	float spread = radius / float(textureSize(headlight_shadowmap, 0).x);
+	int count = (radius > 1.5) ? 8 : 4;
+	float shadow = 0.0;
+	for (int i = 0; i < count; i++)
+	{
+		vec2 offset = vec2(SHADOW_DISC[i].x * rotation.x - SHADOW_DISC[i].y * rotation.y, SHADOW_DISC[i].x * rotation.y + SHADOW_DISC[i].y * rotation.x) * spread;
+		shadow += texture(headlight_shadowmap, vec4(coords + offset, layer, reference));
+	}
+	return shadow / float(count);
+}
+
 // dpdx and dpdy are the change of the view space position of the fragment from a pixel to the next one. the beam texture is
 // sampled with gradients worked out from them instead of the ones of the hardware: those are undefined where the fragments of
 // a quad do not go through the same lights, which is what happens at the edges of the clusters
@@ -230,6 +278,9 @@ vec2 calc_headlights(light_s light, vec3 fragnormal, vec3 dpdx, vec3 dpdy)
 	vec2 dbeamdy = (dheadlightposdy.xy - beamcoords * dheadlightposdy.w) / headlightpos.w;
 	vec3 lights = textureGrad(headlightmap, beamcoords, dbeamdx, dbeamdy).rgb * light.headlight_weights.rgb;
 	float lightintensity = max(max(lights.r, lights.g), lights.b);
+	// headlights with a shadow map: what is in the way holds the beam back
+	if ((light.headlight_weights.w > 0.5) && (lightintensity > 0.0) && (part.x > 0.0))
+		lightintensity *= 1.0 - headlight_beam_shadow(uint(light.headlight_weights.w - 0.5), fragnormal, light_dir);
 	return part * atten * lightintensity;
 }
 
@@ -272,16 +323,14 @@ float local_light_shadow(light_s light, vec3 fragnormal)
 	// samples spread across the direction to the lamp would not be at grazing angles. rotated per pixel to turn the banding into noise
 	vec3 side = normalize(cross(normal, (abs(normal.y) < 0.99) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
 	vec3 up = cross(normal, side);
-	float angle = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+	float angle = shadow_disc_angle();
 	vec2 rotation = vec2(cos(angle), sin(angle));
 	float spread = texel * radius;
-	const vec2 disc[8] = vec2[](vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621),
-	                            vec2(0.962, -0.195), vec2(0.473, -0.480), vec2(0.519, 0.767), vec2(0.185, -0.893));
 	int count = (radius > 1.5) ? 8 : 4;
 	float shadow = 0.0;
 	for (int i = 0; i < count; i++)
 	{
-		vec2 offset = vec2(disc[i].x * rotation.x - disc[i].y * rotation.y, disc[i].x * rotation.y + disc[i].y * rotation.x) * spread;
+		vec2 offset = vec2(SHADOW_DISC[i].x * rotation.x - SHADOW_DISC[i].y * rotation.y, SHADOW_DISC[i].x * rotation.y + SHADOW_DISC[i].y * rotation.x) * spread;
 		shadow += local_light_shadow_tap(position + side * offset.x + up * offset.y, layer, light.headlight_weights.y, bias, lamps);
 	}
 	return shadow / float(count);

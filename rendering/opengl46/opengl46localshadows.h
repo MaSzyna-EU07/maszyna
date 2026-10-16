@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/shader.h"
 #include "gl/query.h"
 #include "rendering/opengl46/opengl46locallights.h"
+#include "rendering/lightarray.h"
 
 class TDynamicObject;
 class TModel3d;
@@ -35,7 +36,13 @@ class TModel3d;
 // the six faces of a map are drawn at once, by a geometry shader (shadowcube.vert/.geom), so a model costs one draw call per
 // submodel, as in the colour pass. the depth is n / d (d the distance along the axis of the face), see local_light_shadow() in
 // light_common.glsl, which reads the map for the light with the layer in its headlight_weights.x, from the array of scenery
-// lamps when its linear is 1 and from the one of the cab lamp otherwise
+// lamps when its linear is 1 and from the one of the cab lamp otherwise.
+// - the headlights of the vehicles (Global.gfx_lights_shadows_headlights sets of them, the most important ones): a plain map,
+//   drawn from the projector of the beam with its projection (the beam is a narrow frustum aimed along the vehicle, see
+//   opengl46_renderer::Headlight_Projector()), with what is within Global.gfx_lights_shadows_headlights_range ahead of the
+//   vehicle, but not the vehicle itself. the map keeps the projector it was drawn with, in world space: one a few frames old is
+//   still right for what doesn't move. read by headlight_beam_shadow() in light_common.glsl, for the headlights with the map in their
+//   headlight_weights.w (1 + the layer) and the projection to it in gl::scene_ubs::headlight_shadow
 class opengl46_local_shadows
 {
   public:
@@ -132,6 +139,52 @@ class opengl46_local_shadows
 	// the headlight_weights of the light of the lamp in the slot, see weights()
 	glm::vec4 lamp_weights(std::size_t const Slot) const;
 
+	// headlights of vehicles
+
+	// a set of headlights (one end of a vehicle) with a slot
+	struct headlight_slot
+	{
+		TDynamicObject const *owner{nullptr}; // light_array::light_record::owner and index
+		int index{-1};
+		unsigned int wantedframe{~0u}; // framestamp it was last among the headlights given shadows
+		bool drawn{false}; // the map holds the shadows of the headlights
+		unsigned int drawnframe{0};
+		// the projector the map was drawn with: world space position, world axes to its axes, projection
+		glm::dvec3 projector{0.0};
+		glm::mat3 rotation{1.f};
+		glm::mat4 projection{1.f};
+		glm::vec3 direction{0.f}; // of the light when the map was drawn
+	};
+	// picks the headlights which get shadows in this frame: Lights, the most important first, as many as there are slots
+	// (Global.gfx_lights_shadows_headlights). a set keeps its slot while it is picked. (re)makes the maps when their count or size changed
+	void update_headlights(std::vector<light_array::light_record const *> const &Lights, unsigned int const Framestamp);
+	// forgets the headlights: the vehicles may be about to go (a scenery being loaded)
+	void reset_headlights();
+	// slots of the headlights picked in this frame
+	std::vector<std::size_t> const &headlights() const
+	{
+		return m_headlightswanted;
+	}
+	headlight_slot const &headlight(std::size_t const Slot) const
+	{
+		return m_headlightslots[Slot];
+	}
+	// whether the map of the slot is to be drawn in this frame: one never drawn, then every few frames by the level, more often
+	// while the headlights Moved (with the vehicle)
+	bool headlight_wanted(std::size_t const Slot, bool const Moved, unsigned int const Framestamp) const;
+	// sets up the drawing to the map of the slot (cleared), drawn from the projector given (see headlight_slot). the geometry is
+	// to be drawn by the shadow pass with this projection, back faces only
+	void begin_headlight(std::size_t const Slot, glm::dvec3 const &Projector, glm::mat3 const &Rotation, glm::mat4 const &Projection, glm::vec3 const &Direction, unsigned int const Framestamp);
+	// ends the drawing to the map of a set of headlights, leaves the default framebuffer bound
+	void end_headlight(std::uint32_t const Drawcalls);
+	// gpu timer of the drawing of the maps of the headlights in this frame
+	void headlights_timer_begin();
+	void headlights_timer_end();
+	// the slot of the headlights with their map ready in this frame, -1 if there is none
+	int headlight_map(TDynamicObject const *Owner, int const Index) const;
+	// the headlight_shadow_params of the map of the slot, see gl::scene_ubs
+	glm::vec4 headlight_params(std::size_t const Slot) const;
+
 	// lines for the gpu times and statistics of the debug panel
 	std::string info_times();
 	std::string info() const;
@@ -139,25 +192,32 @@ class opengl46_local_shadows
 	void draw_debug_ui();
 
   private:
-	// size, refresh interval (frames), filter radius (texels, 0: the 2x2 filter of the hardware) of a level, and the number of
-	// scenery parts of lamp maps drawn per frame
+	// size, refresh interval (frames), filter radius (texels, 0: the 2x2 filter of the hardware) of a level, the number of
+	// scenery parts of lamp maps drawn per frame, and the size and refresh intervals (frames, while the vehicle moves and while
+	// it doesn't) of the maps of headlights
 	struct level_setup
 	{
 		int size;
 		unsigned int interval;
 		float radius;
 		int sceneryperframe;
+		int headlightsize;
+		unsigned int headlightmoving;
+		unsigned int headlightstill;
 	};
 	static level_setup setup(int const Level);
 	void allocate(int const Size);
 	void release();
 	void allocate_lamps(int const Count, int const Size);
 	void release_lamps();
+	void allocate_headlights(int const Count, int const Size);
+	void release_headlights();
 	void set_layer(int const Layer);
 
 	std::unique_ptr<gl::program> m_program;
 	std::unique_ptr<gl::program> m_alpha_program;
 	GLuint m_empty{0}; // stand-in: a cube map array of 1x1 faces with the farthest depth
+	GLuint m_emptyheadlights{0}; // the same, a 2d array of one 1x1 layer
 	int m_level{-1}; // level the maps were made for
 	// cab lamp
 	GLuint m_texture{0}; // cube map array, one cube
@@ -179,6 +239,15 @@ class opengl46_local_shadows
 	int m_sceneryleft{0}; // scenery parts which may still be drawn in this frame
 	gl::gpu_timer m_lampstimer;
 	bool m_lampstiming{false};
+	// headlights: 2d array, a layer per slot
+	GLuint m_headlightstexture{0};
+	GLuint m_headlightsframebuffer{0};
+	int m_headlightssize{0};
+	std::vector<headlight_slot> m_headlightslots;
+	std::vector<std::size_t> m_headlightswanted;
+	gl::gpu_timer m_headlightstimer;
+	bool m_headlightstiming{false};
+	std::chrono::steady_clock::time_point m_headlightscpustart;
 	// statistics
 	std::uint32_t m_drawcalls{0}; // of the last drawing of the cab map
 	std::uint32_t m_updatecount{0}; // drawings of the cab map so far
@@ -189,4 +258,8 @@ class opengl46_local_shadows
 	std::uint32_t m_lampsdrawcalls{0}; // in the drawings of the lamp maps in the last frame with any
 	std::uint32_t m_lampsframedrawcalls{0};
 	double m_lampscputime{0.0}; // milliseconds per frame, smoothed
+	std::uint32_t m_headlightsdrawn{0}; // maps of headlights drawn so far
+	std::uint32_t m_headlightsdrawcalls{0}; // in the drawings of the maps of headlights in the last frame with any
+	std::uint32_t m_headlightsframedrawcalls{0};
+	double m_headlightscputime{0.0}; // milliseconds per frame, smoothed
 };

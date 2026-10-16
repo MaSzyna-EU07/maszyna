@@ -308,6 +308,14 @@ class opengl46_renderer : public gfx_renderer {
 	void Render_lamp_shadows();
 	// one part of the map of a scenery lamp: the scenery, or the vehicles by it (and Cab, the occupied cab) over a copy of it
 	void Render_lamp_shadow(std::size_t const Slot, bool const Vehicles, TDynamicObject *Cab);
+	// picks the headlights which get shadow maps in this frame and draws the maps which need it
+	void Render_headlight_shadows();
+	// the map of the headlights in the slot: the scene within reach ahead of them (and Cab, the occupied cab), without their vehicle
+	void Render_headlight_shadow(std::size_t const Slot, light_array::light_record const &Light, TDynamicObject *Cab);
+	// the projector of the beam of a set of headlights: a narrow frustum along the vehicle, from behind it, its near plane at the
+	// end of the vehicle. the beam texture is projected with it (Update_Lights()) and the shadow map of the headlights drawn with it.
+	// Position in world space, Rotation from world axes to its axes; Near is the distance of the near plane from the projector
+	void Headlight_Projector(light_array::light_record const &Light, glm::dvec3 &Position, glm::mat3 &Rotation, glm::mat4 &Projection, float &Near, float &Fieldofview);
 	bool Render(world_environment *Environment);
 	void Render(scene::basic_region *Region);
 	void Render(section_sequence::iterator First, section_sequence::iterator Last);
@@ -556,6 +564,11 @@ class opengl46_renderer : public gfx_renderer {
 	// vehicles near the camera which cast the shadows of scenery lamps, and those of them by the lamp being drawn
 	std::vector<TDynamicObject *> m_lampshadowvehicles;
 	std::vector<TDynamicObject *> m_lampshadowslot;
+	// the shadow pass leaves this vehicle out (the one the headlights of the map being drawn belong to)
+	TDynamicObject const *m_shadowskipvehicle = nullptr;
+	// headlights which may get shadow maps in this frame, and their importance
+	std::vector<std::pair<float, light_array::light_record const *>> m_headlightshadowcandidates;
+	std::vector<light_array::light_record const *> m_headlightshadowpicked;
 
     double m_precipitationrotation;
 

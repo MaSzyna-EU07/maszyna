@@ -148,6 +148,27 @@ into the cab only through the windows. Each such lamp has a cube shadow map in w
 Lamps of vehicles and lit compartments cast no shadows. The memory taken is 2 maps per lamp: with the defaults (8 lamps,
 512 x 512 per face) about 100 MB of video memory.
 
+**Shadows of headlights** (with `gfx.lights.shadows` above `no`): the headlights of the vehicles cast the shadows of what is
+in their beam, other vehicles, signals, poles, platforms, the walls of a cutting. The beam of a set of headlights (one end of
+a vehicle) is projected from behind the vehicle, as a narrow cone along it which starts at its end; the shadow map is drawn
+with that same projection, so it covers the beam and nothing else, and the shadows fall the way the beam does (nearly along
+the vehicle). In the map is what lies within `gfx.lights.shadows.headlights.range` ahead of the vehicle (the terrain,
+tracks, models, the other vehicles and the occupied cab, only their back faces, as in the shadows of the sun), not the
+vehicle itself; past that reach things cast no shadow of the headlights, but what is behind a nearer one is still in its
+shadow. Maps go to the most important headlights (the nearest and brightest, as the light buffer orders them),
+`gfx.lights.shadows.headlights` sets of them, of those whose beam is in view within that reach. By day, when the beam isn't
+seen, nothing is drawn. A map keeps the place the projector was in when it was drawn, so an older one still holds right for
+what doesn't move:
+
+| Level | Map | Drawn, vehicle moving / standing | Edges |
+|---|---|---|---|
+| `low` (1) | 1024 x 1024, 4 MB | every 2nd / 8th frame | hard (2x2 filter) |
+| `medium` (2) | 1024 x 1024, 4 MB | every frame / every 4th | soft, 4 samples |
+| `high` (3) | 2048 x 2048, 16 MB | every frame / every 2nd | softer, 8 samples |
+
+Drawing a map is a shadow pass of the scene in the beam (draw calls in proportion to what is in it, on the CPU like the
+shadows of the sun, see `headlight shadows:` in Shift+F12); with the vehicle on the move it is drawn every frame from `medium` on.
+
 | Entry | Default | Meaning |
 |---|---|---|
 | `gfx.lights.scenery yes/no` | `yes` | light points of scenery models light their surroundings |
@@ -163,6 +184,8 @@ Lamps of vehicles and lit compartments cast no shadows. The memory taken is 2 ma
 | `gfx.lights.shadows.lamps.size` | `512` | 128..2048: size of a face of the shadow map of a scenery lamp |
 | `gfx.lights.shadows.lamps.range` | `100` | distance from the camera within which scenery lamps cast shadows, metres |
 | `gfx.lights.shadows.vehicles.range` | `50` | distance from the camera within which vehicles (and the occupied cab) cast the shadows of scenery lamps, metres; 0: only the scenery does |
+| `gfx.lights.shadows.headlights` | `2` | 0..4: how many sets of headlights (vehicle ends) cast shadows; 0: none |
+| `gfx.lights.shadows.headlights.range` | `250` | 10..1000: distance ahead of the vehicle within which things cast the shadows of its headlights, metres |
 
 ### Models drawn from the GPU
 
@@ -223,7 +246,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   timings the GPU time of drawing it (`lamp shadows:`); the level can be changed in the window. The `scenery lamp shadows:`
   row gives the lamps with maps (of the slots, how many ready, how many with vehicles), how many scenery parts and vehicle
   copies were drawn so far, and the draw calls and cpu time of the last frame which drew any; the timings show their GPU time
-  (`scenery lamp shadows:`). The count and both ranges can be changed in the window too.
+  (`scenery lamp shadows:`). The count and both ranges can be changed in the window too. The `headlight shadows:` row gives
+  the headlights with maps (of the slots, how many ready), the size of the maps, how many were drawn so far, and the draw
+  calls and cpu time of the last frame which drew any, with their GPU time in the timings (`headlight shadows:`); the count
+  and the reach can be changed in the window.
 - **Sky and exposure** window (next to the Light clusters window): the switches and scales above, the share of the
   atmosphere, the colours of the sun, ambient light and fog in use, and the measured luminance and exposure.
   Shift+F12 shows the GPU time of `atmosphere:` (look-up tables, only when the sun moved or the weather changed),

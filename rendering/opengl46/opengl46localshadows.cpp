@@ -48,6 +48,22 @@ GLuint make_cube_array(int const Size, int const Cubes)
 	return texture;
 }
 
+// 2d array of depth maps compared to the reference, one level, Layers layers of Size x Size
+GLuint make_array(int const Size, int const Layers)
+{
+	GLuint texture{0};
+	glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &texture);
+	glTextureStorage3D(texture, 1, GL_DEPTH_COMPONENT32F, Size, Size, Layers);
+	// one level, as the cube maps above
+	glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTextureParameteri(texture, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTextureParameteri(texture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTextureParameteri(texture, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTextureParameteri(texture, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+	glTextureParameteri(texture, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+	return texture;
+}
+
 // framebuffer drawing to all layers of the depth texture (the geometry shader picks the face); 0 if it can't be made
 GLuint make_framebuffer(GLuint const Texture)
 {
@@ -85,8 +101,11 @@ opengl46_local_shadows::~opengl46_local_shadows()
 {
 	release();
 	release_lamps();
+	release_headlights();
 	if (m_empty != 0)
 		glDeleteTextures(1, &m_empty);
+	if (m_emptyheadlights != 0)
+		glDeleteTextures(1, &m_emptyheadlights);
 }
 
 void opengl46_local_shadows::init()
@@ -114,6 +133,10 @@ void opengl46_local_shadows::init()
 	glTextureParameteri(m_empty, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
 	float const farthest{0.f};
 	glClearTexImage(m_empty, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
+	m_emptyheadlights = make_array(1, 1);
+	glTextureParameteri(m_emptyheadlights, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTextureParameteri(m_emptyheadlights, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glClearTexImage(m_emptyheadlights, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
 }
 
 void opengl46_local_shadows::set_layer(int const Layer)
@@ -127,13 +150,13 @@ opengl46_local_shadows::level_setup opengl46_local_shadows::setup(int const Leve
 	switch (Level)
 	{
 	case 1:
-		return {512, 4, 0.f, 1};
+		return {512, 4, 0.f, 1, 1024, 2, 8};
 	case 2:
-		return {1024, 2, 1.f, 1};
+		return {1024, 2, 1.f, 1, 1024, 1, 4};
 	case 3:
-		return {1024, 1, 2.f, 2};
+		return {1024, 1, 2.f, 2, 2048, 1, 2};
 	default:
-		return {0, 0, 0.f, 0};
+		return {0, 0, 0.f, 0, 0, 0, 0};
 	}
 }
 
@@ -201,10 +224,47 @@ void opengl46_local_shadows::release_lamps()
 	m_wanted.clear();
 }
 
+void opengl46_local_shadows::allocate_headlights(int const Count, int const Size)
+{
+	release_headlights();
+	if ((Count <= 0) || (Size <= 0))
+		return;
+	m_headlightstexture = make_array(Size, Count);
+	glCreateFramebuffers(1, &m_headlightsframebuffer);
+	glNamedFramebufferTextureLayer(m_headlightsframebuffer, GL_DEPTH_ATTACHMENT, m_headlightstexture, 0, 0);
+	glNamedFramebufferDrawBuffer(m_headlightsframebuffer, GL_NONE);
+	glNamedFramebufferReadBuffer(m_headlightsframebuffer, GL_NONE);
+	if (glCheckNamedFramebufferStatus(m_headlightsframebuffer, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	{
+		ErrorLog("headlight shadow map framebuffer setup failed, the headlights have no shadows");
+		release_headlights();
+		Global.gfx_lights_shadows_headlights = 0;
+		return;
+	}
+	m_headlightssize = Size;
+	m_headlightslots.assign(static_cast<std::size_t>(Count), headlight_slot{});
+	WriteLog("headlight shadow maps: " + std::to_string(Count) + " x " + std::to_string(Size) + " x " + std::to_string(Size) + " (" +
+	         std::to_string(Count * Size / 1024 * Size * 4 / 1024) + " MB)");
+}
+
+void opengl46_local_shadows::release_headlights()
+{
+	if (m_headlightsframebuffer != 0)
+		glDeleteFramebuffers(1, &m_headlightsframebuffer);
+	if (m_headlightstexture != 0)
+		glDeleteTextures(1, &m_headlightstexture);
+	m_headlightsframebuffer = 0;
+	m_headlightstexture = 0;
+	m_headlightssize = 0;
+	m_headlightslots.clear();
+	m_headlightswanted.clear();
+}
+
 void opengl46_local_shadows::bind()
 {
 	glBindTextureUnit(gl::LOCAL_SHADOW_TEX, (m_texture != 0) ? m_texture : m_empty);
 	glBindTextureUnit(gl::LOCAL_SHADOW_LAMPS_TEX, (m_lampstexture != 0) ? m_lampstexture : m_empty);
+	glBindTextureUnit(gl::HEADLIGHT_SHADOW_TEX, (m_headlightstexture != 0) ? m_headlightstexture : m_emptyheadlights);
 }
 
 bool opengl46_local_shadows::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Lamp, unsigned int const Framestamp)
@@ -466,6 +526,154 @@ glm::vec4 opengl46_local_shadows::lamp_weights(std::size_t const Slot) const
 	return glm::vec4{static_cast<float>(cube), SHADOW_NEAR, 2.f / static_cast<float>(std::max(m_lampssize, 1)), setup(m_level).radius};
 }
 
+void opengl46_local_shadows::update_headlights(std::vector<light_array::light_record const *> const &Lights, unsigned int const Framestamp)
+{
+	m_headlightswanted.clear();
+	auto const level{std::clamp(Global.gfx_lights_shadows, 0, 3)};
+	auto const count{level > 0 ? std::clamp(Global.gfx_lights_shadows_headlights, 0, static_cast<int>(gl::MAX_HEADLIGHT_SHADOWS)) : 0};
+	auto const size{count > 0 ? setup(level).headlightsize : 0};
+	if ((static_cast<std::size_t>(count) != m_headlightslots.size()) || (size != m_headlightssize))
+	{
+		allocate_headlights(count, size);
+	}
+	if (m_headlightslots.empty())
+	{
+		return;
+	}
+	// sets which already have a slot keep it
+	std::vector<light_array::light_record const *> unplaced;
+	for (auto const *light : Lights)
+	{
+		if (m_headlightswanted.size() + unplaced.size() >= m_headlightslots.size())
+		{
+			break;
+		}
+		auto placed{false};
+		for (std::size_t idx = 0; idx < m_headlightslots.size(); ++idx)
+		{
+			auto &slot{m_headlightslots[idx]};
+			if ((slot.owner == light->owner) && (slot.index == light->index) && (slot.wantedframe != Framestamp))
+			{
+				slot.wantedframe = Framestamp;
+				m_headlightswanted.emplace_back(idx);
+				placed = true;
+				break;
+			}
+		}
+		if (false == placed)
+		{
+			unplaced.emplace_back(light);
+		}
+	}
+	// the others take the slots of sets no longer picked
+	for (auto const *light : unplaced)
+	{
+		for (std::size_t idx = 0; idx < m_headlightslots.size(); ++idx)
+		{
+			auto &slot{m_headlightslots[idx]};
+			if (slot.wantedframe == Framestamp)
+			{
+				continue;
+			}
+			slot = headlight_slot{};
+			slot.owner = light->owner;
+			slot.index = light->index;
+			slot.wantedframe = Framestamp;
+			m_headlightswanted.emplace_back(idx);
+			break;
+		}
+	}
+}
+
+void opengl46_local_shadows::reset_headlights()
+{
+	for (auto &slot : m_headlightslots)
+	{
+		slot = headlight_slot{};
+	}
+	m_headlightswanted.clear();
+}
+
+bool opengl46_local_shadows::headlight_wanted(std::size_t const Slot, bool const Moved, unsigned int const Framestamp) const
+{
+	auto const &slot{m_headlightslots[Slot]};
+	auto const level{setup(m_level)};
+	return (false == slot.drawn) || (Framestamp - slot.drawnframe >= (Moved ? level.headlightmoving : level.headlightstill));
+}
+
+void opengl46_local_shadows::begin_headlight(std::size_t const Slot, glm::dvec3 const &Projector, glm::mat3 const &Rotation, glm::mat4 const &Projection, glm::vec3 const &Direction, unsigned int const Framestamp)
+{
+	auto &slot{m_headlightslots[Slot]};
+	slot.drawn = true;
+	slot.drawnframe = Framestamp;
+	slot.projector = Projector;
+	slot.rotation = Rotation;
+	slot.projection = Projection;
+	slot.direction = Direction;
+	++m_headlightsdrawn;
+
+	gl::framebuffer::unbind();
+	glNamedFramebufferTextureLayer(m_headlightsframebuffer, GL_DEPTH_ATTACHMENT, m_headlightstexture, 0, static_cast<GLint>(Slot));
+	glBindFramebuffer(GL_FRAMEBUFFER, m_headlightsframebuffer);
+	glViewport(0, 0, m_headlightssize, m_headlightssize);
+	float const farthest{0.f};
+	glClearNamedFramebufferfv(m_headlightsframebuffer, GL_DEPTH, 0, &farthest);
+	glDisable(GL_BLEND);
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
+	// as in the shadows of the sun: the back faces, so the lit faces (the ground most of all, which the beam skims) don't shadow themselves
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_FRONT);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+void opengl46_local_shadows::end_headlight(std::uint32_t const Drawcalls)
+{
+	gl::framebuffer::unbind();
+	m_headlightsframedrawcalls += Drawcalls;
+}
+
+void opengl46_local_shadows::headlights_timer_begin()
+{
+	m_headlightsframedrawcalls = 0;
+	m_headlightscpustart = std::chrono::steady_clock::now();
+	m_headlightstimer.begin();
+	m_headlightstiming = true;
+}
+
+void opengl46_local_shadows::headlights_timer_end()
+{
+	if (false == m_headlightstiming)
+	{
+		return;
+	}
+	m_headlightstimer.end();
+	m_headlightstiming = false;
+	m_headlightsdrawcalls = m_headlightsframedrawcalls;
+	auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - m_headlightscpustart).count()};
+	m_headlightscputime = (m_headlightscputime == 0.0 ? elapsed : m_headlightscputime * 0.9 + elapsed * 0.1);
+}
+
+int opengl46_local_shadows::headlight_map(TDynamicObject const *Owner, int const Index) const
+{
+	for (auto const idx : m_headlightswanted)
+	{
+		auto const &slot{m_headlightslots[idx]};
+		if ((slot.owner == Owner) && (slot.index == Index))
+		{
+			return (slot.drawn ? static_cast<int>(idx) : -1);
+		}
+	}
+	return -1;
+}
+
+glm::vec4 opengl46_local_shadows::headlight_params(std::size_t const Slot) const
+{
+	// a map spans 2 tan(fov / 2) one metre from the projector, and the projection holds 1 / tan(fov / 2)
+	auto const &projection{m_headlightslots[Slot].projection};
+	return glm::vec4{2.f / (std::max(projection[1][1], 1e-6f) * static_cast<float>(std::max(m_headlightssize, 1))), setup(m_level).radius, 0.f, 0.f};
+}
+
 std::string opengl46_local_shadows::info_times()
 {
 	std::string text;
@@ -473,6 +681,8 @@ std::string opengl46_local_shadows::info_times()
 		text += " lamp shadows: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms\n";
 	if (auto const time = m_lampstimer.result())
 		text += " scenery lamp shadows: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms\n";
+	if (auto const time = m_headlightstimer.result())
+		text += " headlight shadows: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms\n";
 	return text;
 }
 
@@ -497,6 +707,17 @@ std::string opengl46_local_shadows::info() const
 		        std::to_string(withvehicles) + " with vehicles), drawn " + std::to_string(m_lampsscenery) + " scenery + " + std::to_string(m_lampsvehicles) + " vehicles, " +
 		        std::to_string(m_lampsdrawcalls) + " drawcalls, cpu " + to_string(m_lampscputime, 2) + " ms";
 	}
+	if (false == m_headlightslots.empty())
+	{
+		auto ready{0};
+		for (auto const idx : m_headlightswanted)
+		{
+			ready += (m_headlightslots[idx].drawn ? 1 : 0);
+		}
+		text += "\nheadlight shadows: " + std::to_string(m_headlightswanted.size()) + " of " + std::to_string(m_headlightslots.size()) + " slots (" + std::to_string(ready) + " ready), " +
+		        std::to_string(m_headlightssize) + " map, drawn " + std::to_string(m_headlightsdrawn) + " times, " + std::to_string(m_headlightsdrawcalls) + " drawcalls, cpu " +
+		        to_string(m_headlightscputime, 2) + " ms";
+	}
 	return text;
 }
 
@@ -512,6 +733,16 @@ void opengl46_local_shadows::draw_debug_ui()
 	ImGui::SliderFloat("their reach from the camera, m (.lamps.range)", &Global.gfx_lights_shadows_lamps_range, 0.f, 500.f);
 	ImGui::SliderFloat("vehicles casting them, from the camera, m (.vehicles.range)", &Global.gfx_lights_shadows_vehicles_range, 0.f, 500.f);
 	if (false == m_slots.empty())
+	{
+		auto const text{info()};
+		auto const line{text.find("\nscenery lamp shadows:")};
+		auto const end{(line == std::string::npos) ? std::string::npos : text.find('\n', line + 1)};
+		if (line != std::string::npos)
+			ImGui::TextUnformatted(text.substr(line + 1, end == std::string::npos ? std::string::npos : end - line - 1).c_str());
+	}
+	ImGui::SliderInt("headlights with shadows (gfx.lights.shadows.headlights)", &Global.gfx_lights_shadows_headlights, 0, static_cast<int>(gl::MAX_HEADLIGHT_SHADOWS));
+	ImGui::SliderFloat("their reach ahead of the vehicle, m (.headlights.range)", &Global.gfx_lights_shadows_headlights_range, 10.f, 1000.f);
+	if (false == m_headlightslots.empty())
 	{
 		auto const text{info()};
 		auto const line{text.rfind('\n')};
