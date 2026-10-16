@@ -22,10 +22,11 @@ layout(std430, binding = EXPOSURE_SSBO_BINDING) readonly buffer exposure_ssbo
 };
 
 #include <tonemapping.glsl>
+#include <dither.glsl>
 
 // param[0].x: share of the bloom in the image (0: no bloom, the texture is not read), param[0].y: 1 if the automatic
 // exposure is applied, param[0].z: fixed exposure multiplier, param[0].w: scale of the bloom texture (it holds the sum of
-// the levels of the chain)
+// the levels of the chain), param[1].x: 1 when this is the last pass before the window, which takes the dither
 void main()
 {
 	vec2 texcoord = f_coords;
@@ -36,4 +37,6 @@ void main()
 	if (param[0].y > 0.5 && exposure > 0.0)
 		exposurescale *= exposure;
 	out_color = tonemap(vec4(hdr_color * exposurescale, 1.0));
+	if (param[1].x > 0.5)
+		out_color.rgb = dither_output(out_color.rgb);
 }

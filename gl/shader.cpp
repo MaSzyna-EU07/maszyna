@@ -99,6 +99,8 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
     else if (type == GL_GEOMETRY_SHADER) str += "#define STAGE_GEOMETRY 1\n";
     else if (type == GL_COMPUTE_SHADER)  str += "#define STAGE_COMPUTE 1\n";
     str += "vec4 FBOUT(vec4 x) { return " + (Global.gfx_shadergamma ? std::string("vec4(pow(x.rgb, vec3(1.0 / 2.2)), x.a)") : std::string("x")) + "; }\n";
+    // whether the colour written to the window is encoded by the shader (FBOUT) or left to the sRGB framebuffer (dither.glsl)
+    str += std::string("#define OUTPUT_GAMMA ") + (Global.gfx_shadergamma ? "1" : "0") + "\n";
 
     str += read_file(basedir + filename);
 

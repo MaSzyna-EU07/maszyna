@@ -2,8 +2,10 @@
 // depth), how dense the fog is and how much light it scatters towards the camera. the density: the haze, the patches of the
 // ground fog, the low clouds; the light: the colour the fog has towards the horizon (weather_common.glsl), less what the
 // shadows of the sun and of the clouds hold back, and the lamps and headlights of the light clusters. blended with the
-// previous frame, found where the cell was then; the cells are sampled at another point every frame, each cell going through
-// the points from a place of its own, so the volume doesn't flicker as a whole and the blending smooths the edges of the cells.
+// previous frame, found where the cell was then; the cells are sampled at another depth every frame, each cell going through
+// the depths from a place of its own, so the volume doesn't flicker as a whole. across the view the cells are sampled in their
+// middle: moved across, the ray of a cell crosses the edges of the cones of lamps somewhere else every frame, which the blending
+// doesn't smooth out (the edges of the cells are smoothed when the fog is read, fog_volume.glsl)
 // rgb: light scattered towards the camera per metre, a: extinction per metre
 
 #include <common>
@@ -36,8 +38,6 @@ layout(location = 6) uniform vec4 options;
 layout(location = 7) uniform int cablamp;
 // x: near, y: slices / log((far + FOG_VOLUME_BIAS) / (near + FOG_VOLUME_BIAS)) of the previous frame
 layout(location = 8) uniform vec2 previous_slicing;
-// where in its cell the cell is sampled this frame across the view (0-1), as slicing.w is along the depth
-layout(location = 9) uniform vec2 jitter;
 
 // how many times brighter or darker than this frame the light of the history may be
 const float FOG_HISTORY_REACH = 4.0;
@@ -56,8 +56,8 @@ float slice_depth(float slice)
 	return (slicing.x + FOG_VOLUME_BIAS) * exp(slice / slicing.z) - FOG_VOLUME_BIAS;
 }
 
-// where in the cell it is sampled this frame, 0-1 on each axis: the point of the sequence of the frames moved by a value of
-// the cell's own (pcg3d hash), the middle without the blending
+// where in the cell it is sampled this frame, 0-1 on each axis: across the view the middle, along the depth the point of the
+// sequence of the frames moved by a value of the cell's own (pcg3d hash), the middle without the blending
 vec3 cell_offset(ivec3 cell)
 {
 	if (options.x >= 1.0)
@@ -70,7 +70,7 @@ vec3 cell_offset(ivec3 cell)
 	v.x += v.y * v.z;
 	v.y += v.z * v.x;
 	v.z += v.x * v.y;
-	return fract(vec3(jitter, slicing.w) + vec3(v >> 8U) * (1.0 / 16777216.0));
+	return vec3(0.5, 0.5, fract(slicing.w + float(v.z >> 8U) * (1.0 / 16777216.0)));
 }
 
 float henyey_greenstein(float cosangle, float g)

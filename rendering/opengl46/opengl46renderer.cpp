@@ -1228,6 +1228,8 @@ if (!Global.gfx_skippipeline)
 				bloomlevels = vp.bloom->sizes.size();
 			}
 			model_ubs.param[0] = m_exposure.tonemap_params(bloomlevels);
+			// the dither goes to the last pass before the window: the chromatic aberration, when it follows
+			model_ubs.param[1] = glm::vec4{Global.gfx_postfx_chromaticaberration_enabled ? 0.f : 1.f, 0.f, 0.f, 0.f};
 			model_ubo->update(model_ubs);
 			std::vector<opengl_texture *> tonemapinput{vp.main2_tex.get()};
 			if (bloomtexture != nullptr)
