@@ -172,13 +172,14 @@ vec3 lamp_scattering(light_s lamp, vec3 start, vec3 direction, float span, float
 	if (dot(lamp.pos - nearest, lamp.pos - nearest) < 9.0 * width * width)
 	{
 		// a lamp within a few cells of the ray: the light of the cell is taken along four rays spread over the cell, so it
-		// doesn't depend on which side of the lamp the ray of this frame passes
+		// doesn't depend on which side of the lamp the ray of this frame passes, and the points along the rays are staggered,
+		// eight along the cell, where the cone changes the most (its tip)
 		vec3 across = normalize(cross(direction, vec3(0.0, 1.0, 0.0) + vec3(1e-4, 0.0, 0.0)));
 		vec3 up = cross(across, direction);
 		for (int k = 0; k < 4; k++)
 		{
 			vec2 shift = (vec2(float(k & 1), float(k >> 1)) - 0.5) * 0.5 * width;
-			sum += lamp_segment(lamp, cone, start + across * shift.x + up * shift.y, direction, span, width, part);
+			sum += lamp_segment(lamp, cone, start + across * shift.x + up * shift.y, direction, span, width, fract(part + 0.25 * float(k)));
 		}
 		return sum * 0.25;
 	}
