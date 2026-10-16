@@ -12,7 +12,7 @@ layout(rgba16f, binding = 0) uniform writeonly image3D fog_integrated;
 
 layout(location = 0) uniform ivec3 grid;
 layout(location = 1) uniform mat4 inverse_projection;
-// x: near, y: far, z: slices / log(far / near)
+// x: near, y: far, z: slices / log((far + FOG_VOLUME_BIAS) / (near + FOG_VOLUME_BIAS))
 layout(location = 3) uniform vec4 slicing;
 
 void main()
@@ -31,7 +31,7 @@ void main()
 	float front = slicing.x;
 	for (int slice = 0; slice < grid.z; slice++)
 	{
-		float back = slicing.x * exp(float(slice + 1) / slicing.z);
+		float back = (slicing.x + FOG_VOLUME_BIAS) * exp(float(slice + 1) / slicing.z) - FOG_VOLUME_BIAS;
 		float span = (back - front) * stretch;
 		front = back;
 		vec4 cell = texelFetch(fog_scattering, ivec3(column, slice), 0);

@@ -341,6 +341,9 @@ struct global_settings {
     // they go through the light clusters, so they need gfx_lights_clustered
     bool gfx_lights_scenery { true }; // light points (freespot lights) of scenery models light their surroundings
     bool gfx_lights_vehicles { true }; // light points of vehicles and their lit compartments light their surroundings
+    // the old lighting ahead of vehicles: the beam of their headlights (light_array, the projected texture of the beam), with its
+    // shadows and its light in the fog. off: the vehicles light what is ahead of them only with the light points of their lamps
+    bool gfx_lights_headlights { true };
     bool gfx_lights_cab { true }; // the lamp of the occupied cab is a point light instead of an addition to the ambient light
     float gfx_lights_freespot_intensity { 10.f }; // brightness of a light point of a model
     float gfx_lights_compartment_intensity { 1.f }; // brightness of the light of a lit vehicle compartment
@@ -366,13 +369,15 @@ struct global_settings {
     // environment/weather.h. fog: 1 volumetric (a volume over the view with the shafts of the sun, the shadows of the clouds and
     // the light of lamps and headlights, worked out along the ray past it), 0 analytic (the same fog along the ray only, the way
     // the old one was drawn); the quality of the volume 1-4 (low, medium, high, ultra), its depth (metres), the brightness of the
-    // lamps in it (0: none), whether the sun and the headlights cast their shadows into it, blending over frames
+    // lamps in it (0: none), whether the sun and the headlights cast their shadows into it, blending over frames and the share of
+    // a new frame in the blend (lower: smoother, but the light of moving lamps lags more behind them)
     int gfx_fog { 1 };
     int gfx_fog_quality { 2 };
     float gfx_fog_range { 1500.f };
     float gfx_fog_lights { 1.f };
     bool gfx_fog_shadows { true };
     bool gfx_fog_temporal { true };
+    float gfx_fog_temporal_share { 0.1f };
     // volumetric clouds, 0 none, 1-4 the quality (low, medium, high, ultra); the farthest they are drawn (metres); the shadows
     // they cast (a map around the camera: its size in texels and in metres)
     int gfx_clouds { 2 };

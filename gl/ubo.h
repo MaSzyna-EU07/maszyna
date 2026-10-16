@@ -410,6 +410,9 @@ namespace gl
     const size_t FOG_HORIZON_SAMPLES = 32;
     // work groups of the weather passes: 8x8 for the images, 8x8x1 for the fog volume
     const GLuint WEATHER_GROUP_SIZE = 8;
+    // the slices of the fog volume are spaced exponentially in the view depth plus this many metres: fewer of them go to the first
+    // metres in front of the camera, more to the distance, where thick slices draw the shafts of light in steps
+    const float FOG_VOLUME_BIAS = 10.0f;
 
     // layout std140: one layer of clouds (GLSL: cloud_layer_s), see weather_common.glsl
     struct cloud_layer_ubs

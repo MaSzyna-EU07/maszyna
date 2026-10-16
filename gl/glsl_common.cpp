@@ -75,6 +75,7 @@ void gl::glsl_common_setup()
     "#define MAX_CLOUD_LAYERS " + std::to_string(MAX_CLOUD_LAYERS) + "\n" +
     "#define FOG_HORIZON_SAMPLES " + std::to_string(FOG_HORIZON_SAMPLES) + "\n" +
     "#define WEATHER_GROUP_SIZE " + std::to_string(WEATHER_GROUP_SIZE) + "\n" +
+    "#define FOG_VOLUME_BIAS " + std::to_string(FOG_VOLUME_BIAS) + "\n" +
     R"STRING(
     const uint LIGHT_SPOT = 0U;
     const uint LIGHT_POINT = 1U;

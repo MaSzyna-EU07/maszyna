@@ -823,6 +823,7 @@ void opengl46_renderer::draw_debug_ui()
     {
         ImGui::Checkbox("clustered lights (off: the first dynamiclights headlights)", &Global.gfx_lights_clustered);
         ImGui::Checkbox("heatmap", &Global.gfx_lights_clusterheatmap);
+        ImGui::Checkbox("beams of vehicle headlights (gfx.lights.headlights)", &Global.gfx_lights_headlights);
         if (auto const &clusters{m_viewports.front()->clusters})
         {
             auto const &params{clusters->params()};
@@ -6405,8 +6406,8 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
 
     for (auto const &scenelight : Lights.data)
 	{
-		if (!Headlights || scenelight.intensity == 0.f) {
-			// all lights past this one are bound to be off
+		if (!Headlights || !Global.gfx_lights_headlights || scenelight.intensity == 0.f) {
+			// all lights past this one are bound to be off (or the beams of the headlights are turned off altogether)
 			break;
 		}
 		auto const lightoffset = glm::vec3{scenelight.position - camera};
@@ -6734,7 +6735,7 @@ void opengl46_renderer::Render_headlight_shadows()
 	// the headlights which shine, the most important first (in the order of Update_Lights()), whose beam may be seen within the
 	// reach of the shadows
 	m_headlightshadowpicked.clear();
-	auto const count{(std::clamp(Global.gfx_lights_shadows, 0, 3) > 0) ? std::clamp(Global.gfx_lights_shadows_headlights, 0, static_cast<int>(gl::MAX_HEADLIGHT_SHADOWS)) : 0};
+	auto const count{(Global.gfx_lights_headlights && (std::clamp(Global.gfx_lights_shadows, 0, 3) > 0)) ? std::clamp(Global.gfx_lights_shadows_headlights, 0, static_cast<int>(gl::MAX_HEADLIGHT_SHADOWS)) : 0};
 	if (count > 0)
 	{
 		m_headlightshadowcandidates.clear();

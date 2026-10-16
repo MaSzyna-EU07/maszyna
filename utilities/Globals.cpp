@@ -1613,6 +1613,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         gfx_postfx_ao_steps = std::clamp( gfx_postfx_ao_steps, 1, 16 ); }
     else if( Token == "gfx.lights.scenery" ) { readswitch( gfx_lights_scenery ); }
     else if( Token == "gfx.lights.vehicles" ) { readswitch( gfx_lights_vehicles ); }
+    else if( Token == "gfx.lights.headlights" ) { readswitch( gfx_lights_headlights ); }
     else if( Token == "gfx.lights.cab" ) { readswitch( gfx_lights_cab ); }
     else if( Token == "gfx.lights.freespot.intensity" ) { readvalue( gfx_lights_freespot_intensity, 0.f, 1000.f ); }
     else if( Token == "gfx.lights.compartment.intensity" ) { readvalue( gfx_lights_compartment_intensity, 0.f, 100.f ); }
@@ -1659,6 +1660,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.fog.lights" ) { readvalue( gfx_fog_lights, 0.f, 10.f ); }
     else if( Token == "gfx.fog.shadows" ) { readswitch( gfx_fog_shadows ); }
     else if( Token == "gfx.fog.temporal" ) { readswitch( gfx_fog_temporal ); }
+    else if( Token == "gfx.fog.temporal.share" ) { readvalue( gfx_fog_temporal_share, 0.02f, 1.f ); }
     else if( Token == "gfx.clouds" ) {
         // no, or the quality: low, medium (yes), high, ultra
         Parser.getTokens( 1 );
@@ -1950,6 +1952,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     Output << "gfx.postfx.ao.quality " << gfx_postfx_ao_slices << " " << gfx_postfx_ao_steps << "\n";
     export_as_text( Output, "gfx.lights.scenery", gfx_lights_scenery );
     export_as_text( Output, "gfx.lights.vehicles", gfx_lights_vehicles );
+    export_as_text( Output, "gfx.lights.headlights", gfx_lights_headlights );
     export_as_text( Output, "gfx.lights.cab", gfx_lights_cab );
     export_as_text( Output, "gfx.lights.freespot.intensity", gfx_lights_freespot_intensity );
     export_as_text( Output, "gfx.lights.compartment.intensity", gfx_lights_compartment_intensity );
@@ -1969,6 +1972,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.fog.lights", gfx_fog_lights );
     export_as_text( Output, "gfx.fog.shadows", gfx_fog_shadows );
     export_as_text( Output, "gfx.fog.temporal", gfx_fog_temporal );
+    export_as_text( Output, "gfx.fog.temporal.share", gfx_fog_temporal_share );
     export_as_text( Output, "gfx.clouds", std::string{ gfx_clouds == 1 ? "low" : gfx_clouds == 2 ? "medium" : gfx_clouds == 3 ? "high" : gfx_clouds == 4 ? "ultra" : "no" } );
     export_as_text( Output, "gfx.clouds.distance", gfx_clouds_distance );
     export_as_text( Output, "gfx.clouds.shadows", gfx_clouds_shadows );
