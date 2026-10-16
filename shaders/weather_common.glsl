@@ -98,11 +98,13 @@ vec2 fog_optical_depth(float origin, float up, float near, float far, float haze
 vec3 fog_color_world(vec3 direction)
 {
 	vec3 sun = weather_sun_direction.xyz;
-	vec2 flat_view = direction.xz;
-	vec2 flat_sun = sun.xz;
+	// the light of the haze goes with the angle from the sun, not with the azimuth alone: the table is taken at the point of the
+	// horizon as far from the sun as the view is. level views get the colour of their azimuth as before; a view high up over the
+	// sun no longer gets the glow of the horizon under it (a column of light standing over a low sun)
+	float sunflat = length(sun.xz);
 	float cosangle = 1.0;
-	if (dot(flat_view, flat_view) > 1e-8 && dot(flat_sun, flat_sun) > 1e-8)
-		cosangle = dot(normalize(flat_view), normalize(flat_sun));
+	if (sunflat > 1e-4)
+		cosangle = clamp(dot(normalize(direction), sun) / sunflat, -1.0, 1.0);
 	float position = acos(clamp(cosangle, -1.0, 1.0)) / WEATHER_PI * float(FOG_HORIZON_SAMPLES - 1);
 	int index = int(floor(position));
 	vec3 color = mix(fog_horizon[clamp(index, 0, FOG_HORIZON_SAMPLES - 1)].rgb, fog_horizon[clamp(index + 1, 0, FOG_HORIZON_SAMPLES - 1)].rgb, fract(position));

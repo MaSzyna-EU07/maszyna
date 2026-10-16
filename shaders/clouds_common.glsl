@@ -9,6 +9,11 @@ layout(binding = CLOUD_DETAIL_TEX) uniform sampler3D cloud_detail_noise;
 layout(binding = CLOUD_COVERAGE_TEX) uniform sampler2D cloud_coverage_noise;
 
 const float CLOUD_EARTH_RADIUS = 6360000.0;
+// how much of the shape noise is left standing at the edge and in the core of a cloud area (cloud_layer_density)
+const float CLOUD_FILL_EDGE = 0.45;
+const float CLOUD_FILL_CORE = 0.85;
+// how fast the density rises inside the edge of a cloud: above 1 the edges are crisper, the inside keeps its density
+const float CLOUD_EDGE_SHARPNESS = 2.0;
 
 float cloud_remap(float value, float low, float high, float newlow, float newhigh)
 {
@@ -134,20 +139,27 @@ float cloud_layer_density(int index, vec3 position, float height, bool detail)
 	vec2 plane = layer.motion.xy + cloud_noise_plane(layer, position.xz);
 	vec3 coords = vec3(plane.x, height + layer.extra.y * 4096.0, plane.y) * layer.shape.z;
 	vec4 shape = textureLod(cloud_shape_noise, coords, 0.0);
-	float worley = shape.g * 0.625 + shape.b * 0.25 + shape.a * 0.125;
-	float base = clamp(cloud_remap(shape.r, worley - 1.0, 1.0, 0.0, 1.0), 0.0, 1.0);
+	// the smaller cells of the worley octaves bite billows into the heaps of the perlin-worley noise; the octaves keep to a narrow
+	// band (clouds_noise.comp: WORLEY_FBM_LOW, WORLEY_FBM_HIGH), spread over 0-1 first
+	float worley = clamp((shape.g * 0.625 + shape.b * 0.25 + shape.a * 0.125 - 0.30) / 0.35, 0.0, 1.0);
+	float base = clamp(cloud_remap(shape.r, (1.0 - worley) * 0.35, 1.0, 0.0, 1.0), 0.0, 1.0);
 	// the sheets (little erosion) keep few holes, the heaps are made of lumps
 	base = mix(1.0, base, clamp(layer.shape.w * 2.5, 0.25, 1.0));
-	float density = clamp(cloud_remap(base * gradient, 1.0 - coverage.x, 1.0, 0.0, 1.0), 0.0, 1.0) * coverage.x;
+	// inside its area a cloud is not a solid block: the lumps of the shape noise are cut out of it, the more the nearer its edge,
+	// so it breaks up into single heaps with rounded tops and gaps between them. the sheets keep their base above the cut, and a
+	// layer closing up (broken to overcast) keeps its lumps whole, so it has no more gaps than its coverage
+	float fill = coverage.x * mix(mix(CLOUD_FILL_EDGE, CLOUD_FILL_CORE, coverage.y), 1.0, smoothstep(0.5, 1.0, layer.shape.x));
+	float density = clamp(cloud_remap(base * gradient, 1.0 - fill, 1.0, 0.0, 1.0), 0.0, 1.0) * coverage.x;
 	if (detail && density > 0.0 && layer.shape.w > 0.0)
 	{
 		vec4 small = textureLod(cloud_detail_noise, coords * 6.0, 0.0);
-		float fbm = small.r * 0.625 + small.g * 0.25 + small.b * 0.125;
+		// spread over 0-1 as the worley octaves of the shape; left in their narrow band they would only thin the cloud evenly
+		float fbm = clamp((small.r * 0.625 + small.g * 0.25 + small.b * 0.125 - 0.30) / 0.35, 0.0, 1.0);
 		// wispy at the base, billowing at the top
 		float erosion = mix(fbm, 1.0 - fbm, clamp(h * 4.0, 0.0, 1.0));
-		density = clamp(cloud_remap(density, erosion * layer.shape.w * 0.5, 1.0, 0.0, 1.0), 0.0, 1.0);
+		density = clamp(cloud_remap(density, erosion * layer.shape.w * 0.7, 1.0, 0.0, 1.0), 0.0, 1.0);
 	}
-	return density * layer.shape.y;
+	return min(density * CLOUD_EDGE_SHARPNESS, 1.0) * layer.shape.y;
 }
 
 // the same without the detail, cheaper, for the shadows and the fog

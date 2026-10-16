@@ -196,7 +196,9 @@ are no longer loaded.
 - **Clouds** are ray marched through layers of the genera of aviation reports (cumulus, cumulonimbus, stratus, cirrus...),
   each with its own shape, height and depth, moving with the wind. The main view gets them at a fraction of its resolution
   and blended over frames; reflections and the other views read a panorama of the sky with them, renewed in bands over a few
-  frames. Low clouds hide the hills and the far scenery they are in.
+  frames. Low clouds hide the hills and the far scenery they are in. They are lit by the sun through themselves (dark bellies,
+  edges glowing against the sun, thin wisps darker with the sun behind), by the sky above them in its colour (with the
+  directional ambient light, `gfx.ambient.sh`) and from below by the ground.
 - **Cloud shadows**: the clouds cast their shadows on the ground, the models, the vehicles and into the fog, from a map
   around the camera along the sun (or the moon). With them on, the overcast no longer dims the sun and softens its shadows
   as a whole: the sun is dimmed where the clouds are, and shines in the gaps.

@@ -82,6 +82,10 @@ float worley_fbm(vec3 position, int frequency, uint seed)
 	     + worley(position * float(frequency * 4), frequency * 4, seed + 2U) * 0.125;
 }
 
+// the worley fbm keeps about to this range (5th and 95th percentile 0.35 and 0.61)
+const float WORLEY_FBM_LOW = 0.30;
+const float WORLEY_FBM_HIGH = 0.65;
+
 float remap(float value, float low, float high, float newlow, float newhigh)
 {
 	return newlow + (value - low) / (high - low) * (newhigh - newlow);
@@ -111,9 +115,13 @@ void main()
 	vec3 position = (vec3(texel) + 0.5) / float(size);
 	if (kind == 0)
 	{
-		float low = perlin_fbm(position, 4, 4, 3U) * 0.5 + 0.5;
+		// both spread over 0-1 first: as sums of octaves they keep to a narrow band about the middle, and a cloud made of them
+		// would be an even block with no lumps. the cells then cut the perlin noise into rounded heaps: whole in their middles,
+		// only the highest perlin left between them
+		float low = even(perlin_fbm(position, 4, 4, 3U), 0.22);
 		float cells = worley_fbm(position, 4, 5U);
-		float perlinworley = clamp(remap(low, cells - 1.0, 1.0, 0.0, 1.0), 0.0, 1.0);
+		float spreadcells = clamp((cells - WORLEY_FBM_LOW) / (WORLEY_FBM_HIGH - WORLEY_FBM_LOW), 0.0, 1.0);
+		float perlinworley = clamp(remap(low, (1.0 - spreadcells) * 0.6, 1.0, 0.0, 1.0), 0.0, 1.0);
 		imageStore(noise_volume, texel, vec4(perlinworley, cells, worley_fbm(position, 8, 7U), worley_fbm(position, 16, 9U)));
 	}
 	else
