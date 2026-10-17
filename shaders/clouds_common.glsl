@@ -16,6 +16,11 @@ const float CLOUD_FILL_CORE = 0.85;
 const float CLOUD_EDGE_SHARPNESS = 3.0;
 // how far the base and the top of the single clouds stand off those of their layer, up or down, as shares of the depth of the layer
 // and at most in metres: the clouds of a layer don't all end at one height, some reach a little out of it
+// how high the base of a cloud curves up at its edge and how far into the cloud area (cloud_coverage: y) it does, and how much higher
+// the base of a billow is between the cells of the shape noise than in their middles; shares of the height of the cloud
+const float CLOUD_BASE_ROUND = 0.35;
+const float CLOUD_BASE_ROUND_DEPTH = 0.3;
+const float CLOUD_BASE_LUMPS = 0.08;
 const float CLOUD_BASE_SHIFT = 0.07;
 const float CLOUD_BASE_SHIFT_MAX = 100.0;
 const float CLOUD_TOP_SHIFT = 0.15;
@@ -175,8 +180,8 @@ float cloud_layer_density(int index, vec3 position, float height, bool detail)
 		return 0.0;
 	// the tops of the single clouds are of different heights, the larger ones (deeper in their area) the taller
 	float top = mix(1.0 - layer.profile.z, 1.0, coverage.y);
-	float gradient = smoothstep(0.0, layer.profile.x, h) * (1.0 - smoothstep(top * layer.profile.y, top, h));
-	if (gradient <= 0.0)
+	float fall = 1.0 - smoothstep(top * layer.profile.y, top, h);
+	if (fall <= 0.0)
 		return 0.0;
 	vec2 plane = layer.motion.xy + cloud_noise_plane(layer, position.xz);
 	vec3 coords = vec3(plane.x, height + layer.extra.y * 4096.0, plane.y) * layer.shape.z;
@@ -184,6 +189,13 @@ float cloud_layer_density(int index, vec3 position, float height, bool detail)
 	// the smaller cells of the worley octaves bite billows into the heaps of the perlin-worley noise; the octaves keep to a narrow
 	// band (clouds_noise.comp: WORLEY_FBM_LOW, WORLEY_FBM_HIGH), spread over 0-1 first
 	float worley = clamp((shape.g * 0.625 + shape.b * 0.25 + shape.a * 0.125 - 0.30) / 0.35, 0.0, 1.0);
+	// the base is not cut flat: it curves up towards the edge of the cloud into its sides, and every billow starts a little higher or
+	// lower; both as shares of the height of the cloud, so the small ones are rounded too and not cut away. the sheets (little
+	// erosion) keep a flatter base
+	float lift = (CLOUD_BASE_ROUND * (1.0 - smoothstep(0.0, CLOUD_BASE_ROUND_DEPTH, coverage.y)) + CLOUD_BASE_LUMPS * (1.0 - worley)) * top * clamp(layer.shape.w * 2.5, 0.0, 1.0);
+	float gradient = smoothstep(lift, lift + layer.profile.x, h) * fall;
+	if (gradient <= 0.0)
+		return 0.0;
 	float base = clamp(cloud_remap(shape.r, (1.0 - worley) * 0.35, 1.0, 0.0, 1.0), 0.0, 1.0);
 	// the sheets (little erosion) keep few holes, the heaps are made of lumps
 	base = mix(1.0, base, clamp(layer.shape.w * 2.5, 0.25, 1.0));
