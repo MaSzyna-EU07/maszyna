@@ -70,14 +70,15 @@ void opengl46_hiz::allocate(int const Width, int const Height)
 	glTextureParameteri(m_pyramid, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 }
 
-void opengl46_hiz::build(GLuint const Source, int const Width, int const Height)
+void opengl46_hiz::build(GLuint const Source, int const Width, int const Height, bool const Second)
 {
 	if ((Width <= 0) || (Height <= 0))
 		return;
 	if (m_sourcesize != glm::ivec2{Width, Height})
 		allocate(Width, Height);
 
-	m_timer.begin();
+	auto &timer{Second ? m_secondtimer : m_timer};
+	timer.begin();
 
 	// resolve of the multisampled depth; the scissor test would limit the blit
 	auto const scissor{glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE};
@@ -107,13 +108,19 @@ void opengl46_hiz::build(GLuint const Source, int const Width, int const Height)
 	glBindTextureUnit(0, 0);
 	opengl_texture::reset_unit_cache();
 
-	m_timer.end();
+	timer.end();
 }
 
-std::string opengl46_hiz::info_times()
+std::string opengl46_hiz::info_times(bool const Second)
 {
 	std::string text;
 	if (auto const time = m_timer.result())
-		text += " occlusion depth: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms\n";
+	{
+		text += " occlusion depth: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms";
+		auto const second{m_secondtimer.result()};
+		if (Second && second)
+			text += " (+" + to_string(static_cast<double>(*second) / 1000000.0, 3) + " ms with the instances drawn first)";
+		text += "\n";
+	}
 	return text;
 }

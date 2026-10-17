@@ -247,7 +247,7 @@ public:
         float rangesquaredmin { 0.f }; // visibility range of the instance
         float rangesquaredmax { 0.f };
         std::uint32_t flags { 0 }; // instance_record_flags
-        std::uint32_t pad { 0 };
+        std::uint32_t pad { 0 }; // the copy of the gpu culling keeps there whether the instance was seen in the last frame
         glm::vec4 rotationscale[ 3 ] {}; // columns of rotation and scale of the instance, w unused
     };
     static_assert( sizeof( instance_record ) == 80, "instance_record has to keep its std430 layout" );

@@ -37,7 +37,10 @@ class TAnimModel;
 // list of indirect draw commands (one per submodel drawn in the band), whose instances a fourth pass fills in from the
 // counts (instance_cull_commands.comp), and draws them with the output bound as the instance buffer
 // (opengl46_renderer::Render_Instances_Indirect()). an occlusion test against a depth pyramid of what the pass drew before
-// (opengl46_hiz) can leave out more instances.
+// (opengl46_hiz) can leave out more instances. in two phases the instances seen in the previous frame are culled and drawn
+// first, then the pyramid is made again with them in it (dispatch_second()) and the others are tested against it, so the
+// instances hide one another too. the command buffer holds the commands three times over: the instances drawn first, all
+// of them, and the ones drawn second, each copy command_count() commands long (draw_command_offset())
 // with Global.gfx_gpucull 2 the cpu still draws, and the result is only compared with its own: the counts per entry are
 // read back a few frames later and set against the counts Render_Instanced() reported for the same frame
 class opengl46_instance_cull
@@ -98,8 +101,18 @@ class opengl46_instance_cull
 	// Area: bounds of the cell holding the bucket, which hold the locations of all its instances
 	void add_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area);
 	// runs the culling passes for the buckets added. View: rotation of the view of the pass. Occlusion: the depth pyramid
-	// to test the instances against, or null
-	void dispatch(glm::mat4 const &View, occlusion_setup const *Occlusion = nullptr);
+	// to test the instances against, or null. Twophase: with the occlusion test, only the instances seen in the previous
+	// frame pass for now, dispatch_second() takes the others
+	void dispatch(glm::mat4 const &View, occlusion_setup const *Occlusion = nullptr, bool const Twophase = false);
+	// the second phase, after the instances which passed dispatch() were drawn and the pyramid was made again with them:
+	// the others are tested against it, then the commands of all instances and of the ones of this phase are filled in.
+	// needs fill_commands() before it
+	void dispatch_second(occlusion_setup const &Occlusion);
+	// the last dispatch() works in two phases
+	bool two_phase() const
+	{
+		return m_twophase;
+	}
 	// groups of the pass and the lod bounds they refer to, valid from dispatch() to end_pass()
 	std::vector<draw_group> const &draw_groups() const
 	{
@@ -109,9 +122,22 @@ class opengl46_instance_cull
 	{
 		return m_lodlist;
 	}
-	// sends the indirect draw commands made for the entries of the pass and fills in their instances. after this the
-	// commands are in the buffer bound by bind_draw(), the modelview matrices of the instances in output()
+	// sends the indirect draw commands made for the entries of the pass and fills in their instances (of the instances drawn
+	// first, in two phases). after this the commands are in the buffer bound by bind_draw(), the modelview matrices of the
+	// instances in the output
 	void fill_commands(std::vector<gl::instance_draw_command> const &Commands);
+	// copies of the commands in the command buffer
+	enum class command_set : std::uint32_t
+	{
+		first = 0, // instances which passed dispatch(): in one phase all of them
+		all = 1, // after dispatch_second()
+		second = 2 // the ones which passed dispatch_second()
+	};
+	// offset of command Index of a copy in the command buffer
+	std::intptr_t draw_command_offset(command_set const Set, std::size_t const Index) const
+	{
+		return static_cast<std::intptr_t>((static_cast<std::size_t>(Set) * m_commandcount + Index) * sizeof(gl::instance_draw_command));
+	}
 	// binds the commands to GL_DRAW_INDIRECT_BUFFER and the output in place of the instance buffer of the frame
 	void bind_draw();
 	// counts of the last result which came back from the gpu, with the draws of the pass, for the debug panel
@@ -164,10 +190,13 @@ class opengl46_instance_cull
 		std::uint32_t mismatched{0};
 		std::uint32_t largestdifference{0};
 		std::uint32_t occluded{0}; // left out by the occlusion test
+		std::uint32_t first{0}; // drawn first, seen in the previous frame (two phases)
 	};
 
 	// finds a place for the records of a bucket in the record buffer and sends them
 	void place(scene::basic_cell::instance_bucket const &Bucket);
+	// binds the buffers of the culling passes
+	void bind_buffers();
 	// takes the newest counts of the gpu which arrived and compares them with the ones of the cpu
 	void collect();
 
@@ -186,6 +215,7 @@ class opengl46_instance_cull
 	std::unique_ptr<gl::ssbo> m_commands;
 	std::unique_ptr<gl::readback> m_readback;
 	gl::gpu_timer m_timer;
+	gl::gpu_timer m_secondtimer;
 
 	// record buffer: records placed so far, the generation which tells current places from the ones of a replaced buffer
 	std::uint32_t m_recordfill{0};
@@ -216,4 +246,5 @@ class opengl46_instance_cull
 	std::uint32_t m_commandcount{0};
 	double m_cputime{0.0};
 	bool m_occlusion{false}; // the last dispatch tested occlusion
+	bool m_twophase{false}; // in two phases
 };

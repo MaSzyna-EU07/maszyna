@@ -749,9 +749,15 @@ void opengl46_renderer::SwapBuffers()
             m_debugtimestext += " contact shadows depth: " + to_string( static_cast<double>( *contacttime ) / 1000000.0, 3 ) + " ms\n";
     }
     if( Global.gfx_gpucull == 1 ) {
-        m_debugtimestext += m_hiz.info_times();
-        if( auto const prepasstime = m_prepasstimer.result() )
-            m_debugtimestext += " depth prepass: " + to_string( static_cast<double>( *prepasstime ) / 1000000.0, 3 ) + " ms\n";
+        auto const twophase { m_instancecull.two_phase() };
+        m_debugtimestext += m_hiz.info_times( twophase );
+        if( auto const prepasstime = m_prepasstimer.result() ) {
+            m_debugtimestext += " depth prepass: " + to_string( static_cast<double>( *prepasstime ) / 1000000.0, 3 ) + " ms";
+            auto const firsttime { m_prepassfirsttimer.result() };
+            if( twophase && firsttime )
+                m_debugtimestext += " (+" + to_string( static_cast<double>( *firsttime ) / 1000000.0, 3 ) + " ms of the instances drawn first)";
+            m_debugtimestext += "\n";
+        }
     }
     m_debugtimestext += m_localshadows.info_times();
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
@@ -894,6 +900,8 @@ void opengl46_renderer::draw_debug_ui()
         if (Global.gfx_gpucull == 1)
         {
             ImGui::Checkbox("leave out instances hidden behind the depth drawn before them (gfx.gpucull.occlusion)", &Global.gfx_gpucull_occlusion);
+            if (Global.gfx_gpucull_occlusion)
+                ImGui::Checkbox("draw the instances seen in the last frame first, to hide the others (gfx.gpucull.occlusion.instances)", &Global.gfx_gpucull_occlusion_instances);
             ImGui::Checkbox("draw the depth of the instances before their colour (gfx.depthprepass)", &Global.gfx_depthprepass);
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
@@ -3181,7 +3189,7 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		if( false == m_indirectdraws.empty() ) {
 			auto const cpustart { std::chrono::steady_clock::now() };
 			m_instancecull.bind_draw();
-			Render_Instances_Indirect_Colour();
+			Render_Instances_Indirect_Colour( m_indirectcolourset );
 			::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
 			Bind_Instance_Stream();
 			m_instancecull.draw_result(
@@ -3810,7 +3818,12 @@ void opengl46_renderer::Render_Instances_Indirect()
 		occlusion.screen = glm::vec2{ m_hiz.source_size() };
 		occlusion.projection = OpenGLMatrices.data( GL_PROJECTION );
 	}
-	m_instancecull.dispatch( OpenGLMatrices.data( GL_MODELVIEW ), ( useocclusion ? &occlusion : nullptr ) );
+	// in two phases the instances seen in the previous frame are drawn first, and the others are tested against a pyramid
+	// made again with their depth in it (not in wireframe, which doesn't draw surfaces)
+	m_instancecull.dispatch(
+		OpenGLMatrices.data( GL_MODELVIEW ),
+		( useocclusion ? &occlusion : nullptr ),
+		( Global.gfx_gpucull_occlusion_instances && ( false == Global.bWireFrame ) ) );
 
 	// the draws, recorded while the gpu culls
 	m_indirectdraws.clear();
@@ -3842,29 +3855,43 @@ void opengl46_renderer::Render_Instances_Indirect()
 	m_indirectrecording = false;
 
 	m_instancecull.fill_commands( m_indirectcommands );
+	using command_set = opengl46_instance_cull::command_set;
+	auto const twophase { m_instancecull.two_phase() };
+	auto const draws { false == m_indirectdraws.empty() };
+	// the depth comes first in the depth pass of the whole scene, which has its state set and leaves the colour to the colour
+	// pass (m_indirectcolourpending), and with the depth prepass of the instances: the colour pass shades only what stays in
+	// view. the depth goes a little farther than the surface, so the colour pass, which tests and writes its depth as usual,
+	// is sure to pass where it's the same
+	auto const depthfirst { m_scenedepthpass || ( Global.gfx_depthprepass && ( false == Global.bWireFrame ) ) };
 	std::uint32_t prepassdraws { 0 };
-	if( false == m_indirectdraws.empty() ) {
-		m_instancecull.bind_draw();
-		if( m_scenedepthpass ) {
-			// the depth pass of the whole scene, which has its state set: only the depth here, the colour pass draws the
-			// colour of the same draws (m_indirectcolourpending)
-			prepassdraws = Render_Instances_Indirect_Depth();
-		}
-		else {
-			if( Global.gfx_depthprepass && ( false == Global.bWireFrame ) ) {
-				// the depth first: the colour pass shades only what stays in view. the depth goes a little farther than the
-				// surface, so the colour pass, which tests and writes its depth as usual, is sure to pass where it's the same
-				m_prepasstimer.begin();
-				setup_drawing( false );
-				::glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
-				::glEnable( GL_POLYGON_OFFSET_FILL );
-				::glPolygonOffset( -1.f, -1.f );
-				prepassdraws = Render_Instances_Indirect_Depth();
-				::glDisable( GL_POLYGON_OFFSET_FILL );
-				::glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
-				m_prepasstimer.end();
+	std::uint32_t colourdraws { 0 };
+	auto colourset { command_set::first };
+	if( twophase ) {
+		if( draws ) {
+			// the instances seen in the previous frame, then the pyramid again, with them in it
+			m_instancecull.bind_draw();
+			if( depthfirst ) {
+				prepassdraws += Render_Instances_Indirect_Prepass( command_set::first, m_prepassfirsttimer );
 			}
-			Render_Instances_Indirect_Colour();
+			else {
+				Render_Instances_Indirect_Colour( command_set::first );
+				colourdraws += static_cast<std::uint32_t>( m_indirectdraws.size() );
+			}
+			m_hiz.build( *viewport->msaa_fb, viewport->width, viewport->height, true );
+			occlusion.pyramid = m_hiz.texture();
+		}
+		// the others are tested against it; with no draws the instances are only marked for the next frame
+		m_instancecull.dispatch_second( occlusion );
+		colourset = ( depthfirst ? command_set::all : command_set::second );
+	}
+	if( draws ) {
+		m_instancecull.bind_draw();
+		if( depthfirst ) {
+			prepassdraws += Render_Instances_Indirect_Prepass( ( twophase ? command_set::second : command_set::first ), m_prepasstimer );
+		}
+		if( false == m_scenedepthpass ) {
+			Render_Instances_Indirect_Colour( colourset );
+			colourdraws += static_cast<std::uint32_t>( m_indirectdraws.size() );
 		}
 		::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
 		Bind_Instance_Stream();
@@ -3872,25 +3899,42 @@ void opengl46_renderer::Render_Instances_Indirect()
 	if( m_scenedepthpass ) {
 		// the colour pass takes the draws from here, and counts them
 		m_indirectcolourpending = true;
+		m_indirectcolourset = colourset;
 		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepassdraws );
+		colourdraws = static_cast<std::uint32_t>( m_indirectdraws.size() );
 	}
 	else {
-		m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( m_indirectdraws.size() );
+		m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( colourdraws );
 		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepassdraws );
 		// the count of the frame the gpu reported last
 		m_renderpass.draw_stats.instances += static_cast<int>( m_instancecull.last_count() );
 		m_renderpass.draw_stats.models += static_cast<int>( m_instancecull.last_count() );
 	}
 	m_instancecull.draw_result(
-		static_cast<std::uint32_t>( m_indirectdraws.size() ),
+		colourdraws,
 		prepassdraws,
 		std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count() );
 }
 
-std::uint32_t opengl46_renderer::Render_Instances_Indirect_Depth()
+std::uint32_t opengl46_renderer::Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer )
 {
-	auto const commandoffset = []( std::size_t const Index ) {
-		return static_cast<std::intptr_t>( Index * sizeof( gl::instance_draw_command ) ); };
+	if( m_scenedepthpass ) {
+		return Render_Instances_Indirect_Depth( Set );
+	}
+	Timer.begin();
+	setup_drawing( false );
+	::glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+	::glEnable( GL_POLYGON_OFFSET_FILL );
+	::glPolygonOffset( -1.f, -1.f );
+	auto const draws { Render_Instances_Indirect_Depth( Set ) };
+	::glDisable( GL_POLYGON_OFFSET_FILL );
+	::glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+	Timer.end();
+	return draws;
+}
+
+std::uint32_t opengl46_renderer::Render_Instances_Indirect_Depth( opengl46_instance_cull::command_set const Set )
+{
 	std::uint32_t draws { 0 };
 	// the draws without the alpha test first, then the ones with it, one program each
 	for( auto prepassclass = 1; prepassclass <= 2; ++prepassclass ) {
@@ -3917,24 +3961,22 @@ std::uint32_t opengl46_renderer::Render_Instances_Indirect_Depth()
 			}
 			model_ubs = draw.ubs;
 			model_ubo->update( model_ubs );
-			m_geometry.draw_indirect( draw.geometry, commandoffset( index ) );
+			m_geometry.draw_indirect( draw.geometry, m_instancecull.draw_command_offset( Set, index ) );
 			++draws;
 		}
 	}
 	return draws;
 }
 
-void opengl46_renderer::Render_Instances_Indirect_Colour()
+void opengl46_renderer::Render_Instances_Indirect_Colour( opengl46_instance_cull::command_set const Set )
 {
-	auto const commandoffset = []( std::size_t const Index ) {
-		return static_cast<std::intptr_t>( Index * sizeof( gl::instance_draw_command ) ); };
 	for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
 		auto const &draw { m_indirectdraws[ index ] };
 		if( draw.blending ) { setup_drawing( true ); }
 		Bind_Material( draw.material, draw.submodel );
 		model_ubs = draw.ubs;
 		model_ubo->update( model_ubs );
-		m_geometry.draw_indirect( draw.geometry, commandoffset( index ) );
+		m_geometry.draw_indirect( draw.geometry, m_instancecull.draw_command_offset( Set, index ) );
 		if( draw.blending ) { setup_drawing( false ); }
 	}
 	model_ubs.emission = 0.0f;

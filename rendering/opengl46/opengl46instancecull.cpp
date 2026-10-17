@@ -210,13 +210,14 @@ void opengl46_instance_cull::place(scene::basic_cell::instance_bucket const &Buc
 	allocate(Bucket);
 }
 
-void opengl46_instance_cull::dispatch(glm::mat4 const &View, occlusion_setup const *Occlusion)
+void opengl46_instance_cull::dispatch(glm::mat4 const &View, occlusion_setup const *Occlusion, bool const Twophase)
 {
 	m_occlusion = false;
+	m_twophase = false;
 	if (!m_inpass || m_joblist.empty())
 		return;
 
-	auto const countersize{static_cast<GLsizeiptr>((gl::INSTANCE_COUNTER_HEADER + 2 * m_entries) * sizeof(std::uint32_t))};
+	auto const countersize{static_cast<GLsizeiptr>((gl::INSTANCE_COUNTER_HEADER + 3 * m_entries) * sizeof(std::uint32_t))};
 	reserve(*m_jobs, static_cast<GLsizeiptr>(m_joblist.size() * sizeof(gl::instance_cull_job)));
 	reserve(*m_groups, static_cast<GLsizeiptr>(m_grouplist.size() * sizeof(gl::instance_cull_group)));
 	reserve(*m_lods, static_cast<GLsizeiptr>(std::max<std::size_t>(m_lodlist.size(), 1) * sizeof(float)));
@@ -229,15 +230,10 @@ void opengl46_instance_cull::dispatch(glm::mat4 const &View, occlusion_setup con
 		m_lods->update(m_lodlist.data(), 0, static_cast<GLsizeiptr>(m_lodlist.size() * sizeof(float)));
 	// counts and cursors start at zero
 	glClearNamedBufferSubData(*m_counters, GL_R32UI, 0, countersize, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-	std::uint32_t const header[gl::INSTANCE_COUNTER_HEADER]{m_setup.frame, 0, m_entries, 0};
+	std::uint32_t const header[gl::INSTANCE_COUNTER_HEADER]{m_setup.frame, 0, m_entries, 0, 0, 0, 0, 0};
 	m_counters->update(header, 0, sizeof(header));
 
-	m_records->bind_base();
-	m_jobs->bind_base();
-	m_groups->bind_base();
-	m_lods->bind_base();
-	m_counters->bind_base();
-	m_output->bind_base();
+	bind_buffers();
 
 	// planes moved to the camera of the pass, in double precision: the cpu tests world coordinates
 	auto const &frustumplanes{m_setup.frustum->planes()};
@@ -266,6 +262,8 @@ void opengl46_instance_cull::dispatch(glm::mat4 const &View, occlusion_setup con
 	{
 		glProgramUniform4i(*m_cull_program, 14, 0, 0, 0, 0);
 	}
+	m_twophase = (m_occlusion && Twophase);
+	glProgramUniform4ui(*m_cull_program, 16, (m_twophase ? 1u : 0u), 0, 0, 0);
 
 	// one invocation per record; past the count limit of one dimension the groups go into rows
 	auto const groups{(m_candidates + gl::INSTANCE_CULL_GROUP_SIZE - 1) / gl::INSTANCE_CULL_GROUP_SIZE};
@@ -289,9 +287,51 @@ void opengl46_instance_cull::dispatch(glm::mat4 const &View, occlusion_setup con
 		opengl_texture::reset_unit_cache();
 	}
 
-	m_readback->push(*m_counters);
 	m_cpucounts.assign(m_entries, 0);
 	m_dispatched = true;
+}
+
+void opengl46_instance_cull::bind_buffers()
+{
+	m_records->bind_base();
+	m_jobs->bind_base();
+	m_groups->bind_base();
+	m_lods->bind_base();
+	m_counters->bind_base();
+	m_output->bind_base();
+}
+
+void opengl46_instance_cull::dispatch_second(occlusion_setup const &Occlusion)
+{
+	if (!m_dispatched || !m_twophase)
+		return;
+
+	// the draws of the first phase bound buffers of their own, and other passes share the binding of the records
+	bind_buffers();
+	glProgramUniform4i(*m_cull_program, 14, 1, Occlusion.levels, Occlusion.size.x, Occlusion.size.y);
+	glProgramUniform4f(*m_cull_program, 15, Occlusion.screen.x, Occlusion.screen.y, 0.f, 0.f);
+	glBindTextureUnit(0, Occlusion.pyramid);
+
+	auto const groups{(m_candidates + gl::INSTANCE_CULL_GROUP_SIZE - 1) / gl::INSTANCE_CULL_GROUP_SIZE};
+	auto const groups_x{std::min<GLuint>(groups, 65535)};
+	auto const groups_y{(groups + groups_x - 1) / groups_x};
+
+	m_secondtimer.begin();
+	glProgramUniform4ui(*m_cull_program, 9, static_cast<GLuint>(m_joblist.size()), m_candidates, m_entries, 2);
+	m_cull_program->dispatch(groups_x, groups_y);
+	gl::memory_barrier(GL_SHADER_STORAGE_BARRIER_BIT);
+	if (m_commandcount > 0)
+	{
+		m_commands->bind_base();
+		glProgramUniform4ui(*m_commands_program, 0, m_commandcount, m_entries, 1, 0);
+		m_commands_program->dispatch((m_commandcount + gl::INSTANCE_COMMAND_GROUP_SIZE - 1) / gl::INSTANCE_COMMAND_GROUP_SIZE);
+	}
+	// the commands go to indirect draws, the matrices to the vertex shaders, the counts to the copy for the cpu
+	gl::memory_barrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+	m_secondtimer.end();
+
+	glBindTextureUnit(0, 0);
+	opengl_texture::reset_unit_cache();
 }
 
 void opengl46_instance_cull::fill_commands(std::vector<gl::instance_draw_command> const &Commands)
@@ -300,8 +340,9 @@ void opengl46_instance_cull::fill_commands(std::vector<gl::instance_draw_command
 	if (!m_dispatched || Commands.empty())
 		return;
 
+	// the first copy is sent, the others are made from it on the gpu
 	auto const size{static_cast<GLsizeiptr>(Commands.size() * sizeof(gl::instance_draw_command))};
-	reserve(*m_commands, size);
+	reserve(*m_commands, 3 * size);
 	m_commands->update(Commands.data(), 0, size);
 	m_counters->bind_base();
 	m_commands->bind_base();
@@ -340,6 +381,9 @@ void opengl46_instance_cull::cpu_result(scene::basic_cell::instance_bucket_key c
 
 void opengl46_instance_cull::end_pass()
 {
+	// the counts of both phases, for the panel and the comparison
+	if (m_dispatched)
+		m_readback->push(*m_counters);
 	// the cpu counts are there to compare with only when the cpu drew
 	if (m_dispatched && !m_setup.drawing)
 	{
@@ -363,9 +407,10 @@ void opengl46_instance_cull::collect()
 	auto const frame{m_readbackdata[0]};
 	comparison result;
 	result.frame = frame;
-	result.gputotal = m_readbackdata[1];
-	result.entries = m_readbackdata[2];
 	result.occluded = m_readbackdata[3];
+	result.gputotal = m_readbackdata[1] - std::min(m_readbackdata[1], result.occluded);
+	result.entries = m_readbackdata[2];
+	result.first = m_readbackdata[4];
 	while (!m_cpupasses.empty() && m_cpupasses.front().frame != frame)
 		m_cpupasses.pop_front();
 	if (m_cpupasses.empty())
@@ -404,8 +449,10 @@ std::string opengl46_instance_cull::info()
 	{
 		if (m_last.frame == 0)
 			return "\ngpu cull: no result yet";
-		return "\ngpu cull: " + std::to_string(m_last.gputotal) + " instances drawn, " + std::to_string(m_last.occluded) + " hidden by occlusion" +
-		       (m_occlusion ? "" : " (test off)") + ", " + std::to_string(m_last.entries) + " bands; " + std::to_string(m_draws) + " indirect draws (+" +
+		return "\ngpu cull: " + std::to_string(m_last.gputotal) + " instances drawn" +
+		       (m_twophase ? " (" + std::to_string(m_last.first) + " of them first, seen in the last frame)" : std::string{}) + ", " + std::to_string(m_last.occluded) +
+		       " hidden by occlusion" + (m_occlusion ? (m_twophase ? " (also by one another)" : "") : " (test off)") + ", " + std::to_string(m_last.entries) + " bands; " +
+		       std::to_string(m_draws) + " indirect draws (+" +
 		       std::to_string(m_prepassdraws) + " depth prepass), cpu " + to_string(m_cputime, 3) + " ms";
 	}
 	if (m_comparedframes == 0)
@@ -421,6 +468,12 @@ std::string opengl46_instance_cull::info_times()
 	if (Global.gfx_gpucull == 0)
 		return text;
 	if (auto const time = m_timer.result())
-		text += " instance cull: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms\n";
+	{
+		text += " instance cull: " + to_string(static_cast<double>(*time) / 1000000.0, 3) + " ms";
+		auto const second{m_secondtimer.result()};
+		if (m_twophase && second)
+			text += " (+" + to_string(static_cast<double>(*second) / 1000000.0, 3) + " ms second phase)";
+		text += "\n";
+	}
 	return text;
 }

@@ -19,7 +19,8 @@ http://mozilla.org/MPL/2.0/.
 // pass of the main view, from the depth drawn up to then (cab, terrain, shapes, tracks, vehicles and the models drawn on
 // their own), so it needs no reprojection: the instances are tested against what is already in the image.
 // the multisampled depth is resolved by a blit, then each level of the pyramid (hiz_build.comp) keeps the farthest
-// depth of the 2x2 texels below it; the first level is half the size of the view
+// depth of the 2x2 texels below it; the first level is half the size of the view.
+// in two phases the pyramid is made a second time in the pass, with the instances drawn first in it
 class opengl46_hiz
 {
   public:
@@ -31,8 +32,9 @@ class opengl46_hiz
 	// creates the program. throws gl::shader_exception
 	void init();
 	// makes the pyramid from the depth attachment of Source, a framebuffer of Width x Height pixels.
-	// leaves the framebuffer bindings alone, texture unit 0 and image unit 0 are used (the unit cache is reset)
-	void build(GLuint const Source, int const Width, int const Height);
+	// leaves the framebuffer bindings alone, texture unit 0 and image unit 0 are used (the unit cache is reset).
+	// Second: the second pyramid of the pass, timed on its own
+	void build(GLuint const Source, int const Width, int const Height, bool const Second = false);
 	// the pyramid, its first level size and level count; valid after build()
 	GLuint texture() const
 	{
@@ -50,7 +52,8 @@ class opengl46_hiz
 	{
 		return m_sourcesize;
 	}
-	std::string info_times();
+	// Second: with the time of the second pyramid
+	std::string info_times(bool const Second);
 
   private:
 	// (re)creates the textures for a view of the given size
@@ -65,4 +68,5 @@ class opengl46_hiz
 	glm::ivec2 m_size{0};
 	int m_levels{0};
 	gl::gpu_timer m_timer;
+	gl::gpu_timer m_secondtimer;
 };

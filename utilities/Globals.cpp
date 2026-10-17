@@ -1439,6 +1439,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_gpucull_occlusion;
     }
+    else if (Token == "gfx.gpucull.occlusion.instances")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_occlusion_instances;
+    }
     else if (Token == "gfx.depthprepass")
     {
         Parser.getTokens(1);
@@ -1934,6 +1939,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.lights.clusterheatmap", gfx_lights_clusterheatmap );
     export_as_text( Output, "gfx.gpucull", std::string{ gfx_gpucull == 1 ? "yes" : gfx_gpucull == 2 ? "compare" : "no" } );
     export_as_text( Output, "gfx.gpucull.occlusion", gfx_gpucull_occlusion );
+    export_as_text( Output, "gfx.gpucull.occlusion.instances", gfx_gpucull_occlusion_instances );
     export_as_text( Output, "gfx.depthprepass", gfx_depthprepass );
     export_as_text( Output, "gfx.depthprepass.scene", gfx_depthprepass_scene );
     export_as_text( Output, "gfx.bufferstreaming", gfx_bufferstreaming );

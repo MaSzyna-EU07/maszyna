@@ -1,6 +1,9 @@
-// fills in the instances of the indirect draw commands of the entries, after stage 1 of instance_cull.comp wrote the
-// modelview matrices of the instances which passed. one invocation per command: the instance count is the count of its
-// entry, the base instance the first slot of the entry in the output (its cursor, advanced by stage 1, less the count)
+// fills in the instances of the indirect draw commands of the entries, after instance_cull.comp wrote the modelview
+// matrices of the instances drawn. one invocation per command. the commands are kept three times over: the first copy
+// draws the instances of stage 1, the second all of them, the third those of stage 2 (two phases), each from its first
+// slot in the output on. stage 0 (after stage 1): the instance count of the first copy is how far stage 1 advanced the
+// cursor of its entry, the base instance the first slot of the entry. stage 1 (after stage 2): the other two copies take
+// the command of the first one, the second with the instances of both stages, the third with the ones past the first copy
 
 #include <common>
 
@@ -18,8 +21,17 @@ layout(std430, binding = INSTANCE_COMMAND_SSBO_BINDING) buffer instance_command_
 	uint commands[];
 };
 
-// x: commands, y: entries
+// x: commands (of one copy), y: entries, z: stage
 layout(location = 0) uniform uvec4 counts;
+
+void set_instances(uint field, uint count, uint base)
+{
+	commands[field + 1u] = count;
+	if (commands[field + 6u] != 0u)
+		commands[field + 4u] = base;
+	else
+		commands[field + 3u] = base;
+}
 
 void main()
 {
@@ -29,11 +41,22 @@ void main()
 
 	uint field = command * 8u;
 	uint entry = commands[field + 5u];
-	uint count = counters[INSTANCE_COUNTER_HEADER + entry];
-	uint base = counters[INSTANCE_COUNTER_HEADER + counts.y + entry] - count;
-	commands[field + 1u] = count;
-	if (commands[field + 6u] != 0u)
-		commands[field + 4u] = base;
-	else
-		commands[field + 3u] = base;
+	uint first = counters[INSTANCE_COUNTER_HEADER + 2u * counts.y + entry];
+	uint count = counters[INSTANCE_COUNTER_HEADER + counts.y + entry] - first;
+	if (counts.z == 0u)
+	{
+		set_instances(field, count, first);
+		return;
+	}
+
+	uint drawnfirst = commands[field + 1u];
+	uint all = (counts.x + command) * 8u;
+	uint second = (2u * counts.x + command) * 8u;
+	for (uint value = 0u; value < 8u; ++value)
+	{
+		commands[all + value] = commands[field + value];
+		commands[second + value] = commands[field + value];
+	}
+	set_instances(all, count, first);
+	set_instances(second, count - drawnfirst, first + drawnfirst);
 }

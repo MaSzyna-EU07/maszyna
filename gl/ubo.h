@@ -469,16 +469,17 @@ namespace gl
     const GLuint INSTANCE_JOB_SSBO_BINDING = 10; // instance_cull_job, one per queued bucket
     const GLuint INSTANCE_GROUP_SSBO_BINDING = 11; // instance_cull_group, one per model and skins
     const GLuint INSTANCE_LOD_SSBO_BINDING = 12; // sorted lod bounds (squared distances) of the groups
-    const GLuint INSTANCE_COUNTER_SSBO_BINDING = 13; // header, then count[entries] and cursor[entries]
+    const GLuint INSTANCE_COUNTER_SSBO_BINDING = 13; // header, then count[entries], cursor[entries] and first[entries]
     const GLuint INSTANCE_OUTPUT_SSBO_BINDING = 14; // modelview matrices of the instances which passed, by entry
     const GLuint INSTANCE_COMMAND_SSBO_BINDING = 15; // indirect draw commands of the entries (instance_cull_commands.comp)
     const GLuint INSTANCE_CULL_GROUP_SIZE = 64;
     const GLuint INSTANCE_OFFSETS_GROUP_SIZE = 1024;
     const GLuint INSTANCE_COMMAND_GROUP_SIZE = 64;
-    // uints of the header of the counter buffer: frame number, survivors in total, entries, instances left out as hidden
-    // behind the depth already drawn (occlusion test).
+    // uints of the header of the counter buffer: frame number, survivors of the tests but the occlusion one in total,
+    // entries, instances left out as hidden behind the depth already drawn (occlusion test), instances drawn first in two
+    // phases (seen in the previous frame), unused.
     // an entry is a lod band of a group: survivors of group g in band b are counted at entry entryfirst(g) + b
-    const GLuint INSTANCE_COUNTER_HEADER = 4;
+    const GLuint INSTANCE_COUNTER_HEADER = 8;
     // work group of the passes which make the depth pyramid of the occlusion test (hiz_build.comp), 8x8
     const GLuint HIZ_GROUP_SIZE = 8;
 
@@ -510,7 +511,8 @@ namespace gl
     // layout std430: an indirect draw of the submodel of a group in one of its lod bands. the first five fields are the
     // command of glDrawElementsIndirect (count, instance count, first index, base vertex, base instance), or with indexed 0
     // the one of glDrawArraysIndirect (count, instance count, first vertex, base instance). the cpu fills in what it knows
-    // of the geometry, instance_cull_commands.comp the instances, from the counts of the entry
+    // of the geometry, instance_cull_commands.comp the instances, from the counts of the entry. the command buffer holds the
+    // commands of a pass three times over (instances drawn first, all, drawn second), see opengl46_instance_cull
     struct instance_draw_command
     {
         uint32_t count;

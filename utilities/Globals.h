@@ -289,6 +289,7 @@ struct global_settings {
     // drawn from with indirect draws, 2 on the cpu, which draws, and in a compute pass too, for the results to be compared
     int gfx_gpucull = 0;
     bool gfx_gpucull_occlusion = true; // with gfx_gpucull 1: instances hidden behind the depth drawn before them are left out
+    bool gfx_gpucull_occlusion_instances = true; // with gfx_gpucull_occlusion: in two phases, so that instances hide one another too
     bool gfx_depthprepass = true; // with gfx_gpucull 1: the depth of the instances is drawn before their colour
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
