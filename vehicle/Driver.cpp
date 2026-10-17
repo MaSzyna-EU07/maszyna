@@ -30,6 +30,8 @@ http://mozilla.org/MPL/2.0/.
 #include "world/station.h"
 #include "input/keyboardinput.h"
 
+#include <format>
+
 #define LOGVELOCITY 0
 #define LOGORDERS 1
 #define LOGSTOPS 1
@@ -1093,10 +1095,9 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
             if (Point.fDist < passengerstopmaxdistance * 0.5 ) {
                 // zaliczamy posterunek w pewnej odległości przed (choć W4 nie zasłania już semafora)
 #if LOGSTOPS
-                WriteLog(
-                    pVehicle->asName + " as " + TrainParams.TrainName
-                    + ": at " + std::to_string(simulation::Time.data().wHour) + ":" + std::to_string(simulation::Time.data().wMinute)
-                    + " passed " + asNextStop); // informacja
+                WriteLog(std::format(
+                    "{} as {}: at {}:{} passed {}",
+                    pVehicle->asName, TrainParams.TrainName, simulation::Time.data().wHour, simulation::Time.data().wMinute, asNextStop)); // informacja
 #endif
                 // przy jakim dystansie (stanie licznika) ma przesunąć na następny postój
                 fLastStopExpDist = mvOccupied->DistCounter + 0.250 + 0.001 * fLength;
@@ -1253,10 +1254,9 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         TrainParams.StationIndexInc(); // przejście do następnej
                         asNextStop = TrainParams.NextStop(); // pobranie kolejnego miejsca zatrzymania
 #if LOGSTOPS
-                        WriteLog(
-                            pVehicle->asName + " as " + TrainParams.TrainName
-                            + ": at " + std::to_string(simulation::Time.data().wHour) + ":" + std::to_string(simulation::Time.data().wMinute)
-                            + " next " + asNextStop); // informacja
+                        WriteLog(std::format(
+                            "{} as {}: at {}:{} next {}",
+                            pVehicle->asName, TrainParams.TrainName, simulation::Time.data().wHour, simulation::Time.data().wMinute, asNextStop)); // informacja
 #endif
                         // update consist weight, brake settings and ai braking tables
                         // NOTE: this calculation is expected to run after completing loading/unloading
@@ -1297,13 +1297,16 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 else {
                     // jeśli dojechaliśmy do końca rozkładu
 #if LOGSTOPS
-                    WriteLog(
-                        pVehicle->asName + " as " + TrainParams.TrainName
-                        + ": at " + std::to_string(simulation::Time.data().wHour) + ":" + std::to_string(simulation::Time.data().wMinute)
-                        + " end of route."); // informacja
+                    WriteLog(std::format(
+                        "{} as {}: at {}:{} end of route.",
+                        pVehicle->asName, TrainParams.TrainName, simulation::Time.data().wHour, simulation::Time.data().wMinute)); // informacja
 #endif
                     asNextStop = TrainParams.NextStop(); // informacja o końcu trasy
                     TrainParams.NewName("none"); // czyszczenie nieaktualnego rozkładu
+                    // koniec kursu, gasimy wyświetlacze relacji (tablice blaszane zostają)
+                    for( auto *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+                        vehicle->DestinationClear();
+                    }
                     // ma nie podjeżdżać pod W4 i ma je pomijać
                     iDrivigFlags &= ~moveStopCloser;
                     if( false == TestFlag( iDrivigFlags, movePushPull ) ) {
