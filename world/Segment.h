@@ -123,6 +123,10 @@ public:
     std::size_t
         PieceCount() const {
             return m_pieces.size(); };
+    inline
+    double
+        PieceStart( std::size_t const Piece ) const {
+            return m_starts[ Piece ]; };
     double
         ComputeLength() const; // McZapkie-150503
     // finds point on segment closest to specified point in 3d space. returns: point on segment as value in range 0-1

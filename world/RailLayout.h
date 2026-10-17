@@ -41,6 +41,7 @@ double constexpr blade_point { 0.003 };
 double constexpr blade_nose { 0.005 };
 double constexpr blade_planed { 0.125 };
 double constexpr blade_tangent { 0.00175 };
+double constexpr blade_mark { 0.010 };
 double constexpr blade_gap { 0.0005 };
 double constexpr blade_lowered { 0.050 };
 double constexpr blade_spacing { 0.5 };

@@ -710,9 +710,6 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
     glm::dvec3 point, tangent;
     ours.at( 0.0, point, tangent );
     auto otherat { nearest_distance( theirs, point ) };
-    glm::dvec3 start, along;
-    theirs.at( otherat, start, along );
-    auto const tangential { std::abs( glm::cross( glm::normalize( glm::dvec3 { tangent.x, 0.0, tangent.z } ), glm::normalize( glm::dvec3 { along.x, 0.0, along.z } ) ).y ) < blade_tangent };
     for( int i = 0; i <= count; ++i ) {
         auto const distance { length * i / count };
         ours.at( distance, point, tangent );
@@ -736,9 +733,48 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
             }
         }
         return -1.0; };
-    result.tip = reach( blade_point );
-    if( auto const nose { reach( blade_nose ) }; tangential && nose >= 0.0 ) {
-        result.tip = std::max( result.tip, nose - blade_planed );
+    auto const level = [&]( double const Distance ) {
+        for( std::size_t i = 1; i < gauge.size(); ++i ) {
+            if( gauge[ i ].x >= Distance ) {
+                auto const &a { gauge[ i - 1 ] };
+                auto const &b { gauge[ i ] };
+                return glm::mix( a.y, b.y, std::clamp( ( Distance - a.x ) / std::max( b.x - a.x, 1e-9 ), 0.0, 1.0 ) );
+            }
+        }
+        return gauge.back().y; };
+    auto const turn = [&]( double const Distance ) {
+        glm::dvec3 here, heading, line, along;
+        ours.at( Distance, here, heading );
+        auto there { nearest_distance( theirs, here ) };
+        lateral( theirs, side, here, there );
+        theirs.at( there, line, along );
+        return std::abs( glm::cross( glm::normalize( glm::dvec3 { heading.x, 0.0, heading.z } ), glm::normalize( glm::dvec3 { along.x, 0.0, along.z } ) ).y ); };
+    auto const thin { reach( blade_point ) };
+    auto const thick { reach( blade_nose ) };
+    auto angled { false };
+    if( thin >= 0.0 && thick > thin ) {
+        auto const at { turn( thin ) };
+        auto const bending { ( turn( thick ) - at ) / ( thick - thin ) };
+        angled = std::sqrt( std::max( 0.0, at * at - 2.0 * bending * blade_point ) ) >= blade_tangent;
+    }
+    result.tip = ( angled || thick < 0.0 ? thin : std::max( thin, thick - blade_planed ) );
+    for( auto const path : { Path, 1 - Path } ) {
+        auto const &segment { *SwitchExtension->Segments[ path ] };
+        auto mark { -1.0 };
+        for( std::size_t piece = 1; piece < segment.PieceCount(); ++piece ) {
+            auto const at { segment.PieceStart( piece ) };
+            auto const apart { level( at ) };
+            if( apart > blade_mark ) {
+                break;
+            }
+            if( angled || apart >= blade_gap ) {
+                mark = at;
+            }
+        }
+        if( mark >= 0.0 ) {
+            result.tip = std::max( mark, reach( blade_gap ) );
+            break;
+        }
     }
     result.full = reach( size.head + blade_gap );
     auto const clear { reach( size.head + blade_clearance ) };
@@ -790,15 +826,6 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
         bladetop = std::max( bladetop, static_cast<double>( profile[ i ].position.y ) );
     }
     result.drop = ( half > 0 ? std::max( 0.0, size.crest - bladetop ) : 0.0 );
-    auto const level = [&]( double const Distance ) {
-        for( std::size_t i = 1; i < gauge.size(); ++i ) {
-            if( gauge[ i ].x >= Distance ) {
-                auto const &a { gauge[ i - 1 ] };
-                auto const &b { gauge[ i ] };
-                return glm::mix( a.y, b.y, std::clamp( ( Distance - a.x ) / std::max( b.x - a.x, 1e-9 ), 0.0, 1.0 ) );
-            }
-        }
-        return gauge.back().y; };
     auto const lowered { reach( blade_lowered + blade_gap ) };
     auto const cutto { std::min( result.heel, foot >= 0.0 ? foot + blade_spacing : result.heel ) };
     for( auto distance { result.tip }; distance < cutto + 0.5 * blade_spacing; distance += blade_spacing ) {
