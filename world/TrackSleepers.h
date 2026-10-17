@@ -145,6 +145,7 @@ struct layout_check {
     double slowest { 0.0 }; // the longest a cluster of tracks took to lay, in ms
     std::size_t biggest { 0 }; // the most tracks in a cluster
     std::size_t panels { 0 }; // switches with their paths out of one plane where they share the timbers of the panel
+    std::uint64_t digest { 0 }; // of where all the beams lie, to tell whether a change of the code moved any
     double longest { 0.0 };
     double widest { 0.0 }; // the widest spacing of the beams under a rail
     std::string widestat;

@@ -280,8 +280,8 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	{
 		auto const start{std::chrono::steady_clock::now()};
 		auto const result{track_sleepers::check()};
-		WriteLog(format("SELFTEST sleepercheck: %zu beams, %zu overlaps, %zu gaps, %zu bare rails, %zu too long (longest %.2f m), widest spacing %.2f m at %s; %zu shared off one plane, %zu switch panels off one plane, %zu ends clipped, %zu beams dropped, slowest cluster %.1f ms of %zu tracks; in %.1f ms",
-		    result.beams, result.overlaps, result.gaps, result.bare, result.toolong, result.longest, result.widest, result.widestat.c_str(), result.offplane, result.panels, result.clipped, result.dropped, result.slowest, result.biggest,
+		WriteLog(format("SELFTEST sleepercheck: %zu beams, %zu overlaps, %zu gaps, %zu bare rails, %zu too long (longest %.2f m), widest spacing %.2f m at %s; %zu shared off one plane, %zu switch panels off one plane, %zu ends clipped, %zu beams dropped, slowest cluster %.1f ms of %zu tracks; digest %016llx; in %.1f ms",
+		    result.beams, result.overlaps, result.gaps, result.bare, result.toolong, result.longest, result.widest, result.widestat.c_str(), result.offplane, result.panels, result.clipped, result.dropped, result.slowest, result.biggest, static_cast<unsigned long long>(result.digest),
 		    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count()));
 		for (auto const &example : result.examples)
 			WriteLog("SELFTEST sleepercheck " + example);
@@ -3247,6 +3247,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 			{
 				for (auto const &geometry : *sequence)
 				{
+					// an empty piece of a rail gets no chunk, as the renderer skips it
+					if (geometry == null_handle)
+						continue;
 					++chunks;
 					for (auto const &vertex : GfxRenderer->Vertices(geometry))
 					{
