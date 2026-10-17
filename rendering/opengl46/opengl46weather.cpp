@@ -456,7 +456,8 @@ void opengl46_weather::prepare_view(glm::ivec2 const &Size, quality_level const 
 		m_fog_grid = Level.fog_grid;
 		for (auto &scattering : m_fog_scattering)
 			scattering = create_texture(GL_TEXTURE_3D, GL_RGBA16F, m_fog_grid, GL_LINEAR, GL_CLAMP_TO_EDGE);
-		m_fog_integrated = create_texture(GL_TEXTURE_3D, GL_RGBA16F, m_fog_grid, GL_LINEAR, GL_CLAMP_TO_EDGE);
+		// one slice more: the fog through the whole volume without the clouds, which the sky takes (fog_integrate.comp)
+		m_fog_integrated = create_texture(GL_TEXTURE_3D, GL_RGBA16F, m_fog_grid + glm::ivec3{0, 0, 1}, GL_LINEAR, GL_CLAMP_TO_EDGE);
 		m_previous_fog.valid = false;
 	}
 	m_view_level = Level;
@@ -558,6 +559,7 @@ void opengl46_weather::render_view(glm::mat4 const &Projection, glm::mat4 const 
 		glBindImageTexture(0, m_fog_integrated, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 		glProgramUniform3i(*m_integrate_program, 0, m_fog_grid.x, m_fog_grid.y, m_fog_grid.z);
 		glProgramUniformMatrix4fv(*m_integrate_program, 1, 1, GL_FALSE, glm::value_ptr(inverseprojection));
+		glProgramUniformMatrix4fv(*m_integrate_program, 2, 1, GL_FALSE, glm::value_ptr(viewtoworld));
 		glProgramUniform4fv(*m_integrate_program, 3, 1, glm::value_ptr(slicing));
 		m_integrate_program->dispatch(groups(m_fog_grid.x), groups(m_fog_grid.y), 1);
 		glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);

@@ -3,19 +3,37 @@
 // (apply_fog.glsl). the light of a cell is integrated over its length as Hillaire (2015) does it, so it doesn't grow with
 // the size of the cell. the light of the cells is taken with the light of their neighbours across the view, a 3x3 tent filter
 // (four fetches of the linear filter): every cell is sampled at a point of its own in a frame, and what is left of that after
-// the blending over frames differs from cell to cell, which the filter evens out. the history keeps the cells unfiltered
+// the blending over frames differs from cell to cell, which the filter evens out. the history keeps the cells unfiltered.
+// past the last slice one more: the fog all the way through the volume without the low clouds it holds, for the sky
 
 #include <common>
+#include <weather_common.glsl>
 
 layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, local_size_z = 1) in;
 
 layout(binding = CLOUD_HISTORY_TEX) uniform sampler3D fog_scattering;
+layout(binding = CLOUD_SHAPE_TEX) uniform sampler3D cloud_shape_noise;
 layout(rgba16f, binding = 0) uniform writeonly image3D fog_integrated;
 
 layout(location = 0) uniform ivec3 grid;
 layout(location = 1) uniform mat4 inverse_projection;
+layout(location = 2) uniform mat4 view_to_world;
 // x: near, y: far, z: slices / log((far + FOG_VOLUME_BIAS) / (near + FOG_VOLUME_BIAS))
 layout(location = 3) uniform vec4 slicing;
+
+// extinction (1/m) of the haze and the ground fog at a point, made as fog_inject.comp makes them
+float fog_clear_extinction(vec3 world)
+{
+	float height = weather_camera.x + world.y;
+	float haze = fog_haze.x * exp(-fog_haze.y * max(height, 0.0));
+	float ground = fog_ground.x * exp(-fog_ground.y * max(height - fog_ground.z, 0.0));
+	if (ground > 0.0 && fog_ground.w > 0.0)
+	{
+		float patches = textureLod(cloud_shape_noise, (world + fog_noise.xyz) * fog_noise.w, 0.0).g;
+		ground *= mix(1.0, clamp((patches - 0.3) * 2.6, 0.0, 2.2), fog_ground.w);
+	}
+	return haze + ground;
+}
 
 void main()
 {
@@ -30,6 +48,10 @@ void main()
 
 	vec3 light = vec3(0.0);
 	float transmittance = 1.0;
+	// the same without the clouds: over the sky the ray march draws them (clouds_march.comp), and the volume laid over it would draw
+	// those within its reach a second time, blurred to the size of the cells and cut into bands by the slices
+	vec3 clearlight = vec3(0.0);
+	float cleartransmittance = 1.0;
 	float front = slicing.x;
 	for (int slice = 0; slice < grid.z; slice++)
 	{
@@ -39,14 +61,24 @@ void main()
 		vec4 cell = texelFetch(fog_scattering, ivec3(column, slice), 0);
 		float depthcoord = (float(slice) + 0.5) / float(grid.z);
 		vec2 texel = 1.0 / vec2(grid.xy);
-		cell.rgb = 0.25 * (textureLod(fog_scattering, vec3(coords + vec2(-0.5, -0.5) * texel, depthcoord), 0.0).rgb
-		                 + textureLod(fog_scattering, vec3(coords + vec2(0.5, -0.5) * texel, depthcoord), 0.0).rgb
-		                 + textureLod(fog_scattering, vec3(coords + vec2(-0.5, 0.5) * texel, depthcoord), 0.0).rgb
-		                 + textureLod(fog_scattering, vec3(coords + vec2(0.5, 0.5) * texel, depthcoord), 0.0).rgb);
+		vec4 filtered = 0.25 * (textureLod(fog_scattering, vec3(coords + vec2(-0.5, -0.5) * texel, depthcoord), 0.0)
+		                      + textureLod(fog_scattering, vec3(coords + vec2(0.5, -0.5) * texel, depthcoord), 0.0)
+		                      + textureLod(fog_scattering, vec3(coords + vec2(-0.5, 0.5) * texel, depthcoord), 0.0)
+		                      + textureLod(fog_scattering, vec3(coords + vec2(0.5, 0.5) * texel, depthcoord), 0.0));
+		cell.rgb = filtered.rgb;
 		float extinction = max(cell.a, 1e-7);
 		float through = exp(-extinction * span);
 		light += transmittance * cell.rgb * ((1.0 - through) / extinction);
 		transmittance *= through;
 		imageStore(fog_integrated, ivec3(column, slice), vec4(light, transmittance));
+		// the haze and the ground fog of the cell, at its middle, and their light as that of the cell per extinction, the lamps and the
+		// shadows with it; what is left of the extinction is the clouds. the light per extinction from the filtered cells, light and
+		// extinction alike: the filtered light over the extinction of the cell alone would bring in the light of a cloud next to it
+		float middle = (slicing.x + FOG_VOLUME_BIAS) * exp((float(slice) + 0.5) / slicing.z) - FOG_VOLUME_BIAS;
+		float clear = min(fog_clear_extinction(mat3(view_to_world) * (ray / -ray.z * middle)), extinction);
+		float clearthrough = exp(-clear * span);
+		clearlight += cleartransmittance * (filtered.rgb / max(filtered.a, 1e-7)) * (1.0 - clearthrough);
+		cleartransmittance *= clearthrough;
 	}
+	imageStore(fog_integrated, ivec3(column, grid.z), vec4(clearlight, cleartransmittance));
 }

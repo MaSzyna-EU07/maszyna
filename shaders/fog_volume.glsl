@@ -1,6 +1,7 @@
 // fog between the camera and a point of the view space (weather_common.glsl): from the fog volume of the main view
 // (fog_inject.comp, fog_integrate.comp) up to its far end and along the ray past it, or along the ray all the way in the
-// other passes. Fragcoord: the pixel of the target the point is seen at
+// other passes. Fragcoord: the pixel of the target the point is seen at. the volume holds one slice more than fog_volume_params.w:
+// the fog through all of it without the clouds, for the sky
 #ifndef FOG_VOLUME_GLSL
 #define FOG_VOLUME_GLSL
 
@@ -46,22 +47,17 @@ vec4 fog_along_view(vec3 view, vec2 fragcoord)
 	float slice = log(max((depth + FOG_VOLUME_BIAS) / (fog_volume_params.y + FOG_VOLUME_BIAS), 1e-6)) * fog_volume_params.z;
 	vec2 coords = fragcoord * fog_volume_target.xy;
 	if (slice < 1.0)
-		return mix(vec4(0.0, 0.0, 0.0, 1.0), fog_volume_at(coords, 0.5 / slices), max(slice, 0.0));
+		return mix(vec4(0.0, 0.0, 0.0, 1.0), fog_volume_at(coords, 0.5 / (slices + 1.0)), max(slice, 0.0));
 	if (slice < slices)
-		return fog_volume_at(coords, (slice - 0.5) / slices);
-	vec4 volume = fog_volume_at(coords, (slices - 0.5) / slices);
+		return fog_volume_at(coords, (slice - 0.5) / (slices + 1.0));
+	vec4 volume = fog_volume_at(coords, (slices - 0.5) / (slices + 1.0));
 	vec4 rest = fog_analytic(direction, fog_volume_target.z * span_distance / depth, span_distance, false);
 	return vec4(volume.rgb + volume.a * rest.rgb, volume.a * rest.a);
 }
 
-// shares of the light the clouds in the volume hold back between which its fog over the sky gives way to the fog without the clouds.
-// low: the clouds of the volume (without the detail, so a little wider than those drawn) leave no light rim along their thin edges;
-// the lower end above what the cells of the volume and the fog along the ray differ by on their own
-const float FOG_SKY_CLOUD_LOW = 0.004;
-const float FOG_SKY_CLOUD_HIGH = 0.03;
-
 // fog in front of the sky in a view space direction: through the fog volume to its far end, then along the ray without the
-// haze the atmosphere draws already. the far fog of the volume and the fog over the sky behind it are the same then
+// haze the atmosphere draws already. the far fog of the volume and the fog over the sky behind it are the same then. the volume
+// is taken without the low clouds it holds (its extra slice): the ray march draws them over the sky already
 vec4 fog_sky(vec3 viewdirection, vec2 fragcoord)
 {
 	vec3 view = normalize(viewdirection);
@@ -69,19 +65,8 @@ vec4 fog_sky(vec3 viewdirection, vec2 fragcoord)
 	if (fog_volume_params.x < 0.5 || view.z > -1e-3)
 		return fog_analytic(direction, 0.0, 200000.0, true);
 	float slices = fog_volume_params.w;
-	vec4 volume = fog_volume_at(fragcoord * fog_volume_target.xy, (slices - 0.5) / slices);
-	float far = fog_volume_target.z / -view.z;
-	// the volume holds the low clouds within its reach (fog_inject.comp), for what stands in them; over the sky they are drawn by the
-	// ray march (clouds_march.comp) already. laid on a second time at the size of the cells they would show blurred and grey, with a
-	// light rim, and cut into bands where the slices cross them. where the volume lets through less than the fog without the clouds,
-	// that fog is taken instead
-	if (weather_camera.z > 0.5)
-	{
-		vec4 clear = fog_analytic(direction, 0.0, far, false);
-		float clouds = smoothstep(FOG_SKY_CLOUD_LOW, FOG_SKY_CLOUD_HIGH, 1.0 - volume.a / max(clear.a, 1e-4));
-		volume = mix(volume, clear, clouds);
-	}
-	vec4 rest = fog_analytic(direction, far, 200000.0, true);
+	vec4 volume = fog_volume_at(fragcoord * fog_volume_target.xy, (slices + 0.5) / (slices + 1.0));
+	vec4 rest = fog_analytic(direction, fog_volume_target.z / -view.z, 200000.0, true);
 	return vec4(volume.rgb + volume.a * rest.rgb, volume.a * rest.a);
 }
 
