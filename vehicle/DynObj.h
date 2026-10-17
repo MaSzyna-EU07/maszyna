@@ -816,6 +816,8 @@ private:
     // zapytanie do AI, po którym segmencie skrzyżowania jechać
     int RouteWish(TTrack *tr);
     void DestinationSet(std::string to, std::string numer);
+    // blanks electronic destination sign at the end of the service; physical signs stay until changed
+    void DestinationClear();
     material_handle DestinationFind( std::string Destination );
     void OverheadTrack(float o);
     glm::dvec3 get_future_movement() const;

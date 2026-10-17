@@ -1304,6 +1304,10 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
 #endif
                     asNextStop = TrainParams.NextStop(); // informacja o końcu trasy
                     TrainParams.NewName("none"); // czyszczenie nieaktualnego rozkładu
+                    // koniec kursu, gasimy wyświetlacze relacji (tablice blaszane zostają)
+                    for( auto *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+                        vehicle->DestinationClear();
+                    }
                     // ma nie podjeżdżać pod W4 i ma je pomijać
                     iDrivigFlags &= ~moveStopCloser;
                     if( false == TestFlag( iDrivigFlags, movePushPull ) ) {

@@ -7794,6 +7794,13 @@ int TDynamicObject::RouteWish(TTrack *tr)
     return Mechanik ? Mechanik->CrossRoute(tr) : 0; // wg AI albo prosto
 };
 
+void TDynamicObject::DestinationClear() {
+
+    if( false == DestinationSign.has_light ) { return; } // physical destination signs remain up until manually changed
+    // update_destinations() shows the blank sign in place of the missing destination
+    DestinationSign.destination = null_handle;
+}
+
 void TDynamicObject::DestinationSet(std::string to, std::string numer) {
     // ustawienie stacji docelowej oraz wymiennej tekstury 4, jeśli istnieje plik
     // w zasadzie, to każdy wagon mógłby mieć inną stację docelową
