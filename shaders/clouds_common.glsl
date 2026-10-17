@@ -13,7 +13,7 @@ const float CLOUD_EARTH_RADIUS = 6360000.0;
 const float CLOUD_FILL_EDGE = 0.45;
 const float CLOUD_FILL_CORE = 0.85;
 // how fast the density rises inside the edge of a cloud: above 1 the edges are crisper, the inside keeps its density
-const float CLOUD_EDGE_SHARPNESS = 2.0;
+const float CLOUD_EDGE_SHARPNESS = 3.0;
 
 float cloud_remap(float value, float low, float high, float newlow, float newhigh)
 {

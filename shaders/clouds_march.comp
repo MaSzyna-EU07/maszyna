@@ -30,8 +30,14 @@ const float CLOUD_SUN_SCALE = 1.5;
 const float CLOUD_AMBIENT_SCALE = 1.0;
 // the ground under the clouds lights their bases back with this share of the light falling on it
 const float CLOUD_GROUND_ALBEDO = 0.2;
-// how fast the light of the sky fades into a cloud, per optical depth of the cloud above (or below) a point
+// how fast the light of the sky fades into a cloud, per optical depth of the cloud below a point, or above it past CLOUD_SKY_REACH
 const float CLOUD_AMBIENT_FADE = 0.05;
+// the part of the cloud over a point looked at for the sky light held back (cloud_sky_depth), metres, how fast the light fades
+// per optical depth there (less than the extinction: the light scattered many times gets through further), and the share left
+// in the darkest places
+const float CLOUD_SKY_REACH = 400.0;
+const float CLOUD_SKY_FADE = 0.25;
+const float CLOUD_SKY_FLOOR = 0.15;
 // how dense a cloud has to be to scatter the sunlight back at full: the thin edges and wisps of the side lit by the sun, seen with the
 // sun behind, are darker than its bulk (the "powder" effect: the light takes a few scatterings to turn back towards the view)
 const float CLOUD_POWDER = 6.0;
@@ -89,6 +95,20 @@ float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float 
 	return light;
 }
 
+// optical depth of the cloud over a point up to Reach above it, from Samples of the coarse density: under a lump and deep in a
+// thick cloud the sky light is held back, at the tops and the thin edges it is not, so the shaded sides take the form of the cloud
+float cloud_sky_depth(int index, vec3 position, float height, float reach, int samples)
+{
+	float depth = 0.0;
+	for (int s = 0; s < samples; s++)
+	{
+		// up along the vertical: the height grows by the same distance (cloud_height bends only with the horizontal distance)
+		float up = reach * (float(s) + 0.5) / float(samples);
+		depth += cloud_layer_density(index, position + vec3(0.0, up, 0.0), height + up, false);
+	}
+	return depth * reach / float(samples);
+}
+
 float interleaved_noise(vec2 pixel)
 {
 	return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
@@ -124,6 +144,7 @@ void main()
 	float maxdistance = quality.z;
 	int maxsteps = int(quality.x);
 	int lightsteps = int(quality.y);
+	int skysteps = (lightsteps >= 4) ? 2 : 1;
 	bool detail = quality.w > 0.5;
 	float jitter = fract(interleaved_noise(vec2(texel)) + float(frame) * 0.618034);
 
@@ -187,9 +208,10 @@ void main()
 			// the light of the sky reaches inside through the cloud above, that of the ground through the cloud below: the base of a
 			// thick cloud is darker than its top, and greyer, lit only by the ground and the sky at its sides
 			float column = layer.shape.y * layer.shape.x;
-			float above = column * (layer.heights.y - height);
+			float reach = min(layer.heights.y - height, CLOUD_SKY_REACH);
+			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps) - CLOUD_AMBIENT_FADE * column * (layer.heights.y - height - reach));
 			float below = column * (height - layer.heights.x);
-			vec3 light = sunlight * sunshare + (ambienttop * mix(0.15, 1.0, exp(-CLOUD_AMBIENT_FADE * above)) + ambientbottom * exp(-CLOUD_AMBIENT_FADE * below)) * powder;
+			vec3 light = sunlight * sunshare + (ambienttop * mix(CLOUD_SKY_FLOOR, 1.0, sky) + ambientbottom * exp(-CLOUD_AMBIENT_FADE * below));
 			float through = exp(-density * step);
 			vec3 inscattered = light * (1.0 - through);
 			scattered += transmittance * inscattered;
