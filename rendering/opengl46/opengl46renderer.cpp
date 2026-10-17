@@ -888,6 +888,14 @@ void opengl46_renderer::draw_debug_ui()
         m_sky.draw_debug_ui();
         ImGui::SliderFloat("sun disc, 1 = physical (gfx.sun.disc)", &Global.gfx_sun_disc, 0.f, 2.f);
         ImGui::SliderFloat("moon disc (gfx.moon.disc)", &Global.gfx_moon_disc, 0.f, 8.f);
+        {
+            // where the sun and the moon are: azimuth from the north to the east (the sky has x to the west, z to the north)
+            auto const azimuth = [](glm::vec3 const &Direction) { return glm::degrees(std::atan2(-Direction.x, Direction.z)) + (Direction.x > 0.f ? 360.f : 0.f); };
+            auto const &sun{simulation::Environment.sun()};
+            auto const &moon{simulation::Environment.moon()};
+            ImGui::Text("sun: elevation %.1f, azimuth %.1f", sun.getAngle(), azimuth(sun.getDirection()));
+            ImGui::Text("moon: elevation %.1f, azimuth %.1f, lit %.0f%%, age %.1f d", moon.getAngle(), azimuth(moon.getDirection()), 100.f * moon.getIllumination(), moon.getPhase());
+        }
         ImGui::Separator();
         m_exposure.draw_debug_ui();
         ImGui::Separator();
@@ -2310,7 +2318,15 @@ bool opengl46_renderer::Render(world_environment *Environment)
 		Bind_Texture(0, m_moontexture);
     	glm::vec3 mooncolor(1.0f, 0.9490196f, 0.9058824f);
 		// fade the moon if it's near the sun in the sky, especially during the day
-		float const visibility = std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(Environment->m_sun.getDirection(), Environment->m_moon.getDirection()))) * overcastfactor;
+		float visibility = std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(Environment->m_sun.getDirection(), Environment->m_moon.getDirection()))) * overcastfactor;
+		if (mainview && (false == Global.gfx_skippipeline))
+		{
+			// in the image of the frame the moon is as bright as its surface in the sunlight: about the diffuse colour of the
+			// sun (1.0 .. 1.45) times SUN_DIFFUSE_SCALE (1.5, light_common.glsl), taken down by the albedo of the real moon (0.12)
+			// against that of the picture (about 0.19). it is laid over the sky, which hides it by day only as much as the real
+			// sky does: a pale moon by day, a bright one at night
+			visibility = 1.4f * overcastfactor;
+		}
 
 		auto const moonvector = Environment->m_moon.getDirection();
 		auto const moonradius{Environment->m_moon.getAngularRadius()};
