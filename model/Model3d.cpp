@@ -898,8 +898,7 @@ std::vector<TSubModel *> const &TSubModel::text_letters(std::string const &Text)
 {
 	// the sequence is prepared once for each text the display shows. the texts of the model instances don't change,
 	// so drawing a display afterwards costs a single lookup, however many instances and passes take turns
-	auto const prepared{m_textlayouts.find(Text)};
-	if (prepared != m_textlayouts.end())
+	if (auto const prepared{m_textlayouts.find(Text)}; prepared != m_textlayouts.end())
 	{
 		return prepared->second;
 	}
