@@ -710,6 +710,9 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
     glm::dvec3 point, tangent;
     ours.at( 0.0, point, tangent );
     auto otherat { nearest_distance( theirs, point ) };
+    glm::dvec3 start, along;
+    theirs.at( otherat, start, along );
+    auto const tangential { std::abs( glm::cross( glm::normalize( glm::dvec3 { tangent.x, 0.0, tangent.z } ), glm::normalize( glm::dvec3 { along.x, 0.0, along.z } ) ).y ) < blade_tangent };
     for( int i = 0; i <= count; ++i ) {
         auto const distance { length * i / count };
         ours.at( distance, point, tangent );
@@ -734,6 +737,9 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
         }
         return -1.0; };
     result.tip = reach( blade_point );
+    if( auto const nose { reach( blade_nose ) }; tangential && nose >= 0.0 ) {
+        result.tip = std::max( result.tip, nose - blade_planed );
+    }
     result.full = reach( size.head + blade_gap );
     auto const clear { reach( size.head + blade_clearance ) };
     auto const foot { reach( size.high + blade_gap ) };
