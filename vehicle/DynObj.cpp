@@ -4150,6 +4150,8 @@ bool TDynamicObject::Update(double dt, double dt1)
 
 
     // mirrors
+    auto const mirrorleft { dMirrorMoveL };
+    auto const mirrorright { dMirrorMoveR };
     if( MoverParameters->Vel > MoverParameters->MirrorVelClose
 		|| MoverParameters->CabActive == 0 && activation::mirrors
 		|| MoverParameters->MirrorForbidden ) {
@@ -4180,6 +4182,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                 dMirrorMoveR + 1.0 * dt1 );
         }
     }
+    play_mirror_sounds( side::left, m_mirrormotion[ side::left ].update( dMirrorMoveL - mirrorleft ) );
+    play_mirror_sounds( side::right, m_mirrormotion[ side::right ].update( dMirrorMoveR - mirrorright ) );
 
     // compartment lights
     // if the vehicle has a controller, we base the light state on state of the controller otherwise we check the vehicle itself
@@ -4825,12 +4829,13 @@ void TDynamicObject::RenderSounds() {
 
     // horns
     {
-        // for moving vehicle combine regular horn activation flag with emergency brake horn activation flag, if the brake is active
-        auto const warningsignal { (
-            MoverParameters->Vel > 0.5 && MoverParameters->AlarmChainFlag ?
+        // for moving vehicle combine regular horn activation flag with emergency brake horn activation flag, if the brake is active;
+        // the horns without the air or the voltage they need stay silent
+        auto const warningsignal { MoverParameters->SoundingHorns(
+            ( MoverParameters->Vel > 0.5 && MoverParameters->AlarmChainFlag ?
                 MoverParameters->EmergencyBrakeWarningSignal :
                 0 )
-            | MoverParameters->WarningSignal };
+            | MoverParameters->WarningSignal ) };
 
         if( TestFlag( warningsignal, 1 ) ) {
             sHorn1.play( sound_flags::exclusive | sound_flags::looping );
@@ -6363,6 +6368,19 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                     }
                 }
 
+                else if( token == "mirroropen:" || token == "mirrorclose:" ) {
+                    sound_source soundtemplate { sound_placement::general };
+                    soundtemplate.deserialize( parser, sound_type::single );
+                    soundtemplate.owner( this );
+                    for( auto &mirror : m_mirrorsounds ) {
+                        // apply configuration to all defined mirrors, but preserve their individual offsets
+                        auto &sound { token == "mirroropen:" ? mirror.unfold : mirror.fold };
+                        auto const mirroroffset { sound.offset() };
+                        sound = soundtemplate;
+                        sound.offset( mirroroffset );
+                    }
+                }
+
                 else if( token == "doorstepclose:" ) {
                     sound_source soundtemplate { sound_placement::general };
                     soundtemplate.deserialize( parser, sound_type::single );
@@ -6573,6 +6591,27 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                             doorspeaker_sounds {
                                 { 0.f, 3.f, offset },
                                 {} } );
+                    }
+                }
+
+                else if( token == "mirrors:" ) {
+                    // a list of offsets along vehicle's z-axis of the mirror pairs, one at each cab; followed with "end"
+                    while( (token = parser.getToken<std::string>()) != ""
+                        && token != "end" ) {
+                        // vehicle faces +Z in 'its' space, as for the doors negative value means ahead of centre
+                        auto const offset { std::atof( token.c_str() ) * -1.f };
+                        mirror_sounds mirror;
+                        mirror.end = offset >= 0.f ? end::front : end::rear;
+                        for( auto const mirrorside : { side::left, side::right } ) {
+                            auto const location { glm::vec3 {
+                                MoverParameters->Dim.W * ( mirrorside == side::left ? 0.5f : -0.5f ),
+                                MoverParameters->Dim.H * 0.5f,
+                                offset } };
+                            mirror.placement = mirrorside;
+                            mirror.unfold.offset( location );
+                            mirror.fold.offset( location );
+                            m_mirrorsounds.emplace_back( mirror );
+                        }
                     }
                 }
 
@@ -7794,7 +7833,29 @@ int TDynamicObject::RouteWish(TTrack *tr)
     return Mechanik ? Mechanik->CrossRoute(tr) : 0; // wg AI albo prosto
 };
 
-void TDynamicObject::DestinationSet(std::string to, std::string numer) {
+void TDynamicObject::play_mirror_sounds( side const Side, mirror_moves::event const Event ) {
+
+    if( Event == mirror_moves::event::none ) { return; }
+    // as UpdateMirror(), only the mirrors of the occupied cab move
+    if( MoverParameters->CabOccupied == 0 ) { return; }
+    auto const cabend { MoverParameters->CabOccupied > 0 ? end::front : end::rear };
+    for( auto &mirror : m_mirrorsounds ) {
+        if( mirror.placement != Side || mirror.end != cabend ) { continue; }
+        auto &sound { Event == mirror_moves::event::unfolding ? mirror.unfold : mirror.fold };
+        auto &other { Event == mirror_moves::event::unfolding ? mirror.fold : mirror.unfold };
+        other.stop();
+        sound.play( sound_flags::exclusive );
+    }
+}
+
+void TDynamicObject::DestinationClear() {
+
+    if( false == DestinationSign.has_light ) { return; } // physical destination signs remain up until manually changed
+    // update_destinations() shows the blank sign in place of the missing destination
+    DestinationSign.destination = null_handle;
+}
+
+void TDynamicObject::DestinationSet(std::string const &to, std::string const &numer) {
     // ustawienie stacji docelowej oraz wymiennej tekstury 4, jeśli istnieje plik
     // w zasadzie, to każdy wagon mógłby mieć inną stację docelową
     // zwłaszcza w towarowych, pod kątem zautomatyzowania maewrów albo pracy górki
@@ -7823,6 +7884,15 @@ void TDynamicObject::DestinationSet(std::string to, std::string numer) {
     if( DestinationSign.script.empty() ) { return; } // no script so no way to make the texture
     if( numer == "none" )                { return; } // blank or incomplete/malformed timetable, don't bother
 
+    auto const trainname { [this]() -> std::string {
+        if( ctOwner != nullptr ) { return ctOwner->TrainName(); }
+        if( Mechanik != nullptr ) { return Mechanik->TrainName(); }
+        return "none"; } }; // shouldn't get here but, eh
+    auto const instance { [this]() -> std::string {
+        if( DestinationSign.instancing == "name" ) { return MoverParameters->Name; }
+        if( DestinationSign.instancing == "type" ) { return MoverParameters->TypeName; }
+        return "none"; } };
+
     std::string signrequest {
           "make:"
         + DestinationSign.script
@@ -7834,17 +7904,10 @@ void TDynamicObject::DestinationSet(std::string to, std::string numer) {
                 ctOwner->Vehicle()->MoverParameters->Name ) // owned vehicle, safer to point to owner as carriages can have identical names
         // basic instancing string
         // NOTE: underscore doesn't have any magic meaning for the time being, it's just less likely to conflict with regular dictionary keys
-        + "&_id1=" + (
-            ctOwner != nullptr ? ctOwner->TrainName() :
-            Mechanik != nullptr ? Mechanik->TrainName() :
-            "none" ) }; // shouldn't get here but, eh
+        + "&_id1=" + trainname() };
     // TBD, TODO: replace instancing with support for variables in extra parameters string?
     if( false == DestinationSign.instancing.empty() ) {
-        signrequest +=
-            "&_id2=" + (
-                DestinationSign.instancing == "name" ? MoverParameters->Name :
-                DestinationSign.instancing == "type" ? MoverParameters->TypeName :
-                "none" );
+        signrequest += "&_id2=" + instance();
     }
     // optionl extra parameters
     if( false == DestinationSign.parameters.empty() ) {

@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/Train.h"
+#include "vehicle/horn.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
@@ -340,6 +341,7 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::fuelpumpenable, &TTrain::OnCommand_fuelpumpenable},
     {user_command::fuelpumpdisable, &TTrain::OnCommand_fuelpumpdisable},
     {user_command::oilpumptoggle, &TTrain::OnCommand_oilpumptoggle},
+    {user_command::oilfuelpumptoggle, &TTrain::OnCommand_oilfuelpumptoggle},
     {user_command::oilpumpenable, &TTrain::OnCommand_oilpumpenable},
     {user_command::oilpumpdisable, &TTrain::OnCommand_oilpumpdisable},
     {user_command::waterheaterbreakertoggle, &TTrain::OnCommand_waterheaterbreakertoggle},
@@ -3995,6 +3997,37 @@ void TTrain::OnCommand_oilpumpdisable(TTrain *Train, command_data const &Command
 	}
 }
 
+void TTrain::OnCommand_oilfuelpumptoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action == GLFW_REPEAT)
+	{
+		return;
+	}
+
+	auto *vehicle{Train->mvControlled};
+	if (Train->ggOilFuelPumpButton.type() == TGaugeType::push)
+	{
+		// impulse switch, as the separate ones: held to start both pumps
+		auto const pressed{Command.action == GLFW_PRESS};
+		Train->ggOilFuelPumpButton.UpdateValue(pressed ? 1.0 : 0.0, Train->dsbSwitch);
+		vehicle->FuelPumpSwitch(pressed);
+		vehicle->OilPumpSwitch(pressed);
+		return;
+	}
+	// two-state switch, only cares about press events
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// both pumps go off if both were on, otherwise both go on
+	auto const enable{false == (vehicle->FuelPump.is_enabled && vehicle->OilPump.is_enabled)};
+	Train->ggOilFuelPumpButton.UpdateValue(enable ? 1.0 : 0.0, Train->dsbSwitch);
+	vehicle->FuelPumpSwitch(enable);
+	vehicle->FuelPumpSwitchOff(false == enable);
+	vehicle->OilPumpSwitch(enable);
+	vehicle->OilPumpSwitchOff(false == enable);
+}
+
 void TTrain::OnCommand_waterheaterbreakertoggle(TTrain *Train, command_data const &Command)
 {
 
@@ -6605,7 +6638,7 @@ void TTrain::OnCommand_heatingtoggle(TTrain *Train, command_data const &Command)
 			OnCommand_heatingdisable(Train, Command);
 		}
 	}
-	else if (Command.action == GLFW_RELEASE && Train->ggTrainHeatingButton.type() == TGaugeType::push)
+	else if (Command.action == GLFW_RELEASE && (Train->ggTrainHeatingButton.type() == TGaugeType::push || Train->mvOccupied->HeatingSwitchImpulse))
 	{
 		// impulse switch
 		// visual feedback
@@ -6623,6 +6656,11 @@ void TTrain::OnCommand_heatingenable(TTrain *Train, command_data const &Command)
 		// visual feedback
 		Train->ggTrainHeatingButton.UpdateValue(1.0, Train->dsbSwitch);
 	}
+	else if (Command.action == GLFW_RELEASE && Train->mvOccupied->HeatingSwitchImpulse)
+	{
+		// the switch springs back to the middle
+		Train->ggTrainHeatingButton.UpdateValue(0.0, Train->dsbSwitch);
+	}
 }
 
 void TTrain::OnCommand_heatingdisable(TTrain *Train, command_data const &Command)
@@ -6632,8 +6670,21 @@ void TTrain::OnCommand_heatingdisable(TTrain *Train, command_data const &Command
 	{
 
 		Train->mvOccupied->HeatingSwitch(false);
-		// visual feedback
-		Train->ggTrainHeatingButton.UpdateValue(Train->ggTrainHeatingButton.type() == TGaugeType::push ? 1.0 : 0.0, Train->dsbSwitch);
+		// visual feedback: an impulse switch is pushed the other way, down
+		auto position{0.0};
+		if (Train->mvOccupied->HeatingSwitchImpulse)
+		{
+			position = -1.0;
+		}
+		else if (Train->ggTrainHeatingButton.type() == TGaugeType::push)
+		{
+			position = 1.0;
+		}
+		Train->ggTrainHeatingButton.UpdateValue(position, Train->dsbSwitch);
+	}
+	else if (Command.action == GLFW_RELEASE && Train->mvOccupied->HeatingSwitchImpulse)
+	{
+		Train->ggTrainHeatingButton.UpdateValue(0.0, Train->dsbSwitch);
 	}
 }
 
@@ -7841,16 +7892,10 @@ void TTrain::OnCommand_hornlowactivate(TTrain *Train, command_data const &Comman
 	if (Command.action == GLFW_PRESS)
 	{
 		// only need to react to press, sound will continue until stopped
-		if (false == TestFlag(Train->mvOccupied->WarningSignal, 1))
+		if (false == TestFlag(Train->mvOccupied->WarningSignal, horn::low))
 		{
 			// turn on
-			Train->mvOccupied->WarningSignal |= 1;
-			/*
-			            if( true == TestFlag( Train->mvOccupied->WarningSignal, 2 ) ) {
-			                // low and high horn are treated as mutually exclusive
-			                Train->mvControlled->WarningSignal &= ~2;
-			            }
-			*/
+			Train->mvOccupied->WarningSignal = horn::pressed(Train->mvOccupied->WarningSignal, horn::low, Train->has_single_horn_lever());
 			// visual feedback
 			Train->ggHornButton.UpdateValue(-1.0);
 			Train->ggHornLowButton.UpdateValue(1.0);
@@ -7859,13 +7904,13 @@ void TTrain::OnCommand_hornlowactivate(TTrain *Train, command_data const &Comman
 	else if (Command.action == GLFW_RELEASE)
 	{
 		// turn off
-		/*
-		        // NOTE: we turn off both low and high horn, due to unreliability of release event when shift key is involved
-		        Train->mvOccupied->WarningSignal &= ~( 1 | 2 );
-		*/
-		Train->mvOccupied->WarningSignal &= ~1;
+		Train->mvOccupied->WarningSignal = horn::released(Train->mvOccupied->WarningSignal, horn::low);
 		// visual feedback
-		Train->ggHornButton.UpdateValue(0.0);
+		if (false == (Train->has_single_horn_lever() && TestFlag(Train->mvOccupied->WarningSignal, horn::high)))
+		{
+			// leave the single lever alone if it was moved to the other tone in the meantime
+			Train->ggHornButton.UpdateValue(0.0);
+		}
 		Train->ggHornLowButton.UpdateValue(0.0);
 	}
 }
@@ -7885,16 +7930,10 @@ void TTrain::OnCommand_hornhighactivate(TTrain *Train, command_data const &Comma
 	if (Command.action == GLFW_PRESS)
 	{
 		// only need to react to press, sound will continue until stopped
-		if (false == TestFlag(Train->mvOccupied->WarningSignal, 2))
+		if (false == TestFlag(Train->mvOccupied->WarningSignal, horn::high))
 		{
 			// turn on
-			Train->mvOccupied->WarningSignal |= 2;
-			/*
-			            if( true == TestFlag( Train->mvOccupied->WarningSignal, 1 ) ) {
-			                // low and high horn are treated as mutually exclusive
-			                Train->mvControlled->WarningSignal &= ~1;
-			            }
-			*/
+			Train->mvOccupied->WarningSignal = horn::pressed(Train->mvOccupied->WarningSignal, horn::high, Train->has_single_horn_lever());
 			// visual feedback
 			Train->ggHornButton.UpdateValue(1.0);
 			Train->ggHornHighButton.UpdateValue(1.0);
@@ -7903,13 +7942,13 @@ void TTrain::OnCommand_hornhighactivate(TTrain *Train, command_data const &Comma
 	else if (Command.action == GLFW_RELEASE)
 	{
 		// turn off
-		/*
-		        // NOTE: we turn off both low and high horn, due to unreliability of release event when shift key is involved
-		        Train->mvOccupied->WarningSignal &= ~( 1 | 2 );
-		*/
-		Train->mvOccupied->WarningSignal &= ~2;
+		Train->mvOccupied->WarningSignal = horn::released(Train->mvOccupied->WarningSignal, horn::high);
 		// visual feedback
-		Train->ggHornButton.UpdateValue(0.0);
+		if (false == (Train->has_single_horn_lever() && TestFlag(Train->mvOccupied->WarningSignal, horn::low)))
+		{
+			// leave the single lever alone if it was moved to the other tone in the meantime
+			Train->ggHornButton.UpdateValue(0.0);
+		}
 		Train->ggHornHighButton.UpdateValue(0.0);
 	}
 }
@@ -7953,12 +7992,7 @@ void TTrain::OnCommand_radiotoggle(TTrain *Train, command_data const &Command)
 		return;
 	}
 
-	// NOTE: we ignore the lack of 3d model to allow system reset after receiving radio-stop signal
-	/*
-	    if( false == Train->m_controlmapper.contains( "radio_sw:" ) ) {
-	        return;
-	    }
-	*/
+	// NOTE: works without the switch in the 3d model too, to allow system reset after receiving radio-stop signal
 	// only reacting to press, so the sound can loop uninterrupted
 	if (false == Train->mvOccupied->Radio)
 	{
@@ -8003,9 +8037,13 @@ void TTrain::OnCommand_radiochannelincrease(TTrain *Train, command_data const &C
 
 	if (Command.action == GLFW_PRESS)
 	{
-		command_data newCommand = Command;
-		newCommand.param1 = Train->RadioChannel() + 1;
-		OnCommand_radiochannelset(Train, newCommand);
+		// the channel buttons of a radio switched off or without power do nothing
+		if (Train->mvOccupied->RadioPowered())
+		{
+			command_data newCommand = Command;
+			newCommand.param1 = Train->RadioChannel() + 1;
+			OnCommand_radiochannelset(Train, newCommand);
+		}
 
 		Train->ggRadioChannelNext.UpdateValue(1.0);
 	}
@@ -8021,9 +8059,12 @@ void TTrain::OnCommand_radiochanneldecrease(TTrain *Train, command_data const &C
 
 	if (Command.action == GLFW_PRESS)
 	{
-		command_data newCommand = Command;
-		newCommand.param1 = Train->RadioChannel() - 1;
-		OnCommand_radiochannelset(Train, newCommand);
+		if (Train->mvOccupied->RadioPowered())
+		{
+			command_data newCommand = Command;
+			newCommand.param1 = Train->RadioChannel() - 1;
+			OnCommand_radiochannelset(Train, newCommand);
+		}
 
 		Train->ggRadioChannelPrevious.UpdateValue(1.0);
 	}
@@ -8049,7 +8090,7 @@ void TTrain::OnCommand_radiostopsend(TTrain *Train, command_data const &Command)
 
 	if (Command.action == GLFW_PRESS)
 	{
-		if (true == Train->mvOccupied->Radio && (Train->mvOccupied->Power24vIsAvailable || Train->mvOccupied->Power110vIsAvailable))
+		if (Train->mvOccupied->RadioPowered())
 		{
 			simulation::Region->RadioStop(Train->Dynamic()->GetPosition());
 		}
@@ -8067,7 +8108,7 @@ void TTrain::OnCommand_radiostopenable(TTrain *Train, command_data const &Comman
 {
 	if (Command.action == GLFW_PRESS && Train->ggRadioStop.GetValue() == 0)
 	{
-		if (true == Train->mvOccupied->Radio && (Train->mvOccupied->Power24vIsAvailable || Train->mvOccupied->Power110vIsAvailable))
+		if (Train->mvOccupied->RadioPowered())
 		{
 			simulation::Region->RadioStop(Train->Dynamic()->GetPosition());
 		}
@@ -8090,7 +8131,7 @@ void TTrain::OnCommand_radiostoptest(TTrain *Train, command_data const &Command)
 
 	if (Command.action == GLFW_PRESS)
 	{
-		if (Train->RadioChannel() == 10 && true == Train->mvOccupied->Radio && (Train->mvOccupied->Power24vIsAvailable || Train->mvOccupied->Power110vIsAvailable))
+		if (Train->RadioChannel() == 10 && Train->mvOccupied->RadioPowered())
 		{
 			Train->Dynamic()->RadioStop();
 		}
@@ -8108,7 +8149,7 @@ void TTrain::OnCommand_radiocall1send(TTrain *Train, command_data const &Command
 {
 	if (Command.action == GLFW_PRESS)
 	{
-		if (Train->RadioChannel() != 10 && true == Train->mvOccupied->Radio && (Train->mvOccupied->Power24vIsAvailable || Train->mvOccupied->Power110vIsAvailable))
+		if (Train->RadioChannel() != 10 && Train->mvOccupied->RadioPowered())
 		{
 			simulation::Events.queue_receivers(radio_message::call1, Train->Dynamic()->GetPosition());
 		}
@@ -8127,7 +8168,7 @@ void TTrain::OnCommand_radiocall3send(TTrain *Train, command_data const &Command
 
 	if (Command.action == GLFW_PRESS)
 	{
-		if (Train->RadioChannel() != 10 && true == Train->mvOccupied->Radio && (Train->mvOccupied->Power24vIsAvailable || Train->mvOccupied->Power110vIsAvailable))
+		if (Train->RadioChannel() != 10 && Train->mvOccupied->RadioPowered())
 		{
 			simulation::Events.queue_receivers(radio_message::call3, Train->Dynamic()->GetPosition());
 		}
@@ -8146,9 +8187,13 @@ void TTrain::OnCommand_radiovolumeincrease(TTrain *Train, command_data const &Co
 
 	if (Command.action == GLFW_PRESS)
 	{
-		command_data newCommand = Command;
-		newCommand.param1 = Train->m_radiovolume + 0.125;
-		OnCommand_radiovolumeset(Train, newCommand);
+		// so do the volume buttons
+		if (Train->mvOccupied->RadioPowered())
+		{
+			command_data newCommand = Command;
+			newCommand.param1 = Train->m_radiovolume + 0.125;
+			OnCommand_radiovolumeset(Train, newCommand);
+		}
 		Train->ggRadioVolumeNext.UpdateValue(1.0);
 	}
 	else if (Command.action == GLFW_RELEASE)
@@ -8163,9 +8208,12 @@ void TTrain::OnCommand_radiovolumedecrease(TTrain *Train, command_data const &Co
 
 	if (Command.action == GLFW_PRESS)
 	{
-		command_data newCommand = Command;
-		newCommand.param1 = Train->m_radiovolume - 0.125;
-		OnCommand_radiovolumeset(Train, newCommand);
+		if (Train->mvOccupied->RadioPowered())
+		{
+			command_data newCommand = Command;
+			newCommand.param1 = Train->m_radiovolume - 0.125;
+			OnCommand_radiovolumeset(Train, newCommand);
+		}
 		Train->ggRadioVolumePrevious.UpdateValue(1.0);
 	}
 	else if (Command.action == GLFW_RELEASE)
@@ -8931,7 +8979,7 @@ bool TTrain::Update(double const Deltatime)
 
 		btLampkaOpory.Turn(mvControlled->StLinFlag && mvControlled->ResistorsFlagCheck());
 		btLampkaBezoporowa.Turn(mvControlled->ResistorsFlagCheck() || mvControlled->MainCtrlActualPos == 0); // do EU04
-		btLampkaStyczn.Turn(!mvControlled->StLinFlag && !mvControlled->ControlPressureSwitch && mvControlled->BrakePress < 1.0); // mozna prowadzic rozruch
+		btLampkaStyczn.Turn(mvControlled->LineContactorsLampLit()); // mozna prowadzic rozruch
 		btLampkaPrzekRozn.Turn(!mvControlled->GroundRelay && !mvControlled->ControlPressureSwitch && mvControlled->BrakePress < 1.0); // relay is off and needs a reset
 		btLampkaNadmSil.Turn(mvControlled->FuseFlagCheck() && !mvControlled->ControlPressureSwitch && mvControlled->BrakePress < 1.0); // relay is off and needs a reset
 		btLampkaUkrotnienie.Turn(TestFlag(mvControlled->Couplers[mvControlled->CabOccupied == 1 ? rear : front].CouplingFlag, control));
@@ -9180,14 +9228,7 @@ bool TTrain::Update(double const Deltatime)
 				btLampkaOporyB.Turn(mover->ResistorsFlagCheck());
 				btLampkaBezoporowaB.Turn(true == mover->ResistorsFlagCheck() || mover->MainCtrlActualPos == 0); // do EU04
 
-				if (mover->StLinFlag || mover->ControlPressureSwitch)
-				{
-					btLampkaStycznB.Turn(false);
-				}
-				else if (mover->BrakePress < 1.0)
-				{
-					btLampkaStycznB.Turn(true); // mozna prowadzic rozruch
-				}
+				btLampkaStycznB.Turn(mover->LineContactorsLampLit()); // mozna prowadzic rozruch
 				// hunter-271211: sygnalizacja poslizgu w pierwszym pojezdzie, gdy wystapi w drugim
 				if (mover->SlippingWheels)
 				{
@@ -9583,6 +9624,7 @@ bool TTrain::Update(double const Deltatime)
 	ggWaterCircuitsLinkButton.Update();
 	ggFuelPumpButton.Update();
 	ggOilPumpButton.Update();
+	ggOilFuelPumpButton.Update();
 	ggMotorBlowersFrontButton.Update();
 	ggMotorBlowersRearButton.Update();
 	ggMotorBlowersAllOffButton.Update();
@@ -10106,7 +10148,7 @@ void TTrain::update_sounds_radio()
 		std::erase_if(m_radiomessages, [](auto const &source) { return false == source.second->is_playing(); });
 	}
 	// adjust audibility of remaining messages based on current radio conditions
-	auto const radioenabled{true == mvOccupied->Radio && (mvOccupied->Power24vIsAvailable || mvOccupied->Power110vIsAvailable)};
+	auto const radioenabled{mvOccupied->RadioPowered()};
 	for (auto const &[messagechannel, messagesound] : m_radiomessages)
 	{
 		auto const volume{true == radioenabled && Dynamic()->Mechanik != nullptr && messagechannel == RadioChannel() ? m_radiovolume : 0.0};
@@ -10893,7 +10935,7 @@ void TTrain::radio_message(sound_source *Message, int const Channel)
 	m_radiomessages.emplace_back(Channel, std::make_shared<sound_source>(m_radiosound));
 	// assign sound to the template and play it
 	auto &message = *m_radiomessages.back().second.get();
-	auto const radioenabled{true == mvOccupied->Radio && (mvOccupied->Power24vIsAvailable || mvOccupied->Power110vIsAvailable)};
+	auto const radioenabled{mvOccupied->RadioPowered()};
 	auto const volume{true == radioenabled && Dynamic()->Mechanik != nullptr && Channel == RadioChannel() ? 1.0 : 0.0};
 	message.copy_sounds(*Message).gain(static_cast<float>(volume)).play();
 }
@@ -11081,6 +11123,7 @@ void TTrain::clear_cab_controls()
 	ggWaterCircuitsLinkButton.Clear();
 	ggFuelPumpButton.Clear();
 	ggOilPumpButton.Clear();
+	ggOilFuelPumpButton.Clear();
 	ggMotorBlowersFrontButton.Clear();
 	ggMotorBlowersRearButton.Clear();
 	ggMotorBlowersAllOffButton.Clear();
@@ -11362,7 +11405,7 @@ void TTrain::set_cab_controls(int const Cab)
 		ggDoorStepButton.PutValue(mvOccupied->Doors.step_enabled ? 1.f : 0.f);
 	}
 	// heating
-	if (false == ggTrainHeatingButton.is_push())
+	if (false == ggTrainHeatingButton.is_push() && false == mvControlled->HeatingSwitchImpulse)
 	{
 		ggTrainHeatingButton.PutValue(mvControlled->Heating ? 1.f : 0.f);
 	}
@@ -11414,6 +11457,11 @@ void TTrain::set_cab_controls(int const Cab)
 	if (ggOilPumpButton.type() != TGaugeType::push)
 	{
 		ggOilPumpButton.PutValue(mvControlled->OilPump.is_enabled ? 1.f : 0.f);
+	}
+	// joint oil and fuel pump
+	if (ggOilFuelPumpButton.type() != TGaugeType::push)
+	{
+		ggOilFuelPumpButton.PutValue(mvControlled->FuelPump.is_enabled && mvControlled->OilPump.is_enabled ? 1.f : 0.f);
 	}
 	// traction motor fans
 	if (ggMotorBlowersFrontButton.type() != TGaugeType::push)
@@ -11742,6 +11790,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"watercircuitslink_sw:", ggWaterCircuitsLinkButton},
 	                                                          {"fuelpump_sw:", ggFuelPumpButton},
 	                                                          {"oilpump_sw:", ggOilPumpButton},
+	                                                          {"oilfuelpump_sw:", ggOilFuelPumpButton},
 	                                                          {"oilpressb:", ggOilPressB},
 	                                                          {"motorblowersfront_sw:", ggMotorBlowersFrontButton},
 	                                                          {"motorblowersrear_sw:", ggMotorBlowersRearButton},

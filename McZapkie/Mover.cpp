@@ -16,6 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
+
+#include <format>
 //---------------------------------------------------------------------------
 
 // Ra: tu należy przenosić funcje z mover.pas, które nie są z niego wywoływane.
@@ -1177,6 +1179,51 @@ double TMoverParameters::EngineMaxRPM() const
 }
 
 // *************************************************************************************************
+// prędkość zbliżania się stykających się końców pojazdów przy zderzeniu, w km/h
+// *************************************************************************************************
+double TMoverParameters::CollisionVelocity(int const End, TMoverParameters const &Other, int const OtherEnd) const
+{
+	// V runs along the vehicle's own axis, towards its front; the other vehicle's velocity is turned around when the
+	// vehicles face each other (touch with the same ends), as in CouplerForce()
+	auto const velocitydifference{V - Other.V * DirPatch(End, OtherEnd)};
+	// the front end closes in on the other vehicle when this one moves forward faster, the rear end when it's slower
+	return (End == end::front ? velocitydifference : -velocitydifference) * 3.6; // m/s -> km/h
+}
+
+bool TMoverParameters::AutomaticCouplingSafe(int const End, TMoverParameters const &Other, int const OtherEnd) const
+{
+	return false == Global.crash_damage || CollisionVelocity(End, Other, OtherEnd) <= SafeCollisionVelocity;
+}
+
+int TMoverParameters::SoundingHorns(int const Signal) const
+{
+	auto const supplied{[this](horn_supply const Supply) {
+		if (Supply == horn_supply::electric)
+		{
+			return Power24vIsAvailable || Power110vIsAvailable;
+		}
+		if (VeselVolume > 0.0)
+		{
+			return Compressor >= HornMinPressure;
+		}
+		// a vehicle without a main reservoir of its own takes the air from the main pipe, a vehicle without either
+		// (a road vehicle, say) has no air to check
+		auto const mainpipe{((Couplers[end::front].AllowedFlag | Couplers[end::rear].AllowedFlag) & coupling::mainhose) != 0};
+		return false == mainpipe || ScndPipePress >= HornMinPressure;
+	}};
+	auto horns{0};
+	if (supplied(HornSupply))
+	{
+		horns |= Signal & (1 | 2);
+	}
+	if (supplied(Horn3Supply))
+	{
+		horns |= Signal & 4;
+	}
+	return horns;
+}
+
+// *************************************************************************************************
 // Q: 20160716
 // Wykrywanie kolizji
 // *************************************************************************************************
@@ -1192,8 +1239,11 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto const otherend{Neighbours[End].vehicle_end};
 	auto const &othercoupler{othervehicle->Couplers[otherend]};
 
+	// the velocities along this vehicle's axis: the other vehicle's one is turned around when the vehicles face each
+	// other (touch with the same ends), as in CouplerForce()
+	auto const otherdirection{DirPatch(End, otherend)};
 	auto velocity{V};
-	auto othervehiclevelocity{othervehicle->V};
+	auto othervehiclevelocity{othervehicle->V * otherdirection};
 	// calculate collision force and new velocities for involved vehicles
 	auto const VirtualCoupling{(thiscoupler.CouplingFlag == coupling::faux)};
 	auto CCF{0.0};
@@ -1224,28 +1274,25 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 			damage_coupler(End);
 		}
 
-		if (thiscoupler.CouplingFlag == coupling::faux || true == TestFlag(othervehicle->DamageFlag, dtrain_out))
-		{ // HACK: limit excessive speed derailment checks to vehicles which aren't part of the same consist
-			auto const safevelocitylimit{15.0};
-			auto const velocitydifference{glm::length(glm::angleAxis(Rot.Rz, glm::dvec3{0, 1, 0}) * V - glm::angleAxis(othervehicle->Rot.Rz, glm::dvec3{0, 1, 0}) * othervehicle->V) *
-			                              3.6}; // m/s -> km/h
+		// HACK: limit excessive speed derailment checks to vehicles which aren't part of the same consist
+		auto const outsideconsist{thiscoupler.CouplingFlag == coupling::faux || true == TestFlag(othervehicle->DamageFlag, dtrain_out)};
+		auto const velocitydifference{outsideconsist ? CollisionVelocity(End, *othervehicle, otherend) : 0.0};
 
-			if (velocitydifference > safevelocitylimit)
+		if (velocitydifference > SafeCollisionVelocity)
+		{
+			// HACK: crude estimation for potential derail, will take place with velocity difference > 15 km/h adjusted for vehicle mass ratio
+			if (false == TestFlag(DamageFlag, dtrain_out) || false == TestFlag(othervehicle->DamageFlag, dtrain_out))
 			{
-				// HACK: crude estimation for potential derail, will take place with velocity difference > 15 km/h adjusted for vehicle mass ratio
-				if (false == TestFlag(DamageFlag, dtrain_out) || false == TestFlag(othervehicle->DamageFlag, dtrain_out))
-				{
-					WriteLog("Bad driving: " + Name + " and " + othervehicle->Name + " collided with velocity " + to_string(velocitydifference, 0) + " km/h");
-				}
+				WriteLog("Bad driving: " + Name + " and " + othervehicle->Name + " collided with velocity " + to_string(velocitydifference, 0) + " km/h");
+			}
 
-				if (velocitydifference > safevelocitylimit * (TotalMass / othervehicle->TotalMass))
-				{
-					Derail(COLLISION);
-				}
-				if (velocitydifference > safevelocitylimit * (othervehicle->TotalMass / TotalMass))
-				{
-					othervehicle->Derail(COLLISION);
-				}
+			if (velocitydifference > SafeCollisionVelocity * (TotalMass / othervehicle->TotalMass))
+			{
+				Derail(COLLISION);
+			}
+			if (velocitydifference > SafeCollisionVelocity * (othervehicle->TotalMass / TotalMass))
+			{
+				othervehicle->Derail(COLLISION);
 			}
 		}
 	}
@@ -1254,21 +1301,15 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	if (false == TestFlag(DamageFlag, dtrain_out))
 	{
 		auto const accelerationchange{(velocity - V) / dt};
-		//       if( accelerationchange / AccS < 1.0 ) {
-		// HACK: prevent excessive vehicle pinball cases
 		AccS += accelerationchange;
-		//           AccS = std::clamp( AccS, -2.0, 2.0 );
 		V = velocity;
-		//        }
 	}
 	if (false == TestFlag(othervehicle->DamageFlag, dtrain_out))
 	{
-		auto const othervehicleaccelerationchange{(othervehiclevelocity - othervehicle->V) / dt};
-		//        if( othervehicleaccelerationchange / othervehicle->AccS < 1.0 ) {
-		// HACK: prevent excessive vehicle pinball cases
+		auto const othervehiclenewvelocity{othervehiclevelocity * otherdirection}; // back along the other vehicle's axis
+		auto const othervehicleaccelerationchange{(othervehiclenewvelocity - othervehicle->V) / dt};
 		othervehicle->AccS += othervehicleaccelerationchange;
-		othervehicle->V = othervehiclevelocity;
-		//        }
+		othervehicle->V = othervehiclenewvelocity;
 	}
 }
 
@@ -4332,7 +4373,10 @@ void TMoverParameters::CompressorCheck(double dt)
 	}
 	}
 
-	auto const compressorpower{(CompressorPower == 0 ? Mains : CompressorPower == 3 ? Mains : Power110vIsAvailable)};
+	// the main circuit, also for a compressor driven by the engine, otherwise the low voltage
+	auto const compressorpower{CompressorPower == 0 || CompressorPower == 3 ? Mains : Power110vIsAvailable};
+	CompressorPowerTime = compressorpower ? CompressorPowerTime + dt : 0.0;
+	auto const compressorready{compressorpower && CompressorPowerTime >= CompressorStartDelay};
 	// TBD: split CompressorAllow into separate enable/disable flags, inherit compressor from basic_device
 	auto const compressorenable{CompressorAllowLocal && (CompressorStart == start_t::automatic || CompressorAllow)};
 	auto const compressordisable{false == compressorenable};
@@ -4354,7 +4398,7 @@ void TMoverParameters::CompressorCheck(double dt)
 
 	auto const compressorflag{CompressorFlag};
 	CompressorFlag =
-	    compressorpower && false == compressordisable && (false == governorlock || CompressorPower == 3) && (CompressorFlag || (compressorenable && LastSwitchingTime > CtrlDelay));
+	    compressorready && false == compressordisable && (false == governorlock || CompressorPower == 3) && (CompressorFlag || (compressorenable && LastSwitchingTime > CtrlDelay));
 
 	if (CompressorFlag && CompressorFlag != compressorflag)
 	{
@@ -4384,30 +4428,23 @@ void TMoverParameters::CompressorCheck(double dt)
 	{
 		// vent some air out if there's no governor lock to stop the compressor from exceeding acceptable pressure level
 		SetFlag(SoundFlag, sound::relay | sound::loud);
-		CompressedVolume *= false == governorlockispresent ? 0.80 : // arbitrary amount
-            CompressorTankValve ? MinCompressorF / MaxCompressorF : // drop to mincompressor level
-            0.999; // HACK: drop a tiny bit so the sound doesn't trigger repeatedly
+		auto ventedfraction{0.999}; // HACK: drop a tiny bit so the sound doesn't trigger repeatedly
+		if (false == governorlockispresent)
+		{
+			ventedfraction = 0.80; // arbitrary amount
+		}
+		else if (CompressorTankValve)
+		{
+			ventedfraction = MinCompressorF / MaxCompressorF; // drop to mincompressor level
+		}
+		CompressedVolume *= ventedfraction;
 		if (false == governorlockispresent || CompressorTankValve)
 		{
 			CompressorGovernorLock = false;
 		}
 	}
 
-	// tymczasowo tylko obciążenie sprężarki, tak z 5A na sprężarkę
-	// TODO: draw power from proper high- or low voltage circuit
-	if (CompressorPower == 3)
-	{
-		// diesel-powered compressor doesn't draw power
-	}
-	else
-	{
-		// TODO: drain power from 110v circuit
-		/*
-		            if( compressorowner != nullptr ) {
-		                compressorowner->TotalCurrent += 0.0015 * compressorowner->PantographVoltage;
-		            }
-		*/
-	}
+	// a compressor not driven by the engine doesn't draw power (some 5 A) from the high- or low voltage circuit yet
 }
 
 // *************************************************************************************************
@@ -5008,7 +5045,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		}
 		else
 		{
-			EngineVoltage *= DirAbsolute; // DirActive*CabActive;
+			EngineVoltage *= DirAbsolute; // the reverser of the active cab, relative to the couplers
 		}
 	} // bo nie dzialalo
 	else
@@ -5031,6 +5068,14 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	    && std::abs(Fwheels) > TotalMassxg * Adhesive(RunningTrack.friction))
 	{
 		SlippingWheels = true;
+	}
+	if (true == SlippingWheels && Vel < 0.1 // the same crude trap: (nearly) stopped vehicle...
+	    && std::abs(nrot * M_PI * WheelDiameter - V) < 0.1 / 3.6) // ...with wheels turning at its speed, i.e. locked wheels at the end of a skid
+	{
+		// locked wheels never pass the rotation speed test below once the vehicle stops, and a skidding vehicle
+		// keeps its braking force capped by the sliding adhesion, so the rest of the consist could push it around
+		SlippingWheels = false;
+		nrot = V / M_PI / WheelDiameter;
 	}
 	double temp_nrot = nrot;
 	if (true == SlippingWheels)
@@ -5399,17 +5444,14 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 					couplingtype &= ~coupling::control;
 				}
 
-				if (Attach(End, otherend, othervehicle, couplingtype))
-				{
-					// HACK: we're reusing sound enum to mark whether vehicle was connected to another
-					SetFlag(AIFlag, sound::attachcoupler);
-					thiscoupler.AutomaticCouplingAllowed = false;
-					othercoupler.AutomaticCouplingAllowed = false;
-				}
-				/*
-				                    coupler.CouplingFlag = ( coupler.AutomaticCouplingFlag & othercoupler.AutomaticCouplingFlag );
-				                    SetFlag( coupler.sounds, sound::attachcoupler );
-				*/
+				// too fast for the couplers to catch, the vehicles collide instead (and may derail, see CollisionDetect())
+				auto const safe{AutomaticCouplingSafe(End, *othervehicle, otherend)};
+				auto const caught{safe && Attach(End, otherend, othervehicle, couplingtype)};
+				// HACK: we're reusing sound enum to mark whether vehicle was connected to another
+				SetFlag(AIFlag, caught ? sound::attachcoupler : 0);
+				// coupled, or locked until the vehicles part, so they don't couple as soon as the collision slows them down
+				thiscoupler.AutomaticCouplingAllowed = safe && false == caught;
+				othercoupler.AutomaticCouplingAllowed = safe && false == caught;
 			}
 		}
 	}
@@ -10468,6 +10510,7 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 		auto lookup = compressorpowers.find(extract_value("CompressorPower", line));
 		CompressorPower = lookup != compressorpowers.end() ? lookup->second : 1;
 	}
+	extract_value(CompressorStartDelay, "CompressorStartDelay", line, "");
 
 	if (true == extract_value(AirLeakRate, "AirLeakRate", line, ""))
 	{
@@ -10684,7 +10727,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		for (int idx = 0; idx < 4; ++idx)
 		{
 
-			extract_value(BrakeDelay[idx], "BDelay" + std::to_string(idx + 1), line, "");
+			extract_value(BrakeDelay[idx], std::format("BDelay{}", idx + 1), line, "");
 		}
 		// brakedelays, brakedelayflag
 		{
@@ -10779,6 +10822,16 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 
 	// maksymalna predkosc dostepna na tarczce predkosciomierza
 	extract_value(maxTachoSpeed, "MaxTachoSpeed", line, "");
+
+	// horns
+	{
+		using enum horn_supply;
+		std::map<std::string, horn_supply, std::less<>> const hornsupplies{{"Pneumatic", air}, {"Electric", electric}};
+		auto lookup = hornsupplies.find(extract_value("HornType", line));
+		HornSupply = lookup != hornsupplies.end() ? lookup->second : air;
+		lookup = hornsupplies.find(extract_value("Horn3Type", line));
+		Horn3Supply = lookup != hornsupplies.end() ? lookup->second : HornSupply;
+	}
 
 	// dynamicbrake
 	{
@@ -10939,14 +10992,15 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	// ground relay
 	{
 		auto lookup = starts.find(extract_value("GroundRelayStart", line));
-		GroundRelayStart = lookup != starts.end() ? lookup->second : TrainType == dt_EZT ? start_t::automatic : start_t::manual;
+		auto const defaultstart{TrainType == dt_EZT ? start_t::automatic : start_t::manual};
+		GroundRelayStart = lookup != starts.end() ? lookup->second : defaultstart;
 	}
 	// converter overload relay
 	{
 		auto lookup = starts.find(extract_value("ConverterOverloadRelayStart", line));
-		ConverterOverloadRelayStart = lookup != starts.end() ? lookup->second :
-		                                                        TrainType == dt_EZT ? start_t::converter : // relay activates when converter is switched off
-		                                                                               start_t::manual;
+		// the relay of a multiple unit activates when the converter is switched off
+		auto const defaultstart{TrainType == dt_EZT ? start_t::converter : start_t::manual};
+		ConverterOverloadRelayStart = lookup != starts.end() ? lookup->second : defaultstart;
 	}
 }
 
@@ -11339,6 +11393,7 @@ void TMoverParameters::LoadFIZ_Switches(std::string const &Input)
 	extract_value(PantSwitchType, "Pantograph", Input, "");
 	extract_value(ConvSwitchType, "Converter", Input, "");
 	extract_value(StLinSwitchType, "MotorConnectors", Input, "");
+	HeatingSwitchImpulse = ToLower(extract_value("TrainHeating", Input)) == "impulse";
 	// because people can't make up their minds whether it's "impulse" or "Impulse"...
 	PantSwitchType = ToLower(PantSwitchType);
 	ConvSwitchType = ToLower(ConvSwitchType);

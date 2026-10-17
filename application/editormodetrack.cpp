@@ -1188,8 +1188,8 @@ void editor_mode::render_path_parameters(TTrack &Track)
 				if (m_track_material_edited[i] != nullptr)
 					continue;
 				auto const name = materials[i] ? editor_track::material_name(*materials[i]) : std::string{};
-				std::strncpy(m_track_materials[i].data(), name.c_str(), m_track_materials[i].size() - 1);
-				m_track_materials[i].back() = '\0';
+				auto &buffer{m_track_materials[i]};
+				buffer[name.copy(buffer.data(), buffer.size() - 1)] = '\0';
 			}
 		}
 		for (int i = 0; i < 3; ++i)
@@ -1238,8 +1238,7 @@ void editor_mode::render_path_circuits(TTrack &Track)
 {
 	auto *track{&Track};
 	auto const copy = [](std::array<char, 256> &Buffer, std::string const &Text) {
-		std::strncpy(Buffer.data(), Text.c_str(), Buffer.size() - 1);
-		Buffer.back() = '\0';
+		Buffer[Text.copy(Buffer.data(), Buffer.size() - 1)] = '\0';
 	};
 	auto const isolated_text = [&]() {
 		std::string text;
