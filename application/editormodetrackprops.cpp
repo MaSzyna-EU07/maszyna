@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "rendering/renderer.h"
 #include "world/Track.h"
+#include "world/TrackFeatures.h"
 #include "world/TrackSleepers.h"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
@@ -410,7 +411,7 @@ std::vector<track_property> make_properties()
 	{
 		auto &property{add(list, "frogs", field::check, section::look, group::frogs, "Frog and check rails made from the rails", "Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\nOff for a switch whose include has its own model of them")};
 		property.rebuild = true;
-		property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
+		property.applies = [](TTrack const &Track) { return track_features::crossings && Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
 		property.get = [](TTrack const &Track) { return std::string{Track.SwitchExtension->m_frogs ? "1" : "0"}; };
 		property.set = [](TTrack &Track, std::string const &Text) {
 			auto const frogs{Text == "1"};
@@ -423,7 +424,7 @@ std::vector<track_property> make_properties()
 	{
 		auto &property{add(list, "movablenose", field::check, section::look, group::frogs, "Movable nose", "The nose of the frog moves with the blades over to the wing rail of the track set, leaving no gap; the frog has no check rails")};
 		property.rebuild = true;
-		property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
+		property.applies = [](TTrack const &Track) { return track_features::crossings && Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
 		property.get = [](TTrack const &Track) { return std::string{Track.SwitchExtension->m_movablenose ? "1" : "0"}; };
 		property.set = [](TTrack &Track, std::string const &Text) {
 			auto const movable{Text == "1"};
@@ -535,6 +536,7 @@ std::vector<track_property> make_properties()
 		{
 			auto &property{add(list, "sleeperpack", field::choice, section::look_sleepers, group::sleepers, "Sleeper model from the pack", "Model of the sleepers of the track running alone, of the models of sleepers in the scenery data, laid as 3D sleepers\nin place of the one set with sleepers3dplain in eu07.ini. (as in eu07.ini): the one set there")};
 			property.rebuild = true;
+			property.applies = [](TTrack const &Track) { return track_features::sleepers && Track.m_visible; };
 			property.choices = choices(sleepermodels);
 			property.get = [index_of](TTrack const &Track) { return std::to_string(Track.m_sleeper_enabled ? index_of(sleepermodels, Track.m_sleeper_model_name) : 0); };
 			property.set = [](TTrack &Track, std::string const &Text) {
@@ -552,6 +554,7 @@ std::vector<track_property> make_properties()
 		{
 			auto &property{add(list, "timbermodel", field::choice, section::look_sleepers, group::sleepers, "Timber model", "Model of the timbers under the switch or the crossing the track is part of, of the models of timbers in the scenery data,\nin place of the one set with sleepers3d in eu07.ini. It's put together from its submodels begin, main and end to the length of each timber")};
 			property.rebuild = true;
+			property.applies = [](TTrack const &Track) { return track_features::sleepers && Track.m_visible; };
 			property.choices = choices(timbermodels);
 			property.get = [index_of](TTrack const &Track) { return std::to_string(index_of(timbermodels, Track.m_timber_model_name)); };
 			property.set = [](TTrack &Track, std::string const &Text) {
@@ -568,6 +571,7 @@ std::vector<track_property> make_properties()
 		{
 			auto &property{add(list, "timberskin", field::text, section::look_sleepers, group::sleepers, "Timber skin", "Replaceable skin of the timber model, empty: the one of the model")};
 			property.rebuild = true;
+			property.applies = [](TTrack const &Track) { return track_features::sleepers && Track.m_visible; };
 			property.empty = "of the model";
 			property.get = [](TTrack const &Track) { return Track.m_timber_skin_name; };
 			property.set = [](TTrack &Track, std::string const &Text) {

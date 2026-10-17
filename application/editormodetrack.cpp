@@ -22,6 +22,7 @@ http:
 #include "utilities/Globals.h"
 #include "rendering/renderer.h"
 #include "world/Track.h"
+#include "world/TrackFeatures.h"
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
@@ -1039,16 +1040,17 @@ void editor_mode::render_turnout_ui()
 	if (set.has_value())
 		drive_ui(*set->second);
 	bool frogs{track->SwitchExtension->m_frogs};
-	if (ImGui::Checkbox(STR_C("Frog and check rails made from the rails"), &frogs))
+	if (track_features::crossings && ImGui::Checkbox(STR_C("Frog and check rails made from the rails"), &frogs))
 	{
 		auto const before{editor_track::capture(*track)};
 		track->SwitchExtension->m_frogs = frogs;
 		push_track_snapshot({{track, before}});
 		editor_track::commit_parameters(*track);
 	}
-	item_tooltip("Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\n"
-	             "Off for a switch whose include has its own model of them");
-	if (frogs)
+	if (track_features::crossings)
+		item_tooltip("Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\n"
+		             "Off for a switch whose include has its own model of them");
+	if (track_features::crossings && frogs)
 	{
 		bool movable{track->SwitchExtension->m_movablenose};
 		if (ImGui::Checkbox(STR_C("Movable nose"), &movable))
