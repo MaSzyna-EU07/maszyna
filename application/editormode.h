@@ -505,7 +505,6 @@ class editor_mode : public application_mode, private editor_track::observer
 	// over the 3d view: the tools of the field of work along its left edge, the modes of the gizmo at its top, the axes of the
 	// world and the top view in its top right corner
 	void render_viewport_overlays();
-	void render_viewport_tools();
 	// the tools of the field of work, in the order of the toolbar
 	void work_area_tools(std::vector<editor_tool_button> &Buttons);
 	// the tools of the field of work in the toolbar, as icons with their names
@@ -1026,6 +1025,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		slide_state slide;
 		double slide_typed{0.0};
 		int connection{-1};
+		int connection_kind{0}; // the kind of connection chosen last, taken again when the connections are chosen
 		int connection_second{-1};
 		double connection_radius{0.0};
 		double connection_gap{6.0};
@@ -1034,9 +1034,25 @@ class editor_mode : public application_mode, private editor_track::observer
 		double connection_stub{25.0};
 	};
 	switch_tool m_switch;
+	// what the switch tool places: a switch into a straight or a curve, a slip switch or a crossing at a crossing of two
+	// straights, or a connection of tracks laid whole
+	enum class switch_kind
+	{
+		single,
+		slip,
+		crossing,
+		connection
+	};
+	switch_kind current_switch_kind() const;
+	void choose_switch_kind(switch_kind const Kind);
+	bool switch_kind_offered(switch_kind const Kind) const;
 	bool plan_connection(connection::request &Request, connection::result &Result) const;
 	void insert_connection();
-	void render_connection_ui();
+	void render_connection_options();
+	// the name of a kind of connection of tracks, translated
+	static char const *connection_name(int const Kind);
+	// the name of a switch template for the lists: where it comes from and its name without the lengths
+	static std::string switch_template_label(editor_track::switch_template const &Template);
 	std::string connection_readout(connection::result const &Plan) const;
 	editor_track::straight straight_near(glm::dvec3 const &Point, std::vector<TTrack const *> const &Exclude, double const Reach) const;
 	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
@@ -1274,7 +1290,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		track_tab tab;
 		char const *tooltip;
 	};
-	static std::array<track_mode, 12> const &track_modes();
+	static std::array<track_mode, 11> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
 	track_tab plan_tab_for(TTrack const *Track) const;
 	// the objects along the track: a tab for each tool

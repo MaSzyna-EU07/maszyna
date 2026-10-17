@@ -915,7 +915,7 @@ void nodebank_panel::render_set_cards(int const Setid)
 
 void nodebank_panel::render()
 {
-	if (false == is_open)
+	if (false == is_open || suppressed)
 	{
 		return;
 	}

@@ -762,7 +762,7 @@ void editor_ui::render_tool_options()
 		}
 		else
 			render_mode_options(current);
-		if (ImGui::CollapsingHeader(STR_C("Gizmo"), ImGuiTreeNodeFlags_DefaultOpen))
+		if (ImGui::CollapsingHeader(STR_C("Gizmo")))
 		{
 			if (m_gizmooptions)
 				m_gizmooptions();

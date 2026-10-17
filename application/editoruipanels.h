@@ -133,6 +133,7 @@ class nodebank_panel : public ui_panel
 		TRACK
 	};
 	edit_mode mode = MODIFY;
+	bool suppressed{false}; // the field of work has no use for it: not drawn, though it stays open for the others
 
 	nodebank_panel(std::string const &Name, bool const Isopen);
 	void nodebank_reload();

@@ -127,7 +127,6 @@ void editor_mode::render_viewport_overlays()
 	// a view squeezed between the docks has no room for them
 	if (width < 8.0f * button_side() || height < 6.0f * button_side())
 		return;
-	render_viewport_tools();
 	render_viewport_gizmo();
 	render_view_axes();
 }
@@ -166,30 +165,31 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			auto const chosen{(m_track_tab == Tab || (Tab == track_tab::straights && track_plan_tab())) && false == (Tab == track_tab::lineside && vehicle)};
 			Buttons.push_back({Picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
 		};
+		// the tools of laying track first, the others behind More, shown while one of them is in use
 		add(track_tab::path, icon::select, false);
 		add(track_tab::lay, icon::lay_track, false);
 		add(track_tab::straights, icon::curve, false);
 		add(track_tab::turnout, icon::turnout, false);
 		add(track_tab::parallel, icon::parallel, false);
-		add(track_tab::turntable, icon::turntable, false);
-		add(track_tab::signals, icon::signal, true);
-		add(track_tab::lineside, icon::objects, false);
-		Buttons.push_back({icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {
-			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
-			                   m_vehicle.expand = false == vehicle;
-		                   }});
-		auto const advanced{m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra || m_gauge.open};
+		auto const advanced{m_track_tab == track_tab::turntable || m_track_tab == track_tab::signals || m_track_tab == track_tab::lineside || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed ||
+		                    m_track_tab == track_tab::joints || m_gauge.open};
 		auto const more{EditorSettings.track_tools_more()};
-		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("The checks of a line laid: profile, speed, joints, infrastructure, structure gauge"), more, [more]() {
+		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntables, signals, objects along the track, trainsets and the checks of a line laid: profile, speed, joints, structure gauge"), more, [more]() {
 			                   EditorSettings.track_tools_more(false == more);
 			                   EditorSettings.save();
 		                   }, true});
 		if (false == more && false == advanced)
 			break;
+		add(track_tab::turntable, icon::turntable, true);
+		add(track_tab::signals, icon::signal, false);
+		add(track_tab::lineside, icon::objects, false);
+		Buttons.push_back({icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {
+			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
+			                   m_vehicle.expand = false == vehicle;
+		                   }});
 		add(track_tab::profile, icon::profile, true);
 		add(track_tab::speed, icon::speed, false);
 		add(track_tab::joints, icon::joints, false);
-		add(track_tab::infra, icon::infra, false);
 		Buttons.push_back({icon::gauge, STR_C("Structure gauge"), nullptr, STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"), m_gauge.open,
 		                   [this]() { m_gauge.open = !m_gauge.open; }});
 		break;
@@ -236,48 +236,6 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		break;
 	}
 	}
-}
-
-void editor_mode::render_viewport_tools()
-{
-	// the tools of the field of work which have icons, as in the toolbar
-	std::vector<tool_button> buttons;
-	buttons.reserve(24);
-	work_area_tools(buttons);
-	std::erase_if(buttons, [](tool_button const &Button) { return Button.picture == icon::count; });
-	if (buttons.empty())
-		return;
-
-	// down the left edge, in more columns if the view is too low for them; the bottom is left to the hints of the tools
-	auto const side{button_side()};
-	auto const gap{2.0f * scale()};
-	auto const groupgap{8.0f * scale()};
-	auto const margin{8.0f * scale()};
-	ImVec2 const origin{editor_ui::view_min().x + margin, editor_ui::view_min().y + margin};
-	auto const bottom{std::max(origin.y + 4.0f * side, editor_ui::view_max().y - 130.0f * scale())};
-	std::vector<ImVec2> places;
-	places.reserve(buttons.size());
-	ImVec2 place{origin};
-	for (auto const &button : buttons)
-	{
-		if (button.group && place.y > origin.y)
-			place.y += groupgap - gap;
-		if (place.y > origin.y && place.y + side > bottom)
-			place = ImVec2(place.x + side + gap, origin.y);
-		places.push_back(place);
-		place.y += side + gap;
-	}
-	ImVec2 extent{0.0f, 0.0f};
-	for (auto const &at : places)
-		extent = ImVec2(std::max(extent.x, at.x + side - origin.x), std::max(extent.y, at.y + side - origin.y));
-	auto const pad{3.0f * scale()};
-	if (begin_overlay("##viewporttools", ImVec2(origin.x - pad, origin.y - pad), ImVec2(extent.x + 2.0f * pad, extent.y + 2.0f * pad)))
-	{
-		ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(origin.x - pad, origin.y - pad), ImVec2(origin.x + extent.x + pad, origin.y + extent.y + pad), IM_COL32(16, 18, 21, 140), 6.0f * scale());
-		for (std::size_t index = 0; index < buttons.size(); ++index)
-			icon_button(buttons[index], places[index], static_cast<int>(index));
-	}
-	ImGui::End();
 }
 
 void editor_mode::render_toolbar_caption(char const *Text)

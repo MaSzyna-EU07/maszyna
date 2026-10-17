@@ -208,6 +208,7 @@ set(SOURCES
 "application/editormodetrackgizmo.cpp"
 "application/editormoderecords.cpp"
 "application/editormodeswitchdrive.cpp"
+"application/editormodeswitchtool.cpp"
 "application/editormodeswitchslide.cpp"
 "application/editormodeswitchdesign.cpp"
 "application/editormodetrackbed.cpp"

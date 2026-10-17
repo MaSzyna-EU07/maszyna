@@ -34,6 +34,7 @@ http:
 #include <map>
 #include <numeric>
 #include <functional>
+#include <cstdlib>
 #include <sstream>
 #include <tuple>
 #include <unordered_set>
@@ -3416,4 +3417,33 @@ void editor_track::rebuild_geometry(TTrack &Track)
 	for (auto *crossing : crossings)
 		if (crossing != &Track && false == crossing->m_editorremoved)
 			rebuild(*crossing);
+}
+
+std::string editor_track::switch_template::title() const
+{
+	std::istringstream words(label);
+	std::vector<std::string> kept;
+	std::vector<std::string> all;
+	for (std::string word; words >> word;)
+		all.push_back(word);
+	for (std::size_t i = 0; i < all.size(); ++i)
+	{
+		if (all[i].front() == '(')
+			break;
+		auto const number = [](std::string const &Word) {
+			char *end{nullptr};
+			std::strtod(Word.c_str(), &end);
+			return end != Word.c_str() && *end == '\0';
+		};
+		if ((all[i] == "a" || all[i] == "b") && i + 1 < all.size() && number(all[i + 1]))
+		{
+			++i;
+			continue;
+		}
+		kept.push_back(all[i]);
+	}
+	std::string result;
+	for (auto const &word : kept)
+		result += (result.empty() ? "" : " ") + word;
+	return result.empty() ? label : result;
 }

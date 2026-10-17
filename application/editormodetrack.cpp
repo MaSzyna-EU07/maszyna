@@ -58,13 +58,6 @@ using geometry::level;
 using geometry::reversed;
 using geometry::straight_piece;
 
-std::string template_label(editor_track::switch_template const &Template)
-{
-	if (Template.source != nullptr)
-		return STR("Scenery: ") + Template.label + "  (" + std::to_string(Template.count) + "x)";
-	return (Template.own ? STR("Own: ") : std::string{"PLK: "}) + Template.label;
-}
-
 double constexpr kParallelFindAngle{15.0}; // deg, neighbours counted as beside the straight
 double constexpr kParallelSnapAngle{5.0}; // deg, close enough to snap parallel
 double constexpr kParallelSnapWindow{0.45}; // m from 4.00 / 4.50 / 4.75 m
@@ -556,9 +549,9 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 11> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 12> const modes{{
+	static std::array<track_mode, 11> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters"},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track"},
 	    {"Plan", "G", track_tab::straights, "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too"},
@@ -570,7 +563,7 @@ std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line"},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows"},
 	    {"Joints", "J", track_tab::joints, "Ends of the paths which almost meet, steps, kinks, jumps of the cant and of the grade at the joints"},
-	    {"Infra", "I", track_tab::infra, "Infrastructure along the track, bound to follow its changes"},
+	    // the infrastructure tool (track_tab::infra) is left out: no button nor key
 	}};
 	return modes;
 }
@@ -994,8 +987,16 @@ void editor_mode::render_turnout_ui()
 	}
 	else
 		ImGui::Text(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
-	render_track_name(*track);
-	render_switch_record(*track);
+	if (auto const known{switch_store::of(*track)}; known.has_value())
+		ImGui::TextUnformatted(switch_store::label(*known).c_str());
+	// the name, the number, the rail and the kilometre of the switch, with what the scenery keeps of it
+	if (ImGui::CollapsingHeader(STR_C("Details##switchdetails")))
+	{
+		render_track_name(*track);
+		render_switch_record(*track);
+		if (angle > 1e-6)
+			ImGui::Text(STR_C("Angle 1:%.2f (%.4f deg), R in the entry %.0f m"), 1.0 / std::tan(angle), glm::degrees(angle), diverging.radius);
+	}
 	auto const drive_ui = [&](TTrack &Switch) {
 		ImGui::PushID(&Switch);
 		if (set.has_value())
@@ -1064,8 +1065,6 @@ void editor_mode::render_turnout_ui()
 	}
 	if (false == m_switch.status.empty())
 		ImGui::TextWrapped("%s", m_switch.status.c_str());
-	if (angle > 1e-6)
-		ImGui::Text(STR_C("Angle 1:%.2f (%.4f deg), R in the entry %.0f m"), 1.0 / std::tan(angle), glm::degrees(angle), diverging.radius);
 
 	auto &tool{m_switch};
 	if (false == tool.collected)
@@ -1086,13 +1085,13 @@ void editor_mode::render_turnout_ui()
 	}
 	ImGui::Separator();
 	ImGui::PushItemWidth(-1.0f);
-	if (ImGui::BeginCombo("##turnouttemplate", tool.templates[m_turnout_template].label.c_str()))
+	if (ImGui::BeginCombo("##turnouttemplate", switch_template_label(tool.templates[m_turnout_template]).c_str()))
 	{
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 		{
 			if (false == fits(tool.templates[i]))
 				continue;
-			auto const label{template_label(tool.templates[i])};
+			auto const label{switch_template_label(tool.templates[i])};
 			if (ImGui::Selectable(label.c_str(), i == m_turnout_template))
 				m_turnout_template = i;
 		}
@@ -3709,7 +3708,13 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB", "start, on the ground or at a free end"}};
 	else if (m_track_tab == track_tab::turnout && (selected_track() == nullptr || selected_track()->eType == tt_Switch))
 	{
-		hints = {{"LMB on a track", "the straight or the curve for the switch"}};
+		switch (current_switch_kind())
+		{
+		case switch_kind::connection: hints = {{"Press on a straight", "and drag onto the other track"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}}; break;
+		case switch_kind::slip:
+		case switch_kind::crossing: hints = {{"LMB", "at a crossing of two straights"}}; break;
+		default: hints = {{"LMB on a track", "the straight or the curve for the switch"}}; break;
+		}
 		if (selected != nullptr)
 		{
 			hints.push_back({"Gizmo", "move the selected switch"});
@@ -5782,63 +5787,6 @@ void editor_mode::draw_build_overlay() const
 	if ((m_point_drag.moved || (m_track_gizmo_using && m_track_point.valid())) && editor_track::is_end(m_track_point.kind) && m_track_drag_points.empty())
 		if (auto const *track{selected_track()}; track != nullptr)
 			draw_free_ends(track, track->iCategoryFlag & 15, std::vector<TTrack const *>(m_track_drag.begin(), m_track_drag.end()));
-}
-
-void editor_mode::render_switch_ui()
-{
-	auto &tool{m_switch};
-	auto const list = [&](bool const Slips) {
-		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
-		{
-			auto const &entry{tool.templates[i]};
-			if (entry.double_slip != Slips)
-				continue;
-			auto label{template_label(entry)};
-			label += "##switch" + std::to_string(i);
-			if (ImGui::Selectable(label.c_str(), tool.armed == i))
-			{
-				tool.last = i;
-				tool.armed = tool.last;
-			}
-		}
-	};
-	ImGui::TextDisabled("%s", STR_C("Switch template"));
-	ImGui::BeginChild("##switchtemplates", ImVec2(0.0f, 240.0f), true);
-	list(false);
-	ImGui::EndChild();
-	if (std::any_of(tool.templates.begin(), tool.templates.end(), [](editor_track::switch_template const &Template) { return Template.double_slip; }))
-	{
-		if (tool.armed >= 0 && tool.armed < static_cast<int>(tool.templates.size()) && tool.templates[tool.armed].double_slip)
-			ImGui::SetNextItemOpen(true);
-		if (ImGui::CollapsingHeader(STR_C("Slip switches and crossings")))
-		{
-			ImGui::TextDisabled("%s", STR_C("Only at a crossing of two straights"));
-			list(true);
-		}
-	}
-	render_connection_ui();
-	ImGui::PushItemWidth(120.0f);
-	ImGui::InputTextWithHint(STR_C("Name##switchname"), switch_name_for_new().c_str(), tool.name, sizeof(tool.name));
-	ImGui::PopItemWidth();
-	item_tooltip("Name of the next switch, its drive events are named after it; empty: the next free z1, z2...; a number at the end goes up with each switch");
-	if (render_switch_drive_choice())
-		if (auto *track{selected_track()}; track != nullptr && track->eType == tt_Switch && false == track->m_editorremoved)
-			apply_switch_drive_choice(*track);
-	if (false == tool.status.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", tool.status.c_str());
-	if (ImGui::SmallButton(STR_C("Collect from the scenery")))
-	{
-		tool.templates = editor_track::standard_switch_templates();
-		auto const found{editor_track::find_switch_templates()};
-		tool.templates.insert(tool.templates.end(), found.begin(), found.end());
-		tool.collected = true;
-		arm_switch();
-	}
-	item_tooltip("Looks for the switches of the scenery, to use their shapes as the templates");
-	ImGui::SameLine();
-	if (ImGui::SmallButton(STR_C("Template editor...")))
-		m_switch_designer.open = true;
-	item_tooltip("Own switch templates: diverging tracks of straights, arcs and transition curves, double switches");
 }
 
 std::vector<glm::dvec3> editor_mode::detour_outline() const

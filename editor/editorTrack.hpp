@@ -424,6 +424,9 @@ class editor_track
 		int design{-1}; // in the list of the designs the template was built from
 		double middle{0.0}; // a double slip with the blades outside of the diamond: the radius in the middle of its slip curves, below 0 a straight there
 		bool twofold() const { return stagger > 0.0; }
+		// the name of the template for a list: the label without the lengths a and b and the hint in brackets, which
+		// the full label gives
+		std::string title() const;
 	};
 	// the diverging curve of a slip turning by Angle: arcs of Radius at both ends, each Ends long, and the arc of Middle,
 	// Between long, between them; a straight when Middle is 0. With blades cutting into the stock rails the curve starts and ends

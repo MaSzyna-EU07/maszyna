@@ -32,17 +32,6 @@ namespace
 using geometry::cross;
 using geometry::plan_of;
 
-char const *connection_name(int const Kind)
-{
-	switch (static_cast<connection::kind>(Kind))
-	{
-	case connection::kind::double_crossover: return STR_C("Double crossover");
-	case connection::kind::scissors: return STR_C("Scissors crossover");
-	case connection::kind::ladder: return STR_C("Switch ladder");
-	default: return STR_C("Crossover");
-	}
-}
-
 std::vector<double> spacings_of(char const *Text)
 {
 	std::string text{Text};
@@ -59,19 +48,23 @@ std::vector<double> spacings_of(char const *Text)
 	return result;
 }
 
-std::string switch_label(editor_track::switch_template const &Template)
-{
-	if (Template.source != nullptr)
-		return STR("Scenery: ") + Template.label;
-	return (Template.own ? STR("Own: ") : std::string{"PLK: "}) + Template.label;
-}
-
 bool usable_in_connection(editor_track::switch_template const &Template)
 {
 	return false == Template.double_slip && false == Template.twofold();
 }
 
 } // namespace
+
+char const *editor_mode::connection_name(int const Kind)
+{
+	switch (static_cast<connection::kind>(Kind))
+	{
+	case connection::kind::double_crossover: return STR_C("Double crossover");
+	case connection::kind::scissors: return STR_C("Scissors crossover");
+	case connection::kind::ladder: return STR_C("Switch ladder");
+	default: return STR_C("Crossover");
+	}
+}
 
 editor_track::straight editor_mode::straight_near(glm::dvec3 const &Point, std::vector<TTrack const *> const &Exclude, double const Reach) const
 {
@@ -335,32 +328,19 @@ void editor_mode::insert_connection()
 	ui()->set_status(tool.status, false);
 }
 
-void editor_mode::render_connection_ui()
+void editor_mode::render_connection_options()
 {
 	auto &tool{m_switch};
-	ImGui::PushItemWidth(220.0f);
-	if (ImGui::BeginCombo(STR_C("Connection##switchconnection"), tool.connection < 0 ? STR_C("Single switch") : connection_name(tool.connection)))
-	{
-		if (ImGui::Selectable(STR_C("Single switch"), tool.connection < 0))
-			tool.connection = -1;
-		for (int i = 0; i < connection::kind_count; ++i)
-			if (ImGui::Selectable(connection_name(i), tool.connection == i))
-				tool.connection = i;
-		ImGui::EndCombo();
-	}
-	item_tooltip("A connection of tracks laid whole: press on a straight and drag onto the other track. Its switches are cut into the tracks with the inserts between them and get their drives; Shift+wheel while dragging: another kind, Ctrl+wheel: R of the aligning curve");
 	if (tool.connection < 0)
-	{
-		ImGui::PopItemWidth();
 		return;
-	}
-	auto const label = [&](int const Index) { return Index < 0 || Index >= static_cast<int>(tool.templates.size()) ? std::string{STR_C("The same as the first one")} : switch_label(tool.templates[Index]); };
+	ImGui::PushItemWidth(220.0f);
+	auto const label = [&](int const Index) { return Index < 0 || Index >= static_cast<int>(tool.templates.size()) ? std::string{STR_C("The same as the first one")} : switch_template_label(tool.templates[Index]); };
 	if (ImGui::BeginCombo(STR_C("Other switches##connectionsecond"), label(tool.connection_second).c_str()))
 	{
 		if (ImGui::Selectable(STR_C("The same as the first one"), tool.connection_second < 0))
 			tool.connection_second = -1;
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
-			if (usable_in_connection(tool.templates[i]) && ImGui::Selectable((switch_label(tool.templates[i]) + "##connectionsecond" + std::to_string(i)).c_str(), tool.connection_second == i))
+			if (usable_in_connection(tool.templates[i]) && ImGui::Selectable((switch_template_label(tool.templates[i]) + "##connectionsecond" + std::to_string(i)).c_str(), tool.connection_second == i))
 				tool.connection_second = i;
 		ImGui::EndCombo();
 	}

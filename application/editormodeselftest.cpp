@@ -1652,6 +1652,18 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog("SELFTEST layhold: " + m_lay.status);
 		return selftest_result::handled;
 	}
+	if (command == "switchkind")
+	{
+		// what the switch tool places, as chosen in its panel: single, slip, crossing or connection with the kind of it
+		std::string word;
+		int sub{0};
+		words >> word >> sub;
+		auto const kind{word == "slip" ? switch_kind::slip : word == "crossing" ? switch_kind::crossing : word == "connection" ? switch_kind::connection : switch_kind::single};
+		m_switch.connection_kind = sub;
+		choose_switch_kind(kind);
+		WriteLog(format("SELFTEST switchkind %s: kind %d, connection %d, armed %d", word.c_str(), static_cast<int>(current_switch_kind()), m_switch.connection, m_switch.armed));
+		return selftest_result::handled;
+	}
 	if (command == "connection" || command == "connectionplan" || command == "connectionhold")
 	{
 		std::string kindword;
