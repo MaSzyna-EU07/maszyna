@@ -45,6 +45,12 @@ const float CLOUD_SKY_FLOOR = 0.15;
 const float CLOUD_POWDER = 6.0;
 // how many of the nearest steps towards the sun see the detail noise
 const int CLOUD_LIGHT_DETAIL_STEPS = 1;
+// orders of the scattering the sunlight is followed through (cloud_sunlight): the higher ones reach deep into a thick cloud, so its
+// shaded sides and its inside are lit through the cloud too, not only by the sky, and a big cloud close by is not a flat grey
+const int CLOUD_SCATTER_OCTAVES = 6;
+// how much longer every next step towards the sun is than the one before: 1 + this / steps², so the first step is short where the
+// light falls off fastest (about a 30th of the reach at 4 steps) and the steps get close to even when there are many of them
+const float CLOUD_LIGHT_GROWTH = 24.0;
 
 float henyey_greenstein(float cosangle, float g)
 {
@@ -77,20 +83,23 @@ float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float 
 	float reach = min(thickness, 1500.0);
 	float depth = 0.0;
 	float travelled = 0.0;
+	// steps growing geometrically: near the point the shape matters, far only the bulk. with steps growing evenly the first one was a
+	// tenth of the reach at 4 steps, and the light fell off the smooth sides of the clouds in visible bands
+	float growth = 1.0 + CLOUD_LIGHT_GROWTH / float(steps * steps);
+	float step = reach * (growth - 1.0) / (pow(growth, float(steps)) - 1.0);
 	for (int s = 0; s < steps; s++)
 	{
-		// growing steps: near the point the shape matters, far only the bulk
-		float step = reach * (float(s) + 1.0) / float(steps * (steps + 1) / 2);
 		vec3 point = position + sun * (travelled + 0.5 * step);
 		travelled += step;
 		// the nearest steps with the detail noise: the small billows shade one another, lit on top and grey beneath
 		depth += cloud_layer_density(index, point, cloud_height(point), detail && (s < CLOUD_LIGHT_DETAIL_STEPS)) * step;
+		step *= growth;
 	}
 	float light = 0.0;
 	float amount = 1.0;
 	float fade = 1.0;
 	float spread = 1.0;
-	for (int octave = 0; octave < 3; octave++)
+	for (int octave = 0; octave < CLOUD_SCATTER_OCTAVES; octave++)
 	{
 		light += amount * exp(-depth * fade) * cloud_phase(cosangle, spread) * (octave == 0 ? powder : 1.0);
 		amount *= 0.5;
