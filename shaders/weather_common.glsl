@@ -44,13 +44,14 @@ layout(std140, binding = WEATHER_UBO_BINDING) uniform weather_ubo
 	vec4 weather_camera;
 	// xyz: world space direction towards the key light (the sun, or the moon at night), w: 1 when it is above the horizon
 	vec4 weather_sun_direction;
-	// rgb: colour of the key light as the shading gets it, without the shadow of the clouds; w: unused
+	// rgb: colour of the key light as the shading gets it, without the shadow of the clouds; w: scale of the sunlight of the clouds
 	vec4 weather_sun_color;
-	// rgb: ambient light of the sky above; w: unused
+	// rgb: ambient light of the sky above; w: scale of the sky light of the clouds
 	vec4 weather_ambient;
 	// xy: centre of the cloud shadow map (world x and z relative to the camera), z: 1 / its size (metres), w: 1 when it holds shadows
 	vec4 cloud_shadow_params;
-	// xy: world x and z of the direction the wind at the clouds blows to (unit), z: its speed, m/s
+	// xy: world x and z of the direction the wind at the clouds blows to (unit), z: its speed, m/s, w: scale of the erosion of the
+	// edges of the clouds by the detail noise
 	vec4 cloud_wind;
 	cloud_layer_s cloud_layers[MAX_CLOUD_LAYERS];
 	// colour of the fog towards the horizon by the angle from the azimuth of the sun, 0 to 180 degrees, in the units of the

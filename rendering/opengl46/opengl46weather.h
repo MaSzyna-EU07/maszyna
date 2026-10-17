@@ -177,6 +177,11 @@ class opengl46_weather
 	std::optional<gl::buffer> m_stars_buffer;
 	int m_stars_count{0};
 
+	// tuning of the look of the clouds in the debug window, not saved: scales of their sunlight, of their sky light and of the
+	// erosion of their edges by the detail noise (weather_sun_color.w, weather_ambient.w, cloud_wind.w)
+	float m_cloud_sun_scale{1.f};
+	float m_cloud_sky_scale{1.f};
+	float m_cloud_detail_scale{1.f};
 	// what the debug window shows
 	float m_sun_share{0.f};
 	float m_average_transmittance{1.f};

@@ -299,7 +299,7 @@ void opengl46_weather::update(opengl46_sky const &Sky, glm::vec3 const &Keylight
 	auto const velocity{weather.cloud_velocity()};
 	auto const speed{glm::length(velocity)};
 	auto const wind{speed > 1e-3f ? glm::dvec2{velocity / speed} : glm::dvec2{1.0, 0.0}};
-	m_weather.cloud_wind = glm::vec4{static_cast<float>(wind.x), static_cast<float>(wind.y), speed, 0.f};
+	m_weather.cloud_wind = glm::vec4{static_cast<float>(wind.x), static_cast<float>(wind.y), speed, m_cloud_detail_scale};
 	for (std::size_t i = 0; i < gl::MAX_CLOUD_LAYERS; ++i)
 	{
 		auto &target{m_weather.cloud_layers[i]};
@@ -332,8 +332,8 @@ void opengl46_weather::update(opengl46_sky const &Sky, glm::vec3 const &Keylight
 	m_weather.fog_light = glm::vec4{m_sun_share, m_average_transmittance, 0.6f, fog_density()};
 	m_weather.weather_camera = glm::vec4{height, static_cast<float>(std::fmod(time, 100000.0)), m_clouds_drawn ? 1.f : 0.f, m_clouds_drawn ? static_cast<float>(layers) : 0.f};
 	m_weather.weather_sun_direction = glm::vec4{sun, sun.y > -0.02f ? 1.f : 0.f};
-	m_weather.weather_sun_color = glm::vec4{Keycolor, 0.f};
-	m_weather.weather_ambient = glm::vec4{Ambient * 1.3f, 0.f};
+	m_weather.weather_sun_color = glm::vec4{Keycolor, m_cloud_sun_scale};
+	m_weather.weather_ambient = glm::vec4{Ambient * 1.3f, m_cloud_sky_scale};
 	m_weather.fog_volume_params = glm::vec4{0.f, FOG_VOLUME_NEAR, 1.f, 1.f};
 	m_weather.fog_volume_target = glm::vec4{1.f, 1.f, Global.gfx_fog_range, 1.f - Sky.atmosphere_weight()};
 
@@ -688,6 +688,9 @@ void opengl46_weather::draw_debug_ui()
 	ImGui::SliderFloat("cloud distance, m (gfx.clouds.distance)", &Global.gfx_clouds_distance, 5000.f, 200000.f, "%.0f", ImGuiSliderFlags_Logarithmic);
 	ImGui::Checkbox("cloud shadows (gfx.clouds.shadows)", &Global.gfx_clouds_shadows);
 	ImGui::SliderFloat("cloud shadow map, m (gfx.clouds.shadows.range)", &Global.gfx_clouds_shadows_range, 1000.f, 100000.f, "%.0f", ImGuiSliderFlags_Logarithmic);
+	ImGui::SliderFloat("cloud sunlight (tuning, not saved)", &m_cloud_sun_scale, 0.25f, 3.f);
+	ImGui::SliderFloat("cloud sky light (tuning, not saved)", &m_cloud_sky_scale, 0.f, 3.f);
+	ImGui::SliderFloat("cloud edge detail (tuning, not saved)", &m_cloud_detail_scale, 0.f, 3.f);
 	ImGui::Checkbox("stars (gfx.stars)", &Global.gfx_stars);
 	ImGui::SliderFloat("star brightness", &Global.gfx_stars_brightness, 0.f, 8.f);
 	ImGui::Text("fog range %.0f m, sun share of the fog light %.2f, clouds let through %.2f on average", m_fog_range, m_sun_share, m_average_transmittance);

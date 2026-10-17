@@ -14,6 +14,14 @@ const float CLOUD_FILL_EDGE = 0.45;
 const float CLOUD_FILL_CORE = 0.85;
 // how fast the density rises inside the edge of a cloud: above 1 the edges are crisper, the inside keeps its density
 const float CLOUD_EDGE_SHARPNESS = 3.0;
+// the detail noise: its tile against the tile of the shape noise and how deep it eats into the edges (times the erosion of the
+// genus and the tuning of the debug window, cloud_wind.w); the finer octave of the thin edges: its tile against the detail tile,
+// how far the coarser octave pushes its lookup about (in its tiles), and the density below which it is used
+const float CLOUD_DETAIL_SCALE = 6.0;
+const float CLOUD_EROSION = 2.0;
+const float CLOUD_FINE_SCALE = 3.7;
+const float CLOUD_FINE_PUSH = 0.6;
+const float CLOUD_FINE_BELOW = 0.6;
 
 float cloud_remap(float value, float low, float high, float newlow, float newhigh)
 {
@@ -152,12 +160,23 @@ float cloud_layer_density(int index, vec3 position, float height, bool detail)
 	float density = clamp(cloud_remap(base * gradient, 1.0 - fill, 1.0, 0.0, 1.0), 0.0, 1.0) * coverage.x;
 	if (detail && density > 0.0 && layer.shape.w > 0.0)
 	{
-		vec4 small = textureLod(cloud_detail_noise, coords * 6.0, 0.0);
+		vec3 detailcoords = coords * CLOUD_DETAIL_SCALE;
+		vec4 small = textureLod(cloud_detail_noise, detailcoords, 0.0);
 		// spread over 0-1 as the worley octaves of the shape; left in their narrow band they would only thin the cloud evenly
 		float fbm = clamp((small.r * 0.625 + small.g * 0.25 + small.b * 0.125 - 0.30) / 0.35, 0.0, 1.0);
+		// the thin outer part of a cloud gets a finer octave too, its lookup pushed about by the coarser one, so the edges are frayed
+		// into small billows and torn bits rather than evenly rounded. the dense inside is never eaten into, so it is skipped there
+		float fineshare = 1.0 - smoothstep(CLOUD_FINE_BELOW * 0.5, CLOUD_FINE_BELOW, density);
+		if (fineshare > 0.0)
+		{
+			vec3 push = (small.gbr - 0.5) * CLOUD_FINE_PUSH;
+			vec4 fine = textureLod(cloud_detail_noise, detailcoords * CLOUD_FINE_SCALE + push, 0.0);
+			float finefbm = clamp((fine.r * 0.625 + fine.g * 0.25 + fine.b * 0.125 - 0.30) / 0.35, 0.0, 1.0);
+			fbm = clamp(mix(fbm, fbm * 0.65 + finefbm * 0.35, fineshare), 0.0, 1.0);
+		}
 		// wispy at the base, billowing at the top
 		float erosion = mix(fbm, 1.0 - fbm, clamp(h * 4.0, 0.0, 1.0));
-		density = clamp(cloud_remap(density, erosion * layer.shape.w * 0.7, 1.0, 0.0, 1.0), 0.0, 1.0);
+		density = clamp(cloud_remap(density, erosion * layer.shape.w * CLOUD_EROSION * cloud_wind.w, 1.0, 0.0, 1.0), 0.0, 1.0);
 	}
 	return min(density * CLOUD_EDGE_SHARPNESS, 1.0) * layer.shape.y;
 }

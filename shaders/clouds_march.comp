@@ -25,9 +25,11 @@ layout(location = 6) uniform ivec2 rows;
 
 // lowest elevation of the panorama (radians); its rows go with the square of the height, denser at the horizon
 const float PANORAMA_LOW = -0.1;
-// scales of the light of the clouds against the shading of the surfaces (light_common.glsl: SUN_DIFFUSE_SCALE, AMBIENT_SCALE)
+// scales of the light of the clouds against the shading of the surfaces (light_common.glsl: SUN_DIFFUSE_SCALE, AMBIENT_SCALE),
+// times the tuning of the debug window (weather_sun_color.w, weather_ambient.w). the sky light about as the shaded faces get it:
+// more of it greys the shaded sides of the clouds into a flat pastel
 const float CLOUD_SUN_SCALE = 1.5;
-const float CLOUD_AMBIENT_SCALE = 1.0;
+const float CLOUD_AMBIENT_SCALE = 0.6;
 // the ground under the clouds lights their bases back with this share of the light falling on it
 const float CLOUD_GROUND_ALBEDO = 0.2;
 // how fast the light of the sky fades into a cloud, per optical depth of the cloud below a point, or above it past CLOUD_SKY_REACH
@@ -41,6 +43,8 @@ const float CLOUD_SKY_FLOOR = 0.15;
 // how dense a cloud has to be to scatter the sunlight back at full: the thin edges and wisps of the side lit by the sun, seen with the
 // sun behind, are darker than its bulk (the "powder" effect: the light takes a few scatterings to turn back towards the view)
 const float CLOUD_POWDER = 6.0;
+// how many of the nearest steps towards the sun see the detail noise
+const int CLOUD_LIGHT_DETAIL_STEPS = 1;
 
 float henyey_greenstein(float cosangle, float g)
 {
@@ -60,12 +64,12 @@ float cloud_phase(float cosangle, float scale)
 vec3 cloud_sky_light(float up)
 {
 	vec3 directional = sky_ambient_sh[1].rgb * (0.488603 * up) - sky_ambient_sh[6].rgb * 0.315392 - sky_ambient_sh[8].rgb * 0.546274;
-	return max(weather_ambient.rgb + directional * 1.3, vec3(0.0)) * CLOUD_AMBIENT_SCALE;
+	return max(weather_ambient.rgb + directional * 1.3, vec3(0.0)) * (CLOUD_AMBIENT_SCALE * weather_ambient.w);
 }
 
 // light of the sun reaching a point inside a layer through the cloud towards it, with the light scattered many times
 // (octaves after Wrenninge), and the phase of the view
-float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float powder)
+float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float powder, bool detail)
 {
 	vec3 sun = weather_sun_direction.xyz;
 	cloud_layer_s layer = cloud_layers[index];
@@ -79,7 +83,8 @@ float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float 
 		float step = reach * (float(s) + 1.0) / float(steps * (steps + 1) / 2);
 		vec3 point = position + sun * (travelled + 0.5 * step);
 		travelled += step;
-		depth += cloud_layer_density(index, point, cloud_height(point), false) * step;
+		// the nearest steps with the detail noise: the small billows shade one another, lit on top and grey beneath
+		depth += cloud_layer_density(index, point, cloud_height(point), detail && (s < CLOUD_LIGHT_DETAIL_STEPS)) * step;
 	}
 	float light = 0.0;
 	float amount = 1.0;
@@ -181,7 +186,7 @@ void main()
 	}
 
 	vec3 ambienttop = cloud_sky_light(1.0);
-	vec3 sunlight = weather_sun_color.rgb * CLOUD_SUN_SCALE * sunup;
+	vec3 sunlight = weather_sun_color.rgb * (CLOUD_SUN_SCALE * weather_sun_color.w) * sunup;
 	// the bases are lit from below by the ground, which the sun lights through the gaps between the clouds
 	vec3 ambientbottom = (weather_sun_color.rgb * max(weather_sun_direction.y, 0.0) * sunup * fog_light.y + ambienttop) * CLOUD_GROUND_ALBEDO;
 	// seen against the sun the thin edges glow (the forward scattering); seen with the sun behind, they are dark
@@ -204,7 +209,7 @@ void main()
 			if (density <= 0.0)
 				continue;
 			float powder = mix(1.0, 1.0 - exp(-density / max(layer.shape.y, 1e-6) * CLOUD_POWDER), powderview);
-			float sunshare = (sunup > 0.0) ? cloud_sunlight(index, position, cosangle, lightsteps, powder) : 0.0;
+			float sunshare = (sunup > 0.0) ? cloud_sunlight(index, position, cosangle, lightsteps, powder, detail) : 0.0;
 			// the light of the sky reaches inside through the cloud above, that of the ground through the cloud below: the base of a
 			// thick cloud is darker than its top, and greyer, lit only by the ground and the sky at its sides
 			float column = layer.shape.y * layer.shape.x;
