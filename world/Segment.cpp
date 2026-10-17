@@ -633,6 +633,65 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
     return true;
 };
 
+bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, double fTextureLength, int const Steps ) const
+{
+    if( fTsBuffer.empty() || Steps < 1 || fLength <= 0.0 )
+        return false;
+
+    auto const shapepoints { ShapePoints.size() / 2 };
+    auto const texturelength { static_cast<float>( fTextureLength ) };
+    auto const step { static_cast<float>( fLength / Steps ) };
+    auto const offset { 0.1 / fLength };
+    // point and the unit vector across the path at the k-th of the Steps stations
+    auto const station = [&]( int const k, glm::vec3 &Position, glm::vec3 &Parallel ) {
+        if( k == 0 && m_joints[ 0 ] ) {
+            Position = glm::vec3{ m_joints[ 0 ]->first - Origin };
+            Parallel = glm::vec3{ m_joints[ 0 ]->second };
+            return; }
+        if( k == Steps && m_joints[ 1 ] ) {
+            Position = glm::vec3{ m_joints[ 1 ]->first - Origin };
+            Parallel = glm::vec3{ m_joints[ 1 ]->second };
+            return; }
+        auto const t { k == 0 ? 0.0 : k == Steps ? 1.0 : FastGetTFromS( fLength * k / Steps ) };
+        Position = glm::vec3{ FastGetPoint( t ) - Origin };
+        auto const dir { FastGetDirection( t, offset ) };
+        Parallel = glm::vec3{ -dir.z, 0.0, dir.x };
+        if( glm::length2( Parallel ) == 0.f ) {
+            // the same workaround as in RenderLoft for control points placed above endpoints
+            Parallel = glm::vec3{ FastGetPoint_1() - FastGetPoint_0() };
+        }
+        Parallel = glm::normalize( Parallel ); };
+    // a vertex of the profile blended Share of the way from its start to its end shape
+    auto const vertex = [&]( std::size_t const j, float const Share, glm::vec3 const &Position, glm::vec3 const &Parallel, float const V ) {
+        auto const &from { ShapePoints[ j ] };
+        auto const &to { ShapePoints[ j + shapepoints ] };
+        auto const rest { 1.f - Share };
+        auto point { Parallel * ( rest * from.position.x + Share * to.position.x ) + Position };
+        point.y += rest * from.position.y + Share * to.position.y;
+        auto normal { ( rest * from.normal.x + Share * to.normal.x ) * Parallel };
+        normal.y += rest * from.normal.y + Share * to.normal.y;
+        Output.emplace_back( point, glm::normalize( normal ), glm::vec2 { rest * from.texture.x + Share * to.texture.x, V } ); };
+
+    glm::vec3 pos1, pos2, parallel1, parallel2;
+    station( 0, pos1, parallel1 );
+    auto tv1 { 1.f };
+    for( int k = 1; k <= Steps; ++k ) {
+        station( k, pos2, parallel2 );
+        tv1 = clamp_circular( tv1, 1.0f );
+        auto const tv2 { tv1 - step / texturelength };
+        auto const m1 { static_cast<float>( k - 1 ) / Steps };
+        auto const m2 { static_cast<float>( k ) / Steps };
+        for( std::size_t j = 0; j < shapepoints; ++j ) {
+            vertex( j, m1, pos1, parallel1, tv1 );
+            vertex( j, m2, pos2, parallel2, tv2 );
+        }
+        pos1 = pos2;
+        parallel1 = parallel2;
+        tv1 = tv2;
+    }
+    return true;
+}
+
 void TSegment::plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const {
     auto const t { FastGetTFromS( std::clamp( Distance, 0.0, fLength ) ) };
     Point = FastGetPoint( t );
@@ -751,6 +810,23 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         auto const clamped = [&]( std::size_t const Index ) {
             auto const outside { reach( Index ) };
             return ( outside > middleextent ? 1 : outside < middleinner ? -1 : 0 ); };
+        auto nearest { 1e6 };
+        auto farthest { -1e6 };
+        for( std::size_t j = 0; j < count; ++j ) {
+            nearest = std::min( nearest, reach( j ) );
+            farthest = std::max( farthest, reach( j ) );
+        }
+        if( middleextent <= middleinner || middleextent < nearest || middleinner > farthest ) {
+            // nothing of the profile between the limits there: the ring shrinks to one point, the step draws nothing
+            auto const outside { std::clamp( 0.5 * ( std::min( extent, farthest ) + std::max( innerextent, nearest ) ), nearest, farthest ) };
+            auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position };
+            pt.y += ShapePoints.front().position.y + Span.lift;
+            for( std::size_t j = 0; j < count; ++j ) {
+                Ring.emplace_back( pt, glm::vec3{ 0.f, 1.f, 0.f }, glm::vec2{ ShapePoints[ j ].texture.x, 0.f } );
+                Wear.push_back( 1.f );
+            }
+            return;
+        }
         for( std::size_t j = 0; j < count; ++j ) {
             auto shape { ShapePoints[ j ] };
             auto outside { reach( j ) };

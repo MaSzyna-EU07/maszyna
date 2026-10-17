@@ -25,6 +25,7 @@ double constexpr tread_fade { 0.02 };
 double constexpr wheel_width { 0.14 };
 double constexpr back_to_back { 1.36 };
 double constexpr rolled_band { wheel_width - ( 1.435 - back_to_back ) / 2.0 };
+double constexpr wheel_play { 0.005 }; // how far the wheels wander across each way, by the play of their flanges in the gauge
 double constexpr nose_tip { 0.012 };
 double constexpr middle_angle { 0.35 };
 double constexpr wide_angle { 0.785 };
@@ -35,6 +36,8 @@ double constexpr square_slope { 3.0 };
 double constexpr spacer_length { 0.12 };
 double constexpr spacer_pitch { 0.5 };
 double constexpr check_flangeway { 0.041 };
+double constexpr guard_planing { 0.015 }; // how far the ends of guard rails are planed off their face toward the running rail
+double constexpr guard_bevel { 1.7320508 }; // how far along the flared ends of guard rails are cut back across them, from their face toward the running rail: 30 degrees to the rail
 double constexpr blade_throw { 0.160 };
 double constexpr blade_clearance { 0.058 };
 double constexpr blade_point { 0.003 };
@@ -45,6 +48,7 @@ double constexpr blade_mark { 0.010 };
 double constexpr blade_gap { 0.0005 };
 double constexpr blade_lowered { 0.050 };
 double constexpr blade_spacing { 0.5 };
+double constexpr blade_runon_margin { 0.2 }; // how far short of the end of the plain track a blade running on into it ends
 
 // where the inner rails of the two paths of a switch cross, found from their gauge lines behind the blades
 struct switch_frog {
@@ -87,6 +91,7 @@ struct rail_crossing {
 // the size of the rail profile, out from the gauge face: positive outwards, the side of the head away from the track
 struct rail_size {
     double head { 0.0735 }; // how far the head reaches out
+    double shoulder { 0.005 }; // how far in from the outer edge of the head its top is rounded off
     double height { 0.172 };
     double low { -0.0385 }; // the reach of the profile inwards
     double high { 0.1115 }; // the reach of the profile outwards
@@ -102,7 +107,7 @@ struct rail_size {
     double web { 0.0365 };
     double neck { -0.0467 };
 };
-// a check rail beside a rail, how far its ends turn away from the running rail
+// a check rail beside a rail, how far its ends are bent away from the running rail
 struct check_rail {
     double from { 0.0 };
     double to { 0.0 };
@@ -116,6 +121,16 @@ inline double check_flare( check_rail const &Check ) {
 
     return std::min( guard_flare, 0.4 * ( Check.to - Check.from ) );
 }
+// how the end of a part of a rail planed by the rails around it is made: square where it's put, a point where the head is planed down to nothing
+// (a wing rail), blunt where it's wide enough for the wheels running at it (a leg of the nose, a point rail), sharp where it's put as it gets wider
+// (a leg of a movable nose), mitred against the end of the other rail (an obtuse crossing)
+enum class rail_end {
+    square,
+    point,
+    blunt,
+    sharp,
+    mitre
+};
 // a rail broken where another one crosses it: the part coming from below ends at end, the part going on starts at start
 struct rail_cut {
     double at { 0.0 };
@@ -130,6 +145,21 @@ struct rail_cut {
     knots::line endinner, startinner;
     bool endcap { true };
     bool startcap { true };
+    knots::line endworn, startworn; // from how far out from the gauge line the wheels of a rail beside roll on the head, where it's planed flush against that rail
+    material_handle endwornby { 0 }; // what the wheels rolling on it from beside polish the head to, the brightest of them
+    material_handle startwornby { 0 };
+    // what carving the parts against the rails around takes from the design of the crossing
+    bool carved { false }; // the lines of the parts are left to carving
+    rail_end endkind { rail_end::square };
+    rail_end startkind { rail_end::square };
+    double endanchor { 0.0 }; // from where on a part planed down to its point can end
+    double startanchor { 0.0 };
+    double endrunon { 0.0 }; // how far past its end a wing rail can go on to be planed down to its point
+    double startrunon { 0.0 };
+    knots::line endcarve, startcarve; // offsets the parts are carved with where they aren't those they're laid with: the legs of a movable nose, as they lie with the first path set
+    bool throwable { false }; // the part going on moves with the switch: a leg of a movable nose
+    glm::dvec2 mark { 0.0 }; // where the rails cross, in plan: the parts at an obtuse crossing aren't carved against the other rail's there, they're designed to meet
+    bool obtuse { false };
 };
 struct rail_plan {
     std::vector<rail_cut> cuts;

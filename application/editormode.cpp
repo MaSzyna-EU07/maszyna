@@ -8,6 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
+#include "world/TrackSleepers.h"
 #include <filesystem>
 #include <iterator>
 #include <fstream>
@@ -2952,6 +2953,7 @@ bool editor_mode::save()
     }
     auto const terrainadded{false == rootstatements.empty()};
     auto const controls{turntable_controls(rootstatements)};
+    auto const noses{nose_controls(rootstatements)};
     std::vector<std::string> trailing;
     std::erase_if(m_vehicle.trainsets, [](auto const &Trainset) {
         auto const *track{simulation::Paths.find(Trainset.track)};
@@ -2965,6 +2967,8 @@ bool editor_mode::save()
     auto const result = scene::Layers.save(rootstatements, trailing);
     if (result.success && controls)
         m_turntable_included = true;
+    if (result.success && noses)
+        m_nose_included = true;
     if (result.success && placed > 0)
     {
         m_vehicle.trainsets.clear();
@@ -4756,7 +4760,7 @@ void editor_mode::render_first_steps()
 	     {{"RMB + move", "Hold the right button and move the mouse: look around"},
 	      {"RMB + W S A D", "With the right button held: fly forwards, back and to the sides; E and Q: up and down"},
 	      {"O", "The top view, and back to 3D"},
-	      {"wheel", "In the top view: zoom in and out where the cursor points"},
+	      {"wheel", "Zoom in and out where the cursor points"},
 	      {"MMB + move", "In the top view: hold the wheel and drag to move the map"},
 	      {"F", "Fly to what is selected"}},
 	     {{first_step::look, "Look around with the right button held"}, {first_step::top, "Switch to the top view"}},
@@ -5389,8 +5393,28 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
 {
     if (false == ImGui::GetIO().WantCaptureMouse && track_wheel(Yoffset != 0.0 ? Yoffset : Xoffset))
         return;
-    if (false == Global.EditorOrtho || ImGui::GetIO().WantCaptureMouse)
+    if (ImGui::GetIO().WantCaptureMouse || Yoffset == 0.0)
         return;
+    if (false == Global.EditorOrtho)
+    {
+        // in 3D the camera flies along the ray under the cursor, by a share of the distance to what it points at;
+        // a touchpad sends many small steps, together they come to the same
+        screen_projection const projection;
+        glm::dvec3 origin;
+        glm::dvec3 direction;
+        projection.ray(ImGui::GetIO().MousePos, origin, direction);
+        glm::dvec3 level;
+        auto const distance{std::min(
+            GfxRenderer->Mouse_Hit() ? glm::length(GfxRenderer->Mouse_Position()) : projection.on_level(ImGui::GetIO().MousePos, 0.0, level) ? glm::distance(level, origin) : std::max(20.0, std::abs(Camera.Pos.y) * 2.0),
+            20000.0)};
+        auto step{distance * (1.0 - std::pow(0.85, Yoffset))};
+        // no nearer than 2 m to the point, not through it
+        if (Yoffset > 0.0)
+            step = std::max(0.0, std::min(step, distance - 2.0));
+        Camera.Pos += direction * step;
+        Global.pCamera = Camera;
+        return;
+    }
     auto const before{Global.EditorOrthoExtent};
     auto const after{std::clamp(before * static_cast<float>(std::pow(0.85, Yoffset)), 5.0f, 50000.0f)};
     screen_projection const projection;
@@ -5450,6 +5474,8 @@ void editor_mode::update_camera(double const Deltatime)
 void editor_mode::enter()
 {
     m_statebackup = {Global.pCamera, FreeFlyModeFlag, Global.ControlPicking};
+    // the editor changes the tracks, their sleepers are worked out as they're needed
+    track_sleepers::lay_in_background(false);
 
     if (simulation::Region != nullptr)
     {
@@ -5544,6 +5570,7 @@ void editor_mode::enter()
 
 void editor_mode::exit()
 {
+    track_sleepers::lay_in_background(true);
     Global.editor_tracks = false;
     EditorModeFlag = false;
     Global.ControlPicking = m_statebackup.picking;
@@ -5739,6 +5766,31 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         return;
     }
 
+    // the properties of a track copied and pasted on the selected ones
+    if (Global.ctrlState && Global.shiftState && (Key == GLFW_KEY_C || Key == GLFW_KEY_V) && ui()->mode() == nodebank_panel::TRACK)
+    {
+        if (is_press(Action) && false == ImGui::GetIO().WantTextInput)
+        {
+            auto const tracks{selected_tracks()};
+            if (Key == GLFW_KEY_C)
+            {
+                // the selected track, or the one under the cursor when there are more of them
+                auto *from{tracks.size() == 1 ? tracks.front() : m_hover.track};
+                if (from != nullptr)
+                    copy_track_style(*from);
+                else
+                    ui()->set_status(STR_C("Select one track, or point at one, to copy its properties"), true);
+            }
+            else if (m_track_style.values.empty())
+                ui()->set_status(STR_C("Copy the properties of a track first: Ctrl+Shift+C"), true);
+            else if (tracks.empty())
+                ui()->set_status(STR_C("Select the tracks to paste the properties on"), true);
+            else
+                paste_track_style(tracks);
+        }
+        return;
+    }
+
     // save; checked ahead of the camera keys, which have S bound to moving back
     if (Global.ctrlState && false == Global.shiftState && Key == GLFW_KEY_S)
     {
@@ -5808,6 +5860,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_ESCAPE:
+        // an open list or menu takes this Esc for itself, the selection behind it stays
+        if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+            break;
         if (is_press(Action))
         {
             road_cancel();
@@ -5817,13 +5872,15 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         {
             if (m_lay.active && false == m_lay.points.empty())
                 lay_cancel();
+            else if (m_track_style.picking)
+                m_track_style.picking = false;
             else if (track_busy())
             {
                 cancel_track_tools();
                 m_straights.tool = 0;
             }
-            else if (m_track_tab == track_tab::path && false == m_track_set.empty())
-                m_track_set.clear();
+            else if (m_track_tab == track_tab::path && m_track_set.size() >= 2)
+                select_tracks({});
             else if (m_track_tab != track_tab::path)
                 show_track_tab(track_tab::path);
             else if (selected_track() != nullptr)

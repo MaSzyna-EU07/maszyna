@@ -63,6 +63,14 @@ rail_size measure_rail( gfx::vertex_array const &Profile ) {
         }
     }
     result.tread = result.head;
+    auto flat { -1e9 };
+    for( std::size_t i = 0; i < count; ++i ) {
+        auto const &point { Profile[ i ].position };
+        if( point.y > top - 0.0005 ) {
+            flat = std::max( flat, static_cast<double>( point.x ) );
+        }
+    }
+    result.shoulder = std::clamp( result.head - flat, 0.0, 0.5 * result.head );
     std::vector<std::size_t> heads, lips;
     for( std::size_t i = 0; i < count; ++i ) {
         auto const &point { Profile[ i ].position };

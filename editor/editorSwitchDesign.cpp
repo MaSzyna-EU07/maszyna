@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorSwitchDesign.hpp"
 #include "editor/editorFormat.hpp"
+#include "world/RailLayout.h"
 
 #include "utilities/utilities.h"
 
@@ -29,6 +30,11 @@ double constexpr kPi{3.14159265358979323846};
 double constexpr kMinRadius{10.0};
 double constexpr kTransitionStep{5.0};
 double constexpr kLink{1.0};
+double constexpr kTipStep{0.01};
+double constexpr kHalfGauge{0.7175};
+double constexpr kSecantAngle{25.0 / 60.0};
+double constexpr kSecantLead{0.6};
+double constexpr kCutTips[][2]{{190.0, 1.2483}, {300.0, 1.5}, {500.0, 2.165}, {760.0, 2.633}, {1200.0, 3.3347}};
 
 glm::dvec2 heading_of(double const Angle)
 {
@@ -215,24 +221,44 @@ bool read_parts(std::istream &Input, std::vector<part> &Parts)
 
 bool double_switch(std::string const &Type)
 {
-	return Type == "Rpd" || Type == "Rpj";
+	return Type == "Rpd" || Type == "Rpj" || Type == "Rps";
 }
 
-path diverging(std::vector<part> const &Parts, double const Lead, double const Entry)
+bool symmetric_switch(std::string const &Type)
+{
+	return Type == "Rls";
+}
+
+path diverging(std::vector<part> const &Parts, double const Lead, double const Entry, double const Tip)
 {
 	walker walk;
 	if (Lead > 0.0)
 		walk.straight(Lead);
 	auto const start{Lead > 0.0 ? 0.0 : glm::radians(Entry)};
 	walk.heading += glm::radians(Entry);
+	auto const lay = [&](double const Length, double const Radius1, double const Radius2) {
+		if (Radius1 == 0.0 && Radius2 == 0.0)
+			walk.straight(Length);
+		else if (Radius1 == Radius2)
+			walk.arc(Length, Radius1);
+		else
+			walk.transition(Length, Radius1, Radius2);
+	};
+	auto split{Entry > 0.0 ? 0.0 : Tip - Lead};
 	for (auto const &part : Parts)
 	{
-		if (part.radius1 == 0.0 && part.radius2 == 0.0)
-			walk.straight(part.length);
-		else if (part.radius1 == part.radius2)
-			walk.arc(part.length, part.radius1);
+		if (split > kTipStep && split < part.length - kTipStep)
+		{
+			auto const k1{curvature_of(part.radius1)};
+			auto const k2{curvature_of(part.radius2)};
+			auto const k{k1 + (k2 - k1) * split / part.length};
+			auto const middle{part.radius1 == part.radius2 ? part.radius1 : (k != 0.0 ? 1.0 / k : 0.0)};
+			lay(split, part.radius1, middle);
+			lay(part.length - split, middle, part.radius2);
+		}
 		else
-			walk.transition(part.length, part.radius1, part.radius2);
+			lay(part.length, part.radius1, part.radius2);
+		split -= part.length;
 	}
 	path result;
 	result.angle = walk.heading;
@@ -260,18 +286,80 @@ path diverging(std::vector<part> const &Parts, double const Lead, double const E
 	return result;
 }
 
+double blade_tip(std::vector<part> const &Parts, double const Lead, double const Entry, double const Tip, bool const Symmetric)
+{
+	if (Entry > 0.0)
+		return Lead;
+	if (Tip > Lead)
+		return Tip;
+	auto const reach = [&](double const Gap) {
+		glm::dvec2 at{0.0, Lead};
+		auto heading{0.0};
+		auto apart{0.0};
+		for (auto const &part : Parts)
+		{
+			auto const k1{curvature_of(part.radius1)};
+			auto const k2{curvature_of(part.radius2)};
+			auto const steps{std::max(1, static_cast<int>(std::ceil(part.length / kTipStep)))};
+			auto const step{part.length / steps};
+			for (int i = 0; i < steps; ++i)
+			{
+				auto const k{k1 + (k2 - k1) * (i + 0.5) / steps};
+				auto const next{at + heading_of(heading + 0.5 * k * step) * step};
+				heading += k * step;
+				auto const nextapart{(Symmetric ? 2.0 : 1.0) * (next.x + kHalfGauge * (1.0 - std::cos(heading)))};
+				if (nextapart >= Gap)
+					return glm::mix(at.y, next.y, std::clamp((Gap - apart) / std::max(nextapart - apart, 1e-12), 0.0, 1.0));
+				at = next;
+				apart = nextapart;
+			}
+		}
+		return Lead; };
+	return std::max({Lead, reach(track_rails::blade_point), reach(track_rails::blade_nose) - track_rails::blade_planed});
+}
+
+double cut_tip(std::string const &Rail, double const Radius)
+{
+	if (Rail != "60E1" && Rail != "49E1")
+		return 0.0;
+	for (auto const &cut : kCutTips)
+		if (std::abs(Radius - cut[0]) < 0.5)
+			return cut[1];
+	return 0.0;
+}
+
+std::pair<double, double> secant_blade(std::string const &Rail, double const Radius, double const Ratio)
+{
+	if (Rail != "S42" || Ratio <= 0.0)
+		return {0.0, 0.0};
+	for (auto const &entry : catalogue())
+	{
+		if (entry.type != "Rz" || entry.rail != Rail || entry.entry <= 0.0 || entry.parts.empty() || std::abs(entry.parts.front().radius1 - Radius) > 0.5)
+			continue;
+		auto turn{glm::radians(entry.entry)};
+		for (auto const &part : entry.parts)
+			turn += 0.5 * (curvature_of(part.radius1) + curvature_of(part.radius2)) * part.length;
+		if (std::abs(turn - std::atan(1.0 / Ratio)) < 1e-4)
+			return {entry.lead, glm::radians(entry.entry)};
+	}
+	return {kSecantLead, glm::radians(kSecantAngle)};
+}
+
 shape build(design const &Design, std::string &Error)
 {
 	shape result;
 	Error.clear();
 	bool const twofold{double_switch(Design.type)};
-	if (Design.type != "Rz" && false == twofold)
+	bool const symmetric{symmetric_switch(Design.type)};
+	if (Design.type != "Rz" && false == twofold && false == symmetric)
 	{
 		Error = "Unknown type of switch";
 		return result;
 	}
 	Error = checked(Design.parts);
-	if (Error.empty() && twofold && false == Design.parts2.empty())
+	// both switches of a symmetric double switch have the shape of the first one
+	bool const mirrored{Design.type == "Rps"};
+	if (Error.empty() && twofold && false == mirrored && false == Design.parts2.empty())
 		Error = checked(Design.parts2);
 	if (Error.empty() && (Design.lead < 0.0 || Design.lead > 30.0))
 		Error = "The pre-blade stretch has to be between 0 and 30 m";
@@ -279,18 +367,29 @@ shape build(design const &Design, std::string &Error)
 		Error = "The angle of the blade has to be between 0 and 5 degrees";
 	if (false == Error.empty())
 		return result;
-	auto const first{diverging(Design.parts, Design.lead, Design.entry)};
+	auto const tip{blade_tip(Design.parts, Design.lead, Design.entry, Design.tip, symmetric)};
+	auto const first{diverging(Design.parts, Design.lead, Design.entry, tip)};
 	if (first.angle <= 1e-4 || first.angle >= kPi / 4.0)
 	{
 		Error = "The diverging track has to leave to the side at an angle between 0 and 45 degrees";
 		return result;
 	}
 	auto const end{glm::dvec2{first.whole.points[segment_data::point::end].x, first.whole.points[segment_data::point::end].z}};
-	result.ratio = 1.0 / std::tan(first.angle);
+	// the tracks of a symmetric switch part by twice the angle of each
+	result.ratio = 1.0 / std::tan(symmetric ? 2.0 * first.angle : first.angle);
 	result.radius = first.radius;
 	result.offset = end.x;
-	result.tip = Design.lead;
+	result.tip = tip;
 	result.a = Design.a > 0.0 ? Design.a : tangent_point(end, first.angle);
+	if (symmetric)
+	{
+		result.length = end.y;
+		result.b = Design.b > 0.0 ? Design.b : result.length - result.a;
+		auto other{first.whole};
+		mirror(other);
+		result.paths = {other, first.whole};
+		return result;
+	}
 	if (false == twofold)
 	{
 		result.length = Design.main > 0.0 ? Design.main : end.y;
@@ -309,20 +408,22 @@ shape build(design const &Design, std::string &Error)
 		Error = "The second switch has to start at least 1 m along the main track and 1 m before the end of the diverging track";
 		return result;
 	}
-	auto const lead2{Design.lead2 >= 0.0 ? Design.lead2 : Design.lead};
-	auto const entry2{Design.entry2 >= 0.0 ? Design.entry2 : Design.entry};
+	auto const lead2{Design.lead2 >= 0.0 && false == mirrored ? Design.lead2 : Design.lead};
+	auto const entry2{Design.entry2 >= 0.0 && false == mirrored ? Design.entry2 : Design.entry};
+	auto const &parts2{Design.parts2.empty() || mirrored ? Design.parts : Design.parts2};
+	auto const tip2{blade_tip(parts2, lead2, entry2, Design.tip2 >= 0.0 && false == mirrored ? Design.tip2 : Design.tip, false)};
 	if (lead2 > 30.0 || entry2 > 5.0)
 	{
 		Error = "The pre-blade stretch of the second switch has to be at most 30 m and the angle of its blade at most 5 degrees";
 		return result;
 	}
-	auto second{diverging(Design.parts2.empty() ? Design.parts : Design.parts2, lead2, entry2)};
+	auto second{diverging(parts2, lead2, entry2, tip2)};
 	if (second.angle <= 1e-4 || second.angle >= kPi / 4.0)
 	{
 		Error = "The diverging track of the second switch has to leave to the side at an angle between 0 and 45 degrees";
 		return result;
 	}
-	if (Design.type == "Rpd")
+	if (Design.type == "Rpd" || mirrored)
 		mirror(second.whole);
 	shift(second.whole, Design.stagger);
 	auto const secondend{second.whole.points[segment_data::point::end].z};
@@ -334,7 +435,7 @@ shape build(design const &Design, std::string &Error)
 	}
 	result.b = Design.b > 0.0 ? Design.b : reach - result.a;
 	result.stagger = Design.stagger;
-	result.tip2 = Design.stagger + lead2;
+	result.tip2 = Design.stagger + tip2;
 	result.radius = std::min(first.radius, second.radius > 0.0 ? second.radius : first.radius);
 	// the simulation joins switches only to plain tracks, so a short one lies between the two
 	auto const link{std::min(kLink, Design.stagger * 0.5)};
@@ -344,75 +445,184 @@ shape build(design const &Design, std::string &Error)
 
 std::vector<design> catalogue()
 {
+	// the switches of the instruction Id-4 of PKP PLK, tables 8-1 (60E1), 8-2 (49E1) and 8-3 (S42): a from the start of the switch
+	// to its centre, b on from there along the main track, and along the diverging track where the scheme gives it another length
 	struct ordinary
 	{
 		char const *name;
+		char const *rail;
 		double radius;
-		double ratio;
-		double a;
-		double b;
+		double ratio; // at the end of the diverging track; of the two tracks parting, for a symmetric switch
+		double a; // 0: from the geometry
+		double b; // 0: the diverging track curved up to its end
+		double diverging{0.0}; // 0: the same as b
+		bool movable{false};
+		char const *type{"Rz"};
+		bool tangent{false}; // an S42 switch with blades lying tangent to the stock rails, its a too long for blades cutting into them at 25'
 	};
 	ordinary const ordinaries[] = {
-		{"Rz 1:9 R190", 190.0, 9.0, 10.523, 16.615},
-		{"Rz 1:9 R300", 300.0, 9.0, 16.615, 16.615},
-		{"Rz 1:12 R500", 500.0, 12.0, 20.797, 0.0},
-		{"Rz 1:14 R760", 760.0, 14.0, 0.0, 0.0},
-		{"Rz 1:18,5 R1200", 1200.0, 18.5, 32.409, 34.943},
-		{"Rz 1:26,5 R2500", 2500.0, 26.5, 0.0, 0.0},
+		{"Rz 60E1-190-1:9", "60E1", 190.0, 9.0, 10.523, 16.615},
+		{"Rz 60E1-300-1:9", "60E1", 300.0, 9.0, 16.615, 16.615},
+		{"Rz 60E1-500-1:12", "60E1", 500.0, 12.0, 20.797, 20.797},
+		{"Rz 60E1-500-1:12 movable nose", "60E1", 500.0, 12.0, 20.797, 20.797, 0.0, true},
+		{"Rz 60E1-760-1:14", "60E1", 760.0, 14.0, 27.108, 27.108},
+		{"Rz 60E1-1200-1:18,5", "60E1", 1200.0, 18.5, 32.409, 32.409},
+		{"Rz 60E1-1200-1:18,5 movable nose", "60E1", 1200.0, 18.5, 32.409, 32.409, 0.0, true},
+		{"Rz 60E1-2500-1:26,5 movable nose", "60E1", 2500.0, 26.5, 47.153, 47.153, 0.0, true},
+		{"Rz 49E1-190-1:7,5", "49E1", 190.0, 7.5, 12.611, 12.611},
+		{"Rz 49E1-190-1:7,5 long", "49E1", 190.0, 7.5, 12.611, 17.428},
+		{"Rz 49E1-190-1:9", "49E1", 190.0, 9.0, 10.523, 16.615},
+		{"Rz 49E1-190-1:9 gauge 1524", "49E1", 190.0, 9.0, 10.523, 17.417},
+		{"Rz 49E1-190-1:7,5/1:6,6", "49E1", 190.0, 6.6, 14.312, 10.910, 14.312},
+		{"Rz 49E1-300-1:9", "49E1", 300.0, 9.0, 16.615, 16.615},
+		{"Rz 49E1-300-1:9,403", "49E1", 300.0, 9.403, 15.907, 17.343, 17.322},
+		{"Rz 49E1-500-1:12", "49E1", 500.0, 12.0, 20.797, 20.797},
+		{"Rz 49E1-500-1:14", "49E1", 500.0, 14.0, 17.834, 24.537},
+		{"Rz 49E1-1200-1:18,5", "49E1", 1200.0, 18.5, 32.409, 32.409},
+		// table 3-2, without a scheme
+		{"Rls 49E1-215-1:4,8", "49E1", 215.0, 4.8, 0.0, 0.0, 0.0, false, "Rls"},
+		{"Rz S42-190-1:6,6", "S42", 190.0, 6.6, 13.374, 12.560, 14.172},
+		{"Rz S42-190-1:7", "S42", 190.0, 7.0, 12.573, 13.361},
+		{"Rz S42-190-1:7,5", "S42", 190.0, 7.5, 11.691, 14.243, 14.235},
+		{"Rz S42-205-1:9 I", "S42", 205.0, 9.0, 10.517, 16.500},
+		{"Rz S42-205-1:9 II", "S42", 205.0, 9.0, 10.517, 17.591},
+		{"Rz S42-230-1:9,51 I", "S42", 230.0, 9.51, 11.046, 16.008, 16.308},
+		{"Rz S42-230-1:9,51 II", "S42", 230.0, 9.51, 11.046, 18.342, 18.642},
+		{"Rz S42-230-1:9,51 III", "S42", 230.0, 9.51, 11.046, 16.008, 18.642},
+		{"Rz S42-265-1:10 I", "S42", 265.0, 10.0, 11.9692, 18.1508},
+		{"Rz S42-265-1:10 II", "S42", 265.0, 10.0, 11.9692, 19.1918},
+		{"Rz S42-500-1:9", "S42", 500.0, 9.0, 25.055, 13.743, 27.513},
+		{"Rz S42-500-1:12", "S42", 500.0, 12.0, 18.21526, 20.58234, 20.58202},
+		{"Rz S42-500-1:14", "S42", 500.0, 14.0, 15.288, 26.323},
+		{"Rz S42-70-1:5 industrial", "S42", 70.0, 5.0, 7.112, 8.708},
+		{"Rz S42-140-1:7 industrial", "S42", 140.0, 7.0, 7.670, 12.932},
+		{"Rls S42-140-1:5 industrial", "S42", 140.0, 5.0, 7.131, 8.715, 0.0, false, "Rls"},
+		{"Rls S42-200-1:7 industrial", "S42", 200.0, 7.0, 6.493, 12.148, 0.0, false, "Rls"},
+		{"Rz S42-205-1:6,6 industrial", "S42", 205.0, 6.6, 14.588, 13.602, 15.352},
+		{"Rz S42-205-1:7 industrial", "S42", 205.0, 7.0, 13.710, 14.480},
+		{"Rz S42-205-1:7,5 industrial", "S42", 205.0, 7.5, 12.754, 15.436, 15.427},
+		{"Rz S42-300-1:9 industrial", "S42", 300.0, 9.0, 16.615, 16.615, 0.0, false, "Rz", true},
+		{"Rz S42-205-1:9 gauge 1524", "S42", 205.0, 9.0, 10.513, 18.394},
 	};
 	auto const make = [](ordinary const &Ordinary) {
 		design entry;
 		entry.name = Ordinary.name;
-		auto const angle{std::atan(1.0 / Ordinary.ratio)};
-		entry.a = Ordinary.a > 0.0 ? Ordinary.a : Ordinary.radius * std::tan(angle * 0.5);
-		auto const estimated{Ordinary.b <= 0.0};
-		entry.b = estimated ? 1.87 * Ordinary.ratio : Ordinary.b;
-		entry.parts.push_back({Ordinary.radius * angle, Ordinary.radius, Ordinary.radius});
-		auto const rest{(entry.a + entry.b - Ordinary.radius * std::sin(angle)) / std::cos(angle)};
-		if (rest > 0.01)
+		entry.rail = Ordinary.rail;
+		entry.type = Ordinary.type;
+		entry.movable = Ordinary.movable;
+		auto const symmetric{symmetric_switch(entry.type)};
+		// each track of a symmetric switch turns by a half of the angle between them
+		auto const angle{std::atan(1.0 / Ordinary.ratio) * (symmetric ? 0.5 : 1.0)};
+		auto const radius{Ordinary.radius};
+		auto const tangent{radius * std::tan(angle * 0.5)};
+		auto const a{Ordinary.a > 0.0 ? Ordinary.a : tangent};
+		auto const across = [&](double const Entry) { return radius * (std::cos(Entry) - std::cos(angle)); };
+		// the centre nearer than the tangent of the arc: the blade meets the stock rail at an angle and the arc turns the rest of the way;
+		// further: the diverging track runs along the main one for a while
+		// within a couple of centimetres of the tangent the catalogue only rounds it
+		auto const centre = [&](double const Entry) { return radius * (std::sin(angle) - std::sin(Entry)) - across(Entry) / std::tan(angle); };
+		auto const fit = [&](double const Centre) {
+			auto low{0.0};
+			auto high{angle};
+			for (int i = 0; i < 60; ++i)
+			{
+				auto const middle{(low + high) * 0.5};
+				(centre(middle) > Centre ? low : high) = middle;
+			}
+			return (low + high) * 0.5; };
+		auto entryangle{0.0};
+		auto lead{a > tangent + 0.02 ? a - tangent : 0.0};
+		if (entry.rail == "S42" && false == Ordinary.tangent)
 		{
-			entry.parts.push_back({rest, 0.0, 0.0});
-			entry.main = entry.a + entry.b;
+			entryangle = glm::radians(kSecantAngle) * (symmetric ? 0.5 : 1.0);
+			lead = a - centre(entryangle);
+			if (lead <= 0.0)
+			{
+				lead = kSecantLead;
+				entryangle = fit(a - lead);
+			}
 		}
-		else
-			entry.b = 0.0;
-		if (estimated)
-			entry.note = "(b est.)";
+		else if (a < tangent - 0.02)
+			entryangle = fit(a);
+		else if (auto const cut{cut_tip(entry.rail, radius)}; cut > 0.0 && false == symmetric)
+			entry.tip = lead + cut;
+		entry.entry = glm::degrees(entryangle);
+		entry.lead = lead;
+		entry.a = a;
+		auto const arcend{across(entryangle) / std::sin(angle)};
+		entry.b = Ordinary.b > 0.0 ? Ordinary.b : arcend;
+		entry.parts.push_back({radius * (angle - entryangle), radius, radius});
+		auto const rest{(Ordinary.diverging > 0.0 ? Ordinary.diverging : entry.b) - arcend};
+		if (rest > 0.05)
+			entry.parts.push_back({rest, 0.0, 0.0});
+		if (false == symmetric)
+			entry.main = a + entry.b;
+		if (Ordinary.a <= 0.0 || Ordinary.b <= 0.0)
+			entry.note = "(from the geometry)";
 		return entry;
 	};
 	std::vector<design> result;
 	for (auto const &ordinary : ordinaries)
 		result.push_back(make(ordinary));
-	{
-		design curved;
-		curved.name = "Rz 1:7,5 R190";
-		auto const angle{std::atan(1.0 / 7.5)};
-		curved.parts.push_back({190.0 * angle, 190.0, 190.0});
-		curved.note = "(curved to the end)";
-		result.push_back(curved);
-	}
+	// double switches: the second one starts on the main track of the first, as far on as the schemes give it, a one sided double
+	// switch of Id-4 has its second switch on the diverging track of the first, here on the main one at the same place
+	ordinary const r190_75{"", "", 190.0, 7.5, 12.611, 12.611};
+	ordinary const r190_75long{"", "", 190.0, 7.5, 12.611, 12.611, 16.615};
+	ordinary const r190_9{"", "", 190.0, 9.0, 10.523, 16.615};
+	ordinary const r190_9tangent{"", "", 190.0, 9.0, 10.523, 16.615, 0.0, false, "Rz", true};
+	ordinary const r190_66{"", "", 190.0, 6.6, 14.312, 10.910, 14.312};
+	ordinary const r300_9{"", "", 300.0, 9.0, 16.615, 16.615};
+	ordinary const r500_12{"", "", 500.0, 12.0, 20.797, 20.797};
 	struct twofold
 	{
 		char const *name;
 		char const *type;
-		std::size_t ordinary;
+		char const *rail;
+		ordinary first;
+		ordinary second;
 		double stagger;
+		char const *note;
 	};
 	twofold const twofolds[] = {
-		{"Rpd 1:9 R190", "Rpd", 0, 5.0},
-		{"Rpj 1:9 R190", "Rpj", 0, 5.0},
-		{"Rpd 1:9 R300", "Rpd", 1, 6.0},
-		{"Rpj 1:9 R300", "Rpj", 1, 6.0},
+		{"Rpd 49E1-190-1:7,5/1:7,5", "Rpd", "49E1", r190_75long, r190_75, 10.523, ""},
+		{"Rpd 49E1-190-1:9/1:7,5", "Rpd", "49E1", r190_9, r190_75, 10.523, ""},
+		{"Rpd 49E1-190-1:9/1:9", "Rpd", "49E1", r190_9, r190_9, 10.523, ""},
+		{"Rpd 49E1-190-1:7,5/1:7,5/1:6,6", "Rpd", "49E1", r190_75, r190_66, 10.523, ""},
+		{"Rpd 49E1-190-1:7,5/1:6,6/1:7,5", "Rpd", "49E1", r190_66, r190_75, 10.523, ""},
+		{"Rpd 49E1-190-1:7,5/1:6,6/1:7,5/1:6,6", "Rpd", "49E1", r190_66, r190_66, 10.523, ""},
+		{"Rpd 49E1-190-1:9/1:7,5/1:6,6", "Rpd", "49E1", r190_9, r190_66, 10.523, ""},
+		{"Rpj 49E1-190-1:9", "Rpj", "49E1", r190_9, r190_9, 5.258, "(approx.)"},
+		{"Rpd S42-190-1:9", "Rpd", "S42", r190_9tangent, r190_9tangent, 10.523, ""},
+		{"Rpd S42-190-1:9 II", "Rpd", "S42", {"", "", 190.0, 9.0, 9.626, 15.500}, {"", "", 190.0, 9.0, 9.626, 17.591}, 9.5, ""},
+		{"Rpj S42-190/180-1:10", "Rpj", "S42", {"", "", 190.0, 10.0, 0.0, 19.192, 0.0, false, "Rz", true}, {"", "", 180.0, 10.0, 0.0, 19.192, 0.0, false, "Rz", true}, 5.504, "(approx.)"},
+		{"Rpj S42-140-1:9 industrial", "Rpj", "S42", {"", "", 140.0, 9.0, 9.274, 17.590, 0.0, false, "Rz", true}, {"", "", 140.0, 9.0, 9.274, 17.590, 0.0, false, "Rz", true}, 9.263, "(approx.)"},
+		{"Rpd S42-140-1:7 industrial", "Rpd", "S42", {"", "", 140.0, 7.0, 7.670, 12.932}, {"", "", 140.0, 7.0, 7.670, 12.932}, 6.9, ""},
+		// symmetric double switches, not in Id-4 but for its scheme: the same switch to both sides, the second one starting as close behind
+		// the first one as their blades let them, past the heel of the blades of the first one and the short track between the two
+		{"Rps 60E1-300-1:9", "Rps", "60E1", r300_9, r300_9, 14.2, "(designed)"},
+		{"Rps 60E1-500-1:12", "Rps", "60E1", r500_12, r500_12, 18.0, "(designed)"},
 	};
 	for (auto const &entry : twofolds)
 	{
-		auto made{make(ordinaries[entry.ordinary])};
+		auto first{entry.first};
+		auto other{entry.second};
+		first.rail = other.rail = entry.rail;
+		auto made{make(first)};
+		auto const second{make(other)};
 		made.name = entry.name;
+		made.rail = entry.rail;
 		made.type = entry.type;
 		made.stagger = entry.stagger;
+		if (made.type != "Rps")
+		{
+			made.parts2 = second.parts;
+			made.lead2 = second.lead;
+			made.entry2 = second.entry;
+			made.tip2 = second.tip;
+		}
 		made.main = 0.0;
 		made.b = 0.0;
-		made.note = format("(second switch %.1f m on, assumed)", entry.stagger);
+		made.note = entry.note;
 		result.push_back(made);
 	}
 	return result;
@@ -461,6 +671,14 @@ std::vector<design> own()
 				line >> entry.lead2;
 			else if (keyword == "entry2")
 				line >> entry.entry2;
+			else if (keyword == "tip")
+				line >> entry.tip;
+			else if (keyword == "tip2")
+				line >> entry.tip2;
+			else if (keyword == "heel")
+				line >> entry.heel;
+			else if (keyword == "throw")
+				line >> entry.bladethrow;
 			else if (keyword == "a")
 				line >> entry.a;
 			else if (keyword == "b")
@@ -492,13 +710,15 @@ bool save_own(std::vector<design> const &Designs, std::string &Error)
 		return false;
 	}
 	file << "# switch templates made in the track editor of MaSzyna\n";
-	file << "# switch <name> type <Rz|Rpd|Rpj> rail <rail> main <m> stagger <m> a <m> b <m> lead <m> entry <deg> [lead2 <m> entry2 <deg>] parts <count> (<length> <R at the start> <R at the end>)... parts2 <count> ...\n";
+	file << "# switch <name> type <Rz|Rpd|Rpj> rail <rail> main <m> stagger <m> a <m> b <m> lead <m> entry <deg> tip <m> [lead2 <m> entry2 <deg> tip2 <m>] [heel <m> throw <m>] parts <count> (<length> <R at the start> <R at the end>)... parts2 <count> ...\n";
 	file << "# R 0 is a straight, the same R at both ends an arc, different ones a transition curve; 0 for main, a, b: from the geometry\n";
 	for (auto const &entry : Designs)
 	{
-		file << "switch " << word(entry.name) << " type " << entry.type << " rail " << word(entry.rail) << ' ' << format("main %.4f stagger %.4f a %.4f b %.4f lead %.4f entry %.4f", entry.main, entry.stagger, entry.a, entry.b, entry.lead, entry.entry);
-		if (entry.lead2 >= 0.0 || entry.entry2 >= 0.0)
-			file << format(" lead2 %.4f entry2 %.4f", entry.lead2, entry.entry2);
+		file << "switch " << word(entry.name) << " type " << entry.type << " rail " << word(entry.rail) << ' ' << format("main %.4f stagger %.4f a %.4f b %.4f lead %.4f entry %.4f tip %.4f", entry.main, entry.stagger, entry.a, entry.b, entry.lead, entry.entry, entry.tip);
+		if (entry.lead2 >= 0.0 || entry.entry2 >= 0.0 || entry.tip2 >= 0.0)
+			file << format(" lead2 %.4f entry2 %.4f tip2 %.4f", entry.lead2, entry.entry2, entry.tip2);
+		if (entry.heel > 0.0 || entry.bladethrow > 0.0)
+			file << format(" heel %.4f throw %.4f", entry.heel, entry.bladethrow);
 		file << " parts";
 		write_parts(file, entry.parts);
 		if (false == entry.parts2.empty())

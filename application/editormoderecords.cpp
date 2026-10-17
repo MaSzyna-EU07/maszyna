@@ -346,7 +346,7 @@ std::vector<segment_data> editor_mode::double_paths(double_switch const &Set)
 	return {Set.first->m_paths[0], Set.first->m_paths[1], Set.second->m_paths[0], Set.second->m_paths[1], link};
 }
 
-void editor_mode::record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base)
+void editor_mode::record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base, double const Middle)
 {
 	if (Parts.empty() || scene::Layers.empty())
 		return;
@@ -355,6 +355,7 @@ void editor_mode::record_slip(std::vector<TTrack *> const &Parts, std::string co
 	entry.name = Base;
 	entry.type = Type;
 	entry.radius = Radius;
+	entry.middle = Middle;
 	entry.ratio = Angle > 1e-9 ? 1.0 / std::tan(Angle) : 0.0;
 	for (auto const *part : Parts)
 		if (part != nullptr && false == part->name().empty() && (Kind == "crossing" || part->eType == tt_Switch))

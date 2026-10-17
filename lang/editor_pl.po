@@ -5305,6 +5305,9 @@ msgstr "Miejsce na prostej: %.2f m do tyłu, %.2f m do przodu"
 msgid "Click: edit this switch, drag: slide it along the straight"
 msgstr "Klik: edytuj ten rozjazd, przeciągnij: przesuń go wzdłuż prostej"
 
+msgid "Click: select this switch, drag: slide it along the straight"
+msgstr "Klik: zaznacz ten rozjazd, przeciągnij: przesuń go wzdłuż prostej"
+
 msgid "Drive##standing"
 msgstr "Napęd##standing"
 
@@ -5769,11 +5772,18 @@ msgstr "stawia nową obrotnicę"
 
 msgid "Shifts a piece of the straight sideways around an obstacle and back: four clicks on the straight (Shift+click in the view does the same)"
 msgstr "Przesuwa kawałek prostej w bok, wokół przeszkody, i z powrotem: cztery kliknięcia na prostej (Shift+klik w widoku robi to samo)"
+
 msgid "Frog and check rails made from the rails"
 msgstr "Krzyżownica i kierownice z szyn"
 
 msgid "Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\nOff for a switch whose include has its own model of them"
 msgstr "Tnie szyny rozjazdu na krzyżownicy i układa szyny skrzydłowe i kierownice, dla profili szyn S60, UIC60 i S39.\nWyłącz dla rozjazdu, którego include ma ich własny model"
+
+msgid "Movable nose"
+msgstr "Ruchomy dziób"
+
+msgid "The nose of the frog moves with the blades over to the wing rail of the track set, leaving no gap; the frog has no check rails"
+msgstr "Dziób krzyżownicy przesuwa się razem z iglicami do szyny skrzydłowej toru ustawionego, bez przerwy w toku szynowym; krzyżownica nie ma kierownic"
 
 msgid "1:n##quickratio"
 msgstr "1:n##quickratio"
@@ -5828,6 +5838,9 @@ msgstr "Rozjazd podwójny %s + %s: długość %.3f m, druga zwrotnica zaczyna si
 
 msgid "Double switch %s + %s with drives: events %s+, %s- and %s+, %s- switch them, also in the map"
 msgstr "Rozjazd podwójny %s + %s z napędami: zdarzenia %s+, %s- i %s+, %s- je przestawiają, także w mapie"
+
+msgid "Slip with drives at its switches %s: the events of the name of a switch with + and - switch it, also in the map"
+msgstr "Rozjazd krzyżowy z napędami zwrotnic %s: zdarzenia z nazwą zwrotnicy i + albo - ją przestawiają, także w mapie"
 
 msgid "Double switch %s with its second switch %s inserted"
 msgstr "Wstawiono rozjazd podwójny %s z drugą zwrotnicą %s"
@@ -5922,6 +5935,12 @@ msgstr "Rpd podwójny dwustronny"
 msgid "Rpj double, to one side"
 msgstr "Rpj podwójny jednostronny"
 
+msgid "Rps double, symmetric"
+msgstr "Rps podwójny symetryczny"
+
+msgid "The second switch is the mirror image of the first one"
+msgstr "Druga zwrotnica jest lustrzanym odbiciem pierwszej"
+
 msgid "R##quickradius"
 msgstr "R##quickradius"
 
@@ -5993,6 +6012,18 @@ msgstr "Druga zwrotnica ma własny tor zwrotny"
 
 msgid "Tip of the blade %.3f m from the start, the diverging track leaves there at %.4f deg"
 msgstr "Ostrze iglicy %.3f m od początku, tor zwrotny odchodzi tam pod kątem %.4f°"
+
+msgid "Tip of the blade %.3f m from the start, the diverging track leaves tangentially"
+msgstr "Ostrze iglicy %.3f m od początku, tor zwrotny odchodzi stycznie"
+
+msgid "Tip of a tangent blade, m##designtip"
+msgstr "Ostrze iglicy stycznej, m##designtip"
+
+msgid "Tip of a tangent blade, m##designtip2"
+msgstr "Ostrze iglicy stycznej, m##designtip2"
+
+msgid "With the blade angle 0: the tip of the blade from the start of the switch as its scheme gives it, the diverging track is broken there into pieces; 0: where the blade gets 5 mm thick, less the 125 mm its nose is planed over"
+msgstr "Przy kącie iglicy 0: ostrze iglicy od początku rozjazdu według jego schematu, tor zwrotny jest tam podzielony na kawałki; 0: tam, gdzie iglica ma 5 mm grubości, minus 125 mm zestruganego dzioba"
 
 msgid "to##radius2"
 msgstr "do##radius2"
@@ -6249,6 +6280,9 @@ msgstr "Widok z góry i z powrotem 3D"
 msgid "In the top view: zoom in and out where the cursor points"
 msgstr "W widoku z góry: przybliża i oddala tam, gdzie wskazuje kursor"
 
+msgid "Zoom in and out where the cursor points"
+msgstr "Przybliża i oddala tam, gdzie wskazuje kursor"
+
 msgid "In the top view: hold the wheel and drag to move the map"
 msgstr "W widoku z góry: wciśnij kółko i przeciągnij, żeby przesunąć mapę"
 
@@ -6414,3 +6448,483 @@ msgstr "przesunięto o %.3f m"
 msgid "Tool options, Gizmo, Enabled unticked: the track can't be moved, turned or stretched by chance; its points still drag"
 msgstr "Opcje narzędzia, Gizmo, bez Włączone: toru nie przesuniesz, nie obrócisz ani nie rozciągniesz przypadkiem; punkty dalej się ciągną"
 
+
+# scenery editor: properties of the selected tracks, copied and pasted
+
+msgid "no circuits"
+msgstr "brak"
+
+msgid "no model"
+msgstr "brak modelu"
+
+msgid "Drag on the ground"
+msgstr "Przeciągnij po terenie"
+
+msgid "selects the tracks in a box"
+msgstr "zaznacza tory w ramce"
+
+msgid "the properties of all of them at once"
+msgstr "właściwości wszystkich naraz"
+
+msgid "moves them together"
+msgstr "przesuwa je razem"
+
+msgid "adds or takes out a track"
+msgstr "dodaje albo usuwa tor"
+
+msgid "pastes the copied properties"
+msgstr "wkleja skopiowane właściwości"
+
+msgid "deletes them"
+msgstr "usuwa je"
+
+msgid "unknown"
+msgstr "nieznany"
+
+msgid "Shape of the trackbed"
+msgstr "Kształt podsypki"
+
+msgid "Sleepers"
+msgstr "Podkłady"
+
+msgid "Frog and check rails"
+msgstr "Krzyżownica i kierownice"
+
+msgid "Speed limit of the track for the AI drivers and the timetable.\nEmpty or -1: no limit of its own"
+msgstr "Ograniczenie prędkości na torze dla maszynistów AI i rozkładu jazdy.\nPuste lub -1: bez własnego ograniczenia"
+
+msgid "no limit"
+msgstr "bez ograniczenia"
+
+msgid "Surroundings of the track, they affect the sound of the passing vehicles"
+msgstr "Otoczenie toru, wpływa na dźwięk przejeżdżających pojazdów"
+
+msgid "State of the overhead line over the track: the trains coast through a section with no current,\nor lower the pantographs and keep to the speed limit given"
+msgstr "Stan sieci trakcyjnej nad torem: pociągi przejeżdżają miejsce bez napięcia z rozpędu\nalbo opuszczają pantografy i trzymają się podanego ograniczenia prędkości"
+
+msgid "Speed limit of the trains with the pantographs lowered"
+msgstr "Ograniczenie prędkości pociągów z opuszczonymi pantografami"
+
+msgid "Names of the track circuits (isolated) the track belongs to, separated by spaces.\nA name which doesn't exist yet makes a new circuit. Tracks with vehicles on them keep theirs"
+msgstr "Nazwy odcinków izolowanych, do których należy tor, rozdzielone spacjami.\nNazwa, której jeszcze nie ma, tworzy nowy odcinek izolowany. Tory z pojazdami zachowują swoje"
+
+msgid "Texture of the rails; of both paths of a switch.\nA material dragged from the texture browser can be dropped here"
+msgstr "Tekstura szyn; na rozjeździe obu jego odcinków.\nMożna tu upuścić materiał przeciągnięty z przeglądarki tekstur"
+
+msgid "Texture of the trackbed (ballast) under the rails.\nA material dragged from the texture browser can be dropped here"
+msgstr "Tekstura podsypki (tłucznia) pod szynami.\nMożna tu upuścić materiał przeciągnięty z przeglądarki tekstur"
+
+msgid "Texture length (m)"
+msgstr "Długość tekstury (m)"
+
+msgid "Length after which the texture of the rails and the trackbed repeats"
+msgstr "Długość, po której powtarza się tekstura szyn i podsypki"
+
+msgid "Trackbed height (m)"
+msgstr "Wysokość podsypki (m)"
+
+msgid "Height of the trackbed edge below the rail top"
+msgstr "Wysokość krawędzi podsypki poniżej główki szyny"
+
+msgid "Trackbed width (m)"
+msgstr "Szerokość podsypki (m)"
+
+msgid "Width of the trackbed outside of the rail"
+msgstr "Szerokość podsypki na zewnątrz szyny"
+
+msgid "Trackbed slope (m)"
+msgstr "Skarpa podsypki (m)"
+
+msgid "Horizontal reach of the slope at the outer edge of the trackbed"
+msgstr "Poziomy zasięg skarpy przy zewnętrznej krawędzi podsypki"
+
+msgid "Repeats the model along the track, the sleepers in place of the drawn trackbed.\nOnly on the tracks with a sleeper model"
+msgstr "Powtarza model wzdłuż toru, podkłady zamiast rysowanej podsypki.\nTylko na torach z modelem podkładu"
+
+msgid "Replaceable skin of the model, empty: the one of the model"
+msgstr "Wymienna skóra modelu, puste: skóra samego modelu"
+
+msgid "of the model"
+msgstr "z modelu"
+
+msgid "Distance between the sleepers along the track"
+msgstr "Odstęp między podkładami wzdłuż toru"
+
+msgid "Sleeper shift sideways (m)"
+msgstr "Przesunięcie podkładu w bok (m)"
+
+msgid "Shift of each model sideways, to the right of the track"
+msgstr "Przesunięcie każdego modelu w bok, w prawo od osi toru"
+
+msgid "Sleeper shift along (m)"
+msgstr "Przesunięcie podkładu wzdłuż (m)"
+
+msgid "Shift of each model along the track"
+msgstr "Przesunięcie każdego modelu wzdłuż toru"
+
+msgid "Sleeper shift up (m)"
+msgstr "Przesunięcie podkładu w górę (m)"
+
+msgid "Shift of each model up"
+msgstr "Przesunięcie każdego modelu w górę"
+
+msgid "Sound distance (m)"
+msgstr "Odstęp stuków (m)"
+
+msgid "Distance between the rail joints, sets the rhythm of the wheel clatter; -1: the default"
+msgstr "Odstęp między stykami szyn, nadaje rytm stukotu kół; -1: domyślny"
+
+msgid "0: track in order; any value adds jolts, 128: the vehicles derail on the track"
+msgstr "0: tor sprawny; każda inna wartość dodaje szarpnięcia, 128: pojazdy wykolejają się na torze"
+
+msgid "Gauge (m)"
+msgstr "Rozstaw szyn (m)"
+
+msgid "Gauge of the track, 1.435 m for the standard gauge"
+msgstr "Rozstaw szyn toru, 1,435 m dla toru normalnego"
+
+msgid "yes"
+msgstr "tak"
+
+msgid "no"
+msgstr "nie"
+
+msgid "Applies to %d of the %d selected tracks, the others don't have it"
+msgstr "Dotyczy %d z %d zaznaczonych torów, pozostałe tego nie mają"
+
+msgid "The tracks differ:"
+msgstr "Tory się różnią:"
+
+msgid "and %d more values"
+msgstr "i jeszcze %d wartości"
+
+msgid "A value given here goes to all of them"
+msgstr "Wartość wpisana tutaj trafi do wszystkich"
+
+msgid "%s: nothing to change"
+msgstr "%s: nic do zmiany"
+
+msgid "%s: \"%s\" isn't a number"
+msgstr "%s: \"%s\" to nie liczba"
+
+msgid "different (%d)"
+msgstr "różne (%d)"
+
+msgid "find, or a texture path and Enter"
+msgstr "szukaj albo wpisz ścieżkę tekstury i Enter"
+
+msgid "On the tracks of this scenery:"
+msgstr "Na torach tej scenerii:"
+
+msgid "None of them: Enter sets the path as typed"
+msgstr "Żadna nie pasuje: Enter ustawi wpisaną ścieżkę"
+
+msgid "No texture"
+msgstr "Bez tekstury"
+
+msgid "Traffic"
+msgstr "Ruch"
+
+msgid "Look"
+msgstr "Wygląd"
+
+msgid "Properties of %s copied: Ctrl+Shift+V pastes them on the selected tracks"
+msgstr "Skopiowano właściwości %s: Ctrl+Shift+V wkleja je na zaznaczone tory"
+
+msgid "Nothing chosen to paste"
+msgstr "Nic nie wybrano do wklejenia"
+
+msgid "Pasted properties"
+msgstr "Wklejone właściwości"
+
+msgid "Properties of %s pasted, Ctrl+Z takes them back"
+msgstr "Wklejono właściwości %s, Ctrl+Z cofa"
+
+msgid "The track has these properties already"
+msgstr "Tor ma już te właściwości"
+
+msgid "Copy properties"
+msgstr "Kopiuj właściwości"
+
+msgid "Copies the properties of this track, to paste them on others (Ctrl+Shift+C)"
+msgstr "Kopiuje właściwości tego toru, żeby wkleić je na inne (Ctrl+Shift+C)"
+
+msgid "Select one track to copy its properties, or take them from a track with the pipette"
+msgstr "Zaznacz jeden tor, żeby skopiować jego właściwości, albo pobierz je pipetą z toru"
+
+msgid "Paste..."
+msgstr "Wklej..."
+
+msgid "Copy the properties of a track first"
+msgstr "Najpierw skopiuj właściwości jakiegoś toru"
+
+msgid "Properties of %s: choose what goes on the selected tracks (Ctrl+Shift+V pastes the same choice at once)"
+msgstr "Właściwości %s: wybierz, co trafi na zaznaczone tory (Ctrl+Shift+V od razu wkleja ten sam wybór)"
+
+msgid "Click a track... (Esc)"
+msgstr "Kliknij tor... (Esc)"
+
+msgid "Copying properties"
+msgstr "Kopiowanie właściwości"
+
+msgid "Pipette"
+msgstr "Pipeta"
+
+msgid "Click a track"
+msgstr "Kliknij tor"
+
+msgid "Click a track in the view to take its properties; Esc or this button gives up"
+msgstr "Kliknij tor w widoku, żeby pobrać jego właściwości; Esc albo ten przycisk rezygnuje"
+
+msgid "Selection"
+msgstr "Zaznaczanie"
+
+msgid "Alike..."
+msgstr "Podobne..."
+
+msgid "The selected tracks have different ones"
+msgstr "Zaznaczone tory mają różne"
+
+msgid "In this scenery: %s"
+msgstr "W tej scenerii: %s"
+
+msgid "From the textures folder, on no track yet"
+msgstr "Z folderu textures, jeszcze na żadnym torze"
+
+msgid "On the selected tracks now"
+msgstr "Teraz na zaznaczonych torach"
+
+msgid "Enter chooses this one"
+msgstr "Enter wybiera tę"
+
+msgid "Suggested from the textures folder:"
+msgstr "Podpowiedzi z folderu textures:"
+
+msgid "In the textures folder:"
+msgstr "W folderze textures:"
+
+msgid "and %d more: type more of the name"
+msgstr "i jeszcze %d: wpisz więcej z nazwy"
+
+msgid "From a track..."
+msgstr "Z toru..."
+
+msgid "Pipette: the next click on a track in the view takes its properties, to paste them on the selection"
+msgstr "Pipeta: następne kliknięcie toru w widoku pobiera jego właściwości, do wklejenia na zaznaczenie"
+
+msgid "Paste from %s:"
+msgstr "Wklej z %s:"
+
+msgid "Deselect"
+msgstr "Odznacz"
+
+msgid "Clears the selection (Esc)"
+msgstr "Czyści zaznaczenie (Esc)"
+
+msgid "What is set below goes to all of them, in one step of the undo"
+msgstr "To, co ustawisz poniżej, trafi do wszystkich, w jednym kroku cofania"
+
+msgid "List of the selected tracks"
+msgstr "Lista zaznaczonych torów"
+
+msgid "Takes the track out of the selection"
+msgstr "Usuwa tor z zaznaczenia"
+
+msgid "Click: look at it, double click: select only this one"
+msgstr "Klik: pokaż go, dwuklik: zaznacz tylko ten"
+
+msgid "+ Joined"
+msgstr "+ Połączone"
+
+msgid "Adds the tracks joined to the selection, by the rules of the spread in the tool options"
+msgstr "Dodaje tory połączone z zaznaczonymi, według zasad rozszerzania z opcji narzędzia"
+
+msgid "Select alike..."
+msgstr "Zaznacz podobne..."
+
+msgid "Selects the tracks of the whole scenery which have the same rails, trackbed, speed... as the selected ones"
+msgstr "Zaznacza w całej scenerii tory, które mają te same szyny, podsypkę, prędkość... co zaznaczone"
+
+msgid "The same rails"
+msgstr "Te same szyny"
+
+msgid "The same trackbed"
+msgstr "Ta sama podsypka"
+
+msgid "The same speed"
+msgstr "Ta sama prędkość"
+
+msgid "The same environment"
+msgstr "To samo otoczenie"
+
+msgid "The same track circuits"
+msgstr "Te same odcinki izolowane"
+
+msgid "The same overhead line"
+msgstr "Ta sama sieć trakcyjna"
+
+msgid "%s: %s selected in the scenery"
+msgstr "%s: zaznaczono w scenerii %s"
+
+msgid "Shift+click: add or take out a track\nCtrl+click: the same\nDrag on the ground: select the tracks in a box, with Shift: add them\nCtrl+Shift+click: the whole run of joined tracks\nEsc: clear the selection, Del: delete the selected tracks\nCtrl+Shift+C / Ctrl+Shift+V: copy and paste the properties"
+msgstr "Shift+klik: dodaj albo usuń tor\nCtrl+klik: to samo\nPrzeciągnięcie po terenie: zaznacz tory w ramce, z Shift: dodaj je\nCtrl+Shift+klik: cały ciąg połączonych torów\nEsc: wyczyść zaznaczenie, Del: usuń zaznaczone tory\nCtrl+Shift+C / Ctrl+Shift+V: kopiuj i wklej właściwości"
+
+msgid "Select one track, or point at one, to copy its properties"
+msgstr "Zaznacz jeden tor albo wskaż go kursorem, żeby skopiować jego właściwości"
+
+msgid "Copy the properties of a track first: Ctrl+Shift+C"
+msgstr "Najpierw skopiuj właściwości toru: Ctrl+Shift+C"
+
+msgid "Select the tracks to paste the properties on"
+msgstr "Zaznacz tory, na które mają trafić właściwości"
+
+msgid "Click a track to see its properties. Shift+click adds more tracks to the selection, a drag on the ground selects those in a box"
+msgstr "Kliknij tor, żeby zobaczyć jego właściwości. Shift+klik dodaje kolejne tory do zaznaczenia, przeciągnięcie po terenie zaznacza tory w ramce"
+
+msgid "Deletes the selected tracks (Del); Ctrl+Z brings them back"
+msgstr "Usuwa zaznaczone tory (Del); Ctrl+Z je przywraca"
+
+msgid "The textures, the speed and the other properties of the switch are in the inspector"
+msgstr "Tekstury, prędkość i inne właściwości rozjazdu są w inspektorze"
+
+msgid "What the track sets off as the vehicles run on it"
+msgstr "Co tor wyzwala, gdy jadą po nim pojazdy"
+
+msgid "Click: take the properties of this track"
+msgstr "Klik: pobierz właściwości tego toru"
+
+msgid "Click a track to take its properties, Esc: cancel"
+msgstr "Kliknij tor, żeby pobrać jego właściwości, Esc: anuluj"
+
+msgid "Click: take out of the selection"
+msgstr "Klik: usuń z zaznaczenia"
+
+msgid "Click: add to the selection"
+msgstr "Klik: dodaj do zaznaczenia"
+
+msgid "Copy its properties"
+msgstr "Kopiuj jego właściwości"
+
+msgid "Paste the properties"
+msgstr "Wklej właściwości"
+
+msgid "Properties of %s"
+msgstr "Właściwości %s"
+
+msgid "Select alike"
+msgstr "Zaznacz podobne"
+
+msgid "Their properties are in the inspector, the gizmo moves them together"
+msgstr "Ich właściwości są w inspektorze, gizmo przesuwa je razem"
+
+msgid "%d track"
+msgid_plural "%d tracks"
+msgstr[0] "%d tor"
+msgstr[1] "%d tory"
+msgstr[2] "%d torów"
+
+msgid "%s: changed on %d track, Ctrl+Z takes it back"
+msgid_plural "%s: changed on %d tracks, Ctrl+Z takes it back"
+msgstr[0] "%s: zmieniono na %d torze, Ctrl+Z cofa"
+msgstr[1] "%s: zmieniono na %d torach, Ctrl+Z cofa"
+msgstr[2] "%s: zmieniono na %d torach, Ctrl+Z cofa"
+
+msgid "Paste on %d track"
+msgid_plural "Paste on %d tracks"
+msgstr[0] "Wklej na %d tor"
+msgstr[1] "Wklej na %d tory"
+msgstr[2] "Wklej na %d torów"
+
+msgid "%d track selected, %.1f m"
+msgid_plural "%d tracks selected, %.1f m"
+msgstr[0] "Zaznaczony %d tor, %.1f m"
+msgstr[1] "Zaznaczone %d tory, %.1f m"
+msgstr[2] "Zaznaczonych %d torów, %.1f m"
+
+msgid "among them %d switch"
+msgid_plural "among them %d switches"
+msgstr[0] "w tym %d rozjazd"
+msgstr[1] "w tym %d rozjazdy"
+msgstr[2] "w tym %d rozjazdów"
+
+msgid "Delete %d track"
+msgid_plural "Delete %d tracks"
+msgstr[0] "Usuń %d tor"
+msgstr[1] "Usuń %d tory"
+msgstr[2] "Usuń %d torów"
+
+msgid "one of %d selected tracks"
+msgid_plural "one of %d selected tracks"
+msgstr[0] "jeden z %d zaznaczonych torów"
+msgstr[1] "jeden z %d zaznaczonych torów"
+msgstr[2] "jeden z %d zaznaczonych torów"
+
+msgid "Paste the properties on %d track"
+msgid_plural "Paste the properties on %d tracks"
+msgstr[0] "Wklej właściwości na %d tor"
+msgstr[1] "Wklej właściwości na %d tory"
+msgstr[2] "Wklej właściwości na %d torów"
+
+msgid "%s: %d track selected in the scenery"
+msgid_plural "%s: %d tracks selected in the scenery"
+msgstr[0] "%s: zaznaczono %d tor w scenerii"
+msgstr[1] "%s: zaznaczono %d tory w scenerii"
+msgstr[2] "%s: zaznaczono %d torów w scenerii"
+
+msgid "%d track selected"
+msgid_plural "%d tracks selected"
+msgstr[0] "Zaznaczony %d tor"
+msgstr[1] "Zaznaczone %d tory"
+msgstr[2] "Zaznaczonych %d torów"
+
+
+msgid "The curve past the end of the switch can't keep to it, %s follows the switch on its own"
+msgstr "Nie da się przełożyć łuku za końcem rozjazdu, tor %s tylko podąża za rozjazdem"
+
+msgid "The curve past the end of the switch keeps to it with the radius of %.1f m instead of %.1f m"
+msgstr "Łuk za końcem rozjazdu nadal do niego przylega, ale ma promień %.1f m zamiast %.1f m"
+
+msgid "Blade heel, m##designheel"
+msgstr "Piętka iglicy, m##designheel"
+
+msgid "Where the moving blades end, from the start of the switch, as its scheme gives it; the switch keeps it in the scenery. 0: as long as the flangeway of 58 mm behind them needs"
+msgstr "Gdzie kończą się ruchome iglice, od początku rozjazdu, jak podaje schemat; rozjazd zapisuje to w scenerii. 0: tak długie, jak wymaga żłobek 58 mm za nimi"
+
+msgid "Blade throw, m##designthrow"
+msgstr "Przełożenie iglic, m##designthrow"
+
+msgid "How far the tips of the blades move over between the two paths; 0: the usual 0.160 m"
+msgstr "O ile przesuwają się ostrza iglic między torami; 0: zwykłe 0,160 m"
+
+msgid "Blade heel (m)"
+msgstr "Piętka iglicy (m)"
+
+msgid "Where the moving blades end, from the start of the switch, as the template of the switch gives it.\n0: as long as the flangeway of 58 mm behind them needs"
+msgstr "Gdzie kończą się ruchome iglice, od początku rozjazdu, jak podaje szablon rozjazdu.\n0: tak długie, jak wymaga żłobek 58 mm za nimi"
+
+msgid "Blade throw (m)"
+msgstr "Przełożenie iglic (m)"
+
+msgid "How far the tips of the blades move over between the two paths.\n0: the usual 0.160 m"
+msgstr "O ile przesuwają się ostrza iglic między torami.\n0: zwykłe 0,160 m"
+
+msgid "Sleeper model from the pack"
+msgstr "Model podkładów z paczki"
+
+msgid "Model of the sleepers of the track running alone, of the models of sleepers in the scenery data, laid as 3D sleepers\nin place of the one set with sleepers3dplain in eu07.ini. (as in eu07.ini): the one set there"
+msgstr "Model podkładów toru biegnącego samodzielnie, spośród modeli podkładów w danych scenerii, układanych jako podkłady 3D\nzamiast modelu ustawionego wpisem sleepers3dplain w eu07.ini. (jak w eu07.ini): model ustawiony tam"
+
+msgid "(as in eu07.ini)"
+msgstr "(jak w eu07.ini)"
+
+msgid "Timber model"
+msgstr "Model podrozjazdnic"
+
+msgid "Model of the timbers under the switch or the crossing the track is part of, of the models of timbers in the scenery data,\nin place of the one set with sleepers3d in eu07.ini. It's put together from its submodels begin, main and end to the length of each timber"
+msgstr "Model podrozjazdnic pod rozjazdem lub skrzyżowaniem, którego częścią jest tor, spośród modeli podrozjazdnic w danych scenerii,\nzamiast modelu ustawionego wpisem sleepers3d w eu07.ini. Każda podrozjazdnica jest składana z submodeli begin, main i end na swoją długość"
+
+msgid "Timber skin"
+msgstr "Skóra podrozjazdnic"
+
+msgid "Replaceable skin of the timber model, empty: the one of the model"
+msgstr "Wymienna skóra modelu podrozjazdnic, puste: skóra samego modelu"

@@ -13,16 +13,25 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorIncludeInfo.hpp"
 
+#include "world/Segment.h"
 #include "world/Track.h"
+#include "world/TrackRails.h"
 #include "scene/scenelayers.h"
+#include "simulation/simulation.h"
+#include "utilities/Globals.h"
 #include "utilities/translation.h"
+#include "utilities/utilities.h"
 
 #include "imgui/imgui.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <map>
+#include <sstream>
 
 namespace
 {
@@ -306,4 +315,65 @@ bool editor_mode::render_switch_drive_choice()
 		changed |= ImGui::RadioButton(STR_C("other side"), &tool.drive_side, 1);
 	}
 	return changed;
+}
+
+// a key by the movable nose of each switch with a drive, the frog is far from the drive at the start of the switch
+bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
+{
+	if (scene::Layers.empty())
+		return false;
+	std::string root{scene::Layers.layer(scene::layer_handle{1}).name};
+	if (auto const slash{root.find_last_of("/\\")}; slash != std::string::npos)
+		root.erase(0, slash + 1);
+	if (auto const dot{root.rfind('.')}; dot != std::string::npos)
+		root.erase(dot);
+	if (root.empty())
+		return false;
+	auto const file{root + "_dzioby.scm"};
+	std::ostringstream text;
+	auto noses{0};
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr || false == track->SwitchExtension->m_movablenose || track->name().empty())
+			continue;
+		auto const &segments{track->SwitchExtension->Segments};
+		auto const frog{track->frog()};
+		if (false == frog.valid || segments[0] == nullptr || frog.angle <= 0.0 || false == find_switch_drive(*track).has_value())
+			continue;
+		auto const &name{track->name()};
+		// where the inner rails cross, on the gauge line of the main path
+		glm::dvec3 point, across;
+		segments[0]->plan_frame(frog.at[0], point, across);
+		auto const nose{point + across * (frog.side[0] * 0.5 * std::abs(track->fTrackWidth))};
+		auto const range{5.0 + track_rails::movable_nose_length(std::tan(frog.angle))};
+		text << "node -1 0 " << name << "_dziob eventlauncher " << format("%.3f %.3f %.3f %.1f", nose.x, nose.y, nose.z, range) << " t 0 " << name << "+ " << name << "- end\r\n";
+		++noses;
+	}
+	auto const path{Global.asCurrentSceneryPath + file};
+	std::error_code error;
+	auto const exists{std::filesystem::exists(path, error)};
+	if (noses == 0 && false == exists)
+		return false;
+	auto const content{"// made by the scenery editor on each save: T and Shift+T by the movable nose throw its switch, as by its drive\r\n" + text.str()};
+	std::string current;
+	{
+		std::ifstream input{path, std::ios_base::binary};
+		current.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+	}
+	if (current != content)
+	{
+		std::ofstream output{path, std::ios_base::binary | std::ios_base::trunc};
+		output << content;
+	}
+	auto included{m_nose_included};
+	for (std::size_t handle = 1; handle <= scene::Layers.size() && false == included; ++handle)
+	{
+		auto name{scene::Layers.layer(static_cast<scene::layer_handle>(handle)).name};
+		std::replace(name.begin(), name.end(), '\\', '/');
+		included = ToLower(name) == ToLower(file) || ToLower(name).ends_with("/" + ToLower(file));
+	}
+	if (included)
+		return false;
+	Rootstatements.push_back("include " + file + " end");
+	return true;
 }

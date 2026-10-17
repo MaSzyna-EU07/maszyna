@@ -589,6 +589,9 @@ void editor_ui::register_settings()
 
 void editor_ui::render_()
 {
+	// the keyboard navigation of ImGui is off, so Esc would not close an open list or menu by itself
+	if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+		ImGui::ClosePopupsExceptModals();
 	auto *viewport{ImGui::GetMainViewport()};
 	auto const flags{ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar};
 	// the fields of work of the editor under the menu, in a row twice as high; the tools of the one chosen in the toolbar under it

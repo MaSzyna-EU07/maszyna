@@ -138,6 +138,8 @@ public:
 	auto vertices( gfx::geometry_handle const &Geometry ) const -> gfx::vertex_array const &;
 	// provides direct access to vertex user data of specfied chunk
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
+	// kind of geometry of specified chunk, GL_TRIANGLES, GL_TRIANGLE_STRIP...
+	auto primitive( gfx::geometry_handle const &Geometry ) const -> unsigned int;
 
 protected:
 // types:
@@ -238,6 +240,8 @@ public:
 	auto vertices( gfx::geometry_handle const &Geometry ) const -> gfx::vertex_array const &;
 	// provides direct access to vertex data of specfied chunk
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
+	// kind of geometry of specified chunk
+	auto primitive( gfx::geometry_handle const &Geometry ) const -> unsigned int;
     // sets target texture unit for the texture data stream
     auto units() -> gfx::stream_units & { return m_units; }
     // provides access to primitives count

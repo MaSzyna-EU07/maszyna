@@ -347,11 +347,11 @@ void editor_mode::render_switch_designer()
 		entry.name = name;
 		changed = true;
 	}
-	char const *types[] = {STR_C("Rz ordinary"), STR_C("Rpd double, to both sides"), STR_C("Rpj double, to one side")};
-	char const *codes[] = {"Rz", "Rpd", "Rpj"};
-	int type{entry.type == "Rpd" ? 1 : entry.type == "Rpj" ? 2 : 0};
+	char const *types[] = {STR_C("Rz ordinary"), STR_C("Rpd double, to both sides"), STR_C("Rpj double, to one side"), STR_C("Rps double, symmetric")};
+	char const *codes[] = {"Rz", "Rpd", "Rpj", "Rps"};
+	int type{entry.type == "Rpd" ? 1 : entry.type == "Rpj" ? 2 : entry.type == "Rps" ? 3 : 0};
 	ImGui::SetNextItemWidth(240.0f);
-	if (ImGui::Combo(STR_C("Type##designtype"), &type, types, 3))
+	if (ImGui::Combo(STR_C("Type##designtype"), &type, types, 4))
 	{
 		entry.type = codes[type];
 		if (type > 0 && entry.stagger <= 0.0)
@@ -374,6 +374,14 @@ void editor_mode::render_switch_designer()
 	ImGui::SameLine();
 	changed |= ImGui::InputDouble(STR_C("Blade angle, deg##designentry"), &entry.entry, 0.0, 0.0, "%.4f");
 	item_tooltip("The angle at which the blade meets the stock rail at its tip: the diverging track starts there at this angle instead of tangentially. Curved blades a fraction of a degree, straight blades 1 to 2 degrees; 0: tangential");
+	ImGui::SameLine();
+	changed |= ImGui::InputDouble(STR_C("Tip of a tangent blade, m##designtip"), &entry.tip, 0.0, 0.0, "%.3f");
+	item_tooltip("With the blade angle 0: the tip of the blade from the start of the switch as its scheme gives it, the diverging track is broken there into pieces; 0: where the blade gets 5 mm thick, less the 125 mm its nose is planed over");
+	changed |= ImGui::InputDouble(STR_C("Blade heel, m##designheel"), &entry.heel, 0.0, 0.0, "%.3f");
+	item_tooltip("Where the moving blades end, from the start of the switch, as its scheme gives it; the switch keeps it in the scenery. 0: as long as the flangeway of 58 mm behind them needs");
+	ImGui::SameLine();
+	changed |= ImGui::InputDouble(STR_C("Blade throw, m##designthrow"), &entry.bladethrow, 0.0, 0.0, "%.3f");
+	item_tooltip("How far the tips of the blades move over between the two paths; 0: the usual 0.160 m");
 	ImGui::PopItemWidth();
 	if (editable)
 	{
@@ -427,13 +435,16 @@ void editor_mode::render_switch_designer()
 		ImGui::SetNextItemWidth(90.0f);
 		changed |= ImGui::InputDouble(STR_C("Second switch starts at, m##stagger"), &entry.stagger, 0.0, 0.0, "%.3f");
 		item_tooltip("Distance from the start of the first switch to the start of the second one, along the main track");
-		bool own{false == entry.parts2.empty()};
-		if (ImGui::Checkbox(STR_C("The second switch has a diverging track of its own"), &own))
+		bool own{false == entry.parts2.empty() && entry.type != "Rps"};
+		if (entry.type == "Rps")
+			ImGui::TextDisabled("%s", STR_C("The second switch is the mirror image of the first one"));
+		else if (ImGui::Checkbox(STR_C("The second switch has a diverging track of its own"), &own))
 		{
 			entry.parts2 = own ? entry.parts : std::vector<switch_design::part>{};
 			changed = true;
 		}
-		item_tooltip("Otherwise the second switch diverges the same way as the first, to the other side for Rpd, to the same side for Rpj");
+		if (entry.type != "Rps")
+			item_tooltip("Otherwise the second switch diverges the same way as the first, to the other side for Rpd, to the same side for Rpj");
 		if (own)
 		{
 			ImGui::PushItemWidth(90.0f);
@@ -450,12 +461,19 @@ void editor_mode::render_switch_designer()
 				entry.entry2 = std::max(0.0, entry2);
 				changed = true;
 			}
+			ImGui::SameLine();
+			auto tip2{entry.tip2 >= 0.0 ? entry.tip2 : entry.tip};
+			if (ImGui::InputDouble(STR_C("Tip of a tangent blade, m##designtip2"), &tip2, 0.0, 0.0, "%.3f"))
+			{
+				entry.tip2 = std::max(0.0, tip2);
+				changed = true;
+			}
 			ImGui::PopItemWidth();
 			changed |= edit_parts(entry.parts2, "##parts2", editable);
 		}
-		else if (entry.lead2 >= 0.0 || entry.entry2 >= 0.0)
+		else if (entry.lead2 >= 0.0 || entry.entry2 >= 0.0 || entry.tip2 >= 0.0)
 		{
-			entry.lead2 = entry.entry2 = -1.0;
+			entry.lead2 = entry.entry2 = entry.tip2 = -1.0;
 			changed = true;
 		}
 	}
@@ -482,8 +500,10 @@ void editor_mode::render_switch_designer()
 	{
 		ImGui::Text(STR_C("Angle 1:%.3f (%.4f deg), sharpest R %.1f m, a %.3f m, b %.3f m"), shape.ratio, glm::degrees(std::atan(1.0 / shape.ratio)), shape.radius, shape.a, shape.b);
 		ImGui::Text(STR_C("Length %.3f m, the diverging track ends %.3f m beside the main one, in %zu pieces"), shape.length, shape.offset, std::max<std::size_t>(1, shape.paths[1].pieces.size()));
-		if (entry.lead > 0.0 || entry.entry > 0.0)
+		if (entry.entry > 0.0)
 			ImGui::Text(STR_C("Tip of the blade %.3f m from the start, the diverging track leaves there at %.4f deg"), shape.tip, entry.entry);
+		else
+			ImGui::Text(STR_C("Tip of the blade %.3f m from the start, the diverging track leaves tangentially"), shape.tip);
 	}
 	ImGui::Checkbox(STR_C("Stretch across"), &designer.stretched);
 	item_tooltip("Draws the offsets from the main track larger, so the shape of the diverging track can be seen");

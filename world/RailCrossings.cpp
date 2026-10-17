@@ -63,10 +63,20 @@ void forget() {
     ++stamp;
 }
 
+unsigned int memo_stamp() {
+
+    return stamp;
+}
+
 
 double wing_reach( double const Slope ) {
 
     return 0.15 / Slope + 0.3;
+}
+
+double movable_nose_length( double const Slope ) {
+
+    return 0.4 / Slope;
 }
 
 double check_length( double const Slope ) {
@@ -92,10 +102,47 @@ int blade_steps( TTrack const &Track, int const Path ) {
 double blade_length( TTrack const &Track, int const Path ) {
 
     if( auto const &shape { Track.blade( Path ) }; shape.valid ) {
-        return shape.heel;
+        return std::min( shape.heel, Track.SwitchExtension->Segments[ Path ]->GetLength() );
     }
     auto const &segment { *Track.SwitchExtension->Segments[ Path ] };
     return segment.GetLength() * blade_steps( Track, Path ) / segment.RaSegCount();
+}
+
+TTrack const *runon_track( TTrack const &Switch, int const Path ) {
+
+    auto const *next { path_neighbour( Switch, Path, 1 ) };
+    if( next == nullptr || next->eType != tt_Normal || next->Segment == nullptr || next == &Switch ) {
+        return nullptr;
+    }
+    if( glm::distance( Switch.SwitchExtension->Segments[ Path ]->FastGetPoint_1(), next->Segment->FastGetPoint_0() ) > 0.01 ) {
+        return nullptr;
+    }
+    // only as in a double switch: the plain track leads on to the start of the next switch, not to the end of the other half of a slip
+    auto const *after { next->trNext };
+    if( after == nullptr || after->eType != tt_Switch || after->SwitchExtension == nullptr
+     || glm::distance( after->SwitchExtension->Segments[ 0 ]->FastGetPoint_0(), next->Segment->FastGetPoint_1() ) > 0.01 ) {
+        return nullptr;
+    }
+    return next;
+}
+
+double blade_runon( TTrack const &Track, int const Side ) {
+
+    auto const *owner { Track.trPrev };
+    if( Track.eType != tt_Normal || Track.Segment == nullptr || owner == nullptr || owner->eType != tt_Switch || false == cut_rails( *owner ) ) {
+        return 0.0;
+    }
+    for( int path = 0; path < 2; ++path ) {
+        if( runon_track( *owner, path ) != &Track || ( owner->SwitchExtension->RightSwitch == ( path == 0 ) ? 1 : -1 ) != Side ) {
+            continue;
+        }
+        auto const &shape { owner->blade( path ) };
+        auto const length { owner->SwitchExtension->Segments[ path ]->GetLength() };
+        if( shape.valid && shape.heel > length ) {
+            return std::min( shape.heel - length, Track.Segment->GetLength() );
+        }
+    }
+    return 0.0;
 }
 
 TSegment const &path_segment( TTrack const &Track, int const Path ) {
@@ -361,6 +408,59 @@ std::vector<rail_crossing> own_crossings( TTrack &Track ) {
     return result;
 }
 
+// how far the blades of a part of a double slip may reach: up to the check rails of the crossings of the rails of the diamond, found
+// with the blades of the other parts left out of the account, as they're yet to be made as short; at the latest short of their throats,
+// the check rails then cut to begin past the heels
+// crossings of the rails of the track with the rails of the tracks around, with the blades of switches left out of the account
+std::vector<rail_crossing> unbladed_crossings( TTrack const &Track ) {
+
+    auto &track { const_cast<TTrack &>( Track ) };
+    std::vector<rail_crossing> found;
+    for( auto *other : nearby_rails( track ) ) {
+        for( int otherpath = 0; otherpath < path_count( *other ); ++otherpath ) {
+            rail_run theirs { other, otherpath };
+            theirs.length = path_segment( *other, otherpath ).GetLength();
+            for( int otherside = 0; otherside < 2; ++otherside ) {
+                theirs.side = ( otherside ? 1 : -1 );
+                theirs.line = &rail_line( *other, otherpath, otherside, false );
+                for( int path = 0; path < path_count( track ); ++path ) {
+                    for( int side = 0; side < 2; ++side ) {
+                        meet_rails( { &track, path, side ? 1 : -1, &rail_line( track, path, side, false ), 0.0, path_segment( track, path ).GetLength() }, theirs, found );
+                    }
+                }
+            }
+        }
+    }
+    return found;
+}
+
+std::pair<double, double> slip_blade_reach( TTrack const &Track ) {
+
+    auto reach { 1e9 };
+    auto latest { 1e9 };
+    for( auto const &crossing : unbladed_crossings( Track ) ) {
+        if( crossing.angle <= middle_angle ) {
+            auto const slope { std::tan( crossing.angle ) };
+            reach = std::min( reach, crossing.at - 0.25 - 0.5 * check_length( slope ) - 0.3 );
+            latest = std::min( latest, crossing.at - flangeway / slope - 0.6 );
+        }
+    }
+    return { reach, latest };
+}
+
+// how far the blade of a switch may reach: short of the throat of a frog of another track on its rail, as in a double switch with the middle frog right past the heels,
+// where the wing rail has to bend out of the line of the rail coming from the blade
+double blade_reach( TTrack const &Track, int const Path, int const Side ) {
+
+    auto reach { 1e9 };
+    for( auto const &crossing : unbladed_crossings( Track ) ) {
+        if( crossing.path == Path && crossing.side == Side && crossing.angle <= middle_angle ) {
+            reach = std::min( reach, crossing.at - flangeway / std::tan( crossing.angle ) - 0.05 );
+        }
+    }
+    return reach;
+}
+
 // crossings of the tracks going on from the ends, near enough for their check rails and wings to reach this one
 void add_neighbour_crossings( TTrack &Track, std::vector<rail_crossing> &Result ) {
 
@@ -421,13 +521,14 @@ struct planned_check {
     double flare { 0.02 };
     double frombend { 0.0 };
     double tobend { 0.0 };
+    bool acute { false }; // opposite an acute crossing, it keeps clear of the rails of the tracks crossing this one
 };
 using planned_check_set = std::array<std::array<std::vector<planned_check>, 2>, 2>; // path, right side
 
 void add_acute_check( std::vector<planned_check> &Checks, double const At, double const Toward, double const Slope, double const Flare ) {
 
     auto const half { 0.5 * check_length( Slope ) };
-    Checks.push_back( { At + Toward * 0.25 - half, At + Toward * 0.25 + half, true, true, 1.5, Flare } );
+    Checks.push_back( { At + Toward * 0.25 - half, At + Toward * 0.25 + half, true, true, 1.5, Flare, 0.0, 0.0, true } );
 }
 
 planned_check_set planned_checks( TTrack const &Track, std::vector<rail_crossing> const &Crossings ) {
@@ -449,7 +550,8 @@ planned_check_set planned_checks( TTrack const &Track, std::vector<rail_crossing
     }
     if( Track.eType == tt_Switch ) {
         auto const frog { Track.frog() };
-        if( frog.valid ) {
+        // the movable nose leaves no gap for the wheels, the frog has no check rails
+        if( frog.valid && false == Track.SwitchExtension->m_movablenose ) {
             for( int path = 0; path < 2; ++path ) {
                 add_acute_check( plans[ path ][ frog.side[ path ] < 0 ], frog.at[ path ], -1.0, std::tan( frog.angle ), 0.04 );
             }
@@ -470,6 +572,7 @@ void merge_checks( std::vector<planned_check> &Checks ) {
             }
             Checks[ i - 1 ].shortest = std::min( Checks[ i - 1 ].shortest, Checks[ i ].shortest );
             Checks[ i - 1 ].flare = std::max( Checks[ i - 1 ].flare, Checks[ i ].flare );
+            Checks[ i - 1 ].acute = Checks[ i - 1 ].acute || Checks[ i ].acute;
             Checks.erase( Checks.begin() + i-- );
         }
     }
@@ -492,8 +595,9 @@ bool blocked_by( std::vector<gauge_line> const &Others, glm::dvec2 const &Gauge,
     return blocked;
 }
 
-// check rails keep clear of the blades and the rails of the other path of a switch running inside the rail, here and in a switch joined at an end, and of the blade tips
-knots::line check_blocks( TTrack const &Track, int const Path, int const Side, std::vector<planned_check> const &Checks, double const Clearance ) {
+// check rails keep clear of the blades and the rails of the other path of a switch running inside the rail, here and in a switch joined at an end, and of the blade tips;
+// those opposite acute crossings also of the rails of the Crossing tracks, as where the slip curves of a double slip cross the diamond
+knots::line check_blocks( TTrack const &Track, int const Path, int const Side, std::vector<planned_check> const &Checks, double const Clearance, std::vector<gauge_line> const &Crossing ) {
 
     auto const halfwidth { 0.5 * std::abs( Track.fTrackWidth ) };
     auto const &segment { path_segment( Track, Path ) };
@@ -506,7 +610,15 @@ knots::line check_blocks( TTrack const &Track, int const Path, int const Side, s
         others.push_back( make_gauge_line( Other, -halfwidth, 0.0 ) );
         others.push_back( make_gauge_line( Other, halfwidth, 0.0 ) ); };
     if( Track.eType == tt_Switch ) {
-        blocks.emplace_back( -1e9, 0.3 );
+        // past the heels of the blades
+        auto heel { 0.0 };
+        for( int path = 0; path < 2; ++path ) {
+            auto const &blade { Track.blade( path ) };
+            if( blade.valid ) {
+                heel = std::max( heel, blade.heel );
+            }
+        }
+        blocks.emplace_back( -1e9, heel + 0.3 );
         add_path( path_segment( Track, 1 - Path ) );
     }
     for( auto const *neighbour : { Track.trPrev, Track.trNext } ) {
@@ -531,13 +643,15 @@ knots::line check_blocks( TTrack const &Track, int const Path, int const Side, s
             }
         }
     }
-    if( false == others.empty() ) {
+    if( false == others.empty() || false == Crossing.empty() ) {
         auto const ours { make_gauge_line( segment, Side * halfwidth, 0.0 ) };
         for( auto const &check : Checks ) {
             for( auto s { check.from }; s <= check.to; s += 0.1 ) {
                 glm::dvec3 point, tangent;
                 ours.at( s, point, tangent );
-                if( blocked_by( others, plan( point ), plan( ours.normal( s, Side ) ), Clearance ) ) {
+                auto const inward { plan( ours.normal( s, Side ) ) };
+                if( blocked_by( others, plan( point ), inward, Clearance )
+                 || ( check.acute && blocked_by( Crossing, plan( point ), inward, Clearance ) ) ) {
                     blocks.emplace_back( s - 0.3, s + 0.3 );
                 }
             }
@@ -603,6 +717,19 @@ track_rails::check_rail_set TTrack::check_rails( std::vector<rail_crossing> cons
     }
     auto plans { planned_checks( *this, Crossings ) };
     auto const clearance { 0.046 + 0.04 * size.head / 0.0735 + size.head };
+    std::vector<gauge_line> crossing;
+    std::vector<TTrack const *> crossers;
+    for( auto const &entry : Crossings ) {
+        if( entry.track == nullptr || entry.track == this || std::find( crossers.begin(), crossers.end(), entry.track ) != crossers.end() ) {
+            continue;
+        }
+        crossers.push_back( entry.track );
+        for( int otherpath = 0; otherpath < path_count( *entry.track ); ++otherpath ) {
+            for( auto const side : { -1.0, 1.0 } ) {
+                crossing.push_back( make_gauge_line( path_segment( *entry.track, otherpath ), side * 0.5 * std::abs( entry.track->fTrackWidth ), 0.0 ) );
+            }
+        }
+    }
     for( int path = 0; path < path_count( *this ); ++path ) {
         for( int right = 0; right < 2; ++right ) {
             auto &checks { plans[ path ][ right ] };
@@ -610,7 +737,7 @@ track_rails::check_rail_set TTrack::check_rails( std::vector<rail_crossing> cons
                 continue;
             }
             merge_checks( checks );
-            auto const blocks { check_blocks( *this, path, right ? 1 : -1, checks, clearance ) };
+            auto const blocks { check_blocks( *this, path, right ? 1 : -1, checks, clearance, crossing ) };
             for( auto const &check : checks ) {
                 cut_check( check, blocks, result[ path ][ right ] );
             }
@@ -689,6 +816,11 @@ track_rails::switch_frog TTrack::frog() const {
     return result;
 }
 
+double TTrack::blades_throw() const {
+
+    return ( eType == tt_Switch && SwitchExtension && SwitchExtension->m_bladethrow > 0.0 ? SwitchExtension->m_bladethrow : blade_throw );
+}
+
 track_rails::switch_blade const &TTrack::blade( int const Path ) const {
 
     auto &cached { memo_of( *this ).blades[ Path ] };
@@ -704,7 +836,16 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
     auto const &ours { rail_line( *this, Path, side > 0, false ) };
     auto const &theirs { rail_line( *this, 1 - Path, side > 0, false ) };
     auto const size { rail_dimensions() };
-    auto const length { std::min( SwitchExtension->Segments[ Path ]->GetLength(), SwitchExtension->Segments[ 1 - Path ]->GetLength() ) };
+    // a path ending short of the other one with a plain track going on from it, as the first switch of a double one has, lets the blades run on
+    // into that track, taken straight on from the end, short of the track past it
+    auto const runs = [&]( int const P ) {
+        auto const *next { track_rails::runon_track( *this, P ) };
+        return SwitchExtension->Segments[ P ]->GetLength() + ( next != nullptr ? next->Segment->GetLength() - blade_runon_margin : 0.0 ); };
+    auto const shortest { std::min( SwitchExtension->Segments[ Path ]->GetLength(), SwitchExtension->Segments[ 1 - Path ]->GetLength() ) };
+    auto const length { std::max( shortest, std::min( {
+        std::max( SwitchExtension->Segments[ Path ]->GetLength(), SwitchExtension->Segments[ 1 - Path ]->GetLength() ),
+        runs( Path ),
+        runs( 1 - Path ) } ) ) };
     auto const count { std::max( 2, static_cast<int>( std::ceil( length / 0.1 ) ) ) };
     auto &gauge { result.gauge };
     glm::dvec3 point, tangent;
@@ -777,9 +918,32 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
         }
     }
     result.full = reach( size.head + blade_gap );
-    auto const clear { reach( size.head + blade_clearance ) };
+    auto clear { reach( size.head + blade_clearance ) };
     auto const foot { reach( size.high + blade_gap ) };
-    auto const limit { 0.9 * length };
+    auto limit { length > shortest + 1e-3 ? length : 0.9 * length };
+    // the blades of a double slip with them outside of the diamond end before the check rails of its crossings, shorter than they'd bend;
+    // with the throat of an acute frog of the diamond nearer than the blade gets clear of the stock rail, it ends short of the throat with the head clear of it,
+    // the frog over the blade wouldn't be made at all
+    auto capped { false };
+    if( DoubleSlip() && clear >= 0.0 ) {
+        auto const [ reach, latest ] { slip_blade_reach( *this ) };
+        auto const cap { reach >= clear ? reach : latest };
+        if( cap < limit && ( cap >= clear || ( result.full >= 0.0 && cap > result.full ) ) ) {
+            limit = cap;
+            capped = true;
+            clear = std::min( clear, cap );
+        }
+    }
+    // the blade of a switch with a frog of another track right past the heel keeps as long as it may, it doesn't bend as far as it would
+    auto reached { false };
+    if( false == DoubleSlip() && clear >= 0.0 ) {
+        auto const cap { blade_reach( *this, Path, side ) };
+        if( cap >= clear && cap < limit ) {
+            limit = cap;
+            capped = true;
+            reached = true;
+        }
+    }
     if( result.tip < 0.0 || result.full < 0.0 || clear < 0.0 || clear > limit ) {
         return result;
     }
@@ -792,7 +956,7 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
             if( sample.x < result.tip || sample.x > Heel ) {
                 continue;
             }
-            auto const gap { std::max( 0.0, sample.y - size.head ) + blade_throw * bend( sample.x, Heel ) };
+            auto const gap { std::max( 0.0, sample.y - size.head ) + blades_throw() * bend( sample.x, Heel ) };
             if( gap < least ) {
                 least = gap;
                 At = sample.x;
@@ -800,19 +964,39 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
         }
         return least; };
     auto at { 0.0 };
-    if( opening( limit, at ) < blade_clearance ) {
-        result.rigid = true;
+    auto short_blade { false };
+    auto const given { SwitchExtension->m_bladeheel };
+    if( given > 0.0 ) {
+        // the template of the switch says where its blades end; they bend stiff about the heel where the flangeway is too narrow for them to flex
+        result.heel = std::clamp( given, result.tip + blade_spacing, limit );
+        result.rigid = ( opening( result.heel, at ) < blade_clearance );
+    }
+    else {
         if( opening( limit, at ) < blade_clearance ) {
-            return result;
+            result.rigid = true;
+            if( opening( limit, at ) < blade_clearance || reached ) {
+                if( false == capped ) {
+                    return result;
+                }
+                short_blade = true;
+            }
+        }
+        auto low { clear };
+        auto high { limit };
+        for( int step = 0; step < 40 && false == short_blade; ++step ) {
+            auto const middle { 0.5 * ( low + high ) };
+            ( opening( middle, at ) >= blade_clearance ? high : low ) = middle;
+        }
+        result.heel = high;
+        // the blade goes on until the rail behind it stands clear of the stock rail with its whole foot, so it moves out of the place of the rail
+        // of the other path all along; only the frog of another track or the crossings of a slip end it sooner
+        auto const apart { reach( size.high - size.low + blade_gap ) };
+        if( apart > result.heel && result.heel < limit ) {
+            result.heel = std::min( apart, limit );
+            result.rigid = false;
+            result.rigid = ( opening( result.heel, at ) < blade_clearance );
         }
     }
-    auto low { clear };
-    auto high { limit };
-    for( int step = 0; step < 40; ++step ) {
-        auto const middle { 0.5 * ( low + high ) };
-        ( opening( middle, at ) >= blade_clearance ? high : low ) = middle;
-    }
-    result.heel = high;
     result.opening = opening( result.heel, result.openingat );
     for( std::size_t i = 1; i < gauge.size() && gauge[ i ].x <= result.heel; ++i ) {
         if( gauge[ i ].y < gauge[ i - 1 ].y - 1e-4 ) {

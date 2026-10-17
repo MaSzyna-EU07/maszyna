@@ -58,7 +58,28 @@ std::vector<std::array<std::size_t, 3>> ear_clip( std::vector<glm::dvec2> const 
     for( std::size_t j = 0; j < Polygon.size(); ++j ) {
         left[ j ] = j;
     }
+    // the parts of the outline of no width, as the web and the head of a rail planed away to nothing at the tip of a nose with its foot whole,
+    // go out first: the ears cut across them would cover what lies beside them
+    auto const thin = [&]( std::size_t const J ) {
+        auto const &a { Polygon[ left[ ( J + left.size() - 1 ) % left.size() ] ] };
+        auto const &b { Polygon[ left[ J ] ] };
+        auto const &c { Polygon[ left[ ( J + 1 ) % left.size() ] ] };
+        auto const longest { std::max( { glm::length( b - a ), glm::length( c - b ), glm::length( a - c ) } ) };
+        return ( longest <= 0.0 || std::abs( cross( a, b, c ) ) / longest < 1e-4 ); };
+    for( auto pruned { true }; pruned && left.size() > 3; ) {
+        pruned = false;
+        for( std::size_t j = 0; j < left.size() && left.size() > 3; ++j ) {
+            if( thin( j ) ) {
+                left.erase( left.begin() + j );
+                pruned = true;
+                break;
+            }
+        }
+    }
     std::vector<std::array<std::size_t, 3>> triangles;
+    if( left.size() < 3 || ( left.size() == 3 && thin( 0 ) ) ) {
+        return triangles;
+    }
     while( left.size() > 3 ) {
         auto ear { left.size() };
         for( std::size_t j = 0; j < left.size() && ear == left.size(); ++j ) {
@@ -80,6 +101,23 @@ std::vector<std::array<std::size_t, 3>> ear_clip( std::vector<glm::dvec2> const 
                         inside = true;
                         break;
                     }
+                }
+                // an outline narrower than a millimetre in places lets an ear past the test above across a notch of it, with no corner inside;
+                // the middle of the ear tells: out of the outline, the ear isn't one; the outline of a planed rail may go over itself, so it's what it winds around
+                if( false == inside ) {
+                    auto const middle { ( a + b + c ) / 3.0 };
+                    auto winding { 0 };
+                    for( std::size_t k = 0; k < left.size(); ++k ) {
+                        auto const &p { Polygon[ left[ k ] ] };
+                        auto const &q { Polygon[ left[ ( k + 1 ) % left.size() ] ] };
+                        if( p.y <= middle.y && q.y > middle.y && cross( p, q, middle ) > 0.0 ) {
+                            ++winding;
+                        }
+                        else if( q.y <= middle.y && p.y > middle.y && cross( p, q, middle ) < 0.0 ) {
+                            --winding;
+                        }
+                    }
+                    inside = ( winding == 0 );
                 }
             }
             if( false == inside ) {
@@ -153,13 +191,59 @@ gfx::userdata_array worn_userdata( std::size_t const Count ) {
     return gfx::userdata_array( Count, gfx::vertex_userdata{ glm::vec4{ 1.f, 0.f, 0.f, 0.f } } );
 }
 
+namespace {
+
+chunk_pool *reused { nullptr };
+
+} // namespace
+
+reused_chunks::reused_chunks( chunk_pool *Pool ) :
+    m_previous { reused } {
+
+    if( Pool != nullptr ) {
+        for( auto &chunk : *Pool ) {
+            chunk.used = false;
+        }
+    }
+    reused = Pool;
+}
+
+reused_chunks::~reused_chunks() {
+
+    reused = m_previous;
+}
+
+gfx::geometry_handle insert_chunk( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Bank, int const Type ) {
+
+    if( reused == nullptr ) {
+        return GfxRenderer->Insert( Vertices, Userdata, Bank, Type );
+    }
+    for( auto &chunk : *reused ) {
+        if( chunk.used || chunk.type != Type || chunk.handle.bank != Bank.bank ) {
+            continue;
+        }
+        // the data are swapped into the chunk when of the same size, the caller keeps its own
+        auto vertices { Vertices };
+        auto userdata { Userdata };
+        if( GfxRenderer->Replace( vertices, userdata, chunk.handle, Type ) ) {
+            chunk.used = true;
+            return chunk.handle;
+        }
+    }
+    auto const handle { GfxRenderer->Insert( Vertices, Userdata, Bank, Type ) };
+    if( handle != null_handle ) {
+        reused->push_back( { Type, handle, true } );
+    }
+    return handle;
+}
+
 void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry ) {
 
     gfx::vertex_array triangles;
     cap_loft( Strip, Ring, Start, End, triangles );
     if( false == triangles.empty() ) {
         auto userdata { worn_userdata( triangles.size() ) };
-        Geometry.emplace_back( GfxRenderer->Insert( triangles, userdata, Bank, GL_TRIANGLES ) );
+        Geometry.emplace_back( insert_chunk( triangles, userdata, Bank, GL_TRIANGLES ) );
     }
 }
 
@@ -335,22 +419,17 @@ std::vector<double> cross_splits( rail_piece const &Whole, glm::dvec2 const &Rea
     return result;
 }
 
-knots::line flared( double const From, double const To, double const Flare, double const Base, double const Fromdepth, double const Todepth ) {
+// the face of a check or a guard rail toward the running rail, planed off at the ends by Fromdepth and Todepth down to nothing over Length; lines for the upper envelope of the reach
+void planed( knots::line &Lines, double const From, double const To, double const Length, double const Face, double const Fromdepth, double const Todepth ) {
 
-    knots::line result;
     if( Fromdepth > 0.0 ) {
-        result.insert( result.end(), { { From, Base - Fromdepth }, { From + Flare, Base } } );
-    }
-    else {
-        result.push_back( { From, Base } );
+        auto const slope { Fromdepth / Length };
+        Lines.emplace_back( slope, Face - Fromdepth - slope * From );
     }
     if( Todepth > 0.0 ) {
-        result.insert( result.end(), { { To - Flare, Base }, { To, Base - Todepth } } );
+        auto const slope { Todepth / Length };
+        Lines.emplace_back( -slope, Face - Todepth + slope * To );
     }
-    else {
-        result.push_back( { To, Base } );
-    }
-    return result;
 }
 
 knots::line envelope( knots::line const &Lines, bool const Upper, double const A, double const B ) {
@@ -476,17 +555,18 @@ private:
     void lay_guards();
     void lay_checks();
     void lay_fills();
-    void lay_treads( rail_piece const &Whole, std::vector<rail_tread> const &Treads );
+    void lay_treads( rail_piece const &Whole, std::vector<rail_tread> const &Treads, piece_ends const &Ends );
     void lay_cuts( gfx::vertex_array const &Shape, std::vector<rail_cut> Cuts, bool const Wheels, std::vector<rail_tread> const &Treads, float const Wallu = -1.f );
     void lay_grooved( gfx::vertex_array const &Outline );
     grooved_profile split_grooved( gfx::vertex_array const &Outline ) const;
     std::vector<rail_cut> top_cuts( gfx::vertex_array const &Top ) const;
-    void running( rail_piece const &Whole, knots::line const &Rolled, piece_ends const &Ends );
+    void running( rail_piece const &Whole, knots::line const &Rolled, knots::line const &Worn, material_handle const Wornby, piece_ends const &Ends );
     void plain( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends );
     void treaded( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends );
     gfx::vertex_array lay_sides( rail_piece const &Whole, piece_ends const &Ends );
     void lay_top( gfx::vertex_array const &Top, rail_piece const &Whole, glm::dvec2 const &Reach, std::vector<double> const &Splits, std::vector<top_band> const &Bands, std::function<std::vector<double>( double )> const &Edges, piece_ends const &Ends );
-    void piece( gfx::vertex_array const &Shape, rail_piece const &Piece, piece_ends const &Ends = {} );
+    // the faces between the points Leftfrom and Leftto of the shape are left out, laid apart
+    void piece( gfx::vertex_array const &Shape, rail_piece const &Piece, piece_ends const &Ends = {}, std::size_t const Leftfrom = 0, std::size_t const Leftto = 0 );
     loft_span span( rail_piece const &Piece, piece_ends const &Ends ) const;
     double texture_length( material_handle const Material ) const;
     geometryhandle_sequence &sink( material_handle const Material, bool const Matte );
@@ -575,8 +655,10 @@ void TTrack::rail_layer::lay_guards() {
         auto const inside { Miter.x + Miter.y * ( size.low + m_guardoffset ) };
         auto const outside { Miter.x + Miter.y * ( top + m_guardoffset ) };
         return Latest ? std::max( inside, outside ) : std::min( inside, outside ); };
+    // a flared end is cut slanted from the face of the guard rail toward the running rail: its back reaches out to the end, its face stops short of it
+    auto const back { -( reaches( m_profile ).x + m_guardoffset ) };
     for( auto const &guard : ours( m_layout.guards ) ) {
-        auto const offsets { flared( guard.from, guard.to, std::min( guard_flare, 0.25 * ( guard.to - guard.from ) ), m_guardoffset, guard.flarefrom ? 0.02 : 0.0, guard.flareto ? 0.02 : 0.0 ) };
+        knots::line const offsets { { guard.from, m_guardoffset }, { guard.to, m_guardoffset } };
         auto cuts { guard.plan.cuts };
         sort_cuts( cuts );
         auto start { guard.from };
@@ -584,17 +666,23 @@ void TTrack::rail_layer::lay_guards() {
         for( std::size_t i = 0; i <= cuts.size(); ++i ) {
             auto const end { i < cuts.size() ? cuts[ i ].end : guard.to };
             auto const endmiter { i < cuts.size() ? cuts[ i ].endmiter : guard.tomiter };
-            auto const a { std::max( { mitered( startmiter, start, false ), m_from, 0.0 } ) };
-            auto const b { std::min( { mitered( endmiter, end, true ), m_length, mitered( guard.tomiter, guard.to, true ) } ) };
+            auto const bevelfrom { start == guard.from && startmiter.y == 0.0 && guard.flarefrom && guard.from >= std::max( m_from, 0.0 ) };
+            auto const bevelto { i == cuts.size() && endmiter.y == 0.0 && guard.flareto && guard.to <= m_length };
+            auto const a { bevelfrom ? guard.from + guard_bevel * back : std::max( { mitered( startmiter, start, false ), m_from, 0.0 } ) };
+            auto const b { bevelto ? guard.to - guard_bevel * back : std::min( { mitered( endmiter, end, true ), m_length, mitered( guard.tomiter, guard.to, true ) } ) };
             if( b - a > 0.01 ) {
                 knots::line uppers { { 0.0, top } };
                 knots::line lowers;
+                planed( uppers, guard.from, guard.to, std::min( guard_flare, 0.25 * ( guard.to - guard.from ) ), size.head, guard.flarefrom ? guard_planing : 0.0, guard.flareto ? guard_planing : 0.0 );
                 for( auto const &[ miter, ending ] : { std::pair{ startmiter, false }, std::pair{ endmiter, true } } ) {
                     if( miter.y != 0.0 ) {
                         ( ending == ( miter.y < 0.0 ) ? uppers : lowers ).emplace_back( 1.0 / miter.y, -miter.x / miter.y - m_guardoffset );
                     }
                 }
-                lay_treads( { .from = a, .to = b, .offsets = offsets, .extents = envelope( uppers, true, a, b ), .inner = envelope( lowers, false, a, b ), .capfrom = true, .capto = true, .rolled = false }, guard.treads );
+                lay_treads(
+                    { .from = a, .to = b, .offsets = offsets, .extents = envelope( uppers, true, a, b ), .inner = envelope( lowers, false, a, b ), .capfrom = true, .capto = true, .rolled = false },
+                    guard.treads,
+                    { a, b, { bevelfrom ? guard_bevel : 0.0 }, { bevelto ? -guard_bevel : 0.0 } } );
             }
             if( i < cuts.size() && cuts[ i ].start > start ) {
                 start = cuts[ i ].start;
@@ -613,14 +701,17 @@ void TTrack::rail_layer::lay_checks() {
         if( replaced_by_wing( check, ours( m_layout.wingends ) ) || b - a <= 0.01 ) {
             continue;
         }
+        // the flared ends are bent away from the running rail, the whole of the check rail
+        auto const flare { check_flare( check ) };
+        knots::line const offsets { { check.from, -check.flarefrom }, { check.from + flare, 0.0 }, { check.to - flare, 0.0 }, { check.to, -check.flareto } };
         piece(
             shape,
-            { .from = a, .to = b, .offsets = flared( check.from, check.to, check_flare( check ), 0.0, check.flarefrom, check.flareto ), .capfrom = a > 0.0 || check.from >= 0.0, .capto = check.to <= m_length, .rolled = false },
+            { .from = a, .to = b, .offsets = offsets, .capfrom = a > 0.0 || check.from >= 0.0, .capto = check.to <= m_length, .rolled = false },
             { a, b, { a == check.from ? check.frombend : 0.0 }, { b == check.to ? check.tobend : 0.0 } } );
     }
 }
 
-void TTrack::rail_layer::lay_treads( rail_piece const &Whole, std::vector<rail_tread> const &Treads ) {
+void TTrack::rail_layer::lay_treads( rail_piece const &Whole, std::vector<rail_tread> const &Treads, piece_ends const &Ends ) {
 
     std::vector<double> splits { Whole.from, Whole.to };
     for( auto const &tread : Treads ) {
@@ -631,7 +722,7 @@ void TTrack::rail_layer::lay_treads( rail_piece const &Whole, std::vector<rail_t
         }
     }
     std::sort( splits.begin(), splits.end() );
-    piece_ends const ends { Whole.from, Whole.to };
+    auto const &ends { Ends };
     for( std::size_t k = 1; k < splits.size(); ++k ) {
         auto part { Whole };
         part.from = splits[ k - 1 ];
@@ -671,24 +762,31 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
     auto start { -1e9 };
     auto startcap { true };
     auto startbend { 0.0 };
-    knots::line rolledfrom;
+    knots::line rolledfrom, wornfrom;
+    material_handle wornbyfrom { null_handle };
+    auto const brighter = [&]( material_handle const A, material_handle const B ) {
+        if( A == null_handle || B == null_handle ) {
+            return ( A == null_handle ? B : A );
+        }
+        return ( tread_brightness( B, m_track.tread_band() ) > tread_brightness( A, m_track.tread_band() ) ? B : A ); };
     knots::line offsets, extents, inner;
     for( std::size_t i = 0; i <= Cuts.size(); ++i ) {
         auto const end { i < Cuts.size() ? Cuts[ i ].end : 1e9 };
+        // a piece carved between two cuts has the same lines at both
+        auto const own { i < Cuts.size() && false == ( i > 0 && Cuts[ i - 1 ].carved && Cuts[ i ].carved ) };
         auto pieceoffsets { offsets };
-        auto pieceextents { extents };
-        auto pieceinner { inner };
-        if( i < Cuts.size() ) {
+        if( own ) {
             pieceoffsets.insert( pieceoffsets.end(), Cuts[ i ].endoffsets.begin(), Cuts[ i ].endoffsets.end() );
-            pieceextents.insert( pieceextents.end(), Cuts[ i ].endextents.begin(), Cuts[ i ].endextents.end() );
-            pieceinner.insert( pieceinner.end(), Cuts[ i ].endinner.begin(), Cuts[ i ].endinner.end() );
         }
         knots::sort( pieceoffsets );
-        knots::sort( pieceextents );
-        knots::sort( pieceinner );
+        // the limits of the head from both ends can overlap along a short piece, as the planed wing rail of one frog and the cut of the next: the tighter of them holds
+        auto const pieceextents { own ? knots::bound( extents, Cuts[ i ].endextents, true ) : extents };
+        auto const pieceinner { own ? knots::bound( inner, Cuts[ i ].endinner, false ) : inner };
         auto const a { std::max( start, m_from ) };
         auto const b { std::min( end, m_length ) };
-        auto const rolled { i < Cuts.size() ? knots::bound( rolledfrom, Cuts[ i ].endrolled, true ) : rolledfrom };
+        auto const rolled { own ? knots::bound( rolledfrom, Cuts[ i ].endrolled, true ) : rolledfrom };
+        auto const worn { own ? knots::bound( wornfrom, Cuts[ i ].endworn, true ) : wornfrom };
+        auto const wornby { own ? brighter( wornbyfrom, Cuts[ i ].endwornby ) : wornbyfrom };
         auto const capstart { start > m_from ? startcap : m_openstart };
         auto const capend { end < m_length ? Cuts[ i ].endcap : m_openend };
         piece_ends const ends {
@@ -736,12 +834,14 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
                     piece( Shape, whole, ends );
                 }
                 else {
-                    running( whole, rolled, ends );
+                    running( whole, rolled, worn, wornby, ends );
                 }
             }
         }
         if( i < Cuts.size() ) {
             rolledfrom = Cuts[ i ].startrolled;
+            wornfrom = Cuts[ i ].startworn;
+            wornbyfrom = Cuts[ i ].startwornby;
             start = Cuts[ i ].start;
             startcap = Cuts[ i ].startcap;
             startbend = Cuts[ i ].startbend;
@@ -928,23 +1028,67 @@ std::vector<rail_cut> TTrack::rail_layer::top_cuts( gfx::vertex_array const &Top
     return cuts;
 }
 
-void TTrack::rail_layer::running( rail_piece const &Whole, knots::line const &Rolled, piece_ends const &Ends ) {
+void TTrack::rail_layer::running( rail_piece const &Whole, knots::line const &Rolled, knots::line const &Worn, material_handle const Wornby, piece_ends const &Ends ) {
 
     auto const top { lay_sides( Whole, Ends ) };
     auto const reach { reaches( top ) };
-    auto const inner { knots::shifted( Rolled, -blend ) };
-    auto const splits { cross_splits( Whole, reach, { &Rolled, &inner }, 0.0 ) };
-    auto const marked { treads_marked() };
     auto const own { Whole.material == null_handle ? m_track.rail_material( m_path ) : Whole.material };
+    // the wheels of the rail beside polish the head as they do their own; where the wheels of both roll on it, the brighter polish shows
+    auto const theirs { ( Wornby == null_handle || Worn.empty() ) ? own : Wornby };
+    auto const theirsbrighter { theirs != own && tread_brightness( theirs, m_track.tread_band() ) > tread_brightness( own, m_track.tread_band() ) };
+    auto const theirmaterial { theirs == own ? Whole.material : theirs };
+    // the wheels wander across, rolling a little further than their reach in the middle of the gauge
+    auto const ownreach { knots::shifted( Rolled, wheel_play ) };
+    auto const theirreach { Worn.empty() ? knots::line {} : knots::shifted( Worn, -wheel_play ) };
+    // the polish fades across the edge of the reach of the wheels, as it does at the treads
+    auto reached { knots::shifted( ownreach, 0.5 * blend ) };
+    // where the head is planed flush against a rail beside it, the wheels of that rail roll on it again from the outside; where the reach of both
+    // overlaps, the head is rolled across, each fade cut off halfway between them, or the duller polish where the brighter one reaches. the wheels
+    // wander across the gap between the reaches narrower than a fade, so both fades close in on it, down to none where the reaches touch
+    knots::line outside, meet;
+    if( false == theirreach.empty() ) {
+        auto const widest { knots::shifted( ownreach, blend ) };
+        auto all { knots::stations( ownreach, theirreach ) };
+        for( auto const *edge : { &ownreach, &widest } ) {
+            auto const crossed { knots::meetings( theirreach, *edge ) };
+            all.insert( all.end(), crossed.begin(), crossed.end() );
+        }
+        std::sort( all.begin(), all.end() );
+        reached.clear();
+        for( auto const position : all ) {
+            if( false == outside.empty() && position - outside.back().x < 1e-9 ) {
+                continue;
+            }
+            auto const rolled { knots::sample( ownreach, position, 0.0 ) };
+            auto const worn { knots::sample( theirreach, position, 0.0 ) };
+            auto const half { 0.5 * std::clamp( worn - rolled, 0.0, blend ) };
+            reached.emplace_back( position, rolled - half + blend );
+            outside.emplace_back( position, worn + half - blend );
+            meet.emplace_back( position, ( worn >= rolled || theirs == own ) ? 0.5 * ( rolled + worn ) : theirsbrighter ? worn : rolled );
+        }
+    }
+    auto const inner { outside.empty() ? knots::shifted( reached, -blend ) : knots::bound( knots::shifted( reached, -blend ), meet, true ) };
+    auto const rolled { outside.empty() ? reached : knots::bound( reached, meet, true ) };
+    auto const worn { outside.empty() ? knots::line {} : knots::bound( outside, meet, false ) };
+    auto const outer { outside.empty() ? knots::line {} : knots::bound( knots::shifted( outside, blend ), meet, false ) };
+    auto const splits { cross_splits( Whole, reach, { &rolled, &inner, &worn, &outer }, 0.0 ) };
+    auto const marked { treads_marked() };
+    std::vector<top_band> bands {
+        { Whole.material, knots::bound( Whole.extents, inner, true ), Whole.inner },
+        { marked ? paint( own, { 1.f, 1.f, 0.f } ) : Whole.material, knots::bound( Whole.extents, rolled, true ), knots::bound( inner, Whole.inner, false ), false, marked ? knots::line {} : reached },
+        { marked ? paint( own, { 1.f, 0.f, 1.f } ) : Whole.material, worn.empty() ? Whole.extents : knots::bound( Whole.extents, worn, true ), knots::bound( rolled, Whole.inner, false ), false } };
+    if( false == worn.empty() ) {
+        bands.push_back( { marked ? paint( own, { 0.f, 1.f, 1.f } ) : theirmaterial, knots::bound( Whole.extents, outer, true ), knots::bound( worn, Whole.inner, false ), false, marked ? knots::line {} : outside, -blend } );
+        bands.push_back( { theirmaterial, Whole.extents, knots::bound( outer, Whole.inner, false ) } );
+    }
     lay_top(
-        top, Whole, reach, splits,
-        {
-            { Whole.material, knots::bound( Whole.extents, inner, true ), Whole.inner },
-            { marked ? paint( own, { 1.f, 1.f, 0.f } ) : Whole.material, knots::bound( Whole.extents, Rolled, true ), knots::bound( inner, Whole.inner, false ), false, marked ? knots::line {} : Rolled },
-            { marked ? paint( own, { 1.f, 0.f, 1.f } ) : Whole.material, Whole.extents, knots::bound( Rolled, Whole.inner, false ), false } },
+        top, Whole, reach, splits, bands,
         [&]( double const Middle ) {
-            auto const rolled { knots::sample( Rolled, Middle, 0.0 ) };
-            return std::vector<double> { rolled - blend, rolled }; },
+            if( worn.empty() ) {
+                auto const edge { knots::sample( reached, Middle, 0.0 ) };
+                return std::vector<double> { edge - blend, edge };
+            }
+            return std::vector<double> { knots::sample( inner, Middle, 0.0 ), knots::sample( rolled, Middle, 0.0 ), knots::sample( worn, Middle, 0.0 ), knots::sample( outer, Middle, 0.0 ) }; },
         Ends );
 }
 
@@ -961,21 +1105,39 @@ void TTrack::rail_layer::plain( rail_piece Whole, rail_tread const &Tread, piece
 
 void TTrack::rail_layer::treaded( rail_piece Whole, rail_tread const &Tread, piece_ends const &Ends ) {
 
+    auto const marked { treads_marked() };
+    auto const own { m_track.rail_material( m_path ) };
+    // where the wheels from beside polish the head as its own do, there's no tint between two polishes, only the polish of the rail itself
+    auto const same { Tread.material == own && false == marked };
+    if( same && Whole.rolled ) {
+        plain( Whole, Tread, Ends );
+        return;
+    }
     Whole.material = null_handle;
     auto const top { lay_sides( Whole, Ends ) };
     auto const reach { reaches( top ) };
-    auto const &lower { Tread.below ? Tread.gauge : Tread.edge };
-    auto const &upper { Tread.below ? Tread.edge : Tread.gauge };
-    auto const marked { treads_marked() };
-    auto const own { m_track.rail_material( m_path ) };
-    auto const colour { 0.5f * ( tread_colour( Tread.material, m_track.tread_band() ) + tread_colour( own, m_track.tread_band() ) ) };
+    // the lines of the tread run out from the gauge line of the rail, the piece is laid shifted off it
+    knots::line back;
+    for( auto const &knot : Whole.offsets ) {
+        back.emplace_back( knot.x, -knot.y );
+    }
+    auto const edge { knots::sum( Tread.edge, back ) };
+    auto const gauge { knots::sum( Tread.gauge, back ) };
+    auto const &lower { Tread.below ? gauge : edge };
+    auto const &upper { Tread.below ? edge : gauge };
+    // the brighter polish of the tread fades out towards the edge of the reach of the wheels into the colour of the polish of the rail itself,
+    // keeping the gloss of its steel
+    auto const colour { glm::clamp( tread_colour( own, m_track.tread_band() ) / glm::max( tread_colour( Tread.material, m_track.tread_band() ), glm::vec3 { 1e-3f } ), 0.f, 4.f ) };
     auto const tint = [&]( material_handle const Material, glm::vec3 const &Mark ) {
         return paint( Material, marked ? Mark : colour ); };
-    auto const owntint { Whole.rolled ? tint( own, { 1.f, 0.f, 0.f } ) : null_handle };
     auto const sharedtint { tint( Tread.material, { 0.f, 1.f, 0.f } ) };
     auto const shared { marked ? tint( Tread.material, { 0.f, 0.f, 1.f } ) : Tread.material };
     auto const ramp = [&]( knots::line const &Knots ) {
         return marked ? knots::line {} : Knots; };
+    auto const owned = [&]( knots::line const &Extents, knots::line const &Inner, double const Fade ) {
+        return marked ?
+            top_band { Whole.rolled ? tint( own, { 1.f, 0.f, 0.f } ) : null_handle, Extents, Inner, false, {}, Fade } :
+            top_band { null_handle, Extents, Inner, Whole.rolled }; };
     auto const fade { Tread.fade };
     auto const centre { knots::middle( lower, upper ) };
     auto const beneath { knots::shifted( lower, -fade ) };
@@ -985,15 +1147,32 @@ void TTrack::rail_layer::treaded( rail_piece Whole, rail_tread const &Tread, pie
     auto splits { cross_splits( Whole, reach, { &lower, &upper, &lowfade, &highfade, &beneath, &beyond }, 0.001 ) };
     add_meetings( knots::shifted( lower, 2.0 * fade ), upper, Whole.from, Whole.to, 0.001, splits );
     std::sort( splits.begin(), splits.end() );
+    if( same ) {
+        // the head no wheel of its own rolls on is polished across the tread alone, fading into the matte outside it
+        lay_top(
+            top, Whole, reach, splits,
+            {
+                { null_handle, knots::bound( Whole.extents, beneath, true ), Whole.inner, false },
+                { null_handle, knots::bound( Whole.extents, lower, true ), knots::bound( Whole.inner, beneath, false ), false, beneath, -fade },
+                { shared, knots::bound( Whole.extents, upper, true ), knots::bound( Whole.inner, lower, false ) },
+                { null_handle, knots::bound( Whole.extents, beyond, true ), knots::bound( Whole.inner, upper, false ), false, beyond, fade },
+                { null_handle, Whole.extents, knots::bound( Whole.inner, beyond, false ), false } },
+            [&]( double const Middle ) {
+                auto const from { knots::sample( lower, Middle, 0.0 ) };
+                auto const to { knots::sample( upper, Middle, 0.0 ) };
+                return std::vector<double> { from - fade, from, to, to + fade }; },
+            Ends );
+        return;
+    }
     lay_top(
         top, Whole, reach, splits,
         {
             { null_handle, knots::bound( Whole.extents, beneath, true ), Whole.inner, Whole.rolled },
-            { owntint, knots::bound( Whole.extents, lower, true ), knots::bound( Whole.inner, beneath, false ), false, ramp( lower ), fade },
+            owned( knots::bound( Whole.extents, lower, true ), knots::bound( Whole.inner, beneath, false ), fade ),
             { sharedtint, knots::bound( Whole.extents, lowfade, true ), knots::bound( Whole.inner, lower, false ), false, ramp( lower ), -fade },
             { shared, knots::bound( Whole.extents, highfade, true ), knots::bound( Whole.inner, lowfade, false ), false == marked },
             { sharedtint, knots::bound( Whole.extents, upper, true ), knots::bound( Whole.inner, highfade, false ), false, ramp( upper ), fade },
-            { owntint, knots::bound( Whole.extents, beyond, true ), knots::bound( Whole.inner, upper, false ), false, ramp( upper ), -fade },
+            owned( knots::bound( Whole.extents, beyond, true ), knots::bound( Whole.inner, upper, false ), -fade ),
             { null_handle, Whole.extents, knots::bound( Whole.inner, beyond, false ), Whole.rolled } },
         [&]( double const Middle ) {
             auto const from { knots::sample( lower, Middle, 0.0 ) };
@@ -1004,15 +1183,9 @@ void TTrack::rail_layer::treaded( rail_piece Whole, rail_tread const &Tread, pie
 
 gfx::vertex_array TTrack::rail_layer::lay_sides( rail_piece const &Whole, piece_ends const &Ends ) {
 
-    gfx::vertex_array vertices;
-    if( m_segment.RenderLoftSpan( vertices, m_track.m_origin, m_profile, span( Whole, Ends ) ) ) {
-        cut_faces( vertices, m_profile.size(), Whole.capfrom, Whole.capto, m_drawing.bank, sink( Whole.material, true ) );
-    }
-    auto side { Whole };
-    side.capfrom = false;
-    side.capto = false;
-    piece( strip( 0, m_topfirst ), side, Ends );
-    piece( strip( m_toplast, m_profile.size() - 1 ), side, Ends );
+    // the sides are lofted in the whole profile, the top left out: lofted apart, the points of a side of the head planed along the rail had none
+    // of the top beside them to stop at, and went down past the wall of the cut, which went missing between the top and the underside of the head
+    piece( m_profile, Whole, Ends, m_topfirst, m_toplast );
     return strip( m_topfirst, m_toplast );
 }
 
@@ -1037,7 +1210,7 @@ void TTrack::rail_layer::lay_top( gfx::vertex_array const &Top, rail_piece const
     }
 }
 
-void TTrack::rail_layer::piece( gfx::vertex_array const &Shape, rail_piece const &Piece, piece_ends const &Ends ) {
+void TTrack::rail_layer::piece( gfx::vertex_array const &Shape, rail_piece const &Piece, piece_ends const &Ends, std::size_t const Leftfrom, std::size_t const Leftto ) {
 
     gfx::vertex_array vertices;
     gfx::userdata_array userdata;
@@ -1052,6 +1225,9 @@ void TTrack::rail_layer::piece( gfx::vertex_array const &Shape, rail_piece const
     auto const ring { 2 * Shape.size() };
     for( std::size_t block = 0; block + ring <= vertices.size(); block += ring ) {
         for( std::size_t j = 0; j + 1 < Shape.size(); ++j ) {
+            if( j >= Leftfrom && j < Leftto ) {
+                continue;
+            }
             for( auto const index : { 0, 1, 2, 1, 3, 2 } ) {
                 auto const vertex { block + 2 * j + index };
                 triangles.push_back( vertices[ vertex ] );
@@ -1064,7 +1240,7 @@ void TTrack::rail_layer::piece( gfx::vertex_array const &Shape, rail_piece const
     if( triangles.empty() ) {
         return;
     }
-    sink( Piece.material, false == Piece.rolled ).emplace_back( GfxRenderer->Insert( triangles, triangleuserdata, m_drawing.bank, GL_TRIANGLES ) );
+    sink( Piece.material, false == Piece.rolled ).emplace_back( insert_chunk( triangles, triangleuserdata, m_drawing.bank, GL_TRIANGLES ) );
 }
 
 loft_span TTrack::rail_layer::span( rail_piece const &Piece, piece_ends const &Ends ) const {

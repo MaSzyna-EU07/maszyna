@@ -46,6 +46,7 @@ struct record
 	std::optional<double> km;
 	std::string number{"-"};
 	std::string source{"designed"}; // designed: from the catalogue, measured: copied from a switch of the scenery
+	double middle{0.0}; // the radius in the middle of the slip curves of a double slip with the blades outside of the diamond
 };
 
 void reset();

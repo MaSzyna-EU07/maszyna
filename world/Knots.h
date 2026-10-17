@@ -35,12 +35,13 @@ inline double sample( line const &Line, double const Position, double const Defa
     if( Position <= Line.front().x ) {
         return Line.front().y;
     }
-    for( std::size_t i = 1; i < Line.size(); ++i ) {
-        if( Position <= Line[ i ].x ) {
-            return glm::mix( Line[ i - 1 ].y, Line[ i ].y, ( Position - Line[ i - 1 ].x ) / std::max( Line[ i ].x - Line[ i - 1 ].x, 1e-6 ) );
-        }
+    // the first knot at or past the position, after the first one
+    auto const next { std::lower_bound( Line.begin() + 1, Line.end(), Position, []( glm::dvec2 const &Knot, double const At ) { return Knot.x < At; } ) };
+    if( next == Line.end() ) {
+        return Line.back().y;
     }
-    return Line.back().y;
+    auto const &before { *( next - 1 ) };
+    return glm::mix( before.y, next->y, ( Position - before.x ) / std::max( next->x - before.x, 1e-6 ) );
 }
 
 inline line shifted( line Line, double const Value ) {
@@ -104,6 +105,46 @@ inline line middle( line const &A, line const &B ) {
     for( auto const position : stations( A, B ) ) {
         result.emplace_back( position, 0.5 * ( sample( A, position, 0.0 ) + sample( B, position, 0.0 ) ) );
     }
+    return result;
+}
+
+// both lines added up, each going on flat past its ends
+inline line sum( line const &A, line const &B ) {
+
+    if( A.empty() || B.empty() ) {
+        return ( A.empty() ? B : A );
+    }
+    line result;
+    for( auto const position : stations( A, B ) ) {
+        if( false == result.empty() && position - result.back().x < 1e-9 ) {
+            continue;
+        }
+        result.emplace_back( position, sample( A, position, 0.0 ) + sample( B, position, 0.0 ) );
+    }
+    return result;
+}
+
+// the line without the knots lying on the straight between the knots kept around them, within Tolerance
+inline line simplified( line const &Line, double const Tolerance ) {
+
+    if( Line.size() < 3 ) {
+        return Line;
+    }
+    line result { Line.front() };
+    std::size_t kept { 0 };
+    for( std::size_t i = 2; i < Line.size(); ++i ) {
+        auto const &a { Line[ kept ] };
+        auto const &b { Line[ i ] };
+        for( std::size_t j = kept + 1; j < i; ++j ) {
+            auto const t { ( Line[ j ].x - a.x ) / std::max( b.x - a.x, 1e-9 ) };
+            if( std::abs( glm::mix( a.y, b.y, t ) - Line[ j ].y ) > Tolerance ) {
+                kept = i - 1;
+                result.push_back( Line[ kept ] );
+                break;
+            }
+        }
+    }
+    result.push_back( Line.back() );
     return result;
 }
 

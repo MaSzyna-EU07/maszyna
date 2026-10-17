@@ -41,7 +41,7 @@ bool g_loaded{false};
 // format of the lines, coordinates in the space of the file:
 //   <switch|slip|crossing|double> <name> <type> <rail> <R> <n of 1:n> <hand L|R|-> <a> <b> <R of the main track, + right, - left, 0 straight>
 //     parts <count> <names>... shape <main end along, across> <diverging end along, across> start <x y z> dir <x z>
-//     km <km|-> number <label|-> source <designed|measured>
+//     km <km|-> number <label|-> source <designed|measured> [middle <R in the middle of the slip curves of a double slip>]
 std::string word(std::string const &Text)
 {
 	if (Text.empty())
@@ -122,6 +122,8 @@ void mark(scene::layer_handle const Layer)
 		text += format(" start %.4f %.4f %.4f dir %.9f %.9f km ", start.x, start.y, start.z, direction.x, direction.y);
 		text += entry.km.has_value() ? format("%.3f", *entry.km / 1000.0) : std::string{"-"};
 		text += " number " + word(entry.number) + " source " + word(entry.source);
+		if (entry.middle > 0.0)
+			text += format(" middle %.3f", entry.middle);
 		lines.push_back(text);
 	}
 	scene::Layers.mark(Layer, kMark, std::move(lines));
@@ -177,6 +179,8 @@ void load()
 			line >> start.x >> start.y >> start.z >> keyword >> direction.x >> direction.y >> keyword >> km >> keyword >> entry.number >> keyword >> entry.source;
 			if (line.fail())
 				continue;
+			if (line >> keyword && keyword == "middle")
+				line >> entry.middle;
 			entry.start = context.to_world(start);
 			ahead = context.to_world(start + glm::dvec3{direction.x, 0.0, direction.y});
 			entry.direction = plan_of(ahead - entry.start);
@@ -341,7 +345,7 @@ std::string label(record const &Record)
 	else
 		text += ' ';
 	if (Record.radius > 0.0)
-		text += format("%.0f-", Record.radius);
+		text += Record.middle > 0.0 ? format("%.0f/%.0f-", Record.radius, Record.middle) : format("%.0f-", Record.radius);
 	if (Record.ratio > 0.0)
 		text += format(std::abs(Record.ratio - std::round(Record.ratio)) < 1e-3 ? "1:%.0f" : "1:%.1f", Record.ratio);
 	if (Record.hand == 'L' || Record.hand == 'R')

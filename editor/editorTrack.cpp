@@ -138,6 +138,9 @@ editor_track::state editor_track::capture(TTrack const &Track)
 	result.material2 = Track.m_material2;
 	result.material3 = Track.SwitchExtension ? Track.SwitchExtension->m_material3 : null_handle;
 	result.frogs = Track.SwitchExtension && Track.SwitchExtension->m_frogs;
+	result.movablenose = Track.SwitchExtension && Track.SwitchExtension->m_movablenose;
+	result.bladeheel = Track.SwitchExtension ? Track.SwitchExtension->m_bladeheel : 0.0;
+	result.bladethrow = Track.SwitchExtension ? Track.SwitchExtension->m_bladethrow : 0.0;
 	result.texlength = Track.fTexLength;
 	result.texheight = texture_height(Track);
 	result.texwidth = Track.fTexWidth;
@@ -151,6 +154,8 @@ editor_track::state editor_track::capture(TTrack const &Track)
 	result.sleeper_skin = Track.m_sleeper_skin_name;
 	result.sleeper_offset = Track.m_sleeper_offset;
 	result.sleeper_ballast = Track.m_sleeper_ballast_z;
+	result.timber_model = Track.m_timber_model_name;
+	result.timber_skin = Track.m_timber_skin_name;
 	for (int i = 0; i < 6; ++i)
 		result.events[i] = events(const_cast<TTrack &>(Track), i);
 	result.name = Track.name();
@@ -228,6 +233,9 @@ void editor_track::apply(TTrack &Track, state const &State)
 		Track.SwitchExtension->fVelocity = State.switchvelocity;
 		Track.SwitchExtension->m_material3 = State.material3;
 		Track.SwitchExtension->m_frogs = State.frogs;
+		Track.SwitchExtension->m_movablenose = State.movablenose;
+		Track.SwitchExtension->m_bladeheel = State.bladeheel;
+		Track.SwitchExtension->m_bladethrow = State.bladethrow;
 	}
 	Track.fTrackWidth = State.width;
 	Track.fTrackWidth2 = State.width;
@@ -250,6 +258,8 @@ void editor_track::apply(TTrack &Track, state const &State)
 	Track.m_sleeper_skin_name = State.sleeper_skin;
 	Track.m_sleeper_offset = State.sleeper_offset;
 	Track.m_sleeper_ballast_z = State.sleeper_ballast;
+	Track.m_timber_model_name = State.timber_model;
+	Track.m_timber_skin_name = State.timber_skin;
 	for (int i = 0; i < 6; ++i)
 		events(Track, i) = State.events[i];
 	Track.m_events = std::any_of(State.events.begin(), State.events.end(), [](auto const &Events) {
@@ -2224,33 +2234,45 @@ std::vector<editor_track::route_sample> editor_track::sample_route(route &Route,
 	{
 		auto &span{Route.spans[i]};
 		auto const &path{span.track->m_paths[span.path]};
-		bezier const curve{path};
-		auto const count{std::max(2, static_cast<int>(std::ceil(curve.plan_length(16) / std::max(0.1, Step))))};
+		// a path made of several curves is sampled along them, its own curve only stands in for them in older versions
+		std::vector<segment_data const *> parts;
+		if (path.pieces.empty())
+			parts.push_back(&path);
+		else
+			for (auto const &piece : path.pieces)
+				parts.push_back(&piece);
+		if (false == span.forward)
+			std::reverse(parts.begin(), parts.end());
 		span.from = chainage;
-		auto previous{plan_of(curve.point(span.forward ? 0.0 : 1.0))};
-		for (int j = (samples.empty() ? 0 : 1); j <= count; ++j)
+		for (auto const *part : parts)
 		{
-			auto const t{span.forward ? static_cast<double>(j) / count : 1.0 - static_cast<double>(j) / count};
-			auto const position{curve.point(t)};
-			chainage += glm::distance(previous, plan_of(position));
-			previous = plan_of(position);
-			auto derivative{curve.first(t)};
-			if (false == span.forward)
-				derivative = -derivative;
-			auto const second{curve.second(t)};
-			auto const planar{std::hypot(derivative.x, derivative.z)};
-			route_sample sample;
-			sample.chainage = chainage;
-			sample.position = position;
-			sample.span = i;
-			sample.cant = 1.5 * std::sin(std::abs(glm::radians(path.rolls[0] + (path.rolls[1] - path.rolls[0]) * t)));
-			if (planar > 1e-9)
+			bezier const curve{*part};
+			auto const count{std::max(2, static_cast<int>(std::ceil(curve.plan_length(16) / std::max(0.1, Step))))};
+			auto previous{plan_of(curve.point(span.forward ? 0.0 : 1.0))};
+			for (int j = (samples.empty() ? 0 : 1); j <= count; ++j)
 			{
-				sample.direction = plan_of(derivative) / planar;
-				sample.grade = derivative.y / planar;
-				sample.curvature = (derivative.x * second.z - derivative.z * second.x) / (planar * planar * planar);
+				auto const t{span.forward ? static_cast<double>(j) / count : 1.0 - static_cast<double>(j) / count};
+				auto const position{curve.point(t)};
+				chainage += glm::distance(previous, plan_of(position));
+				previous = plan_of(position);
+				auto derivative{curve.first(t)};
+				if (false == span.forward)
+					derivative = -derivative;
+				auto const second{curve.second(t)};
+				auto const planar{std::hypot(derivative.x, derivative.z)};
+				route_sample sample;
+				sample.chainage = chainage;
+				sample.position = position;
+				sample.span = i;
+				sample.cant = 1.5 * std::sin(std::abs(glm::radians(part->rolls[0] + (part->rolls[1] - part->rolls[0]) * t)));
+				if (planar > 1e-9)
+				{
+					sample.direction = plan_of(derivative) / planar;
+					sample.grade = derivative.y / planar;
+					sample.curvature = (derivative.x * second.z - derivative.z * second.x) / (planar * planar * planar);
+				}
+				samples.push_back(sample);
 			}
-			samples.push_back(sample);
 		}
 		span.to = chainage;
 	}
@@ -2443,6 +2465,26 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 		auto const sign{span.forward ? 1.0 : -1.0};
 		auto &path{span.track->m_paths[span.path]};
 		set_heights(path, Elevation(startchainage), Elevation(endchainage), Grade(startchainage) * sign, Grade(endchainage) * sign);
+		// the pieces of a path made of several curves follow the grade line along them, else the path would part from them and lose them
+		std::vector<double> lengths;
+		double total{0.0};
+		for (auto const &piece : path.pieces)
+		{
+			lengths.push_back(bezier(piece).plan_length());
+			total += lengths.back();
+		}
+		if (total > 1e-6)
+		{
+			auto const at = [&](double const Distance) { return span.forward ? span.from + Distance * (span.to - span.from) / total : span.to - Distance * (span.to - span.from) / total; };
+			double along{0.0};
+			for (std::size_t k = 0; k < path.pieces.size(); ++k)
+			{
+				auto const first{at(along)};
+				auto const last{at(along + lengths[k])};
+				set_heights(path.pieces[k], Elevation(first), Elevation(last), Grade(first) * sign, Grade(last) * sign);
+				along += lengths[k];
+			}
+		}
 		add_unique(changed, span.track);
 		if (span.track->eType == tt_Normal)
 			continue;
@@ -2455,8 +2497,11 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 				if (neighbour != nullptr && false == on_route(neighbour) && std::none_of(joints.begin(), joints.end(), [&](joint const &Joint) { return Joint.track == span.track && Joint.neighbour == neighbour; }))
 					joints.push_back({span.track, i, atend, neighbour});
 			}
-			if (i != span.path)
-				plane_heights(span.track->m_paths[i], path.points[segment_data::point::start], start_direction(path), grade);
+			if (i == span.path)
+				continue;
+			plane_heights(span.track->m_paths[i], path.points[segment_data::point::start], start_direction(path), grade);
+			for (auto &piece : span.track->m_paths[i].pieces)
+				plane_heights(piece, path.points[segment_data::point::start], start_direction(path), grade);
 		}
 	}
 	commit(changed);
@@ -2632,6 +2677,9 @@ std::optional<editor_track::switch_template> editor_track::template_of(switch_de
 	entry.a = shape.a;
 	entry.b = shape.b;
 	entry.own = Design.own;
+	entry.movable = Design.movable;
+	entry.heel = Design.heel;
+	entry.bladethrow = Design.bladethrow;
 	entry.local = {shape.paths[0], shape.paths[1]};
 	entry.local[1].radius = static_cast<float>(shape.radius);
 	if (shape.paths.size() >= 5)
@@ -2643,6 +2691,81 @@ std::optional<editor_track::switch_template> editor_track::template_of(switch_de
 	auto const decimals = [](double const Value) { return format("%.3f", Value); };
 	entry.label = Design.name + "  a " + decimals(entry.a) + " b " + decimals(entry.b) + (Design.note.empty() ? std::string{} : " " + Design.note);
 	return entry;
+}
+
+glm::dvec2 editor_track::slip_curve::point(double const Along) const
+{
+	auto const arc = [](glm::dvec2 const &From, double const Heading, double const Radius, double const Length) {
+		if (Radius <= 0.0)
+			return From + glm::dvec2{std::cos(Heading), std::sin(Heading)} * Length;
+		auto const to{Heading + Length / Radius};
+		return From + Radius * glm::dvec2{std::sin(to) - std::sin(Heading), std::cos(Heading) - std::cos(to)};
+	};
+	auto const along{Along - lead};
+	auto result{arc({0.0, 0.0}, 0.0, 0.0, std::min(Along, lead))};
+	if (along > 0.0)
+		result = arc(result, entry, radius, std::min(along, ends));
+	if (along > ends)
+		result = arc(result, heading(lead + ends), middle, std::min(along - ends, between));
+	if (along > ends + between)
+		result = arc(result, heading(lead + ends + between), radius, std::min(along - ends - between, ends));
+	if (along > 2.0 * ends + between)
+		result = arc(result, angle, 0.0, along - 2.0 * ends - between);
+	return result;
+}
+
+double editor_track::slip_curve::heading(double const Along) const
+{
+	if (Along < lead)
+		return 0.0;
+	if (Along > length() - lead)
+		return angle;
+	auto const along{Along - lead};
+	auto const inside{std::clamp(along - ends, 0.0, between)};
+	return entry + (std::min(along, ends) + std::max(0.0, along - ends - between)) / radius + (middle > 0.0 ? inside / middle : 0.0);
+}
+
+double editor_track::slip_curve::tangent() const
+{
+	auto const end{point(length())};
+	return end.x - end.y / std::tan(angle);
+}
+
+double editor_track::slip_curve::offset() const
+{
+	return glm::distance(point(length() * 0.5), glm::dvec2{tangent(), 0.0});
+}
+
+editor_track::slip_curve editor_track::slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead, double const Entry)
+{
+	if (Entry > 0.0 && Angle * 0.5 <= Entry + 1e-6)
+		return slip_of(Radius, Middle, Angle, Pass);
+	auto const make = [&](double const Turn) {
+		return slip_curve{Radius, Radius * Turn, Middle, Middle * (Angle - 2.0 * (Turn + Entry)), Angle, 0.0, Lead, Entry};
+	};
+	if (Middle < 0.0 && Angle >= 1e-6)
+	{
+		// a straight in the middle, as long as the arcs of Radius turning by a half of Angle pass the crossing as near
+		auto low{0.0};
+		auto high{4.0 * Pass / std::tan(Angle * 0.5)};
+		for (int i = 0; i < 60; ++i)
+		{
+			auto const between{(low + high) * 0.5};
+			(slip_curve{Radius, Radius * (Angle * 0.5 - Entry), 0.0, between, Angle, 0.0, Lead, Entry}.offset() > Pass ? high : low) = between;
+		}
+		return {Radius, Radius * (Angle * 0.5 - Entry), 0.0, (low + high) * 0.5, Angle, 0.0, Lead, Entry};
+	}
+	if (Middle <= 0.0 || Angle < 1e-6)
+		return make(Angle * 0.5 - Entry);
+	// the curve passes the crossing nearer as its end arcs turn further, the middle one being flatter
+	auto low{0.0};
+	auto high{Angle * 0.5 - Entry};
+	for (int i = 0; i < 60; ++i)
+	{
+		auto const turn{(low + high) * 0.5};
+		((make(turn).offset() > Pass) == (Middle > Radius) ? low : high) = turn;
+	}
+	return make((low + high) * 0.5);
 }
 
 std::vector<editor_track::switch_template> editor_track::standard_switch_templates()
@@ -2663,35 +2786,94 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		entry->design = static_cast<int>(i);
 		result.push_back(std::move(*entry));
 	}
-	for (auto const &slipping : {std::pair<double, char const *>{190.0, "1:9"}, {300.0, "1:9"}})
+	// the slips and crossings of Id-4: the angle comes from the straights clicked, the half length from the crossing to the joint
+	// only to the label; the slips with the blades outside of the diamond have a straight in the middle of their curves, along which
+	// the near rails touch. The asymmetric slips of Id-4 (1:9/1:7,5, 1:9/1:6,6) are left out, both of their curves being the same here
+	struct slipping
+	{
+		char const *type;
+		char const *name;
+		double radius;
+		double middle;
+		double half;
+	};
+	slipping const slips[] = {
+		{"Rkp", "60E1-190-1:9", 190.0, 0.0, 16.615},
+		{"Rkp", "49E1-190-1:9", 190.0, 0.0, 16.615},
+		{"Rkp", "49E1-190-1:6,6", 190.0, -1.0, 17.396},
+		{"Rkp", "49E1-300-1:9", 300.0, -1.0, 22.639},
+		{"Rkp", "49E1-500-1:9", 500.0, -1.0, 27.693},
+		{"Rkp", "S42-230-1:9,51", 230.0, 0.0, 18.642},
+		{"Rkp", "S42-265-1:10", 265.0, 0.0, 19.192},
+		{"Rkpd", "60E1-190-1:9", 190.0, 0.0, 16.615},
+		{"Rkpd", "49E1-190-1:9", 190.0, 0.0, 16.615},
+		{"Rkpd", "49E1-190-1:6,6", 190.0, -1.0, 17.396},
+		{"Rkpd", "49E1-300-1:9", 300.0, -1.0, 22.639},
+		{"Rkpd", "49E1-500-1:9", 500.0, -1.0, 27.693},
+		{"Rkpd", "49E1-190-1:9 gauge 1524", 190.0, 0.0, 17.420},
+		{"Rkpd", "S42-205-1:9", 205.0, 0.0, 17.591},
+		{"Rkpd", "S42-205-1:9 II", 205.0, 0.0, 18.394},
+		{"Rkpd", "S42-230-1:9,51", 230.0, 0.0, 18.642},
+		{"Rkpd", "S42-230-1:9,51 Ia", 230.0, 0.0, 18.342},
+		{"Rkpd", "S42-265-1:10", 265.0, 0.0, 19.192},
+	};
+	auto const ratio_of = [](std::string const &Name) {
+		auto const at{Name.find("1:")};
+		auto number{Name.substr(at + 2)};
+		std::replace(number.begin(), number.end(), ',', '.');
+		return std::stod(number);
+	};
+	for (auto const &entry : slips)
 	{
 		switch_template slip;
 		slip.double_slip = true;
-		slip.type = "Rkp";
-		slip.radius = slipping.first;
-		slip.ratio = std::stod(std::string{slipping.second}.substr(2));
-		slip.label = std::string{"Rkp "} + slipping.second + " R" + std::to_string(static_cast<int>(slipping.first)) + " single slip (click at a crossing of two straights, on the side of the joined tracks)";
+		slip.type = entry.type;
+		slip.radius = entry.radius;
+		slip.middle = entry.middle;
+		slip.ratio = ratio_of(entry.name);
+		slip.rail = std::string{entry.name}.substr(0, std::string{entry.name}.find('-'));
+		slip.label = std::string{entry.type} + ' ' + entry.name + format("  a %.3f", entry.half) + (slip.type == "Rkp" ? " single slip" : " double slip") +
+		             (entry.middle < 0.0 ? ", the blades outside of the diamond" : "") +
+		             (slip.type == "Rkp" ? " (click at a crossing of two straights, on the side of the joined tracks)" : " (click at a crossing of two straights)");
 		result.push_back(slip);
 	}
-	for (auto const &crossing : {std::pair<double, char const *>{16.615, "1:9"}, {20.797, "1:12"}})
+	struct crossing
+	{
+		char const *name;
+		double half;
+	};
+	crossing const crossings[] = {
+		{"60E1-1:9", 16.615},
+		{"60E1-1:4,444", 10.907},
+		{"49E1-1:2,9008", 6.904},
+		{"49E1-1:3,224", 7.920},
+		{"49E1-1:3,683", 9.881},
+		{"49E1-1:4,44", 10.907},
+		{"49E1-1:6,6", 17.396},
+		{"49E1-1:7,5", 18.512},
+		{"49E1-1:9", 16.615},
+		{"49E1-1:9 long", 17.016},
+		{"49E1-1:18,5", 32.409},
+		{"S42-1:2", 5.743},
+		{"S42-1:2,9008", 8.250},
+		{"S42-1:3,429", 9.681},
+		{"S42-1:3,43", 8.421},
+		{"S42-1:4,44", 11.788},
+		{"S42-1:4,444 gauge 1524", 12.189},
+		{"S42-1:7", 12.932},
+		{"S42-1:9", 17.591},
+		{"S42-1:10", 19.192},
+	};
+	for (auto const &entry : crossings)
 	{
 		switch_template plain;
 		plain.double_slip = true;
 		plain.type = "Skrz";
-		plain.a = crossing.first;
-		plain.ratio = std::stod(std::string{crossing.second}.substr(2));
-		plain.label = std::string{"Skrz "} + crossing.second + " crossing (click at a crossing of two straights)";
+		plain.a = entry.half;
+		plain.ratio = ratio_of(entry.name);
+		plain.rail = std::string{entry.name}.substr(0, std::string{entry.name}.find('-'));
+		plain.label = std::string{"Skrz "} + entry.name + format("  a %.3f", entry.half) + " crossing (click at a crossing of two straights)";
 		result.push_back(plain);
-	}
-	for (auto const &slipping : {std::pair<double, char const *>{190.0, "1:9"}, {300.0, "1:9"}, {500.0, "1:12"}})
-	{
-		switch_template slip;
-		slip.double_slip = true;
-		slip.type = "Rkpd";
-		slip.radius = slipping.first;
-		slip.ratio = std::stod(std::string{slipping.second}.substr(2));
-		slip.label = std::string{"Rkpd "} + slipping.second + " R" + std::to_string(static_cast<int>(slipping.first)) + " double slip (click at a crossing of two straights)";
-		result.push_back(slip);
 	}
 	return result;
 }
@@ -2731,6 +2913,8 @@ void write_ending(std::ostream &Text, TTrack const &Style)
 		Text << "overhead " << Style.fOverhead << ' ';
 	if (Style.m_sleeper_enabled && false == Style.m_sleeper_model_name.empty())
 		Text << "sleepermodel " << Style.m_sleeper_frequency << ' ' << Style.m_sleeper_model_name << ' ' << (Style.m_sleeper_skin_name.empty() ? std::string{"none"} : Style.m_sleeper_skin_name) << ' ' << Style.m_sleeper_offset.x << ' ' << Style.m_sleeper_offset.y << ' ' << Style.m_sleeper_offset.z << ' ' << Style.m_sleeper_ballast_z << ' ';
+	if (false == Style.m_timber_model_name.empty())
+		Text << "timbermodel " << Style.m_timber_model_name << ' ' << (Style.m_timber_skin_name.empty() ? std::string{"none"} : Style.m_timber_skin_name) << ' ';
 	Text << "endtrack\n";
 }
 
@@ -2779,6 +2963,9 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 		track = load_path(text.str(), Style, Name);
 	}
 	track->SwitchExtension->m_frogs = true;
+	track->SwitchExtension->m_movablenose = Template.movable;
+	track->SwitchExtension->m_bladeheel = Template.heel;
+	track->SwitchExtension->m_bladethrow = Template.bladethrow;
 	track->m_paths.assign(Paths.begin(), Paths.begin() + 2);
 	return track;
 }

@@ -589,6 +589,40 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "sleepers3d")
+    {
+        // model of the sleepers and switch timbers, put together from its submodels begin, main and end; none: no such sleepers
+        ParseOne(Parser, Sleepers3D);
+        if (Sleepers3D == "none")
+        {
+            Sleepers3D.clear();
+        }
+        return true;
+    }
+
+    if (token == "sleepers3dbed")
+    {
+        // the ballast under the tracks with 3D sleepers; no: the sleepers are laid on the ground alone
+        ParseOne(Parser, Sleepers3DBed);
+        return true;
+    }
+
+    if (token == "sleepers3dplain")
+    {
+        // model, skin and the height of the rail seat of the sleepers of a track running alone, square to it; none: the timbers of sleepers3d there too
+        Parser.getTokens(3, false);
+        Parser >> Sleepers3DPlain >> Sleepers3DPlainSkin >> Sleepers3DPlainSeat;
+        if (Sleepers3DPlain == "none")
+        {
+            Sleepers3DPlain.clear();
+        }
+        if (Sleepers3DPlainSkin == "none")
+        {
+            Sleepers3DPlainSkin.clear();
+        }
+        return true;
+    }
+
     if (token == "createswitchtrackbeds")
     {
         ParseOne(Parser, CreateSwitchTrackbeds);
@@ -1605,6 +1639,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "smoothtraction", bSmoothTraction );
     export_as_text( Output, "splinefidelity", SplineFidelity );
     export_as_text( Output, "sleeperdistance", SleeperDistance );
+    export_as_text( Output, "sleepers3d", ( Sleepers3D.empty() ? std::string{ "none" } : Sleepers3D ) );
+    export_as_text( Output, "sleepers3dbed", Sleepers3DBed );
+    Output << "sleepers3dplain " << ( Sleepers3DPlain.empty() ? std::string{ "none" } : Sleepers3DPlain ) << ' ' << ( Sleepers3DPlainSkin.empty() ? std::string{ "none" } : Sleepers3DPlainSkin ) << ' ' << Sleepers3DPlainSeat << '\n';
     export_as_text( Output, "rendercab", render_cab );
     export_as_text( Output, "createswitchtrackbeds", CreateSwitchTrackbeds );
     export_as_text( Output, "gfx.resource.sweep", ResourceSweep );

@@ -313,7 +313,7 @@ void editor_mode::insert_connection()
 		auto second{glm::normalize(plan_of(plan.ends[3] - plan.ends[2]))};
 		if (glm::dot(first, second) < 0.0)
 			second = -second;
-		auto const parts{build_double_slip(plan.ends[0], plan.ends[1], plan.ends[2], plan.ends[3], plan_of(plan.centre), plan.centre.y, first, second, plan.angle, 0.0, *style, "Skrz")};
+		auto const parts{build_double_slip(plan.ends[0], plan.ends[1], plan.ends[2], plan.ends[3], plan_of(plan.centre), plan.centre.y, first, second, plan.angle, editor_track::slip_curve{}, *style, "Skrz")};
 		editor_track::commit(parts);
 		created.insert(created.end(), parts.begin(), parts.end());
 	}

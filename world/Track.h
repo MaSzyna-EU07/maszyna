@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "world/Segment.h"
 #include "world/RailLayout.h"
+#include "world/TrackSleepers.h"
 #include "model/material.h"
 #include "scene/scenenode.h"
 #include "utilities/Names.h"
@@ -54,6 +55,14 @@ class TTrack;
 class TGroundNode;
 class TSubRect;
 class TTraction;
+
+// a chunk of the geometry of a track kept to be laid again in, for the rails changing with the state of a switch
+struct pooled_chunk {
+    int type { 0 };
+    gfx::geometry_handle handle;
+    bool used { false };
+};
+using chunk_pool = std::vector<pooled_chunk>;
 
 class TSwitchExtension
 { // dodatkowe dane do toru, który jest zwrotnicą
@@ -101,6 +110,11 @@ class TSwitchExtension
     material_handle m_material3 = 0; // texture of auto generated switch trackbed
     gfx::geometry_handle Geometry3; // geometry of auto generated switch trackbed
     bool m_frogs { false }; // the frog and check rails are made from the rails, for switches with no model of them in their includes
+    bool m_movablenose { false }; // the nose of the frog moves over to the rail of the track set, closing its flangeway; no check rails
+    double m_bladeheel { 0.0 }; // where the moving blades end along the paths, as the template of the switch gives it; 0: as long as the flangeway needs
+    double m_bladethrow { 0.0 }; // how far the tips of the blades move over; 0: the usual throw
+    double m_nosethrow { -1.0 }; // how far over to the second path the movable nose was laid, -1: no geometry yet
+    chunk_pool m_nosechunks; // the geometry of the switch, laid again in the same chunks as the nose moves over
 
 	gfx::geometrybank_handle map_geometry[6]; // geometry for map visualisation
 };
@@ -217,12 +231,19 @@ public:
     std::string m_sleeper_skin_name;  // replacable skin path, or "none" for default
     glm::vec3 m_sleeper_offset { 0.f, 0.f, 0.f }; // local offset from track centerline (x: left/right, y: forward/back, z: up/down)
     float m_sleeper_ballast_z { 0.f }; // vertical offset applied to the trackbed (ballast) profile
+    // timbermodel optional parameter: the model of the timbers laid under the track where it's part of a switch or a crossing,
+    // in place of the one set with sleepers3d in eu07.ini. Defined in scenery file as:
+    //   timbermodel <model> <skin>
+    std::string m_timber_model_name;
+    std::string m_timber_skin_name; // replacable skin, empty for the textures of the model
     TModel3d *m_sleeper_model { nullptr }; // resolved on init; nullptr means no model / failed to load
     material_handle m_sleeper_skin { 0 }; // resolved replacable skin handle, 0 = use model defaults
     // precomputed local-space transforms (relative to m_origin) for every sleeper instance along the path.
     // Each matrix is translate(world_pos - m_origin) * rotate(direction, roll) * translate(local_offset).
     // The renderer composes this with (view * translate(m_origin - camera_pos)) per draw.
     std::vector<glm::mat4> m_sleeper_local_transforms;
+    // sleepers and switch timbers made of the model set with sleepers3d in eu07.ini, laid where the simulator makes the ballast
+    track_sleepers::laid m_sleepers3d;
 
 public:
     using dynamics_sequence = std::deque<TDynamicObject *>;
@@ -277,13 +298,20 @@ public:
     material_handle copy_adjacent_trackbed_material( TTrack const *Exclude = nullptr );
     inline double Length() const {
         return Segment->GetLength(); };
+    // how far below the top of the rails their feet are, by the rail profile of the track
+    float rail_height() const;
 	inline std::shared_ptr<TSegment> CurrentSegment() const {
         return Segment; };
     inline TTrack *CurrentNext() const {
         return trNext; };
     inline TTrack *CurrentPrev() const {
         return trPrev; };
-    TTrack *Connected(int s, double &d) const;
+    TTrack *Connected(int s, double &d, int const Path = -1) const; // Path: of a switch, the one to leave by whichever way it is set
+    double trailing_point( int const Path ) const; // where along the path the wheels coming from the frog end push the blades over
+    int nose_set() const; // the path the movable nose of the frog lies for, following the blades
+    double nose_throw() const; // how far the movable nose of the frog went over to the second path, following the blades
+    material_handle rail_material( int const Path ) const;
+    glm::vec2 tread_band() const;
     bool SetConnections(int i);
     bool Switch(int i, float const t = -1.f, float const d = -1.f);
     bool SwitchForced(int i, TDynamicObject *o);
@@ -302,11 +330,13 @@ public:
     void init_segments( bool const Initial );
     track_rails::switch_frog frog() const;
     track_rails::switch_blade const &blade( int const Path ) const;
+    double blades_throw() const; // how far the tips of the blades move over between the two paths
     std::vector<track_rails::rail_crossing> rail_crossings( bool const Joined = true );
     track_rails::rail_size rail_dimensions() const;
     // the check rails beside the rails of each path, kept clear of the blades and the rails of other paths running inside them
     track_rails::check_rail_set check_rails( std::vector<track_rails::rail_crossing> const &Crossings );
-    track_rails::rail_layout plan_rails( bool const Crossings );
+    // Carve: the parts of the rails at crossings carved out of what lies around them, false: only their design
+    track_rails::rail_layout plan_rails( bool const Crossings, bool const Carve = true );
     void update_location();
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
@@ -416,8 +446,6 @@ private:
     class rail_layer;
     class rail_planner;
     int blade_side( int const Path ) const;
-    material_handle rail_material( int const Path ) const;
-    glm::vec2 tread_band() const;
     material_handle shared_tread( int const Path, TTrack const &Other, int const Otherpath ) const;
     void loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::vertex_array const &Blade, float const Texturelength, gfx::vertex_array &Vertices ) const;
 // members

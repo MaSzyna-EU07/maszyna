@@ -53,6 +53,9 @@ class editor_track
 		material_handle material2{0};
 		material_handle material3{0};
 		bool frogs{false};
+		bool movablenose{false};
+		double bladeheel{0.0};
+		double bladethrow{0.0};
 		float texlength{4.f};
 		float texheight{0.6f};
 		float texwidth{0.9f};
@@ -65,6 +68,8 @@ class editor_track
 		std::string sleeper_skin;
 		glm::vec3 sleeper_offset{0.f};
 		float sleeper_ballast{0.f};
+		std::string timber_model;
+		std::string timber_skin;
 		std::array<std::vector<std::pair<std::string, basic_event *>>, 6> events;
 		std::string name;
 	};
@@ -413,9 +418,40 @@ class editor_track
 		segment_data link; // plain track from the main track of the first switch to the start of the second one
 		double stagger{0.0};
 		bool own{false};
+		bool movable{false}; // the frog with a movable nose
+		double heel{0.0}; // where the moving blades end, 0: as long as the flangeway behind them needs
+		double bladethrow{0.0}; // how far the tips of the blades move over, 0: the usual throw
 		int design{-1}; // in the list of the designs the template was built from
+		double middle{0.0}; // a double slip with the blades outside of the diamond: the radius in the middle of its slip curves, below 0 a straight there
 		bool twofold() const { return stagger > 0.0; }
 	};
+	// the diverging curve of a slip turning by Angle: arcs of Radius at both ends, each Ends long, and the arc of Middle,
+	// Between long, between them; a straight when Middle is 0. With blades cutting into the stock rails the curve starts and ends
+	// with a straight Lead long along them, the arcs of Radius meeting it at Entry
+	struct slip_curve
+	{
+		double radius{0.0};
+		double ends{0.0};
+		double middle{0.0};
+		double between{0.0};
+		double angle{0.0};
+		double tip{0.0}; // of the blades from each end of the curve, 0: where the blades get as thin as they may
+		double lead{0.0};
+		double entry{0.0}; // radians
+		double length() const { return 2.0 * (lead + ends) + between; }
+		// the point and the heading at Along of the curve starting at the origin along x and turning towards y; the heading at the ends
+		// of the leads is the one of the arcs
+		glm::dvec2 point(double const Along) const;
+		double heading(double const Along) const;
+		// from the start of the curve to the crossing of its tangents
+		double tangent() const;
+		// from the middle of the curve to the crossing of its tangents
+		double offset() const;
+		slip_curve scaled(double const Factor) const { return {radius * Factor, ends * Factor, middle * Factor, between * Factor, angle, Factor == 1.0 ? tip : 0.0, lead * Factor, entry}; }
+	};
+	// one arc of Radius, or with Middle the slip curves of a double slip with the blades outside of the diamond, their near rails
+	// touching in its middle: Pass from the crossing, half of the gauge and the width of the head; a straight there when Middle < 0
+	static slip_curve slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead = 0.0, double const Entry = 0.0);
 	static std::vector<switch_template> standard_switch_templates();
 	static std::optional<switch_template> template_of(switch_design::design const &Design, std::string &Error);
 	static std::vector<switch_template> find_switch_templates();
