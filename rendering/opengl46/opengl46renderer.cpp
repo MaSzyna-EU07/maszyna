@@ -740,6 +740,10 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += m_exposure.info_times();
     m_debugtimestext += m_ao.info_times();
     m_debugtimestext += m_instancecull.info_times();
+    if( Global.gfx_depthprepass_scene ) {
+        if( auto const scenedepthtime = m_scenedepthtimer.result() )
+            m_debugtimestext += " scene depth: " + to_string( static_cast<double>( *scenedepthtime ) / 1000000.0, 3 ) + " ms\n";
+    }
     if( Global.gfx_gpucull == 1 ) {
         m_debugtimestext += m_hiz.info_times();
         if( auto const prepasstime = m_prepasstimer.result() )
@@ -766,6 +770,9 @@ void opengl46_renderer::SwapBuffers()
         + " instanced:" + to_string( m_colorpass.draw_stats.instances, 7 ) + " +" + to_string( shadowstats.instances, 7 )
         + " =" + to_string( m_colorpass.draw_stats.instances + shadowstats.instances, 7 )
         + " (" + std::to_string( m_colorpass.draw_stats.instanced_drawcalls + shadowstats.instanced_drawcalls ) + " batches)\n"
+        + ( Global.gfx_depthprepass_scene ?
+            " scene depth: " + std::to_string( m_scenedepthstats.drawcalls ) + " draws, cpu " + to_string( m_scenedepthcputime, 2 ) + " ms\n" :
+            std::string{} )
         + " instance buffer: " + std::to_string( m_instancestream->used() / static_cast<GLsizeiptr>( sizeof( glm::mat4 ) ) ) + " matrices, "
         + std::to_string( m_instancestream->size() / 1024 ) + " KiB\n"
         + " model blocks: " + std::to_string( model_ubo->updates() )
@@ -874,6 +881,7 @@ void opengl46_renderer::draw_debug_ui()
             ImGui::Checkbox("leave out instances hidden behind the depth drawn before them (gfx.gpucull.occlusion)", &Global.gfx_gpucull_occlusion);
             ImGui::Checkbox("draw the depth of the instances before their colour (gfx.depthprepass)", &Global.gfx_depthprepass);
         }
+        ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
         auto const info{m_instancecull.info()};
         if (!info.empty())
             ImGui::TextUnformatted(info.c_str() + 1);
@@ -1116,6 +1124,15 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         if( Global.gfx_shadowmap_enabled )
             setup_shadow_bind_map();
 
+		// the depth of the whole opaque scene before its colour
+		m_scenedepthdrawn = false;
+		m_indirectcolourpending = false;
+		if (Global.gfx_depthprepass_scene && vp.main && (false == Global.bWireFrame))
+		{
+			glDebug("render scene depth");
+			Render_Scene_Depth(future);
+		}
+
 		// opaque parts...
 		setup_drawing(false);
 
@@ -1140,6 +1157,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		model_ubs.future = future;
 
 		Render(simulation::Region);
+		m_scenedepthdrawn = false;
+		m_indirectcolourpending = false;
 
         Render_vr_models();
 
@@ -2508,6 +2527,31 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 		        material.textures :
 		        material.GetTextures(TSubModel::VariantId(sm))};
 
+		if (m_scenedepthpass)
+		{
+			// the depth of the whole scene: the programs of the depth prepass, the same choice as for the instances in
+			// Render_Instances_Indirect(). what they can't draw (blended, materials of other programs) is left to the colour pass
+			m_scenedepthskip = true;
+			if (m_blendingenabled || (model_ubs.opacity < 0.f))
+				return;
+			auto const prepassclass{Prepass_Class(Material)};
+			if (prepassclass == 0)
+				return;
+			if (prepassclass == 2)
+			{
+				// a texture which isn't there (yet) would leave the one bound before to the alpha test
+				if ((materialtextures[0] == null_handle) || (false == m_textures.mark_as_used(materialtextures[0]).bind(0)))
+					return;
+				m_prepass_alpha_shader->bind();
+			}
+			else
+			{
+				m_prepass_shader->bind();
+			}
+			m_scenedepthskip = false;
+			return;
+		}
+
 		GLuint lastdiff = 0;
 		size_t i;
 		for (i = 0; i < gl::MAX_TEXTURES; i++)
@@ -2702,10 +2746,11 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 	{
 		Render(std::begin(m_sectionqueue), std::end(m_sectionqueue));
 		// draw queue is filled while rendering sections
-		if (EditorModeFlag && m_current_viewport->main)
+		if (EditorModeFlag && m_current_viewport->main && (false == m_scenedepthdrawn))
 		{
 			// when editor mode is active calculate world position of the cursor
 			// at this stage the z-buffer is filled with only ground geometry
+			// (with the depth pass of the whole scene it's done there, at the same stage)
             Update_Mouse_Position();
 		}
 		// draw opaque cells front-to-back: with the depth test enabled this
@@ -3099,6 +3144,24 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	// still happens inside Render_Instanced(), so correctness is unchanged -- only
 	// the number of calls and glBufferSubData round-trips drops sharply.
 	// (For pickscenery/pickcontrols modes the map stays empty, so this is a no-op.)
+	if( m_indirectcolourpending ) {
+		// the instances culled and recorded by the depth pass of the whole scene, the buckets weren't queued for the cpu
+		m_indirectcolourpending = false;
+		if( false == m_indirectdraws.empty() ) {
+			auto const cpustart { std::chrono::steady_clock::now() };
+			m_instancecull.bind_draw();
+			Render_Instances_Indirect_Colour();
+			::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
+			Bind_Instance_Stream();
+			m_instancecull.draw_result(
+				static_cast<std::uint32_t>( m_indirectdraws.size() ),
+				m_instancecull.prepass_draws(),
+				m_instancecull.cpu_time() + std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count() );
+		}
+		m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( m_indirectdraws.size() );
+		m_renderpass.draw_stats.instances += static_cast<int>( m_instancecull.last_count() );
+		m_renderpass.draw_stats.models += static_cast<int>( m_instancecull.last_count() );
+	}
 	if( m_instancecullpass ) {
 		if( m_instancecull.drawing() ) {
 			// the buckets of the pass weren't queued for the cpu, which leaves the loop below empty
@@ -3151,6 +3214,9 @@ void opengl46_renderer::draw(const gfx::geometry_handle &handle)
 		}
 		return;
 	}
+	if( m_scenedepthpass && ( false == Scene_Depth_Draws( handle ) ) ) {
+		return;
+	}
 	model_ubo->update(model_ubs);
 
 	if( m_current_instance_count > 0 ) {
@@ -3166,6 +3232,9 @@ void opengl46_renderer::draw(const gfx::geometry_handle &handle)
 void opengl46_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it, std::vector<gfx::geometrybank_handle>::iterator end)
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+	if( m_scenedepthpass && ( ( it == end ) || ( false == Scene_Depth_Draws( *it ) ) ) ) {
+		return;
+	}
 	model_ubo->update(model_ubs);
 
 	Draw_Geometry(it, end);
@@ -3370,6 +3439,8 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 			// and when the instances are drawn from its result, the cpu has nothing more to do with them
 			if( m_instancecull.drawing() ) { continue; }
 		}
+		// the depth pass of the whole scene culled them already, the colour pass draws what it recorded
+		if( m_indirectcolourpending ) { continue; }
 		auto const &records { instancebucket.records };
 		std::vector<queued_instance> *dest { nullptr }; // looked up when there's something to put in it
 		for( std::size_t idx = 0; idx < records.size(); ++idx ) {
@@ -3672,7 +3743,7 @@ int opengl46_renderer::Prepass_Class( material_handle const Material )
 		"detail_normalmap", "detail_normalmap_specgloss", "normalmap", "normalmap_specgloss",
 		"reflmap", "reflmap_specgloss", "shadowlessnormalmap", "shadowlessnormalmap_specgloss",
 		"sunlessnormalmap", "sunlessnormalmap_specgloss" };
-	static std::unordered_set<std::string> const solid { "colored", "default_0" };
+	static std::unordered_set<std::string> const solid { "colored", "default_0", "terrain", "water", "water_specgloss", "invalid" };
 	auto prepassclass { 0 };
 	for( auto const &shader : m_shaders ) {
 		if( shader.second.get() != material.shader.get() ) { continue; }
@@ -3743,75 +3814,147 @@ void opengl46_renderer::Render_Instances_Indirect()
 	std::uint32_t prepassdraws { 0 };
 	if( false == m_indirectdraws.empty() ) {
 		m_instancecull.bind_draw();
-		auto const commandoffset = []( std::size_t const Index ) {
-			return static_cast<std::intptr_t>( Index * sizeof( gl::instance_draw_command ) ); };
-
-		if( Global.gfx_depthprepass && ( false == Global.bWireFrame ) ) {
-			// the depth first: the colour pass shades only what stays in view. the depth goes a little farther than the
-			// surface, so the colour pass, which tests and writes its depth as usual, is sure to pass where it's the same
-			m_prepasstimer.begin();
-			setup_drawing( false );
-			::glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
-			::glEnable( GL_POLYGON_OFFSET_FILL );
-			::glPolygonOffset( -1.f, -1.f );
-			// the draws without the alpha test first, then the ones with it, one program each
-			for( auto prepassclass = 1; prepassclass <= 2; ++prepassclass ) {
-				auto &program { prepassclass == 1 ? *m_prepass_shader : *m_prepass_alpha_shader };
-				auto bound { false };
-				for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
-					auto const &draw { m_indirectdraws[ index ] };
-					if( ( draw.blending ) || ( draw.ubs.opacity < 0.f ) ) { continue; }
-					if( ( draw.type != GL_TRIANGLES ) && ( draw.type != GL_TRIANGLE_STRIP ) && ( draw.type != GL_TRIANGLE_FAN ) ) { continue; }
-					if( Prepass_Class( draw.material ) != prepassclass ) { continue; }
-					if( prepassclass == 2 ) {
-						// the diffuse texture of the colour pass, the same choice as Bind_Material() makes
-						auto const &material { m_materials.material( draw.material ) };
-						auto const &textures {
-							material.texture_variants.empty() ?
-								material.textures :
-								material.GetTextures( TSubModel::VariantId( draw.submodel ) ) };
-						if( textures[ 0 ] == null_handle ) { continue; }
-						m_textures.bind( 0, textures[ 0 ] );
-					}
-					if( false == bound ) {
-						program.bind();
-						bound = true;
-					}
-					model_ubs = draw.ubs;
-					model_ubo->update( model_ubs );
-					m_geometry.draw_indirect( draw.geometry, commandoffset( index ) );
-					++prepassdraws;
-				}
+		if( m_scenedepthpass ) {
+			// the depth pass of the whole scene, which has its state set: only the depth here, the colour pass draws the
+			// colour of the same draws (m_indirectcolourpending)
+			prepassdraws = Render_Instances_Indirect_Depth();
+		}
+		else {
+			if( Global.gfx_depthprepass && ( false == Global.bWireFrame ) ) {
+				// the depth first: the colour pass shades only what stays in view. the depth goes a little farther than the
+				// surface, so the colour pass, which tests and writes its depth as usual, is sure to pass where it's the same
+				m_prepasstimer.begin();
+				setup_drawing( false );
+				::glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+				::glEnable( GL_POLYGON_OFFSET_FILL );
+				::glPolygonOffset( -1.f, -1.f );
+				prepassdraws = Render_Instances_Indirect_Depth();
+				::glDisable( GL_POLYGON_OFFSET_FILL );
+				::glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+				m_prepasstimer.end();
 			}
-			::glDisable( GL_POLYGON_OFFSET_FILL );
-			::glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
-			m_prepasstimer.end();
+			Render_Instances_Indirect_Colour();
 		}
-
-		for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
-			auto const &draw { m_indirectdraws[ index ] };
-			if( draw.blending ) { setup_drawing( true ); }
-			Bind_Material( draw.material, draw.submodel );
-			model_ubs = draw.ubs;
-			model_ubo->update( model_ubs );
-			m_geometry.draw_indirect( draw.geometry, commandoffset( index ) );
-			if( draw.blending ) { setup_drawing( false ); }
-		}
-		model_ubs.emission = 0.0f;
-
 		::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
 		Bind_Instance_Stream();
 	}
-
-	m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( m_indirectdraws.size() );
-	m_renderpass.draw_stats.drawcalls += static_cast<int>( prepassdraws );
-	// the count of the frame the gpu reported last
-	m_renderpass.draw_stats.instances += static_cast<int>( m_instancecull.last_count() );
-	m_renderpass.draw_stats.models += static_cast<int>( m_instancecull.last_count() );
+	if( m_scenedepthpass ) {
+		// the colour pass takes the draws from here, and counts them
+		m_indirectcolourpending = true;
+		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepassdraws );
+	}
+	else {
+		m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( m_indirectdraws.size() );
+		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepassdraws );
+		// the count of the frame the gpu reported last
+		m_renderpass.draw_stats.instances += static_cast<int>( m_instancecull.last_count() );
+		m_renderpass.draw_stats.models += static_cast<int>( m_instancecull.last_count() );
+	}
 	m_instancecull.draw_result(
 		static_cast<std::uint32_t>( m_indirectdraws.size() ),
 		prepassdraws,
 		std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count() );
+}
+
+std::uint32_t opengl46_renderer::Render_Instances_Indirect_Depth()
+{
+	auto const commandoffset = []( std::size_t const Index ) {
+		return static_cast<std::intptr_t>( Index * sizeof( gl::instance_draw_command ) ); };
+	std::uint32_t draws { 0 };
+	// the draws without the alpha test first, then the ones with it, one program each
+	for( auto prepassclass = 1; prepassclass <= 2; ++prepassclass ) {
+		auto &program { prepassclass == 1 ? *m_prepass_shader : *m_prepass_alpha_shader };
+		auto bound { false };
+		for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
+			auto const &draw { m_indirectdraws[ index ] };
+			if( ( draw.blending ) || ( draw.ubs.opacity < 0.f ) ) { continue; }
+			if( ( draw.type != GL_TRIANGLES ) && ( draw.type != GL_TRIANGLE_STRIP ) && ( draw.type != GL_TRIANGLE_FAN ) ) { continue; }
+			if( Prepass_Class( draw.material ) != prepassclass ) { continue; }
+			if( prepassclass == 2 ) {
+				// the diffuse texture of the colour pass, the same choice as Bind_Material() makes
+				auto const &material { m_materials.material( draw.material ) };
+				auto const &textures {
+					material.texture_variants.empty() ?
+						material.textures :
+						material.GetTextures( TSubModel::VariantId( draw.submodel ) ) };
+				if( textures[ 0 ] == null_handle ) { continue; }
+				m_textures.bind( 0, textures[ 0 ] );
+			}
+			if( false == bound ) {
+				program.bind();
+				bound = true;
+			}
+			model_ubs = draw.ubs;
+			model_ubo->update( model_ubs );
+			m_geometry.draw_indirect( draw.geometry, commandoffset( index ) );
+			++draws;
+		}
+	}
+	return draws;
+}
+
+void opengl46_renderer::Render_Instances_Indirect_Colour()
+{
+	auto const commandoffset = []( std::size_t const Index ) {
+		return static_cast<std::intptr_t>( Index * sizeof( gl::instance_draw_command ) ); };
+	for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
+		auto const &draw { m_indirectdraws[ index ] };
+		if( draw.blending ) { setup_drawing( true ); }
+		Bind_Material( draw.material, draw.submodel );
+		model_ubs = draw.ubs;
+		model_ubo->update( model_ubs );
+		m_geometry.draw_indirect( draw.geometry, commandoffset( index ) );
+		if( draw.blending ) { setup_drawing( false ); }
+	}
+	model_ubs.emission = 0.0f;
+}
+
+// depth of the whole opaque scene of the colour pass, before its colour. the same walk as the colour pass makes (the cab drawn
+// early, then the region), so the same things are seen at the same levels of detail; the programs of the depth prepass draw
+// them (Bind_Material(), draw()), with the depth a little farther than the surface like the prepass of the instances, so the
+// colour pass, which tests and writes its depth as usual, passes where it's the same surface. the gpu culling of the
+// instances runs here, against the same depth as without this pass, and the colour pass draws what it recorded
+void opengl46_renderer::Render_Scene_Depth( glm::mat4 const &Future )
+{
+	auto const cpustart { std::chrono::steady_clock::now() };
+	m_scenedepthtimer.begin();
+	auto const colourstats { m_renderpass.draw_stats };
+	m_renderpass.draw_stats = {};
+
+	m_scenedepthpass = true;
+	m_scenedepthskip = true;
+	setup_drawing( false );
+	::glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+	::glEnable( GL_POLYGON_OFFSET_FILL );
+	::glPolygonOffset( -1.f, -1.f );
+
+	// the conditions of the cab drawn early by the colour pass
+	if( ( false == FreeFlyModeFlag ) && ( Global.Overcast <= 1.0f ) && ( Global.render_cab ) ) {
+		model_ubs.future = glm::mat4();
+		auto const *vehicle { simulation::Train->Dynamic() };
+		Render_cab( vehicle, vehicle->InteriorLightLevel, false );
+	}
+	model_ubs.future = Future;
+	Render( simulation::Region );
+
+	::glDisable( GL_POLYGON_OFFSET_FILL );
+	::glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+	m_scenedepthpass = false;
+	m_scenedepthskip = true;
+	m_scenedepthdrawn = true;
+
+	m_scenedepthstats = m_renderpass.draw_stats;
+	m_renderpass.draw_stats = colourstats;
+	m_scenedepthtimer.end();
+	m_scenedepthcputime = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count();
+}
+
+bool opengl46_renderer::Scene_Depth_Draws( gfx::geometry_handle const &Geometry ) const
+{
+	if( m_scenedepthskip ) { return false; }
+	// the program of the prepass doesn't size points, and lines aren't surfaces
+	auto const type { m_geometry.type( Geometry ) };
+	return ( ( type == GL_TRIANGLES ) || ( type == GL_TRIANGLE_STRIP ) || ( type == GL_TRIANGLE_FAN ) );
 }
 
 // Renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) using the

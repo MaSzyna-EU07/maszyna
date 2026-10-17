@@ -374,6 +374,14 @@ geometry_bank::vertices( gfx::geometry_handle const &Geometry ) const {
     return geometry_bank::chunk( Geometry ).vertices;
 }
 
+// primitive type of specified chunk, 0 if there's no such chunk
+unsigned int
+geometry_bank::type( gfx::geometry_handle const &Geometry ) const {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return 0; }
+    return geometry_bank::chunk( Geometry ).type;
+}
+
 // provides direct access to vertex user data of specfied chunk
 userdata_array const &
 geometry_bank::userdata( gfx::geometry_handle const &Geometry ) const {
@@ -519,6 +527,14 @@ gfx::vertex_array const &
 geometrybank_manager::vertices( gfx::geometry_handle const &Geometry ) const {
 
     return bank( Geometry ).first->vertices( Geometry );
+}
+
+// primitive type of specified chunk, 0 if there's no such chunk
+unsigned int
+geometrybank_manager::type( gfx::geometry_handle const &Geometry ) const {
+
+    if( false == valid( Geometry ) ) { return 0; }
+    return bank( Geometry ).first->type( Geometry );
 }
 
 // provides direct access to vertex user data of specfied chunk

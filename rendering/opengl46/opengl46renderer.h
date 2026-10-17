@@ -349,10 +349,21 @@ class opengl46_renderer : public gfx_renderer {
 	// draws the instances queued in the pass from the result of the gpu culling (Global.gfx_gpucull 1): makes the depth
 	// pyramid of the occlusion test, runs the culling, walks the submodel trees of the groups once per lod band to record
 	// the draws (m_indirectdraws, m_indirectcommands), has their instances filled in, then draws them with indirect draws,
-	// their depth first (Global.gfx_depthprepass)
+	// their depth first (Global.gfx_depthprepass). inside the depth pass of the whole scene only their depth is drawn, their
+	// colour waits for the colour pass (Render_Instances_Indirect_Colour())
 	void Render_Instances_Indirect();
+	// the recorded draws of the instances: their depth with the programs of the depth prepass, with the state of the prepass
+	// already set (returns the number of draws), and their colour. the command buffer and the instances are bound by the caller
+	std::uint32_t Render_Instances_Indirect_Depth();
+	void Render_Instances_Indirect_Colour();
 	// how the depth prepass treats the material: 0 left out, 1 drawn without alpha test, 2 with the alpha test of the diffuse texture
 	int Prepass_Class( material_handle const Material );
+	// depth of the whole opaque scene of the colour pass, before its colour (Global.gfx_depthprepass_scene): the colour pass
+	// walks the scene a second time, Bind_Material() binds the programs of the depth prepass and draw() leaves out what they
+	// can't draw. Future: the motion matrix the colour pass draws the region with
+	void Render_Scene_Depth( glm::mat4 const &Future );
+	// whether the depth pass of the whole scene draws the material bound last (Bind_Material()) and the geometry
+	bool Scene_Depth_Draws( gfx::geometry_handle const &Geometry ) const;
 	bool Render(TDynamicObject *Dynamic);
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
@@ -534,6 +545,14 @@ class opengl46_renderer : public gfx_renderer {
 	std::unique_ptr<gl::program> m_prepass_alpha_shader;
 	std::unordered_map<gl::program const *, int> m_prepassclasses;
 	gl::gpu_timer m_prepasstimer;
+	// depth pass of the whole scene (Render_Scene_Depth())
+	bool m_scenedepthpass { false }; // inside it: Bind_Material() and draw() work for the depth
+	bool m_scenedepthskip { true }; // the material bound last isn't drawn in it
+	bool m_scenedepthdrawn { false }; // it was drawn for the colour pass under way, which skips what was done in it already
+	bool m_indirectcolourpending { false }; // the instances were culled in it, the colour pass draws them from the recorded draws
+	debug_stats m_scenedepthstats; // of its last run
+	double m_scenedepthcputime { 0.0 }; // ms
+	gl::gpu_timer m_scenedepthtimer;
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;

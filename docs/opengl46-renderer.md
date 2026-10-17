@@ -240,11 +240,21 @@ views go as before.
 | `gfx.gpucull` | `no` | `no`: on the processor, as before. `yes`: on the graphics card, and the models are drawn from its result. `compare`: on the processor, which draws, and on the graphics card too, for the results to be compared (debugging) |
 | `gfx.gpucull.occlusion yes/no` | `yes` | with `gfx.gpucull yes`: models hidden whole behind what was drawn before them (the cab, the terrain, buildings and other models drawn on their own, vehicles) are left out |
 | `gfx.depthprepass yes/no` | `yes` | with `gfx.gpucull yes`: the depth of the models is drawn first, so the colour is worked out only for what stays in view (dense foliage) |
+| `gfx.depthprepass.scene yes/no` | `no` | the depth of the whole opaque scene of the main view (terrain, tracks, buildings, models, vehicles, the cab) is drawn before its colour, see below |
 
 The occlusion test does not take models drawn this way as covering each other: a tree hidden behind another tree is still
 drawn (its colour is not worked out with the depth prepass on). Models whose material is not one of the usual ones (parallax,
 water and the like) are left out of the depth prepass and drawn as before. All three can be changed while the simulator
 runs, in the **Instance culling** debug window.
+
+With `gfx.depthprepass.scene yes` the scene is gone through twice: first only its depth is drawn, then its colour, worked
+out once per pixel for the surface which stays in view. That costs the processor a second walk through the scene (fewer
+draws than the colour pass: what the depth programs can't draw, like parallax materials and faded parts, is left to the
+colour pass) and saves the graphics card the shading of hidden surfaces. It also gives the depth of the scene before its
+colour, which the effects that need it build on. The models drawn from the GPU (`gfx.gpucull yes`) are culled in the first
+walk and drawn from the same result in the second. The picture is the same either way. In rain and snow (when the cab is
+drawn last, after the precipitation) the cab isn't in the depth pass. Can be changed while the simulator runs, in the
+**Instance culling** debug window.
 
 ### Model data of the draws
 
@@ -317,6 +327,8 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   of detail, the draw calls with those of the depth prepass, and the processor time of the whole step) and the timings
   `instance cull:`, `occlusion depth:` (the depth pyramid of the test) and `depth prepass:`. With `compare` it shows how many
   models both counted and how many levels of detail differ.
+- With `gfx.depthprepass.scene yes` Shift+F12 shows the `scene depth:` row (draws of the depth pass and its processor time)
+  and the timing `scene depth:` (its GPU time).
 - Shift+F12 shows the `instance buffer:` row (positions of copies written in the frame and the size of the buffer) and the
   `model blocks:` row: how many blocks of model data the frame wrote, with `gfx.bufferstreaming yes` also how much of the
   buffer of the frame they took, how many times a frame had to wait for the graphics card to finish with a buffer before

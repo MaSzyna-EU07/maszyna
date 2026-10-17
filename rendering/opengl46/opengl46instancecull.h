@@ -116,6 +116,15 @@ class opengl46_instance_cull
 	void bind_draw();
 	// counts of the last result which came back from the gpu, with the draws of the pass, for the debug panel
 	void draw_result(std::uint32_t const Draws, std::uint32_t const Prepassdraws, double const Cputime);
+	// what draw_result() was given last
+	std::uint32_t prepass_draws() const
+	{
+		return m_prepassdraws;
+	}
+	double cpu_time() const
+	{
+		return m_cputime;
+	}
 	// instances which passed in the last result which came back from the gpu, a few frames old
 	std::uint32_t last_count() const
 	{
