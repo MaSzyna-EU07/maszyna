@@ -26,9 +26,10 @@ layout(location = 6) uniform ivec2 rows;
 // lowest elevation of the panorama (radians); its rows go with the square of the height, denser at the horizon
 const float PANORAMA_LOW = -0.1;
 // scales of the light of the clouds against the shading of the surfaces (light_common.glsl: SUN_DIFFUSE_SCALE, AMBIENT_SCALE),
-// times the tuning of the debug window (weather_sun_color.w, weather_ambient.w). the sky light about as the shaded faces get it:
-// more of it greys the shaded sides of the clouds into a flat pastel
-const float CLOUD_SUN_SCALE = 1.5;
+// times the tuning of the debug window (weather_sun_color.w, weather_ambient.w). the sunlight three times that of the sunlit faces,
+// set by eye in the simulator: the sunlit sides of real cumulus are several times brighter than the sky around them. the sky light
+// about as the shaded faces get it: more of it greys the shaded sides of the clouds into a flat pastel
+const float CLOUD_SUN_SCALE = 4.5;
 const float CLOUD_AMBIENT_SCALE = 0.6;
 // the ground under the clouds lights their bases back with this share of the light falling on it
 const float CLOUD_GROUND_ALBEDO = 0.2;
