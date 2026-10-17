@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "world/TrackSleepers.h"
+#include "world/TrackFeatures.h"
 #include "world/Track.h"
 #include "model/Model3d.h"
 #include "model/MdlMngr.h"
@@ -1125,6 +1126,9 @@ std::pair<double, double> panel_off_plane( TTrack &Track ) {
 
 beam_model const *timber_model() {
 
+    if( false == track_features::sleepers ) {
+        return nullptr;
+    }
     return find_model( Global.Sleepers3D, std::string {}, -1.f );
 }
 

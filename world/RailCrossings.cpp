@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "world/TrackRails.h"
+#include "world/TrackFeatures.h"
 #include "simulation/simulation.h"
 #include "scene/scene.h"
 
@@ -87,7 +88,8 @@ double check_length( double const Slope ) {
 // the rails of the track are cut where they cross other rails: plain tracks, and switches whose frog is made from the rails
 bool cut_rails( TTrack const &Track ) {
 
-    return ( Track.iCategoryFlag & 15 ) == 1
+    return track_features::crossings
+        && ( Track.iCategoryFlag & 15 ) == 1
         && Track.m_material1 != null_handle
         && false == Track.m_editorremoved
         && ( Track.eType == tt_Normal ? Track.Segment != nullptr :
