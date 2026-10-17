@@ -1710,6 +1710,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.stars.brightness" ) { readvalue( gfx_stars_brightness, 0.f, 16.f ); }
     else if( Token == "gfx.sun.disc" ) { readvalue( gfx_sun_disc, 0.f, 4.f ); }
     else if( Token == "gfx.moon.disc" ) { readvalue( gfx_moon_disc, 0.f, 16.f ); }
+    else if( Token == "gfx.moonlight" ) { readvalue( gfx_moonlight, 0.f, 10.f ); }
     else { return false; }
 
     return true;
@@ -2017,6 +2018,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.stars.brightness", gfx_stars_brightness );
     export_as_text( Output, "gfx.sun.disc", gfx_sun_disc );
     export_as_text( Output, "gfx.moon.disc", gfx_moon_disc );
+    export_as_text( Output, "gfx.moonlight", gfx_moonlight );
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );

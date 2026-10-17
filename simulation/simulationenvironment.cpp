@@ -123,7 +123,7 @@ world_environment::update() {
     float twilightfactor = std::clamp( -m_sun.getAngle(), 0.0f, 18.0f ) / 18.0f;
     // NOTE: sun light receives extra padding to prevent moon from kicking in too soon
     auto const sunlightlevel = m_sun.getIntensity() + 0.05f * ( 1.f - twilightfactor );
-    auto const moonlightlevel = m_moon.getIntensity() * 0.65f; // scaled down by arbitrary factor, it's pretty bright otherwise
+    auto const moonlightlevel = m_moon.getIntensity() * 0.65f * Global.gfx_moonlight; // scaled down by arbitrary factor, it's pretty bright otherwise
 
     // ...update skydome to match the current sun position as well...
     // twilight factor can be reset later down, so we do it here while it's still reflecting state of the sun
@@ -157,7 +157,7 @@ world_environment::update() {
         m_lightintensity = moonlightlevel;
         // if the moon is up, it overrides the twilight
         twilightfactor = 0.0f;
-        lightfloor *= moonlightshare;
+        lightfloor *= moonlightshare * Global.gfx_moonlight;
         keylightcolor = moonlightcolor * moonfadein;
         moonkeylight = true;
     }

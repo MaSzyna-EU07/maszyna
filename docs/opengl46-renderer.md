@@ -257,6 +257,7 @@ are no longer loaded.
 | `gfx.stars.brightness` | `1.0` | 0..16: their brightness |
 | `gfx.sun.disc` | `1.0` | 0..4: brightness of the sun disc against the radiance its sunlight gives it; 1 is physical (held within the range of the image), the glare around it comes from the bloom |
 | `gfx.moon.disc` | `1.0` | 0..16: brightness of the moon disc |
+| `gfx.moonlight` | `1.0` | 0..10: how much the moon lights the scenery at night (its direct light, the night light that comes with it and the moonlit sky); 0: no moonlight |
 
 ### Models drawn from the GPU
 

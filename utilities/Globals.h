@@ -404,6 +404,8 @@ struct global_settings {
     // and of the moon disc
     float gfx_sun_disc { 1.f };
     float gfx_moon_disc { 1.f };
+    // how much the moon lights the scenery at night (its direct light, the night light that comes with it and the moonlit sky)
+    float gfx_moonlight { 1.f };
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;

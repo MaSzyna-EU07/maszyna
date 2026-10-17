@@ -888,6 +888,7 @@ void opengl46_renderer::draw_debug_ui()
         m_sky.draw_debug_ui();
         ImGui::SliderFloat("sun disc, 1 = physical (gfx.sun.disc)", &Global.gfx_sun_disc, 0.f, 2.f);
         ImGui::SliderFloat("moon disc (gfx.moon.disc)", &Global.gfx_moon_disc, 0.f, 8.f);
+        ImGui::SliderFloat("moonlight on the scenery (gfx.moonlight)", &Global.gfx_moonlight, 0.f, 10.f);
         {
             // where the sun and the moon are: azimuth from the north to the east (the sky has x to the west, z to the north)
             auto const azimuth = [](glm::vec3 const &Direction) { return glm::degrees(std::atan2(-Direction.x, Direction.z)) + (Direction.x > 0.f ? 360.f : 0.f); };
@@ -2390,7 +2391,7 @@ bool opengl46_renderer::Render(world_environment *Environment)
 	{
 		// turn on moon shadows after astronomical twilight, if the moon is actually up. they come in with the moonlight
 		// (simulation/simulationenvironment.cpp) and are as deep as it is strong: full from the gibbous moon, faint from a crescent
-		auto const moonshadow{std::clamp(4.f * Environment->m_moon.getBrightness(), 0.f, 1.f) * std::clamp((-18.f - Environment->m_sun.getAngle()) / 2.f, 0.f, 1.f) *
+		auto const moonshadow{std::clamp(4.f * Environment->m_moon.getBrightness() * Global.gfx_moonlight, 0.f, 1.f) * std::clamp((-18.f - Environment->m_sun.getAngle()) / 2.f, 0.f, 1.f) *
 		                      std::clamp(Environment->m_moon.getAngle() / 5.f, 0.f, 1.f)};
 		m_shadowcolor = glm::mix(glm::vec4{colors::white}, glm::vec4{colors::shadow}, moonshadow);
 	}
