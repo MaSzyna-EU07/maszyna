@@ -1719,8 +1719,8 @@ class TMoverParameters
 	int EmergencyBrakeWarningSignal{0}; // combined with basic WarningSignal when manual emergency brake is active
 	horn_supply HornSupply{horn_supply::air}; // of the low and high tone horns (WarningSignal 1 and 2)
 	horn_supply Horn3Supply{horn_supply::air}; // of the third horn (WarningSignal 4)
-	// main reservoir pressure [MPa] below which a pneumatic horn stays silent
-	static constexpr double HornMinPressure{0.2};
+	// main reservoir pressure [bar, as MinCP and MaxCP] below which a pneumatic horn stays silent
+	static constexpr double HornMinPressure{2.0};
 	TUniversalCtrlTable UniCtrlList; /*lista pozycji uniwersalnego nastawnika*/
 	int UniCtrlListSize = 0; /*wielkosc listy pozycji uniwersalnego nastawnika*/
 	bool UniCtrlIntegratedBrakePNCtrl = false; /*zintegrowany nastawnik JH obsluguje hamulec PN*/
@@ -2447,16 +2447,31 @@ class TMoverParameters
 	// closing speed [km/h] of the End of this vehicle and the OtherEnd of the other vehicle it touches, along the coupler
 	// axis: the sum of the speeds in a head-on collision, the difference in a rear-end one, negative when they part
 	double CollisionVelocity(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// velocity [m/s] of this vehicle relative to the other vehicle it touches with its End and the OtherEnd of the
+	// other one, along this vehicle's axis
+	double CouplerVelocityDifference(int const End, TMoverParameters const &Other, int const OtherEnd) const;
 	// whether the automatic couplers at the End of this vehicle and the OtherEnd of the other one can catch each other on
 	// contact, rather than the vehicles colliding (with crash damage enabled, only at a closing speed which doesn't derail them)
 	bool AutomaticCouplingSafe(int const End, TMoverParameters const &Other, int const OtherEnd) const;
 	// the horns of the Signal (WarningSignal bits) which have the air or the voltage they need to sound
 	int SoundingHorns(int const Signal) const;
-	// whether the lamp of the open line contactors is lit, telling the start can be made: the pressure switch, when
-	// fitted, cuts the start off and so puts out the lamp, otherwise the lamp goes out once the brakes are applied
+	// whether the signal lamps of the main circuit (line contactors, ground relay, motor overload relays) can light:
+	// the pressure switch, when fitted, cuts the start off and puts them out, otherwise they go out once the brakes are applied
+	bool MainCircuitLampsEnabled() const
+	{
+		return false == ControlPressureSwitch && (HasControlPressureSwitch || BrakePress < 1.0);
+	}
+	// whether the lamp of the open line contactors is lit, telling the start can be made
 	bool LineContactorsLampLit() const
 	{
-		return false == StLinFlag && false == ControlPressureSwitch && (HasControlPressureSwitch || BrakePress < 1.0);
+		return false == StLinFlag && MainCircuitLampsEnabled();
+	}
+	// whether the pumps a joint oil and fuel pump switch works, those not started automatically, are all switched on
+	bool OilFuelPumpsEnabled() const
+	{
+		auto const fuelmanual{FuelPump.start_type != start_t::automatic};
+		auto const oilmanual{OilPump.start_type != start_t::automatic};
+		return (fuelmanual || oilmanual) && (false == fuelmanual || FuelPump.is_enabled) && (false == oilmanual || OilPump.is_enabled);
 	}
 	// whether the radio is switched on and has the low voltage to work
 	bool RadioPowered() const

@@ -14,9 +14,9 @@ double const step{0.01};
 
 // a compressor which starts on its own, fed from the main circuit unless given another Power, its pressure
 // switch between MinCP and MaxCP, and an empty main reservoir for it to fill
-vehicle compressor_vehicle(double const Delay, std::string const &Power = "Main", double const MinCP = 0.65) {
+vehicle compressor_vehicle(double const Delay, std::string const &Power = "Main", double const MinCP = 6.5) {
 	auto definition{definition::load("wagon")};
-	definition.set("Brake", "Vv", 1.0).set("Brake", "MinCP", MinCP).set("Brake", "MaxCP", 0.8);
+	definition.set("Brake", "Vv", 1.0).set("Brake", "MinCP", MinCP).set("Brake", "MaxCP", 8.0);
 	definition.set("Brake", "CompressorSpeed", 0.01);
 	if (false == Power.empty()) {
 		definition.set("Brake", "CompressorPower", Power);
@@ -99,17 +99,17 @@ TEST_CASE("compressor: a compressor fed from the low voltage waits from the low 
 TEST_CASE("compressor: the pressure switch stops the compressor above the cut-out pressure") {
 	auto vehicle{compressor_vehicle(0.0)};
 	vehicle->Mains = true;
-	vehicle->CompressedVolume = 0.85; // over MaxCP, in the reservoir of 1 m3
+	vehicle->CompressedVolume = 8.5; // over MaxCP, in the reservoir of 1 m3
 	run_compressor(vehicle, step);
 	CHECK(vehicle->CompressorGovernorLock);
 	CHECK_FALSE(vehicle->CompressorFlag);
 }
 
 TEST_CASE("compressor: without a pressure switch the air over the cut-out pressure is vented") {
-	auto vehicle{compressor_vehicle(0.0, "Main", 0.8)}; // MinCP the same as MaxCP: no pressure switch
+	auto vehicle{compressor_vehicle(0.0, "Main", 8.0)}; // MinCP the same as MaxCP: no pressure switch
 	vehicle->Mains = true;
-	vehicle->CompressedVolume = 0.85;
+	vehicle->CompressedVolume = 8.5;
 	run_compressor(vehicle, step);
 	REQUIRE(vehicle->CompressorFlag); // nothing stops it
-	CHECK(vehicle->CompressedVolume < 0.85 * 0.81); // a fifth of the air let out
+	CHECK(vehicle->CompressedVolume < 8.5 * 0.81); // a fifth of the air let out
 }

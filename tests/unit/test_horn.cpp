@@ -46,7 +46,7 @@ namespace {
 
 test::vehicle horn_vehicle(test::definition Definition) {
 	// a main reservoir of its own
-	return test::vehicle{Definition.set("Brake", "Vv", 1.0).set("Brake", "MinCP", 0.65).set("Brake", "MaxCP", 0.8)};
+	return test::vehicle{Definition.set("Brake", "Vv", 1.0).set("Brake", "MinCP", 6.5).set("Brake", "MaxCP", 8.0)};
 }
 
 int const allhorns{horn::low | horn::high | 4};
@@ -57,7 +57,7 @@ TEST_CASE("horn: a pneumatic horn sounds on the air of the main reservoir only")
 	auto vehicle{horn_vehicle(test::definition::load("wagon"))};
 	REQUIRE(vehicle->HornSupply == horn_supply::air); // the default
 
-	vehicle->Compressor = 0.65;
+	vehicle->Compressor = 6.5;
 	CHECK(vehicle->SoundingHorns(allhorns) == allhorns);
 	vehicle->Compressor = 0.0; // the reservoir is empty
 	CHECK(vehicle->SoundingHorns(allhorns) == 0);
@@ -67,7 +67,7 @@ TEST_CASE("horn: a vehicle without a main reservoir takes the horn air from the 
 	test::vehicle vehicle{test::definition::load("wagon")};
 	REQUIRE(vehicle->VeselVolume == 0.0);
 
-	vehicle->ScndPipePress = 0.5;
+	vehicle->ScndPipePress = 5.0;
 	CHECK(vehicle->SoundingHorns(horn::low) == horn::low);
 	vehicle->ScndPipePress = 0.0;
 	CHECK(vehicle->SoundingHorns(horn::low) == 0);
@@ -93,7 +93,7 @@ TEST_CASE("horn: the third horn can have a supply of its own, an electric horn o
 	vehicle->Compressor = 0.0;
 	vehicle->Power24vIsAvailable = true;
 	CHECK(vehicle->SoundingHorns(allhorns) == 4);
-	vehicle->Compressor = 0.65;
+	vehicle->Compressor = 6.5;
 	vehicle->Power24vIsAvailable = false;
 	CHECK(vehicle->SoundingHorns(allhorns) == (horn::low | horn::high));
 }

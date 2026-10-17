@@ -576,7 +576,7 @@ private:
     std::vector<door_sounds> m_doorsounds; // can expect symmetrical arrangement, but don't count on it
     bool m_doorlocks { false }; // sound helper, current state of door locks
     std::vector<mirror_sounds> m_mirrorsounds;
-    std::array<mirror_moves::motion, 2> m_mirrormotion; // left and right
+    std::array<mirror_moves::motion, 2> m_mirrormotion; // indexed by side: right, left
     sound_source sHorn1 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
     sound_source sHorn2 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
     sound_source sHorn3 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };

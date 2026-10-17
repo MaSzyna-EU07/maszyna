@@ -4019,8 +4019,8 @@ void TTrain::OnCommand_oilfuelpumptoggle(TTrain *Train, command_data const &Comm
 	{
 		return;
 	}
-	// both pumps go off if both were on, otherwise both go on
-	auto const enable{false == (vehicle->FuelPump.is_enabled && vehicle->OilPump.is_enabled)};
+	// both pumps go off if both were on, otherwise both go on; a pump started automatically doesn't take part
+	auto const enable{false == vehicle->OilFuelPumpsEnabled()};
 	Train->ggOilFuelPumpButton.UpdateValue(enable ? 1.0 : 0.0, Train->dsbSwitch);
 	vehicle->FuelPumpSwitch(enable);
 	vehicle->FuelPumpSwitchOff(false == enable);
@@ -8980,8 +8980,8 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaOpory.Turn(mvControlled->StLinFlag && mvControlled->ResistorsFlagCheck());
 		btLampkaBezoporowa.Turn(mvControlled->ResistorsFlagCheck() || mvControlled->MainCtrlActualPos == 0); // do EU04
 		btLampkaStyczn.Turn(mvControlled->LineContactorsLampLit()); // mozna prowadzic rozruch
-		btLampkaPrzekRozn.Turn(!mvControlled->GroundRelay && !mvControlled->ControlPressureSwitch && mvControlled->BrakePress < 1.0); // relay is off and needs a reset
-		btLampkaNadmSil.Turn(mvControlled->FuseFlagCheck() && !mvControlled->ControlPressureSwitch && mvControlled->BrakePress < 1.0); // relay is off and needs a reset
+		btLampkaPrzekRozn.Turn(!mvControlled->GroundRelay && mvControlled->MainCircuitLampsEnabled()); // relay is off and needs a reset
+		btLampkaNadmSil.Turn(mvControlled->FuseFlagCheck() && mvControlled->MainCircuitLampsEnabled()); // relay is off and needs a reset
 		btLampkaUkrotnienie.Turn(TestFlag(mvControlled->Couplers[mvControlled->CabOccupied == 1 ? rear : front].CouplingFlag, control));
 		btLampkaHamPosp.Turn(TestFlag(mvOccupied->Hamulec->GetBrakeStatus(), 1)); // lampka drugiego stopnia hamowania
 		// TODO: youBy wyciągnąć flagę wysokiego stopnia
@@ -11405,7 +11405,7 @@ void TTrain::set_cab_controls(int const Cab)
 		ggDoorStepButton.PutValue(mvOccupied->Doors.step_enabled ? 1.f : 0.f);
 	}
 	// heating
-	if (false == ggTrainHeatingButton.is_push() && false == mvControlled->HeatingSwitchImpulse)
+	if (false == ggTrainHeatingButton.is_push() && false == mvOccupied->HeatingSwitchImpulse)
 	{
 		ggTrainHeatingButton.PutValue(mvControlled->Heating ? 1.f : 0.f);
 	}
@@ -11461,7 +11461,7 @@ void TTrain::set_cab_controls(int const Cab)
 	// joint oil and fuel pump
 	if (ggOilFuelPumpButton.type() != TGaugeType::push)
 	{
-		ggOilFuelPumpButton.PutValue(mvControlled->FuelPump.is_enabled && mvControlled->OilPump.is_enabled ? 1.f : 0.f);
+		ggOilFuelPumpButton.PutValue(mvControlled->OilFuelPumpsEnabled() ? 1.f : 0.f);
 	}
 	// traction motor fans
 	if (ggMotorBlowersFrontButton.type() != TGaugeType::push)

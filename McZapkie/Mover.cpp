@@ -1183,11 +1183,16 @@ double TMoverParameters::EngineMaxRPM() const
 // *************************************************************************************************
 double TMoverParameters::CollisionVelocity(int const End, TMoverParameters const &Other, int const OtherEnd) const
 {
-	// V runs along the vehicle's own axis, towards its front; the other vehicle's velocity is turned around when the
-	// vehicles face each other (touch with the same ends), as in CouplerForce()
-	auto const velocitydifference{V - Other.V * DirPatch(End, OtherEnd)};
+	auto const velocitydifference{CouplerVelocityDifference(End, Other, OtherEnd)};
 	// the front end closes in on the other vehicle when this one moves forward faster, the rear end when it's slower
 	return (End == end::front ? velocitydifference : -velocitydifference) * 3.6; // m/s -> km/h
+}
+
+double TMoverParameters::CouplerVelocityDifference(int const End, TMoverParameters const &Other, int const OtherEnd) const
+{
+	// V runs along the vehicle's own axis, towards its front; the other vehicle's velocity is turned around when the
+	// vehicles face each other (touch with the same ends)
+	return V - Other.V * DirPatch(End, OtherEnd);
 }
 
 bool TMoverParameters::AutomaticCouplingSafe(int const End, TMoverParameters const &Other, int const OtherEnd) const
@@ -5331,7 +5336,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 
 	auto const newdistance{initialdistance + 10.0 * distancedelta};
 
-	auto const dV{V - othervehicle->V * DirPatch(End, otherend)};
+	auto const dV{CouplerVelocityDifference(End, *othervehicle, otherend)};
 	auto const absdV{std::abs(dV)};
 
 	// potentially generate sounds on clash or stretch
@@ -5448,7 +5453,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 				auto const safe{AutomaticCouplingSafe(End, *othervehicle, otherend)};
 				auto const caught{safe && Attach(End, otherend, othervehicle, couplingtype)};
 				// HACK: we're reusing sound enum to mark whether vehicle was connected to another
-				SetFlag(AIFlag, caught ? sound::attachcoupler : 0);
+				AIFlag |= (caught ? sound::attachcoupler : 0);
 				// coupled, or locked until the vehicles part, so they don't couple as soon as the collision slows them down
 				thiscoupler.AutomaticCouplingAllowed = safe && false == caught;
 				othercoupler.AutomaticCouplingAllowed = safe && false == caught;
@@ -5458,8 +5463,8 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 
 	if (thiscoupler.CouplingFlag != coupling::faux)
 	{
-		// uzgadnianie prawa Newtona
-		othervehicle->Couplers[1 - End].CForce = -CF;
+		// uzgadnianie prawa Newtona, on the coupler of the other vehicle this one is coupled with
+		othervehicle->Couplers[otherend].CForce = -CF;
 	}
 
 	return CF;

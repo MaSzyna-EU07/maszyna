@@ -46,3 +46,14 @@ TEST_CASE("line contactors: closed contactors put the lamp out") {
 	vehicle->StLinFlag = true;
 	CHECK_FALSE(vehicle->LineContactorsLampLit());
 }
+
+TEST_CASE("line contactors: the ground relay and overload lamps follow the same rule") {
+	// all the lamps of the main circuit go out together, with the pressure switch where it's fitted
+	auto vehicle{locomotive(true)};
+	vehicle->BrakePress = 1.5;
+	vehicle->MotorConnectorsCheck();
+	CHECK(vehicle->MainCircuitLampsEnabled());
+	vehicle->BrakePress = 2.5;
+	vehicle->MotorConnectorsCheck();
+	CHECK_FALSE(vehicle->MainCircuitLampsEnabled());
+}
