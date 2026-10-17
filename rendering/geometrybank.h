@@ -138,6 +138,10 @@ public:
     // draws geometry stored in specified chunk with the command at Offset (bytes) in the bound draw indirect buffer,
     // a glDrawElementsIndirect one for an indexed chunk, glDrawArraysIndirect otherwise
     void draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams = basic_streams );
+    // draws chunks of the bank with Count commands from Offset (bytes) in the bound draw indirect buffer, Stride bytes apart,
+    // with a single glMultiDrawElementsIndirect (or glMultiDrawArraysIndirect). the chunks have to be of the type of the
+    // specified one and indexed alike. returns: false if the bank can't, nothing is drawn then
+    auto draw_indirect_multi( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) -> bool;
     // draws geometry stored in supplied list of chunks
     template <typename Iterator_>
     auto draw( Iterator_ First, Iterator_ Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) ->std::size_t {
@@ -214,6 +218,7 @@ private:
     // indirect_source() and draw_indirect() subclass details. by default the bank can't draw indirectly
     virtual auto indirect_source_( gfx::geometry_handle const & /*Geometry*/, gfx::indirect_source & /*Source*/ ) -> bool { return false; }
     virtual void draw_indirect_( gfx::geometry_handle const & /*Geometry*/, std::intptr_t const /*Offset*/, unsigned int const /*Streams*/ ) {}
+    virtual auto draw_indirect_multi_( gfx::geometry_handle const & /*Geometry*/, std::intptr_t const /*Offset*/, std::uint32_t const /*Count*/, std::uint32_t const /*Stride*/ ) -> bool { return false; }
     // resource release subclass details
     virtual void release_() = 0;
 };
@@ -251,6 +256,9 @@ public:
     auto indirect_source( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source ) -> bool;
     // draws geometry stored in specified chunk with the command at Offset (bytes) in the bound draw indirect buffer
     void draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams = basic_streams );
+    // draws chunks of the bank of the specified one, of its type and indexed alike, with Count commands from Offset in the bound
+    // draw indirect buffer, Stride bytes apart, in one call. returns: false if the bank can't, nothing is drawn then
+    auto draw_indirect_multi( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) -> bool;
     template <typename Iterator_>
     void draw( Iterator_ First, Iterator_ Last, unsigned int const Streams = basic_streams ) {
             while( First != Last ) { 

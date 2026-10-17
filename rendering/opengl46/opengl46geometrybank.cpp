@@ -274,6 +274,28 @@ opengl46_vaogeometrybank::draw_indirect_( gfx::geometry_handle const &Geometry, 
     }
 }
 
+// draw_indirect_multi() subclass details — the commands come from the bound draw indirect buffer, the chunk tells the type
+// and whether they're indexed
+bool
+opengl46_vaogeometrybank::draw_indirect_multi_( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride )
+{
+    setup_buffer();
+
+    // the counts of the chunks are in the commands, which may be for chunks other than this one
+    if( ( false == m_vao.has_value() ) || ( Count == 0 ) ) { return true; }
+
+    auto const &chunkrecord = m_chunkrecords.at(Geometry.chunk - 1);
+    auto const &chunk = gfx::geometry_bank::chunk( Geometry );
+    m_vao->bind();
+    if( chunkrecord.index_count > 0 ) {
+        ::glMultiDrawElementsIndirect( chunk.type, GL_UNSIGNED_INT, reinterpret_cast<void const *>( Offset ), static_cast<GLsizei>( Count ), static_cast<GLsizei>( Stride ) );
+    }
+    else {
+        ::glMultiDrawArraysIndirect( chunk.type, reinterpret_cast<void const *>( Offset ), static_cast<GLsizei>( Count ), static_cast<GLsizei>( Stride ) );
+    }
+    return true;
+}
+
 // draw_batch() subclass details — neighbouring non-indexed chunks of the same type are sent with a single GL call.
 // The chunks are drawn in the supplied order, same as with a draw_() call for each of them.
 std::size_t

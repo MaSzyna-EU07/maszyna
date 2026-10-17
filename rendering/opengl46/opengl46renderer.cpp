@@ -191,6 +191,33 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 			static_cast<GLsizeiptr>(16384 * sizeof(glm::mat4)), static_cast<GLsizeiptr>(sizeof(glm::mat4)), Global.gfx_bufferstreaming, &identity, static_cast<GLsizeiptr>(sizeof(identity)));
 	}
 	WriteLog(std::string("Model data streaming: ") + (model_ubo->streamed() ? "persistently mapped buffers" : "glBufferSubData"));
+	// multi draws of the instances drawn from the gpu culling (Render_Instances_Indirect()): the model blocks of their draws in a
+	// storage buffer bound at whole blocks, and the variants of the programs which read them there. without them the draws are
+	// made one by one, as before
+	try
+	{
+		GLint alignment{256};
+		glGetIntegerv(GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT, &alignment);
+		if ((alignment <= 0) || (sizeof(gl::model_ubs) % static_cast<std::size_t>(alignment) != 0))
+			throw gl::shader_exception("storage buffer offset alignment of " + std::to_string(alignment) + " bytes");
+		std::string const defines{"#define MODEL_DRAWS 1\n"};
+		m_vertex_multidraw_shader = std::make_unique<gl::shader>("vertex.vert", defines);
+		gl::shader prepassvertex("depthprepass.vert", defines);
+		gl::shader prepassfragment("depthprepass.frag", defines);
+		gl::shader prepassalphafragment("depthprepass_alpha.frag", defines);
+		m_prepass_multidraw_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{prepassvertex, prepassfragment});
+		m_prepass_alpha_multidraw_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{prepassvertex, prepassalphafragment});
+		m_drawblockstream = std::make_unique<gl::frame_stream>(
+			static_cast<GLsizeiptr>(4096 * sizeof(gl::model_ubs)), static_cast<GLsizeiptr>(sizeof(gl::model_ubs)), Global.gfx_bufferstreaming);
+	}
+	catch (gl::shader_exception const &e)
+	{
+		ErrorLog("multi draws of the instances not available: " + std::string(e.what()));
+		m_vertex_multidraw_shader.reset();
+		m_prepass_multidraw_shader.reset();
+		m_prepass_alpha_multidraw_shader.reset();
+		m_drawblockstream.reset();
+	}
 
 	try
 	{
@@ -661,6 +688,8 @@ bool opengl46_renderer::Render()
 	m_instancestream->next_frame();
 	Bind_Instance_Stream();
 	model_ubo->next_frame();
+	if (m_drawblockstream)
+		m_drawblockstream->next_frame();
 
 	m_renderpass.draw_mode = rendermode::none; // force setup anew
 	m_renderpass.draw_stats = debug_stats();
@@ -797,6 +826,11 @@ void opengl46_renderer::SwapBuffers()
                 + std::to_string( model_ubo->stream()->waits() + m_instancestream->waits() ) + ", grown "
                 + std::to_string( model_ubo->stream()->grows() + m_instancestream->grows() ) + ")\n" :
             ", glBufferSubData\n" )
+        + ( ( m_drawblockstream && ( Global.gfx_gpucull == 1 ) && Global.gfx_gpucull_multidraw ) ?
+            " multi draw blocks: " + std::to_string( m_drawblockstream->used() / static_cast<GLsizeiptr>( sizeof( gl::model_ubs ) ) ) + ", "
+                + std::to_string( m_drawblockstream->size() / 1024 ) + " KiB (waits " + std::to_string( m_drawblockstream->waits() ) + ", grown "
+                + std::to_string( m_drawblockstream->grows() ) + ")\n" :
+            std::string{} )
         + " inst-pool:" + std::to_string( TAnimModel::s_instanceable_total )
         + "/" + std::to_string( TAnimModel::s_classified_total )
         + " rej(noModel/lights/anim/animSubM): "
@@ -914,6 +948,10 @@ void opengl46_renderer::draw_debug_ui()
             if (Global.gfx_gpucull_occlusion)
                 ImGui::Checkbox("draw the instances seen in the last frame first, to hide the others (gfx.gpucull.occlusion.instances)", &Global.gfx_gpucull_occlusion_instances);
             ImGui::Checkbox("draw the depth of the instances before their colour (gfx.depthprepass)", &Global.gfx_depthprepass);
+            if (m_drawblockstream)
+                ImGui::Checkbox("draw the instances of the same material and model with one multi draw (gfx.gpucull.multidraw)", &Global.gfx_gpucull_multidraw);
+            else
+                ImGui::TextUnformatted("(multi draws not available, see the log)");
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
         if (Global.gfx_contactshadows > 0)
@@ -2474,6 +2512,9 @@ std::shared_ptr<gl::program> opengl46_renderer::Fetch_Shader(const std::string &
 		gl::shader fragment("mat_" + name + ".frag");
 		gl::program *program = new gl::program({fragment, *m_vertex_shader.get()});
 		m_shaders.insert({name, std::shared_ptr<gl::program>(program)});
+		// the variant for the multi draws of the instances, made now rather than when the instances first come into view
+		if ((Global.gfx_gpucull == 1) && Global.gfx_gpucull_multidraw)
+			Multidraw_Program(program);
 	}
 
 	return m_shaders[name];
@@ -2648,7 +2689,14 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 		if (lastdiff)
 			glBindTextures(0, lastdiff, &opengl_texture::units[0]);
 
-		material.shader->bind();
+		auto *program{material.shader.get()};
+		if (m_bindmultidraw)
+		{
+			// the replay of the instances drawn from the gpu culling with multi draws (Render_Instances_Indirect_Colour())
+			if (auto *multidraw{Multidraw_Program(program)})
+				program = multidraw;
+		}
+		program->bind();
 	}
 	else if (Material != m_invalid_material)
 		Bind_Material(m_invalid_material);
@@ -3224,18 +3272,21 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	if( m_indirectcolourpending ) {
 		// the instances culled and recorded by the depth pass of the whole scene, the buckets weren't queued for the cpu
 		m_indirectcolourpending = false;
+		indirect_counts colourcounts;
 		if( false == m_indirectdraws.empty() ) {
 			auto const cpustart { std::chrono::steady_clock::now() };
 			m_instancecull.bind_draw();
-			Render_Instances_Indirect_Colour( m_indirectcolourset );
+			colourcounts = Render_Instances_Indirect_Colour( m_indirectcolourset );
 			::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
 			Bind_Instance_Stream();
 			m_instancecull.draw_result(
-				static_cast<std::uint32_t>( m_indirectdraws.size() ),
+				colourcounts.draws,
 				m_instancecull.prepass_draws(),
+				colourcounts.calls,
+				m_instancecull.prepass_calls(),
 				m_instancecull.cpu_time() + std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count() );
 		}
-		m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( m_indirectdraws.size() );
+		m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( colourcounts.calls );
 		m_renderpass.draw_stats.instances += static_cast<int>( m_instancecull.last_count() );
 		m_renderpass.draw_stats.models += static_cast<int>( m_instancecull.last_count() );
 	}
@@ -3892,6 +3943,14 @@ void opengl46_renderer::Render_Instances_Indirect()
 	}
 	m_indirectrecording = false;
 
+	// with multi draws the draws with the same state follow one another, and their model blocks are in a buffer the programs
+	// of the multi draws read them from. the order goes into the commands, so it comes first
+	m_indirectmultidraw = ( Global.gfx_gpucull_multidraw && ( m_drawblockstream != nullptr ) );
+	if( m_indirectmultidraw && ( false == m_indirectdraws.empty() ) ) {
+		Order_Indirect_Draws();
+		Upload_Indirect_Blocks();
+	}
+
 	m_instancecull.fill_commands( m_indirectcommands );
 	using command_set = opengl46_instance_cull::command_set;
 	auto const twophase { m_instancecull.two_phase() };
@@ -3901,19 +3960,18 @@ void opengl46_renderer::Render_Instances_Indirect()
 	// view. the depth goes a little farther than the surface, so the colour pass, which tests and writes its depth as usual,
 	// is sure to pass where it's the same
 	auto const depthfirst { m_scenedepthpass || ( Global.gfx_depthprepass && ( false == Global.bWireFrame ) ) };
-	std::uint32_t prepassdraws { 0 };
-	std::uint32_t colourdraws { 0 };
+	indirect_counts prepasscounts;
+	indirect_counts colourcounts;
 	auto colourset { command_set::first };
 	if( twophase ) {
 		if( draws ) {
 			// the instances seen in the previous frame, then the pyramid again, with them in it
 			m_instancecull.bind_draw();
 			if( depthfirst ) {
-				prepassdraws += Render_Instances_Indirect_Prepass( command_set::first, m_prepassfirsttimer );
+				prepasscounts += Render_Instances_Indirect_Prepass( command_set::first, m_prepassfirsttimer );
 			}
 			else {
-				Render_Instances_Indirect_Colour( command_set::first );
-				colourdraws += static_cast<std::uint32_t>( m_indirectdraws.size() );
+				colourcounts += Render_Instances_Indirect_Colour( command_set::first );
 			}
 			m_hiz.build( *viewport->msaa_fb, viewport->width, viewport->height, true );
 			occlusion.pyramid = m_hiz.texture();
@@ -3925,11 +3983,10 @@ void opengl46_renderer::Render_Instances_Indirect()
 	if( draws ) {
 		m_instancecull.bind_draw();
 		if( depthfirst ) {
-			prepassdraws += Render_Instances_Indirect_Prepass( ( twophase ? command_set::second : command_set::first ), m_prepasstimer );
+			prepasscounts += Render_Instances_Indirect_Prepass( ( twophase ? command_set::second : command_set::first ), m_prepasstimer );
 		}
 		if( false == m_scenedepthpass ) {
-			Render_Instances_Indirect_Colour( colourset );
-			colourdraws += static_cast<std::uint32_t>( m_indirectdraws.size() );
+			colourcounts += Render_Instances_Indirect_Colour( colourset );
 		}
 		::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
 		Bind_Instance_Stream();
@@ -3938,23 +3995,25 @@ void opengl46_renderer::Render_Instances_Indirect()
 		// the colour pass takes the draws from here, and counts them
 		m_indirectcolourpending = true;
 		m_indirectcolourset = colourset;
-		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepassdraws );
-		colourdraws = static_cast<std::uint32_t>( m_indirectdraws.size() );
+		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepasscounts.calls );
+		colourcounts.draws = static_cast<std::uint32_t>( m_indirectdraws.size() );
 	}
 	else {
-		m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( colourdraws );
-		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepassdraws );
+		m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( colourcounts.calls );
+		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepasscounts.calls );
 		// the count of the frame the gpu reported last
 		m_renderpass.draw_stats.instances += static_cast<int>( m_instancecull.last_count() );
 		m_renderpass.draw_stats.models += static_cast<int>( m_instancecull.last_count() );
 	}
 	m_instancecull.draw_result(
-		colourdraws,
-		prepassdraws,
+		colourcounts.draws,
+		prepasscounts.draws,
+		colourcounts.calls,
+		prepasscounts.calls,
 		std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count() );
 }
 
-std::uint32_t opengl46_renderer::Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer )
+opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer )
 {
 	if( m_scenedepthpass ) {
 		return Render_Instances_Indirect_Depth( Set );
@@ -3964,34 +4023,80 @@ std::uint32_t opengl46_renderer::Render_Instances_Indirect_Prepass( opengl46_ins
 	::glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
 	::glEnable( GL_POLYGON_OFFSET_FILL );
 	::glPolygonOffset( -1.f, -1.f );
-	auto const draws { Render_Instances_Indirect_Depth( Set ) };
+	auto const counts { Render_Instances_Indirect_Depth( Set ) };
 	::glDisable( GL_POLYGON_OFFSET_FILL );
 	::glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
 	Timer.end();
-	return draws;
+	return counts;
 }
 
-std::uint32_t opengl46_renderer::Render_Instances_Indirect_Depth( opengl46_instance_cull::command_set const Set )
+opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Depth( opengl46_instance_cull::command_set const Set )
 {
-	std::uint32_t draws { 0 };
+	indirect_counts counts;
+	auto const count { m_indirectdraws.size() };
+	// whether the prepass of the class draws the draw, and with which diffuse texture (class 2)
+	auto const prepass_texture = [ this ]( std::size_t const Index, int const Prepassclass, texture_handle &Texture ) -> bool {
+		auto const &draw { m_indirectdraws[ Index ] };
+		if( ( draw.blending ) || ( draw.ubs.opacity < 0.f ) ) { return false; }
+		if( ( draw.type != GL_TRIANGLES ) && ( draw.type != GL_TRIANGLE_STRIP ) && ( draw.type != GL_TRIANGLE_FAN ) ) { return false; }
+		if( Prepass_Class( draw.material ) != Prepassclass ) { return false; }
+		Texture = null_handle;
+		if( Prepassclass == 2 ) {
+			// the diffuse texture of the colour pass, the same choice as Bind_Material() makes
+			auto const &material { m_materials.material( draw.material ) };
+			auto const &textures {
+				material.texture_variants.empty() ?
+					material.textures :
+					material.GetTextures( TSubModel::VariantId( draw.submodel ) ) };
+			if( textures[ 0 ] == null_handle ) { return false; }
+			Texture = textures[ 0 ];
+		}
+		return true;
+	};
+	auto lastdrawn { count };
 	// the draws without the alpha test first, then the ones with it, one program each
 	for( auto prepassclass = 1; prepassclass <= 2; ++prepassclass ) {
 		auto &program { prepassclass == 1 ? *m_prepass_shader : *m_prepass_alpha_shader };
+		auto *multidrawprogram {
+			m_indirectmultidraw ?
+				( prepassclass == 1 ? m_prepass_multidraw_shader.get() : m_prepass_alpha_multidraw_shader.get() ) :
+				nullptr };
 		auto bound { false };
-		for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
-			auto const &draw { m_indirectdraws[ index ] };
-			if( ( draw.blending ) || ( draw.ubs.opacity < 0.f ) ) { continue; }
-			if( ( draw.type != GL_TRIANGLES ) && ( draw.type != GL_TRIANGLE_STRIP ) && ( draw.type != GL_TRIANGLE_FAN ) ) { continue; }
-			if( Prepass_Class( draw.material ) != prepassclass ) { continue; }
+		for( std::size_t index = 0; index < count; ) {
+			texture_handle texture;
+			if( false == prepass_texture( index, prepassclass, texture ) ) {
+				++index;
+				continue;
+			}
 			if( prepassclass == 2 ) {
-				// the diffuse texture of the colour pass, the same choice as Bind_Material() makes
-				auto const &material { m_materials.material( draw.material ) };
-				auto const &textures {
-					material.texture_variants.empty() ?
-						material.textures :
-						material.GetTextures( TSubModel::VariantId( draw.submodel ) ) };
-				if( textures[ 0 ] == null_handle ) { continue; }
-				m_textures.bind( 0, textures[ 0 ] );
+				m_textures.bind( 0, texture );
+			}
+			auto const &draw { m_indirectdraws[ index ] };
+			if( multidrawprogram != nullptr ) {
+				// the draws which follow in the same bank and of the same primitive, with the same texture for the alpha test.
+				// the material doesn't matter to the depth
+				auto last { index + 1 };
+				texture_handle othertexture;
+				while( ( last < count )
+					&& ( m_indirectdraws[ last ].geometry.bank == draw.geometry.bank )
+					&& ( m_indirectdraws[ last ].type == draw.type )
+					&& ( m_indirectcommands[ last ].indexed == m_indirectcommands[ index ].indexed )
+					&& ( prepass_texture( last, prepassclass, othertexture ) )
+					&& ( othertexture == texture ) ) {
+					++last;
+				}
+				if( false == bound ) {
+					multidrawprogram->bind();
+					bound = true;
+				}
+				auto const drawcount { static_cast<std::uint32_t>( last - index ) };
+				Bind_Indirect_Blocks( index, drawcount );
+				m_geometry.draw_indirect_multi( draw.geometry, m_instancecull.draw_command_offset( Set, index ), drawcount, sizeof( gl::instance_draw_command ) );
+				counts.draws += drawcount;
+				++counts.calls;
+				lastdrawn = last - 1;
+				index = last;
+				continue;
 			}
 			if( false == bound ) {
 				program.bind();
@@ -4000,24 +4105,239 @@ std::uint32_t opengl46_renderer::Render_Instances_Indirect_Depth( opengl46_insta
 			model_ubs = draw.ubs;
 			model_ubo->update( model_ubs );
 			m_geometry.draw_indirect( draw.geometry, m_instancecull.draw_command_offset( Set, index ) );
-			++draws;
+			++counts.draws;
+			++counts.calls;
+			++index;
 		}
 	}
-	return draws;
+	if( lastdrawn < count ) {
+		// the model block the draws made one by one leave behind
+		model_ubs = m_indirectdraws[ lastdrawn ].ubs;
+		model_ubo->update( model_ubs );
+	}
+	return counts;
 }
 
-void opengl46_renderer::Render_Instances_Indirect_Colour( opengl46_instance_cull::command_set const Set )
+opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Colour( opengl46_instance_cull::command_set const Set )
 {
-	for( std::size_t index = 0; index < m_indirectdraws.size(); ++index ) {
+	indirect_counts counts;
+	auto const count { m_indirectdraws.size() };
+	for( std::size_t index = 0; index < count; ) {
 		auto const &draw { m_indirectdraws[ index ] };
+		auto *multidrawprogram { m_indirectmultidraw ? Multidraw_Program( Indirect_Program( draw.material ) ) : nullptr };
 		if( draw.blending ) { setup_drawing( true ); }
-		Bind_Material( draw.material, draw.submodel );
-		model_ubs = draw.ubs;
-		model_ubo->update( model_ubs );
-		m_geometry.draw_indirect( draw.geometry, m_instancecull.draw_command_offset( Set, index ) );
+		if( multidrawprogram != nullptr ) {
+			// the draws which follow with the same state, in one call
+			auto last { index + 1 };
+			while( ( last < count ) && Indirect_Mergeable( index, last ) ) {
+				++last;
+			}
+			m_bindmultidraw = true;
+			Bind_Material( draw.material, draw.submodel );
+			m_bindmultidraw = false;
+			auto const drawcount { static_cast<std::uint32_t>( last - index ) };
+			Bind_Indirect_Blocks( index, drawcount );
+			m_geometry.draw_indirect_multi( draw.geometry, m_instancecull.draw_command_offset( Set, index ), drawcount, sizeof( gl::instance_draw_command ) );
+			counts.draws += drawcount;
+			index = last;
+		}
+		else {
+			Bind_Material( draw.material, draw.submodel );
+			model_ubs = draw.ubs;
+			model_ubo->update( model_ubs );
+			m_geometry.draw_indirect( draw.geometry, m_instancecull.draw_command_offset( Set, index ) );
+			++counts.draws;
+			++index;
+		}
+		++counts.calls;
 		if( draw.blending ) { setup_drawing( false ); }
 	}
+	if( m_indirectmultidraw && ( count > 0 ) ) {
+		// the model block the draws made one by one leave behind
+		model_ubs = m_indirectdraws.back().ubs;
+		model_ubo->update( model_ubs );
+	}
 	model_ubs.emission = 0.0f;
+	return counts;
+}
+
+// the order of the recorded draws for multi draws. draws go in one multi draw when they follow one another with the same
+// state (material and its texture variant, geometry bank, primitive, blending; Indirect_Mergeable()). the draws of one entry,
+// the walk of one submodel tree in one lod band, keep their order: submodels of a model may lie on one another and rely on
+// the later one being drawn over the earlier one. the draws of different entries are drawn for different instances, which
+// the gpu draws in no particular order anyway, so they're free to move. the entries are queues of draws; the draws at the
+// heads of the queues which have the state taken next all go, each queue as far as its draws keep that state, then the
+// queues wait for the state of their next draw. the states go in the order in which the queues first reach them
+void opengl46_renderer::Order_Indirect_Draws()
+{
+	auto const count { m_indirectdraws.size() };
+	if( count < 2 ) { return; }
+
+	// a number for each state the draws have, by sorting the states (the buffers are kept between frames)
+	m_indirectstatekeys.clear();
+	for( std::size_t index = 0; index < count; ++index ) {
+		auto const &draw { m_indirectdraws[ index ] };
+		auto variant { 0u };
+		if( draw.material != null_handle ) {
+			auto const &material { m_materials.material( draw.material ) };
+			if( false == material.texture_variants.empty() ) {
+				variant = TSubModel::VariantId( draw.submodel ) % static_cast<std::uint32_t>( material.texture_variants.size() );
+			}
+		}
+		m_indirectstatekeys.push_back( { draw.material, variant, draw.geometry.bank, draw.type, m_indirectcommands[ index ].indexed, draw.blending, static_cast<std::uint32_t>( index ) } );
+	}
+	std::sort(
+		std::begin( m_indirectstatekeys ), std::end( m_indirectstatekeys ),
+		[]( indirect_state_key const &Left, indirect_state_key const &Right ) {
+			return Left.tie() < Right.tie(); } );
+	m_indirectdrawstates.resize( count );
+	std::uint32_t statecount { 0 };
+	for( std::size_t index = 0; index < count; ++index ) {
+		if( ( index > 0 ) && ( m_indirectstatekeys[ index ].tie() != m_indirectstatekeys[ index - 1 ].tie() ) ) {
+			++statecount;
+		}
+		m_indirectdrawstates[ m_indirectstatekeys[ index ].draw ] = statecount;
+	}
+	++statecount;
+	if( statecount == count ) {
+		// no two draws share a state, nothing would go together
+		return;
+	}
+
+	auto constexpr none { std::numeric_limits<std::uint32_t>::max() };
+	m_indirectstates.assign( statecount, indirect_state { none, none } );
+	m_indirectstateorder.clear();
+	m_indirectqueues.clear();
+	// the queue waits for the state of its next draw, behind the queues waiting for it already
+	auto const enqueue = [ this, none ]( std::uint32_t const Queue ) {
+		auto &queue { m_indirectqueues[ Queue ] };
+		auto &state { m_indirectstates[ m_indirectdrawstates[ queue.next ] ] };
+		queue.link = none;
+		if( state.head == none ) {
+			state.head = Queue;
+			m_indirectstateorder.push_back( m_indirectdrawstates[ queue.next ] );
+		}
+		else {
+			m_indirectqueues[ state.tail ].link = Queue;
+		}
+		state.tail = Queue;
+	};
+	for( std::size_t index = 0; index < count; ) {
+		auto end { index + 1 };
+		while( ( end < count ) && ( m_indirectcommands[ end ].entry == m_indirectcommands[ index ].entry ) ) { ++end; }
+		m_indirectqueues.push_back( { static_cast<std::uint32_t>( index ), static_cast<std::uint32_t>( end ), none } );
+		index = end;
+	}
+	for( std::uint32_t queue = 0; queue < m_indirectqueues.size(); ++queue ) {
+		enqueue( queue );
+	}
+	m_indirectorder.clear();
+	for( std::size_t taken = 0; taken < m_indirectstateorder.size(); ++taken ) {
+		auto const stateindex { m_indirectstateorder[ taken ] };
+		auto queueindex { m_indirectstates[ stateindex ].head };
+		m_indirectstates[ stateindex ] = { none, none };
+		while( queueindex != none ) {
+			auto &queue { m_indirectqueues[ queueindex ] };
+			auto const nextqueue { queue.link };
+			while( ( queue.next < queue.end ) && ( m_indirectdrawstates[ queue.next ] == stateindex ) ) {
+				m_indirectorder.push_back( queue.next );
+				++queue.next;
+			}
+			if( queue.next < queue.end ) {
+				enqueue( queueindex );
+			}
+			queueindex = nextqueue;
+		}
+	}
+
+	m_indirectdrawsordered.clear();
+	m_indirectcommandsordered.clear();
+	for( auto const index : m_indirectorder ) {
+		m_indirectdrawsordered.push_back( m_indirectdraws[ index ] );
+		m_indirectcommandsordered.push_back( m_indirectcommands[ index ] );
+	}
+	m_indirectdraws.swap( m_indirectdrawsordered );
+	m_indirectcommands.swap( m_indirectcommandsordered );
+}
+
+void opengl46_renderer::Upload_Indirect_Blocks()
+{
+	m_indirectblocks.clear();
+	for( auto const &draw : m_indirectdraws ) {
+		m_indirectblocks.push_back( draw.ubs );
+	}
+	m_indirectblockoffset = m_drawblockstream->push( m_indirectblocks.data(), static_cast<GLsizeiptr>( m_indirectblocks.size() * sizeof( gl::model_ubs ) ) );
+	m_indirectblockbuffer = m_drawblockstream->buffer();
+	m_indirectblockgeneration = m_drawblockstream->generation();
+}
+
+void opengl46_renderer::Bind_Indirect_Blocks( std::size_t const First, std::size_t const Count )
+{
+	if( m_drawblockstream->generation() != m_indirectblockgeneration ) {
+		// the buffer the blocks went to was replaced since (it shouldn't, the draws are recorded once a frame)
+		Upload_Indirect_Blocks();
+	}
+	GLuint const buffer { m_indirectblockbuffer };
+	GLintptr const offset { m_indirectblockoffset + static_cast<GLintptr>( First * sizeof( gl::model_ubs ) ) };
+	GLsizeiptr const size { static_cast<GLsizeiptr>( Count * sizeof( gl::model_ubs ) ) };
+	// the plural form leaves the general GL_SHADER_STORAGE_BUFFER binding alone, as gl::ssbo does
+	::glBindBuffersRange( GL_SHADER_STORAGE_BUFFER, gl::MODEL_DRAW_SSBO_BINDING, 1, &buffer, &offset, &size );
+}
+
+bool opengl46_renderer::Indirect_Mergeable( std::size_t const First, std::size_t const Other ) const
+{
+	auto const &first { m_indirectdraws[ First ] };
+	auto const &other { m_indirectdraws[ Other ] };
+	if( ( first.material != other.material )
+	 || ( first.blending != other.blending )
+	 || ( first.type != other.type )
+	 || ( first.geometry.bank != other.geometry.bank )
+	 || ( m_indirectcommands[ First ].indexed != m_indirectcommands[ Other ].indexed ) ) {
+		return false;
+	}
+	if( first.material == null_handle ) { return true; }
+	// the texture set Bind_Material() binds
+	auto const &material { m_materials.material( first.material ) };
+	if( material.texture_variants.empty() ) { return true; }
+	return ( &material.GetTextures( TSubModel::VariantId( first.submodel ) ) == &material.GetTextures( TSubModel::VariantId( other.submodel ) ) );
+}
+
+gl::program const *opengl46_renderer::Indirect_Program( material_handle Material ) const
+{
+	// the same choice as Bind_Material() makes: what can't be drawn is drawn with the material of failures, if that one can
+	if( Material == null_handle ) { Material = m_invalid_material; }
+	if( Material == null_handle ) { return nullptr; }
+	auto const *material { &m_materials.material( Material ) };
+	if( false == material->is_good ) {
+		if( Material == m_invalid_material ) { return nullptr; }
+		material = &m_materials.material( m_invalid_material );
+		if( false == material->is_good ) { return nullptr; }
+	}
+	return material->shader.get();
+}
+
+gl::program *opengl46_renderer::Multidraw_Program( gl::program const *Program )
+{
+	if( ( Program == nullptr ) || ( m_vertex_multidraw_shader == nullptr ) || ( m_drawblockstream == nullptr ) ) { return nullptr; }
+	auto const lookup { m_multidrawprograms.find( Program ) };
+	if( lookup != m_multidrawprograms.end() ) { return lookup->second.get(); }
+
+	// the fragment shader of the program by its name, mat_<name>.frag (Fetch_Shader())
+	std::unique_ptr<gl::program> variant;
+	for( auto const &shader : m_shaders ) {
+		if( shader.second.get() != Program ) { continue; }
+		try {
+			gl::shader fragment( "mat_" + shader.first + ".frag", "#define MODEL_DRAWS 1\n" );
+			variant = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ fragment, *m_vertex_multidraw_shader } );
+		}
+		catch( gl::shader_exception const &e ) {
+			ErrorLog( "material " + shader.first + " drawn without multi draws: " + std::string( e.what() ) );
+		}
+		break;
+	}
+	auto *result { variant.get() };
+	m_multidrawprograms.emplace( Program, std::move( variant ) );
+	return result;
 }
 
 // depth of the whole opaque scene of the colour pass, before its colour. the same walk as the colour pass makes (the cab drawn

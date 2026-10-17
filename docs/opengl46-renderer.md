@@ -273,6 +273,7 @@ views go as before.
 | `gfx.gpucull.occlusion yes/no` | `yes` | with `gfx.gpucull yes`: models hidden whole behind what was drawn before them (the cab, the terrain, buildings and other models drawn on their own, vehicles) are left out |
 | `gfx.gpucull.occlusion.instances yes/no` | `yes` | with `gfx.gpucull.occlusion yes`: the models drawn this way hide one another too (see below) |
 | `gfx.depthprepass yes/no` | `yes` | with `gfx.gpucull yes`: the depth of the models is drawn first, so the colour is worked out only for what stays in view (dense foliage) |
+| `gfx.gpucull.multidraw yes/no` | `yes` | with `gfx.gpucull yes`: parts of models with the same material (and texture variant) in the same model are drawn with one call (multi draw), see below |
 | `gfx.depthprepass.scene yes/no` | `no` | the depth of the whole opaque scene of the main view (terrain, tracks, buildings, models, vehicles, the cab) is drawn before its colour, see below |
 
 With `gfx.gpucull.occlusion.instances yes` the test goes in two phases: the models seen in the previous frame are drawn
@@ -285,6 +286,16 @@ not the scene). With `no` the models do not cover each other: a tree hidden behi
 is not worked out with the depth prepass on). Models whose material is not one of the usual ones (parallax, water and the
 like) are left out of the depth prepass and drawn as before; with the depth prepass on, they don't hide the others either.
 All of these can be changed while the simulator runs, in the **Instance culling** debug window.
+
+With `gfx.gpucull.multidraw yes` the draws of the models drawn from the GPU are put in an order in which the parts with the
+same material, texture variant and model (the model keeps its geometry in a buffer of its own) follow one another, and each
+such run goes in one call (`glMultiDrawElementsIndirect`); the data of every part (its position in the model, colours,
+parameters) is read by the shaders from a buffer, by the number of the part in the call. The parts of one model at one level
+of detail keep their order (parts of a model lying on one another are drawn as before), only the parts of different copies
+and levels of detail are brought together: a trunk seen in two levels of detail, the six sides of a block in the same
+material. The depth prepass joins the parts of a model with the same alpha-tested texture, whatever their material. The
+picture is the same either way; `no` draws them one by one, as before. Materials whose shader can't be built in this form
+(a message in the log) are drawn one by one.
 
 With `gfx.depthprepass.scene yes` the scene is gone through twice: first only its depth is drawn, then its colour, worked
 out once per pixel for the surface which stays in view. That costs the processor a second walk through the scene (fewer
@@ -363,8 +374,8 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   main view), `clouds panorama:` (a band of the panorama), `cloud shadows:` and `fog volume:`.
 - **Instance culling** window: the mode of `gfx.gpucull` and the switches above. With `gfx.gpucull yes` Shift+F12 shows
   `gpu cull:` (models drawn, in two phases how many of them first, and hidden by the occlusion test, as counted on the
-  graphics card a few frames before, the levels of detail, the draw calls with those of the depth prepass, and the processor
-  time of the whole step) and the timings `instance cull:`, `occlusion depth:` (the depth pyramid of the test) and
+  graphics card a few frames before, the levels of detail, the draws with those of the depth prepass and the calls which
+  made them — fewer than the draws with `gfx.gpucull.multidraw yes` — and the processor time of the whole step) and the timings `instance cull:`, `occlusion depth:` (the depth pyramid of the test) and
   `depth prepass:`; in two phases each of them adds in brackets the time of the second phase, of the second pyramid and of
   the depth of the models drawn first. With `compare` it shows how many models both counted and how many levels of detail
   differ.
@@ -378,6 +389,8 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   `model blocks:` row: how many blocks of model data the frame wrote, with `gfx.bufferstreaming yes` also how much of the
   buffer of the frame they took, how many times a frame had to wait for the graphics card to finish with a buffer before
   writing to it (`waits`, should stay at 0) and how many times a buffer had to grow (`grown`, a few times after the start).
+  With `gfx.gpucull yes` and `gfx.gpucull.multidraw yes` the `multi draw blocks:` row shows the same for the data of the
+  parts of models drawn with multi draws (one block per draw, written once a frame).
 - `gfx.gldebug yes` turns on the OpenGL debug output (`KHR_debug`); messages go to the log.
 
 ## Building

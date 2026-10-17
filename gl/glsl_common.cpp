@@ -22,6 +22,7 @@ void gl::glsl_common_setup()
     "#define INSTANCE_COUNTER_SSBO_BINDING " + std::to_string(INSTANCE_COUNTER_SSBO_BINDING) + "\n" +
     "#define INSTANCE_OUTPUT_SSBO_BINDING " + std::to_string(INSTANCE_OUTPUT_SSBO_BINDING) + "\n" +
     "#define INSTANCE_COMMAND_SSBO_BINDING " + std::to_string(INSTANCE_COMMAND_SSBO_BINDING) + "\n" +
+    "#define MODEL_DRAW_SSBO_BINDING " + std::to_string(MODEL_DRAW_SSBO_BINDING) + "\n" +
     "#define INSTANCE_CULL_GROUP_SIZE " + std::to_string(INSTANCE_CULL_GROUP_SIZE) + "\n" +
     "#define INSTANCE_OFFSETS_GROUP_SIZE " + std::to_string(INSTANCE_OFFSETS_GROUP_SIZE) + "\n" +
     "#define INSTANCE_COMMAND_GROUP_SIZE " + std::to_string(INSTANCE_COMMAND_GROUP_SIZE) + "\n" +
@@ -187,6 +188,49 @@ void gl::glsl_common_setup()
     };
     #endif
 
+    #ifdef MODEL_DRAWS
+    // programs of the multi draws of the instances drawn from the gpu culling: the model block of every draw comes from a
+    // storage buffer, picked by the number of the draw in the multi draw. the fragment stage gets the number from the vertex
+    // stage (which writes f_model_draw), and the names of the uniform block below stand for the fields of the draw
+    struct model_draw_s
+    {
+            mat4 modelview;
+            mat3 modelviewnormal;
+            vec4 param[MAX_PARAMS];
+
+            mat4 future;
+            float opacity;
+            float emission;
+            float fog_density;
+            float alpha_mult;
+            float shadow_tone;
+    };
+
+    layout(std430, binding = MODEL_DRAW_SSBO_BINDING) readonly buffer model_draw_ssbo
+    {
+            model_draw_s model_draws[];
+    };
+
+    #if defined(STAGE_VERTEX)
+    flat out uint f_model_draw;
+    #define MODEL_DRAW gl_DrawID
+    #elif defined(STAGE_FRAGMENT)
+    flat in uint f_model_draw;
+    #define MODEL_DRAW f_model_draw
+    #else
+    #define MODEL_DRAW 0
+    #endif
+
+    #define modelview model_draws[MODEL_DRAW].modelview
+    #define modelviewnormal model_draws[MODEL_DRAW].modelviewnormal
+    #define param model_draws[MODEL_DRAW].param
+    #define future model_draws[MODEL_DRAW].future
+    #define opacity model_draws[MODEL_DRAW].opacity
+    #define emission model_draws[MODEL_DRAW].emission
+    #define fog_density model_draws[MODEL_DRAW].fog_density
+    #define alpha_mult model_draws[MODEL_DRAW].alpha_mult
+    #define shadow_tone model_draws[MODEL_DRAW].shadow_tone
+    #else
     layout (std140) uniform model_ubo
     {
             mat4 modelview;
@@ -200,6 +244,7 @@ void gl::glsl_common_setup()
             float alpha_mult;
             float shadow_tone;
     };
+    #endif
 
     layout (std140) uniform scene_ubo
     {

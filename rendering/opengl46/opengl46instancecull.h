@@ -140,12 +140,17 @@ class opengl46_instance_cull
 	}
 	// binds the commands to GL_DRAW_INDIRECT_BUFFER and the output in place of the instance buffer of the frame
 	void bind_draw();
-	// counts of the last result which came back from the gpu, with the draws of the pass, for the debug panel
-	void draw_result(std::uint32_t const Draws, std::uint32_t const Prepassdraws, double const Cputime);
+	// counts of the last result which came back from the gpu, with the draws of the pass and the gl calls which made them (fewer
+	// with multi draws), for the debug panel
+	void draw_result(std::uint32_t const Draws, std::uint32_t const Prepassdraws, std::uint32_t const Calls, std::uint32_t const Prepasscalls, double const Cputime);
 	// what draw_result() was given last
 	std::uint32_t prepass_draws() const
 	{
 		return m_prepassdraws;
+	}
+	std::uint32_t prepass_calls() const
+	{
+		return m_prepasscalls;
 	}
 	double cpu_time() const
 	{
@@ -243,6 +248,8 @@ class opengl46_instance_cull
 	// draws of the last pass drawn from the gpu
 	std::uint32_t m_draws{0};
 	std::uint32_t m_prepassdraws{0};
+	std::uint32_t m_calls{0};
+	std::uint32_t m_prepasscalls{0};
 	std::uint32_t m_commandcount{0};
 	double m_cputime{0.0};
 	bool m_occlusion{false}; // the last dispatch tested occlusion

@@ -21,7 +21,8 @@ namespace gl
 #ifdef SHADERVALIDATOR_STANDALONE
         shader() = default;
 #endif
-        explicit shader(const std::string &filename);
+        // Defines: lines put before the source (after the version), e.g. "#define MODEL_DRAWS 1\n" for a variant of the shader
+        explicit shader(const std::string &filename, const std::string &defines = {});
         ~shader();
 
         enum class components_e
@@ -67,7 +68,7 @@ namespace gl
 #ifndef SHADERVALIDATOR_STANDALONE
     private:
 #endif
-        std::pair<GLuint, std::string> process_source(const std::string &filename, const std::string &basedir);
+        std::pair<GLuint, std::string> process_source(const std::string &filename, const std::string &basedir, const std::string &defines = {});
 
         void expand_includes(std::string &str, const std::string &basedir);
         void parse_texture_entries(std::string &str);

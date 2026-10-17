@@ -291,6 +291,9 @@ struct global_settings {
     bool gfx_gpucull_occlusion = true; // with gfx_gpucull 1: instances hidden behind the depth drawn before them are left out
     bool gfx_gpucull_occlusion_instances = true; // with gfx_gpucull_occlusion: in two phases, so that instances hide one another too
     bool gfx_depthprepass = true; // with gfx_gpucull 1: the depth of the instances is drawn before their colour
+    // with gfx_gpucull 1: the draws of the instances which follow one another with the same material and geometry bank are
+    // made with one multi draw, their model blocks read from a storage buffer by the number of the draw
+    bool gfx_gpucull_multidraw = true;
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
     // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,

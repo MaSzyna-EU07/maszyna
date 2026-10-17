@@ -360,10 +360,12 @@ void opengl46_instance_cull::bind_draw()
 	glBindBuffersBase(GL_SHADER_STORAGE_BUFFER, gl::INSTANCE_SSBO_BINDING, 1, &output);
 }
 
-void opengl46_instance_cull::draw_result(std::uint32_t const Draws, std::uint32_t const Prepassdraws, double const Cputime)
+void opengl46_instance_cull::draw_result(std::uint32_t const Draws, std::uint32_t const Prepassdraws, std::uint32_t const Calls, std::uint32_t const Prepasscalls, double const Cputime)
 {
 	m_draws = Draws;
 	m_prepassdraws = Prepassdraws;
+	m_calls = Calls;
+	m_prepasscalls = Prepasscalls;
 	m_cputime = Cputime;
 }
 
@@ -452,8 +454,8 @@ std::string opengl46_instance_cull::info()
 		return "\ngpu cull: " + std::to_string(m_last.gputotal) + " instances drawn" +
 		       (m_twophase ? " (" + std::to_string(m_last.first) + " of them first, seen in the last frame)" : std::string{}) + ", " + std::to_string(m_last.occluded) +
 		       " hidden by occlusion" + (m_occlusion ? (m_twophase ? " (also by one another)" : "") : " (test off)") + ", " + std::to_string(m_last.entries) + " bands; " +
-		       std::to_string(m_draws) + " indirect draws (+" +
-		       std::to_string(m_prepassdraws) + " depth prepass), cpu " + to_string(m_cputime, 3) + " ms";
+		       std::to_string(m_draws) + " indirect draws in " + std::to_string(m_calls) + " calls (+" + std::to_string(m_prepassdraws) + " depth prepass in " +
+		       std::to_string(m_prepasscalls) + "), cpu " + to_string(m_cputime, 3) + " ms";
 	}
 	if (m_comparedframes == 0)
 		return "\ngpu cull: no result yet";

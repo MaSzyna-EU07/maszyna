@@ -74,7 +74,7 @@ std::unordered_map<std::string, gl::shader::defaultparam_e> gl::shader::defaultp
     { "glossiness", defaultparam_e::glossiness }
 };
 
-std::pair<GLuint, std::string> gl::shader::process_source(const std::string &filename, const std::string &basedir)
+std::pair<GLuint, std::string> gl::shader::process_source(const std::string &filename, const std::string &basedir, const std::string &defines)
 {
     std::string str;
 
@@ -101,6 +101,7 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
     str += "vec4 FBOUT(vec4 x) { return " + (Global.gfx_shadergamma ? std::string("vec4(pow(x.rgb, vec3(1.0 / 2.2)), x.a)") : std::string("x")) + "; }\n";
     // whether the colour written to the window is encoded by the shader (FBOUT) or left to the sRGB framebuffer (dither.glsl)
     str += std::string("#define OUTPUT_GAMMA ") + (Global.gfx_shadergamma ? "1" : "0") + "\n";
+    str += defines;
 
     str += read_file(basedir + filename);
 
@@ -231,10 +232,10 @@ void gl::shader::log_error(const std::string &str) const
     ErrorLog("bad shader: " + name + ": " + str, logtype::shader);
 }
 
-gl::shader::shader(const std::string &filename) : name(filename)
+gl::shader::shader(const std::string &filename, const std::string &defines) : name(filename)
 {
 
-    auto [shadertype, shadersource] = process_source(filename, "shaders/");
+    auto [shadertype, shadersource] = process_source(filename, "shaders/", defines);
 
     const GLchar *cstr = shadersource.c_str();
 

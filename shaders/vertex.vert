@@ -48,4 +48,8 @@ void main()
 //	TangentViewPos = TBN * vec3(0.0, 0.0, 0.0);
 	TangentFragPos = TBN * f_pos.xyz;
 	UserData = v_userdata;
+#ifdef MODEL_DRAWS
+	// which model block of the multi draw the fragments read (glsl_common)
+	f_model_draw = uint(gl_DrawID);
+#endif
 }

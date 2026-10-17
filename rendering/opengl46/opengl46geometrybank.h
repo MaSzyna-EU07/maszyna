@@ -65,6 +65,9 @@ private:
     // draw_indirect() subclass details — issues glDrawElementsIndirect or glDrawArraysIndirect
     void
         draw_indirect_( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams ) override;
+    // draw_indirect_multi() subclass details — issues glMultiDrawElementsIndirect or glMultiDrawArraysIndirect
+    auto
+        draw_indirect_multi_( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) -> bool override;
     // release() subclass details
     void
         release_() override;

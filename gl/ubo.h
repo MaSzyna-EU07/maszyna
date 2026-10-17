@@ -472,6 +472,10 @@ namespace gl
     const GLuint INSTANCE_COUNTER_SSBO_BINDING = 13; // header, then count[entries], cursor[entries] and first[entries]
     const GLuint INSTANCE_OUTPUT_SSBO_BINDING = 14; // modelview matrices of the instances which passed, by entry
     const GLuint INSTANCE_COMMAND_SSBO_BINDING = 15; // indirect draw commands of the entries (instance_cull_commands.comp)
+    // the model blocks of the draws of a multi draw of the instances drawn from the gpu culling, one gl::model_ubs per draw
+    // (std430, the same layout), read by gl_DrawID in programs built with MODEL_DRAWS. the point is the one of the jobs of the
+    // instance culling, which binds its buffers before every use; the draws bind theirs before every multi draw
+    const GLuint MODEL_DRAW_SSBO_BINDING = 10;
     const GLuint INSTANCE_CULL_GROUP_SIZE = 64;
     const GLuint INSTANCE_OFFSETS_GROUP_SIZE = 1024;
     const GLuint INSTANCE_COMMAND_GROUP_SIZE = 64;

@@ -11,13 +11,13 @@
 
 _global Global;
 
-bool check_shader(std::string filename)
+bool check_shader(std::string filename, std::string const &defines = {})
 {
 	gl::shader shader_processor;
 	shader_processor.name = filename;
 
 	gl::glsl_common_setup();
-	std::pair<GLuint, std::string> source = shader_processor.process_source(filename, "../shaders/");
+	std::pair<GLuint, std::string> source = shader_processor.process_source(filename, "../shaders/", defines);
 
 	std::string stage;
 	if (source.first == GL_VERTEX_SHADER)
@@ -69,6 +69,21 @@ bool check_shader_allopts(std::string filename)
 	Global.gfx_shadergamma = false;
 	if (!check_shader(filename))
 		suc = false;
+
+	// the variant of the vertex and fragment stages the multi draws of the instances use (model blocks by gl_DrawID)
+	auto const ext{std::filesystem::path(filename).extension()};
+	if (ext == ".vert" || ext == ".frag")
+	{
+		std::cout << "done, model draws..." << std::flush;
+		Global.gfx_shadowmap_enabled = true;
+		Global.gfx_envmap_enabled = true;
+		Global.gfx_postfx_motionblur_enabled = true;
+		Global.gfx_skippipeline = false;
+		Global.gfx_extraeffects = true;
+		Global.gfx_shadergamma = true;
+		if (!check_shader(filename, "#define MODEL_DRAWS 1\n"))
+			suc = false;
+	}
 
 	std::cout << "done" << std::flush;
 

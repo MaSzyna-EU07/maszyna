@@ -353,6 +353,13 @@ geometry_bank::draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_
     draw_indirect_( Geometry, Offset, Streams );
 }
 
+// draws chunks of the bank with Count commands from Offset in the bound draw indirect buffer, in one call
+bool
+geometry_bank::draw_indirect_multi( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) {
+    // template method implementation
+    return draw_indirect_multi_( Geometry, Offset, Count, Stride );
+}
+
 // frees subclass-specific resources associated with the bank, typically called when the bank wasn't in use for a period of time
 void
 geometry_bank::release() {
@@ -513,6 +520,18 @@ geometrybank_manager::draw_indirect( gfx::geometry_handle const &Geometry, std::
 
     bankrecord.second = m_garbagecollector.timestamp();
     bankrecord.first->draw_indirect( Geometry, Offset, Streams );
+}
+
+// draws chunks of the bank of the specified one with Count commands from Offset in the bound draw indirect buffer, in one call
+bool
+geometrybank_manager::draw_indirect_multi( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) {
+
+    if( Geometry == null_handle ) { return false; }
+
+    auto &bankrecord = bank( Geometry );
+
+    bankrecord.second = m_garbagecollector.timestamp();
+    return bankrecord.first->draw_indirect_multi( Geometry, Offset, Count, Stride );
 }
 
 // provides direct access to index data of specfied chunk

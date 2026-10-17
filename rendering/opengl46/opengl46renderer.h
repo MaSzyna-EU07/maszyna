@@ -355,13 +355,37 @@ class opengl46_renderer : public gfx_renderer {
 	// (Global.gfx_gpucull_occlusion_instances) the instances seen in the previous frame are drawn first (their depth, or
 	// their colour without the prepass), the pyramid is made again and the other instances are culled against it
 	void Render_Instances_Indirect();
+	// draws of the instances made, and the gl calls which made them
+	struct indirect_counts {
+		std::uint32_t draws { 0 };
+		std::uint32_t calls { 0 };
+		indirect_counts &operator+=( indirect_counts const &Other ) {
+			draws += Other.draws;
+			calls += Other.calls;
+			return *this; }
+	};
 	// the recorded draws of the instances, with the commands of the given set: their depth with the programs of the depth
-	// prepass, with the state of the prepass already set (returns the number of draws), the same with the state set for it
-	// and the time measured outside the depth pass of the whole scene, and their colour. the command buffer and the
-	// instances are bound by the caller
-	std::uint32_t Render_Instances_Indirect_Depth( opengl46_instance_cull::command_set const Set );
-	std::uint32_t Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer );
-	void Render_Instances_Indirect_Colour( opengl46_instance_cull::command_set const Set );
+	// prepass, with the state of the prepass already set, the same with the state set for it and the time measured outside
+	// the depth pass of the whole scene, and their colour. the command buffer and the instances are bound by the caller.
+	// with multi draws (m_indirectmultidraw) the draws which follow one another with the same state go in one call
+	indirect_counts Render_Instances_Indirect_Depth( opengl46_instance_cull::command_set const Set );
+	indirect_counts Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer );
+	indirect_counts Render_Instances_Indirect_Colour( opengl46_instance_cull::command_set const Set );
+	// multi draws of the recorded draws (Global.gfx_gpucull_multidraw): puts the draws in an order in which the ones with the
+	// same state follow one another, the draws of one entry kept in the order of the walk, then places their model blocks in
+	// the buffer of the frame (m_drawblockstream), in the same order
+	void Order_Indirect_Draws();
+	void Upload_Indirect_Blocks();
+	// binds the model blocks of Count recorded draws from First for the programs of the multi draws (MODEL_DRAW_SSBO_BINDING)
+	void Bind_Indirect_Blocks( std::size_t const First, std::size_t const Count );
+	// whether two recorded draws can go in one multi draw of the colour pass: the same material and texture variant, geometry
+	// bank, primitive and blending
+	bool Indirect_Mergeable( std::size_t const First, std::size_t const Other ) const;
+	// the program Bind_Material() binds for the material, nullptr when it binds none
+	gl::program const *Indirect_Program( material_handle Material ) const;
+	// the variant of a material program for multi draws (built with MODEL_DRAWS), made the first time it's asked for.
+	// nullptr if there's none (a program not fetched by Fetch_Shader(), or one which didn't compile)
+	gl::program *Multidraw_Program( gl::program const *Program );
 	// how the depth prepass treats the material: 0 left out, 1 drawn without alpha test, 2 with the alpha test of the diffuse texture
 	int Prepass_Class( material_handle const Material );
 	// depth of the whole opaque scene of the colour pass, before its colour (Global.gfx_depthprepass_scene): the colour pass
@@ -548,6 +572,51 @@ class opengl46_renderer : public gfx_renderer {
 	};
 	std::vector<indirect_draw> m_indirectdraws;
 	std::vector<gl::instance_draw_command> m_indirectcommands; // in the order of m_indirectdraws
+	// multi draws of the recorded draws: whether they were recorded for them (ordered, their model blocks uploaded), and where
+	// the blocks are
+	bool m_indirectmultidraw { false };
+	GLuint m_indirectblockbuffer { 0 };
+	GLintptr m_indirectblockoffset { 0 };
+	std::uint64_t m_indirectblockgeneration { 0 };
+	// working space of Order_Indirect_Draws() and Upload_Indirect_Blocks(), kept between frames
+	struct indirect_queue {
+		std::uint32_t next; // draw
+		std::uint32_t end;
+		std::uint32_t link; // next queue waiting for the same state
+	};
+	struct indirect_state {
+		std::uint32_t head;
+		std::uint32_t tail;
+	};
+	// what a multi draw has in common, and the draw which has it
+	struct indirect_state_key {
+		material_handle material;
+		std::uint32_t variant; // of the textures of the material
+		std::uint32_t bank;
+		unsigned int type;
+		std::uint32_t indexed;
+		bool blending;
+		std::uint32_t draw;
+		auto tie() const {
+			return std::tie( material, variant, bank, type, indexed, blending ); }
+	};
+	std::vector<indirect_state_key> m_indirectstatekeys;
+	std::vector<std::uint32_t> m_indirectdrawstates;
+	std::vector<indirect_queue> m_indirectqueues;
+	std::vector<indirect_state> m_indirectstates;
+	std::vector<std::uint32_t> m_indirectstateorder;
+	std::vector<std::uint32_t> m_indirectorder;
+	std::vector<indirect_draw> m_indirectdrawsordered;
+	std::vector<gl::instance_draw_command> m_indirectcommandsordered;
+	std::vector<gl::model_ubs> m_indirectblocks;
+	// the model blocks of the multi draws, one buffer for each of the last frames like model_ubo (nullptr: no multi draws)
+	std::unique_ptr<gl::frame_stream> m_drawblockstream;
+	// programs of the multi draws: the vertex shader of the materials, variants of the material programs, of the depth prepass
+	std::unique_ptr<gl::shader> m_vertex_multidraw_shader;
+	std::unordered_map<gl::program const *, std::unique_ptr<gl::program>> m_multidrawprograms;
+	std::unique_ptr<gl::program> m_prepass_multidraw_shader;
+	std::unique_ptr<gl::program> m_prepass_alpha_multidraw_shader;
+	bool m_bindmultidraw { false }; // Bind_Material() binds the variant of the material program for multi draws
 	bool m_indirectrecording { false }; // draw() and Bind_Material() record instead of drawing
 	std::uint32_t m_indirectentry { 0 }; // entry (group and lod band) recorded
 	material_handle m_indirectmaterial { null_handle }; // what the last Bind_Material() bound while recording

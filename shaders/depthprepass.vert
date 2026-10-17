@@ -17,4 +17,7 @@ void main()
 	vec4 position = mv * vec4(v_vert, 1.0);
 	gl_Position = projection * position;
 	f_coord = v_coord;
+#ifdef MODEL_DRAWS
+	f_model_draw = uint(gl_DrawID);
+#endif
 }
