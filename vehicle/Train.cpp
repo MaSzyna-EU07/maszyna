@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/Train.h"
+#include "vehicle/horn.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
@@ -7841,16 +7842,10 @@ void TTrain::OnCommand_hornlowactivate(TTrain *Train, command_data const &Comman
 	if (Command.action == GLFW_PRESS)
 	{
 		// only need to react to press, sound will continue until stopped
-		if (false == TestFlag(Train->mvOccupied->WarningSignal, 1))
+		if (false == TestFlag(Train->mvOccupied->WarningSignal, horn::low))
 		{
 			// turn on
-			Train->mvOccupied->WarningSignal |= 1;
-			/*
-			            if( true == TestFlag( Train->mvOccupied->WarningSignal, 2 ) ) {
-			                // low and high horn are treated as mutually exclusive
-			                Train->mvControlled->WarningSignal &= ~2;
-			            }
-			*/
+			Train->mvOccupied->WarningSignal = horn::pressed(Train->mvOccupied->WarningSignal, horn::low, Train->has_single_horn_lever());
 			// visual feedback
 			Train->ggHornButton.UpdateValue(-1.0);
 			Train->ggHornLowButton.UpdateValue(1.0);
@@ -7863,9 +7858,13 @@ void TTrain::OnCommand_hornlowactivate(TTrain *Train, command_data const &Comman
 		        // NOTE: we turn off both low and high horn, due to unreliability of release event when shift key is involved
 		        Train->mvOccupied->WarningSignal &= ~( 1 | 2 );
 		*/
-		Train->mvOccupied->WarningSignal &= ~1;
+		Train->mvOccupied->WarningSignal = horn::released(Train->mvOccupied->WarningSignal, horn::low);
 		// visual feedback
-		Train->ggHornButton.UpdateValue(0.0);
+		if (false == (Train->has_single_horn_lever() && TestFlag(Train->mvOccupied->WarningSignal, horn::high)))
+		{
+			// leave the single lever alone if it was moved to the other tone in the meantime
+			Train->ggHornButton.UpdateValue(0.0);
+		}
 		Train->ggHornLowButton.UpdateValue(0.0);
 	}
 }
@@ -7885,16 +7884,10 @@ void TTrain::OnCommand_hornhighactivate(TTrain *Train, command_data const &Comma
 	if (Command.action == GLFW_PRESS)
 	{
 		// only need to react to press, sound will continue until stopped
-		if (false == TestFlag(Train->mvOccupied->WarningSignal, 2))
+		if (false == TestFlag(Train->mvOccupied->WarningSignal, horn::high))
 		{
 			// turn on
-			Train->mvOccupied->WarningSignal |= 2;
-			/*
-			            if( true == TestFlag( Train->mvOccupied->WarningSignal, 1 ) ) {
-			                // low and high horn are treated as mutually exclusive
-			                Train->mvControlled->WarningSignal &= ~1;
-			            }
-			*/
+			Train->mvOccupied->WarningSignal = horn::pressed(Train->mvOccupied->WarningSignal, horn::high, Train->has_single_horn_lever());
 			// visual feedback
 			Train->ggHornButton.UpdateValue(1.0);
 			Train->ggHornHighButton.UpdateValue(1.0);
@@ -7907,9 +7900,13 @@ void TTrain::OnCommand_hornhighactivate(TTrain *Train, command_data const &Comma
 		        // NOTE: we turn off both low and high horn, due to unreliability of release event when shift key is involved
 		        Train->mvOccupied->WarningSignal &= ~( 1 | 2 );
 		*/
-		Train->mvOccupied->WarningSignal &= ~2;
+		Train->mvOccupied->WarningSignal = horn::released(Train->mvOccupied->WarningSignal, horn::high);
 		// visual feedback
-		Train->ggHornButton.UpdateValue(0.0);
+		if (false == (Train->has_single_horn_lever() && TestFlag(Train->mvOccupied->WarningSignal, horn::low)))
+		{
+			// leave the single lever alone if it was moved to the other tone in the meantime
+			Train->ggHornButton.UpdateValue(0.0);
+		}
 		Train->ggHornHighButton.UpdateValue(0.0);
 	}
 }
