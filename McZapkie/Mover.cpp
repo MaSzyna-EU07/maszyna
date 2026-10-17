@@ -5032,6 +5032,14 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	{
 		SlippingWheels = true;
 	}
+	if (true == SlippingWheels && Vel < 0.1 // the same crude trap: (nearly) stopped vehicle...
+	    && std::abs(nrot * M_PI * WheelDiameter - V) < 0.1 / 3.6) // ...with wheels turning at its speed, i.e. locked wheels at the end of a skid
+	{
+		// locked wheels never pass the rotation speed test below once the vehicle stops, and a skidding vehicle
+		// keeps its braking force capped by the sliding adhesion, so the rest of the consist could push it around
+		SlippingWheels = false;
+		nrot = V / M_PI / WheelDiameter;
+	}
 	double temp_nrot = nrot;
 	if (true == SlippingWheels)
 	{

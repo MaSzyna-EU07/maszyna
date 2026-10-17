@@ -195,6 +195,9 @@ class TTrain {
     bool initialize_button(cParser &Parser, std::string const &Label, int const Cabindex);
     // helper, returns true for EMU with oerlikon brake
     bool is_eztoer() const;
+    // helper, returns true if both horn tones are operated with the same lever, without separate low and high tone buttons
+    bool has_single_horn_lever() const {
+        return ggHornButton.SubModel != nullptr && ggHornLowButton.SubModel == nullptr && ggHornHighButton.SubModel == nullptr; }
     // locates nearest vehicle belonging to the consist
 	TDynamicObject *find_nearest_consist_vehicle(bool freefly, glm::vec3 pos) const;
     // mover master controller to specified position
