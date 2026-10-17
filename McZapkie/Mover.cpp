@@ -9559,6 +9559,37 @@ bool TMoverParameters::LoadFIZ(std::string const &chkpath)
 	chkPath = chkpath; // assign class path for reloading
 
 	ConversionError = 666;
+	std::string file = TypeName + ".fiz";
+
+	WriteLog("LOAD FIZ FROM " + file);
+	/*
+	    std::ifstream in(file);
+	    if (!in.is_open())
+	    {
+	        WriteLog("E8 - FIZ FILE NOT EXIST.");
+	        return false;
+	    }
+	*/
+	cParser fizparser(file, cParser::buffer_FILE, chkpath);
+	if (false == fizparser.ok())
+	{
+		WriteLog("E8 - FIZ FILE NOT EXIST.");
+		return false;
+	}
+
+	return LoadFIZ_Parse(fizparser);
+}
+
+// reads the vehicle definition from text in the .fiz format, e.g. one made up by a unit test
+bool TMoverParameters::LoadFIZ_Text(std::string const &Text)
+{
+	ConversionError = 666;
+	cParser fizparser(Text, cParser::buffer_TEXT);
+	return LoadFIZ_Parse(fizparser);
+}
+
+bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser) // NOSONAR the former body of LoadFIZ(), moved as it was; splitting it up is a change of its own
+{
 	LISTLINE = 0;
 	startBPT = false;
 	startMPT = false;
@@ -9577,23 +9608,6 @@ bool TMoverParameters::LoadFIZ(std::string const &chkpath)
 	startDimmerList = false;
 	startLIGHTSLIST = false;
 	startCOMPRESSORLIST = false;
-	std::string file = TypeName + ".fiz";
-
-	WriteLog("LOAD FIZ FROM " + file);
-	/*
-	    std::ifstream in(file);
-	    if (!in.is_open())
-	    {
-	        WriteLog("E8 - FIZ FILE NOT EXIST.");
-	        return false;
-	    }
-	*/
-	cParser fizparser(file, cParser::buffer_FILE, chkpath);
-	if (false == fizparser.ok())
-	{
-		WriteLog("E8 - FIZ FILE NOT EXIST.");
-		return false;
-	}
 
 	ConversionError = 0;
 

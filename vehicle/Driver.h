@@ -324,6 +324,8 @@ private:
     void control_security_system( double const Timedelta );
     void control_handles();
     void control_lights();
+    void sync_lights_selector();
+    void sync_lights_dimmer();
     void control_compartment_lights();
     void control_doors();
     void UpdateCommand();
