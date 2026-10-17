@@ -7016,3 +7016,21 @@ msgstr "Szyna toru: %s##railonly"
 
 msgid "Only the templates of the rail the selected track is laid with"
 msgstr "Tylko wzorce na szynę, z której jest zaznaczony tor"
+
+msgid "The switch tool; at the top: what to place"
+msgstr "Narzędzie Rozjazd; na górze: co stawiasz"
+
+msgid "Click a track: the switch goes into it"
+msgstr "Kliknij tor: rozjazd wejdzie w niego"
+
+msgid "Tool options, Gizmo, Enabled off: the track won't move by chance"
+msgstr "Opcje narzędzia, Gizmo, Włączone wyłączone: tor nie przesunie się przypadkiem"
+
+msgid "More, Trainset: pick a locomotive, click the track, Place and drive"
+msgstr "Więcej, Skład: wybierz lokomotywę, kliknij tor, Postaw i jedź"
+
+msgid "Press on it and drag: along the direction, sideways the side"
+msgstr "Wciśnij na nim i przeciągnij: wzdłuż kierunek, w bok strona"
+
+msgid "Connection: drag from a straight onto the other track"
+msgstr "Połączenie: przeciągnij z prostej na drugi tor"
