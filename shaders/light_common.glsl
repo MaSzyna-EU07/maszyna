@@ -8,6 +8,8 @@ layout(binding = LOCAL_SHADOW_TEX) uniform samplerCubeArrayShadow local_shadowma
 layout(binding = LOCAL_SHADOW_LAMPS_TEX) uniform samplerCubeArrayShadow local_shadowmap_lamps;
 // shadow maps of the headlights of vehicles, see gl::HEADLIGHT_SHADOW_TEX and gl::scene_ubs::headlight_shadow
 layout(binding = HEADLIGHT_SHADOW_TEX) uniform sampler2DArrayShadow headlight_shadowmap;
+// depth of the opaque scene drawn before the colour, for the contact shadows (gl::scene_ubs::contact_shadow_params)
+layout(binding = SCENE_DEPTH_TEX) uniform sampler2D scene_depth;
 
 #include <envmapping.glsl>
 #include <conversion.glsl>
@@ -42,7 +44,83 @@ float length2(vec3 v)
         return dot(v, v);
 }
 
+// how many more lamps and headlights the fragment traces contact shadows to, see add_headlights()
+int contact_shadow_budget = 0;
+
+// contact shadow of a light in direction Light_dir (view space, towards the light), 0..1: whether the depth of the scene drawn
+// before the colour (scene_depth) holds a surface between the fragment and a point up to Length metres towards the light. it
+// catches what the shadow maps are too coarse for (rails on the sleepers, bolts, edges of panels, where a thing stands on the
+// ground), and things too small or near for them. only what is in the depth casts it, and only within the image.
+// the ray starts a pixel and a half off the visible side of the surface: the depth there, sampled anywhere within a pixel of
+// the projected point, then stays behind the ray on a flat surface, so it doesn't shadow itself. a surface nearer than the
+// ray by more than the thickness is taken for something in front of the ray, not something it goes through.
+// the shadow fades over the last part of the ray (it doesn't end with an edge) and over the last quarter of the range
+float contact_shadow(vec3 light_dir, float raylength, float steps)
+{
+	float range = contact_shadow_params.y;
+	vec3 position = f_pos.xyz;
+	float fade = 1.0 - smoothstep(range * 0.75, range, length(position));
+	if ((fade <= 0.0) || (raylength <= 0.0) || (steps < 1.0))
+		return 0.0;
+	vec3 normal = normalize(f_normal);
+	if (dot(normal, position) > 0.0)
+		normal = -normal;
+	if (dot(normal, light_dir) <= 0.0)
+		return 0.0;
+	vec2 size = vec2(textureSize(scene_depth, 0));
+	// the projection is perspective with the depth n / w (reverse z, infinite far plane): w is the distance along the axis
+	// of the view, and a depth d is a surface at n / d
+	float near = projection[3][2];
+	float distance = (projection * vec4(position, 1.0)).w;
+	float pixel = 2.0 * distance / (abs(projection[1][1]) * size.y);
+	vec4 start = projection * vec4(position + normal * (pixel * 1.5), 1.0);
+	vec4 ray = projection * vec4(light_dir * raylength, 0.0);
+	float thickness = 0.3 + pixel * 4.0;
+	float bias = pixel * 0.5;
+	// a different start along the ray in neighbouring pixels: the steps give noise instead of bands
+	float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+	for (float i = 0.0; i < steps; i += 1.0)
+	{
+		float t = (i + jitter) / steps;
+		vec4 clip = start + ray * t;
+		if (clip.w <= near)
+			break;
+		vec2 coords = (clip.xy / clip.w) * 0.5 + 0.5;
+		if (any(lessThan(coords, vec2(0.0))) || any(greaterThan(coords, vec2(1.0))))
+			break;
+		float depth = texelFetch(scene_depth, min(ivec2(coords * size), ivec2(size) - 1), 0).r;
+		// nothing drawn there (the sky)
+		if (depth <= 0.0)
+			continue;
+		float nearer = clip.w - near / depth;
+		if ((nearer > bias) && (nearer < thickness))
+			return fade * (1.0 - smoothstep(0.6, 1.0, t));
+	}
+	return 0.0;
+}
+
+// contact shadow of a lamp or headlight Distance metres away, whose light reaches the fragment with Strength, for the first
+// few lamps of a fragment (contact_shadow_lamps.x) which light it noticeably. the ray goes at most half way to the light,
+// so the lamp doesn't shadow with its own fitting
+float contact_shadow_lamp(vec3 light_dir, float distance, float strength)
+{
+	if ((contact_shadow_budget <= 0) || (strength < 0.005))
+		return 0.0;
+	--contact_shadow_budget;
+	return contact_shadow(light_dir, min(contact_shadow_params.x, distance * 0.5), contact_shadow_params.w);
+}
+
+// share of the sun (the moon) held back before the fragment by the shadow map and the contact shadow, 0..1
+float calc_shadow_map();
 float calc_shadow()
+{
+	float shadow = calc_shadow_map();
+	if ((contact_shadow_params.x > 0.0) && (shadow < 1.0))
+		shadow = max(shadow, contact_shadow(normalize(-lights[0].dir), contact_shadow_params.x, contact_shadow_params.z));
+	return shadow;
+}
+
+float calc_shadow_map()
 {
 #if SHADOWMAP_ENABLED
 	float distance = dot(f_pos.xyz, f_pos.xyz);
@@ -282,6 +360,9 @@ vec2 calc_headlights(light_s light, vec3 fragnormal, vec3 dpdx, vec3 dpdy)
 	// headlights with a shadow map: what is in the way holds the beam back
 	if ((light.headlight_weights.w > 0.5) && (lightintensity > 0.0) && (part.x > 0.0))
 		lightintensity *= 1.0 - headlight_beam_shadow(uint(light.headlight_weights.w - 0.5), fragnormal, light_dir);
+	if ((contact_shadow_budget > 0) && (lightintensity > 0.0) && (part.x > 0.0))
+		lightintensity *= 1.0 - contact_shadow_lamp(light_dir, distance,
+		                                            part.x * atten * lightintensity * light.intensity * max(light.color.r, max(light.color.g, light.color.b)));
 	return part * atten * lightintensity;
 }
 
@@ -352,6 +433,9 @@ vec2 calc_local_light(light_s light, vec3 fragnormal)
 		atten *= smoothstep(light.out_cutoff, light.in_cutoff, dot(-light_dir, normalize(light.dir)));
 	if ((atten > 0.0) && (light.headlight_weights.x >= 0.0) && (dot(fragnormal, light_dir) > 0.0))
 		atten *= 1.0 - local_light_shadow(light, fragnormal);
+	if ((atten > 0.0) && (contact_shadow_budget > 0))
+		atten *= 1.0 - contact_shadow_lamp(light_dir, sqrt(distance2),
+		                                   atten * max(dot(fragnormal, light_dir), 0.0) * light.intensity * max(light.color.r, max(light.color.g, light.color.b)));
 	if (atten <= 0.0)
 		return vec2(0.0);
 	vec2 part = calc_light(light_dir, fragnormal);
@@ -378,6 +462,7 @@ vec3 add_headlights(vec3 fragcolor, vec3 fragnormal)
 	// worked out before the loops, which the fragments of a quad do not leave together
 	vec3 dpdx = dFdx(f_pos.xyz);
 	vec3 dpdy = dFdy(f_pos.xyz);
+	contact_shadow_budget = (contact_shadow_params.x > 0.0) ? int(contact_shadow_lamps.x) : 0;
 
 	if (lights_clustered != 0U)
 	{

@@ -277,7 +277,8 @@ class opengl46_renderer : public gfx_renderer {
 
         // light cluster grid of the viewport
         std::unique_ptr<gl::cluster_grid> clusters;
-        // depth of the finished scene resolved from the msaa buffer, for the cluster heatmap; made when it is first needed
+        // depth of the scene resolved from the msaa buffer (Resolved_Depth_Target()): of the finished scene for the cluster heatmap,
+        // and of the depth pass of the scene for the contact shadows, read while the colour is drawn. made when it is first needed
         std::unique_ptr<gl::framebuffer> clusters_depth_fb;
         std::unique_ptr<opengl_texture> clusters_depth_tex;
 
@@ -362,6 +363,12 @@ class opengl46_renderer : public gfx_renderer {
 	// walks the scene a second time, Bind_Material() binds the programs of the depth prepass and draw() leaves out what they
 	// can't draw. Future: the motion matrix the colour pass draws the region with
 	void Render_Scene_Depth( glm::mat4 const &Future );
+	// whether the colour pass of the viewport gets contact shadows, which need the depth pass of the scene
+	bool Contact_Shadows_Wanted( viewport_config const &Viewport ) const;
+	// resolves the depth drawn by Render_Scene_Depth() for the contact shadows and sets them up for the colour pass
+	void Setup_Contact_Shadows( viewport_config &Viewport );
+	// makes the target of the resolved depth of the viewport if it isn't there yet; false if it can't be made
+	bool Resolved_Depth_Target( viewport_config &Viewport );
 	// whether the depth pass of the whole scene draws the material bound last (Bind_Material()) and the geometry
 	bool Scene_Depth_Draws( gfx::geometry_handle const &Geometry ) const;
 	bool Render(TDynamicObject *Dynamic);
@@ -553,6 +560,10 @@ class opengl46_renderer : public gfx_renderer {
 	debug_stats m_scenedepthstats; // of its last run
 	double m_scenedepthcputime { 0.0 }; // ms
 	gl::gpu_timer m_scenedepthtimer;
+	// contact shadows: set up for the colour pass under way, and whether the last main view had them
+	bool m_contactshadows { false };
+	bool m_contactshadowslast { false };
+	gl::gpu_timer m_contactshadowstimer; // resolve of the depth
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	std::vector<TSubModel const *> m_pickcontrolsitems;

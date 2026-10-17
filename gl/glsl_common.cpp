@@ -70,6 +70,7 @@ void gl::glsl_common_setup()
     "#define CLOUD_DETAIL_TEX " + std::to_string(CLOUD_DETAIL_TEX) + "\n" +
     "#define CLOUD_COVERAGE_TEX " + std::to_string(CLOUD_COVERAGE_TEX) + "\n" +
     "#define CLOUD_HISTORY_TEX " + std::to_string(CLOUD_HISTORY_TEX) + "\n" +
+    "#define SCENE_DEPTH_TEX " + std::to_string(SCENE_DEPTH_TEX) + "\n" +
     "#define WEATHER_UBO_BINDING " + std::to_string(WEATHER_UBO_BINDING) + "\n" +
     "#define WEATHER_SCRATCH_SSBO_BINDING " + std::to_string(WEATHER_SCRATCH_SSBO_BINDING) + "\n" +
     "#define MAX_CLOUD_LAYERS " + std::to_string(MAX_CLOUD_LAYERS) + "\n" +
@@ -214,6 +215,9 @@ void gl::glsl_common_setup()
         // shadow maps of the headlights, see gl::scene_ubs
         mat4 headlight_shadow[MAX_HEADLIGHT_SHADOWS];
         vec4 headlight_shadow_params[MAX_HEADLIGHT_SHADOWS];
+        // contact shadows, see gl::scene_ubs
+        vec4 contact_shadow_params;
+        vec4 contact_shadow_lamps;
     };
 
     #ifdef STAGE_VERTEX

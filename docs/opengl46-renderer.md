@@ -187,6 +187,35 @@ shadows of the sun, see `headlight shadows:` in Shift+F12); with the vehicle on 
 | `gfx.lights.shadows.headlights` | `2` | 0..4: how many sets of headlights (vehicle ends) cast shadows; 0: none |
 | `gfx.lights.shadows.headlights.range` | `250` | 10..1000: distance ahead of the vehicle within which things cast the shadows of its headlights, metres |
 
+### Contact shadows
+
+Short shadows where things touch or nearly touch: the rails on the sleepers, bolts and edges of panels, a wheel on the rail,
+a post in the ground, the knobs on the desk of the cab. The shadow maps are too coarse for them, and a surface right next to
+another one is kept from shadowing itself there. A contact shadow is found in the image: from each pixel a short ray goes
+towards the light, `gfx.contactshadows.length` long, and where the depth of the scene drawn so far holds a surface in front
+of it, the light is held back. So only what is in the picture casts them (nothing out of view or behind something else),
+they fade over the end of the ray, and they end at `gfx.contactshadows.range` from the camera. They need the depth of the
+whole scene before its colour, so turning them on turns on the depth pass of `gfx.depthprepass.scene` (whatever that is set
+to; see its cost below); they are there only in the main view, with the post processing on and not in the orthographic view
+of the editor. The things left out of the depth pass (parallax materials, water, glass, faded parts) cast none.
+
+| Level | Rays |
+|---|---|
+| `low` (1) | towards the sun (or the moon), 8 steps |
+| `medium` (2) | towards the sun, 12 steps, and towards 2 lamps or headlights which light the pixel, 8 steps |
+| `high` (3) | towards the sun, 16 steps, and towards 4 lamps or headlights, 12 steps |
+
+The rays towards a lamp go at most half the way to it. The lamps of a pixel are the first which light it noticeably, in the
+order of the light buffer: the cab lamp, the headlights, then the lamps of models and vehicles, the most important first.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.contactshadows` | `no` | `no`/`low`/`medium`/`high` (or 0..3), see above |
+| `gfx.contactshadows.length` | `0.5` | 0.05..5: length of the rays, metres |
+| `gfx.contactshadows.range` | `50` | 1..1000: distance from the camera within which there are contact shadows, metres |
+
+All three can be changed while the simulator runs, in the **Light clusters** debug window.
+
 ### Weather
 
 The clouds, the fog and the stars are drawn from the weather of the simulation (a `weather` section of the scenery, or its
@@ -329,6 +358,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   models both counted and how many levels of detail differ.
 - With `gfx.depthprepass.scene yes` Shift+F12 shows the `scene depth:` row (draws of the depth pass and its processor time)
   and the timing `scene depth:` (its GPU time).
+- With `gfx.contactshadows` on Shift+F12 shows the `contact shadows:` row (the level, the length and reach of the rays, or
+  `off in this view`), the `scene depth:` row and timing of the depth pass they turn on, and the timing `contact shadows depth:`
+  (copying the depth for them). The rays themselves are part of the shading of the colour pass: their cost shows as the
+  difference in the GPU frame time with them on and off.
 - Shift+F12 shows the `instance buffer:` row (positions of copies written in the frame and the size of the buffer) and the
   `model blocks:` row: how many blocks of model data the frame wrote, with `gfx.bufferstreaming yes` also how much of the
   buffer of the frame they took, how many times a frame had to wait for the graphics card to finish with a buffer before

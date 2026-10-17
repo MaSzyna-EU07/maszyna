@@ -740,9 +740,13 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += m_exposure.info_times();
     m_debugtimestext += m_ao.info_times();
     m_debugtimestext += m_instancecull.info_times();
-    if( Global.gfx_depthprepass_scene ) {
+    if( Global.gfx_depthprepass_scene || m_contactshadowslast ) {
         if( auto const scenedepthtime = m_scenedepthtimer.result() )
             m_debugtimestext += " scene depth: " + to_string( static_cast<double>( *scenedepthtime ) / 1000000.0, 3 ) + " ms\n";
+    }
+    if( m_contactshadowslast ) {
+        if( auto const contacttime = m_contactshadowstimer.result() )
+            m_debugtimestext += " contact shadows depth: " + to_string( static_cast<double>( *contacttime ) / 1000000.0, 3 ) + " ms\n";
     }
     if( Global.gfx_gpucull == 1 ) {
         m_debugtimestext += m_hiz.info_times();
@@ -770,8 +774,14 @@ void opengl46_renderer::SwapBuffers()
         + " instanced:" + to_string( m_colorpass.draw_stats.instances, 7 ) + " +" + to_string( shadowstats.instances, 7 )
         + " =" + to_string( m_colorpass.draw_stats.instances + shadowstats.instances, 7 )
         + " (" + std::to_string( m_colorpass.draw_stats.instanced_drawcalls + shadowstats.instanced_drawcalls ) + " batches)\n"
-        + ( Global.gfx_depthprepass_scene ?
+        + ( ( Global.gfx_depthprepass_scene || m_contactshadowslast ) ?
             " scene depth: " + std::to_string( m_scenedepthstats.drawcalls ) + " draws, cpu " + to_string( m_scenedepthcputime, 2 ) + " ms\n" :
+            std::string{} )
+        + ( Global.gfx_contactshadows > 0 ?
+            " contact shadows: " + std::string{ Global.gfx_contactshadows == 3 ? "high" : Global.gfx_contactshadows == 2 ? "medium" : "low" }
+                + ( m_contactshadowslast ?
+                    ", rays " + to_string( Global.gfx_contactshadows_length, 2 ) + " m within " + to_string( Global.gfx_contactshadows_range, 0 ) + " m\n" :
+                    ", off in this view\n" ) :
             std::string{} )
         + " instance buffer: " + std::to_string( m_instancestream->used() / static_cast<GLsizeiptr>( sizeof( glm::mat4 ) ) ) + " matrices, "
         + std::to_string( m_instancestream->size() / 1024 ) + " KiB\n"
@@ -853,6 +863,11 @@ void opengl46_renderer::draw_debug_ui()
         m_locallights.draw_debug_ui();
         ImGui::Separator();
         m_localshadows.draw_debug_ui();
+        ImGui::Separator();
+        char const *contactlevels[]{"no", "low (the sun)", "medium (the sun and 2 lamps)", "high (the sun and 4 lamps)"};
+        ImGui::Combo("contact shadows (gfx.contactshadows)", &Global.gfx_contactshadows, contactlevels, IM_ARRAYSIZE(contactlevels));
+        ImGui::SliderFloat("length of their rays, m (gfx.contactshadows.length)", &Global.gfx_contactshadows_length, 0.05f, 5.f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("distance they reach, m (gfx.contactshadows.range)", &Global.gfx_contactshadows_range, 1.f, 1000.f, "%.0f", ImGuiSliderFlags_Logarithmic);
     }
     ImGui::End();
 
@@ -882,6 +897,8 @@ void opengl46_renderer::draw_debug_ui()
             ImGui::Checkbox("draw the depth of the instances before their colour (gfx.depthprepass)", &Global.gfx_depthprepass);
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
+        if (Global.gfx_contactshadows > 0)
+            ImGui::TextUnformatted("(drawn anyway for the contact shadows, gfx.contactshadows)");
         auto const info{m_instancecull.info()};
         if (!info.empty())
             ImGui::TextUnformatted(info.c_str() + 1);
@@ -1124,14 +1141,19 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         if( Global.gfx_shadowmap_enabled )
             setup_shadow_bind_map();
 
-		// the depth of the whole opaque scene before its colour
+		// the depth of the whole opaque scene before its colour, which the contact shadows need
 		m_scenedepthdrawn = false;
 		m_indirectcolourpending = false;
-		if (Global.gfx_depthprepass_scene && vp.main && (false == Global.bWireFrame))
+		auto const contactshadows{Contact_Shadows_Wanted(vp)};
+		if ((Global.gfx_depthprepass_scene || contactshadows) && vp.main && (false == Global.bWireFrame))
 		{
 			glDebug("render scene depth");
 			Render_Scene_Depth(future);
+			if (contactshadows)
+				Setup_Contact_Shadows(vp);
 		}
+		if (vp.main)
+			m_contactshadowslast = m_contactshadows;
 
 		// opaque parts...
 		setup_drawing(false);
@@ -1202,6 +1224,15 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
                 Render_Alpha( vehicle );
             }
         }
+
+		if (m_contactshadows)
+		{
+			// the depth they read is of this view only
+			m_contactshadows = false;
+			scene_ubs.contact_shadow_params = glm::vec4{0.f};
+			scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
+			scene_ubo->update(scene_ubs);
+		}
 
 		Timer::subsystem.gfx_color.stop();
 
@@ -3955,6 +3986,46 @@ bool opengl46_renderer::Scene_Depth_Draws( gfx::geometry_handle const &Geometry 
 	// the program of the prepass doesn't size points, and lines aren't surfaces
 	auto const type { m_geometry.type( Geometry ) };
 	return ( ( type == GL_TRIANGLES ) || ( type == GL_TRIANGLE_STRIP ) || ( type == GL_TRIANGLE_FAN ) );
+}
+
+// the contact shadows read the depth of the scene drawn before the colour, which the main view has, and work out the distance
+// of a surface from its depth the way a perspective projection with the far plane at infinity gives it (depth = near / w):
+// not in the orthographic view of the editor
+bool opengl46_renderer::Contact_Shadows_Wanted( viewport_config const &Viewport ) const
+{
+	if( ( Global.gfx_contactshadows <= 0 ) || ( false == Viewport.main ) || Global.bWireFrame || Global.gfx_skippipeline || ( Viewport.msaa_fb == nullptr ) ) {
+		return false;
+	}
+	auto const &projection { scene_ubs.projection };
+	return ( projection[ 2 ][ 3 ] != 0.f ) && ( projection[ 2 ][ 2 ] == 0.f ) && ( projection[ 3 ][ 2 ] > 0.f );
+}
+
+void opengl46_renderer::Setup_Contact_Shadows( viewport_config &Viewport )
+{
+	if( false == Resolved_Depth_Target( Viewport ) ) { return; }
+	// making the target binds it
+	Viewport.msaa_fb->bind();
+
+	m_contactshadowstimer.begin();
+	// the depth is resolved apart from the buffer the colour pass draws to, which it tests and writes. the scissor test would limit the blit
+	auto const scissor { ::glIsEnabled( GL_SCISSOR_TEST ) == GL_TRUE };
+	if( scissor ) { ::glDisable( GL_SCISSOR_TEST ); }
+	::glBlitNamedFramebuffer(
+		*Viewport.msaa_fb, *Viewport.clusters_depth_fb,
+		0, 0, Viewport.width, Viewport.height, 0, 0, Viewport.width, Viewport.height,
+		GL_DEPTH_BUFFER_BIT, GL_NEAREST );
+	if( scissor ) { ::glEnable( GL_SCISSOR_TEST ); }
+	::glBindTextureUnit( gl::SCENE_DEPTH_TEX, Viewport.clusters_depth_tex->id );
+	m_contactshadowstimer.end();
+
+	// steps of the ray towards the sun, of the rays towards lamps and headlights, and how many of those a pixel traces
+	struct contact_level { float sunsteps; float lampsteps; float lamps; };
+	static contact_level const levels[] { { 8.f, 0.f, 0.f }, { 12.f, 8.f, 2.f }, { 16.f, 12.f, 4.f } };
+	auto const &level { levels[ std::clamp( Global.gfx_contactshadows, 1, 3 ) - 1 ] };
+	scene_ubs.contact_shadow_params = glm::vec4{ Global.gfx_contactshadows_length, Global.gfx_contactshadows_range, level.sunsteps, level.lampsteps };
+	scene_ubs.contact_shadow_lamps = glm::vec4{ level.lamps, 0.f, 0.f, 0.f };
+	scene_ubo->update( scene_ubs );
+	m_contactshadows = true;
 }
 
 // Renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) using the
@@ -7063,6 +7134,31 @@ void opengl46_renderer::Render_ambient_occlusion(viewport_config &vp, gl::frameb
 	m_ao.apply(Mode, *vp.main_texd, *vp.ssao_blur_tex, Target, projection);
 }
 
+bool opengl46_renderer::Resolved_Depth_Target(viewport_config &vp)
+{
+	if (vp.clusters_depth_fb)
+		return true;
+
+	auto texture{std::make_unique<opengl_texture>()};
+	texture->alloc_rendertarget(Global.gfx_format_depth, GL_DEPTH_COMPONENT, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
+	// the values themselves are read, texel by texel
+	glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	auto framebuffer{std::make_unique<gl::framebuffer>()};
+	framebuffer->attach(*texture, GL_DEPTH_ATTACHMENT);
+	// depth only
+	framebuffer->setup_drawing(0);
+	if (!framebuffer->is_complete())
+	{
+		ErrorLog("resolved depth framebuffer setup failed");
+		return false;
+	}
+	vp.clusters_depth_tex = std::move(texture);
+	vp.clusters_depth_fb = std::move(framebuffer);
+	return true;
+}
+
 void opengl46_renderer::Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize)
 {
 	glDebug("Render_cluster_heatmap");
@@ -7070,26 +7166,10 @@ void opengl46_renderer::Render_cluster_heatmap(viewport_config &vp, gl::framebuf
 	if (!vp.msaa_fb)
 		return;
 
-	if (!vp.clusters_depth_fb)
+	if (!Resolved_Depth_Target(vp))
 	{
-		auto texture{std::make_unique<opengl_texture>()};
-		texture->alloc_rendertarget(Global.gfx_format_depth, GL_DEPTH_COMPONENT, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
-		// the values themselves are read, texel by texel
-		glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-		auto framebuffer{std::make_unique<gl::framebuffer>()};
-		framebuffer->attach(*texture, GL_DEPTH_ATTACHMENT);
-		// depth only
-		framebuffer->setup_drawing(0);
-		if (!framebuffer->is_complete())
-		{
-			ErrorLog("cluster heatmap framebuffer setup failed");
-			Global.gfx_lights_clusterheatmap = false;
-			return;
-		}
-		vp.clusters_depth_tex = std::move(texture);
-		vp.clusters_depth_fb = std::move(framebuffer);
+		Global.gfx_lights_clusterheatmap = false;
+		return;
 	}
 
 	// the depth of the scene is still in the msaa buffer, the post processing worked on its colour

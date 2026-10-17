@@ -370,6 +370,12 @@ struct global_settings {
     // cast them, metres
     int gfx_lights_shadows_headlights { 2 };
     float gfx_lights_shadows_headlights_range { 250.f };
+    // (opengl 4.6) contact shadows: short rays through the depth of the scene drawn before its colour (which they turn on, see
+    // gfx_depthprepass_scene) towards the sun and the nearest lamps. 0 none, 1 low (the sun), 2 medium (and 2 lamps), 3 high
+    // (and 4 lamps, more steps); the length of the rays and the distance from the camera within which they are traced, metres
+    int gfx_contactshadows { 0 };
+    float gfx_contactshadows_length { 0.5f };
+    float gfx_contactshadows_range { 50.f };
     // weather of the opengl 4.6 renderer (debug window "Weather"); the weather itself comes from the scenery, see
     // environment/weather.h. fog: 1 volumetric (a volume over the view with the shafts of the sun, the shadows of the clouds and
     // the light of lamps and headlights, worked out along the ray past it), 0 analytic (the same fog along the ray only, the way

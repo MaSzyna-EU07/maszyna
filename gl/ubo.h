@@ -75,6 +75,9 @@ namespace gl
     const size_t CLOUD_DETAIL_TEX = MAX_TEXTURES + HELPER_TEXTURES + 8;
     const size_t CLOUD_COVERAGE_TEX = MAX_TEXTURES + HELPER_TEXTURES + 9;
     const size_t CLOUD_HISTORY_TEX = MAX_TEXTURES + HELPER_TEXTURES + 10;
+    // the depth of the opaque scene of the main view drawn before its colour, resolved, for the contact shadows (light_common.glsl).
+    // bound directly, like the ones above
+    const size_t SCENE_DEPTH_TEX = MAX_TEXTURES + HELPER_TEXTURES + 11;
 
     struct scene_ubs
     {
@@ -92,9 +95,15 @@ namespace gl
         // projector. and x: size of a texel of the map one metre from the projector, y: radius of the filter in texels
         glm::mat4 headlight_shadow[MAX_HEADLIGHT_SHADOWS];
         glm::vec4 headlight_shadow_params[MAX_HEADLIGHT_SHADOWS];
+        // contact shadows, read from SCENE_DEPTH_TEX; set only for the colour pass of the main view, zero elsewhere.
+        // x: length of the rays towards the lights, metres (0: off), y: distance from the camera at which they end, z: steps
+        // of the ray towards the sun, w: steps of the rays towards lamps and headlights
+        glm::vec4 contact_shadow_params;
+        // x: how many lamps and headlights a pixel traces the rays to (0: only the sun), yzw unused
+        glm::vec4 contact_shadow_lamps;
     };
 
-    static_assert(sizeof(scene_ubs) == 400 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 432 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 

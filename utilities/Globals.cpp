@@ -1655,6 +1655,18 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         Parser >> gfx_lights_shadows_headlights;
         gfx_lights_shadows_headlights = std::clamp( gfx_lights_shadows_headlights, 0, 4 ); }
     else if( Token == "gfx.lights.shadows.headlights.range" ) { readvalue( gfx_lights_shadows_headlights_range, 10.f, 1000.f ); }
+    else if( Token == "gfx.contactshadows" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_contactshadows =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.contactshadows.length" ) { readvalue( gfx_contactshadows_length, 0.05f, 5.f ); }
+    else if( Token == "gfx.contactshadows.range" ) { readvalue( gfx_contactshadows_range, 1.f, 1000.f ); }
     else if( Token == "gfx.fog" ) {
         // volumetric (yes) or analytic (no, old): the same weather either way
         Parser.getTokens( 1 );
@@ -1978,6 +1990,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.lights.shadows.vehicles.range", gfx_lights_shadows_vehicles_range );
     export_as_text( Output, "gfx.lights.shadows.headlights", gfx_lights_shadows_headlights );
     export_as_text( Output, "gfx.lights.shadows.headlights.range", gfx_lights_shadows_headlights_range );
+    export_as_text( Output, "gfx.contactshadows", std::string{ gfx_contactshadows == 3 ? "high" : gfx_contactshadows == 2 ? "medium" : gfx_contactshadows == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.contactshadows.length", gfx_contactshadows_length );
+    export_as_text( Output, "gfx.contactshadows.range", gfx_contactshadows_range );
     export_as_text( Output, "gfx.fog", std::string{ gfx_fog == 1 ? "volumetric" : "analytic" } );
     export_as_text( Output, "gfx.fog.quality", std::string{ gfx_fog_quality == 1 ? "low" : gfx_fog_quality == 3 ? "high" : gfx_fog_quality == 4 ? "ultra" : "medium" } );
     export_as_text( Output, "gfx.fog.range", gfx_fog_range );
