@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editormodeshared.h"
 #include "editor/editorConnections.hpp"
+#include "editor/editorFormat.hpp"
 #include "utilities/translation.h"
 #include "world/Track.h"
 
@@ -45,13 +46,43 @@ bool of_kind(editor_track::switch_template const &Template, int const Kind)
 	}
 }
 
+// the rail of the switch templates fitting the track, by the rail profile it's laid with; empty where the profile doesn't tell
+std::string rail_of(TTrack const *Track)
+{
+	if (Track == nullptr || (Track->iCategoryFlag & 15) != 1)
+		return {};
+	auto const &profile{Track->m_profile1.first};
+	if (profile == "s60" || profile == "uic60")
+		return "60E1";
+	if (profile == "s49")
+		return "49E1";
+	if (profile == "s42")
+		return "S42";
+	return {};
+}
+
+// the name of the template in the language of the editor: the words of the catalogue translated, the kind of a slip or
+// a crossing left out where its type says it
+std::string translated(std::string Title)
+{
+	auto const replace = [&](std::string const &From, std::string const &To) {
+		for (auto at{Title.find(From)}; at != std::string::npos; at = Title.find(From, at + To.size()))
+			Title.replace(at, From.size(), To);
+	};
+	for (auto const *redundant : {" single slip", " double slip", " crossing"})
+		replace(redundant, "");
+	for (auto const *word : {"the blades outside of the diamond", "movable nose", "gauge", "long"})
+		replace(word, STR(word));
+	return Title;
+}
+
 } // namespace
 
 std::string editor_mode::switch_template_label(editor_track::switch_template const &Template)
 {
 	if (Template.source != nullptr)
 		return STR("Scenery: ") + Template.title() + "  (" + std::to_string(Template.count) + "x)";
-	return (Template.own ? STR("Own: ") : std::string{"PLK: "}) + Template.title();
+	return (Template.own ? STR("Own: ") : std::string{"PLK: "}) + translated(Template.title());
 }
 
 editor_mode::switch_kind editor_mode::current_switch_kind() const
@@ -101,10 +132,10 @@ void editor_mode::render_switch_ui()
 		char const *label;
 		char const *tooltip;
 	};
-	choice const choices[] = {{switch_kind::single, "Switch", "A switch put into a straight or a curve"},
-	                          {switch_kind::slip, "Slip switch", "A single or double slip switch at a crossing of two straights"},
+	choice const choices[] = {{switch_kind::single, "Switch", "A switch in a straight or a curve"},
+	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd at a crossing of two straights"},
 	                          {switch_kind::crossing, "Crossing", "A crossing of two straights"},
-	                          {switch_kind::connection, "Connection", "Switches laid whole between two tracks: a crossover, a double or a scissors crossover, a switch ladder"}};
+	                          {switch_kind::connection, "Connection", "Crossover, double, scissors, ladder"}};
 	ImGui::TextDisabled("%s", STR_C("What to place"));
 	auto first{true};
 	for (auto const &entry : choices)
@@ -138,26 +169,37 @@ void editor_mode::render_switch_ui()
 	char const *how{nullptr};
 	switch (kind)
 	{
-	case switch_kind::slip: how = "Click at a crossing of two straights; a single slip on the side of the joined tracks"; break;
-	case switch_kind::crossing: how = "Click at a crossing of two straights"; break;
+	case switch_kind::slip: how = "Click a crossing of two straights"; break;
+	case switch_kind::crossing: how = "Click a crossing of two straights"; break;
 	case switch_kind::connection:
-		how = tool.connection == static_cast<int>(connection::kind::double_crossover) ? "Press on a straight and drag onto the other track. While dragging: Shift+wheel another kind, Ctrl+wheel R of the aligning curve, Alt+wheel where they meet" :
-		                                                                                 "Press on a straight and drag onto the other track. While dragging: Shift+wheel another kind, Ctrl+wheel R of the aligning curve";
+		how = tool.connection == static_cast<int>(connection::kind::double_crossover) ? "Drag from a straight onto the other track. Shift+wheel: kind, Ctrl+wheel: R, Alt+wheel: where they meet" :
+		                                                                                 "Drag from a straight onto the other track. Shift+wheel: kind, Ctrl+wheel: R";
 		break;
-	default: how = "Click a straight or a curve, then press on it and drag: along for the direction, sideways for the side"; break;
+	default: how = "Click a track and drag: along for the direction, sideways for the side"; break;
 	}
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.3f, 1.0f));
 	ImGui::TextWrapped("%s", STR_C(how));
 	ImGui::PopStyleColor();
 
-	// the templates of the kind, by their names; the lengths and the rest of the label in the tooltip
+	// the templates of the kind, by their names, for the rail of the selected track unless all are asked for; the lengths
+	// and the rest of the label in the tooltip
 	ImGui::TextDisabled("%s", STR_C(kind == switch_kind::connection ? "The first switch" : "Template"));
-	auto const listed{static_cast<int>(std::count_if(tool.templates.begin(), tool.templates.end(), [&](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(kind)); }))};
+	auto const rail{rail_of(selected_track())};
+	if (false == rail.empty())
+	{
+		ImGui::SameLine();
+		ImGui::Checkbox(format(STR_C("Rail of the track: %s##railonly"), rail.c_str()).c_str(), &tool.rail_only);
+		item_tooltip("Only the templates of the rail the selected track is laid with");
+	}
+	auto const shown = [&](editor_track::switch_template const &Template) {
+		return of_kind(Template, static_cast<int>(kind)) && (rail.empty() || false == tool.rail_only || Template.source != nullptr || Template.rail == rail || Template.rail == "-");
+	};
+	auto const listed{static_cast<int>(std::count_if(tool.templates.begin(), tool.templates.end(), shown))};
 	ImGui::BeginChild("##switchtemplates", ImVec2(0.0f, std::min(240.0f, (listed + 0.5f) * ImGui::GetTextLineHeightWithSpacing() + 8.0f)), true);
 	for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 	{
 		auto const &entry{tool.templates[i]};
-		if (false == of_kind(entry, static_cast<int>(kind)))
+		if (false == shown(entry))
 			continue;
 		if (ImGui::Selectable((switch_template_label(entry) + "##switch" + std::to_string(i)).c_str(), tool.armed == i))
 		{

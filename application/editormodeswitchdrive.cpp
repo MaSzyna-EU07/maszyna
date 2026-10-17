@@ -289,7 +289,7 @@ bool editor_mode::render_switch_drive_choice()
 	scan_switch_drives();
 	if (tool.drives.empty())
 	{
-		ImGui::TextDisabled("%s", STR_C("No switch drive models in the scenery data"));
+		ImGui::TextDisabled("%s", STR_C("No switch drive models"));
 		return false;
 	}
 	auto const label = [&](int const Index) { return Index < 0 ? std::string{STR_C("no drive")} : tool.drives[Index].name; };

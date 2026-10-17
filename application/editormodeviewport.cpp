@@ -174,7 +174,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		auto const advanced{m_track_tab == track_tab::turntable || m_track_tab == track_tab::signals || m_track_tab == track_tab::lineside || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed ||
 		                    m_track_tab == track_tab::joints || m_gauge.open};
 		auto const more{EditorSettings.track_tools_more()};
-		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntables, signals, objects along the track, trainsets and the checks of a line laid: profile, speed, joints, structure gauge"), more, [more]() {
+		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntable, signals, objects, trainset, profile, speed, joints, gauge"), more, [more]() {
 			                   EditorSettings.track_tools_more(false == more);
 			                   EditorSettings.save();
 		                   }, true});

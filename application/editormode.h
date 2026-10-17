@@ -1026,6 +1026,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		double slide_typed{0.0};
 		int connection{-1};
 		int connection_kind{0}; // the kind of connection chosen last, taken again when the connections are chosen
+		bool rail_only{true}; // the templates listed only for the rail of the selected track, where its rail profile tells it
 		int connection_second{-1};
 		double connection_radius{0.0};
 		double connection_gap{6.0};

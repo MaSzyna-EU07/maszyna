@@ -6941,32 +6941,16 @@ msgstr "Skrzyżowanie"
 msgid "Connection"
 msgstr "Połączenie"
 
-msgid "A switch put into a straight or a curve"
-msgstr "Rozjazd wstawiany w prostą albo łuk"
 
-msgid "A single or double slip switch at a crossing of two straights"
-msgstr "Rozjazd krzyżowy pojedynczy albo podwójny, na skrzyżowaniu dwóch prostych"
 
 msgid "A crossing of two straights"
 msgstr "Skrzyżowanie dwóch prostych"
 
-msgid "Switches laid whole between two tracks: a crossover, a double or a scissors crossover, a switch ladder"
-msgstr "Rozjazdy układane w całości między dwoma torami: przejście, przejście podwójne, nożycowe, drabinka rozjazdów"
 
-msgid "Click at a crossing of two straights; a single slip on the side of the joined tracks"
-msgstr "Kliknij skrzyżowanie dwóch prostych; rozjazd pojedynczy po stronie łączonych torów"
 
-msgid "Click at a crossing of two straights"
-msgstr "Kliknij skrzyżowanie dwóch prostych"
 
-msgid "Press on a straight and drag onto the other track. While dragging: Shift+wheel another kind, Ctrl+wheel R of the aligning curve, Alt+wheel where they meet"
-msgstr "Wciśnij LPM na prostej i przeciągnij na drugi tor. W trakcie: Shift+kółko inny rodzaj, Ctrl+kółko R łuku dopasowującego, Alt+kółko miejsce spotkania"
 
-msgid "Press on a straight and drag onto the other track. While dragging: Shift+wheel another kind, Ctrl+wheel R of the aligning curve"
-msgstr "Wciśnij LPM na prostej i przeciągnij na drugi tor. W trakcie: Shift+kółko inny rodzaj, Ctrl+kółko R łuku dopasowującego"
 
-msgid "Click a straight or a curve, then press on it and drag: along for the direction, sideways for the side"
-msgstr "Kliknij prostą albo łuk, potem wciśnij na nim i przeciągnij: wzdłuż wybiera kierunek, w bok stronę toru zwrotnego"
 
 msgid "The first switch"
 msgstr "Pierwszy rozjazd"
@@ -6977,11 +6961,7 @@ msgstr "Wzorzec"
 msgid "Details##switchdetails"
 msgstr "Szczegóły##switchdetails"
 
-msgid "No switch drive models in the scenery data"
-msgstr "Brak modeli napędów zwrotnic w danych scenerii"
 
-msgid "Turntables, signals, objects along the track, trainsets and the checks of a line laid: profile, speed, joints, structure gauge"
-msgstr "Obrotnice, sygnalizatory, obiekty wzdłuż toru, składy i sprawdzanie ułożonej linii: profil, prędkość, styki, skrajnia"
 
 msgid "Press on a straight"
 msgstr "Wciśnij na prostej"
@@ -6991,3 +6971,48 @@ msgstr "i przeciągnij na drugi tor"
 
 msgid "at a crossing of two straights"
 msgstr "na skrzyżowaniu dwóch prostych"
+
+msgid "A switch in a straight or a curve"
+msgstr "Rozjazd w prostej albo łuku"
+
+msgid "Rkp or Rkpd at a crossing of two straights"
+msgstr "Rkp albo Rkpd na skrzyżowaniu dwóch prostych"
+
+msgid "Crossover, double, scissors, ladder"
+msgstr "Przejście, podwójne, nożyce, ulica zwrotnicowa"
+
+msgid "Click a crossing of two straights"
+msgstr "Kliknij skrzyżowanie dwóch prostych"
+
+msgid "Drag from a straight onto the other track. Shift+wheel: kind, Ctrl+wheel: R, Alt+wheel: where they meet"
+msgstr "Przeciągnij z prostej na drugi tor. Shift+kółko: rodzaj, Ctrl+kółko: R, Alt+kółko: miejsce spotkania"
+
+msgid "Drag from a straight onto the other track. Shift+wheel: kind, Ctrl+wheel: R"
+msgstr "Przeciągnij z prostej na drugi tor. Shift+kółko: rodzaj, Ctrl+kółko: R"
+
+msgid "Click a track and drag: along for the direction, sideways for the side"
+msgstr "Kliknij tor i przeciągnij: wzdłuż kierunek, w bok strona"
+
+msgid "Turntable, signals, objects, trainset, profile, speed, joints, gauge"
+msgstr "Obrotnica, sygnalizatory, obiekty, skład, profil, prędkość, styki, skrajnia"
+
+msgid "No switch drive models"
+msgstr "Brak modeli napędów"
+
+msgid "the blades outside of the diamond"
+msgstr "iglice zewnętrzne"
+
+msgid "movable nose"
+msgstr "ruchomy dziób"
+
+msgid "gauge"
+msgstr "rozstaw"
+
+msgid "long"
+msgstr "wydłużony"
+
+msgid "Rail of the track: %s##railonly"
+msgstr "Szyna toru: %s##railonly"
+
+msgid "Only the templates of the rail the selected track is laid with"
+msgstr "Tylko wzorce na szynę, z której jest zaznaczony tor"
