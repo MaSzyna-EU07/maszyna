@@ -14,6 +14,12 @@ const float CLOUD_FILL_EDGE = 0.45;
 const float CLOUD_FILL_CORE = 0.85;
 // how fast the density rises inside the edge of a cloud: above 1 the edges are crisper, the inside keeps its density
 const float CLOUD_EDGE_SHARPNESS = 3.0;
+// how far the base and the top of the single clouds stand off those of their layer, up or down, as shares of the depth of the layer
+// and at most in metres: the clouds of a layer don't all end at one height, some reach a little out of it
+const float CLOUD_BASE_SHIFT = 0.07;
+const float CLOUD_BASE_SHIFT_MAX = 100.0;
+const float CLOUD_TOP_SHIFT = 0.15;
+const float CLOUD_TOP_SHIFT_MAX = 400.0;
 // the detail noise: its tile against the tile of the shape noise and how deep it eats into the edges (times the erosion of the
 // genus and the tuning of the debug window, cloud_wind.w); the finer octave of the thin edges: its tile against the detail tile,
 // how far the coarser octave pushes its lookup about (in its tiles), and the density below which it is used
@@ -110,26 +116,54 @@ vec2 cloud_noise_plane(cloud_layer_s layer, vec2 offset)
 	return across + wind * (along / max(layer.motion.w, 1.0));
 }
 
-// share of the layer filled at a place, x: the soft mask of the coverage, y: how far into a cloud area (0 at its edge)
-vec2 cloud_coverage(cloud_layer_s layer, vec2 offset)
+// how far the base (x) and the top (y) of the clouds of a layer may stand off those of the layer, metres
+vec2 cloud_layer_shift(cloud_layer_s layer)
+{
+	float thickness = layer.heights.y - layer.heights.x;
+	return vec2(min(thickness * CLOUD_BASE_SHIFT, CLOUD_BASE_SHIFT_MAX), min(thickness * CLOUD_TOP_SHIFT, CLOUD_TOP_SHIFT_MAX));
+}
+
+// the lowest base (x) and the highest top (y) the clouds of a layer may reach
+vec2 cloud_layer_bounds(cloud_layer_s layer)
+{
+	vec2 shift = cloud_layer_shift(layer);
+	return vec2(layer.heights.x - shift.x, layer.heights.y + shift.y);
+}
+
+// share of the layer filled at a place, x: the soft mask of the coverage, y: how far into a cloud area (0 at its edge). Shift: how
+// far the base (x) and the top (y) of the cloud there stand off those of the layer, from the second and the third noise of the
+// coverage texture, so the clouds which reach lower don't all reach higher too
+vec2 cloud_coverage(cloud_layer_s layer, vec2 offset, out vec2 shift)
 {
 	vec2 coords = (layer.extra.zw + cloud_noise_plane(layer, offset)) * layer.motion.z;
-	float noise = textureLod(cloud_coverage_noise, coords + layer.extra.y, 0.0).r;
+	vec3 noise = textureLod(cloud_coverage_noise, coords + layer.extra.y, 0.0).rgb;
+	shift = (noise.yz * 2.0 - 1.0) * cloud_layer_shift(layer);
 	float coverage = layer.shape.x;
 	float threshold = 1.0 - coverage;
-	float mask = smoothstep(threshold - 0.06, threshold + 0.06, noise);
-	float depth = clamp((noise - threshold) / max(coverage, 0.05), 0.0, 1.0);
+	float mask = smoothstep(threshold - 0.06, threshold + 0.06, noise.x);
+	float depth = clamp((noise.x - threshold) / max(coverage, 0.05), 0.0, 1.0);
 	return vec2(mask, depth);
+}
+
+vec2 cloud_coverage(cloud_layer_s layer, vec2 offset)
+{
+	vec2 shift;
+	return cloud_coverage(layer, offset, shift);
 }
 
 // extinction (1/m) of a volumetric layer at a point; Detail eats the edges with the small noise
 float cloud_layer_density(int index, vec3 position, float height, bool detail)
 {
 	cloud_layer_s layer = cloud_layers[index];
-	float h = (height - layer.heights.x) * layer.heights.z;
+	vec2 bounds = cloud_layer_bounds(layer);
+	if (height <= bounds.x || height >= bounds.y)
+		return 0.0;
+	vec2 shift;
+	vec2 coverage = cloud_coverage(layer, position.xz, shift);
+	float bottom = layer.heights.x + shift.x;
+	float h = (height - bottom) / max(layer.heights.y + shift.y - bottom, 1.0);
 	if (h <= 0.0 || h >= 1.0)
 		return 0.0;
-	vec2 coverage = cloud_coverage(layer, position.xz);
 	// the anvil spreads the top of the storm clouds out of their area
 	if (layer.profile.w > 0.0)
 	{
@@ -229,8 +263,9 @@ float cloud_transmittance_to_sun(vec3 position, int steps)
 				depth += cloud_flat_depth(i, position + sun * ((middle - height) / sun.y)) / sun.y;
 			continue;
 		}
-		float enter = max(layer.heights.x - height, 0.0) / sun.y;
-		float leave = (layer.heights.y - height) / sun.y;
+		vec2 bounds = cloud_layer_bounds(layer);
+		float enter = max(bounds.x - height, 0.0) / sun.y;
+		float leave = (bounds.y - height) / sun.y;
 		if (leave <= 0.0)
 			continue;
 		float step = (leave - enter) / float(steps);

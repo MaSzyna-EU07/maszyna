@@ -1,7 +1,7 @@
 // the tiling noises the clouds and the fog are made of, made once at the start (opengl46_weather::init).
 // kind 0, the shape (3d): r perlin-worley (perlin fbm with the worley cells carved in), g b a worley fbm of rising frequency;
 // kind 1, the detail (3d): r g b worley fbm of rising frequency;
-// kind 2, the coverage (2d): r g two perlin fbm, spread evenly over 0-1 so a threshold of 1 - c leaves a share c above it
+// kind 2, the coverage (2d): r g b three perlin fbm, spread evenly over 0-1 so a threshold of 1 - c leaves a share c above it
 
 #include <common>
 #include <random.glsl>
@@ -111,7 +111,8 @@ void main()
 		vec3 position = vec3((vec2(texel.xy) + 0.5) / float(size), 0.0);
 		float first = perlin_fbm(position, 4, COVERAGE_OCTAVES, 11U);
 		float second = perlin_fbm(position + vec3(0.0, 0.0, 0.5), 8, 5, 23U);
-		imageStore(noise_plane, texel.xy, vec4(even(first, 0.22), even(second, 0.22), 0.0, 1.0));
+		float third = perlin_fbm(position + vec3(0.0, 0.0, 0.25), 8, 5, 29U);
+		imageStore(noise_plane, texel.xy, vec4(even(first, 0.22), even(second, 0.22), even(third, 0.22), 1.0));
 		return;
 	}
 	if (texel.z >= size)

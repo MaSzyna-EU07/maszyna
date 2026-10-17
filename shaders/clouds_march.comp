@@ -177,7 +177,8 @@ void main()
 	{
 		if (cloud_layers[i].extra.x > 0.5)
 			continue;
-		vec2 segment = cloud_layer_segment(direction.y, cloud_layers[i].heights.x, cloud_layers[i].heights.y);
+		vec2 bounds = cloud_layer_bounds(cloud_layers[i]);
+		vec2 segment = cloud_layer_segment(direction.y, bounds.x, bounds.y);
 		segment.y = min(segment.y, maxdistance);
 		if (segment.y <= segment.x)
 			continue;
@@ -223,9 +224,10 @@ void main()
 			// the light of the sky reaches inside through the cloud above, that of the ground through the cloud below: the base of a
 			// thick cloud is darker than its top, and greyer, lit only by the ground and the sky at its sides
 			float column = layer.shape.y * layer.shape.x;
-			float reach = min(layer.heights.y - height, CLOUD_SKY_REACH);
-			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps) - CLOUD_AMBIENT_FADE * column * (layer.heights.y - height - reach));
-			float below = column * (height - layer.heights.x);
+			float top = cloud_layer_bounds(layer).y;
+			float reach = clamp(top - height, 0.0, CLOUD_SKY_REACH);
+			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps) - CLOUD_AMBIENT_FADE * column * max(top - height - reach, 0.0));
+			float below = column * max(height - layer.heights.x, 0.0);
 			vec3 light = sunlight * sunshare + (ambienttop * mix(CLOUD_SKY_FLOOR, 1.0, sky) + ambientbottom * exp(-CLOUD_AMBIENT_FADE * below));
 			float through = exp(-density * step);
 			vec3 inscattered = light * (1.0 - through);
