@@ -43,6 +43,9 @@ class TAnimModel;
 // of them, and the ones drawn second, each copy command_count() commands long (draw_command_offset())
 // with Global.gfx_gpucull 2 the cpu still draws, and the result is only compared with its own: the counts per entry are
 // read back a few frames later and set against the counts Render_Instanced() reported for the same frame
+// each render pass culled on the gpu (the main view, the cascades of the sun shadows, the faces of the environment map) has a
+// culling of its own, with its own buffers, while the records and the programs are shared by all of them: the records of a
+// bucket go to the gpu once and serve every pass which queues the bucket
 class opengl46_instance_cull
 {
   public:
@@ -85,8 +88,8 @@ class opengl46_instance_cull
 	opengl46_instance_cull(const opengl46_instance_cull &) = delete;
 	opengl46_instance_cull &operator=(const opengl46_instance_cull &) = delete;
 
-	// creates the programs and buffers. throws gl::shader_exception
-	void init();
+	// creates the buffers, and the programs and the record buffer, or takes the ones of Shared. throws gl::shader_exception
+	void init(opengl46_instance_cull const *Shared = nullptr);
 	// starts collecting the buckets of a pass
 	void begin_pass(pass_setup const &Setup);
 	bool in_pass() const
@@ -165,9 +168,17 @@ class opengl46_instance_cull
 	void cpu_result(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts);
 	// ends the pass: its cpu counts are kept for the comparison
 	void end_pass();
-	// lines for the debug panel
-	std::string info();
-	std::string info_times();
+	// takes the newest counts of the gpu which arrived and compares them with the ones of the cpu. done when a pass begins;
+	// for the panel also by the culls of passes which aren't made every frame
+	void collect();
+	// a pass was culled since the start
+	bool ran() const
+	{
+		return m_ran;
+	}
+	// lines for the debug panel, Label naming the pass. Occlusion: the pass may test occlusion (the main view)
+	std::string info(std::string const &Label = "gpu cull", bool const Occlusion = true);
+	std::string info_times(std::string const &Label = "instance cull");
 
   private:
 	struct group_data
@@ -198,20 +209,30 @@ class opengl46_instance_cull
 		std::uint32_t first{0}; // drawn first, seen in the previous frame (two phases)
 	};
 
+	// what the culls of all passes share
+	struct shared_data
+	{
+		std::unique_ptr<gl::program> cull_program;
+		std::unique_ptr<gl::program> offsets_program;
+		std::unique_ptr<gl::program> commands_program;
+		std::unique_ptr<gl::ssbo> records;
+		// record buffer: records placed so far, the generation which tells current places from the ones of a replaced buffer
+		std::uint32_t recordfill{0};
+		unsigned int recordgeneration{1};
+		// frame of the last time the buffer was started over, and whether it was
+		unsigned int restartframe{0};
+		bool restarted{false};
+	};
+
 	// finds a place for the records of a bucket in the record buffer and sends them
 	void place(scene::basic_cell::instance_bucket const &Bucket);
 	// binds the buffers of the culling passes
 	void bind_buffers();
-	// takes the newest counts of the gpu which arrived and compares them with the ones of the cpu
-	void collect();
 
 	// entries read back for the comparison; with more of them only the totals and these are compared
 	static constexpr std::uint32_t READBACK_ENTRIES{16384};
 
-	std::unique_ptr<gl::program> m_cull_program;
-	std::unique_ptr<gl::program> m_offsets_program;
-	std::unique_ptr<gl::program> m_commands_program;
-	std::unique_ptr<gl::ssbo> m_records;
+	std::shared_ptr<shared_data> m_shared;
 	std::unique_ptr<gl::ssbo> m_jobs;
 	std::unique_ptr<gl::ssbo> m_groups;
 	std::unique_ptr<gl::ssbo> m_lods;
@@ -222,11 +243,8 @@ class opengl46_instance_cull
 	gl::gpu_timer m_timer;
 	gl::gpu_timer m_secondtimer;
 
-	// record buffer: records placed so far, the generation which tells current places from the ones of a replaced buffer
-	std::uint32_t m_recordfill{0};
-	unsigned int m_recordgeneration{1};
-
 	bool m_inpass{false};
+	bool m_ran{false};
 	pass_setup m_setup;
 	std::vector<scene::basic_cell::instance_bucket const *> m_buckets; // of the jobs, in their order
 	std::vector<gl::instance_cull_job> m_joblist;

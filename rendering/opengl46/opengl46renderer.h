@@ -355,6 +355,16 @@ class opengl46_renderer : public gfx_renderer {
 	// (Global.gfx_gpucull_occlusion_instances) the instances seen in the previous frame are drawn first (their depth, or
 	// their colour without the prepass), the pyramid is made again and the other instances are culled against it
 	void Render_Instances_Indirect();
+	// the same for the passes culled on the gpu other than the main view (Global.gfx_gpucull_shadows, _reflections): the
+	// cascades of the sun shadows, drawn with the shadow programs, and the faces of the environment map, drawn with the
+	// programs of the materials like the main view. no occlusion test, no depth prepass, one phase
+	void Render_Instances_Indirect_Pass();
+	// the walk of the submodel trees of the groups culled by Cull, once per lod band, which records their draws
+	// (m_indirectdraws, m_indirectcommands), puts them in order for multi draws and has Cull fill in their commands
+	void Record_Indirect_Draws( opengl46_instance_cull &Cull );
+	// whether a model with its skins has any part the sun shadows draw: the same test Render_Instanced() makes. the answer
+	// is kept for the rest of the pass
+	bool Instances_Cast_Shadow( scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket );
 	// draws of the instances made, and the gl calls which made them
 	struct indirect_counts {
 		std::uint32_t draws { 0 };
@@ -371,6 +381,10 @@ class opengl46_renderer : public gfx_renderer {
 	indirect_counts Render_Instances_Indirect_Depth( opengl46_instance_cull::command_set const Set );
 	indirect_counts Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer );
 	indirect_counts Render_Instances_Indirect_Colour( opengl46_instance_cull::command_set const Set );
+	// the recorded draws of a shadow pass with the shadow programs, the way Bind_Material_Shadow() picks them
+	indirect_counts Render_Instances_Indirect_Shadow( opengl46_instance_cull::command_set const Set );
+	// the texture Bind_Material_Shadow() binds for the alpha test of a material, or null_handle (no test)
+	texture_handle Indirect_Shadow_Texture( material_handle const Material );
 	// multi draws of the recorded draws (Global.gfx_gpucull_multidraw): puts the draws in an order in which the ones with the
 	// same state follow one another, the draws of one entry kept in the order of the walk, then places their model blocks in
 	// the buffer of the frame (m_drawblockstream), in the same order
@@ -555,8 +569,17 @@ class opengl46_renderer : public gfx_renderer {
 	// when Global.gfx_gpucull is set: the instances of the pass are drawn from its result (1), or the result is compared
 	// with the one of the cpu (2)
 	opengl46_instance_cull m_instancecull;
-	bool m_instancecullpass { false }; // the current pass feeds it
+	bool m_instancecullpass { false }; // the current pass feeds a culling: m_passcull
 	unsigned int m_instancecullframe { ~0u }; // frame it last ran in
+	// the cullings of the cascades of the sun shadows and of the faces of the environment map (Global.gfx_gpucull_shadows,
+	// _reflections), with records and programs shared with m_instancecull
+	std::array<opengl46_instance_cull, 3> m_shadowcull;
+	opengl46_instance_cull m_reflectioncull;
+	opengl46_instance_cull *m_passcull { nullptr }; // the one the current pass feeds
+	opengl46_instance_cull *m_indirectcull { &m_instancecull }; // the one the recorded draws (m_indirectdraws) were culled by
+	int m_shadowcascade { -1 }; // the region is drawn for this cascade of the sun shadows
+	// Instances_Cast_Shadow() of the groups of the shadow pass under way
+	std::unordered_map<scene::basic_cell::instance_bucket_key, bool, scene::basic_cell::instance_bucket_key_hash> m_shadowcasters;
 	std::vector<std::uint32_t> m_instance_bandcounts; // reported by Render_Instanced() for the comparison
 	// depth pyramid for the occlusion test of the gpu culling
 	opengl46_hiz m_hiz;
@@ -616,6 +639,8 @@ class opengl46_renderer : public gfx_renderer {
 	std::unordered_map<gl::program const *, std::unique_ptr<gl::program>> m_multidrawprograms;
 	std::unique_ptr<gl::program> m_prepass_multidraw_shader;
 	std::unique_ptr<gl::program> m_prepass_alpha_multidraw_shader;
+	std::unique_ptr<gl::program> m_shadow_multidraw_shader; // and of the sun shadows
+	std::unique_ptr<gl::program> m_alpha_shadow_multidraw_shader;
 	bool m_bindmultidraw { false }; // Bind_Material() binds the variant of the material program for multi draws
 	bool m_indirectrecording { false }; // draw() and Bind_Material() record instead of drawing
 	std::uint32_t m_indirectentry { 0 }; // entry (group and lod band) recorded

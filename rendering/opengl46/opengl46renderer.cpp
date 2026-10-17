@@ -207,6 +207,11 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		gl::shader prepassalphafragment("depthprepass_alpha.frag", defines);
 		m_prepass_multidraw_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{prepassvertex, prepassfragment});
 		m_prepass_alpha_multidraw_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{prepassvertex, prepassalphafragment});
+		gl::shader shadowvertex("simpleuv.vert", defines);
+		gl::shader shadowfragment("shadowmap.frag", defines);
+		gl::shader alphashadowfragment("alphashadowmap.frag", defines);
+		m_shadow_multidraw_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shadowvertex, shadowfragment});
+		m_alpha_shadow_multidraw_shader = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shadowvertex, alphashadowfragment});
 		m_drawblockstream = std::make_unique<gl::frame_stream>(
 			static_cast<GLsizeiptr>(4096 * sizeof(gl::model_ubs)), static_cast<GLsizeiptr>(sizeof(gl::model_ubs)), Global.gfx_bufferstreaming);
 	}
@@ -216,6 +221,8 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_vertex_multidraw_shader.reset();
 		m_prepass_multidraw_shader.reset();
 		m_prepass_alpha_multidraw_shader.reset();
+		m_shadow_multidraw_shader.reset();
+		m_alpha_shadow_multidraw_shader.reset();
 		m_drawblockstream.reset();
 	}
 
@@ -224,6 +231,9 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_sky.init();
 		m_weather.init();
 		m_instancecull.init();
+		for (auto &shadowcull : m_shadowcull)
+			shadowcull.init(&m_instancecull);
+		m_reflectioncull.init(&m_instancecull);
 		m_hiz.init();
 		m_exposure.init();
 		m_ao.init();
@@ -769,6 +779,15 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += m_exposure.info_times();
     m_debugtimestext += m_ao.info_times();
     m_debugtimestext += m_instancecull.info_times();
+    // the cullings of the other passes; the environment map is drawn now and then, its numbers are of its last update
+    if( Global.gfx_gpucull_shadows ) {
+        for( std::size_t cascade = 0; cascade < m_shadowcull.size(); ++cascade ) {
+            m_debugtimestext += m_shadowcull[ cascade ].info_times( "instance cull shadows " + std::to_string( cascade + 1 ) );
+        }
+    }
+    if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
+        m_debugtimestext += m_reflectioncull.info_times( "instance cull reflections, last face" );
+    }
     if( Global.gfx_depthprepass_scene || m_contactshadowslast ) {
         if( auto const scenedepthtime = m_scenedepthtimer.result() )
             m_debugtimestext += " scene depth: " + to_string( static_cast<double>( *scenedepthtime ) / 1000000.0, 3 ) + " ms\n";
@@ -853,6 +872,17 @@ void opengl46_renderer::SwapBuffers()
         + "\n" + m_locallights.info()
         + m_localshadows.info()
         + m_instancecull.info();
+    if( Global.gfx_gpucull_shadows ) {
+        for( std::size_t cascade = 0; cascade < m_shadowcull.size(); ++cascade ) {
+            if( false == m_shadowcull[ cascade ].ran() ) { continue; }
+            m_shadowcull[ cascade ].collect();
+            m_debugstatstext += m_shadowcull[ cascade ].info( "gpu cull shadows " + std::to_string( cascade + 1 ), false );
+        }
+    }
+    if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
+        m_reflectioncull.collect();
+        m_debugstatstext += m_reflectioncull.info( "gpu cull reflections, last face", false );
+    }
     if( auto const cullstats = ( m_viewports.empty() || !( Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap ) ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
         m_debugstatstext +=
             "\ncluster lists: " + std::to_string( cullstats->index_count )
@@ -953,10 +983,25 @@ void opengl46_renderer::draw_debug_ui()
             else
                 ImGui::TextUnformatted("(multi draws not available, see the log)");
         }
+        if (Global.gfx_gpucull != 0)
+        {
+            ImGui::Checkbox("the same for the cascades of the sun shadows (gfx.gpucull.shadows)", &Global.gfx_gpucull_shadows);
+            ImGui::Checkbox("the same for the environment map, when it's drawn next (gfx.gpucull.reflections)", &Global.gfx_gpucull_reflections);
+        }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
         if (Global.gfx_contactshadows > 0)
             ImGui::TextUnformatted("(drawn anyway for the contact shadows, gfx.contactshadows)");
-        auto const info{m_instancecull.info()};
+        auto info{m_instancecull.info()};
+        if (Global.gfx_gpucull_shadows)
+        {
+            for (std::size_t cascade = 0; cascade < m_shadowcull.size(); ++cascade)
+            {
+                if (m_shadowcull[cascade].ran())
+                    info += m_shadowcull[cascade].info("gpu cull shadows " + std::to_string(cascade + 1), false);
+            }
+        }
+        if (Global.gfx_gpucull_reflections && m_reflectioncull.ran())
+            info += m_reflectioncull.info("gpu cull reflections, last face", false);
         if (!info.empty())
             ImGui::TextUnformatted(info.c_str() + 1);
     }
@@ -1461,7 +1506,9 @@ if (!Global.gfx_skippipeline)
             scene_ubo->update( scene_ubs );
 
             if( m_shadowcolor != colors::white ) {
+                m_shadowcascade = idx;
                 Render( simulation::Region );
+                m_shadowcascade = -1;
                 if( idx > 0 ) { continue; } // render cab only in the closest csm stage
                 if( !FreeFlyModeFlag && Global.render_cab ) {
                     Render_cab( simulation::Train->Dynamic(), 0.0f, false );
@@ -2704,6 +2751,14 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 
 void opengl46_renderer::Bind_Material_Shadow(material_handle const Material)
 {
+	if (m_indirectrecording)
+	{
+		// the walk of Render_Instances_Indirect_Pass() only notes the material, the program and the texture are bound when the
+		// draw is made (Render_Instances_Indirect_Shadow())
+		m_indirectmaterial = Material;
+		m_indirectsubmodel = nullptr;
+		return;
+	}
 	if (Material != null_handle)
 	{
 		auto &material = m_materials.material(Material);
@@ -2802,15 +2857,35 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 	for( auto &bucket : m_frame_instance_buckets ) {
 		bucket.second.clear();
 	}
-	// the gpu culling runs along the first color pass of the main viewport of a frame. its result is drawn (Global.gfx_gpucull 1),
-	// or compared with the one of the cpu, which draws (2)
+	// the gpu culling runs along the first color pass of the main viewport of a frame, and the passes of the cascades of the
+	// sun shadows and of the faces of the environment map drawn for it, each with a culling of its own. its result is drawn
+	// (Global.gfx_gpucull 1), or compared with the one of the cpu, which draws (2)
 	m_instancecullpass = false;
+	m_passcull = nullptr;
 	if( ( Global.gfx_gpucull != 0 )
-	 && ( m_renderpass.draw_mode == rendermode::color )
 	 && ( m_current_viewport != nullptr )
-	 && ( m_current_viewport->main )
-	 && ( m_instancecullframe != m_framestamp ) ) {
-		m_instancecullframe = m_framestamp;
+	 && ( m_current_viewport->main ) ) {
+		if( ( m_renderpass.draw_mode == rendermode::color )
+		 && ( m_instancecullframe != m_framestamp ) ) {
+			m_instancecullframe = m_framestamp;
+			m_passcull = &m_instancecull;
+		}
+		else if( ( m_renderpass.draw_mode == rendermode::shadows )
+		      && ( Global.gfx_gpucull_shadows )
+		      && ( m_shadowcascade >= 0 )
+		      && ( m_shadowcascade < static_cast<int>( m_shadowcull.size() ) )
+		      && ( false == m_cubeshadows ) ) {
+			// the cascades of the sun; the maps of lamps and headlights go as before
+			m_passcull = &m_shadowcull[ m_shadowcascade ];
+			m_shadowcasters.clear();
+		}
+		else if( ( m_renderpass.draw_mode == rendermode::reflections )
+		      && ( Global.gfx_gpucull_reflections )
+		      && ( Global.reflectiontune.fidelity >= 1 ) ) {
+			m_passcull = &m_reflectioncull;
+		}
+	}
+	if( m_passcull != nullptr ) {
 		m_instancecullpass = true;
 		// the same choices as in Render_Instanced()
 		auto const reflections { m_renderpass.draw_mode == rendermode::reflections };
@@ -2825,7 +2900,7 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 		setup.drawrange = static_cast<float>( sq( m_renderpass.draw_range + 250 ) );
 		setup.zoom = Global.ZoomFactor;
 		setup.drawing = ( Global.gfx_gpucull == 1 );
-		m_instancecull.begin_pass( setup );
+		m_passcull->begin_pass( setup );
 	}
 	// build a list of region sections to render
 	glm::vec3 const cameraposition{m_renderpass.pass_camera.position()};
@@ -3275,6 +3350,7 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		indirect_counts colourcounts;
 		if( false == m_indirectdraws.empty() ) {
 			auto const cpustart { std::chrono::steady_clock::now() };
+			m_indirectcull = &m_instancecull;
 			m_instancecull.bind_draw();
 			colourcounts = Render_Instances_Indirect_Colour( m_indirectcolourset );
 			::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
@@ -3291,26 +3367,32 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		m_renderpass.draw_stats.models += static_cast<int>( m_instancecull.last_count() );
 	}
 	if( m_instancecullpass ) {
-		if( m_instancecull.drawing() ) {
+		if( m_passcull->drawing() ) {
 			// the buckets of the pass weren't queued for the cpu, which leaves the loop below empty
-			Render_Instances_Indirect();
+			if( m_passcull == &m_instancecull ) {
+				Render_Instances_Indirect();
+			}
+			else {
+				Render_Instances_Indirect_Pass();
+			}
 		}
 		else {
 			// the view of the pass is in place here, the one Render_Instanced() takes
-			m_instancecull.dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
+			m_passcull->dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
 		}
 	}
 	for( auto &bucket : m_frame_instance_buckets ) {
 		if( bucket.second.empty() ) { continue; }
 		Render_Instanced( bucket.first.pModel, bucket.second, ( m_instancecullpass ? &m_instance_bandcounts : nullptr ) );
 		if( m_instancecullpass ) {
-			m_instancecull.cpu_result( bucket.first, m_instance_bandcounts );
+			m_passcull->cpu_result( bucket.first, m_instance_bandcounts );
 		}
 		bucket.second.clear();
 	}
 	if( m_instancecullpass ) {
-		m_instancecull.end_pass();
+		m_passcull->end_pass();
 		m_instancecullpass = false;
+		m_passcull = nullptr;
 	}
 }
 
@@ -3562,10 +3644,13 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 			Update_Instance_Records( bucket.first.pModel, instancebucket, Cell->m_area.center );
 		}
 		if( m_instancecullpass ) {
-			// the gpu tests every instance of the bucket, the way Render_Instanced() does
-			m_instancecull.add_bucket( bucket.first, instancebucket, Cell->m_area );
+			// the gpu tests every instance of the bucket, the way Render_Instanced() does. models with nothing to draw in the
+			// sun shadows are left out of them, as Render_Instanced() leaves them
+			if( ( m_renderpass.draw_mode != rendermode::shadows ) || Instances_Cast_Shadow( bucket.first, instancebucket ) ) {
+				m_passcull->add_bucket( bucket.first, instancebucket, Cell->m_area );
+			}
 			// and when the instances are drawn from its result, the cpu has nothing more to do with them
-			if( m_instancecull.drawing() ) { continue; }
+			if( m_passcull->drawing() ) { continue; }
 		}
 		// the depth pass of the whole scene culled them already, the colour pass draws what it recorded
 		if( m_indirectcolourpending ) { continue; }
@@ -3915,43 +4000,8 @@ void opengl46_renderer::Render_Instances_Indirect()
 		( Global.gfx_gpucull_occlusion_instances && ( false == Global.bWireFrame ) ) );
 
 	// the draws, recorded while the gpu culls
-	m_indirectdraws.clear();
-	m_indirectcommands.clear();
-	auto const &lodbounds { m_instancecull.lod_bounds() };
-	m_indirectrecording = true;
-	for( auto const &group : m_instancecull.draw_groups() ) {
-		auto *model { group.key->pModel };
-		if( ( model == nullptr ) || ( model->Root == nullptr ) || ( group.instance == nullptr ) ) { continue; }
-		group.instance->RaPrepare();
-		auto const *material { group.instance->Material() };
-		auto alpha { material != nullptr ? material->textures_alpha : 0x30300030 };
-		alpha ^= 0x0F0F000F;
-		for( std::uint32_t band = 0; band <= group.lodcount; ++band ) {
-			// a band holds the squared distances from its lower bound up to the next one; any of them selects the same lod
-			auto const bandmin { band == 0 ? 0.f : lodbounds[ group.lodfirst + band - 1 ] };
-			auto const bandmax { band == group.lodcount ? std::numeric_limits<float>::max() : lodbounds[ group.lodfirst + band ] };
-			if( ( bandmin > group.distancemax ) || ( bandmax <= group.distancemin ) ) { continue; }
-			m_indirectentry = group.entryfirst + band;
-			::glPushMatrix();
-			::glLoadIdentity();
-			model->Root->fSquareDist = bandmin;
-			model->Root->ReplacableSet( ( material != nullptr ? material->replacable_skins : nullptr ), alpha );
-			model->Root->pRoot = model;
-			Render( model->Root );
-			::glPopMatrix();
-		}
-	}
-	m_indirectrecording = false;
+	Record_Indirect_Draws( m_instancecull );
 
-	// with multi draws the draws with the same state follow one another, and their model blocks are in a buffer the programs
-	// of the multi draws read them from. the order goes into the commands, so it comes first
-	m_indirectmultidraw = ( Global.gfx_gpucull_multidraw && ( m_drawblockstream != nullptr ) );
-	if( m_indirectmultidraw && ( false == m_indirectdraws.empty() ) ) {
-		Order_Indirect_Draws();
-		Upload_Indirect_Blocks();
-	}
-
-	m_instancecull.fill_commands( m_indirectcommands );
 	using command_set = opengl46_instance_cull::command_set;
 	auto const twophase { m_instancecull.two_phase() };
 	auto const draws { false == m_indirectdraws.empty() };
@@ -4011,6 +4061,76 @@ void opengl46_renderer::Render_Instances_Indirect()
 		colourcounts.calls,
 		prepasscounts.calls,
 		std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count() );
+}
+
+// draws the instances of a pass other than the main view from the result of its gpu culling (m_passcull): the culling of the
+// pass with its own camera, no occlusion test, the draws recorded the same way, then drawn once with the programs the pass
+// draws with on the cpu
+void opengl46_renderer::Render_Instances_Indirect_Pass()
+{
+	auto const cpustart { std::chrono::steady_clock::now() };
+	auto &cull { *m_passcull };
+	cull.dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
+	Record_Indirect_Draws( cull );
+
+	using command_set = opengl46_instance_cull::command_set;
+	indirect_counts counts;
+	if( false == m_indirectdraws.empty() ) {
+		cull.bind_draw();
+		counts = (
+			m_renderpass.draw_mode == rendermode::shadows ?
+				Render_Instances_Indirect_Shadow( command_set::first ) :
+				Render_Instances_Indirect_Colour( command_set::first ) );
+		::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
+		Bind_Instance_Stream();
+	}
+	m_renderpass.draw_stats.instanced_drawcalls += static_cast<int>( counts.calls );
+	// the count of the frame the gpu reported last
+	m_renderpass.draw_stats.instances += static_cast<int>( cull.last_count() );
+	m_renderpass.draw_stats.models += static_cast<int>( cull.last_count() );
+	cull.draw_result( counts.draws, 0, counts.calls, 0, std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count() );
+}
+
+void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
+{
+	m_indirectcull = &Cull;
+	m_indirectdraws.clear();
+	m_indirectcommands.clear();
+	auto const &lodbounds { Cull.lod_bounds() };
+	m_indirectrecording = true;
+	for( auto const &group : Cull.draw_groups() ) {
+		auto *model { group.key->pModel };
+		if( ( model == nullptr ) || ( model->Root == nullptr ) || ( group.instance == nullptr ) ) { continue; }
+		group.instance->RaPrepare();
+		auto const *material { group.instance->Material() };
+		auto alpha { material != nullptr ? material->textures_alpha : 0x30300030 };
+		alpha ^= 0x0F0F000F;
+		for( std::uint32_t band = 0; band <= group.lodcount; ++band ) {
+			// a band holds the squared distances from its lower bound up to the next one; any of them selects the same lod
+			auto const bandmin { band == 0 ? 0.f : lodbounds[ group.lodfirst + band - 1 ] };
+			auto const bandmax { band == group.lodcount ? std::numeric_limits<float>::max() : lodbounds[ group.lodfirst + band ] };
+			if( ( bandmin > group.distancemax ) || ( bandmax <= group.distancemin ) ) { continue; }
+			m_indirectentry = group.entryfirst + band;
+			::glPushMatrix();
+			::glLoadIdentity();
+			model->Root->fSquareDist = bandmin;
+			model->Root->ReplacableSet( ( material != nullptr ? material->replacable_skins : nullptr ), alpha );
+			model->Root->pRoot = model;
+			Render( model->Root );
+			::glPopMatrix();
+		}
+	}
+	m_indirectrecording = false;
+
+	// with multi draws the draws with the same state follow one another, and their model blocks are in a buffer the programs
+	// of the multi draws read them from. the order goes into the commands, so it comes first
+	m_indirectmultidraw = ( Global.gfx_gpucull_multidraw && ( m_drawblockstream != nullptr ) );
+	if( m_indirectmultidraw && ( false == m_indirectdraws.empty() ) ) {
+		Order_Indirect_Draws();
+		Upload_Indirect_Blocks();
+	}
+
+	Cull.fill_commands( m_indirectcommands );
 }
 
 opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer )
@@ -4091,7 +4211,7 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 				}
 				auto const drawcount { static_cast<std::uint32_t>( last - index ) };
 				Bind_Indirect_Blocks( index, drawcount );
-				m_geometry.draw_indirect_multi( draw.geometry, m_instancecull.draw_command_offset( Set, index ), drawcount, sizeof( gl::instance_draw_command ) );
+				m_geometry.draw_indirect_multi( draw.geometry, m_indirectcull->draw_command_offset( Set, index ), drawcount, sizeof( gl::instance_draw_command ) );
 				counts.draws += drawcount;
 				++counts.calls;
 				lastdrawn = last - 1;
@@ -4104,7 +4224,7 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 			}
 			model_ubs = draw.ubs;
 			model_ubo->update( model_ubs );
-			m_geometry.draw_indirect( draw.geometry, m_instancecull.draw_command_offset( Set, index ) );
+			m_geometry.draw_indirect( draw.geometry, m_indirectcull->draw_command_offset( Set, index ) );
 			++counts.draws;
 			++counts.calls;
 			++index;
@@ -4137,7 +4257,7 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 			m_bindmultidraw = false;
 			auto const drawcount { static_cast<std::uint32_t>( last - index ) };
 			Bind_Indirect_Blocks( index, drawcount );
-			m_geometry.draw_indirect_multi( draw.geometry, m_instancecull.draw_command_offset( Set, index ), drawcount, sizeof( gl::instance_draw_command ) );
+			m_geometry.draw_indirect_multi( draw.geometry, m_indirectcull->draw_command_offset( Set, index ), drawcount, sizeof( gl::instance_draw_command ) );
 			counts.draws += drawcount;
 			index = last;
 		}
@@ -4145,7 +4265,7 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 			Bind_Material( draw.material, draw.submodel );
 			model_ubs = draw.ubs;
 			model_ubo->update( model_ubs );
-			m_geometry.draw_indirect( draw.geometry, m_instancecull.draw_command_offset( Set, index ) );
+			m_geometry.draw_indirect( draw.geometry, m_indirectcull->draw_command_offset( Set, index ) );
 			++counts.draws;
 			++index;
 		}
@@ -4159,6 +4279,93 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 	}
 	model_ubs.emission = 0.0f;
 	return counts;
+}
+
+opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Shadow( opengl46_instance_cull::command_set const Set )
+{
+	indirect_counts counts;
+	auto const count { m_indirectdraws.size() };
+	for( std::size_t index = 0; index < count; ) {
+		auto const &draw { m_indirectdraws[ index ] };
+		auto const texture { Indirect_Shadow_Texture( draw.material ) };
+		auto *multidrawprogram {
+			m_indirectmultidraw ?
+				( texture != null_handle ? m_alpha_shadow_multidraw_shader.get() : m_shadow_multidraw_shader.get() ) :
+				nullptr };
+		if( multidrawprogram != nullptr ) {
+			// the draws which follow in the same bank and of the same primitive, with the same texture for the alpha test
+			auto last { index + 1 };
+			while( ( last < count )
+				&& ( m_indirectdraws[ last ].geometry.bank == draw.geometry.bank )
+				&& ( m_indirectdraws[ last ].type == draw.type )
+				&& ( m_indirectcommands[ last ].indexed == m_indirectcommands[ index ].indexed )
+				&& ( Indirect_Shadow_Texture( m_indirectdraws[ last ].material ) == texture ) ) {
+				++last;
+			}
+			if( texture != null_handle ) {
+				m_textures.bind( 0, texture );
+			}
+			multidrawprogram->bind();
+			auto const drawcount { static_cast<std::uint32_t>( last - index ) };
+			Bind_Indirect_Blocks( index, drawcount );
+			m_geometry.draw_indirect_multi( draw.geometry, m_indirectcull->draw_command_offset( Set, index ), drawcount, sizeof( gl::instance_draw_command ) );
+			counts.draws += drawcount;
+			index = last;
+		}
+		else {
+			Bind_Material_Shadow( draw.material );
+			model_ubs = draw.ubs;
+			model_ubo->update( model_ubs );
+			m_geometry.draw_indirect( draw.geometry, m_indirectcull->draw_command_offset( Set, index ) );
+			++counts.draws;
+			++index;
+		}
+		++counts.calls;
+	}
+	if( m_indirectmultidraw && ( count > 0 ) ) {
+		// the model block the draws made one by one leave behind
+		model_ubs = m_indirectdraws.back().ubs;
+		model_ubo->update( model_ubs );
+	}
+	return counts;
+}
+
+texture_handle opengl46_renderer::Indirect_Shadow_Texture( material_handle const Material )
+{
+	if( Material == null_handle ) { return null_handle; }
+	return m_materials.material( Material ).textures[ 0 ];
+}
+
+bool opengl46_renderer::Instances_Cast_Shadow( scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket )
+{
+	auto const lookup { m_shadowcasters.find( Key ) };
+	if( lookup != m_shadowcasters.end() ) { return lookup->second; }
+
+	// the skins of the instance Render_Instanced() would take them from
+	TAnimModel const *instance { nullptr };
+	for( auto const *candidate : Bucket.instances ) {
+		if( candidate != nullptr ) {
+			instance = candidate;
+			break;
+		}
+	}
+	auto const *skins { instance != nullptr && instance->Material() != nullptr ? instance->Material()->replacable_skins : nullptr };
+	auto castsshadow { false };
+	m_instance_lodpending.clear();
+	m_instance_lodpending.push_back( Key.pModel != nullptr ? Key.pModel->Root : nullptr );
+	while( ( false == castsshadow ) && ( false == m_instance_lodpending.empty() ) ) {
+		auto const *submodel = m_instance_lodpending.back();
+		m_instance_lodpending.pop_back();
+		if( submodel == nullptr ) { continue; }
+		if( submodel->eType < TP_ROTATOR ) {
+			auto const material { submodel->m_material >= 0 ? submodel->m_material : ( skins != nullptr ? skins[ -submodel->m_material ] : null_handle ) };
+			castsshadow = ( Material( material ).shadow_rank <= Global.gfx_shadow_rank_cutoff );
+		}
+		m_instance_lodpending.push_back( submodel->Child );
+		m_instance_lodpending.push_back( submodel->Next );
+	}
+	m_shadowcasters.emplace( Key, castsshadow );
+	return castsshadow;
 }
 
 // the order of the recorded draws for multi draws. draws go in one multi draw when they follow one another with the same
@@ -4175,8 +4382,14 @@ void opengl46_renderer::Order_Indirect_Draws()
 
 	// a number for each state the draws have, by sorting the states (the buffers are kept between frames)
 	m_indirectstatekeys.clear();
+	// the sun shadows draw with the program and the texture of the alpha test, whatever the material
+	auto const shadows { m_renderpass.draw_mode == rendermode::shadows };
 	for( std::size_t index = 0; index < count; ++index ) {
 		auto const &draw { m_indirectdraws[ index ] };
+		if( shadows ) {
+			m_indirectstatekeys.push_back( { Indirect_Shadow_Texture( draw.material ), 0u, draw.geometry.bank, draw.type, m_indirectcommands[ index ].indexed, draw.blending, static_cast<std::uint32_t>( index ) } );
+			continue;
+		}
 		auto variant { 0u };
 		if( draw.material != null_handle ) {
 			auto const &material { m_materials.material( draw.material ) };

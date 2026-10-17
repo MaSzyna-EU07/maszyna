@@ -294,6 +294,10 @@ struct global_settings {
     // with gfx_gpucull 1: the draws of the instances which follow one another with the same material and geometry bank are
     // made with one multi draw, their model blocks read from a storage buffer by the number of the draw
     bool gfx_gpucull_multidraw = true;
+    // with gfx_gpucull 1 or 2: the instances of the cascades of the sun shadows and of the faces of the environment map are
+    // culled in compute passes as well (drawn from their result, or compared), not only those of the main view
+    bool gfx_gpucull_shadows = true;
+    bool gfx_gpucull_reflections = true;
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
     // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,

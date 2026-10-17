@@ -264,8 +264,9 @@ are no longer loaded.
 Many models of the scenery (trees, bushes, poles, fences: models without lights and animations) are drawn in batches, one
 batch per model and level of detail. Which of them are drawn, and at which level of detail, can be worked out on the
 processor (as before) or on the graphics card. On the graphics card the processor no longer goes through the models one by
-one, so with dense vegetation it is much less loaded. Only the main view is drawn this way; shadows, reflections and other
-views go as before.
+one, so with dense vegetation it is much less loaded. The main view, the three cascades of the sun shadows and the faces of
+the environment map (reflections) are drawn this way; the shadow maps of lamps and headlights, the cab and other views go as
+before.
 
 | Entry | Default | Meaning |
 |---|---|---|
@@ -274,6 +275,8 @@ views go as before.
 | `gfx.gpucull.occlusion.instances yes/no` | `yes` | with `gfx.gpucull.occlusion yes`: the models drawn this way hide one another too (see below) |
 | `gfx.depthprepass yes/no` | `yes` | with `gfx.gpucull yes`: the depth of the models is drawn first, so the colour is worked out only for what stays in view (dense foliage) |
 | `gfx.gpucull.multidraw yes/no` | `yes` | with `gfx.gpucull yes`: parts of models with the same material (and texture variant) in the same model are drawn with one call (multi draw), see below |
+| `gfx.gpucull.shadows yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the cascades of the sun shadows too (each cascade with its own camera and the distances from the real camera, as before; models none of whose materials cast shadows are left out at once) |
+| `gfx.gpucull.reflections yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the faces of the environment map too (its own range of models, as before) |
 | `gfx.depthprepass.scene yes/no` | `no` | the depth of the whole opaque scene of the main view (terrain, tracks, buildings, models, vehicles, the cab) is drawn before its colour, see below |
 
 With `gfx.gpucull.occlusion.instances yes` the test goes in two phases: the models seen in the previous frame are drawn
@@ -286,6 +289,12 @@ not the scene). With `no` the models do not cover each other: a tree hidden behi
 is not worked out with the depth prepass on). Models whose material is not one of the usual ones (parallax, water and the
 like) are left out of the depth prepass and drawn as before; with the depth prepass on, they don't hide the others either.
 All of these can be changed while the simulator runs, in the **Instance culling** debug window.
+
+The shadows and the reflections take the same tests as before (which models are in the cascade or the face, their distance
+and level of detail), without the occlusion test, the depth prepass and the two phases, which belong to the main view. The
+copies of the models are sent to the graphics card once and serve all of these views. In the shadows the parts with the
+same texture for the alpha test (or with none) in the same model go in one call with `gfx.gpucull.multidraw yes`, whatever
+their material.
 
 With `gfx.gpucull.multidraw yes` the draws of the models drawn from the GPU are put in an order in which the parts with the
 same material, texture variant and model (the model keeps its geometry in a buffer of its own) follow one another, and each
@@ -378,7 +387,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   made them — fewer than the draws with `gfx.gpucull.multidraw yes` — and the processor time of the whole step) and the timings `instance cull:`, `occlusion depth:` (the depth pyramid of the test) and
   `depth prepass:`; in two phases each of them adds in brackets the time of the second phase, of the second pyramid and of
   the depth of the models drawn first. With `compare` it shows how many models both counted and how many levels of detail
-  differ.
+  differ. With `gfx.gpucull.shadows` and `gfx.gpucull.reflections` the same rows (without the occlusion test and the
+  prepass) follow for each cascade, `gpu cull shadows 1:` to `3:` (1 the nearest), and for the environment map,
+  `gpu cull reflections, last face:` (the last face of the map drawn, as the map is drawn now and then), with the timings
+  `instance cull shadows 1:` … and `instance cull reflections, last face:`.
 - With `gfx.depthprepass.scene yes` Shift+F12 shows the `scene depth:` row (draws of the depth pass and its processor time)
   and the timing `scene depth:` (its GPU time).
 - With `gfx.contactshadows` on Shift+F12 shows the `contact shadows:` row (the level, the length and reach of the rays, or
