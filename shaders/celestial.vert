@@ -7,12 +7,16 @@ const vec2 vert[4] = vec2[]
 );
 
 out vec2 f_coord;
+// the corner of the quad, -1...1 across it
+out vec2 f_local;
 
 #include <common>
 
 void main()
 {
 	gl_Position = projection * (vec4(param[1].xyz, 1.0) + vec4(vert[gl_VertexID] * param[1].w, 0.0, 0.0));
+
+	f_local = vert[gl_VertexID];
 
 	vec2 coord = param[2].xy;
 	float size = param[2].z;

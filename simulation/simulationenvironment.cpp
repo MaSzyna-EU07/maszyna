@@ -137,8 +137,17 @@ world_environment::update() {
 
     float keylightintensity;
     glm::vec3 keylightcolor;
+    // light of the night sky the key light gets on top of its own; the moon gives less of it in its thinner phases
+    auto lightfloor { 0.05f };
+    // slightly cool moonlight, the way the eye sees a moonlit night
+    glm::vec3 const moonlightcolor { 0.84f, 0.91f, 1.0f };
+    auto const moonlightshare { m_moon.getBrightness() };
+    // the light of the sun is gone at the end of the twilight (-18 degrees), the moon's comes in over the next two degrees
+    // instead of all at once
+    auto const moonfadein { std::clamp( ( -18.f - m_sun.getAngle() ) / 2.f, 0.f, 1.f ) };
+    auto moonkeylight { false };
 	Global.SunAngle = m_sun.getAngle();
-	if (moonlightlevel > sunlightlevel && Global.SunAngle < -20)
+	if (moonlightlevel > sunlightlevel && Global.SunAngle < -18)
 	{
         // rare situations when the moon is brighter than the sun, typically at night
         Global.SunAngle = m_moon.getAngle();
@@ -148,7 +157,9 @@ world_environment::update() {
         m_lightintensity = moonlightlevel;
         // if the moon is up, it overrides the twilight
         twilightfactor = 0.0f;
-        keylightcolor = glm::vec3( 1.0f, 0.9490196f, 0.7921569f );
+        lightfloor *= moonlightshare;
+        keylightcolor = moonlightcolor * moonfadein;
+        moonkeylight = true;
     }
     else {
         // regular situation with sun as the key light
@@ -173,7 +184,7 @@ world_environment::update() {
     // intensity combines intensity of the sun and the light reflected by the sky dome
     // it'd be more technically correct to have just the intensity of the sun here,
     // but whether it'd _look_ better is something to be tested
-    auto const intensity = std::min( 1.15f * ( 0.05f + keylightintensity + skydomehsv.z ), 1.25f );
+    auto const intensity = std::min( 1.15f * ( lightfloor + keylightintensity + skydomehsv.z ), 1.25f );
     // the impact of sun component is reduced proportionally to overcast level, as overcast increases role of ambient light
     auto const diffuselevel = std::lerp( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
     // ...update light colours and intensity.
@@ -188,6 +199,13 @@ world_environment::update() {
     Global.DayLight.ambient[ 0 ] = std::lerp( skydomehsv.z, skydomecolour.r, ambienttone ) * ambientintensitynightfactor;
     Global.DayLight.ambient[ 1 ] = std::lerp( skydomehsv.z, skydomecolour.g, ambienttone ) * ambientintensitynightfactor;
     Global.DayLight.ambient[ 2 ] = std::lerp( skydomehsv.z, skydomecolour.b, ambienttone ) * ambientintensitynightfactor;
+    if( moonkeylight ) {
+        // the sky lit by the moon adds its own light, as the sky of the day does to the sunlight
+        auto const moonlit { moonlightcolor * ( 0.25f * moonlightlevel * moonfadein ) };
+        Global.DayLight.ambient[ 0 ] += moonlit.r;
+        Global.DayLight.ambient[ 1 ] += moonlit.g;
+        Global.DayLight.ambient[ 2 ] += moonlit.b;
+    }
 
     Global.fLuminance = intensity;
 

@@ -255,6 +255,8 @@ are no longer loaded.
 | `gfx.clouds.shadows.range` | `16000` | 1000..100000: the side of the cloud shadow map, metres; farther the clouds cast no shadows |
 | `gfx.stars yes/no` | `yes` | the stars of the catalogue |
 | `gfx.stars.brightness` | `1.0` | 0..16: their brightness |
+| `gfx.sun.disc` | `1.0` | 0..4: brightness of the sun disc against the radiance its sunlight gives it; 1 is physical (held within the range of the image), the glare around it comes from the bloom |
+| `gfx.moon.disc` | `1.0` | 0..16: brightness of the moon disc |
 
 ### Models drawn from the GPU
 

@@ -400,6 +400,10 @@ struct global_settings {
     // stars from the catalogue, and their brightness
     bool gfx_stars { true };
     float gfx_stars_brightness { 1.f };
+    // brightness of the sun disc against the radiance its sunlight gives it (1: physical, held within the range of the image),
+    // and of the moon disc
+    float gfx_sun_disc { 1.f };
+    float gfx_moon_disc { 1.f };
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;

@@ -886,6 +886,8 @@ void opengl46_renderer::draw_debug_ui()
     if (ImGui::Begin("Sky and exposure"))
     {
         m_sky.draw_debug_ui();
+        ImGui::SliderFloat("sun disc, 1 = physical (gfx.sun.disc)", &Global.gfx_sun_disc, 0.f, 2.f);
+        ImGui::SliderFloat("moon disc (gfx.moon.disc)", &Global.gfx_moon_disc, 0.f, 8.f);
         ImGui::Separator();
         m_exposure.draw_debug_ui();
         ImGui::Separator();
@@ -2229,6 +2231,8 @@ bool opengl46_renderer::Render(world_environment *Environment)
 	// celestial bodies
 	m_celestial_shader->bind();
 	m_empty_vao->bind();
+	// the bodies give their colour premultiplied, and as alpha how much of the sky behind them they hide (celestial.frag)
+	::glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
     // the fog and the clouds laid over the sky hide the sun and the moon; without the clouds the overcast fades them
     auto const overcastfactor{m_weather.clouds_drawn() ? 1.f : std::clamp(1.5f - Global.Overcast, 0.f, 1.f)};
@@ -2236,97 +2240,111 @@ bool opengl46_renderer::Render(world_environment *Environment)
 	glm::vec3 suncolor = glm::mix(glm::vec3(1.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
 	suncolor = m_sky.sun_disc_color(suncolor);
 
+	// the vertical of the sky on the quads of the bodies, which lie in the plane of the view
+	glm::vec2 zenith{glm::mat3{modelview} * glm::vec3{0.f, 1.f, 0.f}};
+	zenith = (glm::length(zenith) > 1e-3f ? glm::normalize(zenith) : glm::vec2{0.f, 1.f});
+	// a disc low over the horizon is flattened by the refraction: its lower edge is lifted more than the upper one (refraction
+	// after Bennett, for the apparent elevation). height over width of the disc
+	auto const flattening = [](float const Elevation, float const Radius) {
+		auto const refraction = [](float const Height) {
+			auto const height{std::max(Height, -2.f)};
+			return 1.f / std::tan(glm::radians(height + 7.31f / (height + 4.4f))); // arc minutes
+		};
+		auto const radius{glm::degrees(Radius)};
+		return std::clamp(1.f - (refraction(Elevation - radius) - refraction(Elevation + radius)) / (2.f * radius * 60.f), 0.5f, 1.f);
+	};
+	// the view of the frame gets the sun as bright as it is, which gives the glare of the bloom; the other views (the
+	// environment map, mirrors) keep the old dim disc, the reflections of the sun on surfaces come from their shading
+	auto const mainview{(m_renderpass.draw_mode == rendermode::color) && (m_current_viewport != nullptr) && m_current_viewport->main};
+	std::array<glm::vec4, 3> body{};
+
 	// sun
 	{
-		Bind_Texture(0, m_suntexture);
-		glm::vec4 color(suncolor.x, suncolor.y, suncolor.z, overcastfactor);
-		auto const sunvector = Environment->m_sun.getDirection();
+		// the true size of the disc, 0.533 degrees across, the quad a little larger for a smooth edge
+		float const sunradius{glm::radians(0.2666f)};
+		float const quadmargin{1.25f};
+		// limb darkening per channel (linear law): the edge of the disc is darker and redder than its centre. the centre is
+		// this many times as bright as the disc on average
+		glm::vec3 const limbdarkening{0.50f, 0.60f, 0.75f};
+		float const limbpeak{1.f / (1.f - 0.75f / 3.f)};
+		// the brightest the centre of the disc gets: within the range of the half floats of the image, with the sky added
+		float const radiancemax{60000.f};
 
-        /*float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
-            0.0325f,
-            0.0275f,
-            std::clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );*/
-		model_ubs.param[0] = color;
-        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(sunvector, 1.0f)), 0.00463f /* size */);
-		model_ubs.param[2] = glm::vec4(0.0f, 1.0f, 1.0f, 0.0f);
+		auto const sunvector = Environment->m_sun.getDirection();
+		glm::vec3 radiance{suncolor * overcastfactor};
+		if (mainview)
+		{
+			// radiance of the disc: the illuminance of its sunlight over its solid angle. the shading lights a surface facing
+			// the sun with the diffuse colour times SUN_DIFFUSE_SCALE (1.5) and has no 1/pi in its lambert term
+			// (light_common.glsl), so its surfaces are pi times as bright as physical ones; the disc is put in the same units.
+			// the overcast without the clouds drawn hides the sun, where it only faded the old disc
+			auto const solidangle{2.f * glm::pi<float>() * (1.f - std::cos(sunradius))};
+			auto const hidden{m_weather.clouds_drawn() ? 0.f : glm::smoothstep(0.5f, 1.f, Global.Overcast)};
+			auto const physical{glm::vec3{m_sunlight.diffuse} * (1.5f * glm::pi<float>() / solidangle * Global.gfx_sun_disc)};
+			radiance = glm::mix(physical, radiance, hidden);
+			auto const peak{std::max({radiance.r, radiance.g, radiance.b}) * limbpeak};
+			if (peak > radiancemax)
+				radiance *= radiancemax / peak;
+		}
+		body[0] = glm::vec4{zenith, flattening(Environment->m_sun.getAngle(), sunradius), 1.f / quadmargin};
+		body[1] = glm::vec4{0.f};
+		body[2] = glm::vec4{limbdarkening, 0.f};
+		glProgramUniform4fv(*m_celestial_shader, 0, static_cast<GLsizei>(body.size()), glm::value_ptr(body[0]));
+		model_ubs.param[0] = glm::vec4{radiance, 1.f};
+		model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(sunvector, 1.0f)), std::tan(sunradius) * quadmargin);
+		model_ubs.param[2] = glm::vec4(0.f, 0.f, 0.f, 1.f);
 		model_ubo->update(model_ubs);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	}
 	// moon
 	{
+		// the disc of the full moon in the picture of the phases (fx/moon, 3x3): centre and radius in texture units
+		glm::vec2 const discposition{0.5f, 0.5f};
+		float const discradius{0.1635f};
+		float const quadmargin{1.1f};
+		// light of the earth on the dark part of the moon, against the light of the sun on the lit part, at the new moon
+		float const earthshine{0.005f};
+		// extinction of the air per air mass (natural log), red, green and blue
+		glm::vec3 const extinction{0.10f, 0.17f, 0.30f};
+
 		Bind_Texture(0, m_moontexture);
     	glm::vec3 mooncolor(1.0f, 0.9490196f, 0.9058824f);
-		glm::vec4 color(mooncolor.r, mooncolor.g, mooncolor.b,
-		                // fade the moon if it's near the sun in the sky, especially during the day
-		                std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(Environment->m_sun.getDirection(), Environment->m_moon.getDirection()))) * overcastfactor);
+		// fade the moon if it's near the sun in the sky, especially during the day
+		float const visibility = std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(Environment->m_sun.getDirection(), Environment->m_moon.getDirection()))) * overcastfactor;
 
 		auto const moonvector = Environment->m_moon.getDirection();
+		auto const moonradius{Environment->m_moon.getAngularRadius()};
+		auto const moonelevation{Environment->m_moon.getAngle()};
+		auto const moonview{glm::vec3(modelview * glm::vec4(moonvector, 1.0f))};
 
-		// choose the moon appearance variant, based on current moon phase
-		// NOTE: implementation specific, 8 variants are laid out in 3x3 arrangement
-		// from new moon onwards, top left to right bottom (last spot is left for future use, if any)
-		auto const moonphase = Environment->m_moon.getPhase();
-		float moonu, moonv;
-		if (moonphase < 1.84566f)
+		if (Environment->m_moon.getPhase() == 50)
 		{
-			moonv = 1.0f - 0.0f;
-			moonu = 0.0f;
-		}
-		else if (moonphase < 5.53699f)
-		{
-			moonv = 1.0f - 0.0f;
-			moonu = 0.333f;
-		}
-		else if (moonphase < 9.22831f)
-		{
-			moonv = 1.0f - 0.0f;
-			moonu = 0.667f;
-		}
-		else if (moonphase < 12.91963f)
-		{
-			moonv = 1.0f - 0.333f;
-			moonu = 0.0f;
-		}
-		else if (moonphase < 16.61096f)
-		{
-			moonv = 1.0f - 0.333f;
-			moonu = 0.333f;
-		}
-		else if (moonphase < 20.30228f)
-		{
-			moonv = 1.0f - 0.333f;
-			moonu = 0.667f;
-		}
-		else if (moonphase < 23.99361f)
-		{
-			moonv = 1.0f - 0.667f;
-			moonu = 0.0f;
-		}
-		else if (moonphase < 27.68493f)
-		{
-			moonv = 1.0f - 0.667f;
-			moonu = 0.333f;
-		}
-		else if (moonphase == 50) //9th slot used for easter egg
-		{
-			moonv = 1.0f - 0.667f;
-			moonu = 0.66f;
+			// 9th slot of the picture used for easter egg, drawn as it is
+			model_ubs.param[0] = glm::vec4(mooncolor, visibility);
+			model_ubs.param[1] = glm::vec4(moonview, std::tan(moonradius) * (0.1665f / discradius));
+			model_ubs.param[2] = glm::vec4(0.66f, 1.0f - 0.667f, 0.333f, 0.f);
 		}
 		else
 		{
-			moonv = 1.0f - 0.0f;
-			moonu = 0.0f;
+			// the air dims and reddens the moon low over the horizon (air mass after Kasten and Young 1989), against its colour
+			// high in the sky
+			auto const zenithangle{90.f - std::max(moonelevation, -1.f)};
+			auto const airmass{1.f / (std::cos(glm::radians(zenithangle)) + 0.50572f * std::pow(std::max(96.07995f - zenithangle, 0.1f), -1.6364f))};
+			auto const transmittance{glm::exp(-extinction * (airmass - 1.f))};
+			// the dark part of the moon hides the stars behind it. the sky behind it isn't hidden in the twilight (its light is
+			// scattered in front of the moon), so this waits until the sky is dark
+			auto const night{1.f - glm::smoothstep(-15.f, -9.f, Environment->m_sun.getAngle())};
+			// the moon is lit from the direction of the sun, which shapes its phase; the earth, full at the new moon, lights its
+			// dark part a little
+			auto const earthphase{0.5f * (1.f - std::cos(glm::radians(Environment->m_moon.getPhaseAngle())))};
+			body[0] = glm::vec4{zenith, flattening(moonelevation, moonradius), 1.f / quadmargin};
+			body[1] = glm::vec4{glm::normalize(glm::mat3{modelview} * Environment->m_sun.getDirection()), earthshine * earthphase};
+			body[2] = glm::vec4{0.f};
+			glProgramUniform4fv(*m_celestial_shader, 0, static_cast<GLsizei>(body.size()), glm::value_ptr(body[0]));
+			model_ubs.param[0] = glm::vec4(mooncolor * transmittance * (visibility * Global.gfx_moon_disc), night * overcastfactor);
+			model_ubs.param[1] = glm::vec4(moonview, std::tan(moonradius) * quadmargin);
+			model_ubs.param[2] = glm::vec4(discposition, discradius, 2.f);
 		}
-
-        /*
-        float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
-            0.0160f,
-            0.0135f,
-            std::clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );*/
-
-		model_ubs.param[0] = color;
-        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(moonvector, 1.0f)), 0.00451f /* size */);
-		model_ubs.param[2] = glm::vec4(moonu, moonv, 0.333f, 0.0f);
 		model_ubo->update(model_ubs);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	}
@@ -2354,8 +2372,11 @@ bool opengl46_renderer::Render(world_environment *Environment)
 	m_shadowcolor = glm::mix(glm::vec4{colors::shadow}, glm::vec4{colors::white}, std::clamp(-Environment->m_sun.getAngle(), 0.f, 6.f) / 6.f);
 	if ((Environment->m_sun.getAngle() < -18.f) && (Environment->m_moon.getAngle() > 0.f))
 	{
-		// turn on moon shadows after nautical twilight, if the moon is actually up
-		m_shadowcolor = colors::shadow;
+		// turn on moon shadows after astronomical twilight, if the moon is actually up. they come in with the moonlight
+		// (simulation/simulationenvironment.cpp) and are as deep as it is strong: full from the gibbous moon, faint from a crescent
+		auto const moonshadow{std::clamp(4.f * Environment->m_moon.getBrightness(), 0.f, 1.f) * std::clamp((-18.f - Environment->m_sun.getAngle()) / 2.f, 0.f, 1.f) *
+		                      std::clamp(Environment->m_moon.getAngle() / 5.f, 0.f, 1.f)};
+		m_shadowcolor = glm::mix(glm::vec4{colors::white}, glm::vec4{colors::shadow}, moonshadow);
 	}
 	// soften shadows depending on sky overcast factor, unless the shadows of the clouds hold back the sun where they fall
 	if (false == m_weather.cloud_shadows())
