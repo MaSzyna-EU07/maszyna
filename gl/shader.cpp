@@ -275,6 +275,9 @@ void gl::program::init()
     glUniform1i(glGetUniformLocation(*this, "shadowmap"), gl::SHADOW_TEX);
     glUniform1i(glGetUniformLocation(*this, "envmap"), gl::ENV_TEX);
     glUniform1i(glGetUniformLocation(*this, "headlightmap"), gl::HEADLIGHT_TEX);
+    // the prefiltered environment map (envmapping.glsl); without a unit of its own the cube sampler would share unit 0 with
+    // the 2d diffuse texture of the materials, which makes their draws fail (GL_INVALID_OPERATION)
+    glUniform1i(glGetUniformLocation(*this, "envmap_ggx"), gl::ENV_GGX_TEX);
 
 	GLuint index;
 
