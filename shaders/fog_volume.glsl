@@ -54,8 +54,11 @@ vec4 fog_along_view(vec3 view, vec2 fragcoord)
 	return vec4(volume.rgb + volume.a * rest.rgb, volume.a * rest.a);
 }
 
-// how fast the fog of the volume over the sky gives way to the fog without the clouds, per share of the light the clouds in it hold back
-const float FOG_SKY_CLOUD_CUT = 4.0;
+// shares of the light the clouds in the volume hold back between which its fog over the sky gives way to the fog without the clouds.
+// low: the clouds of the volume (without the detail, so a little wider than those drawn) leave no light rim along their thin edges;
+// the lower end above what the cells of the volume and the fog along the ray differ by on their own
+const float FOG_SKY_CLOUD_LOW = 0.004;
+const float FOG_SKY_CLOUD_HIGH = 0.03;
 
 // fog in front of the sky in a view space direction: through the fog volume to its far end, then along the ray without the
 // haze the atmosphere draws already. the far fog of the volume and the fog over the sky behind it are the same then
@@ -75,7 +78,7 @@ vec4 fog_sky(vec3 viewdirection, vec2 fragcoord)
 	if (weather_camera.z > 0.5)
 	{
 		vec4 clear = fog_analytic(direction, 0.0, far, false);
-		float clouds = clamp((1.0 - volume.a / max(clear.a, 1e-4)) * FOG_SKY_CLOUD_CUT, 0.0, 1.0);
+		float clouds = smoothstep(FOG_SKY_CLOUD_LOW, FOG_SKY_CLOUD_HIGH, 1.0 - volume.a / max(clear.a, 1e-4));
 		volume = mix(volume, clear, clouds);
 	}
 	vec4 rest = fog_analytic(direction, far, 200000.0, true);
