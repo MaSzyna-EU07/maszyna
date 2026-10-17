@@ -1,0 +1,288 @@
+// clouds of the weather ray marched through their layers (clouds_common.glsl), into an image the sky pass lays over the sky
+// (sky_weather.frag). mode 0: the view of the main camera at a part of the resolution, smoothed over frames by
+// clouds_temporal.comp; mode 1: a panorama around the camera (azimuth across, elevation up), a band of rows per frame, for the
+// environment map and the other views. rgb: the light of the clouds with the fog in front of them, a: what they let through
+// of the sky behind; the depth image gets the distance of the clouds, for the reprojection
+
+#include <common>
+#include <clouds_common.glsl>
+
+layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, local_size_z = 1) in;
+
+layout(rgba16f, binding = 0) uniform writeonly image2D clouds_color;
+layout(r32f, binding = 1) uniform writeonly image2D clouds_depth;
+
+layout(location = 0) uniform int mode;
+layout(location = 1) uniform ivec2 size;
+// mode 0: clip space to view space of the camera, and view space to world axes
+layout(location = 2) uniform mat4 inverse_projection;
+layout(location = 3) uniform mat4 view_to_world;
+layout(location = 4) uniform int frame;
+// x: samples through a layer at most, y: samples towards the sun, z: farthest distance (m), w: 1 with the detail noise
+layout(location = 5) uniform vec4 quality;
+// mode 1: first row of the band and the rows in it
+layout(location = 6) uniform ivec2 rows;
+
+// lowest elevation of the panorama (radians); its rows go with the square of the height, denser at the horizon
+const float PANORAMA_LOW = -0.1;
+// scales of the light of the clouds against the shading of the surfaces (light_common.glsl: SUN_DIFFUSE_SCALE, AMBIENT_SCALE),
+// times the tuning of the debug window (weather_sun_color.w, weather_ambient.w). the sunlight three times that of the sunlit faces,
+// set by eye in the simulator: the sunlit sides of real cumulus are several times brighter than the sky around them. the sky light
+// about as the shaded faces get it: more of it greys the shaded sides of the clouds into a flat pastel
+const float CLOUD_SUN_SCALE = 4.5;
+const float CLOUD_AMBIENT_SCALE = 0.6;
+// the ground under the clouds lights their bases back with this share of the light falling on it
+const float CLOUD_GROUND_ALBEDO = 0.2;
+// how fast the light of the sky fades into a cloud, per optical depth of the cloud below a point, or above it past CLOUD_SKY_REACH
+const float CLOUD_AMBIENT_FADE = 0.05;
+// the part of the cloud over a point looked at for the sky light held back (cloud_sky_depth), metres, how fast the light fades
+// per optical depth there (less than the extinction: the light scattered many times gets through further), and the share left
+// in the darkest places
+const float CLOUD_SKY_REACH = 400.0;
+const float CLOUD_SKY_FADE = 0.25;
+const float CLOUD_SKY_FLOOR = 0.15;
+// how dense a cloud has to be to scatter the sunlight back at full: the thin edges and wisps of the side lit by the sun, seen with the
+// sun behind, are darker than its bulk (the "powder" effect: the light takes a few scatterings to turn back towards the view)
+const float CLOUD_POWDER = 6.0;
+// how many of the nearest steps towards the sun see the detail noise
+const int CLOUD_LIGHT_DETAIL_STEPS = 1;
+// orders of the scattering the sunlight is followed through (cloud_sunlight): the higher ones reach deep into a thick cloud, so its
+// shaded sides and its inside are lit through the cloud too, not only by the sky, and a big cloud close by is not a flat grey
+const int CLOUD_SCATTER_OCTAVES = 6;
+// how much longer every next step towards the sun is than the one before: 1 + this / steps², so the first step is short where the
+// light falls off fastest (about a 30th of the reach at 4 steps) and the steps get close to even when there are many of them
+const float CLOUD_LIGHT_GROWTH = 24.0;
+
+float henyey_greenstein(float cosangle, float g)
+{
+	// times 4 pi: 1 for an even scattering
+	float g2 = g * g;
+	return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosangle, 1e-4), 1.5);
+}
+
+float cloud_phase(float cosangle, float scale)
+{
+	return mix(henyey_greenstein(cosangle, 0.8 * scale), henyey_greenstein(cosangle, -0.25 * scale), 0.3);
+}
+
+// the light of the sky a face looking straight up (Up 1) or down (-1) gets: the uniform ambient light and the directional part of
+// the sky light (sky_ssbo, light_common.glsl: sky_ambient_directional) along the vertical. with the physical atmosphere it is bluer
+// and brighter from above than from the sides, so the shaded sides of the clouds take the colour of the sky above them
+vec3 cloud_sky_light(float up)
+{
+	vec3 directional = sky_ambient_sh[1].rgb * (0.488603 * up) - sky_ambient_sh[6].rgb * 0.315392 - sky_ambient_sh[8].rgb * 0.546274;
+	return max(weather_ambient.rgb + directional * 1.3, vec3(0.0)) * (CLOUD_AMBIENT_SCALE * weather_ambient.w);
+}
+
+// light of the sun reaching a point inside a layer through the cloud towards it, with the light scattered many times
+// (octaves after Wrenninge), and the phase of the view
+float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float powder, bool detail)
+{
+	vec3 sun = weather_sun_direction.xyz;
+	cloud_layer_s layer = cloud_layers[index];
+	float thickness = layer.heights.y - layer.heights.x;
+	float reach = min(thickness, 1500.0);
+	float depth = 0.0;
+	float travelled = 0.0;
+	// steps growing geometrically: near the point the shape matters, far only the bulk. with steps growing evenly the first one was a
+	// tenth of the reach at 4 steps, and the light fell off the smooth sides of the clouds in visible bands
+	float growth = 1.0 + CLOUD_LIGHT_GROWTH / float(steps * steps);
+	float step = reach * (growth - 1.0) / (pow(growth, float(steps)) - 1.0);
+	for (int s = 0; s < steps; s++)
+	{
+		vec3 point = position + sun * (travelled + 0.5 * step);
+		travelled += step;
+		// the nearest steps with the detail noise: the small billows shade one another, lit on top and grey beneath
+		depth += cloud_layer_density(index, point, cloud_height(point), detail && (s < CLOUD_LIGHT_DETAIL_STEPS)) * step;
+		step *= growth;
+	}
+	float light = 0.0;
+	float amount = 1.0;
+	float fade = 1.0;
+	float spread = 1.0;
+	for (int octave = 0; octave < CLOUD_SCATTER_OCTAVES; octave++)
+	{
+		light += amount * exp(-depth * fade) * cloud_phase(cosangle, spread) * (octave == 0 ? powder : 1.0);
+		amount *= 0.5;
+		fade *= 0.5;
+		spread *= 0.5;
+	}
+	return light;
+}
+
+// optical depth of the cloud over a point up to Reach above it, from Samples of the coarse density: under a lump and deep in a
+// thick cloud the sky light is held back, at the tops and the thin edges it is not, so the shaded sides take the form of the cloud
+float cloud_sky_depth(int index, vec3 position, float height, float reach, int samples)
+{
+	float depth = 0.0;
+	for (int s = 0; s < samples; s++)
+	{
+		// up along the vertical: the height grows by the same distance (cloud_height bends only with the horizontal distance)
+		float up = reach * (float(s) + 0.5) / float(samples);
+		depth += cloud_layer_density(index, position + vec3(0.0, up, 0.0), height + up, false);
+	}
+	return depth * reach / float(samples);
+}
+
+float interleaved_noise(vec2 pixel)
+{
+	return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
+}
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	vec3 direction;
+	if (mode == 0)
+	{
+		if (any(greaterThanEqual(texel, size)))
+			return;
+		vec2 ndc = (vec2(texel) + 0.5) / vec2(size) * 2.0 - 1.0;
+		// reverse z: the near plane at 1
+		vec4 near = inverse_projection * vec4(ndc, 1.0, 1.0);
+		direction = normalize(mat3(view_to_world) * normalize(near.xyz / near.w));
+	}
+	else
+	{
+		texel.y += rows.x;
+		if (texel.x >= size.x || texel.y >= min(size.y, rows.x + rows.y))
+			return;
+		vec2 coords = (vec2(texel) + 0.5) / vec2(size);
+		float elevation = PANORAMA_LOW + (0.5 * WEATHER_PI - PANORAMA_LOW) * coords.y * coords.y;
+		float azimuth = coords.x * 2.0 * WEATHER_PI;
+		direction = vec3(cos(elevation) * sin(azimuth), sin(elevation), cos(elevation) * cos(azimuth));
+	}
+
+	vec3 sun = weather_sun_direction.xyz;
+	float cosangle = dot(direction, sun);
+	float sunup = weather_sun_direction.w;
+	float maxdistance = quality.z;
+	int maxsteps = int(quality.x);
+	int lightsteps = int(quality.y);
+	int skysteps = (lightsteps >= 4) ? 2 : 1;
+	bool detail = quality.w > 0.5;
+	float jitter = fract(interleaved_noise(vec2(texel)) + float(frame) * 0.618034);
+
+	vec3 scattered = vec3(0.0);
+	float transmittance = 1.0;
+	float depthsum = 0.0;
+	float weightsum = 0.0;
+	int layers = int(weather_camera.w);
+
+	// the stretches of the volumetric layers along the ray, nearest first
+	vec2 segments[MAX_CLOUD_LAYERS];
+	int order[MAX_CLOUD_LAYERS];
+	int count = 0;
+	for (int i = 0; i < layers; i++)
+	{
+		if (cloud_layers[i].extra.x > 0.5)
+			continue;
+		vec2 bounds = cloud_layer_bounds(cloud_layers[i]);
+		vec2 segment = cloud_layer_segment(direction.y, bounds.x, bounds.y);
+		segment.y = min(segment.y, maxdistance);
+		if (segment.y <= segment.x)
+			continue;
+		int at = count++;
+		segments[at] = segment;
+		order[at] = i;
+		for (int j = at; j > 0 && segments[j - 1].x > segments[j].x; j--)
+		{
+			vec2 swapsegment = segments[j];
+			segments[j] = segments[j - 1];
+			segments[j - 1] = swapsegment;
+			int swaporder = order[j];
+			order[j] = order[j - 1];
+			order[j - 1] = swaporder;
+		}
+	}
+
+	vec3 ambienttop = cloud_sky_light(1.0);
+	vec3 sunlight = weather_sun_color.rgb * (CLOUD_SUN_SCALE * weather_sun_color.w) * sunup;
+	// the bases are lit from below by the ground, which the sun lights through the gaps between the clouds
+	vec3 ambientbottom = (weather_sun_color.rgb * max(weather_sun_direction.y, 0.0) * sunup * fog_light.y + ambienttop) * CLOUD_GROUND_ALBEDO;
+	// seen against the sun the thin edges glow (the forward scattering); seen with the sun behind, they are dark
+	float powderview = clamp(1.0 - cosangle, 0.0, 1.0);
+	for (int k = 0; k < count && transmittance > 0.01; k++)
+	{
+		int index = order[k];
+		cloud_layer_s layer = cloud_layers[index];
+		vec2 segment = segments[k];
+		float span = segment.y - segment.x;
+		float thickness = layer.heights.y - layer.heights.x;
+		int steps = clamp(int(float(maxsteps) * span / (thickness * 4.0)), 8, maxsteps);
+		float step = span / float(steps);
+		for (int s = 0; s < steps; s++)
+		{
+			float t = segment.x + (float(s) + jitter) * step;
+			vec3 position = direction * t;
+			float height = cloud_height(position);
+			float density = cloud_layer_density(index, position, height, detail);
+			if (density <= 0.0)
+				continue;
+			float powder = mix(1.0, 1.0 - exp(-density / max(layer.shape.y, 1e-6) * CLOUD_POWDER), powderview);
+			float sunshare = (sunup > 0.0) ? cloud_sunlight(index, position, cosangle, lightsteps, powder, detail) : 0.0;
+			// the light of the sky reaches inside through the cloud above, that of the ground through the cloud below: the base of a
+			// thick cloud is darker than its top, and greyer, lit only by the ground and the sky at its sides
+			float column = layer.shape.y * layer.shape.x;
+			float top = cloud_layer_bounds(layer).y;
+			float reach = clamp(top - height, 0.0, CLOUD_SKY_REACH);
+			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps) - CLOUD_AMBIENT_FADE * column * max(top - height - reach, 0.0));
+			float below = column * max(height - layer.heights.x, 0.0);
+			vec3 light = sunlight * sunshare + (ambienttop * mix(CLOUD_SKY_FLOOR, 1.0, sky) + ambientbottom * exp(-CLOUD_AMBIENT_FADE * below));
+			float through = exp(-density * step);
+			vec3 inscattered = light * (1.0 - through);
+			scattered += transmittance * inscattered;
+			float weight = transmittance * (1.0 - through);
+			depthsum += t * weight;
+			weightsum += weight;
+			transmittance *= through;
+			if (transmittance < 0.01)
+				break;
+		}
+	}
+
+	// the thin high layers, past the others
+	for (int i = 0; i < layers && transmittance > 0.01; i++)
+	{
+		cloud_layer_s layer = cloud_layers[i];
+		if (layer.extra.x < 0.5)
+			continue;
+		vec2 crossing;
+		if (cloud_ray_height(direction.y, 0.5 * (layer.heights.x + layer.heights.y), crossing) == 0)
+			continue;
+		float t = crossing.x;
+		if (t > maxdistance * 2.0)
+			continue;
+		vec3 position = direction * t;
+		// the slant of the ray through the sheet where it crosses it, the earth curving away
+		float slope = max(abs(direction.y - (1.0 - direction.y * direction.y) * t / CLOUD_EARTH_RADIUS), 0.03);
+		float depth = cloud_flat_depth(i, position) / slope;
+		if (depth <= 0.0)
+			continue;
+		float through = exp(-depth);
+		// ice crystals scatter forwards strongly
+		vec3 light = sunlight * henyey_greenstein(cosangle, 0.6) * 0.8 + ambienttop;
+		scattered += transmittance * light * (1.0 - through);
+		float weight = transmittance * (1.0 - through);
+		depthsum += t * weight;
+		weightsum += weight;
+		transmittance *= through;
+	}
+
+	// the haze the atmosphere has in the sky already lies between the camera and the clouds too; the rest of the fog goes over
+	// the clouds and the sky alike when they are laid over it (sky_weather.frag)
+	float span_distance = (weightsum > 1e-5) ? depthsum / weightsum : maxdistance;
+	if (weightsum > 1e-5)
+	{
+		vec4 fog = fog_analytic_with(direction, 0.0, span_distance, min(fog_haze.x, fog_haze.z), 0.0);
+		scattered = scattered * fog.a + fog.rgb * (1.0 - transmittance);
+	}
+	if (any(isnan(scattered)) || isnan(transmittance))
+	{
+		scattered = vec3(0.0);
+		transmittance = 1.0;
+	}
+	imageStore(clouds_color, texel, vec4(scattered, transmittance));
+	if (mode == 0)
+		imageStore(clouds_depth, texel, vec4(span_distance));
+}

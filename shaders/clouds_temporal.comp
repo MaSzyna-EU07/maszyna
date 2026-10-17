@@ -1,0 +1,65 @@
+// the clouds of the main view smoothed over frames: the image of this frame (clouds_march.comp, ray started at another
+// distance every frame) blended into the one of the previous frames, found where the clouds were by the distance of the
+// clouds, the rotation and the move of the camera. the history is held to the range of the neighbourhood of this frame,
+// so moving clouds and a turning camera don't leave trails
+
+#include <common>
+
+layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, local_size_z = 1) in;
+
+layout(binding = CLOUD_TEX) uniform sampler2D current_color;
+layout(binding = CLOUD_SHAPE_TEX) uniform sampler2D current_depth;
+layout(binding = CLOUD_HISTORY_TEX) uniform sampler2D history_color;
+layout(rgba16f, binding = 0) uniform writeonly image2D result;
+
+layout(location = 1) uniform ivec2 size;
+layout(location = 2) uniform mat4 inverse_projection;
+layout(location = 3) uniform mat4 view_to_world;
+// world axes to the clip space of the previous frame, the camera of the previous frame at the origin
+layout(location = 4) uniform mat4 previous_projection_view;
+// where the camera was in the previous frame, relative to where it is (world, metres)
+layout(location = 5) uniform vec3 previous_camera;
+// share of this frame in the result; 1 when there is no history
+layout(location = 6) uniform float blend;
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(texel, size)))
+		return;
+	vec4 current = texelFetch(current_color, texel, 0);
+	if (blend >= 1.0)
+	{
+		imageStore(result, texel, current);
+		return;
+	}
+	// the range of the neighbourhood
+	vec4 low = current;
+	vec4 high = current;
+	for (int y = -1; y <= 1; y++)
+		for (int x = -1; x <= 1; x++)
+		{
+			vec4 neighbour = texelFetch(current_color, clamp(texel + ivec2(x, y), ivec2(0), size - 1), 0);
+			low = min(low, neighbour);
+			high = max(high, neighbour);
+		}
+	vec2 ndc = (vec2(texel) + 0.5) / vec2(size) * 2.0 - 1.0;
+	vec4 near = inverse_projection * vec4(ndc, 1.0, 1.0);
+	vec3 direction = normalize(mat3(view_to_world) * normalize(near.xyz / near.w));
+	float span_distance = texelFetch(current_depth, texel, 0).r;
+	vec3 position = direction * span_distance - previous_camera;
+	vec4 clip = previous_projection_view * vec4(position, 1.0);
+	float share = blend;
+	vec4 history = current;
+	if (clip.w > 0.0)
+	{
+		vec2 coords = clip.xy / clip.w * 0.5 + 0.5;
+		if (all(greaterThanEqual(coords, vec2(0.0))) && all(lessThanEqual(coords, vec2(1.0))))
+			history = clamp(textureLod(history_color, coords, 0.0), low, high);
+		else
+			share = 1.0;
+	}
+	else
+		share = 1.0;
+	imageStore(result, texel, mix(history, current, share));
+}

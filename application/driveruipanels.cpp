@@ -1446,26 +1446,6 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
             {
 		        textline += "NVRHI on ";
             }
-	        else
-	        {
-		        if (Global.BasicRenderer)
-		        {
-			        textline += "Legacy Simple";
-		        }
-		        else
-		        {
-			        textline += "Legacy";
-		        }
-	        }
-
-	        if (Global.bUseVBO)
-	        {
-		        textline += ", VBO";
-	        }
-	        else
-	        {
-		        textline += ", Display Lists";
-	        }
 
 	        textline += " ";
 

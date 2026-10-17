@@ -4,6 +4,7 @@
 #include "bindable.h"
 #include "buffer.h"
 #include <glm/glm.hpp>
+#include <cstddef>
 
 #define UBS_PAD(x) uint8_t PAD[x]
 
@@ -46,6 +47,37 @@ namespace gl
     const size_t SHADOW_TEX = MAX_TEXTURES + 0;
     const size_t ENV_TEX = MAX_TEXTURES + 1;
     const size_t HEADLIGHT_TEX = MAX_TEXTURES + 2;
+    // environment map prefiltered with the GGX lobe, see envmapping.glsl
+    const size_t ENV_GGX_TEX = MAX_TEXTURES + 3;
+    // the prefiltered map: size of its first level and the number of levels. level k holds the reflection of a surface of
+    // perceptual roughness ENVMAP_GGX_ROUGHNESS_MIN + (1 - ENVMAP_GGX_ROUGHNESS_MIN) * k / (ENVMAP_GGX_LEVELS - 1); smoother
+    // surfaces read the mipmaps of the plain map, which differ little from the lobe there
+    const size_t ENVMAP_GGX_SIZE = 256;
+    const size_t ENVMAP_GGX_LEVELS = 7;
+    const float ENVMAP_GGX_ROUGHNESS_MIN = 0.2f;
+    const size_t ENVMAP_GGX_GROUP_SIZE = 8;
+    // sky-view table of the atmosphere (sky_atmosphere.frag). past the units the texture cache keeps track of, bound directly
+    const size_t SKY_VIEW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 0;
+    // cube shadow maps of the lamps (cube map array, depth compared; opengl46_local_shadows). bound directly, like the one above
+    const size_t LOCAL_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 1;
+    // the same for the lamps of scenery models (a texture of its own: the maps have another size)
+    const size_t LOCAL_SHADOW_LAMPS_TEX = MAX_TEXTURES + HELPER_TEXTURES + 2;
+    // shadow maps of the headlights of vehicles (2d array, depth compared; opengl46_local_shadows), and how many of them there may be
+    const size_t HEADLIGHT_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 3;
+    const size_t MAX_HEADLIGHT_SHADOWS = 4;
+    // weather (opengl46_weather): the fog of the main view (3d, apply_fog.glsl) and the shadows the clouds cast (2d), read by the
+    // shading. bound directly, like the ones above
+    const size_t FOG_VOLUME_TEX = MAX_TEXTURES + HELPER_TEXTURES + 4;
+    const size_t CLOUD_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 5;
+    // the clouds drawn into the sky, and the noise the clouds and the fog are made of; bound by the passes which read them
+    const size_t CLOUD_TEX = MAX_TEXTURES + HELPER_TEXTURES + 6;
+    const size_t CLOUD_SHAPE_TEX = MAX_TEXTURES + HELPER_TEXTURES + 7;
+    const size_t CLOUD_DETAIL_TEX = MAX_TEXTURES + HELPER_TEXTURES + 8;
+    const size_t CLOUD_COVERAGE_TEX = MAX_TEXTURES + HELPER_TEXTURES + 9;
+    const size_t CLOUD_HISTORY_TEX = MAX_TEXTURES + HELPER_TEXTURES + 10;
+    // the depth of the opaque scene of the main view drawn before its colour, resolved, for the contact shadows (light_common.glsl).
+    // bound directly, like the ones above
+    const size_t SCENE_DEPTH_TEX = MAX_TEXTURES + HELPER_TEXTURES + 11;
 
     struct scene_ubs
     {
@@ -58,9 +90,20 @@ namespace gl
     	glm::vec4 wiper_pos;
     	glm::vec4 wiper_timer_out;
     	glm::vec4 wiper_timer_return;
+        // view space of the pass to the space of the shadow map of a set of headlights (HEADLIGHTS lights with headlight_weights.w
+        // above 0 read the map w - 1): x, y 0..1 across the map, z / w the depth of the map, w the distance along the axis of the
+        // projector. and x: size of a texel of the map one metre from the projector, y: radius of the filter in texels
+        glm::mat4 headlight_shadow[MAX_HEADLIGHT_SHADOWS];
+        glm::vec4 headlight_shadow_params[MAX_HEADLIGHT_SHADOWS];
+        // contact shadows, read from SCENE_DEPTH_TEX; set only for the colour pass of the main view, zero elsewhere.
+        // x: length of the rays towards the lights, metres (0: off), y: distance from the camera at which they end, z: steps
+        // of the ray towards the sun, w: steps of the rays towards lamps and headlights
+        glm::vec4 contact_shadow_params;
+        // x: how many lamps and headlights a pixel traces the rays to (0: only the sun), yzw unused
+        glm::vec4 contact_shadow_lamps;
     };
 
-    static_assert(sizeof(scene_ubs) == 400, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 432 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
@@ -92,18 +135,14 @@ namespace gl
 
     static_assert(sizeof(model_ubs) == 208 + 16 * MAX_PARAMS, "bad size of ubs");
 
-    // maximum number of instances per single GPU-instanced draw call.
-    // 256 mat4 = 16 KiB, the guaranteed minimum UBO size. Bigger batches must split.
-    const size_t MAX_INSTANCES_PER_BATCH = 256;
+    // layout std430 (shader storage buffers)
+    // structs must match with GLSL, offsets checked below
 
-    struct instance_ubs
-    {
-        glm::mat4 instance_modelview[MAX_INSTANCES_PER_BATCH];
-    };
+    // binding points of the shader storage blocks: layout(std430, binding = ...) in glsl_common
+    const GLuint LIGHT_SSBO_BINDING = 0;
 
-    static_assert(sizeof(instance_ubs) == 64 * MAX_INSTANCES_PER_BATCH, "bad size of instance_ubs");
-
-    struct light_element_ubs
+    // one light source, element of light_ssbo.lights[] (GLSL: light_s)
+    struct light_element
     {
         enum type_e
         {
@@ -128,26 +167,365 @@ namespace gl
 		float intensity;
 		float ambient;
 
+        // HEADLIGHTS: view space to the space of the beam texture, and the weights of its channels; w: 1 + the shadow map of the
+        // headlights (scene_ubs::headlight_shadow), 0 when they have none.
+        // SPOT and POINT (lamps): view space to the space of the cube shadow map of the lamp (origin at the lamp), and
+        // x: layer of the cube map array the map is in, below 0 when the lamp has no shadows; y: near plane of the map;
+        // z: size of a texel of the map one metre from the lamp; w: radius of the filter, in texels. the map is in the array of
+        // the scenery lamps (LOCAL_SHADOW_LAMPS_TEX) when linear is 1, in the one of the cab lamp (LOCAL_SHADOW_TEX) otherwise
         glm::mat4 headlight_projection;
         glm::vec4 headlight_weights;
     };
 
-    static_assert(sizeof(light_element_ubs) == 144, "bad size of ubs");
+    // std430 array stride of a struct is its size rounded up to its alignment (16, from mat4/vec4)
+    static_assert(sizeof(light_element) == 144, "bad size of light_element");
+    static_assert(sizeof(light_element) % 16 == 0, "light_element must be a whole std430 array stride");
+    static_assert(offsetof(light_element, pos) == 0, "bad layout of light_element");
+    static_assert(offsetof(light_element, type) == 12, "bad layout of light_element");
+    static_assert(offsetof(light_element, dir) == 16, "bad layout of light_element");
+    static_assert(offsetof(light_element, in_cutoff) == 28, "bad layout of light_element");
+    static_assert(offsetof(light_element, color) == 32, "bad layout of light_element");
+    static_assert(offsetof(light_element, out_cutoff) == 44, "bad layout of light_element");
+    static_assert(offsetof(light_element, linear) == 48, "bad layout of light_element");
+    static_assert(offsetof(light_element, quadratic) == 52, "bad layout of light_element");
+    static_assert(offsetof(light_element, intensity) == 56, "bad layout of light_element");
+    static_assert(offsetof(light_element, ambient) == 60, "bad layout of light_element");
+    static_assert(offsetof(light_element, headlight_projection) == 64, "bad layout of light_element");
+    static_assert(offsetof(light_element, headlight_weights) == 128, "bad layout of light_element");
 
-    const size_t MAX_LIGHTS = 8;
+    // capacity of light_data.lights; slot 0 is the sun. a buffer size, not a limit of the shaders: they take the
+    // number of lights from the header
+    const size_t MAX_LIGHTS = 1024;
 
-    struct light_ubs
+    // contents of light_ssbo: global lighting header followed by the light array
+    struct light_data
     {
         packed_vec3 ambient;
-		UBS_PAD(4);
+        // number of lights stored in lights[] (the sun included): what the light clusters are culled from
+        uint32_t lights_total;
 
         packed_vec3 fog_color;
+        // number of lights (the sun included) the shading loop over lights[] goes through when the lights are not clustered
         uint32_t lights_count;
+        // 1 if the shading takes the lights of a fragment from the list of its cluster (lights_count is not used then), 0 if not.
+        // set per pass: the cluster grid exists only for the color pass of a perspective view
+        uint32_t lights_clustered;
+        // scale of the directional part of the sky ambient light (sky_ssbo): the factor the ambient light of the object
+        // is scaled with (tunnels), 0 where the ambient light is not the sky's (model previews)
+        float sky_ambient_factor;
+        // 1 if the shading reads rough reflections from the prefiltered environment map, 0 if from the mipmaps of the plain one
+        uint32_t env_ggx;
+        // lights[] begins at a multiple of 16 bytes
+        uint32_t padding;
 
-        light_element_ubs lights[MAX_LIGHTS];
+        light_element lights[MAX_LIGHTS];
     };
 
-    static_assert(sizeof(light_ubs) == 32 + sizeof(light_element_ubs) * MAX_LIGHTS, "bad size of ubs");
+    static_assert(offsetof(light_data, ambient) == 0, "bad layout of light_data");
+    static_assert(offsetof(light_data, lights_total) == 12, "bad layout of light_data");
+    static_assert(offsetof(light_data, fog_color) == 16, "bad layout of light_data");
+    static_assert(offsetof(light_data, lights_count) == 28, "bad layout of light_data");
+    static_assert(offsetof(light_data, lights_clustered) == 32, "bad layout of light_data");
+    static_assert(offsetof(light_data, sky_ambient_factor) == 36, "bad layout of light_data");
+    static_assert(offsetof(light_data, env_ggx) == 40, "bad layout of light_data");
+    static_assert(offsetof(light_data, lights) == 48, "bad layout of light_data");
+    static_assert(sizeof(light_data) == 48 + sizeof(light_element) * MAX_LIGHTS, "bad size of light_data");
+
+    // light clusters (see gl/cluster_grid.h): the view frustum is cut into CLUSTER_GRID_X x CLUSTER_GRID_Y screen
+    // tiles and CLUSTER_GRID_Z depth slices, spaced exponentially between the near and far plane of the pass.
+    // cluster index = x + CLUSTER_GRID_X * (y + CLUSTER_GRID_Y * z), with x and y counted from the lower left corner
+    const GLuint CLUSTER_GRID_X = 16;
+    const GLuint CLUSTER_GRID_Y = 9;
+    const GLuint CLUSTER_GRID_Z = 24;
+    const GLuint CLUSTER_COUNT = CLUSTER_GRID_X * CLUSTER_GRID_Y * CLUSTER_GRID_Z;
+    // capacity of the light list of a single cluster
+    const GLuint MAX_LIGHTS_PER_CLUSTER = 64;
+    // work group size of cluster_build.comp and cluster_cull.comp, which handle one cluster per invocation
+    const GLuint CLUSTER_BUILD_GROUP_SIZE = 64;
+    const GLuint CLUSTER_CULL_GROUP_SIZE = 64;
+
+    // binding points of the cluster buffers: layout(binding = ...) in glsl_common.
+    // the uniform block numbers go together with scene (0), model (1) and instance (3) blocks
+    const GLuint CLUSTER_UBO_BINDING = 2;
+    const GLuint CLUSTER_AABB_SSBO_BINDING = 1;
+    const GLuint CLUSTER_RANGE_SSBO_BINDING = 2;
+    const GLuint CLUSTER_INDEX_SSBO_BINDING = 3;
+    const GLuint CLUSTER_COUNTER_SSBO_BINDING = 4;
+
+    // layout std140: grid parameters for the pass it was built for (GLSL: cluster_ubo)
+    struct cluster_ubs
+    {
+        glm::mat4 projection;
+        float znear;
+        float zfar;
+        // depth slice of a point with clip space w: floor(log(w) * slice_scale + slice_bias), znear..zfar covers all slices
+        float slice_scale;
+        float slice_bias;
+        // size of the render target the tiles are laid over, in pixels
+        float viewport_width;
+        float viewport_height;
+        // 0 if there is no grid for the pass (orthographic projection)
+        uint32_t valid;
+        UBS_PAD(4);
+    };
+
+    static_assert(sizeof(cluster_ubs) == 96, "bad size of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, projection) == 0, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, znear) == 64, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, zfar) == 68, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, slice_scale) == 72, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, slice_bias) == 76, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, viewport_width) == 80, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, viewport_height) == 84, "bad layout of cluster_ubs");
+    static_assert(offsetof(cluster_ubs, valid) == 88, "bad layout of cluster_ubs");
+
+    // layout std430: bounding box of a cluster in view space, element of cluster_aabb_ssbo (GLSL: cluster_aabb_s), w unused
+    struct cluster_aabb
+    {
+        glm::vec4 lower;
+        glm::vec4 upper;
+    };
+
+    static_assert(sizeof(cluster_aabb) == 32, "bad size of cluster_aabb");
+    static_assert(offsetof(cluster_aabb, lower) == 0, "bad layout of cluster_aabb");
+    static_assert(offsetof(cluster_aabb, upper) == 16, "bad layout of cluster_aabb");
+
+    // layout std430: lights of a cluster, element of cluster_range_ssbo (GLSL: cluster_range_s). the lights are
+    // light_data.lights indices stored in the cluster_index_ssbo list from offset on
+    struct cluster_range
+    {
+        uint32_t offset;
+        uint32_t count;
+    };
+
+    static_assert(sizeof(cluster_range) == 8, "bad size of cluster_range");
+    static_assert(offsetof(cluster_range, offset) == 0, "bad layout of cluster_range");
+    static_assert(offsetof(cluster_range, count) == 4, "bad layout of cluster_range");
+
+    // layout std430: cluster_counter_ssbo, zeroed before every culling pass. index_count is the allocator of the shared
+    // index list, overflow_count the number of (cluster, light) pairs dropped because the cluster already held
+    // MAX_LIGHTS_PER_CLUSTER lights
+    struct cluster_counters
+    {
+        uint32_t index_count;
+        uint32_t overflow_count;
+    };
+
+    static_assert(sizeof(cluster_counters) == 8, "bad size of cluster_counters");
+    static_assert(offsetof(cluster_counters, index_count) == 0, "bad layout of cluster_counters");
+    static_assert(offsetof(cluster_counters, overflow_count) == 4, "bad layout of cluster_counters");
+
+    // binding points of the sky, exposure and atmosphere buffers: layout(binding = ...) in glsl_common
+    const GLuint SKY_SSBO_BINDING = 5;
+    const GLuint EXPOSURE_SSBO_BINDING = 6;
+    const GLuint ATMOSPHERE_RESULT_SSBO_BINDING = 7;
+    const GLuint ATMOSPHERE_UBO_BINDING = 4;
+
+    // binding point of the per-instance modelview matrices of instanced draws (glsl: instance_ssbo, mat4 per instance).
+    // element 0 is identity, the matrix of every draw which isn't instanced
+    const GLuint INSTANCE_SSBO_BINDING = 8;
+
+    // number of coefficients of the spherical harmonics of order 2 (bands 0..2)
+    const size_t SKY_SH_COEFFICIENTS = 9;
+
+    // layout std430: directional part of the sky ambient light (GLSL: sky_ssbo). the coefficients of the real spherical
+    // harmonics of the light a surface facing a world space direction gets, in units of light_data.ambient, without the
+    // constant band (that one is light_data.ambient itself); rgb used, w is padding
+    struct sky_data
+    {
+        glm::vec4 ambient_sh[SKY_SH_COEFFICIENTS];
+    };
+
+    static_assert(sizeof(sky_data) == 144, "bad size of sky_data");
+
+    // layout std430: luminance histogram of the image and the exposure worked out from it (GLSL: exposure_ssbo)
+    const GLuint EXPOSURE_HISTOGRAM_BINS = 256;
+    const GLuint EXPOSURE_HISTOGRAM_GROUP_SIZE = 16;
+
+    struct exposure_data
+    {
+        uint32_t histogram[EXPOSURE_HISTOGRAM_BINS];
+        // luminance the exposure is adapted to, the time-smoothed average of the image
+        float adapted_luminance;
+        // multiplier the tonemapping applies to the image
+        float exposure;
+        // average luminance of the last image
+        float average_luminance;
+        // 0 until the first average was taken, the adaptation starts from it
+        uint32_t valid;
+    };
+
+    static_assert(sizeof(exposure_data) == 4 * EXPOSURE_HISTOGRAM_BINS + 16, "bad size of exposure_data");
+    static_assert(offsetof(exposure_data, adapted_luminance) == 4 * EXPOSURE_HISTOGRAM_BINS, "bad layout of exposure_data");
+
+    // sizes of the look-up tables of the atmosphere (Hillaire 2020)
+    const GLuint ATMOSPHERE_TRANSMITTANCE_WIDTH = 256;
+    const GLuint ATMOSPHERE_TRANSMITTANCE_HEIGHT = 64;
+    const GLuint ATMOSPHERE_MULTISCATTERING_SIZE = 32;
+    const GLuint ATMOSPHERE_SKYVIEW_WIDTH = 192;
+    const GLuint ATMOSPHERE_SKYVIEW_HEIGHT = 108;
+    // work group of atmosphere_ambient.comp, which projects the sky on the spherical harmonics in one group
+    const GLuint ATMOSPHERE_AMBIENT_GROUP_SIZE = 256;
+    // binding points of the look-up tables in the compute passes (images and samplers)
+    const GLuint ATMOSPHERE_TRANSMITTANCE_UNIT = 0;
+    const GLuint ATMOSPHERE_MULTISCATTERING_UNIT = 1;
+    const GLuint ATMOSPHERE_SKYVIEW_UNIT = 2;
+
+    // layout std140: parameters of the atmosphere (GLSL: atmosphere_ubo). distances in kilometres, coefficients per kilometre
+    struct atmosphere_ubs
+    {
+        // rgb: rayleigh scattering, w: rayleigh scale height
+        glm::vec4 rayleigh;
+        // x: mie scattering, y: mie extinction, z: mie scale height, w: mie phase asymmetry
+        glm::vec4 mie;
+        // rgb: ozone absorption, w: altitude of the middle of the ozone layer
+        glm::vec4 ozone;
+        // rgb: albedo of the ground, w: half width of the ozone layer
+        glm::vec4 ground;
+        // world space direction towards the sun (y up), w unused
+        glm::vec4 sun_direction;
+        float bottom_radius;
+        float top_radius;
+        // distance of the observer from the centre of the planet
+        float observer_radius;
+        float padding;
+    };
+
+    static_assert(sizeof(atmosphere_ubs) == 96, "bad size of atmosphere_ubs");
+
+    // layout std430: what atmosphere_ambient.comp works out for the cpu (GLSL: atmosphere_result_ssbo). radiance with
+    // the sun of illuminance 1
+    struct atmosphere_result
+    {
+        // radiance arriving at the observer from every direction, ground included, as real spherical harmonics (world, y up)
+        glm::vec4 radiance_sh[SKY_SH_COEFFICIENTS];
+        // transmittance of the atmosphere towards the sun at the observer
+        glm::vec4 sun_transmittance;
+        // average radiance of the sky just above the horizon
+        glm::vec4 horizon;
+        // average radiance of the upper hemisphere
+        glm::vec4 average;
+        // transmittance of the atmosphere straight up from the observer: the colour of the sun high in the sky
+        glm::vec4 zenith_transmittance;
+    };
+
+    static_assert(sizeof(atmosphere_result) == 16 * (SKY_SH_COEFFICIENTS + 4), "bad size of atmosphere_result");
+
+    // weather of the opengl 4.6 renderer (opengl46_weather, weather_common.glsl): fog, clouds, their shadows
+    const GLuint WEATHER_UBO_BINDING = 5;
+    // layers of clouds drawn, see weather_conditions::max_cloud_layers
+    const size_t MAX_CLOUD_LAYERS = 4;
+    // colours of the fog towards the horizon, by the angle from the azimuth of the sun (0-180 degrees)
+    const size_t FOG_HORIZON_SAMPLES = 32;
+    // work groups of the weather passes: 8x8 for the images, 8x8x1 for the fog volume
+    const GLuint WEATHER_GROUP_SIZE = 8;
+    // the slices of the fog volume are spaced exponentially in the view depth plus this many metres: fewer of them go to the first
+    // metres in front of the camera, more to the distance, where thick slices draw the shafts of light in steps
+    const float FOG_VOLUME_BIAS = 10.0f;
+
+    // layout std140: one layer of clouds (GLSL: cloud_layer_s), see weather_common.glsl
+    struct cloud_layer_ubs
+    {
+        glm::vec4 heights;
+        glm::vec4 shape;
+        glm::vec4 profile;
+        glm::vec4 motion;
+        glm::vec4 extra;
+    };
+
+    static_assert(sizeof(cloud_layer_ubs) == 80, "bad size of cloud_layer_ubs");
+
+    // layout std140: the weather for the shading and the weather passes (GLSL: weather_ubo), see weather_common.glsl
+    struct weather_ubs
+    {
+        glm::vec4 fog_haze;
+        glm::vec4 fog_ground;
+        glm::vec4 fog_noise;
+        glm::vec4 fog_light;
+        glm::vec4 fog_volume_params;
+        glm::vec4 fog_volume_target;
+        glm::vec4 weather_camera;
+        glm::vec4 weather_sun_direction;
+        glm::vec4 weather_sun_color;
+        glm::vec4 weather_ambient;
+        glm::vec4 cloud_shadow_params;
+        glm::vec4 cloud_wind;
+        cloud_layer_ubs cloud_layers[MAX_CLOUD_LAYERS];
+        // filled on the gpu (fog_horizon.comp) while the atmosphere is used, by the cpu otherwise
+        glm::vec4 fog_horizon[FOG_HORIZON_SAMPLES];
+    };
+
+    static_assert(offsetof(weather_ubs, cloud_layers) == 192, "bad layout of weather_ubs");
+    static_assert(offsetof(weather_ubs, fog_horizon) == 192 + 80 * MAX_CLOUD_LAYERS, "bad layout of weather_ubs");
+    static_assert(sizeof(weather_ubs) == 192 + 80 * MAX_CLOUD_LAYERS + 16 * FOG_HORIZON_SAMPLES, "bad size of weather_ubs");
+
+    // the weather buffer is written by fog_horizon.comp as a storage block bound here for the pass. the point is one of the
+    // instance culling, which binds its buffers before every use
+    const GLuint WEATHER_SCRATCH_SSBO_BINDING = 9;
+
+    // culling of model instances in compute passes (instance_cull.comp, instance_cull_offsets.comp). binding points of
+    // the shader storage blocks, apart from the ones bound for the shading so the passes don't disturb them
+    const GLuint INSTANCE_RECORD_SSBO_BINDING = 9; // scene::basic_cell::instance_record of the queued buckets
+    const GLuint INSTANCE_JOB_SSBO_BINDING = 10; // instance_cull_job, one per queued bucket
+    const GLuint INSTANCE_GROUP_SSBO_BINDING = 11; // instance_cull_group, one per model and skins
+    const GLuint INSTANCE_LOD_SSBO_BINDING = 12; // sorted lod bounds (squared distances) of the groups
+    const GLuint INSTANCE_COUNTER_SSBO_BINDING = 13; // header, then count[entries], cursor[entries] and first[entries]
+    const GLuint INSTANCE_OUTPUT_SSBO_BINDING = 14; // modelview matrices of the instances which passed, by entry
+    const GLuint INSTANCE_COMMAND_SSBO_BINDING = 15; // indirect draw commands of the entries (instance_cull_commands.comp)
+    const GLuint INSTANCE_CULL_GROUP_SIZE = 64;
+    const GLuint INSTANCE_OFFSETS_GROUP_SIZE = 1024;
+    const GLuint INSTANCE_COMMAND_GROUP_SIZE = 64;
+    // uints of the header of the counter buffer: frame number, survivors of the tests but the occlusion one in total,
+    // entries, instances left out as hidden behind the depth already drawn (occlusion test), instances drawn first in two
+    // phases (seen in the previous frame), unused.
+    // an entry is a lod band of a group: survivors of group g in band b are counted at entry entryfirst(g) + b
+    const GLuint INSTANCE_COUNTER_HEADER = 8;
+    // work group of the passes which make the depth pyramid of the occlusion test (hiz_build.comp), 8x8
+    const GLuint HIZ_GROUP_SIZE = 8;
+
+    // layout std430: a bucket of a scene cell queued in the pass (GLSL: instance_cull_job)
+    struct instance_cull_job
+    {
+        packed_vec3 origin; // origin of the records of the bucket, relative to the camera of the pass
+        uint32_t first; // first record of the bucket in the record buffer
+        packed_vec3 distanceorigin; // the same origin, relative to the camera the distance is measured from
+        uint32_t count; // records of the bucket
+        uint32_t group;
+        uint32_t candidatestart; // records of the jobs before this one
+        uint32_t pad[2];
+    };
+
+    static_assert(sizeof(instance_cull_job) == 48, "bad size of instance_cull_job");
+
+    // layout std430: instances of one model with one set of skins, the unit drawn together (GLSL: instance_cull_group)
+    struct instance_cull_group
+    {
+        uint32_t lodfirst; // first bound in the lod buffer
+        uint32_t lodcount; // bounds; the group has lodcount + 1 bands
+        uint32_t entryfirst; // first entry of the counters
+        uint32_t pad;
+    };
+
+    static_assert(sizeof(instance_cull_group) == 16, "bad size of instance_cull_group");
+
+    // layout std430: an indirect draw of the submodel of a group in one of its lod bands. the first five fields are the
+    // command of glDrawElementsIndirect (count, instance count, first index, base vertex, base instance), or with indexed 0
+    // the one of glDrawArraysIndirect (count, instance count, first vertex, base instance). the cpu fills in what it knows
+    // of the geometry, instance_cull_commands.comp the instances, from the counts of the entry. the command buffer holds the
+    // commands of a pass three times over (instances drawn first, all, drawn second), see opengl46_instance_cull
+    struct instance_draw_command
+    {
+        uint32_t count;
+        uint32_t instancecount;
+        uint32_t first;
+        uint32_t basevertex; // the base instance of an array draw
+        uint32_t baseinstance;
+        uint32_t entry;
+        uint32_t indexed;
+        uint32_t pad;
+    };
+
+    static_assert(sizeof(instance_draw_command) == 32, "bad size of instance_draw_command");
 
 #pragma pack(pop)
 }

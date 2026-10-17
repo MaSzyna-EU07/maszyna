@@ -1,0 +1,778 @@
+﻿/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#pragma once
+
+#include "rendering/renderer.h"
+#include "rendering/openglcamera.h"
+#include "rendering/opengl46/opengl46light.h"
+#include "rendering/opengl46/opengl46particles.h"
+#include "rendering/opengl46/opengl46skydome.h"
+#include "rendering/opengl46/opengl46precipitation.h"
+#include "simulation/simulationenvironment.h"
+#include "scene/scene.h"
+#include "world/MemCell.h"
+#include "rendering/lightarray.h"
+#include "vr/vr_interface.h"
+#include "gl/ubo.h"
+#include "gl/ssbo.h"
+#include "gl/streambuffer.h"
+#include "gl/cluster_grid.h"
+#include "gl/framebuffer.h"
+#include "gl/renderbuffer.h"
+#include "gl/postfx.h"
+#include "gl/shader.h"
+#include "gl/cubemap.h"
+#include "gl/glsl_common.h"
+#include "gl/pbo.h"
+#include "gl/query.h"
+#include "rendering/opengl46/opengl46terrain.h"
+#include "rendering/opengl46/opengl46sky.h"
+#include "rendering/opengl46/opengl46weather.h"
+#include "rendering/opengl46/opengl46exposure.h"
+#include "rendering/opengl46/opengl46ao.h"
+#include "rendering/opengl46/opengl46locallights.h"
+#include "rendering/opengl46/opengl46localshadows.h"
+#include "rendering/opengl46/opengl46instancecull.h"
+#include "rendering/opengl46/opengl46hiz.h"
+
+// bare-bones render controller, in lack of anything better yet
+class opengl46_renderer : public gfx_renderer {
+  public:
+// constructors
+    opengl46_renderer() = default;
+// destructor
+    ~opengl46_renderer() {}
+// methods
+    bool
+        Init( GLFWwindow *Window ) override;
+    void
+        Shutdown() override;
+    bool
+        AddViewport(const global_settings::extraviewport_config &conf) override;
+    // main draw call. returns false on error
+    bool
+        Render() override;
+    void
+        SwapBuffers() override;
+    inline
+    float
+        Framerate() override { return m_framerate; }
+    // geometry methods
+    // NOTE: hands-on geometry management is exposed as a temporary measure; ultimately all visualization data should be generated/handled automatically by the renderer itself
+    // creates a new geometry bank. returns: handle to the bank or NULL
+    gfx::geometrybank_handle
+        Create_Bank() override;
+    // creates a new indexed geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
+	gfx::geometry_handle Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) override;
+    // creates a new geometry chunk of specified type from supplied data, in specified bank. returns: handle to the chunk or NULL
+	gfx::geometry_handle Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) override;
+    // replaces data of specified chunk with the supplied vertex data, starting from specified offset
+	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) override;
+    // adds supplied vertex data at the end of specified chunk
+	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
+    // provides direct access to index data of specfied chunk
+    gfx::index_array const &
+        Indices( gfx::geometry_handle const &Geometry ) const override;
+    // provides direct access to vertex data of specfied chunk
+    gfx::vertex_array const &
+        Vertices( gfx::geometry_handle const &Geometry ) const override;
+	// provides direct access to vertex data of specfied chunk
+	gfx::userdata_array const &
+		UserData( gfx::geometry_handle const &Geometry ) const override;
+    // material methods
+    material_handle
+        Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
+    void
+        Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
+    IMaterial const *
+        Material( material_handle const Material ) const override;
+    material_handle
+        Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement ) override;
+    void
+        Terrain_Release( material_handle const Material ) override;
+    // shader methods
+    auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override;
+    // texture methods
+    texture_handle
+        Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) override;
+    void
+        Bind_Texture( texture_handle const Texture ) override;
+    void
+        Bind_Texture( std::size_t const Unit, texture_handle const Texture ) override;
+    ITexture &
+        Texture( texture_handle const Texture ) override;
+    ITexture const &
+        Texture( texture_handle const Texture ) const override;
+    // utility methods
+    void
+        Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) override;
+    void
+        Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) override;
+    TSubModel const *
+        Pick_Control() const override { return m_pickcontrolitem; }
+    scene::basic_node const *
+        Pick_Node() const override { return m_picksceneryitem; }
+    glm::dvec3
+        Mouse_Position() const override { return m_worldmousecoordinates; }
+    bool
+        Mouse_Hit() const override { return m_mousehit; }
+    glm::mat4
+        Camera_View_Matrix() const override { return glm::mat4( glm::mat3( m_colorpass.pass_camera.modelview() ) ); }
+    glm::mat4
+        Camera_Projection_Matrix() const override { return m_colorpass.pass_camera.projection(); }
+    glm::dvec3
+        Camera_Position() const override { return m_colorpass.pass_camera.position(); }
+    // maintenance methods
+    void
+        Update( double const Deltatime ) override;
+    bool
+        Debug_Ui_State(std::optional<bool>) override;
+    void
+        Update_Pick_Control() override;
+    void
+        Update_Pick_Node() override;
+    glm::dvec3
+        Update_Mouse_Position() override;
+    // debug methods
+    std::string const &
+        info_times() const override;
+    std::string const &
+        info_stats() const override;
+	  void MakeScreenshot() override;
+    bool Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) override;
+
+
+
+    opengl_material & Material( material_handle const Material );
+    opengl_material const & Material( TSubModel const * Submodel ) const;
+    // draws supplied geometry handles
+    void Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end);
+	void Draw_Geometry(const gfx::geometrybank_handle &handle);
+	// material methods
+    void Bind_Material_Shadow(material_handle const Material);
+	void Update_AnimModel(TAnimModel *model);
+
+	// members
+    GLenum static const sunlight{0};
+
+    static std::unique_ptr<gfx_renderer> create_func();
+
+  private:
+	// types
+	enum class rendermode
+	{
+		none,
+		color,
+		shadows,
+		reflections,
+		pickcontrols,
+		pickscenery
+	};
+
+	struct debug_stats
+	{
+		int dynamics{0};
+		int models{0};
+		int submodels{0};
+		int paths{0};
+		int traction{0};
+		int shapes{0};
+		int lines{0};
+    int particles{0};
+		int drawcalls{0};
+    int instanced_drawcalls{0}; // drawcalls issued via instanced render path (one per TModel3d batch)
+    int instances{0}; // total instances drawn via instanced render path
+    int triangles{0};
+
+    debug_stats& operator+=( const debug_stats& Right ) {
+        dynamics += Right.dynamics;
+        models += Right.models;
+        submodels += Right.submodels;
+        paths += Right.paths;
+        traction += Right.traction;
+        shapes += Right.shapes;
+        lines += Right.lines;
+        particles += Right.particles;
+        drawcalls += Right.drawcalls;
+        instanced_drawcalls += Right.instanced_drawcalls;
+        instances += Right.instances;
+        return *this; }
+	};
+
+	using section_sequence = std::vector<scene::basic_section *>;
+	using distancecell_pair = std::pair<double, scene::basic_cell *>;
+	using cell_sequence = std::vector<distancecell_pair>;
+
+	struct renderpass_config
+	{
+		opengl_camera pass_camera;
+		opengl_camera viewport_camera;
+		rendermode draw_mode{rendermode::none};
+		float draw_range{0.0f};
+		// depth range of the projection of a color pass; the far plane is only the end of the range which is drawn,
+		// as the projection matrix itself has none
+		float znear{0.0f};
+		float zfar{0.0f};
+    debug_stats draw_stats;
+	};
+
+	struct viewport_config {
+		int width;
+		int height;
+
+		float draw_range;
+
+		bool main = false;
+
+        GLFWwindow *window = nullptr; // ogl window context
+        bool real_window = true; // whether we need to blit onto GLFWwindow surface
+        bool custom_backbuffer = false; // whether we want to render to our offscreen LDR backbuffer (pipeline required)
+        bool shadow = false; // include this viewport area in shadowmap
+
+        enum vp_type {
+            normal,
+            custom,
+            vr_left,
+            vr_right
+        } proj_type;
+		viewport_proj_config projection;
+
+        // main msaa render target for pipeline mode
+		std::unique_ptr<gl::framebuffer> msaa_fb;
+		std::unique_ptr<gl::renderbuffer> msaa_rbc;
+		std::unique_ptr<gl::renderbuffer> msaa_rbv;
+		std::unique_ptr<gl::renderbuffer> msaa_rbd;
+
+        // msaa resolve buffer (when using motion blur)
+		std::unique_ptr<gl::framebuffer> main_fb;
+		std::unique_ptr<opengl_texture> main_texv;
+		std::unique_ptr<opengl_texture> main_texd;
+		std::unique_ptr<opengl_texture> main_tex;
+
+        // final HDR buffer (also serving as msaa resolve buffer when not using motion blur)
+		std::unique_ptr<gl::framebuffer> main2_fb;
+		std::unique_ptr<opengl_texture> main2_tex;
+
+		// ambient occlusion, half size: raw and smoothed (gtao), or the ssao and its blur (older ssao)
+		std::unique_ptr<opengl_texture>  ssao_tex;
+		std::unique_ptr<opengl_texture>  ssao_blur_tex;
+		std::unique_ptr<gl::framebuffer> ssao_fb;
+		std::unique_ptr<gl::framebuffer> ssao_blur_fb;
+		// main_tex alone, for the ambient occlusion to be applied to it before the motion blur (main_fb holds the depth it reads)
+		std::unique_ptr<gl::framebuffer> ao_apply_fb;
+
+        // LDR backbuffer for offscreen rendering
+        std::unique_ptr<gl::framebuffer> backbuffer_fb;
+        std::unique_ptr<opengl_texture> backbuffer_tex;
+
+        // levels of the bloom of the post processing; null without the pipeline
+        std::unique_ptr<opengl46_exposure::bloom_chain> bloom;
+
+        // light cluster grid of the viewport
+        std::unique_ptr<gl::cluster_grid> clusters;
+        // depth of the scene resolved from the msaa buffer (Resolved_Depth_Target()): of the finished scene for the cluster heatmap,
+        // and of the depth pass of the scene for the contact shadows, read while the colour is drawn. made when it is first needed
+        std::unique_ptr<gl::framebuffer> clusters_depth_fb;
+        std::unique_ptr<opengl_texture> clusters_depth_tex;
+
+        bool initialized = false;
+	};
+
+	viewport_config *m_current_viewport = nullptr;
+
+	// methods
+    std::unique_ptr<gl::program> make_shader(std::string v, std::string f);
+	bool Init_caps();
+	void setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode, float const Znear = 0.f, float const Zfar = 1.f, bool const Ignoredebug = false);
+	void setup_matrices();
+    void setup_drawing(bool const Alpha = false);
+    void setup_shadow_empty_map();
+    void setup_shadow_bind_map();
+    void setup_shadow_color( glm::vec4 const &Shadowcolor );
+    void setup_env_map(gl::cubemap *tex);
+	void setup_environment_light(TEnvironmentType const Environment = e_flat);
+    void setup_sunlight_intensity( float const Factor = 1.f);
+    // sends the header of the light buffer and the sun to the gpu
+    void upload_light_header();
+	// runs jobs needed to generate graphics for specified render pass
+	void Render_pass(viewport_config &vp, rendermode const Mode);
+	// creates dynamic environment cubemap
+	bool Render_reflections(viewport_config &vp);
+	// draws the cube shadow maps of the lamps which need it in this frame (the cab lamp: the cab)
+	void Render_local_shadows();
+	// draws the parts of the cube shadow maps of the scenery lamps which need it in this frame
+	void Render_lamp_shadows();
+	// one part of the map of a scenery lamp: the scenery, or the vehicles by it (and Cab, the occupied cab) over a copy of it
+	void Render_lamp_shadow(std::size_t const Slot, bool const Vehicles, TDynamicObject *Cab);
+	// picks the headlights which get shadow maps in this frame and draws the maps which need it
+	void Render_headlight_shadows();
+	// the map of the headlights in the slot: the scene within reach ahead of them (and Cab, the occupied cab), without their vehicle
+	void Render_headlight_shadow(std::size_t const Slot, light_array::light_record const &Light, TDynamicObject *Cab);
+	// the projector of the beam of a set of headlights: a narrow frustum along the vehicle, from behind it, its near plane at the
+	// end of the vehicle. the beam texture is projected with it (Update_Lights()) and the shadow map of the headlights drawn with it.
+	// Position in world space, Rotation from world axes to its axes; Near is the distance of the near plane from the projector
+	void Headlight_Projector(light_array::light_record const &Light, glm::dvec3 &Position, glm::mat3 &Rotation, glm::mat4 &Projection, float &Near, float &Fieldofview);
+	bool Render(world_environment *Environment);
+	void Render(scene::basic_region *Region);
+	void Render(section_sequence::iterator First, section_sequence::iterator Last);
+	void Render(cell_sequence::iterator First, cell_sequence::iterator Last);
+    void Render(scene::shape_node const &Shape, bool const Ignorerange);
+	void Render(TAnimModel *Instance);
+	// an instance of a bucket of a scene cell, queued to be drawn by Render_Instanced()
+	struct queued_instance {
+		scene::basic_cell::instance_bucket const *bucket;
+		std::size_t index; // of the instance and its record in the bucket
+	};
+	// batched render path for many TAnimModel instances that share the same TModel3d.
+	// Caller guarantees every instance was instanceable when bucketed (no per-instance lights,
+	// no submodel animation, same replacable skins); the records of the instances tell which
+	// ones still are. Instances are individually frustum/distance culled by their records, the
+	// TAnimModel itself is read only for the first instance drawn. Each lod band drawn counts as
+	// one instanced_drawcall in draw_stats; the instances drawn are added to the instances counter.
+	// Bandcounts, when given, gets the number of instances drawn in each lod band.
+	void Render_Instanced( TModel3d *Model, std::vector<queued_instance> const &Instances, std::vector<std::uint32_t> *Bandcounts = nullptr );
+	// adds the bucketed instances of a scene cell to the frame-level buckets drawn by Render_Instanced(),
+	// less the ones their records show to be out of sight in the current render pass
+	void Queue_Instances( scene::basic_cell const *Cell );
+	// makes the records of the instances held by a bucket of a scene cell, with locations relative to Origin
+	void Update_Instance_Records( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket, glm::dvec3 const &Origin );
+	// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
+	std::uint32_t Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count );
+	// binds the instance buffer of the frame for the vertex shaders (INSTANCE_SSBO_BINDING)
+	void Bind_Instance_Stream() const;
+	// draws the instances queued in the pass from the result of the gpu culling (Global.gfx_gpucull 1): makes the depth
+	// pyramid of the occlusion test, runs the culling, walks the submodel trees of the groups once per lod band to record
+	// the draws (m_indirectdraws, m_indirectcommands), has their instances filled in, then draws them with indirect draws,
+	// their depth first (Global.gfx_depthprepass). inside the depth pass of the whole scene only their depth is drawn, their
+	// colour waits for the colour pass (Render_Instances_Indirect_Colour()). in two phases
+	// (Global.gfx_gpucull_occlusion_instances) the instances seen in the previous frame are drawn first (their depth, or
+	// their colour without the prepass), the pyramid is made again and the other instances are culled against it
+	void Render_Instances_Indirect();
+	// the recorded draws of the instances, with the commands of the given set: their depth with the programs of the depth
+	// prepass, with the state of the prepass already set (returns the number of draws), the same with the state set for it
+	// and the time measured outside the depth pass of the whole scene, and their colour. the command buffer and the
+	// instances are bound by the caller
+	std::uint32_t Render_Instances_Indirect_Depth( opengl46_instance_cull::command_set const Set );
+	std::uint32_t Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer );
+	void Render_Instances_Indirect_Colour( opengl46_instance_cull::command_set const Set );
+	// how the depth prepass treats the material: 0 left out, 1 drawn without alpha test, 2 with the alpha test of the diffuse texture
+	int Prepass_Class( material_handle const Material );
+	// depth of the whole opaque scene of the colour pass, before its colour (Global.gfx_depthprepass_scene): the colour pass
+	// walks the scene a second time, Bind_Material() binds the programs of the depth prepass and draw() leaves out what they
+	// can't draw. Future: the motion matrix the colour pass draws the region with
+	void Render_Scene_Depth( glm::mat4 const &Future );
+	// whether the colour pass of the viewport gets contact shadows, which need the depth pass of the scene
+	bool Contact_Shadows_Wanted( viewport_config const &Viewport ) const;
+	// resolves the depth drawn by Render_Scene_Depth() for the contact shadows and sets them up for the colour pass
+	void Setup_Contact_Shadows( viewport_config &Viewport );
+	// makes the target of the resolved depth of the viewport if it isn't there yet; false if it can't be made
+	bool Resolved_Depth_Target( viewport_config &Viewport );
+	// whether the depth pass of the whole scene draws the material bound last (Bind_Material()) and the geometry
+	bool Scene_Depth_Draws( gfx::geometry_handle const &Geometry ) const;
+	bool Render(TDynamicObject *Dynamic);
+    bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
+	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
+	void Render(TSubModel *Submodel);
+	void Render(TTrack *Track);
+	void Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last);
+	// renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) via GPU instancing.
+	// caller must already have the camera-relative world-space transform set on the matrix stack.
+	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
+	// Global.SleeperDistance from the track origin.
+	void Render_Sleepers( TTrack *Track );
+	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
+    bool Render_interior( bool const Alpha = false );
+    bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
+    bool Render_coupler_adapter( TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha = false );
+	// releases gl textures used only by vehicles farther than gfx.textures.releasedistance times the draw range
+	void Update_Texture_Release();
+	// textures used by materials of the sub-models of specified model, replaceable skins excluded
+	std::vector<texture_handle> const &Model_Textures( TModel3d *Model );
+	void Render(TMemCell *Memcell);
+	void Render_particles();
+	void Render_precipitation();
+  void Render_vr_models();
+	void Render_Alpha(scene::basic_region *Region);
+	void Render_Alpha(cell_sequence::reverse_iterator First, cell_sequence::reverse_iterator Last);
+	void Render_Alpha(TAnimModel *Instance);
+	void Render_Alpha(TTraction *Traction);
+    void Render_Alpha(scene::lines_node const &Lines);
+	void Render_editor_overlay();
+	bool Render_Alpha(TDynamicObject *Dynamic);
+	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
+	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
+	void Render_Alpha(TSubModel *Submodel);
+	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
+	// writes the lighting of the pass about to be drawn to the light buffer: the sun, the ambient light and the fog, and the headlights of Lights
+	// unless Headlights is false, as in the pass which draws the environment map, where lights of vehicles would only get baked into the map.
+	// Clustered tells the shading to take the headlights from the lists of the clusters (see Cull_Lights()) and not to go through the first few.
+	// with Headlights and Clustered the cab lamp (first) and the lamps of models and vehicles (after the headlights) are written as well
+	void Update_Lights(light_array &Lights, bool const Headlights = true, bool const Clustered = false);
+	// writes a light of a model or a vehicle, or the cab lamp, to the slot of the light buffer, in the view space of the pass
+	void Write_Local_Light(gl::light_element &Light, opengl46_local_lights::light const &Source, glm::dvec3 const &Camera, glm::mat4 const &View);
+	// brings the light cluster grid of the viewport up to date with the projection of the color pass being drawn.
+	// Targetsize is the size in pixels of what the pass draws to, which gl_FragCoord of the shading counts in
+	void Update_Clusters(viewport_config &vp, glm::ivec2 const &Targetsize);
+	// assigns the lights set up by Update_Lights() to the clusters of the viewport; run after it, before the scene is drawn
+	void Cull_Lights(viewport_config &vp);
+	// debug view: tints the finished image of the viewport with the cluster of every pixel. Target is the framebuffer
+	// holding the image (null for the default one), Targetsize its size
+	void Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize);
+	// ambient occlusion from the resolved depth (vp.main_texd), multiplied into the image of Target. Mode: Global.gfx_postfx_ao
+	void Render_ambient_occlusion(viewport_config &vp, gl::framebuffer &Target, int const Mode);
+	glm::vec3 pick_color(std::size_t const Index);
+	std::size_t pick_index(glm::ivec3 const &Color);
+
+	bool init_viewport(viewport_config &vp);
+
+    void draw(const gfx::geometry_handle &handle);
+    void draw(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end);
+
+	void draw_debug_ui();
+
+	// model previews
+	// extends provided bounds with the geometry of the submodel and its siblings and children visible in a preview
+	void Preview_Bounds( TSubModel const *Submodel, glm::dmat4 const &Transform, glm::dvec3 &Min, glm::dvec3 &Max ) const;
+	// prepares the offscreen targets of model previews for square images of specified size
+	bool Preview_Targets( int const Size );
+	// draws the instance on its own with the current render pass settings
+	void Preview_Model( TAnimModel *Instance, float const Squaredistance, bool const Alpha );
+	// draws the lit instance into the hdr preview target, marking in its stencil the pixels covered by the model
+	void Preview_Color( TAnimModel *Instance, float const Squaredistance, int const Size, glm::dvec3 const &Eye, glm::mat4 const &View, glm::mat4 const &Projection, bool const Shadows );
+
+	// members
+	GLFWwindow *m_window{nullptr}; // main window
+	gfx::geometrybank_manager m_geometry;
+	material_manager m_materials;
+	texture_manager m_textures;
+	opengl46_terrain_materials m_terrainmaterials{m_materials, m_textures};
+	opengl46_light m_sunlight;
+	// fog colour of the frame: the one of the simulation, or of the atmosphere (see opengl46_sky::update())
+	glm::vec3 m_fogcolor{0.f};
+	// light of the sky: directional ambient light, atmosphere, prefiltered environment map
+	opengl46_sky m_sky;
+	// fog, clouds and their shadows, stars
+	opengl46_weather m_weather;
+	// automatic exposure and bloom of the post processing
+	opengl46_exposure m_exposure;
+	// screen space ambient occlusion of the post processing
+	opengl46_ao m_ao;
+	// true while the environment map bound for the shading is the real one (not the empty stand-in of the reflection pass)
+	bool m_envmap_bound{false};
+	/*
+	    float m_sunandviewangle; // cached dot product of sunlight and camera vectors
+    */
+    gfx::geometry_handle m_billboardgeometry{0, 0};
+	texture_handle m_glaretexture{-1};
+	texture_handle m_suntexture{-1};
+    texture_handle m_moontexture{-1};
+	texture_handle m_smoketexture{-1};
+    texture_handle m_headlightstexture{-1};
+
+	// main shadowmap resources
+	int m_shadowbuffersize{2048};
+	glm::mat4 m_shadowtexturematrix; // conversion from camera-centric world space to light-centric clip space
+
+	int m_environmentcubetextureface{0}; // helper, currently processed cube map face
+	int m_environmentupdateface{6}; // cube map face the environment map update in progress draws next; 6: no update in progress
+	bool m_environmentready{false}; // the environment map was drawn whole at least once
+	double m_environmentupdatetime{0}; // time of the most recent environment map update
+	glm::dvec3 m_environmentupdatelocation; // coordinates of most recent environment map update
+    opengl46_skydome m_skydomerenderer;
+    opengl46_precipitation m_precipitationrenderer;
+    opengl46_particles m_particlerenderer; // particle visualization subsystem
+
+	unsigned int m_framestamp; // id of currently rendered gfx frame
+	float m_framerate;
+	double m_updateaccumulator{0.0};
+	std::string m_debugtimestext;
+	std::string m_pickdebuginfo;
+	//debug_stats m_debugstats;
+	std::string m_debugstatstext;
+    struct simulation_state {
+        std::string weather;
+        std::string season;
+    } m_simulationstate;
+
+	glm::vec4 m_baseambient{0.0f, 0.0f, 0.0f, 1.0f};
+	glm::vec4 m_shadowcolor{colors::shadow};
+	//    TEnvironmentType m_environment { e_flat };
+	float m_specularopaquescalefactor{1.f};
+    float m_speculartranslucentscalefactor{1.f};
+
+	float m_fogrange = 2000.0f;
+
+	renderpass_config m_renderpass; // parameters for current render pass
+	section_sequence m_sectionqueue; // list of sections in current render pass
+	cell_sequence m_cellqueue;
+	// frame-level accumulation of per-cell opaque instance buckets. Each visited
+	// cell's buckets are merged here keyed by (TModel3d*, skins), so that
+	// Render_Instanced() runs once per unique model across the whole pass instead
+	// of once per cell -- collapsing many tiny instanced draws into a few large
+	// batches. Reused every pass; the vectors are emptied (not freed) at the top of Render(scene::basic_region*).
+	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<queued_instance>, scene::basic_cell::instance_bucket_key_hash> m_frame_instance_buckets;
+	// textures used by vehicle models, for the release of far textures
+	std::unordered_map<TModel3d const *, std::vector<texture_handle>> m_modeltextures;
+	// geometry of neighbouring tracks of a cell which share the material, gathered to be drawn together. reused by each Render(path_sequence)
+	std::vector<gfx::geometrybank_handle> m_pathbatch;
+	// instance records kept by the buckets of scene cells are good as long as they carry this number.
+	// it changes with each frame drawn with the scenery editor active, as the editor moves and resizes instances in place,
+	// and whenever scene::node_state_version does, as instances are shown, hidden or drawn on their own
+	unsigned int m_instancerecordsversion { 1 };
+	unsigned int m_nodestateversion { 0 }; // scene::node_state_version which m_instancerecordsversion was last checked against
+	// culling of instances in compute passes, run along the first color pass of the main viewport of a frame
+	// when Global.gfx_gpucull is set: the instances of the pass are drawn from its result (1), or the result is compared
+	// with the one of the cpu (2)
+	opengl46_instance_cull m_instancecull;
+	bool m_instancecullpass { false }; // the current pass feeds it
+	unsigned int m_instancecullframe { ~0u }; // frame it last ran in
+	std::vector<std::uint32_t> m_instance_bandcounts; // reported by Render_Instanced() for the comparison
+	// depth pyramid for the occlusion test of the gpu culling
+	opengl46_hiz m_hiz;
+	// a draw recorded from the walk of the submodel tree of a group in one lod band (Render_Instances_Indirect()), to be
+	// replayed once the instances of its command are known: the state the walk left for it and what it bound
+	struct indirect_draw {
+		gl::model_ubs ubs;
+		material_handle material;
+		TSubModel const *submodel;
+		gfx::geometry_handle geometry;
+		unsigned int type; // primitive
+		bool blending; // drawn with the transparency hack of submodels faded out
+	};
+	std::vector<indirect_draw> m_indirectdraws;
+	std::vector<gl::instance_draw_command> m_indirectcommands; // in the order of m_indirectdraws
+	bool m_indirectrecording { false }; // draw() and Bind_Material() record instead of drawing
+	std::uint32_t m_indirectentry { 0 }; // entry (group and lod band) recorded
+	material_handle m_indirectmaterial { null_handle }; // what the last Bind_Material() bound while recording
+	TSubModel const *m_indirectsubmodel { nullptr };
+	// depth prepass: programs and the class of the material programs (see Prepass_Class())
+	std::unique_ptr<gl::program> m_prepass_shader;
+	std::unique_ptr<gl::program> m_prepass_alpha_shader;
+	std::unordered_map<gl::program const *, int> m_prepassclasses;
+	gl::gpu_timer m_prepasstimer;
+	gl::gpu_timer m_prepassfirsttimer; // of the instances drawn first, in two phases
+	// depth pass of the whole scene (Render_Scene_Depth())
+	bool m_scenedepthpass { false }; // inside it: Bind_Material() and draw() work for the depth
+	bool m_scenedepthskip { true }; // the material bound last isn't drawn in it
+	bool m_scenedepthdrawn { false }; // it was drawn for the colour pass under way, which skips what was done in it already
+	bool m_indirectcolourpending { false }; // the instances were culled in it, the colour pass draws them from the recorded draws
+	opengl46_instance_cull::command_set m_indirectcolourset { opengl46_instance_cull::command_set::first }; // with these commands
+	debug_stats m_scenedepthstats; // of its last run
+	double m_scenedepthcputime { 0.0 }; // ms
+	gl::gpu_timer m_scenedepthtimer;
+	// contact shadows: set up for the colour pass under way, and whether the last main view had them
+	bool m_contactshadows { false };
+	bool m_contactshadowslast { false };
+	gl::gpu_timer m_contactshadowstimer; // resolve of the depth
+  renderpass_config m_colorpass; // parametrs of most recent color pass
+	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
+	std::vector<TSubModel const *> m_pickcontrolsitems;
+  std::vector<TSubModel const *> m_picksurfaceitems;
+	TSubModel const *m_pickcontrolitem{nullptr};
+    std::vector<scene::basic_node *> m_picksceneryitems;
+    scene::basic_node *m_picksceneryitem{nullptr};
+    glm::vec3 m_worldmousecoordinates { 0.f };
+    bool m_mousehit { false };
+#ifdef EU07_USE_DEBUG_CAMERA
+	renderpass_config m_worldcamera; // debug item
+#endif
+
+	std::optional<gl::query> m_timequery;
+	GLuint64 m_gllasttime = 0;
+	// gpu time of the light cluster compute passes; the debug panel shows it once a pass measures it
+	gl::gpu_timer m_clusterstimer;
+	// gpu time of assigning the lights to the clusters, done every frame
+	gl::gpu_timer m_cullstimer;
+	// headlights placed in the light buffer by the last Update_Lights(), and those which are on but did not fit in it
+	uint32_t m_lights_lit = 0;
+	uint32_t m_lights_dropped = 0;
+	// lights of models and vehicles and the cab lamp, gathered once per frame for the light clusters
+	opengl46_local_lights m_locallights;
+	// the last Update_Lights() placed the cab lamp in the light buffer: the cab is lit by it, not by an addition to the ambient light
+	bool m_cablamplit = false;
+	// cube shadow maps of the lamps
+	opengl46_local_shadows m_localshadows;
+	// the shadow pass draws to a cube shadow map, with the programs of m_localshadows
+	bool m_cubeshadows = false;
+	// the shadow pass draws the kept scenery part of the map of a lamp: no vehicles, and not the model of the lamp itself
+	bool m_cubescenery = false;
+	TAnimModel const *m_cubeskipinstance = nullptr;
+	// vehicles near the camera which cast the shadows of scenery lamps, and those of them by the lamp being drawn
+	std::vector<TDynamicObject *> m_lampshadowvehicles;
+	std::vector<TDynamicObject *> m_lampshadowslot;
+	// the shadow pass leaves this vehicle out (the one the headlights of the map being drawn belong to)
+	TDynamicObject const *m_shadowskipvehicle = nullptr;
+	// headlights which may get shadow maps in this frame, and their importance
+	std::vector<std::pair<float, light_array::light_record const *>> m_headlightshadowcandidates;
+	std::vector<light_array::light_record const *> m_headlightshadowpicked;
+
+    double m_precipitationrotation;
+
+    glm::mat4 perspective_projection_raw(float fovy, float aspect, float znear, float zfar);
+	glm::mat4 perspective_projection(const viewport_proj_config &c, float n, float f, glm::mat4 &frustum);
+    glm::mat4 ortho_projection(float left, float right, float bottom, float top, float z_near, float z_far);
+    glm::mat4 ortho_frustumtest_projection(float left, float right, float bottom, float top, float z_near, float z_far);
+	void editor_ortho_projection(viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum);
+
+    std::vector<std::function<void(TSubModel const *, glm::vec2)>> m_control_pick_requests;
+    std::vector<std::function<void(scene::basic_node *)>> m_node_pick_requests;
+
+	std::unique_ptr<gl::shader> m_vertex_shader;
+
+	std::unique_ptr<gl::ubo> scene_ubo;
+	// the model block of every draw, streamed (Global.gfx_bufferstreaming): each update to its own place in the buffer of
+	// the frame instead of glBufferSubData of the one block
+	std::unique_ptr<gl::stream_ubo> model_ubo;
+	std::unique_ptr<gl::ssbo> light_ssbo;
+	// per-instance modelview matrices of GPU-instanced draws, one buffer for each of the last frames, used in turn so
+	// a frame doesn't write to the buffer the gpu may still read for an earlier one. element 0 of each is identity
+	// and never overwritten: draws which aren't instanced (gl_BaseInstance == gl_InstanceID == 0) compute
+	// identity*modelview in the vertex shader. Render_Instanced and Render_Sleepers append the camera-space root
+	// matrices of their instances past the ones placed earlier in the frame, and draw them from that base instance.
+	// persistently mapped with Global.gfx_bufferstreaming
+	std::unique_ptr<gl::frame_stream> m_instancestream;
+	// when > 0, the renderer is inside a Render_Instanced() call. The draw(handle)
+	// method routes to glDrawElementsInstanced* with this many instances from
+	// m_current_instance_base onwards rather than a single regular draw. The vertex shader reads
+	// per-instance modelview from instance_ssbo[gl_BaseInstance + gl_InstanceID]. Reset to 0 on exit.
+	std::size_t m_current_instance_count { 0 };
+	std::uint32_t m_current_instance_base { 0 };
+	// persistent scratch buffer for Render_Instanced(): holds the per-instance
+	// camera-space root modelview matrices for the batch currently being built.
+	// Kept as a member rather than a function-local so its heap allocation is
+	// reused across calls -- clear() retains capacity, so once it has grown to
+	// the largest batch seen, steady-state frames perform no allocation here.
+	std::vector<glm::mat4> m_instance_modelviews;
+	// further persistent scratch buffers for Render_Instanced(): culled instances paired with their
+	// squared distance, and the lod bounds of the drawn model which split them into lod bands
+	struct instance_survivor {
+		glm::mat4 modelview;
+		float distancesquared;
+		std::uint32_t band;
+	};
+	std::vector<instance_survivor> m_instance_survivors;
+	std::vector<float> m_instance_lodbounds;
+	std::vector<TSubModel const *> m_instance_lodpending;
+	// per sort key (lod band and distance slot): first index in m_instance_modelviews (with end sentinel)
+	// and fill cursor; per lod band: nearest distance
+	std::vector<std::size_t> m_instance_bandstarts;
+	std::vector<std::size_t> m_instance_bandcursors;
+	std::vector<float> m_instance_banddistances;
+	gl::scene_ubs scene_ubs;
+	gl::model_ubs model_ubs;
+	gl::light_data light_data;
+
+	std::unordered_map<std::string, std::shared_ptr<gl::program>> m_shaders;
+
+	std::unique_ptr<gl::program> m_line_shader;
+	gfx::geometrybank_handle m_editor_overlay_bank;
+	std::vector<gfx::geometry_handle> m_editor_overlay_geometry;
+	unsigned int m_editor_overlay_revision{0};
+	std::unique_ptr<gl::program> m_freespot_shader;
+    std::unique_ptr<gl::program> m_billboard_shader;
+    std::unique_ptr<gl::program> m_celestial_shader;
+    std::unique_ptr<gl::program> m_hiddenarea_shader;
+    std::unique_ptr<gl::program> m_copy_shader;
+    std::unique_ptr<gl::program> m_cluster_build_shader;
+    std::unique_ptr<gl::program> m_cluster_cull_shader;
+    std::unique_ptr<gl::program> m_cluster_heatmap_shader;
+
+    std::unique_ptr<gl::vao> m_empty_vao;
+
+	std::vector<std::unique_ptr<viewport_config>> m_viewports;
+
+	std::unique_ptr<gl::postfx> m_pfx_motionblur;
+	std::unique_ptr<gl::postfx> m_pfx_tonemapping;
+  std::unique_ptr<gl::postfx> m_pfx_chromaticaberration;
+
+	// postfx ssao
+	std::unique_ptr<gl::postfx>      m_pfx_ssao;
+	std::unique_ptr<gl::postfx>      m_pfx_ssao_blur;
+	std::unique_ptr<opengl_texture> m_ssao_noise_tex;
+	glm::vec3                        m_ssao_kernel[32];
+
+	std::unique_ptr<gl::program> m_shadow_shader;
+	std::unique_ptr<gl::program> m_alpha_shadow_shader;
+
+	std::unique_ptr<gl::framebuffer> m_pick_fb;
+	std::unique_ptr<opengl_texture> m_pick_tex;
+	std::unique_ptr<gl::renderbuffer> m_pick_rb;
+  std::unique_ptr<gl::program> m_pick_surface_shader;
+	std::unique_ptr<gl::program> m_pick_shader;
+
+	std::unique_ptr<gl::cubemap> m_empty_cubemap;
+
+	std::unique_ptr<gl::framebuffer> m_env_fb;
+	std::unique_ptr<gl::renderbuffer> m_env_rb;
+	std::unique_ptr<gl::cubemap> m_env_tex;
+
+	std::unique_ptr<gl::framebuffer> m_shadow_fb;
+	std::unique_ptr<opengl_texture> m_shadow_tex;
+	std::unique_ptr<opengl_texture> m_shadow_empty_tex; // what the shadow sampler reads when there is no shadow map in place
+
+    std::unique_ptr<gl::pbo> m_picking_pbo;
+    std::unique_ptr<gl::pbo> m_picking_node_pbo;
+
+    std::unique_ptr<gl::pbo> m_depth_pointer_pbo;
+    std::unique_ptr<gl::framebuffer> m_depth_pointer_fb;
+    std::unique_ptr<gl::renderbuffer> m_depth_pointer_rb;
+
+	material_handle m_invalid_material;
+
+    bool m_blendingenabled;
+
+	struct headlight_config_s
+	{
+		float in_cutoff = 1.005f;
+		float out_cutoff = 0.993f;
+
+		float falloff_linear = 0.15f;
+		float falloff_quadratic = 0.15f;
+
+		float intensity = 1.0f;
+		float ambient = 0.0f;
+	};
+
+	headlight_config_s headlight_config;
+
+    std::unique_ptr<vr_interface> vr;
+    bool debug_ui_active = false;
+
+	// offscreen targets of model previews
+	struct preview_targets
+	{
+		int size { 0 };
+		std::unique_ptr<opengl_texture> hdr_tex;
+		std::unique_ptr<gl::renderbuffer> hdr_rbds; // depth and stencil, the stencil marks pixels covered by the model
+		std::unique_ptr<gl::framebuffer> hdr_fb;
+		std::unique_ptr<opengl_texture> ldr_tex;
+		std::unique_ptr<gl::framebuffer> ldr_fb;
+	} m_preview;
+	// set while a preview is drawn: submodels faded out entirely are skipped, instead of being drawn invisible over the stencil
+	bool m_previewing { false };
+
+    static bool renderer_register;
+
+	class opengl46_imgui_renderer : public imgui_renderer
+	{
+		virtual bool Init() override;
+		virtual void Shutdown() override;
+		virtual void BeginFrame() override;
+		virtual void Render() override;
+		virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height) override;
+		virtual void Release_Image(std::uint64_t const Image) override;
+	} m_imgui_renderer;
+
+  virtual imgui_renderer* GetImguiRenderer() override {
+	  return &m_imgui_renderer;
+  }
+};
+
+//---------------------------------------------------------------------------

@@ -113,7 +113,6 @@ public:
     void set_filtering() const;
     void downsize( GLuint const Format );
     void flip_vertical();
-    void gles_match_internalformat(GLuint format);
 
     // takes over the data read by a worker thread, waiting for it if needed
     void complete_data();

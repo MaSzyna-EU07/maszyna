@@ -6,6 +6,8 @@ layout(location = 0) out vec4 out_color;
 
 uniform sampler2D iChannel0;
 
+#include <dither.glsl>
+
 vec2 barrelDistortion(vec2 f_coords, float amt) {
 	vec2 cc = f_coords - 0.5;
 	float dist = dot(cc, cc);
@@ -54,4 +56,5 @@ void main()
 	}
 		
 	out_color = sumcol / sumw;
+	out_color.rgb = dither_output(out_color.rgb);
 }

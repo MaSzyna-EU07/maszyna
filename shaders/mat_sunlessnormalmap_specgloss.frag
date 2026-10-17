@@ -49,9 +49,8 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     vec3 F0 = mix(vec3(0.04), texturecolor, metalic);
     vec3 fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
 
-    const float MAX_REFLECTION_LOD = 8.0;
     float env_roughness = 1.0 - clamp(glossiness / max(abs(param[1].w), 1.0), 0.0, 1.0);
-    vec3 envcolor = envmap_color_lod(fragnormal, env_roughness * MAX_REFLECTION_LOD);
+    vec3 envcolor = envmap_color_rough(fragnormal, env_roughness);
 
     // Pre-integrated env BRDF (matches apply_lights): roughness-attenuated
     // reflection so matte cab surfaces no longer mirror the environment.
@@ -73,19 +72,16 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     // surfaces (uses SUN_NDOTL_SHARPNESS from light_common.glsl).
     float sun_NdotL = pow(sunlight.x, SUN_NDOTL_SHARPNESS);
     float diffuseamount = sun_NdotL * lights[0].intensity;
+    // the clouds hold back the sun where their shadow falls, as the shadow map does
+    float cloudsun = cloud_shadow(mat3(inv_view) * f_pos.xyz);
 
-    float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity;
+    float specularamount = sunlight.y * param[1].y * specularity * lights[0].intensity * cloudsun;
 
-    for (uint i = 1U; i < lights_count; i++)
-    {
-        light_s light = lights[i];
-        vec2 part = calc_headlights(light, fragnormal);
-        fragcolor += light.color * (part.x + part.y * param[1].y) * light.intensity;
-    }
+    fragcolor = add_headlights(fragcolor, fragnormal);
 
     if (shadowtone < 1.0)
     {
-        float shadow = calc_shadow();
+        float shadow = max(calc_shadow(), 1.0 - cloudsun);
         specularamount *= clamp(1.0 - shadow, 0.0, 1.0);
         fragcolor = mix(fragcolor, fragcolor * shadowtone, clamp(diffuseamount * shadow, 0.0, 1.0));
     }

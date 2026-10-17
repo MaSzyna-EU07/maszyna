@@ -9,5 +9,7 @@
 void
 cStars::init() {
 
-    m_stars = TModelsManager::GetModel( "skydome_stars.t3d", false );
+    // the stars are drawn from the catalogue built into the renderer (environment/starcatalog.h), the model of the starry
+    // dome is no longer loaded
+    m_stars = nullptr;
 }

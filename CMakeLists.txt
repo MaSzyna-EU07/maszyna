@@ -49,6 +49,7 @@ file(GLOB HEADERS "*.h"
 "simulation/*.h"
 "scene/*.h"
 "rendering/*.h"
+"rendering/opengl46/*.h"
 "audio/*.h"
 "environment/*.h"
 "application/*.h"
@@ -68,7 +69,6 @@ if (APPLE)
 endif()
 
 option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
-option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
@@ -132,6 +132,8 @@ set(SOURCES
 "environment/sky.cpp"
 "environment/sun.cpp"
 "environment/stars.cpp"
+"environment/starcatalog.cpp"
+"environment/weather.cpp"
 "rendering/lightarray.cpp"
 "environment/skydome.cpp"
 "audio/sound.cpp"
@@ -219,7 +221,6 @@ set(SOURCES
 "rendering/particles.cpp"
 "utilities/headtrack.cpp"
 "rendering/geometrybank.cpp"
-"rendering/openglcolor.cpp"
 "simulation/simulationsounds.cpp"
 "rendering/openglcamera.cpp"
 
@@ -233,6 +234,7 @@ set(SOURCES
 "widgets/map_objects.cpp"
 "widgets/popup.cpp"
 "widgets/time.cpp"
+"widgets/weatherpanel.cpp"
 "widgets/vehicleparams.cpp"
 "widgets/trainingcard.cpp"
 "widgets/perfgraphs.cpp"
@@ -253,6 +255,10 @@ set(SOURCES
 "gl/fence.cpp"
 "gl/pbo.cpp"
 "gl/query.cpp"
+"gl/ssbo.cpp"
+"gl/streambuffer.cpp"
+"gl/cluster_grid.cpp"
+"gl/readback.cpp"
 
 "imgui/imgui.cpp"
 "imgui/imgui_demo.cpp"
@@ -278,9 +284,7 @@ set(SOURCES
 
 set(DEFINITIONS)
 set(SOURCES ${SOURCES} "imgui/imgui_impl_opengl3.cpp")
-set(SOURCES ${SOURCES} "imgui/imgui_impl_opengl2.cpp")
 set_source_files_properties("imgui/imgui_impl_opengl3.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
-set_source_files_properties("imgui/imgui_impl_opengl2.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 
 if (WITH_CRASHPAD)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_CRASHPAD")
@@ -325,25 +329,22 @@ endif()
 
 if (WITH_OPENGL_MODERN)
         set(SOURCES ${SOURCES}
-            "rendering/opengl33geometrybank.cpp"
-            "rendering/opengl33light.cpp"
-            "rendering/opengl33skydome.cpp"
-            "rendering/opengl33precipitation.cpp"
-            "rendering/opengl33particles.cpp"
-            "rendering/opengl33terrain.cpp"
-            "rendering/opengl33renderer.cpp")
+            "rendering/opengl46/opengl46geometrybank.cpp"
+            "rendering/opengl46/opengl46light.cpp"
+            "rendering/opengl46/opengl46skydome.cpp"
+            "rendering/opengl46/opengl46sky.cpp"
+            "rendering/opengl46/opengl46weather.cpp"
+            "rendering/opengl46/opengl46exposure.cpp"
+            "rendering/opengl46/opengl46ao.cpp"
+            "rendering/opengl46/opengl46locallights.cpp"
+            "rendering/opengl46/opengl46localshadows.cpp"
+            "rendering/opengl46/opengl46instancecull.cpp"
+            "rendering/opengl46/opengl46hiz.cpp"
+            "rendering/opengl46/opengl46precipitation.cpp"
+            "rendering/opengl46/opengl46particles.cpp"
+            "rendering/opengl46/opengl46terrain.cpp"
+            "rendering/opengl46/opengl46renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
-endif()
-
-if (WITH_OPENGL_LEGACY)
-        set(SOURCES ${SOURCES}
-            "rendering/openglgeometrybank.cpp"
-            "rendering/opengllight.cpp"
-            "rendering/openglskydome.cpp"
-            "rendering/openglprecipitation.cpp"
-            "rendering/openglparticles.cpp"
-            "rendering/openglrenderer.cpp")
-		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_LEGACY")
 endif()
 
 add_subdirectory("${DEPS_DIR}/glfw/" EXCLUDE_FROM_ALL)
@@ -665,8 +666,9 @@ if(WIN32 AND WITH_PYTHON)
 		TARGET ${PROJECT_NAME} POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_LIBDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/Lib"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
+		# Lib with its site-packages is huge, the script copies it only when the Python install has changed
+		COMMAND ${CMAKE_COMMAND} "-DPY_LIBDIR=${EU07_PY_LIBDIR}" "-DPY_DLLSDIR=${EU07_PY_DLLSDIR}" "-DDEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/CMake_modules/CopyPythonRuntime.cmake"
 	)
 endif()
 
@@ -735,4 +737,4 @@ if(WITH_TESTS)
 	# Visual Studio builds rerun them with the next change of the game)
 	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
 		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
-endif()
+endif()

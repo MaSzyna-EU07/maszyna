@@ -8,7 +8,7 @@
 
 ![Discord](https://img.shields.io/discord/1019306167803056158?style=flat-square&logo=discord&label=Discord&labelColor=white) ![Github Actions](https://img.shields.io/github/actions/workflow/status/MaSzyna-EU07/maszyna/build_bin.yml?style=flat-square ) ![Quality gate](https://img.shields.io/sonar/quality_gate/MaSzyna-EU07_maszyna?server=https%3A%2F%2Fsonarcloud.io&style=flat-square
 ) ![Sonar cloud violations](https://img.shields.io/sonar/violations/MaSzyna-EU07_maszyna?server=https%3A%2F%2Fsonarcloud.io&format=long&style=flat-square
-) [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg?style=flat-square)](LICENSE) [![Last commit](https://img.shields.io/github/last-commit/MaSzyna-EU07/maszyna?style=flat-square&label=Last%20commit)](https://github.com/MaSzyna-EU07/maszyna/commits/master) [![Open issues](https://img.shields.io/github/issues/MaSzyna-EU07/maszyna?style=flat-square&label=Issues)](https://github.com/MaSzyna-EU07/maszyna/issues) [![Pull requests](https://img.shields.io/github/issues-pr/MaSzyna-EU07/maszyna?style=flat-square&label=Pull%20requests)](https://github.com/MaSzyna-EU07/maszyna/pulls) [![GitHub stars](https://img.shields.io/github/stars/MaSzyna-EU07/maszyna?style=flat-square&logo=github&label=Stars)](https://github.com/MaSzyna-EU07/maszyna/stargazers) [![GitHub forks](https://img.shields.io/github/forks/MaSzyna-EU07/maszyna?style=flat-square&logo=github&label=Forks)](https://github.com/MaSzyna-EU07/maszyna/forks) ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus) ![Windows](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows) ![Linux](https://img.shields.io/badge/platform-Linux-FCC624?style=flat-square&logo=linux&logoColor=black) ![OpenGL](https://img.shields.io/badge/OpenGL-3.3%2B-5586A4?style=flat-square&logo=opengl) 
+) [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg?style=flat-square)](LICENSE) [![Last commit](https://img.shields.io/github/last-commit/MaSzyna-EU07/maszyna?style=flat-square&label=Last%20commit)](https://github.com/MaSzyna-EU07/maszyna/commits/master) [![Open issues](https://img.shields.io/github/issues/MaSzyna-EU07/maszyna?style=flat-square&label=Issues)](https://github.com/MaSzyna-EU07/maszyna/issues) [![Pull requests](https://img.shields.io/github/issues-pr/MaSzyna-EU07/maszyna?style=flat-square&label=Pull%20requests)](https://github.com/MaSzyna-EU07/maszyna/pulls) [![GitHub stars](https://img.shields.io/github/stars/MaSzyna-EU07/maszyna?style=flat-square&logo=github&label=Stars)](https://github.com/MaSzyna-EU07/maszyna/stargazers) [![GitHub forks](https://img.shields.io/github/forks/MaSzyna-EU07/maszyna?style=flat-square&logo=github&label=Forks)](https://github.com/MaSzyna-EU07/maszyna/forks) ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus) ![Windows](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows) ![Linux](https://img.shields.io/badge/platform-Linux-FCC624?style=flat-square&logo=linux&logoColor=black) ![OpenGL](https://img.shields.io/badge/OpenGL-4.6-5586A4?style=flat-square&logo=opengl) 
 
 MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozilla.org/en-US/MPL/2.0/) and comes with a large pack of free assets under a [custom license](https://eu07.pl/docs/inne/readme_pliki/en-licence.html).
 
@@ -89,7 +89,7 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 
 **3) Graphics API**
 
--   **OpenGL 3.0** or newer
+-   **OpenGL 4.6** (core profile), required by the default renderer; see [docs/opengl46-renderer.md](docs/opengl46-renderer.md)
 - **DirectX 12** via NVRHI (optional, Windows only, for Better Renderer)
 
 
@@ -104,6 +104,8 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 | `-DPython3_ROOT_DIR=<path>` | Root of the **Python 3.14** install on Windows (`python.exe`, `Lib`, `DLLs`) for embed/copy steps; on Linux, optional if CMake picks the wrong interpreter |
 
 > **Linux note:** `WITH_BETTER_RENDERER` uses DirectX 12 through NVRHI and is **not supported on Linux**.
+
+> **macOS note:** macOS provides OpenGL only up to 4.1, so the OpenGL 4.6 renderer does not run there.
 
 
 
@@ -232,7 +234,7 @@ If detection still fails, padding the file (with comments) up to ~1 MB may hel
 -   OS: **Windows 10 64-bit**
 -   Processor:  **2 core at least 2 GHz (e.g. Intel Core i3-2100 / AMD Athlon II X2)**
 -   RAM:  **6 GB RAM**
--   Graphics Card:  **supporting OpenGL 3.3 with at least 1GB VRAM**
+-   Graphics Card:  **supporting OpenGL 4.6 with at least 1GB VRAM**
 -   **150 GB of free disk space**
 -   Sound card supporting OpenAL with stereo
 -   Optional COM ports for custom control panel setups.

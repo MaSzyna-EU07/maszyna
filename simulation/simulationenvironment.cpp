@@ -67,6 +67,12 @@ world_environment::compute_weather() const {
 
 	                 Global.AirTemperature > 1 ? "rain:" :
 	                                             "snow:";
+    if( Global.Overcast > 1.f ) {
+        // a described weather may say what falls, whatever the temperature
+        if( auto const kind { m_weather.precipitation_override() } ) {
+            Global.Weather = ( *kind == precipitation_type::snow ? "snow:" : "rain:" );
+        }
+    }
 
     Global.fTurbidity = Global.Overcast <= 0.10 ? 3 :
 	                    Global.Overcast <= 0.20 ? 4 :
@@ -87,6 +93,8 @@ world_environment::init() {
     m_moon.init();
     m_stars.init();
     m_clouds.Init();
+    // the weather of the scenery, or the one made from its overcast and fog range, before anything reads them
+    m_weather.init();
     m_precipitation.init();
     {
         auto const rainsoundoverride { simulation::Sound_overrides.find( "weather.rainsound:" ) };
@@ -105,6 +113,8 @@ world_environment::init() {
 
 void
 world_environment::update() {
+    // the clouds move with the wind, a change of the weather goes on; the overcast and fog range follow a described weather
+    m_weather.update( Timer::GetDeltaTime(), Global.pCamera.Pos );
     // move celestial bodies...
     m_sun.update();
     m_moon.update();

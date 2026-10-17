@@ -8,7 +8,7 @@
 #include "gl/framebuffer.h"
 #include "rendering/frustum.h"
 #ifdef WITH_OPENGL_MODERN
-#include "rendering/opengl33renderer.h"
+#include "rendering/opengl46/opengl46renderer.h"
 #endif
 
 namespace ui
@@ -114,8 +114,6 @@ class map_panel : public ui_panel
 
 	std::vector<gfx::geometrybank_handle> m_section_handles;
 	map_colored_paths m_colored_paths;
-
-	bool m_widelines_supported;
 
     const int fb_size = 1024;
 

@@ -39,10 +39,7 @@ std::optional<int64_t> gl::query::result()
 	glGetQueryObjectuiv(*this, GL_QUERY_RESULT_AVAILABLE, &ready);
 	int64_t value = 0;
 	if (ready) {
-		if (!Global.gfx_usegles)
-			glGetQueryObjecti64v(*this, GL_QUERY_RESULT, &value);
-		else
-			glGetQueryObjectuiv(*this, GL_QUERY_RESULT, reinterpret_cast<GLuint*>(&value));
+		glGetQueryObjecti64v(*this, GL_QUERY_RESULT, &value);
 
 		return std::optional<int64_t>(value);
 	}
@@ -64,3 +61,64 @@ GLenum gl::query::glenum_target(targets Target) const
 }
 
 thread_local gl::query* gl::query::active_queries[6];
+
+gl::gpu_timer::~gpu_timer()
+{
+	if (m_queries[0] != 0)
+		glDeleteQueries(static_cast<GLsizei>(m_queries.size()), m_queries.data());
+}
+
+void gl::gpu_timer::begin()
+{
+	if (m_queries[0] == 0)
+		glCreateQueries(GL_TIMESTAMP, static_cast<GLsizei>(m_queries.size()), m_queries.data());
+
+	collect();
+	m_active = !m_pending[m_slot];
+	if (m_active)
+		glQueryCounter(m_queries[m_slot * 2], GL_TIMESTAMP);
+}
+
+void gl::gpu_timer::end()
+{
+	if (!m_active)
+		return;
+
+	glQueryCounter(m_queries[m_slot * 2 + 1], GL_TIMESTAMP);
+	m_pending[m_slot] = true;
+	m_slot = (m_slot + 1) % SLOTS;
+	m_active = false;
+}
+
+std::optional<uint64_t> gl::gpu_timer::result()
+{
+	if (m_queries[0] != 0)
+		collect();
+
+	return m_last;
+}
+
+void gl::gpu_timer::collect()
+{
+	// slots finish in the order they were issued, oldest first
+	for (size_t i = 0; i < SLOTS; ++i)
+	{
+		size_t const slot = (m_slot + i) % SLOTS;
+		if (!m_pending[slot])
+			continue;
+
+		GLint startready = GL_FALSE;
+		GLint endready = GL_FALSE;
+		glGetQueryObjectiv(m_queries[slot * 2], GL_QUERY_RESULT_AVAILABLE, &startready);
+		glGetQueryObjectiv(m_queries[slot * 2 + 1], GL_QUERY_RESULT_AVAILABLE, &endready);
+		if (!startready || !endready)
+			break;
+
+		GLuint64 start = 0;
+		GLuint64 end = 0;
+		glGetQueryObjectui64v(m_queries[slot * 2], GL_QUERY_RESULT, &start);
+		glGetQueryObjectui64v(m_queries[slot * 2 + 1], GL_QUERY_RESULT, &end);
+		m_last = end >= start ? end - start : 0;
+		m_pending[slot] = false;
+	}
+}

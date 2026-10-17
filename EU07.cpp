@@ -81,6 +81,15 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 
 #endif
 
+// lets the log service write what is still queued and stops it; does nothing once Application.exit() has done that
+static void stop_log_service()
+{
+	Global.applicationQuitOrder = true;
+	auto const it = Global.threads.find("LogService");
+	if (it != Global.threads.end() && it->second.joinable())
+		it->second.join();
+}
+
 int main(int argc, char *argv[])
 {
 #ifdef WITHDUMPGEN
@@ -90,6 +99,8 @@ int main(int argc, char *argv[])
 #endif
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
+
+	int exitcode{0};
 
 	// quick short-circuit for standalone e3d export
 	if (argc == 6 && std::string(argv[1]) == "-e3d")
@@ -140,6 +151,10 @@ int main(int argc, char *argv[])
 				result = Application.run();
 				Application.exit();
 			}
+			else
+			{
+				exitcode = result;
+			}
 		}
 		catch (std::bad_alloc const &Error)
 		{
@@ -154,9 +169,10 @@ int main(int argc, char *argv[])
 		}
 #endif
 	}
+	stop_log_service();
 #ifndef _WIN32
 	fflush(stdout);
 	fflush(stderr);
 #endif
-	std::_Exit(0); // skip destructors, there are ordering errors which causes segfaults
+	std::_Exit(exitcode); // skip destructors, there are ordering errors which causes segfaults
 }

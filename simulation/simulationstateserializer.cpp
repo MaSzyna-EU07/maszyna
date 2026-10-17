@@ -64,6 +64,8 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     Region = new scene::basic_region();
 
     simulation::State.init_scripting_interface();
+    // the weather section of the previous scenery doesn't carry over
+    simulation::Environment.weather().reset();
 
 	// NOTE: for the time being import from text format is a given, since we don't have full binary serialization
 	std::shared_ptr<deserializer_state> state =
@@ -134,6 +136,7 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
 	            { "test",        &state_serializer::deserialize_test },
 	            { "time",        &state_serializer::deserialize_time },
 	            { "trainset",    &state_serializer::deserialize_trainset },
+	            { "weather",     &state_serializer::deserialize_weather },
 	            { "terrain",     &state_serializer::deserialize_terrain },
 	            { "heightmap_terrain", &state_serializer::deserialize_heightmapterrain },
 	            { "editorterrain", &state_serializer::deserialize_editorterrain },
@@ -1042,6 +1045,13 @@ state_serializer::deserialize_sky( cParser &Input, scene::scratch_data &Scratchp
 }
 
 void
+state_serializer::deserialize_weather( cParser &Input, scene::scratch_data &Scratchpad ) {
+
+    // clouds, fog and precipitation, see environment/weather.h. wins over the atmo section
+    simulation::Environment.weather().deserialize( Input );
+}
+
+void
 state_serializer::deserialize_test( cParser &Input, scene::scratch_data &Scratchpad ) {
 
     // legacy section, no longer supported;
@@ -1925,7 +1935,7 @@ std::pair<int, int> state_serializer::preview_include(std::string const &Directi
 	static std::unordered_map<std::string, std::string> const statementends {
 	    { "event", "endevent" }, { "trainset", "endtrainset" }, { "isolated", "endisolated" }, { "area", "endarea" }, { "assignment", "endassignment" },
 	    { "atmo", "endatmo" }, { "camera", "endcamera" }, { "config", "endconfig" }, { "description", "enddescription" }, { "light", "endlight" },
-	    { "sky", "endsky" }, { "test", "endtest" }, { "time", "endtime" }, { "terrain", "endterrain" }, { "heightmap_terrain", "endheightmap_terrain" }, { "editorterrain", "endeditorterrain" } };
+	    { "sky", "endsky" }, { "weather", "endweather" }, { "test", "endtest" }, { "time", "endtime" }, { "terrain", "endterrain" }, { "heightmap_terrain", "endheightmap_terrain" }, { "editorterrain", "endeditorterrain" } };
 
 	cParser parser(Directive, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction);
 	// the template is processed with the placement its directive is going to be loaded with

@@ -30,7 +30,6 @@ http://mozilla.org/MPL/2.0/.
 
 #define EU07_SOUND_PROOFINGUSESRANGE
 
-class opengl_renderer;
 class sound_source;
 
 using uint32_sequence = std::vector<std::uint32_t>;
@@ -100,8 +99,6 @@ private:
 };
 
 class openal_renderer {
-
-    friend opengl_renderer;
 
 public:
     openal_renderer() = default;

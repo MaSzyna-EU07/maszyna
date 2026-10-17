@@ -6,12 +6,14 @@ layout(location = 4) in vec4 v_userdata;
 
 #include <common>
 
+// the depth prepass (depthprepass.vert) works the position out the same way, and has to get the same depth
+invariant gl_Position;
+
 out vec3 f_normal;
 flat out vec3 f_normal_raw;
 out vec2 f_coord;
 out vec4 f_pos;
 out mat3 f_tbn;
-out vec4 f_light_pos[MAX_CASCADES];
 
 out vec4 f_clip_pos;
 out vec4 f_clip_future_pos;
@@ -30,9 +32,6 @@ void main()
 	f_normal_raw = v_normal;
 	f_coord = v_coord;
 	f_pos = mv * vec4(v_vert, 1.0);
-	for (uint idx = 0U ; idx < MAX_CASCADES ; ++idx) {
-		f_light_pos[idx] = lightview[idx] * f_pos;
-	}
 	f_clip_pos = projection * f_pos;
 	f_clip_future_pos = (projection * future) * f_pos;
 

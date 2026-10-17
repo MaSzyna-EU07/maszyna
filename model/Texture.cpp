@@ -242,122 +242,6 @@ texture_manager::texture_manager() {
     m_textures.emplace_back( new opengl_texture(), std::chrono::steady_clock::time_point() );
 }
 
-// convert image to format suitable for given internalformat
-// required for GLES, on desktop GL it will be done by driver
-void opengl_texture::gles_match_internalformat(GLuint internalformat)
-{
-    // ignore compressed formats (and hope that GLES driver will support it)
-    if (precompressed_formats.find(internalformat) != precompressed_formats.end())
-        return;
-
-    // don't care about sRGB here
-    if (internalformat == GL_SRGB8)
-        internalformat = GL_RGB8;
-    if (internalformat == GL_SRGB8_ALPHA8)
-        internalformat = GL_RGBA8;
-
-    // we don't want BGR(A), reverse it
-    if (data_format == GL_BGR)
-    {
-        std::vector<unsigned char> reverse;
-        reverse.resize(data.size());
-
-        for (int y = 0; y < data_height; y++)
-            for (int x = 0; x < data_width; x++)
-            {
-                int offset = (y * data_width + x) * 3;
-                reverse[offset + 0] = data[offset + 2];
-                reverse[offset + 1] = data[offset + 1];
-                reverse[offset + 2] = data[offset + 0];
-            }
-
-        data_format = GL_RGB;
-        data = reverse;
-    }
-    else if (data_format == GL_BGRA)
-    {
-        std::vector<unsigned char> reverse;
-        reverse.resize(data.size());
-
-        for (int y = 0; y < data_height; y++)
-            for (int x = 0; x < data_width; x++)
-            {
-                int offset = (y * data_width + x) * 4;
-                reverse[offset + 0] = data[offset + 2];
-                reverse[offset + 1] = data[offset + 1];
-                reverse[offset + 2] = data[offset + 0];
-                reverse[offset + 3] = data[offset + 3];
-            }
-
-        data_format = GL_RGBA;
-        data = reverse;
-    }
-
-    // if format matches, we're done
-    if (data_format == GL_RGBA && internalformat == GL_RGBA8)
-        return;
-    if (data_format == GL_RGB && internalformat == GL_RGB8)
-        return;
-    if (data_format == GL_RG && internalformat == GL_RG8)
-        return;
-    if (data_format == GL_RED && internalformat == GL_R8)
-        return;
-
-    // do conversion
-
-    int in_c = 0;
-    if (data_format == GL_RGBA)
-        in_c = 4;
-    else if (data_format == GL_RGB)
-        in_c = 3;
-    else if (data_format == GL_RG)
-        in_c = 2;
-    else if (data_format == GL_RED)
-        in_c = 1;
-
-    int out_c = 0;
-    if (internalformat == GL_RGBA8)
-        out_c = 4;
-    else if (internalformat == GL_RGB8)
-        out_c = 3;
-    else if (internalformat == GL_RG8)
-        out_c = 2;
-    else if (internalformat == GL_R8)
-        out_c = 1;
-
-    if (!in_c || !out_c)
-        return; // conversion not supported
-
-    std::vector<unsigned char> out;
-    out.resize(data_width * data_height * out_c);
-
-    for (int y = 0; y < data_height; y++)
-        for (int x = 0; x < data_width; x++)
-        {
-            int pixel = y * data_width + x;
-            int in_off = pixel * in_c;
-            int out_off = pixel * out_c;
-            for (int i = 0; i < out_c; i++)
-            {
-                if (i < in_c)
-                    out[out_off + i] = data[in_off + i];
-                else
-                    out[out_off + i] = 0xFF;
-            }
-        }
-
-    if (out_c == 4)
-        data_format = GL_RGBA;
-    else if (out_c == 3)
-        data_format = GL_RGB;
-    else if (out_c == 2)
-        data_format = GL_RG;
-    else if (out_c == 1)
-        data_format = GL_RED;
-
-    data = out;
-}
-
 // loads texture data from specified file
 // TODO: wrap it in a workitem class, for the job system deferred loading
 void
@@ -540,8 +424,6 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 		set_filtering();
 		glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap_mode_s);
 		glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap_mode_t);
-		if (!glGenerateMipmap)
-			glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
 	}
 	else
 	{
@@ -1041,19 +923,7 @@ opengl_texture::bind(size_t unit) {
 
     if (units[unit] == id)
         return true;
-    if (GLAD_GL_ARB_direct_state_access)
-    {
-        glBindTextureUnit(unit, id);
-    }
-    else
-    {
-        if (unit != m_activeunit)
-        {
-            glActiveTexture(GL_TEXTURE0 + unit);
-            m_activeunit = unit;
-        }
-        glBindTexture(target, id);
-    }
+    glBindTextureUnit(unit, id);
     units[unit] = id;
 
     return true;
@@ -1062,20 +932,7 @@ opengl_texture::bind(size_t unit) {
 void
 opengl_texture::unbind(size_t unit)
 {
-    if (GLAD_GL_ARB_direct_state_access)
-    {
-        glBindTextureUnit(unit, 0);
-    }
-    else
-    {
-        if (unit != m_activeunit)
-        {
-            glActiveTexture(GL_TEXTURE0 + unit);
-            m_activeunit = unit;
-        }
-        //todo: for other targets
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
+    glBindTextureUnit(unit, 0);
     units[unit] = 0;
 }
 
@@ -1125,7 +982,6 @@ opengl_texture::create( bool const Static ) {
         {
             if (data_components == GL_DEPTH_COMPONENT)
             {
-				glTexParameteri(target, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
                 wrap_mode_s = GL_CLAMP_TO_BORDER;
                 wrap_mode_t = GL_CLAMP_TO_BORDER;
                 float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -1136,27 +992,14 @@ opengl_texture::create( bool const Static ) {
             glTexParameteri( target, GL_TEXTURE_WRAP_S, wrap_mode_s );
             glTexParameteri( target, GL_TEXTURE_WRAP_T, wrap_mode_t );
 
-            if (Global.gfx_usegles)
-            {
-                if( target == GL_TEXTURE_2D )
-					glTexStorage2D(target, std::countr_zero(static_cast<unsigned int>(std::max(data_width, data_height))) + 1, data_format, data_width, data_height);
-                else if( target == GL_TEXTURE_2D_MULTISAMPLE )
-                    glTexStorage2DMultisample( target, samples, data_format, data_width, data_height, GL_FALSE );
-                else if( target == GL_TEXTURE_2D_ARRAY )
-					glTexStorage3D(target, std::countr_zero(static_cast<unsigned int>(std::max(data_width, data_height))) + 1, data_format, data_width, data_height, layers);
-                else if( target == GL_TEXTURE_2D_MULTISAMPLE_ARRAY )
-                    glTexStorage3DMultisample( target, samples, data_format, data_width, data_height, layers, GL_FALSE );
-            }
-            else {
-                if( target == GL_TEXTURE_2D )
-                    glTexImage2D( target, 0, data_format, data_width, data_height, 0, data_components, GL_UNSIGNED_SHORT, nullptr );
-                else if( target == GL_TEXTURE_2D_MULTISAMPLE )
-                    glTexImage2DMultisample( target, samples, data_format, data_width, data_height, GL_FALSE );
-                else if( target == GL_TEXTURE_2D_ARRAY )
-                    glTexImage3D( target, 0, data_format, data_width, data_height, layers, 0, data_components, GL_UNSIGNED_SHORT, nullptr );
-                else if( target == GL_TEXTURE_2D_MULTISAMPLE_ARRAY )
-                    glTexImage3DMultisample( target, samples, data_format, data_width, data_height, layers, GL_FALSE );
-            }
+            if( target == GL_TEXTURE_2D )
+                glTexImage2D( target, 0, data_format, data_width, data_height, 0, data_components, GL_UNSIGNED_SHORT, nullptr );
+            else if( target == GL_TEXTURE_2D_MULTISAMPLE )
+                glTexImage2DMultisample( target, samples, data_format, data_width, data_height, GL_FALSE );
+            else if( target == GL_TEXTURE_2D_ARRAY )
+                glTexImage3D( target, 0, data_format, data_width, data_height, layers, 0, data_components, GL_UNSIGNED_SHORT, nullptr );
+            else if( target == GL_TEXTURE_2D_MULTISAMPLE_ARRAY )
+                glTexImage3DMultisample( target, samples, data_format, data_width, data_height, layers, GL_FALSE );
         }
         else
         {
@@ -1180,20 +1023,7 @@ opengl_texture::create( bool const Static ) {
 
             GLint internal_format = mapping[components][components_hint];
 
-            if (Global.gfx_usegles)
-            {
-                // GLES cannot generate mipmaps on SRGB8
-                if (internal_format == GL_SRGB8)
-                    internal_format = GL_SRGB8_ALPHA8;
-
-                gles_match_internalformat(internal_format);
-            }
-
             auto blocksize_it = precompressed_formats.find(internal_format);
-
-            if ( data_mapcount == 1 && !glGenerateMipmap ) {
-                glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
-            }
 
             for( int maplevel = 0; maplevel < data_mapcount; ++maplevel ) {
 
@@ -1334,9 +1164,6 @@ opengl_texture::alloc_rendertarget( GLint format, GLint components, int width, i
     wrap_mode_s = wrap;
     wrap_mode_t = wrap;
     samples = s;
-    if( Global.gfx_usegles && !glTexStorage2DMultisample ) {
-        samples = 1;
-    }
     layers = l;
     if( layers > 1 ) {
         target = samples > 1 ? GL_TEXTURE_2D_MULTISAMPLE_ARRAY : GL_TEXTURE_2D_ARRAY;
@@ -1369,32 +1196,9 @@ opengl_texture::set_filtering() const
     ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
     ::glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
 
-    if (Global.AnisotropicFiltering >= 0
-     && ( GLAD_GL_EXT_texture_filter_anisotropic ||  GLAD_GL_ARB_texture_filter_anisotropic) ) {
+    if (Global.AnisotropicFiltering >= 0) {
         // anisotropic filtering
-        ::glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, Global.AnisotropicFiltering );
-    }
-
-    if( Global.LegacyRenderer ) {
-
-        bool sharpen{ false };
-        for( auto const &trait : traits ) {
-
-            switch( trait ) {
-
-                case '#': { sharpen = true; break; }
-                default:  {                 break; }
-            }
-        }
-
-        if( true == sharpen ) {
-            // #: sharpen more
-            ::glTexEnvf( GL_TEXTURE_FILTER_CONTROL, GL_TEXTURE_LOD_BIAS, -2.0f );
-        }
-        else {
-            // regular texture sharpening
-            ::glTexEnvf( GL_TEXTURE_FILTER_CONTROL, GL_TEXTURE_LOD_BIAS, -1.0f );
-        }
+        ::glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, Global.AnisotropicFiltering );
     }
 }
 

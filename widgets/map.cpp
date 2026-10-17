@@ -16,8 +16,8 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
 #ifdef WITH_OPENGL_MODERN
-    opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
-    if (!gl33) {
+    opengl46_renderer *renderer = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
+    if (!renderer) {
         ErrorLog("map not supported on old renderer");
         return;
     }
@@ -30,12 +30,10 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 	gl::shader frag("map.frag");
 
 	m_track_shader = std::unique_ptr<gl::program>(new gl::program({vert, frag}));
-	if (!Global.gfx_usegles || GLAD_GL_EXT_geometry_shader) {
-		gl::shader poi_frag("map_poi.frag");
-		gl::shader poi_geom("map_poi.geom");
-		m_poi_shader = std::unique_ptr<gl::program>(new gl::program({vert, poi_frag, poi_geom}));
-        m_icon_atlas = GfxRenderer->Fetch_Texture("map_icons");
-	}
+	gl::shader poi_frag("map_poi.frag");
+	gl::shader poi_geom("map_poi.geom");
+	m_poi_shader = std::unique_ptr<gl::program>(new gl::program({vert, poi_frag, poi_geom}));
+    m_icon_atlas = GfxRenderer->Fetch_Texture("map_icons");
 
 	m_tex = std::make_unique<opengl_texture>();
     m_tex->alloc_rendertarget(GL_RGB8, GL_RGB, fb_size, fb_size);
@@ -67,11 +65,6 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 			return;
 		}
 	}
-
-    glGetError();
-    glLineWidth(2.0f);
-    if (!glGetError())
-        m_widelines_supported = true;
 
 	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), 0);
 
@@ -136,8 +129,6 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	}
 
 	m_track_shader->bind();
-    if (m_widelines_supported)
-        glLineWidth(1.5f);
 	glViewport(0, 0, surface_size.x, surface_size.y);
 
 	scene_ubs.projection = transform;
@@ -146,39 +137,29 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	scene_ubo->bind_uniform();
 
 #ifdef WITH_OPENGL_MODERN
-    opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
+    opengl46_renderer *renderer = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
 
-    gl33->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
+    renderer->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
 
-    if (m_widelines_supported)
-        glLineWidth(4.5f);
     scene_ubs.cascade_end = glm::vec4(0.7f, 0.7f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.future.begin(), m_colored_paths.future.end());
+    renderer->Draw_Geometry(m_colored_paths.future.begin(), m_colored_paths.future.end());
 
-    if (m_widelines_supported)
-        glLineWidth(3.0f);
     scene_ubs.cascade_end = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.switches.begin(), m_colored_paths.switches.end());
+    renderer->Draw_Geometry(m_colored_paths.switches.begin(), m_colored_paths.switches.end());
 
-    if (m_widelines_supported)
-        glLineWidth(1.5f);
     scene_ubs.cascade_end = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
 	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.occupied.begin(), m_colored_paths.occupied.end());
+    renderer->Draw_Geometry(m_colored_paths.occupied.begin(), m_colored_paths.occupied.end());
 
-    if (m_widelines_supported)
-        glLineWidth(4.0f);
     scene_ubs.cascade_end = glm::vec4(0.3f, 0.3f, 1.0f, 0.0f);
     scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.highlighted.begin(), m_colored_paths.highlighted.end());
+    renderer->Draw_Geometry(m_colored_paths.highlighted.begin(), m_colored_paths.highlighted.end());
 
-	if (!Global.gfx_usegles || GLAD_GL_EXT_geometry_shader) {
-        gl33->Bind_Texture(0, m_icon_atlas);
-		m_poi_shader->bind();
-        scene_ubs.cascade_end = glm::vec4(1.0f / (surface_size / 200.0f), 1.0f, 0.0f);
-	}
+    renderer->Bind_Texture(0, m_icon_atlas);
+	m_poi_shader->bind();
+    scene_ubs.cascade_end = glm::vec4(1.0f / (surface_size / 200.0f), 1.0f, 0.0f);
 
 	if (map::Objects.poi_dirty) {
 		map::Objects.poi_dirty = false;
@@ -186,7 +167,7 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	}
 
 	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(simulation::Region->get_map_poi_geometry());
+    renderer->Draw_Geometry(simulation::Region->get_map_poi_geometry());
 #endif
 
 	if (Global.iMultisampling)
@@ -425,7 +406,7 @@ void ui::handle_map_object_hover(std::shared_ptr<map::map_object> &obj)
 			for (int i = 0; i < iMaxNumLights; i++)
 			{
 #ifdef WITH_OPENGL_MODERN
-                dynamic_cast<opengl33_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
+                dynamic_cast<opengl46_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
 #endif
 				auto state = model->LightGet(i);
 				if (!state)
@@ -481,7 +462,7 @@ void ui::semaphore_window::render_content()
 		for (int i = 0; i < iMaxNumLights; i++)
 		{
 #ifdef WITH_OPENGL_MODERN
-            dynamic_cast<opengl33_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
+            dynamic_cast<opengl46_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
 #endif
 			auto state = model->LightGet(i);
 			if (!state)

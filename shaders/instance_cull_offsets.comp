@@ -1,0 +1,55 @@
+// turns the counts of instances of the entries, written by stage 0 of instance_cull.comp, into the first slots of the
+// entries in the output (cursors, which stages 1 and 2 advance as they write, and the same first slots kept for
+// instance_cull_commands.comp), and puts the total in the header.
+// a single work group: each invocation sums a run of the entries, then the sums are scanned in shared memory
+
+#include <common>
+
+layout(local_size_x = INSTANCE_OFFSETS_GROUP_SIZE) in;
+
+layout(std430, binding = INSTANCE_COUNTER_SSBO_BINDING) buffer instance_counter_ssbo
+{
+	uint counters[];
+};
+
+// x: entries
+layout(location = 0) uniform uvec4 counts;
+
+shared uint sums[INSTANCE_OFFSETS_GROUP_SIZE];
+
+void main()
+{
+	uint entries = counts.x;
+	uint invocation = gl_LocalInvocationIndex;
+	uint run = (entries + INSTANCE_OFFSETS_GROUP_SIZE - 1u) / INSTANCE_OFFSETS_GROUP_SIZE;
+	uint begin = min(invocation * run, entries);
+	uint end = min(begin + run, entries);
+
+	uint sum = 0u;
+	for (uint entry = begin; entry < end; ++entry)
+		sum += counters[INSTANCE_COUNTER_HEADER + entry];
+	sums[invocation] = sum;
+	memoryBarrierShared();
+	barrier();
+
+	// inclusive scan of the sums
+	for (uint step = 1u; step < INSTANCE_OFFSETS_GROUP_SIZE; step *= 2u)
+	{
+		uint added = (invocation >= step ? sums[invocation - step] : 0u);
+		memoryBarrierShared();
+		barrier();
+		sums[invocation] += added;
+		memoryBarrierShared();
+		barrier();
+	}
+
+	uint offset = sums[invocation] - sum;
+	for (uint entry = begin; entry < end; ++entry)
+	{
+		counters[INSTANCE_COUNTER_HEADER + entries + entry] = offset;
+		counters[INSTANCE_COUNTER_HEADER + 2u * entries + entry] = offset;
+		offset += counters[INSTANCE_COUNTER_HEADER + entry];
+	}
+	if (invocation == INSTANCE_OFFSETS_GROUP_SIZE - 1u)
+		counters[1] = sums[invocation];
+}

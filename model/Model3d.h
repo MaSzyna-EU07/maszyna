@@ -56,8 +56,7 @@ class TSubModel
 { // klasa submodelu - pojedyncza siatka, punkt świetlny albo grupa punktów
     //m7todo: zrobić normalną serializację
 
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
     friend TModel3d; // temporary workaround. TODO: clean up class content/hierarchy
     friend TDynamicObject; // temporary etc
     friend scene::shape_node; // temporary etc
@@ -268,8 +267,7 @@ public:
 
 class TModel3d
 {
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
 public:
     // submodels which scenery instances of the model refer to by name
