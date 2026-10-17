@@ -82,6 +82,10 @@ float worley_fbm(vec3 position, int frequency, uint seed)
 	     + worley(position * float(frequency * 4), frequency * 4, seed + 2U) * 0.125;
 }
 
+// octaves of the coverage noise: it only places the clouds and gives their outline. it is the same at every height, so its finer
+// octaves would stand as upright grooves down the sides of the clouds; their small shapes come from the 3d noises
+const int COVERAGE_OCTAVES = 4;
+
 // the worley fbm keeps about to this range (5th and 95th percentile 0.35 and 0.61)
 const float WORLEY_FBM_LOW = 0.30;
 const float WORLEY_FBM_HIGH = 0.65;
@@ -105,7 +109,7 @@ void main()
 	if (kind == 2)
 	{
 		vec3 position = vec3((vec2(texel.xy) + 0.5) / float(size), 0.0);
-		float first = perlin_fbm(position, 4, 6, 11U);
+		float first = perlin_fbm(position, 4, COVERAGE_OCTAVES, 11U);
 		float second = perlin_fbm(position + vec3(0.0, 0.0, 0.5), 8, 5, 23U);
 		imageStore(noise_plane, texel.xy, vec4(even(first, 0.22), even(second, 0.22), 0.0, 1.0));
 		return;
