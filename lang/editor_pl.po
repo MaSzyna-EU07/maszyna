@@ -7058,3 +7058,66 @@ msgstr "Upuść sygnalizator przy torze"
 
 msgid "This signal is in a file the editor doesn't change, it can't be moved"
 msgstr "Ten sygnalizator jest w pliku, którego edytor nie zmienia, nie da się go przesunąć"
+
+msgid "%zu chunks to make from the terrain model"
+msgstr "%zu kafli do zrobienia z NMT"
+
+msgid "; the formation of %zu paths shaped"
+msgstr "; torowisko %zu torów ukształtowane"
+
+msgid "Along the tracks"
+msgstr "Wzdłuż torów"
+
+msgid "Band along the tracks (m)"
+msgstr "Pas wzdłuż torów (m)"
+
+msgid "Chunks made from the terrain model: %zu, waiting for it: %zu"
+msgstr "Kafle z NMT: zrobione %zu, czeka %zu"
+
+msgid "Compares the formation of the tracks with the terrain model and moves the model up or down to meet them, as a scenery built at height 0 needs"
+msgstr "Porównuje torowisko z NMT i przesuwa NMT w pionie, żeby się spotkały, np. dla scenerii zbudowanej na wysokości 0"
+
+msgid "Each track gets its formation with slopes 1:1.5 down or up to the terrain, as a modifier of the terrain; bridges and tunnels keep the model under them"
+msgstr "Każdy tor dostaje torowisko ze skarpami 1:1,5 w dół albo w górę do terenu, jako modyfikator terenu; pod mostami i w tunelach zostaje NMT"
+
+msgid "Fit to the tracks"
+msgstr "Dopasuj do torów"
+
+msgid "Formation and slopes along the tracks"
+msgstr "Torowisko i skarpy wzdłuż torów"
+
+msgid "Height offset (m)"
+msgstr "Przesunięcie wysokości (m)"
+
+msgid "Place: N %.0f, E %.0f (PUWG 1992), as the orthophoto"
+msgstr "Położenie: N %.0f, E %.0f (PUWG 1992), jak ortofotomapa"
+
+msgid "Squares of the model being fetched: %zu"
+msgstr "Pobierane kafle NMT: %zu"
+
+msgid "Terrain model: GUGiK, geoportal.gov.pl"
+msgstr "NMT: GUGiK, geoportal.gov.pl"
+
+msgid "The scenery isn't placed anywhere: give its place in the settings of the orthophoto first"
+msgstr "Sceneria nie ma położenia: najpierw podaj je w ustawieniach ortofotomapy"
+
+msgid "The tracks lie %+.2f m against the terrain model (%zu places, they differ by %.2f m around it)"
+msgstr "Tory leżą %+.2f m względem NMT (%zu miejsc, rozrzut %.2f m)"
+
+msgid "Terrain model (NMT)"
+msgstr "Teren z NMT"
+
+msgid "No tracks to fit the terrain model to: its heights are taken as they are"
+msgstr "Brak torów do dopasowania: wysokości NMT bez przesunięcia"
+
+msgid "Fetching the terrain model under the tracks..."
+msgstr "Pobieranie NMT pod torami..."
+
+msgid "The terrain model has no data under the tracks: is the scenery placed where it is?"
+msgstr "NMT nie ma danych pod torami: czy położenie scenerii jest dobre?"
+
+msgid ". That's far too much: the place of the scenery is likely wrong, check the orthophoto"
+msgstr ". To za dużo: położenie scenerii jest pewnie złe, sprawdź ortofotomapę"
+
+msgid "There's terrain there already"
+msgstr "Tam już jest teren"

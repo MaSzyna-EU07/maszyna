@@ -63,6 +63,36 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog(format("SELFTEST orthophoto at %.0f %.0f, radius %d, %s%s", config.north, config.east, config.radius, config.drape ? "fitted" : "flat", config.in_scene ? ", in the scene" : ""));
 		return selftest_result::handled;
 	}
+	if (command == "nmtfit")
+	{
+		// the heights of the terrain model fitted to the tracks, as the button of the terrain panel does
+		nmt_fit();
+		WriteLog("SELFTEST nmtfit: " + m_nmt_state.status);
+		return selftest_result::handled;
+	}
+	if (command == "nmtmake")
+	{
+		// chunks from the terrain model along the tracks (with the band in metres) or around the camera
+		std::string where;
+		double band{0.0};
+		words >> where >> band;
+		if (band > 0.0)
+			m_nmt_state.band = band;
+		nmt_make(where == "around" ? nmt_keys_around() : nmt_keys_along_tracks());
+		WriteLog("SELFTEST nmtmake " + where + ": " + m_nmt_state.status);
+		return selftest_result::handled;
+	}
+	if (command == "nmtwait")
+	{
+		// till the model is in and the chunks waiting for it are made
+		if (m_nmt_state.fitting || false == m_nmt_state.pending.empty())
+		{
+			--m_selftest.next;
+			return selftest_result::pause;
+		}
+		WriteLog("SELFTEST nmtwait: " + m_nmt_state.status + (m_nmt_state.error.empty() ? std::string{} : " (" + m_nmt_state.error + ")"));
+		return selftest_result::handled;
+	}
 	if (command == "terrainmode")
 	{
 		m_terrain_open = true;

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTerrain.hpp"
 #include "editor/editorTerrainStreamer.hpp"
 #include "editor/editorOrthophoto.hpp"
+#include "editor/editorNmt.hpp"
 #include "editor/editorTrack.hpp"
 #include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
@@ -319,6 +320,48 @@ class editor_mode : public application_mode, private editor_track::observer
 	// adds a chunk of the terrain shaped as the ground under it; where there's no ground, carried on level with the nearest point
 	// of it, or at the base height. returns: false if there's a chunk already
 	bool add_chunk_from_ground(heightmap::chunk_key const &Key, float const Spacing, std::uint16_t const Layer = 0);
+
+	// the terrain from the digital terrain model of GUGiK (editormodenmt.cpp)
+	struct nmt_place
+	{
+		glm::dvec3 position{0.0}; // on the axis of the path
+		double formation{0.0}; // the height of the formation under it
+		double half_width{3.0}; // from the axis to the foot of the ballast
+		TTrack *track{nullptr};
+		int path{0};
+		bool shapes{true}; // not a bridge nor a tunnel
+	};
+	struct nmt_state
+	{
+		double offset{0.0}; // added to the heights of the model, so they meet the tracks of the scenery
+		bool fitted{false};
+		bool fitting{false}; // waiting for the model under the places of the tracks the offset is worked out from
+		std::vector<nmt_place> fit;
+		double spread{0.0}; // how much the tracks differ from the model about the offset, m
+		std::size_t samples{0};
+		double band{300.0}; // m from the tracks the chunks made along them reach
+		bool shape{true}; // the formation and the slopes of the tracks as modifiers of the terrain
+		double slope{1.5};
+		double reach{60.0};
+		std::vector<heightmap::chunk_key> pending; // chunks to make once their model is in
+		std::size_t made{0};
+		std::size_t shaped{0};
+		std::string status;
+		std::string error;
+	};
+	editor_nmt m_nmt;
+	nmt_state m_nmt_state;
+	std::vector<nmt_place> nmt_track_places(double const Step) const;
+	void nmt_locate();
+	void nmt_fit();
+	void nmt_finish_fit();
+	std::vector<heightmap::chunk_key> nmt_keys_around() const;
+	std::vector<heightmap::chunk_key> nmt_keys_along_tracks() const;
+	void nmt_make(std::vector<heightmap::chunk_key> const &Keys);
+	bool add_chunk_from_nmt(heightmap::chunk_key const &Key);
+	void nmt_shape_tracks();
+	void nmt_update();
+	void render_nmt_ui();
 	// the tool of the terrain the left mouse button works
 	enum class terrain_tool
 	{

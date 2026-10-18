@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <regex>
 #include "application/editormode.h"
+#include "application/editormodeshared.h"
 #include "scene/scenenodegroups.h"
 #include "application/editoruilayer.h"
 #ifndef _WIN32
@@ -1396,6 +1397,7 @@ bool editor_mode::update()
 
     // --- geoportal orthophoto: streamed around the camera, drawn beneath the other overlays ---
     m_orthophoto.update(Camera.Pos);
+    nmt_update();
     draw_orthophoto();
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
@@ -1561,35 +1563,6 @@ namespace
         return changed;
     }
 
-    // grid points without a height (or another value) take the one of the nearest point which has it (by steps along the grid)
-    template <typename Value_> void fill_from_nearest(std::vector<Value_> &Heights, std::vector<char> &Found, std::size_t const Side)
-    {
-        std::deque<std::size_t> queue;
-        for (std::size_t index = 0; index < Found.size(); ++index)
-            if (Found[index] != 0)
-                queue.push_back(index);
-        while (false == queue.empty())
-        {
-            auto const index = queue.front();
-            queue.pop_front();
-            auto const ix = index % Side, iz = index / Side;
-            auto const visit = [&](std::size_t const Next) {
-                if (Found[Next] != 0)
-                    return;
-                Found[Next] = 1;
-                Heights[Next] = Heights[index];
-                queue.push_back(Next);
-            };
-            if (ix > 0)
-                visit(index - 1);
-            if (ix + 1 < Side)
-                visit(index + 1);
-            if (iz > 0)
-                visit(index - Side);
-            if (iz + 1 < Side)
-                visit(index + Side);
-        }
-    }
 } // namespace
 
 void editor_mode::render_terrain_ui()
@@ -1664,6 +1637,9 @@ void editor_mode::render_terrain_ui()
                 ImGui::SetTooltip("%s", STR_C("The chunks under the model take its shape, and the model is removed"));
         }
     }
+
+    if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
+        render_nmt_ui();
 
     if (ImGui::CollapsingHeader(STR_C("Chunk resolution"), m_terrain_tool == terrain_tool::spacing ? ImGuiTreeNodeFlags_DefaultOpen : 0))
     {
