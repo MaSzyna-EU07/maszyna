@@ -652,6 +652,8 @@ bool opengl46_renderer::Render()
 		m_gllasttime = *result;
 		m_timequery->begin();
 	}
+	// the context of the main view is current here, the one of the previous frame's end
+	m_gputimeline.begin("frame setup");
 
 	// fetch simulation data
 	if (simulation::is_ready)
@@ -729,6 +731,7 @@ bool opengl46_renderer::Render()
 	gl::framebuffer::unbind();
 
 	m_current_viewport = &(*m_viewports.front());
+	m_gputimeline.end();
 /*
 	m_debugtimestext += "cpu: " + to_string(Timer::subsystem.gfx_color.average(), 2) + " ms (" + std::to_string(m_cellqueue.size()) + " sectors)\n" +=
 	    "cpu swap: " + to_string(Timer::subsystem.gfx_swap.average(), 2) + " ms\n" += "uilayer: " + to_string(Timer::subsystem.gfx_gui.average(), 2) + "ms\n" +=
@@ -780,6 +783,15 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += " swap: " + to_string( Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n";
     if (m_gllasttime)
         m_debugtimestext += "gpu frame total: " + to_string((double)(m_gllasttime / 1000ULL) / 1000.0, 3) + " ms\n";
+    // the parts follow one another and add up to the frame; the steps below are timed each on its own and can hold the tail
+    // of the work before them
+    if( auto const &gpuparts { m_gputimeline.result() }; false == gpuparts.empty() ) {
+        m_debugtimestext += "gpu frame parts: " + to_string( static_cast<double>( m_gputimeline.total() ) / 1000000.0, 3 ) + " ms\n";
+        for( auto const &part : gpuparts ) {
+            m_debugtimestext += " " + std::string{ part.name } + ": " + to_string( static_cast<double>( part.time ) / 1000000.0, 3 ) + " ms\n";
+        }
+        m_debugtimestext += "gpu steps:\n";
+    }
     if (auto const clusterstime = m_clusterstimer.result())
         m_debugtimestext += " clusters: " + to_string(static_cast<double>(*clusterstime) / 1000000.0, 3) + " ms\n";
     if (auto const culltime = m_cullstimer.result())
@@ -1063,6 +1075,11 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		}
 
         m_colorpass = m_renderpass; // cache pass data
+		// parts of the gpu time of the frame; the marks go through the main view only, in the context they were begun in
+		auto const gpupart = [this, &vp](char const *Name) {
+			if (vp.main)
+				m_gputimeline.next(Name);
+		};
 
 		scene_ubs.time = Timer::GetTime();
 		{
@@ -1135,6 +1152,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
 		if (Global.gfx_envmap_enabled && vp.main)
 		{
+			gpupart("reflections");
 			// potentially update environmental cube map
             m_renderpass.draw_stats = {};
 			Timer::subsystem.gfx_reflections.start();
@@ -1149,11 +1167,13 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
 		if (vp.main)
 		{
+			gpupart("lamp and headlight shadows");
 			Render_local_shadows();
 			Render_lamp_shadows();
 			Render_headlight_shadows();
 		}
 
+		gpupart("clear, clusters, lights");
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
 		setup_drawing(false);
@@ -1231,6 +1251,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         }
 
         // the clouds of the view and the fog volume, which take the lights of the clusters and the shadow map of the pass
+        gpupart("clouds, fog volume");
         {
             auto const fogtarget{ Global.gfx_skippipeline ? target_size : glm::ivec2{ vp.width, vp.height } };
             if( vp.main ) {
@@ -1244,6 +1265,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         }
 
 		glDebug("render environment");
+		gpupart("sky");
 
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		// back to the rotation of the camera after the faces of the environment map, which are drawn with their own
@@ -1261,14 +1283,19 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		if ((Global.gfx_depthprepass_scene || contactshadows) && vp.main && (false == Global.bWireFrame))
 		{
 			glDebug("render scene depth");
+			gpupart("scene depth");
 			Render_Scene_Depth(future);
 			if (contactshadows)
+			{
+				gpupart("contact shadows depth");
 				Setup_Contact_Shadows(vp);
+			}
 		}
 		if (vp.main)
 			m_contactshadowslast = m_contactshadows;
 
 		// opaque parts...
+		gpupart("colour, opaque");
 		setup_drawing(false);
 
 		// without rain/snow we can render the cab early to limit the overdraw
@@ -1299,6 +1326,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
 		// ...translucent parts
 		glDebug("render translucent region");
+		gpupart("colour, translucent and cab");
 		setup_drawing(true);
 		Render_Alpha(simulation::Region);
 		Render_editor_overlay();
@@ -1359,6 +1387,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
 if (!Global.gfx_skippipeline)
 		{
+			gpupart("resolve, ambient occlusion, motion blur");
 			// the targets of the ambient occlusion are there only when it was on at the start
 			auto const aomode{(vp.ssao_tex != nullptr) ? Global.gfx_postfx_ao : 0};
 			if (Global.gfx_postfx_motionblur_enabled)
@@ -1389,6 +1418,7 @@ if (!Global.gfx_skippipeline)
 				}
 			}
 
+			gpupart("exposure, bloom");
 			// the exposure follows the main view; the other viewports use it too
 			if (Global.gfx_postfx_autoexposure && vp.main)
 				m_exposure.measure(*vp.main2_tex, Timer::GetDeltaRenderTime());
@@ -1407,6 +1437,7 @@ if (!Global.gfx_skippipeline)
 			if (bloomtexture != nullptr)
 				tonemapinput.push_back(bloomtexture);
 
+			gpupart("tonemapping, output");
 			if (!Global.gfx_shadergamma)
 				glEnable(GL_FRAMEBUFFER_SRGB);
 
@@ -1459,6 +1490,7 @@ if (!Global.gfx_skippipeline)
 			glDisable(GL_FRAMEBUFFER_SRGB);
 
 		glDebug("uilayer render");
+		gpupart("ui");
 		Timer::subsystem.gfx_gui.start();
 
         if (vp.main) {
@@ -1469,6 +1501,10 @@ if (!Global.gfx_skippipeline)
 		}
 
         Timer::subsystem.gfx_gui.stop();
+
+		// viewports drawn after this one in the same context (vr) land in the last part; others aren't measured
+		if (m_viewports.size() > 1)
+			gpupart("other viewports");
 
 		// restore binding
 		scene_ubo->bind_uniform();
@@ -1501,6 +1537,11 @@ if (!Global.gfx_skippipeline)
 
 
         for( auto idx = 0; idx < m_shadowpass.size(); ++idx ) {
+
+            // the pass is drawn for the main view only
+            static char const *const gpuparts[] = { "sun shadows 1", "sun shadows 2", "sun shadows 3" };
+            static_assert( std::size( gpuparts ) == std::tuple_size_v<decltype( m_shadowpass )> );
+            m_gputimeline.next( gpuparts[ idx ] );
 
             m_shadow_fb->attach( *m_shadow_tex, GL_DEPTH_ATTACHMENT, idx );
             m_shadow_fb->clear( GL_DEPTH_BUFFER_BIT );
@@ -4195,6 +4236,9 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 
 opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Depth( opengl46_instance_cull::command_set const Set )
 {
+	// the draws were recorded with the seed of scenery models and sleepers, 0 (TAnimModel::RaPrepare()); vehicles drawn since
+	// leave their own, which would pick other texture variants than those the draws were recorded and ordered with
+	TSubModel::iVariantSeed = 0;
 	indirect_counts counts;
 	auto const count { m_indirectdraws.size() };
 	// whether the prepass of the class draws the draw, and with which diffuse texture (class 2)
@@ -4283,6 +4327,8 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 
 opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Colour( opengl46_instance_cull::command_set const Set )
 {
+	// as in Render_Instances_Indirect_Depth(): the seed the draws were recorded with
+	TSubModel::iVariantSeed = 0;
 	indirect_counts counts;
 	auto const count { m_indirectdraws.size() };
 	for( std::size_t index = 0; index < count; ) {

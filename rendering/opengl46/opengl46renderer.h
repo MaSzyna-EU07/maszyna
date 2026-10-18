@@ -702,6 +702,8 @@ class opengl46_renderer : public gfx_renderer {
 
 	std::optional<gl::query> m_timequery;
 	GLuint64 m_gllasttime = 0;
+	// gpu time of the parts of the frame, marks put one after another through the main view (the context of m_window)
+	gl::gpu_timeline m_gputimeline;
 	// gpu time of the light cluster compute passes; the debug panel shows it once a pass measures it
 	gl::gpu_timer m_clusterstimer;
 	// gpu time of assigning the lights to the clusters, done every frame

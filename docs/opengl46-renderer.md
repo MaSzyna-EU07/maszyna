@@ -405,6 +405,16 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   writing to it (`waits`, should stay at 0) and how many times a buffer had to grow (`grown`, a few times after the start).
   With `gfx.gpucull yes` and `gfx.gpucull.multidraw yes` the `multi draw blocks:` row shows the same for the data of the
   parts of models drawn with multi draws (one block per draw, written once a frame).
+- Shift+F12 shows below `gpu frame total:` the `gpu frame parts:` of the main view: marks of time put one after another
+  through the frame, so each part lasts until the next one begins and the parts add up to the frame with nothing left out
+  (`frame setup`, `sun shadows 1` to `3` — 1 the nearest, with the culling of the cascade —, `reflections`, `lamp and
+  headlight shadows`, `clear, clusters, lights`, `clouds, fog volume`, `sky`, `scene depth` and `contact shadows depth` when
+  drawn, `colour, opaque` — with the culling, the occlusion depth and the depth prepass of the instances —,
+  `colour, translucent and cab`, `resolve, ambient occlusion, motion blur`, `exposure, bloom`, `tonemapping, output`, `ui`,
+  and `other viewports` when there are more of them; only those in the context of the main window are counted). The timings
+  under `gpu steps:` are measured each from its own pair of marks, and the first mark of a pair can be put while the graphics
+  card still works on what came before, so a short step right after a heavy one may show some of that work; the parts don't.
+  Like the other timings, they are of a frame a few frames back.
 - `gfx.gldebug yes` turns on the OpenGL debug output (`KHR_debug`); messages go to the log.
 
 ## Building
