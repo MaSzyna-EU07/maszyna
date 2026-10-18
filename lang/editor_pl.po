@@ -7121,3 +7121,21 @@ msgstr ". To za dużo: położenie scenerii jest pewnie złe, sprawdź ortofotom
 
 msgid "There's terrain there already"
 msgstr "Tam już jest teren"
+
+msgid "Terrain for the new scenery###nmtoffer"
+msgstr "Teren dla nowej scenerii###nmtoffer"
+
+msgid "The scenery has no terrain yet. Load the terrain model and the aerial photos around here? The tracks laid then go along the real ground."
+msgstr "Sceneria nie ma jeszcze terenu. Wczytać teren z NMT i zdjęcia lotnicze wokół tego miejsca? Tory układane potem pójdą po prawdziwym terenie."
+
+msgid "Where is it? PUWG 1992 of this point, X to the north and Y to the east, as geoportal.gov.pl gives them:"
+msgstr "Gdzie to jest? Współrzędne PUWG 1992 tego miejsca, X na północ i Y na wschód, jak podaje geoportal.gov.pl:"
+
+msgid "Load the terrain"
+msgstr "Wczytaj teren"
+
+msgid "Without terrain"
+msgstr "Bez terenu"
+
+msgid "Ask with every new scenery"
+msgstr "Pytaj przy każdej nowej scenerii"

@@ -348,6 +348,10 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::size_t shaped{0};
 		std::string status;
 		std::string error;
+		bool offered{false}; // the terrain was offered to the scenery begun without it
+		bool prompt{false}; // the offer is shown
+		double north{0.0}; // the place typed into the offer, PUWG 1992
+		double east{0.0};
 	};
 	editor_nmt m_nmt;
 	nmt_state m_nmt_state;
@@ -362,6 +366,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	void nmt_shape_tracks();
 	void nmt_update();
 	void render_nmt_ui();
+	// a scenery begun from nothing, with no tracks nor terrain, is asked as the first track is laid whether it wants the terrain
+	void nmt_offer();
+	void render_nmt_prompt();
+	void nmt_accept_offer();
 	// the tool of the terrain the left mouse button works
 	enum class terrain_tool
 	{

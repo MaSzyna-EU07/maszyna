@@ -1481,6 +1481,7 @@ bool editor_mode::update()
     render_open_scenery_popup();
     render_shortcuts_window();
     render_first_steps();
+    render_nmt_prompt();
     render_orthophoto_window();
     render_switch_designer();
     render_environment_window();

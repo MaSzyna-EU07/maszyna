@@ -16,6 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorSettings.hpp"
+#include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
@@ -248,6 +250,7 @@ void editor_mode::nmt_shape_tracks()
 void editor_mode::nmt_update()
 {
 	auto &state{m_nmt_state};
+	nmt_offer();
 	if (state.fitting)
 	{
 		bool all{true};
@@ -334,4 +337,81 @@ void editor_mode::render_nmt_ui()
 	if (false == state.error.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", state.error.c_str());
 	ImGui::TextDisabled("%s", STR_C("Terrain model: GUGiK, geoportal.gov.pl"));
+}
+
+void editor_mode::nmt_offer()
+{
+	auto &state{m_nmt_state};
+	if (state.offered || false == m_lay.active || false == EditorSettings.terrain_offer())
+		return;
+	state.offered = true;
+	if (m_streamer.resident() > 0 || std::any_of(simulation::Paths.sequence().begin(), simulation::Paths.sequence().end(), [](TTrack const *Track) { return Track != nullptr && rail(*Track); }))
+		return;
+	nmt_locate();
+	state.north = m_orthophoto.settings().north;
+	state.east = m_orthophoto.settings().east;
+	state.prompt = true;
+}
+
+void editor_mode::nmt_accept_offer()
+{
+	auto &state{m_nmt_state};
+	if (false == m_nmt.placed())
+	{
+		auto config{m_orthophoto.settings()};
+		config.north = state.north;
+		config.east = state.east;
+		m_orthophoto.settings(config);
+		m_orthophoto_origin_edit = {config.north, config.east};
+		save_orthophoto_settings();
+	}
+	// no tracks to fit to: the heights of the model as they are
+	state.offset = 0.0;
+	nmt_make(nmt_keys_around());
+	state.prompt = false;
+}
+
+void editor_mode::render_nmt_prompt()
+{
+	auto &state{m_nmt_state};
+	if (false == state.prompt)
+		return;
+	char const *const title{STR_C("Terrain for the new scenery###nmtoffer")};
+	if (false == ImGui::IsPopupOpen(title))
+		ImGui::OpenPopup(title);
+	ImGui::SetNextWindowSize(ImVec2(520.0f * Global.ui_scale, 0.0f));
+	if (false == ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_NoResize))
+		return;
+	ImGui::TextWrapped("%s", STR_C("The scenery has no terrain yet. Load the terrain model and the aerial photos around here? The tracks laid then go along the real ground."));
+	bool const placed{m_nmt.placed()};
+	if (false == placed)
+	{
+		ImGui::TextWrapped("%s", STR_C("Where is it? PUWG 1992 of this point, X to the north and Y to the east, as geoportal.gov.pl gives them:"));
+		ImGui::SetNextItemWidth(150.0f);
+		ImGui::InputDouble("X##nmtnorth", &state.north, 0.0, 0.0, "%.0f");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(150.0f);
+		ImGui::InputDouble("Y##nmteast", &state.east, 0.0, 0.0, "%.0f");
+	}
+	auto const known{placed || (state.north > 100000.0 && state.east > 100000.0)};
+	ImGui::BeginDisabled(false == known);
+	if (ImGui::Button(STR_C("Load the terrain")))
+	{
+		nmt_accept_offer();
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Without terrain")))
+	{
+		state.prompt = false;
+		ImGui::CloseCurrentPopup();
+	}
+	bool ask{EditorSettings.terrain_offer()};
+	if (ImGui::Checkbox(STR_C("Ask with every new scenery"), &ask))
+	{
+		EditorSettings.terrain_offer(ask);
+		EditorSettings.save();
+	}
+	ImGui::EndPopup();
 }

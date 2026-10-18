@@ -82,6 +82,21 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog("SELFTEST nmtmake " + where + ": " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
+	if (command == "nmtoffer")
+	{
+		// the offer of the terrain to a scenery begun from nothing: logged, and taken with the place given, if any
+		double north{0.0}, east{0.0};
+		words >> north >> east;
+		WriteLog(format("SELFTEST nmtoffer: shown %d", m_nmt_state.prompt ? 1 : 0));
+		if (north > 0.0 && east > 0.0 && m_nmt_state.prompt)
+		{
+			m_nmt_state.north = north;
+			m_nmt_state.east = east;
+			nmt_accept_offer();
+			WriteLog("SELFTEST nmtoffer taken: " + m_nmt_state.status);
+		}
+		return selftest_result::handled;
+	}
 	if (command == "nmtwait")
 	{
 		// till the model is in and the chunks waiting for it are made
