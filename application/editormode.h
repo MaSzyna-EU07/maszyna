@@ -2052,6 +2052,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		pause
 	};
 	selftest_result selftest_scene(std::string const &command, std::istringstream &words);
+	selftest_result selftest_sleepers(std::string const &command, std::istringstream &words);
 	selftest_result selftest_sweep(std::string const &command, std::istringstream &words);
 	selftest_result selftest_track(std::string const &command, std::istringstream &words);
 	selftest_result selftest_switch(std::string const &command, std::istringstream &words);
