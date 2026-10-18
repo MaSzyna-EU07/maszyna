@@ -315,6 +315,11 @@ class opengl46_renderer : public gfx_renderer {
 	void Render_headlight_shadows();
 	// the map of the headlights in the slot: the scene within reach ahead of them (and Cab, the occupied cab), without their vehicle
 	void Render_headlight_shadow(std::size_t const Slot, light_array::light_record const &Light, TDynamicObject *Cab);
+	// the culling of one of the maps of lamps and headlights (Global.gfx_gpucull_shadows_headlights, _lamps), the one at Index of
+	// Culls, made when it's first needed; nullptr when the instances of the map go through the cpu
+	opengl46_instance_cull *Light_Shadow_Cull(std::vector<std::unique_ptr<opengl46_instance_cull>> &Culls, std::size_t const Index, bool const Enabled);
+	// the rows of these cullings for the debug panel: their timings (Times) or their counts
+	std::string Light_Shadow_Cull_Info(bool const Times);
 	// the projector of the beam of a set of headlights: a narrow frustum along the vehicle, from behind it, its near plane at the
 	// end of the vehicle. the beam texture is projected with it (Update_Lights()) and the shadow map of the headlights drawn with it.
 	// Position in world space, Rotation from world axes to its axes; Near is the distance of the near plane from the projector
@@ -355,9 +360,10 @@ class opengl46_renderer : public gfx_renderer {
 	// (Global.gfx_gpucull_occlusion_instances) the instances seen in the previous frame are drawn first (their depth, or
 	// their colour without the prepass), the pyramid is made again and the other instances are culled against it
 	void Render_Instances_Indirect();
-	// the same for the passes culled on the gpu other than the main view (Global.gfx_gpucull_shadows, _reflections): the
-	// cascades of the sun shadows, drawn with the shadow programs, and the faces of the environment map, drawn with the
-	// programs of the materials like the main view. no occlusion test, no depth prepass, one phase
+	// the same for the passes culled on the gpu other than the main view (Global.gfx_gpucull_shadows, _reflections,
+	// _shadows_headlights, _shadows_lamps): the cascades of the sun shadows and the maps of headlights and lamps, drawn with the
+	// shadow programs (the cube ones for the lamps), and the faces of the environment map, drawn with the programs of the
+	// materials like the main view. no occlusion test, no depth prepass, one phase
 	void Render_Instances_Indirect_Pass();
 	// the walk of the submodel trees of the groups culled by Cull, once per lod band, which records their draws
 	// (m_indirectdraws, m_indirectcommands), puts them in order for multi draws and has Cull fill in their commands
@@ -593,6 +599,12 @@ class opengl46_renderer : public gfx_renderer {
 	// _reflections), with records and programs shared with m_instancecull
 	std::array<opengl46_instance_cull, 3> m_shadowcull;
 	opengl46_instance_cull m_reflectioncull;
+	// the cullings of the maps of headlights, by the slot of the map, and of the scenery parts of the maps of lamps, by their order
+	// among those drawn in a frame: the passes of a frame don't share the buffers of a culling. made when first needed
+	std::vector<std::unique_ptr<opengl46_instance_cull>> m_headlightcull;
+	std::vector<std::unique_ptr<opengl46_instance_cull>> m_lampcull;
+	opengl46_instance_cull *m_lightshadowcull { nullptr }; // the one of the map of headlights or of a lamp being drawn
+	std::size_t m_lampscenerydrawn { 0 }; // scenery parts of the maps of lamps drawn in this frame so far
 	opengl46_instance_cull *m_passcull { nullptr }; // the one the current pass feeds
 	opengl46_instance_cull *m_indirectcull { &m_instancecull }; // the one the recorded draws (m_indirectdraws) were culled by
 	int m_shadowcascade { -1 }; // the region is drawn for this cascade of the sun shadows

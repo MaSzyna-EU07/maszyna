@@ -61,6 +61,12 @@ class opengl46_local_shadows
 	{
 		return Alpha ? *m_alpha_program : *m_program;
 	}
+	// the same for the multi draws of the instances drawn from the gpu culling, which read the model block of a draw by its
+	// number (MODEL_DRAWS). nullptr when they couldn't be made: the draws are made one by one with program() then
+	gl::program *multidraw_program(bool const Alpha)
+	{
+		return Alpha ? m_alpha_multidraw_program.get() : m_multidraw_program.get();
+	}
 
 	// the cab lamp
 
@@ -216,6 +222,8 @@ class opengl46_local_shadows
 
 	std::unique_ptr<gl::program> m_program;
 	std::unique_ptr<gl::program> m_alpha_program;
+	std::unique_ptr<gl::program> m_multidraw_program;
+	std::unique_ptr<gl::program> m_alpha_multidraw_program;
 	GLuint m_empty{0}; // stand-in: a cube map array of 1x1 faces with the farthest depth
 	GLuint m_emptyheadlights{0}; // the same, a 2d array of one 1x1 layer
 	int m_level{-1}; // level the maps were made for

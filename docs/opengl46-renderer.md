@@ -265,8 +265,9 @@ Many models of the scenery (trees, bushes, poles, fences: models without lights 
 batch per model and level of detail. Which of them are drawn, and at which level of detail, can be worked out on the
 processor (as before) or on the graphics card. On the graphics card the processor no longer goes through the models one by
 one, so with dense vegetation it is much less loaded. The main view, the three cascades of the sun shadows and the faces of
-the environment map (reflections) are drawn this way, and so are the sleepers of the tracks with a `sleepermodel` in the main
-view; the shadow maps of lamps and headlights, the cab and other views go as before.
+the environment map (reflections), the shadow maps of headlights and the scenery of the shadow maps of scenery lamps are drawn
+this way, and so are the sleepers of the tracks with a `sleepermodel` in the main view; the shadow map of the cab lamp, the
+cab and other views go as before.
 
 | Entry | Default | Meaning |
 |---|---|---|
@@ -277,6 +278,8 @@ view; the shadow maps of lamps and headlights, the cab and other views go as bef
 | `gfx.gpucull.multidraw yes/no` | `yes` | with `gfx.gpucull yes`: parts of models with the same material (and texture variant) in the same model are drawn with one call (multi draw), see below |
 | `gfx.gpucull.shadows yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the cascades of the sun shadows too (each cascade with its own camera and the distances from the real camera, as before; models none of whose materials cast shadows are left out at once) |
 | `gfx.gpucull.reflections yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the faces of the environment map too (its own range of models, as before) |
+| `gfx.gpucull.shadows.headlights yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the shadow maps of headlights too (each map tested against the beam it is drawn with, to its reach, the distances from the real camera, as before) |
+| `gfx.gpucull.shadows.lamps yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the scenery part of the shadow maps of scenery lamps too (each map tested against the reach of its lamp, as before); the part with the vehicles has no models of the scenery |
 | `gfx.gpucull.sleepers yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the sleepers of the tracks (`sleepermodel`) of the main view too, each one tested against the view and given its level of detail by its distance, as before (the tracks within `sleeperdistance` are chosen as before); they also take the occlusion test, the depth prepass and the two phases of the models |
 | `gfx.depthprepass.scene yes/no` | `no` | the depth of the whole opaque scene of the main view (terrain, tracks, buildings, models, vehicles, the cab) is drawn before its colour, see below |
 | `gfx.depthprepass.replay yes/no` | `yes` | the scene is gone through once for its depth and its colour: what the colour pass draws is recorded and both are drawn from the record, see below. `no`: twice, as before |
@@ -405,7 +408,11 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   differ. With `gfx.gpucull.shadows` and `gfx.gpucull.reflections` the same rows (without the occlusion test and the
   prepass) follow for each cascade, `gpu cull shadows 1:` to `3:` (1 the nearest), and for the environment map,
   `gpu cull reflections, last face:` (the last face of the map drawn, as the map is drawn now and then), with the timings
-  `instance cull shadows 1:` … and `instance cull reflections, last face:`. With `gfx.gpucull.sleepers` the row
+  `instance cull shadows 1:` … and `instance cull reflections, last face:`. With `gfx.gpucull.shadows.headlights` and
+  `gfx.gpucull.shadows.lamps` they follow for each map of headlights drawn so far, `gpu cull headlight shadows 1:` … (by the
+  slot of the map), and for the scenery of the maps of lamps, `gpu cull lamp shadows, scenery 1:` and `2:` (the first and
+  the second drawn in a frame), each with the numbers of its last drawing and the timings `instance cull headlight shadows 1:`
+  … and `instance cull lamp shadows, scenery 1:` …. With `gfx.gpucull.sleepers` the row
   `gpu cull:` is followed by how many sleepers of how many tracks were queued (they are counted among the models).
 - With `gfx.depthprepass.scene yes` Shift+F12 shows the `scene depth:` row (draws of the depth pass and its processor time)
   and the timing `scene depth:` (its GPU time). With `gfx.depthprepass.replay yes` the row tells how many of the recorded

@@ -122,6 +122,24 @@ void opengl46_local_shadows::init()
 	}
 	glProgramUniform1f(*m_program, NEAR_LOCATION, SHADOW_NEAR);
 	glProgramUniform1f(*m_alpha_program, NEAR_LOCATION, SHADOW_NEAR);
+	// the variants for the multi draws of the instances drawn from the gpu culling (the scenery parts of the maps of lamps); the
+	// fragment stages read nothing of the model block
+	try
+	{
+		gl::shader multidrawvertex("shadowcube.vert", "#define MODEL_DRAWS 1\n");
+		gl::shader fragment("shadowmap.frag");
+		gl::shader alphafragment("alphashadowmap.frag");
+		m_multidraw_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{multidrawvertex, geometry, fragment});
+		m_alpha_multidraw_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{multidrawvertex, geometry, alphafragment});
+		glProgramUniform1f(*m_multidraw_program, NEAR_LOCATION, SHADOW_NEAR);
+		glProgramUniform1f(*m_alpha_multidraw_program, NEAR_LOCATION, SHADOW_NEAR);
+	}
+	catch (gl::shader_exception const &e)
+	{
+		ErrorLog("multi draws of the lamp shadow maps not available: " + std::string(e.what()));
+		m_multidraw_program.reset();
+		m_alpha_multidraw_program.reset();
+	}
 	set_layer(CAB_SLOT * 6);
 
 	// a shadow sampler with no depth texture to read from is undefined, also where the shading doesn't read it
@@ -143,6 +161,10 @@ void opengl46_local_shadows::set_layer(int const Layer)
 {
 	glProgramUniform1i(*m_program, LAYER_LOCATION, Layer);
 	glProgramUniform1i(*m_alpha_program, LAYER_LOCATION, Layer);
+	if (m_multidraw_program)
+		glProgramUniform1i(*m_multidraw_program, LAYER_LOCATION, Layer);
+	if (m_alpha_multidraw_program)
+		glProgramUniform1i(*m_alpha_multidraw_program, LAYER_LOCATION, Layer);
 }
 
 opengl46_local_shadows::level_setup opengl46_local_shadows::setup(int const Level)

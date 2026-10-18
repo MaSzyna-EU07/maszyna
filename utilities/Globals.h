@@ -298,6 +298,10 @@ struct global_settings {
     // culled in compute passes as well (drawn from their result, or compared), not only those of the main view
     bool gfx_gpucull_shadows = true;
     bool gfx_gpucull_reflections = true;
+    // with gfx_gpucull 1 or 2: the same for the maps of the headlights of vehicles and for the scenery parts of the maps of
+    // scenery lamps, each map with a culling of its own
+    bool gfx_gpucull_shadows_headlights = true;
+    bool gfx_gpucull_shadows_lamps = true;
     // with gfx_gpucull 1 or 2: the sleepers of the tracks (sleepermodel) of the main view are culled with the instances as well,
     // and with 1 drawn from the result
     bool gfx_gpucull_sleepers = true;

@@ -816,6 +816,7 @@ void opengl46_renderer::SwapBuffers()
     if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
         m_debugtimestext += m_reflectioncull.info_times( "instance cull reflections, last face" );
     }
+    m_debugtimestext += Light_Shadow_Cull_Info( true );
     if( Global.gfx_depthprepass_scene || m_contactshadowslast ) {
         if( auto const scenedepthtime = m_scenedepthtimer.result() )
             m_debugtimestext += " scene depth: " + to_string( static_cast<double>( *scenedepthtime ) / 1000000.0, 3 ) + " ms\n";
@@ -916,6 +917,7 @@ void opengl46_renderer::SwapBuffers()
         m_reflectioncull.collect();
         m_debugstatstext += m_reflectioncull.info( "gpu cull reflections, last face", false );
     }
+    m_debugstatstext += Light_Shadow_Cull_Info( false );
     if( auto const cullstats = ( m_viewports.empty() || !( Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap ) ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
         m_debugstatstext +=
             "\ncluster lists: " + std::to_string( cullstats->index_count )
@@ -1020,6 +1022,8 @@ void opengl46_renderer::draw_debug_ui()
         {
             ImGui::Checkbox("the same for the cascades of the sun shadows (gfx.gpucull.shadows)", &Global.gfx_gpucull_shadows);
             ImGui::Checkbox("the same for the environment map, when it's drawn next (gfx.gpucull.reflections)", &Global.gfx_gpucull_reflections);
+            ImGui::Checkbox("the same for the shadow maps of headlights (gfx.gpucull.shadows.headlights)", &Global.gfx_gpucull_shadows_headlights);
+            ImGui::Checkbox("the same for the scenery of the shadow maps of lamps, when it's drawn next (gfx.gpucull.shadows.lamps)", &Global.gfx_gpucull_shadows_lamps);
             ImGui::Checkbox("the same for the sleepers of the tracks of the view (gfx.gpucull.sleepers)", &Global.gfx_gpucull_sleepers);
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
@@ -1037,6 +1041,7 @@ void opengl46_renderer::draw_debug_ui()
         }
         if (Global.gfx_gpucull_reflections && m_reflectioncull.ran())
             info += m_reflectioncull.info("gpu cull reflections, last face", false);
+        info += Light_Shadow_Cull_Info(false);
         if (!info.empty())
             ImGui::TextUnformatted(info.c_str() + 1);
     }
@@ -2951,8 +2956,8 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 		bucket.second.clear();
 	}
 	// the gpu culling runs along the first color pass of the main viewport of a frame, and the passes of the cascades of the
-	// sun shadows and of the faces of the environment map drawn for it, each with a culling of its own. its result is drawn
-	// (Global.gfx_gpucull 1), or compared with the one of the cpu, which draws (2)
+	// sun shadows, of the faces of the environment map and of the maps of headlights and lamps drawn for it, each with a culling
+	// of its own. its result is drawn (Global.gfx_gpucull 1), or compared with the one of the cpu, which draws (2)
 	m_instancecullpass = false;
 	m_passcull = nullptr;
 	if( ( Global.gfx_gpucull != 0 )
@@ -2964,11 +2969,17 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 			m_passcull = &m_instancecull;
 		}
 		else if( ( m_renderpass.draw_mode == rendermode::shadows )
+		      && ( m_lightshadowcull != nullptr ) ) {
+			// the map of a set of headlights or the scenery part of the map of a lamp, which picked its culling
+			m_passcull = m_lightshadowcull;
+			m_shadowcasters.clear();
+		}
+		else if( ( m_renderpass.draw_mode == rendermode::shadows )
 		      && ( Global.gfx_gpucull_shadows )
 		      && ( m_shadowcascade >= 0 )
 		      && ( m_shadowcascade < static_cast<int>( m_shadowcull.size() ) )
 		      && ( false == m_cubeshadows ) ) {
-			// the cascades of the sun; the maps of lamps and headlights go as before
+			// the cascades of the sun
 			m_passcull = &m_shadowcull[ m_shadowcascade ];
 			m_shadowcasters.clear();
 		}
@@ -4429,7 +4440,9 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 		auto const texture { Indirect_Shadow_Texture( draw.material ) };
 		auto *multidrawprogram {
 			m_indirectmultidraw ?
-				( texture != null_handle ? m_alpha_shadow_multidraw_shader.get() : m_shadow_multidraw_shader.get() ) :
+				( m_cubeshadows ?
+					m_localshadows.multidraw_program( texture != null_handle ) :
+					( texture != null_handle ? m_alpha_shadow_multidraw_shader.get() : m_shadow_multidraw_shader.get() ) ) :
 				nullptr };
 		if( multidrawprogram != nullptr ) {
 			// the draws which follow in the same bank and of the same primitive, with the same texture for the alpha test
@@ -8057,6 +8070,7 @@ void opengl46_renderer::Render_local_shadows()
 
 void opengl46_renderer::Render_lamp_shadows()
 {
+	m_lampscenerydrawn = 0;
 	auto const &lamps{m_localshadows.lamps()};
 	if (lamps.empty() || (false == Global.gfx_lights_clustered))
 		return;
@@ -8157,7 +8171,10 @@ void opengl46_renderer::Render_lamp_shadow(std::size_t const Slot, bool const Ve
 	{
 		m_cubescenery = true;
 		m_cubeskipinstance = static_cast<TAnimModel const *>(slot.owner);
+		// the instances culled on the gpu, each scenery part drawn in a frame with a culling of its own
+		m_lightshadowcull = Light_Shadow_Cull(m_lampcull, m_lampscenerydrawn++, Global.gfx_gpucull_shadows_lamps);
 		Render(simulation::Region);
+		m_lightshadowcull = nullptr;
 		m_cubeskipinstance = nullptr;
 		m_cubescenery = false;
 	}
@@ -8307,7 +8324,10 @@ void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_ar
 
 	m_localshadows.begin_headlight(Slot, projector, rotation, projection, Light.direction, m_framestamp);
 	m_shadowskipvehicle = Light.owner;
+	// the instances culled on the gpu, each slot with a culling of its own
+	m_lightshadowcull = Light_Shadow_Cull(m_headlightcull, Slot, Global.gfx_gpucull_shadows_headlights);
 	Render(simulation::Region);
+	m_lightshadowcull = nullptr;
 	if ((Cab != nullptr) && (Cab != Light.owner) && (glm::length(Cab->GetPosition() - projector) <= reach + Cab->radius()))
 	{
 		Render_cab(Cab, 0.0f, false);
@@ -8318,6 +8338,51 @@ void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_ar
 	scene_ubo->update(scene_ubs);
 	m_renderpass = m_colorpass;
 	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
+}
+
+opengl46_instance_cull *opengl46_renderer::Light_Shadow_Cull(std::vector<std::unique_ptr<opengl46_instance_cull>> &Culls, std::size_t const Index, bool const Enabled)
+{
+	// the same conditions as those of the other passes in Render(scene::basic_region *)
+	if ((Global.gfx_gpucull == 0) || (false == Enabled) || (m_current_viewport == nullptr) || (false == m_current_viewport->main))
+		return nullptr;
+	if (Culls.size() <= Index)
+		Culls.resize(Index + 1);
+	if (!Culls[Index])
+	{
+		// the buffers of its own, the records and the programs of the main view
+		Culls[Index] = std::make_unique<opengl46_instance_cull>();
+		Culls[Index]->init(&m_instancecull);
+	}
+	return Culls[Index].get();
+}
+
+std::string opengl46_renderer::Light_Shadow_Cull_Info(bool const Times)
+{
+	std::string text;
+	if (Global.gfx_gpucull == 0)
+		return text;
+	// the maps are drawn now and then, the numbers are of the last drawing of each
+	auto const add = [&](std::vector<std::unique_ptr<opengl46_instance_cull>> &Culls, bool const Enabled, std::string const &Label) {
+		if (false == Enabled)
+			return;
+		for (std::size_t idx = 0; idx < Culls.size(); ++idx)
+		{
+			if (!Culls[idx] || (false == Culls[idx]->ran()))
+				continue;
+			if (Times)
+			{
+				text += Culls[idx]->info_times("instance cull " + Label + " " + std::to_string(idx + 1));
+			}
+			else
+			{
+				Culls[idx]->collect();
+				text += Culls[idx]->info("gpu cull " + Label + " " + std::to_string(idx + 1), false);
+			}
+		}
+	};
+	add(m_headlightcull, Global.gfx_gpucull_shadows_headlights, "headlight shadows");
+	add(m_lampcull, Global.gfx_gpucull_shadows_lamps, "lamp shadows, scenery");
+	return text;
 }
 
 void opengl46_renderer::Update_Clusters(viewport_config &vp, glm::ivec2 const &Targetsize)

@@ -43,9 +43,10 @@ class TAnimModel;
 // of them, and the ones drawn second, each copy command_count() commands long (draw_command_offset())
 // with Global.gfx_gpucull 2 the cpu still draws, and the result is only compared with its own: the counts per entry are
 // read back a few frames later and set against the counts Render_Instanced() reported for the same frame
-// each render pass culled on the gpu (the main view, the cascades of the sun shadows, the faces of the environment map) has a
-// culling of its own, with its own buffers, while the records and the programs are shared by all of them: the records of a
-// bucket go to the gpu once and serve every pass which queues the bucket
+// each render pass culled on the gpu (the main view, the cascades of the sun shadows, the faces of the environment map, the
+// shadow maps of headlights and the scenery parts of those of lamps) has a culling of its own, with its own buffers, while the
+// records and the programs are shared by all of them: the records of a bucket go to the gpu once and serve every pass which
+// queues the bucket
 // the sleepers of tracks (TTrack::m_sleeper_local_transforms) are culled the same way, each track with them a bucket of its
 // own, and drawn together with the instances; their groups are kept apart from those of the model instances
 class opengl46_instance_cull
