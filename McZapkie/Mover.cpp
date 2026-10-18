@@ -5463,8 +5463,9 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 
 	if (thiscoupler.CouplingFlag != coupling::faux)
 	{
-		// uzgadnianie prawa Newtona, on the coupler of the other vehicle this one is coupled with
-		othervehicle->Couplers[otherend].CForce = -CF;
+		// uzgadnianie prawa Newtona, on the coupler of the other vehicle this one is coupled with, along that vehicle's
+		// axis: turned around once more when the vehicles face each other
+		othervehicle->Couplers[otherend].CForce = -CF * DirPatch(End, otherend);
 	}
 
 	return CF;

@@ -427,16 +427,32 @@ TEST_CASE("couplers: automatic couplers of different control systems couple with
 
 TEST_CASE("couplers: the coupler force of vehicles facing each other lands on the couplers holding them") {
 	// the force a vehicle takes from its coupler, the other one takes back on its own coupler of the pair, whichever
-	// way the vehicles face; it used to land on the far end of the other vehicle when they faced each other
+	// way the vehicles face; it used to land on the far end of the other vehicle when they faced each other.
+	// CForce runs along the axis of its own vehicle, so the two forces of the pair are opposite along the track: of
+	// opposite signs for vehicles facing the same way, of the same sign for vehicles facing each other
 	auto first{automatic_wagon(5.0, "first")};
 	auto second{automatic_wagon(0.0, "second")};
-	test::pair pair{first, end::front, second, end::front, 1.0};
-	pair.run(5.0);
-	REQUIRE(pair.coupled());
 
-	pair.step();
-	REQUIRE(second->Couplers[end::front].CForce != 0.0);
-	CHECK(first->Couplers[end::front].CForce == doctest::Approx(-second->Couplers[end::front].CForce));
-	CHECK(first->Couplers[end::rear].CForce == 0.0); // nothing there
-	CHECK(second->Couplers[end::rear].CForce == 0.0);
+	SUBCASE("facing each other") {
+		test::pair pair{first, end::front, second, end::front, 1.0};
+		pair.run(5.0);
+		REQUIRE(pair.coupled());
+
+		pair.step();
+		REQUIRE(second->Couplers[end::front].CForce != 0.0);
+		CHECK(first->Couplers[end::front].CForce == doctest::Approx(second->Couplers[end::front].CForce));
+		CHECK(first->Couplers[end::rear].CForce == 0.0); // nothing there
+		CHECK(second->Couplers[end::rear].CForce == 0.0);
+	}
+	SUBCASE("facing the same way") {
+		test::pair pair{first, end::front, second, end::rear, 1.0};
+		pair.run(5.0);
+		REQUIRE(pair.coupled());
+
+		pair.step();
+		REQUIRE(second->Couplers[end::rear].CForce != 0.0);
+		CHECK(first->Couplers[end::front].CForce == doctest::Approx(-second->Couplers[end::rear].CForce));
+		CHECK(first->Couplers[end::rear].CForce == 0.0);
+		CHECK(second->Couplers[end::front].CForce == 0.0);
+	}
 }
