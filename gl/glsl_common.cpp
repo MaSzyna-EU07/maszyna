@@ -28,6 +28,7 @@ void gl::glsl_common_setup()
     "#define INSTANCE_COMMAND_GROUP_SIZE " + std::to_string(INSTANCE_COMMAND_GROUP_SIZE) + "\n" +
     "#define HIZ_GROUP_SIZE " + std::to_string(HIZ_GROUP_SIZE) + "\n" +
     "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
+    "#define INSTANCE_JOB_SLEEPERS " + std::to_string(INSTANCE_JOB_SLEEPERS) + "U\n" +
     "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +
     "#define CLUSTER_GRID_X " + std::to_string(CLUSTER_GRID_X) + "\n" +
     "#define CLUSTER_GRID_Y " + std::to_string(CLUSTER_GRID_Y) + "\n" +

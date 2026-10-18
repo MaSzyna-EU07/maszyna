@@ -1464,6 +1464,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_gpucull_reflections;
     }
+    else if (Token == "gfx.gpucull.sleepers")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_sleepers;
+    }
     else if (Token == "gfx.depthprepass.scene")
     {
         Parser.getTokens(1);
@@ -1962,6 +1967,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.gpucull.multidraw", gfx_gpucull_multidraw );
     export_as_text( Output, "gfx.gpucull.shadows", gfx_gpucull_shadows );
     export_as_text( Output, "gfx.gpucull.reflections", gfx_gpucull_reflections );
+    export_as_text( Output, "gfx.gpucull.sleepers", gfx_gpucull_sleepers );
     export_as_text( Output, "gfx.depthprepass.scene", gfx_depthprepass_scene );
     export_as_text( Output, "gfx.bufferstreaming", gfx_bufferstreaming );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );

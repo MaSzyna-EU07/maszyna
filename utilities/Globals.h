@@ -298,6 +298,9 @@ struct global_settings {
     // culled in compute passes as well (drawn from their result, or compared), not only those of the main view
     bool gfx_gpucull_shadows = true;
     bool gfx_gpucull_reflections = true;
+    // with gfx_gpucull 1 or 2: the sleepers of the tracks (sleepermodel) of the main view are culled with the instances as well,
+    // and with 1 drawn from the result
+    bool gfx_gpucull_sleepers = true;
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
     // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,

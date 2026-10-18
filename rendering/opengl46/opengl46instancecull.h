@@ -46,6 +46,8 @@ class TAnimModel;
 // each render pass culled on the gpu (the main view, the cascades of the sun shadows, the faces of the environment map) has a
 // culling of its own, with its own buffers, while the records and the programs are shared by all of them: the records of a
 // bucket go to the gpu once and serve every pass which queues the bucket
+// the sleepers of tracks (TTrack::m_sleeper_local_transforms) are culled the same way, each track with them a bucket of its
+// own, and drawn together with the instances; their groups are kept apart from those of the model instances
 class opengl46_instance_cull
 {
   public:
@@ -76,7 +78,8 @@ class opengl46_instance_cull
 	struct draw_group
 	{
 		scene::basic_cell::instance_bucket_key const *key;
-		TAnimModel *instance; // one of the group, prepares the model and gives the material
+		TAnimModel *instance; // one of the group, prepares the model and gives the material. none for sleepers
+		bool sleepers; // the skins come from the key, as Render_Sleepers() sets them
 		std::uint32_t lodfirst; // in lod_bounds()
 		std::uint32_t lodcount;
 		std::uint32_t entryfirst;
@@ -103,6 +106,11 @@ class opengl46_instance_cull
 	// adds the records of a bucket (made already) to the pass, sending them to the gpu when they changed.
 	// Area: bounds of the cell holding the bucket, which hold the locations of all its instances
 	void add_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area);
+	// adds the sleepers of a track, their records made already as a bucket with no instances (only the records and the place
+	// in the record buffer count). Area: bounds of the locations of the sleepers. the range of the whole track is tested by
+	// the caller, the culling tests each sleeper against the frustum and gives it the lod band of its plain distance from the
+	// camera of the pass (Render_Sleepers())
+	void add_sleepers(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area);
 	// runs the culling passes for the buckets added. View: rotation of the view of the pass. Occlusion: the depth pyramid
 	// to test the instances against, or null. Twophase: with the occlusion test, only the instances seen in the previous
 	// frame pass for now, dispatch_second() takes the others
@@ -164,8 +172,9 @@ class opengl46_instance_cull
 	{
 		return static_cast<std::uint32_t>(m_last.gputotal);
 	}
-	// counts per lod band of the instances Render_Instanced() drew for a model and its skins in this pass
-	void cpu_result(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts);
+	// counts per lod band of the instances Render_Instanced() drew for a model and its skins in this pass, or of the sleepers
+	// Render_Sleepers() drew. needs dispatch() before it
+	void cpu_result(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts, bool const Sleepers = false);
 	// ends the pass: its cpu counts are kept for the comparison
 	void end_pass();
 	// takes the newest counts of the gpu which arrived and compares them with the ones of the cpu. done when a pass begins;
@@ -224,6 +233,10 @@ class opengl46_instance_cull
 		bool restarted{false};
 	};
 
+	using group_map = std::unordered_map<scene::basic_cell::instance_bucket_key, group_data, scene::basic_cell::instance_bucket_key_hash>;
+
+	// add_bucket() and add_sleepers()
+	void add(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area, bool const Sleepers);
 	// finds a place for the records of a bucket in the record buffer and sends them
 	void place(scene::basic_cell::instance_bucket const &Bucket);
 	// binds the buffers of the culling passes
@@ -251,10 +264,16 @@ class opengl46_instance_cull
 	std::vector<gl::instance_cull_group> m_grouplist;
 	std::vector<draw_group> m_drawgroups;
 	std::vector<float> m_lodlist;
-	std::unordered_map<scene::basic_cell::instance_bucket_key, group_data, scene::basic_cell::instance_bucket_key_hash> m_groupmap;
+	group_map m_groupmap;
+	group_map m_sleepergroupmap; // groups of the sleepers
 	std::vector<TSubModel const *> m_pending; // walk of the submodel tree
 	std::uint32_t m_candidates{0};
 	std::uint32_t m_entries{0};
+	// tracks with sleepers and their sleepers queued in the pass, and in the last pass, for the panel
+	std::uint32_t m_sleepertracks{0};
+	std::uint32_t m_sleepers{0};
+	std::uint32_t m_lastsleepertracks{0};
+	std::uint32_t m_lastsleepers{0};
 	bool m_dispatched{false};
 
 	std::vector<std::uint32_t> m_cpucounts; // of the current pass, by entry

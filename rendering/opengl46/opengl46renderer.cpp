@@ -679,6 +679,8 @@ bool opengl46_renderer::Render()
 		m_locallights.reset();
 		m_localshadows.reset_lamps();
 		m_localshadows.reset_headlights();
+		// and so may the tracks the sleeper records were made for
+		m_sleeperrecords.clear();
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -689,6 +691,14 @@ bool opengl46_renderer::Render()
 		// their own: the instance records are out of date
 		++m_instancerecordsversion;
 		m_nodestateversion = scene::node_state_version;
+	}
+	if( ( m_framestamp % 256 ) == 0 ) {
+		// the sleeper records of tracks out of sight for a while. their places in the record buffer of the gpu culling are
+		// dropped when it starts over
+		for( auto records { m_sleeperrecords.begin() }; records != m_sleeperrecords.end(); ) {
+			if( m_framestamp - records->second.frame > 256 ) { records = m_sleeperrecords.erase( records ); }
+			else { ++records; }
+		}
 	}
 	// scenery lamps which get shadows in this frame. their maps hold the scenery as of the version of the instance records
 	if (simulation::is_ready && (false == Global.gfx_skiprendering))
@@ -987,6 +997,7 @@ void opengl46_renderer::draw_debug_ui()
         {
             ImGui::Checkbox("the same for the cascades of the sun shadows (gfx.gpucull.shadows)", &Global.gfx_gpucull_shadows);
             ImGui::Checkbox("the same for the environment map, when it's drawn next (gfx.gpucull.reflections)", &Global.gfx_gpucull_reflections);
+            ImGui::Checkbox("the same for the sleepers of the tracks of the view (gfx.gpucull.sleepers)", &Global.gfx_gpucull_sleepers);
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
         if (Global.gfx_contactshadows > 0)
@@ -2902,6 +2913,13 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 		setup.drawing = ( Global.gfx_gpucull == 1 );
 		m_passcull->begin_pass( setup );
 	}
+	// the sleepers of tracks go with the instances of the main view
+	m_sleeperspass = ( ( m_passcull == &m_instancecull ) && Global.gfx_gpucull_sleepers );
+	if( m_sleeperspass && ( false == m_passcull->drawing() ) ) {
+		for( auto &counts : m_sleeperbandcounts ) {
+			counts.second.clear();
+		}
+	}
 	// build a list of region sections to render
 	glm::vec3 const cameraposition{m_renderpass.pass_camera.position()};
 	auto const camerax = static_cast<int>(std::floor(cameraposition.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
@@ -3379,6 +3397,14 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		else {
 			// the view of the pass is in place here, the one Render_Instanced() takes
 			m_passcull->dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
+			// the sleepers the cpu drew along the tracks, before the culling ran
+			if( m_sleeperspass ) {
+				for( auto const &counts : m_sleeperbandcounts ) {
+					if( false == counts.second.empty() ) {
+						m_passcull->cpu_result( counts.first, counts.second, true );
+					}
+				}
+			}
 		}
 	}
 	for( auto &bucket : m_frame_instance_buckets ) {
@@ -3394,6 +3420,7 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		m_instancecullpass = false;
 		m_passcull = nullptr;
 	}
+	m_sleeperspass = false;
 }
 
 void opengl46_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
@@ -4045,6 +4072,7 @@ void opengl46_renderer::Render_Instances_Indirect()
 		// the colour pass takes the draws from here, and counts them
 		m_indirectcolourpending = true;
 		m_indirectcolourset = colourset;
+		m_indirectcoloursleepers = m_sleeperspass;
 		m_renderpass.draw_stats.drawcalls += static_cast<int>( prepasscounts.calls );
 		colourcounts.draws = static_cast<std::uint32_t>( m_indirectdraws.size() );
 	}
@@ -4100,10 +4128,25 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 	m_indirectrecording = true;
 	for( auto const &group : Cull.draw_groups() ) {
 		auto *model { group.key->pModel };
-		if( ( model == nullptr ) || ( model->Root == nullptr ) || ( group.instance == nullptr ) ) { continue; }
-		group.instance->RaPrepare();
-		auto const *material { group.instance->Material() };
-		auto alpha { material != nullptr ? material->textures_alpha : 0x30300030 };
+		if( ( model == nullptr ) || ( model->Root == nullptr ) || ( ( group.instance == nullptr ) && ( false == group.sleepers ) ) ) { continue; }
+		material_handle const *skins { nullptr };
+		auto alpha { 0x30300030 };
+		if( group.sleepers ) {
+			// as Render_Sleepers() sets them up: the skin of the track, if any. like scenery models they pick no texture
+			// variants of their own
+			if( group.key->skins[ 1 ] != null_handle ) {
+				skins = group.key->skins.data();
+			}
+			TSubModel::iVariantSeed = 0;
+		}
+		else {
+			group.instance->RaPrepare();
+			auto const *material { group.instance->Material() };
+			if( material != nullptr ) {
+				skins = material->replacable_skins;
+				alpha = material->textures_alpha;
+			}
+		}
 		alpha ^= 0x0F0F000F;
 		for( std::uint32_t band = 0; band <= group.lodcount; ++band ) {
 			// a band holds the squared distances from its lower bound up to the next one; any of them selects the same lod
@@ -4114,7 +4157,7 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 			::glPushMatrix();
 			::glLoadIdentity();
 			model->Root->fSquareDist = bandmin;
-			model->Root->ReplacableSet( ( material != nullptr ? material->replacable_skins : nullptr ), alpha );
+			model->Root->ReplacableSet( skins, alpha );
 			model->Root->pRoot = model;
 			Render( model->Root );
 			::glPopMatrix();
@@ -4764,6 +4807,71 @@ std::vector<texture_handle> const &opengl46_renderer::Model_Textures(TModel3d *M
 	return textures;
 }
 
+namespace {
+
+// the group of the sleepers of a track in the gpu culling: their model, and the skin in the slot Render_Sleepers() sets it in
+scene::basic_cell::instance_bucket_key sleeper_key( TTrack const &Track ) {
+	scene::basic_cell::instance_bucket_key key;
+	key.pModel = Track.m_sleeper_model;
+	key.skins[ 1 ] = Track.m_sleeper_skin;
+	return key;
+}
+
+} // namespace
+
+void opengl46_renderer::Queue_Sleepers( TTrack *Track )
+{
+	// the gates of Render_Sleepers(); the range is tested for the whole track
+	if( ( Track->m_sleeper_model == nullptr ) || Track->m_sleeper_local_transforms.empty() || ( Global.SleeperDistance <= 0.f ) ) { return; }
+	auto const distsq { glm::length2( Track->location() - m_renderpass.pass_camera.position() ) };
+	auto const cutoffsq { static_cast<double>( Global.SleeperDistance ) * static_cast<double>( Global.SleeperDistance ) };
+	if( distsq > cutoffsq ) { return; }
+
+	auto &records { m_sleeperrecords[ Track ] };
+	auto const &transforms { Track->m_sleeper_local_transforms };
+	if( ( records.bucket.recordsversion != m_instancerecordsversion )
+	 || ( records.model != Track->m_sleeper_model )
+	 || ( records.skin != Track->m_sleeper_skin )
+	 || ( records.transforms != transforms.data() )
+	 || ( records.count != transforms.size() ) ) {
+		// each sleeper is a record placed and turned by its transform, relative to the origin of the track (the centre of its
+		// cell), with the sphere Render_Sleepers() tests against the frustum
+		auto const radius { std::max( Track->m_sleeper_model->bounding_radius(), 2.0f ) };
+		auto &bucket { records.bucket };
+		bucket.records.clear();
+		bucket.records.reserve( transforms.size() );
+		glm::vec3 low { std::numeric_limits<float>::max() };
+		glm::vec3 high { std::numeric_limits<float>::lowest() };
+		for( auto const &local : transforms ) {
+			scene::basic_cell::instance_record record;
+			glm::vec3 const position { local[ 3 ] };
+			record.position = packed_vec3{ position };
+			record.radius = radius;
+			record.rangesquaredmin = 0.f;
+			record.rangesquaredmax = std::numeric_limits<float>::max();
+			record.flags = scene::basic_cell::instance_visible | scene::basic_cell::instance_instanceable;
+			for( int column = 0; column < 3; ++column ) {
+				record.rotationscale[ column ] = local[ column ];
+			}
+			bucket.records.emplace_back( record );
+			low = glm::min( low, position );
+			high = glm::max( high, position );
+		}
+		bucket.recordorigin = Track->m_origin;
+		bucket.lodrangesquared = std::numeric_limits<float>::max();
+		bucket.recordsversion = m_instancerecordsversion;
+		bucket.gpustale = true;
+		records.key = sleeper_key( *Track );
+		records.area = scene::bounding_area{ Track->m_origin + glm::dvec3{ ( low + high ) * 0.5f }, 0.5f * glm::length( high - low ) };
+		records.model = Track->m_sleeper_model;
+		records.skin = Track->m_sleeper_skin;
+		records.transforms = transforms.data();
+		records.count = transforms.size();
+	}
+	records.frame = m_framestamp;
+	m_passcull->add_sleepers( records.key, records.bucket, records.area );
+}
+
 void opengl46_renderer::Render_Sleepers( TTrack *Track )
 {
 	if( Track == nullptr ) { return; }
@@ -4931,6 +5039,25 @@ void opengl46_renderer::Render_Sleepers( TTrack *Track )
 
 	m_renderpass.draw_stats.instances += static_cast<int>( total );
 	m_renderpass.draw_stats.models    += static_cast<int>( total );
+
+	if( m_sleeperspass && m_instancecullpass && ( false == m_passcull->drawing() ) ) {
+		// the comparison with the gpu culling: the sleepers drawn by lod band, the bands as the culling makes them, split by
+		// the bounds of the model past 0 and short of the largest float
+		auto const counted = []( float const Bound ) {
+			return ( Bound > 0.f ) && ( Bound < std::numeric_limits<float>::max() ); };
+		auto &counts { m_sleeperbandcounts[ sleeper_key( *Track ) ] };
+		auto const bands { static_cast<std::size_t>( std::count_if( lodbounds.begin(), lodbounds.end(), counted ) ) + 1 };
+		if( counts.size() < bands ) {
+			counts.resize( bands, 0 );
+		}
+		for( auto const &survivor : survivors ) {
+			std::size_t band { 0 };
+			for( auto const bound : lodbounds ) {
+				if( counted( bound ) && ( bound <= survivor.first ) ) { ++band; }
+			}
+			++counts[ band ];
+		}
+	}
 }
 
 bool opengl46_renderer::Render(TDynamicObject *Dynamic)
@@ -5699,6 +5826,15 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			auto *track = *first;
 			if( false == track->m_visible )       { continue; }
 			if( false == track->m_sleeper_enabled ) { continue; }
+			if( m_sleeperspass ) {
+				// culled with the instances of the pass and drawn from the result, or drawn by the cpu as well to compare
+				Queue_Sleepers( track );
+				if( m_passcull->drawing() ) { continue; }
+			}
+			else if( m_indirectcolourpending && m_indirectcoloursleepers ) {
+				// the depth pass of the whole scene culled and recorded them, the colour pass draws what it recorded
+				continue;
+			}
 			Render_Sleepers( track );
 		}
 		break;

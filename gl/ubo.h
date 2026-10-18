@@ -466,7 +466,7 @@ namespace gl
     // culling of model instances in compute passes (instance_cull.comp, instance_cull_offsets.comp). binding points of
     // the shader storage blocks, apart from the ones bound for the shading so the passes don't disturb them
     const GLuint INSTANCE_RECORD_SSBO_BINDING = 9; // scene::basic_cell::instance_record of the queued buckets
-    const GLuint INSTANCE_JOB_SSBO_BINDING = 10; // instance_cull_job, one per queued bucket
+    const GLuint INSTANCE_JOB_SSBO_BINDING = 10; // instance_cull_job, one per queued bucket (or track with sleepers)
     const GLuint INSTANCE_GROUP_SSBO_BINDING = 11; // instance_cull_group, one per model and skins
     const GLuint INSTANCE_LOD_SSBO_BINDING = 12; // sorted lod bounds (squared distances) of the groups
     const GLuint INSTANCE_COUNTER_SSBO_BINDING = 13; // header, then count[entries], cursor[entries] and first[entries]
@@ -496,7 +496,15 @@ namespace gl
         uint32_t count; // records of the bucket
         uint32_t group;
         uint32_t candidatestart; // records of the jobs before this one
-        uint32_t pad[2];
+        uint32_t flags; // instance_cull_job_flags
+        uint32_t pad;
+    };
+
+    enum instance_cull_job_flags : uint32_t
+    {
+        // the sleepers of a track (opengl46_renderer::Render_Sleepers()): the lod goes by the plain distance from the camera of
+        // the pass, without the range and size tests of the model instances (the range of the whole track is tested on the cpu)
+        INSTANCE_JOB_SLEEPERS = 1u
     };
 
     static_assert(sizeof(instance_cull_job) == 48, "bad size of instance_cull_job");

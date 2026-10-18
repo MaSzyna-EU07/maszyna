@@ -76,26 +76,44 @@ void opengl46_instance_cull::begin_pass(pass_setup const &Setup)
 	m_drawgroups.clear();
 	m_lodlist.clear();
 	m_groupmap.clear();
+	m_sleepergroupmap.clear();
 	m_cpucounts.clear();
 	m_candidates = 0;
 	m_entries = 0;
+	m_sleepertracks = 0;
+	m_sleepers = 0;
 }
 
 void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area)
+{
+	add(Key, Bucket, Area, false);
+}
+
+void opengl46_instance_cull::add_sleepers(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area)
+{
+	add(Key, Bucket, Area, true);
+}
+
+void opengl46_instance_cull::add(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area, bool const Sleepers)
 {
 	if (!m_inpass || Bucket.records.empty() || Key.pModel == nullptr)
 		return;
 
 	// range of the squared distances the instances of the bucket can be at, scaled as in the culling, with some slack for
-	// its single precision: the draws are made only for the lod bands within it
-	auto const centerdistance{glm::length(Area.center - m_setup.distancecamera)};
+	// its single precision: the draws are made only for the lod bands within it. sleepers go by the plain distance from the
+	// camera of the pass
+	auto const &distancecamera{Sleepers ? m_setup.camera : m_setup.distancecamera};
+	auto const distancescale{Sleepers ? 1.0 : static_cast<double>(m_setup.distancescale)};
+	auto const distanceoffset{Sleepers ? 0.0 : static_cast<double>(m_setup.distanceoffset)};
+	auto const centerdistance{glm::length(Area.center - distancecamera)};
 	auto const nearest{std::max(0.0, centerdistance - Area.radius)};
 	auto const farthest{centerdistance + Area.radius};
-	auto const distancemin{static_cast<float>(0.999 * (nearest * nearest * m_setup.distancescale + m_setup.distanceoffset))};
-	auto const distancemax{static_cast<float>(1.001 * (farthest * farthest * m_setup.distancescale + m_setup.distanceoffset))};
+	auto const distancemin{static_cast<float>(0.999 * (nearest * nearest * distancescale + distanceoffset))};
+	auto const distancemax{static_cast<float>(1.001 * (farthest * farthest * distancescale + distanceoffset))};
 
-	auto lookup{m_groupmap.find(Key)};
-	if (lookup == m_groupmap.end())
+	auto &groupmap{Sleepers ? m_sleepergroupmap : m_groupmap};
+	auto lookup{groupmap.find(Key)};
+	if (lookup == groupmap.end())
 	{
 		// lod bounds of the model, the same set Render_Instanced() splits the distance into bands with
 		auto const lodfirst{static_cast<std::uint32_t>(m_lodlist.size())};
@@ -121,7 +139,7 @@ void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key c
 		group_data const group{static_cast<std::uint32_t>(m_grouplist.size()), m_entries, lodcount + 1, distancemin, distancemax};
 		m_grouplist.push_back({lodfirst, lodcount, m_entries, 0});
 		m_entries += group.entrycount;
-		lookup = m_groupmap.emplace(Key, group).first;
+		lookup = groupmap.emplace(Key, group).first;
 		if (m_setup.drawing)
 		{
 			// any instance of the group serves; it's only prepared and asked for its material
@@ -134,7 +152,7 @@ void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key c
 					break;
 				}
 			}
-			m_drawgroups.push_back({&lookup->first, instance, lodfirst, lodcount, group.entryfirst, distancemin, distancemax});
+			m_drawgroups.push_back({&lookup->first, instance, Sleepers, lodfirst, lodcount, group.entryfirst, distancemin, distancemax});
 		}
 	}
 	else
@@ -169,9 +187,15 @@ void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key c
 	job.count = static_cast<std::uint32_t>(Bucket.records.size());
 	job.group = lookup->second.index;
 	job.candidatestart = m_candidates;
+	job.flags = (Sleepers ? gl::INSTANCE_JOB_SLEEPERS : 0u);
 	m_joblist.push_back(job);
 	m_buckets.push_back(&Bucket);
 	m_candidates += job.count;
+	if (Sleepers)
+	{
+		++m_sleepertracks;
+		m_sleepers += job.count;
+	}
 }
 
 void opengl46_instance_cull::place(scene::basic_cell::instance_bucket const &Bucket)
@@ -384,12 +408,13 @@ void opengl46_instance_cull::draw_result(std::uint32_t const Draws, std::uint32_
 	m_cputime = Cputime;
 }
 
-void opengl46_instance_cull::cpu_result(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts)
+void opengl46_instance_cull::cpu_result(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts, bool const Sleepers)
 {
 	if (!m_dispatched)
 		return;
-	auto const lookup{m_groupmap.find(Key)};
-	if (lookup == m_groupmap.end())
+	auto const &groupmap{Sleepers ? m_sleepergroupmap : m_groupmap};
+	auto const lookup{groupmap.find(Key)};
+	if (lookup == groupmap.end())
 		return;
 	auto const &group{lookup->second};
 	for (std::size_t band = 0; band < std::min<std::size_t>(Bandcounts.size(), group.entrycount); ++band)
@@ -412,6 +437,8 @@ void opengl46_instance_cull::end_pass()
 		while (m_cpupasses.size() > 8)
 			m_cpupasses.pop_front();
 	}
+	m_lastsleepertracks = m_sleepertracks;
+	m_lastsleepers = m_sleepers;
 	m_inpass = false;
 	m_dispatched = false;
 }
@@ -462,24 +489,26 @@ std::string opengl46_instance_cull::info(std::string const &Label, bool const Oc
 {
 	if (Global.gfx_gpucull == 0)
 		return {};
+	// the sleepers are among the instances counted
+	auto const sleepers{m_lastsleepertracks > 0 ? "\n" + Label + ": " + std::to_string(m_lastsleepers) + " sleepers of " + std::to_string(m_lastsleepertracks) + " tracks queued" : std::string{}};
 	if (Global.gfx_gpucull == 1)
 	{
 		if (m_last.frame == 0)
-			return "\n" + Label + ": no result yet";
+			return "\n" + Label + ": no result yet" + sleepers;
 		if (false == Occlusion)
 			return "\n" + Label + ": " + std::to_string(m_last.gputotal) + " instances drawn, " + std::to_string(m_last.entries) + " bands; " + std::to_string(m_draws) +
-			       " indirect draws in " + std::to_string(m_calls) + " calls, cpu " + to_string(m_cputime, 3) + " ms";
+			       " indirect draws in " + std::to_string(m_calls) + " calls, cpu " + to_string(m_cputime, 3) + " ms" + sleepers;
 		return "\n" + Label + ": " + std::to_string(m_last.gputotal) + " instances drawn" +
 		       (m_twophase ? " (" + std::to_string(m_last.first) + " of them first, seen in the last frame)" : std::string{}) + ", " + std::to_string(m_last.occluded) +
 		       " hidden by occlusion" + (m_occlusion ? (m_twophase ? " (also by one another)" : "") : " (test off)") + ", " + std::to_string(m_last.entries) + " bands; " +
 		       std::to_string(m_draws) + " indirect draws in " + std::to_string(m_calls) + " calls (+" + std::to_string(m_prepassdraws) + " depth prepass in " +
-		       std::to_string(m_prepasscalls) + "), cpu " + to_string(m_cputime, 3) + " ms";
+		       std::to_string(m_prepasscalls) + "), cpu " + to_string(m_cputime, 3) + " ms" + sleepers;
 	}
 	if (m_comparedframes == 0)
-		return "\n" + Label + ": no result yet";
+		return "\n" + Label + ": no result yet" + sleepers;
 	return "\n" + Label + ": " + std::to_string(m_last.gputotal) + " instances (cpu " + std::to_string(m_last.cputotal) + "), " + std::to_string(m_last.entries) + " bands, " +
 	       std::to_string(m_last.mismatched) + " differ (by up to " + std::to_string(m_last.largestdifference) + "); frames differing " + std::to_string(m_mismatchedframes) + " of " +
-	       std::to_string(m_comparedframes);
+	       std::to_string(m_comparedframes) + sleepers;
 }
 
 std::string opengl46_instance_cull::info_times(std::string const &Label)

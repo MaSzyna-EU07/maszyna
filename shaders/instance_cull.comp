@@ -1,5 +1,6 @@
 // culls the model instances of the buckets queued in a render pass and assigns them their lod bands, with the tests
-// opengl46_renderer::Render_Instanced() makes on the cpu. one invocation per record of a queued bucket.
+// opengl46_renderer::Render_Instanced() makes on the cpu. one invocation per record of a queued bucket. the sleepers of the
+// tracks queued come as buckets too, with the tests of opengl46_renderer::Render_Sleepers().
 // stage 0 counts the instances which pass the tests, per entry (lod band of a group); after instance_cull_offsets.comp
 // turned the counts into the first slots of the entries, stage 1 writes the modelview matrices of the instances drawn first
 // there, in no particular order, and stage 2 (two phases) those of the instances drawn second after them.
@@ -35,8 +36,8 @@ struct instance_cull_job
 	uint count;
 	uint group;
 	uint candidatestart;
-	uint pad0;
-	uint pad1;
+	uint flags;
+	uint pad;
 };
 
 struct instance_cull_group
@@ -162,7 +163,7 @@ bool occluded(vec3 center, float radius)
 	return nearest < farthest;
 }
 
-// the tests of the cpu (Render_Instanced()), all but the occlusion one: the entry of the instance, or false when it's left out.
+// the tests of the cpu (Render_Instanced(), for sleepers Render_Sleepers()), all but the occlusion one: the entry of the instance, or false when it's left out.
 // Location: relative to the camera of the pass
 bool passes(instance_cull_job job, instance_record record, out vec3 location, out uint entry)
 {
@@ -178,17 +179,26 @@ bool passes(instance_cull_job job, instance_record record, out vec3 location, ou
 			return false;
 	}
 
-	vec3 offset = job.distanceorigin + record.position;
-	float distancesquared = dot(offset, offset) * distance_params.x;
-	if (distancesquared > distance_params.z)
-		return false;
-	distancesquared += distance_params.y;
-	if ((distancesquared < record.rangesquaredmin) || (distancesquared >= record.rangesquaredmax))
-		return false;
-	if (distancesquared > distance_params.w)
-		return false;
-	if (record.radius * record.radius * size_params.x / distancesquared < MIN_SCREEN_SIZE * MIN_SCREEN_SIZE)
-		return false;
+	float distancesquared;
+	if ((job.flags & INSTANCE_JOB_SLEEPERS) != 0u)
+	{
+		// the sleepers of a track, as Render_Sleepers() takes them: the lod by the plain distance from the camera of the pass
+		distancesquared = dot(location, location);
+	}
+	else
+	{
+		vec3 offset = job.distanceorigin + record.position;
+		distancesquared = dot(offset, offset) * distance_params.x;
+		if (distancesquared > distance_params.z)
+			return false;
+		distancesquared += distance_params.y;
+		if ((distancesquared < record.rangesquaredmin) || (distancesquared >= record.rangesquaredmax))
+			return false;
+		if (distancesquared > distance_params.w)
+			return false;
+		if (record.radius * record.radius * size_params.x / distancesquared < MIN_SCREEN_SIZE * MIN_SCREEN_SIZE)
+			return false;
+	}
 
 	// band: the number of lod bounds the distance reached, like upper_bound over the sorted bounds
 	instance_cull_group group = groups[job.group];
@@ -202,9 +212,18 @@ bool passes(instance_cull_job job, instance_record record, out vec3 location, ou
 	return true;
 }
 
-void write(uint entry, instance_record record, vec3 location)
+void write(uint entry, instance_record record, vec3 location, instance_cull_job job)
 {
 	uint slot = atomicAdd(counters[INSTANCE_COUNTER_HEADER + counts.z + entry], 1u);
+	if ((job.flags & INSTANCE_JOB_SLEEPERS) != 0u)
+	{
+		// in the order Render_Sleepers() multiplies them (the view moved to the origin of the track, then the transform of the
+		// sleeper), which gives the very same matrix: the other order rounds differently, enough to shift the edges of sleepers
+		// sunk in the ballast by a pixel here and there
+		mat4 originview = view * mat4(vec4(1.0, 0.0, 0.0, 0.0), vec4(0.0, 1.0, 0.0, 0.0), vec4(0.0, 0.0, 1.0, 0.0), vec4(job.origin, 1.0));
+		modelviews[slot] = originview * mat4(record.rotationscale[0], record.rotationscale[1], record.rotationscale[2], vec4(record.position, 1.0));
+		return;
+	}
 	modelviews[slot] = view * mat4(record.rotationscale[0], record.rotationscale[1], record.rotationscale[2], vec4(location, 1.0));
 }
 
@@ -241,7 +260,7 @@ void main()
 			atomicAdd(counters[COUNTER_OCCLUDED], 1u);
 			return;
 		}
-		write(entry, record, location);
+		write(entry, record, location, job);
 		if (phases.x != 0u)
 			atomicAdd(counters[COUNTER_FIRST], 1u);
 		return;
@@ -252,7 +271,7 @@ void main()
 	if (passed && (false == seen))
 	{
 		if (inview)
-			write(entry, record, location);
+			write(entry, record, location, job);
 		else
 			atomicAdd(counters[COUNTER_OCCLUDED], 1u);
 	}

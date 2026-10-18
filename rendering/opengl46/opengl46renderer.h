@@ -425,6 +425,9 @@ class opengl46_renderer : public gfx_renderer {
 	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
 	// Global.SleeperDistance from the track origin.
 	void Render_Sleepers( TTrack *Track );
+	// queues the sleepers of a track in the gpu culling of the pass (Global.gfx_gpucull_sleepers), with the gates of
+	// Render_Sleepers(), making their records first when they're missing or out of date
+	void Queue_Sleepers( TTrack *Track );
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
@@ -581,6 +584,25 @@ class opengl46_renderer : public gfx_renderer {
 	// Instances_Cast_Shadow() of the groups of the shadow pass under way
 	std::unordered_map<scene::basic_cell::instance_bucket_key, bool, scene::basic_cell::instance_bucket_key_hash> m_shadowcasters;
 	std::vector<std::uint32_t> m_instance_bandcounts; // reported by Render_Instanced() for the comparison
+	// the sleepers of tracks culled on the gpu with the instances of the main view (Global.gfx_gpucull_sleepers): records made
+	// from TTrack::m_sleeper_local_transforms when the track is queued first, and again when they or the instance records
+	// (editor, m_instancerecordsversion) went out of date. the records of tracks not queued for a while are let go
+	struct sleeper_records {
+		scene::basic_cell::instance_bucket bucket; // the records only, no instances
+		scene::basic_cell::instance_bucket_key key; // the model, and the skin in the slot Render_Sleepers() sets it in
+		scene::bounding_area area; // of the locations of the sleepers
+		TModel3d const *model { nullptr }; // what the records were made from
+		material_handle skin { null_handle };
+		glm::mat4 const *transforms { nullptr };
+		std::size_t count { 0 };
+		unsigned int frame { 0 }; // queued last
+	};
+	std::unordered_map<TTrack const *, sleeper_records> m_sleeperrecords;
+	bool m_sleeperspass { false }; // the sleepers of the pass under way go to its gpu culling (the one of the main view)
+	bool m_indirectcoloursleepers { false }; // with m_indirectcolourpending: the depth pass culled and recorded the sleepers too
+	// counts per lod band of the sleepers Render_Sleepers() drew in the pass, by model and skin, for the comparison (they're
+	// drawn before the culling runs)
+	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<std::uint32_t>, scene::basic_cell::instance_bucket_key_hash> m_sleeperbandcounts;
 	// depth pyramid for the occlusion test of the gpu culling
 	opengl46_hiz m_hiz;
 	// a draw recorded from the walk of the submodel tree of a group in one lod band (Render_Instances_Indirect()), to be
