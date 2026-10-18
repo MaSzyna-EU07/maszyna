@@ -1374,7 +1374,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -1447,6 +1447,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_track_context();
 	void split_track_at(TTrack &Track, glm::dvec3 const &Point);
 	void focus_track(TTrack &Track, int const Path, glm::dvec3 const &Point);
+	// the camera flies over Duration seconds to the place Distance back from the target along Look, looking along it
+	void fly_to(glm::dvec3 const &Target, glm::dvec3 const &Look, double const Distance, double const Duration = 0.6);
 	// paths found by their names
 	struct track_search
 	{
@@ -1737,7 +1739,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	{
 		bool open{false};
 		bool expand{false};
-		int scope{0}; // 0: the selected switch, 1: around the camera, 2: the whole scenery
+		int scope{1}; // 0: the selected switch, 1: around the camera, 2: the whole scenery
 		double reach{1500.0};
 		double spacing{3.5}; // m between the axes
 		double tolerance{2.0}; // m, a marker farther than this from its point is wrong
@@ -1756,8 +1758,13 @@ class editor_mode : public application_mode, private editor_track::observer
 	};
 	fouling_tool m_fouling;
 	void fouling_update();
-	void fouling_place();
-	void fouling_fix();
+	// the markers put at the fouling points without one, or at the one only
+	void fouling_place(int const Only = -1);
+	// the markers standing wrong moved to their places, or the one found only
+	void fouling_fix(int const Only = -1);
+	// the fouling point without a marker or the marker standing wrong under the cursor: the index of the point or of the
+	// marker found, and whether it's a marker
+	std::optional<std::pair<int, bool>> fouling_hit() const;
 	void render_fouling_ui();
 	void draw_fouling_overlay() const;
 

@@ -783,6 +783,11 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 				values[pair.substr(0, equals)] = pair.substr(equals + 1);
 		}
 		auto &tool{m_fouling};
+		if (values["show"] == "1")
+		{
+			show_track_tab(track_tab::lineside);
+			tool.expand = true;
+		}
 		tool.scope = std::stoi(values.count("scope") ? values["scope"] : "2");
 		tool.height_mode = values["mode"] == "ground" ? 0 : 1;
 		tool.height = std::stod(values.count("height") ? values["height"] : "0");
@@ -793,6 +798,19 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 		for (auto const &found : tool.found)
 			if (found.wrong && shown++ < 5)
 				WriteLog(format("SELFTEST fouling: %s %.2f m off, %+.3f m high", found.marker.file.c_str(), found.error, found.height_error));
+		if (values["place"] == "one")
+		{
+			// the first fouling point without a marker alone, as a click on it in the view
+			for (int index = 0; index < static_cast<int>(tool.points.size()); ++index)
+				if (tool.points[index].standing < 0)
+				{
+					fouling_place(index);
+					break;
+				}
+			tool.dirty = true;
+			fouling_update();
+			WriteLog("SELFTEST fouling one: " + tool.status);
+		}
 		if (values["place"] == "1")
 		{
 			fouling_place();

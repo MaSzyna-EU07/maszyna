@@ -7034,3 +7034,21 @@ msgstr "Wciśnij na nim i przeciągnij: wzdłuż kierunek, w bok strona"
 
 msgid "Connection: drag from a straight onto the other track"
 msgstr "Połączenie: przeciągnij z prostej na drugi tor"
+
+msgid "Click the green or red point in the view: that one only"
+msgstr "Kliknij zielony albo czerwony punkt w widoku: tylko ten"
+
+msgid "%s: no W17"
+msgstr "%s: brak W17"
+
+msgid "%s: W17 %.1f m off, %+.2f m high"
+msgstr "%s: W17 %.1f m od miejsca, %+.2f m w pionie"
+
+msgid "Settings##fouling"
+msgstr "Ustawienia##fouling"
+
+msgid "Click: move this W17 to its place"
+msgstr "Klik: przesuń ten W17 na miejsce"
+
+msgid "Click: put the W17 here"
+msgstr "Klik: postaw tu W17"

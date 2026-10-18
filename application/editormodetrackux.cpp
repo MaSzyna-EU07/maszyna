@@ -437,6 +437,14 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::switch_at, "Press and drag: a switch here, along sets its direction, sideways its side");
 		}
 	}
+	if (m_track_tab == track_tab::lineside && m_fouling.open)
+		if (auto const hit{fouling_hit()}; hit.has_value())
+		{
+			intent.index = hit->first;
+			intent.path = hit->second ? 1 : 0;
+			intent.position = hit->second ? m_fouling.found[hit->first].marker.location : m_fouling.points[hit->first].position;
+			return make(kind::fouling, hit->second ? "Click: move this W17 to its place" : "Click: put the W17 here");
+		}
 	if (m_hover.track != nullptr)
 	{
 		intent.track = m_hover.track;
@@ -552,6 +560,12 @@ void editor_mode::track_press(track_intent const &Intent)
 		handle_drag_start(Intent.position);
 		return;
 	case kind::switch_at: start_switch_placement(); return;
+	case kind::fouling:
+		if (Intent.path == 1)
+			fouling_fix(Intent.index);
+		else
+			fouling_place(Intent.index);
+		return;
 	case kind::extend_end:
 		if (false == start_extend(Intent.snap))
 			point_drag_start(Intent.snap.point);
@@ -700,13 +714,7 @@ void editor_mode::focus_track(TTrack &Track, int const Path, glm::dvec3 const &P
 	if (glm::dot(Camera.Pos - Point, look) > 0.0)
 		look = -look;
 	look = glm::normalize(look - glm::dvec3(0.0, 0.25, 0.0));
-	m_focus_start_pos = Camera.Pos;
-	m_focus_start_angle = Camera.Angle;
-	m_focus_target_pos = Point - look * kFocusDistance;
-	m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
-	m_focus_active = true;
-	m_focus_time = 0.0;
-	m_focus_duration = 0.6;
+	fly_to(Point, look, kFocusDistance);
 }
 
 void editor_mode::render_track_context()

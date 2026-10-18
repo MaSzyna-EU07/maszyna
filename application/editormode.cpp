@@ -675,23 +675,19 @@ void editor_mode::start_focus(scene::basic_node *node, double duration)
     double const len = glm::length(dir);
     dir = len > 1e-3 ? dir / len : glm::normalize(glm::dvec3(1.0, 0.5, 1.0));
 
+    // looking from there straight at the object
+    fly_to(center, -dir, distance, duration);
+}
+
+void editor_mode::fly_to(glm::dvec3 const &Target, glm::dvec3 const &Look, double const Distance, double const Duration)
+{
     m_focus_start_pos = Camera.Pos;
     m_focus_start_angle = Camera.Angle;
-    m_focus_target_pos = center + dir * distance;
-
-    // target orientation looks from the target position straight at the object
-    glm::dvec3 look = center - m_focus_target_pos;
-    double const looklen = glm::length(look);
-    if (looklen > 1e-6)
-        look /= looklen;
-    m_focus_target_angle = glm::vec3(
-        static_cast<float>(std::asin(glm::clamp(look.y, -1.0, 1.0))),   // pitch
-        static_cast<float>(std::atan2(-look.x, -look.z)),               // yaw
-        0.0f);                                                          // roll
-
+    m_focus_target_pos = Target - Look * Distance;
+    m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(std::clamp(Look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-Look.x, -Look.z)), 0.0f);
     m_focus_active = true;
     m_focus_time = 0.0;
-    m_focus_duration = duration;
+    m_focus_duration = Duration;
 }
 
 void editor_mode::snap_to_ground(scene::basic_node *node, bool const Alone, bool const Joined)

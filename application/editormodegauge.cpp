@@ -677,13 +677,7 @@ void editor_mode::gauge_focus(int const Index)
 	look = glm::length(look) > 1e-6 ? glm::normalize(look) : glm::dvec3(0.0, 0.0, 1.0);
 	if (glm::dot(Camera.Pos - hit.point, look) > 0.0)
 		look = -look;
-	m_focus_start_pos = Camera.Pos;
-	m_focus_start_angle = Camera.Angle;
-	m_focus_target_pos = hit.point - look * gauge_view_distance;
-	m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
-	m_focus_active = true;
-	m_focus_time = 0.0;
-	m_focus_duration = 0.6;
+	fly_to(hit.point, look, gauge_view_distance);
 }
 
 void editor_mode::gauge_spot(gauge_hit const &Hit)

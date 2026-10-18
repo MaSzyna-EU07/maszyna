@@ -38,6 +38,7 @@ using geometry::plan_of;
 double const kSampleStep{2.0}; // m between the samples of the line
 double const kLineCorridor{15.0}; // m from the axis, posts farther away belong to another line
 double const kOverlayRange{3000.0};
+float const kFoulingPick{12.0f}; // px from a point of the fouling overlay a click takes it
 double const kFoulingTrace{250.0}; // m from the start of a switch the tracks are followed for
 double const kRailHeight{0.18}; // m from the points of a track to the heads of its rails
 int const kRailCategory{1};
@@ -666,14 +667,7 @@ void editor_mode::render_hekto_ui()
 			auto const label{post.duplicate ? format(STR_C("km %s duplicate##%u"), km_text(post.hectometres).c_str(), post.post.instance) : format(STR_C("km %s stands %.1f m from its place##%u"), km_text(post.hectometres).c_str(), post.distance, post.post.instance)};
 			if (ImGui::Selectable(label.c_str()))
 			{
-				glm::dvec3 const look{glm::normalize(glm::dvec3{-1.0, -0.8, -1.0})};
-				m_focus_start_pos = Camera.Pos;
-				m_focus_start_angle = Camera.Angle;
-				m_focus_target_pos = post.post.location - look * 20.0;
-				m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(look.y)), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
-				m_focus_active = true;
-				m_focus_time = 0.0;
-				m_focus_duration = 0.6;
+				fly_to(post.post.location, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 20.0);
 			}
 		}
 		ImGui::EndChild();
@@ -832,14 +826,15 @@ void editor_mode::fouling_update()
 	tool.status = format(STR_C("%zu switches, %zu fouling points: %d without a marker, %d markers standing wrong"), switches.size(), tool.points.size(), static_cast<int>(missing), static_cast<int>(wrong));
 }
 
-void editor_mode::fouling_place()
+void editor_mode::fouling_place(int const Only)
 {
 	auto &tool{m_fouling};
 	fouling_update();
 	std::vector<template_item> items;
-	for (auto const &point : tool.points)
+	for (int i = 0; i < static_cast<int>(tool.points.size()); ++i)
 	{
-		if (point.standing >= 0)
+		auto const &point{tool.points[i]};
+		if (point.standing >= 0 || (Only >= 0 && i != Only))
 			continue;
 		template_item item;
 		item.file = kFoulingModels[std::clamp(tool.model, 0, 3)];
@@ -856,14 +851,15 @@ void editor_mode::fouling_place()
 	tool.dirty = true;
 }
 
-void editor_mode::fouling_fix()
+void editor_mode::fouling_fix(int const Only)
 {
 	auto &tool{m_fouling};
 	fouling_update();
 	std::vector<std::pair<standing_template, template_item>> moves;
-	for (auto const &found : tool.found)
+	for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
 	{
-		if (false == found.wrong)
+		auto const &found{tool.found[i]};
+		if (false == found.wrong || (Only >= 0 && i != Only))
 			continue;
 		template_item item;
 		auto const &point{tool.points[found.point]};
@@ -886,10 +882,37 @@ void editor_mode::fouling_fix()
 	tool.dirty = true;
 }
 
+std::optional<std::pair<int, bool>> editor_mode::fouling_hit() const
+{
+	auto const &tool{m_fouling};
+	screen_projection const projection;
+	auto const &mouse{ImGui::GetIO().MousePos};
+	glm::dvec3 const camera{Global.pCamera.Pos};
+	std::optional<std::pair<int, bool>> result;
+	auto best{kFoulingPick * kFoulingPick};
+	auto const consider = [&](glm::dvec3 const &Position, int const Index, bool const Marker) {
+		ImVec2 screen;
+		if (glm::distance(Position, camera) > kOverlayRange || false == projection.project(Position, screen))
+			return;
+		auto const distance2{(screen.x - mouse.x) * (screen.x - mouse.x) + (screen.y - mouse.y) * (screen.y - mouse.y)};
+		if (distance2 < best)
+		{
+			best = distance2;
+			result = std::make_pair(Index, Marker);
+		}
+	};
+	for (int i = 0; i < static_cast<int>(tool.points.size()); ++i)
+		if (tool.points[i].standing < 0)
+			consider(tool.points[i].position, i, false);
+	for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
+		if (tool.found[i].wrong)
+			consider(tool.found[i].marker.location, i, true);
+	return result;
+}
+
 void editor_mode::render_fouling_ui()
 {
 	auto &tool{m_fouling};
-	ImGui::TextDisabled("%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"));
 	auto const changed = [&](bool const Changed) {
 		if (Changed)
 			tool.dirty = true;
@@ -899,54 +922,92 @@ void editor_mode::render_fouling_ui()
 	changed(ImGui::RadioButton(STR_C("Around the camera"), &tool.scope, 1));
 	ImGui::SameLine();
 	changed(ImGui::RadioButton(STR_C("Whole scenery"), &tool.scope, 2));
-	ImGui::PushItemWidth(110.0f);
-	if (tool.scope == 1)
-		changed(ImGui::InputDouble(STR_C("Around the camera (m)"), &tool.reach, 0.0, 0.0, "%.0f"));
-	changed(ImGui::InputDouble(STR_C("Spacing of the axes (m)"), &tool.spacing, 0.0, 0.0, "%.2f"));
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("3.5 m on the straight track; more on the curves, where the cars lean out"));
-	changed(ImGui::InputDouble(STR_C("A marker off by more (m) is wrong"), &tool.tolerance, 0.0, 0.0, "%.1f"));
-	changed(ImGui::RadioButton(STR_C("On the ground"), &tool.height_mode, 0));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("Over the rail heads"), &tool.height_mode, 1));
-	if (tool.height_mode == 1)
+	fouling_update();
+	if (false == tool.error.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", tool.error.c_str());
+	else
 	{
+		ImGui::TextWrapped("%s", tool.status.c_str());
+		auto const missing{std::count_if(tool.points.begin(), tool.points.end(), [](fouling_point const &Point) { return Point.standing < 0; })};
+		auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](fouling_found const &Found) { return Found.wrong; })};
+		if (missing > 0 && ImGui::Button(format(STR_C("Place %d markers"), static_cast<int>(missing)).c_str()))
+			fouling_place();
+		if (wrong > 0)
+		{
+			if (missing > 0)
+				ImGui::SameLine();
+			if (ImGui::Button(format(STR_C("Move %d wrong markers to their places"), static_cast<int>(wrong)).c_str()))
+				fouling_fix();
+		}
+		if (missing + wrong > 0)
+		{
+			// each one: a click flies there, the button fixes it alone; in the view a click on its point does the same
+			ImGui::TextDisabled("%s", STR_C("Click the green or red point in the view: that one only"));
+			ImGui::BeginChild("##foulinglist", ImVec2(0.0f, std::min(8, static_cast<int>(missing + wrong)) * ImGui::GetFrameHeightWithSpacing() + 6.0f), true);
+			auto const look{glm::normalize(glm::dvec3{-1.0, -0.8, -1.0})};
+			for (int i = 0; i < static_cast<int>(tool.points.size()); ++i)
+			{
+				auto const &point{tool.points[i]};
+				if (point.standing >= 0)
+					continue;
+				ImGui::PushID(i);
+				if (ImGui::SmallButton(STR_C("Place")))
+					fouling_place(i);
+				ImGui::SameLine();
+				if (ImGui::Selectable(format(STR_C("%s: no W17"), point.track->name().c_str()).c_str()))
+					fly_to(point.position, look, 25.0);
+				ImGui::PopID();
+			}
+			for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
+			{
+				auto const &found{tool.found[i]};
+				if (false == found.wrong)
+					continue;
+				ImGui::PushID(1000000 + i);
+				if (ImGui::SmallButton(STR_C("Fix")))
+					fouling_fix(i);
+				ImGui::SameLine();
+				if (ImGui::Selectable(format(STR_C("%s: W17 %.1f m off, %+.2f m high"), tool.points[found.point].track->name().c_str(), found.error, found.height_error).c_str()))
+					fly_to(found.marker.location, look, 25.0);
+				ImGui::PopID();
+			}
+			ImGui::EndChild();
+		}
+	}
+	if (ImGui::CollapsingHeader(STR_C("Settings##fouling")))
+	{
+		ImGui::TextDisabled("%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"));
+		ImGui::PushItemWidth(110.0f);
+		if (tool.scope == 1)
+			changed(ImGui::InputDouble(STR_C("Around the camera (m)"), &tool.reach, 0.0, 0.0, "%.0f"));
+		changed(ImGui::InputDouble(STR_C("Spacing of the axes (m)"), &tool.spacing, 0.0, 0.0, "%.2f"));
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("3.5 m on the straight track; more on the curves, where the cars lean out"));
+		changed(ImGui::InputDouble(STR_C("A marker off by more (m) is wrong"), &tool.tolerance, 0.0, 0.0, "%.1f"));
+		changed(ImGui::RadioButton(STR_C("On the ground"), &tool.height_mode, 0));
 		ImGui::SameLine();
-		changed(ImGui::InputDouble(STR_C("by (m)"), &tool.height, 0.0, 0.0, "%.3f"));
-		changed(ImGui::InputDouble(STR_C("A marker higher or lower by more (m) is wrong"), &tool.height_tolerance, 0.0, 0.0, "%.3f"));
-		tool.height_tolerance = std::clamp(tool.height_tolerance, 0.005, 1.0);
+		changed(ImGui::RadioButton(STR_C("Over the rail heads"), &tool.height_mode, 1));
+		if (tool.height_mode == 1)
+		{
+			ImGui::SameLine();
+			changed(ImGui::InputDouble(STR_C("by (m)"), &tool.height, 0.0, 0.0, "%.3f"));
+			changed(ImGui::InputDouble(STR_C("A marker higher or lower by more (m) is wrong"), &tool.height_tolerance, 0.0, 0.0, "%.3f"));
+			tool.height_tolerance = std::clamp(tool.height_tolerance, 0.005, 1.0);
+		}
+		char const *models[] = {"w17", "w17_new", "w17_old", "w17_dwuteo"};
+		ImGui::Combo(STR_C("Marker"), &tool.model, models, IM_ARRAYSIZE(models));
+		char const *turns[] = {"0", "90", "180", "270"};
+		int turn{tool.turn / 90};
+		if (ImGui::Combo(STR_C("Turned by (deg)"), &turn, turns, IM_ARRAYSIZE(turns)))
+		{
+			tool.turn = turn * 90;
+			tool.dirty = true;
+		}
+		ImGui::PopItemWidth();
 	}
-	char const *models[] = {"w17", "w17_new", "w17_old", "w17_dwuteo"};
-	ImGui::Combo(STR_C("Marker"), &tool.model, models, IM_ARRAYSIZE(models));
-	char const *turns[] = {"0", "90", "180", "270"};
-	int turn{tool.turn / 90};
-	if (ImGui::Combo(STR_C("Turned by (deg)"), &turn, turns, IM_ARRAYSIZE(turns)))
-	{
-		tool.turn = turn * 90;
-		tool.dirty = true;
-	}
-	ImGui::PopItemWidth();
 	tool.reach = std::clamp(tool.reach, 50.0, 50000.0);
 	tool.spacing = std::clamp(tool.spacing, 2.0, 10.0);
 	tool.tolerance = std::clamp(tool.tolerance, 0.2, 20.0);
-	fouling_update();
-	if (false == tool.error.empty())
-	{
-		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", tool.error.c_str());
-		return;
-	}
-	ImGui::TextWrapped("%s", tool.status.c_str());
-	auto const missing{std::count_if(tool.points.begin(), tool.points.end(), [](fouling_point const &Point) { return Point.standing < 0; })};
-	auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](fouling_found const &Found) { return Found.wrong; })};
-	if (missing > 0 && ImGui::Button(format(STR_C("Place %d markers"), static_cast<int>(missing)).c_str()))
-		fouling_place();
-	if (wrong > 0)
-	{
-		if (missing > 0)
-			ImGui::SameLine();
-		if (ImGui::Button(format(STR_C("Move %d wrong markers to their places"), static_cast<int>(wrong)).c_str()))
-			fouling_fix();
-	}
 }
 
 void editor_mode::draw_fouling_overlay() const
