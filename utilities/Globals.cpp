@@ -1474,6 +1474,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_depthprepass_scene;
     }
+    else if (Token == "gfx.depthprepass.replay")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_depthprepass_replay;
+    }
     else if (Token == "gfx.bufferstreaming")
     {
         Parser.getTokens(1);
@@ -1969,6 +1974,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.gpucull.reflections", gfx_gpucull_reflections );
     export_as_text( Output, "gfx.gpucull.sleepers", gfx_gpucull_sleepers );
     export_as_text( Output, "gfx.depthprepass.scene", gfx_depthprepass_scene );
+    export_as_text( Output, "gfx.depthprepass.replay", gfx_depthprepass_replay );
     export_as_text( Output, "gfx.bufferstreaming", gfx_bufferstreaming );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );

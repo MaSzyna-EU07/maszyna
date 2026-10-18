@@ -303,6 +303,10 @@ struct global_settings {
     bool gfx_gpucull_sleepers = true;
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
+    // (opengl 4.6) the depth pass of the scene (gfx_depthprepass_scene, or the one of the contact shadows) walks the scene for
+    // the colour pass as well: its opaque draws are recorded once, their depth drawn from the record (with the contact shadows
+    // alone only within their reach) and their colour too. false: the scene is walked twice, as before
+    bool gfx_depthprepass_replay = true;
     // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,
     // one for each of the last frames, instead of with glBufferSubData. read at the start
     bool gfx_bufferstreaming = true;

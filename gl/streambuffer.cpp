@@ -42,6 +42,11 @@ gl::frame_stream::~frame_stream()
 	{
 		release(slot);
 	}
+	for (auto &retired : m_retired)
+	{
+		if (!retired.empty())
+			glDeleteBuffers(static_cast<GLsizei>(retired.size()), retired.data());
+	}
 }
 
 void gl::frame_stream::create(slot &Slot, GLsizeiptr Size)
@@ -125,6 +130,13 @@ void gl::frame_stream::next_frame()
 	}
 	m_slot = (m_slot + 1) % FRAMES;
 	wait(m_slots[m_slot]);
+	// the buffers this slot outgrew in its last frame, which the gpu is done with now
+	auto &retired{m_retired[m_slot]};
+	if (!retired.empty())
+	{
+		glDeleteBuffers(static_cast<GLsizei>(retired.size()), retired.data());
+		retired.clear();
+	}
 	m_fill = m_start;
 }
 
@@ -139,8 +151,12 @@ GLintptr gl::frame_stream::push(void const *Data, GLsizeiptr Size)
 		if (size > current->size)
 		{
 			// a bigger buffer for the rest of the frame, starting after its header again. the fence of the slot (if any) was
-			// waited for when the frame took the slot over, the old buffer is only read by the draws of this frame
-			release(*current);
+			// waited for when the frame took the slot over, the old buffer is only read by this frame, which may still bind it
+			// for what it wrote there (a recorded draw drawn later), so it's kept, mapped, until the slot is taken over again
+			m_retired[m_slot].push_back(current->buffer);
+			current->buffer = 0;
+			current->data = nullptr;
+			current->size = 0;
 			create(*current, size);
 			++m_grows;
 		}

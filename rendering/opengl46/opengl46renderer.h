@@ -404,8 +404,23 @@ class opengl46_renderer : public gfx_renderer {
 	int Prepass_Class( material_handle const Material );
 	// depth of the whole opaque scene of the colour pass, before its colour (Global.gfx_depthprepass_scene): the colour pass
 	// walks the scene a second time, Bind_Material() binds the programs of the depth prepass and draw() leaves out what they
-	// can't draw. Future: the motion matrix the colour pass draws the region with
-	void Render_Scene_Depth( glm::mat4 const &Future );
+	// can't draw. with Global.gfx_depthprepass_replay the walk of the colour pass is made here, once: its opaque draws are
+	// recorded (Record_Scene_Draw()), their depth is drawn from the record (Render_Scene_Prepass()) and the colour pass draws
+	// them from it (Render_Scene_Colour()). Future: the motion matrix the colour pass draws the region with. Contactonly: the
+	// depth is drawn only for the contact shadows, which need it within their reach
+	void Render_Scene_Depth( glm::mat4 const &Future, bool const Contactonly );
+	// notes a draw of the walk recorded by Render_Scene_Depth(): the chunks drawn, with the state the walk left for them
+	void Record_Scene_Draw( gfx::geometry_handle const *First, std::size_t const Count, bool const Batch );
+	// draws the depth of the recorded draws not drawn yet, in runs of the same program, bank and texture of the alpha test,
+	// with multi draws when there are any. the depth pyramid of the occlusion test and the cursor of the editor take the depth
+	// drawn so far, and the end of the walk the rest
+	void Render_Scene_Prepass();
+	// the colour of the recorded draws, in the order of the walk, with the programs of their materials
+	void Render_Scene_Colour();
+	// the colour of the instances culled and recorded by the depth pass of the whole scene (m_indirectcolourpending)
+	void Render_Instances_Indirect_Pending();
+	// the bounding sphere of a geometry chunk in the space of its vertices, w the radius (negative if there's none)
+	glm::vec4 const &Chunk_Sphere( gfx::geometry_handle const &Geometry );
 	// whether the colour pass of the viewport gets contact shadows, which need the depth pass of the scene
 	bool Contact_Shadows_Wanted( viewport_config const &Viewport ) const;
 	// resolves the depth drawn by Render_Scene_Depth() for the contact shadows and sets them up for the colour pass
@@ -683,6 +698,71 @@ class opengl46_renderer : public gfx_renderer {
 	debug_stats m_scenedepthstats; // of its last run
 	double m_scenedepthcputime { 0.0 }; // ms
 	gl::gpu_timer m_scenedepthtimer;
+	// the recorded walk of the colour pass (Global.gfx_depthprepass_replay): a draw with the state it was made with
+	struct scene_draw {
+		gl::model_ubs ubs;
+		material_handle material { null_handle }; // bound last before it (Bind_Material())
+		TSubModel const *submodel { nullptr };
+		std::uint32_t seed { 0 }; // TSubModel::iVariantSeed then
+		std::uint32_t variant { 0 }; // TSubModel::VariantId() then: which textures of the material were bound
+		std::uint32_t chunkfirst { 0 }; // in m_scenechunks
+		std::uint32_t chunkcount { 0 };
+		std::uint32_t instancecount { 0 }; // instanced draw (Render_Instanced(), Render_Sleepers()), 0 if not
+		std::uint32_t instancebase { 0 };
+		GLuint instancebuffer { 0 }; // the instance buffer of the frame the matrices of the instances went to
+		std::uint32_t header { 0 }; // the light header (m_sceneheaders) it is lit with
+		texture_handle prepasstexture { null_handle }; // of the alpha test of the depth pass
+		int prepassclass { 0 }; // Prepass_Class(), 0 as well for what the depth pass leaves out (blending, opacity < 0)
+		bool blending { false };
+		bool batch { false }; // drawn with draw_batch() (neighbouring tracks)
+		bool instances { false }; // no draw: the colour of the instances culled in the walk goes here
+	};
+	struct scene_chunk {
+		gfx::geometry_handle geometry;
+		std::uint32_t draw;
+		bool depth; // drawn in the depth pass
+	};
+	using light_header = std::array<std::uint8_t, offsetof( gl::light_data, lights ) + sizeof( gl::light_element )>;
+	bool m_scenerecording { false }; // inside the walk of Render_Scene_Depth(): draw(), Bind_Material(), upload_light_header() record
+	bool m_scenerecorded { false }; // the colour pass under way draws the record
+	bool m_scenereplayed { false }; // the last depth pass of the scene was drawn from a record
+	bool m_scenedepthreach { false }; // the depth pass leaves out the draws lying whole farther than m_scenedepthlimit
+	float m_scenedepthlimit { 0.f };
+	material_handle m_scenematerial { null_handle }; // what Bind_Material() bound last in the walk
+	TSubModel const *m_scenesubmodel { nullptr };
+	std::uint32_t m_sceneseed { 0 };
+	std::uint32_t m_scenevariant { 0 };
+	std::vector<scene_draw> m_scenedraws;
+	std::vector<scene_chunk> m_scenechunks;
+	std::vector<gfx::geometry_handle> m_scenegeometry; // the chunks of m_scenechunks, for draw_batch()
+	std::vector<light_header> m_sceneheaders; // the first one is in the light buffer when the walk begins
+	std::size_t m_sceneflushed { 0 }; // chunks Render_Scene_Prepass() went through
+	// working space of Render_Scene_Prepass(): a chunk drawn and what its run has in common
+	struct scene_prepass_item {
+		int prepassclass;
+		texture_handle texture;
+		std::uint32_t bank;
+		unsigned int type;
+		std::uint32_t indexed;
+		GLuint instancebuffer; // 0 for a draw which isn't instanced, which reads the identity every buffer starts with
+		std::uint32_t chunk;
+		gl::instance_draw_command command;
+		auto tie() const {
+			return std::tie( prepassclass, texture, bank, type, indexed, instancebuffer, chunk ); }
+	};
+	std::vector<scene_prepass_item> m_sceneprepassitems;
+	std::vector<gl::model_ubs> m_sceneprepassblocks;
+	std::vector<gl::instance_draw_command> m_sceneprepasscommands;
+	// the commands of the multi draws of the depth pass, one buffer for each of the last frames (nullptr: no multi draws)
+	std::unique_ptr<gl::frame_stream> m_scenecommandstream;
+	// of the last recorded walk: parts drawn (chunks of geometry; neighbouring tracks are drawn together), those of them drawn in
+	// the depth pass and its gl calls, and those left out of it as farther than the reach of the contact shadows
+	std::uint32_t m_scenerecordedparts { 0 };
+	std::uint32_t m_sceneprepassdraws { 0 };
+	std::uint32_t m_sceneprepasscalls { 0 };
+	std::uint32_t m_scenebeyondreach { 0 };
+	// Chunk_Sphere() of the chunks asked about, dropped when their vertices change (Replace(), Append())
+	std::unordered_map<std::uint64_t, glm::vec4> m_chunkspheres;
 	// contact shadows: set up for the colour pass under way, and whether the last main view had them
 	bool m_contactshadows { false };
 	bool m_contactshadowslast { false };

@@ -31,8 +31,8 @@ namespace gl
 		// ends the frame: what was written so far goes with its fence, the next frame writes to the next buffer
 		void next_frame();
 		// appends Size bytes to the buffer of the frame and returns their offset. may replace the buffer of the frame with a
-		// bigger one (generation() changes, buffer() tells which to bind); the draws issued before keep the old one until the
-		// gpu is done with them
+		// bigger one (generation() changes, buffer() tells which to bind); the old one stays until the frame is done with, so
+		// what was written to it can still be bound and drawn from later in the frame
 		GLintptr push(void const *Data, GLsizeiptr Size);
 
 		GLuint buffer() const
@@ -83,6 +83,8 @@ namespace gl
 		void wait(slot &Slot);
 
 		std::array<slot, FRAMES> m_slots;
+		// buffers of the slots replaced by bigger ones in their frame, deleted when the slot is taken over again
+		std::array<std::vector<GLuint>, FRAMES> m_retired;
 		std::size_t m_slot = 0;
 		GLsizeiptr m_alignment;
 		bool m_mapped; // buffers made from now on are mapped

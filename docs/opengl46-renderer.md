@@ -279,6 +279,7 @@ view; the shadow maps of lamps and headlights, the cab and other views go as bef
 | `gfx.gpucull.reflections yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the faces of the environment map too (its own range of models, as before) |
 | `gfx.gpucull.sleepers yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the sleepers of the tracks (`sleepermodel`) of the main view too, each one tested against the view and given its level of detail by its distance, as before (the tracks within `sleeperdistance` are chosen as before); they also take the occlusion test, the depth prepass and the two phases of the models |
 | `gfx.depthprepass.scene yes/no` | `no` | the depth of the whole opaque scene of the main view (terrain, tracks, buildings, models, vehicles, the cab) is drawn before its colour, see below |
+| `gfx.depthprepass.replay yes/no` | `yes` | the scene is gone through once for its depth and its colour: what the colour pass draws is recorded and both are drawn from the record, see below. `no`: twice, as before |
 
 With `gfx.gpucull.occlusion.instances yes` the test goes in two phases: the models seen in the previous frame are drawn
 first (their depth, or their colour without the depth prepass), the depth they leave is added to what the others are tested
@@ -315,6 +316,19 @@ colour, which the effects that need it build on. The models drawn from the GPU (
 walk and drawn from the same result in the second. The picture is the same either way. In rain and snow (when the cab is
 drawn last, after the precipitation) the cab isn't in the depth pass. Can be changed while the simulator runs, in the
 **Instance culling** debug window.
+
+With `gfx.depthprepass.replay yes` (the default) the scene isn't gone through twice: the walk of the colour pass is made
+once, in the depth pass, and every opaque draw it would make is recorded with what it needs (the data of the model part, the
+material and its texture variant, the light of tunnels and of the cab). The depth is drawn from the record in runs of the
+same kind (with or without the alpha test, the texture of the test, the model or section the geometry is kept in), each run
+with one multi draw, and the colour pass then draws the record in the order of the walk, with the programs of the materials.
+The depth is drawn before the depth pyramid of the occlusion test of the models (`gfx.gpucull.occlusion`) and before the
+cursor of the editor reads the ground, so they see the same as before. When the depth pass is there only for the contact
+shadows (`gfx.depthprepass.scene no`), the parts lying whole farther than the reach of the contact shadows
+(`gfx.contactshadows.range` and a little more) are left out of it and only drawn in colour, as they would be without the depth
+pass; the copies of models drawn from the GPU always have their depth drawn. With fewer parts in the depth the occlusion test
+of the models has less to hide them behind past that reach. In the editor the whole depth is drawn. The picture is the same
+either way; `no` walks the scene twice, as before, for comparison.
 
 ### Model data of the draws
 
@@ -394,7 +408,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   `instance cull shadows 1:` … and `instance cull reflections, last face:`. With `gfx.gpucull.sleepers` the row
   `gpu cull:` is followed by how many sleepers of how many tracks were queued (they are counted among the models).
 - With `gfx.depthprepass.scene yes` Shift+F12 shows the `scene depth:` row (draws of the depth pass and its processor time)
-  and the timing `scene depth:` (its GPU time).
+  and the timing `scene depth:` (its GPU time). With `gfx.depthprepass.replay yes` the row tells how many of the recorded
+  parts (of models, of the scenery; neighbouring tracks count one by one) had their depth drawn, in how many calls, how many
+  were left beyond the reach of the contact shadows, and the processor time of the depth pass, which holds the walk of the
+  colour pass now (the `color:` time is the one to compare).
 - With `gfx.contactshadows` on Shift+F12 shows the `contact shadows:` row (the level, the length and reach of the rays, or
   `off in this view`), the `scene depth:` row and timing of the depth pass they turn on, and the timing `contact shadows depth:`
   (copying the depth for them). The rays themselves are part of the shading of the colour pass: their cost shows as the
