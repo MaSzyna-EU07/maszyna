@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes //$e descriptions into the turntable templates of the scenery, so the editor places them as turntables.
 
-usage: turntable_headers.py <data root> [--write] [--zip <file>]
+usage: turntable_headers.py <data root> [--write] [--zip <file>] [--sidecar]
 without --write it only reports what it would write; --zip packs every described turntable template with its scenery/ path
 """
 
@@ -9,7 +9,7 @@ import os
 import re
 import sys
 
-from editor_headers import LINEMARK, body_lines, decode, load, options, pack, write
+from editor_headers import LINEMARK, body_lines, decode, load, options, pack, sidecar, write
 
 FOLDER = 'scenery'
 ROTATION = re.compile(r'^event\s+\S*tor(\d+)rot\s+animation\s+\S+\s+\S+\s+rotate\s+\S+\s+\S+\s+\S+\s+(\S+)', re.I | re.M)
@@ -95,6 +95,8 @@ def main():
         write(data, FOLDER, 'turntables', fresh)
     if target:
         pack(target, FOLDER, done)
+    if '--sidecar' in sys.argv:
+        sidecar(data, FOLDER, done)
     return 0
 
 

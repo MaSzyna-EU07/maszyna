@@ -50,6 +50,23 @@ def options(argv, usage):
     return argv[1], '--write' in argv, pack
 
 
+def sidecar(data, folder, entries):
+    """the descriptions next to the game data instead of in the templates: <data>/editor/templates/<the path of the
+    template in the scenery folder>, the lines without the marks, which the editor reads for a template without its own;
+    the templates stay as they are, so a check of the game files by the store doesn't take the descriptions away"""
+    root = os.path.join(data, 'editor', 'templates', os.path.relpath(folder, 'scenery'))
+    written = 0
+    for file, info in entries:
+        if info.get('header') is None:
+            continue
+        target = os.path.normpath(os.path.join(root, file))
+        os.makedirs(os.path.dirname(target), exist_ok=True)  # NOSONAR
+        with open(target, 'w', encoding='utf-8', newline='\n') as out:  # NOSONAR
+            out.write('\n'.join(info['header']) + '\n')
+        written += 1
+    print('%d descriptions written beside the data in %s' % (written, root))
+
+
 def write(data, folder, name, entries):
     backup = os.path.join(data, 'editor_backup')
     os.makedirs(backup, exist_ok=True)  # NOSONAR

@@ -7052,3 +7052,9 @@ msgstr "Klik: przesuń ten W17 na miejsce"
 
 msgid "Click: put the W17 here"
 msgstr "Klik: postaw tu W17"
+
+msgid "Drop the signal by a track"
+msgstr "Upuść sygnalizator przy torze"
+
+msgid "This signal is in a file the editor doesn't change, it can't be moved"
+msgstr "Ten sygnalizator jest w pliku, którego edytor nie zmienia, nie da się go przesunąć"

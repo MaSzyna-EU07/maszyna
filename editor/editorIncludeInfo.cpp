@@ -129,6 +129,14 @@ bool read_template(std::string const &File, template_text &Text, std::string &Er
 		}
 		linebegin = next;
 	}
+	// a template without a description of its own may have one beside the game data, in editor/templates, where the
+	// scripts of tools/editor write it with --sidecar: a check of the game files doesn't take it away
+	if (Text.yaml.empty())
+	{
+		std::ifstream beside{"editor/templates/" + File, std::ios_base::binary};
+		if (beside.is_open())
+			Text.yaml.assign(std::istreambuf_iterator<char>(beside), std::istreambuf_iterator<char>());
+	}
 	if (false == is_utf8(Text.yaml, extended))
 	{
 		Text.yaml = win1250_to_utf8(Text.yaml);
@@ -752,7 +760,7 @@ include_entry examine(std::string const &File)
 	{
 		return entry;
 	}
-	entry.described = false == text.lines.empty();
+	entry.described = false == text.yaml.empty();
 	if (false == entry.described)
 	{
 		entry.issue = "the template has no description";

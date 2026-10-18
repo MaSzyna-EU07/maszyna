@@ -5301,7 +5301,12 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
     glm::vec3 const snapvalue(translating ? m_gizmo_snap : 5.0f);
     float const *snap = Global.ctrlState && snapvalue.x > 0.0f ? glm::value_ptr(snapvalue) : nullptr;
 
+    // in the signal tool a press on the mast drags the signal along its track: the gizmo, whose up axis runs along the
+    // mast, gives way over a signal and while one is dragged
+    auto const yield{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::signals && false == ImGuizmo::IsUsing() && (m_signal.moving || m_signal.placing || signal_hit() >= 0)};
+    ImGuizmo::Enable(false == yield);
     ImGuizmo::Manipulate(glm::value_ptr(View), glm::value_ptr(Projection), static_cast<ImGuizmo::OPERATION>(operation), mode, glm::value_ptr(matrix), nullptr, snap);
+    ImGuizmo::Enable(true);
 
     if (false == ImGuizmo::IsUsing())
         return;

@@ -473,7 +473,23 @@ void editor_mode::signal_move_update()
 	if (false == dragged)
 		return;
 	auto const found{std::find_if(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; })};
-	if (found == tool.standing.end() || m_hover.track == nullptr)
+	if (found == tool.standing.end())
+	{
+		tool.moved_valid = false;
+		return;
+	}
+	// the track under the cursor; off every track, as it is when the signal is dragged beside its track, the place of the
+	// track the signal stands by nearest the cursor
+	auto *track{m_hover.track};
+	auto path{m_hover.path};
+	auto point{m_hover.point};
+	if (track == nullptr && found->track != nullptr && false == found->track->m_editorremoved && false == found->track->m_paths.empty())
+	{
+		track = found->track;
+		path = std::clamp(found->spot.path, 0, static_cast<int>(track->m_paths.size()) - 1);
+		point = bezier{track->m_paths[path]}.point(nearest_on(*track, path, cursor_level(found->spot.axis.y)));
+	}
+	if (track == nullptr)
 	{
 		tool.moved_valid = false;
 		return;
@@ -481,13 +497,14 @@ void editor_mode::signal_move_update()
 	auto const *item{signal_template_of(found->include.file)};
 	if (item == nullptr)
 		return;
+	path = std::clamp(path, 0, static_cast<int>(track->m_paths.size()) - 1);
 	auto const yaw{glm::radians(found->include.yaw + 180.0)};
 	glm::dvec2 const travel{std::sin(yaw), std::cos(yaw)};
-	auto const parameter{nearest_on(*m_hover.track, std::clamp(m_hover.path, 0, static_cast<int>(m_hover.track->m_paths.size()) - 1), m_hover.point)};
-	auto const forward{forward_at(*m_hover.track, std::clamp(m_hover.path, 0, static_cast<int>(m_hover.track->m_paths.size()) - 1), parameter)};
+	auto const parameter{nearest_on(*track, path, point)};
+	auto const forward{forward_at(*track, path, parameter)};
 	auto const facing{glm::dot(forward, travel) >= 0.0 ? 1 : -1};
-	auto const sideoftravel{glm::dot(plan_of(found->include.location) - plan_of(m_hover.point), right_of(travel)) >= 0.0 ? 1 : -1};
-	tool.moved_valid = signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, m_hover.point, facing, sideoftravel * facing, *item, tool.moved);
+	auto const sideoftravel{glm::dot(plan_of(found->include.location) - plan_of(point), right_of(travel)) >= 0.0 ? 1 : -1};
+	tool.moved_valid = signal_spot_at(*track, path, point, point, facing, sideoftravel * facing, *item, tool.moved);
 }
 
 void editor_mode::signal_release()
@@ -504,12 +521,22 @@ void editor_mode::signal_release()
 		return;
 	tool.moving = false;
 	auto const &mouse{ImGui::GetIO().MousePos};
-	if (false == tool.moved_valid || glm::length(glm::vec2{mouse.x, mouse.y} - tool.pressed) <= kDragStart)
+	if (glm::length(glm::vec2{mouse.x, mouse.y} - tool.pressed) <= kDragStart)
 		return;
+	if (false == tool.moved_valid)
+	{
+		tool.status = STR_C("Drop the signal by a track");
+		return;
+	}
 	tool.moved_valid = false;
 	auto const found{std::find_if(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; })};
-	if (found == tool.standing.end() || false == scene::Layers.tracked(found->include.instance) || false == scene::Layers.removable(found->include.instance))
+	if (found == tool.standing.end())
 		return;
+	if (false == scene::Layers.tracked(found->include.instance) || false == scene::Layers.removable(found->include.instance))
+	{
+		tool.status = STR_C("This signal is in a file the editor doesn't change, it can't be moved");
+		return;
+	}
 	auto const &spot{tool.moved};
 	auto const &included{scene::Layers.instance(found->include.instance)};
 	auto values{found->include.values};

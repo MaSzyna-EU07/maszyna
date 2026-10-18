@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes //$e descriptions into the switch drive templates (scenery/tory/napedy), so the editor places them with a switch.
 
-usage: drive_headers.py <data root> [--write] [--zip <file>]
+usage: drive_headers.py <data root> [--write] [--zip <file>] [--sidecar]
 without --write it only reports what it would write; --zip packs the written templates with their scenery/ paths
 """
 
@@ -9,7 +9,7 @@ import os
 import re
 import sys
 
-from editor_headers import body_lines, decode, load, options, pack, write
+from editor_headers import body_lines, decode, load, options, pack, sidecar, write
 
 FOLDER = 'scenery/tory/napedy'
 PATTERN = re.compile(r'^(ele1?|mech[12]?)-rz([lp])-([lp])((?:_[a-z]+)*)\.inc$')
@@ -78,6 +78,8 @@ def main():
     print('%d described, %d skipped' % (len(done), len(skipped)))
     if writing:
         write(data, FOLDER, 'drives', done)
+    if '--sidecar' in sys.argv:
+        sidecar(data, FOLDER, done)
     if target:
         pack(target, FOLDER, done)
     return 0

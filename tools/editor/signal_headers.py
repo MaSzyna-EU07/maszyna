@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Writes //$e descriptions into the signal templates of the scenery directory, so the editor can place them.
 
-usage: signal_headers.py <data root> [--write]
-without --write it only reports what it would write
+usage: signal_headers.py <data root> [--write] [--sidecar]
+without --write it only reports what it would write; --sidecar writes them beside the data, in editor/templates, the
+templates left as they are
 """
 
 import os
 import re
 import sys
 
-from editor_headers import body_lines, decode, load, write
+from editor_headers import body_lines, decode, load, sidecar, write
 
 FAMILIES = [
     (re.compile(r'^ss[dow]?\d'), 'main'),
@@ -200,6 +201,8 @@ def main():
 
     if writing:
         write(sys.argv[1], 'scenery', 'signals', done)
+    if '--sidecar' in sys.argv:
+        sidecar(sys.argv[1], 'scenery', done)
     return 0
 
 
