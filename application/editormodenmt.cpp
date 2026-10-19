@@ -1030,13 +1030,18 @@ void editor_mode::nmt_lift_scenery(double const Offset)
 		item.yaw = standing.yaw;
 		moves.emplace_back(standing, item);
 	}
-	if (move_templates(moves) > 0 && m_history.size() >= 2)
-		m_history.back().joined = true;
-	// the models, a group as a whole
+	// the includes moved by the place in their parameters are made anew there: their models aren't moved on their own, nor are
+	// the models left behind by earlier changes, deleted a moment later: moved, they'd get into the scene again
+	std::set<scene::instance_handle> remade;
+	for (auto const &move : moves)
+		if (scene::Layers.tracked(move.first.instance) && scene::Layers.removable(move.first.instance))
+			remade.insert(move.first.instance);
+	// the models, a group as a whole, ahead of the includes, which retire theirs
 	std::set<int> groups;
 	for (auto *instance : simulation::Instances.sequence())
 	{
-		if (instance == nullptr)
+		if (instance == nullptr || remade.contains(instance->m_instance) ||
+		    std::any_of(m_retired.begin(), m_retired.end(), [&](std::pair<TAnimModel *, int> const &Retired) { return Retired.first == instance; }))
 			continue;
 		if (instance->group() > 1 && false == groups.insert(instance->group()).second)
 			continue;
@@ -1044,6 +1049,8 @@ void editor_mode::nmt_lift_scenery(double const Offset)
 		m_history.back().joined = true;
 		m_editor.translate(instance, instance->location() + shift, true);
 	}
+	if (move_templates(moves) > 0 && m_history.size() >= 2)
+		m_history.back().joined = true;
 	WriteLog(format("Editor: NMT - the scenery moved %+.2f m: %zu tracks, %zu includes, the models", Offset, lifted, moves.size()), logtype::generic);
 }
 

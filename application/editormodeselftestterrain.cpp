@@ -231,6 +231,29 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog("SELFTEST nmtwait: " + m_nmt_state.status + (m_nmt_state.error.empty() ? std::string{} : " (" + m_nmt_state.error + ")"));
 		return selftest_result::handled;
 	}
+	if (command == "danglers")
+	{
+		// models the cells hold which aren't in the scene any more, or are about to be destroyed
+		std::set<TAnimModel const *> const alive{simulation::Instances.sequence().begin(), simulation::Instances.sequence().end()};
+		std::size_t held{0}, gone{0}, retired{0};
+		for (auto const *section : simulation::Region->m_sections)
+		{
+			if (section == nullptr)
+				continue;
+			for (auto const &cell : section->m_cells)
+				for (auto const *sequence : {&cell.m_instancesopaque, &cell.m_instancetranslucent})
+					for (auto const *instance : *sequence)
+					{
+						++held;
+						if (false == alive.contains(instance))
+							++gone;
+						else if (std::any_of(m_retired.begin(), m_retired.end(), [&](std::pair<TAnimModel *, int> const &Retired) { return Retired.first == instance; }))
+							++retired;
+					}
+		}
+		WriteLog(format("SELFTEST danglers: %zu held, %zu gone, %zu retired, %zu waiting", held, gone, retired, m_retired.size()));
+		return selftest_result::handled;
+	}
 	if (command == "terrainmode")
 	{
 		m_terrain_open = true;
