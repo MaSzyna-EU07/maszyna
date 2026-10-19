@@ -1476,6 +1476,17 @@ class editor_mode : public application_mode, private editor_track::observer
 	editor_track::point_ref m_join_point;
 	mutable alignment::join_result m_join_last;
 	bool track_wheel(double const Offset);
+	// a touchpad sends fractions of a notch: a choice moves a step for each whole notch gathered, and only one in a gesture when
+	// Gesture; a pause, another key or the other way starts over
+	struct wheel_state
+	{
+		double rest{0.0};
+		double time{-10.0};
+		int keys{0};
+		bool spent{false};
+	};
+	wheel_state m_wheel;
+	int wheel_step(double const Offset, bool const Gesture);
 	std::string track_shaping(bool const Joined) const;
 	void render_layout_combo();
 	double design_speed(TTrack const *From, TTrack const *To) const;

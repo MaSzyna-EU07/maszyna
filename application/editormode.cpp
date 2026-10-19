@@ -5886,6 +5886,8 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
         return;
     if (ImGui::GetIO().WantCaptureMouse || Yoffset == 0.0)
         return;
+    // a fast swipe on a touchpad can come as one big step
+    auto const notches{std::clamp(Yoffset, -2.0, 2.0)};
     if (false == Global.EditorOrtho)
     {
         // in 3D the camera flies along the ray under the cursor, by a share of the distance to what it points at;
@@ -5894,20 +5896,26 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
         glm::dvec3 origin;
         glm::dvec3 direction;
         projection.ray(ImGui::GetIO().MousePos, origin, direction);
+        // with nothing under the cursor, the ground under the camera stands for it: the level 0 can lie far below the terrain
+        std::vector<char> found;
+        auto const below{ground_heights({Camera.Pos}, false, &found)};
+        auto const ground{found[0] != 0 ? below[0] : 0.0};
+        auto const height{std::max(2.0, std::abs(Camera.Pos.y - ground))};
         glm::dvec3 level;
-        auto const distance{std::min(
-            GfxRenderer->Mouse_Hit() ? glm::length(GfxRenderer->Mouse_Position()) : projection.on_level(ImGui::GetIO().MousePos, 0.0, level) ? glm::distance(level, origin) : std::max(20.0, std::abs(Camera.Pos.y) * 2.0),
-            20000.0)};
-        auto step{distance * (1.0 - std::pow(0.85, Yoffset))};
+        auto distance{std::min(GfxRenderer->Mouse_Hit() ? glm::length(GfxRenderer->Mouse_Position()) : projection.on_level(ImGui::GetIO().MousePos, ground, level) ? glm::distance(level, origin) : 2.0 * height, 20000.0)};
+        // backing away from a point on the horizon would throw the camera kilometres up
+        if (notches < 0.0)
+            distance = std::min(distance, std::max(100.0, 4.0 * height));
+        auto step{distance * (1.0 - std::pow(0.85, notches))};
         // no nearer than 2 m to the point, not through it
-        if (Yoffset > 0.0)
+        if (notches > 0.0)
             step = std::max(0.0, std::min(step, distance - 2.0));
         Camera.Pos += direction * step;
         Global.pCamera = Camera;
         return;
     }
     auto const before{Global.EditorOrthoExtent};
-    auto const after{std::clamp(before * static_cast<float>(std::pow(0.85, Yoffset)), 5.0f, 50000.0f)};
+    auto const after{std::clamp(before * static_cast<float>(std::pow(0.85, notches)), 5.0f, 50000.0f)};
     screen_projection const projection;
     glm::dvec3 origin;
     glm::dvec3 direction;

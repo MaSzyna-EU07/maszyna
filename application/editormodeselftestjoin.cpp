@@ -169,6 +169,12 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		lay_cancel();
 		return selftest_result::handled;
 	}
+	if (command == "laystate")
+	{
+		WriteLog(format("SELFTEST laystate: layout %d, join variant %d, R %.0f m, join R %.0f m, camera %.1f %.1f %.1f, extent %.1f", static_cast<int>(m_track_layout), m_join_variant, m_lay.radius, m_join_radius, Camera.Pos.x,
+		                Camera.Pos.y, Camera.Pos.z, static_cast<double>(Global.EditorOrthoExtent)));
+		return selftest_result::handled;
+	}
 	if (command == "layclicks")
 	{
 		int layout{0};

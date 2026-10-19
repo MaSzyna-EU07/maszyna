@@ -696,13 +696,37 @@ void editor_mode::render_layout_combo()
 	ImGui::TextDisabled("%s", STR_C("(Shift+wheel)"));
 }
 
+int editor_mode::wheel_step(double const Offset, bool const Gesture)
+{
+	auto const &io{ImGui::GetIO()};
+	auto const now{ImGui::GetTime()};
+	int const keys{(io.KeyCtrl ? 1 : 0) | (io.KeyShift ? 2 : 0) | (io.KeyAlt ? 4 : 0)};
+	auto &wheel{m_wheel};
+	if (now - wheel.time > 0.3 || keys != wheel.keys || (wheel.rest != 0.0 && (wheel.rest > 0.0) != (Offset > 0.0)))
+	{
+		wheel.rest = 0.0;
+		wheel.spent = false;
+	}
+	wheel.time = now;
+	wheel.keys = keys;
+	wheel.rest += Offset;
+	if ((Gesture && wheel.spent) || std::abs(wheel.rest) < 1.0 - 1e-6)
+		return 0;
+	int const step{wheel.rest > 0.0 ? 1 : -1};
+	wheel.rest -= step;
+	wheel.spent = true;
+	return step;
+}
+
 bool editor_mode::track_wheel(double const Offset)
 {
 	auto const &io{ImGui::GetIO()};
 	if (m_switch.placing && m_switch.connection >= 0 && Offset != 0.0 && (io.KeyCtrl || io.KeyShift || io.KeyAlt))
 	{
 		auto &tool{m_switch};
-		int const step{Offset > 0.0 ? 1 : -1};
+		int const step{wheel_step(Offset, false == io.KeyCtrl)};
+		if (step == 0)
+			return true;
 		if (io.KeyShift)
 			tool.connection = (tool.connection + step + connection::kind_count) % connection::kind_count;
 		else if (io.KeyCtrl)
@@ -723,7 +747,9 @@ bool editor_mode::track_wheel(double const Offset)
 	bool const laying{m_lay.active && false == m_lay.points.empty()};
 	if (false == m_extend.active && false == laying)
 		return false;
-	int const step{Offset > 0.0 ? 1 : -1};
+	int const step{wheel_step(Offset, false == io.KeyCtrl)};
+	if (step == 0)
+		return true;
 	editor_track::snap_target target;
 	bool const joined{m_extend.active ? extend_snap(target) : m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr};
 	static double const radii[]{100.0, 150.0, 190.0, 250.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0, 3000.0, 4000.0, 6000.0};
