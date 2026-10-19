@@ -232,6 +232,7 @@ struct join_result
 	double cant{0.0};
 	double transition{0.0};
 	double speed{0.0};
+	double kink{0.0};
 	int variants{0};
 	std::vector<std::string> warnings;
 	std::vector<std::string> radius_warnings;

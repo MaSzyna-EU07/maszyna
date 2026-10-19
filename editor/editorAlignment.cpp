@@ -969,10 +969,12 @@ std::optional<join_result> straight_join(join_frame const &Frame)
 {
 	auto const &a{Frame.request.start};
 	auto const &b{Frame.request.end};
-	if (std::abs(geometry::signed_angle(Frame.start_direction, Frame.chord)) > Frame.tolerance || std::abs(geometry::signed_angle(Frame.chord, Frame.end_direction)) > Frame.tolerance)
+	auto const kink{std::max(std::abs(geometry::signed_angle(Frame.start_direction, Frame.chord)), std::abs(geometry::signed_angle(Frame.chord, Frame.end_direction)))};
+	if (kink > Frame.tolerance)
 		return std::nullopt;
 	join_result straight;
 	straight.kind = join_kind::straight;
+	straight.kink = kink;
 	segment_data path;
 	path.points[segment_data::point::start] = a.position;
 	path.points[segment_data::point::end] = b.position;
@@ -992,10 +994,12 @@ std::optional<join_result> arc_join(join_frame const &Frame)
 	auto const angle{2.0 * std::atan2(std::abs(lateral), glm::dot(Frame.start_direction, Frame.chord))};
 	int const side{lateral > 0.0 ? 1 : -1};
 	auto const radius{Frame.distance * Frame.distance / (2.0 * std::abs(lateral))};
-	if (angle >= kPi - 1e-3 || std::abs(geometry::signed_angle(turned(Frame.start_direction, side * angle), Frame.end_direction)) > Frame.tolerance)
+	auto const kink{std::abs(geometry::signed_angle(turned(Frame.start_direction, side * angle), Frame.end_direction))};
+	if (angle >= kPi - 1e-3 || kink > Frame.tolerance)
 		return std::nullopt;
 	join_result arc;
 	arc.kind = join_kind::arc;
+	arc.kink = kink;
 	arc.pieces = geometry::arc_pieces(a.position, Frame.start_direction, Frame.rise / (radius * angle), radius, angle, side);
 	arc.pieces.back().points[segment_data::point::end] = b.position;
 	spread_rolls(arc.pieces, a.roll, b.roll);
@@ -1024,7 +1028,7 @@ design join_design(join_frame const &Frame, join_kind const Kind)
 		shape.vertices = {corner};
 	else
 	{
-		corner.offset = Frame.distance / 3.0;
+		corner.offset = Frame.distance / 4.0;
 		shape.vertices = {corner, corner};
 	}
 	return shape;
@@ -1103,9 +1107,11 @@ join_result join(join_request const &Request)
 	auto const enddirection{glm::normalize(b.direction)};
 	join_frame const frame{Request, startdirection, enddirection, chord, distance, glm::radians(Request.kink), std::abs(geometry::signed_angle(startdirection, enddirection)), b.position.y - a.position.y};
 	std::vector<join_result> candidates;
+	std::vector<join_result> kinked;
 	for (auto const &candidate : {straight_join(frame), arc_join(frame), curve_join(frame)})
 		if (candidate.has_value())
-			candidates.push_back(*candidate);
+			(candidate->kink > 0.1 * frame.tolerance ? kinked : candidates).push_back(*candidate);
+	candidates.insert(candidates.end(), kinked.begin(), kinked.end());
 	if (candidates.empty())
 		candidates.push_back(bezier_join(frame));
 	auto const count{static_cast<int>(candidates.size())};
@@ -1253,12 +1259,36 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	auto const chainage_from = [&](span const &Span) { return Span.generic ? Span.start : Result.elements[Span.element].chainage + Span.from; };
 	auto const chainage_to = [&](span const &Span) { return Span.generic ? Span.end : Result.elements[Span.element].chainage + Span.to; };
 	std::vector<span> spans;
+	std::optional<double> lead;
 	for (std::size_t i = 0; i < Result.elements.size(); ++i)
 	{
 		auto const &e{Result.elements[i]};
 		auto const count{element_pieces(e, Design.shape, Design.transition_pieces, Design.arc_piece_angle)};
+		if (count == 0)
+		{
+			if (e.length <= 0.0)
+				continue;
+			if (spans.empty())
+			{
+				lead = lead.value_or(e.chainage);
+				continue;
+			}
+			auto &previous{spans.back()};
+			previous.start = chainage_from(previous);
+			previous.end = e.chainage + e.length;
+			previous.generic = true;
+			continue;
+		}
 		for (std::size_t j = 0; j < count; ++j)
 			spans.push_back({i, e.length * j / count, e.length * (j + 1) / count});
+		if (lead.has_value())
+		{
+			auto &first{spans[spans.size() - count]};
+			first.end = chainage_to(first);
+			first.start = *lead;
+			first.generic = true;
+			lead.reset();
+		}
 	}
 	double const shortest{1.0};
 	for (std::size_t i = 0; i < spans.size() && spans.size() > 1;)
