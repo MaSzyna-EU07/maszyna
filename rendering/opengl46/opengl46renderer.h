@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "scene/scene.h"
 #include "world/MemCell.h"
+#include "world/TrackSleepers.h"
 #include "rendering/lightarray.h"
 #include "vr/vr_interface.h"
 #include "gl/ubo.h"
@@ -87,9 +88,15 @@ class opengl46_renderer : public gfx_renderer {
 	// provides direct access to vertex data of specfied chunk
 	gfx::userdata_array const &
 		UserData( gfx::geometry_handle const &Geometry ) const override;
+	int
+		Primitive( gfx::geometry_handle const &Geometry ) const override;
     // material methods
     material_handle
         Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
+    material_handle
+        Matte_Material( material_handle const Material ) override;
+    material_handle
+        Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) override;
     void
         Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
     IMaterial const *
@@ -463,6 +470,9 @@ class opengl46_renderer : public gfx_renderer {
 	// queues the sleepers of a track in the gpu culling of the pass (Global.gfx_gpucull_sleepers), with the gates of
 	// Render_Sleepers(), making their records first when they're missing or out of date
 	void Queue_Sleepers( TTrack *Track );
+	// renders the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of date.
+	// the parts of the model are drawn in instanced batches for the whole run of tracks, the runs of beams out of sight left out
+	void Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
 	// queues a model instance drawn on its own in the gpu culling of the pass (Global.gfx_gpucull_models), as a bucket of
 	// its own, making its record first when it's missing or out of date. Inrange: the cell of the instance lies within the
 	// range of the pass. returns true when the instance isn't drawn by the cpu in the pass: it's drawn from the result of the
@@ -909,6 +919,15 @@ class opengl46_renderer : public gfx_renderer {
 	// per-instance modelview from instance_ssbo[gl_BaseInstance + gl_InstanceID]. Reset to 0 on exit.
 	std::size_t m_current_instance_count { 0 };
 	std::uint32_t m_current_instance_base { 0 };
+	// camera-space transforms of the sleepers and timbers drawn by Render_Timbers, by the model and its part or its level of
+	// detail; kept from frame to frame to reuse their allocations
+	struct timber_bucket {
+		track_sleepers::beam_model const *model { nullptr };
+		int part { -1 }; // of a model put together from parts; -1: the whole model
+		float band { 0.f }; // the squared distance the level of detail of the whole model is seen from
+		std::vector<glm::mat4> instances;
+	};
+	std::vector<timber_bucket> m_timberbuckets;
 	// persistent scratch buffer for Render_Instanced(): holds the per-instance
 	// camera-space root modelview matrices for the batch currently being built.
 	// Kept as a member rather than a function-local so its heap allocation is
