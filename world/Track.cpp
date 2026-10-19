@@ -2528,9 +2528,9 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     // type
     Output << (
             eType == tt_Normal ? (
-                iCategoryFlag == 1 ? "normal" :
-                iCategoryFlag == 2 ? "road" :
-                iCategoryFlag == 4 ? "river" :
+                ( iCategoryFlag & 15 ) == 1 ? "normal" :
+                ( iCategoryFlag & 15 ) == 2 ? "road" :
+                ( iCategoryFlag & 15 ) == 4 ? "river" :
                 "none" ) :
             eType == tt_Switch ? "switch" :
             eType == tt_Cross ? "cross" :
