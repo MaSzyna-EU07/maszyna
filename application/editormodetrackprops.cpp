@@ -59,7 +59,7 @@ bool rail(TTrack const &Track)
 
 std::string name_of(TTrack const &Track)
 {
-	return Track.name().empty() ? std::string{"(noname)"} : Track.name();
+	return Track.name().empty() ? std::string{STR_C("(no name)")} : Track.name();
 }
 
 char const *type_of(TTrack const &Track)
@@ -71,7 +71,7 @@ char const *type_of(TTrack const &Track)
 	case tt_Cross: return "cross";
 	case tt_Table: return "turntable";
 	case tt_Tributary: return "tributary";
-	default: return "unknown";
+	default: return "unknown type";
 	}
 }
 
@@ -237,6 +237,7 @@ struct track_property
 	int group{group::speed};
 	bool rebuild{false}; // the geometry of the track is made again after a change
 	bool late{false};    // pasted after the others, it depends on them
+	bool more{false};
 	int texture{-1};     // which list of the textures on the tracks: 0 rails, 1 trackbed
 	char const *label{""};
 	char const *tooltip{""};
@@ -322,6 +323,7 @@ std::vector<track_property> make_properties()
 	{
 		auto &property{add(list, "overhead", field::choice, section::traffic, group::overhead_line, "Overhead line", "State of the overhead line over the track: the trains coast through a section with no current,\nor lower the pantographs and keep to the speed limit given")};
 		property.applies = any;
+		property.more = true;
 		property.choices = {"Normal", "No current, coasting", "Pantographs lowered, speed limit"};
 		property.get = [](TTrack const &Track) { return std::string{Track.fOverhead < 0.f ? "0" : Track.fOverhead == 0.f ? "1" : "2"}; };
 		property.set = [](TTrack &Track, std::string const &Text) {
@@ -338,6 +340,7 @@ std::vector<track_property> make_properties()
 	}
 	{
 		auto &property{add(list, "overheadspeed", field::number, section::traffic, group::overhead_line, "Speed with the pantographs lowered (km/h)", "Speed limit of the trains with the pantographs lowered")};
+		property.more = true;
 		property.applies = [](TTrack const &Track) { return Track.fOverhead > 0.f; };
 		property.get = [](TTrack const &Track) { return decimal(Track.fOverhead, 0); };
 		property.set = [](TTrack &Track, std::string const &Text) {
@@ -354,6 +357,7 @@ std::vector<track_property> make_properties()
 	{
 		auto &property{add(list, "circuits", field::text, section::traffic, group::circuits, "Track circuits", "Names of the track circuits (isolated) the track belongs to, separated by spaces.\nA name which doesn't exist yet makes a new circuit. Tracks with vehicles on them keep theirs")};
 		property.applies = any;
+		property.more = true;
 		property.empty = "no circuits";
 		property.get = [](TTrack const &Track) {
 			std::string text;
@@ -391,6 +395,30 @@ std::vector<track_property> make_properties()
 		};
 	}
 	{
+		// the profiles of the rails the game has (models/tory/railprofile_*), the first: none, the default shape
+		static char const *const profiles[] = {"", "s60", "uic60", "s49", "s42", "s39", "s30pn", "s30din", "s24", "s20", "s18", "s14", "s10", "r-65", "ri60n", "lk1"};
+		auto &property{add(list, "railprofile", field::choice, section::look, group::rails, "Rail profile",
+		                   "Shape of the rails, the railprofile of the track. It also picks the switch templates of the rail: S60 60E1, S49 49E1.\nNo profile: the default shape, and the templates of all the rails are offered")};
+		property.rebuild = true;
+		property.more = true;
+		property.applies = [](TTrack const &Track) { return Track.m_visible && (Track.iCategoryFlag & 15) == 1; };
+		property.choices = {"No profile", "S60 (60E1)", "UIC60", "S49 (49E1)", "S42", "S39", "S30 PN", "S30 DIN", "S24", "S20", "S18", "S14", "S10", "R65", "Ri60N", "LK1"};
+		property.get = [](TTrack const &Track) {
+			auto const at{std::find_if(std::begin(profiles), std::end(profiles), [&](char const *Name) { return Track.m_profile1.first == Name; })};
+			return at != std::end(profiles) ? std::to_string(at - std::begin(profiles)) : Track.m_profile1.first;
+		};
+		property.set = [](TTrack &Track, std::string const &Text) {
+			double index;
+			if (false == parse_number(Text, index) || index < 0.0 || index >= static_cast<double>(std::size(profiles)))
+				return false;
+			std::string const name{profiles[static_cast<int>(index)]};
+			if (name == Track.m_profile1.first)
+				return false;
+			Track.rail_profile(name);
+			return true;
+		};
+	}
+	{
 		auto &property{add(list, "trackbed", field::texture, section::look, group::trackbed, "Trackbed", "Texture of the trackbed (ballast) under the rails.\nA material dragged from the texture browser can be dropped here")};
 		property.rebuild = true;
 		property.texture = 1;
@@ -409,7 +437,7 @@ std::vector<track_property> make_properties()
 		};
 	}
 	{
-		auto &property{add(list, "frogs", field::check, section::look, group::frogs, "Frog and check rails made from the rails", "Cuts the rails of the switch at its frog and lays wing rails and check rails, for rail profiles S60, UIC60 and S39.\nOff for a switch whose include has its own model of them")};
+		auto &property{add(list, "frogs", field::check, section::look, group::frogs, "Frog and check rails made from the rails", "Cuts the rails of the switch at its frog and lays wing rails and check rails.\nOff for a switch whose include has its own model of them")};
 		property.rebuild = true;
 		property.applies = [](TTrack const &Track) { return track_features::crossings && Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
 		property.get = [](TTrack const &Track) { return std::string{Track.SwitchExtension->m_frogs ? "1" : "0"}; };
@@ -1067,10 +1095,12 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		ImGui::AlignTextToFramePadding();
 		auto const partial{cache.applies[Index] < Tracks.size()};
 		auto const mixed{cache.values[Index].size() > 1};
+		ImGui::PushTextWrapPos(0.0f);
 		if (mixed)
 			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.45f, 1.0f), "%s", STR_C(property.label));
 		else
 			ImGui::TextUnformatted(STR_C(property.label));
+		ImGui::PopTextWrapPos();
 		if (partial)
 		{
 			ImGui::SameLine(0.0f, 4.0f);
@@ -1181,19 +1211,22 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			track_property_apply(static_cast<int>(Index), Tracks, dropped);
 	};
 
-	auto const rows = [&](int const Part) {
-		bool any{false};
+	auto const any_in = [&](int const Part, bool const More) {
 		for (std::size_t i = 0; i < list.size(); ++i)
-			any |= list[i].part == Part && cache.applies[i] > 0;
-		if (false == any)
+			if (list[i].part == Part && list[i].more == More && cache.applies[i] > 0)
+				return true;
+		return false;
+	};
+	auto const rows = [&](int const Part, bool const More) {
+		if (false == any_in(Part, More))
 			return;
-		if (false == ImGui::BeginTable(format("##trackprops%d", Part).c_str(), 2, ImGuiTableFlags_SizingStretchProp))
+		if (false == ImGui::BeginTable(format("##trackprops%d%d", Part, More ? 1 : 0).c_str(), 2, ImGuiTableFlags_SizingStretchProp))
 			return;
 		ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 0.45f);
 		ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.55f);
 		for (std::size_t i = 0; i < list.size(); ++i)
 		{
-			if (list[i].part != Part || cache.applies[i] == 0)
+			if (list[i].part != Part || list[i].more != More || cache.applies[i] == 0)
 				continue;
 			ImGui::PushID(list[i].key);
 			row_label(i);
@@ -1208,31 +1241,40 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		}
 		ImGui::EndTable();
 	};
-	auto const any_in = [&](int const Part) {
-		for (std::size_t i = 0; i < list.size(); ++i)
-			if (list[i].part == Part && cache.applies[i] > 0)
-				return true;
-		return false;
+	auto const more = [&](char const *Id, int const Part) {
+		if (false == any_in(Part, true))
+			return;
+		ImGui::PushID(Id);
+		if (ImGui::TreeNode(STR_C("More settings")))
+		{
+			rows(Part, true);
+			ImGui::TreePop();
+		}
+		ImGui::PopID();
 	};
 
 	if (ImGui::CollapsingHeader(STR_C("Traffic"), ImGuiTreeNodeFlags_DefaultOpen))
-		rows(section::traffic);
-	if ((any_in(section::look) || any_in(section::look_bed) || any_in(section::look_sleepers)) && ImGui::CollapsingHeader(STR_C("Look"), ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		rows(section::look);
-		if (any_in(section::look_bed) && ImGui::TreeNode(STR_C("Shape of the trackbed")))
+		rows(section::traffic, false);
+		more("traffic", section::traffic);
+	}
+	if ((any_in(section::look, false) || any_in(section::look, true) || any_in(section::look_bed, false) || any_in(section::look_sleepers, false)) && ImGui::CollapsingHeader(STR_C("Look"), ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		rows(section::look, false);
+		more("look", section::look);
+		if (any_in(section::look_bed, false) && ImGui::TreeNode(STR_C("Shape of the trackbed")))
 		{
-			rows(section::look_bed);
+			rows(section::look_bed, false);
 			ImGui::TreePop();
 		}
-		if (any_in(section::look_sleepers) && ImGui::TreeNode(STR_C("Sleeper models")))
+		if (any_in(section::look_sleepers, false) && ImGui::TreeNode(STR_C("Sleeper models")))
 		{
-			rows(section::look_sleepers);
+			rows(section::look_sleepers, false);
 			ImGui::TreePop();
 		}
 	}
 	if (ImGui::CollapsingHeader(STR_C("Ride and sound")))
-		rows(section::ride);
+		rows(section::ride, false);
 }
 
 void editor_mode::copy_track_style(TTrack const &Track)
@@ -1288,7 +1330,8 @@ void editor_mode::render_track_style(std::vector<TTrack *> const &Tracks)
 {
 	auto &style{m_track_style};
 	auto const single{Tracks.size() == 1};
-	ImGui::SeparatorText(STR_C("Copying properties"));
+	if (false == ImGui::CollapsingHeader(format("%s###trackstyle%d", STR_C("Copying properties"), single ? 1 : 2).c_str(), single ? 0 : ImGuiTreeNodeFlags_DefaultOpen))
+		return;
 	auto const width{button_width(3)};
 	ImGui::BeginDisabled(false == single);
 	if (ImGui::Button(STR_C("Copy"), ImVec2(width, 0.0f)))
@@ -1389,6 +1432,7 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 		switches += track->eType == tt_Switch ? 1 : 0;
 	}
 	ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), STR_P("%d track selected, %.1f m", "%d tracks selected, %.1f m", static_cast<long long>(Tracks.size())), static_cast<int>(Tracks.size()), length);
+	item_tooltip("What is set below goes to all of them, in one step of the undo");
 	ImGui::SameLine();
 	if (auto const room{ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(STR_C("Deselect")).x - ImGui::GetStyle().FramePadding.x * 2.0f}; room > 0.0f)
 		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + room);
@@ -1400,7 +1444,7 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 	item_tooltip("Clears the selection (Esc)");
 	if (switches > 0)
 		ImGui::TextDisabled(STR_P("among them %d switch", "among them %d switches", static_cast<long long>(switches)), switches);
-	ImGui::TextDisabled("%s", STR_C("What is set below goes to all of them, in one step of the undo"));
+	ImGui::TextDisabled("%s", STR_C("What is set below goes to all of them"));
 
 	// the list: hovering a row shows the track in the view, a click flies to it, a double click keeps it alone
 	if (ImGui::TreeNode(STR_C("List of the selected tracks")))
@@ -1449,7 +1493,8 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 
 void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
 {
-	ImGui::SeparatorText(format("%s  (?)", STR_C("Selection")).c_str());
+	auto const single{Tracks.size() == 1};
+	auto const open{ImGui::CollapsingHeader(format("%s  (?)###trackselect%d", STR_C("Selection"), single ? 1 : 2).c_str(), single ? 0 : ImGuiTreeNodeFlags_DefaultOpen)};
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Shift+click: add or take out a track\n"
 		                              "Ctrl+click: the same\n"
@@ -1457,6 +1502,8 @@ void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
 		                              "Ctrl+Shift+click: the whole run of joined tracks\n"
 		                              "Esc: clear the selection, Del: delete the selected tracks\n"
 		                              "Ctrl+Shift+C / Ctrl+Shift+V: copy and paste the properties"));
+	if (false == open)
+		return;
 	auto const width{button_width(2)};
 	if (ImGui::Button(STR_C("+ Joined"), ImVec2(width, 0.0f)))
 	{

@@ -20,6 +20,10 @@ http://mozilla.org/MPL/2.0/.
 namespace geometry
 {
 
+// m, the longest path of a track the editor lays or leaves after a change: longer ones are cut into equal pieces
+double constexpr longest_path{400.0};
+
+
 // points of the paths closer than this are taken for the same point
 double constexpr same_point{0.05};
 

@@ -634,7 +634,7 @@ void editor_ui::render_()
 			}
 			if (m_node != nullptr)
 			{
-				auto const name{m_node->name().empty() ? std::string{"(none)"} : m_node->name()};
+				auto const name{m_node->name().empty() ? std::string{STR_C("(no name)")} : m_node->name()};
 				auto const label{std::string{STR_C("Selected:")} + " " + name};
 				ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - ImGui::CalcTextSize(label.c_str()).x - ImGui::GetStyle().ItemSpacing.x * 2.0f));
 				ImGui::TextUnformatted(label.c_str());
@@ -684,7 +684,7 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 		{
 			m_nodebankpanel.set_combo(STR_C("Set##insert"), m_insertset, nullptr);
 			auto const count{m_nodebankpanel.set_entries(m_insertset).size()};
-			ImGui::TextDisabled(STR_C("%zu templates in set%s"), count, count == 0 ? ", the node bank selection is used" : "");
+			ImGui::TextDisabled(STR_C("%zu templates in set%s"), count, count == 0 ? STR_C(", the node bank selection is used") : "");
 		}
 		else
 		{
@@ -745,7 +745,7 @@ void editor_ui::render_tool_options()
 			break;
 		}
 		if (active == workspace::roads)
-			name = "Roads";
+			name = STR_C("Roads");
 		else if (active == workspace::terrain)
 			name = STR_C("Terrain");
 		ImGui::SeparatorText(name);
@@ -849,7 +849,7 @@ void editor_ui::scene_row(std::size_t const Entry)
 		ImGui::TextDisabled("%s", entry.name.c_str());
 		return;
 	}
-	auto const label{(node->name().empty() ? std::string{"(none)"} : node->name()) + "##" + entry.uuid};
+	auto const label{(node->name().empty() ? std::string{STR_C("(no name)")} : node->name()) + "##" + entry.uuid};
 	if (ImGui::Selectable(label.c_str(), node == m_node, ImGuiSelectableFlags_AllowDoubleClick) && m_sceneselect)
 		m_sceneselect(node, ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left));
 	if (ImGui::IsItemHovered())

@@ -151,9 +151,7 @@ void editor_mode::finish_switch_placement()
 			insert_connection();
 			return;
 		}
-		tool.placing = false;
-		tool.status = STR_C("A connection is laid between straights");
-		ui()->set_status(tool.status, true);
+		insert_curved_connection();
 		return;
 	}
 	switch_link plan;
@@ -250,6 +248,11 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 
 void editor_mode::advance_switch_name()
 {
+	if (false == m_switch.keep_names.empty())
+	{
+		m_switch.keep_names.erase(m_switch.keep_names.begin());
+		return;
+	}
 	std::string name{m_switch.name};
 	auto digits{name.size()};
 	while (digits > 0 && std::isdigit(static_cast<unsigned char>(name[digits - 1])))
@@ -263,6 +266,8 @@ void editor_mode::advance_switch_name()
 
 std::string editor_mode::switch_name_for_new() const
 {
+	if (false == m_switch.keep_names.empty() && simulation::Paths.find(m_switch.keep_names.front()) == nullptr)
+		return m_switch.keep_names.front();
 	if (m_switch.name[0] != '\0')
 		return m_switch.name;
 	for (int i = 1;; ++i)
@@ -277,10 +282,19 @@ void editor_mode::join_last_steps()
 {
 	if (m_history.size() < 2)
 		return;
-	auto last{std::move(m_history.back())};
+	auto &last{m_history.back()};
+	// a step of more than the includes placed, as the paths laid after others were taken out, is undone together with the one before
+	auto const more{false == last.tracks.empty() || false == last.created.empty() || false == last.removed.empty() || false == last.directives.empty() || false == last.sweeps.empty() || false == last.sweeps_toggled.empty() ||
+	                false == last.infra.empty() || last.alignments.has_value() || last.switch_records.has_value() || last.profiles || false == last.copies.empty() || last.terrain != nullptr};
+	if (more)
+	{
+		last.joined = true;
+		return;
+	}
+	auto instances{std::move(last.instances)};
 	m_history.pop_back();
 	auto &previous{m_history.back()};
-	previous.instances.insert(previous.instances.end(), last.instances.begin(), last.instances.end());
+	previous.instances.insert(previous.instances.end(), instances.begin(), instances.end());
 }
 
 bool editor_mode::cut_straight(editor_track::straight const &Line, double const From, double const To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack **Style)
@@ -427,7 +441,7 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 	}
 	editor_track::commit({track});
 	record_switch(*track, Shape);
-	m_switch.status = STR_C("Switch ") + track->name() + STR_C(" inserted");
+	m_switch.status = format(STR_C("Switch %s inserted, Ctrl+Z takes it back"), track->name().c_str());
 	return {track};
 }
 
@@ -517,7 +531,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 
 std::string editor_mode::link_problem(editor_track::snap_target const &Target, editor_track::branch_link const &Link) const
 {
-	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{"(noname)"}};
+	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{STR_C("(no name)")}};
 	if (false == Link.valid)
 		return Link.shortfall > 0.0 ? format(STR_C("The branch can't lead into %s: the R %.0f m curve needs %.2f m more room"), name.c_str(), Link.radius, Link.shortfall) :
 		                              format(STR_C("The branch can't lead into %s"), name.c_str());
@@ -895,7 +909,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 			state.status = STR_C("Not enough straight track around the crossing");
 			return false;
 		}
-		state.status = STR_C("R reduced to ") + std::to_string(static_cast<int>(curve.radius)) + STR_C(" m, the straights end ") + std::to_string(static_cast<int>(available)) + STR_C(" m from the crossing");
+		state.status = format(STR_C("R reduced to %d m, the straights end %d m from the crossing"), static_cast<int>(curve.radius), static_cast<int>(available));
 	}
 
 	auto const heightfirst = [&](double const Along) { return Line.start.y + Line.grade * Along; };
@@ -926,7 +940,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 		}
 		for (auto *track : removed)
 		{
-			track->m_editorremoved = false;
+			editor_track::revive(*track);
 			editor_track::commit({track});
 		}
 		return false;
@@ -1031,7 +1045,7 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 			{
 				half = oldhalf;
 				radius = curve.radius * half / full;
-				state.status = STR_C("R limited to ") + std::to_string(static_cast<int>(radius)) + STR_C(" m, a neighbouring path isn't straight");
+				state.status = format(STR_C("R limited to %d m, a neighbouring track isn't straight"), static_cast<int>(radius));
 				break;
 			}
 			auto const line{editor_track::find_straight(*e->outer, m_straights.tolerance)};
@@ -1041,7 +1055,7 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 			{
 				half = std::min(half, std::max(reach, reachstart) - 0.5);
 				radius = curve.radius * half / full;
-				state.status = STR_C("R reduced to ") + std::to_string(static_cast<int>(radius)) + STR_C(" m to fit the straights");
+				state.status = format(STR_C("R reduced to %d m to fit the straights"), static_cast<int>(radius));
 			}
 		}
 	}
@@ -1309,7 +1323,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	auto const made{create_switch_set(shape, paths, *tool.frame_tracks.front(), switch_name_for_new())};
 	created.insert(created.end(), made.begin(), made.end());
 	if (made.size() == 1)
-		tool.status = STR_C("Switch ") + made.front()->name() + STR_C(" inserted into the curve");
+		tool.status = format(STR_C("Switch %s inserted into the curve, Ctrl+Z takes it back"), made.front()->name().c_str());
 	auto const placed{created};
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();

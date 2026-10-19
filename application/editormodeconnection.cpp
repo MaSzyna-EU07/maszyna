@@ -239,7 +239,7 @@ void editor_mode::insert_connection()
 		}
 		for (auto *track : removed)
 		{
-			track->m_editorremoved = false;
+			editor_track::revive(*track);
 			editor_track::commit({track});
 		}
 		if (auto before{switch_store::take_changes()})
@@ -333,9 +333,11 @@ void editor_mode::render_connection_options()
 	auto &tool{m_switch};
 	if (tool.connection < 0)
 		return;
-	ImGui::PushItemWidth(220.0f);
+	if (false == begin_fields("##connectionoptions"))
+		return;
 	auto const label = [&](int const Index) { return Index < 0 || Index >= static_cast<int>(tool.templates.size()) ? std::string{STR_C("The same as the first one")} : switch_template_label(tool.templates[Index]); };
-	if (ImGui::BeginCombo(STR_C("Other switches##connectionsecond"), label(tool.connection_second).c_str()))
+	field_row("Other switches##connectionsecond");
+	if (ImGui::BeginCombo("##connectionsecond", label(tool.connection_second).c_str()))
 	{
 		if (ImGui::Selectable(STR_C("The same as the first one"), tool.connection_second < 0))
 			tool.connection_second = -1;
@@ -345,24 +347,23 @@ void editor_mode::render_connection_options()
 		ImGui::EndCombo();
 	}
 	item_tooltip("Template of the switches on the other track and along a ladder; the first switch is the one chosen on the list above");
-	ImGui::InputDouble(STR_C("Aligning curve R, m##connectionradius"), &tool.connection_radius, 10.0, 100.0, "%.0f");
+	field_row("Aligning curve R, m##connectionradius");
+	ImGui::InputDouble("##connectionradius", &tool.connection_radius, 10.0, 100.0, "%.0f");
 	tool.connection_radius = std::clamp(tool.connection_radius, 0.0, 10000.0);
 	item_tooltip("Of the curve between switches of different angles or on tracks that aren't parallel, and at the end of a ladder; 0: the radius of the sharper switch");
 	if (tool.connection == static_cast<int>(connection::kind::double_crossover))
 	{
-		ImGui::InputDouble(STR_C("Gap between the switches, m##connectiongap"), &tool.connection_gap, 0.5, 1.0, "%.2f");
+		field_row("Gap between the switches, m##connectiongap");
+		ImGui::InputDouble("##connectiongap", &tool.connection_gap, 0.5, 1.0, "%.2f");
 		tool.connection_gap = std::clamp(tool.connection_gap, 0.0, 100.0);
 		item_tooltip("Straight between the starts of the two switches meeting on one track");
-		ImGui::Checkbox(STR_C("The switches meet on this track##connectiontogether"), &tool.connection_together);
-		item_tooltip("Otherwise the two crossovers meet on the other track; Alt+wheel while dragging switches it");
 	}
 	if (tool.connection == static_cast<int>(connection::kind::ladder))
 	{
-		ImGui::InputText(STR_C("Spacings, m##connectionspacings"), tool.connection_spacings, sizeof(tool.connection_spacings));
-		item_tooltip("Distances between the tracks of the fan from this track on, such as 4.75;4.75;5.0; used when the drag doesn't end on a parallel track, otherwise the parallel tracks up to that one make the fan");
-		ImGui::InputDouble(STR_C("New tracks, m##connectionstub"), &tool.connection_stub, 5.0, 25.0, "%.0f");
+		field_row("New tracks, m##connectionstub");
+		ImGui::InputDouble("##connectionstub", &tool.connection_stub, 5.0, 25.0, "%.0f");
 		tool.connection_stub = std::clamp(tool.connection_stub, 1.0, 1000.0);
 		item_tooltip("Length of the new tracks of the fan where there are none to lead onto");
 	}
-	ImGui::PopItemWidth();
+	ImGui::EndTable();
 }

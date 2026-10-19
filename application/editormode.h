@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorInfra.hpp"
 #include "editor/editorGauge.hpp"
 #include "editor/editorClips.hpp"
+#include "editor/editorIcons.hpp"
 #include "application/scriptedinput.h"
 #include "world/Sweep.h"
 
@@ -41,6 +42,7 @@ http://mozilla.org/MPL/2.0/.
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <limits>
 #include <set>
 #include <string>
 #include <vector>
@@ -186,6 +188,7 @@ class editor_mode : public application_mode, private editor_track::observer
 
 	std::vector<EditorSnapshot> m_history; // history of changes to nodes, used for undo functionality
 	std::vector<EditorSnapshot> g_redo;
+	int m_track_edits{0};
 	// methods
 	void update_camera(double const Deltatime);
 
@@ -256,7 +259,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void render_help_menu();
 	void render_shortcuts_window();
 	bool m_shortcuts_open{false};
-	enum class first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, count };
+	enum class first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, count };
 	void render_first_steps();
 	void first_step_done(first_step const Step);
 	bool m_first_steps_open{false};
@@ -325,7 +328,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	struct nmt_place
 	{
 		glm::dvec3 position{0.0}; // on the axis of the path
-		double formation{0.0}; // the height of the formation under it
+		double formation{0.0}; // the height of the formation under it, the foot of the ballast
+		double crown{0.0}; // the height of the top of the ballast under the rails: what the terrain model measures on a track
 		double half_width{3.0}; // from the axis to the foot of the ballast
 		TTrack *track{nullptr};
 		int path{0};
@@ -348,20 +352,55 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::size_t shaped{0};
 		std::string status;
 		std::string error;
+		// the tracks of a scenery built at any height put onto the terrain model: the whole scenery lifted to it, then the grade
+		// line of each line of tracks fitted to the model, the longest first, then the terrain made along them
+		enum class automatic
+		{
+			idle,
+			fetching, // the model under the tracks
+			fitting // the grade lines, a few each frame
+		};
+		automatic stage{automatic::idle};
+		std::vector<nmt_place> probes; // places of the tracks whose model is waited for
+		std::size_t tracks{0}; // rail tracks when the grade lines began, and the paths the grade lines split off since
+		std::size_t split{0};
+		std::vector<TTrack *> left; // tracks whose grade line is still to be fitted
+		std::vector<TTrack *> done; // tracks of the lines fitted already: the lines fitted later end on them and don't change them
+		// the rail tops of the lines fitted already, in squares of the plan: the tracks of a station lie in one plane, a line laid
+		// near them takes their height for its ground too, the more closely the nearer it is
+		std::map<std::pair<int, int>, std::vector<glm::dvec3>> laid;
+		std::size_t lines{0}; // grade lines fitted and applied
+		std::size_t refused{0}; // grade lines the checks didn't let apply
+		std::size_t departures{0}; // grade lines parting from the terrain model by much
+		double lifted{0.0}; // m the scenery went up or down
+		// the terrain made under the tracks as they are: the model drawn to them by the difference found at the places along them,
+		// fading out away from them into the offset of the whole scenery
+		bool under{false};
+		std::vector<glm::dvec3> anchors; // x, z of a place of the tracks, the formation there less the model
+		std::map<std::pair<int, int>, std::vector<std::size_t>> anchor_cells; // the anchors in squares of the plan
 		bool offered{false}; // the terrain was offered to the scenery begun without it
 		bool prompt{false}; // the offer is shown
 		double north{0.0}; // the place typed into the offer, PUWG 1992
 		double east{0.0};
+		int mode{0}; // 0: the tracks go onto the terrain, 1: the terrain is drawn to the tracks
+		bool moving{false}; // the place being typed again
 	};
 	editor_nmt m_nmt;
 	nmt_state m_nmt_state;
 	std::vector<nmt_place> nmt_track_places(double const Step) const;
 	void nmt_locate();
+	bool nmt_choice_card(int const Index, char const *Title, char const *Text, float const Width, float const TextHeight, bool const Chosen) const;
 	void nmt_fit();
 	void nmt_finish_fit();
+	// the terrain under the tracks, the tracks left as they are: the model drawn to each of them, its relief kept
+	void nmt_under_start();
+	void nmt_under_anchors();
+	// added to the height of the model at the place: the offset of the scenery, drawn to the tracks near them
+	double nmt_offset_at(double const X, double const Z) const;
 	std::vector<heightmap::chunk_key> nmt_keys_around() const;
 	std::vector<heightmap::chunk_key> nmt_keys_along_tracks() const;
-	void nmt_make(std::vector<heightmap::chunk_key> const &Keys);
+	// Rebuild: the chunks there already are made anew too, and the formation laid before is forgotten, as when the tracks moved
+	void nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool const Rebuild = false);
 	bool add_chunk_from_nmt(heightmap::chunk_key const &Key);
 	void nmt_shape_tracks();
 	void nmt_update();
@@ -369,7 +408,16 @@ class editor_mode : public application_mode, private editor_track::observer
 	// a scenery begun from nothing, with no tracks nor terrain, is asked as the first track is laid whether it wants the terrain
 	void nmt_offer();
 	void render_nmt_prompt();
+	// the place typed in the terrain window: the terrain model and the orthophoto take it
+	void nmt_place_scenery();
 	void nmt_accept_offer();
+	// the whole scenery: tracks, includes and models, moved up or down as one undo step
+	void nmt_lift_scenery(double const Offset);
+	std::size_t nmt_join_ends();
+	void nmt_auto_start();
+	void nmt_auto_step();
+	// the grade line of the line of tracks through the track fitted to the terrain model and applied; false if it couldn't be
+	bool nmt_fit_line(TTrack &Track);
 	// the tool of the terrain the left mouse button works
 	enum class terrain_tool
 	{
@@ -868,12 +916,35 @@ class editor_mode : public application_mode, private editor_track::observer
 		int vertex{-1};
 		int grip{-1};
 		bool single{true}; // one curve between its straights, instead of the whole line
+		bool relaying{false}; // the crossovers of the line were taken out, they go back once it's laid
+		// crossovers taken out with a line which didn't fit it laid again, tried again as the other lines are laid
+		struct crossover_out
+		{
+			int shape{-1};
+			glm::dvec3 press{0.0}, release{0.0};
+			std::string name;
+			std::vector<std::string> names; // of the switches at the press and at the release
+		};
+		std::vector<crossover_out> crossovers_out;
 		double origin{0.0}; // km of the start, m
 		int designed{0}; // vertices whose parameters came from the alignment kept in the scenery
 		int departed{-1}; // alignment kept in the scenery near the fragment, which its paths no longer follow
 		double departure{0.0};
+		// the band of the curvature in the panel: the element under the mouse, the point of it, and what's dragged in it
+		struct curvature_band
+		{
+			int hot{-1};
+			double at{-1.0};
+			int vertex{-1};
+			int part{0}; // 1 the radius, 2 the transition in, 3 the transition out
+			double value{0.0};
+			ImVec2 press{0.0f, 0.0f};
+			float metres{1.0f}; // pixels of a metre and of a unit of the curvature, kept as the drag goes
+			float curvature{1.0f};
+		} band;
 	};
 	void render_route_ui();
+	bool render_route_band();
 	bool render_route_parameters();
 	bool render_route_vertices();
 	bool render_route_vertex(int const Index);
@@ -906,7 +977,37 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true);
 	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr, TTrack **Culprit = nullptr);
 	int digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped);
-	void digitize_all();
+	// the lines kept, the paths left out
+	void digitize_all(int *Kept = nullptr, int *Failed = nullptr);
+	// what the digitization of the scenery did, or would do
+	struct digitize_report
+	{
+		int lines{0};
+		int lines_failed{0};
+		int switches{0};
+		int known{0}; // kept in the scenery already
+		int designed{0}; // of a template of the catalogue
+		int measured{0};
+		int slips{0};
+		int unnamed{0}; // no record finds them
+		int odd{0};
+		int recorded{0};
+		int crossovers{0};
+		int crossovers_known{0};
+		int crossovers_recorded{0};
+		int crossovers_odd{0};
+		int found{0};
+		int bound{0};
+		std::map<std::string, int> types; // of the catalogue
+		std::map<std::string, int> shapes; // measured
+		std::vector<std::string> notes;
+	};
+	// the switches without a type kept get the one of the catalogue they are of, or the size measured from their shape
+	void digitize_switches(digitize_report &Report, bool const Write);
+	// two switches facing each other from two tracks, their diverging tracks joined by a plain one, are kept as a crossover
+	void digitize_crossovers(digitize_report &Report, bool const Write);
+	// the lines, the switches, the crossovers and the objects along the tracks at one go; without Write only counts them
+	std::string digitize_scenery(bool const Write);
 	void render_route_stored();
 	void route_update()
 	{
@@ -1028,6 +1129,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	};
 	struct switch_tool
 	{
+		std::vector<std::string> keep_names; // the names the switches laid next take, before the ones of the tool
 		bool curved{false};
 		std::vector<curve_sample> frame;
 		std::vector<TTrack *> frame_tracks;
@@ -1261,6 +1363,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
 	alignment::result lay_shape(std::vector<glm::dvec3> const &Points, glm::dvec2 const &Startdirection, glm::dvec2 const &Enddirection, alignment::design &Design) const;
 	void render_switch_ui();
+	void render_rail_profile_hint(TTrack &Track);
 	bool start_switch_placement();
 	void finish_switch_placement();
 	std::vector<segment_data> switch_preview() const;
@@ -1271,6 +1374,30 @@ class editor_mode : public application_mode, private editor_track::observer
 	static double nearest_station(std::vector<curve_sample> const &Frame, glm::dvec3 const &Point);
 	static std::vector<segment_data> curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side);
 	void insert_curved_switch(int const Direction, int const Side);
+	// a crossover between two tracks running side by side along a curve (editormodeconnectioncurve.cpp)
+	struct curve_mapping;
+	static bool curve_of(TTrack &Track, editor_track::straight_tolerance const &Tolerance, double const Gauge, std::vector<curve_sample> &Frame, std::vector<TTrack *> &Tracks);
+	static void cut_curve(std::vector<TTrack *> &Candidates, std::vector<curve_sample> const &Frame, glm::dvec3 const &First, glm::dvec3 const &Second, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed);
+	void insert_curved_connection();
+	struct curved_crossover
+	{
+		switch_store::record record;
+		TTrack *first{nullptr};
+		TTrack *second{nullptr};
+		TTrack *insert{nullptr};
+	};
+	// the single crossover the switch is a part of, along a curve or straights
+	std::optional<curved_crossover> crossover_of(TTrack const &Switch) const;
+	bool take_out_crossover(curved_crossover const &Crossover, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack *&First, TTrack *&Second);
+	bool slide_curved_connection(TTrack &Switch, double const Distance);
+	// the template a crossover was laid of, -1 if it's not among the templates
+	int crossover_template(switch_store::record const &Record);
+	// a crossover laid again from the press on one track to the release by the other, as by the mouse. false if it doesn't fit
+	// Names: of the switch at the press and of the one at the release, kept when a crossover is laid again
+	bool lay_crossover(int const Shape, glm::dvec3 const &Press, glm::dvec3 const &Release, double const Reach = 3.0, std::vector<std::string> const &Names = {});
+	// after the grade line of the open route went on its paths: the line on the other side of each crossover of the route
+	// takes the same change of the heights where it runs beside, and its design with it. returns: how many lines followed
+	std::size_t follow_crossovers(std::vector<editor_track::route_sample> const &Before);
 	bool place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, std::string const &Name = {});
 	struct crossover_plan
 	{
@@ -1341,6 +1468,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		char const *key;
 		track_tab tab;
 		char const *tooltip;
+		editor_icons::icon picture;
+		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
 	static std::array<track_mode, 11> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
@@ -1404,11 +1533,14 @@ class editor_mode : public application_mode, private editor_track::observer
 	{
 		char const *key;
 		std::string action;
+		char const *raw{nullptr}; // the key before it's translated, its gesture drawn from it
 	};
 	std::vector<key_hint> track_key_hints(bool const All) const;
 	void render_track_guide();
 	std::string track_readout() const;
 	void draw_track_hints();
+	// a scenery with no tracks yet: in the middle of the view, how the first one is laid
+	void draw_empty_scenery_hint();
 	// path under the cursor, outlined before a click so it's known which one the click takes
 	struct track_hover
 	{
@@ -1842,6 +1974,8 @@ class editor_mode : public application_mode, private editor_track::observer
 			bool turned{false};
 		};
 		std::vector<consist_vehicle> consist;
+		int picked{-1}; // vehicle of the train whose buttons are shown
+		std::set<ui::skin_set const *> minis; // skins whose side view was asked for
 		int facing{1};
 		bool write{true};
 		char timetable[64]{"none"};
@@ -2112,6 +2246,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	selftest_result selftest_signal(std::string const &command, std::istringstream &words);
 	selftest_result selftest_terrain(std::string const &command, std::istringstream &words);
 	selftest_result selftest_props(std::string const &command, std::istringstream &words);
+	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
 	// a value typed during a gesture, taken instead of the one the cursor gives
@@ -2132,10 +2267,17 @@ class editor_mode : public application_mode, private editor_track::observer
 		TTrack *to{nullptr};
 		TTrack *picked_from{nullptr};
 		TTrack *picked_to{nullptr};
-		double run_length{3000.0};
+		double run_length{std::numeric_limits<double>::infinity()}; // the whole line through the track clicked
+		std::vector<TTrack *> followed; // the selection the route was last taken from
 		editor_track::route route;
 		std::vector<editor_track::route_sample> samples;
+		std::vector<TTrack *> created; // the paths the last apply split off the route
 		std::vector<double> terrain; // NaN where there's no terrain
+		// what the joined ends take their height and grade from, when it's a switch: shown on the plot
+		std::string start_inherits, end_inherits;
+		// depth of the formation under the grade line, the rail top, of the track of each sample: the formation, not the rails,
+		// lies on the ground
+		std::vector<double> beds;
 		profile::line line;
 		profile::context context;
 		std::vector<profile::issue> issues;
@@ -2166,6 +2308,10 @@ class editor_mode : public application_mode, private editor_track::observer
 		bool show_plan{true};
 		int selected{-1};
 		int dragging{-1};
+		// where the point was grabbed: the mouse there, the point against the mouse; the point moves once the mouse does
+		ImVec2 drag_press{0.0f, 0.0f};
+		glm::dvec2 drag_grab{0.0};
+		bool drag_moved{false};
 		int curve_grip{-1};
 		bool panning{false};
 		bool changed{false};
@@ -2175,6 +2321,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		int hover_grip{-1};
 		bool hover_line{false};
 		int shown{-2}; // point in the side panel
+		bool show_remarks{false};
+		float strip_top{-1.0f}; // the top of the strip over the 3d view, -1 while it isn't shown
+		int edits{-1}; // of the tracks, when the route was last read
 		std::string status;
 		std::string error;
 	};
@@ -2187,6 +2336,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		glm::dvec3 start{0.0}, end{0.0}, middle{0.0}; // of the route, world space
 		double origin{0.0};
 		profile::line line;
+		double departure{-1.0}; // of the track from the design when it was kept; -1 as kept by an older editor
 	};
 	std::vector<stored_profile> m_profiles;
 	bool m_profiles_loaded{false};
@@ -2194,12 +2344,17 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_library_mark(std::vector<scene::layer_handle> Layers);
 	int profile_find(bool &Reversed) const;
 	bool profile_restore();
+	bool profile_restore_parts();
+	// the route a kept design was laid over, as it runs now; none when its paths moved or are gone
+	std::optional<editor_track::route> profile_stored_route(stored_profile const &Entry, TTrack **From = nullptr, TTrack **To = nullptr) const;
 	void profile_store();
 	void profile_forget();
 	void profile_open_stored(std::size_t const Index);
 	void profile_edited();
 	void render_profile_body();
 	void render_profile_strip();
+	void render_profile_header();
+	void render_profile_empty();
 	void render_profile_toolbar();
 	void render_profile_points();
 	void render_profile_source();
@@ -2208,10 +2363,15 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_open(TTrack *From, TTrack *To);
 	void profile_open_run(TTrack &Track);
 	void profile_take(editor_track::route Route, TTrack *From, TTrack *To);
+	void profile_open_selection(std::vector<TTrack *> const &Tracks);
+	void profile_follow_selection();
 	void profile_resample();
 	void profile_recognize();
 	void profile_fit_ground();
+	// depth of the foot of the ballast under the rail top, and its distance from the axis
 	static std::pair<double, double> profile_ballast(TTrack const &Track);
+	// false for a track with no trackbed of its own, as the switches of the older sceneries whose bed is an include
+	static bool profile_own_bed(TTrack const &Track);
 	void profile_shape_ground();
 	std::pair<int, int> profile_generate_ground(std::vector<std::pair<double, double>> const &Beds, double const Reach);
 	void profile_restore_ground();
@@ -2220,6 +2380,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_apply();
 	void profile_fit_view();
 	void profile_after_undo();
+	void profile_follow_edits();
 	struct profile_view;
 	void render_profile_canvas(float const Height);
 	void profile_fit_exaggeration(profile_view const &View);

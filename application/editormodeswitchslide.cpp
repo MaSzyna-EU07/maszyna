@@ -45,7 +45,7 @@ struct switch_end_move
 
 std::string track_label(TTrack const &Track)
 {
-	return Track.name().empty() ? std::string{"(noname)"} : Track.name();
+	return Track.name().empty() ? std::string{STR_C("(no name)")} : Track.name();
 }
 
 std::optional<std::vector<switch_end_move>> switch_end_moves(TTrack const &Track, segment_data const &Main, bool const Online, std::pair<double, double> const &Room, double const Offset, std::string &Status)
@@ -709,6 +709,9 @@ bool editor_mode::slide_switch(TTrack &Track, double const Distance)
 {
 	if (std::abs(Distance) < 0.005)
 		return false;
+	// a switch of a crossover along a curve takes the crossover with it
+	if (crossover_of(Track).has_value())
+		return slide_curved_connection(Track, Distance);
 	auto const set{double_of(Track)};
 	auto &first{set.has_value() ? *set->first : Track};
 	if (first.m_paths.size() < 2)

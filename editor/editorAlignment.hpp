@@ -155,6 +155,7 @@ struct result
 	double gauge{1500.0};
 	std::vector<std::string> errors;
 	std::vector<std::string> warnings;
+	std::vector<std::string> radius_warnings;
 	std::vector<glm::dvec2> vertices;
 	std::vector<double> vertex_chainages;
 	std::vector<double> vertex_elevations;
@@ -233,6 +234,7 @@ struct join_result
 	double speed{0.0};
 	int variants{0};
 	std::vector<std::string> warnings;
+	std::vector<std::string> radius_warnings;
 };
 
 join_result join(join_request const &Request);

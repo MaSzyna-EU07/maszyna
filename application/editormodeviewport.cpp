@@ -13,6 +13,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
+#include "application/editormodeshared.h"
+#include "editor/editorFormat.hpp"
 #include "editor/editorIcons.hpp"
 #include "editor/editorSettings.hpp"
 #include "rendering/renderer.h"
@@ -36,6 +38,7 @@ struct editor_tool_button
 	std::function<void()> action;
 	bool group{false}; // a gap before it, it starts another group
 	bool enabled{true};
+	ImU32 accent{0}; // the colour of the family of the tool, 0 if it has none
 };
 
 namespace
@@ -48,6 +51,8 @@ float scale()
 {
 	return std::max(1.0f, Global.ui_scale);
 }
+
+bool terrain_tools_more{false};
 
 // side of a button, the icon with some room around it
 float button_side()
@@ -156,21 +161,22 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	case work_area::tracks:
 	{
 		auto const vehicle{m_track_tab == track_tab::lineside && m_vehicle.open};
-		auto const add = [&](track_tab const Tab, icon const Picture, bool const Group) {
+		auto const add = [&](track_tab const Tab, bool const Group) {
 			auto const &modes{track_modes()};
 			auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == Tab; })};
 			if (found == modes.end())
 				return;
 			// a tool chosen again gives way to the select one
 			auto const chosen{(m_track_tab == Tab || (Tab == track_tab::straights && track_plan_tab())) && false == (Tab == track_tab::lineside && vehicle)};
-			Buttons.push_back({Picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
+			Buttons.push_back({found->picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
+			Buttons.back().accent = family_colour(found->family);
 		};
 		// the tools of laying track first, the others behind More, shown while one of them is in use
-		add(track_tab::path, icon::select, false);
-		add(track_tab::lay, icon::lay_track, false);
-		add(track_tab::straights, icon::curve, false);
-		add(track_tab::turnout, icon::turnout, false);
-		add(track_tab::parallel, icon::parallel, false);
+		add(track_tab::path, false);
+		add(track_tab::lay, false);
+		add(track_tab::straights, false);
+		add(track_tab::turnout, false);
+		add(track_tab::parallel, false);
 		auto const advanced{m_track_tab == track_tab::turntable || m_track_tab == track_tab::signals || m_track_tab == track_tab::lineside || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed ||
 		                    m_track_tab == track_tab::joints || m_gauge.open};
 		auto const more{EditorSettings.track_tools_more()};
@@ -180,18 +186,20 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   }, true});
 		if (false == more && false == advanced)
 			break;
-		add(track_tab::turntable, icon::turntable, true);
-		add(track_tab::signals, icon::signal, false);
-		add(track_tab::lineside, icon::objects, false);
+		add(track_tab::turntable, true);
+		add(track_tab::signals, false);
+		add(track_tab::lineside, false);
 		Buttons.push_back({icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {
 			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
 			                   m_vehicle.expand = false == vehicle;
 		                   }});
-		add(track_tab::profile, icon::profile, true);
-		add(track_tab::speed, icon::speed, false);
-		add(track_tab::joints, icon::joints, false);
+		Buttons.back().accent = family_colour(1);
+		add(track_tab::profile, true);
+		add(track_tab::speed, false);
+		add(track_tab::joints, false);
 		Buttons.push_back({icon::gauge, STR_C("Structure gauge"), nullptr, STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"), m_gauge.open,
 		                   [this]() { m_gauge.open = !m_gauge.open; }});
+		Buttons.back().accent = family_colour(2);
 		break;
 	}
 	case work_area::roads:
@@ -222,16 +230,21 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   chosen(terrain_tool::level), choose(terrain_tool::level)});
 		Buttons.push_back({icon::brush, STR_C("Paint"), nullptr, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"), chosen(terrain_tool::paint), choose(terrain_tool::paint)});
 		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), chosen(terrain_tool::chunks), choose(terrain_tool::chunks)});
-		Buttons.push_back({icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away; the tool options convert the point spacing of the selected"),
-		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing)});
 		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
 		Buttons.push_back({icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
 		                   choose(terrain_tool::fill)});
-		Buttons.push_back({icon::joints, STR_C("Restore"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
-		                   choose(terrain_tool::restore)});
 		auto const orthophoto{m_orthophoto.enabled()};
 		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
 		                   [this, orthophoto]() { m_orthophoto.enabled(false == orthophoto); }, true});
+		auto const advanced{m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::restore || m_orthophoto_window};
+		Buttons.push_back({icon::more, terrain_tools_more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Point spacing, restoring the terrain, orthophoto settings"), terrain_tools_more,
+		                   []() { terrain_tools_more = false == terrain_tools_more; }, true});
+		if (false == terrain_tools_more && false == advanced)
+			break;
+		Buttons.push_back({icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away; the tool options convert the point spacing of the selected"),
+		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing), true});
+		Buttons.push_back({icon::joints, STR_C("Restore terrain"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
+		                   choose(terrain_tool::restore)});
 		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, m_orthophoto_window, [this]() { m_orthophoto_window = !m_orthophoto_window; }});
 		break;
 	}
@@ -274,7 +287,9 @@ void editor_mode::render_toolbar_tools()
 	auto const buttonheight{height - 2.0f * margin};
 	auto const left{ImGui::GetCursorScreenPos().x};
 	auto const top{ImGui::GetWindowPos().y + margin};
-	auto const right{ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - 4.0f * s};
+	// undo and redo at the right end of the row, the tools before them
+	auto const history_width{2.0f * buttonheight + gap};
+	auto const right{ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - 4.0f * s - history_width - groupgap};
 	// the names next to the icons if there's room for them; if there isn't, the name of the chosen tool only, or none
 	enum class names
 	{
@@ -331,7 +346,9 @@ void editor_mode::render_toolbar_tools()
 		auto const background{button.chosen ? ImGui::GetColorU32(ImGuiCol_Header) : hovered && button.enabled ? ImGui::GetColorU32(ImGuiCol_HeaderHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg)};
 		list->AddRectFilled(position, end, background, rounding);
 		if (button.chosen)
-			list->AddRectFilled(ImVec2(position.x, end.y - 2.0f * s), end, ImGui::GetColorU32(ImGuiCol_CheckMark), rounding, ImDrawFlags_RoundCornersBottom);
+			list->AddRectFilled(ImVec2(position.x, end.y - (button.accent != 0 ? 3.0f : 2.0f) * s), end, button.accent != 0 ? button.accent : ImGui::GetColorU32(ImGuiCol_CheckMark), rounding, ImDrawFlags_RoundCornersBottom);
+		else if (button.accent != 0)
+			list->AddRectFilled(ImVec2(position.x + rounding, end.y - 1.0f * s), ImVec2(end.x - rounding, end.y), (button.accent & ~IM_COL32_A_MASK) | (IM_COL32(0, 0, 0, hovered ? 200 : 90) & IM_COL32_A_MASK));
 		auto const color{button.enabled ? ImGui::GetColorU32(ImGuiCol_Text, button.chosen || hovered ? 1.0f : 0.85f) : ImGui::GetColorU32(ImGuiCol_TextDisabled)};
 		auto const center{position.y + size.y * 0.5f};
 		if (named(button, shown))
@@ -339,7 +356,7 @@ void editor_mode::render_toolbar_tools()
 			auto textx{position.x + pad};
 			if (button.picture != icon::count)
 			{
-				editor_icons::draw(list, button.picture, ImVec2(textx + iconside * 0.5f, center), color);
+				editor_icons::draw(list, button.picture, ImVec2(textx + iconside * 0.5f, center), button.chosen && button.accent != 0 ? button.accent : color);
 				textx += iconside + spacing;
 			}
 			list->AddText(ImVec2(textx, std::round(center - ImGui::GetFontSize() * 0.5f)), color, button.label);
@@ -351,6 +368,43 @@ void editor_mode::render_toolbar_tools()
 		if (clicked && button.enabled && button.action)
 			button.action();
 		x = end.x;
+	}
+
+	// undo and redo, as Ctrl+Z and Ctrl+Y: not in the middle of a drag, it would go on from the state which was undone
+	auto const dragging{m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active};
+	auto const history_left{ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - 4.0f * s - history_width};
+	for (int index = 0; index < 2; ++index)
+	{
+		auto const redo{index == 1};
+		auto const steps{redo ? g_redo.size() : m_history.size()};
+		auto const enabled{steps > 0 && false == dragging && false == m_history_busy};
+		ImVec2 const position{history_left + index * (buttonheight + gap), top};
+		ImVec2 const end{position.x + buttonheight, position.y + buttonheight};
+		ImGui::SetCursorScreenPos(position);
+		ImGui::PushID(redo ? "##redo" : "##undo");
+		auto const clicked{ImGui::InvisibleButton("##history", ImVec2(buttonheight, buttonheight))};
+		ImGui::PopID();
+		auto const hovered{ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)};
+		list->AddRectFilled(position, end, hovered && enabled ? ImGui::GetColorU32(ImGuiCol_HeaderHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+		auto const colour{enabled ? ImGui::GetColorU32(ImGuiCol_Text, hovered ? 1.0f : 0.85f) : ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f)};
+		// a hook of an arrow: back to the left for undo, on to the right for redo
+		auto const centre{ImVec2(position.x + buttonheight * 0.5f, position.y + buttonheight * 0.5f)};
+		auto const r{buttonheight * 0.22f};
+		auto const direction{redo ? -1.0f : 1.0f};
+		ImVec2 const from{centre.x + direction * r, centre.y + r * 0.9f};
+		ImVec2 const to{centre.x - direction * r * 0.2f, centre.y - r * 0.55f};
+		list->AddBezierCubic(from, ImVec2(centre.x + direction * r * 1.6f, centre.y + r * 0.2f), ImVec2(centre.x + direction * r * 1.2f, centre.y - r * 0.6f), to, colour, 1.8f * s);
+		list->AddLine(to, ImVec2(to.x - direction * r * 0.9f, to.y), colour, 1.8f * s);
+		list->AddTriangleFilled(ImVec2(to.x - direction * r * 1.45f, to.y), ImVec2(to.x - direction * r * 0.75f, to.y - r * 0.5f), ImVec2(to.x - direction * r * 0.75f, to.y + r * 0.5f), colour);
+		if (hovered)
+			ImGui::SetTooltip("%s", (redo ? format(STR_C("Redo (Ctrl+Y): %zu steps"), steps) : format(STR_C("Undo (Ctrl+Z): %zu steps"), steps)).c_str());
+		if (clicked && enabled)
+		{
+			if (redo)
+				redo_last();
+			else
+				undo_last();
+		}
 	}
 }
 

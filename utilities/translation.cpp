@@ -117,6 +117,18 @@ bool locale::parse_translation(std::istream &stream)
 	std::vector<std::string> forms;
 	char last = 'x';
 
+	auto const commit = [&]() {
+		if (!msgid.empty() && !forms.empty())
+			plural_mapping.emplace(msgid, std::move(forms));
+		else if (!msgid.empty() && !msgstr.empty()) {
+			// TODO: context support is incomplete
+			if (!msgctxt.empty())
+				lang_mapping.emplace(msgctxt + "\x1d" + msgid, msgstr);
+			else
+				lang_mapping.emplace(msgid, msgstr);
+		}
+	};
+
 	while (std::getline(stream, line)) {
 		if (line.size() > 0 && line[0] == '#')
 			continue;
@@ -145,19 +157,15 @@ bool locale::parse_translation(std::istream &stream)
 				msgctxt += parse_c_literal(line);
 		}
 		else {
-			if (!msgid.empty() && !forms.empty())
-				plural_mapping.emplace(msgid, std::move(forms));
-			else if (!msgid.empty() && !msgstr.empty()) {
-				// TODO: context support is incomplete
-				if (!msgctxt.empty())
-					lang_mapping.emplace(msgctxt + "\x1d" + msgid, msgstr);
-				else
-					lang_mapping.emplace(msgid, msgstr);
-			}
+			commit();
 			return true;
 		}
 	}
 
+	if (!msgid.empty()) {
+		commit();
+		return true;
+	}
 	return false;
 }
 

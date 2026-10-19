@@ -143,6 +143,15 @@ class modifier_shape
 	explicit modifier_shape(modifier const &Modifier);
 	// leads Height at specified point the way the modifier does; returns: true if the height changed
 	bool apply(double const X, double const Z, float &Height) const;
+	// what the modifier makes of Ground at the point, and how far the point lies off the formation: 0 or less on it; none out of
+	// its reach
+	struct effect
+	{
+		double height{0.0};
+		double outside{0.0};
+		double distance{0.0}; // from the axis
+	};
+	std::optional<effect> evaluate(double const X, double const Z, double const Ground) const;
 	bool reaches(glm::dvec2 const &Min, glm::dvec2 const &Max) const;
 
   private:

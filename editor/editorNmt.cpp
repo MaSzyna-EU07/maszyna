@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorNmt.hpp"
 #include "editor/editorHttp.hpp"
 #include "utilities/Logs.h"
+#include "utilities/translation.h"
 
 #include <algorithm>
 #include <cctype>
@@ -321,7 +322,7 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 	}
 	if (false == can_download())
 	{
-		Error = "this build can't fetch from the internet";
+		Error = STRN("This build can't fetch from the internet");
 		result->failed = true;
 		return result;
 	}
@@ -365,7 +366,7 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 		if (stop())
 			break;
 		if (Error.empty())
-			Error = "the service gave no terrain model";
+			Error = STRN("The service gave no terrain model");
 	}
 	WriteLog("Editor: NMT square " + std::to_string(Key.first) + "," + std::to_string(Key.second) + " not fetched: " + Error, logtype::generic);
 	result->failed = true;

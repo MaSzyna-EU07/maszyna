@@ -250,8 +250,9 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			if (false == points.empty() && std::none_of(points.begin(), points.end(), [&](glm::dvec3 const &Point) { return geometry::plan_distance(Point, issue.position) < 5.0; }))
 				continue;
 			++around;
-			WriteLog(format("SELFTEST joints: %s %.3f at %.1f %.1f, %s / %s", kinds[static_cast<int>(issue.type)], issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-",
-			                issue.other != nullptr ? issue.other->name().c_str() : "-"));
+			auto const name = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : Track->name() + (Track->eType == tt_Switch ? "(switch)" : ""); };
+			auto const rise{issue.other != nullptr ? editor_track::point_position(*issue.other, issue.theirs).y - issue.position.y : 0.0};
+			WriteLog(format("SELFTEST joints: %s %.3f at %.1f %.1f, %s / %s, rise %.3f", kinds[static_cast<int>(issue.type)], issue.value, issue.position.x, issue.position.z, name(issue.track).c_str(), name(issue.other).c_str(), rise));
 		}
 		WriteLog(format("SELFTEST joints: %d issues around the points, %zu in all", around, m_joints.issues.size()));
 		return selftest_result::handled;

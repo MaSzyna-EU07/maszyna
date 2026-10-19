@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
+#include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 
@@ -62,7 +63,7 @@ bool rail(TTrack const &Track)
 
 std::string name_of(TTrack const &Track)
 {
-	return Track.name().empty() ? std::string{"(noname)"} : Track.name();
+	return Track.name().empty() ? std::string{STR_C("(no name)")} : Track.name();
 }
 
 std::string lower(std::string Text)
@@ -80,7 +81,7 @@ char const *type_of(TTrack const &Track)
 	case tt_Cross: return "cross";
 	case tt_Table: return "turntable";
 	case tt_Tributary: return "tributary";
-	default: return "unknown";
+	default: return "unknown type";
 	}
 }
 
@@ -369,6 +370,13 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::box, track_selected(m_hover.track) ? "Click: take out of the selection" : "Click: add to the selection");
 		}
 	}
+	if (m_track_tab == track_tab::profile && shift && false == gizmo_frame::over())
+	{
+		// a box from the empty ground is the route by itself, a click on a track adds it to the route or takes it out
+		intent.track = m_hover.track;
+		intent.index = m_hover.track == nullptr ? 1 : 0;
+		return make(kind::box, m_hover.track == nullptr ? "Drag: the route over the tracks in a box" : track_selected(m_hover.track) ? "Click: take it out of the route, drag: a box" : "Click: add it to the route, drag: a box");
+	}
 	if (m_track_tab == track_tab::straights)
 	{
 		auto const &line{current_straight()};
@@ -455,7 +463,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		case track_tab::straights:
 		case track_tab::route: return make(kind::select, m_hover.track->eType != tt_Switch && editor_track::is_straight(*m_hover.track, m_straights.tolerance) ? "Click: the whole straight through this track" : "Click: the curve of this track with its straights");
 		case track_tab::turnout: return make(kind::select, m_hover.track->eType == tt_Switch ? "Click: edit this switch" : m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: choose this track, then press and drag on it for the switch");
-		case track_tab::profile: return make(kind::select, "Click: the grade line through this track");
+		case track_tab::profile: return make(kind::select, "Click: the grade line of the whole line through this track; Shift: the route between the tracks");
 		case track_tab::lineside: return make(kind::select, "Click: the line the objects go along");
 		case track_tab::parallel: return make(kind::select, "Click: the straight the new track goes beside");
 		default: return make(kind::select, "Click: select");
@@ -777,8 +785,11 @@ void editor_mode::render_track_context()
 		show_track_tab(track_tab::turnout);
 	if (ImGui::MenuItem(STR_C("Plan"), "G", false, normal))
 		show_track_tab(track_tab::straights);
-	if (ImGui::MenuItem(STR_C("Parallel track"), "L", false, normal))
-		show_track_tab(track_tab::lay);
+	if (ImGui::MenuItem(STR_C("Parallel track"), "N", false, normal))
+	{
+		select_track(track);
+		show_track_tab(track_tab::parallel);
+	}
 	if (ImGui::MenuItem(STR_C("Place a vehicle here")))
 	{
 		show_track_tab(track_tab::lineside);
@@ -808,7 +819,7 @@ void editor_mode::render_track_context()
 		speed_start();
 	}
 	ImGui::Separator();
-	if (ImGui::MenuItem(track_selected(track) ? STR_C("Take out of the selection") : STR_C("Add to the selection"), "Shift+LMB"))
+	if (ImGui::MenuItem(track_selected(track) ? STR_C("Take out of the selection") : STR_C("Add to the selection"), STR_C("Shift+LMB")))
 		track_set_toggle(*track);
 	if (ImGui::MenuItem(STR_C("Look at it")))
 		focus_track(*track, context.target.path, point);
@@ -1191,22 +1202,49 @@ void editor_mode::track_set_grow()
 void editor_mode::render_track_spread_ui()
 {
 	auto &spread{m_spread};
-	if (false == ImGui::CollapsingHeader(STR_C("Spread along the joins: Ctrl+Shift+LMB on a path")))
+	auto const open{ImGui::CollapsingHeader(STR_C("Spread along the joins"))};
+	item_tooltip("Ctrl+Shift+LMB on a track adds the tracks joined to it to the selection.\nHolding Ctrl+Shift shows what the click takes; on a track of the selection it takes them out");
+	if (false == open)
 		return;
-	char const *const stops[] = {STR_C("Stop before the switches"), STR_C("Through the switches, along their main track"), STR_C("Through everything joined")};
-	for (int i = 0; i < IM_ARRAYSIZE(stops); ++i)
-		ImGui::RadioButton(stops[i], &spread.stop, i);
-	ImGui::TextUnformatted(STR_C("Only to the paths like the clicked one:"));
-	ImGui::SameLine();
-	ImGui::Checkbox(STR_C("rails"), &spread.same_rails);
-	ImGui::SameLine();
-	ImGui::Checkbox(STR_C("trackbed"), &spread.same_bed);
-	ImGui::SameLine();
-	ImGui::Checkbox(STR_C("speed"), &spread.same_speed);
-	ImGui::SetNextItemWidth(110.f);
-	ImGui::InputFloat(STR_C("Reach along the track, m (0: no limit)"), &spread.reach, 50.f, 500.f, "%.0f");
+	auto const gap{std::round(ImGui::GetFontSize() * 0.3f)};
+	auto const width{std::floor((ImGui::GetContentRegionAvail().x - 2.0f * gap) / 3.0f)};
+	auto const at = [](ImVec2 const Low, ImVec2 const High, float const X, float const Y) { return ImVec2(Low.x + (High.x - Low.x) * X, Low.y + (High.y - Low.y) * Y); };
+	char const *const labels[]{STR_C("Up to a switch"), STR_C("Main track on"), STR_C("Everything joined")};
+	char const *const tooltips[]{"Stop before the switches", "Through the switches, along their main track", "Through everything joined"};
+	for (int i = 0; i < 3; ++i)
+	{
+		if (i > 0)
+			ImGui::SameLine(0.0f, gap);
+		ImGui::PushID(i);
+		if (sketch_tile("##spreadstop", labels[i], spread.stop == i, width, [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
+			    auto const dim{(Line & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 70)};
+			    List.AddLine(at(Low, High, 0.0f, 0.75f), at(Low, High, 1.0f, 0.75f), dim, 2.0f);
+			    List.AddBezierQuadratic(at(Low, High, 0.45f, 0.75f), at(Low, High, 0.7f, 0.75f), at(Low, High, 1.0f, 0.15f), dim, 2.0f);
+			    List.AddLine(at(Low, High, 0.0f, 0.75f), at(Low, High, i == 0 ? 0.4f : 1.0f, 0.75f), Made, 2.5f);
+			    if (i == 2)
+				    List.AddBezierQuadratic(at(Low, High, 0.45f, 0.75f), at(Low, High, 0.7f, 0.75f), at(Low, High, 1.0f, 0.15f), Made, 2.5f);
+			    List.AddCircleFilled(at(Low, High, 0.12f, 0.75f), 3.0f, IM_COL32(230, 90, 70, 255));
+		    }))
+			spread.stop = i;
+		item_tooltip(tooltips[i]);
+		ImGui::PopID();
+	}
+	ImGui::PushID("spread");
+	if (ImGui::TreeNode(STR_C("More settings")))
+	{
+		ImGui::TextDisabled("%s", STR_C("Only to the paths like the clicked one:"));
+		toggle_chips("spreadsame", {{STR_C("rails"), &spread.same_rails}, {STR_C("trackbed"), &spread.same_bed}, {STR_C("speed"), &spread.same_speed}});
+		if (begin_fields("##spreadfields", 0.55f))
+		{
+			field_row("Reach along the track (m)");
+			ImGui::InputFloat("##spreadreach", &spread.reach, 50.f, 500.f, "%.0f");
+			item_tooltip("How far along the tracks the spread goes from the clicked one; 0: no limit");
+			ImGui::EndTable();
+		}
+		ImGui::TreePop();
+	}
+	ImGui::PopID();
 	spread.reach = std::clamp(spread.reach, 0.f, 100000.f);
-	ImGui::TextDisabled("%s", STR_C("Holding Ctrl+Shift shows what the click takes; on a path of the set it takes them out"));
 }
 
 void editor_mode::draw_track_spread() const
@@ -1305,7 +1343,7 @@ void editor_mode::track_set_delete()
 	ui()->set_node(nullptr);
 	m_track_point = {};
 	straight_refresh();
-	auto status{format(STR_C("%zu paths deleted, Ctrl+Z brings them back"), removed.size())};
+	auto status{format(STR_P("%zu track deleted, Ctrl+Z brings it back", "%zu tracks deleted, Ctrl+Z brings them back", static_cast<long long>(removed.size())), removed.size())};
 	if (kept > 0)
 		status += format(STR_C(", %zu with vehicles on them or in the files which can't be changed are left"), kept);
 	ui()->set_status(status, false);

@@ -24,6 +24,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/translation.h"
+#include "editor/editorFormat.hpp"
 
 #include <map>
 #include <optional>
@@ -636,13 +638,13 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 	save_result result;
 	if (m_layers.empty())
 	{
-		result.message = "The scenery wasn't opened for editing, there are no layers to save.";
+		result.message = STR_C("The scenery wasn't opened for editing, there are no layers to save");
 		return result;
 	}
 	auto const root{layer_handle{1}};
 	save_state state;
 	auto const fail = [&](std::string const &Message) {
-		result.message = "Scenery not saved: " + Message;
+		result.message = format(STR_C("Scenery not saved: %s"), Message.c_str());
 		ErrorLog(result.message);
 		return result;
 	};
@@ -1003,7 +1005,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		}
 		if (false == writable(source.layer))
 		{
-			unwritten.push_back(path->name().empty() ? std::string{"(noname)"} : path->name());
+			unwritten.push_back(path->name().empty() ? std::string{STR_C("(no name)")} : path->name());
 			continue;
 		}
 		if (false == load(source.layer))
@@ -1354,7 +1356,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			if (false == included.context.matches(layer(target).context_insert()))
 			{
 				// shouldn't happen, merge of layers is refused when it'd lead to this
-				return fail("include \"" + *included.file + "\" was placed for different origin, rotation or scale than its layer file receives it with");
+				return fail(format(STR_C("include \"%s\" was placed for different origin, rotation or scale than its layer file receives it with"), included.file->c_str()));
 			}
 			placed[target].emplace_back(static_cast<instance_handle>(idx + 1));
 		}
@@ -1631,7 +1633,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 				std::filesystem::remove(path(leftover) + ".tmp", error);
 			}
 			std::filesystem::remove(path(output) + ".tmp", error);
-			return fail("can't write file \"" + layer(output).name + "\"");
+			return fail(format(STR_C("can't write file \"%s\""), layer(output).name.c_str()));
 		}
 		written.emplace_back(output);
 	}
@@ -1657,7 +1659,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 				{
 					std::filesystem::remove(path(leftover) + ".tmp", error);
 				}
-				return fail("can't make a backup of file \"" + layer(output).name + "\": " + copyerror.message());
+				return fail(format(STR_C("can't make a backup of file \"%s\": %s"), layer(output).name.c_str(), copyerror.message().c_str()));
 			}
 			WriteLog("Scenery save: the triangles of the ground go from \"" + layer(output).name + "\", its previous content is kept in \"" + backup + "\"");
 			result.backups.emplace_back(backup);
@@ -1696,7 +1698,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 				std::filesystem::remove(path(leftover) + ".tmp", error);
 			}
 			result.files.clear();
-			return fail("can't replace file \"" + layer(output).name + "\": " + cause);
+			return fail(format(STR_C("can't replace file \"%s\": %s"), layer(output).name.c_str(), cause.c_str()));
 		}
 		replaced.emplace_back(output);
 		result.files.emplace_back(layer(output).name);
@@ -1867,18 +1869,19 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 	result.success = true;
 	if (result.files.empty())
 	{
-		result.message = "No changes to save.";
+		result.message = STR_C("No changes to save");
 	}
 	else
 	{
-		result.message = "Saved: ";
+		std::string files;
 		for (auto const &file : result.files)
 		{
-			result.message += file + (&file != &result.files.back() ? ", " : "");
+			files += file + (&file != &result.files.back() ? ", " : "");
 		}
+		result.message = format(STR_C("Saved: %s"), files.c_str());
 		for (auto const &backup : result.backups)
 		{
-			result.message += ". Backup before the ground was taken out: " + std::filesystem::path(backup).filename().string();
+			result.message += format(STR_C(". Backup before the ground was taken out: %s"), std::filesystem::path(backup).filename().string().c_str());
 		}
 	}
 	if (false == unwritten.empty())
@@ -1892,8 +1895,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		{
 			names += ", ...";
 		}
-		auto const warning{std::to_string(unwritten.size()) + " changed nodes not saved, their files are included with parameters or more than once: " + names};
-		WriteLog("Scenery save: " + warning, logtype::generic);
+		WriteLog("Scenery save: " + std::to_string(unwritten.size()) + " changed nodes not saved, their files are included with parameters or more than once: " + names, logtype::generic);
+		auto const warning{format(STR_C("Changed nodes left unsaved (their files are included with parameters or more than once): %zu, %s"), unwritten.size(), names.c_str())};
 		result.message = result.files.empty() ? warning : result.message + ". " + warning;
 	}
 	return result;

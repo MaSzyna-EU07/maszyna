@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <regex>
 #include "application/editormode.h"
 #include "application/editormodeshared.h"
+#include "application/editorgestures.h"
 #include "scene/scenenodegroups.h"
 #include "application/editoruilayer.h"
 #ifndef _WIN32
@@ -518,7 +519,7 @@ editor_mode::editor_mode() {
 		std::string reason;
 		if (Node->from_template() || false == scene::Layers.editable(Node, &reason))
 		{
-			ui()->set_status("\"" + (Node->name().empty() ? std::string{"(unnamed node)"} : Node->name()) + "\" can't be edited: " + reason, true);
+			ui()->set_status(format(STR_C("\"%s\" can't be edited: %s"), (Node->name().empty() ? std::string{STR_C("(no name)")} : Node->name()).c_str(), reason.c_str()), true);
 			return;
 		}
 		m_track_window_open = false;
@@ -1448,6 +1449,7 @@ bool editor_mode::update()
         speed_step();
         joints_step();
         draw_track_hints();
+        draw_empty_scenery_hint();
         draw_profile_overlay();
         draw_infra_overlay();
         draw_speed_overlay();
@@ -1570,47 +1572,18 @@ void editor_mode::render_terrain_ui()
 {
     if (false == m_streamer.active())
     {
-        ImGui::TextWrapped("%s", STR_C("The scenery has no heightmap terrain yet. It's kept in the folder terrain/<name of the scenery>/ of the simulator, "
-                                       "and written there when the scenery is saved."));
+        ImGui::TextWrapped("%s", STR_C("The scenery has no terrain yet. Make an empty one, or load it from the terrain model below"));
         if (ImGui::Button(STR_C("Make heightmap terrain for this scenery")))
             ensure_terrain();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Kept in the folder terrain/<name of the scenery>/ and written there with the scenery (Ctrl+S)"));
+        // the terrain model makes the terrain itself
+        if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
+            render_nmt_ui();
         return;
     }
-    ImGui::TextDisabled(STR_C("Folder: %s"), m_streamer.directory().c_str());
-    ImGui::TextDisabled(STR_C("Chunks in memory: %zu%s"), m_streamer.resident(), m_streamer.modified() ? STR_C(", changes not saved yet") : "");
-
-    // what the left mouse button does
-    auto tool = static_cast<int>(m_terrain_tool);
-    auto const radio = [&](char const *Label, terrain_tool const Tool, char const *Tooltip) {
-        ImGui::RadioButton(Label, &tool, static_cast<int>(Tool));
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", Tooltip);
-    };
-    // the tools are named like the headers below, which would give them the same IDs
-    ImGui::PushID("terrain_tools");
-    // the tools working on a click, then the brushes
-    radio(STR_C("Select"), terrain_tool::none, STR_C("LMB picks the models, as in the surroundings"));
-    ImGui::SameLine();
-    radio(STR_C("Chunks"), terrain_tool::chunks, STR_C("LMB adds a chunk shaped as the ground under it, next to the clicked one; Shift+LMB removes the clicked chunk"));
-    ImGui::SameLine();
-    radio(STR_C("Spacing"), terrain_tool::spacing, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds it to the selection or takes it away;\nthe point spacing of the selected chunks is converted in \"Chunk resolution\" below"));
-    ImGui::SameLine();
-    radio(STR_C("Water"), terrain_tool::water, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"));
-    ImGui::SameLine();
-    radio(STR_C("Fill"), terrain_tool::fill, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"));
-    radio(STR_C("Sculpt"), terrain_tool::sculpt, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"));
-    ImGui::SameLine();
-    radio(STR_C("Smooth"), terrain_tool::smooth, STR_C("LMB evens the terrain out under the brush"));
-    ImGui::SameLine();
-    radio(STR_C("Level"), terrain_tool::level, STR_C("LMB leads the terrain under the brush to the target height, Ctrl+LMB takes the target height from what's under the cursor"));
-    ImGui::SameLine();
-    radio(STR_C("Paint"), terrain_tool::paint, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"));
-    ImGui::SameLine();
-    radio(STR_C("Restore"), terrain_tool::restore, STR_C("LMB takes back the touch-ups made over the tracks under the brush:\nthe terrain returns to the shape the modifiers (tracks) give it"));
-    ImGui::PopID();
-    m_terrain_tool = static_cast<terrain_tool>(tool);
-
-    if (ImGui::CollapsingHeader(STR_C("Chunks"), ImGuiTreeNodeFlags_DefaultOpen))
+    // the tools are chosen in the toolbar, here are their settings
+    if (ImGui::CollapsingHeader(STR_C("Chunks"), m_terrain_tool == terrain_tool::chunks ? ImGuiTreeNodeFlags_DefaultOpen : 0))
     {
         if (spacing_combo(STR_C("Point spacing"), m_terrain_spacing))
             m_streamer.default_spacing(m_terrain_spacing);
@@ -1639,7 +1612,7 @@ void editor_mode::render_terrain_ui()
         }
     }
 
-    if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)")))
         render_nmt_ui();
 
     if (ImGui::CollapsingHeader(STR_C("Chunk resolution"), m_terrain_tool == terrain_tool::spacing ? ImGuiTreeNodeFlags_DefaultOpen : 0))
@@ -1648,7 +1621,7 @@ void editor_mode::render_terrain_ui()
         for (auto it = m_terrain_selection.begin(); it != m_terrain_selection.end();)
             it = m_streamer.exists(*it) ? std::next(it) : m_terrain_selection.erase(it);
         if (m_terrain_selection.empty())
-            ImGui::TextWrapped("%s", STR_C("No chunk selected. With the Spacing tool LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away."));
+            ImGui::TextWrapped("%s", STR_C("No chunk selected. With the Point spacing tool LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away."));
         else
         {
             bool coarser = false;
@@ -1739,9 +1712,11 @@ void editor_mode::render_terrain_ui()
         {
             auto label{layers[i].size > 0.f ? format("%zu: %s (%.1f m)", i, layers[i].material.c_str(), layers[i].size) : format("%zu: %s", i, layers[i].material.c_str())};
             if (layers[i].rotation != 0.f)
-                label += format(STR_C(", turned %.0f deg"), layers[i].rotation);
+                label += format(STR_C(", turned %.0f°"), layers[i].rotation);
             if (ImGui::Selectable(label.c_str(), static_cast<int>(i) == m_terrain_layer))
                 m_terrain_layer = static_cast<int>(i);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("New chunks are covered with the first material. A texture dragged from the browser onto an entry of the palette takes its place"));
             // a material dropped on an entry takes its place, on every chunk painted with it
             std::string dropped;
             if (material_drop(dropped))
@@ -1777,8 +1752,7 @@ void editor_mode::render_terrain_ui()
         ImGui::SameLine();
         if (ImGui::Button(STR_C("Add to the palette")) && m_terrain_material[0] != '\0')
             m_terrain_layer = m_streamer.layer(m_terrain_material, m_terrain_material_size);
-        ImGui::TextDisabled("%s", STR_C("New chunks are covered with the first material. A chunk holds up to 8 of them. "
-                                        "A texture dragged from the browser onto an entry of the palette takes its place."));
+        ImGui::TextDisabled("%s", STR_C("A chunk holds up to 8 materials"));
     }
 
     if (ImGui::CollapsingHeader(STR_C("Fill"), m_terrain_tool == terrain_tool::fill ? ImGuiTreeNodeFlags_DefaultOpen : 0))
@@ -1787,7 +1761,7 @@ void editor_mode::render_terrain_ui()
         if (false == layers.empty())
         {
             auto const &chosen{layers[std::clamp(m_terrain_layer, 0, static_cast<int>(layers.size()) - 1)]};
-            ImGui::Text(STR_C("Material: %s (chosen in the palette below)"), chosen.material.c_str());
+            ImGui::Text(STR_C("Material: %s (chosen in the palette above)"), chosen.material.c_str());
         }
         ImGui::Text(STR_C("Outline: %zu points"), m_paint_outline.size());
         ImGui::SetNextItemWidth(120.0f);
@@ -1854,7 +1828,7 @@ void editor_mode::render_terrain_ui()
         {
             ImGui::PushID(static_cast<int>(i));
             auto const material = water[i].material.empty() ? std::string(STR_C("default material")) : water[i].material;
-            if (ImGui::Selectable(format("%s, %.2f m, %zu points, %s", water[i].name.c_str(), water[i].level, water[i].outline.size(), material.c_str()).c_str(), static_cast<int>(i) == m_water_selected))
+            if (ImGui::Selectable(format(STR_C("%s, %.2f m, %zu points, %s"), water[i].name.c_str(), water[i].level, water[i].outline.size(), material.c_str()).c_str(), static_cast<int>(i) == m_water_selected))
                 m_water_selected = static_cast<int>(i);
             // a texture dropped on an entry becomes the material of that water
             std::string name;
@@ -1945,7 +1919,7 @@ void editor_mode::render_terrain_ui()
         for (auto const &modifier : modifiers)
         {
             ImGui::PushID(modifier.name.c_str());
-            ImGui::TextUnformatted(format("%s, %zu points", modifier.name.c_str(), modifier.points.size()).c_str());
+            ImGui::TextUnformatted(format(STR_C("%s, %zu points"), modifier.name.c_str(), modifier.points.size()).c_str());
             ImGui::SameLine();
             if (ImGui::SmallButton(STR_C("Bake")))
                 baked = modifier.name;
@@ -1973,8 +1947,13 @@ void editor_mode::render_terrain_ui()
         }
     }
 
-    if (ImGui::CollapsingHeader(STR_C("Drawing and files")))
+    auto const files{format(STR_C("Folder: %s"), m_streamer.directory().c_str()) + "\n" + format(STR_C("Chunks in memory: %zu%s"), m_streamer.resident(), m_streamer.modified() ? STR_C(", changes not saved yet") : "")};
+    auto const drawing{ImGui::CollapsingHeader(STR_C("Drawing and files"))};
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", files.c_str());
+    if (drawing)
     {
+        ImGui::TextDisabled("%s", files.c_str());
         auto detail{m_streamer.detail()};
         ImGui::SetNextItemWidth(160.0f);
         if (ImGui::SliderFloat(STR_C("Detail"), &detail, 30.0f, 400.0f, "%.0f"))
@@ -2217,6 +2196,8 @@ void editor_mode::render_orthophoto_ui()
 
     ImGui::Separator();
     ImGui::TextUnformatted(STR_C("Scenery origin (0,0,0) in PUWG 1992 / EPSG:2180"));
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("PUWG 1992 (EPSG:2180): the coordinate system of the maps of Poland, in metres; the numbers as on geoportal.gov.pl"));
     // geodetic convention, as displayed by geoportal.gov.pl: X grows north, Y grows east.
     // applied once editing ends, so half-typed numbers don't trigger downloads
     ImGui::SetNextItemWidth(160.0f);
@@ -2277,115 +2258,123 @@ void editor_mode::render_orthophoto_ui()
         ImGui::PopItemFlag();
     };
 
-    if (ImGui::Checkbox(STR_C("Fit to terrain"), &config.drape))
+    auto const stats = m_orthophoto.stats();
+    if (stats.failed > 0)
     {
-        changed = true;
-        persist = true;
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(STR_C("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, heightmap terrain).\n"
-                          "Places without any ground use the height below."));
-    if (config.drape)
-    {
+        ImGui::Text(STR_C("Tiles: %d shown, %d loading, %d failed"), stats.resident, stats.loading, stats.failed);
         ImGui::SameLine();
-        if (ImGui::Button(STR_C("Refit")))
-        {
-            // the ground was edited: what's kept of it has to go as well
-            ground_tiles.clear();
-            forget_ground_shapes();
-            m_orthophoto.refit();
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(STR_C("Samples the ground again, after it was edited"));
+        if (ImGui::Button(STR_C("Retry")))
+            m_orthophoto.retry_failed();
     }
 
-    begin_disabled(!config.drape);
-    ImGui::SetNextItemWidth(160.0f);
-    changed |= ImGui::DragFloat(STR_C("Lift above ground (m)"), &config.lift, 0.01f, 0.0f, 50.0f, "%.2f");
-    persist |= ImGui::IsItemDeactivatedAfterEdit();
-    end_disabled(!config.drape);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(STR_C("Raises the fitted imagery above the ground. Keep it below the objects you want to see:\n"
-                          "in the scene everything lower than this ends up under the imagery."));
-
-    begin_disabled(config.drape);
-    ImGui::SetNextItemWidth(160.0f);
-    changed |= ImGui::DragFloat(STR_C("Height (m)"), &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
-    persist |= ImGui::IsItemDeactivatedAfterEdit();
-    end_disabled(config.drape);
-
-    if (ImGui::Checkbox(STR_C("Covered by objects and terrain"), &config.in_scene))
+    if (ImGui::TreeNode(STR_C("More settings")))
     {
-        changed = true;
-        persist = true;
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(STR_C("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
-                          "It is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\n"
-                          "translucent, it doesn't catch the mouse.\n"
-                          "Not available with the Better Renderer, which doesn't pick up geometry added in the editor."));
-
-    ImGui::SetNextItemWidth(160.0f);
-    changed |= ImGui::SliderFloat(STR_C("Opacity"), &config.opacity, 0.0f, 1.0f, "%.2f");
-    persist |= ImGui::IsItemDeactivatedAfterEdit();
-    if (config.in_scene && ImGui::IsItemHovered())
-        ImGui::SetTooltip(STR_C("In the scene the opacity is part of the textures: the tiles are read again from the cache\n"
-                          "shortly after the slider stops, which takes a moment."));
-
-    // newest imagery, or the newest imagery taken up to the end of the selected year
-    int const thisyear = static_cast<int>(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year());
-    std::string const yearlabel = config.year ? std::to_string(config.year) : std::string(STR_C("Newest"));
-    ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::BeginCombo("Photo year", yearlabel.c_str()))
-    {
-        if (ImGui::Selectable(STR_C("Newest"), config.year == 0))
+        if (ImGui::Checkbox(STR_C("Fit to terrain"), &config.drape))
         {
-            config.year = 0;
             changed = true;
             persist = true;
         }
-        for (int year = thisyear; year >= editor_orthophoto::oldest_year; --year)
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(STR_C("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, heightmap terrain).\n"
+                              "Places without any ground use the height below."));
+        if (config.drape)
         {
-            if (ImGui::Selectable(std::to_string(year).c_str(), config.year == year))
+            ImGui::SameLine();
+            if (ImGui::Button(STR_C("Refit")))
             {
-                config.year = year;
+                // the ground was edited: what's kept of it has to go as well
+                ground_tiles.clear();
+                forget_ground_shapes();
+                m_orthophoto.refit();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(STR_C("Samples the ground again, after it was edited"));
+        }
+
+        begin_disabled(!config.drape);
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat(STR_C("Lift above ground (m)"), &config.lift, 0.01f, 0.0f, 50.0f, "%.2f");
+        persist |= ImGui::IsItemDeactivatedAfterEdit();
+        end_disabled(!config.drape);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(STR_C("Raises the fitted imagery above the ground. Keep it below the objects you want to see:\n"
+                              "in the scene everything lower than this ends up under the imagery."));
+
+        begin_disabled(config.drape);
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::DragFloat(STR_C("Height (m)"), &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
+        persist |= ImGui::IsItemDeactivatedAfterEdit();
+        end_disabled(config.drape);
+
+        if (ImGui::Checkbox(STR_C("Covered by objects and terrain"), &config.in_scene))
+        {
+            changed = true;
+            persist = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(STR_C("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
+                              "It is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\n"
+                              "translucent, it doesn't catch the mouse.\n"
+                              "Not available with the Better Renderer, which doesn't pick up geometry added in the editor."));
+
+        ImGui::SetNextItemWidth(160.0f);
+        changed |= ImGui::SliderFloat(STR_C("Opacity"), &config.opacity, 0.0f, 1.0f, "%.2f");
+        persist |= ImGui::IsItemDeactivatedAfterEdit();
+        if (config.in_scene && ImGui::IsItemHovered())
+            ImGui::SetTooltip(STR_C("In the scene the opacity is part of the textures: the tiles are read again from the cache\n"
+                              "shortly after the slider stops, which takes a moment."));
+
+        // newest imagery, or the newest imagery taken up to the end of the selected year
+        int const thisyear = static_cast<int>(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year());
+        std::string const yearlabel = config.year ? std::to_string(config.year) : std::string(STR_C("Newest"));
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::BeginCombo(STR_C("Photo year"), yearlabel.c_str()))
+        {
+            if (ImGui::Selectable(STR_C("Newest"), config.year == 0))
+            {
+                config.year = 0;
                 changed = true;
                 persist = true;
             }
+            for (int year = thisyear; year >= editor_orthophoto::oldest_year; --year)
+            {
+                if (ImGui::Selectable(std::to_string(year).c_str(), config.year == year))
+                {
+                    config.year = year;
+                    changed = true;
+                    persist = true;
+                }
+            }
+            ImGui::EndCombo();
         }
-        ImGui::EndCombo();
-    }
 
-    if (ImGui::Checkbox(STR_C("4K tiles where available"), &config.hires))
-    {
-        changed = true;
-        persist = true;
+        if (ImGui::Checkbox(STR_C("4K tiles where available"), &config.hires))
+        {
+            changed = true;
+            persist = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(STR_C("4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\n"
+                              "Areas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory."));
+
+        ImGui::Separator();
+        if (stats.failed == 0)
+            ImGui::Text(STR_C("Tiles: %d shown, %d loading, %d failed"), stats.resident, stats.loading, stats.failed);
+        if (!editor_orthophoto::can_download())
+            ImGui::TextDisabled(STR_C("This build has no HTTP client, only cached tiles are shown"));
+        ImGui::TextDisabled(STR_C("Cache: %s"), editor_orthophoto::cache_directory().c_str());
+        if (ImGui::Button(STR_C("Clear cache")))
+            m_orthophoto.clear_cache();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(STR_C("Deletes downloaded tiles from disk. They are fetched again around the camera."));
+        ImGui::TreePop();
     }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(STR_C("4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\n"
-                          "Areas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory."));
 
     if (changed)
         m_orthophoto.settings(config);
     if (persist)
         save_orthophoto_settings();
 
-    ImGui::Separator();
-    auto const stats = m_orthophoto.stats();
-    ImGui::Text(STR_C("Tiles: %d shown, %d loading, %d failed"), stats.resident, stats.loading, stats.failed);
-    if (stats.failed > 0)
-    {
-        ImGui::SameLine();
-        if (ImGui::Button(STR_C("Retry")))
-            m_orthophoto.retry_failed();
-    }
-    if (!editor_orthophoto::can_download())
-        ImGui::TextDisabled(STR_C("This build has no HTTP client, only cached tiles are shown"));
-    ImGui::TextDisabled(STR_C("Cache: %s"), editor_orthophoto::cache_directory().c_str());
-    if (ImGui::Button(STR_C("Clear cache")))
-        m_orthophoto.clear_cache();
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(STR_C("Deletes downloaded tiles from disk. They are fetched again around the camera."));
     ImGui::TextDisabled(STR_C("Imagery: GUGiK, geoportal.gov.pl"));
 }
 
@@ -2975,11 +2964,11 @@ void editor_mode::toggle_include(scene::instance_handle const Instance)
     if (included.dead)
     {
         // its directive is gone from the scenery file, and the place it was at with it
-        ui()->set_status("Include of \"" + *included.file + "\" was removed from the saved scenery, this can't be taken back.", true);
+        ui()->set_status(format(STR_C("Include of \"%s\" was removed from the saved scenery, this can't be taken back"), included.file->c_str()), true);
         return;
     }
     scene::Layers.removed(Instance, false == included.removed);
-    ui()->set_status("Include of \"" + *included.file + "\" " + (included.removed ? "removed." : "restored."));
+    ui()->set_status(format(included.removed ? STR_C("Include of \"%s\" removed") : STR_C("Include of \"%s\" restored"), included.file->c_str()));
 }
 
 void editor_mode::restore_include(EditorSnapshot &Snapshot)
@@ -2995,7 +2984,7 @@ void editor_mode::restore_include(EditorSnapshot &Snapshot)
     auto current = scene::Layers.directive(Snapshot.instance);
     if (current.empty() || scene::Layers.instance(Snapshot.instance).dead)
     {
-        ui()->set_status("Include of \"" + Snapshot.node_name + "\" is gone from the scenery, the change can't be taken back.", true);
+        ui()->set_status(format(STR_C("Include of \"%s\" is gone from the scenery, the change can't be taken back"), Snapshot.node_name.c_str()), true);
         return;
     }
     set_include_directive(Snapshot.instance, Snapshot.serialized);
@@ -3027,7 +3016,7 @@ void editor_mode::restore_includes(EditorSnapshot &Snapshot)
         entry.second = std::move(current);
     }
     select_include(0);
-    ui()->set_status(gone > 0 ? std::to_string(gone) + " of the includes are gone from the saved scenery, they can't be taken back." : std::to_string(Snapshot.instances.size() + Snapshot.directives.size()) + " includes restored.", gone > 0);
+    ui()->set_status(gone > 0 ? format(STR_C("Includes gone from the saved scenery, they can't be taken back: %zu"), gone) : format(STR_C("Includes restored: %zu"), Snapshot.instances.size() + Snapshot.directives.size()), gone > 0);
 }
 
 void editor_mode::select_include(scene::instance_handle const Instance)
@@ -3049,7 +3038,7 @@ void editor_mode::select_include(scene::instance_handle const Instance)
     if (false == editor_includes::parse_directive(scene::Layers.directive(m_instance), m_include.target, m_include.values))
     {
         m_include.values.clear();
-        m_include.issue = "The directive of the include can't be read from the scenery file, its parameters can't be changed.";
+        m_include.issue = STR_C("The directive of the include can't be read from the scenery file, its parameters can't be changed");
     }
     // with a rotation or a scale in effect the parameters don't translate to a location in the scene in a single way,
     // see place_include()
@@ -3077,7 +3066,7 @@ void editor_mode::apply_include()
         if (value == "end" || value.find_first_of("\"\r\n") != std::string::npos)
         {
             // either would cut the directive short
-            ui()->set_status("A parameter of an include can't be \"end\", or have a quotation mark in it.", true);
+            ui()->set_status(STR_C("A parameter of an include can't be \"end\", or have a quotation mark in it"), true);
             select_include(m_instance); // back to the values of the directive
             return;
         }
@@ -3121,7 +3110,7 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
     if (scene::Layers.empty())
     {
         // the directive has to go to a scenery file, and without the sources tracked there's no telling which
-        ui()->set_status("Scenery templates can be placed only in a scenery opened for editing (-edit).", true);
+        ui()->set_status(STR_C("Scenery templates can be placed only in a scenery opened for editing (-edit)"), true);
         WriteLog("Editor: scenery templates can be placed only in a scenery opened for editing (-edit)", logtype::generic);
         return;
     }
@@ -3130,7 +3119,7 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
     auto const parameters = editor_includes::parameter_count(File);
     if (false == editor_includes::load(File, info, issue) || false == editor_includes::complete(info, parameters, &issue))
     {
-        ui()->set_status("Template \"" + File + "\" can't be placed: " + issue, true);
+        ui()->set_status(format(STR_C("Template \"%s\" can't be placed: %s"), File.c_str(), issue.c_str()), true);
         return;
     }
 
@@ -3138,7 +3127,7 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
     auto const layer = scene::Layers.resolve(scene::Layers.active());
     if (std::string reason; false == scene::Layers.accepts(layer, &reason))
     {
-        ui()->set_status("Template \"" + File + "\" can't be placed: " + (reason.empty() ? "there's no active layer to put it in" : "the active layer can't take it, " + reason), true);
+        ui()->set_status(format(STR_C("Template \"%s\" can't be placed: %s"), File.c_str(), (reason.empty() ? std::string{STR_C("there's no active layer to put it in")} : format(STR_C("the active layer can't take it, %s"), reason.c_str())).c_str()), true);
         return;
     }
     auto const context = scene::Layers.layer(layer).context_insert();
@@ -3146,7 +3135,7 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
     {
         // a template can pass its parameters to an origin directive, which isn't affected by these, or straight to
         // the nodes, which are. there's no single set of parameter values which puts both at the cursor
-        ui()->set_status("Template \"" + File + "\" can't be placed: the file of the active layer would receive it with a rotation or a scale in effect. Pick another layer.", true);
+        ui()->set_status(format(STR_C("Template \"%s\" can't be placed: the file of the active layer would receive it with a rotation or a scale in effect. Pick another layer"), File.c_str()), true);
         return;
     }
     glm::dvec3 const location = placement_on_ground(Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position()));
@@ -3160,7 +3149,7 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
     auto const instance = scene::Layers.place(layer, File, directive);
     if (instance == 0)
     {
-        ui()->set_status("Template \"" + File + "\" can't be placed in the active layer.", true);
+        ui()->set_status(format(STR_C("Template \"%s\" can't be placed in the active layer"), File.c_str()), true);
         return;
     }
     // show the models of the template right away. the rest of it comes into play when the saved scenery is loaded
@@ -3173,9 +3162,8 @@ void editor_mode::place_include(std::string const &File, int const RotationMode,
     g_redo.clear();
     select_include(instance);
 
-    ui()->set_status(
-        "\"" + info.name + "\" placed in layer \"" + scene::Layers.layer(layer).name + "\": " + std::to_string(preview.first) + " model(s) shown"
-        + (preview.second > 0 ? ", " + std::to_string(preview.second) + " other statement(s) of the template take effect once the scenery is saved and loaded again." : "."));
+    ui()->set_status(format(STR_C("\"%s\" placed in layer \"%s\", models shown: %d"), info.name.c_str(), scene::Layers.layer(layer).name.c_str(), static_cast<int>(preview.first)) +
+                     (preview.second > 0 ? format(STR_C(", other statements of the template, working once the scenery is saved and loaded again: %d"), static_cast<int>(preview.second)) : std::string{}));
 }
 
 void editor_mode::export_scenery()
@@ -3398,7 +3386,7 @@ void editor_mode::drop_model_instances()
     if (selected->radius() >= 50.0f)
     {
         // it'd be put on top of itself
-        ui()->set_status("\"" + selected->Model()->NameGet() + "\" is large enough to count as ground itself, so there's nothing to put it on", true);
+        ui()->set_status(format(STR_C("\"%s\" is large enough to count as ground itself, so there's nothing to put it on"), selected->Model()->NameGet().c_str()), true);
         return;
     }
     std::vector<TAnimModel *> instances;
@@ -3436,11 +3424,11 @@ void editor_mode::drop_model_instances()
         instance->mark_dirty();
         ++moved;
     }
-    std::string status = std::to_string(moved) + " of " + std::to_string(instances.size()) + " instances of \"" + selected->Model()->NameGet() + "\" put on the ground";
+    std::string status = format(STR_C("%d of %d copies of \"%s\" put on the ground"), moved, static_cast<int>(instances.size()), selected->Model()->NameGet().c_str());
     if (moved > 0)
-        status += "; Ctrl+Z takes them back one at a time";
+        status += STR_C("; Ctrl+Z takes them back one at a time");
     if (locked > 0)
-        status += ". " + std::to_string(locked) + " left alone: placed by a template, or on a layer which can't be edited";
+        status += format(STR_C(". Left alone, placed by a template or on a layer which can't be edited: %d"), locked);
     ui()->set_status(status);
 }
 
@@ -3524,7 +3512,7 @@ void editor_mode::render_view_menu()
         ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", "Draws the lanes of the roads with the ways the vehicles take through the junctions");
+        ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));
     if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.open))
         m_gauge.open = !m_gauge.open;
     if (ImGui::IsItemHovered())
@@ -3588,7 +3576,7 @@ void editor_mode::render_environment_window()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Up to 1 the sky clouds over, past it rain or snow falls, by the air temperature"));
         auto temperature{Global.AirTemperature};
-        auto const air{format("%.1f deg C", Global.AirTemperature)};
+        auto const air{format("%.1f °C", Global.AirTemperature)};
         if (ImGui::SliderFloat((std::string(STR_C("Air temperature")) + "###airtemperature").c_str(), &temperature, -35.0f, 40.0f, air.c_str()))
         {
             Global.AirTemperature = std::clamp(temperature, -35.0f, 40.0f);
@@ -3959,9 +3947,9 @@ void editor_mode::run_area_fill()
 
     m_fill_status = format(STR_C("Placed %zu of %zu objects"), m_fill_last.size(), static_cast<std::size_t>(target));
     if (points.size() < target)
-        m_fill_status += " (limited by min. spacing)";
+        m_fill_status += STR_C(" (limited by min. spacing)");
     if (unsupported > 0)
-        m_fill_status += ", " + std::to_string(unsupported) + " without ground found (height interpolated)";
+        m_fill_status += format(STR_C(", without ground under them (height from the outline): %zu"), unsupported);
     WriteLog("Editor: area fill - " + m_fill_status, logtype::generic);
 }
 
@@ -4017,7 +4005,7 @@ void editor_mode::render_area_fill()
 {
     ImGui::TextDisabled(STR_C("LMB: add outline point   Backspace: remove last point"));
     double const area = polygon_area_xz(m_fill_points);
-    ImGui::Text(STR_C("Points: %zu   Area: %.0f m2 (%.2f ha)"), m_fill_points.size(), area, area / 10000.0);
+    ImGui::Text(STR_C("Points: %zu   Area: %.0f m² (%.2f ha)"), m_fill_points.size(), area, area / 10000.0);
     if (ImGui::Button(STR_C("Remove last point")) && !m_fill_points.empty())
         m_fill_points.pop_back();
     ImGui::SameLine();
@@ -4039,15 +4027,21 @@ void editor_mode::render_area_fill()
     ImGui::SetNextItemWidth(120.0f);
     ImGui::InputFloat(STR_C("Density (objects/ha)"), &m_fill_density, 10.0f, 100.0f, "%.1f");
     m_fill_density = std::max(0.0f, m_fill_density);
-    ImGui::SetNextItemWidth(120.0f);
-    ImGui::InputFloat(STR_C("Min. spacing (m)"), &m_fill_min_spacing, 0.5f, 2.0f, "%.1f");
-    m_fill_min_spacing = std::max(0.0f, m_fill_min_spacing);
-    ImGui::SetNextItemWidth(200.0f);
-    ImGui::DragFloatRange2("Scale", &m_fill_scale_min, &m_fill_scale_max, 0.01f, 0.1f, 5.0f, "min %.2f", "max %.2f");
-    ImGui::Checkbox(STR_C("Random rotation"), &m_fill_random_rotation);
-    if (!m_fill_random_rotation)
-        ui()->render_rotation_controls();
-    ImGui::Checkbox(STR_C("Large models count as ground (terrain tiles)"), &m_fill_models_as_ground);
+    ImGui::PushID("areafill");
+    if (ImGui::TreeNode(STR_C("More settings")))
+    {
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::InputFloat(STR_C("Min. spacing (m)"), &m_fill_min_spacing, 0.5f, 2.0f, "%.1f");
+        m_fill_min_spacing = std::max(0.0f, m_fill_min_spacing);
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::DragFloatRange2(STR_C("Scale"), &m_fill_scale_min, &m_fill_scale_max, 0.01f, 0.1f, 5.0f, "min %.2f", "max %.2f");
+        ImGui::Checkbox(STR_C("Random rotation"), &m_fill_random_rotation);
+        if (!m_fill_random_rotation)
+            ui()->render_rotation_controls();
+        ImGui::Checkbox(STR_C("Large models count as ground (terrain tiles)"), &m_fill_models_as_ground);
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
 
     ImGui::Text(STR_C("Estimated objects: %.0f"), std::round(area / 10000.0 * m_fill_density));
 
@@ -4357,33 +4351,37 @@ void editor_mode::render_array()
             ImGui::SetTooltip("%s", STR_C("As many copies are made as fit in this length, measured along the row"));
     }
 
-    ImGui::Checkbox(STR_C("Relative offset"), &settings.relative);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", STR_C("Distance between the copies as a part of the size of the model, along its axes: x, y (up), z.\n"
-                                "1 along an axis puts the copies end to end"));
-    if (settings.relative)
-    {
-        ImGui::SetNextItemWidth(200.0f);
-        ImGui::DragFloat3(STR_C("x size"), &settings.relative_offset.x, 0.01f, 0.0f, 0.0f, "%.3f");
-    }
-    ImGui::Checkbox(STR_C("Constant offset"), &settings.constant);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", STR_C("Distance between the copies in metres, along the axes of the model: x, y (up), z.\n"
-                                "With both offsets on the copies are set apart by their sum"));
-    if (settings.constant)
-    {
-        ImGui::SetNextItemWidth(200.0f);
-        ImGui::DragFloat3("m", &settings.constant_offset.x, 0.05f, 0.0f, 0.0f, "%.3f");
-    }
     ImGui::SetNextItemWidth(120.0f);
     ImGui::DragFloat(STR_C("Turn per copy (deg)"), &settings.turn, 0.1f, -180.0f, 180.0f, "%.2f");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Each copy is turned by this much around the vertical axis against the one before it,\n"
                                 "and the row bends with them into an arc"));
-    ImGui::Checkbox(STR_C("Follow the ground"), &settings.ground);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", STR_C("The copies are put as high over the ground as the model is, instead of level with it.\n"
-                                "Not for the models large enough to count as ground themselves"));
+    if (ImGui::TreeNode(STR_C("More settings")))
+    {
+        ImGui::Checkbox(STR_C("Relative offset"), &settings.relative);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Distance between the copies as a part of the size of the model, along its axes: x, y (up), z.\n"
+                                    "1 along an axis puts the copies end to end"));
+        if (settings.relative)
+        {
+            ImGui::SetNextItemWidth(200.0f);
+            ImGui::DragFloat3(STR_C("x size"), &settings.relative_offset.x, 0.01f, 0.0f, 0.0f, "%.3f");
+        }
+        ImGui::Checkbox(STR_C("Constant offset"), &settings.constant);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Distance between the copies in metres, along the axes of the model: x, y (up), z.\n"
+                                    "With both offsets on the copies are set apart by their sum"));
+        if (settings.constant)
+        {
+            ImGui::SetNextItemWidth(200.0f);
+            ImGui::DragFloat3("m", &settings.constant_offset.x, 0.05f, 0.0f, 0.0f, "%.3f");
+        }
+        ImGui::Checkbox(STR_C("Follow the ground"), &settings.ground);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("The copies are put as high over the ground as the model is, instead of level with it.\n"
+                                    "Not for the models large enough to count as ground themselves"));
+        ImGui::TreePop();
+    }
 
     if (selected != nullptr)
     {
@@ -4554,7 +4552,7 @@ void editor_mode::render_edit_menu()
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Puts the copied models at the cursor, around it as they were around the selected one; Ctrl+RMB in the view pastes them where it was clicked"));
 	ImGui::Separator();
-	if (ImGui::MenuItem(STR_C("Group"), "Ctrl+G", false, models && selected_nodes().size() > 1))
+	if (ImGui::MenuItem(STR_C("Group together"), "Ctrl+G", false, models && selected_nodes().size() > 1))
 		group_selection();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The selected models move together from now on; a click on one selects them all. Shift+LMB adds a model to the selection"));
@@ -4563,7 +4561,7 @@ void editor_mode::render_edit_menu()
 		ungroup_selection();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The models of the group move each by itself again"));
-	if (ImGui::MenuItem(STR_C("Drop to the ground"), STR_C("End"), false, selected))
+	if (ImGui::MenuItem(STR_C("Drop to the ground"), "End", false, selected))
 		drop_selection_to_ground();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Puts each selected model, also each model of their groups, down onto the terrain or the object under it"));
@@ -4577,7 +4575,7 @@ void editor_mode::render_edit_menu()
 		show_track_tab(m_track_window_open ? m_track_tab : track_tab::path);
 		m_track_search.focus = true;
 	}
-	if (ImGui::MenuItem(STR_C("Bend along the track"), "B", false, ui()->mode() != nodebank_panel::TRACK))
+	if (ImGui::MenuItem(STR_C("Bend the selected along the track"), "B", false, ui()->mode() != nodebank_panel::TRACK))
 		bend_shortcut();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Bends the selected model, e.g. a platform edge or a fence, along the nearest track; the settings are in the inspector"));
@@ -4593,7 +4591,7 @@ void editor_mode::render_help_menu()
 		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
 	ImGui::MenuItem(STR_C("Tutorial"), nullptr, &m_first_steps_open);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Seven short lessons with clips: the camera, laying track, curves, joining, switches, fixing, saving"));
+		ImGui::SetTooltip("%s", STR_C("Twelve short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the grade line, terrain, older sceneries, saving and driving"));
 	ImGui::EndMenu();
 }
 
@@ -4604,65 +4602,6 @@ void editor_mode::first_step_done(first_step const Step)
 
 namespace
 {
-
-ImU32 const kTutorialLit{IM_COL32(90, 175, 255, 255)};
-
-float tutorial_mouse(ImDrawList &List, ImVec2 const At, float const Height, std::string const &Part)
-{
-	auto const width{std::round(Height * 0.68f)};
-	auto const line{ImGui::GetColorU32(ImGuiCol_Text)};
-	auto const thickness{std::max(1.0f, Height * 0.07f)};
-	auto const rounding{width * 0.5f};
-	auto const split{At.y + std::round(Height * 0.45f)};
-	auto const middle{At.x + width * 0.5f};
-	ImVec2 const high{At.x + width, At.y + Height};
-	if (Part == "LMB")
-		List.AddRectFilled(At, ImVec2(middle, split), kTutorialLit, rounding, ImDrawFlags_RoundCornersTopLeft);
-	if (Part == "RMB")
-		List.AddRectFilled(ImVec2(middle, At.y), ImVec2(high.x, split), kTutorialLit, rounding, ImDrawFlags_RoundCornersTopRight);
-	List.AddRect(At, high, line, rounding, 0, thickness);
-	List.AddLine(ImVec2(At.x, split), ImVec2(high.x, split), line, thickness);
-	List.AddLine(ImVec2(middle, At.y), ImVec2(middle, split), line, thickness);
-	auto const wheel{std::max(3.0f, std::round(width * 0.24f))};
-	ImVec2 const wheel_low{middle - wheel * 0.5f, At.y + Height * 0.1f};
-	ImVec2 const wheel_high{middle + wheel * 0.5f, At.y + Height * 0.36f};
-	List.AddRectFilled(wheel_low, wheel_high, (Part == "MMB" || Part == "wheel") ? kTutorialLit : ImGui::GetColorU32(ImGuiCol_WindowBg), wheel * 0.5f);
-	List.AddRect(wheel_low, wheel_high, line, wheel * 0.5f, 0, thickness * 0.8f);
-	auto right{high.x};
-	auto const arrow{Height * 0.16f};
-	if (Part == "wheel")
-	{
-		auto const x{right + arrow * 1.6f};
-		List.AddTriangleFilled(ImVec2(x - arrow, At.y + arrow * 1.8f), ImVec2(x + arrow, At.y + arrow * 1.8f), ImVec2(x, At.y + arrow * 0.3f), kTutorialLit);
-		List.AddTriangleFilled(ImVec2(x - arrow, high.y - arrow * 1.8f), ImVec2(x + arrow, high.y - arrow * 1.8f), ImVec2(x, high.y - arrow * 0.3f), kTutorialLit);
-		right = x + arrow;
-	}
-	if (Part == "move")
-	{
-		auto const reach{Height * 0.42f};
-		ImVec2 const centre{right + arrow * 0.8f + reach, At.y + Height * 0.5f};
-		List.AddLine(ImVec2(centre.x - reach + arrow, centre.y), ImVec2(centre.x + reach - arrow, centre.y), kTutorialLit, thickness);
-		List.AddLine(ImVec2(centre.x, centre.y - reach + arrow), ImVec2(centre.x, centre.y + reach - arrow), kTutorialLit, thickness);
-		List.AddTriangleFilled(ImVec2(centre.x - reach, centre.y), ImVec2(centre.x - reach + arrow * 1.4f, centre.y - arrow), ImVec2(centre.x - reach + arrow * 1.4f, centre.y + arrow), kTutorialLit);
-		List.AddTriangleFilled(ImVec2(centre.x + reach, centre.y), ImVec2(centre.x + reach - arrow * 1.4f, centre.y + arrow), ImVec2(centre.x + reach - arrow * 1.4f, centre.y - arrow), kTutorialLit);
-		List.AddTriangleFilled(ImVec2(centre.x, centre.y - reach), ImVec2(centre.x + arrow, centre.y - reach + arrow * 1.4f), ImVec2(centre.x - arrow, centre.y - reach + arrow * 1.4f), kTutorialLit);
-		List.AddTriangleFilled(ImVec2(centre.x, centre.y + reach), ImVec2(centre.x - arrow, centre.y + reach - arrow * 1.4f), ImVec2(centre.x + arrow, centre.y + reach - arrow * 1.4f), kTutorialLit);
-		right = centre.x + reach;
-	}
-	return right - At.x;
-}
-
-float tutorial_key(ImDrawList &List, ImVec2 const At, float const Height, std::string const &Text)
-{
-	auto const size{ImGui::CalcTextSize(Text.c_str())};
-	auto const width{std::max(std::round(size.x + Height * 0.6f), Height)};
-	auto const rounding{Height * 0.2f};
-	ImVec2 const high{At.x + width, At.y + Height};
-	List.AddRectFilled(At, high, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
-	List.AddRect(At, high, ImGui::GetColorU32(ImGuiCol_TextDisabled), rounding, 0, std::max(1.0f, Height * 0.06f));
-	List.AddText(ImVec2(std::round(At.x + (width - size.x) * 0.5f), std::round(At.y + (Height - size.y) * 0.5f)), ImGui::GetColorU32(ImGuiCol_Text), Text.c_str());
-	return width;
-}
 
 void tutorial_input(char const *Keys, char const *Text, float const Column)
 {
@@ -4682,14 +4621,381 @@ void tutorial_input(char const *Keys, char const *Text, float const Column)
 			x += size.x + gap;
 		}
 		else if (word == "LMB" || word == "RMB" || word == "MMB" || word == "wheel" || word == "move")
-			x += tutorial_mouse(list, place, height, word) + gap;
+			x += gesture_mouse(list, place, height, word) + gap;
 		else
-			x += tutorial_key(list, place, height, word) + gap;
+			x += gesture_key(list, place, height, word) + gap;
 	}
 	ImGui::Dummy(ImVec2(std::max(x, Column), height));
 	ImGui::SameLine();
 	ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((height - ImGui::GetTextLineHeight()) * 0.5f));
 	ImGui::TextWrapped("%s", STR_C(Text));
+}
+
+// a window that grew past the bottom or the right of the screen is moved back onto it
+void keep_on_screen(char const *Name)
+{
+	auto const *window{ImGui::FindWindowByName(Name)};
+	if (window == nullptr)
+		return;
+	auto const display{ImGui::GetIO().DisplaySize};
+	ImVec2 position{window->Pos};
+	position.x = std::max(0.0f, std::min(position.x, display.x - window->Size.x));
+	position.y = std::max(20.0f, std::min(position.y, display.y - window->Size.y));
+	if (position.x != window->Pos.x || position.y != window->Pos.y)
+		ImGui::SetNextWindowPos(position);
+}
+
+// the strip of the profile: the ground, the track as it lies, the grade line over them with a point of it dragged up and down,
+// the grades on both sides of it following
+void tutorial_profile_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
+{
+	auto const width{High.x - Low.x};
+	auto const height{High.y - Low.y};
+	auto const x_of = [&](float const Share) { return Low.x + width * (0.06f + 0.88f * Share); };
+	auto const y_of = [&](float const Level) { return Low.y + height * (0.82f - 0.6f * Level); };
+	std::vector<ImVec2> ground;
+	for (int i = 0; i <= 60; ++i)
+	{
+		auto const share{i / 60.0f};
+		ground.emplace_back(x_of(share), y_of(0.25f + 0.35f * std::sin(share * 5.2f + 0.6f) * 0.5f + 0.18f * share));
+	}
+	auto const flags{List.Flags};
+	List.Flags &= ~ImDrawListFlags_AntiAliasedFill;
+	for (std::size_t i = 0; i + 1 < ground.size(); ++i)
+		List.AddQuadFilled(ground[i], ground[i + 1], ImVec2(ground[i + 1].x, High.y), ImVec2(ground[i].x, High.y), IM_COL32(110, 85, 55, 70));
+	List.Flags = flags;
+	List.AddPolyline(ground.data(), static_cast<int>(ground.size()), IM_COL32(170, 130, 80, 220), 0, 1.5f);
+	auto const lift{static_cast<float>(0.5 + 0.5 * std::sin(Time * 1.6))};
+	ImVec2 const points[]{ImVec2(x_of(0.0f), y_of(0.32f)), ImVec2(x_of(0.38f), y_of(0.42f)), ImVec2(x_of(0.66f), y_of(0.35f + 0.4f * lift)), ImVec2(x_of(1.0f), y_of(0.55f))};
+	List.AddPolyline(points, 4, IM_COL32(170, 170, 170, 160), 0, 1.0f);
+	List.AddPolyline(points, 4, IM_COL32(90, 220, 110, 255), 0, 2.5f);
+	for (int i = 0; i < 4; ++i)
+		List.AddCircleFilled(points[i], i == 2 ? 6.0f : 4.5f, i == 2 ? kGestureLit : IM_COL32(250, 210, 80, 255));
+	List.AddCircle(points[2], 9.0f, kGestureLit, 0, 1.5f);
+	for (int i = 0; i < 3; ++i)
+	{
+		auto const grade{-(points[i + 1].y - points[i].y) / (points[i + 1].x - points[i].x) * 40.0f};
+		char text[32];
+		std::snprintf(text, sizeof(text), "%+.1f", std::abs(grade) < 0.05f ? 0.0f : grade);
+		ImVec2 const middle{(points[i].x + points[i + 1].x) * 0.5f, (points[i].y + points[i + 1].y) * 0.5f - ImGui::GetTextLineHeight() - 2.0f};
+		List.AddText(ImVec2(middle.x - ImGui::CalcTextSize(text).x * 0.5f, middle.y), i == 0 ? IM_COL32(200, 200, 200, 255) : IM_COL32(255, 255, 255, 255), text);
+	}
+	gesture_mouse(List, ImVec2(points[2].x + 12.0f, points[2].y + 10.0f), height * 0.18f, "LMB");
+}
+
+// the route of the grade line picked on the map: a click lights up the whole line through the track, Shift and a box only the
+// tracks between the outermost ones in it; beside it the strip with a point of the line dragged
+void tutorial_route_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
+{
+	auto const split{std::round(Low.x + (High.x - Low.x) * 0.48f)};
+	tutorial_profile_sketch(List, ImVec2(split + 6.0f, Low.y), High, Time);
+	List.AddLine(ImVec2(split + 2.0f, Low.y + 6.0f), ImVec2(split + 2.0f, High.y - 6.0f), ImGui::GetColorU32(ImGuiCol_Border), 1.0f);
+	auto const width{split - Low.x};
+	auto const height{High.y - Low.y};
+	auto const at = [&](float const X, float const Y) { return ImVec2(Low.x + width * X, Low.y + height * Y); };
+	auto const mix = [](ImVec2 const A, ImVec2 const B, float const T) { return ImVec2(A.x + (B.x - A.x) * T, A.y + (B.y - A.y) * T); };
+	auto const ease = [](float const T) { auto const t{std::clamp(T, 0.0f, 1.0f)}; return t * t * (3.0f - 2.0f * t); };
+	// the joints of the tracks of the line, and a siding going off it at a switch
+	ImVec2 const joints[]{at(0.04f, 0.72f), at(0.18f, 0.64f), at(0.32f, 0.54f), at(0.46f, 0.48f), at(0.60f, 0.46f), at(0.74f, 0.42f), at(0.88f, 0.32f), at(0.98f, 0.24f)};
+	int constexpr tracks{7};
+	List.AddBezierQuadratic(joints[3], at(0.58f, 0.52f), at(0.80f, 0.66f), IM_COL32(130, 130, 130, 200), 2.0f);
+	auto const cycle{static_cast<float>(std::fmod(Time, 8.0))};
+	bool const boxing{cycle >= 4.0f};
+	int first{0};
+	int last{tracks - 1};
+	bool lit{false};
+	ImVec2 cursor;
+	if (false == boxing)
+	{
+		auto const target{mix(joints[4], joints[5], 0.5f)};
+		cursor = mix(at(0.75f, 0.92f), target, ease(cycle / 1.0f));
+		lit = cycle > 1.3f;
+	}
+	else
+	{
+		auto const corner{at(0.29f, 0.28f)};
+		auto const drag{ease((cycle - 4.6f) / 1.5f)};
+		auto const other{mix(corner, at(0.72f, 0.70f), drag)};
+		cursor = cycle < 4.6f ? mix(at(0.75f, 0.92f), corner, ease((cycle - 4.0f) / 0.6f)) : other;
+		if (cycle >= 4.6f && cycle < 6.6f)
+		{
+			List.AddRectFilled(corner, other, IM_COL32(90, 175, 255, 40));
+			List.AddRect(corner, other, kGestureLit, 0.0f, 0, 1.5f);
+		}
+		lit = cycle >= 6.2f;
+		first = 2;
+		last = 4;
+		gesture_key(List, ImVec2(Low.x + 6.0f, Low.y + 6.0f), std::round(ImGui::GetTextLineHeight() * 1.3f), "Shift");
+	}
+	for (int i = 0; i < tracks; ++i)
+	{
+		auto const on{lit && i >= first && i <= last};
+		List.AddLine(joints[i], joints[i + 1], on ? IM_COL32(90, 220, 110, 255) : IM_COL32(170, 170, 170, 220), on ? 4.0f : 2.0f);
+	}
+	for (auto const &joint : joints)
+		List.AddCircleFilled(joint, 2.5f, IM_COL32(220, 220, 220, 255));
+	gesture_mouse(List, ImVec2(cursor.x + 2.0f, cursor.y + 2.0f), std::round(height * 0.16f), "LMB");
+	auto const caption{boxing ? STR_C("Shift + a box: between the outermost") : STR_C("LMB on a track: its whole line")};
+	List.AddText(ImVec2(Low.x + 6.0f, High.y - ImGui::GetTextLineHeight() - 4.0f), IM_COL32(230, 230, 230, 230), caption);
+}
+
+// a signal put by a track: pressed beside it and dragged along, the arrow tells the way of the trains which see it; then the
+// hectometre posts of the line stand up one after the other
+void tutorial_signal_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
+{
+	auto const width{High.x - Low.x};
+	auto const height{High.y - Low.y};
+	auto const at = [&](float const X, float const Y) { return ImVec2(Low.x + width * X, Low.y + height * Y); };
+	auto const ease = [](float const T) { auto const t{std::clamp(T, 0.0f, 1.0f)}; return t * t * (3.0f - 2.0f * t); };
+	auto const cycle{static_cast<float>(std::fmod(Time, 8.0))};
+	// the track seen from above: sleepers and the two rails
+	auto const middle{at(0.0f, 0.5f).y};
+	auto const gauge{height * 0.07f};
+	for (float x = 0.02f; x < 1.0f; x += 0.025f)
+		List.AddLine(ImVec2(at(x, 0.0f).x, middle - gauge * 1.6f), ImVec2(at(x, 0.0f).x, middle + gauge * 1.6f), IM_COL32(110, 90, 70, 255), 3.0f);
+	List.AddLine(ImVec2(Low.x, middle - gauge), ImVec2(High.x, middle - gauge), IM_COL32(200, 200, 205, 255), 2.0f);
+	List.AddLine(ImVec2(Low.x, middle + gauge), ImVec2(High.x, middle + gauge), IM_COL32(200, 200, 205, 255), 2.0f);
+	auto const line{ImGui::GetTextLineHeight()};
+	if (cycle < 4.0f)
+	{
+		// pressed beside the track, dragged along it
+		auto const press{at(0.32f, 0.67f)};
+		auto const drag{ease((cycle - 1.0f) / 1.4f)};
+		ImVec2 const cursor{cycle < 1.0f ? ImVec2(press.x + (1.0f - ease(cycle)) * width * 0.3f, press.y + (1.0f - ease(cycle)) * height * 0.2f) : ImVec2(press.x + width * 0.3f * drag, press.y)};
+		if (cycle >= 1.0f)
+		{
+			ImVec2 const tip{cursor.x, press.y};
+			List.AddLine(press, tip, IM_COL32(255, 210, 60, 255), 3.0f);
+			if (drag > 0.2f)
+				List.AddTriangleFilled(ImVec2(tip.x + 8.0f, tip.y), ImVec2(tip.x - 4.0f, tip.y - 7.0f), ImVec2(tip.x - 4.0f, tip.y + 7.0f), IM_COL32(255, 210, 60, 255));
+		}
+		if (cycle >= 2.6f)
+		{
+			// the signal by the track: the mast and the head with its lights
+			auto const foot{at(0.32f, 0.98f)};
+			List.AddLine(foot, ImVec2(foot.x, foot.y - height * 0.06f), IM_COL32(200, 200, 200, 255), 3.0f);
+			ImVec2 const head_low{foot.x - height * 0.04f, foot.y - height * 0.27f};
+			ImVec2 const head_high{foot.x + height * 0.04f, foot.y - height * 0.06f};
+			List.AddRectFilled(head_low, head_high, IM_COL32(25, 25, 25, 255), height * 0.03f);
+			List.AddRect(head_low, head_high, IM_COL32(150, 150, 150, 255), height * 0.03f);
+			for (int i = 0; i < 3; ++i)
+			{
+				ImU32 const lights[]{IM_COL32(230, 60, 50, 255), IM_COL32(70, 210, 90, 255), IM_COL32(240, 240, 240, 255)};
+				List.AddCircleFilled(ImVec2(foot.x, head_low.y + height * (0.04f + 0.065f * i)), height * 0.025f, lights[i]);
+			}
+			List.AddText(ImVec2(foot.x - height * 0.06f - ImGui::CalcTextSize("S1").x, foot.y - line), IM_COL32(255, 255, 255, 230), "S1");
+		}
+		gesture_mouse(List, ImVec2(cursor.x + 2.0f, cursor.y + 2.0f), std::round(height * 0.16f), "LMB");
+		List.AddText(ImVec2(Low.x + 6.0f, Low.y + 4.0f), IM_COL32(230, 230, 230, 230), STR_C("H: by the track, drag along: the way the trains run"));
+		return;
+	}
+	// the hectometre posts of the line, one after the other
+	auto const shown{static_cast<int>((cycle - 4.3f) / 0.35f) + 1};
+	for (int i = 0; i < std::min(shown, 9); ++i)
+	{
+		auto const x{at(0.07f + 0.105f * i, 0.0f).x};
+		auto const foot{middle - gauge * 3.2f};
+		List.AddRectFilled(ImVec2(x - 3.0f, foot - height * 0.14f), ImVec2(x + 3.0f, foot), IM_COL32(240, 240, 240, 255), 1.0f);
+		char text[16];
+		std::snprintf(text, sizeof(text), "12.%d", i + 1);
+		auto const size{ImGui::CalcTextSize(text)};
+		List.AddText(ImVec2(std::round(x - size.x * 0.5f), foot - height * 0.14f - size.y - 1.0f), IM_COL32(255, 220, 120, 255), text);
+	}
+	List.AddText(ImVec2(Low.x + 6.0f, High.y - line - 4.0f), IM_COL32(230, 230, 230, 230), STR_C("B: the hectometre posts of the whole line at once"));
+}
+
+// a vehicle seen from the side, drawn simply: the body with its windows on two bogies
+void tutorial_vehicle(ImDrawList &List, ImVec2 const Low, ImVec2 const High, ImU32 const Body, bool const Locomotive)
+{
+	auto const width{High.x - Low.x};
+	auto const height{High.y - Low.y};
+	auto const wheel{height * 0.14f};
+	ImVec2 const body_high{High.x, High.y - wheel * 1.6f};
+	List.AddRectFilled(Low, body_high, Body, height * 0.12f);
+	auto const windows{Locomotive ? 2 : 5};
+	for (int i = 0; i < windows; ++i)
+	{
+		auto const left{Locomotive ? (i == 0 ? Low.x + width * 0.06f : High.x - width * 0.2f) : Low.x + width * (0.08f + 0.18f * i)};
+		auto const size{Locomotive ? width * 0.14f : width * 0.12f};
+		List.AddRectFilled(ImVec2(left, Low.y + height * 0.15f), ImVec2(left + size, Low.y + height * 0.42f), IM_COL32(30, 40, 50, 255), 2.0f);
+	}
+	for (float const share : {0.22f, 0.78f})
+	{
+		ImVec2 const middle{Low.x + width * share, High.y - wheel};
+		List.AddCircleFilled(ImVec2(middle.x - wheel * 1.1f, middle.y), wheel, IM_COL32(40, 40, 40, 255));
+		List.AddCircleFilled(ImVec2(middle.x + wheel * 1.1f, middle.y), wheel, IM_COL32(40, 40, 40, 255));
+	}
+}
+
+// the trainset tool: a double click on the list puts a vehicle into the train, the train grows on the track, Place and drive
+// and it runs off
+void tutorial_trainset_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
+{
+	auto const width{High.x - Low.x};
+	auto const height{High.y - Low.y};
+	auto const at = [&](float const X, float const Y) { return ImVec2(Low.x + width * X, Low.y + height * Y); };
+	auto const cycle{static_cast<float>(std::fmod(Time, 9.0))};
+	ImU32 const colours[]{IM_COL32(200, 60, 50, 255), IM_COL32(60, 120, 70, 255), IM_COL32(70, 100, 160, 255)};
+	auto const line{ImGui::GetTextLineHeight()};
+	// the list: the side view of each vehicle and its name
+	for (int i = 0; i < 3; ++i)
+	{
+		auto const top{0.08f + 0.28f * i};
+		auto const clicked{cycle > 0.8f + 1.4f * i && cycle < 1.2f + 1.4f * i};
+		if (clicked)
+			List.AddRectFilled(at(0.02f, top - 0.02f), at(0.40f, top + 0.24f), IM_COL32(90, 175, 255, 70), 3.0f);
+		tutorial_vehicle(List, at(0.03f, top), at(0.16f, top + 0.2f), colours[i], i == 0);
+		List.AddRectFilled(at(0.19f, top + 0.03f), at(0.36f, top + 0.03f + line / height * 0.6f), IM_COL32(220, 220, 220, 200), 2.0f);
+		List.AddRectFilled(at(0.19f, top + 0.12f), at(0.31f, top + 0.12f + line / height * 0.5f), IM_COL32(150, 150, 150, 160), 2.0f);
+	}
+	// the cursor goes down the list double clicking, then to the button
+	auto const row{std::min(2, static_cast<int>(std::max(0.0f, cycle - 0.4f) / 1.4f))};
+	ImVec2 cursor{at(0.30f, 0.16f + 0.28f * row)};
+	auto const added{std::clamp(static_cast<int>((cycle - 0.8f) / 1.4f) + 1, 0, 3)};
+	auto const button_low{at(0.55f, 0.08f)};
+	auto const button_high{at(0.95f, 0.30f)};
+	if (cycle > 4.6f)
+		cursor = ImVec2((button_low.x + button_high.x) * 0.5f, (button_low.y + button_high.y) * 0.5f);
+	bool const pressed{cycle > 5.2f && cycle < 5.6f};
+	List.AddRectFilled(button_low, button_high, pressed ? IM_COL32(60, 170, 75, 255) : IM_COL32(50, 140, 64, 255), 4.0f);
+	auto const label{STR_C("Place and drive")};
+	auto const size{ImGui::CalcTextSize(label)};
+	List.AddText(ImVec2(std::round((button_low.x + button_high.x - size.x) * 0.5f), std::round((button_low.y + button_high.y - size.y) * 0.5f)), IM_COL32(255, 255, 255, 255), label);
+	// the track and the train on it, the head on the left; after the button it runs off
+	auto const rail{at(0.0f, 0.86f).y};
+	List.AddLine(ImVec2(at(0.44f, 0.0f).x, rail), ImVec2(High.x, rail), IM_COL32(170, 170, 170, 255), 2.0f);
+	auto const run{cycle > 5.6f ? (cycle - 5.6f) * (cycle - 5.6f) * width * 0.06f : 0.0f};
+	auto const car{width * 0.15f};
+	List.PushClipRect(ImVec2(at(0.44f, 0.0f).x, Low.y), High, true);
+	for (int i = 0; i < added; ++i)
+	{
+		auto const left{at(0.46f, 0.0f).x + (car + 3.0f) * i - run};
+		tutorial_vehicle(List, ImVec2(left, rail - height * 0.24f), ImVec2(left + car, rail), colours[i], i == 0);
+	}
+	List.PopClipRect();
+	gesture_mouse(List, ImVec2(cursor.x + 2.0f, cursor.y + 2.0f), std::round(height * 0.16f), "LMB");
+	if (cycle < 4.6f)
+		List.AddText(ImVec2(cursor.x + height * 0.16f, cursor.y), IM_COL32(255, 220, 120, 255), "x2");
+}
+
+// the plan of a curve over the band of its curvature: the plateau of the arc goes up and down under the mouse, the curve tightens
+// and opens with it over the plan kept faint as it was
+void tutorial_curve_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
+{
+	auto const width{High.x - Low.x};
+	auto const height{High.y - Low.y};
+	auto const lift{static_cast<float>(0.5 + 0.5 * std::sin(Time * 1.3))};
+	auto const curvature = [](float const Share, float const Peak) {
+		if (Share < 0.15f || Share > 0.85f)
+			return 0.0f;
+		if (Share < 0.35f)
+			return Peak * (Share - 0.15f) / 0.2f;
+		if (Share > 0.65f)
+			return Peak * (0.85f - Share) / 0.2f;
+		return Peak;
+	};
+	auto const colour = [](float const Share) {
+		if (Share < 0.15f || Share > 0.85f)
+			return IM_COL32(255, 255, 255, 230);
+		if (Share < 0.35f || Share > 0.65f)
+			return IM_COL32(255, 140, 30, 255);
+		return IM_COL32(60, 230, 90, 255);
+	};
+	int constexpr steps{90};
+	auto const plan_height{height * 0.5f};
+	float scale{1.0f};
+	ImVec2 start{0.0f, 0.0f};
+	auto const plan = [&](float const Peak) {
+		std::vector<ImVec2> points;
+		float heading{0.0f}, x{0.0f}, y{0.0f};
+		for (int i = 0; i <= steps; ++i)
+		{
+			points.emplace_back(start.x + x * scale, start.y + y * scale);
+			auto const share{(i + 0.5f) / steps};
+			heading += curvature(share, Peak) / steps;
+			x += std::cos(heading) / steps;
+			y -= std::sin(heading) / steps;
+		}
+		return points;
+	};
+	// the scale fits the plan of the sharpest curve, the least sharp one is the widest
+	auto const sharpest{plan(2.8f)};
+	auto const widest{plan(1.6f)};
+	scale = std::min(width * 0.85f / std::max(1e-3f, widest.back().x), plan_height / std::max(1e-3f, -sharpest.back().y));
+	start = ImVec2(Low.x + (width - widest.back().x * scale) * 0.5f, Low.y + height * 0.06f + plan_height);
+	auto const before{plan(1.6f)};
+	List.AddPolyline(before.data(), static_cast<int>(before.size()), IM_COL32(170, 170, 170, 90), 0, 1.5f);
+	auto const peak{1.6f + 1.2f * lift};
+	auto const now{plan(peak)};
+	for (int i = 0; i < steps; ++i)
+		List.AddLine(now[i], now[i + 1], colour((i + 0.5f) / steps), 3.0f);
+	// the band under the plan
+	auto const band_top{Low.y + height * 0.66f};
+	auto const band_bottom{High.y - height * 0.06f};
+	auto const left{Low.x + width * 0.06f};
+	auto const band_width{width * 0.88f};
+	List.AddRectFilled(ImVec2(left - 6.0f, band_top - 6.0f), ImVec2(left + band_width + 6.0f, band_bottom + 4.0f), ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
+	List.AddLine(ImVec2(left, band_bottom), ImVec2(left + band_width, band_bottom), ImGui::GetColorU32(ImGuiCol_TextDisabled));
+	auto const k_scale{(band_bottom - band_top) * 0.9f / 2.8f};
+	for (int i = 0; i < steps; ++i)
+	{
+		auto const a{static_cast<float>(i) / steps};
+		auto const b{static_cast<float>(i + 1) / steps};
+		ImVec2 const p{left + a * band_width, band_bottom - curvature(a, peak) * k_scale};
+		ImVec2 const q{left + b * band_width, band_bottom - curvature(b, peak) * k_scale};
+		auto const tint{colour((a + b) * 0.5f)};
+		auto const flags{List.Flags};
+		List.Flags &= ~ImDrawListFlags_AntiAliasedFill;
+		List.AddQuadFilled(ImVec2(p.x, band_bottom), p, q, ImVec2(q.x, band_bottom), (tint & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 50));
+		List.Flags = flags;
+		List.AddLine(p, q, tint, 2.0f);
+	}
+	char text[32];
+	std::snprintf(text, sizeof(text), "R %.0f", std::round(900.0f / peak / 5.0f) * 5.0f);
+	ImVec2 const plateau{left + band_width * 0.5f, band_bottom - peak * k_scale};
+	List.AddText(ImVec2(plateau.x - ImGui::CalcTextSize(text).x * 0.5f, plateau.y - ImGui::GetTextLineHeight() - 2.0f), IM_COL32(60, 230, 90, 255), text);
+	gesture_mouse(List, ImVec2(plateau.x + band_width * 0.08f, plateau.y - height * 0.06f), height * 0.16f, "LMB");
+}
+
+// the terrain model under the tracks: the track laid level sinks onto the ground along, the formation and the slopes under it
+void tutorial_terrain_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
+{
+	auto const width{High.x - Low.x};
+	auto const height{High.y - Low.y};
+	auto const phase{static_cast<float>(std::fmod(Time * 0.3, 1.4))};
+	auto const settle{std::clamp(phase / 0.8f, 0.0f, 1.0f)};
+	auto const eased{settle * settle * (3.0f - 2.0f * settle)};
+	auto const ground_at = [&](float const Share) { return 0.45f + 0.22f * std::sin(Share * 4.0f) + 0.08f * std::sin(Share * 13.0f); };
+	auto const smooth_at = [&](float const Share) { return 0.45f + 0.18f * std::sin(Share * 4.0f); };
+	auto const x_of = [&](float const Share) { return Low.x + width * Share; };
+	auto const y_of = [&](float const Level) { return Low.y + height * (0.95f - 0.75f * Level); };
+	int constexpr steps{80};
+	std::vector<ImVec2> ground, track;
+	for (int i = 0; i <= steps; ++i)
+	{
+		auto const share{static_cast<float>(i) / steps};
+		ground.emplace_back(x_of(share), y_of(ground_at(share)));
+		track.emplace_back(x_of(share), y_of(0.55f + (smooth_at(share) + 0.04f - 0.55f) * eased));
+	}
+	auto const flags{List.Flags};
+	List.Flags &= ~ImDrawListFlags_AntiAliasedFill;
+	for (int i = 0; i < steps; ++i)
+	{
+		ImVec2 const quad[]{ground[i], ground[i + 1], ImVec2(ground[i + 1].x, High.y), ImVec2(ground[i].x, High.y)};
+		List.AddConvexPolyFilled(quad, 4, IM_COL32(95, 120, 70, 120));
+	}
+	if (eased > 0.99f)
+		for (int i = 0; i < steps; ++i)
+		{
+			auto const fill{track[i].y < ground[i].y};
+			ImVec2 const quad[]{track[i], track[i + 1], ground[i + 1], ground[i]};
+			List.AddQuadFilled(quad[0], quad[1], quad[2], quad[3], fill ? IM_COL32(190, 150, 90, 150) : IM_COL32(60, 45, 30, 150));
+		}
+	List.Flags = flags;
+	List.AddPolyline(ground.data(), static_cast<int>(ground.size()), IM_COL32(150, 190, 110, 255), 0, 1.5f);
+	List.AddPolyline(track.data(), static_cast<int>(track.size()), IM_COL32(230, 230, 230, 255), 0, 3.0f);
+	auto const label{eased > 0.99f ? STR_C("embankment and cutting") : STR_C("the terrain model")};
+	List.AddText(ImVec2(Low.x + 6.0f, Low.y + 4.0f), IM_COL32(220, 220, 220, 200), label);
 }
 
 } // namespace
@@ -4708,7 +5014,11 @@ void editor_mode::render_first_steps()
 		first_step_done(first_step::lay);
 	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && selected_track() != nullptr)
 		first_step_done(first_step::select);
-	enum class trial { none, top, lay, turnout, select };
+	if (current_work_area() == work_area::terrain)
+		first_step_done(first_step::terrain);
+	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::route && false == m_route.chain.tracks.empty())
+		first_step_done(first_step::plan);
+	enum class trial { none, top, lay, turnout, select, profile, terrain, plan, trainset, signals };
 	struct input
 	{
 		char const *keys;
@@ -4726,6 +5036,7 @@ void editor_mode::render_first_steps()
 		std::vector<input> inputs;
 		std::vector<goal> goals;
 		trial action;
+		void (*sketch)(ImDrawList &, ImVec2, ImVec2, double){nullptr};
 	};
 	static std::vector<lesson> const lessons{
 	    {"Looking around",
@@ -4759,6 +5070,16 @@ void editor_mode::render_first_steps()
 	      {"wheel", "Alone it zooms, as everywhere"}},
 	     {{first_step::wheel, "Change the radius with Ctrl+wheel"}, {first_step::shape, "Change the shape with Shift+wheel"}},
 	     trial::lay},
+	    {"Correcting a curve",
+	     nullptr,
+	     {{"G", "The plan tool: a click on a curve shows its design, the vertex and the radius to drag in the view"},
+	      {"LMB + move", "In the panel, the band of the curvature: drag the plateau of the arc up or down for its radius"},
+	      {"LMB + move", "Drag a ramp sideways: the transition curve gets longer or shorter"},
+	      {"wheel", "Over the band: the radius by 5%, a transition by 5 m"},
+	      {"LMB", "Apply to the scenery: the tracks are laid by the design"}},
+	     {{first_step::plan, "Open the plan of a curve"}, {first_step::plan_band, "Change the curve in the band"}, {first_step::plan_apply, "Apply it to the scenery"}},
+	     trial::plan,
+	     tutorial_curve_sketch},
 	    {"Joining tracks",
 	     "join",
 	     {{"LMB + move", "Press on a free end (a magenta ring) and drag: a new track goes out of it"},
@@ -4776,26 +5097,70 @@ void editor_mode::render_first_steps()
 	      {"Esc", "Back to selecting"}},
 	     {{first_step::turnout, "Put a switch into a track"}},
 	     trial::turnout},
+	    {"Signals and posts",
+	     nullptr,
+	     {{"H", "The signals tool: the type of the signal in the panel, from the templates of the scenery"},
+	      {"LMB", "A click by a track places the signal on that side"},
+	      {"LMB + move", "Press by the track and drag along it: the trains running that way see the signal"},
+	      {"LMB + move", "Drag a standing signal: it moves along its track"},
+	      {"B", "Objects along the track: the hectometre posts and the W17 markers of a whole line at once, and trainsets"}},
+	     {{first_step::signal, "Place a signal"}, {first_step::posts, "Place the hectometre posts of a line"}},
+	     trial::signals,
+	     tutorial_signal_sketch},
 	    {"Selecting and fixing",
 	     "edit",
 	     {{"Esc", "The select tool"},
 	      {"LMB", "Click a track: it is selected, with its points"},
 	      {"LMB + move", "Drag a point: the end or the curve follows"},
 	      {"Q W E", "Move, turn or scale with the gizmo"},
-	      {"Gizmo", "Tool options, Gizmo, Enabled off: the track won't move by chance"},
+	      {"Gizmo", "Tool options, Gizmo, Off: the track won't move by chance"},
 	      {"RMB", "A click on a track: what can be done with it"},
 	      {"Del", "Deletes the selected"},
 	      {"Ctrl + Z", "Takes the last change back; Ctrl+Y brings it back again"}},
 	     {{first_step::select, "Select a track"}, {first_step::undo, "Take a change back"}},
 	     trial::select},
+	    {"The grade line",
+	     nullptr,
+	     {{"P", "The profile tool: a click on a track opens the grade line of its whole line in the strip below"},
+	      {"Shift + LMB", "A click adds a track, a box from the empty ground takes the tracks in it: the route runs between the outermost of them"},
+	      {"LMB + move", "Drag a point of the grade line: the grades on both sides of it follow"},
+	      {"LMB LMB", "A double click on the line adds a point"},
+	      {"Del", "Removes the chosen point"},
+	      {"Ctrl + wheel", "Over the plot: the heights stretched, the grades seen better"},
+	      {"RMB + move", "Over the plot: the view moves along the line"}},
+	     {{first_step::profile, "Open the grade line of a track"}, {first_step::profile_point, "Move or add a point"}, {first_step::profile_apply, "Apply it: the tracks take its heights"}},
+	     trial::profile,
+	     tutorial_route_sketch},
+	    {"Terrain from the terrain model",
+	     nullptr,
+	     {{"F5", "The Terrain field of work: the terrain model (NMT) is in its tool options"},
+	      {"1", "Location: where the scenery lies in PUWG 1992; a scenery begun from nothing asks for it with its first track"},
+	      {"2", "What gives way: the tracks go onto the terrain, or the terrain is drawn to the tracks"},
+	      {"3", "Load: the model comes from geoportal.gov.pl, the terrain is made along the tracks with the formation and the slopes"},
+	      {"Ctrl + Z", "Takes the changes of the tracks back"}},
+	     {{first_step::terrain, "Open the Terrain field of work"}, {first_step::nmt, "Load terrain from the model"}},
+	     trial::terrain,
+	     tutorial_terrain_sketch},
+	    {"Sceneries made before",
+	     nullptr,
+	     {{"LMB", "A track of an include or of a file that isn't saved: the inspector says why it can't be changed"},
+	      {"T", "Switches laid before keep their shape; Replace the geometry with the template, under More settings of the switch, gives them the one of the catalogue"},
+	      {"P", "Grade lines kept by an older editor are read as they were kept"},
+	      {"Ctrl + S", "Only what changed is written: the other lines stay as they were, the comment lines of other tools too"}},
+	     {},
+	     trial::none},
 	    {"Saving and driving",
 	     nullptr,
-	     {{"Ctrl + S", "Saves the scenery"}, {"LMB", "More, Trainset: pick a locomotive, click the track, Place and drive"}},
+	     {{"Ctrl + S", "Saves the scenery"},
+	      {"LMB", "Trainset tool: a click on the track where the train stands"},
+	      {"LMB LMB", "A double click on a vehicle of the list puts it into the train; a click on a vehicle of the train moves it, turns it or takes it out"},
+	      {"LMB", "Place and drive: the train goes onto the track and the cab is yours"}},
 	     {{first_step::save, "Save the scenery"}, {first_step::drive, "Drive on the new track"}},
-	     trial::none},
+	     trial::trainset,
+	     tutorial_trainset_sketch},
 	};
 	auto const done = [&](lesson const &Lesson) {
-		return std::all_of(Lesson.goals.begin(), Lesson.goals.end(), [&](goal const &Goal) { return m_first_steps_done[static_cast<std::size_t>(Goal.step)]; });
+		return false == Lesson.goals.empty() && std::all_of(Lesson.goals.begin(), Lesson.goals.end(), [&](goal const &Goal) { return m_first_steps_done[static_cast<std::size_t>(Goal.step)]; });
 	};
 	m_tutorial_page = std::clamp(m_tutorial_page, 0, static_cast<int>(lessons.size()) - 1);
 	auto const &lesson{lessons[m_tutorial_page]};
@@ -4810,6 +5175,8 @@ void editor_mode::render_first_steps()
 	auto const width{520.0f * scale};
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 	ImGui::SetNextWindowBgAlpha(1.0f);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(FLT_MAX, ImGui::GetIO().DisplaySize.y - 60.0f));
+	keep_on_screen("###tutorial");
 	if (ImGui::Begin((std::string(STR_C("Tutorial")) + "###tutorial").c_str(), &m_first_steps_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
 	{
 		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
@@ -4834,10 +5201,22 @@ void editor_mode::render_first_steps()
 				ImGui::Dummy(ImVec2(width, height));
 			}
 		}
+		if (lesson.sketch != nullptr)
+		{
+			auto const at{ImGui::GetCursorScreenPos()};
+			ImVec2 const end{at.x + width, at.y + std::round(width * 0.36f)};
+			auto *list{ImGui::GetWindowDrawList()};
+			list->AddRectFilled(at, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
+			list->PushClipRect(at, end, true);
+			lesson.sketch(*list, at, end, ImGui::GetTime());
+			list->PopClipRect();
+			ImGui::Dummy(ImVec2(width, end.y - at.y));
+		}
 		ImGui::SeparatorText(STR_C("Mouse and keys"));
 		for (auto const &entry : lesson.inputs)
 			tutorial_input(entry.keys, entry.text, 150.0f * scale);
-		ImGui::SeparatorText(STR_C("Try it"));
+		if (false == lesson.goals.empty())
+			ImGui::SeparatorText(STR_C("Try it"));
 		for (auto const &entry : lesson.goals)
 		{
 			bool const reached{m_first_steps_done[static_cast<std::size_t>(entry.step)]};
@@ -4856,6 +5235,60 @@ void editor_mode::render_first_steps()
 			if (ImGui::Button(Global.EditorOrtho ? STR_C("3D view (O)") : STR_C("Top view, orthographic (O)")))
 				toggle_ortho();
 			break;
+		case trial::profile:
+		{
+			auto const on{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::profile};
+			ImGui::BeginDisabled(on);
+			if (ImGui::Button(STR_C("The profile tool (P)")))
+			{
+				choose_work_area(work_area::tracks);
+				show_track_tab(track_tab::profile);
+			}
+			ImGui::EndDisabled();
+			break;
+		}
+		case trial::signals:
+		{
+			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::signals);
+			if (ImGui::Button(STR_C("The signals tool (H)")))
+			{
+				choose_work_area(work_area::tracks);
+				show_track_tab(track_tab::signals);
+			}
+			ImGui::EndDisabled();
+			break;
+		}
+		case trial::trainset:
+		{
+			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::lineside && m_vehicle.open);
+			if (ImGui::Button(STR_C("The trainset tool")))
+			{
+				choose_work_area(work_area::tracks);
+				show_track_tab(track_tab::lineside);
+				m_vehicle.expand = true;
+			}
+			ImGui::EndDisabled();
+			break;
+		}
+		case trial::plan:
+		{
+			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && (m_track_tab == track_tab::route || m_track_tab == track_tab::straights));
+			if (ImGui::Button(STR_C("The plan tool (G)")))
+			{
+				choose_work_area(work_area::tracks);
+				show_track_tab(track_tab::straights);
+			}
+			ImGui::EndDisabled();
+			break;
+		}
+		case trial::terrain:
+		{
+			ImGui::BeginDisabled(current_work_area() == work_area::terrain);
+			if (ImGui::Button(STR_C("Terrain (F5)")))
+				choose_work_area(work_area::terrain);
+			ImGui::EndDisabled();
+			break;
+		}
 		case trial::lay:
 		case trial::turnout:
 		case trial::select:
@@ -4892,7 +5325,7 @@ void editor_mode::render_first_steps()
 			ImVec2 const centre{at.x + dot * 0.4f, at.y + dot * 0.5f};
 			auto const colour{done(lessons[index]) ? IM_COL32(100, 230, 100, 255) : ImGui::GetColorU32(ImGuiCol_TextDisabled)};
 			if (index == m_tutorial_page)
-				ImGui::GetWindowDrawList()->AddCircle(centre, dot * 0.3f, kTutorialLit, 0, 2.0f);
+				ImGui::GetWindowDrawList()->AddCircle(centre, dot * 0.3f, kGestureLit, 0, 2.0f);
 			ImGui::GetWindowDrawList()->AddCircleFilled(centre, dot * 0.17f, colour);
 			ImGui::PopID();
 			ImGui::SameLine(0.0f, 0.0f);
@@ -4939,7 +5372,7 @@ void editor_mode::render_shortcuts_window()
 	      {"PrtScr", "Screenshot"},
 	      {"Ctrl+Shift+F11", "Export scenery dump"},
 	      {"F11", "Leave the editor"},
-	      {"F10", "Quit"}}},
+	      {"F10", "Quit the simulator"}}},
 	    {"Fields of work", {{"F2", "Surroundings"}, {"F3", "Tracks"}, {"F4", "Roads"}, {"F5", "Terrain"}}},
 	    {"Camera",
 	     {{"RMB held, mouse", "Look around"},
@@ -4948,7 +5381,10 @@ void editor_mode::render_shortcuts_window()
 	      {"F", "Fly to the selected"},
 	      {"O", "Top view, orthographic"}}},
 	    {"Gizmo",
-	     {{"Q / W / E", "Translate / rotate / scale"}, {"R", "Local space"}, {"Ctrl held while dragging", "Snap to the step set in the gizmo settings"}}},
+	     {{"Q / W / E", "Translate / rotate / scale"},
+	      {"R", "Local space"},
+	      {"Ctrl held while dragging", "Snap to the step set in the gizmo settings"},
+	      {"Tool options, Gizmo, Off", "Hides the gizmo, so nothing moves by chance"}}},
 	    {"Surroundings",
 	     {{"1 2 3 4 5", "Select, insert, brush, area fill, copy to bank"},
 	      {"LMB", "Select a model, or place one in the insert and brush modes"},
@@ -4965,7 +5401,7 @@ void editor_mode::render_shortcuts_window()
 	      {"L / T / U", "Lay track / switch / turntable"},
 	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
 	      {"H / B", "Signals / objects along the track"},
-	      {"P / V / J / I", "Profile / speed / joints / infrastructure"},
+	      {"P / V / J", "Profile / speed / joints"},
 	      {"Ctrl+F", "Find a track by its name"},
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
 	      {"RMB on a track", "What can be done with it"},
@@ -4976,10 +5412,31 @@ void editor_mode::render_shortcuts_window()
 	      {"Shift+wheel", "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"},
 	      {"0-9 while laying", "Type the length (or the radius) of the next piece, Enter lays it"},
 	      {"Alt held while laying", "The direction in steps of 15 degrees"},
-	      {"N", "Parallel track: LMB on a straight, then the side and the spacing"},
+	      {"N", "Parallel track: LMB on a track, then the side and the spacing"},
 	      {"Shift+LMB on a track in L", "The Parallel tool (N) with it"},
 	      {"Enter / Backspace", "Laying track: lay up to the cursor / take the last piece back"},
 	      {"Del", "Delete the selected tracks"}}},
+	    {"Plan of a curve",
+	     {{"G, LMB on a curve", "Its design: the vertex and the radius to drag in the view, the curvature in the panel"},
+	      {"Drag a plateau of the curvature band", "The radius of that arc"},
+	      {"Drag a ramp sideways", "The length of the transition curve"},
+	      {"Wheel over the band", "The radius by 5%, a transition by 5 m"},
+	      {"Apply to the scenery", "Lay the paths by the design; Ctrl+Z takes it back"}}},
+	    {"Trainset",
+	     {{"B, Trainset, LMB on a track", "Where the train stands"},
+	      {"LMB LMB on the list", "Adds the vehicle to the train"},
+	      {"LMB on a vehicle of the train", "Moves it, turns it around or takes it out"},
+	      {"Place and drive", "Puts the train on the track and gives the cab at once"}}},
+	    {"Vertical profile",
+	     {{"P, LMB on a track", "The grade line of its whole line, in the strip under the view"},
+	      {"Shift+LMB box", "The route between the outermost of the tracks, through the switches"},
+	      {"LMB + move on a point", "Change the grade before and after it"},
+	      {"LMB LMB on the line", "Add a point"},
+	      {"Del", "Remove the chosen point"},
+	      {"Wheel", "Zoom along the line"},
+	      {"Ctrl+wheel", "Stretch the heights"},
+	      {"RMB + move", "Move the view along the line"},
+	      {"Apply in the scenery", "Write the heights into the tracks; Ctrl+Z takes them back"}}},
 	    {"Roads",
 	     {{"Esc", "Finish the road being built"},
 	      {"Ctrl held", "Build: straight ahead"},
@@ -4989,22 +5446,54 @@ void editor_mode::render_shortcuts_window()
 	    {"Terrain", {{"LMB", "Sculpt: raise; smooth: even out; chunks: add one"}, {"Shift+LMB", "Sculpt: lower; chunks: delete one"}}},
 	};
 	ImGui::SetNextWindowSize(ImVec2(620.0f * Global.ui_scale, 560.0f * Global.ui_scale), ImGuiCond_FirstUseEver);
+	keep_on_screen("###shortcuts");
 	// it floats over the view, read better on a solid background
 	ImGui::SetNextWindowBgAlpha(0.97f);
 	if (ImGui::Begin((std::string(STR_C("Keyboard shortcuts")) + "###shortcuts").c_str(), &m_shortcuts_open, ImGuiWindowFlags_NoCollapse))
 	{
+		static char filter[64]{};
+		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+		ImGui::InputTextWithHint("##shortcutfilter", STR_C("Find: a key or what it does"), filter, sizeof(filter));
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Tutorial")))
+			m_first_steps_open = true;
+		auto const lower = [](std::string Text) {
+			std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+			return Text;
+		};
+		auto const wanted{lower(filter)};
+		auto const matches = [&](shortcut const &Item) { return wanted.empty() || lower(STR_C(Item.keys)).find(wanted) != std::string::npos || lower(STR_C(Item.action)).find(wanted) != std::string::npos; };
+		auto const picture{std::round(ImGui::GetTextLineHeight() * 1.15f)};
 		for (auto const &entry : groups)
 		{
+			if (std::none_of(entry.shortcuts.begin(), entry.shortcuts.end(), matches))
+				continue;
 			ImGui::SeparatorText(STR_C(entry.title));
 			if (false == ImGui::BeginTable(entry.title, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 				continue;
-			ImGui::TableSetupColumn("##keys", ImGuiTableColumnFlags_WidthFixed, 190.0f * Global.ui_scale);
+			ImGui::TableSetupColumn("##keys", ImGuiTableColumnFlags_WidthFixed, 250.0f * Global.ui_scale);
 			ImGui::TableSetupColumn("##action", ImGuiTableColumnFlags_WidthStretch);
 			for (auto const &item : entry.shortcuts)
 			{
+				if (false == matches(item))
+					continue;
 				ImGui::TableNextColumn();
-				ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "%s", STR_C(item.keys));
+				auto const words{gesture_picture(item.keys)};
+				if (false == words.empty())
+				{
+					auto const at{ImGui::GetCursorScreenPos()};
+					auto const drawn{gesture_draw(*ImGui::GetWindowDrawList(), at, picture, words, ImGui::GetColorU32(ImGuiCol_Text))};
+					ImGui::Dummy(ImVec2(drawn, picture));
+					ImGui::SameLine();
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((picture - ImGui::GetTextLineHeight()) * 0.5f));
+				}
+				if (words.empty() || false == gesture_keys_only(item.keys))
+					ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "%s", STR_C(item.keys));
+				else
+					ImGui::NewLine();
 				ImGui::TableNextColumn();
+				if (false == words.empty())
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((picture - ImGui::GetTextLineHeight()) * 0.5f));
 				ImGui::TextWrapped("%s", STR_C(item.action));
 			}
 			ImGui::EndTable();
@@ -5030,7 +5519,17 @@ void editor_mode::render_gizmo_options()
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::signals &&
         m_track_tab != track_tab::lineside)
         return;
-    ImGui::Checkbox(STR_C("Enabled"), &m_gizmo_enabled);
+    int op{m_gizmo_enabled ? static_cast<int>(m_gizmo_op) : -1};
+    if (segmented("gizmo", op,
+                  {{-1, STR_C("Off"), "The gizmo hidden: the selected things won't move by chance"},
+                   {static_cast<int>(gizmo_operation::translate), STR_C("Translate (Q)"), "Arrows which move the selected thing"},
+                   {static_cast<int>(gizmo_operation::rotate), STR_C("Rotate (W)"), "Rings which turn the selected thing"},
+                   {static_cast<int>(gizmo_operation::scale), STR_C("Scale (E)"), "Handles which scale the selected thing; a track is lengthened"}}))
+    {
+        m_gizmo_enabled = op >= 0;
+        if (m_gizmo_enabled)
+            m_gizmo_op = static_cast<gizmo_operation>(op);
+    }
     if (!m_gizmo_enabled)
         return;
     if (terrain_brush() || terrain_clicking())
@@ -5038,15 +5537,6 @@ void editor_mode::render_gizmo_options()
         ImGui::TextDisabled(STR_C("Suspended while editing terrain"));
         return;
     }
-
-    // lets the user pick the transform mode without keyboard shortcuts
-    int op = static_cast<int>(m_gizmo_op);
-    ImGui::RadioButton(STR_C("Translate (Q)"), &op, static_cast<int>(gizmo_operation::translate));
-    ImGui::SameLine();
-    ImGui::RadioButton(STR_C("Rotate (W)"), &op, static_cast<int>(gizmo_operation::rotate));
-    ImGui::SameLine();
-    ImGui::RadioButton(STR_C("Scale (E)"), &op, static_cast<int>(gizmo_operation::scale));
-    m_gizmo_op = static_cast<gizmo_operation>(op);
 
     if (m_gizmo_op != gizmo_operation::scale) // ImGuizmo always scales in local space
         ImGui::Checkbox(STR_C("Local space (R)"), &m_gizmo_local);
@@ -5629,7 +6119,7 @@ void editor_mode::delete_selected()
         snap.node_name = *scene::Layers.instance(m_instance).file;
         m_history.push_back(std::move(snap));
         g_redo.clear();
-        ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" removed, Ctrl+Z brings it back. Its directive is erased when the scenery is saved.");
+        ui()->set_status(format(STR_C("Include of \"%s\" removed, Ctrl+Z brings it back. Its directive is erased when the scenery is saved"), scene::Layers.instance(m_instance).file->c_str()));
         select_include(0);
         return;
     }
@@ -6048,12 +6538,12 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         if (node->from_template() && scene::Layers.removable(node->m_instance, &reason))
                         {
                             select_include(node->m_instance);
-                            ui()->set_status("Include of \"" + *scene::Layers.instance(m_instance).file + "\" selected. Its parameters are in the node properties, Del removes it from the scenery.");
+                            ui()->set_status(format(STR_C("Include of \"%s\" selected. Its parameters are in the inspector, Del removes it from the scenery"), scene::Layers.instance(m_instance).file->c_str()));
                             node = nullptr;
                         }
                         else if (node->from_template() || false == scene::Layers.editable(node, &reason))
                         {
-                            ui()->set_status("\"" + (node->name().empty() ? std::string{"(unnamed node)"} : node->name()) + "\" can't be edited: " + reason, true);
+                            ui()->set_status(format(STR_C("\"%s\" can't be edited: %s"), (node->name().empty() ? std::string{STR_C("(no name)")} : node->name()).c_str(), reason.c_str()), true);
                             node = nullptr;
                         }
                     }
@@ -6195,7 +6685,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
 void editor_mode::render_change_history(){
 
 
-    ImGui::Begin((std::string(STR_C("Editor History")) + "###editorhistory").c_str(), &m_change_history);
+    ImGui::Begin((std::string(STR_C("Change History")) + "###editorhistory").c_str(), &m_change_history);
     int maxsize = m_max_history_size;
     if (ImGui::InputInt(STR_C("Max history size"), &maxsize))
     {
@@ -6235,7 +6725,7 @@ void editor_mode::render_change_history(){
                         s.action == EditorSnapshot::Action::RoadEdit ? "ROAD" :
                         s.action == EditorSnapshot::Action::Array ? "ARR" :
                         s.action == EditorSnapshot::Action::Terrain ? "TER" : "OTH",
-                        s.node_name.empty() ? "(noname)" : s.node_name.c_str(),
+                        s.node_name.empty() ? STR_C("(no name)") : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 
         if (ImGui::Selectable(buf, m_selected_history_idx == i))
@@ -6253,7 +6743,7 @@ void editor_mode::render_change_history(){
     ImGui::SameLine();
    
     ImGui::SameLine();
-    if (ImGui::Button(STR_C("Undo Selected")))
+    if (ImGui::Button(STR_C("Undo back to the selected")))
     {
         if (m_selected_history_idx >= 0 && m_selected_history_idx < (int)m_history.size())
         {

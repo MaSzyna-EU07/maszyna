@@ -11,6 +11,7 @@ http:
 #include "editor/editorAlignment.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "utilities/translation.h"
 
 #include <algorithm>
 #include <array>
@@ -296,7 +297,7 @@ result fit_between(design const &Design)
 	auto const end{plan_of(Design.end)};
 	if (glm::length(Design.start_direction) < 1e-9 || glm::length(Design.end_direction) < 1e-9)
 	{
-		r.errors.emplace_back("The direction of an end of the fragment is undefined, its end path has zero length");
+		r.errors.emplace_back(STR_C("The direction of an end of the fragment is undefined, its end path has zero length"));
 		return r;
 	}
 	auto const startdirection{glm::normalize(Design.start_direction)};
@@ -308,7 +309,7 @@ result fit_between(design const &Design)
 	{
 		auto const offset{end - start};
 		if (std::abs(cross(startdirection, offset)) > 0.01 || glm::dot(startdirection, enddirection) < std::cos(1e-4) || glm::dot(startdirection, offset) <= 0.0)
-			r.errors.emplace_back("The ends don't lie on a common straight line, add a vertex");
+			r.errors.emplace_back(STR_C("The ends don't lie on a common straight line, add a vertex"));
 	}
 	else if (count == 1)
 	{
@@ -316,14 +317,14 @@ result fit_between(design const &Design)
 		auto const determinant{cross(startdirection, enddirection)};
 		if (std::abs(determinant) < 1e-9)
 		{
-			r.errors.emplace_back("Tangents of the ends are parallel, use two vertices");
+			r.errors.emplace_back(STR_C("Tangents of the ends are parallel, use two vertices"));
 		}
 		else
 		{
 			auto const t{cross(offset, enddirection) / determinant};
 			auto const u{cross(startdirection, offset) / determinant};
 			if ((t <= 0.0 || u <= 0.0) && false == Design.vertices.front().reverse_turn)
-				r.errors.emplace_back("Tangents of the ends intersect outside of the fragment, turn the longer way or use two vertices");
+				r.errors.emplace_back(STR_C("Tangents of the ends intersect outside of the fragment, turn the longer way or use two vertices"));
 			r.vertices[0] = start + startdirection * t;
 		}
 	}
@@ -344,7 +345,7 @@ result fit_between(design const &Design)
 	{
 		if (glm::distance(polygon[i], polygon[i + 1]) < 1e-3)
 		{
-			r.errors.emplace_back(format("Tangent %zu has zero length", i + 1));
+			r.errors.emplace_back(format(STR_C("Tangent %zu has zero length"), i + 1));
 			return r;
 		}
 	}
@@ -371,9 +372,9 @@ result fit_between(design const &Design)
 		if (Straight >= -1e-4 || -Straight <= startreserve + 1e-4)
 			return;
 		if (startreserve > 0.0)
-			r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the adjoining straight", -Straight - startreserve));
+			r.errors.emplace_back(format(STR_C("Vertex 1: the curve starts %.2f m before the adjoining straight"), -Straight - startreserve));
 		else
-			r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -Straight));
+			r.errors.emplace_back(format(STR_C("Vertex 1: the curve starts %.2f m before the fixed start"), -Straight));
 	};
 
 	struct fitted
@@ -416,7 +417,7 @@ result fit_between(design const &Design)
 			continue;
 		if (geometric > kPi - 1e-3 || (reverse && geometric < 1e-3))
 		{
-			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex"), k + 1));
 			return r;
 		}
 		if (vertex.compound && false == vertex.arcs.empty())
@@ -451,7 +452,7 @@ result fit_between(design const &Design)
 				auto const middle{(low + high) * 0.5};
 				(angles(middle) > deflection ? high : low) = middle;
 			}
-			r.warnings.emplace_back(format("Vertex %zu: transition curves shortened to %.1f / %.1f m to fit the deflection angle", k + 1, fit.transition_in * low, fit.transition_out * low));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to %.1f / %.1f m to fit the deflection angle"), k + 1, fit.transition_in * low, fit.transition_out * low));
 			fit.transition_in *= low;
 			fit.transition_out *= low;
 		}
@@ -525,7 +526,8 @@ result fit_between(design const &Design)
 			fit.transition_in *= scales[k];
 			fit.transition_out *= scales[k];
 		}
-		r.warnings.emplace_back(format("Vertex %zu: R reduced from %.1f to %.1f m, transitions to %.1f / %.1f m, to fit between the ends", k + 1, Design.vertices[k].radius, fit.radius, fit.transition_in, fit.transition_out));
+		r.warnings.emplace_back(format(STR_C("Vertex %zu: R reduced from %.1f to %.1f m, transitions to %.1f / %.1f m, to fit between the ends"), k + 1, Design.vertices[k].radius, fit.radius, fit.transition_in, fit.transition_out));
+		r.radius_warnings.push_back(r.warnings.back());
 	}
 	for (std::size_t k = 0; k < count; ++k)
 	{
@@ -550,7 +552,7 @@ result fit_between(design const &Design)
 			}
 			fit.transition_in *= low;
 			fit.transition_out *= low;
-			r.warnings.emplace_back(format("Vertex %zu: transition curves shortened to %.1f / %.1f m, the circular arc keeps %.0f m", k + 1, fit.transition_in, fit.transition_out, minimum));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to %.1f / %.1f m, the circular arc keeps %.0f m"), k + 1, fit.transition_in, fit.transition_out, minimum));
 		}
 		if (fit.transition_in < 1.0)
 			fit.transition_in = 0.0;
@@ -564,7 +566,7 @@ result fit_between(design const &Design)
 		if (ramp >= fit.cant)
 			continue;
 		fit.cant = ramp < 5.0 ? 0.0 : std::floor(ramp / 5.0) * 5.0;
-		r.warnings.emplace_back(format("Vertex %zu: cant lowered to %.0f mm, the shortened transition curves can't ramp more", k + 1, fit.cant));
+		r.warnings.emplace_back(format(STR_C("Vertex %zu: cant lowered to %.0f mm, the shortened transition curves can't ramp more"), k + 1, fit.cant));
 	}
 
 	std::vector<double> vertexchainage(count, 0.0);
@@ -586,7 +588,7 @@ result fit_between(design const &Design)
 		if (deflection < 1e-7)
 		{
 			if (lead < -1e-4)
-				r.errors.emplace_back(format("Vertex %zu lies inside the curve of the previous vertex", k + 1));
+				r.errors.emplace_back(format(STR_C("Vertex %zu lies inside the curve of the previous vertex"), k + 1));
 			push_straight(cursor, directionin, lead);
 			vertexchainage[k] = chainage;
 			cursor = position;
@@ -594,14 +596,14 @@ result fit_between(design const &Design)
 		}
 		if (geometric > kPi - 1e-3 || (reverse && geometric < 1e-3))
 		{
-			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex"), k + 1));
 			return r;
 		}
 		if (fit.compound)
 		{
 			auto const shape{build_compound(deflection, fit.arcs, fit.transition_in, fit.transition_out)};
 			if (shape.shortened < 1.0)
-				r.warnings.emplace_back(format("Vertex %zu: transition curves shortened to fit the deflection angle", k + 1));
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to fit the deflection angle"), k + 1));
 			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
 			auto const endoffset{directionin * shape.end.x + normalin * shape.end.y};
 			auto const along{cross(directionout, endoffset) / cross(directionout, directionin)};
@@ -610,7 +612,7 @@ result fit_between(design const &Design)
 			if (k == 0)
 				starts_early(straight);
 			else if (straight < -1e-4)
-				r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
+				r.errors.emplace_back(format(STR_C("Curves of vertices %zu and %zu overlap by %.2f m"), k, k + 1, -straight));
 			push_straight(cursor, directionin, straight);
 			auto const startchainage{chainage};
 			glm::dvec2 origin{curvestart};
@@ -657,9 +659,9 @@ result fit_between(design const &Design)
 			report.recommended = recommend(Design.speed, sharpest, Design.norms);
 			r.curves.push_back(report);
 			if (Design.norms.checked && sharpest < report.recommended.radius_min - 1e-6)
-				r.warnings.emplace_back(format("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h", k + 1, sharpest, report.recommended.radius_min, Design.speed));
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, sharpest, report.recommended.radius_min, Design.speed));
 			if (Design.norms.checked && report.unbalanced > Design.norms.unbalanced + 1e-6)
-				r.warnings.emplace_back(format("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2", k + 1, report.unbalanced, Design.norms.unbalanced));
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2"), k + 1, report.unbalanced, Design.norms.unbalanced));
 			continue;
 		}
 		auto const radius{fit.radius};
@@ -683,7 +685,7 @@ result fit_between(design const &Design)
 		auto const arcangle{deflection - endin.angle - endout.angle};
 		if (arcangle < -1e-9)
 		{
-			r.errors.emplace_back(format("Vertex %zu: transition curves are too long for the deflection angle", k + 1));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: transition curves are too long for the deflection angle"), k + 1));
 			return r;
 		}
 
@@ -691,7 +693,7 @@ result fit_between(design const &Design)
 		if (k == 0)
 			starts_early(straight);
 		else if (straight < -1e-4)
-			r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
+			r.errors.emplace_back(format(STR_C("Curves of vertices %zu and %zu overlap by %.2f m"), k, k + 1, -straight));
 		push_straight(cursor, directionin, straight);
 
 		element curve;
@@ -759,16 +761,16 @@ result fit_between(design const &Design)
 		if (false == norms.checked)
 			continue;
 		if (radius < report.recommended.radius_min - 1e-6)
-			r.warnings.emplace_back(format("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h", k + 1, radius, report.recommended.radius_min, Design.speed));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, radius, report.recommended.radius_min, Design.speed));
 		if (curve.cant > norms.cant_max + 1e-6)
-			r.warnings.emplace_back(format("Vertex %zu: cant %.0f mm exceeds %.0f mm", k + 1, curve.cant, norms.cant_max));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: cant %.0f mm exceeds %.0f mm"), k + 1, curve.cant, norms.cant_max));
 		if (report.unbalanced > norms.unbalanced + 1e-6)
-			r.warnings.emplace_back(format("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2 (cant at least %.0f mm)", k + 1, report.unbalanced, norms.unbalanced, report.recommended.cant_min));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2 (cant at least %.0f mm)"), k + 1, report.unbalanced, norms.unbalanced, report.recommended.cant_min));
 		auto const required{transition_length(Design.speed, radius, curve.cant, norms)};
 		if (lengthin + 1e-6 < required || lengthout + 1e-6 < required)
-			r.warnings.emplace_back(format("Vertex %zu: transition curves shorter than the required %.0f m", k + 1, required));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shorter than the required %.0f m"), k + 1, required));
 		if (curve.cant > 0.0 && (lengthin <= 0.0 || lengthout <= 0.0))
-			r.warnings.emplace_back(format("Vertex %zu: cant without a transition curve to ramp it", k + 1));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: cant without a transition curve to ramp it"), k + 1));
 	}
 	auto const lastdirection{glm::normalize(polygon.back() - polygon[polygon.size() - 2])};
 	auto const tail{glm::dot(end - cursor, lastdirection)};
@@ -777,9 +779,9 @@ result fit_between(design const &Design)
 	if (tail < -1e-4 && -tail > endreserve + 1e-4)
 	{
 		if (endreserve > 0.0)
-			r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the adjoining straight", count, -tail - endreserve));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: the curve ends %.2f m past the adjoining straight"), count, -tail - endreserve));
 		else
-			r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the fixed end", count, -tail));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: the curve ends %.2f m past the fixed end"), count, -tail));
 	}
 	push_straight(cursor, lastdirection, tail);
 	r.length = chainage;
@@ -791,7 +793,7 @@ result fit_between(design const &Design)
 		{
 			auto const &e{r.elements[i]};
 			if (e.kind == element_kind::straight && e.length < minimum && r.elements[i - 1].kind != element_kind::straight && r.elements[i + 1].kind != element_kind::straight)
-				r.warnings.emplace_back(format("Straight between curves is %.1f m long, less than %.0f m", e.length, minimum));
+				r.warnings.emplace_back(format(STR_C("Straight between curves is %.1f m long, less than %.0f m"), e.length, minimum));
 		}
 	}
 
@@ -815,9 +817,9 @@ result fit_between(design const &Design)
 		point.tangent = point.radius * std::abs(gradeafter - gradebefore) / 2.0;
 	}
 	if (Design.start_radius > 0.0 && Design.start_radius < 10000.0)
-		r.warnings.emplace_back(format("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly", Design.start_radius));
+		r.warnings.emplace_back(format(STR_C("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly"), Design.start_radius));
 	if (Design.end_radius > 0.0 && Design.end_radius < 10000.0)
-		r.warnings.emplace_back(format("The adjoining track at the end is curved (R %.0f m), the curvature changes abruptly", Design.end_radius));
+		r.warnings.emplace_back(format(STR_C("The adjoining track at the end is curved (R %.0f m), the curvature changes abruptly"), Design.end_radius));
 
 	r.valid = r.errors.empty() && r.length > 1e-3;
 	return r;
@@ -1045,6 +1047,7 @@ std::optional<join_result> fitted_join(join_frame const &Frame, join_kind const 
 	curve.length = r.length;
 	curve.speed = shape.speed;
 	curve.warnings = r.warnings;
+	curve.radius_warnings = r.radius_warnings;
 	curve.radius = r.curves.empty() ? 0.0 : std::numeric_limits<double>::max();
 	for (auto const &report : r.curves)
 	{
@@ -1328,6 +1331,19 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	{
 		auto longest = std::max_element(spans.begin(), spans.end(), [&](span const &A, span const &B) { return extent(A) < extent(B); });
 		split(longest, (chainage_from(*longest) + chainage_to(*longest)) * 0.5);
+	}
+	// no path longer than a track may be
+	for (std::size_t i = 0; i < spans.size();)
+	{
+		auto const from{chainage_from(spans[i])};
+		auto const length{chainage_to(spans[i]) - from};
+		if (length <= geometry::longest_path)
+		{
+			++i;
+			continue;
+		}
+		auto const count{static_cast<int>(std::ceil(length / geometry::longest_path))};
+		split(spans.begin() + static_cast<std::ptrdiff_t>(i), from + length / count);
 	}
 	if (Intervals != nullptr)
 	{

@@ -279,6 +279,18 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		WriteLog("SELFTEST " + command + ": " + m_route.status + " " + m_route.error);
 		return selftest_result::handled;
 	}
+	if (command == "digitizescenery")
+	{
+		// "digitizescenery write" digitizes, without the word only counts what it would do
+		std::string mode;
+		words >> mode;
+		auto const text{digitize_scenery(mode == "write")};
+		std::istringstream lines{text};
+		std::string line;
+		while (std::getline(lines, line))
+			WriteLog("SELFTEST digitizescenery: " + line);
+		return selftest_result::handled;
+	}
 	if (command == "digitizeall")
 	{
 		digitize_all();
@@ -316,6 +328,35 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 				text += format(" | curve R %.3f L %.3f / %.3f cant %.1f compound %d arcs %zu %s", curve.radius, curve.transition_in, curve.transition_out, curve.cant, curve.compound ? 1 : 0, curve.arcs.size(), curve.designed.has_value() ? "designed" : "recognized");
 			WriteLog(text);
 		}
+		return selftest_result::handled;
+	}
+	if (command == "vprofilezoom")
+	{
+		// the plot of the open profile from one chainage to another, the heights exaggerated as given (0: fitted)
+		double from{0.0}, to{100.0}, exaggeration{0.0};
+		words >> from >> to >> exaggeration;
+		m_profile.view_from = from;
+		m_profile.view_to = to;
+		m_profile.exaggeration = static_cast<float>(exaggeration);
+		std::string zones;
+		for (auto const &zone : m_profile.context.switches)
+			zones += format(" [%.1f..%.1f %s]", zone.from, zone.to, zone.name.c_str());
+		std::string points;
+		for (auto const &point : m_profile.line.points)
+			points += format(" (%.1f %.3f R%.0f%s)", point.chainage, point.elevation, point.radius, point.joint ? " joint" : "");
+		std::size_t kept{0};
+		std::string nearby;
+		for (auto const &entry : m_profiles)
+		{
+			++kept;
+			if (false == m_profile.samples.empty() && glm::length(glm::dvec2{entry.start.x - m_profile.samples.front().position.x, entry.start.z - m_profile.samples.front().position.z}) < 50.0)
+				nearby += format(" [%.1f m, start %.1f %.1f end %.1f %.1f]", entry.length, entry.start.x, entry.start.z, entry.end.x, entry.end.z);
+		}
+		WriteLog(format("SELFTEST vprofilezoom library %zu (loaded %d), route %.1f m from %.1f %.1f to %.1f %.1f; near:%s", kept, m_profiles_loaded ? 1 : 0, m_profile.route.length, m_profile.samples.front().position.x, m_profile.samples.front().position.z, m_profile.samples.back().position.x, m_profile.samples.back().position.z, nearby.c_str()));
+		std::string issues;
+		for (auto const &issue : m_profile.issues)
+			issues += std::string{issue.error ? " | error: " : " | "} + issue.text;
+		WriteLog(format("SELFTEST vprofilezoom %.1f..%.1f; departure of the track %.3f m; %s; zones%s; points%s%s", from, to, m_profile.departure, m_profile.status.c_str(), zones.c_str(), points.c_str(), issues.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "vprofile")
@@ -443,6 +484,183 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			WriteLog("SELFTEST btf kept: " + line);
 		return selftest_result::handled;
 	}
+	if (command == "infrascan")
+	{
+		// what the binding of the objects along the tracks finds over the whole scenery: how many of each kind and group, and
+		// the files the rules don't know, the most used first
+		double corridor{0.0};
+		int top{30};
+		std::string usage;
+		words >> corridor >> top >> usage;
+		m_infra.scope = 3;
+		if (corridor > 0.0)
+			m_infra.corridor = static_cast<float>(corridor);
+		infra_recognize();
+		std::map<std::string, int> kinds, groups;
+		std::map<std::string, std::pair<int, std::string>> unknown;
+		for (auto const &candidate : m_infra.candidates)
+		{
+			auto const &binding{candidate.binding};
+			++kinds[infra::name(binding.type)];
+			++groups[infra::name(binding.group)];
+			if (binding.group != infra::category::other)
+				continue;
+			std::string file;
+			if (binding.type == infra::kind::include)
+				file = *scene::Layers.instance(binding.include).file;
+			else if (binding.type == infra::kind::model)
+			{
+				auto const *model{static_cast<TAnimModel const *>(binding.node)};
+				file = model->Model() != nullptr ? model->Model()->NameGet() : std::string{"?"};
+			}
+			else
+				file = infra::name(binding.type);
+			auto &entry{unknown[std::string{infra::name(binding.type)} + " " + file]};
+			++entry.first;
+			entry.second = format("%.1f m", candidate.offset);
+		}
+		std::string text;
+		for (auto const &[name, count] : kinds)
+			text += format(" %s %d", name.c_str(), count);
+		text += " |";
+		for (auto const &[name, count] : groups)
+			text += format(" %s %d", name.c_str(), count);
+		WriteLog(format("SELFTEST infrascan: %zu objects along %zu paths, corridor %.1f m:", m_infra.candidates.size(), m_infra.tracks.size(), m_infra.corridor) + text + " | " + m_infra.status);
+		std::vector<std::pair<int, std::string>> sorted;
+		for (auto const &[name, entry] : unknown)
+			sorted.emplace_back(entry.first, name + " (e.g. " + entry.second + " off the axis)");
+		std::sort(sorted.begin(), sorted.end(), [](auto const &A, auto const &B) { return A.first > B.first; });
+		for (std::size_t i = 0; i < sorted.size() && static_cast<int>(i) < top; ++i)
+			WriteLog(format("SELFTEST infrascan unknown %d x %s", sorted[i].first, sorted[i].second.c_str()));
+		WriteLog(format("SELFTEST infrascan: %zu files the rules don't know", sorted.size()));
+		// how each template and model stands by the tracks: the distance from the axis, the height over the rail top, the turn
+		// against the path, as tab separated values for the descriptions of the templates
+		if (false == usage.empty())
+		{
+			struct use
+			{
+				std::string kind;
+				std::string group;
+				std::vector<double> offsets, heights, turns;
+			};
+			std::map<std::string, use> uses;
+			for (auto const &candidate : m_infra.candidates)
+			{
+				auto const &binding{candidate.binding};
+				if (binding.anchors.empty() || (binding.type != infra::kind::include && binding.type != infra::kind::model))
+					continue;
+				std::string file;
+				if (binding.type == infra::kind::include)
+					file = *scene::Layers.instance(binding.include).file;
+				else
+				{
+					auto const *model{static_cast<TAnimModel const *>(binding.node)};
+					file = model->Model() != nullptr ? model->Model()->NameGet() : std::string{};
+				}
+				if (file.empty())
+					continue;
+				auto &entry{uses[file]};
+				entry.kind = infra::name(binding.type);
+				entry.group = infra::name(binding.group);
+				entry.offsets.push_back(binding.anchors.front().offset);
+				entry.heights.push_back(binding.anchors.front().height);
+				if (binding.turns)
+				{
+					auto turn{std::fmod(glm::degrees(binding.yaw), 360.0)};
+					entry.turns.push_back(turn < 0.0 ? turn + 360.0 : turn);
+				}
+			}
+			std::ofstream out{usage};
+			out << "file\tkind\tgroup\tcount\toffsets\theights\tturns\n";
+			auto const list = [](std::vector<double> const &Values) {
+				std::string text;
+				for (auto const value : Values)
+					text += format("%s%.2f", text.empty() ? "" : ",", value);
+				return text;
+			};
+			for (auto const &[file, entry] : uses)
+				out << file << '\t' << entry.kind << '\t' << entry.group << '\t' << entry.offsets.size() << '\t' << list(entry.offsets) << '\t' << list(entry.heights) << '\t' << list(entry.turns) << '\n';
+			WriteLog(format("SELFTEST infrascan: the use of %zu templates and models written to %s", uses.size(), usage.c_str()));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "rollcheck")
+	{
+		// at each joint near the point the cant of the paths meeting, told along a common direction, and their heights
+		glm::dvec3 point{0.0};
+		double radius{100.0};
+		words >> point.x >> point.z >> radius;
+		struct end
+		{
+			TTrack *track;
+			std::size_t path;
+			bool last;
+			glm::dvec3 position;
+			double roll; // along the direction leaving the joint
+		};
+		std::vector<end> ends;
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved)
+				continue;
+			for (std::size_t i = 0; i < track->m_paths.size(); ++i)
+			{
+				auto const &path{track->m_paths[i]};
+				for (auto const last : {false, true})
+				{
+					auto const &at{path.points[last ? segment_data::point::end : segment_data::point::start]};
+					if (geometry::plan_distance(at, point) > radius)
+						continue;
+					// the roll of the path told along it; leaving the joint from its end the direction is the other way
+					auto const roll{static_cast<double>(path.rolls[last ? 1 : 0])};
+					ends.push_back({track, i, last, at, last ? -roll : roll});
+				}
+			}
+		}
+		std::size_t joints{0}, wrong{0};
+		for (std::size_t a = 0; a < ends.size(); ++a)
+			for (std::size_t b = a + 1; b < ends.size(); ++b)
+			{
+				if (ends[a].track == ends[b].track || glm::distance(ends[a].position, ends[b].position) > 0.02)
+					continue;
+				++joints;
+				// leaving the joint both ways, one path's cant is the other's turned round
+				auto const mismatch{std::abs(ends[a].roll + ends[b].roll)};
+				if (mismatch > 0.05)
+				{
+					++wrong;
+					WriteLog(format("SELFTEST rollcheck %s/%zu %s and %s/%zu %s at %.2f %.2f %.2f: cant %.3f vs %.3f deg", ends[a].track->name().c_str(), ends[a].path, ends[a].last ? "end" : "start", ends[b].track->name().c_str(), ends[b].path, ends[b].last ? "end" : "start", ends[a].position.x, ends[a].position.y, ends[a].position.z, ends[a].roll, -ends[b].roll));
+				}
+			}
+		WriteLog(format("SELFTEST rollcheck: %zu joints, %zu with the cant not matching", joints, wrong));
+		return selftest_result::handled;
+	}
+	if (command == "freeends")
+	{
+		// the ends of the rail paths joined to nothing near the point, and how far the nearest other end is from each
+		glm::dvec3 point{0.0};
+		double radius{100.0};
+		words >> point.x >> point.z >> radius;
+		for (auto const &end : editor_track::free_ends(nullptr, 1, point, radius, {}))
+		{
+			double nearest{std::numeric_limits<double>::max()};
+			double rise{0.0};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track == end.track || track->m_editorremoved)
+					continue;
+				for (auto const &path : track->m_paths)
+					for (auto const which : {segment_data::point::start, segment_data::point::end})
+						if (auto const distance{glm::distance(path.points[which], end.position)}; distance < nearest)
+						{
+							nearest = distance;
+							rise = path.points[which].y - end.position.y;
+						}
+			}
+			WriteLog(format("SELFTEST freeend %s at %.3f %.3f %.3f, nearest other end %.3f m away, %+.3f m higher", end.track->name().c_str(), end.position.x, end.position.y, end.position.z, nearest, rise));
+		}
+		return selftest_result::handled;
+	}
 	if (command == "pathsnear")
 	{
 		glm::dvec3 point{0.0};
@@ -461,7 +679,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 					continue;
 				auto const &c1{path.points[segment_data::point::control1]};
 				auto const &c2{path.points[segment_data::point::control2]};
-				WriteLog(format("SELFTEST path %s/%zu %s: %.3f %.3f -> %.3f %.3f, c1 %.3f %.3f, c2 %.3f %.3f, %.3f m", track->name().c_str(), i, track->eType == tt_Switch ? "switch" : "normal", a.x, a.z, b.x, b.z, c1.x, c1.z, c2.x, c2.z, geometry::bezier{path}.plan_length()));
+				WriteLog(format("SELFTEST path %s/%zu %s: %.3f %.3f -> %.3f %.3f, c1 %.3f %.3f, c2 %.3f %.3f, %.3f m, y %.3f -> %.3f, cant %.2f -> %.2f deg", track->name().c_str(), i, track->eType == tt_Switch ? "switch" : "normal", a.x, a.z, b.x, b.z, c1.x, c1.z, c2.x, c2.z, geometry::bezier{path}.plan_length(), a.y, b.y, path.rolls[0], path.rolls[1]));
 			}
 		}
 		return selftest_result::handled;

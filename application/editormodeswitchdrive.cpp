@@ -165,7 +165,7 @@ void editor_mode::switch_drives_committed(std::vector<TTrack *> const &Tracks)
 
 std::string editor_mode::missing_drive_variant(int const Family, bool const Rightswitch, bool const Driveright) const
 {
-	return format(STR_C("The drive %s has no variant for a %s switch with the drive on the %s"), m_switch.drives[Family].name.c_str(), Rightswitch ? STR_C("right") : STR_C("left"), Driveright ? STR_C("right") : STR_C("left"));
+	return format(Rightswitch ? STR_C("The drive %s has no variant for a right-hand switch with the drive %s") : STR_C("The drive %s has no variant for a left-hand switch with the drive %s"), m_switch.drives[Family].name.c_str(), Driveright ? STR_C("on the right") : STR_C("on the left"));
 }
 
 bool editor_mode::place_switch_drive(TTrack &Switch)
@@ -293,9 +293,11 @@ bool editor_mode::render_switch_drive_choice()
 		return false;
 	}
 	auto const label = [&](int const Index) { return Index < 0 ? std::string{STR_C("no drive")} : tool.drives[Index].name; };
-	ImGui::PushItemWidth(200.0f);
 	bool changed{false};
-	if (ImGui::BeginCombo(STR_C("Drive"), label(tool.drive).c_str()))
+	if (false == begin_fields("##drivefields", 0.3f))
+		return false;
+	field_row("Drive");
+	if (ImGui::BeginCombo("##drive", label(tool.drive).c_str()))
 	{
 		for (int i = -1; i < static_cast<int>(tool.drives.size()); ++i)
 			if (ImGui::Selectable(label(i).c_str(), tool.drive == i))
@@ -305,15 +307,10 @@ bool editor_mode::render_switch_drive_choice()
 			}
 		ImGui::EndCombo();
 	}
-	ImGui::PopItemWidth();
+	ImGui::EndTable();
 	item_tooltip("Templates described with category: switch drive, the side of the switch and of the drive, and a parameter with the role track for the name of the switch.\nIts events <name>+ and <name>- switch it with the keys by the switch and in the map during the game");
 	if (tool.drive >= 0)
-	{
-		ImGui::SameLine();
-		changed |= ImGui::RadioButton(STR_C("diverging side"), &tool.drive_side, 0);
-		ImGui::SameLine();
-		changed |= ImGui::RadioButton(STR_C("other side"), &tool.drive_side, 1);
-	}
+		changed |= segmented("driveside", tool.drive_side, {{0, STR_C("diverging side")}, {1, STR_C("other side")}});
 	return changed;
 }
 

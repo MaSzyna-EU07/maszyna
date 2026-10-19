@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "utilities/translation.h"
+#include "editor/editorFormat.hpp"
 
 #include <yaml-cpp/yaml.h>
 
@@ -96,7 +98,7 @@ bool read_template(std::string const &File, template_text &Text, std::string &Er
 	std::ifstream input{Global.asCurrentSceneryPath + File, std::ios_base::binary};
 	if (false == input.is_open())
 	{
-		Error = "can't open file \"" + File + "\"";
+		Error = format(STR_C("can't open file \"%s\""), File.c_str());
 		return false;
 	}
 	auto &content{Text.content};
@@ -248,7 +250,7 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 		}
 		if (false == document.IsMap())
 		{
-			Error = "the description isn't a list of named values";
+			Error = STR_C("the description isn't a list of named values");
 			return false;
 		}
 		Info.name = document["name"].as<std::string>("");
@@ -293,7 +295,7 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 	}
 	catch (YAML::Exception const &exception)
 	{
-		Error = std::string{"the description is malformed: "} + exception.what();
+		Error = format(STR_C("the description is malformed: %s"), exception.what());
 		return false;
 	}
 	return true;
@@ -355,7 +357,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 		auto document{YAML::Load(text.yaml)};
 		if (false == document.IsNull() && false == document.IsMap())
 		{
-			Error = "the existing description isn't a list of named values";
+			Error = STR_C("the existing description isn't a list of named values");
 			return false;
 		}
 		if (false == document["version"].IsDefined())
@@ -427,7 +429,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 	}
 	catch (YAML::Exception const &exception)
 	{
-		Error = std::string{"the existing description is malformed, fix or remove it first: "} + exception.what();
+		Error = format(STR_C("the existing description is malformed, fix or remove it first: %s"), exception.what());
 		return false;
 	}
 	if (false == text.utf8)
@@ -458,7 +460,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 	if (output.fail())
 	{
 		std::filesystem::remove(filepath + ".tmp", error);
-		Error = "can't write file \"" + File + "\"";
+		Error = format(STR_C("can't write file \"%s\""), File.c_str());
 		return false;
 	}
 	// the first save of a file leaves its original content next to it
@@ -469,7 +471,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 	std::filesystem::rename(filepath + ".tmp", filepath, error);
 	if (error)
 	{
-		Error = "can't replace file \"" + File + "\": " + error.message();
+		Error = format(STR_C("can't replace file \"%s\": %s"), File.c_str(), error.message().c_str());
 		std::filesystem::remove(filepath + ".tmp", error);
 		return false;
 	}
@@ -555,14 +557,14 @@ bool complete(include_info const &Info, int const Parameters, std::string *Issue
 	std::string issue;
 	if (Info.name.empty())
 	{
-		issue = "the template needs a name";
+		issue = STR_C("the template needs a name");
 	}
 	for (auto id = 1; id <= Parameters && issue.empty(); ++id)
 	{
 		auto const lookup{std::find_if(std::begin(Info.parameters), std::end(Info.parameters), [=](include_parameter const &Parameter) { return Parameter.id == id; })};
 		if (lookup == std::end(Info.parameters) || (false == automatic(lookup->role) && lookup->value.empty()))
 		{
-			issue = "(p" + std::to_string(id) + ") needs a default value, or a role filled in by the editor (name, pos.*, rot.*)";
+			issue = format(STR_C("(p%d) needs a default value, or a role filled in by the editor (name, pos.*, rot.*)"), id);
 		}
 	}
 	if (false == issue.empty() && Issue != nullptr)
@@ -763,7 +765,7 @@ include_entry examine(std::string const &File)
 	entry.described = false == text.yaml.empty();
 	if (false == entry.described)
 	{
-		entry.issue = "the template has no description";
+		entry.issue = STR_C("the template has no description");
 		return entry;
 	}
 	include_info info;
@@ -791,8 +793,9 @@ void editorIncludeBank::scan()
 	m_scanned = true;
 	std::error_code error;
 	auto const root{std::filesystem::path(Global.asCurrentSceneryPath)};
-	// NOTE: on an error the iterator turns into the end one
-	for (std::filesystem::recursive_directory_iterator file{root, std::filesystem::directory_options::skip_permission_denied, error}, end; file != end; file.increment(error))
+	// NOTE: on an error the iterator turns into the end one. Folders linked into the scenery folder are a part of it
+	auto const options{std::filesystem::directory_options::skip_permission_denied | std::filesystem::directory_options::follow_directory_symlink};
+	for (std::filesystem::recursive_directory_iterator file{root, options, error}, end; file != end; file.increment(error))
 	{
 		if (false == file->is_regular_file(error))
 		{

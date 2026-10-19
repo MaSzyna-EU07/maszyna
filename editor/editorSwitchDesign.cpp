@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "world/RailLayout.h"
 
+#include "utilities/translation.h"
 #include "utilities/utilities.h"
 
 #include <algorithm>
@@ -706,7 +707,7 @@ bool save_own(std::vector<design> const &Designs, std::string &Error)
 	std::ofstream file{path, std::ios::trunc};
 	if (false == file.is_open())
 	{
-		Error = "Can't write " + path.string();
+		Error = format(STR_C("Can't write %s"), path.string().c_str());
 		return false;
 	}
 	file << "# switch templates made in the track editor of MaSzyna\n";
@@ -730,7 +731,7 @@ bool save_own(std::vector<design> const &Designs, std::string &Error)
 	}
 	if (file.fail())
 	{
-		Error = "Can't write " + path.string();
+		Error = format(STR_C("Can't write %s"), path.string().c_str());
 		return false;
 	}
 	return true;

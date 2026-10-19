@@ -70,6 +70,7 @@ class editor_track
 		float sleeper_ballast{0.f};
 		std::string timber_model;
 		std::string timber_skin;
+		std::pair<std::string, int> rail_profile;
 		std::array<std::vector<std::pair<std::string, basic_event *>>, 6> events;
 		std::string name;
 	};
@@ -383,7 +384,8 @@ class editor_track
 	static double sampled_grade(std::vector<route_sample> const &Samples, double const Chainage);
 	static glm::dvec3 sampled_position(std::vector<route_sample> const &Samples, double const Chainage);
 	// grade of the path which adjoins the end of the route, positive rising along the route
-	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade);
+	// Adjoining, Path, Entered: the path met, and whether it's met at its start
+	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade, TTrack **Adjoining = nullptr, int *Path = nullptr, bool *Entered = nullptr);
 	// path off the route whose end no longer met the adjoining path in height
 	struct height_gap
 	{
@@ -456,10 +458,14 @@ class editor_track
 	// touching in its middle: Pass from the crossing, half of the gauge and the width of the head; a straight there when Middle < 0
 	static slip_curve slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead = 0.0, double const Entry = 0.0);
 	static std::vector<switch_template> standard_switch_templates();
+	// the rail of the switch templates fitting the track, by the rail profile it's laid with; empty where the profile doesn't tell
+	static std::string rail_of(TTrack const *Track);
 	static std::optional<switch_template> template_of(switch_design::design const &Design, std::string &Error);
 	static std::vector<switch_template> find_switch_templates();
+	// the switch of the scenery as a template of its own shape; none when its tracks don't start at one point
+	static std::optional<switch_template> template_of_switch(TTrack *Track);
 	static TTrack *load_path(std::string const &Text, TTrack const &Template, std::string const &Name = {});
-	static TTrack *create_path(TTrack const &Style, segment_data const &Path);
+	static TTrack *create_path(TTrack const &Style, segment_data const &Path, std::string const &Name = {});
 	// parameters of a path laid where there's no other path to copy them from
 	struct path_style
 	{
@@ -470,7 +476,8 @@ class editor_track
 	};
 	// the path goes to the layer receiving the items created in the editor
 	static TTrack *create_path(path_style const &Style, segment_data const &Path);
-	static TTrack *split_path(TTrack &Track, double const T);
+	// Name: of the new piece, else after the track
+	static TTrack *split_path(TTrack &Track, double const T, std::string const &Name = {});
 	static double nearest_parameter(TTrack const &Track, glm::dvec3 const &Point);
 	// point of the first path at the parameter of nearest_parameter()
 	static glm::dvec3 point_at(TTrack const &Track, double const T);
@@ -480,6 +487,8 @@ class editor_track
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces, TTrack **Last = nullptr);
 	static void retire(TTrack &Track);
+	// a retired path back in the scenery, found by its name again; it's committed by the caller
+	static void revive(TTrack &Track);
 
 	static std::string material_name(material_handle const Material);
 	static material_handle fetch_material(std::string const &Name);
@@ -514,7 +523,7 @@ class editor_track
 	static void bind_switch_path(TTrack &Switch, int const Path);
 	static void store_switch_path(TTrack &Switch, int const Path);
 	static void rebuild_geometry(TTrack &Track);
-	static TTrack *clone(TTrack const &Template);
+	static TTrack *clone(TTrack const &Template, std::string const &Name = {});
 	static TTrack *load_text(std::string const &Text, TTrack const *Template, std::string const &Name);
 	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member);
 };

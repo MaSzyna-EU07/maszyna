@@ -198,12 +198,29 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		tool.connection_second = find(second);
 		tool.connection = kindword == "single" ? -1 : static_cast<int>(kind);
 		auto const line{straight_near(at, {}, 3.0)};
-		if (line.tracks.empty())
+		TTrack *start{line.tracks.empty() ? nullptr : line.tracks.front()};
+		if (start == nullptr)
 		{
-			WriteLog("SELFTEST connection: no straight at the start");
+			// along a curve: the track nearest to the press
+			auto best{3.0};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+					continue;
+				auto const distance{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, at)), at)};
+				if (distance < best)
+				{
+					best = distance;
+					start = track;
+				}
+			}
+		}
+		if (start == nullptr)
+		{
+			WriteLog("SELFTEST connection: no track at the start");
 			return selftest_result::handled;
 		}
-		m_node = line.tracks.front();
+		m_node = start;
 		ui()->set_node(m_node);
 		m_cursor_override = at;
 		auto const started{start_switch_placement()};
@@ -214,6 +231,12 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			return selftest_result::handled;
 		}
 		tool.mouse = glm::dvec3{toward.x, tool.point.y, toward.z};
+		if (tool.curved)
+		{
+			finish_switch_placement();
+			WriteLog("SELFTEST connection along the curve: " + tool.status);
+			return selftest_result::handled;
+		}
 		if (command == "connectionhold")
 		{
 			m_cursor_override = toward;

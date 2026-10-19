@@ -302,33 +302,47 @@ glm::dvec3 editor_mode::snap_straight_direction(glm::dvec3 const &Pivot, glm::dv
 void editor_mode::render_straights_ui()
 {
 	auto &state{m_straights};
-	ImGui::TextDisabled(STR_C("Straights recognized from chains of collinear straight paths.\nLMB: select a path to see the straight it belongs to"));
-
-	ImGui::PushItemWidth(100.0f);
-	double angle{glm::degrees(state.tolerance.angle)};
-	if (ImGui::InputDouble(STR_C("Angle tolerance (deg)"), &angle, 0.0, 0.0, "%.4f"))
-		state.tolerance.angle = glm::radians(std::max(0.0, angle));
-	item_tooltip("Largest change of the direction between the paths of one straight");
-	ImGui::InputDouble(STR_C("Offset tolerance (m)"), &state.tolerance.offset, 0.0, 0.0, "%.3f");
-	item_tooltip("Largest distance of the paths from the common axis of the straight");
-	ImGui::InputDouble(STR_C("Treat as straight above R (m)"), &state.tolerance.radius, 0.0, 0.0, "%.0f");
-	item_tooltip("Curves of a larger radius count as straight");
-	ImGui::InputDouble(STR_C("Minimum length (m)"), &state.minimum_length, 0.0, 0.0, "%.0f");
-	item_tooltip("Shorter straights aren't listed");
-	ImGui::PopItemWidth();
-	if (ImGui::Button(STR_C("Recognize straights in the scenery")))
+	ImGui::PushTextWrapPos(0.0f);
+	ImGui::TextDisabled("%s", STR_C("Straights recognized from chains of collinear straight paths.\nLMB: select a path to see the straight it belongs to"));
+	ImGui::PopTextWrapPos();
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.24f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.52f, 0.30f, 1.0f));
+	if (ImGui::Button(STR_C("Recognize straights in the scenery"), ImVec2(-FLT_MIN, ImGui::GetFrameHeight() * 1.4f)))
 	{
 		state.found = editor_track::find_straights(state.minimum_length, state.tolerance);
 		state.listed = -1;
 		state.current_for = nullptr;
 	}
+	ImGui::PopStyleColor(2);
+	if (ImGui::TreeNode(STR_C("What counts as one straight")))
+	{
+		if (begin_fields("##straighttolerance", 0.55f))
+		{
+			double angle{glm::degrees(state.tolerance.angle)};
+			field_row("Angle tolerance (deg)");
+			if (ImGui::InputDouble("##straightangle", &angle, 0.0, 0.0, "%.4f"))
+				state.tolerance.angle = glm::radians(std::max(0.0, angle));
+			item_tooltip("Largest change of the direction between the paths of one straight");
+			field_row("Offset tolerance (m)");
+			ImGui::InputDouble("##straightoffset", &state.tolerance.offset, 0.0, 0.0, "%.3f");
+			item_tooltip("Largest distance of the paths from the common axis of the straight");
+			field_row("Treat as straight above R (m)");
+			ImGui::InputDouble("##straightradius", &state.tolerance.radius, 0.0, 0.0, "%.0f");
+			item_tooltip("Curves of a larger radius count as straight");
+			field_row("Minimum length (m)");
+			ImGui::InputDouble("##straightminimum", &state.minimum_length, 0.0, 0.0, "%.0f");
+			item_tooltip("Shorter straights aren't listed");
+			ImGui::EndTable();
+		}
+		ImGui::TreePop();
+	}
 	if (false == state.found.empty())
 	{
+		ImGui::AlignTextToFramePadding();
 		ImGui::Text(STR_C("%zu straights"), state.found.size());
 		ImGui::SameLine();
-		ImGui::PushItemWidth(150.0f);
+		ImGui::SetNextItemWidth(-FLT_MIN);
 		ImGui::InputTextWithHint("##straightfilter", STR_C("path name"), state.filter, sizeof(state.filter));
-		ImGui::PopItemWidth();
 		ImGui::BeginChild("##straights", ImVec2(0.0f, 160.0f), true);
 		for (int i = 0; i < static_cast<int>(state.found.size()); ++i)
 		{
@@ -359,30 +373,55 @@ void editor_mode::render_straight_ui()
 			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", state.status.c_str());
 		return;
 	}
-	ImGui::TextUnformatted(describe(line).c_str());
+	metric_tiles({{format("%.2f m", line.length), STR_C("length"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%.2f\xc2\xb0", line.azimuth), STR_C("azimuth"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%+.2f \xe2\x80\xb0", line.grade * 1000.0), STR_C("grade"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%zu", line.tracks.size()), STR_C("paths"), ImGui::GetColorU32(ImGuiCol_TextDisabled)}});
 	if (false == m_straights.neighbours.empty())
 		ImGui::TextDisabled("%s", STR_C("Nearby straight: the diamond snaps parallel at 4.00 / 4.50 / 4.75 m"));
 
-	auto const toolbutton = [&](char const *Label, int const Tool, char const *Tooltip) {
+	// what else can be done with the straight, as tiles with a sketch of it
+	auto const gap{std::round(ImGui::GetFontSize() * 0.3f)};
+	auto const width{std::floor((ImGui::GetContentRegionAvail().x - 2.0f * gap) / 3.0f)};
+	auto const toolbutton = [&](char const *Label, int const Tool, char const *Tooltip, std::function<void(ImDrawList &, ImVec2, ImVec2, ImU32, ImU32)> const &Sketch) {
 		bool const active{state.tool == Tool};
-		if (active)
-			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-		if (ImGui::Button(Label))
+		if (sketch_tile(Label, Label, active, width, Sketch))
 		{
 			state.tool = active ? 0 : Tool;
 			state.tool_placed = false;
 			state.handle = -1;
 		}
-		if (active)
-			ImGui::PopStyleColor();
 		item_tooltip(Tooltip);
 	};
-	toolbutton(STR_C("Break"), 1, STR_C("Turns the rest of the straight from a point, a curve goes at the break (Ctrl+drag in the view does the same)"));
-	ImGui::SameLine();
-	toolbutton(STR_C("S-curve"), 2, STR_C("Shifts a piece of the straight sideways around an obstacle and back: four clicks on the straight (Shift+click in the view does the same)"));
-	ImGui::SameLine();
+	auto const at = [](ImVec2 const Low, ImVec2 const High, float const X, float const Y) { return ImVec2(Low.x + (High.x - Low.x) * X, Low.y + (High.y - Low.y) * Y); };
+	toolbutton(STR_C("Break"), 1, STR_C("Turns the rest of the straight from a point, a curve goes at the break (Ctrl+drag in the view does the same)"), [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
+		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 1.0f, 0.8f), (Line & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 60), 1.0f);
+		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 0.4f, 0.8f), Line, 2.0f);
+		List.AddBezierQuadratic(at(Low, High, 0.4f, 0.8f), at(Low, High, 0.62f, 0.8f), at(Low, High, 1.0f, 0.1f), Made, 2.0f);
+	});
+	ImGui::SameLine(0.0f, gap);
+	toolbutton(STR_C("S-curve"), 2, STR_C("Shifts a piece of the straight sideways around an obstacle and back: four clicks on the straight (Shift+click in the view does the same)"), [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
+		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 1.0f, 0.8f), (Line & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 60), 1.0f);
+		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 0.15f, 0.8f), Line, 2.0f);
+		List.AddBezierCubic(at(Low, High, 0.15f, 0.8f), at(Low, High, 0.3f, 0.8f), at(Low, High, 0.25f, 0.2f), at(Low, High, 0.42f, 0.2f), Made, 2.0f);
+		List.AddLine(at(Low, High, 0.42f, 0.2f), at(Low, High, 0.58f, 0.2f), Made, 2.0f);
+		List.AddBezierCubic(at(Low, High, 0.58f, 0.2f), at(Low, High, 0.75f, 0.2f), at(Low, High, 0.7f, 0.8f), at(Low, High, 0.85f, 0.8f), Made, 2.0f);
+		List.AddLine(at(Low, High, 0.85f, 0.8f), at(Low, High, 1.0f, 0.8f), Line, 2.0f);
+		List.AddCircleFilled(at(Low, High, 0.5f, 0.8f), 2.5f, IM_COL32(230, 90, 70, 255));
+	});
+	ImGui::SameLine(0.0f, gap);
 	bool const member{in_straight_set(line)};
-	if (ImGui::Button(member ? STR_C("Leave the group") : STR_C("Move with others")))
+	auto const grouped{sketch_tile("##group", member ? STR_C("Leave the group") : STR_C("Move with others"), member, width, [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
+		List.AddLine(at(Low, High, 0.0f, 0.2f), at(Low, High, 1.0f, 0.2f), Line, 2.0f);
+		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 1.0f, 0.8f), Line, 2.0f);
+		for (auto const x : {0.3f, 0.7f})
+		{
+			List.AddLine(at(Low, High, x, 0.32f), at(Low, High, x, 0.68f), Made, 1.5f);
+			List.AddTriangleFilled(at(Low, High, x - 0.08f, 0.38f), at(Low, High, x + 0.08f, 0.38f), at(Low, High, x, 0.26f), Made);
+			List.AddTriangleFilled(at(Low, High, x - 0.08f, 0.62f), at(Low, High, x + 0.08f, 0.62f), at(Low, High, x, 0.74f), Made);
+		}
+	})};
+	if (grouped)
 	{
 		if (member)
 			state.set.erase(std::remove_if(state.set.begin(), state.set.end(), [&](editor_track::straight const &Member) { return std::any_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Track) { return std::find(Member.tracks.begin(), Member.tracks.end(), Track) != Member.tracks.end(); }); }), state.set.end());
@@ -392,17 +431,24 @@ void editor_mode::render_straight_ui()
 	item_tooltip("Straights of a group move together and stay parallel; Alt+click in the view adds another one");
 	if (state.tool != 0)
 	{
-		ImGui::PushItemWidth(100.0f);
-		ImGui::InputDouble(STR_C("Curve R (m, 0: automatic)"), &state.curve_radius, 0.0, 0.0, "%.0f");
+		ImGui::TextDisabled("%s", STR_C("Curve R (m, 0: automatic)"));
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		ImGui::InputDouble("##straightcurve", &state.curve_radius, 10.0, 100.0, "%.0f");
+		state.curve_radius = std::max(0.0, state.curve_radius);
 		item_tooltip("Radius of the curves made by the break and the S-curve; automatic: 1.5 times the minimum radius for the speed of the line");
-		ImGui::Checkbox(STR_C("Transitions from the line speed"), &state.auto_transitions);
-		item_tooltip("Lengths of the transition curves from the speed of the paths and the limits of the curve design");
+		value_chips("straightcurves", state.curve_radius, {0.0, 300.0, 600.0, 1000.0, 2000.0}, "%.0f");
+		ImGui::TextDisabled("%s", STR_C("Transition curves"));
+		int transitions{state.auto_transitions ? 0 : 1};
+		if (segmented("straighttransitions", transitions,
+		              {{0, STR_C("From the line speed"), "Lengths of the transition curves from the speed of the paths and the limits of the curve design"},
+		               {1, STR_C("Given length"), "The same length of the transition curves at every curve"}}))
+			state.auto_transitions = transitions == 0;
 		if (false == state.auto_transitions)
 		{
-			ImGui::SameLine();
-			ImGui::InputDouble(STR_C("Transition (m)"), &state.transition, 0.0, 0.0, "%.1f");
+			ImGui::SetNextItemWidth(-FLT_MIN);
+			ImGui::InputDouble("##straighttransition", &state.transition, 1.0, 10.0, "%.1f m");
+			state.transition = std::max(0.0, state.transition);
 		}
-		ImGui::PopItemWidth();
 	}
 	if (false == state.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", state.status.c_str());
@@ -423,29 +469,39 @@ void editor_mode::render_straight_ui()
 	}
 	if (ImGui::CollapsingHeader(STR_C("Exact values")))
 	{
-		ImGui::PushItemWidth(-110.0f);
-		ImGui::InputScalarN(STR_C("Start (x, y, z)"), ImGuiDataType_Double, glm::value_ptr(state.edit_start), 3, nullptr, nullptr, "%.3f");
-		ImGui::InputScalarN(STR_C("End (x, y, z)"), ImGuiDataType_Double, glm::value_ptr(state.edit_end), 3, nullptr, nullptr, "%.3f");
-		ImGui::PopItemWidth();
-		if (ImGui::Button(STR_C("Apply ends")))
+		if (begin_fields("##straightexact", 0.3f))
+		{
+			field_row("Start (x, y, z)");
+			ImGui::InputScalarN("##straightstart", ImGuiDataType_Double, glm::value_ptr(state.edit_start), 3, nullptr, nullptr, "%.3f");
+			field_row("End (x, y, z)");
+			ImGui::InputScalarN("##straightend", ImGuiDataType_Double, glm::value_ptr(state.edit_end), 3, nullptr, nullptr, "%.3f");
+			ImGui::EndTable();
+		}
+		if (ImGui::Button(STR_C("Apply ends"), ImVec2(-FLT_MIN, 0.0f)))
 			straight_apply(line, state.edit_start, state.edit_end);
-		ImGui::PushItemWidth(120.0f);
-		ImGui::InputDouble(STR_C("Length (m)"), &state.edit_length, 0.0, 0.0, "%.3f");
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Set from the start##length")))
+		if (begin_fields("##straightmeasures", 0.3f))
 		{
-			glm::dvec3 const direction{line.direction.x, line.grade, line.direction.y};
-			straight_apply(line, line.start, line.start + direction * std::max(0.1, state.edit_length));
+			field_row("Length (m)");
+			ImGui::InputDouble("##straightlength", &state.edit_length, 0.0, 0.0, "%.3f");
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(1);
+			if (ImGui::Button(STR_C("Set from the start##length"), ImVec2(-FLT_MIN, 0.0f)))
+			{
+				glm::dvec3 const direction{line.direction.x, line.grade, line.direction.y};
+				straight_apply(line, line.start, line.start + direction * std::max(0.1, state.edit_length));
+			}
+			field_row("Azimuth (deg)");
+			ImGui::InputDouble("##straightazimuth", &state.edit_azimuth, 0.0, 0.0, "%.5f");
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(1);
+			if (ImGui::Button(STR_C("Turn around the start"), ImVec2(-FLT_MIN, 0.0f)))
+			{
+				auto const azimuth{glm::radians(state.edit_azimuth)};
+				glm::dvec3 const direction{std::sin(azimuth), line.grade, std::cos(azimuth)};
+				straight_apply(line, line.start, line.start + direction * line.length);
+			}
+			ImGui::EndTable();
 		}
-		ImGui::InputDouble(STR_C("Azimuth (deg)"), &state.edit_azimuth, 0.0, 0.0, "%.5f");
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Turn around the start")))
-		{
-			auto const azimuth{glm::radians(state.edit_azimuth)};
-			glm::dvec3 const direction{std::sin(azimuth), line.grade, std::cos(azimuth)};
-			straight_apply(line, line.start, line.start + direction * line.length);
-		}
-		ImGui::PopItemWidth();
 	}
 }
 
@@ -914,7 +970,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	std::string error;
 	editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error, true);
 	straight_refresh();
-	state.status = STR_C("Done, select a curve to adjust it in the Curve mode");
+	state.status = STR_C("Done: click a curve to adjust it; Ctrl+Z takes it back");
 }
 
 double editor_mode::straight_tool_radius(editor_track::straight const &Line) const

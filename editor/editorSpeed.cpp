@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTrack.hpp"
 #include "editor/editorSwitchStore.hpp"
 
+#include "utilities/translation.h"
 #include "world/Track.h"
 
 #include <algorithm>
@@ -141,56 +142,58 @@ bool verdict::warned(options const &Options) const
 std::string explain(verdict const &Verdict, options const &Options)
 {
 	if (Verdict.safe >= Options.top)
-		return format("The geometry allows any speed up to %.0f km/h", Options.top);
+		return format(STR_C("The geometry allows any speed up to %.0f km/h"), Options.top);
 	auto const gauge{Options.norms.gauge / 1000.0};
 	// the numbers are given at the speed set, or at the safe one when none is set
 	auto const speed{Verdict.set > 0.0 ? Verdict.set : Verdict.safe};
 	auto const radius_text = [](double const Radius) {
-		return Radius == 0.0 ? std::string{"straight"} : format("R %.0f m%s", std::abs(Radius), Radius < 0.0 ? " the other way" : "");
+		return Radius == 0.0 ? std::string{STR_C("a straight")} : format("R %.0f m%s", std::abs(Radius), Radius < 0.0 ? STR_C(" the other way") : "");
 	};
 	auto const unbalanced = [&](double const Radius, double const Cant) { return (Radius != 0.0 ? speed * speed / (12.96 * Radius) : 0.0) - kGravity * Cant / 1000.0 / gauge; };
 	std::string text;
 	if (Verdict.warned(Options))
-		text = "Warning only, the limit of a switch branch: ";
+		text = STR_C("Warning only, the limit of a switch branch: ");
 	if (Verdict.set <= 0.0)
-		text += format("No speed limit is set, so the trains run at the line speed, while the geometry allows %.0f km/h.\n", Verdict.safe);
+		text += format(STR_C("No speed limit is set, so the trains run at the line speed, while the geometry allows %.0f km/h.\n"), Verdict.safe);
+	else if (Verdict.set > Verdict.safe + 0.5)
+		text += format(STR_C("The speed set, %.0f km/h, is above the %.0f km/h the geometry allows.\n"), Verdict.set, Verdict.safe);
 	else
-		text += format("The speed set, %.0f km/h, is %s the %.0f km/h the geometry allows.\n", Verdict.set, Verdict.set > Verdict.safe + 0.5 ? "above" : "within", Verdict.safe);
+		text += format(STR_C("The speed set, %.0f km/h, is within the %.0f km/h the geometry allows.\n"), Verdict.set, Verdict.safe);
 	if (Verdict.why == cause::branch)
-		text += Verdict.hard < Options.top ? format("Without the switch branch limit the geometry allows %.0f km/h (%s).\n", Verdict.hard, describe(Verdict.hard_why))
-		                                   : std::string{"Without the switch branch limit the geometry allows any speed.\n"};
+		text += Verdict.hard < Options.top ? format(STR_C("Without the switch branch limit the geometry allows %.0f km/h (%s).\n"), Verdict.hard, STR_C(describe(Verdict.hard_why)))
+		                                   : std::string{STR_C("Without the switch branch limit the geometry allows any speed.\n")};
 	switch (Verdict.why)
 	{
 	case cause::radius:
 	case cause::branch:
 	{
 		bool const branch{Verdict.why == cause::branch};
-		text += format("%s, %s, cant %.0f mm.\n", branch ? "Diverging track of the switch" : "Curve", radius_text(Verdict.radius).c_str(), Verdict.cant);
-		text += format("Unbalanced acceleration V^2/(12.96 R) - g h/s at %.0f km/h: %.2f m/s2, the limit is %.2f m/s2%s.\n", speed, unbalanced(Verdict.radius, Verdict.cant),
-		               branch ? Options.branch_unbalanced : Options.norms.unbalanced, branch ? " for the switch branches, which have no cant" : "");
-		text += branch ? "A switch of a larger radius would allow more" : "More cant or a larger radius would allow more";
+		text += format(STR_C("%s, %s, cant %.0f mm.\n"), branch ? STR_C("Diverging track of the switch") : STR_C("Curve"), radius_text(Verdict.radius).c_str(), Verdict.cant);
+		text += format(STR_C("Unbalanced acceleration V²/(12.96 R) - g h/s at %.0f km/h: %.2f m/s², the limit is %.2f m/s²%s.\n"), speed, unbalanced(Verdict.radius, Verdict.cant),
+		               branch ? Options.branch_unbalanced : Options.norms.unbalanced, branch ? STR_C(" for the switch branches, which have no cant") : "");
+		text += branch ? STR_C("A switch of a larger radius would allow more") : STR_C("More cant or a larger radius would allow more");
 		break;
 	}
 	case cause::cant_rate:
-		text += format("The cant changes from %.0f to %.0f mm over %.0f m, %.2f mm per m.\n", Verdict.cant_from, Verdict.cant_to, Options.reference_length, Verdict.cant_slope);
-		text += format("A train at %.0f km/h feels it change by %.0f mm/s, the limit is %.0f mm/s.\n", speed, Verdict.cant_slope * speed / 3.6, Options.norms.cant_rate);
-		text += "A longer cant ramp, along a longer transition curve, would allow more";
+		text += format(STR_C("The cant changes from %.0f to %.0f mm over %.0f m, %.2f mm per m.\n"), Verdict.cant_from, Verdict.cant_to, Options.reference_length, Verdict.cant_slope);
+		text += format(STR_C("A train at %.0f km/h feels it change by %.0f mm/s, the limit is %.0f mm/s.\n"), speed, Verdict.cant_slope * speed / 3.6, Options.norms.cant_rate);
+		text += STR_C("A longer cant ramp, along a longer transition curve, would allow more");
 		break;
 	case cause::cant_ramp:
-		text += format("The cant changes from %.0f to %.0f mm over %.0f m, a ramp of 1:%.0f.\n", Verdict.cant_from, Verdict.cant_to, Options.reference_length, 1000.0 / std::max(1e-6, Verdict.cant_slope));
-		text += format("At %.0f km/h the ramp can't be steeper than 1:(k V) = 1:%.0f, k = %.1f.\n", speed, Options.norms.ramp_factor * speed, Options.norms.ramp_factor);
-		text += "A longer cant ramp would allow more";
+		text += format(STR_C("The cant changes from %.0f to %.0f mm over %.0f m, a ramp of 1:%.0f.\n"), Verdict.cant_from, Verdict.cant_to, Options.reference_length, 1000.0 / std::max(1e-6, Verdict.cant_slope));
+		text += format(STR_C("At %.0f km/h the ramp can't be steeper than 1:(k V) = 1:%.0f, k = %.1f.\n"), speed, Options.norms.ramp_factor * speed, Options.norms.ramp_factor);
+		text += STR_C("A longer cant ramp would allow more");
 		break;
 	case cause::jerk:
 	{
 		auto const from{unbalanced(Verdict.radius_from, Verdict.cant_from)};
 		auto const to{unbalanced(Verdict.radius_to, Verdict.cant_to)};
 		auto const time{Options.reference_length / std::max(1.0, speed / 3.6)};
-		text += format("Within %.0f m the track goes from %s, cant %.0f mm, to %s, cant %.0f mm.\n", Options.reference_length, radius_text(Verdict.radius_from).c_str(), Verdict.cant_from,
+		text += format(STR_C("Within %.0f m the track goes from %s, cant %.0f mm, to %s, cant %.0f mm.\n"), Options.reference_length, radius_text(Verdict.radius_from).c_str(), Verdict.cant_from,
 		               radius_text(Verdict.radius_to).c_str(), Verdict.cant_to);
-		text += format("At %.0f km/h the unbalanced acceleration changes from %.2f to %.2f m/s2 in %.1f s: %.2f m/s3, the limit is %.2f m/s3.\n", speed, from, to, time, std::abs(to - from) / time,
-		               Options.norms.jerk);
-		text += "The curve lacks a transition, or it is too short";
+		text += format(STR_C("At %.0f km/h the unbalanced acceleration changes from %.2f to %.2f m/s² in %.1f s: %.2f m/s³, the limit is %.2f m/s³.\n"), speed, from, to, time,
+		               std::abs(to - from) / time, Options.norms.jerk);
+		text += STR_C("The curve lacks a transition, or it is too short");
 		break;
 	}
 	default: break;

@@ -134,7 +134,9 @@ std::vector<std::string> drift_notes(record_drift const &Drift)
 	if (Drift.followed > 0)
 		notes.push_back(STR("The kept design of the line went along with its paths"));
 	if (Drift.departed > 0)
-		notes.push_back(format(STR_C("%d path(s) left the design kept in %s, by up to %.2f m: Ctrl+Z takes it back, the route design lays them by the design again or forgets it"), Drift.departed, Drift.layer.c_str(), Drift.departure));
+		notes.push_back(format(STR_P("%d path left the design kept in %s, by up to %.2f m: Ctrl+Z takes it back, the Plan tool (G) lays it by the design again or forgets the design",
+		                             "%d paths left the design kept in %s, by up to %.2f m: Ctrl+Z takes it back, the Plan tool (G) lays them by the design again or forgets it", Drift.departed),
+		                       Drift.departed, Drift.layer.c_str(), Drift.departure));
 	if (Drift.cant > 5.0)
 		notes.push_back(format(STR_C("The cant differs from the kept design by up to %.0f mm"), Drift.cant));
 	return notes;
@@ -160,7 +162,8 @@ switch_store::record switch_entry(editor_track::switch_template const &Shape)
 	}
 	else
 	{
-		entry.type = "-";
+		// Rz, Rlj or Rld, as classify finds it by the shape
+		entry.type = "Rz";
 		entry.radius = Shape.radius;
 		entry.ratio = Shape.ratio;
 		entry.source = "measured";
@@ -379,24 +382,35 @@ void editor_mode::render_switch_record(TTrack const &Track) const
 	}
 	auto entry{*known};
 	ImGui::Text(STR_C("Type kept in the scenery: %s"), switch_store::label(entry).c_str());
-	if (entry.kind == "switch" && entry.main_radius != 0.0)
-		ImGui::TextDisabled(STR_C("Diverging track R %.0f m: the R %.0f m of the type bent with the main track"), switch_store::branch_radius(entry), entry.radius);
-	if (entry.source == "measured")
-		ImGui::TextDisabled("%s", STR_C("Copied from a switch of the scenery: the size is measured from its shape"));
-	ImGui::PushItemWidth(100.0f);
-	bool changed{edit_dashed<32>(STR_C("Number##switchnumber"), entry.number)};
-	item_tooltip("Number of the switch in the station, as the plans of the station give it");
-	ImGui::SameLine();
-	changed |= edit_dashed<16>(STR_C("Rail##switchrail"), entry.rail);
-	item_tooltip("Rail of the switch: 60E1, 49E1...");
-	auto km{entry.km.has_value() ? *entry.km / 1000.0 : 0.0};
-	if (ImGui::InputDouble(STR_C("Km of the start##switchkm"), &km, 0.0, 0.0, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue))
+	if (ImGui::IsItemHovered())
 	{
-		entry.km = km * 1000.0;
-		changed = true;
+		std::string text;
+		if (entry.kind == "switch" && entry.main_radius != 0.0)
+			text = format(STR_C("Diverging track R %.0f m: the R %.0f m of the type bent with the main track"), switch_store::branch_radius(entry), entry.radius);
+		if (entry.source == "measured")
+			text += (text.empty() ? "" : "\n") + std::string{STR_C("The size is measured from the shape of the switch, it's of no template of the catalogue")};
+		if (false == text.empty())
+			ImGui::SetTooltip("%s", text.c_str());
 	}
-	item_tooltip("Chainage of the start of the switch; taken from the horizontal alignment kept in the scenery when the switch lies on one");
-	ImGui::PopItemWidth();
+	bool changed{false};
+	if (begin_fields("##switchrecord", 0.4f))
+	{
+		field_row("Number##switchnumber");
+		changed |= edit_dashed<32>("##switchnumber", entry.number);
+		item_tooltip("Number of the switch in the station, as the plans of the station give it");
+		field_row("Rail##switchrail");
+		changed |= edit_dashed<16>("##switchrail", entry.rail);
+		item_tooltip("Rail of the switch: 60E1, 49E1...");
+		auto km{entry.km.has_value() ? *entry.km / 1000.0 : 0.0};
+		field_row("Km of the start##switchkm");
+		if (ImGui::InputDouble("##switchkm", &km, 0.0, 0.0, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue))
+		{
+			entry.km = km * 1000.0;
+			changed = true;
+		}
+		item_tooltip("Chainage of the start of the switch; taken from the horizontal alignment kept in the scenery when the switch lies on one");
+		ImGui::EndTable();
+	}
 	if (changed)
 	{
 		switch_store::put(entry, entry.layer);

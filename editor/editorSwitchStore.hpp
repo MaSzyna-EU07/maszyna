@@ -47,6 +47,11 @@ struct record
 	std::string number{"-"};
 	std::string source{"designed"}; // designed: from the catalogue, measured: copied from a switch of the scenery
 	double middle{0.0}; // the radius in the middle of the slip curves of a double slip with the blades outside of the diamond
+	// a crossover laid along a curve: the outer track went up by lift over it, level between the two points, with ramps of
+	// ramp m on both sides
+	double lift{0.0};
+	glm::dvec3 lift_from{0.0}, lift_to{0.0};
+	double ramp{0.0};
 };
 
 void reset();

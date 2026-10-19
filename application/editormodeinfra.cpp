@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editorprojection.h"
+#include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 
@@ -65,6 +66,8 @@ ImU32 colour(infra::category const Category, int const Alpha = 255)
 	case infra::category::catenary: return IM_COL32(80, 200, 255, Alpha);
 	case infra::category::logic: return IM_COL32(220, 120, 255, Alpha);
 	case infra::category::other: return IM_COL32(200, 200, 200, Alpha);
+	case infra::category::equipment: return IM_COL32(255, 150, 60, Alpha);
+	case infra::category::environment: return IM_COL32(110, 190, 110, Alpha);
 	}
 	return IM_COL32(200, 200, 200, Alpha);
 }
@@ -123,6 +126,7 @@ struct include_place
 	int yaw{-1};
 	glm::dvec3 offset{0.0};
 	std::string description; // name and category of the template
+	std::string category; // of the description of the template
 };
 
 bool numeric(std::string const &Text, double &Value)
@@ -164,6 +168,7 @@ bool include_place_of(scene::instance_handle const Instance, include_place &Plac
 	Place.yaw = index("rot.y");
 	Place.offset = included.context.offset;
 	Place.description = info.name + ' ' + info.category;
+	Place.category = info.category;
 	return Place.position[0] >= 0 && Place.position[1] >= 0 && Place.position[2] >= 0;
 }
 
@@ -669,7 +674,7 @@ std::optional<infra::binding> read_binding(std::string const &Text, scene::layer
 		return std::nullopt;
 	location = Context.to_world(location);
 	infra::binding binding;
-	binding.group = static_cast<infra::category>(std::clamp(group, 0, static_cast<int>(infra::category::other)));
+	binding.group = static_cast<infra::category>(std::clamp(group, 0, static_cast<int>(infra::category::environment)));
 	binding.turns = (turns != 0);
 	auto found{false};
 	if (kindname == infra::name(infra::kind::model))
@@ -963,14 +968,13 @@ void editor_mode::infra_recognize()
 		candidate.offset = Binding.anchors.front().offset;
 		candidate.reason = Reason;
 		candidate.bound = (infra_find(Binding) != nullptr);
-		candidate.chosen = (false == candidate.bound && Binding.group != infra::category::other);
+		candidate.chosen = (false == candidate.bound && Binding.group != infra::category::other && Binding.group != infra::category::environment);
 		candidate.binding = std::move(Binding);
 		state.read += candidate.reader != nullptr ? 1 : 0;
 		state.overruled += candidate.nearer != nullptr ? 1 : 0;
 		state.unread += candidate.unread ? 1 : 0;
 		state.candidates.push_back(std::move(candidate));
 	};
-	auto const rule_reason = [](infra::category const Group, char const *What) { return Group == infra::category::other ? std::string{"nearby, no rule matches the "} + What : std::string{"the "} + What + " matches a rule"; };
 
 	for (auto *model : simulation::Instances.sequence())
 	{
@@ -981,7 +985,7 @@ void editor_mode::infra_recognize()
 		binding.type = infra::kind::model;
 		binding.node = model;
 		binding.group = infra::classify(model->Model()->NameGet() + ' ' + model->name(), state.rules);
-		add(binding, rule_reason(binding.group, "file name"), corridor);
+		add(binding, binding.group == infra::category::other ? STR("nearby, no rule matches the file name") : STR("the file name matches a rule"), corridor);
 	}
 	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 	{
@@ -991,8 +995,15 @@ void editor_mode::infra_recognize()
 		infra::binding binding;
 		binding.type = infra::kind::include;
 		binding.include = handle;
+		// the kind the description of the template names, else by the rules
+		if (auto const named{infra::category_named(place.category)})
+		{
+			binding.group = *named;
+			add(binding, STR("the description of the template says what it is"), corridor);
+			continue;
+		}
 		binding.group = infra::classify(place.file + ' ' + place.description, state.rules);
-		add(binding, rule_reason(binding.group, "template or its description"), corridor);
+		add(binding, binding.group == infra::category::other ? STR("nearby, no rule matches the template or its description") : STR("the template or its description matches a rule"), corridor);
 	}
 	for (auto *piece : simulation::Traction.sequence())
 	{
@@ -1002,7 +1013,7 @@ void editor_mode::infra_recognize()
 		binding.type = infra::kind::traction;
 		binding.node = piece;
 		binding.group = infra::category::catenary;
-		add(binding, "wire over the track", corridor);
+		add(binding, STR("wire over the track"), corridor);
 	}
 	for (auto *memcell : simulation::Memory.sequence())
 	{
@@ -1013,7 +1024,7 @@ void editor_mode::infra_recognize()
 		binding.node = memcell;
 		binding.group = infra::category::logic;
 		auto const named{false == memcell->asTrackName.empty() && names.count(memcell->asTrackName) > 0};
-		add(binding, named ? "names the path " + memcell->asTrackName : std::string{"nearby"}, named ? std::max(corridor, 50.0) : corridor);
+		add(binding, named ? format(STR_C("names the path %s"), memcell->asTrackName.c_str()) : STR("nearby"), named ? std::max(corridor, 50.0) : corridor);
 	}
 	for (auto *launcher : simulation::Events.launchers())
 	{
@@ -1023,7 +1034,7 @@ void editor_mode::infra_recognize()
 		binding.type = infra::kind::launcher;
 		binding.node = launcher;
 		binding.group = infra::category::logic;
-		add(binding, "nearby", corridor);
+		add(binding, STR("nearby"), corridor);
 	}
 	std::stable_sort(state.candidates.begin(), state.candidates.end(), [](infra_candidate const &A, infra_candidate const &B) { return A.binding.group < B.binding.group; });
 	state.status = format(STR_C("%d object(s) found along %d path(s)"), static_cast<int>(state.candidates.size()), static_cast<int>(state.tracks.size()));
@@ -1417,31 +1428,35 @@ void editor_mode::render_infra_search()
 	char const *const scopes[] = {STR_C("Selected path"), STR_C("Line through the selected path"), STR_C("Route of the vertical profile"), STR_C("Whole scenery")};
 	ImGui::SetNextItemWidth(260.f);
 	ImGui::Combo(STR_C("Look along"), &state.scope, scopes, IM_ARRAYSIZE(scopes));
-	if (state.scope == 1)
+	if (ImGui::TreeNode(STR_C("More settings")))
 	{
-		ImGui::SetNextItemWidth(120.f);
-		ImGui::InputFloat(STR_C("Reach each way, m"), &state.reach, 100.f, 500.f, "%.0f");
-		state.reach = std::clamp(state.reach, 10.f, 20000.f);
-	}
-	ImGui::SetNextItemWidth(120.f);
-	ImGui::InputFloat(STR_C("Corridor each side of the axis, m"), &state.corridor, 0.5f, 2.f, "%.1f");
-	state.corridor = std::clamp(state.corridor, 0.5f, 50.f);
-	if (ImGui::TreeNode(STR_C("Rules for names of the files")))
-	{
-		ImGui::TextDisabled(STR_C("Parts of the names, separated by spaces; the first rule which matches decides"));
-		for (std::size_t i = 0; i < state.rules.size(); ++i)
+		if (state.scope == 1)
 		{
-			auto &rule{state.rules[i]};
-			char buffer[512];
-			std::snprintf(buffer, sizeof(buffer), "%s", rule.keywords.c_str());
-			ImGui::SetNextItemWidth(360.f);
-			if (ImGui::InputText((std::string{infra::name(rule.group)} + "##rule" + std::to_string(i)).c_str(), buffer, sizeof(buffer)))
-				rule.keywords = buffer;
+			ImGui::SetNextItemWidth(120.f);
+			ImGui::InputFloat(STR_C("Reach each way, m"), &state.reach, 100.f, 500.f, "%.0f");
+			state.reach = std::clamp(state.reach, 10.f, 20000.f);
 		}
-		if (ImGui::SmallButton(STR_C("Default rules")))
-			state.rules = infra::default_rules();
-		ImGui::TextDisabled(STR_C("Includes are matched by the template name and its //$e description, models by the file and node name;\n"
-		                    "traction is always the catenary, memory cells and event launchers the logic"));
+		ImGui::SetNextItemWidth(120.f);
+		ImGui::InputFloat(STR_C("Corridor each side of the axis, m"), &state.corridor, 0.5f, 2.f, "%.1f");
+		state.corridor = std::clamp(state.corridor, 0.5f, 50.f);
+		if (ImGui::TreeNode(STR_C("Rules for names of the files")))
+		{
+			ImGui::TextDisabled("%s", STR_C("Parts of the names, separated by spaces; the first rule which matches decides"));
+			for (std::size_t i = 0; i < state.rules.size(); ++i)
+			{
+				auto &rule{state.rules[i]};
+				char buffer[512];
+				std::snprintf(buffer, sizeof(buffer), "%s", rule.keywords.c_str());
+				ImGui::SetNextItemWidth(360.f);
+				if (ImGui::InputText((std::string{STR_C(infra::name(rule.group))} + "##rule" + std::to_string(i)).c_str(), buffer, sizeof(buffer)))
+					rule.keywords = buffer;
+			}
+			if (ImGui::SmallButton(STR_C("Default rules")))
+				state.rules = infra::default_rules();
+			ImGui::TextDisabled("%s", STR_C("Includes are matched by the template name and its //$e description, models by the file and node name;\n"
+			                          "traction is always the catenary, memory cells and event launchers the logic"));
+			ImGui::TreePop();
+		}
 		ImGui::TreePop();
 	}
 	if (ImGui::Button(STR_C("Find objects")))
@@ -1487,31 +1502,15 @@ void editor_mode::render_infra_candidates()
 
 	if (state.read > 0 || state.unread > 0)
 	{
-		ImGui::TextColored(readcolour, STR_C("%d read by the paths"), state.read);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(STR_C("The memory cell of the object is read by a getvalues event of a path, listed by the path, inside a multiple\n"
-			                  "event or written loose as <path>:event<n>. The object is bound to the thread of that path, not to the nearest one"));
-		if (state.overruled > 0)
-		{
-			ImGui::SameLine();
-			ImGui::TextColored(warncolour, STR_C("%d of them nearer to another path"), state.overruled);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(STR_C("By the distance alone these would go to the wrong thread. Check them in 3D: the dashed line goes to the nearer path"));
-		}
-		if (state.unread > 0)
-		{
-			ImGui::SameLine();
-			ImGui::TextColored(warncolour, STR_C("%d signal(s) not read by any path"), state.unread);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(STR_C("The signal has a memory cell, but no event of a path reads it: the vehicles won't see it.\nBound to the nearest path"));
-		}
-		static char const *const filters[] = {"All", "Read by a path", "Nearer to another path", "Not read"};
-		for (int i = 0; i < IM_ARRAYSIZE(filters); ++i)
-		{
-			if (i > 0)
-				ImGui::SameLine();
-			ImGui::RadioButton(STR_C(filters[i]), &state.filter, i);
-		}
+		std::string const labels[]{format("%s (%d)", STR_C("All"), static_cast<int>(candidates.size())), format("%s (%d)", STR_C("Read by a path"), state.read),
+		                           format("%s (%d)", STR_C("Nearer to another path"), state.overruled), format("%s (%d)", STR_C("Not read"), state.unread)};
+		choice_chips("infrafilter", state.filter,
+		             {{0, labels[0].c_str()},
+		              {1, labels[1].c_str(),
+		               "The memory cell of the object is read by a getvalues event of a path, listed by the path, inside a multiple\n"
+		               "event or written loose as <path>:event<n>. The object is bound to the thread of that path, not to the nearest one"},
+		              {2, labels[2].c_str(), "By the distance alone these would go to the wrong thread. Check them in 3D: the dashed line goes to the nearer path"},
+		              {3, labels[3].c_str(), "The signal has a memory cell, but no event of a path reads it: the vehicles won't see it.\nBound to the nearest path"}});
 	}
 
 	ImGui::BeginChild("##infracandidates", ImVec2(0.f, 260.f), true);
@@ -1525,7 +1524,7 @@ void editor_mode::render_infra_candidates()
 		if (rows.empty())
 			continue;
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(colour(group)));
-		auto const open{ImGui::TreeNodeEx(format("%s (%d)", infra::name(group), static_cast<int>(rows.size())).c_str(), group == infra::category::other ? 0 : ImGuiTreeNodeFlags_DefaultOpen)};
+		auto const open{ImGui::TreeNodeEx(format("%s (%d)", STR_C(infra::name(group)), static_cast<int>(rows.size())).c_str(), group == infra::category::other || group == infra::category::environment ? 0 : ImGuiTreeNodeFlags_DefaultOpen)};
 		ImGui::PopStyleColor();
 		ImGui::SameLine();
 		if (ImGui::SmallButton((std::string{STR_C("all##g")} + infra::name(group)).c_str()))
@@ -1556,7 +1555,7 @@ void editor_mode::render_infra_candidates()
 				{
 					state.hovered = i;
 					std::string text{format(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), anchor.at.track != nullptr ? anchor.at.track->name().c_str() : "-", std::abs(candidate.offset),
-					                        candidate.offset >= 0.0 ? "right" : "left", anchor.height, candidate.reason.c_str())};
+					                        candidate.offset >= 0.0 ? STR_C("on the right") : STR_C("on the left"), anchor.height, candidate.reason.c_str())};
 					if (candidate.reader != nullptr)
 						text += format(STR_C("\nRead by the path %s: event %s, getvalues of the memory cell %s"), candidate.reader->name().c_str(), candidate.event.c_str(), candidate.cell.c_str()) +
 						        (candidate.loose ? STR(" (written loose, the path takes it by the name)") : std::string{});

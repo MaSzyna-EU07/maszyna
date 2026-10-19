@@ -568,7 +568,7 @@ void ui_layer::render_hierarchy(){
 	// fitted to the contents when it first appears; no auto resize, which a docked window can't do
 	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);
 	ImGui::Begin((std::string(STR_C("Scene Hierarchy")) + "###scenehierarchy").c_str(), &m_editor_hierarchy);
-	ImGui::Text("Registered nodes: %zu", scene::Hierarchy.size());
+	ImGui::Text(STR_C("Registered nodes: %zu"), scene::Hierarchy.size());
     ImGui::BeginChild("hierarchy_list", ImVec2(500, 300), true);
 
 	for (auto &entry : scene::Hierarchy)
@@ -599,7 +599,7 @@ void ui_layer::render_hierarchy(){
 
                 if (ImGui::IsItemHovered())
                 {
-                    ImGui::SetTooltip("UUID: %s\nNode type: %s", uuid.c_str(), typeid(*node).name());
+                    ImGui::SetTooltip(STR_C("UUID: %s\nNode type: %s"), uuid.c_str(), typeid(*node).name());
                 }
             }
         }
@@ -709,14 +709,14 @@ void ui_layer::render_menu_contents()
 			GfxRenderer->Debug_Ui_State(ret);
 		}
 		if(EditorModeFlag){
-			ImGui::MenuItem("Hierarchy", nullptr, &m_editor_hierarchy);
+			ImGui::MenuItem(STR_C("Scene Hierarchy"), nullptr, &m_editor_hierarchy);
 			bool change_history_enabled = editor_mode::change_history();
-			if (ImGui::MenuItem("Change History", nullptr, &change_history_enabled))
+			if (ImGui::MenuItem(STR_C("Change History"), nullptr, &change_history_enabled))
 			{
 				editor_mode::set_change_history(change_history_enabled);
 			}
 			bool settings_open = editor_mode::settings_open();
-			if (ImGui::MenuItem("Editor Settings", nullptr, &settings_open))
+			if (ImGui::MenuItem(STR_C("Editor Settings"), nullptr, &settings_open))
 			{
 				editor_mode::set_settings_open(settings_open);
 			}

@@ -82,6 +82,123 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog("SELFTEST nmtmake " + where + ": " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
+	if (command == "nmtunder")
+	{
+		// the terrain under the tracks, the tracks left as they are, as the button of the terrain panel does
+		nmt_under_start();
+		WriteLog("SELFTEST nmtunder: " + m_nmt_state.status);
+		return selftest_result::handled;
+	}
+	if (command == "nmtpending")
+	{
+		// the chunks still waiting for the model: their place and the squares of the model they wait for
+		WriteLog(format("SELFTEST nmtpending: %zu chunks, %zu made, model waiting %zu, fitting %d, stage %d, under %d, status %s", m_nmt_state.pending.size(), m_nmt_state.made, m_nmt.waiting(), m_nmt_state.fitting ? 1 : 0, static_cast<int>(m_nmt_state.stage), m_nmt_state.under ? 1 : 0, m_nmt_state.status.c_str()));
+		for (auto const &key : m_nmt_state.pending)
+		{
+			auto const low{heightmap::chunk_corner(key)};
+			auto const high{low + glm::dvec2{heightmap::chunk_size}};
+			double height{0.0};
+			auto const known{m_nmt.height(0.5 * (low.x + high.x), 0.5 * (low.y + high.y), height)};
+			WriteLog(format("SELFTEST nmtpending chunk %d,%d at %.0f..%.0f %.0f..%.0f: exists %d, model in %d, height in the middle %d %.2f", key.first, key.second, low.x, high.x, low.y, high.y, m_streamer.exists(key) ? 1 : 0, m_nmt.request(low - glm::dvec2{2.0}, high + glm::dvec2{2.0}) ? 1 : 0, known ? 1 : 0, height));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "nmtcheck")
+	{
+		// the ground under the axis of the tracks against their formation (the foot of the ballast), every Step m: over the top of the
+		// ballast it sticks out of the track, far below it the track floats; and the places with no terrain at all
+		double step{10.0};
+		int top{20};
+		words >> step >> top;
+		struct finding
+		{
+			double off;
+			glm::dvec3 at;
+			std::string track;
+		};
+		std::vector<finding> over, under;
+		std::size_t places{0}, none{0}, bridges{0};
+		std::vector<double> offs;
+		for (auto const &place : nmt_track_places(step))
+		{
+			if (false == place.shapes)
+			{
+				++bridges;
+				continue;
+			}
+			++places;
+			double height{0.0};
+			if (false == m_streamer.height_at(place.position.x, place.position.z, height))
+			{
+				++none;
+				continue;
+			}
+			auto const off{height - place.formation};
+			offs.push_back(off);
+			auto const name{place.track->name().empty() ? std::string{"(noname)"} : place.track->name()};
+			if (height > place.crown + 0.02)
+				over.push_back({height - place.crown, place.position, name});
+			else if (off < -0.3)
+				under.push_back({off, place.position, name});
+		}
+		std::sort(offs.begin(), offs.end());
+		auto const quantile = [&](double const Q) { return offs.empty() ? 0.0 : offs[static_cast<std::size_t>(Q * (offs.size() - 1))]; };
+		WriteLog(format("SELFTEST nmtcheck: %zu places, %zu without terrain, %zu on bridges or in tunnels; ground less formation: 5%% %.2f, median %.2f, 95%% %.2f m; over the top of the ballast %zu, more than 0.3 m under the formation %zu; modifiers %zu",
+		                places, none, bridges, quantile(0.05), quantile(0.5), quantile(0.95), over.size(), under.size(), m_streamer.manifest().modifiers.size()));
+		for (auto *list : {&over, &under})
+		{
+			std::sort(list->begin(), list->end(), [](finding const &A, finding const &B) { return std::abs(A.off) > std::abs(B.off); });
+			for (std::size_t i = 0; i < std::min<std::size_t>(list->size(), static_cast<std::size_t>(top)); ++i)
+				WriteLog(format("SELFTEST nmtcheck %s %+.2f m at %.1f %.1f %.1f %s", list == &over ? "over the crown" : "under the formation", (*list)[i].off, (*list)[i].at.x, (*list)[i].at.y, (*list)[i].at.z, (*list)[i].track.c_str()));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "nmtauto")
+	{
+		// the tracks put onto the terrain model, as the button of the terrain panel does; nmtwait waits for the end
+		nmt_auto_start();
+		WriteLog("SELFTEST nmtauto: " + m_nmt_state.status);
+		return selftest_result::handled;
+	}
+	if (command == "nmtprobe")
+	{
+		// heights across the tracks: the rail top, the top of the ballast under the rails, the model, the ground under the axis
+		// and beside the track
+		std::string name;
+		double step{250.0};
+		words >> name >> step;
+		auto const places{nmt_track_places(step)};
+		for (std::size_t i = 0; i + 1 < places.size(); ++i)
+		{
+			auto const &place{places[i]};
+			auto const &next{places[i + 1]};
+			if (place.track != next.track || place.path != next.path || (false == name.empty() && place.track->name() != name))
+				continue;
+			glm::dvec2 along{next.position.x - place.position.x, next.position.z - place.position.z};
+			if (glm::length(along) < 1e-6)
+				continue;
+			along = glm::normalize(along);
+			glm::dvec2 const across{-along.y, along.x};
+			std::vector<glm::dvec3> points;
+			for (double const offset : {0.0, -2.0, 2.0, -3.5, 3.5, -6.0, 6.0})
+				points.emplace_back(place.position.x + across.x * offset, place.position.y, place.position.z + across.y * offset);
+			std::vector<char> found;
+			auto const ground{ground_heights(points, true, &found)};
+			double model{std::numeric_limits<double>::quiet_NaN()};
+			if (double height; m_nmt.height(place.position.x, place.position.z, height))
+				model = height + m_nmt_state.offset;
+			std::string text{format("SELFTEST nmtprobe %s at %.0f %.0f: rail top %.2f, ballast top %.2f, foot %.2f, model %.2f; ground/model at axis, -2, 2, -3.5, 3.5, -6, 6 m:", place.track->name().c_str(), place.position.x, place.position.z, place.position.y, place.crown, place.formation, model)};
+			for (std::size_t k = 0; k < points.size(); ++k)
+			{
+				double side{std::numeric_limits<double>::quiet_NaN()};
+				if (double height; m_nmt.height(points[k].x, points[k].z, height))
+					side = height + m_nmt_state.offset;
+				text += (found[k] != 0 ? format(" %.2f", ground[k]) : std::string{" -"}) + format("/%.2f", side);
+			}
+			WriteLog(text);
+		}
+		return selftest_result::handled;
+	}
 	if (command == "nmtoffer")
 	{
 		// the offer of the terrain to a scenery begun from nothing: logged, and taken with the place given, if any
@@ -100,7 +217,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "nmtwait")
 	{
 		// till the model is in and the chunks waiting for it are made
-		if (m_nmt_state.fitting || false == m_nmt_state.pending.empty())
+		if (m_nmt_state.fitting || m_nmt_state.stage != nmt_state::automatic::idle || false == m_nmt_state.pending.empty())
 		{
 			--m_selftest.next;
 			return selftest_result::pause;

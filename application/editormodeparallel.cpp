@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
+#include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 
@@ -36,9 +37,95 @@ using geometry::signed_angle;
 double const kParallelReach{5000.0}; // m each way along the line
 double const kSpacings[] = {3.5, 4.0, 4.5, 4.75, 5.0, 6.0};
 
+// the side of the new track as a picture: three rows, the new track on the left of the line, the line with its direction,
+// the new track on the right; the side chosen drawn with the spacing marked, the other faint. a click on a row chooses its side
+bool side_picker(int &Side, double const Spacing)
+{
+	auto const font{ImGui::GetFontSize()};
+	auto const width{ImGui::GetContentRegionAvail().x};
+	auto const row{std::round(font * 1.7f)};
+	auto const height{row * 3.0f};
+	auto const top{ImGui::GetCursorScreenPos()};
+	ImGui::InvisibleButton("##side", ImVec2(width, height));
+	auto const hovered{ImGui::IsItemHovered()};
+	auto const mouse{ImGui::GetIO().MousePos};
+	auto const middle{std::round(top.y + row * 1.5f)};
+	auto const pointed{hovered ? (mouse.y < top.y + row ? -1 : mouse.y >= top.y + row * 2.0f ? 1 : 0) : 0};
+	bool changed{false};
+	if (ImGui::IsItemClicked() && pointed != 0 && pointed != Side)
+	{
+		Side = pointed;
+		changed = true;
+	}
+	auto *list{ImGui::GetWindowDrawList()};
+	ImVec2 const bottom{top.x + width, top.y + height};
+	auto const rounding{std::round(font * 0.35f)};
+	list->AddRectFilled(top, bottom, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+	if (pointed != 0 && pointed != Side)
+		list->AddRectFilled(ImVec2(top.x, pointed < 0 ? top.y : top.y + row * 2.0f), ImVec2(bottom.x, pointed < 0 ? top.y + row : bottom.y), ImGui::GetColorU32(ImGuiCol_FrameBgHovered), rounding);
+	auto const pad{std::round(font * 0.6f)};
+	char const *const labels[]{STR_C("Left"), STR_C("selected"), STR_C("Right")};
+	float column{0.0f};
+	for (auto const *label : labels)
+		column = std::max(column, ImGui::CalcTextSize(label).x);
+	auto const left{top.x + pad + column + pad};
+	auto const right{bottom.x - pad * 2.0f};
+	auto const gauge{std::round(font * 0.36f)};
+	// a track as two rails, sleepers under the solid ones
+	auto const track = [&](float const Y, ImU32 const Colour, bool const Dashed) {
+		if (false == Dashed)
+			for (auto x{left + font * 0.3f}; x < right; x += std::round(font * 0.9f))
+				list->AddLine(ImVec2(x, Y - gauge * 0.95f), ImVec2(x, Y + gauge * 0.95f), (Colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 90), 2.0f);
+		for (auto const rail : {Y - gauge * 0.5f, Y + gauge * 0.5f})
+		{
+			if (false == Dashed)
+			{
+				list->AddLine(ImVec2(left, rail), ImVec2(right, rail), Colour, 1.5f);
+				continue;
+			}
+			for (auto x{left}; x < right; x += font)
+				list->AddLine(ImVec2(x, rail), ImVec2(std::min(right, x + font * 0.55f), rail), Colour, 1.0f);
+		}
+	};
+	auto const line{ImGui::GetColorU32(ImGuiCol_Text, 0.85f)};
+	track(middle, line, false);
+	auto const arrow{std::round(font * 0.45f)};
+	list->AddTriangleFilled(ImVec2(right + pad * 1.2f, middle), ImVec2(right + pad * 0.2f - arrow * 0.4f, middle - arrow), ImVec2(right + pad * 0.2f - arrow * 0.4f, middle + arrow), line);
+	auto const label_at = [&](int const Row, char const *Label, bool const Lit) {
+		auto const size{ImGui::CalcTextSize(Label)};
+		list->AddText(ImVec2(top.x + pad + column - size.x, std::round(top.y + row * (Row + 0.5f) - size.y * 0.5f)), ImGui::GetColorU32(Lit ? ImGuiCol_Text : ImGuiCol_TextDisabled), Label);
+	};
+	label_at(1, labels[1], false);
+	auto const accent{family_colour(0)};
+	for (auto const side : {-1, 1})
+	{
+		auto const y{middle + side * row};
+		auto const chosen{side == Side};
+		track(y, chosen ? accent : ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f), false == chosen);
+		label_at(side < 0 ? 0 : 2, labels[side < 0 ? 0 : 2], chosen);
+		if (false == chosen)
+			continue;
+		// the spacing, axis to axis
+		auto const x{std::round(left + (right - left) * 0.62f)};
+		ImU32 const dimension{IM_COL32(255, 210, 60, 255)};
+		list->AddLine(ImVec2(x, middle), ImVec2(x, y), dimension, 1.5f);
+		list->AddTriangleFilled(ImVec2(x, middle), ImVec2(x - 3.0f, middle + side * 6.0f), ImVec2(x + 3.0f, middle + side * 6.0f), dimension);
+		list->AddTriangleFilled(ImVec2(x, y), ImVec2(x - 3.0f, y - side * 6.0f), ImVec2(x + 3.0f, y - side * 6.0f), dimension);
+		char text[32];
+		std::snprintf(text, sizeof(text), "%.2f m", Spacing);
+		auto const size{ImGui::CalcTextSize(text)};
+		ImVec2 const at{x + 6.0f, std::round((middle + y) * 0.5f - size.y * 0.5f)};
+		list->AddRectFilled(ImVec2(at.x - 3.0f, at.y), ImVec2(at.x + size.x + 3.0f, at.y + size.y), ImGui::GetColorU32(ImGuiCol_FrameBg), 3.0f);
+		list->AddText(at, dimension, text);
+	}
+	if (hovered)
+		ImGui::SetTooltip("%s", pointed != 0 && pointed != Side ? STR_C("A click: the new track on this side") : STR_C("Left and right as seen along the line, the way the arrow points"));
+	return changed;
+}
+
 std::string name_of(TTrack const &Track)
 {
-	return Track.name().empty() ? std::string{"(noname)"} : Track.name();
+	return Track.name().empty() ? STR("(no name)") : Track.name();
 }
 
 segment_data reversed(segment_data const &Path)
@@ -299,47 +386,41 @@ void editor_mode::render_parallel_controls(bool const Scope)
 {
 	auto &tool{m_parallel};
 	if (Scope)
-	{
-		ImGui::RadioButton(STR_C("This path"), &tool.scope, 0);
-		ImGui::SameLine();
-		ImGui::RadioButton(STR_C("The line, up to the switches"), &tool.scope, 1);
-	}
-	ImGui::RadioButton(STR_C("Left"), &tool.side, -1);
-	ImGui::SameLine();
-	ImGui::RadioButton(STR_C("Right"), &tool.side, 1);
-	ImGui::SameLine();
-	ImGui::TextDisabled("%s", STR_C("(of the direction of the line, see the preview)"));
-	ImGui::SetNextItemWidth(90.0f);
-	ImGui::InputDouble(STR_C("Spacing (m)"), &tool.spacing, 0.0, 0.0, "%.2f");
+		segmented("scope", tool.scope, {{0, STR_C("This path"), "Only beside the selected path"}, {1, STR_C("The line, up to the switches"), "Beside the whole line of the selected path, up to the switches: its curves go along with R minus or plus the spacing"}});
+	side_picker(tool.side, tool.spacing);
+	ImGui::SetNextItemWidth(std::round(ImGui::GetFontSize() * 6.0f));
+	ImGui::InputDouble("##spacing", &tool.spacing, 0.0, 0.0, STR_C("%.2f m"));
+	item_tooltip("Spacing of the axes of the tracks; the usual ones beside it");
 	tool.spacing = std::clamp(tool.spacing, 1.5, 100.0);
-	for (auto const spacing : kSpacings)
-	{
-		ImGui::SameLine();
-		if (ImGui::SmallButton(format("%.2f", spacing).c_str()))
-			tool.spacing = spacing;
-	}
+	ImGui::SameLine();
+	value_chips("spacings", tool.spacing, {kSpacings[0], kSpacings[1], kSpacings[2], kSpacings[3], kSpacings[4], kSpacings[5]}, "%.2f");
 }
 
 void editor_mode::render_parallel_ui()
 {
 	auto &tool{m_parallel};
-	ImGui::TextDisabled("%s", STR_C("First select a straight path (LMB). Then a second track is laid beside it.\nAlong the line the curves are included: R minus or plus the spacing, same transitions and cant."));
+	ImGui::PushTextWrapPos(0.0f);
 	if (parallel_target() != nullptr)
-		ImGui::TextDisabled("%s", STR_C("Two paths selected: set the spacing of the other in Select. The first must be a straight."));
-	else if (auto *source{parallel_source()}; source == nullptr)
-		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("First select a straight path in the view."));
-	else if (source->eType != tt_Normal || false == editor_track::is_straight(*source, m_straights.tolerance))
-		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("The selected path isn't a straight. Select a straight first."));
+		ImGui::TextDisabled("%s", STR_C("Two tracks selected: set the spacing of the other in the Select tool"));
+	else if (parallel_source() == nullptr)
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("Click a track in the view: the new one goes beside it."));
+	ImGui::PopTextWrapPos();
 	render_parallel_controls();
 	parallel_update();
 	if (false == tool.error.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", tool.error.c_str());
+		ImGui::PopTextWrapPos();
+	}
 	else if (false == tool.pieces.empty())
 	{
-		if (ImGui::Button(format(STR_C("Lay %zu paths, %.1f m"), tool.pieces.size(), tool.length).c_str()))
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
+		if (ImGui::Button(format(STR_P("Lay %zu track, %.1f m", "Lay %zu tracks, %.1f m", static_cast<long long>(tool.pieces.size())), tool.pieces.size(), tool.length).c_str(), ImVec2(-1.0f, std::round(ImGui::GetFrameHeight() * 1.3f))))
 			parallel_build();
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("First select a straight. Creates a new track beside it; the selected path stays."));
+		ImGui::PopStyleColor(2);
+		item_tooltip("A new track beside the one selected, as in the preview; the selected stays as it is. Ctrl+Z takes it back");
 	}
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
@@ -354,8 +435,8 @@ void editor_mode::render_parallel_set_ui()
 		return;
 	if (false == ImGui::CollapsingHeader(STR_C("Make parallel"), ImGuiTreeNodeFlags_DefaultOpen))
 		return;
-	ImGui::TextWrapped("%s", STR_C("First selected must be a straight. It stays; the other is moved to this spacing."));
-	ImGui::TextWrapped("%s", format(STR_C("%s stays. %s is moved to this spacing, taking its curves."), name_of(*source).c_str(), name_of(*target).c_str()).c_str());
+	ImGui::TextWrapped("%s", STR_C("The first selected track must be a straight"));
+	ImGui::TextWrapped("%s", format(STR_C("%s stays, %s moves to this spacing with its curves"), name_of(*source).c_str(), name_of(*target).c_str()).c_str());
 	if (tool.measured > 0.05)
 		ImGui::TextDisabled("%s", format(lateral_of(*source, *target) >= 0.0 ? STR_C("Now %.2f m on the right") : STR_C("Now %.2f m on the left"), tool.measured).c_str());
 	tool.scope = 0;

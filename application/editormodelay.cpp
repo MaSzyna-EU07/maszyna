@@ -223,7 +223,7 @@ void editor_mode::draw_free_ends(TTrack const *Self, int const Category, std::ve
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const &display{ImGui::GetIO().DisplaySize};
-	auto const reach{Global.EditorOrtho ? std::max(kJointRange, static_cast<double>(Global.EditorOrthoExtent) * 2.0) : kJointRange};
+	auto const reach{Global.EditorOrtho ? std::max(kJointRange, static_cast<double>(Global.EditorOrthoExtent) * 2.0) : std::min(kJointRange, kDotsRange)};
 	for (auto const &candidate : editor_track::free_ends(Self, Category, glm::dvec3{Global.pCamera.Pos}, reach, Exclude))
 	{
 		ImVec2 screen;
@@ -484,7 +484,7 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 	Length = result.length;
 	std::vector<std::string> notes;
 	for (auto const &warning : result.warnings)
-		if (m_join_radius > 0.0 || warning.find("R reduced") == std::string::npos)
+		if (m_join_radius > 0.0 || std::find(result.radius_warnings.begin(), result.radius_warnings.end(), warning) == result.radius_warnings.end())
 			notes.push_back(warning);
 	if (result.kind == alignment::join_kind::bezier)
 		notes.insert(notes.begin(), STR_C("No curve fits between the ends, they are joined with a free curve"));
@@ -597,42 +597,102 @@ void editor_mode::render_extend_ui()
 	extend_tool tool;
 	if (false == chosen_free_end(tool))
 		return;
-	if (false == ImGui::CollapsingHeader(STR_C("Continue from the free end"), ImGuiTreeNodeFlags_DefaultOpen))
+	if (false == ImGui::CollapsingHeader(STR_C("Continue from the free end")))
 		return;
-	ImGui::PushItemWidth(100.0f);
-	ImGui::DragScalar(STR_C("Length (m)##extend"), ImGuiDataType_Double, &m_extend_length, 0.5f, nullptr, nullptr, "%.1f");
-	item_tooltip("Length of the next piece, along the curve for the curves");
-	ImGui::SameLine();
-	ImGui::DragScalar("R (m)##extend", ImGuiDataType_Double, &m_extend_radius, 5.0f, nullptr, nullptr, "%.0f");
-	item_tooltip("Radius of the curves added");
-	ImGui::PopItemWidth();
+	if (begin_fields("##extendfields", 0.3f))
+	{
+		field_row("Length (m)##extend");
+		ImGui::DragScalar("##extendlength", ImGuiDataType_Double, &m_extend_length, 0.5f, nullptr, nullptr, "%.1f");
+		item_tooltip("Length of the next piece, along the curve for the curves");
+		field_row("R (m)##extend");
+		ImGui::DragScalar("##extendradius", ImGuiDataType_Double, &m_extend_radius, 5.0f, nullptr, nullptr, "%.0f");
+		item_tooltip("Radius of the curves added");
+		ImGui::EndTable();
+	}
 	m_extend_length = std::clamp(m_extend_length, 0.5, 5000.0);
 	m_extend_radius = std::clamp(m_extend_radius, 10.0, 100000.0);
-	if (ImGui::Button(STR_C("Straight##extend"), ImVec2(100.0f, 0.0f)))
+	auto const gap{std::round(ImGui::GetFontSize() * 0.3f)};
+	auto const width{std::floor((ImGui::GetContentRegionAvail().x - 2.0f * gap) / 3.0f)};
+	auto const at = [](ImVec2 const Low, ImVec2 const High, float const X, float const Y) { return ImVec2(Low.x + (High.x - Low.x) * X, Low.y + (High.y - Low.y) * Y); };
+	auto const piece = [&](char const *Id, char const *Label, int const Bend) {
+		return sketch_tile(Id, Label, false, width, [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32) {
+			List.AddLine(at(Low, High, 0.0f, 0.5f), at(Low, High, 0.4f, 0.5f), Line, 2.0f);
+			List.AddCircleFilled(at(Low, High, 0.4f, 0.5f), 2.5f, IM_COL32(230, 90, 70, 255));
+			if (Bend == 0)
+				List.AddLine(at(Low, High, 0.4f, 0.5f), at(Low, High, 1.0f, 0.5f), IM_COL32(255, 210, 60, 255), 2.0f);
+			else
+				List.AddBezierQuadratic(at(Low, High, 0.4f, 0.5f), at(Low, High, 0.75f, 0.5f), at(Low, High, 0.95f, Bend > 0 ? 0.08f : 0.92f), IM_COL32(255, 210, 60, 255), 2.0f);
+		});
+	};
+	if (piece("##extendstraight", STR_C("Straight"), 0))
 		extend_add(0);
 	item_tooltip("Adds a straight at the free end; the new piece gets selected, so the next click goes on from it");
-	ImGui::SameLine();
-	if (ImGui::Button(STR_C("Curve left##extend"), ImVec2(100.0f, 0.0f)))
+	ImGui::SameLine(0.0f, gap);
+	if (piece("##extendleft", STR_C("Curve left"), 1))
 		extend_add(1);
-	ImGui::SameLine();
-	if (ImGui::Button(STR_C("Curve right##extend"), ImVec2(100.0f, 0.0f)))
+	ImGui::SameLine(0.0f, gap);
+	if (piece("##extendright", STR_C("Curve right"), -1))
 		extend_add(-1);
 }
 
+// the shapes laid from a free end as four tiles, each with a sketch: the end of the track, what's laid from it, the cursor
 void editor_mode::render_layout_combo()
 {
 	char const *const names[]{"Arc, then straight", "Straight, then arc", "Arc through the cursor", "Straight"};
-	auto current{static_cast<int>(m_track_layout)};
-	ImGui::PushItemWidth(200.0f);
-	if (ImGui::BeginCombo(STR_C("Shape from a free end"), STR_C(names[current])))
+	auto const current{static_cast<int>(m_track_layout)};
+	ImGui::TextDisabled("%s", STR_C("Shape from a free end"));
+	auto const font{ImGui::GetFontSize()};
+	auto const gap{std::round(font * 0.3f)};
+	auto const width{std::floor((ImGui::GetContentRegionAvail().x - 3.0f * gap) * 0.25f)};
+	auto const height{std::round(font * 2.4f)};
+	auto *list{ImGui::GetWindowDrawList()};
+	auto const accent{family_colour(0)};
+	for (int i = 0; i < 4; ++i)
 	{
-		for (int i = 0; i < 4; ++i)
-			if (ImGui::Selectable(STR_C(names[i]), i == current))
-				m_track_layout = static_cast<track_layout>(i);
-		ImGui::EndCombo();
+		if (i > 0)
+			ImGui::SameLine(0.0f, gap);
+		ImGui::PushID(i);
+		auto const top{ImGui::GetCursorScreenPos()};
+		if (ImGui::InvisibleButton("##shape", ImVec2(width, height)))
+			m_track_layout = static_cast<track_layout>(i);
+		auto const hovered{ImGui::IsItemHovered()};
+		if (hovered)
+			ImGui::SetTooltip("%s\n%s", STR_C(names[i]), STR_C("While laying from a free end: Shift+wheel"));
+		ImGui::PopID();
+		auto const chosen{i == current};
+		ImVec2 const bottom{top.x + width, top.y + height};
+		auto const rounding{std::round(font * 0.35f)};
+		list->AddRectFilled(top, bottom, chosen ? (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 46) : ImGui::GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), rounding);
+		list->AddRect(top, bottom, chosen ? accent : ImGui::GetColorU32(ImGuiCol_Border), rounding, 0, chosen ? 2.0f : 1.0f);
+		auto const pad{std::round(font * 0.45f)};
+		auto const at = [&](float const X, float const Y) { return ImVec2(top.x + pad + X * (width - 2.0f * pad), top.y + pad + Y * (height - 2.0f * pad)); };
+		auto const laid{chosen ? accent : ImGui::GetColorU32(ImGuiCol_Text, 0.7f)};
+		list->AddLine(at(0.0f, 0.85f), at(0.18f, 0.85f), ImGui::GetColorU32(ImGuiCol_TextDisabled), 3.0f);
+		switch (i)
+		{
+		case 0:
+			list->AddBezierQuadratic(at(0.18f, 0.85f), at(0.4f, 0.85f), at(0.61f, 0.6f), laid, 2.0f);
+			list->AddLine(at(0.61f, 0.6f), at(1.0f, 0.1f), laid, 2.0f);
+			break;
+		case 1:
+			list->AddLine(at(0.18f, 0.85f), at(0.45f, 0.85f), laid, 2.0f);
+			list->AddBezierQuadratic(at(0.45f, 0.85f), at(0.85f, 0.85f), at(1.0f, 0.1f), laid, 2.0f);
+			break;
+		case 2: list->AddBezierQuadratic(at(0.18f, 0.85f), at(0.7f, 0.85f), at(1.0f, 0.1f), laid, 2.0f); break;
+		default:
+			list->AddLine(at(0.18f, 0.85f), at(1.0f, 0.85f), laid, 2.0f);
+			for (float y{0.15f}; y < 0.8f; y += 0.2f)
+				list->AddLine(at(1.0f, y), at(1.0f, y + 0.1f), IM_COL32(255, 210, 60, 160), 1.0f);
+			break;
+		}
+		list->AddCircleFilled(at(0.18f, 0.85f), 2.5f, IM_COL32(230, 80, 230, 255));
+		auto const cursor{at(1.0f, 0.1f)};
+		list->AddLine(ImVec2(cursor.x - 4.0f, cursor.y), ImVec2(cursor.x + 4.0f, cursor.y), IM_COL32(255, 210, 60, 255), 1.5f);
+		list->AddLine(ImVec2(cursor.x, cursor.y - 4.0f), ImVec2(cursor.x, cursor.y + 4.0f), IM_COL32(255, 210, 60, 255), 1.5f);
 	}
-	ImGui::PopItemWidth();
-	item_tooltip("What a drag or a click from a free end lays towards the cursor; Shift+wheel changes it, Ctrl+wheel the radius");
+	ImGui::TextUnformatted(STR_C(names[current]));
+	ImGui::SameLine();
+	ImGui::TextDisabled("%s", STR_C("(Shift+wheel)"));
 }
 
 bool editor_mode::track_wheel(double const Offset)
@@ -927,7 +987,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	first_step_done(first_step::laid);
 	if (End.track != nullptr)
 		first_step_done(first_step::join);
-	tool.status = format(STR_C("Laid %zu paths, %.1f m"), created.size(), length);
+	tool.status = format(STR_P("Laid %zu track, %.1f m, Ctrl+Z takes it back", "Laid %zu tracks, %.1f m, Ctrl+Z takes them back", static_cast<long long>(created.size())), created.size(), length);
 	if (false == error.empty())
 		tool.status += "\n" + error;
 	{
@@ -948,7 +1008,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 				}
 	}
 	if (scene::Layers.active() == null_handle && style == nullptr)
-		tool.status += "\nThe scenery isn't opened for editing, the new track won't be saved";
+		tool.status += "\n" + STR("The scenery isn't opened for editing: new track won't be saved");
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.points.clear();
 	tool.start = {};
@@ -1062,29 +1122,133 @@ alignment::limits editor_mode::laying_norms() const
 	return norms;
 }
 
+namespace
+{
+
+// a card of the geometry of the new track: its plan, and under it its curvature along the length, a point running along both;
+// a plain arc jumps to its curvature, a railway curve leads into it along a transition, the cant with it
+float geometry_card_height(char const *Title, char const *Text, float const Width)
+{
+	auto const font{ImGui::GetFontSize()};
+	auto const pad{std::round(font * 0.5f)};
+	auto const wrap{Width - 2.0f * pad};
+	return pad + ImGui::CalcTextSize(Title, nullptr, false, wrap).y + pad * 0.5f + std::round(font * 2.6f) + pad * 0.5f + ImGui::CalcTextSize(Text, nullptr, false, wrap).y + pad;
+}
+
+bool geometry_card(char const *Id, char const *Title, char const *Text, bool const Railway, bool const Chosen, float const Width, float const Height)
+{
+	auto const font{ImGui::GetFontSize()};
+	auto const pad{std::round(font * 0.5f)};
+	auto const sketch{std::round(font * 2.6f)};
+	auto const wrap{Width - 2.0f * pad};
+	auto const title{ImGui::CalcTextSize(Title, nullptr, false, wrap)};
+	auto const height{Height};
+	auto const top{ImGui::GetCursorScreenPos()};
+	auto const clicked{ImGui::InvisibleButton(Id, ImVec2(Width, height))};
+	auto const hovered{ImGui::IsItemHovered()};
+	auto *list{ImGui::GetWindowDrawList()};
+	auto const accent{family_colour(0)};
+	ImVec2 const bottom{top.x + Width, top.y + height};
+	auto const rounding{std::round(font * 0.35f)};
+	list->AddRectFilled(top, bottom, Chosen ? (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 46) : ImGui::GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), rounding);
+	list->AddRect(top, bottom, Chosen ? accent : ImGui::GetColorU32(ImGuiCol_Border), rounding, 0, Chosen ? 2.0f : 1.0f);
+	auto y{top.y + pad};
+	list->AddText(nullptr, 0.0f, ImVec2(top.x + pad, y), ImGui::GetColorU32(ImGuiCol_Text), Title, nullptr, wrap);
+	y += title.y + pad * 0.5f;
+	// the curvature along the length, as a share of the curvature of the arc
+	auto const curvature = [Railway](double const Share) {
+		if (Railway)
+			return std::clamp((Share - 0.22) / 0.3, 0.0, 1.0);
+		return Share < 0.37 ? 0.0 : 1.0;
+	};
+	int constexpr steps{80};
+	std::vector<ImVec2> plan;
+	plan.reserve(steps + 1);
+	double heading{0.0}, px{0.0}, py{0.0};
+	auto const turn{1.45 / (Railway ? 0.63 - 0.15 : 0.63)};
+	for (int i = 0; i <= steps; ++i)
+	{
+		plan.emplace_back(static_cast<float>(px), static_cast<float>(py));
+		auto const share{(i + 0.5) / steps};
+		heading += curvature(share) * turn / steps;
+		px += std::cos(heading) / steps;
+		py -= std::sin(heading) / steps;
+	}
+	ImVec2 low{plan.front()}, high{plan.front()};
+	for (auto const &point : plan)
+	{
+		low = ImVec2(std::min(low.x, point.x), std::min(low.y, point.y));
+		high = ImVec2(std::max(high.x, point.x), std::max(high.y, point.y));
+	}
+	// the plan on the left, the curvature along the length on the right
+	auto const half{std::floor((wrap - pad) * 0.5f)};
+	auto const scale{std::min(half / std::max(1e-3f, high.x - low.x), sketch / std::max(1e-3f, high.y - low.y))};
+	ImVec2 const origin{top.x + pad + (half - (high.x - low.x) * scale) * 0.5f, y + sketch - (high.y - low.y) * scale};
+	for (auto &point : plan)
+		point = ImVec2(origin.x + (point.x - low.x) * scale, origin.y + (point.y - low.y) * scale);
+	auto const line{Chosen ? accent : ImGui::GetColorU32(ImGuiCol_Text, 0.75f)};
+	list->AddPolyline(plan.data(), static_cast<int>(plan.size()), line, 0, 2.0f);
+	auto const label{ImGui::CalcTextSize("1/R")};
+	auto const graph_left{top.x + pad + half + pad * 0.5f + label.x + 2.0f};
+	auto const graph_width{top.x + pad + wrap - graph_left};
+	auto const graph_top{y};
+	auto const graph{sketch};
+	auto const axis{ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f)};
+	list->AddLine(ImVec2(graph_left, graph_top + graph), ImVec2(graph_left + graph_width, graph_top + graph), axis);
+	list->AddLine(ImVec2(graph_left, graph_top), ImVec2(graph_left, graph_top + graph), axis);
+	list->AddText(ImVec2(graph_left - label.x - 2.0f, graph_top + graph * 0.2f - label.y * 0.5f), axis, "1/R");
+	std::vector<ImVec2> curve;
+	for (int i = 0; i <= steps; ++i)
+	{
+		auto const share{static_cast<double>(i) / steps};
+		curve.emplace_back(graph_left + static_cast<float>(share) * graph_width, graph_top + graph - static_cast<float>(curvature(share)) * graph * 0.8f);
+	}
+	list->AddPolyline(curve.data(), static_cast<int>(curve.size()), line, 0, 1.5f);
+	if (Railway)
+		for (int i = 0; i < steps; i += 4)
+		{
+			auto const share{static_cast<double>(i) / steps};
+			auto const next{static_cast<double>(i + 2) / steps};
+			list->AddLine(ImVec2(graph_left + static_cast<float>(share) * graph_width, graph_top + graph - static_cast<float>(curvature(share)) * graph * 0.45f),
+			              ImVec2(graph_left + static_cast<float>(next) * graph_width, graph_top + graph - static_cast<float>(curvature(next)) * graph * 0.45f), IM_COL32(240, 170, 60, 220), 1.0f);
+		}
+	auto const running{std::fmod(ImGui::GetTime() * 0.22, 1.0)};
+	auto const index{std::clamp(static_cast<int>(running * steps), 0, steps)};
+	list->AddCircleFilled(plan[index], 3.0f, IM_COL32(255, 255, 255, 230));
+	list->AddLine(ImVec2(curve[index].x, graph_top), ImVec2(curve[index].x, graph_top + graph), IM_COL32(255, 255, 255, 70));
+	list->AddCircleFilled(curve[index], 2.5f, IM_COL32(255, 255, 255, 230));
+	y += sketch + pad * 0.5f;
+	list->AddText(nullptr, 0.0f, ImVec2(top.x + pad, y), ImGui::GetColorU32(ImGuiCol_TextDisabled), Text, nullptr, wrap);
+	return clicked;
+}
+
+} // namespace
+
 bool editor_mode::render_norms_choice()
 {
-	ImGui::AlignTextToFramePadding();
-	ImGui::TextUnformatted(STR_C("Norms:"));
 	auto changed{false};
-	char const *names[]{STR_C("free"), STR_C("PKP PLK")};
+	auto const gap{std::round(ImGui::GetFontSize() * 0.5f)};
+	auto const width{std::floor((ImGui::GetContentRegionAvail().x - gap) * 0.5f)};
+	char const *const titles[]{STR_C("Free laying"), STR_C("To the PKP PLK norms")};
+	char const *const texts[]{STR_C("Plain arcs, no transition curves nor cant"), STR_C("Transition curves and cant for the speed, checked against the norms")};
+	auto const height{std::max(geometry_card_height(titles[0], texts[0], width), geometry_card_height(titles[1], texts[1], width))};
+	ImGui::PushID("geometry");
 	for (int i = 0; i < 2; ++i)
 	{
-		ImGui::SameLine();
+		if (i > 0)
+			ImGui::SameLine(0.0f, gap);
 		auto const chosen{m_norms_free == (i == 0)};
-		if (chosen)
-			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-		if (ImGui::Button(names[i], ImVec2(90.0f, 0.0f)) && false == chosen)
+		auto const clicked{geometry_card(i == 0 ? "##free" : "##norms", titles[i], texts[i], i == 1, chosen, width, height)};
+		item_tooltip(i == 0 ? "Plain arcs with no transition curves and no cant, no warnings about the norms: the track goes where it's clicked"
+		                    : "Transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms");
+		if (clicked && false == chosen)
 		{
 			m_norms_free = i == 0;
 			m_lay.transitions = false == m_norms_free;
 			changed = true;
 		}
-		if (chosen)
-			ImGui::PopStyleColor();
-		item_tooltip(i == 0 ? "Plain arcs with no transition curves and no cant, no warnings about the norms: the track goes where it's clicked"
-		                    : "Transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms");
 	}
+	ImGui::PopID();
 	if (changed && false == m_route.chain.tracks.empty())
 		route_update();
 	return changed;
@@ -1098,13 +1262,15 @@ void editor_mode::render_lay_ui()
 	ImGui::PushItemWidth(120.0f);
 	ImGui::DragScalar(STR_C("Curve radius (m)"), ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
 	item_tooltip("Drag to change, Ctrl+click to type the value. While laying: Ctrl+wheel");
+	value_chips("radii", tool.radius, {190.0, 300.0, 500.0, 800.0, 1200.0, 2000.0}, "%.0f");
 	tool.radius = std::max(10.0, tool.radius);
 	ImGui::DragScalar(STR_C("Speed (km/h)"), ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
-	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
 	item_tooltip(m_norms_free ? "Speed limit of the new paths; the speed of the track joined comes first"
 	                          : "Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
+	if (false == m_norms_free)
+		value_chips("speeds", tool.style.velocity, {40.0, 60.0, 80.0, 100.0, 120.0, 160.0}, "%.0f");
+	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
 	ImGui::PopItemWidth();
-	render_layout_combo();
 	if (auto *track{selected_track()}; track != nullptr)
 	{
 		std::string reason;
@@ -1116,25 +1282,67 @@ void editor_mode::render_lay_ui()
 		render_lay_status();
 		return;
 	}
+	render_layout_combo();
+	ImGui::Spacing();
 	ImGui::PushItemWidth(120.0f);
 	ImGui::DragScalar(STR_C("Longest path (m)"), ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
 	tool.piece_length = std::clamp(tool.piece_length, 5.0, 1000.0);
 	ImGui::PopItemWidth();
-	ImGui::Checkbox(STR_C("Parameters of the selected track"), &tool.copy_selected);
-	item_tooltip("Takes the textures and the other parameters from the selected track.\nA track started or finished at a free end always takes them from the track it joins");
+	ImGui::TextDisabled("%s", STR_C("Look of the new track"));
+	int source{tool.copy_selected ? 1 : 0};
+	if (segmented("laylook", source,
+	              {{0, STR_C("These textures"), "The rails and the trackbed chosen below.\nA track started or finished at a free end always takes them from the track it joins"},
+	               {1, STR_C("Like the selected one"), "Takes the textures and the other parameters from the selected track.\nA track started or finished at a free end always takes them from the track it joins"}}))
+		tool.copy_selected = source == 1;
 	if (false == tool.copy_selected)
 	{
-		auto const text_field = [](char const *Label, std::string &Value, char const *Tooltip) {
-			char buffer[256];
-			std::snprintf(buffer, sizeof(buffer), "%s", Value.c_str());
-			if (ImGui::InputText(Label, buffer, sizeof(buffer)))
-				Value = buffer;
-			item_tooltip(Tooltip);
+		m_textures.loads = 0;
+		auto const column{std::round(ImGui::GetCursorPosX() + std::max(ImGui::CalcTextSize(STR_C("Rails")).x, ImGui::CalcTextSize(STR_C("Trackbed")).x) + ImGui::GetStyle().ItemSpacing.x)};
+		auto const texture_row = [&](int const Kind, char const *Label, std::string &Value) {
+			ImGui::PushID(Kind);
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(Label);
+			ImGui::SameLine(column);
+			auto const side{ImGui::GetFrameHeight()};
+			auto const corner{ImGui::GetCursorScreenPos()};
+			if (auto const image{Value.empty() || Value == "none" ? 0 : track_texture_image(Kind, Value)}; image != 0)
+			{
+				ImGui::Image(static_cast<ImTextureID>(image), ImVec2(side, side), ImVec2(0, 1), ImVec2(1, 0));
+				if (ImGui::IsItemHovered())
+				{
+					auto const big{std::round(ImGui::GetFontSize() * 14.0f)};
+					ImGui::BeginTooltip();
+					ImGui::Image(static_cast<ImTextureID>(image), ImVec2(big, big), ImVec2(0, 1), ImVec2(1, 0));
+					ImGui::TextUnformatted(Value.c_str());
+					ImGui::EndTooltip();
+				}
+			}
+			else
+			{
+				ImGui::Dummy(ImVec2(side, side));
+				ImGui::GetWindowDrawList()->AddRect(corner, ImVec2(corner.x + side, corner.y + side), ImGui::GetColorU32(ImGuiCol_Border));
+			}
+			ImGui::SameLine(0.0f, 4.0f);
+			ImGui::SetNextItemWidth(-FLT_MIN);
+			ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
+			auto const slash{Value.find_last_of('/')};
+			auto const preview{Value.empty() || Value == "none" ? std::string{STR_C("No texture")} : slash == std::string::npos ? Value : Value.substr(slash + 1)};
+			if (ImGui::BeginCombo("##texture", preview.c_str(), ImGuiComboFlags_HeightLargest))
+			{
+				if (std::string chosen; track_texture_picker(Kind, Value, false, chosen))
+				{
+					Value = chosen;
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::EndCombo();
+			}
+			item_tooltip(Kind == 0 ? "Texture of the rails.\nA material dragged from the texture browser can be dropped here" : "Texture of the trackbed (ballast) under the rails.\nA material dragged from the texture browser can be dropped here");
+			if (std::string dropped; material_drop(dropped))
+				Value = dropped;
+			ImGui::PopID();
 		};
-		ImGui::PushItemWidth(-1.0f);
-		text_field("##layrail", tool.style.rail, STR_C("Texture of the rails"));
-		text_field("##layballast", tool.style.ballast, STR_C("Texture of the ballast"));
-		ImGui::PopItemWidth();
+		texture_row(0, STR_C("Rails"), tool.style.rail);
+		texture_row(1, STR_C("Trackbed"), tool.style.ballast);
 	}
 	ImGui::TreePop();
 	render_lay_status();

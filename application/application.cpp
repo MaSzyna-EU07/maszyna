@@ -282,7 +282,11 @@ void eu07_application::DiscordRPCService()
 		}
 
 		if (currentMode != mode::driver)
+		{
+			// the editor and the other modes: nothing to tell, without spinning a core on it
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			continue;
+		}
 
 		// Discord RPC updater
 		if (simulation::is_ready)

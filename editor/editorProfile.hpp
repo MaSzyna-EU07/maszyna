@@ -30,7 +30,8 @@ struct pvi
 struct limits
 {
 	double grade_max{6.0}; // per mille
-	double grade_switch_max{2.5}; // per mille, over switches
+	double grade_switch_max{0.0}; // per mille, over switches and their shared timbers; 0: the limit of the line, as a switch may lie on
+	                              // the grade of the line. A lower one for the tracks of a station where vehicles stand
 	double radius_factor{0.4}; // R >= k * V^2
 	double radius_min{2000.0};
 	double curve_threshold{2.0}; // per mille, change of grade which needs a vertical curve
@@ -107,18 +108,43 @@ struct recognition
 	double grade_tolerance{0.0004};
 	double minimum_length{15.0};
 	double sharp_gap{2.0};
+	double step{0.02};
+	// where the line read departs from the track by more than this, the bends of the track itself; 0 leaves the line as read
+	double detail{0.0};
 };
 // grade line of existing track, from its elevations and grades sampled along the chainage
 line recognize(std::vector<double> const &Chainages, std::vector<double> const &Elevations, std::vector<double> const &Grades, recognition const &Options);
 
 struct ground_fit
 {
-	double tolerance{1.0}; // m, departure from the ground which doesn't yet need a change of grade
-	double smoothing{20.0}; // m, length over which the ground is averaged
+	double tolerance{1.0}; // m, the ground this near the line agrees with it; farther, the line doesn't lie on it there
+	double grade_max{0.0}; // per mille, the steepest grade the line may take; 0: the limit of the line
+	// heights the line keeps between before it lies on the ground, as where the tracks off a switch of it lead into another line:
+	// they can't climb more than their length lets them
+	struct bound
+	{
+		double chainage{0.0};
+		double low{0.0};
+		double high{0.0};
+	};
+	std::vector<bound> bounds;
 };
-// grade line which follows the ground within the limits of Settings, with the least earthworks.
-// Ground is NaN where there's none; the joined ends of the route keep the elevation of the adjoining track
-line fit_ground(std::vector<double> const &Chainages, std::vector<double> const &Ground, context const &Context, line const &Settings, ground_fit const &Options);
+// grade line which lies on the ground where it agrees, within the limits of Settings, with the fewest and least changes of
+// grade; where the ground parts from it, at a bridge, a viaduct, a cutting wall, the line goes on past it. Chainages ascend,
+// Ground is NaN where there's none. Each sample may have its own tolerance, how closely it tells the height, and its own
+// reach, how far from the line it still belongs to it (empty: the tolerance of Options). The joined ends of the route keep
+// the elevation of the adjoining track, and its grade where the line can take it over
+line fit_ground(std::vector<double> const &Chainages, std::vector<double> const &Ground, context const &Context, line const &Settings, ground_fit const &Options, std::vector<double> const &Tolerances = {},
+                std::vector<double> const &Reaches = {});
+// stretches where the ground departs from the line by over Tolerance, one way all along: depth below the line (a gap, under
+// a bridge, a viaduct), above it (a wall, a structure over the track)
+struct departure
+{
+	double from{0.0};
+	double to{0.0};
+	double depth{0.0}; // m, the ground against the line where they part the most
+};
+std::vector<departure> departures(line const &Line, std::vector<double> const &Chainages, std::vector<double> const &Ground, double const Tolerance);
 
 // chainages where the paths have to end so that each of them carries a single grade or a single curve
 std::vector<double> breaks(line const &Line);

@@ -124,6 +124,12 @@ void mark(scene::layer_handle const Layer)
 		text += " number " + word(entry.number) + " source " + word(entry.source);
 		if (entry.middle > 0.0)
 			text += format(" middle %.3f", entry.middle);
+		if (entry.lift != 0.0)
+		{
+			auto const from{context.to_local(entry.lift_from)};
+			auto const to{context.to_local(entry.lift_to)};
+			text += format(" lift %.4f %.4f %.4f %.4f %.4f %.4f %.4f ramp %.3f", entry.lift, from.x, from.y, from.z, to.x, to.y, to.z, entry.ramp);
+		}
 		lines.push_back(text);
 	}
 	scene::Layers.mark(Layer, kMark, std::move(lines));
@@ -179,8 +185,18 @@ void load()
 			line >> start.x >> start.y >> start.z >> keyword >> direction.x >> direction.y >> keyword >> km >> keyword >> entry.number >> keyword >> entry.source;
 			if (line.fail())
 				continue;
-			if (line >> keyword && keyword == "middle")
-				line >> entry.middle;
+			while (line >> keyword)
+			{
+				if (keyword == "middle")
+					line >> entry.middle;
+				else if (keyword == "lift")
+				{
+					glm::dvec3 from{0.0}, to{0.0};
+					line >> entry.lift >> from.x >> from.y >> from.z >> to.x >> to.y >> to.z >> keyword >> entry.ramp;
+					entry.lift_from = context.to_world(from);
+					entry.lift_to = context.to_world(to);
+				}
+			}
 			entry.start = context.to_world(start);
 			ahead = context.to_world(start + glm::dvec3{direction.x, 0.0, direction.y});
 			entry.direction = plan_of(ahead - entry.start);

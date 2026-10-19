@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
@@ -107,9 +108,9 @@ std::string value_text(editor_mode::joint_issue const &Issue)
 	{
 	case kind::gap: return format("%.3f m", Issue.value);
 	case kind::step: return format("%.1f mm", Issue.value * 1000.0);
-	case kind::kink: return format("%.3f deg", Issue.value);
+	case kind::kink: return format("%.3f\xc2\xb0", Issue.value);
 	case kind::cant: return format("%.1f mm", Issue.value);
-	case kind::grade: return format("%.1f %%o", Issue.value);
+	case kind::grade: return format("%.1f \xe2\x80\xb0", Issue.value);
 	default: return "-";
 	}
 }
@@ -131,7 +132,7 @@ std::string name_of(TTrack const *Track)
 {
 	if (Track == nullptr)
 		return "-";
-	return Track->name().empty() ? std::string{"(noname)"} : Track->name();
+	return Track->name().empty() ? STR("(no name)") : Track->name();
 }
 
 } // namespace
@@ -387,10 +388,10 @@ void editor_mode::joints_fix(std::vector<int> const &Indices)
 void editor_mode::render_joints_body()
 {
 	auto &state{m_joints};
-	ImGui::TextDisabled("%s", STR_C("Ends of the paths which almost meet, steps, kinks,\njumps of the cant and of the grade at the joints"));
-	ImGui::RadioButton(STR_C("Around the camera"), &state.scope, 0);
-	ImGui::SameLine();
-	ImGui::RadioButton(STR_C("Whole scenery"), &state.scope, 1);
+	ImGui::PushTextWrapPos(0.0f);
+	ImGui::TextDisabled("%s", STR_C("Looks for faults at the joints of the tracks"));
+	ImGui::PopTextWrapPos();
+	segmented("jointscope", state.scope, {{0, STR_C("Around the camera")}, {1, STR_C("Whole scenery")}});
 	bool const running{state.next < state.queue.size()};
 	if (running)
 	{
@@ -400,31 +401,42 @@ void editor_mode::render_joints_body()
 		if (ImGui::SmallButton(STR_C("Cancel")))
 			state.queue.resize(state.next);
 	}
-	else if (ImGui::Button(STR_C("Check")))
+	else
 	{
-		joints_start();
+		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(family_colour(2, 0.55f)));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(family_colour(2, 0.75f)));
+		if (ImGui::Button(STR_C("Check"), ImVec2(-1.0f, std::round(ImGui::GetFrameHeight() * 1.3f))))
+			joints_start();
+		ImGui::PopStyleColor(2);
+		item_tooltip("Finds the gaps between the ends of the tracks, the steps, the kinks and the jumps of the cant and of the grade");
 	}
-	if (ImGui::TreeNode(STR_C("Limits")))
+	if (ImGui::TreeNode(STR_C("Thresholds")))
 	{
-		ImGui::PushItemWidth(100.0f);
-		if (state.scope == 0)
-			ImGui::InputDouble(STR_C("Around the camera (m)"), &state.reach, 0.0, 0.0, "%.0f");
-		ImGui::InputDouble(STR_C("Gap up to (m)"), &state.gap, 0.0, 0.0, "%.2f");
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("A free end closer than this to the end of another path is a gap: the trains don't go across it.\nThe simulation joins the ends no more than 2 cm apart"));
-		ImGui::InputDouble(STR_C("Step (m)"), &state.step, 0.0, 0.0, "%.3f");
-		ImGui::InputDouble(STR_C("Kink (deg)"), &state.angle, 0.0, 0.0, "%.2f");
-		ImGui::InputDouble(STR_C("Cant jump (mm)"), &state.cant, 0.0, 0.0, "%.1f");
-		ImGui::InputDouble(STR_C("Grade break (per mille)"), &state.grade, 0.0, 0.0, "%.1f");
-		ImGui::Checkbox(STR_C("Free ends too"), &state.free_ends);
-		ImGui::PopItemWidth();
+		if (begin_fields("##jointlimits", 0.55f))
+		{
+			auto const limit = [](char const *Label, char const *Id, double &Value, char const *Format) {
+				field_row(Label);
+				ImGui::InputDouble(Id, &Value, 0.0, 0.0, Format);
+			};
+			if (state.scope == 0)
+				limit("Around the camera (m)", "##jointreach", state.reach, "%.0f");
+			limit("Gap up to (m)", "##jointgap", state.gap, "%.2f");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("A free end closer than this to the end of another path is a gap: the trains don't go across it.\nThe simulation joins the ends no more than 2 cm apart"));
+			limit("Step (m)", "##jointstep", state.step, "%.3f");
+			limit("Kink (deg)", "##jointkink", state.angle, "%.2f");
+			limit("Cant jump (mm)", "##jointcant", state.cant, "%.1f");
+			limit("Grade break (per mille)", "##jointgrade", state.grade, "%.1f");
+			ImGui::EndTable();
+		}
+		toggle_chips("jointflags", {{STR_C("Free ends too"), &state.free_ends}});
 		state.reach = std::clamp(state.reach, 50.0, 50000.0);
 		state.gap = std::clamp(state.gap, 0.03, 20.0);
 		state.step = std::max(0.001, state.step);
 		state.angle = std::max(0.01, state.angle);
 		state.cant = std::max(0.5, state.cant);
 		state.grade = std::max(0.5, state.grade);
-		ImGui::TextDisabled("%s", STR_C("Change the limits, then Check again"));
+		ImGui::TextDisabled("%s", STR_C("Change the thresholds, then Check again"));
 		ImGui::TreePop();
 	}
 	if (false == state.status.empty())

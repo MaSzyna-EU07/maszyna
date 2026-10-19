@@ -197,6 +197,8 @@ public:
     material_handle m_material1 = 0; // tekstura szyn albo nawierzchni
     material_handle m_material2 = 0; // tekstura automatycznej podsypki albo pobocza
     std::pair<std::string, int> m_profile1 {}; // profile of geometry chunks textured with texture 1
+    // sets the rail profile by its name, as railprofile does; empty: none, the default shape
+    void rail_profile( std::string const &Name );
     using geometryhandle_sequence = std::vector<gfx::geometry_handle>;
     geometryhandle_sequence Geometry1; // geometry chunks textured with texture 1
     geometryhandle_sequence Geometry2; // geometry chunks textured with texture 2

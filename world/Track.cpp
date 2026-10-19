@@ -759,7 +759,11 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
 		str = token;
     }
 
+    auto const velocity { fVelocity };
     init_segments( true );
+    if( SwitchExtension ) {
+        fVelocity = velocity;
+    }
     // alternatywny zapis nazwy odcinka izolowanego - po znaku "@" w nazwie toru
     if ((i = m_name.find("@")) != std::string::npos && i < m_name.length())
     {
@@ -2731,6 +2735,12 @@ std::string TTrack::tooltip() const
 
 // locates specified profile in the profile database, potentially loading it from a file
 // returns: pair <profile name, profile handle>
+void
+TTrack::rail_profile( std::string const &Name ) {
+
+    m_profile1 = ( Name.empty() ? std::pair<std::string, int>{} : fetch_track_rail_profile( Name ) );
+}
+
 std::pair<std::string, int>
 TTrack::fetch_track_rail_profile( std::string const &Profile ) {
 

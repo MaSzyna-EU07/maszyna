@@ -21,6 +21,8 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 
+std::string switch_name_translated(std::string Title);
+
 namespace
 {
 
@@ -60,7 +62,7 @@ void set_kind(switch_design::part &Part, part_kind const Kind)
 bool edit_parts(std::vector<switch_design::part> &Parts, char const *Id, bool const Editable)
 {
 	bool changed{false};
-	char const *kinds[] = {STR_C("Straight"), STR_C("Arc"), STR_C("Transition curve")};
+	char const *kinds[] = {STR_C("Straight"), STR_C("Arc"), STR_C("Transition")};
 	ImGui::PushID(Id);
 	if (false == Editable)
 		ImGui::BeginDisabled();
@@ -98,7 +100,7 @@ bool edit_parts(std::vector<switch_design::part> &Parts, char const *Id, bool co
 			if (part.radius1 != 0.0)
 			{
 				ImGui::SameLine();
-				ImGui::TextDisabled("%.3f deg", glm::degrees(part.length / part.radius1));
+				ImGui::TextDisabled("%.3f°", glm::degrees(part.length / part.radius1));
 			}
 			break;
 		case part_kind::transition:
@@ -119,9 +121,11 @@ bool edit_parts(std::vector<switch_design::part> &Parts, char const *Id, bool co
 			ImGui::SameLine();
 			if (ImGui::SmallButton("^") && i > 0)
 				up = i;
+			item_tooltip("Move the part up");
 			ImGui::SameLine();
 			if (ImGui::SmallButton("x"))
 				erase = i;
+			item_tooltip("Remove the part");
 		}
 		ImGui::PopID();
 	}
@@ -276,7 +280,7 @@ void editor_mode::render_switch_designer()
 	ImGui::TextDisabled("%s", STR_C("Catalogue (read only)"));
 	item_tooltip("The catalogue switches start tangentially at the joint before the blades: without the pre-blade stretch and the angle of the blade, which a copy can be given");
 	for (int i = 0; i < static_cast<int>(designer.catalogue.size()); ++i)
-		if (ImGui::Selectable((designer.catalogue[i].name + "##catalogue" + std::to_string(i)).c_str(), designer.from_catalogue && designer.selected == i))
+		if (ImGui::Selectable((switch_name_translated(designer.catalogue[i].name) + "##catalogue" + std::to_string(i)).c_str(), designer.from_catalogue && designer.selected == i))
 		{
 			designer.from_catalogue = true;
 			designer.selected = i;
@@ -310,7 +314,8 @@ void editor_mode::render_switch_designer()
 	auto const &list{designer.from_catalogue ? designer.catalogue : designer.own};
 	if (designer.selected < 0 || designer.selected >= static_cast<int>(list.size()))
 	{
-		ImGui::TextWrapped("%s", STR_C("Choose a template on the left. The catalogue ones can be copied to own templates and changed there. A template is a straight main track and the diverging track from the start of the switch as a chain of straights, arcs and transition curves; a double switch is two switches, the second one starting on the main track of the first."));
+		ImGui::TextWrapped("%s", STR_C("Choose a template on the left; copy a catalogue one to own templates to change it"));
+		item_tooltip("A template is a straight main track and the diverging track from the start of the switch as a chain of straights, arcs and transition curves; a double switch is two switches, the second one starting on the main track of the first");
 		ImGui::EndChild();
 		ImGui::End();
 		return;
@@ -325,7 +330,7 @@ void editor_mode::render_switch_designer()
 			auto copy{entry};
 			copy.own = true;
 			copy.note.clear();
-			copy.name += STR(" (copy)");
+			copy.name = switch_name_translated(copy.name) + STR(" (copy)");
 			designer.own.push_back(copy);
 			designer.from_catalogue = false;
 			designer.selected = static_cast<int>(designer.own.size()) - 1;
@@ -339,83 +344,47 @@ void editor_mode::render_switch_designer()
 	}
 	if (false == editable)
 		ImGui::BeginDisabled();
-	char name[96];
-	std::snprintf(name, sizeof(name), "%s", entry.name.c_str());
-	ImGui::SetNextItemWidth(240.0f);
-	if (ImGui::InputText(STR_C("Name##designname"), name, sizeof(name)))
+	auto const input = [&](char const *Label, char const *Id, double &Value, char const *Format) {
+		field_row(Label);
+		return ImGui::InputDouble(Id, &Value, 0.0, 0.0, Format);
+	};
+	if (begin_fields("##designfields", 0.5f))
 	{
-		entry.name = name;
-		changed = true;
-	}
-	char const *types[] = {STR_C("Rz ordinary"), STR_C("Rpd double, to both sides"), STR_C("Rpj double, to one side"), STR_C("Rps double, symmetric")};
-	char const *codes[] = {"Rz", "Rpd", "Rpj", "Rps"};
-	int type{entry.type == "Rpd" ? 1 : entry.type == "Rpj" ? 2 : entry.type == "Rps" ? 3 : 0};
-	ImGui::SetNextItemWidth(240.0f);
-	if (ImGui::Combo(STR_C("Type##designtype"), &type, types, 4))
-	{
-		entry.type = codes[type];
-		if (type > 0 && entry.stagger <= 0.0)
-			entry.stagger = 5.0;
-		changed = true;
-	}
-	item_tooltip("A double switch is laid as two switches: the first one with its diverging track and the main track up to the second one, which starts there with the other diverging track");
-	char rail[32];
-	std::snprintf(rail, sizeof(rail), "%s", entry.rail == "-" ? "" : entry.rail.c_str());
-	ImGui::SetNextItemWidth(120.0f);
-	if (ImGui::InputText(STR_C("Rail##designrail"), rail, sizeof(rail)))
-	{
-		entry.rail = rail[0] != '\0' ? std::string{rail} : std::string{"-"};
-		changed = true;
-	}
-	item_tooltip("Rail of the switch kept in its record: 60E1, 49E1...");
-	ImGui::PushItemWidth(90.0f);
-	changed |= ImGui::InputDouble(STR_C("Pre-blade stretch, m##designlead"), &entry.lead, 0.0, 0.0, "%.3f");
-	item_tooltip("From the start of the switch (the joint before the blades) to the tip of the blade; the diverging track runs along the main one there");
-	ImGui::SameLine();
-	changed |= ImGui::InputDouble(STR_C("Blade angle, deg##designentry"), &entry.entry, 0.0, 0.0, "%.4f");
-	item_tooltip("The angle at which the blade meets the stock rail at its tip: the diverging track starts there at this angle instead of tangentially. Curved blades a fraction of a degree, straight blades 1 to 2 degrees; 0: tangential");
-	ImGui::SameLine();
-	changed |= ImGui::InputDouble(STR_C("Tip of a tangent blade, m##designtip"), &entry.tip, 0.0, 0.0, "%.3f");
-	item_tooltip("With the blade angle 0: the tip of the blade from the start of the switch as its scheme gives it, the diverging track is broken there into pieces; 0: where the blade gets 5 mm thick, less the 125 mm its nose is planed over");
-	changed |= ImGui::InputDouble(STR_C("Blade heel, m##designheel"), &entry.heel, 0.0, 0.0, "%.3f");
-	item_tooltip("Where the moving blades end, from the start of the switch, as its scheme gives it; the switch keeps it in the scenery. 0: as long as the flangeway of 58 mm behind them needs");
-	ImGui::SameLine();
-	changed |= ImGui::InputDouble(STR_C("Blade throw, m##designthrow"), &entry.bladethrow, 0.0, 0.0, "%.3f");
-	item_tooltip("How far the tips of the blades move over between the two paths; 0: the usual 0.160 m");
-	ImGui::PopItemWidth();
-	if (editable)
-	{
-		ImGui::PushItemWidth(70.0f);
-		ImGui::TextDisabled("%s", STR_C("Straight blade:"));
-		ImGui::SameLine();
-		ImGui::InputDouble(STR_C("l, m##bladelength"), &designer.blade_length, 0.0, 0.0, "%.2f");
-		ImGui::SameLine();
-		ImGui::InputDouble(STR_C("z, m##bladegap"), &designer.blade_gap, 0.0, 0.0, "%.3f");
-		ImGui::PopItemWidth();
-		ImGui::SameLine();
-		if (ImGui::SmallButton(STR_C("Angle from l and z")) && designer.blade_length > 0.1 && designer.blade_gap > 0.0 && designer.blade_gap < designer.blade_length)
+		char name[96];
+		std::snprintf(name, sizeof(name), "%s", entry.name.c_str());
+		field_row("Name##designname");
+		if (ImGui::InputText("##designname", name, sizeof(name)))
 		{
-			entry.entry = glm::degrees(std::asin(designer.blade_gap / designer.blade_length));
+			entry.name = name;
 			changed = true;
 		}
-		item_tooltip("sin angle = z / l: l the length of a straight blade, z the gap between the running edges of the stock rail and the blade at its heel");
+		char const *types[] = {STR_C("Rz ordinary"), STR_C("Rpd double, to both sides"), STR_C("Rpj double, to one side"), STR_C("Rps double, symmetric")};
+		char const *codes[] = {"Rz", "Rpd", "Rpj", "Rps"};
+		int type{entry.type == "Rpd" ? 1 : entry.type == "Rpj" ? 2 : entry.type == "Rps" ? 3 : 0};
+		field_row("Type##designtype");
+		if (ImGui::Combo("##designtype", &type, types, 4))
+		{
+			entry.type = codes[type];
+			if (type > 0 && entry.stagger <= 0.0)
+				entry.stagger = 5.0;
+			changed = true;
+		}
+		item_tooltip("A double switch is laid as two switches: the first one with its diverging track and the main track up to the second one, which starts there with the other diverging track");
+		ImGui::EndTable();
 	}
 	if (false == editable)
 		ImGui::EndDisabled();
 
 	ImGui::Separator();
 	ImGui::TextDisabled("%s", STR_C("Diverging track from the start of the switch"));
-	if (editable)
+	if (editable && begin_fields("##quickfields", 0.5f))
 	{
-		ImGui::PushItemWidth(80.0f);
-		ImGui::InputDouble(STR_C("R##quickradius"), &designer.quick_radius, 0.0, 0.0, "%.0f");
-		ImGui::SameLine();
-		ImGui::InputDouble(STR_C("1:n##quickratio"), &designer.quick_ratio, 0.0, 0.0, "%.2f");
-		ImGui::SameLine();
-		ImGui::InputDouble(STR_C("straight after, m##quickstraight"), &designer.quick_straight, 0.0, 0.0, "%.3f");
-		ImGui::PopItemWidth();
-		ImGui::SameLine();
-		if (ImGui::SmallButton(STR_C("Fill in")) && designer.quick_radius >= 10.0 && designer.quick_ratio > 1.0)
+		input("R##quickradius", "##quickradius", designer.quick_radius, "%.0f");
+		input("1:n##quickratio", "##quickratio", designer.quick_ratio, "%.2f");
+		input("straight after, m##quickstraight", "##quickstraight", designer.quick_straight, "%.3f");
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(1);
+		if (ImGui::Button(STR_C("Fill in"), ImVec2(-FLT_MIN, 0.0f)) && designer.quick_radius >= 10.0 && designer.quick_ratio > 1.0)
 		{
 			auto const angle{std::atan(1.0 / designer.quick_ratio)};
 			entry.parts = {{designer.quick_radius * angle, designer.quick_radius, designer.quick_radius}};
@@ -424,6 +393,7 @@ void editor_mode::render_switch_designer()
 			changed = true;
 		}
 		item_tooltip("Replaces the parts with an arc of R up to the angle 1:n and the straight after it, the shape of an ordinary switch");
+		ImGui::EndTable();
 	}
 	changed |= edit_parts(entry.parts, "##parts", editable);
 	bool const twofold{switch_design::double_switch(entry.type)};
@@ -432,9 +402,12 @@ void editor_mode::render_switch_designer()
 	if (twofold)
 	{
 		ImGui::Separator();
-		ImGui::SetNextItemWidth(90.0f);
-		changed |= ImGui::InputDouble(STR_C("Second switch starts at, m##stagger"), &entry.stagger, 0.0, 0.0, "%.3f");
-		item_tooltip("Distance from the start of the first switch to the start of the second one, along the main track");
+		if (begin_fields("##staggerfields", 0.5f))
+		{
+			changed |= input("Second switch starts at, m##stagger", "##stagger", entry.stagger, "%.3f");
+			item_tooltip("Distance from the start of the first switch to the start of the second one, along the main track");
+			ImGui::EndTable();
+		}
 		bool own{false == entry.parts2.empty() && entry.type != "Rps"};
 		if (entry.type == "Rps")
 			ImGui::TextDisabled("%s", STR_C("The second switch is the mirror image of the first one"));
@@ -447,28 +420,28 @@ void editor_mode::render_switch_designer()
 			item_tooltip("Otherwise the second switch diverges the same way as the first, to the other side for Rpd, to the same side for Rpj");
 		if (own)
 		{
-			ImGui::PushItemWidth(90.0f);
-			auto lead2{entry.lead2 >= 0.0 ? entry.lead2 : entry.lead};
-			if (ImGui::InputDouble(STR_C("Pre-blade stretch, m##designlead2"), &lead2, 0.0, 0.0, "%.3f"))
+			if (begin_fields("##design2fields", 0.5f))
 			{
-				entry.lead2 = std::max(0.0, lead2);
-				changed = true;
+				auto lead2{entry.lead2 >= 0.0 ? entry.lead2 : entry.lead};
+				if (input("Pre-blade stretch, m##designlead2", "##designlead2", lead2, "%.3f"))
+				{
+					entry.lead2 = std::max(0.0, lead2);
+					changed = true;
+				}
+				auto entry2{entry.entry2 >= 0.0 ? entry.entry2 : entry.entry};
+				if (input("Blade angle, deg##designentry2", "##designentry2", entry2, "%.4f"))
+				{
+					entry.entry2 = std::max(0.0, entry2);
+					changed = true;
+				}
+				auto tip2{entry.tip2 >= 0.0 ? entry.tip2 : entry.tip};
+				if (input("Tip of a tangent blade, m##designtip2", "##designtip2", tip2, "%.3f"))
+				{
+					entry.tip2 = std::max(0.0, tip2);
+					changed = true;
+				}
+				ImGui::EndTable();
 			}
-			ImGui::SameLine();
-			auto entry2{entry.entry2 >= 0.0 ? entry.entry2 : entry.entry};
-			if (ImGui::InputDouble(STR_C("Blade angle, deg##designentry2"), &entry2, 0.0, 0.0, "%.4f"))
-			{
-				entry.entry2 = std::max(0.0, entry2);
-				changed = true;
-			}
-			ImGui::SameLine();
-			auto tip2{entry.tip2 >= 0.0 ? entry.tip2 : entry.tip};
-			if (ImGui::InputDouble(STR_C("Tip of a tangent blade, m##designtip2"), &tip2, 0.0, 0.0, "%.3f"))
-			{
-				entry.tip2 = std::max(0.0, tip2);
-				changed = true;
-			}
-			ImGui::PopItemWidth();
 			changed |= edit_parts(entry.parts2, "##parts2", editable);
 		}
 		else if (entry.lead2 >= 0.0 || entry.entry2 >= 0.0 || entry.tip2 >= 0.0)
@@ -477,33 +450,83 @@ void editor_mode::render_switch_designer()
 			changed = true;
 		}
 	}
-	ImGui::Separator();
-	ImGui::PushItemWidth(90.0f);
-	changed |= ImGui::InputDouble(STR_C("Main track, m##designmain"), &entry.main, 0.0, 0.0, "%.3f");
-	item_tooltip("Length of the main track, 0: as far as the diverging tracks reach");
-	ImGui::SameLine();
-	changed |= ImGui::InputDouble(STR_C("a##designa"), &entry.a, 0.0, 0.0, "%.3f");
-	item_tooltip("From the start to the point where the tangents of both tracks meet, as the catalogue gives it; 0: from the geometry");
-	ImGui::SameLine();
-	changed |= ImGui::InputDouble(STR_C("b##designb"), &entry.b, 0.0, 0.0, "%.3f");
-	item_tooltip("From the point where the tangents meet to the end, as the catalogue gives it; 0: the main track less a");
-	ImGui::PopItemWidth();
 	if (false == editable)
 		ImGui::EndDisabled();
+	if (ImGui::TreeNode(STR_C("More settings")))
+	{
+		if (false == editable)
+			ImGui::BeginDisabled();
+		if (begin_fields("##designmorefields", 0.5f))
+		{
+			char rail[32];
+			std::snprintf(rail, sizeof(rail), "%s", entry.rail == "-" ? "" : entry.rail.c_str());
+			field_row("Rail##designrail");
+			if (ImGui::InputText("##designrail", rail, sizeof(rail)))
+			{
+				entry.rail = rail[0] != '\0' ? std::string{rail} : std::string{"-"};
+				changed = true;
+			}
+			item_tooltip("Rail of the switch kept in its record: 60E1, 49E1...");
+			changed |= input("Pre-blade stretch, m##designlead", "##designlead", entry.lead, "%.3f");
+			item_tooltip("From the start of the switch (the joint before the blades) to the tip of the blade; the diverging track runs along the main one there");
+			changed |= input("Blade angle, deg##designentry", "##designentry", entry.entry, "%.4f");
+			item_tooltip("The angle at which the blade meets the stock rail at its tip: the diverging track starts there at this angle instead of tangentially. Curved blades a fraction of a degree, straight blades 1 to 2 degrees; 0: tangential");
+			changed |= input("Tip of a tangent blade, m##designtip", "##designtip", entry.tip, "%.3f");
+			item_tooltip("With the blade angle 0: the tip of the blade from the start of the switch as its scheme gives it, the diverging track is broken there into pieces; 0: where the blade gets 5 mm thick, less the 125 mm its nose is planed over");
+			changed |= input("Blade heel, m##designheel", "##designheel", entry.heel, "%.3f");
+			item_tooltip("Where the moving blades end, from the start of the switch, as its scheme gives it; the switch keeps it in the scenery. 0: as long as the flangeway of 58 mm behind them needs");
+			changed |= input("Blade throw, m##designthrow", "##designthrow", entry.bladethrow, "%.3f");
+			item_tooltip("How far the tips of the blades move over between the two paths; 0: the usual 0.160 m");
+			ImGui::EndTable();
+		}
+		if (editable)
+		{
+			ImGui::TextDisabled("%s", STR_C("Straight blade:"));
+			if (begin_fields("##bladefields", 0.5f))
+			{
+				input("l, m##bladelength", "##bladelength", designer.blade_length, "%.2f");
+				input("z, m##bladegap", "##bladegap", designer.blade_gap, "%.3f");
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(1);
+				if (ImGui::Button(STR_C("Angle from l and z"), ImVec2(-FLT_MIN, 0.0f)) && designer.blade_length > 0.1 && designer.blade_gap > 0.0 && designer.blade_gap < designer.blade_length)
+				{
+					entry.entry = glm::degrees(std::asin(designer.blade_gap / designer.blade_length));
+					changed = true;
+				}
+				item_tooltip("sin angle = z / l: l the length of a straight blade, z the gap between the running edges of the stock rail and the blade at its heel");
+				ImGui::EndTable();
+			}
+		}
+		if (begin_fields("##designmainfields", 0.5f))
+		{
+			changed |= input("Main track, m##designmain", "##designmain", entry.main, "%.3f");
+			item_tooltip("Length of the main track, 0: as far as the diverging tracks reach");
+			changed |= input("a##designa", "##designa", entry.a, "%.3f");
+			item_tooltip("From the start to the point where the tangents of both tracks meet, as the catalogue gives it; 0: from the geometry");
+			changed |= input("b##designb", "##designb", entry.b, "%.3f");
+			item_tooltip("From the point where the tangents meet to the end, as the catalogue gives it; 0: the main track less a");
+			ImGui::EndTable();
+		}
+		if (false == editable)
+			ImGui::EndDisabled();
+		ImGui::TreePop();
+	}
 
 	std::string error;
 	auto const shape{switch_design::build(entry, error)};
 	ImGui::Separator();
 	if (false == error.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "%s", STR_C(error.c_str()));
+		ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "%s", STR(error).c_str());
 	else
 	{
 		ImGui::Text(STR_C("Angle 1:%.3f (%.4f deg), sharpest R %.1f m, a %.3f m, b %.3f m"), shape.ratio, glm::degrees(std::atan(1.0 / shape.ratio)), shape.radius, shape.a, shape.b);
-		ImGui::Text(STR_C("Length %.3f m, the diverging track ends %.3f m beside the main one, in %zu pieces"), shape.length, shape.offset, std::max<std::size_t>(1, shape.paths[1].pieces.size()));
-		if (entry.entry > 0.0)
-			ImGui::Text(STR_C("Tip of the blade %.3f m from the start, the diverging track leaves there at %.4f deg"), shape.tip, entry.entry);
-		else
-			ImGui::Text(STR_C("Tip of the blade %.3f m from the start, the diverging track leaves tangentially"), shape.tip);
+		if (ImGui::IsItemHovered())
+		{
+			auto const length{format(STR_C("Length %.3f m, the diverging track ends %.3f m beside the main one, in %zu pieces"), shape.length, shape.offset, std::max<std::size_t>(1, shape.paths[1].pieces.size()))};
+			auto const tip{entry.entry > 0.0 ? format(STR_C("Tip of the blade %.3f m from the start, the diverging track leaves there at %.4f deg"), shape.tip, entry.entry)
+			                                 : format(STR_C("Tip of the blade %.3f m from the start, the diverging track leaves tangentially"), shape.tip)};
+			ImGui::SetTooltip("%s\n%s", length.c_str(), tip.c_str());
+		}
 	}
 	ImGui::Checkbox(STR_C("Stretch across"), &designer.stretched);
 	item_tooltip("Draws the offsets from the main track larger, so the shape of the diverging track can be seen");

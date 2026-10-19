@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
+#include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
@@ -338,7 +339,7 @@ std::string editor_mode::signal_intent_label(signal_template const &Template, si
 	if (Template.read.empty())
 		return format(STR_C("Click: %s %s (%s)%s, the train doesn't read it"), STR(kKindLabels[kind_index(Template.kind)]).c_str(), name.c_str(), variant.c_str(), where.c_str()) + "\n" + STR("Drag along: the trains it faces run the way of the drag");
 	auto const event{editor_includes::substitute(Template.read, {name})};
-	auto const path{Spot.track->name().empty() ? std::string{"(noname)"} : Spot.track->name()};
+	auto const path{Spot.track->name().empty() ? std::string{STR("(no name)")} : Spot.track->name()};
 	return format(STR_C("Click: %s %s (%s)%s, read by %s %s of %s"), STR(kKindLabels[kind_index(Template.kind)]).c_str(), name.c_str(), variant.c_str(), where.c_str(), editor_track::event_keyword(Spot.list), event.c_str(), path.c_str()) + "\n" + STR("Drag along: the trains it faces run the way of the drag");
 }
 
@@ -572,7 +573,8 @@ void editor_mode::signal_release()
 		push_track_snapshot(std::move(states));
 		m_history.back().directives.emplace_back(found->include.instance, std::move(before));
 	}
-	tool.status = found->read.empty() ? format(STR_C("Signal %s moved"), found->name.c_str()) : format(STR_C("Signal %s moved, read by %s %s of %s"), found->name.c_str(), editor_track::event_keyword(spot.list), found->read.c_str(), spot.track->name().empty() ? "(noname)" : spot.track->name().c_str());
+	tool.status = found->read.empty() ? format(STR_C("Signal %s moved, Ctrl+Z takes it back"), found->name.c_str())
+	                                  : format(STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), found->name.c_str(), editor_track::event_keyword(spot.list), found->read.c_str(), spot.track->name().empty() ? STR_C("(no name)") : spot.track->name().c_str());
 	signal_refresh(true);
 	signal_select(found->include.instance);
 }
@@ -649,14 +651,14 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	auto const instance{m_history.back().instances.front()};
 	auto const *placed{signal_template_of(file)};
 	auto const read{placed != nullptr && false == placed->read.empty() ? editor_includes::substitute(placed->read, {name}) : std::string{}};
-	auto const path{Spot.track->name().empty() ? std::string{"(noname)"} : Spot.track->name()};
+	auto const path{Spot.track->name().empty() ? std::string{STR("(no name)")} : Spot.track->name()};
 	std::string reason;
 	if (read.empty())
-		tool.status = format(STR_C("Signal %s placed (%s), the train doesn't read it"), name.c_str(), file.c_str());
+		tool.status = format(STR_C("Signal %s placed (%s), the train doesn't read it, Ctrl+Z takes it back"), name.c_str(), file.c_str());
 	else if (false == Spot.track->Dynamics.empty())
-		tool.status = format(STR_C("Signal %s placed (%s), but vehicles stand on the path: add %s to its %s by hand"), name.c_str(), file.c_str(), read.c_str(), editor_track::event_keyword(Spot.list));
+		tool.status = format(STR_C("Signal %s placed (%s), but vehicles stand on the path: add %s to its %s by hand, Ctrl+Z takes it back"), name.c_str(), file.c_str(), read.c_str(), editor_track::event_keyword(Spot.list));
 	else if (false == scene::Layers.editable(Spot.track, &reason))
-		tool.status = format(STR_C("Signal %s placed (%s), but the path can't take its event: %s"), name.c_str(), file.c_str(), reason.c_str());
+		tool.status = format(STR_C("Signal %s placed (%s), but the path can't take its event: %s, Ctrl+Z takes it back"), name.c_str(), file.c_str(), reason.c_str());
 	else
 	{
 		auto snap{std::move(m_history.back())};
@@ -668,11 +670,12 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 		Spot.track->mark_dirty();
 		push_track_snapshot({{Spot.track, before}});
 		m_history.back().instances = std::move(snap.instances);
-		tool.status = format(STR_C("Signal %s placed (%s), read by %s %s of %s. Its logic works after the scenery is saved and opened again"), name.c_str(), file.c_str(), editor_track::event_keyword(Spot.list), read.c_str(), path.c_str());
+		tool.status = format(STR_C("Signal %s placed (%s), read by %s %s of %s, Ctrl+Z takes it back. Its logic works after the scenery is saved and opened again"), name.c_str(), file.c_str(), editor_track::event_keyword(Spot.list), read.c_str(), path.c_str());
 	}
 	std::snprintf(tool.name, sizeof(tool.name), "%s", signal_next_name(name).c_str());
 	signal_refresh(true);
 	signal_select(instance);
+	first_step_done(first_step::signal);
 	return true;
 }
 
@@ -861,10 +864,13 @@ void editor_mode::render_signal_palette()
 		ImGui::EndCombo();
 	}
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"));
+	{
+		auto const read{armed->read.empty() ? std::string{armed->kind == "warning" || armed->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it")}
+		                                    : format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(armed->read, {tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}}).c_str())};
+		ImGui::SetTooltip("%s\n%s", STR_C("Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"), read.c_str());
+	}
 	if (false == armed->description.empty())
 		ImGui::TextWrapped("%s", armed->description.c_str());
-	ImGui::TextDisabled("%s", armed->read.empty() ? (armed->kind == "warning" || armed->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it")) : format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(armed->read, {tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}}).c_str()).c_str());
 }
 
 void editor_mode::render_signal_selected()
@@ -875,13 +881,13 @@ void editor_mode::render_signal_selected()
 		return;
 	ImGui::Separator();
 	ImGui::TextUnformatted(format(STR_C("Selected: %s (%s)"), found->name.c_str(), found->include.file.c_str()).c_str());
+	item_tooltip("Name, plate and the linked signal: in the node properties. Del removes it with its event");
 	if (found->read.empty())
 		ImGui::TextDisabled("%s", STR_C("The train doesn't read it"));
 	else if (found->track != nullptr)
-		ImGui::TextDisabled(STR_C("Read by %s %s of %s"), editor_track::event_keyword(found->list), found->read.c_str(), found->track->name().empty() ? "(noname)" : found->track->name().c_str());
+		ImGui::TextDisabled(STR_C("Read by %s %s of %s"), editor_track::event_keyword(found->list), found->read.c_str(), found->track->name().empty() ? STR_C("(no name)") : found->track->name().c_str());
 	else
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("No path has %s among its events: the train doesn't see it"), found->read.c_str());
-	ImGui::TextDisabled("%s", STR_C("Name, plate and the linked signal: in the node properties. Del removes it with its event"));
 }
 
 void editor_mode::render_signal_ui()
@@ -893,43 +899,78 @@ void editor_mode::render_signal_ui()
 		ImGui::TextWrapped("%s", STR_C("No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."));
 		return;
 	}
-	if (ImGui::BeginTabBar("##signalkinds"))
-	{
-		for (int k = 0; k < kKindCount; ++k)
+	std::vector<std::string> labels;
+	labels.reserve(kKindCount);
+	std::vector<segment_option> kinds;
+	for (int k = 0; k < kKindCount; ++k)
+		if (std::any_of(tool.templates.begin(), tool.templates.end(), [&](signal_template const &Item) { return Item.kind == kKinds[k]; }))
 		{
-			if (std::none_of(tool.templates.begin(), tool.templates.end(), [&](signal_template const &Item) { return Item.kind == kKinds[k]; }))
-				continue;
-			if (ImGui::BeginTabItem(STR(kKindLabels[k]).c_str()))
-			{
-				tool.kind = k;
-				ImGui::EndTabItem();
-			}
+			labels.push_back(STR(kKindLabels[k]));
+			kinds.push_back({k, labels.back().c_str()});
 		}
-		ImGui::EndTabBar();
-	}
+	if (false == kinds.empty() && std::none_of(kinds.begin(), kinds.end(), [&](segment_option const &Option) { return Option.value == tool.kind; }))
+		tool.kind = kinds.front().value;
+	choice_chips("signalkinds", tool.kind, kinds);
 	render_signal_palette();
 	auto const *armed{signal_armed()};
 	ImGui::Separator();
-	ImGui::PushItemWidth(140.0f);
-	ImGui::InputText(STR_C("Name"), tool.name, sizeof(tool.name));
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
-	if (armed != nullptr && armed->plate)
+	if (begin_fields("##signalnames", 0.3f))
 	{
-		auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
-		ImGui::InputTextWithHint(STR_C("Plate"), automatic.c_str(), tool.plate, sizeof(tool.plate));
+		field_row("Name");
+		ImGui::InputText("##signalname", tool.name, sizeof(tool.name));
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
-		auto const &plates{plate_textures()};
-		auto const typed{lower(tool.plate)};
-		auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};
-		if (false == exists)
+			ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
+		ImGui::EndTable();
+	}
+	ImGui::PushID("signalmore");
+	if (ImGui::TreeNode(STR_C("More settings")))
+	{
+		bool missing{false};
+		if (begin_fields("##signalplace", 0.45f))
 		{
-			ImGui::SameLine();
-			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("no such texture"));
+			if (armed != nullptr && armed->plate)
+			{
+				auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
+				field_row("Plate");
+				ImGui::InputTextWithHint("##signalplate", automatic.c_str(), tool.plate, sizeof(tool.plate));
+				auto const typing{ImGui::IsItemActive()};
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
+				auto const &plates{plate_textures()};
+				auto const typed{lower(tool.plate)};
+				auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};
+				if (false == exists)
+					ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("no such texture"));
+				missing = typing || (false == exists && false == typed.empty());
+			}
+			if (armed != nullptr && armed->linked)
+			{
+				field_row("Linked signal");
+				ImGui::InputText("##linked", tool.linked, sizeof(tool.linked));
+				item_tooltip("(p7) of the template: the warning signal a semaphore drives, the previous block signal, \"none\" for no link");
+			}
+			auto offset{static_cast<float>(EditorSettings.signal_offset())};
+			field_row("From the axis (m)");
+			if (ImGui::InputFloat("##signaloffset", &offset, 0.05f, 0.25f, "%.2f"))
+			{
+				EditorSettings.signal_offset(std::clamp(static_cast<double>(offset), 0.0, 10.0));
+				EditorSettings.save();
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("Distance of the mast from the axis of the track. 2.25 m is what the signals of the sceneries stand at"));
+			if (armed != nullptr && armed->mount == "gantry")
+			{
+				field_row("Over the rails (m)");
+				ImGui::InputFloat("##signalheight", &tool.height, 0.1f, 0.5f, "%.2f");
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("A head for a gantry hangs over the axis of the track this high over the rail heads"));
+			}
+			ImGui::EndTable();
 		}
-		if (ImGui::IsItemActive() || (false == exists && false == typed.empty()))
+		if (missing)
 		{
+			auto const &plates{plate_textures()};
+			auto const typed{lower(tool.plate)};
 			int shown{0};
 			for (auto const &plate : plates)
 			{
@@ -943,28 +984,9 @@ void editor_mode::render_signal_ui()
 					break;
 			}
 		}
-	}
-	if (armed != nullptr && armed->linked && ImGui::TreeNode(STR_C("Linked signal")))
-	{
-		ImGui::InputText("##linked", tool.linked, sizeof(tool.linked));
-		ImGui::TextDisabled("%s", STR_C("(p7) of the template: the warning signal a semaphore drives, the previous block signal, \"none\" for no link"));
 		ImGui::TreePop();
 	}
-	auto offset{static_cast<float>(EditorSettings.signal_offset())};
-	if (ImGui::InputFloat(STR_C("From the axis (m)"), &offset, 0.05f, 0.25f, "%.2f"))
-	{
-		EditorSettings.signal_offset(std::clamp(static_cast<double>(offset), 0.0, 10.0));
-		EditorSettings.save();
-	}
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Distance of the mast from the axis of the track. 2.25 m is what the signals of the sceneries stand at"));
-	if (armed != nullptr && armed->mount == "gantry")
-	{
-		ImGui::InputFloat(STR_C("Over the rails (m)"), &tool.height, 0.1f, 0.5f, "%.2f");
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("A head for a gantry hangs over the axis of the track this high over the rail heads"));
-	}
-	ImGui::PopItemWidth();
+	ImGui::PopID();
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
 	render_signal_selected();

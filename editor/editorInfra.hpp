@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <string>
+#include <map>
+#include <optional>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -39,10 +41,16 @@ enum class category
 	pole,
 	catenary,
 	logic,
-	other
+	other,
+	// after the others, so the numbers kept in the scenery files keep their meaning
+	equipment, // of the track itself, on its axis: the magnets of the train protection, the plates of a level crossing, the
+	           // ballast and the lanterns of the switches
+	environment // greenery, people, small architecture: by the track, but not a part of the railway, not bound by default
 };
 char const *name(kind Kind);
 char const *name(category Category);
+// the kind of an object by the category in the description of its template, if it names one
+std::optional<category> category_named(std::string const &Category);
 std::vector<category> const &categories();
 
 // point of a path, measured in the plan from the start of the path

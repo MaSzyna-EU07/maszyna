@@ -83,7 +83,7 @@ inline std::string narrowed(std::vector<segment_data> const &Pieces, editor_trac
 
 inline std::string describe(editor_track::straight const &Line)
 {
-	return format("L %.2f m  az %.4f deg  i %.2f per mille  %zu paths", Line.length, Line.azimuth, Line.grade * 1000.0, Line.tracks.size());
+	return format(STR_C("L %.2f m  azimuth %.4f deg  grade %.2f per mille  %zu paths"), Line.length, Line.azimuth, Line.grade * 1000.0, Line.tracks.size());
 }
 
 inline char const *point_label(editor_track::point_kind const Kind)
@@ -107,6 +107,7 @@ double const kLineReach{2000.0}; // how far each way the Curve tab follows the l
 double const kDigitizeFit{0.5};
 double const kDrawnReach{100000.0};
 double const kJointRange{400.0}; // the ends of the paths are drawn for the tracks this close to the camera
+double const kDotsRange{500.0}; // m, the dots of the ends of the tracks are drawn this close to the camera in the 3D view
 ImU32 const kJointColor{IM_COL32(255, 255, 255, 200)};
 int const kRailCategory{1};
 
@@ -151,7 +152,7 @@ inline double switch_from(editor_track::straight const &Line, double const Lengt
 
 inline std::string link_summary(editor_track::snap_target const &Target, editor_track::branch_link const &Link, double const Switchradius)
 {
-	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{"(noname)"}};
+	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{STR_C("(no name)")}};
 	auto text{Link.reverse ? format(STR_C("The branch leads into %s with reverse curves R %.0f m"), name.c_str(), Link.radius) :
 	          Link.radius > 0.0 ? format(STR_C("The branch leads into %s with an R %.0f m curve"), name.c_str(), Link.radius) : format(STR_C("The branch leads straight into %s"), name.c_str())};
 	if (Link.insert > 0.0)
@@ -226,7 +227,7 @@ inline char const *type_name(TTrack const &Track)
 	case tt_Cross: return "cross";
 	case tt_Table: return "turntable";
 	case tt_Tributary: return "tributary";
-	default: return "unknown";
+	default: return "unknown type";
 	}
 }
 

@@ -51,7 +51,7 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &command, std::istringstream &words)
 {
-	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props})
+	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props, &editor_mode::selftest_monkey})
 		if (auto const result{(this->*group)(command, words)}; result != selftest_result::unhandled)
 			return result;
 	return selftest_result::unhandled;
