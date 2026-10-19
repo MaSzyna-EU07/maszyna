@@ -3350,6 +3350,8 @@ glm::dvec3 editor_mode::placement_on_ground(glm::dvec3 Location)
     double constexpr height_tolerance = 50.0; // with nothing there or lower, how far up the ground is looked for
     float constexpr terrain_model_radius = 50.0f; // the same models count as ground as for the area fill and the orthophoto
 
+    if (false == std::isfinite(Location.x) || false == std::isfinite(Location.y) || false == std::isfinite(Location.z))
+        return Location;
     glm::dvec2 const bmin{Location.x - reach, Location.z - reach};
     glm::dvec2 const bmax{Location.x + reach, Location.z + reach};
     std::vector<world_triangle> triangles;
@@ -5884,7 +5886,8 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
 {
     if (false == ImGui::GetIO().WantCaptureMouse && track_wheel(Yoffset != 0.0 ? Yoffset : Xoffset))
         return;
-    if (ImGui::GetIO().WantCaptureMouse || Yoffset == 0.0)
+    // a swipe on a touchpad goes on after the cursor left the window, with no place for the ray under it
+    if (ImGui::GetIO().WantCaptureMouse || Yoffset == 0.0 || false == ImGui::IsMousePosValid())
         return;
     // a fast swipe on a touchpad can come as one big step
     auto const notches{std::clamp(Yoffset, -2.0, 2.0)};

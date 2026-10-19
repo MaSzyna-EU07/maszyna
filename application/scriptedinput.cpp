@@ -93,6 +93,13 @@ bool scripted_input::dispatch(std::string const &Command, std::istringstream &Wo
 		WriteLog(format("SELFTEST mouse %.0f %.0f", screen.x, screen.y));
 		return true;
 	}
+	if (Command == "leave")
+	{
+		m_mouse.reset();
+		queue([]() { ui_layer::cursor_enter_callback(0); });
+		WriteLog("SELFTEST leave");
+		return true;
+	}
 	if (Command == "button")
 	{
 		std::string which;
