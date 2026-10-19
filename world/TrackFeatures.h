@@ -14,8 +14,8 @@ namespace track_features {
 
 // the rails cut where they cross other rails into frogs, wing rails and check rails; off, the rails of plain tracks and of
 // switches with the key frogs are laid whole, as before
-bool constexpr crossings { false };
+bool constexpr crossings { true };
 // the 3D sleepers and switch timbers of sleepers3d; off, the tracks keep their ballast whatever eu07.ini sets
-bool constexpr sleepers { false };
+bool constexpr sleepers { true };
 
 } // namespace track_features
