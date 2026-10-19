@@ -2107,6 +2107,48 @@ void editor_mode::draw_build_overlay() const
 			drawlist->AddText(ImVec2(screen.x + 18.0f, screen.y + 12.0f), valid ? (plan.warning.empty() ? overlay_color::highlight : overlay_color::warning) : overlay_color::invalid, text.c_str());
 		}
 	}
+	else if (auto const *selected{selected_track()}; false == m_switch.placing && m_track_tab == track_tab::turnout && m_switch.connection < 0 && m_switch.armed >= 0 && m_switch.armed < static_cast<int>(m_switch.templates.size()) &&
+	                                                 m_switch.templates[m_switch.armed].double_slip && selected != nullptr && selected == m_straights.current_for && false == m_straights.current.tracks.empty() &&
+	                                                 false == ImGui::GetIO().WantCaptureMouse)
+	{
+		// where the slip goes for a click there, before the click
+		auto const &line{m_straights.current};
+		auto const cursor{cursor_on_straight(line)};
+		auto const along{std::clamp(line.along(cursor), 0.0, line.length)};
+		if (plan_distance(line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * along, cursor) <= kSwitchReach)
+		{
+			slip_plan plan;
+			auto const valid{plan_double_slip(line, cursor, m_switch.templates[m_switch.armed], plan)};
+			std::string text{plan.problem};
+			glm::dvec3 marker{cursor};
+			ImU32 colour{overlay_color::invalid};
+			if (valid && plan.replaces != nullptr)
+			{
+				marker = plan.replaces->location();
+				colour = overlay_color::highlight;
+				text = STR_C("Click: this double slip is replaced by the one chosen");
+			}
+			else if (valid)
+			{
+				for (int i = 0; i < 4; i += 2)
+				{
+					segment_data path;
+					path.points[segment_data::point::start] = plan.points[i];
+					path.points[segment_data::point::end] = plan.points[i + 1];
+					drawpath(path, overlay_color::marked);
+				}
+				marker = {plan.crossing.x, line.start.y + line.grade * plan.alongfirst, plan.crossing.y};
+				colour = overlay_color::highlight;
+				text = plan.note.empty() ? std::string{STR_C("Click: it goes here")} : plan.note;
+			}
+			ImVec2 screen;
+			if (projection.project(marker, screen))
+			{
+				drawlist->AddCircle(screen, 12.0f, colour, 20, 2.5f);
+				drawlist->AddText({screen.x + 16.0f, screen.y - 8.0f}, colour, text.c_str());
+			}
+		}
+	}
 	else if (m_switch.placing)
 	{
 		for (auto const &piece : switch_preview())

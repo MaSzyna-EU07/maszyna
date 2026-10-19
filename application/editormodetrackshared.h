@@ -103,6 +103,7 @@ float const kHandleRadius{10.0f};
 double const kLaySnapRadius{5.0};
 float const kSnapPixels{16.0f};
 double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
+double const kSlipReach{12.0}; // m; a slip goes to the crossing nearest the cursor, if it's this close
 double const kLineReach{2000.0}; // how far each way the Curve tab follows the line
 double const kDigitizeFit{0.5};
 double const kDrawnReach{100000.0};

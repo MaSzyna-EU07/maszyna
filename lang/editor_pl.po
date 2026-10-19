@@ -9919,3 +9919,18 @@ msgstr "Tor leży wyżej lub niżej, niż według NMT jest grunt, o więcej niż
 
 msgid "Against the terrain model"
 msgstr "Także względem NMT"
+
+msgid "No track crosses the selected straight under the cursor"
+msgstr "Pod kursorem żaden tor nie przecina zaznaczonej prostej"
+
+msgid "The track crossing here is a switch: a slip goes only where two straights cross"
+msgstr "Tor, który tu przecina, jest rozjazdem: rozjazd krzyżowy stawia się tylko na przecięciu dwóch prostych"
+
+msgid "The track crossing here isn't straight: a slip goes only where two straights cross"
+msgstr "Tor, który tu przecina, nie jest prosty: rozjazd krzyżowy stawia się tylko na przecięciu dwóch prostych"
+
+msgid "Click: this double slip is replaced by the one chosen"
+msgstr "Klik: ten rozjazd krzyżowy zostanie zastąpiony wybranym"
+
+msgid "Click: it goes here"
+msgstr "Klik: stanie tutaj"

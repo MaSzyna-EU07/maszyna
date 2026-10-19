@@ -124,18 +124,19 @@ bool editor_mode::start_switch_placement()
 		return true;
 	}
 	auto const &line{current_straight()};
-	auto const along{std::clamp(line.along(ground), 0.0, line.length)};
+	auto const cursor{cursor_on_straight(line)};
+	auto const along{std::clamp(line.along(cursor), 0.0, line.length)};
 	auto const point{line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * along};
-	if (plan_distance(point, ground) > kSwitchReach)
+	if (plan_distance(point, cursor) > kSwitchReach)
 		return false;
 	if (tool.templates[tool.armed].double_slip)
 	{
-		insert_double_slip(line, ground, tool.templates[tool.armed]);
+		insert_double_slip(line, cursor, tool.templates[tool.armed]);
 		return true;
 	}
 	tool.along = along;
 	tool.point = point;
-	tool.mouse = ground;
+	tool.mouse = cursor;
 	tool.line = line;
 	tool.placing = true;
 	return true;
@@ -817,61 +818,99 @@ std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, g
 	return parts;
 }
 
-bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape)
+glm::dvec3 editor_mode::cursor_on_straight(editor_track::straight const &Line) const
 {
-	auto &state{m_straights};
-	state.status.clear();
-	{
-		auto const sections{simulation::Region->sections(Point, 40.f)};
-		for (auto *section : sections)
-			for (auto const &cell : section->m_cells)
-				for (auto *track : cell.m_paths)
-					if (Shape.type == "Rkpd" && track->eType == tt_Switch && false == track->m_editorremoved && track->DoubleSlip() && glm::distance(plan_of(track->location()), plan_of(Point)) < 25.0)
-						return replace_double_slip(*track, Shape);
-	}
-	TTrack *other{nullptr};
+	// the height of the straight under the cursor, worked out anew till it settles: on a grade the plane of the start of the
+	// straight would put the cursor metres away from where it points at the track
+	auto cursor{cursor_level(Line.start.y)};
+	for (int i = 0; i < 4; ++i)
+		cursor = cursor_level(Line.start.y + Line.grade * std::clamp(Line.along(cursor), 0.0, Line.length));
+	return cursor;
+}
+
+bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape, slip_plan &Plan) const
+{
+	Plan = slip_plan{};
+	// the crossing of the straight with the rail track nearest the cursor, whatever that track is: the slip goes there or
+	// nowhere, never to another crossing around
+	TTrack *nearest{nullptr};
 	glm::dvec2 crossing{0.0};
-	double best{40.0};
-	auto const sections{simulation::Region->sections(Point, 60.f)};
-	for (auto *section : sections)
-	{
+	double best{kSlipReach};
+	auto const category{Line.tracks.empty() ? 1 : Line.tracks.front()->iCategoryFlag & 15};
+	for (auto *section : simulation::Region->sections(Point, 300.f))
 		for (auto const &cell : section->m_cells)
-		{
 			for (auto *track : cell.m_paths)
 			{
-				if (std::find(Line.tracks.begin(), Line.tracks.end(), track) != Line.tracks.end() || track->eType != tt_Normal || track->m_editorremoved || false == editor_track::is_straight(*track, m_straights.tolerance))
+				if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != category || std::find(Line.tracks.begin(), Line.tracks.end(), track) != Line.tracks.end())
 					continue;
-				auto const &path{track->m_paths.front()};
-				auto const a{plan_of(path.points[segment_data::point::start])};
-				auto const b{plan_of(path.points[segment_data::point::end])};
-				auto const segment{b - a};
-				auto const determinant{cross(Line.direction, segment)};
-				if (std::abs(determinant) < 1e-9)
-					continue;
-				auto const offset{a - plan_of(Line.start)};
-				auto const along{cross(offset, segment) / determinant};
-				auto const fraction{cross(offset, Line.direction) / determinant};
-				if (fraction < -0.01 || fraction > 1.01 || along < 0.0 || along > Line.length)
-					continue;
-				auto const position{plan_of(Line.start) + Line.direction * along};
-				auto const distance{glm::distance(position, plan_of(Point))};
-				if (distance < best)
+				for (auto const &path : track->m_paths)
 				{
-					best = distance;
-					other = track;
-					crossing = position;
+					bezier const curve{path};
+					auto const straight{path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{}};
+					int const pieces{straight ? 1 : 16};
+					auto previous{plan_of(path.points[segment_data::point::start])};
+					for (int i = 1; i <= pieces; ++i)
+					{
+						auto const next{straight ? plan_of(path.points[segment_data::point::end]) : plan_of(curve.point(static_cast<double>(i) / pieces))};
+						auto const segment{next - previous};
+						auto const determinant{cross(Line.direction, segment)};
+						if (std::abs(determinant) > 1e-9)
+						{
+							auto const offset{previous - plan_of(Line.start)};
+							auto const along{cross(offset, segment) / determinant};
+							auto const fraction{cross(offset, Line.direction) / determinant};
+							auto const position{plan_of(Line.start) + Line.direction * along};
+							if (fraction >= -0.01 && fraction <= 1.01 && along >= 0.0 && along <= Line.length && glm::distance(position, plan_of(Point)) < best)
+							{
+								best = glm::distance(position, plan_of(Point));
+								nearest = track;
+								crossing = position;
+							}
+						}
+						previous = next;
+					}
 				}
 			}
+	// a double slip nearer the cursor than any crossing is replaced by the one chosen
+	if (Shape.type == "Rkpd")
+	{
+		TTrack *slip{nullptr};
+		double closest{25.0};
+		for (auto *section : simulation::Region->sections(Point, 40.f))
+			for (auto const &cell : section->m_cells)
+				for (auto *track : cell.m_paths)
+					if (track->eType == tt_Switch && false == track->m_editorremoved && track->DoubleSlip() && glm::distance(plan_of(track->location()), plan_of(Point)) < closest)
+					{
+						closest = glm::distance(plan_of(track->location()), plan_of(Point));
+						slip = track;
+					}
+		if (slip != nullptr && (nearest == nullptr || closest < best))
+		{
+			Plan.replaces = slip;
+			return true;
 		}
 	}
-	if (other == nullptr)
+	if (nearest == nullptr)
 	{
-		state.status = STR_C("No straight crossing the selected one near the click");
+		Plan.problem = STR_C("No track crosses the selected straight under the cursor");
 		return false;
 	}
-	auto const second{editor_track::find_straight(*other, m_straights.tolerance)};
-	if (second.tracks.empty())
+	if (nearest->eType != tt_Normal)
+	{
+		Plan.problem = STR_C("The track crossing here is a switch: a slip goes only where two straights cross");
 		return false;
+	}
+	if (false == editor_track::is_straight(*nearest, m_straights.tolerance))
+	{
+		Plan.problem = STR_C("The track crossing here isn't straight: a slip goes only where two straights cross");
+		return false;
+	}
+	auto const second{editor_track::find_straight(*nearest, m_straights.tolerance)};
+	if (second.tracks.empty())
+	{
+		Plan.problem = STR_C("The track crossing here isn't straight: a slip goes only where two straights cross");
+		return false;
+	}
 	auto const first{Line.direction};
 	auto direction{second.direction};
 	if (glm::dot(first, direction) < 0.0)
@@ -880,7 +919,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	bool const plain{Shape.type == "Skrz"};
 	if (angle < glm::radians(0.5) || angle > glm::radians(plain ? 89.0 : 30.0))
 	{
-		state.status = STR_C("The straights cross at an angle unsuitable for a double slip");
+		Plan.problem = STR_C("The straights cross at an angle unsuitable for a double slip");
 		return false;
 	}
 	auto const alongfirst{glm::dot(crossing - plan_of(Line.start), Line.direction)};
@@ -896,7 +935,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 		half = available;
 		if (half < 2.0)
 		{
-			state.status = STR_C("Not enough straight track around the crossing");
+			Plan.problem = STR_C("Not enough straight track around the crossing");
 			return false;
 		}
 	}
@@ -906,20 +945,54 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 		half = available;
 		if (curve.radius < 50.0)
 		{
-			state.status = STR_C("Not enough straight track around the crossing");
+			Plan.problem = STR_C("Not enough straight track around the crossing");
 			return false;
 		}
-		state.status = format(STR_C("R reduced to %d m, the straights end %d m from the crossing"), static_cast<int>(curve.radius), static_cast<int>(available));
+		Plan.note = format(STR_C("R reduced to %d m, the straights end %d m from the crossing"), static_cast<int>(curve.radius), static_cast<int>(available));
 	}
-
 	auto const heightfirst = [&](double const Along) { return Line.start.y + Line.grade * Along; };
 	auto const heightsecond = [&](double const Along) { return second.start.y + second.grade * Along; };
 	auto const sign{glm::dot(second.direction, direction) > 0.0 ? 1.0 : -1.0};
 	auto const at = [&](glm::dvec2 const &Planar, double const Height) { return glm::dvec3{Planar.x, Height, Planar.y}; };
-	auto const pointA{at(crossing - first * half, heightfirst(alongfirst - half))};
-	auto const pointB{at(crossing + first * half, heightfirst(alongfirst + half))};
-	auto const pointC{at(crossing - direction * half, heightsecond(alongsecond - sign * half))};
-	auto const pointD{at(crossing + direction * half, heightsecond(alongsecond + sign * half))};
+	Plan.other = nearest;
+	Plan.crossing = crossing;
+	Plan.first = first;
+	Plan.direction = direction;
+	Plan.angle = angle;
+	Plan.alongfirst = alongfirst;
+	Plan.half = half;
+	Plan.curve = curve;
+	Plan.points = {at(crossing - first * half, heightfirst(alongfirst - half)), at(crossing + first * half, heightfirst(alongfirst + half)), at(crossing - direction * half, heightsecond(alongsecond - sign * half)),
+	               at(crossing + direction * half, heightsecond(alongsecond + sign * half))};
+	return true;
+}
+
+bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape)
+{
+	auto &state{m_straights};
+	state.status.clear();
+	slip_plan plan;
+	if (false == plan_double_slip(Line, Point, Shape, plan))
+	{
+		state.status = plan.problem;
+		return false;
+	}
+	if (plan.replaces != nullptr)
+		return replace_double_slip(*plan.replaces, Shape);
+	state.status = plan.note;
+	auto *other{plan.other};
+	auto const crossing{plan.crossing};
+	auto const first{plan.first};
+	auto const direction{plan.direction};
+	auto const angle{plan.angle};
+	auto const alongfirst{plan.alongfirst};
+	auto const half{plan.half};
+	auto const curve{plan.curve};
+	auto const heightfirst = [&](double const Along) { return Line.start.y + Line.grade * Along; };
+	auto const &pointA{plan.points[0]};
+	auto const &pointB{plan.points[1]};
+	auto const &pointC{plan.points[2]};
+	auto const &pointD{plan.points[3]};
 
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;

@@ -1432,6 +1432,26 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool stretchable(editor_track::snap_target const &Target) const;
 	std::vector<TTrack *> link_tracks(editor_track::snap_target const &Target, editor_track::branch_link const &Link, TTrack const &Style, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);
 	bool cut_straight(editor_track::straight const &Line, double const From, double const To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack **Style);
+	// where a slip or a crossing goes for the cursor at Point on the straight Line: the crossing of Line with the rail track
+	// nearest the cursor, or the double slip there to be replaced
+	struct slip_plan
+	{
+		std::string problem;
+		std::string note;
+		TTrack *replaces{nullptr};
+		TTrack *other{nullptr};
+		glm::dvec2 crossing{0.0};
+		glm::dvec2 first{0.0, 1.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double angle{0.0};
+		double alongfirst{0.0};
+		double half{0.0};
+		editor_track::slip_curve curve;
+		std::array<glm::dvec3, 4> points{};
+	};
+	bool plan_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape, slip_plan &Plan) const;
+	// the cursor where it points at the straight, at the height of the straight there
+	glm::dvec3 cursor_on_straight(editor_track::straight const &Line) const;
 	bool insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape);
 	bool replace_double_slip(TTrack &Part, editor_track::switch_template const &Shape);
 	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack &Style, std::string const &Type = "Rkpd");
