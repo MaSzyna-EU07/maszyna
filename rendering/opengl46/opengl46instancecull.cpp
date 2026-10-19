@@ -82,6 +82,7 @@ void opengl46_instance_cull::begin_pass(pass_setup const &Setup)
 	m_entries = 0;
 	m_sleepertracks = 0;
 	m_sleepers = 0;
+	m_models = 0;
 }
 
 void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area)
@@ -195,6 +196,10 @@ void opengl46_instance_cull::add(scene::basic_cell::instance_bucket_key const &K
 	{
 		++m_sleepertracks;
 		m_sleepers += job.count;
+	}
+	else if (Key.instance != nullptr)
+	{
+		++m_models;
 	}
 }
 
@@ -421,6 +426,22 @@ void opengl46_instance_cull::cpu_result(scene::basic_cell::instance_bucket_key c
 		m_cpucounts[group.entryfirst + band] += Bandcounts[band];
 }
 
+void opengl46_instance_cull::cpu_instance(scene::basic_cell::instance_bucket_key const &Key, float const Distancesquared)
+{
+	if (!m_dispatched)
+		return;
+	auto const lookup{m_groupmap.find(Key)};
+	if (lookup == m_groupmap.end())
+		return;
+	auto const &group{lookup->second};
+	auto const &lods{m_grouplist[group.index]};
+	// the band the culling gives the distance: the number of bounds it reached
+	auto const first{m_lodlist.begin() + lods.lodfirst};
+	auto const band{static_cast<std::uint32_t>(std::upper_bound(first, first + lods.lodcount, Distancesquared) - first)};
+	if (band < group.entrycount)
+		++m_cpucounts[group.entryfirst + band];
+}
+
 void opengl46_instance_cull::end_pass()
 {
 	// the counts of both phases, for the panel and the comparison
@@ -439,6 +460,7 @@ void opengl46_instance_cull::end_pass()
 	}
 	m_lastsleepertracks = m_sleepertracks;
 	m_lastsleepers = m_sleepers;
+	m_lastmodels = m_models;
 	m_inpass = false;
 	m_dispatched = false;
 }
@@ -490,7 +512,10 @@ std::string opengl46_instance_cull::info(std::string const &Label, bool const Oc
 	if (Global.gfx_gpucull == 0)
 		return {};
 	// the sleepers are among the instances counted
-	auto const sleepers{m_lastsleepertracks > 0 ? "\n" + Label + ": " + std::to_string(m_lastsleepers) + " sleepers of " + std::to_string(m_lastsleepertracks) + " tracks queued" : std::string{}};
+	auto sleepers{m_lastsleepertracks > 0 ? "\n" + Label + ": " + std::to_string(m_lastsleepers) + " sleepers of " + std::to_string(m_lastsleepertracks) + " tracks queued" : std::string{}};
+	// and so are the models drawn on their own
+	if (m_lastmodels > 0)
+		sleepers += "\n" + Label + ": " + std::to_string(m_lastmodels) + " models drawn on their own queued";
 	if (Global.gfx_gpucull == 1)
 	{
 		if (m_last.frame == 0)

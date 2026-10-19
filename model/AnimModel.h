@@ -228,6 +228,10 @@ public:
     // no lights, no submodel animations, no replacable skins, no seasonal variants.
     // computed once at end of Load() so the renderer can simply test the flag.
     bool m_instanceable { false };
+    // true if the walk of the submodel tree gives the same submodel-local transforms whatever modelview it starts from
+    // (no billboards turned to the camera): an instance drawn on its own can then be culled on the gpu like the instanced
+    // ones, its tree walked from the origin of the instance, which the culling places in view
+    bool m_cameraindependent { false };
     // helper: evaluates current state and updates m_instanceable accordingly.
     void update_instanceable_flag();
     // helper: assigns the model and the replacable skin to the instance, and binds light and variant submodels of the model

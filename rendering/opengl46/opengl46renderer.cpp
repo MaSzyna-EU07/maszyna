@@ -685,8 +685,9 @@ bool opengl46_renderer::Render()
 		m_locallights.reset();
 		m_localshadows.reset_lamps();
 		m_localshadows.reset_headlights();
-		// and so may the tracks the sleeper records were made for
+		// and so may the tracks the sleeper records were made for, and the models drawn on their own
 		m_sleeperrecords.clear();
+		m_modelrecords.clear();
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -703,6 +704,11 @@ bool opengl46_renderer::Render()
 		// dropped when it starts over
 		for( auto records { m_sleeperrecords.begin() }; records != m_sleeperrecords.end(); ) {
 			if( m_framestamp - records->second.frame > 256 ) { records = m_sleeperrecords.erase( records ); }
+			else { ++records; }
+		}
+		// and so are the records of the models drawn on their own
+		for( auto records { m_modelrecords.begin() }; records != m_modelrecords.end(); ) {
+			if( m_framestamp - records->second.frame > 256 ) { records = m_modelrecords.erase( records ); }
 			else { ++records; }
 		}
 	}
@@ -1025,6 +1031,7 @@ void opengl46_renderer::draw_debug_ui()
             ImGui::Checkbox("the same for the shadow maps of headlights (gfx.gpucull.shadows.headlights)", &Global.gfx_gpucull_shadows_headlights);
             ImGui::Checkbox("the same for the scenery of the shadow maps of lamps, when it's drawn next (gfx.gpucull.shadows.lamps)", &Global.gfx_gpucull_shadows_lamps);
             ImGui::Checkbox("the same for the sleepers of the tracks of the view (gfx.gpucull.sleepers)", &Global.gfx_gpucull_sleepers);
+            ImGui::Checkbox("the same for the models drawn on their own, with lights, animations or skins of their own (gfx.gpucull.models)", &Global.gfx_gpucull_models);
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
         if (Global.gfx_contactshadows > 0)
@@ -3013,6 +3020,9 @@ void opengl46_renderer::Render(scene::basic_region *Region)
 			counts.second.clear();
 		}
 	}
+	// the models drawn on their own go with the instances of every pass culled on the gpu
+	m_modelspass = ( m_instancecullpass && Global.gfx_gpucull_models );
+	m_modelcpudistances.clear();
 	// build a list of region sections to render
 	glm::vec3 const cameraposition{m_renderpass.pass_camera.position()};
 	auto const camerax = static_cast<int>(std::floor(cameraposition.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
@@ -3361,8 +3371,9 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 			// cell that still holds a drawable instance. Shadows measure from the
 			// real (viewport) camera, matching Render_Instanced()'s shadow branch;
 			// every other gated mode measures from the pass camera. Non-instanced
-			// scenery and vehicles below keep their own per-node culling and are
-			// intentionally left untouched.
+			// scenery drawn by the cpu and vehicles below keep their own per-node
+			// culling and are intentionally left untouched; the non-instanced models
+			// culled on the gpu (Queue_Model()) are left out with the cell the same way.
 			{
 				auto const &distancecamera = (
 					m_renderpass.draw_mode == rendermode::shadows
@@ -3374,17 +3385,21 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 					( cellnearestdistance * cellnearestdistance )
 					/ ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) )
 					/ static_cast<double>( Global.fDistanceFactor ) };
-				if( cellnearestdistancesquared <= sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) {
+				auto const cellinrange { cellnearestdistancesquared <= sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) };
+				if( cellinrange ) {
 					Queue_Instances( cell );
 				}
-			}
-			// remaining (non-instanceable) opaque instance nodes go through the per-node path
-			for (auto *instance : cell->m_instancesopaque)
-			{
-				if( instance->m_instanceable ) { continue; } // already handled via bucket
-				// the model of a lamp would shadow everything in the map of the lamp
-				if( instance == m_cubeskipinstance ) { continue; }
-				Render(instance);
+				// remaining (non-instanceable) opaque instance nodes go through the per-node path, or with the instances
+				// to the gpu culling, each on its own
+				for (auto *instance : cell->m_instancesopaque)
+				{
+					if( instance->m_instanceable ) { continue; } // already handled via bucket
+					// the model of a lamp would shadow everything in the map of the lamp
+					if( instance == m_cubeskipinstance ) { continue; }
+					if( Queue_Model( instance, cellinrange ) ) { continue; }
+					Render(instance);
+					m_modelcomparekey = nullptr;
+				}
 			}
 			// opaque parts of vehicles. the kept scenery part of the map of a lamp is drawn without them
 			if( false == m_cubescenery ) {
@@ -3415,7 +3430,9 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
                 Queue_Instances( cell );
                 for( auto *instance : cell->m_instancesopaque ) {
                     if( instance->m_instanceable ) { continue; }
+                    if( Queue_Model( instance, true ) ) { continue; }
                     Render( instance );
+                    m_modelcomparekey = nullptr;
                 }
             }
             if( Global.reflectiontune.fidelity >= 2 ) {
@@ -3485,6 +3502,10 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 					}
 				}
 			}
+			// and the models drawn on their own
+			for( auto const &model : m_modelcpudistances ) {
+				m_passcull->cpu_instance( model.first, model.second );
+			}
 		}
 	}
 	for( auto &bucket : m_frame_instance_buckets ) {
@@ -3501,6 +3522,8 @@ void opengl46_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		m_passcull = nullptr;
 	}
 	m_sleeperspass = false;
+	m_modelspass = false;
+	m_modelcpudistances.clear();
 }
 
 void opengl46_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
@@ -3685,6 +3708,10 @@ void opengl46_renderer::Render(TAnimModel *Instance)
     if( radiussquared * Global.ZoomFactor / distancesquared < 0.003 * 0.003 ) {
         return;
     }
+    if( m_modelcomparekey != nullptr ) {
+        // queued in the gpu culling as well, to compare with (Queue_Model())
+        m_modelcpudistances.emplace_back( *m_modelcomparekey, static_cast<float>( distancesquared ) );
+    }
 
 	switch (m_renderpass.draw_mode)
 	{
@@ -3792,6 +3819,58 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 			dest->push_back( { &instancebucket, idx } );
 		}
 	}
+}
+
+// queues a model instance drawn on its own in the gpu culling of the pass, as a bucket and a group of its own. the culling
+// makes the tests of Render( TAnimModel * ): visibility, frustum, the range of the instance, the draw range, the size on the
+// screen, and gives it the lod band of the bounds of its submodels (mindistance/maxdistance) its distance falls in, then
+// Record_Indirect_Draws() animates, prepares and walks its submodel tree from its origin, like it does for a group of
+// instanced ones
+bool opengl46_renderer::Queue_Model( TAnimModel *Instance, bool const Inrange )
+{
+	// a billboard is turned to the camera from the modelview of the instance, which a walk from its origin doesn't have
+	if( ( false == Instance->m_cameraindependent ) || ( Instance->Model() == nullptr ) ) { return false; }
+	if( false == m_modelspass ) {
+		// the depth pass of the whole scene culled and recorded it, the colour pass draws what it recorded
+		return ( m_indirectcolourpending && m_indirectcolourmodels );
+	}
+	auto const drawing { m_passcull->drawing() };
+	// a model hidden by an event, or in a cell wholly out of the range of the pass, would be left out by the culling
+	if( ( false == Instance->visible() ) || ( false == Inrange ) ) { return drawing; }
+
+	auto &records { m_modelrecords[ Instance ] };
+	auto &bucket { records.bucket };
+	if( ( bucket.recordsversion != m_instancerecordsversion ) || ( bucket.records.size() != 1 ) ) {
+		// the key, the instance and the record anew: the editor may have given the instance another model or skins, or
+		// another instance may have taken the place of a deleted one
+		auto &key { records.key };
+		key = {};
+		key.pModel = Instance->Model();
+		if( auto const *material { Instance->Material() } ) {
+			for( int skin = 0; skin < 5; ++skin ) { key.skins[ skin ] = material->replacable_skins[ skin ]; }
+		}
+		key.instance = Instance;
+		bucket.instances.assign( 1, Instance );
+		// the location of the instance as the origin of the record, which keeps the precision
+		Update_Instance_Records( key.pModel, bucket, Instance->location() );
+		// drawn by its bucket, though it isn't instanceable
+		bucket.records.front().flags |= scene::basic_cell::instance_instanceable;
+		records.area = scene::bounding_area{ Instance->location(), 0.f };
+	}
+	records.frame = m_framestamp;
+	if( m_renderpass.draw_mode == rendermode::shadows ) {
+		// a model with nothing to draw in the shadows is left out of them, like the instances. the answer depends on the
+		// model and the skins only, and is shared by the instances with them
+		auto modelkey { records.key };
+		modelkey.instance = nullptr;
+		if( false == Instances_Cast_Shadow( modelkey, bucket ) ) { return drawing; }
+	}
+	m_passcull->add_bucket( records.key, bucket, records.area );
+	if( false == drawing ) {
+		// the cpu draws it too, and tells what it drew for the comparison
+		m_modelcomparekey = &records.key;
+	}
+	return drawing;
 }
 
 // makes the records of the instances held by a bucket of a scene cell, with locations relative to Origin
@@ -4169,6 +4248,7 @@ void opengl46_renderer::Render_Instances_Indirect()
 		m_indirectcolourpending = true;
 		m_indirectcolourset = colourset;
 		m_indirectcoloursleepers = m_sleeperspass;
+		m_indirectcolourmodels = m_modelspass;
 		if( m_scenerecording ) {
 			// where the colour pass, which draws the record, draws them, in the light the walk had here
 			auto &marker { m_scenedraws.emplace_back() };
@@ -4242,6 +4322,10 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 			TSubModel::iVariantSeed = 0;
 		}
 		else {
+			if( group.key->instance != nullptr ) {
+				// a model drawn on its own: its lights and animations, the way Render( TAnimModel * ) sets them up
+				group.instance->RaAnimate( m_framestamp );
+			}
 			group.instance->RaPrepare();
 			auto const *material { group.instance->Material() };
 			if( material != nullptr ) {

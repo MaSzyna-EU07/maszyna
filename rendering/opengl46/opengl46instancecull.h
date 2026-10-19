@@ -49,6 +49,8 @@ class TAnimModel;
 // queues the bucket
 // the sleepers of tracks (TTrack::m_sleeper_local_transforms) are culled the same way, each track with them a bucket of its
 // own, and drawn together with the instances; their groups are kept apart from those of the model instances
+// so are the model instances drawn on their own (not instanceable): each one a bucket and a group of its own (the instance in
+// its key), whose submodel tree the renderer animates and walks for it alone
 class opengl46_instance_cull
 {
   public:
@@ -176,6 +178,9 @@ class opengl46_instance_cull
 	// counts per lod band of the instances Render_Instanced() drew for a model and its skins in this pass, or of the sleepers
 	// Render_Sleepers() drew. needs dispatch() before it
 	void cpu_result(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts, bool const Sleepers = false);
+	// the cpu drew the instance of a group of its own (Key with the instance) at a squared distance scaled as the culling
+	// scales it: counted in the lod band the distance falls in. needs dispatch() before it
+	void cpu_instance(scene::basic_cell::instance_bucket_key const &Key, float const Distancesquared);
 	// ends the pass: its cpu counts are kept for the comparison
 	void end_pass();
 	// takes the newest counts of the gpu which arrived and compares them with the ones of the cpu. done when a pass begins;
@@ -275,6 +280,9 @@ class opengl46_instance_cull
 	std::uint32_t m_sleepers{0};
 	std::uint32_t m_lastsleepertracks{0};
 	std::uint32_t m_lastsleepers{0};
+	// model instances drawn on their own queued in the pass, and in the last pass, for the panel
+	std::uint32_t m_models{0};
+	std::uint32_t m_lastmodels{0};
 	bool m_dispatched{false};
 
 	std::vector<std::uint32_t> m_cpucounts; // of the current pass, by entry

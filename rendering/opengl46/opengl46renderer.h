@@ -449,6 +449,11 @@ class opengl46_renderer : public gfx_renderer {
 	// queues the sleepers of a track in the gpu culling of the pass (Global.gfx_gpucull_sleepers), with the gates of
 	// Render_Sleepers(), making their records first when they're missing or out of date
 	void Queue_Sleepers( TTrack *Track );
+	// queues a model instance drawn on its own in the gpu culling of the pass (Global.gfx_gpucull_models), as a bucket of
+	// its own, making its record first when it's missing or out of date. Inrange: the cell of the instance lies within the
+	// range of the pass. returns true when the instance isn't drawn by the cpu in the pass: it's drawn from the result of the
+	// culling, or it was culled and recorded by the depth pass of the whole scene, or it lies out of range
+	bool Queue_Model( TAnimModel *Instance, bool const Inrange );
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
@@ -625,6 +630,22 @@ class opengl46_renderer : public gfx_renderer {
 		unsigned int frame { 0 }; // queued last
 	};
 	std::unordered_map<TTrack const *, sleeper_records> m_sleeperrecords;
+	// the model instances drawn on their own culled on the gpu (Global.gfx_gpucull_models), each one a bucket of its own with
+	// a group of its own: the record made when the instance is queued first, and again when the instance records went out of
+	// date (editor, events: m_instancerecordsversion). the records of instances not queued for a while are let go
+	struct model_records {
+		scene::basic_cell::instance_bucket bucket; // the instance alone
+		scene::basic_cell::instance_bucket_key key; // the model, the skins and the instance
+		scene::bounding_area area; // the location of the instance
+		unsigned int frame { 0 }; // queued last
+	};
+	std::unordered_map<TAnimModel const *, model_records> m_modelrecords;
+	bool m_modelspass { false }; // the models drawn on their own of the pass under way go to its gpu culling
+	bool m_indirectcolourmodels { false }; // with m_indirectcolourpending: the depth pass culled and recorded them too
+	// comparison (Global.gfx_gpucull 2): the key of the model Render( TAnimModel * ) is called for, and the models it drew in
+	// the pass with their scaled squared distances, reported once the culling ran
+	scene::basic_cell::instance_bucket_key const *m_modelcomparekey { nullptr };
+	std::vector<std::pair<scene::basic_cell::instance_bucket_key, float>> m_modelcpudistances;
 	bool m_sleeperspass { false }; // the sleepers of the pass under way go to its gpu culling (the one of the main view)
 	bool m_indirectcoloursleepers { false }; // with m_indirectcolourpending: the depth pass culled and recorded the sleepers too
 	// counts per lod band of the sleepers Render_Sleepers() drew in the pass, by model and skin, for the comparison (they're

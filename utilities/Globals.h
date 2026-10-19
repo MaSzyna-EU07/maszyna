@@ -305,6 +305,10 @@ struct global_settings {
     // with gfx_gpucull 1 or 2: the sleepers of the tracks (sleepermodel) of the main view are culled with the instances as well,
     // and with 1 drawn from the result
     bool gfx_gpucull_sleepers = true;
+    // with gfx_gpucull 1 or 2: the model instances drawn on their own (with lights, animations or skins of their own, which
+    // keep them out of the instanced draws) are culled with the instances as well, each one a group of its own, in every pass
+    // culled on the gpu, and with 1 drawn from the result. models with billboards stay on the cpu
+    bool gfx_gpucull_models = true;
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
     // (opengl 4.6) the depth pass of the scene (gfx_depthprepass_scene, or the one of the contact shadows) walks the scene for

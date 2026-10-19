@@ -221,9 +221,12 @@ public:
     struct instance_bucket_key {
         TModel3d *pModel { nullptr };
         std::array<material_handle, 5> skins {};
+        // an instance drawn on its own (not instanceable) culled on the gpu as a bucket of its own: it isn't drawn
+        // together with other instances of the model, as its submodel tree is prepared and walked for it alone
+        TAnimModel const *instance { nullptr };
 
         bool operator==( instance_bucket_key const &other ) const {
-            return pModel == other.pModel && skins == other.skins;
+            return pModel == other.pModel && skins == other.skins && instance == other.instance;
         }
     };
     struct instance_bucket_key_hash {
@@ -233,6 +236,7 @@ public:
                 // boost-style hash combine
                 h ^= std::hash<int>()( s ) + 0x9e3779b9 + ( h << 6 ) + ( h >> 2 );
             }
+            h ^= std::hash<TAnimModel const *>()( k.instance ) + 0x9e3779b9 + ( h << 6 ) + ( h >> 2 );
             return h;
         }
     };
