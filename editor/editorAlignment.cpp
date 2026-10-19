@@ -488,7 +488,7 @@ result fit_between(design const &Design)
 	}
 	for (std::size_t k = 0; k < count; ++k)
 	{
-		if (scales[k] >= 1.0)
+		if (scales[k] >= 1.0 || fits[k].tangents == nullptr)
 			continue;
 		auto &fit{fits[k]};
 		auto const budgetin{fit.tangent_in * scales[k]};
