@@ -1528,6 +1528,23 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_depthprepass_replay;
     }
+    else if (Token == "gfx.grass")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_grass;
+    }
+    else if (Token == "gfx.grass.distance")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_grass_distance;
+        gfx_grass_distance = std::clamp(gfx_grass_distance, 5.f, 500.f);
+    }
+    else if (Token == "gfx.grass.density")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_grass_density;
+        gfx_grass_density = std::clamp(gfx_grass_density, 0.f, 4.f);
+    }
     else if (Token == "gfx.bufferstreaming")
     {
         Parser.getTokens(1);
@@ -2041,6 +2058,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.gpucull.models", gfx_gpucull_models );
     export_as_text( Output, "gfx.depthprepass.scene", gfx_depthprepass_scene );
     export_as_text( Output, "gfx.depthprepass.replay", gfx_depthprepass_replay );
+    export_as_text( Output, "gfx.grass", gfx_grass );
+    export_as_text( Output, "gfx.grass.distance", gfx_grass_distance );
+    export_as_text( Output, "gfx.grass.density", gfx_grass_density );
     export_as_text( Output, "gfx.bufferstreaming", gfx_bufferstreaming );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );

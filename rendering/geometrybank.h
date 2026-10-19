@@ -125,6 +125,8 @@ public:
     auto create( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, unsigned int const Type ) -> gfx::geometry_handle;
     // replaces vertex data of specified chunk with the supplied data, starting from specified offset
     auto replace( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry, std::size_t const Offset = 0 ) -> bool;
+    // replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts. returns: false if the counts differ
+    auto replace( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // draws geometry stored in specified chunk
@@ -243,6 +245,8 @@ public:
     auto create_chunk( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, unsigned int const Type ) -> gfx::geometry_handle;
     // replaces data of specified chunk with the supplied vertex data, starting from specified offset
     auto replace( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, std::size_t const Offset = 0 ) -> bool;
+    // replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts. returns: false if the counts differ
+    auto replace( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // draws geometry stored in specified chunk

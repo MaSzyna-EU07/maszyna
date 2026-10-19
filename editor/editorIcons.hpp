@@ -57,6 +57,9 @@ enum class icon
 	work_tracks,
 	work_roads,
 	work_terrain,
+	// the tools of the terrain added later, at the end so the other cells stay where they were
+	hole,
+	grass,
 	count
 };
 

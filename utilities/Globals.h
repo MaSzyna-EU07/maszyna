@@ -321,6 +321,11 @@ struct global_settings {
     // the colour pass as well: its opaque draws are recorded once, their depth drawn from the record (with the contact shadows
     // alone only within their reach) and their colour too. false: the scene is walked twice, as before
     bool gfx_depthprepass_replay = true;
+    // (opengl 4.6) grass of the heightmap terrain, grown where it's painted: drawn, how far from the camera (metres), and how
+    // many blades of the density painted (1: all)
+    bool gfx_grass = true;
+    float gfx_grass_distance = 60.f;
+    float gfx_grass_density = 1.f;
     // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,
     // one for each of the last frames, instead of with glBufferSubData. read at the start
     bool gfx_bufferstreaming = true;

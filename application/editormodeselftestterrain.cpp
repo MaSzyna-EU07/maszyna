@@ -408,6 +408,69 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog("SELFTEST terrainadd: " + m_terrain_status);
 		return selftest_result::handled;
 	}
+	if (command == "terraincut")
+	{
+		double x{0.0};
+		double z{0.0};
+		double radius{2.0};
+		int cut{1};
+		words >> x >> z >> radius >> cut;
+		auto const changed{m_streamer.cut(x, z, radius, cut != 0)};
+		forget_ground();
+		WriteLog(format("SELFTEST terraincut %.1f %.1f: %s", x, z, changed ? "changed" : "nothing changed"));
+		return selftest_result::handled;
+	}
+	if (command == "terraincutarea" || command == "terraingrassarea")
+	{
+		int value{1};
+		words >> value;
+		std::vector<glm::dvec2> outline;
+		double x, z;
+		while (words >> x >> z)
+			outline.emplace_back(x, z);
+		auto const changed{command == "terraincutarea" ? m_streamer.cut(outline, value != 0) : m_streamer.grass(outline, static_cast<std::uint16_t>(std::max(0, value)), value < 0)};
+		forget_ground();
+		WriteLog(format("SELFTEST %s: %s", command.c_str(), changed ? "changed" : "nothing changed"));
+		return selftest_result::handled;
+	}
+	if (command == "terraingrasskind")
+	{
+		std::string name;
+		std::getline(words >> std::ws, name);
+		for (auto const &preset : heightmap::grass_presets())
+			if (preset.name == name)
+				m_grass_kind = m_streamer.add_grass_kind(preset);
+		WriteLog(format("SELFTEST terraingrasskind %s: %zu kinds", name.c_str(), m_streamer.grass_kinds().size()));
+		return selftest_result::handled;
+	}
+	if (command == "terraingrass")
+	{
+		double x{0.0};
+		double z{0.0};
+		double radius{5.0};
+		int kind{0};
+		int erase{0};
+		words >> x >> z >> radius >> kind >> erase;
+		auto const changed{m_streamer.grass(x, z, radius, 1.0, static_cast<std::uint16_t>(kind), erase != 0)};
+		WriteLog(format("SELFTEST terraingrass %.1f %.1f: %s", x, z, changed ? "changed" : "nothing changed"));
+		return selftest_result::handled;
+	}
+	if (command == "terraintool")
+	{
+		std::string name;
+		words >> name;
+		m_terrain_tool = name == "holes" ? terrain_tool::holes : name == "grass" ? terrain_tool::grass : name == "paint" ? terrain_tool::paint : name == "sculpt" ? terrain_tool::sculpt : terrain_tool::none;
+		m_terrain_brush_radius = 3.0f;
+		WriteLog("SELFTEST terraintool " + name);
+		return selftest_result::handled;
+	}
+	if (command == "terraincursor")
+	{
+		glm::dvec3 world;
+		auto const found{terrain_cursor(world)};
+		WriteLog(format("SELFTEST terraincursor: %s %.2f %.2f %.2f", found ? "ground" : "none", world.x, world.y, world.z));
+		return selftest_result::handled;
+	}
 	if (command == "terrainprobe")
 	{
 		double x{0.0};
@@ -435,6 +498,18 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			if (false == data.adjust.empty())
 				adjust = data.height_in(data.adjust, x, z);
 			grid = format(", spacing %.1f, paint %d, base %s %.3f, touch-up %.3f", data.spacing(), data.paint, data.base.empty() ? "none" : "", base, adjust);
+			// the holes and the grass at the point
+			grid += format(", holes %d%s, grass kinds %zu", data.holes, data.hole_at(x, z) ? " (cut here)" : "", data.grass_count());
+			if (data.grass > 0)
+			{
+				auto const corner{data.corner()};
+				auto const ix{std::clamp(static_cast<int>(std::lround((x - corner.x) / heightmap::chunk_size * data.grass)), 0, data.grass)};
+				auto const iz{std::clamp(static_cast<int>(std::lround((z - corner.y) / heightmap::chunk_size * data.grass)), 0, data.grass)};
+				auto const plane{static_cast<std::size_t>(data.grass + 1) * (data.grass + 1)};
+				grid += ", grass";
+				for (std::size_t slot = 0; slot < data.grass_count(); ++slot)
+					grid += format(" %u:%d", data.grass_kinds[slot], data.grass_density[slot * plane + static_cast<std::size_t>(iz) * (data.grass + 1) + ix]);
+			}
 			if (data.paint > 0)
 			{
 				// weights at the paint sample nearest the point

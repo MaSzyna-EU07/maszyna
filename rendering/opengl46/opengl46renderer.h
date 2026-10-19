@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/pbo.h"
 #include "gl/query.h"
 #include "rendering/opengl46/opengl46terrain.h"
+#include "rendering/opengl46/opengl46grass.h"
 #include "rendering/opengl46/opengl46sky.h"
 #include "rendering/opengl46/opengl46weather.h"
 #include "rendering/opengl46/opengl46exposure.h"
@@ -77,6 +78,8 @@ class opengl46_renderer : public gfx_renderer {
 	gfx::geometry_handle Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) override;
     // replaces data of specified chunk with the supplied vertex data, starting from specified offset
 	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) override;
+	// replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts
+	bool Replace_Indexed(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry) override;
     // adds supplied vertex data at the end of specified chunk
 	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
     // provides direct access to index data of specfied chunk
@@ -102,9 +105,12 @@ class opengl46_renderer : public gfx_renderer {
     IMaterial const *
         Material( material_handle const Material ) const override;
     material_handle
-        Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement ) override;
+        Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
+                          int const HoleSamples = 0, std::uint8_t const *Holes = nullptr ) override;
     void
         Terrain_Release( material_handle const Material ) override;
+    void
+        Terrain_Grass( std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks ) override;
     // shader methods
     auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override;
     // texture methods
@@ -489,6 +495,8 @@ class opengl46_renderer : public gfx_renderer {
 	void Render(TMemCell *Memcell);
 	void Render_particles();
 	void Render_precipitation();
+	// the grass of the heightmap terrain around the camera of the main view; Future: the matrix of the motion vectors
+	void Render_grass(glm::mat4 const &Future);
   void Render_vr_models();
 	void Render_Alpha(scene::basic_region *Region);
 	void Render_Alpha(cell_sequence::reverse_iterator First, cell_sequence::reverse_iterator Last);
@@ -544,6 +552,7 @@ class opengl46_renderer : public gfx_renderer {
 	material_manager m_materials;
 	texture_manager m_textures;
 	opengl46_terrain_materials m_terrainmaterials{m_materials, m_textures};
+	opengl46_grass m_grass; // of the heightmap terrain
 	opengl46_light m_sunlight;
 	// fog colour of the frame: the one of the simulation, or of the atmosphere (see opengl46_sky::update())
 	glm::vec3 m_fogcolor{0.f};

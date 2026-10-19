@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/framebuffer.h"
 #include "gl/postfx.h"
 
-// materials of the heightmap terrain for the opengl 3.3 renderer (shader mat_terrain).
+// materials of the heightmap terrain for the opengl 4.6 renderer (shader mat_terrain, mat_terrain_holes for chunks with holes).
 // the textures of the layer materials are copied into texture arrays shared by all chunks; each chunk gets a material
 // of its own, with textures holding the weights of its layers and a table of what its layers are
 class opengl46_terrain_materials
@@ -29,7 +29,8 @@ class opengl46_terrain_materials
 	opengl46_terrain_materials(material_manager &Materials, texture_manager &Textures) : m_materials(Materials), m_textures(Textures) {}
 
 	// see gfx_renderer::Terrain_Material. returns null_handle if the terrain shader can't be used
-	material_handle make(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement);
+	material_handle make(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
+	                     int const HoleSamples = 0, std::uint8_t const *Holes = nullptr);
 	void release(material_handle const Material);
 	// copies the textures of new layers into the arrays; to be called before the frame is drawn
 	void update();
@@ -63,6 +64,7 @@ class opengl46_terrain_materials
 		material_handle material{null_handle};
 		std::array<texture_handle, 2> weights{null_handle, null_handle};
 		texture_handle table{null_handle};
+		texture_handle holes{null_handle}; // where the ground is cut, R8; a single texel of 0 without holes
 		bool used{false};
 		// what the table was made of, kept to make it again when a layer changes
 		std::size_t count{0};
@@ -90,6 +92,8 @@ class opengl46_terrain_materials
 	std::vector<slot> m_slots;
 	std::vector<std::size_t> m_free;
 	std::unordered_map<material_handle, std::size_t> m_slotof;
+	std::shared_ptr<gl::program> m_program; // of the chunks, mat_terrain
+	std::shared_ptr<gl::program> m_holesprogram; // of the chunks with holes, mat_terrain_holes
 	std::unique_ptr<gl::postfx> m_copy;
 	std::unique_ptr<gl::framebuffer> m_framebuffer;
 };

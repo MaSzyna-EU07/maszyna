@@ -1763,6 +1763,17 @@ void editor_mode::render_terrain_ui()
         ImGui::TextDisabled("%s", STR_C("A chunk holds up to 8 materials"));
     }
 
+    if (ImGui::CollapsingHeader(STR_C("Grass"), m_terrain_tool == terrain_tool::grass ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+        render_grass_ui();
+
+    if (ImGui::CollapsingHeader(STR_C("Holes"), m_terrain_tool == terrain_tool::holes ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+    {
+        ImGui::TextWrapped("%s", STR_C("Openings in the ground for the portals of tunnels, cuttings under bridges and the like. "
+                                       "With the Holes tool LMB cuts the ground under the brush and Shift+LMB closes it; "
+                                       "the brush stays on the ground also over an opening. An area outlined with the Fill tool can be cut or closed in the Fill section."));
+        ImGui::TextDisabled("%s", STR_C("The holes follow the ground every metre (every grid point of finer chunks), whatever the drawn grid"));
+    }
+
     if (ImGui::CollapsingHeader(STR_C("Fill"), m_terrain_tool == terrain_tool::fill ? ImGuiTreeNodeFlags_DefaultOpen : 0))
     {
         auto const &layers{m_streamer.manifest().layers};
@@ -1790,6 +1801,49 @@ void editor_mode::render_terrain_ui()
         ImGui::SameLine();
         if (ImGui::Button(STR_C("Clear the outline##fill")))
             m_paint_outline.clear();
+        // the same outline for the holes and the grass
+        std::vector<glm::dvec2> outline;
+        for (auto const &point : m_paint_outline)
+            outline.emplace_back(point.x, point.z);
+        ImGui::BeginDisabled(outline.size() < 3);
+        if (ImGui::Button(STR_C("Cut a hole")))
+        {
+            auto const cut = m_streamer.cut(outline, true);
+            m_terrain_status = cut ? std::string(STR_C("Hole cut in the outlined area")) : std::string(STR_C("Nothing cut: no chunk under the outline"));
+            if (cut)
+            {
+                ground_tiles.clear();
+                forget_ground_shapes();
+            }
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Cuts the ground within the outline away, e.g. for the portal of a tunnel"));
+        ImGui::SameLine();
+        if (ImGui::Button(STR_C("Close the hole")))
+        {
+            auto const closed = m_streamer.cut(outline, false);
+            m_terrain_status = closed ? std::string(STR_C("Hole closed in the outlined area")) : std::string(STR_C("No hole under the outline"));
+            if (closed)
+            {
+                ground_tiles.clear();
+                forget_ground_shapes();
+            }
+        }
+        auto const &grasskinds = m_streamer.grass_kinds();
+        ImGui::BeginDisabled(grasskinds.empty());
+        if (ImGui::Button(STR_C("Grow grass")))
+        {
+            auto const kind = static_cast<std::uint16_t>(std::clamp(m_grass_kind, 0, std::max(0, static_cast<int>(grasskinds.size()) - 1)));
+            m_terrain_status = m_streamer.grass(outline, kind, false) ? format(STR_C("Grass grown: %s"), grasskinds[kind].name.c_str())
+                                                                    : std::string(STR_C("Nothing grown: no chunk under the outline, or no room for another kind of grass"));
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Grows the kind of grass chosen in the Grass section within the outline"));
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button(STR_C("Clear the grass")))
+            m_terrain_status = m_streamer.grass(outline, 0, true) ? std::string(STR_C("Grass taken away from the outlined area")) : std::string(STR_C("No grass under the outline"));
+        ImGui::EndDisabled();
     }
 
     if (ImGui::CollapsingHeader(STR_C("Water"), m_terrain_tool == terrain_tool::water ? ImGuiTreeNodeFlags_DefaultOpen : 0))
@@ -2000,8 +2054,12 @@ void editor_mode::draw_terrain_overlay()
         }
     };
 
-    if (terrain_brush() && hovering)
+    // the holes and the grass are aimed at the ground itself, also over an opening and behind the blades
+    glm::dvec3 brushcentre = cursor;
+    bool const onground = (m_terrain_tool == terrain_tool::holes || m_terrain_tool == terrain_tool::grass) && false == ImGui::GetIO().WantCaptureMouse && terrain_cursor(brushcentre);
+    if (terrain_brush() && (hovering || onground))
     {
+        auto const cursor = onground ? brushcentre : Camera.Pos + offset;
         std::vector<glm::dvec3> circle;
         for (int i = 0; i < 64; ++i)
         {
@@ -2011,6 +2069,8 @@ void editor_mode::draw_terrain_overlay()
             circle.emplace_back(x, ground(x, z, cursor.y) + 0.1, z);
         }
         auto const color = m_terrain_tool == terrain_tool::paint     ? IM_COL32(120, 230, 120, 220)
+                           : m_terrain_tool == terrain_tool::grass   ? IM_COL32(170, 255, 90, 220)
+                           : m_terrain_tool == terrain_tool::holes   ? IM_COL32(255, 90, 90, 230)
                            : m_terrain_tool == terrain_tool::smooth  ? IM_COL32(120, 200, 255, 220)
                            : m_terrain_tool == terrain_tool::restore ? IM_COL32(230, 120, 230, 220)
                                                                      : IM_COL32(255, 180, 80, 220);
@@ -3192,9 +3252,15 @@ void editor_mode::handle_terrain_brush(double Deltatime)
 {
     // world point under the cursor (Mouse_Position is camera-relative, like the brush placement uses)
     glm::dvec3 const offset = GfxRenderer->Mouse_Position();
-    if (glm::length(offset) < 1e-3)
+    glm::dvec3 world = Camera.Pos + offset;
+    if (m_terrain_tool == terrain_tool::holes || m_terrain_tool == terrain_tool::grass)
+    {
+        // the ground itself: the cursor may be over a hole (and what's seen through it), or over the blades of the grass
+        if (false == terrain_cursor(world))
+            return;
+    }
+    else if (glm::length(offset) < 1e-3)
         return;
-    glm::dvec3 const world = Camera.Pos + offset;
     // only when the cursor is over the terrain (avoids editing on a stale depth read)
     if (terrain_at(world.x, world.z) == nullptr)
         return;
@@ -3227,6 +3293,22 @@ void editor_mode::handle_terrain_brush(double Deltatime)
     case terrain_tool::restore:
         shaped = m_streamer.restore_stitching(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.5));
         break;
+    case terrain_tool::holes:
+        // the ground there is no longer ground for the tools which ask about it
+        shaped = m_streamer.cut(world.x, world.z, m_terrain_brush_radius, false == Global.shiftState);
+        break;
+    case terrain_tool::grass:
+    {
+        if (m_streamer.grass_kinds().empty() && false == Global.shiftState)
+        {
+            // the first kind of the presets, so the brush grows something
+            m_streamer.add_grass_kind(heightmap::grass_presets().front());
+            m_grass_kind = 0;
+        }
+        m_grass_kind = std::clamp(m_grass_kind, 0, std::max(0, static_cast<int>(m_streamer.grass_kinds().size()) - 1));
+        m_streamer.grass(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.25), static_cast<std::uint16_t>(m_grass_kind), Global.shiftState);
+        break;
+    }
     default:
         break;
     }
@@ -3236,6 +3318,115 @@ void editor_mode::handle_terrain_brush(double Deltatime)
         ground_tiles.clear();
         forget_ground_shapes();
     }
+}
+
+bool editor_mode::terrain_cursor(glm::dvec3 &World) const
+{
+    // along the ray to what the depth under the cursor shows, or, with nothing there, the ray through the cursor
+    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
+    if (glm::length(offset) > 1e-3)
+        return m_streamer.raycast(Camera.Pos, glm::normalize(offset), 5000.0, World);
+    ImGuiIO const &io = ImGui::GetIO();
+    if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f)
+        return false;
+    auto const inverse = glm::inverse(editor_mode::projection_matrix(io.DisplaySize.x / io.DisplaySize.y) * GfxRenderer->Camera_View_Matrix());
+    glm::vec2 const ndc{io.MousePos.x / io.DisplaySize.x * 2.0f - 1.0f, 1.0f - io.MousePos.y / io.DisplaySize.y * 2.0f};
+    // two points of the ray, whatever the depth range of the projection
+    auto const point = [&](float const Depth) {
+        auto const clip = inverse * glm::vec4(ndc, Depth, 1.0f);
+        return glm::dvec3{glm::vec3{clip} / clip.w};
+    };
+    auto const direction = point(0.5f) - point(0.0f);
+    if (glm::length(direction) < 1e-9)
+        return false;
+    return m_streamer.raycast(GfxRenderer->Camera_Position() + point(0.0f), glm::normalize(direction), 5000.0, World);
+}
+
+void editor_mode::render_grass_ui()
+{
+    auto const &kinds = m_streamer.grass_kinds();
+    if (kinds.empty())
+        ImGui::TextWrapped("%s", STR_C("No kinds of grass yet. Add one of the presets below; the first stroke of the brush adds a meadow."));
+    m_grass_kind = std::clamp(m_grass_kind, 0, std::max(0, static_cast<int>(kinds.size()) - 1));
+    for (std::size_t i = 0; i < kinds.size(); ++i)
+    {
+        ImGui::PushID(static_cast<int>(i));
+        // a swatch of the colours of the kind, from the root to the tip
+        auto *drawlist = ImGui::GetWindowDrawList();
+        auto const corner = ImGui::GetCursorScreenPos();
+        auto const height = ImGui::GetTextLineHeight();
+        auto const colour = [](glm::vec3 const &Colour) { return ImGui::ColorConvertFloat4ToU32(ImVec4(Colour.r, Colour.g, Colour.b, 1.0f)); };
+        drawlist->AddRectFilledMultiColor(corner, ImVec2(corner.x + height, corner.y + height), colour(kinds[i].tip), colour(kinds[i].tip), colour(kinds[i].base), colour(kinds[i].base));
+        ImGui::Dummy(ImVec2(height, height));
+        ImGui::SameLine();
+        if (ImGui::Selectable(format(STR_C("%zu: %s, %.2f m, %.0f blades/m2"), i, kinds[i].name.c_str(), kinds[i].height, kinds[i].density).c_str(), static_cast<int>(i) == m_grass_kind))
+            m_grass_kind = static_cast<int>(i);
+        ImGui::PopID();
+    }
+    if (false == kinds.empty())
+    {
+        // the chosen kind, given to the palette once a field is left
+        if (m_grass_edit_of != m_grass_kind || false == m_grass_edit_active)
+        {
+            m_grass_edit = kinds[m_grass_kind];
+            m_grass_edit_of = m_grass_kind;
+        }
+        auto &kind = m_grass_edit;
+        bool changed = false, active = false;
+        auto const field = [&](bool const Edited) {
+            changed |= ImGui::IsItemDeactivatedAfterEdit() || (Edited && false == ImGui::IsItemActive());
+            active |= ImGui::IsItemActive();
+        };
+        char name[64];
+        std::snprintf(name, sizeof(name), "%s", kind.name.c_str());
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::InputText(STR_C("Name##grass"), name, sizeof(name)))
+            kind.name = name;
+        field(false);
+        ImGui::SetNextItemWidth(200.0f);
+        field(ImGui::ColorEdit3(STR_C("Root colour"), &kind.base.r, ImGuiColorEditFlags_NoInputs));
+        ImGui::SameLine();
+        field(ImGui::ColorEdit3(STR_C("Tip colour"), &kind.tip.r, ImGuiColorEditFlags_NoInputs));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::DragFloat(STR_C("Height (m)##grass"), &kind.height, 0.005f, 0.02f, 2.0f, "%.2f"));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::SliderFloat(STR_C("Height varies by"), &kind.variation, 0.0f, 1.0f, "%.2f"));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Share of the height the blades differ by, either way"));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::DragFloat(STR_C("Blade width (m)"), &kind.width, 0.0002f, 0.002f, 0.05f, "%.3f m"));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::DragFloat(STR_C("Density (blades/m2)"), &kind.density, 0.5f, 1.0f, 300.0f, "%.0f"));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Blades on a square metre painted fully. The renderer draws fewer further away, and wider;\n"
+                                          "gfx.grass.distance and gfx.grass.density in eu07.ini set how far and how many"));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::SliderFloat(STR_C("Lean"), &kind.bend, 0.0f, 1.0f, "%.2f"));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("How far the tips of the blades lean over, share of their height; the wind adds to it"));
+        m_grass_edit_active = active;
+        if (changed)
+        {
+            kind.height = std::max(0.02f, kind.height);
+            kind.width = std::max(0.002f, kind.width);
+            kind.density = std::max(1.0f, kind.density);
+            m_streamer.grass_kind(static_cast<std::uint16_t>(m_grass_kind), kind);
+        }
+    }
+    // the presets, added to the palette
+    ImGui::TextUnformatted(STR_C("Add:"));
+    for (auto const &preset : heightmap::grass_presets())
+    {
+        ImGui::SameLine();
+        if (ImGui::SmallButton(STR(preset.name.c_str()).c_str()))
+        {
+            m_grass_kind = m_streamer.add_grass_kind(preset);
+            m_grass_edit_of = -1;
+        }
+    }
+    ImGui::TextDisabled("%s", STR_C("A chunk holds up to 4 kinds of grass. LMB grows the chosen kind, Shift+LMB takes all grass away"));
+    if (false == Global.gfx_grass)
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("The grass isn't drawn: gfx.grass is off"));
 }
 
 void editor_mode::fill_terrain_area()

@@ -229,10 +229,14 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		Buttons.push_back({icon::profile, STR_C("Level"), nullptr, STR_C("LMB leads the terrain under the brush to the target height, Ctrl+LMB takes the target height from what's under the cursor"),
 		                   chosen(terrain_tool::level), choose(terrain_tool::level)});
 		Buttons.push_back({icon::brush, STR_C("Paint"), nullptr, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"), chosen(terrain_tool::paint), choose(terrain_tool::paint)});
+		Buttons.push_back({icon::grass, STR_C("Grass"), nullptr, STR_C("LMB grows the kind of grass chosen in the grass palette, Shift+LMB takes the grass away"), chosen(terrain_tool::grass),
+		                   choose(terrain_tool::grass)});
 		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), chosen(terrain_tool::chunks), choose(terrain_tool::chunks)});
 		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
 		Buttons.push_back({icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
 		                   choose(terrain_tool::fill)});
+		Buttons.push_back({icon::hole, STR_C("Holes"), nullptr, STR_C("LMB cuts a hole in the terrain under the brush (portals of tunnels), Shift+LMB closes it"), chosen(terrain_tool::holes),
+		                   choose(terrain_tool::holes)});
 		auto const orthophoto{m_orthophoto.enabled()};
 		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
 		                   [this, orthophoto]() { m_orthophoto.enabled(false == orthophoto); }, true});

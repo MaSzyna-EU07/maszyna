@@ -35,6 +35,7 @@ double constexpr height_step{0.005}; // metres, quantum of the stored heights
 std::size_t constexpr max_chunk_layers{8}; // materials painted over a single chunk
 std::uint16_t constexpr no_layer{0xffff};
 int constexpr default_paint_samples{250}; // paint samples along the side of a chunk, less one: a sample per metre
+std::size_t constexpr max_chunk_grass{4}; // kinds of grass growing on a single chunk
 
 // point spacings a chunk can have, finest first
 std::array<float, 4> constexpr spacings{0.5f, 1.f, 2.f, 5.f};
@@ -43,6 +44,9 @@ float constexpr default_spacing{2.f};
 int cells_for(float const Spacing);
 // the allowed spacing closest to specified one
 float valid_spacing(float const Spacing);
+// samples along the side of a chunk less one, of the holes and the grass of a chunk with specified cells: a sample a metre,
+// or one at every grid point of a finer grid
+int detail_samples(int const Cells);
 
 using chunk_key = std::pair<int, int>;
 using pack_key = std::pair<int, int>;
@@ -70,8 +74,22 @@ struct chunk_data
 	int paint{0}; // paint samples along a side, less one. 0: the chunk is covered with its first layer alone
 	std::array<std::uint16_t, max_chunk_layers> layers; // indices of the materials in the terrain palette, no_layer for unused
 	std::vector<std::uint8_t> weights; // planar, (paint + 1)^2 per used layer, rows like the heights; weights of a sample add up to 255
+	// holes cut in the ground, for the portals of tunnels and the like: (holes + 1)^2 samples, rows like the heights, 255 where
+	// the ground is cut and 0 where it stays. the surface is cut where the value led between the samples is over the half.
+	// 0: no holes
+	int holes{0};
+	std::vector<std::uint8_t> hole_mask;
+	// grass grown on the chunk by the renderer: the density (0..255) of up to 4 kinds of the grass palette at (grass + 1)^2
+	// samples, planar per used kind, rows like the heights. the densities of a sample add up to 255 at most. 0: no grass
+	int grass{0};
+	std::array<std::uint16_t, max_chunk_grass> grass_kinds; // indices of the kinds in the grass palette, no_layer for unused
+	std::vector<std::uint8_t> grass_density;
 
-	chunk_data() { layers.fill(no_layer); }
+	chunk_data()
+	{
+		layers.fill(no_layer);
+		grass_kinds.fill(no_layer);
+	}
 
 	int side() const { return cells + 1; }
 	double spacing() const { return chunk_size / cells; }
@@ -101,6 +119,28 @@ struct chunk_data
 	void ensure_paint(int const Samples = default_paint_samples);
 	// drops the layers left without weight anywhere, and the paint samples altogether when a single layer is left
 	void compact_layers();
+
+	// holes
+	bool has_holes() const { return holes > 0 && hole_mask.size() == static_cast<std::size_t>(holes + 1) * (holes + 1); }
+	// 0..1, how much the point is cut, led between the samples; the surface is cut where it's over the half
+	float hole_value(double const X, double const Z) const;
+	bool hole_at(double const X, double const Z) const { return has_holes() && hole_value(X, Z) > 0.5f; }
+	// true if the whole of the grid cells from (Ix0, Iz0) to (Ix1, Iz1) (exclusive) is cut out
+	bool cut_cells(int const Ix0, int const Iz0, int const Ix1, int const Iz1) const;
+	// gives the chunk a hole mask with nothing cut, if it has none
+	void ensure_holes();
+	// drops the hole mask if nothing is cut
+	void compact_holes();
+
+	// grass
+	// number of kinds of grass in use, the used ones come first
+	std::size_t grass_count() const;
+	// grass slot of specified kind of the palette, or -1
+	int grass_slot_of(std::uint16_t const Kind) const;
+	// gives the chunk grass samples (with no kind) if it has none yet
+	void ensure_grass();
+	// drops the kinds left without density anywhere, and the samples altogether when no grass is left
+	void compact_grass();
 };
 
 using chunk_ptr = std::shared_ptr<chunk_data const>;
@@ -171,6 +211,22 @@ struct layer_def
 	float rotation{0.f}; // degrees the textures are turned by, counterclockwise seen from above
 };
 
+// kind of grass of the grass palette: blades the renderer makes up where the grass is painted
+struct grass_def
+{
+	std::string name;
+	glm::vec3 base{0.22f, 0.33f, 0.09f}; // colour at the root of the blades, sRGB 0..1
+	glm::vec3 tip{0.58f, 0.68f, 0.27f}; // colour at the tips
+	float height{0.25f}; // metres, of an average blade
+	float variation{0.45f}; // share of the height the blades differ by, either way
+	float width{0.02f}; // metres, of a blade at its root
+	float density{90.f}; // blades per square metre where the kind is painted fully
+	float bend{0.3f}; // how far the tips lean over, share of the height
+};
+
+// a few kinds to start the palette with
+std::vector<grass_def> const &grass_presets();
+
 // description of the terrain, terrain.yaml
 struct manifest
 {
@@ -181,6 +237,7 @@ struct manifest
 	float spacing{default_spacing}; // point spacing of new chunks
 	std::vector<water_body> water;
 	std::vector<modifier> modifiers;
+	std::vector<grass_def> grass; // the grass palette
 };
 
 bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Error = nullptr);
@@ -202,6 +259,8 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 //   'HBAS' heights before the modifiers, as 'HGHT'
 //   'HADJ' touch-ups over the modifiers, as 'HGHT' (only with 'HBAS'; older versions skip it and keep the heights)
 //   'SPLT' paint weights: uint8 per sample per used layer, planar
+//   'HOLE' holes: uint16 samples less one, then uint8 per sample (255: cut)
+//   'GRAS' grass: uint16 samples less one, uint16 kinds[4], then uint8 density per sample per used kind, planar
 class pack_file
 {
   public:
@@ -247,12 +306,17 @@ struct mesh
 	float radius{0.f}; // from the centre of the vertices
 	glm::dvec3 centre{0.0};
 	glm::dvec3 low{0.0}, high{0.0}; // world bounds of the grid, the skirts included
+	// the chunk has holes: the cells cut out are left out of the indices (their triangles made empty, so the count of the
+	// indices is the same as without the holes), the indices are its own
+	bool cut{false};
 };
 // strides the grid of a chunk with specified cells can be drawn with
 int max_stride(int const Cells);
 void build_mesh(chunk_data const &Chunk, int const Stride, glm::dvec3 const &Origin, height_source const &Outside, mesh &Out);
 // indices of the mesh of a chunk with specified cells and stride; the same for every chunk of these
 void build_indices(int const Cells, int const Stride, gfx::index_array &Out);
+// leaves the cells of the chunk cut out entirely, and the skirts along them, out of the indices made by build_indices()
+void cut_indices(chunk_data const &Chunk, int const Stride, gfx::index_array &Indices);
 // vertices the mesh of a chunk with specified cells and stride has
 std::size_t mesh_vertex_count(int const Cells, int const Stride);
 

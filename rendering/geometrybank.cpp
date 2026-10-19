@@ -309,6 +309,27 @@ geometry_bank::replace( gfx::vertex_array &Vertices, userdata_array &Userdata, g
     return true;
 }
 
+// replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts
+bool
+geometry_bank::replace( gfx::index_array &Indices, gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return false; }
+
+    auto &chunk = gfx::geometry_bank::chunk( Geometry );
+    // the place of the chunk in the buffers of the bank is kept, so the sizes have to stay
+    if( ( Indices.size() != chunk.indices.size() )
+     || ( Vertices.size() != chunk.vertices.size() )
+     || ( Userdata.size() != chunk.userdata.size() ) ) {
+        return false;
+    }
+    chunk.indices.swap( Indices );
+    chunk.vertices.swap( Vertices );
+    chunk.userdata.swap( Userdata );
+    // template method implementation; the chunk is uploaded whole the next time it's drawn
+    replace_( Geometry );
+    return true;
+}
+
 // adds supplied vertex data at the end of specified chunk
 bool
 geometry_bank::append( gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
@@ -439,6 +460,13 @@ bool
 geometrybank_manager::replace( gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry, std::size_t const Offset ) {
 
     return bank( Geometry ).first->replace( Vertices, Userdata, Geometry, Offset );
+}
+
+// replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts
+bool
+geometrybank_manager::replace( gfx::index_array &Indices, gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
+
+    return bank( Geometry ).first->replace( Indices, Vertices, Userdata, Geometry );
 }
 
 // adds supplied vertex data at the end of specified chunk

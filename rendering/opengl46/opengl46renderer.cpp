@@ -1108,6 +1108,12 @@ void opengl46_renderer::draw_debug_ui()
         if (Global.gfx_contactshadows > 0)
             ImGui::TextUnformatted("(drawn anyway for the contact shadows, gfx.contactshadows)");
         ImGui::Checkbox("walk the scene once for its depth and colour, drawing both from a record (gfx.depthprepass.replay)", &Global.gfx_depthprepass_replay);
+        ImGui::Checkbox("grass of the heightmap terrain (gfx.grass)", &Global.gfx_grass);
+        if (Global.gfx_grass)
+        {
+            ImGui::SliderFloat("reach of the grass, m (gfx.grass.distance)", &Global.gfx_grass_distance, 10.f, 250.f, "%.0f");
+            ImGui::SliderFloat("density of the grass (gfx.grass.density)", &Global.gfx_grass_density, 0.1f, 2.f, "%.2f");
+        }
         auto info{m_instancecull.info()};
         if (Global.gfx_gpucull_shadows)
         {
@@ -1427,6 +1433,13 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		}
 		m_scenedepthdrawn = false;
 		m_indirectcolourpending = false;
+
+		// the grass of the terrain, opaque, over the ground drawn
+		if (vp.main && (false == Global.bWireFrame))
+		{
+			gpupart("grass");
+			Render_grass(future);
+		}
 
         Render_vr_models();
 
@@ -2742,6 +2755,14 @@ bool opengl46_renderer::Replace(gfx::vertex_array &Vertices, gfx::userdata_array
 	return m_geometry.replace(Vertices, Userdata, Geometry, Offset);
 }
 
+// replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts
+bool opengl46_renderer::Replace_Indexed(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry)
+{
+	// NOTE: we expect indexed geometry to come with calculated tangents
+	m_chunkspheres.erase(static_cast<std::uint64_t>(Geometry));
+	return m_geometry.replace(Indices, Vertices, Userdata, Geometry);
+}
+
 // adds supplied vertex data at the end of specified chunk
 bool opengl46_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type)
 {
@@ -3041,18 +3062,24 @@ IMaterial const *opengl46_renderer::Material(material_handle const Material) con
 	return &m_materials.material(Material);
 }
 
-material_handle opengl46_renderer::Terrain_Material(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement)
+material_handle opengl46_renderer::Terrain_Material(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
+                                                     int const HoleSamples, std::uint8_t const *Holes)
 {
-	auto const material{m_terrainmaterials.make(Reuse, Layers, Samples, Weights, Placement)};
+	auto const material{m_terrainmaterials.make(Reuse, Layers, Samples, Weights, Placement, HoleSamples, Holes)};
 	if (material != null_handle)
 		return material;
 	// the terrain shader can't be used, the chunk makes do with a plain material
-	return gfx_renderer::Terrain_Material(Reuse, Layers, Samples, Weights, Placement);
+	return gfx_renderer::Terrain_Material(Reuse, Layers, Samples, Weights, Placement, HoleSamples, Holes);
 }
 
 void opengl46_renderer::Terrain_Release(material_handle const Material)
 {
 	m_terrainmaterials.release(Material);
+}
+
+void opengl46_renderer::Terrain_Grass(std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks)
+{
+	m_grass.update(Kinds, Chunks);
 }
 
 opengl_material &opengl46_renderer::Material(material_handle const Material)
@@ -6799,6 +6826,27 @@ void opengl46_renderer::Render(TMemCell *Memcell)
 	}
 
 	::glPopMatrix();
+}
+
+void opengl46_renderer::Render_grass(glm::mat4 const &Future)
+{
+	if (false == Global.gfx_grass || m_grass.empty())
+		return;
+	glDebug("render grass");
+	// the blades bring their colour, the lights do the rest
+	model_ubs.future = Future;
+	model_ubs.param[0] = glm::vec4(1.f);
+	model_ubs.param[1] = glm::vec4(1.f, 1.f, 0.f, 1.f); // diffuse, specular, reflection, glossiness
+	model_ubs.param[2] = glm::vec4(0.f);
+	model_ubs.emission = 0.f;
+	model_ubs.alpha_mult = 1.f;
+	model_ubs.opacity = 0.5f;
+	glm::mat4 const view{OpenGLMatrices.data(GL_MODELVIEW)};
+	auto const triangles{m_grass.render(m_renderpass.pass_camera, view, [this](glm::mat4 const &Modelview) {
+		model_ubs.set_modelview(Modelview);
+		model_ubo->update(model_ubs);
+	})};
+	m_renderpass.draw_stats.triangles += static_cast<int>(triangles);
 }
 
 void opengl46_renderer::Render_particles()

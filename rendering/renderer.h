@@ -9,6 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
+#include <cstdint>
+
 #include "rendering/geometrybank.h"
 #include "interfaces/IMaterial.h"
 #include "interfaces/ITexture.h"
@@ -29,6 +32,35 @@ struct terrain_layer
 	material_handle material{null_handle};
 	float size{0.f};
 	float rotation{0.f}; // degrees the textures are turned by
+};
+
+// kind of grass grown over the heightmap terrain (heightmap::grass_def), colours in linear rgb
+struct grass_kind
+{
+	glm::vec3 base{0.f}; // at the root of the blades
+	glm::vec3 tip{0.f};
+	float height{0.3f}; // metres
+	float variation{0.4f}; // share of the height the blades differ by, either way
+	float width{0.012f}; // metres, at the root
+	float density{60.f}; // blades per square metre where painted fully
+	float bend{0.3f}; // share of the height the tips lean over by
+};
+
+// a chunk of the heightmap terrain the grass grows on, see gfx_renderer::Terrain_Grass()
+struct grass_chunk
+{
+	std::uint64_t id{0}; // the same for the same chunk, as long as it's in memory
+	std::uint64_t version{0}; // changes with every change of what the grass is made of
+	glm::dvec2 corner{0.0}; // x, z
+	float size{0.f}; // metres along a side
+	float low{0.f}, high{0.f}; // the lowest and the highest point
+	int cells{0}; // quads of the grid along a side
+	float const *heights{nullptr}; // (cells + 1)^2, rows of growing z
+	int samples{0}; // grass samples along a side less one
+	std::uint8_t const *density{nullptr}; // (samples + 1)^2 per kind, planar
+	std::array<int, 4> kinds{-1, -1, -1, -1}; // indices of the kinds of the samples, -1 unused
+	int holes{0}; // hole samples along a side less one, 0: none
+	std::uint8_t const *hole_mask{nullptr}; // (holes + 1)^2, 255: cut
 };
 } // namespace gfx
 
@@ -57,6 +89,9 @@ public:
     virtual auto Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) -> gfx::geometry_handle = 0;
     // replaces data of specified chunk with the supplied vertex data, starting from specified offset
     virtual auto Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) -> bool = 0;
+    // replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts.
+    // returns: false if it wasn't replaced (the counts differ, or the backend can't)
+    virtual auto Replace_Indexed( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool { return false; }
     // adds supplied vertex data at the end of specified chunk
     virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
     // provides direct access to index data of specfied chunk
@@ -78,10 +113,17 @@ public:
     // Weights: (Samples + 1)^2 values per layer, planar, rows of growing z, the weights of a sample adding up to 255; null with a single layer.
     // Placement: corner of the chunk (x, z) in the texture coordinates of its mesh, and the size of the chunk.
     // Reuse: a material made by this call before, to be filled anew, or null_handle.
+    // Holes: (HoleSamples + 1)^2 values (255: the ground is cut there), rows like the weights; null without holes. the cells
+    // cut out entirely are left out of the geometry, the material cuts the rest of the openings.
     // returns: the material. backends which can't blend give back the material of the layer covering the most
-    virtual auto Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement ) -> material_handle;
+    virtual auto Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
+                                   int const HoleSamples = 0, std::uint8_t const *Holes = nullptr ) -> material_handle;
     // gives back a material made by Terrain_Material, once its chunk is gone
     virtual void Terrain_Release( material_handle const Material ) {}
+    // heightmap terrain: the grass to draw, the kinds of the grass palette and the chunks near the camera which have grass.
+    // the data of the chunks is read during the call only; a chunk the renderer has with the same id and version isn't read
+    // again. chunks left out are dropped. backends which can't draw grass ignore it
+    virtual void Terrain_Grass( std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks ) {}
     // shader methods
     virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> = 0;
     // texture methods

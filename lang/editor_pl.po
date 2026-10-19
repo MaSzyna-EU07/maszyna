@@ -9949,3 +9949,128 @@ msgstr "Dobudowuj teren przy układaniu"
 
 msgid "Where a track is laid past the edge of the terrain, the terrain model is made around the cursor as it goes"
 msgstr "Gdy tor wychodzi poza teren, NMT dobudowuje się wokół kursora na bieżąco"
+
+# scenery editor: holes and grass of the heightmap terrain
+
+msgid "%zu: %s, %.2f m, %.0f blades/m2"
+msgstr "%zu: %s, %.2f m, %.0f źdźbeł/m2"
+
+msgid "A chunk holds up to 4 kinds of grass. LMB grows the chosen kind, Shift+LMB takes all grass away"
+msgstr "Kawałek mieści do 4 rodzajów trawy. LPM sieje wybrany rodzaj, Shift+LPM usuwa całą trawę"
+
+msgid "Add:"
+msgstr "Dodaj:"
+
+msgid "Blade width (m)"
+msgstr "Szerokość źdźbła (m)"
+
+msgid "Blades on a square metre painted fully. The renderer draws fewer further away, and wider;\ngfx.grass.distance and gfx.grass.density in eu07.ini set how far and how many"
+msgstr "Źdźbła na metrze kwadratowym w pełni pomalowanym. Dalej renderer rysuje ich mniej, ale szerszych;\ngfx.grass.distance i gfx.grass.density w eu07.ini ustalają, jak daleko i ile"
+
+msgid "Clear the grass"
+msgstr "Usuń trawę"
+
+msgid "Close the hole"
+msgstr "Zamknij dziurę"
+
+msgid "Cut a hole"
+msgstr "Wytnij dziurę"
+
+msgid "Cuts the ground within the outline away, e.g. for the portal of a tunnel"
+msgstr "Wycina teren wewnątrz obrysu, np. pod portal tunelu"
+
+msgid "Density (blades/m2)"
+msgstr "Gęstość (źdźbła/m2)"
+
+msgid "Grass grown: %s"
+msgstr "Wysiano trawę: %s"
+
+msgid "Grass taken away from the outlined area"
+msgstr "Usunięto trawę z obrysowanego obszaru"
+
+msgid "Grass"
+msgstr "Trawa"
+
+msgid "Grow grass"
+msgstr "Posiej trawę"
+
+msgid "Grows the kind of grass chosen in the Grass section within the outline"
+msgstr "Sieje wewnątrz obrysu rodzaj trawy wybrany w sekcji Trawa"
+
+msgid "Height (m)##grass"
+msgstr "Wysokość (m)##grass"
+
+msgid "Height varies by"
+msgstr "Rozrzut wysokości"
+
+msgid "Hole closed in the outlined area"
+msgstr "Zamknięto dziurę w obrysowanym obszarze"
+
+msgid "Hole cut in the outlined area"
+msgstr "Wycięto dziurę w obrysowanym obszarze"
+
+msgid "Holes"
+msgstr "Dziury"
+
+msgid "How far the tips of the blades lean over, share of their height; the wind adds to it"
+msgstr "Jak bardzo czubki źdźbeł się pochylają, jako część ich wysokości; wiatr dokłada swoje"
+
+msgid "LMB cuts a hole in the terrain under the brush (portals of tunnels), Shift+LMB closes it"
+msgstr "LPM wycina dziurę w terenie pod pędzlem (portale tuneli), Shift+LPM ją zamyka"
+
+msgid "LMB grows the kind of grass chosen in the grass palette, Shift+LMB takes the grass away"
+msgstr "LPM sieje rodzaj trawy wybrany w palecie traw, Shift+LPM usuwa trawę"
+
+msgid "Lean"
+msgstr "Pochylenie"
+
+msgid "Name##grass"
+msgstr "Nazwa##grass"
+
+msgid "No grass under the outline"
+msgstr "Pod obrysem nie ma trawy"
+
+msgid "No hole under the outline"
+msgstr "Pod obrysem nie ma dziury"
+
+msgid "No kinds of grass yet. Add one of the presets below; the first stroke of the brush adds a meadow."
+msgstr "Nie ma jeszcze rodzajów trawy. Dodaj któryś z gotowych poniżej; pierwsze pociągnięcie pędzla doda łąkę."
+
+msgid "Nothing cut: no chunk under the outline"
+msgstr "Nic nie wycięto: pod obrysem nie ma kawałka terenu"
+
+msgid "Nothing grown: no chunk under the outline, or no room for another kind of grass"
+msgstr "Nic nie wysiano: pod obrysem nie ma kawałka terenu albo nie ma miejsca na kolejny rodzaj trawy"
+
+msgid "Openings in the ground for the portals of tunnels, cuttings under bridges and the like. With the Holes tool LMB cuts the ground under the brush and Shift+LMB closes it; the brush stays on the ground also over an opening. An area outlined with the Fill tool can be cut or closed in the Fill section."
+msgstr "Otwory w terenie pod portale tuneli, przejścia pod mostami i podobne. Narzędziem Dziury LPM wycina teren pod pędzlem, a Shift+LPM go zamyka; pędzel trzyma się terenu także nad otworem. Obszar obrysowany narzędziem Wypełnienie można wyciąć albo zamknąć w sekcji Wypełnienie."
+
+msgid "Root colour"
+msgstr "Kolor u nasady"
+
+msgid "Share of the height the blades differ by, either way"
+msgstr "O jaką część wysokości źdźbła różnią się w górę i w dół"
+
+msgid "The grass isn't drawn: gfx.grass is off"
+msgstr "Trawa nie jest rysowana: gfx.grass jest wyłączone"
+
+msgid "The holes follow the ground every metre (every grid point of finer chunks), whatever the drawn grid"
+msgstr "Dziury idą za terenem co metr (co punkt siatki w gęstszych kawałkach), niezależnie od rysowanej siatki"
+
+msgid "Tip colour"
+msgstr "Kolor czubka"
+
+msgid "meadow"
+msgstr "łąka"
+
+msgid "lawn"
+msgstr "trawnik"
+
+msgid "dry grass"
+msgstr "sucha trawa"
+
+msgid "tall grass"
+msgstr "wysoka trawa"
+
+msgid "weeds"
+msgstr "chwasty"

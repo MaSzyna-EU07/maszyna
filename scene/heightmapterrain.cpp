@@ -39,6 +39,8 @@ std::uint32_t constexpr tag_heights{fourcc('H', 'G', 'H', 'T')};
 std::uint32_t constexpr tag_base{fourcc('H', 'B', 'A', 'S')};
 std::uint32_t constexpr tag_paint{fourcc('S', 'P', 'L', 'T')};
 std::uint32_t constexpr tag_adjust{fourcc('H', 'A', 'D', 'J')};
+std::uint32_t constexpr tag_holes{fourcc('H', 'O', 'L', 'E')};
+std::uint32_t constexpr tag_grass{fourcc('G', 'R', 'A', 'S')};
 
 std::uint32_t constexpr pack_magic{fourcc('T', 'C', 'H', '1')};
 std::uint32_t constexpr pack_version{1};
@@ -186,6 +188,11 @@ float valid_spacing(float const Spacing)
 			best = spacing;
 		}
 	return best;
+}
+
+int detail_samples(int const Cells)
+{
+	return std::max(default_paint_samples, Cells);
 }
 
 chunk_key chunk_at(double const X, double const Z)
@@ -429,6 +436,111 @@ void chunk_data::compact_layers()
 	weights = std::move(kept);
 }
 
+float chunk_data::hole_value(double const X, double const Z) const
+{
+	if (false == has_holes())
+		return 0.f;
+	auto const low{corner()};
+	auto const step{chunk_size / holes};
+	auto const fx{std::clamp((X - low.x) / step, 0.0, static_cast<double>(holes))};
+	auto const fz{std::clamp((Z - low.y) / step, 0.0, static_cast<double>(holes))};
+	auto const ix{std::min(static_cast<int>(fx), holes - 1)};
+	auto const iz{std::min(static_cast<int>(fz), holes - 1)};
+	auto const tx{fx - ix}, tz{fz - iz};
+	auto const side{static_cast<std::size_t>(holes + 1)};
+	auto const at = [&](int const X_, int const Z_) { return hole_mask[static_cast<std::size_t>(Z_) * side + X_] / 255.0; };
+	return static_cast<float>((at(ix, iz) * (1.0 - tx) + at(ix + 1, iz) * tx) * (1.0 - tz) + (at(ix, iz + 1) * (1.0 - tx) + at(ix + 1, iz + 1) * tx) * tz);
+}
+
+bool chunk_data::cut_cells(int const Ix0, int const Iz0, int const Ix1, int const Iz1) const
+{
+	if (false == has_holes() || cells <= 0)
+		return false;
+	// every sample the surface of the cells is led from has to be cut, then all of it is
+	auto const ratio{static_cast<double>(holes) / cells};
+	auto const range = [&](int const From, int const To) {
+		return std::make_pair(std::clamp(static_cast<int>(std::floor(From * ratio + 1e-9)), 0, holes), std::clamp(static_cast<int>(std::ceil(To * ratio - 1e-9)), 0, holes));
+	};
+	auto const [x0, x1]{range(Ix0, Ix1)};
+	auto const [z0, z1]{range(Iz0, Iz1)};
+	auto const side{static_cast<std::size_t>(holes + 1)};
+	for (int z = z0; z <= z1; ++z)
+		for (int x = x0; x <= x1; ++x)
+			if (hole_mask[static_cast<std::size_t>(z) * side + x] < 128)
+				return false;
+	return true;
+}
+
+void chunk_data::ensure_holes()
+{
+	if (has_holes())
+		return;
+	holes = detail_samples(cells);
+	hole_mask.assign(static_cast<std::size_t>(holes + 1) * (holes + 1), 0);
+}
+
+void chunk_data::compact_holes()
+{
+	if (has_holes() && std::any_of(hole_mask.begin(), hole_mask.end(), [](std::uint8_t const Value) { return Value != 0; }))
+		return;
+	holes = 0;
+	hole_mask.clear();
+}
+
+std::size_t chunk_data::grass_count() const
+{
+	if (grass <= 0)
+		return 0;
+	std::size_t count{0};
+	while (count < grass_kinds.size() && grass_kinds[count] != no_layer)
+		++count;
+	return count;
+}
+
+int chunk_data::grass_slot_of(std::uint16_t const Kind) const
+{
+	for (std::size_t slot = 0; slot < grass_count(); ++slot)
+		if (grass_kinds[slot] == Kind)
+			return static_cast<int>(slot);
+	return -1;
+}
+
+void chunk_data::ensure_grass()
+{
+	if (grass > 0)
+		return;
+	grass = default_paint_samples;
+	grass_kinds.fill(no_layer);
+	grass_density.clear();
+}
+
+void chunk_data::compact_grass()
+{
+	if (grass <= 0)
+		return;
+	auto const samples{static_cast<std::size_t>(grass + 1) * (grass + 1)};
+	auto const count{grass_count()};
+	std::vector<std::uint8_t> kept;
+	std::array<std::uint16_t, max_chunk_grass> keptkinds;
+	keptkinds.fill(no_layer);
+	std::size_t used{0};
+	for (std::size_t slot = 0; slot < count; ++slot)
+	{
+		auto const begin{grass_density.begin() + slot * samples};
+		if (slot * samples + samples > grass_density.size() || std::all_of(begin, begin + samples, [](std::uint8_t const Value) { return Value == 0; }))
+			continue;
+		kept.insert(kept.end(), begin, begin + samples);
+		keptkinds[used++] = grass_kinds[slot];
+	}
+	grass_kinds = keptkinds;
+	grass_density = std::move(kept);
+	if (used == 0)
+	{
+		grass = 0;
+		grass_density.clear();
+	}
+}
+
 // modifiers
 
 std::pair<glm::dvec2, glm::dvec2> modifier::bounds() const
@@ -541,6 +653,19 @@ std::optional<modifier_shape::effect> modifier_shape::evaluate(double const X, d
 
 // manifest
 
+std::vector<grass_def> const &grass_presets()
+{
+	static std::vector<grass_def> const presets{
+	    // name, root, tip, height, variation, width, density, bend
+	    {"meadow", {0.22f, 0.33f, 0.09f}, {0.58f, 0.68f, 0.27f}, 0.25f, 0.45f, 0.020f, 90.f, 0.30f},
+	    {"lawn", {0.18f, 0.30f, 0.08f}, {0.42f, 0.58f, 0.20f}, 0.07f, 0.30f, 0.012f, 200.f, 0.15f},
+	    {"dry grass", {0.36f, 0.32f, 0.16f}, {0.80f, 0.72f, 0.45f}, 0.30f, 0.45f, 0.016f, 70.f, 0.40f},
+	    {"tall grass", {0.18f, 0.27f, 0.07f}, {0.60f, 0.66f, 0.30f}, 0.70f, 0.35f, 0.022f, 40.f, 0.45f},
+	    {"weeds", {0.16f, 0.25f, 0.08f}, {0.45f, 0.55f, 0.22f}, 0.16f, 0.60f, 0.030f, 30.f, 0.25f},
+	};
+	return presets;
+}
+
 bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Error)
 {
 	try
@@ -615,6 +740,30 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 				if (item.points.size() >= 2)
 					result.modifiers.push_back(std::move(item));
 			}
+		if (auto const node{document["grass"]}; node && node.IsSequence())
+			for (auto const &entry : node)
+			{
+				grass_def kind;
+				auto const colour = [](YAML::Node const &Node, glm::vec3 &Colour) {
+					if (Node && Node.IsSequence() && Node.size() >= 3)
+						Colour = glm::clamp(glm::vec3{Node[0].as<float>(), Node[1].as<float>(), Node[2].as<float>()}, glm::vec3{0.f}, glm::vec3{1.f});
+				};
+				if (auto const name{entry["name"]})
+					kind.name = name.as<std::string>();
+				colour(entry["base"], kind.base);
+				colour(entry["tip"], kind.tip);
+				if (auto const height{entry["height"]})
+					kind.height = std::max(0.01f, height.as<float>());
+				if (auto const variation{entry["variation"]})
+					kind.variation = std::clamp(variation.as<float>(), 0.f, 1.f);
+				if (auto const width{entry["width"]})
+					kind.width = std::max(0.001f, width.as<float>());
+				if (auto const density{entry["density"]})
+					kind.density = std::max(0.f, density.as<float>());
+				if (auto const bend{entry["bend"]})
+					kind.bend = std::clamp(bend.as<float>(), 0.f, 1.f);
+				result.grass.push_back(std::move(kind));
+			}
 		Manifest = std::move(result);
 		return true;
 	}
@@ -685,6 +834,24 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 			for (auto const &point : item.points)
 				out << YAML::Flow << YAML::BeginSeq << point.position.x << point.position.y << point.formation << point.half_width << YAML::EndSeq;
 			out << YAML::EndSeq;
+			out << YAML::EndMap;
+		}
+		out << YAML::EndSeq;
+	}
+	if (false == Manifest.grass.empty())
+	{
+		out << YAML::Key << "grass" << YAML::Value << YAML::BeginSeq;
+		for (auto const &kind : Manifest.grass)
+		{
+			out << YAML::BeginMap;
+			out << YAML::Key << "name" << YAML::Value << kind.name;
+			out << YAML::Key << "base" << YAML::Value << YAML::Flow << YAML::BeginSeq << kind.base.r << kind.base.g << kind.base.b << YAML::EndSeq;
+			out << YAML::Key << "tip" << YAML::Value << YAML::Flow << YAML::BeginSeq << kind.tip.r << kind.tip.g << kind.tip.b << YAML::EndSeq;
+			out << YAML::Key << "height" << YAML::Value << kind.height;
+			out << YAML::Key << "variation" << YAML::Value << kind.variation;
+			out << YAML::Key << "width" << YAML::Value << kind.width;
+			out << YAML::Key << "density" << YAML::Value << kind.density;
+			out << YAML::Key << "bend" << YAML::Value << kind.bend;
 			out << YAML::EndMap;
 		}
 		out << YAML::EndSeq;
@@ -844,7 +1011,7 @@ std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *E
 
 	auto chunk{std::make_shared<chunk_data>()};
 	chunk->key = Key;
-	slice const *heights{nullptr}, *base{nullptr}, *adjust{nullptr}, *paint{nullptr};
+	slice const *heights{nullptr}, *base{nullptr}, *adjust{nullptr}, *paint{nullptr}, *holes{nullptr}, *grass{nullptr};
 	bool header{false};
 	for (auto const &slice : slices)
 	{
@@ -871,6 +1038,10 @@ std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *E
 			adjust = &slice;
 		else if (slice.tag == tag_paint)
 			paint = &slice;
+		else if (slice.tag == tag_holes)
+			holes = &slice;
+		else if (slice.tag == tag_grass)
+			grass = &slice;
 		// slices of unknown kinds are left for newer versions of the simulator
 	}
 	if (false == header || heights == nullptr || chunk->cells <= 0 || chunk->cells > 4096)
@@ -891,6 +1062,34 @@ std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *E
 		auto const expected{static_cast<std::size_t>(chunk->paint + 1) * (chunk->paint + 1) * chunk->layer_count()};
 		if (paint == nullptr || false == load(*paint, chunk->weights) || chunk->weights.size() != expected)
 			return fail("damaged paint");
+	}
+	if (holes != nullptr)
+	{
+		if (false == load(*holes, data))
+			return fail("damaged holes");
+		reader input{data.data(), data.size()};
+		std::uint16_t samples{0};
+		input.get(samples);
+		auto const count{static_cast<std::size_t>(samples + 1) * (samples + 1)};
+		chunk->holes = samples;
+		chunk->hole_mask.resize(count);
+		if (samples == 0 || input.left() != count || false == input.get(chunk->hole_mask.data(), count))
+			return fail("damaged holes");
+	}
+	if (grass != nullptr)
+	{
+		if (false == load(*grass, data))
+			return fail("damaged grass");
+		reader input{data.data(), data.size()};
+		std::uint16_t samples{0};
+		input.get(samples);
+		for (auto &kind : chunk->grass_kinds)
+			input.get(kind);
+		chunk->grass = samples;
+		auto const count{static_cast<std::size_t>(samples + 1) * (samples + 1) * chunk->grass_count()};
+		chunk->grass_density.resize(count);
+		if (samples == 0 || input.left() != count || false == input.get(chunk->grass_density.data(), count))
+			return fail("damaged grass");
 	}
 	return chunk;
 }
@@ -958,6 +1157,22 @@ bool write_pack(std::string const &Path, pack_key const &Key, std::vector<chunk_
 		}
 		if (chunk->paint > 0 && chunk->layer_count() > 1)
 			add(table, tag_paint, chunk->weights);
+		if (chunk->has_holes())
+		{
+			data.clear();
+			put<std::uint16_t>(data, static_cast<std::uint16_t>(chunk->holes));
+			data.insert(data.end(), chunk->hole_mask.begin(), chunk->hole_mask.end());
+			add(table, tag_holes, data);
+		}
+		if (auto const kinds{chunk->grass_count()}; kinds > 0 && chunk->grass_density.size() == static_cast<std::size_t>(chunk->grass + 1) * (chunk->grass + 1) * kinds)
+		{
+			data.clear();
+			put<std::uint16_t>(data, static_cast<std::uint16_t>(chunk->grass));
+			for (auto const kind : chunk->grass_kinds)
+				put<std::uint16_t>(data, kind);
+			data.insert(data.end(), chunk->grass_density.begin(), chunk->grass_density.end());
+			add(table, tag_grass, data);
+		}
 	}
 
 	std::vector<std::uint8_t> file;
@@ -1146,6 +1361,42 @@ void build_indices(int const Cells, int const Stride, gfx::index_array &Out)
 	skirt(grid + 3 * row, [&](gfx::basic_index const K) { return at(n, K); }, false);
 }
 
+void cut_indices(chunk_data const &Chunk, int const Stride, gfx::index_array &Indices)
+{
+	if (false == Chunk.has_holes())
+		return;
+	auto const cells{Chunk.cells};
+	auto const stride{std::clamp(Stride, 1, max_stride(cells))};
+	auto const n{segments(cells, stride)};
+	auto const grid{static_cast<std::size_t>(n) * n * 6};
+	if (Indices.size() != grid + static_cast<std::size_t>(n) * 24)
+		return;
+	auto const coordinate = [&](int const I) { return std::min(I * stride, cells); };
+	// the triangles of a cell cut out entirely become empty ones, so the count of the indices stays
+	std::vector<bool> cut(static_cast<std::size_t>(n) * n, false);
+	for (int j = 0; j < n; ++j)
+		for (int i = 0; i < n; ++i)
+		{
+			if (false == Chunk.cut_cells(coordinate(i), coordinate(j), coordinate(i + 1), coordinate(j + 1)))
+				continue;
+			cut[static_cast<std::size_t>(j) * n + i] = true;
+			std::fill_n(Indices.begin() + (static_cast<std::size_t>(j) * n + i) * 6, 6, Indices[(static_cast<std::size_t>(j) * n + i) * 6]);
+		}
+	// the skirts along the cells cut out would hang in the opening
+	auto const skirt = [&](std::size_t const Skirt, auto const &Cell) {
+		for (int k = 0; k < n; ++k)
+			if (Cell(k))
+			{
+				auto const first{grid + (Skirt * n + k) * 6};
+				std::fill_n(Indices.begin() + first, 6, Indices[first]);
+			}
+	};
+	skirt(0, [&](int const K) { return cut[K]; });
+	skirt(1, [&](int const K) { return cut[static_cast<std::size_t>(n - 1) * n + K]; });
+	skirt(2, [&](int const K) { return cut[static_cast<std::size_t>(K) * n]; });
+	skirt(3, [&](int const K) { return cut[static_cast<std::size_t>(K) * n + n - 1]; });
+}
+
 void build_mesh(chunk_data const &Chunk, int const Stride, glm::dvec3 const &Origin, height_source const &Outside, mesh &Out)
 {
 	auto const cells{Chunk.cells};
@@ -1223,6 +1474,9 @@ void build_mesh(chunk_data const &Chunk, int const Stride, glm::dvec3 const &Ori
 		vertex(cells, coordinate(k), skirtdepth);
 
 	build_indices(cells, stride, Out.indices);
+	Out.cut = Chunk.has_holes();
+	if (Out.cut)
+		cut_indices(Chunk, stride, Out.indices);
 	Out.centre = (lowest + highest) * 0.5;
 	Out.radius = static_cast<float>(glm::length(highest - lowest) * 0.5 + skirtdepth);
 	Out.low = lowest - glm::dvec3{0.0, skirtdepth, 0.0};

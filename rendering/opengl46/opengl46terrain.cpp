@@ -79,7 +79,7 @@ bool opengl46_terrain_materials::init()
 	// the shader is checked now, so a broken one makes the terrain fall back on plain materials instead of the failure indicator
 	try
 	{
-		GfxRenderer->Fetch_Shader("terrain");
+		m_program = GfxRenderer->Fetch_Shader("terrain");
 	}
 	catch (gl::shader_exception const &e)
 	{
@@ -192,6 +192,7 @@ std::size_t opengl46_terrain_materials::acquire_slot(material_handle const Reuse
 	entry.weights[0] = make_texture("internal_src:terrain/weights0_" + suffix, GL_TEXTURE_2D);
 	entry.weights[1] = make_texture("internal_src:terrain/weights1_" + suffix, GL_TEXTURE_2D);
 	entry.table = make_texture("internal_src:terrain/table_" + suffix, GL_TEXTURE_2D);
+	entry.holes = make_texture("internal_src:terrain/holes_" + suffix, GL_TEXTURE_2D);
 	// the textures get their content before the material is made of them, which checks they're there
 	std::uint8_t const blank[4]{0, 0, 0, 0};
 	for (auto const handle : entry.weights)
@@ -211,6 +212,18 @@ std::size_t opengl46_terrain_materials::acquire_slot(material_handle const Reuse
 		std::array<float, max_layers * 2 * 4> const zeros{};
 		::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, static_cast<GLsizei>(max_layers), 2, 0, GL_RGBA, GL_FLOAT, zeros.data());
 	}
+	{
+		// led between the samples, so the edges of the holes run smoothly across the cells
+		bind_for_upload(m_textures.texture(entry.holes));
+		::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		std::uint8_t const none{0};
+		::glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		::glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 1, 1, 0, GL_RED, GL_UNSIGNED_BYTE, &none);
+		::glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+	}
 	opengl_texture::reset_unit_cache();
 	auto const name = [&](texture_handle const Handle) { return "internal_src:" + m_textures.texture(Handle).name; };
 	std::string const definition{
@@ -221,7 +234,8 @@ std::size_t opengl46_terrain_materials::acquire_slot(material_handle const Reuse
 	    "texture4: " + name(m_arrays[0].handle) + "\n"
 	    "texture5: " + name(m_arrays[1].handle) + "\n"
 	    "texture6: " + name(m_arrays[2].handle) + "\n"
-	    "texture7: " + name(entry.table) + "\n"};
+	    "texture7: " + name(entry.table) + "\n"
+	    "texture8: " + name(entry.holes) + "\n"};
 	entry.material = m_materials.create_from_text("internal_src:terrain/chunk_" + suffix, definition);
 	if (entry.material == null_handle || false == m_materials.material(entry.material).is_good)
 	{
@@ -235,7 +249,8 @@ std::size_t opengl46_terrain_materials::acquire_slot(material_handle const Reuse
 	return index;
 }
 
-material_handle opengl46_terrain_materials::make(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement)
+material_handle opengl46_terrain_materials::make(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
+                                                 int const HoleSamples, std::uint8_t const *Holes)
 {
 	if (Layers.empty() || false == init())
 		return null_handle;
@@ -286,8 +301,32 @@ material_handle opengl46_terrain_materials::make(material_handle const Reuse, st
 		entry.rotations[i] = Layers[i].rotation;
 	write_table(entry);
 
+	// the holes: the cells cut out entirely are left out of the mesh, the program of the holes cuts the rest of the openings
+	auto const cut{Holes != nullptr && HoleSamples > 0};
+	{
+		auto const holeside{cut ? HoleSamples + 1 : 1};
+		std::uint8_t const none{0};
+		bind_for_upload(m_textures.texture(entry.holes));
+		::glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		::glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, holeside, holeside, 0, GL_RED, GL_UNSIGNED_BYTE, cut ? Holes : &none);
+		::glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+		opengl_texture::reset_unit_cache();
+	}
 	auto &material{m_materials.material(entry.material)};
 	material.params[2] = glm::vec4(Placement.x, Placement.y, 1.f / std::max(1.f, Placement.z), static_cast<float>(side - 1));
+	if (m_holesprogram == nullptr && cut)
+	{
+		try
+		{
+			m_holesprogram = GfxRenderer->Fetch_Shader("terrain_holes");
+		}
+		catch (gl::shader_exception const &e)
+		{
+			ErrorLog("heightmap terrain: can't use the shader of the holes: " + std::string(e.what()));
+		}
+	}
+	// the program of the holes discards fragments, which the depth prepass of the plain one never does
+	material.shader = (cut && m_holesprogram != nullptr) ? m_holesprogram : m_program;
 	return entry.material;
 }
 

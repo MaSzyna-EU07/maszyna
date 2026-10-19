@@ -378,11 +378,24 @@ def work_terrain(d):
         line(d, [at(u, v) for v in steps], W - 6)
 
 
+def hole(d):
+    # a hill with the portal of a tunnel cut in it (the opening is in cutouts())
+    poly(d, [(2, 58), (2, 40), (14, 22), (28, 12), (42, 16), (54, 30), (62, 42), (62, 58)])
+
+
+def grass(d):
+    # blades growing from the ground, leaning either way
+    line(d, [(4, 58), (60, 58)], W - 8)
+    for x, lean, height in ((10, -6, 30), (20, 4, 44), (31, -3, 52), (42, 7, 40), (53, -5, 30)):
+        pts = [(x + lean * t * t, 56 - height * t) for t in (i / 10 for i in range(11))]
+        line(d, pts, W - 8)
+
+
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
          vehicle, profile, speed, joints, infra, gauge, turntable, parallel, more, work_surroundings,
-         work_tracks, work_roads, work_terrain]
+         work_tracks, work_roads, work_terrain, hole, grass]
 
 
 def cutouts(name, d):
@@ -403,6 +416,9 @@ def cutouts(name, d):
         # the door and the gap between the crowns of the tree
         rect(d, 46, 46, 52, 60)
         line(d, [(9, 31), (27, 31)], 8)
+    elif name == "hole":
+        # the opening of the portal, an arch on the ground
+        poly(d, [(20, 60), (20, 42)] + [(32 + 12 * math.cos(math.radians(180 - a)), 42 - 12 * math.sin(math.radians(180 - a))) for a in range(0, 181, 10)] + [(44, 60)])
     elif name == "work_roads":
         # the windows, and the gaps around the wheels
         poly(d, [(25, 22), (31, 22), (31, 30), (19, 30)])

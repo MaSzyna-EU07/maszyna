@@ -115,6 +115,11 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   terrainfill <palette entry> <blur> <rotation> <x> <z> <x> <z> <x> <z>...   the area outlined filled, as the fill tool does it
 //   terrainturn <palette entry> <degrees>  the textures of the palette entry turned
 //   terrainwater <index> <material> [size]    material and repeat of a body of water; terrainwaterdefault <material>
+//   terraincut <x> <z> <radius> <1 cut|0 close>   a stroke of the holes brush; terraincutarea <1|0> <x> <z>...   the area outlined
+//   terraingrasskind <preset name>       a preset added to the grass palette; terraingrass <x> <z> <radius> <kind> [erase 0|1]   a stroke
+//                                        of the grass brush; terraingrassarea <kind, -1 takes the grass away> <x> <z>...   the area outlined
+//   terraincursor                        logs the point of the ground under the cursor, found along the ray (over holes too)
+//   terraintool <holes|grass|paint|sculpt|none>   the tool the left button works on the terrain, with a brush of 3 m
 //   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout

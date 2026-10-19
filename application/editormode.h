@@ -436,14 +436,21 @@ class editor_mode : public application_mode, private editor_track::observer
 		spacing, // selects chunks (Ctrl: adds or takes away one), whose point spacing is then converted
 		water, // outlines a body of water
 		restore, // takes the touch-ups over the modifiers back
-		fill // outlines an area filled with a material
+		fill, // outlines an area filled with a material
+		holes, // cuts holes in the ground (portals of tunnels), Shift: closes them
+		grass // grows the chosen kind of grass, Shift: takes the grass away
 	};
 	terrain_tool m_terrain_tool{terrain_tool::none};
 	bool terrain_brush() const
 	{
 		return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::level || m_terrain_tool == terrain_tool::paint ||
-		       m_terrain_tool == terrain_tool::restore;
+		       m_terrain_tool == terrain_tool::restore || m_terrain_tool == terrain_tool::holes || m_terrain_tool == terrain_tool::grass;
 	}
+	// the point of the ground of the terrain under the cursor, found along the ray through the cursor, so it's found also over
+	// a hole and behind the grass. returns: false if the ray meets no terrain
+	bool terrain_cursor(glm::dvec3 &World) const;
+	// the grass of the terrain: the palette, the kind grown, presets
+	void render_grass_ui();
 	// converts the point spacing of the selected chunks to m_terrain_convert_spacing
 	void convert_selected_chunks();
 	// takes the height of whatever is under the cursor (terrain, track, model) for the target of the level brush. returns: false if there's nothing
@@ -552,6 +559,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool m_terrain_stroke{false}; // a stroke of the brush is under way
 	bool m_terrain_picking{false}; // the next click picks the target height
 	int m_terrain_layer{0};               // entry of the palette painted
+	int m_grass_kind{0};                  // entry of the grass palette grown
+	heightmap::grass_def m_grass_edit;    // the chosen kind of grass while it's edited
+	int m_grass_edit_of{-1};              // the kind in m_grass_edit, -1: none
+	bool m_grass_edit_active{false};      // a field of the chosen kind is being dragged
 	char m_terrain_material[128]{"grass"}; // material added to the palette
 	float m_terrain_material_size{0.0f};   // metres its textures repeat at, 0: given by the material
 	float m_terrain_layer_size{0.0f};      // repeat of the chosen palette entry, while it's dragged
