@@ -452,6 +452,8 @@ void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool c
 			++queued;
 		}
 	state.made = 0;
+	if (queued > 0)
+		state.grown = false;
 	// the terrain comes with its photos
 	if (queued > 0 && false == m_orthophoto.enabled())
 		m_orthophoto.enabled(true);
@@ -597,6 +599,7 @@ void editor_mode::nmt_update()
 			nmt_finish_fit();
 		return;
 	}
+	nmt_grow();
 	if (state.pending.empty())
 		return;
 	// a few chunks a frame, those whose model is in
@@ -623,7 +626,7 @@ void editor_mode::nmt_update()
 		state.status = format(STR_C("Chunks made from the terrain model: %zu, waiting for it: %zu"), state.made, state.pending.size());
 		if (state.pending.empty())
 		{
-			if (state.shape)
+			if (state.shape && false == state.grown)
 			{
 				nmt_shape_tracks();
 				state.status += format(STR_P("; the formation of %zu path shaped", "; the formation of %zu paths shaped", state.shaped), state.shaped);
@@ -635,6 +638,44 @@ void editor_mode::nmt_update()
 	}
 	if (auto const error{m_nmt.error()}; false == error.empty())
 		state.error = STR(error);
+}
+
+void editor_mode::nmt_grow()
+{
+	auto &state{m_nmt_state};
+	auto const now{ImGui::GetTime()};
+	if (false == state.grow || now - state.grow_time < 0.5 || (false == m_lay.active && false == m_extend.active) || m_streamer.resident() == 0 || false == m_nmt.placed())
+		return;
+	state.grow_time = now;
+	auto const at{m_extend.active ? m_extend.mouse : m_lay.mouse};
+	glm::dvec2 const cursor{at.x, at.z};
+	double constexpr grow_reach{400.0}; // m around the cursor
+	auto const reach{static_cast<int>(std::ceil(grow_reach / heightmap::chunk_size))};
+	auto const centre{heightmap::chunk_at(at.x, at.z)};
+	std::vector<std::pair<double, heightmap::chunk_key>> missing;
+	for (int dz = -reach; dz <= reach; ++dz)
+		for (int dx = -reach; dx <= reach; ++dx)
+		{
+			heightmap::chunk_key const key{centre.first + dx, centre.second + dz};
+			auto const low{heightmap::chunk_corner(key)};
+			glm::dvec2 const nearest{std::clamp(cursor.x, low.x, low.x + heightmap::chunk_size), std::clamp(cursor.y, low.y, low.y + heightmap::chunk_size)};
+			auto const distance{glm::distance(nearest, cursor)};
+			if (distance <= grow_reach && false == m_streamer.exists(key) && std::find(state.pending.begin(), state.pending.end(), key) == state.pending.end())
+				missing.emplace_back(distance, key);
+		}
+	if (missing.empty())
+		return;
+	std::sort(missing.begin(), missing.end());
+	if (state.pending.empty())
+	{
+		state.grown = true;
+		state.made = 0;
+	}
+	for (auto const &chunk : missing)
+		state.pending.push_back(chunk.second);
+	if (false == m_orthophoto.enabled())
+		m_orthophoto.enabled(true);
+	WriteLog(format("Editor: NMT - %zu chunks around the cursor to make", missing.size()), logtype::generic);
 }
 
 void editor_mode::render_nmt_ui()
@@ -748,6 +789,7 @@ void editor_mode::render_nmt_ui()
 		                           STR_C("Loads the terrain model, the real relief of the ground, around the camera")};
 		ImGui::SetTooltip("%s\n%s", text, STR_C("Terrain model: GUGiK, geoportal.gov.pl"));
 	}
+	toggle_chips("nmtgrow", {{STR_C("Make the terrain ahead while laying"), &state.grow, "Where a track is laid past the edge of the terrain, the terrain model is made around the cursor as it goes"}});
 	// how far it got
 	if (state.stage == nmt_state::automatic::fetching || state.fitting)
 	{

@@ -345,6 +345,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::size_t samples{0};
 		double band{300.0}; // m from the tracks the chunks made along them reach
 		bool shape{true}; // the formation and the slopes of the tracks as modifiers of the terrain
+		bool grow{true}; // while a track is laid, the terrain is made around the cursor where there's none
+		bool grown{false}; // the chunks waiting were all asked for by growing: the formations aren't made anew after them
+		double grow_time{-10.0};
 		double slope{1.5};
 		double reach{60.0};
 		std::vector<heightmap::chunk_key> pending; // chunks to make once their model is in
@@ -406,6 +409,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	// of the modifiers laid
 	std::size_t nmt_shape_tracks(std::vector<TTrack *> const *Only = nullptr);
 	void nmt_update();
+	void nmt_grow();
 	void render_nmt_ui();
 	// a scenery begun from nothing, with no tracks nor terrain, is asked as the first track is laid whether it wants the terrain
 	void nmt_offer();

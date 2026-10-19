@@ -9943,3 +9943,9 @@ msgstr "równolegle do %s"
 
 msgid "%.0f deg to %s"
 msgstr "%.0f° do %s"
+
+msgid "Make the terrain ahead while laying"
+msgstr "Dobudowuj teren przy układaniu"
+
+msgid "Where a track is laid past the edge of the terrain, the terrain model is made around the cursor as it goes"
+msgstr "Gdy tor wychodzi poza teren, NMT dobudowuje się wokół kursora na bieżąco"
