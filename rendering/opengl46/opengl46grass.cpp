@@ -208,14 +208,14 @@ std::size_t opengl46_grass::render(opengl_camera const &Camera, glm::mat4 const 
 		return 0;
 
 	auto const reach{std::max(5.f, Global.gfx_grass_distance)};
-	auto const near{std::max(3.f, reach * 0.2f)};
+	auto const thinning{std::max(3.f, reach * 0.2f)};
 	auto const multiplier{std::max(0.f, Global.gfx_grass_density)};
 	auto const camera{Camera.position()};
 
 	m_program->bind();
 	m_vao->bind();
 	::glDisable(GL_CULL_FACE);
-	::glUniform4f(m_uniforms.lod, near, reach, 0.f, 0.f);
+	::glUniform4f(m_uniforms.lod, thinning, reach, 0.f, 0.f);
 	// the wind sways the blades along it, harder in the gusts
 	auto const wind{glm::vec3{simulation::Environment.wind()}};
 	auto const windspeed{glm::length(glm::vec2{wind.x, wind.z})};
@@ -266,7 +266,7 @@ std::size_t opengl46_grass::render(opengl_camera const &Camera, glm::mat4 const 
 				if (false == Camera.visible(scene::bounding_area{(low + high) * 0.5, static_cast<float>(glm::length(high - low) * 0.5)}))
 					continue;
 				auto const full{tilesize * tilesize * densest * multiplier * fill};
-				auto const count{std::min(max_blades, static_cast<int>(std::ceil(full * lod_share(distance, near))))};
+				auto const count{std::min(max_blades, static_cast<int>(std::ceil(full * lod_share(distance, thinning))))};
 				if (count <= 0)
 					continue;
 				if (false == set)
@@ -284,7 +284,7 @@ std::size_t opengl46_grass::render(opengl_camera const &Camera, glm::mat4 const 
 					::glBindTextures(0, 3, textures);
 				}
 				// fewer segments further away
-				auto const segments{distance < near * 1.5f ? 3 : distance < reach * 0.5f ? 2 : 1};
+				auto const segments{distance < thinning * 1.5f ? 3 : distance < reach * 0.5f ? 2 : 1};
 				// the number of the tile in the world, the seed of its blades
 				auto const seedx{static_cast<float>(std::floor(chunk.corner.x / tilesize + 0.5) + tx)};
 				auto const seedz{static_cast<float>(std::floor(chunk.corner.y / tilesize + 0.5) + tz)};
