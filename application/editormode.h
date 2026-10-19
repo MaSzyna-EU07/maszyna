@@ -1152,7 +1152,7 @@ class editor_mode : public application_mode, private editor_track::observer
 			bool preferred{false};
 		};
 		std::vector<drive_family> drives;
-		bool drives_scanned{false};
+		int drives_revision{-1}; // of the include bank the drives were read from
 		int drive{-1};
 		int drive_side{0};
 		struct slide_state
@@ -1231,7 +1231,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void switch_slide_update();
 	void switch_slide_finish();
 	void draw_switch_slide() const;
-	void scan_switch_drives();
+	// reads the drives from the include bank once it changes; Wait: for the templates being looked for. true if it read them
+	bool scan_switch_drives(bool Wait = true);
 	std::string switch_name_for_new() const;
 	bool place_switch_drive(TTrack &Switch);
 	bool flip_switch_drive(TTrack &Switch);
@@ -1264,7 +1265,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	struct turntable_tool
 	{
 		std::vector<turntable_template> templates;
-		bool scanned{false};
+		int revision{-1}; // of the include bank the templates were read from
 		int chosen{-1};
 		char name[64]{};
 		bool placing{false};
@@ -1290,7 +1291,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::string error;
 	};
 	turntable_tool m_turntable;
-	void scan_turntables();
+	bool scan_turntables(bool Wait = true);
 	std::string turntable_name_for_new() const;
 	bool turntable_read(TTrack *Table);
 	std::vector<scene::instance_handle> turntable_includes(TTrack const &Table);
@@ -1833,7 +1834,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		int family{-1};
 		int index{0};
 	};
-	std::optional<switch_drive> find_switch_drive(TTrack const &Switch);
+	std::optional<switch_drive> find_switch_drive(TTrack const &Switch, bool Wait = true);
 	std::string missing_drive_variant(int const Family, bool const Rightswitch, bool const Driveright) const;
 	bool replace_switch_drive(TTrack &Switch, int Family, bool Flip);
 	void apply_switch_drive_choice(TTrack &Switch);
@@ -2058,7 +2059,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::string status;
 	};
 	signal_tool m_signal;
-	void signal_scan();
+	bool signal_scan(bool Wait = true);
 	signal_template const *signal_armed() const;
 	signal_template const *signal_template_of(std::string const &File) const;
 	bool signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const &Point, glm::dvec3 const &Cursor, int const Facing, int const Side, signal_template const &Template, signal_spot &Spot) const;
@@ -2091,6 +2092,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		char search[64]{};
 		std::vector<std::string> models;
 		bool scanned{false};
+		int revision{-1}; // of the include bank the templates were taken from
 		// parameters of a template laid along the track, with their names
 		std::string parameters_for;
 		std::vector<std::array<char, 128>> parameters;

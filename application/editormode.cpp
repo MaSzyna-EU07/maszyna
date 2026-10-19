@@ -1286,6 +1286,12 @@ bool editor_mode::update()
     // bindings are matched with the objects by their locations, before anything gets moved
     if (false == m_bindings_loaded && simulation::is_ready)
         infra_load();
+    // the templates are looked for in the background from the start, for the tools to have them at hand
+    if (simulation::is_ready)
+    {
+        EditorIncludes.start();
+        EditorIncludes.poll();
+    }
 
     auto const deltarealtime = Timer::GetDeltaRenderTime();
 

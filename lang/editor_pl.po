@@ -9862,3 +9862,6 @@ msgstr "Nie dopasowano pasów obok \"%s\": %s"
 
 msgid "\"%s\" couldn't be cut for the lanes to change"
 msgstr "Nie dało się przeciąć \"%s\", żeby zmienić pasy"
+
+msgid "Looking for the templates..."
+msgstr "Szukam szablonów..."

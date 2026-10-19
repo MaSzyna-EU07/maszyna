@@ -189,15 +189,18 @@ void label(screen_projection const &Projection, glm::dvec3 const &Point, std::st
 
 } // namespace
 
-void editor_mode::scan_turntables()
+bool editor_mode::scan_turntables(bool const Wait)
 {
 	auto &tool{m_turntable};
-	if (tool.scanned)
-		return;
-	tool.scanned = true;
+	if (Wait)
+		EditorIncludes.wait();
+	else
+		EditorIncludes.start();
+	if (false == EditorIncludes.scanned() || tool.revision == EditorIncludes.revision())
+		return false;
+	tool.revision = EditorIncludes.revision();
+	auto const chosen{tool.chosen >= 0 && tool.chosen < static_cast<int>(tool.templates.size()) ? tool.templates[tool.chosen].file : std::string{}};
 	tool.templates.clear();
-	if (false == EditorIncludes.scanned())
-		EditorIncludes.scan();
 	for (auto const &entry : EditorIncludes.entries())
 	{
 		if (entry.category != "turntable")
@@ -224,7 +227,11 @@ void editor_mode::scan_turntables()
 		tool.templates.push_back(std::move(item));
 	}
 	std::stable_sort(tool.templates.begin(), tool.templates.end(), [](turntable_template const &A, turntable_template const &B) { return (A.angles > 0) != (B.angles > 0) ? A.angles > 0 : A.name < B.name; });
-	tool.chosen = tool.templates.empty() ? -1 : 0;
+	auto const kept{std::find_if(tool.templates.begin(), tool.templates.end(), [&](turntable_template const &Template) { return Template.file == chosen; })};
+	tool.chosen = tool.templates.empty() ? -1 : kept != tool.templates.end() ? static_cast<int>(kept - tool.templates.begin()) : 0;
+	// the turntable read before points at the templates of before
+	tool.table = nullptr;
+	return true;
 }
 
 std::string editor_mode::turntable_name_for_new() const
@@ -258,7 +265,7 @@ bool editor_mode::turntable_read(TTrack *Table)
 		tool.status.clear();
 		tool.error.clear();
 	}
-	scan_turntables();
+	scan_turntables(false);
 	tool.table = Table;
 	tool.length = length_of(*Table);
 	auto const &path{Table->m_paths.front()};
@@ -794,7 +801,7 @@ editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground
 			return make(kind::select, track == tool.table ? std::string{} : STR("Click: this turntable"));
 		}
 	}
-	scan_turntables();
+	scan_turntables(false);
 	if (tool.chosen < 0)
 		return intent;
 	if (false == Shift)
@@ -813,7 +820,7 @@ editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground
 void editor_mode::render_turntable_ui()
 {
 	auto &tool{m_turntable};
-	scan_turntables();
+	scan_turntables(false);
 	auto *selected{selected_track()};
 	if (tool.table != selected)
 		turntable_read(selected);
@@ -979,7 +986,9 @@ void editor_mode::render_turntable_ui()
 		if (selected != nullptr && selected->eType == tt_Table)
 			ImGui::TextColored(warncolour, "%s", STR_C("This turntable can't be read"));
 		ImGui::TextUnformatted(STR_C("New turntable"));
-		if (tool.templates.empty())
+		if (tool.templates.empty() && EditorIncludes.searching())
+			ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+		else if (tool.templates.empty())
 			ImGui::TextColored(warncolour, "%s", STR_C("No turntables: no template is described with category: turntable and its turntable: {length}"));
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 		{

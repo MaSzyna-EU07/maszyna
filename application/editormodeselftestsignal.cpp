@@ -61,6 +61,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 				values[pair.substr(0, equals)] = pair.substr(equals + 1);
 		}
 		show_track_tab(track_tab::signals);
+		signal_scan();
 		signal_refresh(true);
 		auto &tool{m_signal};
 		auto const standing_named = [&](std::string const &Name) -> signal_standing const * {

@@ -867,9 +867,11 @@ void nodebank_panel::render_list(std::vector<std::pair<std::string, std::shared_
 
 void nodebank_panel::render_templates_list(std::string const &Filter)
 {
-	if (false == EditorIncludes.scanned())
+	EditorIncludes.start();
+	if (EditorIncludes.searching() && EditorIncludes.ready().empty())
 	{
-		EditorIncludes.scan();
+		ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+		return;
 	}
 	auto const &templates{EditorIncludes.entries()};
 	std::string const *category{nullptr};
@@ -2203,10 +2205,7 @@ void includes_panel::open(std::string const &File)
 
 void includes_panel::render_list()
 {
-	if (false == EditorIncludes.scanned())
-	{
-		EditorIncludes.scan();
-	}
+	EditorIncludes.start();
 	auto const &entries{EditorIncludes.entries()};
 
 	ImGui::PushItemWidth(ImGui::GetFontSize() * 12.0f);
@@ -2221,9 +2220,13 @@ void includes_panel::render_list()
 		changed |= ImGui::Checkbox(STR_C("Used by the scenery"), &m_usedonly);
 	}
 	ImGui::SameLine();
-	if (ImGui::Button(STR_C("Rescan")))
+	if (EditorIncludes.searching())
 	{
-		EditorIncludes.scan();
+		ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+	}
+	else if (ImGui::Button(STR_C("Rescan")))
+	{
+		EditorIncludes.rescan();
 	}
 	if (ImGui::IsItemHovered())
 	{

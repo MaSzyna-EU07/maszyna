@@ -77,15 +77,20 @@ double angle_value(std::vector<std::string> const &Values, std::size_t const Ind
 
 } // namespace
 
-void editor_mode::scan_switch_drives()
+bool editor_mode::scan_switch_drives(bool const Wait)
 {
 	auto &tool{m_switch};
-	if (tool.drives_scanned)
-		return;
-	tool.drives_scanned = true;
+	if (Wait)
+		EditorIncludes.wait();
+	else
+		EditorIncludes.start();
+	if (false == EditorIncludes.scanned() || tool.drives_revision == EditorIncludes.revision())
+		return false;
+	tool.drives_revision = EditorIncludes.revision();
+	// the drive chosen stays chosen, also none
+	auto const chosen{tool.drive >= 0 && tool.drive < static_cast<int>(tool.drives.size()) ? std::optional<std::string>{tool.drives[tool.drive].name} : std::nullopt};
+	auto const none{false == tool.drives.empty() && tool.drive < 0};
 	tool.drives.clear();
-	if (false == EditorIncludes.scanned())
-		EditorIncludes.scan();
 	for (auto const &entry : EditorIncludes.entries())
 	{
 		if (entry.category != "switch drive")
@@ -111,10 +116,14 @@ void editor_mode::scan_switch_drives()
 	}
 	std::sort(tool.drives.begin(), tool.drives.end(), [](switch_tool::drive_family const &A, switch_tool::drive_family const &B) { return A.name < B.name; });
 	auto const preferred{std::find_if(tool.drives.begin(), tool.drives.end(), [](switch_tool::drive_family const &Family) { return Family.preferred; })};
-	if (tool.drives.empty())
+	auto const kept{std::find_if(tool.drives.begin(), tool.drives.end(), [&](switch_tool::drive_family const &Family) { return chosen.has_value() && Family.name == *chosen; })};
+	if (tool.drives.empty() || none)
 		tool.drive = -1;
+	else if (kept != tool.drives.end())
+		tool.drive = static_cast<int>(kept - tool.drives.begin());
 	else
 		tool.drive = preferred != tool.drives.end() ? static_cast<int>(preferred - tool.drives.begin()) : 0;
+	return true;
 }
 
 void editor_mode::switch_drive_captured(TTrack const &Track)
@@ -204,10 +213,10 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 	return true;
 }
 
-std::optional<editor_mode::switch_drive> editor_mode::find_switch_drive(TTrack const &Switch)
+std::optional<editor_mode::switch_drive> editor_mode::find_switch_drive(TTrack const &Switch, bool const Wait)
 {
 	auto const &tool{m_switch};
-	scan_switch_drives();
+	scan_switch_drives(Wait);
 	std::map<std::string, std::pair<int, int>, std::less<>> variants;
 	for (int family = 0; family < static_cast<int>(tool.drives.size()); ++family)
 		for (int index = 0; index < 4; ++index)
@@ -286,10 +295,10 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 bool editor_mode::render_switch_drive_choice()
 {
 	auto &tool{m_switch};
-	scan_switch_drives();
+	scan_switch_drives(false);
 	if (tool.drives.empty())
 	{
-		ImGui::TextDisabled("%s", STR_C("No switch drive models"));
+		ImGui::TextDisabled("%s", EditorIncludes.searching() ? STR_C("Looking for the templates...") : STR_C("No switch drive models"));
 		return false;
 	}
 	auto const label = [&](int const Index) { return Index < 0 ? std::string{STR_C("no drive")} : tool.drives[Index].name; };

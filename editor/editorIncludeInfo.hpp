@@ -114,11 +114,22 @@ struct include_entry
 class editorIncludeBank
 {
   public:
-	// looks through the scenery directory for the templates, and reads their descriptions
-	void scan();
+	~editorIncludeBank();
+	// starts looking through the scenery directory for the templates in the background, unless they were found already
+	void start();
+	// looks through the scenery directory again in the background, for the templates added or changed outside of the editor
+	void rescan();
+	// takes the templates found in the background once the search is over; true if it took them
+	bool poll();
+	// waits for the templates being looked for, or looks for them if they weren't yet
+	void wait();
 	bool scanned() const
 	{
 		return m_scanned;
+	}
+	bool searching() const
+	{
+		return m_search != nullptr;
 	}
 	std::vector<include_entry> const &entries() const
 	{
@@ -138,8 +149,11 @@ class editorIncludeBank
 	}
 
   private:
+	struct search;
+
 	void index();
 
+	std::shared_ptr<search> m_search; // under way in the background
 	std::vector<include_entry> m_entries; // sorted by file name
 	std::vector<std::size_t> m_ready;
 	bool m_scanned{false};

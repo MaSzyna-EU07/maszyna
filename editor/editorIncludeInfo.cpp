@@ -11,14 +11,19 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorIncludeInfo.hpp"
 
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
 #include "utilities/translation.h"
 #include "editor/editorFormat.hpp"
 
 #include <yaml-cpp/yaml.h>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <future>
 #include <random>
+#include <set>
 #include <sstream>
 #include <tuple>
 #include <unordered_map>
@@ -93,12 +98,13 @@ std::string utf8_to_win1250(std::string const &Text)
 	return output;
 }
 
-bool read_template(std::string const &File, template_text &Text, std::string &Error)
+// reads template File from the file at specified location. runs in the background as well, so it leaves the messages to
+// the callers
+bool read_file(std::filesystem::path const &Path, std::string const &File, template_text &Text)
 {
-	std::ifstream input{Global.asCurrentSceneryPath + File, std::ios_base::binary};
+	std::ifstream input{Path, std::ios_base::binary};
 	if (false == input.is_open())
 	{
-		Error = format(STR_C("can't open file \"%s\""), File.c_str());
 		return false;
 	}
 	auto &content{Text.content};
@@ -142,6 +148,16 @@ bool read_template(std::string const &File, template_text &Text, std::string &Er
 	if (false == is_utf8(Text.yaml, extended))
 	{
 		Text.yaml = win1250_to_utf8(Text.yaml);
+	}
+	return true;
+}
+
+bool read_template(std::string const &File, template_text &Text, std::string &Error)
+{
+	if (false == read_file(Global.asCurrentSceneryPath + File, File, Text))
+	{
+		Error = format(STR_C("can't open file \"%s\""), File.c_str());
+		return false;
 	}
 	return true;
 }
@@ -752,16 +768,18 @@ editorIncludeBank EditorIncludes;
 namespace
 {
 
-include_entry examine(std::string const &File)
+// Text: the template read before, null if its file couldn't be opened
+include_entry examine(std::string const &File, template_text const *Text)
 {
 	include_entry entry;
 	entry.file = File;
 	entry.statement = std::make_shared<std::string>(editor_includes::directive_mark + File);
-	template_text text;
-	if (false == read_template(File, text, entry.issue))
+	if (Text == nullptr)
 	{
+		entry.issue = format(STR_C("can't open file \"%s\""), File.c_str());
 		return entry;
 	}
+	auto const &text{*Text};
 	entry.described = false == text.yaml.empty();
 	if (false == entry.described)
 	{
@@ -779,25 +797,43 @@ include_entry examine(std::string const &File)
 	return entry;
 }
 
-} // namespace
-
-void editorIncludeBank::scan()
+include_entry examine(std::string const &File)
 {
-	// the node bank may hold one of the templates selected, the statements stay in place across the scans
-	std::unordered_map<std::string, std::shared_ptr<std::string>> statements;
-	for (auto &entry : m_entries)
-	{
-		statements.emplace(entry.file, entry.statement);
-	}
-	m_entries.clear();
-	m_scanned = true;
+	template_text text;
+	std::string error;
+	auto const read{read_template(File, text, error)};
+	return examine(File, read ? &text : nullptr);
+}
+
+// template file found in the background, for examine() to read its description on the main thread
+struct found_template
+{
+	std::string file;
+	bool read{false};
+	template_text text;
+};
+
+// reads every template in the scenery directory, until told to stop
+std::vector<found_template> find_templates(std::filesystem::path const &Root, std::atomic<bool> const &Stop)
+{
+	std::vector<found_template> found;
 	std::error_code error;
-	auto const root{std::filesystem::path(Global.asCurrentSceneryPath)};
+	// a folder linked into one of its own subfolders would lead the walk in circles
+	std::set<std::filesystem::path> folders{std::filesystem::canonical(Root, error)};
 	// NOTE: on an error the iterator turns into the end one. Folders linked into the scenery folder are a part of it
 	auto const options{std::filesystem::directory_options::skip_permission_denied | std::filesystem::directory_options::follow_directory_symlink};
-	for (std::filesystem::recursive_directory_iterator file{root, options, error}, end; file != end; file.increment(error))
+	for (std::filesystem::recursive_directory_iterator file{Root, options, error}, end; file != end && false == Stop; file.increment(error))
 	{
-		if (false == file->is_regular_file(error))
+		std::error_code status;
+		if (file->is_directory(status))
+		{
+			if (auto const folder{std::filesystem::canonical(file->path(), status)}; false == static_cast<bool>(status) && false == folders.emplace(folder).second)
+			{
+				file.disable_recursion_pending();
+			}
+			continue;
+		}
+		if (false == file->is_regular_file(status))
 		{
 			continue;
 		}
@@ -805,7 +841,7 @@ void editorIncludeBank::scan()
 		std::string name;
 		try
 		{
-			name = ToLower(file->path().lexically_relative(root).generic_string());
+			name = ToLower(file->path().lexically_relative(Root).generic_string());
 		}
 		catch (std::exception const &)
 		{
@@ -816,14 +852,94 @@ void editorIncludeBank::scan()
 		{
 			continue;
 		}
-		m_entries.emplace_back(examine(name));
-		if (auto const lookup{statements.find(name)}; lookup != statements.end())
+		auto &entry{found.emplace_back()};
+		entry.file = name;
+		entry.read = read_file(file->path(), name, entry.text);
+		if (entry.text.yaml.empty())
+		{
+			// the rest of the file matters only to the described templates
+			entry.text = template_text{};
+		}
+	}
+	return found;
+}
+
+} // namespace
+
+struct editorIncludeBank::search
+{
+	std::atomic<bool> stop{false};
+	std::future<std::vector<found_template>> result;
+	std::chrono::steady_clock::time_point started{std::chrono::steady_clock::now()};
+
+	~search()
+	{
+		// the result waits for the search to end before it goes
+		stop = true;
+	}
+};
+
+editorIncludeBank::~editorIncludeBank() = default;
+
+void editorIncludeBank::start()
+{
+	if (m_scanned || m_search != nullptr)
+	{
+		return;
+	}
+	rescan();
+}
+
+void editorIncludeBank::rescan()
+{
+	if (m_search != nullptr)
+	{
+		return;
+	}
+	m_search = std::make_shared<search>();
+	m_search->result = std::async(std::launch::async, find_templates, std::filesystem::path(Global.asCurrentSceneryPath), std::cref(m_search->stop));
+}
+
+bool editorIncludeBank::poll()
+{
+	if (m_search == nullptr || m_search->result.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+	{
+		return false;
+	}
+	auto found{m_search->result.get()};
+	auto const seconds{std::chrono::duration<double>(std::chrono::steady_clock::now() - m_search->started).count()};
+	m_search.reset();
+	// the node bank may hold one of the templates selected, the statements stay in place across the scans
+	std::unordered_map<std::string, std::shared_ptr<std::string>> statements;
+	for (auto &entry : m_entries)
+	{
+		statements.emplace(entry.file, entry.statement);
+	}
+	m_entries.clear();
+	m_scanned = true;
+	for (auto const &file : found)
+	{
+		m_entries.emplace_back(examine(file.file, file.read ? &file.text : nullptr));
+		if (auto const lookup{statements.find(file.file)}; lookup != statements.end())
 		{
 			m_entries.back().statement = lookup->second;
 		}
 	}
 	std::sort(std::begin(m_entries), std::end(m_entries), [](include_entry const &Left, include_entry const &Right) { return Left.file < Right.file; });
 	index();
+	WriteLog(format("Editor: %zu templates found in the scenery directory in %.1f s, %zu of them described for the editor", m_entries.size(), seconds,
+	                static_cast<std::size_t>(std::count_if(std::begin(m_entries), std::end(m_entries), [](include_entry const &Entry) { return Entry.described; }))));
+	return true;
+}
+
+void editorIncludeBank::wait()
+{
+	start();
+	if (m_search != nullptr)
+	{
+		m_search->result.wait();
+		poll();
+	}
 }
 
 void editorIncludeBank::index()

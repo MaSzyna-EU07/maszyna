@@ -214,13 +214,15 @@ void draw_signal_icon(ImDrawList *Draw, ImVec2 const Origin, ImVec2 const Size, 
 
 } // namespace
 
-void editor_mode::signal_scan()
+bool editor_mode::signal_scan(bool const Wait)
 {
 	auto &tool{m_signal};
-	if (false == EditorIncludes.scanned())
-		EditorIncludes.scan();
-	if (tool.revision == EditorIncludes.revision())
-		return;
+	if (Wait)
+		EditorIncludes.wait();
+	else
+		EditorIncludes.start();
+	if (false == EditorIncludes.scanned() || tool.revision == EditorIncludes.revision())
+		return false;
 	tool.revision = EditorIncludes.revision();
 	std::string chosen[kKindCount];
 	for (int i = 0; i < kKindCount; ++i)
@@ -280,6 +282,7 @@ void editor_mode::signal_scan()
 		}
 		tool.chosen[i] = best;
 	}
+	return true;
 }
 
 editor_mode::signal_template const *editor_mode::signal_armed() const
@@ -346,9 +349,9 @@ std::string editor_mode::signal_intent_label(signal_template const &Template, si
 void editor_mode::signal_refresh(bool const Force)
 {
 	auto &tool{m_signal};
-	signal_scan();
+	auto const scanned{signal_scan(false)};
 	auto const now{ImGui::GetTime()};
-	if (false == Force && tool.standing_history == m_history.size() && tool.standing_redo == g_redo.size() && now - tool.standing_time < kRefreshPeriod)
+	if (false == Force && false == scanned && tool.standing_history == m_history.size() && tool.standing_redo == g_redo.size() && now - tool.standing_time < kRefreshPeriod)
 		return;
 	tool.standing_history = m_history.size();
 	tool.standing_redo = g_redo.size();
@@ -893,7 +896,12 @@ void editor_mode::render_signal_selected()
 void editor_mode::render_signal_ui()
 {
 	auto &tool{m_signal};
-	signal_scan();
+	signal_scan(false);
+	if (tool.templates.empty() && EditorIncludes.searching())
+	{
+		ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+		return;
+	}
 	if (tool.templates.empty())
 	{
 		ImGui::TextWrapped("%s", STR_C("No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."));

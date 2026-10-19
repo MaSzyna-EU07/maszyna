@@ -410,11 +410,10 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 			profile_open_run(*track);
 		break;
 	case track_tab::turntable:
-		scan_turntables();
+		scan_turntables(false);
 		turntable_read(track);
 		break;
 	case track_tab::signals:
-		signal_scan();
 		signal_refresh(true);
 		break;
 	default:
@@ -982,7 +981,9 @@ void editor_mode::render_turnout_ui()
 		ImGui::PushID(&Switch);
 		if (set.has_value())
 			ImGui::TextUnformatted(Switch.name().c_str());
-		if (auto const drive{find_switch_drive(Switch)})
+		if (false == EditorIncludes.scanned())
+			ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+		else if (auto const drive{find_switch_drive(Switch, false)})
 		{
 			auto const family{drive->family};
 			auto const variant{drive->index};

@@ -137,30 +137,39 @@ std::string lower(std::string Text)
 void editor_mode::sweep_scan_models()
 {
 	auto &tool{m_sweep};
-	if (tool.scanned)
+	EditorIncludes.start();
+	auto changed{false};
+	if (false == tool.scanned)
+	{
+		tool.scanned = true;
+		changed = true;
+		std::error_code error;
+		for (auto const &entry : std::filesystem::recursive_directory_iterator("models", std::filesystem::directory_options::skip_permission_denied, error))
+		{
+			if (false == entry.is_regular_file(error))
+				continue;
+			auto const extension{lower(entry.path().extension().string())};
+			if (extension != ".e3d" && extension != ".t3d")
+				continue;
+			auto name{std::filesystem::relative(entry.path(), "models", error).generic_string()};
+			name.erase(name.size() - extension.size());
+			tool.models.push_back(name);
+		}
+	}
+	// the templates come from the include bank, which looks through the scenery directory in the background
+	if (EditorIncludes.scanned() && tool.revision != EditorIncludes.revision())
+	{
+		tool.revision = EditorIncludes.revision();
+		std::erase_if(tool.models, [](std::string const &Model) { return Model.ends_with(".inc"); });
+		for (auto const &entry : EditorIncludes.entries())
+			tool.models.push_back(entry.file);
+		changed = true;
+	}
+	if (false == changed)
 		return;
-	tool.scanned = true;
-	std::error_code error;
-	std::set<std::string> found;
-	for (auto const &entry : std::filesystem::recursive_directory_iterator("models", std::filesystem::directory_options::skip_permission_denied, error))
-	{
-		if (false == entry.is_regular_file(error))
-			continue;
-		auto const extension{lower(entry.path().extension().string())};
-		if (extension != ".e3d" && extension != ".t3d")
-			continue;
-		auto name{std::filesystem::relative(entry.path(), "models", error).generic_string()};
-		name.erase(name.size() - extension.size());
-		found.insert(name);
-	}
-	for (auto const &entry : std::filesystem::recursive_directory_iterator("scenery", std::filesystem::directory_options::skip_permission_denied, error))
-	{
-		if (entry.is_regular_file(error) && lower(entry.path().extension().string()) == ".inc")
-			found.insert(std::filesystem::relative(entry.path(), "scenery", error).generic_string());
-	}
-	tool.models.assign(found.begin(), found.end());
+	std::sort(tool.models.begin(), tool.models.end());
+	tool.models.erase(std::unique(tool.models.begin(), tool.models.end()), tool.models.end());
 }
-
 
 void editor_mode::sweep_curve()
 {
