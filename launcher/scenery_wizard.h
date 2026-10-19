@@ -60,6 +60,7 @@ class scenerywizard_panel : public ui_panel
 	std::string m_map_error;
 
 	bool m_picked{false};
+	bool m_realistic{true};
 	glm::dvec2 m_point{0.0};
 	char m_filename[64]{};
 	char m_title[128]{};

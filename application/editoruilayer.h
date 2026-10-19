@@ -58,6 +58,8 @@ class editor_ui : public ui_layer
 	void set_track(bool const Track)
 	{
 		m_track = Track;
+		// the models of the node bank aren't laid with the track tools
+		m_nodebankpanel.suppressed = Track;
 	}
 	// draws menus of the editor mode in the menu bar, past the ones of the user interface
 	void set_menu_options(std::function<void()> Renderer)

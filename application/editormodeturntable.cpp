@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editorgestures.h"
+#include "application/editormodeshared.h"
 #include "application/editorprojection.h"
 #include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
@@ -44,7 +46,6 @@ using geometry::signed_angle;
 
 double constexpr kRimTolerance{0.05};
 double constexpr kMinimumRadius{80.0};
-float constexpr kDragPixels{5.0f};
 
 glm::dvec2 heading_vector(double const Heading)
 {
@@ -188,15 +189,18 @@ void label(screen_projection const &Projection, glm::dvec3 const &Point, std::st
 
 } // namespace
 
-void editor_mode::scan_turntables()
+bool editor_mode::scan_turntables(bool const Wait)
 {
 	auto &tool{m_turntable};
-	if (tool.scanned)
-		return;
-	tool.scanned = true;
+	if (Wait)
+		EditorIncludes.wait();
+	else
+		EditorIncludes.start();
+	if (false == EditorIncludes.scanned() || tool.revision == EditorIncludes.revision())
+		return false;
+	tool.revision = EditorIncludes.revision();
+	auto const chosen{tool.chosen >= 0 && tool.chosen < static_cast<int>(tool.templates.size()) ? tool.templates[tool.chosen].file : std::string{}};
 	tool.templates.clear();
-	if (false == EditorIncludes.scanned())
-		EditorIncludes.scan();
 	for (auto const &entry : EditorIncludes.entries())
 	{
 		if (entry.category != "turntable")
@@ -223,7 +227,11 @@ void editor_mode::scan_turntables()
 		tool.templates.push_back(std::move(item));
 	}
 	std::stable_sort(tool.templates.begin(), tool.templates.end(), [](turntable_template const &A, turntable_template const &B) { return (A.angles > 0) != (B.angles > 0) ? A.angles > 0 : A.name < B.name; });
-	tool.chosen = tool.templates.empty() ? -1 : 0;
+	auto const kept{std::find_if(tool.templates.begin(), tool.templates.end(), [&](turntable_template const &Template) { return Template.file == chosen; })};
+	tool.chosen = tool.templates.empty() ? -1 : kept != tool.templates.end() ? static_cast<int>(kept - tool.templates.begin()) : 0;
+	// the turntable read before points at the templates of before
+	tool.table = nullptr;
+	return true;
 }
 
 std::string editor_mode::turntable_name_for_new() const
@@ -257,7 +265,7 @@ bool editor_mode::turntable_read(TTrack *Table)
 		tool.status.clear();
 		tool.error.clear();
 	}
-	scan_turntables();
+	scan_turntables(false);
 	tool.table = Table;
 	tool.length = length_of(*Table);
 	auto const &path{Table->m_paths.front()};
@@ -668,7 +676,7 @@ void editor_mode::turntable_place(glm::dvec3 const &Centre, double const Yaw)
 	m_track_point = {};
 	ui()->set_node(m_node);
 	turntable_read(table);
-	tool.status = format(STR_C("Turntable %s: click around it for the tracks out of it, or fit the tracks around. It turns after the scenery is saved and loaded again"), table->name().c_str());
+	tool.status = format(STR_C("Turntable %s placed; it turns after the scenery is saved and loaded again"), table->name().c_str());
 }
 
 void editor_mode::turntable_press(track_intent const &Intent)
@@ -772,7 +780,8 @@ editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground
 			intent.position = end.position;
 			return make(kind::turntable_fit, STR("Click: lead this track to the turntable"));
 		}
-		double heading, length;
+		double heading;
+		double length;
 		if (turntable_exit_at(cursor_level(centre.y), heading, length))
 		{
 			tool.heading = heading;
@@ -792,7 +801,7 @@ editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground
 			return make(kind::select, track == tool.table ? std::string{} : STR("Click: this turntable"));
 		}
 	}
-	scan_turntables();
+	scan_turntables(false);
 	if (tool.chosen < 0)
 		return intent;
 	if (false == Shift)
@@ -811,7 +820,7 @@ editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground
 void editor_mode::render_turntable_ui()
 {
 	auto &tool{m_turntable};
-	scan_turntables();
+	scan_turntables(false);
 	auto *selected{selected_track()};
 	if (tool.table != selected)
 		turntable_read(selected);
@@ -825,7 +834,6 @@ void editor_mode::render_turntable_ui()
 		{
 			auto const &kind{tool.templates[tool.kind]};
 			ImGui::TextDisabled("%s", kind.name.c_str());
-			ImGui::SameLine();
 			ImGui::TextDisabled(kind.angles > 0 ? STR_C("(positions set by the tracks around, up to %d)") : STR_C("(%d positions fixed by the template)"), kind.angles > 0 ? kind.positions : static_cast<int>(kind.fixed.size()));
 		}
 		else
@@ -834,7 +842,49 @@ void editor_mode::render_turntable_ui()
 
 		auto const centre{turntable_centre()};
 		auto const ends{rim_ends(&table, centre, tool.length * 0.5)};
-		if (false == tool.exits.empty() && ImGui::TreeNodeEx(format(STR_C("Positions (%d)"), static_cast<int>(tool.exits.size())).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+		if (false == tool.exits.empty())
+		{
+			// the positions round the pit: a track out of the end of a position in green, a free end as a grey tick, the numbers
+			// past them, the bridge at the first position
+			auto const occupied = [&](double const Heading) { return std::any_of(ends.begin(), ends.end(), [&](rim_end const &End) { return std::abs(circular(End.heading - Heading)) < 0.05; }); };
+			auto const font{ImGui::GetFontSize()};
+			auto const width{ImGui::GetContentRegionAvail().x};
+			auto const height{std::round(font * 10.0f)};
+			auto const top{ImGui::GetCursorScreenPos()};
+			ImGui::Dummy(ImVec2(width, height));
+			auto *list{ImGui::GetWindowDrawList()};
+			list->AddRectFilled(top, ImVec2(top.x + width, top.y + height), ImGui::GetColorU32(ImGuiCol_FrameBg), std::round(font * 0.35f));
+			ImVec2 const middle{std::round(top.x + width * 0.5f), std::round(top.y + height * 0.5f)};
+			auto const rim{height * 0.22f};
+			auto const point = [&](double const Heading, float const Distance) {
+				auto const direction{heading_vector(Heading)};
+				return ImVec2(middle.x + static_cast<float>(direction.x) * Distance, middle.y - static_cast<float>(direction.y) * Distance);
+			};
+			list->AddCircleFilled(middle, rim, IM_COL32(40, 44, 52, 255), 48);
+			list->AddCircle(middle, rim, ImGui::GetColorU32(ImGuiCol_Text, 0.7f), 48, 2.0f);
+			auto const bridge{tool.table_yaw + tool.exits.front()};
+			list->AddLine(point(bridge, rim * 0.95f), point(bridge + 180.0, rim * 0.95f), IM_COL32(150, 160, 175, 255), std::round(font * 0.55f));
+			list->AddLine(point(bridge, rim * 0.95f), point(bridge + 180.0, rim * 0.95f), ImGui::GetColorU32(ImGuiCol_Text), 1.5f);
+			list->AddCircleFilled(middle, 3.0f, ImGui::GetColorU32(ImGuiCol_Text));
+			for (std::size_t i = 0; i < tool.exits.size(); ++i)
+				for (auto const back : {false, true})
+				{
+					auto const heading{tool.table_yaw + tool.exits[i] + (back ? 180.0 : 0.0)};
+					auto const taken{occupied(heading)};
+					if (taken)
+						list->AddLine(point(heading, rim), point(heading, rim * 1.5f), IM_COL32(90, 230, 110, 255), 3.0f);
+					else
+						list->AddLine(point(heading, rim), point(heading, rim * 1.15f), ImGui::GetColorU32(ImGuiCol_TextDisabled), 1.5f);
+					if (back)
+						continue;
+					auto const number{std::to_string(i + 1)};
+					auto const size{ImGui::CalcTextSize(number.c_str())};
+					auto const at{point(heading, rim * (taken ? 1.5f : 1.15f) + font * 0.75f)};
+					list->AddText(ImVec2(std::round(at.x - size.x * 0.5f), std::round(at.y - size.y * 0.5f)), taken ? IM_COL32(150, 240, 160, 255) : ImGui::GetColorU32(ImGuiCol_TextDisabled), number.c_str());
+				}
+			ImGui::TextDisabled("%s", STR_C("green: a track out of the position"));
+		}
+		if (false == tool.exits.empty() && ImGui::TreeNodeEx(format(STR_C("Positions (%d)"), static_cast<int>(tool.exits.size())).c_str()))
 		{
 			for (std::size_t i = 0; i < tool.exits.size(); ++i)
 			{
@@ -842,7 +892,7 @@ void editor_mode::render_turntable_ui()
 				auto const occupied = [&](double const Heading) { return std::any_of(ends.begin(), ends.end(), [&](rim_end const &End) { return std::abs(circular(End.heading - Heading)) < 0.05; }); };
 				auto const front{occupied(heading)};
 				auto const back{occupied(heading + 180.0)};
-				ImGui::Text("%2d  %7.2f deg", static_cast<int>(i + 1), tool.exits[i]);
+				ImGui::Text("%2d  %7.2f°", static_cast<int>(i + 1), tool.exits[i]);
 				ImGui::SameLine();
 				if (front || back)
 					ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.f), "%s%s%s", front ? STR_C("track") : "", front && back ? " + " : "", back ? STR_C("track on the other end") : "");
@@ -852,29 +902,44 @@ void editor_mode::render_turntable_ui()
 			ImGui::TreePop();
 		}
 
-		ImGui::Separator();
-		ImGui::TextUnformatted(STR_C("Tracks around"));
-		ImGui::PushItemWidth(110.f);
-		ImGui::InputFloat(STR_C("Reach from the rim, m"), &tool.reach, 10.f, 50.f, "%.0f");
-		tool.reach = std::clamp(tool.reach, 5.f, 500.f);
-		ImGui::InputFloat(STR_C("Radius of the curves, m"), &tool.radius, 10.f, 50.f, "%.0f");
-		tool.radius = std::clamp(tool.radius, static_cast<float>(kMinimumRadius), 2000.f);
-		if (tool.kind < 0 || tool.templates[tool.kind].angles > 0)
+		ImGui::SeparatorText(STR_C("Tracks around"));
+		ImGui::PushID("turntablemore");
+		if (ImGui::TreeNode(STR_C("More settings")))
 		{
-			ImGui::InputFloat(STR_C("Angle step of a new track, deg (0: free)"), &tool.step, 0.5f, 2.5f, "%.2f");
-			tool.step = std::clamp(tool.step, 0.f, 45.f);
+			if (begin_fields("##turntablefields", 0.5f))
+			{
+				field_row("Reach from the rim, m");
+				ImGui::InputFloat("##turntablereach", &tool.reach, 10.f, 50.f, "%.0f");
+				tool.reach = std::clamp(tool.reach, 5.f, 500.f);
+				field_row("Radius of the curves, m");
+				ImGui::InputFloat("##turntableradius", &tool.radius, 10.f, 50.f, "%.0f");
+				tool.radius = std::clamp(tool.radius, static_cast<float>(kMinimumRadius), 2000.f);
+				if (tool.kind < 0 || tool.templates[tool.kind].angles > 0)
+				{
+					field_row("Angle step of a new track, deg (0: free)");
+					ImGui::InputFloat("##turntablestep", &tool.step, 0.5f, 2.5f, "%.2f");
+					tool.step = std::clamp(tool.step, 0.f, 45.f);
+				}
+				ImGui::EndTable();
+			}
+			ImGui::TreePop();
 		}
-		ImGui::PopItemWidth();
-		ImGui::TextDisabled("%s", STR_C("Click around the turntable: a track out of it, as long as the cursor is far.\nClick a free end near it: that track is led to the rim, straight or with a curve"));
-		if (ImGui::Button(STR_C("Find the free ends around")))
+		ImGui::PopID();
+		gesture_rows({{"LMB around the turntable", "a track out of it, as long as the cursor is far"}, {"LMB on a free end near it", "that track is led to the rim, straight or with a curve"}});
+		if (ImGui::Button(STR_C("Find the free ends around"), ImVec2(-FLT_MIN, 0.f)))
 			turntable_find_fits();
 		if (false == tool.fits.empty())
 		{
 			int chosen{0};
 			for (auto const &fit : tool.fits)
 				chosen += fit.chosen && fit.issue.empty() ? 1 : 0;
-			ImGui::SameLine();
-			if (ImGui::Button(format(STR_C("Lead the chosen to the turntable (%d)"), chosen).c_str()))
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.24f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.52f, 0.30f, 1.0f));
+			ImGui::BeginDisabled(chosen == 0);
+			auto const lead{ImGui::Button(format(STR_C("Lead the chosen to the turntable (%d)"), chosen).c_str(), ImVec2(-FLT_MIN, 0.f))};
+			ImGui::EndDisabled();
+			ImGui::PopStyleColor(2);
+			if (lead)
 			{
 				std::vector<turntable_fit const *> fits;
 				for (auto const &fit : tool.fits)
@@ -894,7 +959,7 @@ void editor_mode::render_turntable_ui()
 				else
 					ImGui::TextDisabled("  -  ");
 				ImGui::SameLine();
-				auto const name{fit.end.track->name().empty() ? std::string{"(noname)"} : fit.end.track->name()};
+				auto const name{fit.end.track->name().empty() ? std::string{STR_C("(no name)")} : fit.end.track->name()};
 				if (ImGui::Selectable(name.c_str(), false, ImGuiSelectableFlags_None, ImVec2(ImGui::CalcTextSize(name.c_str()).x, 0.f)))
 					focus_track(*fit.end.track, fit.end.point.path, fit.end.position);
 				if (ImGui::IsItemHovered())
@@ -921,21 +986,33 @@ void editor_mode::render_turntable_ui()
 		if (selected != nullptr && selected->eType == tt_Table)
 			ImGui::TextColored(warncolour, "%s", STR_C("This turntable can't be read"));
 		ImGui::TextUnformatted(STR_C("New turntable"));
-		if (tool.templates.empty())
+		if (tool.templates.empty() && EditorIncludes.searching())
+			ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+		else if (tool.templates.empty())
 			ImGui::TextColored(warncolour, "%s", STR_C("No turntables: no template is described with category: turntable and its turntable: {length}"));
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 		{
 			auto const &kind{tool.templates[i]};
-			auto const text{kind.angles > 0 ? format(STR_C("%s   %.0f m, up to %d positions set by the tracks"), kind.name.c_str(), kind.length, kind.positions)
-			                                : format(STR_C("%s   %.0f m, %d fixed positions"), kind.name.c_str(), kind.length, static_cast<int>(kind.fixed.size()))};
-			if (ImGui::Selectable((text + "##turntable" + std::to_string(i)).c_str(), tool.chosen == i))
+			// the name, and under it the size and the positions
+			auto const details{kind.angles > 0 ? format(STR_C("%.0f m, up to %d positions set by the tracks"), kind.length, kind.positions)
+			                                   : format(STR_C("%.0f m, %d fixed positions"), kind.length, static_cast<int>(kind.fixed.size()))};
+			auto const line{ImGui::GetTextLineHeight()};
+			auto const at{ImGui::GetCursorScreenPos()};
+			if (ImGui::Selectable(("##turntable" + std::to_string(i)).c_str(), tool.chosen == i, ImGuiSelectableFlags_None, ImVec2(0.0f, line * 2.0f + 2.0f)))
 				tool.chosen = i;
+			auto *list{ImGui::GetWindowDrawList()};
+			list->AddText(ImVec2(at.x + 4.0f, at.y), ImGui::GetColorU32(ImGuiCol_Text), kind.name.c_str());
+			list->AddText(ImVec2(at.x + 4.0f, at.y + line + 1.0f), ImGui::GetColorU32(ImGuiCol_TextDisabled), details.c_str());
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s", kind.file.c_str());
 		}
-		ImGui::SetNextItemWidth(160.f);
-		ImGui::InputTextWithHint(STR_C("Name##turntablename"), turntable_name_for_new().c_str(), tool.name, sizeof(tool.name), ImGuiInputTextFlags_CharsNoBlank);
-		ImGui::TextDisabled("%s", STR_C("Press where the centre goes and drag to turn the bridge.\nClick a free end of a track: the turntable lines up with it, at its end. Shift: no lining up"));
+		if (begin_fields("##turntablenamefields", 0.3f))
+		{
+			field_row("Name##turntablename");
+			ImGui::InputTextWithHint("##turntablename", turntable_name_for_new().c_str(), tool.name, sizeof(tool.name), ImGuiInputTextFlags_CharsNoBlank);
+			ImGui::EndTable();
+		}
+		gesture_rows({{"Drag", "from where the centre goes, turning the bridge"}, {"LMB on a free end", "the turntable lines up with it, at its end"}, {"Shift+LMB", "no lining up"}});
 	}
 	if (false == tool.error.empty())
 		ImGui::TextColored(ImVec4(1.f, 0.45f, 0.35f, 1.f), "%s", tool.error.c_str());
@@ -1044,7 +1121,7 @@ void editor_mode::draw_turntable_overlay() const
 		draw_circle(projection, drawlist, centre, rim, overlay_color::marked, 2.5f);
 		projection.line(drawlist, {centre.x + direction.x * rim, centre.y, centre.z + direction.y * rim}, {centre.x - direction.x * rim, centre.y, centre.z - direction.y * rim}, overlay_color::marked, 3.f);
 		if (dragged)
-			label(projection, cursor, format("%.1f deg", yaw));
+			label(projection, cursor, format("%.1f°", yaw));
 	}
 }
 
@@ -1062,6 +1139,10 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 	auto const file{root + "_obrotnice.scm"};
 	std::ostringstream text;
 	auto tables{0};
+	std::vector<glm::dvec3> centres;
+	for (auto const *table : simulation::Paths.sequence())
+		if (table != nullptr && table->eType == tt_Table && false == table->m_editorremoved && false == table->m_paths.empty() && false == table->name().empty())
+			centres.push_back(centre_of(*table));
 	for (auto const *table : simulation::Paths.sequence())
 	{
 		if (table == nullptr || table->eType != tt_Table || table->m_editorremoved || table->m_paths.empty() || table->name().empty())
@@ -1136,7 +1217,11 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 				text << "event " << name << step << positions[i] << " multiple 0 " << name << ' ' << name << "_tor" << target << " condition memcompare * " << positions[i] << " * endevent\r\n";
 			}
 		}
-		text << "node -1 0 " << name << "_key eventlauncher " << at << " 150 t 0 " << name << "_next " << name << "_prev end\r\n";
+		auto range{150.0};
+		for (auto const &other : centres)
+			if (auto const distance{glm::distance(other, centre)}; distance > 0.5)
+				range = std::min(range, distance * 0.5);
+		text << "node -1 0 " << name << "_key eventlauncher " << at << ' ' << format("%.1f", range) << " t 0 " << name << "_next " << name << "_prev end\r\n";
 	}
 	auto const path{Global.asCurrentSceneryPath + file};
 	std::error_code error;

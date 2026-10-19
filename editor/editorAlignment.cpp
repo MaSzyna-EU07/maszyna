@@ -11,12 +11,15 @@ http:
 #include "editor/editorAlignment.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "utilities/translation.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <limits>
+#include <optional>
 
 namespace alignment
 {
@@ -61,7 +64,8 @@ local_point transition_point(transition_shape const Shape, double const Length, 
 	auto const angle = [&](double const S) { return S * S / (2.0 * Radius * Length); };
 	int const steps{std::max(8, static_cast<int>(std::ceil(distance / 0.5)) * 2)};
 	double const h{distance / steps};
-	double x{0.0}, y{0.0};
+	double x{0.0};
+	double y{0.0};
 	for (int i = 0; i <= steps; ++i)
 	{
 		double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
@@ -79,7 +83,8 @@ local_point spiral_point(double const Start, double const End, double const Leng
 	auto const heading = [&](double const S) { return Start * S + (End - Start) * S * S / (2.0 * std::max(Length, 1e-9)); };
 	int const steps{std::max(8, static_cast<int>(std::ceil(Distance / 0.5)) * 2)};
 	double const h{Distance / steps};
-	double x{0.0}, y{0.0};
+	double x{0.0};
+	double y{0.0};
 	for (int i = 0; i <= steps; ++i)
 	{
 		double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
@@ -125,7 +130,9 @@ compound_curve build_compound(double const Deflection, std::vector<compound_arc>
 		segments.push_back({curvatures[i], curvatures[i], share * arcs / curvatures[i]});
 	}
 	segments.push_back({curvatures.back(), 0.0, Lengthout * f});
-	double x{0.0}, y{0.0}, heading{0.0};
+	double x{0.0};
+	double y{0.0};
+	double heading{0.0};
 	for (auto const &segment : segments)
 	{
 		if (segment[2] < 1e-6)
@@ -290,7 +297,7 @@ result fit_between(design const &Design)
 	auto const end{plan_of(Design.end)};
 	if (glm::length(Design.start_direction) < 1e-9 || glm::length(Design.end_direction) < 1e-9)
 	{
-		r.errors.emplace_back("The direction of an end of the fragment is undefined, its end path has zero length");
+		r.errors.emplace_back(STR_C("The direction of an end of the fragment is undefined, its end path has zero length"));
 		return r;
 	}
 	auto const startdirection{glm::normalize(Design.start_direction)};
@@ -302,7 +309,7 @@ result fit_between(design const &Design)
 	{
 		auto const offset{end - start};
 		if (std::abs(cross(startdirection, offset)) > 0.01 || glm::dot(startdirection, enddirection) < std::cos(1e-4) || glm::dot(startdirection, offset) <= 0.0)
-			r.errors.emplace_back("The ends don't lie on a common straight line, add a vertex");
+			r.errors.emplace_back(STR_C("The ends don't lie on a common straight line, add a vertex"));
 	}
 	else if (count == 1)
 	{
@@ -310,14 +317,14 @@ result fit_between(design const &Design)
 		auto const determinant{cross(startdirection, enddirection)};
 		if (std::abs(determinant) < 1e-9)
 		{
-			r.errors.emplace_back("Tangents of the ends are parallel, use two vertices");
+			r.errors.emplace_back(STR_C("Tangents of the ends are parallel, use two vertices"));
 		}
 		else
 		{
 			auto const t{cross(offset, enddirection) / determinant};
 			auto const u{cross(startdirection, offset) / determinant};
 			if ((t <= 0.0 || u <= 0.0) && false == Design.vertices.front().reverse_turn)
-				r.errors.emplace_back("Tangents of the ends intersect outside of the fragment, turn the longer way or use two vertices");
+				r.errors.emplace_back(STR_C("Tangents of the ends intersect outside of the fragment, turn the longer way or use two vertices"));
 			r.vertices[0] = start + startdirection * t;
 		}
 	}
@@ -338,7 +345,7 @@ result fit_between(design const &Design)
 	{
 		if (glm::distance(polygon[i], polygon[i + 1]) < 1e-3)
 		{
-			r.errors.emplace_back(format("Tangent %zu has zero length", i + 1));
+			r.errors.emplace_back(format(STR_C("Tangent %zu has zero length"), i + 1));
 			return r;
 		}
 	}
@@ -365,9 +372,9 @@ result fit_between(design const &Design)
 		if (Straight >= -1e-4 || -Straight <= startreserve + 1e-4)
 			return;
 		if (startreserve > 0.0)
-			r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the adjoining straight", -Straight - startreserve));
+			r.errors.emplace_back(format(STR_C("Vertex 1: the curve starts %.2f m before the adjoining straight"), -Straight - startreserve));
 		else
-			r.errors.emplace_back(format("Vertex 1: the curve starts %.2f m before the fixed start", -Straight));
+			r.errors.emplace_back(format(STR_C("Vertex 1: the curve starts %.2f m before the fixed start"), -Straight));
 	};
 
 	struct fitted
@@ -378,6 +385,7 @@ result fit_between(design const &Design)
 		double tangent_in{0.0};
 		double tangent_out{0.0};
 		double deflection{0.0};
+		double cant{0.0};
 		bool compound{false};
 		std::vector<compound_arc> arcs;
 		std::function<void(double, double &, double &)> tangents;
@@ -409,7 +417,7 @@ result fit_between(design const &Design)
 			continue;
 		if (geometric > kPi - 1e-3 || (reverse && geometric < 1e-3))
 		{
-			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex"), k + 1));
 			return r;
 		}
 		if (vertex.compound && false == vertex.arcs.empty())
@@ -437,13 +445,14 @@ result fit_between(design const &Design)
 		};
 		if (angles(1.0) > deflection)
 		{
-			double low{0.0}, high{1.0};
+			double low{0.0};
+			double high{1.0};
 			for (int i = 0; i < 50; ++i)
 			{
 				auto const middle{(low + high) * 0.5};
 				(angles(middle) > deflection ? high : low) = middle;
 			}
-			r.warnings.emplace_back(format("Vertex %zu: transition curves shortened to %.1f / %.1f m to fit the deflection angle", k + 1, fit.transition_in * low, fit.transition_out * low));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to %.1f / %.1f m to fit the deflection angle"), k + 1, fit.transition_in * low, fit.transition_out * low));
 			fit.transition_in *= low;
 			fit.transition_out *= low;
 		}
@@ -479,7 +488,7 @@ result fit_between(design const &Design)
 	}
 	for (std::size_t k = 0; k < count; ++k)
 	{
-		if (scales[k] >= 1.0)
+		if (scales[k] >= 1.0 || fits[k].tangents == nullptr)
 			continue;
 		auto &fit{fits[k]};
 		auto const budgetin{fit.tangent_in * scales[k]};
@@ -487,7 +496,8 @@ result fit_between(design const &Design)
 		auto const fits_budget = [&](double const Radius) {
 			if (transition_point(Design.shape, fit.transition_in, Radius, 1.0).angle + transition_point(Design.shape, fit.transition_out, Radius, 1.0).angle > fit.deflection)
 				return false;
-			double tangentin, tangentout;
+			double tangentin;
+			double tangentout;
 			fit.tangents(Radius, tangentin, tangentout);
 			return tangentin <= budgetin && tangentout <= budgetout;
 		};
@@ -516,7 +526,47 @@ result fit_between(design const &Design)
 			fit.transition_in *= scales[k];
 			fit.transition_out *= scales[k];
 		}
-		r.warnings.emplace_back(format("Vertex %zu: R reduced from %.1f to %.1f m, transitions to %.1f / %.1f m, to fit between the ends", k + 1, Design.vertices[k].radius, fit.radius, fit.transition_in, fit.transition_out));
+		r.warnings.emplace_back(format(STR_C("Vertex %zu: R reduced from %.1f to %.1f m, transitions to %.1f / %.1f m, to fit between the ends"), k + 1, Design.vertices[k].radius, fit.radius, fit.transition_in, fit.transition_out));
+		r.radius_warnings.push_back(r.warnings.back());
+	}
+	for (std::size_t k = 0; k < count; ++k)
+	{
+		auto &fit{fits[k]};
+		auto const &vertex{Design.vertices[k]};
+		fit.cant = std::max(0.0, vertex.cant);
+		if (fit.compound || fit.deflection < 1e-7 || fit.transition_in + fit.transition_out <= 0.0)
+			continue;
+		auto const angles = [&](double const Factor) {
+			return transition_point(Design.shape, fit.transition_in * Factor, fit.radius, 1.0).angle + transition_point(Design.shape, fit.transition_out * Factor, fit.radius, 1.0).angle;
+		};
+		auto const minimum{std::min(fit.radius * fit.deflection, std::max(Design.norms.arc_min, Design.norms.arc_min_factor * Design.speed))};
+		if (fit.radius * (fit.deflection - angles(1.0)) < minimum - 1e-6)
+		{
+			auto const target{fit.deflection - minimum / fit.radius};
+			double low{0.0};
+			double high{1.0};
+			for (int i = 0; i < 50; ++i)
+			{
+				auto const middle{(low + high) * 0.5};
+				(angles(middle) > target ? high : low) = middle;
+			}
+			fit.transition_in *= low;
+			fit.transition_out *= low;
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to %.1f / %.1f m, the circular arc keeps %.0f m"), k + 1, fit.transition_in, fit.transition_out, minimum));
+		}
+		if (fit.transition_in < 1.0)
+			fit.transition_in = 0.0;
+		if (fit.transition_out < 1.0)
+			fit.transition_out = 0.0;
+		auto const shortest{std::min(fit.transition_in, fit.transition_out)};
+		if (fit.cant <= 0.0 || (fit.transition_in >= vertex.transition_in - 1e-6 && fit.transition_out >= vertex.transition_out - 1e-6))
+			continue;
+		auto const speed{std::max(1.0, Design.speed)};
+		auto const ramp{std::min(shortest * 1000.0 / (Design.norms.ramp_factor * speed), Design.norms.cant_rate * 3.6 * shortest / speed)};
+		if (ramp >= fit.cant)
+			continue;
+		fit.cant = ramp < 5.0 ? 0.0 : std::floor(ramp / 5.0) * 5.0;
+		r.warnings.emplace_back(format(STR_C("Vertex %zu: cant lowered to %.0f mm, the shortened transition curves can't ramp more"), k + 1, fit.cant));
 	}
 
 	std::vector<double> vertexchainage(count, 0.0);
@@ -538,7 +588,7 @@ result fit_between(design const &Design)
 		if (deflection < 1e-7)
 		{
 			if (lead < -1e-4)
-				r.errors.emplace_back(format("Vertex %zu lies inside the curve of the previous vertex", k + 1));
+				r.errors.emplace_back(format(STR_C("Vertex %zu lies inside the curve of the previous vertex"), k + 1));
 			push_straight(cursor, directionin, lead);
 			vertexchainage[k] = chainage;
 			cursor = position;
@@ -546,14 +596,14 @@ result fit_between(design const &Design)
 		}
 		if (geometric > kPi - 1e-3 || (reverse && geometric < 1e-3))
 		{
-			r.errors.emplace_back(format("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex", k + 1));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex"), k + 1));
 			return r;
 		}
 		if (fit.compound)
 		{
 			auto const shape{build_compound(deflection, fit.arcs, fit.transition_in, fit.transition_out)};
 			if (shape.shortened < 1.0)
-				r.warnings.emplace_back(format("Vertex %zu: transition curves shortened to fit the deflection angle", k + 1));
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to fit the deflection angle"), k + 1));
 			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
 			auto const endoffset{directionin * shape.end.x + normalin * shape.end.y};
 			auto const along{cross(directionout, endoffset) / cross(directionout, directionin)};
@@ -562,7 +612,7 @@ result fit_between(design const &Design)
 			if (k == 0)
 				starts_early(straight);
 			else if (straight < -1e-4)
-				r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
+				r.errors.emplace_back(format(STR_C("Curves of vertices %zu and %zu overlap by %.2f m"), k, k + 1, -straight));
 			push_straight(cursor, directionin, straight);
 			auto const startchainage{chainage};
 			glm::dvec2 origin{curvestart};
@@ -608,10 +658,10 @@ result fit_between(design const &Design)
 			report.unbalanced = unbalanced_acceleration(Design.speed, sharpest, std::max(0.0, vertex.cant), Design.norms);
 			report.recommended = recommend(Design.speed, sharpest, Design.norms);
 			r.curves.push_back(report);
-			if (sharpest < report.recommended.radius_min - 1e-6)
-				r.warnings.emplace_back(format("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h", k + 1, sharpest, report.recommended.radius_min, Design.speed));
-			if (report.unbalanced > Design.norms.unbalanced + 1e-6)
-				r.warnings.emplace_back(format("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2", k + 1, report.unbalanced, Design.norms.unbalanced));
+			if (Design.norms.checked && sharpest < report.recommended.radius_min - 1e-6)
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, sharpest, report.recommended.radius_min, Design.speed));
+			if (Design.norms.checked && report.unbalanced > Design.norms.unbalanced + 1e-6)
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2"), k + 1, report.unbalanced, Design.norms.unbalanced));
 			continue;
 		}
 		auto const radius{fit.radius};
@@ -635,7 +685,7 @@ result fit_between(design const &Design)
 		auto const arcangle{deflection - endin.angle - endout.angle};
 		if (arcangle < -1e-9)
 		{
-			r.errors.emplace_back(format("Vertex %zu: transition curves are too long for the deflection angle", k + 1));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: transition curves are too long for the deflection angle"), k + 1));
 			return r;
 		}
 
@@ -643,18 +693,19 @@ result fit_between(design const &Design)
 		if (k == 0)
 			starts_early(straight);
 		else if (straight < -1e-4)
-			r.errors.emplace_back(format("Curves of vertices %zu and %zu overlap by %.2f m", k, k + 1, -straight));
+			r.errors.emplace_back(format(STR_C("Curves of vertices %zu and %zu overlap by %.2f m"), k, k + 1, -straight));
 		push_straight(cursor, directionin, straight);
 
 		element curve;
 		curve.vertex = static_cast<int>(k);
 		curve.radius = radius;
 		curve.turn = side;
-		curve.cant = std::max(0.0, vertex.cant);
+		curve.cant = fit.cant;
 		if (lengthin > 0.0)
 		{
 			curve.kind = element_kind::transition_in;
-			curve.transition = curve.length = lengthin;
+			curve.length = lengthin;
+			curve.transition = curve.length;
 			curve.origin = curvestart;
 			curve.direction = directionin;
 			curve.normal = normalin;
@@ -673,7 +724,8 @@ result fit_between(design const &Design)
 		if (lengthout > 0.0)
 		{
 			curve.kind = element_kind::transition_out;
-			curve.transition = curve.length = lengthout;
+			curve.length = lengthout;
+			curve.transition = curve.length;
 			curve.origin = curveend;
 			curve.direction = -directionout;
 			curve.normal = normalout;
@@ -706,17 +758,19 @@ result fit_between(design const &Design)
 		r.curves.push_back(report);
 
 		auto const &norms{Design.norms};
+		if (false == norms.checked)
+			continue;
 		if (radius < report.recommended.radius_min - 1e-6)
-			r.warnings.emplace_back(format("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h", k + 1, radius, report.recommended.radius_min, Design.speed));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, radius, report.recommended.radius_min, Design.speed));
 		if (curve.cant > norms.cant_max + 1e-6)
-			r.warnings.emplace_back(format("Vertex %zu: cant %.0f mm exceeds %.0f mm", k + 1, curve.cant, norms.cant_max));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: cant %.0f mm exceeds %.0f mm"), k + 1, curve.cant, norms.cant_max));
 		if (report.unbalanced > norms.unbalanced + 1e-6)
-			r.warnings.emplace_back(format("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2 (cant at least %.0f mm)", k + 1, report.unbalanced, norms.unbalanced, report.recommended.cant_min));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2 (cant at least %.0f mm)"), k + 1, report.unbalanced, norms.unbalanced, report.recommended.cant_min));
 		auto const required{transition_length(Design.speed, radius, curve.cant, norms)};
 		if (lengthin + 1e-6 < required || lengthout + 1e-6 < required)
-			r.warnings.emplace_back(format("Vertex %zu: transition curves shorter than the required %.0f m", k + 1, required));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shorter than the required %.0f m"), k + 1, required));
 		if (curve.cant > 0.0 && (lengthin <= 0.0 || lengthout <= 0.0))
-			r.warnings.emplace_back(format("Vertex %zu: cant without a transition curve to ramp it", k + 1));
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: cant without a transition curve to ramp it"), k + 1));
 	}
 	auto const lastdirection{glm::normalize(polygon.back() - polygon[polygon.size() - 2])};
 	auto const tail{glm::dot(end - cursor, lastdirection)};
@@ -725,21 +779,21 @@ result fit_between(design const &Design)
 	if (tail < -1e-4 && -tail > endreserve + 1e-4)
 	{
 		if (endreserve > 0.0)
-			r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the adjoining straight", count, -tail - endreserve));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: the curve ends %.2f m past the adjoining straight"), count, -tail - endreserve));
 		else
-			r.errors.emplace_back(format("Vertex %zu: the curve ends %.2f m past the fixed end", count, -tail));
+			r.errors.emplace_back(format(STR_C("Vertex %zu: the curve ends %.2f m past the fixed end"), count, -tail));
 	}
 	push_straight(cursor, lastdirection, tail);
 	r.length = chainage;
 
-	if (Design.norms.tangent_min_time > 0.0)
+	if (Design.norms.checked && Design.norms.tangent_min_time > 0.0)
 	{
 		auto const minimum{Design.norms.tangent_min_time * Design.speed / 3.6};
 		for (std::size_t i = 1; i + 1 < r.elements.size(); ++i)
 		{
 			auto const &e{r.elements[i]};
 			if (e.kind == element_kind::straight && e.length < minimum && r.elements[i - 1].kind != element_kind::straight && r.elements[i + 1].kind != element_kind::straight)
-				r.warnings.emplace_back(format("Straight between curves is %.1f m long, less than %.0f m", e.length, minimum));
+				r.warnings.emplace_back(format(STR_C("Straight between curves is %.1f m long, less than %.0f m"), e.length, minimum));
 		}
 	}
 
@@ -763,9 +817,9 @@ result fit_between(design const &Design)
 		point.tangent = point.radius * std::abs(gradeafter - gradebefore) / 2.0;
 	}
 	if (Design.start_radius > 0.0 && Design.start_radius < 10000.0)
-		r.warnings.emplace_back(format("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly", Design.start_radius));
+		r.warnings.emplace_back(format(STR_C("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly"), Design.start_radius));
 	if (Design.end_radius > 0.0 && Design.end_radius < 10000.0)
-		r.warnings.emplace_back(format("The adjoining track at the end is curved (R %.0f m), the curvature changes abruptly", Design.end_radius));
+		r.warnings.emplace_back(format(STR_C("The adjoining track at the end is curved (R %.0f m), the curvature changes abruptly"), Design.end_radius));
 
 	r.valid = r.errors.empty() && r.length > 1e-3;
 	return r;
@@ -786,13 +840,15 @@ result compute(design const &Design)
 	auto const endextension{first.end_extension > 1e-4 ? first.end_extension : 0.0};
 	if (false == first.errors.empty() || (startextension == 0.0 && endextension == 0.0))
 	{
-		first.start_extension = first.end_extension = 0.0;
+		first.start_extension = 0.0;
+		first.end_extension = 0.0;
 		return first;
 	}
 	auto extended{Design};
 	extended.start = along_end(Design.start, Design.start_direction, Design.start_grade, -startextension);
 	extended.end = along_end(Design.end, Design.end_direction, Design.end_grade, endextension);
-	extended.start_reserve = extended.end_reserve = 0.0;
+	extended.start_reserve = 0.0;
+	extended.end_reserve = 0.0;
 	if (extended.vertices.size() >= 2)
 	{
 		extended.vertices.front().offset += startextension;
@@ -802,6 +858,268 @@ result compute(design const &Design)
 	r.start_extension = startextension;
 	r.end_extension = endextension;
 	return r;
+}
+
+double speed_limit(double const Radius, limits const &Limits)
+{
+	if (Radius <= 0.0)
+		return 0.0;
+	auto const factor{Limits.gauge / (kGravity * 12.96)};
+	auto const allowance{Limits.gauge * Limits.unbalanced / kGravity};
+	return std::sqrt(Radius * (Limits.cant_max + allowance) / factor);
+}
+
+result compute_recommended(design &Design, bool const Transitions)
+{
+	for (auto &vertex : Design.vertices)
+	{
+		vertex.cant = 0.0;
+		vertex.transition_in = 0.0;
+		vertex.transition_out = 0.0;
+	}
+	auto r{compute(Design)};
+	if (false == Transitions || false == r.valid)
+		return r;
+	auto const speed{Design.speed};
+	for (int i = 0; i < 3; ++i)
+	{
+		bool accepted{false};
+		for (auto const share : {1.0, 0.75, 0.5, 0.35, 0.25})
+		{
+			auto attempt{Design};
+			auto slowest{speed};
+			for (auto const &curve : r.curves)
+			{
+				if (curve.vertex < 0 || curve.vertex >= static_cast<int>(attempt.vertices.size()))
+					continue;
+				auto const allowed{std::max(1.0, std::min(speed, speed_limit(curve.radius, attempt.norms)))};
+				auto const recommended{recommend(allowed, curve.radius, attempt.norms)};
+				auto const length{recommended.transition * share};
+				auto &vertex{attempt.vertices[curve.vertex]};
+				vertex.transition_out = length;
+				vertex.transition_in = vertex.transition_out;
+				vertex.cant = std::min({recommended.cant, length * 1000.0 / (attempt.norms.ramp_factor * allowed), attempt.norms.cant_rate * 3.6 * length / allowed});
+				vertex.cant = vertex.cant < 5.0 ? 0.0 : std::floor(vertex.cant / 5.0) * 5.0;
+				slowest = std::min(slowest, allowed);
+			}
+			attempt.speed = slowest;
+			auto next{compute(attempt)};
+			if (false == next.valid)
+				continue;
+			auto const kept{std::all_of(next.curves.begin(), next.curves.end(), [&](curve_report const &Curve) {
+				auto const &vertex{attempt.vertices[Curve.vertex]};
+				return Curve.transition_in >= 0.95 * vertex.transition_in && Curve.transition_out >= 0.95 * vertex.transition_out;
+			})};
+			if (false == kept && share > 0.25)
+				continue;
+			Design = attempt;
+			r = next;
+			accepted = true;
+			break;
+		}
+		if (false == accepted)
+			break;
+	}
+	return r;
+}
+
+namespace
+{
+
+double turning(result const &Result)
+{
+	double total{0.0};
+	for (auto const &e : Result.elements)
+	{
+		if (e.radius <= 0.0)
+			continue;
+		if (e.kind == element_kind::arc)
+			total += e.length / e.radius;
+		else if (e.kind == element_kind::transition_in || e.kind == element_kind::transition_out)
+			total += e.length / (2.0 * e.radius);
+	}
+	return total;
+}
+
+void spread_rolls(std::vector<segment_data> &Pieces, double const Start, double const End)
+{
+	auto const count{static_cast<double>(Pieces.size())};
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+		Pieces[i].rolls = {static_cast<float>(Start + (End - Start) * i / count), static_cast<float>(Start + (End - Start) * (i + 1) / count)};
+}
+
+} // namespace
+
+namespace
+{
+
+struct join_frame
+{
+	join_request const &request;
+	glm::dvec2 start_direction;
+	glm::dvec2 end_direction;
+	glm::dvec2 chord;
+	double distance;
+	double tolerance;
+	double heading;
+	double rise;
+};
+
+std::optional<join_result> straight_join(join_frame const &Frame)
+{
+	auto const &a{Frame.request.start};
+	auto const &b{Frame.request.end};
+	auto const kink{std::max(std::abs(geometry::signed_angle(Frame.start_direction, Frame.chord)), std::abs(geometry::signed_angle(Frame.chord, Frame.end_direction)))};
+	if (kink > Frame.tolerance)
+		return std::nullopt;
+	join_result straight;
+	straight.kind = join_kind::straight;
+	straight.kink = kink;
+	segment_data path;
+	path.points[segment_data::point::start] = a.position;
+	path.points[segment_data::point::end] = b.position;
+	straight.pieces = {path};
+	spread_rolls(straight.pieces, a.roll, b.roll);
+	straight.length = glm::distance(a.position, b.position);
+	return straight;
+}
+
+std::optional<join_result> arc_join(join_frame const &Frame)
+{
+	auto const &a{Frame.request.start};
+	auto const &b{Frame.request.end};
+	auto const lateral{cross(Frame.start_direction, Frame.chord)};
+	if (std::abs(lateral) <= 1e-6)
+		return std::nullopt;
+	auto const angle{2.0 * std::atan2(std::abs(lateral), glm::dot(Frame.start_direction, Frame.chord))};
+	int const side{lateral > 0.0 ? 1 : -1};
+	auto const radius{Frame.distance * Frame.distance / (2.0 * std::abs(lateral))};
+	auto const kink{std::abs(geometry::signed_angle(turned(Frame.start_direction, side * angle), Frame.end_direction))};
+	if (angle >= kPi - 1e-3 || kink > Frame.tolerance)
+		return std::nullopt;
+	join_result arc;
+	arc.kind = join_kind::arc;
+	arc.kink = kink;
+	arc.pieces = geometry::arc_pieces(a.position, Frame.start_direction, Frame.rise / (radius * angle), radius, angle, side);
+	arc.pieces.back().points[segment_data::point::end] = b.position;
+	spread_rolls(arc.pieces, a.roll, b.roll);
+	arc.radius = radius;
+	arc.length = radius * angle;
+	return arc;
+}
+
+design join_design(join_frame const &Frame, join_kind const Kind)
+{
+	auto const &request{Frame.request};
+	design shape;
+	shape.norms = request.norms;
+	shape.shape = request.shape;
+	shape.speed = request.speed;
+	shape.arc_piece_angle = 90.0;
+	shape.start = request.start.position;
+	shape.end = request.end.position;
+	shape.start_direction = Frame.start_direction;
+	shape.end_direction = Frame.end_direction;
+	shape.start_grade = Frame.rise / Frame.distance;
+	shape.end_grade = shape.start_grade;
+	vertex corner;
+	corner.radius = request.radius > 0.0 ? request.radius : 100000.0;
+	if (Kind == join_kind::curve)
+		shape.vertices = {corner};
+	else
+	{
+		corner.offset = Frame.distance / 4.0;
+		shape.vertices = {corner, corner};
+	}
+	return shape;
+}
+
+std::optional<join_result> fitted_join(join_frame const &Frame, join_kind const Kind)
+{
+	auto shape{join_design(Frame, Kind)};
+	auto const r{compute_recommended(shape, Frame.request.transitions)};
+	auto const sharp{std::any_of(r.curves.begin(), r.curves.end(), [](curve_report const &Report) { return Report.radius < 10.0; })};
+	if (false == r.valid || sharp || turning(r) > Frame.heading + kPi + 1e-6 || r.length > 3.0 * Frame.distance + 1.0)
+		return std::nullopt;
+	join_result curve;
+	curve.kind = Kind;
+	curve.pieces = pieces(r, shape, 0);
+	if (curve.pieces.empty())
+		return curve;
+	curve.pieces.front().rolls[0] = static_cast<float>(Frame.request.start.roll);
+	curve.pieces.back().rolls[1] = static_cast<float>(Frame.request.end.roll);
+	curve.length = r.length;
+	curve.speed = shape.speed;
+	curve.warnings = r.warnings;
+	curve.radius_warnings = r.radius_warnings;
+	curve.radius = r.curves.empty() ? 0.0 : std::numeric_limits<double>::max();
+	for (auto const &report : r.curves)
+	{
+		curve.radius = std::min(curve.radius, report.radius);
+		curve.transition = std::max({curve.transition, report.transition_in, report.transition_out});
+	}
+	for (auto const &e : r.elements)
+		curve.cant = std::max(curve.cant, e.cant);
+	return curve;
+}
+
+std::optional<join_result> curve_join(join_frame const &Frame)
+{
+	design probe;
+	probe.start = Frame.request.start.position;
+	probe.end = Frame.request.end.position;
+	probe.start_direction = Frame.start_direction;
+	probe.end_direction = Frame.end_direction;
+	glm::dvec2 intersection;
+	return fitted_join(Frame, tangent_intersection(probe, intersection) ? join_kind::curve : join_kind::reverse_curve);
+}
+
+join_result bezier_join(join_frame const &Frame)
+{
+	auto const &a{Frame.request.start};
+	auto const &b{Frame.request.end};
+	join_result fallback;
+	fallback.kind = join_kind::bezier;
+	auto const grade{Frame.rise / Frame.distance};
+	auto const handle{Frame.distance / 3.0};
+	segment_data path;
+	path.points[segment_data::point::start] = a.position;
+	path.points[segment_data::point::end] = b.position;
+	path.points[segment_data::point::control1] = glm::dvec3{Frame.start_direction.x, grade, Frame.start_direction.y} * handle;
+	path.points[segment_data::point::control2] = -glm::dvec3{Frame.end_direction.x, grade, Frame.end_direction.y} * handle;
+	fallback.pieces = {path};
+	spread_rolls(fallback.pieces, a.roll, b.roll);
+	fallback.length = Frame.distance;
+	return fallback;
+}
+
+} // namespace
+
+join_result join(join_request const &Request)
+{
+	auto const &a{Request.start};
+	auto const &b{Request.end};
+	auto const chord{plan_of(b.position) - plan_of(a.position)};
+	auto const distance{glm::length(chord)};
+	if (distance < 0.05 || glm::length(a.direction) < 1e-9 || glm::length(b.direction) < 1e-9)
+		return {};
+	auto const startdirection{glm::normalize(a.direction)};
+	auto const enddirection{glm::normalize(b.direction)};
+	join_frame const frame{Request, startdirection, enddirection, chord, distance, glm::radians(Request.kink), std::abs(geometry::signed_angle(startdirection, enddirection)), b.position.y - a.position.y};
+	std::vector<join_result> candidates;
+	std::vector<join_result> kinked;
+	for (auto const &candidate : {straight_join(frame), arc_join(frame), curve_join(frame)})
+		if (candidate.has_value())
+			(candidate->kink > 0.1 * frame.tolerance ? kinked : candidates).push_back(*candidate);
+	candidates.insert(candidates.end(), kinked.begin(), kinked.end());
+	if (candidates.empty())
+		candidates.push_back(bezier_join(frame));
+	auto const count{static_cast<int>(candidates.size())};
+	auto chosen{candidates[((Request.variant % count) + count) % count]};
+	chosen.variants = count;
+	if (chosen.speed <= 0.0)
+		chosen.speed = Request.speed;
+	return chosen;
 }
 
 bool tangent_intersection(design const &Design, glm::dvec2 &Point)
@@ -819,6 +1137,24 @@ bool tangent_intersection(design const &Design, glm::dvec2 &Point)
 		return false;
 	Point = start + startdirection * t;
 	return true;
+}
+
+bool spiral_tangents(transition_shape const Shape, double const TurnIn, double const TurnOut, double &TangentIn, double &TangentOut)
+{
+	auto const length = [&](double const Turn) { return Shape == transition_shape::clothoid ? 2.0 * Turn : 2.0 * std::tan(Turn); };
+	if (TurnIn <= 0.0 || TurnOut <= 0.0 || TurnIn >= 0.5 * kPi || TurnOut >= 0.5 * kPi)
+		return false;
+	auto const in{transition_point(Shape, length(TurnIn), 1.0, 1.0)};
+	auto const out{transition_point(Shape, length(TurnOut), 1.0, 1.0)};
+	auto const deflection{in.angle + out.angle};
+	if (deflection >= kPi - 1e-3)
+		return false;
+	glm::dvec2 const direction{std::cos(deflection), std::sin(deflection)};
+	glm::dvec2 const normal{-direction.y, direction.x};
+	auto const end{glm::dvec2{in.x, in.y} + direction * out.x - normal * out.y};
+	TangentOut = end.y / std::sin(deflection);
+	TangentIn = end.x - TangentOut * std::cos(deflection);
+	return TangentIn > 0.0 && TangentOut > 0.0;
 }
 
 bool collinear(design const &Design)
@@ -889,7 +1225,8 @@ station evaluate(result const &Result, double const Chainage)
 	auto const s{std::clamp(Chainage, 0.0, Result.length)};
 	auto const &e{element_at(Result, s)};
 	auto const distance{std::clamp(s - e.chainage, 0.0, e.length)};
-	glm::dvec2 position, direction;
+	glm::dvec2 position;
+	glm::dvec2 direction;
 	element_point(e, Result.shape, distance, position, direction);
 	result.position = {position.x, elevation(Result, s), position.y};
 	result.direction = glm::normalize(glm::dvec3{direction.x, grade(Result, s), direction.y});
@@ -912,7 +1249,8 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	struct span
 	{
 		std::size_t element;
-		double from, to;
+		double from;
+		double to;
 		bool generic{false};
 		double start{0.0};
 		double end{0.0};
@@ -921,12 +1259,36 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	auto const chainage_from = [&](span const &Span) { return Span.generic ? Span.start : Result.elements[Span.element].chainage + Span.from; };
 	auto const chainage_to = [&](span const &Span) { return Span.generic ? Span.end : Result.elements[Span.element].chainage + Span.to; };
 	std::vector<span> spans;
+	std::optional<double> lead;
 	for (std::size_t i = 0; i < Result.elements.size(); ++i)
 	{
 		auto const &e{Result.elements[i]};
 		auto const count{element_pieces(e, Design.shape, Design.transition_pieces, Design.arc_piece_angle)};
+		if (count == 0)
+		{
+			if (e.length <= 0.0)
+				continue;
+			if (spans.empty())
+			{
+				lead = lead.value_or(e.chainage);
+				continue;
+			}
+			auto &previous{spans.back()};
+			previous.start = chainage_from(previous);
+			previous.end = e.chainage + e.length;
+			previous.generic = true;
+			continue;
+		}
 		for (std::size_t j = 0; j < count; ++j)
 			spans.push_back({i, e.length * j / count, e.length * (j + 1) / count});
+		if (lead.has_value())
+		{
+			auto &first{spans[spans.size() - count]};
+			first.end = chainage_to(first);
+			first.start = *lead;
+			first.generic = true;
+			lead.reset();
+		}
 	}
 	double const shortest{1.0};
 	for (std::size_t i = 0; i < spans.size() && spans.size() > 1;)
@@ -1000,6 +1362,19 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 		auto longest = std::max_element(spans.begin(), spans.end(), [&](span const &A, span const &B) { return extent(A) < extent(B); });
 		split(longest, (chainage_from(*longest) + chainage_to(*longest)) * 0.5);
 	}
+	// no path longer than a track may be
+	for (std::size_t i = 0; i < spans.size();)
+	{
+		auto const from{chainage_from(spans[i])};
+		auto const length{chainage_to(spans[i]) - from};
+		if (length <= geometry::longest_path)
+		{
+			++i;
+			continue;
+		}
+		auto const count{static_cast<int>(std::ceil(length / geometry::longest_path))};
+		split(spans.begin() + static_cast<std::ptrdiff_t>(i), from + length / count);
+	}
 	if (Intervals != nullptr)
 	{
 		Intervals->clear();
@@ -1039,10 +1414,14 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 			continue;
 		}
 		auto const &e{Result.elements[piece.element]};
-		glm::dvec2 p0, p3, d0, d3;
+		glm::dvec2 p0;
+		glm::dvec2 p3;
+		glm::dvec2 d0;
+		glm::dvec2 d3;
 		element_point(e, Design.shape, piece.from, p0, d0);
 		element_point(e, Design.shape, piece.to, p3, d3);
-		glm::dvec2 p1, p2;
+		glm::dvec2 p1;
+		glm::dvec2 p2;
 		switch (e.kind)
 		{
 		case element_kind::straight:

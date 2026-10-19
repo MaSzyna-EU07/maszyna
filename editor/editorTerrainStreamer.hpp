@@ -132,6 +132,10 @@ class terrain_streamer
 	void water_material(std::string const &Material);
 	// modifiers: added or replaced by name
 	void modifier(heightmap::modifier Modifier);
+	// many at once, as the formation of all the tracks: each chunk they reach is led anew once
+	void modifiers(std::vector<heightmap::modifier> Modifiers);
+	// the modifiers whose names start so are forgotten, the chunks keep their heights till they're made anew; returns how many
+	std::size_t drop_modifiers(std::string const &Prefix);
 	bool remove_modifier(std::string const &Name);
 	// the ground takes the shape the modifier gives it for good, and the modifier is removed: from then on the
 	// terrain there is shaped by hand like anywhere else
@@ -249,7 +253,10 @@ class terrain_streamer
 	std::vector<editor_terrain *> chunks_in(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const Load);
 	// leads the heights of the chunk from its base heights through the modifiers, within the rectangle
 	void apply_modifiers(editor_terrain &Chunk, glm::dvec2 const &Min, glm::dvec2 const &Max);
+	// the same with the rectangles the modifiers reach, as modifier_bounds() gives them, worked out once for many chunks
+	void apply_modifiers(editor_terrain &Chunk, glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<std::pair<glm::dvec2, glm::dvec2>> const &Bounds);
 	void apply_modifiers(glm::dvec2 const &Min, glm::dvec2 const &Max);
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> modifier_bounds() const;
 	void build_water();
 	void clear_water(bool const Touch);
 	std::string pack_path(heightmap::pack_key const &Key) const;
@@ -288,6 +295,13 @@ class terrain_streamer
 	bool m_hascamera{false};
 	std::vector<chunk_key> m_ring; // offsets of the chunks around a point, the nearest first
 	int m_ringradius{-1};
+	double m_pixel{0.0}; // metres a pixel of the top view spans; none in the 3D view
+	// the last walk over the chunks around the camera, and whether it found nothing more to ask for
+	bool m_settled{false};
+	chunk_key m_walkhere{0, 0};
+	chunk_key m_walkthere{0, 0};
+	int m_walkradius{0};
+	double m_walktime{0.0};
 
 	// shared with the workers, guarded by m_mutex
 	std::mutex m_mutex;

@@ -44,8 +44,19 @@ void TTrackFollower::Reset()
 	fDirection = 1.0;
 }
 
+// the end of the next track joined to the end of the current one, of the path of a switch the axle runs on
+int TTrackFollower::JoinedEnd(int const End) const
+{
+    if( iPath >= 0 && pCurrentTrack->eType == tt_Switch ) {
+        return End ? pCurrentTrack->SwitchExtension->iNextDirection[ iPath ] : pCurrentTrack->SwitchExtension->iPrevDirection[ iPath ];
+    }
+    return End ? pCurrentTrack->iNextDirection : pCurrentTrack->iPrevDirection;
+}
+
 TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
 { // przejechanie na inny odcinkek toru, z ewentualnym rozpruciem
+    auto path { -1 };
+    auto trailat { -1.0 };
     if (pTrack)
         switch (pTrack->eType)
         {
@@ -54,8 +65,14 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
             if( pCurrentTrack == nullptr ) {
                 break;
             }
-            int i = end ? pCurrentTrack->iNextDirection : pCurrentTrack->iPrevDirection;
-            if (i > 0) // jeżeli wjazd z ostrza
+            int i = JoinedEnd( end );
+            if( i & 1 ) {
+                // coming from the frog end the axle runs on its path whichever way the switch is set; it gets trailed through
+                // only where the wheels get to the blades, or to the nose of a movable frog
+                path = i >> 1;
+                trailat = pTrack->trailing_point( path );
+            }
+            else if (i > 0) // jeżeli wjazd z ostrza
                 pTrack->SwitchForced(i >> 1, Owner); // to przełożenie zwrotnicy - rozprucie!
         }
         break;
@@ -94,7 +111,13 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
             pCurrentTrack->AxleCounter(-1, Owner); // opuszczenie tamtego toru
     }
     pCurrentTrack = pTrack;
-    pCurrentSegment = pCurrentTrack != nullptr ? pCurrentTrack->CurrentSegment() : nullptr;
+    // on a switch the axle keeps to the path it came on, the switch thrown under it doesn't move it over to the other one
+    iPath = ( pCurrentTrack != nullptr && pCurrentTrack->eType == tt_Switch && pCurrentTrack->SwitchExtension ) ? ( path >= 0 ? path : pCurrentTrack->SwitchExtension->CurrentIndex ) : -1;
+    fTrailAt = ( iPath >= 0 ? trailat : -1.0 );
+    pCurrentSegment =
+        iPath >= 0 ? pCurrentTrack->SwitchExtension->Segments[ iPath ] :
+        pCurrentTrack != nullptr ? pCurrentTrack->CurrentSegment() :
+        nullptr;
     if (!pCurrentTrack)
         Error(Owner->MoverParameters->Name + " at NULL track");
     return pCurrentTrack;
@@ -167,6 +190,11 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
             return false;
         // if (fDistance==0.0) return true; //Ra: jak stoi, to chyba dalej nie ma co kombinować?
         s = fCurrentDistance + fDistance; // doliczenie przesunięcia
+        if( fTrailAt >= 0.0 && s <= fTrailAt ) {
+            // the wheels got to the blades of the switch coming from its frog end: pushed over if set the other way - rozprucie
+            fTrailAt = -1.0;
+            pCurrentTrack->SwitchForced( iPath, Owner );
+        }
         // Ra: W Point2 toru może znajdować się "dziura", która zamieni energię kinetyczną
         // ruchu wzdłużnego na energię potencjalną, zamieniającą się potem na energię
         // sprężystości na amortyzatorach. Należałoby we wpisie toru umieścić współczynnik
@@ -196,7 +224,7 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
                 if (!SetCurrentTrack(pCurrentTrack->Connected(iSegment, fDirection), 0))
                     return false; // wyjście z błędem
             }
-            else if (!SetCurrentTrack(pCurrentTrack->Connected(-1, fDirection), 0)) // ustawia fDirection
+            else if (!SetCurrentTrack(pCurrentTrack->Connected(-1, fDirection, iPath), 0)) // ustawia fDirection
                 return false; // wyjście z błędem
             if (dir == fDirection) //(pCurrentTrack->iPrevDirection)
             { // gdy kierunek bez zmiany (Point1->Point2)
@@ -230,7 +258,7 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
                 if (!SetCurrentTrack(pCurrentTrack->Connected(iSegment, fDirection), 1))
                     return false; // wyjście z błędem
             }
-            else if (!SetCurrentTrack(pCurrentTrack->Connected(1, fDirection), 1)) // ustawia fDirection
+            else if (!SetCurrentTrack(pCurrentTrack->Connected(1, fDirection, iPath), 1)) // ustawia fDirection
                 return false; // wyjście z błędem
             if (dir != fDirection) //(pCurrentTrack->iNextDirection)
             { // gdy zmiana kierunku toru (Point2->Point2)

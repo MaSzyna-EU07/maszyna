@@ -17,6 +17,8 @@ layout(binding = SCENE_DEPTH_TEX) uniform sampler2D scene_depth;
 
 float glossiness = 1.0;
 float metalic = 0.0;
+in vec4 UserData;
+#param (weathering, 2, 3, 1, zero)
 
 // ---------------------------------------------------------------------
 // Lighting balance tunables - tweak these to control overall scene
@@ -571,6 +573,19 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     texturecolor *= material_diffuse();
     // the sky lights the faces turned up and towards the bright part of the sky more than the ones turned to the ground
     fragcolor = add_sky_ambient(fragcolor, fragnormal);
+    float weathered = (param[2].w > 0.0 ? clamp(param[2].w * UserData.x, 0.0, 1.0) : 0.0);
+    float tinted = (param[2].w < 0.0 ? clamp(-param[2].w * UserData.x, 0.0, 1.0) : 0.0);
+    // a tint only scales the colour of the texture, the steel keeps its own polish
+    float polished = weathered * smoothstep(0.03, 0.12, dot(texturecolor, vec3(0.2126, 0.7152, 0.0722)));
+    float weatheredluma = min(dot(texturecolor, vec3(0.2126, 0.7152, 0.0722)), 0.05);
+    vec3 unused = texturecolor * (weatheredluma / max(dot(texturecolor, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
+    unused = mix(unused, vec3(1.0, 0.82, 0.74) * (weatheredluma / 0.8525), 0.5);
+    texturecolor = mix(texturecolor, unused, smoothstep(0.0, 0.4, weathered));
+    texturecolor = (tinted > 0.0 ? texturecolor * mix(vec3(1.0), param[2].rgb, tinted) : texturecolor);
+    specularity = mix(specularity, min(specularity, 0.03), smoothstep(0.0, 0.4, polished));
+    metalic = mix(metalic, 0.0, polished);
+    glossiness = mix(glossiness, min(glossiness, 0.06 * abs(param[1].w)), polished);
+    reflectivity = mix(reflectivity, min(reflectivity, 0.08 * param[1].z), smoothstep(0.0, 0.4, polished));
     // Scale ambient before it gets tinted by the texture.
     // Sun, headlights and emission are added afterwards so they are NOT
     // attenuated by AMBIENT_SCALE - this only dims the indirect term.

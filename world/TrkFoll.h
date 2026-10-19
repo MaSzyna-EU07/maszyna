@@ -49,6 +49,7 @@ public:
   private:
 // methods
     bool ComputatePosition(); // przeliczenie pozycji na torze
+    int JoinedEnd( int const End ) const;
 // members
     TTrack *pCurrentTrack = nullptr; // na którym torze siê znajduje
 	std::shared_ptr<TSegment> pCurrentSegment; // zwrotnice mog¹ mieæ dwa segmenty
@@ -58,6 +59,9 @@ public:
     int iEventFlag = 0; // McZapkie-020602: informacja o tym czy wyzwalac zdarzenie: 0,1,2,3
     int iEventallFlag = 0;
     int iSegment = 0; // który segment toru jest używany (żeby nie przeskakiwało po przestawieniu zwrotnicy pod taborem)
+    int iPath = -1; // the path of the switch the axle runs on
+    double fTrailAt = -1.0; // coming from the frog end of a switch: where along the path the wheels push the blades over
+
 };
 //---------------------------------------------------------------------------
 #endif

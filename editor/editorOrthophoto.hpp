@@ -93,6 +93,8 @@ class editor_orthophoto
 	// disabling drops the queue and returns the gpu memory of the resident tiles
 	void enabled(bool State);
 	config const &settings() const { return m_config; }
+	static std::string mark(config const &Config, bool Enabled, bool Origin);
+	static bool read_mark(std::string const &Text, config &Config, bool &Enabled);
 	// changes of year / resolution invalidate resident tiles, the rest applies immediately
 	void settings(config const &Config);
 	void ground_source(ground_query Query) { m_ground = std::move(Query); }

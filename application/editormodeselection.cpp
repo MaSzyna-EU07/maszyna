@@ -269,7 +269,9 @@ void editor_mode::group_selection()
 		std::string reason;
 		if (node->from_template() || false == scene::Layers.editable(node, &reason))
 		{
-			ui()->set_status("\"" + (node->name().empty() ? std::string{"(unnamed node)"} : node->name()) + "\" can't be grouped: " + reason, true);
+			if (reason.empty())
+				reason = STR("it's a part of a scenery template");
+			ui()->set_status(format(STR_C("\"%s\" can't be grouped: %s"), node->name().empty() ? STR_C("(no name)") : node->name().c_str(), reason.c_str()), true);
 			return;
 		}
 	}
@@ -332,7 +334,7 @@ void editor_mode::render_context_menu()
 	if (count > 1)
 		ImGui::TextDisabled(STR_C("%zu models selected"), count);
 	else if (selected)
-		ImGui::TextDisabled("%s", m_node->name().empty() ? "(unnamed node)" : m_node->name().c_str());
+		ImGui::TextDisabled("%s", m_node->name().empty() ? STR_C("(no name)") : m_node->name().c_str());
 	else
 		ImGui::TextDisabled("%s", STR_C("Nothing selected"));
 	ImGui::Separator();
@@ -347,11 +349,11 @@ void editor_mode::render_context_menu()
 	if (item(STR_C("Paste here"), "Ctrl+V", false == m_clipboard.empty(), STR_C("Puts the copied models here, around this point as they were around the selected one")))
 		paste_clipboard(m_contextpoint);
 	ImGui::Separator();
-	if (item(STR_C("Group"), "Ctrl+G", model && count > 1, STR_C("The selected models move together from now on; a click on one selects them all")))
+	if (item(STR_C("Group together"), "Ctrl+G", model && count > 1, STR_C("The selected models move together from now on; a click on one selects them all")))
 		group_selection();
 	if (item(STR_C("Ungroup"), "Ctrl+Shift+G", selected && m_node->group() > 1, STR_C("The models of the group move each by itself again")))
 		ungroup_selection();
-	if (item(STR_C("Drop to the ground"), STR_C("End"), selected, STR_C("Puts each selected model, also each model of their groups, down onto the terrain or the object under it")))
+	if (item(STR_C("Drop to the ground"), "End", selected, STR_C("Puts each selected model, also each model of their groups, down onto the terrain or the object under it")))
 		drop_selection_to_ground();
 	ImGui::Separator();
 	if (item(STR_C("Fly to the selected"), "F", selected, STR_C("The camera flies to the selected model and looks at it")))

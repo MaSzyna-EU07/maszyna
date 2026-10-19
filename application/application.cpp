@@ -80,6 +80,8 @@ void focus_callback(GLFWwindow *window, int focus)
 
 void cursor_enter_callback(GLFWwindow *window, int entered)
 {
+	if (scripted_input::driving())
+		return;
 	ui_layer::cursor_enter_callback(entered);
 }
 
@@ -96,6 +98,8 @@ void window_resize_callback(GLFWwindow *, int w, int h)
 
 void cursor_pos_callback(GLFWwindow *window, double x, double y)
 {
+	if (scripted_input::driving())
+		return;
 	ui_layer::cursor_pos_callback(x, y);
 	Global.cursor_pos = glm::ivec2(x, y);
 	Application.on_cursor_pos(x, y);
@@ -103,22 +107,30 @@ void cursor_pos_callback(GLFWwindow *window, double x, double y)
 
 void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_mouse_button(button, action, mods);
 }
 
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_scroll(xoffset, yoffset);
 }
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
+	if (scripted_input::driving())
+		return;
 
 	Application.on_key(key, scancode, action, mods);
 }
 
 void char_callback(GLFWwindow *window, unsigned int c)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_char(c);
 }
 
@@ -270,7 +282,11 @@ void eu07_application::DiscordRPCService()
 		}
 
 		if (currentMode != mode::driver)
+		{
+			// the editor and the other modes: nothing to tell, without spinning a core on it
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			continue;
+		}
 
 		// Discord RPC updater
 		if (simulation::is_ready)

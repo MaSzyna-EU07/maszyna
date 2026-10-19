@@ -31,6 +31,14 @@ int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of r
 
 namespace {
 
+// the top view of the editor shows everything this close to the camera, the corners of the screen included
+float
+editor_ortho_reach()
+{
+	auto const aspect{Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
+	return Global.EditorOrthoExtent * std::sqrt(1.f + aspect * aspect) + 500.f;
+}
+
 float
 editor_track_view_range(float const Range, bool const Apply)
 {
@@ -38,14 +46,22 @@ editor_track_view_range(float const Range, bool const Apply)
 		return Range;
 	float extra = 50000.0f;
 	if (Global.EditorOrtho)
-		extra = Global.EditorOrthoExtent * 3.0f;
+		extra = editor_ortho_reach();
 	return Range > extra ? Range : extra;
 }
 
+// the top view of the editor may leave the ballast of the railway out, for the ground under the tracks to show
+bool
+editor_ballast_hidden(TTrack const *Track, bool const Colour)
+{
+	return Colour && EditorModeFlag && Global.EditorOrtho && false == Global.EditorOrthoBallast && (Track->iCategoryFlag & 15) == 1;
+}
+
+// the top view draws the scenery as far as the tracks; its models keep their own ranges
 bool
 editor_far_tracks_only(bool const Apply, scene::basic_cell const *Cell, glm::dvec3 const &Camera, double const SceneryLimit)
 {
-	if (false == Apply)
+	if (false == Apply || Global.EditorOrtho)
 		return false;
 	double nearest = glm::length(Cell->m_area.center - Camera) - static_cast<double>(Cell->m_area.radius);
 	if (nearest < 0.0)
@@ -2752,11 +2768,28 @@ gfx::userdata_array const &opengl46_renderer::UserData(const gfx::geometry_handl
 	return m_geometry.userdata(Geometry);
 }
 
+int opengl46_renderer::Primitive(gfx::geometry_handle const &Geometry) const
+{
+	return static_cast<int>(m_geometry.type(Geometry));
+}
+
 // material methods
 material_handle opengl46_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
 {
 
 	return m_materials.create(Filename, Loadnow);
+}
+
+material_handle opengl46_renderer::Matte_Material(material_handle const Material)
+{
+
+	return m_materials.create_matte(Material);
+}
+
+material_handle opengl46_renderer::Tinted_Material(material_handle const Material, glm::vec3 const &Colour)
+{
+
+	return m_materials.create_tinted(Material, Colour);
 }
 
 std::shared_ptr<gl::program> opengl46_renderer::Fetch_Shader(const std::string &name)
@@ -5755,6 +5788,130 @@ void opengl46_renderer::Render_Sleepers( TTrack *Track )
 	}
 }
 
+// Renders the sleepers and switch timbers of a run of tracks of a cell. Each beam is made of instances of the parts of a model or
+// of a whole model, kept by its track relative to the origin of the track. The runs of beams in range and in sight are gathered
+// for the whole run of tracks by the model and its part or its level of detail, and each is drawn in one instanced batch.
+// In the shadow pass only those near the camera are drawn, their shadows falling where they can be seen.
+void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last )
+{
+	if( Global.SleeperDistance <= 0.f ) { return; }
+	if( track_sleepers::timber_model() == nullptr ) { return; }
+
+	auto const shadows = ( m_renderpass.draw_mode == rendermode::shadows );
+	// the distance is taken from the camera of the view, the shadow pass culling against its own frustum
+	auto const camera = ( shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() );
+	auto const range = static_cast<double>( shadows ? std::min( Global.SleeperDistance, 50.f ) : Global.SleeperDistance );
+	glm::mat4 const originmodelview = OpenGLMatrices.data( GL_MODELVIEW );
+	for( auto &bucket : m_timberbuckets ) {
+		bucket.instances.clear();
+	}
+	auto const bucket_for = [&]( track_sleepers::beam_model const *Model, int const Part, float const Band ) -> std::vector<glm::mat4> & {
+		for( auto &bucket : m_timberbuckets ) {
+			if( bucket.model == Model && bucket.part == Part && bucket.band == Band ) {
+				return bucket.instances;
+			}
+		}
+		m_timberbuckets.push_back( { Model, Part, Band, {} } );
+		return m_timberbuckets.back().instances; };
+	// the level of detail of the whole model the run of beams is seen at, from its distance
+	auto const band_of = []( track_sleepers::beam_model const &Model, double const Distance ) {
+		auto const squaredistance { static_cast<float>( Distance * Distance ) };
+		auto band { Model.bands.empty() ? 0.f : Model.bands.front() };
+		for( auto const start : Model.bands ) {
+			if( squaredistance >= start ) {
+				band = start;
+			}
+		}
+		return band; };
+	for( auto first { First }; first != Last; ++first ) {
+		auto *track = *first;
+		if( false == track->m_visible || false == track->m_sleepers3d.active ) { continue; }
+		if( glm::length( track->location() - camera ) > range + track->radius() ) {
+			// worked out ahead, in the background, before it comes in range
+			if( false == shadows && track->m_sleepers3d.dirty && glm::length( track->location() - camera ) < range + track->radius() + 300.0 ) {
+				track_sleepers::prefetch( *track );
+			}
+			continue;
+		}
+		if( track->m_sleepers3d.dirty ) {
+			track_sleepers::lay( *track );
+		}
+		auto const &laid = track->m_sleepers3d;
+		if( laid.timbers == nullptr ) { continue; }
+		// the transforms of the beams are relative to the origin of the track, which the modelview is translated to already
+		auto const &trackmodelview = originmodelview;
+		for( auto const &chunk : laid.chunks ) {
+			auto const centre = track->m_origin + glm::dvec3( chunk.centre );
+			auto const distance = glm::length( centre - camera );
+			if( distance > range + chunk.radius ) { continue; }
+			if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ centre, chunk.radius } ) ) { continue; }
+			auto const nearest = std::max( 0.0, distance - chunk.radius );
+			if( laid.timbers->stretchable ) {
+				for( int part = 0; part < track_sleepers::part_count; ++part ) {
+					auto &instances = bucket_for( laid.timbers, part, 0.f );
+					for( auto index = chunk.first[ part ]; index < chunk.last[ part ]; ++index ) {
+						instances.emplace_back( trackmodelview * laid.instances[ part ][ index ] );
+					}
+				}
+			}
+			if( chunk.wholelast > chunk.wholefirst ) {
+				auto &instances = bucket_for( laid.timbers, -1, band_of( *laid.timbers, nearest ) );
+				for( auto index = chunk.wholefirst; index < chunk.wholelast; ++index ) {
+					instances.emplace_back( trackmodelview * laid.whole[ index ] );
+				}
+			}
+			if( laid.plains != nullptr && chunk.plainlast > chunk.plainfirst ) {
+				auto &instances = bucket_for( laid.plains, -1, band_of( *laid.plains, nearest ) );
+				for( auto index = chunk.plainfirst; index < chunk.plainlast; ++index ) {
+					instances.emplace_back( trackmodelview * laid.plain[ index ] );
+				}
+			}
+		}
+	}
+
+	auto const alpha = ( 0x30300030 ^ 0x0F0F000F );
+	std::size_t total { 0 };
+	for( auto &bucket : m_timberbuckets ) {
+		auto const &instances = bucket.instances;
+		if( instances.empty() ) { continue; }
+		total += instances.size();
+		auto const &beammodel = *bucket.model;
+		auto *model = beammodel.model;
+		if( bucket.part >= 0 ) {
+			// only the part of the model is visible, its siblings are skipped as the model is walked
+			for( int part = 0; part < track_sleepers::part_count; ++part ) {
+				beammodel.parts[ part ]->iVisible = ( part == bucket.part ? 1 : 0 );
+			}
+		}
+		material_data skins {};
+		if( beammodel.skin != null_handle ) {
+			skins.replacable_skins[ 1 ] = beammodel.skin;
+		}
+		// the instances go to the instance stream of the frame, as in Render_Sleepers(), which the recorded walk of the depth
+		// pass keeps for its replay as well
+		auto const baseinstance { Upload_Instance_Modelviews( instances.data(), instances.size() ) };
+		::glPushMatrix();
+		::glLoadIdentity();
+		m_current_instance_count = instances.size();
+		m_current_instance_base = baseinstance;
+		// inside the range of the level of detail the beams are at
+		model->Root->fSquareDist = ( bucket.part >= 0 ? 0.f : bucket.band + 1.f );
+		model->Root->ReplacableSet( ( beammodel.skin != null_handle ? skins.replacable_skins : nullptr ), alpha );
+		model->Root->pRoot = model;
+		Render( model->Root );
+		m_current_instance_count = 0;
+		m_current_instance_base = 0;
+		::glPopMatrix();
+		++m_renderpass.draw_stats.instanced_drawcalls;
+		if( bucket.part >= 0 ) {
+			for( int part = 0; part < track_sleepers::part_count; ++part ) {
+				beammodel.parts[ part ]->iVisible = 1;
+			}
+		}
+	}
+	m_renderpass.draw_stats.instances += static_cast<int>( total );
+}
+
 bool opengl46_renderer::Render(TDynamicObject *Dynamic)
 {
 	glDebug("Render TDynamicObject");
@@ -6264,6 +6421,8 @@ void opengl46_renderer::Render(TTrack *Track)
 
 		draw(std::begin(Track->Geometry1), std::end(Track->Geometry1));
 		draw(std::begin(Track->Geometry2), std::end(Track->Geometry2));
+		for (auto &tread : Track->GeometryTreads)
+			draw(std::begin(tread.geometry), std::end(tread.geometry));
 		if (Track->eType == tt_Switch)
 			draw(Track->SwitchExtension->Geometry3);
 		break;
@@ -6403,6 +6562,10 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			continue;
 		}
+		if (track->eType == tt_Normal && editor_ballast_hidden(track, m_renderpass.draw_mode == rendermode::color))
+		{
+			continue;
+		}
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -6466,6 +6629,10 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			continue;
 		}
+		if (editor_ballast_hidden(track, m_renderpass.draw_mode == rendermode::color))
+		{
+			continue;
+		}
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -6511,6 +6678,45 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	}
 	flush_batch();
 
+	// cut faces of rails, in matte variants of the rail materials
+	if ((m_renderpass.draw_mode == rendermode::color) || (m_renderpass.draw_mode == rendermode::reflections))
+	{
+		for (auto first{First}; first != Last; ++first)
+		{
+			auto const track{*first};
+
+			if (false == track->m_visible)
+			{
+				continue;
+			}
+			std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{track->m_materialcut1, &track->GeometryCut1}, {track->m_materialcut2, &track->GeometryCut2}};
+			for (auto &tread : track->GeometryTreads)
+			{
+				parts.emplace_back(tread.material, &tread.geometry);
+				parts.emplace_back(tread.matte, &tread.cuts);
+			}
+			for (auto const &cuts : parts)
+			{
+				if ((cuts.first == null_handle) || cuts.second->empty())
+				{
+					continue;
+				}
+				if (track->eEnvironment != e_flat)
+				{
+					flush_batch();
+					setup_environment_light(track->eEnvironment);
+					Bind_Material(cuts.first);
+					draw(std::begin(*cuts.second), std::end(*cuts.second));
+					setup_environment_light();
+					continue;
+				}
+				begin_batch(cuts.first);
+				m_pathbatch.insert(std::end(m_pathbatch), std::begin(*cuts.second), std::end(*cuts.second));
+			}
+		}
+		flush_batch();
+	}
+
 	// fourth pass: per-track sleeper models (sleepermodel optional directive).
 	// drawn after rails/trackbeds so depth pre-pass culling is favourable, and only in passes
 	// where Render_Sleepers actually does work (it gates itself on draw mode / distance).
@@ -6521,6 +6727,8 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			auto *track = *first;
 			if( false == track->m_visible )       { continue; }
 			if( false == track->m_sleeper_enabled ) { continue; }
+			// a track with the sleepers and timbers of eu07.ini lays its sleeper model there
+			if( track->m_sleepers3d.active )      { continue; }
 			if( m_sleeperspass ) {
 				// culled with the instances of the pass and drawn from the result, or drawn by the cpu as well to compare
 				Queue_Sleepers( track );
@@ -6532,6 +6740,13 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			}
 			Render_Sleepers( track );
 		}
+		if( m_renderpass.draw_mode == rendermode::color ) {
+			Render_Timbers( First, Last );
+		}
+		break;
+	}
+	case rendermode::shadows: {
+		Render_Timbers( First, Last );
 		break;
 	}
 	default:

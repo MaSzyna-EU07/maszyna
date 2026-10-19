@@ -102,6 +102,14 @@ bool editorSettings::load()
 			parse(value, m_nodebank_card);
 		else if (key == "colours")
 			parse(value, m_palette);
+		else if (key == "first_steps")
+			m_first_steps = (value == "1");
+		else if (key == "terrain_offer")
+			m_terrain_offer = (value == "1");
+		else if (key == "track_tools_all")
+			m_track_tools_more = (value == "1");
+		else if (key == "top_ballast")
+			m_top_ballast = (value == "1");
 		else if (key.rfind(origin_prefix, 0) == 0)
 		{
 			// northing;easting
@@ -145,6 +153,10 @@ bool editorSettings::save()
 	stream << "nodebank_previews " << (m_nodebank_previews ? 1 : 0) << "\n";
 	stream << "nodebank_card " << m_nodebank_card << "\n";
 	stream << "colours " << m_palette << "\n";
+	stream << "first_steps " << (m_first_steps ? 1 : 0) << "\n";
+	stream << "terrain_offer " << (m_terrain_offer ? 1 : 0) << "\n";
+	stream << "track_tools_all " << (m_track_tools_more ? 1 : 0) << "\n";
+	stream << "top_ballast " << (m_top_ballast ? 1 : 0) << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)
 		stream << origin.first << " " << origin.second.first << ";" << origin.second.second << "\n";

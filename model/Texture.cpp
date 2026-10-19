@@ -433,6 +433,16 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 	if (glGenerateMipmap)
 		glGenerateMipmap(target);
 	glFlush();
+	// the content given straight to the gpu can't be read again: released by the garbage sweep, the texture would come back as
+	// the grey stub
+	if (type == "internalsrc:")
+	{
+		is_static = true;
+		is_ready = true;
+	}
+	// the name may be a new one, and the unit active took the texture past the unit cache
+	for (auto &unit : units)
+		unit = -1;
 }
 
 void

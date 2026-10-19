@@ -16,11 +16,15 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Traction.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "utilities/translation.h"
+#include "editor/editorFormat.hpp"
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <string_view>
 
 namespace scene
 {
@@ -207,7 +211,7 @@ bool node_layers::accepts(layer_handle Layer, std::string *Reason) const
 	{
 		if (Reason != nullptr)
 		{
-			*Reason = "the file is loaded after the scenario initialization (FirstInit), which only vehicles should follow";
+			*Reason = STR_C("the file is loaded after the scenario initialization (FirstInit), which only vehicles should follow");
 		}
 		return false;
 	}
@@ -355,16 +359,16 @@ bool node_layers::writable(layer_handle Layer, std::string *Reason) const
 	char const *reason{nullptr};
 	if (target.binary)
 	{
-		reason = "the file is loaded from binary terrain cache";
+		reason = STR_C("the file is loaded from binary terrain cache");
 	}
 	else if (target.sites.size() > 1)
 	{
 		// one definition yields several nodes, there's no telling which of them should be written back
-		reason = "the file is included more than once";
+		reason = STR_C("the file is included more than once");
 	}
 	else if (false == target.sites.empty() && target.sites.front().parameters)
 	{
-		reason = "the file is included with parameters";
+		reason = STR_C("the file is included with parameters");
 	}
 	if (reason != nullptr && Reason != nullptr)
 	{
@@ -396,7 +400,7 @@ bool node_layers::editable(basic_node const *Node, std::string *Reason) const
 	std::string reason;
 	if (Node->from_template())
 	{
-		reason = "it's a part of an include template (.inc)";
+		reason = STR_C("it's a part of an include template (.inc)");
 	}
 	else if (false == writable(nodelayer, &reason))
 	{
@@ -404,11 +408,11 @@ bool node_layers::editable(basic_node const *Node, std::string *Reason) const
 	}
 	else if (layer(nodelayer).locked)
 	{
-		reason = "its layer is locked";
+		reason = STR_C("its layer is locked");
 	}
 	else if (false == layer(nodelayer).visible || layer(nodelayer).removed)
 	{
-		reason = "its layer is hidden";
+		reason = STR_C("its layer is hidden");
 	}
 	if (false == reason.empty() && Reason != nullptr)
 	{
@@ -537,7 +541,9 @@ bool node_layers::is_descendant(layer_handle Layer, layer_handle const Ancestor)
 
 std::string node_layers::path(layer_handle const Layer) const
 {
-	return Global.asCurrentSceneryPath + layer(Layer).name;
+	auto const named{Global.asCurrentSceneryPath + layer(Layer).name};
+	auto const cased{FileCased(named)};
+	return cased.empty() ? named : cased;
 }
 
 // stores current state of the layer file, to detect later whether it was changed behind our back
@@ -557,12 +563,12 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 	Parent = resolve(Parent);
 	if (false == valid(Parent) || layer(Parent).removed || layer(Parent).binary)
 	{
-		Reason = "the parent layer can't include other files";
+		Reason = STR_C("the parent layer can't include other files");
 		return null_handle;
 	}
 	if (layer(Parent).late)
 	{
-		Reason = "the parent layer is loaded after the scenario initialization (FirstInit), which only vehicles should follow";
+		Reason = STR_C("the parent layer is loaded after the scenario initialization (FirstInit), which only vehicles should follow");
 		return null_handle;
 	}
 	// file names in the scenery are processed in lower case, with forward slashes
@@ -572,12 +578,12 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 	Name.erase(Name.find_last_not_of(" \t") + 1);
 	if (Name.empty())
 	{
-		Reason = "the layer needs a file name";
+		Reason = STR_C("the layer needs a file name");
 		return null_handle;
 	}
 	if (Name.find_first_of(" \t\";:*?<>|") != std::string::npos || Name.front() == '/' || Name.back() == '/' || contains(Name, ".."))
 	{
-		Reason = "the file name has to be a plain path inside the scenery directory, without spaces";
+		Reason = STR_C("the file name has to be a plain path inside the scenery directory, without spaces");
 		return null_handle;
 	}
 	if (std::filesystem::path(Name).extension().empty())
@@ -586,18 +592,18 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 	}
 	if (Name.ends_with(".inc"))
 	{
-		Reason = ".inc files are include templates, not layers";
+		Reason = STR_C(".inc files are include templates, not layers");
 		return null_handle;
 	}
 	if (m_layers.size() >= static_cast<std::size_t>(std::numeric_limits<layer_handle>::max()))
 	{
-		Reason = "too many layers";
+		Reason = STR_C("too many layers");
 		return null_handle;
 	}
 	auto const taken{std::any_of(std::begin(m_layers), std::end(m_layers), [&](basic_layer const &Layer) { return Layer.name == Name && false == Layer.dead; })};
 	if (taken || FileExists(Global.asCurrentSceneryPath + Name))
 	{
-		Reason = "the file \"" + Name + "\" already exists";
+		Reason = format(STR_C("the file \"%s\" already exists"), Name.c_str());
 		return null_handle;
 	}
 
@@ -642,7 +648,7 @@ bool node_layers::can_remove(layer_handle Layer, std::string &Reason) const
 {
 	if (false == listed(Layer) || layer(Layer).removed)
 	{
-		Reason = "no such layer";
+		Reason = STR_C("no such layer");
 		return false;
 	}
 	auto const &target{layer(Layer)};
@@ -652,22 +658,22 @@ bool node_layers::can_remove(layer_handle Layer, std::string &Reason) const
 	}
 	if (target.sites.empty())
 	{
-		Reason = "the scenario file can't be removed";
+		Reason = STR_C("the scenario file can't be removed");
 		return false;
 	}
 	if (target.binary)
 	{
-		Reason = "the file is loaded from binary terrain cache";
+		Reason = STR_C("the file is loaded from binary terrain cache");
 		return false;
 	}
 	if (target.sites.size() > 1)
 	{
-		Reason = "the file is included more than once";
+		Reason = STR_C("the file is included more than once");
 		return false;
 	}
 	if (target.sites.front().fixed)
 	{
-		Reason = "the file is included by an include template (.inc)";
+		Reason = STR_C("the file is included by an include template (.inc)");
 		return false;
 	}
 	return true;
@@ -733,12 +739,12 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 {
 	if (false == listed(Source) || false == listed(Target) || layer(Source).removed || layer(Target).removed)
 	{
-		Reason = "no such layer";
+		Reason = STR_C("no such layer");
 		return false;
 	}
 	if (Source == Target)
 	{
-		Reason = "pick another layer to merge into";
+		Reason = STR_C("pick another layer to merge into");
 		return false;
 	}
 	auto const &source{layer(Source)};
@@ -750,14 +756,14 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 	if (is_descendant(Target, Source))
 	{
 		// the merged text would include the file it was put in
-		Reason = "the target layer is included by the merged one";
+		Reason = STR_C("the target layer is included by the merged one");
 		return false;
 	}
 	if (target.late != source.late && (source.created || source.sites.empty() || resolve(source.sites.front().parent) != Target))
 	{
 		// the content would change sides of the scenario initialization
-		Reason = (target.late ? "the target layer is loaded after the scenario initialization (FirstInit), which only vehicles should follow" :
-		                        "the merged layer is loaded after the scenario initialization (FirstInit), its content has to stay there");
+		Reason = (target.late ? STR_C("the target layer is loaded after the scenario initialization (FirstInit), which only vehicles should follow") :
+		                        STR_C("the merged layer is loaded after the scenario initialization (FirstInit), its content has to stay there"));
 		return false;
 	}
 	if (false == source.context_insert().matches(target.context_insert()))
@@ -768,7 +774,7 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 		})};
 		if (unsaved)
 		{
-			Reason = "the merged layer has includes which weren't saved yet, save the scenery first";
+			Reason = STR_C("the merged layer has includes which weren't saved yet, save the scenery first");
 			return false;
 		}
 	}
@@ -779,7 +785,7 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 	}
 	if (source.sites.empty())
 	{
-		Reason = "the scenario file can't be merged into another layer";
+		Reason = STR_C("the scenario file can't be merged into another layer");
 		return false;
 	}
 	if (false == writable(Source, &Reason))
@@ -788,7 +794,7 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 	}
 	if (source.sites.front().fixed)
 	{
-		Reason = "the file is included by an include template (.inc)";
+		Reason = STR_C("the file is included by an include template (.inc)");
 		return false;
 	}
 	if (resolve(source.sites.front().parent) != Target)
@@ -797,7 +803,7 @@ bool node_layers::can_merge(layer_handle Source, layer_handle Target, std::strin
 		// and can't leave anything behind for what used to follow it
 		if (false == source.context_begin.matches(target.context_insert()) || false == source.context_end.matches(source.context_begin))
 		{
-			Reason = "the layers are loaded with different origin, rotation or scale";
+			Reason = STR_C("the layers are loaded with different origin, rotation or scale");
 			return false;
 		}
 	}
@@ -837,7 +843,25 @@ bool node_layers::pending() const
 namespace
 {
 // marks of the lines the editor keeps track of
-std::array<char const *, 3> const editormarks{"//$p", "//$b", "//$c"};
+std::array<char const *, 6> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o"};
+
+// other tools put lines of their own after some of these marks: Rainsted its includes after //$r, the launcher the descriptions
+// of the trainsets after //$o. The editor's lines of them are told by their first word
+bool editor_line(char const *Mark, std::string const &Text)
+{
+	static std::array<std::pair<std::string_view, std::array<std::string_view, 9>>, 3> const words{{
+	    {"//$h", {"#", "alignment", "source", "ends", "norms", "pieces", "vertex", "element", "end"}},
+	    {"//$r", {"#", "switch", "slip", "crossing", "double", "connection"}},
+	    {"//$o", {"on"}},
+	}};
+	auto const lookup{std::find_if(words.begin(), words.end(), [&](auto const &Entry) { return Entry.first == Mark; })};
+	if (lookup == words.end())
+	{
+		return true;
+	}
+	auto const word{std::string_view{Text}.substr(0, Text.find_first_of(" \t"))};
+	return std::any_of(lookup->second.begin(), lookup->second.end(), [&](std::string_view const Known) { return false == Known.empty() && Known == word; });
+}
 } // namespace
 
 void node_layers::scan(layer_handle const Layer)
@@ -874,6 +898,10 @@ void node_layers::scan(layer_handle const Layer)
 					text.pop_back();
 				}
 				text.erase(0, text.find_first_not_of(" \t"));
+				if (false == editor_line(mark, text))
+				{
+					break;
+				}
 				m_marked[Layer].push_back({mark, {static_cast<std::streamoff>(begin), static_cast<std::streamoff>(end)}, std::move(text)});
 				break;
 			}
@@ -953,14 +981,14 @@ bool node_layers::removable(instance_handle Instance, std::string *Reason) const
 	std::string reason;
 	if (false == tracked(Instance) || instance(Instance).dead)
 	{
-		reason = "it's a part of an include template (.inc)";
+		reason = STR_C("it's a part of an include template (.inc)");
 	}
 	else
 	{
 		auto const includelayer{resolve(instance(Instance).layer)};
 		if (false == valid(includelayer) || layer(includelayer).removed)
 		{
-			reason = "its layer is no longer a part of the scenery";
+			reason = STR_C("its layer is no longer a part of the scenery");
 		}
 		else if (false == writable(includelayer, &reason))
 		{
@@ -968,7 +996,7 @@ bool node_layers::removable(instance_handle Instance, std::string *Reason) const
 		}
 		else if (layer(includelayer).locked)
 		{
-			reason = "its layer is locked";
+			reason = STR_C("its layer is locked");
 		}
 	}
 	if (false == reason.empty() && Reason != nullptr)
@@ -1108,7 +1136,8 @@ void node_layers::rebuilt(instance_handle const Instance)
 std::string scene::node_layers::check_sources() const
 {
 	std::map<scene::layer_handle, std::string> files;
-	std::size_t good{0}, bad{0};
+	std::size_t good{0};
+	std::size_t bad{0};
 	std::string report;
 	for (auto const &[node, source] : m_sources)
 	{

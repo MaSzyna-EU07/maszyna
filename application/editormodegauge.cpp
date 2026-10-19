@@ -438,7 +438,7 @@ bool edit_points(std::vector<gauge::profile::point> &Points)
 	bool edited{false};
 	bool inserted{false};
 	int remove{-1};
-	ImGui::Columns(3, STR_C("gaugeoutline"), false);
+	ImGui::Columns(3, "gaugeoutline", false);
 	ImGui::SetColumnWidth(0, 110.0f);
 	ImGui::SetColumnWidth(1, 110.0f);
 	ImGui::TextDisabled(STR_C("Half-width"));
@@ -481,6 +481,60 @@ bool edit_points(std::vector<gauge::profile::point> &Points)
 		edited = true;
 	}
 	return edited;
+}
+
+// the railway outline drawn across the track at the size of the panel, so the name in the list has a shape
+void gauge_sketch(gauge::profile const &Profile)
+{
+	auto const width{ImGui::GetContentRegionAvail().x};
+	auto const height{std::round(ImGui::GetFontSize() * 9.0f)};
+	auto const low{ImGui::GetCursorScreenPos()};
+	ImGui::Dummy(ImVec2(width, height));
+	if (Profile.outline.size() < 2)
+		return;
+	double top{0.0};
+	double half{0.0};
+	for (auto const &point : Profile.outline)
+	{
+		top = std::max(top, point.height);
+		half = std::max(half, point.half_width);
+	}
+	if (top <= 0.0 || half <= 0.0)
+		return;
+	auto const pad{ImGui::GetFontSize() * 1.2f};
+	auto const scale{static_cast<float>(std::min((height - pad * 2.0f) / top, (width - pad * 2.0f) / (half * 2.0)))};
+	ImVec2 const base{std::round(low.x + width * 0.5f), std::round(low.y + height - pad)};
+	auto const at = [&](double const X, double const Y) { return ImVec2(base.x + static_cast<float>(X) * scale, base.y - static_cast<float>(Y) * scale); };
+	auto *draw{ImGui::GetWindowDrawList()};
+	draw->AddRectFilled(low, ImVec2(low.x + width, low.y + height), ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
+	// ballast, a sleeper and the two rails
+	ImVec2 const ballast[]{at(-2.1, -0.6), at(2.1, -0.6), at(1.55, -0.2), at(-1.55, -0.2)};
+	draw->AddConvexPolyFilled(ballast, 4, IM_COL32(110, 100, 90, 255));
+	draw->AddRectFilled(at(-1.3, -0.2), at(1.3, -0.13), IM_COL32(150, 150, 150, 255));
+	for (double const side : {-0.7175, 0.7175})
+		draw->AddRectFilled(at(side - 0.04, -0.13), at(side + 0.04, 0.0), IM_COL32(210, 210, 215, 255));
+	// the outline, the right half from the bottom up and its mirror back down
+	std::vector<ImVec2> points;
+	for (auto const &point : Profile.outline)
+		points.push_back(at(point.half_width, point.height));
+	for (auto point{Profile.outline.rbegin()}; point != Profile.outline.rend(); ++point)
+		points.push_back(at(-point->half_width, point->height));
+	auto const accent{IM_COL32(120, 200, 255, 255)};
+	auto const flags{draw->Flags};
+	draw->Flags &= ~ImDrawListFlags_AntiAliasedFill;
+	draw->AddConcavePolyFilled(points.data(), static_cast<int>(points.size()), IM_COL32(120, 200, 255, 40));
+	draw->Flags = flags;
+	draw->AddPolyline(points.data(), static_cast<int>(points.size()), accent, ImDrawFlags_Closed, 2.0f);
+	// the height over the top and the widest half at its height
+	auto const widest{std::max_element(Profile.outline.begin(), Profile.outline.end(), [](auto const &A, auto const &B) { return A.half_width < B.half_width; })};
+	auto const tall{format("%.2f m", top)};
+	auto const size{ImGui::CalcTextSize(tall.c_str())};
+	draw->AddText(ImVec2(std::round(base.x - size.x * 0.5f), std::round(at(0.0, top).y - size.y - 2.0f)), accent, tall.c_str());
+	auto const wide{format("%.2f m", widest->half_width * 2.0)};
+	auto const y{at(0.0, widest->height).y};
+	draw->AddLine(ImVec2(at(-widest->half_width, 0.0).x, y), ImVec2(at(widest->half_width, 0.0).x, y), IM_COL32(255, 220, 120, 160), 1.0f);
+	auto const wsize{ImGui::CalcTextSize(wide.c_str())};
+	draw->AddText(ImVec2(std::round(base.x - wsize.x * 0.5f), std::round(y - wsize.y - 1.0f)), IM_COL32(255, 220, 120, 255), wide.c_str());
 }
 
 } // namespace
@@ -677,13 +731,7 @@ void editor_mode::gauge_focus(int const Index)
 	look = glm::length(look) > 1e-6 ? glm::normalize(look) : glm::dvec3(0.0, 0.0, 1.0);
 	if (glm::dot(Camera.Pos - hit.point, look) > 0.0)
 		look = -look;
-	m_focus_start_pos = Camera.Pos;
-	m_focus_start_angle = Camera.Angle;
-	m_focus_target_pos = hit.point - look * gauge_view_distance;
-	m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
-	m_focus_active = true;
-	m_focus_time = 0.0;
-	m_focus_duration = 0.6;
+	fly_to(hit.point, look, gauge_view_distance);
 }
 
 void editor_mode::gauge_spot(gauge_hit const &Hit)
@@ -721,13 +769,15 @@ void editor_mode::render_gauge_window()
 	bool changed{render_gauge_choice("Railway", m_gauge.profile, false)};
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("GPL: unified structure gauge, widened only in the curves under 250 m.\nG1, G2, GA, GB, GC: limit (GSZ) and nominal (NSZ) installation gauges, widened by 3750/R in all curves."));
+	if (m_gauge.profile >= 0)
+		gauge_sketch(m_gauge.profiles[m_gauge.profile]);
 	changed |= render_gauge_choice("Road", m_gauge.road, true);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("Clearance over the roads, from 0.5 m beyond the edges of the carriageway"));
 
 	if (m_gauge.scan)
 	{
-		auto const label{format("Scanning the map %.0f%%, %zu found", m_gauge.scan->progress * 100.f, m_gauge.map.hits.size())};
+		auto const label{format(STR_C("Scanning the scenery %.0f%%, %zu found"), m_gauge.scan->progress * 100.f, m_gauge.map.hits.size())};
 		ImGui::ProgressBar(m_gauge.scan->progress, ImVec2(-70.0f, 0.0f), label.c_str());
 		ImGui::SameLine();
 		if (ImGui::SmallButton(STR_C("Cancel")))
@@ -735,7 +785,7 @@ void editor_mode::render_gauge_window()
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip(STR_C("Stops the scan and keeps the models found so far"));
 	}
-	else if (ImGui::Button(STR_C("Find the violations on the whole map")))
+	else if (ImGui::Button(STR_C("Find the violations in the whole scenery")))
 		scan_gauge_map();
 	else if (ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("Checks the models along all tracks of the scenery against the chosen gauge\nand lists them, the deepest first.\nRuns in the background, the list fills up as it goes"));
@@ -766,10 +816,10 @@ void editor_mode::render_gauge_hits()
 		return;
 	if (hits.empty())
 	{
-		ImGui::TextDisabled(m_gauge.map.scanned ? STR_C("No model enters the gauge on the map") : STR_C("The gauge is clear along this line"));
+		ImGui::TextDisabled("%s", m_gauge.map.scanned ? STR_C("No model in the scenery enters the gauge") : STR_C("The gauge is clear along this line"));
 		return;
 	}
-	ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), STR_C("%zu models enter the gauge%s"), hits.size(), m_gauge.map.scanned ? STR_C(" on the map") : "");
+	ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), STR_C("%zu models enter the gauge%s"), hits.size(), m_gauge.map.scanned ? STR_C(" in the whole scenery") : "");
 	if (ImGui::ArrowButton("##gaugeprevious", ImGuiDir_Left))
 		gauge_focus(m_gauge.current - 1);
 	ImGui::SameLine();
@@ -784,7 +834,7 @@ void editor_mode::render_gauge_hits()
 		for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
 		{
 			auto const &hit{hits[i]};
-			auto const label{(hit.model.empty() ? std::string{"(unnamed)"} : hit.model) + "  " + std::to_string(static_cast<int>(std::lround(hit.depth * 100.0))) + " cm##" + std::to_string(i)};
+			auto const label{(hit.model.empty() ? STR("(no name)") : hit.model) + "  " + std::to_string(static_cast<int>(std::lround(hit.depth * 100.0))) + " cm##" + std::to_string(i)};
 			if (ImGui::Selectable(label.c_str(), m_gauge.current == i))
 				gauge_focus(i);
 		}
@@ -794,8 +844,12 @@ void editor_mode::render_gauge_hits()
 bool editor_mode::render_gauge_choice(char const *Label, int &Index, bool const Road)
 {
 	bool changed{false};
-	ImGui::SetNextItemWidth(-60.0f);
-	if (ImGui::BeginCombo(Label, Index >= 0 ? m_gauge.profiles[Index].name.c_str() : STR_C("none")))
+	ImGui::PushID(Label);
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted(STR_C(Label));
+	ImGui::SameLine(std::round(ImGui::GetCursorStartPos().x + std::max(ImGui::CalcTextSize(STR_C("Railway")).x, ImGui::CalcTextSize(STR_C("Road")).x) + ImGui::GetStyle().ItemSpacing.x));
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	if (ImGui::BeginCombo("##profile", Index >= 0 ? m_gauge.profiles[Index].name.c_str() : STR_C("(none)")))
 	{
 		for (int i = 0; i < static_cast<int>(m_gauge.profiles.size()); ++i)
 			if ((m_gauge.profiles[i].kind == gauge::kind::road) == Road && ImGui::Selectable(m_gauge.profiles[i].name.c_str(), i == Index))
@@ -805,6 +859,7 @@ bool editor_mode::render_gauge_choice(char const *Label, int &Index, bool const 
 			}
 		ImGui::EndCombo();
 	}
+	ImGui::PopID();
 	return changed;
 }
 
@@ -816,7 +871,7 @@ bool editor_mode::render_gauge_outline(int const Index)
 	if (false == ImGui::TreeNode(&profile, STR_C("Outline of %s (right half)"), profile.name.c_str()))
 		return false;
 	ImGui::TextDisabled(profile.kind == gauge::kind::road ? STR_C("Metres from the edge of the carriageway and above the road, bottom up.")
-	                                                      : "PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
+	                                                      : STR_C("PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up."));
 	bool edited{edit_points(profile.outline)};
 	if (ImGui::SmallButton(STR_C("Restore the starting outlines")))
 	{

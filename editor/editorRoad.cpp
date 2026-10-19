@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "editor/editorRoad.hpp"
+#include "editor/editorFormat.hpp"
 
 #include "editor/editorTrack.hpp"
 #include "world/Track.h"
@@ -17,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "utilities/translation.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1067,7 +1069,7 @@ bool editor_road::dissolve(glm::dvec3 const &Joint, record &Record, std::string 
 	{
 		if (false == can_edit(*end.road, &reason))
 		{
-			Error = "\"" + end.road->name() + "\" can't be changed: " + reason;
+			Error = format(STR_C("\"%s\" can't be changed: %s"), end.road->name().c_str(), STR(reason).c_str());
 			return false;
 		}
 	}
@@ -1664,7 +1666,6 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 		float lanewidth{0.f};
 		auto const evenlanes{lane_width(layout, atend ? 1.0 : 0.0, lanewidth)};
 		auto const gap{static_cast<float>(layout.median_width(atend ? 1.0 : 0.0))};
-		char const *unevenlanes{" differ in width, and a junction takes roads with lanes of the same width. "};
 		std::string reason;
 
 		auto const junctions{arms_at(position)};
@@ -1680,12 +1681,12 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 					continue;
 				if (false == evenlanes)
 				{
-					Notes += "Lanes of \"" + Road.name() + "\"" + unevenlanes;
+					Notes += format(STR_C("Lanes of \"%s\" differ in width, and a junction takes roads with lanes of the same width"), Road.name().c_str()) + ". ";
 					continue;
 				}
 				if (false == can_edit(*junction, &reason))
 				{
-					Notes += "\"" + junction->name() + "\" wasn't fitted: " + reason + ". ";
+					Notes += format(STR_C("\"%s\" wasn't fitted: %s"), junction->name().c_str(), STR(reason).c_str()) + ". ";
 					continue;
 				}
 				arm.incoming = arriving;
@@ -1717,7 +1718,7 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 				continue;
 			if (false == can_edit(*other, &reason))
 			{
-				Notes += "\"" + other->name() + "\" wasn't fitted: " + reason + ". ";
+				Notes += format(STR_C("\"%s\" wasn't fitted: %s"), other->name().c_str(), STR(reason).c_str()) + ". ";
 				continue;
 			}
 			auto state{otherlayout};
@@ -1743,12 +1744,12 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 		float otherlanewidth{0.f};
 		if (false == evenlanes || false == lane_width(otherlayout, otheratend ? 1.0 : 0.0, otherlanewidth))
 		{
-			Notes += "Lanes of \"" + (evenlanes ? other->name() : Road.name()) + "\" differ in width, and a road changes the number of its lanes only if they're all as wide. ";
+			Notes += format(STR_C("Lanes of \"%s\" differ in width, and a road changes the number of its lanes only if they're all as wide"), (evenlanes ? other->name() : Road.name()).c_str()) + ". ";
 			continue;
 		}
 		if (false == can_edit(*other, &reason))
 		{
-			Notes += "The lanes next to \"" + Road.name() + "\" weren't fitted: " + reason + ". ";
+			Notes += format(STR_C("The lanes next to \"%s\" weren't fitted: %s"), Road.name().c_str(), STR(reason).c_str()) + ". ";
 			continue;
 		}
 		auto *stretch{other};
@@ -1758,7 +1759,7 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 			auto *rest{split(*other, parameter_at(lengths, otheratend ? lengths.back() - kTransitionLength : kTransitionLength))};
 			if (rest == nullptr)
 			{
-				Notes += "\"" + other->name() + "\" couldn't be cut for the lanes to change. ";
+				Notes += format(STR_C("\"%s\" couldn't be cut for the lanes to change"), other->name().c_str()) + ". ";
 				continue;
 			}
 			// the neighbour goes on record the way it was before the cut
@@ -1781,7 +1782,7 @@ void editor_road::settle(road_node &Road, record &Record, std::string &Notes)
 		state.lanes_between(counts[0][0], counts[0][1], counts[1][0], counts[1][1]);
 		if (state.lanes_at(end, true) != counts[end][0] || state.lanes_at(end, false) != counts[end][1])
 		{
-			Notes += "The lanes of \"" + Road.name() + "\" can't be led on to the road next to it. ";
+			Notes += format(STR_C("The lanes of \"%s\" can't be led on to the road next to it"), Road.name().c_str()) + ". ";
 			continue;
 		}
 		// and it's as wide there as the piece is, with its directions as far apart
@@ -1829,13 +1830,13 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	}
 	if (layout.changing())
 	{
-		Error = "\"" + Road.name() + "\" changes its lanes along the way, which leaves no place for a junction. Lead the road out of a piece next to it";
+		Error = format(STR_C("\"%s\" changes its lanes along the way, which leaves no place for a junction. Lead the road out of a piece next to it"), Road.name().c_str());
 		return false;
 	}
 	float lanewidth{0.f};
 	if (false == lane_width(layout, T, lanewidth))
 	{
-		Error = "Lanes of \"" + Road.name() + "\" differ in width, and a junction takes roads with lanes of the same width";
+		Error = format(STR_C("Lanes of \"%s\" differ in width, and a junction takes roads with lanes of the same width"), Road.name().c_str());
 		return false;
 	}
 	auto const halfwidth{0.5 * (layout.forward + layout.backward) * lanewidth + 0.5 * layout.median_width(T)};
@@ -1878,7 +1879,7 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	{
 		if (false == can_edit(*change.first, &reason))
 		{
-			Error = "\"" + change.first->name() + "\" can't be changed: " + reason;
+			Error = format(STR_C("\"%s\" can't be changed: %s"), change.first->name().c_str(), STR(reason).c_str());
 			return false;
 		}
 	}
@@ -1886,7 +1887,7 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	{
 		if (false == can_edit(*piece, &reason))
 		{
-			Error = "\"" + piece->name() + "\" can't be changed: " + reason;
+			Error = format(STR_C("\"%s\" can't be changed: %s"), piece->name().c_str(), STR(reason).c_str());
 			return false;
 		}
 	}
@@ -1899,7 +1900,7 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 		junction_node::arm_data arm;
 		if (false == cut_arm(cut, arm))
 		{
-			Error = "Lanes of \"" + cut.road->name() + "\" differ in width, and a junction takes roads with lanes of the same width";
+			Error = format(STR_C("Lanes of \"%s\" differ in width, and a junction takes roads with lanes of the same width"), cut.road->name().c_str());
 			return false;
 		}
 		junction.arms.emplace_back(arm);
@@ -1936,7 +1937,7 @@ bool editor_road::branch_from(junction_node &Junction, glm::dvec2 const &Directi
 	std::string reason;
 	if (false == can_edit(Junction, &reason))
 	{
-		Error = "\"" + Junction.name() + "\" can't be changed: " + reason;
+		Error = format(STR_C("\"%s\" can't be changed: %s"), Junction.name().c_str(), STR(reason).c_str());
 		return false;
 	}
 	auto const direction{glm::length(Direction) > 1e-9 ? glm::normalize(Direction) : glm::dvec2{0.0, 1.0}};

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "editor/editorOrthophoto.hpp"
+#include "editor/editorHttp.hpp"
 
 #include "rendering/renderer.h"
 #include "scene/scene.h"
@@ -19,11 +20,6 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui.h"
 #include "stb/stb_image.h"
 
-#if defined(_WIN32)
-#include <winhttp.h>
-#elif defined(EU07_WITH_CURL)
-#include <curl/curl.h>
-#endif
 
 #include <algorithm>
 #include <chrono>
@@ -49,212 +45,14 @@ constexpr std::size_t upload_budget{16u << 20}; // bytes of texture data uploade
 constexpr std::size_t vertex_budget{60000};     // ImGui uses 16-bit indices and not every backend supports vertex offsets
 constexpr float near_w{0.5f};
 
-using stop_check = std::function<bool()>;
+using stop_check = editor_http::stop_check;
+using http_client = editor_http::client;
 
 double steady_seconds()
 {
 	return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-// ---------------------------------------------------------------------------------------------
-// minimal blocking https GET; one instance per worker thread
-
-class http_client
-{
-  public:
-	http_client();
-	~http_client();
-	http_client(http_client const &) = delete;
-	http_client &operator=(http_client const &) = delete;
-
-	bool get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop);
-
-  private:
-#if defined(_WIN32)
-	HINTERNET m_session{nullptr};
-#elif defined(EU07_WITH_CURL)
-	CURL *m_curl{nullptr};
-#endif
-};
-
-#if defined(_WIN32)
-
-http_client::http_client()
-{
-	wchar_t const *agent = L"MaSzyna-editor";
-#ifdef WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
-	m_session = ::WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-#endif
-	if (m_session == nullptr) // automatic proxy needs windows 8.1+
-		m_session = ::WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-	if (m_session != nullptr)
-		::WinHttpSetTimeouts(m_session, 10000, 10000, 15000, 20000);
-}
-
-http_client::~http_client()
-{
-	if (m_session != nullptr)
-		::WinHttpCloseHandle(m_session);
-}
-
-bool http_client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
-{
-	Out.clear();
-	if (m_session == nullptr)
-	{
-		Error = "WinHttpOpen failed (" + std::to_string(::GetLastError()) + ")";
-		return false;
-	}
-
-	std::wstring const url(Url.begin(), Url.end()); // the requests are plain ascii
-	URL_COMPONENTS parts{};
-	parts.dwStructSize = sizeof(parts);
-	parts.dwSchemeLength = static_cast<DWORD>(-1);
-	parts.dwHostNameLength = static_cast<DWORD>(-1);
-	parts.dwUrlPathLength = static_cast<DWORD>(-1);
-	parts.dwExtraInfoLength = static_cast<DWORD>(-1);
-	if (!::WinHttpCrackUrl(url.c_str(), 0, 0, &parts))
-	{
-		Error = "invalid url";
-		return false;
-	}
-	std::wstring const host(parts.lpszHostName, parts.dwHostNameLength);
-	std::wstring const path = std::wstring(parts.lpszUrlPath, parts.dwUrlPathLength) + std::wstring(parts.lpszExtraInfo, parts.dwExtraInfoLength);
-
-	HINTERNET connection = ::WinHttpConnect(m_session, host.c_str(), parts.nPort, 0);
-	HINTERNET request = connection ? ::WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-	                                                      parts.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0)
-	                               : nullptr;
-	auto const close = [&]() {
-		if (request != nullptr)
-			::WinHttpCloseHandle(request);
-		if (connection != nullptr)
-			::WinHttpCloseHandle(connection);
-	};
-
-	if (request == nullptr || !::WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) || !::WinHttpReceiveResponse(request, nullptr))
-	{
-		Error = "WinHTTP error " + std::to_string(::GetLastError());
-		close();
-		return false;
-	}
-
-	DWORD status{0};
-	DWORD statussize{sizeof(status)};
-	::WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status, &statussize, WINHTTP_NO_HEADER_INDEX);
-
-	for (;;)
-	{
-		if (Stop())
-		{
-			Error = "cancelled";
-			close();
-			return false;
-		}
-		DWORD available{0};
-		if (!::WinHttpQueryDataAvailable(request, &available))
-		{
-			Error = "WinHTTP error " + std::to_string(::GetLastError());
-			close();
-			return false;
-		}
-		if (available == 0)
-			break;
-		std::size_t const offset = Out.size();
-		Out.resize(offset + available);
-		DWORD received{0};
-		if (!::WinHttpReadData(request, Out.data() + offset, available, &received))
-		{
-			Error = "WinHTTP error " + std::to_string(::GetLastError());
-			close();
-			return false;
-		}
-		Out.resize(offset + received);
-	}
-	close();
-
-	if (status != 200)
-	{
-		Error = "HTTP " + std::to_string(status);
-		return false;
-	}
-	return true;
-}
-
-#elif defined(EU07_WITH_CURL)
-
-http_client::http_client()
-{
-	static std::once_flag initialized;
-	std::call_once(initialized, []() { ::curl_global_init(CURL_GLOBAL_DEFAULT); });
-	m_curl = ::curl_easy_init();
-}
-
-http_client::~http_client()
-{
-	if (m_curl != nullptr)
-		::curl_easy_cleanup(m_curl);
-}
-
-bool http_client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
-{
-	Out.clear();
-	if (m_curl == nullptr)
-	{
-		Error = "curl_easy_init failed";
-		return false;
-	}
-
-	auto const write = +[](char *Data, std::size_t Size, std::size_t Count, void *User) -> std::size_t {
-		auto *out = static_cast<std::vector<std::uint8_t> *>(User);
-		out->insert(out->end(), Data, Data + Size * Count);
-		return Size * Count;
-	};
-	auto const progress = +[](void *User, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> int { return (*static_cast<stop_check const *>(User))() ? 1 : 0; };
-
-	::curl_easy_reset(m_curl);
-	::curl_easy_setopt(m_curl, CURLOPT_URL, Url.c_str());
-	::curl_easy_setopt(m_curl, CURLOPT_USERAGENT, "MaSzyna-editor");
-	::curl_easy_setopt(m_curl, CURLOPT_FOLLOWLOCATION, 1L);
-	::curl_easy_setopt(m_curl, CURLOPT_NOSIGNAL, 1L);
-	::curl_easy_setopt(m_curl, CURLOPT_CONNECTTIMEOUT, 10L);
-	::curl_easy_setopt(m_curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
-	::curl_easy_setopt(m_curl, CURLOPT_LOW_SPEED_TIME, 20L);
-	::curl_easy_setopt(m_curl, CURLOPT_WRITEFUNCTION, write);
-	::curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &Out);
-	::curl_easy_setopt(m_curl, CURLOPT_NOPROGRESS, 0L);
-	::curl_easy_setopt(m_curl, CURLOPT_XFERINFOFUNCTION, progress);
-	::curl_easy_setopt(m_curl, CURLOPT_XFERINFODATA, const_cast<stop_check *>(&Stop));
-
-	CURLcode const code = ::curl_easy_perform(m_curl);
-	if (code != CURLE_OK)
-	{
-		Error = ::curl_easy_strerror(code);
-		return false;
-	}
-	long status{0};
-	::curl_easy_getinfo(m_curl, CURLINFO_RESPONSE_CODE, &status);
-	if (status != 200)
-	{
-		Error = "HTTP " + std::to_string(status);
-		return false;
-	}
-	return true;
-}
-
-#else
-
-http_client::http_client() = default;
-http_client::~http_client() = default;
-
-bool http_client::get(std::string const &, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &)
-{
-	Out.clear();
-	Error = "no http client in this build";
-	return false;
-}
-
-#endif
 
 } // namespace
 
@@ -463,7 +261,17 @@ bool is_blank(image const &Image)
 bool load_standard(http_client &Client, tile_request const &Request, image &Out, std::string &Error, stop_check const &Stop)
 {
 	std::vector<std::uint8_t> data;
-	return fetch(Client, wms_url(Request, false, standard_pixels, false), cache_file(Request, false, std::to_string(standard_pixels) + ".jpg"), data, Error, Stop) && decode(data, Out, Error);
+	auto const path{cache_file(Request, false, std::to_string(standard_pixels) + ".jpg")};
+	for (int attempt = 0; attempt < 2; ++attempt)
+	{
+		if (!fetch(Client, wms_url(Request, false, standard_pixels, false), path, data, Error, Stop) || !decode(data, Out, Error))
+			return false;
+		if (!is_blank(Out))
+			return true;
+		std::error_code ec;
+		fs::remove(path, ec);
+	}
+	return true;
 }
 
 // returns false on failure (to be retried later); Empty is set when the place has no imagery
@@ -675,6 +483,57 @@ std::string editor_orthophoto::cache_directory()
 bool editor_orthophoto::owns(gfx::geometry_handle const &Geometry)
 {
 	return Geometry.bank != 0 && std::find(scene_banks.begin(), scene_banks.end(), Geometry.bank) != scene_banks.end();
+}
+
+std::string editor_orthophoto::mark(config const &Config, bool const Enabled, bool const Origin)
+{
+	char text[256];
+	std::snprintf(text, sizeof(text), "on %d year %d opacity %.2f radius %d height %.2f drape %d lift %.2f hires %d scene %d", Enabled ? 1 : 0, Config.year, Config.opacity, Config.radius, Config.height, Config.drape ? 1 : 0, Config.lift, Config.hires ? 1 : 0, Config.in_scene ? 1 : 0);
+	std::string result{text};
+	if (Origin)
+	{
+		std::snprintf(text, sizeof(text), " origin %.2f %.2f", Config.north, Config.east);
+		result += text;
+	}
+	return result;
+}
+
+bool editor_orthophoto::read_mark(std::string const &Text, config &Config, bool &Enabled)
+{
+	std::istringstream words{Text};
+	std::string key;
+	auto found{false};
+	while (words >> key)
+	{
+		if (key == "on")
+			words >> Enabled;
+		else if (key == "year")
+			words >> Config.year;
+		else if (key == "opacity")
+			words >> Config.opacity;
+		else if (key == "radius")
+			words >> Config.radius;
+		else if (key == "height")
+			words >> Config.height;
+		else if (key == "drape")
+			words >> Config.drape;
+		else if (key == "lift")
+			words >> Config.lift;
+		else if (key == "hires")
+			words >> Config.hires;
+		else if (key == "scene")
+			words >> Config.in_scene;
+		else if (key == "origin")
+			words >> Config.north >> Config.east;
+		else
+			continue;
+		if (words.fail())
+			return found;
+		found = true;
+	}
+	Config.radius = std::clamp(Config.radius, 0, max_radius);
+	Config.opacity = std::clamp(Config.opacity, 0.0f, 1.0f);
+	return found;
 }
 
 void editor_orthophoto::enabled(bool State)
