@@ -33,8 +33,12 @@ class opengl46_terrain_materials
 	void release(material_handle const Material);
 	// copies the textures of new layers into the arrays; to be called before the frame is drawn
 	void update();
+	// the layer materials which change with the season or the weather were reloaded, their textures are copied again
+	void on_environment_change();
 
   private:
+	static constexpr std::size_t max_layers{8};
+
 	struct layer
 	{
 		material_handle material{null_handle};
@@ -60,12 +64,18 @@ class opengl46_terrain_materials
 		std::array<texture_handle, 2> weights{null_handle, null_handle};
 		texture_handle table{null_handle};
 		bool used{false};
+		// what the table was made of, kept to make it again when a layer changes
+		std::size_t count{0};
+		std::array<int, max_layers> layers{};
+		std::array<float, max_layers> rotations{};
 	};
 
 	bool init();
 	texture_handle make_texture(std::string const &Name, GLenum const Target);
 	void make_storage(texture_array &Array, int const Layers);
+	void read_material(layer &Layer);
 	int layer_index(gfx::terrain_layer const &Layer);
+	void write_table(slot const &Slot);
 	bool copy_layer(layer &Layer);
 	std::size_t acquire_slot(material_handle const Reuse);
 

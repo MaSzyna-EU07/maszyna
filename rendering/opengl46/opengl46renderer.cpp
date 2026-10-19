@@ -7417,11 +7417,18 @@ void opengl46_renderer::Update(double const Deltatime)
             Global.Season
         };
         std::swap( m_simulationstate, simulationstate );
+        bool changed { false };
         if( ( m_simulationstate.season != simulationstate.season ) && ( false == simulationstate.season.empty() ) ) {
             m_materials.on_season_change();
+            changed = true;
         }
         if( ( m_simulationstate.weather != simulationstate.weather ) && ( false == simulationstate.weather.empty() ) ) {
             m_materials.on_weather_change();
+            changed = true;
+        }
+        if( changed ) {
+            // the heightmap terrain keeps copies of the textures of its layer materials
+            m_terrainmaterials.on_environment_change();
         }
     }
 

@@ -17,7 +17,6 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
-std::size_t constexpr max_layers{8};
 int constexpr initial_capacity{8};
 int constexpr copy_attempts{600}; // frames to wait for the textures of a layer to load before it's left with what it has
 float constexpr default_repeat{8.f};
@@ -124,6 +123,15 @@ void opengl46_terrain_materials::make_storage(texture_array &Array, int const La
 	texture.data_components = GL_RGBA;
 }
 
+void opengl46_terrain_materials::read_material(layer &Layer)
+{
+	auto const &material{m_materials.material(Layer.material)};
+	Layer.repeat = (Layer.size > 0.f ? Layer.size : (material.size.x > 0.f ? material.size.x : default_repeat));
+	Layer.normalmap = (material.shader && material.shader->texture_conf.count("normalmap") > 0);
+	Layer.specgloss = (material.shader && material.shader->texture_conf.count("specgloss") > 0);
+	Layer.reflection = (std::isfinite(material.params[1].z) ? material.params[1].z : 0.f);
+}
+
 int opengl46_terrain_materials::layer_index(gfx::terrain_layer const &Layer)
 {
 	for (auto const &existing : m_layers)
@@ -134,14 +142,7 @@ int opengl46_terrain_materials::layer_index(gfx::terrain_layer const &Layer)
 	entry.material = Layer.material;
 	entry.size = Layer.size;
 	entry.index = static_cast<int>(m_layers.size());
-	auto const &material{m_materials.material(Layer.material)};
-	entry.repeat = (Layer.size > 0.f ? Layer.size : (material.size.x > 0.f ? material.size.x : default_repeat));
-	if (material.shader)
-	{
-		entry.normalmap = material.shader->texture_conf.count("normalmap") > 0;
-		entry.specgloss = material.shader->texture_conf.count("specgloss") > 0;
-	}
-	entry.reflection = (std::isfinite(material.params[1].z) ? material.params[1].z : 0.f);
+	read_material(entry);
 	m_layers.push_back(entry);
 	m_pending = true;
 
@@ -279,28 +280,62 @@ material_handle opengl46_terrain_materials::make(material_handle const Reuse, st
 		::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, side, side, 0, GL_RGBA, GL_UNSIGNED_BYTE, texels.data());
 		::glGenerateMipmap(GL_TEXTURE_2D);
 	}
+	entry.count = count;
+	entry.layers = indices;
+	for (std::size_t i = 0; i < count; ++i)
+		entry.rotations[i] = Layers[i].rotation;
+	write_table(entry);
+
+	auto &material{m_materials.material(entry.material)};
+	material.params[2] = glm::vec4(Placement.x, Placement.y, 1.f / std::max(1.f, Placement.z), static_cast<float>(side - 1));
+	return entry.material;
+}
+
+void opengl46_terrain_materials::write_table(slot const &Slot)
+{
 	// what the layers are: index in the arrays, repeat, which maps they have, reflection
 	std::array<float, max_layers * 2 * 4> table{};
-	for (std::size_t i = 0; i < count; ++i)
+	for (std::size_t i = 0; i < Slot.count; ++i)
 	{
-		auto const &layer{m_layers[indices[i]]};
+		auto const &layer{m_layers[Slot.layers[i]]};
 		table[i * 4 + 0] = static_cast<float>(layer.index);
 		table[i * 4 + 1] = 1.f / std::max(0.01f, layer.repeat);
 		table[i * 4 + 2] = layer.normalmap ? 1.f : 0.f;
 		table[i * 4 + 3] = layer.specgloss ? 1.f : 0.f;
 		table[(max_layers + i) * 4 + 0] = layer.reflection;
 		// the textures turned by the layer of the chunk (the same material can be turned differently in another layer)
-		auto const angle{glm::radians(static_cast<double>(Layers[i].rotation))};
+		auto const angle{glm::radians(static_cast<double>(Slot.rotations[i]))};
 		table[(max_layers + i) * 4 + 1] = static_cast<float>(std::cos(angle));
 		table[(max_layers + i) * 4 + 2] = static_cast<float>(std::sin(angle));
 	}
-	bind_for_upload(m_textures.texture(entry.table));
+	bind_for_upload(m_textures.texture(Slot.table));
 	::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, static_cast<GLsizei>(max_layers), 2, 0, GL_RGBA, GL_FLOAT, table.data());
 	opengl_texture::reset_unit_cache();
+}
 
-	auto &material{m_materials.material(entry.material)};
-	material.params[2] = glm::vec4(Placement.x, Placement.y, 1.f / std::max(1.f, Placement.z), static_cast<float>(side - 1));
-	return entry.material;
+void opengl46_terrain_materials::on_environment_change()
+{
+	if (m_state <= 0)
+		return;
+	bool changed{false};
+	for (auto &layer : m_layers)
+	{
+		auto const &material{m_materials.material(layer.material)};
+		if (false == (material.update_on_season_change || material.update_on_weather_change))
+			continue;
+		// the reloaded material can have other textures, other maps and another size
+		read_material(layer);
+		layer.copied = false;
+		layer.attempts = 0;
+		changed = true;
+	}
+	if (false == changed)
+		return;
+	m_pending = true;
+	// the tables of the chunks hold what the layers have, freed slots get theirs anew when they're used again
+	for (auto const &entry : m_slots)
+		if (entry.used)
+			write_table(entry);
 }
 
 void opengl46_terrain_materials::release(material_handle const Material)
