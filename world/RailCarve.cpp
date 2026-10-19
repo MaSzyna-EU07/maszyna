@@ -411,7 +411,7 @@ public:
     // the stations near the other rail: where the middle of the head of ours lies across its gauge line within what Across gives where along it,
     // along it within Along
     template <typename Reach>
-    std::vector<std::pair<long, long>> near( carve_rail const &Other, Reach const &Across, glm::dvec2 const &Along, double const Spread ) const {
+    std::vector<std::pair<long, long>> stations_near( carve_rail const &Other, Reach const &Across, glm::dvec2 const &Along, double const Spread ) const {
         std::vector<std::pair<long, long>> result;
         if( empty() ) {
             return result;
@@ -637,7 +637,7 @@ void trim( carve_rail &Rail, carve_part &Part ) {
             if( false == flangeway_counts( Rail, Part, theirs ) ) {
                 continue;
             }
-            auto const windows { scan.near( theirs, [&]( double ) { return glm::dvec2 { -flangeway - 0.5 * size.head, 0.5 * size.head }; }, { -nearby, theirs.length + nearby }, flangeway + size.head + nearby ) };
+            auto const windows { scan.stations_near( theirs, [&]( double ) { return glm::dvec2 { -flangeway - 0.5 * size.head, 0.5 * size.head }; }, { -nearby, theirs.length + nearby }, flangeway + size.head + nearby ) };
             for( auto const &[ a, b ] : windows ) {
                 if( debugging( Rail ) ) {
                     WriteLog( "CARVE F " + rail_name( Rail ) + " part " + std::to_string( Part.from ) + "-" + std::to_string( Part.to ) + " vs " + rail_name( theirs ) + " window " + std::to_string( part_scan::position( a ) ) + "-" + std::to_string( part_scan::position( b ) ) );
@@ -804,7 +804,7 @@ carved_lines carve( carve_rail &Rail, carve_part &Part ) {
                     offsets = { 0.0, 0.0 };
                 }
                 return glm::dvec2 { offsets.x + theirsize.low - 0.1, offsets.y + theirsize.high + 0.1 }; };
-            auto const windows { scan.near( theirs, spread, { -nearby, theirs.length + nearby }, reach ) };
+            auto const windows { scan.stations_near( theirs, spread, { -nearby, theirs.length + nearby }, reach ) };
             for( auto const &[ a, b ] : windows ) {
                 if( debugging( Rail ) ) {
                     WriteLog( "CARVE O " + rail_name( Rail ) + " part " + std::to_string( Part.from ) + "-" + std::to_string( Part.to ) + " vs " + rail_name( theirs ) + " window " + std::to_string( part_scan::position( a ) ) + "-" + std::to_string( part_scan::position( b ) ) );
