@@ -2050,8 +2050,8 @@ void NvRenderer::Animate(Renderable &renderable, TSubModel *Submodel,
       Renderable::SpotLight &spotlight = renderable.m_spotlights.emplace_back();
       spotlight.m_origin = model_transform[3];
       spotlight.m_direction = glm::normalize(-model_transform[2]);
-      spotlight.m_color =
-          Submodel->f4Diffuse * Config()->m_lighting.m_freespot_multiplier;
+      spotlight.m_color = Submodel->f4Diffuse * Submodel->fHotspotPower *
+                          Config()->m_lighting.m_freespot_multiplier;
       spotlight.m_cos_outer_cone = Submodel->fCosFalloffAngle;
       spotlight.m_cos_inner_cone = Submodel->fCosHotspotAngle;
       spotlight.m_radius = glm::sqrt(

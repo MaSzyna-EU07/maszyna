@@ -360,19 +360,21 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		parser >> fNearAttenStart >> discard >> fNearAttenEnd >> discard >> bUseNearAtten >> discard >> iFarAttenDecay >> discard >> fFarDecayRadius >> discard >>
 		    fCosFalloffAngle // kąt liczony dla średnicy, a nie promienia
 		    >> discard >> fCosHotspotAngle; // kąt liczony dla średnicy, a nie promienia
-		// trzeba pobrac do kolejki 2 tokeny
+		// opcjonalne natężenie światła w procentach. trzeba pobrać do kolejki 2 tokeny; jeśli to nie hotspotpower,
+		// zostają w kolejce dla odczytu zasięgu widoczności, który przywraca autoclear
 		parser.getTokens(2);
 		if (parser.peek() == "hotspotpower:")
 		{
-			float multiplier;
-			parser >> discard >> multiplier;
-			WriteLog("Found hotspot power!");
-			// recaluclate multiplier
-			diffuseMultiplier = multiplier / 100.f;
-
-			// apply color only on nvrenderer
-			if (Global.NvRenderer)
-				f4Diffuse *= diffuseMultiplier;
+			float power;
+			parser >> discard >> power;
+			if (power > 0.f)
+			{
+				fHotspotPower = power * 0.01f;
+			}
+			else
+			{
+				ErrorLog("Bad model: non-positive hotspotpower " + std::to_string(power) + " of light \"" + pName + "\" in model \"" + parser.Name() + "\", ignored", logtype::model);
+			}
 		}
 		else
 			parser.autoclear(false);
@@ -1814,7 +1816,10 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 	sn_utils::ls_int32(s, m_geometry.index_offset);
 
 	// external data
-	sn_utils::ls_float32(s, diffuseMultiplier);
+	// the slot of the former diffuse multiplier, by which the diffuse colour of light points was multiplied (or not, depending on
+	// the renderer the model was converted with). the colour is written as it is now, 1 makes older programs leave it so
+	sn_utils::ls_float32(s, 1.f);
+	sn_utils::ls_float32(s, fHotspotPower);
 
 	// fill empty space
 	size_t fill = end - s.tellp();
@@ -1986,10 +1991,17 @@ void TSubModel::deserialize(std::istream &s)
 	m_geometry.index_offset = sn_utils::ld_int32(s);
 
 	// extra data block
-	diffuseMultiplier = sn_utils::ld_float32(s);
-	// only multiply diffuse on experimental renderer
-	if (!Global.NvRenderer)
-		f4Diffuse /= diffuseMultiplier <= 0.0 ? 1.0 : diffuseMultiplier;
+	auto const diffusemultiplier{sn_utils::ld_float32(s)};
+	fHotspotPower = sn_utils::ld_float32(s);
+	if (fHotspotPower <= 0.f)
+	{
+		// file without the power of its own, where the diffuse colour holds it, or files older than both: 0 in either slot
+		fHotspotPower = diffusemultiplier > 0.f ? diffusemultiplier : 1.f;
+		if (eType == TP_FREESPOTLIGHT)
+		{
+			f4Diffuse /= fHotspotPower;
+		}
+	}
 
 	// necessary rotations were already done during t3d->e3d conversion
 	m_rotation_init_done = true;

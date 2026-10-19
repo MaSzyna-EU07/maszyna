@@ -385,9 +385,7 @@ void opengl46_local_lights::add_light_point(TSubModel const &Submodel, glm::mat4
 	auto const diffuse{Submodel.DiffuseOverride.r < 0.f ? // -1 indicates no override
 	                       glm::vec3{Submodel.f4Diffuse} :
 	                       Submodel.DiffuseOverride};
-	// hotspotpower of the model; this renderer keeps it apart from the colour
-	auto const multiplier{Submodel.diffuseMultiplier > 0.f ? Submodel.diffuseMultiplier : 1.f};
-	auto const color{to_linear(diffuse) * (Brightness * multiplier * Submodel.fVisible * std::min(Submodel.f4Emision.a, 1.f))};
+	auto const color{to_linear(diffuse) * (Brightness * Submodel.fHotspotPower * Submodel.fVisible * std::min(Submodel.f4Emision.a, 1.f))};
 	if (max_component(color) <= LIGHT_THRESHOLD)
 	{
 		return;

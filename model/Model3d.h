@@ -115,7 +115,7 @@ public:
         f4Emision { 1.0f,1.0f,1.0f,1.0f };
     glm::vec3 DiffuseOverride { -1.f };
     normalization m_normalizenormals { normalization::none }; // indicates vectors need to be normalized due to scaling etc
-	float diffuseMultiplier {1.0};
+	float fHotspotPower { 1.0f }; // natężenie światła punktowego (hotspotpower/100), kolor określa tylko f4Diffuse
     float fWireSize { 0.0f }; // nie używane, ale wczytywane
     float fSquareMaxDist { 10000.0f * 10000.0f };
     float fSquareMinDist { 0.0f };
