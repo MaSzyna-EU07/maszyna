@@ -9898,3 +9898,24 @@ msgstr "Podsypka"
 
 msgid "Off: the top view draws the rails and sleepers of the tracks without the ballast, so the ground under them shows"
 msgstr "Wyłączone: widok z góry rysuje szyny i podkłady bez podsypki, widać teren pod torami"
+
+msgid "off the terrain model"
+msgstr "odstaje od NMT"
+
+msgid ", the terrain model left out: the scenery isn't placed on the map (the orthophoto settings)"
+msgstr ", bez NMT: sceneria nie jest umieszczona na mapie (ustawienia ortofotomapy)"
+
+msgid ", %d paths off the terrain model"
+msgstr ", odstające od NMT: %d"
+
+msgid "Terrain model %zu / %zu"
+msgstr "NMT %zu / %zu"
+
+msgid "Off the terrain model (m)"
+msgstr "Odstaje od NMT o (m)"
+
+msgid "The track lies higher or lower than the terrain model (NMT) says the ground is, by more than this.\nEach path is listed once, at its place the farthest off; bridges and tunnels are left out"
+msgstr "Tor leży wyżej lub niżej, niż według NMT jest grunt, o więcej niż tyle.\nKażdy tor jest na liście raz, w miejscu, gdzie odstaje najbardziej; mosty i tunele są pominięte"
+
+msgid "Against the terrain model"
+msgstr "Także względem NMT"

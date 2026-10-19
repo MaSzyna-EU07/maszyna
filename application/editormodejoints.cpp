@@ -26,6 +26,8 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
+#include <map>
 #include <set>
 #include <tuple>
 
@@ -39,6 +41,10 @@ double const kLinked{0.02}; // m, ends this close are joined by the simulation
 double const kOverlayRange{3000.0};
 double const kGauge{1.5}; // m between the rails, for the cant
 int const kRailCategory{1};
+double const kModelStep{5.0}; // m between the places of the tracks compared with the terrain model
+std::size_t const kModelRun{200}; // places of a path whose model is asked for at once
+double const kModelPoll{0.25}; // s between the looks whether the model is in
+double const kUnfitted{30.0}; // m; a scenery whose tracks lie this far from the model as a whole isn't fitted to it
 
 using kind = editor_mode::joint_issue::kind;
 
@@ -98,6 +104,7 @@ char const *kind_name(kind const Kind)
 	case kind::kink: return "kink";
 	case kind::cant: return "cant jump";
 	case kind::grade: return "grade break";
+	case kind::model: return "off the terrain model";
 	default: return "free end";
 	}
 }
@@ -111,6 +118,7 @@ std::string value_text(editor_mode::joint_issue const &Issue)
 	case kind::kink: return format("%.3f\xc2\xb0", Issue.value);
 	case kind::cant: return format("%.1f mm", Issue.value);
 	case kind::grade: return format("%.1f \xe2\x80\xb0", Issue.value);
+	case kind::model: return format("%+.2f m", Issue.value);
 	default: return "-";
 	}
 }
@@ -124,6 +132,7 @@ ImU32 kind_colour(kind const Kind)
 	case kind::kink: return IM_COL32(255, 190, 60, 225);
 	case kind::cant: return IM_COL32(200, 120, 255, 225);
 	case kind::grade: return IM_COL32(90, 200, 255, 220);
+	case kind::model: return IM_COL32(70, 200, 190, 235);
 	default: return IM_COL32(200, 200, 200, 200);
 	}
 }
@@ -156,6 +165,114 @@ void editor_mode::joints_start()
 		state.queue.push_back(track);
 	}
 	state.history = m_history.size();
+	state.places.clear();
+	state.runs.clear();
+	state.run_next = 0;
+	state.model_waiting = false;
+	state.model_asked = false;
+	state.model_polled = 0.0;
+	state.model_unplaced = false;
+	if (false == state.model_check || state.queue.empty())
+		return;
+	nmt_locate();
+	if (false == m_nmt.placed())
+	{
+		state.model_unplaced = true;
+		return;
+	}
+	std::set<TTrack const *> const queued(state.queue.begin(), state.queue.end());
+	for (auto const &place : nmt_track_places(kModelStep))
+		if (place.shapes && queued.count(place.track) > 0)
+		{
+			if (state.places.empty() || state.places.back().track != place.track || state.places.back().path != place.path || state.places.size() - state.runs.back().first >= kModelRun)
+				state.runs.emplace_back(state.places.size(), state.places.size());
+			state.places.push_back(place);
+			state.runs.back().second = state.places.size();
+		}
+	state.model_waiting = false == state.places.empty();
+}
+
+bool editor_mode::joints_model()
+{
+	auto &state{m_joints};
+	auto const now{ImGui::GetTime()};
+	if (state.model_asked && now - state.model_polled < kModelPoll)
+		return false;
+	state.model_polled = now;
+	auto const box = [&](std::pair<std::size_t, std::size_t> const &Run, glm::dvec2 &Min, glm::dvec2 &Max) {
+		Min = glm::dvec2{std::numeric_limits<double>::max()};
+		Max = glm::dvec2{std::numeric_limits<double>::lowest()};
+		for (auto i = Run.first; i < Run.second; ++i)
+		{
+			glm::dvec2 const at{state.places[i].position.x, state.places[i].position.z};
+			Min = glm::min(Min, at - 2.0);
+			Max = glm::max(Max, at + 2.0);
+		}
+	};
+	glm::dvec2 low, high;
+	// all of it asked for once, then the runs looked over in turn as their squares come
+	if (false == state.model_asked)
+	{
+		for (auto const &run : state.runs)
+		{
+			box(run, low, high);
+			m_nmt.request(low, high);
+		}
+		state.model_asked = true;
+	}
+	while (state.run_next < state.runs.size())
+	{
+		box(state.runs[state.run_next], low, high);
+		if (false == m_nmt.request(low, high))
+			return false;
+		++state.run_next;
+	}
+	std::vector<double> differences(state.places.size(), std::numeric_limits<double>::quiet_NaN());
+	std::vector<double> known;
+	for (std::size_t i = 0; i < state.places.size(); ++i)
+		if (double height; m_nmt.height(state.places[i].position.x, state.places[i].position.z, height))
+		{
+			differences[i] = state.places[i].crown - (height + m_nmt_state.offset);
+			known.push_back(differences[i]);
+		}
+	auto shift{0.0};
+	if (false == m_nmt_state.fitted && false == known.empty())
+	{
+		std::nth_element(known.begin(), known.begin() + known.size() / 2, known.end());
+		if (std::abs(known[known.size() / 2]) > kUnfitted)
+			shift = known[known.size() / 2];
+	}
+	// the place of each path the farthest from the model
+	std::map<std::pair<TTrack *, int>, std::size_t> worst;
+	for (std::size_t i = 0; i < state.places.size(); ++i)
+	{
+		if (false == std::isfinite(differences[i]))
+			continue;
+		differences[i] -= shift;
+		if (std::abs(differences[i]) <= state.model)
+			continue;
+		auto const key{std::make_pair(state.places[i].track, state.places[i].path)};
+		auto const found{worst.find(key)};
+		if (found == worst.end())
+			worst.emplace(key, i);
+		else if (std::abs(differences[i]) > std::abs(differences[found->second]))
+			found->second = i;
+	}
+	for (auto const &entry : worst)
+	{
+		auto const &place{state.places[entry.second]};
+		joint_issue issue;
+		issue.type = kind::model;
+		issue.track = place.track;
+		issue.point = {place.path, editor_track::point_kind::start};
+		issue.position = place.position;
+		issue.value = differences[entry.second];
+		state.issues.push_back(issue);
+	}
+	state.places.clear();
+	state.runs.clear();
+	state.model_waiting = false;
+	return true;
 }
 
 void editor_mode::joints_check(TTrack &Track)
@@ -252,7 +369,7 @@ void editor_mode::joints_check(TTrack &Track)
 void editor_mode::joints_step()
 {
 	auto &state{m_joints};
-	if (state.next >= state.queue.size())
+	if (state.next >= state.queue.size() && false == state.model_waiting)
 		return;
 	auto const deadline{std::chrono::steady_clock::now() + std::chrono::milliseconds(15)};
 	while (state.next < state.queue.size() && std::chrono::steady_clock::now() < deadline)
@@ -264,17 +381,23 @@ void editor_mode::joints_step()
 	}
 	if (state.next < state.queue.size())
 		return;
+	if (state.model_waiting && false == joints_model())
+		return;
 	std::stable_sort(state.issues.begin(), state.issues.end(), [](joint_issue const &A, joint_issue const &B) {
 		if (A.type != B.type)
 			return A.type < B.type;
-		return A.value > B.value;
+		return std::abs(A.value) > std::abs(B.value);
 	});
-	std::array<int, 6> counts{};
+	std::array<int, 7> counts{};
 	for (auto const &issue : state.issues)
 		++counts[static_cast<int>(issue.type)];
 	state.status = format(STR_C("%zu paths checked: %d gaps, %d steps, %d kinks, %d cant jumps, %d grade breaks"), state.queue.size(), counts[0], counts[1], counts[2], counts[3], counts[4]);
+	if (state.model_check && state.model_unplaced)
+		state.status += STR_C(", the terrain model left out: the scenery isn't placed on the map (the orthophoto settings)");
+	else if (state.model_check)
+		state.status += format(STR_C(", %d paths off the terrain model"), counts[5]);
 	if (state.free_ends)
-		state.status += format(STR_C(", %d free ends"), counts[5]);
+		state.status += format(STR_C(", %d free ends"), counts[6]);
 	WriteLog("Editor: joints check - " + state.status, logtype::generic);
 }
 
@@ -296,7 +419,7 @@ void editor_mode::joints_focus(int const Index)
 
 bool editor_mode::joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Changed)
 {
-	if (Issue.fixed || Issue.type == kind::open || Issue.track == nullptr || Issue.other == nullptr || Issue.track->m_editorremoved || Issue.other->m_editorremoved)
+	if (Issue.fixed || Issue.type == kind::open || Issue.type == kind::model || Issue.track == nullptr || Issue.other == nullptr || Issue.track->m_editorremoved || Issue.other->m_editorremoved)
 		return false;
 	auto const movable = [](TTrack const *Track) {
 		std::string reason;
@@ -392,14 +515,25 @@ void editor_mode::render_joints_body()
 	ImGui::TextDisabled("%s", STR_C("Looks for faults at the joints of the tracks"));
 	ImGui::PopTextWrapPos();
 	segmented("jointscope", state.scope, {{0, STR_C("Around the camera")}, {1, STR_C("Whole scenery")}});
-	bool const running{state.next < state.queue.size()};
+	bool const running{state.next < state.queue.size() || state.model_waiting};
 	if (running)
 	{
-		auto const progress{static_cast<float>(state.next) / static_cast<float>(state.queue.size())};
-		ImGui::ProgressBar(progress, ImVec2(-70.0f, 0.0f), format(STR_C("Checking %zu / %zu"), state.next, state.queue.size()).c_str());
+		if (state.next < state.queue.size())
+		{
+			auto const progress{static_cast<float>(state.next) / static_cast<float>(state.queue.size())};
+			ImGui::ProgressBar(progress, ImVec2(-70.0f, 0.0f), format(STR_C("Checking %zu / %zu"), state.next, state.queue.size()).c_str());
+		}
+		else
+		{
+			auto const progress{static_cast<float>(state.run_next) / static_cast<float>(std::max<std::size_t>(1, state.runs.size()))};
+			ImGui::ProgressBar(progress, ImVec2(-70.0f, 0.0f), format(STR_C("Terrain model %zu / %zu"), state.run_next, state.runs.size()).c_str());
+		}
 		ImGui::SameLine();
 		if (ImGui::SmallButton(STR_C("Cancel")))
+		{
 			state.queue.resize(state.next);
+			state.model_waiting = false;
+		}
 	}
 	else
 	{
@@ -427,15 +561,19 @@ void editor_mode::render_joints_body()
 			limit("Kink (deg)", "##jointkink", state.angle, "%.2f");
 			limit("Cant jump (mm)", "##jointcant", state.cant, "%.1f");
 			limit("Grade break (per mille)", "##jointgrade", state.grade, "%.1f");
+			limit("Off the terrain model (m)", "##jointmodel", state.model, "%.2f");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("The track lies higher or lower than the terrain model (NMT) says the ground is, by more than this.\nEach path is listed once, at its place the farthest off; bridges and tunnels are left out"));
 			ImGui::EndTable();
 		}
-		toggle_chips("jointflags", {{STR_C("Free ends too"), &state.free_ends}});
+		toggle_chips("jointflags", {{STR_C("Free ends too"), &state.free_ends}, {STR_C("Against the terrain model"), &state.model_check}});
 		state.reach = std::clamp(state.reach, 50.0, 50000.0);
 		state.gap = std::clamp(state.gap, 0.03, 20.0);
 		state.step = std::max(0.001, state.step);
 		state.angle = std::max(0.01, state.angle);
 		state.cant = std::max(0.5, state.cant);
 		state.grade = std::max(0.5, state.grade);
+		state.model = std::max(0.05, state.model);
 		ImGui::TextDisabled("%s", STR_C("Change the thresholds, then Check again"));
 		ImGui::TreePop();
 	}
@@ -447,7 +585,8 @@ void editor_mode::render_joints_body()
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", STR_C("The scenery changed since the check"));
 	int filter{state.filter + 1};
 	ImGui::SetNextItemWidth(150.0f);
-	auto const filters{std::string{STR_C("All")} + '\0' + STR_C("gap") + '\0' + STR_C("step") + '\0' + STR_C("kink") + '\0' + STR_C("cant jump") + '\0' + STR_C("grade break") + '\0' + STR_C("free end") + '\0' + '\0'};
+	auto const filters{std::string{STR_C("All")} + '\0' + STR_C("gap") + '\0' + STR_C("step") + '\0' + STR_C("kink") + '\0' + STR_C("cant jump") + '\0' + STR_C("grade break") + '\0' + STR_C("off the terrain model") + '\0' +
+	                   STR_C("free end") + '\0' + '\0'};
 	if (ImGui::Combo("##jointfilter", &filter, filters.c_str()))
 		state.filter = filter - 1;
 	std::vector<int> listed;
@@ -458,7 +597,7 @@ void editor_mode::render_joints_body()
 		if (state.filter >= 0 && static_cast<int>(issue.type) != state.filter)
 			continue;
 		listed.push_back(i);
-		if (false == issue.fixed && issue.type != kind::open)
+		if (false == issue.fixed && issue.type != kind::open && issue.type != kind::model)
 			fixable.push_back(i);
 	}
 	if (false == fixable.empty())
@@ -505,7 +644,7 @@ void editor_mode::render_joints_body()
 	{
 		auto &issue{state.issues[state.selected]};
 		ImGui::Text("%s %s: %s / %s", STR_C(kind_name(issue.type)), value_text(issue).c_str(), name_of(issue.track).c_str(), name_of(issue.other).c_str());
-		if (false == issue.fixed && issue.type != kind::open && ImGui::Button(STR_C("Fix this one")))
+		if (false == issue.fixed && issue.type != kind::open && issue.type != kind::model && ImGui::Button(STR_C("Fix this one")))
 			joints_fix({state.selected});
 	}
 }
@@ -521,7 +660,7 @@ void editor_mode::draw_joints_overlay() const
 	for (int i = 0; i < static_cast<int>(state.issues.size()); ++i)
 	{
 		auto const &issue{state.issues[i]};
-		if (issue.fixed || (state.filter >= 0 && static_cast<int>(issue.type) != state.filter) || glm::distance(issue.position, camera) > kOverlayRange)
+		if (issue.fixed || (state.filter >= 0 && static_cast<int>(issue.type) != state.filter) || (false == Global.EditorOrtho && glm::distance(issue.position, camera) > kOverlayRange))
 			continue;
 		ImVec2 screen;
 		if (false == projection.project(issue.position, screen))
