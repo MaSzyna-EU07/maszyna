@@ -104,6 +104,9 @@ double const kLaySnapRadius{5.0};
 float const kSnapPixels{16.0f};
 double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
 double const kSlipReach{12.0}; // m; a slip goes to the crossing nearest the cursor, if it's this close
+double const kSkewSeat{2.0}; // m; the first point laid with Alt this close to a straight track goes onto its axis
+double const kSkewReach{30.0}; // m; Alt while laying turns the straight to a straight track this close to its start, or one it crosses
+double const kSkewRatios[]{4.8, 6.6, 7.5, 9.0, 12.0, 14.0, 18.5, 26.5};
 double const kLineReach{2000.0}; // how far each way the Curve tab follows the line
 double const kDigitizeFit{0.5};
 double const kDrawnReach{100000.0};

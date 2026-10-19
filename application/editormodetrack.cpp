@@ -1521,14 +1521,14 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	if (m_lay.active)
 	{
 		if (m_lay.points.empty())
-			hints = {{"LMB", "start, on the ground or at a free end"}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees"}, {"Esc", "stop laying"}};
+			hints = {{"LMB", "start, on the ground or at a free end"}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Esc", "stop laying"}};
 		else
 		{
 			bool const chained{m_lay.start.track != nullptr};
 			hints = {{"LMB", chained ? "lay the shape up to here" : "lay the straight up to here"}, {"LMB on a free end", "join and lay"}};
 			if (chained || m_lay.mouse_snap.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
-			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees"}, {"Enter", "lay up to the cursor"}, {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "cancel"}});
+			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", "lay up to the cursor"}, {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "cancel"}});
 		}
 	}
 	else if (false == m_straights.detour.empty())
@@ -1738,7 +1738,7 @@ std::string editor_mode::track_readout() const
 		if (lay.points.size() == 1 && (lay.start.track != nullptr || lay.mouse_snap.track != nullptr))
 			text += "\n" + track_shaping(lay.mouse_snap.track != nullptr && lay.start.track != nullptr);
 		if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
-			text += "\n" + format(STR_C("azimuth %.0f deg"), azimuth(lay.points.back(), lay.mouse));
+			text += "\n" + (lay.skew.empty() ? format(STR_C("azimuth %.0f deg"), azimuth(lay.points.back(), lay.mouse)) : lay.skew);
 		if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
 			text += "\n" + lay.status;
 		return text;

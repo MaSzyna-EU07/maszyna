@@ -80,8 +80,9 @@ void editor_mode::update_build_tools()
 	double const height{false == lay.points.empty() ? lay.points.back().y : lay.start.track != nullptr ? lay.start.position.y : ground.y};
 	if (pointing)
 		lay.mouse = typed_lay(cursor_terrain(height));
+	lay.skew.clear();
 	if (pointing && ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
-		lay.mouse = lay_angle_snap(lay.mouse);
+		lay.mouse = lay_angle_snap(lay.mouse, lay.skew);
 	lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
 	if (lay.mouse_snap.track == nullptr)
 		lay.mouse = lay_bed(lay.mouse);
@@ -926,7 +927,16 @@ void editor_mode::lay_click()
 	{
 		tool.chain.clear();
 		tool.start = snap;
-		tool.points.push_back(snap.track != nullptr ? snap.position : tool.mouse);
+		auto point{snap.track != nullptr ? snap.position : tool.mouse};
+		if (auto const *axis{snap.track == nullptr && ImGui::GetIO().KeyAlt ? skew_reference(point, point, kSkewSeat) : nullptr})
+		{
+			auto const &path{axis->m_paths.front()};
+			auto const &from{path.points[segment_data::point::start]};
+			auto const &to{path.points[segment_data::point::end]};
+			auto const along{std::clamp(glm::dot(plan_of(point - from), plan_of(to - from)) / glm::dot(plan_of(to - from), plan_of(to - from)), 0.0, 1.0)};
+			point = from + (to - from) * along;
+		}
+		tool.points.push_back(point);
 		return;
 	}
 	auto const &point{tool.mouse};
@@ -1093,18 +1103,82 @@ void editor_mode::lay_back()
 		tool.start = {};
 }
 
-glm::dvec3 editor_mode::lay_angle_snap(glm::dvec3 const &Mouse) const
+glm::dvec3 editor_mode::lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const
 {
+	Label.clear();
 	auto const &last{m_lay.points.back()};
 	glm::dvec2 const offset{Mouse.x - last.x, Mouse.z - last.z};
 	auto const length{glm::length(offset)};
 	if (length < 1.0)
 		return Mouse;
 	auto const leaving{m_lay.start.track != nullptr ? -plan_of(m_lay.start.direction) : glm::dvec2{0.0}};
-	glm::dvec2 const reference{glm::length(leaving) > 1e-6 ? glm::normalize(leaving) : glm::dvec2{0.0, 1.0}};
+	glm::dvec2 reference{glm::length(leaving) > 1e-6 ? glm::normalize(leaving) : glm::dvec2{0.0, 1.0}};
 	auto const step{glm::radians(15.0)};
-	auto const heading{turned(reference, std::round(signed_angle(reference, offset / length) / step) * step) * length};
+	auto angle{std::round(signed_angle(reference, offset / length) / step) * step};
+	if (auto const *axis{skew_reference(last, Mouse, kSkewReach)})
+	{
+		auto const &path{axis->m_paths.front()};
+		reference = glm::normalize(plan_of(path.points[segment_data::point::end] - path.points[segment_data::point::start]));
+		auto const relative{signed_angle(reference, offset / length)};
+		angle = std::round(relative / step) * step;
+		double ratio{0.0};
+		for (auto const n : kSkewRatios)
+			for (auto const base : {0.0, glm::pi<double>()})
+				for (auto const side : {-1.0, 1.0})
+				{
+					auto const candidate{base + side * std::atan(1.0 / n)};
+					if (std::abs(std::remainder(relative - candidate, 2.0 * glm::pi<double>())) < std::abs(std::remainder(relative - angle, 2.0 * glm::pi<double>())))
+					{
+						angle = candidate;
+						ratio = n;
+					}
+				}
+		auto const name{axis->name().empty() ? std::string{STR_C("(no name)")} : axis->name()};
+		auto const degrees{glm::degrees(std::abs(std::remainder(angle, glm::pi<double>())))};
+		Label = ratio > 0.0 ? format(STR_C("1:%g to %s"), ratio, name.c_str()) : degrees < 0.1 ? format(STR_C("parallel to %s"), name.c_str()) : format(STR_C("%.0f deg to %s"), degrees, name.c_str());
+	}
+	auto const heading{turned(reference, angle) * length};
 	return {last.x + heading.x, Mouse.y, last.z + heading.y};
+}
+
+TTrack const *editor_mode::skew_reference(glm::dvec3 const &From, glm::dvec3 const &To, double const Reach) const
+{
+	auto const from{plan_of(From)};
+	auto const leg{plan_of(To) - from};
+	auto const length{glm::length(leg)};
+	TTrack const *nearest{nullptr};
+	auto best{std::numeric_limits<double>::max()};
+	for (auto *section : simulation::Region->sections((From + To) * 0.5, static_cast<float>(std::min(0.5 * length + Reach, 2000.0))))
+		for (auto const &cell : section->m_cells)
+			for (auto *track : cell.m_directories.paths)
+			{
+				if (track == nullptr || track->eType != tt_Normal || track->m_editorremoved || (track->iCategoryFlag & 15) != kRailCategory || track->m_paths.size() != 1 ||
+				    false == editor_track::is_straight(*track, m_straights.tolerance))
+					continue;
+				auto const &path{track->m_paths.front()};
+				auto const a{plan_of(path.points[segment_data::point::start])};
+				auto const axis{plan_of(path.points[segment_data::point::end]) - a};
+				auto const span{glm::length(axis)};
+				if (span < 1.0)
+					continue;
+				auto const along{std::clamp(glm::dot(from - a, axis) / span, 0.0, span)};
+				auto distance{glm::distance(from, a + axis / span * along)};
+				if (distance > Reach)
+					distance = std::numeric_limits<double>::max();
+				if (auto const determinant{cross(leg, axis)}; length > 1.0 && std::abs(determinant) > 1e-9)
+				{
+					auto const t{cross(a - from, axis) / determinant};
+					auto const u{cross(a - from, leg) / determinant};
+					if (t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0)
+						distance = std::min(distance, t * length);
+				}
+				if (distance < best)
+				{
+					best = distance;
+					nearest = track;
+				}
+			}
+	return nearest;
 }
 
 editor_mode::track_hover editor_mode::split_spot() const
