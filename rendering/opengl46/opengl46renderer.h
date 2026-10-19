@@ -41,6 +41,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46localshadows.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 #include "rendering/opengl46/opengl46hiz.h"
+#include "rendering/opengl46/opengl46shadowfit.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer {
@@ -433,6 +434,19 @@ class opengl46_renderer : public gfx_renderer {
 	void Setup_Contact_Shadows( viewport_config &Viewport );
 	// makes the target of the resolved depth of the viewport if it isn't there yet; false if it can't be made
 	bool Resolved_Depth_Target( viewport_config &Viewport );
+	// the direction the sun shadows are cast in (the sun, its height capped by gfx.shadow.angle.min), and the rotation from
+	// the world to the space of the light of the cascades: x and y across the maps, z along the light
+	glm::vec3 Shadow_Light_Vector() const;
+	glm::mat3 Shadow_Light_Rotation() const;
+	// the distances the fixed cascades of the sun shadows go from and to (shadowtune)
+	std::array<float, gl::MAX_CASCADES + 1> Shadow_Fixed_Splits() const;
+	// why the cascades of the sun shadows can't be fitted to the depth of the viewport (gfx.shadow.sdsm), null if they can
+	char const *Shadow_Fit_Unavailable( viewport_config const &Viewport ) const;
+	// the cascades of the frame fitted to the latest measurement of the depth of the view (gfx.shadow.sdsm): the distances
+	// they go from and to, and for each cascade the corners of the area its map is to cover, camera-relative world space
+	// (none: the whole slice of the view). false: the fixed cascades. fills m_shadowfitstate
+	bool Shadow_Fit( viewport_config const &Viewport, std::array<float, gl::MAX_CASCADES + 1> &Splits,
+	                 std::array<std::optional<std::array<glm::vec3, 8>>, gl::MAX_CASCADES> &Areas );
 	// whether the depth pass of the whole scene draws the material bound last (Bind_Material()) and the geometry
 	bool Scene_Depth_Draws( gfx::geometry_handle const &Geometry ) const;
 	bool Render(TDynamicObject *Dynamic);
@@ -653,6 +667,26 @@ class opengl46_renderer : public gfx_renderer {
 	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<std::uint32_t>, scene::basic_cell::instance_bucket_key_hash> m_sleeperbandcounts;
 	// depth pyramid for the occlusion test of the gpu culling
 	opengl46_hiz m_hiz;
+	// the cascades of the sun shadows fitted to the depth of the main view (Global.gfx_shadow_sdsm)
+	opengl46_shadow_fit m_shadowfit;
+	// with a cascade fitted: the corners of the area its map is to cover, for setup_pass()
+	std::array<glm::vec3, 8> const *m_shadowfitarea { nullptr };
+	// what the last shadow pass did, for the debug panel
+	struct shadow_fit_state {
+		bool fitted { false };
+		char const *reason { nullptr }; // why not, with gfx.shadow.sdsm on
+		unsigned int age { 0 }; // frames since the measurement
+		float depthmin { 0.f };
+		float depthmax { 0.f };
+		float turn { 0.f }; // of the view since the measurement, degrees
+		std::array<float, gl::MAX_CASCADES + 1> splits {};
+		// size of the area of the map of each cascade: of the whole slice of the view, and as drawn; metres
+		std::array<float, gl::MAX_CASCADES> slice {};
+		std::array<float, gl::MAX_CASCADES> drawn {};
+	} m_shadowfitstate;
+	// the sizes setup_pass() found for the last shadow pass: of the whole slice of the view and as drawn
+	float m_shadowslicesize { 0.f };
+	float m_shadowdrawnsize { 0.f };
 	// a draw recorded from the walk of the submodel tree of a group in one lod band (Render_Instances_Indirect()), to be
 	// replayed once the instances of its command are known: the state the walk left for it and what it bound
 	struct indirect_draw {

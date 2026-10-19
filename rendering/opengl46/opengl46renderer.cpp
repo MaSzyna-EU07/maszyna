@@ -239,6 +239,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 			shadowcull.init(&m_instancecull);
 		m_reflectioncull.init(&m_instancecull);
 		m_hiz.init();
+		m_shadowfit.init();
 		m_exposure.init();
 		m_ao.init();
 		m_localshadows.init();
@@ -843,6 +844,8 @@ void opengl46_renderer::SwapBuffers()
         }
     }
     m_debugtimestext += m_localshadows.info_times();
+    if( Global.gfx_shadow_sdsm )
+        m_debugtimestext += m_shadowfit.info_times();
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();
@@ -850,6 +853,36 @@ void opengl46_renderer::SwapBuffers()
     debug_stats shadowstats;
     for( auto const &shadowpass : m_shadowpass ) {
         shadowstats += shadowpass.draw_stats;
+    }
+
+    // the cascades of the sun shadows: where they end and the size of a texel of their maps, fixed or fitted to the depth
+    std::string shadowcascadestext;
+    if( Global.gfx_shadowmap_enabled && ( m_shadowbuffersize > 0 ) ) {
+        auto const &fit { m_shadowfitstate };
+        shadowcascadestext = " sun shadow cascades to";
+        for( std::size_t cascade = 0; cascade < gl::MAX_CASCADES; ++cascade ) {
+            shadowcascadestext += " " + to_string( fit.splits[ cascade + 1 ], 1 );
+        }
+        shadowcascadestext += " m, texels";
+        for( std::size_t cascade = 0; cascade < gl::MAX_CASCADES; ++cascade ) {
+            shadowcascadestext += " " + to_string( 100.f * fit.drawn[ cascade ] / m_shadowbuffersize, 1 );
+        }
+        shadowcascadestext += " cm";
+        if( Global.gfx_shadow_sdsm ) {
+            if( fit.fitted ) {
+                shadowcascadestext += " (whole slices";
+                for( std::size_t cascade = 0; cascade < gl::MAX_CASCADES; ++cascade ) {
+                    shadowcascadestext += " " + to_string( 100.f * fit.slice[ cascade ] / m_shadowbuffersize, 1 );
+                }
+                shadowcascadestext +=
+                    "), fitted to pixels " + to_string( fit.depthmin, 2 ) + "-" + to_string( fit.depthmax, 1 ) + " m "
+                    + std::to_string( fit.age ) + " frames ago, view turned " + to_string( fit.turn, 1 ) + " deg since";
+            }
+            else {
+                shadowcascadestext += ", fixed: " + std::string{ fit.reason != nullptr ? fit.reason : "" };
+            }
+        }
+        shadowcascadestext += "\n";
     }
 
     m_debugstatstext =
@@ -877,6 +910,7 @@ void opengl46_renderer::SwapBuffers()
                     ", rays " + to_string( Global.gfx_contactshadows_length, 2 ) + " m within " + to_string( Global.gfx_contactshadows_range, 0 ) + " m\n" :
                     ", off in this view\n" ) :
             std::string{} )
+        + shadowcascadestext
         + " instance buffer: " + std::to_string( m_instancestream->used() / static_cast<GLsizeiptr>( sizeof( glm::mat4 ) ) ) + " matrices, "
         + std::to_string( m_instancestream->size() / 1024 ) + " KiB\n"
         + " model blocks: " + std::to_string( model_ubo->updates() )
@@ -979,6 +1013,27 @@ void opengl46_renderer::draw_debug_ui()
         ImGui::Combo("contact shadows (gfx.contactshadows)", &Global.gfx_contactshadows, contactlevels, IM_ARRAYSIZE(contactlevels));
         ImGui::SliderFloat("length of their rays, m (gfx.contactshadows.length)", &Global.gfx_contactshadows_length, 0.05f, 5.f, "%.2f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("distance they reach, m (gfx.contactshadows.range)", &Global.gfx_contactshadows_range, 1.f, 1000.f, "%.0f", ImGuiSliderFlags_Logarithmic);
+    }
+    ImGui::End();
+
+    if (ImGui::Begin("Sun shadows"))
+    {
+        ImGui::Checkbox("cascades fitted to the depth of the view (gfx.shadow.sdsm)", &Global.gfx_shadow_sdsm);
+        ImGui::SliderFloat("splits, 0 equal lengths .. 1 equal ratios (gfx.shadow.sdsm.split)", &Global.gfx_shadow_sdsm_split, 0.f, 1.f, "%.2f");
+        auto const &fit{m_shadowfitstate};
+        if (Global.gfx_shadow_sdsm)
+        {
+            if (fit.fitted)
+                ImGui::Text("fitted to pixels %.2f - %.1f m, measured %u frames ago, view turned %.1f deg since", fit.depthmin, fit.depthmax, fit.age, fit.turn);
+            else
+                ImGui::Text("fixed cascades: %s", fit.reason != nullptr ? fit.reason : "");
+        }
+        if (m_shadowbuffersize > 0)
+        {
+            for (std::size_t cascade = 0; cascade < gl::MAX_CASCADES; ++cascade)
+                ImGui::Text("cascade %d: to %.1f m, map %.1f m across (whole slice %.1f m), texel %.1f cm", static_cast<int>(cascade + 1), fit.splits[cascade + 1],
+                            fit.drawn[cascade], fit.slice[cascade], 100.f * fit.drawn[cascade] / m_shadowbuffersize);
+        }
     }
     ImGui::End();
 
@@ -1453,6 +1508,20 @@ if (!Global.gfx_skippipeline)
 				}
 			}
 
+			// the depth of the finished view, which the cascades of the sun shadows of the next frames are fitted to
+			// (gfx.shadow.sdsm). the main framebuffer holds it resolved for the motion blur or the ambient occlusion
+			if (vp.main && Global.gfx_shadow_sdsm && (Shadow_Fit_Unavailable(vp) == nullptr))
+			{
+				auto const resolved{(vp.main_texd != nullptr) && (Global.gfx_postfx_motionblur_enabled || (aomode != 0))};
+				opengl46_shadow_fit::view const view{
+				    m_colorpass.pass_camera.position(),
+				    m_colorpass.pass_camera.projection(),
+				    glm::mat3{m_colorpass.pass_camera.modelview()},
+				    Shadow_Light_Rotation(),
+				    Shadow_Fixed_Splits().back()};
+				m_shadowfit.measure(resolved ? vp.main_texd->id : 0, *vp.msaa_fb, vp.width, vp.height, view, m_framestamp);
+			}
+
 			gpupart("exposure, bloom");
 			// the exposure follows the main view; the other viewports use it too
 			if (Global.gfx_postfx_autoexposure && vp.main)
@@ -1559,17 +1628,13 @@ if (!Global.gfx_skippipeline)
         setup_drawing( false );
 
 		glViewport(0, 0, m_shadowbuffersize, m_shadowbuffersize);
-		float csmstageboundaries[] = {0.0f,
-		                               Global.shadowtune.range / 32,
-		                              Global.shadowtune.range / 8,
-		                              Global.shadowtune.range};
-        if( Global.shadowtune.map_size > 2048 ) {
-            // increase coverage if our shadow map is large enough to produce decent results
-			csmstageboundaries[1] *= Global.shadowtune.map_size / 2048;
-			csmstageboundaries[2] *= Global.shadowtune.map_size / 2048;
-			csmstageboundaries[3] *= Global.shadowtune.map_size / 2048;
-        }
-
+		auto csmstageboundaries { Shadow_Fixed_Splits() };
+		// the cascades fitted to the depth of the view (gfx.shadow.sdsm) go between the distances of its pixels, each map
+		// covering the area of the pixels its cascade takes
+		std::array<std::optional<std::array<glm::vec3, 8>>, gl::MAX_CASCADES> fitareas;
+		auto const fitted { Shadow_Fit( vp, csmstageboundaries, fitareas ) };
+		scene_ubs.shadow_fit = glm::vec4{ fitted ? 1.f : 0.f, 0.f, 0.f, 0.f };
+		m_shadowfitstate.splits = csmstageboundaries;
 
         for( auto idx = 0; idx < m_shadowpass.size(); ++idx ) {
 
@@ -1581,8 +1646,12 @@ if (!Global.gfx_skippipeline)
             m_shadow_fb->attach( *m_shadow_tex, GL_DEPTH_ATTACHMENT, idx );
             m_shadow_fb->clear( GL_DEPTH_BUFFER_BIT );
 
+            m_shadowfitarea = ( fitareas[ idx ] ? &( *fitareas[ idx ] ) : nullptr );
             setup_pass( vp, m_renderpass, rendermode::shadows, csmstageboundaries[ idx ], csmstageboundaries[ idx + 1 ] );
+            m_shadowfitarea = nullptr;
             m_shadowpass[ idx ] = m_renderpass; // store pass config for reference in other stages
+            m_shadowfitstate.slice[ idx ] = m_shadowslicesize;
+            m_shadowfitstate.drawn[ idx ] = m_shadowdrawnsize;
 
             setup_matrices();
             scene_ubs.projection = OpenGLMatrices.data( GL_PROJECTION );
@@ -2090,12 +2159,53 @@ void opengl46_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         }
         pass_camera /= bounding_viewports_count;
 
+		// ...a cascade fitted to the depth of the view (gfx.shadow.sdsm) covers the area of the pixels it takes, within the
+		// slice of the view. the areas are compared across the light, the depth along it stays the one of the slice...
+		auto quantizationstep{0.f};
+		{
+			auto const lightrotation{Shadow_Light_Rotation()};
+			glm::vec3 slicemin{std::numeric_limits<float>::max()}, slicemax{std::numeric_limits<float>::lowest()};
+			for (auto const &point : frustumchunkshapepoints)
+			{
+				auto const lightpoint{lightrotation * glm::vec3{point}};
+				slicemin = glm::min(slicemin, lightpoint);
+				slicemax = glm::max(slicemax, lightpoint);
+			}
+			m_shadowslicesize = std::max(slicemax.x - slicemin.x, slicemax.y - slicemin.y);
+			if (m_shadowfitarea != nullptr)
+			{
+				glm::vec3 areamin{std::numeric_limits<float>::max()}, areamax{std::numeric_limits<float>::lowest()};
+				for (auto const &point : *m_shadowfitarea)
+				{
+					auto const lightpoint{lightrotation * point};
+					areamin = glm::min(areamin, lightpoint);
+					areamax = glm::max(areamax, lightpoint);
+				}
+				auto const fitmin{glm::vec2{glm::max(glm::vec2{slicemin}, glm::vec2{areamin})}};
+				auto const fitmax{glm::vec2{glm::min(glm::vec2{slicemax}, glm::vec2{areamax})}};
+				if ((fitmin.x < fitmax.x) && (fitmin.y < fitmax.y))
+				{
+					// the size changes in steps of a power of two of about 1/16 of it, so that the texels of the map keep
+					// their size until the area grows or shrinks by a step
+					auto const size{std::max(fitmax.x - fitmin.x, fitmax.y - fitmin.y)};
+					quantizationstep = std::exp2(std::ceil(std::log2(std::max(size, 1.f) / 16.f)));
+					frustumchunkshapepoints.clear();
+					auto const inverserotation{glm::transpose(lightrotation)};
+					for (int corner = 0; corner < 8; ++corner)
+					{
+						auto const lightpoint{glm::vec3{(corner & 1) ? fitmax.x : fitmin.x, (corner & 2) ? fitmax.y : fitmin.y, (corner & 4) ? slicemax.z : slicemin.z}};
+						frustumchunkshapepoints.emplace_back(inverserotation * lightpoint, 1.f);
+					}
+				}
+			}
+		}
+
 		// ...modelview matrix: determine the centre of frustum chunk in world space...
 		glm::vec3 frustumchunkmin, frustumchunkmax;
 		bounding_box(frustumchunkmin, frustumchunkmax, std::begin(frustumchunkshapepoints), std::end(frustumchunkshapepoints));
 		auto const frustumchunkcentre = (frustumchunkmin + frustumchunkmax) * 0.5f;
 		// ...cap the vertical angle to keep shadows from getting too long...
-		auto const lightvector = glm::normalize(glm::vec3{m_sunlight.direction.x, std::min(m_sunlight.direction.y, Global.gfx_shadow_angle_min), m_sunlight.direction.z});
+		auto const lightvector = Shadow_Light_Vector();
 		// ...place the light source at the calculated centre and setup world space light view matrix...
         camera.position() = pass_camera + glm::dvec3{frustumchunkcentre};
 		viewmatrix *= glm::lookAt(camera.position(), camera.position() + glm::dvec3{lightvector}, glm::dvec3{0.f, 1.f, 0.f});
@@ -2108,9 +2218,11 @@ void opengl46_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 		bounding_box(frustumchunkmin, frustumchunkmax, std::begin(frustumchunkshapepoints), std::end(frustumchunkshapepoints));
 		// quantize the frustum points and add some padding, to reduce shadow shimmer on scale changes
         auto const frustumchunkdepth { zfar - ( Znear > 1.f ? Znear : 0.f ) };
-		auto const quantizationstep{std::min(frustumchunkdepth, 50.f)};
+		if (quantizationstep <= 0.f)
+			quantizationstep = std::min(frustumchunkdepth, 50.f);
 		frustumchunkmin = quantizationstep * glm::floor(frustumchunkmin * (1.f / quantizationstep));
 		frustumchunkmax = quantizationstep * glm::ceil(frustumchunkmax * (1.f / quantizationstep));
+		m_shadowdrawnsize = std::max(frustumchunkmax.x - frustumchunkmin.x, frustumchunkmax.y - frustumchunkmin.y);
 		// ...use the dimensions to set up light projection boundaries...
 		// NOTE: since we only have one cascade map stage, we extend the chunk forward/back to catch areas normally covered by other stages
 		camera.projection() = ortho_projection(frustumchunkmin.x, frustumchunkmax.x, frustumchunkmin.y, frustumchunkmax.y, frustumchunkmin.z - 500.f, frustumchunkmax.z + 500.f);
@@ -7606,6 +7718,7 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 		// everything is in the first cascade
 		scene_ubs.cascade_end[idx] = std::numeric_limits<float>::max();
 	}
+	scene_ubs.shadow_fit = glm::vec4{0.f};
 	scene_ubo->update(scene_ubs);
 	scene_ubo->bind_uniform();
 	// the sun is the only light, and there's no fog
@@ -8547,6 +8660,158 @@ bool opengl46_renderer::Resolved_Depth_Target(viewport_config &vp)
 	}
 	vp.clusters_depth_tex = std::move(texture);
 	vp.clusters_depth_fb = std::move(framebuffer);
+	return true;
+}
+
+glm::vec3 opengl46_renderer::Shadow_Light_Vector() const
+{
+	// cap the vertical angle to keep shadows from getting too long
+	return glm::normalize(glm::vec3{m_sunlight.direction.x, std::min(m_sunlight.direction.y, Global.gfx_shadow_angle_min), m_sunlight.direction.z});
+}
+
+glm::mat3 opengl46_renderer::Shadow_Light_Rotation() const
+{
+	// the rotation of the view of the shadow pass (setup_pass())
+	return glm::mat3{glm::lookAt(glm::vec3{0.f}, Shadow_Light_Vector(), glm::vec3{0.f, 1.f, 0.f})};
+}
+
+std::array<float, gl::MAX_CASCADES + 1> opengl46_renderer::Shadow_Fixed_Splits() const
+{
+	static_assert(gl::MAX_CASCADES == 3, "the fixed cascades are made for 3 of them");
+	std::array<float, gl::MAX_CASCADES + 1> splits{0.0f, Global.shadowtune.range / 32, Global.shadowtune.range / 8, Global.shadowtune.range};
+	if (Global.shadowtune.map_size > 2048)
+	{
+		// increase coverage if our shadow map is large enough to produce decent results
+		for (std::size_t idx = 1; idx < splits.size(); ++idx)
+			splits[idx] *= Global.shadowtune.map_size / 2048;
+	}
+	return splits;
+}
+
+char const *opengl46_renderer::Shadow_Fit_Unavailable(viewport_config const &Viewport) const
+{
+	if (false == Global.gfx_shadowmap_enabled)
+		return "no shadow maps";
+	if (Global.bWireFrame)
+		return "wireframe";
+	// the shadows follow the camera, the view shows another one
+	if (DebugCameraFlag)
+		return "debug camera";
+	if (Global.gfx_skippipeline || (Viewport.msaa_fb == nullptr))
+		return "no post processing";
+	if (EditorModeFlag && Global.EditorOrtho)
+		return "orthographic view";
+	auto const shadowviews{std::count_if(m_viewports.begin(), m_viewports.end(), [](auto const &View) { return View->shadow; })};
+	if ((false == Viewport.shadow) || (shadowviews != 1))
+		return "the shadows cover more than one view";
+	return nullptr;
+}
+
+bool opengl46_renderer::Shadow_Fit(viewport_config const &Viewport, std::array<float, gl::MAX_CASCADES + 1> &Splits,
+                                   std::array<std::optional<std::array<glm::vec3, 8>>, gl::MAX_CASCADES> &Areas)
+{
+	// a measurement older than this many frames, made with the camera this many metres away or the view turned this many
+	// degrees from the one now, isn't used
+	constexpr unsigned int AGE_MAX{6};
+	constexpr float SHIFT_MAX{25.f};
+	constexpr float TURN_MAX{20.f};
+	// metres an area grows by on each side: the vehicles move in the frames since the measurement too
+	constexpr float MARGIN{0.25f};
+
+	auto &state{m_shadowfitstate};
+	state = shadow_fit_state{};
+	if (false == Global.gfx_shadow_sdsm)
+		return false;
+	if ((state.reason = Shadow_Fit_Unavailable(Viewport)) != nullptr)
+		return false;
+	auto const *latest{m_shadowfit.latest()};
+	if (latest == nullptr)
+	{
+		state.reason = "no measurement yet";
+		return false;
+	}
+	auto const &data{latest->data};
+	auto const &source{latest->source};
+	state.age = m_framestamp - latest->frame;
+	state.depthmin = data.depthmin;
+	state.depthmax = data.depthmax;
+	if (state.age > AGE_MAX)
+	{
+		state.reason = "the measurement is too old";
+		return false;
+	}
+	if (data.samples == 0)
+	{
+		state.reason = "only the sky in the view";
+		return false;
+	}
+	if (source.range != Shadow_Fixed_Splits().back())
+	{
+		state.reason = "the range of the shadows changed";
+		return false;
+	}
+	// the shadows of this frame are made for its colour pass
+	auto const &camera{m_colorpass.pass_camera};
+	auto const shift{glm::vec3{source.camera - camera.position()}};
+	if (glm::length(shift) > SHIFT_MAX)
+	{
+		state.reason = "the camera jumped";
+		return false;
+	}
+	auto const turnmatrix{glm::mat3{camera.modelview()} * glm::transpose(source.rotation)};
+	auto const turn{std::acos(std::clamp((turnmatrix[0][0] + turnmatrix[1][1] + turnmatrix[2][2] - 1.f) * 0.5f, -1.f, 1.f))};
+	state.turn = glm::degrees(turn);
+	if (state.turn > TURN_MAX)
+	{
+		state.reason = "the view turned too fast";
+		return false;
+	}
+	auto const &projection{camera.projection()};
+	if ((std::abs(projection[0][0] - source.projection[0][0]) > 0.02f * std::abs(projection[0][0]))
+	 || (std::abs(projection[1][1] - source.projection[1][1]) > 0.02f * std::abs(projection[1][1])))
+	{
+		state.reason = "the field of view changed";
+		return false;
+	}
+
+	// the first cascade from the camera, like the fixed ones. setup_pass() takes distances up to 1 m as shares of the far
+	// end, so the others start past that
+	Splits[0] = 0.f;
+	for (std::size_t split = 1; split < Splits.size(); ++split)
+		Splits[split] = std::max(data.splits[split], Splits[split - 1] + 1.5f);
+	if (false == std::isfinite(Splits.back()))
+	{
+		state.reason = "invalid measurement";
+		return false;
+	}
+
+	auto const inverselight{glm::transpose(source.light)};
+	// the scenery stays where it was while the camera moved, the cab and the train the camera rides with moved along. an area
+	// covers both
+	auto const lightshift{source.light * shift};
+	auto const chord{2.f * std::sin(turn * 0.5f)};
+	for (std::size_t cascade = 0; cascade < gl::MAX_CASCADES; ++cascade)
+	{
+		// with nothing of the view in a cascade, its map covers the whole slice
+		if (data.counts[cascade] == 0)
+			continue;
+		auto const *bounds{&data.bounds[cascade * 8]};
+		glm::vec3 low{opengl46_shadow_fit::unorder(bounds[0]), opengl46_shadow_fit::unorder(bounds[1]), opengl46_shadow_fit::unorder(bounds[2])};
+		glm::vec3 high{opengl46_shadow_fit::unorder(bounds[4]), opengl46_shadow_fit::unorder(bounds[5]), opengl46_shadow_fit::unorder(bounds[6])};
+		if ((false == std::isfinite(low.x + low.y + high.x + high.y)) || (low.x > high.x) || (low.y > high.y))
+			continue;
+		low = glm::min(low, low + lightshift);
+		high = glm::max(high, high + lightshift);
+		// and what came into the view as it turned, out to the reach of the cascade
+		auto const reach{Splits[cascade + 1] + static_cast<float>(gl::MAX_CASCADES - cascade)};
+		auto const margin{reach * chord + MARGIN + 0.01f * std::max(high.x - low.x, high.y - low.y)};
+		low -= glm::vec3{margin};
+		high += glm::vec3{margin};
+		auto &area{Areas[cascade].emplace()};
+		for (int corner = 0; corner < 8; ++corner)
+			area[corner] = inverselight * glm::vec3{(corner & 1) ? high.x : low.x, (corner & 2) ? high.y : low.y, (corner & 4) ? high.z : low.z};
+	}
+	state.fitted = true;
 	return true;
 }
 

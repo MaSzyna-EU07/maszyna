@@ -334,6 +334,13 @@ struct global_settings {
     float gfx_distance_factor_max { 3.f };
     float gfx_shadow_angle_min { -0.2f };
     int gfx_shadow_rank_cutoff { 3 };
+    // (opengl 4.6) the cascades of the sun shadows are fitted to the depth of the main view of a frame or two before (SDSM):
+    // the distances they cover go from the nearest to the farthest pixel which isn't the sky, and the map of each covers only
+    // the area of the pixels it takes. false: the fixed cascades of shadowtune
+    bool gfx_shadow_sdsm { false };
+    // with gfx_shadow_sdsm: how the distances between the nearest and the farthest pixel are split between the cascades,
+    // 0: in equal lengths, 1: in equal ratios
+    float gfx_shadow_sdsm_split { 0.9f };
 
     // sky light and exposure of the opengl 4.6 renderer. the switches can also be changed at run time in the debug window
     // "Sky and exposure"; the scales are multipliers of the calibrated defaults (1 = as calibrated)

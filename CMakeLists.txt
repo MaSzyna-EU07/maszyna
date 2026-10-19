@@ -340,6 +340,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46localshadows.cpp"
             "rendering/opengl46/opengl46instancecull.cpp"
             "rendering/opengl46/opengl46hiz.cpp"
+            "rendering/opengl46/opengl46shadowfit.cpp"
             "rendering/opengl46/opengl46precipitation.cpp"
             "rendering/opengl46/opengl46particles.cpp"
             "rendering/opengl46/opengl46terrain.cpp"

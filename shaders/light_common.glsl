@@ -128,6 +128,21 @@ float calc_shadow_map()
 	for (cascade = 0U; cascade < MAX_CASCADES; cascade++)
 		if (distance <= cascade_end[cascade])
 			break;
+	// cascades fitted to the depth of the view of an earlier frame (gfx.shadow.sdsm) cover only the area of the points seen
+	// then: a point at the edge of the view or one which came closer since may be outside the map of its cascade. it goes to
+	// the first further cascade whose map holds it with the reach of the filter, and is lit past the last one
+	if (shadow_fit.x > 0.0)
+	{
+		float border = 4.0 / float(textureSize(shadowmap, 0).x);
+		for (; cascade < MAX_CASCADES; cascade++)
+		{
+			vec2 fitcoords = (lightview[cascade] * vec4(f_pos.xyz, 1.0)).xy;
+			if (all(greaterThanEqual(fitcoords, vec2(border))) && all(lessThanEqual(fitcoords, vec2(1.0 - border))))
+				break;
+		}
+		if (cascade >= MAX_CASCADES)
+			return 0.0;
+	}
 	// Normal offset: sample the shadow map from a point pushed along the surface normal
 	// by a fraction of the cascade's texel footprint. A constant depth bias can't keep up
 	// with large texels (far cascades, small shadow maps) on surfaces at a grazing angle

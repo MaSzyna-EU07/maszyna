@@ -101,9 +101,12 @@ namespace gl
         glm::vec4 contact_shadow_params;
         // x: how many lamps and headlights a pixel traces the rays to (0: only the sun), yzw unused
         glm::vec4 contact_shadow_lamps;
+        // x: 1 when the cascades of the sun shadows are fitted to the depth of the view (gfx.shadow.sdsm, opengl46_shadow_fit):
+        // a point outside the map of its cascade goes to the next cascade whose map holds it. yzw unused
+        glm::vec4 shadow_fit;
     };
 
-    static_assert(sizeof(scene_ubs) == 432 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 448 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
@@ -487,6 +490,12 @@ namespace gl
     // work group of the passes which make the depth pyramid of the occlusion test (hiz_build.comp), 8x8
     const GLuint HIZ_GROUP_SIZE = 8;
 
+    // the cascades of the sun shadows fitted to the depth of the main view (opengl46_shadow_fit, shadow_fit_*.comp): work group
+    // of its passes, 16x16 pixels, and the binding point of its buffer. the point is one of the instance culling, which binds
+    // its buffers before every use; the fit binds its own before its passes
+    const GLuint SHADOW_FIT_GROUP_SIZE = 16;
+    const GLuint SHADOW_FIT_SSBO_BINDING = 9;
+
     // layout std430: a bucket of a scene cell queued in the pass (GLSL: instance_cull_job)
     struct instance_cull_job
     {
@@ -538,6 +547,29 @@ namespace gl
     };
 
     static_assert(sizeof(instance_draw_command) == 32, "bad size of instance_draw_command");
+
+    // layout std430: what the passes of the cascades fitted to the depth of the view leave for the cpu (GLSL: shadow_fit_ssbo).
+    // the cpu writes it before the passes: the number of the measurement, no pixels, the nearest distance infinite, the bounds
+    // empty. the passes take the extremes with atomic operations on the bits: positive floats order as uints, and the bounds,
+    // which can be negative, are stored in an order preserving form (shadow_fit_order() in shadow_fit_bounds.comp)
+    struct shadow_fit_data
+    {
+        uint32_t measurement; // number given by the cpu, to find the camera and the light it was made with
+        uint32_t samples; // pixels of the view which aren't the sky
+        float depthmin; // nearest and farthest distance of those from the camera, metres
+        float depthmax;
+        float splits[4]; // distances the cascades go from and to (MAX_CASCADES + 1 of them), from the two above
+        uint32_t counts[4]; // pixels taken into the bounds of each cascade (MAX_CASCADES of them)
+        // per cascade the lowest x, y, z, unused, then the highest x, y, z, unused, of the pixels it takes, in metres in the
+        // space of the light (its rotation only), relative to the camera
+        uint32_t bounds[MAX_CASCADES * 8];
+    };
+
+    static_assert(MAX_CASCADES + 1 <= 4, "shadow_fit_data holds the splits of at most 3 cascades");
+    static_assert(offsetof(shadow_fit_data, splits) == 16, "bad layout of shadow_fit_data");
+    static_assert(offsetof(shadow_fit_data, counts) == 32, "bad layout of shadow_fit_data");
+    static_assert(offsetof(shadow_fit_data, bounds) == 48, "bad layout of shadow_fit_data");
+    static_assert(sizeof(shadow_fit_data) == 48 + 32 * MAX_CASCADES, "bad size of shadow_fit_data");
 
 #pragma pack(pop)
 }

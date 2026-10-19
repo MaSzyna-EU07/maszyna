@@ -1,0 +1,65 @@
+// the cascades of the sun shadows fitted to the depth of the main view (opengl46_shadow_fit), first pass: how many pixels of
+// the resolved depth of the view aren't the sky, and the nearest and the farthest of their distances from the camera.
+// the depth is reversed with the far plane at infinity: the sky, which writes no depth, stays at 0.
+// shadow_fit_bounds.comp splits the distances between the cascades
+
+#include <common>
+
+layout(local_size_x = SHADOW_FIT_GROUP_SIZE, local_size_y = SHADOW_FIT_GROUP_SIZE) in;
+
+layout(binding = 0) uniform sampler2D scene_depth;
+
+layout(std430, binding = SHADOW_FIT_SSBO_BINDING) buffer shadow_fit_ssbo
+{
+	uint measurement;
+	uint samples;
+	// positive floats, as bits
+	uint depthmin;
+	uint depthmax;
+	float splits[4];
+	uint counts[4];
+	uint bounds[MAX_CASCADES * 8U];
+};
+
+// the inverse of the projection of the view
+layout(location = 0) uniform mat4 inv_projection;
+
+shared uint shared_samples;
+shared uint shared_min;
+shared uint shared_max;
+
+void main()
+{
+	if (gl_LocalInvocationIndex == 0U)
+	{
+		shared_samples = 0U;
+		// infinity
+		shared_min = 0x7F800000U;
+		shared_max = 0U;
+	}
+	barrier();
+
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = textureSize(scene_depth, 0);
+	if (all(lessThan(pixel, size)))
+	{
+		float depth = texelFetch(scene_depth, pixel, 0).r;
+		if (depth > 0.0)
+		{
+			vec2 ndc = (vec2(pixel) + 0.5) / vec2(size) * 2.0 - 1.0;
+			vec4 position = inv_projection * vec4(ndc, depth, 1.0);
+			uint distance = floatBitsToUint(length(position.xyz / position.w));
+			atomicAdd(shared_samples, 1U);
+			atomicMin(shared_min, distance);
+			atomicMax(shared_max, distance);
+		}
+	}
+	barrier();
+
+	if ((gl_LocalInvocationIndex == 0U) && (shared_samples > 0U))
+	{
+		atomicAdd(samples, shared_samples);
+		atomicMin(depthmin, shared_min);
+		atomicMax(depthmax, shared_max);
+	}
+}

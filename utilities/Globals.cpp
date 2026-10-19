@@ -1607,6 +1607,17 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_shadow_rank_cutoff;
         gfx_shadow_rank_cutoff = std::clamp(gfx_shadow_rank_cutoff, 1, 3);
     }
+    else if (Token == "gfx.shadow.sdsm")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_shadow_sdsm;
+    }
+    else if (Token == "gfx.shadow.sdsm.split")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_shadow_sdsm_split;
+        gfx_shadow_sdsm_split = std::clamp(gfx_shadow_sdsm_split, 0.f, 1.f);
+    }
     else if (ConfigParse_gfx_sky(Parser, Token))
     {
         // parsed
@@ -2006,6 +2017,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.shadergamma", gfx_shadergamma );
     export_as_text( Output, "gfx.shadow.angle.min", gfx_shadow_angle_min );
     export_as_text( Output, "gfx.shadow.rank.cutoff", gfx_shadow_rank_cutoff );
+    export_as_text( Output, "gfx.shadow.sdsm", gfx_shadow_sdsm );
+    export_as_text( Output, "gfx.shadow.sdsm.split", gfx_shadow_sdsm_split );
     export_as_text( Output, "gfx.ambient.sh", gfx_ambient_sh );
     export_as_text( Output, "gfx.ambient.sh.strength", gfx_ambient_sh_strength );
     export_as_text( Output, "gfx.ambient.groundalbedo", gfx_ambient_groundalbedo );

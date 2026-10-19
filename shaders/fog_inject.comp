@@ -87,13 +87,22 @@ float sun_shadow(vec3 position)
 	for (cascade = 0U; cascade < MAX_CASCADES; cascade++)
 		if (span_distance <= cascade_end[cascade])
 			break;
-	if (cascade >= MAX_CASCADES)
-		return 0.0;
-	vec4 lightpos = lightview[cascade] * vec4(position, 1.0);
-	vec3 coords = lightpos.xyz / lightpos.w;
-	if (coords.z < 0.0 || any(lessThan(coords.xy, vec2(0.0))) || any(greaterThan(coords.xy, vec2(1.0))))
-		return 0.0;
-	return texture(shadowmap, vec4(coords.xy, float(cascade), coords.z + 0.0001 * float(cascade + 1U)));
+	for (; cascade < MAX_CASCADES; cascade++)
+	{
+		vec4 lightpos = lightview[cascade] * vec4(position, 1.0);
+		vec3 coords = lightpos.xyz / lightpos.w;
+		if (all(greaterThanEqual(coords.xy, vec2(0.0))) && all(lessThanEqual(coords.xy, vec2(1.0))))
+		{
+			if (coords.z < 0.0)
+				return 0.0;
+			return texture(shadowmap, vec4(coords.xy, float(cascade), coords.z + 0.0001 * float(cascade + 1U)));
+		}
+		// outside the map: lit, unless the cascades are fitted to the depth of the view (gfx.shadow.sdsm), whose maps cover
+		// only the area of the surfaces seen; then the first further cascade whose map holds the point
+		if (shadow_fit.x <= 0.0)
+			return 0.0;
+	}
+	return 0.0;
 #else
 	return 0.0;
 #endif
