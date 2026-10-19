@@ -275,13 +275,16 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	if (command == "ortho")
 	{
 		float extent{0.0f};
-		words >> extent;
+		std::string ballast;
+		words >> extent >> ballast;
 		choose_work_area(work_area::tracks);
 		if (Global.EditorOrtho == extent < 0.0f)
 			toggle_ortho();
 		if (extent > 0.0f)
 			Global.EditorOrthoExtent = std::clamp(extent, 5.0f, 50000.0f);
-		WriteLog(format("SELFTEST ortho extent %.0f", Global.EditorOrthoExtent));
+		if (false == ballast.empty())
+			Global.EditorOrthoBallast = ballast != "noballast";
+		WriteLog(format("SELFTEST ortho extent %.0f ballast %d", Global.EditorOrthoExtent, Global.EditorOrthoBallast ? 1 : 0));
 		return selftest_result::handled;
 	}
 	if (command == "mapstate")

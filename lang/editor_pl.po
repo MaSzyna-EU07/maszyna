@@ -9889,3 +9889,12 @@ msgid_plural "\nThe terrain followed the tracks: %zu formations laid anew"
 msgstr[0] "\nTeren poszedł za torami: %zu torowisko ułożone od nowa"
 msgstr[1] "\nTeren poszedł za torami: %zu torowiska ułożone od nowa"
 msgstr[2] "\nTeren poszedł za torami: %zu torowisk ułożonych od nowa"
+
+msgid "Ballast in the top view"
+msgstr "Podsypka w widoku z góry"
+
+msgid "Ballast"
+msgstr "Podsypka"
+
+msgid "Off: the top view draws the rails and sleepers of the tracks without the ballast, so the ground under them shows"
+msgstr "Wyłączone: widok z góry rysuje szyny i podkłady bez podsypki, widać teren pod torami"

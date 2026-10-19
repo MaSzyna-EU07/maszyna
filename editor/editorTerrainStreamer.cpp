@@ -34,6 +34,9 @@ double constexpr upload_budget{0.004}; // seconds of a frame for taking over fin
 int constexpr materials_per_frame{6};
 double constexpr look_ahead{8.0}; // seconds; chunks are loaded around where the camera will be by then
 double constexpr look_ahead_limit{2000.0}; // metres
+double constexpr pixel_distance{1300.0}; // m; a pixel of the top view is as big as one of the 3D view this far away
+int constexpr top_radius{200}; // chunks the top view of the tracks loads around its centre at most
+double constexpr settled_walk{1.0}; // seconds; the chunks around the camera are looked over this often when nothing is coming
 double constexpr region_half{scene::EU07_REGIONSIDESECTIONCOUNT * scene::EU07_SECTIONSIZE * 0.5 - heightmap::chunk_size};
 double constexpr kPi{3.14159265358979323846};
 
@@ -135,6 +138,7 @@ void terrain_streamer::close()
 	m_packs.clear();
 	m_loading.clear();
 	m_removed.clear();
+	m_settled = false;
 	m_palette.clear();
 	m_recording = 0;
 	m_change = change();
@@ -159,6 +163,7 @@ void terrain_streamer::reset()
 	m_packs.clear();
 	m_loading.clear();
 	m_removed.clear();
+	m_settled = false;
 	m_palette.clear();
 	clear_water(false);
 	m_recording = 0;
@@ -506,7 +511,7 @@ int terrain_streamer::wanted_stride(editor_terrain const &Chunk, glm::dvec3 cons
 	// distance from the camera to the box of the chunk
 	glm::dvec3 const offset{std::max({Chunk.m_low.x - Camera.x, 0.0, Camera.x - Chunk.m_high.x}), std::max({Chunk.m_low.y - Camera.y, 0.0, Camera.y - Chunk.m_high.y}),
 	                        std::max({Chunk.m_low.z - Camera.z, 0.0, Camera.z - Chunk.m_high.z})};
-	auto const distance{glm::length(offset)};
+	auto const distance{m_pixel > 0.0 ? m_pixel * pixel_distance : glm::length(offset)};
 	auto const spacing{Chunk.data().spacing()};
 	auto const limit{heightmap::max_stride(Chunk.cells())};
 	auto const stride_for = [&](double const Distance) {
@@ -586,12 +591,19 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 			m_results.pop_front();
 		}
 		process(done);
+		m_settled = false;
 	}
 
+	// the top view of the tracks wants the terrain as far as the corners of the screen, as fine as its pixels need
+	auto const top{Global.EditorOrtho && Global.editor_tracks};
+	auto const aspect{Global.window_size.x / std::max(1.0, static_cast<double>(Global.window_size.y))};
+	auto const reach{top ? Global.EditorOrthoExtent * std::sqrt(1.0 + aspect * aspect) : 0.0};
+	m_pixel = top ? 2.0 * Global.EditorOrthoExtent / std::max(1, Global.window_size.y) : 0.0;
+
 	// chunks wanted around the camera and around where it's heading
-	auto const range{std::max(m_radius * heightmap::chunk_size, static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor))) + heightmap::chunk_size * 0.5};
-	auto const radius{std::min(64, static_cast<int>(std::ceil(range / heightmap::chunk_size)))};
-	if (m_ringradius != radius)
+	auto const range{std::max({m_radius * heightmap::chunk_size, static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor)), reach}) + heightmap::chunk_size * 0.5};
+	auto const radius{std::min(top ? top_radius : 64, static_cast<int>(std::ceil(range / heightmap::chunk_size)))};
+	if (m_ringradius < radius)
 	{
 		m_ring.clear();
 		for (int dz = -radius; dz <= radius; ++dz)
@@ -606,12 +618,31 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 	std::vector<chunk_key> centres{here};
 	if (there != here)
 		centres.push_back(there);
+	// a walk which asked for nothing isn't made again until something comes or the camera moves to another chunk
+	if (m_settled && (here != m_walkhere || there != m_walkthere || radius != m_walkradius || now - m_walktime > settled_walk))
+		m_settled = false;
+	if (false == m_settled)
+	{
+		m_walkhere = here;
+		m_walkthere = there;
+		m_walkradius = radius;
+		m_walktime = now;
+		m_settled = m_loading.empty();
+	}
+	else
+		centres.clear();
+	auto const walked{(radius + 1) * (radius + 1)};
 	for (auto const &centre : centres)
 	{
 		for (auto const &offset : m_ring)
 		{
-			if (m_loading.size() >= max_loading)
+			if (offset.first * offset.first + offset.second * offset.second > walked)
 				break;
+			if (m_loading.size() >= max_loading)
+			{
+				m_settled = false;
+				break;
+			}
 			chunk_key const key{centre.first + offset.first, centre.second + offset.second};
 			if (m_chunks.count(key) > 0 || m_loading.count(key) > 0 || m_removed.count(key) > 0)
 				continue;
@@ -627,8 +658,11 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 				task.generation = pack.generation;
 				task.priority = distance;
 				submit(std::move(task));
+				m_settled = false;
 				continue;
 			}
+			if (pack.status == pack_state::state::loading)
+				m_settled = false;
 			if (pack.status != pack_state::state::ready || false == pack.file->has(key))
 				continue;
 			job task;
@@ -640,6 +674,7 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 			task.priority = distance;
 			m_loading.insert(key);
 			submit(std::move(task));
+			m_settled = false;
 		}
 	}
 

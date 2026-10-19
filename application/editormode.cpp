@@ -636,6 +636,7 @@ editor_ui *editor_mode::ui() const
 bool editor_mode::init()
 {
     EditorSettings.load();
+    Global.EditorOrthoBallast = EditorSettings.top_ballast();
     EditorModelSets.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
     return m_input.init();
@@ -3516,6 +3517,13 @@ void editor_mode::render_view_menu()
         toggle_ortho();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
+    if (ImGui::MenuItem(STR_C("Ballast in the top view"), nullptr, &Global.EditorOrthoBallast))
+    {
+        EditorSettings.top_ballast(Global.EditorOrthoBallast);
+        EditorSettings.save();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Off: the top view draws the rails and sleepers of the tracks without the ballast, so the ground under them shows"));
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));
@@ -5521,6 +5529,14 @@ void editor_mode::render_gizmo_options()
         ImGui::SliderFloat(STR_C("Extent (m), wheel / MMB pan"), &Global.EditorOrthoExtent, 5.0f, 50000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Wheel zooms. Hold the wheel and drag to pan."));
+        ImGui::SameLine();
+        if (ImGui::Checkbox(STR_C("Ballast"), &Global.EditorOrthoBallast))
+        {
+            EditorSettings.top_ballast(Global.EditorOrthoBallast);
+            EditorSettings.save();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Off: the top view draws the rails and sleepers of the tracks without the ballast, so the ground under them shows"));
     }
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::signals &&
         m_track_tab != track_tab::lineside)

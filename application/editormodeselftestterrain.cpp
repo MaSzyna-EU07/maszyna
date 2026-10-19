@@ -53,6 +53,12 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "orthophoto")
 	{
 		auto config{m_orthophoto.settings()};
+		if (words.str().find(" off") != std::string::npos)
+		{
+			m_orthophoto.enabled(false);
+			WriteLog("SELFTEST orthophoto off");
+			return selftest_result::handled;
+		}
 		int fit{1};
 		int inscene{0};
 		words >> config.north >> config.east >> config.radius >> fit >> inscene;

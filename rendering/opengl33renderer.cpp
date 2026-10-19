@@ -31,6 +31,14 @@ int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of r
 
 namespace {
 
+// the top view of the editor shows everything this close to the camera, the corners of the screen included
+float
+editor_ortho_reach()
+{
+	auto const aspect{Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
+	return Global.EditorOrthoExtent * std::sqrt(1.f + aspect * aspect) + 500.f;
+}
+
 float
 editor_track_view_range(float const Range, bool const Apply)
 {
@@ -38,14 +46,22 @@ editor_track_view_range(float const Range, bool const Apply)
 		return Range;
 	float extra = 50000.0f;
 	if (Global.EditorOrtho)
-		extra = Global.EditorOrthoExtent * 3.0f;
+		extra = editor_ortho_reach();
 	return Range > extra ? Range : extra;
 }
 
+// the top view of the editor may leave the ballast of the railway out, for the ground under the tracks to show
+bool
+editor_ballast_hidden(TTrack const *Track, bool const Colour)
+{
+	return Colour && EditorModeFlag && Global.EditorOrtho && false == Global.EditorOrthoBallast && (Track->iCategoryFlag & 15) == 1;
+}
+
+// the top view draws the scenery as far as the tracks; its models keep their own ranges
 bool
 editor_far_tracks_only(bool const Apply, scene::basic_cell const *Cell, glm::dvec3 const &Camera, double const SceneryLimit)
 {
-	if (false == Apply)
+	if (false == Apply || Global.EditorOrtho)
 		return false;
 	double nearest = glm::length(Cell->m_area.center - Camera) - static_cast<double>(Cell->m_area.radius);
 	if (nearest < 0.0)
@@ -4519,6 +4535,10 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			continue;
 		}
+		if (track->eType == tt_Normal && editor_ballast_hidden(track, m_renderpass.draw_mode == rendermode::color))
+		{
+			continue;
+		}
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -4579,6 +4599,10 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			continue;
 		}
 		if (false == track->m_visible)
+		{
+			continue;
+		}
+		if (editor_ballast_hidden(track, m_renderpass.draw_mode == rendermode::color))
 		{
 			continue;
 		}

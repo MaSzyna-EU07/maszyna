@@ -295,6 +295,13 @@ class terrain_streamer
 	bool m_hascamera{false};
 	std::vector<chunk_key> m_ring; // offsets of the chunks around a point, the nearest first
 	int m_ringradius{-1};
+	double m_pixel{0.0}; // metres a pixel of the top view spans; none in the 3D view
+	// the last walk over the chunks around the camera, and whether it found nothing more to ask for
+	bool m_settled{false};
+	chunk_key m_walkhere{0, 0};
+	chunk_key m_walkthere{0, 0};
+	int m_walkradius{0};
+	double m_walktime{0.0};
 
 	// shared with the workers, guarded by m_mutex
 	std::mutex m_mutex;

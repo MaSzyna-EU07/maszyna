@@ -108,6 +108,8 @@ bool editorSettings::load()
 			m_terrain_offer = (value == "1");
 		else if (key == "track_tools_all")
 			m_track_tools_more = (value == "1");
+		else if (key == "top_ballast")
+			m_top_ballast = (value == "1");
 		else if (key.rfind(origin_prefix, 0) == 0)
 		{
 			// northing;easting
@@ -154,6 +156,7 @@ bool editorSettings::save()
 	stream << "first_steps " << (m_first_steps ? 1 : 0) << "\n";
 	stream << "terrain_offer " << (m_terrain_offer ? 1 : 0) << "\n";
 	stream << "track_tools_all " << (m_track_tools_more ? 1 : 0) << "\n";
+	stream << "top_ballast " << (m_top_ballast ? 1 : 0) << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)
 		stream << origin.first << " " << origin.second.first << ";" << origin.second.second << "\n";
