@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
+#include "utilities/glmHelpers.h"
 #include "world/TrackSleepers.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
@@ -46,6 +47,7 @@ ImU32 const kTangents{IM_COL32(255, 210, 60, 130)};
 ImU32 const kTrack{IM_COL32(190, 190, 190, 255)};
 ImU32 const kTerrain{IM_COL32(170, 120, 70, 255)};
 ImU32 const kFormation{IM_COL32(215, 185, 140, 200)};
+ImU32 const kModel{IM_COL32(70, 200, 190, 230)}; // the ground of the terrain model, as measured
 double constexpr kNoBed{0.05}; // m, a trackbed shallower is none
 // a design the track lay on when it was kept, within kApplied, was applied; where the track parts from it by more than kStale since,
 // it was changed by other tools, and the line is read from the track there, over the stretch and kStaleMargin around it
@@ -730,6 +732,8 @@ void editor_mode::profile_take(editor_track::route Route, TTrack *From, TTrack *
 		}
 	}
 	profile_fit_view();
+	// the camera stays where the route was picked, it follows the plot once that's moved
+	state.view_seen = state.view_framed = {state.view_from, state.view_to};
 }
 
 void editor_mode::profile_resample()
@@ -747,6 +751,7 @@ void editor_mode::profile_resample()
 	for (std::size_t i = 0; i < samples.size(); ++i)
 		if (found[i] != 0)
 			state.terrain[i] = heights[i];
+	profile_sample_model();
 	state.beds.assign(samples.size(), 0.0);
 	std::vector<char> bedless(samples.size(), 0);
 	std::vector<double> own;
@@ -835,6 +840,52 @@ void editor_mode::profile_resample()
 	context.end_joined = editor_track::adjoining_grade(state.route, true, context.end_grade, &adjoining, &path, &entered);
 	state.end_inherits = inherits(context.end_joined, context.end_elevation, context.end_grade);
 	profile_check();
+}
+
+void editor_mode::profile_sample_model()
+{
+	auto &state{m_profile};
+	auto const &samples{state.samples};
+	state.model.assign(samples.size(), std::numeric_limits<double>::quiet_NaN());
+	state.model_waiting = false;
+	state.model_polled = ImGui::GetTime();
+	if (samples.empty() || false == state.show_model)
+		return;
+	nmt_locate();
+	if (false == m_nmt.placed())
+		return;
+	// the squares along the route, not all those under the rectangle around it: a long line crosses the grid
+	std::size_t constexpr run{200};
+	for (std::size_t first = 0; first < samples.size(); first += run)
+	{
+		glm::dvec2 low{samples[first].position.x, samples[first].position.z};
+		auto high{low};
+		for (auto i = first; i < std::min(samples.size(), first + run + 1); ++i)
+		{
+			low = glm::min(low, glm::dvec2{samples[i].position.x, samples[i].position.z});
+			high = glm::max(high, glm::dvec2{samples[i].position.x, samples[i].position.z});
+		}
+		if (false == m_nmt.request(low - glm::dvec2{2.0}, high + glm::dvec2{2.0}))
+			state.model_waiting = true;
+	}
+	std::vector<double> differences;
+	for (std::size_t i = 0; i < samples.size(); ++i)
+		if (double height; m_nmt.height(samples[i].position.x, samples[i].position.z, height))
+		{
+			state.model[i] = height;
+			differences.push_back(samples[i].position.y - height);
+		}
+	// a scenery put onto the model lies at its heights, or as far from them as the model was found to lie from it; one built at
+	// heights of its own, never put onto it, is compared by the shape: the model goes as far as the route lies from it
+	auto offset{m_nmt_state.offset};
+	if (false == m_nmt_state.fitted && false == differences.empty())
+	{
+		std::nth_element(differences.begin(), differences.begin() + differences.size() / 2, differences.end());
+		if (auto const median{differences[differences.size() / 2]}; std::abs(median) > 30.0)
+			offset = median;
+	}
+	for (auto &height : state.model)
+		height += offset;
 }
 
 void editor_mode::profile_recognize()
@@ -1306,13 +1357,101 @@ void editor_mode::profile_fit_view()
 	state.exaggeration = 0.0f;
 }
 
-void editor_mode::profile_apply()
+void editor_mode::profile_follow_view()
+{
+	auto &state{m_profile};
+	std::pair<double, double> const shown{state.view_from, state.view_to};
+	auto const now{ImGui::GetTime()};
+	if (shown != state.view_seen)
+	{
+		state.view_seen = shown;
+		state.view_seen_time = now;
+		return;
+	}
+	if (false == state.camera_follows || shown == state.view_framed || now - state.view_seen_time < 0.25)
+		return;
+	state.view_framed = shown;
+	profile_frame_view();
+}
+
+void editor_mode::profile_frame_view()
+{
+	auto const &state{m_profile};
+	std::vector<glm::dvec3> points;
+	for (auto const &sample : state.samples)
+		if (sample.chainage >= state.view_from && sample.chainage <= state.view_to)
+			points.push_back(sample.position);
+	auto const &io{ImGui::GetIO()};
+	if (points.size() < 2 || io.DisplaySize.y <= 0.0f)
+		return;
+	glm::dvec3 low{points.front()};
+	glm::dvec3 high{points.front()};
+	for (auto const &point : points)
+	{
+		low = glm::min(low, point);
+		high = glm::max(high, point);
+	}
+	auto const centre{(low + high) * 0.5};
+	// the room the docks and the strip of the plot leave to the view, and how far its middle lies from the middle of the screen,
+	// in pixels
+	glm::dvec2 const screen{io.DisplaySize.x, io.DisplaySize.y};
+	auto const viewlow{editor_ui::view_min()};
+	auto viewhigh{editor_ui::view_max()};
+	if (state.strip_top > viewlow.y + 100.0f)
+		viewhigh.y = std::min(viewhigh.y, state.strip_top);
+	auto const width{std::max(50.0, static_cast<double>(viewhigh.x - viewlow.x))};
+	auto const height{std::max(50.0, static_cast<double>(viewhigh.y - viewlow.y))};
+	glm::dvec2 const shift{(viewlow.x + viewhigh.x) * 0.5 - screen.x * 0.5, (viewlow.y + viewhigh.y) * 0.5 - screen.y * 0.5};
+	double constexpr margin{1.1};
+	if (Global.EditorOrtho)
+	{
+		auto const yaw{static_cast<double>(Camera.Angle.y)};
+		double extent{5.0};
+		for (auto const &point : points)
+		{
+			auto const local{RotateY(point - centre, -yaw)};
+			extent = std::max({extent, std::abs(local.x) * margin * screen.y / width, std::abs(local.z) * margin * screen.y / height});
+		}
+		Global.EditorOrthoExtent = std::clamp(static_cast<float>(extent), 5.0f, 50000.0f);
+		auto const scale{2.0 * static_cast<double>(Global.EditorOrthoExtent) / screen.y};
+		auto const offset{RotateY(glm::dvec3{shift.x * scale, 0.0, shift.y * scale}, yaw)};
+		Camera.Pos.x = centre.x - offset.x;
+		Camera.Pos.z = centre.z - offset.z;
+		Camera.Velocity = {};
+		m_focus_active = false;
+		Global.pCamera = Camera;
+		return;
+	}
+	// seen from the side, as the plot shows it: the start on the left, from a little above
+	glm::dvec3 chord{points.back().x - points.front().x, 0.0, points.back().z - points.front().z};
+	chord = glm::length(chord) > 1e-6 ? glm::normalize(chord) : glm::dvec3{1.0, 0.0, 0.0};
+	glm::dvec3 const up{0.0, 1.0, 0.0};
+	auto const look{glm::normalize(glm::cross(up, chord) + glm::dvec3{0.0, -0.4, 0.0})};
+	auto const right{glm::normalize(glm::cross(look, up))};
+	auto const above{glm::cross(right, look)};
+	auto const tangent{std::tan(glm::radians(static_cast<double>(Global.FieldOfView) / std::max(0.01, static_cast<double>(Global.ZoomFactor))) * 0.5)};
+	auto const across{tangent * width / screen.y};
+	auto const upward{tangent * height / screen.y};
+	double distance{10.0};
+	for (auto const &point : points)
+	{
+		auto const offset{point - centre};
+		auto const depth{glm::dot(offset, look)};
+		distance = std::max({distance, std::abs(glm::dot(offset, right)) * margin / across - depth, std::abs(glm::dot(offset, above)) * margin / upward - depth});
+	}
+	distance = std::min(distance, 8000.0);
+	auto const pixel{2.0 * distance * tangent / screen.y};
+	fly_to(centre - right * (shift.x * pixel) + above * (shift.y * pixel), look, distance, 0.35);
+}
+
+void editor_mode::profile_apply(bool const Terrain)
 {
 	auto &state{m_profile};
 	state.status.clear();
 	state.error.clear();
 	if (state.route.spans.empty() || state.line.points.size() < 2)
 		return;
+	auto const edits{m_track_edits};
 	if (has_errors(state.issues))
 	{
 		state.error = STR_C("Correct the errors to apply the grade line");
@@ -1370,7 +1509,63 @@ void editor_mode::profile_apply()
 	auto const followed{follow_crossovers(before)};
 	if (followed > 0)
 		state.status += format(STR_C("\nThe tracks across %zu crossover(s) followed the change"), followed);
+	if (Terrain)
+		profile_follow_terrain(static_cast<std::size_t>(m_track_edits - edits));
 	WriteLog("Editor: vertical profile - " + state.status, logtype::generic);
+}
+
+void editor_mode::profile_follow_terrain(std::size_t const Edits)
+{
+	auto &state{m_profile};
+	// the heightmap terrain the scenery has; the ground of a scenery without it stays as it is
+	if (false == m_streamer.active() || Edits == 0)
+		return;
+	std::vector<TTrack *> tracks;
+	std::size_t found{0};
+	for (auto step{m_history.rbegin()}; step != m_history.rend() && found < Edits; ++step)
+	{
+		if (step->action != EditorSnapshot::Action::TrackEdit)
+			continue;
+		++found;
+		for (auto const &entry : step->tracks)
+			tracks.push_back(entry.first);
+		tracks.insert(tracks.end(), step->created.begin(), step->created.end());
+		tracks.insert(tracks.end(), step->removed.begin(), step->removed.end());
+	}
+	std::erase(tracks, nullptr);
+	std::sort(tracks.begin(), tracks.end());
+	tracks.erase(std::unique(tracks.begin(), tracks.end()), tracks.end());
+	if (tracks.empty())
+		return;
+	// the route shaped by the earthworks of the profile keeps its modifier, shaped again to the new grade line; the tracks
+	// shaped one by one, as the terrain model lays them, get their formations anew
+	auto const name = [](TTrack const *Track) { return Track != nullptr && false == Track->name().empty() ? Track->name() : std::string{"?"}; };
+	auto const route{"route " + name(state.from) + " - " + name(state.to)};
+	auto const &modifiers{m_streamer.modifiers()};
+	auto const has = [&](std::string const &Name) { return std::any_of(modifiers.begin(), modifiers.end(), [&](heightmap::modifier const &Modifier) { return Modifier.name == Name; }); };
+	auto const shaped{has(route) || (false == state.earthworks.modifier.empty() && has(state.earthworks.modifier))};
+	auto const own{std::any_of(tracks.begin(), tracks.end(), [&](TTrack const *Track) {
+		return false == Track->name().empty() && std::any_of(modifiers.begin(), modifiers.end(), [&](heightmap::modifier const &Modifier) { return Modifier.name == "nmt " + Track->name() || Modifier.name.starts_with("nmt " + Track->name() + " "); });
+	})};
+	auto status{state.status};
+	std::size_t laid{0};
+	if (false == shaped || own)
+		laid = nmt_shape_tracks(&tracks);
+	if (shaped)
+	{
+		profile_shape_ground();
+		status += "\n" + state.status;
+	}
+	else
+		profile_resample();
+	if (laid > 0)
+		status += format(STR_P("\nThe terrain followed the tracks: %zu formation laid anew", "\nThe terrain followed the tracks: %zu formations laid anew", laid), laid);
+	state.status = status;
+	// the terrain goes back with the grade line in one step
+	auto const before{m_history.empty() ? EditorSnapshot::Action::Other : m_history.back().action};
+	terrain_history_step();
+	if (before != EditorSnapshot::Action::Terrain && false == m_history.empty() && m_history.back().action == EditorSnapshot::Action::Terrain)
+		m_history.back().joined = true;
 }
 
 void editor_mode::profile_after_undo()
@@ -1576,7 +1771,7 @@ void editor_mode::render_profile_header()
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.68f, 0.3f, 1.0f));
 	if (ImGui::Button((label + "###profileapply").c_str()))
-		profile_apply();
+		profile_apply(true);
 	ImGui::PopStyleColor(2);
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -1974,15 +2169,31 @@ struct editor_mode::profile_view
 void editor_mode::render_profile_toolbar()
 {
 	auto &state{m_profile};
+	// the next item on the same line while it fits, past the edge of the plot on the next one
+	auto const edge{ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x};
+	auto const next = [&](float const Gap, float const Width) {
+		ImGui::SameLine(0.0f, Gap);
+		if (ImGui::GetCursorScreenPos().x + Width > edge)
+			ImGui::NewLine();
+	};
+	auto const pill = [](char const *Label) { return ImGui::CalcTextSize(Label).x + ImGui::GetFrameHeight() * 1.75f; };
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextDisabled("%s", STR_C("Show:"));
-	ImGui::SameLine();
+	next(ImGui::GetStyle().ItemSpacing.x, pill(STR_C("Track")));
 	pill_toggle(STR_C("Track"), kTrack, state.show_track);
-	ImGui::SameLine(0.0f, 4.0f);
+	next(4.0f, pill(STR_C("Terrain")));
 	pill_toggle(STR_C("Terrain"), kTerrain, state.show_terrain);
-	ImGui::SameLine(0.0f, 4.0f);
+	if (m_nmt.placed())
+	{
+		next(4.0f, pill(STR_C("Terrain model")));
+		if (pill_toggle(STR_C("Terrain model"), kModel, state.show_model))
+			profile_sample_model();
+		item_tooltip(state.model_waiting ? "The ground of the terrain model (NMT) as it was measured, before the earthworks; its squares along the route are still being fetched"
+		                                 : "The ground of the terrain model (NMT) as it was measured, before the earthworks");
+	}
+	next(4.0f, pill(STR_C("Plan curvature")));
 	pill_toggle(STR_C("Plan curvature"), kPlan, state.show_plan);
-	ImGui::SameLine(0.0f, 6.0f);
+	next(6.0f, ImGui::CalcTextSize("(?)").x);
 	ImGui::TextDisabled("(?)");
 	if (ImGui::IsItemHovered())
 	{
@@ -2003,6 +2214,7 @@ void editor_mode::render_profile_toolbar()
 		entry(kTrack, "Track");
 		entry(kTerrain, "Terrain");
 		entry(kFormation, "Formation");
+		entry(kModel, "Terrain model");
 		entry(kPlan, "Plan curvature");
 		entry(kSwitchLabel, "Switches");
 		entry(kSharedEdge, "Shared timbers");
@@ -2010,16 +2222,20 @@ void editor_mode::render_profile_toolbar()
 		entry(kWarning, "Warnings");
 		ImGui::EndTooltip();
 	}
-	ImGui::SameLine(0.0f, 14.0f);
+	next(14.0f, 120.0f);
 	ImGui::SetNextItemWidth(120.0f);
 	ImGui::SliderFloat("##exaggeration", &state.exaggeration, 1.0f, 500.0f, STR_C("heights x%.0f"), ImGuiSliderFlags_Logarithmic);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Exaggeration of the heights against the lengths, also Ctrl+wheel over the plot"));
-	ImGui::SameLine();
+	next(ImGui::GetStyle().ItemSpacing.x, ImGui::CalcTextSize(STR_C("Fit")).x + ImGui::GetStyle().FramePadding.x * 2.0f);
 	if (ImGui::Button(STR_C("Fit")))
 		profile_fit_view();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Shows the whole route"));
+	next(14.0f, pill(STR_C("Camera follows")));
+	if (pill_toggle(STR_C("Camera follows"), kGradeLine, state.camera_follows) && state.camera_follows)
+		state.view_framed = {};
+	item_tooltip("The view shows the part of the route the plot shows, once the plot is zoomed or moved");
 }
 
 void editor_mode::render_profile_canvas(float const Height)
@@ -2035,7 +2251,10 @@ void editor_mode::render_profile_canvas(float const Height)
 
 	if (state.exaggeration <= 0.0f)
 		profile_fit_exaggeration(profile_view{state, corner, size});
+	if (state.model_waiting && ImGui::GetTime() - state.model_polled > 0.5)
+		profile_sample_model();
 	profile_navigate(profile_view{state, corner, size}, hovered);
+	profile_follow_view();
 	profile_view const view{state, corner, size};
 	if (profile_canvas_edit(view, hovered))
 		profile_edited();
@@ -2415,6 +2634,8 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		// the formation under the grade line, which is what meets the ground
 		polyline([&](std::size_t const I) { return profile::elevation(state.line, samples[I].chainage) - (I < state.beds.size() ? state.beds[I] : 0.0); }, kFormation, 1.0f);
 	}
+	if (state.show_model && state.model.size() == samples.size())
+		polyline([&](std::size_t const I) { return state.model[I]; }, kModel, 1.5f);
 	if (state.show_track)
 		polyline([&](std::size_t const I) { return samples[I].position.y; }, kTrack, 1.5f);
 
@@ -2530,6 +2751,8 @@ void editor_mode::profile_canvas_tooltip() const
 		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(kFormation), STR_C("Formation %.3f m, %.2f m under the rail top"), formation, designed - formation);
 		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(kTerrain), STR_C("Terrain %.3f m, %s %.2f m"), state.terrain[index], formation > state.terrain[index] ? STR_C("fill") : STR_C("cut"), std::abs(formation - state.terrain[index]));
 	}
+	if (state.show_model && index < state.model.size() && false == std::isnan(state.model[index]))
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(kModel), STR_C("Terrain model %.3f m, the grade line %+.2f m from it"), state.model[index], designed - state.model[index]);
 	auto const &span{state.route.spans[samples[index].span]};
 	ImGui::TextDisabled("%s%s", span.track->name().c_str(), span.track->eType != tt_Normal ? STR_C(" (switch, tilted as a whole with its branch)") : "");
 	ImGui::EndTooltip();

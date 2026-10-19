@@ -508,11 +508,12 @@ bool editor_mode::add_chunk_from_nmt(heightmap::chunk_key const &Key)
 	return true;
 }
 
-void editor_mode::nmt_shape_tracks()
+std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
 {
 	auto &state{m_nmt_state};
 	if (false == ensure_terrain())
-		return;
+		return 0;
+	auto const wanted = [&](TTrack const *Track) { return Only == nullptr || std::find(Only->begin(), Only->end(), Track) != Only->end(); };
 	// one modifier per path: the formation under its axis and the slopes from its edges to the ground. laid over each other the
 	// modifiers keep the highest of the slopes going down and the lowest of those going up, so tracks side by side share one
 	// formation instead of a saw of their own ones
@@ -524,6 +525,8 @@ void editor_mode::nmt_shape_tracks()
 	bool broken{false};
 	for (auto const &place : nmt_track_places(step))
 	{
+		if (false == wanted(place.track))
+			continue;
 		std::pair<TTrack *, int> const path{place.track, place.path};
 		if (path != previous)
 			broken = false;
@@ -552,9 +555,28 @@ void editor_mode::nmt_shape_tracks()
 	for (auto &[path, modifier] : modifiers)
 		if (modifier.points.size() >= 2)
 			laid.push_back(std::move(modifier));
+	if (Only != nullptr)
+	{
+		// the modifiers the tracks don't have any more: of the pieces of a path gone, of the tracks removed
+		std::vector<std::string> gone;
+		for (auto const *track : *Only)
+		{
+			if (track == nullptr || track->name().empty())
+				continue;
+			auto const own{"nmt " + track->name()};
+			for (auto const &modifier : m_streamer.modifiers())
+				if ((modifier.name == own || modifier.name.starts_with(own + " ")) && std::none_of(laid.begin(), laid.end(), [&](heightmap::modifier const &Laid) { return Laid.name == modifier.name; }))
+					gone.push_back(modifier.name);
+		}
+		for (auto const &name : gone)
+			m_streamer.remove_modifier(name);
+	}
+	auto const count{laid.size()};
 	m_streamer.modifiers(std::move(laid));
 	forget_ground();
-	state.shaped = modifiers.size();
+	if (Only == nullptr)
+		state.shaped = modifiers.size();
+	return count;
 }
 
 void editor_mode::nmt_update()

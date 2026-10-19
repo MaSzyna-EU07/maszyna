@@ -330,6 +330,24 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		}
 		return selftest_result::handled;
 	}
+	if (command == "vprofilemodel")
+	{
+		// the ground of the terrain model along the open route, and where the camera is
+		auto const &state{m_profile};
+		std::size_t known{0};
+		double low{std::numeric_limits<double>::max()};
+		double high{std::numeric_limits<double>::lowest()};
+		for (std::size_t i = 0; i < state.model.size() && i < state.samples.size(); ++i)
+			if (false == std::isnan(state.model[i]))
+			{
+				++known;
+				low = std::min(low, state.samples[i].position.y - state.model[i]);
+				high = std::max(high, state.samples[i].position.y - state.model[i]);
+			}
+		WriteLog(format("SELFTEST vprofilemodel: %zu of %zu samples known%s, the track %.2f..%.2f m from the model; view %.1f..%.1f, camera %.1f %.1f %.1f angle %.3f %.3f, ortho %d extent %.0f", known, state.samples.size(), state.model_waiting ? " (waiting)" : "", known > 0 ? low : 0.0, known > 0 ? high : 0.0,
+		                state.view_from, state.view_to, Camera.Pos.x, Camera.Pos.y, Camera.Pos.z, Camera.Angle.x, Camera.Angle.y, Global.EditorOrtho ? 1 : 0, Global.EditorOrthoExtent));
+		return selftest_result::handled;
+	}
 	if (command == "vprofilezoom")
 	{
 		// the plot of the open profile from one chainage to another, the heights exaggerated as given (0: fitted)
@@ -382,7 +400,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 	{
 		// a plain grade line from the height of the start of the open route, applied to it
 		double grade{0.0};
-		words >> grade;
+		std::string option;
+		words >> grade >> option;
 		auto &state{m_profile};
 		if (state.samples.empty())
 		{
@@ -394,7 +413,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		state.line.join_start = false;
 		state.line.join_end = false;
 		profile_check();
-		profile_apply();
+		profile_apply(option == "terrain");
 		WriteLog("SELFTEST vprofileapply: " + state.status + " " + state.error);
 		for (auto const &span : state.route.spans)
 		{

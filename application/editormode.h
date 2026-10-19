@@ -402,7 +402,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	// Rebuild: the chunks there already are made anew too, and the formation laid before is forgotten, as when the tracks moved
 	void nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool const Rebuild = false);
 	bool add_chunk_from_nmt(heightmap::chunk_key const &Key);
-	void nmt_shape_tracks();
+	// Only: the paths of these tracks are shaped anew, the modifiers of those removed taken away; null: all of them. the number
+	// of the modifiers laid
+	std::size_t nmt_shape_tracks(std::vector<TTrack *> const *Only = nullptr);
 	void nmt_update();
 	void render_nmt_ui();
 	// a scenery begun from nothing, with no tracks nor terrain, is asked as the first track is laid whether it wants the terrain
@@ -2275,6 +2277,9 @@ class editor_mode : public application_mode, private editor_track::observer
 		std::vector<editor_track::route_sample> samples;
 		std::vector<TTrack *> created; // the paths the last apply split off the route
 		std::vector<double> terrain; // NaN where there's no terrain
+		std::vector<double> model; // the ground of the terrain model (NMT) as measured; NaN where it's not known
+		bool model_waiting{false}; // squares of the model under the route still to come
+		double model_polled{0.0};
 		// what the joined ends take their height and grade from, when it's a switch: shown on the plot
 		std::string start_inherits, end_inherits;
 		// depth of the formation under the grade line, the rail top, of the track of each sample: the formation, not the rails,
@@ -2306,7 +2311,13 @@ class editor_mode : public application_mode, private editor_track::observer
 		double view_centre{0.0};
 		float exaggeration{20.0f};
 		bool show_terrain{true};
+		bool show_model{true};
 		bool show_track{true};
+		bool camera_follows{true};
+		// the part of the route the plot shows: as last seen and when, and as the camera last showed it
+		std::pair<double, double> view_seen{0.0, 0.0};
+		double view_seen_time{0.0};
+		std::pair<double, double> view_framed{0.0, 0.0};
 		bool show_plan{true};
 		int selected{-1};
 		int dragging{-1};
@@ -2368,6 +2379,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_open_selection(std::vector<TTrack *> const &Tracks);
 	void profile_follow_selection();
 	void profile_resample();
+	// the ground of the terrain model under the route, as it was measured before any earthworks
+	void profile_sample_model();
 	void profile_recognize();
 	void profile_fit_ground();
 	// depth of the foot of the ballast under the rail top, and its distance from the axis
@@ -2379,8 +2392,14 @@ class editor_mode : public application_mode, private editor_track::observer
 	void profile_restore_ground();
 	void render_profile_earthworks();
 	void profile_check();
-	void profile_apply();
+	// Terrain: the heightmap terrain follows the tracks changed
+	void profile_apply(bool const Terrain = false);
+	// the terrain under the tracks changed by the last Edits steps of the history which changed tracks
+	void profile_follow_terrain(std::size_t const Edits);
 	void profile_fit_view();
+	// the camera shows the part of the route the plot shows, once the plot stops moving
+	void profile_follow_view();
+	void profile_frame_view();
 	void profile_after_undo();
 	void profile_follow_edits();
 	struct profile_view;

@@ -9865,3 +9865,27 @@ msgstr "Nie dało się przeciąć \"%s\", żeby zmienić pasy"
 
 msgid "Looking for the templates..."
 msgstr "Szukam szablonów..."
+
+msgid "Terrain model"
+msgstr "Teren z NMT"
+
+msgid "The ground of the terrain model (NMT) as it was measured, before the earthworks; its squares along the route are still being fetched"
+msgstr "Teren z modelu NMT taki, jak go zmierzono, sprzed robót ziemnych; jego kwadraty wzdłuż trasy jeszcze się pobierają"
+
+msgid "The ground of the terrain model (NMT) as it was measured, before the earthworks"
+msgstr "Teren z modelu NMT taki, jak go zmierzono, sprzed robót ziemnych"
+
+msgid "Terrain model %.3f m, the grade line %+.2f m from it"
+msgstr "Teren z NMT %.3f m, niweleta %+.2f m od niego"
+
+msgid "Camera follows"
+msgstr "Kamera za wykresem"
+
+msgid "The view shows the part of the route the plot shows, once the plot is zoomed or moved"
+msgstr "Widok pokazuje ten kawałek trasy, który widać na wykresie, kiedy go przybliżysz albo przesuniesz"
+
+msgid "\nThe terrain followed the tracks: %zu formation laid anew"
+msgid_plural "\nThe terrain followed the tracks: %zu formations laid anew"
+msgstr[0] "\nTeren poszedł za torami: %zu torowisko ułożone od nowa"
+msgstr[1] "\nTeren poszedł za torami: %zu torowiska ułożone od nowa"
+msgstr[2] "\nTeren poszedł za torami: %zu torowisk ułożonych od nowa"
