@@ -315,6 +315,10 @@ struct global_settings {
     // keep them out of the instanced draws) are culled with the instances as well, each one a group of its own, in every pass
     // culled on the gpu, and with 1 drawn from the result. models with billboards stay on the cpu
     bool gfx_gpucull_models = true;
+    // the buckets of instances of a scene cell lying wholly beyond their range (the largest range of their instances and of
+    // the submodels of their model) are left out of a pass before the culling, the gpu one included, which would leave out
+    // each of their instances anyway
+    bool gfx_gpucull_bucketrange = true;
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
     // (opengl 4.6) the depth pass of the scene (gfx_depthprepass_scene, or the one of the contact shadows) walks the scene for

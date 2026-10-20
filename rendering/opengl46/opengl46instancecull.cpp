@@ -83,11 +83,20 @@ void opengl46_instance_cull::begin_pass(pass_setup const &Setup)
 	m_sleepertracks = 0;
 	m_sleepers = 0;
 	m_models = 0;
+	m_counts = {};
 }
 
 void opengl46_instance_cull::add_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area)
 {
 	add(Key, Bucket, Area, false);
+}
+
+void opengl46_instance_cull::skip_bucket(scene::basic_cell::instance_bucket const &Bucket)
+{
+	if (!m_inpass)
+		return;
+	++m_counts.skippedbuckets;
+	m_counts.skippedinstances += Bucket.records.size();
 }
 
 void opengl46_instance_cull::add_sleepers(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area)
@@ -213,12 +222,13 @@ void opengl46_instance_cull::place(scene::basic_cell::instance_bucket const &Buc
 	if (current && count <= Bucket.gpucapacity)
 	{
 		shared.records->update(Bucket.records.data(), static_cast<GLintptr>(Bucket.gpufirst) * RECORD_SIZE, static_cast<GLsizeiptr>(count) * RECORD_SIZE);
+		m_counts.sentrecords += count;
 		Bucket.gpustale = false;
 		return;
 	}
 
 	// a new place, with some room for instances the editor adds
-	auto const allocate = [&shared](scene::basic_cell::instance_bucket const &Target) {
+	auto const allocate = [this, &shared](scene::basic_cell::instance_bucket const &Target) {
 		auto const records{static_cast<std::uint32_t>(Target.records.size())};
 		Target.gpufirst = shared.recordfill;
 		Target.gpucapacity = records + records / 4;
@@ -226,6 +236,7 @@ void opengl46_instance_cull::place(scene::basic_cell::instance_bucket const &Buc
 		Target.gpustale = false;
 		shared.recordfill += Target.gpucapacity;
 		shared.records->update(Target.records.data(), static_cast<GLintptr>(Target.gpufirst) * RECORD_SIZE, static_cast<GLsizeiptr>(records) * RECORD_SIZE);
+		m_counts.sentrecords += records;
 	};
 
 	auto const capacity{static_cast<std::uint32_t>(shared.records->size() / RECORD_SIZE)};
@@ -243,6 +254,7 @@ void opengl46_instance_cull::place(scene::basic_cell::instance_bucket const &Buc
 			shared.records->resize(std::max(2 * live * RECORD_SIZE, 2 * shared.records->size()));
 		shared.restarted = true;
 		shared.restartframe = m_setup.frame;
+		m_counts.restarted = true;
 		++shared.recordgeneration;
 		shared.recordfill = 0;
 		for (std::size_t job = 0; job < m_buckets.size(); ++job)
@@ -461,6 +473,9 @@ void opengl46_instance_cull::end_pass()
 	m_lastsleepertracks = m_sleepertracks;
 	m_lastsleepers = m_sleepers;
 	m_lastmodels = m_models;
+	m_counts.jobs = static_cast<std::uint32_t>(m_joblist.size());
+	m_counts.candidates = m_candidates;
+	m_lastcounts = m_counts;
 	m_inpass = false;
 	m_dispatched = false;
 }
@@ -516,6 +531,11 @@ std::string opengl46_instance_cull::info(std::string const &Label, bool const Oc
 	// and so are the models drawn on their own
 	if (m_lastmodels > 0)
 		sleepers += "\n" + Label + ": " + std::to_string(m_lastmodels) + " models drawn on their own queued";
+	// what the pass tested and sent to the gpu
+	sleepers += "\n" + Label + ": " + std::to_string(m_lastcounts.candidates) + " instances tested in " + std::to_string(m_lastcounts.jobs) + " buckets";
+	if (Global.gfx_gpucull_bucketrange)
+		sleepers += ", " + std::to_string(m_lastcounts.skippedbuckets) + " buckets (" + std::to_string(m_lastcounts.skippedinstances) + " instances) left out beyond their range";
+	sleepers += ", " + std::to_string(m_lastcounts.sentrecords) + " records sent" + (m_lastcounts.restarted ? ", record buffer started over" : "");
 	if (Global.gfx_gpucull == 1)
 	{
 		if (m_last.frame == 0)

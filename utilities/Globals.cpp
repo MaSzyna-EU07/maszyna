@@ -1518,6 +1518,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_gpucull_models;
     }
+    else if (Token == "gfx.gpucull.bucketrange")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_bucketrange;
+    }
     else if (Token == "gfx.depthprepass.scene")
     {
         Parser.getTokens(1);
@@ -2062,6 +2067,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.gpucull.shadows.lamps", gfx_gpucull_shadows_lamps );
     export_as_text( Output, "gfx.gpucull.sleepers", gfx_gpucull_sleepers );
     export_as_text( Output, "gfx.gpucull.models", gfx_gpucull_models );
+    export_as_text( Output, "gfx.gpucull.bucketrange", gfx_gpucull_bucketrange );
     export_as_text( Output, "gfx.depthprepass.scene", gfx_depthprepass_scene );
     export_as_text( Output, "gfx.depthprepass.replay", gfx_depthprepass_replay );
     export_as_text( Output, "gfx.grass", gfx_grass );

@@ -1103,6 +1103,7 @@ void opengl46_renderer::draw_debug_ui()
             ImGui::Checkbox("the same for the scenery of the shadow maps of lamps, when it's drawn next (gfx.gpucull.shadows.lamps)", &Global.gfx_gpucull_shadows_lamps);
             ImGui::Checkbox("the same for the sleepers of the tracks of the view (gfx.gpucull.sleepers)", &Global.gfx_gpucull_sleepers);
             ImGui::Checkbox("the same for the models drawn on their own, with lights, animations or skins of their own (gfx.gpucull.models)", &Global.gfx_gpucull_models);
+            ImGui::Checkbox("leave out the models of a cell lying wholly beyond their range before the culling (gfx.gpucull.bucketrange)", &Global.gfx_gpucull_bucketrange);
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
         if (Global.gfx_contactshadows > 0)
@@ -3954,12 +3955,24 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 	auto const distancelimit { slack * ( reflections ? sq( static_cast<double>( Global.reflectiontune.range_instances ) ) : sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) };
 	// up close the rounding of the records is too large a part of the distance for the slack to cover it
 	auto const distancetested { sq( 64.0 ) };
+	// the nearest point of the cell, measured as the tests below and the gpu culling measure the instances: a bucket whose range
+	// ends before it has none of its instances drawn, and is left out of the pass before the culling. basic_cell::enclose_area
+	// keeps the locations of all instances of the cell within the radius of its area
+	auto const cellnearest { std::max( 0.0, glm::length( Cell->m_area.center - cameraposition ) - static_cast<double>( Cell->m_area.radius ) ) };
+	auto const cellscaledsquared { cellnearest * cellnearest * distancescale + distanceoffset };
+	auto const bucketrange { Global.gfx_gpucull_bucketrange && userecords && ( cellnearest * cellnearest > distancetested ) };
 
 	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
 		auto const &instancebucket { bucket.second };
 		if( ( instancebucket.recordsversion != m_instancerecordsversion )
 		 || ( instancebucket.records.size() != instancebucket.instances.size() ) ) {
 			Update_Instance_Records( bucket.first.pModel, instancebucket, Cell->m_area.center );
+		}
+		if( bucketrange && ( cellscaledsquared >= slack * instancebucket.rangesquared ) ) {
+			if( m_instancecullpass ) {
+				m_passcull->skip_bucket( instancebucket );
+			}
+			continue;
 		}
 		if( m_instancecullpass ) {
 			// the gpu tests every instance of the bucket, the way Render_Instanced() does. models with nothing to draw in the
@@ -4070,6 +4083,8 @@ void opengl46_renderer::Update_Instance_Records( TModel3d const *Model, scene::b
 
 	Bucket.records.clear();
 	Bucket.records.reserve( Bucket.instances.size() );
+	// the range of the bucket: past it none of its instances is drawn, by its own range or by the submodels of the model
+	auto rangesquared { 0.f };
 	for( auto *instance : Bucket.instances ) {
 		scene::basic_cell::instance_record record;
 		if( instance != nullptr ) {
@@ -4077,6 +4092,7 @@ void opengl46_renderer::Update_Instance_Records( TModel3d const *Model, scene::b
 			record.radius = instance->radius();
 			record.rangesquaredmin = tofloat( instance->m_rangesquaredmin );
 			record.rangesquaredmax = tofloat( instance->m_rangesquaredmax );
+			rangesquared = std::max( rangesquared, record.rangesquaredmax );
 			record.flags =
 				( instance->visible() ? scene::basic_cell::instance_visible : 0u )
 				| ( instance->m_instanceable ? scene::basic_cell::instance_instanceable : 0u );
@@ -4088,6 +4104,7 @@ void opengl46_renderer::Update_Instance_Records( TModel3d const *Model, scene::b
 		// an empty slot keeps its record without flags, and isn't drawn
 		Bucket.records.emplace_back( record );
 	}
+	Bucket.rangesquared = std::min( rangesquared, lodrangesquared );
 	Bucket.recordsversion = m_instancerecordsversion;
 	Bucket.gpustale = true;
 }

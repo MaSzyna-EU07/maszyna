@@ -268,6 +268,7 @@ public:
         mutable std::vector<instance_record> records; // copies for the instances, in the same order
         mutable glm::dvec3 recordorigin { 0.0 }; // the records hold locations relative to it
         mutable float lodrangesquared { 0.f }; // past it no submodel of the model of the bucket is drawn
+        mutable float rangesquared { std::numeric_limits<float>::max() }; // past it no instance of the bucket is drawn: the largest range of its instances, within lodrangesquared
         mutable unsigned int recordsversion { 0 };
         // place of the records in the record buffer of the gpu culling: first record, room, and the generation of
         // the buffer it is good for. gpustale: the records changed since they were sent

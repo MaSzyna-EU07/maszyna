@@ -282,6 +282,7 @@ cab and other views go as before.
 | `gfx.gpucull.shadows.lamps yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the scenery part of the shadow maps of scenery lamps too (each map tested against the reach of its lamp, as before); the part with the vehicles has no models of the scenery |
 | `gfx.gpucull.sleepers yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the sleepers of the tracks (`sleepermodel`) of the main view too, each one tested against the view and given its level of detail by its distance, as before (the tracks within `sleeperdistance` are chosen as before); they also take the occlusion test, the depth prepass and the two phases of the models |
 | `gfx.gpucull.models yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models drawn on their own too (scenery models with lights, animations, or skins and animations given by events, which the instanced draws leave out), in every pass the instances are culled in: each such model is tested on its own like the others (visibility, the view, its range, the draw range, its size on the screen) and given the level of detail its distance picks from the `mindistance`/`maxdistance` of its submodels; the processor animates and prepares the model only to record what it draws. Models with billboards turned to the camera stay on the processor, and so do vehicles |
+| `gfx.gpucull.bucketrange yes/no` | `yes` | the models of one kind in a scene cell lying wholly beyond their range (the largest visibility range of their nodes, and of the submodels of the model) are left out of each pass before the culling, the one on the graphics card included, which would leave out each of them anyway; the picture stays the same. Matters with many small models of a short range (grass): without it they are tested and sent to the graphics card in every pass up to the draw range |
 | `gfx.depthprepass.scene yes/no` | `no` | the depth of the whole opaque scene of the main view (terrain, tracks, buildings, models, vehicles, the cab) is drawn before its colour, see below |
 | `gfx.depthprepass.replay yes/no` | `yes` | the scene is gone through once for its depth and its colour: what the colour pass draws is recorded and both are drawn from the record, see below. `no`: twice, as before |
 
@@ -417,6 +418,10 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   `gpu cull:` is followed by how many sleepers of how many tracks were queued (they are counted among the models). With
   `gfx.gpucull.models` each `gpu cull` row is followed by how many models drawn on their own were queued (also counted
   among the models).
+  Each `gpu cull` row is also followed by how many models the pass tested in how many buckets (models of one kind in one
+  cell), with `gfx.gpucull.bucketrange` how many buckets and models were left out beyond their range, how many records of
+  models were sent to the graphics card, and whether the buffer of the records was started over (all buckets of the pass
+  sent anew).
 - With `gfx.depthprepass.scene yes` Shift+F12 shows the `scene depth:` row (draws of the depth pass and its processor time)
   and the timing `scene depth:` (its GPU time). With `gfx.depthprepass.replay yes` the row tells how many of the recorded
   parts (of models, of the scenery; neighbouring tracks count one by one) had their depth drawn, in how many calls, how many

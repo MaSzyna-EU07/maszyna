@@ -114,6 +114,9 @@ class opengl46_instance_cull
 	// the caller, the culling tests each sleeper against the frustum and gives it the lod band of its plain distance from the
 	// camera of the pass (Render_Sleepers())
 	void add_sleepers(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area);
+	// a bucket the renderer left out of the pass, as it lies wholly beyond its range (Global.gfx_gpucull_bucketrange): only counted,
+	// for the panel
+	void skip_bucket(scene::basic_cell::instance_bucket const &Bucket);
 	// runs the culling passes for the buckets added. View: rotation of the view of the pass. Occlusion: the depth pyramid
 	// to test the instances against, or null. Twophase: with the occlusion test, only the instances seen in the previous
 	// frame pass for now, dispatch_second() takes the others
@@ -283,6 +286,19 @@ class opengl46_instance_cull
 	// model instances drawn on their own queued in the pass, and in the last pass, for the panel
 	std::uint32_t m_models{0};
 	std::uint32_t m_lastmodels{0};
+	// what the pass held and sent, and the same of the last pass, for the panel: jobs (buckets queued), buckets left out beyond
+	// their range and their instances, records sent to the gpu, the record buffer started over
+	struct pass_counts
+	{
+		std::uint32_t jobs{0};
+		std::uint32_t candidates{0};
+		std::uint32_t skippedbuckets{0};
+		std::uint64_t skippedinstances{0};
+		std::uint64_t sentrecords{0};
+		bool restarted{false};
+	};
+	pass_counts m_counts;
+	pass_counts m_lastcounts;
 	bool m_dispatched{false};
 
 	std::vector<std::uint32_t> m_cpucounts; // of the current pass, by entry
