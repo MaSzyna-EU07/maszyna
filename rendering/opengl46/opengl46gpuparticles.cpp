@@ -249,6 +249,7 @@ void opengl46_gpu_particles::simulate_smoke(particle_manager &Particles, glm::dv
 		record.sizechange = glm::vec4{state.sizechange[0], state.sizechange[1], state.sizechange[2], 0.f};
 		record.opacitychange = glm::vec4{state.opacitychange[0], state.opacitychange[1], state.opacitychange[2], 0.f};
 		record.motion = glm::vec4{state.rise, state.damping, state.risemin, 0.f};
+		record.settling = glm::vec4{state.settling, state.drag, state.settles ? 1.f : 0.f, 0.f};
 		record.color = glm::vec4{glm::clamp(state.color, glm::vec3{0.f}, glm::vec3{1.f}), 0.f};
 		record.oldcolor = glm::vec4{glm::clamp(state.color * oldlight, glm::vec3{0.f}, glm::vec3{1.f}), 0.f};
 		if (pool.size > 0)

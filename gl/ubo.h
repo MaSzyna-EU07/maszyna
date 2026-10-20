@@ -526,10 +526,11 @@ namespace gl
         glm::vec4 sizechange;
         glm::vec4 opacitychange;
         glm::vec4 motion;
+        glm::vec4 settling;
         glm::vec4 color;
         glm::vec4 oldcolor;
     };
-    static_assert(sizeof(particle_smoke_source) == 160, "bad size of particle_smoke_source");
+    static_assert(sizeof(particle_smoke_source) == 176, "bad size of particle_smoke_source");
 
     // layout std430: GLSL particle_draw_s, read by the draws as attributes of instances
     struct particle_draw

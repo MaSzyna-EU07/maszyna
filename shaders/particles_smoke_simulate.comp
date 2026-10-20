@@ -37,10 +37,18 @@ bool advance(inout smoke_particle_s particle, smoke_source_s source, float secon
 	if (particle.state.x <= 0.0)
 		return false;
 	particle.velocity.w = clamp(particle.velocity.w + source.sizechange.x * seconds, source.sizechange.y, source.sizechange.z);
-	// crude smoke dispersion
-	particle.velocity.y += source.motion.x * particle.velocity.y * seconds;
-	particle.velocity.y -= source.motion.y * particle.velocity.y * seconds;
-	particle.velocity.y = max(source.motion.z, particle.velocity.y);
+	if (source.settling.z > 0.5)
+	{
+		// the drag of the air takes the particle towards the velocity it settles at
+		particle.velocity.xyz += (vec3(0.0, source.settling.x, 0.0) - particle.velocity.xyz) * (1.0 - exp(-source.settling.y * seconds));
+	}
+	else
+	{
+		// crude smoke dispersion
+		particle.velocity.y += source.motion.x * particle.velocity.y * seconds;
+		particle.velocity.y -= source.motion.y * particle.velocity.y * seconds;
+		particle.velocity.y = max(source.motion.z, particle.velocity.y);
+	}
 	particle.position.xyz += particle.velocity.xyz * seconds;
 	particle.position.xyz += 0.1 * particle.state.y * wind.xyz * seconds;
 	particle.state.y += seconds;

@@ -269,6 +269,11 @@ are no longer loaded.
   what it doesn't see and lights the rest with the sun (with the shadows of the terrain, models and clouds), the sky and
   the lamps and headlights, as the surfaces are lit: smoke in the shade is darker, smoke against the sun glows, smoke in
   the beam of headlights at night is lit by it.
+- **Templates of smoke sources** (`data/smokesource_*.txt`, both renderers) may say how heavy the particles are: with
+  `terminal_velocity: v` (m/s, positive up: light, hot smoke rises; negative down: dust, sand, sparks fall) the velocity
+  of a particle goes over to `v` (straight up or down, besides the drift with the wind), the faster the larger `drag: d`
+  (per second, default 1: about 63% of the way in a second). It takes the place of the old rules of the rise (slower in
+  cold and humid air); a template without it behaves as before. The particles don't stop at the ground.
 - **Rain and snow** are particles in three boxes around the camera (10, 24 and 60 metres), more of them the heavier the
   rain or snow (the overcast above 1). The drops and flakes fall, drift with the wind, the flakes flutter, and each is
   drawn as a streak of its motion against the camera: they slant when the train moves. They are lit like the smoke, so the

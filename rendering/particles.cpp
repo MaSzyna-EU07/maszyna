@@ -115,6 +115,13 @@ smoke_source::deserialize_mapping( cParser &Input ) {
     else if( key == "opacity_change:" ) {
         m_opacitymodifier.deserialize( Input );
     }
+    else if( key == "terminal_velocity:" ) {
+        m_settles = true;
+        m_settling = Input.getToken<float>( true, "\n\r\t  ,;[]" );
+    }
+    else if( key == "drag:" ) {
+        m_drag = std::max( 0.f, Input.getToken<float>( true, "\n\r\t  ,;[]" ) );
+    }
 
     return true; // return value marks a [ key: value ] pair was extracted, nothing about whether it's recognized
 }
@@ -379,9 +386,14 @@ smoke_source::update( smoke_particle &Particle, bounding_box &Boundingbox, doubl
     // ... otherwise proceed with full update
     m_sizemodifier.update( Particle.size, Timedelta );
 
+    if( m_settles ) {
+        // the drag of the air takes the particle towards the velocity it settles at
+        auto const share { static_cast<float>( 1.0 - std::exp( -m_drag * Timedelta ) ) };
+        Particle.velocity += ( glm::vec3{ 0.f, m_settling, 0.f } - Particle.velocity ) * share;
+    }
     // crude smoke dispersion simulation
     // http://www.auburn.edu/academic/forestry_wildlife/fire/smoke_guide/smoke_dispersion.htm
-	if (m_ownertype == owner_type::vehicle)
+	else if (m_ownertype == owner_type::vehicle)
 	{
     Particle.velocity.y += static_cast<float>(( 0.025 * Particle.velocity.y ) * std::min( 0.f, Global.AirTemperature - 90 ) * Timedelta); // decelerate faster in cold weather
 	Particle.velocity.y -= static_cast<float>(( (0.05 * (pow(m_owner.vehicle->GetVelocity()*1,0.4))) * Particle.velocity.y ) * Global.Overcast * Timedelta); // decelerate faster with high air humidity and/or precipitation
@@ -451,6 +463,9 @@ smoke_source::update_gpu( double const Timedelta, bool const Onlydespawn ) {
         m_gpu.damping = static_cast<float>( 0.050 * Global.Overcast );
         m_gpu.risemin = static_cast<float>( 0.25 * ( 2.f - Global.Overcast ) );
     }
+    m_gpu.settles = m_settles;
+    m_gpu.settling = m_settling;
+    m_gpu.drag = m_drag;
     m_gpu.color = m_emitter.color;
 
     // the renderer culls the particles one by one; the area is where they come from, for the distance of the source

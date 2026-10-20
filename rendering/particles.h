@@ -101,6 +101,10 @@ public:
         float rise { 0.f };
         float damping { 0.f };
         float risemin { std::numeric_limits<float>::lowest() };
+        // with a settling velocity (settles): the velocity goes over to it instead, see smoke_source::m_settling
+        bool settles { false };
+        float settling { 0.f };
+        float drag { 1.f };
         glm::vec3 color { 0.f };
     };
 // methods
@@ -189,6 +193,12 @@ private:
     fixedstep_modifier<float> m_sizemodifier; // particle billboard size
 //    fixedstep_modifier<glm::vec3> m_colormodifier; // particle billboard color and opacity
     fixedstep_modifier<float> m_opacitymodifier;
+    // optional velocity the particles settle at in still air, m/s, positive upwards (light, hot smoke rises, heavy particles
+    // fall), and how fast they get to it: the share of the rest of the way per second is 1 - exp(-drag). when given, it takes
+    // the place of the crude dispersion of update( Particle ) (the rise in cold air, the damping in humid air)
+    bool m_settles { false };
+    float m_settling { 0.f }; // terminal_velocity:
+    float m_drag { 1.f }; // drag:
 //    texture_handle m_texture { -1 }; // texture assigned to particle billboards
     // current state
     float m_spawncount { 0.f }; // number of particles to spawn during next update
