@@ -274,6 +274,10 @@ are no longer loaded.
   of a particle goes over to `v` (straight up or down, besides the drift with the wind), the faster the larger `drag: d`
   (per second, default 1: about 63% of the way in a second). It takes the place of the old rules of the rise (slower in
   cold and humid air); a template without it behaves as before. The particles don't stop at the ground.
+  Two more keys make the smoke come out of the exhaust as a jet instead of puffs swelling above it: `spread: s` — the
+  particles grow by `s` metres of size for each metre they go through the air (a jet widens by about 0.3–0.5 per metre),
+  on top of `size_change`, so they leave the exhaust as small as `min_size`/`max_size` (the size of the pipe) and widen
+  as they rise; `fade_in: t` — they take `t` seconds to show up after they're born, instead of popping up at full opacity.
 - **Rain and snow** are particles in three boxes around the camera (10, 24 and 60 metres), more of them the heavier the
   rain or snow (the overcast above 1). The drops and flakes fall, drift with the wind, the flakes flutter, and each is
   drawn as a streak of its motion against the camera: they slant when the train moves. They are lit like the smoke, so the

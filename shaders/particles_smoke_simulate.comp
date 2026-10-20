@@ -37,6 +37,9 @@ bool advance(inout smoke_particle_s particle, smoke_source_s source, float secon
 	if (particle.state.x <= 0.0)
 		return false;
 	particle.velocity.w = clamp(particle.velocity.w + source.sizechange.x * seconds, source.sizechange.y, source.sizechange.z);
+	// the jet widens with the way it goes
+	if (source.sizechange.w > 0.0)
+		particle.velocity.w = min(particle.velocity.w + source.sizechange.w * length(particle.velocity.xyz) * seconds, source.sizechange.z);
 	if (source.settling.z > 0.5)
 	{
 		// the drag of the air takes the particle towards the velocity it settles at

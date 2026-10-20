@@ -105,6 +105,8 @@ public:
         bool settles { false };
         float settling { 0.f };
         float drag { 1.f };
+        float spread { 0.f }; // see smoke_source::m_spread
+        float fadein { 0.f }; // see smoke_source::m_fadein
         glm::vec3 color { 0.f };
     };
 // methods
@@ -128,6 +130,12 @@ public:
     std::size_t
         max_particles() const {
             return m_max_particles; }
+    // share of the opacity of a particle the age has let through so far, 0-1 (fade_in:)
+    float
+        fade_in( float const Age ) const {
+            if( m_fadein <= 0.f ) { return 1.f; }
+            auto const share { std::clamp( Age / m_fadein, 0.f, 1.f ) };
+            return share * share * ( 3.f - 2.f * share ); }
     glm::vec3 const &
         color() const {
             return m_emitter.color; }
@@ -199,6 +207,11 @@ private:
     bool m_settles { false };
     float m_settling { 0.f }; // terminal_velocity:
     float m_drag { 1.f }; // drag:
+    // optional growth of the particles with the way they go through the air, metres of size per metre: the jet out of the
+    // exhaust widens into a cone as it takes in the air around, instead of the puffs swelling in one place
+    float m_spread { 0.f }; // spread:
+    // optional time the particles take to show up after they're born, seconds, so they don't pop up at the exhaust
+    float m_fadein { 0.f }; // fade_in:
 //    texture_handle m_texture { -1 }; // texture assigned to particle billboards
     // current state
     float m_spawncount { 0.f }; // number of particles to spawn during next update

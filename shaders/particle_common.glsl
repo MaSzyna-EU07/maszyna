@@ -19,10 +19,10 @@ struct smoke_source_s
 	vec4 previous; // xyz: emitter at the update before, from the origin
 	vec4 launch; // xy: inclination, radians, zw: speed, m/s
 	vec4 initial; // xy: size, zw: opacity
-	vec4 sizechange; // x: per second, y: min, z: max
+	vec4 sizechange; // x: per second, y: min, z: max, w: per metre the particle goes through the air (spread:)
 	vec4 opacitychange; // x: per second, y: min, z: max
 	vec4 motion; // x: rise, y: damping (per second, of the vertical velocity), z: least vertical velocity
-	vec4 settling; // x: velocity the particles settle at, m/s upwards, y: drag, per second, z: 1 when they settle (in place of motion)
+	vec4 settling; // x: velocity the particles settle at, m/s upwards, y: drag, per second, z: 1 when they settle (in place of motion), w: seconds they take to show up (fade_in:)
 	vec4 color; // rgb: colour of the smoke, lit by the lights of the pass
 	vec4 oldcolor; // rgb: colour lit as the cpu does it, without the lights (gfx.smoke.lighting off)
 };

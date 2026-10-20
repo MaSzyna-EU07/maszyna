@@ -122,6 +122,12 @@ smoke_source::deserialize_mapping( cParser &Input ) {
     else if( key == "drag:" ) {
         m_drag = std::max( 0.f, Input.getToken<float>( true, "\n\r\t  ,;[]" ) );
     }
+    else if( key == "spread:" ) {
+        m_spread = std::max( 0.f, Input.getToken<float>( true, "\n\r\t  ,;[]" ) );
+    }
+    else if( key == "fade_in:" ) {
+        m_fadein = std::max( 0.f, Input.getToken<float>( true, "\n\r\t  ,;[]" ) );
+    }
 
     return true; // return value marks a [ key: value ] pair was extracted, nothing about whether it's recognized
 }
@@ -385,6 +391,10 @@ smoke_source::update( smoke_particle &Particle, bounding_box &Boundingbox, doubl
     if( Particle.opacity <= 0.f ) { return false; }
     // ... otherwise proceed with full update
     m_sizemodifier.update( Particle.size, Timedelta );
+    if( m_spread > 0.f ) {
+        // the jet widens with the way it goes
+        Particle.size = std::min( Particle.size + m_spread * glm::length( Particle.velocity ) * static_cast<float>( Timedelta ), m_sizemodifier.limit( value_limit::max ) );
+    }
 
     if( m_settles ) {
         // the drag of the air takes the particle towards the velocity it settles at
@@ -463,6 +473,8 @@ smoke_source::update_gpu( double const Timedelta, bool const Onlydespawn ) {
         m_gpu.damping = static_cast<float>( 0.050 * Global.Overcast );
         m_gpu.risemin = static_cast<float>( 0.25 * ( 2.f - Global.Overcast ) );
     }
+    m_gpu.spread = m_spread;
+    m_gpu.fadein = m_fadein;
     m_gpu.settles = m_settles;
     m_gpu.settling = m_settling;
     m_gpu.drag = m_drag;

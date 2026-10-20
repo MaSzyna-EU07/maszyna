@@ -48,5 +48,9 @@ void main()
 	vec3 color = source.oldcolor.rgb;
 	if (options.x > 0.5)
 		color = source.color.rgb * particle_light((view * vec4(world, 1.0)).xyz, world, options.y);
-	particle_emit(world, size, vec3(particle.position.w, 0.0, 0.0), color, clamp(particle.state.x, 0.0, 1.0), uint(options.z));
+	float opacity = clamp(particle.state.x, 0.0, 1.0);
+	// showing up after the birth (smoke_source::fade_in())
+	if (source.settling.w > 0.0)
+		opacity *= smoothstep(0.0, source.settling.w, particle.state.y);
+	particle_emit(world, size, vec3(particle.position.w, 0.0, 0.0), color, opacity, uint(options.z));
 }
