@@ -259,6 +259,32 @@ are no longer loaded.
 | `gfx.moon.disc` | `1.0` | 0..16: brightness of the moon disc |
 | `gfx.moonlight` | `1.0` | 0..10: how much the moon lights the scenery at night (its direct light, the night light that comes with it and the moonlit sky); 0: no moonlight |
 
+### Particles
+
+- **Smoke** of vehicles and scenery models is simulated and drawn on the graphics card. The sources (the `smokesource_`
+  points of the models and their `data/*.txt` templates, unchanged) work out on the processor only how many particles they
+  give off and what these start with, as before; the particles themselves live in a buffer of the graphics card and are
+  moved there once per step of the simulation, by the same rules as on the processor. The particles of a step are spread
+  along the way the source went in it, so the smoke of a fast train no longer comes out in clumps. Each view leaves out
+  what it doesn't see and lights the rest with the sun (with the shadows of the terrain, models and clouds), the sky and
+  the lamps and headlights, as the surfaces are lit: smoke in the shade is darker, smoke against the sun glows, smoke in
+  the beam of headlights at night is lit by it.
+- **Rain and snow** are particles in three boxes around the camera (10, 24 and 60 metres), more of them the heavier the
+  rain or snow (the overcast above 1). The drops and flakes fall, drift with the wind, the flakes flutter, and each is
+  drawn as a streak of its motion against the camera: they slant when the train moves. They are lit like the smoke, so the
+  rain shows in the headlights and under the lamps, and fogged. The cab still hides them as before. They don't stop under
+  roofs or in tunnels yet (neither did the old cylinder).
+- **Soft particles**: smoke, rain and snow fade where they near the scenery behind them instead of being cut by it
+  (the depth of the view drawn so far is copied for it once per view).
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.smoke.gpu yes/no` | `yes` | the smoke on the graphics card, see above; `no`: simulated on the processor and drawn as before |
+| `gfx.smoke.lighting yes/no` | `yes` | the smoke of the graphics card lit by the sun, the sky and the lamps; `no`: in the colour the processor gave it, as before |
+| `gfx.particles.soft` | `1.0` | 0..4: how far in front of the scenery the particles fade out, as a share of the half size of a particle of smoke, and times 0.25 m for rain and snow; 0: cut, as before |
+| `gfx.precipitation.gpu yes/no` | `yes` | rain and snow as particles, see above; `no`: the textured cylinder, as before |
+| `gfx.precipitation.particles` | `65536` | 0..1048576: the particles of the heaviest rain or snow; lighter rain has fewer, down to 15% of it |
+
 ### Models drawn from the GPU
 
 Many models of the scenery (trees, bushes, poles, fences: models without lights and animations) are drawn in batches, one
@@ -447,6 +473,11 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   under `gpu steps:` are measured each from its own pair of marks, and the first mark of a pair can be put while the graphics
   card still works on what came before, so a short step right after a heavy one may show some of that work; the parts don't.
   Like the other timings, they are of a frame a few frames back.
+- **Particles** window (next to the Weather window): the switches above. Shift+F12 shows the `smoke of the gpu:` row
+  (particles drawn, as counted on the graphics card a few frames before, the places for the particles and the sources they
+  are shared by) and, while it rains or snows, `rain of the gpu:` / `snow of the gpu:` (drawn of how many); the timings
+  `particles:` give the GPU time of the step of the smoke, of the smoke of the view (culling, light and drawing) and of the
+  rain or snow.
 - `gfx.gldebug yes` turns on the OpenGL debug output (`KHR_debug`); messages go to the log.
 
 ## Building

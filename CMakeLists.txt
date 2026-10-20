@@ -393,6 +393,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46shadowfit.cpp"
             "rendering/opengl46/opengl46precipitation.cpp"
             "rendering/opengl46/opengl46particles.cpp"
+            "rendering/opengl46/opengl46gpuparticles.cpp"
             "rendering/opengl46/opengl46terrain.cpp"
             "rendering/opengl46/opengl46grass.cpp"
             "rendering/opengl46/opengl46renderer.cpp")

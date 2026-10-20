@@ -29,6 +29,12 @@ void gl::glsl_common_setup()
     "#define HIZ_GROUP_SIZE " + std::to_string(HIZ_GROUP_SIZE) + "\n" +
     "#define SHADOW_FIT_GROUP_SIZE " + std::to_string(SHADOW_FIT_GROUP_SIZE) + "\n" +
     "#define SHADOW_FIT_SSBO_BINDING " + std::to_string(SHADOW_FIT_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_GROUP_SIZE " + std::to_string(PARTICLE_GROUP_SIZE) + "\n" +
+    "#define PARTICLE_SSBO_BINDING " + std::to_string(PARTICLE_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_SOURCE_SSBO_BINDING " + std::to_string(PARTICLE_SOURCE_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_OWNER_SSBO_BINDING " + std::to_string(PARTICLE_OWNER_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_OUTPUT_SSBO_BINDING " + std::to_string(PARTICLE_OUTPUT_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_COMMAND_SSBO_BINDING " + std::to_string(PARTICLE_COMMAND_SSBO_BINDING) + "\n" +
     "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
     "#define INSTANCE_JOB_SLEEPERS " + std::to_string(INSTANCE_JOB_SLEEPERS) + "U\n" +
     "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +

@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/openglcamera.h"
 #include "rendering/opengl46/opengl46light.h"
 #include "rendering/opengl46/opengl46particles.h"
+#include "rendering/opengl46/opengl46gpuparticles.h"
 #include "rendering/opengl46/opengl46skydome.h"
 #include "rendering/opengl46/opengl46precipitation.h"
 #include "simulation/simulationenvironment.h"
@@ -447,6 +448,9 @@ class opengl46_renderer : public gfx_renderer {
 	void Setup_Contact_Shadows( viewport_config &Viewport );
 	// makes the target of the resolved depth of the viewport if it isn't there yet; false if it can't be made
 	bool Resolved_Depth_Target( viewport_config &Viewport );
+	// resolves the depth drawn so far in the colour pass of the viewport for the soft particles (gfx.particles.soft) and binds it
+	// to gl::SCENE_DEPTH_TEX; false when the viewport has no such depth
+	bool Setup_Particles_Depth( viewport_config &Viewport );
 	// the direction the sun shadows are cast in (the sun, its height capped by gfx.shadow.angle.min), and the rotation from
 	// the world to the space of the light of the cascades: x and y across the maps, z along the light
 	glm::vec3 Shadow_Light_Vector() const;
@@ -495,6 +499,8 @@ class opengl46_renderer : public gfx_renderer {
 	void Render(TMemCell *Memcell);
 	void Render_particles();
 	void Render_precipitation();
+	// the view of the colour pass being drawn, for the particles of the gpu
+	opengl46_gpu_particles::view Particles_View() const;
 	// the grass of the heightmap terrain around the camera of the main view; Future: the matrix of the motion vectors
 	void Render_grass(glm::mat4 const &Future);
   void Render_vr_models();
@@ -588,6 +594,8 @@ class opengl46_renderer : public gfx_renderer {
     opengl46_skydome m_skydomerenderer;
     opengl46_precipitation m_precipitationrenderer;
     opengl46_particles m_particlerenderer; // particle visualization subsystem
+    opengl46_gpu_particles m_gpuparticles; // the smoke, rain and snow of the gpu (gfx.smoke.gpu, gfx.precipitation.gpu)
+    bool m_particlesoft{false}; // the depth for the soft particles is bound in the colour pass being drawn
 
 	unsigned int m_framestamp; // id of currently rendered gfx frame
 	float m_framerate;

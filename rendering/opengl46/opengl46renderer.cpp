@@ -865,6 +865,7 @@ void opengl46_renderer::SwapBuffers()
     m_debugtimestext += m_localshadows.info_times();
     if( Global.gfx_shadow_sdsm )
         m_debugtimestext += m_shadowfit.info_times();
+    m_debugtimestext += m_gpuparticles.info_times();
     m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
     if( DebugModeFlag )
         m_debugtimestext += m_textures.info();
@@ -964,6 +965,7 @@ void opengl46_renderer::SwapBuffers()
         + ( Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string( std::max( Global.DynamicLightCount, 0 ) ) )
         + "\n" + m_locallights.info()
         + m_localshadows.info()
+        + m_gpuparticles.info()
         + m_instancecull.info();
     if( Global.gfx_gpucull_shadows ) {
         for( std::size_t cascade = 0; cascade < m_shadowcull.size(); ++cascade ) {
@@ -1059,6 +1061,21 @@ void opengl46_renderer::draw_debug_ui()
     if (ImGui::Begin("Weather"))
     {
         m_weather.draw_debug_ui();
+    }
+    ImGui::End();
+
+    if (ImGui::Begin("Particles"))
+    {
+        ImGui::Checkbox("smoke simulated and drawn on the gpu (gfx.smoke.gpu)", &Global.gfx_smoke_gpu);
+        if (Global.gfx_smoke_gpu)
+            ImGui::Checkbox("smoke lit by the sun, the sky and the lamps (gfx.smoke.lighting)", &Global.gfx_smoke_lighting);
+        ImGui::Checkbox("rain and snow as particles of the gpu (gfx.precipitation.gpu)", &Global.gfx_precipitation_gpu);
+        if (Global.gfx_precipitation_gpu)
+            ImGui::SliderInt("particles of the heaviest rain or snow (gfx.precipitation.particles)", &Global.gfx_precipitation_particles, 0, 262144);
+        ImGui::SliderFloat("soft particles, share of their size, 0: off (gfx.particles.soft)", &Global.gfx_particles_soft, 0.f, 4.f, "%.2f");
+        auto const info{m_gpuparticles.info()};
+        if (!info.empty())
+            ImGui::TextUnformatted(info.c_str() + 1);
     }
     ImGui::End();
 
@@ -1463,6 +1480,12 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		setup_drawing(true);
 		Render_Alpha(simulation::Region);
 		Render_editor_overlay();
+
+		// the depth drawn so far, which the particles of the gpu fade in front of
+		m_particlesoft =
+			( Global.gfx_particles_soft > 0.f )
+			&& ( ( Global.Smoke && Global.gfx_smoke_gpu && ( false == simulation::Particles.sequence().empty() ) ) || ( Global.gfx_precipitation_gpu && ( Global.Overcast > 1.f ) ) )
+			&& Setup_Particles_Depth( vp );
 
 		// particles
 		Render_particles();
@@ -6897,8 +6920,57 @@ void opengl46_renderer::Render_particles()
 	model_ubo->update(model_ubs);
 
 	Bind_Texture(0, m_smoketexture);
+	// the smoke of the gpu, when its programs could be made; otherwise the particle manager simulates it on the cpu. a switch
+	// takes effect from the next update of the manager
+	auto const gpu{Global.gfx_smoke_gpu && m_gpuparticles.smoke_available()};
+	simulation::Particles.gpu(gpu);
+	if (gpu)
+	{
+		if (Global.Smoke)
+		{
+			m_gpuparticles.simulate_smoke(simulation::Particles, m_renderpass.pass_camera.position());
+			m_renderpass.draw_stats.particles = static_cast<int>(m_gpuparticles.render_smoke(Particles_View()));
+		}
+		return;
+	}
 	m_particlerenderer.update(m_renderpass.pass_camera);
     m_renderpass.draw_stats.particles = m_particlerenderer.render();
+}
+
+opengl46_gpu_particles::view opengl46_renderer::Particles_View() const
+{
+	GLint viewport[4];
+	::glGetIntegerv(GL_VIEWPORT, viewport);
+	opengl46_gpu_particles::view view;
+	view.modelview = OpenGLMatrices.data(GL_MODELVIEW);
+	view.projection = OpenGLMatrices.data(GL_PROJECTION);
+	view.camera = m_renderpass.pass_camera.position();
+	view.height = viewport[3];
+	view.soft = m_particlesoft;
+	return view;
+}
+
+bool opengl46_renderer::Setup_Particles_Depth(viewport_config &Viewport)
+{
+	// the fading works out the distance from the depth as the contact shadows do (Contact_Shadows_Wanted())
+	if (Global.gfx_skippipeline || Global.bWireFrame || (Viewport.msaa_fb == nullptr))
+		return false;
+	auto const &projection{scene_ubs.projection};
+	if ((projection[2][3] == 0.f) || (projection[2][2] != 0.f) || (projection[3][2] <= 0.f))
+		return false;
+	if (false == Resolved_Depth_Target(Viewport))
+		return false;
+	// making the target binds it
+	Viewport.msaa_fb->bind();
+	// the scissor test would limit the blit
+	auto const scissor{::glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE};
+	if (scissor)
+		::glDisable(GL_SCISSOR_TEST);
+	::glBlitNamedFramebuffer(*Viewport.msaa_fb, *Viewport.clusters_depth_fb, 0, 0, Viewport.width, Viewport.height, 0, 0, Viewport.width, Viewport.height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+	if (scissor)
+		::glEnable(GL_SCISSOR_TEST);
+	::glBindTextureUnit(gl::SCENE_DEPTH_TEX, Viewport.clusters_depth_tex->id);
+	return true;
 }
 
 void opengl46_renderer::Render_vr_models()
@@ -6924,6 +6996,15 @@ void opengl46_renderer::Render_precipitation()
 {
 	if (Global.Overcast <= 1.f)
 	{
+		return;
+	}
+
+	if (Global.gfx_precipitation_gpu && m_gpuparticles.precipitation_available())
+	{
+		// the particles of the gpu: the overcast above 1 is how heavy the rain or snow is
+		model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+		model_ubo->update(model_ubs);
+		m_gpuparticles.render_precipitation(Particles_View(), Global.Weather == "snow:", std::clamp(Global.Overcast - 1.f, 0.f, 1.f), m_framestamp);
 		return;
 	}
 

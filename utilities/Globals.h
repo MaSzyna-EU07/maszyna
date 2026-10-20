@@ -332,6 +332,17 @@ struct global_settings {
     // (opengl 4.6) the grass thins out from gfx_grass_distance to here, where it ends
     float gfx_grass_fadedistance = 70.f;
     float gfx_grass_density = 1.f;
+    // (opengl 4.6) the smoke is simulated and drawn on the gpu (opengl46_gpu_particles), lit by the sun, the sky and the lamps
+    // when gfx_smoke_lighting; false: simulated on the cpu and drawn as before
+    bool gfx_smoke_gpu = true;
+    bool gfx_smoke_lighting = true;
+    // (opengl 4.6) the particles of the gpu fade where they near what is behind them, over this share of their size (smoke) or of
+    // a few decimetres (rain, snow), instead of being cut by it; 0: cut, as before
+    float gfx_particles_soft = 1.f;
+    // (opengl 4.6) rain and snow as particles around the camera, lit like the smoke (opengl46_gpu_particles), at most this many of
+    // them in the heaviest rain or snow; false: the textured cylinder, as before
+    bool gfx_precipitation_gpu = true;
+    int gfx_precipitation_particles = 65536;
     // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,
     // one for each of the last frames, instead of with glBufferSubData. read at the start
     bool gfx_bufferstreaming = true;

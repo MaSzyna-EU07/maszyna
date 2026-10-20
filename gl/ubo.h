@@ -496,6 +496,50 @@ namespace gl
     const GLuint SHADOW_FIT_GROUP_SIZE = 16;
     const GLuint SHADOW_FIT_SSBO_BINDING = 9;
 
+    // the particles of the gpu (opengl46_gpu_particles, particles_*.comp, particle_common.glsl): work group of their passes and the
+    // binding points of their buffers. the points are ones of the instance culling, which binds its buffers before every use; the
+    // particles bind their own before their passes. the draws read the particles as attributes of instances, not from storage
+    const GLuint PARTICLE_GROUP_SIZE = 64;
+    const GLuint PARTICLE_SSBO_BINDING = 9; // the smoke particles
+    const GLuint PARTICLE_SOURCE_SSBO_BINDING = 10; // their sources, as the last update of the simulation left them
+    const GLuint PARTICLE_OWNER_SSBO_BINDING = 11; // the source of every place of the particles
+    const GLuint PARTICLE_OUTPUT_SSBO_BINDING = 12; // what the draw reads, a particle_draw per particle drawn
+    const GLuint PARTICLE_COMMAND_SSBO_BINDING = 13; // the indirect draw command, whose instances the passes count
+
+    // layout std430: GLSL smoke_particle_s
+    struct particle_smoke
+    {
+        glm::vec4 position;
+        glm::vec4 velocity;
+        glm::vec4 state;
+    };
+    static_assert(sizeof(particle_smoke) == 48, "bad size of particle_smoke");
+
+    // layout std430: GLSL smoke_source_s
+    struct particle_smoke_source
+    {
+        glm::uvec4 pool;
+        glm::vec4 location;
+        glm::vec4 previous;
+        glm::vec4 launch;
+        glm::vec4 initial;
+        glm::vec4 sizechange;
+        glm::vec4 opacitychange;
+        glm::vec4 motion;
+        glm::vec4 color;
+        glm::vec4 oldcolor;
+    };
+    static_assert(sizeof(particle_smoke_source) == 160, "bad size of particle_smoke_source");
+
+    // layout std430: GLSL particle_draw_s, read by the draws as attributes of instances
+    struct particle_draw
+    {
+        glm::vec4 place;
+        glm::vec4 shape;
+        glm::vec4 color;
+    };
+    static_assert(sizeof(particle_draw) == 48, "bad size of particle_draw");
+
     // layout std430: a bucket of a scene cell queued in the pass (GLSL: instance_cull_job)
     struct instance_cull_job
     {

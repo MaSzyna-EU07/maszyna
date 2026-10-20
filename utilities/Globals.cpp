@@ -1556,6 +1556,33 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_grass_density;
         gfx_grass_density = std::clamp(gfx_grass_density, 0.f, 4.f);
     }
+    else if (Token == "gfx.smoke.gpu")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_smoke_gpu;
+    }
+    else if (Token == "gfx.smoke.lighting")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_smoke_lighting;
+    }
+    else if (Token == "gfx.particles.soft")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_particles_soft;
+        gfx_particles_soft = std::clamp(gfx_particles_soft, 0.f, 4.f);
+    }
+    else if (Token == "gfx.precipitation.gpu")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_precipitation_gpu;
+    }
+    else if (Token == "gfx.precipitation.particles")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_precipitation_particles;
+        gfx_precipitation_particles = std::clamp(gfx_precipitation_particles, 0, 1 << 20);
+    }
     else if (Token == "gfx.bufferstreaming")
     {
         Parser.getTokens(1);
@@ -2074,6 +2101,11 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.grass.distance", gfx_grass_distance );
     export_as_text( Output, "gfx.grass.fadedistance", gfx_grass_fadedistance );
     export_as_text( Output, "gfx.grass.density", gfx_grass_density );
+    export_as_text( Output, "gfx.smoke.gpu", gfx_smoke_gpu );
+    export_as_text( Output, "gfx.smoke.lighting", gfx_smoke_lighting );
+    export_as_text( Output, "gfx.particles.soft", gfx_particles_soft );
+    export_as_text( Output, "gfx.precipitation.gpu", gfx_precipitation_gpu );
+    export_as_text( Output, "gfx.precipitation.particles", gfx_precipitation_particles );
     export_as_text( Output, "gfx.bufferstreaming", gfx_bufferstreaming );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );
