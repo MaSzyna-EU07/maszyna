@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/openglcamera.h"
 #include "model/Texture.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtime.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/Timer.h"
@@ -23,10 +24,37 @@ namespace
 int constexpr max_blades{65536}; // drawn in a tile at most
 float constexpr blade_reach{1.5f}; // metres the bounds of a tile reach above its ground, for the blades
 
-// the share of the blades drawn at specified distance; the same as lod_share() of grass.vert
-float lod_share(float const Distance, float const Near)
+// the share of the blades drawn at specified distance: fewer further away, for speed (from Thinning), and fewer and fewer from
+// Fade to Reach, where the grass ends; the same as lod_share() of grass.vert
+float lod_share(float const Distance, float const Thinning, float const Fade, float const Reach)
 {
-	return Distance <= Near ? 1.f : std::pow(Near / Distance, 1.5f);
+	auto const share{Distance <= Thinning ? 1.f : std::pow(Thinning / Distance, 1.5f)};
+	auto const t{std::clamp((Distance - Fade) / std::max(Reach - Fade, 1e-3f), 0.f, 1.f)};
+	return share * (1.f - t * t * (3.f - 2.f * t));
+}
+
+// the grass through the year, by the day of the year: x how dry it is, y how fresh (the green of spring), z how grown (share
+// of the height). the turns follow the seasons of the textures (world_environment::compute_season(): winter till day 65,
+// spring till 158, summer till 252, autumn till 341): dormant and dry in winter, greening up and growing through spring,
+// fresh in May, drying out from August, the dry grass lying lower towards winter
+glm::vec3 grass_season(int const Yearday)
+{
+	struct point
+	{
+		float day;
+		glm::vec3 value;
+	};
+	static point const year[]{{1.f, {0.80f, 0.f, 0.55f}},    {65.f, {0.80f, 0.f, 0.55f}},   {100.f, {0.45f, 0.3f, 0.70f}}, {135.f, {0.05f, 1.f, 0.90f}},
+	                          {170.f, {0.f, 0.4f, 1.f}},     {200.f, {0.10f, 0.f, 1.f}},    {240.f, {0.35f, 0.f, 1.f}},    {280.f, {0.50f, 0.f, 0.95f}},
+	                          {320.f, {0.65f, 0.f, 0.80f}},  {341.f, {0.80f, 0.f, 0.60f}},  {367.f, {0.80f, 0.f, 0.55f}}};
+	auto const day{std::clamp(static_cast<float>(Yearday), 1.f, 366.f)};
+	for (std::size_t i = 1; i < std::size(year); ++i)
+		if (day <= year[i].day)
+		{
+			auto const t{(day - year[i - 1].day) / (year[i].day - year[i - 1].day)};
+			return glm::mix(year[i - 1].value, year[i].value, t * t * (3.f - 2.f * t));
+		}
+	return year[std::size(year) - 1].value;
 }
 
 GLuint make_texture(GLenum const Format, int const Width, int const Height, GLenum const Filter)
@@ -78,6 +106,8 @@ bool opengl46_grass::init()
 	m_uniforms.tip = location("grass_tip");
 	m_uniforms.shape = location("grass_shape");
 	m_uniforms.share = location("grass_share");
+	m_uniforms.dry = location("grass_dry");
+	m_uniforms.season = location("grass_season");
 	m_state = 1;
 	return true;
 }
@@ -207,15 +237,19 @@ std::size_t opengl46_grass::render(opengl_camera const &Camera, glm::mat4 const 
 	if (false == Global.gfx_grass || m_chunks.empty() || m_kinds.empty() || false == init())
 		return 0;
 
-	auto const reach{std::max(5.f, Global.gfx_grass_distance)};
-	auto const thinning{std::max(3.f, reach * 0.2f)};
+	// whole up to the distance, thinning out to the fading distance
+	auto const fade{std::max(5.f, Global.gfx_grass_distance)};
+	auto const reach{std::max(fade + 1.f, Global.gfx_grass_fadedistance)};
+	auto const thinning{std::max(3.f, fade * 0.2f)};
 	auto const multiplier{std::max(0.f, Global.gfx_grass_density)};
 	auto const camera{Camera.position()};
 
 	m_program->bind();
 	m_vao->bind();
 	::glDisable(GL_CULL_FACE);
-	::glUniform4f(m_uniforms.lod, thinning, reach, 0.f, 0.f);
+	::glUniform4f(m_uniforms.lod, thinning, fade, reach, 0.f);
+	auto const season{grass_season(simulation::Time.year_day())};
+	::glUniform4f(m_uniforms.season, season.x, season.y, season.z, 0.f);
 	// the wind sways the blades along it, harder in the gusts
 	auto const wind{glm::vec3{simulation::Environment.wind()}};
 	auto const windspeed{glm::length(glm::vec2{wind.x, wind.z})};
@@ -227,7 +261,7 @@ std::size_t opengl46_grass::render(opengl_camera const &Camera, glm::mat4 const 
 	{
 		auto &chunk{entry.second};
 		// the kinds of the chunk, and the share of the blades of each against its densest
-		std::array<glm::vec4, 4> base{}, tip{}, shape{};
+		std::array<glm::vec4, 4> base{}, tip{}, shape{}, dry{};
 		glm::vec4 share{0.f};
 		float densest{0.f};
 		for (std::size_t i = 0; i < chunk.kinds.size(); ++i)
@@ -243,6 +277,7 @@ std::size_t opengl46_grass::render(opengl_camera const &Camera, glm::mat4 const 
 			base[i] = glm::vec4{kind.base, 0.f};
 			tip[i] = glm::vec4{kind.tip, 0.f};
 			shape[i] = glm::vec4{kind.height, kind.variation, kind.width, kind.bend};
+			dry[i] = glm::vec4{kind.dry, kind.seasonal};
 			share[i] = kind.density / densest;
 		}
 		auto const tallest{std::max({shape[0].x, shape[1].x, shape[2].x, shape[3].x}) * 1.5f + blade_reach};
@@ -266,7 +301,7 @@ std::size_t opengl46_grass::render(opengl_camera const &Camera, glm::mat4 const 
 				if (false == Camera.visible(scene::bounding_area{(low + high) * 0.5, static_cast<float>(glm::length(high - low) * 0.5)}))
 					continue;
 				auto const full{tilesize * tilesize * densest * multiplier * fill};
-				auto const count{std::min(max_blades, static_cast<int>(std::ceil(full * lod_share(distance, thinning))))};
+				auto const count{std::min(max_blades, static_cast<int>(std::ceil(full * lod_share(distance, thinning, fade, reach))))};
 				if (count <= 0)
 					continue;
 				if (false == set)
@@ -280,11 +315,12 @@ std::size_t opengl46_grass::render(opengl_camera const &Camera, glm::mat4 const 
 					::glUniform4fv(m_uniforms.tip, 4, glm::value_ptr(tip[0]));
 					::glUniform4fv(m_uniforms.shape, 4, glm::value_ptr(shape[0]));
 					::glUniform4fv(m_uniforms.share, 1, glm::value_ptr(share));
+					::glUniform4fv(m_uniforms.dry, 4, glm::value_ptr(dry[0]));
 					GLuint const textures[]{chunk.heights, chunk.density, chunk.holes};
 					::glBindTextures(0, 3, textures);
 				}
 				// fewer segments further away
-				auto const segments{distance < thinning * 1.5f ? 3 : distance < reach * 0.5f ? 2 : 1};
+				auto const segments{distance < thinning * 1.5f ? 3 : distance < fade * 0.5f ? 2 : 1};
 				// the number of the tile in the world, the seed of its blades
 				auto const seedx{static_cast<float>(std::floor(chunk.corner.x / tilesize + 0.5) + tx)};
 				auto const seedz{static_cast<float>(std::floor(chunk.corner.y / tilesize + 0.5) + tz)};

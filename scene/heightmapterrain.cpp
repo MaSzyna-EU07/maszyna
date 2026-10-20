@@ -656,12 +656,12 @@ std::optional<modifier_shape::effect> modifier_shape::evaluate(double const X, d
 std::vector<grass_def> const &grass_presets()
 {
 	static std::vector<grass_def> const presets{
-	    // name, root, tip, height, variation, width, density, bend
-	    {"meadow", {0.22f, 0.33f, 0.09f}, {0.58f, 0.68f, 0.27f}, 0.25f, 0.45f, 0.020f, 90.f, 0.30f},
-	    {"lawn", {0.18f, 0.30f, 0.08f}, {0.42f, 0.58f, 0.20f}, 0.07f, 0.30f, 0.012f, 200.f, 0.15f},
-	    {"dry grass", {0.36f, 0.32f, 0.16f}, {0.80f, 0.72f, 0.45f}, 0.30f, 0.45f, 0.016f, 70.f, 0.40f},
-	    {"tall grass", {0.18f, 0.27f, 0.07f}, {0.60f, 0.66f, 0.30f}, 0.70f, 0.35f, 0.022f, 40.f, 0.45f},
-	    {"weeds", {0.16f, 0.25f, 0.08f}, {0.45f, 0.55f, 0.22f}, 0.16f, 0.60f, 0.030f, 30.f, 0.25f},
+	    // name, root, tip, height, variation, width, density, bend, dried out, follows the seasons
+	    {"meadow", {0.22f, 0.33f, 0.09f}, {0.58f, 0.68f, 0.27f}, 0.25f, 0.45f, 0.020f, 90.f, 0.30f, {0.74f, 0.66f, 0.40f}, 1.f},
+	    {"lawn", {0.18f, 0.30f, 0.08f}, {0.42f, 0.58f, 0.20f}, 0.07f, 0.30f, 0.012f, 200.f, 0.15f, {0.62f, 0.60f, 0.36f}, 0.6f},
+	    {"dry grass", {0.36f, 0.32f, 0.16f}, {0.80f, 0.72f, 0.45f}, 0.30f, 0.45f, 0.016f, 70.f, 0.40f, {0.82f, 0.74f, 0.50f}, 0.5f},
+	    {"tall grass", {0.18f, 0.27f, 0.07f}, {0.60f, 0.66f, 0.30f}, 0.70f, 0.35f, 0.022f, 40.f, 0.45f, {0.76f, 0.66f, 0.40f}, 1.f},
+	    {"weeds", {0.16f, 0.25f, 0.08f}, {0.45f, 0.55f, 0.22f}, 0.16f, 0.60f, 0.030f, 30.f, 0.25f, {0.52f, 0.44f, 0.28f}, 1.f},
 	};
 	return presets;
 }
@@ -762,6 +762,9 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 					kind.density = std::max(0.f, density.as<float>());
 				if (auto const bend{entry["bend"]})
 					kind.bend = std::clamp(bend.as<float>(), 0.f, 1.f);
+				colour(entry["dry"], kind.dry);
+				if (auto const seasonal{entry["seasonal"]})
+					kind.seasonal = std::clamp(seasonal.as<float>(), 0.f, 1.f);
 				result.grass.push_back(std::move(kind));
 			}
 		Manifest = std::move(result);
@@ -852,6 +855,8 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 			out << YAML::Key << "width" << YAML::Value << kind.width;
 			out << YAML::Key << "density" << YAML::Value << kind.density;
 			out << YAML::Key << "bend" << YAML::Value << kind.bend;
+			out << YAML::Key << "dry" << YAML::Value << YAML::Flow << YAML::BeginSeq << kind.dry.r << kind.dry.g << kind.dry.b << YAML::EndSeq;
+			out << YAML::Key << "seasonal" << YAML::Value << kind.seasonal;
 			out << YAML::EndMap;
 		}
 		out << YAML::EndSeq;

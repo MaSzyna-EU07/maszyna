@@ -325,6 +325,8 @@ struct global_settings {
     // many blades of the density painted (1: all)
     bool gfx_grass = true;
     float gfx_grass_distance = 60.f;
+    // (opengl 4.6) the grass thins out from gfx_grass_distance to here, where it ends
+    float gfx_grass_fadedistance = 70.f;
     float gfx_grass_density = 1.f;
     // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,
     // one for each of the last frames, instead of with glBufferSubData. read at the start

@@ -44,6 +44,8 @@ struct grass_kind
 	float width{0.012f}; // metres, at the root
 	float density{60.f}; // blades per square metre where painted fully
 	float bend{0.3f}; // share of the height the tips lean over by
+	glm::vec3 dry{0.f}; // the tips dried out, in autumn and winter
+	float seasonal{1.f}; // how much the kind follows the seasons, 0..1
 };
 
 // a chunk of the heightmap terrain the grass grows on, see gfx_renderer::Terrain_Grass()

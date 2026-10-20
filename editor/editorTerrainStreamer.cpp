@@ -800,9 +800,11 @@ void terrain_streamer::publish_grass(glm::dvec3 const &Camera)
 			entry.width = kind.width;
 			entry.density = kind.density;
 			entry.bend = kind.bend;
+			entry.dry = glm::pow(glm::clamp(kind.dry, glm::vec3{0.f}, glm::vec3{1.f}), glm::vec3{2.2f});
+			entry.seasonal = kind.seasonal;
 			kinds.push_back(entry);
 		}
-		auto const reach{static_cast<double>(Global.gfx_grass_distance) + 2.0};
+		auto const reach{static_cast<double>(std::max(Global.gfx_grass_distance, Global.gfx_grass_fadedistance)) + 2.0};
 		for (auto const &entry : m_chunks)
 		{
 			auto const &chunk{*entry.second};

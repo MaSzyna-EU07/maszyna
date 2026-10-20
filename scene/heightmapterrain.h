@@ -222,6 +222,8 @@ struct grass_def
 	float width{0.02f}; // metres, of a blade at its root
 	float density{90.f}; // blades per square metre where the kind is painted fully
 	float bend{0.3f}; // how far the tips lean over, share of the height
+	glm::vec3 dry{0.74f, 0.66f, 0.40f}; // colour of the tips dried out, in autumn and winter, sRGB 0..1
+	float seasonal{1.f}; // how much the kind follows the seasons: 0 the same all year, 1 fully
 };
 
 // a few kinds to start the palette with

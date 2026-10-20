@@ -18,7 +18,8 @@ uniform vec4 grass_part;
 uniform vec4 grass_chunk;
 // the camera relative to the corner of the chunk (y as it is)
 uniform vec4 grass_camera;
-// x: distance the grass starts to thin out at; y: reach of the grass
+// x: distance the grass starts to thin out at, for speed; y: distance the fading starts at (gfx.grass.distance); z: where the
+// grass ends (gfx.grass.fadedistance)
 uniform vec4 grass_lod;
 // x, y: direction of the wind (x, z of the world); z: its strength, 0..1; w: time, seconds
 uniform vec4 grass_wind;
@@ -28,6 +29,10 @@ uniform vec4 grass_tip[4];
 uniform vec4 grass_shape[4];
 // share of the blades of each kind against the densest one of the chunk
 uniform vec4 grass_share;
+// the colour of each kind dried out (linear rgb), and how much it follows the seasons
+uniform vec4 grass_dry[4];
+// the time of the year: x: how dry the grass is, y: how fresh (spring), z: how grown (share of the height)
+uniform vec4 grass_season;
 
 layout(binding = 0) uniform sampler2D grass_heights; // heights of the grid points, R32F
 layout(binding = 1) uniform sampler2D grass_density; // densities of the kinds, RGBA8
@@ -56,10 +61,17 @@ float random(inout uint state)
 	return float(state >> 8) * (1.0 / 16777216.0);
 }
 
-// the share of the blades drawn at specified distance; the same as lod_share() of opengl46grass.cpp
-float lod_share(float distance)
+// the share of the blades drawn at specified distance for speed: fewer further away, each standing for more of them
+float lod_thinning(float distance)
 {
 	return distance <= grass_lod.x ? 1.0 : pow(grass_lod.x / distance, 1.5);
+}
+
+// the share of the blades drawn: the above, and fewer and fewer over the fading distance, where the grass really gets
+// sparser; the same as lod_share() of opengl46grass.cpp
+float lod_share(float distance)
+{
+	return lod_thinning(distance) * (1.0 - smoothstep(grass_lod.y, grass_lod.z, distance));
 }
 
 // height of the ground at a point of the chunk and its normal, the way the full grid is triangulated
@@ -111,6 +123,7 @@ void main()
 	float leanamount = random(state);
 	float shade = random(state);
 	float phase = random(state);
+	float early = random(state);
 
 	// place: R2 spreads the first blades evenly at any count, a little jitter breaks its lattice
 	vec2 spot = fract(shift + float(blade) * vec2(0.7548776662466927, 0.5698402909980532));
@@ -148,7 +161,7 @@ void main()
 	float distance = length(root - grass_camera.xyz);
 	float share = lod_share(distance);
 	float rank = (float(blade) + 0.5) / grass_tile.w;
-	if (kind < 0 || hole > 0.5 || rank >= share || distance > grass_lod.y)
+	if (kind < 0 || hole > 0.5 || rank >= share || distance > grass_lod.z)
 	{
 		collapse();
 		return;
@@ -158,11 +171,13 @@ void main()
 	float height = shape.x * (1.0 + shape.y * heightrandom);
 	// the last of the blades drawn at the distance grow in, and the grass fades out at the end of its reach
 	height *= 1.0 - smoothstep(share * 0.8, share, rank);
-	height *= 1.0 - smoothstep(grass_lod.y * 0.75, grass_lod.y, distance);
+	// lower in winter, growing in spring
+	float seasonal = grass_dry[kind].a;
+	height *= mix(1.0, grass_season.z, seasonal);
 	// where the paint thins out the blades get shorter
 	height *= mix(0.5, 1.0, clamp(density[kind] * 1.5, 0.0, 1.0));
 	// the blades drawn further away stand for more of them, so they're wider
-	float width = shape.z * (0.8 + 0.4 * widthrandom) / sqrt(share);
+	float width = shape.z * (0.8 + 0.4 * widthrandom) / sqrt(lod_thinning(distance));
 
 	// the face of the blade turns towards the camera further away, so the blades don't vanish edge on
 	vec2 facing = vec2(cos(turnrandom), sin(turnrandom));
@@ -192,7 +207,13 @@ void main()
 
 	// lit mostly as the ground under it, which keeps a field of blades from shimmering
 	vec3 normal = normalize(groundnormal * 0.8 + vec3(facing.x, 0.0, facing.y) * (side == 0.0 ? 0.0 : 0.25) + vec3(0.0, 0.3, 0.0));
-	vec3 albedo = mix(grass_base[kind].rgb, grass_tip[kind].rgb, t) * (0.85 + 0.3 * shade);
+	// the seasons: some blades dry out (and green up) earlier than others, so a field turns gradually; a dry blade takes the
+	// dry colour, darker at its root. in spring the green is fresher
+	float dry = clamp(grass_season.x * seasonal * (0.6 + 0.8 * early), 0.0, 1.0);
+	vec3 bottom = mix(grass_base[kind].rgb, grass_dry[kind].rgb * 0.45, dry);
+	vec3 top = mix(grass_tip[kind].rgb, grass_dry[kind].rgb, dry);
+	top *= mix(vec3(1.0), vec3(1.08, 1.22, 0.85), grass_season.y * seasonal * (1.0 - dry));
+	vec3 albedo = mix(bottom, top, t) * (0.85 + 0.3 * shade);
 	// the lower part of the blades is shaded by the others
 	albedo *= mix(0.7, 1.0, t);
 

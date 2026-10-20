@@ -9964,8 +9964,8 @@ msgstr "Dodaj:"
 msgid "Blade width (m)"
 msgstr "Szerokość źdźbła (m)"
 
-msgid "Blades on a square metre painted fully. The renderer draws fewer further away, and wider;\ngfx.grass.distance and gfx.grass.density in eu07.ini set how far and how many"
-msgstr "Źdźbła na metrze kwadratowym w pełni pomalowanym. Dalej renderer rysuje ich mniej, ale szerszych;\ngfx.grass.distance i gfx.grass.density w eu07.ini ustalają, jak daleko i ile"
+msgid "Blades on a square metre painted fully. The renderer draws fewer further away, and wider;\ngfx.grass.distance, gfx.grass.fadedistance and gfx.grass.density in eu07.ini set how far and how many"
+msgstr "Źdźbła na metrze kwadratowym w pełni pomalowanym. Dalej renderer rysuje ich mniej, ale szerszych;\ngfx.grass.distance, gfx.grass.fadedistance i gfx.grass.density w eu07.ini ustalają, jak daleko i ile"
 
 msgid "Clear the grass"
 msgstr "Usuń trawę"
@@ -10074,3 +10074,15 @@ msgstr "wysoka trawa"
 
 msgid "weeds"
 msgstr "chwasty"
+
+msgid "Dried out"
+msgstr "Wyschnięta"
+
+msgid "Colour the tips take as the grass dries out, in late summer, autumn and winter"
+msgstr "Kolor, jaki przybierają czubki, gdy trawa wysycha: późnym latem, jesienią i zimą"
+
+msgid "Follows the seasons"
+msgstr "Zmienia się z porami roku"
+
+msgid "How much the colour and the height change through the year with the date of the scenario:\ndry and low in winter, greening up in spring, fresh in May, drying out from August.\n0: the same all year (e.g. a watered lawn), 1: fully"
+msgstr "Jak bardzo kolor i wysokość zmieniają się w ciągu roku z datą scenariusza:\nzimą sucha i niska, wiosną zielenieje, w maju świeża, od sierpnia wysycha.\n0: taka sama przez cały rok (np. podlewany trawnik), 1: w pełni"

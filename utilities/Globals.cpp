@@ -1539,6 +1539,12 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_grass_distance;
         gfx_grass_distance = std::clamp(gfx_grass_distance, 5.f, 500.f);
     }
+    else if (Token == "gfx.grass.fadedistance")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_grass_fadedistance;
+        gfx_grass_fadedistance = std::clamp(gfx_grass_fadedistance, 5.f, 600.f);
+    }
     else if (Token == "gfx.grass.density")
     {
         Parser.getTokens(1);
@@ -2060,6 +2066,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.depthprepass.replay", gfx_depthprepass_replay );
     export_as_text( Output, "gfx.grass", gfx_grass );
     export_as_text( Output, "gfx.grass.distance", gfx_grass_distance );
+    export_as_text( Output, "gfx.grass.fadedistance", gfx_grass_fadedistance );
     export_as_text( Output, "gfx.grass.density", gfx_grass_density );
     export_as_text( Output, "gfx.bufferstreaming", gfx_bufferstreaming );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );

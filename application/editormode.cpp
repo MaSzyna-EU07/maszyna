@@ -3399,11 +3399,22 @@ void editor_mode::render_grass_ui()
         field(ImGui::DragFloat(STR_C("Density (blades/m2)"), &kind.density, 0.5f, 1.0f, 300.0f, "%.0f"));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Blades on a square metre painted fully. The renderer draws fewer further away, and wider;\n"
-                                          "gfx.grass.distance and gfx.grass.density in eu07.ini set how far and how many"));
+                                          "gfx.grass.distance, gfx.grass.fadedistance and gfx.grass.density in eu07.ini set how far and how many"));
         ImGui::SetNextItemWidth(120.0f);
         field(ImGui::SliderFloat(STR_C("Lean"), &kind.bend, 0.0f, 1.0f, "%.2f"));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("How far the tips of the blades lean over, share of their height; the wind adds to it"));
+        ImGui::SetNextItemWidth(200.0f);
+        field(ImGui::ColorEdit3(STR_C("Dried out"), &kind.dry.r, ImGuiColorEditFlags_NoInputs));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Colour the tips take as the grass dries out, in late summer, autumn and winter"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::SliderFloat(STR_C("Follows the seasons"), &kind.seasonal, 0.0f, 1.0f, "%.2f"));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("How much the colour and the height change through the year with the date of the scenario:\n"
+                                          "dry and low in winter, greening up in spring, fresh in May, drying out from August.\n"
+                                          "0: the same all year (e.g. a watered lawn), 1: fully"));
         m_grass_edit_active = active;
         if (changed)
         {
