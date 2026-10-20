@@ -43,6 +43,8 @@ uniform highp sampler2DArray layerspecgloss;
 uniform highp sampler2D layertable;
 
 #define NORMALMAP
+// param[2] holds the placement of the chunk, not the weathering
+#define NO_WEATHERING
 #include <light_common.glsl>
 #include <apply_fog.glsl>
 #include <tonemapping.glsl>
@@ -111,7 +113,9 @@ void main()
 		}
 		else
 		{
-			gloss += weight;
+			// a layer without a specgloss map: a dielectric of the glossiness: of the material (a blinn-phong exponent)
+			specularity += 0.5 * weight;
+			gloss += (1.0 - phong_roughness(abs(param[1].w))) * weight;
 		}
 		reflectivity += layerreflection * weight;
 		total += weight;

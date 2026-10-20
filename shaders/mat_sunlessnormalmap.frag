@@ -30,58 +30,6 @@ uniform sampler2D normalmap;
 #include <apply_fog.glsl>
 #include <tonemapping.glsl>
 
-vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
-{
-	// diffuse colour applied once, to the albedo (see material_diffuse() in light_common.glsl)
-	texturecolor *= material_diffuse();
-
-	// Cab interior: dim ambient less than the exterior path because
-	// ambient is the dominant indoor illumination. 0.80 trims the
-	// brightest faces without making the cab feel under-lit.
-	fragcolor *= 0.80;
-
-	vec3 emissioncolor = vec3(emission);
-	vec3 envcolor = envmap_color(fragnormal);
-
-// yuv path
-	vec3 texturecoloryuv = rgb2yuv(texturecolor);
-	vec3 texturecolorfullv = yuv2rgb(vec3(0.2176, texturecoloryuv.gb));
-// hsl path
-//	vec3 texturecolorhsl = rgb2hsl(texturecolor);
-//	vec3 texturecolorfullv = hsl2rgb(vec3(texturecolorhsl.rg, 0.5));
-
-	vec3 envyuv = rgb2yuv(envcolor);
-	texturecolor = mix(texturecolor, texturecolorfullv, envyuv.r * reflectivity);
-
-	if(lights_count == 0U) 
-		return (fragcolor + emissioncolor + envcolor * reflectivity) * texturecolor;
-
-	vec2 sunlight = calc_dir_light(lights[0], fragnormal);
-
-	// Sharpen N.L for stronger contrast between lit and shaded cab
-	// surfaces (uses SUN_NDOTL_SHARPNESS from light_common.glsl).
-	float sun_NdotL = pow(sunlight.x, SUN_NDOTL_SHARPNESS);
-	float diffuseamount = sun_NdotL * lights[0].intensity;
-	// the clouds hold back the sun where their shadow falls, as the shadow map does
-	float cloudsun = cloud_shadow(mat3(inv_view) * f_pos.xyz);
-	fragcolor += envcolor * reflectivity;
-	float specularamount = (sunlight.y * param[1].y * specularity) * lights[0].intensity * cloudsun;
-	glossiness = abs(param[1].w);
-
-	fragcolor = add_headlights(fragcolor, fragnormal);
-
-	if (shadowtone < 1.0)
-	{
-		float shadow = max(calc_shadow(), 1.0 - cloudsun);
-		specularamount *= clamp(1.0 - shadow, 0.0, 1.0);
-		fragcolor = mix(fragcolor,  fragcolor * shadowtone,  clamp(diffuseamount * shadow + specularamount, 0.0, 1.0));
-	}
-	fragcolor += emissioncolor;
-	fragcolor *= texturecolor;
-	
-	return fragcolor;
-}
-
 void main()
 {
 	vec4 tex_color = texture(diffuse, f_coord);
@@ -100,6 +48,7 @@ void main()
 	vec3 fragnormal = normalize(f_tbn * normalize(normal.xyz));
 	float reflectivity = param[1].z * texture(normalmap, f_coord).a;
 	float specularity = (tex_color.r + tex_color.g + tex_color.b) * 0.5;
+	legacy_gloss();
 	
 	fragcolor = apply_lights_sunless(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
 	vec4 color = vec4(apply_fog(fragcolor), tex_color.a * alpha_mult);

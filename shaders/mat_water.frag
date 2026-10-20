@@ -58,7 +58,8 @@ void main()
 	normal.z = sqrt(1.0 - clamp((dot(normal.xy, normal.xy)), 0.0, 1.0));
 	vec3 fragnormal = normalize(f_tbn * normalize(normal.xyz));
 	float reflectivity = param[1].z * texture(normalmap, texture_coords ).a;
-	float specularity = 1.0;
+	// water reflects 2% at normal incidence
+	float specularity = 0.25;
 	glossiness = abs(param[1].w);
 	
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
@@ -70,10 +71,10 @@ void main()
 
 	// fresnel effect
 	vec3 view_dir = normalize(vec3(0.0f, 0.0f, 0.0f) - f_pos.xyz);
-	float fresnel = pow ( dot (f_normal, view_dir), 0.2 );
+	float fresnel = pow(max(dot(normalize(f_normal), view_dir), 0.0), 0.2);
 	float fresnel_inv = ((fresnel - 1.0 ) * -1.0 );
 	
-	vec4 color = vec4(apply_fog(clamp(fragcolor, 0.0, 1.0)), clamp((fresnel_inv + param[0].a), 0.0, 1.0));
+	vec4 color = vec4(apply_fog(fragcolor), clamp((fresnel_inv + param[0].a), 0.0, 1.0));
 #if POSTFX_ENABLED
     out_color = color;
 #else

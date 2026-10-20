@@ -62,9 +62,10 @@ void main()
 	normal.z = sqrt(1.0 - clamp((dot(normal.xy, normal.xy)), 0.0, 1.0));
 	vec3 fragnormal = normalize(f_tbn * normalize(normal.xyz));
 	float reflectivity = param[1].z * texture(normalmap, texture_coords ).a;
-	float specularity = texture(specgloss, f_coord).r;
-	glossiness = texture(specgloss, f_coord).g * abs(param[1].w);
-	float metalic = texture(specgloss, f_coord).b;
+	vec4 specgloss_map = texture(specgloss, texture_coords);
+	float specularity = specgloss_map.r;
+	glossiness = specgloss_map.g * abs(param[1].w);
+	metalic = specgloss_map.b;
 	
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
 
@@ -75,10 +76,10 @@ void main()
 
 	// fresnel effect
 	vec3 view_dir = normalize(vec3(0.0f, 0.0f, 0.0f) - f_pos.xyz);
-	float fresnel = pow ( dot (f_normal, view_dir), 0.2 );
+	float fresnel = pow(max(dot(normalize(f_normal), view_dir), 0.0), 0.2);
 	float fresnel_inv = ((fresnel - 1.0 ) * -1.0 );
 	
-	vec4 color = vec4(apply_fog(clamp(fragcolor, 0.0, 1.0)), clamp((fresnel_inv + param[0].a), 0.0, 1.0));
+	vec4 color = vec4(apply_fog(fragcolor), clamp((fresnel_inv + param[0].a), 0.0, 1.0));
 #if POSTFX_ENABLED
     out_color = color;
 #else

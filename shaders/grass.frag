@@ -20,7 +20,7 @@ layout(location = 1) out vec4 out_motion;
 void main()
 {
 	vec3 fragnormal = normalize(f_normal);
-	glossiness = 6.0;
+	glossiness = phong_glossiness(6.0);
 	metalic = 0.0;
 	vec3 fragcolor = apply_lights(ambient, fragnormal, f_albedo, 0.0, 0.2, shadow_tone);
 

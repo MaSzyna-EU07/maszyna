@@ -38,9 +38,11 @@ void main()
 	gl_Position = f_clip_pos;
 	gl_PointSize = param[1].x;
 
-	vec3 T = normalize(mvn * v_tangent.xyz);
 	vec3 N = f_normal;
-	vec3 B = normalize(cross(N, T));
+	vec3 T = mvn * v_tangent.xyz;
+	T = normalize(T - N * dot(N, T));
+	// w is -1 where the texture is mirrored (calculate_tangents()), the bitangent turns with it
+	vec3 B = cross(N, T) * (v_tangent.w < 0.0 ? -1.0 : 1.0);
 	f_tbn = mat3(T, B, N);
 
 	mat3 TBN = transpose(f_tbn);
