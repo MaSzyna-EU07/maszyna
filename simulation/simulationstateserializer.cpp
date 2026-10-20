@@ -2006,14 +2006,14 @@ void state_serializer::create_trainset(const std::string &src) {
 	while (!token.empty()) {
 		if (token == "node")
 			deserialize_node(parser, scratch);
-		else if (token == "endtrainset")
+		else if (token == "endtrainset") {
 			deserialize_endtrainset(parser, scratch);
+            break;
+        }
 		else {
-			deserialize_endtrainset(parser, scratch);
 			ErrorLog( std::format(R"(Bad scenario: encountered invalid token "{}" in file "{}" (line {}))", token, parser.Name(), std::to_string(parser.Line())));
 			break;
 		}
-
 		token = parser.getToken<std::string>();
 	}
 }
