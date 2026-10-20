@@ -852,6 +852,9 @@ class opengl46_renderer : public gfx_renderer {
 	// contact shadows: set up for the colour pass under way, and whether the last main view had them
 	bool m_contactshadows { false };
 	bool m_contactshadowslast { false };
+	// a vehicle drawn in the colour pass of the last frame moved, and one drawn in this frame did (motion blur, Render_pass())
+	bool m_vehiclesmoved { true };
+	bool m_vehiclesmoving { false };
 	gl::gpu_timer m_contactshadowstimer; // resolve of the depth
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages

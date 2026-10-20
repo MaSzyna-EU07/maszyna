@@ -743,6 +743,9 @@ bool opengl46_renderer::Render()
 		m_scenecommandstream->next_frame();
 
 	m_renderpass.draw_mode = rendermode::none; // force setup anew
+	// the vehicles which moved in the last frame (motion blur)
+	m_vehiclesmoved = m_vehiclesmoving;
+	m_vehiclesmoving = false;
 	m_renderpass.draw_stats = debug_stats();
     m_geometry.primitives_count() = 0;
 
@@ -1285,11 +1288,20 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         if (vp.main && !vp.custom_backbuffer) // TODO: update window sizes also for extra viewports
             target_size = Global.fb_size;
 
+		// the motion blur only when something in the view moves: the vehicle of the camera, or a vehicle drawn in the last frame.
+		// with nothing moving the velocity is zero everywhere, the blur takes a single sample of each pixel and gives back the
+		// image it was given, so the velocity target, its resolve and the blur are left out and the picture stays the same.
+		// a vehicle setting off is blurred from its second frame, when its velocity is still far below a pixel
+		auto const motionblur{
+		    Global.gfx_postfx_motionblur_enabled
+		    && (m_vehiclesmoved
+		        || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
+
 		if (!Global.gfx_skippipeline)
 		{
 			vp.msaa_fb->bind();
 
-			if (Global.gfx_postfx_motionblur_enabled)
+			if (motionblur)
 				vp.msaa_fb->setup_drawing(2);
 			else
 				vp.msaa_fb->setup_drawing(1);
@@ -1511,7 +1523,7 @@ if (!Global.gfx_skippipeline)
 			gpupart("resolve, ambient occlusion, motion blur");
 			// the targets of the ambient occlusion are there only when it was on at the start
 			auto const aomode{(vp.ssao_tex != nullptr) ? Global.gfx_postfx_ao : 0};
-			if (Global.gfx_postfx_motionblur_enabled)
+			if (motionblur)
 			{
 				vp.main_fb->clear(GL_COLOR_BUFFER_BIT);
                 vp.main_fb->setup_drawing(2);
@@ -1543,7 +1555,7 @@ if (!Global.gfx_skippipeline)
 			// (gfx.shadow.sdsm). the main framebuffer holds it resolved for the motion blur or the ambient occlusion
 			if (vp.main && Global.gfx_shadow_sdsm && (Shadow_Fit_Unavailable(vp) == nullptr))
 			{
-				auto const resolved{(vp.main_texd != nullptr) && (Global.gfx_postfx_motionblur_enabled || (aomode != 0))};
+				auto const resolved{(vp.main_texd != nullptr) && (motionblur || (aomode != 0))};
 				opengl46_shadow_fit::view const view{
 				    m_colorpass.pass_camera.position(),
 				    m_colorpass.pass_camera.projection(),
@@ -3768,6 +3780,15 @@ void opengl46_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it,
 void opengl46_renderer::Render(scene::shape_node const &Shape, bool const Ignorerange)
 {
 	auto const &data{Shape.data()};
+
+	// a shape lying wholly outside the view of the pass draws nothing. the section and the cell holding it were tested as a
+	// whole, while a section holds the chunks of the heightmap terrain (250 m each, 16 of them) and the large shapes of the
+	// scenery, drawn in every pass the section is seen in: in a cascade of the sun shadows or a face of the environment map
+	// most of them are out of view. a shape merged from others has its radius invalidated (-1) and keeps being drawn
+	if ((data.area.radius > 0.f) && (false == m_renderpass.pass_camera.visible(data.area)))
+	{
+		return;
+	}
 
 	if (false == Ignorerange)
 	{
@@ -6033,6 +6054,9 @@ bool opengl46_renderer::Render(TDynamicObject *Dynamic)
 
 	glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
 	model_ubs.future *= glm::translate(mv, glm::vec3(Dynamic->get_future_movement())) * glm::inverse(mv);
+	// the velocity it leaves in the colour pass keeps the motion blur on (Render_pass())
+	if ((m_renderpass.draw_mode == rendermode::color) && (Dynamic->get_future_movement() != glm::dvec3{0.0}))
+		m_vehiclesmoving = true;
 
 	::glPushMatrix();
 	::glTranslated(originoffset.x, originoffset.y, originoffset.z);
@@ -7259,6 +7283,9 @@ bool opengl46_renderer::Render_Alpha(TDynamicObject *Dynamic)
 
 	glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
 	model_ubs.future *= glm::translate(mv, glm::vec3(Dynamic->get_future_movement())) * glm::inverse(mv);
+	// the velocity it leaves in the colour pass keeps the motion blur on (Render_pass())
+	if ((m_renderpass.draw_mode == rendermode::color) && (Dynamic->get_future_movement() != glm::dvec3{0.0}))
+		m_vehiclesmoving = true;
 
 	::glPushMatrix();
 
