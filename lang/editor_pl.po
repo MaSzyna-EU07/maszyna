@@ -10090,3 +10090,12 @@ msgid_plural "Stopped: %zu chunks made stay"
 msgstr[0] "Przerwane: zrobiony %zu kafel zostaje"
 msgstr[1] "Przerwane: zrobione %zu kafle zostają"
 msgstr[2] "Przerwane: zrobionych %zu kafli zostaje"
+
+msgid "  (up to %.0f km/h)"
+msgstr "  (do %.0f km/h)"
+
+msgid "height %+.2f m   grade %+.1f per mille"
+msgstr "różnica wysokości %+.2f m   pochylenie %+.1f‰"
+
+msgid "height %+.2f m   grade %+.1f to %+.1f per mille"
+msgstr "różnica wysokości %+.2f m   pochylenie od %+.1f do %+.1f‰"

@@ -19,6 +19,9 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Track.h"
 
 #include "imgui/imgui.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -58,6 +61,41 @@ inline double piece_plan_radius(segment_data const &Path)
 	if (turn < 1e-4)
 		return 0.0;
 	return curve.plan_length() / turn;
+}
+
+// the speed an arc of the radius lets the trains through at, within the cant and the unbalanced acceleration of the limits
+inline std::string speed_of(double const Radius, alignment::limits const &Limits)
+{
+	auto const speed{std::floor(alignment::speed_limit(Radius, Limits) / 5.0) * 5.0};
+	return speed > 0.0 ? format(STR_C("  (up to %.0f km/h)"), speed) : std::string{};
+}
+
+// the rise of the track from its start to its end, and the grades along it
+inline std::string vertical_of(std::vector<segment_data> const &Pieces)
+{
+	double low{std::numeric_limits<double>::max()};
+	double high{std::numeric_limits<double>::lowest()};
+	for (auto const &piece : Pieces)
+	{
+		bezier const curve{piece};
+		auto previous{curve.point(0.0)};
+		for (int k = 1; k <= 8; ++k)
+		{
+			auto const next{curve.point(k / 8.0)};
+			if (auto const run{plan_distance(previous, next)}; run > 1e-3)
+			{
+				low = std::min(low, (next.y - previous.y) / run * 1000.0);
+				high = std::max(high, (next.y - previous.y) / run * 1000.0);
+			}
+			previous = next;
+		}
+	}
+	if (low > high)
+		return {};
+	auto const rise{bezier{Pieces.back()}.point(1.0).y - bezier{Pieces.front()}.point(0.0).y};
+	if (high - low < 0.1)
+		return format(STR_C("height %+.2f m   grade %+.1f per mille"), rise, (low + high) * 0.5);
+	return format(STR_C("height %+.2f m   grade %+.1f to %+.1f per mille"), rise, low, high);
 }
 
 inline std::string lines_of(std::vector<std::string> const &Texts)

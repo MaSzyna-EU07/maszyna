@@ -1771,7 +1771,9 @@ std::string editor_mode::track_readout() const
 			return link_summary(target, link, editor_track::branch_radius(m_extend.track->m_paths[1]));
 		if (snapped && pieces.empty())
 			return format(STR_C("no track fits to the end of %s"), name(target.track).c_str());
-		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) : format("L %.2f m   %s", length, STR_C("straight"))};
+		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) + speed_of(radius, laying_norms()) : format("L %.2f m   %s", length, STR_C("straight"))};
+		if (auto const vertical{vertical_of(pieces)}; false == vertical.empty())
+			text += "\n" + vertical;
 		if (snapped)
 			text += "\n" + format(STR_C("joins %s"), name(target.track).c_str());
 		if (false == reason.empty())
@@ -1797,9 +1799,11 @@ std::string editor_mode::track_readout() const
 					radius = r;
 			}
 			if (radius > 0.0)
-				text = straight ? format("L %.1f m   %s + R %.0f m", lay.preview_length, STR_C("straight"), radius) : format("L %.1f m   R %.0f m", lay.preview_length, radius);
+				text = (straight ? format("L %.1f m   %s + R %.0f m", lay.preview_length, STR_C("straight"), radius) : format("L %.1f m   R %.0f m", lay.preview_length, radius)) + speed_of(radius, laying_norms());
 			else
 				text = format("L %.1f m   %s", lay.preview_length, STR_C("straight"));
+			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
+				text += "\n" + vertical;
 		}
 		if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
 			text += "\n" + format(STR_C("joins %s"), name(lay.mouse_snap.track).c_str());

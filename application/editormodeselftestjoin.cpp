@@ -201,6 +201,15 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
 			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
 			WriteLog(format("SELFTEST layclicks ground %.3f, track %.3f", point.y, m_lay.mouse.y));
+			if (false == m_lay.points.empty())
+			{
+				auto points{m_lay.points};
+				points.push_back(m_lay.mouse_snap.track != nullptr ? m_lay.mouse_snap.position : m_lay.mouse);
+				m_lay.preview = lay_pieces(points, m_lay.mouse_snap, m_lay.preview_length, m_lay.preview_error);
+				auto readout{track_readout()};
+				std::replace(readout.begin(), readout.end(), '\n', '|');
+				WriteLog("SELFTEST layclicks readout: " + readout);
+			}
 			lay_click();
 			WriteLog(format("SELFTEST layclicks %.1f %.1f: %s", point.x, point.z, m_lay.status.c_str()));
 		}
