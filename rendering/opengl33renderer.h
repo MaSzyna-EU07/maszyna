@@ -67,6 +67,7 @@ class opengl33_renderer : public gfx_renderer {
 	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) override;
     // adds supplied vertex data at the end of specified chunk
 	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
+	void Erase( gfx::geometry_handle const &Geometry ) override;
     // provides direct access to index data of specfied chunk
     gfx::index_array const &
         Indices( gfx::geometry_handle const &Geometry ) const override;

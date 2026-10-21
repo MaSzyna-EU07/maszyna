@@ -1471,12 +1471,27 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
     track_rails::forget();
+    auto const erase = [ this ]( gfx::geometry_handle const &Chunk ) {
+        if( SwitchExtension
+         && std::any_of( SwitchExtension->m_nosechunks.begin(), SwitchExtension->m_nosechunks.end(), [ & ]( auto const &Pooled ) { return Pooled.handle == Chunk; } ) ) {
+            return;
+        }
+        GfxRenderer->Erase( Chunk );
+    };
+    for( auto const *geometry : { &Geometry1, &Geometry2, &GeometryCut1, &GeometryCut2 } ) {
+        std::for_each( geometry->begin(), geometry->end(), erase );
+    }
+    for( auto const &tread : GeometryTreads ) {
+        std::for_each( tread.geometry.begin(), tread.geometry.end(), erase );
+        std::for_each( tread.cuts.begin(), tread.cuts.end(), erase );
+    }
     Geometry1.clear();
     Geometry2.clear();
     GeometryCut1.clear();
     GeometryCut2.clear();
     GeometryTreads.clear();
     if( SwitchExtension ) {
+        erase( SwitchExtension->Geometry3 );
         SwitchExtension->Geometry3 = gfx::geometry_handle{};
     }
     m_sleeper_local_transforms.clear();

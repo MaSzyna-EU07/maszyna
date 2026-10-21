@@ -292,6 +292,7 @@ void move_traction(TTraction *Traction, std::array<glm::dvec3, 4> const &Points)
 	Traction->location(glm::mix(Points[1], Points[0], 0.5));
 	Traction->m_area.radius = -1.f;
 	simulation::Region->insert_and_register(Traction);
+	GfxRenderer->Erase(Traction->m_geometry);
 	Traction->m_geometry = gfx::geometry_handle{};
 	auto &section{simulation::Region->section(Traction->location())};
 	if (section.m_geometrycreated)

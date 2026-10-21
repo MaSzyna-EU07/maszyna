@@ -318,6 +318,20 @@ geometry_bank::append( gfx::vertex_array &Vertices, userdata_array &Userdata, gf
     return replace( Vertices, Userdata, Geometry, gfx::geometry_bank::chunk( Geometry ).vertices.size() );
 }
 
+void
+geometry_bank::erase( gfx::geometry_handle const &Geometry ) {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return; }
+
+    auto &chunk = gfx::geometry_bank::chunk( Geometry );
+    if( chunk.vertices.empty() && chunk.indices.empty() ) { return; }
+
+    gfx::vertex_array().swap( chunk.vertices );
+    gfx::index_array().swap( chunk.indices );
+    gfx::userdata_array().swap( chunk.userdata );
+    replace_( Geometry );
+}
+
 // draws geometry stored in specified chunk
 std::size_t
 geometry_bank::draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) {
@@ -424,6 +438,14 @@ bool
 geometrybank_manager::append( gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
 
     return bank( Geometry ).first->append( Vertices, Userdata, Geometry );
+}
+
+void
+geometrybank_manager::erase( gfx::geometry_handle const &Geometry ) {
+
+    if( ( Geometry.bank == 0 ) || ( Geometry.bank > m_geometrybanks.size() ) ) { return; }
+
+    bank( Geometry ).first->erase( Geometry );
 }
 // draws geometry stored in specified chunk
 void

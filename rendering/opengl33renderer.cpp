@@ -2217,6 +2217,11 @@ bool opengl33_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array 
 	return m_geometry.append(Vertices, Userdata, Geometry);
 }
 
+void opengl33_renderer::Erase(gfx::geometry_handle const &Geometry)
+{
+	m_geometry.erase(Geometry);
+}
+
 // provides direct access to index data of specfied chunk
 gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const 
 {

@@ -59,6 +59,7 @@ public:
     virtual auto Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) -> bool = 0;
     // adds supplied vertex data at the end of specified chunk
     virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
+    virtual void Erase( gfx::geometry_handle const &Geometry ) {}
     // provides direct access to index data of specfied chunk
     virtual auto Indices( gfx::geometry_handle const &Geometry ) const->gfx::index_array const & = 0;
 	// provides direct access to vertex data of specfied chunk
