@@ -11,7 +11,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/editortool.h"
 
+#include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -37,6 +39,8 @@ class joints_tool final : public editor_tool
 	void render_options() override;
 	editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) override;
 	void set_open(bool const Open) { m_joints.open = Open; }
+	// the tracks just changed, checked at their joints once the change is over
+	void tracks_committed(std::vector<TTrack *> const &Tracks);
 	double kink_angle() const { return m_joints.angle; }
 
   private:
@@ -75,8 +79,19 @@ class joints_tool final : public editor_tool
 		std::string status;
 	};
 	joints_state m_joints;
+	using end_key = std::tuple<TTrack const *, int, int>;
+	// pairs of the ends already looked at in the check under way
+	std::set<std::pair<end_key, end_key>> m_reported;
+	// the joints of the tracks changed last, marked while the panel is closed
+	struct live_state
+	{
+		std::set<TTrack *> pending;
+		std::vector<joint_issue> issues;
+	};
+	live_state m_live;
+	void live_update();
 	void joints_start();
-	void joints_check(TTrack &Track);
+	void joints_check(TTrack &Track, std::vector<joint_issue> &Issues, std::set<std::pair<end_key, end_key>> &Seen, bool const Open) const;
 	// the paths lying off the terrain model by more than the threshold. returns: false while the model under them is coming
 	bool joints_model();
 	void joints_focus(int const Index);

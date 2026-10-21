@@ -85,15 +85,10 @@ double plan_angle(glm::dvec3 const &A, glm::dvec3 const &B)
 	return glm::degrees(std::acos(std::clamp(glm::dot(glm::normalize(a), glm::normalize(b)), -1.0, 1.0)));
 }
 
-using end_key = std::tuple<TTrack const *, int, int>;
-
-end_key key_of(TTrack const *Track, editor_track::point_ref const &Point)
+std::tuple<TTrack const *, int, int> key_of(TTrack const *Track, editor_track::point_ref const &Point)
 {
 	return {Track, Point.path, static_cast<int>(Point.kind)};
 }
-
-// pairs of the ends already looked at in the check under way
-std::set<std::pair<end_key, end_key>> reported;
 
 char const *kind_name(kind const Kind)
 {
@@ -152,7 +147,7 @@ void joints_tool::joints_start()
 	state.issues.clear();
 	state.selected = -1;
 	state.status.clear();
-	reported.clear();
+	m_reported.clear();
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	for (auto *track : simulation::Paths.sequence())
 	{
@@ -273,10 +268,10 @@ bool joints_tool::joints_model()
 	return true;
 }
 
-void joints_tool::joints_check(TTrack &Track)
+void joints_tool::joints_check(TTrack &Track, std::vector<joint_issue> &Issues, std::set<std::pair<end_key, end_key>> &Seen, bool const Open) const
 {
-	auto &state{m_joints};
-	auto const once = [&](end_key const &A, end_key const &B) { return reported.insert(A < B ? std::make_pair(A, B) : std::make_pair(B, A)).second; };
+	auto const &state{m_joints};
+	auto const once = [&](end_key const &A, end_key const &B) { return Seen.insert(A < B ? std::make_pair(A, B) : std::make_pair(B, A)).second; };
 	for (int i = 0; i < static_cast<int>(Track.m_paths.size()); ++i)
 	{
 		for (auto const kind_of_end : {editor_track::point_kind::start, editor_track::point_kind::end})
@@ -314,17 +309,17 @@ void joints_tool::joints_check(TTrack &Track)
 					{
 						nearest.type = kind::gap;
 						nearest.position = position;
-						state.issues.push_back(nearest);
+						Issues.push_back(nearest);
 					}
 				}
-				else if (state.free_ends)
+				else if (Open)
 				{
 					joint_issue open;
 					open.type = kind::open;
 					open.track = &Track;
 					open.point = point;
 					open.position = position;
-					state.issues.push_back(open);
+					Issues.push_back(open);
 				}
 				continue;
 			}
@@ -349,7 +344,7 @@ void joints_tool::joints_check(TTrack &Track)
 				auto const add = [&](kind const Kind, double const Value) {
 					issue.type = Kind;
 					issue.value = Value;
-					state.issues.push_back(issue);
+					Issues.push_back(issue);
 				};
 				if (step > state.step)
 					add(kind::step, step);
@@ -364,9 +359,44 @@ void joints_tool::joints_check(TTrack &Track)
 	}
 }
 
+void joints_tool::tracks_committed(std::vector<TTrack *> const &Tracks)
+{
+	for (auto *track : Tracks)
+		if (track != nullptr)
+			m_live.pending.insert(track);
+}
+
+void joints_tool::live_update()
+{
+	auto &live{m_live};
+	auto const gone = [](TTrack const *Track) { return Track != nullptr && Track->m_editorremoved; };
+	std::erase_if(live.issues, [&](joint_issue const &Issue) { return gone(Issue.track) || gone(Issue.other); });
+	if (live.pending.empty() || ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right))
+		return;
+	// the joints of a track changed are looked at again, from its side and from the side of the tracks it joins
+	std::set<TTrack *> checked;
+	for (auto *track : live.pending)
+	{
+		if (track->m_editorremoved || false == rail(*track))
+			continue;
+		checked.insert(track);
+		for (auto const &path : track->m_paths)
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+				for (auto const &connection : editor_track::connected_points(*track, path.points[index]))
+					if (rail(*connection.first))
+						checked.insert(connection.first);
+	}
+	live.pending.clear();
+	std::erase_if(live.issues, [&](joint_issue const &Issue) { return checked.contains(Issue.track) || checked.contains(Issue.other); });
+	std::set<std::pair<end_key, end_key>> seen;
+	for (auto *track : checked)
+		joints_check(*track, live.issues, seen, false);
+}
+
 void joints_tool::update()
 {
 	auto &state{m_joints};
+	live_update();
 	if (state.next >= state.queue.size() && false == state.model_waiting)
 		return;
 	auto const deadline{std::chrono::steady_clock::now() + std::chrono::milliseconds(15)};
@@ -375,7 +405,7 @@ void joints_tool::update()
 		auto *track{state.queue[state.next++]};
 		if (track->m_editorremoved)
 			continue;
-		joints_check(*track);
+		joints_check(*track, state.issues, m_reported, state.free_ends);
 	}
 	if (state.next < state.queue.size())
 		return;
@@ -649,11 +679,26 @@ void joints_tool::render_options()
 void joints_tool::draw_overlay() const
 {
 	auto const &state{m_joints};
-	if (false == state.open || state.issues.empty())
-		return;
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	glm::dvec3 const camera{Global.pCamera.Pos};
+	if (false == state.open)
+	{
+		for (auto const &issue : m_live.issues)
+		{
+			ImVec2 screen;
+			if ((false == Global.EditorOrtho && glm::distance(issue.position, camera) > kOverlayRange) || false == projection.project(issue.position, screen))
+				continue;
+			auto const colour{kind_colour(issue.type)};
+			drawlist->AddCircle(screen, 9.0f, colour, 16, 2.0f);
+			auto const text{std::string{STR_C(kind_name(issue.type))} + " " + value_text(issue)};
+			drawlist->AddRectFilled(ImVec2(screen.x + 11.0f, screen.y - 9.0f), ImVec2(screen.x + 17.0f + ImGui::CalcTextSize(text.c_str()).x, screen.y + 9.0f), IM_COL32(0, 0, 0, 150), 3.0f);
+			drawlist->AddText(ImVec2(screen.x + 14.0f, screen.y - 7.0f), colour, text.c_str());
+		}
+		return;
+	}
+	if (state.issues.empty())
+		return;
 	for (int i = 0; i < static_cast<int>(state.issues.size()); ++i)
 	{
 		auto const &issue{state.issues[i]};
@@ -694,6 +739,15 @@ editor_selftest_result joints_tool::selftest(std::string const &Command, std::is
 			if (issue.type == joint_issue::kind::model && count++ < 40)
 				WriteLog(format("SELFTEST jointsmodel: %+.2f m at %.1f %.1f, %s path %d", issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-", issue.point.path));
 		WriteLog("SELFTEST jointsmodel: " + m_joints.status);
+		return editor_selftest_result::handled;
+	}
+	if (Command == "jointslive")
+	{
+		live_update();
+		std::string text;
+		for (auto const &issue : m_live.issues)
+			text += format(" [%s %s at %.1f %.1f]", kind_name(issue.type), value_text(issue).c_str(), issue.position.x, issue.position.z);
+		WriteLog(format("SELFTEST jointslive: %zu pending, %zu marked", m_live.pending.size(), m_live.issues.size()) + text);
 		return editor_selftest_result::handled;
 	}
 	if (Command == "joints")
