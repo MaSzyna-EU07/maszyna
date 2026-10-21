@@ -152,7 +152,8 @@ public:
     // itself where it can't be blended
     material_handle
         create_blend( material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain );
-    // whether the material can be blended so: one diffuse texture, lit as mat_default, not changing with the weather and seasons
+    // whether the material can be blended so: a diffuse texture lit as mat_default, or with a normal map lit as normalmap,
+    // sunlessnormalmap or shadowlessnormalmap; not changing with the weather and seasons, not tinted
     bool
         blendable( material_handle const Material );
     opengl_material const &
@@ -174,6 +175,10 @@ private:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.
     material_handle
         find_in_databank( std::string const &Materialname ) const;
+    // how the material is lit, of the materials a track blends: 0 as mat_default, 1 normalmap, 2 sunlessnormalmap,
+    // 3 shadowlessnormalmap; -1 where it can't be blended
+    int
+        blend_lighting( material_handle const Material );
     public:
     // checks whether specified file exists. returns name of the located file, or empty string.
     static std::pair<std::string, std::string>
@@ -186,7 +191,7 @@ private:
     std::unordered_map<material_handle, material_handle> m_mattes;
     std::map<std::tuple<material_handle, float, float, float>, material_handle> m_tints;
     std::map<std::tuple<material_handle, material_handle, material_handle, material_handle, bool>, material_handle> m_blends;
-    std::unordered_map<material_handle, bool> m_blendables;
+    std::unordered_map<material_handle, int> m_blendables;
 };
 
 //---------------------------------------------------------------------------

@@ -1,9 +1,14 @@
 // a track drawn with the textures of the tracks joined at its ends blended in near them (world/TrackBlend.h): the weights of the
 // tracks joined at the ends p1, p2 and p4 of a switch in UserData.yzw, their textures in diffuse1..3, lit as mat_default.
-// TRACKBLEND_GRAIN: the others come in as grains, as the stones of two ballasts would mix, rather than faded in
+// TRACKBLEND_GRAIN: the others come in as grains, as the stones of two ballasts would mix, rather than faded in.
+// TRACKBLEND_NORMALMAP: with the normal maps of the four in normalmap..normalmap3 (declared by the including shader), lit as
+// the shader of the material of the track: param[2].x 1 normalmap, 2 sunlessnormalmap, 3 shadowlessnormalmap
 in vec3 f_normal;
 in vec2 f_coord;
 in vec4 f_pos;
+#if TRACKBLEND_NORMALMAP
+in mat3 f_tbn;
+#endif
 
 in vec4 f_clip_pos;
 in vec4 f_clip_future_pos;
@@ -15,6 +20,7 @@ in vec4 f_clip_future_pos;
 #param (specular, 1, 1, 1, specular)
 #param (reflection, 1, 2, 1, zero)
 #param (glossiness, 1, 3, 1, glossiness)
+#param (blendlighting, 2, 0, 1, zero)
 
 #texture (diffuse, 0, sRGB_A)
 uniform sampler2D diffuse;
@@ -96,6 +102,9 @@ void main()
 	float grained = 1.0 - smoothstep(0.35, 0.9, footprint);
 #endif
 	vec4 tex_color = textureGrad(diffuse, f_coord, dx, dy);
+#if TRACKBLEND_NORMALMAP
+	vec4 tex_normal = textureGrad(normalmap, f_coord, dx, dy);
+#endif
 	if (total > 0.0)
 	{
 #if TRACKBLEND_GRAIN
@@ -108,13 +117,34 @@ void main()
 		total = weights.x + weights.y + weights.z;
 #endif
 		vec4 blended = tex_color * (1.0 - total);
+#if TRACKBLEND_NORMALMAP
+		vec4 blendednormal = tex_normal * (1.0 - total);
+#endif
 		if (weights.x > 0.0)
+		{
 			blended += textureGrad(diffuse1, f_coord, dx, dy) * weights.x;
+#if TRACKBLEND_NORMALMAP
+			blendednormal += textureGrad(normalmap1, f_coord, dx, dy) * weights.x;
+#endif
+		}
 		if (weights.y > 0.0)
+		{
 			blended += textureGrad(diffuse2, f_coord, dx, dy) * weights.y;
+#if TRACKBLEND_NORMALMAP
+			blendednormal += textureGrad(normalmap2, f_coord, dx, dy) * weights.y;
+#endif
+		}
 		if (weights.z > 0.0)
+		{
 			blended += textureGrad(diffuse3, f_coord, dx, dy) * weights.z;
+#if TRACKBLEND_NORMALMAP
+			blendednormal += textureGrad(normalmap3, f_coord, dx, dy) * weights.z;
+#endif
+		}
 		tex_color = blended;
+#if TRACKBLEND_NORMALMAP
+		tex_normal = blendednormal;
+#endif
 	}
 
 	bool alphatestfail = ( opacity >= 0.0 ? (tex_color.a < opacity) : (tex_color.a >= -opacity) );
@@ -122,10 +152,25 @@ void main()
 		discard;
 
 	vec3 fragcolor = ambient;
+#if TRACKBLEND_NORMALMAP
+	vec3 normal;
+	normal.xy = (tex_normal.rg * 2.0 - 1.0);
+	normal.z = sqrt(1.0 - clamp((dot(normal.xy, normal.xy)), 0.0, 1.0));
+	vec3 fragnormal = normalize(f_tbn * normalize(normal.xyz));
+	float reflectivity = param[1].z * tex_normal.a;
+	float specularity = (tex_color.r + tex_color.g + tex_color.b) * 0.5;
+	legacy_gloss();
+	int lighting = int(param[2].x + 0.5);
+	if (lighting == 2)
+		fragcolor = apply_lights_sunless(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
+	else
+		fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, (lighting == 3 ? 1.0 : shadow_tone));
+#else
 	vec3 fragnormal = normalize(f_normal);
 	matte = true;
 
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, 0.0, 0.0, shadow_tone);
+#endif
 	vec4 color = vec4(apply_fog(fragcolor), tex_color.a * alpha_mult);
 #if POSTFX_ENABLED
     out_color = color;
