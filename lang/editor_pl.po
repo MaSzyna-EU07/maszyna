@@ -10243,3 +10243,21 @@ msgstr "Krzywe przejściowe skrócone do %.0f%% długości wg norm, nie ma na wi
 
 msgid "The cant is lowered to %.0f mm, what the transition curves ramp"
 msgstr "Przechyłka obniżona do %.0f mm, tyle zdążą podnieść krzywe przejściowe"
+
+msgid "design speed %.0f km/h, that of the track %s"
+msgstr "prędkość projektowa %.0f km/h, jak tor %s"
+
+msgid "design speed %.0f km/h, set for the laying"
+msgstr "prędkość projektowa %.0f km/h, ustawiona do kładzenia"
+
+msgid ", Ctrl+Shift+wheel: speed"
+msgstr ", Ctrl+Shift+kółko: prędkość"
+
+msgid "This speed also on from a track with its own"
+msgstr "Ta prędkość także od toru z własną"
+
+msgid "Off: a track laid on from another one, or joined to it, takes the speed of that track.\nOn: the new tracks get the speed above"
+msgstr "Wyłączone: tor kładziony od innego toru albo dołączany do niego bierze prędkość tamtego toru.\nWłączone: nowe tory dostają prędkość z pola powyżej"
+
+msgid "Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel"
+msgstr "Wyłączone: tor kładziony od innego toru albo dołączany do niego jest projektowany na prędkość tamtego toru i ją dostaje.\nWłączone: jest projektowany na prędkość z pola powyżej i nowe tory ją dostają.\nW trakcie kładzenia: Ctrl+Shift+kółko"

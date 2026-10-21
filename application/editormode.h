@@ -1341,6 +1341,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double piece_length{100.0};
 		bool copy_selected{false};
 		editor_track::path_style style;
+		bool own_speed{false}; // the speed of the style also where the track goes on from one with its own, the new tracks given it
 		std::string status;
 		double status_time{-100.0};
 		std::string skew; // what Alt turned the straight to
@@ -1501,6 +1502,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::string track_shaping(bool const Joined) const;
 	void render_layout_combo();
 	double design_speed(TTrack const *From, TTrack const *To) const;
+	// the track whose speed the design takes, none where it's the one set for the laying
+	TTrack const *speed_track(TTrack const *From, TTrack const *To) const;
+	// the tracks the laying under way goes on from and to
+	std::pair<TTrack const *, TTrack const *> laying_ends() const;
+	std::string design_speed_of(TTrack const *From, TTrack const *To) const;
+	void give_own_speed(std::vector<TTrack *> const &Created) const;
 	std::vector<segment_data> join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
 	                                      std::string &Error) const;
 	double m_extend_length{25.0};

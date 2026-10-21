@@ -490,20 +490,50 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	return pieces;
 }
 
+TTrack const *editor_mode::speed_track(TTrack const *From, TTrack const *To) const
+{
+	if (m_lay.own_speed && m_lay.style.velocity > 0.0)
+		return nullptr;
+	TTrack const *result{nullptr};
+	for (auto const *track : {From, To})
+		if (track != nullptr && editor_track::velocity(*track) > 0.0 && (result == nullptr || editor_track::velocity(*track) < editor_track::velocity(*result)))
+			result = track;
+	return result;
+}
+
 double editor_mode::design_speed(TTrack const *From, TTrack const *To) const
 {
-	double speed{0.0};
-	for (auto const *track : {From, To})
+	if (auto const *track{speed_track(From, To)}; track != nullptr)
+		return editor_track::velocity(*track);
+	return m_lay.style.velocity > 0.0 ? m_lay.style.velocity : 100.0;
+}
+
+std::pair<TTrack const *, TTrack const *> editor_mode::laying_ends() const
+{
+	if (m_extend.active)
 	{
-		if (track == nullptr)
-			continue;
-		auto const velocity{editor_track::velocity(*track)};
-		if (velocity > 0.0)
-			speed = speed > 0.0 ? std::min(speed, velocity) : velocity;
+		editor_track::snap_target target;
+		return {m_extend.track, extend_snap(target) ? target.track : nullptr};
 	}
-	if (speed <= 0.0)
-		speed = m_lay.style.velocity > 0.0 ? m_lay.style.velocity : 100.0;
-	return speed;
+	if (m_lay.active && false == m_lay.points.empty())
+		return {m_lay.start.track, m_lay.points.size() == 1 ? m_lay.mouse_snap.track : nullptr};
+	return {nullptr, nullptr};
+}
+
+std::string editor_mode::design_speed_of(TTrack const *From, TTrack const *To) const
+{
+	auto const speed{design_speed(From, To)};
+	if (auto const *track{speed_track(From, To)}; track != nullptr)
+		return format(STR_C("design speed %.0f km/h, that of the track %s"), speed, name_of(*track).c_str());
+	return format(STR_C("design speed %.0f km/h, set for the laying"), speed);
+}
+
+void editor_mode::give_own_speed(std::vector<TTrack *> const &Created) const
+{
+	if (false == m_lay.own_speed || m_lay.style.velocity <= 0.0)
+		return;
+	for (auto *track : Created)
+		editor_track::velocity(*track, m_lay.style.velocity);
 }
 
 std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
@@ -601,6 +631,7 @@ void editor_mode::finish_extend()
 	std::vector<TTrack *> created;
 	for (auto const &piece : pieces)
 		created.push_back(editor_track::create_path(*style, piece));
+	give_own_speed(created);
 	editor_track::commit(created);
 	digitize_drawn(created);
 	push_track_snapshot({}, created);
@@ -817,6 +848,21 @@ bool editor_mode::track_wheel(double const Offset)
 		return radii[0];
 	};
 	first_step_done(io.KeyCtrl ? first_step::wheel : first_step::shape);
+	if (io.KeyCtrl && io.KeyShift)
+	{
+		static double const speeds[]{20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 120.0, 140.0, 160.0, 200.0, 250.0};
+		auto const [from, to]{laying_ends()};
+		auto const current{design_speed(from, to)};
+		int index{0};
+		for (int i = 0; i < static_cast<int>(std::size(speeds)); ++i)
+			if (speeds[i] <= current + 1e-6)
+				index = i;
+		if (step < 0 && speeds[index] < current - 1e-6)
+			++index;
+		m_lay.style.velocity = speeds[std::clamp(index + step, 0, static_cast<int>(std::size(speeds)) - 1)];
+		m_lay.own_speed = true;
+		return true;
+	}
 	if (io.KeyCtrl)
 	{
 		if (false == joined)
@@ -1073,6 +1119,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	std::vector<TTrack *> created;
 	for (auto const &piece : pieces)
 		created.push_back(style != nullptr ? editor_track::create_path(*style, piece) : editor_track::create_path(tool.style, piece));
+	give_own_speed(created);
 	editor_track::commit(created);
 	digitize_drawn(created);
 	push_track_snapshot({}, created);
@@ -1470,6 +1517,11 @@ void editor_mode::render_lay_ui()
 		value_chips("speeds", tool.style.velocity, {40.0, 60.0, 80.0, 100.0, 120.0, 160.0}, "%.0f");
 	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
 	ImGui::PopItemWidth();
+	ImGui::Checkbox(STR_C("This speed also on from a track with its own"), &tool.own_speed);
+	item_tooltip(m_norms_free ? "Off: a track laid on from another one, or joined to it, takes the speed of that track.\nOn: the new tracks get the speed above"
+	                          : "Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
+	if (auto const [from, to]{laying_ends()}; false == m_norms_free && (from != nullptr || to != nullptr))
+		ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
 	if (auto *track{selected_track()}; track != nullptr)
 	{
 		std::string reason;

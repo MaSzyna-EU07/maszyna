@@ -1795,6 +1795,8 @@ std::string editor_mode::track_readout() const
 		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) + speed_of(radius, laying_norms()) : format("L %.2f m   %s", length, STR_C("straight"))};
 		if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
 			text += "\n" + eased;
+		if (false == m_norms_free)
+			text += "\n" + design_speed_of(m_extend.track, snapped ? target.track : nullptr);
 		if (auto const vertical{vertical_of(pieces)}; false == vertical.empty())
 			text += "\n" + vertical;
 		if (snapped)
@@ -1829,6 +1831,11 @@ std::string editor_mode::track_readout() const
 				text = format("L %.1f m   %s", lay.preview_length, STR_C("straight"));
 			if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
 				text += "\n" + eased;
+			if (false == m_norms_free)
+			{
+				auto const [from, to]{laying_ends()};
+				text += "\n" + design_speed_of(from, to);
+			}
 			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
 				text += "\n" + vertical;
 		}
@@ -1943,7 +1950,7 @@ std::string editor_mode::track_shaping(bool const Joined) const
 		auto text{std::string{STR_C(names[static_cast<int>(m_track_layout)])}};
 		if (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc)
 			text += format("   R %.0f m", m_lay.radius);
-		return text + "\n" + STR("Ctrl+wheel: radius, Shift+wheel: arc / straight");
+		return text + "\n" + STR("Ctrl+wheel: radius, Shift+wheel: arc / straight") + (m_norms_free ? std::string{} : STR(", Ctrl+Shift+wheel: speed"));
 	}
 	auto const &join{m_join_last};
 	char const *const kinds[]{"", "straight", "arc", "curve", "reverse curve", "free curve"};
@@ -1958,7 +1965,7 @@ std::string editor_mode::track_shaping(bool const Joined) const
 		text += format("   V %.0f km/h", join.speed);
 	if (join.variants > 1)
 		text += format("   %d/%d", (m_join_variant % join.variants + join.variants) % join.variants + 1, join.variants);
-	return text + "\n" + STR("Ctrl+wheel: radius, Shift+wheel: another shape");
+	return text + "\n" + STR("Ctrl+wheel: radius, Shift+wheel: another shape") + (m_norms_free ? std::string{} : STR(", Ctrl+Shift+wheel: speed"));
 }
 
 void editor_mode::draw_empty_scenery_hint()

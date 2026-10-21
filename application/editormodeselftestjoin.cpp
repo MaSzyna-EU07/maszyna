@@ -130,6 +130,14 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		WriteLog(std::string{"SELFTEST norms: "} + (m_norms_free ? "free" : "plk"));
 		return selftest_result::handled;
 	}
+	if (command == "layspeed")
+	{
+		int own{0};
+		words >> m_lay.style.velocity >> own;
+		m_lay.own_speed = own != 0;
+		WriteLog(format("SELFTEST layspeed: %.0f km/h, own %d", m_lay.style.velocity, m_lay.own_speed ? 1 : 0));
+		return selftest_result::handled;
+	}
 	if (command == "tracktab")
 	{
 		std::string key;
