@@ -271,6 +271,8 @@ class pack_file
 	bool has(chunk_key const &Key) const;
 	// chunks the file holds
 	std::vector<chunk_key> chunks() const;
+	// the same, each with the cells along a side of the chunk, read from its header alone; 0 where the header can't be read
+	std::vector<std::pair<chunk_key, int>> chunk_cells() const;
 	// reads specified chunk. returns: the chunk, or null on failure
 	std::shared_ptr<chunk_data> read(chunk_key const &Key, std::string *Error = nullptr) const;
 	pack_key key() const { return m_key; }

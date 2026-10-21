@@ -10086,3 +10086,77 @@ msgstr "Zmienia się z porami roku"
 
 msgid "How much the colour and the height change through the year with the date of the scenario:\ndry and low in winter, greening up in spring, fresh in May, drying out from August.\n0: the same all year (e.g. a watered lawn), 1: fully"
 msgstr "Jak bardzo kolor i wysokość zmieniają się w ciągu roku z datą scenariusza:\nzimą sucha i niska, wiosną zielenieje, w maju świeża, od sierpnia wysycha.\n0: taka sama przez cały rok (np. podlewany trawnik), 1: w pełni"
+
+# scenery editor: the list of the terrain chunks
+
+msgid "List of the chunks..."
+msgstr "Lista kafli..."
+
+msgid "All the chunks of the terrain with the files they're kept in and their triangles;\na double click on a chunk takes the camera to it"
+msgstr "Wszystkie kafle terenu z plikami, w których są zapisane, i ich trójkątami;\ndwuklik na kaflu przenosi do niego kamerę"
+
+msgid "Terrain chunks"
+msgstr "Kafle terenu"
+
+msgid "The scenery has no heightmap terrain yet"
+msgstr "Sceneria nie ma jeszcze terenu z map wysokości"
+
+msgid "Chunks: %zu in %zu files, %.2f km2"
+msgstr "Kafle: %zu w plikach: %zu, %.2f km²"
+
+msgid "In memory: %zu, changed and not saved: %zu"
+msgstr "W pamięci: %zu, zmienione i niezapisane: %zu"
+
+msgid "Terrain triangles: %s"
+msgstr "Trójkąty terenu: %s"
+
+msgid "Of the full grids of all the chunks, as their point spacing makes them; the holes not taken off"
+msgstr "Pełnych siatek wszystkich kafli, jakie daje ich odstęp punktów; dziury nie są odejmowane"
+
+msgid "Drawn now: %s"
+msgstr "Rysowane teraz: %s"
+
+msgid "Triangles of the chunks drawn around the camera, with the grids made coarser with the distance"
+msgstr "Trójkąty kafli rysowanych wokół kamery, z siatkami rzadszymi wraz z odległością"
+
+msgid "Filter: file or x,z"
+msgstr "Filtr: plik lub x,z"
+
+msgid "Read the files again"
+msgstr "Wczytaj pliki ponownie"
+
+msgid "The files are read when the list opens and after the terrain is saved"
+msgstr "Pliki są czytane przy otwarciu listy i po zapisaniu terenu"
+
+msgid "Under the camera"
+msgstr "Pod kamerą"
+
+msgid "Shows the chunk the camera is over in the list"
+msgstr "Pokazuje na liście kafel, nad którym jest kamera"
+
+msgid "Double click: the camera goes to the chunk"
+msgstr "Dwuklik: kamera przenosi się do kafla"
+
+msgid "Chunk"
+msgstr "Kafel"
+
+msgid "Triangles"
+msgstr "Trójkąty"
+
+msgid "Drawn"
+msgstr "Rysowane"
+
+msgid "State"
+msgstr "Stan"
+
+msgid "in the file"
+msgstr "w pliku"
+
+msgid "loaded"
+msgstr "wczytany"
+
+msgid "changed, not saved"
+msgstr "zmieniony, niezapisany"
+
+msgid "new, not saved"
+msgstr "nowy, niezapisany"

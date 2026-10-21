@@ -1495,6 +1495,10 @@ bool editor_mode::update()
     render_orthophoto_window();
     render_switch_designer();
     render_environment_window();
+    if (m_terrain_open)
+        render_terrain_chunks_window();
+    else
+        m_chunklist.scanned = false; // the files are read again when the terrain is the field of work again
     draw_selection_overlay();
     render_context_menu();
 
@@ -1610,6 +1614,11 @@ void editor_mode::render_terrain_ui()
             add_chunks_around(m_terrain_add_count);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Makes the chunks missing around the camera, shaped as the ground under them"));
+        if (ImGui::Button(STR_C("List of the chunks...")))
+            m_chunklist.open = true;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("All the chunks of the terrain with the files they're kept in and their triangles;\n"
+                                    "a double click on a chunk takes the camera to it"));
         render_ground_conversion();
         if (dynamic_cast<TAnimModel *>(m_node) != nullptr)
         {
@@ -2121,6 +2130,9 @@ void editor_mode::draw_terrain_overlay()
     if (m_terrain_tool == terrain_tool::spacing)
         for (auto const &key : m_terrain_selection)
             chunk_outline(key, cursor.y, IM_COL32(90, 220, 255, 230), 3.0f);
+    // the chunk chosen in the list of the chunks
+    if (m_chunklist.open && m_chunklist.chosen)
+        chunk_outline(*m_chunklist.chosen, cursor.y, IM_COL32(255, 150, 40, 230), 3.0f);
     if ((m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing) && hovering)
     {
         auto const key = heightmap::chunk_at(cursor.x, cursor.z);

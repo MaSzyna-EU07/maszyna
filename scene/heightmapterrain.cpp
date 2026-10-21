@@ -156,6 +156,29 @@ std::uint32_t checksum(std::vector<std::uint8_t> const &Data)
 	return scene::terrain_file::checksum(reinterpret_cast<char const *>(Data.data()), Data.size());
 }
 
+// reads the data of a slice of a pack file, unpacked and checked
+template <typename Slice_> bool load_slice(std::ifstream &File, Slice_ const &Slice, std::vector<std::uint8_t> &Out)
+{
+	File.clear();
+	std::vector<std::uint8_t> stored(Slice.stored);
+	File.seekg(static_cast<std::streamoff>(Slice.offset));
+	File.read(reinterpret_cast<char *>(stored.data()), stored.size());
+	if (File.gcount() != static_cast<std::streamsize>(stored.size()))
+		return false;
+	if (Slice.codec == codec_stored)
+		Out = std::move(stored);
+	else if (Slice.codec == codec_zstd)
+	{
+		Out.resize(Slice.size);
+		auto const result{ZSTD_decompress(Out.data(), Out.size(), stored.data(), stored.size())};
+		if (ZSTD_isError(result) || result != Slice.size)
+			return false;
+	}
+	else
+		return false;
+	return Out.size() == Slice.size && checksum(Out) == Slice.crc;
+}
+
 int floor_div(int const Value, int const Divisor)
 {
 	return (Value >= 0 ? Value / Divisor : -((-Value + Divisor - 1) / Divisor));
@@ -980,6 +1003,36 @@ std::vector<chunk_key> pack_file::chunks() const
 	return result;
 }
 
+std::vector<std::pair<chunk_key, int>> pack_file::chunk_cells() const
+{
+	std::vector<std::pair<chunk_key, int>> result;
+	std::ifstream file{m_path, std::ios::binary};
+	for (int z = 0; z < pack_side; ++z)
+		for (int x = 0; x < pack_side; ++x)
+		{
+			auto const &slices{m_slices[static_cast<std::size_t>(z) * pack_side + x]};
+			if (slices.empty())
+				continue;
+			int cells{0};
+			for (auto const &slice : slices)
+			{
+				if (slice.tag != tag_chunk)
+					continue;
+				std::vector<std::uint8_t> data;
+				std::uint16_t count{0};
+				if (file.is_open() && load_slice(file, slice, data))
+				{
+					reader input{data.data(), data.size()};
+					if (input.get(count))
+						cells = count;
+				}
+				break;
+			}
+			result.emplace_back(chunk_key{m_key.first * pack_side + x, m_key.second * pack_side + z}, cells);
+		}
+	return result;
+}
+
 std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *Error) const
 {
 	auto const fail = [&](std::string const &Message) -> std::shared_ptr<chunk_data> {
@@ -994,25 +1047,7 @@ std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *E
 	if (false == file.good())
 		return fail("can't open the file");
 
-	auto const load = [&](slice const &Slice, std::vector<std::uint8_t> &Out) {
-		std::vector<std::uint8_t> stored(Slice.stored);
-		file.seekg(static_cast<std::streamoff>(Slice.offset));
-		file.read(reinterpret_cast<char *>(stored.data()), stored.size());
-		if (file.gcount() != static_cast<std::streamsize>(stored.size()))
-			return false;
-		if (Slice.codec == codec_stored)
-			Out = std::move(stored);
-		else if (Slice.codec == codec_zstd)
-		{
-			Out.resize(Slice.size);
-			auto const result{ZSTD_decompress(Out.data(), Out.size(), stored.data(), stored.size())};
-			if (ZSTD_isError(result) || result != Slice.size)
-				return false;
-		}
-		else
-			return false;
-		return Out.size() == Slice.size && checksum(Out) == Slice.crc;
-	};
+	auto const load = [&](slice const &Slice, std::vector<std::uint8_t> &Out) { return load_slice(file, Slice, Out); };
 
 	auto chunk{std::make_shared<chunk_data>()};
 	chunk->key = Key;

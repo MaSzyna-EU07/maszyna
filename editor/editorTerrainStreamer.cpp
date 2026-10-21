@@ -979,6 +979,46 @@ bool terrain_streamer::exists(chunk_key const &Key) const
 	return pack != m_packs.end() && pack->second.status == pack_state::state::ready && pack->second.file->has(Key);
 }
 
+std::vector<std::pair<terrain_streamer::chunk_key, int>> terrain_streamer::stored_chunks()
+{
+	std::vector<std::pair<chunk_key, int>> result;
+	if (false == m_active)
+		return result;
+	std::error_code ec;
+	std::filesystem::directory_iterator const end;
+	for (std::filesystem::directory_iterator item{m_directory, ec}; false == static_cast<bool>(ec) && item != end; item.increment(ec))
+	{
+		if (item->path().extension() != ".tch")
+			continue;
+		auto const filename{item->path().filename().string()};
+		heightmap::pack_file file;
+		std::string error;
+		std::lock_guard<std::mutex> lock{m_filemutex};
+		if (false == file.open(m_directory + filename, &error))
+		{
+			ErrorLog("Bad file: " + error, logtype::file);
+			continue;
+		}
+		// the terrain reads a pack only from the file named after it
+		if (filename != heightmap::pack_file_name(file.key()))
+			continue;
+		auto const cells{file.chunk_cells()};
+		result.insert(result.end(), cells.begin(), cells.end());
+	}
+	std::sort(result.begin(), result.end());
+	return result;
+}
+
+editor_terrain *terrain_streamer::chunk(chunk_key const &Key, bool const Load)
+{
+	if (false == m_active)
+		return nullptr;
+	if (Load)
+		return load_now(Key);
+	auto const lookup{m_chunks.find(Key)};
+	return lookup != m_chunks.end() ? lookup->second.get() : nullptr;
+}
+
 // editing
 
 editor_terrain *terrain_streamer::load_now(chunk_key const &Key)

@@ -237,6 +237,7 @@ set(SOURCES
 "application/editormodevehicle.cpp"
 "application/editormodeselection.cpp"
 "application/editormodeviewport.cpp"
+"application/editormodeterrainchunks.cpp"
 "application/editormodesignal.cpp"
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"

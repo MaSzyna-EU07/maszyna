@@ -79,6 +79,14 @@ class terrain_streamer
 	std::size_t resident() const { return m_chunks.size(); }
 	// chunks in the pack files and in memory, less the removed ones; the files known so far
 	bool exists(chunk_key const &Key) const;
+	// the chunks of all the pack files in the folder of the terrain, each with the cells along its side (0: unknown), ordered
+	// by key, as the files are on the disk: the chunks added or removed since the last save are as they were. reads the
+	// headers of the files, so it's for a list made now and then, not for every frame
+	std::vector<std::pair<chunk_key, int>> stored_chunks();
+	// removed in the editor, still in the files until saved
+	bool removed(chunk_key const &Key) const { return m_removed.count(Key) > 0; }
+	// the chunk in memory, or nullptr; Load: read from its pack file if it isn't in memory yet
+	editor_terrain *chunk(chunk_key const &Key, bool const Load = false);
 
 	// editing; the chunks changed are written to the files by save()
 	heightmap::manifest const &manifest() const { return m_manifest; }

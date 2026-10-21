@@ -588,6 +588,33 @@ class editor_mode : public application_mode, private editor_track::observer
 	float m_water_selected_level{0.0f}; // level of the chosen water, while it's edited
 	bool m_water_level_dragged{false};
 	std::string m_terrain_status;
+	// the window listing the chunks of the terrain, the files they're kept in and their triangles (editormodeterrainchunks.cpp)
+	void render_terrain_chunks_window();
+	// the camera brought over the chunk, to look at the whole of it
+	void go_to_terrain_chunk(heightmap::chunk_key const &Key);
+	struct terrain_chunk_row
+	{
+		heightmap::chunk_key key{0, 0};
+		int cells{0}; // quads along a side; 0: unknown
+		bool stored{false}; // in a pack file as it's on the disk
+	};
+	struct terrain_chunk_list
+	{
+		bool open{true};
+		bool scanned{false}; // the pack files were read
+		bool modified{false}; // the terrain had unsaved changes when last seen: once it hasn't, it was saved and the files are read again
+		std::vector<std::pair<heightmap::chunk_key, int>> stored; // the chunks of the pack files, as read last
+		std::vector<terrain_chunk_row> rows; // the chunks listed: of the files and of the memory, filtered and sorted
+		std::size_t chunks{0}; // listed before the filter
+		std::size_t files{0};
+		std::size_t triangles{0}; // of the full grids of all the chunks
+		double built{-1.0}; // when the rows were made
+		bool resort{true};
+		int sortcolumn{0};
+		bool descending{false};
+		char filter[64]{};
+		std::optional<heightmap::chunk_key> chosen; // outlined in the view
+	} m_chunklist;
 
 	// the heightmap terrain, shared with the scenery loader so it shows in every mode
 	terrain_streamer &m_streamer{EditorTerrain};
