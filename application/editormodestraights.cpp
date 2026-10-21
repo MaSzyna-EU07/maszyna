@@ -442,7 +442,8 @@ void editor_mode::render_straight_ui()
 		ImGui::TextDisabled("%s", STR_C("Transition curves"));
 		int transitions{state.auto_transitions ? 0 : 1};
 		if (segmented("straighttransitions", transitions,
-		              {{0, STR_C("From the line speed"), "Lengths of the transition curves from the speed of the paths and the limits of the curve design"},
+		              {m_norms_free ? segment_option{0, STR_C("None"), "Plain arcs: the free design has no transition curves, the PKP PLK norms work them out from the speed of the line"}
+		                            : segment_option{0, STR_C("From the line speed"), "Lengths of the transition curves from the speed of the paths and the limits of the curve design"},
 		               {1, STR_C("Given length"), "The same length of the transition curves at every curve"}}))
 			state.auto_transitions = transitions == 0;
 		if (false == state.auto_transitions)
@@ -1054,7 +1055,7 @@ void editor_mode::apply_straight_tool()
 		double speed{-1.0};
 		for (auto const *track : line.tracks)
 			speed = std::max(speed, editor_track::velocity(*track));
-		auto const transition{state.auto_transitions ? alignment::recommend(speed > 0.0 ? speed : 100.0, radius, m_route.design.norms).transition : state.transition};
+		auto const transition{state.auto_transitions ? alignment::recommend(speed > 0.0 ? speed : 100.0, radius, laying_norms()).transition : state.transition};
 		auto const reach{radius * std::tan(std::min(std::abs(angle), 3.0) * 0.5) + transition * 0.5 + 10.0};
 		straight_reshape(line, state.tool_at - reach, state.tool_at + reach,
 			[pivot, angle](glm::dvec3 const &Point) {
@@ -1182,7 +1183,7 @@ void editor_mode::apply_detour()
 	double speed{-1.0};
 	for (auto const *track : line.tracks)
 		speed = std::max(speed, editor_track::velocity(*track));
-	auto const transition{state.auto_transitions ? alignment::recommend(speed > 0.0 ? speed : 100.0, radius, m_route.design.norms).transition : state.transition};
+	auto const transition{state.auto_transitions ? alignment::recommend(speed > 0.0 ? speed : 100.0, radius, laying_norms()).transition : state.transition};
 	auto const reach{radius * std::tan(slope * 0.5) + transition * 0.5 + 5.0};
 	auto const from{std::max(0.0, stations[0] - reach)};
 	auto const to{std::min(line.length, stations[3] + reach)};

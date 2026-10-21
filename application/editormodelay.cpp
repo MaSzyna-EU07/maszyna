@@ -1344,15 +1344,20 @@ bool editor_mode::render_norms_choice()
 		                    : "Transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms");
 		if (clicked && false == chosen)
 		{
-			m_norms_free = i == 0;
-			m_lay.transitions = false == m_norms_free;
+			set_norms_free(i == 0);
 			changed = true;
 		}
 	}
 	ImGui::PopID();
-	if (changed && false == m_route.chain.tracks.empty())
-		route_update();
 	return changed;
+}
+
+void editor_mode::set_norms_free(bool const Free)
+{
+	m_norms_free = Free;
+	m_lay.transitions = false == m_norms_free;
+	if (false == m_route.chain.tracks.empty())
+		route_update();
 }
 
 void editor_mode::render_lay_ui()

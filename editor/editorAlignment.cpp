@@ -275,6 +275,8 @@ recommendation recommend(double const Speed, double const Radius, limits const &
 		return result;
 	result.cant_equilibrium = factor * Speed * Speed / Radius;
 	result.cant_min = std::max(0.0, result.cant_equilibrium - allowance);
+	if (false == Limits.checked)
+		return result;
 	result.cant = std::min(Limits.cant_max, ceil_to(std::max(result.cant_min, result.cant_equilibrium * 2.0 / 3.0), 5.0));
 	result.transition = std::min(5000.0, transition_length(Speed, Radius, result.cant, Limits));
 	return result;

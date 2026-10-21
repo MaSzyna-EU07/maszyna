@@ -52,7 +52,7 @@ bool editor_mode::route_active() const
 
 void editor_mode::route_recommend(alignment::vertex &Vertex) const
 {
-	auto const recommended{alignment::recommend(m_route.design.speed, Vertex.radius, m_route.design.norms)};
+	auto const recommended{alignment::recommend(m_route.design.speed, Vertex.radius, laying_norms())};
 	Vertex.cant = recommended.cant;
 	Vertex.transition_in = recommended.transition;
 	Vertex.transition_out = recommended.transition;

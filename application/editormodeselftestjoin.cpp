@@ -122,6 +122,14 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
 		return selftest_result::handled;
 	}
+	if (command == "norms")
+	{
+		std::string which;
+		words >> which;
+		set_norms_free(which != "plk");
+		WriteLog(std::string{"SELFTEST norms: "} + (m_norms_free ? "free" : "plk"));
+		return selftest_result::handled;
+	}
 	if (command == "tracktab")
 	{
 		std::string key;

@@ -9997,3 +9997,6 @@ msgstr "Przechyłka (mm)"
 
 msgid "Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path"
 msgstr "Przechyłka na początku i na końcu: o ile jedna szyna jest wyżej, + podnosi lewą szynę patrząc wzdłuż toru"
+
+msgid "Plain arcs: the free design has no transition curves, the PKP PLK norms work them out from the speed of the line"
+msgstr "Zwykłe łuki: projekt wolny nie ma krzywych przejściowych, normy PKP PLK liczą je z prędkości linii"

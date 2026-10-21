@@ -1294,6 +1294,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_norms_free{true};
 	alignment::limits laying_norms() const;
 	bool render_norms_choice();
+	void set_norms_free(bool const Free);
 	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const;
 	// the straight track Alt turns the laid straight to: the nearest one the straight from From to To crosses, or one along From
 	TTrack const *skew_reference(glm::dvec3 const &From, glm::dvec3 const &To, double const Reach) const;
