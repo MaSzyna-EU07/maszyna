@@ -1458,7 +1458,10 @@ bool editor_mode::update()
 
     render_track_inspector();
     if (ui()->mode() == nodebank_panel::TRACK)
+    {
         draw_track_lines();
+        draw_track_legend();
+    }
     if (selected_track())
         draw_track_overlay();
     if (route_active())
@@ -3579,6 +3582,16 @@ void editor_mode::render_view_menu()
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Off: the top view draws the rails and sleepers of the tracks without the ballast, so the ground under them shows"));
+    if (ImGui::BeginMenu(STR_C("Track colours")))
+    {
+        char const *const names[]{"Plain", "By the radius", "By the speed", "By the grade"};
+        for (int i = 0; i < 4; ++i)
+            if (ImGui::MenuItem(STR_C(names[i]), nullptr, static_cast<int>(m_track_colouring) == i))
+                m_track_colouring = static_cast<track_colouring>(i);
+        ImGui::EndMenu();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("The tracks of the track mode coloured by their radius, speed or grade, with the legend in the corner"));
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));

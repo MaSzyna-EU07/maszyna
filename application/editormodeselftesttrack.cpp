@@ -396,6 +396,13 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			WriteLog(format("SELFTEST vprofile zone %.3f %.3f %s", zone.from, zone.to, zone.name.c_str()));
 		return selftest_result::handled;
 	}
+	if (command == "trackcolours")
+	{
+		int colouring{0};
+		words >> colouring;
+		m_track_colouring = static_cast<track_colouring>(std::clamp(colouring, 0, 3));
+		return selftest_result::handled;
+	}
 	if (command == "vprofilerun" || command == "vprofiledel" || command == "vprofileput")
 	{
 		// the grade line of the line through a track, a point of it taken out as with Del, the line applied

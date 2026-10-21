@@ -1570,6 +1570,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	track_hover split_spot() const;
 	void update_track_hover();
 	void draw_track_lines() const;
+	// what the colours of the tracks in the view tell
+	enum class track_colouring { plain, radius, speed, grade };
+	track_colouring m_track_colouring{track_colouring::plain};
+	void draw_track_legend() const;
 	void draw_track_hover() const;
 	struct track_intent
 	{

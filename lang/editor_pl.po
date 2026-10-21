@@ -10105,3 +10105,21 @@ msgstr "pochylenie %+.1f‰"
 
 msgid "Switched off in this build of the simulator"
 msgstr "Wyłączone w tej wersji symulatora"
+
+msgid "Track colours"
+msgstr "Kolory torów"
+
+msgid "Plain"
+msgstr "Zwykłe"
+
+msgid "By the radius"
+msgstr "Według promienia"
+
+msgid "By the speed"
+msgstr "Według prędkości"
+
+msgid "By the grade"
+msgstr "Według pochylenia"
+
+msgid "The tracks of the track mode coloured by their radius, speed or grade, with the legend in the corner"
+msgstr "Tory w dziale Tory pokolorowane według promienia, prędkości albo pochylenia, z legendą w rogu"

@@ -36,6 +36,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -80,6 +81,31 @@ double ortho_metres_per_pixel()
 {
 	auto const height{ImGui::GetIO().DisplaySize.y};
 	return Global.EditorOrtho && height > 0.0f ? 2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(height) : 0.0;
+}
+
+// the bands of the colouring of the tracks: up to the value, the colour and its label in the legend
+struct colour_band
+{
+	double below;
+	ImU32 colour;
+	char const *label;
+};
+double constexpr kBeyond{std::numeric_limits<double>::max()};
+ImU32 const kUncoloured{IM_COL32(200, 200, 200, 170)};
+double const kColouredReach{1500.0}; // m around the camera in the 3D view
+std::vector<colour_band> const kRadiusBands{{300.0, IM_COL32(235, 60, 60, 235), "R < 300 m"}, {600.0, IM_COL32(245, 140, 50, 235), "R 300-600 m"}, {1200.0, IM_COL32(240, 220, 60, 235), "R 600-1200 m"},
+                                            {3000.0, IM_COL32(110, 210, 80, 235), "R 1200-3000 m"}, {kBeyond, IM_COL32(70, 190, 235, 235), "R > 3000 m"}};
+std::vector<colour_band> const kSpeedBands{{40.5, IM_COL32(235, 60, 60, 235), "<= 40 km/h"}, {60.5, IM_COL32(245, 140, 50, 235), "50-60 km/h"}, {80.5, IM_COL32(240, 220, 60, 235), "70-80 km/h"},
+                                           {100.5, IM_COL32(110, 210, 80, 235), "90-100 km/h"}, {120.5, IM_COL32(70, 190, 235, 235), "110-120 km/h"}, {kBeyond, IM_COL32(170, 120, 255, 235), "> 120 km/h"}};
+std::vector<colour_band> const kGradeBands{{2.0, kUncoloured, "0-2 \xe2\x80\xb0"}, {5.0, IM_COL32(110, 210, 80, 235), "2-5 \xe2\x80\xb0"}, {10.0, IM_COL32(240, 220, 60, 235), "5-10 \xe2\x80\xb0"},
+                                           {20.0, IM_COL32(245, 140, 50, 235), "10-20 \xe2\x80\xb0"}, {kBeyond, IM_COL32(235, 60, 60, 235), "> 20 \xe2\x80\xb0"}};
+
+ImU32 band_colour(std::vector<colour_band> const &Bands, double const Value)
+{
+	for (auto const &band : Bands)
+		if (Value < band.below)
+			return band.colour;
+	return kUncoloured;
 }
 
 bool plan_near(bezier const &Curve, glm::dvec2 const &Point, double const Reach)
@@ -172,31 +198,84 @@ void editor_mode::update_track_hover()
 void editor_mode::draw_track_lines() const
 {
 	auto const metres{ortho_metres_per_pixel()};
-	if (metres < kLinesFrom)
+	auto const colouring{m_track_colouring};
+	if (metres < kLinesFrom && colouring == track_colouring::plain)
 		return;
 	auto const &io{ImGui::GetIO()};
 	screen_projection const projection;
 	glm::dvec2 const centre{Global.pCamera.Pos.x, Global.pCamera.Pos.z};
-	auto const reach{0.5 * metres * std::hypot(static_cast<double>(io.DisplaySize.x), static_cast<double>(io.DisplaySize.y))};
+	auto const reach{Global.EditorOrtho ? 0.5 * metres * std::hypot(static_cast<double>(io.DisplaySize.x), static_cast<double>(io.DisplaySize.y)) : kColouredReach};
+	auto const width{colouring == track_colouring::plain ? 1.5f : 3.0f};
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == rail(*track))
 			continue;
+		auto const velocity{editor_track::velocity(*track)};
 		for (auto const &path : track->m_paths)
 		{
 			bezier const curve{path};
 			if (false == plan_near(curve, centre, reach))
 				continue;
-			auto const count{std::clamp(static_cast<int>(curve.plan_length(4) / metres / 8.0), 1, 32)};
+			auto colour{IM_COL32(235, 235, 235, 150)};
+			if (colouring == track_colouring::radius)
+			{
+				auto const radius{::track_mode::piece_plan_radius(path)};
+				colour = radius >= 0.5 ? band_colour(kRadiusBands, radius) : kUncoloured;
+			}
+			else if (colouring == track_colouring::speed)
+				colour = velocity > 0.0 ? band_colour(kSpeedBands, velocity) : kUncoloured;
+			auto const length{curve.plan_length(4)};
+			auto const count{std::clamp(static_cast<int>(length / std::max(metres, 0.5) / 8.0), colouring == track_colouring::grade ? std::clamp(static_cast<int>(length / 10.0), 1, 8) : 1, 32)};
 			auto previous{curve.point(0.0)};
 			for (int k = 1; k <= count; ++k)
 			{
 				auto const next{curve.point(static_cast<double>(k) / count)};
-				projection.line(drawlist, previous, next, IM_COL32(235, 235, 235, 150), 1.5f);
+				if (colouring == track_colouring::grade)
+				{
+					auto const run{geometry::plan_distance(previous, next)};
+					colour = run > 1e-3 ? band_colour(kGradeBands, std::abs(next.y - previous.y) / run * 1000.0) : kUncoloured;
+				}
+				projection.line(drawlist, previous, next, colour, width);
 				previous = next;
 			}
 		}
+	}
+}
+
+void editor_mode::draw_track_legend() const
+{
+	if (m_track_colouring == track_colouring::plain)
+		return;
+	auto const &bands{m_track_colouring == track_colouring::radius ? kRadiusBands : m_track_colouring == track_colouring::speed ? kSpeedBands : kGradeBands};
+	std::vector<std::pair<ImU32, std::string>> rows;
+	for (auto const &band : bands)
+		rows.emplace_back(band.colour, band.label);
+	if (m_track_colouring == track_colouring::radius)
+		rows.emplace_back(kUncoloured, STR("straight"));
+	else if (m_track_colouring == track_colouring::speed)
+		rows.emplace_back(kUncoloured, STR("no limit"));
+	char const *const titles[]{"", "By the radius", "By the speed", "By the grade"};
+	std::string const title{STR_C(titles[static_cast<int>(m_track_colouring)])};
+	auto const line{ImGui::GetTextLineHeightWithSpacing()};
+	auto const swatch{ImGui::GetTextLineHeight()};
+	float width{ImGui::CalcTextSize(title.c_str()).x};
+	for (auto const &row : rows)
+		width = std::max(width, swatch + 6.0f + ImGui::CalcTextSize(row.second.c_str()).x);
+	auto const pad{8.0f};
+	// in the bottom right corner, over the profile strip when it's open
+	auto const bottom{m_profile.strip_top > editor_ui::view_min().y + 4.0f * line ? std::min(editor_ui::view_max().y, m_profile.strip_top) : editor_ui::view_max().y};
+	ImVec2 const to{editor_ui::view_max().x - 12.0f, bottom - 12.0f};
+	ImVec2 const from{to.x - width - pad * 2.0f, to.y - pad * 2.0f - line * static_cast<float>(rows.size() + 1)};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	drawlist->AddRectFilled(from, to, IM_COL32(0, 0, 0, 170), 4.0f);
+	ImVec2 at{from.x + pad, from.y + pad};
+	drawlist->AddText(at, IM_COL32(255, 255, 255, 235), title.c_str());
+	for (auto const &row : rows)
+	{
+		at.y += line;
+		drawlist->AddRectFilled(ImVec2(at.x, at.y + 2.0f), ImVec2(at.x + swatch, at.y + swatch - 2.0f), row.first, 2.0f);
+		drawlist->AddText(ImVec2(at.x + swatch + 6.0f, at.y), IM_COL32(235, 235, 235, 235), row.second.c_str());
 	}
 }
 
