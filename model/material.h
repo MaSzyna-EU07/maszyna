@@ -153,7 +153,7 @@ public:
     material_handle
         create_blend( material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain );
     // whether the material can be blended so: a diffuse texture lit as mat_default, or with a normal map (and a specgloss map)
-    // lit as normalmap, sunlessnormalmap or shadowlessnormalmap (and their _specgloss); not tinted. the blending materials take the
+    // lit as normalmap, sunlessnormalmap or shadowlessnormalmap (and their _specgloss), or parallax; not tinted. the blending materials take the
     // textures of another season or weather with the materials they blend
     bool
         blendable( material_handle const Material );
@@ -179,7 +179,7 @@ private:
     material_handle
         find_in_databank( std::string const &Materialname ) const;
     // how the material is lit, of the materials a track blends: 0 as mat_default, 1 normalmap, 2 sunlessnormalmap,
-    // 3 shadowlessnormalmap, 4 more for their _specgloss; -1 where it can't be blended
+    // 3 shadowlessnormalmap, 4 more for their _specgloss, 9 parallax; -1 where it can't be blended
     int
         blend_lighting( material_handle const Material );
     // the blending material made of the current textures of the materials. returns: false when they can't be blended

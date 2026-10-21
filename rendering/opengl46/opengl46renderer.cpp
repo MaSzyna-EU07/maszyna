@@ -2860,6 +2860,14 @@ bool opengl46_renderer::Blendable_Material(material_handle const Material)
 	return m_materials.blendable(Material);
 }
 
+std::string opengl46_renderer::Shader_Name(std::shared_ptr<gl::program> const &Program) const
+{
+	for (auto const &shader : m_shaders)
+		if (shader.second == Program)
+			return shader.first;
+	return {};
+}
+
 std::shared_ptr<gl::program> opengl46_renderer::Fetch_Shader(const std::string &name)
 {
 	auto it = m_shaders.find(name);
@@ -4396,7 +4404,8 @@ int opengl46_renderer::Prepass_Class( material_handle const Material )
 		"default", "default_1", "default_2", "default_detail", "default_specgloss",
 		"detail_normalmap", "detail_normalmap_specgloss", "normalmap", "normalmap_specgloss",
 		"reflmap", "reflmap_specgloss", "shadowlessnormalmap", "shadowlessnormalmap_specgloss",
-		"sunlessnormalmap", "sunlessnormalmap_specgloss" };
+		"sunlessnormalmap", "sunlessnormalmap_specgloss",
+		"trackblend", "trackblend_grain", "trackblend_normalmap", "trackblend_normalmap_grain", "trackblend_specgloss", "trackblend_specgloss_grain" };
 	static std::unordered_set<std::string> const solid { "colored", "default_0", "terrain", "water", "water_specgloss", "invalid" };
 	auto prepassclass { 0 };
 	for( auto const &shader : m_shaders ) {

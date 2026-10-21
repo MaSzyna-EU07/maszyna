@@ -133,6 +133,8 @@ public:
     virtual void Terrain_Grass( std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks ) {}
     // shader methods
     virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> = 0;
+    // the name the program was fetched by, empty where it wasn't fetched by Fetch_Shader()
+    virtual auto Shader_Name( std::shared_ptr<gl::program> const &Program ) const -> std::string { return {}; }
     // texture methods
     virtual auto Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) -> texture_handle = 0;
     virtual void Bind_Texture( texture_handle const Texture ) = 0;

@@ -763,12 +763,14 @@ namespace {
 char const *const blend_normal_shaders[] = { "normalmap", "sunlessnormalmap", "shadowlessnormalmap" };
 char const *const blend_specgloss_shaders[] = { "normalmap_specgloss", "sunlessnormalmap_specgloss", "shadowlessnormalmap_specgloss" };
 int constexpr blend_specgloss { 4 }; // added to the lighting for a material with a specgloss map
+int constexpr blend_parallax { 8 }; // added to the lighting (1, normalmap) of a parallax material
 
 std::string
 blend_shader( int const Lighting, bool const Grain ) {
 
     std::string name { "trackblend" };
     if( Lighting & blend_specgloss ) { name += "_specgloss"; }
+    else if( Lighting & blend_parallax ) { name += "_parallax"; }
     else if( Lighting > 0 ) { name += "_normalmap"; }
     return ( Grain ? name + "_grain" : name );
 }
@@ -809,6 +811,9 @@ material_manager::blend_lighting( material_handle const Material ) {
             }
             else if( conf.size() == 2 && has( "normalmap" ) ) {
                 lit_as( blend_normal_shaders, 0 );
+                if( material.shader == GfxRenderer->Fetch_Shader( "parallax" ) ) {
+                    lighting = 1 + blend_parallax;
+                }
             }
             else if( conf.size() == 3 && has( "normalmap" ) && has( "specgloss" ) ) {
                 lit_as( blend_specgloss_shaders, blend_specgloss );
@@ -840,7 +845,7 @@ material_manager::blend_lighting( material_handle const Material ) {
         WriteLog(
             "track blend: material \"" + material.name + "\" isn't blended:"
             + ( material.is_good ? "" : " not good;" )
-            + ( material.shader ? " a shader with the textures " + textures + ";" : " no shader;" )
+            + ( material.shader ? " shader \"" + GfxRenderer->Shader_Name( material.shader ) + "\" with the textures " + textures + ";" : " no shader;" )
             + ( material.texture_variants.empty() ? "" : " texture variants;" )
             + ( material.params[ 2 ].w < 0.f ? " tinted;" : "" ) );
     }
@@ -872,7 +877,7 @@ material_manager::build_blend( blend_key const &Key, opengl_material &Blend ) {
         auto const found { source.shader->texture_conf.find( Name ) };
         return ( found != source.shader->texture_conf.end() ? source.textures[ found->second.id ] : null_handle );
     };
-    // the slots of the textures in the blending shaders (mat_trackblend*.frag): with a specgloss map there's room for the textures
+    // the slots of the textures in the blending shaders (mat_trackblend*.frag), parallax as normalmap: with a specgloss map there's room for the textures
     // of two ends alone, p1 and p2, which is all the rails of a plain track have
     auto const normals { lighting > 0 };
     auto const specgloss { ( lighting & blend_specgloss ) != 0 };
