@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTerrainStreamer.hpp"
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorNmt.hpp"
+#include "editor/editorGeoMap.hpp"
 #include "editor/editorTrack.hpp"
 #include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
@@ -323,6 +324,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double reach{60.0};
 		std::vector<heightmap::chunk_key> pending; // chunks to make once their model is in
 		std::size_t made{0};
+		std::size_t empty{0}; // chunks not made: the model has no data there
+		std::size_t foreign{0}; // chunks not made ahead: the terrain beside isn't of the model
+		std::optional<double> ahead; // how much the terrain made ahead lies over the model
+		std::set<TTrack *> changed; // tracks whose formations are to follow them
+		std::set<std::string> gone; // names of the tracks removed, whose formations go with them
+		double changed_time{0.0};
+		bool restoring{false}; // the history is taken back or forward: the terrain comes back with it
 		std::size_t shaped{0};
 		std::string status;
 		std::string error;
@@ -354,13 +362,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::map<std::pair<int, int>, std::vector<std::size_t>> anchor_cells; // the anchors in squares of the plan
 		bool offered{false}; // the terrain was offered to the scenery begun without it
 		bool prompt{false}; // the offer is shown
-		double north{0.0}; // the place typed into the offer, PUWG 1992
-		double east{0.0};
 		int mode{0}; // 0: the tracks go onto the terrain, 1: the terrain is drawn to the tracks
-		bool moving{false}; // the place being typed again
+		bool moving{false}; // the place being picked again
+		char place[96]{}; // typed: degrees or PUWG 1992
+		int shown{-1}; // the frame the terrain panel showed how far the work got
 	};
 	editor_nmt m_nmt;
 	nmt_state m_nmt_state;
+	editor_map m_nmt_map;
 	std::vector<nmt_place> nmt_track_places(double const Step) const override;
 	void nmt_locate() override;
 	bool nmt_choice_card(int const Index, char const *Title, char const *Text, float const Width, float const TextHeight, bool const Chosen) const;
@@ -375,18 +384,50 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<heightmap::chunk_key> nmt_keys_along_tracks() const;
 	// Rebuild: the chunks there already are made anew too, and the formation laid before is forgotten, as when the tracks moved
 	void nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool const Rebuild = false);
-	bool add_chunk_from_nmt(heightmap::chunk_key const &Key);
+	enum class nmt_chunk
+	{
+		waiting, // for its squares of the model
+		made,
+		empty // the model has no data there
+	};
+	// Offset: the heights of the model go up or down by it in the whole chunk, in place of the offsets of the fit
+	nmt_chunk add_chunk_from_nmt(heightmap::chunk_key const &Key, std::optional<double> const Offset = std::nullopt);
+	// how much the terrain lies over the model at the points: none where there's too little terrain at them, nor where it
+	// doesn't follow the model (Foreign), as one made by hand
+	std::optional<double> nmt_terrain_offset(std::vector<glm::dvec2> const &Points, bool &Foreign) const;
+	// the same along the edges the chunk shares with the chunks beside it in memory
+	std::optional<double> nmt_seam_offset(heightmap::chunk_key const &Key, bool &Foreign) const;
+	// the terrain beside the formation of the track is the one made from the model; Waiting: its squares of the model aren't in yet
+	bool nmt_terrain_along(TTrack const &Track, bool &Waiting);
+	// the tracks changed by hand are told to the terrain: their formations laid anew, of the tracks removed taken away, a
+	// track laid onto the terrain of the model given its own, once the mouse lets go; in the step of the history of the change
+	void nmt_track_changed(std::vector<TTrack *> const &Tracks);
+	void nmt_track_gone(TTrack const &Track);
+	void nmt_follow_tracks();
+	// the height the ground will have where the terrain is made ahead of the track laid and isn't there yet
+	bool nmt_ahead(double const X, double const Z, double &Height) const;
+	// the squares of the model under the rectangle are in, none of them waiting to be asked for again
+	bool nmt_ready(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	// Only: the paths of these tracks are shaped anew, the modifiers of those removed taken away; null: all of them. the number
 	// of the modifiers laid
 	std::size_t nmt_shape_tracks(std::vector<TTrack *> const *Only = nullptr);
 	void nmt_update();
 	void nmt_grow();
 	void render_nmt_ui();
+	// where the scenery lies: the map to click on, the place typed; true once it's placed
+	bool render_nmt_place(bool const Moving, bool const Button);
+	// the work under way: what's left of it and the button to stop it; Compact: one line, for the 3d view
+	void render_nmt_progress(bool const Compact);
+	// over the 3d view while the terrain panel isn't seen
+	void render_nmt_banner();
+	bool nmt_busy() const;
+	// the terrain made so far stays, what's waiting is dropped, the grade lines not fitted yet are left
+	void nmt_stop();
 	// a scenery begun from nothing, with no tracks nor terrain, is asked as the first track is laid whether it wants the terrain
 	void nmt_offer();
 	void render_nmt_prompt();
-	// the place typed in the terrain window: the terrain model and the orthophoto take it
-	void nmt_place_scenery();
+	// the place picked in the terrain window: the terrain model and the orthophoto take it
+	void nmt_place_scenery(glm::dvec2 const &Point);
 	void nmt_accept_offer();
 	// the whole scenery: tracks, includes and models, moved up or down as one undo step
 	void nmt_lift_scenery(double const Offset);

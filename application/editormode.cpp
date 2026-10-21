@@ -911,6 +911,9 @@ void editor_mode::terrain_history_step()
 {
     if (false == m_streamer.active())
         return;
+    // the terrain loaded from the model is taken back as a whole
+    if (nmt_busy() && false == m_history_busy)
+        return;
     if (m_streamer.recording())
     {
         if (terrain_brush() && mouseHold && false == m_history_busy)
@@ -994,6 +997,12 @@ void editor_mode::undo_one()
     if (m_history.empty())
         return;
 
+    m_nmt_state.restoring = true;
+    struct restored
+    {
+        bool &flag;
+        ~restored() { flag = false; }
+    } const restoring{m_nmt_state.restoring};
     EditorSnapshot snap = m_history.back();
     m_history.pop_back();
 
@@ -1157,6 +1166,12 @@ void editor_mode::redo_one()
     if (g_redo.empty())
         return;
 
+    m_nmt_state.restoring = true;
+    struct restored
+    {
+        bool &flag;
+        ~restored() { flag = false; }
+    } const restoring{m_nmt_state.restoring};
     EditorSnapshot snap = g_redo.back();
     g_redo.pop_back();
 
@@ -1519,6 +1534,7 @@ bool editor_mode::update()
     render_shortcuts_window();
     render_first_steps();
     render_nmt_prompt();
+    render_nmt_banner();
     render_orthophoto_window();
     render_switch_designer();
     render_environment_window();
@@ -1607,14 +1623,16 @@ void editor_mode::render_terrain_ui()
 {
     if (false == m_streamer.active())
     {
-        ImGui::TextWrapped("%s", STR_C("The scenery has no terrain yet. Make an empty one, or load it from the terrain model below"));
-        if (ImGui::Button(STR_C("Make heightmap terrain for this scenery")))
-            ensure_terrain();
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", STR_C("Kept in the folder terrain/<name of the scenery>/ and written there with the scenery (Ctrl+S)"));
+        ImGui::TextUnformatted(STR_C("The scenery has no terrain yet"));
         // the terrain model makes the terrain itself
         if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
             render_nmt_ui();
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", STR_C("Or without the real ground:"));
+        if (ImGui::Button(STR_C("Make an empty, flat terrain")))
+            ensure_terrain();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Kept in the folder terrain/<name of the scenery>/ and written there with the scenery (Ctrl+S)"));
         return;
     }
     // the tools are chosen in the toolbar, here are their settings
@@ -1647,6 +1665,8 @@ void editor_mode::render_terrain_ui()
         }
     }
 
+    if (nmt_busy())
+        ImGui::SetNextItemOpen(true);
     if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)")))
         render_nmt_ui();
 

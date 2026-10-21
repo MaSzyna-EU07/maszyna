@@ -6096,7 +6096,7 @@ msgid "The tracks lie %+.2f m against the terrain model (%zu places, they differ
 msgstr "Tory leżą %+.2f m względem NMT (%zu miejsc, rozrzut %.2f m)"
 
 msgid "Terrain model (NMT)"
-msgstr "Numeryczny model terenu (NMT)"
+msgstr "Prawdziwy teren z map (NMT)"
 
 msgid "No tracks to fit the terrain model to: its heights are taken as they are"
 msgstr "Brak torów do dopasowania: wysokości NMT bez przesunięcia"
@@ -10000,3 +10000,93 @@ msgstr "Przechyłka na początku i na końcu: o ile jedna szyna jest wyżej, + p
 
 msgid "Plain arcs: the free design has no transition curves, the PKP PLK norms work them out from the speed of the line"
 msgstr "Zwykłe łuki: projekt wolny nie ma krzywych przejściowych, normy PKP PLK liczą je z prędkości linii"
+
+msgid "The place lies outside of the terrain model of Poland: check the location of the scenery"
+msgstr "To miejsce leży poza NMT Polski: sprawdź położenie scenerii"
+
+msgid "; so do the grade lines fitted, Ctrl+Z takes them back"
+msgstr "; dopasowane niwelety też zostają, Ctrl+Z je cofa"
+
+msgid "Stop"
+msgstr "Przerwij"
+
+msgid "Stops loading: the terrain made so far stays"
+msgstr "Przerywa wczytywanie: teren zrobiony do tej pory zostaje"
+
+msgid "Loading the real terrain"
+msgstr "Wczytywanie prawdziwego terenu"
+
+msgid "Try again"
+msgstr "Spróbuj ponownie"
+
+msgid "Click the middle of the scenery on the map"
+msgstr "Kliknij na mapie środek scenerii"
+
+msgid "The point 0,0,0 of the scenery. The wheel zooms the map, a drag moves it"
+msgstr "Punkt 0,0,0 scenerii. Kółko przybliża mapę, przeciąganie ją przesuwa"
+
+msgid "or type it: 52.2297, 21.0122"
+msgstr "albo wpisz: 52.2297, 21.0122"
+
+msgid "Degrees as the online maps copy them (latitude, longitude), or the X and Y of PUWG 1992, the coordinates of the Polish maps of geoportal.gov.pl"
+msgstr "Stopnie, tak jak kopiują je mapy internetowe (szerokość, długość), albo X i Y w PUWG 1992, układzie polskich map z geoportal.gov.pl"
+
+msgid "Not a place in Poland: two numbers, degrees or the X and Y of PUWG 1992"
+msgstr "To nie jest miejsce w Polsce: wpisz dwie liczby, stopnie albo X i Y w PUWG 1992"
+
+msgid "X %.0f, Y %.0f in PUWG 1992"
+msgstr "X %.0f, Y %.0f w PUWG 1992"
+
+msgid "The terrain made already stays as it is"
+msgstr "Teren zrobiony wcześniej zostaje bez zmian"
+
+msgid "The scenery is here"
+msgstr "Sceneria jest tutaj"
+
+msgid "X %.0f, Y %.0f in PUWG 1992, the coordinates of the Polish maps; the place is shared with the orthophoto"
+msgstr "X %.0f, Y %.0f w PUWG 1992, układzie polskich map; to samo położenie ma ortofotomapa"
+
+msgid "Area"
+msgstr "Obszar"
+
+msgid "A square of 500 m around the camera"
+msgstr "Kwadrat 500 m wokół kamery"
+
+msgid "A square of 1 km around the camera"
+msgstr "Kwadrat 1 km wokół kamery"
+
+msgid "A square of 2 km around the camera"
+msgstr "Kwadrat 2 km wokół kamery"
+
+msgid "The squares of the model the service didn't give are asked for again; it happens by itself every 15 s too"
+msgstr "Ponownie prosi serwis o brakujące fragmenty NMT; samo dzieje się to też co 15 s"
+
+msgid "Pick where the scenery lies first"
+msgstr "Najpierw wskaż, gdzie leży sceneria"
+
+msgid "The scenery has no terrain yet"
+msgstr "Sceneria nie ma jeszcze terenu"
+
+msgid "Or without the real ground:"
+msgstr "Albo bez prawdziwego terenu:"
+
+msgid "Make an empty, flat terrain"
+msgstr "Utwórz pusty, płaski teren"
+
+msgid "; %zu chunk not made, the model has no data there"
+msgid_plural "; %zu chunks not made, the model has no data there"
+msgstr[0] "; %zu kafel pominięty, NMT nie ma tam danych"
+msgstr[1] "; %zu kafle pominięte, NMT nie ma tam danych"
+msgstr[2] "; %zu kafli pominiętych, NMT nie ma tam danych"
+
+msgid "; %zu chunk not made ahead, the terrain beside isn't the real one"
+msgid_plural "; %zu chunks not made ahead, the terrain beside isn't the real one"
+msgstr[0] "; %zu kafel przed torem pominięty, teren obok nie jest z NMT"
+msgstr[1] "; %zu kafle przed torem pominięte, teren obok nie jest z NMT"
+msgstr[2] "; %zu kafli przed torem pominiętych, teren obok nie jest z NMT"
+
+msgid "Stopped: %zu chunk made stays"
+msgid_plural "Stopped: %zu chunks made stay"
+msgstr[0] "Przerwane: zrobiony %zu kafel zostaje"
+msgstr[1] "Przerwane: zrobione %zu kafle zostają"
+msgstr[2] "Przerwane: zrobionych %zu kafli zostaje"

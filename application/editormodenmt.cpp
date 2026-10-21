@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editormodeshared.h"
+#include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorSettings.hpp"
@@ -252,6 +253,7 @@ void editor_mode::nmt_fit()
 {
 	nmt_locate();
 	auto &state{m_nmt_state};
+	state.error.clear();
 	state.under = false;
 	state.fit.clear();
 	auto const places{nmt_track_places(25.0)};
@@ -276,6 +278,7 @@ void editor_mode::nmt_under_start()
 {
 	nmt_locate();
 	auto &state{m_nmt_state};
+	state.error.clear();
 	state.fit.clear();
 	state.anchors.clear();
 	state.anchor_cells.clear();
@@ -452,6 +455,9 @@ void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool c
 			++queued;
 		}
 	state.made = 0;
+	state.empty = 0;
+	state.foreign = 0;
+	state.error.clear();
 	if (queued > 0)
 		state.grown = false;
 	// the terrain comes with its photos
@@ -460,12 +466,186 @@ void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool c
 	state.status = queued > 0 ? format(STR_P("%zu chunk to make from the terrain model", "%zu chunks to make from the terrain model", queued), queued) : STR("There's terrain there already");
 }
 
-bool editor_mode::add_chunk_from_nmt(heightmap::chunk_key const &Key)
+bool editor_mode::nmt_ready(glm::dvec2 const &Min, glm::dvec2 const &Max)
+{
+	return m_nmt.request(Min, Max) && false == m_nmt.retrying(Min, Max);
+}
+
+std::optional<double> editor_mode::nmt_terrain_offset(std::vector<glm::dvec2> const &Points, bool &Foreign) const
+{
+	Foreign = false;
+	std::vector<double> differences;
+	for (auto const &point : Points)
+		if (double terrain, model; m_streamer.height_at(point.x, point.y, terrain) && m_nmt.height(point.x, point.y, model))
+			differences.push_back(terrain - model);
+	if (differences.size() < 5)
+		return std::nullopt;
+	std::nth_element(differences.begin(), differences.begin() + differences.size() / 2, differences.end());
+	auto const median{differences[differences.size() / 2]};
+	// the formations of the tracks and the touch-ups of the brushes leave the terrain here and there, the rest keeps to the model
+	auto const along{std::count_if(differences.begin(), differences.end(), [&](double const Difference) { return std::abs(Difference - median) <= 0.3; })};
+	if (static_cast<double>(along) < 0.7 * static_cast<double>(differences.size()))
+	{
+		Foreign = true;
+		return std::nullopt;
+	}
+	return median;
+}
+
+std::optional<double> editor_mode::nmt_seam_offset(heightmap::chunk_key const &Key, bool &Foreign) const
+{
+	auto const low{heightmap::chunk_corner(Key)};
+	auto const size{heightmap::chunk_size};
+	int constexpr steps{16};
+	struct side
+	{
+		int dx;
+		int dz;
+		glm::dvec2 from;
+		glm::dvec2 to;
+	};
+	side const sides[]{{-1, 0, low, {low.x, low.y + size}}, {1, 0, {low.x + size, low.y}, low + glm::dvec2{size}}, {0, -1, low, {low.x + size, low.y}}, {0, 1, {low.x, low.y + size}, low + glm::dvec2{size}}};
+	std::vector<glm::dvec2> points;
+	for (auto const &edge : sides)
+		if (m_streamer.exists({Key.first + edge.dx, Key.second + edge.dz}))
+			for (int i = 0; i <= steps; ++i)
+				points.push_back(edge.from + (edge.to - edge.from) * (static_cast<double>(i) / steps) + glm::dvec2{edge.dx, edge.dz} * 0.01);
+	return nmt_terrain_offset(points, Foreign);
+}
+
+bool editor_mode::nmt_terrain_along(TTrack const &Track, bool &Waiting)
+{
+	Waiting = false;
+	if (false == m_nmt.placed() || Track.m_paths.empty())
+		return false;
+	auto const half{profile_ballast(Track).second};
+	std::vector<glm::dvec2> points;
+	glm::dvec2 low{std::numeric_limits<double>::max()};
+	glm::dvec2 high{std::numeric_limits<double>::lowest()};
+	for (auto const &path : Track.m_paths)
+	{
+		geometry::bezier const curve{path};
+		auto const count{std::max(2, static_cast<int>(std::ceil(curve.plan_length() / 10.0)))};
+		for (int i = 0; i <= count; ++i)
+		{
+			auto const t{static_cast<double>(i) / count};
+			auto const at{geometry::plan_of(curve.point(t))};
+			auto const along{geometry::plan_of(curve.first(t))};
+			if (glm::length(along) < 1e-9)
+				continue;
+			auto const across{glm::dvec2{-along.y, along.x} / glm::length(along) * (half + 15.0)};
+			for (auto const &point : {at + across, at - across})
+			{
+				points.push_back(point);
+				low = glm::min(low, point);
+				high = glm::max(high, point);
+			}
+		}
+	}
+	if (points.empty())
+		return false;
+	if (false == nmt_ready(low - glm::dvec2{2.0}, high + glm::dvec2{2.0}))
+	{
+		Waiting = true;
+		return false;
+	}
+	bool foreign{false};
+	return nmt_terrain_offset(points, foreign).has_value();
+}
+
+void editor_mode::nmt_track_changed(std::vector<TTrack *> const &Tracks)
+{
+	auto &state{m_nmt_state};
+	if (state.restoring || state.stage != nmt_state::automatic::idle || Tracks.empty() || false == m_streamer.active())
+		return;
+	for (auto *track : Tracks)
+		if (track != nullptr)
+			state.changed.insert(track);
+	state.changed_time = ImGui::GetTime();
+}
+
+void editor_mode::nmt_track_gone(TTrack const &Track)
+{
+	auto &state{m_nmt_state};
+	if (state.restoring || state.stage != nmt_state::automatic::idle || Track.name().empty() || false == m_streamer.active())
+		return;
+	state.gone.insert(Track.name());
+	state.changed_time = ImGui::GetTime();
+}
+
+void editor_mode::nmt_follow_tracks()
+{
+	auto &state{m_nmt_state};
+	if (state.changed.empty() && state.gone.empty())
+		return;
+	if (state.stage != nmt_state::automatic::idle || state.fitting || ImGui::GetTime() - state.changed_time < 0.3 || ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right))
+		return;
+	if (false == m_streamer.active())
+	{
+		state.changed.clear();
+		state.gone.clear();
+		return;
+	}
+	auto const &modifiers{m_streamer.modifiers()};
+	auto const of = [](heightmap::modifier const &Modifier, std::string const &Track) { return Modifier.name == "nmt " + Track || Modifier.name.starts_with("nmt " + Track + " "); };
+	std::vector<std::string> dropped;
+	for (auto const &name : state.gone)
+		if (simulation::Paths.find(name) == nullptr)
+			for (auto const &modifier : modifiers)
+				if (of(modifier, name))
+					dropped.push_back(modifier.name);
+	state.gone.clear();
+	std::vector<TTrack *> shaped;
+	std::set<TTrack *> waiting;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || false == state.changed.contains(track) || track->m_editorremoved || false == rail(*track) || track->name().empty())
+			continue;
+		if (std::any_of(modifiers.begin(), modifiers.end(), [&](heightmap::modifier const &Modifier) { return of(Modifier, track->name()); }))
+		{
+			shaped.push_back(track);
+			continue;
+		}
+		bool wait{false};
+		if (state.shape && nmt_terrain_along(*track, wait))
+			shaped.push_back(track);
+		else if (wait)
+			waiting.insert(track);
+	}
+	state.changed = std::move(waiting);
+	if (dropped.empty() && shaped.empty())
+		return;
+	// the terrain follows in the step of the history of the change of the tracks
+	terrain_history_step();
+	auto const *top{m_history.empty() ? nullptr : m_history.back().terrain.get()};
+	for (auto const &name : dropped)
+		m_streamer.remove_modifier(name);
+	auto const laid{shaped.empty() ? std::size_t{0} : nmt_shape_tracks(&shaped)};
+	if (false == dropped.empty())
+		forget_ground();
+	terrain_history_step();
+	auto const count{m_history.size()};
+	auto const of_tracks = [](EditorSnapshot const &Step) { return Step.action == EditorSnapshot::Action::TrackEdit || (Step.action == EditorSnapshot::Action::Terrain && Step.joined); };
+	if (count >= 2 && m_history.back().action == EditorSnapshot::Action::Terrain && m_history.back().terrain.get() != top && of_tracks(m_history[count - 2]))
+		m_history.back().joined = true;
+	WriteLog(format("Editor: NMT - the terrain followed the tracks: %zu formations laid, %zu taken away", laid, dropped.size()), logtype::generic);
+}
+
+bool editor_mode::nmt_ahead(double const X, double const Z, double &Height) const
+{
+	auto const &state{m_nmt_state};
+	if (false == state.grow || false == state.ahead.has_value() || false == m_nmt.placed() || false == m_nmt.height(X, Z, Height))
+		return false;
+	Height += *state.ahead;
+	return true;
+}
+
+editor_mode::nmt_chunk editor_mode::add_chunk_from_nmt(heightmap::chunk_key const &Key, std::optional<double> const Offset)
 {
 	auto const low{heightmap::chunk_corner(Key)};
 	auto const high{low + glm::dvec2{heightmap::chunk_size}};
-	if (false == m_nmt.request(low - glm::dvec2{2.0}, high + glm::dvec2{2.0}))
-		return false;
+	if (false == nmt_ready(low - glm::dvec2{2.0}, high + glm::dvec2{2.0}))
+		return nmt_chunk::waiting;
 	auto const cells{heightmap::cells_for(m_terrain_spacing)};
 	auto const side{static_cast<std::size_t>(cells) + 1};
 	auto const step{heightmap::chunk_size / cells};
@@ -476,7 +656,7 @@ bool editor_mode::add_chunk_from_nmt(heightmap::chunk_key const &Key)
 	std::array<double, (coarse + 1) * (coarse + 1)> offsets;
 	for (int iz = 0; iz <= coarse; ++iz)
 		for (int ix = 0; ix <= coarse; ++ix)
-			offsets[iz * (coarse + 1) + ix] = nmt_offset_at(low.x + ix * heightmap::chunk_size / coarse, low.y + iz * heightmap::chunk_size / coarse);
+			offsets[iz * (coarse + 1) + ix] = Offset.has_value() ? *Offset : nmt_offset_at(low.x + ix * heightmap::chunk_size / coarse, low.y + iz * heightmap::chunk_size / coarse);
 	auto const offset_at = [&](double const X, double const Z) {
 		auto const u{std::clamp((X - low.x) / heightmap::chunk_size * coarse, 0.0, static_cast<double>(coarse))};
 		auto const v{std::clamp((Z - low.y) / heightmap::chunk_size * coarse, 0.0, static_cast<double>(coarse))};
@@ -499,15 +679,16 @@ bool editor_mode::add_chunk_from_nmt(heightmap::chunk_key const &Key)
 				any = true;
 			}
 		}
+	if (false == any)
+		return nmt_chunk::empty;
 	// where the model has no data the chunk goes on level with its nearest point
-	if (any)
-		fill_from_nearest(heights, found, side);
+	fill_from_nearest(heights, found, side);
 	m_streamer.add_chunk(Key.first, Key.second, m_terrain_spacing, [&](double const X, double const Z) {
 		auto const ix{static_cast<std::size_t>(std::clamp<long>(std::lround((X - low.x) / step), 0, cells))};
 		auto const iz{static_cast<std::size_t>(std::clamp<long>(std::lround((Z - low.y) / step), 0, cells))};
 		return static_cast<float>(heights[iz * side + ix]);
 	});
-	return true;
+	return nmt_chunk::made;
 }
 
 std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
@@ -559,6 +740,20 @@ std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
 			laid.push_back(std::move(modifier));
 	if (Only != nullptr)
 	{
+		// the formations as they are already aren't led into the terrain again
+		auto const same = [](heightmap::modifier const &A, heightmap::modifier const &B) {
+			return A.slope == B.slope && A.reach == B.reach && A.rounding == B.rounding && A.points.size() == B.points.size() &&
+			       std::equal(A.points.begin(), A.points.end(), B.points.begin(), [](heightmap::corridor_point const &P, heightmap::corridor_point const &Q) {
+				       return glm::distance(P.position, Q.position) < 1e-6 && std::abs(P.formation - Q.formation) < 1e-6 && std::abs(P.half_width - Q.half_width) < 1e-6;
+			       });
+		};
+		auto const &existing{m_streamer.modifiers()};
+		std::erase_if(laid, [&](heightmap::modifier const &Modifier) {
+			auto const found{std::find_if(existing.begin(), existing.end(), [&](heightmap::modifier const &Other) { return Other.name == Modifier.name; })};
+			return found != existing.end() && same(*found, Modifier);
+		});
+		for (auto *track : *Only)
+			state.changed.erase(track);
 		// the modifiers the tracks don't have any more: of the pieces of a path gone, of the tracks removed
 		std::vector<std::string> gone;
 		for (auto const *track : *Only)
@@ -577,7 +772,11 @@ std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
 	m_streamer.modifiers(std::move(laid));
 	forget_ground();
 	if (Only == nullptr)
+	{
 		state.shaped = modifiers.size();
+		state.changed.clear();
+		state.gone.clear();
+	}
 	return count;
 }
 
@@ -585,6 +784,7 @@ void editor_mode::nmt_update()
 {
 	auto &state{m_nmt_state};
 	nmt_offer();
+	nmt_follow_tracks();
 	if (state.stage != nmt_state::automatic::idle)
 	{
 		nmt_auto_step();
@@ -594,7 +794,7 @@ void editor_mode::nmt_update()
 	{
 		bool all{true};
 		for (auto const &place : state.fit)
-			all = m_nmt.request(glm::dvec2{place.position.x, place.position.z} - glm::dvec2{1.0}, glm::dvec2{place.position.x, place.position.z} + glm::dvec2{1.0}) && all;
+			all = nmt_ready(glm::dvec2{place.position.x, place.position.z} - glm::dvec2{1.0}, glm::dvec2{place.position.x, place.position.z} + glm::dvec2{1.0}) && all;
 		if (all)
 			nmt_finish_fit();
 		return;
@@ -602,8 +802,17 @@ void editor_mode::nmt_update()
 	nmt_grow();
 	if (state.pending.empty())
 		return;
-	// a few chunks a frame, those whose model is in
+	// a few chunks a frame, those whose model is in. the terrain made ahead of the track laid isn't a step of the history:
+	// Ctrl+Z takes back the track, not the ground under it
+	auto const unrecorded{state.grown && m_streamer.recording()};
+	if (unrecorded)
+	{
+		terrain_history_step();
+		m_streamer.end_change();
+	}
 	int made{0};
+	std::size_t apart{0};
+	std::set<heightmap::chunk_key> fresh;
 	for (auto it{state.pending.begin()}; it != state.pending.end() && made < 4;)
 	{
 		if (m_streamer.exists(*it))
@@ -611,19 +820,59 @@ void editor_mode::nmt_update()
 			it = state.pending.erase(it);
 			continue;
 		}
-		if (add_chunk_from_nmt(*it))
+		// ahead of the track the terrain goes on from the one there is, at its height over the model
+		std::optional<double> offset;
+		if (state.grown)
 		{
-			it = state.pending.erase(it);
-			++made;
-			++state.made;
+			bool foreign{false};
+			offset = nmt_seam_offset(*it, foreign);
+			if (foreign)
+			{
+				it = state.pending.erase(it);
+				++state.foreign;
+				++made;
+				continue;
+			}
+			if (false == offset.has_value())
+			{
+				++apart;
+				++it;
+				continue;
+			}
+		}
+		auto const chunk{add_chunk_from_nmt(*it, offset)};
+		if (chunk == nmt_chunk::waiting)
+		{
+			++it;
 			continue;
 		}
-		++it;
+		if (offset.has_value() && chunk == nmt_chunk::made)
+		{
+			state.ahead = offset;
+			fresh.insert(*it);
+		}
+		it = state.pending.erase(it);
+		++made;
+		if (chunk == nmt_chunk::made)
+			++state.made;
+		else
+			++state.empty;
+	}
+	// the chunks ahead which no terrain made from the model touches any more are given up
+	if (made == 0 && apart > 0 && apart == state.pending.size())
+	{
+		state.foreign += apart;
+		state.pending.clear();
+		made = 1;
 	}
 	if (made > 0)
 	{
 		forget_ground();
 		state.status = format(STR_C("Chunks made from the terrain model: %zu, waiting for it: %zu"), state.made, state.pending.size());
+		if (state.empty > 0)
+			state.status += format(STR_P("; %zu chunk not made, the model has no data there", "; %zu chunks not made, the model has no data there", state.empty), state.empty);
+		if (state.foreign > 0)
+			state.status += format(STR_P("; %zu chunk not made ahead, the terrain beside isn't the real one", "; %zu chunks not made ahead, the terrain beside isn't the real one", state.foreign), state.foreign);
 		if (state.pending.empty())
 		{
 			if (state.shape && false == state.grown)
@@ -636,8 +885,24 @@ void editor_mode::nmt_update()
 			first_step_done(first_step::nmt);
 		}
 	}
-	if (auto const error{m_nmt.error()}; false == error.empty())
-		state.error = STR(error);
+	// the tracks laid ahead of the terrain get their formations once it's there under them
+	if (state.shape && false == fresh.empty())
+	{
+		auto const crosses = [&](segment_data const &Path) {
+			geometry::bezier const curve{Path};
+			auto const count{std::max(1, static_cast<int>(std::ceil(curve.plan_length() / 50.0)))};
+			for (int i = 0; i <= count; ++i)
+				if (auto const at{curve.point(static_cast<double>(i) / count)}; fresh.contains(heightmap::chunk_at(at.x, at.z)))
+					return true;
+			return false;
+		};
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && rail(*track) && std::any_of(track->m_paths.begin(), track->m_paths.end(), crosses))
+				state.changed.insert(track);
+		state.changed_time = ImGui::GetTime();
+	}
+	if (unrecorded)
+		m_streamer.begin_change();
 }
 
 void editor_mode::nmt_grow()
@@ -670,6 +935,8 @@ void editor_mode::nmt_grow()
 	{
 		state.grown = true;
 		state.made = 0;
+		state.empty = 0;
+		state.foreign = 0;
 	}
 	for (auto const &chunk : missing)
 		state.pending.push_back(chunk.second);
@@ -678,57 +945,191 @@ void editor_mode::nmt_grow()
 	WriteLog(format("Editor: NMT - %zu chunks around the cursor to make", missing.size()), logtype::generic);
 }
 
+bool editor_mode::nmt_busy() const
+{
+	auto const &state{m_nmt_state};
+	return state.fitting || state.stage != nmt_state::automatic::idle || (false == state.pending.empty() && false == state.grown);
+}
+
+void editor_mode::nmt_stop()
+{
+	auto &state{m_nmt_state};
+	if (false == nmt_busy())
+		return;
+	auto const lines{state.stage == nmt_state::automatic::fitting && state.lines > 0};
+	m_nmt.cancel();
+	state.fitting = false;
+	state.fit.clear();
+	state.probes.clear();
+	state.left.clear();
+	state.done.clear();
+	state.laid.clear();
+	state.stage = nmt_state::automatic::idle;
+	state.pending.clear();
+	m_profile.open = false;
+	state.status = format(STR_P("Stopped: %zu chunk made stays", "Stopped: %zu chunks made stay", state.made), state.made);
+	if (lines)
+		state.status += STR("; so do the grade lines fitted, Ctrl+Z takes them back");
+	WriteLog("Editor: NMT - " + state.status, logtype::generic);
+}
+
+void editor_mode::render_nmt_progress(bool const Compact)
+{
+	auto &state{m_nmt_state};
+	float fraction{0.0f};
+	std::string text;
+	if (state.stage == nmt_state::automatic::fetching || state.fitting)
+	{
+		auto const waiting{m_nmt.waiting()};
+		fraction = -1.0f * static_cast<float>(ImGui::GetTime());
+		text = format(STR_P("Terrain model: %zu square left", "Terrain model: %zu squares left", waiting), waiting);
+	}
+	else if (state.stage == nmt_state::automatic::fitting && state.tracks > 0)
+	{
+		fraction = 1.0f - static_cast<float>(state.left.size()) / static_cast<float>(std::max<std::size_t>(state.tracks, state.left.size()));
+		text = format(STR_P("Grade lines: %zu fitted, %zu track left", "Grade lines: %zu fitted, %zu tracks left", state.left.size()), state.lines, state.left.size());
+	}
+	else if (false == state.pending.empty())
+	{
+		auto const total{state.made + state.empty + state.pending.size()};
+		fraction = static_cast<float>(state.made + state.empty) / static_cast<float>(std::max<std::size_t>(1, total));
+		text = format(STR_C("Chunks: %zu of %zu"), state.made + state.empty, total);
+	}
+	else
+		return;
+	auto const stoppable{nmt_busy()};
+	auto const stop{STR_C("Stop")};
+	auto const button{ImGui::CalcTextSize(stop).x + ImGui::GetStyle().FramePadding.x * 2.0f};
+	auto const width{Compact ? std::round(ImGui::GetFontSize() * 16.0f) : stoppable ? -(button + ImGui::GetStyle().ItemSpacing.x) : -FLT_MIN};
+	ImGui::ProgressBar(fraction, ImVec2(width, Compact ? 0.0f : tall_button_height()), text.c_str());
+	if (false == stoppable)
+		return;
+	ImGui::SameLine();
+	if (ImGui::Button(stop, ImVec2(0.0f, Compact ? 0.0f : tall_button_height())))
+		nmt_stop();
+	item_tooltip("Stops loading: the terrain made so far stays");
+}
+
+void editor_mode::render_nmt_banner()
+{
+	auto const &state{m_nmt_state};
+	if (false == nmt_busy() || state.shown >= ImGui::GetFrameCount() - 1)
+		return;
+	auto const low{editor_ui::view_min()};
+	auto const high{editor_ui::view_max()};
+	ImGui::SetNextWindowPos(ImVec2((low.x + high.x) * 0.5f, low.y + std::round(ImGui::GetFontSize() * 3.6f)), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+	ImGui::SetNextWindowViewport(ImGui::GetMainViewport()->ID);
+	ImGui::SetNextWindowBgAlpha(0.88f);
+	if (ImGui::Begin("##nmtbanner", nullptr,
+	                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking))
+	{
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted(STR_C("Loading the real terrain"));
+		ImGui::SameLine();
+		render_nmt_progress(true);
+		bool again{false};
+		if (auto const error{m_nmt.error(&again)}; false == error.empty())
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR(error).c_str());
+			if (again)
+			{
+				ImGui::SameLine();
+				if (ImGui::SmallButton(STR_C("Try again")))
+					m_nmt.retry();
+			}
+		}
+	}
+	ImGui::End();
+}
+
+bool editor_mode::render_nmt_place(bool const Moving, bool const Button)
+{
+	auto &state{m_nmt_state};
+	auto &map{m_nmt_map};
+	auto const width{ImGui::GetContentRegionAvail().x};
+	auto const height{std::round(std::min(width * 0.65f, ImGui::GetFontSize() * 16.0f))};
+	ImGui::TextUnformatted(STR_C("Click the middle of the scenery on the map"));
+	item_tooltip("The point 0,0,0 of the scenery. The wheel zooms the map, a drag moves it");
+	ImGui::BeginChild("##nmtmap", ImVec2(width, height), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+	if (map.render({width, height}))
+	{
+		auto const degrees{editor_geo::to_degrees(map.point())};
+		std::snprintf(state.place, sizeof(state.place), "%.6f, %.6f", degrees.x, degrees.y);
+	}
+	ImGui::EndChild();
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	glm::dvec2 typed;
+	auto const understood{editor_geo::parse_place(state.place, typed)};
+	if (ImGui::InputTextWithHint("##nmtplace", STR_C("or type it: 52.2297, 21.0122"), state.place, sizeof(state.place)) && editor_geo::parse_place(state.place, typed))
+	{
+		map.pick(typed);
+		map.show(typed, 8.0);
+	}
+	item_tooltip("Degrees as the online maps copy them (latitude, longitude), or the X and Y of PUWG 1992, the coordinates of the Polish maps of geoportal.gov.pl");
+	if (state.place[0] != '\0' && false == understood)
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("Not a place in Poland: two numbers, degrees or the X and Y of PUWG 1992"));
+	else if (map.picked())
+		ImGui::TextDisabled(STR_C("X %.0f, Y %.0f in PUWG 1992"), map.point().y, map.point().x);
+	if (Moving && m_streamer.resident() > 0)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.75f, 0.3f, 1.0f));
+		ImGui::TextWrapped("%s", STR_C("The terrain made already stays as it is"));
+		ImGui::PopStyleColor();
+	}
+	if (false == Button)
+		return false;
+	auto const cancel{STR_C("Cancel")};
+	auto const cancel_width{ImGui::CalcTextSize(cancel).x + ImGui::GetStyle().FramePadding.x * 2.0f};
+	bool placed{false};
+	ImGui::BeginDisabled(false == map.picked());
+	if (main_button(STR_C("The scenery is here"), ImVec2(Moving ? -(cancel_width + ImGui::GetStyle().ItemSpacing.x) : -FLT_MIN, tall_button_height())))
+	{
+		nmt_place_scenery(map.point());
+		placed = true;
+	}
+	ImGui::EndDisabled();
+	if (Moving)
+	{
+		ImGui::SameLine();
+		if (ImGui::Button(cancel, ImVec2(0.0f, tall_button_height())))
+			state.moving = false;
+	}
+	return placed;
+}
+
 void editor_mode::render_nmt_ui()
 {
 	auto &state{m_nmt_state};
+	state.shown = ImGui::GetFrameCount();
 	nmt_locate();
-	auto const busy{state.fitting || state.stage != nmt_state::automatic::idle};
+	auto const busy{nmt_busy()};
 	step_heading(1, STR_C("Location"));
 	if (false == m_nmt.placed() || state.moving)
 	{
-		// where the scenery is, right here: the terrain model and the orthophoto take it
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", STR_C("Where the point 0,0 of the scenery lies on the map:"));
-		ImGui::PopTextWrapPos();
-		ImGui::SetNextItemWidth(120.0f);
-		ImGui::InputDouble("X##nmtplacenorth", &state.north, 0.0, 0.0, "%.0f");
-		item_tooltip("X of the point 0,0 in the PUWG 1992 coordinates of the Polish maps, metres to the north, as geoportal.gov.pl gives it");
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(120.0f);
-		ImGui::InputDouble("Y##nmtplaceeast", &state.east, 0.0, 0.0, "%.0f");
-		item_tooltip("Y of the point 0,0 in the PUWG 1992 coordinates of the Polish maps, metres to the east, as geoportal.gov.pl gives it");
-		ImGui::BeginDisabled(state.north < 100000.0 || state.east < 100000.0);
-		if (ImGui::Button(STR_C("The scenery is there")))
-		{
-			nmt_place_scenery();
+		if (render_nmt_place(state.moving, true))
 			state.moving = false;
-		}
-		ImGui::EndDisabled();
-		if (state.moving)
-		{
-			ImGui::SameLine();
-			if (ImGui::Button(STR_C("Cancel")))
-				state.moving = false;
-		}
 		if (false == m_nmt.placed())
 			return;
 	}
 	else
 	{
 		auto const &config{m_orthophoto.settings()};
-		ImGui::Text(STR_C("N %.0f, E %.0f"), config.north, config.east);
-		ImGui::SameLine();
-		ImGui::TextDisabled("%s", STR_C("PUWG 1992"));
+		auto const degrees{editor_geo::to_degrees({config.east, config.north})};
+		ImGui::AlignTextToFramePadding();
+		ImGui::Text(STR_C("%.5f N, %.5f E"), degrees.x, degrees.y);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(STR_C("X %.0f, Y %.0f in PUWG 1992, the coordinates of the Polish maps; the place is shared with the orthophoto"), config.north, config.east);
 		ImGui::SameLine();
 		ImGui::BeginDisabled(busy);
 		if (ImGui::SmallButton(STR_C("Change...")))
 		{
-			state.north = config.north;
-			state.east = config.east;
+			glm::dvec2 const point{config.east, config.north};
+			m_nmt_map.pick(point);
+			m_nmt_map.show(point, 8.0);
+			std::snprintf(state.place, sizeof(state.place), "%.6f, %.6f", degrees.x, degrees.y);
 			state.moving = true;
 		}
 		ImGui::EndDisabled();
-		item_tooltip("The place is shared with the orthophoto");
 	}
 
 	auto const tracks{std::any_of(simulation::Paths.sequence().begin(), simulation::Paths.sequence().end(), [](TTrack const *Track) { return Track != nullptr && rail(*Track); })};
@@ -755,57 +1156,47 @@ void editor_mode::render_nmt_ui()
 		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextDisabled("%s", STR_C("No tracks yet: the terrain is made around the camera, the tracks laid then go along it"));
 		ImGui::PopTextWrapPos();
+		if (begin_fields("##nmtarea"))
+		{
+			field_row("Area");
+			segmented("nmtarea", m_terrain_add_count, {{2, "0.5 km", "A square of 500 m around the camera"}, {4, "1 km", "A square of 1 km around the camera"}, {8, "2 km", "A square of 2 km around the camera"}});
+			ImGui::EndTable();
+		}
 	}
 
 	step_heading(3, STR_C("Load"));
-	if (tracks && m_streamer.resident() > 0)
+	if (tracks && m_streamer.resident() > 0 && false == busy)
 	{
 		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.75f, 0.3f, 1.0f));
 		ImGui::TextWrapped("%s", STR_C("The scenery has terrain already: along the tracks it's made anew from the model, its painting too"));
 		ImGui::PopStyleColor();
 	}
-	ImGui::BeginDisabled(busy);
-	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.45f, 0.75f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.55f, 0.88f, 1.0f));
-	char const *label{tracks ? (state.mode == 0 ? STR_C("Load the terrain, put the tracks onto it") : STR_C("Load the terrain under the tracks")) : STR_C("Load the terrain around the camera")};
-	if (ImGui::Button(label, ImVec2(-1.0f, ImGui::GetFrameHeight() * 1.5f)))
+	if (busy)
+		render_nmt_progress(false);
+	else
 	{
-		if (false == tracks)
+		char const *label{tracks ? (state.mode == 0 ? STR_C("Load the terrain, put the tracks onto it") : STR_C("Load the terrain under the tracks")) : STR_C("Load the terrain around the camera")};
+		if (main_button(label, ImVec2(-FLT_MIN, tall_button_height())))
 		{
-			state.offset = 0.0;
-			nmt_make(nmt_keys_around());
+			if (false == tracks)
+			{
+				state.offset = 0.0;
+				nmt_make(nmt_keys_around());
+			}
+			else if (state.mode == 0)
+				nmt_auto_start();
+			else
+				nmt_under_start();
 		}
-		else if (state.mode == 0)
-			nmt_auto_start();
-		else
-			nmt_under_start();
-	}
-	ImGui::PopStyleColor(2);
-	ImGui::EndDisabled();
-	if (ImGui::IsItemHovered())
-	{
-		auto const *text{tracks ? (state.mode == 0 ? STR_C("The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported") :
-		                                             STR_C("The tracks aren't touched: the terrain model is loaded along them and drawn to them, at each place by as much as the tracks lie above or below it there, fading out away from them, so its relief stays and the tracks don't end up in deep cuttings; then the formation and the slopes along them. For a scenery built level or at its own heights")) :
-		                           STR_C("Loads the terrain model, the real relief of the ground, around the camera")};
-		ImGui::SetTooltip("%s\n%s", text, STR_C("Terrain model: GUGiK, geoportal.gov.pl"));
+		if (ImGui::IsItemHovered())
+		{
+			auto const *text{tracks ? (state.mode == 0 ? STR_C("The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported") :
+			                                             STR_C("The tracks aren't touched: the terrain model is loaded along them and drawn to them, at each place by as much as the tracks lie above or below it there, fading out away from them, so its relief stays and the tracks don't end up in deep cuttings; then the formation and the slopes along them. For a scenery built level or at its own heights")) :
+			                           STR_C("Loads the terrain model, the real relief of the ground, around the camera")};
+			ImGui::SetTooltip("%s\n%s", text, STR_C("Terrain model: GUGiK, geoportal.gov.pl"));
+		}
 	}
 	toggle_chips("nmtgrow", {{STR_C("Make the terrain ahead while laying"), &state.grow, "Where a track is laid past the edge of the terrain, the terrain model is made around the cursor as it goes"}});
-	// how far it got
-	if (state.stage == nmt_state::automatic::fetching || state.fitting)
-	{
-		auto const waiting{m_nmt.waiting()};
-		ImGui::ProgressBar(-1.0f * static_cast<float>(ImGui::GetTime()), ImVec2(-1.0f, 0.0f), format(STR_P("Terrain model: %zu square left", "Terrain model: %zu squares left", waiting), waiting).c_str());
-	}
-	else if (state.stage == nmt_state::automatic::fitting && state.tracks > 0)
-	{
-		auto const fraction{1.0f - static_cast<float>(state.left.size()) / static_cast<float>(std::max<std::size_t>(state.tracks, state.left.size()))};
-		ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), format(STR_P("Grade lines: %zu fitted, %zu track left", "Grade lines: %zu fitted, %zu tracks left", state.left.size()), state.lines, state.left.size()).c_str());
-	}
-	else if (false == state.pending.empty())
-	{
-		auto const total{state.made + state.pending.size()};
-		ImGui::ProgressBar(static_cast<float>(state.made) / static_cast<float>(std::max<std::size_t>(1, total)), ImVec2(-1.0f, 0.0f), format(STR_C("Chunks: %zu of %zu"), state.made, total).c_str());
-	}
 	if (false == state.status.empty())
 	{
 		ImGui::PushTextWrapPos(0.0f);
@@ -817,6 +1208,17 @@ void editor_mode::render_nmt_ui()
 		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", state.error.c_str());
 		ImGui::PopTextWrapPos();
+	}
+	bool again{false};
+	if (auto const error{m_nmt.error(&again)}; false == error.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR(error).c_str());
+		ImGui::PopTextWrapPos();
+		if (again && ImGui::Button(STR_C("Try again")))
+			m_nmt.retry();
+		if (again)
+			item_tooltip("The squares of the model the service didn't give are asked for again; it happens by itself every 15 s too");
 	}
 	ImGui::PushID("nmtmore");
 	if (tracks && ImGui::TreeNode(STR_C("More settings")))
@@ -917,16 +1319,22 @@ bool editor_mode::nmt_choice_card(int const Index, char const *Title, char const
 	return clicked;
 }
 
-void editor_mode::nmt_place_scenery()
+void editor_mode::nmt_place_scenery(glm::dvec2 const &Point)
 {
 	auto &state{m_nmt_state};
 	auto config{m_orthophoto.settings()};
-	config.north = state.north;
-	config.east = state.east;
+	config.north = Point.y;
+	config.east = Point.x;
 	m_orthophoto.settings(config);
 	m_orthophoto_origin_edit = {config.north, config.east};
 	save_orthophoto_settings();
 	nmt_locate();
+	// the heights fitted to the tracks at the place before mean nothing here
+	state.offset = 0.0;
+	state.fitted = false;
+	state.under = false;
+	state.anchors.clear();
+	state.anchor_cells.clear();
 }
 
 void editor_mode::nmt_offer()
@@ -938,16 +1346,14 @@ void editor_mode::nmt_offer()
 	if (m_streamer.resident() > 0 || std::any_of(simulation::Paths.sequence().begin(), simulation::Paths.sequence().end(), [](TTrack const *Track) { return Track != nullptr && rail(*Track); }))
 		return;
 	nmt_locate();
-	state.north = m_orthophoto.settings().north;
-	state.east = m_orthophoto.settings().east;
 	state.prompt = true;
 }
 
 void editor_mode::nmt_accept_offer()
 {
 	auto &state{m_nmt_state};
-	if (false == m_nmt.placed())
-		nmt_place_scenery();
+	if (false == m_nmt.placed() && m_nmt_map.picked())
+		nmt_place_scenery(m_nmt_map.point());
 	// no tracks to fit to: the heights of the model as they are
 	state.offset = 0.0;
 	nmt_make(nmt_keys_around());
@@ -968,15 +1374,8 @@ void editor_mode::render_nmt_prompt()
 	ImGui::TextWrapped("%s", STR_C("The scenery has no terrain yet. Load the terrain model and the aerial photos around here? The tracks laid then go along the real ground."));
 	bool const placed{m_nmt.placed()};
 	if (false == placed)
-	{
-		ImGui::TextWrapped("%s", STR_C("Where is it? PUWG 1992 of this point, X to the north and Y to the east, as geoportal.gov.pl gives them:"));
-		ImGui::SetNextItemWidth(150.0f);
-		ImGui::InputDouble("X##nmtnorth", &state.north, 0.0, 0.0, "%.0f");
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(150.0f);
-		ImGui::InputDouble("Y##nmteast", &state.east, 0.0, 0.0, "%.0f");
-	}
-	auto const known{placed || (state.north > 100000.0 && state.east > 100000.0)};
+		render_nmt_place(false, false);
+	auto const known{placed || m_nmt_map.picked()};
 	ImGui::Spacing();
 	auto const gap{std::round(ImGui::GetFontSize() * 0.6f)};
 	auto const width{std::floor((ImGui::GetContentRegionAvail().x - gap) * 0.5f)};
@@ -986,7 +1385,7 @@ void editor_mode::render_nmt_prompt()
 		ImGui::CloseCurrentPopup();
 	}
 	if (false == known)
-		item_tooltip("Type where the scenery lies first");
+		item_tooltip("Pick where the scenery lies first");
 	ImGui::SameLine(0.0f, gap);
 	if (ground_card("##flat", STR_C("Without terrain"), STR_C("The tracks lie on the flat plane at the height 0; the terrain can be loaded later in Terrain (F5)"), false, true, width))
 	{
@@ -1146,6 +1545,7 @@ std::size_t editor_mode::nmt_join_ends()
 void editor_mode::nmt_auto_start()
 {
 	auto &state{m_nmt_state};
+	state.error.clear();
 	state.under = false;
 	nmt_locate();
 	state.probes.clear();
@@ -1445,7 +1845,7 @@ void editor_mode::nmt_auto_step()
 	{
 		bool all{true};
 		for (auto const &place : state.probes)
-			all = m_nmt.request(glm::dvec2{place.position.x, place.position.z} - glm::dvec2{1.0}, glm::dvec2{place.position.x, place.position.z} + glm::dvec2{1.0}) && all;
+			all = nmt_ready(glm::dvec2{place.position.x, place.position.z} - glm::dvec2{1.0}, glm::dvec2{place.position.x, place.position.z} + glm::dvec2{1.0}) && all;
 		auto const waiting{m_nmt.waiting()};
 		state.status = format(STR_P("Fetching the terrain model under the tracks: %zu square left", "Fetching the terrain model under the tracks: %zu squares left", waiting), waiting);
 		if (false == all)

@@ -1194,6 +1194,7 @@ void editor_mode::track_captured(TTrack const &Track)
 
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
+	nmt_track_changed(Tracks);
 	sweeps_committed(Tracks);
 	switch_drives_committed(Tracks);
 	if (m_infra_suspended || false == m_infra.follow)
@@ -1273,8 +1274,9 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 	}
 }
 
-void editor_mode::track_retired(TTrack &)
+void editor_mode::track_retired(TTrack &Track)
 {
+	nmt_track_gone(Track);
 	tracks_committed({});
 }
 

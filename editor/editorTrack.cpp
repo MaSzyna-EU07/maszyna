@@ -3512,6 +3512,8 @@ void editor_track::retire(TTrack &Track)
 	disconnect(Track);
 	simulation::Region->erase_and_unregister(&Track);
 	Track.m_editorremoved = true;
+	if (s_observer != nullptr)
+		s_observer->track_retired(Track);
 	// the name is free for the path laid in its place, as the switches of a crossover laid again keep theirs
 	simulation::Paths.rename(&Track, std::string{});
 	for (auto *neighbour : adjoining)
@@ -3527,8 +3529,6 @@ void editor_track::retire(TTrack &Track)
 	for (auto *crossing : crossings)
 		if (crossing != &Track && false == crossing->m_editorremoved)
 			rebuild_geometry(*crossing);
-	if (s_observer != nullptr)
-		s_observer->track_retired(Track);
 }
 
 void editor_track::revive(TTrack &Track)

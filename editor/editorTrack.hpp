@@ -506,6 +506,7 @@ class editor_track
 		virtual ~observer() = default;
 		virtual void track_captured(TTrack const &Track) = 0;
 		virtual void tracks_committed(std::vector<TTrack *> const &Tracks) = 0;
+		// still under its name
 		virtual void track_retired(TTrack &Track) = 0;
 		// called before the commit; Original keeps the beginning of the path, given in First
 		virtual void track_split(TTrack &Original, TTrack &Created, segment_data const &First) = 0;

@@ -213,11 +213,70 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog(format("SELFTEST nmtoffer: shown %d", m_nmt_state.prompt ? 1 : 0));
 		if (north > 0.0 && east > 0.0 && m_nmt_state.prompt)
 		{
-			m_nmt_state.north = north;
-			m_nmt_state.east = east;
+			m_nmt_map.pick({east, north});
 			nmt_accept_offer();
 			WriteLog("SELFTEST nmtoffer taken: " + m_nmt_state.status);
 		}
+		return selftest_result::handled;
+	}
+	if (command == "nmtplace")
+	{
+		// a place as typed into the terrain window: the PUWG 1992 and the degrees it's understood as
+		std::string text;
+		std::getline(words, text);
+		glm::dvec2 point;
+		if (false == editor_geo::parse_place(text, point))
+		{
+			WriteLog("SELFTEST nmtplace" + text + ": not understood");
+			return selftest_result::handled;
+		}
+		auto const degrees{editor_geo::to_degrees(point)};
+		WriteLog(format("SELFTEST nmtplace%s: X %.1f Y %.1f, %.6f N %.6f E", text.c_str(), point.y, point.x, degrees.x, degrees.y));
+		return selftest_result::handled;
+	}
+	if (command == "nmtgrow")
+	{
+		// the cursor of a track laid at the place: the terrain grows around it
+		auto const active{m_lay.active};
+		words >> m_lay.mouse.x >> m_lay.mouse.z;
+		m_lay.active = true;
+		m_nmt_state.grow_time = -10.0;
+		nmt_grow();
+		m_lay.active = active;
+		WriteLog(format("SELFTEST nmtgrow: %zu chunks waiting, grown %d", m_nmt_state.pending.size(), m_nmt_state.grown ? 1 : 0));
+		return selftest_result::handled;
+	}
+	if (command == "terrainseams")
+	{
+		// the steps of the ground where two chunks in memory meet
+		std::vector<editor_terrain *> chunks;
+		m_streamer.collect(chunks);
+		std::set<heightmap::chunk_key> keys;
+		for (auto const *chunk : chunks)
+			keys.insert(chunk->key());
+		std::size_t edges{0};
+		double worst{0.0};
+		glm::dvec2 where{0.0};
+		for (auto const &key : keys)
+			for (auto const [dx, dz] : {std::pair{1, 0}, std::pair{0, 1}})
+			{
+				if (false == keys.contains({key.first + dx, key.second + dz}))
+					continue;
+				++edges;
+				auto const corner{heightmap::chunk_corner({key.first + dx, key.second + dz})};
+				for (int i = 0; i <= 32; ++i)
+				{
+					auto const along{heightmap::chunk_size * i / 32.0};
+					glm::dvec2 const point{corner.x + (dx == 0 ? along : 0.0), corner.y + (dz == 0 ? along : 0.0)};
+					glm::dvec2 const inside{dx * 0.01, dz * 0.01};
+					if (double a, b; m_streamer.height_at(point.x - inside.x, point.y - inside.y, a) && m_streamer.height_at(point.x + inside.x, point.y + inside.y, b) && std::abs(a - b) > worst)
+					{
+						worst = std::abs(a - b);
+						where = point;
+					}
+				}
+			}
+		WriteLog(format("SELFTEST terrainseams: %zu chunks, %zu edges, the greatest step %.3f m at %.1f %.1f", keys.size(), edges, worst, where.x, where.y));
 		return selftest_result::handled;
 	}
 	if (command == "nmtwait")
