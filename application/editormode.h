@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodegauge.h"
 #include "application/editormodejoints.h"
 #include "application/editormodespeed.h"
+#include "application/editormodevehicle.h"
 #include "application/editortool.h"
 #include "scene/sceneeditor.h"
 #include "scene/scenenode.h"
@@ -55,12 +56,6 @@ class TAnimModel;
 // a tool of a field of work of the editor, a button in the toolbar and over the 3d view
 struct editor_tool_button;
 class TTrack;
-namespace ui
-{
-class vehicles_bank;
-struct vehicle_desc;
-struct skin_set;
-}
 
 class editor_mode : public application_mode, private editor_track::observer, private editor_services
 {
@@ -240,9 +235,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_help_menu();
 	void render_shortcuts_window();
 	bool m_shortcuts_open{false};
-	enum class first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, count };
+	using first_step = editor_first_step;
 	void render_first_steps();
-	void first_step_done(first_step const Step);
+	void first_step_done(first_step const Step) override;
 	bool m_first_steps_open{false};
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
 	int m_tutorial_page{0};
@@ -718,6 +713,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool track_editing() const override;
 	std::size_t history_size() const override;
 	glm::dvec3 camera_position() const override;
+	track_hover const &hovered_track() const override;
 	void render_path_ui();
 	void draw_track_overlay() const;
 	editor_track::point_ref track_handle_hit() const;
@@ -1516,13 +1512,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// a scenery with no tracks yet: in the middle of the view, how the first one is laid
 	void draw_empty_scenery_hint();
 	// path under the cursor, outlined before a click so it's known which one the click takes
-	struct track_hover
-	{
-		TTrack *track{nullptr};
-		int path{0};
-		glm::dvec3 point{0.0};
-		double since{0.0};
-	};
+	using track_hover = ::track_hover;
 	track_hover m_hover;
 	track_hover track_under_cursor(TTrack const *Only = nullptr, float const Pixels = 0.0f) const;
 	track_hover split_spot() const;
@@ -1924,49 +1914,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::optional<std::pair<int, bool>> fouling_hit() const;
 	void render_fouling_ui();
 	void draw_fouling_overlay() const;
-
-	// a trainset put on the selected path, written to the scenery on save, or only to be driven
-	struct vehicle_tool
-	{
-		bool open{false};
-		bool expand{false};
-		std::shared_ptr<ui::vehicles_bank> bank;
-		char search[64]{};
-		bool controllable_only{true};
-		std::shared_ptr<ui::vehicle_desc> vehicle;
-		std::shared_ptr<ui::skin_set> skin;
-		int driver{0}; // 0: a driver, to be driven; 1: nobody, parked
-		TTrack *track{nullptr};
-		glm::dvec3 point{0.0};
-		std::string placed;
-		std::string status;
-		bool leave{false}; // the editor gives way to the driving at the start of the next frame
-		struct consist_vehicle
-		{
-			std::shared_ptr<ui::vehicle_desc> vehicle;
-			std::shared_ptr<ui::skin_set> skin;
-			bool turned{false};
-		};
-		std::vector<consist_vehicle> consist;
-		int picked{-1}; // vehicle of the train whose buttons are shown
-		std::set<ui::skin_set const *> minis; // skins whose side view was asked for
-		int facing{1};
-		bool write{true};
-		char timetable[64]{"none"};
-		double velocity{0.0};
-		struct trainset
-		{
-			std::string head;
-			std::string track;
-			std::vector<std::string> lines;
-		};
-		std::vector<trainset> trainsets;
-	};
-	vehicle_tool m_vehicle;
-	void vehicle_start(TTrack &Track, glm::dvec3 const &Point);
-	bool vehicle_place();
-	void render_vehicle_ui();
-	void draw_vehicle_marker() const;
 
 	struct signal_template
 	{
@@ -2445,7 +2392,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	gauge_tool m_gauge{*this};
 	speed_tool m_speed{*this};
 	joints_tool m_joints{*this};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints};
+	vehicle_tool m_vehicle{*this};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle};
 
 	void infra_rebase();
 	void render_infra_search();

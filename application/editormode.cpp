@@ -1286,9 +1286,8 @@ bool editor_mode::update()
 {
     Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
-    if (m_vehicle.leave)
+    if (m_vehicle.take_leave())
     {
-        m_vehicle.leave = false;
         Application.pop_mode();
         return true;
     }
@@ -1456,7 +1455,7 @@ bool editor_mode::update()
         {
             draw_hekto_overlay();
             draw_fouling_overlay();
-            draw_vehicle_marker();
+            m_vehicle.draw_overlay();
         }
         render_track_context();
         update_build_tools();
@@ -2937,13 +2936,7 @@ bool editor_mode::save()
     auto const controls{turntable_controls(rootstatements)};
     auto const noses{nose_controls(rootstatements)};
     std::vector<std::string> trailing;
-    std::erase_if(m_vehicle.trainsets, [](auto const &Trainset) {
-        auto const *track{simulation::Paths.find(Trainset.track)};
-        return track == nullptr || track->m_editorremoved;
-    });
-    auto const placed{m_vehicle.trainsets.size()};
-    for (auto const &trainset : m_vehicle.trainsets)
-        trailing.insert(trailing.end(), trainset.lines.begin(), trainset.lines.end());
+    auto const placed{m_vehicle.trainset_lines(trailing)};
     if (placed == 0)
         starter_trainset(trailing);
     auto const result = scene::Layers.save(rootstatements, trailing);
@@ -2952,10 +2945,7 @@ bool editor_mode::save()
     if (result.success && noses)
         m_nose_included = true;
     if (result.success && placed > 0)
-    {
-        m_vehicle.trainsets.clear();
-        m_vehicle.status = format(STR_C("%d trainset(s) written to the scenery"), static_cast<int>(placed));
-    }
+        m_vehicle.trainsets_written();
     if (result.success && placed == 0 && trailing.size() == 3)
     {
         std::istringstream header{trailing.front()};
@@ -5301,12 +5291,12 @@ void editor_mode::render_first_steps()
 		}
 		case trial::trainset:
 		{
-			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::lineside && m_vehicle.open);
+			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::lineside && m_vehicle.tab().open);
 			if (ImGui::Button(STR_C("The trainset tool")))
 			{
 				choose_work_area(work_area::tracks);
 				show_track_tab(track_tab::lineside);
-				m_vehicle.expand = true;
+				m_vehicle.tab().expand = true;
 			}
 			ImGui::EndDisabled();
 			break;

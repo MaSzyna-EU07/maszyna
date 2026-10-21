@@ -34,6 +34,22 @@ enum class editor_selftest_result
 	again
 };
 
+enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, count };
+
+struct track_hover
+{
+	TTrack *track{nullptr};
+	int path{0};
+	glm::dvec3 point{0.0};
+	double since{0.0};
+};
+
+struct tool_tab
+{
+	bool open{false};
+	bool expand{false};
+};
+
 struct nmt_place
 {
 	glm::dvec3 position{0.0}; // on the axis of the path
@@ -52,6 +68,8 @@ class editor_services
 	virtual bool track_editing() const = 0;
 	virtual std::size_t history_size() const = 0;
 	virtual glm::dvec3 camera_position() const = 0;
+	virtual track_hover const &hovered_track() const = 0;
+	virtual void first_step_done(editor_first_step const Step) = 0;
 	virtual void fly_to(glm::dvec3 const &Target, glm::dvec3 const &Look, double const Distance, double const Duration = 0.6) = 0;
 	virtual void focus_track(TTrack &Track, int const Path, glm::dvec3 const &Point) = 0;
 	virtual void set_current_node(scene::basic_node *Node) = 0;

@@ -293,29 +293,6 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		WriteLog(format("SELFTEST mapstate orthophoto %d top %d extent %.0f mark %s camera %.1f %.1f %.1f", m_orthophoto.enabled() ? 1 : 0, Global.EditorOrtho ? 1 : 0, Global.EditorOrthoExtent, marked.empty() ? "-" : marked.front().c_str(), Camera.Pos.x, Camera.Pos.y, Camera.Pos.z));
 		return selftest_result::handled;
 	}
-	if (command == "trainset")
-	{
-		std::string name;
-		std::string vehicle;
-		std::string skin;
-		int facing{1};
-		words >> name >> vehicle >> skin >> facing >> m_vehicle.velocity;
-		auto *track{simulation::Paths.find(name)};
-		if (track == nullptr)
-			return selftest_result::handled;
-		auto desc{std::make_shared<ui::vehicle_desc>()};
-		desc->path = vehicle;
-		auto set{std::make_shared<ui::skin_set>()};
-		set->skin = skin;
-		m_vehicle.consist.clear();
-		m_vehicle.vehicle = desc;
-		m_vehicle.skin = set;
-		vehicle_start(*track, geometry::bezier{track->m_paths.front()}.point(0.5));
-		m_vehicle.facing = facing;
-		auto const placed{vehicle_place()};
-		WriteLog(format("SELFTEST trainset %s placed %d pending %d: %s", name.c_str(), placed ? 1 : 0, static_cast<int>(m_vehicle.trainsets.size()), m_vehicle.status.c_str()));
-		return selftest_result::handled;
-	}
 	if (command == "selectmodel")
 	{
 		glm::dvec3 point{0.0};

@@ -160,7 +160,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	}
 	case work_area::tracks:
 	{
-		auto const vehicle{m_track_tab == track_tab::lineside && m_vehicle.open};
+		auto const vehicle{m_track_tab == track_tab::lineside && m_vehicle.tab().open};
 		auto const add = [&](track_tab const Tab, bool const Group) {
 			auto const &modes{track_modes()};
 			auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == Tab; })};
@@ -191,7 +191,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		add(track_tab::lineside, false);
 		Buttons.push_back({icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {
 			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
-			                   m_vehicle.expand = false == vehicle;
+			                   m_vehicle.tab().expand = false == vehicle;
 		                   }});
 		Buttons.back().accent = family_colour(1);
 		add(track_tab::profile, true);

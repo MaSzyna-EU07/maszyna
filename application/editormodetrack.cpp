@@ -67,6 +67,11 @@ glm::dvec3 editor_mode::camera_position() const
 	return Camera.Pos;
 }
 
+editor_mode::track_hover const &editor_mode::hovered_track() const
+{
+	return m_hover;
+}
+
 void editor_mode::set_current_node(scene::basic_node *Node)
 {
 	m_node = Node;
@@ -554,7 +559,7 @@ void editor_mode::render_track_inspector()
 		m_hekto.open = false;
 		m_fouling.open = false;
 		m_parallel.open = false;
-		m_vehicle.open = false;
+		m_vehicle.tab().open = false;
 	}
 	ui()->set_track(m_track_window_open);
 	if (false == m_track_window_open)

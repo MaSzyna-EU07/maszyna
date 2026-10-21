@@ -142,7 +142,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		m_hekto.expand = tab == 1;
 		m_fouling.expand = tab == 2;
 		m_parallel.expand = tab == 3;
-		m_vehicle.expand = tab == 4;
+		m_vehicle.tab().expand = tab == 4;
 		return selftest_result::handled;
 	}
 	if (command == "curve")
