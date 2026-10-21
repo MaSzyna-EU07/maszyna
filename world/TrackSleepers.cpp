@@ -118,6 +118,10 @@ void lay( TTrack &Track ) {
     if( false == laid.active || laid.timbers == nullptr ) {
         return;
     }
+    // the sleepers of the model of the track itself (sleepermodel) at the height they're drawn at without the 3D sleepers: the
+    // origin of the model at the top of the rails, moved up by the sleeper shift, which the model was fitted to
+    auto const ownplains { laid.plains != nullptr && Track.m_sleeper_enabled && laid.plains != plain_model() };
+    auto const plainlift { ownplains ? Track.rail_height() + Track.m_sleeper_offset.z : 0.f };
     auto const &parts { *laid.timbers };
     if( auto const panel { panel_off_plane( Track ) }; panel.first > coplanar_tolerance ) {
         WriteLog(
@@ -202,7 +206,7 @@ void lay( TTrack &Track ) {
             // the whole sleeper at its own length, its middle under the middle of the track
             auto const &plain { *laid.plains };
             laid.plain.emplace_back(
-                glm::translate( frame, glm::vec3 { -0.5f * ( plain.span.x + plain.span.y ), -plain.seat, 0.f } ) );
+                glm::translate( frame, glm::vec3 { -0.5f * ( plain.span.x + plain.span.y ), ( ownplains ? plainlift : -plain.seat ), 0.f } ) );
         }
         else if( false == parts.stretchable ) {
             // a timber of a model which can't be put together, the whole of it stretched to the length

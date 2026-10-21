@@ -3388,8 +3388,9 @@ TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previ
                 {0.5f + map12, 0.f} }; // prawy skos
         }
     }
-    if( m_sleepers3d.active ) {
-        // the ballast lowered under the sleepers laid on it, so they stick out of it
+    if( m_sleepers3d.active && false == ( m_sleeper_enabled && false == m_sleeper_model_name.empty() ) ) {
+        // the ballast lowered under the sleepers laid on it, so they stick out of it; the ballast under the sleepers of
+        // the model of the track itself is moved by its own trackbed shift, as without the 3D sleepers
         for( auto &point : Output ) {
             point.position.y -= static_cast<float>( track_sleepers::bed_drop );
         }
