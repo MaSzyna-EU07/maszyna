@@ -10,6 +10,7 @@ http:
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "editor/editorSettings.hpp"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
@@ -1342,7 +1343,7 @@ bool geometry_card(char const *Id, char const *Title, char const *Text, bool con
 
 bool editor_mode::render_norms_choice()
 {
-	auto changed{false};
+	auto picked{false};
 	auto const gap{std::round(ImGui::GetFontSize() * 0.5f)};
 	auto const width{std::floor((ImGui::GetContentRegionAvail().x - gap) * 0.5f)};
 	char const *const titles[]{STR_C("Free laying"), STR_C("To the PKP PLK norms")};
@@ -1357,14 +1358,48 @@ bool editor_mode::render_norms_choice()
 		auto const clicked{geometry_card(i == 0 ? "##free" : "##norms", titles[i], texts[i], i == 1, chosen, width, height)};
 		item_tooltip(i == 0 ? "Plain arcs with no transition curves and no cant, no warnings about the norms: the track goes where it's clicked"
 		                    : "Transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms");
+		picked |= clicked;
 		if (clicked && false == chosen)
 		{
 			set_norms_free(i == 0);
-			changed = true;
+			// a kept choice follows the one made later
+			if (EditorSettings.norms() != editorSettings::track_norms::ask)
+			{
+				EditorSettings.norms(m_norms_free ? editorSettings::track_norms::free_laying : editorSettings::track_norms::plk);
+				EditorSettings.save();
+			}
 		}
 	}
 	ImGui::PopID();
-	return changed;
+	return picked;
+}
+
+void editor_mode::render_norms_prompt()
+{
+	if (false == m_norms_prompt)
+		return;
+	char const *const title{STR_C("How to lay the tracks###normsprompt")};
+	if (false == ImGui::IsPopupOpen(title))
+		ImGui::OpenPopup(title);
+	ImGui::SetNextWindowSize(ImVec2(520.0f * Global.ui_scale, 0.0f));
+	if (false == ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_NoResize))
+		return;
+	ImGui::TextWrapped("%s", STR_C("Choose how the new tracks are laid. It can be changed any time at the top of the panels of laying and of the plan."));
+	ImGui::Spacing();
+	if (render_norms_choice())
+	{
+		if (m_norms_remember)
+		{
+			EditorSettings.norms(m_norms_free ? editorSettings::track_norms::free_laying : editorSettings::track_norms::plk);
+			EditorSettings.save();
+		}
+		m_norms_prompt = false;
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::Spacing();
+	ImGui::Checkbox(STR_C("Remember the choice, don't ask again"), &m_norms_remember);
+	item_tooltip("Asking again can be switched on in the settings of the editor (General)");
+	ImGui::EndPopup();
 }
 
 void editor_mode::set_norms_free(bool const Free)

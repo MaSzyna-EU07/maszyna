@@ -64,6 +64,15 @@ public:
 	// the ballast of the railway drawn in the top view
 	bool top_ballast() const { return m_top_ballast; }
 	void top_ballast(bool Show) { m_top_ballast = Show; }
+	// how the new tracks are laid: asked as the laying starts, or the choice kept
+	enum class track_norms
+	{
+		ask,
+		free_laying,
+		plk
+	};
+	track_norms norms() const { return m_norms; }
+	void norms(track_norms Norms) { m_norms = Norms; }
 
 private:
 	movement_scheme m_movement{movement_scheme::wsad};
@@ -78,6 +87,7 @@ private:
 	bool m_terrain_offer{true};
 	bool m_track_tools_more{false};
 	bool m_top_ballast{true};
+	track_norms m_norms{track_norms::ask};
 };
 
 // global editor settings instance

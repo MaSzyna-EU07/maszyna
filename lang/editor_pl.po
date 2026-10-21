@@ -10150,3 +10150,21 @@ msgstr "LPM: początek pomiaru. M albo Esc: koniec"
 
 msgid "Measure"
 msgstr "Miarka"
+
+msgid "How to lay the tracks###normsprompt"
+msgstr "Jak kłaść tory###normsprompt"
+
+msgid "Choose how the new tracks are laid. It can be changed any time at the top of the panels of laying and of the plan."
+msgstr "Wybierz, jak mają się kłaść nowe tory. Zmienisz to w każdej chwili na górze paneli Układanie i Plan."
+
+msgid "Remember the choice, don't ask again"
+msgstr "Zapamiętaj wybór, nie pytaj więcej"
+
+msgid "Asking again can be switched on in the settings of the editor (General)"
+msgstr "Pytanie można włączyć z powrotem w ustawieniach edytora (Ogólne)"
+
+msgid "Laying of new tracks"
+msgstr "Kładzenie nowych torów"
+
+msgid "Ask as the laying starts"
+msgstr "Pytaj przy rozpoczęciu kładzenia"

@@ -1336,9 +1336,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<step> chain;
 	};
 	lay_tool m_lay;
-	bool m_norms_free{true};
+	bool m_norms_free{false};
+	// the choice between the free laying and the norms, asked once a session as the laying or the plan is opened first
+	bool m_norms_prompt{false};
+	bool m_norms_asked{false};
+	bool m_norms_remember{false};
 	alignment::limits laying_norms() const;
+	// returns: a card was clicked
 	bool render_norms_choice();
+	void render_norms_prompt();
 	void set_norms_free(bool const Free);
 	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const;
 	// the straight track Alt turns the laid straight to: the nearest one the straight from From to To crosses, or one along From

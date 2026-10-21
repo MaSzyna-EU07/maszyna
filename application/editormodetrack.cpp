@@ -10,6 +10,7 @@ http:
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "editor/editorSettings.hpp"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
@@ -37,6 +38,7 @@ http:
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <iterator>
@@ -447,6 +449,11 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 	m_lay.active = Tab == track_tab::lay;
 	m_switch.armed = -1;
 	m_track_tab = Tab;
+	if ((Tab == track_tab::lay || Tab == track_tab::straights || Tab == track_tab::route) && false == m_norms_asked && EditorSettings.norms() == editorSettings::track_norms::ask && std::getenv("EU07_EDITOR_SELFTEST") == nullptr)
+	{
+		m_norms_asked = true;
+		m_norms_prompt = true;
+	}
 	auto *track{selected_track()};
 	switch (Tab)
 	{
