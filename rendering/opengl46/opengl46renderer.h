@@ -102,7 +102,7 @@ class opengl46_renderer : public gfx_renderer {
     material_handle
         Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) override;
     material_handle
-        Blend_Material( material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain ) override;
+        Blend_Material( material_handle const Material, std::array<material_handle, 3> const &Others ) override;
     bool
         Blendable_Material( material_handle const Material ) override;
     void

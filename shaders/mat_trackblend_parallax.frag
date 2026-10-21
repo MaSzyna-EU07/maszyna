@@ -1,4 +1,4 @@
-// the rails of a track of a parallax material faded into those of the tracks joined at its ends, see trackblend.glsl
+// the rails and the ballast of a track of a parallax material faded into those of the tracks joined at its ends, see trackblend.glsl
 #define TRACKBLEND_NORMALMAP 1
 #define TRACKBLEND_PARALLAX 1
 #param (height_scale, 2, 1, 1, zero)

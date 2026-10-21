@@ -1,4 +1,4 @@
-// the rails of a track of a material with normal and specgloss maps faded into those of the tracks joined at its ends, see trackblend.glsl
+// the rails and the ballast of a track of a material with normal and specgloss maps faded into those of the tracks joined at its ends, see trackblend.glsl
 #define TRACKBLEND_NORMALMAP 1
 #define TRACKBLEND_SPECGLOSS 1
 #texture (diffuse, 0, sRGB_A)

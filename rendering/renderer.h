@@ -112,8 +112,8 @@ public:
     virtual auto Matte_Material( material_handle const Material ) -> material_handle { return Material; }
     virtual auto Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) -> material_handle { return Material; }
     // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of the user data
-    // of the vertices, the others as grains with Grain (world/TrackBlend.h). backends which can't make one give back the material itself
-    virtual auto Blend_Material( material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain ) -> material_handle { return Material; }
+    // of the vertices (world/TrackBlend.h). backends which can't make one give back the material itself
+    virtual auto Blend_Material( material_handle const Material, std::array<material_handle, 3> const &Others ) -> material_handle { return Material; }
     // whether a material can be blended so
     virtual auto Blendable_Material( material_handle const Material ) -> bool { return false; }
     // heightmap terrain: material of a chunk blending the materials of up to 8 layers by their weights.

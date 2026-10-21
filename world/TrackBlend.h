@@ -21,8 +21,8 @@ class TTrack;
 
 // the rails and the ballast of a track blended into those of the tracks joined at its ends, where their textures differ: near
 // an end the vertices carry the weight of the track joined there (y, z, w of their user data for the ends p1, p2 and p4 of a
-// switch) and the track is drawn with a material blending its texture with theirs. the ballast comes in as grains, the rails
-// fade into each other. a plain track blends its rails and its ballast, a switch the trackbed made for it
+// switch) and the track is drawn with a material fading its texture into theirs. a plain track blends its rails and its
+// ballast, a switch the trackbed made for it
 namespace track_blend {
 
 // how far from an end the textures blend, by default

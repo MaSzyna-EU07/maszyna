@@ -766,13 +766,13 @@ int constexpr blend_specgloss { 4 }; // added to the lighting for a material wit
 int constexpr blend_parallax { 8 }; // added to the lighting (1, normalmap) of a parallax material
 
 std::string
-blend_shader( int const Lighting, bool const Grain ) {
+blend_shader( int const Lighting ) {
 
     std::string name { "trackblend" };
     if( Lighting & blend_specgloss ) { name += "_specgloss"; }
     else if( Lighting & blend_parallax ) { name += "_parallax"; }
     else if( Lighting > 0 ) { name += "_normalmap"; }
-    return ( Grain ? name + "_grain" : name );
+    return name;
 }
 
 } // namespace
@@ -820,7 +820,7 @@ material_manager::blend_lighting( material_handle const Material ) {
             }
             if( lighting >= 0 ) {
                 // the parameters of the material go to the blending one as they are, so they have to be in the same places in both
-                auto const blend { GfxRenderer->Fetch_Shader( blend_shader( lighting, false ) ) };
+                auto const blend { GfxRenderer->Fetch_Shader( blend_shader( lighting ) ) };
                 auto const fits { std::all_of(
                     std::begin( material.shader->param_conf ), std::end( material.shader->param_conf ),
                     [&]( auto const &Entry ) {
@@ -864,7 +864,6 @@ material_manager::build_blend( blend_key const &Key, opengl_material &Blend ) {
 
     auto const material { std::get<0>( Key ) };
     std::array<material_handle, 3> const others { std::get<1>( Key ), std::get<2>( Key ), std::get<3>( Key ) };
-    auto const grain { std::get<4>( Key ) };
     auto const lighting { blend_lighting( material ) };
     if( lighting < 0 ) {
         return false;
@@ -885,8 +884,8 @@ material_manager::build_blend( blend_key const &Key, opengl_material &Blend ) {
     int const normalslots[] = { ( specgloss ? 3 : 4 ), ( specgloss ? 4 : 5 ), ( specgloss ? 5 : 6 ), 7 };
     auto const ends { specgloss ? 2 : 3 };
     try {
-        Blend = variant_of( m_materials[ material ], grain ? ":blendgrain" : ":blend" );
-        Blend.shader = GfxRenderer->Fetch_Shader( blend_shader( lighting, grain ) );
+        Blend = variant_of( m_materials[ material ], ":blend" );
+        Blend.shader = GfxRenderer->Fetch_Shader( blend_shader( lighting ) );
         Blend.texture_variants.clear();
         Blend.textures.fill( null_handle );
         auto const owndiffuse { texture_of( material, "diffuse" ) };
@@ -922,12 +921,12 @@ material_manager::build_blend( blend_key const &Key, opengl_material &Blend ) {
 }
 
 material_handle
-material_manager::create_blend( material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain ) {
+material_manager::create_blend( material_handle const Material, std::array<material_handle, 3> const &Others ) {
 
     if( false == blendable( Material ) ) {
         return Material;
     }
-    blend_key const key { Material, Others[ 0 ], Others[ 1 ], Others[ 2 ], Grain };
+    blend_key const key { Material, Others[ 0 ], Others[ 1 ], Others[ 2 ] };
     if( auto const lookup { m_blends.find( key ) }; lookup != m_blends.end() ) {
         return lookup->second;
     }

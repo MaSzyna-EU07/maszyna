@@ -1,4 +1,4 @@
-// the rails of a track faded into those of the tracks joined at its ends, see trackblend.glsl
+// the rails and the ballast of a track faded into those of the tracks joined at its ends, see trackblend.glsl
 #texture (diffuse, 0, sRGB_A)
 uniform sampler2D diffuse;
 #texture (diffuse1, 1, sRGB_A)

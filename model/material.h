@@ -148,10 +148,9 @@ public:
     material_handle
         create_tinted( material_handle const Material, glm::vec3 const &Colour );
     // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of
-    // the user data of the vertices (mat_trackblend), as grains with Grain. returns: handle to it, made once, or the material
-    // itself where it can't be blended
+    // the user data of the vertices (mat_trackblend). returns: handle to it, made once, or the material itself where it can't be blended
     material_handle
-        create_blend( material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain );
+        create_blend( material_handle const Material, std::array<material_handle, 3> const &Others );
     // whether the material can be blended so: a diffuse texture lit as mat_default, or with a normal map (and a specgloss map)
     // lit as normalmap, sunlessnormalmap or shadowlessnormalmap (and their _specgloss), or parallax; not tinted. the blending materials take the
     // textures of another season or weather with the materials they blend
@@ -172,8 +171,8 @@ private:
 // types
     typedef std::vector<opengl_material> material_sequence;
     typedef std::unordered_map<std::string, std::size_t> index_map;
-    // a blending material: the material of the track, those it blends into at the ends, whether in grains
-    using blend_key = std::tuple<material_handle, material_handle, material_handle, material_handle, bool>;
+    // a blending material: the material of the track, those it blends into at the ends
+    using blend_key = std::tuple<material_handle, material_handle, material_handle, material_handle>;
 // methods:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.
     material_handle

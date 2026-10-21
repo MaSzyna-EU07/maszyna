@@ -1,4 +1,4 @@
-// the rails of a track of a normal mapped material faded into those of the tracks joined at its ends, see trackblend.glsl
+// the rails and the ballast of a track of a normal mapped material faded into those of the tracks joined at its ends, see trackblend.glsl
 #define TRACKBLEND_NORMALMAP 1
 #texture (diffuse, 0, sRGB_A)
 uniform sampler2D diffuse;

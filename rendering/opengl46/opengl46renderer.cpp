@@ -2850,9 +2850,9 @@ material_handle opengl46_renderer::Tinted_Material(material_handle const Materia
 	return m_materials.create_tinted(Material, Colour);
 }
 
-material_handle opengl46_renderer::Blend_Material(material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain)
+material_handle opengl46_renderer::Blend_Material(material_handle const Material, std::array<material_handle, 3> const &Others)
 {
-	return m_materials.create_blend(Material, Others, Grain);
+	return m_materials.create_blend(Material, Others);
 }
 
 bool opengl46_renderer::Blendable_Material(material_handle const Material)
@@ -4405,7 +4405,7 @@ int opengl46_renderer::Prepass_Class( material_handle const Material )
 		"detail_normalmap", "detail_normalmap_specgloss", "normalmap", "normalmap_specgloss",
 		"reflmap", "reflmap_specgloss", "shadowlessnormalmap", "shadowlessnormalmap_specgloss",
 		"sunlessnormalmap", "sunlessnormalmap_specgloss",
-		"trackblend", "trackblend_grain", "trackblend_normalmap", "trackblend_normalmap_grain", "trackblend_specgloss", "trackblend_specgloss_grain" };
+		"trackblend", "trackblend_normalmap", "trackblend_specgloss" };
 	static std::unordered_set<std::string> const solid { "colored", "default_0", "terrain", "water", "water_specgloss", "invalid" };
 	auto prepassclass { 0 };
 	for( auto const &shader : m_shaders ) {

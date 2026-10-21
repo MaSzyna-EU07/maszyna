@@ -507,8 +507,8 @@ std::vector<track_property> make_properties()
 	}
 	{
 		// the ends of a plain track are p1 and p2, a switch has p4 as the end of its second path
-		char const *const ends[][3] = {{"blend1", "Texture blending at p1 (m)", "How far from the end p1 the rails and the ballast blend into those of the track joined there, where their textures differ.\nThe ballast comes in as stones mixed together, the rails fade into each other; 0: not blended"},
-		                               {"blend2", "Texture blending at p2 (m)", "How far from the end p2 the rails and the ballast blend into those of the track joined there, where their textures differ.\nThe ballast comes in as stones mixed together, the rails fade into each other; 0: not blended"},
+		char const *const ends[][3] = {{"blend1", "Texture blending at p1 (m)", "How far from the end p1 the rails and the ballast blend into those of the track joined there, where their textures differ, fading into each other; 0: not blended"},
+		                               {"blend2", "Texture blending at p2 (m)", "How far from the end p2 the rails and the ballast blend into those of the track joined there, where their textures differ, fading into each other; 0: not blended"},
 		                               {"blend3", "Texture blending at p4 (m)", "How far from the end p4 of the switch its trackbed blends into the ballast of the track joined there, where their textures differ; 0: not blended"}};
 		for (int end = 0; end < 3; ++end)
 		{

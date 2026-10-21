@@ -230,7 +230,7 @@ blending setup( TTrack const &Track, kind const Kind ) {
         return {};
     }
     auto const own { material_of( Track, Kind, 0 ) };
-    auto const material { GfxRenderer->Blend_Material( own, others, Kind == kind::ballast ) };
+    auto const material { GfxRenderer->Blend_Material( own, others ) };
     if( material == own ) {
         // the renderer can't blend them
         return {};
