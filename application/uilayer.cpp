@@ -696,6 +696,7 @@ void ui_layer::render_menu_contents()
 
 		if (ImGui::MenuItem(STR_C("Screenshot"), "PrtScr"))
 			Application.queue_screenshot();
+		render_tools_menu();
 		ImGui::EndMenu();
 	}
 	if (ImGui::BeginMenu(STR_C("Windows")))

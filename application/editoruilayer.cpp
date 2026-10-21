@@ -990,6 +990,15 @@ void editor_ui::render_menu_contents()
 		m_menuoptions();
 }
 
+// the tools of the editor mode, in the tools menu after the common ones (logging, screenshot)
+void editor_ui::render_tools_menu()
+{
+	if (!m_toolsmenu)
+		return;
+	ImGui::Separator();
+	m_toolsmenu();
+}
+
 // the windows of the editor and their layout, in the windows menu after the common ones (log, hierarchy, history, settings)
 void editor_ui::render_windows_menu()
 {

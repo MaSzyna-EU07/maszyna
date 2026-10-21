@@ -28,6 +28,7 @@ extern char **environ;
 #include "application/application.h"
 #include "editor/editorSettings.hpp"
 #include "editor/editorModelSets.hpp"
+#include "editor/editorTrackPresets.hpp"
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorGroundMesh.hpp"
 #include "editor/editorFormat.hpp"
@@ -542,6 +543,7 @@ editor_mode::editor_mode() {
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
 	ui()->set_edit_menu([this]() { render_edit_menu(); });
+	ui()->set_tools_menu([this]() { render_track_presets_menu(); });
 	ui()->set_menu_options([this]() {
 		render_object_menu();
 		render_view_menu();
@@ -648,6 +650,7 @@ bool editor_mode::init()
     Global.EditorOrthoTracks = EditorSettings.top_tracks();
     set_norms_free(EditorSettings.norms() == editorSettings::track_norms::free_laying);
     EditorModelSets.load();
+    EditorTrackPresets.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
     return m_input.init();
 }

@@ -80,6 +80,11 @@ class editor_ui : public ui_layer
 	{
 		m_editmenu = std::move(Renderer);
 	}
+	// draws the items of the editor mode in the tools menu, after the common ones
+	void set_tools_menu(std::function<void()> Renderer)
+	{
+		m_toolsmenu = std::move(Renderer);
+	}
 	// draws the fields of work of the editor mode in a row above the toolbar
 	void set_workspace_bar(std::function<void()> Renderer)
 	{
@@ -177,6 +182,7 @@ class editor_ui : public ui_layer
 	void scene_row(std::size_t const Entry);
 	void render_menu_contents() override;
 	void render_windows_menu() override;
+	void render_tools_menu() override;
 	int palette() const override;
 	void render_dockspace() override;
 	void render_() override;
@@ -210,6 +216,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
 	std::function<void()> m_editmenu;
+	std::function<void()> m_toolsmenu;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
 	std::string m_refusal;
 	double m_refusaltime{-100.0};

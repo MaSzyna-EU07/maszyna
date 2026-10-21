@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorTrackPresets.hpp"
 
 #include "rendering/renderer.h"
 #include "world/Track.h"
@@ -219,10 +220,13 @@ enum group : int
 	sleepers,
 	ride_sound,
 	frogs,
+	sleeper_placement, // spacing and shift of the sleepers and of the trackbed under them, apart from their models
 	group_count
 };
 
-char const *const kGroupLabels[group_count] = {"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails"};
+char const *const kGroupLabels[group_count] = {"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement"};
+// the groups as the presets keep them in their file, by names which don't change with the order of the groups
+char const *const kGroupKeys[group_count] = {"speed", "environment", "overhead", "circuits", "rails", "trackbed", "bedshape", "sleepers", "ride", "frogs", "sleeperplacement"};
 
 struct track_property
 {
@@ -630,13 +634,13 @@ std::vector<track_property> make_properties()
 			};
 		}
 	}
-	add_float(list, "sleeperspacing", section::look_sleepers, group::sleepers, "Sleeper spacing (m)", "Distance between the sleepers along the track", &TTrack::m_sleeper_frequency, 3, 0.1f, true);
+	add_float(list, "sleeperspacing", section::look_sleepers, group::sleeper_placement, "Sleeper spacing (m)", "Distance between the sleepers along the track", &TTrack::m_sleeper_frequency, 3, 0.1f, true);
 	char const *const offsets[][3] = {{"sleeperside", "Sleeper shift sideways (m)", "Shift of each model sideways, to the right of the track"},
 	                                  {"sleeperalong", "Sleeper shift along (m)", "Shift of each model along the track"},
 	                                  {"sleeperup", "Sleeper shift up (m)", "Shift of each model up"}};
 	for (int axis = 0; axis < 3; ++axis)
 	{
-		auto &property{add(list, offsets[axis][0], field::number, section::look_sleepers, group::sleepers, offsets[axis][1], offsets[axis][2])};
+		auto &property{add(list, offsets[axis][0], field::number, section::look_sleepers, group::sleeper_placement, offsets[axis][1], offsets[axis][2])};
 		property.rebuild = true;
 		property.get = [axis](TTrack const &Track) { return decimal(Track.m_sleeper_offset[axis], 3); };
 		property.set = [axis](TTrack &Track, std::string const &Text) {
@@ -647,7 +651,7 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
-	add_float(list, "bedshift", section::look_sleepers, group::sleepers, "Trackbed shift (m)", "Vertical shift of the drawn trackbed under the sleepers, negative lowers it", &TTrack::m_sleeper_ballast_z, 3, lowest, true);
+	add_float(list, "bedshift", section::look_sleepers, group::sleeper_placement, "Trackbed shift (m)", "Vertical shift of the drawn trackbed under the sleepers, negative lowers it", &TTrack::m_sleeper_ballast_z, 3, lowest, true);
 
 	// ride and sound
 	add_float(list, "friction", section::ride, group::ride_sound, "Friction", "Friction coefficient of the rails, 0.15 for the dry rails; lower values make the wheels slip", &TTrack::fFriction, 3, 0.f, false);
@@ -746,6 +750,62 @@ void row_tooltip(track_property const &Property, value_counts const &Values, std
 	}
 	ImGui::PopTextWrapPos();
 	ImGui::EndTooltip();
+}
+
+// the values of the properties of the track, as they're copied and kept by the presets
+std::vector<std::pair<std::string, std::string>> values_of_track(TTrack const &Track)
+{
+	std::vector<std::pair<std::string, std::string>> values;
+	for (auto const &property : properties())
+		if (false == property.off && property.applies(Track))
+			values.emplace_back(property.key, property.get(Track));
+	return values;
+}
+
+// the groups some of the values are of
+std::array<bool, group_count> groups_in(std::vector<std::pair<std::string, std::string>> const &Values)
+{
+	std::array<bool, group_count> groups{};
+	for (auto const &[key, value] : Values)
+		for (auto const &property : properties())
+			if (key == property.key)
+				groups[property.group] = true;
+	return groups;
+}
+
+// the groups the preset overwrites, from the names it keeps them by
+std::array<bool, group_count> groups_of(editor_track_preset const &Preset)
+{
+	std::array<bool, group_count> groups{};
+	for (auto const &key : Preset.groups)
+		for (int group = 0; group < group_count; ++group)
+			if (key == kGroupKeys[group])
+				groups[group] = true;
+	return groups;
+}
+
+std::vector<std::string> group_keys(std::array<bool, group_count> const &Groups)
+{
+	std::vector<std::string> keys;
+	for (int group = 0; group < group_count; ++group)
+		if (Groups[group])
+			keys.emplace_back(kGroupKeys[group]);
+	return keys;
+}
+
+// what the preset puts on the tracks, for its tooltip
+std::string preset_summary(editor_track_preset const &Preset)
+{
+	auto const groups{groups_of(Preset)};
+	auto const available{groups_in(Preset.values)};
+	std::string overwrites;
+	for (int group = 0; group < group_count; ++group)
+		if (groups[group] && available[group])
+			overwrites += (overwrites.empty() ? "" : ", ") + std::string{STR_C(kGroupLabels[group])};
+	auto text{overwrites.empty() ? std::string{STR_C("Overwrites nothing: choose what it overwrites in the inspector")} : format(STR_C("Overwrites: %s"), overwrites.c_str())};
+	if (false == Preset.from.empty())
+		text += "\n" + format(STR_C("Taken from %s"), Preset.from.c_str());
+	return text;
 }
 
 } // namespace
@@ -1297,6 +1357,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		if (any_in(section::look_sleepers, false) && ImGui::TreeNode(STR_C("Sleeper models")))
 		{
 			rows(section::look_sleepers, false);
+			render_track_presets(Tracks);
 			ImGui::TreePop();
 		}
 	}
@@ -1307,50 +1368,230 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 void editor_mode::copy_track_style(TTrack const &Track)
 {
 	auto &style{m_track_style};
-	style.values.clear();
 	style.from = name_of(Track);
-	for (auto const &property : properties())
-		if (false == property.off && property.applies(Track))
-			style.values.emplace_back(property.key, property.get(Track));
+	style.values = values_of_track(Track);
 	ui()->set_status(format(STR_C("Properties of %s copied: Ctrl+Shift+V pastes them on the selected tracks"), style.from.c_str()), false);
 }
 
 std::size_t editor_mode::paste_track_style(std::vector<TTrack *> const &Tracks)
 {
-	static_assert(group_count == std::tuple_size_v<decltype(track_style::groups)>, "a choice for each group of the pasted properties");
 	auto const &style{m_track_style};
 	if (style.values.empty() || Tracks.empty())
 		return 0;
+	auto const changed{apply_track_values(style.values, style.groups, Tracks, "Pasted properties")};
+	if (false == changed.has_value())
+	{
+		ui()->set_status(STR_C("Nothing chosen to paste"), true);
+		return 0;
+	}
+	if (Tracks.size() == 1)
+		ui()->set_status(*changed > 0 ? format(STR_C("Properties of %s pasted, Ctrl+Z takes them back"), style.from.c_str()) : std::string{STR_C("The track has these properties already")}, false);
+	return *changed;
+}
+
+std::optional<std::size_t> editor_mode::apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What)
+{
+	static_assert(group_count == std::tuple_size_v<track_groups>, "a choice for each group of the pasted properties");
 	auto const &list{properties()};
 	std::vector<std::pair<track_property const *, std::string>> pasted;
 	bool rebuild{false};
 	for (auto const late : {false, true})
-		for (auto const &[key, value] : style.values)
+		for (auto const &[key, value] : Values)
 		{
 			auto const index{track_property_index(key)};
 			if (index < 0)
 				continue;
 			auto const &property{list[index]};
-			if (property.off || property.late != late || false == style.groups[property.group])
+			if (property.off || property.late != late || false == Groups[property.group])
 				continue;
 			pasted.emplace_back(&property, value);
 			rebuild |= property.rebuild;
 		}
 	if (pasted.empty())
-	{
-		ui()->set_status(STR_C("Nothing chosen to paste"), true);
-		return 0;
-	}
-	auto const changed{tracks_apply(Tracks, [&](TTrack &Track) {
+		return std::nullopt;
+	return tracks_apply(Tracks, [&](TTrack &Track) {
 		bool any{false};
 		for (auto const &[property, value] : pasted)
 			if (property->applies(Track))
 				any |= property->set(Track, value);
 		return any;
-	}, rebuild, "Pasted properties")};
-	if (Tracks.size() == 1)
-		ui()->set_status(changed > 0 ? format(STR_C("Properties of %s pasted, Ctrl+Z takes them back"), style.from.c_str()) : std::string{STR_C("The track has these properties already")}, false);
-	return changed;
+	}, rebuild, What);
+}
+
+std::size_t editor_mode::apply_track_preset(int const Id, std::vector<TTrack *> const &Tracks)
+{
+	auto const *preset{EditorTrackPresets.find(Id)};
+	if (preset == nullptr || Tracks.empty())
+		return 0;
+	auto const name{preset->name};
+	auto const changed{apply_track_values(preset->values, groups_of(*preset), Tracks, "Applied a track preset")};
+	if (false == changed.has_value())
+	{
+		ui()->set_status(format(STR_C("The preset \"%s\" overwrites nothing: choose what it overwrites"), name.c_str()), true);
+		return 0;
+	}
+	if (*changed > 0)
+		ui()->set_status(format(STR_P("Preset \"%s\" applied on %d track, Ctrl+Z takes it back", "Preset \"%s\" applied on %d tracks, Ctrl+Z takes it back", static_cast<long long>(*changed)), name.c_str(), static_cast<int>(*changed)), false);
+	else
+		ui()->set_status(STR_C("The tracks have the properties of the preset already"), false);
+	return *changed;
+}
+
+void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
+{
+	if (Tracks.empty() || false == ImGui::TreeNode(STR_C("Presets")))
+		return;
+	auto &panel{m_track_presets};
+	auto const &presets{EditorTrackPresets.presets()};
+	if (EditorTrackPresets.find(panel.selected) == nullptr)
+		panel.selected = presets.empty() ? 0 : presets.front().id;
+	auto const single{Tracks.size() == 1};
+	auto const *selected{EditorTrackPresets.find(panel.selected)};
+
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	if (ImGui::BeginCombo("##trackpreset", selected != nullptr ? selected->name.c_str() : STR_C("No presets yet")))
+	{
+		for (auto const &preset : presets)
+		{
+			if (ImGui::Selectable(preset.name.c_str(), preset.id == panel.selected))
+				panel.selected = preset.id;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", preset_summary(preset).c_str());
+		}
+		ImGui::EndCombo();
+	}
+	if (selected != nullptr && ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", preset_summary(*selected).c_str());
+
+	auto const width{button_width(2)};
+	ImGui::BeginDisabled(selected == nullptr);
+	if (ImGui::Button(format(STR_P("Apply on %d track", "Apply on %d tracks", static_cast<long long>(Tracks.size())), static_cast<int>(Tracks.size())).c_str(), ImVec2(width, 0.0f)))
+		apply_track_preset(panel.selected, Tracks);
+	ImGui::EndDisabled();
+	item_tooltip("Puts the values of the preset on the selected tracks, of what it overwrites; Ctrl+Z takes them back.\nTools in the menu applies the presets too");
+	ImGui::SameLine();
+	ImGui::BeginDisabled(false == single);
+	if (ImGui::Button(STR_C("New from the track"), ImVec2(width, 0.0f)))
+	{
+		// rails, trackbed, its shape, sleepers, frogs and sleeper placement at first, the look of the track
+		std::array<bool, group_count> groups{};
+		for (auto const group : {group::rails, group::trackbed, group::trackbed_shape, group::sleepers, group::frogs, group::sleeper_placement})
+			groups[group] = true;
+		panel.selected = EditorTrackPresets.create(STR_C("New preset"), name_of(*Tracks.front()), values_of_track(*Tracks.front()), group_keys(groups));
+		panel.nameid = 0;
+		ui()->set_status(format(STR_C("Properties of %s saved as a preset: give it a name and choose what it overwrites"), name_of(*Tracks.front()).c_str()), false);
+	}
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s", STR_C(single ? "Saves the properties of this track as a new preset" : "Select one track to save its properties as a preset"));
+
+	// pointers to the presets don't outlive a change of their list
+	selected = EditorTrackPresets.find(panel.selected);
+	if (selected == nullptr)
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("A preset keeps the properties of a track: its rails, trackbed, sleepers... to put them on other tracks,\nwith the choice of what it overwrites"));
+		ImGui::PopTextWrapPos();
+		ImGui::TreePop();
+		return;
+	}
+	auto const id{selected->id};
+
+	// the name
+	if (panel.nameid != id)
+	{
+		std::snprintf(panel.name, sizeof(panel.name), "%s", selected->name.c_str());
+		panel.nameid = id;
+	}
+	ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(STR_C("Rename")).x - ImGui::GetStyle().FramePadding.x * 2 - ImGui::GetStyle().ItemSpacing.x);
+	auto const entered{ImGui::InputText("##presetname", panel.name, IM_ARRAYSIZE(panel.name), ImGuiInputTextFlags_EnterReturnsTrue)};
+	ImGui::PopItemWidth();
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Rename")) || entered)
+	{
+		EditorTrackPresets.rename(id, panel.name);
+		panel.nameid = 0; // reload, the name could have been adjusted to stay unique
+		selected = EditorTrackPresets.find(id);
+	}
+
+	// what it overwrites, of the groups it has values of
+	ImGui::TextDisabled("%s", STR_C("Overwrites:"));
+	// its own id scope: the group checkboxes share their labels with the sections of the properties
+	ImGui::PushID("presetgroups");
+	auto const available{groups_in(selected->values)};
+	auto groups{groups_of(*selected)};
+	auto changed{false};
+	int column{0};
+	auto const half{ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x * 0.5f};
+	for (int group = 0; group < group_count; ++group)
+	{
+		if (false == available[group])
+			continue;
+		if (column % 2 == 1)
+			ImGui::SameLine(half);
+		changed |= ImGui::Checkbox(STR_C(kGroupLabels[group]), &groups[group]);
+		++column;
+	}
+	ImGui::PopID();
+	if (changed)
+	{
+		// the groups it has no values of are kept as they were, for a track they're taken again from
+		auto kept{groups_of(*selected)};
+		for (int group = 0; group < group_count; ++group)
+			if (available[group])
+				kept[group] = groups[group];
+		EditorTrackPresets.set_groups(id, group_keys(kept));
+		selected = EditorTrackPresets.find(id);
+	}
+
+	ImGui::BeginDisabled(false == single);
+	if (ImGui::Button(STR_C("Update from the track"), ImVec2(width, 0.0f)))
+	{
+		EditorTrackPresets.update(id, name_of(*Tracks.front()), values_of_track(*Tracks.front()));
+		ui()->set_status(format(STR_C("Preset \"%s\" takes the properties of %s now"), selected->name.c_str(), name_of(*Tracks.front()).c_str()), false);
+	}
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s", STR_C(single ? "The preset takes the properties of this track in place of the ones it had; what it overwrites stays" : "Select one track to take its properties into the preset"));
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Delete"), ImVec2(width, 0.0f)))
+		ImGui::OpenPopup("##deletepreset");
+	if (ImGui::BeginPopup("##deletepreset"))
+	{
+		ImGui::Text(STR_C("Delete preset \"%s\"?"), selected->name.c_str());
+		if (ImGui::Button(STR_C("Delete##confirm")))
+		{
+			EditorTrackPresets.remove(id);
+			panel.selected = 0;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Cancel")))
+			ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+	ImGui::TreePop();
+}
+
+void editor_mode::render_track_presets_menu()
+{
+	if (false == ImGui::BeginMenu(STR_C("Track presets")))
+		return;
+	auto const &presets{EditorTrackPresets.presets()};
+	if (presets.empty())
+		ImGui::TextDisabled("%s", STR_C("No presets: save one in the inspector of a track, Look, Sleeper models, Presets"));
+	auto const tracks{selected_tracks()};
+	int chosen{0};
+	for (auto const &preset : presets)
+	{
+		if (ImGui::MenuItem(preset.name.c_str(), nullptr, false, false == tracks.empty()))
+			chosen = preset.id;
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip("%s", tracks.empty() ? STR_C("Select the tracks to apply the preset on first") : (format(STR_P("Applies the preset on %d selected track", "Applies the preset on %d selected tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) + "\n" + preset_summary(preset)).c_str());
+	}
+	ImGui::EndMenu();
+	if (chosen != 0)
+		apply_track_preset(chosen, tracks);
 }
 
 void editor_mode::render_track_style(std::vector<TTrack *> const &Tracks)
@@ -1623,7 +1864,7 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 		}
 		else if (action == "groups")
 		{
-			// the groups pasted, as their numbers: 0 speed ... 9 frogs
+			// the groups pasted, as their numbers: 0 speed ... 9 frogs, 10 sleeper placement
 			m_track_style.groups.fill(false);
 			for (int group; Words >> group;)
 				if (group >= 0 && group < group_count)

@@ -11532,3 +11532,98 @@ msgstr "Każdy kliknięty punkt na wysokości terenu, między punktami równe po
 
 msgid "The track goes on at the height it's laid from, whatever the ground; the first point on the ground"
 msgstr "Tor idzie dalej na wysokości, z której go kładziesz, bez względu na teren; pierwszy punkt na terenie"
+
+msgid "new, not saved"
+msgstr "nowy, niezapisany"
+
+# scenery editor: presets of the track properties
+
+msgid "Sleeper placement"
+msgstr "Rozmieszczenie podkładów"
+
+msgid "Overwrites nothing: choose what it overwrites in the inspector"
+msgstr "Niczego nie nadpisuje: wybierz w inspektorze, co ma nadpisywać"
+
+msgid "Overwrites: %s"
+msgstr "Nadpisuje: %s"
+
+msgid "Taken from %s"
+msgstr "Wzięty z %s"
+
+msgid "The preset \"%s\" overwrites nothing: choose what it overwrites"
+msgstr "Zestaw \"%s\" niczego nie nadpisuje: wybierz, co ma nadpisywać"
+
+msgid "Preset \"%s\" applied on %d track, Ctrl+Z takes it back"
+msgid_plural "Preset \"%s\" applied on %d tracks, Ctrl+Z takes it back"
+msgstr[0] "Zestaw \"%s\" zastosowany na %d torze, Ctrl+Z go cofa"
+msgstr[1] "Zestaw \"%s\" zastosowany na %d torach, Ctrl+Z go cofa"
+msgstr[2] "Zestaw \"%s\" zastosowany na %d torach, Ctrl+Z go cofa"
+
+msgid "The tracks have the properties of the preset already"
+msgstr "Tory mają już właściwości tego zestawu"
+
+msgid "Presets"
+msgstr "Zestawy"
+
+msgid "No presets yet"
+msgstr "Brak zestawów"
+
+msgid "Apply on %d track"
+msgid_plural "Apply on %d tracks"
+msgstr[0] "Zastosuj na %d torze"
+msgstr[1] "Zastosuj na %d torach"
+msgstr[2] "Zastosuj na %d torach"
+
+msgid "Puts the values of the preset on the selected tracks, of what it overwrites; Ctrl+Z takes them back.\nTools in the menu applies the presets too"
+msgstr "Nadaje zaznaczonym torom wartości zestawu, z tego, co nadpisuje; Ctrl+Z je cofa.\nZestawy można też zastosować z menu Narzędzia"
+
+msgid "New from the track"
+msgstr "Nowy z toru"
+
+msgid "New preset"
+msgstr "Nowy zestaw"
+
+msgid "Properties of %s saved as a preset: give it a name and choose what it overwrites"
+msgstr "Właściwości %s zapisane jako zestaw: nadaj mu nazwę i wybierz, co ma nadpisywać"
+
+msgid "Saves the properties of this track as a new preset"
+msgstr "Zapisuje właściwości tego toru jako nowy zestaw"
+
+msgid "Select one track to save its properties as a preset"
+msgstr "Zaznacz jeden tor, żeby zapisać jego właściwości jako zestaw"
+
+msgid "A preset keeps the properties of a track: its rails, trackbed, sleepers... to put them on other tracks,\nwith the choice of what it overwrites"
+msgstr "Zestaw przechowuje właściwości toru: szyny, podsypkę, podkłady... żeby nadać je innym torom,\nz wyborem tego, co nadpisuje"
+
+msgid "Overwrites:"
+msgstr "Nadpisuje:"
+
+msgid "Update from the track"
+msgstr "Aktualizuj z toru"
+
+msgid "Preset \"%s\" takes the properties of %s now"
+msgstr "Zestaw \"%s\" ma teraz właściwości %s"
+
+msgid "The preset takes the properties of this track in place of the ones it had; what it overwrites stays"
+msgstr "Zestaw przejmuje właściwości tego toru w miejsce dotychczasowych; wybór tego, co nadpisuje, zostaje"
+
+msgid "Select one track to take its properties into the preset"
+msgstr "Zaznacz jeden tor, żeby przenieść jego właściwości do zestawu"
+
+msgid "Delete preset \"%s\"?"
+msgstr "Usunąć zestaw \"%s\"?"
+
+msgid "Track presets"
+msgstr "Zestawy torów"
+
+msgid "No presets: save one in the inspector of a track, Look, Sleeper models, Presets"
+msgstr "Brak zestawów: zapisz zestaw w inspektorze toru, Wygląd, Modele podkładów, Zestawy"
+
+msgid "Select the tracks to apply the preset on first"
+msgstr "Najpierw zaznacz tory, na których zastosować zestaw"
+
+msgid "Applies the preset on %d selected track"
+msgid_plural "Applies the preset on %d selected tracks"
+msgstr[0] "Stosuje zestaw na %d zaznaczonym torze"
+msgstr[1] "Stosuje zestaw na %d zaznaczonych torach"
+msgstr[2] "Stosuje zestaw na %d zaznaczonych torach"
