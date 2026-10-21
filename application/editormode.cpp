@@ -1450,7 +1450,7 @@ bool editor_mode::update()
             signal_move_update();
             draw_signal_overlay();
         }
-        draw_parallel_preview();
+        m_parallel.draw_overlay();
         if (m_track_tab == track_tab::lineside)
         {
             m_hekto.draw_overlay();

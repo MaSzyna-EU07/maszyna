@@ -284,7 +284,7 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 		std::string tab;
 		words >> tab;
 		show_track_tab(tab == "parallel" ? track_tab::parallel : track_tab::lineside);
-		(tab == "vehicle" ? m_vehicle.tab().expand : tab == "hekto" ? m_hekto.tab().expand : tab == "fouling" ? m_fouling.tab().expand : m_parallel.expand) = true;
+		(tab == "vehicle" ? m_vehicle.tab().expand : tab == "hekto" ? m_hekto.tab().expand : tab == "fouling" ? m_fouling.tab().expand : m_parallel.tab().expand) = true;
 		return selftest_result::handled;
 	}
 	if (command == "bendpanel")

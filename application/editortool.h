@@ -92,6 +92,8 @@ class editor_services
 	virtual std::size_t history_size() const = 0;
 	virtual glm::dvec3 camera_position() const = 0;
 	virtual track_hover const &hovered_track() const = 0;
+	virtual std::vector<TTrack *> const &track_set() const = 0;
+	virtual editor_track_tab current_track_tab() const = 0;
 	virtual void first_step_done(editor_first_step const Step) = 0;
 	virtual void show_track_tab(editor_track_tab const Wanted) = 0;
 	virtual glm::dvec3 placement_on_ground(glm::dvec3 Location) = 0;
@@ -109,6 +111,8 @@ class editor_services
 	virtual std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error) = 0;
 	virtual std::size_t move_templates(std::vector<std::pair<standing_template, template_item>> const &Moves) = 0;
 	virtual std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances) = 0;
+	virtual bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true) = 0;
+	virtual void straight_refresh() = 0;
 	virtual void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {}) = 0;
 
   protected:

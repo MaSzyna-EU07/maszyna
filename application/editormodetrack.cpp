@@ -72,6 +72,16 @@ editor_mode::track_hover const &editor_mode::hovered_track() const
 	return m_hover;
 }
 
+std::vector<TTrack *> const &editor_mode::track_set() const
+{
+	return m_track_set;
+}
+
+editor_track_tab editor_mode::current_track_tab() const
+{
+	return m_track_tab;
+}
+
 void editor_mode::set_current_node(scene::basic_node *Node)
 {
 	m_node = Node;
@@ -558,7 +568,7 @@ void editor_mode::render_track_inspector()
 		m_sweep.open = false;
 		m_hekto.tab().open = false;
 		m_fouling.tab().open = false;
-		m_parallel.open = false;
+		m_parallel.tab().open = false;
 		m_vehicle.tab().open = false;
 	}
 	ui()->set_track(m_track_window_open);
@@ -611,7 +621,7 @@ void editor_mode::render_track_tool_options()
 		render_lay_ui();
 		break;
 	case track_tab::parallel:
-		render_parallel_ui();
+		m_parallel.render_options();
 		break;
 	case track_tab::turnout:
 		if (track != nullptr && track->eType == tt_Switch)

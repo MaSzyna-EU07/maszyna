@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodegauge.h"
 #include "application/editormodejoints.h"
 #include "application/editormodelineside.h"
+#include "application/editormodeparallel.h"
 #include "application/editormodespeed.h"
 #include "application/editormodevehicle.h"
 #include "application/editortool.h"
@@ -715,6 +716,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t history_size() const override;
 	glm::dvec3 camera_position() const override;
 	track_hover const &hovered_track() const override;
+	std::vector<TTrack *> const &track_set() const override;
+	editor_track_tab current_track_tab() const override;
 	void render_path_ui();
 	void draw_track_overlay() const;
 	editor_track::point_ref track_handle_hit() const;
@@ -910,7 +913,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base, double const Middle = 0.0);
 	void render_switch_record(TTrack const &Track) const;
 	void route_store();
-	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true);
+	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true) override;
 	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr, TTrack **Culprit = nullptr);
 	int digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped);
 	// the lines kept, the paths left out
@@ -1016,7 +1019,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void apply_straight_tool();
 	double straight_tool_radius(editor_track::straight const &Line) const;
 	void straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius);
-	void straight_refresh();
+	void straight_refresh() override;
 	bool start_curve_fit(editor_track::straight const &Line, int const Handle);
 	void update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &End);
 	void add_detour_point();
@@ -1736,40 +1739,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<std::vector<TTrack *>> m_track_similar;
 	TTrack const *m_track_list_hover{nullptr}; // in the list of the selected tracks
 	int m_track_list_hover_frame{-1};
-	// second track alongside the selected path or the line through it, at a spacing, curves included
-	struct parallel_tool
-	{
-		bool open{false};
-		bool expand{false};
-		double spacing{4.0};
-		int side{1}; // 1: to the right, -1: to the left, of the direction of the line
-		int scope{1}; // 0: the selected path, 1: the line through it, up to the switches
-		TTrack *built_for{nullptr};
-		double built_spacing{0.0};
-		int built_side{0};
-		int built_scope{-1};
-		std::size_t built_history{0};
-		TTrack *pair_src{nullptr};
-		TTrack *pair_dst{nullptr};
-		double measured{0.0};
-		std::vector<segment_data> pieces;
-		std::vector<TTrack *> styles;
-		double length{0.0};
-		std::string error;
-		std::string status;
-	};
-	parallel_tool m_parallel;
-	TTrack *parallel_source() const;
-	TTrack *parallel_target() const;
-	void parallel_update();
-	void render_parallel_controls(bool const Scope = true);
-	void render_parallel_ui();
-	void render_parallel_set_ui();
-	void parallel_build();
-	void parallel_apply();
-	bool parallel_preview_visible() const;
-	void draw_parallel_preview() const;
-
 	using template_item = ::template_item;
 	using standing_template = ::standing_template;
 	// includes of the templates whose file names the test accepts, with the location in p2..p4 and the rotation in p5
@@ -2273,7 +2242,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	vehicle_tool m_vehicle{*this};
 	hekto_tool m_hekto{*this};
 	fouling_tool m_fouling{*this};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling};
+	parallel_tool m_parallel{*this};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel};
 
 	void infra_rebase();
 	void render_infra_search();

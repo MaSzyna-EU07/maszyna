@@ -141,7 +141,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		m_sweep.expand = tab == 0;
 		m_hekto.tab().expand = tab == 1;
 		m_fouling.tab().expand = tab == 2;
-		m_parallel.expand = tab == 3;
+		m_parallel.tab().expand = tab == 3;
 		m_vehicle.tab().expand = tab == 4;
 		return selftest_result::handled;
 	}
@@ -780,15 +780,6 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		}
 		auto const kept{nearest != nullptr && digitize_drawn({nearest}, false)};
 		WriteLog(format("SELFTEST digitize %s: %d", nearest != nullptr ? nearest->name().c_str() : "-", kept ? 1 : 0));
-		return selftest_result::handled;
-	}
-	if (command == "parallel")
-	{
-		words >> m_parallel.spacing >> m_parallel.side;
-		m_parallel.scope = 1;
-		m_parallel.built_for = nullptr;
-		parallel_build();
-		WriteLog("SELFTEST parallel: " + m_parallel.status + " " + m_parallel.error);
 		return selftest_result::handled;
 	}
 	return selftest_result::unhandled;

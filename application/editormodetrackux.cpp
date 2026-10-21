@@ -1355,7 +1355,7 @@ void editor_mode::render_track_set_ui()
 	ImGui::PushTextWrapPos(0.0f);
 	ImGui::TextDisabled("%s", STR_C("Their properties are in the inspector, the gizmo moves them together"));
 	ImGui::PopTextWrapPos();
-	render_parallel_set_ui();
+	m_parallel.render_set_options();
 	ImGui::Separator();
 }
 
