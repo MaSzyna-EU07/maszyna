@@ -236,6 +236,9 @@ const float SUN_BRDF_LIMIT = 1.0e6;
 vec3 spec_f0 = vec3(0.04);
 float spec_roughness = 0.5;
 
+// a matte material (mat_default) reflects nothing: neither the surroundings nor the sun and the lamps, only the diffuse light
+bool matte = false;
+
 // light of a light from Light_dir reflected by the surface, in the units of the diffuse shading (a white lambertian surface
 // facing the light reflects 1 of it): pi times the cook-torrance brdf with schlick's fresnel of F0, times n.l. Limit caps the
 // brdf without the n.l
@@ -545,6 +548,8 @@ void add_local_light(light_s light, vec2 part, vec3 fragnormal, inout vec3 diffu
 		return;
 	vec3 color = light.color * light.intensity;
 	diffuse += color * part.x;
+	if (matte)
+		return;
 	specular += color * (part.y * param[1].y) * specular_light(normalize(light.pos - f_pos.xyz), fragnormal, spec_f0, spec_roughness, LOCAL_LIGHT_BRDF_LIMIT);
 }
 
@@ -713,6 +718,11 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     vec3 cubemap_spec = env_spec;
     float cubemap_share = max(reflectivity, 0.0);
     float ambient_share = clamp(1.0 - reflectivity, 0.0, 1.0);
+    if (matte)
+    {
+        env_spec = vec3(0.0);
+        cubemap_share = 0.0;
+    }
     // what the diffuse layer is left with
     vec3 diffuse_albedo = texturecolor * (1.0 - metalic) * (1.0 - env_spec);
     if (legacy_coat)
@@ -723,7 +733,7 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
         ambient_share = 1.0;
         diffuse_albedo *= 1.0 - cubemap_spec * min(cubemap_share, 1.0);
     }
-    vec3 envcolor = envmap_color_rough(fragnormal, env_roughness);
+    vec3 envcolor = (matte ? vec3(0.0) : envmap_color_rough(fragnormal, env_roughness));
 
     if (lights_count == 0U)
         return fragcolor * diffuse_albedo
@@ -766,7 +776,7 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     // nothing to the highlight
     if (!sunless)
         fragcolor += sunlight * (sun_NdotL * (1.0 - (1.0 - shadowtone) * shadow));
-    vec3 specular = sunlight * specular_light(light_dir, fragnormal, f0, roughness, SUN_BRDF_LIMIT) * (1.0 - shadow);
+    vec3 specular = matte ? vec3(0.0) : sunlight * specular_light(light_dir, fragnormal, f0, roughness, SUN_BRDF_LIMIT) * (1.0 - shadow);
 
     vec3 lampspecular = vec3(0.0);
     add_local_lights(fragnormal, fragcolor, lampspecular);
