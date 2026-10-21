@@ -791,6 +791,21 @@ material_manager::blendable( material_handle const Material ) {
             ErrorLog( "invalid shader: " + std::string( e.what() ) );
         }
     }
+    if( false == result ) {
+        // once for each material a track would blend, which of the conditions it fails
+        std::string textures;
+        if( material.shader ) {
+            for( auto const &entry : material.shader->texture_conf ) {
+                textures += ( textures.empty() ? "" : ", " ) + entry.first;
+            }
+        }
+        WriteLog(
+            "track blend: material \"" + material.name + "\" isn't blended:"
+            + ( material.is_good ? "" : " not good;" )
+            + ( material.shader ? " a shader with the textures " + textures + ";" : " no shader;" )
+            + ( material.texture_variants.empty() ? "" : " texture variants;" )
+            + ( material.update_on_weather_change || material.update_on_season_change ? " changes with the weather or seasons;" : "" ) );
+    }
     m_blendables.emplace( Material, result );
     return result;
 }
