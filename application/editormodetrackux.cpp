@@ -814,9 +814,8 @@ void editor_mode::render_track_context()
 	}
 	if (ImGui::MenuItem(STR_C("Speed check of the line"), "V"))
 	{
-		m_speed.scope = 0;
 		show_track_tab(track_tab::speed);
-		speed_start();
+		m_speed.check_line();
 	}
 	ImGui::Separator();
 	if (ImGui::MenuItem(track_selected(track) ? STR_C("Take out of the selection") : STR_C("Add to the selection"), STR_C("Shift+LMB")))

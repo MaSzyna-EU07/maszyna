@@ -67,6 +67,17 @@ glm::dvec3 editor_mode::camera_position() const
 	return Camera.Pos;
 }
 
+void editor_mode::set_current_node(scene::basic_node *Node)
+{
+	m_node = Node;
+	ui()->set_node(m_node);
+}
+
+alignment::limits const &editor_mode::route_norms() const
+{
+	return m_route.design.norms;
+}
+
 void editor_mode::select_track(scene::basic_node *Node)
 {
 	auto *track = dynamic_cast<TTrack *>(Node);
@@ -514,7 +525,7 @@ void editor_mode::render_track_inspector()
 {
 	auto const &io{ImGui::GetIO()};
 	m_profile.open = m_track_window_open && m_track_tab == track_tab::profile;
-	m_speed.open = m_track_window_open && m_track_tab == track_tab::speed;
+	m_speed.set_open(m_track_window_open && m_track_tab == track_tab::speed);
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
 	m_joints.open = m_track_window_open && m_track_tab == track_tab::joints;
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
@@ -547,7 +558,7 @@ void editor_mode::render_track_inspector()
 		{
 			switch (m_track_tab)
 			{
-			case track_tab::speed: render_speed_body(); break;
+			case track_tab::speed: m_speed.render_options(); break;
 			case track_tab::joints: render_joints_body(); break;
 			default: render_infra_body(); break;
 			}

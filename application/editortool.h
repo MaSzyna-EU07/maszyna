@@ -12,8 +12,12 @@ http://mozilla.org/MPL/2.0/.
 #include <cstddef>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <glm/glm.hpp>
+
+#include "editor/editorTrack.hpp"
 
 class TTrack;
 namespace scene
@@ -36,6 +40,10 @@ class editor_services
 	virtual std::size_t history_size() const = 0;
 	virtual glm::dvec3 camera_position() const = 0;
 	virtual void fly_to(glm::dvec3 const &Target, glm::dvec3 const &Look, double const Distance, double const Duration = 0.6) = 0;
+	virtual void focus_track(TTrack &Track, int const Path, glm::dvec3 const &Point) = 0;
+	virtual void set_current_node(scene::basic_node *Node) = 0;
+	virtual alignment::limits const &route_norms() const = 0;
+	virtual void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {}) = 0;
 
   protected:
 	~editor_services() = default;
@@ -46,6 +54,8 @@ class editor_tool
   public:
 	virtual ~editor_tool() = default;
 	virtual void update() {}
+	virtual void draw_overlay() const {}
+	virtual void render_options() {}
 	virtual void render_windows() {}
 	virtual void forget(scene::basic_node const *Node) {}
 	virtual editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) { return editor_selftest_result::unhandled; }

@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "input/editorkeyboardinput.h"
 #include "vehicle/Camera.h"
 #include "application/editormodegauge.h"
+#include "application/editormodespeed.h"
 #include "application/editortool.h"
 #include "scene/sceneeditor.h"
 #include "scene/scenenode.h"
@@ -745,7 +746,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_track_gizmo();
 	void commit_track_drag(bool const Force);
 	void cancel_track_tools();
-	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {});
+	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {}) override;
+	void set_current_node(scene::basic_node *Node) override;
+	alignment::limits const &route_norms() const override;
 	// false, with the reason, when one of the paths can't be changed, its file not taking the changes back
 	static bool tracks_editable(std::vector<TTrack *> const &Tracks, std::string &Reason);
 	void trim_history();
@@ -857,8 +860,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::string m_track_events_missing;
 	void render_path_events(TTrack &Track);
 	std::string m_track_mode_notice;
-	gauge_tool m_gauge{*this};
-	std::vector<editor_tool *> m_tools{&m_gauge};
 	struct route_design
 	{
 		TTrack *from{nullptr};
@@ -1619,7 +1620,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void track_context_release();
 	void render_track_context();
 	void split_track_at(TTrack &Track, glm::dvec3 const &Point);
-	void focus_track(TTrack &Track, int const Path, glm::dvec3 const &Point);
+	void focus_track(TTrack &Track, int const Path, glm::dvec3 const &Point) override;
 	// the camera flies over Duration seconds to the place Distance back from the target along Look, looking along it
 	void fly_to(glm::dvec3 const &Target, glm::dvec3 const &Look, double const Distance, double const Duration = 0.6) override;
 	// paths found by their names
@@ -2458,30 +2459,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void infra_attach(EditorSnapshot &Snapshot);
 	void render_infra_body();
 
-	// speed limits of the paths checked against what their geometry allows
-	struct speed_state
-	{
-		bool open{false};
-		int scope{0}; // 0: the line through the selected path, 1: the whole scenery
-		speed_check::options options;
-		std::vector<std::pair<TTrack *, int>> queue;
-		std::size_t next{0};
-		std::vector<speed_check::verdict> results;
-		bool show_all{false};
-		int limits{0}; // 0: all the paths, 1: only those with a speed limit set, 2: only those without
-		int selected{-1};
-		std::size_t history{0}; // size of the undo history at the check
-		std::string status;
-	};
-	speed_state m_speed;
-	void render_speed_body();
-	void speed_start();
-	void speed_step();
-	void speed_focus(int const Index);
-	// with Branches the limits of the switch branches count too, otherwise they're only warnings
-	void speed_apply(std::vector<int> const &Indices, bool const Branches);
-	std::vector<int> speed_listed() const;
-	void draw_speed_overlay() const;
+	gauge_tool m_gauge{*this};
+	speed_tool m_speed{*this};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed};
 
 	// joints of the paths: ends which almost meet, steps, kinks, jumps of the cant and of the grade
 	struct joints_state
