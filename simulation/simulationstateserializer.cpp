@@ -1900,7 +1900,12 @@ std::vector<TDynamicObject *> state_serializer::insert_trainset(std::string cons
 std::vector<TDynamicObject *> state_serializer::insert_trainset_full(std::string const &Vehicles) {
 	scene::scratch_data scratch;
 	cParser parser(Vehicles, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction);
-	parser.getTokens(); // "trainset"
+	auto first_token { parser.getToken<std::string>() };
+	if (first_token != "trainset")
+	{
+		ErrorLog(std::format("Bad scenario: 'trainset' token expected, got %s", first_token));
+		return {};
+	}
 	deserialize_trainset(parser, scratch);
 	auto token { parser.getToken<std::string>() };
 	while (false == token.empty()) {
