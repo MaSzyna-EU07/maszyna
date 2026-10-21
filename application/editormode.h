@@ -1797,7 +1797,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void copy_track_style(TTrack const &Track);
 	std::size_t paste_track_style(std::vector<TTrack *> const &Tracks);
 	// which groups of the properties are pasted or put on the tracks by a preset, in the order of the groups of editormodetrackprops.cpp
-	using track_groups = std::array<bool, 11>;
+	using track_groups = std::array<bool, 12>;
 	// the values of the properties of the chosen groups put on the tracks, in one step of the undo. returns: the number of the
 	// tracks changed, none when no value is of the chosen groups
 	std::optional<std::size_t> apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What);
@@ -1850,8 +1850,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	{
 		std::string from;
 		std::vector<std::pair<std::string, std::string>> values;
-		// speed, environment, overhead line, track circuits, rails, trackbed, its shape, sleepers, ride and sound, frogs, sleeper placement
-		track_groups groups{false, false, false, false, true, true, true, true, false, true, true};
+		// speed, environment, overhead line, track circuits, rails, trackbed, its shape, sleepers, ride and sound, frogs, sleeper placement, texture blending
+		track_groups groups{false, false, false, false, true, true, true, true, false, true, true, true};
 		bool open{false};
 		bool picking{false}; // the next click on a track in the view copies its properties
 	};

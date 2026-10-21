@@ -756,6 +756,90 @@ material_manager::create_tinted( material_handle const Material, glm::vec3 const
     return tintedhandle;
 }
 
+bool
+material_manager::blendable( material_handle const Material ) {
+
+    if( Material == null_handle || Material >= m_materials.size() ) {
+        return false;
+    }
+    if( auto const lookup { m_blendables.find( Material ) }; lookup != m_blendables.end() ) {
+        return lookup->second;
+    }
+    auto result { false };
+    auto const &material { m_materials[ Material ] };
+    if( material.is_good
+     && material.shader
+     && material.texture_variants.empty()
+     && false == material.update_on_weather_change
+     && false == material.update_on_season_change
+     && material.shader->texture_conf.size() == 1
+     && material.shader->texture_conf.count( "diffuse" ) == 1
+     && material.textures[ material.shader->texture_conf.at( "diffuse" ).id ] != null_handle ) {
+        try {
+            // the parameters of the material go to the blending one as they are, so they have to be in the same places in both
+            auto const blend { GfxRenderer->Fetch_Shader( "trackblend" ) };
+            result = std::all_of(
+                std::begin( material.shader->param_conf ), std::end( material.shader->param_conf ),
+                [&]( auto const &Entry ) {
+                    auto const found { blend->param_conf.find( Entry.first ) };
+                    return found != blend->param_conf.end()
+                        && found->second.location == Entry.second.location
+                        && found->second.offset == Entry.second.offset
+                        && found->second.size == Entry.second.size; } );
+        }
+        catch( gl::shader_exception const &e ) {
+            ErrorLog( "invalid shader: " + std::string( e.what() ) );
+        }
+    }
+    m_blendables.emplace( Material, result );
+    return result;
+}
+
+material_handle
+material_manager::create_blend( material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain ) {
+
+    if( false == blendable( Material ) ) {
+        return Material;
+    }
+    auto const key { std::make_tuple( Material, Others[ 0 ], Others[ 1 ], Others[ 2 ], Grain ) };
+    if( auto const lookup { m_blends.find( key ) }; lookup != m_blends.end() ) {
+        return lookup->second;
+    }
+    auto const diffuse_of = [&]( material_handle const Source ) -> texture_handle {
+        if( false == blendable( Source ) ) {
+            return null_handle;
+        }
+        auto const &source { m_materials[ Source ] };
+        return source.textures[ source.shader->texture_conf.at( "diffuse" ).id ];
+    };
+    auto blend { variant_of( m_materials[ Material ], Grain ? ":blendgrain" : ":blend" ) };
+    auto result { Material };
+    try {
+        blend.shader = GfxRenderer->Fetch_Shader( Grain ? "trackblend_grain" : "trackblend" );
+        blend.texture_variants.clear();
+        blend.textures.fill( null_handle );
+        auto const own { diffuse_of( Material ) };
+        blend.textures[ 0 ] = own;
+        for( std::size_t other = 0; other < Others.size(); ++other ) {
+            // the slots of the ends nothing is blended at take the own texture, the shader samples them only with a weight
+            auto const texture { diffuse_of( Others[ other ] ) };
+            blend.textures[ 1 + other ] = ( texture != null_handle ? texture : own );
+        }
+        // the parameters taken from the bindings again, by the shader
+        blend.params_state.clear();
+        blend.finalize( true );
+        if( blend.is_good ) {
+            result = static_cast<material_handle>( m_materials.size() );
+            m_materials.emplace_back( std::move( blend ) );
+        }
+    }
+    catch( gl::shader_exception const &e ) {
+        ErrorLog( "invalid shader: " + std::string( e.what() ) );
+    }
+    m_blends.emplace( key, result );
+    return result;
+}
+
 void
 material_manager::on_weather_change() {
 

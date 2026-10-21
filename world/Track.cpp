@@ -701,6 +701,18 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             m_timber_model_name = modelpath;
             m_timber_skin_name = ( skinpath == "none" ? std::string{} : skinpath );
         }
+        else if( str == "blend" ) {
+            // blend <end> <length>: how far from the end 1 (p1), 2 (p2) or 3 (p4 of a switch) the rails and the ballast blend into those
+            // of the track joined there, where their textures differ; 0: not at all
+            auto const end { parser->getToken<int>() };
+            auto const length { parser->getToken<double>() };
+            if( end >= 1 && end <= static_cast<int>( m_blend.size() ) ) {
+                m_blend[ end - 1 ] = static_cast<float>( std::max( 0.0, length ) );
+            }
+            else {
+                ErrorLog( "Bad track: blend at end " + std::to_string( end ) + " of track \"" + m_name + "\" which has no such end" );
+            }
+        }
         else if( str == "friction" ) {
             // memory cell holding friction value modifiers
             m_friction.first = parser->getToken<std::string>();
@@ -1546,6 +1558,24 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
     if( m_sleeper_enabled && false == m_sleepers3d.active && m_sleeper_local_transforms.empty() ) {
         build_sleeper_transforms();
     }
+    // the rails and the ballast blended into those of the tracks joined at the ends, where their textures differ. the weights go with
+    // the geometry as it's made, so the materials change only with it; not where the chunks are laid again as a movable nose moves
+    track_blend::blending railsblend;
+    track_blend::blending ballastblend;
+    if( Bank != null_handle && false == movable ) {
+        if( Geometry1.empty() ) {
+            railsblend = track_blend::setup( *this, track_blend::kind::rails );
+            m_blendmaterial1 = railsblend.material;
+        }
+        if( eType == tt_Switch ) {
+            ballastblend = track_blend::setup( *this, track_blend::kind::ballast );
+            m_blendmaterial3 = ballastblend.material;
+        }
+        else if( Geometry2.empty() ) {
+            ballastblend = track_blend::setup( *this, track_blend::kind::ballast );
+            m_blendmaterial2 = ballastblend.material;
+        }
+    }
     switch (iCategoryFlag & 15)
     {
     case 1: // tor
@@ -1583,6 +1613,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array vertices;
                 Segment->RenderLoft(vertices, m_origin, bpts1, iTrapezoid > 0, texturelength);
                 if( Bank != 0 && true == Geometry2.empty() ) {
+                    track_blend::weighing const weighing { &ballastblend };
                     Geometry2.emplace_back(track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
                 }
                 if( Bank == 0 && false == Geometry2.empty() ) {
@@ -1597,6 +1628,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array vertices;
                 auto const open { eType == tt_Normal && ( trPrev == nullptr || trNext == nullptr ) };
                 if( Bank != 0 && true == Geometry1.empty() ) {
+                    track_blend::weighing const weighing { &railsblend };
                     for( auto const side : { 1, -1 } ) {
                         auto const &profile { side > 0 ? rpts1 : rpts2 };
                         if( eType == tt_Normal && iTrapezoid == 0 && lay_rail( 0, profile, side, texturelength, track_rails::blade_runon( *this, side ), trPrev == nullptr, trNext == nullptr, Geometry1, GeometryCut1 ) ) {
@@ -1695,6 +1727,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
             if( true == Global.CreateSwitchTrackbeds ) {
                 gfx::vertex_array vertices;
                 create_switch_trackbed( vertices );
+                track_blend::weighing const weighing { &ballastblend };
                 SwitchExtension->Geometry3 = track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP);
                 vertices.clear();
             }
@@ -2714,6 +2747,11 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             << "timbermodel "
             << m_timber_model_name << ' '
             << ( m_timber_skin_name.empty() ? std::string{ "none" } : m_timber_skin_name ) << ' ';
+    }
+    for( std::size_t end = 0; end < m_blend.size(); ++end ) {
+        if( m_blend[ end ] != track_blend::default_length ) {
+            Output << "blend " << end + 1 << ' ' << m_blend[ end ] << ' ';
+        }
     }
     // footer
     Output

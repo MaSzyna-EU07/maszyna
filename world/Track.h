@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Segment.h"
 #include "world/RailLayout.h"
 #include "world/TrackSleepers.h"
+#include "world/TrackBlend.h"
 #include "model/material.h"
 #include "scene/scenenode.h"
 #include "utilities/Names.h"
@@ -237,6 +238,12 @@ public:
     //   timbermodel <model> <skin>
     std::string m_timber_model_name;
     std::string m_timber_skin_name; // replacable skin, empty for the textures of the model
+    // how far from its ends p1, p2 (and p4 of a switch) the rails and the ballast blend into those of the tracks joined there (blend)
+    std::array<float, 3> m_blend { track_blend::default_length, track_blend::default_length, track_blend::default_length };
+    // the materials the blending is drawn with, null where nothing's blended: the rails of a plain track, its ballast, the trackbed of a switch
+    material_handle m_blendmaterial1 { null_handle };
+    material_handle m_blendmaterial2 { null_handle };
+    material_handle m_blendmaterial3 { null_handle };
     TModel3d *m_sleeper_model { nullptr }; // resolved on init; nullptr means no model / failed to load
     material_handle m_sleeper_skin { 0 }; // resolved replacable skin handle, 0 = use model defaults
     // precomputed local-space transforms (relative to m_origin) for every sleeper instance along the path.

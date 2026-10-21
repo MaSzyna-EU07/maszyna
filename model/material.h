@@ -147,6 +147,14 @@ public:
         create_matte( material_handle const Material );
     material_handle
         create_tinted( material_handle const Material, glm::vec3 const &Colour );
+    // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of
+    // the user data of the vertices (mat_trackblend), as grains with Grain. returns: handle to it, made once, or the material
+    // itself where it can't be blended
+    material_handle
+        create_blend( material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain );
+    // whether the material can be blended so: one diffuse texture, lit as mat_default, not changing with the weather and seasons
+    bool
+        blendable( material_handle const Material );
     opengl_material const &
         material( material_handle const Material ) const { return m_materials[ Material ]; }
     opengl_material &
@@ -177,6 +185,8 @@ private:
     index_map m_materialmappings;
     std::unordered_map<material_handle, material_handle> m_mattes;
     std::map<std::tuple<material_handle, float, float, float>, material_handle> m_tints;
+    std::map<std::tuple<material_handle, material_handle, material_handle, material_handle, bool>, material_handle> m_blends;
+    std::unordered_map<material_handle, bool> m_blendables;
 };
 
 //---------------------------------------------------------------------------

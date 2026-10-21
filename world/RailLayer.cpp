@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "world/TrackRails.h"
+#include "world/TrackBlend.h"
 #include "rendering/renderer.h"
 
 namespace track_rails {
@@ -213,7 +214,9 @@ reused_chunks::~reused_chunks() {
     reused = m_previous;
 }
 
-gfx::geometry_handle insert_chunk( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Bank, int const Type ) {
+namespace {
+
+gfx::geometry_handle insert_weighed( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Bank, int const Type ) {
 
     if( reused == nullptr ) {
         return GfxRenderer->Insert( Vertices, Userdata, Bank, Type );
@@ -235,6 +238,19 @@ gfx::geometry_handle insert_chunk( gfx::vertex_array &Vertices, gfx::userdata_ar
         reused->push_back( { Type, handle, true } );
     }
     return handle;
+}
+
+} // namespace
+
+gfx::geometry_handle insert_chunk( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Bank, int const Type ) {
+
+    if( auto const *blending { track_blend::weighed() }; blending != nullptr ) {
+        // the weights of the textures the track blends into near its ends; the user data given are the caller's own, often shared
+        auto weighed { Userdata };
+        blending->weigh( Vertices, weighed );
+        return insert_weighed( Vertices, weighed, Bank, Type );
+    }
+    return insert_weighed( Vertices, Userdata, Bank, Type );
 }
 
 void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry ) {

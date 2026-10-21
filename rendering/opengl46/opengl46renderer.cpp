@@ -2850,6 +2850,16 @@ material_handle opengl46_renderer::Tinted_Material(material_handle const Materia
 	return m_materials.create_tinted(Material, Colour);
 }
 
+material_handle opengl46_renderer::Blend_Material(material_handle const Material, std::array<material_handle, 3> const &Others, bool const Grain)
+{
+	return m_materials.create_blend(Material, Others, Grain);
+}
+
+bool opengl46_renderer::Blendable_Material(material_handle const Material)
+{
+	return m_materials.blendable(Material);
+}
+
 std::shared_ptr<gl::program> opengl46_renderer::Fetch_Shader(const std::string &name)
 {
 	auto it = m_shaders.find(name);
@@ -6611,13 +6621,13 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 				// track with light level of its own is drawn on its own
 				flush_batch();
 				setup_environment_light(track->eEnvironment);
-				Bind_Material(track->m_material1);
+				Bind_Material(track->m_blendmaterial1 != null_handle ? track->m_blendmaterial1 : track->m_material1);
 				draw(std::begin(track->Geometry1), std::end(track->Geometry1));
 				// restore default lighting
 				setup_environment_light();
 				break;
 			}
-			if (false == begin_batch(track->m_material1))
+			if (false == begin_batch(track->m_blendmaterial1 != null_handle ? track->m_blendmaterial1 : track->m_material1))
 			{
 				// the track is drawn with the call of its predecessor
 				--m_renderpass.draw_stats.drawcalls;
@@ -6680,13 +6690,13 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			{
 				flush_batch();
 				setup_environment_light(track->eEnvironment);
-				Bind_Material(track->m_material2);
+				Bind_Material(track->m_blendmaterial2 != null_handle ? track->m_blendmaterial2 : track->m_material2);
 				draw(std::begin(track->Geometry2), std::end(track->Geometry2));
 				// restore default lighting
 				setup_environment_light();
 				break;
 			}
-			begin_batch(track->m_material2);
+			begin_batch(track->m_blendmaterial2 != null_handle ? track->m_blendmaterial2 : track->m_material2);
 			m_pathbatch.insert(std::end(m_pathbatch), std::begin(track->Geometry2), std::end(track->Geometry2));
 			break;
 		}
@@ -6747,13 +6757,13 @@ void opengl46_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			{
 				flush_batch();
 				setup_environment_light(track->eEnvironment);
-				Bind_Material(track->SwitchExtension->m_material3);
+				Bind_Material(track->m_blendmaterial3 != null_handle ? track->m_blendmaterial3 : track->SwitchExtension->m_material3);
 				draw(track->SwitchExtension->Geometry3);
 				// restore default lighting
 				setup_environment_light();
 				break;
 			}
-			begin_batch(track->SwitchExtension->m_material3);
+			begin_batch(track->m_blendmaterial3 != null_handle ? track->m_blendmaterial3 : track->SwitchExtension->m_material3);
 			m_pathbatch.emplace_back(track->SwitchExtension->Geometry3);
 			break;
 		}

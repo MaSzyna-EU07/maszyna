@@ -226,12 +226,13 @@ enum group : int
 	ride_sound,
 	frogs,
 	sleeper_placement, // spacing and shift of the sleepers and of the trackbed under them, apart from their models
+	blending, // how far from the ends the textures blend into those of the tracks joined there
 	group_count
 };
 
-char const *const kGroupLabels[group_count] = {"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement"};
+char const *const kGroupLabels[group_count] = {"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement", "Texture blending"};
 // the groups as the presets keep them in their file, by names which don't change with the order of the groups
-char const *const kGroupKeys[group_count] = {"speed", "environment", "overhead", "circuits", "rails", "trackbed", "bedshape", "sleepers", "ride", "frogs", "sleeperplacement"};
+char const *const kGroupKeys[group_count] = {"speed", "environment", "overhead", "circuits", "rails", "trackbed", "bedshape", "sleepers", "ride", "frogs", "sleeperplacement", "blending"};
 
 struct track_property
 {
@@ -503,6 +504,30 @@ std::vector<track_property> make_properties()
 		};
 		blades("bladeheel", "Blade heel (m)", "Where the moving blades end, from the start of the switch, as the template of the switch gives it.\n0: as long as the flangeway of 58 mm behind them needs", &TSwitchExtension::m_bladeheel);
 		blades("bladethrow", "Blade throw (m)", "How far the tips of the blades move over between the two paths.\n0: the usual 0.160 m", &TSwitchExtension::m_bladethrow);
+	}
+	{
+		// the ends of a plain track are p1 and p2, a switch has p4 as the end of its second path
+		char const *const ends[][3] = {{"blend1", "Texture blending at p1 (m)", "How far from the end p1 the rails and the ballast blend into those of the track joined there, where their textures differ.\nThe ballast comes in as stones mixed together, the rails fade into each other; 0: not blended"},
+		                               {"blend2", "Texture blending at p2 (m)", "How far from the end p2 the rails and the ballast blend into those of the track joined there, where their textures differ.\nThe ballast comes in as stones mixed together, the rails fade into each other; 0: not blended"},
+		                               {"blend3", "Texture blending at p4 (m)", "How far from the end p4 of the switch its trackbed blends into the ballast of the track joined there, where their textures differ; 0: not blended"}};
+		for (int end = 0; end < 3; ++end)
+		{
+			auto &property{add(list, ends[end][0], field::number, section::look, group::blending, ends[end][1], ends[end][2])};
+			property.rebuild = true;
+			property.more = true;
+			property.applies = [end](TTrack const &Track) { return Track.m_visible && (Track.iCategoryFlag & 15) == kRailCategory && (Track.eType == tt_Switch || (Track.eType == tt_Normal && end < 2)); };
+			property.get = [end](TTrack const &Track) { return decimal(Track.m_blend[end], 2); };
+			property.set = [end](TTrack &Track, std::string const &Text) {
+				double length;
+				if (false == parse_number(Text, length))
+					return false;
+				auto const clamped{static_cast<float>(std::max(0.0, length))};
+				if (decimal(clamped, 2) == decimal(Track.m_blend[end], 2))
+					return false;
+				Track.m_blend[end] = clamped;
+				return true;
+			};
+		}
 	}
 	add_float(list, "texlength", section::look_bed, group::trackbed_shape, "Texture length (m)", "Length after which the texture of the rails and the trackbed repeats", &TTrack::fTexLength, 2, 0.01f, true);
 	{
@@ -1466,7 +1491,7 @@ void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
 	{
 		// rails, trackbed, its shape, sleepers, frogs and sleeper placement at first, the look of the track
 		std::array<bool, group_count> groups{};
-		for (auto const group : {group::rails, group::trackbed, group::trackbed_shape, group::sleepers, group::frogs, group::sleeper_placement})
+		for (auto const group : {group::rails, group::trackbed, group::trackbed_shape, group::sleepers, group::frogs, group::sleeper_placement, group::blending})
 			groups[group] = true;
 		panel.selected = EditorTrackPresets.create(STR_C("New preset"), name_of(*Tracks.front()), values_of_track(*Tracks.front()), group_keys(groups));
 		panel.nameid = 0;
@@ -1855,7 +1880,7 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 		}
 		else if (action == "groups")
 		{
-			// the groups pasted, as their numbers: 0 speed ... 9 frogs, 10 sleeper placement
+			// the groups pasted, as their numbers: 0 speed ... 9 frogs, 10 sleeper placement, 11 texture blending
 			m_track_style.groups.fill(false);
 			for (int group; Words >> group;)
 				if (group >= 0 && group < group_count)

@@ -96,6 +96,7 @@ set(SOURCES
 "utilities/Timer.cpp"
 "world/Track.cpp"
 "world/TrackSleepers.cpp"
+"world/TrackBlend.cpp"
 "world/SleeperPaths.cpp"
 "world/SleeperFeatures.cpp"
 "world/SleeperLines.cpp"

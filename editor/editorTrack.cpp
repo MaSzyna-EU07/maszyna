@@ -157,6 +157,7 @@ editor_track::state editor_track::capture(TTrack const &Track)
 	result.sleeper_ballast = Track.m_sleeper_ballast_z;
 	result.timber_model = Track.m_timber_model_name;
 	result.timber_skin = Track.m_timber_skin_name;
+	result.blend = Track.m_blend;
 	result.rail_profile = Track.m_profile1;
 	for (int i = 0; i < 6; ++i)
 		result.events[i] = events(const_cast<TTrack &>(Track), i);
@@ -262,6 +263,7 @@ void editor_track::apply(TTrack &Track, state const &State)
 	Track.m_sleeper_ballast_z = State.sleeper_ballast;
 	Track.m_timber_model_name = State.timber_model;
 	Track.m_timber_skin_name = State.timber_skin;
+	Track.m_blend = State.blend;
 	Track.m_profile1 = State.rail_profile;
 	for (int i = 0; i < 6; ++i)
 		events(Track, i) = State.events[i];
@@ -3033,6 +3035,9 @@ void write_ending(std::ostream &Text, TTrack const &Style)
 		Text << "sleepermodel " << Style.m_sleeper_frequency << ' ' << Style.m_sleeper_model_name << ' ' << (Style.m_sleeper_skin_name.empty() ? std::string{"none"} : Style.m_sleeper_skin_name) << ' ' << Style.m_sleeper_offset.x << ' ' << Style.m_sleeper_offset.y << ' ' << Style.m_sleeper_offset.z << ' ' << Style.m_sleeper_ballast_z << ' ';
 	if (false == Style.m_timber_model_name.empty())
 		Text << "timbermodel " << Style.m_timber_model_name << ' ' << (Style.m_timber_skin_name.empty() ? std::string{"none"} : Style.m_timber_skin_name) << ' ';
+	for (std::size_t end = 0; end < Style.m_blend.size(); ++end)
+		if (Style.m_blend[end] != track_blend::default_length)
+			Text << "blend " << end + 1 << ' ' << Style.m_blend[end] << ' ';
 	Text << "endtrack\n";
 }
 
