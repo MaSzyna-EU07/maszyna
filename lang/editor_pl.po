@@ -9988,3 +9988,6 @@ msgstr "Przeciągnij przez tor"
 
 msgid "to the other side"
 msgstr "na drugą stronę"
+
+msgid "type the radius of the curve"
+msgstr "wpisz promień łuku"

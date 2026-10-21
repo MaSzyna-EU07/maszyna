@@ -891,6 +891,8 @@ char const *editor_mode::typed_meaning() const
 		return "type the turn in degrees, + to the right";
 	if (m_lay.active && false == m_lay.points.empty())
 		return "type the length of the next leg, Enter adds the point";
+	if (m_extend.active && (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc))
+		return "type the radius of the curve";
 	return nullptr;
 }
 
