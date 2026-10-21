@@ -25,6 +25,11 @@ namespace
 using geometry::plan_distance;
 using geometry::plan_of;
 
+double constexpr kSteepest{1000.0}; // per mille: the grades of the user's own track aren't capped
+double constexpr kFormed{0.5}; // m, how closely the line keeps to the ground the formation is made in
+double constexpr kBare{0.1}; // m, to the ground left as it is
+double constexpr kBareRadius{300.0}; // m, the vertical curves over it
+
 } // namespace
 
 glm::dvec3 editor_mode::cursor_terrain(double const Height)
@@ -124,7 +129,30 @@ double editor_mode::bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direct
 
 void editor_mode::follow_ground(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const
 {
-	ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, [&](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions) { return bed_heights(Points, Directions, Style); });
+	std::vector<glm::dvec2> points;
+	for (auto const &piece : Pieces)
+	{
+		geometry::bezier const curve{piece};
+		auto const count{std::max(6, static_cast<int>(std::ceil(curve.plan_length() / 10.0)))};
+		for (int i = 0; i <= count; ++i)
+			points.push_back(plan_of(curve.point(static_cast<double>(i) / count)));
+	}
+	// the ground the formation is made in lets the line keep to the norms of the profile, cutting and filling; the ground left as
+	// it is the line follows, bending as sharply as it has to
+	auto const formed{nmt_formed(points)};
+	ground_follow::grading grading;
+	grading.settings.norms = m_profile.line.norms;
+	grading.settings.norms.grade_max = kSteepest;
+	grading.settings.norms.curve_threshold = 0.0;
+	if (false == formed)
+	{
+		grading.settings.norms.radius_factor = 0.0;
+		grading.settings.norms.radius_min = kBareRadius;
+	}
+	grading.settings.speed = design_speed(Style, nullptr);
+	grading.fit.grade_max = kSteepest;
+	grading.fit.tolerance = formed ? kFormed : kBare;
+	ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, [&](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions) { return bed_heights(Points, Directions, Style); }, grading);
 }
 
 glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point)

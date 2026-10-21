@@ -406,6 +406,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void nmt_follow_tracks();
 	// the height the ground will have where the terrain is made ahead of the track laid and isn't there yet
 	bool nmt_ahead(double const X, double const Z, double &Height) const;
+	// a track laid through the points gets its formation from the terrain of the model: it needn't keep to every bump of it
+	bool nmt_formed(std::vector<glm::dvec2> const &Points) const;
 	// the squares of the model under the rectangle are in, none of them waiting to be asked for again
 	bool nmt_ready(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	// Only: the paths of these tracks are shaped anew, the modifiers of those removed taken away; null: all of them. the number

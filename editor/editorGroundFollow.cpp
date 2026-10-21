@@ -13,7 +13,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iterator>
+#include <limits>
 
 namespace ground_follow
 {
@@ -27,8 +29,7 @@ using geometry::part_of;
 using geometry::plan_of;
 
 double constexpr kStep{2.0};
-double constexpr kTolerance{0.1};
-double constexpr kSpacing{10.0};
+double constexpr kShortest{5.0}; // m, the shortest piece the line cuts off
 
 struct samples
 {
@@ -61,27 +62,39 @@ samples sample(std::vector<segment_data> const &Pieces, std::vector<double> cons
 	return result;
 }
 
-void fit(knot_line &Line, std::vector<double> const &Chainages, std::vector<double> const &Targets)
+bool grade_line(samples const &Points, std::vector<double> const &Targets, double const Total, ends const &Ends, grading const &Grading, profile::line &Line)
 {
-	for (std::size_t pass = 0; pass < Chainages.size(); ++pass)
-	{
-		auto worst{kTolerance};
-		auto pick{Chainages.size()};
-		for (std::size_t j = 0; j < Chainages.size(); ++j)
-		{
-			if (std::isnan(Targets[j]))
-				continue;
-			double grade{0.0};
-			auto const miss{std::abs(Line.at(Chainages[j], grade) - Targets[j])};
-			if (miss <= worst || false == Line.room(Chainages[j], kSpacing))
-				continue;
-			worst = miss;
-			pick = j;
-		}
-		if (pick == Chainages.size())
-			return;
-		Line.insert(Chainages[pick], Targets[pick]);
-	}
+	auto const none{std::numeric_limits<double>::quiet_NaN()};
+	std::vector<double> chainages{0.0};
+	std::vector<double> ground{none};
+	chainages.insert(chainages.end(), Points.chainages.begin(), Points.chainages.end());
+	ground.insert(ground.end(), Targets.begin(), Targets.end());
+	chainages.push_back(Total);
+	ground.push_back(none);
+	if (std::none_of(ground.begin(), ground.end(), [](double const Height) { return std::isfinite(Height); }))
+		return false;
+	profile::context context;
+	context.length = Total;
+	context.start_elevation = Ends.height0;
+	context.end_elevation = Ends.height1;
+	context.start_joined = false == std::isnan(Ends.grade0);
+	context.end_joined = false == std::isnan(Ends.grade1);
+	context.start_grade = context.start_joined ? Ends.grade0 : 0.0;
+	context.end_grade = context.end_joined ? Ends.grade1 : 0.0;
+	// the start of the track stays where it's laid from, a free end goes where the line takes it
+	auto fit{Grading.fit};
+	if (false == context.start_joined)
+		fit.bounds.push_back({0.0, Ends.height0, Ends.height0});
+	auto settings{Grading.settings};
+	settings.join_start = true;
+	settings.join_end = true;
+	Line = profile::fit_ground(chainages, ground, context, settings, fit, {}, std::vector<double>(chainages.size(), Grading.reach));
+	if (Line.points.size() < 2)
+		return false;
+	profile::complete(Line, context);
+	if (false == context.start_joined)
+		Line.points.front().elevation = Ends.height0;
+	return true;
 }
 
 std::vector<segment_data> cut(std::vector<segment_data> const &Pieces, std::vector<double> const &Lengths, std::vector<double> const &Knots, std::vector<std::pair<double, double>> &Spans)
@@ -96,7 +109,7 @@ std::vector<segment_data> cut(std::vector<segment_data> const &Pieces, std::vect
 		double parameter{0.0};
 		for (auto const knot : Knots)
 		{
-			if (knot < cut + 0.5 || knot > to - 0.5)
+			if (knot < cut + kShortest || knot > to - kShortest)
 				continue;
 			auto const next{curve.parameter(knot - from)};
 			result.push_back(part_of(Pieces[i], parameter, next));
@@ -111,7 +124,7 @@ std::vector<segment_data> cut(std::vector<segment_data> const &Pieces, std::vect
 	return result;
 }
 
-void lift(segment_data &Piece, std::pair<double, double> const &Span, knot_line const &Line)
+void lift(segment_data &Piece, std::pair<double, double> const &Span, std::function<double(double, double &)> const &At)
 {
 	auto &points{Piece.points};
 	auto const [a, b]{Span};
@@ -122,8 +135,8 @@ void lift(segment_data &Piece, std::pair<double, double> const &Span, knot_line 
 	auto &finish{points[segment_data::point::end]};
 	auto &control1{points[segment_data::point::control1]};
 	auto &control2{points[segment_data::point::control2]};
-	start.y = Line.at(a, begin);
-	finish.y = Line.at(b, end);
+	start.y = At(a, begin);
+	finish.y = At(b, end);
 	if (has_controls(Piece))
 	{
 		control1.y = begin * glm::length(plan_of(control1));
@@ -156,14 +169,6 @@ void knot_line::refresh()
 		slopes.back() = grade1;
 }
 
-void knot_line::insert(double const Chainage, double const Height)
-{
-	auto const where{std::upper_bound(knots.begin(), knots.end(), Chainage) - knots.begin()};
-	knots.insert(knots.begin() + where, Chainage);
-	heights.insert(heights.begin() + where, Height);
-	refresh();
-}
-
 double knot_line::at(double const Chainage, double &Grade) const
 {
 	auto const next{static_cast<std::size_t>(std::upper_bound(knots.begin(), knots.end(), Chainage) - knots.begin())};
@@ -172,13 +177,7 @@ double knot_line::at(double const Chainage, double &Grade) const
 	return geometry::hermite(length, heights[i], slopes[i], heights[i + 1], slopes[i + 1], std::clamp((Chainage - knots[i]) / length, 0.0, 1.0), Grade);
 }
 
-bool knot_line::room(double const Chainage, double const Spacing) const
-{
-	auto const next{std::upper_bound(knots.begin(), knots.end(), Chainage)};
-	return next != knots.end() && *next - Chainage >= Spacing && Chainage - *std::prev(next) >= Spacing;
-}
-
-void follow(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const &Bed)
+void follow(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const &Bed, grading const &Grading)
 {
 	std::vector<double> lengths;
 	double total{0.0};
@@ -188,13 +187,34 @@ void follow(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const
 		return;
 	auto const points{sample(Pieces, lengths, total, Ends)};
 	auto const targets{Bed(points.points, points.directions)};
+	std::vector<std::pair<double, double>> spans;
+	if (profile::line graded; grade_line(points, targets, total, Ends, Grading, graded))
+	{
+		// the ends of the track go on in the height and the grade of the tracks they join, whatever the line found
+		auto result{cut(Pieces, lengths, profile::breaks(graded), spans)};
+		for (std::size_t i = 0; i < result.size(); ++i)
+			lift(result[i], spans[i], [&](double const Chainage, double &Grade) {
+				if (Chainage < 1e-6 && false == std::isnan(Ends.grade0))
+				{
+					Grade = Ends.grade0;
+					return Ends.height0;
+				}
+				if (Chainage > total - 1e-6 && false == std::isnan(Ends.grade1))
+				{
+					Grade = Ends.grade1;
+					return Ends.height1;
+				}
+				Grade = profile::grade(graded, Chainage);
+				return profile::elevation(graded, Chainage);
+			});
+		Pieces = std::move(result);
+		return;
+	}
 	knot_line line{{0.0, total}, {Ends.height0, Ends.height1}, {}, Ends.grade0, Ends.grade1};
 	line.refresh();
-	fit(line, points.chainages, targets);
-	std::vector<std::pair<double, double>> spans;
 	auto result{cut(Pieces, lengths, line.knots, spans)};
 	for (std::size_t i = 0; i < result.size(); ++i)
-		lift(result[i], spans[i], line);
+		lift(result[i], spans[i], [&](double const Chainage, double &Grade) { return line.at(Chainage, Grade); });
 	Pieces = std::move(result);
 }
 

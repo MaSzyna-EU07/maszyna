@@ -640,6 +640,20 @@ bool editor_mode::nmt_ahead(double const X, double const Z, double &Height) cons
 	return true;
 }
 
+bool editor_mode::nmt_formed(std::vector<glm::dvec2> const &Points) const
+{
+	auto const &state{m_nmt_state};
+	if (false == state.shape || false == m_nmt.placed() || false == m_streamer.active())
+		return false;
+	bool foreign{false};
+	if (nmt_terrain_offset(Points, foreign).has_value())
+		return true;
+	if (foreign)
+		return false;
+	double height;
+	return std::all_of(Points.begin(), Points.end(), [&](glm::dvec2 const &Point) { return false == m_streamer.height_at(Point.x, Point.y, height) && nmt_ahead(Point.x, Point.y, height); });
+}
+
 editor_mode::nmt_chunk editor_mode::add_chunk_from_nmt(heightmap::chunk_key const &Key, std::optional<double> const Offset)
 {
 	auto const low{heightmap::chunk_corner(Key)};

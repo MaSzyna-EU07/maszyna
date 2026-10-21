@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 #include <glm/glm.hpp>
 
+#include "editor/editorProfile.hpp"
 #include "world/Segment.h"
 
 namespace ground_follow
@@ -37,11 +38,18 @@ struct knot_line
 	double grade1{0.0};
 
 	void refresh();
-	void insert(double const Chainage, double const Height);
 	double at(double const Chainage, double &Grade) const;
-	bool room(double const Chainage, double const Spacing) const;
 };
 
-void follow(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const &Bed);
+// the grade line the track is laid on where there's ground under it: the solver of the grade lines fits it to the ground
+struct grading
+{
+	profile::line settings; // the speed and the norms of the line
+	profile::ground_fit fit; // how closely it keeps to the ground
+	double reach{100.0}; // m, how far the ground may part from the line and still be followed
+};
+
+// where Bed finds no ground, the heights lead from one end to the other
+void follow(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const &Bed, grading const &Grading = {});
 
 } // namespace ground_follow
