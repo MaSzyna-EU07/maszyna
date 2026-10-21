@@ -638,6 +638,7 @@ void editor_mode::render_straight_gizmo()
 			if (false == state.fitting)
 			{
 				push_track_snapshot(state.drag_states);
+				state.drag_step = m_history.size();
 				m_track_drag = tracks;
 			}
 		}
@@ -731,6 +732,7 @@ void editor_mode::cancel_track_tools()
 			m_track_dirty = true;
 			commit_track_drag(true);
 			m_track_drag.clear();
+			drop_step(state.drag_step);
 		}
 		state.dragging = false;
 		state.fitting = false;
@@ -743,10 +745,22 @@ void editor_mode::cancel_track_tools()
 	m_signal.placing = false;
 	m_signal.moving = false;
 	m_handle_drag = {};
+	if (m_route_dragging)
+	{
+		m_route_dragging = false;
+		m_route.design = m_route_drag_from;
+		route_update();
+	}
 	if (m_point_drag.active)
 	{
+		auto const step{m_point_drag.moved ? m_point_drag.step : 0};
 		m_track_snap = {};
-		point_drag_finish();
+		m_record_watch = {};
+		m_point_drag = {};
+		m_track_drag.clear();
+		m_track_drag_points.clear();
+		m_track_joints.clear();
+		drop_step(step);
 	}
 	if (m_switch.placing)
 	{

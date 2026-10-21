@@ -973,6 +973,16 @@ void editor_mode::undo_last()
     }
 }
 
+void editor_mode::drop_step(std::size_t const Step)
+{
+    if (Step == 0 || m_history.size() != Step)
+        return;
+    auto const redo{g_redo.size()};
+    undo_one();
+    if (g_redo.size() > redo)
+        g_redo.erase(g_redo.begin() + redo, g_redo.end());
+}
+
 void editor_mode::undo_one()
 {
     if (m_history.empty())

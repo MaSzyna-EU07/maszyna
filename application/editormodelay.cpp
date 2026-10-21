@@ -351,6 +351,7 @@ void editor_mode::point_drag_update()
 		for (auto *dragged : m_track_drag)
 			states.emplace_back(dragged, editor_track::capture(*dragged));
 		push_track_snapshot(std::move(states));
+		drag.step = m_history.size();
 		records_watch_begin();
 	}
 	screen_projection const projection;

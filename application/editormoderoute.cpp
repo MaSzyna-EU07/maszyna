@@ -1102,6 +1102,8 @@ void editor_mode::render_route_gizmo()
 		}
 		return;
 	}
+	if (false == m_route_dragging)
+		m_route_drag_from = route.design;
 	m_route_dragging = true;
 	if (grip)
 	{

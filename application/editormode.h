@@ -174,6 +174,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void redo_last();
 	// a single step of the history, see undo_last()
 	void undo_one();
+	void drop_step(std::size_t const Step);
 	void redo_one();
 	// the changes of the heightmap terrain since the last step become a step of the history: a stroke of the brush,
 	// or what a frame did; the next change is recorded from now on
@@ -984,6 +985,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool fit_has_before{false};
 		bool fit_has_after{false};
 		std::vector<std::pair<TTrack *, editor_track::state>> drag_states;
+		std::size_t drag_step{0};
 		glm::dvec3 preview_start{0.0};
 		glm::dvec3 preview_end{0.0};
 		glm::dvec3 edit_start{0.0};
@@ -1551,6 +1553,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool moved{false};
 		glm::vec2 from{0.f};
 		double height{0.0};
+		std::size_t step{0};
 	};
 	point_drag m_point_drag;
 	struct handle_drag
@@ -2258,6 +2261,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_infra_overlay() const;
 
 	bool m_route_dragging{false};
+	alignment::design m_route_drag_from;
 	float m_track_snap_radius{1.0f};
 	bool m_track_align_tangent{true};
 	bool m_track_drag_connected{true};

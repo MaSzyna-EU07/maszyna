@@ -1695,7 +1695,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		gizmo = true;
 	}
 	else if (m_point_drag.moved)
-		hints = {{"Drag", "moves the point, level"}, {"Over a free end", "the end joins it"}, {"Release", "done"}, {"Esc", "done"}};
+		hints = {{"Drag", "moves the point, level"}, {"Over a free end", "the end joins it"}, {"Release", "done"}, {"Esc", "cancel"}};
 	else if (m_track_point.valid())
 	{
 		char const *action{"moves the point along the axes"};
