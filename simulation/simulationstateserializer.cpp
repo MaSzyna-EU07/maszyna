@@ -1877,15 +1877,31 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 	return cloned;
 }
 
-std::vector<TDynamicObject *> state_serializer::insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed) {
+std::vector<TDynamicObject *> state_serializer::insert_trainset(std::string const &Name, TTrack *Path, double const Offset, double const Velocity, std::string const &Vehicles, bool const Reversed) {
 	scene::scratch_data scratch;
 	scratch.trainset.is_open = true;
 	scratch.trainset.name = Name;
 	scratch.trainset.track = Path != nullptr ? Path->name() : std::string{};
 	scratch.trainset.path = Path;
 	scratch.trainset.offset = static_cast<float>(Offset);
+	scratch.trainset.velocity = static_cast<float>(Velocity);
 	scratch.trainset.reversed = Reversed;
 	cParser parser(Vehicles, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction);
+	auto token { parser.getToken<std::string>() };
+	while (false == token.empty()) {
+		if (token == "node") { deserialize_node(parser, scratch); }
+		token = parser.getToken<std::string>();
+	}
+	auto const vehicles { scratch.trainset.vehicles };
+	if (false == vehicles.empty()) { deserialize_endtrainset(parser, scratch); }
+	return vehicles;
+}
+
+std::vector<TDynamicObject *> state_serializer::insert_trainset_full(std::string const &Vehicles) {
+	scene::scratch_data scratch;
+	cParser parser(Vehicles, cParser::buffer_TEXT, Global.asCurrentSceneryPath, Global.bLoadTraction);
+	parser.getTokens(); // "trainset"
+	deserialize_trainset(parser, scratch);
 	auto token { parser.getToken<std::string>() };
 	while (false == token.empty()) {
 		if (token == "node") { deserialize_node(parser, scratch); }
@@ -1991,31 +2007,6 @@ TEventLauncher *state_serializer::create_eventlauncher(const std::string &src, c
 	simulation::Region->insert(launcher);
 
 	return launcher;
-}
-
-void state_serializer::create_trainset(const std::string &src) {
-	cParser parser(src);
-	parser.getTokens(); // "trainset"
-
-	scene::scratch_data scratch;
-
-	deserialize_trainset(parser, scratch);
-
-	// deserialize content from the provided input
-	auto token = parser.getToken<std::string>();
-	while (!token.empty()) {
-		if (token == "node")
-			deserialize_node(parser, scratch);
-		else if (token == "endtrainset") {
-			deserialize_endtrainset(parser, scratch);
-            break;
-        }
-		else {
-			ErrorLog( std::format(R"(Bad scenario: encountered invalid token "{}" in file "{}" (line {}))", token, parser.Name(), std::to_string(parser.Line())));
-			break;
-		}
-		token = parser.getToken<std::string>();
-	}
 }
 
 } // simulation
