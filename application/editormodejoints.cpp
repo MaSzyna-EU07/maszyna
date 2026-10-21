@@ -8,9 +8,9 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "application/editormode.h"
+#include "application/editormodejoints.h"
+#include "editor/editorNmt.hpp"
 #include "application/editormodeshared.h"
-#include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
@@ -46,7 +46,7 @@ std::size_t const kModelRun{200}; // places of a path whose model is asked for a
 double const kModelPoll{0.25}; // s between the looks whether the model is in
 double const kUnfitted{30.0}; // m; a scenery whose tracks lie this far from the model as a whole isn't fitted to it
 
-using kind = editor_mode::joint_issue::kind;
+using kind = joints_tool::joint_issue::kind;
 
 bool rail(TTrack const &Track)
 {
@@ -109,7 +109,7 @@ char const *kind_name(kind const Kind)
 	}
 }
 
-std::string value_text(editor_mode::joint_issue const &Issue)
+std::string value_text(joints_tool::joint_issue const &Issue)
 {
 	switch (Issue.type)
 	{
@@ -146,7 +146,7 @@ std::string name_of(TTrack const *Track)
 
 } // namespace
 
-void editor_mode::joints_start()
+void joints_tool::joints_start()
 {
 	auto &state{m_joints};
 	state.queue.clear();
@@ -164,7 +164,7 @@ void editor_mode::joints_start()
 			continue;
 		state.queue.push_back(track);
 	}
-	state.history = m_history.size();
+	state.history = m_services.history_size();
 	state.places.clear();
 	state.runs.clear();
 	state.run_next = 0;
@@ -174,14 +174,14 @@ void editor_mode::joints_start()
 	state.model_unplaced = false;
 	if (false == state.model_check || state.queue.empty())
 		return;
-	nmt_locate();
-	if (false == m_nmt.placed())
+	m_services.nmt_locate();
+	if (false == m_services.terrain_model().placed())
 	{
 		state.model_unplaced = true;
 		return;
 	}
 	std::set<TTrack const *> const queued(state.queue.begin(), state.queue.end());
-	for (auto const &place : nmt_track_places(kModelStep))
+	for (auto const &place : m_services.nmt_track_places(kModelStep))
 		if (place.shapes && queued.count(place.track) > 0)
 		{
 			if (state.places.empty() || state.places.back().track != place.track || state.places.back().path != place.path || state.places.size() - state.runs.back().first >= kModelRun)
@@ -192,7 +192,7 @@ void editor_mode::joints_start()
 	state.model_waiting = false == state.places.empty();
 }
 
-bool editor_mode::joints_model()
+bool joints_tool::joints_model()
 {
 	auto &state{m_joints};
 	auto const now{ImGui::GetTime()};
@@ -216,27 +216,27 @@ bool editor_mode::joints_model()
 		for (auto const &run : state.runs)
 		{
 			box(run, low, high);
-			m_nmt.request(low, high);
+			m_services.terrain_model().request(low, high);
 		}
 		state.model_asked = true;
 	}
 	while (state.run_next < state.runs.size())
 	{
 		box(state.runs[state.run_next], low, high);
-		if (false == m_nmt.request(low, high))
+		if (false == m_services.terrain_model().request(low, high))
 			return false;
 		++state.run_next;
 	}
 	std::vector<double> differences(state.places.size(), std::numeric_limits<double>::quiet_NaN());
 	std::vector<double> known;
 	for (std::size_t i = 0; i < state.places.size(); ++i)
-		if (double height; m_nmt.height(state.places[i].position.x, state.places[i].position.z, height))
+		if (double height; m_services.terrain_model().height(state.places[i].position.x, state.places[i].position.z, height))
 		{
-			differences[i] = state.places[i].crown - (height + m_nmt_state.offset);
+			differences[i] = state.places[i].crown - (height + m_services.terrain_model_offset());
 			known.push_back(differences[i]);
 		}
 	auto shift{0.0};
-	if (false == m_nmt_state.fitted && false == known.empty())
+	if (false == m_services.terrain_model_fitted() && false == known.empty())
 	{
 		std::nth_element(known.begin(), known.begin() + known.size() / 2, known.end());
 		if (std::abs(known[known.size() / 2]) > kUnfitted)
@@ -275,7 +275,7 @@ bool editor_mode::joints_model()
 	return true;
 }
 
-void editor_mode::joints_check(TTrack &Track)
+void joints_tool::joints_check(TTrack &Track)
 {
 	auto &state{m_joints};
 	auto const once = [&](end_key const &A, end_key const &B) { return reported.insert(A < B ? std::make_pair(A, B) : std::make_pair(B, A)).second; };
@@ -366,7 +366,7 @@ void editor_mode::joints_check(TTrack &Track)
 	}
 }
 
-void editor_mode::joints_step()
+void joints_tool::update()
 {
 	auto &state{m_joints};
 	if (state.next >= state.queue.size() && false == state.model_waiting)
@@ -401,7 +401,7 @@ void editor_mode::joints_step()
 	WriteLog("Editor: joints check - " + state.status, logtype::generic);
 }
 
-void editor_mode::joints_focus(int const Index)
+void joints_tool::joints_focus(int const Index)
 {
 	auto &state{m_joints};
 	if (Index < 0 || Index >= static_cast<int>(state.issues.size()))
@@ -411,13 +411,12 @@ void editor_mode::joints_focus(int const Index)
 	auto const &paths{simulation::Paths.sequence()};
 	if (std::find(paths.begin(), paths.end(), issue.track) == paths.end() || issue.track->m_editorremoved)
 		return;
-	m_node = issue.track;
-	m_track_point = {};
-	ui()->set_node(m_node);
-	focus_track(*issue.track, issue.point.path, issue.position);
+	m_services.set_current_node(issue.track);
+	m_services.clear_track_point();
+	m_services.focus_track(*issue.track, issue.point.path, issue.position);
 }
 
-bool editor_mode::joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Changed)
+bool joints_tool::joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Changed)
 {
 	if (Issue.fixed || Issue.type == kind::open || Issue.type == kind::model || Issue.track == nullptr || Issue.other == nullptr || Issue.track->m_editorremoved || Issue.other->m_editorremoved)
 		return false;
@@ -481,7 +480,7 @@ bool editor_mode::joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, 
 	return true;
 }
 
-void editor_mode::joints_fix(std::vector<int> const &Indices)
+void joints_tool::joints_fix(std::vector<int> const &Indices)
 {
 	auto &state{m_joints};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
@@ -499,16 +498,16 @@ void editor_mode::joints_fix(std::vector<int> const &Indices)
 		state.status = STR_C("Nothing could be fixed: the paths are switches or in the files which can't be changed");
 		return;
 	}
-	push_track_snapshot(std::move(states));
+	m_services.push_track_snapshot(std::move(states));
 	editor_track::commit(changed);
 	for (auto *track : changed)
 		track->mark_dirty();
-	state.history = m_history.size();
+	state.history = m_services.history_size();
 	state.status = format(STR_C("%zu joints fixed, Ctrl+Z takes them back"), count);
 	WriteLog("Editor: joints check - " + state.status, logtype::generic);
 }
 
-void editor_mode::render_joints_body()
+void joints_tool::render_options()
 {
 	auto &state{m_joints};
 	ImGui::PushTextWrapPos(0.0f);
@@ -581,7 +580,7 @@ void editor_mode::render_joints_body()
 		ImGui::TextWrapped("%s", state.status.c_str());
 	if (state.issues.empty())
 		return;
-	if (state.history != m_history.size())
+	if (state.history != m_services.history_size())
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", STR_C("The scenery changed since the check"));
 	int filter{state.filter + 1};
 	ImGui::SetNextItemWidth(150.0f);
@@ -649,7 +648,7 @@ void editor_mode::render_joints_body()
 	}
 }
 
-void editor_mode::draw_joints_overlay() const
+void joints_tool::draw_overlay() const
 {
 	auto const &state{m_joints};
 	if (false == state.open || state.issues.empty())
@@ -670,4 +669,64 @@ void editor_mode::draw_joints_overlay() const
 		auto const text{std::string{STR_C(kind_name(issue.type))} + " " + value_text(issue)};
 		drawlist->AddText(ImVec2(screen.x + 13.0f, screen.y - 7.0f), colour, text.c_str());
 	}
+}
+
+editor_selftest_result joints_tool::selftest(std::string const &Command, std::istringstream &Words)
+{
+	if (Command == "jointsmodel")
+	{
+		// the whole scenery against the terrain model, as the check of the panel does it, waiting for the model
+		static bool started{false};
+		if (false == started)
+		{
+			double threshold{0.5};
+			Words >> threshold;
+			m_joints.scope = 1;
+			m_joints.model_check = true;
+			m_joints.model = threshold;
+			joints_start();
+			started = true;
+		}
+		update();
+		if (m_joints.next < m_joints.queue.size() || m_joints.model_waiting)
+			return editor_selftest_result::again;
+		started = false;
+		std::size_t count{0};
+		for (auto const &issue : m_joints.issues)
+			if (issue.type == joint_issue::kind::model && count++ < 40)
+				WriteLog(format("SELFTEST jointsmodel: %+.2f m at %.1f %.1f, %s path %d", issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-", issue.point.path));
+		WriteLog("SELFTEST jointsmodel: " + m_joints.status);
+		return editor_selftest_result::handled;
+	}
+	if (Command == "joints")
+	{
+		std::vector<glm::dvec3> points;
+		for (glm::dvec3 point{0.0}; Words >> point.x >> point.z;)
+			points.push_back(point);
+		auto const scope{m_joints.scope};
+		auto const model{m_joints.model_check};
+		m_joints.scope = 1;
+		m_joints.model_check = false;
+		joints_start();
+		while (m_joints.next < m_joints.queue.size())
+			update();
+		m_joints.scope = scope;
+		m_joints.model_check = model;
+		char const *const kinds[]{"gap", "step", "kink", "cant jump", "grade break", "off the terrain model", "free end"};
+		int around{0};
+		for (auto const &issue : m_joints.issues)
+		{
+			if (false == points.empty() && issue.type == joint_issue::kind::open)
+				continue;
+			if (false == points.empty() && std::none_of(points.begin(), points.end(), [&](glm::dvec3 const &Point) { return geometry::plan_distance(Point, issue.position) < 5.0; }))
+				continue;
+			++around;
+			auto const name = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : Track->name() + (Track->eType == tt_Switch ? "(switch)" : ""); };
+			auto const rise{issue.other != nullptr ? editor_track::point_position(*issue.other, issue.theirs).y - issue.position.y : 0.0};
+			WriteLog(format("SELFTEST joints: %s %.3f at %.1f %.1f, %s / %s, rise %.3f", kinds[static_cast<int>(issue.type)], issue.value, issue.position.x, issue.position.z, name(issue.track).c_str(), name(issue.other).c_str(), rise));
+		}
+		WriteLog(format("SELFTEST joints: %d issues around the points, %zu in all", around, m_joints.issues.size()));
+		return editor_selftest_result::handled;
+	}
+	return editor_selftest_result::unhandled;
 }

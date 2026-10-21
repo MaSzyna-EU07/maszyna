@@ -470,7 +470,7 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 	request.variant = m_join_variant;
 	request.transitions = m_lay.transitions;
 	request.speed = design_speed(From, End.track);
-	request.kink = m_joints.angle * 0.5;
+	request.kink = m_joints.kink_angle() * 0.5;
 	request.shape = m_route.design.shape;
 	request.norms = laying_norms();
 	auto result{alignment::join(request)};

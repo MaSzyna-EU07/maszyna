@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTrack.hpp"
 
 class TTrack;
+class editor_nmt;
 namespace scene
 {
 class basic_node;
@@ -29,7 +30,19 @@ enum class editor_selftest_result
 {
 	unhandled,
 	handled,
-	pause
+	pause,
+	again
+};
+
+struct nmt_place
+{
+	glm::dvec3 position{0.0}; // on the axis of the path
+	double formation{0.0}; // the height of the formation under it, the foot of the ballast
+	double crown{0.0}; // the height of the top of the ballast under the rails: what the terrain model measures on a track
+	double half_width{3.0}; // from the axis to the foot of the ballast
+	TTrack *track{nullptr};
+	int path{0};
+	bool shapes{true}; // not a bridge nor a tunnel
 };
 
 class editor_services
@@ -43,6 +56,12 @@ class editor_services
 	virtual void focus_track(TTrack &Track, int const Path, glm::dvec3 const &Point) = 0;
 	virtual void set_current_node(scene::basic_node *Node) = 0;
 	virtual alignment::limits const &route_norms() const = 0;
+	virtual void clear_track_point() = 0;
+	virtual void nmt_locate() = 0;
+	virtual std::vector<nmt_place> nmt_track_places(double const Step) const = 0;
+	virtual editor_nmt &terrain_model() = 0;
+	virtual double terrain_model_offset() const = 0;
+	virtual bool terrain_model_fitted() const = 0;
 	virtual void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {}) = 0;
 
   protected:

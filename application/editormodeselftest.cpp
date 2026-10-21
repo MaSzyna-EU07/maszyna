@@ -188,8 +188,12 @@ void editor_mode::selftest_step()
 			words >> test.wait;
 			return;
 		}
-		if (selftest_dispatch(command, words) == selftest_result::pause)
+		if (auto const result{selftest_dispatch(command, words)}; result == selftest_result::pause || result == selftest_result::again)
+		{
+			if (result == selftest_result::again)
+				--test.next;
 			return;
+		}
 		if (command == "quit")
 		{
 			if (false == test.quitting)

@@ -1467,13 +1467,13 @@ bool editor_mode::update()
         draw_build_overlay();
         draw_track_intent();
         m_speed.update();
-        joints_step();
+        m_joints.update();
         draw_track_hints();
         draw_empty_scenery_hint();
         draw_profile_overlay();
         draw_infra_overlay();
         m_speed.draw_overlay();
-        draw_joints_overlay();
+        m_joints.draw_overlay();
     }
     else
     {

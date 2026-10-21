@@ -236,64 +236,6 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		WriteLog(format("SELFTEST layclicks %d paths, ballast foot over the ground up to %.3f m, under it up to %.3f m", paths, hanging, buried));
 		return selftest_result::handled;
 	}
-	if (command == "jointsmodel")
-	{
-		// the whole scenery against the terrain model, as the check of the panel does it, waiting for the model
-		static bool started{false};
-		if (false == started)
-		{
-			double threshold{0.5};
-			words >> threshold;
-			m_joints.scope = 1;
-			m_joints.model_check = true;
-			m_joints.model = threshold;
-			joints_start();
-			started = true;
-		}
-		joints_step();
-		if (m_joints.next < m_joints.queue.size() || m_joints.model_waiting)
-		{
-			--m_selftest.next;
-			return selftest_result::pause;
-		}
-		started = false;
-		std::size_t count{0};
-		for (auto const &issue : m_joints.issues)
-			if (issue.type == joint_issue::kind::model && count++ < 40)
-				WriteLog(format("SELFTEST jointsmodel: %+.2f m at %.1f %.1f, %s path %d", issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-", issue.point.path));
-		WriteLog("SELFTEST jointsmodel: " + m_joints.status);
-		return selftest_result::handled;
-	}
-	if (command == "joints")
-	{
-		std::vector<glm::dvec3> points;
-		for (glm::dvec3 point{0.0}; words >> point.x >> point.z;)
-			points.push_back(point);
-		auto const scope{m_joints.scope};
-		auto const model{m_joints.model_check};
-		m_joints.scope = 1;
-		m_joints.model_check = false;
-		joints_start();
-		while (m_joints.next < m_joints.queue.size())
-			joints_step();
-		m_joints.scope = scope;
-		m_joints.model_check = model;
-		char const *const kinds[]{"gap", "step", "kink", "cant jump", "grade break", "off the terrain model", "free end"};
-		int around{0};
-		for (auto const &issue : m_joints.issues)
-		{
-			if (false == points.empty() && issue.type == joint_issue::kind::open)
-				continue;
-			if (false == points.empty() && std::none_of(points.begin(), points.end(), [&](glm::dvec3 const &Point) { return geometry::plan_distance(Point, issue.position) < 5.0; }))
-				continue;
-			++around;
-			auto const name = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : Track->name() + (Track->eType == tt_Switch ? "(switch)" : ""); };
-			auto const rise{issue.other != nullptr ? editor_track::point_position(*issue.other, issue.theirs).y - issue.position.y : 0.0};
-			WriteLog(format("SELFTEST joints: %s %.3f at %.1f %.1f, %s / %s, rise %.3f", kinds[static_cast<int>(issue.type)], issue.value, issue.position.x, issue.position.z, name(issue.track).c_str(), name(issue.other).c_str(), rise));
-		}
-		WriteLog(format("SELFTEST joints: %d issues around the points, %zu in all", around, m_joints.issues.size()));
-		return selftest_result::handled;
-	}
 	if (command == "gizmo")
 	{
 		std::string action;

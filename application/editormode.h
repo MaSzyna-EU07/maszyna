@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "input/editorkeyboardinput.h"
 #include "vehicle/Camera.h"
 #include "application/editormodegauge.h"
+#include "application/editormodejoints.h"
 #include "application/editormodespeed.h"
 #include "application/editortool.h"
 #include "scene/sceneeditor.h"
@@ -65,19 +66,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 {
 
   public:
-	// joint of the paths found wrong by the joints check
-	struct joint_issue
-	{
-		enum class kind { gap, step, kink, cant, grade, model, open };
-		kind type{kind::gap};
-		TTrack *track{nullptr};
-		editor_track::point_ref point;
-		TTrack *other{nullptr};
-		editor_track::point_ref theirs;
-		glm::dvec3 position{0.0};
-		double value{0.0}; // m, deg, mm, per mille; m of the track over the terrain model
-		bool fixed{false};
-	};
 	// constructors
 	editor_mode();
 	~editor_mode() override;
@@ -318,16 +306,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool add_chunk_from_ground(heightmap::chunk_key const &Key, float const Spacing, std::uint16_t const Layer = 0);
 
 	// the terrain from the digital terrain model of GUGiK (editormodenmt.cpp)
-	struct nmt_place
-	{
-		glm::dvec3 position{0.0}; // on the axis of the path
-		double formation{0.0}; // the height of the formation under it, the foot of the ballast
-		double crown{0.0}; // the height of the top of the ballast under the rails: what the terrain model measures on a track
-		double half_width{3.0}; // from the axis to the foot of the ballast
-		TTrack *track{nullptr};
-		int path{0};
-		bool shapes{true}; // not a bridge nor a tunnel
-	};
+	using nmt_place = ::nmt_place;
 	struct nmt_state
 	{
 		double offset{0.0}; // added to the heights of the model, so they meet the tracks of the scenery
@@ -383,8 +362,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	};
 	editor_nmt m_nmt;
 	nmt_state m_nmt_state;
-	std::vector<nmt_place> nmt_track_places(double const Step) const;
-	void nmt_locate();
+	std::vector<nmt_place> nmt_track_places(double const Step) const override;
+	void nmt_locate() override;
 	bool nmt_choice_card(int const Index, char const *Title, char const *Text, float const Width, float const TextHeight, bool const Chosen) const;
 	void nmt_fit();
 	void nmt_finish_fit();
@@ -749,6 +728,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {}) override;
 	void set_current_node(scene::basic_node *Node) override;
 	alignment::limits const &route_norms() const override;
+	void clear_track_point() override;
+	editor_nmt &terrain_model() override;
+	double terrain_model_offset() const override;
+	bool terrain_model_fitted() const override;
 	// false, with the reason, when one of the paths can't be changed, its file not taking the changes back
 	static bool tracks_editable(std::vector<TTrack *> const &Tracks, std::string &Reason);
 	void trim_history();
@@ -2461,49 +2444,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 
 	gauge_tool m_gauge{*this};
 	speed_tool m_speed{*this};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed};
+	joints_tool m_joints{*this};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints};
 
-	// joints of the paths: ends which almost meet, steps, kinks, jumps of the cant and of the grade
-	struct joints_state
-	{
-		bool open{false};
-		int scope{0}; // 0: around the camera, 1: the whole scenery
-		double reach{2000.0};
-		double gap{1.0}; // m, free ends closer than this to another end
-		double step{0.005}; // m
-		double angle{0.2}; // deg
-		double cant{5.0}; // mm
-		double grade{10.0}; // per mille
-		double model{0.5}; // m, the track over or under the terrain model (NMT)
-		bool free_ends{false};
-		bool model_check{true};
-		std::vector<TTrack *> queue;
-		std::size_t next{0};
-		// the places of the tracks compared with the terrain model, in runs of one path each, once the model under them is in
-		std::vector<nmt_place> places;
-		std::vector<std::pair<std::size_t, std::size_t>> runs;
-		std::size_t run_next{0};
-		bool model_waiting{false};
-		bool model_asked{false};
-		double model_polled{0.0};
-		bool model_unplaced{false};
-		std::vector<joint_issue> issues;
-		int filter{-1};
-		int selected{-1};
-		std::size_t history{0};
-		std::string status;
-	};
-	joints_state m_joints;
-	void joints_start();
-	void joints_step();
-	void joints_check(TTrack &Track);
-	// the paths lying off the terrain model by more than the threshold. returns: false while the model under them is coming
-	bool joints_model();
-	void joints_focus(int const Index);
-	bool joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Changed);
-	void joints_fix(std::vector<int> const &Indices);
-	void render_joints_body();
-	void draw_joints_overlay() const;
 	void infra_rebase();
 	void render_infra_search();
 	void render_infra_candidates();

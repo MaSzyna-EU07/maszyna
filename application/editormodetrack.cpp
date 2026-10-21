@@ -78,6 +78,26 @@ alignment::limits const &editor_mode::route_norms() const
 	return m_route.design.norms;
 }
 
+void editor_mode::clear_track_point()
+{
+	m_track_point = {};
+}
+
+editor_nmt &editor_mode::terrain_model()
+{
+	return m_nmt;
+}
+
+double editor_mode::terrain_model_offset() const
+{
+	return m_nmt_state.offset;
+}
+
+bool editor_mode::terrain_model_fitted() const
+{
+	return m_nmt_state.fitted;
+}
+
 void editor_mode::select_track(scene::basic_node *Node)
 {
 	auto *track = dynamic_cast<TTrack *>(Node);
@@ -527,7 +547,7 @@ void editor_mode::render_track_inspector()
 	m_profile.open = m_track_window_open && m_track_tab == track_tab::profile;
 	m_speed.set_open(m_track_window_open && m_track_tab == track_tab::speed);
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
-	m_joints.open = m_track_window_open && m_track_tab == track_tab::joints;
+	m_joints.set_open(m_track_window_open && m_track_tab == track_tab::joints);
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
 	{
 		m_sweep.open = false;
@@ -559,7 +579,7 @@ void editor_mode::render_track_inspector()
 			switch (m_track_tab)
 			{
 			case track_tab::speed: m_speed.render_options(); break;
-			case track_tab::joints: render_joints_body(); break;
+			case track_tab::joints: m_joints.render_options(); break;
 			default: render_infra_body(); break;
 			}
 		}

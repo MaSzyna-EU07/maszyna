@@ -583,7 +583,7 @@ bool editor_mode::plan_switch_link(switch_link &Plan) const
 	}
 	if (shape.length > line.length - 0.02)
 		return false;
-	auto const kink{glm::radians(m_joints.angle * 0.5)};
+	auto const kink{glm::radians(m_joints.kink_angle() * 0.5)};
 	auto const plan = [&](double const Along) {
 		Plan.along = Along;
 		Plan.paths = place(Along);
@@ -643,7 +643,7 @@ bool editor_mode::plan_branch_link(editor_track::branch_link &Link, std::string 
 		return false;
 	auto const &diverging{tool.track->m_paths[1]};
 	auto const radius{editor_track::branch_radius(diverging)};
-	Link = editor_track::link_branch(branch_start(diverging), radius, branch_target(target), glm::radians(m_joints.angle * 0.5),
+	Link = editor_track::link_branch(branch_start(diverging), radius, branch_target(target), glm::radians(m_joints.kink_angle() * 0.5),
 	                                 editor_track::reverse_insert(std::min(editor_track::diverging_speed(radius), design_speed(tool.track, target.track))), stretchable(target));
 	Reason = link_problem(target, Link);
 	return Reason.empty();
