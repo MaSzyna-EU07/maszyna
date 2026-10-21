@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -33,6 +34,12 @@ char const *const cache_folder{"editor/cache/nmt/grid1/"};
 int constexpr worker_count{2}; // the service is quick, but isn't to be hammered
 int constexpr border{1}; // pixels of the neighbouring squares fetched around a square, so the heights interpolate across its edges
 float constexpr no_data{-1000.f}; // the model gives far lower values outside of the country
+double constexpr retry_after{15.0}; // s, a square the service didn't give is asked for again
+
+double seconds()
+{
+	return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 // the name of the model among the names the capabilities of the service list: the first which says it's a terrain model
 std::string coverage_of(std::string const &Capabilities)
@@ -231,12 +238,17 @@ bool editor_nmt::request(glm::dvec2 const &Min, glm::dvec2 const &Max)
 		auto const low{key_of(m_east - Max.x, m_north + Min.y)};
 		auto const high{key_of(m_east - Min.x, m_north + Max.y)};
 		auto const middle{key_of(m_east - 0.5 * (Min.x + Max.x), m_north + 0.5 * (Min.y + Max.y))};
+		auto const now{seconds()};
 		for (auto e = low.first; e <= high.first; ++e)
 			for (auto n = low.second; n <= high.second; ++n)
 			{
 				key const square{e, n};
-				if (m_squares.contains(square))
-					continue;
+				if (auto const found{m_squares.find(square)}; found != m_squares.end())
+				{
+					if (false == found->second->failed || found->second->outside || now - found->second->failed_at < retry_after)
+						continue;
+					m_squares.erase(found);
+				}
 				all = false;
 				if (false == m_queued.contains(square))
 					wanted.push_back(square);
@@ -265,10 +277,52 @@ std::size_t editor_nmt::waiting() const
 	return m_queued.size();
 }
 
-std::string editor_nmt::error() const
+bool editor_nmt::retrying(glm::dvec2 const &Min, glm::dvec2 const &Max) const
 {
 	std::lock_guard<std::mutex> lock{m_mutex};
-	return m_error;
+	auto const low{key_of(m_east - Max.x, m_north + Min.y)};
+	auto const high{key_of(m_east - Min.x, m_north + Max.y)};
+	for (auto e = low.first; e <= high.first; ++e)
+		for (auto n = low.second; n <= high.second; ++n)
+			if (auto const found{m_squares.find({e, n})}; found != m_squares.end() && found->second->failed && false == found->second->outside)
+				return true;
+	return false;
+}
+
+void editor_nmt::retry()
+{
+	std::lock_guard<std::mutex> lock{m_mutex};
+	std::erase_if(m_squares, [](auto const &Square) { return Square.second->failed && false == Square.second->outside; });
+}
+
+void editor_nmt::cancel()
+{
+	std::lock_guard<std::mutex> lock{m_mutex};
+	for (auto const &square : m_queue)
+		m_queued.erase(square);
+	m_queue.clear();
+}
+
+std::string editor_nmt::error(bool *Again) const
+{
+	std::lock_guard<std::mutex> lock{m_mutex};
+	std::string result;
+	bool outside{false};
+	if (Again != nullptr)
+		*Again = false;
+	for (auto const &[key, square] : m_squares)
+	{
+		if (false == square->failed)
+			continue;
+		if (Again != nullptr && false == square->outside)
+			*Again = true;
+		if (result.empty() || (square->outside && false == outside))
+		{
+			result = square->error;
+			outside = square->outside;
+		}
+	}
+	return result;
 }
 
 void editor_nmt::clear()
@@ -300,7 +354,6 @@ void editor_nmt::work()
 				continue; // cleared meanwhile
 			m_queued.erase(square);
 			m_squares[square] = std::move(fetched);
-			m_error = error;
 		}
 	}
 }
@@ -324,6 +377,8 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 	{
 		Error = STRN("This build can't fetch from the internet");
 		result->failed = true;
+		result->outside = true;
+		result->error = Error;
 		return result;
 	}
 	editor_http::client client;
@@ -365,10 +420,18 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 		}
 		if (stop())
 			break;
+		if (std::string const text(data.begin(), data.end()); text.find("outside requested coverage") != std::string::npos)
+		{
+			Error = STRN("The place lies outside of the terrain model of Poland: check the location of the scenery");
+			result->outside = true;
+			break;
+		}
 		if (Error.empty())
 			Error = STRN("The service gave no terrain model");
 	}
 	WriteLog("Editor: NMT square " + std::to_string(Key.first) + "," + std::to_string(Key.second) + " not fetched: " + Error, logtype::generic);
 	result->failed = true;
+	result->error = Error;
+	result->failed_at = seconds();
 	return result;
 }

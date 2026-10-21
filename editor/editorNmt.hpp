@@ -46,8 +46,15 @@ class editor_nmt
 	bool request(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	// squares asked for and not in yet
 	std::size_t waiting() const;
-	// what the last fetch said went wrong, empty when it went right
-	std::string error() const;
+	// a square under the rectangle the service didn't give, which is asked for again after a while
+	bool retrying(glm::dvec2 const &Min, glm::dvec2 const &Max) const;
+	// the squares the service didn't give asked for again at once
+	void retry();
+	// the squares waiting aren't fetched; those in stay
+	void cancel();
+	// why squares in memory have no data, empty when all came; a place outside of the model is told first. Again: whether
+	// some of them are asked for again
+	std::string error(bool *Again = nullptr) const;
 	// the squares dropped from the memory, and those waiting; the files on the disk stay
 	void clear();
 	// whether this build can fetch from the service at all
@@ -67,6 +74,9 @@ class editor_nmt
 		int height{0};
 		std::vector<float> heights; // rows from the north, columns from the west
 		bool failed{false}; // the service gave nothing usable: the square has no data
+		bool outside{false}; // failed for it lies outside of the model: asked again, it gives nothing either
+		double failed_at{0.0}; // s
+		std::string error;
 	};
 
 	key key_of(double const East, double const North) const;
@@ -80,7 +90,6 @@ class editor_nmt
 	std::set<key> m_queued;
 	std::map<key, std::shared_ptr<square const>> m_squares;
 	std::string m_coverage; // the name of the model in the service, read from its capabilities once
-	std::string m_error;
 	double m_north{0.0};
 	double m_east{0.0};
 	bool m_stop{false};
