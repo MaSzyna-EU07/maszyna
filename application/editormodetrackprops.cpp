@@ -520,11 +520,11 @@ std::vector<track_property> make_properties()
 			int end;
 		};
 		blend_field const fields[] = {
-		    {"blendballast1", "Ballast blending at p1 (m)", "How far from the end p1 the ballast fades into that of the track joined there, where their textures differ; 0: not blended", track_blend::kind::ballast, 0},
-		    {"blendballast2", "Ballast blending at p2 (m)", "How far from the end p2 the ballast fades into that of the track joined there, where their textures differ; 0: not blended", track_blend::kind::ballast, 1},
-		    {"blendballast3", "Ballast blending at p4 (m)", "How far from the end p4 of the switch its trackbed fades into the ballast of the track joined there, where their textures differ; 0: not blended", track_blend::kind::ballast, 2},
-		    {"blendrails1", "Rails blending at p1 (m)", "How far from the end p1 the rails fade into those of the track joined there, where their textures differ; 0: not blended", track_blend::kind::rails, 0},
-		    {"blendrails2", "Rails blending at p2 (m)", "How far from the end p2 the rails fade into those of the track joined there, where their textures differ; 0: not blended", track_blend::kind::rails, 1}};
+		    {"blendballast1", "Ballast blending at p1 (m)", "How far from the end p1 the ballast fades into that of the track joined there, where their textures differ; 0: the joint stays sharp, whatever the track joined there has", track_blend::kind::ballast, 0},
+		    {"blendballast2", "Ballast blending at p2 (m)", "How far from the end p2 the ballast fades into that of the track joined there, where their textures differ; 0: the joint stays sharp, whatever the track joined there has", track_blend::kind::ballast, 1},
+		    {"blendballast3", "Ballast blending at p4 (m)", "How far from the end p4 of the switch its trackbed fades into the ballast of the track joined there, where their textures differ; 0: the joint stays sharp, whatever the track joined there has", track_blend::kind::ballast, 2},
+		    {"blendrails1", "Rails blending at p1 (m)", "How far from the end p1 the rails fade into those of the track joined there, where their textures differ; 0: the joint stays sharp, whatever the track joined there has", track_blend::kind::rails, 0},
+		    {"blendrails2", "Rails blending at p2 (m)", "How far from the end p2 the rails fade into those of the track joined there, where their textures differ; 0: the joint stays sharp, whatever the track joined there has", track_blend::kind::rails, 1}};
 		for (auto const &blend : fields)
 		{
 			auto &property{add(list, blend.key, field::slider, section::look, group::blending, blend.label, blend.tooltip)};

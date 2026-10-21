@@ -140,8 +140,9 @@ material_handle material_of( TTrack const &Track, kind const Kind, int const End
     }
 }
 
-// whether the track blends its rails or ballast at the end into those of the track joined there, and what with. the answer is
-// the same for that track back, but for the lengths and the kinds of tracks which blend: switches don't blend their rails
+// whether the track blends its rails or ballast at the end into those of the track joined there, and what with: not where
+// either of them has a length of 0 there. the answer is the same for that track back, but for the kinds of tracks which blend:
+// switches don't blend their rails, a plain track fades its rails all the way into theirs
 bool blends( TTrack const &Track, kind const Kind, int const End, TTrack const **Other = nullptr, int *Otherend = nullptr, material_handle *Othermaterial = nullptr ) {
 
     if( End < 0 || End >= end_count( Track ) ) {
@@ -164,6 +165,10 @@ bool blends( TTrack const &Track, kind const Kind, int const End, TTrack const *
     }
     auto const otherend { end_toward( *other, &Track, point ) };
     if( otherend < 0 ) {
+        return false;
+    }
+    // a length of 0 at either side leaves the joint sharp
+    if( other->m_blend[ static_cast<int>( Kind ) ][ otherend ] <= 0.f ) {
         return false;
     }
     auto const theirs { material_of( *other, Kind, otherend ) };
@@ -220,7 +225,7 @@ blending setup( TTrack const &Track, kind const Kind ) {
         end_frame( Track, end, blend.point, blend.inward );
         blend.point -= Track.m_origin;
         blend.length = Track.m_blend[ static_cast<int>( Kind ) ][ end ];
-        // where both tracks blend they meet half way at the joint, otherwise this one goes all the way to the other one there
+        // where both tracks blend they meet half way at the joint; a plain track goes all the way into the rails of a switch
         blend.peak = ( blends( *other, Kind, otherend ) ? 0.5f : 1.f );
         blend.active = true;
         others[ end ] = theirs;
