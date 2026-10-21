@@ -9955,3 +9955,36 @@ msgstr "Gdy tor wychodzi poza teren, NMT dobudowuje się wokół kursora na bie�
 
 msgid "The ends have to be numbers, from 0.1 m to 100 km apart"
 msgstr "Końce muszą być liczbami, od 0,1 m do 100 km od siebie"
+
+msgid "To the other side"
+msgstr "Na drugą stronę"
+
+msgid "Takes the signal across the track, it keeps facing the same trains. Dragging it over the track does the same"
+msgstr "Przenosi sygnalizator na drugą stronę toru, dalej stoi przodem do tych samych pociągów. To samo robi przeciągnięcie go przez tor"
+
+msgid "Turns the signal to the trains of the other direction, they read it by the other event of the path"
+msgstr "Obraca sygnalizator do pociągów z przeciwnego kierunku, odczytują go przez drugi event toru"
+
+msgid "No track by the signal to take it across"
+msgstr "Przy sygnalizatorze nie ma toru, na którego drugą stronę można go przenieść"
+
+msgid "No track by the signal to turn it to"
+msgstr "Przy sygnalizatorze nie ma toru, do którego można go obrócić"
+
+msgid "Signal %s moved to the other side of the track, read by %s %s of %s, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s przeniesiony na drugą stronę toru, pociąg odczytuje go przez %s %s toru %s, Ctrl+Z cofa"
+
+msgid "Signal %s moved to the other side of the track, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s przeniesiony na drugą stronę toru, Ctrl+Z cofa"
+
+msgid "Signal %s turned to the trains of the other direction, read by %s %s of %s, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s obrócony do pociągów z przeciwnego kierunku, pociąg odczytuje go przez %s %s toru %s, Ctrl+Z cofa"
+
+msgid "Signal %s turned to the trains of the other direction, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s obrócony do pociągów z przeciwnego kierunku, Ctrl+Z cofa"
+
+msgid "Drag over the track"
+msgstr "Przeciągnij przez tor"
+
+msgid "to the other side"
+msgstr "na drugą stronę"

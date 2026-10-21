@@ -1796,8 +1796,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string read;
 		TTrack *track{nullptr};
 		int list{0};
-		signal_spot spot;
-		bool on_track{false};
 	};
 	struct signal_tool
 	{
@@ -1821,6 +1819,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int hover{-1};
 		scene::instance_handle selected{0};
 		bool moving{false};
+		glm::dvec2 grab{0.0};
+		signal_spot home;
+		bool home_valid{false};
 		signal_spot moved;
 		bool moved_valid{false};
 		std::string status;
@@ -1836,7 +1837,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void signal_release();
 	bool signal_place(signal_spot const &Spot, signal_template const &Template);
 	void signal_move_update();
-	void signal_move_finish();
+	bool signal_standing_spot(signal_standing const &Standing, signal_spot &Spot) const;
+	bool signal_drop_at(signal_standing const &Standing, TTrack &Track, int const Path, glm::dvec3 const &Point, int const Side, signal_spot &Spot) const;
+	bool signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread);
+	bool signal_flip(scene::instance_handle const Instance);
+	bool signal_turn(scene::instance_handle const Instance);
+	signal_standing const *signal_standing_of(scene::instance_handle const Instance) const;
 	bool signal_delete(scene::instance_handle const Instance);
 	void signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States);
 	void signal_renamed(std::string const &Before, std::string const &After, EditorSnapshot &Snapshot);

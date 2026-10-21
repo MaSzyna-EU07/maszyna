@@ -3058,7 +3058,12 @@ void editor_mode::select_include(scene::instance_handle const Instance)
 
 void editor_mode::set_include_directive(scene::instance_handle const Instance, std::string const &Directive)
 {
-    if (false == scene::Layers.modify(Instance, Directive))
+    std::string file;
+    std::vector<std::string> values;
+    if (scene::Layers.tracked(Instance) && editor_includes::parse_directive(Directive, file, values) && scene::Layers.instance(Instance).file != nullptr &&
+        editor_includes::normalized(file) == editor_includes::normalized(*scene::Layers.instance(Instance).file))
+        file.clear();
+    if (false == scene::Layers.modify(Instance, Directive, file))
         return;
     std::vector<TAnimModel *> retired;
     simulation::State.rebuild_include(Instance, retired);

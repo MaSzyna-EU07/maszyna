@@ -46,6 +46,7 @@ float const kSignalPick{12.0f};
 float const kDragStart{6.0f};
 double const kDragTravel{1.0};
 double const kRefreshPeriod{2.0};
+double const kSignalReach{10.0};
 
 char const *const kKinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
 char const *const kKindLabels[] = {"Semaphore", "Automatic block", "Warning signal", "Shunting signal", "Stop signal", "Substitute signal", "Repeater"};
@@ -86,6 +87,17 @@ glm::dvec2 forward_at(TTrack const &Track, int const Path, double const Paramete
 glm::dvec2 right_of(glm::dvec2 const &Direction)
 {
 	return {-Direction.y, Direction.x};
+}
+
+glm::dvec2 travel_of(double const Yaw)
+{
+	auto const yaw{glm::radians(Yaw + 180.0)};
+	return {std::sin(yaw), std::cos(yaw)};
+}
+
+int travel_side(int const Side, int const List)
+{
+	return Side * (List == 2 ? 1 : -1);
 }
 
 int lean_wanted(int const Side)
@@ -430,9 +442,12 @@ void editor_mode::signal_press(track_intent const &Intent)
 	{
 		if (Intent.index < 0 || Intent.index >= static_cast<int>(tool.standing.size()))
 			return;
-		signal_select(tool.standing[Intent.index].include.instance);
+		auto const &standing{tool.standing[Intent.index]};
+		tool.grab = plan_of(standing.include.location) - plan_of(cursor_level(standing.include.location.y));
+		tool.home_valid = signal_standing_spot(standing, tool.home);
 		tool.moving = true;
 		tool.moved_valid = false;
+		signal_select(standing.include.instance);
 		return;
 	}
 	auto const *armed{signal_armed()};
@@ -473,39 +488,84 @@ void editor_mode::signal_move_update()
 		return;
 	if (false == dragged)
 		return;
-	auto const found{std::find_if(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; })};
-	if (found == tool.standing.end())
+	auto const *found{signal_standing_of(tool.selected)};
+	if (found == nullptr)
 	{
 		tool.moved_valid = false;
 		return;
 	}
-	// the track under the cursor; off every track, as it is when the signal is dragged beside its track, the place of the
-	// track the signal stands by nearest the cursor
+	auto const &location{found->include.location};
+	auto const cursor{cursor_level(location.y)};
+	glm::dvec3 const held{cursor.x + tool.grab.x, location.y, cursor.z + tool.grab.y};
+	// the track under the cursor; off every track, as it is when the signal is dragged beside its track, the track the
+	// signal stands by
 	auto *track{m_hover.track};
 	auto path{m_hover.path};
-	auto point{m_hover.point};
-	if (track == nullptr && found->track != nullptr && false == found->track->m_editorremoved && false == found->track->m_paths.empty())
+	if (track == nullptr && tool.home_valid)
 	{
-		track = found->track;
-		path = std::clamp(found->spot.path, 0, static_cast<int>(track->m_paths.size()) - 1);
-		point = bezier{track->m_paths[path]}.point(nearest_on(*track, path, cursor_level(found->spot.axis.y)));
+		track = tool.home.track;
+		path = tool.home.path;
 	}
+	tool.moved_valid = track != nullptr && signal_drop_at(*found, *track, path, held, 0, tool.moved);
+}
+
+editor_mode::signal_standing const *editor_mode::signal_standing_of(scene::instance_handle const Instance) const
+{
+	auto const &standing{m_signal.standing};
+	auto const found{std::find_if(standing.begin(), standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == Instance; })};
+	return found != standing.end() ? &*found : nullptr;
+}
+
+bool editor_mode::signal_drop_at(signal_standing const &Standing, TTrack &Track, int const Path, glm::dvec3 const &Point, int const Side, signal_spot &Spot) const
+{
+	auto const *item{signal_template_of(Standing.include.file)};
+	if (item == nullptr || Track.m_paths.empty() || Track.m_editorremoved)
+		return false;
+	auto const path{std::clamp(Path, 0, static_cast<int>(Track.m_paths.size()) - 1)};
+	auto const forward{forward_at(Track, path, nearest_on(Track, path, Point))};
+	auto const facing{glm::dot(forward, travel_of(Standing.include.yaw)) >= 0.0 ? 1 : -1};
+	return signal_spot_at(Track, path, Point, Point, facing, Side * facing, *item, Spot);
+}
+
+bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_spot &Spot) const
+{
+	auto const &location{Standing.include.location};
+	TTrack *track{nullptr};
+	int path{0};
+	auto best{kSignalReach};
+	auto const consider = [&](TTrack *Track) {
+		if (Track == nullptr || Track->m_editorremoved)
+			return;
+		for (int p = 0; p < static_cast<int>(Track->m_paths.size()); ++p)
+		{
+			bezier const curve{Track->m_paths[p]};
+			auto const low{glm::min(glm::min(plan_of(curve.p0), plan_of(curve.p1)), glm::min(plan_of(curve.p2), plan_of(curve.p3)))};
+			auto const high{glm::max(glm::max(plan_of(curve.p0), plan_of(curve.p1)), glm::max(plan_of(curve.p2), plan_of(curve.p3)))};
+			if (glm::length(glm::max(glm::max(low - plan_of(location), plan_of(location) - high), glm::dvec2{0.0})) >= best)
+				continue;
+			auto const distance{geometry::plan_distance(curve.point(nearest_on(*Track, p, location)), location)};
+			if (distance < best)
+			{
+				best = distance;
+				track = Track;
+				path = p;
+			}
+		}
+	};
+	consider(Standing.track);
 	if (track == nullptr)
-	{
-		tool.moved_valid = false;
-		return;
-	}
-	auto const *item{signal_template_of(found->include.file)};
-	if (item == nullptr)
-		return;
-	path = std::clamp(path, 0, static_cast<int>(track->m_paths.size()) - 1);
-	auto const yaw{glm::radians(found->include.yaw + 180.0)};
-	glm::dvec2 const travel{std::sin(yaw), std::cos(yaw)};
-	auto const parameter{nearest_on(*track, path, point)};
-	auto const forward{forward_at(*track, path, parameter)};
-	auto const facing{glm::dot(forward, travel) >= 0.0 ? 1 : -1};
-	auto const sideoftravel{glm::dot(plan_of(found->include.location) - plan_of(point), right_of(travel)) >= 0.0 ? 1 : -1};
-	tool.moved_valid = signal_spot_at(*track, path, point, point, facing, sideoftravel * facing, *item, tool.moved);
+		for (auto *candidate : simulation::Paths.sequence())
+			consider(candidate);
+	if (track == nullptr)
+		return false;
+	auto const axis{bezier{track->m_paths[path]}.point(nearest_on(*track, path, location))};
+	auto const side{glm::dot(plan_of(location) - plan_of(axis), right_of(travel_of(Standing.include.yaw))) >= 0.0 ? 1 : -1};
+	if (false == signal_drop_at(Standing, *track, path, location, side, Spot))
+		return false;
+	Spot.offset = geometry::plan_distance(location, axis);
+	Spot.position = location;
+	Spot.yaw = Standing.include.yaw;
+	return true;
 }
 
 void editor_mode::signal_release()
@@ -530,40 +590,53 @@ void editor_mode::signal_release()
 		return;
 	}
 	tool.moved_valid = false;
-	auto const found{std::find_if(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; })};
-	if (found == tool.standing.end())
-		return;
-	if (false == scene::Layers.tracked(found->include.instance) || false == scene::Layers.removable(found->include.instance))
+	if (auto const *found{signal_standing_of(tool.selected)})
+		signal_move_to(*found, tool.moved, STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved, Ctrl+Z takes it back"));
+}
+
+bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread)
+{
+	auto &tool{m_signal};
+	auto const instance{Standing.include.instance};
+	if (false == scene::Layers.tracked(instance) || false == scene::Layers.removable(instance))
 	{
 		tool.status = STR_C("This signal is in a file the editor doesn't change, it can't be moved");
-		return;
+		return false;
 	}
-	auto const &spot{tool.moved};
-	auto const &included{scene::Layers.instance(found->include.instance)};
-	auto values{found->include.values};
-	auto const local{spot.position - included.context.offset};
+	auto const &included{scene::Layers.instance(instance)};
+	auto file{*included.file};
+	signal_spot before;
+	auto const *item{signal_template_of(Standing.include.file)};
+	if (item != nullptr && signal_standing_spot(Standing, before) && travel_side(before.side, before.list) != travel_side(Spot.side, Spot.list))
+		file = signal_variant(*item, Spot);
+	auto values{Standing.include.values};
+	auto const local{Spot.position - included.context.offset};
 	values[1] = editor_includes::number(local.x);
 	values[2] = editor_includes::number(local.y);
 	values[3] = editor_includes::number(local.z);
-	values[4] = editor_includes::number(spot.yaw);
-	auto before{scene::Layers.directive(found->include.instance)};
+	values[4] = editor_includes::number(Spot.yaw);
+	auto const *next{signal_template_of(file)};
+	auto const read{next != nullptr && false == next->read.empty() ? editor_includes::substitute(next->read, values) : Standing.read};
+	auto directive{scene::Layers.directive(instance)};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
-	if (false == found->read.empty() && spot.track->Dynamics.empty())
+	if (false == Standing.read.empty() && Spot.track->Dynamics.empty())
 	{
-		signal_detach_events(found->read, states);
-		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == spot.track; }))
-			states.emplace_back(spot.track, editor_track::capture(*spot.track));
-		editor_track::events(*spot.track, spot.list).emplace_back(ToLower(found->read), nullptr);
+		signal_detach_events(Standing.read, states);
+		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == Spot.track; }))
+			states.emplace_back(Spot.track, editor_track::capture(*Spot.track));
+		editor_track::events(*Spot.track, Spot.list).emplace_back(ToLower(read), nullptr);
 		std::string missing;
-		editor_track::bind_events(*spot.track, missing);
-		spot.track->mark_dirty();
+		editor_track::bind_events(*Spot.track, missing);
+		Spot.track->mark_dirty();
 	}
-	set_include_directive(found->include.instance, editor_includes::compose_directive(*included.file, values));
+	auto const name{Standing.name};
+	auto const node{Standing.include.file};
+	set_include_directive(instance, editor_includes::compose_directive(file, values));
 	if (states.empty())
 	{
 		EditorSnapshot snap;
-		snap.directives.emplace_back(found->include.instance, std::move(before));
-		snap.node_name = found->include.file;
+		snap.directives.emplace_back(instance, std::move(directive));
+		snap.node_name = node;
 		trim_history();
 		m_history.push_back(std::move(snap));
 		g_redo.clear();
@@ -571,13 +644,47 @@ void editor_mode::signal_release()
 	else
 	{
 		push_track_snapshot(std::move(states));
-		m_history.back().directives.emplace_back(found->include.instance, std::move(before));
+		m_history.back().directives.emplace_back(instance, std::move(directive));
 	}
-	tool.status = found->read.empty() ? format(STR_C("Signal %s moved, Ctrl+Z takes it back"), found->name.c_str())
-	                                  : format(STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), found->name.c_str(), editor_track::event_keyword(spot.list), found->read.c_str(), name_of(*spot.track).c_str());
-	auto const instance{found->include.instance};
 	signal_refresh(true);
 	signal_select(instance);
+	auto const *moved{signal_standing_of(instance)};
+	tool.status = moved != nullptr && moved->track != nullptr ? format(Read, name.c_str(), editor_track::event_keyword(moved->list), moved->read.c_str(), name_of(*moved->track).c_str()) : format(Unread, name.c_str());
+	return true;
+}
+
+bool editor_mode::signal_flip(scene::instance_handle const Instance)
+{
+	auto const *standing{signal_standing_of(Instance)};
+	signal_spot spot;
+	if (standing == nullptr || false == signal_standing_spot(*standing, spot))
+	{
+		m_signal.status = STR_C("No track by the signal to take it across");
+		return false;
+	}
+	auto const across{plan_of(spot.position) - plan_of(spot.axis)};
+	auto const mirrored{plan_of(spot.axis) + spot.travel * glm::dot(across, spot.travel) - right_of(spot.travel) * glm::dot(across, right_of(spot.travel))};
+	spot.side = -spot.side;
+	spot.position = {mirrored.x, spot.position.y, mirrored.y};
+	return signal_move_to(*standing, spot, STR_C("Signal %s moved to the other side of the track, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved to the other side of the track, Ctrl+Z takes it back"));
+}
+
+bool editor_mode::signal_turn(scene::instance_handle const Instance)
+{
+	auto const *standing{signal_standing_of(Instance)};
+	signal_spot spot;
+	if (standing == nullptr || false == signal_standing_spot(*standing, spot))
+	{
+		m_signal.status = STR_C("No track by the signal to turn it to");
+		return false;
+	}
+	auto const *item{signal_template_of(standing->include.file)};
+	auto const position{spot.position};
+	if (item == nullptr || false == signal_spot_at(*spot.track, spot.path, spot.axis, spot.axis, spot.list == 2 ? -1 : 1, spot.side, *item, spot))
+		return false;
+	spot.position = position;
+	spot.yaw = std::fmod(standing->include.yaw + 180.0, 360.0);
+	return signal_move_to(*standing, spot, STR_C("Signal %s turned to the trains of the other direction, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s turned to the trains of the other direction, Ctrl+Z takes it back"));
 }
 
 std::string editor_mode::signal_variant(signal_template const &Template, signal_spot const &Spot) const
@@ -876,9 +983,8 @@ void editor_mode::render_signal_palette()
 
 void editor_mode::render_signal_selected()
 {
-	auto &tool{m_signal};
-	auto const found{std::find_if(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; })};
-	if (found == tool.standing.end())
+	auto const *found{signal_standing_of(m_signal.selected)};
+	if (found == nullptr)
 		return;
 	ImGui::Separator();
 	ImGui::TextUnformatted(format(STR_C("Selected: %s (%s)"), found->name.c_str(), found->include.file.c_str()).c_str());
@@ -889,6 +995,15 @@ void editor_mode::render_signal_selected()
 		ImGui::TextDisabled(STR_C("Read by %s %s of %s"), editor_track::event_keyword(found->list), found->read.c_str(), name_of(*found->track).c_str());
 	else
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("No path has %s among its events: the train doesn't see it"), found->read.c_str());
+	auto const instance{found->include.instance};
+	auto const width{(ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f};
+	if (ImGui::Button(STR_C("To the other side"), ImVec2(width, 0.0f)))
+		signal_flip(instance);
+	item_tooltip("Takes the signal across the track, it keeps facing the same trains. Dragging it over the track does the same");
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Turn around"), ImVec2(width, 0.0f)))
+		signal_turn(instance);
+	item_tooltip("Turns the signal to the trains of the other direction, they read it by the other event of the path");
 }
 
 void editor_mode::render_signal_ui()
@@ -1038,10 +1153,7 @@ void editor_mode::draw_signal_overlay() const
 			drawlist->AddText(ImVec2(head.x + 6.0f, head.y - 6.0f), colour, label.c_str());
 		}
 		if (selected || hovered)
-		{
-			auto const yaw{glm::radians(standing.include.yaw + 180.0)};
-			arrow(location, glm::dvec2{std::sin(yaw), std::cos(yaw)}, colour);
-		}
+			arrow(location, travel_of(standing.include.yaw), colour);
 	}
 	auto const preview = [&](signal_spot const &Spot, ImU32 const Colour) {
 		projection.line(drawlist, Spot.axis + glm::dvec3{0.0, kRailTop, 0.0}, Spot.position, Colour, 2.0f);

@@ -335,7 +335,7 @@ class node_layers
 	// returns: empty text if the directive can't be read
 	std::string directive(instance_handle Instance) const;
 	// replaces the directive of specified include, the scenery file receives it on save. NOTE: the nodes aren't touched
-	bool modify(instance_handle Instance, std::string const &Directive);
+	bool modify(instance_handle Instance, std::string const &Directive, std::string const &File = {});
 	// takes the models specified include was loaded with out of the scene, once the editor shows its own in their place
 	void rebuilt(instance_handle Instance);
 	// true if specified node was replaced by the editor with a node showing the current state of its include

@@ -1090,13 +1090,17 @@ std::string node_layers::directive(instance_handle const Instance) const
 }
 
 // replaces the directive of specified include, the scenery file receives it on save
-bool node_layers::modify(instance_handle const Instance, std::string const &Directive)
+bool node_layers::modify(instance_handle const Instance, std::string const &Directive, std::string const &File)
 {
 	if (false == tracked(Instance) || m_instances[Instance - 1].dead || Directive.empty())
 	{
 		return false;
 	}
 	m_instances[Instance - 1].directive = Directive;
+	if (false == File.empty())
+	{
+		m_instances[Instance - 1].file = &(*m_templates.emplace(File).first);
+	}
 	return true;
 }
 
