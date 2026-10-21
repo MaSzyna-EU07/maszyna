@@ -1237,6 +1237,435 @@ station evaluate(result const &Result, double const Chainage)
 	return result;
 }
 
+namespace
+{
+
+// the plan from From to To in chords short enough to keep to the curves, the directions of its ends carried on far, so that a point
+// past them is measured across the track
+struct plan_line
+{
+	std::vector<glm::dvec2> points;
+	std::vector<double> chainages;
+};
+
+plan_line sample_plan(result const &Result, double const From, double const To, double const Step)
+{
+	constexpr double kFar{5000.0};
+	plan_line line;
+	if (Result.elements.empty())
+		return line;
+	auto const from{std::clamp(From, 0.0, Result.length)};
+	auto const to{std::clamp(To, from, Result.length)};
+	auto const push = [&](glm::dvec2 const &Position, double const Chainage) {
+		line.points.push_back(Position);
+		line.chainages.push_back(Chainage);
+	};
+	for (auto const &e : Result.elements)
+	{
+		auto const low{std::max(from, e.chainage)};
+		auto const high{std::min(to, e.chainage + e.length)};
+		if (high < low)
+			continue;
+		auto const count{std::max(1, static_cast<int>(std::ceil((high - low) / Step)))};
+		auto const at = [&](int const Index) { return low + (high - low) * Index / count; };
+		if (e.kind != element_kind::spiral)
+		{
+			glm::dvec2 position;
+			glm::dvec2 direction;
+			for (int i = 0; i <= count; ++i)
+			{
+				element_point(e, Result.shape, at(i) - e.chainage, position, direction);
+				push(position, at(i));
+			}
+			continue;
+		}
+		// spiral_point integrates from the start of the element for every point, here it goes on from the previous one
+		auto const heading = [&](double const S) { return e.curvature_start * S + (e.curvature_end - e.curvature_start) * S * S / (2.0 * std::max(e.length, 1e-9)); };
+		double x{0.0};
+		double y{0.0};
+		double s{0.0};
+		auto const advance = [&](double const Distance) {
+			auto const pieces{std::max(1, static_cast<int>(std::ceil((Distance - s) / 2.0)))};
+			auto const h{(Distance - s) / pieces};
+			for (int i = 0; i < pieces; ++i)
+			{
+				auto const a{heading(s + h * i)};
+				auto const m{heading(s + h * (i + 0.5))};
+				auto const b{heading(s + h * (i + 1))};
+				x += h / 6.0 * (std::cos(a) + 4.0 * std::cos(m) + std::cos(b));
+				y += h / 6.0 * (std::sin(a) + 4.0 * std::sin(m) + std::sin(b));
+			}
+			s = Distance;
+		};
+		for (int i = 0; i <= count; ++i)
+		{
+			advance(at(i) - e.chainage);
+			push(e.origin + e.direction * x + e.normal * y, at(i));
+		}
+	}
+	if (line.points.size() < 2)
+		return line;
+	auto const away = [](glm::dvec2 const &End, glm::dvec2 const &Inner) {
+		auto const offset{End - Inner};
+		return glm::length(offset) > 1e-9 ? offset / glm::length(offset) : glm::dvec2{0.0};
+	};
+	std::size_t first{1};
+	while (first + 1 < line.points.size() && glm::distance(line.points[first], line.points.front()) < 1e-6)
+		++first;
+	auto last{line.points.size() - 2};
+	while (last > 0 && glm::distance(line.points[last], line.points.back()) < 1e-6)
+		--last;
+	auto const before{away(line.points.front(), line.points[first])};
+	auto const after{away(line.points.back(), line.points[last])};
+	line.points.insert(line.points.begin(), line.points.front() + before * kFar);
+	line.chainages.insert(line.chainages.begin(), line.chainages.front() - kFar);
+	push(line.points.back() + after * kFar, line.chainages.back() + kFar);
+	return line;
+}
+
+plan_projection project_on(plan_line const &Line, glm::dvec2 const &Point)
+{
+	plan_projection best;
+	auto nearest{std::numeric_limits<double>::max()};
+	for (std::size_t i = 0; i + 1 < Line.points.size(); ++i)
+	{
+		auto const segment{Line.points[i + 1] - Line.points[i]};
+		auto const length2{glm::dot(segment, segment)};
+		if (length2 < 1e-18)
+			continue;
+		auto const t{std::clamp(glm::dot(Point - Line.points[i], segment) / length2, 0.0, 1.0)};
+		auto const offset{Point - (Line.points[i] + segment * t)};
+		auto const distance2{glm::dot(offset, offset)};
+		if (distance2 >= nearest)
+			continue;
+		nearest = distance2;
+		best.chainage = Line.chainages[i] + (Line.chainages[i + 1] - Line.chainages[i]) * t;
+		best.offset = std::copysign(std::sqrt(distance2), cross(segment, offset));
+	}
+	return best;
+}
+
+double squares(std::vector<double> const &Values)
+{
+	double sum{0.0};
+	for (auto const value : Values)
+		sum += value * value;
+	return sum;
+}
+
+using residuals_of = std::function<bool(std::vector<double> const &, std::vector<double> &)>;
+
+// Levenberg-Marquardt: the parameters of the least sum of the squares of the residuals; a step to where Residuals fails isn't taken
+double least_squares(std::vector<double> &Parameters, residuals_of const &Residuals)
+{
+	constexpr double kDifference{1e-4};
+	std::vector<double> residuals;
+	if (false == Residuals(Parameters, residuals))
+		return std::numeric_limits<double>::max();
+	auto cost{squares(residuals)};
+	auto const n{Parameters.size()};
+	auto const m{residuals.size()};
+	double damping{1e-3};
+	std::vector<double> trial;
+	for (int iteration = 0; iteration < 40 && cost > 1e-12; ++iteration)
+	{
+		std::vector<std::vector<double>> jacobian(n, std::vector<double>(m, 0.0));
+		for (std::size_t j = 0; j < n; ++j)
+		{
+			auto parameters{Parameters};
+			parameters[j] += kDifference;
+			auto sign{1.0};
+			if (false == Residuals(parameters, trial) || trial.size() != m)
+			{
+				parameters[j] = Parameters[j] - kDifference;
+				sign = -1.0;
+				if (false == Residuals(parameters, trial) || trial.size() != m)
+					continue;
+			}
+			for (std::size_t i = 0; i < m; ++i)
+				jacobian[j][i] = sign * (trial[i] - residuals[i]) / kDifference;
+		}
+		std::vector<double> normal(n * n, 0.0);
+		std::vector<double> gradient(n, 0.0);
+		for (std::size_t j = 0; j < n; ++j)
+		{
+			for (std::size_t i = 0; i < m; ++i)
+				gradient[j] += jacobian[j][i] * residuals[i];
+			for (std::size_t k = 0; k < n; ++k)
+				for (std::size_t i = 0; i < m; ++i)
+					normal[j * n + k] += jacobian[j][i] * jacobian[k][i];
+		}
+		auto better{false};
+		auto settled{false};
+		for (int attempt = 0; attempt < 12 && false == better; ++attempt)
+		{
+			auto system{normal};
+			std::vector<double> step(n);
+			for (std::size_t j = 0; j < n; ++j)
+			{
+				system[j * n + j] += damping * std::max(normal[j * n + j], 1e-9);
+				step[j] = -gradient[j];
+			}
+			for (std::size_t c = 0; c < n; ++c)
+			{
+				auto pivot{c};
+				for (std::size_t r = c + 1; r < n; ++r)
+					if (std::abs(system[r * n + c]) > std::abs(system[pivot * n + c]))
+						pivot = r;
+				if (std::abs(system[pivot * n + c]) < 1e-300)
+					break;
+				for (std::size_t k = 0; k < n; ++k)
+					std::swap(system[c * n + k], system[pivot * n + k]);
+				std::swap(step[c], step[pivot]);
+				for (std::size_t r = c + 1; r < n; ++r)
+				{
+					auto const factor{system[r * n + c] / system[c * n + c]};
+					for (std::size_t k = c; k < n; ++k)
+						system[r * n + k] -= factor * system[c * n + k];
+					step[r] -= factor * step[c];
+				}
+			}
+			for (std::size_t c = n; c-- > 0;)
+			{
+				for (std::size_t k = c + 1; k < n; ++k)
+					step[c] -= system[c * n + k] * step[k];
+				step[c] = std::abs(system[c * n + c]) > 1e-300 ? step[c] / system[c * n + c] : 0.0;
+			}
+			auto candidate{Parameters};
+			for (std::size_t j = 0; j < n; ++j)
+				candidate[j] += step[j];
+			if (Residuals(candidate, trial) && trial.size() == m && squares(trial) < cost)
+			{
+				auto const lower{squares(trial)};
+				settled = cost - lower < 1e-6 * cost;
+				Parameters = candidate;
+				residuals = trial;
+				cost = lower;
+				damping = std::max(1e-9, damping * 0.3);
+				better = true;
+			}
+			else
+			{
+				damping *= 8.0;
+			}
+		}
+		if (false == better || settled)
+			break;
+	}
+	return cost;
+}
+
+constexpr double kTraceRadiusMin{15.0};
+constexpr double kTraceRadiusMax{50000.0};
+constexpr double kTraceRobust{0.25};
+
+// the parameters: the logarithms of the radii, then the weights of the shares of all but the first radius, as logarithms too
+vertex traced_shape(vertex const &Base, std::vector<double> const &Parameters, int const Radii)
+{
+	auto shape{Base};
+	auto const radius = [&](int const Index) { return std::exp(std::clamp(Parameters[Index], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax))); };
+	shape.radius = radius(0);
+	shape.share = 1.0;
+	if (Radii == 1)
+	{
+		shape.compound = false;
+		return shape;
+	}
+	std::vector<double> weights{1.0};
+	for (int i = 1; i < Radii; ++i)
+		weights.push_back(std::exp(std::clamp(Parameters[Radii + i - 1], -5.0, 5.0)));
+	double total{0.0};
+	for (auto const weight : weights)
+		total += weight;
+	shape.compound = true;
+	shape.share = weights[0] / total;
+	shape.arcs.clear();
+	for (int i = 1; i < Radii; ++i)
+	{
+		compound_arc arc;
+		arc.radius = radius(i);
+		arc.transition = i - 1 < static_cast<int>(Base.arcs.size()) ? Base.arcs[i - 1].transition : 0.0;
+		arc.share = weights[i] / total;
+		shape.arcs.push_back(arc);
+	}
+	return shape;
+}
+
+} // namespace
+
+std::vector<plan_projection> project(result const &Result, std::vector<glm::dvec2> const &Points)
+{
+	std::vector<plan_projection> projections;
+	if (Result.elements.empty())
+		return projections;
+	auto const line{sample_plan(Result, 0.0, Result.length, std::max(0.5, Result.length / 4000.0))};
+	for (auto const &point : Points)
+		projections.push_back(project_on(line, point));
+	return projections;
+}
+
+trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<glm::dvec2> const &Points, int const Radii)
+{
+	trace_fit best;
+	if (Vertex >= Design.vertices.size() || Points.empty())
+		return best;
+	auto const &base{Design.vertices[Vertex]};
+	auto const residuals = [&](int const Count) -> residuals_of {
+		return [&, Count](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
+			auto trial{Design};
+			trial.norms.checked = false;
+			trial.vertices[Vertex] = traced_shape(base, Parameters, Count);
+			auto const result{compute(trial)};
+			if (false == result.valid)
+				return false;
+			auto from{std::numeric_limits<double>::max()};
+			auto to{std::numeric_limits<double>::lowest()};
+			for (auto const &e : result.elements)
+			{
+				if (e.vertex != static_cast<int>(Vertex))
+					continue;
+				from = std::min(from, e.chainage);
+				to = std::max(to, e.chainage + e.length);
+			}
+			if (from > to)
+				return false;
+			auto const line{sample_plan(result, from - 1.0, to + 1.0, std::clamp((to - from) / 300.0, 0.25, 2.0))};
+			Residuals.clear();
+			for (auto const &point : Points)
+			{
+				// a point clicked by mistake far off pulls the curve less than the square of its departure would
+				auto const offset{project_on(line, point).offset};
+				auto const departure{std::abs(offset)};
+				Residuals.push_back(departure <= kTraceRobust ? offset : std::copysign(std::sqrt(2.0 * kTraceRobust * departure - kTraceRobust * kTraceRobust), offset));
+			}
+			return true;
+		};
+	};
+	auto const cost_of = [](residuals_of const &Residuals, std::vector<double> const &Parameters) {
+		std::vector<double> values;
+		return Residuals(Parameters, values) ? squares(values) : std::numeric_limits<double>::max();
+	};
+
+	// one radius: a scan over the whole range, then the golden section around the best of it
+	auto const one{residuals(1)};
+	auto const low{std::log(kTraceRadiusMin)};
+	auto const high{std::log(kTraceRadiusMax)};
+	constexpr int kScan{60};
+	auto const spacing{(high - low) / kScan};
+	auto bestlog{std::log(std::max(kTraceRadiusMin, base.radius))};
+	auto bestcost{cost_of(one, {bestlog})};
+	for (int i = 0; i <= kScan; ++i)
+		if (auto const cost{cost_of(one, {low + spacing * i})}; cost < bestcost)
+		{
+			bestcost = cost;
+			bestlog = low + spacing * i;
+		}
+	if (bestcost == std::numeric_limits<double>::max())
+		return best;
+	{
+		constexpr double kGolden{0.6180339887498949};
+		auto a{bestlog - spacing};
+		auto b{bestlog + spacing};
+		auto c{b - (b - a) * kGolden};
+		auto d{a + (b - a) * kGolden};
+		auto fc{cost_of(one, {c})};
+		auto fd{cost_of(one, {d})};
+		for (int i = 0; i < 50; ++i)
+		{
+			if (fc < fd)
+			{
+				b = d;
+				d = c;
+				fd = fc;
+				c = b - (b - a) * kGolden;
+				fc = cost_of(one, {c});
+			}
+			else
+			{
+				a = c;
+				c = d;
+				fc = fd;
+				d = a + (b - a) * kGolden;
+				fd = cost_of(one, {d});
+			}
+		}
+		if (auto const middle{(a + b) * 0.5}; cost_of(one, {middle}) < bestcost)
+			bestlog = middle;
+	}
+
+	struct candidate
+	{
+		std::vector<double> parameters;
+		double cost{std::numeric_limits<double>::max()};
+	};
+	std::array<candidate, 4> fits;
+	fits[1] = {{bestlog}, cost_of(one, {bestlog})};
+	auto const most{std::clamp(Radii > 0 ? Radii : 3, 1, std::max(1, static_cast<int>(Points.size()) / 2))};
+	auto const shift{std::log(1.3)};
+	auto const share = [](double const Second, double const First) { return std::log(Second / First); };
+	auto const rms = [&](int const Count) { return std::sqrt(fits[Count].cost / static_cast<double>(Points.size())); };
+	// the next radius has to halve the departure about, a curve which keeps to the points already gets none
+	constexpr double kClose{0.08};
+	auto chosen{1};
+	auto const wanted = [&](int const Count) { return Count <= most && (Radii > 0 || rms(chosen) > kClose); };
+	auto const take = [&](int const Count) {
+		if (fits[Count].cost == std::numeric_limits<double>::max())
+			return;
+		if (Radii > 0 || rms(Count) < 0.6 * rms(chosen))
+			chosen = Count;
+	};
+	if (wanted(2))
+	{
+		auto const two{residuals(2)};
+		for (auto const fraction : {0.3, 0.5, 0.7})
+			for (auto const sign : {-1.0, 1.0})
+			{
+				std::vector<double> parameters{bestlog + sign * shift, bestlog - sign * shift, share(1.0 - fraction, fraction)};
+				if (auto const cost{least_squares(parameters, two)}; cost < fits[2].cost)
+					fits[2] = {parameters, cost};
+			}
+		take(2);
+	}
+	if (wanted(3))
+	{
+		auto const three{residuals(3)};
+		std::vector<std::vector<double>> starts;
+		for (auto const sign : {-1.0, 1.0})
+			starts.push_back({bestlog + sign * shift, bestlog - sign * shift, bestlog + sign * shift, 0.0, 0.0});
+		if (false == fits[2].parameters.empty())
+		{
+			auto const &two{fits[2].parameters};
+			auto const second{std::exp(two[2])};
+			starts.push_back({two[0], two[0], two[1], 0.0, std::log(2.0 * second)});
+			starts.push_back({two[0], two[1], two[1], std::log(0.5 * second), std::log(0.5 * second)});
+		}
+		for (auto parameters : starts)
+			if (auto const cost{least_squares(parameters, three)}; cost < fits[3].cost)
+				fits[3] = {parameters, cost};
+		take(3);
+	}
+
+	auto shape{traced_shape(base, fits[chosen].parameters, chosen)};
+	shape.radius = std::max(kTraceRadiusMin, std::round(shape.radius));
+	for (auto &arc : shape.arcs)
+		arc.radius = std::max(kTraceRadiusMin, std::round(arc.radius));
+	auto trial{Design};
+	trial.vertices[Vertex] = shape;
+	auto const result{compute(trial)};
+	if (false == result.valid)
+		return best;
+	best.valid = true;
+	best.fitted = shape;
+	double sum{0.0};
+	for (auto const &projection : project(result, Points))
+	{
+		sum += projection.offset * projection.offset;
+		best.worst = std::max(best.worst, std::abs(projection.offset));
+	}
+	best.rms = std::sqrt(sum / static_cast<double>(Points.size()));
+	return best;
+}
+
 std::size_t minimum_pieces(result const &Result, design const &Design)
 {
 	std::size_t count{0};

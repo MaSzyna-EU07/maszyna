@@ -187,6 +187,25 @@ station evaluate(result const &Result, double const Chainage);
 double elevation(result const &Result, double const Chainage);
 double grade(result const &Result, double const Chainage);
 
+// a point of the plan projected on the alignment, its offset positive to the left; past the ends it's measured from the straights carried on
+struct plan_projection
+{
+	double chainage{0.0};
+	double offset{0.0};
+};
+std::vector<plan_projection> project(result const &Result, std::vector<glm::dvec2> const &Points);
+
+struct trace_fit
+{
+	bool valid{false};
+	vertex fitted;
+	double rms{0.0};
+	double worst{0.0};
+};
+// the radii of the curve of the vertex and their shares which follow the points traced along the track best; the tangents, the
+// transitions and the cant stay. Radii 0 takes the fewest radii, up to three, which follow the points about as well as more would
+trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<glm::dvec2> const &Points, int const Radii);
+
 std::size_t minimum_pieces(result const &Result, design const &Design);
 // Breaks: ascending chainages at which pieces have to end. Counts: least number of the pieces between the consecutive breaks,
 // one more than the breaks; Intervals receives the number of the interval of each piece

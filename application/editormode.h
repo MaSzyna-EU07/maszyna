@@ -926,6 +926,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			float metres{1.0f}; // pixels of a metre and of a unit of the curvature, kept as the drag goes
 			float curvature{1.0f};
 		} band;
+		// points clicked along the middle of the track seen on the orthophoto, the radii of the curves and their shares fitted to them after each click
+		struct trace_state
+		{
+			bool active{false};
+			int radii{0}; // 0: as many as the points need, up to three
+			std::vector<glm::dvec3> points;
+			alignment::design before; // taken back by Esc
+			double rms{0.0};
+			double worst{0.0};
+		} trace;
 	};
 	void render_route_ui();
 	bool render_route_band();
@@ -933,6 +943,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool render_route_vertices();
 	bool render_route_vertex(int const Index);
 	void render_route_result();
+	void render_route_trace();
+	void route_trace_start();
+	void route_trace_fit();
+	void route_trace_end(bool const Keep);
+	int route_trace_hit() const;
+	glm::dvec3 route_trace_cursor() const;
 	void route_reset();
 	void route_bind_ends();
 	bool route_from_curve(TTrack &Track);
@@ -1586,7 +1602,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling, measure };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling, measure, route_trace };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};

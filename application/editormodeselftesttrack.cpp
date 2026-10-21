@@ -263,6 +263,94 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		WriteLog(format("SELFTEST %s: valid %d, %zu elements, extension %.3f / %.3f", command.c_str(), m_route.result.valid ? 1 : 0, m_route.result.elements.size(), m_route.result.start_extension, m_route.result.end_extension) + errors);
 		return selftest_result::handled;
 	}
+	if (command == "routeplain")
+	{
+		int index{0};
+		double radius{1000.0};
+		words >> index >> radius;
+		if (index >= 0 && index < static_cast<int>(m_route.design.vertices.size()))
+		{
+			auto &vertex{m_route.design.vertices[index]};
+			vertex.radius = radius;
+			vertex.compound = false;
+			vertex.share = 1.0;
+			vertex.arcs.clear();
+			route_update();
+		}
+		WriteLog(format("SELFTEST routeplain: valid %d", m_route.result.valid ? 1 : 0));
+		return selftest_result::handled;
+	}
+	// points along the curves of the design as it is now, every Spacing metres from 20 m before the first curve to 20 m past the last,
+	// shifted across by up to Noise to and fro, as the trace takes them
+	if (command == "tracesample")
+	{
+		double spacing{20.0};
+		double noise{0.0};
+		words >> spacing >> noise;
+		route_trace_start();
+		auto const &result{m_route.result};
+		auto from{result.length};
+		auto to{0.0};
+		for (auto const &e : result.elements)
+			if (e.kind != alignment::element_kind::straight)
+			{
+				from = std::min(from, e.chainage);
+				to = std::max(to, e.chainage + e.length);
+			}
+		int count{0};
+		for (auto chainage{std::max(0.0, from - 20.0)}; chainage <= std::min(result.length, to + 20.0); chainage += spacing, ++count)
+		{
+			auto const station{alignment::evaluate(result, chainage)};
+			glm::dvec3 const across{-station.direction.z, 0.0, station.direction.x};
+			auto const shift{noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)};
+			m_route.trace.points.push_back(station.position + glm::normalize(across) * shift);
+		}
+		auto const &middle{m_route.trace.points.empty() ? glm::dvec3{0.0} : m_route.trace.points[m_route.trace.points.size() / 2]};
+		WriteLog(format("SELFTEST tracesample: %zu points over %.1f m, the middle one at %.3f %.3f", m_route.trace.points.size(), to - from, middle.x, middle.z));
+		return selftest_result::handled;
+	}
+	if (command == "traceradii" || command == "traceclick" || command == "traceundo")
+	{
+		auto const started{std::chrono::steady_clock::now()};
+		if (command == "traceradii")
+		{
+			words >> m_route.trace.radii;
+			route_trace_fit();
+		}
+		else if (command == "traceundo")
+		{
+			if (false == m_route.trace.points.empty())
+				m_route.trace.points.pop_back();
+			route_trace_fit();
+		}
+		else
+		{
+			track_intent intent;
+			words >> intent.position.x >> intent.position.z;
+			intent.what = track_intent::kind::route_trace;
+			intent.index = -1;
+			track_press(intent);
+		}
+		auto const took{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()};
+		WriteLog(format("SELFTEST %s: %zu points, departure %.3f m, at most %.3f m, valid %d, %.0f ms", command.c_str(), m_route.trace.points.size(), m_route.trace.rms, m_route.trace.worst, m_route.result.valid ? 1 : 0, took));
+		for (std::size_t i = 0; i < m_route.design.vertices.size(); ++i)
+		{
+			auto const &v{m_route.design.vertices[i]};
+			auto text{format("SELFTEST %s vertex %zu: R %.0f L %.1f / %.1f compound %d share %.3f", command.c_str(), i, v.radius, v.transition_in, v.transition_out, v.compound ? 1 : 0, v.share)};
+			for (auto const &arc : v.arcs)
+				text += format(" [R %.0f L %.1f share %.3f]", arc.radius, arc.transition, arc.share);
+			WriteLog(text);
+		}
+		return selftest_result::handled;
+	}
+	if (command == "traceend")
+	{
+		int keep{1};
+		words >> keep;
+		route_trace_end(keep != 0);
+		WriteLog(format("SELFTEST traceend: active %d, valid %d, ", m_route.trace.active ? 1 : 0, m_route.result.valid ? 1 : 0) + m_route.status + " " + m_route.error);
+		return selftest_result::handled;
+	}
 	if (command == "routekm")
 	{
 		double km{0.0};

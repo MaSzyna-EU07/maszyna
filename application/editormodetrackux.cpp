@@ -549,6 +549,18 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::straight_handle, hit == 2 ? "Drag: shift the straight sideways" : "Drag: move this end, the curves at it follow");
 		}
 	}
+	if (m_route.trace.active && route_active())
+	{
+		intent.index = route_trace_hit();
+		if (control && intent.index >= 0)
+		{
+			intent.position = m_route.trace.points[intent.index];
+			return make(kind::route_trace, "Click: take this point out");
+		}
+		intent.index = -1;
+		intent.position = route_trace_cursor();
+		return make(kind::route_trace, m_route.trace.points.empty() ? "Click: a point in the middle of the track on the photo. Enter: apply, Esc: drop" : "Click: one more point, the curve follows. Ctrl+click: take a point out");
+	}
 	if (int vertex, grip; route_hit(vertex, grip))
 	{
 		intent.index = vertex >= 0 ? vertex : grip;
@@ -711,6 +723,13 @@ void editor_mode::track_press(track_intent const &Intent)
 			m_tape.points.clear();
 		m_tape.points.push_back(m_tape.mouse);
 		return;
+	case kind::route_trace:
+		if (Intent.index >= 0)
+			m_route.trace.points.erase(m_route.trace.points.begin() + Intent.index);
+		else
+			m_route.trace.points.push_back(Intent.position);
+		route_trace_fit();
+		return;
 	case kind::lay_end:
 		if (m_lay.points.empty() && start_extend(Intent.snap))
 			return;
@@ -849,7 +868,8 @@ void editor_mode::draw_track_intent() const
 		case kind::extend_end:
 		case kind::turntable_fit: drawlist->AddCircleFilled(at, 5.0f, IM_COL32(255, 60, 255, 255)); break;
 		case kind::turntable_exit: drawlist->AddCircle(at, 11.0f, overlay_color::grip, 20, 2.0f); break;
-		case kind::lay: drawlist->AddCircle(at, 6.0f, IM_COL32(255, 255, 255, 200), 12, 1.5f); break;
+		case kind::lay:
+		case kind::route_trace: drawlist->AddCircle(at, 6.0f, IM_COL32(255, 255, 255, 200), 12, 1.5f); break;
 		default: break;
 		}
 	}

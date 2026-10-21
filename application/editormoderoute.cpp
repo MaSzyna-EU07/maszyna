@@ -83,6 +83,7 @@ void editor_mode::route_reset()
 	route.vertex = -1;
 	route.grip = -1;
 	route.result = {};
+	route.trace = {};
 	if (route.from == nullptr || route.to == nullptr)
 		return;
 	if (false == editor_track::find_chain(route.from, route.to, route.chain, route.error, true))
@@ -1086,6 +1087,162 @@ void editor_mode::draw_route_overlay() const
 		}
 		drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), overlay_color::marked, format("W%d", i + 1).c_str());
 	}
+	if (route.trace.points.empty())
+		return;
+	std::vector<glm::dvec2> plan;
+	for (auto const &point : route.trace.points)
+		plan.push_back(plan_of(point));
+	auto const projections{alignment::project(result, plan)};
+	auto const hit{route_trace_hit()};
+	for (std::size_t i = 0; i < route.trace.points.size(); ++i)
+	{
+		ImVec2 screen;
+		if (false == projection.project(route.trace.points[i], screen))
+			continue;
+		auto const departure{i < projections.size() ? std::abs(projections[i].offset) : 0.0};
+		auto const colour{departure <= 0.1 ? IM_COL32(90, 220, 110, 255) : departure <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255)};
+		drawlist->AddCircle(screen, 5.0f, IM_COL32(0, 0, 0, 200), 12, 3.5f);
+		drawlist->AddCircle(screen, 5.0f, colour, 12, 2.0f);
+		if (static_cast<int>(i) == hit)
+			drawlist->AddCircle(screen, 10.0f, overlay_color::highlight, 16, 2.0f);
+		if (i < projections.size())
+			drawlist->AddText(ImVec2(screen.x + 8.0f, screen.y - 7.0f), colour, format("%.0f cm", departure * 100.0).c_str());
+	}
+}
+
+void editor_mode::render_route_trace()
+{
+	auto &trace{m_route.trace};
+	if (false == trace.active)
+	{
+		if (ImGui::Button(STR_C("Trace the curve on the photo")))
+			route_trace_start();
+		item_tooltip("Click points along the middle of the track on the orthophoto: after each click the curve takes the radius, or the radii of a compound curve and their shares, which follow the points best. The straights and the transition curves stay");
+		return;
+	}
+	ImGui::SeparatorText(STR_C("Tracing the curve"));
+	if (segmented("traceradii", trace.radii,
+	              {{0, STR_C("Auto"), "As few radii as follow the points, up to three"}, {1, STR_C("1 R"), "One radius"}, {2, STR_C("2 R"), "A compound curve of two radii"}, {3, STR_C("3 R"), "A compound curve of three radii"}}))
+		route_trace_fit();
+	if (trace.points.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("Click points along the middle of the track on the photo, spread over the whole curve; a few on the straights at its ends help too"));
+		ImGui::PopTextWrapPos();
+	}
+	else
+	{
+		auto const colour = [](double const Departure) { return Departure <= 0.1 ? IM_COL32(90, 220, 110, 255) : Departure <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255); };
+		metric_tiles({{format("%zu", trace.points.size()), STR_C("points"), ImGui::GetColorU32(ImGuiCol_Text)},
+		              {format("%.0f cm", trace.rms * 100.0), STR_C("departure"), colour(trace.rms)},
+		              {format("%.0f cm", trace.worst * 100.0), STR_C("at most"), colour(trace.worst)}});
+	}
+	if (main_button(STR_C("Apply   Enter"), ImVec2(-1.0f, 0.0f)))
+		route_trace_end(true);
+	if (ImGui::Button(STR_C("Drop   Esc")))
+		route_trace_end(false);
+	ImGui::SameLine();
+	ImGui::BeginDisabled(trace.points.empty());
+	if (ImGui::Button(STR_C("Take out the last point   Backspace")))
+	{
+		trace.points.pop_back();
+		route_trace_fit();
+	}
+	ImGui::EndDisabled();
+}
+
+void editor_mode::route_trace_start()
+{
+	auto &trace{m_route.trace};
+	trace.active = true;
+	trace.points.clear();
+	trace.before = m_route.design;
+	trace.rms = 0.0;
+	trace.worst = 0.0;
+}
+
+// every point goes to the curve nearest to it along the line, the curves without points keep their shape
+void editor_mode::route_trace_fit()
+{
+	auto &route{m_route};
+	auto &trace{route.trace};
+	auto design{route.design};
+	trace.rms = 0.0;
+	trace.worst = 0.0;
+	if (trace.points.empty() || design.vertices.empty() || false == route.result.valid)
+		return;
+	std::vector<glm::dvec2> plan;
+	for (auto const &point : trace.points)
+		plan.push_back(plan_of(point));
+	auto const projections{alignment::project(route.result, plan)};
+	std::vector<std::vector<glm::dvec2>> owned(design.vertices.size());
+	for (std::size_t i = 0; i < plan.size(); ++i)
+	{
+		std::size_t nearest{0};
+		for (std::size_t k = 1; k < route.result.vertex_chainages.size() && k < owned.size(); ++k)
+			if (std::abs(route.result.vertex_chainages[k] - projections[i].chainage) < std::abs(route.result.vertex_chainages[nearest] - projections[i].chainage))
+				nearest = k;
+		owned[nearest].push_back(plan[i]);
+	}
+	for (std::size_t k = 0; k < owned.size(); ++k)
+	{
+		if (owned[k].empty())
+			continue;
+		auto const fit{alignment::fit_trace(design, k, owned[k], trace.radii)};
+		if (fit.valid)
+			design.vertices[k] = fit.fitted;
+	}
+	route.design = design;
+	route_update();
+	double sum{0.0};
+	for (auto const &projection : alignment::project(route.result, plan))
+	{
+		sum += projection.offset * projection.offset;
+		trace.worst = std::max(trace.worst, std::abs(projection.offset));
+	}
+	trace.rms = std::sqrt(sum / static_cast<double>(plan.size()));
+}
+
+void editor_mode::route_trace_end(bool const Keep)
+{
+	auto &trace{m_route.trace};
+	if (false == trace.active)
+		return;
+	auto const traced{false == trace.points.empty()};
+	if (false == Keep)
+	{
+		m_route.design = trace.before;
+		route_update();
+	}
+	trace = {};
+	if (Keep && traced)
+		route_apply();
+}
+
+// the photo under the cursor where the depth finds it, else the level of the design there
+glm::dvec3 editor_mode::route_trace_cursor() const
+{
+	if (GfxRenderer->Mouse_Hit())
+		return cursor_ground();
+	auto const &result{m_route.result};
+	auto point{cursor_level(alignment::elevation(result, result.length * 0.5))};
+	if (auto const projections{alignment::project(result, {plan_of(point)})}; false == projections.empty())
+		point = cursor_level(alignment::elevation(result, projections.front().chainage));
+	return point;
+}
+
+int editor_mode::route_trace_hit() const
+{
+	screen_projection const projection;
+	float best{kHandleRadius * kHandleRadius};
+	int hit{-1};
+	for (int i = 0; i < static_cast<int>(m_route.trace.points.size()); ++i)
+		if (auto const distance{projection.mouse_distance2(m_route.trace.points[i])}; distance < best)
+		{
+			best = distance;
+			hit = i;
+		}
+	return hit;
 }
 
 void editor_mode::render_route_gizmo()
@@ -1166,6 +1323,7 @@ void editor_mode::render_route_ui()
 	}
 	item_tooltip("Reads the curves of the line from the scenery again, dropping the changes not applied");
 	auto changed{render_route_band()};
+	render_route_trace();
 	render_route_stored();
 	changed |= render_route_vertices();
 	if (ImGui::CollapsingHeader(STR_C("Design speed and limits")))

@@ -6465,6 +6465,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         {
             if (m_tape.active)
                 m_tape = {};
+            else if (m_route.trace.active && route_active())
+                route_trace_end(false);
             else if (m_lay.active && false == m_lay.points.empty())
                 lay_cancel();
             else if (m_track_style.picking)
@@ -6493,12 +6495,19 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             m_fill_points.pop_back();
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active && !m_lay.points.empty())
             lay_back();
+        if (is_press(Action) && m_route.trace.active && route_active() && !m_route.trace.points.empty())
+        {
+            m_route.trace.points.pop_back();
+            route_trace_fit();
+        }
         break;
 
     case GLFW_KEY_ENTER:
     case GLFW_KEY_KP_ENTER:
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
             lay_enter();
+        if (is_press(Action) && m_route.trace.active && route_active())
+            route_trace_end(true);
         break;
 
     case GLFW_KEY_K:

@@ -10168,3 +10168,57 @@ msgstr "Kładzenie nowych torów"
 
 msgid "Ask as the laying starts"
 msgstr "Pytaj przy rozpoczęciu kładzenia"
+
+msgid "Trace the curve on the photo"
+msgstr "Odrysuj łuk ze zdjęcia"
+
+msgid "Click points along the middle of the track on the orthophoto: after each click the curve takes the radius, or the radii of a compound curve and their shares, which follow the points best. The straights and the transition curves stay"
+msgstr "Klikaj punkty po środku toru na ortofotomapie: po każdym kliknięciu łuk dobiera promień, albo promienie łuku koszowego i ich udziały, tak żeby szedł po punktach. Proste i krzywe przejściowe zostają"
+
+msgid "Tracing the curve"
+msgstr "Odrysowywanie łuku"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "As few radii as follow the points, up to three"
+msgstr "Najmniej promieni, przy których łuk trzyma się punktów, najwyżej trzy"
+
+msgid "One radius"
+msgstr "Jeden promień"
+
+msgid "A compound curve of two radii"
+msgstr "Łuk koszowy z dwóch promieni"
+
+msgid "A compound curve of three radii"
+msgstr "Łuk koszowy z trzech promieni"
+
+msgid "Click points along the middle of the track on the photo, spread over the whole curve; a few on the straights at its ends help too"
+msgstr "Klikaj punkty po środku toru na zdjęciu, rozłożone na cały łuk; kilka na prostych przy jego końcach też pomaga"
+
+msgid "points"
+msgstr "punktów"
+
+msgid "departure"
+msgstr "odchyłka"
+
+msgid "at most"
+msgstr "największa"
+
+msgid "Apply   Enter"
+msgstr "Zastosuj   Enter"
+
+msgid "Drop   Esc"
+msgstr "Porzuć   Esc"
+
+msgid "Take out the last point   Backspace"
+msgstr "Usuń ostatni punkt   Backspace"
+
+msgid "Click: take this point out"
+msgstr "LPM: usuń ten punkt"
+
+msgid "Click: a point in the middle of the track on the photo. Enter: apply, Esc: drop"
+msgstr "LPM: punkt na środku toru na zdjęciu. Enter: zastosuj, Esc: porzuć"
+
+msgid "Click: one more point, the curve follows. Ctrl+click: take a point out"
+msgstr "LPM: kolejny punkt, łuk idzie za nimi. Ctrl+LPM: usuń punkt"
