@@ -1462,10 +1462,12 @@ void editor_mode::render_path_ui()
 			{
 				if (begin_fields("##cantradius", 0.3f))
 				{
-					field_row("Roll (deg)");
-					if (auto rolls{path.rolls}; ImGui::DragFloat2("##roll", rolls.data(), 0.01f, -15.0f, 15.0f, "%.2f") && std::isfinite(rolls[0]) && std::isfinite(rolls[1]))
-						path.rolls = rolls;
-					item_tooltip("Cant at the start and at the end as the roll angle of the track");
+					field_row("Cant (mm)");
+					auto const lift = [](float const Roll) { return static_cast<float>(1500.0 * std::sin(glm::radians(static_cast<double>(Roll)))); };
+					auto const roll = [](float const Lift) { return static_cast<float>(glm::degrees(std::asin(std::clamp(static_cast<double>(Lift) / 1500.0, -1.0, 1.0)))); };
+					if (std::array<float, 2> cants{lift(path.rolls[0]), lift(path.rolls[1])}; ImGui::DragFloat2("##roll", cants.data(), 0.5f, -388.0f, 388.0f, "%.0f") && std::isfinite(cants[0]) && std::isfinite(cants[1]))
+						path.rolls = {roll(cants[0]), roll(cants[1])};
+					item_tooltip("Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path");
 					finish_edit(rebuild::geometry);
 					field_row("Radius");
 					if (auto radius{path.radius}; ImGui::InputFloat("##radius", &radius, 0.0f, 0.0f, "%.1f") && std::isfinite(radius))

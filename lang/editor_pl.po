@@ -9991,3 +9991,9 @@ msgstr "na drugą stronę"
 
 msgid "type the radius of the curve"
 msgstr "wpisz promień łuku"
+
+msgid "Cant (mm)"
+msgstr "Przechyłka (mm)"
+
+msgid "Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path"
+msgstr "Przechyłka na początku i na końcu: o ile jedna szyna jest wyżej, + podnosi lewą szynę patrząc wzdłuż toru"
