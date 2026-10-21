@@ -556,8 +556,8 @@ void editor_mode::render_track_inspector()
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
 	{
 		m_sweep.open = false;
-		m_hekto.open = false;
-		m_fouling.open = false;
+		m_hekto.tab().open = false;
+		m_fouling.tab().open = false;
 		m_parallel.open = false;
 		m_vehicle.tab().open = false;
 	}

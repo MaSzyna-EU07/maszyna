@@ -139,8 +139,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		words >> tab;
 		show_track_tab(track_tab::lineside);
 		m_sweep.expand = tab == 0;
-		m_hekto.expand = tab == 1;
-		m_fouling.expand = tab == 2;
+		m_hekto.tab().expand = tab == 1;
+		m_fouling.tab().expand = tab == 2;
 		m_parallel.expand = tab == 3;
 		m_vehicle.tab().expand = tab == 4;
 		return selftest_result::handled;

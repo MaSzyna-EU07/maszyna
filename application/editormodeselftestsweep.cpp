@@ -126,110 +126,6 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 		WriteLog("SELFTEST drag: " + m_sweep.status);
 		return selftest_result::handled;
 	}
-	if (command == "fouling")
-	{
-		std::map<std::string, std::string> values;
-		std::string pair;
-		while (words >> pair)
-		{
-			auto const equals{pair.find('=')};
-			if (equals != std::string::npos)
-				values[pair.substr(0, equals)] = pair.substr(equals + 1);
-		}
-		auto &tool{m_fouling};
-		if (values["show"] == "1")
-		{
-			show_track_tab(track_tab::lineside);
-			tool.expand = true;
-		}
-		tool.scope = std::stoi(values.count("scope") ? values["scope"] : "2");
-		tool.height_mode = values["mode"] == "ground" ? 0 : 1;
-		tool.height = std::stod(values.count("height") ? values["height"] : "0");
-		tool.dirty = true;
-		fouling_update();
-		WriteLog("SELFTEST fouling: " + tool.status);
-		int shown{0};
-		for (auto const &found : tool.found)
-			if (found.wrong && shown++ < 5)
-				WriteLog(format("SELFTEST fouling: %s %.2f m off, %+.3f m high", found.marker.file.c_str(), found.error, found.height_error));
-		if (values["place"] == "one")
-		{
-			// the first fouling point without a marker alone, as a click on it in the view
-			for (int index = 0; index < static_cast<int>(tool.points.size()); ++index)
-				if (tool.points[index].standing < 0)
-				{
-					fouling_place(index);
-					break;
-				}
-			tool.dirty = true;
-			fouling_update();
-			WriteLog("SELFTEST fouling one: " + tool.status);
-		}
-		if (values["place"] == "1")
-		{
-			fouling_place();
-			tool.dirty = true;
-			fouling_update();
-			WriteLog("SELFTEST fouling after placing: " + tool.status);
-		}
-		if (values["fix"] == "1")
-		{
-			fouling_fix();
-			tool.dirty = true;
-			fouling_update();
-			WriteLog("SELFTEST fouling after the fix: " + tool.status);
-		}
-		return selftest_result::handled;
-	}
-	if (command == "hekto")
-	{
-		std::map<std::string, std::string> values;
-		std::string pair;
-		while (words >> pair)
-		{
-			auto const equals{pair.find('=')};
-			if (equals != std::string::npos)
-				values[pair.substr(0, equals)] = pair.substr(equals + 1);
-		}
-		auto *track{simulation::Paths.find(values["track"])};
-		if (track == nullptr)
-		{
-			WriteLog("SELFTEST hekto: no such track");
-			return selftest_result::handled;
-		}
-		hekto_start(*track, track->m_paths.front().points[segment_data::point::start]);
-		auto &tool{m_hekto};
-		tool.dirty = true;
-		hekto_update();
-		if (values.count("km"))
-		{
-			tool.km = std::stod(values["km"]);
-			tool.growth = values["growth"] == "-1" ? -1 : 1;
-		}
-		tool.side = values["side"] == "alt" ? 0 : values["side"] == "left" ? -1 : 1;
-		tool.dirty = true;
-		hekto_update();
-		auto const missing{std::count_if(tool.posts.begin(), tool.posts.end(), [](hekto_post const &Post) { return Post.standing < 0; })};
-		WriteLog(format("SELFTEST hekto: km %.3f growth %d, %zu posts along %.0f m, %d to place, %zu standing. %s", tool.km, tool.growth, tool.posts.size(), tool.samples.empty() ? 0.0 : tool.samples.back().chainage, static_cast<int>(missing), tool.found.size(), tool.status.c_str()));
-		for (std::size_t i = 0; i < tool.posts.size() && i < 4; ++i)
-		{
-			auto const &post{tool.posts[i]};
-			double lateral;
-			glm::dvec3 const axis{editor_track::sampled_position(tool.samples, post.chainage)};
-			auto const direction{editor_track::sampled_position(tool.samples, post.chainage + 1.0) - axis};
-			glm::dvec2 const offset{post.position.x - axis.x, post.position.z - axis.z};
-			lateral = glm::length(offset);
-			auto const right{(direction.x * offset.y - direction.z * offset.x) * tool.growth >= 0.0};
-			WriteLog(format("SELFTEST hekto post %d.%d at %.1f m, %.2f m from the axis, %s of the growing kilometrage, at %.1f %.1f %.1f", post.hectometres / 10, post.hectometres % 10, post.chainage, lateral, right ? "right" : "left", post.position.x, post.position.y,
-			                post.position.z));
-		}
-		if (values["place"] == "1")
-		{
-			hekto_place();
-			WriteLog("SELFTEST hekto: " + tool.status);
-		}
-		return selftest_result::handled;
-	}
 	if (command == "spread")
 	{
 		std::string name;
@@ -388,7 +284,7 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 		std::string tab;
 		words >> tab;
 		show_track_tab(tab == "parallel" ? track_tab::parallel : track_tab::lineside);
-		(tab == "vehicle" ? m_vehicle.tab().expand : tab == "hekto" ? m_hekto.expand : tab == "fouling" ? m_fouling.expand : m_parallel.expand) = true;
+		(tab == "vehicle" ? m_vehicle.tab().expand : tab == "hekto" ? m_hekto.tab().expand : tab == "fouling" ? m_fouling.tab().expand : m_parallel.expand) = true;
 		return selftest_result::handled;
 	}
 	if (command == "bendpanel")

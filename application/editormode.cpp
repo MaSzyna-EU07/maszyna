@@ -1453,8 +1453,8 @@ bool editor_mode::update()
         draw_parallel_preview();
         if (m_track_tab == track_tab::lineside)
         {
-            draw_hekto_overlay();
-            draw_fouling_overlay();
+            m_hekto.draw_overlay();
+            m_fouling.draw_overlay();
             m_vehicle.draw_overlay();
         }
         render_track_context();

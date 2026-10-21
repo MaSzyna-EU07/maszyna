@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "application/editormodegauge.h"
 #include "application/editormodejoints.h"
+#include "application/editormodelineside.h"
 #include "application/editormodespeed.h"
 #include "application/editormodevehicle.h"
 #include "application/editortool.h"
@@ -225,7 +226,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	int m_selected_history_idx{-1};
 	glm::dvec3 clamp_mouse_offset_to_max(const glm::dvec3 &offset);
 	// the ground under a point the cursor landed on, for things which are to stand on the ground
-	glm::dvec3 placement_on_ground(glm::dvec3 Location);
+	glm::dvec3 placement_on_ground(glm::dvec3 Location) override;
 	// puts every instance of the model the selected node shows on the ground under it
 	void drop_model_instances();
 	void render_object_menu();
@@ -1431,7 +1432,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void update_build_tools();
 	void draw_build_overlay() const;
 	// modes of the track editor, one at a time: path is the plain selection
-	enum class track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals, parallel };
+	using track_tab = editor_track_tab;
 	struct track_mode
 	{
 		char const *label;
@@ -1477,7 +1478,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the track tools in the tool options window, and the selected path in the inspector
 	void render_track_tool_options();
 	void render_track_selection();
-	void show_track_tab(track_tab const Wanted);
+	void show_track_tab(track_tab const Wanted) override;
 	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
 	bool track_busy() const; // something going on in the mode, which Esc drops before it leaves the mode
@@ -1769,28 +1770,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool parallel_preview_visible() const;
 	void draw_parallel_preview() const;
 
-	// scenery templates standing by the track, placed and checked by the editor
-	struct template_item
-	{
-		std::string file;
-		glm::dvec3 location{0.0}; // world space
-		double yaw{0.0};
-		std::vector<std::string> rest; // parameters after the rotation
-		bool described{false};
-		std::string track;
-		glm::dvec2 tilt{0.0}; // rot.x and rot.z of a described template, degrees
-		std::map<std::string, std::string> values;
-	};
-	struct standing_template
-	{
-		scene::instance_handle instance{0};
-		std::string file; // lower case, forward slashes
-		glm::dvec3 location{0.0};
-		double yaw{0.0};
-		std::vector<std::string> values;
-	};
+	using template_item = ::template_item;
+	using standing_template = ::standing_template;
 	// includes of the templates whose file names the test accepts, with the location in p2..p4 and the rotation in p5
-	std::vector<standing_template> standing_templates(std::function<bool(std::string const &)> const &Accept) const;
+	std::vector<standing_template> standing_templates(std::function<bool(std::string const &)> const &Accept) const override;
 	struct switch_drive
 	{
 		standing_template standing;
@@ -1804,116 +1787,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void switch_drive_captured(TTrack const &Track);
 	void switch_drives_committed(std::vector<TTrack *> const &Tracks);
 	// places them in the active layer, as one step of the undo. returns: how many were placed
-	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error);
+	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error) override;
 	// moves them, as one step of the undo
-	std::size_t move_templates(std::vector<std::pair<standing_template, template_item>> const &Moves);
+	std::size_t move_templates(std::vector<std::pair<standing_template, template_item>> const &Moves) override;
 	// takes them out, as one step of the undo
-	std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances);
-
-	// hectometre posts along the line, at every 100 m of the kilometrage
-	struct hekto_post
-	{
-		int hectometres{0};
-		double chainage{0.0};
-		glm::dvec3 position{0.0};
-		double yaw{0.0};
-		int standing{-1}; // post already there with this number
-	};
-	struct hekto_found
-	{
-		standing_template post;
-		int hectometres{0};
-		double chainage{0.0}; // where it stands along the line
-		double expected{0.0}; // where its number belongs
-		double error{0.0}; // m along the line
-		double distance{0.0}; // m from where it belongs, in the plan
-		bool wrong{false};
-		bool duplicate{false}; // another post with the same number stands nearer to its place
-		bool outside{false}; // its number belongs past the ends of the line
-	};
-	struct hekto_tool
-	{
-		bool open{false};
-		bool expand{false};
-		TTrack *track{nullptr}; // the line runs through it
-		glm::dvec3 point{0.0}; // where the kilometrage is given
-		double km{0.0};
-		bool km_read{false}; // the kilometrage was read from the posts already standing
-		int growth{1}; // 1: grows along the line, -1: against
-		int side{1}; // 1: to the right of the growing kilometrage, -1: to the left, 0: alternately
-		double offset{3.0}; // m from the axis
-		int style{0}; // nowy, stary, zgnity, mixed
-		int turn{0}; // degrees added to the rotation
-		double reach{10000.0}; // m each way
-		double tolerance{5.0}; // m along the line, for the posts standing
-		bool dirty{true};
-		std::size_t history{0};
-		editor_track::route route;
-		std::vector<editor_track::route_sample> samples;
-		double origin{0.0}; // chainage of the point
-		std::vector<hekto_post> posts;
-		std::vector<hekto_found> found;
-		std::string status;
-		std::string error;
-	};
-	hekto_tool m_hekto;
-	void hekto_start(TTrack &Track, glm::dvec3 const &Point);
-	void hekto_update();
-	void hekto_read_kilometrage();
-	void hekto_place();
-	void hekto_fix();
-	void hekto_remove_duplicates();
-	void render_hekto_ui();
-	void draw_hekto_overlay() const;
-
-	// fouling point markers (W17) where the tracks meeting at a switch are the spacing apart
-	struct fouling_point
-	{
-		TTrack *track{nullptr}; // the switch
-		glm::dvec3 position{0.0};
-		double yaw{0.0};
-		int standing{-1}; // marker already there
-	};
-	struct fouling_found
-	{
-		standing_template marker;
-		int point{-1}; // the fouling point it belongs to
-		double error{0.0}; // m from where it belongs
-		double height_error{0.0}; // m over where it belongs
-		bool wrong{false};
-	};
-	struct fouling_tool
-	{
-		bool open{false};
-		bool expand{false};
-		int scope{1}; // 0: the selected switch, 1: around the camera, 2: the whole scenery
-		double reach{1500.0};
-		double spacing{3.5}; // m between the axes
-		double tolerance{2.0}; // m, a marker farther than this from its point is wrong
-		int height_mode{1}; // 0: on the ground, 1: at the height given over the rail heads
-		double height{0.0}; // m over the rail heads
-		double height_tolerance{0.03}; // m, a marker standing higher or lower than this is wrong
-		int model{0}; // w17, w17_new, w17_old, w17_dwuteo
-		int turn{0};
-		bool dirty{true};
-		std::size_t history{0};
-		TTrack *selected{nullptr};
-		std::vector<fouling_point> points;
-		std::vector<fouling_found> found;
-		std::string status;
-		std::string error;
-	};
-	fouling_tool m_fouling;
-	void fouling_update();
-	// the markers put at the fouling points without one, or at the one only
-	void fouling_place(int const Only = -1);
-	// the markers standing wrong moved to their places, or the one found only
-	void fouling_fix(int const Only = -1);
-	// the fouling point without a marker or the marker standing wrong under the cursor: the index of the point or of the
-	// marker found, and whether it's a marker
-	std::optional<std::pair<int, bool>> fouling_hit() const;
-	void render_fouling_ui();
-	void draw_fouling_overlay() const;
+	std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances) override;
 
 	struct signal_template
 	{
@@ -2393,7 +2271,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	speed_tool m_speed{*this};
 	joints_tool m_joints{*this};
 	vehicle_tool m_vehicle{*this};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle};
+	hekto_tool m_hekto{*this};
+	fouling_tool m_fouling{*this};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling};
 
 	void infra_rebase();
 	void render_infra_search();

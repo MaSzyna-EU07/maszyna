@@ -445,12 +445,12 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::switch_at, "Press and drag: a switch here, along sets its direction, sideways its side");
 		}
 	}
-	if (m_track_tab == track_tab::lineside && m_fouling.open)
-		if (auto const hit{fouling_hit()}; hit.has_value())
+	if (m_track_tab == track_tab::lineside && m_fouling.tab().open)
+		if (auto const hit{m_fouling.hit()}; hit.has_value())
 		{
 			intent.index = hit->first;
 			intent.path = hit->second ? 1 : 0;
-			intent.position = hit->second ? m_fouling.found[hit->first].marker.location : m_fouling.points[hit->first].position;
+			intent.position = m_fouling.position_of(*hit);
 			return make(kind::fouling, hit->second ? "Click: move this W17 to its place" : "Click: put the W17 here");
 		}
 	if (m_hover.track != nullptr)
@@ -570,9 +570,9 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::switch_at: start_switch_placement(); return;
 	case kind::fouling:
 		if (Intent.path == 1)
-			fouling_fix(Intent.index);
+			m_fouling.fix(Intent.index);
 		else
-			fouling_place(Intent.index);
+			m_fouling.place(Intent.index);
 		return;
 	case kind::extend_end:
 		if (false == start_extend(Intent.snap))
@@ -798,14 +798,12 @@ void editor_mode::render_track_context()
 	if (ImGui::MenuItem(STR_C("Hectometre posts from here")))
 	{
 		show_track_tab(track_tab::lineside);
-		hekto_start(*track, point);
+		m_hekto.start(*track, point);
 	}
 	if (ImGui::MenuItem(STR_C("Fouling point markers"), nullptr, false, track->eType == tt_Switch))
 	{
 		show_track_tab(track_tab::lineside);
-		m_fouling.scope = 0;
-		m_fouling.dirty = true;
-		m_fouling.expand = true;
+		m_fouling.check_selected_switch();
 	}
 	if (ImGui::MenuItem(STR_C("Vertical profile of the line"), "P"))
 	{
@@ -1477,8 +1475,8 @@ void editor_mode::render_lineside_ui()
 		std::function<void()> render;
 	};
 	std::array<tab, 3> const tabs{{
-	    {"Hectometre posts", &m_hekto.open, &m_hekto.expand, [this]() { render_hekto_ui(); }},
-	    {"Fouling points", &m_fouling.open, &m_fouling.expand, [this]() { render_fouling_ui(); }},
+	    {"Hectometre posts", &m_hekto.tab().open, &m_hekto.tab().expand, [this]() { m_hekto.render_options(); }},
+	    {"Fouling points", &m_fouling.tab().open, &m_fouling.tab().expand, [this]() { m_fouling.render_options(); }},
 	    {"Trainset", &m_vehicle.tab().open, &m_vehicle.tab().expand, [this]() { m_vehicle.render_options(); }},
 	}};
 	if (selected_track() == nullptr)
