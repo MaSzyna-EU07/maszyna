@@ -5906,7 +5906,7 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 		}
 		m_timberbuckets.push_back( { Model, Part, Band, {} } );
 		return m_timberbuckets.back().instances; };
-	// the level of detail of the whole model the run of beams is seen at, from its distance
+	// the level of detail of the whole model a beam is seen at, from its distance
 	auto const band_of = []( track_sleepers::beam_model const &Model, double const Distance ) {
 		auto const squaredistance { static_cast<float>( Distance * Distance ) };
 		auto band { Model.bands.empty() ? 0.f : Model.bands.front() };
@@ -5916,6 +5916,21 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 			}
 		}
 		return band; };
+	// the beams of a run made of a whole model, each at the level of detail of its own distance; the run is culled as one
+	auto const put_by_band = [&]( track_sleepers::beam_model const &Model, std::vector<glm::mat4> const &Transforms, std::uint32_t const From, std::uint32_t const To, glm::dvec3 const &Origin ) {
+		std::vector<glm::mat4> *instances { nullptr };
+		auto current { 0.f };
+		for( auto index = From; index < To; ++index ) {
+			auto const &local = Transforms[ index ];
+			auto const band = band_of( Model, glm::length( Origin + glm::dvec3( glm::vec3( local[ 3 ] ) ) - camera ) );
+			if( instances == nullptr || band != current ) {
+				// looked up again only as the band changes; a bucket added on the way moves the others, so the pointer goes with it
+				instances = &bucket_for( &Model, -1, band );
+				current = band;
+			}
+			instances->emplace_back( originmodelview * local );
+		}
+	};
 	for( auto first { First }; first != Last; ++first ) {
 		auto *track = *first;
 		if( false == track->m_visible || false == track->m_sleepers3d.active ) { continue; }
@@ -5938,7 +5953,6 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 			auto const distance = glm::length( centre - camera );
 			if( distance > range + chunk.radius ) { continue; }
 			if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ centre, chunk.radius } ) ) { continue; }
-			auto const nearest = std::max( 0.0, distance - chunk.radius );
 			if( laid.timbers->stretchable ) {
 				for( int part = 0; part < track_sleepers::part_count; ++part ) {
 					auto &instances = bucket_for( laid.timbers, part, 0.f );
@@ -5948,16 +5962,10 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 				}
 			}
 			if( chunk.wholelast > chunk.wholefirst ) {
-				auto &instances = bucket_for( laid.timbers, -1, band_of( *laid.timbers, nearest ) );
-				for( auto index = chunk.wholefirst; index < chunk.wholelast; ++index ) {
-					instances.emplace_back( trackmodelview * laid.whole[ index ] );
-				}
+				put_by_band( *laid.timbers, laid.whole, chunk.wholefirst, chunk.wholelast, track->m_origin );
 			}
 			if( laid.plains != nullptr && chunk.plainlast > chunk.plainfirst ) {
-				auto &instances = bucket_for( laid.plains, -1, band_of( *laid.plains, nearest ) );
-				for( auto index = chunk.plainfirst; index < chunk.plainlast; ++index ) {
-					instances.emplace_back( trackmodelview * laid.plain[ index ] );
-				}
+				put_by_band( *laid.plains, laid.plain, chunk.plainfirst, chunk.plainlast, track->m_origin );
 			}
 		}
 	}
