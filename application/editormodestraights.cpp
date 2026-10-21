@@ -570,7 +570,7 @@ void editor_mode::straights_apply(std::vector<editor_track::straight> const &Lin
 		    return false == finite(End.first) || false == finite(End.second) || false == (glm::distance(End.first, End.second) >= 0.1 && glm::distance(End.first, End.second) <= 100000.0);
 	    }))
 	{
-		state.status = STR_C("The ends have to be numbers, from 0.1 m to 100 km apart");
+		state.status = refused(STR_C("The ends have to be numbers, from 0.1 m to 100 km apart"));
 		return;
 	}
 	auto const tracks{editor_track::straight_affected(Lines)};
@@ -627,6 +627,7 @@ void editor_mode::render_straight_gizmo()
 			auto const tracks{state.fitting ? std::vector<TTrack *>{} : editor_track::straight_affected(lines)};
 			if (false == tracks_editable(tracks, state.status))
 			{
+				refused(state.status);
 				state.fitting = false;
 				return;
 			}
@@ -947,7 +948,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 			editor_track::apply(*entry.first, entry.second);
 		editor_track::commit(tracks);
 		undo_split();
-		state.status = m_route.error;
+		state.status = refused(m_route.error);
 		return;
 	}
 	m_route.design.start_reserve = 0.0;
@@ -969,7 +970,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 			editor_track::apply(*entry.first, entry.second);
 		editor_track::commit(tracks);
 		undo_split();
-		state.status = m_route.result.errors.empty() ? STR_C("The curve can't be fitted") : m_route.result.errors.front();
+		state.status = refused(m_route.result.errors.empty() ? STR_C("The curve can't be fitted") : m_route.result.errors.front());
 		return;
 	}
 	auto pieces{alignment::pieces(m_route.result, m_route.design, m_route.chain.tracks.size())};

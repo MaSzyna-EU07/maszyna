@@ -165,6 +165,7 @@ class editor_ui : public ui_layer
 
   private:
 	// methods
+	void render_refusal();
 	void render_mode_options(nodebank_panel::edit_mode const Mode);
 	// windows of the editor drawn by the user interface itself
 	void render_tool_options();
@@ -208,6 +209,8 @@ class editor_ui : public ui_layer
 	std::function<void()> m_workspacebar;
 	std::function<void()> m_editmenu;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
+	std::string m_refusal;
+	double m_refusaltime{-100.0};
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};
 	bool m_sceneopen{true};

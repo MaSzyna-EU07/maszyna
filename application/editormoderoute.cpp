@@ -574,6 +574,14 @@ bool editor_mode::route_from_line(TTrack &Track)
 
 void editor_mode::route_apply()
 {
+	m_route.error.clear();
+	route_lay();
+	if (false == m_route.error.empty())
+		refused(m_route.error);
+}
+
+void editor_mode::route_lay()
+{
 	auto &route{m_route};
 	route.status.clear();
 	if (false == route.result.valid || route.chain.tracks.empty())

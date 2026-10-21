@@ -646,6 +646,7 @@ void editor_ui::render_()
 	// strips of the unpinned docks, inside the toolbar and the status bar; the pins over the tab bars drawn by now
 	autohide_strips();
 	autohide_pins();
+	render_refusal();
 }
 
 // updates state of UI elements
@@ -1026,6 +1027,28 @@ void editor_ui::set_status(std::string const &Status, bool const Error)
 {
 	m_layerspanel.status = Status;
 	m_layerspanel.status_error = Error;
+	if (Error && false == Status.empty())
+	{
+		m_refusal = Status;
+		m_refusaltime = ImGui::GetTime();
+	}
+}
+
+void editor_ui::render_refusal()
+{
+	auto const age{ImGui::GetTime() - m_refusaltime};
+	if (m_refusal.empty() || age > 4.0)
+		return;
+	auto const &io{ImGui::GetIO()};
+	auto const alpha{static_cast<float>(std::clamp(4.0 - age, 0.0, 1.0))};
+	auto const wrap{std::round(ImGui::GetFontSize() * 30.0f)};
+	auto const size{ImGui::CalcTextSize(m_refusal.c_str(), nullptr, false, wrap)};
+	ImVec2 at{io.MousePos.x + 20.0f, io.MousePos.y - 24.0f - size.y};
+	at.x = std::clamp(at.x, 10.0f, std::max(10.0f, io.DisplaySize.x - size.x - 10.0f));
+	at.y = std::clamp(at.y, 10.0f, std::max(10.0f, io.DisplaySize.y - size.y - 10.0f));
+	auto *draw{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
+	draw->AddRectFilled(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), IM_COL32(40, 0, 0, static_cast<int>(210 * alpha)), 4.0f);
+	draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(), at, IM_COL32(255, 150, 130, static_cast<int>(255 * alpha)), m_refusal.c_str(), nullptr, wrap);
 }
 
 void editor_ui::render_rotation_controls()

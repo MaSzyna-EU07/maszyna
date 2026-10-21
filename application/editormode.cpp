@@ -973,6 +973,12 @@ void editor_mode::undo_last()
     }
 }
 
+std::string editor_mode::refused(std::string Text)
+{
+    ui()->set_status(Text, true);
+    return Text;
+}
+
 void editor_mode::drop_step(std::size_t const Step)
 {
     if (Step == 0 || m_history.size() != Step)

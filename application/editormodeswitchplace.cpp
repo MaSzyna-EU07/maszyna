@@ -88,7 +88,7 @@ bool editor_mode::start_switch_placement()
 		auto *track{selected};
 		if (tool.templates[tool.armed].double_slip)
 		{
-			tool.status = STR_C("A double slip goes only into a straight crossing another one");
+			tool.status = refused(STR_C("A double slip goes only into a straight crossing another one"));
 			return false;
 		}
 		editor_track::curve curve;
@@ -96,12 +96,12 @@ bool editor_mode::start_switch_placement()
 		std::string error;
 		if (false == editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
 		{
-			tool.status = STR_C("The selected track is neither a recognized straight nor a curve");
+			tool.status = refused(STR_C("The selected track is neither a recognized straight nor a curve"));
 			return false;
 		}
 		if (false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
 		{
-			tool.status = error.empty() ? std::string{STR_C("The curve can't be followed")} : error;
+			tool.status = refused(error.empty() ? std::string{STR_C("The curve can't be followed")} : error);
 			return false;
 		}
 		for (auto const &part : editor_track::chain_parts(chain))
@@ -305,7 +305,7 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	std::string reason;
 	if (false == tracks_editable(Line.tracks, reason))
 	{
-		m_switch.status = reason;
+		m_switch.status = refused(reason);
 		ui()->set_status(reason, true);
 		return false;
 	}
@@ -393,7 +393,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	auto const &shape{Shape};
 	if (shape.length > Line.length - 0.02)
 	{
-		m_switch.status = format(STR_C("The straight is %.1f m long, too short for the %.1f m switch"), Line.length, shape.length);
+		m_switch.status = refused(format(STR_C("The straight is %.1f m long, too short for the %.1f m switch"), Line.length, shape.length));
 		return false;
 	}
 	auto const from{switch_from(Line, shape.length, Along, Direction, Snap)};
@@ -402,7 +402,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	TTrack *first{nullptr};
 	if (false == cut_straight(Line, from, to, States, Created, Removed, &first))
 	{
-		m_switch.status = STR_C("The switch would overlap another switch, move it onto plain track");
+		m_switch.status = refused(STR_C("The switch would overlap another switch, move it onto plain track"));
 		return false;
 	}
 	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
@@ -426,7 +426,7 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 		auto *link{two != nullptr ? editor_track::create_path(Style, Paths[4]) : nullptr};
 		if (link == nullptr)
 		{
-			m_switch.status = STR_C("The switch couldn't be created from this template");
+			m_switch.status = refused(STR_C("The switch couldn't be created from this template"));
 			return {};
 		}
 		editor_track::commit({one, two, link});
@@ -437,7 +437,7 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 	auto *track{editor_track::create_switch(Shape, Paths, Style, Name)};
 	if (track == nullptr)
 	{
-		m_switch.status = STR_C("The switch couldn't be created from this template");
+		m_switch.status = refused(STR_C("The switch couldn't be created from this template"));
 		return {};
 	}
 	editor_track::commit({track});
@@ -974,7 +974,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	slip_plan plan;
 	if (false == plan_double_slip(Line, Point, Shape, plan))
 	{
-		state.status = plan.problem;
+		state.status = refused(plan.problem);
 		return false;
 	}
 	if (plan.replaces != nullptr)
@@ -1041,7 +1041,7 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 		switches[i] = simulation::Paths.find(base + "_" + static_cast<char>('a' + i));
 		if (switches[i] == nullptr || switches[i]->m_editorremoved || switches[i]->eType != tt_Switch || switches[i]->m_paths.size() < 2)
 		{
-			state.status = STR_C("The double slip isn't complete, it can't be replaced");
+			state.status = refused(STR_C("The double slip isn't complete, it can't be replaced"));
 			return false;
 		}
 	}
@@ -1077,7 +1077,7 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 			partner = i;
 	if (partner < 0)
 	{
-		state.status = STR_C("The double slip geometry isn't recognized");
+		state.status = refused(STR_C("The double slip geometry isn't recognized"));
 		return false;
 	}
 	auto const &a{ends[0]};
@@ -1346,7 +1346,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	auto const total{tool.frame.back().station};
 	if (shape.length > total - 0.02)
 	{
-		tool.status = format(STR_C("The curve is %.1f m long, too short for the %.1f m switch"), total, shape.length);
+		tool.status = refused(format(STR_C("The curve is %.1f m long, too short for the %.1f m switch"), total, shape.length));
 		return;
 	}
 	auto const station{std::clamp(tool.along, Direction > 0 ? 0.0 : shape.length, Direction > 0 ? total - shape.length : total)};

@@ -175,6 +175,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// a single step of the history, see undo_last()
 	void undo_one();
 	void drop_step(std::size_t const Step);
+	std::string refused(std::string Text);
 	void redo_one();
 	// the changes of the heightmap terrain since the last step become a step of the history: a stroke of the brush,
 	// or what a frame did; the next change is recorded from now on
@@ -955,6 +956,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		m_route.result = alignment::compute(m_route.design);
 	}
 	void route_apply();
+	void route_lay();
 	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, TTrack *&Last);
 	void route_recommend(alignment::vertex &Vertex) const;
 	void draw_route_overlay() const;

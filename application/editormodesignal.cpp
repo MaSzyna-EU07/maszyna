@@ -586,7 +586,7 @@ void editor_mode::signal_release()
 		return;
 	if (false == tool.moved_valid)
 	{
-		tool.status = STR_C("Drop the signal by a track");
+		tool.status = refused(STR_C("Drop the signal by a track"));
 		return;
 	}
 	tool.moved_valid = false;
@@ -600,7 +600,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	auto const instance{Standing.include.instance};
 	if (false == scene::Layers.tracked(instance) || false == scene::Layers.removable(instance))
 	{
-		tool.status = STR_C("This signal is in a file the editor doesn't change, it can't be moved");
+		tool.status = refused(STR_C("This signal is in a file the editor doesn't change, it can't be moved"));
 		return false;
 	}
 	auto const &included{scene::Layers.instance(instance)};
@@ -659,7 +659,7 @@ bool editor_mode::signal_flip(scene::instance_handle const Instance)
 	signal_spot spot;
 	if (standing == nullptr || false == signal_standing_spot(*standing, spot))
 	{
-		m_signal.status = STR_C("No track by the signal to take it across");
+		m_signal.status = refused(STR_C("No track by the signal to take it across"));
 		return false;
 	}
 	auto const across{plan_of(spot.position) - plan_of(spot.axis)};
@@ -675,7 +675,7 @@ bool editor_mode::signal_turn(scene::instance_handle const Instance)
 	signal_spot spot;
 	if (standing == nullptr || false == signal_standing_spot(*standing, spot))
 	{
-		m_signal.status = STR_C("No track by the signal to turn it to");
+		m_signal.status = refused(STR_C("No track by the signal to turn it to"));
 		return false;
 	}
 	auto const *item{signal_template_of(standing->include.file)};
@@ -730,7 +730,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	std::string name{tool.name};
 	if (name.empty() || name.find_first_of(" \t\";") != std::string::npos)
 	{
-		tool.status = STR_C("Give the signal a name without spaces first");
+		tool.status = refused(STR_C("Give the signal a name without spaces first"));
 		return false;
 	}
 	signal_refresh(true);
@@ -753,7 +753,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	std::string error;
 	if (place_templates({item}, error) == 0)
 	{
-		tool.status = STR_C("The signal couldn't be placed: ") + error;
+		tool.status = refused(STR_C("The signal couldn't be placed: ") + error);
 		return false;
 	}
 	auto const instance{m_history.back().instances.front()};
