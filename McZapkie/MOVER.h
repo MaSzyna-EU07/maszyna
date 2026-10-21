@@ -2003,6 +2003,8 @@ class TMoverParameters
 	bool CompressorGovernorLock{false}; // indicates whether compressor pressure switch was activated due to reaching cut-out pressure
 	bool CompressorTankValve{false}; // indicates excessive pressure is vented from compressor tank directly and instantly
 	start_t CompressorStart{start_t::manual}; // whether the compressor is started manually, or another way
+	float CompressorStartDelay{0.0f}; // delay (in seconds) between start of the engine (closing of the main circuit) and the moment the compressor can work
+	double CompressorStartDelayTimer{0.0}; // helper, for tracking whether compressor start delay passed
 	start_t PantographCompressorStart{start_t::manual};
 	basic_valve PantsValve;
 	std::array<basic_pantograph, 2> Pantographs;

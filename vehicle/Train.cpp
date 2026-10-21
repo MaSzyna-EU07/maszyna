@@ -8944,6 +8944,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaSprezarka.Turn(mvControlled->CompressorFlag); // mutopsitka dziala
 		btLampkaSprezarkaOff.Turn(!mvControlled->CompressorFlag);
 		btLampkaFuelPumpOff.Turn(!mvControlled->FuelPump.is_active);
+		btLampkaOilPump.Turn(mvControlled->OilPump.is_active); // pre-lubrication pump, goes off once the engine is started
 
 		// boczniki
 		// Ra: w SU45 boczniki wchodzą na ScndCtrlPos, a nie na ScndCtrlActualPos
@@ -9103,6 +9104,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaSprezarka.Turn(false);
 		btLampkaSprezarkaOff.Turn(false);
 		btLampkaFuelPumpOff.Turn(false);
+		btLampkaOilPump.Turn(false);
 		btLampkaBezoporowa.Turn(false);
 		btLampkaHamowanie1zes.Turn(false);
 		btLampkaHamienie.Turn(false);
@@ -11141,6 +11143,7 @@ void TTrain::clear_cab_controls()
 	btLampkaSprezarkaOff.Clear();
 	btLampkaSprezarkaBOff.Clear();
 	btLampkaFuelPumpOff.Clear();
+	btLampkaOilPump.Clear();
 	btLampkaNapNastHam.Clear();
 	btLampkaOporyB.Clear();
 	btLampkaStycznB.Clear();
@@ -11558,6 +11561,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-compressoroff:", btLampkaSprezarkaOff},
 	    {"i-compressorboff:", btLampkaSprezarkaBOff},
 	    {"i-fuelpumpoff:", btLampkaFuelPumpOff},
+	    {"i-oilpump:", btLampkaOilPump},
 	    {"i-voltbrake:", btLampkaNapNastHam},
 	    {"i-resistorsb:", btLampkaOporyB},
 	    {"i-contactorsb:", btLampkaStycznB},

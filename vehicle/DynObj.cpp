@@ -557,6 +557,33 @@ void TDynamicObject::UpdateAxle(TAnim *pAnim)
     pAnim->smAnimated->future_transform = glm::rotate((float)glm::radians(m_future_wheels_angle[wheel_id]), glm::vec3(1.0f, 0.0f, 0.0f));
 };
 
+// angle of a slotted lever for given angle of the wheel, which drives the coupling rod with the pin
+// all points of the coupling rod move along circles of crank radius, the lever follows the pin sliding in its slot
+double TDynamicObject::slottedlever_angle( slottedlever_data const &Lever, double const Wheelangle ) {
+    // crank turned around X axis, the same way as the wheel
+    auto const wheelangle { glm::radians( Wheelangle ) };
+    auto const crank { glm::dvec2(
+        Lever.crank.x * std::cos( wheelangle ) - Lever.crank.y * std::sin( wheelangle ),
+        Lever.crank.x * std::sin( wheelangle ) + Lever.crank.y * std::cos( wheelangle ) ) };
+    auto const pin { Lever.pin - Lever.crank + crank };
+    // angle relative to the pose of the lever in the model, which matches wheel angle 0
+    return glm::degrees( std::atan2( pin.y, pin.x ) - std::atan2( Lever.pin.y, Lever.pin.x ) );
+}
+
+void TDynamicObject::update_slottedlevers() {
+
+    for( auto const &lever : m_slottedlevers ) {
+        auto const wheelid { (
+            ( lever.axle < iAnimType[ ANIM_WHEELS ] ) && ( lever.axle < static_cast<int>( pAnimations.size() ) ) ?
+                pAnimations[ lever.axle ].dWheelAngle :
+                1 ) }; // driving wheels and coupling rods by default
+        auto const angle { slottedlever_angle( lever, dWheelAngle[ wheelid ] ) };
+        auto const futureangle { slottedlever_angle( lever, dWheelAngle[ wheelid ] + m_future_wheels_angle[ wheelid ] ) };
+        lever.submodel->SetRotate( float3( 1, 0, 0 ), angle );
+        lever.submodel->future_transform = glm::rotate( (float)glm::radians( std::remainder( futureangle - angle, 360.0 ) ), glm::vec3( 1.0f, 0.0f, 0.0f ) );
+    }
+}
+
 // animacja drzwi - przesuw
 void TDynamicObject::UpdateDoorTranslate(TAnim *pAnim) {
     if( pAnim->smAnimated == nullptr ) { return; }
@@ -841,6 +868,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                 animation.yUpdate( &animation );
             }
         }
+        update_slottedlevers();
 
         if( mdModel != nullptr
          && ObjSqrDist < 50 * 50 ) {
@@ -5743,6 +5771,35 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 						parser.getTokens( 1, false );
 						parser >> fWahaczeAmp;
 					}
+                }
+
+                else if( token == "animslottedlever:" ) {
+                    // lever with a slot, turned by a pin on the coupling rod (e.g. speedometer drive)
+                    // parameters: submodel name, number of axle (from animwheelprefix) driving the coupling rod, crank radius [m],
+                    // pin position relative to the lever axis [m] and crank angle [deg] for wheel angle 0, in local (Y, Z) plane of the lever
+                    // angle is measured from Y axis towards Z axis, i.e. in the direction of rotation around X axis
+                    slottedlever_data lever;
+                    int axle { 1 };
+                    double crankradius { 0.0 };
+                    double crankangle { 0.0 };
+                    parser.getTokens( 6, false );
+                    parser
+                        >> asAnimName
+                        >> axle
+                        >> crankradius
+                        >> lever.pin.x
+                        >> lever.pin.y
+                        >> crankangle;
+                    lever.submodel = GetSubmodelFromName( mdModel, asAnimName );
+                    if( lever.submodel != nullptr ) {
+                        lever.submodel->WillBeAnimated();
+                        lever.axle = std::max( 0, axle - 1 );
+                        lever.crank = crankradius * glm::dvec2( std::cos( glm::radians( crankangle ) ), std::sin( glm::radians( crankangle ) ) );
+                        m_slottedlevers.emplace_back( lever );
+                    }
+                    else {
+                        ErrorLog( "Bad model: " + asFileName + " - missed submodel " + asAnimName, logtype::model );
+                    }
                 }
 
 				else if( token == "animdoorprefix:" ) {

@@ -4332,7 +4332,18 @@ void TMoverParameters::CompressorCheck(double dt)
 	}
 	}
 
-	auto const compressorpower{(CompressorPower == 0 ? Mains : CompressorPower == 3 ? Mains : Power110vIsAvailable)};
+	// delay timer can be optionally configured, and is set anew whenever the engine stops (main circuit opens)
+	// NOTE: models compressors fed from the generator of the engine, which reaches full voltage some time after the engine start
+	if (Mains)
+	{
+		CompressorStartDelayTimer = std::max(0.0, CompressorStartDelayTimer - dt);
+	}
+	else
+	{
+		CompressorStartDelayTimer = static_cast<double>(CompressorStartDelay);
+	}
+
+	auto const compressorpower{(CompressorPower == 0 ? Mains : CompressorPower == 3 ? Mains : Power110vIsAvailable) && CompressorStartDelayTimer <= 0.0};
 	// TBD: split CompressorAllow into separate enable/disable flags, inherit compressor from basic_device
 	auto const compressorenable{CompressorAllowLocal && (CompressorStart == start_t::automatic || CompressorAllow)};
 	auto const compressordisable{false == compressorenable};
@@ -10881,6 +10892,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		auto lookup = starts.find(extract_value("CompressorStart", line));
 		CompressorStart = lookup != starts.end() ? lookup->second : start_t::manual;
 	}
+	extract_value(CompressorStartDelay, "CompressorStartDelay", line, "");
 	// pantograph compressor
 	{
 		auto lookup = starts.find(extract_value("PantCompressorStart", line));
