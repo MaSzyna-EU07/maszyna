@@ -1903,7 +1903,7 @@ std::vector<TDynamicObject *> state_serializer::insert_trainset_full(std::string
 	auto first_token { parser.getToken<std::string>() };
 	if (first_token != "trainset")
 	{
-		ErrorLog(std::format("Bad scenario: 'trainset' token expected, got %s", first_token));
+		ErrorLog(std::format("Bad scenario: 'trainset' token expected, got '{}'", first_token));
 		return {};
 	}
 	deserialize_trainset(parser, scratch);
