@@ -874,6 +874,7 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
         ui()->set_node(nullptr);
     infra_forget(node);
 
+    auto const followed = [node](infra::object_state const &State) { return State.saved.node == node; };
     for (auto &s : m_history)
     {
         if (s.node_ptr == node)
@@ -883,12 +884,14 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
             if (copy.model == node)
                 copy.model = nullptr;
         }
+        s.infra.erase(std::remove_if(s.infra.begin(), s.infra.end(), followed), s.infra.end());
     }
 
     for (auto &s : g_redo)
     {
         if (s.node_ptr == node)
             s.node_ptr = nullptr;
+        s.infra.erase(std::remove_if(s.infra.begin(), s.infra.end(), followed), s.infra.end());
     }
 
     // deleted nodes also drop out of the "undo last fill" set
