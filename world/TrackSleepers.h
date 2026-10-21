@@ -86,7 +86,6 @@ struct laid {
     std::vector<glm::mat4> whole; // transforms of the timbers of a model without parts, drawn whole
     std::vector<glm::mat4> plain; // transforms of the plain sleepers, whole models, relative to the origin of the track
     std::vector<chunk> chunks;
-    std::vector<beam> beams; // as they're laid
 };
 
 // how far the ballast of a track with beams is lowered, so they stick out of it
@@ -130,6 +129,9 @@ void unsettle_around( TTrack &Track );
 void lay_in_background( bool const Background );
 // the beams of the track worked out ahead, before it comes in range
 void prefetch( TTrack &Track );
+// the beams of the tracks far from the camera let go, a slice of the tracks each call, to be laid again as they come near;
+// otherwise each track keeps the beams laid since it was first seen
+void release_far( glm::dvec3 const &Camera, double const Range );
 
 // what's wrong with the layout of the beams of all the tracks: beams over each other, rails with too few beams under them,
 // timbers shared by rails out of one plane

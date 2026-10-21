@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <map>
 #include <set>
 
@@ -111,7 +112,6 @@ void lay( TTrack &Track ) {
     }
     laid.whole.clear();
     laid.plain.clear();
-    laid.beams.clear();
     laid.chunks.clear();
     laid.timbers = timber_model( Track );
     laid.plains = plain_model( Track );
@@ -125,9 +125,10 @@ void lay( TTrack &Track ) {
             + to_string( panel.second, 2 ) + " m along, where they share the timbers of its panel" );
     }
     laid.laying = true;
-    laid.beams = ( in_background() ? std::move( placed ) : place( Track ) );
+    auto const beams { in_background() ? std::move( placed ) : place( Track ) };
     laid.laying = false;
-    auto const &beams { laid.beams };
+    // the layout of the cluster isn't needed by this track any more, the instances below are what's drawn
+    forget_layout( Track );
 
     auto const partlength = [&]( int const Part ) {
         return static_cast<double>( parts.spans[ Part ].y - parts.spans[ Part ].x ); };
@@ -233,6 +234,47 @@ void lay( TTrack &Track ) {
         }
     }
     close_run();
+    // kept for as long as the track is near, without the room the vectors grew into
+    for( auto &instances : laid.instances ) {
+        instances.shrink_to_fit();
+    }
+    laid.whole.shrink_to_fit();
+    laid.plain.shrink_to_fit();
+    laid.chunks.shrink_to_fit();
+}
+
+void release_far( glm::dvec3 const &Camera, double const Range ) {
+
+    // the tracks swept in slices, so a big scenery costs little in a frame
+    static std::size_t next { 0 };
+    auto const &tracks { simulation::Paths.sequence() };
+    auto const slice { std::min<std::size_t>( tracks.size(), 256 ) };
+    for( std::size_t count = 0; count < slice; ++count ) {
+        if( next >= tracks.size() ) {
+            next = 0;
+        }
+        auto *track { tracks[ next++ ] };
+        if( track == nullptr || false == track->m_sleepers3d.active || track->m_sleepers3d.laying ) {
+            continue;
+        }
+        if( glm::length( track->location() - Camera ) - track->radius() <= Range ) {
+            continue;
+        }
+        auto &laid { track->m_sleepers3d };
+        forget_layout( *track );
+        auto const holds { laid.chunks.capacity() > 0 || laid.whole.capacity() > 0 || laid.plain.capacity() > 0
+            || std::any_of( laid.instances.begin(), laid.instances.end(), []( std::vector<glm::mat4> const &Instances ) { return Instances.capacity() > 0; } ) };
+        if( false == holds ) {
+            continue;
+        }
+        for( auto &instances : laid.instances ) {
+            std::vector<glm::mat4> {}.swap( instances );
+        }
+        std::vector<glm::mat4> {}.swap( laid.whole );
+        std::vector<glm::mat4> {}.swap( laid.plain );
+        std::vector<chunk> {}.swap( laid.chunks );
+        laid.dirty = true;
+    }
 }
 
 layout_check check() {

@@ -1542,7 +1542,8 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
     m_sleepers3d.active = track_sleepers::lays( *this );
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).
-    if( m_sleeper_enabled && m_sleeper_local_transforms.empty() ) {
+    // a track laying the 3D sleepers draws its sleeper model with them, the transforms of the model alone wouldn't be drawn
+    if( m_sleeper_enabled && false == m_sleepers3d.active && m_sleeper_local_transforms.empty() ) {
         build_sleeper_transforms();
     }
     switch (iCategoryFlag & 15)

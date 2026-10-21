@@ -5889,6 +5889,11 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 	// the distance is taken from the camera of the view, the shadow pass culling against its own frustum
 	auto const camera = ( shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() );
 	auto const range = static_cast<double>( shadows ? std::min( Global.SleeperDistance, 50.f ) : Global.SleeperDistance );
+	if( m_renderpass.draw_mode == rendermode::color && m_timbersweepframe != m_framestamp ) {
+		// once a frame the beams of the tracks well past where they're laid and worked out ahead are let go
+		m_timbersweepframe = m_framestamp;
+		track_sleepers::release_far( camera, range + 600.0 );
+	}
 	glm::mat4 const originmodelview = OpenGLMatrices.data( GL_MODELVIEW );
 	for( auto &bucket : m_timberbuckets ) {
 		bucket.instances.clear();

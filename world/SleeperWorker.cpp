@@ -227,4 +227,10 @@ void settle_background() {
     worker().settle();
 }
 
+void forget_layout( TTrack const &Track ) {
+
+    std::lock_guard<std::mutex> lock { clusters_mutex() };
+    known_clusters().erase( &Track );
+}
+
 } // namespace track_sleepers

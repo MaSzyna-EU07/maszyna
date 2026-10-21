@@ -598,6 +598,7 @@ class opengl46_renderer : public gfx_renderer {
     bool m_particlesoft{false}; // the depth for the soft particles is bound in the colour pass being drawn
 
 	unsigned int m_framestamp; // id of currently rendered gfx frame
+	unsigned int m_timbersweepframe { 0 }; // the frame the beams of the tracks far away were last let go in
 	float m_framerate;
 	double m_updateaccumulator{0.0};
 	std::string m_debugtimestext;
