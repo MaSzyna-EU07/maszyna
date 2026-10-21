@@ -81,15 +81,17 @@ std::vector<segment_data> arc_then_straight(glm::dvec3 const &Point, glm::dvec2 
 			turn += 2.0 * glm::pi<double>();
 		auto const heading{turned(Direction, Side * turn)};
 		auto const remaining{glm::dot(plan_of(Target) - centre - radial, heading)};
-		if (remaining > 0.0 && (rest < 0.0 || turn < angle))
+		if (remaining > -1e-3 && (rest < 0.0 || turn < angle))
 		{
-			rest = remaining;
+			rest = std::max(0.0, remaining);
 			angle = turn;
 		}
 	}
 	if (rest < 0.0 || angle > glm::pi<double>())
 		return {};
 	auto pieces{arc_pieces(Point, Direction, Grade, Radius, angle, Side)};
+	if (rest < 0.01)
+		return pieces;
 	auto const tail{straight_piece(pieces.back().points[segment_data::point::end], turned(Direction, Side * angle), Grade, rest)};
 	pieces.insert(pieces.end(), tail.begin(), tail.end());
 	return pieces;
