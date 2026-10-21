@@ -90,7 +90,6 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 **3) Graphics API**
 
 -   **OpenGL 4.6** (core profile), required by the default renderer; see [docs/opengl46-renderer.md](docs/opengl46-renderer.md)
-- **DirectX 12** via NVRHI (optional, Windows only, for Better Renderer)
 
 
 ### CMake flags
@@ -100,10 +99,7 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 | `-DCMAKE_BUILD_TYPE=Debug` | Debug build |
 | `-DCMAKE_BUILD_TYPE=Release` | Release build |
 | `-DCMAKE_BUILD_TYPE=RelWithDebInfo` | Release build with debug symbols |
-| `-DWITH_BETTER_RENDERER=ON/OFF` | Enable/disable NVRHI-based renderer |
 | `-DPython3_ROOT_DIR=<path>` | Root of the **Python 3.14** install on Windows (`python.exe`, `Lib`, `DLLs`) for embed/copy steps; on Linux, optional if CMake picks the wrong interpreter |
-
-> **Linux note:** `WITH_BETTER_RENDERER` uses DirectX 12 through NVRHI and is **not supported on Linux**.
 
 > **macOS note:** macOS provides OpenGL only up to 4.1, so the OpenGL 4.6 renderer does not run there.
 
@@ -170,8 +166,8 @@ cd maszyna
 mkdir build
 cd build
 
-# Generate Makefiles (NVRHI is not supported on Linux)
-cmake .. -DWITH_BETTER_RENDERER=OFF
+# Generate Makefiles
+cmake ..
 
 # Compile using all cores
 make -j"$(nproc)"
@@ -216,8 +212,6 @@ If detection still fails, padding the file (with comments) up to ~1 MB may hel
 -   **GLFW linking** – On some systems you must provide the GLFW library path explicitly with `-DGLFW3_LIBRARIES`.
     
 -   **X11/Wayland linking order** – Linking order of X11 and related libs can matter.
-    
--   **NVRHI on Linux** – The NVRHI/"Better Renderer" path targets DirectX 12 and is currently unsupported on Linux.
     
 
 

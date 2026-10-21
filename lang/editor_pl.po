@@ -3186,8 +3186,8 @@ msgstr "Wysokość (m)"
 msgid "Covered by objects and terrain"
 msgstr "Chowaj za obiektami i terenem"
 
-msgid "Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\nIt is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\ntranslucent, it doesn't catch the mouse.\nNot available with the Better Renderer, which doesn't pick up geometry added in the editor."
-msgstr "Rysuje zdjęcia jako część sceny, więc tory, modele i teren przed nimi je zasłaniają.\nJest oświetlone jak scena. W pełni kryjące łapie mysz przy wstawianiu jak każda powierzchnia;\nprzezroczyste nie łapie myszy.\nNiedostępne z Better Renderer, który nie widzi geometrii dodanej w edytorze."
+msgid "Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\nIt is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\ntranslucent, it doesn't catch the mouse."
+msgstr "Rysuje zdjęcia jako część sceny, więc tory, modele i teren przed nimi je zasłaniają.\nJest oświetlone jak scena. W pełni kryjące łapie mysz przy wstawianiu jak każda powierzchnia;\nprzezroczyste nie łapie myszy."
 
 msgid "Opacity"
 msgstr "Krycie"
@@ -8395,9 +8395,6 @@ msgstr "Droga jest za krótka na skrzyżowanie"
 
 msgid "The road is cut into too many pieces here"
 msgstr "Droga jest tu podzielona na zbyt wiele odcinków"
-
-msgid "Geometry of the roads can't be rebuilt with the experimental renderer"
-msgstr "Z eksperymentalnym rendererem nie da się przebudować geometrii dróg"
 
 msgid "the scenery wasn't opened for editing (-edit), geometry of the roads it came with can't be taken apart"
 msgstr "sceneria nie jest otwarta do edycji (-edit), więc geometrii jej dróg nie da się rozebrać"

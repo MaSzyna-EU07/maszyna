@@ -2397,8 +2397,7 @@ void editor_mode::render_orthophoto_ui()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(STR_C("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
                               "It is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\n"
-                              "translucent, it doesn't catch the mouse.\n"
-                              "Not available with the Better Renderer, which doesn't pick up geometry added in the editor."));
+                              "translucent, it doesn't catch the mouse."));
 
         ImGui::SetNextItemWidth(160.0f);
         changed |= ImGui::SliderFloat(STR_C("Opacity"), &config.opacity, 0.0f, 1.0f, "%.2f");

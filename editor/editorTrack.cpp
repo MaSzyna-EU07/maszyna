@@ -416,11 +416,6 @@ bool editor_track::can_edit_geometry(TTrack const &Track, std::string &Reason)
 		Reason = "Editing of this path type isn't supported";
 		return false;
 	}
-	if (Global.NvRenderer)
-	{
-		Reason = "Path geometry can't be rebuilt with the experimental renderer";
-		return false;
-	}
 	std::string why;
 	if (false == scene::Layers.editable(&Track, &why))
 	{

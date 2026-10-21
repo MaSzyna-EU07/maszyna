@@ -78,7 +78,6 @@ option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
 option(USE_LTO "Use link-time optimization" OFF)
 option(WITH_TESTS "Build and run the unit tests with the game, a failing test fails the build" ON)
-option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" OFF)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
@@ -727,17 +726,8 @@ if(WIN32 AND WITH_PYTHON)
 	)
 endif()
 
-if (WITH_BETTER_RENDERER)
-    add_subdirectory("betterRenderer")
-	set_target_properties(betterRenderer betterRenderer_fsr2 betterRenderer_shaders PROPERTIES FOLDER "renderers")
-	target_link_libraries(${PROJECT_NAME} "betterRenderer")
-endif ()
-
-# yaml-cpp, for the descriptions of scenery templates edited in the scenery editor.
-# the experimental renderer brings in the same copy on its own, when enabled
-if (NOT TARGET yaml-cpp)
-	add_subdirectory("betterRenderer/thirdparty/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)
-endif ()
+# yaml-cpp, for the descriptions of scenery templates edited in the scenery editor and for the heightmap terrain
+add_subdirectory("ref/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)
 target_link_libraries(eu07_settings INTERFACE yaml-cpp)
 
 

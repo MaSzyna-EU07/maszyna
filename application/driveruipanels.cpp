@@ -1442,10 +1442,6 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 	        {
 		        textline += "Shaders";
 	        }
-            else if (Global.GfxRenderer == "experimental")
-            {
-		        textline += "NVRHI on ";
-            }
 
 	        textline += " ";
 

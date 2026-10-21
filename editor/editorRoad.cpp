@@ -467,12 +467,6 @@ double tightest_radius(segment_data const &Path)
 
 bool editor_road::available(std::string *Reason)
 {
-	if (Global.NvRenderer)
-	{
-		if (Reason != nullptr)
-			*Reason = "Geometry of the roads can't be rebuilt with the experimental renderer";
-		return false;
-	}
 	if (simulation::Region == nullptr)
 	{
 		if (Reason != nullptr)

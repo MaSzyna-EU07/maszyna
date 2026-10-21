@@ -99,7 +99,6 @@ private:
     using modeptr_array = std::array<std::shared_ptr<application_mode>, static_cast<std::size_t>( mode::count_ )>;
     using mode_stack = std::stack<mode>;
 // methods
-	  bool needs_ogl() const;
     void init_debug();
     void init_console();
     void init_files();

@@ -373,10 +373,6 @@ int eu07_application::init(int Argc, char *Argv[])
 		WriteLog(settingspipe.str());
 	}
 
-	// cruel way to prevent crashes because of threaded upload from python
-	if (Global.NvRenderer)
-		Global.python_threadedupload = false;
-
 	WriteLog("// startup");
 
 	if ((result = init_glfw()) != 0)
@@ -384,7 +380,7 @@ int eu07_application::init(int Argc, char *Argv[])
 		ErrorLog("Failed to initialize glfw!");
 		return result;
 	}
-	if (needs_ogl() && (result = init_ogl()) != 0)
+	if ((result = init_ogl()) != 0)
 	{
 		ErrorLog("Failed to initialize ogl!");
 		return result;
@@ -1001,11 +997,6 @@ std::string eu07_application::describe_monitor(GLFWmonitor *monitor) const
 
 // private:
 
-bool eu07_application::needs_ogl() const
-{
-	return !Global.NvRenderer;
-}
-
 void eu07_application::init_debug()
 {
 
@@ -1275,22 +1266,15 @@ int eu07_application::init_glfw()
 
 	crashreport_add_info("gfxrenderer", Global.GfxRenderer);
 
-	if (!needs_ogl())
-	{
-		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	}
-	else
-	{
-		// activate core profile for opengl 4.6 renderer
-		// NOTE: the hints stay in effect for the additional windows and shared contexts created later through window()
-		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+	// activate core profile for opengl 4.6 renderer
+	// NOTE: the hints stay in effect for the additional windows and shared contexts created later through window()
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 
-		if (Global.gfx_gldebug)
-			glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
-	}
+	if (Global.gfx_gldebug)
+		glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 
 	glfwWindowHint(GLFW_SRGB_CAPABLE, !Global.gfx_shadergamma);
 
@@ -1306,21 +1290,18 @@ int eu07_application::init_glfw()
 
 	if (mainwindow == nullptr)
 	{
-		if (needs_ogl())
-		{
-			char const *glfwerror = nullptr;
-			glfwGetError(&glfwerror);
-			std::string const reason = (glfwerror != nullptr ? glfwerror : "unknown error");
-			auto const driver = describe_gl_driver();
-			ErrorLog("Bad init: failed to create OpenGL 4.6 core profile context (" + reason + "); the graphics card/driver provides: " + driver);
+		char const *glfwerror = nullptr;
+		glfwGetError(&glfwerror);
+		std::string const reason = (glfwerror != nullptr ? glfwerror : "unknown error");
+		auto const driver = describe_gl_driver();
+		ErrorLog("Bad init: failed to create OpenGL 4.6 core profile context (" + reason + "); the graphics card/driver provides: " + driver);
 #ifdef _WIN32
-			auto const message = "MaSzyna requires OpenGL 4.6 (core profile), but the OpenGL 4.6 context could not be created.\n\n"
-			                     "Your graphics card/driver provides:\n" + driver + "\n\n"
-			                     "Details: " + reason + "\n\n"
-			                     "Update the graphics driver or use a graphics card with OpenGL 4.6 support.";
-			MessageBoxA(nullptr, message.c_str(), "MaSzyna", MB_ICONERROR | MB_OK);
+		auto const message = "MaSzyna requires OpenGL 4.6 (core profile), but the OpenGL 4.6 context could not be created.\n\n"
+		                     "Your graphics card/driver provides:\n" + driver + "\n\n"
+		                     "Details: " + reason + "\n\n"
+		                     "Update the graphics driver or use a graphics card with OpenGL 4.6 support.";
+		MessageBoxA(nullptr, message.c_str(), "MaSzyna", MB_ICONERROR | MB_OK);
 #endif
-		}
 		ErrorLog("Bad init: failed to create glfw window");
 		return -1;
 	}
@@ -1389,15 +1370,7 @@ int eu07_application::init_gfx()
 {
 
 	// NOTE: global_settings maps unsupported gfxrenderer values (e.g. the removed "legacy") to "default"
-	if (Global.GfxRenderer == "experimental")
-	{
-		GfxRenderer = gfx_renderer_factory::get_instance()->create(Global.GfxRenderer);
-	}
-	else
-	{
-		// default render path
-		GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
-	}
+	GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
 
 	if (!GfxRenderer)
 	{

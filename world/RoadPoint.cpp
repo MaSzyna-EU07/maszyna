@@ -1107,9 +1107,8 @@ std::vector<scene::shape_node> roadpoint_node::create_shapes() const
 // puts geometry of the point in the scene as shapes of its own, which can be taken back
 void roadpoint_node::show()
 {
-	if (m_shapes.shown() || m_editorremoved || simulation::Region == nullptr || Global.NvRenderer)
+	if (m_shapes.shown() || m_editorremoved || simulation::Region == nullptr)
 	{
-		// NOTE: the experimental renderer draws only what the scenery had when it was loaded
 		return;
 	}
 	m_shapes.show(create_shapes(), m_state.position);

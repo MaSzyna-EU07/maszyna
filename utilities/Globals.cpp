@@ -320,15 +320,9 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
         if (GfxRenderer == "full")
             GfxRenderer = "default";
 
-        if (GfxRenderer == "experimental")
+        if (GfxRenderer != "default")
         {
-            NvRenderer = true;
-            GfxRenderer = "experimental";
-        }
-
-        if (GfxRenderer != "default" && GfxRenderer != "experimental")
-        {
-            // the legacy OpenGL 2.1 renderer ("legacy", "simple" and other values) was removed
+            // the legacy OpenGL 2.1 renderer ("legacy", "simple" and other values) and the NVRHI renderer ("experimental") were removed
             WriteLog("eu07.ini: gfxrenderer \"" + GfxRenderer + "\" is no longer supported, using \"default\"");
             GfxRenderer = "default";
         }

@@ -12,7 +12,6 @@ For how the lights are handled, see [clustered-lighting.md](clustered-lighting.m
   the log at start: `Renderer:`, `Vendor:` and `GL version:`.
 - A CPU with AVX2, as before.
 - Windows and Linux. macOS provides OpenGL only up to 4.1, so the renderer does not run there.
-- The experimental Better Renderer (`gfxrenderer experimental`) is a separate renderer and is not affected.
 
 On Linux, `glxinfo -B` should report an `OpenGL core profile version string` of 4.6 or newer.
 
@@ -492,7 +491,7 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
 ## Building
 
 `-DWITH_OPENGL_MODERN=ON` (default) builds this renderer; `WITH_OPENGL_LEGACY` and the GLES / ANGLE options
-are gone. Linux builds still use `-DWITH_BETTER_RENDERER=OFF`.
+are gone.
 
 All shaders in `shaders/` can be checked without a graphics card against GLSL 4.60, compute stage included:
 
