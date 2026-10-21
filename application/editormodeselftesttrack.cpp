@@ -396,6 +396,61 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			WriteLog(format("SELFTEST vprofile zone %.3f %.3f %s", zone.from, zone.to, zone.name.c_str()));
 		return selftest_result::handled;
 	}
+	if (command == "vprofilerun" || command == "vprofiledel" || command == "vprofileput")
+	{
+		// the grade line of the line through a track, a point of it taken out as with Del, the line applied
+		auto &state{m_profile};
+		if (command == "vprofilerun")
+		{
+			std::string name;
+			double length{std::numeric_limits<double>::infinity()};
+			words >> name >> length;
+			auto *track{simulation::Paths.find(name)};
+			if (track == nullptr)
+			{
+				WriteLog("SELFTEST vprofilerun: no track " + name);
+				return selftest_result::handled;
+			}
+			state.run_length = length;
+			profile_open_run(*track);
+		}
+		else if (command == "vprofiledel")
+		{
+			int index{-1};
+			words >> index;
+			auto &points{state.line.points};
+			if (index <= 0 || index + 1 >= static_cast<int>(points.size()) || points[index].joint)
+			{
+				WriteLog(format("SELFTEST vprofiledel: point %d can't be taken out", index));
+				return selftest_result::handled;
+			}
+			profile_remove_point(index);
+		}
+		else
+		{
+			std::string option;
+			words >> option;
+			profile_apply(option == "terrain");
+			WriteLog("SELFTEST vprofileput: " + state.status + " " + state.error);
+		}
+		std::string points;
+		for (auto const &point : state.line.points)
+			points += format(" (%.1f %.3f R%.0f%s%s)", point.chainage, point.elevation, point.radius, point.automatic ? "" : " fixed", point.joint ? " joint" : "");
+		std::string issues;
+		for (auto const &issue : state.issues)
+			issues += std::string{issue.error ? " | error: " : " | "} + issue.text;
+		double low{0.0}, high{0.0}, at_low{0.0}, at_high{0.0};
+		for (auto const &sample : state.samples)
+		{
+			auto const off{sample.position.y - profile::elevation(state.line, sample.chainage)};
+			if (off < low)
+				low = off, at_low = sample.chainage;
+			if (off > high)
+				high = off, at_high = sample.chainage;
+		}
+		WriteLog(format("SELFTEST %s: route %.1f m, %zu samples, track against the line %.3f at %.1f .. %+.3f at %.1f; points%s%s", command.c_str(), state.route.length, state.samples.size(), low, at_low, high, at_high, points.c_str(), issues.c_str()));
+		return selftest_result::handled;
+	}
 	if (command == "vprofileapply")
 	{
 		// a plain grade line from the height of the start of the open route, applied to it

@@ -2559,7 +2559,9 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 		auto const endchainage{span.forward ? span.to : span.from};
 		auto const sign{span.forward ? 1.0 : -1.0};
 		auto &path{span.track->m_paths[span.path]};
-		set_heights(path, Elevation(startchainage), Elevation(endchainage), Grade(startchainage) * sign, Grade(endchainage) * sign);
+		// at a break of the grade without a curve each path takes the grade on its own side of it
+		auto const inward = [&](double const Chainage, double const Other) { return Grade(Chainage + std::min(1e-3, std::abs(Other - Chainage) * 0.5) * (Other > Chainage ? 1.0 : -1.0)); };
+		set_heights(path, Elevation(startchainage), Elevation(endchainage), inward(startchainage, endchainage) * sign, inward(endchainage, startchainage) * sign);
 		// the pieces of a path made of several curves follow the grade line along them, else the path would part from them and lose them
 		std::vector<double> lengths;
 		double total{0.0};
@@ -2576,7 +2578,7 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 			{
 				auto const first{at(along)};
 				auto const last{at(along + lengths[k])};
-				set_heights(path.pieces[k], Elevation(first), Elevation(last), Grade(first) * sign, Grade(last) * sign);
+				set_heights(path.pieces[k], Elevation(first), Elevation(last), inward(first, last) * sign, inward(last, first) * sign);
 				along += lengths[k];
 			}
 		}

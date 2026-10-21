@@ -2179,6 +2179,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profile_forget();
 	void profile_open_stored(std::size_t const Index);
 	void profile_edited();
+	// the radii of its neighbours were for the breaks of the grade it made, they follow the limits after it
+	void profile_remove_point(int const Index);
 	void render_profile_body();
 	void render_profile_strip();
 	void render_profile_header();

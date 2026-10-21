@@ -630,6 +630,20 @@ void editor_mode::profile_edited()
 	first_step_done(first_step::profile_point);
 }
 
+void editor_mode::profile_remove_point(int const Index)
+{
+	auto &state{m_profile};
+	auto &points{state.line.points};
+	if (Index <= 0 || Index + 1 >= static_cast<int>(points.size()))
+		return;
+	points.erase(points.begin() + Index);
+	for (auto const neighbour : {Index - 1, Index})
+		if (neighbour > 0 && neighbour + 1 < static_cast<int>(points.size()) && false == points[neighbour].joint)
+			points[neighbour].automatic = true;
+	state.selected = -1;
+	profile_edited();
+}
+
 void editor_mode::profile_open(TTrack *From, TTrack *To)
 {
 	auto &state{m_profile};
@@ -2086,9 +2100,8 @@ void editor_mode::render_profile_point()
 			ImGui::SameLine();
 			if (ImGui::Button(STR_C("Remove  Del")))
 			{
-				points.erase(points.begin() + index);
-				state.selected = -1;
-				changed = true;
+				profile_remove_point(index);
+				return;
 			}
 		}
 	}
@@ -2513,11 +2526,7 @@ bool editor_mode::profile_canvas_edit(profile_view const &View, bool const Hover
 	else
 		state.curve_grip = -1;
 	if ((Hovered || ImGui::IsWindowFocused()) && state.selected > 0 && state.selected + 1 < static_cast<int>(points.size()) && false == points[state.selected].joint && ImGui::IsKeyPressed(ImGuiKey_Delete))
-	{
-		points.erase(points.begin() + state.selected);
-		state.selected = -1;
-		changed = true;
-	}
+		profile_remove_point(state.selected);
 	return changed;
 }
 
