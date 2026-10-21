@@ -722,8 +722,8 @@ void editor_mode::route_apply()
 			to = editor_track::take_straight(editor_track::straight_beyond(before, true, m_straights.tolerance), to, before.end, route.result.end, states, created);
 		std::string error;
 		auto const found{editor_track::find_chain(from, to, chain, error, true)};
-		auto const startoff{found ? plan_distance(chain.start, route.result.start) : 0.0};
-		auto const endoff{found ? plan_distance(chain.end, route.result.end) : 0.0};
+		auto const startoff{found && startextension > 0.0 ? plan_distance(chain.start, route.result.start) : 0.0};
+		auto const endoff{found && endextension > 0.0 ? plan_distance(chain.end, route.result.end) : 0.0};
 		if (false == found || startoff > 5.0 || endoff > 5.0)
 		{
 			auto const startrun{editor_track::straight_beyond(before, false, m_straights.tolerance)};
