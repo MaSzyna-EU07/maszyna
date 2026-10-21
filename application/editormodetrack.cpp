@@ -2122,6 +2122,16 @@ void editor_mode::draw_build_overlay() const
 					drawlist->AddCircleFilled(screen, 3.5f, kJointColor);
 			}
 	}
+	// the ends joined to nothing, where a train would run off
+	for (auto const &point : free_end_points(eye, Global.EditorOrtho ? std::max(kDotsRange, static_cast<double>(Global.EditorOrthoExtent) * 2.0) : kDotsRange))
+	{
+		ImVec2 screen;
+		if (in_reach(point) && projection.project(point, screen) && screen.x >= 0.0f && screen.y >= 0.0f && screen.x <= display.x && screen.y <= display.y)
+		{
+			drawlist->AddCircleFilled(screen, 5.0f, kFreeEndColor);
+			drawlist->AddCircle(screen, 5.0f, IM_COL32(0, 0, 0, 160), 12, 1.0f);
+		}
+	}
 	if (m_extend.active)
 	{
 		if (m_extend.track != nullptr)

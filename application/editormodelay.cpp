@@ -219,6 +219,21 @@ editor_track::snap_target editor_mode::snap_free_end(glm::dvec3 const &Near, glm
 	return result;
 }
 
+std::vector<glm::dvec3> const &editor_mode::free_end_points(glm::dvec3 const &Centre, double const Reach) const
+{
+	auto &cache{m_free_end_cache};
+	if (cache.edits != m_track_edits || glm::distance(cache.centre, Centre) > cache.reach * 0.25 || Reach > cache.reach * 1.01 || Reach < cache.reach * 0.5)
+	{
+		cache.edits = m_track_edits;
+		cache.centre = Centre;
+		cache.reach = Reach * 1.25;
+		cache.points.clear();
+		for (auto const &end : editor_track::free_ends(nullptr, kRailCategory, Centre, cache.reach, {}))
+			cache.points.push_back(end.position);
+	}
+	return cache.points;
+}
+
 void editor_mode::draw_free_ends(TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const
 {
 	screen_projection const projection;

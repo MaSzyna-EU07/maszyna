@@ -1593,6 +1593,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_intent() const;
 	editor_track::snap_target snap_free_end(glm::dvec3 const &Near, glm::vec2 const &Screen, TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const;
 	void draw_free_ends(TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const;
+	// the free ends of the rail tracks around the camera, looked for again after an edit or once the camera leaves the place
+	struct free_end_cache
+	{
+		int edits{-1};
+		glm::dvec3 centre{0.0};
+		double reach{0.0};
+		std::vector<glm::dvec3> points;
+	};
+	mutable free_end_cache m_free_end_cache;
+	std::vector<glm::dvec3> const &free_end_points(glm::dvec3 const &Centre, double const Reach) const;
 	struct point_drag
 	{
 		bool active{false};

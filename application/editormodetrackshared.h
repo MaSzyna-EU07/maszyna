@@ -151,6 +151,7 @@ double const kDrawnReach{100000.0};
 double const kJointRange{400.0}; // the ends of the paths are drawn for the tracks this close to the camera
 double const kDotsRange{500.0}; // m, the dots of the ends of the tracks are drawn this close to the camera in the 3D view
 ImU32 const kJointColor{IM_COL32(255, 255, 255, 200)};
+ImU32 const kFreeEndColor{IM_COL32(240, 60, 60, 235)};
 int const kRailCategory{1};
 
 inline editor_track::branch_end branch_start(segment_data const &Diverging)
