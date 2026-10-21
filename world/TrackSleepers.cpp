@@ -58,7 +58,8 @@ bool bedded( TTrack const &Track ) {
 
 bool lays( TTrack const &Track ) {
 
-    return timber_model() != nullptr && bedded( Track );
+    // the model of the track itself (timbermodel) is enough, without sleepers3d in eu07.ini
+    return bedded( Track ) && timber_model( Track ) != nullptr;
 }
 
 std::vector<std::pair<double, double>> shared_zones( TTrack const &Track, int const Path ) {

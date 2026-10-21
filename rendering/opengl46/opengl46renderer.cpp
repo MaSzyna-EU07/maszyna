@@ -5884,7 +5884,6 @@ void opengl46_renderer::Render_Sleepers( TTrack *Track )
 void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last )
 {
 	if( Global.SleeperDistance <= 0.f ) { return; }
-	if( track_sleepers::timber_model() == nullptr ) { return; }
 
 	auto const shadows = ( m_renderpass.draw_mode == rendermode::shadows );
 	// the distance is taken from the camera of the view, the shadow pass culling against its own frustum

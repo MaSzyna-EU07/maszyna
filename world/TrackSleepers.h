@@ -93,7 +93,7 @@ struct laid {
 double constexpr bed_drop { 0.06 };
 
 // the model the timbers are made of where a track has none of its own, set with sleepers3d in eu07.ini and loaded on the first
-// use; null when there's none, and no beams are laid
+// use; null when there's none, and only the tracks with a timbermodel of their own lay beams
 beam_model const *timber_model();
 // the model of the sleepers of the tracks running alone, set with sleepers3dplain; null when there's none
 beam_model const *plain_model();
@@ -104,7 +104,7 @@ beam_model const *plain_model( TTrack const &Track );
 double plain_length( TTrack const &Track );
 // whether the track has the ballast the simulator makes, which the beams are laid on when there's a model of them
 bool bedded( TTrack const &Track );
-// whether the track gets beams: a rail track with the ballast made by the simulator, and the model is there
+// whether the track gets beams: a rail track with the ballast made by the simulator, and the model is there, its own or of eu07.ini
 bool lays( TTrack const &Track );
 // where along the path of the track its rails lie on timbers shared with other tracks: where another track runs so near that
 // the plain sleepers of the two would touch, of the lengths of the models they'd be made of. this goes by the shape of the
