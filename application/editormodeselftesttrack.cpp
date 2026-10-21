@@ -396,6 +396,23 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			WriteLog(format("SELFTEST vprofile zone %.3f %.3f %s", zone.from, zone.to, zone.name.c_str()));
 		return selftest_result::handled;
 	}
+	if (command == "tape")
+	{
+		// the measure between two points on the ground, as two clicks of the measuring tape take it
+		std::vector<glm::dvec3> points;
+		for (glm::dvec3 point{0.0, 5000.0, 0.0}; words >> point.x >> point.z;)
+			points.push_back(point);
+		std::vector<char> found;
+		auto const heights{ground_heights(points, true, &found)};
+		for (std::size_t i = 0; i < points.size(); ++i)
+			points[i].y = found[i] != 0 ? heights[i] : 0.0;
+		m_tape = {true, points, points.empty() ? glm::dvec3{0.0} : points.back()};
+		auto readout{tape_readout()};
+		std::replace(readout.begin(), readout.end(), '\n', '|');
+		WriteLog("SELFTEST tape: " + readout);
+		m_tape = {};
+		return selftest_result::handled;
+	}
 	if (command == "trackcolours")
 	{
 		int colouring{0};

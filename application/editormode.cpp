@@ -1494,12 +1494,14 @@ bool editor_mode::update()
         }
         render_track_context();
         update_build_tools();
+        tape_update();
         update_track_intent();
         draw_track_hover();
         draw_track_set();
         draw_track_spread();
         draw_build_overlay();
         draw_track_intent();
+        draw_tape();
         m_speed.update();
         m_joints.update();
         draw_track_hints();
@@ -6447,7 +6449,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // the first Esc drops what is going on in the track mode, the next one goes back to the selection
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)
         {
-            if (m_lay.active && false == m_lay.points.empty())
+            if (m_tape.active)
+                m_tape = {};
+            else if (m_lay.active && false == m_lay.points.empty())
                 lay_cancel();
             else if (m_track_style.picking)
                 m_track_style.picking = false;

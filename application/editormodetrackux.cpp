@@ -392,6 +392,11 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	};
 	auto *selected{selected_track()};
 
+	if (m_tape.active)
+	{
+		intent.position = m_tape.mouse;
+		return make(kind::measure, m_tape.points.size() == 1 ? "Click: the end of the measure" : "Click: the start of the measure. M or Esc: done");
+	}
 	if (m_lay.active)
 	{
 		auto const &lay{m_lay};
@@ -637,11 +642,75 @@ void editor_mode::update_track_intent()
 	}
 }
 
+void editor_mode::tape_update()
+{
+	auto &tape{m_tape};
+	if (false == tape.active || ImGui::GetIO().WantCaptureMouse)
+		return;
+	glm::vec2 const cursor{ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y};
+	auto const ground{cursor_ground()};
+	if (auto const end{snap_free_end(ground, cursor, nullptr, kRailCategory, {})}; end.track != nullptr)
+		tape.mouse = end.position;
+	else if (auto const under{track_under_cursor()}; under.track != nullptr)
+		tape.mouse = under.point;
+	else
+		tape.mouse = ground;
+}
+
+std::string editor_mode::tape_readout() const
+{
+	auto const &tape{m_tape};
+	if (tape.points.empty())
+		return {};
+	auto const &from{tape.points.front()};
+	auto const &to{tape.points.size() >= 2 ? tape.points[1] : tape.mouse};
+	auto const plan{geometry::plan_distance(from, to)};
+	auto const rise{to.y - from.y};
+	auto azimuth{glm::degrees(std::atan2(to.x - from.x, to.z - from.z))};
+	if (azimuth < 0.0)
+		azimuth += 360.0;
+	auto text{format(STR_C("%.2f m in plan, %.2f m in space"), plan, glm::distance(from, to))};
+	text += "\n" + format(STR_C("height %+.2f m"), rise) + (plan > 0.01 ? format(STR_C("   grade %+.1f per mille"), rise / plan * 1000.0) : std::string{});
+	text += "\n" + format(STR_C("azimuth %.1f deg"), azimuth);
+	if (tape.points.size() >= 2)
+		text += "\n" + STR("Click: a new measure. M or Esc: done");
+	return text;
+}
+
+void editor_mode::draw_tape() const
+{
+	auto const &tape{m_tape};
+	if (false == tape.active)
+		return;
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
+	auto const colour{IM_COL32(255, 230, 60, 255)};
+	std::vector<glm::dvec3> points{tape.points};
+	if (points.size() < 2)
+		points.push_back(tape.mouse);
+	for (std::size_t i = 0; i + 1 < points.size(); ++i)
+		projection.line(drawlist, points[i], points[i + 1], colour, 2.0f);
+	for (auto const &point : points)
+	{
+		ImVec2 screen;
+		if (projection.project(point, screen))
+		{
+			drawlist->AddCircleFilled(screen, 4.0f, colour);
+			drawlist->AddCircle(screen, 7.0f, IM_COL32(0, 0, 0, 200), 12, 1.5f);
+		}
+	}
+}
+
 void editor_mode::track_press(track_intent const &Intent)
 {
 	using kind = track_intent::kind;
 	switch (Intent.what)
 	{
+	case kind::measure:
+		if (m_tape.points.size() >= 2)
+			m_tape.points.clear();
+		m_tape.points.push_back(m_tape.mouse);
+		return;
 	case kind::lay_end:
 		if (m_lay.points.empty() && start_extend(Intent.snap))
 			return;

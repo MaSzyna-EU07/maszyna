@@ -501,6 +501,11 @@ void editor_mode::arm_switch()
 
 bool editor_mode::track_shortcut(int const Key)
 {
+	if (Key == GLFW_KEY_M)
+	{
+		m_tape = {false == m_tape.active, {}, m_tape.mouse};
+		return true;
+	}
 	auto const key{Key == GLFW_KEY_C ? GLFW_KEY_G : Key};
 	for (auto const &mode : track_modes())
 	{
@@ -531,6 +536,8 @@ bool editor_mode::track_busy() const
 
 std::string editor_mode::track_mode_name() const
 {
+	if (m_tape.active)
+		return STR_C("Measure");
 	if (false == m_track_window_open)
 		return STR_C("Select");
 	switch (m_track_tab)
@@ -1750,6 +1757,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 // values of the change in progress, shown next to the cursor
 std::string editor_mode::track_readout() const
 {
+	if (m_tape.active)
+		return tape_readout();
 	auto const name = [](TTrack const *Track) { return name_of(*Track); };
 	auto const azimuth = [](glm::dvec3 const &From, glm::dvec3 const &To) {
 		auto const degrees{glm::degrees(std::atan2(To.x - From.x, To.z - From.z))};

@@ -1580,7 +1580,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling, measure };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -1591,6 +1591,17 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string action;
 	};
 	track_intent m_intent;
+	// the measure between two points (M): on the ground, at a free end or on the axis of the track under the cursor
+	struct tape_state
+	{
+		bool active{false};
+		std::vector<glm::dvec3> points;
+		glm::dvec3 mouse{0.0};
+	};
+	tape_state m_tape;
+	void tape_update();
+	std::string tape_readout() const;
+	void draw_tape() const;
 	track_intent track_intent_at(int const Mods);
 	bool track_gesture_on() const;
 	void update_track_intent();

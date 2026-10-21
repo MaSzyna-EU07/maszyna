@@ -10129,3 +10129,24 @@ msgstr "Opisy torów w widoku z góry"
 
 msgid "Zoomed in from above, the curves get their radius and length and the switches their name and type, as on a plan; where they'd crowd, some are left out"
 msgstr "Po przybliżeniu z góry łuki dostają promień i długość, a rozjazdy nazwę i typ, jak na planie; gdzie byłoby ich za gęsto, część się chowa"
+
+msgid "%.2f m in plan, %.2f m in space"
+msgstr "%.2f m w planie, %.2f m w przestrzeni"
+
+msgid "height %+.2f m"
+msgstr "różnica wysokości %+.2f m"
+
+msgid "azimuth %.1f deg"
+msgstr "azymut %.1f°"
+
+msgid "Click: a new measure. M or Esc: done"
+msgstr "LPM: nowy pomiar. M albo Esc: koniec"
+
+msgid "Click: the end of the measure"
+msgstr "LPM: koniec pomiaru"
+
+msgid "Click: the start of the measure. M or Esc: done"
+msgstr "LPM: początek pomiaru. M albo Esc: koniec"
+
+msgid "Measure"
+msgstr "Miarka"
