@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
+#include "application/editormodetrackshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 
@@ -652,10 +653,26 @@ void editor_mode::draw_track_intent() const
 		details += "\n" + std::string{STR_C(type_of(*track))};
 		if (track->eType == tt_Switch)
 			details += m_hover.path == 0 ? STR(" (main)") : STR(" (branch)");
-		details += format("   L %.1f m", bezier{path}.plan_length());
-		details += path.radius != 0.0f ? format("   R %.0f m", std::abs(path.radius)) : std::string{"   "} + STR_C("straight");
+		bezier const curve{path};
+		details += format("   L %.1f m", curve.plan_length());
+		auto const radius{::track_mode::piece_plan_radius(path)};
+		details += radius >= 0.5 ? format("   R %.0f m", radius) : std::string{"   "} + STR_C("straight");
 		auto const velocity{editor_track::velocity(*track)};
 		details += velocity > 0.0 ? format("   V %.0f km/h", velocity) : std::string{};
+		double nearest{std::numeric_limits<double>::max()};
+		double at{0.0};
+		for (int k = 0; k <= 64; ++k)
+			if (auto const distance{geometry::plan_distance(curve.point(k / 64.0), m_hover.point)}; distance < nearest)
+			{
+				nearest = distance;
+				at = k / 64.0;
+			}
+		auto const tangent{curve.first(at)};
+		if (auto const run{glm::length(plan_of(tangent))}; run > 1e-9)
+			details += "\n" + format(STR_C("grade %+.1f per mille"), tangent.y / run * 1000.0);
+		auto const roll{std::max(std::abs(path.rolls[0]), std::abs(path.rolls[1]))};
+		if (roll > 1e-3f)
+			details += format(STR_C("   cant %.0f mm"), 1500.0 * std::sin(glm::radians(static_cast<double>(roll))));
 	}
 	auto *foreground{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 	auto const actionsize{ImGui::CalcTextSize(intent.action.c_str())};

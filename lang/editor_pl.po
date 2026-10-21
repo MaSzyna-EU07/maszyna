@@ -10099,3 +10099,6 @@ msgstr "różnica wysokości %+.2f m   pochylenie %+.1f‰"
 
 msgid "height %+.2f m   grade %+.1f to %+.1f per mille"
 msgstr "różnica wysokości %+.2f m   pochylenie od %+.1f do %+.1f‰"
+
+msgid "grade %+.1f per mille"
+msgstr "pochylenie %+.1f‰"
