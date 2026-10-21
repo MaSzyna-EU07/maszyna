@@ -379,7 +379,7 @@ std::vector<track_property> make_properties()
 
 	// look
 	{
-		auto &property{add(list, "rails", field::texture, section::look, group::rails, "Rails", "Texture of the rails; of both paths of a switch.\nA material dragged from the texture browser can be dropped here")};
+		auto &property{add(list, "rails", field::texture, section::look, group::rails, "Rails", "Texture of the rails; of both paths of a switch, those of its path 2 can then be set apart.\nA material dragged from the texture browser can be dropped here")};
 		property.rebuild = true;
 		property.texture = 0;
 		property.empty = "No texture";
@@ -391,6 +391,24 @@ std::vector<track_property> make_properties()
 			Track.m_material1 = material;
 			if (Track.eType == tt_Switch)
 				Track.m_material2 = material;
+			return true;
+		};
+	}
+	{
+		// a switch keeps the rails of its path 2 in its second texture, its trackbed is m_material3
+		auto &property{add(list, "rails2", field::texture, section::look, group::rails, "Rails of path 2",
+		                   "Texture of the rails of path 2 of the switch, from p3 to p4, usually the diverging track.\nPath 1, from p1 to p2, keeps the texture of the rails above.\nA material dragged from the texture browser can be dropped here")};
+		property.rebuild = true;
+		property.late = true; // after the rails, which set both paths
+		property.texture = 0;
+		property.empty = "No texture";
+		property.applies = [](TTrack const &Track) { return Track.m_visible && Track.eType == tt_Switch; };
+		property.get = [](TTrack const &Track) { return editor_track::material_name(Track.m_material2); };
+		property.set = [](TTrack &Track, std::string const &Text) {
+			auto const material{editor_track::fetch_material(Text)};
+			if (Track.eType != tt_Switch || material == Track.m_material2)
+				return false;
+			Track.m_material2 = material;
 			return true;
 		};
 	}
