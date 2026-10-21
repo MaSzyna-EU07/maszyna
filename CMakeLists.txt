@@ -204,6 +204,7 @@ set(SOURCES
 "editor/editorOrthophoto.cpp"
 "editor/editorHttp.cpp"
 "editor/editorNmt.cpp"
+"editor/editorGeoMap.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
 "editor/editorClips.cpp"
