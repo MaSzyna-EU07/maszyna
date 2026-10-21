@@ -52,6 +52,21 @@ TTrack *editor_mode::selected_track() const
 	return dynamic_cast<TTrack *>(m_node);
 }
 
+bool editor_mode::track_editing() const
+{
+	return m_track_gizmo_using || m_dragging;
+}
+
+std::size_t editor_mode::history_size() const
+{
+	return m_history.size();
+}
+
+glm::dvec3 editor_mode::camera_position() const
+{
+	return Camera.Pos;
+}
+
 void editor_mode::select_track(scene::basic_node *Node)
 {
 	auto *track = dynamic_cast<TTrack *>(Node);

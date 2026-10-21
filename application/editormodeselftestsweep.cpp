@@ -396,21 +396,6 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 		ui()->expand_bend();
 		return selftest_result::handled;
 	}
-	if (command == "gauge")
-	{
-		std::string name;
-		words >> name;
-		if (auto *track{simulation::Paths.find(name)})
-		{
-			scan_gauge(*track);
-			WriteLog(format("SELFTEST gauge %s: %d hits", name.c_str(), static_cast<int>(m_gauge.line.hits.size())));
-			for (auto const &hit : m_gauge.line.hits)
-				WriteLog(format("SELFTEST gauge hit %s depth %.3f at %.2f %.2f %.2f", hit.model.c_str(), hit.depth, hit.point.x, hit.point.y, hit.point.z));
-		}
-		else
-			WriteLog("SELFTEST gauge " + name + ": no such track");
-		return selftest_result::handled;
-	}
 	if (command == "ttincludes")
 	{
 		std::string name;

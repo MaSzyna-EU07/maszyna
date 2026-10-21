@@ -14,6 +14,8 @@ http://mozilla.org/MPL/2.0/.
 #include "input/editormouseinput.h"
 #include "input/editorkeyboardinput.h"
 #include "vehicle/Camera.h"
+#include "application/editormodegauge.h"
+#include "application/editortool.h"
 #include "scene/sceneeditor.h"
 #include "scene/scenenode.h"
 #include "editor/editorTerrain.hpp"
@@ -58,20 +60,10 @@ struct vehicle_desc;
 struct skin_set;
 }
 
-class editor_mode : public application_mode, private editor_track::observer
+class editor_mode : public application_mode, private editor_track::observer, private editor_services
 {
 
   public:
-	// model entering the structure gauge, at its deepest place
-	struct gauge_hit
-	{
-		std::string model;
-		glm::dvec3 point{0.0};
-		double depth{0.0}; // m
-		TTrack const *track{nullptr}; // nearest one, may be gone by now
-		int path{0};
-		glm::dvec2 direction{0.0, 1.0}; // of the track there, in the plan
-	};
 	// joint of the paths found wrong by the joints check
 	struct joint_issue
 	{
@@ -742,7 +734,10 @@ class editor_mode : public application_mode, private editor_track::observer
 	gizmo_operation m_gizmo_op{gizmo_operation::translate};      // current transform mode (translate/rotate/scale)
 	float m_gizmo_snap{1.0f};                                    // translation snap step (metres) applied while Ctrl is held
 
-	TTrack *selected_track() const;
+	TTrack *selected_track() const override;
+	bool track_editing() const override;
+	std::size_t history_size() const override;
+	glm::dvec3 camera_position() const override;
 	void render_path_ui();
 	void draw_track_overlay() const;
 	editor_track::point_ref track_handle_hit() const;
@@ -862,55 +857,8 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::string m_track_events_missing;
 	void render_path_events(TTrack &Track);
 	std::string m_track_mode_notice;
-	// structure gauge along the line of the selected path, shown in the 3d view
-	struct gauge_state
-	{
-		bool open{false}; // window
-		bool enabled{true}; // tunnel along the selected path
-		std::vector<gauge::profile> profiles;
-		int profile{0}; // railway
-		int road{-1};
-		TTrack const *track{nullptr}; // scanned
-		std::size_t history{0};
-		bool pending{false}; // rescan once the edit ends
-		struct
-		{
-			std::vector<glm::dvec3> surface; // triangles of the tunnel
-			std::vector<glm::dvec3> edges; // lines
-			std::vector<gauge_hit> hits;
-		} line; // along the selected path
-		struct
-		{
-			bool scanned{false};
-			std::size_t history{0};
-			std::string profile;
-			std::vector<gauge_hit> hits;
-		} map; // whole scenery
-		struct
-		{
-			std::vector<glm::dvec3> surface;
-			std::vector<glm::dvec3> edges;
-		} spot; // tunnel around the hit the camera went to
-		int current{-1}; // hit the camera went to
-		bool published{false}; // overlay up to date
-		std::shared_ptr<struct gauge_scan> scan; // of the whole scenery, done in slices over the frames
-	} m_gauge;
-	void gauge_load();
-	// the chosen railway and road outlines
-	gauge::choice gauge_choice() const;
-	std::vector<gauge_hit> const &gauge_hits() const;
-	void update_gauge();
-	void scan_gauge(TTrack &Track);
-	void scan_gauge_map();
-	void step_gauge_map();
-	void finish_gauge_map();
-	void gauge_publish();
-	void gauge_focus(int Index);
-	void gauge_spot(gauge_hit const &Hit);
-	void render_gauge_window();
-	void render_gauge_hits();
-	bool render_gauge_choice(char const *Label, int &Index, bool Road);
-	bool render_gauge_outline(int Index);
+	gauge_tool m_gauge{*this};
+	std::vector<editor_tool *> m_tools{&m_gauge};
 	struct route_design
 	{
 		TTrack *from{nullptr};
@@ -1673,7 +1621,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void split_track_at(TTrack &Track, glm::dvec3 const &Point);
 	void focus_track(TTrack &Track, int const Path, glm::dvec3 const &Point);
 	// the camera flies over Duration seconds to the place Distance back from the target along Look, looking along it
-	void fly_to(glm::dvec3 const &Target, glm::dvec3 const &Look, double const Distance, double const Duration = 0.6);
+	void fly_to(glm::dvec3 const &Target, glm::dvec3 const &Look, double const Distance, double const Duration = 0.6) override;
 	// paths found by their names
 	struct track_search
 	{
@@ -2273,12 +2221,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		scripted_input input;
 	};
 	selftest m_selftest;
-	enum class selftest_result
-	{
-		unhandled,
-		handled,
-		pause
-	};
+	using selftest_result = editor_selftest_result;
 	selftest_result selftest_scene(std::string const &command, std::istringstream &words);
 	selftest_result selftest_sleepers(std::string const &command, std::istringstream &words);
 	selftest_result selftest_sweep(std::string const &command, std::istringstream &words);

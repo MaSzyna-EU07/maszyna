@@ -873,6 +873,8 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
     if (ui()->node() == node)
         ui()->set_node(nullptr);
     infra_forget(node);
+    for (auto *tool : m_tools)
+        tool->forget(node);
 
     auto const followed = [node](infra::object_state const &State) { return State.saved.node == node; };
     for (auto &s : m_history)
@@ -1480,8 +1482,8 @@ bool editor_mode::update()
         bend_drag_update();
         draw_bend_overlay();
     }
-    update_gauge();
-    render_gauge_window();
+    m_gauge.update();
+    m_gauge.render_windows();
 
     // roads: trajectories of the lanes, and the tools of the road window
     update_road_tool();
@@ -3549,8 +3551,8 @@ void editor_mode::render_view_menu()
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));
-    if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.open))
-        m_gauge.open = !m_gauge.open;
+    if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.is_open()))
+        m_gauge.toggle();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
     ImGui::Separator();

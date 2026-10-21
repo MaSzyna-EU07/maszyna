@@ -54,6 +54,9 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props, &editor_mode::selftest_monkey})
 		if (auto const result{(this->*group)(command, words)}; result != selftest_result::unhandled)
 			return result;
+	for (auto *tool : m_tools)
+		if (auto const result{tool->selftest(command, words)}; result != selftest_result::unhandled)
+			return result;
 	return selftest_result::unhandled;
 }
 
