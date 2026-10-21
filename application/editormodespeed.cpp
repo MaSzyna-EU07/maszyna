@@ -51,14 +51,14 @@ void speed_tool::speed_start()
 	state.results.clear();
 	state.selected = -1;
 	state.status.clear();
-	state.options.norms = m_services.route_norms();
+	state.options.norms = m_design.route_norms();
 	auto const add = [&](TTrack *Track) {
 		for (int i = 0; i < static_cast<int>(Track->m_paths.size()); ++i)
 			state.queue.emplace_back(Track, i);
 	};
 	if (state.scope == 0)
 	{
-		auto *track{m_services.selected_track()};
+		auto *track{m_selection.selected_track()};
 		if (track == nullptr || false == rail(*track))
 		{
 			state.status = STR_C("Select a track first");
@@ -87,7 +87,7 @@ void speed_tool::speed_start()
 			if (track != nullptr && rail(*track))
 				add(track);
 	}
-	state.history = m_services.history_size();
+	state.history = m_history.history_size();
 }
 
 void speed_tool::update()
@@ -145,8 +145,8 @@ void speed_tool::speed_focus(int const Index)
 	auto const &paths{simulation::Paths.sequence()};
 	if (std::find(paths.begin(), paths.end(), verdict.track) == paths.end() || verdict.track->m_editorremoved)
 		return;
-	m_services.set_current_node(verdict.track);
-	m_services.focus_track(*verdict.track, verdict.path, verdict.position);
+	m_selection.set_current_node(verdict.track);
+	m_view.focus_track(*verdict.track, verdict.path, verdict.position);
 }
 
 void speed_tool::speed_apply(std::vector<int> const &Indices, bool const Branches)
@@ -189,7 +189,7 @@ void speed_tool::speed_apply(std::vector<int> const &Indices, bool const Branche
 			state.status = STR_C("Nothing changed") + skipped;
 		return;
 	}
-	m_services.push_track_snapshot(std::move(states));
+	m_history.push_track_snapshot(std::move(states));
 	for (auto const &entry : changes)
 	{
 		auto const velocity{entry.track->eType == tt_Switch ? speed_check::switch_velocity(entry.limits[0], entry.limits[1]) : entry.limits[0]};
@@ -198,7 +198,7 @@ void speed_tool::speed_apply(std::vector<int> const &Indices, bool const Branche
 	}
 	for (auto &verdict : state.results)
 		verdict.set = speed_check::path_velocity(*verdict.track, verdict.path);
-	state.history = m_services.history_size();
+	state.history = m_history.history_size();
 	state.status = format(STR_C("Speed limits of %zu paths lowered to the safe ones, Ctrl+Z brings them back"), changes.size()) + skipped;
 	WriteLog("Editor: speed check - " + state.status, logtype::generic);
 }
@@ -262,7 +262,7 @@ void speed_tool::render_options()
 		ImGui::TextWrapped("%s", state.status.c_str());
 	if (state.results.empty())
 		return;
-	if (state.history != m_services.history_size())
+	if (state.history != m_history.history_size())
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), STR_C("The scenery changed since the check"));
 	auto const *const within{STR_C("Within their limits too")};
 	auto const checkbox{ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(within).x};

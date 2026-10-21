@@ -164,7 +164,7 @@ void joints_tool::joints_start()
 			continue;
 		state.queue.push_back(track);
 	}
-	state.history = m_services.history_size();
+	state.history = m_history.history_size();
 	state.places.clear();
 	state.runs.clear();
 	state.run_next = 0;
@@ -174,14 +174,14 @@ void joints_tool::joints_start()
 	state.model_unplaced = false;
 	if (false == state.model_check || state.queue.empty())
 		return;
-	m_services.nmt_locate();
-	if (false == m_services.terrain_model().placed())
+	m_ground.nmt_locate();
+	if (false == m_ground.terrain_model().placed())
 	{
 		state.model_unplaced = true;
 		return;
 	}
 	std::set<TTrack const *> const queued(state.queue.begin(), state.queue.end());
-	for (auto const &place : m_services.nmt_track_places(kModelStep))
+	for (auto const &place : m_ground.nmt_track_places(kModelStep))
 		if (place.shapes && queued.count(place.track) > 0)
 		{
 			if (state.places.empty() || state.places.back().track != place.track || state.places.back().path != place.path || state.places.size() - state.runs.back().first >= kModelRun)
@@ -216,27 +216,27 @@ bool joints_tool::joints_model()
 		for (auto const &run : state.runs)
 		{
 			box(run, low, high);
-			m_services.terrain_model().request(low, high);
+			m_ground.terrain_model().request(low, high);
 		}
 		state.model_asked = true;
 	}
 	while (state.run_next < state.runs.size())
 	{
 		box(state.runs[state.run_next], low, high);
-		if (false == m_services.terrain_model().request(low, high))
+		if (false == m_ground.terrain_model().request(low, high))
 			return false;
 		++state.run_next;
 	}
 	std::vector<double> differences(state.places.size(), std::numeric_limits<double>::quiet_NaN());
 	std::vector<double> known;
 	for (std::size_t i = 0; i < state.places.size(); ++i)
-		if (double height; m_services.terrain_model().height(state.places[i].position.x, state.places[i].position.z, height))
+		if (double height; m_ground.terrain_model().height(state.places[i].position.x, state.places[i].position.z, height))
 		{
-			differences[i] = state.places[i].crown - (height + m_services.terrain_model_offset());
+			differences[i] = state.places[i].crown - (height + m_ground.terrain_model_offset());
 			known.push_back(differences[i]);
 		}
 	auto shift{0.0};
-	if (false == m_services.terrain_model_fitted() && false == known.empty())
+	if (false == m_ground.terrain_model_fitted() && false == known.empty())
 	{
 		std::nth_element(known.begin(), known.begin() + known.size() / 2, known.end());
 		if (std::abs(known[known.size() / 2]) > kUnfitted)
@@ -411,9 +411,9 @@ void joints_tool::joints_focus(int const Index)
 	auto const &paths{simulation::Paths.sequence()};
 	if (std::find(paths.begin(), paths.end(), issue.track) == paths.end() || issue.track->m_editorremoved)
 		return;
-	m_services.set_current_node(issue.track);
-	m_services.clear_track_point();
-	m_services.focus_track(*issue.track, issue.point.path, issue.position);
+	m_selection.set_current_node(issue.track);
+	m_selection.clear_track_point();
+	m_view.focus_track(*issue.track, issue.point.path, issue.position);
 }
 
 bool joints_tool::joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Changed)
@@ -498,11 +498,11 @@ void joints_tool::joints_fix(std::vector<int> const &Indices)
 		state.status = STR_C("Nothing could be fixed: the paths are switches or in the files which can't be changed");
 		return;
 	}
-	m_services.push_track_snapshot(std::move(states));
+	m_history.push_track_snapshot(std::move(states));
 	editor_track::commit(changed);
 	for (auto *track : changed)
 		track->mark_dirty();
-	state.history = m_services.history_size();
+	state.history = m_history.history_size();
 	state.status = format(STR_C("%zu joints fixed, Ctrl+Z takes them back"), count);
 	WriteLog("Editor: joints check - " + state.status, logtype::generic);
 }
@@ -580,7 +580,7 @@ void joints_tool::render_options()
 		ImGui::TextWrapped("%s", state.status.c_str());
 	if (state.issues.empty())
 		return;
-	if (state.history != m_services.history_size())
+	if (state.history != m_history.history_size())
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", STR_C("The scenery changed since the check"));
 	int filter{state.filter + 1};
 	ImGui::SetNextItemWidth(150.0f);

@@ -210,15 +210,15 @@ double lateral_of(TTrack const &Src, TTrack const &Dst)
 
 TTrack *parallel_tool::parallel_source() const
 {
-	auto const &set{m_services.track_set()};
+	auto const &set{m_selection.track_set()};
 	if (set.size() >= 2)
 		return set.front();
-	return m_services.selected_track();
+	return m_selection.selected_track();
 }
 
 TTrack *parallel_tool::parallel_target() const
 {
-	auto const &set{m_services.track_set()};
+	auto const &set{m_selection.track_set()};
 	if (set.size() != 2)
 		return nullptr;
 	return set.back() != set.front() ? set.back() : nullptr;
@@ -245,13 +245,13 @@ void parallel_tool::parallel_update()
 	else if (track != nullptr && target != nullptr)
 		tool.measured = std::abs(lateral_of(*track, *target));
 
-	if (track == tool.built_for && tool.spacing == tool.built_spacing && tool.side == tool.built_side && tool.scope == tool.built_scope && m_services.history_size() == tool.built_history)
+	if (track == tool.built_for && tool.spacing == tool.built_spacing && tool.side == tool.built_side && tool.scope == tool.built_scope && m_history.history_size() == tool.built_history)
 		return;
 	tool.built_for = track;
 	tool.built_spacing = tool.spacing;
 	tool.built_side = tool.side;
 	tool.built_scope = tool.scope;
-	tool.built_history = m_services.history_size();
+	tool.built_history = m_history.history_size();
 	tool.pieces.clear();
 	tool.styles.clear();
 	tool.length = 0.0;
@@ -330,8 +330,8 @@ void parallel_tool::parallel_build()
 	for (std::size_t i = 0; i < tool.pieces.size(); ++i)
 		created.push_back(editor_track::create_path(*tool.styles[i], tool.pieces[i]));
 	editor_track::commit(created);
-	m_services.digitize_drawn(created);
-	m_services.push_track_snapshot({}, created);
+	m_design.digitize_drawn(created);
+	m_history.push_track_snapshot({}, created);
 	tool.status = format(STR_C("Parallel track of %zu paths, %.1f m, %.2f m away; Ctrl+Z takes it back"), created.size(), tool.length, tool.spacing);
 	if (scene::Layers.active() == null_handle)
 		tool.status += "\n" + std::string{STR_C("The scenery isn't opened for editing, the new track won't be saved")};
@@ -376,11 +376,11 @@ void parallel_tool::parallel_apply()
 		if (joint.other != nullptr)
 			committed.push_back(joint.other);
 	editor_track::commit(committed);
-	m_services.push_track_snapshot(std::move(states));
+	m_history.push_track_snapshot(std::move(states));
 	tool.status = format(STR_C("%s set parallel to %s, %.2f m away; Ctrl+Z takes it back"), name_of(*target).c_str(), name_of(*parallel_source()).c_str(), tool.spacing);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.built_for = nullptr;
-	m_services.straight_refresh();
+	m_design.straight_refresh();
 }
 
 void parallel_tool::render_parallel_controls(bool const Scope)
@@ -455,9 +455,9 @@ bool parallel_tool::parallel_preview_visible() const
 {
 	if (m_parallel.pieces.empty() || parallel_source() != m_parallel.built_for)
 		return false;
-	if (m_services.current_track_tab() == editor_track_tab::parallel)
+	if (m_view.current_track_tab() == editor_track_tab::parallel)
 		return true;
-	return m_services.current_track_tab() == editor_track_tab::path && parallel_target() != nullptr;
+	return m_view.current_track_tab() == editor_track_tab::path && parallel_target() != nullptr;
 }
 
 void parallel_tool::draw_overlay() const

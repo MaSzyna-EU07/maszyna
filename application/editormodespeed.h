@@ -19,7 +19,7 @@ http://mozilla.org/MPL/2.0/.
 class speed_tool final : public editor_tool
 {
   public:
-	explicit speed_tool(editor_services &Services) : m_services{Services} {}
+	speed_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_track_design &Design) : m_selection{Selection}, m_view{View}, m_history{History}, m_design{Design} {}
 	void update() override;
 	void draw_overlay() const override;
 	void render_options() override;
@@ -28,7 +28,10 @@ class speed_tool final : public editor_tool
 	void check_line();
 
   private:
-	editor_services &m_services;
+	editor_selection &m_selection;
+	editor_view &m_view;
+	editor_history &m_history;
+	editor_track_design &m_design;
 	// speed limits of the paths checked against what their geometry allows
 	struct speed_state
 	{

@@ -421,10 +421,10 @@ void hekto_tool::hekto_read_kilometrage()
 void hekto_tool::hekto_update()
 {
 	auto &tool{m_hekto};
-	if (false == tool.dirty && tool.history == m_services.history_size())
+	if (false == tool.dirty && tool.history == m_history.history_size())
 		return;
 	tool.dirty = false;
-	tool.history = m_services.history_size();
+	tool.history = m_history.history_size();
 	tool.posts.clear();
 	tool.found.clear();
 	tool.error.clear();
@@ -449,7 +449,7 @@ void hekto_tool::hekto_update()
 	double distance;
 	tool.origin = project(tool.samples, tool.point, distance);
 	auto const length{tool.samples.back().chainage};
-	for (auto const &standing : m_services.standing_templates([](std::string const &File) { return File.find("hekto") != std::string::npos; }))
+	for (auto const &standing : m_templates.standing_templates([](std::string const &File) { return File.find("hekto") != std::string::npos; }))
 	{
 		hekto_found post;
 		post.post = standing;
@@ -488,7 +488,7 @@ void hekto_tool::hekto_update()
 		// alternately: the even hectometres on the right, the odd ones on the left of the growing kilometrage
 		auto const side{tool.side != 0 ? tool.side : (hectometres % 2 == 0 ? 1 : -1)};
 		auto const planar{plan_of(axis) + left * (side * tool.offset)};
-		post.position = m_services.placement_on_ground({planar.x, axis.y, planar.y});
+		post.position = m_ground.placement_on_ground({planar.x, axis.y, planar.y});
 		post.yaw = std::fmod(heading_of(growing) + tool.turn, 360.0);
 		// of the posts with this number the one nearest to the place stands for it, the others are duplicates. it stands wrong
 		// when it's farther from the place than allowed: along the line, across it, or on the other side
@@ -526,7 +526,7 @@ void hekto_tool::hekto_remove_duplicates()
 	for (auto const &found : tool.found)
 		if (found.duplicate)
 			instances.push_back(found.post.instance);
-	auto const removed{m_services.remove_templates(instances)};
+	auto const removed{m_templates.remove_templates(instances)};
 	tool.status = format(STR_P("%zu duplicate hectometre post removed, Ctrl+Z brings it back", "%zu duplicate hectometre posts removed, Ctrl+Z brings them back", static_cast<long long>(removed)), removed);
 	WriteLog("Editor: " + tool.status);
 	tool.dirty = true;
@@ -549,10 +549,10 @@ void hekto_tool::hekto_place()
 		items.push_back(std::move(item));
 	}
 	std::string error;
-	auto const placed{m_services.place_templates(items, error)};
+	auto const placed{m_templates.place_templates(items, error)};
 	tool.status = placed > 0 ? format(STR_P("%zu hectometre post placed, Ctrl+Z takes it back", "%zu hectometre posts placed, Ctrl+Z takes them back", static_cast<long long>(placed)), placed) : error;
 	if (placed > 0)
-		m_services.first_step_done(editor_first_step::posts);
+		m_guide.first_step_done(editor_first_step::posts);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
 }
@@ -571,7 +571,7 @@ void hekto_tool::hekto_fix()
 		item.yaw = post.yaw;
 		moves.emplace_back(tool.found[post.standing].post, item);
 	}
-	auto const moved{m_services.move_templates(moves)};
+	auto const moved{m_templates.move_templates(moves)};
 	tool.status = format(STR_P("%zu hectometre post moved to its place, Ctrl+Z takes it back", "%zu hectometre posts moved to their places, Ctrl+Z takes it back", static_cast<long long>(moved)), moved);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
@@ -580,7 +580,7 @@ void hekto_tool::hekto_fix()
 void hekto_tool::render_options()
 {
 	auto &tool{m_hekto};
-	auto *selected{m_services.selected_track()};
+	auto *selected{m_selection.selected_track()};
 	if (tool.track == nullptr || (selected != nullptr && selected != tool.track && ImGui::SmallButton(STR_C("Along the line of the selected path"))))
 	{
 		if (selected == nullptr)
@@ -679,7 +679,7 @@ void hekto_tool::render_options()
 			auto const label{post.duplicate ? format(STR_C("km %s duplicate##%u"), km_text(post.hectometres).c_str(), post.post.instance) : format(STR_C("km %s stands %.1f m from its place##%u"), km_text(post.hectometres).c_str(), post.distance, post.post.instance)};
 			if (ImGui::Selectable(label.c_str()))
 			{
-				m_services.fly_to(post.post.location, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 20.0);
+				m_view.fly_to(post.post.location, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 20.0);
 			}
 		}
 		ImGui::EndChild();
@@ -735,13 +735,13 @@ void hekto_tool::draw_overlay() const
 void fouling_tool::fouling_update()
 {
 	auto &tool{m_fouling};
-	auto *selected{m_services.selected_track()};
+	auto *selected{m_selection.selected_track()};
 	if (tool.scope == 0 && selected != tool.selected)
 		tool.dirty = true;
-	if (false == tool.dirty && tool.history == m_services.history_size())
+	if (false == tool.dirty && tool.history == m_history.history_size())
 		return;
 	tool.dirty = false;
-	tool.history = m_services.history_size();
+	tool.history = m_history.history_size();
 	tool.selected = selected;
 	tool.points.clear();
 	tool.found.clear();
@@ -792,7 +792,7 @@ void fouling_tool::fouling_update()
 			point.track = track;
 			auto const middle{(onbranch + onmain) * 0.5};
 			// the points of the paths are at the rail foot, the heads of the rails are the height of the rail over them
-			point.position = tool.height_mode == 1 ? glm::dvec3{middle.x, 0.5 * (onbranch.y + onmain.y) + kRailHeight + tool.height, middle.z} : m_services.placement_on_ground({middle.x, std::max(onbranch.y, onmain.y), middle.z});
+			point.position = tool.height_mode == 1 ? glm::dvec3{middle.x, 0.5 * (onbranch.y + onmain.y) + kRailHeight + tool.height, middle.z} : m_ground.placement_on_ground({middle.x, std::max(onbranch.y, onmain.y), middle.z});
 			auto const back{plan_of(previous - branch[i])};
 			point.yaw = std::fmod(heading_of(glm::length(back) > 1e-9 ? glm::normalize(back) : glm::dvec2{0.0, 1.0}) + tool.turn, 360.0);
 			tool.points.push_back(point);
@@ -800,7 +800,7 @@ void fouling_tool::fouling_update()
 		}
 	}
 	// markers standing: each goes to the nearest fouling point, the others are left alone
-	auto const markers{m_services.standing_templates([](std::string const &File) { return File.find("w17") != std::string::npos || File.find("ukres") != std::string::npos; })};
+	auto const markers{m_templates.standing_templates([](std::string const &File) { return File.find("w17") != std::string::npos || File.find("ukres") != std::string::npos; })};
 	for (auto const &marker : markers)
 	{
 		int nearest{-1};
@@ -857,7 +857,7 @@ void fouling_tool::place(int const Only)
 		items.push_back(std::move(item));
 	}
 	std::string error;
-	auto const placed{m_services.place_templates(items, error)};
+	auto const placed{m_templates.place_templates(items, error)};
 	tool.status = placed > 0 ? format(STR_P("%zu fouling point marker placed, Ctrl+Z takes it back", "%zu fouling point markers placed, Ctrl+Z takes them back", static_cast<long long>(placed)), placed) : error;
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
@@ -888,7 +888,7 @@ void fouling_tool::fix(int const Only)
 		}
 		moves.emplace_back(found.marker, item);
 	}
-	auto const moved{m_services.move_templates(moves)};
+	auto const moved{m_templates.move_templates(moves)};
 	tool.status = format(STR_P("%zu fouling point marker moved to its place, Ctrl+Z takes it back", "%zu fouling point markers moved to their places, Ctrl+Z takes it back", static_cast<long long>(moved)), moved);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
@@ -971,7 +971,7 @@ void fouling_tool::render_options()
 					place(i);
 				ImGui::SameLine();
 				if (ImGui::Selectable(format(STR_C("%s: no W17"), point.track->name().c_str()).c_str()))
-					m_services.fly_to(point.position, look, 25.0);
+					m_view.fly_to(point.position, look, 25.0);
 				ImGui::PopID();
 			}
 			for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
@@ -984,7 +984,7 @@ void fouling_tool::render_options()
 					fix(i);
 				ImGui::SameLine();
 				if (ImGui::Selectable(format(STR_C("%s: W17 %.1f m off, %+.2f m high"), tool.points[found.point].track->name().c_str(), found.error, found.height_error).c_str()))
-					m_services.fly_to(found.marker.location, look, 25.0);
+					m_view.fly_to(found.marker.location, look, 25.0);
 				ImGui::PopID();
 			}
 			ImGui::EndChild();
@@ -1146,7 +1146,7 @@ editor_selftest_result fouling_tool::selftest(std::string const &Command, std::i
 		auto &tool{m_fouling};
 		if (values["show"] == "1")
 		{
-			m_services.show_track_tab(editor_track_tab::lineside);
+			m_view.show_track_tab(editor_track_tab::lineside);
 			m_tab.expand = true;
 		}
 		tool.scope = std::stoi(values.count("scope") ? values["scope"] : "2");

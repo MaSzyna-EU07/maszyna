@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 class hekto_tool final : public editor_tool
 {
   public:
-	explicit hekto_tool(editor_services &Services) : m_services{Services} {}
+	hekto_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates, editor_ground &Ground, editor_guide &Guide) : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}, m_ground{Ground}, m_guide{Guide} {}
 	void draw_overlay() const override;
 	void render_options() override;
 	editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) override;
@@ -28,7 +28,12 @@ class hekto_tool final : public editor_tool
 	void start(TTrack &Track, glm::dvec3 const &Point);
 
   private:
-	editor_services &m_services;
+	editor_selection &m_selection;
+	editor_view &m_view;
+	editor_history &m_history;
+	editor_templates &m_templates;
+	editor_ground &m_ground;
+	editor_guide &m_guide;
 	tool_tab m_tab;
 	struct hekto_post
 	{
@@ -85,7 +90,7 @@ class hekto_tool final : public editor_tool
 class fouling_tool final : public editor_tool
 {
   public:
-	explicit fouling_tool(editor_services &Services) : m_services{Services} {}
+	fouling_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates, editor_ground &Ground) : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}, m_ground{Ground} {}
 	void draw_overlay() const override;
 	void render_options() override;
 	editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) override;
@@ -101,7 +106,11 @@ class fouling_tool final : public editor_tool
 	void check_selected_switch();
 
   private:
-	editor_services &m_services;
+	editor_selection &m_selection;
+	editor_view &m_view;
+	editor_history &m_history;
+	editor_templates &m_templates;
+	editor_ground &m_ground;
 	tool_tab m_tab;
 	struct fouling_point
 	{

@@ -29,7 +29,7 @@ class gauge_tool final : public editor_tool
 		int path{0};
 		glm::dvec2 direction{0.0, 1.0}; // of the track there, in the plan
 	};
-	explicit gauge_tool(editor_services &Services) : m_services{Services} {}
+	gauge_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_track_design &Design) : m_selection{Selection}, m_view{View}, m_history{History}, m_design{Design} {}
 	void update() override;
 	void render_windows() override;
 	editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) override;
@@ -37,7 +37,10 @@ class gauge_tool final : public editor_tool
 	void toggle() { m_gauge.open = !m_gauge.open; }
 
   private:
-	editor_services &m_services;
+	editor_selection &m_selection;
+	editor_view &m_view;
+	editor_history &m_history;
+	editor_track_design &m_design;
 	// structure gauge along the line of the selected path, shown in the 3d view
 	struct gauge_state
 	{

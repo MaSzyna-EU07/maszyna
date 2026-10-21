@@ -209,7 +209,7 @@ bool vehicle_tool::place()
 		return false;
 	}
 	tool.placed = head;
-	m_services.first_step_done(editor_first_step::drive);
+	m_guide.first_step_done(editor_first_step::drive);
 	auto const trackname{tool.track->name().empty() ? std::string{STR("(no name)")} : tool.track->name()};
 	auto const behind{static_cast<int>(vehicles.size()) - 1};
 	tool.status = behind > 0 ? format(STR_P("%s and %d vehicle behind it stand on %s", "%s and %d vehicles behind it stand on %s", behind), head.c_str(), behind, trackname.c_str()) : format(STR_C("%s stands on %s"), head.c_str(), trackname.c_str());
@@ -240,8 +240,8 @@ bool vehicle_tool::place()
 void vehicle_tool::render_options()
 {
 	auto &tool{m_vehicle};
-	auto *selected{m_services.selected_track()};
-	auto const &hover{m_services.hovered_track()};
+	auto *selected{m_selection.selected_track()};
+	auto const &hover{m_selection.hovered_track()};
 	if (selected != nullptr && selected == tool.track && hover.track == selected && ImGui::IsMouseClicked(0) && false == ImGui::GetIO().WantCaptureMouse)
 		start(*selected, hover.point);
 	else if (selected != nullptr && selected != tool.track)

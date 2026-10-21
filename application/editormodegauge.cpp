@@ -591,9 +591,9 @@ void gauge_tool::update()
 		m_gauge.published = false;
 		return;
 	}
-	auto *track{m_gauge.enabled ? m_services.selected_track() : nullptr};
+	auto *track{m_gauge.enabled ? m_selection.selected_track() : nullptr};
 	// the geometry is rescanned once the edit ends
-	if (ImGui::IsMouseDown(0) || m_services.track_editing())
+	if (ImGui::IsMouseDown(0) || m_design.track_editing())
 		m_gauge.pending = true;
 	else if (track == nullptr)
 	{
@@ -604,15 +604,15 @@ void gauge_tool::update()
 			m_gauge.published = false;
 		}
 	}
-	else if (track != m_gauge.track || m_services.history_size() != m_gauge.history || m_gauge.pending)
+	else if (track != m_gauge.track || m_history.history_size() != m_gauge.history || m_gauge.pending)
 	{
 		m_gauge.track = track;
-		m_gauge.history = m_services.history_size();
+		m_gauge.history = m_history.history_size();
 		m_gauge.pending = false;
 		scan_gauge(*track);
 		m_gauge.published = false;
 	}
-	if (false == m_gauge.published || glm::distance(m_services.camera_position(), EditorOverlay.origin) > gauge_origin_range)
+	if (false == m_gauge.published || glm::distance(m_view.camera_position(), EditorOverlay.origin) > gauge_origin_range)
 		gauge_publish();
 }
 
@@ -645,7 +645,7 @@ void gauge_tool::scan_gauge_map()
 	scan->space.emplace(scan->lines);
 	m_gauge.map = {};
 	m_gauge.map.scanned = true;
-	m_gauge.map.history = m_services.history_size();
+	m_gauge.map.history = m_history.history_size();
 	auto const name{[](gauge::profile const *Profile) { return Profile != nullptr ? Profile->name : std::string{"-"}; }};
 	m_gauge.map.profile = name(chosen.railway) + ", " + name(chosen.road);
 	m_gauge.current = -1;
@@ -695,7 +695,7 @@ void gauge_tool::gauge_publish()
 {
 	m_gauge.published = true;
 	EditorOverlay.clear();
-	EditorOverlay.origin = m_services.camera_position();
+	EditorOverlay.origin = m_view.camera_position();
 	auto const batch{[](glm::vec4 const &Color, unsigned int const Type, std::vector<glm::dvec3> const &Points) {
 		gfx::editor_overlay::batch result{Color, Type};
 		result.points.reserve(Points.size());
@@ -730,9 +730,9 @@ void gauge_tool::gauge_focus(int const Index)
 	// along the track, tangent to the gauge at the height of the place, from the end nearer to the camera
 	glm::dvec3 look{hit.direction.x, 0.0, hit.direction.y};
 	look = glm::length(look) > 1e-6 ? glm::normalize(look) : glm::dvec3(0.0, 0.0, 1.0);
-	if (glm::dot(m_services.camera_position() - hit.point, look) > 0.0)
+	if (glm::dot(m_view.camera_position() - hit.point, look) > 0.0)
 		look = -look;
-	m_services.fly_to(hit.point, look, gauge_view_distance);
+	m_view.fly_to(hit.point, look, gauge_view_distance);
 }
 
 void gauge_tool::gauge_spot(gauge_hit const &Hit)
@@ -799,7 +799,7 @@ void gauge_tool::render_windows()
 			m_gauge.current = -1;
 			m_gauge.published = false;
 		}
-		else if (m_gauge.map.history != m_services.history_size())
+		else if (m_gauge.map.history != m_history.history_size())
 			ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), STR_C("The scenery changed since the scan (%s)"), m_gauge.map.profile.c_str());
 	}
 	render_gauge_hits();

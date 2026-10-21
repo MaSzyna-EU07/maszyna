@@ -31,7 +31,7 @@ class joints_tool final : public editor_tool
 		double value{0.0}; // m, deg, mm, per mille; m of the track over the terrain model
 		bool fixed{false};
 	};
-	explicit joints_tool(editor_services &Services) : m_services{Services} {}
+	joints_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_ground &Ground) : m_selection{Selection}, m_view{View}, m_history{History}, m_ground{Ground} {}
 	void update() override;
 	void draw_overlay() const override;
 	void render_options() override;
@@ -40,7 +40,10 @@ class joints_tool final : public editor_tool
 	double kink_angle() const { return m_joints.angle; }
 
   private:
-	editor_services &m_services;
+	editor_selection &m_selection;
+	editor_view &m_view;
+	editor_history &m_history;
+	editor_ground &m_ground;
 	// joints of the paths: ends which almost meet, steps, kinks, jumps of the cant and of the grade
 	struct joints_state
 	{

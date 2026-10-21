@@ -2236,13 +2236,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void infra_attach(EditorSnapshot &Snapshot);
 	void render_infra_body();
 
-	gauge_tool m_gauge{*this};
-	speed_tool m_speed{*this};
-	joints_tool m_joints{*this};
-	vehicle_tool m_vehicle{*this};
-	hekto_tool m_hekto{*this};
-	fouling_tool m_fouling{*this};
-	parallel_tool m_parallel{*this};
+	gauge_tool m_gauge{*this, *this, *this, *this};
+	speed_tool m_speed{*this, *this, *this, *this};
+	joints_tool m_joints{*this, *this, *this, *this};
+	vehicle_tool m_vehicle{*this, *this};
+	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
+	fouling_tool m_fouling{*this, *this, *this, *this, *this};
+	parallel_tool m_parallel{*this, *this, *this, *this};
 	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel};
 
 	void infra_rebase();
