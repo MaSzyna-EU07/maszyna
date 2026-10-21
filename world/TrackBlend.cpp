@@ -22,9 +22,6 @@ namespace track_blend {
 
 namespace {
 
-// how far aside of the line of an end its weight reaches, past the widest trackbeds
-double constexpr lateral_reach { 6.0 };
-
 blending const *current { nullptr };
 
 int end_count( TTrack const &Track ) {
@@ -194,17 +191,13 @@ void blending::weigh( gfx::vertex_array const &Vertices, gfx::userdata_array &Us
         auto &data { Userdata[ index ].data };
         for( int end = 0; end < 3; ++end ) {
             auto const &blend { ends[ end ] };
-            auto weight { 0.f };
+            auto value { none_mark };
             if( blend.active ) {
-                // measured along the line of the end, so both tracks give the vertices of their joint the same weight
-                auto const offset { position - blend.point };
-                auto const along { glm::dot( offset, blend.inward ) };
-                auto const aside { glm::length( offset - blend.inward * along ) };
-                if( along < blend.length && aside < lateral_reach ) {
-                    weight = blend.peak * static_cast<float>( 1.0 - std::max( 0.0, along ) / blend.length );
-                }
+                // measured along the line of the end, so both tracks give the vertices of their joint the same distance
+                auto const fraction { static_cast<float>( glm::dot( position - blend.point, blend.inward ) / blend.length ) };
+                value = ( blend.peak < 1.f ? fraction : single_mark - fraction );
             }
-            data[ 1 + end ] = weight;
+            data[ 1 + end ] = value;
         }
     }
 }

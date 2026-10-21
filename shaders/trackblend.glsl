@@ -82,11 +82,17 @@ vec2 parallax_coord(sampler2D heights, vec2 coord, vec3 viewdir, vec2 dcoorddx, 
 
 void main()
 {
+	// how far the fragment is into the track from the ends, in the lengths of their blending (track_blend::blending::weigh()):
+	// from -100 down where the track joined there doesn't blend back and its texture goes all the way to the joint, 10000 where
+	// nothing's blended at the end
 #ifdef TRACKBLEND_SPECGLOSS
-	vec3 weights = clamp(vec3(UserData.yz, 0.0), 0.0, 1.0);
+	vec3 along = vec3(UserData.yz, 10000.0);
 #else
-	vec3 weights = clamp(UserData.yzw, 0.0, 1.0);
+	vec3 along = UserData.yzw;
 #endif
+	vec3 single = vec3(lessThan(along, vec3(-50.0)));
+	vec3 fraction = mix(along, -100.0 - along, single);
+	vec3 weights = mix(vec3(0.5), vec3(1.0), single) * clamp(1.0 - fraction, 0.0, 1.0);
 	float total = weights.x + weights.y + weights.z;
 	if (total > 1.0)
 	{

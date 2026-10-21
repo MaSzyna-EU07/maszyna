@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 class TTrack;
 
 // the rails and the ballast of a track blended into those of the tracks joined at its ends, where their textures differ: near
-// an end the vertices carry the weight of the track joined there (y, z, w of their user data for the ends p1, p2 and p4 of a
+// an end the vertices carry how far they are from it (y, z, w of their user data for the ends p1, p2 and p4 of a
 // switch) and the track is drawn with a material fading its texture into theirs. a plain track blends its rails and its
 // ballast, a switch the trackbed made for it
 namespace track_blend {
@@ -47,9 +47,14 @@ struct blending {
 
     bool any() const {
         return material != null_handle; }
-    // the weights of the ends put in the user data of the vertices (relative to the origin of the track), made as long as the
-    // vertices where it's shorter; what the user data hold at x is kept
+    // how far the vertices (relative to the origin of the track) are into it from each end, in the length of its blending, put
+    // in their user data: distance / length where the track joined blends back, single_mark - distance / length where it doesn't,
+    // none_mark where nothing's blended at the end. a distance runs straight along the vertices, so it's led between them exactly
+    // and the shader (trackblend.glsl) works the weight out of it for each fragment, however far apart the vertices are. the user
+    // data are made as long as the vertices where they're shorter; what they hold at x is kept
     void weigh( gfx::vertex_array const &Vertices, gfx::userdata_array &Userdata ) const;
+    static float constexpr single_mark { -100.f };
+    static float constexpr none_mark { 10000.f };
 };
 
 // how the rails or the ballast of the track blend into those of the tracks joined to it, nothing for the tracks which don't
