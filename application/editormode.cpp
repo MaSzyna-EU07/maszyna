@@ -1460,6 +1460,7 @@ bool editor_mode::update()
     if (ui()->mode() == nodebank_panel::TRACK)
     {
         draw_track_lines();
+        draw_track_labels();
         draw_track_legend();
     }
     if (selected_track())
@@ -3592,6 +3593,9 @@ void editor_mode::render_view_menu()
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The tracks of the track mode coloured by their radius, speed or grade, with the legend in the corner"));
+    ImGui::MenuItem(STR_C("Track labels in the top view"), nullptr, &m_track_labels);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Zoomed in from above, the curves get their radius and length and the switches their name and type, as on a plan; where they'd crowd, some are left out"));
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));

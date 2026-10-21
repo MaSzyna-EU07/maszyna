@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodetrackshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorSwitchStore.hpp"
 
 #include "utilities/Globals.h"
 #include "rendering/renderer.h"
@@ -93,6 +94,8 @@ struct colour_band
 double constexpr kBeyond{std::numeric_limits<double>::max()};
 ImU32 const kUncoloured{IM_COL32(200, 200, 200, 170)};
 double const kColouredReach{1500.0}; // m around the camera in the 3D view
+double const kLabelsTo{1.0}; // m a pixel of the top view, farther out the labels of the tracks are left out
+double const kLabelledLength{5.0}; // m, shorter curves get no label
 std::vector<colour_band> const kRadiusBands{{300.0, IM_COL32(235, 60, 60, 235), "R < 300 m"}, {600.0, IM_COL32(245, 140, 50, 235), "R 300-600 m"}, {1200.0, IM_COL32(240, 220, 60, 235), "R 600-1200 m"},
                                             {3000.0, IM_COL32(110, 210, 80, 235), "R 1200-3000 m"}, {kBeyond, IM_COL32(70, 190, 235, 235), "R > 3000 m"}};
 std::vector<colour_band> const kSpeedBands{{40.5, IM_COL32(235, 60, 60, 235), "<= 40 km/h"}, {60.5, IM_COL32(245, 140, 50, 235), "50-60 km/h"}, {80.5, IM_COL32(240, 220, 60, 235), "70-80 km/h"},
@@ -241,6 +244,66 @@ void editor_mode::draw_track_lines() const
 			}
 		}
 	}
+}
+
+void editor_mode::draw_track_labels() const
+{
+	auto const metres{ortho_metres_per_pixel()};
+	if (false == m_track_labels || metres <= 0.0 || metres > kLabelsTo)
+		return;
+	auto const &io{ImGui::GetIO()};
+	screen_projection const projection;
+	glm::dvec2 const centre{Global.pCamera.Pos.x, Global.pCamera.Pos.z};
+	auto const reach{0.5 * metres * std::hypot(static_cast<double>(io.DisplaySize.x), static_cast<double>(io.DisplaySize.y))};
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	auto const low{editor_ui::view_min()};
+	auto const high{editor_ui::view_max()};
+	// a label which would cover another one is left out: the switches go first, then the sharper curves
+	std::vector<std::pair<ImVec2, ImVec2>> taken;
+	auto const write = [&](glm::dvec3 const &Point, std::string const &Text, ImU32 const Colour) {
+		ImVec2 at;
+		if (false == projection.project(Point, at))
+			return;
+		auto const size{ImGui::CalcTextSize(Text.c_str())};
+		ImVec2 const from{at.x - size.x * 0.5f - 4.0f, at.y - size.y - 12.0f};
+		ImVec2 const to{at.x + size.x * 0.5f + 4.0f, at.y - 8.0f};
+		if (from.x < low.x || from.y < low.y || to.x > high.x || to.y > high.y)
+			return;
+		if (std::any_of(taken.begin(), taken.end(), [&](auto const &Rect) { return from.x < Rect.second.x + 6.0f && to.x > Rect.first.x - 6.0f && from.y < Rect.second.y + 3.0f && to.y > Rect.first.y - 3.0f; }))
+			return;
+		taken.emplace_back(from, to);
+		drawlist->AddRectFilled(from, to, IM_COL32(0, 0, 0, 165), 3.0f);
+		drawlist->AddText(ImVec2(from.x + 4.0f, from.y), Colour, Text.c_str());
+	};
+	struct curve_label
+	{
+		double radius;
+		glm::dvec3 point;
+		std::string text;
+	};
+	std::vector<curve_label> curves;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || false == rail(*track) || track->m_paths.empty())
+			continue;
+		bezier const first{track->m_paths.front()};
+		if (false == plan_near(first, centre, reach))
+			continue;
+		if (track->eType == tt_Switch)
+		{
+			auto text{name_of(*track)};
+			if (auto const record{switch_store::of(*track)})
+				text += "  " + switch_store::label(*record);
+			write(first.point(0.0), text, IM_COL32(255, 220, 120, 255));
+			continue;
+		}
+		auto const radius{::track_mode::piece_plan_radius(track->m_paths.front())};
+		if (radius >= 0.5 && first.plan_length() >= kLabelledLength)
+			curves.push_back({radius, first.point(0.5), format("R %.0f  L %.1f", radius, first.plan_length())});
+	}
+	std::sort(curves.begin(), curves.end(), [](curve_label const &A, curve_label const &B) { return A.radius < B.radius; });
+	for (auto const &curve : curves)
+		write(curve.point, curve.text, IM_COL32(235, 235, 235, 240));
 }
 
 void editor_mode::draw_track_legend() const

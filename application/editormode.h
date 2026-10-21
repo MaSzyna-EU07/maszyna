@@ -1574,6 +1574,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	enum class track_colouring { plain, radius, speed, grade };
 	track_colouring m_track_colouring{track_colouring::plain};
 	void draw_track_legend() const;
+	// the radii and lengths of the curves and the names and types of the switches written by them, from above, as on a plan
+	bool m_track_labels{true};
+	void draw_track_labels() const;
 	void draw_track_hover() const;
 	struct track_intent
 	{

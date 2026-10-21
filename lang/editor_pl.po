@@ -10123,3 +10123,9 @@ msgstr "Według pochylenia"
 
 msgid "The tracks of the track mode coloured by their radius, speed or grade, with the legend in the corner"
 msgstr "Tory w dziale Tory pokolorowane według promienia, prędkości albo pochylenia, z legendą w rogu"
+
+msgid "Track labels in the top view"
+msgstr "Opisy torów w widoku z góry"
+
+msgid "Zoomed in from above, the curves get their radius and length and the switches their name and type, as on a plan; where they'd crowd, some are left out"
+msgstr "Po przybliżeniu z góry łuki dostają promień i długość, a rozjazdy nazwę i typ, jak na planie; gdzie byłoby ich za gęsto, część się chowa"
