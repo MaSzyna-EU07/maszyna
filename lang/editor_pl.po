@@ -10261,20 +10261,32 @@ msgstr[2] "Stosuje zestaw na %d zaznaczonych torach"
 msgid "Texture blending"
 msgstr "Mieszanie tekstur"
 
-msgid "Texture blending at p1 (m)"
-msgstr "Mieszanie tekstur przy p1 (m)"
+msgid "Ballast blending at p1 (m)"
+msgstr "Mieszanie podsypki przy p1 (m)"
 
-msgid "Texture blending at p2 (m)"
-msgstr "Mieszanie tekstur przy p2 (m)"
+msgid "Ballast blending at p2 (m)"
+msgstr "Mieszanie podsypki przy p2 (m)"
 
-msgid "Texture blending at p4 (m)"
-msgstr "Mieszanie tekstur przy p4 (m)"
+msgid "Ballast blending at p4 (m)"
+msgstr "Mieszanie podsypki przy p4 (m)"
 
-msgid "How far from the end p1 the rails and the ballast blend into those of the track joined there, where their textures differ, fading into each other; 0: not blended"
-msgstr "Na jakiej długości od końca p1 szyny i podsypka płynnie przechodzą w te z toru tam dołączonego, gdy ich tekstury są różne; 0: bez mieszania"
+msgid "Rails blending at p1 (m)"
+msgstr "Mieszanie szyn przy p1 (m)"
 
-msgid "How far from the end p2 the rails and the ballast blend into those of the track joined there, where their textures differ, fading into each other; 0: not blended"
-msgstr "Na jakiej długości od końca p2 szyny i podsypka płynnie przechodzą w te z toru tam dołączonego, gdy ich tekstury są różne; 0: bez mieszania"
+msgid "Rails blending at p2 (m)"
+msgstr "Mieszanie szyn przy p2 (m)"
 
-msgid "How far from the end p4 of the switch its trackbed blends into the ballast of the track joined there, where their textures differ; 0: not blended"
-msgstr "Na jakiej długości od końca p4 rozjazdu jego podsypka przechodzi w podsypkę toru tam dołączonego, gdy ich tekstury są różne; 0: bez mieszania"
+msgid "How far from the end p1 the ballast fades into that of the track joined there, where their textures differ; 0: not blended"
+msgstr "Na jakiej długości od końca p1 podsypka płynnie przechodzi w podsypkę toru tam dołączonego, gdy ich tekstury są różne; 0: bez mieszania"
+
+msgid "How far from the end p2 the ballast fades into that of the track joined there, where their textures differ; 0: not blended"
+msgstr "Na jakiej długości od końca p2 podsypka płynnie przechodzi w podsypkę toru tam dołączonego, gdy ich tekstury są różne; 0: bez mieszania"
+
+msgid "How far from the end p4 of the switch its trackbed fades into the ballast of the track joined there, where their textures differ; 0: not blended"
+msgstr "Na jakiej długości od końca p4 rozjazdu jego podsypka płynnie przechodzi w podsypkę toru tam dołączonego, gdy ich tekstury są różne; 0: bez mieszania"
+
+msgid "How far from the end p1 the rails fade into those of the track joined there, where their textures differ; 0: not blended"
+msgstr "Na jakiej długości od końca p1 szyny płynnie przechodzą w szyny toru tam dołączonego, gdy ich tekstury są różne; 0: bez mieszania"
+
+msgid "How far from the end p2 the rails fade into those of the track joined there, where their textures differ; 0: not blended"
+msgstr "Na jakiej długości od końca p2 szyny płynnie przechodzą w szyny toru tam dołączonego, gdy ich tekstury są różne; 0: bez mieszania"

@@ -28,6 +28,7 @@ namespace track_blend {
 // how far from an end the textures blend, by default
 float constexpr default_length { 3.f };
 
+// the order of the lengths of TTrack::m_blend
 enum class kind {
     rails,
     ballast

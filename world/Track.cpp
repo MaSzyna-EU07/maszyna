@@ -701,16 +701,21 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             m_timber_model_name = modelpath;
             m_timber_skin_name = ( skinpath == "none" ? std::string{} : skinpath );
         }
-        else if( str == "blend" ) {
-            // blend <end> <length>: how far from the end 1 (p1), 2 (p2) or 3 (p4 of a switch) the rails and the ballast blend into those
-            // of the track joined there, where their textures differ; 0: not at all
+        else if( str == "blendrails" || str == "blendballast" || str == "blend" ) {
+            // blendrails/blendballast <end> <length>: how far from the end 1 (p1), 2 (p2) or 3 (p4 of a switch) the rails or the ballast
+            // blend into those of the track joined there, where their textures differ; 0: not at all. blend: both of them
             auto const end { parser->getToken<int>() };
-            auto const length { parser->getToken<double>() };
-            if( end >= 1 && end <= static_cast<int>( m_blend.size() ) ) {
-                m_blend[ end - 1 ] = static_cast<float>( std::max( 0.0, length ) );
+            auto const length { static_cast<float>( std::max( 0.0, parser->getToken<double>() ) ) };
+            if( end >= 1 && end <= static_cast<int>( m_blend[ 0 ].size() ) ) {
+                if( str != "blendballast" ) {
+                    m_blend[ static_cast<int>( track_blend::kind::rails ) ][ end - 1 ] = length;
+                }
+                if( str != "blendrails" ) {
+                    m_blend[ static_cast<int>( track_blend::kind::ballast ) ][ end - 1 ] = length;
+                }
             }
             else {
-                ErrorLog( "Bad track: blend at end " + std::to_string( end ) + " of track \"" + m_name + "\" which has no such end" );
+                ErrorLog( "Bad track: " + str + " at end " + std::to_string( end ) + " of track \"" + m_name + "\" which has no such end" );
             }
         }
         else if( str == "friction" ) {
@@ -2748,9 +2753,12 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             << m_timber_model_name << ' '
             << ( m_timber_skin_name.empty() ? std::string{ "none" } : m_timber_skin_name ) << ' ';
     }
-    for( std::size_t end = 0; end < m_blend.size(); ++end ) {
-        if( m_blend[ end ] != track_blend::default_length ) {
-            Output << "blend " << end + 1 << ' ' << m_blend[ end ] << ' ';
+    for( auto const kind : { track_blend::kind::rails, track_blend::kind::ballast } ) {
+        auto const &lengths { m_blend[ static_cast<int>( kind ) ] };
+        for( std::size_t end = 0; end < lengths.size(); ++end ) {
+            if( lengths[ end ] != track_blend::default_length ) {
+                Output << ( kind == track_blend::kind::rails ? "blendrails " : "blendballast " ) << end + 1 << ' ' << lengths[ end ] << ' ';
+            }
         }
     }
     // footer

@@ -3035,9 +3035,13 @@ void write_ending(std::ostream &Text, TTrack const &Style)
 		Text << "sleepermodel " << Style.m_sleeper_frequency << ' ' << Style.m_sleeper_model_name << ' ' << (Style.m_sleeper_skin_name.empty() ? std::string{"none"} : Style.m_sleeper_skin_name) << ' ' << Style.m_sleeper_offset.x << ' ' << Style.m_sleeper_offset.y << ' ' << Style.m_sleeper_offset.z << ' ' << Style.m_sleeper_ballast_z << ' ';
 	if (false == Style.m_timber_model_name.empty())
 		Text << "timbermodel " << Style.m_timber_model_name << ' ' << (Style.m_timber_skin_name.empty() ? std::string{"none"} : Style.m_timber_skin_name) << ' ';
-	for (std::size_t end = 0; end < Style.m_blend.size(); ++end)
-		if (Style.m_blend[end] != track_blend::default_length)
-			Text << "blend " << end + 1 << ' ' << Style.m_blend[end] << ' ';
+	for (auto const kind : {track_blend::kind::rails, track_blend::kind::ballast})
+	{
+		auto const &lengths{Style.m_blend[static_cast<int>(kind)]};
+		for (std::size_t end = 0; end < lengths.size(); ++end)
+			if (lengths[end] != track_blend::default_length)
+				Text << (kind == track_blend::kind::rails ? "blendrails " : "blendballast ") << end + 1 << ' ' << lengths[end] << ' ';
+	}
 	Text << "endtrack\n";
 }
 

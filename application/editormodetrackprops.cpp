@@ -199,7 +199,8 @@ enum class field
 	text,
 	choice,
 	check,
-	texture
+	texture,
+	slider // a number dragged between least and most, or typed with Ctrl+click
 };
 
 // parts of the sheet, in their order
@@ -244,6 +245,8 @@ struct track_property
 	bool late{false};    // pasted after the others, it depends on them
 	bool more{false};
 	int texture{-1};     // which list of the textures on the tracks: 0 rails, 1 trackbed
+	float least{0.f};    // the range of a slider
+	float most{1.f};
 	char const *label{""};
 	char const *tooltip{""};
 	char const *empty{nullptr}; // hint of an empty field
@@ -506,25 +509,44 @@ std::vector<track_property> make_properties()
 		blades("bladethrow", "Blade throw (m)", "How far the tips of the blades move over between the two paths.\n0: the usual 0.160 m", &TSwitchExtension::m_bladethrow);
 	}
 	{
-		// the ends of a plain track are p1 and p2, a switch has p4 as the end of its second path
-		char const *const ends[][3] = {{"blend1", "Texture blending at p1 (m)", "How far from the end p1 the rails and the ballast blend into those of the track joined there, where their textures differ, fading into each other; 0: not blended"},
-		                               {"blend2", "Texture blending at p2 (m)", "How far from the end p2 the rails and the ballast blend into those of the track joined there, where their textures differ, fading into each other; 0: not blended"},
-		                               {"blend3", "Texture blending at p4 (m)", "How far from the end p4 of the switch its trackbed blends into the ballast of the track joined there, where their textures differ; 0: not blended"}};
-		for (int end = 0; end < 3; ++end)
+		// how far from each end the ballast and the rails blend, apart: the ends of a plain track are p1 and p2, a switch has p4 as
+		// the end of its second path; a switch blends its trackbed alone, not its rails
+		struct blend_field
 		{
-			auto &property{add(list, ends[end][0], field::number, section::look, group::blending, ends[end][1], ends[end][2])};
+			char const *key;
+			char const *label;
+			char const *tooltip;
+			track_blend::kind kind;
+			int end;
+		};
+		blend_field const fields[] = {
+		    {"blendballast1", "Ballast blending at p1 (m)", "How far from the end p1 the ballast fades into that of the track joined there, where their textures differ; 0: not blended", track_blend::kind::ballast, 0},
+		    {"blendballast2", "Ballast blending at p2 (m)", "How far from the end p2 the ballast fades into that of the track joined there, where their textures differ; 0: not blended", track_blend::kind::ballast, 1},
+		    {"blendballast3", "Ballast blending at p4 (m)", "How far from the end p4 of the switch its trackbed fades into the ballast of the track joined there, where their textures differ; 0: not blended", track_blend::kind::ballast, 2},
+		    {"blendrails1", "Rails blending at p1 (m)", "How far from the end p1 the rails fade into those of the track joined there, where their textures differ; 0: not blended", track_blend::kind::rails, 0},
+		    {"blendrails2", "Rails blending at p2 (m)", "How far from the end p2 the rails fade into those of the track joined there, where their textures differ; 0: not blended", track_blend::kind::rails, 1}};
+		for (auto const &blend : fields)
+		{
+			auto &property{add(list, blend.key, field::slider, section::look, group::blending, blend.label, blend.tooltip)};
 			property.rebuild = true;
 			property.more = true;
-			property.applies = [end](TTrack const &Track) { return Track.m_visible && (Track.iCategoryFlag & 15) == kRailCategory && (Track.eType == tt_Switch || (Track.eType == tt_Normal && end < 2)); };
-			property.get = [end](TTrack const &Track) { return decimal(Track.m_blend[end], 2); };
-			property.set = [end](TTrack &Track, std::string const &Text) {
+			property.least = 0.f;
+			property.most = 20.f;
+			auto const kind{static_cast<int>(blend.kind)};
+			auto const end{blend.end};
+			auto const rails{blend.kind == track_blend::kind::rails};
+			property.applies = [end, rails](TTrack const &Track) {
+				return Track.m_visible && (Track.iCategoryFlag & 15) == kRailCategory && (Track.eType == tt_Normal ? end < 2 : (Track.eType == tt_Switch && false == rails));
+			};
+			property.get = [kind, end](TTrack const &Track) { return decimal(Track.m_blend[kind][end], 2); };
+			property.set = [kind, end](TTrack &Track, std::string const &Text) {
 				double length;
 				if (false == parse_number(Text, length))
 					return false;
 				auto const clamped{static_cast<float>(std::max(0.0, length))};
-				if (decimal(clamped, 2) == decimal(Track.m_blend[end], 2))
+				if (decimal(clamped, 2) == decimal(Track.m_blend[kind][end], 2))
 					return false;
-				Track.m_blend[end] = clamped;
+				Track.m_blend[kind][end] = clamped;
 				return true;
 			};
 		}
@@ -924,7 +946,7 @@ std::size_t editor_mode::track_property_apply(int const Property, std::vector<TT
 	if (changed == 0 && targets.size() == 1)
 	{
 		double value;
-		if (property.kind == field::number && false == words_of(Text).empty() && false == parse_number(Text, value))
+		if ((property.kind == field::number || property.kind == field::slider) && false == words_of(Text).empty() && false == parse_number(Text, value))
 			ui()->set_status(format(STR_C("%s: \"%s\" isn't a number"), STR_C(property.label), Text.c_str()), true);
 		else if (std::string{property.key} == "sleepers" && Text == "1" && targets.front()->m_sleeper_model_name.empty())
 			ui()->set_status(STR_C("Give the sleeper model first"), true);
@@ -1246,6 +1268,49 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		}
 	};
 
+	// dragged without changing the tracks, which are changed once as it's let go, in one step of the undo
+	auto const slider_row = [&](std::size_t const Index) {
+		auto const &property{list[Index]};
+		auto const &values{cache.values[Index]};
+		auto &edit{m_track_field};
+		auto const editing{edit.property == static_cast<int>(Index)};
+		double shown{0.0};
+		if (false == values.empty())
+			parse_number(values.front().first, shown);
+		auto value{static_cast<float>(shown)};
+		if (editing)
+		{
+			double typed;
+			if (parse_number(edit.text.data(), typed))
+				value = static_cast<float>(typed);
+		}
+		// the most common value, marked where the tracks differ
+		auto const format{values.size() > 1 && false == editing ? std::string{"%.1f m *"} : std::string{"%.1f m"}};
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		auto const changed{ImGui::SliderFloat("##value", &value, property.least, property.most, format.c_str())};
+		if (ImGui::IsItemActivated())
+		{
+			edit.property = static_cast<int>(Index);
+			edit.tracks = Tracks;
+			edit.initial = decimal(shown, 2);
+			std::snprintf(edit.text.data(), edit.text.size(), "%s", edit.initial.c_str());
+		}
+		if (changed && edit.property == static_cast<int>(Index))
+			std::snprintf(edit.text.data(), edit.text.size(), "%s", decimal(std::max(0.f, value), 2).c_str());
+		if (edit.property == static_cast<int>(Index))
+			edit.frame = ImGui::GetFrameCount();
+		row_tooltip(property, values, cache.applies[Index], Tracks.size());
+		if (ImGui::IsItemDeactivated() && edit.property == static_cast<int>(Index))
+		{
+			auto const tracks{edit.tracks};
+			std::string const typed{edit.text.data()};
+			auto const initial{edit.initial};
+			edit = {};
+			if (typed != initial)
+				track_property_apply(static_cast<int>(Index), tracks, typed);
+		}
+	};
+
 	auto const choice_row = [&](std::size_t const Index) {
 		auto const &property{list[Index]};
 		auto const &values{cache.values[Index]};
@@ -1338,6 +1403,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			case field::choice: choice_row(i); break;
 			case field::check: check_row(i); break;
 			case field::texture: texture_row(i); break;
+			case field::slider: slider_row(i); break;
 			default: text_row(i); break;
 			}
 			ImGui::PopID();

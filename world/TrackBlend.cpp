@@ -150,7 +150,7 @@ bool blends( TTrack const &Track, kind const Kind, int const End, TTrack const *
     if( Kind == kind::rails && Track.eType != tt_Normal ) {
         return false;
     }
-    if( Track.m_blend[ End ] <= 0.f ) {
+    if( Track.m_blend[ static_cast<int>( Kind ) ][ End ] <= 0.f ) {
         return false;
     }
     auto const own { material_of( Track, Kind, End ) };
@@ -219,7 +219,7 @@ blending setup( TTrack const &Track, kind const Kind ) {
         auto &blend { result.ends[ end ] };
         end_frame( Track, end, blend.point, blend.inward );
         blend.point -= Track.m_origin;
-        blend.length = Track.m_blend[ end ];
+        blend.length = Track.m_blend[ static_cast<int>( Kind ) ][ end ];
         // where both tracks blend they meet half way at the joint, otherwise this one goes all the way to the other one there
         blend.peak = ( blends( *other, Kind, otherend ) ? 0.5f : 1.f );
         blend.active = true;

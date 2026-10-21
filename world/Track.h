@@ -238,8 +238,11 @@ public:
     //   timbermodel <model> <skin>
     std::string m_timber_model_name;
     std::string m_timber_skin_name; // replacable skin, empty for the textures of the model
-    // how far from its ends p1, p2 (and p4 of a switch) the rails and the ballast blend into those of the tracks joined there (blend)
-    std::array<float, 3> m_blend { track_blend::default_length, track_blend::default_length, track_blend::default_length };
+    // how far from its ends p1, p2 (and p4 of a switch) the rails and the ballast blend into those of the tracks joined there
+    // (blendrails, blendballast), by the kind (track_blend::kind)
+    std::array<std::array<float, 3>, 2> m_blend { {
+        { track_blend::default_length, track_blend::default_length, track_blend::default_length },
+        { track_blend::default_length, track_blend::default_length, track_blend::default_length } } };
     // the materials the blending is drawn with, null where nothing's blended: the rails of a plain track, its ballast, the trackbed of a switch
     material_handle m_blendmaterial1 { null_handle };
     material_handle m_blendmaterial2 { null_handle };
