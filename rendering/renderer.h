@@ -96,6 +96,7 @@ public:
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
     virtual auto Pick_Control() const -> TSubModel const * = 0;
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
+    virtual void Forget_Node( scene::basic_node const *Node ) {}
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
     virtual auto Mouse_Hit() const -> bool { return true; }

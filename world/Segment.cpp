@@ -121,6 +121,11 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     else {
 		fLength = glm::length(Point1 - Point2);
     }
+    if( false == std::isfinite( fLength ) ) {
+
+        ErrorLog( "Bad track: spline \"" + pOwner->name() + "\" with no finite length (location: " + to_string( glm::dvec3{ Point1 } ) + ")" );
+        fLength = 0.01;
+    }
     if (fLength <= 0) {
 
         ErrorLog( "Bad track: zero length spline \"" + pOwner->name() + "\" (location: " + to_string( glm::dvec3{ Point1 } ) + ")" );
@@ -129,7 +134,7 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
 
     fStoop = std::atan2(Point2.y - Point1.y, fLength); // pochylenie toru prostego, żeby nie liczyć wielokrotnie
 
-    fStep = fNewStep;
+    fStep = ( fNewStep > 0.0 && std::isfinite( fNewStep ) ) ? fNewStep : fLength;
     // NOTE: optionally replace this part with the commented version, after solving geometry issues with double switches
     if( pOwner->eType == tt_Switch
      && fStep * (3.0 * Global.SplineFidelity) > fLength ) {
@@ -137,7 +142,7 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
         fStep = fLength / ( 3.0 * Global.SplineFidelity );
     }
 //    iSegCount = static_cast<int>( std::ceil( fLength / fStep ) ); // potrzebne do VBO
-    iSegCount = pOwner->eType == tt_Switch ? static_cast<int>(6 * Global.SplineFidelity) : static_cast<int>(std::ceil(fLength / fStep)); // potrzebne do VBO
+    iSegCount = pOwner->eType == tt_Switch ? static_cast<int>(6 * Global.SplineFidelity) : static_cast<int>(std::clamp(std::ceil(fLength / fStep), 1.0, 100000.0)); // potrzebne do VBO
 
     fStep = fLength / iSegCount; // update step to equalize size of individual pieces
 

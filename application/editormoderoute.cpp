@@ -279,7 +279,7 @@ void editor_mode::render_route_stored()
 		ImGui::EndTable();
 	}
 	auto const &records{alignment_store::records()};
-	if (route.departed < 0 || route.departed >= static_cast<int>(records.size()))
+	if (route.departed < 0 || route.departed >= static_cast<int>(records.size()) || false == scene::Layers.valid(records[route.departed].layer))
 		return;
 	auto const &layer{scene::Layers.layer(records[route.departed].layer).name};
 	ImGui::PushTextWrapPos(0.0f);
@@ -404,7 +404,7 @@ int editor_mode::digitize_parts(editor_track::chain const &Chain, std::string *R
 
 bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *Reason, TTrack **Culprit)
 {
-	if (Chain.tracks.empty())
+	if (Chain.tracks.empty() || scene::Layers.empty())
 		return false;
 	auto const name = [](TTrack const *Track) { return Track == nullptr || Track->name().empty() ? std::string{STR_C("(no name)")} : Track->name(); };
 	auto const nearest = [&](glm::dvec2 const &Point) {
@@ -1423,7 +1423,7 @@ bool editor_mode::render_route_band()
 		if (false == dragging)
 			list->AddLine(ImVec2(mouse.x, plot_top), ImVec2(mouse.x, plot_bottom), IM_COL32(255, 255, 255, 60));
 	}
-	if (dragging && band.vertex < static_cast<int>(design.vertices.size()))
+	if (dragging && band.vertex >= 0 && band.vertex < static_cast<int>(design.vertices.size()))
 	{
 		auto const &vertex{design.vertices[band.vertex]};
 		auto const text{band.part == 1 ? format("R %.0f m", vertex.radius) : format("%.0f m", band.part == 2 ? vertex.transition_in : vertex.transition_out)};

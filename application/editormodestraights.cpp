@@ -347,6 +347,8 @@ void editor_mode::render_straights_ui()
 		for (int i = 0; i < static_cast<int>(state.found.size()); ++i)
 		{
 			auto const &line{state.found[i]};
+			if (line.tracks.empty())
+				continue;
 			if (state.filter[0] != '\0' && std::none_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Track) { return Track->name().find(state.filter) != std::string::npos; }))
 				continue;
 			auto const label{std::to_string(i + 1) + ".  " + describe(line) + "##straight" + std::to_string(i)};
@@ -562,6 +564,14 @@ void editor_mode::straights_apply(std::vector<editor_track::straight> const &Lin
 {
 	auto &state{m_straights};
 	state.status.clear();
+	auto const finite = [](glm::dvec3 const &Point) { return std::isfinite(Point.x) && std::isfinite(Point.y) && std::isfinite(Point.z); };
+	if (std::any_of(Ends.begin(), Ends.end(), [&](std::pair<glm::dvec3, glm::dvec3> const &End) {
+		    return false == finite(End.first) || false == finite(End.second) || false == (glm::distance(End.first, End.second) >= 0.1 && glm::distance(End.first, End.second) <= 100000.0);
+	    }))
+	{
+		state.status = STR_C("The ends have to be numbers, from 0.1 m to 100 km apart");
+		return;
+	}
 	auto const tracks{editor_track::straight_affected(Lines)};
 	if (false == tracks_editable(tracks, state.status))
 		return;

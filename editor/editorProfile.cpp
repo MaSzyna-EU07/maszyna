@@ -56,7 +56,7 @@ double grade_after(line const &Line, std::size_t const Index)
 
 double required_radius(line const &Line)
 {
-	return std::max(Line.norms.radius_min, Line.norms.radius_factor * Line.speed * Line.speed);
+	return std::max({10.0, Line.norms.radius_min, Line.norms.radius_factor * Line.speed * Line.speed});
 }
 
 void assign_radii(line &Line)

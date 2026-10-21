@@ -5638,6 +5638,13 @@ void opengl33_renderer::Pick_Node_Callback(std::function<void(scene::basic_node 
 	m_node_pick_requests.push_back(callback);
 }
 
+void opengl33_renderer::Forget_Node(scene::basic_node const *Node)
+{
+	if (m_picksceneryitem == Node)
+		m_picksceneryitem = nullptr;
+	std::replace_if(m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
+}
+
 glm::dvec3 opengl33_renderer::Update_Mouse_Position()
 {
 	if (!m_depth_pointer_pbo->is_busy())

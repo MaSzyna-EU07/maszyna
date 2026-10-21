@@ -144,14 +144,26 @@ void editor_mode::sweep_scan_models()
 		tool.scanned = true;
 		changed = true;
 		std::error_code error;
-		for (auto const &entry : std::filesystem::recursive_directory_iterator("models", std::filesystem::directory_options::skip_permission_denied, error))
+		for (std::filesystem::recursive_directory_iterator entry{"models", std::filesystem::directory_options::skip_permission_denied, error}, end; entry != end; entry.increment(error))
 		{
-			if (false == entry.is_regular_file(error))
+			std::error_code status;
+			if (false == entry->is_regular_file(status))
 				continue;
-			auto const extension{lower(entry.path().extension().string())};
-			if (extension != ".e3d" && extension != ".t3d")
+			std::string extension;
+			std::string name;
+			try
+			{
+				extension = lower(entry->path().extension().string());
+				if (extension != ".e3d" && extension != ".t3d")
+					continue;
+				name = std::filesystem::relative(entry->path(), "models", status).generic_string();
+			}
+			catch (std::exception const &)
+			{
 				continue;
-			auto name{std::filesystem::relative(entry.path(), "models", error).generic_string()};
+			}
+			if (name.size() < extension.size())
+				continue;
 			name.erase(name.size() - extension.size());
 			tool.models.push_back(name);
 		}
@@ -799,9 +811,17 @@ void editor_mode::render_sweep_ui()
 				auto const start{prefix.substr(slash + 1)};
 				std::set<std::string> variants;
 				std::error_code error;
-				for (auto const &entry : std::filesystem::directory_iterator(folder, error))
+				for (std::filesystem::directory_iterator entry{folder, error}, end; entry != end; entry.increment(error))
 				{
-					auto const stem{lower(entry.path().stem().string())};
+					std::string stem;
+					try
+					{
+						stem = lower(entry->path().stem().string());
+					}
+					catch (std::exception const &)
+					{
+						continue;
+					}
 					if (stem.size() > start.size() + suffix.size() && stem.compare(0, start.size(), start) == 0 && (suffix.empty() || stem.compare(stem.size() - suffix.size(), suffix.size(), lower(suffix)) == 0))
 						variants.insert(stem.substr(start.size(), stem.size() - start.size() - suffix.size()));
 				}
@@ -1405,12 +1425,10 @@ void editor_mode::bend_selection()
 		snap.rotation = model->Angles();
 		snap.scale = model->Scale();
 		snap.uuid = model->uuid;
-		nullify_history_pointers(model);
-		remove_from_hierarchy(model);
 		m_node = nullptr;
 		m_dragging = false;
 		ui()->set_node(nullptr);
-		simulation::State.delete_model(model);
+		erase_model(model);
 	}
 	else
 	{
@@ -1463,9 +1481,7 @@ void editor_mode::restore_bend(EditorSnapshot &Snapshot, bool const Undo)
 	}
 	else if (auto *model{dynamic_cast<TAnimModel *>(find_node_by_any(Snapshot.node_ptr, Snapshot.uuid.to_string(), Snapshot.node_name))})
 	{
-		nullify_history_pointers(model);
-		remove_from_hierarchy(model);
-		simulation::State.delete_model(model);
+		erase_model(model);
 		Snapshot.node_ptr = nullptr;
 		m_node = nullptr;
 		ui()->set_node(nullptr);

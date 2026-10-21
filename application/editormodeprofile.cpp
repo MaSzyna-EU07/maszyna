@@ -1912,6 +1912,8 @@ bool editor_mode::render_profile_parameters()
 			ImGui::EndTable();
 		}
 		norms.grade_switch_max = std::max(0.0, norms.grade_switch_max);
+		norms.radius_factor = std::max(0.0, norms.radius_factor);
+		norms.radius_min = std::max(10.0, norms.radius_min);
 		if (ImGui::SmallButton(STR_C("Automatic R at all points")))
 		{
 			for (auto &point : line.points)

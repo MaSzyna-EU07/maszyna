@@ -333,7 +333,7 @@ void editor_mode::insert_curved_connection()
 		// the top of the ramps where the switch on the outer track ends: no short paths left between the two
 		if (c1 > c2)
 			std::swap(c1, c2);
-		auto const ramp{std::abs(lift) / (kRampShare * m_profile.line.norms.curve_threshold / 1000.0)};
+		auto const ramp{std::abs(lift) / (std::max(0.5, kRampShare * m_profile.line.norms.curve_threshold) / 1000.0)};
 		flatfrom = editor_track::sampled_position(samples, c1);
 		flatto = editor_track::sampled_position(samples, c2);
 		ramplength = ramp;
@@ -545,7 +545,7 @@ void editor_mode::insert_curved_connection()
 	}
 	tool.status = format(STR_C("Crossover laid along the curve, switches %s, the tracks %.2f m apart"), names.c_str(), std::abs(offset));
 	if (std::abs(lift) > 0.002)
-		tool.status += format(STR_C("\nThe outer track went up %.3f m onto the plane of the cant of the inner one, with ramps of %.1f per mille"), std::abs(lift), kRampShare * m_profile.line.norms.curve_threshold);
+		tool.status += format(STR_C("\nThe outer track went up %.3f m onto the plane of the cant of the inner one, with ramps of %.1f per mille"), std::abs(lift), std::max(0.5, kRampShare * m_profile.line.norms.curve_threshold));
 	tool.status += "\n" + connection_readout(plan);
 	ui()->set_status(tool.status, false);
 }

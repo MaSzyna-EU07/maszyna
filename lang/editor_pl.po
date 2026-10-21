@@ -5118,6 +5118,9 @@ msgstr "Tor zwrotny nie ma części"
 msgid "A part of the diverging track is shorter than 5 cm"
 msgstr "Część toru zwrotnego jest krótsza niż 5 cm"
 
+msgid "A part of the diverging track is longer than 1000 m"
+msgstr "Część toru zwrotnego jest dłuższa niż 1000 m"
+
 msgid "A radius of the diverging track is under 10 m"
 msgstr "Promień toru zwrotnego jest mniejszy niż 10 m"
 
@@ -9949,3 +9952,6 @@ msgstr "Dobudowuj teren przy układaniu"
 
 msgid "Where a track is laid past the edge of the terrain, the terrain model is made around the cursor as it goes"
 msgstr "Gdy tor wychodzi poza teren, NMT dobudowuje się wokół kursora na bieżąco"
+
+msgid "The ends have to be numbers, from 0.1 m to 100 km apart"
+msgstr "Końce muszą być liczbami, od 0,1 m do 100 km od siebie"

@@ -32,6 +32,10 @@ class editor_ui : public ui_layer
 	// updates state of UI elements
 	void update() override;
 	void set_node(scene::basic_node *Node);
+	scene::basic_node *node() const
+	{
+		return m_node;
+	}
 	// include of a scenery template to show in the node properties in place of a node; nullptr if there's none
 	void set_include(include_selection *Include);
 	void add_node_template(const std::string &desc);

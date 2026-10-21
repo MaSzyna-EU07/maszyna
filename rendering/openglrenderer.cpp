@@ -1903,6 +1903,15 @@ opengl_renderer::Pick_Node_Callback( std::function<void( scene::basic_node * )> 
 }
 
 void
+opengl_renderer::Forget_Node( scene::basic_node const *Node ) {
+
+    if( m_picksceneryitem == Node ) {
+        m_picksceneryitem = nullptr;
+    }
+    std::replace_if( m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node]( scene::basic_node const *Item ) { return Item == Node; }, nullptr );
+}
+
+void
 opengl_renderer::Render( scene::basic_region *Region ) {
 
     m_sectionqueue.clear();

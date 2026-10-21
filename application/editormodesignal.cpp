@@ -156,7 +156,15 @@ std::vector<std::string> const &plate_textures()
 	std::error_code error;
 	for (std::filesystem::directory_iterator file{"textures/tabl", error}, end; file != end; file.increment(error))
 	{
-		auto const stem{lower(file->path().stem().string())};
+		std::string stem;
+		try
+		{
+			stem = lower(file->path().stem().string());
+		}
+		catch (std::exception const &)
+		{
+			continue;
+		}
 		if (std::find(plates.begin(), plates.end(), stem) == plates.end())
 			plates.push_back(stem);
 	}
@@ -578,8 +586,9 @@ void editor_mode::signal_release()
 	}
 	tool.status = found->read.empty() ? format(STR_C("Signal %s moved, Ctrl+Z takes it back"), found->name.c_str())
 	                                  : format(STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), found->name.c_str(), editor_track::event_keyword(spot.list), found->read.c_str(), spot.track->name().empty() ? STR_C("(no name)") : spot.track->name().c_str());
+	auto const instance{found->include.instance};
 	signal_refresh(true);
-	signal_select(found->include.instance);
+	signal_select(instance);
 }
 
 std::string editor_mode::signal_variant(signal_template const &Template, signal_spot const &Spot) const

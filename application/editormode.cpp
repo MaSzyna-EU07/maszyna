@@ -200,6 +200,12 @@ namespace
         triangle_grid(std::vector<world_triangle> Triangles, glm::dvec2 const &Min, glm::dvec2 const &Max) : m_triangles(std::move(Triangles)), m_min(Min)
         {
             glm::dvec2 const extent = glm::max(Max - Min, glm::dvec2(1.0));
+            if (false == std::isfinite(extent.x) || false == std::isfinite(extent.y))
+            {
+                m_triangles.clear();
+                m_cells.resize(1);
+                return;
+            }
             // ~8 m cells, coarser for big areas so large terrain triangles don't flood the grid
             m_cellsize = std::max(8.0, std::max(extent.x, extent.y) / 128.0);
             m_columns = static_cast<int>(std::ceil(extent.x / m_cellsize)) + 1;
@@ -241,11 +247,13 @@ namespace
       private:
         int column(double const X) const
         {
-            return static_cast<int>(std::clamp(std::floor((X - m_min.x) / m_cellsize), 0.0, static_cast<double>(m_columns - 1)));
+            double const cell = std::floor((X - m_min.x) / m_cellsize);
+            return cell > 0.0 ? static_cast<int>(std::min(cell, static_cast<double>(m_columns - 1))) : 0;
         }
         int row(double const Z) const
         {
-            return static_cast<int>(std::clamp(std::floor((Z - m_min.y) / m_cellsize), 0.0, static_cast<double>(m_rows - 1)));
+            double const cell = std::floor((Z - m_min.y) / m_cellsize);
+            return cell > 0.0 ? static_cast<int>(std::min(cell, static_cast<double>(m_rows - 1))) : 0;
         }
 
         std::vector<world_triangle> m_triangles;
@@ -862,6 +870,10 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
     if (!node)
         return;
 
+    if (ui()->node() == node)
+        ui()->set_node(nullptr);
+    infra_forget(node);
+
     for (auto &s : m_history)
     {
         if (s.node_ptr == node)
@@ -1076,9 +1088,7 @@ void editor_mode::undo_one()
         if (auto *model = dynamic_cast<TAnimModel *>(target))
         {
           
-            nullify_history_pointers(model);
-            remove_from_hierarchy(model);
-            simulation::State.delete_model(model);
+            erase_model(model);
             m_node = nullptr;
             ui()->set_node(nullptr);
         }
@@ -1204,9 +1214,7 @@ void editor_mode::redo_one()
         {
             if (auto *model = dynamic_cast<TAnimModel *>(target))
             {
-                nullify_history_pointers(model);
-                remove_from_hierarchy(model);
-                simulation::State.delete_model(model);
+                erase_model(model);
                 m_node = nullptr;
                 ui()->set_node(nullptr);
             }
@@ -3061,7 +3069,10 @@ void editor_mode::set_include_directive(scene::instance_handle const Instance, s
     simulation::State.rebuild_include(Instance, retired);
     // the pick of the renderer is resolved a few frames after it's requested, and can still deliver one of these
     for (auto *model : retired)
+    {
+        nullify_history_pointers(model);
         m_retired.emplace_back(model, 120);
+    }
 }
 
 void editor_mode::apply_include()
@@ -3332,12 +3343,10 @@ void editor_mode::capture_terrain()
     std::string as_text;
     model->export_as_text(as_text);
     push_snapshot(model, EditorSnapshot::Action::Delete, as_text);
-    nullify_history_pointers(model);
-    remove_from_hierarchy(model);
     m_node = nullptr;
     m_dragging = false;
     ui()->set_node(nullptr);
-    simulation::State.delete_model(model);
+    erase_model(model);
 }
 
 // the ground under a point the cursor landed on. the orthophoto laid over the ground catches the cursor like any
@@ -3453,13 +3462,21 @@ void editor_mode::read_georeference()
     std::error_code error;
     if (false == std::filesystem::exists(file, error))
     {
-        for (auto const &entry : std::filesystem::directory_iterator(Global.asCurrentSceneryPath, error))
+        for (std::filesystem::directory_iterator entry{Global.asCurrentSceneryPath, error}, end; entry != end; entry.increment(error))
         {
-            auto name{entry.path().filename().string()};
+            std::string name;
+            try
+            {
+                name = entry->path().filename().string();
+            }
+            catch (std::exception const &)
+            {
+                continue;
+            }
             std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
             if (name == Global.SceneryFile)
             {
-                file = entry.path();
+                file = entry->path();
                 break;
             }
         }
@@ -3696,10 +3713,19 @@ void editor_mode::render_open_scenery_popup()
         m_openscenery_list.clear();
         m_openscenery_choice.clear();
         std::error_code error;
-        for (auto const &entry : std::filesystem::directory_iterator(Global.asCurrentSceneryPath, error))
+        for (std::filesystem::directory_iterator entry{Global.asCurrentSceneryPath, error}, end; entry != end; entry.increment(error))
         {
-            auto const name{entry.path().filename().string()};
-            if (entry.is_regular_file(error) && name.size() > 4 && lower(name.substr(name.size() - 4)) == ".scn" && name.front() != '$')
+            std::string name;
+            try
+            {
+                name = entry->path().filename().string();
+            }
+            catch (std::exception const &)
+            {
+                continue;
+            }
+            std::error_code status;
+            if (entry->is_regular_file(status) && name.size() > 4 && lower(name.substr(name.size() - 4)) == ".scn" && name.front() != '$')
                 m_openscenery_list.emplace_back(name);
         }
         std::sort(m_openscenery_list.begin(), m_openscenery_list.end(), [&](std::string const &A, std::string const &B) { return lower(A) < lower(B); });
@@ -3807,9 +3833,7 @@ void editor_mode::undo_last_area_fill()
             m_node = nullptr;
             ui()->set_node(nullptr);
         }
-        nullify_history_pointers(model);
-        remove_from_hierarchy(model);
-        simulation::State.delete_model(model);
+        erase_model(model);
     }
     m_fill_status = format(STR_C("Removed %zu objects of the last fill"), created.size());
 }
@@ -4230,9 +4254,7 @@ void editor_mode::shape_array()
         copies.pop_back();
         if (model == nullptr)
             continue;
-        nullify_history_pointers(model);
-        remove_from_hierarchy(model);
-        simulation::State.delete_model(model);
+        erase_model(model);
     }
 
     std::string definition;
@@ -4317,9 +4339,7 @@ void editor_mode::restore_array_snapshot(EditorSnapshot Snapshot, std::vector<Ed
                 m_dragging = false;
                 ui()->set_node(nullptr);
             }
-            nullify_history_pointers(model);
-            remove_from_hierarchy(model);
-            simulation::State.delete_model(model);
+            erase_model(model);
         }
         else
         {
@@ -5488,7 +5508,7 @@ void editor_mode::render_shortcuts_window()
 			if (false == ImGui::BeginTable(entry.title, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 				continue;
 			ImGui::TableSetupColumn("##keys", ImGuiTableColumnFlags_WidthFixed, 250.0f * Global.ui_scale);
-			ImGui::TableSetupColumn("##action", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableSetupColumn("##action", ImGuiTableColumnFlags_WidthStretch, 1.0f);
 			for (auto const &item : entry.shortcuts)
 			{
 				if (false == matches(item))
@@ -6123,15 +6143,17 @@ void editor_mode::delete_model(TAnimModel *model, bool const Joined)
         m_history.back().joined = Joined;
     WriteLog(debug, logtype::generic);
 
-    // clear history pointers referencing this model before actually deleting it
+    erase_model(model);
+}
+
+void editor_mode::erase_model(TAnimModel *model)
+{
     nullify_history_pointers(model);
     remove_from_hierarchy(model);
-
     if (m_node == model)
     {
         m_node = nullptr;
         m_dragging = false;
-        ui()->set_node(nullptr);
     }
     simulation::State.delete_model(model);
 }
@@ -6561,6 +6583,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     auto *const previous{m_node};
                     m_node = nullptr;
                     select_include(0);
+                    ui()->set_node(additive ? previous : nullptr);
 
                     // in a scenery opened for editing selection has its limits. nodes of locked layers are off limits.
                     // nodes defined by a scenery template can't be rewritten one by one on save, so a click on one
@@ -6722,7 +6745,7 @@ void editor_mode::render_change_history(){
     int maxsize = m_max_history_size;
     if (ImGui::InputInt(STR_C("Max history size"), &maxsize))
     {
-        m_max_history_size = std::max(0, maxsize);
+        m_max_history_size = std::max(1, maxsize);
         if ((int)m_history.size() > m_max_history_size && m_max_history_size >= 0)
         {
             auto remove_count = (int)m_history.size() - m_max_history_size;

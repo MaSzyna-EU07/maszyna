@@ -1345,6 +1345,7 @@ void editor_mode::render_path_ui()
 		}
 	};
 
+	auto const finite = [](glm::dvec3 const &Point) { return std::isfinite(Point.x) && std::isfinite(Point.y) && std::isfinite(Point.z); };
 	if (ImGui::CollapsingHeader(track->eType == tt_Switch ? STR_C("Geometry of the paths") : STR_C("Geometry")))
 	{
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
@@ -1381,7 +1382,7 @@ void editor_mode::render_path_ui()
 				if (editor_track::is_end(kind))
 				{
 					auto position = path.points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end];
-					if (ImGui::DragScalarN("x, y, z##point", ImGuiDataType_Double, glm::value_ptr(position), 3, 0.01f, nullptr, nullptr, "%.3f"))
+					if (ImGui::DragScalarN("x, y, z##point", ImGuiDataType_Double, glm::value_ptr(position), 3, 0.01f, nullptr, nullptr, "%.3f") && finite(position))
 						editor_track::move_point(*track, m_track_point, position);
 					item_tooltip("Drag to move, Ctrl+click to type the value");
 					finish_edit(rebuild::geometry);
@@ -1389,7 +1390,9 @@ void editor_mode::render_path_ui()
 				else
 				{
 					auto &vector{path.points[kind == editor_track::point_kind::control1 ? segment_data::point::control1 : segment_data::point::control2]};
-					ImGui::DragScalarN(STR_C("vector##point"), ImGuiDataType_Double, glm::value_ptr(vector), 3, 0.01f, nullptr, nullptr, "%.3f");
+					auto typed{vector};
+					if (ImGui::DragScalarN(STR_C("vector##point"), ImGuiDataType_Double, glm::value_ptr(typed), 3, 0.01f, nullptr, nullptr, "%.3f") && finite(typed) && glm::length(typed) < 1e5)
+						vector = typed;
 					item_tooltip("Control vector, relative to its end; zero for a straight");
 					finish_edit(rebuild::geometry);
 				}
@@ -1399,11 +1402,13 @@ void editor_mode::render_path_ui()
 				if (begin_fields("##cantradius", 0.3f))
 				{
 					field_row("Roll (deg)");
-					ImGui::DragFloat2("##roll", path.rolls.data(), 0.01f, -15.0f, 15.0f, "%.2f");
+					if (auto rolls{path.rolls}; ImGui::DragFloat2("##roll", rolls.data(), 0.01f, -15.0f, 15.0f, "%.2f") && std::isfinite(rolls[0]) && std::isfinite(rolls[1]))
+						path.rolls = rolls;
 					item_tooltip("Cant at the start and at the end as the roll angle of the track");
 					finish_edit(rebuild::geometry);
 					field_row("Radius");
-					ImGui::InputFloat("##radius", &path.radius, 0.0f, 0.0f, "%.1f");
+					if (auto radius{path.radius}; ImGui::InputFloat("##radius", &radius, 0.0f, 0.0f, "%.1f") && std::isfinite(radius))
+						path.radius = radius;
 					item_tooltip("Radius stored with the path in the scenery; the shape itself comes from the control vectors");
 					finish_edit(rebuild::geometry);
 					ImGui::EndTable();

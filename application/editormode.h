@@ -639,6 +639,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	// hierarchy management
 	void add_to_hierarchy(scene::basic_node *node);
 	void remove_from_hierarchy(scene::basic_node *node);
+	void erase_model(TAnimModel *model);
 	scene::basic_node* find_in_hierarchy(const std::string &uuid_str);
 	scene::basic_node* find_node_by_any(scene::basic_node *node_ptr, const std::string &uuid_str, const std::string &name);
 
@@ -2496,6 +2497,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool m_infra_suspended{false};
 	void infra_load();
 	void infra_store();
+	void infra_forget(scene::basic_node const *Node);
 	std::vector<TTrack *> infra_scope() const;
 	void infra_recognize();
 	void infra_bind_chosen();

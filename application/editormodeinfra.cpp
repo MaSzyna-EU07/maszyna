@@ -97,6 +97,11 @@ class live_nodes
 	{
 		return Node != nullptr && m_nodes.count(Node) > 0;
 	}
+	void forget(scene::basic_node const *Node)
+	{
+		m_nodes.erase(Node);
+		m_valid = false;
+	}
 
   private:
 	std::unordered_set<scene::basic_node const *> m_nodes;
@@ -776,6 +781,17 @@ void editor_mode::infra_load()
 	WriteLog("Editor: " + std::to_string(resolved) + " object(s) bound to the paths read from the scenery" +
 	             (m_bindings_unresolved.empty() ? std::string{} : ", " + std::to_string(m_bindings_unresolved.size()) + " binding(s) whose objects or paths weren't found are kept as they are"),
 	         logtype::generic);
+}
+
+void editor_mode::infra_forget(scene::basic_node const *Node)
+{
+	Live.forget(Node);
+	auto const held = [Node](infra::binding const &Binding) { return Binding.type != infra::kind::include && Binding.node == Node; };
+	m_bindings.erase(std::remove_if(m_bindings.begin(), m_bindings.end(), held), m_bindings.end());
+	m_infra_buffer.erase(std::remove_if(m_infra_buffer.begin(), m_infra_buffer.end(), [&](infra::object_state const &State) { return held(State.saved); }), m_infra_buffer.end());
+	for (auto &candidate : m_infra.candidates)
+		if (held(candidate.binding))
+			candidate.binding.node = nullptr;
 }
 
 void editor_mode::infra_store()

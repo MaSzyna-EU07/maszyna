@@ -209,6 +209,7 @@ class terrain_streamer
 		std::shared_ptr<heightmap::chunk_data> data;
 		heightmap::mesh mesh;
 		int stride{1};
+		int cells{0};
 		std::uint64_t version{0};
 		std::string error;
 	};

@@ -260,6 +260,7 @@ void terrain_streamer::worker()
 		}
 		case job::kind::mesh:
 		{
+			done.cells = task.data->cells;
 			auto const &neighbours{task.neighbours};
 			heightmap::build_mesh(*task.data, task.stride, task.origin,
 			                      [&neighbours](double const X, double const Z, double &Height) {
@@ -332,7 +333,7 @@ void terrain_streamer::process(result &Result)
 			break;
 		auto &chunk{*lookup->second};
 		chunk.m_building = false;
-		if (Result.version < chunk.m_builtversion)
+		if (Result.version < chunk.m_builtversion || Result.cells != chunk.cells())
 			break;
 		upload(chunk, Result.mesh, Result.stride);
 		chunk.m_builtversion = Result.version;
@@ -386,7 +387,9 @@ void terrain_streamer::upload(editor_terrain &Chunk, heightmap::mesh &Mesh, int 
 	gfx::userdata_array nouserdata;
 
 	// the mesh goes to a geometry slot made for its grid; a slot of the same kind is refilled in place
-	auto fits = [&](geometry_slot const &Slot) { return Slot.cells == cells && Slot.stride == Stride; };
+	auto fits = [&](geometry_slot const &Slot) {
+		return Slot.cells == cells && Slot.stride == Stride && GfxRenderer->Indices(Slot.geometry).size() == Mesh.indices.size() && GfxRenderer->Vertices(Slot.geometry).size() == Mesh.vertices.size();
+	};
 	if (Chunk.m_slot < 0 || false == fits(m_slots[Chunk.m_slot]))
 	{
 		if (Chunk.m_slot >= 0)

@@ -962,7 +962,7 @@ bool editor_mode::typed_key(int const Key)
 glm::dvec3 editor_mode::typed_lay(glm::dvec3 const &Mouse) const
 {
 	auto const values{typed_values()};
-	if (values.empty() || m_lay.points.empty() || values[0] <= 0.0)
+	if (values.empty() || m_lay.points.empty() || false == (values[0] > 0.0 && values[0] <= 50000.0))
 		return Mouse;
 	auto const &last{m_lay.points.back()};
 	glm::dvec2 heading{Mouse.x - last.x, Mouse.z - last.z};

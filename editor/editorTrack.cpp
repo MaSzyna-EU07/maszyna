@@ -472,8 +472,11 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks)
 	for (auto *track : Tracks)
 		track->mark_dirty();
 	for (auto *track : affected)
-		for (auto *vehicle : track->Dynamics)
+	{
+		auto const vehicles{track->Dynamics};
+		for (auto *vehicle : vehicles)
 			vehicle->Move(0.000001);
+	}
 	if (s_observer != nullptr)
 		s_observer->tracks_committed(Tracks);
 }

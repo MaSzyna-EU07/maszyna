@@ -875,21 +875,28 @@ void editor_mode::track_textures_index()
 	for (std::filesystem::recursive_directory_iterator entry{root, options, error}, end; false == static_cast<bool>(error) && entry != end; entry.increment(error))
 	{
 		std::error_code ignored;
-		if (entry->is_directory(ignored))
+		try
 		{
-			// the normal maps go with their textures, not on a track by themselves
-			if (lowered(entry->path().filename().string()) == "normals")
-				entry.disable_recursion_pending();
+			if (entry->is_directory(ignored))
+			{
+				// the normal maps go with their textures, not on a track by themselves
+				if (lowered(entry->path().filename().string()) == "normals")
+					entry.disable_recursion_pending();
+				continue;
+			}
+			auto const extension{lowered(entry->path().extension().string())};
+			auto const material{extension == ".mat"};
+			if (false == material && false == texture_extension(extension))
+				continue;
+			auto path{entry->path().lexically_relative(root)};
+			path.replace_extension();
+			auto &known{found[path.generic_string()]};
+			known = known || material;
+		}
+		catch (std::exception const &)
+		{
 			continue;
 		}
-		auto const extension{lowered(entry->path().extension().string())};
-		auto const material{extension == ".mat"};
-		if (false == material && false == texture_extension(extension))
-			continue;
-		auto path{entry->path().lexically_relative(root)};
-		path.replace_extension();
-		auto &known{found[path.generic_string()]};
-		known = known || material;
 	}
 	m_track_texture_index.clear();
 	m_track_texture_index.reserve(found.size());

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <set>
 #include <sstream>
 
@@ -167,7 +168,7 @@ void load()
 			if (entry.kind != "switch" && entry.kind != "slip" && entry.kind != "crossing" && entry.kind != "double" && entry.kind != "connection")
 				continue;
 			line >> entry.name >> entry.type >> entry.rail >> entry.radius >> entry.ratio >> hand >> entry.a >> entry.b >> entry.main_radius >> keyword >> count;
-			if (line.fail() || keyword != "parts" || count > 64)
+			if (line.fail() || keyword != "parts" || count == 0 || count > 64)
 				continue;
 			entry.hand = hand.empty() ? '-' : hand.front();
 			entry.parts.resize(count);
@@ -202,7 +203,12 @@ void load()
 			entry.direction = plan_of(ahead - entry.start);
 			entry.direction = glm::length(entry.direction) > 1e-12 ? glm::normalize(entry.direction) : glm::dvec2{0.0, 1.0};
 			if (km != "-")
-				entry.km = std::stod(km) * 1000.0;
+			{
+				char *end{nullptr};
+				auto const value{std::strtod(km.c_str(), &end)};
+				if (end != km.c_str() && *end == '\0' && std::isfinite(value))
+					entry.km = value * 1000.0;
+			}
 			g_records.push_back(std::move(entry));
 		}
 	}

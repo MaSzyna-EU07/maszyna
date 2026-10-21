@@ -117,7 +117,7 @@ bool read_geotiff(std::vector<std::uint8_t> const &Data, Square &Out)
 	};
 	auto const width{static_cast<int>(number(256, 0))};
 	auto const height{static_cast<int>(number(257, 0))};
-	if (width < 2 || height < 2 || number(258, 0) != 32 || number(339, 0) != 3 || std::max(1u, number(259, 0)) != 1 || false == entries.contains(273) || false == entries.contains(33550) ||
+	if (width < 2 || height < 2 || width > 8192 || height > 8192 || number(258, 0) != 32 || number(339, 0) != 3 || std::max(1u, number(259, 0)) != 1 || false == entries.contains(273) || false == entries.contains(33550) ||
 	    false == entries.contains(33922))
 		return false;
 	auto const rows{std::max(1u, number(278, 0))};
