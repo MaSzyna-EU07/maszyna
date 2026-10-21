@@ -10102,3 +10102,6 @@ msgstr "różnica wysokości %+.2f m   pochylenie od %+.1f do %+.1f‰"
 
 msgid "grade %+.1f per mille"
 msgstr "pochylenie %+.1f‰"
+
+msgid "Switched off in this build of the simulator"
+msgstr "Wyłączone w tej wersji symulatora"

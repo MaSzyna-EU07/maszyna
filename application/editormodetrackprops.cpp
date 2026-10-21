@@ -239,6 +239,7 @@ struct track_property
 	char const *empty{nullptr}; // hint of an empty field
 	std::vector<char const *> choices;
 	std::function<bool(TTrack const &)> applies;
+	bool off{false}; // the feature isn't in this build: the field is shown greyed and nothing changes it
 	std::function<std::string(TTrack const &)> get;
 	// false: the text doesn't fit the track or changes nothing, the track stays as it was
 	std::function<bool(TTrack &, std::string const &)> set;
@@ -434,7 +435,8 @@ std::vector<track_property> make_properties()
 	{
 		auto &property{add(list, "frogs", field::check, section::look, group::frogs, "Frog and check rails made from the rails", "Cuts the rails of the switch at its frog and lays wing rails and check rails.\nOff for a switch whose include has its own model of them")};
 		property.rebuild = true;
-		property.applies = [](TTrack const &Track) { return track_features::crossings && Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
+		property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
+		property.off = false == track_features::crossings;
 		property.get = [](TTrack const &Track) { return std::string{Track.SwitchExtension->m_frogs ? "1" : "0"}; };
 		property.set = [](TTrack &Track, std::string const &Text) {
 			auto const frogs{Text == "1"};
@@ -447,7 +449,8 @@ std::vector<track_property> make_properties()
 	{
 		auto &property{add(list, "movablenose", field::check, section::look, group::frogs, "Movable nose", "The nose of the frog moves with the blades over to the wing rail of the track set, leaving no gap; the frog has no check rails")};
 		property.rebuild = true;
-		property.applies = [](TTrack const &Track) { return track_features::crossings && Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
+		property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
+		property.off = false == track_features::crossings;
 		property.get = [](TTrack const &Track) { return std::string{Track.SwitchExtension->m_movablenose ? "1" : "0"}; };
 		property.set = [](TTrack &Track, std::string const &Text) {
 			auto const movable{Text == "1"};
@@ -559,7 +562,7 @@ std::vector<track_property> make_properties()
 		{
 			auto &property{add(list, "sleeperpack", field::choice, section::look_sleepers, group::sleepers, "Sleeper model from the pack", "Model of the sleepers of the track running alone, of the models of sleepers in the scenery data, laid as 3D sleepers\nin place of the one set with sleepers3dplain in eu07.ini. (as in eu07.ini): the one set there")};
 			property.rebuild = true;
-			property.applies = [](TTrack const &Track) { return track_features::sleepers && Track.m_visible; };
+			property.off = false == track_features::sleepers;
 			property.choices = choices(sleepermodels);
 			property.get = [index_of](TTrack const &Track) { return std::to_string(Track.m_sleeper_enabled ? index_of(sleepermodels, Track.m_sleeper_model_name) : 0); };
 			property.set = [](TTrack &Track, std::string const &Text) {
@@ -577,7 +580,7 @@ std::vector<track_property> make_properties()
 		{
 			auto &property{add(list, "timbermodel", field::choice, section::look_sleepers, group::sleepers, "Timber model", "Model of the timbers under the switch or the crossing the track is part of, of the models of timbers in the scenery data,\nin place of the one set with sleepers3d in eu07.ini. It's put together from its submodels begin, main and end to the length of each timber")};
 			property.rebuild = true;
-			property.applies = [](TTrack const &Track) { return track_features::sleepers && Track.m_visible; };
+			property.off = false == track_features::sleepers;
 			property.choices = choices(timbermodels);
 			property.get = [index_of](TTrack const &Track) { return std::to_string(index_of(timbermodels, Track.m_timber_model_name)); };
 			property.set = [](TTrack &Track, std::string const &Text) {
@@ -594,7 +597,7 @@ std::vector<track_property> make_properties()
 		{
 			auto &property{add(list, "timberskin", field::text, section::look_sleepers, group::sleepers, "Timber skin", "Replaceable skin of the timber model, empty: the one of the model")};
 			property.rebuild = true;
-			property.applies = [](TTrack const &Track) { return track_features::sleepers && Track.m_visible; };
+			property.off = false == track_features::sleepers;
 			property.empty = "of the model";
 			property.get = [](TTrack const &Track) { return Track.m_timber_skin_name; };
 			property.set = [](TTrack &Track, std::string const &Text) {
@@ -810,7 +813,7 @@ std::size_t editor_mode::track_property_apply(int const Property, std::vector<TT
 	auto const &property{properties()[Property]};
 	std::vector<TTrack *> targets;
 	for (auto *track : Tracks)
-		if (track != nullptr && false == track->m_editorremoved && property.applies(*track))
+		if (track != nullptr && false == property.off && false == track->m_editorremoved && property.applies(*track))
 			targets.push_back(track);
 	auto const changed{tracks_apply(targets, [&](TTrack &Track) { return property.set(Track, Text); }, property.rebuild, property.label)};
 	if (changed == 0 && targets.size() == 1)
@@ -1231,6 +1234,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			if (list[i].part != Part || list[i].more != More || cache.applies[i] == 0)
 				continue;
 			ImGui::PushID(list[i].key);
+			ImGui::BeginDisabled(list[i].off);
 			row_label(i);
 			switch (list[i].kind)
 			{
@@ -1239,6 +1243,9 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			case field::texture: texture_row(i); break;
 			default: text_row(i); break;
 			}
+			ImGui::EndDisabled();
+			if (list[i].off && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("%s", STR_C("Switched off in this build of the simulator"));
 			ImGui::PopID();
 		}
 		ImGui::EndTable();
@@ -1285,7 +1292,7 @@ void editor_mode::copy_track_style(TTrack const &Track)
 	style.values.clear();
 	style.from = name_of(Track);
 	for (auto const &property : properties())
-		if (property.applies(Track))
+		if (false == property.off && property.applies(Track))
 			style.values.emplace_back(property.key, property.get(Track));
 	ui()->set_status(format(STR_C("Properties of %s copied: Ctrl+Shift+V pastes them on the selected tracks"), style.from.c_str()), false);
 }
@@ -1306,7 +1313,7 @@ std::size_t editor_mode::paste_track_style(std::vector<TTrack *> const &Tracks)
 			if (index < 0)
 				continue;
 			auto const &property{list[index]};
-			if (property.late != late || false == style.groups[property.group])
+			if (property.off || property.late != late || false == style.groups[property.group])
 				continue;
 			pasted.emplace_back(&property, value);
 			rebuild |= property.rebuild;

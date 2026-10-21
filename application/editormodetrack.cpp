@@ -1081,18 +1081,21 @@ void editor_mode::render_turnout_ui()
 	drive_ui(*track);
 	if (set.has_value())
 		drive_ui(*set->second);
-	if (track_features::crossings)
 	{
 		bool frogs{track->SwitchExtension->m_frogs};
 		bool movable{track->SwitchExtension->m_movablenose};
 		char const *const frogtip{"Cuts the rails of the switch at its frog and lays wing rails and check rails.\n"
 		                          "Off for a switch whose include has its own model of them"};
 		char const *const nosetip{"The nose of the frog moves with the blades over to the wing rail of the track set, leaving no gap; the frog has no check rails"};
+		ImGui::BeginDisabled(false == track_features::crossings);
 		if (frogs)
 			toggle_chips("switchfrogs", {{STR_C("Frog and check rails made from the rails"), &frogs, frogtip}, {STR_C("Movable nose"), &movable, nosetip}});
 		else
 			toggle_chips("switchfrogs", {{STR_C("Frog and check rails made from the rails"), &frogs, frogtip}});
-		if (frogs != track->SwitchExtension->m_frogs || movable != track->SwitchExtension->m_movablenose)
+		ImGui::EndDisabled();
+		if (false == track_features::crossings && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip("%s", STR_C("Switched off in this build of the simulator"));
+		if (track_features::crossings && (frogs != track->SwitchExtension->m_frogs || movable != track->SwitchExtension->m_movablenose))
 		{
 			auto const before{editor_track::capture(*track)};
 			track->SwitchExtension->m_frogs = frogs;
