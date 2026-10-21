@@ -84,6 +84,19 @@ struct nmt_place
 	bool shapes{true}; // not a bridge nor a tunnel
 };
 
+inline std::map<std::string, std::string> selftest_values(std::istringstream &Words)
+{
+	std::map<std::string, std::string> values;
+	std::string pair;
+	while (Words >> pair)
+	{
+		auto const equals{pair.find('=')};
+		if (equals != std::string::npos)
+			values[pair.substr(0, equals)] = pair.substr(equals + 1);
+	}
+	return values;
+}
+
 class editor_selection
 {
   public:

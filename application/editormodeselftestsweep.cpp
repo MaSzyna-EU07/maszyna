@@ -52,14 +52,7 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 {
 	if (command == "sweep")
 	{
-		std::map<std::string, std::string> values;
-		std::string pair;
-		while (words >> pair)
-		{
-			auto const equals{pair.find('=')};
-			if (equals != std::string::npos)
-				values[pair.substr(0, equals)] = pair.substr(equals + 1);
-		}
+		auto values{selftest_values(words)};
 		auto &tool{m_sweep};
 		auto const get = [&](char const *Key, std::string const &Default) { auto const found{values.find(Key)}; return found != values.end() ? found->second : Default; };
 		tool.edited = nullptr;
@@ -158,14 +151,7 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 	}
 	if (command == "bend" || command == "bendset")
 	{
-		std::map<std::string, std::string> values;
-		std::string pair;
-		while (words >> pair)
-		{
-			auto const equals{pair.find('=')};
-			if (equals != std::string::npos)
-				values[pair.substr(0, equals)] = pair.substr(equals + 1);
-		}
+		auto values{selftest_values(words)};
 		auto const vector = [](std::string Text) {
 			std::replace(Text.begin(), Text.end(), ',', ' ');
 			std::istringstream numbers(Text);

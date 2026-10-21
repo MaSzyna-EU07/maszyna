@@ -590,6 +590,12 @@ bool complete(include_info const &Info, int const Parameters, std::string *Issue
 	return issue.empty();
 }
 
+std::string normalized(std::string File)
+{
+	std::replace(File.begin(), File.end(), '\\', '/');
+	return ToLower(File);
+}
+
 std::string number(double const Value)
 {
 	std::ostringstream converter;

@@ -381,7 +381,7 @@ int editor_mode::digitize_parts(editor_track::chain const &Chain, std::string *R
 	if (count == 1)
 	{
 		++Skipped;
-		reason = (Chain.tracks.front()->name().empty() ? std::string{STR_C("(no name)")} : Chain.tracks.front()->name()) + ": " + reason;
+		reason = name_of(*Chain.tracks.front()) + ": " + reason;
 		WriteLog("Editor: digitizing - " + reason, logtype::generic);
 		if (Reason != nullptr && Reason->empty())
 			*Reason = reason;
@@ -805,7 +805,7 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 {
 	auto &route{m_route};
 	auto const &result{route.result};
-	auto const name = [](TTrack const *Track) { return Track->name().empty() ? std::string{STR_C("(no name)")} : Track->name(); };
+	auto const name = [](TTrack const *Track) { return name_of(*Track); };
 	auto const plan = [](glm::dvec3 const &Vector) { return glm::normalize(plan_of(Vector)); };
 	struct placement
 	{
@@ -1657,14 +1657,11 @@ void editor_mode::render_route_result()
 
 	if (result.valid)
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
-		if (ImGui::Button(STR_C("Apply to the scenery"), ImVec2(-1.0f, 28.0f)))
+		if (main_button(STR_C("Apply to the scenery"), ImVec2(-1.0f, 28.0f)))
 		{
 			route_apply();
 			first_step_done(first_step::plan_apply);
 		}
-		ImGui::PopStyleColor(2);
 	}
 	else
 	{

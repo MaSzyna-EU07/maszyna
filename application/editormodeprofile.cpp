@@ -1493,7 +1493,7 @@ void editor_mode::profile_apply(bool const Terrain)
 	state.status = format(STR_P("Grade line applied: %zu path changed, %zu added, largest departure %.3f m", "Grade line applied: %zu paths changed, %zu added, largest departure %.3f m", changed), changed, added, state.departure);
 	if (false == scene::Layers.empty())
 		state.status += STR_C("\nThe paths and the design (//$p lines) go to the scenery files on save");
-	auto const name = [](TTrack const *Track) { return Track->name().empty() ? std::string{STR_C("(no name)")} : Track->name(); };
+	auto const name = [](TTrack const *Track) { return name_of(*Track); };
 	auto const closed{std::count_if(gaps.begin(), gaps.end(), [](auto const &Gap) { return Gap.closed; })};
 	if (closed > 0)
 		state.status += STR_C("\nPaths off the route brought to its height:");

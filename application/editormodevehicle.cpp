@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "world/Track.h"
 
@@ -36,12 +37,6 @@ using geometry::bezier;
 
 std::size_t const kVehicleList{300};
 double const kHalfVehicle{8.0}; // m, the vehicle is placed about centred on the point
-
-std::string lower(std::string Text)
-{
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
-	return Text;
-}
 
 std::string skin_name(ui::skin_set const &Skin)
 {
@@ -191,7 +186,7 @@ bool vehicle_tool::place()
 		std::string name;
 		for (int index = 1; index < 10000; ++index)
 		{
-			name = lower("editor_" + stem + "_" + std::to_string(index));
+			name = ToLower("editor_" + stem + "_" + std::to_string(index));
 			if (simulation::Vehicles.find(name) == nullptr && std::find(names.begin(), names.end(), name) == names.end())
 				break;
 		}
@@ -210,7 +205,7 @@ bool vehicle_tool::place()
 	}
 	tool.placed = head;
 	m_guide.first_step_done(editor_first_step::drive);
-	auto const trackname{tool.track->name().empty() ? std::string{STR("(no name)")} : tool.track->name()};
+	auto const trackname{name_of(*tool.track)};
 	auto const behind{static_cast<int>(vehicles.size()) - 1};
 	tool.status = behind > 0 ? format(STR_P("%s and %d vehicle behind it stand on %s", "%s and %d vehicles behind it stand on %s", behind), head.c_str(), behind, trackname.c_str()) : format(STR_C("%s stands on %s"), head.c_str(), trackname.c_str());
 	if (tool.write && tool.track->name().empty())
@@ -259,7 +254,7 @@ void vehicle_tool::render_options()
 	ImGui::SetNextItemWidth(-1.0f);
 	ImGui::InputTextWithHint("##vehiclesearch", STR_C("search: name, series, skin"), tool.search, sizeof(tool.search));
 	ImGui::Checkbox(STR_C("Only the ones with a cab"), &tool.controllable_only);
-	std::string const text{lower(tool.search)};
+	std::string const text{ToLower(tool.search)};
 	std::vector<std::pair<std::shared_ptr<ui::vehicle_desc>, std::shared_ptr<ui::skin_set>>> listed;
 	std::size_t total{0};
 	for (auto const &[path, vehicle] : tool.bank->vehicles)
@@ -270,7 +265,7 @@ void vehicle_tool::render_options()
 		{
 			if (skin == nullptr)
 				continue;
-			if (false == text.empty() && lower(skin_label(*vehicle, *skin)).find(text) == std::string::npos && (skin->meta == nullptr || skin->meta->search_lowered.find(text) == std::string::npos))
+			if (false == text.empty() && ToLower(skin_label(*vehicle, *skin)).find(text) == std::string::npos && (skin->meta == nullptr || skin->meta->search_lowered.find(text) == std::string::npos))
 				continue;
 			++total;
 			if (listed.size() < kVehicleList)
@@ -426,13 +421,10 @@ void vehicle_tool::render_options()
 	if (false == tool.consist.empty() || (tool.vehicle != nullptr && tool.skin != nullptr))
 	{
 		auto const half{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
-		auto const tall{std::round(ImGui::GetFrameHeight() * 1.3f)};
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
-		if (ImGui::Button(STR_C("Place"), ImVec2(half, tall)))
+		auto const tall{tall_button_height()};
+		if (main_button(STR_C("Place"), ImVec2(half, tall)))
 			place();
 		item_tooltip("A trainset on the track, placed where the track was clicked, or in the middle of the path");
-		ImGui::PopStyleColor(2);
 		ImGui::SameLine();
 		if (ImGui::Button(STR_C("Place and drive"), ImVec2(-1.0f, tall)) && place())
 		{

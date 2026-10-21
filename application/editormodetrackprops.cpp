@@ -57,11 +57,6 @@ bool rail(TTrack const &Track)
 	return (Track.iCategoryFlag & 15) == kRailCategory && false == Track.m_editorremoved && Track.visible();
 }
 
-std::string name_of(TTrack const &Track)
-{
-	return Track.name().empty() ? std::string{STR_C("(no name)")} : Track.name();
-}
-
 char const *type_of(TTrack const &Track)
 {
 	switch (Track.eType)

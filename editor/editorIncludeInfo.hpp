@@ -89,6 +89,7 @@ bool parse_directive(std::string const &Directive, std::string &File, std::vecto
 std::string compose_directive(std::string const &File, std::vector<std::string> const &Values);
 // text of a number passed as a parameter value
 std::string number(double Value);
+std::string normalized(std::string File);
 // number of the parameter with specified role, 0 if the description has none
 int parameter_with_role(include_info const &Info, std::string const &Role);
 

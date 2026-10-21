@@ -134,13 +134,6 @@ struct include_place
 	std::string category; // of the description of the template
 };
 
-bool numeric(std::string const &Text, double &Value)
-{
-	char *end{nullptr};
-	Value = std::strtod(Text.c_str(), &end);
-	return false == Text.empty() && *end == '\0';
-}
-
 bool include_place_of(scene::instance_handle const Instance, include_place &Place)
 {
 	if (false == scene::Layers.tracked(Instance))

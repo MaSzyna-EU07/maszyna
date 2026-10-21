@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorConnections.hpp"
@@ -328,7 +329,7 @@ void editor_mode::digitize_crossovers(digitize_report &Report, bool const Write)
 		if (spacing < kSpacingLeast || spacing > kSpacingMost)
 			continue;
 		++Report.crossovers;
-		auto const name = [](TTrack const *Track) { return Track->name().empty() ? STR("(no name)") : Track->name(); };
+		auto const name = [](TTrack const *Track) { return name_of(*Track); };
 		auto const note = [&](std::string const &Why) { Report.notes.push_back(name(first) + " + " + name(second) + ": " + Why); };
 		if (false == switch_store::connections(*first).empty())
 		{

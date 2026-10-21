@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "world/Sweep.h"
 #include "model/AnimModel.h"
 #include "world/Track.h"
@@ -126,12 +127,6 @@ bool same_piece(segment_data const &A, segment_data const &B)
 	return std::abs(A.rolls[0] - B.rolls[0]) < 1e-3f && std::abs(A.rolls[1] - B.rolls[1]) < 1e-3f;
 }
 
-std::string lower(std::string Text)
-{
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
-	return Text;
-}
-
 } // namespace
 
 void editor_mode::sweep_scan_models()
@@ -153,7 +148,7 @@ void editor_mode::sweep_scan_models()
 			std::string name;
 			try
 			{
-				extension = lower(entry->path().extension().string());
+				extension = ToLower(entry->path().extension().string());
 				if (extension != ".e3d" && extension != ".t3d")
 					continue;
 				name = std::filesystem::relative(entry->path(), "models", status).generic_string();
@@ -754,14 +749,14 @@ void editor_mode::render_sweep_ui()
 		changed = true;
 	ImGui::SetNextItemWidth(-1.0f);
 	ImGui::InputTextWithHint("##sweepsearch", STR_C("search the models"), tool.search, sizeof(tool.search));
-	std::string const text{lower(tool.search)};
+	std::string const text{ToLower(tool.search)};
 	if (false == text.empty())
 	{
 		ImGui::BeginChild("##sweepmodels", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 7.0f + 6.0f), true);
 		std::size_t listed{0};
 		for (auto const &model : tool.models)
 		{
-			if (lower(model).find(text) == std::string::npos)
+			if (ToLower(model).find(text) == std::string::npos)
 				continue;
 			if (++listed > kSweepModelList)
 				break;
@@ -775,7 +770,7 @@ void editor_mode::render_sweep_ui()
 	}
 	// a template takes its parameters, the ones which place it are zeros: it's laid out in its own space
 	std::string const model{tool.model};
-	bool const istemplate{model.size() > 4 && lower(model.substr(model.size() - 4)) == ".inc"};
+	bool const istemplate{model.size() > 4 && ToLower(model.substr(model.size() - 4)) == ".inc"};
 	if (istemplate && model != tool.parameters_for)
 	{
 		tool.parameters_for = model;
@@ -803,7 +798,7 @@ void editor_mode::render_sweep_ui()
 				auto const id{std::atoi(word.substr(open + 2, close - open - 2).c_str())};
 				if (id < 1 || id > count || false == tool.parameter_choices[id - 1].empty())
 					continue;
-				auto const prefix{lower(word.substr(0, open))};
+				auto const prefix{ToLower(word.substr(0, open))};
 				auto suffix{word.substr(close + 1)};
 				suffix = suffix.substr(0, suffix.find(':'));
 				auto const slash{prefix.rfind('/')};
@@ -816,13 +811,13 @@ void editor_mode::render_sweep_ui()
 					std::string stem;
 					try
 					{
-						stem = lower(entry->path().stem().string());
+						stem = ToLower(entry->path().stem().string());
 					}
 					catch (std::exception const &)
 					{
 						continue;
 					}
-					if (stem.size() > start.size() + suffix.size() && stem.compare(0, start.size(), start) == 0 && (suffix.empty() || stem.compare(stem.size() - suffix.size(), suffix.size(), lower(suffix)) == 0))
+					if (stem.size() > start.size() + suffix.size() && stem.compare(0, start.size(), start) == 0 && (suffix.empty() || stem.compare(stem.size() - suffix.size(), suffix.size(), ToLower(suffix)) == 0))
 						variants.insert(stem.substr(start.size(), stem.size() - start.size() - suffix.size()));
 				}
 				tool.parameter_choices[id - 1].assign(variants.begin(), variants.end());
@@ -1836,7 +1831,7 @@ void editor_mode::render_bend()
 			else
 			{
 				tool.track = std::clamp(tool.track, 0, static_cast<int>(tool.tracks.size()) - 1);
-				auto const label = [](std::pair<TTrack *, double> const &Entry) { return format("%s  (%.1f m)", Entry.first->name().empty() ? STR_C("(no name)") : Entry.first->name().c_str(), Entry.second); };
+				auto const label = [](std::pair<TTrack *, double> const &Entry) { return format("%s  (%.1f m)", name_of(*Entry.first).c_str(), Entry.second); };
 				if (begin_fields("##bendsource", 0.35f))
 				{
 					field_row("Track");

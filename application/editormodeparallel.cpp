@@ -122,11 +122,6 @@ bool side_picker(int &Side, double const Spacing)
 	return changed;
 }
 
-std::string name_of(TTrack const &Track)
-{
-	return Track.name().empty() ? STR("(no name)") : Track.name();
-}
-
 segment_data reversed(segment_data const &Path)
 {
 	segment_data result{Path};
@@ -416,11 +411,8 @@ void parallel_tool::render_options()
 	}
 	else if (false == tool.pieces.empty())
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
-		if (ImGui::Button(format(STR_P("Lay %zu track, %.1f m", "Lay %zu tracks, %.1f m", static_cast<long long>(tool.pieces.size())), tool.pieces.size(), tool.length).c_str(), ImVec2(-1.0f, std::round(ImGui::GetFrameHeight() * 1.3f))))
+		if (main_button(format(STR_P("Lay %zu track, %.1f m", "Lay %zu tracks, %.1f m", static_cast<long long>(tool.pieces.size())), tool.pieces.size(), tool.length).c_str(), ImVec2(-1.0f, tall_button_height())))
 			parallel_build();
-		ImGui::PopStyleColor(2);
 		item_tooltip("A new track beside the one selected, as in the preview; the selected stays as it is. Ctrl+Z takes it back");
 	}
 	if (false == tool.status.empty())

@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
@@ -271,7 +272,7 @@ void editor_mode::group_selection()
 		{
 			if (reason.empty())
 				reason = STR("it's a part of a scenery template");
-			ui()->set_status(format(STR_C("\"%s\" can't be grouped: %s"), node->name().empty() ? STR_C("(no name)") : node->name().c_str(), reason.c_str()), true);
+			ui()->set_status(format(STR_C("\"%s\" can't be grouped: %s"), name_of(*node).c_str(), reason.c_str()), true);
 			return;
 		}
 	}
@@ -334,7 +335,7 @@ void editor_mode::render_context_menu()
 	if (count > 1)
 		ImGui::TextDisabled(STR_C("%zu models selected"), count);
 	else if (selected)
-		ImGui::TextDisabled("%s", m_node->name().empty() ? STR_C("(no name)") : m_node->name().c_str());
+		ImGui::TextDisabled("%s", name_of(*m_node).c_str());
 	else
 		ImGui::TextDisabled("%s", STR_C("Nothing selected"));
 	ImGui::Separator();

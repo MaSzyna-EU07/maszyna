@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "rendering/renderer.h"
 #include "world/Track.h"
+#include "utilities/utilities.h"
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
@@ -59,17 +60,6 @@ bool viewport_click()
 bool rail(TTrack const &Track)
 {
 	return (Track.iCategoryFlag & 15) == kRailCategory && false == Track.m_editorremoved && Track.visible();
-}
-
-std::string name_of(TTrack const &Track)
-{
-	return Track.name().empty() ? std::string{STR_C("(no name)")} : Track.name();
-}
-
-std::string lower(std::string Text)
-{
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
-	return Text;
 }
 
 char const *type_of(TTrack const &Track)
@@ -843,7 +833,7 @@ void editor_mode::render_track_search()
 	}
 	ImGui::SetNextItemWidth(-1.0f);
 	ImGui::InputTextWithHint("##findtrack", STR_C("Find a track by its name (Ctrl+F)"), search.text, sizeof(search.text));
-	std::string const text{lower(search.text)};
+	std::string const text{ToLower(search.text)};
 	if (text.empty())
 	{
 		search.searched.clear();
@@ -857,7 +847,7 @@ void editor_mode::render_track_search()
 		search.total = 0;
 		for (auto *track : simulation::Paths.sequence())
 		{
-			if (track == nullptr || false == rail(*track) || lower(track->name()).find(text) == std::string::npos)
+			if (track == nullptr || false == rail(*track) || ToLower(track->name()).find(text) == std::string::npos)
 				continue;
 			++search.total;
 			if (search.found.size() < kSearchLimit)

@@ -35,6 +35,7 @@ namespace
 
 using geometry::bezier;
 using geometry::plan_distance;
+using geometry::heading_of;
 using geometry::plan_of;
 
 double const kSampleStep{2.0}; // m between the samples of the line
@@ -47,31 +48,12 @@ int const kRailCategory{1};
 char const *const kHektoStyles[] = {"nowy", "stary", "zgnity"};
 char const *const kFoulingModels[] = {"ip/pkp/w17.inc", "ip/pkp/w17_new.inc", "ip/pkp/w17_old.inc", "ip/pkp/w17_dwuteo.inc"};
 
-std::string normalized(std::string Text)
-{
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(Character == '\\' ? '/' : std::tolower(Character)); });
-	return Text;
-}
-
-bool numeric(std::string const &Text, double &Value)
-{
-	char *end{nullptr};
-	Value = std::strtod(Text.c_str(), &end);
-	return false == Text.empty() && *end == '\0';
-}
-
 std::string number(double const Value, int const Decimals)
 {
 	auto text{format("%.*f", Decimals, Value)};
 	if (text == "-0" || text.find_first_not_of("-0.") == std::string::npos)
 		text.erase(0, text.front() == '-' ? 1 : 0);
 	return text;
-}
-
-double heading_of(glm::dvec2 const &Direction)
-{
-	auto const degrees{glm::degrees(std::atan2(Direction.x, Direction.y))};
-	return degrees < 0.0 ? degrees + 360.0 : degrees;
 }
 
 // index of the sample at or before the chainage
@@ -238,7 +220,7 @@ std::vector<editor_mode::standing_template> editor_mode::standing_templates(std:
 		auto const &included{scene::Layers.instance(handle)};
 		if (included.removed || included.dead || included.file == nullptr)
 			continue;
-		auto const file{normalized(*included.file)};
+		auto const file{editor_includes::normalized(*included.file)};
 		if (false == Accept(file) || included.context.rotation != glm::vec3{0.f} || included.context.scale != glm::vec3{1.f})
 			continue;
 		std::string target;
@@ -649,11 +631,8 @@ void hekto_tool::render_options()
 		                  tool.posts.empty() ? "-" : km_text(std::max(tool.posts.front().hectometres, tool.posts.back().hectometres)).c_str(), tool.found.size(), static_cast<int>(wrong));
 	if (missing > 0)
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
-		if (ImGui::Button(format(STR_P("Place %d post", "Place %d posts", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, std::round(ImGui::GetFrameHeight() * 1.3f))))
+		if (main_button(format(STR_P("Place %d post", "Place %d posts", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, tall_button_height())))
 			hekto_place();
-		ImGui::PopStyleColor(2);
 	}
 	if (duplicates > 0)
 	{
@@ -938,14 +917,11 @@ void fouling_tool::render_options()
 		ImGui::TextWrapped("%s", tool.status.c_str());
 		auto const missing{std::count_if(tool.points.begin(), tool.points.end(), [](fouling_point const &Point) { return Point.standing < 0; })};
 		auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](fouling_found const &Found) { return Found.wrong; })};
-		auto const tall{std::round(ImGui::GetFrameHeight() * 1.3f)};
+		auto const tall{tall_button_height()};
 		if (missing > 0)
 		{
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
-			if (ImGui::Button(format(STR_P("Place %d marker", "Place %d markers", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, tall)))
+			if (main_button(format(STR_P("Place %d marker", "Place %d markers", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, tall)))
 				place();
-			ImGui::PopStyleColor(2);
 		}
 		if (wrong > 0)
 		{
@@ -1069,14 +1045,7 @@ editor_selftest_result hekto_tool::selftest(std::string const &Command, std::ist
 {
 	if (Command == "hekto")
 	{
-		std::map<std::string, std::string> values;
-		std::string pair;
-		while (Words >> pair)
-		{
-			auto const equals{pair.find('=')};
-			if (equals != std::string::npos)
-				values[pair.substr(0, equals)] = pair.substr(equals + 1);
-		}
+		auto values{selftest_values(Words)};
 		auto *track{simulation::Paths.find(values["track"])};
 		if (track == nullptr)
 		{
@@ -1135,14 +1104,7 @@ editor_selftest_result fouling_tool::selftest(std::string const &Command, std::i
 {
 	if (Command == "fouling")
 	{
-		std::map<std::string, std::string> values;
-		std::string pair;
-		while (Words >> pair)
-		{
-			auto const equals{pair.find('=')};
-			if (equals != std::string::npos)
-				values[pair.substr(0, equals)] = pair.substr(equals + 1);
-		}
+		auto values{selftest_values(Words)};
 		auto &tool{m_fouling};
 		if (values["show"] == "1")
 		{

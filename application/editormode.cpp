@@ -527,7 +527,7 @@ editor_mode::editor_mode() {
 		std::string reason;
 		if (Node->from_template() || false == scene::Layers.editable(Node, &reason))
 		{
-			ui()->set_status(format(STR_C("\"%s\" can't be edited: %s"), (Node->name().empty() ? std::string{STR_C("(no name)")} : Node->name()).c_str(), reason.c_str()), true);
+			ui()->set_status(format(STR_C("\"%s\" can't be edited: %s"), name_of(*Node).c_str(), reason.c_str()), true);
 			return;
 		}
 		m_track_window_open = false;
@@ -6594,7 +6594,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                         }
                         else if (node->from_template() || false == scene::Layers.editable(node, &reason))
                         {
-                            ui()->set_status(format(STR_C("\"%s\" can't be edited: %s"), (node->name().empty() ? std::string{STR_C("(no name)")} : node->name()).c_str(), reason.c_str()), true);
+                            ui()->set_status(format(STR_C("\"%s\" can't be edited: %s"), name_of(*node).c_str(), reason.c_str()), true);
                             node = nullptr;
                         }
                     }

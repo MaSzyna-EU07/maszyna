@@ -302,7 +302,7 @@ bool editor_mode::tracks_editable(std::vector<TTrack *> const &Tracks, std::stri
 		std::string reason;
 		if (track != nullptr && false == editor_track::can_edit_geometry(*track, reason))
 		{
-			Reason = (track->name().empty() ? std::string{STR_C("(no name)")} : track->name()) + ": " + reason;
+			Reason = name_of(*track) + ": " + reason;
 			return false;
 		}
 	}
@@ -698,7 +698,7 @@ void editor_mode::render_track_selection()
 	auto *track{tracks.front()};
 	if (false == sheet)
 	{
-		ImGui::TextUnformatted(track->name().empty() ? STR_C("(no name)") : track->name().c_str());
+		ImGui::TextUnformatted(name_of(*track).c_str());
 		ImGui::TextDisabled("%s, %.2f m", STR_C(type_name(*track)), track->Length());
 		return;
 	}
@@ -1743,7 +1743,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 // values of the change in progress, shown next to the cursor
 std::string editor_mode::track_readout() const
 {
-	auto const name = [](TTrack const *Track) { return Track->name().empty() ? std::string{STR_C("(no name)")} : Track->name(); };
+	auto const name = [](TTrack const *Track) { return name_of(*Track); };
 	auto const azimuth = [](glm::dvec3 const &From, glm::dvec3 const &To) {
 		auto const degrees{glm::degrees(std::atan2(To.x - From.x, To.z - From.z))};
 		return degrees < 0.0 ? degrees + 360.0 : degrees;

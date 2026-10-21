@@ -38,6 +38,12 @@ inline double plan_distance(glm::dvec3 const &A, glm::dvec3 const &B)
 }
 
 // z component of the 3d cross product; for a unit Direction it's the offset of the Point to its left
+inline double heading_of(glm::dvec2 const &Direction)
+{
+	auto const degrees{glm::degrees(std::atan2(Direction.x, Direction.y))};
+	return degrees < 0.0 ? degrees + 360.0 : degrees;
+}
+
 inline double cross(glm::dvec2 const &Direction, glm::dvec2 const &Point)
 {
 	return Direction.x * Point.y - Direction.y * Point.x;

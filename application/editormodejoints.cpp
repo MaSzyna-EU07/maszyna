@@ -137,11 +137,9 @@ ImU32 kind_colour(kind const Kind)
 	}
 }
 
-std::string name_of(TTrack const *Track)
+std::string label_of(TTrack const *Track)
 {
-	if (Track == nullptr)
-		return "-";
-	return Track->name().empty() ? STR("(no name)") : Track->name();
+	return Track == nullptr ? std::string{"-"} : ::name_of(*Track);
 }
 
 } // namespace
@@ -538,7 +536,7 @@ void joints_tool::render_options()
 	{
 		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(family_colour(2, 0.55f)));
 		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(family_colour(2, 0.75f)));
-		if (ImGui::Button(STR_C("Check"), ImVec2(-1.0f, std::round(ImGui::GetFrameHeight() * 1.3f))))
+		if (ImGui::Button(STR_C("Check"), ImVec2(-1.0f, tall_button_height())))
 			joints_start();
 		ImGui::PopStyleColor(2);
 		item_tooltip("Finds the gaps between the ends of the tracks, the steps, the kinks and the jumps of the cant and of the grade");
@@ -632,9 +630,9 @@ void joints_tool::render_options()
 			ImGui::NextColumn();
 			ImGui::TextUnformatted(issue.fixed ? STR_C("fixed") : value_text(issue).c_str());
 			ImGui::NextColumn();
-			ImGui::TextUnformatted(name_of(issue.track).c_str());
+			ImGui::TextUnformatted(label_of(issue.track).c_str());
 			ImGui::NextColumn();
-			ImGui::TextUnformatted(name_of(issue.other).c_str());
+			ImGui::TextUnformatted(label_of(issue.other).c_str());
 			ImGui::NextColumn();
 		}
 	ImGui::Columns(1);
@@ -642,7 +640,7 @@ void joints_tool::render_options()
 	if (chosen)
 	{
 		auto &issue{state.issues[state.selected]};
-		ImGui::Text("%s %s: %s / %s", STR_C(kind_name(issue.type)), value_text(issue).c_str(), name_of(issue.track).c_str(), name_of(issue.other).c_str());
+		ImGui::Text("%s %s: %s / %s", STR_C(kind_name(issue.type)), value_text(issue).c_str(), label_of(issue.track).c_str(), label_of(issue.other).c_str());
 		if (false == issue.fixed && issue.type != kind::open && issue.type != kind::model && ImGui::Button(STR_C("Fix this one")))
 			joints_fix({state.selected});
 	}

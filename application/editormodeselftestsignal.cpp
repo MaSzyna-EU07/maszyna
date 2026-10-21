@@ -52,14 +52,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 {
 	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe")
 	{
-		std::map<std::string, std::string> values;
-		std::string pair;
-		while (words >> pair)
-		{
-			auto const equals{pair.find('=')};
-			if (equals != std::string::npos)
-				values[pair.substr(0, equals)] = pair.substr(equals + 1);
-		}
+		auto values{selftest_values(words)};
 		show_track_tab(track_tab::signals);
 		signal_scan();
 		signal_refresh(true);

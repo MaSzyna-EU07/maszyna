@@ -43,11 +43,6 @@ struct switch_end_move
 	double shift{0.0};
 };
 
-std::string track_label(TTrack const &Track)
-{
-	return Track.name().empty() ? std::string{STR_C("(no name)")} : Track.name();
-}
-
 std::optional<std::vector<switch_end_move>> switch_end_moves(TTrack const &Track, segment_data const &Main, bool const Online, std::pair<double, double> const &Room, double const Offset, std::string &Status)
 {
 	auto const axis{editor_track::main_axis(Track)};
@@ -83,7 +78,7 @@ std::string switch_rejoin(TTrack &Track, std::vector<editor_track::joint> const 
 		auto const shift{glm::distance(editor_track::point_position(Track, joint.own), editor_track::point_position(*joint.other, joint.theirs))};
 		if (shift > 0.3 * bezier{theirs}.plan_length())
 		{
-			loose += (loose.empty() ? "" : ", ") + track_label(*joint.other);
+			loose += (loose.empty() ? "" : ", ") + name_of(*joint.other);
 			continue;
 		}
 		following.push_back(joint);
@@ -579,7 +574,7 @@ std::string editor_mode::plan_switch_branches(TTrack const &Track, std::vector<e
 		std::string reason;
 		if (false == plan_switch_branch(Track.m_paths[joint.own.path], joint, *branch) || false == tracks_editable(branch->part.tracks, reason))
 		{
-			notes += (notes.empty() ? "" : "\n") + format(STR_C("The curve past the end of the switch can't keep to it, %s follows the switch on its own"), track_label(*joint.other).c_str());
+			notes += (notes.empty() ? "" : "\n") + format(STR_C("The curve past the end of the switch can't keep to it, %s follows the switch on its own"), name_of(*joint.other).c_str());
 			branch = Branches.erase(branch);
 			continue;
 		}

@@ -1159,7 +1159,7 @@ glm::dvec3 editor_mode::lay_angle_snap(glm::dvec3 const &Mouse, std::string &Lab
 						ratio = n;
 					}
 				}
-		auto const name{axis->name().empty() ? std::string{STR_C("(no name)")} : axis->name()};
+		auto const name{name_of(*axis)};
 		auto const degrees{glm::degrees(std::abs(std::remainder(angle, glm::pi<double>())))};
 		Label = ratio > 0.0 ? format(STR_C("1:%g to %s"), ratio, name.c_str()) : degrees < 0.1 ? format(STR_C("parallel to %s"), name.c_str()) : format(STR_C("%.0f deg to %s"), degrees, name.c_str());
 	}

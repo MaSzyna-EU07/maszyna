@@ -223,7 +223,7 @@ void speed_tool::render_options()
 	{
 		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(family_colour(2, 0.55f)));
 		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(family_colour(2, 0.75f)));
-		if (ImGui::Button(STR_C("Check"), ImVec2(-1.0f, std::round(ImGui::GetFrameHeight() * 1.3f))))
+		if (ImGui::Button(STR_C("Check"), ImVec2(-1.0f, tall_button_height())))
 			speed_start();
 		ImGui::PopStyleColor(2);
 		item_tooltip("Looks at the radius and the cant, the cant ramps, the curves without the transitions and the switch branches");
@@ -312,7 +312,7 @@ void speed_tool::render_options()
 			bool const violated{verdict.violated(state.options)};
 			bool const bad{violated || verdict.warned(state.options)};
 			auto const colour{violated ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(1.0f, 0.75f, 0.3f, 1.0f)};
-			auto name{verdict.track->name().empty() ? STR("(no name)") : verdict.track->name()};
+			auto name{name_of(*verdict.track)};
 			if (verdict.track->eType == tt_Switch)
 				name += verdict.path == 0 ? STR_C(" (main)") : STR_C(" (branch)");
 			if (bad)
