@@ -3130,7 +3130,8 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 	{
 		std::ostringstream text;
 		text.precision(std::numeric_limits<double>::digits10);
-		write_header(text, "switch", Template.length, 10.0, Style, Style.m_material1);
+		// a switch styled after a switch keeps the rails of its path 2
+		write_header(text, "switch", Template.length, 10.0, Style, Style.eType == tt_Switch ? Style.m_material2 : Style.m_material1);
 		write_points(text, Paths[0]);
 		write_points(text, Paths[1]);
 		if (auto const trackbed{ballast_of(Style)}; trackbed != null_handle)
