@@ -9,6 +9,7 @@ http:
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
@@ -38,6 +39,8 @@ struct limits
 	double arc_min{20.0};
 	double arc_min_factor{0.4};
 	bool checked{true};
+
+	bool operator==(limits const &) const = default;
 };
 
 struct compound_arc
@@ -92,6 +95,9 @@ struct recommendation
 };
 recommendation recommend(double const Speed, double const Radius, limits const &Limits);
 double transition_length(double const Speed, double const Radius, double const Cant, limits const &Limits);
+// the transition curve from the curvature and the cant of one arc to those of the next one, 0 for a straight; the curvature positive
+// turning one way, the cant with the same sign as the curvature it leans into
+double transition_between(double const Speed, double const Curvature0, double const Cant0, double const Curvature1, double const Cant1, limits const &Limits);
 double unbalanced_acceleration(double const Speed, double const Radius, double const Cant, limits const &Limits);
 
 enum class element_kind
@@ -217,6 +223,8 @@ struct join_end
 	glm::dvec3 position{0.0};
 	glm::dvec2 direction{0.0, 1.0};
 	double roll{0.0};
+
+	bool operator==(join_end const &) const = default;
 };
 
 enum class join_kind
@@ -258,5 +266,48 @@ struct join_result
 };
 
 join_result join(join_request const &Request);
+
+enum class lay_kind
+{
+	arc_straight,
+	straight_arc,
+	arc,
+	straight
+};
+
+// a track laid on from an end the way the layout lays it, with the transition curves of the norms: from the curvature the end has
+// into the arc, between the arcs of a compound curve where both turn the same way, and out of the arc to the straight
+struct lay_request
+{
+	join_end start; // the roll in degrees, as the track goes on
+	double curvature{0.0}; // of the end as the track goes on, positive turning from x towards z
+	glm::dvec3 target{0.0};
+	lay_kind kind{lay_kind::arc_straight};
+	double radius{500.0}; // of the arc, but the arc through the target
+	double speed{100.0};
+	double piece_length{100.0};
+	limits norms;
+
+	bool operator==(lay_request const &) const = default;
+};
+
+// no pieces where the norms find no room for the transitions, the note says why
+struct lay_result
+{
+	std::vector<segment_data> pieces;
+	std::string note;
+	double length{0.0};
+	double radius{0.0};
+	double cant{0.0};
+	double entry{0.0}; // the transition out of the curvature of the end
+	double exit{0.0};
+	double from_radius{0.0}; // of the end, 0 for a straight
+	bool compound{false};
+};
+
+std::optional<lay_result> lay_on(lay_request const &Request);
+
+// the transitions between the arcs of a compound curve which the norms ask for at the speed, the cant of the vertex on its sharpest arc
+void recommend_between(vertex &Vertex, double const Speed, limits const &Limits);
 
 }

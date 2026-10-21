@@ -1782,6 +1782,8 @@ std::string editor_mode::track_readout() const
 			if (piece.radius != 0.0f && (radius == 0.0 || std::abs(piece.radius) < radius))
 				radius = std::abs(piece.radius);
 		}
+		if (m_eased_last.has_value() && false == m_eased_last->pieces.empty())
+			radius = m_eased_last->radius;
 		editor_track::snap_target target;
 		auto const snapped{extend_snap(target) && target.track != nullptr};
 		editor_track::branch_link link;
@@ -1791,6 +1793,8 @@ std::string editor_mode::track_readout() const
 		if (snapped && pieces.empty())
 			return format(STR_C("no track fits to the end of %s"), name(target.track).c_str());
 		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) + speed_of(radius, laying_norms()) : format("L %.2f m   %s", length, STR_C("straight"))};
+		if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
+			text += "\n" + eased;
 		if (auto const vertical{vertical_of(pieces)}; false == vertical.empty())
 			text += "\n" + vertical;
 		if (snapped)
@@ -1817,10 +1821,14 @@ std::string editor_mode::track_readout() const
 				else if (radius == 0.0 || r < radius)
 					radius = r;
 			}
+			if (m_eased_last.has_value() && false == m_eased_last->pieces.empty())
+				radius = m_eased_last->radius;
 			if (radius > 0.0)
 				text = (straight ? format("L %.1f m   %s + R %.0f m", lay.preview_length, STR_C("straight"), radius) : format("L %.1f m   R %.0f m", lay.preview_length, radius)) + speed_of(radius, laying_norms());
 			else
 				text = format("L %.1f m   %s", lay.preview_length, STR_C("straight"));
+			if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
+				text += "\n" + eased;
 			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
 				text += "\n" + vertical;
 		}

@@ -52,10 +52,15 @@ bool editor_mode::route_active() const
 
 void editor_mode::route_recommend(alignment::vertex &Vertex) const
 {
-	auto const recommended{alignment::recommend(m_route.design.speed, Vertex.radius, laying_norms())};
+	auto sharpest{Vertex.radius};
+	if (Vertex.compound)
+		for (auto const &arc : Vertex.arcs)
+			sharpest = std::min(sharpest, arc.radius);
+	auto const recommended{alignment::recommend(m_route.design.speed, sharpest, laying_norms())};
 	Vertex.cant = recommended.cant;
 	Vertex.transition_in = recommended.transition;
 	Vertex.transition_out = recommended.transition;
+	alignment::recommend_between(Vertex, m_route.design.speed, laying_norms());
 }
 
 void editor_mode::route_bind_ends()

@@ -408,8 +408,40 @@ void editor_mode::point_drag_finish()
 	m_track_joints.clear();
 }
 
+std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const
+{
+	m_eased_last.reset();
+	if (false == m_lay.transitions || From == nullptr || From->eType != tt_Normal)
+		return std::nullopt;
+	auto const end{editor_track::bend_at(*From, Point)};
+	if (false == end.has_value())
+		return std::nullopt;
+	alignment::lay_request request;
+	request.start.position = Point;
+	request.start.direction = Direction;
+	request.start.roll = end->roll;
+	request.curvature = end->curvature;
+	request.target = Target;
+	switch (m_track_layout)
+	{
+	case track_layout::straight: request.kind = alignment::lay_kind::straight; break;
+	case track_layout::arc: request.kind = alignment::lay_kind::arc; break;
+	case track_layout::straight_arc: request.kind = alignment::lay_kind::straight_arc; break;
+	default: request.kind = alignment::lay_kind::arc_straight; break;
+	}
+	request.radius = Radius;
+	request.speed = design_speed(From, nullptr);
+	request.piece_length = m_lay.piece_length;
+	request.norms = laying_norms();
+	if (false == m_eased_cache.has_value() || m_eased_cache->first != request)
+		m_eased_cache.emplace(request, alignment::lay_on(request));
+	m_eased_last = m_eased_cache->second;
+	return m_eased_last;
+}
+
 std::vector<segment_data> editor_mode::extend_pieces() const
 {
+	m_eased_last.reset();
 	std::vector<segment_data> result;
 	auto const &tool{m_extend};
 	editor_track::snap_target target;
@@ -452,7 +484,8 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	auto radius{m_lay.radius};
 	if (auto const values{typed_values()}; false == values.empty() && (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc) && std::abs(values[0]) >= 1.0)
 		radius = std::abs(values[0]);
-	auto pieces{editor_track::layout_pieces(m_track_layout, tool.point, tool.direction, tool.grade, tool.mouse, radius)};
+	auto const eased{eased_layout(tool.track, tool.point, tool.direction, tool.mouse, radius)};
+	auto pieces{eased.has_value() && false == eased->pieces.empty() ? eased->pieces : editor_track::layout_pieces(m_track_layout, tool.point, tool.direction, tool.grade, tool.mouse, radius)};
 	follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
 	return pieces;
 }
@@ -807,6 +840,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 {
 	auto const &tool{m_lay};
 	Length = 0.0;
+	m_eased_last.reset();
 	if (Points.size() < 2)
 		return {};
 	if (Points.size() == 2)
@@ -824,8 +858,10 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		if (tool.start.track != nullptr)
 		{
 			auto const grade{-grade_of(tool.start.direction)};
-			pieces = editor_track::layout_pieces(m_track_layout, Points[0], glm::normalize(leaving), grade, Points[1], tool.radius);
-			Error = narrowed(pieces, m_track_layout, tool.radius);
+			auto const eased{eased_layout(tool.start.track, Points[0], glm::normalize(leaving), Points[1], tool.radius)};
+			auto const laid{eased.has_value() && false == eased->pieces.empty()};
+			pieces = laid ? eased->pieces : editor_track::layout_pieces(m_track_layout, Points[0], glm::normalize(leaving), grade, Points[1], tool.radius);
+			Error = laid ? narrowed(m_track_layout, tool.radius, eased->radius) : narrowed(pieces, m_track_layout, tool.radius);
 			follow_ground(pieces, Points[0].y, grade, Points[1].y, std::numeric_limits<double>::quiet_NaN(), tool.start.track);
 		}
 		else if (End.track == nullptr)
@@ -836,10 +872,12 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		}
 		else if (glm::length(plan_of(End.direction)) > 1e-6)
 		{
-			auto const back{editor_track::layout_pieces(m_track_layout, End.position, glm::normalize(-plan_of(End.direction)), -grade_of(End.direction), Points[0], tool.radius)};
+			auto const eased{eased_layout(End.track, End.position, glm::normalize(-plan_of(End.direction)), Points[0], tool.radius)};
+			auto const laid{eased.has_value() && false == eased->pieces.empty()};
+			auto const back{laid ? eased->pieces : editor_track::layout_pieces(m_track_layout, End.position, glm::normalize(-plan_of(End.direction)), -grade_of(End.direction), Points[0], tool.radius)};
 			for (auto piece{back.rbegin()}; piece != back.rend(); ++piece)
 				pieces.push_back(reversed(*piece));
-			Error = narrowed(pieces, m_track_layout, tool.radius);
+			Error = laid ? narrowed(m_track_layout, tool.radius, eased->radius) : narrowed(pieces, m_track_layout, tool.radius);
 			follow_ground(pieces, Points[0].y, std::numeric_limits<double>::quiet_NaN(), End.position.y, grade_of(End.direction), End.track);
 		}
 		for (auto const &piece : pieces)
@@ -1020,6 +1058,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	double length;
 	std::string error;
 	auto const pieces{lay_pieces(tool.points, End, length, error)};
+	auto const eased{m_eased_last};
 	tool.status_time = ImGui::GetTime();
 	if (pieces.empty())
 	{
@@ -1043,6 +1082,10 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	tool.status = format(STR_P("Laid %zu track, %.1f m, Ctrl+Z takes it back", "Laid %zu tracks, %.1f m, Ctrl+Z takes them back", static_cast<long long>(created.size())), created.size(), length);
 	if (false == error.empty())
 		tool.status += "\n" + error;
+	if (eased.has_value() && eased->compound)
+		tool.status += "\n" + format(STR_C("Compound curve: R %.0f m goes on into R %.0f m through a transition curve of %.0f m"), eased->from_radius, eased->radius, eased->entry);
+	if (eased.has_value() && false == eased->note.empty())
+		tool.status += "\n" + eased->note;
 	{
 		std::vector<std::pair<TTrack *, bool>> run;
 		if (tool.start.track != nullptr && tool.start.track->eType == tt_Normal)

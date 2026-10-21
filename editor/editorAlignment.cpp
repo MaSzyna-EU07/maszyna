@@ -265,6 +265,20 @@ double transition_length(double const Speed, double const Radius, double const C
 	return length > 0.0 ? ceil_to(length, 5.0) : 0.0;
 }
 
+double transition_between(double const Speed, double const Curvature0, double const Cant0, double const Curvature1, double const Cant1, limits const &Limits)
+{
+	auto const cant{std::abs(Cant1 - Cant0)};
+	double length{0.0};
+	if (cant > 0.0)
+	{
+		length = std::max(length, Speed * cant / (3.6 * Limits.cant_rate));
+		length = std::max(length, cant / 1000.0 * Limits.ramp_factor * Speed);
+	}
+	auto const unbalanced = [&](double const Curvature, double const Cant) { return Speed * Speed / 12.96 * Curvature - kGravity * Cant / Limits.gauge; };
+	length = std::max(length, std::abs(unbalanced(Curvature1, Cant1) - unbalanced(Curvature0, Cant0)) * Speed / (3.6 * Limits.jerk));
+	return length > 0.0 ? ceil_to(length, 5.0) : 0.0;
+}
+
 recommendation recommend(double const Speed, double const Radius, limits const &Limits)
 {
 	recommendation result;
@@ -1124,6 +1138,450 @@ join_result join(join_request const &Request)
 	return chosen;
 }
 
+namespace
+{
+
+// elements laid one after another from a point in a direction, put together the way the alignment computes them; the cant along
+// them is kept apart, a transition between two canted arcs ramps it from the one to the other
+struct element_chain
+{
+	result shape;
+	glm::dvec2 position{0.0};
+	glm::dvec2 direction{0.0, 1.0};
+	std::vector<std::array<double, 2>> cants; // chainage, cant
+};
+
+void chain_push(element_chain &Chain, element Element, double const Cant0, double const Cant1)
+{
+	Element.chainage = Chain.shape.length;
+	Chain.shape.length += Element.length;
+	Chain.shape.elements.push_back(Element);
+	Chain.cants.push_back({Element.chainage, Cant0});
+	Chain.cants.push_back({Chain.shape.length, Cant1});
+}
+
+void chain_straight(element_chain &Chain, double const Length)
+{
+	if (Length < 1e-6)
+		return;
+	element straight;
+	straight.kind = element_kind::straight;
+	straight.origin = Chain.position;
+	straight.direction = Chain.direction;
+	straight.length = Length;
+	Chain.position += Chain.direction * Length;
+	chain_push(Chain, straight, 0.0, 0.0);
+}
+
+void chain_arc(element_chain &Chain, double const Curvature, double const Length, double const Cant)
+{
+	if (Length < 1e-6)
+		return;
+	if (std::abs(Curvature) < 1e-9)
+	{
+		chain_straight(Chain, Length);
+		return;
+	}
+	element arc;
+	arc.kind = element_kind::arc;
+	arc.turn = Curvature > 0.0 ? 1 : -1;
+	arc.radius = 1.0 / std::abs(Curvature);
+	arc.length = Length;
+	arc.origin = Chain.position + perpendicular(Chain.direction) / Curvature;
+	arc.normal = Chain.position - arc.origin;
+	arc.direction = Chain.direction;
+	auto const angle{arc.turn * Length / arc.radius};
+	Chain.position = arc.origin + turned(arc.normal, angle);
+	Chain.direction = turned(Chain.direction, angle);
+	chain_push(Chain, arc, Cant, Cant);
+}
+
+// a curvature going on through 0 turns the curve the other way: it's kept signed, the element turning to the left
+void chain_spiral(element_chain &Chain, double const From, double const To, double const Length, double const Cant0, double const Cant1)
+{
+	if (Length < 1e-6)
+		return;
+	int const turn{(From * To < 0.0 || From + To >= 0.0) ? 1 : -1};
+	element spiral;
+	spiral.kind = element_kind::spiral;
+	spiral.turn = turn;
+	spiral.curvature_start = From * turn;
+	spiral.curvature_end = To * turn;
+	spiral.curvature_peak = std::max(std::abs(From), std::abs(To));
+	spiral.radius = spiral.curvature_peak > 1e-12 ? 1.0 / spiral.curvature_peak : 0.0;
+	spiral.length = Length;
+	spiral.origin = Chain.position;
+	spiral.direction = Chain.direction;
+	spiral.normal = perpendicular(Chain.direction) * static_cast<double>(turn);
+	auto const local{spiral_point(spiral.curvature_start, spiral.curvature_end, Length, Length)};
+	Chain.position = spiral.origin + spiral.direction * local.x + spiral.normal * local.y;
+	Chain.direction = glm::normalize(spiral.direction * std::cos(local.angle) + spiral.normal * std::sin(local.angle));
+	chain_push(Chain, spiral, Cant0, Cant1);
+}
+
+lay_result chain_pieces(element_chain &Chain, lay_request const &Request)
+{
+	auto &shape{Chain.shape};
+	shape.gauge = Request.norms.gauge;
+	shape.start = Request.start.position;
+	shape.end = {Chain.position.x, Request.target.y, Chain.position.y};
+	shape.profile = {{0.0, Request.start.position.y, 0.0, 0.0}, {shape.length, Request.target.y, 0.0, 0.0}};
+	shape.valid = shape.length > 1e-3;
+	design style;
+	style.norms = Request.norms;
+	lay_result result;
+	result.length = shape.length;
+	auto const count{std::max(minimum_pieces(shape, style), static_cast<std::size_t>(std::ceil(shape.length / std::max(5.0, Request.piece_length) - 1e-9)))};
+	result.pieces = pieces(shape, style, count);
+	auto const cant_at = [&](double const Chainage) {
+		auto const &cants{Chain.cants};
+		for (std::size_t i = 0; i + 1 < cants.size(); i += 2)
+			if (Chainage <= cants[i + 1][0] + 1e-6)
+			{
+				auto const span{cants[i + 1][0] - cants[i][0]};
+				auto const t{span > 1e-9 ? std::clamp((Chainage - cants[i][0]) / span, 0.0, 1.0) : 1.0};
+				return cants[i][1] + (cants[i + 1][1] - cants[i][1]) * t;
+			}
+		return cants.empty() ? 0.0 : cants.back()[1];
+	};
+	auto const roll = [&](double const Cant) { return static_cast<float>(glm::degrees(std::asin(std::clamp(Cant / Request.norms.gauge, -1.0, 1.0)))); };
+	double chainage{0.0};
+	for (auto &piece : result.pieces)
+	{
+		piece.rolls[0] = roll(cant_at(chainage));
+		chainage += geometry::bezier{piece}.plan_length();
+		piece.rolls[1] = roll(cant_at(chainage));
+	}
+	if (false == result.pieces.empty())
+		result.pieces.front().rolls[0] = static_cast<float>(Request.start.roll);
+	return result;
+}
+
+// a transition of the length given from the curvature of the start, as the position and the direction it ends with
+struct spiral_end
+{
+	double x{0.0};
+	double y{0.0};
+	double angle{0.0};
+	int turn{1};
+
+	spiral_end(double const From, double const To, double const Length)
+	{
+		turn = (From * To < 0.0 || From + To >= 0.0) ? 1 : -1;
+		auto const local{spiral_point(From * turn, To * turn, Length, Length)};
+		x = local.x;
+		y = local.y;
+		angle = local.angle;
+	}
+	void apply(glm::dvec2 &Position, glm::dvec2 &Direction) const
+	{
+		auto const normal{perpendicular(Direction) * static_cast<double>(turn)};
+		Position += Direction * x + normal * y;
+		Direction = glm::normalize(Direction * std::cos(angle) + normal * std::sin(angle));
+	}
+};
+
+void arc_end(glm::dvec2 &Position, glm::dvec2 &Direction, double const Curvature, double const Length)
+{
+	auto const centre{Position + perpendicular(Direction) / Curvature};
+	auto const angle{Curvature * Length};
+	Position = centre + turned(Position - centre, angle);
+	Direction = turned(Direction, angle);
+}
+
+} // namespace
+
+std::optional<lay_result> lay_on(lay_request const &Request)
+{
+	auto const &norms{Request.norms};
+	if (glm::length(Request.start.direction) < 1e-9)
+		return std::nullopt;
+	glm::dvec2 const start{Request.start.position.x, Request.start.position.z};
+	auto const direction{glm::normalize(Request.start.direction)};
+	glm::dvec2 const target{Request.target.x, Request.target.z};
+	auto const offset{target - start};
+	auto const chord{glm::length(offset)};
+	auto const lateral{cross(direction, offset)};
+	if (chord < 0.5 || glm::dot(offset, direction) <= 0.0)
+		return std::nullopt;
+	auto const k0{Request.curvature};
+	auto const c0{norms.gauge * std::sin(glm::radians(Request.start.roll))};
+	if (Request.kind == lay_kind::straight && std::abs(k0) < 1e-9 && std::abs(c0) < 5.0)
+		return std::nullopt;
+	if (Request.kind == lay_kind::arc && std::abs(lateral) < 0.005 * chord + 0.05 && std::abs(k0) < 1e-9 && std::abs(c0) < 5.0)
+		return std::nullopt;
+	int const side{lateral > 0.0 ? 1 : -1};
+	// the speed the arc allows and its cant; a transition is ramped for the lower speed of its two ends
+	auto const allowed = [&](double const Curvature) { return std::abs(Curvature) < 1e-9 ? Request.speed : std::max(1.0, std::min(Request.speed, speed_limit(1.0 / std::abs(Curvature), norms))); };
+	auto const cant_of = [&](double const Curvature) { return std::abs(Curvature) < 1e-9 ? 0.0 : std::copysign(recommend(allowed(Curvature), 1.0 / std::abs(Curvature), norms).cant, Curvature); };
+	auto const slower = [&](double const From, double const To) { return std::min(allowed(From), allowed(To)); };
+	auto const between = [&](double const From, double const Fromcant, double const To, double const Tocant) {
+		if (std::abs(To - From) <= 0.05 * std::max(std::abs(From), std::abs(To)) && std::abs(Tocant - Fromcant) < 5.0)
+			return 0.0;
+		return transition_between(slower(From, To), From, Fromcant, To, Tocant, norms);
+	};
+	// the change of the cant a transition of the length ramps at the speed
+	auto const ramped = [&](double const Length, double const Speed) { return std::min(Length * 1000.0 / (norms.ramp_factor * Speed), norms.cant_rate * 3.6 * Length / Speed); };
+
+	// the transitions of the norms cut to the share, the cant of the arc lowered to what they can ramp; none where the cant of the
+	// end can't be ramped to one leaning into the arc
+	struct layout_plan
+	{
+		double out{0.0}; // out of the curvature of the end to the straight, before the straight of the layout
+		double entry{0.0};
+		double exit{0.0};
+		double cant{0.0};
+		double from{0.0}; // the curvature and the cant the entry starts from
+		double fromcant{0.0};
+		bool lowered{false};
+	};
+	auto const planned = [&](double const Curvature, bool const Lead, bool const Exit, double const Share) -> std::optional<layout_plan> {
+		layout_plan result;
+		auto const wanted{cant_of(Curvature)};
+		if (Lead)
+		{
+			result.out = between(k0, c0, 0.0, 0.0) * Share;
+			if (std::abs(c0) > ramped(result.out, slower(k0, 0.0)) + 1e-6)
+				return std::nullopt;
+		}
+		else
+		{
+			result.from = k0;
+			result.fromcant = c0;
+		}
+		result.entry = between(result.from, result.fromcant, Curvature, wanted) * Share;
+		result.exit = Exit ? between(Curvature, wanted, 0.0, 0.0) * Share : 0.0;
+		auto cant{wanted};
+		if (result.entry > 0.0)
+		{
+			auto const reach{ramped(result.entry, slower(result.from, Curvature))};
+			cant = std::clamp(cant, result.fromcant - reach, result.fromcant + reach);
+		}
+		else
+			cant = result.fromcant;
+		if (Exit)
+		{
+			auto const reach{result.exit > 0.0 ? ramped(result.exit, allowed(Curvature)) : 0.0};
+			cant = std::clamp(cant, -reach, reach);
+		}
+		if (cant * Curvature < -1e-9 || (result.entry > 0.0 && std::abs(cant - result.fromcant) > ramped(result.entry, slower(result.from, Curvature)) + 1e-6) || (result.entry <= 0.0 && std::abs(cant - result.fromcant) > 1e-6))
+			return std::nullopt;
+		result.cant = cant;
+		result.lowered = std::abs(cant) < std::abs(wanted) - 0.5;
+		return result;
+	};
+	auto const begin = [&]() {
+		element_chain chain;
+		chain.position = start;
+		chain.direction = direction;
+		return chain;
+	};
+	auto const made = [&](element_chain &Chain, double const Curvature, layout_plan const &Plan, double const Share) {
+		auto result{chain_pieces(Chain, Request)};
+		result.radius = std::abs(Curvature) > 1e-9 ? 1.0 / std::abs(Curvature) : 0.0;
+		result.cant = std::abs(Plan.cant);
+		result.entry = Plan.out > 0.0 ? Plan.out : Plan.entry;
+		result.exit = Plan.out > 0.0 ? Plan.entry : Plan.exit;
+		result.from_radius = std::abs(k0) > 1e-9 ? 1.0 / std::abs(k0) : 0.0;
+		result.compound = k0 * Curvature > 0.0 && Plan.out <= 0.0 && Plan.entry > 0.0;
+		if (Share < 1.0)
+			result.note = format(STR_C("The transition curves are cut to %.0f%% of what the norms ask for, there's no more room"), Share * 100.0);
+		if (Plan.lowered)
+			result.note += (result.note.empty() ? "" : "\n") + format(STR_C("The cant is lowered to %.0f mm, what the transition curves ramp"), std::abs(Plan.cant));
+		return result;
+	};
+
+	auto const arc_through = [&](double const Share) -> std::optional<lay_result> {
+		auto const reference{2.0 * lateral / (chord * chord)};
+		auto curvature{reference};
+		std::optional<layout_plan> plan;
+		// the transition and the cant follow the curvature found, which moves with them
+		for (int pass = 0; pass < 4; ++pass)
+		{
+			plan = planned(curvature, false, false, Share);
+			if (false == plan.has_value())
+				return std::nullopt;
+			// over the curvatures turning to the target, from flat to sharp, it goes from inside of the circle of the arc to outside
+			auto const outside = [&](double const Curvature) {
+				auto position{start};
+				auto heading{direction};
+				spiral_end{k0, Curvature, plan->entry}.apply(position, heading);
+				return glm::distance(target, position + perpendicular(heading) / Curvature) - 1.0 / std::abs(Curvature);
+			};
+			auto low{std::log(1e-6)};
+			auto high{std::log(0.1)};
+			if (outside(side * std::exp(low)) >= 0.0 || outside(side * std::exp(high)) <= 0.0)
+				return std::nullopt;
+			for (int i = 0; i < 60; ++i)
+			{
+				auto const middle{(low + high) * 0.5};
+				(outside(side * std::exp(middle)) < 0.0 ? low : high) = middle;
+			}
+			curvature = side * std::exp((low + high) * 0.5);
+		}
+		// a transition too long for the way to the target squeezes the arc after it, a shorter one is tried then
+		if (std::abs(curvature) > 1.3 * std::abs(reference) + 1e-5)
+			return std::nullopt;
+		auto chain{begin()};
+		chain_spiral(chain, k0, curvature, plan->entry, c0, plan->cant);
+		auto const centre{chain.position + perpendicular(chain.direction) / curvature};
+		auto const angle{geometry::signed_angle(chain.position - centre, target - centre) * side};
+		if (angle <= 1e-4 || angle >= kPi)
+			return std::nullopt;
+		chain_arc(chain, curvature, angle / std::abs(curvature), plan->cant);
+		return made(chain, curvature, *plan, Share);
+	};
+
+	auto const arc_straight = [&](double const Share) -> std::optional<lay_result> {
+		auto const curvature{side / std::max(1.0, Request.radius)};
+		auto const plan{planned(curvature, false, true, Share)};
+		if (false == plan.has_value())
+			return std::nullopt;
+		auto position{start};
+		auto heading{direction};
+		spiral_end{k0, curvature, plan->entry}.apply(position, heading);
+		spiral_end const out{curvature, 0.0, plan->exit};
+		// the arc grows until the straight after the transition out of it runs through the target
+		auto const miss = [&](double const Arc) {
+			auto at{position};
+			auto towards{heading};
+			arc_end(at, towards, curvature, Arc);
+			out.apply(at, towards);
+			return std::array<double, 2>{cross(towards, target - at) * side, glm::dot(towards, target - at)};
+		};
+		if (miss(0.0)[0] <= 0.0)
+			return std::nullopt;
+		auto const radius{1.0 / std::abs(curvature)};
+		auto const step{std::max(0.5, radius * glm::radians(2.0))};
+		double low{0.0};
+		double high{-1.0};
+		for (auto arc{step}; arc < 2.0 * kPi * radius; arc += step)
+		{
+			if (miss(arc)[0] <= 0.0)
+			{
+				high = arc;
+				break;
+			}
+			low = arc;
+		}
+		if (high < 0.0)
+			return std::nullopt;
+		for (int i = 0; i < 60; ++i)
+		{
+			auto const middle{(low + high) * 0.5};
+			(miss(middle)[0] > 0.0 ? low : high) = middle;
+		}
+		auto const arc{(low + high) * 0.5};
+		auto const straight{miss(arc)[1]};
+		if (straight < 0.0)
+			return std::nullopt;
+		auto chain{begin()};
+		chain_spiral(chain, k0, curvature, plan->entry, c0, plan->cant);
+		chain_arc(chain, curvature, arc, plan->cant);
+		chain_spiral(chain, curvature, 0.0, plan->exit, plan->cant, 0.0);
+		chain_straight(chain, straight);
+		return made(chain, curvature, *plan, Share);
+	};
+
+	auto const straight_arc = [&](double const Share) -> std::optional<lay_result> {
+		auto const curvature{side / std::max(1.0, Request.radius)};
+		auto const plan{planned(curvature, true, false, Share)};
+		if (false == plan.has_value())
+			return std::nullopt;
+		auto lead{begin()};
+		chain_spiral(lead, k0, 0.0, plan->out, c0, 0.0);
+		spiral_end const into{0.0, curvature, plan->entry};
+		// the end of the arc with no straight before it; the straight moves it along the lead, the arc sideways
+		auto const end = [&](double const Arc) {
+			auto at{lead.position};
+			auto towards{lead.direction};
+			into.apply(at, towards);
+			arc_end(at, towards, curvature, Arc);
+			return at;
+		};
+		auto const miss = [&](double const Arc) { return cross(lead.direction, target - end(Arc)) * side; };
+		auto const most{kPi / std::abs(curvature)};
+		if (miss(0.0) <= 0.0 || miss(most) > 0.0)
+			return std::nullopt;
+		double low{0.0};
+		double high{most};
+		for (int i = 0; i < 60; ++i)
+		{
+			auto const middle{(low + high) * 0.5};
+			(miss(middle) > 0.0 ? low : high) = middle;
+		}
+		auto const arc{(low + high) * 0.5};
+		auto const straight{glm::dot(lead.direction, target - end(arc))};
+		if (straight < 0.5)
+			return std::nullopt;
+		auto chain{lead};
+		chain_straight(chain, straight);
+		chain_spiral(chain, 0.0, curvature, plan->entry, 0.0, plan->cant);
+		chain_arc(chain, curvature, arc, plan->cant);
+		return made(chain, curvature, *plan, Share);
+	};
+
+	auto const straight = [&](double const Share) -> std::optional<lay_result> {
+		auto const plan{planned(0.0, true, false, Share)};
+		if (false == plan.has_value())
+			return std::nullopt;
+		auto chain{begin()};
+		chain_spiral(chain, k0, 0.0, plan->out, c0, 0.0);
+		auto const along{glm::dot(chain.direction, target - chain.position)};
+		if (along < 0.5)
+			return std::nullopt;
+		chain_straight(chain, along);
+		return made(chain, 0.0, *plan, Share);
+	};
+
+	auto const first = [](auto const &Layout) -> std::optional<lay_result> {
+		for (auto const share : {1.0, 0.75, 0.5, 0.35, 0.25})
+			if (auto laid{Layout(share)}; laid.has_value())
+				return laid;
+		return std::nullopt;
+	};
+	std::optional<lay_result> laid;
+	switch (Request.kind)
+	{
+	case lay_kind::straight: laid = first(straight); break;
+	case lay_kind::arc: laid = first(arc_through); break;
+	case lay_kind::straight_arc:
+		laid = first(straight_arc);
+		if (false == laid.has_value())
+			laid = first(arc_through);
+		break;
+	default:
+		laid = first(arc_straight);
+		if (false == laid.has_value())
+			laid = first(arc_through);
+		break;
+	}
+	if (laid.has_value())
+		return laid;
+	lay_result refused;
+	refused.note = std::abs(c0) >= 5.0 ? format(STR_C("No room to ramp the cant of %.0f mm the track ends with, the track is laid without transition curves"), std::abs(c0))
+	                                   : std::string{STR_C("No room for the transition curves of the norms, the track is laid without them")};
+	return refused;
+}
+
+void recommend_between(vertex &Vertex, double const Speed, limits const &Limits)
+{
+	if (false == Vertex.compound || Vertex.arcs.empty())
+		return;
+	auto sharpest{std::max(1.0, Vertex.radius)};
+	for (auto const &arc : Vertex.arcs)
+		sharpest = std::min(sharpest, std::max(1.0, arc.radius));
+	auto const speed{std::max(1.0, std::min(Speed, speed_limit(sharpest, Limits)))};
+	auto const cant_of = [&](double const Radius) { return Vertex.cant * sharpest / Radius; };
+	auto previous{std::max(1.0, Vertex.radius)};
+	for (auto &arc : Vertex.arcs)
+	{
+		auto const radius{std::max(1.0, arc.radius)};
+		arc.transition = transition_between(speed, 1.0 / previous, cant_of(previous), 1.0 / radius, cant_of(radius), Limits);
+		previous = radius;
+	}
+}
+
 bool tangent_intersection(design const &Design, glm::dvec2 &Point)
 {
 	auto const start{plan_of(Design.start)};
@@ -1460,7 +1918,7 @@ constexpr double kTraceRadiusMax{50000.0};
 constexpr double kTraceRobust{0.25};
 
 // the parameters: the logarithms of the radii, then the weights of the shares of all but the first radius, as logarithms too
-vertex traced_shape(vertex const &Base, std::vector<double> const &Parameters, int const Radii)
+vertex traced_shape(design const &Design, vertex const &Base, std::vector<double> const &Parameters, int const Radii)
 {
 	auto shape{Base};
 	auto const radius = [&](int const Index) { return std::exp(std::clamp(Parameters[Index], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax))); };
@@ -1488,6 +1946,8 @@ vertex traced_shape(vertex const &Base, std::vector<double> const &Parameters, i
 		arc.share = weights[i] / total;
 		shape.arcs.push_back(arc);
 	}
+	if (Design.norms.checked)
+		recommend_between(shape, Design.speed, Design.norms);
 	return shape;
 }
 
@@ -1514,7 +1974,7 @@ trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<
 		return [&, Count](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
 			auto trial{Design};
 			trial.norms.checked = false;
-			trial.vertices[Vertex] = traced_shape(base, Parameters, Count);
+			trial.vertices[Vertex] = traced_shape(Design, base, Parameters, Count);
 			auto const result{compute(trial)};
 			if (false == result.valid)
 				return false;
@@ -1645,10 +2105,12 @@ trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<
 		take(3);
 	}
 
-	auto shape{traced_shape(base, fits[chosen].parameters, chosen)};
+	auto shape{traced_shape(Design, base, fits[chosen].parameters, chosen)};
 	shape.radius = std::max(kTraceRadiusMin, std::round(shape.radius));
 	for (auto &arc : shape.arcs)
 		arc.radius = std::max(kTraceRadiusMin, std::round(arc.radius));
+	if (Design.norms.checked)
+		recommend_between(shape, Design.speed, Design.norms);
 	auto trial{Design};
 	trial.vertices[Vertex] = shape;
 	auto const result{compute(trial)};

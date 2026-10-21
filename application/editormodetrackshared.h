@@ -70,6 +70,21 @@ inline std::string speed_of(double const Radius, alignment::limits const &Limits
 	return speed > 0.0 ? format(STR_C("  (up to %.0f km/h)"), speed) : std::string{};
 }
 
+// the transition curves and the cant the norms put in a layout, a compound curve where it goes on from an arc turning the same way
+inline std::string eased_of(std::optional<alignment::lay_result> const &Eased)
+{
+	if (false == Eased.has_value())
+		return {};
+	if (Eased->pieces.empty() || (Eased->entry <= 0.0 && Eased->exit <= 0.0))
+		return Eased->note;
+	auto text{Eased->compound ? format(STR_C("compound curve on from R %.0f m, a transition of %.0f m between the arcs"), Eased->from_radius, Eased->entry) : format(STR_C("transition curves %.0f / %.0f m"), Eased->entry, Eased->exit)};
+	if (Eased->cant > 0.0)
+		text += format(STR_C("   cant %.0f mm"), Eased->cant);
+	if (false == Eased->note.empty())
+		text += "\n" + Eased->note;
+	return text;
+}
+
 // the rise of the track from its start to its end, and the grades along it
 inline std::string vertical_of(std::vector<segment_data> const &Pieces)
 {
@@ -106,17 +121,20 @@ inline std::string lines_of(std::vector<std::string> const &Texts)
 	return text;
 }
 
+inline std::string narrowed(editor_track::layout const Layout, double const Radius, double const Arc)
+{
+	if ((Layout != editor_track::layout::arc_straight && Layout != editor_track::layout::straight_arc) || Arc == 0.0 || std::abs(Arc - Radius) < Radius * 0.01)
+		return {};
+	return format(STR_C("R %.0f m doesn't reach the cursor, the arc goes through it with R %.0f m"), Radius, Arc);
+}
+
 inline std::string narrowed(std::vector<segment_data> const &Pieces, editor_track::layout const Layout, double const Radius)
 {
-	if (Layout != editor_track::layout::arc_straight && Layout != editor_track::layout::straight_arc)
-		return {};
 	double sharpest{0.0};
 	for (auto const &piece : Pieces)
 		if (auto const radius{piece_plan_radius(piece)}; radius >= 0.5 && (sharpest == 0.0 || radius < sharpest))
 			sharpest = radius;
-	if (sharpest == 0.0 || sharpest >= Radius * 0.99)
-		return {};
-	return format(STR_C("R %.0f m doesn't reach the cursor, the arc goes through it with R %.0f m"), Radius, sharpest);
+	return narrowed(Layout, Radius, sharpest > Radius ? 0.0 : sharpest);
 }
 
 inline std::string describe(editor_track::straight const &Line)

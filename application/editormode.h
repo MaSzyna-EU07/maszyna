@@ -1482,6 +1482,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	TTrack const *m_join_track{nullptr};
 	editor_track::point_ref m_join_point;
 	mutable alignment::join_result m_join_last;
+	// the layout laid on from the end of From with the transition curves of the norms; none in the free laying, or where it doesn't fit
+	std::optional<alignment::lay_result> eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const;
+	mutable std::optional<alignment::lay_result> m_eased_last;
+	mutable std::optional<std::pair<alignment::lay_request, std::optional<alignment::lay_result>>> m_eased_cache;
 	bool track_wheel(double const Offset);
 	// a touchpad sends fractions of a notch: a choice moves a step for each whole notch gathered, and only one in a gesture when
 	// Gesture; a pause, another key or the other way starts over

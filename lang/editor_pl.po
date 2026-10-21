@@ -10222,3 +10222,24 @@ msgstr "LPM: punkt na środku toru na zdjęciu. Enter: zastosuj, Esc: porzuć"
 
 msgid "Click: one more point, the curve follows. Ctrl+click: take a point out"
 msgstr "LPM: kolejny punkt, łuk idzie za nimi. Ctrl+LPM: usuń punkt"
+
+msgid "compound curve on from R %.0f m, a transition of %.0f m between the arcs"
+msgstr "łuk koszowy dalej od R %.0f m, krzywa przejściowa %.0f m między łukami"
+
+msgid "Compound curve: R %.0f m goes on into R %.0f m through a transition curve of %.0f m"
+msgstr "Łuk koszowy: R %.0f m przechodzi w R %.0f m przez krzywą przejściową %.0f m"
+
+msgid "transition curves %.0f / %.0f m"
+msgstr "krzywe przejściowe %.0f / %.0f m"
+
+msgid "No room for the transition curves of the norms, the track is laid without them"
+msgstr "Brak miejsca na krzywe przejściowe wg norm, tor ułożony bez nich"
+
+msgid "No room to ramp the cant of %.0f mm the track ends with, the track is laid without transition curves"
+msgstr "Brak miejsca, żeby zejść z przechyłką %.0f mm z końca toru, tor ułożony bez krzywych przejściowych"
+
+msgid "The transition curves are cut to %.0f%% of what the norms ask for, there's no more room"
+msgstr "Krzywe przejściowe skrócone do %.0f%% długości wg norm, nie ma na więcej miejsca"
+
+msgid "The cant is lowered to %.0f mm, what the transition curves ramp"
+msgstr "Przechyłka obniżona do %.0f mm, tyle zdążą podnieść krzywe przejściowe"

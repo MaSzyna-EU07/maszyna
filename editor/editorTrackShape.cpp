@@ -640,33 +640,48 @@ std::vector<segment_data> editor_track::layout_pieces(layout const Kind, glm::dv
 	return straight_then_arc(Point, Direction, Grade, offset, radius, side);
 }
 
-editor_track::easing editor_track::ease_out_of(TTrack const &Neighbour, glm::dvec3 const &Joint, double const Grade, double const Speed, alignment::limits const &Limits)
+std::optional<editor_track::bend> editor_track::bend_at(TTrack const &Neighbour, glm::dvec3 const &Joint)
 {
-	easing result;
 	for (auto const &path : Neighbour.m_paths)
 		for (auto const atend : {false, true})
 		{
 			if (glm::distance(path.points[atend ? segment_data::point::end : segment_data::point::start], Joint) > 0.05)
 				continue;
+			bend result;
+			auto const sign{atend ? 1.0 : -1.0};
+			result.roll = atend ? static_cast<double>(path.rolls[1]) : -static_cast<double>(path.rolls[0]);
 			if (false == has_controls(path))
+			{
+				auto const chord{plan_of(path.points[segment_data::point::end] - path.points[segment_data::point::start])};
+				if (glm::length(chord) < 1e-9)
+					return std::nullopt;
+				result.direction = glm::normalize(chord) * sign;
 				return result;
+			}
 			bezier const curve{path};
 			auto const first{curve.first(atend ? 1.0 : 0.0)};
 			auto const second{curve.second(atend ? 1.0 : 0.0)};
 			auto const speed{std::hypot(first.x, first.z)};
 			if (speed < 1e-9)
-				return result;
-			auto const sign{atend ? 1.0 : -1.0};
-			auto const curvature{sign * (first.x * second.z - first.z * second.x) / (speed * speed * speed)};
-			glm::dvec2 const direction{sign * first.x / speed, sign * first.z / speed};
-			auto const roll{atend ? static_cast<double>(path.rolls[1]) : -static_cast<double>(path.rolls[0])};
-			result.curvature = curvature;
-			if (std::abs(curvature) < 1e-4)
-				return result;
-			result.length = std::max(20.0, alignment::recommend(Speed, 1.0 / std::abs(curvature), Limits).transition);
-			lay_transition(result, Joint, direction, Grade, roll);
+				return std::nullopt;
+			result.curvature = sign * (first.x * second.z - first.z * second.x) / (speed * speed * speed);
+			result.direction = {sign * first.x / speed, sign * first.z / speed};
 			return result;
 		}
+	return std::nullopt;
+}
+
+editor_track::easing editor_track::ease_out_of(TTrack const &Neighbour, glm::dvec3 const &Joint, double const Grade, double const Speed, alignment::limits const &Limits)
+{
+	easing result;
+	auto const end{bend_at(Neighbour, Joint)};
+	if (false == end.has_value())
+		return result;
+	result.curvature = end->curvature;
+	if (std::abs(end->curvature) < 1e-4)
+		return result;
+	result.length = std::max(20.0, alignment::recommend(Speed, 1.0 / std::abs(end->curvature), Limits).transition);
+	lay_transition(result, Joint, end->direction, Grade, end->roll);
 	return result;
 }
 
