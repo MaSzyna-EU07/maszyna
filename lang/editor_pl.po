@@ -8846,6 +8846,9 @@ msgstr "Łuki pionowe punktów %zu i %zu nachodzą na siebie o %.2f m"
 msgid "Point %zu: the vertical curve lies on switch %s"
 msgstr "Punkt %zu: łuk pionowy leży na rozjeździe %s"
 
+msgid "Point %zu: the convex vertical curve on switch %s is sharper than %.0f m"
+msgstr "Punkt %zu: wypukły łuk pionowy na rozjeździe %s jest ostrzejszy niż %.0f m"
+
 msgid "Constant grade between points %zu and %zu is %.1f m long, less than %.0f m"
 msgstr "Stałe pochylenie między punktami %zu i %zu ma %.1f m, mniej niż %.0f m"
 

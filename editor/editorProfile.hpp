@@ -115,19 +115,47 @@ struct recognition
 // grade line of existing track, from its elevations and grades sampled along the chainage
 line recognize(std::vector<double> const &Chainages, std::vector<double> const &Elevations, std::vector<double> const &Grades, recognition const &Options);
 
+// the hump of a marshalling yard: a crest with the fan of the switches of the sorting tracks past it, the ground falling away from
+// it both ways, one of them more steeply than a line or a station is laid, and the grade changing across it more sharply than
+// any vertical curve of the norms bends. Nothing else has all of it
+struct hump
+{
+	double from{0.0};
+	double crest{0.0};
+	double to{0.0};
+	double height{0.0}; // m, of the crest over the lower of its feet
+};
+// the humps of the ground; the samples which tell the height more closely than Tolerance, the rail tops beside, don't count
+std::vector<hump> humps(std::vector<double> const &Chainages, std::vector<double> const &Ground, context const &Context, double const Tolerance, std::vector<double> const &Tolerances = {});
+
 struct ground_fit
 {
 	double tolerance{1.0}; // m, the ground this near the line agrees with it; farther, the line doesn't lie on it there
 	double grade_max{0.0}; // per mille, the steepest grade the line may take; 0: the limit of the line
+	// the ground parting from the line longer than this, by less than the height and nowhere steeper than the steepest, is no
+	// structure: no bridge or viaduct with the banks and the walls under it, no hill over a tunnel, but a hump, a rise, a
+	// hollow. The line follows it, as closely as the tolerance. 0: the line goes past whatever it parts from
+	double follow_length{0.0}; // m
+	double follow_height{0.0}; // m
+	double follow_steepest{0.0}; // per mille
+	double follow_tolerance{0.0}; // m, 0: the tolerance
+	// on the humps the line follows the ground all along, as closely as the follow tolerance, and its vertical curves are as sharp
+	// as the ground bends, down to the hump radius. Nowhere else is a curve sharper than the norms require
+	std::vector<hump> humps;
+	double hump_radius{0.0}; // m, 0: the required one
 	// heights the line keeps between before it lies on the ground, as where the tracks off a switch of it lead into another line:
-	// they can't climb more than their length lets them
+	// they can't climb more than their length lets them. A yielding one, told over tracks which still bend, gives way to the
+	// curves of the norms, if to no ground
 	struct bound
 	{
 		double chainage{0.0};
 		double low{0.0};
 		double high{0.0};
+		bool yielding{false};
 	};
 	std::vector<bound> bounds;
+	// the joined ends keep the grade of the adjoining track; false: their height only, the grade breaks at the joint
+	bool hold_grades{true};
 };
 // grade line which lies on the ground where it agrees, within the limits of Settings, with the fewest and least changes of
 // grade; where the ground parts from it, at a bridge, a viaduct, a cutting wall, the line goes on past it. Chainages ascend,
@@ -145,6 +173,9 @@ struct departure
 	double depth{0.0}; // m, the ground against the line where they part the most
 };
 std::vector<departure> departures(line const &Line, std::vector<double> const &Chainages, std::vector<double> const &Ground, double const Tolerance);
+// stretches a track goes over on a bridge or a viaduct the ground doesn't have: the ground under the heights of the track by over
+// Depth, with a bank about them steeper than Steepest (per mille), as it falls by the abutments into what the bridge spans
+std::vector<departure> bridged(std::vector<double> const &Chainages, std::vector<double> const &Heights, std::vector<double> const &Ground, double const Depth, double const Steepest);
 
 // chainages where the paths have to end so that each of them carries a single grade or a single curve
 std::vector<double> breaks(line const &Line);

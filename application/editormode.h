@@ -45,6 +45,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <map>
+#include <tuple>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -349,8 +350,25 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<TTrack *> left; // tracks whose grade line is still to be fitted
 		std::vector<TTrack *> done; // tracks of the lines fitted already: the lines fitted later end on them and don't change them
 		// the rail tops of the lines fitted already, in squares of the plan: the tracks of a station lie in one plane, a line laid
-		// near them takes their height for its ground too, the more closely the nearer it is
-		std::map<std::pair<int, int>, std::vector<glm::dvec3>> laid;
+		// near them takes their height for its ground too, the more closely the nearer it is, and a line crossing one of them
+		// on its level its height on the crossing
+		struct laid_point
+		{
+			glm::dvec3 position{0.0};
+			glm::dvec2 direction{0.0, 1.0};
+			double grade{0.0};
+			double was{0.0}; // the height before the line was fitted
+			double rails{0.0}; // the height of the rails of the track
+			TTrack const *track{nullptr};
+		};
+		std::map<std::pair<int, int>, std::vector<laid_point>> laid;
+		// the points of all the paths as they were laid, for the crossings
+		std::map<std::pair<int, int>, std::vector<laid_point>> paths;
+		// ends which meet in the plan unlinked, laid apart in height, that the joining of the ends couldn't join as neither of
+		// them can be changed alone, as of two switches: each with the other one, which a line ending there takes over
+		std::map<std::tuple<TTrack const *, int, bool>, std::tuple<TTrack *, int, bool>> loose;
+		// the points of the lines over a bridge or a viaduct, the model falling away under them: no formation is laid there
+		std::map<std::pair<int, int>, std::vector<glm::dvec3>> bridged;
 		std::size_t lines{0}; // grade lines fitted and applied
 		std::size_t refused{0}; // grade lines the checks didn't let apply
 		std::size_t departures{0}; // grade lines parting from the terrain model by much

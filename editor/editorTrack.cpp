@@ -2192,6 +2192,20 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum)
 	route result;
 	if (false == is_supported(Track))
 		return result;
+	// through a switch the run goes along its first path, the main one; but where that one bends and the other runs straight,
+	// as in the quarters of a double slip, straight on
+	auto const bends = [](TTrack const &Of, int const Path) {
+		bezier const curve{Of.m_paths[Path]};
+		auto const from{plan_of(curve.first(0.0))};
+		auto const to{plan_of(curve.first(1.0))};
+		return glm::length(from) > 1e-9 && glm::length(to) > 1e-9 && std::abs(std::atan2(from.x * to.y - from.y * to.x, glm::dot(from, to))) > 0.002;
+	};
+	auto const main_of = [&](TTrack const &Of) {
+		for (int i = 1; i < static_cast<int>(Of.m_paths.size()); ++i)
+			if (bends(Of, 0) && false == bends(Of, i))
+				return i;
+		return 0;
+	};
 	auto const walk = [&](route_node Node) {
 		std::vector<route_node> nodes;
 		double length{0.0};
@@ -2202,7 +2216,7 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum)
 				break;
 			auto chosen{candidates.front()};
 			for (auto const &candidate : candidates)
-				if (std::get<1>(candidate) == 0)
+				if (std::get<1>(candidate) == main_of(*std::get<0>(candidate)))
 					chosen = candidate;
 			auto *track{std::get<0>(chosen)};
 			if (track == &Track || std::any_of(nodes.begin(), nodes.end(), [&](route_node const &Other) { return std::get<0>(Other) == track; }))
@@ -2213,12 +2227,13 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum)
 		}
 		return nodes;
 	};
-	auto const ahead{walk({&Track, 0, true})};
-	auto const behind{walk({&Track, 0, false})};
+	auto const own{main_of(Track)};
+	auto const ahead{walk({&Track, own, true})};
+	auto const behind{walk({&Track, own, false})};
 	for (auto node = behind.rbegin(); node != behind.rend(); ++node)
 		if (std::none_of(ahead.begin(), ahead.end(), [&](route_node const &Other) { return std::get<0>(Other) == std::get<0>(*node); }))
 			result.spans.push_back({std::get<0>(*node), std::get<1>(*node), false == std::get<2>(*node)});
-	result.spans.push_back({&Track, 0, true});
+	result.spans.push_back({&Track, own, true});
 	for (auto const &node : ahead)
 		result.spans.push_back({std::get<0>(node), std::get<1>(node), std::get<2>(node)});
 	return result;
@@ -2230,6 +2245,24 @@ editor_track::route editor_track::route_of(chain const &Chain)
 	for (std::size_t i = 0; i < Chain.tracks.size(); ++i)
 		result.spans.push_back({Chain.tracks[i], 0, Chain.forward[i]});
 	return result;
+}
+
+double editor_track::route_speed(route const &Route)
+{
+	std::vector<std::pair<double, double>> speeds;
+	auto total{0.0};
+	for (auto const &span : Route.spans)
+		if (auto const speed{velocity(*span.track)}; speed > 0.0)
+		{
+			speeds.emplace_back(speed, std::abs(span.to - span.from));
+			total += speeds.back().second;
+		}
+	std::sort(speeds.begin(), speeds.end());
+	auto passed{0.0};
+	for (auto const &[speed, length] : speeds)
+		if ((passed += length) >= total * 0.5)
+			return speed;
+	return 100.0;
 }
 
 std::vector<editor_track::route_sample> editor_track::sample_route(route &Route, double const Step)
@@ -2446,6 +2479,20 @@ bool editor_track::adjoining_grade(route const &Route, bool const Atend, double 
 	auto const along{(forward ? 1.0 : -1.0) * tangent.y / plan};
 	Grade = Atend ? along : -along;
 	return true;
+}
+
+std::vector<editor_track::continuation> editor_track::continuations(route_span const &Span)
+{
+	std::vector<continuation> result;
+	for (auto const &[track, path, forward] : route_next({Span.track, Span.path, Span.forward}))
+	{
+		auto const tangent{path_tangent(track->m_paths[path], false == forward)};
+		auto const plan{std::hypot(tangent.x, tangent.z)};
+		if (plan < 1e-9)
+			continue;
+		result.push_back({{track, path, forward}, (forward ? 1.0 : -1.0) * tangent.y / plan});
+	}
+	return result;
 }
 
 std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, std::function<double(double)> const &Elevation, std::function<double(double)> const &Grade, std::vector<double> const &Breaks, std::vector<std::pair<TTrack *, state>> &States, std::vector<TTrack *> &Created)

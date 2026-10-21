@@ -377,6 +377,9 @@ class editor_track
 	// continues both ways from the path, through switches along their path 0
 	static route run_route(TTrack &Track, double const Maximum);
 	static route route_of(chain const &Chain);
+	// the speed most of the sampled route is laid for, by the length: a few tracks set faster or slower don't set the curves of
+	// all of it. 100 where none is set
+	static double route_speed(route const &Route);
 	struct route_sample
 	{
 		double chainage{0.0};
@@ -394,6 +397,14 @@ class editor_track
 	// grade of the path which adjoins the end of the route, positive rising along the route
 	// Adjoining, Path, Entered: the path met, and whether it's met at its start
 	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade, TTrack **Adjoining = nullptr, int *Path = nullptr, bool *Entered = nullptr);
+	// the paths which go on from the end of the span the way it runs, both of a switch met at its start, with their grade there,
+	// positive rising onward
+	struct continuation
+	{
+		route_span span;
+		double grade{0.0};
+	};
+	static std::vector<continuation> continuations(route_span const &Span);
 	// path off the route whose end no longer met the adjoining path in height
 	struct height_gap
 	{

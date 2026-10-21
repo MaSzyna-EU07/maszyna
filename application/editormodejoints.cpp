@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorProfile.hpp"
 
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
@@ -45,6 +46,12 @@ double const kModelStep{5.0}; // m between the places of the tracks compared wit
 std::size_t const kModelRun{200}; // places of a path whose model is asked for at once
 double const kModelPoll{0.25}; // s between the looks whether the model is in
 double const kUnfitted{30.0}; // m; a scenery whose tracks lie this far from the model as a whole isn't fitted to it
+// a track over the model by more than the depth goes on a bridge or a viaduct the model leaves out where the model falls away by
+// the abutments, steeper than the banks, within the reach along the track both ways; as the grade lines fitted to the model
+// tell them. By the abutments the track is over the model by less
+double const kBridgeDepth{1.0}; // m
+double const kAbutment{100.0}; // per mille
+double const kBridgeReach{200.0}; // m
 
 using kind = joints_tool::joint_issue::kind;
 
@@ -198,8 +205,8 @@ bool joints_tool::joints_model()
 		for (auto i = Run.first; i < Run.second; ++i)
 		{
 			glm::dvec2 const at{state.places[i].position.x, state.places[i].position.z};
-			Min = glm::min(Min, at - 2.0);
-			Max = glm::max(Max, at + 2.0);
+			Min = glm::min(Min, at - kBridgeReach);
+			Max = glm::max(Max, at + kBridgeReach);
 		}
 	};
 	glm::dvec2 low, high;
@@ -235,6 +242,37 @@ bool joints_tool::joints_model()
 		if (std::abs(known[known.size() / 2]) > kUnfitted)
 			shift = known[known.size() / 2];
 	}
+	// a place on a bridge or a viaduct the model leaves out isn't off it: the route through its track sampled both ways, the
+	// stretches over the model as on a bridge found along it
+	std::map<TTrack const *, std::pair<std::vector<editor_track::route_sample>, std::vector<profile::departure>>> routes;
+	auto const on_bridge = [&](nmt_place const &Place) {
+		auto found{routes.find(Place.track)};
+		if (found == routes.end())
+		{
+			auto route{editor_track::run_route(*Place.track, kBridgeReach)};
+			auto samples{editor_track::sample_route(route, 1.0)};
+			std::vector<double> chainages, heights, ground;
+			for (auto const &sample : samples)
+			{
+				chainages.push_back(sample.chainage);
+				heights.push_back(sample.position.y - route.spans[sample.span].track->rail_height());
+				double height;
+				ground.push_back(m_ground.terrain_model().height(sample.position.x, sample.position.z, height) ? height + m_ground.terrain_model_offset() + shift : std::numeric_limits<double>::quiet_NaN());
+			}
+			auto spans{profile::bridged(chainages, heights, ground, kBridgeDepth, kAbutment)};
+			found = routes.emplace(Place.track, std::make_pair(std::move(samples), std::move(spans))).first;
+		}
+		auto const &[samples, spans]{found->second};
+		auto nearest{std::numeric_limits<double>::max()};
+		double at{0.0};
+		for (auto const &sample : samples)
+			if (auto const distance{geometry::plan_distance(sample.position, Place.position)}; distance < nearest)
+			{
+				nearest = distance;
+				at = sample.chainage;
+			}
+		return nearest <= 1.0 && std::any_of(spans.begin(), spans.end(), [&](profile::departure const &Span) { return at >= Span.from - kModelStep && at <= Span.to + kModelStep; });
+	};
 	// the place of each path the farthest from the model
 	std::map<std::pair<TTrack *, int>, std::size_t> worst;
 	for (std::size_t i = 0; i < state.places.size(); ++i)
@@ -242,7 +280,7 @@ bool joints_tool::joints_model()
 		if (false == std::isfinite(differences[i]))
 			continue;
 		differences[i] -= shift;
-		if (std::abs(differences[i]) <= state.model)
+		if (std::abs(differences[i]) <= state.model || (differences[i] > 0.0 && on_bridge(state.places[i])))
 			continue;
 		auto const key{std::make_pair(state.places[i].track, state.places[i].path)};
 		auto const found{worst.find(key)};

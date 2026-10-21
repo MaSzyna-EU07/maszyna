@@ -82,14 +82,6 @@ double nice_step(double const Approximate)
 	return power * 10.0;
 }
 
-double route_speed(editor_track::route const &Route)
-{
-	double speed{-1.0};
-	for (auto const &span : Route.spans)
-		speed = std::max(speed, editor_track::velocity(*span.track));
-	return speed > 0.0 ? speed : 100.0;
-}
-
 std::string const kProfileMark{"//$p"};
 
 profile::line reversed_line(profile::line Line, double const Length)
@@ -915,7 +907,7 @@ void editor_mode::profile_recognize()
 	auto const norms{state.line.norms};
 	state.line = profile::recognize(chainages, elevations, grades, {});
 	state.line.norms = norms;
-	state.line.speed = route_speed(state.route);
+	state.line.speed = editor_track::route_speed(state.route);
 	state.selected = -1;
 	profile_check();
 	state.status = format(STR_P("Grade line recognized from the track: %zu point, largest departure %.3f m", "Grade line recognized from the track: %zu points, largest departure %.3f m", state.line.points.size()), state.line.points.size(), state.departure);
@@ -933,7 +925,7 @@ void editor_mode::profile_fit_ground()
 		return;
 	}
 	auto settings{state.line};
-	settings.speed = route_speed(state.route);
+	settings.speed = editor_track::route_speed(state.route);
 	// the grade line is the rail top: it's fitted so the formation under it, not the rails, follows the ground
 	auto ground{state.terrain};
 	for (std::size_t i = 0; i < ground.size() && i < state.beds.size(); ++i)

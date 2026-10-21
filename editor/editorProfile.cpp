@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <optional>
 #include <tuple>
 
@@ -23,6 +24,9 @@ namespace profile
 
 namespace
 {
+
+// a switch, and the timbers it shares, may lie on a vertical curve: a concave one, or a convex one no sharper than this
+double constexpr switch_crest{2000.0}; // m
 
 double polyline(line const &Line, double const Chainage)
 {
@@ -256,9 +260,17 @@ std::vector<issue> check(line const &Line, context const &Context)
 			add(true, point, points[c.point].chainage, format(STR_C("Point %zu: the vertical curve reaches past the end of the route"), c.point + 1));
 		if (i + 1 < list.size() && c.end > list[i + 1].start + 1e-6)
 			add(true, point, c.end, format(STR_C("Vertical curves of points %zu and %zu overlap by %.2f m"), c.point + 1, list[i + 1].point + 1, c.end - list[i + 1].start));
+		// a switch may lie on a concave curve, and on a convex one no sharper than switch_crest, though better off them; within
+		// what the fit rounds the radius to its room by
 		for (auto const &zone : Context.switches)
 			if (overlaps(c.start, c.end, zone))
-				add(true, point, points[c.point].chainage, format(STR_C("Point %zu: the vertical curve lies on switch %s"), c.point + 1, zone.name.c_str()));
+			{
+				if (c.change < 0.0 && points[c.point].radius < switch_crest * 0.99)
+					add(true, point, points[c.point].chainage, format(STR_C("Point %zu: the convex vertical curve on switch %s is sharper than %.0f m"), c.point + 1, zone.name.c_str(), switch_crest));
+				else
+					add(false, point, points[c.point].chainage, format(STR_C("Point %zu: the vertical curve lies on switch %s"), c.point + 1, zone.name.c_str()));
+				break;
+			}
 	}
 	if (norms.element_min > 0.0)
 	{
@@ -499,6 +511,117 @@ line recognize(std::vector<double> const &Chainages, std::vector<double> const &
 	return result;
 }
 
+std::vector<hump> humps(std::vector<double> const &Chainages, std::vector<double> const &Ground, context const &Context, double const Tolerance, std::vector<double> const &Tolerances)
+{
+	std::vector<hump> result;
+	auto const count{std::min(Chainages.size(), Ground.size())};
+	if (count < 2)
+		return result;
+	// the ground every few metres, the mean of the model about each, past its noise
+	double constexpr spacing{5.0};
+	auto const origin{Chainages.front()};
+	auto const end{Chainages[count - 1]};
+	auto const cells{static_cast<std::ptrdiff_t>(std::lround((end - origin) / spacing)) + 1};
+	std::vector<double> level(cells, 0.0);
+	std::vector<int> taken(cells, 0);
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		if (false == std::isfinite(Ground[i]) || (i < Tolerances.size() && Tolerances[i] > 0.0 && Tolerances[i] < Tolerance))
+			continue;
+		auto const k{std::clamp<std::ptrdiff_t>(std::lround((Chainages[i] - origin) / spacing), 0, cells - 1)};
+		level[k] += Ground[i];
+		++taken[k];
+	}
+	for (std::ptrdiff_t k = 0; k < cells; ++k)
+		level[k] = taken[k] > 0 ? level[k] / taken[k] : std::numeric_limits<double>::quiet_NaN();
+	auto const at = [&](std::ptrdiff_t const K) { return K >= 0 && K < cells ? level[K] : std::numeric_limits<double>::quiet_NaN(); };
+	auto const cells_of = [](double const Distance) { return static_cast<std::ptrdiff_t>(std::lround(Distance / spacing)); };
+	// the crest is the highest of the ground about it, the feet where the ground has fallen nearly as far as it falls within
+	// the reach: some metres lower than the crest, not as many as of a hill or a bridge
+	double constexpr around{60.0}; // m
+	double constexpr farthest{300.0}; // m
+	double constexpr lowest{1.0}; // m
+	double constexpr highest{6.0}; // m
+	// the grades just past the rounding of the crest fall away from it both ways, one of them more steeply than lines and
+	// stations are laid, the two together a change of grade over some 50 m which no curve of 1250 m or more makes
+	double constexpr inner{10.0}; // m
+	double constexpr outer{40.0}; // m
+	double constexpr falling{5.0}; // per mille
+	double constexpr steep{25.0}; // per mille
+	double constexpr sharp{40.0}; // per mille
+	// nowhere about the crest as steep as the banks of a bridge, the walls of a cutting
+	double constexpr wall{80.0}; // per mille
+	// no switch on the crest; past it the fan, switches of their own length, not the shared timbers of the ones beside
+	double constexpr clear{15.0}; // m
+	double constexpr fan{150.0}; // m
+	double constexpr body{15.0}; // m
+	std::size_t constexpr fanning{2};
+	auto const crest_of = [&](std::ptrdiff_t const C) -> std::optional<hump> {
+		auto const top{at(C)};
+		if (false == std::isfinite(top))
+			return std::nullopt;
+		for (auto k = C - cells_of(around); k <= C + cells_of(around); ++k)
+			if (auto const other{at(k)}; std::isfinite(other) && (other > top || (other == top && k < C)))
+				return std::nullopt;
+		hump found;
+		found.crest = origin + spacing * static_cast<double>(C);
+		for (auto const &zone : Context.switches)
+			if (zone.from < found.crest + clear && zone.to > found.crest - clear)
+				return std::nullopt;
+		double grades{0.0};
+		double steepest{0.0};
+		bool fanned{false};
+		for (int const side : {-1, 1})
+		{
+			auto low{top};
+			std::ptrdiff_t seen{0};
+			auto const reach{cells_of(farthest)};
+			for (std::ptrdiff_t d = 1; d <= reach; ++d)
+				if (auto const height{at(C + side * d)}; std::isfinite(height))
+				{
+					low = std::min(low, height);
+					++seen;
+				}
+			if (seen < cells_of(around) || top - low < lowest || top - low > highest)
+				return std::nullopt;
+			found.height = std::max(found.height, top - low);
+			auto foot{reach};
+			for (std::ptrdiff_t d = 1; d <= reach; ++d)
+				if (auto const height{at(C + side * d)}; std::isfinite(height) && top - height >= 0.9 * (top - low))
+				{
+					foot = d;
+					break;
+				}
+			// and on past the foot as far as the curve into the grade beyond
+			(side < 0 ? found.from : found.to) = std::clamp(found.crest + side * spacing * static_cast<double>(foot + cells_of(25.0)), origin, end);
+			auto const off{at(C + side * cells_of(inner))};
+			auto const on{at(C + side * cells_of(outer))};
+			if (false == std::isfinite(off) || false == std::isfinite(on))
+				return std::nullopt;
+			auto const grade{(off - on) / (outer - inner) * 1000.0};
+			if (grade < falling)
+				return std::nullopt;
+			grades += grade;
+			steepest = std::max(steepest, grade);
+			for (std::ptrdiff_t d = 0; d + 2 <= cells_of(around); ++d)
+				if (auto const a{at(C + side * d)}, b{at(C + side * (d + 2))}; std::isfinite(a) && std::isfinite(b) && std::abs(a - b) / (2.0 * spacing) * 1000.0 > wall)
+					return std::nullopt;
+			std::size_t past{0};
+			for (auto const &zone : Context.switches)
+				if (auto const distance{side > 0 ? zone.from - found.crest : found.crest - zone.to}; zone.to - zone.from >= body && distance >= clear && distance <= fan)
+					++past;
+			fanned = fanned || past >= fanning;
+		}
+		if (steepest < steep || grades < sharp || false == fanned)
+			return std::nullopt;
+		return found;
+	};
+	for (std::ptrdiff_t c = 0; c < cells; ++c)
+		if (auto const found{crest_of(c)}; found && (result.empty() || found->crest > result.back().to))
+			result.push_back(*found);
+	return result;
+}
+
 line fit_ground(std::vector<double> const &Chainages, std::vector<double> const &Ground, context const &Context, line const &Settings, ground_fit const &Options, std::vector<double> const &Tolerances,
                 std::vector<double> const &Reaches)
 {
@@ -527,27 +650,60 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		part[i] = at - static_cast<double>(cell[i]);
 	}
 	auto const node = [&](std::size_t const K) { return origin + step * static_cast<double>(K); };
-	// a change of grade at a node is the curve of the required radius around it, which keeps off the switches: none on a
-	// switch, and beside one no more than a curve reaching up to it
+	// a change of grade at a node is the curve of the required radius around it. On a hump the least radius is the one of the
+	// hump, though a convex curve over a switch is no sharper than switch_crest
 	auto const required{std::ceil(required_radius(result) / 10.0) * 10.0};
+	auto const on_hump = [&](double const Chainage) { return std::any_of(Options.humps.begin(), Options.humps.end(), [&](hump const &Hump) { return Chainage >= Hump.from && Chainage <= Hump.to; }); };
+	auto const least = [&](double const Chainage) { return Options.hump_radius > 0.0 && on_hump(Chainage) ? std::min(required, std::ceil(Options.hump_radius / 10.0) * 10.0) : required; };
+	auto const on_switch = [&](double const From, double const To) { return std::any_of(Context.switches.begin(), Context.switches.end(), [&](auto const &Zone) { return Zone.to > From && Zone.from < To; }); };
 	auto const sharpest{step / (required * 1.001)};
-	std::vector<double> bend_max(nodes, sharpest);
-	for (std::size_t k = 1; k + 1 < nodes; ++k)
-		for (auto const &zone : Context.switches)
-			bend_max[k] = std::min(bend_max[k], std::max(0.0, 2.0 * std::max(zone.from - node(k), node(k) - zone.to) / (required * 1.001)));
+	std::vector<double> sag_max(nodes), crest_max(nodes);
+	for (std::size_t k = 0; k < nodes; ++k)
+	{
+		auto const radius{least(node(k))};
+		sag_max[k] = crest_max[k] = step / (radius * 1.001);
+		// a sharper one keeps its curve off the switches
+		if (radius < switch_crest)
+			for (auto const &zone : Context.switches)
+				crest_max[k] = std::min(crest_max[k], std::max(step / (switch_crest * 1.001), 2.0 * std::max(zone.from - node(k), node(k) - zone.to) / (radius * 1.001)));
+	}
 	struct held
 	{
 		std::size_t cell;
 		double part;
 		double low;
 		double high;
+		bool yielding;
 	};
 	std::vector<held> bounds;
 	for (auto const &bound : Options.bounds)
 	{
 		auto const at{std::clamp((bound.chainage - origin) / step, 0.0, static_cast<double>(nodes - 1))};
 		auto const cell{std::min(nodes - 2, static_cast<std::size_t>(at))};
-		bounds.push_back({cell, at - static_cast<double>(cell), std::min(bound.low, bound.high), std::max(bound.low, bound.high)});
+		bounds.push_back({cell, at - static_cast<double>(cell), std::min(bound.low, bound.high), std::max(bound.low, bound.high), bound.yielding});
+	}
+	// the bounds which contradict each other about one place, as of two crossovers into lines fitted apart in height, hold as far
+	// as both can: the line keeps between them. Held both, it would tear itself apart over them
+	std::sort(bounds.begin(), bounds.end(), [](held const &A, held const &B) { return A.cell + A.part < B.cell + B.part; });
+	for (std::size_t first = 0; first < bounds.size();)
+	{
+		auto last{first + 1};
+		while (last < bounds.size() && bounds[last].cell + bounds[last].part - bounds[first].cell - bounds[first].part <= 1.0)
+			++last;
+		auto low{-std::numeric_limits<double>::max()};
+		auto high{std::numeric_limits<double>::max()};
+		for (auto i = first; i < last; ++i)
+		{
+			low = std::max(low, bounds[i].low);
+			high = std::min(high, bounds[i].high);
+		}
+		if (low > high)
+			for (auto i = first; i < last; ++i)
+			{
+				bounds[i].low = high;
+				bounds[i].high = low;
+			}
+		first = last;
 	}
 	bool const start_fixed{Settings.join_start && Context.start_joined};
 	bool const end_fixed{Settings.join_end && Context.end_joined};
@@ -557,14 +713,24 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	// what parts from the line, a bridge, a viaduct, a wall, a track on another level, is gone past rather than followed. The
 	// bends are no sharper than the radius of the norms and the grades no steeper than the limit
 	auto const tolerance{std::max(0.01, Options.tolerance)};
-	auto const own = [&](std::size_t const I) { return I < Tolerances.size() && Tolerances[I] > 0.0 ? std::max(0.005, Tolerances[I]) : tolerance; };
-	auto const reach = [&](std::size_t const I) { return I < Reaches.size() && Reaches[I] > 0.0 ? std::max(0.005, Reaches[I]) : own(I); };
+	auto const told = [&](std::size_t const I) { return I < Tolerances.size() && Tolerances[I] > 0.0 ? std::max(0.005, Tolerances[I]) : tolerance; };
+	// the ground the line follows however far it parts, and as closely as asked, where it parted longer than a structure would
+	std::vector<double> followed(count, 0.0);
+	auto const close_to{Options.follow_tolerance > 0.0 ? std::max(0.005, Options.follow_tolerance) : tolerance};
+	auto const own = [&](std::size_t const I) { return followed[I] > 0.0 ? close_to : told(I); };
+	auto const reach = [&](std::size_t const I) { return followed[I] > 0.0 ? followed[I] : I < Reaches.size() && Reaches[I] > 0.0 ? std::max(0.005, Reaches[I]) : told(I); };
+	for (auto const &hump : Options.humps)
+		for (std::size_t i = 0; i < count; ++i)
+			if (std::isfinite(Ground[i]) && told(i) >= tolerance && Chainages[i] >= hump.from && Chainages[i] <= hump.to)
+				followed[i] = hump.height + tolerance;
 	auto const price{24000.0 * tolerance * tolerance};
 	auto const grade_max{(Options.grade_max > 0.0 ? Options.grade_max : result.norms.grade_max) / 1000.0};
-	// what has to hold, the heights of the joined ends and the switches in one plane, holds before the grades of the ends, and
-	// these before the limits of the norms
+	// what has to hold, the heights of the joined ends, holds before the grades of the ends, and these before the limits of the
+	// norms. A yielding bound counts as much as a kilometre of the ground off as far, and gives
+	// way to the norms
 	double constexpr stiff{1e11};
 	double constexpr firm{1e9};
+	double constexpr leaning{1e3};
 
 	std::vector<double> x(nodes);
 	{
@@ -628,15 +794,10 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		{
 			auto const terms = {std::pair{k - 1, 1.0 / step}, std::pair{k, -2.0 / step}, std::pair{k + 1, 1.0 / step}};
 			auto const bend{(Line[k - 1] - 2.0 * Line[k] + Line[k + 1]) / step};
-			if (bend_max[k] <= 0.0)
-			{
-				square(terms, bend, stiff);
-				continue;
-			}
 			auto const root{std::sqrt(bend * bend + flat * flat)};
 			add(terms, price * root, price * bend / root, price * flat * flat / (root * root * root));
-			if (std::abs(bend) > bend_max[k])
-				square(terms, bend - std::copysign(bend_max[k], bend), firm);
+			if (auto const most{bend > 0.0 ? sag_max[k] : crest_max[k]}; std::abs(bend) > most)
+				square(terms, bend - std::copysign(most, bend), firm);
 		}
 		for (std::size_t k = 0; k + 1 < nodes; ++k)
 		{
@@ -647,18 +808,20 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		if (start_fixed)
 		{
 			square({{0, 1.0}}, Line[0] - Context.start_elevation, stiff);
-			square({{0, -1.0 / step}, {1, 1.0 / step}}, (Line[1] - Line[0]) / step - Context.start_grade, firm * 10.0);
+			if (Options.hold_grades)
+				square({{0, -1.0 / step}, {1, 1.0 / step}}, (Line[1] - Line[0]) / step - Context.start_grade, firm * 10.0);
 		}
 		if (end_fixed)
 		{
 			square({{nodes - 1, 1.0}}, Line[nodes - 1] - Context.end_elevation, stiff);
-			square({{nodes - 2, -1.0 / step}, {nodes - 1, 1.0 / step}}, (Line[nodes - 1] - Line[nodes - 2]) / step - Context.end_grade, firm * 10.0);
+			if (Options.hold_grades)
+				square({{nodes - 2, -1.0 / step}, {nodes - 1, 1.0 / step}}, (Line[nodes - 1] - Line[nodes - 2]) / step - Context.end_grade, firm * 10.0);
 		}
 		for (auto const &bound : bounds)
 		{
 			auto const height{Line[bound.cell] * (1.0 - bound.part) + Line[bound.cell + 1] * bound.part};
 			if (height < bound.low || height > bound.high)
-				square({{bound.cell, 1.0 - bound.part}, {bound.cell + 1, bound.part}}, height - std::clamp(height, bound.low, bound.high), firm * 10.0);
+				square({{bound.cell, 1.0 - bound.part}, {bound.cell + 1, bound.part}}, height - std::clamp(height, bound.low, bound.high), bound.yielding ? leaning : firm * 10.0);
 		}
 		return total;
 	};
@@ -683,36 +846,105 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	};
 	// the spread and the flat narrow down level by level, each level going on from the line of the one before: from nearly
 	// all the ground agreeing and changes of grade costing their square, to the tolerance and their size
-	for (;;)
-	{
-		auto current{cost(x, true)};
-		for (int pass = 0; pass < 100; ++pass)
+	auto const solve = [&]() {
+		spread = 256.0;
+		flat = sharpest;
+		for (;;)
 		{
-			auto const direction{newton()};
-			auto descent{0.0};
-			for (std::size_t k = 0; k < nodes; ++k)
-				descent += gradient[k] * direction[k];
-			std::vector<double> trial(nodes);
-			auto length{1.0};
-			for (;; length *= 0.5)
+			auto current{cost(x, true)};
+			for (int pass = 0; pass < 100; ++pass)
 			{
+				auto const direction{newton()};
+				auto descent{0.0};
 				for (std::size_t k = 0; k < nodes; ++k)
-					trial[k] = x[k] + length * direction[k];
-				if (cost(trial, false) <= current + 1e-4 * length * descent || length < 1e-6)
+					descent += gradient[k] * direction[k];
+				std::vector<double> trial(nodes);
+				auto length{1.0};
+				for (;; length *= 0.5)
+				{
+					for (std::size_t k = 0; k < nodes; ++k)
+						trial[k] = x[k] + length * direction[k];
+					if (cost(trial, false) <= current + 1e-4 * length * descent || length < 1e-6)
+						break;
+				}
+				auto moved{0.0};
+				for (std::size_t k = 0; k < nodes; ++k)
+					moved = std::max(moved, std::abs(length * direction[k]));
+				x = std::move(trial);
+				current = cost(x, true);
+				if (moved < 1e-5)
 					break;
 			}
-			auto moved{0.0};
-			for (std::size_t k = 0; k < nodes; ++k)
-				moved = std::max(moved, std::abs(length * direction[k]));
-			x = std::move(trial);
-			current = cost(x, true);
-			if (moved < 1e-5)
+			if (spread <= 1.0 && flat <= 1e-6)
 				break;
+			spread = std::max(1.0, spread * 0.5);
+			flat = std::max(1e-6, flat * 0.5);
 		}
-		if (spread <= 1.0 && flat <= 1e-6)
+	};
+	solve();
+	// the ground parted from the line farther along than a structure is long, not as far as a viaduct or a hill over a tunnel
+	// keep it, and nowhere as steep as the banks and the walls under a bridge, is none: a hump, a rise, a hollow the line goes
+	// over. It agrees with the line however far it is, and the line is sought again. The ground which tells the height no more
+	// closely than the tolerance counts, the model, not the rail tops beside; its steepness over a few metres, past the noise
+	// of the model
+	double constexpr chord{5.0};
+	for (int round = 0; round < 3 && Options.follow_length > 0.0; ++round)
+	{
+		bool more{false};
+		std::vector<std::size_t> run;
+		std::size_t back{0};
+		std::size_t previous{count};
+		int side{0};
+		double farthest{0.0};
+		double steepest{0.0};
+		auto const close = [&]() {
+			if (side != 0 && Chainages[run.back()] - Chainages[run.front()] > Options.follow_length && farthest <= Options.follow_height && steepest <= Options.follow_steepest / 1000.0)
+			{
+				for (auto const i : run)
+					if (followed[i] <= 0.0)
+						followed[i] = farthest + tolerance;
+				more = true;
+			}
+			side = 0;
+			run.clear();
+		};
+		auto const extend = [&](std::size_t const I) {
+			while (back + 1 < run.size() && Chainages[I] - Chainages[run[back + 1]] >= chord)
+				++back;
+			if (false == run.empty() && Chainages[I] - Chainages[run[back]] >= chord)
+				steepest = std::max(steepest, std::abs(Ground[I] - Ground[run[back]]) / (Chainages[I] - Chainages[run[back]]));
+			run.push_back(I);
+		};
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			if (false == std::isfinite(Ground[i]) || told(i) < tolerance)
+				continue;
+			auto const off{x[cell[i]] * (1.0 - part[i]) + x[cell[i] + 1] * part[i] - Ground[i]};
+			auto const now{followed[i] > 0.0 ? 0 : off > reach(i) ? 1 : off < -reach(i) ? -1 : 0};
+			if (now != side)
+			{
+				close();
+				if (now != 0)
+				{
+					side = now;
+					back = 0;
+					farthest = 0.0;
+					steepest = 0.0;
+					if (previous < count)
+						run.push_back(previous);
+				}
+			}
+			if (now != 0)
+			{
+				farthest = std::max(farthest, std::abs(off));
+				extend(i);
+			}
+			previous = i;
+		}
+		close();
+		if (false == more)
 			break;
-		spread = std::max(1.0, spread * 0.5);
-		flat = std::max(1e-6, flat * 0.5);
+		solve();
 	}
 
 	// the design: the changes of grade along a bend, one after another the same way, are one point of intersection where
@@ -720,10 +952,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	// radius stays within the nodes of its bend; where the ends held the line sharper, the curve is as sharp as the line
 	auto const change = [&](std::size_t const K) { return (x[K - 1] - 2.0 * x[K] + x[K + 1]) / step; };
 	auto const significant{sharpest * 0.01};
-	auto const between = [&](std::size_t const K, std::size_t const L) {
-		return std::any_of(Context.switches.begin(), Context.switches.end(), [&](auto const &Zone) { return Zone.to > node(K) && Zone.from < node(L); });
-	};
-	auto const bends = [&](std::size_t const K) { return bend_max[K] > 0.0 && std::abs(change(K)) >= significant; };
+	auto const bends = [&](std::size_t const K) { return std::abs(change(K)) >= significant; };
 	// an end whose grade the line couldn't take over keeps only its height, the grade breaks at the joint
 	if (start_fixed && std::abs((x[1] - x[0]) / step - Context.start_grade) > significant)
 		result.join_start = false;
@@ -731,6 +960,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		result.join_end = false;
 	result.points.push_back({origin, x[0]});
 	std::vector<double> rooms{0.0};
+	std::vector<double> lengths{0.0};
 	for (std::size_t k = 1; k + 1 < nodes;)
 	{
 		if (false == bends(k))
@@ -741,29 +971,48 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		auto const first{k};
 		auto const sign{change(k) > 0.0};
 		double sum{0.0}, moment{0.0};
-		for (; k + 1 < nodes && bends(k) && (change(k) > 0.0) == sign && (k == first || false == between(k - 1, k)); ++k)
+		for (; k + 1 < nodes && bends(k) && (change(k) > 0.0) == sign; ++k)
 		{
 			sum += change(k);
 			moment += change(k) * node(k);
 		}
 		auto const at{moment / sum};
 		pvi point{at, x[first] + (x[first] - x[first - 1]) / step * (at - node(first))};
-		auto room{std::min(at - node(first) + step * 0.5, node(k - 1) + step * 0.5 - at)};
-		for (auto const &zone : Context.switches)
-			room = std::min(room, std::max(0.0, std::max(zone.from - at, at - zone.to)));
+		auto const room{std::min(at - node(first) + step * 0.5, node(k - 1) + step * 0.5 - at)};
 		result.points.push_back(point);
 		rooms.push_back(room);
+		lengths.push_back(node(k - 1) - node(first) + step);
 	}
 	result.points.push_back({node(nodes - 1), x[nodes - 1]});
 	rooms.push_back(0.0);
-	// the curve of the required radius where it has room, off the switches and the curves beside; where it hasn't, as sharp as
-	// the room lets it be
+	lengths.push_back(0.0);
+	// the curve of the required radius where it has room, off the curves beside; where it hasn't, as sharp as the room lets it
+	// be. On a hump as long as the bend of the line, no sharper than the radius of the hump, nor than a switch lets a convex one
 	for (std::size_t i = 1; i + 1 < result.points.size(); ++i)
 	{
 		auto const turn{std::abs(grade_after(result, i) - grade_after(result, i - 1))};
-		if (turn * 1000.0 > result.norms.curve_threshold + 1e-6 && required * turn * 0.5 > rooms[i] - 1e-4)
+		if (turn * 1000.0 <= result.norms.curve_threshold + 1e-6)
+		{
+			// a change no curve needs breaks bare, but not on a switch
+			if (auto const at{result.points[i].chainage}; turn > 1e-9 && on_switch(at, at))
+			{
+				result.points[i].radius = std::min(required, 2.0 * std::max(0.0, rooms[i] - 1e-4) / turn);
+				result.points[i].automatic = false;
+			}
+			continue;
+		}
+		auto const radius{least(result.points[i].chainage)};
+		auto bent{radius < required ? std::clamp(std::ceil(lengths[i] / turn / 10.0) * 10.0, radius, required) : required};
+		if (auto const at{result.points[i].chainage}; bent < switch_crest && grade_after(result, i) < grade_after(result, i - 1) && on_switch(at - bent * turn * 0.5, at + bent * turn * 0.5))
+			bent = switch_crest;
+		if (bent * turn * 0.5 > rooms[i] - 1e-4)
 		{
 			result.points[i].radius = 2.0 * std::max(0.0, rooms[i] - 1e-4) / turn;
+			result.points[i].automatic = false;
+		}
+		else if (bent < required)
+		{
+			result.points[i].radius = bent;
 			result.points[i].automatic = false;
 		}
 	}
@@ -793,6 +1042,24 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		return worst;
 	};
 	auto faults{errors(result)};
+	// a convex curve over a switch which the room of its bend cut sharper than a switch may lie on takes the radius it may have,
+	// as far as the curves beside leave it room
+	for (std::size_t i = 1; faults > 0 && i + 1 < result.points.size(); ++i)
+	{
+		auto const turn{grade_after(result, i) - grade_after(result, i - 1)};
+		auto const radius{result.points[i].radius};
+		auto const at{result.points[i].chainage};
+		if (radius <= 0.0 || radius >= switch_crest || turn >= 0.0 || false == on_switch(at + radius * turn * 0.5, at - radius * turn * 0.5))
+			continue;
+		auto wider{result};
+		wider.points[i].radius = switch_crest;
+		wider.points[i].automatic = false;
+		if (auto const fewer{errors(wider)}; fewer < faults)
+		{
+			result = std::move(wider);
+			faults = fewer;
+		}
+	}
 	// an end whose grade the curve of the joint can't take over without a fault breaks at the joint
 	for (auto *join : {&result.join_start, &result.join_end})
 		if (faults > 0 && *join)
@@ -803,6 +1070,15 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 			else
 				*join = true;
 		}
+	// where the line can't bend from the grades of its ends into the ground within the norms, as a short piece between two
+	// lines, the grades break at the joints: the line keeps only the heights of the ends
+	if (faults > 0 && Options.hold_grades && (start_fixed || end_fixed))
+	{
+		auto loose{Options};
+		loose.hold_grades = false;
+		if (auto again{fit_ground(Chainages, Ground, Context, Settings, loose, Tolerances, Reaches)}; errors(again) < faults)
+			return again;
+	}
 	for (;;)
 	{
 		auto const &points{result.points};
@@ -861,6 +1137,48 @@ std::vector<departure> departures(line const &Line, std::vector<double> const &C
 			stretch.to = Chainages[i];
 		}
 		result.push_back(stretch);
+	}
+	return result;
+}
+
+std::vector<departure> bridged(std::vector<double> const &Chainages, std::vector<double> const &Heights, std::vector<double> const &Ground, double const Depth, double const Steepest)
+{
+	std::vector<departure> result;
+	auto const count{std::min({Chainages.size(), Heights.size(), Ground.size()})};
+	auto const under = [&](std::size_t const I) { return std::isfinite(Ground[I]) && Heights[I] - Ground[I] > Depth; };
+	// the steepness over a few metres, past the noise of the model, in and about the stretch
+	double constexpr chord{5.0};
+	double constexpr about{10.0};
+	auto const steepest = [&](double const From, double const To) {
+		double most{0.0};
+		for (std::size_t i = 0, j = 0; i < count; ++i)
+		{
+			if (Chainages[i] < From - about || Chainages[i] > To + about || false == std::isfinite(Ground[i]))
+				continue;
+			j = std::max(j, i);
+			while (j + 1 < count && Chainages[j] - Chainages[i] < chord)
+				++j;
+			if (auto const run{Chainages[j] - Chainages[i]}; run >= chord && run <= 2.0 * chord && std::isfinite(Ground[j]))
+				most = std::max(most, std::abs(Ground[j] - Ground[i]) / run);
+		}
+		return most * 1000.0;
+	};
+	for (std::size_t i = 0; i < count;)
+	{
+		if (false == under(i))
+		{
+			++i;
+			continue;
+		}
+		departure stretch;
+		stretch.from = Chainages[i];
+		for (; i < count && under(i); ++i)
+		{
+			stretch.depth = std::min(stretch.depth, Ground[i] - Heights[i]);
+			stretch.to = Chainages[i];
+		}
+		if (steepest(stretch.from, stretch.to) > Steepest)
+			result.push_back(stretch);
 	}
 	return result;
 }
