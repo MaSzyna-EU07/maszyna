@@ -27,8 +27,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <map>
+#include <functional>
 #include <unordered_set>
 
 namespace
@@ -60,6 +62,29 @@ std::string word_of(std::string const &Text)
 std::string shown(std::string const &Word)
 {
 	return Word == "-" ? std::string{} : Word;
+}
+
+// the number of the switch of a unit: of its name once named after the station, of its record, else of its place
+std::string unit_number(station::unit const &Unit, std::string const &Stem, std::size_t const Index)
+{
+	auto const &name{Unit.parts.front()->name()};
+	if (name.size() > Stem.size() && name.compare(0, Stem.size(), Stem) == 0)
+	{
+		auto digits{name.substr(Stem.size())};
+		while (false == digits.empty() && std::isalpha(static_cast<unsigned char>(digits.back())))
+			digits.pop_back();
+		if (false == digits.empty() && std::all_of(digits.begin(), digits.end(), [](char const Digit) { return std::isdigit(static_cast<unsigned char>(Digit)) != 0; }))
+			return digits;
+	}
+	if (auto const record{switch_store::named(*Unit.parts.front())}; record && record->number != "-")
+		return record->number;
+	return std::to_string(Index + 1);
+}
+
+ImU32 circuit_colour(std::string const &Name)
+{
+	static std::array<ImU32, 6> const palette{IM_COL32(110, 200, 250, 255), IM_COL32(250, 150, 90, 255), IM_COL32(150, 220, 120, 255), IM_COL32(230, 120, 200, 255), IM_COL32(240, 220, 100, 255), IM_COL32(150, 140, 250, 255)};
+	return palette[std::hash<std::string>{}(Name) % palette.size()];
 }
 
 template <typename Record_> std::string anchor_of(Record_ const &Entry)
@@ -156,6 +181,7 @@ void srk_tool::open(TTrack &Track)
 			m_record = index;
 	}
 	m_anchor = m_record >= 0 ? m_records[m_record].track : m_layout->switches.front();
+	survey();
 }
 
 void srk_tool::refresh()
@@ -374,10 +400,17 @@ void srk_tool::render_options()
 	              {{0, STR_C("From the left"), layout.kilometrage ? "From the lower km, as PKP PLK numbers them" : "From the west end of the station"},
 	               {1, STR_C("From the right"), layout.kilometrage ? "From the higher km" : "From the east end of the station"}}))
 		m_reversed = from == 1;
-	if (main_button(STR_C("Number the switches"), ImVec2(-1.0f, tall_button_height())))
+	if (ImGui::Button(STR_C("Number the switches"), ImVec2(-1.0f, 0.0f)))
 		number_switches();
 	item_tooltip("Numbers the switches 1, 2, 3... along the station and names them after its code, as on the lines of PKP PLK: bpd_1, "
 	             "the parts of a slip bpd_15a to bpd_15d. The drives follow their switches, events written by hand keep the old names. One step of undo");
+	step_heading(2, STR_C("Track circuits"));
+	if (main_button(STR_C("Set the track circuits"), ImVec2(-1.0f, tall_button_height())))
+		set_circuits();
+	item_tooltip("Cuts the tracks of the station at the joints of the track circuits and names the circuits, as on the lines of PKP PLK: "
+	             "a joint 1.5 m before the start of a switch, beyond the fouling point of each branch where the axes are 4 m apart, in the middle "
+	             "of a link too short for both. Each switch gets bpd_iz<number>, each station track bpd_it<number>: 1 and 2 the main tracks, "
+	             "track 1 on the right along the km, the odd ones beyond it, the even ones on the other side. One step of undo");
 	if (false == m_status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", m_status.c_str());
 	ImGui::Spacing();
@@ -495,6 +528,150 @@ void srk_tool::number_switches()
 		before.emplace_back(units.front().parts.front(), editor_track::capture(*units.front().parts.front()));
 	m_history.push_track_snapshot(std::move(before));
 	m_status = format(STR_P("%zu switch numbered", "%zu switches numbered", units.size()), units.size());
+}
+
+void srk_tool::set_circuits()
+{
+	m_status.clear();
+	auto const code{m_record >= 0 ? m_records[m_record].code : std::string{}};
+	if (code.empty())
+	{
+		m_status = STR_C("Give the station its code first: the track circuits are named after it");
+		return;
+	}
+	auto const units{station::numbering(*m_layout, m_reversed)};
+	auto const planned{station::joints(*m_layout, units)};
+	for (auto const &entry : planned)
+		if (std::string reason; entry.track != nullptr && false == editor_track::can_edit_geometry(*entry.track, reason))
+		{
+			m_status = format(STR_C("%s can't be cut: %s"), name_of(*entry.track).c_str(), reason.c_str());
+			return;
+		}
+	for (auto const &path : m_layout->paths)
+		if (std::string reason; false == path.approach && false == scene::Layers.editable(path.track, &reason))
+		{
+			m_status = format(STR_C("%s can't be changed: %s"), name_of(*path.track).c_str(), reason.c_str());
+			return;
+		}
+	// the cuts: each track from its end back, so the pieces left to cut stay in the track
+	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	std::vector<TTrack *> created;
+	std::vector<glm::dvec3> points;
+	std::vector<std::pair<TTrack *, std::vector<glm::dvec3>>> cuts;
+	for (auto const &entry : planned)
+	{
+		points.push_back(entry.point);
+		if (entry.track == nullptr)
+			continue;
+		auto found{std::find_if(cuts.begin(), cuts.end(), [&](auto const &Cut) { return Cut.first == entry.track; })};
+		if (found == cuts.end())
+			found = cuts.insert(cuts.end(), {entry.track, {}});
+		found->second.push_back(entry.point);
+	}
+	for (auto &[track, at] : cuts)
+	{
+		before.emplace_back(track, editor_track::capture(*track));
+		auto *const piece{track};
+		std::sort(at.begin(), at.end(), [&](glm::dvec3 const &A, glm::dvec3 const &B) { return editor_track::nearest_parameter(*piece, A) > editor_track::nearest_parameter(*piece, B); });
+		for (auto const &point : at)
+			if (auto *cut{editor_track::split_path(*track, editor_track::nearest_parameter(*track, point))})
+				created.push_back(cut);
+	}
+	// the circuits of the station as cut
+	std::size_t count{0};
+	if (auto const found{station::find(*m_anchor)})
+	{
+		auto const circuits{station::circuits(*found, units, points)};
+		auto const numbers{station::track_numbers(*found, circuits)};
+		auto const stem{station::prefix(code)};
+		std::unordered_set<TTrack const *> captured(created.begin(), created.end());
+		for (auto const &[track, state] : before)
+			captured.insert(track);
+		for (std::size_t index = 0; index < circuits.size(); ++index)
+		{
+			auto const &circuit{circuits[index]};
+			auto const name{circuit.unit >= 0 ? stem + "iz" + unit_number(units[circuit.unit], stem, circuit.unit) : stem + "it" + numbers[index]};
+			for (auto *track : circuit.tracks)
+			{
+				if (track->Isolated.size() == 1 && track->Isolated.front()->asName == name)
+					continue;
+				if (captured.insert(track).second)
+					before.emplace_back(track, editor_track::capture(*track));
+				editor_track::isolated(*track, {name});
+			}
+		}
+		count = circuits.size();
+	}
+	if (before.empty() && created.empty())
+	{
+		m_status = STR_C("The track circuits are set already");
+		return;
+	}
+	m_history.push_track_snapshot(std::move(before), created);
+	m_status = format(STR_P("%zu track circuit", "%zu track circuits", count), count) + ", " + format(STR_P("%zu cut", "%zu cuts", created.size()), created.size());
+}
+
+void srk_tool::survey()
+{
+	m_circuit_of.assign(m_layout.has_value() ? m_layout->paths.size() : 0, -1);
+	m_circuits.clear();
+	m_ticks.clear();
+	if (false == m_layout.has_value())
+		return;
+	auto const &layout{*m_layout};
+	auto const stem{m_record >= 0 && false == m_records[m_record].code.empty() ? station::prefix(m_records[m_record].code) : std::string{}};
+	std::vector<double> weights;
+	for (std::size_t index = 0; index < layout.paths.size(); ++index)
+	{
+		auto const &path{layout.paths[index]};
+		if (path.track->Isolated.empty())
+			continue;
+		// of the lines leading out only the stretches up to the joints of the station
+		auto const &name{path.track->Isolated.front()->asName};
+		if (path.approach && (stem.empty() || name.compare(0, stem.size(), stem) != 0))
+			continue;
+		auto found{std::find_if(m_circuits.begin(), m_circuits.end(), [&](circuit_mark const &Mark) { return Mark.text == name; })};
+		if (found == m_circuits.end())
+		{
+			found = m_circuits.insert(m_circuits.end(), {glm::dvec2{0.0}, name, circuit_colour(name)});
+			weights.push_back(0.0);
+		}
+		auto const circuit{static_cast<std::size_t>(found - m_circuits.begin())};
+		m_circuit_of[index] = static_cast<int>(circuit);
+		for (auto const &point : path.schematic)
+		{
+			found->at += point;
+			weights[circuit] += 1.0;
+		}
+	}
+	for (std::size_t index = 0; index < m_circuits.size(); ++index)
+	{
+		auto &mark{m_circuits[index]};
+		mark.at /= std::max(1.0, weights[index]);
+		// bpd_it3 shown as It3
+		if (false == stem.empty() && mark.text.compare(0, stem.size(), stem) == 0)
+			mark.text.erase(0, stem.size());
+		if (false == mark.text.empty())
+			mark.text.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(mark.text.front())));
+	}
+	// the joints: the ends where paths of different circuits meet
+	std::vector<std::pair<glm::dvec3, int>> ends;
+	for (std::size_t index = 0; index < layout.paths.size(); ++index)
+	{
+		auto const &path{layout.paths[index]};
+		if (path.approach && m_circuit_of[index] < 0)
+		{
+			for (auto const &point : {path.points.front(), path.points.back()})
+				ends.emplace_back(point, -1);
+			continue;
+		}
+		for (auto const &point : {path.points.front(), path.points.back()})
+			ends.emplace_back(point, m_circuit_of[index]);
+	}
+	for (std::size_t i = 0; i < ends.size(); ++i)
+		for (std::size_t j = i + 1; j < ends.size(); ++j)
+			if (ends[i].second != ends[j].second && (ends[i].second >= 0 || ends[j].second >= 0) && glm::distance(ends[i].first, ends[j].first) < 0.05)
+				m_ticks.push_back(station::project(layout, ends[i].first));
 }
 
 void srk_tool::fit_view(float const Width, float const Height)
@@ -616,17 +793,21 @@ void srk_tool::render_canvas(float const Height)
 	for (auto const &path : layout.paths)
 		if (path.approach)
 			draw_path(path, kApproach, 2.0f);
-	for (auto const &path : layout.paths)
-		if (false == path.approach)
-			draw_path(path, is_switch(*path.track) ? kSwitch : kPlain, 2.5f);
+	for (std::size_t index = 0; index < layout.paths.size(); ++index)
+		if (auto const &path{layout.paths[index]}; false == path.approach || m_circuit_of[index] >= 0)
+			draw_path(path, m_circuit_of[index] >= 0 ? m_circuits[m_circuit_of[index]].colour : is_switch(*path.track) ? kSwitch : kPlain, 2.5f);
+	for (auto const &tick : m_ticks)
+	{
+		auto const at{screen_of(tick)};
+		draw->AddLine(ImVec2(at.x, at.y - 5.0f), ImVec2(at.x, at.y + 5.0f), IM_COL32(255, 255, 255, 220), 2.0f);
+	}
 	for (auto const &path : layout.paths)
 		if (path.track == selected)
 			draw_path(path, overlay_color::selected, 4.0f);
 	if (m_hover >= 0)
 		draw_path(layout.paths[m_hover], kHovered, 4.0f);
 	// the switches: a dot at the start, the name over or under it in turn; the number alone, once named after the station
-	auto const prefix{m_record >= 0 && false == m_records[m_record].code.empty() ? station::switch_name(m_records[m_record].code, 0, 0, 1) : std::string{}};
-	auto const stem{prefix.empty() ? std::string{} : prefix.substr(0, prefix.size() - 1)};
+	auto const stem{m_record >= 0 && false == m_records[m_record].code.empty() ? station::prefix(m_records[m_record].code) : std::string{}};
 	for (std::size_t index = 0; index < layout.switches.size(); ++index)
 	{
 		auto const *track{layout.switches[index]};
@@ -640,6 +821,12 @@ void srk_tool::render_canvas(float const Height)
 		draw->AddRectFilled(ImVec2(place.x - 2.0f, place.y - 1.0f), ImVec2(place.x + extent.x + 2.0f, place.y + extent.y + 1.0f), IM_COL32(22, 24, 28, 200), 2.0f);
 		draw->AddText(place, kSwitch, text.c_str());
 	}
+	for (auto const &mark : m_circuits)
+	{
+		auto const at{screen_of(mark.at)};
+		auto const extent{ImGui::CalcTextSize(mark.text.c_str())};
+		draw->AddText(ImVec2(at.x - extent.x * 0.5f, at.y + 4.0f), mark.colour, mark.text.c_str());
+	}
 	draw->PopClipRect();
 	if (hovered && m_hover >= 0 && false == m_dragging)
 	{
@@ -650,6 +837,8 @@ void srk_tool::render_canvas(float const Height)
 		ImGui::TextDisabled("%s, %.1f m", is_switch(*path.track) ? STR_C("switch") : path.approach ? STR_C("line out of the station") : STR_C("track"), path.length);
 		if (layout.kilometrage)
 			ImGui::TextDisabled("km %.3f", station::km_of(layout, along));
+		if (false == path.track->Isolated.empty())
+			ImGui::TextDisabled(STR_C("track circuit %s"), path.track->Isolated.front()->asName.c_str());
 		ImGui::TextDisabled("%s", STR_C("LMB: select it"));
 		ImGui::EndTooltip();
 	}
@@ -719,6 +908,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				tracks.insert(path.track);
 		WriteLog(format("SELFTEST srkopen %s: %zu switches, %zu tracks, %zu paths out, axis %.0f m, switches over %.0f..%.0f, offsets %.1f..%.1f, km %s, record %d", m_anchor->name().c_str(), layout.switches.size(), tracks.size(), approach,
 		                layout.chainage.back(), layout.from, layout.to, layout.low, layout.high, layout.kilometrage ? format("%.3f", layout.km).c_str() : "-", m_record));
+		WriteLog(format("SELFTEST srkopen lines %zu, main %zu tracks, second %zu tracks", layout.lines.size(), layout.main.size(), layout.second.size()));
 		for (auto const *track : layout.switches)
 		{
 			auto const at{station::project(layout, track->m_paths.front().points[segment_data::point::start])};
@@ -747,6 +937,31 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			}
 		WriteLog("SELFTEST srknumber: " + m_status);
 		WriteLog("SELFTEST srknumber names:" + list);
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkcircuits")
+	{
+		// srkcircuits: the open station cut into its track circuits
+		if (false == m_layout.has_value())
+		{
+			WriteLog("SELFTEST srkcircuits: no station open");
+			return editor_selftest_result::handled;
+		}
+		set_circuits();
+		WriteLog("SELFTEST srkcircuits: " + m_status);
+		refresh();
+		std::map<std::string, std::pair<std::size_t, double>> found;
+		for (auto const &path : m_layout->paths)
+			if (false == path.track->Isolated.empty())
+			{
+				auto &entry{found[path.track->Isolated.front()->asName]};
+				++entry.first;
+				entry.second += path.length;
+			}
+		std::string list;
+		for (auto const &[name, entry] : found)
+			list += format(" %s:%zu/%.0f", name.c_str(), entry.first, entry.second);
+		WriteLog(format("SELFTEST srkcircuits %zu named, %zu joints:", found.size(), m_ticks.size()) + list);
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstations")

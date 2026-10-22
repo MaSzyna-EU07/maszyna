@@ -50,6 +50,9 @@ struct layout
 	double high{0.0};
 	bool kilometrage{false}; // the chainage runs with the km of the switches
 	double km{0.0}; // at chainage 0, when it does
+	std::vector<std::vector<TTrack *>> lines; // the lines leading out, their tracks from the station on, as far as the approach
+	std::vector<TTrack *> main; // the tracks of the axis
+	std::vector<TTrack *> second; // of the other main track of a double-track line, none on a single-track one
 };
 
 // what shares a number of the station: a switch, or the switches of a slip, the two of a double switch, the paths of a crossing
@@ -58,6 +61,24 @@ struct unit
 	std::vector<TTrack *> parts;
 	std::string record; // the name of its record of the switches, empty without one
 	double chainage{0.0}; // of the start of its first part along the station
+};
+
+// a joint of the track circuits; Track is the plain track to be cut there, none where two tracks meet already
+struct joint
+{
+	TTrack *track{nullptr};
+	glm::dvec3 point{0.0};
+};
+
+// a track circuit of the station, once its tracks are cut at the joints: of a switch, or of a station track
+struct circuit
+{
+	std::vector<TTrack *> tracks;
+	int unit{-1}; // of the switch, -1 for a station track
+	double offset{0.0}; // the mean one of a station track, in the schematic
+	double from{0.0}; // the chainage it spans
+	double to{0.0};
+	double length{0.0};
 };
 
 // the station of the switch, or of the plain track near one
@@ -70,8 +91,19 @@ double km_of(layout const &Layout, double const Chainage);
 std::vector<TTrack *> stations(options const &Options = {});
 // the switches of the station by their numbers: along the chainage, or against it when Reversed; turntables have none
 std::vector<unit> numbering(layout const &Layout, bool const Reversed);
+// the names of the switches and the track circuits of the station begin with it: bpd_
+std::string prefix(std::string const &Code);
 // <code>_<number>, each part of a unit of several with a letter of its own: bpd_15a
 std::string switch_name(std::string const &Code, int const Number, std::size_t const Part, std::size_t const Parts);
+// the joints of the track circuits: 1.5 m before the start of a switch, beyond the fouling points of its branches where the axes
+// are 4 m apart, in the middle of the links between switches too short for both, and so where the lines leave the station
+std::vector<joint> joints(layout const &Layout, std::vector<unit> const &Units, options const &Options = {});
+// the track circuits the joints part the station into; the tracks of the lines beyond the joints belong to none
+std::vector<circuit> circuits(layout const &Layout, std::vector<unit> const &Units, std::vector<glm::dvec3> const &Joints);
+// the numbers of the station tracks as PKP PLK gives them, one for each circuit, empty for those of switches: 1 and 2 the main
+// tracks, track 1 on the right along the chainage, the odd ones beyond it on its side, the even ones on the other; a track of
+// several circuits has them lettered along the chainage: 5a, 5b
+std::vector<std::string> track_numbers(layout const &Layout, std::vector<circuit> const &Circuits);
 // the switches of the station of the switch, without laying it out
 std::vector<TTrack *> switches_of(TTrack &Switch, options const &Options = {});
 

@@ -13,6 +13,8 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorStation.hpp"
 #include "scene/scenelayers.h"
 
+#include "imgui/imgui.h"
+
 #include <optional>
 #include <string>
 #include <utility>
@@ -69,6 +71,15 @@ class srk_tool final : public editor_tool
 	int m_hover{-1}; // path of the layout under the mouse in the schematic
 	bool m_dragging{false};
 	std::vector<std::pair<std::string, std::size_t>> m_found; // the stations of the scenery: a switch and the count of them
+	struct circuit_mark
+	{
+		glm::dvec2 at{0.0}; // in the schematic
+		std::string text;
+		ImU32 colour{0};
+	};
+	std::vector<int> m_circuit_of; // of each path of the layout, an index into m_circuits, -1 for none
+	std::vector<circuit_mark> m_circuits;
+	std::vector<glm::dvec2> m_ticks; // the joints between the circuits, in the schematic
 	std::string m_status;
 
 	void load();
@@ -82,4 +93,8 @@ class srk_tool final : public editor_tool
 	void find_all();
 	// the switches numbered along the station and named after its code; one step of the history
 	void number_switches();
+	// the station cut at the joints of its track circuits and the circuits named; one step of the history
+	void set_circuits();
+	// the track circuits as the tracks have them, for the schematic
+	void survey();
 };

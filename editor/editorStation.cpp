@@ -20,6 +20,8 @@ http://mozilla.org/MPL/2.0/.
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -96,11 +98,17 @@ struct chain
 	double length{0.0};
 	TTrack *reached{nullptr}; // the switch met at its other end
 	bool ended{false}; // at a free end
+	TTrack const *from{nullptr}; // the switch it leads out of, with the end of it
+	int path{0};
+	bool atend{false};
 };
 
 chain follow(TTrack const &From, int const Path, bool const Atend, double const Limit)
 {
 	chain result;
+	result.from = &From;
+	result.path = Path;
+	result.atend = Atend;
 	auto point{end_of(From, Path, Atend)};
 	auto *next{neighbour(From, Path, Atend)};
 	while (next != nullptr && result.length <= Limit)
@@ -131,6 +139,7 @@ struct area
 	std::vector<TTrack *> switches;
 	std::vector<TTrack *> plain;
 	std::vector<chain> exits;
+	std::vector<chain> ends; // tracks ending free: sidings, or lines cut off by the edge of the scenery
 };
 
 area collect(TTrack &From, options const &Options)
@@ -159,9 +168,9 @@ area collect(TTrack &From, options const &Options)
 		for (auto const &[path, atend] : ends_of(from))
 		{
 			auto line{follow(from, path, atend, Options.link)};
-			if (line.reached == nullptr && false == line.ended)
+			if (line.reached == nullptr)
 			{
-				result.exits.push_back(std::move(line));
+				(line.ended ? result.ends : result.exits).push_back(std::move(line));
 				continue;
 			}
 			for (auto *track : line.tracks)
@@ -170,6 +179,22 @@ area collect(TTrack &From, options const &Options)
 			if (line.reached != nullptr && known.insert(line.reached).second)
 				result.switches.push_back(line.reached);
 		}
+	}
+	// a link longer than the limit between two switches of the station is a track of it, not two lines out
+	auto exits{std::move(result.exits)};
+	result.exits.clear();
+	for (auto &line : exits)
+	{
+		if (false == line.ended)
+			if (auto const whole{follow(*line.from, line.path, line.atend, std::numeric_limits<double>::max())}; whole.reached != nullptr && known.count(whole.reached) > 0)
+			{
+				for (auto *track : whole.tracks)
+					if (known.insert(track).second)
+						result.plain.push_back(track);
+				continue;
+			}
+		if (std::none_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Track) { return known.count(Track) > 0; }))
+			result.exits.push_back(std::move(line));
 	}
 	return result;
 }
@@ -185,10 +210,141 @@ std::vector<glm::dvec3> points_of(TTrack const &Track, int const Path, double &L
 	return result;
 }
 
+// the points of the path a metre or so apart, for the joints to come out the same however the tracks are cut
+std::vector<glm::dvec3> dense_points(TTrack const &Track, int const Path, double &Length)
+{
+	bezier const curve{Track.m_paths[Path]};
+	Length = curve.plan_length(64);
+	auto const count{std::clamp(static_cast<int>(std::ceil(Length)), 2, 4000)};
+	std::vector<glm::dvec3> result;
+	for (int i = 0; i <= count; ++i)
+		result.push_back(curve.point(static_cast<double>(i) / count));
+	return result;
+}
+
 // the map shows the east to the right and the north up: the x of the scenery runs to the west
 glm::dvec2 map_of(glm::dvec3 const &Point)
 {
 	return {-Point.x, Point.z};
+}
+
+double constexpr kStart{1.5}; // m, a joint before the start of a switch
+double constexpr kClear{4.0}; // m, between the axes at a joint beyond a fouling point
+double constexpr kReach{120.0}; // m, along a branch looked for its fouling point
+double constexpr kSection{30.0}; // m, the shortest stretch between two joints made a track circuit of its own
+double constexpr kSnap{0.3}; // m, a joint this close to the end of a track lies at the end
+
+// the points of the way out of an end of the track, as a train runs: along the main path of a switch run into from its start,
+// back along the path of one run into from the end of it
+std::vector<glm::dvec3> ahead(TTrack const &From, int const Path, bool const Atend, double const Length)
+{
+	std::vector<glm::dvec3> result{end_of(From, Path, Atend)};
+	auto *next{neighbour(From, Path, Atend)};
+	std::unordered_set<TTrack const *> seen{&From};
+	double length{0.0};
+	while (next != nullptr && length < Length && rail(*next) && seen.insert(next).second)
+	{
+		int path{0};
+		bool atend{false};
+		if (false == end_at(*next, result.back(), path, atend))
+			break;
+		if (next->eType == tt_Switch && false == atend)
+			path = 0;
+		double plan{0.0};
+		auto points{dense_points(*next, path, plan)};
+		if (atend)
+			std::reverse(points.begin(), points.end());
+		result.insert(result.end(), points.begin() + 1, points.end());
+		length += plan;
+		auto const *track{next};
+		next = neighbour(*track, path, false == atend);
+	}
+	return result;
+}
+
+// the path of a switch a train run into from its start goes on along: the one turning the least
+int straighter(TTrack const &Switch)
+{
+	if (Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
+		return 0;
+	auto const turn = [&](int const Path) {
+		bezier const curve{Switch.m_paths[Path]};
+		auto const from{curve.first(0.0)};
+		auto const to{curve.first(1.0)};
+		return std::abs(std::atan2(from.x * to.z - from.z * to.x, from.x * to.x + from.z * to.z));
+	};
+	return turn(1) < turn(0) ? 1 : 0;
+}
+
+// the tracks of the run from the end of the track at the point on, through the switches along their straighter paths
+std::vector<TTrack *> straight_run(TTrack &Track, glm::dvec3 Point, double const Limit)
+{
+	std::vector<TTrack *> result{&Track};
+	std::unordered_set<TTrack const *> seen{&Track};
+	int path{0};
+	bool atend{false};
+	if (false == end_at(Track, Point, path, atend))
+		return result;
+	auto *next{neighbour(Track, path, atend)};
+	double length{0.0};
+	while (next != nullptr && length < Limit && rail(*next) && seen.insert(next).second)
+	{
+		if (false == end_at(*next, Point, path, atend))
+			break;
+		if (next->eType == tt_Switch && false == atend)
+			path = straighter(*next);
+		result.push_back(next);
+		length += plan_length(*next, path);
+		Point = end_of(*next, path, false == atend);
+		auto const *track{next};
+		next = neighbour(*track, path, false == atend);
+	}
+	return result;
+}
+
+double plan_gap(glm::dvec3 const &Point, std::vector<glm::dvec3> const &Line)
+{
+	glm::dvec2 const point{Point.x, Point.z};
+	auto best{glm::distance(point, glm::dvec2{Line.front().x, Line.front().z})};
+	for (std::size_t i = 1; i < Line.size(); ++i)
+	{
+		glm::dvec2 const a{Line[i - 1].x, Line[i - 1].z};
+		glm::dvec2 const along{glm::dvec2{Line[i].x, Line[i].z} - a};
+		auto const length2{glm::dot(along, along)};
+		auto const t{length2 > 1e-12 ? std::clamp(glm::dot(point - a, along) / length2, 0.0, 1.0) : 0.0};
+		best = std::min(best, glm::distance(point, a + along * t));
+	}
+	return best;
+}
+
+// how far from the end of the switch its joint lies: beyond the fouling point at a branch, before the start elsewhere
+double clearance(TTrack const &Switch, int const Path, bool const Atend)
+{
+	auto const point{end_of(Switch, Path, Atend)};
+	std::optional<std::pair<int, bool>> other;
+	auto nearest{kClear};
+	for (auto const &[path, atend] : ends_of(Switch))
+		if (auto const distance{plan_distance(end_of(Switch, path, atend), point)}; distance > same_point && distance < nearest)
+		{
+			nearest = distance;
+			other = std::make_pair(path, atend);
+		}
+	if (false == other.has_value())
+		return kStart;
+	auto const mine{ahead(Switch, Path, Atend, kReach)};
+	auto const theirs{ahead(Switch, other->first, other->second, kReach + 50.0)};
+	double along{0.0};
+	auto gap{plan_gap(mine.front(), theirs)};
+	for (std::size_t i = 1; i < mine.size(); ++i)
+	{
+		auto const step{plan_distance(mine[i - 1], mine[i])};
+		auto const next{plan_gap(mine[i], theirs)};
+		if (next >= kClear)
+			return along + (next > gap ? step * std::clamp((kClear - gap) / (next - gap), 0.0, 1.0) : step);
+		along += step;
+		gap = next;
+	}
+	return along;
 }
 
 } // namespace
@@ -201,9 +357,10 @@ std::optional<layout> find(TTrack &From, options const &Options)
 	std::unordered_set<TTrack const *> switches(found.switches.begin(), found.switches.end());
 	// the axis: the run through the station along the main paths of its switches which passes the most of them
 	std::vector<TTrack *> starts;
-	for (auto const &line : found.exits)
-		if (false == line.tracks.empty())
-			starts.push_back(line.tracks.front());
+	for (auto const *lines : {&found.exits, &found.ends})
+		for (auto const &line : *lines)
+			if (false == line.tracks.empty())
+				starts.push_back(line.tracks.front());
 	if (starts.empty())
 		starts.push_back(found.switches.front());
 	editor_track::route best;
@@ -298,6 +455,33 @@ std::optional<layout> find(TTrack &From, options const &Options)
 		std::reverse(result.axis.begin(), result.axis.end());
 		measure();
 	}
+	// a long track ending free far beyond the switches is a line cut off by the edge of the scenery, else a siding
+	std::vector<chain> exits{found.exits};
+	std::vector<TTrack *> plain{found.plain};
+	{
+		auto low{std::numeric_limits<double>::max()};
+		auto high{std::numeric_limits<double>::lowest()};
+		for (auto const *track : found.switches)
+		{
+			auto const along{project(result, end_of(*track, 0, false)).x};
+			low = std::min(low, along);
+			high = std::max(high, along);
+		}
+		for (auto const &line : found.ends)
+		{
+			auto beyond{0.0};
+			for (auto const *track : line.tracks)
+				for (auto const atend : {false, true})
+				{
+					auto const at{project(result, end_of(*track, 0, atend))};
+					beyond = std::max({beyond, low - at.x, at.x - high});
+				}
+			if (beyond > Options.approach * 0.5 && line.length > Options.approach)
+				exits.push_back(line);
+			else
+				plain.insert(plain.end(), line.tracks.begin(), line.tracks.end());
+		}
+	}
 	// the paths, laid out along the axis
 	auto const add = [&](TTrack &Track, bool const Approach) {
 		for (int index = 0; index < static_cast<int>(Track.m_paths.size()); ++index)
@@ -314,16 +498,18 @@ std::optional<layout> find(TTrack &From, options const &Options)
 	};
 	for (auto *track : found.switches)
 		add(*track, false);
-	for (auto *track : found.plain)
+	for (auto *track : plain)
 		add(*track, false);
-	for (auto const &line : found.exits)
+	for (auto const &line : exits)
 	{
 		double length{0.0};
+		result.lines.emplace_back();
 		for (auto *track : line.tracks)
 		{
 			if (length >= Options.approach)
 				break;
 			add(*track, true);
+			result.lines.back().push_back(track);
 			length += plan_length(*track, 0);
 		}
 	}
@@ -348,6 +534,40 @@ std::optional<layout> find(TTrack &From, options const &Options)
 	}
 	result.switches = found.switches;
 	std::sort(result.switches.begin(), result.switches.end(), [&](TTrack const *A, TTrack const *B) { return project(result, end_of(*A, 0, false)).x < project(result, end_of(*B, 0, false)).x; });
+	// a double-track line: another line leaves the station by the one along the axis a few metres aside; the run from it along
+	// the main paths of the switches is the other main track
+	for (auto const &span : best.spans)
+		result.main.push_back(span.track);
+	std::unordered_set<TTrack const *> const axis(result.main.begin(), result.main.end());
+	std::vector<std::pair<std::size_t, glm::dvec2>> leaving;
+	for (std::size_t index = 0; index < result.lines.size(); ++index)
+	{
+		std::vector<glm::dvec2> points;
+		for (auto const &path : result.paths)
+			if (path.approach && std::find(result.lines[index].begin(), result.lines[index].end(), path.track) != result.lines[index].end())
+				points.insert(points.end(), path.schematic.begin(), path.schematic.end());
+		auto const beyond = [&](glm::dvec2 const &Point) { return std::abs(std::max(result.from - Point.x, Point.x - result.to) - 60.0); };
+		if (false == points.empty())
+			leaving.emplace_back(index, *std::min_element(points.begin(), points.end(), [&](glm::dvec2 const &A, glm::dvec2 const &B) { return beyond(A) < beyond(B); }));
+	}
+	for (auto const &[along, at] : leaving)
+	{
+		if (axis.count(result.lines[along].front()) == 0 || false == result.second.empty())
+			continue;
+		for (auto const &[aside, there] : leaving)
+		{
+			if (aside == along || axis.count(result.lines[aside].front()) > 0 || (at.x < result.from) != (there.x < result.from) || std::abs(there.y - at.y) < 3.0 || std::abs(there.y - at.y) > 7.0)
+				continue;
+			// the run goes in from the end of the line at the station
+			auto &first{*result.lines[aside].front()};
+			auto const *start{neighbour(first, 0, false)};
+			auto const inwards{start != nullptr && switches.count(start) > 0 ? false : true};
+			for (auto *track : straight_run(first, end_of(first, 0, inwards), result.chainage.back() + 2.0 * Options.approach))
+				if (axis.count(track) == 0 && std::find(result.second.begin(), result.second.end(), track) == result.second.end())
+					result.second.push_back(track);
+			break;
+		}
+	}
 	return result;
 }
 
@@ -365,7 +585,8 @@ glm::dvec2 project(layout const &Layout, glm::dvec3 const &Point)
 		if (length < 1e-9)
 			continue;
 		auto const unit{along / length};
-		auto const t{std::clamp(glm::dot(point - a, unit), 0.0, length)};
+		// beyond the ends of the axis it goes on straight
+		auto const t{std::clamp(glm::dot(point - a, unit), i == 1 ? std::numeric_limits<double>::lowest() : 0.0, i + 1 == Layout.axis.size() ? std::numeric_limits<double>::max() : length)};
 		auto const foot{a + unit * t};
 		auto const distance{glm::distance(point, foot)};
 		if (distance >= best)
@@ -430,14 +651,258 @@ std::vector<unit> numbering(layout const &Layout, bool const Reversed)
 	return result;
 }
 
-std::string switch_name(std::string const &Code, int const Number, std::size_t const Part, std::size_t const Parts)
+std::string prefix(std::string const &Code)
 {
 	std::string result;
 	for (auto const c : Code)
 		result += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-	result += '_' + std::to_string(Number);
+	return result + '_';
+}
+
+std::string switch_name(std::string const &Code, int const Number, std::size_t const Part, std::size_t const Parts)
+{
+	auto result{prefix(Code) + std::to_string(Number)};
 	if (Parts > 1)
 		result += static_cast<char>('a' + std::min<std::size_t>(Part, 25));
+	return result;
+}
+
+std::vector<joint> joints(layout const &Layout, std::vector<unit> const &Units, options const &Options)
+{
+	std::unordered_map<TTrack const *, std::size_t> unit_of;
+	for (std::size_t index = 0; index < Units.size(); ++index)
+		for (auto const *part : Units[index].parts)
+			unit_of[part] = index;
+	auto const one_unit = [&](TTrack const *A, TTrack const *B) {
+		auto const a{unit_of.find(A)};
+		auto const b{unit_of.find(B)};
+		return a != unit_of.end() && b != unit_of.end() && a->second == b->second;
+	};
+	std::unordered_set<TTrack const *> through;
+	std::vector<glm::dvec3> meets;
+	std::vector<joint> result;
+	for (auto *from : Layout.switches)
+		for (auto const &[path, atend] : ends_of(*from))
+		{
+			auto line{follow(*from, path, atend, std::numeric_limits<double>::max())};
+			auto const start{end_of(*from, path, atend)};
+			// out of the station: to a switch of another one, along a line cut off by the edge of the scenery
+			if ((line.reached != nullptr && std::find(Layout.switches.begin(), Layout.switches.end(), line.reached) == Layout.switches.end()) ||
+			    (line.ended && false == line.tracks.empty() && std::any_of(Layout.lines.begin(), Layout.lines.end(), [&](std::vector<TTrack *> const &Line) { return false == Line.empty() && Line.front() == line.tracks.front(); })))
+			{
+				line.reached = nullptr;
+				line.ended = false;
+			}
+			if (line.reached == nullptr && false == line.ended)
+			{
+				double length{0.0};
+				auto const kept{std::find_if(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Track) { return (length += plan_length(*Track, 0)) > kReach * 2.0; })};
+				line.tracks.erase(kept == line.tracks.end() ? kept : std::next(kept), line.tracks.end());
+			}
+			if (line.tracks.empty())
+			{
+				// two switches meeting: the joint lies where they meet, unless they're parts of one
+				if (line.reached == nullptr || one_unit(from, line.reached) || std::any_of(meets.begin(), meets.end(), [&](glm::dvec3 const &Meet) { return glm::distance(Meet, start) < same_point; }))
+					continue;
+				meets.push_back(start);
+				result.push_back({nullptr, start});
+				continue;
+			}
+			if (through.count(line.tracks.front()) > 0)
+				continue;
+			through.insert(line.tracks.begin(), line.tracks.end());
+			// the link as one line from the switch on, and where each of its tracks ends along it
+			std::vector<glm::dvec3> points{start};
+			std::vector<double> lengths{0.0};
+			std::vector<std::pair<double, TTrack *>> pieces;
+			for (auto *track : line.tracks)
+			{
+				double plan{0.0};
+				auto samples{dense_points(*track, 0, plan)};
+				if (plan_distance(samples.back(), points.back()) < plan_distance(samples.front(), points.back()))
+					std::reverse(samples.begin(), samples.end());
+				for (std::size_t i = 1; i < samples.size(); ++i)
+				{
+					lengths.push_back(lengths.back() + plan_distance(points.back(), samples[i]));
+					points.push_back(samples[i]);
+				}
+				pieces.emplace_back(lengths.back(), track);
+			}
+			auto const length{lengths.back()};
+			auto const own{clearance(*from, path, atend)};
+			std::vector<double> places;
+			if (line.reached != nullptr)
+			{
+				int far_path{0};
+				bool far_atend{false};
+				if (one_unit(from, line.reached) || false == end_at(*line.reached, points.back(), far_path, far_atend))
+					continue;
+				auto const theirs{clearance(*line.reached, far_path, far_atend)};
+				if (length - own - theirs >= kSection)
+					places = {own, length - theirs};
+				else
+					places = {(own + length - theirs) * 0.5};
+			}
+			else if (false == line.ended || length - own >= kSection)
+				places = {own};
+			for (auto const place : places)
+			{
+				auto distance{std::clamp(place, 0.0, length)};
+				TTrack *track{nullptr};
+				auto previous{0.0};
+				for (auto const &[end, piece] : pieces)
+				{
+					if (std::abs(distance - previous) <= kSnap || std::abs(distance - end) <= kSnap)
+					{
+						distance = std::abs(distance - previous) <= kSnap ? previous : end;
+						track = nullptr;
+						break;
+					}
+					if (distance < end)
+					{
+						track = piece;
+						break;
+					}
+					previous = end;
+				}
+				auto const after{std::min<std::size_t>(std::upper_bound(lengths.begin(), lengths.end(), distance) - lengths.begin(), lengths.size() - 1)};
+				auto const before{after > 0 ? after - 1 : 0};
+				auto const span{lengths[after] - lengths[before]};
+				result.push_back({track, glm::mix(points[before], points[after], span > 1e-9 ? (distance - lengths[before]) / span : 0.0)});
+			}
+		}
+	return result;
+}
+
+std::vector<circuit> circuits(layout const &Layout, std::vector<unit> const &Units, std::vector<glm::dvec3> const &Joints)
+{
+	std::unordered_map<TTrack const *, std::size_t> unit_of;
+	for (std::size_t index = 0; index < Units.size(); ++index)
+		for (auto const *part : Units[index].parts)
+			unit_of[part] = index;
+	std::vector<TTrack *> tracks{Layout.switches};
+	std::unordered_set<TTrack const *> members(tracks.begin(), tracks.end());
+	std::unordered_set<TTrack const *> approach;
+	for (auto const &entry : Layout.paths)
+	{
+		if (members.insert(entry.track).second)
+			tracks.push_back(entry.track);
+		if (entry.approach)
+			approach.insert(entry.track);
+	}
+	auto const barrier = [&](glm::dvec3 const &Point) { return std::any_of(Joints.begin(), Joints.end(), [&](glm::dvec3 const &Joint) { return glm::distance(Joint, Point) < 0.05; }); };
+	std::unordered_set<TTrack const *> taken;
+	std::vector<circuit> result;
+	for (auto *seed : tracks)
+	{
+		if (taken.count(seed) > 0)
+			continue;
+		taken.insert(seed);
+		circuit entry;
+		entry.tracks.push_back(seed);
+		for (std::size_t i = 0; i < entry.tracks.size(); ++i)
+		{
+			auto const &track{*entry.tracks[i]};
+			auto const ends{node(track) ? ends_of(track) : std::vector<std::pair<int, bool>>{{0, false}, {0, true}}};
+			for (auto const &[path, atend] : ends)
+			{
+				if (barrier(end_of(track, path, atend)))
+					continue;
+				auto *next{neighbour(track, path, atend)};
+				if (next != nullptr && members.count(next) > 0 && taken.insert(next).second)
+					entry.tracks.push_back(next);
+			}
+		}
+		for (auto const *track : entry.tracks)
+			if (auto const found{unit_of.find(track)}; found != unit_of.end())
+			{
+				entry.unit = static_cast<int>(found->second);
+				break;
+			}
+		if (entry.unit < 0 && std::any_of(entry.tracks.begin(), entry.tracks.end(), [&](TTrack const *Track) { return approach.count(Track) > 0; }))
+			continue;
+		entry.from = std::numeric_limits<double>::max();
+		entry.to = std::numeric_limits<double>::lowest();
+		double weighted{0.0};
+		std::unordered_set<TTrack const *> own(entry.tracks.begin(), entry.tracks.end());
+		for (auto const &path : Layout.paths)
+		{
+			if (own.count(path.track) == 0)
+				continue;
+			for (std::size_t i = 1; i < path.schematic.size(); ++i)
+			{
+				auto const step{glm::distance(path.points[i - 1], path.points[i])};
+				weighted += step * (path.schematic[i - 1].y + path.schematic[i].y) * 0.5;
+				entry.length += step;
+			}
+			for (auto const &point : path.schematic)
+			{
+				entry.from = std::min(entry.from, point.x);
+				entry.to = std::max(entry.to, point.x);
+			}
+		}
+		entry.offset = entry.length > 0.0 ? weighted / entry.length : 0.0;
+		result.push_back(std::move(entry));
+	}
+	return result;
+}
+
+std::vector<std::string> track_numbers(layout const &Layout, std::vector<circuit> const &Circuits)
+{
+	std::unordered_set<TTrack const *> const main(Layout.main.begin(), Layout.main.end());
+	std::unordered_set<TTrack const *> const second(Layout.second.begin(), Layout.second.end());
+	auto const on = [&](circuit const &Circuit, std::unordered_set<TTrack const *> const &Tracks) { return std::any_of(Circuit.tracks.begin(), Circuit.tracks.end(), [&](TTrack const *Track) { return Tracks.count(Track) > 0; }); };
+	std::vector<std::size_t> axis;
+	std::vector<std::size_t> other;
+	std::vector<std::size_t> right;
+	std::vector<std::size_t> left;
+	for (std::size_t index = 0; index < Circuits.size(); ++index)
+		if (Circuits[index].unit >= 0)
+			continue;
+		else if (on(Circuits[index], main))
+			axis.push_back(index);
+		else if (on(Circuits[index], second))
+			other.push_back(index);
+		else
+			(Circuits[index].offset < 0.0 ? right : left).push_back(index);
+	auto const mean = [&](std::vector<std::size_t> const &Group) {
+		double weighted{0.0};
+		double length{0.0};
+		for (auto const index : Group)
+		{
+			weighted += Circuits[index].offset * Circuits[index].length;
+			length += Circuits[index].length;
+		}
+		return length > 0.0 ? weighted / length : 0.0;
+	};
+	// track 1 on the right along the chainage: the other main track of a double-track line when it lies to the right of the axis
+	auto const swapped{false == other.empty() && mean(other) < mean(axis)};
+	std::vector<std::pair<std::vector<std::size_t>, int>> tracks{{axis, swapped ? 2 : 1}};
+	if (false == other.empty())
+		tracks.emplace_back(other, swapped ? 1 : 2);
+	// beyond the main tracks the circuits side by side, the nearest first, the odd numbers to the right, the even ones to the left
+	for (auto *side : {&right, &left})
+	{
+		std::sort(side->begin(), side->end(), [&](std::size_t A, std::size_t B) { return std::abs(Circuits[A].offset) < std::abs(Circuits[B].offset); });
+		auto number{side == &right ? 3 : other.empty() ? 2 : 4};
+		for (std::size_t index = 0; index < side->size(); ++index)
+		{
+			if (index == 0 || std::abs(Circuits[(*side)[index]].offset) - std::abs(Circuits[(*side)[index - 1]].offset) > 2.0)
+			{
+				if (index > 0)
+					number += 2;
+				tracks.emplace_back(std::vector<std::size_t>{}, number);
+			}
+			tracks.back().first.push_back((*side)[index]);
+		}
+	}
+	std::vector<std::string> result(Circuits.size());
+	for (auto &[members, number] : tracks)
+	{
+		std::sort(members.begin(), members.end(), [&](std::size_t A, std::size_t B) { return Circuits[A].from < Circuits[B].from; });
+		for (std::size_t index = 0; index < members.size(); ++index)
+			result[members[index]] = std::to_string(number) + (members.size() > 1 ? std::string(1, static_cast<char>('a' + std::min<std::size_t>(index, 25))) : std::string{});
+	}
 	return result;
 }
 

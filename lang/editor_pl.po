@@ -10410,3 +10410,36 @@ msgstr[0] "Ponumerowano %zu rozjazd"
 msgstr[1] "Ponumerowano %zu rozjazdy"
 msgstr[2] "Ponumerowano %zu rozjazdów"
 
+msgid "Set the track circuits"
+msgstr "Ustaw izolacje"
+
+msgid "Cuts the tracks of the station at the joints of the track circuits and names the circuits, as on the lines of PKP PLK: a joint 1.5 m before the start of a switch, beyond the fouling point of each branch where the axes are 4 m apart, in the middle of a link too short for both. Each switch gets bpd_iz<number>, each station track bpd_it<number>: 1 and 2 the main tracks, track 1 on the right along the km, the odd ones beyond it, the even ones on the other side. One step of undo"
+msgstr "Tnie tory stacji na stykach izolowanych i nazywa odcinki jak na liniach PKP PLK: styk 1,5 m przed początkiem rozjazdu, za ukresem każdej gałęzi tam, gdzie osie są 4 m od siebie, w połowie łącznika za krótkiego na oba. Każdy rozjazd dostaje bpd_iz<numer>, każdy tor stacyjny bpd_it<numer>: 1 i 2 to tory główne, tor 1 po prawej w stronę rosnącego km, nieparzyste za nim, parzyste po drugiej stronie. Jeden krok cofania"
+
+msgid "Give the station its code first: the track circuits are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy odcinków izolowanych"
+
+msgid "%s can't be cut: %s"
+msgstr "Nie można przeciąć %s: %s"
+
+msgid "%s can't be changed: %s"
+msgstr "Nie można zmienić %s: %s"
+
+msgid "The track circuits are set already"
+msgstr "Izolacje są już ustawione"
+
+msgid "%zu track circuit"
+msgid_plural "%zu track circuits"
+msgstr[0] "%zu odcinek izolowany"
+msgstr[1] "%zu odcinki izolowane"
+msgstr[2] "%zu odcinków izolowanych"
+
+msgid "%zu cut"
+msgid_plural "%zu cuts"
+msgstr[0] "%zu cięcie"
+msgstr[1] "%zu cięcia"
+msgstr[2] "%zu cięć"
+
+msgid "track circuit %s"
+msgstr "odcinek izolowany %s"
+
