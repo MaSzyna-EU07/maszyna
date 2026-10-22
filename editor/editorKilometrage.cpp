@@ -927,6 +927,86 @@ bool km_at(std::string const &Line, glm::dvec3 const &Point, double &Km, double 
 	return true;
 }
 
+std::string line_at(glm::dvec3 const &Point, double const Reach)
+{
+	std::string result;
+	auto nearest{Reach};
+	for (auto const &line : lines())
+		if (auto const *found{axis_of(line)}; found != nullptr)
+		{
+			double gap{0.0};
+			chainage_at(*found, Point, gap);
+			if (gap < nearest)
+			{
+				nearest = gap;
+				result = line;
+			}
+		}
+	return result;
+}
+
+int growth_at(std::string const &Line, glm::dvec3 const &Point, glm::dvec2 const &Way, double const Reach)
+{
+	auto const *found{axis_of(Line)};
+	if (found == nullptr)
+		return 0;
+	double gap{0.0};
+	auto const chainage{chainage_at(*found, Point, gap)};
+	if (gap > Reach)
+		return 0;
+	return glm::dot(direction_on(*found, chainage) * static_cast<double>(found->growth), Way) >= 0.0 ? 1 : -1;
+}
+
+std::vector<hectometre> hectometres(axis const &Axis)
+{
+	std::vector<hectometre> result;
+	std::vector<double> jumps;
+	for (auto const &anchor : Axis.anchors)
+		if (std::abs(anchor.after - anchor.before) >= 1e-6)
+			jumps.push_back(anchor.chainage);
+	auto const along = [&](std::vector<glm::dvec3> const &Points, std::vector<double> const &Km, std::vector<double> const &Chainage) {
+		for (std::size_t i = 1; i < Points.size(); ++i)
+		{
+			auto const from{std::min(Chainage[i - 1], Chainage[i])};
+			auto const to{std::max(Chainage[i - 1], Chainage[i])};
+			if (std::any_of(jumps.begin(), jumps.end(), [&](double const Jump) { return Jump >= from - 1e-6 && Jump <= to + 1e-6; }))
+				continue;
+			auto const k0{Km[i - 1]};
+			auto const k1{Km[i]};
+			if (std::abs(k1 - k0) < 1e-9)
+				continue;
+			auto way{plan_of(Points[i] - Points[i - 1])};
+			way = glm::length(way) > 1e-9 ? glm::normalize(way) : glm::dvec2{0.0, 1.0};
+			auto const first{static_cast<int>(std::floor(std::min(k0, k1) * 10.0 + 1e-9)) + 1};
+			auto const last{static_cast<int>(std::floor(std::max(k0, k1) * 10.0 + 1e-9))};
+			for (auto number = first; number <= last && number < first + 10; ++number)
+				result.push_back({glm::mix(Points[i - 1], Points[i], (number / 10.0 - k0) / (k1 - k0)), k1 > k0 ? way : -way, number});
+		}
+	};
+	// at a jump the post of the km on from it, as the posts of a line built anew begin there, else of the km the jump is reached at
+	for (auto const &anchor : Axis.anchors)
+	{
+		if (std::abs(anchor.after - anchor.before) < 1e-6)
+			continue;
+		auto const round = [](double const Km) { return std::abs(Km * 10.0 - std::round(Km * 10.0)) < 1e-4; };
+		auto const km{round(anchor.after) ? anchor.after : anchor.before};
+		if (round(km))
+			result.push_back({point_on(Axis, anchor.chainage), direction_on(Axis, anchor.chainage) * static_cast<double>(Axis.growth), static_cast<int>(std::lround(km * 10.0))});
+	}
+	std::vector<double> km;
+	for (auto const chainage : Axis.chainage)
+		km.push_back(km_on(Axis, chainage));
+	along(Axis.points, km, Axis.chainage);
+	for (auto const &side : Axis.sides)
+	{
+		km.clear();
+		for (auto const distance : side.along)
+			km.push_back(km_on(Axis, side, distance));
+		along(side.points, km, side.chainage);
+	}
+	return result;
+}
+
 TTrack *track_near(glm::dvec3 const &Point, double const Reach)
 {
 	TTrack *best{nullptr};

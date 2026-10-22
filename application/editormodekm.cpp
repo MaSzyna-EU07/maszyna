@@ -163,51 +163,22 @@ void km_tool::refresh()
 		auto const high{axis->anchors.back().chainage + 1.0};
 		for (auto const chainage : axis->chainage)
 			entry.guessed.push_back(chainage < low || chainage > high ? 1 : 0);
-		std::vector<double> jumps;
 		for (auto const &anchor : axis->anchors)
-		{
-			if (std::abs(anchor.after - anchor.before) < 1e-6)
-				continue;
-			jumps.push_back(anchor.chainage);
-			auto const way{kilometrage::direction_on(*axis, anchor.chainage)};
-			entry.ticks.push_back({kilometrage::point_on(*axis, anchor.chainage), {-way.y, 0.0, way.x}, 0, true});
-		}
-		// a tick at each hectometre the km pass along the axis, none at a jump
-		auto const hectometres_along = [&](std::vector<glm::dvec3> const &Points, std::vector<double> const &Km, std::vector<double> const &Chainage, std::vector<tick> &Ticks) {
-			for (std::size_t i = 1; i < Points.size(); ++i)
+			if (std::abs(anchor.after - anchor.before) >= 1e-6)
 			{
-				auto const from{std::min(Chainage[i - 1], Chainage[i])};
-				auto const to{std::max(Chainage[i - 1], Chainage[i])};
-				if (std::any_of(jumps.begin(), jumps.end(), [&](double const Jump) { return Jump >= from - 1e-6 && Jump <= to + 1e-6; }))
-					continue;
-				auto const k0{Km[i - 1]};
-				auto const k1{Km[i]};
-				if (std::abs(k1 - k0) < 1e-9)
-					continue;
-				auto way{plan_of(Points[i] - Points[i - 1])};
-				way = glm::length(way) > 1e-9 ? glm::normalize(way) : glm::dvec2{0.0, 1.0};
-				auto const first{static_cast<int>(std::floor(std::min(k0, k1) * 10.0 + 1e-9)) + 1};
-				auto const last{static_cast<int>(std::floor(std::max(k0, k1) * 10.0 + 1e-9))};
-				for (auto hectometres = first; hectometres <= last && hectometres < first + 10; ++hectometres)
-					Ticks.push_back({glm::mix(Points[i - 1], Points[i], (hectometres / 10.0 - k0) / (k1 - k0)), {-way.y, 0.0, way.x}, hectometres, false});
+				auto const way{kilometrage::direction_on(*axis, anchor.chainage)};
+				entry.ticks.push_back({kilometrage::point_on(*axis, anchor.chainage), {-way.y, 0.0, way.x}, 0, true});
 			}
-		};
-		std::vector<double> km;
-		for (auto const chainage : axis->chainage)
-			km.push_back(kilometrage::km_on(*axis, chainage));
-		hectometres_along(axis->points, km, axis->chainage, entry.ticks);
+		for (auto const &hectometre : kilometrage::hectometres(*axis))
+			entry.ticks.push_back({hectometre.at, {-hectometre.rising.y, 0.0, hectometre.rising.x}, hectometre.number, false});
 		m_drawn.push_back(std::move(entry));
-		// the shorter track where the tracks run apart, with its irregular hectometre
+		// the shorter track where the tracks run apart
 		for (auto const &side : axis->sides)
 		{
 			drawn apart;
 			apart.line = line;
 			apart.points = side.points;
 			apart.guessed.assign(side.points.size(), 0);
-			km.clear();
-			for (auto const along : side.along)
-				km.push_back(kilometrage::km_on(*axis, side, along));
-			hectometres_along(side.points, km, side.chainage, apart.ticks);
 			m_drawn.push_back(std::move(apart));
 		}
 	}
@@ -303,18 +274,8 @@ void km_tool::pick(TTrack &Track, glm::dvec3 const &Point)
 	else
 	{
 		// the line the point lies on, and its km there
-		auto best{kReadoutReach};
-		for (auto const &line : kilometrage::lines())
-			if (auto const *axis{kilometrage::axis_of(line)}; axis != nullptr)
-			{
-				double gap{0.0};
-				kilometrage::chainage_at(*axis, entry.point, gap);
-				if (gap < best)
-				{
-					best = gap;
-					m_line = line;
-				}
-			}
+		if (auto const line{kilometrage::line_at(entry.point, kReadoutReach)}; false == line.empty())
+			m_line = line;
 		double km{0.0};
 		if (false == m_line.empty() && kilometrage::km_at(m_line, entry.point, km, kReadoutReach))
 		{

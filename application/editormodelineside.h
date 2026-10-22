@@ -41,6 +41,7 @@ class hekto_tool final : public editor_tool
 		double chainage{0.0};
 		glm::dvec3 position{0.0};
 		double yaw{0.0};
+		int growth{1}; // 1: the kilometrage grows along the line there, -1: against
 		int standing{-1}; // post already there with this number
 	};
 	struct hekto_found
@@ -54,6 +55,7 @@ class hekto_tool final : public editor_tool
 		bool wrong{false};
 		bool duplicate{false}; // another post with the same number stands nearer to its place
 		bool outside{false}; // its number belongs past the ends of the line
+		int place{-1}; // of the posts, the one with its number nearest to it
 	};
 	struct hekto_state
 	{
@@ -62,6 +64,9 @@ class hekto_tool final : public editor_tool
 		double km{0.0};
 		bool km_read{false}; // the kilometrage was read from the posts already standing
 		int growth{1}; // 1: grows along the line, -1: against
+		std::string line; // of the kilometrage set for the line in the Kilometrage tool the posts follow, empty for the one given here
+		std::string line_set; // the line the Kilometrage tool sets the kilometrage of at the point, empty for none
+		bool own_km{false}; // the kilometrage given here, even where the line has one set
 		int side{1}; // 1: to the right of the growing kilometrage, -1: to the left, 0: alternately
 		double offset{3.0}; // m from the axis
 		int style{0}; // nowy, stary, zgnity, mixed

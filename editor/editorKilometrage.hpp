@@ -127,6 +127,20 @@ glm::dvec2 direction_on(axis const &Axis, double const Chainage);
 double km_on(axis const &Axis, axis::side const &Side, double const Along);
 // the km of the line at the point, when it lies within the reach of the axis
 bool km_at(std::string const &Line, glm::dvec3 const &Point, double &Km, double const Reach = 30.0);
+// the line whose axis, or a track running apart from it, passes nearest to the point within the reach, empty for none
+std::string line_at(glm::dvec3 const &Point, double const Reach = 30.0);
+// the km of the line rise along the way at the point: 1, against it: -1, 0 where the axis doesn't reach
+int growth_at(std::string const &Line, glm::dvec3 const &Point, glm::dvec2 const &Way, double const Reach = 30.0);
+// a hectometre the km of a line pass
+struct hectometre
+{
+	glm::dvec3 at{0.0};
+	glm::dvec2 rising{0.0, 1.0}; // the way the km rise there, in the plan
+	int number{0}; // of the hectometres from km 0, 1043 for km 104,3
+};
+// the hectometres along the axis and along the tracks running apart from it; at a jump the one of the km on from it, else of
+// the km it is reached at, whichever is a whole hectometre
+std::vector<hectometre> hectometres(axis const &Axis);
 // the track nearest to the point in the plan within the reach, nullptr for none
 TTrack *track_near(glm::dvec3 const &Point, double const Reach);
 // the path of the track nearest to the point in the plan, On: the point of it nearest

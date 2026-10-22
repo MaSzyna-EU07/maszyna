@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
+#include "editor/editorKilometrage.hpp"
 
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
@@ -442,61 +443,97 @@ void hekto_tool::hekto_update()
 			continue;
 		tool.found.push_back(post);
 	}
-	if (false == tool.km_read)
+	tool.line_set = kilometrage::line_at(tool.point);
+	tool.line = tool.own_km ? std::string{} : tool.line_set;
+	if (tool.line.empty() && false == tool.km_read)
 	{
 		tool.km_read = true;
 		hekto_read_kilometrage();
 	}
-	auto const chainage_of = [&](int const Hectometres) { return tool.origin + tool.growth * (Hectometres / 10.0 - tool.km) * 1000.0; };
-	for (auto &post : tool.found)
-	{
-		post.expected = chainage_of(post.hectometres);
-		post.error = post.chainage - post.expected;
-		post.outside = true;
-	}
-	auto const km_at = [&](double const Chainage) { return tool.km + tool.growth * (Chainage - tool.origin) / 1000.0; };
-	auto const low{std::max(0, static_cast<int>(std::ceil(std::min(km_at(0.0), km_at(length)) * 10.0 - 1e-6)))};
-	auto const high{static_cast<int>(std::floor(std::max(km_at(0.0), km_at(length)) * 10.0 + 1e-6))};
-	for (int hectometres = low; hectometres <= high && tool.posts.size() < 5000; ++hectometres)
-	{
-		hekto_post post;
-		post.hectometres = hectometres;
-		post.chainage = chainage_of(hectometres);
-		if (post.chainage < 0.0 || post.chainage > length)
-			continue;
-		auto const axis{editor_track::sampled_position(tool.samples, post.chainage)};
-		auto const growing{sampled_direction(tool.samples, post.chainage) * static_cast<double>(tool.growth)};
+	auto const place = [&](hekto_post &Post) {
+		auto const axis{editor_track::sampled_position(tool.samples, Post.chainage)};
+		auto const growing{sampled_direction(tool.samples, Post.chainage) * static_cast<double>(Post.growth)};
 		glm::dvec2 const left{-growing.y, growing.x};
 		// alternately: the even hectometres on the right, the odd ones on the left of the growing kilometrage
-		auto const side{tool.side != 0 ? tool.side : (hectometres % 2 == 0 ? 1 : -1)};
+		auto const side{tool.side != 0 ? tool.side : (Post.hectometres % 2 == 0 ? 1 : -1)};
 		auto const planar{plan_of(axis) + left * (side * tool.offset)};
-		post.position = m_ground.placement_on_ground({planar.x, axis.y, planar.y});
-		post.yaw = std::fmod(heading_of(growing) + tool.turn, 360.0);
-		// of the posts with this number the one nearest to the place stands for it, the others are duplicates. it stands wrong
-		// when it's farther from the place than allowed: along the line, across it, or on the other side
-		auto best{std::numeric_limits<double>::max()};
-		for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
+		Post.position = m_ground.placement_on_ground({planar.x, axis.y, planar.y});
+		Post.yaw = std::fmod(heading_of(growing) + tool.turn, 360.0);
+		tool.posts.push_back(Post);
+	};
+	auto const *axis{tool.line.empty() ? nullptr : kilometrage::axis_of(tool.line)};
+	if (axis != nullptr)
+	{
+		// the hectometres of the kilometrage of the line, the jumps in it too
+		double km{0.0};
+		if (kilometrage::km_at(tool.line, tool.point, km))
+			tool.km = std::round(km * 1000.0) / 1000.0;
+		tool.growth = kilometrage::growth_at(tool.line, tool.point, sampled_direction(tool.samples, tool.origin)) < 0 ? -1 : 1;
+		for (auto const &hectometre : kilometrage::hectometres(*axis))
 		{
-			auto &found{tool.found[i]};
-			if (found.hectometres != hectometres)
+			hekto_post post;
+			post.hectometres = hectometre.number;
+			post.chainage = project(tool.samples, hectometre.at, distance);
+			if (distance > kLineCorridor || post.chainage <= 0.0 || post.chainage >= length || hectometre.number < 0 || tool.posts.size() >= 5000)
 				continue;
-			found.outside = false;
-			found.distance = plan_distance(found.post.location, post.position);
-			if (found.distance < best)
+			post.growth = glm::dot(hectometre.rising, sampled_direction(tool.samples, post.chainage)) < 0.0 ? -1 : 1;
+			place(post);
+		}
+		std::sort(tool.posts.begin(), tool.posts.end(), [](hekto_post const &A, hekto_post const &B) { return A.chainage < B.chainage; });
+	}
+	else
+	{
+		auto const km_at = [&](double const Chainage) { return tool.km + tool.growth * (Chainage - tool.origin) / 1000.0; };
+		auto const low{std::max(0, static_cast<int>(std::ceil(std::min(km_at(0.0), km_at(length)) * 10.0 - 1e-6)))};
+		auto const high{static_cast<int>(std::floor(std::max(km_at(0.0), km_at(length)) * 10.0 + 1e-6))};
+		for (int hectometres = low; hectometres <= high && tool.posts.size() < 5000; ++hectometres)
+		{
+			hekto_post post;
+			post.hectometres = hectometres;
+			post.chainage = tool.origin + tool.growth * (hectometres / 10.0 - tool.km) * 1000.0;
+			post.growth = tool.growth;
+			if (post.chainage < 0.0 || post.chainage > length)
+				continue;
+			place(post);
+		}
+	}
+	// each post standing goes with the place of its number nearest to it; of the posts going with a place the one nearest to it
+	// stands for it, the others are duplicates. it stands wrong when it's farther from the place than allowed: along the line,
+	// across it, or on the other side
+	for (auto &found : tool.found)
+	{
+		found.outside = true;
+		found.place = -1;
+		for (int i = 0; i < static_cast<int>(tool.posts.size()); ++i)
+		{
+			auto const &post{tool.posts[i]};
+			if (post.hectometres != found.hectometres)
+				continue;
+			auto const distance{plan_distance(found.post.location, post.position)};
+			if (found.place < 0 || distance < found.distance)
 			{
-				best = found.distance;
-				post.standing = i;
+				found.outside = false;
+				found.place = i;
+				found.distance = distance;
+				found.expected = post.chainage;
+				found.error = found.chainage - post.chainage;
 			}
 		}
-		for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
-		{
-			auto &found{tool.found[i]};
-			if (found.hectometres != hectometres)
-				continue;
-			found.duplicate = i != post.standing;
-			found.wrong = false == found.duplicate && found.distance > tool.tolerance;
-		}
-		tool.posts.push_back(post);
+	}
+	for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
+	{
+		auto const &found{tool.found[i]};
+		if (found.place < 0)
+			continue;
+		auto &post{tool.posts[found.place]};
+		if (post.standing < 0 || found.distance < tool.found[post.standing].distance)
+			post.standing = i;
+	}
+	for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
+	{
+		auto &found{tool.found[i]};
+		found.duplicate = found.place >= 0 && tool.posts[found.place].standing != i;
+		found.wrong = found.place >= 0 && false == found.duplicate && found.distance > tool.tolerance;
 	}
 }
 
@@ -576,21 +613,40 @@ void hekto_tool::render_options()
 		if (Changed)
 			tool.dirty = true;
 	};
-	if (begin_fields("##hektokm", 0.45f))
+	if (false == tool.line.empty())
 	{
-		field_row("Kilometre at the point (km)");
-		changed(ImGui::InputDouble("##hektokilometre", &tool.km, 0.0, 0.0, "%.3f"));
-		ImGui::TableNextRow();
-		ImGui::TableSetColumnIndex(1);
-		if (ImGui::Button(STR_C("Read from the posts"), ImVec2(-FLT_MIN, 0.0f)))
+		ImGui::TextWrapped("%s", format(STR_C("The km of line %s, as the Kilometrage tool sets them, its jumps too: km %s at the point"), tool.line.c_str(), kilometrage::text(tool.km).c_str()).c_str());
+		if (ImGui::SmallButton(STR_C("Give the km here instead")))
 		{
+			tool.own_km = true;
 			tool.km_read = false;
 			tool.dirty = true;
 		}
-		ImGui::EndTable();
+		item_tooltip("The posts go by the km given at the point and the way it grows, without the jumps of the line");
 	}
-	ImGui::TextDisabled("%s", STR_C("The kilometrage grows"));
-	changed(segmented("growth", tool.growth, {{1, STR_C("along the line")}, {-1, STR_C("against it")}}));
+	else
+	{
+		if (false == tool.line_set.empty() && ImGui::SmallButton(format(STR_C("Follow the km of line %s"), tool.line_set.c_str()).c_str()))
+		{
+			tool.own_km = false;
+			tool.dirty = true;
+		}
+		if (begin_fields("##hektokm", 0.45f))
+		{
+			field_row("Kilometre at the point (km)");
+			changed(ImGui::InputDouble("##hektokilometre", &tool.km, 0.0, 0.0, "%.3f"));
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(1);
+			if (ImGui::Button(STR_C("Read from the posts"), ImVec2(-FLT_MIN, 0.0f)))
+			{
+				tool.km_read = false;
+				tool.dirty = true;
+			}
+			ImGui::EndTable();
+		}
+		ImGui::TextDisabled("%s", STR_C("The kilometrage grows"));
+		changed(segmented("growth", tool.growth, {{1, STR_C("along the line")}, {-1, STR_C("against it")}}));
+	}
 	ImGui::TextDisabled("%s", STR_C("Side, looking where it grows"));
 	changed(segmented("side", tool.side, {{1, STR_C("on the right")}, {-1, STR_C("on the left")}, {0, STR_C("alternately"), "The even hectometres on the right, the odd ones on the left"}}));
 	if (ImGui::TreeNode(STR_C("More settings")))
@@ -1056,6 +1112,7 @@ editor_selftest_result hekto_tool::selftest(std::string const &Command, std::ist
 		auto &tool{m_hekto};
 		if (values.count("reach"))
 			tool.reach = std::stod(values["reach"]);
+		tool.own_km = values["own"] == "1";
 		tool.dirty = true;
 		hekto_update();
 		if (values.count("km"))
@@ -1067,7 +1124,10 @@ editor_selftest_result hekto_tool::selftest(std::string const &Command, std::ist
 		tool.dirty = true;
 		hekto_update();
 		auto const missing{std::count_if(tool.posts.begin(), tool.posts.end(), [](hekto_post const &Post) { return Post.standing < 0; })};
-		WriteLog(format("SELFTEST hekto: km %.3f growth %d, %zu posts along %.0f m, %d to place, %zu standing. %s", tool.km, tool.growth, tool.posts.size(), tool.samples.empty() ? 0.0 : tool.samples.back().chainage, static_cast<int>(missing), tool.found.size(), tool.status.c_str()));
+		auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](hekto_found const &Post) { return Post.wrong; })};
+		auto const duplicates{std::count_if(tool.found.begin(), tool.found.end(), [](hekto_found const &Post) { return Post.duplicate; })};
+		WriteLog(format("SELFTEST hekto: line %s km %.3f growth %d, %zu posts along %.0f m, %d to place, %zu standing, %d wrong, %d duplicate. %s", tool.line.empty() ? "-" : tool.line.c_str(), tool.km, tool.growth, tool.posts.size(), tool.samples.empty() ? 0.0 : tool.samples.back().chainage, static_cast<int>(missing), tool.found.size(),
+		                static_cast<int>(wrong), static_cast<int>(duplicates), tool.status.c_str()));
 		for (std::size_t i = 0; i < tool.posts.size() && i < 4; ++i)
 		{
 			auto const &post{tool.posts[i]};
@@ -1076,9 +1136,16 @@ editor_selftest_result hekto_tool::selftest(std::string const &Command, std::ist
 			auto const direction{editor_track::sampled_position(tool.samples, post.chainage + 1.0) - axis};
 			glm::dvec2 const offset{post.position.x - axis.x, post.position.z - axis.z};
 			lateral = glm::length(offset);
-			auto const right{(direction.x * offset.y - direction.z * offset.x) * tool.growth >= 0.0};
+			auto const right{(direction.x * offset.y - direction.z * offset.x) * post.growth >= 0.0};
 			WriteLog(format("SELFTEST hekto post %d.%d at %.1f m, %.2f m from the axis, %s of the growing kilometrage, at %.1f %.1f %.1f", post.hectometres / 10, post.hectometres % 10, post.chainage, lateral, right ? "right" : "left", post.position.x, post.position.y,
 			                post.position.z));
+		}
+		if (values["list"] == "1")
+		{
+			std::string list;
+			for (auto const &post : tool.posts)
+				list += format(" %d@%.0f", post.hectometres, post.chainage);
+			WriteLog("SELFTEST hekto posts:" + list);
 		}
 		if (values["place"] == "1")
 		{

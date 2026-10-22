@@ -10780,3 +10780,15 @@ msgstr "Przez stację linia biegnie tym torem, a nie po prostych torach rozjazd�
 msgid "%s: this way"
 msgstr "%s: tędy"
 
+msgid "The km of line %s, as the Kilometrage tool sets them, its jumps too: km %s at the point"
+msgstr "Kilometraż linii %s z narzędzia Kilometraż, razem z uskokami: km %s w punkcie"
+
+msgid "Give the km here instead"
+msgstr "Podaj kilometr tutaj"
+
+msgid "The posts go by the km given at the point and the way it grows, without the jumps of the line"
+msgstr "Słupki pójdą według kilometra podanego w punkcie i kierunku, w którym rośnie, bez uskoków linii"
+
+msgid "Follow the km of line %s"
+msgstr "Według kilometrażu linii %s"
+
