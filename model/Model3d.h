@@ -292,6 +292,8 @@ private:
     nameoffset_sequence m_smokesources; // list of particle sources defined in the model
     instance_submodels m_instancesubmodels; // filled on first use, see instance_parts()
     bool m_instancesubmodelslocated { false };
+    std::vector<float> m_lodbounds; // filled on first use, see lod_bounds()
+    bool m_lodboundsfound { false };
 
 public:
     TModel3d() = default;
@@ -303,6 +305,9 @@ public:
     // returns submodels which scenery instances of the model refer to by name. the search for a name goes through the whole
     // submodel tree, so it's done once for the model instead of once for each of its instances
     instance_submodels const & instance_parts();
+    // returns the distinct bounds of the visibility ranges of the submodels (fSquareMinDist and fSquareMaxDist, squared), sorted:
+    // they split the distance into bands in which the same submodels are drawn. found once for the model, like instance_parts()
+    std::vector<float> const & lod_bounds();
 	TSubModel * AddToNamed(const char *Name, TSubModel *SubModel);
     nameoffset_sequence const & find_smoke_sources();
 	void AddTo(TSubModel *tmp, TSubModel *SubModel);

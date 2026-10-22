@@ -1616,6 +1616,7 @@ void TModel3d::AddTo(TSubModel *tmp, TSubModel *SubModel)
 	}
 	++iSubModelsCount; // teraz jest o 1 submodel więcej
 	iFlags |= 0x0200; // submodele są oddzielne
+	m_lodboundsfound = false; // the new submodel may have its own range
 };
 
 TSubModel *TModel3d::GetFromName(std::string const &Name) const
@@ -1641,6 +1642,33 @@ TModel3d::instance_submodels const &TModel3d::instance_parts()
 		m_instancesubmodelslocated = true;
 	}
 	return m_instancesubmodels;
+}
+
+// returns the distinct bounds of the visibility ranges of the submodels, sorted, finding them on first use
+std::vector<float> const &TModel3d::lod_bounds()
+{
+	if (false == m_lodboundsfound)
+	{
+		m_lodbounds.clear();
+		std::vector<TSubModel const *> pending{Root};
+		while (false == pending.empty())
+		{
+			auto const *submodel{pending.back()};
+			pending.pop_back();
+			if (submodel == nullptr)
+				continue;
+			if (submodel->fSquareMinDist > 0.f)
+				m_lodbounds.emplace_back(submodel->fSquareMinDist);
+			if (submodel->fSquareMaxDist < std::numeric_limits<float>::max())
+				m_lodbounds.emplace_back(submodel->fSquareMaxDist);
+			pending.push_back(submodel->Child);
+			pending.push_back(submodel->Next);
+		}
+		std::sort(m_lodbounds.begin(), m_lodbounds.end());
+		m_lodbounds.erase(std::unique(m_lodbounds.begin(), m_lodbounds.end()), m_lodbounds.end());
+		m_lodboundsfound = true;
+	}
+	return m_lodbounds;
 }
 
 // locates particle source submodels and stores them on internal list

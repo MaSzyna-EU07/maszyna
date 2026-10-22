@@ -269,6 +269,13 @@ public:
         mutable glm::dvec3 recordorigin { 0.0 }; // the records hold locations relative to it
         mutable float lodrangesquared { 0.f }; // past it no submodel of the model of the bucket is drawn
         mutable float rangesquared { std::numeric_limits<float>::max() }; // past it no instance of the bucket is drawn: the largest range of its instances, within lodrangesquared
+        // bounds of the visible instances of the records, for the tests of a whole bucket: a sphere around their locations
+        // (recordcenter, recordlocationradius), the radius of the sphere which holds the instances whole (negative when none
+        // of them is visible), and the largest radius of an instance
+        mutable glm::dvec3 recordcenter { 0.0 };
+        mutable float recordlocationradius { 0.f };
+        mutable float recordradius { -1.f };
+        mutable float recordradiusmax { 0.f };
         mutable unsigned int recordsversion { 0 };
         // place of the records in the record buffer of the gpu culling: first record, room, and the generation of
         // the buffer it is good for. gpustale: the records changed since they were sent

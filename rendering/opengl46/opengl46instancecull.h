@@ -107,14 +107,15 @@ class opengl46_instance_cull
 		return m_inpass && m_setup.drawing;
 	}
 	// adds the records of a bucket (made already) to the pass, sending them to the gpu when they changed.
-	// Area: bounds of the cell holding the bucket, which hold the locations of all its instances
+	// Area: bounds which hold the locations of all its visible instances: their own (opengl46_renderer::Bucket_Area()) or of the cell
+	// holding the bucket
 	void add_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area);
 	// adds the sleepers of a track, their records made already as a bucket with no instances (only the records and the place
 	// in the record buffer count). Area: bounds of the locations of the sleepers. the range of the whole track is tested by
 	// the caller, the culling tests each sleeper against the frustum and gives it the lod band of its plain distance from the
 	// camera of the pass (Render_Sleepers())
 	void add_sleepers(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, scene::bounding_area const &Area);
-	// a bucket the renderer left out of the pass, as it lies wholly beyond its range (Global.gfx_gpucull_bucketrange): only counted,
+	// a bucket the renderer left out of the pass, as none of its instances can pass the culling (Global.gfx_gpucull_bucketrange): only counted,
 	// for the panel
 	void skip_bucket(scene::basic_cell::instance_bucket const &Bucket);
 	// runs the culling passes for the buckets added. View: rotation of the view of the pass. Occlusion: the depth pyramid
@@ -275,7 +276,6 @@ class opengl46_instance_cull
 	std::vector<float> m_lodlist;
 	group_map m_groupmap;
 	group_map m_sleepergroupmap; // groups of the sleepers
-	std::vector<TSubModel const *> m_pending; // walk of the submodel tree
 	std::uint32_t m_candidates{0};
 	std::uint32_t m_entries{0};
 	// tracks with sleepers and their sleepers queued in the pass, and in the last pass, for the panel

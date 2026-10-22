@@ -705,6 +705,7 @@ bool opengl46_renderer::Render()
 		// and so may the tracks the sleeper records were made for, and the models drawn on their own
 		m_sleeperrecords.clear();
 		m_modelrecords.clear();
+		m_cascaderecords.clear();
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -801,7 +802,21 @@ void opengl46_renderer::SwapBuffers()
 	Timer::subsystem.gfx_swap.stop();
 
     m_debugtimestext.clear();
-    m_debugtimestext =
+    // the whole frame of the main loop and its parts: the update of the simulation, Render() with the ui drawn in it, the swap,
+    // and what's left (input, terrain streaming, tasks, network), measured by none of them
+    {
+        auto const mainloop { Timer::subsystem.mainloop_total.average() };
+        auto const simulation { Timer::subsystem.sim_total.average() };
+        auto const render { Timer::subsystem.gfx_total.average() };
+        auto const swap { Timer::subsystem.gfx_swap.average() };
+        m_debugtimestext =
+            "mainloop total: " + to_string( mainloop, 2 ) + " ms\n"
+            + " simulation: " + to_string( simulation, 2 ) + " ms\n"
+            + " render: " + to_string( render, 2 ) + " ms (ui " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms)\n"
+            + " swap: " + to_string( swap, 2 ) + " ms\n"
+            + " other: " + to_string( mainloop - simulation - render - swap, 2 ) + " ms\n";
+    }
+    m_debugtimestext +=
         "cpu frame total: " + to_string( Timer::subsystem.gfx_color.average() + Timer::subsystem.gfx_shadows.average() + ( Global.gfx_envmap_enabled ? Timer::subsystem.gfx_reflections.average() : 0.f ) + Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n"
         + " color: " + to_string( Timer::subsystem.gfx_color.average(), 2 ) + " ms (" + std::to_string( m_cellqueue.size() ) + " sectors)\n";
     if( Global.gfx_shadowmap_enabled ) {
@@ -1123,7 +1138,7 @@ void opengl46_renderer::draw_debug_ui()
             ImGui::Checkbox("the same for the scenery of the shadow maps of lamps, when it's drawn next (gfx.gpucull.shadows.lamps)", &Global.gfx_gpucull_shadows_lamps);
             ImGui::Checkbox("the same for the sleepers of the tracks of the view (gfx.gpucull.sleepers)", &Global.gfx_gpucull_sleepers);
             ImGui::Checkbox("the same for the models drawn on their own, with lights, animations or skins of their own (gfx.gpucull.models)", &Global.gfx_gpucull_models);
-            ImGui::Checkbox("leave out the models of a cell lying wholly beyond their range before the culling (gfx.gpucull.bucketrange)", &Global.gfx_gpucull_bucketrange);
+            ImGui::Checkbox("leave out the models of a cell lying wholly out of view, beyond their range or too small before the culling (gfx.gpucull.bucketrange)", &Global.gfx_gpucull_bucketrange);
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
         if (Global.gfx_contactshadows > 0)
@@ -4017,12 +4032,9 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 	auto const distancelimit { slack * ( reflections ? sq( static_cast<double>( Global.reflectiontune.range_instances ) ) : sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) };
 	// up close the rounding of the records is too large a part of the distance for the slack to cover it
 	auto const distancetested { sq( 64.0 ) };
-	// the nearest point of the cell, measured as the tests below and the gpu culling measure the instances: a bucket whose range
-	// ends before it has none of its instances drawn, and is left out of the pass before the culling. basic_cell::enclose_area
-	// keeps the locations of all instances of the cell within the radius of its area
-	auto const cellnearest { std::max( 0.0, glm::length( Cell->m_area.center - cameraposition ) - static_cast<double>( Cell->m_area.radius ) ) };
-	auto const cellscaledsquared { cellnearest * cellnearest * distancescale + distanceoffset };
-	auto const bucketrange { Global.gfx_gpucull_bucketrange && userecords && ( cellnearest * cellnearest > distancetested ) };
+	// a bucket whose visible instances all fail the tests of the culling by the bounds of their records (Bucket_Culled()) is left
+	// out of the pass before the culling. the bounds are made with the records, which the editor doesn't let go by
+	auto const buckettests { Global.gfx_gpucull_bucketrange && userecords };
 
 	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
 		auto const &instancebucket { bucket.second };
@@ -4030,7 +4042,7 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 		 || ( instancebucket.records.size() != instancebucket.instances.size() ) ) {
 			Update_Instance_Records( bucket.first.pModel, instancebucket, Cell->m_area.center );
 		}
-		if( bucketrange && ( cellscaledsquared >= slack * instancebucket.rangesquared ) ) {
+		if( buckettests && Bucket_Culled( instancebucket ) ) {
 			if( m_instancecullpass ) {
 				m_passcull->skip_bucket( instancebucket );
 			}
@@ -4038,9 +4050,10 @@ void opengl46_renderer::Queue_Instances( scene::basic_cell const *Cell )
 		}
 		if( m_instancecullpass ) {
 			// the gpu tests every instance of the bucket, the way Render_Instanced() does. models with nothing to draw in the
-			// sun shadows are left out of them, as Render_Instanced() leaves them
+			// sun shadows are left out of them, as Render_Instanced() leaves them. the lod bands drawn go by the distances
+			// the locations of the instances can be at: of their own bounds, or of the cell, which holds them too
 			if( ( m_renderpass.draw_mode != rendermode::shadows ) || Instances_Cast_Shadow( bucket.first, instancebucket ) ) {
-				m_passcull->add_bucket( bucket.first, instancebucket, Cell->m_area );
+				m_passcull->add_bucket( bucket.first, instancebucket, ( buckettests ? Bucket_Area( instancebucket ) : Cell->m_area ) );
 			}
 			// and when the instances are drawn from its result, the cpu has nothing more to do with them
 			if( m_passcull->drawing() ) { continue; }
@@ -4113,6 +4126,12 @@ bool opengl46_renderer::Queue_Model( TAnimModel *Instance, bool const Inrange )
 		modelkey.instance = nullptr;
 		if( false == Instances_Cast_Shadow( modelkey, bucket ) ) { return drawing; }
 	}
+	// out of the frustum of the pass, beyond its range or too small on the screen by its record: the culling would leave it out,
+	// and the walk of Record_Indirect_Draws() isn't made for it
+	if( Global.gfx_gpucull_bucketrange && ( false == EditorModeFlag ) && Bucket_Culled( bucket ) ) {
+		m_passcull->skip_bucket( bucket );
+		return drawing;
+	}
 	m_passcull->add_bucket( records.key, bucket, records.area );
 	if( false == drawing ) {
 		// the cpu draws it too, and tells what it drew for the comparison
@@ -4167,8 +4186,85 @@ void opengl46_renderer::Update_Instance_Records( TModel3d const *Model, scene::b
 		Bucket.records.emplace_back( record );
 	}
 	Bucket.rangesquared = std::min( rangesquared, lodrangesquared );
+
+	// bounds of the visible instances, for Bucket_Culled(): the centre of the box around their locations, and the spheres
+	// around it which hold the locations and the instances whole. the gpu leaves out the ones which aren't visible
+	glm::dvec3 low { std::numeric_limits<double>::max() };
+	glm::dvec3 high { std::numeric_limits<double>::lowest() };
+	auto radiusmax { 0.f };
+	for( auto const &record : Bucket.records ) {
+		if( ( record.flags & scene::basic_cell::instance_visible ) == 0 ) { continue; }
+		glm::dvec3 const position { record.position };
+		low = glm::min( low, position );
+		high = glm::max( high, position );
+		radiusmax = std::max( radiusmax, record.radius );
+	}
+	Bucket.recordlocationradius = 0.f;
+	Bucket.recordradius = -1.f;
+	Bucket.recordradiusmax = radiusmax;
+	if( low.x <= high.x ) {
+		auto const center { 0.5 * ( low + high ) };
+		auto locationradius { 0.0 };
+		auto radius { 0.0 };
+		for( auto const &record : Bucket.records ) {
+			if( ( record.flags & scene::basic_cell::instance_visible ) == 0 ) { continue; }
+			auto const distance { glm::length( glm::dvec3{ record.position } - center ) };
+			locationradius = std::max( locationradius, distance );
+			radius = std::max( radius, distance + record.radius );
+		}
+		Bucket.recordcenter = Origin + center;
+		Bucket.recordlocationradius = static_cast<float>( locationradius );
+		Bucket.recordradius = static_cast<float>( radius );
+	}
+	else {
+		Bucket.recordcenter = Origin;
+	}
 	Bucket.recordsversion = m_instancerecordsversion;
 	Bucket.gpustale = true;
+}
+
+// whether none of the instances of a bucket can pass the tests of the culling of the pass (Render_Instanced(), on the gpu
+// instance_cull.comp): by the bounds of their records the visible ones lie wholly out of the frustum of the pass, beyond their
+// range or the draw range, or are too small on the screen. the tests are those of the culling with the nearest location and
+// the largest instance of the bucket, with a margin for the single precision of the records and of the gpu, so they leave out
+// only buckets which the culling would leave out whole
+bool opengl46_renderer::Bucket_Culled( scene::basic_cell::instance_bucket const &Bucket ) const
+{
+	if( Bucket.recordradius < 0.f ) { return true; }
+
+	auto const slack { 1.001 };
+	auto const margin { 0.5 }; // metres
+	// the planes of the frustum in world coordinates, the ones the gpu culling moves to the camera of the pass
+	auto const &planes { m_renderpass.pass_camera.frustum().planes() };
+	auto const &center { Bucket.recordcenter };
+	auto const radius { slack * Bucket.recordradius + margin };
+	for( auto const *plane : planes ) {
+		if( plane[ 0 ] * center.x + plane[ 1 ] * center.y + plane[ 2 ] * center.z + plane[ 3 ] <= -radius ) { return true; }
+	}
+
+	// the same choices as in Render_Instanced(): shadows measure the distance from the real camera, reflections ignore zoom and
+	// distance factor, test the plain distance against their own range and add the fidelity offset
+	auto const reflections { m_renderpass.draw_mode == rendermode::reflections };
+	auto const &distancecamera { m_renderpass.draw_mode == rendermode::shadows ? m_renderpass.viewport_camera : m_renderpass.pass_camera };
+	auto const nearest { std::max( 0.0, glm::length( center - distancecamera.position() ) - ( slack * Bucket.recordlocationradius + margin ) ) };
+	auto const zoom { static_cast<double>( Global.ZoomFactor ) };
+	auto const scaledsquared { nearest * nearest * ( reflections ? 1.0 : 1.0 / ( zoom * zoom * static_cast<double>( Global.fDistanceFactor ) ) ) };
+	if( reflections && ( scaledsquared > slack * sq( static_cast<double>( Global.reflectiontune.range_instances ) ) ) ) { return true; }
+	auto const distancesquared { scaledsquared + ( reflections ? sq( static_cast<double>( EU07_REFLECTIONFIDELITYOFFSET ) ) : 0.0 ) };
+	if( distancesquared >= slack * Bucket.rangesquared ) { return true; }
+	if( distancesquared > slack * sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) { return true; }
+	// the largest instance at the nearest location takes the largest part of the view
+	auto const radiusmax { static_cast<double>( Bucket.recordradiusmax ) };
+	if( radiusmax * radiusmax * zoom * slack < 0.003 * 0.003 * distancesquared ) { return true; }
+
+	return false;
+}
+
+// the sphere around the locations of the visible instances of a bucket, with the margin of Bucket_Culled(): their distances
+// from it set the lod bands the gpu culling can put them in
+scene::bounding_area opengl46_renderer::Bucket_Area( scene::basic_cell::instance_bucket const &Bucket )
+{
+	return scene::bounding_area{ Bucket.recordcenter, static_cast<float>( 1.001 * Bucket.recordlocationradius + 0.5 ) };
 }
 
 // places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
@@ -4560,39 +4656,92 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 	m_indirectdraws.clear();
 	m_indirectcommands.clear();
 	auto const &lodbounds { Cull.lod_bounds() };
+	// the cascades of the sun shadows make the same walks: the mode, the lod band and the state of the models are the same in all
+	// of them within a frame, only the instances differ, and those the gpu fills in. the walk of a group in a band is made by the
+	// first cascade which draws it, the others copy its draws and commands with entries of their own
+	auto const cascade {
+		( m_renderpass.draw_mode == rendermode::shadows )
+		&& ( &Cull >= m_shadowcull.data() )
+		&& ( &Cull < m_shadowcull.data() + m_shadowcull.size() ) };
+	auto constexpr nowalk { std::numeric_limits<std::uint32_t>::max() };
+	if( cascade && ( m_cascaderecordframe != m_framestamp ) ) {
+		m_cascaderecordframe = m_framestamp;
+		m_cascadedraws.clear();
+		m_cascadecommands.clear();
+		if( ( m_framestamp % 256 ) == 0 ) {
+			// the groups not drawn for a while
+			for( auto records { m_cascaderecords.begin() }; records != m_cascaderecords.end(); ) {
+				if( m_framestamp - records->second.frame > 256 ) { records = m_cascaderecords.erase( records ); }
+				else { ++records; }
+			}
+		}
+	}
 	m_indirectrecording = true;
 	for( auto const &group : Cull.draw_groups() ) {
 		auto *model { group.key->pModel };
 		if( ( model == nullptr ) || ( model->Root == nullptr ) || ( ( group.instance == nullptr ) && ( false == group.sleepers ) ) ) { continue; }
 		material_handle const *skins { nullptr };
 		auto alpha { 0x30300030 };
-		if( group.sleepers ) {
-			// as Render_Sleepers() sets them up: the skin of the track, if any. like scenery models they pick no texture
-			// variants of their own
-			if( group.key->skins[ 1 ] != null_handle ) {
-				skins = group.key->skins.data();
+		auto prepared { false };
+		auto const prepare = [ & ]() {
+			prepared = true;
+			if( group.sleepers ) {
+				// as Render_Sleepers() sets them up: the skin of the track, if any. like scenery models they pick no texture
+				// variants of their own
+				if( group.key->skins[ 1 ] != null_handle ) {
+					skins = group.key->skins.data();
+				}
+				TSubModel::iVariantSeed = 0;
 			}
-			TSubModel::iVariantSeed = 0;
+			else {
+				if( group.key->instance != nullptr ) {
+					// a model drawn on its own: its lights and animations, the way Render( TAnimModel * ) sets them up
+					group.instance->RaAnimate( m_framestamp );
+				}
+				group.instance->RaPrepare();
+				auto const *material { group.instance->Material() };
+				if( material != nullptr ) {
+					skins = material->replacable_skins;
+					alpha = material->textures_alpha;
+				}
+			}
+			alpha ^= 0x0F0F000F;
+		};
+		// the walks of the group the cascades made in this frame. a group whose bands were all walked already isn't prepared
+		cascade_record *walks { nullptr };
+		if( cascade ) {
+			walks = &m_cascaderecords[ *group.key ];
+			if( ( walks->frame != m_framestamp ) || ( walks->bands.size() != group.lodcount + 1 ) ) {
+				walks->frame = m_framestamp;
+				walks->bands.assign( group.lodcount + 1, cascade_band { nowalk, 0 } );
+			}
 		}
 		else {
-			if( group.key->instance != nullptr ) {
-				// a model drawn on its own: its lights and animations, the way Render( TAnimModel * ) sets them up
-				group.instance->RaAnimate( m_framestamp );
-			}
-			group.instance->RaPrepare();
-			auto const *material { group.instance->Material() };
-			if( material != nullptr ) {
-				skins = material->replacable_skins;
-				alpha = material->textures_alpha;
-			}
+			prepare();
 		}
-		alpha ^= 0x0F0F000F;
 		for( std::uint32_t band = 0; band <= group.lodcount; ++band ) {
 			// a band holds the squared distances from its lower bound up to the next one; any of them selects the same lod
 			auto const bandmin { band == 0 ? 0.f : lodbounds[ group.lodfirst + band - 1 ] };
 			auto const bandmax { band == group.lodcount ? std::numeric_limits<float>::max() : lodbounds[ group.lodfirst + band ] };
 			if( ( bandmin > group.distancemax ) || ( bandmax <= group.distancemin ) ) { continue; }
 			m_indirectentry = group.entryfirst + band;
+			if( ( walks != nullptr ) && ( walks->bands[ band ].first != nowalk ) ) {
+				// walked by another cascade: its draws, for the instances of this entry
+				auto const &walk { walks->bands[ band ] };
+				m_indirectdraws.insert( m_indirectdraws.end(), m_cascadedraws.begin() + walk.first, m_cascadedraws.begin() + walk.first + walk.count );
+				for( std::uint32_t draw = 0; draw < walk.count; ++draw ) {
+					auto &command { m_indirectcommands.emplace_back( m_cascadecommands[ walk.first + draw ] ) };
+					command.entry = m_indirectentry;
+				}
+				// as the walk would count them
+				m_renderpass.draw_stats.submodels += static_cast<int>( walk.count );
+				m_renderpass.draw_stats.drawcalls += static_cast<int>( walk.count );
+				continue;
+			}
+			if( false == prepared ) {
+				prepare();
+			}
+			auto const walkfirst { m_indirectdraws.size() };
 			::glPushMatrix();
 			::glLoadIdentity();
 			model->Root->fSquareDist = bandmin;
@@ -4600,6 +4749,13 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 			model->Root->pRoot = model;
 			Render( model->Root );
 			::glPopMatrix();
+			if( walks != nullptr ) {
+				walks->bands[ band ] = cascade_band {
+					static_cast<std::uint32_t>( m_cascadedraws.size() ),
+					static_cast<std::uint32_t>( m_indirectdraws.size() - walkfirst ) };
+				m_cascadedraws.insert( m_cascadedraws.end(), m_indirectdraws.begin() + walkfirst, m_indirectdraws.end() );
+				m_cascadecommands.insert( m_cascadecommands.end(), m_indirectcommands.begin() + walkfirst, m_indirectcommands.end() );
+			}
 		}
 	}
 	m_indirectrecording = false;

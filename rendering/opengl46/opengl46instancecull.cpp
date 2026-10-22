@@ -125,26 +125,11 @@ void opengl46_instance_cull::add(scene::basic_cell::instance_bucket_key const &K
 	auto lookup{groupmap.find(Key)};
 	if (lookup == groupmap.end())
 	{
-		// lod bounds of the model, the same set Render_Instanced() splits the distance into bands with
+		// lod bounds of the model, the same set Render_Instanced() splits the distance into bands with, found once for the model
 		auto const lodfirst{static_cast<std::uint32_t>(m_lodlist.size())};
-		m_pending.clear();
-		m_pending.push_back(Key.pModel->Root);
-		while (!m_pending.empty())
-		{
-			auto const *submodel{m_pending.back()};
-			m_pending.pop_back();
-			if (submodel == nullptr)
-				continue;
-			if (submodel->fSquareMinDist > 0.f)
-				m_lodlist.emplace_back(submodel->fSquareMinDist);
-			if (submodel->fSquareMaxDist < std::numeric_limits<float>::max())
-				m_lodlist.emplace_back(submodel->fSquareMaxDist);
-			m_pending.push_back(submodel->Child);
-			m_pending.push_back(submodel->Next);
-		}
-		std::sort(m_lodlist.begin() + lodfirst, m_lodlist.end());
-		m_lodlist.erase(std::unique(m_lodlist.begin() + lodfirst, m_lodlist.end()), m_lodlist.end());
-		auto const lodcount{static_cast<std::uint32_t>(m_lodlist.size()) - lodfirst};
+		auto const &lodbounds{Key.pModel->lod_bounds()};
+		m_lodlist.insert(m_lodlist.end(), lodbounds.begin(), lodbounds.end());
+		auto const lodcount{static_cast<std::uint32_t>(lodbounds.size())};
 
 		group_data const group{static_cast<std::uint32_t>(m_grouplist.size()), m_entries, lodcount + 1, distancemin, distancemax};
 		m_grouplist.push_back({lodfirst, lodcount, m_entries, 0});
@@ -534,7 +519,7 @@ std::string opengl46_instance_cull::info(std::string const &Label, bool const Oc
 	// what the pass tested and sent to the gpu
 	sleepers += "\n" + Label + ": " + std::to_string(m_lastcounts.candidates) + " instances tested in " + std::to_string(m_lastcounts.jobs) + " buckets";
 	if (Global.gfx_gpucull_bucketrange)
-		sleepers += ", " + std::to_string(m_lastcounts.skippedbuckets) + " buckets (" + std::to_string(m_lastcounts.skippedinstances) + " instances) left out beyond their range";
+		sleepers += ", " + std::to_string(m_lastcounts.skippedbuckets) + " buckets (" + std::to_string(m_lastcounts.skippedinstances) + " instances) left out before the culling";
 	sleepers += ", " + std::to_string(m_lastcounts.sentrecords) + " records sent" + (m_lastcounts.restarted ? ", record buffer started over" : "");
 	if (Global.gfx_gpucull == 1)
 	{

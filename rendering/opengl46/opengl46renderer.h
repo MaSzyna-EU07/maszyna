@@ -368,6 +368,10 @@ class opengl46_renderer : public gfx_renderer {
 	void Queue_Instances( scene::basic_cell const *Cell );
 	// makes the records of the instances held by a bucket of a scene cell, with locations relative to Origin
 	void Update_Instance_Records( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket, glm::dvec3 const &Origin );
+	// whether none of the instances of a bucket can pass the culling of the current pass, by the bounds of their records
+	bool Bucket_Culled( scene::basic_cell::instance_bucket const &Bucket ) const;
+	// the sphere around the locations of the visible instances of a bucket, with a margin for the precision of the records
+	static scene::bounding_area Bucket_Area( scene::basic_cell::instance_bucket const &Bucket );
 	// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
 	std::uint32_t Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count );
 	// binds the instance buffer of the frame for the vertex shaders (INSTANCE_SSBO_BINDING)
@@ -732,6 +736,20 @@ class opengl46_renderer : public gfx_renderer {
 	};
 	std::vector<indirect_draw> m_indirectdraws;
 	std::vector<gl::instance_draw_command> m_indirectcommands; // in the order of m_indirectdraws
+	// the walks Record_Indirect_Draws() made for the cascades of the sun shadows in the frame, for the other cascades to copy: the
+	// draws and commands recorded for a group (model and skins) in each of its lod bands, first none where no cascade walked it
+	struct cascade_band {
+		std::uint32_t first;
+		std::uint32_t count;
+	};
+	struct cascade_record {
+		unsigned int frame { 0 };
+		std::vector<cascade_band> bands;
+	};
+	std::unordered_map<scene::basic_cell::instance_bucket_key, cascade_record, scene::basic_cell::instance_bucket_key_hash> m_cascaderecords;
+	std::vector<indirect_draw> m_cascadedraws;
+	std::vector<gl::instance_draw_command> m_cascadecommands;
+	unsigned int m_cascaderecordframe { 0 };
 	// multi draws of the recorded draws: whether they were recorded for them (ordered, their model blocks uploaded), and where
 	// the blocks are
 	bool m_indirectmultidraw { false };
