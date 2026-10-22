@@ -2128,6 +2128,29 @@ trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<
 	return best;
 }
 
+std::vector<double> breaks_at(result const &Result, std::vector<glm::dvec2> const &Points, double const From, double const To)
+{
+	double constexpr apart{0.2};
+	std::vector<double> breaks;
+	auto previous{From};
+	for (auto const &at : project(Result, Points))
+	{
+		if (at.chainage < previous + apart || at.chainage > To - apart)
+			return {};
+		breaks.push_back(previous = at.chainage);
+	}
+	return breaks;
+}
+
+std::vector<segment_data> pieces_at(result const &Result, design const &Design, std::size_t const Count, std::vector<glm::dvec2> const &Joints, std::vector<std::size_t> &Intervals)
+{
+	Intervals.clear();
+	auto const breaks{breaks_at(Result, Joints, 0.0, Result.length)};
+	if (breaks.empty() || breaks.size() != Joints.size())
+		return pieces(Result, Design, Count);
+	return pieces(Result, Design, Count, breaks, std::vector<std::size_t>(breaks.size() + 1, 1), &Intervals);
+}
+
 std::size_t minimum_pieces(result const &Result, design const &Design)
 {
 	std::size_t count{0};

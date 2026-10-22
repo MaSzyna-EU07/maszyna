@@ -2372,6 +2372,23 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<infra::object_state> m_infra_buffer; // states of the objects before the change in progress
 	std::vector<std::pair<scene::instance_handle, std::string>> m_drive_buffer;
 	bool m_infra_suspended{false};
+	// the point objects which go with a path: the signals and the warning discs it reads, the SHP resonators, and the controls of the
+	// block sections, the signs and the posts by the path nearest to them
+	struct point_object
+	{
+		scene::instance_handle include{0};
+		glm::dvec3 location{0.0};
+		TTrack *reader{nullptr};
+		TTrack *nearest{nullptr}; // of one no path reads
+		infra::category group{infra::category::other};
+	};
+	std::vector<point_object> m_point_objects;
+	std::size_t m_point_objects_revision{static_cast<std::size_t>(-1)};
+	std::size_t m_point_objects_count{0};
+	void infra_adopt(TTrack &Track);
+	int infra_bound_count() const; // by the infra tool, not the ones a change of their track took along
+	std::set<std::pair<scene::basic_node const *, scene::instance_handle>> m_infra_carried; // the objects their tracks moved since the tool cleared it
+	std::string infra_carried_note(); // a line of the status telling how many, empty for none; clears them
 	void infra_load();
 	void infra_store();
 	void infra_forget(scene::basic_node const *Node);

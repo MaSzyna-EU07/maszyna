@@ -217,6 +217,13 @@ std::size_t minimum_pieces(result const &Result, design const &Design);
 // one more than the breaks; Intervals receives the number of the interval of each piece
 std::vector<segment_data> pieces(result const &Result, design const &Design, std::size_t const Count, std::vector<double> const &Breaks = {}, std::vector<std::size_t> const &Counts = {},
                                  std::vector<std::size_t> *Intervals = nullptr);
+// the points of the plan set square onto the line, the chainages of them in their order between From and To; empty where they
+// don't follow one another along it
+std::vector<double> breaks_at(result const &Result, std::vector<glm::dvec2> const &Points, double const From, double const To);
+// the pieces of the line ending at the joints of the old paths set square onto it, so that each old path keeps its stretch of the
+// ground: Intervals receives the old path of each piece, or stays empty where the joints don't follow one another along the line
+// and the pieces are cut as by pieces() alone
+std::vector<segment_data> pieces_at(result const &Result, design const &Design, std::size_t const Count, std::vector<glm::dvec2> const &Joints, std::vector<std::size_t> &Intervals);
 
 struct join_end
 {

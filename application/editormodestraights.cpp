@@ -786,6 +786,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 {
 	auto &state{m_straights};
 	state.status.clear();
+	m_infra_carried.clear();
 	struct span
 	{
 		TTrack *track;
@@ -973,9 +974,10 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 		state.status = refused(m_route.result.errors.empty() ? STR_C("The curve can't be fitted") : m_route.result.errors.front());
 		return;
 	}
-	auto pieces{alignment::pieces(m_route.result, m_route.design, m_route.chain.tracks.size())};
+	std::vector<std::size_t> intervals;
+	auto pieces{alignment::pieces_at(m_route.result, m_route.design, m_route.chain.tracks.size(), editor_track::chain_joints(m_route.chain), intervals)};
 	editor_track::keep_heights(m_route.chain, pieces);
-	auto created{editor_track::relay(m_route.chain, pieces, &m_route.to)};
+	auto created{editor_track::relay(m_route.chain, pieces, &m_route.to, &intervals)};
 	editor_track::commit(tracks);
 	for (auto const &entry : splitstates)
 	{
@@ -996,7 +998,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	std::string error;
 	editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error, true);
 	straight_refresh();
-	state.status = STR_C("Done: click a curve to adjust it; Ctrl+Z takes it back");
+	state.status = STR_C("Done: click a curve to adjust it; Ctrl+Z takes it back") + infra_carried_note();
 }
 
 double editor_mode::straight_tool_radius(editor_track::straight const &Line) const

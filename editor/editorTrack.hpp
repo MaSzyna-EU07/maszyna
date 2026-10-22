@@ -506,7 +506,10 @@ class editor_track
 	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name = {});
 	static TTrack *create_turntable(segment_data const &Path, TTrack const *Style, std::string const &Name);
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
-	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces, TTrack **Last = nullptr);
+	// Intervals: the path of the chain each piece takes the place of, else they're handed out in turn
+	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces, TTrack **Last = nullptr, std::vector<std::size_t> const *Intervals = nullptr);
+	// the joints between the paths of the chain in its order, in the plan
+	static std::vector<glm::dvec2> chain_joints(chain const &Chain);
 	static void retire(TTrack &Track);
 	// a retired path back in the scenery, found by its name again; it's committed by the caller
 	static void revive(TTrack &Track);

@@ -389,9 +389,9 @@ std::string editor_mode::digitize_scenery(bool const Write)
 		m_infra.scope = 3;
 		infra_recognize();
 		report.found = static_cast<int>(m_infra.candidates.size());
-		auto const before{m_bindings.size()};
+		auto const before{infra_bound_count()};
 		infra_bind_chosen();
-		report.bound = static_cast<int>(m_bindings.size() - before);
+		report.bound = infra_bound_count() - before;
 		m_infra.scope = scope;
 	}
 	auto text{format(STR_C("Switches: %d, kept already %d, of the catalogue %d, measured %d, parts of slips %d, odd %d"), report.switches, report.known, report.designed, report.measured, report.slips, report.odd)};

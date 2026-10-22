@@ -49,6 +49,11 @@ using geometry::plan_distance;
 using geometry::plan_of;
 
 std::string const kBindingMark{"//$b"};
+// the templates of the signalling which go with a path without a signal template of their own: the SHP resonator, read by its
+// event, and the control of a block section, by the path nearest to it
+std::string const kResonatorFile{"rezonator.inc"};
+std::string const kControlFile{"sbl_odstep.inc"};
+double constexpr kAdoptReach{12.0}; // m, of a point object from the axis of its path
 
 template <typename Type_>
 bool contains(std::vector<Type_> const &Items, Type_ const &Item)
@@ -803,7 +808,7 @@ void editor_mode::infra_store()
 	{
 		std::vector<glm::dvec3> points;
 		std::optional<double> yaw;
-		if (binding.anchors.empty() || false == object_points(binding, points, yaw))
+		if (binding.adopted || binding.anchors.empty() || false == object_points(binding, points, yaw))
 			continue;
 		auto layer{scene::Layers.resolve(binding.anchors.front().at.track->layer())};
 		if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
@@ -868,6 +873,18 @@ infra::binding *editor_mode::infra_find(infra::binding const &Binding)
 		if (binding.same(Binding))
 			return &binding;
 	return nullptr;
+}
+
+std::string editor_mode::infra_carried_note()
+{
+	auto const count{m_infra_carried.size()};
+	m_infra_carried.clear();
+	return count > 0 ? format(STR_P("\n%zu object by the tracks moved sideways with them", "\n%zu objects by the tracks moved sideways with them", count), count) : std::string{};
+}
+
+int editor_mode::infra_bound_count() const
+{
+	return static_cast<int>(std::count_if(m_bindings.begin(), m_bindings.end(), [](infra::binding const &Binding) { return false == Binding.adopted; }));
 }
 
 void editor_mode::infra_recognize()
@@ -977,7 +994,8 @@ void editor_mode::infra_recognize()
 		Binding.label = object_label(Binding);
 		candidate.offset = Binding.anchors.front().offset;
 		candidate.reason = Reason;
-		candidate.bound = (infra_find(Binding) != nullptr);
+		auto const *existing{infra_find(Binding)};
+		candidate.bound = (existing != nullptr && false == existing->adopted);
 		candidate.chosen = (false == candidate.bound && Binding.group != infra::category::other && Binding.group != infra::category::environment);
 		candidate.binding = std::move(Binding);
 		state.read += candidate.reader != nullptr ? 1 : 0;
@@ -1153,6 +1171,133 @@ void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh
 	m_infra_buffer.push_back(infra_state_of(Binding));
 }
 
+void editor_mode::infra_adopt(TTrack &Track)
+{
+	auto const revision{history_revision()};
+	if (revision != m_point_objects_revision || scene::Layers.instance_count() != m_point_objects_count)
+	{
+		m_point_objects_revision = revision;
+		m_point_objects_count = scene::Layers.instance_count();
+		m_point_objects.clear();
+		std::unordered_map<std::string, TTrack *> readers;
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved)
+				for (int list = 0; list < 6; ++list)
+					for (auto const &event : editor_track::events(*track, list))
+						if (false == event.first.empty())
+							readers.emplace(ToLower(event.first), track);
+		static auto const rules{infra::default_rules()};
+		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+		{
+			include_place place;
+			if (false == include_place_of(handle, place) || place.values.empty() || false == scene::Layers.removable(handle))
+				continue;
+			point_object object;
+			object.include = handle;
+			object.location = include_location(place);
+			auto const file{ToLower(place.file)};
+			auto const *signal{signal_template_of(place.file)};
+			std::string read;
+			if (signal != nullptr)
+			{
+				object.group = infra::category::signal;
+				read = signal->read.empty() ? std::string{} : editor_includes::substitute(signal->read, place.values);
+			}
+			else if (file == kResonatorFile)
+			{
+				object.group = infra::category::equipment;
+				read = place.values.front() + "_shp";
+			}
+			else if (file == kControlFile)
+				object.group = infra::category::logic;
+			else
+			{
+				auto const named{infra::category_named(place.category)};
+				object.group = named.has_value() ? *named : infra::classify(place.file + ' ' + place.description, rules);
+				if (object.group != infra::category::signal && object.group != infra::category::sign)
+					continue;
+			}
+			if (false == read.empty())
+				if (auto const reader{readers.find(ToLower(read))}; reader != readers.end())
+					object.reader = reader->second;
+			m_point_objects.push_back(std::move(object));
+		}
+		// the path nearest to each one no path reads, the objects by cells of the plan
+		auto constexpr cell{200.0};
+		auto const key = [&](double const Value) { return static_cast<long long>(std::floor(Value / cell)); };
+		std::map<std::pair<long long, long long>, std::vector<std::size_t>> cells;
+		for (std::size_t i = 0; i < m_point_objects.size(); ++i)
+			if (m_point_objects[i].reader == nullptr)
+				cells[{key(m_point_objects[i].location.x), key(m_point_objects[i].location.z)}].push_back(i);
+		std::vector<double> nearest(m_point_objects.size(), kAdoptReach);
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (cells.empty() || track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track))
+				continue;
+			auto const area{area_of(*track)};
+			auto const reach{area.radius + kAdoptReach};
+			for (auto x = key(area.centre.x - reach); x <= key(area.centre.x + reach); ++x)
+				for (auto z = key(area.centre.z - reach); z <= key(area.centre.z + reach); ++z)
+				{
+					auto const found{cells.find({x, z})};
+					if (found == cells.end())
+						continue;
+					for (auto const i : found->second)
+					{
+						auto &object{m_point_objects[i]};
+						if (plan_distance(object.location, area.centre) > area.radius + nearest[i])
+							continue;
+						infra::station station;
+						bool interior;
+						auto const distance{infra::project(*track, object.location, station, interior)};
+						if (distance < nearest[i] && beside(station, object.location, interior))
+						{
+							nearest[i] = distance;
+							object.nearest = track;
+						}
+					}
+				}
+		}
+	}
+	auto const area{area_of(Track)};
+	for (auto const &object : m_point_objects)
+	{
+		if (plan_distance(object.location, area.centre) > area.radius + kAdoptReach)
+			continue;
+		infra::binding binding;
+		binding.type = infra::kind::include;
+		binding.include = object.include;
+		if (infra_find(binding) != nullptr)
+			continue;
+		// of the line of the track: read by it or by a path of its run, else nearest to it; not one of the track alongside
+		if (object.reader != nullptr && object.reader != &Track)
+		{
+			auto const spans{editor_track::run_route(*object.reader, 250.0).spans};
+			if (std::none_of(spans.begin(), spans.end(), [&](auto const &Span) { return Span.track == &Track; }))
+				continue;
+		}
+		if (object.reader == nullptr && object.nearest != &Track)
+			continue;
+		infra::station station;
+		bool interior;
+		if (infra::project(Track, object.location, station, interior) > kAdoptReach || false == beside(station, object.location, interior))
+			continue;
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		if (false == object_points(binding, points, yaw) || points.empty())
+			continue;
+		binding.group = object.group;
+		binding.anchors.push_back(infra::make_anchor(station, points.front()));
+		binding.turns = yaw.has_value() && object.group != infra::category::logic;
+		if (binding.turns)
+			binding.yaw = turn_of(binding, *yaw);
+		binding.label = object_label(binding);
+		binding.adopted = true;
+		binding.measured = points.front();
+		m_bindings.push_back(std::move(binding));
+	}
+}
+
 void editor_mode::track_captured(TTrack const &Track)
 {
 	sweeps_captured(Track);
@@ -1160,6 +1305,8 @@ void editor_mode::track_captured(TTrack const &Track)
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	infra_load();
+	// the signals and the like of the track follow it, staying where they stand along it
+	infra_adopt(const_cast<TTrack &>(Track));
 	if (m_bindings.empty())
 		return;
 	Live.refresh();
@@ -1188,6 +1335,8 @@ void editor_mode::track_captured(TTrack const &Track)
 			if (binding.turns && yaw.has_value() && binding.anchors.front().at.track == &Track)
 				binding.yaw = turn_of(binding, *yaw);
 		}
+		if (binding.adopted && false == points.empty())
+			binding.measured = points.front();
 		infra_buffer(binding, true);
 	}
 }
@@ -1223,6 +1372,7 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 		// only a path running where the old one did, not the one alongside
 		return nearest_beside(*everywhere, Foot, 1.0, Station);
 	};
+	std::vector<scene::instance_handle> dropped;
 	for (auto &binding : m_bindings)
 	{
 		auto const affected{std::any_of(binding.anchors.begin(), binding.anchors.end(), [&](infra::anchor const &Anchor) {
@@ -1230,6 +1380,14 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 		})};
 		if (false == affected || false == alive(binding))
 			continue;
+		std::vector<glm::dvec3> standing;
+		std::optional<double> facing;
+		if (binding.adopted && (false == object_points(binding, standing, facing) || standing.empty() || glm::distance(standing.front(), binding.measured) > 0.01))
+		{
+			// moved by another tool while its track was being changed: it stays where that put it, bound again with the next change
+			dropped.push_back(binding.include);
+			continue;
+		}
 		auto moved{binding};
 		auto lost{false};
 		for (auto &anchor : moved.anchors)
@@ -1256,23 +1414,53 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 			}
 			auto const offset{anchor.offset};
 			auto const height{anchor.height};
+			// a path taking the object over may run the other way: the object stays on its side, turned as it was
+			auto const before{plan_of(anchor.end - anchor.start)};
 			anchor = infra::make_anchor(station, anchor.foot);
-			anchor.offset = offset;
+			auto const reversed{glm::length(before) > 1e-6 && glm::dot(before, infra::frame_at(anchor.at).forward) < 0.0};
+			anchor.offset = reversed ? -offset : offset;
 			anchor.height = height;
+			if (reversed && &anchor == &moved.anchors.front())
+				moved.yaw = clamp_circular(moved.yaw + 180.0);
 		}
 		if (lost)
 		{
-			binding.lost = true;
+			if (binding.adopted)
+				dropped.push_back(binding.include);
+			else
+				binding.lost = true;
 			continue;
+		}
+		if (binding.adopted)
+		{
+			// where nothing moved, the directive stays as it is written
+			auto const there{infra::place(moved.anchors.front())};
+			auto const turned{facing.has_value() && moved.turns ? std::abs(clamp_circular(infra::heading(infra::frame_at(moved.anchors.front().at).forward) + moved.yaw - *facing + 180.0) - 180.0) : 0.0};
+			if (glm::distance(there, standing.front()) < 0.005 && turned < 0.01)
+			{
+				moved.lost = false;
+				binding = std::move(moved);
+				continue;
+			}
 		}
 		infra_buffer(binding, false);
 		moved.lost = false;
 		binding = std::move(moved);
 		infra_move(binding);
+		m_infra_carried.emplace(binding.node, binding.include);
+		if (binding.adopted)
+		{
+			std::vector<glm::dvec3> points;
+			std::optional<double> yaw;
+			if (object_points(binding, points, yaw) && false == points.empty())
+				binding.measured = points.front();
+		}
 		for (auto &entry : m_infra_buffer)
 			if (entry.saved.same(binding))
 				entry.moved = true;
 	}
+	if (false == dropped.empty())
+		m_bindings.erase(std::remove_if(m_bindings.begin(), m_bindings.end(), [&](infra::binding const &Binding) { return Binding.adopted && contains(dropped, Binding.include); }), m_bindings.end());
 }
 
 void editor_mode::track_retired(TTrack &Track)
@@ -1360,6 +1548,9 @@ void editor_mode::infra_attach(EditorSnapshot &Snapshot)
 	auto const involved = [&](infra::object_state const &State) {
 		if (State.moved)
 			return true;
+		// one the editor bound for the change which didn't move: its own changes, if any, are taken back by the tool which made them
+		if (State.saved.adopted)
+			return false;
 		for (auto const &anchor : State.saved.anchors)
 		{
 			if (contains(Snapshot.created, anchor.at.track) || contains(Snapshot.removed, anchor.at.track))
@@ -1394,7 +1585,7 @@ void editor_mode::render_infra_body()
 		                  "models and includes turn with the path and stay upright. The move is a part of the undo step of the change."));
 	ImGui::SameLine();
 	ImGui::Checkbox(STR_C("Show in 3D"), &state.show);
-	ImGui::Text(STR_C("Objects bound in the scenery: %d"), static_cast<int>(m_bindings.size()));
+	ImGui::Text(STR_C("Objects bound in the scenery: %d"), infra_bound_count());
 	if (false == m_bindings_unresolved.empty())
 	{
 		ImGui::SameLine();
@@ -1612,9 +1803,9 @@ void editor_mode::render_infra_bound()
 		std::unordered_set<TTrack const *> const tracks(scope.begin(), scope.end());
 		std::vector<std::size_t> along;
 		for (std::size_t i = 0; i < m_bindings.size(); ++i)
-			if (std::any_of(m_bindings[i].anchors.begin(), m_bindings[i].anchors.end(), [&](infra::anchor const &Anchor) { return tracks.count(Anchor.at.track) > 0; }))
+			if (false == m_bindings[i].adopted && std::any_of(m_bindings[i].anchors.begin(), m_bindings[i].anchors.end(), [&](infra::anchor const &Anchor) { return tracks.count(Anchor.at.track) > 0; }))
 				along.push_back(i);
-		ImGui::Text(STR_C("%d of %d"), static_cast<int>(along.size()), static_cast<int>(m_bindings.size()));
+		ImGui::Text(STR_C("%d of %d"), static_cast<int>(along.size()), infra_bound_count());
 		if (false == along.empty())
 		{
 			ImGui::SameLine();
@@ -1678,7 +1869,8 @@ void editor_mode::draw_infra_overlay() const
 			drawlist->AddCircleFilled(screen, Size, Colour);
 	};
 	for (auto const &binding : m_bindings)
-		draw(binding, binding.lost ? overlay_color::invalid : IM_COL32(90, 230, 110, 220), 3.5f);
+		if (false == binding.adopted)
+			draw(binding, binding.lost ? overlay_color::invalid : IM_COL32(90, 230, 110, 220), 3.5f);
 	auto const object = [&](infra_candidate const &Candidate) {
 		std::vector<glm::dvec3> points;
 		std::optional<double> yaw;

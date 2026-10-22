@@ -9098,6 +9098,12 @@ msgstr[0] "Ułożono na nowo %zu tor"
 msgstr[1] "Ułożono na nowo %zu tory"
 msgstr[2] "Ułożono na nowo %zu torów"
 
+msgid "\n%zu object by the tracks moved sideways with them"
+msgid_plural "\n%zu objects by the tracks moved sideways with them"
+msgstr[0] "\n%zu obiekt przy torach przesunął się z nimi w bok"
+msgstr[1] "\n%zu obiekty przy torach przesunęły się z nimi w bok"
+msgstr[2] "\n%zu obiektów przy torach przesunęło się z nimi w bok"
+
 msgid ", the curve took over %.2f / %.2f m of the adjoining straights"
 msgstr ", łuk zajął %.2f / %.2f m przyległych prostych"
 

@@ -3346,18 +3346,22 @@ void editor_track::move_straight(straight const &Line, glm::dvec3 const &Start, 
 	}
 }
 
-std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segment_data> const &Pieces, TTrack **Last)
+std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segment_data> const &Pieces, TTrack **Last, std::vector<std::size_t> const *Intervals)
 {
 	std::vector<TTrack *> created;
 	auto const count{Chain.tracks.size()};
 	if (count == 0 || Pieces.size() < count)
 		return created;
 
+	// each path of the chain keeps the stretch of the ground it had, where the pieces were cut at its joints: its events and its
+	// track circuit stay where they were, not handed on along the line
+	auto const along{Intervals != nullptr && Intervals->size() == Pieces.size() && Intervals->front() == 0 && Intervals->back() + 1 == count &&
+	                 std::adjacent_find(Intervals->begin(), Intervals->end(), [](std::size_t const A, std::size_t const B) { return B < A || B > A + 1; }) == Intervals->end()};
 	std::vector<TTrack *> tracks;
 	std::size_t previous{count};
 	for (std::size_t i = 0; i < Pieces.size(); ++i)
 	{
-		auto const index{i * count / Pieces.size()};
+		auto const index{along ? (*Intervals)[i] : i * count / Pieces.size()};
 		TTrack *track;
 		bool forward;
 		if (index != previous)
@@ -3380,6 +3384,18 @@ std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segmen
 	if (Last != nullptr)
 		*Last = tracks.back();
 	return created;
+}
+
+std::vector<glm::dvec2> editor_track::chain_joints(chain const &Chain)
+{
+	std::vector<glm::dvec2> joints;
+	for (std::size_t i = 0; i + 1 < Chain.tracks.size() && i < Chain.forward.size(); ++i)
+	{
+		auto const &path{Chain.tracks[i]->m_paths.front()};
+		auto const &end{path.points[Chain.forward[i] ? segment_data::point::end : segment_data::point::start]};
+		joints.emplace_back(end.x, end.z);
+	}
+	return joints;
 }
 
 TTrack *editor_track::clone(TTrack const &Template, std::string const &Name)

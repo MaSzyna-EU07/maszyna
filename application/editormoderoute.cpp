@@ -590,6 +590,7 @@ void editor_mode::route_lay()
 {
 	auto &route{m_route};
 	route.status.clear();
+	m_infra_carried.clear();
 	if (false == route.result.valid || route.chain.tracks.empty())
 		return;
 	editor_track::chain chain;
@@ -760,9 +761,10 @@ void editor_mode::route_lay()
 	std::vector<TTrack *> relaid;
 	if (chain.switches.empty())
 	{
-		auto pieces{alignment::pieces(route.result, route.design, chain.tracks.size())};
+		std::vector<std::size_t> intervals;
+		auto pieces{alignment::pieces_at(route.result, route.design, chain.tracks.size(), editor_track::chain_joints(chain), intervals)};
 		editor_track::keep_heights(chain, pieces);
-		relaid = editor_track::relay(chain, pieces, &to);
+		relaid = editor_track::relay(chain, pieces, &to, &intervals);
 	}
 	else if (false == route_relay_through_switches(chain, states, relaid, to))
 	{
@@ -793,6 +795,7 @@ void editor_mode::route_lay()
 	route.status = added > 0 ? format(STR_P("Re-laid %zu path, added %zu", "Re-laid %zu paths, added %zu", chain.tracks.size()), chain.tracks.size(), added) : format(STR_P("Re-laid %zu path", "Re-laid %zu paths", chain.tracks.size()), chain.tracks.size());
 	if (startextension > 0.0 || endextension > 0.0)
 		route.status += format(STR_C(", the curve took over %.2f / %.2f m of the adjoining straights"), startextension, endextension);
+	route.status += infra_carried_note();
 	// the crossovers taken out before which fit the lines now
 	if (false == route.relaying && false == route.crossovers_out.empty())
 	{
@@ -844,14 +847,14 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 	}
 	auto const oldlength{before};
 	std::vector<placement> placements;
-	std::vector<double> breaks;
+	std::vector<double> ends; // of the switches along the new line
 	for (std::size_t k = 0; k < Chain.switches.size(); ++k)
 	{
 		auto const &passage{Chain.switches[k]};
 		auto const &main{passage.track->m_paths.front()};
 		auto const length{bezier{main}.plan_length()};
 		auto const from{starts[k] + length * 0.5 < oldlength * 0.5 ? starts[k] : result.length - (oldlength - starts[k])};
-		if (from < 0.0 || from + length > result.length || (false == breaks.empty() && from < breaks.back() - 0.01))
+		if (from < 0.0 || from + length > result.length || (false == ends.empty() && from < ends.back() - 0.01))
 		{
 			route.error = format(STR_C("The switch %s doesn't fit on the designed line"), name(passage.track).c_str());
 			return false;
@@ -874,22 +877,50 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 			return false;
 		}
 		placements.push_back({passage.track, from, length, entry, angle});
-		breaks.push_back(from);
-		breaks.push_back(from + length);
+		ends.push_back(from);
+		ends.push_back(from + length);
 	}
-	// the regular parts between the switches, one interval each, the switches taking the ones between
+	// the regular parts between the switches, cut at the joints of their paths set square onto the new line where they follow one
+	// another along it, else one interval each; the switches taking the ones between
 	auto const parts{editor_track::chain_parts(Chain)};
+	std::vector<double> breaks;
 	std::vector<std::size_t> counts;
-	std::vector<int> partof;
+	std::vector<std::pair<int, int>> owners; // of each interval: the part, -1 for none, and its path, -1 for any
 	std::size_t part{0};
 	for (std::size_t k = 0; k <= Chain.switches.size(); ++k)
 	{
 		auto const first{k == 0 ? std::size_t{0} : Chain.switches[k - 1].before};
 		auto const last{k == Chain.switches.size() ? Chain.tracks.size() : Chain.switches[k].before};
-		counts.push_back(last - first);
-		partof.push_back(last > first ? static_cast<int>(part++) : -1);
+		if (last > first && part < parts.size())
+		{
+			auto const inner{alignment::breaks_at(result, editor_track::chain_joints(parts[part]), k == 0 ? 0.0 : ends[2 * k - 1], k == Chain.switches.size() ? result.length : ends[2 * k])};
+			if (last - first > 1 && inner.size() + 1 == last - first)
+				for (std::size_t j = 0; j < last - first; ++j)
+				{
+					if (j > 0)
+						breaks.push_back(inner[j - 1]);
+					counts.push_back(1);
+					owners.emplace_back(static_cast<int>(part), static_cast<int>(j));
+				}
+			else
+			{
+				counts.push_back(last - first);
+				owners.emplace_back(static_cast<int>(part), -1);
+			}
+			++part;
+		}
+		else
+		{
+			counts.push_back(last - first);
+			owners.emplace_back(-1, -1);
+		}
 		if (k < Chain.switches.size())
+		{
+			breaks.push_back(ends[2 * k]);
+			breaks.push_back(ends[2 * k + 1]);
 			counts.push_back(1);
+			owners.emplace_back(-1, -1);
+		}
 	}
 	if (part != parts.size())
 	{
@@ -899,9 +930,15 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 	std::vector<std::size_t> intervals;
 	auto const pieces{alignment::pieces(result, route.design, 0, breaks, counts, &intervals)};
 	std::vector<std::vector<segment_data>> groups(parts.size());
-	for (std::size_t i = 0; i < pieces.size(); ++i)
-		if (intervals[i] % 2 == 0 && partof[intervals[i] / 2] >= 0)
-			groups[partof[intervals[i] / 2]].push_back(pieces[i]);
+	std::vector<std::vector<std::size_t>> paths(parts.size()); // of each piece of a part, its path, where its joints cut the line
+	for (std::size_t i = 0; i < pieces.size() && i < intervals.size(); ++i)
+		if (intervals[i] < owners.size() && owners[intervals[i]].first >= 0)
+		{
+			auto const &[owner, path]{owners[intervals[i]]};
+			groups[owner].push_back(pieces[i]);
+			if (path >= 0)
+				paths[owner].push_back(static_cast<std::size_t>(path));
+		}
 	for (std::size_t i = 0; i < parts.size(); ++i)
 		if (groups[i].size() < parts[i].tracks.size())
 		{
@@ -938,7 +975,7 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 		auto group{groups[i]};
 		editor_track::keep_heights(parts[i], group);
 		TTrack *last{nullptr};
-		auto const added{editor_track::relay(parts[i], group, &last)};
+		auto const added{editor_track::relay(parts[i], group, &last, paths[i].size() == group.size() ? &paths[i] : nullptr)};
 		if (last != nullptr && parts[i].tracks.back() == Chain.tracks.back())
 			Last = last;
 		Created.insert(Created.end(), added.begin(), added.end());
