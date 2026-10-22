@@ -1920,7 +1920,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool plate{false};
 		bool linked{false};
 		std::vector<int> speeds;
-		bool informs{false};
 	};
 	struct signal_spot
 	{

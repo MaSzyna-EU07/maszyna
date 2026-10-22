@@ -69,8 +69,8 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 // highest number of (pN) placeholder used by specified template, 0 if it has none
 int parameter_count(std::string const &File);
 // the speeds the events of a signal template set it to show, by their SetVelocity: of the signal itself, km/h, -1 the highest
-// allowed, 20 the substitute signal. Informs: one of them tells the next signal shows stop. returns: false if the file can't be read
-bool signal_speeds(std::string const &File, std::vector<int> &Speeds, bool &Informs);
+// allowed, 20 the substitute signal. returns: false if the file can't be read
+bool signal_speeds(std::string const &File, std::vector<int> &Speeds);
 // sets roles of the parameters whose use in the template makes their meaning clear. roles already set are left alone
 void suggest(std::string const &File, include_info &Info);
 // true if value of a parameter with specified role is supplied by the editor when the template is placed

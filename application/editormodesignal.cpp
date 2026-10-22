@@ -264,7 +264,7 @@ bool editor_mode::signal_scan(bool const Wait)
 			if (parameter.id == 7)
 				item.linked = true;
 		}
-		editor_includes::signal_speeds(entry.file, item.speeds, item.informs);
+		editor_includes::signal_speeds(entry.file, item.speeds);
 		tool.templates.push_back(std::move(item));
 	}
 	std::sort(tool.templates.begin(), tool.templates.end(), [](signal_template const &A, signal_template const &B) {
@@ -912,7 +912,7 @@ bool editor_mode::signal_heads(std::vector<signal_head> &Heads, bool const Wait)
 		if (item.lamps.empty())
 			continue;
 		auto const kind{kind_index(item.kind)};
-		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, item.informs, kind >= 0 && m_signal.chosen[kind] == index});
+		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index});
 	}
 	return true;
 }

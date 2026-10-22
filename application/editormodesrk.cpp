@@ -302,15 +302,16 @@ bool has_speed(std::vector<int> const &Speeds, int const Speed)
 	return std::find(Speeds.begin(), Speeds.end(), Speed) != Speeds.end();
 }
 
-// the template has the lights the need takes: a lower orange one for a lower speed, a strip for 60 and 100, Ie-1 § 7, two orange
-// ones to show a lower speed with the next signal at stop
+// the template has the lights the need takes, by its chambers: an orange one to tell the next signal shows stop, a lower orange one
+// for a lower speed, a strip for 60 and 100 by the speeds its events set, Ie-1 § 7, two orange ones to show a lower speed with the
+// next signal at stop
 bool shows(signal_head const &Head, head_need const &Need)
 {
 	auto const &lamps{Head.lamps};
 	auto const count = [&](char const Lamp) { return std::count(lamps.begin(), lamps.end(), Lamp); };
 	if (count('z') == 0 || count('c') == 0 || (Need.white && count('b') == 0))
 		return false;
-	if (Need.informs && (false == Head.informs || count('p') == 0))
+	if (Need.informs && count('p') == 0)
 		return false;
 	if (Need.speeds.empty())
 		return true;

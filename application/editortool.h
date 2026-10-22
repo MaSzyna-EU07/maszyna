@@ -115,7 +115,6 @@ struct signal_head
 	std::string mount;
 	std::string lamps; // its chambers from the top: z green, c red, p orange, b white, n blue, x blind
 	std::vector<int> speeds; // of the signal itself, km/h: -1 the highest allowed, 20 the substitute signal
-	bool informs{false}; // it tells the next signal shows stop
 	bool chosen{false}; // the Signals tool places it for its kind
 };
 // one step of the history of the signalling: signals placed, standing ones renamed, other templates placed with them, the values

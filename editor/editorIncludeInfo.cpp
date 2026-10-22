@@ -501,10 +501,9 @@ int parameter_count(std::string const &File)
 	return read_template(File, text, error) ? count_parameters(text) : 0;
 }
 
-bool signal_speeds(std::string const &File, std::vector<int> &Speeds, bool &Informs)
+bool signal_speeds(std::string const &File, std::vector<int> &Speeds)
 {
 	Speeds.clear();
-	Informs = false;
 	template_text text;
 	std::string error;
 	if (false == read_template(File, text, error))
@@ -522,22 +521,16 @@ bool signal_speeds(std::string const &File, std::vector<int> &Speeds, bool &Info
 		Speed = static_cast<int>(std::lround(value));
 		return true;
 	};
-	for (std::size_t idx = 0; idx + 2 < tokens.size(); ++idx)
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
 	{
 		if (tokens[idx] != "setvelocity")
 		{
 			continue;
 		}
 		int own{0};
-		int next{0};
-		auto const shown{speed(tokens[idx + 1], own)};
-		if (shown && own != 0 && std::find(Speeds.begin(), Speeds.end(), own) == Speeds.end())
+		if (speed(tokens[idx + 1], own) && own != 0 && std::find(Speeds.begin(), Speeds.end(), own) == Speeds.end())
 		{
 			Speeds.push_back(own);
-		}
-		if (speed(tokens[idx + 2], next) && next == 0 && (tokens[idx + 1] == "*" || (shown && own != 0 && own != 20)))
-		{
-			Informs = true;
 		}
 	}
 	std::sort(Speeds.begin(), Speeds.end());
