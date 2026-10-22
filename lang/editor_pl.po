@@ -10389,8 +10389,8 @@ msgstr "Od wschodniego końca stacji"
 msgid "Number the switches"
 msgstr "Ponumeruj rozjazdy"
 
-msgid "Numbers the switches 1, 2, 3... along the station and names them after its code, as on the lines of PKP PLK: bpd_1, the parts of a slip bpd_15a to bpd_15d. The drives follow their switches, events written by hand keep the old names. One step of undo"
-msgstr "Numeruje rozjazdy 1, 2, 3... wzdłuż stacji i nazywa je od jej skrótu, jak na liniach PKP PLK: bpd_1, części rozjazdu krzyżowego bpd_15a do bpd_15d. Napędy idą za swoimi rozjazdami, eventy pisane ręcznie zostają przy starych nazwach. Jeden krok cofania"
+msgid "Numbers the switches 1, 2, 3... along the station and names them after its code, as on the lines of PKP PLK: bpd_1, the parts of a slip bpd_15a to bpd_15d. The drives and the objects naming a switch follow it, events written by hand keep the old names. One step of undo"
+msgstr "Numeruje rozjazdy 1, 2, 3... wzdłuż stacji i nazywa je od jej skrótu, jak na liniach PKP PLK: bpd_1, części rozjazdu krzyżowego bpd_15a do bpd_15d. Napędy i obiekty z nazwą rozjazdu, jak latarnie zwrotnicowe, idą za nim, eventy pisane ręcznie zostają przy starych nazwach. Jeden krok cofania"
 
 msgid "Give the station its code first: the switches are named after it"
 msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy rozjazdów"
@@ -10535,4 +10535,10 @@ msgid_plural "%zu block sections"
 msgstr[0] "%zu odstęp"
 msgstr[1] "%zu odstępy"
 msgstr[2] "%zu odstępów"
+
+msgid "%zu object of the scenery follows them"
+msgid_plural "%zu objects of the scenery follow them"
+msgstr[0] "%zu obiekt scenerii idzie za nimi"
+msgstr[1] "%zu obiekty scenerii idą za nimi"
+msgstr[2] "%zu obiektów scenerii idzie za nimi"
 

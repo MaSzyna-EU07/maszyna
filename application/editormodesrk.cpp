@@ -542,7 +542,7 @@ void srk_tool::render_options()
 	if (ImGui::Button(STR_C("Number the switches"), ImVec2(-1.0f, 0.0f)))
 		number_switches();
 	item_tooltip("Numbers the switches 1, 2, 3... along the station and names them after its code, as on the lines of PKP PLK: bpd_1, "
-	             "the parts of a slip bpd_15a to bpd_15d. The drives follow their switches, events written by hand keep the old names. One step of undo");
+	             "the parts of a slip bpd_15a to bpd_15d. The drives and the objects naming a switch follow it, events written by hand keep the old names. One step of undo");
 	step_heading(2, STR_C("Track circuits"));
 	if (main_button(STR_C("Set the track circuits"), ImVec2(-1.0f, tall_button_height())))
 		set_circuits();
@@ -678,6 +678,24 @@ void srk_tool::number_switches()
 		if (false == units[index].record.empty())
 			bases[units[index].record] = station::switch_name(code, static_cast<int>(index) + 1, 0, 1);
 	switch_store::rename(parts, bases);
+	// the objects of the scenery naming a switch, as the lanterns of rainsted/lwzm.inc, follow it
+	std::map<std::string, std::string> renamed;
+	for (auto const &[track, name] : names)
+		if (track->name() != name)
+			renamed[ToLower(track->name())] = name;
+	std::vector<std::pair<scene::instance_handle, std::vector<std::string>>> following;
+	for (auto &standing : m_templates.standing_templates([](std::string const &) { return true; }))
+	{
+		auto changed{false};
+		for (auto &value : standing.values)
+			if (auto const found{renamed.find(ToLower(value))}; found != renamed.end())
+			{
+				value = found->second;
+				changed = true;
+			}
+		if (changed)
+			following.emplace_back(standing.instance, std::move(standing.values));
+	}
 	// the names go round among the switches: a switch whose name another one gets gives it up first
 	for (auto const &entry : names)
 		if (entry.first->name() != entry.second && std::any_of(names.begin(), names.end(), [&](auto const &Other) { return Other.first != entry.first && Other.second == entry.first->name(); }))
@@ -698,8 +716,17 @@ void srk_tool::number_switches()
 	}
 	if (before.empty())
 		before.emplace_back(units.front().parts.front(), editor_track::capture(*units.front().parts.front()));
-	m_history.push_track_snapshot(std::move(before));
+	auto const followed{following.size()};
+	if (following.empty())
+		m_history.push_track_snapshot(std::move(before));
+	else
+	{
+		std::string error;
+		m_signals.signal_batch({{}, {}, {}, std::move(following)}, std::move(before), {}, error);
+	}
 	m_status = format(STR_P("%zu switch numbered", "%zu switches numbered", units.size()), units.size());
+	if (followed > 0)
+		m_status += ", " + format(STR_P("%zu object of the scenery follows them", "%zu objects of the scenery follow them", followed), followed);
 }
 
 void srk_tool::set_circuits()
