@@ -537,6 +537,25 @@ bool signal_speeds(std::string const &File, std::vector<int> &Speeds)
 	return true;
 }
 
+int block_aspects(std::string const &File)
+{
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return 0;
+	}
+	auto const tokens{tokenize(text.content)};
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] == "event" && tokens[idx + 1].size() > 3 && tokens[idx + 1].ends_with("_s3"))
+		{
+			return 4;
+		}
+	}
+	return 3;
+}
+
 void suggest(std::string const &File, include_info &Info)
 {
 	template_text text;

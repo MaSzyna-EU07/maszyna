@@ -116,6 +116,7 @@ struct signal_head
 	std::string lamps; // its chambers from the top: z green, c red, p orange, b white, n blue, x blind
 	std::vector<int> speeds; // of the signal itself, km/h: -1 the highest allowed, 20 the substitute signal
 	bool chosen{false}; // the Signals tool places it for its kind
+	int aspects{0}; // of a block signal: 3, or 4 with the warning two signals ahead
 };
 // one step of the history of the signalling: signals placed, standing ones renamed, other templates placed with them, the values
 // of standing ones replaced
@@ -126,6 +127,7 @@ struct signal_changes
 	std::vector<template_item> others;
 	std::vector<std::pair<scene::instance_handle, std::vector<std::string>>> values;
 	std::vector<std::pair<scene::instance_handle, std::string>> files; // standing signals given another template, of the same kind, their values kept
+	std::vector<scene::instance_handle> removed; // includes taken away, the signals among them with their read events
 };
 
 struct nmt_place

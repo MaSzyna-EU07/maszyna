@@ -71,6 +71,9 @@ int parameter_count(std::string const &File);
 // the speeds the events of a signal template set it to show, by their SetVelocity: of the signal itself, km/h, -1 the highest
 // allowed, 20 the substitute signal. returns: false if the file can't be read
 bool signal_speeds(std::string const &File, std::vector<int> &Speeds);
+// the aspects of a block signal of the template: 4 where its events give S3, the green light flashing with the next signal at S5,
+// the warning two signals ahead, else 3. returns: 0 if the file can't be read
+int block_aspects(std::string const &File);
 // sets roles of the parameters whose use in the template makes their meaning clear. roles already set are left alone
 void suggest(std::string const &File, include_info &Info);
 // true if value of a parameter with specified role is supplied by the editor when the template is placed

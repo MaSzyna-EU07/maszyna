@@ -265,6 +265,8 @@ bool editor_mode::signal_scan(bool const Wait)
 				item.linked = true;
 		}
 		editor_includes::signal_speeds(entry.file, item.speeds);
+		if (item.kind == "block")
+			item.aspects = editor_includes::block_aspects(entry.file);
 		tool.templates.push_back(std::move(item));
 	}
 	std::sort(tool.templates.begin(), tool.templates.end(), [](signal_template const &A, signal_template const &B) {
@@ -936,7 +938,7 @@ bool editor_mode::signal_heads(std::vector<signal_head> &Heads, bool const Wait)
 		if (item.lamps.empty())
 			continue;
 		auto const kind{kind_index(item.kind)};
-		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index});
+		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index, item.aspects});
 	}
 	return true;
 }
@@ -1072,6 +1074,27 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		if (false == read_before.empty() && false == read_after.empty() && ToLower(read_before) != ToLower(read_after))
 			signal_renamed(read_before, read_after, step);
 	}
+	std::unordered_set<TTrack const *> const created(Created.begin(), Created.end());
+	std::vector<scene::instance_handle> removed;
+	for (auto const instance : Changes.removed)
+	{
+		if (false == scene::Layers.tracked(instance) || false == scene::Layers.removable(instance) || scene::Layers.instance(instance).removed)
+			continue;
+		auto const *standing{signal_standing_of(instance)};
+		auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
+		std::string file;
+		std::vector<std::string> values;
+		if (item != nullptr && false == item->read.empty() && editor_includes::parse_directive(scene::Layers.directive(instance), file, values))
+		{
+			std::vector<std::pair<TTrack *, editor_track::state>> states;
+			signal_detach_events(editor_includes::substitute(item->read, values), states);
+			for (auto &state : states)
+				if (created.count(state.first) == 0 && std::none_of(step.tracks.begin(), step.tracks.end(), [&](auto const &Taken) { return Taken.first == state.first; }))
+					step.tracks.push_back(std::move(state));
+		}
+		scene::Layers.removed(instance, true);
+		removed.push_back(instance);
+	}
 	std::vector<scene::instance_handle> instances;
 	if (Error.empty() && false == items.empty())
 	{
@@ -1086,7 +1109,6 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 	}
 	else
 		reads.clear();
-	std::unordered_set<TTrack const *> const created(Created.begin(), Created.end());
 	for (auto const &[spot, read] : reads)
 	{
 		if (read.empty() || false == spot.track->Dynamics.empty() || false == scene::Layers.editable(spot.track))
@@ -1099,6 +1121,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		spot.track->mark_dirty();
 	}
 	auto const count{instances.size()};
+	instances.insert(instances.end(), removed.begin(), removed.end());
 	if (step.tracks.empty() && Created.empty() && instances.empty() && directives.empty())
 		return 0;
 	if (step.tracks.empty() && Created.empty())
