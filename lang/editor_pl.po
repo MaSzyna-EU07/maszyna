@@ -5981,8 +5981,8 @@ msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowani
 msgid "Crossover, double, scissors, ladder"
 msgstr "Przejście rozjazdowe, podwójne przejście rozjazdowe, nożyce, ulica zwrotnicowa"
 
-msgid "Turntable, signals, signalling, objects, trainset, profile, speed, joints, gauge"
-msgstr "Obrotnica, sygnalizatory, SRK, obiekty, skład, profil, prędkość, styki, skrajnia"
+msgid "Turntable, signals, signalling, kilometrage, objects, trainset, profile, speed, joints, gauge"
+msgstr "Obrotnica, sygnalizatory, SRK, kilometraż, obiekty, skład, profil, prędkość, styki, skrajnia"
 
 msgid "No switch drive models"
 msgstr "Brak modeli napędów"
@@ -10541,4 +10541,182 @@ msgid_plural "%zu objects of the scenery follow them"
 msgstr[0] "%zu obiekt scenerii idzie za nimi"
 msgstr[1] "%zu obiekty scenerii idą za nimi"
 msgstr[2] "%zu obiektów scenerii idzie za nimi"
+
+# kilometrage tool
+msgid "Kilometrage"
+msgstr "Kilometraż"
+
+msgid "The km of the railway lines: LMB on a track puts a point of the km there, a jump of the km too"
+msgstr "Kilometraż linii kolejowych: LPM na torze wstawia tam punkt kilometra, także uskok kilometrażu"
+
+msgid "Click: a point of the km here"
+msgstr "Klik: punkt kilometra tutaj"
+
+msgid "Id-1 § 19: the km shouldn't jump on a curve nor at a station, move the jump to a straight on the open line"
+msgstr "Id-1 § 19: uskoku kilometrażu nie daje się na łuku ani na stacji, przesuń go na prostą na szlaku"
+
+msgid "Id-1 § 19: the km shouldn't jump on a curve, move the jump to a straight"
+msgstr "Id-1 § 19: uskoku kilometrażu nie daje się na łuku, przesuń go na prostą"
+
+msgid "Id-1 § 19: the km shouldn't jump at a station, move the jump out to the open line"
+msgstr "Id-1 § 19: uskoku kilometrażu nie daje się na stacji, przesuń go na szlak"
+
+msgid "line %s: km %s"
+msgstr "linia %s: km %s"
+
+msgid "Give the number of the line first"
+msgstr "Najpierw wpisz numer linii"
+
+msgid "A jump needs another km on from the point"
+msgstr "Uskok wymaga innego kilometra za punktem"
+
+msgid "Line %s: km %s at the point"
+msgstr "Linia %s: km %s w punkcie"
+
+msgid "The point of the km removed"
+msgstr "Punkt kilometra usunięty"
+
+msgid "Click a track of the line first"
+msgstr "Najpierw kliknij tor linii"
+
+msgid "No line through this track"
+msgstr "Przez ten tor nie biegnie żadna linia"
+
+msgid "Fewer than two hectometre posts stand along the line, nothing to read"
+msgstr "Wzdłuż linii stoją mniej niż dwa słupki hektometrowe, nie ma czego odczytać"
+
+msgid "The numbers of the posts don't go by 100 m anywhere along the line, nothing read"
+msgstr "Numery słupków nigdzie wzdłuż linii nie idą co 100 m, nic nie odczytano"
+
+msgid "%zu posts read: %zu points of the km, %zu jumps"
+msgstr "Odczytane słupki: %zu, punkty kilometra: %zu, uskoki: %zu"
+
+msgid "The km of a railway line: the points where the km is known, from a post or a document, and where it jumps. The km of the rest go from them along the axis of the line: between the tracks of a double-track one, along the longer track where the tracks run on formations of their own, the shorter one getting an irregular hectometre"
+msgstr "Kilometraż linii kolejowej: punkty, w których kilometr jest znany ze słupka albo z dokumentu, i miejsca uskoków. Kilometraż reszty liczy się od nich wzdłuż osi linii: na dwutorowej po osi międzytorza, a gdzie tory biegną osobnymi torowiskami, po torze dłuższym, krótszy dostaje hektometr o nieprawidłowej długości"
+
+msgid "a point of the km there, or the one standing by it"
+msgstr "punkt kilometra w tym miejscu albo ten, który już tam jest"
+
+msgid "jumps"
+msgstr "uskoki"
+
+msgid "A point of the km"
+msgstr "Punkt kilometra"
+
+msgid "Click a track where the km is known: by a post, a station or a bridge"
+msgstr "Kliknij tor tam, gdzie znasz kilometr: przy słupku, stacji albo moście"
+
+msgid "The number of the railway line, as 91: a scenery can hold several lines, each with its own km"
+msgstr "Numer linii kolejowej, np. 91: sceneria może mieć kilka linii, każda z własnym kilometrażem"
+
+msgid "The km of the point, as PKP PLK write it: 100,234 is km 100 and 234 m. At a jump: the km the point is reached at, coming along the rising km"
+msgstr "Kilometr punktu, zapisany jak w PKP PLK: 100,234 to km 100 i 234 m. Przy uskoku: kilometr, z jakim dojeżdża się do punktu, jadąc w stronę rosnącego kilometrażu"
+
+msgid "Jump"
+msgstr "Uskok"
+
+msgid "The km jumps at the point: a line built anew, shortened or lengthened keeps the km of the rest. The irregular hectometre is marked by a black stripe under the digit of the post (Id-1 § 19)"
+msgstr "W tym punkcie kilometraż skacze: przebudowana, skrócona albo wydłużona linia zachowuje kilometraż reszty. Nieregularny hektometr oznacza się czarnym paskiem pod cyfrą słupka (Id-1 § 19)"
+
+msgid "Km on"
+msgstr "Km dalej"
+
+msgid "The km on from the point, along the rising km"
+msgstr "Kilometr za punktem, w stronę rosnącego kilometrażu"
+
+msgid "Rise this way"
+msgstr "Rośnie w tę stronę"
+
+msgid "The km rise the way the arrow at the point shows"
+msgstr "Kilometraż rośnie tam, gdzie pokazuje strzałka w punkcie"
+
+msgid "Rise the other way"
+msgstr "Rośnie w drugą stronę"
+
+msgid "The km rise against the arrow"
+msgstr "Kilometraż rośnie przeciwnie do strzałki"
+
+msgid "Change the point"
+msgstr "Zmień punkt"
+
+msgid "Put the point of the km"
+msgstr "Wstaw punkt kilometra"
+
+msgid "The point goes to the file of the scenery with the track, the simulation skips it. One step of undo"
+msgstr "Punkt trafia do pliku scenerii z tym torem, symulacja go pomija. Jeden krok cofania"
+
+msgid "Remove the point"
+msgstr "Usuń punkt"
+
+msgid "One step of undo"
+msgstr "Jeden krok cofania"
+
+msgid "From the posts"
+msgstr "Ze słupków"
+
+msgid "Read the km from the posts"
+msgstr "Odczytaj kilometraż ze słupków"
+
+msgid "Reads the hectometre posts standing along the line through the track clicked: a point of the km at the first and the last post of each run numbered by 100 m, a jump where two runs meet. The points of the line along it before give way. One step of undo"
+msgstr "Odczytuje słupki hektometrowe stojące wzdłuż linii przez kliknięty tor: punkt kilometra na pierwszym i ostatnim słupku każdego ciągu numerowanego co 100 m, uskok tam, gdzie dwa ciągi się stykają. Wcześniejsze punkty tej linii na tym odcinku ustępują nowym. Jeden krok cofania"
+
+msgid "The points of the lines"
+msgstr "Punkty linii"
+
+msgid "None yet"
+msgstr "Jeszcze żadnych"
+
+msgid "No track by the points of the line"
+msgstr "Przy punktach linii nie ma toru"
+
+msgid "%.1f km of the axis, %s"
+msgstr "%.1f km osi, %s"
+
+msgid "between the tracks"
+msgstr "w osi międzytorza"
+
+msgid "In the scenery"
+msgstr "W scenerii"
+
+msgid "By the km"
+msgstr "Wg kilometrażu"
+
+msgid "Off by"
+msgstr "Różnica"
+
+msgid "How much longer the stretch is in the scenery than by the km: the km between the points are stretched to it evenly"
+msgstr "O ile odcinek w scenerii jest dłuższy niż wg kilometrażu: kilometry między punktami rozciąga się na nim równo"
+
+msgid "The point is away from the axis of the line the other points make: the main paths of the switches don't lead to it"
+msgstr "Punkt leży z dala od osi linii wyznaczonej przez pozostałe punkty: zasadnicze tory rozjazdów do niego nie prowadzą"
+
+msgid "%zu post doesn't fit its neighbours and was left out"
+msgid_plural "%zu posts don't fit their neighbours and were left out"
+msgstr[0] "%zu słupek nie pasuje do sąsiednich i został pominięty"
+msgstr[1] "%zu słupki nie pasują do sąsiednich i zostały pominięte"
+msgstr[2] "%zu słupków nie pasuje do sąsiednich i zostało pominiętych"
+
+msgid "%zu jump lies on a curve or at a station, Id-1 § 19 wants none there"
+msgid_plural "%zu jumps lie on a curve or at a station, Id-1 § 19 wants none there"
+msgstr[0] "%zu uskok leży na łuku albo na stacji, Id-1 § 19 tego nie dopuszcza"
+msgstr[1] "%zu uskoki leżą na łuku albo na stacji, Id-1 § 19 tego nie dopuszcza"
+msgstr[2] "%zu uskoków leży na łuku albo na stacji, Id-1 § 19 tego nie dopuszcza"
+
+msgid "a point of the km there"
+msgstr "punkt kilometra w tym miejscu"
+
+msgid "Mouse over a track"
+msgstr "Mysz nad torem"
+
+msgid "its km by the cursor"
+msgstr "jego kilometr przy kursorze"
+
+msgid "%zu stretch with the tracks on formations of their own"
+msgid_plural "%zu stretches with the tracks on formations of their own"
+msgstr[0] "%zu odcinek z torami na osobnych torowiskach"
+msgstr[1] "%zu odcinki z torami na osobnych torowiskach"
+msgstr[2] "%zu odcinków z torami na osobnych torowiskach"
+
+msgid "Where the tracks part more than 15 m and come together again, the km run along the longer one, the shorter one goes by its own length and its last hectometre before they meet takes up the difference, as PKP GK-1 gives it (6.1.12)"
+msgstr "Gdzie tory rozchodzą się na więcej niż 15 m i znów schodzą, kilometraż biegnie po dłuższym, krótszy liczy się po własnej długości, a różnicę bierze jego ostatni hektometr przed zejściem, jak podaje PKP GK-1 (6.1.12)"
 

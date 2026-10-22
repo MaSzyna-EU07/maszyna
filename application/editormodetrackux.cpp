@@ -465,6 +465,16 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.position = m_hover.point;
 		return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
 	}
+	if (m_track_tab == track_tab::kilometrage && m_hover.track != nullptr)
+	{
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.point;
+		make(kind::kilometrage, "Click: a point of the km here");
+		if (auto const km{m_km.readout(m_hover.point)}; false == km.empty())
+			intent.action = km + "\n" + intent.action;
+		return intent;
+	}
 	if (m_track_style.picking && (m_track_tab == track_tab::path || m_track_tab == track_tab::turnout))
 	{
 		intent.track = m_hover.track;
@@ -796,6 +806,10 @@ void editor_mode::track_press(track_intent const &Intent)
 		handle_drag_start(Intent.position);
 		return;
 	case kind::switch_at: start_switch_placement(); return;
+	case kind::kilometrage:
+		if (Intent.track != nullptr)
+			m_km.pick(*Intent.track, Intent.position);
+		return;
 	case kind::fouling:
 		if (Intent.path == 1)
 			m_fouling.fix(Intent.index);

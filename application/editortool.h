@@ -36,7 +36,7 @@ enum class editor_selftest_result
 
 enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, count };
 
-enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals, parallel, srk };
+enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals, parallel, srk, kilometrage };
 
 struct track_hover
 {
@@ -167,6 +167,8 @@ class editor_history
   public:
 	virtual std::size_t history_size() const = 0;
 	virtual void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {}) = 0;
+	// the changes of the kilometrage made since the last step: one step of the history
+	virtual void push_kilometrage_snapshot() = 0;
 
   protected:
 	~editor_history() = default;

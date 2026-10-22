@@ -52,6 +52,7 @@ enum class icon
 	turntable,
 	parallel,
 	station,
+	kilometrage,
 	more,
 	// the fields of work
 	work_surroundings,

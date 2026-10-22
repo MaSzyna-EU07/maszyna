@@ -297,6 +297,28 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	++m_track_edits;
 }
 
+void editor_mode::push_kilometrage_snapshot()
+{
+	auto before{kilometrage::take_changes()};
+	if (false == before.has_value())
+		return;
+	trim_history();
+	EditorSnapshot snap;
+	snap.action = EditorSnapshot::Action::Kilometrage;
+	snap.kilometrage = std::move(before);
+	m_history.push_back(std::move(snap));
+	g_redo.clear();
+}
+
+void editor_mode::restore_kilometrage(EditorSnapshot &Snapshot)
+{
+	if (false == Snapshot.kilometrage.has_value())
+		return;
+	auto current{kilometrage::marks()};
+	kilometrage::restore(std::move(*Snapshot.kilometrage));
+	Snapshot.kilometrage = std::move(current);
+}
+
 bool editor_mode::tracks_editable(std::vector<TTrack *> const &Tracks, std::string &Reason)
 {
 	for (auto const *track : Tracks)
@@ -422,9 +444,9 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 13> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 12> const modes{{
+	static std::array<track_mode, 13> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters", editor_icons::icon::select, 0},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track", editor_icons::icon::lay_track, 0},
 	    {"Plan", "G", track_tab::straights, "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too", editor_icons::icon::curve, 0},
@@ -433,6 +455,7 @@ std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it", editor_icons::icon::turntable, 1},
 	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by", editor_icons::icon::signal, 1},
 	    {"Signalling", "I", track_tab::srk, "The signalling of a station: LMB on a switch lays its station out as a schematic", editor_icons::icon::station, 1},
+	    {"Kilometrage", "X", track_tab::kilometrage, "The km of the railway lines: LMB on a track puts a point of the km there, a jump of the km too", editor_icons::icon::kilometrage, 1},
 	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, trainsets", editor_icons::icon::objects, 1},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line", editor_icons::icon::profile, 2},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows", editor_icons::icon::speed, 2},
@@ -578,6 +601,7 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::parallel: return STR_C("Parallel track");
 	case track_tab::signals: return STR_C("Signal");
 	case track_tab::srk: return STR_C("Signalling");
+	case track_tab::kilometrage: return STR_C("Kilometrage");
 	case track_tab::turntable: return STR_C("Turntable");
 	default: return STR_C("Select");
 	}
@@ -591,6 +615,7 @@ void editor_mode::render_track_inspector()
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
 	m_joints.set_open(m_track_window_open && m_track_tab == track_tab::joints);
 	m_srk.set_open(m_track_window_open && m_track_tab == track_tab::srk);
+	m_km.set_open(m_track_window_open && m_track_tab == track_tab::kilometrage);
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
 	{
 		m_sweep.open = false;
@@ -675,6 +700,7 @@ void editor_mode::render_track_tool_options()
 	case track_tab::lineside: render_lineside_ui(); break;
 	case track_tab::signals: render_signal_ui(); break;
 	case track_tab::srk: m_srk.render_options(); break;
+	case track_tab::kilometrage: m_km.render_options(); break;
 	case track_tab::turntable: render_turntable_ui(); break;
 	default:
 		render_track_set_ui();
@@ -1694,6 +1720,10 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB around it", "leads a track out"}, {"LMB on a free end", "fits that track to the turntable"}};
 	else if (m_track_window_open && m_track_tab == track_tab::turntable)
 		hints = {{"LMB", "places a new turntable"}};
+	else if (m_track_window_open && m_track_tab == track_tab::srk)
+		hints = {{"LMB on a switch", "opens its station"}};
+	else if (m_track_window_open && m_track_tab == track_tab::kilometrage)
+		hints = {{"LMB on a track", "a point of the km there"}, {"Mouse over a track", "its km by the cursor"}};
 	else if (m_track_window_open && m_track_tab == track_tab::joints)
 		hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
 	else if (m_track_window_open && m_track_tab == track_tab::infra)

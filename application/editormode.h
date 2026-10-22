@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodeparallel.h"
 #include "application/editormodespeed.h"
 #include "application/editormodesrk.h"
+#include "application/editormodekm.h"
 #include "application/editormodevehicle.h"
 #include "application/editortool.h"
 #include "scene/sceneeditor.h"
@@ -34,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorAlignment.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "editor/editorKilometrage.hpp"
 #include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
 #include "editor/editorProfile.hpp"
@@ -123,7 +125,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	struct stored_profile;
 	struct EditorSnapshot
 	{
-		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array, Bend, Terrain };
+		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array, Bend, Terrain, Kilometrage };
 		// copy of a model an array made
 		struct array_copy
 		{
@@ -161,6 +163,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<stored_profile> profile_library;
 		std::optional<std::vector<alignment_store::record>> alignments; // the kept horizontal alignments changed too, these were the ones before
 		std::optional<std::vector<switch_store::record>> switch_records; // the kept switches changed too, these were the ones before
+		std::optional<std::vector<kilometrage::mark>> kilometrage; // the marks of the kilometrage before the change (Action::Kilometrage)
 		std::vector<array_copy> copies; // models an array added to the one it was made of
 		bool joined{false}; // undone and redone together with the change before it
 		std::shared_ptr<terrain_streamer::change const> terrain; // the heightmap terrain from before the change (Action::Terrain)
@@ -185,6 +188,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void terrain_history_step();
 	// puts the terrain back as the step recorded it, the step left with the state it replaced
 	void restore_terrain(EditorSnapshot &Snapshot);
+	// swaps the marks of the kilometrage with the ones the snapshot keeps
+	void restore_kilometrage(EditorSnapshot &Snapshot);
 	bool m_history_busy{false}; // undo or redo under way
 	void handle_brush_mouse_hold(int Action, int Button);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
@@ -790,6 +795,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void commit_track_drag(bool const Force);
 	void cancel_track_tools();
 	void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {}) override;
+	void push_kilometrage_snapshot() override;
 	void set_current_node(scene::basic_node *Node) override;
 	alignment::limits const &route_norms() const override;
 	void clear_track_point() override;
@@ -1545,7 +1551,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		editor_icons::icon picture;
 		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
-	static std::array<track_mode, 12> const &track_modes();
+	static std::array<track_mode, 13> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
 	track_tab plan_tab_for(TTrack const *Track) const;
 	// the objects along the track: a tab for each tool
@@ -1632,7 +1638,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling, measure, route_trace };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling, measure, route_trace, kilometrage };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -2384,7 +2390,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
 	parallel_tool m_parallel{*this, *this, *this, *this};
 	srk_tool m_srk{*this, *this, *this, *this, *this};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk};
+	km_tool m_km{*this, *this, *this, *this};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km};
 
 	void infra_rebase();
 	void render_infra_search();

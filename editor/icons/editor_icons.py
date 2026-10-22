@@ -340,6 +340,16 @@ def station(d):
     line(d, [(46, 36), (46, 56)], W - 10)
 
 
+def kilometrage(d):
+    # a hectometre post by the track with its digits, and the way the km rise along the track
+    rect(d, 16, 4, 36, 40, outline=True, width=W - 6, radius=3)
+    line(d, [(22, 15), (30, 15)], W - 8)
+    line(d, [(22, 28), (30, 28)], W - 8)
+    line(d, [(26, 40), (26, 48)], W - 6)
+    line(d, [(4, 56), (48, 56)], W - 6)
+    arrowhead(d, 54, 56, 0, 12)
+
+
 def more(d):
     for x in (12, 32, 52):
         circle(d, x, 32, 6)
@@ -390,7 +400,7 @@ def work_terrain(d):
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
-         vehicle, profile, speed, joints, infra, gauge, turntable, parallel, station, more, work_surroundings,
+         vehicle, profile, speed, joints, infra, gauge, turntable, parallel, station, kilometrage, more, work_surroundings,
          work_tracks, work_roads, work_terrain]
 
 

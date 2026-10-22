@@ -1054,6 +1054,8 @@ editor_selftest_result hekto_tool::selftest(std::string const &Command, std::ist
 		}
 		start(*track, track->m_paths.front().points[segment_data::point::start]);
 		auto &tool{m_hekto};
+		if (values.count("reach"))
+			tool.reach = std::stod(values["reach"]);
 		tool.dirty = true;
 		hekto_update();
 		if (values.count("km"))

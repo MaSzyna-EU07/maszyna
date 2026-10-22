@@ -510,6 +510,7 @@ void editor_mode::editormode_input::poll()
 editor_mode::editor_mode() {
 	alignment_store::reset();
 	switch_store::reset();
+	kilometrage::reset();
 	m_userinterface = std::make_shared<editor_ui>();
 	// the area fill settings live in the node bank window, in the tab of the fill mode
 	ui()->set_fill_options([this]() { render_area_fill(); });
@@ -1014,6 +1015,13 @@ void editor_mode::undo_one()
         return;
     }
 
+    if (snap.action == EditorSnapshot::Action::Kilometrage)
+    {
+        restore_kilometrage(snap);
+        g_redo.push_back(std::move(snap));
+        return;
+    }
+
     if (snap.action == EditorSnapshot::Action::Bend)
     {
         restore_bend(snap, true);
@@ -1179,6 +1187,13 @@ void editor_mode::redo_one()
     if (snap.action == EditorSnapshot::Action::Terrain)
     {
         restore_terrain(snap);
+        m_history.push_back(std::move(snap));
+        return;
+    }
+
+    if (snap.action == EditorSnapshot::Action::Kilometrage)
+    {
+        restore_kilometrage(snap);
         m_history.push_back(std::move(snap));
         return;
     }
@@ -1506,6 +1521,8 @@ bool editor_mode::update()
         m_speed.update();
         m_joints.update();
         m_srk.update();
+        kilometrage::follow(m_track_edits);
+        m_km.update();
         draw_track_hints();
         draw_empty_scenery_hint();
         draw_profile_overlay();
@@ -1513,6 +1530,7 @@ bool editor_mode::update()
         m_speed.draw_overlay();
         m_joints.draw_overlay();
         m_srk.draw_overlay();
+        m_km.draw_overlay();
     }
     else
     {
@@ -6863,7 +6881,8 @@ void editor_mode::render_change_history(){
                         s.action == EditorSnapshot::Action::TrackEdit ? "TRK" :
                         s.action == EditorSnapshot::Action::RoadEdit ? "ROAD" :
                         s.action == EditorSnapshot::Action::Array ? "ARR" :
-                        s.action == EditorSnapshot::Action::Terrain ? "TER" : "OTH",
+                        s.action == EditorSnapshot::Action::Terrain ? "TER" :
+                        s.action == EditorSnapshot::Action::Kilometrage ? "KM" : "OTH",
                         s.node_name.empty() ? STR_C("(no name)") : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 
