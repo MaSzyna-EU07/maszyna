@@ -82,7 +82,7 @@ editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &com
 			lines.push_back(std::string{"button "} + Button + " release");
 			lines.emplace_back("wait 2");
 		};
-		char const *const tools[]{"esc", "l", "g", "c", "t", "n", "u", "h", "b", "p", "v", "j", "k", "o", "q", "w", "e"};
+		char const *const tools[]{"esc", "l", "g", "c", "t", "n", "u", "h", "i", "b", "p", "v", "j", "k", "o", "q", "w", "e"};
 		char const *const modifiers[]{"", "ctrl", "shift", "alt"};
 		for (int step = 0; step < steps; ++step)
 		{

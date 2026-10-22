@@ -4379,13 +4379,13 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 	}
 	if (Command == "srkboundary")
 	{
-		// srkboundary entry=<A> at=<m> [nudge=<m>]: a click while drawing the block boundaries, on the line beyond the entry signal at the
-		// distance out, nudge metres aside
+		// srkboundary entry=<A> at=<m>|stop=<n> [nudge=<m>]: a click while drawing the block boundaries, on the line beyond the entry
+		// signal at the distance out or at a block signal standing along it, nudge metres aside
 		if (m_history.history_revision() != m_history_revision)
 			refresh();
 		auto const values{selftest_values(Words)};
 		auto const entry{values.count("entry") > 0 ? values.at("entry") : std::string{}};
-		auto const at{values.count("at") > 0 ? std::atof(values.at("at").c_str()) : 0.0};
+		auto at{values.count("at") > 0 ? std::atof(values.at("at").c_str()) : 0.0};
 		auto const nudge{values.count("nudge") > 0 ? std::atof(values.at("nudge").c_str()) : 0.0};
 		auto const found{std::find_if(m_lines.begin(), m_lines.end(), [&](line_row const &Row) { return Row.entry == entry; })};
 		if (false == m_layout.has_value() || found == m_lines.end())
@@ -4393,6 +4393,8 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			WriteLog("SELFTEST srkboundary: no line beyond " + entry);
 			return editor_selftest_result::handled;
 		}
+		if (values.count("stop") > 0 && false == found->stops.empty())
+			at = found->stops[static_cast<std::size_t>(std::abs(std::atoi(values.at("stop").c_str()))) % found->stops.size()].first;
 		auto const place{station::point_on(m_line_ways[found - m_lines.begin()], at)};
 		m_drawing = true;
 		bool valid{false};
@@ -4404,6 +4406,55 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			WriteLog("SELFTEST srkboundary: " + m_status);
 		}
 		m_drawing = false;
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkdraw")
+	{
+		// srkdraw on|off: the block boundaries drawn by hand, or not
+		std::string word;
+		Words >> word;
+		m_drawing = word != "off";
+		WriteLog(std::string{"SELFTEST srkdraw "} + (m_drawing ? "on" : "off"));
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkcheck")
+	{
+		// srkcheck: the block sections of the scenery checked: each switched by a block signal standing, none twice, no two signals of
+		// one name
+		std::vector<standing_signal> standing;
+		m_signals.standing_signals(standing, true);
+		std::unordered_map<std::string, int> names;
+		for (auto const &signal : standing)
+			++names[ToLower(signal.name)];
+		std::size_t bad{0};
+		for (auto const &[name, count] : names)
+			if (count > 1)
+			{
+				++bad;
+				WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
+			}
+		std::unordered_map<std::string, int> sections;
+		auto const controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
+		for (auto const &control : controls)
+		{
+			if (control.values.size() < 6)
+			{
+				++bad;
+				WriteLog("SELFTEST srkcheck: a block section without its signal");
+				continue;
+			}
+			if (++sections[ToLower(control.values[0])] > 1)
+			{
+				++bad;
+				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " twice");
+			}
+			if (names.count(ToLower(control.values[5])) == 0)
+			{
+				++bad;
+				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " switched by " + control.values[5] + ", which doesn't stand");
+			}
+		}
+		WriteLog(format("SELFTEST srkcheck: %zu signals, %zu block sections, %zu bad", standing.size(), controls.size(), bad));
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstrip")
