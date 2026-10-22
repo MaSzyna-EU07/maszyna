@@ -1904,6 +1904,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances) override;
 	bool standing_signals(std::vector<standing_signal> &Signals, bool const Wait) override;
 	std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) override;
+	bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) override;
 
 	struct signal_template
 	{
@@ -1918,6 +1919,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int parameters{0};
 		bool plate{false};
 		bool linked{false};
+		std::vector<int> speeds;
+		bool informs{false};
 	};
 	struct signal_spot
 	{

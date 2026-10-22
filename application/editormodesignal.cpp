@@ -264,6 +264,7 @@ bool editor_mode::signal_scan(bool const Wait)
 			if (parameter.id == 7)
 				item.linked = true;
 		}
+		editor_includes::signal_speeds(entry.file, item.speeds, item.informs);
 		tool.templates.push_back(std::move(item));
 	}
 	std::sort(tool.templates.begin(), tool.templates.end(), [](signal_template const &A, signal_template const &B) {
@@ -698,7 +699,7 @@ std::string editor_mode::signal_variant(signal_template const &Template, signal_
 	auto best{std::numeric_limits<std::size_t>::max()};
 	for (auto const &other : m_signal.templates)
 	{
-		if (other.kind != Template.kind || group_of(other.mount, other.lamps) != group || lean_of(other.lean) != wanted)
+		if (other.kind != Template.kind || group_of(other.mount, other.lamps) != group || lean_of(other.lean) != wanted || other.speeds != Template.speeds)
 			continue;
 		auto const distance{edit_distance(other.name, Template.name)};
 		if (distance < best)
@@ -891,6 +892,27 @@ bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool c
 		auto const *item{signal_template_of(standing.include.file)};
 		auto const linked{item != nullptr && item->linked && editor_includes::parse_directive(scene::Layers.directive(standing.include.instance), file, values) && values.size() > 6};
 		Signals.push_back({standing.include.instance, standing.name, kKinds[standing.kind], standing.include.location, standing.include.yaw, linked ? values[6] : std::string{}});
+		auto &signal{Signals.back()};
+		signal.file = standing.include.file;
+		signal.track = standing.track;
+		signal.facing = standing.track == nullptr ? 0 : standing.list % 3 == 2 ? 1 : standing.list % 3 == 1 ? -1 : 0;
+	}
+	return true;
+}
+
+bool editor_mode::signal_heads(std::vector<signal_head> &Heads, bool const Wait)
+{
+	Heads.clear();
+	signal_scan(Wait);
+	if (m_signal.templates.empty())
+		return false;
+	for (int index = 0; index < static_cast<int>(m_signal.templates.size()); ++index)
+	{
+		auto const &item{m_signal.templates[index]};
+		if (item.lamps.empty())
+			continue;
+		auto const kind{kind_index(item.kind)};
+		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, item.informs, kind >= 0 && m_signal.chosen[kind] == index});
 	}
 	return true;
 }
@@ -906,6 +928,8 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 	{
 		auto const kind{kind_index(order.kind)};
 		auto const *item{kind >= 0 && tool.chosen[kind] >= 0 && tool.chosen[kind] < static_cast<int>(tool.templates.size()) ? &tool.templates[tool.chosen[kind]] : nullptr};
+		if (auto const *wanted{order.file.empty() ? nullptr : signal_template_of(order.file)}; wanted != nullptr && wanted->kind == order.kind)
+			item = wanted;
 		if (item == nullptr)
 		{
 			Error = format(STR_C("no template of the kind %s"), STR(kKindLabels[std::max(0, kind)]).c_str());
@@ -979,6 +1003,50 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			record(instance, before);
 			set_include_directive(instance, directive);
 		}
+	}
+	for (auto const &[instance, wanted] : Changes.files)
+	{
+		auto const *standing{signal_standing_of(instance)};
+		auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
+		auto const *chosen{signal_template_of(wanted)};
+		auto const before{scene::Layers.directive(instance)};
+		std::string file;
+		std::vector<std::string> values;
+		if (item == nullptr || chosen == nullptr || chosen->kind != item->kind || false == editor_includes::parse_directive(before, file, values) || values.empty())
+			continue;
+		signal_spot spot;
+		auto const *variant{signal_standing_spot(*standing, spot) ? signal_template_of(signal_variant(*chosen, spot)) : chosen};
+		if (variant == nullptr)
+			variant = chosen;
+		if (variant->file == item->file)
+			continue;
+		include_info had;
+		include_info info;
+		std::string missing;
+		editor_includes::load(item->file, had, missing);
+		editor_includes::load(variant->file, info, missing);
+		auto const role_of = [](include_info &Info, int const Id) { return Info.parameter(Id).role; };
+		std::vector<std::string> after(std::max(variant->parameters, 1));
+		for (int id = 1; id <= static_cast<int>(after.size()); ++id)
+		{
+			auto &value{after[id - 1]};
+			auto const role{role_of(info, id)};
+			for (int old = 1; old <= static_cast<int>(values.size()) && value.empty(); ++old)
+				if (role != "free" && role != "text" && role_of(had, old) == role)
+					value = values[old - 1];
+			if (id == 7 && variant->linked)
+				value = item->linked && values.size() > 6 ? values[6] : std::string{"none"};
+			if (value.empty() && id == 6 && variant->plate)
+				value = plate_for(std::string{}, values[0].substr(values[0].rfind('_') + 1));
+			if (value.empty())
+				value = info.parameter(id).value.empty() ? std::string{"none"} : info.parameter(id).value;
+		}
+		auto const read_before{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
+		auto const read_after{variant->read.empty() ? std::string{} : editor_includes::substitute(variant->read, after)};
+		record(instance, before);
+		set_include_directive(instance, editor_includes::compose_directive(variant->file, after));
+		if (false == read_before.empty() && false == read_after.empty() && ToLower(read_before) != ToLower(read_after))
+			signal_renamed(read_before, read_after, step);
 	}
 	std::vector<scene::instance_handle> instances;
 	if (Error.empty() && false == items.empty())

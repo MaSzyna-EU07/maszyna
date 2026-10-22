@@ -10885,3 +10885,180 @@ msgstr "Tor\tDługość budowlana [m]\tUżyteczna w prawo [m]\tod\tdo\tUżyteczn
 msgid "Track %s, useful length %.0f m to the right, %.0f m to the left"
 msgstr "Tor %s, długość użyteczna %.0f m w prawo, %.0f m w lewo"
 
+msgid "green"
+msgstr "zielone"
+
+msgid "two orange"
+msgstr "dwa pomarańczowe"
+
+msgid "red"
+msgstr "czerwone"
+
+msgid "%s km/h"
+msgstr "%s km/h"
+
+msgid "an orange strip"
+msgstr "pomarańczowy pas świetlny"
+
+msgid "a green strip"
+msgstr "zielony pas świetlny"
+
+msgid "Signal heads"
+msgstr "Komory semaforów"
+
+msgid "Line speed"
+msgstr "Prędkość linii"
+
+msgid "%.0f km/h, the highest set on its main tracks"
+msgstr "%.0f km/h, najwyższa ustawiona na torach głównych"
+
+msgid "%.0f km/h taken: no track of the station has a speed set"
+msgstr "przyjęto %.0f km/h: żaden tor stacji nie ma ustawionej prędkości"
+
+msgid "The speed of the trains through the station, the highest one its main tracks and the lines out of it are set to in the Track tool, up to 250 km/h: the braking distance and the lights of the signals go by it. Without one 160 km/h is taken, or the speed of the braking distance set by hand"
+msgstr "Prędkość pociągów przez stację: najwyższa, jaką jej tory główne i wychodzące z niej linie mają ustawioną w narzędziu Tor, do 250 km/h. Od niej zależą droga hamowania i światła semaforów. Gdy żaden tor jej nie ma, przyjmuje się 160 km/h albo prędkość drogi hamowania ustawionej ręcznie"
+
+msgid "Braking distance"
+msgstr "Droga hamowania"
+
+msgid "%.0f m, after the speed"
+msgstr "%.0f m, według prędkości"
+
+msgid "%d m, set by hand"
+msgstr "%d m, ustawiona ręcznie"
+
+msgid "The braking distance of the trains on the line, Ie-4 § 8: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. The block sections and the warning discs stand no nearer, a signal telling of the next one standing nearer slows the trains. Set it by hand where the line has another one"
+msgstr "Droga hamowania pociągów na linii, Ie-4 § 8: 400 m do 60 km/h, 700 m do 100, 1000 m do 140, 1300 m powyżej. Odstępy blokady i tarcze ostrzegawcze nie są krótsze, a semafor zapowiadający następny, który stoi bliżej, zmniejsza prędkość pociągów. Ustaw ją ręcznie, gdy linia ma inną"
+
+msgid "Looking for the signal templates..."
+msgstr "Szukam szablonów semaforów..."
+
+msgid "No main signal stands by the station yet: its lights are checked once one does"
+msgstr "Przy stacji nie stoi jeszcze żaden semafor: światła sprawdzę, gdy jakiś stanie"
+
+msgid "Speeds"
+msgstr "Prędkości"
+
+msgid "Lights"
+msgstr "Światła"
+
+msgid "State"
+msgstr "Stan"
+
+msgid "Main signal %s"
+msgstr "Semafor %s"
+
+msgid "Block signal %s"
+msgstr "Semafor SBL %s"
+
+msgid "Warning disc %s"
+msgstr "Tarcza ostrzegawcza %s"
+
+msgid "To %s: %.0f m"
+msgstr "Do %s: %.0f m"
+
+msgid "To the end of the tracks: %.0f m"
+msgstr "Do końca torów: %.0f m"
+
+msgid "No signal within %.0f m"
+msgstr "Żadnego semafora przez %.0f m"
+
+msgid "%d km/h through the switches"
+msgstr "%d km/h przez rozjazdy"
+
+msgid "%.0f km/h"
+msgstr "%.0f km/h"
+
+msgid "turning at %s"
+msgstr "zwrot na %s"
+
+msgid "past a warning disc"
+msgstr "za tarczą ostrzegawczą"
+
+msgid "Needs: %s"
+msgstr "Potrzebne: %s"
+
+msgid "The next signal stands nearer than the braking distance: with it at stop this one slows the trains to %d km/h, Ie-4 § 8 ust. 5"
+msgstr "Następny semafor stoi bliżej niż droga hamowania: gdy on pokazuje stój, ten zmniejsza prędkość pociągów do %d km/h, Ie-4 § 8 ust. 5"
+
+msgid "Give it a W21 indicator \"14\": 140 km/h with the next signal at stop, Ie-4 § 8 ust. 5"
+msgstr "Dostaw mu wskaźnik W21 „14”: 140 km/h, gdy następny semafor pokazuje stój, Ie-4 § 8 ust. 5"
+
+msgid "A semaphore with arms: its lights aren't checked"
+msgstr "Semafor kształtowy: jego świateł nie sprawdzam"
+
+msgid "No template of its kind and mount has these lights"
+msgstr "Żaden szablon tego rodzaju i mocowania nie ma tych świateł"
+
+msgid "Its lights don't show all of it: %s does"
+msgstr "Jego światła nie pokażą wszystkiego, %s pokaże"
+
+msgid "It has more lights than it needs: %s will do"
+msgstr "Ma więcej świateł, niż trzeba: wystarczy %s"
+
+msgid "LMB: fly to it"
+msgstr "LPM: leć do niego"
+
+msgid "disc"
+msgstr "tarcza"
+
+msgid "arms"
+msgstr "ramiona"
+
+msgid "no template"
+msgstr "brak szablonu"
+
+msgid "lights missing"
+msgstr "brak świateł"
+
+msgid "more than needed"
+msgstr "za dużo"
+
+msgid "fits"
+msgstr "pasuje"
+
+msgid "too near"
+msgstr "za blisko"
+
+msgid "Fit the lights"
+msgstr "Dopasuj światła"
+
+msgid "Gives each signal marked the template of its kind and mount with the lights its routes need and the least beyond them, the name, the plate and the place kept, the trains reading it as before. One step of undo"
+msgstr "Daje każdemu zaznaczonemu semaforowi szablon tego samego rodzaju i mocowania ze światłami, jakich wymagają jego przebiegi, i jak najmniejszym nadmiarem. Nazwa, tablica i miejsce zostają, pociągi odczytują go jak dotąd. Jeden krok cofania"
+
+msgid "The lights go by the routes of the trains: 40 km/h through the switches 1:9, 60 through 1:12 and 1:14, 100 through 1:18.5, by their radii, for these a lower orange light, with an orange strip for 60, a green one for 100, Ie-1; an upper orange one where the next signal can show stop; the white one of the substitute signal. A signal telling of the next one standing nearer than the braking distance slows the trains with it at stop, Ie-4 § 8 ust. 5"
+msgstr "Światła wynikają z przebiegów pociągów: 40 km/h przez rozjazdy 1:9, 60 przez 1:12 i 1:14, 100 przez 1:18,5, liczone z ich promieni; dla nich dolne światło pomarańczowe, z pomarańczowym pasem dla 60 i zielonym dla 100, Ie-1; górne pomarańczowe, gdy następny semafor może pokazać stój; białe dla sygnału zastępczego. Semafor zapowiadający następny, który stoi bliżej niż droga hamowania, zmniejsza prędkość pociągów, gdy tamten pokazuje stój, Ie-4 § 8 ust. 5"
+
+msgid "No template has the lights %s need, they got the one chosen in the Signals tool: see Signal heads"
+msgstr "Żaden szablon nie ma świateł potrzebnych dla %s, dostały ten wybrany w narzędziu Sygnalizatory: zobacz Komory semaforów"
+
+msgid "No main signal within %.0f m ahead of it to tell of"
+msgstr "Przez %.0f m przed nią nie ma semafora, który by zapowiadała"
+
+msgid "It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"
+msgstr "Stoi %.0f m przed %s, mniej niż droga hamowania %.0f m: pociąg nie zdąży się zatrzymać przed semaforem"
+
+msgid "The block section to %s is %.0f m long, shorter than the braking distance of %.0f m, Ie-4 § 8 ust. 1"
+msgstr "Odstęp do %s ma %.0f m, mniej niż droga hamowania %.0f m, Ie-4 § 8 ust. 1"
+
+msgid "No template has the lights the signals marked need"
+msgstr "Żaden szablon nie ma świateł potrzebnych zaznaczonym semaforom"
+
+msgid "The lights of the signals fit already"
+msgstr "Światła semaforów już pasują"
+
+msgid "The signals couldn't be changed: %s"
+msgstr "Nie udało się zmienić semaforów: %s"
+
+msgid "%zu signal of the lines fits"
+msgid_plural "%zu signals of the lines fit"
+msgstr[0] "%zu semafor linii pasuje"
+msgstr[1] "%zu semafory linii pasują"
+msgstr[2] "%zu semaforów linii pasuje"
+
+msgid "%zu signal got the lights it needs, Ctrl+Z takes it back"
+msgid_plural "%zu signals got the lights they need, Ctrl+Z takes it back"
+msgstr[0] "%zu semafor dostał potrzebne światła, Ctrl+Z cofa"
+msgstr[1] "%zu semafory dostały potrzebne światła, Ctrl+Z cofa"
+msgstr[2] "%zu semaforów dostało potrzebne światła, Ctrl+Z cofa"
+

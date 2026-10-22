@@ -2043,4 +2043,190 @@ std::vector<lengths> track_lengths(layout const &Layout, std::vector<numbered> c
 	return result;
 }
 
+namespace
+{
+
+double constexpr kStraight{5000.0}; // m, a path curved less goes for a straight one
+int constexpr kPieces{20000}; // of the tracks passed by the routes of a signal, at most
+
+struct reach
+{
+	TTrack *track{nullptr};
+	int path{0};
+	int facing{1};
+	double from{0.0}; // m, along the path from its start, where the route comes in
+	double length{0.0}; // of the route up to there
+	double speed{0.0};
+	int warning{-1};
+	std::vector<TTrack *> turnouts;
+	std::vector<std::pair<TTrack const *, int>> passed;
+};
+
+} // namespace
+
+double path_speed(TTrack const &Track, int const Path)
+{
+	bezier const curve{Track.m_paths[Path]};
+	int constexpr count{32};
+	int constexpr span{4};
+	auto least{std::numeric_limits<double>::max()};
+	for (int i = 0; i + 2 * span <= count; ++i)
+	{
+		auto const a{map_of(curve.point(static_cast<double>(i) / count))};
+		auto const b{map_of(curve.point(static_cast<double>(i + span) / count))};
+		auto const c{map_of(curve.point(static_cast<double>(i + 2 * span) / count))};
+		auto const twice{std::abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x))};
+		if (twice > 1e-9)
+			least = std::min(least, glm::distance(a, b) * glm::distance(b, c) * glm::distance(c, a) / (2.0 * twice));
+	}
+	return least > kStraight ? 0.0 : std::sqrt(8.424 * least);
+}
+
+std::vector<std::vector<route>> routes(std::vector<post> const &Posts, std::vector<std::size_t> const &From, double const Limit)
+{
+	std::vector<std::vector<route>> all;
+	struct along
+	{
+		std::vector<glm::dvec3> points;
+		std::vector<double> distances;
+	};
+	std::map<std::pair<TTrack const *, int>, along> paths;
+	auto const along_of = [&](TTrack const &Track, int const Path) -> along const & {
+		auto &found{paths[{&Track, Path}]};
+		if (found.points.empty())
+		{
+			double length{0.0};
+			found.points = points_of(Track, Path, length);
+			found.distances.assign(1, 0.0);
+			for (std::size_t k = 1; k < found.points.size(); ++k)
+				found.distances.push_back(found.distances.back() + plan_distance(found.points[k - 1], found.points[k]));
+		}
+		return found;
+	};
+	auto const project_on = [&](along const &Path, glm::dvec3 const &Point, double &Gap) {
+		auto best{std::numeric_limits<double>::max()};
+		double at{0.0};
+		for (std::size_t k = 0; k + 1 < Path.points.size(); ++k)
+		{
+			auto const a{map_of(Path.points[k])};
+			auto const ab{map_of(Path.points[k + 1]) - a};
+			auto const length2{glm::dot(ab, ab)};
+			auto const t{length2 > 1e-12 ? std::clamp(glm::dot(map_of(Point) - a, ab) / length2, 0.0, 1.0) : 0.0};
+			if (auto const distance{glm::distance(a + ab * t, map_of(Point))}; distance < best)
+			{
+				best = distance;
+				at = Path.distances[k] + (Path.distances[k + 1] - Path.distances[k]) * t;
+			}
+		}
+		Gap = best;
+		return at;
+	};
+	std::unordered_map<TTrack const *, std::vector<std::size_t>> by_track;
+	for (std::size_t index = 0; index < Posts.size(); ++index)
+		if (Posts[index].track != nullptr)
+			by_track[Posts[index].track].push_back(index);
+	auto const routes_from = [&](std::size_t const Start) {
+		std::vector<route> result;
+		auto const &start{Posts[Start]};
+		auto path{0};
+		auto nearest{std::numeric_limits<double>::max()};
+		double from{0.0};
+		for (int candidate = 0; candidate < static_cast<int>(start.track->m_paths.size()); ++candidate)
+		{
+			double gap{0.0};
+			auto const at{project_on(along_of(*start.track, candidate), start.point, gap)};
+			if (gap < nearest - 1e-3)
+			{
+				nearest = gap;
+				path = candidate;
+				from = at;
+			}
+		}
+		std::vector<reach> stack{{start.track, path, start.facing, from, 0.0, 0.0, -1, {}, {}}};
+		auto pieces{0};
+		while (false == stack.empty() && pieces++ < kPieces)
+		{
+			auto here{std::move(stack.back())};
+			stack.pop_back();
+			auto const &track{*here.track};
+			auto const &line{along_of(track, here.path)};
+			auto const total{line.distances.back()};
+			here.passed.emplace_back(&track, here.path * 2 + (here.facing > 0 ? 1 : 0));
+			if (node(track))
+			{
+				auto const speed{path_speed(track, here.path)};
+				auto limit{speed};
+				auto const set{track.SwitchExtension != nullptr ? std::abs(static_cast<double>(track.SwitchExtension->fVelocity)) : here.track->VelocityGet()};
+				if (speed > 0.0 && set >= 2.0)
+					limit = std::min(speed, set);
+				if (limit > 0.0 && (here.speed <= 0.0 || limit < here.speed))
+					here.speed = limit;
+				if (speed > 0.0 && (track.eType != tt_Switch || here.path != straighter(track)))
+					here.turnouts.push_back(here.track);
+			}
+			// the signals ahead on the path, the nearest first
+			std::vector<std::pair<double, std::size_t>> ahead;
+			if (auto const found{by_track.find(&track)}; found != by_track.end())
+				for (auto const index : found->second)
+				{
+					auto const &other{Posts[index]};
+					if (index == Start || other.facing != here.facing || other.kind == signal::role::shunting)
+						continue;
+					double gap{0.0};
+					auto const at{project_on(line, other.point, gap)};
+					auto const distance{(at - here.from) * here.facing};
+					if (gap < 4.5 && distance > 0.1)
+						ahead.emplace_back(distance, index);
+				}
+			std::sort(ahead.begin(), ahead.end());
+			auto stopped{false};
+			for (auto const &[distance, index] : ahead)
+			{
+				if (here.length + distance > Limit)
+					break;
+				if (Posts[index].kind == signal::role::warning)
+				{
+					if (here.warning < 0)
+						here.warning = static_cast<int>(index);
+					continue;
+				}
+				result.push_back({static_cast<int>(index), here.warning, here.length + distance, here.speed, here.turnouts, false});
+				stopped = true;
+				break;
+			}
+			if (stopped)
+				continue;
+			auto const length{here.length + (here.facing > 0 ? total - here.from : here.from)};
+			if (length > Limit)
+			{
+				result.push_back({-1, here.warning, Limit, here.speed, here.turnouts, false});
+				continue;
+			}
+			auto const atend{here.facing > 0};
+			auto const point{end_of(track, here.path, atend)};
+			auto *next{neighbour(track, here.path, atend)};
+			auto went{false};
+			if (next != nullptr && rail(*next))
+				for (int other = 0; other < static_cast<int>(next->m_paths.size()); ++other)
+					for (auto const end : {false, true})
+					{
+						if (glm::distance(end_of(*next, other, end), point) >= same_point)
+							continue;
+						auto const facing{end ? -1 : 1};
+						if (std::find(here.passed.begin(), here.passed.end(), std::make_pair(static_cast<TTrack const *>(next), other * 2 + (facing > 0 ? 1 : 0))) != here.passed.end())
+							continue;
+						auto const &entered{along_of(*next, other)};
+						stack.push_back({next, other, facing, end ? entered.distances.back() : 0.0, length, here.speed, here.warning, here.turnouts, here.passed});
+						went = true;
+					}
+			if (false == went)
+				result.push_back({-1, here.warning, length, here.speed, here.turnouts, true});
+		}
+		return result;
+	};
+	for (auto const from : From)
+		all.push_back(from < Posts.size() && Posts[from].track != nullptr && false == Posts[from].track->m_paths.empty() ? routes_from(from) : std::vector<route>{});
+	return all;
+}
+
 } // namespace station

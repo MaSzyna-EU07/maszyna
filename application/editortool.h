@@ -85,6 +85,7 @@ struct signal_order
 	std::string name;
 	std::string plate; // the name on the plate under the head, when the template has one
 	std::string linked{"none"}; // the signal before it, when the template takes one: a block signal shows its aspects by it
+	std::string file; // the template, of its kind; empty for the one chosen for the kind
 };
 struct signal_rename
 {
@@ -101,6 +102,21 @@ struct standing_signal
 	glm::dvec3 position{0.0};
 	double yaw{0.0};
 	std::string linked; // of a template that takes one, else empty
+	std::string file; // of its template
+	TTrack *track{nullptr}; // the trains read it on, nullptr while none does
+	int facing{0}; // the trains it faces run 1: towards the end of the path of the track, -1: towards its start, 0 unknown
+};
+// a signal template as the signalling picks one: the lights it has and the speeds its events show
+struct signal_head
+{
+	std::string file;
+	std::string name;
+	std::string kind;
+	std::string mount;
+	std::string lamps; // its chambers from the top: z green, c red, p orange, b white, n blue, x blind
+	std::vector<int> speeds; // of the signal itself, km/h: -1 the highest allowed, 20 the substitute signal
+	bool informs{false}; // it tells the next signal shows stop
+	bool chosen{false}; // the Signals tool places it for its kind
 };
 // one step of the history of the signalling: signals placed, standing ones renamed, other templates placed with them, the values
 // of standing ones replaced
@@ -110,6 +126,7 @@ struct signal_changes
 	std::vector<signal_rename> renamed;
 	std::vector<template_item> others;
 	std::vector<std::pair<scene::instance_handle, std::vector<std::string>>> values;
+	std::vector<std::pair<scene::instance_handle, std::string>> files; // standing signals given another template, of the same kind, their values kept
 };
 
 struct nmt_place
@@ -195,6 +212,8 @@ class editor_signals
 	// the signals placed by the templates chosen for their kinds and the rest of the changes, with the tracks changed before: one
 	// step of the history. returns: how many signals were placed
 	virtual std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) = 0;
+	// the signal templates with lights, false while they are still being looked for
+	virtual bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) = 0;
 
   protected:
 	~editor_signals() = default;

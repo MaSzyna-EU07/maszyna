@@ -226,4 +226,27 @@ struct lengths
 // the lengths of the station tracks, the signals standing by them among the signals given
 std::vector<lengths> track_lengths(layout const &Layout, std::vector<numbered> const &Tracks, std::vector<signal> const &Signals);
 
+// a signal by the track the trains read it on
+struct post
+{
+	TTrack *track{nullptr};
+	int facing{1}; // the trains it faces run 1: towards the end of the path, -1: towards its start
+	glm::dvec3 point{0.0};
+	signal::role kind{signal::role::entry}; // entry for any main signal
+};
+// the way of the trains from a signal on to the next main or block signal facing them
+struct route
+{
+	int next{-1}; // of the posts, -1 for none within the limit
+	int warning{-1}; // the warning disc passed on the way, of the posts
+	double length{0.0}; // m, in the plan
+	double speed{0.0}; // km/h, the least the switches on it allow on their curved paths, by the radius and by the speed set; 0 for no limit
+	std::vector<TTrack *> turnouts; // the switches it turns off the straight at
+	bool ended{false}; // at the end of the tracks, before the limit
+};
+// km/h, a train runs the path at by its least radius, 0.65 m/s² of the acceleration left unbalanced without cant; 0 for a straight one
+double path_speed(TTrack const &Track, int const Path);
+// the routes of the trains from each of the posts given on through the switches, none longer than the limit
+std::vector<std::vector<route>> routes(std::vector<post> const &Posts, std::vector<std::size_t> const &From, double const Limit);
+
 } // namespace station

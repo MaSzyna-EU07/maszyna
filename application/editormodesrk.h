@@ -56,6 +56,7 @@ class srk_tool final : public editor_tool
 		std::string line; // the number of the railway line
 		std::string km; // of the axis of the station along the line, empty while unknown
 		bool reversed{false}; // the km rise to the left of the schematic, the switches numbered from there
+		int braking{0}; // m, the braking distance of the line set by hand, 0: after its speed
 	};
 	// the schematic: the chainage across, the offsets upwards, exaggerated
 	struct view
@@ -104,6 +105,7 @@ class srk_tool final : public editor_tool
 		bool ahead{true}; // the trains it faces run along the chainage
 		std::string text;
 		glm::dvec3 head{0.0}; // above its lamps, in the scenery
+		bool unfit{false}; // its lights don't show what its routes need
 	};
 	std::vector<signal_mark> m_signal_marks;
 	bool m_signals_known{false}; // the signals standing surveyed, once their templates are found
@@ -113,6 +115,33 @@ class srk_tool final : public editor_tool
 	int m_length_hover{-1}; // of the lengths, the row under the mouse
 	int m_length_canvas{-1}; // of the lengths, of the track under the mouse in the schematic
 	int m_length_shown{-1}; // of the lengths, the one drawn: of the row or the track under the mouse, else of the track selected
+	// a signal of the station or of its lines, its lights as the routes of its trains need them: Ie-1, Ie-4 § 8
+	struct head_check
+	{
+		scene::instance_handle instance{0};
+		std::string name; // shown, without the code of the station
+		std::string kind;
+		glm::dvec3 position{0.0};
+		glm::dvec2 travel{0.0, 1.0};
+		std::string file; // of its template
+		std::string lamps;
+		std::vector<int> own; // the speeds of its template
+		bool station{false}; // stands by the station, not out on a line
+		std::vector<station::route> routes;
+		std::vector<std::string> nexts; // of the routes, the signals they end at, shown
+		std::vector<int> speeds; // km/h, the lower ones it must show: 40, 60, 100
+		bool informs{false}; // it must tell the next signal shows stop
+		bool white{false}; // it must give the substitute signal
+		int shortened{0}; // km/h, it slows the trains to, the next signal nearer than the braking distance: Ie-4 § 8 ust. 5
+		bool indicator{false}; // a W21 "14" beside it, for 140 km/h so
+		bool fits{true}; // its template shows all of it
+		bool more{false}; // its template has more than it needs
+		std::string fit; // the template that fits best, empty for none
+		std::vector<std::string> problems; // of its place
+	};
+	std::vector<head_check> m_heads;
+	bool m_heads_known{false}; // the templates found
+	int m_head_hover{-1}; // of the heads, the row under the mouse
 	std::string m_status;
 
 	void load();
@@ -137,6 +166,17 @@ class srk_tool final : public editor_tool
 	void survey_signals();
 	// the lengths of the station tracks, the signals given by them
 	void measure(std::vector<station::signal> const &Signals);
+	// km/h, the highest of the speeds the tracks of the open station are set to, 0 while none is
+	double set_speed_of_open() const;
+	// km/h, the trains run the station at: the highest set on its tracks, else after the braking distance set by hand, else 160
+	double speed_of_open() const;
+	// m, the braking distance of the line of the open station: set by hand, else after its speed, as Ie-4 § 8 gives it
+	double braking_of_open() const;
+	// the lights of the signals checked against the routes of their trains and the places of the signals they tell of
+	void check_heads(std::vector<standing_signal> const &Standing);
+	void render_heads();
+	// the signals given the templates whose lights fit their routes; one step of the history
+	void fit_heads();
 	// the lengths of the station tracks as the list of the tracks gives them, the useful ones each way
 	void render_lengths();
 	// the lengths as a table to paste into a spreadsheet, a line a track, the columns parted by tabs
