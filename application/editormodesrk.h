@@ -80,6 +80,7 @@ class srk_tool final : public editor_tool
 		bool reversed{false}; // the km rise to the left of the schematic, the switches numbered from there
 		int braking{0}; // m, the braking distance of the line set by hand, 0: after its speed
 		std::map<std::string, block_kind> blocks; // of the lines by their entry signals, as set by hand
+		std::map<std::string, bool> ways; // the automatic block of the lines by their entry signals both ways, as set by hand
 	};
 	// the schematic: the chainage across, the offsets upwards, exaggerated
 	struct view
@@ -101,6 +102,7 @@ class srk_tool final : public editor_tool
 	std::size_t m_history_revision{0};
 	TTrack const *m_picked{nullptr}; // the track selected when the station was looked for
 	view m_view_state;
+	bool m_fit_lines{false}; // the schematic fits the lines out to the next stations too
 	int m_hover{-1}; // path of the layout under the mouse in the schematic
 	bool m_dragging{false};
 	std::vector<std::pair<std::string, std::size_t>> m_found; // the stations of the scenery: a switch and the count of them
@@ -193,16 +195,45 @@ class srk_tool final : public editor_tool
 		std::string next; // the entry signal of the next station facing out along it, shown; empty for none
 		bool station{false}; // ends at the next station rather than at the end of the tracks
 		std::size_t blocks{0}; // the block signals standing along it
-		std::vector<std::pair<double, std::string>> stops; // the same, out along it, shown
+		// the block boundaries of the same facing its trains, the joints they turn them to stop at, out along it, with the signal shown
+		std::vector<std::pair<double, std::string>> stops;
+		std::vector<std::pair<double, std::string>> wrong; // the block signals facing its wrong-track trains, out along it, shown
 		block_kind block{block_kind::semi};
 		block_reason why{block_reason::single}; // the block it has, so
 		block_kind own{block_kind::semi}; // the block it has by itself, unless set by hand
 		block_reason own_why{block_reason::single};
+		// the automatic block both ways: at each block boundary a block signal of each track either way, the wrong-track one with N
+		bool both{false};
+		bool both_hand{false}; // so set by hand
+		bool own_both{false}; // so by itself
 		// block signals stand along it, none switched by block sections of the editor: it keeps the block of the scenery as it stands
 		bool legacy{false};
 		double braking{0.0}; // m, the braking distance on it
 		std::string km_number; // the line of the kilometrage it runs along
 		bool rising{true}; // its trains run towards the higher km
+		bool km_known{false}; // the km out along it are known
+		// in the schematic, straightened: the chainage of the entry signal, 1 or -1 the way out along the chainage, the offset of the
+		// track there
+		double chainage{0.0};
+		double outward{1.0};
+		double offset{0.0};
+		struct run
+		{
+			double from{0.0}; // out along the line
+			double to{0.0};
+			std::string name;
+			double km_from{0.0};
+			double km_to{0.0};
+		};
+		std::vector<run> sections; // the track circuits along it, out from the station
+		struct post
+		{
+			double distance{0.0}; // out along the line
+			std::string name; // shown
+			bool wrong{false}; // facing the wrong-track trains
+			double km{0.0};
+		};
+		std::vector<post> posts; // the block signals along it
 		// the signals of the other block standing along it: warning discs on a line of the automatic block, block signals on one of the
 		// semi-automatic one, the first of them
 		std::size_t leftovers{0};
@@ -211,6 +242,7 @@ class srk_tool final : public editor_tool
 	};
 	std::vector<line_row> m_lines;
 	std::vector<station::line> m_line_ways; // of the lines listed
+	std::unordered_set<std::string> m_signal_names; // of the signals of the scenery, lowercase: a block signal drawn on one's number takes a letter
 	std::string m_lines_problem; // why the station has no lines listed
 	bool m_drawing{false}; // the block boundaries drawn by hand
 	// a block boundary under the mouse while they are drawn: block signals across the line there, or the ones standing taken away
@@ -219,10 +251,15 @@ class srk_tool final : public editor_tool
 		bool valid{false};
 		bool remove{false};
 		std::string entry; // of the line under the mouse, its entry signal shown
-		glm::dvec3 point{0.0}; // on its axis
-		std::vector<glm::dvec3> places; // of the signals, on the axes of the tracks
-		std::vector<glm::dvec3> ways; // the trains run there
-		std::vector<std::string> names;
+		glm::dvec3 point{0.0}; // the joint, on its axis
+		std::vector<std::pair<glm::dvec3, glm::dvec3>> joints; // of each track, on its axis, the way out along it
+		struct post
+		{
+			glm::dvec3 point{0.0}; // on the axis
+			glm::dvec3 side{1.0, 0.0, 0.0}; // the signal stands off the axis so
+			std::string name;
+		};
+		std::vector<post> posts; // of the block signals
 	};
 	boundary m_boundary;
 	// a block boundary drawn on a line of the automatic block of the open station
@@ -283,6 +320,9 @@ class srk_tool final : public editor_tool
 	// aspects where one of them has, else on a double-track line, of the aspects of the block signal chosen in the Signals tool, else
 	// the semi-automatic one; Own: the block it has by itself
 	block_kind block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads, block_reason &Why, block_kind &Own, block_reason &Own_why, std::size_t &Blocks) const;
+	// the automatic block of the double-track line both ways: as set by hand for its entry signal, else where block signals stand
+	// along it, when some of them face its wrong-track trains, else on a new line; Own: so by itself
+	bool both_ways(std::vector<station::line> const &Lines, std::size_t Index, std::string const &Entry, std::vector<standing_signal> const &Standing, bool &Hand, bool &Own) const;
 	// the line of the kilometrage a line out of the open station runs along: of the station, at a junction another one
 	std::string km_line(station::line const &Line) const;
 	// the km out along the line, Number: of the line of its kilometrage

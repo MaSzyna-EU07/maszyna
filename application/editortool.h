@@ -117,6 +117,7 @@ struct signal_head
 	std::vector<int> speeds; // of the signal itself, km/h: -1 the highest allowed, 20 the substitute signal
 	bool chosen{false}; // the Signals tool places it for its kind
 	int aspects{0}; // of a block signal: 3, or 4 with the warning two signals ahead
+	std::string lean; // its head leans towards the track: left, standing on the right of it, right, or none
 };
 // one step of the history of the signalling: signals placed, standing ones renamed, other templates placed with them, the values
 // of standing ones replaced

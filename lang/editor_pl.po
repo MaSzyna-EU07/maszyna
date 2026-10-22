@@ -11278,8 +11278,47 @@ msgstr "Blokada szlaku, na obu torach dwutorowego taka sama. Samoczynna (SBL): s
 msgid "Draw the block boundaries"
 msgstr "Rysuj granice odstępów"
 
-msgid "LMB on a track of a line of the automatic block, beyond the entry signal: block signals across both tracks there, numbered after the hectometre ahead of them, the tracks cut 15 m beyond them and the new block sections named; LMB on a block boundary standing takes its signals away, the sections either side joined. A line whose block signals stand keeps them: Set the line signals places them evenly only on a line without any. One step of undo each"
-msgstr "LPM na torze szlaku z SBL, za semaforem wjazdowym: semafory SBL na obu torach w tym miejscu, numerowane po hektometrze przed nimi, tory przecięte 15 m za nimi i nazwane nowe odstępy. LPM na istniejącej granicy zabiera jej semafory, a odstępy po obu stronach łączą się w jeden. Szlak, na którym stoją już semafory SBL, je zachowuje: Ustaw sygnalizatory szlakowe rozstawia je równo tylko na szlaku bez żadnego. Każde kliknięcie to jeden krok cofania"
+msgid "LMB on a track of a line of the automatic block, beyond the entry signal: a block boundary there, the tracks cut across the line, block signals 15 m before the joint, numbered after the hectometre ahead of them, on a line both ways the wrong-track ones 15 m beyond it, with N, and the new block sections named; LMB on a block boundary standing takes its signals away, the sections either side joined. A line whose block signals stand keeps them: Set the line signals places them evenly only on a line without any. One step of undo each"
+msgstr "LPM na torze szlaku z SBL, za semaforem wjazdowym: granica odstępu w tym miejscu, tory przecięte w poprzek szlaku, semafory SBL 15 m przed złączem, numerowane po hektometrze przed nimi, na szlaku w obu kierunkach także semafory dla jazdy po torze lewym 15 m za złączem, z N, i nazwane nowe odstępy. LPM na istniejącej granicy zabiera jej semafory, a odstępy po obu stronach łączą się w jeden. Szlak, na którym stoją już semafory SBL, je zachowuje: Ustaw sygnalizatory szlakowe rozstawia je równo tylko na szlaku bez żadnego. Każde kliknięcie to jeden krok cofania"
+
+msgid "Wrong-track running"
+msgstr "Jazda po torze lewym"
+
+msgid "SBL both ways"
+msgstr "SBL dwukierunkowa"
+
+msgid "Mixed"
+msgstr "Mieszana"
+
+msgid "At each block boundary the block signals of both tracks either way: of the trains of the track 15 m before the joint, for the wrong-track ones 15 m beyond it, with N (523N), on the outside of the line, as on the lines of PKP PLK"
+msgstr "Na każdej granicy odstępu semafory SBL obu torów w obu kierunkach: dla jazdy po torze właściwym 15 m przed złączem, dla jazdy po torze lewym 15 m za nim, z N (523N), po zewnętrznej stronie szlaku, jak na liniach PKP PLK"
+
+msgid "The automatic block for the trains of the track, the semi-automatic one for the wrong-track ones: no N signals, a warning disc ToB the braking distance before the entry signal of the wrong-track trains, on the outside of the line. Set the line signals places it and takes the N signals away"
+msgstr "SBL dla jazdy po torze właściwym, blokada półsamoczynna dla jazdy po torze lewym: bez semaforów N, tarcza ostrzegawcza ToB w drodze hamowania przed semaforem wjazdowym z toru lewego, po zewnętrznej stronie szlaku. Ustaw sygnalizatory szlakowe ją stawia i zabiera semafory N"
+
+msgid "Each line as it stands: a choice sets all of them"
+msgstr "Każdy szlak tak, jak stoi: wybór ustawia wszystkie"
+
+msgid "Wrong-track running: SBL both ways, the block signals with N"
+msgstr "Jazda po torze lewym: SBL dwukierunkowa, semafory z N"
+
+msgid "Wrong-track running: the mixed block, a warning disc before the entry signal"
+msgstr "Jazda po torze lewym: blokada mieszana, tarcza ostrzegawcza przed semaforem wjazdowym"
+
+msgid "Shows the station with its lines out to the next stations: their block sections, the block signals with their km"
+msgstr "Pokazuje stację ze szlakami do sąsiednich stacji: ich odstępy i semafory SBL z kilometrażem"
+
+msgid "Block section %s, %.2f km"
+msgstr "Odstęp %s, %.2f km"
+
+msgid "km %.3f to %.3f"
+msgstr "km %.3f do %.3f"
+
+msgid "No track circuit here"
+msgstr "Tu nie ma odcinka izolowanego"
+
+msgid "LMB: show it in the 3d view"
+msgstr "LPM: pokaż w widoku 3d"
 
 msgid "LMB on a track of a line beyond the entry signal: a block boundary there; on one standing: taken away"
 msgstr "LPM na torze szlaku za semaforem wjazdowym: granica odstępu w tym miejscu; na istniejącej granicy: usunięcie"

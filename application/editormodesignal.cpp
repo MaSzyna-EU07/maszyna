@@ -938,7 +938,7 @@ bool editor_mode::signal_heads(std::vector<signal_head> &Heads, bool const Wait)
 		if (item.lamps.empty())
 			continue;
 		auto const kind{kind_index(item.kind)};
-		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index, item.aspects});
+		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index, item.aspects, item.lean});
 	}
 	return true;
 }
