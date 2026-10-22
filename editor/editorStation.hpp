@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
 #include <functional>
 #include <optional>
 #include <string>
@@ -185,5 +186,44 @@ double distance_on(line const &Line, glm::dvec3 const &Point, double &Gap);
 // the number of a block signal at the km, as PKP PLK gives them (Ie-4 § 10): the km and the hectometre, the nearest one ahead of the
 // signal odd on track 1, even on track 2: 241, 242; Rising: its trains run towards the higher km
 std::string block_number(double const Km, int const Track, bool const Rising);
+
+// a limit of the part of a station track a train stands on
+struct limit
+{
+	enum class kind
+	{
+		signal,
+		joint, // of the track circuits
+		fouling, // the fouling point of a switch
+		start, // of a switch
+		buffer, // the end of the tracks, where the buffer stop stands
+		crossing // the edge of a road crossing the track on its level
+	};
+	kind what{kind::joint};
+	std::string name; // of the signal, of the switch for the others
+	double along{0.0}; // along the track, from its end at the lower chainage
+	glm::dvec3 point{0.0};
+};
+// the part of a station track the trains running one way stand on
+struct stand
+{
+	limit head; // the trains stop by it
+	limit rear; // behind them
+	double length{0.0};
+};
+// the lengths of a station track, as the list of the tracks of a station gives them: the rozporządzenie of the minister of
+// infrastructure on the railway structures (Dz.U. 2026 poz. 1225) § 2
+struct lengths
+{
+	std::string number;
+	double construction{0.0}; // between the ends of the switches at its ends, or to the buffer stop, the switches within it left out
+	// the useful one, of the trains running along the chainage, then of those running against it: from the signal they stop by back
+	// to the joint, the fouling point or the level crossing behind them, between those where no signal stands
+	std::array<stand, 2> ways;
+	std::vector<glm::dvec3> points; // along the track from its end at the lower chainage, through the switches within it
+	std::vector<double> distances; // of the points, from that end
+};
+// the lengths of the station tracks, the signals standing by them among the signals given
+std::vector<lengths> track_lengths(layout const &Layout, std::vector<numbered> const &Tracks, std::vector<signal> const &Signals);
 
 } // namespace station

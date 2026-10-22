@@ -107,6 +107,12 @@ class srk_tool final : public editor_tool
 	};
 	std::vector<signal_mark> m_signal_marks;
 	bool m_signals_known{false}; // the signals standing surveyed, once their templates are found
+	std::vector<station::lengths> m_lengths; // of the station tracks, by their numbers
+	bool m_measured{false};
+	bool m_numbered{false}; // the station has tracks numbered by their circuits
+	int m_length_hover{-1}; // of the lengths, the row under the mouse
+	int m_length_canvas{-1}; // of the lengths, of the track under the mouse in the schematic
+	int m_length_shown{-1}; // of the lengths, the one drawn: of the row or the track under the mouse, else of the track selected
 	std::string m_status;
 
 	void load();
@@ -129,6 +135,14 @@ class srk_tool final : public editor_tool
 	void set_signals();
 	// the signals standing by the station, for the schematic
 	void survey_signals();
+	// the lengths of the station tracks, the signals given by them
+	void measure(std::vector<station::signal> const &Signals);
+	// the lengths of the station tracks as the list of the tracks gives them, the useful ones each way
+	void render_lengths();
+	// the lengths as a table to paste into a spreadsheet, a line a track, the columns parted by tabs
+	std::string lengths_table() const;
+	// of the lengths, the one of the station track the track is a part of, -1 for none
+	int length_of(TTrack const *Track) const;
 	// the signals of the lines out of the station: on a double-track line the block signals to the next station and the block
 	// sections between them, on a single-track one a warning disc before the entry signal; one step of the history
 	void set_lines();

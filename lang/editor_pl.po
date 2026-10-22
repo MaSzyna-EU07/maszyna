@@ -10801,3 +10801,87 @@ msgstr "Słupki pójdą według kilometra podanego w punkcie i kierunku, w któr
 msgid "Follow the km of line %s"
 msgstr "Według kilometrażu linii %s"
 
+msgid "signal %s"
+msgstr "sygnalizatora %s"
+
+msgid "the fouling point of switch %s"
+msgstr "ukresu rozjazdu %s"
+
+msgid "the start of switch %s"
+msgstr "początku rozjazdu %s"
+
+msgid "the buffer stop"
+msgstr "kozła oporowego"
+
+msgid "the joint"
+msgstr "złącza izolowanego"
+
+msgid "the joint by switch %s"
+msgstr "złącza izolowanego przy rozjeździe %s"
+
+msgid "Track lengths"
+msgstr "Długości torów"
+
+msgid "Set the track circuits first: the station tracks are measured by their numbers, from their joints, the fouling points and the signals"
+msgstr "Najpierw ustaw izolacje: tory stacyjne mierzy się po ich numerach, od złączy izolowanych, ukresów i sygnalizatorów"
+
+msgid "To the right"
+msgstr "W prawo"
+
+msgid "To the left"
+msgstr "W lewo"
+
+msgid "Train up to"
+msgstr "Pociąg do"
+
+msgid "Track %s"
+msgstr "Tor %s"
+
+msgid "%s: %.0f m, from %s to %s"
+msgstr "%s: %.0f m, od %s do %s"
+
+msgid "Construction length %.0f m: between the switches at its ends, the switches within it left out"
+msgstr "Długość budowlana %.0f m: między rozjazdami na jego końcach, bez rozjazdów pośrednich"
+
+msgid "LMB: show it"
+msgstr "LPM: pokaż go"
+
+msgid "The useful length: where a train stands, from the signal it stops by back to the joint, the fouling point or the level crossing behind it, between those where no signal stands (dimmed). The longest train leaves 25 m of it: 10 m to stop, 10 m to see the signal, 5 m to the joint"
+msgstr "Długość użyteczna: miejsce postoju pociągu, od sygnalizatora, przy którym staje, do złącza izolowanego, ukresu albo przejazdu za nim, a gdzie sygnalizatora nie ma, między nimi (wyszarzone). Najdłuższy pociąg zostawia z niej 25 m: 10 m na zatrzymanie, 10 m na widoczność sygnału, 5 m do złącza"
+
+msgid "track %s: %.0f m"
+msgstr "tor %s: %.0f m"
+
+msgid "the level crossing"
+msgstr "przejazdu kolejowo-drogowego"
+
+msgid "Give the station its code first: its tracks are numbered and measured after it"
+msgstr "Najpierw nadaj stacji skrót: po nim numeruje się i mierzy jej tory"
+
+msgid "The station tracks have no ends to be measured between"
+msgstr "Tory stacyjne nie mają końców, między którymi dałoby się je zmierzyć"
+
+msgid "The two ways differ: their trains stop on other stretches of the track, between other switches or signals"
+msgstr "Kierunki się różnią: pociągi każdego z nich stają na innym odcinku toru, między innymi rozjazdami albo sygnalizatorami"
+
+msgid "No signal stands by the station tracks yet, the lengths run between the fouling points: set the signals for the useful ones"
+msgstr "Przy torach stacyjnych nie stoi jeszcze żaden sygnalizator, długości liczą się między ukresami: ustaw semafory, żeby wyszły użyteczne"
+
+msgid "Copy the list of tracks"
+msgstr "Kopiuj wykaz torów"
+
+msgid "The lengths of %zu track copied"
+msgid_plural "The lengths of %zu tracks copied"
+msgstr[0] "Skopiowano długości %zu toru"
+msgstr[1] "Skopiowano długości %zu torów"
+msgstr[2] "Skopiowano długości %zu torów"
+
+msgid "The lengths of the station tracks as a table to paste into a spreadsheet: the construction length and the useful one each way with its limits, as the list of the tracks of a station gives them"
+msgstr "Długości torów stacyjnych jako tabela do wklejenia w arkusz: długość budowlana i użyteczna w każdą stronę z jej granicami, tak jak podaje je wykaz torów stacji"
+
+msgid "Track\tConstruction length [m]\tUseful to the right [m]\tfrom\tto\tUseful to the left [m]\tfrom\tto"
+msgstr "Tor\tDługość budowlana [m]\tUżyteczna w prawo [m]\tod\tdo\tUżyteczna w lewo [m]\tod\tdo"
+
+msgid "Track %s, useful length %.0f m to the right, %.0f m to the left"
+msgstr "Tor %s, długość użyteczna %.0f m w prawo, %.0f m w lewo"
+
