@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "editor/editorTrack.hpp"
 
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
@@ -27,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <map>
 #include <unordered_set>
 
 namespace
@@ -58,6 +60,11 @@ std::string word_of(std::string const &Text)
 std::string shown(std::string const &Word)
 {
 	return Word == "-" ? std::string{} : Word;
+}
+
+template <typename Record_> std::string anchor_of(Record_ const &Entry)
+{
+	return Entry.track != nullptr && false == Entry.track->m_editorremoved ? Entry.track->name() : Entry.anchor;
 }
 
 } // namespace
@@ -95,6 +102,7 @@ void srk_tool::load()
 			}
 			entry.code = shown(entry.code);
 			entry.line = shown(entry.line);
+			entry.track = simulation::Paths.find(entry.anchor);
 			if (false == entry.anchor.empty())
 				m_records.push_back(std::move(entry));
 		}
@@ -118,7 +126,7 @@ void srk_tool::store()
 				continue;
 			if (lines.empty())
 				lines.emplace_back("# stations described in the track editor, the simulation skips these lines");
-			lines.push_back(format("station %s line %s anchor %s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), entry.anchor.c_str(), entry.name.c_str()));
+			lines.push_back(format("station %s line %s anchor %s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), anchor_of(entry).c_str(), entry.name.c_str()));
 		}
 		scene::Layers.mark(layer, kMark, std::move(lines));
 	}
@@ -140,24 +148,32 @@ void srk_tool::open(TTrack &Track)
 	// the record of the station, by any of its switches
 	m_record = -1;
 	for (int index = 0; index < static_cast<int>(m_records.size()) && m_record < 0; ++index)
-		if (std::any_of(m_layout->switches.begin(), m_layout->switches.end(), [&](TTrack const *Switch) { return Switch->name() == m_records[index].anchor; }))
+	{
+		auto &entry{m_records[index]};
+		if (entry.track == nullptr)
+			entry.track = simulation::Paths.find(entry.anchor);
+		if (std::find(m_layout->switches.begin(), m_layout->switches.end(), entry.track) != m_layout->switches.end())
 			m_record = index;
-	m_anchor = m_record >= 0 ? m_records[m_record].anchor : m_layout->switches.front()->name();
+	}
+	m_anchor = m_record >= 0 ? m_records[m_record].track : m_layout->switches.front();
 }
 
 void srk_tool::refresh()
 {
 	m_history_size = m_history.history_size();
-	auto *anchor{m_anchor.empty() ? nullptr : simulation::Paths.find(m_anchor)};
-	if (anchor == nullptr || anchor->m_editorremoved)
+	if (m_anchor == nullptr || m_anchor->m_editorremoved)
 	{
 		m_layout.reset();
 		return;
 	}
 	auto const view{m_view_state};
-	open(*anchor);
+	auto const status{m_status};
+	open(*m_anchor);
 	if (m_layout.has_value())
+	{
 		m_view_state = view;
+		m_status = status;
+	}
 }
 
 srk_tool::record &srk_tool::record_of_open()
@@ -165,8 +181,9 @@ srk_tool::record &srk_tool::record_of_open()
 	if (m_record < 0)
 	{
 		record entry;
-		auto const *first{m_layout->switches.front()};
+		auto *first{m_layout->switches.front()};
 		entry.anchor = first->name();
+		entry.track = first;
 		entry.layer = scene::Layers.resolve(first->layer());
 		if (false == scene::Layers.valid(entry.layer) || false == scene::Layers.accepts(entry.layer))
 			entry.layer = scene::Layers.active();
@@ -174,7 +191,7 @@ srk_tool::record &srk_tool::record_of_open()
 			entry.layer = 1;
 		m_records.push_back(std::move(entry));
 		m_record = static_cast<int>(m_records.size()) - 1;
-		m_anchor = m_records.back().anchor;
+		m_anchor = first;
 	}
 	return m_records[m_record];
 }
@@ -189,7 +206,7 @@ std::string srk_tool::title() const
 		if (false == entry.code.empty())
 			return entry.code;
 	}
-	return format(STR_C("Station of %s"), m_anchor.c_str());
+	return format(STR_C("Station of %s"), m_anchor != nullptr ? m_anchor->name().c_str() : "");
 }
 
 void srk_tool::find_all()
@@ -205,9 +222,14 @@ void srk_tool::update()
 	if (false == m_open)
 		return;
 	load();
-	if (m_layout.has_value() && m_history.history_size() != m_history_size)
-		refresh();
-	else if (false == m_layout.has_value() && false == m_anchor.empty() && m_history.history_size() != m_history_size)
+	// the stations follow their anchors renamed
+	for (auto &entry : m_records)
+		if (auto const name{anchor_of(entry)}; name != entry.anchor)
+		{
+			entry.anchor = name;
+			m_changed = true;
+		}
+	if ((m_layout.has_value() || m_anchor != nullptr) && m_history.history_size() != m_history_size)
 		refresh();
 	// a track of another station selected opens it
 	auto *track{m_selection.selected_track()};
@@ -223,6 +245,20 @@ void srk_tool::forget(scene::basic_node const *Node)
 {
 	if (Node == m_picked)
 		m_picked = nullptr;
+	for (auto &entry : m_records)
+		if (entry.track == Node)
+			entry.track = nullptr;
+	if (Node == m_anchor)
+	{
+		m_anchor = nullptr;
+		if (m_layout.has_value())
+			for (auto *track : m_layout->switches)
+				if (track != Node)
+				{
+					m_anchor = track;
+					break;
+				}
+	}
 	if (m_layout.has_value() && std::any_of(m_layout->paths.begin(), m_layout->paths.end(), [&](station::path const &Path) { return Path.track == Node; }))
 	{
 		// laid out again from its anchor at the next update
@@ -274,7 +310,7 @@ void srk_tool::render_found()
 	for (std::size_t index = 0; index < m_found.size(); ++index)
 	{
 		auto const &[name, count]{m_found[index]};
-		auto const described{std::find_if(m_records.begin(), m_records.end(), [&](record const &Entry) { return Entry.anchor == name; })};
+		auto const described{std::find_if(m_records.begin(), m_records.end(), [&](record const &Entry) { return anchor_of(Entry) == name; })};
 		auto label{format(STR_P("%s: %zu switch", "%s: %zu switches", count), name.c_str(), count)};
 		if (described != m_records.end() && false == described->name.empty())
 			label = described->name + " - " + label;
@@ -332,6 +368,18 @@ void srk_tool::render_options()
 		item_tooltip("The number of the railway line the station lies on, as the block sections between the stations are named after it");
 		ImGui::EndTable();
 	}
+	step_heading(1, STR_C("Switch numbers"));
+	int from{m_reversed ? 1 : 0};
+	if (segmented("##srkfrom", from,
+	              {{0, STR_C("From the left"), layout.kilometrage ? "From the lower km, as PKP PLK numbers them" : "From the west end of the station"},
+	               {1, STR_C("From the right"), layout.kilometrage ? "From the higher km" : "From the east end of the station"}}))
+		m_reversed = from == 1;
+	if (main_button(STR_C("Number the switches"), ImVec2(-1.0f, tall_button_height())))
+		number_switches();
+	item_tooltip("Numbers the switches 1, 2, 3... along the station and names them after its code, as on the lines of PKP PLK: bpd_1, "
+	             "the parts of a slip bpd_15a to bpd_15d. The drives follow their switches, events written by hand keep the old names. One step of undo");
+	if (false == m_status.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", m_status.c_str());
 	ImGui::Spacing();
 	if (ImGui::CollapsingHeader(format("%s (%zu)###srkswitches", STR_C("Switches"), layout.switches.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 	{
@@ -369,16 +417,84 @@ void srk_tool::render_options()
 		}
 	}
 	ImGui::Spacing();
-	if (false == m_status.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", m_status.c_str());
 	if (ImGui::Button(STR_C("Another station"), ImVec2(-1.0f, 0.0f)))
 	{
 		m_layout.reset();
-		m_anchor.clear();
+		m_anchor = nullptr;
 		m_record = -1;
 		m_hover = -1;
 	}
 	item_tooltip("Leaves this station; LMB on a switch opens another one");
+}
+
+void srk_tool::number_switches()
+{
+	m_status.clear();
+	auto const code{m_record >= 0 ? m_records[m_record].code : std::string{}};
+	if (code.empty())
+	{
+		m_status = STR_C("Give the station its code first: the switches are named after it");
+		return;
+	}
+	auto const units{station::numbering(*m_layout, m_reversed)};
+	std::vector<std::pair<TTrack *, std::string>> names;
+	std::unordered_set<TTrack const *> own;
+	for (std::size_t index = 0; index < units.size(); ++index)
+		for (std::size_t part = 0; part < units[index].parts.size(); ++part)
+		{
+			names.emplace_back(units[index].parts[part], station::switch_name(code, static_cast<int>(index) + 1, part, units[index].parts.size()));
+			own.insert(units[index].parts[part]);
+		}
+	for (auto &[track, name] : names)
+	{
+		std::string reason;
+		TTrack *owner{nullptr};
+		if (false == scene::Layers.editable(track, &reason))
+		{
+			m_status = format(STR_C("%s can't be renamed: %s"), track->name().c_str(), reason.c_str());
+			return;
+		}
+		if (false == editor_track::name_valid(*track, name, reason, &owner) && (owner == nullptr || own.count(owner) == 0))
+		{
+			m_status = format(STR_C("%s can't be named %s: %s"), track->name().c_str(), name.c_str(), reason.c_str());
+			return;
+		}
+	}
+	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	std::map<std::string, std::string> parts;
+	std::map<std::string, std::string> bases;
+	for (auto const &[track, name] : names)
+		if (track->name() != name)
+		{
+			before.emplace_back(track, editor_track::capture(*track));
+			parts[track->name()] = name;
+		}
+	for (std::size_t index = 0; index < units.size(); ++index)
+		if (false == units[index].record.empty())
+			bases[units[index].record] = station::switch_name(code, static_cast<int>(index) + 1, 0, 1);
+	switch_store::rename(parts, bases);
+	// the names go round among the switches: a switch whose name another one gets gives it up first
+	for (auto const &entry : names)
+		if (entry.first->name() != entry.second && std::any_of(names.begin(), names.end(), [&](auto const &Other) { return Other.first != entry.first && Other.second == entry.first->name(); }))
+			editor_track::rename(*entry.first, entry.first->name() + "~");
+	for (auto const &[track, name] : names)
+		editor_track::rename(*track, name);
+	std::size_t numbered{0};
+	for (std::size_t index = 0; index < units.size(); ++index)
+		if (auto const record{switch_store::named(*units[index].parts.front())}; record && record->number != std::to_string(index + 1))
+		{
+			switch_store::number(record->name, std::to_string(index + 1));
+			++numbered;
+		}
+	if (before.empty() && numbered == 0)
+	{
+		m_status = STR_C("The switches have these numbers already");
+		return;
+	}
+	if (before.empty())
+		before.emplace_back(units.front().parts.front(), editor_track::capture(*units.front().parts.front()));
+	m_history.push_track_snapshot(std::move(before));
+	m_status = format(STR_P("%zu switch numbered", "%zu switches numbered", units.size()), units.size());
 }
 
 void srk_tool::fit_view(float const Width, float const Height)
@@ -508,13 +624,17 @@ void srk_tool::render_canvas(float const Height)
 			draw_path(path, overlay_color::selected, 4.0f);
 	if (m_hover >= 0)
 		draw_path(layout.paths[m_hover], kHovered, 4.0f);
-	// the switches: a dot at the start, the name over or under it in turn
+	// the switches: a dot at the start, the name over or under it in turn; the number alone, once named after the station
+	auto const prefix{m_record >= 0 && false == m_records[m_record].code.empty() ? station::switch_name(m_records[m_record].code, 0, 0, 1) : std::string{}};
+	auto const stem{prefix.empty() ? std::string{} : prefix.substr(0, prefix.size() - 1)};
 	for (std::size_t index = 0; index < layout.switches.size(); ++index)
 	{
 		auto const *track{layout.switches[index]};
 		auto const at{screen_of(station::project(layout, track->m_paths.front().points[segment_data::point::start]))};
 		draw->AddCircleFilled(at, 3.5f, kSwitch);
-		auto const text{track->name()};
+		auto text{track->name()};
+		if (false == stem.empty() && text.size() > stem.size() && text.compare(0, stem.size(), stem) == 0)
+			text.erase(0, stem.size());
 		auto const extent{ImGui::CalcTextSize(text.c_str())};
 		ImVec2 const place{at.x - extent.x * 0.5f, index % 2 == 0 ? at.y - extent.y - 6.0f : at.y + 6.0f};
 		draw->AddRectFilled(ImVec2(place.x - 2.0f, place.y - 1.0f), ImVec2(place.x + extent.x + 2.0f, place.y + extent.y + 1.0f), IM_COL32(22, 24, 28, 200), 2.0f);
@@ -597,13 +717,36 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				++approach;
 			else
 				tracks.insert(path.track);
-		WriteLog(format("SELFTEST srkopen %s: %zu switches, %zu tracks, %zu paths out, axis %.0f m, switches over %.0f..%.0f, offsets %.1f..%.1f, km %s, record %d", m_anchor.c_str(), layout.switches.size(), tracks.size(), approach,
+		WriteLog(format("SELFTEST srkopen %s: %zu switches, %zu tracks, %zu paths out, axis %.0f m, switches over %.0f..%.0f, offsets %.1f..%.1f, km %s, record %d", m_anchor->name().c_str(), layout.switches.size(), tracks.size(), approach,
 		                layout.chainage.back(), layout.from, layout.to, layout.low, layout.high, layout.kilometrage ? format("%.3f", layout.km).c_str() : "-", m_record));
 		for (auto const *track : layout.switches)
 		{
 			auto const at{station::project(layout, track->m_paths.front().points[segment_data::point::start])};
 			WriteLog(format("SELFTEST srkopen switch %s at %.1f offset %.1f", track->name().c_str(), at.x, at.y));
 		}
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srknumber")
+	{
+		// srknumber [from=right]: the switches of the open station numbered
+		if (false == m_layout.has_value())
+		{
+			WriteLog("SELFTEST srknumber: no station open");
+			return editor_selftest_result::handled;
+		}
+		auto const values{selftest_values(Words)};
+		auto const from{values.find("from")};
+		m_reversed = from != values.end() && from->second == "right";
+		number_switches();
+		std::string list;
+		for (auto const &unit : station::numbering(*m_layout, m_reversed))
+			for (auto const *part : unit.parts)
+			{
+				auto const record{switch_store::named(*part)};
+				list += ' ' + part->name() + '/' + (record ? record->number : std::string{"?"});
+			}
+		WriteLog("SELFTEST srknumber: " + m_status);
+		WriteLog("SELFTEST srknumber names:" + list);
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstations")

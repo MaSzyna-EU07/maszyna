@@ -330,6 +330,42 @@ void forget(std::string const &Name)
 		mark(layer);
 }
 
+void rename(std::map<std::string, std::string> const &Parts, std::map<std::string, std::string> const &Bases)
+{
+	load();
+	auto const renamed = [](std::map<std::string, std::string> const &Names, std::string &Name) {
+		auto const found{Names.find(Name)};
+		if (found == Names.end() || found->second == Name)
+			return false;
+		Name = found->second;
+		return true;
+	};
+	std::set<scene::layer_handle> layers;
+	for (auto &entry : g_records)
+	{
+		auto changed{renamed(entry.kind == "slip" || entry.kind == "crossing" ? Bases : Parts, entry.name)};
+		for (auto &part : entry.parts)
+			changed = renamed(Parts, part) || changed;
+		if (changed)
+			layers.insert(entry.layer);
+	}
+	for (auto const layer : layers)
+		mark(layer);
+	g_changed = g_changed || false == layers.empty();
+}
+
+void number(std::string const &Name, std::string const &Number)
+{
+	load();
+	for (auto &entry : g_records)
+		if (entry.kind != "connection" && entry.name == Name && entry.number != Number)
+		{
+			entry.number = Number;
+			mark(entry.layer);
+			g_changed = true;
+		}
+}
+
 void tidy()
 {
 	load();

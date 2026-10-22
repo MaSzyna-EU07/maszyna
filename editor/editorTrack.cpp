@@ -367,7 +367,7 @@ editor_track::name_uses editor_track::uses_of_name(TTrack const &Track)
 	return result;
 }
 
-void editor_track::rename(TTrack &Track, std::string const &Name)
+void editor_track::rename(TTrack &Track, std::string const &Name, std::vector<scene::instance_handle> const &Kept)
 {
 	auto const old{Track.name()};
 	if (old == Name)
@@ -388,7 +388,7 @@ void editor_track::rename(TTrack &Track, std::string const &Name)
 		std::string file;
 		std::vector<std::string> values;
 		auto const index{track_parameter(handle, file, values)};
-		if (index < 0 || lower_name(values[index]) != old)
+		if (index < 0 || lower_name(values[index]) != old || std::find(Kept.begin(), Kept.end(), handle) != Kept.end())
 			continue;
 		values[index] = Name;
 		scene::Layers.modify(handle, editor_includes::compose_directive(file, values));

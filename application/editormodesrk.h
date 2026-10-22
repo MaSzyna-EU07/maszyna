@@ -42,6 +42,7 @@ class srk_tool final : public editor_tool
 	{
 		scene::layer_handle layer{null_handle};
 		std::string anchor; // the name of a switch of the station
+		TTrack *track{nullptr}; // the switch, once found: it stays the anchor when it gets renamed
 		std::string code; // the abbreviation of the station, as MMz
 		std::string name;
 		std::string line; // the number of the railway line
@@ -60,7 +61,8 @@ class srk_tool final : public editor_tool
 	std::vector<record> m_records;
 	std::optional<station::layout> m_layout;
 	int m_record{-1}; // of the open station, -1 while it has none
-	std::string m_anchor; // the switch the open station was found from
+	TTrack *m_anchor{nullptr}; // the switch the open station was found from
+	bool m_reversed{false}; // the switches numbered from the right end of the schematic
 	std::size_t m_history_size{0};
 	TTrack const *m_picked{nullptr}; // the track selected when the station was looked for
 	view m_view_state;
@@ -78,4 +80,6 @@ class srk_tool final : public editor_tool
 	void render_canvas(float const Height);
 	void fit_view(float const Width, float const Height);
 	void find_all();
+	// the switches numbered along the station and named after its code; one step of the history
+	void number_switches();
 };

@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Track.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <unordered_set>
@@ -291,6 +292,12 @@ std::optional<layout> find(TTrack &From, options const &Options)
 			result.km = best.origin / 1000.0;
 		}
 	}
+	// without the km the station runs from the west to the east, as the map shows it
+	if (false == result.kilometrage && map_of(result.axis.back()).x < map_of(result.axis.front()).x)
+	{
+		std::reverse(result.axis.begin(), result.axis.end());
+		measure();
+	}
 	// the paths, laid out along the axis
 	auto const add = [&](TTrack &Track, bool const Approach) {
 		for (int index = 0; index < static_cast<int>(Track.m_paths.size()); ++index)
@@ -388,6 +395,49 @@ std::vector<TTrack *> stations(options const &Options)
 			taken.insert(member);
 		result.push_back(track);
 	}
+	return result;
+}
+
+std::vector<unit> numbering(layout const &Layout, bool const Reversed)
+{
+	std::unordered_set<TTrack const *> members;
+	for (auto const &entry : Layout.paths)
+		if (false == entry.approach)
+			members.insert(entry.track);
+	std::unordered_set<TTrack const *> taken;
+	std::vector<unit> result;
+	for (auto *track : Layout.switches)
+	{
+		if (track->eType == tt_Table || taken.count(track) > 0)
+			continue;
+		unit entry;
+		if (auto const record{switch_store::named(*track)})
+		{
+			entry.record = record->name;
+			if (record->kind != "switch")
+				for (auto const &name : record->parts)
+					if (auto *part{simulation::Paths.find(name)}; part != nullptr && members.count(part) > 0 && taken.insert(part).second)
+						entry.parts.push_back(part);
+		}
+		if (taken.insert(track).second)
+			entry.parts.push_back(track);
+		entry.chainage = std::numeric_limits<double>::max();
+		for (auto const *part : entry.parts)
+			entry.chainage = std::min(entry.chainage, project(Layout, end_of(*part, 0, false)).x);
+		result.push_back(std::move(entry));
+	}
+	std::stable_sort(result.begin(), result.end(), [&](unit const &A, unit const &B) { return Reversed ? A.chainage > B.chainage : A.chainage < B.chainage; });
+	return result;
+}
+
+std::string switch_name(std::string const &Code, int const Number, std::size_t const Part, std::size_t const Parts)
+{
+	std::string result;
+	for (auto const c : Code)
+		result += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	result += '_' + std::to_string(Number);
+	if (Parts > 1)
+		result += static_cast<char>('a' + std::min<std::size_t>(Part, 25));
 	return result;
 }
 

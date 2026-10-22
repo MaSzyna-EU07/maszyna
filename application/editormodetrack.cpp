@@ -374,6 +374,17 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		for (auto *track : Snapshot.created)
 			editor_track::revive(*track);
 	}
+	// names passed round among the tracks: a track whose name another one gets back gives it up first. The drives the step
+	// put back have the names of their switches already
+	std::vector<scene::instance_handle> restored;
+	for (auto const &entry : Snapshot.directives)
+		restored.push_back(entry.first);
+	for (auto const &entry : Snapshot.tracks)
+		if (entry.second.name != entry.first->name() && std::any_of(Snapshot.tracks.begin(), Snapshot.tracks.end(), [&](auto const &Other) { return Other.first != entry.first && Other.second.name == entry.first->name(); }))
+			editor_track::rename(*entry.first, entry.first->name() + "~", restored);
+	for (auto const &entry : Snapshot.tracks)
+		if (entry.second.name != entry.first->name())
+			editor_track::rename(*entry.first, entry.second.name, restored);
 	for (auto const &entry : Snapshot.tracks)
 		editor_track::apply(*entry.first, entry.second);
 	editor_track::commit(tracks);

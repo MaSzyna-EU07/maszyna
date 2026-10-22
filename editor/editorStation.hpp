@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -51,6 +52,14 @@ struct layout
 	double km{0.0}; // at chainage 0, when it does
 };
 
+// what shares a number of the station: a switch, or the switches of a slip, the two of a double switch, the paths of a crossing
+struct unit
+{
+	std::vector<TTrack *> parts;
+	std::string record; // the name of its record of the switches, empty without one
+	double chainage{0.0}; // of the start of its first part along the station
+};
+
 // the station of the switch, or of the plain track near one
 std::optional<layout> find(TTrack &From, options const &Options = {});
 // the chainage along the axis and the offset to the left of it, as the map shows it
@@ -59,6 +68,10 @@ glm::dvec2 project(layout const &Layout, glm::dvec3 const &Point);
 double km_of(layout const &Layout, double const Chainage);
 // one switch of each station of the scenery
 std::vector<TTrack *> stations(options const &Options = {});
+// the switches of the station by their numbers: along the chainage, or against it when Reversed; turntables have none
+std::vector<unit> numbering(layout const &Layout, bool const Reversed);
+// <code>_<number>, each part of a unit of several with a letter of its own: bpd_15a
+std::string switch_name(std::string const &Code, int const Number, std::size_t const Part, std::size_t const Parts);
 // the switches of the station of the switch, without laying it out
 std::vector<TTrack *> switches_of(TTrack &Switch, options const &Options = {});
 

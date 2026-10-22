@@ -10365,3 +10365,48 @@ msgstr[0] "%s: %zu rozjazd"
 msgstr[1] "%s: %zu rozjazdy"
 msgstr[2] "%s: %zu rozjazdów"
 
+msgid "Switch numbers"
+msgstr "Numery rozjazdów"
+
+msgid "From the left"
+msgstr "Od lewej"
+
+msgid "From the right"
+msgstr "Od prawej"
+
+msgid "From the lower km, as PKP PLK numbers them"
+msgstr "Od niższego km, jak numeruje PKP PLK"
+
+msgid "From the west end of the station"
+msgstr "Od zachodniego końca stacji"
+
+msgid "From the higher km"
+msgstr "Od wyższego km"
+
+msgid "From the east end of the station"
+msgstr "Od wschodniego końca stacji"
+
+msgid "Number the switches"
+msgstr "Ponumeruj rozjazdy"
+
+msgid "Numbers the switches 1, 2, 3... along the station and names them after its code, as on the lines of PKP PLK: bpd_1, the parts of a slip bpd_15a to bpd_15d. The drives follow their switches, events written by hand keep the old names. One step of undo"
+msgstr "Numeruje rozjazdy 1, 2, 3... wzdłuż stacji i nazywa je od jej skrótu, jak na liniach PKP PLK: bpd_1, części rozjazdu krzyżowego bpd_15a do bpd_15d. Napędy idą za swoimi rozjazdami, eventy pisane ręcznie zostają przy starych nazwach. Jeden krok cofania"
+
+msgid "Give the station its code first: the switches are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy rozjazdów"
+
+msgid "%s can't be renamed: %s"
+msgstr "Nie można zmienić nazwy %s: %s"
+
+msgid "%s can't be named %s: %s"
+msgstr "%s nie może dostać nazwy %s: %s"
+
+msgid "The switches have these numbers already"
+msgstr "Rozjazdy mają już te numery"
+
+msgid "%zu switch numbered"
+msgid_plural "%zu switches numbered"
+msgstr[0] "Ponumerowano %zu rozjazd"
+msgstr[1] "Ponumerowano %zu rozjazdy"
+msgstr[2] "Ponumerowano %zu rozjazdów"
+

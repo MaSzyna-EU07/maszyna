@@ -86,7 +86,8 @@ class editor_track
 		std::vector<std::string> loose;
 	};
 	static name_uses uses_of_name(TTrack const &Track);
-	static void rename(TTrack &Track, std::string const &Name);
+	// the includes of Kept keep their directives: an undo step puts them back on its own
+	static void rename(TTrack &Track, std::string const &Name, std::vector<scene::instance_handle> const &Kept = {});
 
 	// lists of the events of the path, in the order of event_keyword(): event0, event1, event2, eventall0, eventall1, eventall2
 	static std::vector<std::pair<std::string, basic_event *>> &events(TTrack &Track, int const Index);
