@@ -8960,6 +8960,12 @@ msgstr "Serwis nie zwrócił modelu terenu"
 msgid "\nThe paths and the design (//$p lines) go to the scenery files on save"
 msgstr "\nTory i projekt (wiersze //$p) trafią do plików scenerii przy zapisie"
 
+msgid "\nOver a bridge or a viaduct: %zu path"
+msgid_plural "\nOver a bridge or a viaduct: %zu paths"
+msgstr[0] "\nNa moście lub wiadukcie: %zu tor"
+msgstr[1] "\nNa moście lub wiadukcie: %zu tory"
+msgstr[2] "\nNa moście lub wiadukcie: %zu torów"
+
 msgid "\nPaths off the route brought to the height of the switches:"
 msgstr "\nTory spoza trasy dociągnięte do wysokości rozjazdów:"
 

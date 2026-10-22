@@ -2069,7 +2069,15 @@ bool editor_mode::nmt_fit_line(TTrack &Track)
 	profile_check();
 	auto const fitted_line{profile.line};
 	auto const authored{profile.samples};
-	profile_apply();
+	// where the model falls away under the line by the abutments, the line goes over on a bridge or a viaduct: its paths there
+	// are cut off and set to the bridge, the formation is laid up to it, the ground under it stays as the model has it
+	double constexpr kBridged{1.0}; // m
+	double constexpr kAbutment{100.0}; // per mille
+	std::vector<double> heights(count);
+	for (std::size_t i = 0; i < count; ++i)
+		heights[i] = profile::elevation(fitted_line, sampled[i]);
+	auto const bridges{profile::bridged(sampled, heights, model, kBridged, kAbutment)};
+	profile_apply(false, bridges);
 	auto const applied{profile.error.empty()};
 	// where the line parts from the model: under it a gap, a bridge or a viaduct, over it a wall or a structure above the track
 	auto const parted{profile::departures(fitted_line, sampled, model, 2.0 * kModel)};
@@ -2125,14 +2133,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track)
 			m_nmt_state.laid[{static_cast<int>(std::floor(sample.position.x / kPlanCell)), static_cast<int>(std::floor(sample.position.z / kPlanCell))}].push_back(
 			    {sample.position, sample.direction, sample.grade, editor_track::sampled_elevation(authored, sample.chainage), track != nullptr ? static_cast<double>(track->rail_height()) : 0.0, track});
 		}
-	// where the model falls away under the line by the abutments, the line goes over on a bridge or a viaduct: the formation
-	// is laid up to it, the ground under it stays as the model has it
-	double constexpr kBridged{1.0}; // m
-	double constexpr kAbutment{100.0}; // per mille
-	std::vector<double> heights(count);
-	for (std::size_t i = 0; i < count; ++i)
-		heights[i] = profile::elevation(fitted_line, sampled[i]);
-	auto const spans{applied ? profile::bridged(sampled, heights, model, kBridged, kAbutment) : std::vector<profile::departure>{}};
+	auto const spans{applied ? bridges : std::vector<profile::departure>{}};
 	for (auto const &stretch : spans)
 		for (std::size_t i = 0; i < count; ++i)
 			if (sampled[i] >= stretch.from && sampled[i] <= stretch.to)

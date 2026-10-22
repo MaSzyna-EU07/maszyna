@@ -2288,8 +2288,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profile_restore_ground();
 	void render_profile_earthworks();
 	void profile_check();
-	// Terrain: the heightmap terrain follows the tracks changed
-	void profile_apply(bool const Terrain = false);
+	// Terrain: the heightmap terrain follows the tracks changed. Bridges: stretches of the route over a bridge or a viaduct, the
+	// paths over them cut off at their ends and set to the bridge environment
+	void profile_apply(bool const Terrain = false, std::vector<profile::departure> const &Bridges = {});
 	// the terrain under the tracks changed by the last Edits steps of the history which changed tracks
 	void profile_follow_terrain(std::size_t const Edits);
 	void profile_fit_view();

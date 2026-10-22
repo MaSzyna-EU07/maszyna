@@ -1450,7 +1450,7 @@ void editor_mode::profile_frame_view()
 	fly_to(centre - right * (shift.x * pixel) + above * (shift.y * pixel), look, distance, 0.35);
 }
 
-void editor_mode::profile_apply(bool const Terrain)
+void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departure> const &Bridges)
 {
 	auto &state{m_profile};
 	state.status.clear();
@@ -1475,8 +1475,22 @@ void editor_mode::profile_apply(bool const Terrain)
 	auto const before{state.samples};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
+	auto cuts{profile::breaks(line)};
+	for (auto const &bridge : Bridges)
+		cuts.insert(cuts.end(), {bridge.from, bridge.to});
+	std::sort(cuts.begin(), cuts.end());
 	auto const gaps{editor_track::apply_profile(
-	    state.route, [&](double const Chainage) { return profile::elevation(line, Chainage); }, [&](double const Chainage) { return profile::grade(line, Chainage); }, profile::breaks(line), states, created)};
+	    state.route, [&](double const Chainage) { return profile::elevation(line, Chainage); }, [&](double const Chainage) { return profile::grade(line, Chainage); }, cuts, states, created)};
+	// the paths over a bridge sound and light as on one, and get no formation; within what a cut too near an end leaves on
+	double constexpr kBridgeEnd{0.5}; // m
+	std::size_t bridged{0};
+	for (auto const &span : state.route.spans)
+		if (span.track->eEnvironment != e_bridge && span.track->eEnvironment != e_tunnel
+		    && std::any_of(Bridges.begin(), Bridges.end(), [&](profile::departure const &Bridge) { return span.from >= Bridge.from - kBridgeEnd && span.to <= Bridge.to + kBridgeEnd; }))
+		{
+			span.track->eEnvironment = e_bridge;
+			++bridged;
+		}
 	auto const changed{states.size()};
 	auto const added{created.size()};
 	state.created = created;
@@ -1499,6 +1513,8 @@ void editor_mode::profile_apply(bool const Terrain)
 	state.status = format(STR_P("Grade line applied: %zu path changed, %zu added, largest departure %.3f m", "Grade line applied: %zu paths changed, %zu added, largest departure %.3f m", changed), changed, added, state.departure);
 	if (false == scene::Layers.empty())
 		state.status += STR_C("\nThe paths and the design (//$p lines) go to the scenery files on save");
+	if (bridged > 0)
+		state.status += format(STR_P("\nOver a bridge or a viaduct: %zu path", "\nOver a bridge or a viaduct: %zu paths", bridged), bridged);
 	auto const name = [](TTrack const *Track) { return name_of(*Track); };
 	auto const closed{std::count_if(gaps.begin(), gaps.end(), [](auto const &Gap) { return Gap.closed; })};
 	if (closed > 0)
