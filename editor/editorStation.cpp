@@ -232,16 +232,19 @@ glm::dvec2 map_of(glm::dvec3 const &Point)
 }
 
 double constexpr kStart{1.5}; // m, a joint before the start of a switch
-double constexpr kClear{4.0}; // m, between the axes at a joint beyond a fouling point
+double constexpr kFouling{3.5}; // m, between the axes at the fouling point of two tracks
+double constexpr kBeyond{4.2}; // m, from a fouling point on to the joint beyond it, Ie-4 § 33
+double constexpr kBranches{10.0}; // m, the ends of a switch closer together are the ends of its paths at the frog
 double constexpr kReach{120.0}; // m, along a branch looked for its fouling point
 double constexpr kSection{30.0}; // m, the shortest stretch between two joints made a track circuit of its own
 double constexpr kSnap{0.3}; // m, a joint this close to the end of a track lies at the end
 double constexpr kThrough{400.0}; // m, of the switches a station track is followed through for its circuits beyond
 double constexpr kEntry{300.0}; // m, from the joint of the station out to its entry signal
-double constexpr kJoint{3.5}; // m, from a signal to the joint of the circuit it guards
+double constexpr kJoint{3.5}; // m, from a shunting signal to the joint of the circuit it guards
 double constexpr kStopping{200.0}; // m, the shortest circuit of a station track a train is sent out of by an exit signal
 double constexpr kSignalSide{2.25}; // m, from the axis to a signal
 double constexpr kSignalClear{2.5}; // m, the least from a signal to the axis of another track
+double constexpr kSignalApart{3.0}; // m, the least between two signals
 
 // the points of the way out of an end of the track, as a train runs: along the main path of a switch run into from its start,
 // back along the path of one run into from the end of it
@@ -326,12 +329,12 @@ double plan_gap(glm::dvec3 const &Point, std::vector<glm::dvec3> const &Line)
 	return best;
 }
 
-// how far from the end of the switch its joint lies: beyond the fouling point at a branch, before the start elsewhere
+// how far from the end of the switch its joint lies: 4.2 m beyond the fouling point at a branch, before the start elsewhere
 double clearance(TTrack const &Switch, int const Path, bool const Atend)
 {
 	auto const point{end_of(Switch, Path, Atend)};
 	std::optional<std::pair<int, bool>> other;
-	auto nearest{kClear};
+	auto nearest{kBranches};
 	for (auto const &[path, atend] : ends_of(Switch))
 		if (auto const distance{plan_distance(end_of(Switch, path, atend), point)}; distance > same_point && distance < nearest)
 		{
@@ -340,16 +343,29 @@ double clearance(TTrack const &Switch, int const Path, bool const Atend)
 		}
 	if (false == other.has_value())
 		return kStart;
-	auto const mine{ahead(Switch, Path, Atend, kReach)};
 	auto const theirs{ahead(Switch, other->first, other->second, kReach + 50.0)};
+	if (plan_gap(point, theirs) >= kFouling)
+	{
+		// the fouling point within the switch: back along its paths to it
+		double length{0.0};
+		auto mine{dense_points(Switch, Path, length)};
+		auto const own{dense_points(Switch, other->first, length)};
+		if (Atend)
+			std::reverse(mine.begin(), mine.end());
+		double back{0.0};
+		for (std::size_t i = 1; i < mine.size() && plan_gap(mine[i], own) >= kFouling; ++i)
+			back += plan_distance(mine[i - 1], mine[i]);
+		return std::max(0.0, kBeyond - back);
+	}
+	auto const mine{ahead(Switch, Path, Atend, kReach)};
 	double along{0.0};
 	auto gap{plan_gap(mine.front(), theirs)};
 	for (std::size_t i = 1; i < mine.size(); ++i)
 	{
 		auto const step{plan_distance(mine[i - 1], mine[i])};
 		auto const next{plan_gap(mine[i], theirs)};
-		if (next >= kClear)
-			return along + (next > gap ? step * std::clamp((kClear - gap) / (next - gap), 0.0, 1.0) : step);
+		if (next >= kFouling)
+			return along + (next > gap ? step * std::clamp((kFouling - gap) / (next - gap), 0.0, 1.0) : step) + kBeyond;
 		along += step;
 		gap = next;
 	}
@@ -1007,12 +1023,46 @@ std::pair<glm::dvec3, glm::dvec3> in_from(TTrack const &Track, bool const Atend,
 	return {points.front(), glm::dvec3{0.0, 0.0, 1.0}};
 }
 
-// how far a signal on the side of the track at the point keeps from the other tracks; Way: of the path there
-double side_gap(layout const &Layout, glm::dvec3 const &Point, glm::dvec3 const &Way, int const Side)
+// the point the distance in from the end of the track, on into the tracks before it while they're shorter, short of a switch: the
+// track, the end of it the trains running out reach, the point and the way to that end
+std::tuple<TTrack *, bool, glm::dvec3, glm::dvec3> back_from(TTrack *Track, bool Atend, double Distance)
+{
+	std::unordered_set<TTrack const *> seen{Track};
+	while (true)
+	{
+		auto const length{plan_length(*Track, 0)};
+		if (Distance < length - 1.0)
+			break;
+		auto const inner{end_of(*Track, 0, false == Atend)};
+		auto *before{neighbour(*Track, 0, false == Atend)};
+		int path{0};
+		bool atend{false};
+		if (before == nullptr || node(*before) || false == rail(*before) || false == seen.insert(before).second || false == end_at(*before, inner, path, atend))
+		{
+			Distance = std::min(Distance, length * 0.5);
+			break;
+		}
+		Distance -= length;
+		Track = before;
+		Atend = atend;
+	}
+	auto const [at, way] = in_from(*Track, Atend, Distance);
+	return {Track, Atend, at, way};
+}
+
+// where a signal on the side of the track at the point stands, in the plan; Way: of the path there
+glm::dvec2 side_spot(glm::dvec3 const &Point, glm::dvec3 const &Way, int const Side)
 {
 	glm::dvec2 const way{glm::normalize(glm::dvec2{Way.x, Way.z} + glm::dvec2{1e-12, 0.0})};
-	glm::dvec2 const right{-way.y, way.x};
-	auto const spot{glm::dvec2{Point.x, Point.z} + right * (Side * kSignalSide)};
+	return glm::dvec2{Point.x, Point.z} + glm::dvec2{-way.y, way.x} * (Side * kSignalSide);
+}
+
+// how far a signal on the side of the track at the point keeps from the other tracks, none where another signal stands already
+double side_gap(layout const &Layout, glm::dvec3 const &Point, glm::dvec3 const &Way, int const Side, std::vector<glm::dvec2> const &Taken)
+{
+	auto const spot{side_spot(Point, Way, Side)};
+	if (std::any_of(Taken.begin(), Taken.end(), [&](glm::dvec2 const &Other) { return glm::distance(Other, spot) < kSignalApart; }))
+		return 0.0;
 	glm::dvec3 const at{spot.x, Point.y, spot.y};
 	auto gap{std::numeric_limits<double>::max()};
 	for (auto const &path : Layout.paths)
@@ -1021,14 +1071,20 @@ double side_gap(layout const &Layout, glm::dvec3 const &Point, glm::dvec3 const 
 	return gap;
 }
 
-// on the right of the trains, unless another track runs too close by there and less so on the left
-int side_for(layout const &Layout, glm::dvec3 const &Point, glm::dvec3 const &Way, int const Facing)
+// on the right of the trains, unless another track runs too close by there or another signal stands there, and less so on the left;
+// the spot taken
+int side_for(layout const &Layout, glm::dvec3 const &Point, glm::dvec3 const &Way, int const Facing, std::vector<glm::dvec2> &Taken)
 {
-	auto const right{side_gap(Layout, Point, Way, Facing)};
-	if (right >= kSignalClear)
-		return Facing;
-	auto const left{side_gap(Layout, Point, Way, -Facing)};
-	return left >= kSignalClear || left > right ? -Facing : Facing;
+	auto const right{side_gap(Layout, Point, Way, Facing, Taken)};
+	auto side{Facing};
+	if (right < kSignalClear)
+	{
+		auto const left{side_gap(Layout, Point, Way, -Facing, Taken)};
+		if (left >= kSignalClear || left > right)
+			side = -Facing;
+	}
+	Taken.push_back(side_spot(Point, Way, side));
+	return side;
 }
 
 // the ends of the tracks out of the set, Free where no track goes on
@@ -1073,6 +1129,7 @@ std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &T
 {
 	std::vector<signal> result;
 	auto const middle{(Layout.from + Layout.to) * 0.5};
+	std::vector<glm::dvec2> taken; // the spots of the signals placed
 	// the entry signals: out along each line from where it leaves the circuits of the station
 	struct entry
 	{
@@ -1126,7 +1183,7 @@ std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &T
 				found.placed.track = next;
 				found.placed.point = at;
 				found.placed.facing = outward ? -1 : 1;
-				found.placed.side = side_for(Layout, at, outward ? -way : way, found.placed.facing);
+				found.placed.side = side_for(Layout, at, outward ? -way : way, found.placed.facing, taken);
 				found.placed.travel = way;
 				break;
 			}
@@ -1143,7 +1200,7 @@ std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &T
 			found.placed.track = last;
 			found.placed.point = at;
 			found.placed.facing = outward ? -1 : 1;
-			found.placed.side = side_for(Layout, at, outward ? way : -way, found.placed.facing);
+			found.placed.side = side_for(Layout, at, outward ? way : -way, found.placed.facing, taken);
 			found.placed.travel = -way;
 		}
 		if (found.placed.track != nullptr)
@@ -1226,13 +1283,14 @@ std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &T
 			if (end.track == nullptr || end.free)
 				continue;
 			signal placed;
-			auto const [at, way] = in_from(*end.track, end.atend, std::min(kJoint, plan_length(*end.track, 0) * 0.5));
-			placed.track = end.track;
+			auto const exit{stopping && (start ? starts : ends)};
+			auto const [track, atend, at, way] = back_from(end.track, end.atend, exit ? signal_drop : kJoint);
+			placed.track = track;
 			placed.point = at;
-			placed.facing = end.atend ? 1 : -1;
-			placed.side = side_for(Layout, at, end.atend ? way : -way, placed.facing);
+			placed.facing = atend ? 1 : -1;
+			placed.side = side_for(Layout, at, atend ? way : -way, placed.facing, taken);
 			placed.travel = way;
-			if (stopping && (start ? starts : ends))
+			if (exit)
 			{
 				placed.kind = signal::role::exit;
 				placed.name = std::string(1, start ? (odd ? odd_start : even_start) : (odd ? odd_end : even_end)) + upper;
@@ -1264,36 +1322,61 @@ std::vector<line> lines_out(layout const &Layout, std::vector<signal> const &Sig
 			continue;
 		line found;
 		found.entry = index;
+		std::unordered_set<TTrack const *> seen;
+		auto const add = [&](TTrack *Track, bool const Outward, std::vector<glm::dvec3> Points) {
+			if (false == found.points.empty())
+				Points.erase(Points.begin());
+			seen.insert(Track);
+			found.tracks.push_back(Track);
+			found.outward.push_back(Outward);
+			for (auto const &point : Points)
+			{
+				found.distances.push_back(found.points.empty() ? 0.0 : found.distances.back() + plan_distance(found.points.back(), point));
+				found.points.push_back(point);
+				found.owners.push_back(found.tracks.size() - 1);
+			}
+		};
+		// in from the signal to the joint of the station first: its trains run on there beyond it
+		for (auto const &[part, out] : entry.run)
+		{
+			if (part == entry.track)
+				break;
+			double length{0.0};
+			auto points{dense_points(*part, 0, length)};
+			if (false == out)
+				std::reverse(points.begin(), points.end());
+			add(part, out, std::move(points));
+		}
 		// out where the trains it faces come from
 		auto *track{entry.track};
 		auto outward{entry.facing < 0};
 		auto first{true};
-		std::unordered_set<TTrack const *> seen;
+		auto origin{0.0};
 		while (true)
 		{
 			double length{0.0};
 			auto points{dense_points(*track, 0, length)};
 			if (false == outward)
 				std::reverse(points.begin(), points.end());
+			std::size_t at{0};
 			if (first)
 			{
 				auto const nearest{std::min_element(points.begin(), points.end(), [&](glm::dvec3 const &A, glm::dvec3 const &B) { return plan_distance(A, entry.point) < plan_distance(B, entry.point); })};
-				points.erase(points.begin(), nearest);
-				points.front() = entry.point;
+				*nearest = entry.point;
+				at = static_cast<std::size_t>(nearest - points.begin());
+				if (found.points.empty())
+				{
+					points.erase(points.begin(), nearest);
+					at = 0;
+				}
+				else
+					at += found.points.size() - 1;
 			}
-			else
-				points.erase(points.begin());
-			seen.insert(track);
-			found.tracks.push_back(track);
-			found.outward.push_back(outward);
-			for (auto const &point : points)
-			{
-				found.distances.push_back(found.points.empty() ? 0.0 : found.distances.back() + plan_distance(found.points.back(), point));
-				found.points.push_back(point);
-				found.owners.push_back(found.tracks.size() - 1);
-			}
+			add(track, outward, std::move(points));
+			if (first)
+				origin = found.distances[at];
 			first = false;
-			if (found.length() > Limit)
+			if (found.length() - origin > Limit)
 				break;
 			auto const end{end_of(*track, 0, outward)};
 			auto *next{neighbour(*track, 0, outward)};
@@ -1311,6 +1394,8 @@ std::vector<line> lines_out(layout const &Layout, std::vector<signal> const &Sig
 			track = next;
 			outward = false == atend;
 		}
+		for (auto &distance : found.distances)
+			distance -= origin;
 		if (found.length() > 1.0)
 			result.push_back(std::move(found));
 	}
@@ -1355,6 +1440,29 @@ std::vector<line> lines_out(layout const &Layout, std::vector<signal> const &Sig
 		result[partner].inbound = partner_inbound;
 		for (auto *found : {&result[i], &result[partner]})
 			found->number = found->inbound == start(*found) ? 1 : 2;
+	}
+	return result;
+}
+
+line run_line(signal const &Entry)
+{
+	line result;
+	for (auto const &[track, outward] : Entry.run)
+	{
+		double length{0.0};
+		auto points{dense_points(*track, 0, length)};
+		if (false == outward)
+			std::reverse(points.begin(), points.end());
+		if (false == result.points.empty())
+			points.erase(points.begin());
+		result.tracks.push_back(track);
+		result.outward.push_back(outward);
+		for (auto const &point : points)
+		{
+			result.distances.push_back(result.points.empty() ? 0.0 : result.distances.back() + plan_distance(result.points.back(), point));
+			result.points.push_back(point);
+			result.owners.push_back(result.tracks.size() - 1);
+		}
 	}
 	return result;
 }
@@ -1407,12 +1515,12 @@ double distance_on(line const &Line, glm::dvec3 const &Point, double &Gap)
 	return result;
 }
 
-std::string block_number(double const Km, int const Track)
+std::string block_number(double const Km, int const Track, bool const Rising)
 {
 	auto const hectometres{std::max(Km, 0.0) * 10.0};
-	auto number{static_cast<long long>(std::llround(hectometres))};
+	auto number{static_cast<long long>(Rising ? std::ceil(hectometres - 1e-6) : std::floor(hectometres + 1e-6))};
 	if ((number % 2 == 1) != (Track % 2 == 1))
-		number += hectometres > static_cast<double>(number) ? 1 : -1;
+		number += Rising ? 1 : -1;
 	if (number < 1)
 		number = Track % 2 == 1 ? 1 : 2;
 	return std::to_string(number);

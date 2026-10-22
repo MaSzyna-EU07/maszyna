@@ -48,11 +48,16 @@ double constexpr kLabelRange{700.0}; // m, of the names shown there, farther one
 double constexpr kRailHead{0.18}; // m, above the axis of a path
 
 double constexpr kLineLimit{30000.0}; // m, of a line followed out to the next station
-double constexpr kBlock{1400.0}; // m, of a block section of the automatic block
+double constexpr kBlockShare{1.1}; // of the braking distance, the block sections towards the end of the tracks
 double constexpr kPredicted{305.0}; // m, out from the next station to its entry signal, while it has none
-double constexpr kWarning{1000.0}; // m, from a warning disc to its entry signal, the braking distance
-double constexpr kWarningFast{1300.0}; // m, the same on lines faster than 120 km/h
-char const *const kControl{"sbl_odstep.inc"}; // the events of a block section, switching the block signal guarding it
+char const *const kControl{"sbl_odstep.inc"};
+
+// m, of a train at the speed, as Ie-4 § 8 takes it: the least block section of the automatic block, a warning disc that far before
+// its signal
+double braking_distance(double const Speed)
+{
+	return Speed <= 60.0 ? 400.0 : Speed <= 100.0 ? 700.0 : Speed <= 140.0 ? 1000.0 : 1300.0;
+} // the events of a block section, switching the block signal guarding it
 
 ImU32 constexpr kPlain{IM_COL32(170, 176, 188, 255)};
 ImU32 constexpr kSwitch{IM_COL32(240, 200, 90, 255)};
@@ -546,27 +551,29 @@ void srk_tool::render_options()
 	step_heading(2, STR_C("Track circuits"));
 	if (main_button(STR_C("Set the track circuits"), ImVec2(-1.0f, tall_button_height())))
 		set_circuits();
-	item_tooltip("Cuts the tracks of the station at the joints of the track circuits and names the circuits, as on the lines of PKP PLK: "
-	             "a joint 1.5 m before the start of a switch, beyond the fouling point of each branch where the axes are 4 m apart, in the middle "
-	             "of a link too short for both. Each switch gets bpd_iz<number>, each station track bpd_it<number>: 1 and 2 the main tracks, "
-	             "track 1 on the right along the km, the odd ones beyond it, the even ones on the other side. Run again after changes, it keeps "
-	             "the numbers the tracks have. One step of undo");
+	item_tooltip("Cuts the tracks of the station at the joints of the track circuits and names the circuits, as on the lines of PKP PLK: a "
+	             "joint 1.5 m before the start of a switch, 4.2 m beyond the fouling point of each branch, where the axes are 3.5 m apart, as "
+	             "Ie-4 gives it, in the middle of a link too short for both. Each switch gets bpd_iz<number>, each station track "
+	             "bpd_it<number>: 1 and 2 the main tracks, track 1 on the right along the km, the odd ones beyond it, the even ones on the "
+	             "other side. Run again after changes, it keeps the numbers the tracks have. One step of undo");
 	step_heading(3, STR_C("Signals"));
 	if (ImGui::Button(STR_C("Set the signals"), ImVec2(-1.0f, 0.0f)))
 		set_signals();
 	item_tooltip("Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on "
-	             "each line, A, B... from the start of the km, Z, Y... from the end, the circuit from it to the station bpd_ita; an exit "
-	             "signal at the end of each station track a train is sent out of, F1, G2 towards the start, R1, P2 towards the end; a "
-	             "shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets its name, none is "
-	             "doubled. The kinds of signals chosen in the Signals tool. One step of undo");
+	             "each line, A, B... from the start of the km, Z, Y... from the end, the circuit from 15 m beyond it to the station bpd_ita; "
+	             "an exit signal 15 m before the joint at the end of each station track a train is sent out of, F1, G2 towards the start, R1, "
+	             "P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets "
+	             "its name, none is doubled. The kinds of signals chosen in the Signals tool. One step of undo");
 	step_heading(4, STR_C("Lines"));
 	if (ImGui::Button(STR_C("Set the line signals"), ImVec2(-1.0f, 0.0f)))
 		set_lines();
-	item_tooltip("Places the signals of the lines out of the station, from its entry signals on. A double-track line gets the automatic "
-	             "block: block signals evenly to the entry signals of the next station, about 1.4 km apart, numbered after the km, 241 on "
-	             "track 1, 242 on track 2, and the block sections between them named as on the lines of PKP PLK, 2411-2571@LK2.1. A "
-	             "single-track line gets a warning disc ToA 1000 m before the entry signal, 1300 m on a line faster than 120 km/h. Needs "
-	             "the line and the km of the station. Run it at the next station too, it keeps what stands. One step of undo");
+	item_tooltip("Places the signals of the lines out of the station, from its entry signals on. A double-track line gets the automatic block: "
+	             "block signals evenly to the entry signals of the next station, a section no shorter than the braking distance, numbered "
+	             "after the hectometre ahead of them, odd on track 1, even on track 2, and the block sections from 15 m beyond them named as "
+	             "on the lines of PKP PLK, 2411-2571@LK2.1. A single-track line gets a warning disc ToA the braking distance before the entry "
+	             "signal. The braking distance after the speed of the line, as Ie-4 gives it: 400 m up to 60 km/h, 700 m up to 100, 1000 m up "
+	             "to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it keeps what stands. One "
+	             "step of undo");
 	if (auto const *selected{m_selection.selected_track()}; selected != nullptr && false == selected->Isolated.empty())
 		if (auto const number{track_of(selected->Isolated.front()->asName, stem_of_open())}; false == number.empty() && begin_fields("##srktrack"))
 		{
@@ -1007,6 +1014,7 @@ void srk_tool::set_signals()
 		glm::dvec3 point{0.0};
 		bool outward{false};
 		std::vector<TTrack *> named; // between the station and the cut
+		std::vector<TTrack *> beyond; // out from the cut to the signal and on
 	};
 	std::vector<cut> cuts;
 	for (std::size_t i = 0; i < plan.size(); ++i)
@@ -1014,7 +1022,11 @@ void srk_tool::set_signals()
 		auto const &planned{plan[i]};
 		if (planned.kind != station::signal::role::entry || planned.run.empty())
 			continue;
-		auto const at{match[i] >= 0 ? standing[match[i]].position : planned.point};
+		// the joint the trains pass the signal to, in from it towards the station
+		auto const run{station::run_line(planned)};
+		double gap{0.0};
+		auto const signal_at{station::distance_on(run, match[i] >= 0 ? standing[match[i]].position : planned.point, gap)};
+		auto const at{station::point_on(run, std::max(0.0, signal_at - station::signal_drop)).point};
 		cut entry;
 		entry.signal = i;
 		auto best{std::numeric_limits<double>::max()};
@@ -1033,6 +1045,8 @@ void srk_tool::set_signals()
 		}
 		for (std::size_t k = 0; k < nearest; ++k)
 			entry.named.push_back(planned.run[k].first);
+		for (std::size_t k = nearest + 1; k < planned.run.size(); ++k)
+			entry.beyond.push_back(planned.run[k].first);
 		entry.track = planned.run[nearest].first;
 		entry.outward = planned.run[nearest].second;
 		auto const &ends{entry.track->m_paths.front().points};
@@ -1042,8 +1056,7 @@ void srk_tool::set_signals()
 		if (std::min(to_start, to_end) <= 0.3)
 		{
 			// at an end already
-			if ((to_end < to_start) == entry.outward)
-				entry.named.push_back(entry.track);
+			((to_end < to_start) == entry.outward ? entry.named : entry.beyond).push_back(entry.track);
 			entry.track = nullptr;
 		}
 		else if (false == editor_track::can_edit_geometry(*entry.track, reason))
@@ -1074,8 +1087,9 @@ void srk_tool::set_signals()
 				created.push_back(piece);
 				captured.insert(piece);
 				entry.named.push_back(entry.outward ? entry.track : piece);
-				planned.track = entry.outward ? piece : entry.track;
-				planned.point = entry.point;
+				entry.beyond.push_back(entry.outward ? piece : entry.track);
+				if (planned.track == entry.track)
+					planned.track = entry.outward ? piece : entry.track;
 			}
 		}
 		auto const name{stem + "it" + ToLower(planned.name)};
@@ -1086,6 +1100,15 @@ void srk_tool::set_signals()
 			if (captured.insert(part).second)
 				before.emplace_back(part, editor_track::capture(*part));
 			editor_track::isolated(*part, {name});
+		}
+		// out of the circuit beyond its joint, where an earlier one ended at the signal
+		for (auto *part : entry.beyond)
+		{
+			if (part->Isolated.size() != 1 || ToLower(part->Isolated.front()->asName) != name)
+				continue;
+			if (captured.insert(part).second)
+				before.emplace_back(part, editor_track::capture(*part));
+			editor_track::isolated(*part, {});
 		}
 	}
 	std::vector<signal_order> placed;
@@ -1165,11 +1188,20 @@ void srk_tool::set_lines()
 		m_status = STR_C("Set the signals first: the lines begin at the entry signals");
 		return;
 	}
-	auto const lines{station::lines_out(layout, entries, kLineLimit)};
+	auto lines{station::lines_out(layout, entries, kLineLimit)};
 	if (lines.empty())
 	{
 		m_status = STR_C("No line leads out of the station beyond its entry signals");
 		return;
+	}
+	// the distances from the entry signals as they stand
+	for (auto &line : lines)
+	{
+		double gap{0.0};
+		auto const at{station::distance_on(line, standing[entry_standing[line.entry]].position, gap)};
+		if (gap < 4.5)
+			for (auto &distance : line.distances)
+				distance -= at;
 	}
 	auto const &described{m_records[m_record]};
 	double known{0.0};
@@ -1201,10 +1233,21 @@ void srk_tool::set_lines()
 		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
 	};
 	auto const km_on = [&](std::size_t const Index, double const Distance) {
-		auto const chainage{station::project(layout, lines[Index].points.front()).x};
+		auto const chainage{station::project(layout, station::point_on(lines[Index], 0.0).point).x};
 		double km{0.0};
 		km_of_open(chainage < middle ? chainage - Distance : chainage + Distance, km);
 		return km;
+	};
+	// the trains of the line run towards the higher km
+	auto const rising = [&](std::size_t const Index) { return (km_on(Index, 1000.0) > km_on(Index, 0.0)) != lines[Index].inbound; };
+	// the braking distance at the highest speed out along the line, at 160 km/h while its tracks have none
+	auto const braking = [&](std::size_t const Index) {
+		auto speed{0.0};
+		auto const &line{lines[Index]};
+		for (std::size_t k = 0; k < line.points.size(); ++k)
+			if (line.distances[k] >= 0.0)
+				speed = std::max(speed, line.tracks[line.owners[k]]->VelocityGet());
+		return braking_distance(speed > 0.0 ? speed : 160.0);
 	};
 	for (std::size_t index = 0; index < lines.size(); ++index)
 	{
@@ -1233,26 +1276,28 @@ void srk_tool::set_lines()
 		auto const &line{lines[index]};
 		auto const &end{ends[index]};
 		auto const &entry{entries[line.entry]};
+		auto const least{braking(index)};
 		if (line.number > 0)
 		{
-			// the block signals: the line to the next station parted evenly, towards the end of the tracks every 1.4 km
+			// the block signals, Ie-4 § 51: the sections no shorter than the braking distance and no longer than twice it, the line to the
+			// next station parted evenly, towards the end of the tracks a little over the braking distance each
 			std::vector<double> places;
 			if (line.station || end.signal >= 0)
 			{
 				// as many on both tracks of the line
 				auto const reach{line.partner >= 0 ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
-				auto const sections{std::max(1L, std::lround(reach / kBlock))};
-				for (long k = 1; k < sections; ++k)
-					places.push_back(end.distance * static_cast<double>(k) / static_cast<double>(sections));
+				auto const sections{std::max(1.0, std::floor(reach / (line.partner >= 0 ? std::max(least, braking(line.partner)) : least)))};
+				for (auto k{1.0}; k < sections; k += 1.0)
+					places.push_back(end.distance * k / sections);
 			}
 			else
-				for (auto distance{kBlock}; distance <= end.distance - 100.0; distance += kBlock)
+				for (auto distance{least * kBlockShare}; distance <= end.distance - 100.0; distance += least * kBlockShare)
 					places.push_back(distance);
 			for (auto const distance : places)
 			{
 				planned_signal signal;
 				signal.kind = station::signal::role::block;
-				signal.name = station::block_number(km_on(index, distance), line.number);
+				signal.name = station::block_number(km_on(index, distance), line.number, rising(index));
 				signal.plate = signal.name;
 				signal.line = index;
 				signal.distance = distance;
@@ -1262,8 +1307,7 @@ void srk_tool::set_lines()
 		else
 		{
 			// the warning disc of the entry signal, the braking distance before it
-			auto const fast{entry.track != nullptr && entry.track->VelocityGet() > 120.0};
-			auto const distance{std::min(fast ? kWarningFast : kWarning, end.distance - 100.0)};
+			auto const distance{std::min(least, end.distance - 100.0)};
 			if (distance >= 400.0)
 			{
 				planned_signal signal;
@@ -1366,6 +1410,12 @@ void srk_tool::set_lines()
 		std::sort(order.begin(), order.end(), [](stop const &A, stop const &B) { return A.distance < B.distance; });
 		if (line.inbound)
 			std::reverse(order.begin(), order.end());
+		// the joints the trains pass the signals to: on beyond a block signal, in towards the station from an entry one
+		auto const joint_of = [&](stop const &Stop) {
+			if (Stop.signal >= 0)
+				return Stop.distance + (line.inbound ? -station::signal_drop : station::signal_drop);
+			return Stop.distance + (Stop.distance > 0.0 ? station::signal_drop : -station::signal_drop);
+		};
 		for (std::size_t i = 0; i < order.size(); ++i)
 		{
 			auto const &here{order[i]};
@@ -1385,8 +1435,8 @@ void srk_tool::set_lines()
 			section found;
 			found.name = ToLower(section_tag(low.name, line.number) + "-" + section_tag(high.name, line.number) + "@lk" + described.line + "." + std::to_string(line.number));
 			found.line = index;
-			found.from = std::min(before.distance, here.distance);
-			found.to = std::max(before.distance, here.distance);
+			found.from = std::min(joint_of(before), joint_of(here));
+			found.to = std::max(joint_of(before), joint_of(here));
 			found.guard = before.signal >= 0 ? before.name : std::string{};
 			found.start = station::point_on(line, before.distance).point;
 			sections.push_back(std::move(found));
@@ -2047,7 +2097,13 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		refresh();
 		std::string list;
 		for (auto const &mark : m_signal_marks)
-			list += format(" %s@%.0f/%.1f%s", mark.text.c_str(), mark.at.x, mark.at.y, mark.ahead ? ">" : "<");
+		{
+			// and the joint nearest to it, in the plan
+			auto nearest{std::numeric_limits<double>::max()};
+			for (auto const &joint : m_joints)
+				nearest = std::min(nearest, glm::distance(glm::dvec2{joint.at.x, joint.at.z}, glm::dvec2{mark.head.x, mark.head.z}));
+			list += format(" %s@%.0f/%.1f%s~%.1f", mark.text.c_str(), mark.at.x, mark.at.y, mark.ahead ? ">" : "<", nearest);
+		}
 		WriteLog(format("SELFTEST srksignals %zu:", m_signal_marks.size()) + list);
 		return editor_selftest_result::handled;
 	}
@@ -2080,7 +2136,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 					along.emplace_back(distance, format("%s(%s,%s)", signal.name.c_str(), signal.kind.c_str(), signal.linked.c_str()));
 			}
 			std::string last;
-			for (std::size_t i = 1; i < line.points.size(); i += 20)
+			for (std::size_t i = 1; i < line.points.size(); ++i)
 			{
 				auto const *track{line.tracks[line.owners[i]]};
 				auto const name{track->Isolated.empty() ? std::string{"-"} : track->Isolated.front()->asName};

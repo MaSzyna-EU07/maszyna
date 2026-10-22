@@ -116,6 +116,9 @@ struct numbered
 };
 
 // a signal of the station, as PKP PLK places and names them
+// m, from a main signal on to the joint its trains turn it to stop at: Ie-4 § 9, at least 15 m, at most 30 for an entry or a block signal
+double constexpr signal_drop{15.0};
+
 struct signal
 {
 	enum class role
@@ -158,7 +161,7 @@ struct line
 	std::vector<TTrack *> tracks; // from the entry signal out
 	std::vector<bool> outward; // of each track: the line runs out towards the end of its path
 	std::vector<glm::dvec3> points; // along the tracks from the entry signal on, a metre or so apart
-	std::vector<double> distances; // of the points, from the entry signal
+	std::vector<double> distances; // of the points, from the entry signal: below 0 in from it to the joint of the station
 	std::vector<std::size_t> owners; // of the points, the track each lies on
 	double length() const { return distances.empty() ? 0.0 : distances.back(); }
 };
@@ -174,11 +177,13 @@ struct on_line
 // the lines beyond the entry signals among the signals given, no longer than the limit; two lines out of the same end side by side
 // are the tracks of a double-track line
 std::vector<line> lines_out(layout const &Layout, std::vector<signal> const &Signals, double const Limit);
+// the run of an entry signal as a line, from the joint of the station out, the distances from the joint
+line run_line(signal const &Entry);
 on_line point_on(line const &Line, double const Distance);
 // how far out along the line the point lies, Gap: how far from its axis in the plan
 double distance_on(line const &Line, glm::dvec3 const &Point, double &Gap);
-// the number of a block signal at the km, as PKP PLK gives them: the km and the hectometre, the last digit odd on track 1, even on
-// track 2: 241, 242
-std::string block_number(double const Km, int const Track);
+// the number of a block signal at the km, as PKP PLK gives them (Ie-4 § 10): the km and the hectometre, the nearest one ahead of the
+// signal odd on track 1, even on track 2: 241, 242; Rising: its trains run towards the higher km
+std::string block_number(double const Km, int const Track, bool const Rising);
 
 } // namespace station
