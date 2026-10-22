@@ -1245,7 +1245,8 @@ std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &T
 		auto const odd{digit == track.number.rend() || (*digit - '0') % 2 == 1};
 		auto upper{track.number};
 		std::transform(upper.begin(), upper.end(), upper.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
-		// the outer ends of the outermost circuits long enough, else of the outermost ones
+		// the ends of the longest circuit long enough, for the longest useful length of the track both ways (Ie-4 § 13 ust. 8), else
+		// the outer ends of the outermost ones
 		struct reach
 		{
 			track_end low;
@@ -1255,15 +1256,22 @@ std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &T
 		};
 		reach longest;
 		reach any;
+		double best{0.0};
 		for (auto const &circuit : track.circuits)
 		{
 			double length{0.0};
 			for (auto const *part : circuit)
 				length += node(*part) ? 0.0 : plan_length(*part, 0);
+			auto const chosen{length >= kStopping && length > best};
+			if (chosen)
+			{
+				best = length;
+				longest = reach{};
+			}
 			for (auto const &end : ends_out(circuit))
 			{
 				auto const x{project(Layout, end.point).x};
-				for (auto *found : {&any, length >= kStopping ? &longest : static_cast<reach *>(nullptr)})
+				for (auto *found : {&any, chosen ? &longest : static_cast<reach *>(nullptr)})
 				{
 					if (found == nullptr)
 						continue;

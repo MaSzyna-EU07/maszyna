@@ -143,11 +143,11 @@ struct signal
 };
 
 // the signals of the station: the entry ones 300 m out along the lines beyond the circuits of the station, A, B... from the start
-// of the chainage, Z, Y... from its end, the leftmost first; the exit ones facing out at the outer ends of the outermost circuits
-// at least 200 m long of the station tracks, a letter for the odd tracks and one for the even ones at each end, with the number:
-// F1, G2 towards the start, R1, P2 towards the end; the shunting ones at the ends of the shorter tracks, Tm1, Tm2... along the
-// chainage. Each on the right of the trains, unless another track runs too close by there. Inside: a track of the circuits of the
-// station
+// of the chainage, Z, Y... from its end, the leftmost first; the exit ones facing out at the ends of the longest circuit at least
+// 200 m long of each station track, for its longest useful length, a letter for the odd tracks and one for the even ones at each
+// end, with the number: F1, G2 towards the start, R1, P2 towards the end; the shunting ones at the ends of the shorter tracks, Tm1,
+// Tm2... along the chainage. Each on the right of the trains, unless another track runs too close by there. Inside: a track of the
+// circuits of the station
 std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &Tracks, std::function<bool(TTrack const &)> const &Inside);
 
 // a track of a line out beyond an entry signal of the station, to the next station or the end of the tracks
