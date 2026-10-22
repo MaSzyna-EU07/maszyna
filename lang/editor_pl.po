@@ -11246,10 +11246,10 @@ msgid "LMB: fly to the first of them"
 msgstr "LPM: leć do pierwszego z nich"
 
 msgid "SBL, 3 aspects"
-msgstr "SBL trzystawna"
+msgstr "SBL 3-stawna"
 
 msgid "SBL, 4 aspects"
-msgstr "SBL czterostawna"
+msgstr "SBL 4-stawna"
 
 msgid "Automatic block, 3 aspects (SBL)"
 msgstr "Samoczynna blokada liniowa trzystawna (SBL)"
@@ -11302,11 +11302,14 @@ msgstr "Klik: usuń semafory SBL %s, odstępy po obu stronach połączone: %.2f 
 msgid "Click: block signals %s here: the block sections %.2f km and %.2f km"
 msgstr "Klik: semafory SBL %s tutaj, odstępy %.2f km i %.2f km"
 
-msgid "shorter than half the braking distance, %.0f m, of the 4-aspect block"
-msgstr "krótszy niż połowa drogi hamowania (%.0f m), a to SBL czterostawna"
+msgid "The block section of %.2f km is shorter than half the braking distance, %.0f m, of the 4-aspect block"
+msgstr "Odstęp %.2f km jest krótszy niż połowa drogi hamowania (%.0f m) przy SBL czterostawnej"
 
-msgid "shorter than the braking distance, %.0f m"
-msgstr "krótszy niż droga hamowania, %.0f m"
+msgid "The block section of %.2f km is shorter than the braking distance, %.0f m"
+msgstr "Odstęp %.2f km jest krótszy niż droga hamowania (%.0f m)"
+
+msgid "Ctrl+Z takes back the tracks cut"
+msgstr "Ctrl+Z cofa przecięcia torów"
 
 msgid "The line drawn on isn't there any more"
 msgstr "Szlaku, na którym rysujesz, już nie ma"

@@ -980,6 +980,13 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		items.push_back(std::move(placing));
 		reads.emplace_back(spot, variant->read.empty() ? std::string{} : editor_includes::substitute(variant->read, {order.name}));
 	}
+	if (false == Error.empty())
+	{
+		// nothing changed but the tracks cut for them, a step of undo
+		if (false == States.empty() || false == Created.empty())
+			push_track_snapshot(std::move(States), std::move(Created));
+		return 0;
+	}
 	// the names passed round among the signals go through ones of their own first, or a read event renamed would be renamed again
 	items.insert(items.end(), Changes.others.begin(), Changes.others.end());
 	EditorSnapshot step;

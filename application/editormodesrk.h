@@ -201,6 +201,8 @@ class srk_tool final : public editor_tool
 		// block signals stand along it, none switched by block sections of the editor: it keeps the block of the scenery as it stands
 		bool legacy{false};
 		double braking{0.0}; // m, the braking distance on it
+		std::string km_number; // the line of the kilometrage it runs along
+		bool rising{true}; // its trains run towards the higher km
 		// the signals of the other block standing along it: warning discs on a line of the automatic block, block signals on one of the
 		// semi-automatic one, the first of them
 		std::size_t leftovers{0};

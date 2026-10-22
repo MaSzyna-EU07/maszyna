@@ -668,6 +668,17 @@ std::unordered_set<std::string> guarded(std::vector<standing_template> const &Co
 	return result;
 }
 
+// a block signal standing by the track of the line facing its trains, Distance: how far out along it
+bool block_along(station::line const &Line, standing_signal const &Signal, double &Distance)
+{
+	double gap{0.0};
+	Distance = station::distance_on(Line, Signal.position, gap);
+	if (Signal.kind != "block" || gap > 4.5 || Distance < 50.0 || Distance > Line.length() - 1.0)
+		return false;
+	auto const way{station::point_on(Line, Distance).way};
+	return (Line.inbound ? -1.0 : 1.0) * glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z}) >= 0.87;
+}
+
 } // namespace
 
 srk_tool::shp_state srk_tool::head_check::shp_of() const
@@ -1335,9 +1346,9 @@ void srk_tool::render_lines()
 	auto changed{false};
 	if (ImGui::BeginTable("##srklinelist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 	{
-		ImGui::TableSetupColumn(STR_C("Line"), ImGuiTableColumnFlags_WidthStretch, 0.27f);
-		ImGui::TableSetupColumn(STR_C("To"), ImGuiTableColumnFlags_WidthStretch, 0.33f);
-		ImGui::TableSetupColumn(STR_C("Block"), ImGuiTableColumnFlags_WidthStretch, 0.40f);
+		ImGui::TableSetupColumn(STR_C("Line"), ImGuiTableColumnFlags_WidthStretch, 0.26f);
+		ImGui::TableSetupColumn(STR_C("To"), ImGuiTableColumnFlags_WidthStretch, 0.29f);
+		ImGui::TableSetupColumn(STR_C("Block"), ImGuiTableColumnFlags_WidthStretch, 0.45f);
 		ImGui::TableHeadersRow();
 		for (std::size_t index = 0; index < m_lines.size() && false == changed; ++index)
 		{
@@ -1481,7 +1492,7 @@ std::string srk_tool::boundary_hover(glm::dvec3 const &Point, bool &Valid)
 	m_boundary.point = station::point_on(line, at).point;
 	// the other track across, the block signals standing within reach on both
 	std::vector<std::pair<std::size_t, double>> tracks{{static_cast<std::size_t>(best), at}};
-	if (row.partner >= 0 && row.partner < static_cast<int>(m_line_ways.size()))
+	if (row.partner >= 0 && row.partner < static_cast<int>(std::min(m_lines.size(), m_line_ways.size())) && false == m_lines[row.partner].legacy && m_lines[row.partner].block != block_kind::semi)
 		if (double gap{0.0}; true)
 			if (auto const across{station::distance_on(m_line_ways[row.partner], m_boundary.point, gap)}; gap < 12.0)
 				tracks.emplace_back(static_cast<std::size_t>(row.partner), across);
@@ -1517,10 +1528,9 @@ std::string srk_tool::boundary_hover(glm::dvec3 const &Point, bool &Valid)
 			continue;
 		}
 		auto const place{station::point_on(way, distance)};
-		auto const number{km_line(way)};
 		m_boundary.places.push_back(place.point);
 		m_boundary.ways.push_back(place.way);
-		m_boundary.names.push_back(station::block_number(km_along(way, number, distance), way.number, km_rising(way, number)));
+		m_boundary.names.push_back(station::block_number(km_along(way, other.km_number, distance), way.number, other.rising));
 	}
 	std::string names;
 	for (auto const &name : m_boundary.names)
@@ -1532,7 +1542,7 @@ std::string srk_tool::boundary_hover(glm::dvec3 const &Point, bool &Valid)
 	auto const least{row.block == block_kind::four ? row.braking * 0.5 : row.braking};
 	auto label{format(STR_C("Click: block signals %s here: the block sections %.2f km and %.2f km"), names.c_str(), (at - previous) / 1000.0, (next - at) / 1000.0)};
 	if (std::min(at - previous, next - at) < least)
-		label += "\n" + format(row.block == block_kind::four ? STR_C("shorter than half the braking distance, %.0f m, of the 4-aspect block") : STR_C("shorter than the braking distance, %.0f m"), least);
+		label += "\n" + format(row.block == block_kind::four ? STR_C("The block section of %.2f km is shorter than half the braking distance, %.0f m, of the 4-aspect block") : STR_C("The block section of %.2f km is shorter than the braking distance, %.0f m"), std::min(at - previous, next - at) / 1000.0, least);
 	return label;
 }
 
@@ -2408,9 +2418,10 @@ void srk_tool::set_signals()
 		}
 	}
 	std::string error;
+	auto const touched{false == before.empty() || false == created.empty()};
 	auto const count{m_signals.signal_batch({placed, renamed, {}, {}, {}}, std::move(before), std::move(created), error)};
 	if (false == error.empty())
-		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str());
+		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{});
 	else
 		m_status = format(STR_P("%zu signal placed", "%zu signals placed", count), count) + ", " + format(STR_P("%zu renamed", "%zu renamed", renamed.size()), renamed.size());
 	if (false == unfit.empty())
@@ -2590,12 +2601,13 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		row.travel = travel_of(Standing[owners[line.entry]].yaw);
 		row.block = block_of(line, row.entry, Standing, heads, row.why, row.own, row.own_why, row.blocks);
 		row.braking = line_braking(line);
+		row.km_number = km_line(line);
+		row.rising = km_rising(line, row.km_number);
 		auto switched{false};
 		for (auto const &signal : Standing)
 		{
-			double gap{0.0};
-			auto const distance{station::distance_on(line, signal.position, gap)};
-			if (signal.kind != "block" || gap > 4.5 || distance < 50.0 || distance > line.length() - 1.0)
+			double distance{0.0};
+			if (false == block_along(line, signal, distance))
 				continue;
 			row.stops.emplace_back(distance, signal_shown(signal.name, stem));
 			switched = switched || guards.count(ToLower(signal.name)) > 0;
@@ -2666,11 +2678,8 @@ void srk_tool::set_lines(block_edit const *Edit)
 		auto switched{false};
 		for (std::size_t k = 0; k < standing.size(); ++k)
 		{
-			if (standing[k].kind != "block")
-				continue;
-			double gap{0.0};
-			auto const distance{station::distance_on(line, standing[k].position, gap)};
-			if (gap > 4.5 || distance < 50.0 || distance > line.length() - 1.0 || (line.inbound ? -1.0 : 1.0) * facing_out(line, standing[k], distance) < 0.87)
+			double distance{0.0};
+			if (false == block_along(line, standing[k], distance))
 				continue;
 			along[index].push_back(k);
 			switched = switched || guards.count(ToLower(standing[k].name)) > 0;
@@ -2702,7 +2711,10 @@ void srk_tool::set_lines(block_edit const *Edit)
 		}
 		processed[edited] = 1;
 		if (auto const partner{lines[edited].partner}; partner >= 0 && automatic[partner] == 1)
-			processed[partner] = 1;
+		{
+			station::distance_on(lines[partner], station::point_on(lines[edited], drawn).point, gap);
+			processed[partner] = gap < 12.0 ? 1 : 0;
+		}
 	}
 	auto const described{line_of_open()};
 	double known{0.0};
@@ -3197,10 +3209,11 @@ void srk_tool::set_lines(block_edit const *Edit)
 		return;
 	}
 	std::string error;
+	auto const touched{false == before.empty() || false == created.empty()};
 	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
 	if (false == error.empty())
 	{
-		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str());
+		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{});
 		return;
 	}
 	m_status = format(STR_P("%zu block signal placed", "%zu block signals placed", blocks), blocks) + ", " + format(STR_P("%zu warning disc", "%zu warning discs", discs), discs) + ", " +
@@ -3224,6 +3237,7 @@ void srk_tool::survey_signals()
 		m_heads.clear();
 		m_heads_known = false;
 		m_lines.clear();
+		m_line_ways.clear();
 		m_lines_problem = STR("Looking for the signal templates...");
 		if (false == m_measured)
 			measure({});
@@ -3642,7 +3656,7 @@ void srk_tool::set_shp()
 	signal_changes changes;
 	for (auto const &entry : places)
 	{
-		auto *track{entry.track != nullptr ? entry.track : piece_at(entry.cut, entry.inside)};
+		auto *track{entry.track != nullptr ? piece_at(entry.track, entry.point) : piece_at(entry.cut, entry.inside)};
 		// the trains run into the track at the point: at the start of its path running towards its end
 		if (glm::distance(track->m_paths.front().points[entry.facing > 0 ? segment_data::point::start : segment_data::point::end], entry.point) > 1.0)
 		{
