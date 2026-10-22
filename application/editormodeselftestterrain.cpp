@@ -61,9 +61,12 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		}
 		int fit{1};
 		int inscene{0};
+		float height{0.0f};
 		words >> config.north >> config.east >> config.radius >> fit >> inscene;
 		config.drape = fit != 0;
 		config.in_scene = inscene != 0;
+		if (words >> height)
+			config.height = height;
 		m_orthophoto.settings(config);
 		m_orthophoto.enabled(true);
 		WriteLog(format("SELFTEST orthophoto at %.0f %.0f, radius %d, %s%s", config.north, config.east, config.radius, config.drape ? "fitted" : "flat", config.in_scene ? ", in the scene" : ""));
