@@ -17,6 +17,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
@@ -55,8 +56,6 @@ TSubModel::~TSubModel()
 		SafeDelete(Child);
 		delete fMatrix; // własny transform trzeba usunąć (zawsze jeden)
 	}
-	delete[] smLetter; // używany tylko roboczo dla TP_TEXT, do przyspieszenia
-	                   // wyświetlania
 };
 
 void TSubModel::Name_Material(std::string const &Name)
@@ -892,6 +891,67 @@ void TSubModel::InitialRotate(bool doit)
 		Next->InitialRotate(doit);
 };
 
+// text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order.
+// a character is matched with the first character of a child sub-model name. both the text and the names can be
+// encoded either in utf-8 or in windows-1250, so the legacy (ansi) scenery and model files work along the utf-8 ones
+std::vector<TSubModel *> const &TSubModel::text_letters(std::string const &Text)
+{
+	// the sequence is prepared once for each text the display shows. the texts of the model instances don't change,
+	// so drawing a display afterwards costs a single lookup, however many instances and passes take turns
+	auto const prepared{m_textlayouts.find(Text)};
+	if (prepared != m_textlayouts.end())
+	{
+		return prepared->second;
+	}
+
+	std::u32string characters;
+	if (false == m_lettersready)
+	{
+		for (auto *letter = Child; letter != nullptr; letter = letter->Next)
+		{
+			if (letter->pName.empty())
+			{
+				continue;
+			}
+			if (false == utf8_to_utf32(letter->pName, characters))
+			{
+				win1250_to_utf32(letter->pName, characters);
+			}
+			if (characters.front() != 0)
+			{
+				m_letters[characters.front()] = letter;
+			}
+		}
+		m_lettersready = true;
+	}
+
+	// the text is taken for utf-8 if it's valid as such, and for windows-1250 otherwise. a short ansi text can pass
+	// for utf-8 by accident (two upper case accented letters in a row are enough for this to happen),
+	// so if both readings are possible the one which finds more of its characters in the model wins
+	auto const known = [this](std::u32string const &Characters) {
+		return std::ranges::count_if(Characters, [this](char32_t const Character) { return m_letters.contains(Character); });
+	};
+	std::u32string ansi;
+	win1250_to_utf32(Text, ansi);
+	if (false == utf8_to_utf32(Text, characters) || known(ansi) > known(characters))
+	{
+		characters = ansi;
+	}
+
+	auto &textletters{m_textlayouts[Text]};
+	// NOTE: the first character of the text isn't displayed. the displays always worked this way, and the existing
+	// content relies on it
+	for (std::size_t idx = 1; idx < characters.size(); ++idx)
+	{
+		auto const lookup{m_letters.find(characters[idx])};
+		if (lookup != m_letters.end())
+		{
+			textletters.emplace_back(lookup->second);
+		}
+	}
+	return textletters;
+}
+
 void TSubModel::ChildAdd(TSubModel *SubModel)
 { // dodanie submodelu potemnego (uzależnionego)
   // Ra: zmiana kolejności, żeby kolejne móc renderować po aktualnym (było
@@ -1469,7 +1529,9 @@ void TSubModel::ParentMatrix(float4x4 *m) const
 
 void TSubModel::ReplaceMatrix(const glm::mat4 &mat)
 {
-	*fMatrix = float4x4(glm::value_ptr(mat));
+	for (int column = 0; column < 4; ++column)
+		for (int row = 0; row < 4; ++row)
+			fMatrix->e[column * 4 + row] = mat[column][row];
 }
 
 void TSubModel::ReplaceMaterial(const std::string &name)
@@ -1558,14 +1620,26 @@ TSubModel *TModel3d::GetFromName(std::string const &Name) const
 { // wyszukanie submodelu po nazwie
 	if (Name.empty())
 		return Root; // potrzebne do terenu z E3D
-	if (iFlags & 0x0200) // wczytany z pliku tekstowego, wyszukiwanie rekurencyjne
-		return Root ? Root->GetFromName(Name) : nullptr;
-	else // wczytano z pliku binarnego, można wyszukać iteracyjnie
-	{
-		// for (int i=0;i<iSubModelsCount;++i)
-		return Root ? Root->GetFromName(Name) : nullptr;
-	}
+	// both text and binary models are searched recursively
+	return Root ? Root->GetFromName(Name) : nullptr;
 };
+
+// returns submodels which scenery instances of the model refer to by name, locating them on first use
+TModel3d::instance_submodels const &TModel3d::instance_parts()
+{
+	if (false == m_instancesubmodelslocated)
+	{
+		for (std::size_t idx = 0; idx < m_instancesubmodels.lights_on.size(); ++idx)
+		{
+			auto const index{(idx < 10 ? "0" : "") + std::to_string(idx)};
+			m_instancesubmodels.lights_on[idx] = GetFromName("Light_On" + index);
+			m_instancesubmodels.lights_off[idx] = GetFromName("Light_Off" + index);
+		}
+		m_instancesubmodels.variants = {GetFromName("winter_variant"), GetFromName("spring_variant"), GetFromName("summer_variant"), GetFromName("autumn_variant")};
+		m_instancesubmodelslocated = true;
+	}
+	return m_instancesubmodels;
+}
 
 // locates particle source submodels and stores them on internal list
 nameoffset_sequence const &TModel3d::find_smoke_sources()
@@ -1921,8 +1995,121 @@ void TSubModel::deserialize(std::istream &s)
 	m_rotation_init_done = true;
 }
 
+namespace
+{
+// read only stream buffer over the content of a whole e3d file kept in memory.
+// reading the geometry of a model value by value from a file stream costs several times more than the read of the file itself
+class e3d_memorybuffer : public std::streambuf
+{
+  public:
+	e3d_memorybuffer(char *Begin, char *End)
+	{
+		setg(Begin, Begin, End);
+	}
+	// data from the current read position on
+	unsigned char const *cursor() const
+	{
+		return reinterpret_cast<unsigned char const *>(gptr());
+	}
+	std::size_t available() const
+	{
+		return static_cast<std::size_t>(egptr() - gptr());
+	}
+
+  protected:
+	pos_type seekoff(off_type Offset, std::ios_base::seekdir Direction, std::ios_base::openmode) override
+	{
+		off_type const size{egptr() - eback()};
+		off_type const origin{Direction == std::ios_base::beg ? 0 : Direction == std::ios_base::cur ? (gptr() - eback()) + m_beyondend : size};
+		off_type const position{origin + Offset};
+		if (position < 0)
+		{
+			return pos_type(off_type(-1));
+		}
+		// like a file stream it can be placed past the end of the data, where nothing more can be read
+		m_beyondend = std::max<off_type>(position - size, 0);
+		setg(eback(), eback() + std::min(position, size), egptr());
+		return pos_type(position);
+	}
+	pos_type seekpos(pos_type Position, std::ios_base::openmode Mode) override
+	{
+		return seekoff(off_type(Position), std::ios_base::beg, Mode);
+	}
+
+  private:
+	off_type m_beyondend{0};
+};
+
+// little endian values taken from memory the same way the sn_utils functions read them from a stream
+std::uint16_t e3d_uint16(unsigned char const *&Data)
+{
+	std::uint16_t const value = static_cast<std::uint16_t>(Data[1] << 8 | Data[0]);
+	Data += 2;
+	return value;
+}
+std::uint32_t e3d_uint32(unsigned char const *&Data)
+{
+	std::uint32_t const value = std::uint32_t{Data[3]} << 24 | std::uint32_t{Data[2]} << 16 | std::uint32_t{Data[1]} << 8 | std::uint32_t{Data[0]};
+	Data += 4;
+	return value;
+}
+std::uint64_t e3d_uint64(unsigned char const *&Data)
+{
+	std::uint64_t const low{e3d_uint32(Data)};
+	std::uint64_t const high{e3d_uint32(Data)};
+	return high << 32 | low;
+}
+float e3d_float32(unsigned char const *&Data)
+{
+	return std::bit_cast<float>(e3d_uint32(Data));
+}
+glm::vec3 e3d_vec3(unsigned char const *&Data)
+{
+	glm::vec3 value;
+	value.x = e3d_float32(Data);
+	value.y = e3d_float32(Data);
+	value.z = e3d_float32(Data);
+	return value;
+}
+glm::vec4 e3d_vec4(unsigned char const *&Data)
+{
+	glm::vec4 value;
+	value.x = e3d_float32(Data);
+	value.y = e3d_float32(Data);
+	value.z = e3d_float32(Data);
+	value.w = e3d_float32(Data);
+	return value;
+}
+// counterparts of basic_vertex::deserialize() and basic_vertex::deserialize_packed()
+void e3d_vertex(unsigned char const *&Data, gfx::basic_vertex &Vertex, bool const Tangent)
+{
+	Vertex.position = e3d_vec3(Data);
+	Vertex.normal = e3d_vec3(Data);
+	Vertex.texture.x = e3d_float32(Data);
+	Vertex.texture.y = e3d_float32(Data);
+	if (Tangent)
+	{
+		Vertex.tangent = e3d_vec4(Data);
+	}
+}
+void e3d_vertex_packed(unsigned char const *&Data, gfx::basic_vertex &Vertex, bool const Tangent)
+{
+	Vertex.position = glm::unpackHalf4x16(e3d_uint64(Data));
+	Vertex.normal = glm::unpackSnorm3x10_1x2(e3d_uint32(Data));
+	Vertex.texture.x = glm::unpackHalf1x16(e3d_uint16(Data));
+	Vertex.texture.y = glm::unpackHalf1x16(e3d_uint16(Data));
+	if (Tangent)
+	{
+		Vertex.tangent = glm::unpackSnorm3x10_1x2(e3d_uint32(Data));
+	}
+}
+} // namespace
+
 void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 {
+	// a model loaded by LoadFromBinFile() comes from memory, its geometry is taken straight from there
+	auto *const memory{dynamic_cast<e3d_memorybuffer *>(s.rdbuf())};
+
 	Root = nullptr;
 	if (m_geometrybank == null_handle)
 	{
@@ -2009,6 +2196,67 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 				if (hasuserdata)
 					submodel.Userdata.resize(submodelgeometry.vertex_count);
 				m_vertexcount += submodelgeometry.vertex_count;
+				if (memory != nullptr)
+				{
+					// geometry past the end of the file is left as it was made
+					auto const datasize{vertex_size * sizeof(float)};
+					auto const vertexcount{std::min<std::size_t>(submodel.Vertices.size(), (datasize > 0 ? memory->available() / datasize : 0))};
+					if ((datasize > 0) && (vertexcount < submodel.Vertices.size()))
+					{
+						ErrorLog("Bad model: vertex data of sub-model " + std::to_string(submodeloffset.second) + " lies past the end of the file", logtype::model);
+					}
+					auto *data{memory->cursor()};
+					switch (vertextype & 3)
+					{
+					case 0:
+					{
+						// legacy vnt0 format
+						for (std::size_t i = 0; i < vertexcount; ++i)
+						{
+							e3d_vertex(data, submodel.Vertices[i], hastangents);
+							if (hasuserdata)
+								submodel.Userdata[i].data = e3d_vec4(data);
+							if (submodel.eType < TP_ROTATOR)
+							{
+								// normal vectors debug routine
+								if (false == submodel.m_normalizenormals && std::abs(glm::length2(submodel.Vertices[i].normal) - 1.0f) > 0.01f)
+								{
+									submodel.m_normalizenormals = TSubModel::normalize; // we don't know if uniform scaling would suffice
+									WriteLog("Bad model: non-unit normal vector(s) encountered during sub-model geometry deserialization", logtype::model);
+								}
+							}
+						}
+						break;
+					}
+					case 1:
+					{
+						// expanded chunk formats
+						for (std::size_t i = 0; i < vertexcount; ++i)
+						{
+							e3d_vertex_packed(data, submodel.Vertices[i], hastangents);
+							if (hasuserdata)
+								submodel.Userdata[i].data = glm::unpackHalf4x16(e3d_uint64(data));
+						}
+						break;
+					}
+					case 2:
+					{
+						// expanded chunk formats
+						for (std::size_t i = 0; i < vertexcount; ++i)
+						{
+							e3d_vertex(data, submodel.Vertices[i], hastangents);
+							if (hasuserdata)
+								submodel.Userdata[i].data = e3d_vec4(data);
+						}
+						break;
+					}
+					default:
+					{
+						break;
+					}
+					}
+					continue;
+				}
 				switch (vertextype & 3)
 				{
 				case 0:
@@ -2089,6 +2337,48 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 				auto const &submodelgeometry{submodel.m_geometry};
 				submodel.Indices.resize(submodelgeometry.index_count);
 				m_indexcount += submodelgeometry.index_count;
+				if (memory != nullptr)
+				{
+					// indices past the end of the file are left as zeroes
+					auto const indexcount{std::min<std::size_t>(submodel.Indices.size(), (indexsize > 0 ? memory->available() / indexsize : 0))};
+					if ((indexsize > 0) && (indexcount < submodel.Indices.size()))
+					{
+						ErrorLog("Bad model: index data of sub-model " + std::to_string(submodeloffset.second) + " lies past the end of the file", logtype::model);
+					}
+					auto *data{memory->cursor()};
+					switch (indexsize)
+					{
+					case 1:
+					{
+						for (std::size_t i = 0; i < indexcount; ++i)
+						{
+							submodel.Indices[i] = *data++;
+						}
+						break;
+					}
+					case 2:
+					{
+						for (std::size_t i = 0; i < indexcount; ++i)
+						{
+							submodel.Indices[i] = e3d_uint16(data);
+						}
+						break;
+					}
+					case 4:
+					{
+						for (std::size_t i = 0; i < indexcount; ++i)
+						{
+							submodel.Indices[i] = e3d_uint32(data);
+						}
+						break;
+					}
+					default:
+					{
+						break;
+					}
+					}
+					continue;
+				}
 				switch (indexsize)
 				{
 				case 1:
@@ -2360,7 +2650,22 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 { // wczytanie modelu z pliku binarnego
 	WriteLog("Loading binary format 3d model data from \"" + FileName + "\"...", logtype::model);
 
-	std::ifstream file(FileName, std::ios::binary);
+	// the file is read whole in one go and parsed from memory
+	std::unique_ptr<char[]> filedata;
+	std::size_t filesize{0};
+	{
+		std::ifstream input(FileName, std::ios::binary | std::ios::ate);
+		auto const length{input.tellg()};
+		if (length > 0)
+		{
+			filedata.reset(new char[static_cast<std::size_t>(length)]);
+			input.seekg(0);
+			input.read(filedata.get(), length);
+			filesize = static_cast<std::size_t>(input.gcount());
+		}
+	}
+	e3d_memorybuffer buffer(filedata.get(), filedata.get() + filesize);
+	std::istream file(&buffer);
 
 	uint32_t type = sn_utils::ld_uint32(file);
 	uint32_t size = sn_utils::ld_uint32(file) - 8;
@@ -2368,7 +2673,6 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	if (type == MAKE_ID4('E', '3', 'D', '0'))
 	{
 		deserialize(file, size, dynamic);
-		file.close();
 
 		WriteLog("Finished loading 3d model data from \"" + FileName + "\"", logtype::model);
 	}
@@ -2376,7 +2680,6 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	{
 		// throw std::runtime_error("e3d: unknown main chunk");
 		ErrorLog("Bad model: unknown main chunk in file \"" + FileName + "\"", logtype::model);
-		file.close();
 	}
 };
 

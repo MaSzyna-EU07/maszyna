@@ -156,7 +156,10 @@ public: // chwilowo
     std::uintptr_t iAnimOwner{ 0 }; // roboczy numer egzemplarza, który ustawił animację
     TAnimType b_aAnim{ TAnimType::at_None }; // kody animacji oddzielnie, bo zerowane
 	std::shared_ptr<float4x4> mAnimMatrix; // macierz do animacji kwaternionowych
-    TSubModel **smLetter{ nullptr }; // wskaźnik na tablicę submdeli do generoania tekstu (docelowo zapisać do E3D)
+    // text display (TP_TEXT) data, filled on first use
+    std::unordered_map<char32_t, TSubModel *> m_letters; // sub-models of the available characters, by unicode code point
+    bool m_lettersready { false }; // whether the character lookup was built yet
+    std::unordered_map<std::string, std::vector<TSubModel *>> m_textlayouts; // sub-models of consecutive characters, for each text shown
     TSubModel *Parent{ nullptr }; // nadrzędny, np. do wymnażania macierzy
     int iVisible { 1 }; // roboczy stan widoczności
     float fVisible { 1.f }; // visibility level
@@ -202,6 +205,8 @@ public:
 	void SetTranslate(float3 vNewTransVector);
 	void SetRotateIK1(float3 vNewAngles);
 	TSubModel * GetFromName( std::string const &search, bool i = true );
+    // text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order
+    std::vector<TSubModel *> const & text_letters( std::string const &Text );
 	inline float4x4 * GetMatrix() { return fMatrix; };
     inline float4x4 const * GetMatrix() const { return fMatrix; };
     // returns offset vector from root
@@ -267,6 +272,12 @@ class TModel3d
     friend opengl33_renderer;
 
 public:
+    // submodels which scenery instances of the model refer to by name
+    struct instance_submodels {
+        std::array<TSubModel *, 8> lights_on {}; // Light_On00 - Light_On07
+        std::array<TSubModel *, 8> lights_off {}; // Light_Off00 - Light_Off07
+        std::array<TSubModel *, 4> variants {}; // winter_variant, spring_variant, summer_variant, autumn_variant
+    };
     TSubModel *Root { nullptr }; // drzewo submodeli
     uint32_t iFlags { 0 }; // Ra: czy submodele mają przezroczyste tekstury
 public: // Ra: tymczasowo
@@ -281,6 +292,8 @@ private:
 	std::string asBinary; // nazwa pod którą zapisać model binarny
     std::string m_filename;
     nameoffset_sequence m_smokesources; // list of particle sources defined in the model
+    instance_submodels m_instancesubmodels; // filled on first use, see instance_parts()
+    bool m_instancesubmodelslocated { false };
 
 public:
     TModel3d() = default;
@@ -289,6 +302,9 @@ public:
         return Root ? Root->m_boundingradius : 0.f; }
 	inline TSubModel * GetSMRoot() { return Root; };
 	TSubModel * GetFromName(std::string const &Name) const;
+    // returns submodels which scenery instances of the model refer to by name. the search for a name goes through the whole
+    // submodel tree, so it's done once for the model instead of once for each of its instances
+    instance_submodels const & instance_parts();
 	TSubModel * AddToNamed(const char *Name, TSubModel *SubModel);
     nameoffset_sequence const & find_smoke_sources();
 	void AddTo(TSubModel *tmp, TSubModel *SubModel);

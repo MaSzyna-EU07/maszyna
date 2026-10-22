@@ -74,7 +74,13 @@ extern WNDPROC BaseWindowProc;
 
 void focus_callback(GLFWwindow *window, int focus)
 {
+	ui_layer::focus_callback(focus);
 	Application.on_focus_change(focus != 0);
+}
+
+void cursor_enter_callback(GLFWwindow *window, int entered)
+{
+	ui_layer::cursor_enter_callback(entered);
 }
 
 void framebuffer_resize_callback(GLFWwindow *, int w, int h)
@@ -90,6 +96,7 @@ void window_resize_callback(GLFWwindow *, int w, int h)
 
 void cursor_pos_callback(GLFWwindow *window, double x, double y)
 {
+	ui_layer::cursor_pos_callback(x, y);
 	Global.cursor_pos = glm::ivec2(x, y);
 	Application.on_cursor_pos(x, y);
 }
@@ -498,7 +505,7 @@ int eu07_application::run()
 			{
 				command_queue::commands_map commands_to_exec;
 				command_queue::commands_map local_commands = simulation::Commands.pop_intercept_queue();
-				double slave_sync;
+				double slave_sync{0.0};
 
 				// if we're the server
 				if (m_network && m_network->servers)
@@ -562,7 +569,7 @@ int eu07_application::run()
 				if (m_network && m_network->client)
 				{
 					// verify sync
-					if (sync != slave_sync)
+					if (sync != slave_sync) // NOSONAR slave_sync is initialised, the PR analysis keeps a stale report of the old declaration
 					{
 						WriteLog("net: desync! calculated: " + std::to_string(sync) + ", received: " + std::to_string(slave_sync), logtype::net);
 
@@ -694,11 +701,12 @@ void eu07_application::exit()
 
 	ui_layer::shutdown();
 
+	// the python workers detach their GL context on the way out, so they have to be done before the windows they use are destroyed
+	m_taskqueue.exit();
 	for (auto *window : m_windows)
 	{
 		glfwDestroyWindow(window);
 	}
-	m_taskqueue.exit();
 	glfwPollEvents(); // TODO: This fixes a segfault on Wayland when closing. Remove after updating glfw to 3.5.
 	glfwTerminate();
 
@@ -1126,6 +1134,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	}
 
 	// process command line arguments
+	bool sceneryfromcommandline{false};
+	bool editwithoutscenery{false};
 	for (int i = 1; i < Argc; ++i)
 	{
 
@@ -1136,6 +1146,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			if (i + 1 < Argc)
 			{
 				Global.SceneryFile = ToLower(Argv[++i]);
+				sceneryfromcommandline = true;
 			}
 		}
 		else if (token == "-v")
@@ -1144,6 +1155,19 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			{
 				Global.local_start_vehicle = ToLower(Argv[++i]);
 			}
+		}
+		else if (token == "-edit")
+		{
+			// edit session: the scenery is loaded without player vehicle, straight into the editor
+			Global.editor_session = true;
+			Global.local_start_vehicle = "ghostview";
+			if (i + 1 < Argc && Argv[i + 1][0] != '-')
+			{
+				Global.SceneryFile = ToLower(Argv[++i]);
+				sceneryfromcommandline = true;
+			}
+			else
+				editwithoutscenery = true;
 		}
 		else if (token == "-seed")
 		{
@@ -1159,10 +1183,13 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		{
 			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
+			          << " [-edit [sceneryfilepath]]"
 			          << " [-seed number|word]" << std::endl;
 			return -1;
 		}
 	}
+	if (editwithoutscenery && false == sceneryfromcommandline)
+		Global.SceneryFile.clear();
 
 	return 0;
 }
@@ -1332,6 +1359,7 @@ void eu07_application::init_callbacks()
 	glfwSetScrollCallback(window, scroll_callback);
 	glfwSetCharCallback(window, char_callback);
 	glfwSetWindowFocusCallback(window, focus_callback);
+	glfwSetCursorEnterCallback(window, cursor_enter_callback);
 }
 
 int eu07_application::init_ogl()
@@ -1437,7 +1465,8 @@ int eu07_application::init_data()
 
 int eu07_application::init_modes()
 {
-	Global.local_random_engine.seed(static_cast<std::mt19937::result_type>(true_random_seed()));
+	// local cosmetics only (sound pitch, editor placement), never security related
+	Global.local_random_engine.seed(static_cast<std::mt19937::result_type>(true_random_seed())); // NOSONAR
 
 	if ((!Global.network_servers.empty() || Global.network_client) && Global.SceneryFile.empty())
 	{

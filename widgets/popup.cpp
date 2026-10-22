@@ -3,7 +3,7 @@
 
 ui::popup::popup(ui_panel &panel) : m_parent(panel) {}
 
-ui::popup::~popup() {}
+ui::popup::~popup() = default;
 
 bool ui::popup::render()
 {

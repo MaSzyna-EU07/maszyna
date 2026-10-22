@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/parser.h"
 #include "scene/scene.h"
+#include "scene/scenelayers.h"
 
 namespace simulation {
 
@@ -43,8 +44,14 @@ public:
         export_as_text( std::string const &Scenariofile ) const;
 	// create new model from node stirng
 	TAnimModel * create_model(std::string const &src, std::string const &name, const glm::dvec3 &position);
+	// places the vehicles, given as their node statements, as a trainset on the path, while the simulation runs. returns: the vehicles made
+	std::vector<TDynamicObject *> insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed = false);
 	// create new eventlauncher from node stirng
 	TEventLauncher * create_eventlauncher(std::string const &src, std::string const &name, const glm::dvec3 &position);
+	// creates model instances defined by an include directive placed or changed in the scenery editor, to show the outcome.
+	// everything else the included template defines is left out, and takes effect when the saved scenery is loaded.
+	// Context: placement in effect at the location of the directive. returns: number of created models and of skipped statements
+	std::pair<int, int> preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance);
 
 private:
 // methods
@@ -73,14 +80,20 @@ private:
     void deserialize_time( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_trainset( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_terrain( cParser &Input, scene::scratch_data &Scratchpad );
+    void deserialize_heightmapterrain( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_editorterrain( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_endtrainset( cParser &Input, scene::scratch_data &Scratchpad );
+    void deserialize_reversed( cParser &Input, scene::scratch_data &Scratchpad );
     TTrack * deserialize_path( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TTraction * deserialize_traction( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TTractionPowerSource * deserialize_tractionpowersource( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TMemCell * deserialize_memorycell( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     TEventLauncher * deserialize_eventlauncher( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
 	TAnimModel * deserialize_model( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
+	// loads a run of model instances straight from the text. returns: true if any were loaded, false if the definition at hand is left to the parser
+	bool deserialize_models( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data &Nodedata, std::size_t Line, std::streamoff Sourcebegin );
+	// makes model instance defined by a scenery file a part of the simulation
+	void insert_model( TAnimModel *Instance, cParser const &Input, std::size_t Line, scene::source_span const &Span );
     TDynamicObject * deserialize_dynamic( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     sound_source * deserialize_sound( cParser &Input, scene::scratch_data &Scratchpad, scene::node_data const &Nodedata );
     void init_time();

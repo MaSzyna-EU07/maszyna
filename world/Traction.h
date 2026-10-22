@@ -29,8 +29,10 @@ class TTraction : public scene::basic_node
     TTraction *hvNext[ 2 ] { nullptr, nullptr }; //łączenie drutów w sieć
     int iNext[ 2 ] { 0, 0 }; // do którego końca się łączy
     int iLast { 0 }; //że niby ostatni drut // ustawiony bit 0, jeśli jest ostatnim drutem w sekcji; bit1 - przedostatni
-  public:
-    glm::dvec3 pPoint1, pPoint2, pPoint3, pPoint4;
+    glm::dvec3 pPoint1;
+    glm::dvec3 pPoint2;
+    glm::dvec3 pPoint3;
+    glm::dvec3 pPoint4;
     glm::dvec3 vParametric; // współczynniki równania parametrycznego odcinka
     double fHeightDifference { 0.0 };
     int iNumSections { 0 };
@@ -66,7 +68,7 @@ class TTraction : public scene::basic_node
     // creates geometry data in specified geometry bank. returns: number of created elements, or NULL
     // NOTE: deleting nodes doesn't currently release geometry data owned by the node. TODO: implement erasing individual geometry chunks and banks
     std::size_t create_geometry( gfx::geometrybank_handle const &Bank );
-    int TestPoint(glm::dvec3 const &Point);
+    int TestPoint(glm::dvec3 const &Point) const;
     void Connect(int my, TTraction *with, int to);
     void Init();
     bool WhereIs();
@@ -78,13 +80,13 @@ private:
 // methods
     glm::vec3 wire_color() const;
     // radius() subclass details, calculates node's bounding radius
-    float radius_();
+    float radius_() override;
     // serialize() subclass details, sends content of the subclass to provided stream
-    void serialize_( std::ostream &Output ) const;
+    void serialize_( std::ostream &Output ) const override;
     // deserialize() subclass details, restores content of the subclass from provided stream
-    void deserialize_( std::istream &Input );
+    void deserialize_( std::istream &Input ) override;
     // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
-    void export_as_text_( std::ostream &Output ) const;
+    void export_as_text_( std::ostream &Output ) const override;
 
 };
 

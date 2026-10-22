@@ -324,6 +324,8 @@ private:
     void control_security_system( double const Timedelta );
     void control_handles();
     void control_lights();
+    void sync_lights_selector();
+    void sync_lights_dimmer();
     void control_compartment_lights();
     void control_doors();
     void UpdateCommand();
@@ -348,6 +350,10 @@ private:
     void control_tractive_and_braking_force();
     void control_releaser();
     void control_main_pipe();
+    void update_brake_charging();
+    bool is_brake_charging_done() const;
+    double consist_max_crp() const;
+    bool is_departure_blocked( double const Delay ) const;
     void control_relays();
     void control_motor_connectors();
     void control_tractive_force();
@@ -458,6 +464,9 @@ private:
     double ReactionTime = 0.0; // czas reakcji Ra: czego i na co? świadomości AI
     double fBrakeTime = 0.0; // wpisana wartość jest zmniejszana do 0, gdy ujemna należy zmienić nastawę hamulca
     double BrakeChargingCooldown{}; // prevents the ai from trying to charge the train brake too frequently
+    double BrakeChargingStart = -1.0;
+    std::unordered_map<TDynamicObject const *, double> BrakeChargingPipeOverchargeStart;
+    double DepartBlockedStart = -1.0;
     TBrakeSystem BrakeSystem = TBrakeSystem::Individual; //type of main brake
     bool ForcePNBrake = false; //is it necessary to use PN brake instead of EP brake
     int DynamicBrakeTest = 0; //is it necessary to make brake test while driving
@@ -490,6 +499,7 @@ private:
     void OrderPush( TOrders NewOrder );
     void OrderNext( TOrders NewOrder );
     inline TOrders OrderCurrentGet() const;
+    inline void OrderCurrentSet( TOrders const Order );
     inline TOrders OrderNextGet() const;
     void OrderCheck();
     void OrdersInit( double fVel );
@@ -550,7 +560,7 @@ private:
     double fLastVel = 0.0; // prędkość na poprzednio sprawdzonym torze
     TTrack *tLast = nullptr; // ostatni analizowany tor
     basic_event *eSignSkip = nullptr; // można pominąć ten SBL po zatrzymaniu
-    static constexpr std::size_t npos{ std::size_t( -1 ) };
+    static constexpr std::size_t npos{ std::numeric_limits<std::size_t>::max() };
     std::size_t SemNextIndex{ npos };
     std::size_t SemNextStopIndex{ npos };
     double dMoveLen = 0.0; // odległość przejechana od ostatniego sprawdzenia tabelki
@@ -653,9 +663,23 @@ private:
 };
 
 inline TOrders TController::OrderCurrentGet() const {
+    if( OrderPos < 0 || OrderPos >= maxorders ) {
+        return Wait_for_orders;
+    }
     return OrderList[ OrderPos ];
 }
 
+inline void TController::OrderCurrentSet( TOrders const Order ) {
+    if( OrderPos < 0 || OrderPos >= maxorders ) {
+        return;
+    }
+    OrderList[ OrderPos ] = Order;
+}
+
 inline TOrders TController::OrderNextGet() const {
-    return OrderList[ OrderPos + 1 ];
+    if( OrderPos < 0 || OrderPos >= maxorders ) {
+        return Wait_for_orders;
+    }
+    // the order list wraps around, same as in JumpToNextOrder()
+    return OrderList[ ( OrderPos + 1 ) % maxorders ];
 }

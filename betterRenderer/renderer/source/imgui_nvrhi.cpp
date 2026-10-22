@@ -92,7 +92,8 @@ bool ImGui_NVRHI::createFontTexture(nvrhi::ICommandList* commandList)
         commandList->setPermanentTextureState(fontTexture, nvrhi::ResourceStates::ShaderResource);
         commandList->commitBarriers();
 
-        io.Fonts->TexID = fontTexture;
+        // since imgui 1.91 ImTextureID is an integer, not a pointer
+        io.Fonts->TexID = static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(fontTexture.Get()));
     }
 
     {
@@ -371,7 +372,7 @@ bool ImGui_NVRHI::render(nvrhi::IFramebuffer* framebuffer)
             {
                 pCmd->UserCallback(cmdList, pCmd);
             } else {
-                drawState.bindings = { getBindingSet(pCmd->TextureId) };
+                drawState.bindings = { getBindingSet(reinterpret_cast<void*>(static_cast<uintptr_t>(pCmd->GetTexID()))) };
                 assert(drawState.bindings[0]);
 
                 drawState.viewport.scissorRects[0] = nvrhi::Rect(int(pCmd->ClipRect.x),

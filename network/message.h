@@ -18,56 +18,57 @@ struct message
 
 	type_e type;
 
-	message(type_e t) : type(t) {}
-	virtual void serialize(std::ostream &stream) const {}
-	virtual void deserialize(std::istream &stream) {}
+	explicit message(type_e t) : type(t) {}
+	virtual void serialize(std::ostream &stream) const { /* message carries no payload */ }
+	virtual void deserialize(std::istream &stream) { /* message carries no payload */ }
+	virtual ~message() = default;
 };
 
 struct client_hello : public message
 {
 	client_hello() : message(CLIENT_HELLO) {}
 
-	virtual void serialize(std::ostream &stream) const override;
-	virtual void deserialize(std::istream &stream) override;
+	void serialize(std::ostream &stream) const override;
+	void deserialize(std::istream &stream) override;
 
-	int32_t version{};
-	uint32_t start_packet{};
+	int32_t version{0};
+	uint32_t start_packet{0};
 };
 
 struct server_hello : public message
 {
 	server_hello() : message(SERVER_HELLO) {}
 
-	uint32_t seed{};
-	int64_t timestamp{};
-    int64_t config{};
+	uint32_t seed{0};
+	int64_t timestamp{0};
+    int64_t config{0};
     std::string scenario;
 
-	virtual void serialize(std::ostream &stream) const override;
-	virtual void deserialize(std::istream &stream) override;
+	void serialize(std::ostream &stream) const override;
+	void deserialize(std::istream &stream) override;
 };
 
 struct request_command : public message
 {
-	request_command(type_e type) : message(type) {}
+	using message::message;
 	request_command() : message(REQUEST_COMMAND) {}
 
 	command_queue::commands_map commands;
 
-	virtual void serialize(std::ostream &stream) const override;
-	virtual void deserialize(std::istream &stream) override;
+	void serialize(std::ostream &stream) const override;
+	void deserialize(std::istream &stream) override;
 };
 
 struct frame_info : public request_command
 {
 	frame_info() : request_command(FRAME_INFO) {}
 
-	double render_dt{};
-	double dt{};
-	double sync{};
+	double render_dt{0.0};
+	double dt{0.0};
+	double sync{0.0};
 
-	virtual void serialize(std::ostream &stream) const override;
-	virtual void deserialize(std::istream &stream) override;
+	void serialize(std::ostream &stream) const override;
+	void deserialize(std::istream &stream) override;
 };
 
 std::shared_ptr<message> deserialize_message(std::istream &stream);

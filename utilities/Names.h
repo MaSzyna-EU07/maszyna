@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <unordered_map>
 #include <string>
+#include <algorithm>
 
 template <typename Type_>
 class basic_table {
@@ -31,7 +32,7 @@ public:
             }
             auto const itemhandle { m_items.size() - 1 };
             // add item name to the map
-            auto mapping = m_itemmap.emplace( itemname, itemhandle );
+            auto mapping = m_itemmap.emplace( std::move( itemname ), itemhandle );
             if( true == mapping.second ) {
                 return true;
             }
@@ -42,6 +43,33 @@ public:
 	{
 		return insert(Item, Item->name());
 	}
+    // changes the name specified item is found by; empty text or "none" leaves the item without one.
+    // NOTE: the name held by the item itself is for the caller to change afterwards.
+    // returns: false if the name is in use by another item or the item isn't in the collection, true otherwise
+    bool
+        rename( Type_ const *Item, std::string const &Name ) {
+            auto const named { false == Name.empty() && Name != "none" };
+            if( named ) {
+                auto const taken { m_itemmap.find( Name ) };
+                if( taken != m_itemmap.end()
+                 && m_items[ taken->second ] != nullptr
+                 && m_items[ taken->second ] != Item ) {
+                    return false; } }
+            // the current name leads to the item unless the item has none, or shares it with an item added later
+            auto itemhandle { m_items.size() };
+            auto const current { m_itemmap.find( Item->name() ) };
+            if( current != m_itemmap.end()
+             && m_items[ current->second ] == Item ) {
+                itemhandle = current->second;
+                m_itemmap.erase( current ); }
+            else {
+                auto const lookup { std::find( m_items.begin(), m_items.end(), Item ) };
+                if( lookup == m_items.end() ) {
+                    return false; }
+                itemhandle = static_cast<std::size_t>( std::distance( m_items.begin(), lookup ) ); }
+            if( named ) {
+                m_itemmap[ Name ] = itemhandle; }
+            return true; }
 	void purge (std::string const &Name)
 	{
 		auto lookup = m_itemmap.find( Name );

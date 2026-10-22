@@ -56,6 +56,9 @@ private:
     // draw_instanced() subclass details — issues glDrawElementsInstancedBaseVertex
     auto
         draw_instanced_( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) -> std::size_t override;
+    // draw_batch() subclass details — issues glMultiDrawArrays for runs of non-indexed chunks of the same type
+    auto
+        draw_batch_( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t override;
     // release() subclass details
     void
         release_() override;

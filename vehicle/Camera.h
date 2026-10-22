@@ -22,7 +22,7 @@ class TCamera {
     void OnCursorMove(double const x, double const y);
     bool OnCommand( command_data const &Command );
     void Update();
-    bool SetMatrix(glm::dmat4 &Matrix);
+    bool SetMatrix(glm::dmat4 &Matrix) const;
     void RaLook();
 
     glm::vec3 Angle; // pitch, yaw, roll

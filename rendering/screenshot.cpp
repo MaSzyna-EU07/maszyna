@@ -29,9 +29,9 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
         stride = -w * 3;
     }
 
-	char datetime[64];
+	std::array<char, 64> datetime{};
 	std::tm const tm_info = local_tm(std::time(nullptr));
-	strftime(datetime, 64, "%Y-%m-%d_%H-%M-%S", &tm_info);
+	strftime(datetime.data(), datetime.size(), "%Y-%m-%d_%H-%M-%S", &tm_info);
 
 	uint64_t perf;
 #ifdef _WIN32
@@ -42,7 +42,7 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
 	perf = ts.tv_nsec;
 #endif
 
-	std::string filename = Global.screenshot_dir + "/" + std::string(datetime) +
+	std::string filename = Global.screenshot_dir + "/" + std::string(datetime.data()) +
 	                       "_" + std::to_string(perf) + ".png";
 
     if (png_image_write_to_file(&png, filename.c_str(), 0, img, stride, nullptr) == 1)
@@ -55,7 +55,7 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
 
 void screenshot_manager::make_screenshot()
 {
-    char *img = new char[Global.fb_size.x * Global.fb_size.y * 4];
+    auto img = new char[Global.fb_size.x * Global.fb_size.y * 4];
     glReadPixels(0, 0, Global.fb_size.x, Global.fb_size.y, Global.gfx_usegles ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, (GLvoid*)img);
 	//m7t: use pbo
 	

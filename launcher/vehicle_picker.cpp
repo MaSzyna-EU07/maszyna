@@ -37,7 +37,7 @@ void ui::vehiclepicker_panel::render_contents()
 	if (ImGui::RadioButton(STR_C("texture group"), display_by_groups))
 		display_by_groups = true;
 
-	std::vector<const skin_set*> skinset_list;
+	std::vector<skin_set*> skinset_list;
 
 	if (display_by_groups) {
 		std::vector<const std::string*> model_list;
@@ -78,7 +78,8 @@ void ui::vehiclepicker_panel::render_contents()
 		}
 
 		if (ImGui::BeginChild("box2")) {
-			ImGuiListClipper clipper(model_list.size());
+			ImGuiListClipper clipper;
+			clipper.Begin(model_list.size());
 			while (clipper.Step())
 				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 					auto group = model_list[i];
@@ -109,12 +110,13 @@ void ui::vehiclepicker_panel::render_contents()
 		}
 
 		if (ImGui::BeginChild("box2")) {
-			ImGuiListClipper clipper(model_list.size());
+			ImGuiListClipper clipper;
+			clipper.Begin(model_list.size());
 			while (clipper.Step())
 				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 					auto &desc = model_list[i];
 
-					const deferred_image *image = nullptr;
+					deferred_image *image = nullptr;
 					for (auto const &skinset : desc->matching_skinsets) {
 						if (skinset->mini) {
 							image = &skinset->mini;
@@ -141,7 +143,8 @@ void ui::vehiclepicker_panel::render_contents()
 		                   skinset_list.end());
 
 	if (ImGui::BeginChild("box3")) {
-		ImGuiListClipper clipper(skinset_list.size());
+		ImGuiListClipper clipper;
+		clipper.Begin(skinset_list.size());
 		while (clipper.Step())
 			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 				auto skin = skinset_list[i];
@@ -256,7 +259,7 @@ bool ui::vehiclepicker_panel::skin_filter(const skin_set *skin, std::vector<sear
 	return alternative_present ? !any : false;
 }
 
-bool ui::vehiclepicker_panel::selectable_image(const char *desc, bool selected, const deferred_image* image, const skin_set *pickable)
+bool ui::vehiclepicker_panel::selectable_image(const char *desc, bool selected, deferred_image *image, const skin_set *pickable)
 {
 	ImGui::PushID(pickable);
 
@@ -270,7 +273,7 @@ bool ui::vehiclepicker_panel::selectable_image(const char *desc, bool selected, 
 	}
 
 	GLuint tex = image->get();
-	if (tex != (GLuint)-1) {
+	if (tex != deferred_image::invalid_id) {
 		glm::ivec2 size = image->size();
 		float width = 30.0f / size.y * size.x;
 		ImGui::SameLine(ImGui::GetContentRegionAvail().x - width);

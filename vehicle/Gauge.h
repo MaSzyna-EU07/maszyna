@@ -67,8 +67,8 @@ public:
     bool is_delayed() const {
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::delayed ) ) != 0; }
 // members
-    TSubModel *SubModel { nullptr }, // McZapkie-310302: zeby mozna bylo sprawdzac czy zainicjowany poprawnie
-              *SubModelOn { nullptr }; // optional submodel visible when the state input is set
+    TSubModel *SubModel { nullptr }; // McZapkie-310302: zeby mozna bylo sprawdzac czy zainicjowany poprawnie
+    TSubModel *SubModelOn { nullptr }; // optional submodel visible when the state input is set
 
 private:
 // types
@@ -82,7 +82,7 @@ private:
     float
         GetScaledValue() const;
     void
-        UpdateAnimation( TSubModel *Submodel );
+        UpdateAnimation( TSubModel *Submodel ) const;
 
 // members
     TGaugeAnimation m_animation { TGaugeAnimation::gt_Unknown }; // typ ruchu

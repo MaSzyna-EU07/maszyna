@@ -49,9 +49,9 @@ std::optional<int64_t> gl::query::result()
 	return std::nullopt;
 }
 
-GLenum gl::query::glenum_target(targets target)
+GLenum gl::query::glenum_target(targets Target) const
 {
-	static GLenum mapping[6] =
+	static std::array<GLenum, 6> const mapping =
 	{
 	    GL_SAMPLES_PASSED,
 	    GL_ANY_SAMPLES_PASSED,
@@ -60,7 +60,7 @@ GLenum gl::query::glenum_target(targets target)
 	    GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN,
 	    GL_TIME_ELAPSED
 	};
-	return mapping[target];
+	return mapping[Target];
 }
 
 thread_local gl::query* gl::query::active_queries[6];

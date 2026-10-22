@@ -32,7 +32,7 @@ namespace multiplayer {
 std::uint32_t const EU07_MESSAGEHEADER { MAKE_ID4( 'E','U','0','7' ) };
 
 void
-Navigate(std::string const &ClassName, UINT Msg, WPARAM wParam, LPARAM lParam) {
+Navigate([[maybe_unused]] std::string const &ClassName, [[maybe_unused]] UINT Msg, [[maybe_unused]] WPARAM wParam, [[maybe_unused]] LPARAM lParam) {
 #ifdef _WIN32
     // wysłanie komunikatu do sterującego
     HWND h = FindWindow(ClassName.c_str(), 0); // można by to zapamiętać
@@ -43,7 +43,7 @@ Navigate(std::string const &ClassName, UINT Msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void
-OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
+OnCommandGet(multiplayer::DaneRozkaz const *pRozkaz)
 { // odebranie komunikatu z serwera
     if (pRozkaz->iSygn == EU07_MESSAGEHEADER )
         switch (pRozkaz->iComm)
@@ -62,15 +62,13 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                 std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) + " rcvd" );
 
             if( Global.iMultiplayer ) {
-                auto *event = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
-                if( event != nullptr ) {
-                    if( typeid(*event) == typeid(multi_event)
-                     || typeid(*event) == typeid(lights_event)
-                     || event->m_sibling != 0 ) {
-                        // tylko jawne albo niejawne Multiple
-						command_relay relay;
-						relay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &event->name());
-                    }
+                auto const *foundevent = simulation::Events.FindEvent( std::string( pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0] ) );
+                if (foundevent != nullptr && (typeid(*foundevent) == typeid(multi_event)
+                     || typeid(*foundevent) == typeid(lights_event)
+                     || foundevent->m_sibling != nullptr)) {
+                    // tylko jawne albo niejawne Multiple
+						command_relay commandrelay;
+						commandrelay.post(user_command::queueevent, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &foundevent->name());
                 }
             }
             break;
@@ -78,7 +76,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         case 3: // rozkaz dla AI
             if (Global.iMultiplayer)
             {
-                int i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
+                auto i = int(pRozkaz->cString[8]); // długość pierwszego łańcucha (z przodu dwa floaty)
                 CommLog(
                     Now() + " " + std::to_string(pRozkaz->iComm) + " " +
                     std::string(pRozkaz->cString + 11 + i, (unsigned)pRozkaz->cString[10 + i]) +
@@ -110,21 +108,21 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
         break;
         case 5: // ustawienie parametrów
         {
-			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " params " + std::to_string(*pRozkaz->iPar) + " rcvd");
-            if (*pRozkaz->iPar == 0) // sprawdzenie czasu
-                if (*pRozkaz->iPar & 1) // ustawienie czasu
-                {
-                    auto t = pRozkaz->fPar[1];
-                    simulation::Time.data().wDay = std::floor(t); // niby nie powinno być dnia, ale...
-                    if (Global.fMoveLight >= 0)
-                        Global.fMoveLight = t; // trzeba by deklinację Słońca przeliczyć
-                    simulation::Time.data().wHour = std::floor(24 * t) - 24.0 * simulation::Time.data().wDay;
-                    simulation::Time.data().wMinute = std::floor(60 * 24 * t) - 60.0 * (24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour);
-                    simulation::Time.data().wSecond = std::floor( 60 * 60 * 24 * t ) - 60.0 * ( 60.0 * ( 24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour ) + simulation::Time.data().wMinute );
-                }
-            if (*pRozkaz->iPar & 2)
+			CommLog(Now() + " " + std::to_string(pRozkaz->iComm) + " params " + std::to_string(pRozkaz->iPar[0]) + " rcvd");
+            // sprawdzenie czasu
+            if (pRozkaz->iPar[0] == 0 && pRozkaz->iPar[0] & 1) // ustawienie czasu
+            {
+                auto t = pRozkaz->fPar[1];
+                simulation::Time.data().wDay = static_cast<uint16_t>(std::floor(t)); // niby nie powinno być dnia, ale...
+                if (Global.fMoveLight >= 0)
+                    Global.fMoveLight = t; // trzeba by deklinację Słońca przeliczyć
+                simulation::Time.data().wHour = static_cast<uint16_t>(std::floor(24 * t) - 24.0 * simulation::Time.data().wDay);
+                simulation::Time.data().wMinute = static_cast<uint16_t>(std::floor(60 * 24 * t) - 60.0 * (24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour));
+                simulation::Time.data().wSecond = static_cast<uint16_t>(std::floor( 60 * 60 * 24 * t ) - 60.0 * ( 60.0 * ( 24.0 * simulation::Time.data().wDay + simulation::Time.data().wHour ) + simulation::Time.data().wMinute ));
+            }
+            if (pRozkaz->iPar[0] & 2)
             { // ustawienie flag zapauzowania
-                Global.iPause = pRozkaz->fPar[2]; // zakładamy, że wysyłający wie, co robi
+                Global.iPause = static_cast<int>(pRozkaz->fPar[2]); // zakładamy, że wysyłający wie, co robi
             }
         }
         break;
@@ -138,7 +136,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                   + " rcvd" );
                 if (pRozkaz->cString[0]) {
                     // jeśli długość nazwy jest niezerowa szukamy pierwszego pojazdu o takiej nazwie i odsyłamy parametry ramką #7
-                    auto *vehicle = pRozkaz->cString[1] == '*' ? simulation::Train->Dynamic() : simulation::Vehicles.find(std::string{pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]});
+                    auto const *vehicle = pRozkaz->cString[1] == '*' ? simulation::Train->Dynamic() : simulation::Vehicles.find(std::string{pRozkaz->cString + 1, (unsigned)pRozkaz->cString[0]});
                     if( vehicle != nullptr ) {
                         WyslijNamiary( vehicle ); // wysłanie informacji o pojeździe
                     }
@@ -189,7 +187,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
                     d->Damage( pRozkaz->cString[ 0 ] );
                     d = d->Prev(); // w drugą stronę też
                 }
-                WyslijUszkodzenia( lookup->asName, lookup->MoverParameters->EngDmgFlag ); // zwrot informacji o pojeździe
+                WyslijUszkodzenia( lookup->asName, static_cast<char>(lookup->MoverParameters->EngDmgFlag) ); // zwrot informacji o pojeździe
             }
 			break;
         default:
@@ -198,7 +196,7 @@ OnCommandGet(multiplayer::DaneRozkaz *pRozkaz)
 }
 
 void
-WyslijEvent(const std::string &e, const std::string &d)
+WyslijEvent([[maybe_unused]] const std::string &e, [[maybe_unused]] const std::string &d)
 { // Ra: jeszcze do wyczyszczenia
 #ifdef _WIN32
     DaneRozkaz r;
@@ -219,7 +217,7 @@ WyslijEvent(const std::string &e, const std::string &d)
 }
 
 void
-WyslijUszkodzenia(const std::string &t, char fl)
+WyslijUszkodzenia([[maybe_unused]] const std::string &t, [[maybe_unused]] char fl)
 { // wysłanie informacji w postaci pojedynczego tekstu
 #ifdef _WIN32
     DaneRozkaz r;
@@ -239,7 +237,7 @@ WyslijUszkodzenia(const std::string &t, char fl)
 }
 
 void
-WyslijString(const std::string &t, int n)
+WyslijString([[maybe_unused]] const std::string &t, [[maybe_unused]] int n)
 { // wysłanie informacji w postaci pojedynczego tekstu
 #ifdef _WIN32
     DaneRozkaz r;
@@ -264,7 +262,7 @@ WyslijWolny(const std::string &t)
 }
 
 void
-WyslijNamiary(TDynamicObject const *Vehicle)
+WyslijNamiary([[maybe_unused]] TDynamicObject const *Vehicle)
 { // wysłanie informacji o pojeździe - (float), długość ramki będzie zwiększana w miarę potrzeby
 #ifdef _WIN32
     DaneRozkaz r;
@@ -395,7 +393,7 @@ WyslijObsadzone()
 }
 
 void
-WyslijParam(int nr, int fl)
+WyslijParam([[maybe_unused]] int nr, [[maybe_unused]] int fl)
 { // wysłanie parametrów symulacji w ramce (nr) z flagami (fl)
 #ifdef _WIN32
     DaneRozkaz r;

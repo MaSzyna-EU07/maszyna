@@ -19,14 +19,13 @@ struct node_snapshot {
     scene::basic_node *node;
     std::string data;
 
-    node_snapshot( scene::basic_node *Node ) :
+    explicit node_snapshot( scene::basic_node *Node ) :
         node( Node ) {
         if( Node != nullptr ) {
             Node->export_as_text( data ); } };
 };
 
 inline bool operator==( node_snapshot const &Left, node_snapshot const &Right ) { return Left.node == Right.node && Left.data == Right.data; }
-inline bool operator!=( node_snapshot const &Left, node_snapshot const &Right ) { return !(Left == Right); }
 
 class basic_editor {
 
@@ -46,17 +45,17 @@ private:
     void
         translate_node( scene::basic_node *Node, float const Offset );
     void
-        translate_instance( TAnimModel *Instance, glm::dvec3 const &Location );
+        translate_instance( TAnimModel *Instance, glm::dvec3 const &Location ) const;
     void
-        translate_instance( TAnimModel *Instance, float const Offset );
+        translate_instance( TAnimModel *Instance, float const Offset ) const;
     void
-        translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location );
+        translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location ) const;
     void
-        translate_memorycell( TMemCell *Memorycell, float const Offset );
+        translate_memorycell( TMemCell *Memorycell, float const Offset ) const;
     void
         rotate_node( scene::basic_node *Node, glm::vec3 const &Angle );
     void
-        rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle );
+        rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle ) const;
 };
 
 } // scene

@@ -31,6 +31,45 @@ int constexpr EU07_PICKBUFFERSIZE { 1024 }; // size of (square) textures bound w
 int constexpr EU07_ENVIRONMENTBUFFERSIZE { 256 }; // size of (square) environmental cube map texture
 int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of range for reflection pass detail reduction
 
+namespace {
+
+float
+editor_track_view_range(float const Range, bool const Apply)
+{
+    if( false == Apply || false == Global.editor_tracks )
+        return Range;
+    float extra = 50000.0f;
+    if( Global.EditorOrtho )
+        extra = Global.EditorOrthoExtent * 3.0f;
+    return Range > extra ? Range : extra;
+}
+
+bool
+editor_far_tracks_only(bool const Apply, scene::basic_cell const *Cell, glm::dvec3 const &Camera, double const SceneryLimit)
+{
+    if( false == Apply )
+        return false;
+    double nearest = glm::length( Cell->m_area.center - Camera ) - static_cast<double>( Cell->m_area.radius );
+    if( nearest < 0.0 )
+        nearest = 0.0;
+    return nearest > SceneryLimit;
+}
+
+// returns material assigned to the submodel, resolving replacable skins. null_handle if no skin set is bound
+material_handle
+submodel_material( TSubModel const *Submodel ) {
+
+    if( Submodel->m_material >= 0 ) {
+        return Submodel->m_material;
+    }
+    return (
+        TSubModel::ReplacableSkinId != nullptr ?
+            TSubModel::ReplacableSkinId[ -Submodel->m_material ] :
+            null_handle );
+}
+
+} // namespace
+
 float const EU07_OPACITYDEFAULT { 0.5f };
 
 bool
@@ -1571,7 +1610,7 @@ opengl_renderer::Render( world_environment *Environment ) {
     auto const fogfactor { std::clamp( Global.fFogEnd / 2000.f, 0.f, 1.f ) }; // closer/denser fog reduces opacity of the celestial bodies
     float const duskfactor = 1.0f - std::clamp( std::abs( Environment->m_sun.getAngle() ), 0.0f, 12.0f ) / 12.0f;
 	glm::vec3 suncolor = glm::mix(
-        glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
+        glm::vec3( 1.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
         glm::vec3( 235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f ),
         duskfactor );
     // sun
@@ -1790,8 +1829,7 @@ opengl_renderer::Material( material_handle const Material ) const {
 opengl_material const &
 opengl_renderer::Material( TSubModel const * Submodel ) const {
 
-    auto const material { Submodel->m_material >= 0 ? Submodel->m_material : Submodel->ReplacableSkinId[ -Submodel->m_material ] };
-    return m_materials.material( material );
+    return m_materials.material( submodel_material( Submodel ) );
 }
 
 // shader methods
@@ -1859,7 +1897,9 @@ opengl_renderer::Render( scene::basic_region *Region ) {
     glm::vec3 const cameraposition { m_renderpass.camera.position() };
     auto const camerax = static_cast<int>( std::floor( cameraposition.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2 ) );
     auto const cameraz = static_cast<int>( std::floor( cameraposition.z / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2 ) );
-    int const segmentcount = 2 * static_cast<int>( std::ceil( m_renderpass.draw_range * Global.fDistanceFactor / scene::EU07_SECTIONSIZE ) );
+    float section_range = m_renderpass.draw_range * Global.fDistanceFactor;
+    section_range = editor_track_view_range( section_range, EditorModeFlag && ( m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery ) );
+    int const segmentcount = 2 * static_cast<int>( std::ceil( section_range / scene::EU07_SECTIONSIZE ) );
     int const originx = camerax - segmentcount / 2;
     int const originz = cameraz - segmentcount / 2;
 
@@ -2024,12 +2064,16 @@ opengl_renderer::Render( cell_sequence::iterator First, cell_sequence::iterator 
 
     // cache initial iterator for the second sweep
     auto first { First };
+    auto const scenery_limit{ static_cast<double>( Global.BaseDrawRange ) * Global.fDistanceFactor + 250.0 };
+    bool const far_paths{ EditorModeFlag && Global.editor_tracks && ( m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery ) };
+    glm::dvec3 const camera{ m_renderpass.camera.position() };
     // first pass draws elements which we know are located in section banks, to reduce vbo switching
     while( First != Last ) {
 
         auto *cell = First->second;
         // przeliczenia animacji torów w sektorze
         cell->RaAnimate( m_framestamp );
+        bool const tracks_only{ editor_far_tracks_only( far_paths, cell, camera, scenery_limit ) };
 
         switch( m_renderpass.draw_mode ) {
             case rendermode::color: {
@@ -2040,7 +2084,9 @@ opengl_renderer::Render( cell_sequence::iterator First, cell_sequence::iterator 
 
                 // render
                 // opaque non-instanced shapes
-                for( auto const &shape : cell->m_shapesopaque ) { Render( shape, false ); }
+                if( false == tracks_only ) {
+                    for( auto const &shape : cell->m_shapesopaque ) { Render( shape, false ); }
+                }
                 // tracks
                 // TODO: update after path node refactoring
                 Render( std::begin( cell->m_paths ), std::end( cell->m_paths ) );
@@ -2142,8 +2188,10 @@ opengl_renderer::Render( cell_sequence::iterator First, cell_sequence::iterator 
                 // render
                 // opaque non-instanced shapes
                 // non-interactive scenery elements get neutral colour
-                ::glColor3fv( glm::value_ptr( colors::none ) );
-                for( auto const &shape : cell->m_shapesopaque ) { Render( shape, false ); }
+                if( false == tracks_only ) {
+                    ::glColor3fv( glm::value_ptr( colors::none ) );
+                    for( auto const &shape : cell->m_shapesopaque ) { Render( shape, false ); }
+                }
                 // tracks
                 for( auto *path : cell->m_paths ) {
                     ::glColor3fv( glm::value_ptr( pick_color( m_picksceneryitems.size() + 1 ) ) );
@@ -2172,6 +2220,8 @@ opengl_renderer::Render( cell_sequence::iterator First, cell_sequence::iterator 
             case rendermode::color:
             case rendermode::shadows:
             case rendermode::cabshadows: {
+                if( editor_far_tracks_only( far_paths, cell, camera, scenery_limit ) )
+                    break;
                 // TBD, TODO: refactor in to a method to reuse in branch below?
                 // opaque parts of instanced models
                 for( auto *instance : cell->m_instancesopaque ) {
@@ -2214,6 +2264,8 @@ opengl_renderer::Render( cell_sequence::iterator First, cell_sequence::iterator 
                 break;
             }
             case rendermode::pickscenery: {
+                if( editor_far_tracks_only( far_paths, cell, camera, scenery_limit ) )
+                    break;
                 // opaque parts of instanced models
                 // same procedure like with regular render, but each node receives custom colour used for picking
                 for( auto *instance : cell->m_instancesopaque ) {
@@ -2768,10 +2820,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         }
 #endif
                         // material configuration:
-                        auto const material{ (
-                            Submodel->m_material < 0 ?
-                                Submodel->ReplacableSkinId[ -Submodel->m_material ] : // zmienialne skóry
-                                Submodel->m_material ) }; // również 0
+                        auto const material{ submodel_material( Submodel ) }; // zmienialne skóry, również 0
                         // textures...
                         Bind_Material( material );
                         // ...colors and opacity...
@@ -2879,7 +2928,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         // material configuration:
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( submodel_material( Submodel ), Submodel );
                         }
                         else {
                             // również 0
@@ -2897,7 +2946,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                         ::glColor3fv( glm::value_ptr( pick_color( m_pickcontrolsitems.size() ) ) );
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( submodel_material( Submodel ), Submodel );
                         }
                         else {
                             // również 0
@@ -2971,10 +3020,10 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                             auto const unitstate = m_unitstate;
                             switch_units( m_unitstate.diffuse, false, false );
 
-                            auto const *lightcolor {
+                            glm::vec3 const lightcolor {
                                   Submodel->DiffuseOverride.r < 0.f ? // -1 indicates no override
-                                    glm::value_ptr( Submodel->f4Diffuse ) :
-                                    glm::value_ptr( Submodel->DiffuseOverride ) };
+                                    glm::vec3( Submodel->f4Diffuse ) :
+                                    Submodel->DiffuseOverride };
 
                             // main draw call
                             if( Global.Overcast > 1.f ) {
@@ -2987,9 +3036,9 @@ opengl_renderer::Render( TSubModel *Submodel ) {
 
                                 ::glPointSize( pointsize * fogfactor );
                                 ::glColor4f(
-                                    lightcolor[ 0 ],
-                                    lightcolor[ 1 ],
-                                    lightcolor[ 2 ],
+                                    lightcolor.r,
+                                    lightcolor.g,
+                                    lightcolor.b,
                                     Submodel->fVisible * std::min( 1.f, lightlevel ) * 0.5f );
                                 ::glDepthMask( GL_FALSE );
                                 m_geometry.draw( Submodel->m_geometry.handle );
@@ -2997,9 +3046,9 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                             }
                             ::glPointSize( pointsize );
                             ::glColor4f(
-                                lightcolor[ 0 ],
-                                lightcolor[ 1 ],
-                                lightcolor[ 2 ],
+                                lightcolor.r,
+                                lightcolor.g,
+                                lightcolor.b,
                                 Submodel->fVisible * std::min( 1.f, lightlevel ) );
                             m_geometry.draw( Submodel->m_geometry.handle );
 
@@ -3800,6 +3849,19 @@ opengl_renderer::Render_Alpha( TModel3d *Model, material_data const *Material, f
     return result;
 }
 
+// characters of a text display, laid out in a row. the text can be encoded in utf-8 or in windows-1250
+void
+opengl_renderer::Render_Alpha_text( TSubModel *Submodel ) {
+
+    if( TSubModel::pasText == nullptr ) { return; }
+
+    for( auto *p : Submodel->text_letters( *TSubModel::pasText ) ) { // translucent only, for the time being
+        Render_Alpha( p );
+        if( p->fMatrix )
+            ::glMultMatrixf( p->fMatrix->readArray() ); // move on to the place of the next character
+    }
+}
+
 void
 opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
     // renderowanie przezroczystych przez DL
@@ -3845,10 +3907,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
 #endif
                         // material configuration:
                         // textures...
-                        auto const material { (
-                            Submodel->m_material < 0 ?
-                                Submodel->ReplacableSkinId[ -Submodel->m_material ] : // zmienialne skóry
-                                Submodel->m_material ) }; // również 0
+                        auto const material { submodel_material( Submodel ) }; // zmienialne skóry, również 0
                         // textures...
                         Bind_Material( material );
                         // ...colors and opacity...
@@ -3923,7 +3982,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                         // material configuration:
                         // textures...
                         if( Submodel->m_material < 0 ) { // zmienialne skóry
-                            Bind_Material( TSubModel::ReplacableSkinId[ -Submodel->m_material ], Submodel );
+                            Bind_Material( submodel_material( Submodel ), Submodel );
                         }
                         else {
                             // również 0
@@ -3986,14 +4045,14 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                         auto const unitstate = m_unitstate;
                         switch_units( unitstate.diffuse, false, false );
 
-                        auto const *lightcolor {
+                        glm::vec3 const lightcolor {
                             Submodel->DiffuseOverride.r < 0.f ? // -1 indicates no override
-                                glm::value_ptr( Submodel->f4Diffuse ) :
-                                glm::value_ptr( Submodel->DiffuseOverride ) };
+                                glm::vec3( Submodel->f4Diffuse ) :
+                                Submodel->DiffuseOverride };
                         ::glColor4f(
-                            lightcolor[ 0 ],
-                            lightcolor[ 1 ],
-                            lightcolor[ 2 ],
+                            lightcolor.r,
+                            lightcolor.g,
+                            lightcolor.b,
                             Submodel->fVisible * glarelevel );
 
                         // main draw call
@@ -4018,25 +4077,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
 
         if( Submodel->Child != nullptr ) {
             if( Submodel->eType == TP_TEXT ) { // tekst renderujemy w specjalny sposób, zamiast submodeli z łańcucha Child
-                int i, j = (int)Submodel->pasText->size();
-                TSubModel *p;
-                if( !Submodel->smLetter ) { // jeśli nie ma tablicy, to ją stworzyć; miejsce nieodpowiednie, ale tymczasowo może być
-                    Submodel->smLetter = new TSubModel *[ 256 ]; // tablica wskaźników submodeli dla wyświetlania tekstu
-                    std::memset(Submodel->smLetter, 0, 256 * sizeof( TSubModel * )); // wypełnianie zerami
-                    p = Submodel->Child;
-                    while( p ) {
-                        Submodel->smLetter[ p->pName[ 0 ] ] = p;
-                        p = p->Next; // kolejny znak
-                    }
-                }
-                for( i = 1; i <= j; ++i ) {
-                    p = Submodel->smLetter[ ( *( Submodel->pasText) )[ i ] ]; // znak do wyświetlenia
-                    if( p ) { // na razie tylko jako przezroczyste
-                        Render_Alpha( p );
-                        if( p->fMatrix )
-                            ::glMultMatrixf( p->fMatrix->readArray() ); // przesuwanie widoku
-                    }
-                }
+                Render_Alpha_text( Submodel );
             }
             else if( Submodel->iAlpha & Submodel->iFlags & 0x002F0000 )
                 Render_Alpha( Submodel->Child );
@@ -4558,5 +4599,31 @@ void opengl_renderer::opengl_imgui_renderer::Render()
 {
 	gl::buffer::unbind(gl::buffer::ARRAY_BUFFER);
 	ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+}
+
+std::uint64_t opengl_renderer::opengl_imgui_renderer::Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+{
+	// the ui of this renderer works on srgb colours as they are. the binding the renderer keeps track of is put back as it was
+	GLint texture{0}, alignment{4};
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	GLuint image{0};
+	glGenTextures(1, &image);
+	glBindTexture(GL_TEXTURE_2D, image);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Width, Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, Rgba);
+	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
+	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+	return image;
+}
+
+void opengl_renderer::opengl_imgui_renderer::Release_Image(std::uint64_t const Image)
+{
+	auto const image{static_cast<GLuint>(Image)};
+	glDeleteTextures(1, &image);
 }
 

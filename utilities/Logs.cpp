@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/Logs.h"
 
+#include <format>
+
 #include "utilities/Globals.h"
 #include "winheaders.h"
 #include "utilities/utilities.h"
@@ -19,9 +21,8 @@ http://mozilla.org/MPL/2.0/.
 std::ofstream output; // standardowy "log.txt", można go wyłączyć
 std::ofstream errors; // lista błędów "errors.txt", zawsze działa
 std::ofstream comms; // lista komunikatow "comms.txt", można go wyłączyć
-char logbuffer[ 256 ];
 
-char endstring[10] = "\n";
+char const endstring[10] = "\n";
 
 std::deque<std::string> log_scrollback;
 
@@ -33,30 +34,26 @@ std::string filename_date() {
     clock_gettime(CLOCK_REALTIME, &ts);
     std::tm const tm = local_tm(ts.tv_sec);
     std::tm const *tms = &tm;
-    st.wYear = tms->tm_year;
-    st.wMonth = tms->tm_mon;
-    st.wDayOfWeek = tms->tm_wday;
-    st.wDay = tms->tm_mday;
-    st.wHour = tms->tm_hour;
-    st.wMinute = tms->tm_min;
-    st.wSecond = tms->tm_sec;
-    st.wMilliseconds = ts.tv_nsec / 1000000;
+    st.wYear = static_cast<uint16_t>(tms->tm_year);
+    st.wMonth = static_cast<uint16_t>(tms->tm_mon);
+    st.wDayOfWeek = static_cast<uint16_t>(tms->tm_wday);
+    st.wDay = static_cast<uint16_t>(tms->tm_mday);
+    st.wHour = static_cast<uint16_t>(tms->tm_hour);
+    st.wMinute = static_cast<uint16_t>(tms->tm_min);
+    st.wSecond = static_cast<uint16_t>(tms->tm_sec);
+    st.wMilliseconds = static_cast<uint16_t>(ts.tv_nsec / 1000000);
 #elif _WIN32
     ::GetLocalTime( &st );
 #endif
 
-    std::snprintf(
-        logbuffer,
-        sizeof(logbuffer),
-	    "%d%02d%02d_%02d%02d%03d",
+    return std::format(
+	    "{}{:02}{:02}_{:02}{:02}{:03}",
         st.wYear,
         st.wMonth,
         st.wDay,
         st.wHour,
 	    st.wMinute,
 	    st.wMilliseconds);
-
-    return std::string( logbuffer );
 }
 
 std::string filename_scenery() {
@@ -80,29 +77,20 @@ std::mutex logMutex;
 
 void LogService()
 {
-	// prevent crash if mutex is not initialized
-	while (true)
-	{
-		try
-		{
-			logMutex.lock();
-			break;
-		}
-		catch (...) {}
-	}
-	logMutex.unlock();
-
 	while (!Global.applicationQuitOrder)
 	{
 		{
 			// --- Obsługa InfoStack ---
 			while (!InfoStack.empty())
 			{
-				logMutex.lock();
-				std::string msg = InfoStack.front().first;
-				bool isError = InfoStack.front().second;
-				InfoStack.pop_front();
-				logMutex.unlock();
+				std::string msg;
+				bool isError;
+				{
+					std::scoped_lock lock(logMutex);
+					msg = InfoStack.front().first;
+					isError = InfoStack.front().second;
+					InfoStack.pop_front();
+				}
 
 				// log to file
 				if (Global.iWriteLogEnabled & 1)
@@ -134,10 +122,12 @@ void LogService()
 			// --- Obsługa ErrorStack ---
 			while (!ErrorStack.empty())
 			{
-				logMutex.lock();
-				std::string msg = ErrorStack.front();
-				ErrorStack.pop_front();
-				logMutex.unlock();
+				std::string msg;
+				{
+					std::scoped_lock lock(logMutex);
+					msg = ErrorStack.front();
+					ErrorStack.pop_front();
+				}
 
 				if (!(Global.iWriteLogEnabled & 1))
 					continue;
@@ -181,8 +171,8 @@ void WriteLog(std::string_view str, logtype type, bool isError)
 
 	const auto message = FormatLogMessage(str);
 
-	std::lock_guard<std::mutex> lock(logMutex);
-	InfoStack.push_back({message, isError});
+	std::scoped_lock lock(logMutex);
+	InfoStack.emplace_back(message, isError);
 }
 
 void ErrorLog(std::string_view str, logtype type)
@@ -192,7 +182,7 @@ void ErrorLog(std::string_view str, logtype type)
 
 	const auto message = FormatLogMessage(str);
 
-	std::lock_guard<std::mutex> lock(logMutex);
+	std::scoped_lock lock(logMutex);
 	ErrorStack.push_back(message);
 }
 
@@ -213,14 +203,14 @@ void ErrorLog(const char* str, logtype type)
 }
 
 
-void Error(const std::string &asMessage, bool box)
+void Error(const std::string &asMessage, bool /*box*/)
 {
     // if (box)
     //	MessageBox(NULL, asMessage.c_str(), string("EU07 " + Global.asRelease).c_str(), MB_OK);
-    ErrorLog(asMessage.c_str());
+    ErrorLog(asMessage);
 }
 
-void Error(const char *&asMessage, bool box)
+void Error(const char *&asMessage, bool /*box*/)
 {
     // if (box)
     //	MessageBox(NULL, asMessage, string("EU07 " + Global.asRelease).c_str(), MB_OK);

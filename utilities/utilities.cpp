@@ -17,6 +17,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#include <sys/stat.h>
 #include <charconv>
 #include <ranges>
+#include <format>
 //#ifndef WIN32
 //#include <unistd.h>
 //#endif
@@ -127,14 +128,14 @@ bool ClearFlag(int &Flag, int const Value)
 double Random(double min, double max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_real_distribution requires min <= max (inverted bounds are UB)
-	std::uniform_real_distribution<double> dist(min, max);
+	std::uniform_real_distribution dist(min, max);
 	return dist(Global.random_engine);
 }
 
 int Random(int min, int max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_int_distribution requires min <= max (inverted bounds are UB)
-	std::uniform_int_distribution<int> dist(min, max);
+	std::uniform_int_distribution dist(min, max);
 	return dist(Global.random_engine);
 }
 
@@ -178,7 +179,7 @@ std::uint32_t seed_of(std::string const &Text)
 
 std::string generate_uuid_v4()
 {
-	std::uniform_int_distribution<int> dist(0, 255);
+	std::uniform_int_distribution dist(0, 255);
 
 	std::array<uint8_t, 16> bytes;
 	for (auto &b : bytes)
@@ -188,22 +189,18 @@ std::string generate_uuid_v4()
 	bytes[6] = bytes[6] & 0x0F | 0x40;
 	bytes[8] = bytes[8] & 0x3F | 0x80;
 
-	char buf[37]; // 36 znaków + \0
-	std::snprintf(buf, sizeof(buf),
-	              "%02x%02x%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x-"
-	              "%02x%02x%02x%02x%02x%02x",
-	              bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
-
-	return std::string(buf);
+	return std::format("{:02x}{:02x}{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}-"
+	                   "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+	                   bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
 }
 
 double LocalRandom(double a, double b)
 {
 	if (b < a) { std::swap(a, b); } // std::uniform_real_distribution requires a <= b (inverted bounds are UB)
-	std::uniform_real_distribution<double> dist(a, b);
+	std::uniform_real_distribution dist(a, b);
 	return dist(Global.local_random_engine);
 }
 
@@ -252,23 +249,18 @@ std::string to_string(int Value, int width)
 
 std::string to_string(double Value, int precision)
 {
-	std::ostringstream o;
-	o << std::fixed << std::setprecision(precision) << Value;
-	return std::move(o).str();
+	return std::format("{:.{}f}", Value, precision);
 };
 
 std::string to_string(double const Value, int const Precision, int const Width)
 {
-	std::ostringstream o;
-	o << std::setw(Width) << std::fixed << std::setprecision(Precision) << Value;
-	return std::move(o).str();
+	return std::format("{:>{}.{}f}", Value, Width, Precision);
 };
 
 std::string to_hex_str(int const Value, int const Width)
 {
-	std::ostringstream o;
-	o << "0x" << std::uppercase << std::setfill('0') << std::setw(Width) << std::hex << Value;
-	return o.str();
+	// iostreams print negative values in hex as their unsigned representation
+	return std::format("0x{:0{}X}", static_cast<unsigned int>(Value), Width);
 };
 
 std::string const fractionlabels[] = {U8(" "), U8("¹"), U8("²"), U8("³"), U8("⁴"), U8("⁵"), U8("⁶"), U8("⁷"), U8("⁸"), U8("⁹")};
@@ -297,7 +289,7 @@ std::string ToLower(std::string const &text)
 {
 
 	auto lowercase{text};
-	std::transform(std::begin(text), std::end(text), std::begin(lowercase), [](unsigned char c) { return std::tolower(c); });
+	std::ranges::transform(text, std::begin(lowercase), [](unsigned char c) { return std::tolower(c); });
 	return lowercase;
 }
 
@@ -305,7 +297,7 @@ std::string ToUpper(std::string const &text)
 {
 
 	auto uppercase{text};
-	std::transform(std::begin(text), std::end(text), std::begin(uppercase), [](unsigned char c) { return std::toupper(c); });
+	std::ranges::transform(text, std::begin(uppercase), [](unsigned char c) { return std::toupper(c); });
 	return uppercase;
 }
 
@@ -339,8 +331,89 @@ std::string win1250_to_utf8(const std::string &Input)
 	return output;
 }
 
+namespace
+{
+// unicode code points of the upper half of the windows-1250 code page; 0 marks the unassigned bytes
+std::array<char32_t, 128> const win1250_upperhalf{
+    0x20AC, 0x0000, 0x201A, 0x0000, 0x201E, 0x2026, 0x2020, 0x2021, 0x0000, 0x2030, 0x0160, 0x2039, 0x015A, 0x0164, 0x017D, 0x0179,
+    0x0000, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x0000, 0x2122, 0x0161, 0x203A, 0x015B, 0x0165, 0x017E, 0x017A,
+    0x00A0, 0x02C7, 0x02D8, 0x0141, 0x00A4, 0x0104, 0x00A6, 0x00A7, 0x00A8, 0x00A9, 0x015E, 0x00AB, 0x00AC, 0x00AD, 0x00AE, 0x017B,
+    0x00B0, 0x00B1, 0x02DB, 0x0142, 0x00B4, 0x00B5, 0x00B6, 0x00B7, 0x00B8, 0x0105, 0x015F, 0x00BB, 0x013D, 0x02DD, 0x013E, 0x017C,
+    0x0154, 0x00C1, 0x00C2, 0x0102, 0x00C4, 0x0139, 0x0106, 0x00C7, 0x010C, 0x00C9, 0x0118, 0x00CB, 0x011A, 0x00CD, 0x00CE, 0x010E,
+    0x0110, 0x0143, 0x0147, 0x00D3, 0x00D4, 0x0150, 0x00D6, 0x00D7, 0x0158, 0x016E, 0x00DA, 0x0170, 0x00DC, 0x00DD, 0x0162, 0x00DF,
+    0x0155, 0x00E1, 0x00E2, 0x0103, 0x00E4, 0x013A, 0x0107, 0x00E7, 0x010D, 0x00E9, 0x0119, 0x00EB, 0x011B, 0x00ED, 0x00EE, 0x010F,
+    0x0111, 0x0144, 0x0148, 0x00F3, 0x00F4, 0x0151, 0x00F6, 0x00F7, 0x0159, 0x016F, 0x00FA, 0x0171, 0x00FC, 0x00FD, 0x0163, 0x02D9};
+
+// returns number of bytes of the utf-8 sequence started by provided byte, or 0 if it can't start one
+std::size_t utf8_sequence_length(std::byte const Lead)
+{
+	if ((Lead & std::byte{0x80}) == std::byte{0x00})
+	{
+		return 1;
+	}
+	if ((Lead & std::byte{0xE0}) == std::byte{0xC0})
+	{
+		return 2;
+	}
+	if ((Lead & std::byte{0xF0}) == std::byte{0xE0})
+	{
+		return 3;
+	}
+	if ((Lead & std::byte{0xF8}) == std::byte{0xF0})
+	{
+		return 4;
+	}
+	return 0; // a continuation byte, or a lead of a sequence utf-8 doesn't allow
+}
+} // namespace
+
+bool utf8_to_utf32(std::string const &Text, std::u32string &Output)
+{
+	// lowest code point which needs given number of bytes; shorter values are overlong forms
+	static std::array<char32_t, 5> const minimum{0, 0, 0x80, 0x800, 0x10000};
+
+	Output.clear();
+	auto const size{Text.size()};
+	for (std::size_t idx = 0; idx < size;)
+	{
+		auto const lead{static_cast<std::byte>(Text[idx])};
+		auto const length{utf8_sequence_length(lead)};
+		if (length == 0 || idx + length > size)
+		{
+			return false;
+		}
+		auto codepoint{std::to_integer<char32_t>(lead & (std::byte{0xFF} >> (length > 1 ? length + 1 : 1)))};
+		for (std::size_t offset = 1; offset < length; ++offset)
+		{
+			auto const next{static_cast<std::byte>(Text[idx + offset])};
+			if ((next & std::byte{0xC0}) != std::byte{0x80})
+			{
+				return false;
+			}
+			codepoint = (codepoint << 6) | std::to_integer<char32_t>(next & std::byte{0x3F});
+		}
+		if (codepoint < minimum[length] || codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF))
+		{
+			return false;
+		}
+		Output += codepoint;
+		idx += length;
+	}
+	return true;
+}
+
+void win1250_to_utf32(std::string const &Text, std::u32string &Output)
+{
+	Output.clear();
+	for (auto const character : Text)
+	{
+		auto const value{std::to_integer<std::size_t>(static_cast<std::byte>(character))};
+		Output += (value < 0x80 ? static_cast<char32_t>(value) : win1250_upperhalf[value - 0x80]);
+	}
+}
+
 // Ra: tymczasowe rozwiązanie kwestii zagranicznych (czeskich) napisów
-char charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
+char const charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
                                 " ^^L$A|S^CS<--RZo±,l'uP.,as>L\"lz"
                                 "RAAAALCCCEEEEIIDDNNOOOOxRUUUUYTB"
                                 "raaaalccceeeeiiddnnoooo-ruuuuyt?";
@@ -526,7 +599,7 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 {
 
 	auto token{Input.getToken<std::string>(true, Break)};
-	std::replace(token.begin(), token.end(), '\\', '/');
+	std::ranges::replace(token, '\\', '/');
 	if (token != "[")
 	{
 		// simple case, single token
@@ -541,7 +614,8 @@ std::string deserialize_random_set(cParser &Input, char const *Break)
 	}
 	if (false == tokens.empty())
 	{
-		std::shuffle(std::begin(tokens), std::end(tokens), Global.random_engine);
+		// scenery random set: must replay from the shared run seed, not a security concern
+		std::shuffle(std::begin(tokens), std::end(tokens), Global.random_engine); // NOSONAR
 		return tokens.front();
 	}
 	else

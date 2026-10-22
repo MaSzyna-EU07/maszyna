@@ -382,8 +382,7 @@ void TTrack::ConnectNextNext(TTrack *pTrack, int typ)
 
 void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
 { // pobranie obiektu trajektorii ruchu
-	glm::dvec3 pt, vec, p1, p2, cp1, cp2, p3, p4, cp3, cp4; // dodatkowe punkty potrzebne do skrzyżowań
-	double a1, a2, r1, r2, r3, r4;
+	double a1, a2;
     std::string str;
     size_t i; //,state; //Ra: teraz już nie ma początkowego stanu zwrotnicy we wpisie
     std::string token;
@@ -501,8 +500,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     else if (Global.iWriteLogEnabled & 4)
         WriteLog("unvis");
     Init(); // ustawia SwitchExtension
-    double segsize = 5.0; // długość odcinka segmentowania
-
     // path data
     // all subtypes contain at least one path
     m_paths.emplace_back();
@@ -520,6 +517,194 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             break;
         }
     }
+
+    init_segments( true );
+
+    // optional attributes
+    parser->getTokens();
+    *parser >> token;
+    str = token;
+    while (str != "endtrack")
+    {
+        if (str == "event0")
+        {
+            parser->getTokens();
+            *parser >> token;
+            m_events0.emplace_back( token, nullptr );
+        }
+        else if (str == "event1")
+        {
+            parser->getTokens();
+            *parser >> token;
+            m_events1.emplace_back( token, nullptr );
+        }
+        else if (str == "event2")
+        {
+            parser->getTokens();
+            *parser >> token;
+            m_events2.emplace_back( token, nullptr );
+        }
+        else if (str == "eventall0")
+        {
+            parser->getTokens();
+            *parser >> token;
+            m_events0all.emplace_back( token, nullptr );
+        }
+        else if (str == "eventall1")
+        {
+            parser->getTokens();
+            *parser >> token;
+            m_events1all.emplace_back( token, nullptr );
+        }
+        else if (str == "eventall2")
+        {
+            parser->getTokens();
+            *parser >> token;
+            m_events2all.emplace_back( token, nullptr );
+        }
+        else if (str == "velocity")
+        {
+            parser->getTokens();
+            *parser >> fVelocity; //*0.28; McZapkie-010602
+            if (SwitchExtension) // jeśli tor ruchomy
+                if (std::abs(fVelocity) >= 1.0) //żeby zero nie ograniczało dożywotnio
+                    // zapamiętanie głównego ograniczenia; a np. -40 ogranicza tylko na bok
+                    SwitchExtension->fVelocity = static_cast<float>(fVelocity);
+        }
+        else if (str == "isolated")
+        { // obwód izolowany, do którego tor należy
+            parser->getTokens();
+            *parser >> token;
+            Isolated.push_back(TIsolated::Find(token));
+        }
+        else if (str == "angle1")
+        { // kąt ścięcia końca od strony 1
+            // NOTE: not used/implemented
+            parser->getTokens();
+            *parser >> a1;
+            //Segment->AngleSet(0, a1);
+        }
+        else if (str == "angle2")
+        { // kąt ścięcia końca od strony 2
+          // NOTE: not used/implemented
+            parser->getTokens();
+            *parser >> a2;
+            //Segment->AngleSet(1, a2);
+        }
+        else if (str == "fouling1")
+        { // wskazanie modelu ukresu w kierunku 1
+          // NOTE: not used/implemented
+            parser->getTokens();
+            *parser >> token;
+            // nFouling[0]=
+        }
+        else if (str == "fouling2")
+        { // wskazanie modelu ukresu w kierunku 2
+          // NOTE: not used/implemented
+            parser->getTokens();
+            *parser >> token;
+            // nFouling[1]=
+        }
+        else if (str == "overhead")
+        { // informacja o stanie sieci: 0-jazda bezprądowa, >0-z opuszczonym i ograniczeniem prędkości
+            parser->getTokens();
+            *parser >> fOverhead;
+            if (fOverhead > 0.0)
+                iAction |= 0x40; // flaga opuszczenia pantografu (tor uwzględniany w skanowaniu jako
+            // ograniczenie dla pantografujących)
+        }
+        else if( str == "vradius" ) {
+            // y-axis track radius
+            // NOTE: not used/implemented
+            parser->getTokens();
+            *parser >> fVerticalRadius;
+        }
+        else if( str == "trackbed" ) {
+            // switch trackbed texture
+            auto const trackbedtexture { parser->getToken<std::string>() };
+            if( eType == tt_Switch ) {
+                SwitchExtension->m_material3 = GfxRenderer->Fetch_Material( trackbedtexture );
+            }
+        }
+        else if( str == "railprofile" ) {
+            // rail profile
+            auto const railprofile { parser->getToken<std::string>() };
+            if( iCategoryFlag == 1 ) {
+                m_profile1 = fetch_track_rail_profile( railprofile );
+            }
+        }
+        else if( str == "friction" ) {
+            // memory cell holding friction value modifiers
+            m_friction.first = parser->getToken<std::string>();
+        }
+        else if( str == "sleepermodel" ) {
+            // sleepermodel <frequency> <model> <skin> <offsetX> <offsetY> <offsetZ> <ballastZ>
+            // - frequency: meters between consecutive sleeper instances (must be > 0)
+            // - model:     path to the .e3d sleeper model
+            // - skin:      replacable skin path, or "none" for the model's defaults
+            // - offset:    local-space offset applied per-instance (x=left/right, y=forward/back, z=up/down)
+            // - ballastZ:  vertical shift applied to the auto-generated trackbed (ballast). negative pushes ballast down.
+            float frequency { 0.f };
+            float offsetx { 0.f }, offsety { 0.f }, offsetz { 0.f };
+            float ballastz { 0.f };
+            parser->getTokens( 1, false ); *parser >> frequency;
+            auto modelpath { parser->getToken<std::string>( false ) };
+            auto skinpath  { parser->getToken<std::string>( false ) };
+            parser->getTokens( 3, false ); *parser >> offsetx >> offsety >> offsetz;
+            parser->getTokens( 1, false ); *parser >> ballastz;
+
+            if( frequency <= 0.01f ) {
+                ErrorLog( "Bad track: invalid sleepermodel frequency (" + std::to_string( frequency ) + ") for track \"" + m_name + "\"" );
+            }
+            else {
+                replace_slashes( modelpath );
+                m_sleeper_enabled = true;
+                m_sleeper_frequency = frequency;
+                m_sleeper_model_name = modelpath;
+                m_sleeper_skin_name = skinpath;
+                m_sleeper_offset = glm::vec3( offsetx, offsety, offsetz );
+                m_sleeper_ballast_z = ballastz;
+                // model and skin are resolved (and instance transforms baked) in build_sleeper_transforms,
+                // called after segment initialisation so the path geometry is final.
+            }
+        }
+        else
+            ErrorLog("Bad track: unknown property: \"" + str + "\" defined for track \"" + m_name + "\"");
+        parser->getTokens();
+        *parser >> token;
+		str = token;
+    }
+    // alternatywny zapis nazwy odcinka izolowanego - po znaku "@" w nazwie toru
+    if ((i = m_name.find("@")) != std::string::npos && i < m_name.length())
+    {
+        Isolated.push_back(TIsolated::Find(m_name.substr(i + 1, m_name.length())));
+        m_name = m_name.substr(0, i - 1); // usunięcie z nazwy
+    }
+
+    update_location();
+    // sleeper transforms are baked later in create_geometry(), once the owning cell has
+    // assigned this track its m_origin (otherwise the local-space matrices would be relative
+    // to a stale origin and the renderer would draw sleepers in the wrong place).
+}
+
+void TTrack::update_location() {
+
+    location( (
+        CurrentSegment()->FastGetPoint_0()
+        + CurrentSegment()->FastGetPoint( 0.5 )
+        + CurrentSegment()->FastGetPoint_1() )
+        / 3.0 );
+}
+
+void TTrack::init_segments( bool const Initial ) {
+
+	glm::dvec3 p1, p2, cp1, cp2, p3, p4, cp3, cp4; // dodatkowe punkty potrzebne do skrzyżowań
+	double r1, r2, r3, r4;
+    double segsize = 5.0; // długość odcinka segmentowania
+
+    fTexHeight1 -= fTexHeightOffset;
+    fTexHeightOffset = 0.f;
+    iTrapezoid = 0;
 
     switch (eType) {
         // Ra: łuki segmentowane co 5m albo 314-kątem foremnym
@@ -773,7 +958,9 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             }
         }
 
-        Switch(0); // na stałe w położeniu 0 - nie ma początkowego stanu zwrotnicy we wpisie
+        if( Initial ) {
+            Switch(0);
+        } // na stałe w położeniu 0 - nie ma początkowego stanu zwrotnicy we wpisie
 
         if( eType == tt_Switch )
         // Ra: zamienić później na iloczyn wektorowy
@@ -796,177 +983,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         break;
         }
     }
-
-    // optional attributes
-    parser->getTokens();
-    *parser >> token;
-    str = token;
-    while (str != "endtrack")
-    {
-        if (str == "event0")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events0.emplace_back( token, nullptr );
-        }
-        else if (str == "event1")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events1.emplace_back( token, nullptr );
-        }
-        else if (str == "event2")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events2.emplace_back( token, nullptr );
-        }
-        else if (str == "eventall0")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events0all.emplace_back( token, nullptr );
-        }
-        else if (str == "eventall1")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events1all.emplace_back( token, nullptr );
-        }
-        else if (str == "eventall2")
-        {
-            parser->getTokens();
-            *parser >> token;
-            m_events2all.emplace_back( token, nullptr );
-        }
-        else if (str == "velocity")
-        {
-            parser->getTokens();
-            *parser >> fVelocity; //*0.28; McZapkie-010602
-            if (SwitchExtension) // jeśli tor ruchomy
-                if (std::abs(fVelocity) >= 1.0) //żeby zero nie ograniczało dożywotnio
-                    // zapamiętanie głównego ograniczenia; a np. -40 ogranicza tylko na bok
-                    SwitchExtension->fVelocity = static_cast<float>(fVelocity);
-        }
-        else if (str == "isolated")
-        { // obwód izolowany, do którego tor należy
-            parser->getTokens();
-            *parser >> token;
-            Isolated.push_back(TIsolated::Find(token));
-        }
-        else if (str == "angle1")
-        { // kąt ścięcia końca od strony 1
-            // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> a1;
-            //Segment->AngleSet(0, a1);
-        }
-        else if (str == "angle2")
-        { // kąt ścięcia końca od strony 2
-          // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> a2;
-            //Segment->AngleSet(1, a2);
-        }
-        else if (str == "fouling1")
-        { // wskazanie modelu ukresu w kierunku 1
-          // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> token;
-            // nFouling[0]=
-        }
-        else if (str == "fouling2")
-        { // wskazanie modelu ukresu w kierunku 2
-          // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> token;
-            // nFouling[1]=
-        }
-        else if (str == "overhead")
-        { // informacja o stanie sieci: 0-jazda bezprądowa, >0-z opuszczonym i ograniczeniem prędkości
-            parser->getTokens();
-            *parser >> fOverhead;
-            if (fOverhead > 0.0)
-                iAction |= 0x40; // flaga opuszczenia pantografu (tor uwzględniany w skanowaniu jako
-            // ograniczenie dla pantografujących)
-        }
-        else if( str == "vradius" ) {
-            // y-axis track radius
-            // NOTE: not used/implemented
-            parser->getTokens();
-            *parser >> fVerticalRadius;
-        }
-        else if( str == "trackbed" ) {
-            // switch trackbed texture
-            auto const trackbedtexture { parser->getToken<std::string>() };
-            if( eType == tt_Switch ) {
-                SwitchExtension->m_material3 = GfxRenderer->Fetch_Material( trackbedtexture );
-            }
-        }
-        else if( str == "railprofile" ) {
-            // rail profile
-            auto const railprofile { parser->getToken<std::string>() };
-            if( iCategoryFlag == 1 ) {
-                m_profile1 = fetch_track_rail_profile( railprofile );
-            }
-        }
-        else if( str == "friction" ) {
-            // memory cell holding friction value modifiers
-            m_friction.first = parser->getToken<std::string>();
-        }
-        else if( str == "sleepermodel" ) {
-            // sleepermodel <frequency> <model> <skin> <offsetX> <offsetY> <offsetZ> <ballastZ>
-            // - frequency: meters between consecutive sleeper instances (must be > 0)
-            // - model:     path to the .e3d sleeper model
-            // - skin:      replacable skin path, or "none" for the model's defaults
-            // - offset:    local-space offset applied per-instance (x=left/right, y=forward/back, z=up/down)
-            // - ballastZ:  vertical shift applied to the auto-generated trackbed (ballast). negative pushes ballast down.
-            float frequency { 0.f };
-            float offsetx { 0.f }, offsety { 0.f }, offsetz { 0.f };
-            float ballastz { 0.f };
-            parser->getTokens( 1, false ); *parser >> frequency;
-            auto modelpath { parser->getToken<std::string>( false ) };
-            auto skinpath  { parser->getToken<std::string>( false ) };
-            parser->getTokens( 3, false ); *parser >> offsetx >> offsety >> offsetz;
-            parser->getTokens( 1, false ); *parser >> ballastz;
-
-            if( frequency <= 0.01f ) {
-                ErrorLog( "Bad track: invalid sleepermodel frequency (" + std::to_string( frequency ) + ") for track \"" + m_name + "\"" );
-            }
-            else {
-                replace_slashes( modelpath );
-                m_sleeper_enabled = true;
-                m_sleeper_frequency = frequency;
-                m_sleeper_model_name = modelpath;
-                m_sleeper_skin_name = skinpath;
-                m_sleeper_offset = glm::vec3( offsetx, offsety, offsetz );
-                m_sleeper_ballast_z = ballastz;
-                // model and skin are resolved (and instance transforms baked) in build_sleeper_transforms,
-                // called after segment initialisation so the path geometry is final.
-            }
-        }
-        else
-            ErrorLog("Bad track: unknown property: \"" + str + "\" defined for track \"" + m_name + "\"");
-        parser->getTokens();
-        *parser >> token;
-		str = token;
-    }
-    // alternatywny zapis nazwy odcinka izolowanego - po znaku "@" w nazwie toru
-    if ((i = m_name.find("@")) != std::string::npos && i < m_name.length())
-    {
-        Isolated.push_back(TIsolated::Find(m_name.substr(i + 1, m_name.length())));
-        m_name = m_name.substr(0, i - 1); // usunięcie z nazwy
-    }
-
-    // calculate path location
-    location( (
-        CurrentSegment()->FastGetPoint_0()
-        + CurrentSegment()->FastGetPoint( 0.5 )
-        + CurrentSegment()->FastGetPoint_1() )
-        / 3.0 );
-    // sleeper transforms are baked later in create_geometry(), once the owning cell has
-    // assigned this track its m_origin (otherwise the local-space matrices would be relative
-    // to a stale origin and the renderer would draw sleepers in the wrong place).
 }
 
 bool TTrack::AssignEvents() {
@@ -1333,6 +1349,20 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 }
 
 // wypełnianie tablic VBO
+void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
+
+    Geometry1.clear();
+    Geometry2.clear();
+    if( SwitchExtension ) {
+        SwitchExtension->Geometry3 = gfx::geometry_handle{};
+    }
+    m_sleeper_local_transforms.clear();
+
+    if( Bank == null_handle ) { return; }
+
+    create_geometry( Bank );
+}
+
 void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
 	gfx::userdata_array empty_userdata;
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
@@ -1912,6 +1942,29 @@ bool TTrack::SwitchForced(int i, TDynamicObject *o)
     return true;
 };
 
+// picks one of the routes through a crossroads for a driver heading for it
+int TTrack::RouteDraw() const {
+
+    auto const count { std::min( RouteCount(), static_cast<int>( m_routeweights.size() ) ) };
+    auto total { 0.0 };
+    for( int route = 0; route < count; ++route ) {
+        total += std::max( 0.f, m_routeweights[ route ] );
+    }
+    if( total <= 0.0 ) {
+        // even odds, the way it's always been for the crossroads of the scenery
+        return 1 + static_cast<int>( std::floor( Random( static_cast<double>( RouteCount() ) - 0.001 ) ) );
+    }
+    auto draw { Random( total ) };
+    auto last { 1 };
+    for( int route = 0; route < count; ++route ) {
+        if( m_routeweights[ route ] <= 0.f ) { continue; }
+        last = route + 1;
+        draw -= m_routeweights[ route ];
+        if( draw < 0.0 ) { break; }
+    }
+    return last;
+}
+
 int TTrack::CrossSegment(int from, int into)
 { // ustawienie wskaźnika na segement w pożądanym kierunku (into) od strony (from)
     // zwraca kod segmentu, z kierunkiem jazdy jako znakiem ±
@@ -2319,6 +2372,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             << fTexSlope << ' ';
     }
     // path data
+    auto const precision { Output.precision( std::numeric_limits<double>::digits10 ) };
     for( auto const &path : m_paths ) {
         Output
             << path.points[ segment_data::point::start ].x << ' '
@@ -2341,6 +2395,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
 
             << path.radius << ' ';
     }
+    Output.precision( precision );
     // optional attributes
     std::vector< std::pair< std::string, event_sequence const * > > const eventsequences {
         { "event0", &m_events0 }, { "eventall0", &m_events0all },
@@ -2379,12 +2434,16 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     }
     if( eType == tt_Switch
      && SwitchExtension->m_material3 != null_handle) {
-        auto texturefile { GfxRenderer->Material( m_material2 )->GetName() };
+        auto texturefile { GfxRenderer->Material( SwitchExtension->m_material3 )->GetName() };
         if( texturefile.find( paths::textures ) == 0 ) {
             // don't include 'textures/' in the path
             texturefile.erase( 0, std::string{ paths::textures }.size() );
         }
         Output << "trackbed " << texturefile << ' ';
+    }
+    if( iCategoryFlag == 1
+     && false == m_profile1.first.empty() ) {
+        Output << "railprofile " << m_profile1.first << ' ';
     }
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
@@ -3661,6 +3720,58 @@ std::vector<TSegment *> sleeper_segments_for( TTrack const &Track )
     }
     return out;
 }
+
+// Local-space transform (relative to Origin) of the sleeper at distance S along the Segment,
+// or none at a degenerate spot (e.g. zero-length sub-segment) where no tangent can be taken.
+// Eps is the half-span of the central difference used to extract the tangent.
+std::optional<glm::mat4> sleeper_transform( TSegment const &Segment, double const S, double const Eps, glm::dvec3 const &Origin, glm::vec3 const &Offset )
+{
+    glm::dvec3 pos;
+    glm::vec3 angles;
+    Segment.RaPositionGet( S, pos, angles );
+
+    // tangent direction via central difference (clamped to the segment endpoints)
+    glm::dvec3 p_back;
+    glm::dvec3 p_fwd;
+    glm::vec3 dummy;
+    Segment.RaPositionGet( std::max( 0.0, S - Eps ), p_back, dummy );
+    Segment.RaPositionGet( std::min( Segment.GetLength(), S + Eps ), p_fwd, dummy );
+    auto tangent = glm::vec3( p_fwd - p_back );
+    if( glm::length2( tangent ) < 1e-8f ) {
+        // skip this position rather than emit a junk transform with NaN normals.
+        return std::nullopt;
+    }
+    tangent = glm::normalize( tangent );
+
+    // build an orthonormal basis around the tangent. world up is the reference; if the
+    // track is almost vertical we fall back to world X so cross() doesn't collapse.
+    glm::vec3 up_ref { 0.f, 1.f, 0.f };
+    if( std::abs( glm::dot( tangent, up_ref ) ) > 0.999f ) { up_ref = glm::vec3( 1.f, 0.f, 0.f ); }
+    glm::vec3 side = glm::normalize( glm::cross( up_ref, tangent ) );
+    glm::vec3 up   = glm::cross( tangent, side );
+
+    // apply track roll (banking) around the tangent / forward axis.
+    if( float const roll = angles.x; roll != 0.f ) {
+        auto const roll_mat = glm::rotate( glm::mat4( 1.f ), roll, tangent );
+        side = glm::vec3( roll_mat * glm::vec4( side, 0.f ) );
+        up   = glm::vec3( roll_mat * glm::vec4( up,   0.f ) );
+    }
+
+    // assemble local transform: columns are (right, up, forward, translation).
+    // a sleeper modelled with X = sideways, Y = up, Z = along-track now ends up
+    // correctly oriented along the path tangent regardless of curve direction.
+    auto const localpos = glm::vec3( pos - Origin );
+    glm::mat4 m { 1.f };
+    m[ 0 ] = glm::vec4( side,    0.f );
+    m[ 1 ] = glm::vec4( up,      0.f );
+    m[ 2 ] = glm::vec4( tangent, 0.f );
+    m[ 3 ] = glm::vec4( localpos, 1.f );
+
+    if( Offset != glm::vec3( 0.f ) ) {
+        m = glm::translate( m, Offset );
+    }
+    return m;
+}
 } // anonymous namespace
 
 // Resolves the sleeper model + (optional) replacable skin via the global model/material
@@ -3705,13 +3816,12 @@ void TTrack::build_sleeper_transforms()
     // at the segment endpoints. Sampling positions directly is robust for both straight
     // segments and bezier curves, and it costs us two extra evaluations per sleeper.
     double const eps = std::min( 0.1, spacing * 0.25 );
-    glm::vec3 const world_up { 0.f, 1.f, 0.f };
 
     // user offset is (left/right, forward/back, up/down) in the local frame established by
     // the basis below (x=right, y=up, z=forward). swap y<->z to match the documented axes.
     glm::vec3 const local_offset { m_sleeper_offset.x, m_sleeper_offset.z, m_sleeper_offset.y };
 
-    for( auto *segment : segments ) {
+    for( auto const *segment : segments ) {
         auto const length = segment->GetLength();
         if( length <= 0.0 ) { continue; }
         // start half a frequency in so the first sleeper doesn't sit on the joint.
@@ -3719,55 +3829,12 @@ void TTrack::build_sleeper_transforms()
         auto const expected = static_cast<std::size_t>( std::max( 0.0, ( length - start ) / spacing ) ) + 1u;
         m_sleeper_local_transforms.reserve( m_sleeper_local_transforms.size() + expected );
 
-        for( double s = start; s < length; s += spacing ) {
-            glm::dvec3 pos;
-            glm::vec3 angles;
-            segment->RaPositionGet( s, pos, angles );
-
-            // tangent direction via central difference (clamped to the segment endpoints)
-            auto const s_back = std::max( 0.0, s - eps );
-            auto const s_fwd  = std::min( length, s + eps );
-            glm::dvec3 p_back, p_fwd;
-            glm::vec3  dummy;
-            segment->RaPositionGet( s_back, p_back, dummy );
-            segment->RaPositionGet( s_fwd,  p_fwd,  dummy );
-            auto tangent = glm::vec3( p_fwd - p_back );
-            if( glm::length2( tangent ) < 1e-8f ) {
-                // degenerate sample (e.g. zero-length sub-segment); skip this position rather
-                // than emit a junk transform with NaN normals.
-                continue;
+        for( std::size_t sleeperidx = 0;; ++sleeperidx ) {
+            auto const s = start + static_cast<double>( sleeperidx ) * spacing;
+            if( s >= length ) { break; }
+            if( auto const transform = sleeper_transform( *segment, s, eps, m_origin, local_offset ) ) {
+                m_sleeper_local_transforms.emplace_back( *transform );
             }
-            tangent = glm::normalize( tangent );
-
-            // build an orthonormal basis around the tangent. world up is the reference; if the
-            // track is almost vertical we fall back to world X so cross() doesn't collapse.
-            glm::vec3 up_ref = world_up;
-            if( std::abs( glm::dot( tangent, up_ref ) ) > 0.999f ) { up_ref = glm::vec3( 1.f, 0.f, 0.f ); }
-            glm::vec3 right = glm::normalize( glm::cross( up_ref, tangent ) );
-            glm::vec3 up    = glm::cross( tangent, right );
-
-            // apply track roll (banking) around the tangent / forward axis.
-            float const roll = angles.x;
-            if( roll != 0.f ) {
-                auto const roll_mat = glm::rotate( glm::mat4( 1.f ), roll, tangent );
-                right = glm::vec3( roll_mat * glm::vec4( right, 0.f ) );
-                up    = glm::vec3( roll_mat * glm::vec4( up,    0.f ) );
-            }
-
-            // assemble local transform: columns are (right, up, forward, translation).
-            // a sleeper modelled with X = sideways, Y = up, Z = along-track now ends up
-            // correctly oriented along the path tangent regardless of curve direction.
-            auto const localpos = glm::vec3( pos - m_origin );
-            glm::mat4 m { 1.f };
-            m[ 0 ] = glm::vec4( right,   0.f );
-            m[ 1 ] = glm::vec4( up,      0.f );
-            m[ 2 ] = glm::vec4( tangent, 0.f );
-            m[ 3 ] = glm::vec4( localpos, 1.f );
-
-            if( local_offset != glm::vec3( 0.f ) ) {
-                m = glm::translate( m, local_offset );
-            }
-            m_sleeper_local_transforms.emplace_back( m );
         }
     }
 }

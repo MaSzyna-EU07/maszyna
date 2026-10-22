@@ -15,10 +15,7 @@ cSun::cSun() {
 	m_observer.temp = 15.0;							// ambient dry-bulb temperature, degrees C
 }
 
-cSun::~cSun()
-{
-
-}
+cSun::~cSun() = default;
 
 void
 cSun::init() {
@@ -79,8 +76,8 @@ float cSun::getIntensity() {
 void cSun::setLocation( float const Longitude, float const Latitude ) {
 
 	// convert fraction from geographical base of 6o minutes
-	m_observer.longitude = (int)Longitude + (Longitude - (int)Longitude) * 100.0 / 60.0;
-	m_observer.latitude = (int)Latitude + (Latitude - (int)Latitude) * 100.0 / 60.0 ;
+	m_observer.longitude = (int)Longitude + (Longitude - static_cast<float>((int)Longitude)) * 100.0 / 60.0;
+	m_observer.latitude = (int)Latitude + (Latitude - static_cast<float>((int)Latitude)) * 100.0 / 60.0 ;
 }
 
 // sets current time, overriding one acquired from the system clock
@@ -108,9 +105,9 @@ void cSun::move() {
 
     SYSTEMTIME localtime = simulation::Time.data(); // time for the calculation
 
-    if( m_observer.hour >= 0 ) { localtime.wHour = m_observer.hour; }
-    if( m_observer.minute >= 0 ) { localtime.wMinute = m_observer.minute; }
-    if( m_observer.second >= 0 ) { localtime.wSecond = m_observer.second; }
+    if( m_observer.hour >= 0 ) { localtime.wHour = static_cast<uint16_t>(m_observer.hour); }
+    if( m_observer.minute >= 0 ) { localtime.wMinute = static_cast<uint16_t>(m_observer.minute); }
+    if( m_observer.second >= 0 ) { localtime.wSecond = static_cast<uint16_t>(m_observer.second); }
 
     double localut =
         localtime.wHour
