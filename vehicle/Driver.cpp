@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
+#include "world/RoadOrder.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "world/Track.h"
@@ -602,7 +603,13 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 					                            fCurrentDistance + ProjectEventOnTrack( pEvent, pTrack, fLastDir ),
 					                            OrderCurrentGet() ) ) {
 					*/
-					if (newspeedpoint.Set(pEvent, GetDistanceToEvent(pTrack, pEvent, fLastDir, fCurrentDistance), fLength, OrderCurrentGet()))
+					// an order of a road junction or a level crossing lies on the lane it's on. it's measured along that lane: the search
+					// for the events beside the track goes in steps of about a metre, and misplaces the ones on lanes shorter than a few metres
+					auto const eventdistance{
+						typeid( *pEvent ) == typeid( road_order ) ?
+							fCurrentDistance + ProjectEventOnTrack( pEvent, pTrack, fLastDir ) :
+							GetDistanceToEvent( pTrack, pEvent, fLastDir, fCurrentDistance ) };
+					if (newspeedpoint.Set(pEvent, eventdistance, fLength, OrderCurrentGet()))
 					{
 
 						fDistance = newspeedpoint.fDist; // jeśli sygnał stop, to nie ma potrzeby dalej skanować
