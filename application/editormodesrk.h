@@ -125,6 +125,15 @@ class srk_tool final : public editor_tool
 	int m_length_hover{-1}; // of the lengths, the row under the mouse
 	int m_length_canvas{-1}; // of the lengths, of the track under the mouse in the schematic
 	int m_length_shown{-1}; // of the lengths, the one drawn: of the row or the track under the mouse, else of the track selected
+	// how the SHP track resonator of a signal stands
+	enum class shp_state
+	{
+		needless, // the signal needs none
+		missing,
+		beyond, // missing, the tracks before the signal end short of its place
+		off, // farther from its place than allowed
+		placed
+	};
 	// a signal of the station or of its lines, its lights as the routes of its trains need them: Ie-1, Ie-4 § 8
 	struct head_check
 	{
@@ -153,6 +162,7 @@ class srk_tool final : public editor_tool
 		double shp{-1.0};
 		double shp_found{-1.0}; // m before it the trains run into the event of the SHP resonator standing, -1 for none
 		bool shp_short{false}; // the tracks before it end short of the place of its resonator
+		shp_state shp_of() const;
 	};
 	std::vector<head_check> m_heads;
 	bool m_heads_known{false}; // the templates found

@@ -80,6 +80,8 @@ double constexpr kUnequal{20.0}; // m, the useful lengths of the two ways differ
 ImU32 constexpr kUnfit{IM_COL32(255, 190, 40, 255)};
 double constexpr kFastest{250.0}; // km/h, a track set faster is taken for one without a limit
 ImVec4 constexpr kWrong{1.0f, 0.42f, 0.36f, 1.0f};
+ImVec4 constexpr kDoubtful{1.0f, 0.75f, 0.3f, 1.0f};
+ImVec4 constexpr kRight{0.45f, 0.85f, 0.45f, 1.0f};
 
 bool is_switch(TTrack const &Track)
 {
@@ -425,18 +427,36 @@ double route_reach(double const Braking)
 	return std::max(3000.0, 3.0 * Braking);
 }
 
-// how far the point lies from the path in the plan, Parameter: of the nearest point of it, a metre or so apart
+// how far the point lies from the path in the plan, Parameter: of the nearest point of it, found among points 8 m or so apart and
+// narrowed down between the two by them
 double nearest_of(TTrack const &Track, int const Path, glm::dvec3 const &Point, double &Parameter)
 {
 	geometry::bezier const curve{Track.m_paths[Path]};
-	auto const count{std::clamp(static_cast<int>(curve.plan_length(16)), 64, 4000)};
+	auto const gap = [&](double const At) { return geometry::plan_distance(curve.point(At), Point); };
+	auto const count{std::clamp(static_cast<int>(curve.plan_length(16) / 8.0), 16, 512)};
 	auto best{std::numeric_limits<double>::max()};
 	for (int k = 0; k <= count; ++k)
-		if (auto const distance{geometry::plan_distance(curve.point(static_cast<double>(k) / count), Point)}; distance < best)
+		if (auto const distance{gap(static_cast<double>(k) / count)}; distance < best)
 		{
 			best = distance;
 			Parameter = static_cast<double>(k) / count;
 		}
+	auto low{std::max(0.0, Parameter - 1.0 / count)};
+	auto high{std::min(1.0, Parameter + 1.0 / count)};
+	for (int step = 0; step < 40; ++step)
+	{
+		auto const first{low + (high - low) / 3.0};
+		auto const second{high - (high - low) / 3.0};
+		if (gap(first) < gap(second))
+			high = second;
+		else
+			low = first;
+	}
+	if (auto const narrowed{(low + high) * 0.5}; gap(narrowed) < best)
+	{
+		best = gap(narrowed);
+		Parameter = narrowed;
+	}
 	return best;
 }
 
@@ -573,7 +593,49 @@ double shp_before(std::vector<station::approach_point> const &Way, glm::dvec3 co
 	return best;
 }
 
+// m from the point to the nearer end of the track
+double end_gap(TTrack const &Track, glm::dvec3 const &Point)
+{
+	auto const &ends{Track.m_paths.front().points};
+	return std::min(glm::distance(Point, ends[segment_data::point::start]), glm::distance(Point, ends[segment_data::point::end]));
+}
+
+// of the way of the trains, the point the SHP resonator wanted m before the signal goes at, within kShpTolerance: a joint of the
+// tracks, Joint, its event put on the plain track the trains run into there, else a point of a plain track away from its ends, the
+// track cut at it; -1 for none
+int resonator_at(std::vector<station::approach_point> const &Way, double const Wanted, bool &Joint)
+{
+	auto best{-1};
+	auto miss{kShpTolerance + 1e-6};
+	Joint = false;
+	for (std::size_t k = 0; k + 1 < Way.size(); ++k)
+		if (Way[k + 1].track != Way[k].track && Way[k].track->eType == tt_Normal && std::abs(Way[k].distance - Wanted) < miss)
+		{
+			miss = std::abs(Way[k].distance - Wanted);
+			best = static_cast<int>(k);
+			Joint = true;
+		}
+	if (best >= 0)
+		return best;
+	for (std::size_t k = 0; k < Way.size(); ++k)
+		if (Way[k].track->eType == tt_Normal && end_gap(*Way[k].track, Way[k].point) > 0.5 && std::abs(Way[k].distance - Wanted) < miss)
+		{
+			miss = std::abs(Way[k].distance - Wanted);
+			best = static_cast<int>(k);
+		}
+	return best;
+}
+
 } // namespace
+
+srk_tool::shp_state srk_tool::head_check::shp_of() const
+{
+	if (shp < 0.0)
+		return shp_state::needless;
+	if (shp_found < 0.0)
+		return shp_short ? shp_state::beyond : shp_state::missing;
+	return std::abs(shp_found - shp) > kShpTolerance ? shp_state::off : shp_state::placed;
+}
 
 void srk_tool::load()
 {
@@ -950,7 +1012,7 @@ void srk_tool::render_options()
 		ImGui::Spacing();
 		gesture_rows({{"LMB on a switch", "opens its station"}});
 		if (false == m_status.empty())
-			ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", m_status.c_str());
+			ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
 		ImGui::Spacing();
 		render_found();
 		return;
@@ -1077,25 +1139,16 @@ void srk_tool::render_options()
 	             "700 m up to 100, 1000 m up to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it "
 	             "keeps what stands. One step of undo");
 	step_heading(5, STR_C("SHP"));
-	std::size_t needed{0};
-	std::size_t found{0};
-	std::size_t off{0};
-	std::size_t nowhere{0};
+	std::array<std::size_t, 5> states{};
 	for (auto const &head : m_heads)
-		if (head.shp >= 0.0)
-		{
-			++needed;
-			if (head.shp_found >= 0.0)
-			{
-				++found;
-				if (std::abs(head.shp_found - head.shp) > kShpTolerance)
-					++off;
-			}
-			else if (head.shp_short)
-				++nowhere;
-		}
-	ImGui::BeginDisabled(found + nowhere == needed);
-	if (ImGui::Button(format("%s (%zu)###srkshp", STR_C("Place the SHP resonators"), needed - found - nowhere).c_str(), ImVec2(-1.0f, 0.0f)))
+		++states[static_cast<std::size_t>(head.shp_of())];
+	auto const of = [&](shp_state const State) { return states[static_cast<std::size_t>(State)]; };
+	auto const needed{m_heads.size() - of(shp_state::needless)};
+	auto const found{of(shp_state::off) + of(shp_state::placed)};
+	auto const off{of(shp_state::off)};
+	auto const nowhere{of(shp_state::beyond)};
+	ImGui::BeginDisabled(of(shp_state::missing) == 0);
+	if (ImGui::Button(format("%s (%zu)###srkshp", STR_C("Place the SHP resonators"), of(shp_state::missing)).c_str(), ImVec2(-1.0f, 0.0f)))
 		set_shp();
 	ImGui::EndDisabled();
 	item_tooltip("Places the SHP track resonators the signals checked lack, rezonator.inc, as PKP PLK places them: 200 m before an entry "
@@ -1122,7 +1175,7 @@ void srk_tool::render_options()
 			ImGui::EndTable();
 		}
 	if (false == m_status.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", m_status.c_str());
+		ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
 	ImGui::Spacing();
 	m_length_hover = -1;
 	if (ImGui::CollapsingHeader(format("%s (%zu)###srklengths", STR_C("Track lengths"), m_lengths.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
@@ -1354,7 +1407,7 @@ void srk_tool::render_lengths()
 				}
 				ImGui::TextDisabled(STR_C("Construction length %.0f m: between the switches at its ends, the switches within it left out"), track.construction);
 				if (std::abs(track.ways[0].length - track.ways[1].length) > kUnequal)
-					ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", STR_C("The two ways differ: their trains stop on other stretches of the track, between other switches or signals"));
+					ImGui::TextColored(kDoubtful, "%s", STR_C("The two ways differ: their trains stop on other stretches of the track, between other switches or signals"));
 				ImGui::TextDisabled("%s", STR_C("LMB: show it"));
 				ImGui::EndTooltip();
 			}
@@ -1415,7 +1468,7 @@ void srk_tool::render_heads()
 	for (std::size_t index = 0; index < m_heads.size(); ++index)
 	{
 		auto const &head{m_heads[index]};
-		if (head.station || false == head.fits || false == head.problems.empty() || (head.shp >= 0.0 && (head.shp_found < 0.0 || std::abs(head.shp_found - head.shp) > kShpTolerance)))
+		if (head.station || false == head.fits || false == head.problems.empty() || (head.shp_of() != shp_state::needless && head.shp_of() != shp_state::placed))
 			rows.push_back(index);
 		else
 			++fine;
@@ -1474,26 +1527,26 @@ void srk_tool::render_heads()
 					ImGui::TextUnformatted(format(STR_C("Needs: %s"), need_text(need).c_str()).c_str());
 				}
 				if (head.shortened > 0)
-					ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", format(STR_C("The next signal stands nearer than the braking distance: with it at stop this one slows the trains to %d km/h, Ie-4 § 8 ust. 5"), head.shortened).c_str());
+					ImGui::TextColored(kDoubtful, "%s", format(STR_C("The next signal stands nearer than the braking distance: with it at stop this one slows the trains to %d km/h, Ie-4 § 8 ust. 5"), head.shortened).c_str());
 				if (head.indicator)
-					ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", STR_C("Give it a W21 indicator \"14\": 140 km/h with the next signal at stop, Ie-4 § 8 ust. 5"));
+					ImGui::TextColored(kDoubtful, "%s", STR_C("Give it a W21 indicator \"14\": 140 km/h with the next signal at stop, Ie-4 § 8 ust. 5"));
 				if (head.lamps.empty() && head.kind != "warning")
 					ImGui::TextDisabled("%s", STR_C("A semaphore with arms: its lights aren't checked"));
 				else if (false == head.fits && head.fit.empty())
 					ImGui::TextColored(kWrong, "%s", STR_C("No template of its kind and mount has these lights"));
 				else if (false == head.fits)
-					ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", format(STR_C("Its lights don't show all of it: %s does"), head.fit.c_str()).c_str());
+					ImGui::TextColored(kDoubtful, "%s", format(STR_C("Its lights don't show all of it: %s does"), head.fit.c_str()).c_str());
 				else if (head.more)
 					ImGui::TextDisabled("%s", format(STR_C("It has more lights than it needs: %s will do"), head.fit.c_str()).c_str());
 				for (auto const &problem : head.problems)
 					ImGui::TextColored(kWrong, "%s", problem.c_str());
-				if (head.shp >= 0.0)
+				if (auto const state{head.shp_of()}; state != shp_state::needless)
 				{
 					auto const wanted{head.shp > 0.0 ? format(STR_C("its SHP resonator belongs %.0f m before it"), head.shp) : std::string{STR_C("its SHP resonator belongs at it, it tells of the next signal")}};
-					if (head.shp_found < 0.0)
-						ImGui::TextColored(kWrong, "%s", (wanted + ", " + (head.shp_short ? STR("the tracks before it end short of it") : STR("none stands"))).c_str());
+					if (state == shp_state::missing || state == shp_state::beyond)
+						ImGui::TextColored(kWrong, "%s", (wanted + ", " + (state == shp_state::beyond ? STR("the tracks before it end short of it") : STR("none stands"))).c_str());
 					else
-						ImGui::TextColored(std::abs(head.shp_found - head.shp) > kShpTolerance ? ImVec4(1.0f, 0.75f, 0.3f, 1.0f) : ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "%s", (wanted + ", " + format(STR_C("its event %.0f m before it"), head.shp_found)).c_str());
+						ImGui::TextColored(state == shp_state::off ? kDoubtful : kRight, "%s", (wanted + ", " + format(STR_C("its event %.0f m before it"), head.shp_found)).c_str());
 				}
 				ImGui::TextDisabled("%s", STR_C("LMB: fly to it"));
 				ImGui::PopTextWrapPos();
@@ -1518,25 +1571,25 @@ void srk_tool::render_heads()
 			if (head.lamps.empty())
 				ImGui::TextDisabled("-");
 			else if (false == head.fits)
-				ImGui::TextColored(head.fit.empty() ? kWrong : ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", head.fit.empty() ? STR_C("no template") : STR_C("lights missing"));
+				ImGui::TextColored(head.fit.empty() ? kWrong : kDoubtful, "%s", head.fit.empty() ? STR_C("no template") : STR_C("lights missing"));
 			else if (head.more)
 				ImGui::TextDisabled("%s", STR_C("more than needed"));
 			else
-				ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "%s", STR_C("fits"));
+				ImGui::TextColored(kRight, "%s", STR_C("fits"));
 			if (false == head.problems.empty())
 			{
 				ImGui::SameLine();
 				ImGui::TextColored(kWrong, "%s", STR_C("too near"));
 			}
 			ImGui::TableNextColumn();
-			if (head.shp < 0.0)
-				ImGui::TextDisabled("-");
-			else if (head.shp_found < 0.0)
-				ImGui::TextColored(kWrong, "%s", head.shp_short ? STR_C("no track") : STR_C("none"));
-			else if (std::abs(head.shp_found - head.shp) > kShpTolerance)
-				ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%.0f m", head.shp_found);
-			else
-				ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "%s", head.shp > 0.0 ? format("%.0f m", head.shp_found).c_str() : STR_C("at it"));
+			switch (head.shp_of())
+			{
+			case shp_state::needless: ImGui::TextDisabled("-"); break;
+			case shp_state::missing: ImGui::TextColored(kWrong, "%s", STR_C("none")); break;
+			case shp_state::beyond: ImGui::TextColored(kWrong, "%s", STR_C("no track")); break;
+			case shp_state::off: ImGui::TextColored(kDoubtful, "%.0f m", head.shp_found); break;
+			default: ImGui::TextColored(kRight, "%s", head.shp > 0.0 ? format("%.0f m", head.shp_found).c_str() : STR_C("at it")); break;
+			}
 		}
 		ImGui::EndTable();
 	}
@@ -2274,7 +2327,6 @@ void srk_tool::set_lines()
 {
 	m_status.clear();
 	auto const stem{stem_of_open()};
-	auto const &layout{*m_layout};
 	std::vector<standing_signal> standing;
 	m_signals.standing_signals(standing, true);
 	std::vector<station::line> lines;
@@ -2282,6 +2334,7 @@ void srk_tool::set_lines()
 	std::vector<std::size_t> entry_standing;
 	if (false == lines_of_open(standing, lines, entries, entry_standing, m_status))
 		return;
+	auto const &layout{*m_layout};
 	// of each line, 1: the automatic block, placed on a double-track line only, 2: the automatic block on a single-track line, its
 	// signals facing both ways on a track left as they stand, 0: the semi-automatic one
 	std::vector<char> automatic(lines.size(), 0);
@@ -2721,6 +2774,8 @@ void srk_tool::survey_signals()
 	{
 		m_heads.clear();
 		m_heads_known = false;
+		m_lines.clear();
+		m_lines_problem = STR("Looking for the signal templates...");
 		if (false == m_measured)
 			measure({});
 		return;
@@ -3011,6 +3066,7 @@ void srk_tool::set_shp()
 					taken.insert(ToLower(event.first));
 	struct placing
 	{
+		std::string signal; // shown
 		std::string name; // of the resonator, its event is <name>_shp
 		TTrack *track{nullptr}; // the trains run into its event on, where a joint of the tracks lies
 		TTrack *cut{nullptr}; // the track cut at the point, else
@@ -3023,9 +3079,9 @@ void srk_tool::set_shp()
 	std::vector<std::string> problems;
 	for (auto const &head : m_heads)
 	{
-		if (head.shp < 0.0 || head.shp_found >= 0.0)
+		if (head.shp_of() != shp_state::missing && head.shp_of() != shp_state::beyond)
 			continue;
-		if (head.shp_short)
+		if (head.shp_of() == shp_state::beyond)
 		{
 			problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), head.name.c_str(), head.shp));
 			continue;
@@ -3045,29 +3101,8 @@ void srk_tool::set_shp()
 			problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), head.name.c_str(), head.shp));
 			continue;
 		}
-		// a joint of the tracks within the tolerance takes the event on the track the trains run into there, else the track is cut
-		auto best{-1};
 		auto joint{false};
-		auto miss{kShpTolerance + 1e-6};
-		for (std::size_t k = 0; k + 1 < way.size(); ++k)
-			if (way[k + 1].track != way[k].track && way[k].track->eType == tt_Normal && std::abs(way[k].distance - head.shp) < miss)
-			{
-				miss = std::abs(way[k].distance - head.shp);
-				best = static_cast<int>(k);
-				joint = true;
-			}
-		if (best < 0)
-			for (std::size_t k = 0; k < way.size(); ++k)
-			{
-				auto const &ends{way[k].track->m_paths.front().points};
-				if (way[k].track->eType != tt_Normal || std::min(glm::distance(way[k].point, ends[segment_data::point::start]), glm::distance(way[k].point, ends[segment_data::point::end])) <= 0.5)
-					continue;
-				if (std::abs(way[k].distance - head.shp) < miss)
-				{
-					miss = std::abs(way[k].distance - head.shp);
-					best = static_cast<int>(k);
-				}
-			}
+		auto const best{resonator_at(way, head.shp, joint)};
 		if (best < 0)
 		{
 			problems.push_back(format(STR_C("%s: no plain track within %.0f m of the place of its SHP resonator"), head.name.c_str(), kShpTolerance));
@@ -3090,6 +3125,7 @@ void srk_tool::set_shp()
 		for (int number = 2; taken.count(ToLower(name) + "_shp") > 0 && number < 100; ++number)
 			name = found->name + "_rez" + std::to_string(number);
 		taken.insert(ToLower(name) + "_shp");
+		entry.signal = head.name;
 		entry.name = name;
 		entry.facing = at.facing;
 		entry.point = at.point;
@@ -3132,8 +3168,7 @@ void srk_tool::set_shp()
 		if (entry.cut == nullptr)
 			continue;
 		auto *track{piece_at(entry.cut, entry.point)};
-		auto const &ends{track->m_paths.front().points};
-		if (std::min(glm::distance(entry.point, ends[segment_data::point::start]), glm::distance(entry.point, ends[segment_data::point::end])) <= 0.3)
+		if (end_gap(*track, entry.point) <= 0.3)
 			continue;
 		if (captured.insert(track).second)
 			before.emplace_back(track, editor_track::capture(*track));
@@ -3152,6 +3187,12 @@ void srk_tool::set_shp()
 	for (auto const &entry : places)
 	{
 		auto *track{entry.track != nullptr ? entry.track : piece_at(entry.cut, entry.inside)};
+		// the trains run into the track at the point: at the start of its path running towards its end
+		if (glm::distance(track->m_paths.front().points[entry.facing > 0 ? segment_data::point::start : segment_data::point::end], entry.point) > 1.0)
+		{
+			problems.push_back(format(STR_C("%s: the track couldn't be cut at the place of its SHP resonator"), entry.signal.c_str()));
+			continue;
+		}
 		if (captured.insert(track).second)
 			before.emplace_back(track, editor_track::capture(*track));
 		editor_track::events(*track, entry.facing > 0 ? 2 : 1).emplace_back(ToLower(entry.name) + "_shp", nullptr);
@@ -3167,13 +3208,14 @@ void srk_tool::set_shp()
 		changes.others.push_back(std::move(item));
 	}
 	std::string error;
+	auto const placed{changes.others.size()};
 	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
 	if (false == error.empty())
 	{
-		m_status = format(STR_C("The SHP resonators couldn't be placed: %s"), error.c_str());
+		m_status = format(STR_C("The SHP resonators couldn't be placed: %s. Ctrl+Z takes back the tracks cut"), error.c_str());
 		return;
 	}
-	m_status = format(STR_P("%zu SHP resonator placed", "%zu SHP resonators placed", places.size()), places.size()) + ", " + format(STR_P("%zu track cut", "%zu tracks cut", cuts), cuts) + ". " + STR("Ctrl+Z takes it back, the resonators work after the scenery is saved and opened again");
+	m_status = format(STR_P("%zu SHP resonator placed", "%zu SHP resonators placed", placed), placed) + ", " + format(STR_P("%zu track cut", "%zu tracks cut", cuts), cuts) + ". " + STR("Ctrl+Z takes it back, the resonators work after the scenery is saved and opened again");
 	for (auto const &problem : problems)
 		m_status += "\n" + problem;
 }

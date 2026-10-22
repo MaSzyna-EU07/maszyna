@@ -11233,8 +11233,11 @@ msgstr[2] "przecięto %zu torów"
 msgid "Ctrl+Z takes it back, the resonators work after the scenery is saved and opened again"
 msgstr "Ctrl+Z cofa, rezonatory działają po zapisaniu i ponownym otwarciu scenerii"
 
-msgid "The SHP resonators couldn't be placed: %s"
-msgstr "Nie udało się postawić rezonatorów SHP: %s"
+msgid "The SHP resonators couldn't be placed: %s. Ctrl+Z takes back the tracks cut"
+msgstr "Nie udało się postawić rezonatorów SHP: %s. Ctrl+Z cofa przecięcie torów"
+
+msgid "%s: the track couldn't be cut at the place of its SHP resonator"
+msgstr "%s: nie udało się przeciąć toru w miejscu rezonatora SHP"
 
 msgid "at it"
 msgstr "przy nim"
