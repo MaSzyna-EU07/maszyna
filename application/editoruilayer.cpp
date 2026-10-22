@@ -36,6 +36,7 @@ editor_ui::editor_ui()
 	add_external_panel(&m_nodebankpanel);
 	add_external_panel(&m_layerspanel);
 	add_external_panel(&m_includespanel);
+	add_external_panel(&m_memcellspanel);
 
 	// the menu is a part of the layout of the editor, not a pop-up as in the driver mode
 	m_menu_always = true;
@@ -984,6 +985,14 @@ void editor_ui::render_menu_contents()
 		m_editmenu();
 
 	ui_layer::render_menu_contents();
+
+	if (ImGui::BeginMenu(STR_C("Debug")))
+	{
+		ImGui::MenuItem(STR_C("Memory cells"), nullptr, &m_memcellspanel.is_open);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Looks up the memory cells of the scenery, shows what's in them and sets it by hand"));
+		ImGui::EndMenu();
+	}
 
 	if (m_menuoptions)
 		m_menuoptions();

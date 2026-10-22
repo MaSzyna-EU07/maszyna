@@ -534,6 +534,7 @@ editor_mode::editor_mode() {
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
+	ui()->set_memcell_focus([this](scene::basic_node *Node) { start_focus(Node); });
 	ui()->set_edit_menu([this]() { render_edit_menu(); });
 	ui()->set_tools_menu([this]() { render_track_presets_menu(); });
 	ui()->set_menu_options([this]() {

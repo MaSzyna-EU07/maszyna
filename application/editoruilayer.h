@@ -108,6 +108,7 @@ class editor_ui : public ui_layer
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
 	void set_new_scenery(std::function<void()> New) { m_newscenery = std::move(New); }
 	void set_open_scenery(std::function<void()> Open) { m_openscenery = std::move(Open); }
+	void set_memcell_focus(std::function<void(scene::basic_node *)> Focus) { m_memcellspanel.focus = std::move(Focus); }
 	// part of the main window between the docked windows, where the 3d view is seen; for the overlays placed in it
 	static glm::vec2 view_min()
 	{
@@ -197,6 +198,7 @@ class editor_ui : public ui_layer
 	nodebank_panel m_nodebankpanel{"Node bank", true}; // templates to insert, paint or fill with
 	layers_panel m_layerspanel{"Layers", true};
 	includes_panel m_includespanel{"Include database", false};
+	memcells_panel m_memcellspanel{"Memory cells", false};
 	std::function<void()> m_save;
 	std::function<void()> m_export;
 	std::function<void()> m_newscenery;

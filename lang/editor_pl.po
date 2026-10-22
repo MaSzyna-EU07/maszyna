@@ -10290,3 +10290,88 @@ msgstr "Na jakiej długości od końca p1 szyny płynnie przechodzą w szyny tor
 
 msgid "How far from the end p2 the rails fade into those of the track joined there, where their textures differ; 0: the joint stays sharp, whatever the track joined there has"
 msgstr "Na jakiej długości od końca p2 szyny płynnie przechodzą w szyny toru tam dołączonego, gdy ich tekstury są różne; 0: ostra granica na styku, niezależnie od ustawienia toru tam dołączonego"
+
+# scenery editor: level crossings told by memory cells
+
+msgid "Memory cell"
+msgstr "Komórka pamięci"
+
+msgid "(named after the crossing)"
+msgstr "(nazwana od przejazdu)"
+
+msgid "Events of the scenery close the entry onto the crossing with the first value of this memory cell:\nabove 0 the vehicles heading for the crossing are stopped, below 0 it's kept open whatever comes by the rails,\n0 leaves it to the trains. The vehicles past the stops, on the crossing or leaving it, drive on.\nThe crossing sets the second value: 1 while the entry is closed, 0 while it's open.\nLeft empty, the cell is the one named after the crossing with \":block\" added, made if the scenery doesn't have it"
+msgstr "Eventy scenerii zamykają wjazd na przejazd pierwszą wartością tej komórki pamięci:\npowyżej 0 pojazdy jadące na przejazd są zatrzymywane, poniżej 0 jest on otwarty bez względu na to, co jedzie po torach,\n0 zostawia to pociągom. Pojazdy za miejscami zatrzymania, na przejeździe albo zjeżdżające z niego, jadą dalej.\nPrzejazd ustawia drugą wartość: 1, gdy wjazd jest zamknięty, 0, gdy jest otwarty.\nGdy pole jest puste, jest to komórka nazwana od przejazdu z dodanym \":block\", tworzona, jeśli sceneria jej nie ma"
+
+msgid "The crossing has no name, so there's no memory cell to tell it by"
+msgstr "Przejazd nie ma nazwy, więc nie ma komórki pamięci, którą można nim sterować"
+
+msgid "The entry is closed"
+msgstr "Wjazd zamknięty"
+
+msgid "The entry is open"
+msgstr "Wjazd otwarty"
+
+msgid "By the trains"
+msgstr "Według pociągów"
+
+msgid "Closed"
+msgstr "Zamknięty"
+
+msgid "Kept open"
+msgstr "Otwarty"
+
+msgid "Sets the first value of the memory cell, the way an event of the scenery would. It isn't saved with the scenery"
+msgstr "Ustawia pierwszą wartość komórki pamięci, tak jak zrobiłby to event scenerii. Nie jest zapisywane w scenerii"
+
+# scenery editor: memory cells window
+
+msgid "Debug"
+msgstr "Debugowanie"
+
+msgid "Memory cells"
+msgstr "Komórki pamięci"
+
+msgid "Looks up the memory cells of the scenery, shows what's in them and sets it by hand"
+msgstr "Wyszukuje komórki pamięci scenerii, pokazuje ich zawartość i pozwala ją ustawić ręcznie"
+
+msgid "In the texts too"
+msgstr "Także w tekstach"
+
+msgid "Log all"
+msgstr "Wszystkie do logu"
+
+msgid "Writes the content of all memory cells to the log"
+msgstr "Zapisuje zawartość wszystkich komórek pamięci do logu"
+
+msgid "Memory cells: %d, shown: %d"
+msgstr "Komórek pamięci: %d, pokazanych: %d"
+
+msgid "Text"
+msgstr "Tekst"
+
+msgid "Value 1"
+msgstr "Wartość 1"
+
+msgid "Value 2"
+msgstr "Wartość 2"
+
+msgid "Made by the simulator, it isn't saved with the scenery"
+msgstr "Utworzona przez symulator, nie jest zapisywana w scenerii"
+
+msgid "Pick a memory cell from the list to set what's in it. A double click shows where it is"
+msgstr "Wybierz komórkę pamięci z listy, aby ustawić jej zawartość. Podwójne kliknięcie pokazuje, gdzie jest"
+
+msgid "\"%s\": %s %g %g"
+msgstr "\"%s\": %s %g %g"
+
+msgid "At %.1f %.1f %.1f"
+msgstr "Położenie %.1f %.1f %.1f"
+
+msgid "Puts the ticked fields in the cell, the way an UpdateValues event does. The scenery files aren't changed"
+msgstr "Wpisuje zaznaczone pola do komórki, tak jak event UpdateValues. Pliki scenerii nie są zmieniane"
+
+msgid "Add to the values"
+msgstr "Dodaj do wartości"
+
+msgid "Read again"
+msgstr "Odczytaj ponownie"

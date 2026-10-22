@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "world/Track.h"
 #include "world/Event.h"
+#include "world/MemCell.h"
 #include "world/RoadOrder.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
@@ -356,6 +357,14 @@ void roadpoint_node::import(cParser &Input, glm::dvec3 const &Offset)
 		{
 			m_state.stoplines = (Input.getToken<std::string>() != "no");
 		}
+		else if (token == "memcell")
+		{
+			m_state.memcell = Input.getToken<std::string>();
+			if (m_state.memcell == "none")
+			{
+				m_state.memcell.clear();
+			}
+		}
 		else if (token == "interval")
 		{
 			Input.getTokens();
@@ -488,6 +497,7 @@ void roadpoint_node::bind()
 	{
 	case kind_type::crossing:
 	{
+		bind_memcell();
 		bind_crossing();
 		break;
 	}
@@ -571,6 +581,42 @@ void roadpoint_node::bind()
 		}
 		break;
 	}
+	}
+}
+
+// name of the memory cell the crossing is told by
+std::string roadpoint_node::memcell_name() const
+{
+	if (false == m_state.memcell.empty())
+	{
+		return m_state.memcell;
+	}
+	return m_name.empty() || m_name == "none" ? std::string{} : m_name + ":block";
+}
+
+// finds the memory cell the crossing is told by, or makes it
+void roadpoint_node::bind_memcell()
+{
+	auto const name{memcell_name()};
+	if (name.empty())
+	{
+		m_memcell = nullptr;
+		return;
+	}
+	if (m_memcell != nullptr && m_memcell->name() == name)
+	{
+		return;
+	}
+	m_memcell = simulation::Memory.find(name);
+	if (m_memcell == nullptr)
+	{
+		scene::node_data nodedata;
+		nodedata.name = name;
+		m_memcell = new TMemCell(nodedata);
+		// NOTE: it's made anew each time the scenery is loaded, so it isn't saved with it
+		m_memcell->is_exportable = false;
+		m_memcell->location(m_state.position);
+		simulation::Memory.insert(m_memcell);
 	}
 }
 
@@ -896,9 +942,12 @@ void roadpoint_node::update_crossing(double const Deltatime)
 		}
 		m_seen.swap(seen);
 	}
-	if ((m_hold > 0.0) != m_closed)
+	// the scenery can close the entry, or keep it open, whatever the trains do
+	auto const control{m_memcell != nullptr ? m_memcell->Value1() : 0.0};
+	auto const closed{control > 0.0 || (control == 0.0 && m_hold > 0.0)};
+	if (closed != m_closed)
 	{
-		close(m_hold > 0.0);
+		close(closed);
 	}
 }
 
@@ -906,9 +955,14 @@ void roadpoint_node::update_crossing(double const Deltatime)
 void roadpoint_node::close(bool const Closed)
 {
 	m_closed = Closed;
+	// only the vehicles heading for the crossing are stopped, at the stops ahead of it; the ones past them leave it
 	for (std::size_t idx = 0; idx < m_stops.size() && idx < m_events.size(); ++idx)
 	{
 		static_cast<stop_event *>(m_events[idx])->m_velocity = (Closed ? 0.0 : -1.0);
+	}
+	if (m_memcell != nullptr && m_memcell->Value2() != (Closed ? 1.0 : 0.0))
+	{
+		m_memcell->UpdateValues("", 0.0, Closed ? 1.0 : 0.0, basic_event::flags::value2);
 	}
 }
 
@@ -1150,6 +1204,10 @@ void roadpoint_node::export_as_text_(std::ostream &Output) const
 	case kind_type::crossing:
 	{
 		Output << "clearance " << m_state.clearance << ' ' << "warning " << m_state.warning << ' ' << "stoplines " << (m_state.stoplines ? "yes" : "no") << ' ';
+		if (false == m_state.memcell.empty())
+		{
+			Output << "memcell " << m_state.memcell << ' ';
+		}
 		break;
 	}
 	case kind_type::spawn:

@@ -20,6 +20,8 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Track.h"
 #include "world/Road.h"
 #include "world/RoadPoint.h"
+#include "world/MemCell.h"
+#include "world/Event.h"
 #include "simulation/simulation.h"
 
 #include "imgui/imgui.h"
@@ -537,6 +539,51 @@ bool editor_mode::render_roadpoint_layout(roadpoint_node::state &State, roadpoin
 		             "It opens a few seconds after the last one is gone");
 		if (ImGui::Checkbox(STR_C("Paint the stop lines"), &State.stoplines))
 			changed = true;
+		// what the scenery closes the entry onto the crossing with
+		char memcell[128];
+		copy_text(memcell, sizeof(memcell), State.memcell);
+		ImGui::SetNextItemWidth(200.0f);
+		if (ImGui::InputTextWithHint(STR_C("Memory cell"), STR_C("(named after the crossing)"), memcell, sizeof(memcell), ImGuiInputTextFlags_EnterReturnsTrue))
+		{
+			auto name{lower_case(memcell)};
+			if (name == "none")
+				name.clear();
+			if (name.find(' ') == std::string::npos && name != State.memcell)
+			{
+				State.memcell = name;
+				changed = true;
+			}
+		}
+		item_tooltip("Events of the scenery close the entry onto the crossing with the first value of this memory cell:\n"
+		             "above 0 the vehicles heading for the crossing are stopped, below 0 it's kept open whatever comes by the rails,\n"
+		             "0 leaves it to the trains. The vehicles past the stops, on the crossing or leaving it, drive on.\n"
+		             "The crossing sets the second value: 1 while the entry is closed, 0 while it's open.\n"
+		             "Left empty, the cell is the one named after the crossing with \":block\" added, made if the scenery doesn't have it");
+		if (Point != nullptr)
+		{
+			auto *cell{Point->memcell()};
+			if (cell == nullptr)
+			{
+				ImGui::TextColored(warning, "%s", STR_C("The crossing has no name, so there's no memory cell to tell it by"));
+			}
+			else
+			{
+				ImGui::Text("\"%s\": %g %g", cell->name().c_str(), cell->Value1(), cell->Value2());
+				ImGui::SameLine();
+				ImGui::TextUnformatted(Point->closed() ? STR_C("The entry is closed") : STR_C("The entry is open"));
+				// the value can be tried out right here; the scenery isn't changed by it
+				int control{cell->Value1() > 0.0 ? 1 : cell->Value1() < 0.0 ? 2 : 0};
+				auto const before{control};
+				ImGui::RadioButton(STR_C("By the trains"), &control, 0);
+				ImGui::SameLine();
+				ImGui::RadioButton(STR_C("Closed"), &control, 1);
+				ImGui::SameLine();
+				ImGui::RadioButton(STR_C("Kept open"), &control, 2);
+				item_tooltip("Sets the first value of the memory cell, the way an event of the scenery would. It isn't saved with the scenery");
+				if (control != before)
+					cell->UpdateValues("", control == 1 ? 1.0 : control == 2 ? -1.0 : 0.0, 0.0, basic_event::flags::value1);
+			}
+		}
 		break;
 	}
 	case roadpoint_node::kind_type::spawn:

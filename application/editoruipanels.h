@@ -275,6 +275,40 @@ class includes_panel : public ui_panel
 	bool m_statuserror{false};
 };
 
+// memory cells of the scenery: looked up by name or text, with what's in them, which can be set by hand while the scenery runs
+class memcells_panel : public ui_panel
+{
+
+  public:
+	memcells_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen) {}
+
+	void render() override;
+
+	// moves the camera to specified node; provided by the editor mode
+	std::function<void(scene::basic_node *)> focus;
+
+  private:
+	// methods
+	void render_list();
+	void render_cell();
+	void select(TMemCell *Cell);
+	// members
+	char m_filter[128]{};
+	bool m_searchtext{true}; // the filter is looked for in the texts of the cells as well as in their names
+	std::vector<TMemCell *> m_sorted; // all cells, in the order of their names
+	std::vector<TMemCell *> m_listed; // the ones matching the filter
+	std::string m_listedfilter; // filter the list was made for
+	double m_listedtime{-1.0}; // when it was made; the texts change, so it's made again now and then
+	TMemCell *m_selected{nullptr};
+	char m_text[256]{}; // what's going to be put in the selected cell
+	double m_value1{0.0};
+	double m_value2{0.0};
+	bool m_settext{true};
+	bool m_setvalue1{true};
+	bool m_setvalue2{true};
+	bool m_add{false}; // the values are added to what the cell holds, the way an event with the add mode does
+};
+
 class functions_panel : public ui_panel
 {
 
