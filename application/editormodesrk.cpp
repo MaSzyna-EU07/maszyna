@@ -772,11 +772,13 @@ void srk_tool::draw_overlay() const
 	if (m_head_hover >= 0 && m_head_hover < static_cast<int>(m_heads.size()))
 	{
 		auto const &head{m_heads[m_head_hover]};
-		ImVec2 foot, top;
-		if (projection.project(head.position, foot) && projection.project(head.position + glm::dvec3{0.0, 6.0, 0.0}, top))
+		ImVec2 label;
+		if (projection.project(head.position + glm::dvec3{0.0, 7.0, 0.0}, label))
 		{
+			ImVec2 const foot{label.x, label.y - ImGui::GetTextLineHeight() - 8.0f};
+			ImVec2 const top{label.x, foot.y - 30.0f};
 			drawlist->AddLine(foot, top, kHovered, 3.0f);
-			drawlist->AddCircle(top, 9.0f, kHovered, 0, 3.0f);
+			drawlist->AddCircle(ImVec2(top.x, top.y - 9.0f), 9.0f, kHovered, 0, 3.0f);
 		}
 	}
 }
@@ -1193,7 +1195,7 @@ void srk_tool::render_heads()
 					for (auto const *turnout : route.turnouts)
 						turnouts += (turnouts.empty() ? "" : ", ") + without_stem(turnout->name(), stem_of_open());
 					if (false == turnouts.empty())
-						text += ", " + format(STR_C("turning at %s"), turnouts.c_str());
+						text += ", " + format(STR_P("off the straight at switch %s", "off the straight at switches %s", route.turnouts.size()), turnouts.c_str());
 					if (route.warning >= 0)
 						text += ", " + STR("past a warning disc");
 					ImGui::BulletText("%s", text.c_str());

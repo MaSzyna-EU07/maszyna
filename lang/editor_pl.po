@@ -10961,7 +10961,7 @@ msgid "To the end of the tracks: %.0f m"
 msgstr "Do końca torów: %.0f m"
 
 msgid "No signal within %.0f m"
-msgstr "Żadnego semafora przez %.0f m"
+msgstr "Brak semafora na %.0f m"
 
 msgid "%d km/h through the switches"
 msgstr "%d km/h przez rozjazdy"
@@ -10969,8 +10969,11 @@ msgstr "%d km/h przez rozjazdy"
 msgid "%.0f km/h"
 msgstr "%.0f km/h"
 
-msgid "turning at %s"
-msgstr "zwrot na %s"
+msgid "off the straight at switch %s"
+msgid_plural "off the straight at switches %s"
+msgstr[0] "w bok na rozjeździe %s"
+msgstr[1] "w bok na rozjazdach %s"
+msgstr[2] "w bok na rozjazdach %s"
 
 msgid "past a warning disc"
 msgstr "za tarczą ostrzegawczą"
@@ -10991,13 +10994,13 @@ msgid "No template of its kind and mount has these lights"
 msgstr "Żaden szablon tego rodzaju i mocowania nie ma tych świateł"
 
 msgid "Its lights don't show all of it: %s does"
-msgstr "Jego światła nie pokażą wszystkiego, %s pokaże"
+msgstr "Brakuje mu świateł, pasuje %s"
 
 msgid "It has more lights than it needs: %s will do"
 msgstr "Ma więcej świateł, niż trzeba: wystarczy %s"
 
 msgid "LMB: fly to it"
-msgstr "LPM: leć do niego"
+msgstr "LPM: pokaż go w scenerii"
 
 msgid "disc"
 msgstr "tarcza"
@@ -11033,7 +11036,7 @@ msgid "No template has the lights %s need, they got the one chosen in the Signal
 msgstr "Żaden szablon nie ma świateł potrzebnych dla %s, dostały ten wybrany w narzędziu Sygnalizatory: zobacz Komory semaforów"
 
 msgid "No main signal within %.0f m ahead of it to tell of"
-msgstr "Przez %.0f m przed nią nie ma semafora, który by zapowiadała"
+msgstr "Na %.0f m przed nią nie ma semafora do zapowiadania"
 
 msgid "It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"
 msgstr "Stoi %.0f m przed %s, mniej niż droga hamowania %.0f m: pociąg nie zdąży się zatrzymać przed semaforem"
