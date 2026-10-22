@@ -84,12 +84,14 @@ struct signal_order
 	std::string kind;
 	std::string name;
 	std::string plate; // the name on the plate under the head, when the template has one
+	std::string linked{"none"}; // the signal before it, when the template takes one: a block signal shows its aspects by it
 };
 struct signal_rename
 {
 	scene::instance_handle instance{0};
 	std::string name;
 	std::string plate;
+	std::string linked; // the same, empty to keep the one it has
 };
 struct standing_signal
 {
@@ -98,6 +100,16 @@ struct standing_signal
 	std::string kind;
 	glm::dvec3 position{0.0};
 	double yaw{0.0};
+	std::string linked; // of a template that takes one, else empty
+};
+// one step of the history of the signalling: signals placed, standing ones renamed, other templates placed with them, the values
+// of standing ones replaced
+struct signal_changes
+{
+	std::vector<signal_order> placed;
+	std::vector<signal_rename> renamed;
+	std::vector<template_item> others;
+	std::vector<std::pair<scene::instance_handle, std::vector<std::string>>> values;
 };
 
 struct nmt_place
@@ -177,9 +189,9 @@ class editor_signals
   public:
 	// false while the signal templates are still being looked for
 	virtual bool standing_signals(std::vector<standing_signal> &Signals, bool const Wait) = 0;
-	// the signals placed by the templates chosen for their kinds and the standing ones renamed, with the tracks changed before:
-	// one step of the history. returns: how many were placed
-	virtual std::size_t signal_batch(std::vector<signal_order> const &Placed, std::vector<signal_rename> const &Renamed, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) = 0;
+	// the signals placed by the templates chosen for their kinds and the rest of the changes, with the tracks changed before: one
+	// step of the history. returns: how many signals were placed
+	virtual std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) = 0;
 
   protected:
 	~editor_signals() = default;

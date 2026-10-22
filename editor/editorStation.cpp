@@ -1254,4 +1254,168 @@ std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &T
 	return result;
 }
 
+std::vector<line> lines_out(layout const &Layout, std::vector<signal> const &Signals, double const Limit)
+{
+	std::vector<line> result;
+	for (std::size_t index = 0; index < Signals.size(); ++index)
+	{
+		auto const &entry{Signals[index]};
+		if (entry.kind != signal::role::entry || entry.track == nullptr || node(*entry.track))
+			continue;
+		line found;
+		found.entry = index;
+		// out where the trains it faces come from
+		auto *track{entry.track};
+		auto outward{entry.facing < 0};
+		auto first{true};
+		std::unordered_set<TTrack const *> seen;
+		while (true)
+		{
+			double length{0.0};
+			auto points{dense_points(*track, 0, length)};
+			if (false == outward)
+				std::reverse(points.begin(), points.end());
+			if (first)
+			{
+				auto const nearest{std::min_element(points.begin(), points.end(), [&](glm::dvec3 const &A, glm::dvec3 const &B) { return plan_distance(A, entry.point) < plan_distance(B, entry.point); })};
+				points.erase(points.begin(), nearest);
+				points.front() = entry.point;
+			}
+			else
+				points.erase(points.begin());
+			seen.insert(track);
+			found.tracks.push_back(track);
+			found.outward.push_back(outward);
+			for (auto const &point : points)
+			{
+				found.distances.push_back(found.points.empty() ? 0.0 : found.distances.back() + plan_distance(found.points.back(), point));
+				found.points.push_back(point);
+				found.owners.push_back(found.tracks.size() - 1);
+			}
+			first = false;
+			if (found.length() > Limit)
+				break;
+			auto const end{end_of(*track, 0, outward)};
+			auto *next{neighbour(*track, 0, outward)};
+			if (next == nullptr || false == rail(*next) || seen.count(next) > 0)
+				break;
+			if (node(*next))
+			{
+				found.station = true;
+				break;
+			}
+			int path{0};
+			bool atend{false};
+			if (false == end_at(*next, end, path, atend))
+				break;
+			track = next;
+			outward = false == atend;
+		}
+		if (found.length() > 1.0)
+			result.push_back(std::move(found));
+	}
+	// a double-track line: two lines out of the same end 3 to 6.5 m apart all along their first kilometre
+	auto const middle{(Layout.from + Layout.to) * 0.5};
+	auto const start = [&](line const &Line) { return project(Layout, Line.points.front()).x < middle; };
+	auto const gap_between = [&](line const &A, line const &B) {
+		auto const reach{std::min({A.length(), B.length(), 1000.0})};
+		auto worst{0.0};
+		for (auto const fraction : {0.2, 0.6, 1.0})
+		{
+			double gap{0.0};
+			distance_on(B, point_on(A, reach * fraction).point, gap);
+			worst = std::max(worst, std::abs(gap - 4.5));
+		}
+		return reach < 100.0 ? std::numeric_limits<double>::max() : worst;
+	};
+	// the pairs running side by side the longest first: a siding along a main track for a while is no line
+	std::vector<std::tuple<double, double, std::size_t, std::size_t>> pairs;
+	for (std::size_t i = 0; i < result.size(); ++i)
+		for (std::size_t j = i + 1; j < result.size(); ++j)
+			if (start(result[i]) == start(result[j]))
+				if (auto const gap{gap_between(result[i], result[j])}; gap <= 2.0)
+					pairs.emplace_back(-std::min(result[i].length(), result[j].length()), gap, i, j);
+	std::sort(pairs.begin(), pairs.end());
+	std::vector<char> paired(result.size(), 0);
+	for (auto const &[reach_order, gap, i, partner] : pairs)
+	{
+		if (paired[i] != 0 || paired[partner] != 0)
+			continue;
+		paired[i] = paired[partner] = 1;
+		result[i].partner = static_cast<int>(partner);
+		result[partner].partner = static_cast<int>(i);
+		// the trains towards the station on the track on their right; along the chainage the right one is track 1
+		auto const &travel{Signals[result[i].entry].travel};
+		glm::dvec2 const right{-travel.z, travel.x};
+		auto const reach{std::min({result[i].length(), result[partner].length(), 200.0})};
+		auto const here{point_on(result[i], reach).point};
+		auto const there{point_on(result[partner], reach).point};
+		auto const partner_inbound{glm::dot(glm::dvec2{there.x - here.x, there.z - here.z}, right) > 0.0};
+		result[i].inbound = false == partner_inbound;
+		result[partner].inbound = partner_inbound;
+		for (auto *found : {&result[i], &result[partner]})
+			found->number = found->inbound == start(*found) ? 1 : 2;
+	}
+	return result;
+}
+
+on_line point_on(line const &Line, double const Distance)
+{
+	on_line result;
+	if (Line.points.empty())
+		return result;
+	auto const after{std::lower_bound(Line.distances.begin(), Line.distances.end(), Distance)};
+	auto const i{std::clamp<std::size_t>(static_cast<std::size_t>(after - Line.distances.begin()), 1, std::max<std::size_t>(1, Line.points.size() - 1))};
+	if (Line.points.size() < 2)
+	{
+		result.track = Line.tracks[Line.owners.front()];
+		result.outward = Line.outward[Line.owners.front()];
+		result.point = Line.points.front();
+		return result;
+	}
+	auto const step{Line.distances[i] - Line.distances[i - 1]};
+	auto const t{step > 1e-9 ? std::clamp((Distance - Line.distances[i - 1]) / step, 0.0, 1.0) : 0.0};
+	result.track = Line.tracks[Line.owners[i]];
+	result.outward = Line.outward[Line.owners[i]];
+	result.point = glm::mix(Line.points[i - 1], Line.points[i], t);
+	auto const way{Line.points[i] - Line.points[i - 1]};
+	if (glm::length(way) > 1e-9)
+		result.way = glm::normalize(way);
+	return result;
+}
+
+double distance_on(line const &Line, glm::dvec3 const &Point, double &Gap)
+{
+	Gap = std::numeric_limits<double>::max();
+	auto result{0.0};
+	glm::dvec2 const point{Point.x, Point.z};
+	for (std::size_t i = 1; i < Line.points.size(); ++i)
+	{
+		glm::dvec2 const a{Line.points[i - 1].x, Line.points[i - 1].z};
+		glm::dvec2 const b{Line.points[i].x, Line.points[i].z};
+		auto const along{b - a};
+		auto const length{glm::length(along)};
+		if (length < 1e-9)
+			continue;
+		auto const t{std::clamp(glm::dot(point - a, along) / (length * length), 0.0, 1.0)};
+		if (auto const gap{glm::distance(point, a + along * t)}; gap < Gap)
+		{
+			Gap = gap;
+			result = Line.distances[i - 1] + length * t;
+		}
+	}
+	return result;
+}
+
+std::string block_number(double const Km, int const Track)
+{
+	auto const hectometres{std::max(Km, 0.0) * 10.0};
+	auto number{static_cast<long long>(std::llround(hectometres))};
+	if ((number % 2 == 1) != (Track % 2 == 1))
+		number += hectometres > static_cast<double>(number) ? 1 : -1;
+	if (number < 1)
+		number = Track % 2 == 1 ? 1 : 2;
+	return std::to_string(number);
+}
+
 } // namespace station

@@ -122,7 +122,9 @@ struct signal
 	{
 		entry,
 		exit,
-		shunting
+		shunting,
+		block,
+		warning
 	};
 	role kind{role::entry};
 	std::string name; // without the code of the station: A, F1, Tm3
@@ -144,5 +146,39 @@ struct signal
 // chainage. Each on the right of the trains, unless another track runs too close by there. Inside: a track of the circuits of the
 // station
 std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &Tracks, std::function<bool(TTrack const &)> const &Inside);
+
+// a track of a line out beyond an entry signal of the station, to the next station or the end of the tracks
+struct line
+{
+	std::size_t entry{0}; // the entry signal standing on it, of the signals given
+	int number{0}; // of the track of a double-track line: 1 the one on the right along the chainage, 2 the other; 0 on a single-track line
+	bool inbound{true}; // its trains run towards the station: on a double-track line the track on their right
+	bool station{false}; // ends at a switch, of the next station, rather than at the end of the tracks
+	int partner{-1}; // the other track of a double-track line, of the lines
+	std::vector<TTrack *> tracks; // from the entry signal out
+	std::vector<bool> outward; // of each track: the line runs out towards the end of its path
+	std::vector<glm::dvec3> points; // along the tracks from the entry signal on, a metre or so apart
+	std::vector<double> distances; // of the points, from the entry signal
+	std::vector<std::size_t> owners; // of the points, the track each lies on
+	double length() const { return distances.empty() ? 0.0 : distances.back(); }
+};
+// where the line runs at the distance out: on what track, the point on its axis, the way out along the line
+struct on_line
+{
+	TTrack *track{nullptr};
+	bool outward{true}; // the way out runs towards the end of the path of the track
+	glm::dvec3 point{0.0};
+	glm::dvec3 way{0.0, 0.0, 1.0};
+};
+
+// the lines beyond the entry signals among the signals given, no longer than the limit; two lines out of the same end side by side
+// are the tracks of a double-track line
+std::vector<line> lines_out(layout const &Layout, std::vector<signal> const &Signals, double const Limit);
+on_line point_on(line const &Line, double const Distance);
+// how far out along the line the point lies, Gap: how far from its axis in the plan
+double distance_on(line const &Line, glm::dvec3 const &Point, double &Gap);
+// the number of a block signal at the km, as PKP PLK gives them: the km and the hectometre, the last digit odd on track 1, even on
+// track 2: 241, 242
+std::string block_number(double const Km, int const Track);
 
 } // namespace station

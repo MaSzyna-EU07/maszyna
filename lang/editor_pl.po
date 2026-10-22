@@ -10488,3 +10488,51 @@ msgstr[0] "%zu przemianowany"
 msgstr[1] "%zu przemianowane"
 msgstr[2] "%zu przemianowanych"
 
+msgid "Lines"
+msgstr "Szlaki"
+
+msgid "Set the line signals"
+msgstr "Ustaw sygnalizatory szlakowe"
+
+msgid "Places the signals of the lines out of the station, from its entry signals on. A double-track line gets the automatic block: block signals evenly to the entry signals of the next station, about 1.4 km apart, numbered after the km, 241 on track 1, 242 on track 2, and the block sections between them named as on the lines of PKP PLK, 2411-2571@LK2.1. A single-track line gets a warning disc ToA 1000 m before the entry signal, 1300 m on a line faster than 120 km/h. Needs the line and the km of the station. Run it at the next station too, it keeps what stands. One step of undo"
+msgstr "Stawia sygnalizatory szlaków wychodzących ze stacji, od jej semaforów wjazdowych. Szlak dwutorowy dostaje samoczynną blokadę liniową: semafory SBL rozstawione równo do semaforów wjazdowych następnej stacji, co około 1,4 km, numerowane według kilometra, 241 na torze 1, 242 na torze 2, a odstępy między nimi nazwane jak na liniach PKP PLK, 2411-2571@LK2.1. Szlak jednotorowy dostaje tarczę ostrzegawczą ToA 1000 m przed semaforem wjazdowym, 1300 m na linii szybszej niż 120 km/h. Potrzebna linia i kilometr stacji. Uruchom to też na następnej stacji, zostawia to, co już stoi. Jeden krok cofania"
+
+msgid "Km"
+msgstr "Kilometr"
+
+msgid "The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km"
+msgstr "Kilometr środka stacji na linii, rosnący w stronę numeracji rozjazdów: według kilometra numerowane są semafory SBL na szlakach"
+
+msgid "Give the station its line and its km first: the block signals and the block sections are named after them"
+msgstr "Najpierw podaj linię i kilometr stacji: według nich nazywają się semafory SBL i odstępy"
+
+msgid "Set the signals first: the lines begin at the entry signals"
+msgstr "Najpierw ustaw semafory: szlaki zaczynają się od semaforów wjazdowych"
+
+msgid "No line leads out of the station beyond its entry signals"
+msgstr "Za semaforami wjazdowymi nie wychodzi ze stacji żaden szlak"
+
+msgid "The lines are set already"
+msgstr "Szlaki są już ustawione"
+
+msgid "%s isn't in the scenery folder: the block signals won't change their lights"
+msgstr "Brak %s w katalogu scenery: semafory SBL nie będą zmieniać świateł"
+
+msgid "%zu block signal placed"
+msgid_plural "%zu block signals placed"
+msgstr[0] "Postawiono %zu semafor SBL"
+msgstr[1] "Postawiono %zu semafory SBL"
+msgstr[2] "Postawiono %zu semaforów SBL"
+
+msgid "%zu warning disc"
+msgid_plural "%zu warning discs"
+msgstr[0] "%zu tarczę ostrzegawczą"
+msgstr[1] "%zu tarcze ostrzegawcze"
+msgstr[2] "%zu tarcz ostrzegawczych"
+
+msgid "%zu block section"
+msgid_plural "%zu block sections"
+msgstr[0] "%zu odstęp"
+msgstr[1] "%zu odstępy"
+msgstr[2] "%zu odstępów"
+

@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -24,7 +25,10 @@ http://mozilla.org/MPL/2.0/.
 class srk_tool final : public editor_tool
 {
   public:
-	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_signals &Signals) : m_selection{Selection}, m_view{View}, m_history{History}, m_signals{Signals} {}
+	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates, editor_signals &Signals)
+	    : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}, m_signals{Signals}
+	{
+	}
 	void update() override;
 	void draw_overlay() const override;
 	void render_options() override;
@@ -39,6 +43,7 @@ class srk_tool final : public editor_tool
 	editor_selection &m_selection;
 	editor_view &m_view;
 	editor_history &m_history;
+	editor_templates &m_templates;
 	editor_signals &m_signals;
 	// a station described: found again by a switch of it
 	struct record
@@ -49,6 +54,8 @@ class srk_tool final : public editor_tool
 		std::string code; // the abbreviation of the station, as MMz
 		std::string name;
 		std::string line; // the number of the railway line
+		std::string km; // of the axis of the station along the line, empty while unknown
+		bool reversed{false}; // the km rise to the left of the schematic, the switches numbered from there
 	};
 	// the schematic: the chainage across, the offsets upwards, exaggerated
 	struct view
@@ -122,8 +129,16 @@ class srk_tool final : public editor_tool
 	void set_signals();
 	// the signals standing by the station, for the schematic
 	void survey_signals();
+	// the signals of the lines out of the station: on a double-track line the block signals to the next station and the block
+	// sections between them, on a single-track one a warning disc before the entry signal; one step of the history
+	void set_lines();
 	// the names of the switches and the circuits of the open station begin with it, empty while it has no code
 	std::string stem_of_open() const;
+	// the km at the chainage of the open station: of its record, else of its switches; false while unknown
+	bool km_of_open(double const Chainage, double &Km) const;
+	// the station tracks by their numbers with their circuits as the tracks have them, Inside: the tracks of the circuits; false
+	// while it has none
+	bool station_tracks(std::vector<station::numbered> &Tracks, std::unordered_set<TTrack const *> &Inside) const;
 	// the circuits of the station track of the track renamed after another number; one step of the history
 	void renumber_track(TTrack const &Track, std::string const &Number);
 };

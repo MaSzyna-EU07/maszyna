@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorIncludeInfo.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "editor/editorTrack.hpp"
 
@@ -34,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <tuple>
 #include <functional>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace
@@ -44,6 +46,13 @@ double constexpr kOverlayRange{4000.0};
 double constexpr kJointRange{1500.0}; // m, of the joints shown in the scenery
 double constexpr kLabelRange{700.0}; // m, of the names shown there, farther ones crowd the horizon
 double constexpr kRailHead{0.18}; // m, above the axis of a path
+
+double constexpr kLineLimit{30000.0}; // m, of a line followed out to the next station
+double constexpr kBlock{1400.0}; // m, of a block section of the automatic block
+double constexpr kPredicted{305.0}; // m, out from the next station to its entry signal, while it has none
+double constexpr kWarning{1000.0}; // m, from a warning disc to its entry signal, the braking distance
+double constexpr kWarningFast{1300.0}; // m, the same on lines faster than 120 km/h
+char const *const kControl{"sbl_odstep.inc"}; // the events of a block section, switching the block signal guarding it
 
 ImU32 constexpr kPlain{IM_COL32(170, 176, 188, 255)};
 ImU32 constexpr kSwitch{IM_COL32(240, 200, 90, 255)};
@@ -122,6 +131,16 @@ std::string signal_shown(std::string const &Name, std::string const &Stem)
 	return text;
 }
 
+// a signal in the names of the block sections: a block signal by its number, a station one by its letter, with the number of the
+// track: 2411, A2
+std::string section_tag(std::string const &Name, int const Track)
+{
+	auto const cut{Name.rfind('_')};
+	auto tag{cut == std::string::npos ? Name : Name.substr(cut + 1)};
+	std::transform(tag.begin(), tag.end(), tag.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+	return tag + std::to_string(Track);
+}
+
 // the way the trains a signal faces run, in the plan: it stands turned to them
 glm::dvec2 travel_of(double const Yaw)
 {
@@ -174,6 +193,10 @@ void srk_tool::load()
 			{
 				if (word == "line")
 					words >> entry.line;
+				else if (word == "km")
+					words >> entry.km;
+				else if (word == "from")
+					entry.reversed = (words >> word) && word == "right";
 				else if (word == "anchor")
 					words >> entry.anchor;
 				else if (word == "name")
@@ -185,6 +208,7 @@ void srk_tool::load()
 			}
 			entry.code = shown(entry.code);
 			entry.line = shown(entry.line);
+			entry.km = shown(entry.km);
 			entry.track = simulation::Paths.find(entry.anchor);
 			if (false == entry.anchor.empty())
 				m_records.push_back(std::move(entry));
@@ -209,7 +233,7 @@ void srk_tool::store()
 				continue;
 			if (lines.empty())
 				lines.emplace_back("# stations described in the track editor, the simulation skips these lines");
-			lines.push_back(format("station %s line %s anchor %s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), anchor_of(entry).c_str(), entry.name.c_str()));
+			lines.push_back(format("station %s line %s km %s from %s anchor %s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), word_of(entry.km).c_str(), entry.reversed ? "right" : "left", anchor_of(entry).c_str(), entry.name.c_str()));
 		}
 		scene::Layers.mark(layer, kMark, std::move(lines));
 	}
@@ -239,6 +263,7 @@ void srk_tool::open(TTrack &Track)
 			m_record = index;
 	}
 	m_anchor = m_record >= 0 ? m_records[m_record].track : m_layout->switches.front();
+	m_reversed = m_record >= 0 && m_records[m_record].reversed;
 	survey();
 }
 
@@ -494,6 +519,14 @@ void srk_tool::render_options()
 		item_tooltip("The abbreviation of the station: the names of its switches, track circuits and signals begin with it");
 		text("Line", "##srkline", entry != nullptr ? entry->line : std::string{}, "2", [&](std::string const &Value) { record_of_open().line = word_of(Value) == "-" ? std::string{} : word_of(Value); });
 		item_tooltip("The number of the railway line the station lies on, as the block sections between the stations are named after it");
+		double known{0.0};
+		auto const hint{layout.kilometrage && km_of_open((layout.from + layout.to) * 0.5, known) ? format("%.3f", known) : std::string{"189.563"}};
+		text("Km", "##srkkm", entry != nullptr ? entry->km : std::string{}, hint.c_str(), [&](std::string const &Value) {
+			auto km{word_of(Value)};
+			std::replace(km.begin(), km.end(), ',', '.');
+			record_of_open().km = km == "-" ? std::string{} : km;
+		});
+		item_tooltip("The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km");
 		ImGui::EndTable();
 	}
 	step_heading(1, STR_C("Switch numbers"));
@@ -501,7 +534,11 @@ void srk_tool::render_options()
 	if (segmented("##srkfrom", from,
 	              {{0, STR_C("From the left"), layout.kilometrage ? "From the lower km, as PKP PLK numbers them" : "From the west end of the station"},
 	               {1, STR_C("From the right"), layout.kilometrage ? "From the higher km" : "From the east end of the station"}}))
+	{
 		m_reversed = from == 1;
+		record_of_open().reversed = m_reversed;
+		m_changed = true;
+	}
 	if (ImGui::Button(STR_C("Number the switches"), ImVec2(-1.0f, 0.0f)))
 		number_switches();
 	item_tooltip("Numbers the switches 1, 2, 3... along the station and names them after its code, as on the lines of PKP PLK: bpd_1, "
@@ -522,6 +559,14 @@ void srk_tool::render_options()
 	             "signal at the end of each station track a train is sent out of, F1, G2 towards the start, R1, P2 towards the end; a "
 	             "shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets its name, none is "
 	             "doubled. The kinds of signals chosen in the Signals tool. One step of undo");
+	step_heading(4, STR_C("Lines"));
+	if (ImGui::Button(STR_C("Set the line signals"), ImVec2(-1.0f, 0.0f)))
+		set_lines();
+	item_tooltip("Places the signals of the lines out of the station, from its entry signals on. A double-track line gets the automatic "
+	             "block: block signals evenly to the entry signals of the next station, about 1.4 km apart, numbered after the km, 241 on "
+	             "track 1, 242 on track 2, and the block sections between them named as on the lines of PKP PLK, 2411-2571@LK2.1. A "
+	             "single-track line gets a warning disc ToA 1000 m before the entry signal, 1300 m on a line faster than 120 km/h. Needs "
+	             "the line and the km of the station. Run it at the next station too, it keeps what stands. One step of undo");
 	if (auto const *selected{m_selection.selected_track()}; selected != nullptr && false == selected->Isolated.empty())
 		if (auto const number{track_of(selected->Isolated.front()->asName, stem_of_open())}; false == number.empty() && begin_fields("##srktrack"))
 		{
@@ -590,6 +635,11 @@ void srk_tool::number_switches()
 	{
 		m_status = STR_C("Give the station its code first: the switches are named after it");
 		return;
+	}
+	if (m_records[m_record].reversed != m_reversed)
+	{
+		m_records[m_record].reversed = m_reversed;
+		m_changed = true;
 	}
 	auto const units{station::numbering(*m_layout, m_reversed)};
 	std::vector<std::pair<TTrack *, std::string>> names;
@@ -776,6 +826,57 @@ std::string srk_tool::stem_of_open() const
 	return m_record >= 0 && false == m_records[m_record].code.empty() ? station::prefix(m_records[m_record].code) : std::string{};
 }
 
+bool srk_tool::km_of_open(double const Chainage, double &Km) const
+{
+	if (false == m_layout.has_value())
+		return false;
+	if (m_record >= 0 && false == m_records[m_record].km.empty())
+	{
+		char *end{nullptr};
+		auto const &text{m_records[m_record].km};
+		auto const middle{std::strtod(text.c_str(), &end)};
+		if (end != text.c_str())
+		{
+			Km = middle + (Chainage - (m_layout->from + m_layout->to) * 0.5) / 1000.0 * (m_reversed ? -1.0 : 1.0);
+			return true;
+		}
+	}
+	if (false == m_layout->kilometrage)
+		return false;
+	Km = station::km_of(*m_layout, Chainage);
+	return true;
+}
+
+bool srk_tool::station_tracks(std::vector<station::numbered> &Tracks, std::unordered_set<TTrack const *> &Inside) const
+{
+	Tracks.clear();
+	Inside.clear();
+	auto const stem{stem_of_open()};
+	if (false == m_layout.has_value() || stem.empty())
+		return false;
+	std::map<std::string, std::map<std::string, std::vector<TTrack *>>> numbers;
+	for (auto const &path : m_layout->paths)
+	{
+		if (path.track->Isolated.empty() || Inside.count(path.track) > 0)
+			continue;
+		auto const &name{path.track->Isolated.front()->asName};
+		if (name.size() <= stem.size() || name.compare(0, stem.size(), stem) != 0 || entry_circuit(name, stem))
+			continue;
+		Inside.insert(path.track);
+		if (auto const number{track_of(name, stem)}; false == number.empty())
+			numbers[number][name].push_back(path.track);
+	}
+	for (auto &[number, circuits] : numbers)
+	{
+		station::numbered entry;
+		entry.number = number;
+		for (auto &[name, members] : circuits)
+			entry.circuits.push_back(std::move(members));
+		Tracks.push_back(std::move(entry));
+	}
+	return false == Tracks.empty();
+}
+
 void srk_tool::renumber_track(TTrack const &Track, std::string const &Number)
 {
 	m_status.clear();
@@ -823,33 +924,12 @@ void srk_tool::set_signals()
 		return;
 	}
 	auto const &layout{*m_layout};
-	// the station tracks by their numbers, the circuits as the tracks have them
-	std::map<std::string, std::map<std::string, std::vector<TTrack *>>> numbers;
+	std::vector<station::numbered> tracks;
 	std::unordered_set<TTrack const *> inside;
-	for (auto const &path : layout.paths)
-	{
-		if (path.track->Isolated.empty() || inside.count(path.track) > 0)
-			continue;
-		auto const &name{path.track->Isolated.front()->asName};
-		if (name.size() <= stem.size() || name.compare(0, stem.size(), stem) != 0 || entry_circuit(name, stem))
-			continue;
-		inside.insert(path.track);
-		if (auto const number{track_of(name, stem)}; false == number.empty())
-			numbers[number][name].push_back(path.track);
-	}
-	if (numbers.empty())
+	if (false == station_tracks(tracks, inside))
 	{
 		m_status = STR_C("Set the track circuits first: the signals stand at their joints");
 		return;
-	}
-	std::vector<station::numbered> tracks;
-	for (auto &[number, circuits] : numbers)
-	{
-		station::numbered entry;
-		entry.number = number;
-		for (auto &[name, members] : circuits)
-			entry.circuits.push_back(std::move(members));
-		tracks.push_back(std::move(entry));
 	}
 	auto plan{station::signals(layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
 	std::vector<standing_signal> standing;
@@ -1013,11 +1093,458 @@ void srk_tool::set_signals()
 		return;
 	}
 	std::string error;
-	auto const count{m_signals.signal_batch(placed, renamed, std::move(before), std::move(created), error)};
+	auto const count{m_signals.signal_batch({placed, renamed, {}, {}}, std::move(before), std::move(created), error)};
 	if (false == error.empty())
 		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str());
 	else
 		m_status = format(STR_P("%zu signal placed", "%zu signals placed", count), count) + ", " + format(STR_P("%zu renamed", "%zu renamed", renamed.size()), renamed.size());
+}
+
+void srk_tool::set_lines()
+{
+	m_status.clear();
+	auto const stem{stem_of_open()};
+	if (stem.empty())
+	{
+		m_status = STR_C("Give the station its code first: the signals are named after it");
+		return;
+	}
+	auto const &layout{*m_layout};
+	std::vector<station::numbered> tracks;
+	std::unordered_set<TTrack const *> inside;
+	if (false == station_tracks(tracks, inside))
+	{
+		m_status = STR_C("Set the track circuits first: the signals stand at their joints");
+		return;
+	}
+	auto const plan{station::signals(layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
+	std::vector<standing_signal> standing;
+	m_signals.standing_signals(standing, true);
+	// the lines begin at the entry signals standing
+	std::vector<station::signal> entries;
+	std::vector<std::size_t> entry_standing;
+	for (auto const &planned : plan)
+	{
+		if (planned.kind != station::signal::role::entry)
+			continue;
+		auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_signal const &Signal) { return Signal.kind == "main" && ToLower(Signal.name) == stem + ToLower(planned.name); })};
+		if (found == standing.end())
+			continue;
+		entries.push_back(planned);
+		entry_standing.push_back(static_cast<std::size_t>(found - standing.begin()));
+	}
+	if (entries.empty())
+	{
+		m_status = STR_C("Set the signals first: the lines begin at the entry signals");
+		return;
+	}
+	auto const lines{station::lines_out(layout, entries, kLineLimit)};
+	if (lines.empty())
+	{
+		m_status = STR_C("No line leads out of the station beyond its entry signals");
+		return;
+	}
+	auto const &described{m_records[m_record]};
+	double known{0.0};
+	if (std::any_of(lines.begin(), lines.end(), [](station::line const &Line) { return Line.number > 0; }) && (false == km_of_open(0.0, known) || described.line.empty()))
+	{
+		m_status = STR_C("Give the station its line and its km first: the block signals and the block sections are named after them");
+		return;
+	}
+	auto const middle{(layout.from + layout.to) * 0.5};
+	struct planned_signal
+	{
+		station::signal::role kind{station::signal::role::block};
+		std::string name;
+		std::string plate;
+		std::size_t line{0};
+		double distance{0.0}; // out along the line
+		std::string linked{"none"};
+		int match{-1}; // of the standing signals
+	};
+	struct far_end
+	{
+		int signal{-1}; // the entry signal of the next station standing, of the standing signals
+		double distance{0.0}; // out to it, or to where the signals of the line end
+	};
+	std::vector<planned_signal> planned;
+	std::vector<far_end> ends(lines.size());
+	auto const facing_out = [&](station::line const &Line, standing_signal const &Signal, double const Distance) {
+		auto const way{station::point_on(Line, Distance).way};
+		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
+	};
+	auto const km_on = [&](std::size_t const Index, double const Distance) {
+		auto const chainage{station::project(layout, lines[Index].points.front()).x};
+		double km{0.0};
+		km_of_open(chainage < middle ? chainage - Distance : chainage + Distance, km);
+		return km;
+	};
+	for (std::size_t index = 0; index < lines.size(); ++index)
+	{
+		auto const &line{lines[index]};
+		auto &end{ends[index]};
+		// the entry signal of the next station: the first main signal along the line facing out
+		for (std::size_t k = 0; k < standing.size(); ++k)
+		{
+			if (standing[k].kind != "main")
+				continue;
+			double gap{0.0};
+			auto const distance{station::distance_on(line, standing[k].position, gap)};
+			if (gap > 4.5 || distance < 100.0 || distance > line.length() - 1.0 || facing_out(line, standing[k], distance) < 0.87)
+				continue;
+			if (end.signal < 0 || distance < end.distance)
+			{
+				end.signal = static_cast<int>(k);
+				end.distance = distance;
+			}
+		}
+		if (end.signal < 0)
+			end.distance = line.station ? line.length() - kPredicted : line.length();
+	}
+	for (std::size_t index = 0; index < lines.size(); ++index)
+	{
+		auto const &line{lines[index]};
+		auto const &end{ends[index]};
+		auto const &entry{entries[line.entry]};
+		if (line.number > 0)
+		{
+			// the block signals: the line to the next station parted evenly, towards the end of the tracks every 1.4 km
+			std::vector<double> places;
+			if (line.station || end.signal >= 0)
+			{
+				// as many on both tracks of the line
+				auto const reach{line.partner >= 0 ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
+				auto const sections{std::max(1L, std::lround(reach / kBlock))};
+				for (long k = 1; k < sections; ++k)
+					places.push_back(end.distance * static_cast<double>(k) / static_cast<double>(sections));
+			}
+			else
+				for (auto distance{kBlock}; distance <= end.distance - 100.0; distance += kBlock)
+					places.push_back(distance);
+			for (auto const distance : places)
+			{
+				planned_signal signal;
+				signal.kind = station::signal::role::block;
+				signal.name = station::block_number(km_on(index, distance), line.number);
+				signal.plate = signal.name;
+				signal.line = index;
+				signal.distance = distance;
+				planned.push_back(std::move(signal));
+			}
+		}
+		else
+		{
+			// the warning disc of the entry signal, the braking distance before it
+			auto const fast{entry.track != nullptr && entry.track->VelocityGet() > 120.0};
+			auto const distance{std::min(fast ? kWarningFast : kWarning, end.distance - 100.0)};
+			if (distance >= 400.0)
+			{
+				planned_signal signal;
+				signal.kind = station::signal::role::warning;
+				signal.name = stem + "to" + ToLower(entry.name);
+				signal.plate = "to" + ToLower(entry.name);
+				signal.line = index;
+				signal.distance = distance;
+				planned.push_back(std::move(signal));
+			}
+		}
+	}
+	// the standing ones by their places, then by their names
+	std::vector<char> used(standing.size(), 0);
+	for (auto const index : entry_standing)
+		used[index] = 1;
+	for (auto const &end : ends)
+		if (end.signal >= 0)
+			used[end.signal] = 1;
+	std::vector<std::tuple<double, std::size_t, std::size_t>> candidates;
+	std::vector<double> standing_at(standing.size(), 0.0);
+	for (std::size_t i = 0; i < planned.size(); ++i)
+	{
+		auto const &signal{planned[i]};
+		auto const &line{lines[signal.line]};
+		auto const kind{signal.kind == station::signal::role::block ? "block" : "warning"};
+		auto const reach{signal.kind == station::signal::role::block ? 300.0 : 400.0};
+		for (std::size_t k = 0; k < standing.size(); ++k)
+		{
+			if (standing[k].kind != kind)
+				continue;
+			double gap{0.0};
+			auto const distance{station::distance_on(line, standing[k].position, gap)};
+			auto const facing{facing_out(line, standing[k], distance)};
+			if (gap < 4.5 && std::abs(distance - signal.distance) < reach && (line.inbound ? -facing : facing) > 0.87)
+				candidates.emplace_back(std::abs(distance - signal.distance) + gap * 10.0, i, k);
+		}
+	}
+	std::sort(candidates.begin(), candidates.end());
+	for (auto const &[score, i, k] : candidates)
+		if (planned[i].match < 0 && 0 == used[k])
+		{
+			planned[i].match = static_cast<int>(k);
+			used[k] = 1;
+			double gap{0.0};
+			planned[i].distance = station::distance_on(lines[planned[i].line], standing[k].position, gap);
+		}
+	for (auto &signal : planned)
+		for (std::size_t k = 0; k < standing.size() && signal.match < 0; ++k)
+			if (0 == used[k] && ToLower(standing[k].name) == ToLower(signal.name))
+			{
+				signal.match = static_cast<int>(k);
+				used[k] = 1;
+			}
+	// a number another signal of the scenery has already gets a letter
+	std::unordered_set<std::string> taken;
+	for (std::size_t k = 0; k < standing.size(); ++k)
+		if (0 == used[k])
+			taken.insert(ToLower(standing[k].name));
+	for (auto &signal : planned)
+	{
+		if (signal.kind != station::signal::role::block)
+			continue;
+		auto const base{signal.name};
+		for (char letter = 'a'; taken.count(ToLower(signal.name)) > 0 && letter <= 'z'; ++letter)
+			signal.name = base + letter;
+		taken.insert(ToLower(signal.name));
+		signal.plate = signal.name;
+	}
+	// the block sections of each track of a double-track line, between the signals in the order the trains pass them
+	struct section
+	{
+		std::string name;
+		std::size_t line{0};
+		double from{0.0};
+		double to{0.0};
+		std::string guard; // the block signal at its start, empty for a station one
+		glm::dvec3 start{0.0};
+	};
+	std::vector<section> sections;
+	std::vector<std::pair<std::size_t, std::string>> relinked; // standing station signals, the block signal before each
+	for (std::size_t index = 0; index < lines.size(); ++index)
+	{
+		auto const &line{lines[index]};
+		if (line.number == 0)
+			continue;
+		struct stop
+		{
+			double distance{0.0};
+			std::string name;
+			int signal{-1}; // of the planned ones, -1 for a station signal
+			int standing{-1};
+		};
+		std::vector<stop> order{{0.0, standing[entry_standing[line.entry]].name, -1, static_cast<int>(entry_standing[line.entry])}};
+		for (std::size_t i = 0; i < planned.size(); ++i)
+			if (planned[i].line == index)
+				order.push_back({planned[i].distance, planned[i].name, static_cast<int>(i), planned[i].match});
+		if (ends[index].signal >= 0)
+			order.push_back({ends[index].distance, standing[ends[index].signal].name, -1, ends[index].signal});
+		std::sort(order.begin(), order.end(), [](stop const &A, stop const &B) { return A.distance < B.distance; });
+		if (line.inbound)
+			std::reverse(order.begin(), order.end());
+		for (std::size_t i = 0; i < order.size(); ++i)
+		{
+			auto const &here{order[i]};
+			auto const block_before{i > 0 && order[i - 1].signal >= 0};
+			auto const linked{block_before ? order[i - 1].name : std::string{"none"}};
+			if (here.signal >= 0)
+				planned[here.signal].linked = linked;
+			else if (block_before && here.standing >= 0 && false == standing[here.standing].linked.empty() && ToLower(standing[here.standing].linked) != ToLower(linked))
+				relinked.emplace_back(here.standing, linked);
+			if (i == 0)
+				continue;
+			auto const &before{order[i - 1]};
+			// the lower km first, as on the lines of PKP PLK: 2411-2571@LK2.1
+			auto const ascending{km_on(index, before.distance) <= km_on(index, here.distance)};
+			auto const &low{ascending ? before : here};
+			auto const &high{ascending ? here : before};
+			section found;
+			found.name = ToLower(section_tag(low.name, line.number) + "-" + section_tag(high.name, line.number) + "@lk" + described.line + "." + std::to_string(line.number));
+			found.line = index;
+			found.from = std::min(before.distance, here.distance);
+			found.to = std::max(before.distance, here.distance);
+			found.guard = before.signal >= 0 ? before.name : std::string{};
+			found.start = station::point_on(line, before.distance).point;
+			sections.push_back(std::move(found));
+		}
+	}
+	// the tracks cut where the sections meet, all of it checked before any is
+	struct cut
+	{
+		TTrack *track{nullptr};
+		glm::dvec3 point{0.0};
+	};
+	std::vector<cut> cuts;
+	auto const add_cut = [&](station::line const &Line, double const Distance) -> bool {
+		auto const at{station::point_on(Line, Distance)};
+		if (at.track == nullptr || std::any_of(cuts.begin(), cuts.end(), [&](cut const &Cut) { return glm::distance(Cut.point, at.point) < 0.5; }))
+			return true;
+		auto const &ends_of{at.track->m_paths.front().points};
+		if (std::min(glm::distance(at.point, ends_of[segment_data::point::start]), glm::distance(at.point, ends_of[segment_data::point::end])) <= 0.3)
+			return true;
+		std::string reason;
+		if (false == editor_track::can_edit_geometry(*at.track, reason))
+		{
+			m_status = format(STR_C("%s can't be cut: %s"), name_of(*at.track).c_str(), reason.c_str());
+			return false;
+		}
+		cuts.push_back({at.track, at.point});
+		return true;
+	};
+	for (auto const &found : sections)
+		if (false == add_cut(lines[found.line], found.from) || false == add_cut(lines[found.line], found.to))
+			return;
+	for (auto const &line : lines)
+		for (auto *part : line.tracks)
+			if (std::string reason; false == scene::Layers.editable(part, &reason) && std::any_of(sections.begin(), sections.end(), [&](section const &Found) { return &lines[Found.line] == &line; }))
+			{
+				m_status = format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
+				return;
+			}
+	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	std::vector<TTrack *> created;
+	std::unordered_set<TTrack const *> captured;
+	std::unordered_map<TTrack const *, std::vector<TTrack *>> pieces; // of each track cut, itself and the pieces cut off it
+	auto const piece_at = [&](TTrack *Track, glm::dvec3 const &Point) {
+		auto found{pieces.find(Track)};
+		if (found == pieces.end())
+			return Track;
+		TTrack *best{Track};
+		auto nearest{std::numeric_limits<double>::max()};
+		for (auto *piece : found->second)
+		{
+			auto const point{editor_track::point_at(*piece, editor_track::nearest_parameter(*piece, Point))};
+			if (auto const distance{glm::distance(point, Point)}; distance < nearest)
+			{
+				nearest = distance;
+				best = piece;
+			}
+		}
+		return best;
+	};
+	for (auto const &entry : cuts)
+	{
+		auto *track{piece_at(entry.track, entry.point)};
+		auto const parameter{editor_track::nearest_parameter(*track, entry.point)};
+		auto const &ends_of{track->m_paths.front().points};
+		if (std::min(glm::distance(entry.point, ends_of[segment_data::point::start]), glm::distance(entry.point, ends_of[segment_data::point::end])) <= 0.3)
+			continue;
+		if (captured.insert(track).second)
+			before.emplace_back(track, editor_track::capture(*track));
+		if (auto *piece{editor_track::split_path(*track, parameter)})
+		{
+			created.push_back(piece);
+			captured.insert(piece);
+			auto &list{pieces[entry.track]};
+			if (list.empty())
+				list.push_back(entry.track);
+			list.push_back(piece);
+		}
+	}
+	// the sections named, each track by its middle
+	for (std::size_t index = 0; index < lines.size(); ++index)
+	{
+		std::vector<TTrack *> parts;
+		for (auto *track : lines[index].tracks)
+		{
+			auto const found{pieces.find(track)};
+			if (found == pieces.end())
+				parts.push_back(track);
+			else
+				parts.insert(parts.end(), found->second.begin(), found->second.end());
+		}
+		for (auto *part : parts)
+		{
+			double gap{0.0};
+			auto const distance{station::distance_on(lines[index], editor_track::point_at(*part, 0.5), gap)};
+			if (gap > 1.0)
+				continue;
+			auto const found{std::find_if(sections.begin(), sections.end(), [&](section const &Section) { return Section.line == index && distance > Section.from && distance < Section.to; })};
+			if (found == sections.end() || (part->Isolated.size() == 1 && ToLower(part->Isolated.front()->asName) == found->name))
+				continue;
+			if (captured.insert(part).second)
+				before.emplace_back(part, editor_track::capture(*part));
+			editor_track::isolated(*part, {found->name});
+		}
+	}
+	// the signals placed on the track the trains run on up to them
+	signal_changes changes;
+	std::size_t blocks{0};
+	std::size_t discs{0};
+	for (auto const &signal : planned)
+	{
+		auto const block{signal.kind == station::signal::role::block};
+		if (signal.match >= 0)
+		{
+			auto const &found{standing[signal.match]};
+			auto const relink{block && false == found.linked.empty() && ToLower(found.linked) != ToLower(signal.linked)};
+			if (ToLower(found.name) != ToLower(signal.name) || relink)
+				changes.renamed.push_back({found.instance, signal.name, signal.plate, relink ? signal.linked : std::string{}});
+			continue;
+		}
+		auto const &line{lines[signal.line]};
+		auto const inbound{line.inbound};
+		auto const at{station::point_on(line, signal.distance)};
+		auto const approach{station::point_on(line, signal.distance + (inbound ? 1.0 : -1.0))};
+		signal_order order;
+		order.track = piece_at(approach.track, approach.point);
+		order.point = at.point;
+		order.facing = inbound == approach.outward ? -1 : 1;
+		order.side = order.facing;
+		order.kind = block ? "block" : "warning";
+		order.name = signal.name;
+		order.plate = signal.plate;
+		order.linked = signal.linked;
+		changes.placed.push_back(std::move(order));
+		++(block ? blocks : discs);
+	}
+	for (auto const &[index, linked] : relinked)
+		changes.renamed.push_back({standing[index].instance, standing[index].name, std::string{}, linked});
+	// the block signals switched by the sections they guard
+	include_info control;
+	std::string missing;
+	auto const controlled{editor_includes::load(kControl, control, missing)};
+	if (controlled)
+	{
+		auto const standing_controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
+		for (auto const &found : sections)
+		{
+			if (found.guard.empty())
+				continue;
+			auto const already{std::find_if(standing_controls.begin(), standing_controls.end(), [&](standing_template const &Control) { return false == Control.values.empty() && ToLower(Control.values[0]) == found.name; })};
+			if (already != standing_controls.end())
+			{
+				if (already->values.size() > 5 && ToLower(already->values[5]) != ToLower(found.guard))
+				{
+					auto values{already->values};
+					values[5] = found.guard;
+					changes.values.emplace_back(already->instance, std::move(values));
+				}
+				continue;
+			}
+			template_item item;
+			item.file = kControl;
+			item.location = found.start;
+			item.described = true;
+			item.values["name"] = found.name;
+			item.values["#6"] = found.guard;
+			changes.others.push_back(std::move(item));
+		}
+	}
+	if (changes.placed.empty() && changes.renamed.empty() && changes.others.empty() && changes.values.empty() && before.empty() && created.empty())
+	{
+		m_status = STR_C("The lines are set already");
+		return;
+	}
+	std::string error;
+	auto const renamed{changes.renamed.size()};
+	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
+	if (false == error.empty())
+	{
+		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str());
+		return;
+	}
+	m_status = format(STR_P("%zu block signal placed", "%zu block signals placed", blocks), blocks) + ", " + format(STR_P("%zu warning disc", "%zu warning discs", discs), discs) + ", " +
+	           format(STR_P("%zu renamed", "%zu renamed", renamed), renamed) + ", " + format(STR_P("%zu block section", "%zu block sections", sections.size()), sections.size());
+	if (false == controlled && std::any_of(sections.begin(), sections.end(), [](section const &Found) { return false == Found.guard.empty(); }))
+		m_status += "\n" + format(STR_C("%s isn't in the scenery folder: the block signals won't change their lights"), kControl);
 }
 
 void srk_tool::survey_signals()
@@ -1497,6 +2024,51 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		WriteLog(format("SELFTEST srksignals %zu:", m_signal_marks.size()) + list);
 		return editor_selftest_result::handled;
 	}
+	if (Command == "srklines")
+	{
+		// srklines: the signals of the lines out of the open station set
+		if (false == m_layout.has_value())
+		{
+			WriteLog("SELFTEST srklines: no station open");
+			return editor_selftest_result::handled;
+		}
+		set_lines();
+		WriteLog("SELFTEST srklines: " + m_status);
+		refresh();
+		std::vector<station::numbered> tracks;
+		std::unordered_set<TTrack const *> inside;
+		if (false == station_tracks(tracks, inside))
+			return editor_selftest_result::handled;
+		auto const plan{station::signals(*m_layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
+		std::vector<standing_signal> standing;
+		m_signals.standing_signals(standing, true);
+		for (auto const &line : station::lines_out(*m_layout, plan, kLineLimit))
+		{
+			std::vector<std::pair<double, std::string>> along;
+			for (auto const &signal : standing)
+			{
+				double gap{0.0};
+				auto const distance{station::distance_on(line, signal.position, gap)};
+				if (gap < 4.5 && distance < line.length())
+					along.emplace_back(distance, format("%s(%s,%s)", signal.name.c_str(), signal.kind.c_str(), signal.linked.c_str()));
+			}
+			std::string last;
+			for (std::size_t i = 1; i < line.points.size(); i += 20)
+			{
+				auto const *track{line.tracks[line.owners[i]]};
+				auto const name{track->Isolated.empty() ? std::string{"-"} : track->Isolated.front()->asName};
+				if (name != last)
+					along.emplace_back(line.distances[i], "[" + name + "]");
+				last = name;
+			}
+			std::sort(along.begin(), along.end());
+			std::string list;
+			for (auto const &[distance, text] : along)
+				list += format(" %.0f:%s", distance, text.c_str());
+			WriteLog(format("SELFTEST srklines %s track %d %s %.0f m%s:", plan[line.entry].name.c_str(), line.number, line.inbound ? "in" : "out", line.length(), line.station ? " to a station" : "") + list);
+		}
+		return editor_selftest_result::handled;
+	}
 	if (Command == "srkstrip")
 	{
 		// srkstrip shown=0: the schematic hidden, the 3d view whole for a screenshot
@@ -1533,6 +2105,8 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			entry.name = name->second;
 			std::replace(entry.name.begin(), entry.name.end(), '_', ' ');
 		}
+		if (auto const km{values.find("km")}; km != values.end())
+			entry.km = km->second;
 		m_changed = true;
 		WriteLog("SELFTEST srkset: " + title());
 		return editor_selftest_result::handled;

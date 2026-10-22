@@ -883,19 +883,26 @@ bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool c
 		return false;
 	signal_refresh(true);
 	for (auto const &standing : m_signal.standing)
-		if (standing.kind >= 0)
-			Signals.push_back({standing.include.instance, standing.name, kKinds[standing.kind], standing.include.location, standing.include.yaw});
+	{
+		if (standing.kind < 0)
+			continue;
+		std::string file;
+		std::vector<std::string> values;
+		auto const *item{signal_template_of(standing.include.file)};
+		auto const linked{item != nullptr && item->linked && editor_includes::parse_directive(scene::Layers.directive(standing.include.instance), file, values) && values.size() > 6};
+		Signals.push_back({standing.include.instance, standing.name, kKinds[standing.kind], standing.include.location, standing.include.yaw, linked ? values[6] : std::string{}});
+	}
 	return true;
 }
 
-std::size_t editor_mode::signal_batch(std::vector<signal_order> const &Placed, std::vector<signal_rename> const &Renamed, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error)
+std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error)
 {
 	auto &tool{m_signal};
 	signal_scan();
 	signal_refresh(true);
 	std::vector<template_item> items;
 	std::vector<std::pair<signal_spot, std::string>> reads;
-	for (auto const &order : Placed)
+	for (auto const &order : Changes.placed)
 	{
 		auto const kind{kind_index(order.kind)};
 		auto const *item{kind >= 0 && tool.chosen[kind] >= 0 && tool.chosen[kind] < static_cast<int>(tool.templates.size()) ? &tool.templates[tool.chosen[kind]] : nullptr};
@@ -919,16 +926,22 @@ std::size_t editor_mode::signal_batch(std::vector<signal_order> const &Placed, s
 		if (variant->plate)
 			placing.values["#6"] = plate_for(std::string{}, order.plate);
 		if (variant->linked)
-			placing.values["#7"] = "none";
+			placing.values["#7"] = order.linked.empty() ? std::string{"none"} : order.linked;
 		items.push_back(std::move(placing));
 		reads.emplace_back(spot, variant->read.empty() ? std::string{} : editor_includes::substitute(variant->read, {order.name}));
 	}
 	// the names passed round among the signals go through ones of their own first, or a read event renamed would be renamed again
+	items.insert(items.end(), Changes.others.begin(), Changes.others.end());
 	EditorSnapshot step;
 	step.tracks = std::move(States);
 	std::vector<std::pair<scene::instance_handle, std::string>> directives;
+	std::unordered_set<scene::instance_handle> changed;
+	auto const record = [&](scene::instance_handle const Instance, std::string const &Before) {
+		if (changed.insert(Instance).second)
+			directives.emplace_back(Instance, Before);
+	};
 	for (auto const temporary : {true, false})
-		for (auto const &rename : Renamed)
+		for (auto const &rename : Changes.renamed)
 		{
 			auto const *standing{signal_standing_of(rename.instance)};
 			auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
@@ -937,20 +950,36 @@ std::size_t editor_mode::signal_batch(std::vector<signal_order> const &Placed, s
 			std::vector<std::string> values;
 			if (item == nullptr || false == editor_includes::parse_directive(before, file, values) || values.empty())
 				continue;
+			if (temporary && ToLower(values[0]) == ToLower(rename.name))
+				continue;
 			auto const read_before{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
 			values[0] = rename.name + (temporary ? "~" : "");
-			if (item->plate && values.size() > 5)
+			if (item->plate && values.size() > 5 && false == rename.plate.empty())
 				values[5] = plate_for(std::string{}, rename.plate);
+			if (item->linked && values.size() > 6 && false == rename.linked.empty())
+				values[6] = rename.linked;
 			auto const read_after{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
 			auto const directive{editor_includes::compose_directive(file, values)};
 			if (directive == before)
 				continue;
-			if (temporary)
-				directives.emplace_back(rename.instance, before);
+			record(rename.instance, before);
 			set_include_directive(rename.instance, directive);
 			if (read_before != read_after)
 				signal_renamed(read_before, read_after, step);
 		}
+	for (auto const &[instance, values] : Changes.values)
+	{
+		auto const before{scene::Layers.directive(instance)};
+		std::string file;
+		std::vector<std::string> standing;
+		if (false == editor_includes::parse_directive(before, file, standing))
+			continue;
+		if (auto const directive{editor_includes::compose_directive(file, values)}; directive != before)
+		{
+			record(instance, before);
+			set_include_directive(instance, directive);
+		}
+	}
 	std::vector<scene::instance_handle> instances;
 	if (Error.empty() && false == items.empty())
 	{
