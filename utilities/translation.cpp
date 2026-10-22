@@ -218,6 +218,7 @@ std::string locale::label_cab_control(std::string const &Label)
 	    { "watercircuitslink_sw:", STRN("water circuits link") },
 	    { "fuelpump_sw:", STRN("fuel pump") },
 	    { "oilpump_sw:", STRN("oil pump") },
+	    { "oilfuelpump_sw:", STRN("oil and fuel pumps") },
 	    { "motorblowersfront_sw:", STRN("motor blowers A") },
 	    { "motorblowersrear_sw:", STRN("motor blowers B") },
 	    { "motorblowersalloff_sw:", STRN("all motor blowers") },

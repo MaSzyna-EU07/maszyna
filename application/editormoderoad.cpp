@@ -120,8 +120,8 @@ bool is_curved(segment_data const &Path)
 
 void copy_text(char *Buffer, std::size_t const Size, std::string const &Text)
 {
-	std::strncpy(Buffer, Text.c_str(), Size - 1);
-	Buffer[Size - 1] = 0;
+	// as much of the text as fits, always terminated
+	Buffer[Text.copy(Buffer, Size - 1)] = 0;
 }
 
 std::string lower_case(std::string Text)
