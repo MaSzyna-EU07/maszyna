@@ -604,10 +604,10 @@ void gauge_tool::update()
 			m_gauge.published = false;
 		}
 	}
-	else if (track != m_gauge.track || m_history.history_size() != m_gauge.history || m_gauge.pending)
+	else if (track != m_gauge.track || m_history.history_revision() != m_gauge.history || m_gauge.pending)
 	{
 		m_gauge.track = track;
-		m_gauge.history = m_history.history_size();
+		m_gauge.history = m_history.history_revision();
 		m_gauge.pending = false;
 		scan_gauge(*track);
 		m_gauge.published = false;
@@ -645,7 +645,7 @@ void gauge_tool::scan_gauge_map()
 	scan->space.emplace(scan->lines);
 	m_gauge.map = {};
 	m_gauge.map.scanned = true;
-	m_gauge.map.history = m_history.history_size();
+	m_gauge.map.history = m_history.history_revision();
 	auto const name{[](gauge::profile const *Profile) { return Profile != nullptr ? Profile->name : std::string{"-"}; }};
 	m_gauge.map.profile = name(chosen.railway) + ", " + name(chosen.road);
 	m_gauge.current = -1;
@@ -799,7 +799,7 @@ void gauge_tool::render_windows()
 			m_gauge.current = -1;
 			m_gauge.published = false;
 		}
-		else if (m_gauge.map.history != m_history.history_size())
+		else if (m_gauge.map.history != m_history.history_revision())
 			ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), STR_C("The scenery changed since the scan (%s)"), m_gauge.map.profile.c_str());
 	}
 	render_gauge_hits();

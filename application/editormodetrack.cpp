@@ -59,9 +59,10 @@ bool editor_mode::track_editing() const
 	return m_track_gizmo_using || m_dragging;
 }
 
-std::size_t editor_mode::history_size() const
+std::size_t editor_mode::history_revision() const
 {
-	return m_history.size();
+	auto const top{m_history.empty() ? std::uint64_t{0} : m_history.back().serial};
+	return static_cast<std::size_t>(top * 1000003u) ^ (m_history.size() << 20) ^ g_redo.size();
 }
 
 glm::dvec3 editor_mode::camera_position() const

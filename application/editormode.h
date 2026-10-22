@@ -167,6 +167,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<array_copy> copies; // models an array added to the one it was made of
 		bool joined{false}; // undone and redone together with the change before it
 		std::shared_ptr<terrain_streamer::change const> terrain; // the heightmap terrain from before the change (Action::Terrain)
+		std::uint64_t serial{next_serial()}; // of each step made, for the revision of the history
+		static std::uint64_t next_serial()
+		{
+			static std::uint64_t counter{0};
+			return ++counter;
+		}
 	};
 	void push_snapshot(scene::basic_node *node, EditorSnapshot::Action Action = EditorSnapshot::Action::Move, std::string const &Serialized = std::string());
 
@@ -782,7 +788,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 
 	TTrack *selected_track() const override;
 	bool track_editing() const override;
-	std::size_t history_size() const override;
+	std::size_t history_revision() const override;
 	glm::dvec3 camera_position() const override;
 	track_hover const &hovered_track() const override;
 	std::vector<TTrack *> const &track_set() const override;

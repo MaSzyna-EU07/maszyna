@@ -87,7 +87,7 @@ void speed_tool::speed_start()
 			if (track != nullptr && rail(*track))
 				add(track);
 	}
-	state.history = m_history.history_size();
+	state.history = m_history.history_revision();
 }
 
 void speed_tool::update()
@@ -198,7 +198,7 @@ void speed_tool::speed_apply(std::vector<int> const &Indices, bool const Branche
 	}
 	for (auto &verdict : state.results)
 		verdict.set = speed_check::path_velocity(*verdict.track, verdict.path);
-	state.history = m_history.history_size();
+	state.history = m_history.history_revision();
 	state.status = format(STR_C("Speed limits of %zu paths lowered to the safe ones, Ctrl+Z brings them back"), changes.size()) + skipped;
 	WriteLog("Editor: speed check - " + state.status, logtype::generic);
 }
@@ -262,7 +262,7 @@ void speed_tool::render_options()
 		ImGui::TextWrapped("%s", state.status.c_str());
 	if (state.results.empty())
 		return;
-	if (state.history != m_history.history_size())
+	if (state.history != m_history.history_revision())
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), STR_C("The scenery changed since the check"));
 	auto const *const within{STR_C("Within their limits too")};
 	auto const checkbox{ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(within).x};

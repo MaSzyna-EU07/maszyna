@@ -404,10 +404,10 @@ void hekto_tool::hekto_read_kilometrage()
 void hekto_tool::hekto_update()
 {
 	auto &tool{m_hekto};
-	if (false == tool.dirty && tool.history == m_history.history_size())
+	if (false == tool.dirty && tool.history == m_history.history_revision())
 		return;
 	tool.dirty = false;
-	tool.history = m_history.history_size();
+	tool.history = m_history.history_revision();
 	tool.posts.clear();
 	tool.found.clear();
 	tool.error.clear();
@@ -774,10 +774,10 @@ void fouling_tool::fouling_update()
 	auto *selected{m_selection.selected_track()};
 	if (tool.scope == 0 && selected != tool.selected)
 		tool.dirty = true;
-	if (false == tool.dirty && tool.history == m_history.history_size())
+	if (false == tool.dirty && tool.history == m_history.history_revision())
 		return;
 	tool.dirty = false;
-	tool.history = m_history.history_size();
+	tool.history = m_history.history_revision();
 	tool.selected = selected;
 	tool.points.clear();
 	tool.found.clear();

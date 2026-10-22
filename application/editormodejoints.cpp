@@ -164,7 +164,7 @@ void joints_tool::joints_start()
 			continue;
 		state.queue.push_back(track);
 	}
-	state.history = m_history.history_size();
+	state.history = m_history.history_revision();
 	state.places.clear();
 	state.runs.clear();
 	state.run_next = 0;
@@ -568,7 +568,7 @@ void joints_tool::joints_fix(std::vector<int> const &Indices)
 	editor_track::commit(changed);
 	for (auto *track : changed)
 		track->mark_dirty();
-	state.history = m_history.history_size();
+	state.history = m_history.history_revision();
 	state.status = format(STR_C("%zu joints fixed, Ctrl+Z takes them back"), count);
 	WriteLog("Editor: joints check - " + state.status, logtype::generic);
 }
@@ -646,7 +646,7 @@ void joints_tool::render_options()
 		ImGui::TextWrapped("%s", state.status.c_str());
 	if (state.issues.empty())
 		return;
-	if (state.history != m_history.history_size())
+	if (state.history != m_history.history_revision())
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", STR_C("The scenery changed since the check"));
 	int filter{state.filter + 1};
 	ImGui::SetNextItemWidth(150.0f);

@@ -165,7 +165,8 @@ class editor_view
 class editor_history
 {
   public:
-	virtual std::size_t history_size() const = 0;
+	// changes with each step of the history taken, undone or redone, also once the oldest steps are dropped
+	virtual std::size_t history_revision() const = 0;
 	virtual void push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created = {}, std::vector<TTrack *> Removed = {}) = 0;
 	// the changes of the kilometrage made since the last step: one step of the history
 	virtual void push_kilometrage_snapshot() = 0;

@@ -240,13 +240,13 @@ void parallel_tool::parallel_update()
 	else if (track != nullptr && target != nullptr)
 		tool.measured = std::abs(lateral_of(*track, *target));
 
-	if (track == tool.built_for && tool.spacing == tool.built_spacing && tool.side == tool.built_side && tool.scope == tool.built_scope && m_history.history_size() == tool.built_history)
+	if (track == tool.built_for && tool.spacing == tool.built_spacing && tool.side == tool.built_side && tool.scope == tool.built_scope && m_history.history_revision() == tool.built_history)
 		return;
 	tool.built_for = track;
 	tool.built_spacing = tool.spacing;
 	tool.built_side = tool.side;
 	tool.built_scope = tool.scope;
-	tool.built_history = m_history.history_size();
+	tool.built_history = m_history.history_revision();
 	tool.pieces.clear();
 	tool.styles.clear();
 	tool.length = 0.0;

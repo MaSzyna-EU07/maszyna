@@ -318,7 +318,7 @@ void srk_tool::open(TTrack &Track)
 	m_layout = std::move(found);
 	m_hover = -1;
 	m_view_state.exaggeration = 0.0f;
-	m_history_size = m_history.history_size();
+	m_history_revision = m_history.history_revision();
 	// the record of the station, by any of its switches
 	m_record = -1;
 	for (int index = 0; index < static_cast<int>(m_records.size()) && m_record < 0; ++index)
@@ -336,7 +336,7 @@ void srk_tool::open(TTrack &Track)
 
 void srk_tool::refresh()
 {
-	m_history_size = m_history.history_size();
+	m_history_revision = m_history.history_revision();
 	if (m_anchor == nullptr || m_anchor->m_editorremoved)
 	{
 		m_layout.reset();
@@ -405,7 +405,7 @@ void srk_tool::update()
 			entry.anchor = name;
 			m_changed = true;
 		}
-	if ((m_layout.has_value() || m_anchor != nullptr) && m_history.history_size() != m_history_size)
+	if ((m_layout.has_value() || m_anchor != nullptr) && m_history.history_revision() != m_history_revision)
 		refresh();
 	else if (m_layout.has_value() && false == m_signals_known)
 		survey_signals();
@@ -445,7 +445,7 @@ void srk_tool::forget(scene::basic_node const *Node)
 		// laid out again from its anchor at the next update
 		m_layout.reset();
 		m_hover = -1;
-		m_history_size = 0;
+		m_history_revision = static_cast<std::size_t>(-1);
 	}
 }
 

@@ -74,7 +74,7 @@ class srk_tool final : public editor_tool
 	int m_record{-1}; // of the open station, -1 while it has none
 	TTrack *m_anchor{nullptr}; // the switch the open station was found from
 	bool m_reversed{false}; // the switches numbered from the right end of the schematic
-	std::size_t m_history_size{0};
+	std::size_t m_history_revision{0};
 	TTrack const *m_picked{nullptr}; // the track selected when the station was looked for
 	view m_view_state;
 	int m_hover{-1}; // path of the layout under the mouse in the schematic
