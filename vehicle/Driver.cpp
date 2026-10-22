@@ -1655,6 +1655,12 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 						Point.Clear();
 					}
 				}
+				else if (Point.fDist > 0.0 && typeid(*Point.evEvent) == typeid(road_order))
+				{
+					// a level crossing or a junction which holds the vehicle ahead: the road orders past it, which let the traffic
+					// through, aren't for this vehicle yet. without this the first of them would tell the standing vehicle to drive on
+					Command = TCommandType::cm_SetProximityVelocity; // taken, and not acted on
+				}
 				else if (Point.evEvent->is_command())
 				{
 					// jeśli prędkość jest zerowa, a komórka zawiera komendę
