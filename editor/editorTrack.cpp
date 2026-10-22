@@ -215,6 +215,7 @@ void editor_track::isolated(TTrack &Track, std::vector<std::string> const &Names
 			isolated->AssignEvents();
 		Track.Isolated.push_back(isolated);
 	}
+	Track.mark_dirty();
 }
 
 void editor_track::overhead(TTrack &Track, float const Overhead)
