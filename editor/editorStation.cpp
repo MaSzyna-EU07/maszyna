@@ -20,6 +20,8 @@ http://mozilla.org/MPL/2.0/.
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <map>
+#include <numeric>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -233,6 +235,7 @@ double constexpr kClear{4.0}; // m, between the axes at a joint beyond a fouling
 double constexpr kReach{120.0}; // m, along a branch looked for its fouling point
 double constexpr kSection{30.0}; // m, the shortest stretch between two joints made a track circuit of its own
 double constexpr kSnap{0.3}; // m, a joint this close to the end of a track lies at the end
+double constexpr kThrough{400.0}; // m, of the switches a station track is followed through for its circuits beyond
 
 // the points of the way out of an end of the track, as a train runs: along the main path of a switch run into from its start,
 // back along the path of one run into from the end of it
@@ -854,9 +857,12 @@ std::vector<std::string> track_numbers(layout const &Layout, std::vector<circuit
 	auto const on = [&](circuit const &Circuit, std::unordered_set<TTrack const *> const &Tracks) { return std::any_of(Circuit.tracks.begin(), Circuit.tracks.end(), [&](TTrack const *Track) { return Tracks.count(Track) > 0; }); };
 	std::vector<std::size_t> axis;
 	std::vector<std::size_t> other;
-	std::vector<std::size_t> right;
-	std::vector<std::size_t> left;
+	std::vector<std::size_t> rest;
+	std::unordered_map<TTrack const *, std::size_t> circuit_of;
 	for (std::size_t index = 0; index < Circuits.size(); ++index)
+	{
+		for (auto const *track : Circuits[index].tracks)
+			circuit_of[track] = index;
 		if (Circuits[index].unit >= 0)
 			continue;
 		else if (on(Circuits[index], main))
@@ -864,7 +870,72 @@ std::vector<std::string> track_numbers(layout const &Layout, std::vector<circuit
 		else if (on(Circuits[index], second))
 			other.push_back(index);
 		else
-			(Circuits[index].offset < 0.0 ? right : left).push_back(index);
+			rest.push_back(index);
+	}
+	// a station track goes on through the switches along their straighter paths: its circuits beyond them share its number
+	std::vector<std::size_t> group(Circuits.size());
+	std::iota(group.begin(), group.end(), 0);
+	auto const root = [&](std::size_t Index) {
+		while (group[Index] != Index)
+			Index = group[Index] = group[group[Index]];
+		return Index;
+	};
+	std::unordered_set<std::size_t> const plain(rest.begin(), rest.end());
+	for (auto const index : rest)
+		for (auto const *track : Circuits[index].tracks)
+			for (auto const atend : {false, true})
+			{
+				if (node(*track))
+					break;
+				auto point{end_of(*track, 0, atend)};
+				auto *next{neighbour(*track, 0, atend)};
+				double length{0.0};
+				while (next != nullptr && length < kThrough && rail(*next))
+				{
+					auto const there{circuit_of.find(next)};
+					if (there == circuit_of.end() || there->second == index)
+						break;
+					if (Circuits[there->second].unit < 0)
+					{
+						if (plain.count(there->second) > 0)
+							group[root(there->second)] = root(index);
+						break;
+					}
+					int path{0};
+					bool end{false};
+					if (false == end_at(*next, point, path, end))
+						break;
+					if (next->eType == tt_Switch)
+					{
+						if (end && path != straighter(*next))
+							break;
+						path = straighter(*next);
+					}
+					length += plan_length(*next, path);
+					point = end_of(*next, path, false == end);
+					auto const *through{next};
+					next = neighbour(*through, path, false == end);
+				}
+			}
+	std::vector<std::pair<std::vector<std::size_t>, double>> right;
+	std::vector<std::pair<std::vector<std::size_t>, double>> left;
+	{
+		std::map<std::size_t, std::vector<std::size_t>> groups;
+		for (auto const index : rest)
+			groups[root(index)].push_back(index);
+		for (auto &[first, members] : groups)
+		{
+			double weighted{0.0};
+			double length{0.0};
+			for (auto const index : members)
+			{
+				weighted += Circuits[index].offset * Circuits[index].length;
+				length += Circuits[index].length;
+			}
+			auto const offset{length > 0.0 ? weighted / length : Circuits[first].offset};
+			(offset < 0.0 ? right : left).emplace_back(std::move(members), offset);
+		}
+	}
 	auto const mean = [&](std::vector<std::size_t> const &Group) {
 		double weighted{0.0};
 		double length{0.0};
@@ -880,20 +951,15 @@ std::vector<std::string> track_numbers(layout const &Layout, std::vector<circuit
 	std::vector<std::pair<std::vector<std::size_t>, int>> tracks{{axis, swapped ? 2 : 1}};
 	if (false == other.empty())
 		tracks.emplace_back(other, swapped ? 1 : 2);
-	// beyond the main tracks the circuits side by side, the nearest first, the odd numbers to the right, the even ones to the left
+	// beyond the main tracks the others side by side, the nearest first, the odd numbers to the right, the even ones to the left
 	for (auto *side : {&right, &left})
 	{
-		std::sort(side->begin(), side->end(), [&](std::size_t A, std::size_t B) { return std::abs(Circuits[A].offset) < std::abs(Circuits[B].offset); });
+		std::sort(side->begin(), side->end(), [&](auto const &A, auto const &B) { return std::abs(A.second) < std::abs(B.second); });
 		auto number{side == &right ? 3 : other.empty() ? 2 : 4};
-		for (std::size_t index = 0; index < side->size(); ++index)
+		for (auto &[members, offset] : *side)
 		{
-			if (index == 0 || std::abs(Circuits[(*side)[index]].offset) - std::abs(Circuits[(*side)[index - 1]].offset) > 2.0)
-			{
-				if (index > 0)
-					number += 2;
-				tracks.emplace_back(std::vector<std::size_t>{}, number);
-			}
-			tracks.back().first.push_back((*side)[index]);
+			tracks.emplace_back(std::move(members), number);
+			number += 2;
 		}
 	}
 	std::vector<std::string> result(Circuits.size());

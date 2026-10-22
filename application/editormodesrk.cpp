@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <functional>
 #include <unordered_set>
@@ -79,6 +80,18 @@ std::string unit_number(station::unit const &Unit, std::string const &Stem, std:
 	if (auto const record{switch_store::named(*Unit.parts.front())}; record && record->number != "-")
 		return record->number;
 	return std::to_string(Index + 1);
+}
+
+// the number of the station track a circuit is named after: bpd_it5b of track 5; empty for the other names
+std::string track_of(std::string const &Name, std::string const &Stem)
+{
+	auto const head{Stem + "it"};
+	if (Stem.empty() || Name.size() <= head.size() || Name.compare(0, head.size(), head) != 0)
+		return {};
+	auto number{Name.substr(head.size())};
+	if (number.size() > 1 && std::isalpha(static_cast<unsigned char>(number.back())) && std::isdigit(static_cast<unsigned char>(number[number.size() - 2])))
+		number.pop_back();
+	return number;
 }
 
 ImU32 circuit_colour(std::string const &Name)
@@ -410,7 +423,19 @@ void srk_tool::render_options()
 	item_tooltip("Cuts the tracks of the station at the joints of the track circuits and names the circuits, as on the lines of PKP PLK: "
 	             "a joint 1.5 m before the start of a switch, beyond the fouling point of each branch where the axes are 4 m apart, in the middle "
 	             "of a link too short for both. Each switch gets bpd_iz<number>, each station track bpd_it<number>: 1 and 2 the main tracks, "
-	             "track 1 on the right along the km, the odd ones beyond it, the even ones on the other side. One step of undo");
+	             "track 1 on the right along the km, the odd ones beyond it, the even ones on the other side. Run again after changes, it keeps "
+	             "the numbers the tracks have. One step of undo");
+	if (auto const *selected{m_selection.selected_track()}; selected != nullptr && false == selected->Isolated.empty())
+		if (auto const number{track_of(selected->Isolated.front()->asName, stem_of_open())}; false == number.empty() && begin_fields("##srktrack"))
+		{
+			field_row("Track number");
+			std::array<char, 16> buffer{};
+			number.copy(buffer.data(), buffer.size() - 1);
+			if (ImGui::InputText("##srktracknumber", buffer.data(), buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
+				renumber_track(*selected, buffer.data());
+			item_tooltip("The number of the selected station track: type another one and its track circuits are renamed, bpd_it7a, bpd_it7b. One step of undo");
+			ImGui::EndTable();
+		}
 	if (false == m_status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", m_status.c_str());
 	ImGui::Spacing();
@@ -587,10 +612,48 @@ void srk_tool::set_circuits()
 		std::unordered_set<TTrack const *> captured(created.begin(), created.end());
 		for (auto const &[track, state] : before)
 			captured.insert(track);
+		// a station track keeps the name most of it has, given by hand or so far, unless another one has it too; the others take
+		// the numbers left on their side
+		std::vector<std::string> names(circuits.size());
+		std::map<std::string, std::size_t> held;
 		for (std::size_t index = 0; index < circuits.size(); ++index)
 		{
 			auto const &circuit{circuits[index]};
-			auto const name{circuit.unit >= 0 ? stem + "iz" + unit_number(units[circuit.unit], stem, circuit.unit) : stem + "it" + numbers[index]};
+			if (circuit.unit >= 0)
+				continue;
+			std::map<std::string, std::size_t> counts;
+			for (auto const *track : circuit.tracks)
+				if (track->Isolated.size() == 1 && false == track_of(track->Isolated.front()->asName, stem).empty())
+					++counts[track->Isolated.front()->asName];
+			if (auto const most{std::max_element(counts.begin(), counts.end(), [](auto const &A, auto const &B) { return A.second < B.second; })}; most != counts.end())
+				++held[names[index] = most->first];
+		}
+		std::unordered_set<std::string> taken;
+		for (auto &name : names)
+			if (false == name.empty() && held[name] > 1)
+				name.clear();
+			else if (false == name.empty())
+				taken.insert(name);
+		for (std::size_t index = 0; index < circuits.size(); ++index)
+		{
+			auto const &circuit{circuits[index]};
+			auto &name{names[index]};
+			if (circuit.unit >= 0)
+				name = stem + "iz" + unit_number(units[circuit.unit], stem, circuit.unit);
+			else if (name.empty())
+			{
+				auto number{numbers[index]};
+				while (taken.count(stem + "it" + number) > 0)
+				{
+					std::size_t digits{0};
+					while (digits < number.size() && std::isdigit(static_cast<unsigned char>(number[digits])))
+						++digits;
+					if (digits == 0)
+						break;
+					number = std::to_string(std::stoi(number.substr(0, digits)) + 2) + number.substr(digits);
+				}
+				taken.insert(name = stem + "it" + number);
+			}
 			for (auto *track : circuit.tracks)
 			{
 				if (track->Isolated.size() == 1 && track->Isolated.front()->asName == name)
@@ -611,6 +674,48 @@ void srk_tool::set_circuits()
 	m_status = format(STR_P("%zu track circuit", "%zu track circuits", count), count) + ", " + format(STR_P("%zu cut", "%zu cuts", created.size()), created.size());
 }
 
+std::string srk_tool::stem_of_open() const
+{
+	return m_record >= 0 && false == m_records[m_record].code.empty() ? station::prefix(m_records[m_record].code) : std::string{};
+}
+
+void srk_tool::renumber_track(TTrack const &Track, std::string const &Number)
+{
+	m_status.clear();
+	auto const stem{stem_of_open()};
+	auto const from{Track.Isolated.empty() ? std::string{} : track_of(Track.Isolated.front()->asName, stem)};
+	std::string to;
+	for (auto const letter : Number)
+		if (std::isalnum(static_cast<unsigned char>(letter)))
+			to += static_cast<char>(std::tolower(static_cast<unsigned char>(letter)));
+	if (from.empty() || to.empty() || to == from)
+		return;
+	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	std::unordered_set<TTrack const *> seen;
+	for (auto const &path : m_layout->paths)
+	{
+		if (path.track->Isolated.empty() || false == seen.insert(path.track).second)
+			continue;
+		auto const number{track_of(path.track->Isolated.front()->asName, stem)};
+		if (number == to)
+		{
+			m_status = format(STR_C("The station has a track %s already"), to.c_str());
+			return;
+		}
+		if (number == from)
+			before.emplace_back(path.track, editor_track::capture(*path.track));
+	}
+	for (auto &[track, state] : before)
+	{
+		auto const &name{track->Isolated.front()->asName};
+		editor_track::isolated(*track, {stem + "it" + to + name.substr(stem.size() + 2 + from.size())});
+	}
+	if (before.empty())
+		return;
+	m_history.push_track_snapshot(std::move(before));
+	m_status = format(STR_C("Track %s is track %s now"), from.c_str(), to.c_str());
+}
+
 void srk_tool::survey()
 {
 	m_circuit_of.assign(m_layout.has_value() ? m_layout->paths.size() : 0, -1);
@@ -619,7 +724,7 @@ void srk_tool::survey()
 	if (false == m_layout.has_value())
 		return;
 	auto const &layout{*m_layout};
-	auto const stem{m_record >= 0 && false == m_records[m_record].code.empty() ? station::prefix(m_records[m_record].code) : std::string{}};
+	auto const stem{stem_of_open()};
 	std::vector<double> weights;
 	for (std::size_t index = 0; index < layout.paths.size(); ++index)
 	{
@@ -634,6 +739,7 @@ void srk_tool::survey()
 		if (found == m_circuits.end())
 		{
 			found = m_circuits.insert(m_circuits.end(), {glm::dvec2{0.0}, name, circuit_colour(name)});
+			found->labelled = stem.empty() || name.compare(0, stem.size() + 2, stem + "iz") != 0;
 			weights.push_back(0.0);
 		}
 		auto const circuit{static_cast<std::size_t>(found - m_circuits.begin())};
@@ -643,11 +749,24 @@ void srk_tool::survey()
 			found->at += point;
 			weights[circuit] += 1.0;
 		}
+		found->length += path.length;
 	}
 	for (std::size_t index = 0; index < m_circuits.size(); ++index)
 	{
 		auto &mark{m_circuits[index]};
 		mark.at /= std::max(1.0, weights[index]);
+		// on its track, nearest the middle of its points
+		auto nearest{std::numeric_limits<double>::max()};
+		glm::dvec2 on{mark.at};
+		for (std::size_t path = 0; path < layout.paths.size(); ++path)
+			if (m_circuit_of[path] == static_cast<int>(index))
+				for (auto const &point : layout.paths[path].schematic)
+					if (auto const distance{glm::distance(point, mark.at)}; distance < nearest)
+					{
+						nearest = distance;
+						on = point;
+					}
+		mark.at = on;
 		// bpd_it3 shown as It3
 		if (false == stem.empty() && mark.text.compare(0, stem.size(), stem) == 0)
 			mark.text.erase(0, stem.size());
@@ -806,8 +925,24 @@ void srk_tool::render_canvas(float const Height)
 			draw_path(path, overlay_color::selected, 4.0f);
 	if (m_hover >= 0)
 		draw_path(layout.paths[m_hover], kHovered, 4.0f);
-	// the switches: a dot at the start, the name over or under it in turn; the number alone, once named after the station
-	auto const stem{m_record >= 0 && false == m_records[m_record].code.empty() ? station::prefix(m_records[m_record].code) : std::string{}};
+	// the labels, none over another: the switches first, a dot at the start and the name over or under it in turn, the number
+	// alone once named after the station; then the station tracks under or over them, the longest first
+	std::vector<ImVec4> placed;
+	auto const label = [&](std::string const &Text, ImU32 const Colour, std::initializer_list<ImVec2> Places) {
+		auto const extent{ImGui::CalcTextSize(Text.c_str())};
+		for (auto const &place : Places)
+		{
+			ImVec4 const box{place.x - extent.x * 0.5f - 2.0f, place.y - 1.0f, place.x + extent.x * 0.5f + 2.0f, place.y + extent.y + 1.0f};
+			if (std::any_of(placed.begin(), placed.end(), [&](ImVec4 const &Other) { return box.x < Other.z && Other.x < box.z && box.y < Other.w && Other.y < box.w; }))
+				continue;
+			placed.push_back(box);
+			draw->AddRectFilled(ImVec2(box.x, box.y), ImVec2(box.z, box.w), IM_COL32(22, 24, 28, 200), 2.0f);
+			draw->AddText(ImVec2(place.x - extent.x * 0.5f, place.y), Colour, Text.c_str());
+			return;
+		}
+	};
+	auto const stem{stem_of_open()};
+	auto const height{ImGui::GetTextLineHeight()};
 	for (std::size_t index = 0; index < layout.switches.size(); ++index)
 	{
 		auto const *track{layout.switches[index]};
@@ -816,16 +951,23 @@ void srk_tool::render_canvas(float const Height)
 		auto text{track->name()};
 		if (false == stem.empty() && text.size() > stem.size() && text.compare(0, stem.size(), stem) == 0)
 			text.erase(0, stem.size());
-		auto const extent{ImGui::CalcTextSize(text.c_str())};
-		ImVec2 const place{at.x - extent.x * 0.5f, index % 2 == 0 ? at.y - extent.y - 6.0f : at.y + 6.0f};
-		draw->AddRectFilled(ImVec2(place.x - 2.0f, place.y - 1.0f), ImVec2(place.x + extent.x + 2.0f, place.y + extent.y + 1.0f), IM_COL32(22, 24, 28, 200), 2.0f);
-		draw->AddText(place, kSwitch, text.c_str());
+		ImVec2 const over{at.x, at.y - height - 6.0f};
+		ImVec2 const under{at.x, at.y + 6.0f};
+		if (index % 2 == 0)
+			label(text, kSwitch, {over, under});
+		else
+			label(text, kSwitch, {under, over});
 	}
-	for (auto const &mark : m_circuits)
+	std::vector<std::size_t> order;
+	for (std::size_t index = 0; index < m_circuits.size(); ++index)
+		if (m_circuits[index].labelled)
+			order.push_back(index);
+	std::sort(order.begin(), order.end(), [&](std::size_t A, std::size_t B) { return m_circuits[A].length > m_circuits[B].length; });
+	for (auto const index : order)
 	{
+		auto const &mark{m_circuits[index]};
 		auto const at{screen_of(mark.at)};
-		auto const extent{ImGui::CalcTextSize(mark.text.c_str())};
-		draw->AddText(ImVec2(at.x - extent.x * 0.5f, at.y + 4.0f), mark.colour, mark.text.c_str());
+		label(mark.text, mark.colour, {ImVec2(at.x, at.y + 4.0f), ImVec2(at.x, at.y - height - 4.0f)});
 	}
 	draw->PopClipRect();
 	if (hovered && m_hover >= 0 && false == m_dragging)
@@ -962,6 +1104,26 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		for (auto const &[name, entry] : found)
 			list += format(" %s:%zu/%.0f", name.c_str(), entry.first, entry.second);
 		WriteLog(format("SELFTEST srkcircuits %zu named, %zu joints:", found.size(), m_ticks.size()) + list);
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srktrack")
+	{
+		// srktrack circuit=<name> number=<number>: the station track of the circuit renumbered
+		auto const values{selftest_values(Words)};
+		auto const circuit{values.find("circuit")};
+		auto const number{values.find("number")};
+		TTrack const *found{nullptr};
+		if (m_layout.has_value() && circuit != values.end())
+			for (auto const &path : m_layout->paths)
+				if (false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == circuit->second)
+					found = path.track;
+		if (found == nullptr || number == values.end())
+		{
+			WriteLog("SELFTEST srktrack: no station open, or no such circuit");
+			return editor_selftest_result::handled;
+		}
+		renumber_track(*found, number->second);
+		WriteLog("SELFTEST srktrack: " + m_status);
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstations")

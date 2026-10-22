@@ -76,6 +76,8 @@ class srk_tool final : public editor_tool
 		glm::dvec2 at{0.0}; // in the schematic
 		std::string text;
 		ImU32 colour{0};
+		double length{0.0};
+		bool labelled{true}; // the circuits of the switches go without, named after them
 	};
 	std::vector<int> m_circuit_of; // of each path of the layout, an index into m_circuits, -1 for none
 	std::vector<circuit_mark> m_circuits;
@@ -97,4 +99,8 @@ class srk_tool final : public editor_tool
 	void set_circuits();
 	// the track circuits as the tracks have them, for the schematic
 	void survey();
+	// the names of the switches and the circuits of the open station begin with it, empty while it has no code
+	std::string stem_of_open() const;
+	// the circuits of the station track of the track renamed after another number; one step of the history
+	void renumber_track(TTrack const &Track, std::string const &Number);
 };

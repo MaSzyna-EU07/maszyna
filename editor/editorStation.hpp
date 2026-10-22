@@ -101,8 +101,8 @@ std::vector<joint> joints(layout const &Layout, std::vector<unit> const &Units, 
 // the track circuits the joints part the station into; the tracks of the lines beyond the joints belong to none
 std::vector<circuit> circuits(layout const &Layout, std::vector<unit> const &Units, std::vector<glm::dvec3> const &Joints);
 // the numbers of the station tracks as PKP PLK gives them, one for each circuit, empty for those of switches: 1 and 2 the main
-// tracks, track 1 on the right along the chainage, the odd ones beyond it on its side, the even ones on the other; a track of
-// several circuits has them lettered along the chainage: 5a, 5b
+// tracks, track 1 on the right along the chainage, the odd ones beyond it on its side, the even ones on the other; a track goes
+// on through the switches along their straighter paths, its circuits lettered along the chainage: 5a, 5b
 std::vector<std::string> track_numbers(layout const &Layout, std::vector<circuit> const &Circuits);
 // the switches of the station of the switch, without laying it out
 std::vector<TTrack *> switches_of(TTrack &Switch, options const &Options = {});
