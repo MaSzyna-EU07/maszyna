@@ -11065,3 +11065,15 @@ msgstr[0] "%zu semafor dostał potrzebne światła, Ctrl+Z cofa"
 msgstr[1] "%zu semafory dostały potrzebne światła, Ctrl+Z cofa"
 msgstr[2] "%zu semaforów dostało potrzebne światła, Ctrl+Z cofa"
 
+
+msgid "Template: %s"
+msgstr "Szablon: %s"
+
+msgid "Another template of its kind and mount for the signal: the name, the plate, the place and the event the train reads it by stay. A head leaning to one side is swapped for its counterpart leaning towards the track. Ctrl+Z takes it back"
+msgstr "Inny szablon tego samego rodzaju i mocowania dla semafora: nazwa, tablica, miejsce i event, po którym pociąg go odczytuje, zostają. Głowica pochylona w bok zamienia się na odpowiednik pochylony ku torowi. Ctrl+Z cofa"
+
+msgid "Signal %s got the template %s, Ctrl+Z takes it back"
+msgstr "Semafor %s dostał szablon %s, Ctrl+Z cofa"
+
+msgid "Signal %s can't take the template %s"
+msgstr "Semafor %s nie może dostać szablonu %s"

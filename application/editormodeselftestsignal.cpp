@@ -50,7 +50,7 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_signal(std::string const &command, std::istringstream &words)
 {
-	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn")
+	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap")
 	{
 		auto values{selftest_values(words)};
 		show_track_tab(track_tab::signals);
@@ -140,6 +140,24 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			auto const *standing{standing_named(values["name"])};
 			auto const done{standing != nullptr && (command == "signalflip" ? signal_flip(standing->include.instance) : signal_turn(standing->include.instance))};
 			WriteLog("SELFTEST " + command + " " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+		}
+		else if (command == "signalselect" || command == "signalswap")
+		{
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			auto const instance{standing->include.instance};
+			signal_select(instance);
+			if (command == "signalswap")
+			{
+				auto const done{signal_swap(instance, values["file"])};
+				WriteLog("SELFTEST signalswap " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+			}
+			else
+				WriteLog("SELFTEST signalselect " + values["name"] + ": " + standing->include.file);
 		}
 		else if (command == "signaldelete")
 		{

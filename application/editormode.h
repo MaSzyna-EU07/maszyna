@@ -1987,6 +1987,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread);
 	bool signal_flip(scene::instance_handle const Instance);
 	bool signal_turn(scene::instance_handle const Instance);
+	bool signal_swap(scene::instance_handle const Instance, std::string const &File);
 	signal_standing const *signal_standing_of(scene::instance_handle const Instance) const;
 	bool signal_delete(scene::instance_handle const Instance);
 	void signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States);

@@ -689,6 +689,30 @@ bool editor_mode::signal_turn(scene::instance_handle const Instance)
 	return signal_move_to(*standing, spot, STR_C("Signal %s turned to the trains of the other direction, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s turned to the trains of the other direction, Ctrl+Z takes it back"));
 }
 
+bool editor_mode::signal_swap(scene::instance_handle const Instance, std::string const &File)
+{
+	auto &tool{m_signal};
+	auto const *standing{signal_standing_of(Instance)};
+	if (standing == nullptr)
+		return false;
+	auto const name{standing->name};
+	auto const before{standing->include.file};
+	signal_changes changes;
+	changes.files.emplace_back(Instance, File);
+	std::string error;
+	signal_batch(changes, {}, {}, error);
+	signal_refresh(true);
+	auto const *swapped{signal_standing_of(Instance)};
+	if (false == error.empty() || swapped == nullptr || swapped->include.file == before)
+	{
+		tool.status = error.empty() ? format(STR_C("Signal %s can't take the template %s"), name.c_str(), File.c_str()) : error;
+		return false;
+	}
+	signal_select(Instance);
+	tool.status = format(STR_C("Signal %s got the template %s, Ctrl+Z takes it back"), name.c_str(), swapped->include.file.c_str());
+	return true;
+}
+
 std::string editor_mode::signal_variant(signal_template const &Template, signal_spot const &Spot) const
 {
 	auto file{Template.file};
@@ -1217,6 +1241,25 @@ void editor_mode::render_signal_selected()
 	else
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("No path has %s among its events: the train doesn't see it"), found->read.c_str());
 	auto const instance{found->include.instance};
+	if (auto const *item{signal_template_of(found->include.file)}; item != nullptr)
+	{
+		auto const shown = [](signal_template const &Template) { return Template.lamps.empty() ? Template.name : Template.name + "  " + Template.lamps; };
+		std::string swap;
+		ImGui::SetNextItemWidth(-1.0f);
+		if (ImGui::BeginCombo("##signalswap", format(STR_C("Template: %s"), shown(*item).c_str()).c_str(), ImGuiComboFlags_HeightLarge))
+		{
+			for (auto const &other : m_signal.templates)
+				if (other.kind == item->kind && other.mount == item->mount && ImGui::Selectable((shown(other) + "##" + other.file).c_str(), other.file == item->file) && other.file != item->file)
+					swap = other.file;
+			ImGui::EndCombo();
+		}
+		item_tooltip("Another template of its kind and mount for the signal: the name, the plate, the place and the event the train reads it by stay. A head leaning to one side is swapped for its counterpart leaning towards the track. Ctrl+Z takes it back");
+		if (false == swap.empty())
+		{
+			signal_swap(instance, swap);
+			return;
+		}
+	}
 	auto const width{(ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f};
 	if (ImGui::Button(STR_C("To the other side"), ImVec2(width, 0.0f)))
 		signal_flip(instance);
