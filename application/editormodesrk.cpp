@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodeshared.h"
 #include "application/editorprojection.h"
 #include "application/editoruilayer.h"
+#include "editor/editorAlignmentStore.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
@@ -360,11 +361,7 @@ srk_tool::record &srk_tool::record_of_open()
 		auto *first{m_layout->switches.front()};
 		entry.anchor = first->name();
 		entry.track = first;
-		entry.layer = scene::Layers.resolve(first->layer());
-		if (false == scene::Layers.valid(entry.layer) || false == scene::Layers.accepts(entry.layer))
-			entry.layer = scene::Layers.active();
-		if (false == scene::Layers.valid(entry.layer))
-			entry.layer = 1;
+		entry.layer = alignment_store::layer_of(*first);
 		m_records.push_back(std::move(entry));
 		m_record = static_cast<int>(m_records.size()) - 1;
 		m_anchor = first;

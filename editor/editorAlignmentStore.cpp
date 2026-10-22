@@ -863,7 +863,12 @@ void restore(std::vector<record> Records)
 
 scene::layer_handle layer_of(TTrack const &Track)
 {
-	auto const usable = [](scene::layer_handle const Layer) { return scene::Layers.valid(Layer) && scene::Layers.accepts(Layer) && false == scene::Layers.layer(Layer).name.ends_with(".txtf"); };
+	auto const usable = [](scene::layer_handle const Layer) {
+		if (false == scene::Layers.valid(Layer) || false == scene::Layers.accepts(Layer))
+			return false;
+		auto const &name{scene::Layers.layer(Layer).name};
+		return false == name.ends_with(".txtf") && false == name.ends_with("_ter.scm");
+	};
 	auto layer{scene::Layers.resolve(Track.layer())};
 	if (false == usable(layer))
 		layer = scene::Layers.active();
