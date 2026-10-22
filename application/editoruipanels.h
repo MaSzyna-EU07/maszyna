@@ -283,9 +283,13 @@ class memcells_panel : public ui_panel
 	memcells_panel(std::string const &Name, bool const Isopen) : ui_panel(Name, Isopen) {}
 
 	void render() override;
+	// panel content without the window, also drawn in the debug panel of the driver mode
+	void render_body();
 
 	// moves the camera to specified node; provided by the editor mode
 	std::function<void(scene::basic_node *)> focus;
+	// height of the list, 0: it takes what the window has left
+	float listheight{0.0f};
 
   private:
 	// methods

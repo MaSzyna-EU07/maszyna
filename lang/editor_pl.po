@@ -10375,3 +10375,6 @@ msgstr "Dodaj do wartości"
 
 msgid "Read again"
 msgstr "Odczytaj ponownie"
+
+msgid "Pick a memory cell from the list to set what's in it"
+msgstr "Wybierz komórkę pamięci z listy, aby ustawić jej zawartość"

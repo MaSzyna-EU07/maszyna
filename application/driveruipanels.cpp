@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/driveruipanels.h"
+#include "application/editoruipanels.h"
 
 #include "utilities/Globals.h"
 #include "application/application.h"
@@ -544,6 +545,22 @@ void debug_panel::update()
 #endif
 }
 
+namespace {
+
+// memory cells of the scenery, to look into and play with while the simulation runs
+bool render_section_memcells() {
+
+    if( false == ImGui::CollapsingHeader( "Memory Cells" ) ) { return false; }
+    static memcells_panel memcells { "Memory cells", true };
+    memcells.listheight = ImGui::GetTextLineHeightWithSpacing() * 12.f;
+    ImGui::PushID( "memcells" );
+    memcells.render_body();
+    ImGui::PopID();
+    return true;
+}
+
+} // namespace
+
 void
 debug_panel::render() {
     if( false == is_open ) { return; }
@@ -577,6 +594,7 @@ debug_panel::render() {
         render_section( "Vehicle Scan Table", m_scantablelines );
         render_section_scenario();
         render_section_eventqueue();
+        render_section_memcells();
         if( true == render_section( "Power Grid", m_powergridlines ) ) {
             // traction state debug
             ImGui::Checkbox( "Debug Traction", &DebugTractionFlag );

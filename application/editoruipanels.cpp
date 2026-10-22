@@ -2468,10 +2468,15 @@ void memcells_panel::render()
 	auto const panelname{(title.empty() ? std::string{STR_C(m_name.c_str())} : title) + "###" + m_name};
 	if (ImGui::Begin(panelname.c_str(), &is_open, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
 	{
-		render_list();
-		render_cell();
+		render_body();
 	}
 	ImGui::End();
+}
+
+void memcells_panel::render_body()
+{
+	render_list();
+	render_cell();
 }
 
 void memcells_panel::render_list()
@@ -2533,8 +2538,8 @@ void memcells_panel::render_list()
 	}
 	ImGui::TextDisabled(STR_C("Memory cells: %d, shown: %d"), static_cast<int>(m_sorted.size()), static_cast<int>(m_listed.size()));
 
-	auto const listheight{std::max(120.0f, ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeightWithSpacing() * 7.0f)};
-	if (ImGui::BeginTable("##memcells", 5, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(-1.0f, listheight)))
+	auto const height{listheight > 0.0f ? listheight : std::max(120.0f, ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeightWithSpacing() * 7.0f)};
+	if (ImGui::BeginTable("##memcells", 5, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(-1.0f, height)))
 	{
 		ImGui::TableSetupScrollFreeze(0, 1);
 		ImGui::TableSetupColumn(STR_C("Name"), ImGuiTableColumnFlags_WidthStretch, 2.0f);
@@ -2601,7 +2606,7 @@ void memcells_panel::render_cell()
 	ImGui::Separator();
 	if (m_selected == nullptr)
 	{
-		ImGui::TextDisabled("%s", STR_C("Pick a memory cell from the list to set what's in it. A double click shows where it is"));
+		ImGui::TextDisabled("%s", focus ? STR_C("Pick a memory cell from the list to set what's in it. A double click shows where it is") : STR_C("Pick a memory cell from the list to set what's in it"));
 		return;
 	}
 	auto *cell{m_selected};
