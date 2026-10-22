@@ -111,6 +111,7 @@ class TRapid : public TPrzekladnik {
   public:
     void SetRapidParams(double mult, double size);
     void SetRapidStatus(bool rs);
+    double GetRapidMult() const { return RapidMult; }
     void Update(double dt) override;
 	using TPrzekladnik::TPrzekladnik;
 };
@@ -194,6 +195,7 @@ class TNESt3 : public TBrake {
     double GetPF( double const PP, double const dt, double const Vel ) override; // przeplyw miedzy komora wstepna i PG
     void EStParams(double i_crc) const; // parametry charakterystyczne dla ESt
     double GetCRP() override;
+    double GetRapidRatio(double const Vel) const override;
     void CheckState(double const BCP, double &dV1); // glowny przyrzad rozrzadczy
     void CheckReleaser(double const dt); // odluzniacz
     double CVs(double const BP) const; // napelniacz sterujacego
