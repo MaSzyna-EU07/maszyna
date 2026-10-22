@@ -77,6 +77,15 @@ bool TTrainParameters::IsLastStop() const {
     return StationIndex >= StationCount;
 }
 
+TMTableLine const &TTrainParameters::TimeTableEntryAhead( int Offset ) const
+{ // wpis rozkladu Offset pozycji za aktualnym (bez pomijania przelotow);
+  // poza zakresem 1..StationCount zwraca techniczny wpis zerowy
+    int const idx { StationIndex + Offset };
+    if( ( idx < 1 ) || ( idx > StationCount ) )
+        return TimeTable[0];
+    return TimeTable[idx];
+}
+
 
 bool TTrainParameters::IsMaintenance() const {
     if( StationIndex <= StationCount )
