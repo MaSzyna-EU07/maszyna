@@ -2073,10 +2073,22 @@ bool editor_mode::nmt_fit_line(TTrack &Track)
 	// are cut off and set to the bridge, the formation is laid up to it, the ground under it stays as the model has it
 	double constexpr kBridged{1.0}; // m
 	double constexpr kAbutment{100.0}; // per mille
+	// spans a few metres apart are one bridge on its piers; what is shorter than that is a culvert under the embankment
+	double constexpr kPier{5.0}; // m
+	double constexpr kCulvert{3.0}; // m
 	std::vector<double> heights(count);
 	for (std::size_t i = 0; i < count; ++i)
 		heights[i] = profile::elevation(fitted_line, sampled[i]);
-	auto const bridges{profile::bridged(sampled, heights, model, kBridged, kAbutment)};
+	std::vector<profile::departure> bridges;
+	for (auto const &stretch : profile::bridged(sampled, heights, model, kBridged, kAbutment))
+		if (false == bridges.empty() && stretch.from - bridges.back().to < kPier)
+		{
+			bridges.back().to = stretch.to;
+			bridges.back().depth = std::min(bridges.back().depth, stretch.depth);
+		}
+		else
+			bridges.push_back(stretch);
+	bridges.erase(std::remove_if(bridges.begin(), bridges.end(), [&](profile::departure const &Bridge) { return Bridge.to - Bridge.from < kCulvert; }), bridges.end());
 	profile_apply(false, bridges);
 	auto const applied{profile.error.empty()};
 	// where the line parts from the model: under it a gap, a bridge or a viaduct, over it a wall or a structure above the track

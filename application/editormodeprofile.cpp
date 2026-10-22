@@ -1476,7 +1476,18 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
 	auto cuts{profile::breaks(line)};
-	for (auto const &bridge : Bridges)
+	// a bridge ends at a joint or a break of the line by its abutment rather than leave a sliver of a path there
+	double constexpr kBridgeSnap{1.0}; // m
+	auto joints{cuts};
+	for (auto const &span : state.route.spans)
+		joints.insert(joints.end(), {span.from, span.to});
+	auto bridges{Bridges};
+	for (auto &bridge : bridges)
+		for (auto *end : {&bridge.from, &bridge.to})
+			if (auto const nearest{std::min_element(joints.begin(), joints.end(), [&](double const A, double const B) { return std::abs(A - *end) < std::abs(B - *end); })};
+			    nearest != joints.end() && std::abs(*nearest - *end) <= kBridgeSnap)
+				*end = *nearest;
+	for (auto const &bridge : bridges)
 		cuts.insert(cuts.end(), {bridge.from, bridge.to});
 	std::sort(cuts.begin(), cuts.end());
 	auto const gaps{editor_track::apply_profile(
@@ -1486,7 +1497,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	std::size_t bridged{0};
 	for (auto const &span : state.route.spans)
 		if (span.track->eEnvironment != e_bridge && span.track->eEnvironment != e_tunnel
-		    && std::any_of(Bridges.begin(), Bridges.end(), [&](profile::departure const &Bridge) { return span.from >= Bridge.from - kBridgeEnd && span.to <= Bridge.to + kBridgeEnd; }))
+		    && std::any_of(bridges.begin(), bridges.end(), [&](profile::departure const &Bridge) { return span.from >= Bridge.from - kBridgeEnd && span.to <= Bridge.to + kBridgeEnd; }))
 		{
 			span.track->eEnvironment = e_bridge;
 			++bridged;
