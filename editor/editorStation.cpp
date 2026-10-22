@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorStation.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorKilometrage.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "editor/editorTrack.hpp"
 #include "simulation/simulation.h"
@@ -427,14 +428,18 @@ std::optional<layout> find(TTrack &From, options const &Options)
 			result.chainage.push_back(result.chainage.back() + plan_distance(result.axis[i - 1], result.axis[i]));
 	};
 	measure();
-	// the chainage runs with the km of the switches, when they have one and most of them agree on it
+	// the chainage runs with the km of the switches, when they have one and most of them agree on it: of the kilometrage of the
+	// line, of their records, of the alignment
 	double constexpr kAgree{50.0}; // m
 	std::vector<std::pair<double, double>> marks; // the chainage and the km, in m
 	for (auto *track : found.switches)
 	{
 		auto const start{end_of(*track, 0, false)};
 		std::optional<double> km;
-		if (auto const record{switch_store::named(*track)}; record && record->km)
+		double line_km{0.0};
+		if (auto const line{kilometrage::line_at(start)}; false == line.empty() && kilometrage::km_at(line, start, line_km))
+			km = line_km * 1000.0;
+		else if (auto const record{switch_store::named(*track)}; record && record->km)
 			km = record->km;
 		else
 			km = alignment_store::chainage_at(start);

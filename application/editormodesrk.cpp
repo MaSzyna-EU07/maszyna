@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
+#include "editor/editorKilometrage.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "editor/editorTrack.hpp"
 
@@ -172,6 +173,18 @@ ImU32 circuit_colour(std::string const &Name)
 template <typename Record_> std::string anchor_of(Record_ const &Entry)
 {
 	return Entry.track != nullptr && false == Entry.track->m_editorremoved ? Entry.track->name() : Entry.anchor;
+}
+
+glm::dvec3 axis_point(station::layout const &Layout, double const Chainage)
+{
+	auto const after{std::lower_bound(Layout.chainage.begin(), Layout.chainage.end(), Chainage)};
+	if (after == Layout.chainage.begin())
+		return Layout.axis.front();
+	if (after == Layout.chainage.end())
+		return Layout.axis.back();
+	auto const i{static_cast<std::size_t>(after - Layout.chainage.begin())};
+	auto const step{Layout.chainage[i] - Layout.chainage[i - 1]};
+	return glm::mix(Layout.axis[i - 1], Layout.axis[i], step > 1e-9 ? (Chainage - Layout.chainage[i - 1]) / step : 0.0);
 }
 
 } // namespace
@@ -522,16 +535,26 @@ void srk_tool::render_options()
 		text("Name", "##srkname", entry != nullptr ? entry->name : std::string{}, "Biała Podlaska", [&](std::string const &Value) { record_of_open().name = Value; });
 		text("Code", "##srkcode", entry != nullptr ? entry->code : std::string{}, "BPd", [&](std::string const &Value) { record_of_open().code = word_of(Value) == "-" ? std::string{} : word_of(Value); });
 		item_tooltip("The abbreviation of the station: the names of its switches, track circuits and signals begin with it");
-		text("Line", "##srkline", entry != nullptr ? entry->line : std::string{}, "2", [&](std::string const &Value) { record_of_open().line = word_of(Value) == "-" ? std::string{} : word_of(Value); });
+		auto const line_hint{line_of_open()};
+		text("Line", "##srkline", entry != nullptr ? entry->line : std::string{}, line_hint.empty() ? "2" : line_hint.c_str(), [&](std::string const &Value) { record_of_open().line = word_of(Value) == "-" ? std::string{} : word_of(Value); });
 		item_tooltip("The number of the railway line the station lies on, as the block sections between the stations are named after it");
 		double known{0.0};
-		auto const hint{layout.kilometrage && km_of_open((layout.from + layout.to) * 0.5, known) ? format("%.3f", known) : std::string{"189.563"}};
-		text("Km", "##srkkm", entry != nullptr ? entry->km : std::string{}, hint.c_str(), [&](std::string const &Value) {
-			auto km{word_of(Value)};
-			std::replace(km.begin(), km.end(), ',', '.');
-			record_of_open().km = km == "-" ? std::string{} : km;
-		});
-		item_tooltip("The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km");
+		if (km_of_line((layout.from + layout.to) * 0.5, known))
+		{
+			field_row("Km");
+			ImGui::TextDisabled("%s", format(STR_C("%s, of the kilometrage of line %s"), kilometrage::text(known).c_str(), line_of_open().c_str()).c_str());
+			item_tooltip("The km of the middle of the station, as the Kilometrage tool sets them for the line, the jumps too: the block signals of the lines are numbered after them");
+		}
+		else
+		{
+			auto const hint{layout.kilometrage && km_of_open((layout.from + layout.to) * 0.5, known) ? format("%.3f", known) : std::string{"189.563"}};
+			text("Km", "##srkkm", entry != nullptr ? entry->km : std::string{}, hint.c_str(), [&](std::string const &Value) {
+				auto km{word_of(Value)};
+				std::replace(km.begin(), km.end(), ',', '.');
+				record_of_open().km = km == "-" ? std::string{} : km;
+			});
+			item_tooltip("The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km");
+		}
 		ImGui::EndTable();
 	}
 	step_heading(1, STR_C("Switch numbers"));
@@ -860,10 +883,37 @@ std::string srk_tool::stem_of_open() const
 	return m_record >= 0 && false == m_records[m_record].code.empty() ? station::prefix(m_records[m_record].code) : std::string{};
 }
 
+std::string srk_tool::line_of_open() const
+{
+	if (m_record >= 0 && false == m_records[m_record].line.empty())
+		return m_records[m_record].line;
+	if (false == m_layout.has_value())
+		return {};
+	return kilometrage::line_at(axis_point(*m_layout, (m_layout->from + m_layout->to) * 0.5));
+}
+
+bool srk_tool::km_of_line(double const Chainage, double &Km) const
+{
+	auto const line{line_of_open()};
+	if (false == m_layout.has_value() || line.empty())
+		return false;
+	// along the axis of the station, on beyond its switches the way the km go through it
+	auto const &layout{*m_layout};
+	auto const within{std::clamp(Chainage, layout.from, layout.to)};
+	double low{0.0};
+	double high{0.0};
+	if (false == kilometrage::km_at(line, axis_point(layout, within), Km) || false == kilometrage::km_at(line, axis_point(layout, layout.from), low) || false == kilometrage::km_at(line, axis_point(layout, layout.to), high))
+		return false;
+	Km += (Chainage - within) / 1000.0 * (high >= low ? 1.0 : -1.0);
+	return true;
+}
+
 bool srk_tool::km_of_open(double const Chainage, double &Km) const
 {
 	if (false == m_layout.has_value())
 		return false;
+	if (km_of_line(Chainage, Km))
+		return true;
 	if (m_record >= 0 && false == m_records[m_record].km.empty())
 	{
 		char *end{nullptr};
@@ -1203,9 +1253,9 @@ void srk_tool::set_lines()
 			for (auto &distance : line.distances)
 				distance -= at;
 	}
-	auto const &described{m_records[m_record]};
+	auto const described{line_of_open()};
 	double known{0.0};
-	if (std::any_of(lines.begin(), lines.end(), [](station::line const &Line) { return Line.number > 0; }) && (false == km_of_open(0.0, known) || described.line.empty()))
+	if (std::any_of(lines.begin(), lines.end(), [](station::line const &Line) { return Line.number > 0; }) && (false == km_of_open(0.0, known) || described.empty()))
 	{
 		m_status = STR_C("Give the station its line and its km first: the block signals and the block sections are named after them");
 		return;
@@ -1232,14 +1282,31 @@ void srk_tool::set_lines()
 		auto const way{station::point_on(Line, Distance).way};
 		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
 	};
-	auto const km_on = [&](std::size_t const Index, double const Distance) {
-		auto const chainage{station::project(layout, station::point_on(lines[Index], 0.0).point).x};
+	// the lines of the kilometrage the lines out run along, at a junction another one than the line of the station
+	std::vector<std::string> numbers(lines.size(), described);
+	for (std::size_t index = 0; index < lines.size(); ++index)
+	{
+		auto const out{station::point_on(lines[index], std::min(2000.0, lines[index].length() * 0.5)).point};
 		double km{0.0};
+		if (false == kilometrage::km_at(described, out, km))
+			if (auto const found{kilometrage::line_at(out)}; false == found.empty())
+				numbers[index] = found;
+	}
+	auto const km_on = [&](std::size_t const Index, double const Distance) {
+		double km{0.0};
+		if (kilometrage::km_at(numbers[Index], station::point_on(lines[Index], Distance).point, km))
+			return km;
+		auto const chainage{station::project(layout, station::point_on(lines[Index], 0.0).point).x};
 		km_of_open(chainage < middle ? chainage - Distance : chainage + Distance, km);
 		return km;
 	};
 	// the trains of the line run towards the higher km
-	auto const rising = [&](std::size_t const Index) { return (km_on(Index, 1000.0) > km_on(Index, 0.0)) != lines[Index].inbound; };
+	auto const rising = [&](std::size_t const Index) {
+		auto const at{station::point_on(lines[Index], 100.0)};
+		if (auto const growth{kilometrage::growth_at(numbers[Index], at.point, {at.way.x, at.way.z})}; growth != 0)
+			return (growth > 0) != lines[Index].inbound;
+		return (km_on(Index, 1000.0) > km_on(Index, 0.0)) != lines[Index].inbound;
+	};
 	// the braking distance at the highest speed out along the line, at 160 km/h while its tracks have none
 	auto const braking = [&](std::size_t const Index) {
 		auto speed{0.0};
@@ -1429,11 +1496,11 @@ void srk_tool::set_lines()
 				continue;
 			auto const &before{order[i - 1]};
 			// the lower km first, as on the lines of PKP PLK: 2411-2571@LK2.1
-			auto const ascending{km_on(index, before.distance) <= km_on(index, here.distance)};
+			auto const ascending{rising(index)};
 			auto const &low{ascending ? before : here};
 			auto const &high{ascending ? here : before};
 			section found;
-			found.name = ToLower(section_tag(low.name, line.number) + "-" + section_tag(high.name, line.number) + "@lk" + described.line + "." + std::to_string(line.number));
+			found.name = ToLower(section_tag(low.name, line.number) + "-" + section_tag(high.name, line.number) + "@lk" + numbers[index] + "." + std::to_string(line.number));
 			found.line = index;
 			found.from = std::min(joint_of(before), joint_of(here));
 			found.to = std::max(joint_of(before), joint_of(here));

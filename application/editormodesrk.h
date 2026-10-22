@@ -134,8 +134,13 @@ class srk_tool final : public editor_tool
 	void set_lines();
 	// the names of the switches and the circuits of the open station begin with it, empty while it has no code
 	std::string stem_of_open() const;
-	// the km at the chainage of the open station: of its record, else of its switches; false while unknown
+	// the km at the chainage of the open station: of the kilometrage of its line, else of its record, else of its switches; false
+	// while unknown
 	bool km_of_open(double const Chainage, double &Km) const;
+	// the km at the chainage of the open station, as the Kilometrage tool sets them for its line; false where it doesn't
+	bool km_of_line(double const Chainage, double &Km) const;
+	// the line of the open station: of its record, else the one the Kilometrage tool sets the km of through it; empty for none
+	std::string line_of_open() const;
 	// the station tracks by their numbers with their circuits as the tracks have them, Inside: the tracks of the circuits; false
 	// while it has none
 	bool station_tracks(std::vector<station::numbered> &Tracks, std::unordered_set<TTrack const *> &Inside) const;
