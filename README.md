@@ -25,6 +25,8 @@ MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozil
         
     -   [Linux](#linux)
         
+    -   [macOS](#macos)
+        
 -   [Installing](#installing)
     
 -   [Known Issues](#known-issues)
@@ -37,7 +39,7 @@ MaSzyna executable source code is licensed under the [MPL 2.0](https://www.mozil
 
 ## Getting Started
 
-MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms are not tested.
+MaSzyna compiles and runs natively on **Linux** and **Windows**. **macOS** (Apple Silicon) builds and starts, but is less tested. Other platforms are not tested.
 
 > **Heads-up**  
 > Our dev team is small; we keep improving the build process, but issues may still occur. If you get stuck, please ask on the [official Discord server](https://discord.gg/qAh9ctWPQv).
@@ -177,6 +179,36 @@ make -j"$(nproc)"
 ```
 
 > **Tip (Ubuntu/Debian)**: Package names differ; install equivalent `build-essential`, `libgl1-mesa-dev`, `libglew-dev`, `libglfw3-dev`, `python3.14-dev`, `libpng-dev`, `libopenal-dev`, `libluajit-5.1-dev`, `libserialport-dev`, `libsndfile1-dev`, and Wayland/X11 dev packages as needed.
+
+
+## macOS
+
+Tested on Apple Silicon (arm64) with Apple Clang 21 and Homebrew. macOS provides OpenGL up to 4.1, which is enough for the default OpenGL 3.3 renderer.
+
+```bash
+# Install dependencies
+brew install cmake ninja python@3.14 libpng luajit libserialport libsndfile openal-soft
+
+# Clone repository with submodules
+git clone --recursive https://github.com/MaSzyna-EU07/maszyna.git
+
+cd maszyna
+
+# Generate Ninja files (openal-soft is keg-only, so point CMake at it)
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DWITH_BETTER_RENDERER=OFF \
+  -DWITH_DISCORD_RPC=OFF \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix openal-soft);$(brew --prefix)"
+
+# Compile
+ninja -C build
+```
+
+> **Notes:**
+> - AVX2 is switched off automatically on non-x86 CPUs such as Apple Silicon.
+> - `WITH_DISCORD_RPC` is off because the Discord RPC submodule needs `rapidjson`, which it does not fetch.
+> - The embedded Python looks for its standard library in `macpython64` next to the executable. Link it to the Homebrew install from your MaSzyna directory:
+>   `ln -s "$(brew --prefix python@3.14)/Frameworks/Python.framework/Versions/3.14" macpython64`
 
 
 ## Installing

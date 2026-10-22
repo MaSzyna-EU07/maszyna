@@ -709,6 +709,11 @@ if(ENABLE_MCC AND MSVC)
 	add_compile_options(/MP)
 endif()
 
+if(ENABLE_AVX2 AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86|x86)$")
+    message(STATUS "AVX2 is not available on ${CMAKE_SYSTEM_PROCESSOR}, disabling it.")
+    set(ENABLE_AVX2 OFF)
+endif()
+
 if(ENABLE_AVX2)
     message(STATUS "Enabling AVX2 instruction set.")
     if (MSVC)

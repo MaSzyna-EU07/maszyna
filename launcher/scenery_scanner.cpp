@@ -10,6 +10,12 @@ scenery_scanner::scenery_scanner(ui::vehicles_bank &bank)
 
 void scenery_scanner::scan()
 {
+	if (!std::filesystem::is_directory("scenery"))
+	{
+		ErrorLog("Bad init: \"scenery\" directory not found, no sceneries available");
+		return;
+	}
+
 	for (auto &f : std::filesystem::directory_iterator("scenery")) {
 		std::filesystem::path path(std::filesystem::relative(f.path(), "scenery/"));
 
