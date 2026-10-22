@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui.h"
 
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -45,6 +46,14 @@ class srk_tool final : public editor_tool
 	editor_history &m_history;
 	editor_templates &m_templates;
 	editor_signals &m_signals;
+	// where the block of a line out of the station comes from
+	enum class block_reason
+	{
+		hand, // set by hand
+		standing, // block signals stand along it
+		double_track, // the automatic one on a double-track line
+		single // the semi-automatic one on a single-track line
+	};
 	// a station described: found again by a switch of it
 	struct record
 	{
@@ -57,6 +66,7 @@ class srk_tool final : public editor_tool
 		std::string km; // of the axis of the station along the line, empty while unknown
 		bool reversed{false}; // the km rise to the left of the schematic, the switches numbered from there
 		int braking{0}; // m, the braking distance of the line set by hand, 0: after its speed
+		std::map<std::string, bool> blocks; // of the lines by their entry signals: the automatic block on it, as set by hand
 	};
 	// the schematic: the chainage across, the offsets upwards, exaggerated
 	struct view
@@ -138,10 +148,33 @@ class srk_tool final : public editor_tool
 		bool more{false}; // its template has more than it needs
 		std::string fit; // the template that fits best, empty for none
 		std::vector<std::string> problems; // of its place
+		// m before it the SHP track resonator belongs, -1 for none: 200 m before an entry signal, a block signal and a warning disc,
+		// at an exit signal onto a line of the automatic block
+		double shp{-1.0};
+		double shp_found{-1.0}; // m before it the trains run into the event of the SHP resonator standing, -1 for none
+		bool shp_short{false}; // the tracks before it end short of the place of its resonator
 	};
 	std::vector<head_check> m_heads;
 	bool m_heads_known{false}; // the templates found
 	int m_head_hover{-1}; // of the heads, the row under the mouse
+	// a line out of the open station, from an entry signal of it
+	struct line_row
+	{
+		std::string entry; // the entry signal, shown
+		glm::dvec3 position{0.0}; // of the entry signal
+		glm::dvec2 travel{0.0, 1.0}; // the trains it faces run, in the plan
+		int number{0}; // of the track of a double-track line, 0 on a single-track one
+		bool inbound{true}; // its trains run towards the station
+		int partner{-1}; // the other track of a double-track line, of the lines
+		double length{0.0}; // to the entry signal of the next station, or to the end of the tracks
+		std::string next; // the entry signal of the next station facing out along it, shown; empty for none
+		bool station{false}; // ends at the next station rather than at the end of the tracks
+		std::size_t blocks{0}; // the block signals standing along it
+		bool automatic{false}; // of the automatic block
+		block_reason why{block_reason::single}; // the block it has, so
+	};
+	std::vector<line_row> m_lines;
+	std::string m_lines_problem; // why the station has no lines listed
 	std::string m_status;
 
 	void load();
@@ -186,6 +219,19 @@ class srk_tool final : public editor_tool
 	// the signals of the lines out of the station: on a double-track line the block signals to the next station and the block
 	// sections between them, on a single-track one a warning disc before the entry signal; one step of the history
 	void set_lines();
+	// the lines out of the open station from its entry signals standing, Entries: the signals of the plan they begin at, Owners:
+	// the standing ones; false with the reason while it has none
+	bool lines_of_open(std::vector<standing_signal> const &Standing, std::vector<station::line> &Lines, std::vector<station::signal> &Entries, std::vector<std::size_t> &Owners, std::string &Problem) const;
+	// the line has the automatic block: as set by hand for its entry signal, else where block signals stand along it, else on a
+	// double-track line
+	bool automatic_block(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, block_reason &Why, std::size_t &Blocks) const;
+	// the lines out of the open station, for the panel
+	void survey_lines(std::vector<standing_signal> const &Standing);
+	void render_lines();
+	// the SHP track resonators placed where the signals checked need them and have none: 200 m before an entry signal, a block
+	// signal and a warning disc, at an exit signal onto a line of the automatic block, the track cut where none of its joints lies
+	// within 5 m, its event put on the track the trains run into there; one step of the history
+	void set_shp();
 	// the names of the switches and the circuits of the open station begin with it, empty while it has no code
 	std::string stem_of_open() const;
 	// the km at the chainage of the open station: of the kilometrage of its line, else of its record, else of its switches; false

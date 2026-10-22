@@ -249,4 +249,18 @@ double path_speed(TTrack const &Track, int const Path);
 // the routes of the trains from each of the posts given on through the switches, none longer than the limit
 std::vector<std::vector<route>> routes(std::vector<post> const &Posts, std::vector<std::size_t> const &From, double const Limit);
 
+// a point of the way of the trains up to a signal
+struct approach_point
+{
+	TTrack *track{nullptr};
+	int path{0};
+	int facing{1}; // the trains run 1: towards the end of the path, -1: towards its start
+	glm::dvec3 point{0.0};
+	glm::dvec3 way{0.0, 0.0, 1.0}; // the trains run, in the plan
+	double distance{0.0}; // m, before the signal
+};
+// the way of the trains running past the point of the track the way given, back along the tracks they come by up to the distance
+// before it or the end of the tracks, a metre or so apart: into a switch from its start along its straighter path
+std::vector<approach_point> approach(TTrack &Track, glm::dvec3 const &Point, int const Facing, double const Distance);
+
 } // namespace station

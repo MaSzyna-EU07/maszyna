@@ -54,6 +54,12 @@ double constexpr kBlockShare{1.1}; // of the braking distance, the block section
 double constexpr kPredicted{305.0}; // m, out from the next station to its entry signal, while it has none
 // the events of a block section, switching the block signal guarding it
 char const *const kControl{"sbl_odstep.inc"};
+// the SHP track resonator: its model on the axis, 0.2 m below it, turned as a signal facing the trains, and its event
+char const *const kResonator{"rezonator.inc"};
+double constexpr kShpBefore{200.0}; // m, of the resonator before an entry signal, a block signal and a warning disc
+double constexpr kShpTolerance{5.0}; // m, either way
+double constexpr kShpWindow{100.0}; // m, either way of its place, a resonator standing is taken for the one of the signal
+double constexpr kResonatorDrop{0.2}; // m, of its origin below the axis
 
 // m, of a train at the speed, as Ie-4 § 8 takes it: the least block section of the automatic block, a warning disc that far before
 // its signal
@@ -419,6 +425,21 @@ double route_reach(double const Braking)
 	return std::max(3000.0, 3.0 * Braking);
 }
 
+// how far the point lies from the path in the plan, Parameter: of the nearest point of it, a metre or so apart
+double nearest_of(TTrack const &Track, int const Path, glm::dvec3 const &Point, double &Parameter)
+{
+	geometry::bezier const curve{Track.m_paths[Path]};
+	auto const count{std::clamp(static_cast<int>(curve.plan_length(16)), 64, 4000)};
+	auto best{std::numeric_limits<double>::max()};
+	for (int k = 0; k <= count; ++k)
+		if (auto const distance{geometry::plan_distance(curve.point(static_cast<double>(k) / count), Point)}; distance < best)
+		{
+			best = distance;
+			Parameter = static_cast<double>(k) / count;
+		}
+	return best;
+}
+
 // a standing signal by the track its trains read it on, no track for a signal of another kind or by none
 station::post post_of(standing_signal const &Signal)
 {
@@ -435,29 +456,121 @@ station::post post_of(standing_signal const &Signal)
 	else
 		return post;
 	post.point = Signal.position;
+	// the track it's read on, where it stands by it: an event put on a track before the signal leaves the track it stands by
 	if (Signal.track != nullptr && Signal.facing != 0 && false == Signal.track->m_editorremoved)
-	{
-		post.track = Signal.track;
-		post.facing = Signal.facing;
-		return post;
-	}
+		for (int candidate = 0; candidate < static_cast<int>(Signal.track->m_paths.size()); ++candidate)
+			if (double parameter{0.0}; nearest_of(*Signal.track, candidate, Signal.position, parameter) < 4.5)
+			{
+				post.track = Signal.track;
+				post.facing = Signal.facing;
+				return post;
+			}
 	int path{0};
 	post.track = kilometrage::track_near(Signal.position, 4.5, path);
 	if (post.track == nullptr)
 		return post;
 	geometry::bezier const curve{post.track->m_paths[path]};
 	auto parameter{0.0};
-	auto best{std::numeric_limits<double>::max()};
-	for (int k = 0; k <= 64; ++k)
-		if (auto const distance{geometry::plan_distance(curve.point(k / 64.0), Signal.position)}; distance < best)
-		{
-			best = distance;
-			parameter = k / 64.0;
-		}
+	nearest_of(*post.track, path, Signal.position, parameter);
 	auto const tangent{curve.first(parameter)};
 	auto const travel{travel_of(Signal.yaw)};
 	post.facing = travel.x * tangent.x + travel.y * tangent.z >= 0.0 ? 1 : -1;
 	return post;
+}
+
+// the entry signal of the next station along the line: the first main signal 100 m out or more facing out, of the standing ones,
+// -1 for none; Distance: out to it, else to where the signals of the line end
+int next_entry(station::line const &Line, std::vector<standing_signal> const &Standing, double &Distance)
+{
+	auto found{-1};
+	for (std::size_t k = 0; k < Standing.size(); ++k)
+	{
+		if (Standing[k].kind != "main")
+			continue;
+		double gap{0.0};
+		auto const distance{station::distance_on(Line, Standing[k].position, gap)};
+		if (gap > 4.5 || distance < 100.0 || distance > Line.length() - 1.0)
+			continue;
+		auto const way{station::point_on(Line, distance).way};
+		if (glm::dot(travel_of(Standing[k].yaw), glm::dvec2{way.x, way.z}) < 0.87)
+			continue;
+		if (found < 0 || distance < Distance)
+		{
+			found = static_cast<int>(k);
+			Distance = distance;
+		}
+	}
+	if (found < 0)
+		Distance = Line.station ? Line.length() - kPredicted : Line.length();
+	return found;
+}
+
+// where the trains run into the event of an SHP track resonator: the end of the track it's put on, the way they run
+struct shp_trigger
+{
+	glm::dvec3 point{0.0};
+	glm::dvec3 way{0.0, 0.0, 1.0};
+};
+
+bool shp_event(std::string const &Name)
+{
+	return Name.size() > 4 && ToLower(Name.substr(Name.size() - 4)) == "_shp";
+}
+
+std::vector<shp_trigger> shp_triggers()
+{
+	std::vector<shp_trigger> result;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
+			continue;
+		for (auto const list : {1, 2, 4, 5})
+			for (auto const &event : editor_track::events(*track, list))
+				if (shp_event(event.first))
+				{
+					auto const towards_end{list % 3 == 2};
+					geometry::bezier const curve{track->m_paths.front()};
+					auto const tangent{curve.first(towards_end ? 0.0 : 1.0)};
+					glm::dvec3 way{tangent.x, 0.0, tangent.z};
+					way = glm::length(way) > 1e-9 ? glm::normalize(way) * (towards_end ? 1.0 : -1.0) : glm::dvec3{0.0, 0.0, 1.0};
+					result.push_back({curve.point(towards_end ? 0.0 : 1.0), way});
+				}
+	}
+	return result;
+}
+
+// m before the signal the trains run into the event of an SHP resonator, the one nearest the place wanted within kShpWindow of it;
+// -1 for none
+double shp_before(std::vector<station::approach_point> const &Way, glm::dvec3 const &Signal, glm::dvec3 const &Travel, std::vector<shp_trigger> const &Triggers, double const Wanted)
+{
+	auto best{-1.0};
+	auto miss{std::numeric_limits<double>::max()};
+	for (auto const &trigger : Triggers)
+	{
+		if (geometry::plan_distance(trigger.point, Signal) > Wanted + kShpWindow + 10.0 || glm::dot(trigger.way, Travel) < 0.7)
+			continue;
+		auto before{std::numeric_limits<double>::lowest()};
+		if (geometry::plan_distance(trigger.point, Signal) < 12.0)
+			before = glm::dot(glm::dvec3{Signal.x - trigger.point.x, 0.0, Signal.z - trigger.point.z}, Travel);
+		else
+		{
+			auto nearest{2.5};
+			for (auto const &point : Way)
+				if (auto const gap{geometry::plan_distance(point.point, trigger.point)}; gap < nearest && glm::dot(point.way, trigger.way) > 0.7)
+				{
+					nearest = gap;
+					before = point.distance;
+				}
+		}
+		if (before < -10.0 || std::abs(before - Wanted) > kShpWindow)
+			continue;
+		if (std::abs(before - Wanted) < miss)
+		{
+			miss = std::abs(before - Wanted);
+			best = std::max(0.0, before);
+		}
+	}
+	return best;
 }
 
 } // namespace
@@ -490,6 +603,15 @@ void srk_tool::load()
 					entry.reversed = (words >> word) && word == "right";
 				else if (word == "braking")
 					words >> entry.braking;
+				else if (word == "blocks" && words >> word)
+					for (std::size_t from = 0; from < word.size();)
+					{
+						auto const comma{std::min(word.find(',', from), word.size())};
+						auto const item{word.substr(from, comma - from)};
+						if (auto const equals{item.find('=')}; equals != std::string::npos && equals > 0)
+							entry.blocks[item.substr(0, equals)] = item.substr(equals + 1) == "sbl";
+						from = comma + 1;
+					}
 				else if (word == "anchor")
 					words >> entry.anchor;
 				else if (word == "name")
@@ -527,7 +649,11 @@ void srk_tool::store()
 			if (lines.empty())
 				lines.emplace_back("# stations described in the track editor, the simulation skips these lines");
 			auto const braking{entry.braking > 0 ? format(" braking %d", entry.braking) : std::string{}};
-			lines.push_back(format("station %s line %s km %s from %s anchor %s%s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), word_of(entry.km).c_str(), entry.reversed ? "right" : "left", anchor_of(entry).c_str(), braking.c_str(), entry.name.c_str()));
+			std::string blocks;
+			for (auto const &[signal, automatic] : entry.blocks)
+				if (false == signal.empty() && signal.find_first_of(" ,=\t") == std::string::npos)
+					blocks += (blocks.empty() ? " blocks " : ",") + signal + (automatic ? "=sbl" : "=semi");
+			lines.push_back(format("station %s line %s km %s from %s anchor %s%s%s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), word_of(entry.km).c_str(), entry.reversed ? "right" : "left", anchor_of(entry).c_str(), braking.c_str(), blocks.c_str(), entry.name.c_str()));
 		}
 		scene::Layers.mark(layer, kMark, std::move(lines));
 	}
@@ -874,7 +1000,40 @@ void srk_tool::render_options()
 			});
 			item_tooltip("The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km");
 		}
+		auto changed{false};
+		field_row("Line speed");
+		auto const set{set_speed_of_open()};
+		if (set > 0.0)
+			ImGui::TextWrapped("%s", format(STR_C("%.0f km/h, the highest set on its main tracks"), set).c_str());
+		else
+			ImGui::TextColored(kWrong, "%s", format(STR_C("%.0f km/h taken: no track of the station has a speed set"), speed_of_open()).c_str());
+		item_tooltip("The speed of the trains through the station, the highest one its main tracks and the lines out of it are set to in the Track tool, up to 250 km/h: the braking distance and the lights of the signals go by it. Without one 160 km/h is taken, or the speed of the braking distance set by hand");
+		field_row("Braking distance");
+		auto const by_hand{m_record >= 0 ? m_records[m_record].braking : 0};
+		auto const after{format(STR_C("%.0f m, after the speed"), braking_distance(set > 0.0 ? set : 160.0))};
+		ImGui::SetNextItemWidth(-1.0f);
+		if (ImGui::BeginCombo("##srkbrakingset", by_hand > 0 ? format(STR_C("%d m, set by hand"), by_hand).c_str() : after.c_str()))
+		{
+			if (ImGui::Selectable(after.c_str(), by_hand == 0))
+			{
+				record_of_open().braking = 0;
+				changed = true;
+			}
+			for (auto const distance : {400, 700, 1000, 1300})
+				if (ImGui::Selectable(format(STR_C("%d m, set by hand"), distance).c_str(), by_hand == distance))
+				{
+					record_of_open().braking = distance;
+					changed = true;
+				}
+			ImGui::EndCombo();
+		}
+		item_tooltip("The braking distance of the trains on the line, Ie-4 § 8: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. The block sections and the warning discs stand no nearer, a signal telling of the next one standing nearer slows the trains. Set it by hand where the line has another one");
 		ImGui::EndTable();
+		if (changed)
+		{
+			m_changed = true;
+			survey_signals();
+		}
 	}
 	step_heading(1, STR_C("Switch numbers"));
 	int from{m_reversed ? 1 : 0};
@@ -907,15 +1066,50 @@ void srk_tool::render_options()
 	             "P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets "
 	             "its name, none is doubled. The kinds of signals chosen in the Signals tool. One step of undo");
 	step_heading(4, STR_C("Lines"));
+	render_lines();
 	if (ImGui::Button(STR_C("Set the line signals"), ImVec2(-1.0f, 0.0f)))
 		set_lines();
-	item_tooltip("Places the signals of the lines out of the station, from its entry signals on. A double-track line gets the automatic block: "
-	             "block signals evenly to the entry signals of the next station, a section no shorter than the braking distance, numbered "
-	             "after the hectometre ahead of them, odd on track 1, even on track 2, and the block sections from 15 m beyond them named as "
-	             "on the lines of PKP PLK, 2411-2571@LK2.1. A single-track line gets a warning disc ToA the braking distance before the entry "
-	             "signal. The braking distance after the speed of the line, as Ie-4 gives it: 400 m up to 60 km/h, 700 m up to 100, 1000 m up "
-	             "to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it keeps what stands. One "
-	             "step of undo");
+	item_tooltip("Places the signals of the lines out of the station, from its entry signals on, by the block chosen for each line above. "
+	             "The automatic block: block signals evenly to the entry signals of the next station, a section no shorter than the braking "
+	             "distance, numbered after the hectometre ahead of them, odd on track 1, even on track 2, and the block sections from 15 m "
+	             "beyond them named as on the lines of PKP PLK, 2411-2571@LK2.1. The semi-automatic block: a warning disc ToA the braking "
+	             "distance before the entry signal. The braking distance after the speed of the line, as Ie-4 gives it: 400 m up to 60 km/h, "
+	             "700 m up to 100, 1000 m up to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it "
+	             "keeps what stands. One step of undo");
+	step_heading(5, STR_C("SHP"));
+	std::size_t needed{0};
+	std::size_t found{0};
+	std::size_t off{0};
+	std::size_t nowhere{0};
+	for (auto const &head : m_heads)
+		if (head.shp >= 0.0)
+		{
+			++needed;
+			if (head.shp_found >= 0.0)
+			{
+				++found;
+				if (std::abs(head.shp_found - head.shp) > kShpTolerance)
+					++off;
+			}
+			else if (head.shp_short)
+				++nowhere;
+		}
+	ImGui::BeginDisabled(found + nowhere == needed);
+	if (ImGui::Button(format("%s (%zu)###srkshp", STR_C("Place the SHP resonators"), needed - found - nowhere).c_str(), ImVec2(-1.0f, 0.0f)))
+		set_shp();
+	ImGui::EndDisabled();
+	item_tooltip("Places the SHP track resonators the signals checked lack, rezonator.inc, as PKP PLK places them: 200 m before an entry "
+	             "signal, a block signal and a warning disc, at an exit signal telling of the next one, as one onto a line of the automatic "
+	             "block, 5 m either way. Its event goes on the track the trains run into there, at a joint of the tracks within 5 m, else the "
+	             "track is cut. A resonator standing is one whose event ends with _shp, put on a track the trains run into within 100 m of its "
+	             "place, so the ones of the old sceneries count too. One step of undo");
+	if (m_heads_known && needed > 0)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		ImGui::TextWrapped("%s", (format(STR_P("%zu of %zu signal has its SHP resonator", "%zu of %zu signals have their SHP resonators", needed), found, needed) + (off > 0 ? ", " + format(STR_P("%zu farther than 5 m from its place", "%zu farther than 5 m from their places", off), off) : std::string{}) +
+		                          (nowhere > 0 ? ", " + format(STR_P("%zu with the tracks ending short of the place of its resonator", "%zu with the tracks ending short of the places of their resonators", nowhere), nowhere) : std::string{})).c_str());
+		ImGui::PopStyleColor();
+	}
 	if (auto const *selected{m_selection.selected_track()}; selected != nullptr && false == selected->Isolated.empty())
 		if (auto const number{track_of(selected->Isolated.front()->asName, stem_of_open())}; false == number.empty() && begin_fields("##srktrack"))
 		{
@@ -982,6 +1176,112 @@ void srk_tool::render_options()
 		m_hover = -1;
 	}
 	item_tooltip("Leaves this station; LMB on a switch opens another one");
+}
+
+void srk_tool::render_lines()
+{
+	if (m_lines.empty())
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		ImGui::TextWrapped("%s", m_lines_problem.empty() ? STR_C("No line leads out of the station beyond its entry signals") : m_lines_problem.c_str());
+		ImGui::PopStyleColor();
+		return;
+	}
+	auto const reason = [](block_reason const Why) {
+		switch (Why)
+		{
+		case block_reason::hand: return STR_C("set by hand");
+		case block_reason::standing: return STR_C("block signals stand along it");
+		case block_reason::double_track: return STR_C("a double-track line");
+		default: return STR_C("a single-track line");
+		}
+	};
+	auto const kind = [](bool const Automatic) { return Automatic ? STR_C("automatic (SBL)") : STR_C("semi-automatic"); };
+	auto const set = [&](line_row const &Row, std::optional<bool> const Automatic) {
+		auto &entry{record_of_open()};
+		for (auto const *row : std::initializer_list<line_row const *>{&Row, Row.partner >= 0 && Row.partner < static_cast<int>(m_lines.size()) ? &m_lines[Row.partner] : nullptr})
+			if (row != nullptr)
+			{
+				if (Automatic.has_value())
+					entry.blocks[row->entry] = *Automatic;
+				else
+					entry.blocks.erase(row->entry);
+			}
+		m_changed = true;
+	};
+	auto changed{false};
+	if (ImGui::BeginTable("##srklinelist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+	{
+		ImGui::TableSetupColumn(STR_C("Line"), ImGuiTableColumnFlags_WidthStretch, 0.27f);
+		ImGui::TableSetupColumn(STR_C("To"), ImGuiTableColumnFlags_WidthStretch, 0.33f);
+		ImGui::TableSetupColumn(STR_C("Block"), ImGuiTableColumnFlags_WidthStretch, 0.40f);
+		ImGui::TableHeadersRow();
+		for (std::size_t index = 0; index < m_lines.size() && false == changed; ++index)
+		{
+			auto const &row{m_lines[index]};
+			ImGui::PushID(static_cast<int>(index));
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			auto const track{row.number == 0 ? std::string{STR_C("single track")} : format(STR_C("track %d"), row.number)};
+			if (ImGui::Selectable(format("%s, %s##srkline", row.entry.c_str(), track.c_str()).c_str(), false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+				m_view.fly_to(row.position + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{row.travel.x, -0.3, row.travel.y}), 30.0);
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::BeginTooltip();
+				ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+				ImGui::TextUnformatted(format(STR_C("The line out beyond the entry signal %s"), row.entry.c_str()).c_str());
+				if (row.number > 0)
+					ImGui::TextUnformatted((format(STR_C("Track %d of a double-track line"), row.number) + ", " + (row.inbound ? STR("its trains run in to the station") : STR("its trains run out of the station"))).c_str());
+				else
+					ImGui::TextUnformatted(STR_C("A single-track line"));
+				ImGui::TextUnformatted(format(STR_P("%zu block signal stands along it", "%zu block signals stand along it", row.blocks), row.blocks).c_str());
+				ImGui::TextUnformatted(format(STR_C("Block: %s, %s"), kind(row.automatic), reason(row.why)).c_str());
+				ImGui::TextDisabled("%s", STR_C("LMB: fly to the entry signal"));
+				ImGui::PopTextWrapPos();
+				ImGui::EndTooltip();
+			}
+			ImGui::TableNextColumn();
+			auto const where{false == row.next.empty() ? row.next : row.station ? std::string{STR_C("station")} : std::string{STR_C("track end")}};
+			ImGui::TextUnformatted(format("%s %.1f km", where.c_str(), row.length / 1000.0).c_str());
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", (false == row.next.empty() ? format(STR_C("To the entry signal %s of the next station"), row.next.c_str()) : row.station ? std::string{STR_C("To the next station, its entry signal not standing yet")} : std::string{STR_C("To the end of the tracks")}).c_str());
+			ImGui::TableNextColumn();
+			auto const automatic_by_itself{row.blocks > 0 || row.number > 0};
+			auto const by_itself{row.blocks > 0 ? block_reason::standing : row.number > 0 ? block_reason::double_track : block_reason::single};
+			ImGui::SetNextItemWidth(-1.0f);
+			auto const preview{row.why == block_reason::hand ? std::string{kind(row.automatic)} : format(STR_C("%s, auto"), kind(row.automatic))};
+			if (ImGui::BeginCombo("##srkblock", preview.c_str()))
+			{
+				if (ImGui::Selectable(format(STR_C("Auto: %s, %s"), kind(automatic_by_itself), reason(by_itself)).c_str(), row.why != block_reason::hand))
+				{
+					set(row, std::nullopt);
+					changed = true;
+				}
+				ImGui::BeginDisabled(row.number == 0);
+				if (ImGui::Selectable(STR_C("Automatic block (SBL)"), row.why == block_reason::hand && row.automatic))
+				{
+					set(row, true);
+					changed = true;
+				}
+				ImGui::EndDisabled();
+				if (row.number == 0)
+					item_tooltip("Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are");
+				if (ImGui::Selectable(STR_C("Semi-automatic block"), row.why == block_reason::hand && false == row.automatic))
+				{
+					set(row, false);
+					changed = true;
+				}
+				ImGui::EndCombo();
+			}
+			item_tooltip("The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no "
+			             "warning disc. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic "
+			             "one where block signals stand along the line or it's double-track, else the semi-automatic one");
+			ImGui::PopID();
+		}
+		ImGui::EndTable();
+	}
+	if (changed)
+		survey_signals();
 }
 
 void srk_tool::render_lengths()
@@ -1097,43 +1397,6 @@ void srk_tool::render_heads()
 		ImGui::TextWrapped("%s", Text);
 		ImGui::PopStyleColor();
 	};
-	if (begin_fields("##srkbraking"))
-	{
-		field_row("Line speed");
-		auto const set{set_speed_of_open()};
-		if (set > 0.0)
-			ImGui::TextWrapped("%s", format(STR_C("%.0f km/h, the highest set on its main tracks"), set).c_str());
-		else
-			ImGui::TextColored(kWrong, "%s", format(STR_C("%.0f km/h taken: no track of the station has a speed set"), speed_of_open()).c_str());
-		item_tooltip("The speed of the trains through the station, the highest one its main tracks and the lines out of it are set to in the Track tool, up to 250 km/h: the braking distance and the lights of the signals go by it. Without one 160 km/h is taken, or the speed of the braking distance set by hand");
-		field_row("Braking distance");
-		auto const by_hand{m_record >= 0 ? m_records[m_record].braking : 0};
-		auto const after{format(STR_C("%.0f m, after the speed"), braking_distance(set > 0.0 ? set : 160.0))};
-		auto changed{false};
-		ImGui::SetNextItemWidth(-1.0f);
-		if (ImGui::BeginCombo("##srkbrakingset", by_hand > 0 ? format(STR_C("%d m, set by hand"), by_hand).c_str() : after.c_str()))
-		{
-			if (ImGui::Selectable(after.c_str(), by_hand == 0))
-			{
-				record_of_open().braking = 0;
-				changed = true;
-			}
-			for (auto const distance : {400, 700, 1000, 1300})
-				if (ImGui::Selectable(format(STR_C("%d m, set by hand"), distance).c_str(), by_hand == distance))
-				{
-					record_of_open().braking = distance;
-					changed = true;
-				}
-			ImGui::EndCombo();
-		}
-		item_tooltip("The braking distance of the trains on the line, Ie-4 § 8: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. The block sections and the warning discs stand no nearer, a signal telling of the next one standing nearer slows the trains. Set it by hand where the line has another one");
-		ImGui::EndTable();
-		if (changed)
-		{
-			m_changed = true;
-			survey_signals();
-		}
-	}
 	if (false == m_heads_known)
 	{
 		dimmed(STR_C("Looking for the signal templates..."));
@@ -1152,18 +1415,19 @@ void srk_tool::render_heads()
 	for (std::size_t index = 0; index < m_heads.size(); ++index)
 	{
 		auto const &head{m_heads[index]};
-		if (head.station || false == head.fits || false == head.problems.empty())
+		if (head.station || false == head.fits || false == head.problems.empty() || (head.shp >= 0.0 && (head.shp_found < 0.0 || std::abs(head.shp_found - head.shp) > kShpTolerance)))
 			rows.push_back(index);
 		else
 			++fine;
 	}
-	if (ImGui::BeginTable("##srkheadlist", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (rows.size() + 1.5f)))))
+	if (ImGui::BeginTable("##srkheadlist", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (rows.size() + 1.5f)))))
 	{
 		ImGui::TableSetupScrollFreeze(0, 1);
-		ImGui::TableSetupColumn(STR_C("Signal"), ImGuiTableColumnFlags_WidthStretch, 0.25f);
-		ImGui::TableSetupColumn(STR_C("Speeds"), ImGuiTableColumnFlags_WidthStretch, 0.23f);
-		ImGui::TableSetupColumn(STR_C("Lights"), ImGuiTableColumnFlags_WidthStretch, 0.25f);
-		ImGui::TableSetupColumn(STR_C("State"), ImGuiTableColumnFlags_WidthStretch, 0.27f);
+		ImGui::TableSetupColumn(STR_C("Signal"), ImGuiTableColumnFlags_WidthStretch, 0.2f);
+		ImGui::TableSetupColumn(STR_C("Speeds"), ImGuiTableColumnFlags_WidthStretch, 0.2f);
+		ImGui::TableSetupColumn(STR_C("Lights"), ImGuiTableColumnFlags_WidthStretch, 0.21f);
+		ImGui::TableSetupColumn(STR_C("State"), ImGuiTableColumnFlags_WidthStretch, 0.24f);
+		ImGui::TableSetupColumn(STR_C("SHP"), ImGuiTableColumnFlags_WidthStretch, 0.15f);
 		ImGui::TableHeadersRow();
 		for (auto const index : rows)
 		{
@@ -1223,6 +1487,14 @@ void srk_tool::render_heads()
 					ImGui::TextDisabled("%s", format(STR_C("It has more lights than it needs: %s will do"), head.fit.c_str()).c_str());
 				for (auto const &problem : head.problems)
 					ImGui::TextColored(kWrong, "%s", problem.c_str());
+				if (head.shp >= 0.0)
+				{
+					auto const wanted{head.shp > 0.0 ? format(STR_C("its SHP resonator belongs %.0f m before it"), head.shp) : std::string{STR_C("its SHP resonator belongs at it, it tells of the next signal")}};
+					if (head.shp_found < 0.0)
+						ImGui::TextColored(kWrong, "%s", (wanted + ", " + (head.shp_short ? STR("the tracks before it end short of it") : STR("none stands"))).c_str());
+					else
+						ImGui::TextColored(std::abs(head.shp_found - head.shp) > kShpTolerance ? ImVec4(1.0f, 0.75f, 0.3f, 1.0f) : ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "%s", (wanted + ", " + format(STR_C("its event %.0f m before it"), head.shp_found)).c_str());
+				}
 				ImGui::TextDisabled("%s", STR_C("LMB: fly to it"));
 				ImGui::PopTextWrapPos();
 				ImGui::EndTooltip();
@@ -1256,11 +1528,20 @@ void srk_tool::render_heads()
 				ImGui::SameLine();
 				ImGui::TextColored(kWrong, "%s", STR_C("too near"));
 			}
+			ImGui::TableNextColumn();
+			if (head.shp < 0.0)
+				ImGui::TextDisabled("-");
+			else if (head.shp_found < 0.0)
+				ImGui::TextColored(kWrong, "%s", head.shp_short ? STR_C("no track") : STR_C("none"));
+			else if (std::abs(head.shp_found - head.shp) > kShpTolerance)
+				ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%.0f m", head.shp_found);
+			else
+				ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "%s", head.shp > 0.0 ? format("%.0f m", head.shp_found).c_str() : STR_C("at it"));
 		}
 		ImGui::EndTable();
 	}
 	if (fine > 0)
-		ImGui::TextDisabled("%s", format(STR_P("%zu signal of the lines fits", "%zu signals of the lines fit", fine), fine).c_str());
+		ImGui::TextDisabled("%s", format(STR_P("%zu signal of the lines fits, its SHP too", "%zu signals of the lines fit, their SHP too", fine), fine).c_str());
 	auto const fitting{static_cast<std::size_t>(std::count_if(m_heads.begin(), m_heads.end(), [](head_check const &Head) { return false == Head.fit.empty() && Head.fit != Head.file && (false == Head.fits || Head.more); }))};
 	ImGui::BeginDisabled(fitting == 0);
 	if (main_button(format("%s (%zu)###srkfitheads", STR_C("Fit the lights"), fitting).c_str(), ImVec2(-1.0f, 0.0f)))
@@ -1880,62 +2161,140 @@ void srk_tool::set_signals()
 	}
 }
 
-void srk_tool::set_lines()
+bool srk_tool::lines_of_open(std::vector<standing_signal> const &Standing, std::vector<station::line> &Lines, std::vector<station::signal> &Entries, std::vector<std::size_t> &Owners, std::string &Problem) const
 {
-	m_status.clear();
+	Lines.clear();
+	Entries.clear();
+	Owners.clear();
 	auto const stem{stem_of_open()};
+	if (false == m_layout.has_value())
+		return false;
 	if (stem.empty())
 	{
-		m_status = STR_C("Give the station its code first: the signals are named after it");
-		return;
+		Problem = STR_C("Give the station its code first: the signals are named after it");
+		return false;
 	}
-	auto const &layout{*m_layout};
 	std::vector<station::numbered> tracks;
 	std::unordered_set<TTrack const *> inside;
 	if (false == station_tracks(tracks, inside))
 	{
-		m_status = STR_C("Set the track circuits first: the signals stand at their joints");
-		return;
+		Problem = STR_C("Set the track circuits first: the signals stand at their joints");
+		return false;
 	}
-	auto const plan{station::signals(layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
-	std::vector<standing_signal> standing;
-	m_signals.standing_signals(standing, true);
+	auto const plan{station::signals(*m_layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
 	// the lines begin at the entry signals standing
-	std::vector<station::signal> entries;
-	std::vector<std::size_t> entry_standing;
 	for (auto const &planned : plan)
 	{
 		if (planned.kind != station::signal::role::entry)
 			continue;
-		auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_signal const &Signal) { return Signal.kind == "main" && ToLower(Signal.name) == stem + ToLower(planned.name); })};
-		if (found == standing.end())
+		auto const found{std::find_if(Standing.begin(), Standing.end(), [&](standing_signal const &Signal) { return Signal.kind == "main" && ToLower(Signal.name) == stem + ToLower(planned.name); })};
+		if (found == Standing.end())
 			continue;
-		entries.push_back(planned);
-		entry_standing.push_back(static_cast<std::size_t>(found - standing.begin()));
+		Entries.push_back(planned);
+		Owners.push_back(static_cast<std::size_t>(found - Standing.begin()));
 	}
-	if (entries.empty())
+	if (Entries.empty())
 	{
-		m_status = STR_C("Set the signals first: the lines begin at the entry signals");
-		return;
+		Problem = STR_C("Set the signals first: the lines begin at the entry signals");
+		return false;
 	}
-	auto lines{station::lines_out(layout, entries, kLineLimit)};
-	if (lines.empty())
+	Lines = station::lines_out(*m_layout, Entries, kLineLimit);
+	if (Lines.empty())
 	{
-		m_status = STR_C("No line leads out of the station beyond its entry signals");
-		return;
+		Problem = STR_C("No line leads out of the station beyond its entry signals");
+		return false;
 	}
 	// the distances from the entry signals as they stand
-	for (auto &line : lines)
+	for (auto &line : Lines)
 	{
 		double gap{0.0};
-		auto const at{station::distance_on(line, standing[entry_standing[line.entry]].position, gap)};
+		auto const at{station::distance_on(line, Standing[Owners[line.entry]].position, gap)};
 		if (gap < 4.5)
 			for (auto &distance : line.distances)
 				distance -= at;
 	}
+	return true;
+}
+
+bool srk_tool::automatic_block(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, block_reason &Why, std::size_t &Blocks) const
+{
+	Blocks = 0;
+	for (auto const &signal : Standing)
+	{
+		if (signal.kind != "block")
+			continue;
+		double gap{0.0};
+		auto const distance{station::distance_on(Line, signal.position, gap)};
+		if (gap < 4.5 && distance > 50.0 && distance < Line.length() - 1.0)
+			++Blocks;
+	}
+	if (m_record >= 0)
+		if (auto const set{m_records[m_record].blocks.find(Entry)}; set != m_records[m_record].blocks.end())
+		{
+			Why = block_reason::hand;
+			return set->second;
+		}
+	if (Blocks > 0)
+	{
+		Why = block_reason::standing;
+		return true;
+	}
+	Why = Line.number > 0 ? block_reason::double_track : block_reason::single;
+	return Line.number > 0;
+}
+
+void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
+{
+	m_lines.clear();
+	m_lines_problem.clear();
+	std::vector<station::line> lines;
+	std::vector<station::signal> entries;
+	std::vector<std::size_t> owners;
+	if (false == lines_of_open(Standing, lines, entries, owners, m_lines_problem))
+		return;
+	auto const stem{stem_of_open()};
+	for (auto const &line : lines)
+	{
+		line_row row;
+		row.entry = entries[line.entry].name;
+		row.number = line.number;
+		row.inbound = line.inbound;
+		row.partner = line.partner;
+		row.station = line.station;
+		row.position = Standing[owners[line.entry]].position;
+		row.travel = travel_of(Standing[owners[line.entry]].yaw);
+		row.automatic = automatic_block(line, row.entry, Standing, row.why, row.blocks);
+		auto const next{next_entry(line, Standing, row.length)};
+		row.next = next >= 0 ? signal_shown(Standing[next].name, stem) : std::string{};
+		m_lines.push_back(std::move(row));
+	}
+}
+
+void srk_tool::set_lines()
+{
+	m_status.clear();
+	auto const stem{stem_of_open()};
+	auto const &layout{*m_layout};
+	std::vector<standing_signal> standing;
+	m_signals.standing_signals(standing, true);
+	std::vector<station::line> lines;
+	std::vector<station::signal> entries;
+	std::vector<std::size_t> entry_standing;
+	if (false == lines_of_open(standing, lines, entries, entry_standing, m_status))
+		return;
+	// of each line, 1: the automatic block, placed on a double-track line only, 2: the automatic block on a single-track line, its
+	// signals facing both ways on a track left as they stand, 0: the semi-automatic one
+	std::vector<char> automatic(lines.size(), 0);
+	for (std::size_t index = 0; index < lines.size(); ++index)
+	{
+		auto why{block_reason::single};
+		std::size_t blocks{0};
+		if (automatic_block(lines[index], entries[lines[index].entry].name, standing, why, blocks))
+			automatic[index] = lines[index].number > 0 ? 1 : 2;
+	}
 	auto const described{line_of_open()};
 	double known{0.0};
-	if (std::any_of(lines.begin(), lines.end(), [](station::line const &Line) { return Line.number > 0; }) && (false == km_of_open(0.0, known) || described.empty()))
+	if (std::any_of(automatic.begin(), automatic.end(), [](char const Automatic) { return Automatic == 1; }) && (false == km_of_open(0.0, known) || described.empty()))
 	{
 		m_status = STR_C("Give the station its line and its km first: the block signals and the block sections are named after them");
 		return;
@@ -1999,34 +2358,14 @@ void srk_tool::set_lines()
 		return braking_distance(speed > 0.0 ? speed : 160.0);
 	};
 	for (std::size_t index = 0; index < lines.size(); ++index)
-	{
-		auto const &line{lines[index]};
-		auto &end{ends[index]};
-		// the entry signal of the next station: the first main signal along the line facing out
-		for (std::size_t k = 0; k < standing.size(); ++k)
-		{
-			if (standing[k].kind != "main")
-				continue;
-			double gap{0.0};
-			auto const distance{station::distance_on(line, standing[k].position, gap)};
-			if (gap > 4.5 || distance < 100.0 || distance > line.length() - 1.0 || facing_out(line, standing[k], distance) < 0.87)
-				continue;
-			if (end.signal < 0 || distance < end.distance)
-			{
-				end.signal = static_cast<int>(k);
-				end.distance = distance;
-			}
-		}
-		if (end.signal < 0)
-			end.distance = line.station ? line.length() - kPredicted : line.length();
-	}
+		ends[index].signal = next_entry(lines[index], standing, ends[index].distance);
 	for (std::size_t index = 0; index < lines.size(); ++index)
 	{
 		auto const &line{lines[index]};
 		auto const &end{ends[index]};
 		auto const &entry{entries[line.entry]};
 		auto const least{braking(index)};
-		if (line.number > 0)
+		if (automatic[index] == 1)
 		{
 			// the block signals, Ie-4 § 51: the sections no shorter than the braking distance and no longer than twice it, the line to the
 			// next station parted evenly, towards the end of the tracks a little over the braking distance each
@@ -2053,7 +2392,7 @@ void srk_tool::set_lines()
 				planned.push_back(std::move(signal));
 			}
 		}
-		else
+		else if (automatic[index] == 0)
 		{
 			// the warning disc of the entry signal, the braking distance before it
 			auto const distance{std::min(least, end.distance - 100.0)};
@@ -2141,7 +2480,7 @@ void srk_tool::set_lines()
 	for (std::size_t index = 0; index < lines.size(); ++index)
 	{
 		auto const &line{lines[index]};
-		if (line.number == 0)
+		if (automatic[index] != 1)
 			continue;
 		struct stop
 		{
@@ -2387,6 +2726,7 @@ void srk_tool::survey_signals()
 		return;
 	}
 	check_heads(standing);
+	survey_lines(standing);
 	auto const stem{stem_of_open()};
 	std::vector<station::signal> stops;
 	for (auto const &signal : standing)
@@ -2529,6 +2869,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 	std::unordered_map<std::string, std::size_t> by_file;
 	for (std::size_t index = 0; index < heads.size(); ++index)
 		by_file.emplace(heads[index].file, index);
+	auto const triggers{shp_triggers()};
 	for (auto const index : order)
 	{
 		auto const &signal{Standing[owners[index]]};
@@ -2550,6 +2891,24 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		{
 			check.lamps = template_of->lamps;
 			check.own = template_of->speeds;
+		}
+		glm::dvec3 const travel{check.travel.x, 0.0, check.travel.y};
+		if (post.kind != role::entry)
+			check.shp = kShpBefore;
+		else if (own[index])
+		{
+			auto const along{station::project(layout, signal.position).x};
+			auto const ahead{station::project(layout, signal.position + travel * 10.0).x};
+			if ((along < layout.from && ahead > along) || (along > layout.to && ahead < along))
+				check.shp = kShpBefore;
+			else if (std::any_of(check.routes.begin(), check.routes.end(), [](station::route const &Route) { return Route.next >= 0 && Route.warning < 0; }))
+				check.shp = 0.0;
+		}
+		if (check.shp >= 0.0)
+		{
+			auto const way{station::approach(*post.track, post.point, post.facing, check.shp + kShpWindow)};
+			check.shp_found = shp_before(way, signal.position, travel, triggers, check.shp);
+			check.shp_short = way.empty() || way.back().distance < check.shp - kShpTolerance;
 		}
 		if (post.kind == role::warning)
 		{
@@ -2627,6 +2986,196 @@ void srk_tool::fit_heads()
 		m_status = STR_C("The lights of the signals fit already");
 	else
 		m_status = format(STR_P("%zu signal got the lights it needs, Ctrl+Z takes it back", "%zu signals got the lights they need, Ctrl+Z takes it back", changed), changed);
+}
+
+void srk_tool::set_shp()
+{
+	m_status.clear();
+	if (false == m_layout.has_value())
+		return;
+	include_info resonator;
+	std::string unreadable;
+	if (false == editor_includes::load(kResonator, resonator, unreadable))
+	{
+		m_status = format(STR_C("%s isn't in the scenery folder: the SHP resonators can't be placed"), kResonator);
+		return;
+	}
+	std::vector<standing_signal> standing;
+	m_signals.standing_signals(standing, true);
+	check_heads(standing);
+	std::unordered_set<std::string> taken;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			for (int list = 0; list < 6; ++list)
+				for (auto const &event : editor_track::events(*track, list))
+					taken.insert(ToLower(event.first));
+	struct placing
+	{
+		std::string name; // of the resonator, its event is <name>_shp
+		TTrack *track{nullptr}; // the trains run into its event on, where a joint of the tracks lies
+		TTrack *cut{nullptr}; // the track cut at the point, else
+		int facing{1}; // the trains run on the track, 1: towards the end of its path
+		glm::dvec3 point{0.0};
+		glm::dvec3 way{0.0, 0.0, 1.0};
+		glm::dvec3 inside{0.0}; // of the track the trains run into, a metre on from the point
+	};
+	std::vector<placing> places;
+	std::vector<std::string> problems;
+	for (auto const &head : m_heads)
+	{
+		if (head.shp < 0.0 || head.shp_found >= 0.0)
+			continue;
+		if (head.shp_short)
+		{
+			problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), head.name.c_str(), head.shp));
+			continue;
+		}
+		auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_signal const &Signal) { return Signal.instance == head.instance; })};
+		if (found == standing.end())
+			continue;
+		auto const post{post_of(*found)};
+		if (post.track == nullptr)
+		{
+			problems.push_back(format(STR_C("%s stands by no track"), head.name.c_str()));
+			continue;
+		}
+		auto const way{station::approach(*post.track, post.point, post.facing, head.shp + kShpTolerance + 1.0)};
+		if (way.empty() || way.back().distance < head.shp - kShpTolerance)
+		{
+			problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), head.name.c_str(), head.shp));
+			continue;
+		}
+		// a joint of the tracks within the tolerance takes the event on the track the trains run into there, else the track is cut
+		auto best{-1};
+		auto joint{false};
+		auto miss{kShpTolerance + 1e-6};
+		for (std::size_t k = 0; k + 1 < way.size(); ++k)
+			if (way[k + 1].track != way[k].track && way[k].track->eType == tt_Normal && std::abs(way[k].distance - head.shp) < miss)
+			{
+				miss = std::abs(way[k].distance - head.shp);
+				best = static_cast<int>(k);
+				joint = true;
+			}
+		if (best < 0)
+			for (std::size_t k = 0; k < way.size(); ++k)
+			{
+				auto const &ends{way[k].track->m_paths.front().points};
+				if (way[k].track->eType != tt_Normal || std::min(glm::distance(way[k].point, ends[segment_data::point::start]), glm::distance(way[k].point, ends[segment_data::point::end])) <= 0.5)
+					continue;
+				if (std::abs(way[k].distance - head.shp) < miss)
+				{
+					miss = std::abs(way[k].distance - head.shp);
+					best = static_cast<int>(k);
+				}
+			}
+		if (best < 0)
+		{
+			problems.push_back(format(STR_C("%s: no plain track within %.0f m of the place of its SHP resonator"), head.name.c_str(), kShpTolerance));
+			continue;
+		}
+		auto const &at{way[best]};
+		std::string reason;
+		if (false == scene::Layers.editable(at.track, &reason) || (false == joint && false == editor_track::can_edit_geometry(*at.track, reason)))
+		{
+			problems.push_back(format(STR_C("%s can't be changed: %s"), name_of(*at.track).c_str(), reason.c_str()));
+			continue;
+		}
+		if (false == at.track->Dynamics.empty())
+		{
+			problems.push_back(format(STR_C("%s: vehicles stand on %s"), head.name.c_str(), name_of(*at.track).c_str()));
+			continue;
+		}
+		placing entry;
+		auto name{found->name + "_rez"};
+		for (int number = 2; taken.count(ToLower(name) + "_shp") > 0 && number < 100; ++number)
+			name = found->name + "_rez" + std::to_string(number);
+		taken.insert(ToLower(name) + "_shp");
+		entry.name = name;
+		entry.facing = at.facing;
+		entry.point = at.point;
+		entry.way = at.way;
+		if (joint)
+			entry.track = at.track;
+		else
+		{
+			entry.cut = at.track;
+			entry.inside = best > 0 ? way[best - 1].point : at.point + at.way;
+		}
+		places.push_back(std::move(entry));
+	}
+	if (places.empty())
+	{
+		m_status = problems.empty() ? STR_C("The signals have their SHP resonators already") : problems.front();
+		return;
+	}
+	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	std::vector<TTrack *> created;
+	std::unordered_set<TTrack const *> captured;
+	std::unordered_map<TTrack const *, std::vector<TTrack *>> pieces; // of each track cut, itself and the pieces cut off it
+	auto const piece_at = [&](TTrack *Track, glm::dvec3 const &Point) {
+		auto found{pieces.find(Track)};
+		if (found == pieces.end())
+			return Track;
+		TTrack *nearest{Track};
+		auto gap{std::numeric_limits<double>::max()};
+		for (auto *piece : found->second)
+			if (auto const distance{glm::distance(editor_track::point_at(*piece, editor_track::nearest_parameter(*piece, Point)), Point)}; distance < gap)
+			{
+				gap = distance;
+				nearest = piece;
+			}
+		return nearest;
+	};
+	std::size_t cuts{0};
+	for (auto const &entry : places)
+	{
+		if (entry.cut == nullptr)
+			continue;
+		auto *track{piece_at(entry.cut, entry.point)};
+		auto const &ends{track->m_paths.front().points};
+		if (std::min(glm::distance(entry.point, ends[segment_data::point::start]), glm::distance(entry.point, ends[segment_data::point::end])) <= 0.3)
+			continue;
+		if (captured.insert(track).second)
+			before.emplace_back(track, editor_track::capture(*track));
+		if (auto *piece{editor_track::split_path(*track, editor_track::nearest_parameter(*track, entry.point))})
+		{
+			created.push_back(piece);
+			captured.insert(piece);
+			auto &list{pieces[entry.cut]};
+			if (list.empty())
+				list.push_back(entry.cut);
+			list.push_back(piece);
+			++cuts;
+		}
+	}
+	signal_changes changes;
+	for (auto const &entry : places)
+	{
+		auto *track{entry.track != nullptr ? entry.track : piece_at(entry.cut, entry.inside)};
+		if (captured.insert(track).second)
+			before.emplace_back(track, editor_track::capture(*track));
+		editor_track::events(*track, entry.facing > 0 ? 2 : 1).emplace_back(ToLower(entry.name) + "_shp", nullptr);
+		std::string missing;
+		editor_track::bind_events(*track, missing);
+		track->mark_dirty();
+		template_item item;
+		item.file = kResonator;
+		item.location = entry.point - glm::dvec3{0.0, kResonatorDrop, 0.0};
+		auto const yaw{geometry::heading_of({entry.way.x, entry.way.z}) + 180.0};
+		item.yaw = yaw >= 360.0 ? yaw - 360.0 : yaw;
+		item.values["name"] = entry.name;
+		changes.others.push_back(std::move(item));
+	}
+	std::string error;
+	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
+	if (false == error.empty())
+	{
+		m_status = format(STR_C("The SHP resonators couldn't be placed: %s"), error.c_str());
+		return;
+	}
+	m_status = format(STR_P("%zu SHP resonator placed", "%zu SHP resonators placed", places.size()), places.size()) + ", " + format(STR_P("%zu track cut", "%zu tracks cut", cuts), cuts) + ". " + STR("Ctrl+Z takes it back, the resonators work after the scenery is saved and opened again");
+	for (auto const &problem : problems)
+		m_status += "\n" + problem;
 }
 
 void srk_tool::survey()
@@ -3266,11 +3815,60 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				auto const &route{head.routes[k]};
 				routes += format(" %s:%.0f:%.0f%s%s", route.next >= 0 ? head.nexts[k].c_str() : route.ended ? "end" : "none", route.length, route.speed, route.warning >= 0 ? ":to" : "", route.turnouts.empty() ? "" : format(":%zut", route.turnouts.size()).c_str());
 			}
-			WriteLog(format("SELFTEST srkheads %s %s%s %s lamps=%s own=%s need=%s%s%s short=%d%s fits=%d more=%d fit=%s routes%s problems=%zu", head.name.c_str(), head.kind.c_str(), head.station ? "" : "(line)", head.file.c_str(), head.lamps.c_str(), list(head.own).c_str(), list(head.speeds).c_str(), head.informs ? "+inform" : "",
-			                head.white ? "+white" : "", head.shortened, head.indicator ? " w21" : "", head.fits ? 1 : 0, head.more ? 1 : 0, head.fit.empty() ? "-" : head.fit.c_str(), routes.c_str(), head.problems.size()));
+			WriteLog(format("SELFTEST srkheads %s %s%s %s lamps=%s own=%s need=%s%s%s short=%d%s fits=%d more=%d fit=%s shp=%.0f/%.0f routes%s problems=%zu", head.name.c_str(), head.kind.c_str(), head.station ? "" : "(line)", head.file.c_str(), head.lamps.c_str(), list(head.own).c_str(), list(head.speeds).c_str(), head.informs ? "+inform" : "",
+			                head.white ? "+white" : "", head.shortened, head.indicator ? " w21" : "", head.fits ? 1 : 0, head.more ? 1 : 0, head.fit.empty() ? "-" : head.fit.c_str(), head.shp, head.shp_found, routes.c_str(), head.problems.size()));
 			for (auto const &problem : head.problems)
 				WriteLog("SELFTEST srkheads   " + problem);
 		}
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkshp")
+	{
+		// srkshp: the SHP resonators of the open station placed, the signals listed with them
+		if (false == m_layout.has_value())
+		{
+			WriteLog("SELFTEST srkshp: no station open");
+			return editor_selftest_result::handled;
+		}
+		set_shp();
+		WriteLog("SELFTEST srkshp: " + m_status);
+		refresh();
+		if (false == m_layout.has_value())
+			return editor_selftest_result::handled;
+		std::vector<standing_signal> standing;
+		m_signals.standing_signals(standing, true);
+		check_heads(standing);
+		for (auto const &head : m_heads)
+			if (head.shp >= 0.0)
+				WriteLog(format("SELFTEST srkshp %s %s wanted %.0f found %.0f", head.name.c_str(), head.kind.c_str(), head.shp, head.shp_found));
+		for (auto const &include : m_templates.standing_templates([](std::string const &File) { return File == kResonator; }))
+			WriteLog(format("SELFTEST srkshp resonator %s at %.2f %.2f %.2f yaw %.1f", include.values.empty() ? "-" : include.values.front().c_str(), include.location.x, include.location.y, include.location.z, include.yaw));
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkblock")
+	{
+		// srkblock entry=<A> kind=sbl|semi|auto: the block of the line out beyond the entry signal, the lines listed
+		if (false == m_layout.has_value())
+		{
+			WriteLog("SELFTEST srkblock: no station open");
+			return editor_selftest_result::handled;
+		}
+		auto const values{selftest_values(Words)};
+		auto const entry{values.find("entry")};
+		auto const kind{values.find("kind")};
+		if (entry != values.end() && kind != values.end())
+		{
+			if (kind->second == "auto")
+				record_of_open().blocks.erase(entry->second);
+			else
+				record_of_open().blocks[entry->second] = kind->second == "sbl";
+			m_changed = true;
+		}
+		survey_signals();
+		if (false == m_lines_problem.empty())
+			WriteLog("SELFTEST srkblock: " + m_lines_problem);
+		for (auto const &row : m_lines)
+			WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks, row.automatic ? "sbl" : "semi", static_cast<int>(row.why)));
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstrip")

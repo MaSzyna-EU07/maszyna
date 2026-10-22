@@ -2229,4 +2229,65 @@ std::vector<std::vector<route>> routes(std::vector<post> const &Posts, std::vect
 	return all;
 }
 
+std::vector<approach_point> approach(TTrack &Track, glm::dvec3 const &Point, int const Facing, double const Distance)
+{
+	std::vector<approach_point> result;
+	if (false == rail(Track))
+		return result;
+	auto *track{&Track};
+	int path{0};
+	long at{0};
+	std::vector<glm::dvec3> points;
+	auto nearest{std::numeric_limits<double>::max()};
+	for (int candidate = 0; candidate < static_cast<int>(Track.m_paths.size()); ++candidate)
+	{
+		double length{0.0};
+		auto dense{dense_points(Track, candidate, length)};
+		for (std::size_t k = 0; k < dense.size(); ++k)
+			if (auto const gap{plan_distance(dense[k], Point)}; gap < nearest - 1e-6)
+			{
+				nearest = gap;
+				path = candidate;
+				at = static_cast<long>(k);
+			}
+		if (path == candidate)
+			points = std::move(dense);
+	}
+	auto facing{Facing > 0 ? 1 : -1};
+	auto last{points[at]};
+	double distance{0.0};
+	std::unordered_set<TTrack const *> seen{track};
+	while (true)
+	{
+		auto const count{static_cast<long>(points.size())};
+		auto const step{facing > 0 ? -1L : 1L};
+		for (auto k{at}; k >= 0 && k < count; k += step)
+		{
+			distance += plan_distance(last, points[k]);
+			last = points[k];
+			auto const ahead{points[std::clamp(k + 1, 0L, count - 1)] - points[std::clamp(k - 1, 0L, count - 1)]};
+			glm::dvec3 way{ahead.x * facing, 0.0, ahead.z * facing};
+			way = glm::length(way) > 1e-9 ? glm::normalize(way) : glm::dvec3{0.0, 0.0, 1.0};
+			result.push_back({track, path, facing, points[k], way, distance});
+			if (distance >= Distance)
+				return result;
+		}
+		auto const atend{facing < 0};
+		auto const end{end_of(*track, path, atend)};
+		auto *before{neighbour(*track, path, atend)};
+		int entered{0};
+		bool from_end{false};
+		if (before == nullptr || false == rail(*before) || false == seen.insert(before).second || false == end_at(*before, end, entered, from_end))
+			return result;
+		if (before->eType == tt_Switch && false == from_end)
+			entered = straighter(*before);
+		track = before;
+		path = entered;
+		double length{0.0};
+		points = dense_points(*track, path, length);
+		facing = from_end ? 1 : -1;
+		at = from_end ? static_cast<long>(points.size()) - 2 : 1;
+	}
+}
+
 } // namespace station

@@ -10494,8 +10494,8 @@ msgstr "Szlaki"
 msgid "Set the line signals"
 msgstr "Ustaw sygnalizatory szlakowe"
 
-msgid "Places the signals of the lines out of the station, from its entry signals on. A double-track line gets the automatic block: block signals evenly to the entry signals of the next station, a section no shorter than the braking distance, numbered after the hectometre ahead of them, odd on track 1, even on track 2, and the block sections from 15 m beyond them named as on the lines of PKP PLK, 2411-2571@LK2.1. A single-track line gets a warning disc ToA the braking distance before the entry signal. The braking distance after the speed of the line, as Ie-4 gives it: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it keeps what stands. One step of undo"
-msgstr "Stawia sygnalizatory szlaków wychodzących ze stacji, od jej semaforów wjazdowych. Szlak dwutorowy dostaje samoczynną blokadę liniową: semafory SBL rozstawione równo do semaforów wjazdowych następnej stacji, odstęp nie krótszy od drogi hamowania, numerowane według najbliższego hektometra przed nimi, nieparzyste na torze 1, parzyste na torze 2, a odstępy od 15 m za nimi nazwane jak na liniach PKP PLK, 2411-2571@LK2.1. Szlak jednotorowy dostaje tarczę ostrzegawczą ToA w odległości drogi hamowania przed semaforem wjazdowym. Droga hamowania według prędkości szlaku, jak w Ie-4: 400 m do 60 km/h, 700 m do 100, 1000 m do 140, 1300 m powyżej. Potrzebna linia i kilometr stacji. Uruchom to też na następnej stacji, zostawia to, co już stoi. Jeden krok cofania"
+msgid "Places the signals of the lines out of the station, from its entry signals on, by the block chosen for each line above. The automatic block: block signals evenly to the entry signals of the next station, a section no shorter than the braking distance, numbered after the hectometre ahead of them, odd on track 1, even on track 2, and the block sections from 15 m beyond them named as on the lines of PKP PLK, 2411-2571@LK2.1. The semi-automatic block: a warning disc ToA the braking distance before the entry signal. The braking distance after the speed of the line, as Ie-4 gives it: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it keeps what stands. One step of undo"
+msgstr "Stawia sygnalizatory szlaków wychodzących ze stacji, od jej semaforów wjazdowych, według blokady wybranej wyżej dla każdego szlaku. Blokada samoczynna: semafory SBL rozstawione równo do semaforów wjazdowych następnej stacji, odstęp nie krótszy od drogi hamowania, numerowane według najbliższego hektometra przed nimi, nieparzyste na torze 1, parzyste na torze 2, a odstępy od 15 m za nimi nazwane jak na liniach PKP PLK, 2411-2571@LK2.1. Blokada półsamoczynna: tarcza ostrzegawcza ToA w odległości drogi hamowania przed semaforem wjazdowym. Droga hamowania według prędkości szlaku, jak w Ie-4: 400 m do 60 km/h, 700 m do 100, 1000 m do 140, 1300 m powyżej. Potrzebna linia i kilometr stacji. Uruchom to też na następnej stacji, zostawia to, co już stoi. Jeden krok cofania"
 
 msgid "Km"
 msgstr "Kilometr"
@@ -11053,18 +11053,17 @@ msgstr "Światła semaforów już pasują"
 msgid "The signals couldn't be changed: %s"
 msgstr "Nie udało się zmienić semaforów: %s"
 
-msgid "%zu signal of the lines fits"
-msgid_plural "%zu signals of the lines fit"
-msgstr[0] "%zu semafor linii pasuje"
-msgstr[1] "%zu semafory linii pasują"
-msgstr[2] "%zu semaforów linii pasuje"
+msgid "%zu signal of the lines fits, its SHP too"
+msgid_plural "%zu signals of the lines fit, their SHP too"
+msgstr[0] "%zu semafor szlaku pasuje, jego SHP też"
+msgstr[1] "%zu semafory szlaku pasują, ich SHP też"
+msgstr[2] "%zu semaforów szlaku pasuje, ich SHP też"
 
 msgid "%zu signal got the lights it needs, Ctrl+Z takes it back"
 msgid_plural "%zu signals got the lights they need, Ctrl+Z takes it back"
 msgstr[0] "%zu semafor dostał potrzebne światła, Ctrl+Z cofa"
 msgstr[1] "%zu semafory dostały potrzebne światła, Ctrl+Z cofa"
 msgstr[2] "%zu semaforów dostało potrzebne światła, Ctrl+Z cofa"
-
 
 msgid "Template: %s"
 msgstr "Szablon: %s"
@@ -11077,3 +11076,174 @@ msgstr "Semafor %s dostał szablon %s, Ctrl+Z cofa"
 
 msgid "Signal %s can't take the template %s"
 msgstr "Semafor %s nie może dostać szablonu %s"
+
+msgid "SHP"
+msgstr "SHP"
+
+msgid "Place the SHP resonators"
+msgstr "Postaw rezonatory SHP"
+
+msgid "Places the SHP track resonators the signals checked lack, rezonator.inc, as PKP PLK places them: 200 m before an entry signal, a block signal and a warning disc, at an exit signal telling of the next one, as one onto a line of the automatic block, 5 m either way. Its event goes on the track the trains run into there, at a joint of the tracks within 5 m, else the track is cut. A resonator standing is one whose event ends with _shp, put on a track the trains run into within 100 m of its place, so the ones of the old sceneries count too. One step of undo"
+msgstr "Stawia rezonatory SHP (rezonator.inc) tam, gdzie sprawdzonym semaforom ich brakuje, tak jak PKP PLK: 200 m przed semaforem wjazdowym, semaforem SBL i tarczą ostrzegawczą, a przy semaforze wyjazdowym, który zapowiada następny semafor, np. przy wyjeździe na szlak z SBL; ±5 m. Event rezonatora trafia na tor, na który pociąg tam wjeżdża: na styku torów, jeśli jakiś jest w promieniu 5 m, inaczej tor zostaje przecięty. Za stojący rezonator uznaje się każdy event kończący się na _shp na torze w promieniu 100 m od miejsca rezonatora, więc liczą się też te ze starych scenerii. Jeden krok cofania"
+
+msgid "%zu of %zu signal has its SHP resonator"
+msgid_plural "%zu of %zu signals have their SHP resonators"
+msgstr[0] "%zu z %zu semafora ma rezonator SHP"
+msgstr[1] "%zu z %zu semaforów ma rezonatory SHP"
+msgstr[2] "%zu z %zu semaforów ma rezonatory SHP"
+
+msgid "%zu farther than 5 m from its place"
+msgid_plural "%zu farther than 5 m from their places"
+msgstr[0] "%zu dalej niż 5 m od swojego miejsca"
+msgstr[1] "%zu dalej niż 5 m od swoich miejsc"
+msgstr[2] "%zu dalej niż 5 m od swoich miejsc"
+
+msgid "set by hand"
+msgstr "ustawiona ręcznie"
+
+msgid "block signals stand along it"
+msgstr "stoją na nim semafory SBL"
+
+msgid "a double-track line"
+msgstr "linia dwutorowa"
+
+msgid "a single-track line"
+msgstr "linia jednotorowa"
+
+msgid "automatic (SBL)"
+msgstr "samoczynna (SBL)"
+
+msgid "semi-automatic"
+msgstr "półsamoczynna"
+
+msgid "To"
+msgstr "Dokąd"
+
+msgid "Block"
+msgstr "Blokada"
+
+msgid "single track"
+msgstr "jednotorowy"
+
+msgid "track %d"
+msgstr "tor %d"
+
+msgid "The line out beyond the entry signal %s"
+msgstr "Szlak za semaforem wjazdowym %s"
+
+msgid "Track %d of a double-track line"
+msgstr "Tor %d linii dwutorowej"
+
+msgid "its trains run in to the station"
+msgstr "pociągi jadą nim do stacji"
+
+msgid "its trains run out of the station"
+msgstr "pociągi jadą nim ze stacji"
+
+msgid "A single-track line"
+msgstr "Linia jednotorowa"
+
+msgid "%zu block signal stands along it"
+msgid_plural "%zu block signals stand along it"
+msgstr[0] "Stoi na nim %zu semafor SBL"
+msgstr[1] "Stoją na nim %zu semafory SBL"
+msgstr[2] "Stoi na nim %zu semaforów SBL"
+
+msgid "Block: %s, %s"
+msgstr "Blokada: %s, %s"
+
+msgid "LMB: fly to the entry signal"
+msgstr "LPM: leć do semafora wjazdowego"
+
+msgid "station"
+msgstr "stacja"
+
+msgid "track end"
+msgstr "koniec toru"
+
+msgid "To the entry signal %s of the next station"
+msgstr "Do semafora wjazdowego %s następnej stacji"
+
+msgid "To the next station, its entry signal not standing yet"
+msgstr "Do następnej stacji, jej semafor wjazdowy jeszcze nie stoi"
+
+msgid "To the end of the tracks"
+msgstr "Do końca torów"
+
+msgid "%s, auto"
+msgstr "%s, auto"
+
+msgid "Auto: %s, %s"
+msgstr "Auto: %s, %s"
+
+msgid "Automatic block (SBL)"
+msgstr "Blokada samoczynna (SBL)"
+
+msgid "Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are"
+msgstr "Edytor stawia ją tylko na linii dwutorowej: na jednym torze semafory SBL musiałyby stać w obu kierunkach, takie, które już stoją, zostawia bez zmian"
+
+msgid "Semi-automatic block"
+msgstr "Blokada półsamoczynna"
+
+msgid "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no warning disc. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where block signals stand along the line or it's double-track, else the semi-automatic one"
+msgstr "Blokada liniowa szlaku, na dwutorowym taka sama na obu torach. Samoczynna (SBL): semafory SBL z odstępami blokowymi, bez tarczy ostrzegawczej. Półsamoczynna: tarcza ostrzegawcza ToA w odległości drogi hamowania przed semaforem wjazdowym. Auto: samoczynna, gdy na szlaku stoją semafory SBL albo linia jest dwutorowa, inaczej półsamoczynna"
+
+msgid "its SHP resonator belongs %.0f m before it"
+msgstr "rezonator SHP powinien stać %.0f m przed nim"
+
+msgid "its SHP resonator belongs at it, it tells of the next signal"
+msgstr "rezonator SHP powinien stać przy nim, bo zapowiada następny semafor"
+
+msgid "none stands"
+msgstr "nie ma go"
+
+msgid "its event %.0f m before it"
+msgstr "jego event jest %.0f m przed nim"
+
+msgid "%s isn't in the scenery folder: the SHP resonators can't be placed"
+msgstr "Brak %s w folderze scenerii: nie da się postawić rezonatorów SHP"
+
+msgid "%s stands by no track"
+msgstr "%s nie stoi przy żadnym torze"
+
+msgid "%s: the tracks before it end short of %.0f m"
+msgstr "%s: tory przed nim kończą się przed %.0f m"
+
+msgid "%s: no plain track within %.0f m of the place of its SHP resonator"
+msgstr "%s: w miejscu rezonatora SHP (±%.0f m) nie ma zwykłego toru, same rozjazdy"
+
+msgid "%s: vehicles stand on %s"
+msgstr "%s: na %s stoją pojazdy"
+
+msgid "The signals have their SHP resonators already"
+msgstr "Semafory mają już rezonatory SHP"
+
+msgid "%zu SHP resonator placed"
+msgid_plural "%zu SHP resonators placed"
+msgstr[0] "Postawiono %zu rezonator SHP"
+msgstr[1] "Postawiono %zu rezonatory SHP"
+msgstr[2] "Postawiono %zu rezonatorów SHP"
+
+msgid "%zu track cut"
+msgid_plural "%zu tracks cut"
+msgstr[0] "przecięto %zu tor"
+msgstr[1] "przecięto %zu tory"
+msgstr[2] "przecięto %zu torów"
+
+msgid "Ctrl+Z takes it back, the resonators work after the scenery is saved and opened again"
+msgstr "Ctrl+Z cofa, rezonatory działają po zapisaniu i ponownym otwarciu scenerii"
+
+msgid "The SHP resonators couldn't be placed: %s"
+msgstr "Nie udało się postawić rezonatorów SHP: %s"
+
+msgid "at it"
+msgstr "przy nim"
+
+msgid "the tracks before it end short of it"
+msgstr "tory przed nim kończą się wcześniej"
+
+msgid "%zu with the tracks ending short of the place of its resonator"
+msgid_plural "%zu with the tracks ending short of the places of their resonators"
+msgstr[0] "%zu ma tory kończące się przed miejscem rezonatora"
+msgstr[1] "%zu mają tory kończące się przed miejscem rezonatora"
+msgstr[2] "%zu ma tory kończące się przed miejscem rezonatora"

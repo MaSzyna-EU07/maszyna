@@ -278,7 +278,8 @@ std::size_t editor_mode::place_templates(std::vector<template_item> const &Items
 		}
 		else
 		{
-			std::vector<std::string> values{"none", number(local.x, 3), number(local.y, 3), number(local.z, 3), number(item.yaw, 2)};
+			auto const name{item.values.find("name")};
+			std::vector<std::string> values{name != item.values.end() ? name->second : std::string{"none"}, number(local.x, 3), number(local.y, 3), number(local.z, 3), number(item.yaw, 2)};
 			values.insert(values.end(), item.rest.begin(), item.rest.end());
 			directive = editor_includes::compose_directive(item.file, values);
 		}
