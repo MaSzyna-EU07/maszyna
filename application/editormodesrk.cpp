@@ -60,6 +60,8 @@ double constexpr kShpBefore{200.0}; // m, of the resonator before an entry signa
 double constexpr kShpTolerance{5.0}; // m, either way
 double constexpr kShpWindow{100.0}; // m, either way of its place, a resonator standing is taken for the one of the signal
 double constexpr kResonatorDrop{0.2}; // m, of its origin below the axis
+double constexpr kBoundaryReach{30.0}; // m, either way of a block signal, a click while drawing the boundaries takes it away
+double constexpr kBoundaryEnd{50.0}; // m, of a block boundary drawn from the entry signals at the ends of the line
 
 // m, of a train at the speed, as Ie-4 § 8 takes it: the least block section of the automatic block, a warning disc that far before
 // its signal
@@ -340,14 +342,14 @@ int surplus(signal_head const &Head, head_need const &Need)
 
 // of the templates of the kind and the mount that fit the need, the one with the least beyond it, the most like the one named;
 // -1 for none
-int best_head(std::vector<signal_head> const &Heads, std::string const &Kind, std::string const &Mount, std::string const &Like, head_need const &Need)
+int best_head(std::vector<signal_head> const &Heads, std::string const &Kind, std::string const &Mount, std::string const &Like, int const Aspects, head_need const &Need)
 {
 	auto best{-1};
 	std::tuple<int, int, std::size_t> score;
 	for (int index = 0; index < static_cast<int>(Heads.size()); ++index)
 	{
 		auto const &head{Heads[index]};
-		if (head.kind != Kind || head.mount != Mount || false == shows(head, Need))
+		if (head.kind != Kind || head.mount != Mount || head.aspects != Aspects || false == shows(head, Need))
 			continue;
 		std::size_t common{0};
 		while (common < head.name.size() && common < Like.size() && head.name[common] == Like[common])
@@ -626,6 +628,46 @@ int resonator_at(std::vector<station::approach_point> const &Way, double const W
 	return best;
 }
 
+// the template of a block signal of the aspects wanted, Like: the one standing, empty for the one chosen in the Signals tool, taken
+// where it has them, else the one of their mount with them, its counterpart by the name first, then of its lights; not the first of
+// a line, whose events tell a station signal; empty for none
+std::string block_template(std::vector<signal_head> const &Heads, std::string const &Like, int const Aspects)
+{
+	signal_head const *like{nullptr};
+	for (auto const &head : Heads)
+		if (head.kind == "block" && (Like.empty() ? head.chosen : head.file == Like))
+			like = &head;
+	if (like != nullptr && like->aspects == Aspects)
+		return like->file;
+	auto counterpart{like != nullptr ? like->name : std::string{}};
+	if (auto const digit{counterpart.find_first_of("34")}; digit != std::string::npos)
+		counterpart[digit] = counterpart[digit] == '3' ? '4' : '3';
+	signal_head const *best{nullptr};
+	auto rank{std::numeric_limits<int>::max()};
+	for (auto const &head : Heads)
+	{
+		if (head.kind != "block" || head.aspects != Aspects || ToLower(head.name).find("pierwszy") != std::string::npos)
+			continue;
+		auto const score{like == nullptr ? 0 : (head.mount != like->mount ? 4 : 0) + (head.name != counterpart ? 2 : 0) + (head.lamps != like->lamps ? 1 : 0)};
+		if (score < rank)
+		{
+			rank = score;
+			best = &head;
+		}
+	}
+	return best != nullptr ? best->file : std::string{};
+}
+
+// the block signals switched by the block sections of the editor, lower case
+std::unordered_set<std::string> guarded(std::vector<standing_template> const &Controls)
+{
+	std::unordered_set<std::string> result;
+	for (auto const &control : Controls)
+		if (control.values.size() > 5)
+			result.insert(ToLower(control.values[5]));
+	return result;
+}
+
 } // namespace
 
 srk_tool::shp_state srk_tool::head_check::shp_of() const
@@ -671,7 +713,10 @@ void srk_tool::load()
 						auto const comma{std::min(word.find(',', from), word.size())};
 						auto const item{word.substr(from, comma - from)};
 						if (auto const equals{item.find('=')}; equals != std::string::npos && equals > 0)
-							entry.blocks[item.substr(0, equals)] = item.substr(equals + 1) == "sbl";
+						{
+							auto const kind{item.substr(equals + 1)};
+							entry.blocks[item.substr(0, equals)] = kind == "sbl4" ? block_kind::four : kind == "sbl" || kind == "sbl3" ? block_kind::three : block_kind::semi;
+						}
 						from = comma + 1;
 					}
 				else if (word == "anchor")
@@ -712,9 +757,9 @@ void srk_tool::store()
 				lines.emplace_back("# stations described in the track editor, the simulation skips these lines");
 			auto const braking{entry.braking > 0 ? format(" braking %d", entry.braking) : std::string{}};
 			std::string blocks;
-			for (auto const &[signal, automatic] : entry.blocks)
+			for (auto const &[signal, kind] : entry.blocks)
 				if (false == signal.empty() && signal.find_first_of(" ,=\t") == std::string::npos)
-					blocks += (blocks.empty() ? " blocks " : ",") + signal + (automatic ? "=sbl" : "=semi");
+					blocks += (blocks.empty() ? " blocks " : ",") + signal + (kind == block_kind::four ? "=sbl4" : kind == block_kind::three ? "=sbl" : "=semi");
 			lines.push_back(format("station %s line %s km %s from %s anchor %s%s%s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), word_of(entry.km).c_str(), entry.reversed ? "right" : "left", anchor_of(entry).c_str(), braking.c_str(), blocks.c_str(), entry.name.c_str()));
 		}
 		scene::Layers.mark(layer, kMark, std::move(lines));
@@ -948,6 +993,24 @@ void srk_tool::draw_overlay() const
 			drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), kUseful, text.c_str());
 		}
 	}
+	// the block boundary under the mouse while they are drawn: a bar across each track and a post where its signal goes
+	if (drawing() && m_boundary.valid)
+		for (std::size_t k = 0; k < m_boundary.places.size(); ++k)
+		{
+			auto const colour{m_boundary.remove ? IM_COL32(255, 90, 80, 255) : IM_COL32(110, 230, 120, 255)};
+			auto const &way{m_boundary.ways[k]};
+			glm::dvec3 const across{-way.z, 0.0, way.x};
+			auto const base{m_boundary.places[k] + lift};
+			projection.line(drawlist, base - across * 2.0, base + across * 2.0, colour, 4.0f);
+			projection.line(drawlist, base + across * 2.4, base + across * 2.4 + glm::dvec3{0.0, 6.0, 0.0}, colour, 3.0f);
+			ImVec2 screen;
+			if (k >= m_boundary.names.size() || false == projection.project(base + across * 2.4 + glm::dvec3{0.0, 6.5, 0.0}, screen))
+				continue;
+			auto const &text{m_boundary.names[k]};
+			auto const size{ImGui::CalcTextSize(text.c_str())};
+			drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 4.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x * 0.5f + 4.0f, screen.y), colour, 3.0f);
+			drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), IM_COL32(0, 0, 0, 255), text.c_str());
+		}
 	for (auto const &mark : m_signal_marks)
 	{
 		ImVec2 screen;
@@ -1249,14 +1312,21 @@ void srk_tool::render_lines()
 		default: return STR_C("a single-track line");
 		}
 	};
-	auto const kind = [](bool const Automatic) { return Automatic ? STR_C("automatic (SBL)") : STR_C("semi-automatic"); };
-	auto const set = [&](line_row const &Row, std::optional<bool> const Automatic) {
+	auto const kind = [](block_kind const Kind) {
+		switch (Kind)
+		{
+		case block_kind::three: return STR_C("SBL, 3 aspects");
+		case block_kind::four: return STR_C("SBL, 4 aspects");
+		default: return STR_C("semi-automatic");
+		}
+	};
+	auto const set = [&](line_row const &Row, std::optional<block_kind> const Kind) {
 		auto &entry{record_of_open()};
 		for (auto const *row : std::initializer_list<line_row const *>{&Row, Row.partner >= 0 && Row.partner < static_cast<int>(m_lines.size()) ? &m_lines[Row.partner] : nullptr})
 			if (row != nullptr)
 			{
-				if (Automatic.has_value())
-					entry.blocks[row->entry] = *Automatic;
+				if (Kind.has_value())
+					entry.blocks[row->entry] = *Kind;
 				else
 					entry.blocks.erase(row->entry);
 			}
@@ -1297,11 +1367,13 @@ void srk_tool::render_lines()
 				else
 					ImGui::TextUnformatted(STR_C("A single-track line"));
 				ImGui::TextUnformatted(format(STR_P("%zu block signal stands along it", "%zu block signals stand along it", row.blocks), row.blocks).c_str());
-				ImGui::TextUnformatted(format(STR_C("Block: %s, %s"), kind(row.automatic), reason(row.why)).c_str());
+				ImGui::TextUnformatted(format(STR_C("Block: %s, %s"), kind(row.block), reason(row.why)).c_str());
+				if (row.legacy)
+					ImGui::TextColored(kDoubtful, "%s", STR_C("No block section of the editor switches its block signals: it keeps the block of the scenery as it stands"));
 				if (row.leftovers > 0)
 				{
-					ImGui::TextColored(kDoubtful, "%s", (row.automatic ? format(STR_P("%zu warning disc stands along it, of the semi-automatic block: delete it in the Signals tool", "%zu warning discs stand along it, of the semi-automatic block: delete them in the Signals tool", row.leftovers), row.leftovers)
-					                                                  : format(STR_P("%zu block signal stands along it, of the automatic block: delete it in the Signals tool", "%zu block signals stand along it, of the automatic block: delete them in the Signals tool", row.leftovers), row.leftovers)).c_str());
+					ImGui::TextColored(kDoubtful, "%s", (row.block != block_kind::semi ? format(STR_P("%zu warning disc stands along it, of the semi-automatic block: Set the line signals takes it away", "%zu warning discs stand along it, of the semi-automatic block: Set the line signals takes them away", row.leftovers), row.leftovers)
+					                                                                  : format(STR_P("%zu block signal stands along it, of the automatic block: Set the line signals takes it away", "%zu block signals stand along it, of the automatic block: Set the line signals takes them away", row.leftovers), row.leftovers)).c_str());
 					ImGui::TextDisabled("%s", STR_C("LMB: fly to the first of them"));
 				}
 				else
@@ -1315,42 +1387,162 @@ void srk_tool::render_lines()
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s", (false == row.next.empty() ? format(STR_C("To the entry signal %s of the next station"), row.next.c_str()) : row.station ? std::string{STR_C("To the next station, its entry signal not standing yet")} : std::string{STR_C("To the end of the tracks")}).c_str());
 			ImGui::TableNextColumn();
-			auto const automatic_by_itself{row.blocks > 0 || row.number > 0};
-			auto const by_itself{row.blocks > 0 ? block_reason::standing : row.number > 0 ? block_reason::double_track : block_reason::single};
 			ImGui::SetNextItemWidth(-1.0f);
-			auto const preview{row.why == block_reason::hand ? std::string{kind(row.automatic)} : format(STR_C("%s, auto"), kind(row.automatic))};
+			auto const preview{row.legacy ? std::string{STR_C("of the scenery")} : row.why == block_reason::hand ? std::string{kind(row.block)} : format(STR_C("%s, auto"), kind(row.block))};
+			ImGui::BeginDisabled(row.legacy);
 			if (ImGui::BeginCombo("##srkblock", preview.c_str()))
 			{
-				if (ImGui::Selectable(format(STR_C("Auto: %s, %s"), kind(automatic_by_itself), reason(by_itself)).c_str(), row.why != block_reason::hand))
+				if (ImGui::Selectable(format(STR_C("Auto: %s, %s"), kind(row.own), reason(row.own_why)).c_str(), row.why != block_reason::hand))
 				{
 					set(row, std::nullopt);
 					changed = true;
 				}
-				ImGui::BeginDisabled(row.number == 0);
-				if (ImGui::Selectable(STR_C("Automatic block (SBL)"), row.why == block_reason::hand && row.automatic))
+				for (auto const automatic : {block_kind::three, block_kind::four})
 				{
-					set(row, true);
-					changed = true;
+					ImGui::BeginDisabled(row.number == 0);
+					if (ImGui::Selectable(automatic == block_kind::three ? STR_C("Automatic block, 3 aspects (SBL)") : STR_C("Automatic block, 4 aspects (SBL)"), row.why == block_reason::hand && row.block == automatic))
+					{
+						set(row, automatic);
+						changed = true;
+					}
+					ImGui::EndDisabled();
+					if (row.number == 0)
+						item_tooltip("Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are");
+					else
+						item_tooltip(automatic == block_kind::three ? "A block signal tells of the next one, Ie-1: red, orange for the next at stop, green. The block sections no shorter than the braking distance" :
+						                                              "A block signal tells of the next two, Ie-1: red, orange for the next at stop, green flashing for the one after it at stop, green. The block sections no shorter than half the braking distance, two of them no shorter than it");
 				}
-				ImGui::EndDisabled();
-				if (row.number == 0)
-					item_tooltip("Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are");
-				if (ImGui::Selectable(STR_C("Semi-automatic block"), row.why == block_reason::hand && false == row.automatic))
+				if (ImGui::Selectable(STR_C("Semi-automatic block"), row.why == block_reason::hand && row.block == block_kind::semi))
 				{
-					set(row, false);
+					set(row, block_kind::semi);
 					changed = true;
 				}
 				ImGui::EndCombo();
 			}
-			item_tooltip("The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no "
-			             "warning disc. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic "
-			             "one where block signals stand along the line or it's double-track, else the semi-automatic one");
+			ImGui::EndDisabled();
+			item_tooltip(row.legacy ? "Block signals stand along the line, none of them switched by a block section of the editor: the line keeps the block of the scenery as it stands" :
+			                          "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no "
+			                          "warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. "
+			                          "Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where "
+			                          "block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal "
+			                          "chosen in the Signals tool, else the semi-automatic one");
 			ImGui::PopID();
 		}
 		ImGui::EndTable();
 	}
 	if (changed)
 		survey_signals();
+	ImGui::Checkbox(STR_C("Draw the block boundaries"), &m_drawing);
+	item_tooltip("LMB on a track of a line of the automatic block, beyond the entry signal: block signals across both tracks there, "
+	             "numbered after the hectometre ahead of them, the tracks cut 15 m beyond them and the new block sections named; LMB on a "
+	             "block boundary standing takes its signals away, the sections either side joined. A line whose block signals stand keeps "
+	             "them: Set the line signals places them evenly only on a line without any. One step of undo each");
+	if (m_drawing)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		ImGui::TextWrapped("%s", STR_C("LMB on a track of a line beyond the entry signal: a block boundary there; on one standing: taken away"));
+		ImGui::PopStyleColor();
+	}
+}
+
+std::string srk_tool::boundary_hover(glm::dvec3 const &Point, bool &Valid)
+{
+	m_boundary = {};
+	Valid = false;
+	if (false == drawing())
+		return {};
+	auto best{-1};
+	auto nearest{3.0};
+	double at{0.0};
+	for (std::size_t index = 0; index < m_lines.size() && index < m_line_ways.size(); ++index)
+	{
+		double gap{0.0};
+		auto const distance{station::distance_on(m_line_ways[index], Point, gap)};
+		if (gap < nearest && distance > 0.0 && distance < m_line_ways[index].length())
+		{
+			nearest = gap;
+			best = static_cast<int>(index);
+			at = distance;
+		}
+	}
+	if (best < 0)
+		return STR("Drawing the block boundaries: LMB on a track of a line out of the station, beyond its entry signal");
+	auto const &row{m_lines[best]};
+	auto const &line{m_line_ways[best]};
+	if (row.legacy)
+		return format(STR_C("No block section of the editor switches the block signals beyond %s: the line keeps them as they stand"), row.entry.c_str());
+	if (row.block == block_kind::semi)
+		return format(STR_C("The line beyond %s has the semi-automatic block: choose the automatic one for it in the table of the lines"), row.entry.c_str());
+	if (row.number == 0)
+		return format(STR_C("The line beyond %s is single-track: the editor draws the block boundaries of double-track lines only"), row.entry.c_str());
+	if (at < kBoundaryEnd || at > row.length - kBoundaryEnd)
+		return format(STR_C("A block boundary stands %.0f m or more from the entry signals"), kBoundaryEnd);
+	m_boundary.entry = row.entry;
+	m_boundary.point = station::point_on(line, at).point;
+	// the other track across, the block signals standing within reach on both
+	std::vector<std::pair<std::size_t, double>> tracks{{static_cast<std::size_t>(best), at}};
+	if (row.partner >= 0 && row.partner < static_cast<int>(m_line_ways.size()))
+		if (double gap{0.0}; true)
+			if (auto const across{station::distance_on(m_line_ways[row.partner], m_boundary.point, gap)}; gap < 12.0)
+				tracks.emplace_back(static_cast<std::size_t>(row.partner), across);
+	auto const near_stop = [&](line_row const &Row, double const Distance) {
+		auto const found{std::min_element(Row.stops.begin(), Row.stops.end(), [&](auto const &A, auto const &B) { return std::abs(A.first - Distance) < std::abs(B.first - Distance); })};
+		return found != Row.stops.end() && std::abs(found->first - Distance) < kBoundaryReach ? found : Row.stops.end();
+	};
+	m_boundary.remove = near_stop(row, at) != row.stops.end();
+	auto previous{0.0};
+	auto next{row.length};
+	for (auto const &stop : row.stops)
+	{
+		if (m_boundary.remove && std::abs(stop.first - at) < kBoundaryReach)
+			continue;
+		if (stop.first < at)
+			previous = std::max(previous, stop.first);
+		else
+			next = std::min(next, stop.first);
+	}
+	for (auto const &[index, distance] : tracks)
+	{
+		auto const &other{m_lines[index]};
+		auto const &way{m_line_ways[index]};
+		if (m_boundary.remove)
+		{
+			auto const stop{near_stop(other, distance)};
+			if (stop == other.stops.end())
+				continue;
+			auto const place{station::point_on(way, stop->first)};
+			m_boundary.places.push_back(place.point);
+			m_boundary.ways.push_back(place.way);
+			m_boundary.names.push_back(stop->second);
+			continue;
+		}
+		auto const place{station::point_on(way, distance)};
+		auto const number{km_line(way)};
+		m_boundary.places.push_back(place.point);
+		m_boundary.ways.push_back(place.way);
+		m_boundary.names.push_back(station::block_number(km_along(way, number, distance), way.number, km_rising(way, number)));
+	}
+	std::string names;
+	for (auto const &name : m_boundary.names)
+		names += (names.empty() ? "" : ", ") + name;
+	m_boundary.valid = true;
+	Valid = true;
+	if (m_boundary.remove)
+		return format(STR_C("Click: take the block signals %s away, the block sections either side joined: %.2f km"), names.c_str(), (next - previous) / 1000.0);
+	auto const least{row.block == block_kind::four ? row.braking * 0.5 : row.braking};
+	auto label{format(STR_C("Click: block signals %s here: the block sections %.2f km and %.2f km"), names.c_str(), (at - previous) / 1000.0, (next - at) / 1000.0)};
+	if (std::min(at - previous, next - at) < least)
+		label += "\n" + format(row.block == block_kind::four ? STR_C("shorter than half the braking distance, %.0f m, of the 4-aspect block") : STR_C("shorter than the braking distance, %.0f m"), least);
+	return label;
+}
+
+void srk_tool::boundary_click()
+{
+	if (false == drawing() || false == m_boundary.valid)
+		return;
+	block_edit const edit{m_boundary.entry, m_boundary.point, m_boundary.remove};
+	m_boundary = {};
+	set_lines(&edit);
 }
 
 void srk_tool::render_lengths()
@@ -2209,7 +2401,7 @@ void srk_tool::set_signals()
 			if (order.kind != "main")
 				continue;
 			auto const need{need_of(found[next++], true, line, braking_of_open())};
-			if (auto const best{best_head(heads, "main", chosen->mount, chosen->name, need)}; best >= 0)
+			if (auto const best{best_head(heads, "main", chosen->mount, chosen->name, 0, need)}; best >= 0)
 				order.file = heads[best].file;
 			else
 				unfit.push_back(signal_shown(order.name, stem));
@@ -2285,43 +2477,107 @@ bool srk_tool::lines_of_open(std::vector<standing_signal> const &Standing, std::
 	return true;
 }
 
-bool srk_tool::automatic_block(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, block_reason &Why, std::size_t &Blocks) const
+srk_tool::block_kind srk_tool::block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads, block_reason &Why, block_kind &Own, block_reason &Own_why, std::size_t &Blocks) const
 {
 	Blocks = 0;
+	auto four{false};
 	for (auto const &signal : Standing)
 	{
 		if (signal.kind != "block")
 			continue;
 		double gap{0.0};
 		auto const distance{station::distance_on(Line, signal.position, gap)};
-		if (gap < 4.5 && distance > 50.0 && distance < Line.length() - 1.0)
-			++Blocks;
+		if (gap > 4.5 || distance < 50.0 || distance > Line.length() - 1.0)
+			continue;
+		++Blocks;
+		four = four || std::any_of(Heads.begin(), Heads.end(), [&](signal_head const &Head) { return Head.file == signal.file && Head.aspects == 4; });
 	}
+	if (Blocks > 0)
+	{
+		Own = four ? block_kind::four : block_kind::three;
+		Own_why = block_reason::standing;
+	}
+	else if (Line.number > 0)
+	{
+		auto const chosen{std::find_if(Heads.begin(), Heads.end(), [](signal_head const &Head) { return Head.kind == "block" && Head.chosen; })};
+		Own = chosen != Heads.end() && chosen->aspects == 4 ? block_kind::four : block_kind::three;
+		Own_why = block_reason::double_track;
+	}
+	else
+	{
+		Own = block_kind::semi;
+		Own_why = block_reason::single;
+	}
+	Why = Own_why;
 	if (m_record >= 0)
 		if (auto const set{m_records[m_record].blocks.find(Entry)}; set != m_records[m_record].blocks.end())
 		{
 			Why = block_reason::hand;
 			return set->second;
 		}
-	if (Blocks > 0)
-	{
-		Why = block_reason::standing;
-		return true;
-	}
-	Why = Line.number > 0 ? block_reason::double_track : block_reason::single;
-	return Line.number > 0;
+	return Own;
+}
+
+std::string srk_tool::km_line(station::line const &Line) const
+{
+	auto const described{line_of_open()};
+	auto const out{station::point_on(Line, std::min(2000.0, Line.length() * 0.5)).point};
+	double km{0.0};
+	if (false == kilometrage::km_at(described, out, km))
+		if (auto const found{kilometrage::line_at(out)}; false == found.empty())
+			return found;
+	return described;
+}
+
+double srk_tool::km_along(station::line const &Line, std::string const &Number, double const Distance) const
+{
+	double km{0.0};
+	if (kilometrage::km_at(Number, station::point_on(Line, Distance).point, km) || false == m_layout.has_value())
+		return km;
+	auto const middle{(m_layout->from + m_layout->to) * 0.5};
+	auto const chainage{station::project(*m_layout, station::point_on(Line, 0.0).point).x};
+	km_of_open(chainage < middle ? chainage - Distance : chainage + Distance, km);
+	return km;
+}
+
+bool srk_tool::km_rising(station::line const &Line, std::string const &Number) const
+{
+	auto const at{station::point_on(Line, 100.0)};
+	if (auto const growth{kilometrage::growth_at(Number, at.point, {at.way.x, at.way.z})}; growth != 0)
+		return (growth > 0) != Line.inbound;
+	return (km_along(Line, Number, 1000.0) > km_along(Line, Number, 0.0)) != Line.inbound;
+}
+
+double srk_tool::line_braking(station::line const &Line) const
+{
+	if (m_record >= 0 && m_records[m_record].braking > 0)
+		return static_cast<double>(m_records[m_record].braking);
+	auto speed{0.0};
+	for (std::size_t k = 0; k < Line.points.size() && k < Line.owners.size(); ++k)
+		if (auto const set{Line.tracks[Line.owners[k]]->VelocityGet()}; Line.distances[k] >= 0.0 && set <= kFastest)
+			speed = std::max(speed, set);
+	return braking_distance(speed > 0.0 ? speed : 160.0);
 }
 
 void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 {
 	m_lines.clear();
+	m_line_ways.clear();
 	m_lines_problem.clear();
 	std::vector<station::line> lines;
 	std::vector<station::signal> entries;
 	std::vector<std::size_t> owners;
 	if (false == lines_of_open(Standing, lines, entries, owners, m_lines_problem))
 		return;
+	std::vector<signal_head> heads;
+	m_signals.signal_heads(heads, false);
+	auto const guards{guarded(m_templates.standing_templates([](std::string const &File) { return File == kControl; }))};
 	auto const stem{stem_of_open()};
+	auto const on_line = [](station::line const &Line, glm::dvec3 const &Point) {
+		double gap{0.0};
+		auto const distance{station::distance_on(Line, Point, gap)};
+		return gap < 4.5 && distance > 50.0 && distance < Line.length() - 1.0;
+	};
 	for (auto const &line : lines)
 	{
 		line_row row;
@@ -2332,28 +2588,48 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		row.station = line.station;
 		row.position = Standing[owners[line.entry]].position;
 		row.travel = travel_of(Standing[owners[line.entry]].yaw);
-		row.automatic = automatic_block(line, row.entry, Standing, row.why, row.blocks);
+		row.block = block_of(line, row.entry, Standing, heads, row.why, row.own, row.own_why, row.blocks);
+		row.braking = line_braking(line);
+		auto switched{false};
 		for (auto const &signal : Standing)
 		{
-			if (signal.kind != (row.automatic ? "warning" : "block"))
-				continue;
 			double gap{0.0};
 			auto const distance{station::distance_on(line, signal.position, gap)};
-			if (gap > 4.5 || distance < 50.0 || distance > line.length() - 1.0)
+			if (signal.kind != "block" || gap > 4.5 || distance < 50.0 || distance > line.length() - 1.0)
 				continue;
-			if (row.leftovers++ == 0)
-			{
-				row.leftover = signal.position;
-				row.leftover_travel = travel_of(signal.yaw);
-			}
+			row.stops.emplace_back(distance, signal_shown(signal.name, stem));
+			switched = switched || guards.count(ToLower(signal.name)) > 0;
 		}
+		std::sort(row.stops.begin(), row.stops.end());
+		row.legacy = false == row.stops.empty() && false == switched;
 		auto const next{next_entry(line, Standing, row.length)};
 		row.next = next >= 0 ? signal_shown(Standing[next].name, stem) : std::string{};
 		m_lines.push_back(std::move(row));
+		m_line_ways.push_back(line);
+	}
+	// the signals of the other block along a line, but where it shares its track with a line of that block
+	for (std::size_t index = 0; index < m_lines.size(); ++index)
+	{
+		auto &row{m_lines[index]};
+		if (row.legacy || (row.number == 0 && row.block != block_kind::semi))
+			continue;
+		auto const automatic{row.block != block_kind::semi};
+		for (auto const &signal : Standing)
+		{
+			if (signal.kind != (automatic ? "warning" : "block") || false == on_line(m_line_ways[index], signal.position))
+				continue;
+			auto shared{false};
+			for (std::size_t other = 0; other < m_lines.size() && false == shared; ++other)
+				shared = (m_lines[other].block != block_kind::semi) != automatic && on_line(m_line_ways[other], signal.position);
+			if (shared || row.leftovers++ > 0)
+				continue;
+			row.leftover = signal.position;
+			row.leftover_travel = travel_of(signal.yaw);
+		}
 	}
 }
 
-void srk_tool::set_lines()
+void srk_tool::set_lines(block_edit const *Edit)
 {
 	m_status.clear();
 	auto const stem{stem_of_open()};
@@ -2364,25 +2640,83 @@ void srk_tool::set_lines()
 	std::vector<std::size_t> entry_standing;
 	if (false == lines_of_open(standing, lines, entries, entry_standing, m_status))
 		return;
-	auto const &layout{*m_layout};
-	// of each line, 1: the automatic block, placed on a double-track line only, 2: the automatic block on a single-track line, its
-	// signals facing both ways on a track left as they stand, 0: the semi-automatic one
+	std::vector<signal_head> heads;
+	m_signals.signal_heads(heads, true);
+	auto const controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
+	auto const guards{guarded(controls)};
+	auto const facing_out = [&](station::line const &Line, standing_signal const &Signal, double const Distance) {
+		auto const way{station::point_on(Line, Distance).way};
+		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
+	};
+	// of each line, 1: the automatic block, placed on a double-track line only, 2: the automatic block left as it stands, on a
+	// single-track line its signals facing both ways on a track, or with block signals the block sections of the editor don't switch,
+	// 0: the semi-automatic one
 	std::vector<char> automatic(lines.size(), 0);
+	std::vector<int> aspects(lines.size(), 3);
+	std::vector<std::vector<std::size_t>> along(lines.size()); // the block signals standing along each line facing its trains
 	for (std::size_t index = 0; index < lines.size(); ++index)
 	{
+		auto const &line{lines[index]};
 		auto why{block_reason::single};
+		auto own{block_kind::semi};
+		auto own_why{block_reason::single};
 		std::size_t blocks{0};
-		if (automatic_block(lines[index], entries[lines[index].entry].name, standing, why, blocks))
-			automatic[index] = lines[index].number > 0 ? 1 : 2;
+		auto const kind{block_of(line, entries[line.entry].name, standing, heads, why, own, own_why, blocks)};
+		aspects[index] = kind == block_kind::four ? 4 : 3;
+		auto switched{false};
+		for (std::size_t k = 0; k < standing.size(); ++k)
+		{
+			if (standing[k].kind != "block")
+				continue;
+			double gap{0.0};
+			auto const distance{station::distance_on(line, standing[k].position, gap)};
+			if (gap > 4.5 || distance < 50.0 || distance > line.length() - 1.0 || (line.inbound ? -1.0 : 1.0) * facing_out(line, standing[k], distance) < 0.87)
+				continue;
+			along[index].push_back(k);
+			switched = switched || guards.count(ToLower(standing[k].name)) > 0;
+		}
+		if (kind != block_kind::semi)
+			automatic[index] = line.number > 0 && (along[index].empty() || switched) ? 1 : 2;
+	}
+	// the lines set: all of them, or the one a block boundary is drawn on with the other track of a double-track one
+	std::vector<char> processed(lines.size(), Edit == nullptr ? 1 : 0);
+	int edited{-1};
+	double drawn{0.0};
+	if (Edit != nullptr)
+	{
+		for (std::size_t index = 0; index < lines.size(); ++index)
+			if (entries[lines[index].entry].name == Edit->entry)
+				edited = static_cast<int>(index);
+		double gap{0.0};
+		if (edited >= 0)
+			drawn = station::distance_on(lines[edited], Edit->point, gap);
+		if (edited < 0 || gap > 5.0)
+		{
+			m_status = STR_C("The line drawn on isn't there any more");
+			return;
+		}
+		if (automatic[edited] != 1)
+		{
+			m_status = format(STR_C("The line beyond %s has no automatic block the editor sets: choose one for it in the table of the lines"), Edit->entry.c_str());
+			return;
+		}
+		processed[edited] = 1;
+		if (auto const partner{lines[edited].partner}; partner >= 0 && automatic[partner] == 1)
+			processed[partner] = 1;
 	}
 	auto const described{line_of_open()};
 	double known{0.0};
-	if (std::any_of(automatic.begin(), automatic.end(), [](char const Automatic) { return Automatic == 1; }) && (false == km_of_open(0.0, known) || described.empty()))
+	auto const blocked{[&] {
+		for (std::size_t index = 0; index < lines.size(); ++index)
+			if (processed[index] && automatic[index] == 1)
+				return true;
+		return false;
+	}()};
+	if (blocked && (false == km_of_open(0.0, known) || described.empty()))
 	{
 		m_status = STR_C("Give the station its line and its km first: the block signals and the block sections are named after them");
 		return;
 	}
-	auto const middle{(layout.from + layout.to) * 0.5};
 	struct planned_signal
 	{
 		station::signal::role kind{station::signal::role::block};
@@ -2392,6 +2726,7 @@ void srk_tool::set_lines()
 		double distance{0.0}; // out along the line
 		std::string linked{"none"};
 		int match{-1}; // of the standing signals
+		bool kept{false}; // standing as it is, its name and its plate kept
 	};
 	struct far_end
 	{
@@ -2400,85 +2735,98 @@ void srk_tool::set_lines()
 	};
 	std::vector<planned_signal> planned;
 	std::vector<far_end> ends(lines.size());
-	auto const facing_out = [&](station::line const &Line, standing_signal const &Signal, double const Distance) {
-		auto const way{station::point_on(Line, Distance).way};
-		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
-	};
 	// the lines of the kilometrage the lines out run along, at a junction another one than the line of the station
-	std::vector<std::string> numbers(lines.size(), described);
-	for (std::size_t index = 0; index < lines.size(); ++index)
-	{
-		auto const out{station::point_on(lines[index], std::min(2000.0, lines[index].length() * 0.5)).point};
-		double km{0.0};
-		if (false == kilometrage::km_at(described, out, km))
-			if (auto const found{kilometrage::line_at(out)}; false == found.empty())
-				numbers[index] = found;
-	}
-	auto const km_on = [&](std::size_t const Index, double const Distance) {
-		double km{0.0};
-		if (kilometrage::km_at(numbers[Index], station::point_on(lines[Index], Distance).point, km))
-			return km;
-		auto const chainage{station::project(layout, station::point_on(lines[Index], 0.0).point).x};
-		km_of_open(chainage < middle ? chainage - Distance : chainage + Distance, km);
-		return km;
-	};
-	// the trains of the line run towards the higher km
-	auto const rising = [&](std::size_t const Index) {
-		auto const at{station::point_on(lines[Index], 100.0)};
-		if (auto const growth{kilometrage::growth_at(numbers[Index], at.point, {at.way.x, at.way.z})}; growth != 0)
-			return (growth > 0) != lines[Index].inbound;
-		return (km_on(Index, 1000.0) > km_on(Index, 0.0)) != lines[Index].inbound;
-	};
-	// the braking distance at the highest speed out along the line, at 160 km/h while its tracks have none, unless one is set by hand
-	auto const braking = [&](std::size_t const Index) {
-		if (m_record >= 0 && m_records[m_record].braking > 0)
-			return static_cast<double>(m_records[m_record].braking);
-		auto speed{0.0};
-		auto const &line{lines[Index]};
-		for (std::size_t k = 0; k < line.points.size(); ++k)
-			if (auto const set{line.tracks[line.owners[k]]->VelocityGet()}; line.distances[k] >= 0.0 && set <= kFastest)
-				speed = std::max(speed, set);
-		return braking_distance(speed > 0.0 ? speed : 160.0);
-	};
+	std::vector<std::string> numbers;
+	for (auto const &line : lines)
+		numbers.push_back(km_line(line));
+	auto const km_on = [&](std::size_t const Index, double const Distance) { return km_along(lines[Index], numbers[Index], Distance); };
+	auto const rising = [&](std::size_t const Index) { return km_rising(lines[Index], numbers[Index]); };
+	auto const braking = [&](std::size_t const Index) { return line_braking(lines[Index]); };
 	for (std::size_t index = 0; index < lines.size(); ++index)
 		ends[index].signal = next_entry(lines[index], standing, ends[index].distance);
+	// the standing signals taken away: of a boundary drawn away, of the other block left along a line
+	std::vector<char> gone(standing.size(), 0);
 	for (std::size_t index = 0; index < lines.size(); ++index)
 	{
+		if (false == processed[index])
+			continue;
 		auto const &line{lines[index]};
 		auto const &end{ends[index]};
 		auto const &entry{entries[line.entry]};
-		auto const least{braking(index)};
+		auto const least{braking(index) * (aspects[index] == 4 ? 0.5 : 1.0)};
 		if (automatic[index] == 1)
 		{
-			// the block signals, Ie-4 § 51: the sections no shorter than the braking distance and no longer than twice it, the line to the
-			// next station parted evenly, towards the end of the tracks a little over the braking distance each
-			std::vector<double> places;
-			if (line.station || end.signal >= 0)
+			// the boundary drawn, on the line drawn on and across on its other track
+			std::optional<double> boundary;
+			if (static_cast<int>(index) == edited)
+				boundary = drawn;
+			else if (edited >= 0)
+				if (double gap{0.0}; true)
+					if (auto const across{station::distance_on(line, station::point_on(lines[edited], drawn).point, gap)}; gap < 12.0)
+						boundary = across;
+			if (false == along[index].empty() || boundary.has_value())
 			{
-				// as many on both tracks of the line
-				auto const reach{line.partner >= 0 ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
-				auto const sections{std::max(1.0, std::floor(reach / (line.partner >= 0 ? std::max(least, braking(line.partner)) : least)))};
-				for (auto k{1.0}; k < sections; k += 1.0)
-					places.push_back(end.distance * k / sections);
+				// the block signals standing kept as they stand, the boundary drawn added or the ones standing at it taken away
+				for (auto const k : along[index])
+				{
+					double gap{0.0};
+					auto const distance{station::distance_on(line, standing[k].position, gap)};
+					if (boundary.has_value() && Edit->remove && std::abs(distance - *boundary) < kBoundaryReach)
+					{
+						gone[k] = 1;
+						continue;
+					}
+					planned_signal signal;
+					signal.name = standing[k].name;
+					signal.line = index;
+					signal.distance = distance;
+					signal.match = static_cast<int>(k);
+					signal.kept = true;
+					planned.push_back(std::move(signal));
+				}
+				if (boundary.has_value() && false == Edit->remove)
+				{
+					planned_signal signal;
+					signal.name = station::block_number(km_on(index, *boundary), line.number, rising(index));
+					signal.plate = signal.name;
+					signal.line = index;
+					signal.distance = *boundary;
+					planned.push_back(std::move(signal));
+				}
 			}
 			else
-				for (auto distance{least * kBlockShare}; distance <= end.distance - 100.0; distance += least * kBlockShare)
-					places.push_back(distance);
-			for (auto const distance : places)
 			{
-				planned_signal signal;
-				signal.kind = station::signal::role::block;
-				signal.name = station::block_number(km_on(index, distance), line.number, rising(index));
-				signal.plate = signal.name;
-				signal.line = index;
-				signal.distance = distance;
-				planned.push_back(std::move(signal));
+				// the block signals, Ie-4 § 51: the sections no shorter than the braking distance, half of it with four aspects, and no
+				// longer than twice it, the line to the next station parted evenly, towards the end of the tracks a little over the
+				// least each
+				std::vector<double> places;
+				if (line.station || end.signal >= 0)
+				{
+					// as many on both tracks of the line
+					auto const reach{line.partner >= 0 ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
+					auto const other{line.partner >= 0 ? braking(line.partner) * (aspects[line.partner] == 4 ? 0.5 : 1.0) : least};
+					auto const sections{std::max(1.0, std::floor(reach / std::max(least, other)))};
+					for (auto k{1.0}; k < sections; k += 1.0)
+						places.push_back(end.distance * k / sections);
+				}
+				else
+					for (auto distance{least * kBlockShare}; distance <= end.distance - 100.0; distance += least * kBlockShare)
+						places.push_back(distance);
+				for (auto const distance : places)
+				{
+					planned_signal signal;
+					signal.name = station::block_number(km_on(index, distance), line.number, rising(index));
+					signal.plate = signal.name;
+					signal.line = index;
+					signal.distance = distance;
+					planned.push_back(std::move(signal));
+				}
 			}
 		}
 		else if (automatic[index] == 0)
 		{
 			// the warning disc of the entry signal, the braking distance before it
-			auto const distance{std::min(least, end.distance - 100.0)};
+			auto const distance{std::min(braking(index), end.distance - 100.0)};
 			if (distance >= 400.0)
 			{
 				planned_signal signal;
@@ -2490,19 +2838,46 @@ void srk_tool::set_lines()
 				planned.push_back(std::move(signal));
 			}
 		}
+		// the signals of the other block left along the line: the warning discs of a line of the automatic block, the block signals of
+		// one of the semi-automatic one
+		if (Edit != nullptr || automatic[index] == 2)
+			continue;
+		for (std::size_t k = 0; k < standing.size(); ++k)
+		{
+			if (automatic[index] == 1 ? standing[k].kind != "warning" : std::find(along[index].begin(), along[index].end(), k) == along[index].end())
+				continue;
+			// not where the line shares its track with one of the other block
+			auto shared{false};
+			for (std::size_t other = 0; other < lines.size() && false == shared; ++other)
+			{
+				if ((automatic[other] == 0) == (automatic[index] == 0))
+					continue;
+				double gap{0.0};
+				auto const distance{station::distance_on(lines[other], standing[k].position, gap)};
+				shared = gap < 4.5 && distance > 50.0 && distance < lines[other].length() - 1.0;
+			}
+			double gap{0.0};
+			auto const distance{station::distance_on(line, standing[k].position, gap)};
+			if (false == shared && gap < 4.5 && distance > 50.0 && distance < line.length() - 1.0)
+				gone[k] = 1;
+		}
 	}
 	// the standing ones by their places, then by their names
-	std::vector<char> used(standing.size(), 0);
+	std::vector<char> used(gone);
+	for (auto const &signal : planned)
+		if (signal.match >= 0)
+			used[signal.match] = 1;
 	for (auto const index : entry_standing)
 		used[index] = 1;
 	for (auto const &end : ends)
 		if (end.signal >= 0)
 			used[end.signal] = 1;
 	std::vector<std::tuple<double, std::size_t, std::size_t>> candidates;
-	std::vector<double> standing_at(standing.size(), 0.0);
 	for (std::size_t i = 0; i < planned.size(); ++i)
 	{
 		auto const &signal{planned[i]};
+		if (signal.match >= 0)
+			continue;
 		auto const &line{lines[signal.line]};
 		auto const kind{signal.kind == station::signal::role::block ? "block" : "warning"};
 		auto const reach{signal.kind == station::signal::role::block ? 300.0 : 400.0};
@@ -2538,9 +2913,12 @@ void srk_tool::set_lines()
 	for (std::size_t k = 0; k < standing.size(); ++k)
 		if (0 == used[k])
 			taken.insert(ToLower(standing[k].name));
+	for (auto const &signal : planned)
+		if (signal.kept)
+			taken.insert(ToLower(signal.name));
 	for (auto &signal : planned)
 	{
-		if (signal.kind != station::signal::role::block)
+		if (signal.kind != station::signal::role::block || signal.kept)
 			continue;
 		auto const base{signal.name};
 		for (char letter = 'a'; taken.count(ToLower(signal.name)) > 0 && letter <= 'z'; ++letter)
@@ -2563,7 +2941,7 @@ void srk_tool::set_lines()
 	for (std::size_t index = 0; index < lines.size(); ++index)
 	{
 		auto const &line{lines[index]};
-		if (automatic[index] != 1)
+		if (automatic[index] != 1 || false == processed[index])
 			continue;
 		struct stop
 		{
@@ -2689,6 +3067,8 @@ void srk_tool::set_lines()
 	// the sections named, each track by its middle
 	for (std::size_t index = 0; index < lines.size(); ++index)
 	{
+		if (false == processed[index])
+			continue;
 		std::vector<TTrack *> parts;
 		for (auto *track : lines[index].tracks)
 		{
@@ -2716,6 +3096,8 @@ void srk_tool::set_lines()
 	signal_changes changes;
 	std::size_t blocks{0};
 	std::size_t discs{0};
+	std::size_t swapped{0};
+	std::size_t renamed{0};
 	for (auto const &signal : planned)
 	{
 		auto const block{signal.kind == station::signal::role::block};
@@ -2725,6 +3107,16 @@ void srk_tool::set_lines()
 			auto const relink{block && false == found.linked.empty() && ToLower(found.linked) != ToLower(signal.linked)};
 			if (ToLower(found.name) != ToLower(signal.name) || relink)
 				changes.renamed.push_back({found.instance, signal.name, signal.plate, relink ? signal.linked : std::string{}});
+			if (ToLower(found.name) != ToLower(signal.name))
+				++renamed;
+			// of the aspects of its line
+			auto const head{std::find_if(heads.begin(), heads.end(), [&](signal_head const &Head) { return Head.file == found.file; })};
+			if (block && head != heads.end() && head->aspects != 0 && head->aspects != aspects[signal.line])
+				if (auto const other{block_template(heads, found.file, aspects[signal.line])}; false == other.empty())
+				{
+					changes.files.emplace_back(found.instance, other);
+					++swapped;
+				}
 			continue;
 		}
 		auto const &line{lines[signal.line]};
@@ -2737,6 +3129,7 @@ void srk_tool::set_lines()
 		order.facing = inbound == approach.outward ? -1 : 1;
 		order.side = order.facing;
 		order.kind = block ? "block" : "warning";
+		order.file = block ? block_template(heads, {}, aspects[signal.line]) : std::string{};
 		order.name = signal.name;
 		order.plate = signal.plate;
 		order.linked = signal.linked;
@@ -2745,19 +3138,22 @@ void srk_tool::set_lines()
 	}
 	for (auto const &[index, linked] : relinked)
 		changes.renamed.push_back({standing[index].instance, standing[index].name, std::string{}, linked});
+	for (std::size_t k = 0; k < standing.size(); ++k)
+		if (gone[k])
+			changes.removed.push_back(standing[k].instance);
+	auto const removed{changes.removed.size()};
 	// the block signals switched by the sections they guard
 	include_info control;
 	std::string missing;
 	auto const controlled{editor_includes::load(kControl, control, missing)};
 	if (controlled)
 	{
-		auto const standing_controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
 		for (auto const &found : sections)
 		{
 			if (found.guard.empty())
 				continue;
-			auto const already{std::find_if(standing_controls.begin(), standing_controls.end(), [&](standing_template const &Control) { return false == Control.values.empty() && ToLower(Control.values[0]) == found.name; })};
-			if (already != standing_controls.end())
+			auto const already{std::find_if(controls.begin(), controls.end(), [&](standing_template const &Control) { return false == Control.values.empty() && ToLower(Control.values[0]) == found.name; })};
+			if (already != controls.end())
 			{
 				if (already->values.size() > 5 && ToLower(already->values[5]) != ToLower(found.guard))
 				{
@@ -2775,14 +3171,32 @@ void srk_tool::set_lines()
 			item.values["#6"] = found.guard;
 			changes.others.push_back(std::move(item));
 		}
+		// those of the sections gone from the lines set taken away with them
+		std::unordered_set<std::string> named;
+		for (auto const &found : sections)
+			named.insert(found.name);
+		for (auto const &standing_control : controls)
+		{
+			if (standing_control.values.empty() || named.count(ToLower(standing_control.values[0])) > 0)
+				continue;
+			for (std::size_t index = 0; index < lines.size(); ++index)
+			{
+				double gap{0.0};
+				auto const distance{station::distance_on(lines[index], standing_control.location, gap)};
+				if (processed[index] && automatic[index] != 2 && gap < 4.5 && distance > 0.0 && distance < lines[index].length())
+				{
+					changes.removed.push_back(standing_control.instance);
+					break;
+				}
+			}
+		}
 	}
-	if (changes.placed.empty() && changes.renamed.empty() && changes.others.empty() && changes.values.empty() && before.empty() && created.empty())
+	if (changes.placed.empty() && changes.renamed.empty() && changes.others.empty() && changes.values.empty() && changes.files.empty() && changes.removed.empty() && before.empty() && created.empty())
 	{
 		m_status = STR_C("The lines are set already");
 		return;
 	}
 	std::string error;
-	auto const renamed{changes.renamed.size()};
 	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
 	if (false == error.empty())
 	{
@@ -2791,6 +3205,11 @@ void srk_tool::set_lines()
 	}
 	m_status = format(STR_P("%zu block signal placed", "%zu block signals placed", blocks), blocks) + ", " + format(STR_P("%zu warning disc", "%zu warning discs", discs), discs) + ", " +
 	           format(STR_P("%zu renamed", "%zu renamed", renamed), renamed) + ", " + format(STR_P("%zu block section", "%zu block sections", sections.size()), sections.size());
+	if (removed > 0)
+		m_status += ", " + format(STR_P("%zu signal taken away", "%zu signals taken away", removed), removed);
+	if (swapped > 0)
+		m_status += ", " + format(STR_P("%zu given the template of the aspects of its line", "%zu given the templates of the aspects of their lines", swapped), swapped);
+	m_status += ". " + STR("Ctrl+Z takes it back");
 	if (false == controlled && std::any_of(sections.begin(), sections.end(), [](section const &Found) { return false == Found.guard.empty(); }))
 		m_status += "\n" + format(STR_C("%s isn't in the scenery folder: the block signals won't change their lights"), kControl);
 }
@@ -3019,13 +3438,20 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			for (std::size_t k = 0; k < check.routes.size(); ++k)
 			{
 				auto const &route{check.routes[k]};
-				if (route.next >= 0 && route.warning < 0 && route.length < braking - 1.0)
+				if (route.next < 0 || route.warning >= 0)
+					continue;
+				if (template_of != nullptr && template_of->aspects == 4)
+				{
+					if (route.length < braking * 0.5 - 1.0)
+						check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than half the braking distance of %.0f m, of the 4-aspect block"), check.nexts[k].c_str(), route.length, braking));
+				}
+				else if (route.length < braking - 1.0)
 					check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than the braking distance of %.0f m, Ie-4 § 8 ust. 1"), check.nexts[k].c_str(), route.length, braking));
 			}
 		if (template_of != nullptr)
 		{
 			check.fits = shows(*template_of, need);
-			auto const best{best_head(heads, signal.kind, template_of->mount, template_of->name, need)};
+			auto const best{best_head(heads, signal.kind, template_of->mount, template_of->name, template_of->aspects, need)};
 			if (best >= 0)
 			{
 				check.fit = heads[best].file;
@@ -3919,7 +4345,9 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 	}
 	if (Command == "srkblock")
 	{
-		// srkblock entry=<A> kind=sbl|semi|auto: the block of the line out beyond the entry signal, the lines listed
+		// srkblock entry=<A> kind=sbl|sbl4|semi|auto: the block of the line out beyond the entry signal, the lines listed
+		if (m_history.history_revision() != m_history_revision)
+			refresh();
 		if (false == m_layout.has_value())
 		{
 			WriteLog("SELFTEST srkblock: no station open");
@@ -3933,14 +4361,49 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			if (kind->second == "auto")
 				record_of_open().blocks.erase(entry->second);
 			else
-				record_of_open().blocks[entry->second] = kind->second == "sbl";
+				record_of_open().blocks[entry->second] = kind->second == "sbl4" ? block_kind::four : kind->second == "sbl" ? block_kind::three : block_kind::semi;
 			m_changed = true;
 		}
 		survey_signals();
 		if (false == m_lines_problem.empty())
 			WriteLog("SELFTEST srkblock: " + m_lines_problem);
 		for (auto const &row : m_lines)
-			WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d leftovers %zu", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks, row.automatic ? "sbl" : "semi", static_cast<int>(row.why), row.leftovers));
+			WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d own %d leftovers %zu legacy %d stops%s", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks,
+			                row.block == block_kind::four ? "sbl4" : row.block == block_kind::three ? "sbl" : "semi", static_cast<int>(row.why), static_cast<int>(row.own), row.leftovers, row.legacy ? 1 : 0, [&] {
+				                std::string text;
+				                for (auto const &[distance, name] : row.stops)
+					                text += format(" %s@%.0f", name.c_str(), distance);
+				                return text;
+			                }().c_str()));
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkboundary")
+	{
+		// srkboundary entry=<A> at=<m> [nudge=<m>]: a click while drawing the block boundaries, on the line beyond the entry signal at the
+		// distance out, nudge metres aside
+		if (m_history.history_revision() != m_history_revision)
+			refresh();
+		auto const values{selftest_values(Words)};
+		auto const entry{values.count("entry") > 0 ? values.at("entry") : std::string{}};
+		auto const at{values.count("at") > 0 ? std::atof(values.at("at").c_str()) : 0.0};
+		auto const nudge{values.count("nudge") > 0 ? std::atof(values.at("nudge").c_str()) : 0.0};
+		auto const found{std::find_if(m_lines.begin(), m_lines.end(), [&](line_row const &Row) { return Row.entry == entry; })};
+		if (false == m_layout.has_value() || found == m_lines.end())
+		{
+			WriteLog("SELFTEST srkboundary: no line beyond " + entry);
+			return editor_selftest_result::handled;
+		}
+		auto const place{station::point_on(m_line_ways[found - m_lines.begin()], at)};
+		m_drawing = true;
+		bool valid{false};
+		auto const label{boundary_hover(place.point + glm::dvec3{-place.way.z, 0.0, place.way.x} * nudge, valid)};
+		WriteLog(format("SELFTEST srkboundary %s at %.0f: %s%s", entry.c_str(), at, valid ? "" : "(refused) ", label.c_str()));
+		if (valid)
+		{
+			boundary_click();
+			WriteLog("SELFTEST srkboundary: " + m_status);
+		}
+		m_drawing = false;
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstrip")

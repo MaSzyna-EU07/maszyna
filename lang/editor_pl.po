@@ -11110,9 +11110,6 @@ msgstr "linia dwutorowa"
 msgid "a single-track line"
 msgstr "linia jednotorowa"
 
-msgid "automatic (SBL)"
-msgstr "samoczynna (SBL)"
-
 msgid "semi-automatic"
 msgstr "półsamoczynna"
 
@@ -11176,17 +11173,11 @@ msgstr "%s, auto"
 msgid "Auto: %s, %s"
 msgstr "Auto: %s, %s"
 
-msgid "Automatic block (SBL)"
-msgstr "Blokada samoczynna (SBL)"
-
 msgid "Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are"
 msgstr "Edytor stawia ją tylko na linii dwutorowej: na jednym torze semafory SBL musiałyby stać w obu kierunkach, takie, które już stoją, zostawia bez zmian"
 
 msgid "Semi-automatic block"
 msgstr "Blokada półsamoczynna"
-
-msgid "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no warning disc. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where block signals stand along the line or it's double-track, else the semi-automatic one"
-msgstr "Blokada liniowa szlaku, na dwutorowym taka sama na obu torach. Samoczynna (SBL): semafory SBL z odstępami blokowymi, bez tarczy ostrzegawczej. Półsamoczynna: tarcza ostrzegawcza ToA w odległości drogi hamowania przed semaforem wjazdowym. Auto: samoczynna, gdy na szlaku stoją semafory SBL albo linia jest dwutorowa, inaczej półsamoczynna"
 
 msgid "its SHP resonator belongs %.0f m before it"
 msgstr "rezonator SHP powinien stać %.0f m przed nim"
@@ -11251,17 +11242,107 @@ msgstr[0] "%zu ma tory kończące się przed miejscem rezonatora"
 msgstr[1] "%zu mają tory kończące się przed miejscem rezonatora"
 msgstr[2] "%zu ma tory kończące się przed miejscem rezonatora"
 
-msgid "%zu warning disc stands along it, of the semi-automatic block: delete it in the Signals tool"
-msgid_plural "%zu warning discs stand along it, of the semi-automatic block: delete them in the Signals tool"
-msgstr[0] "Stoi na nim %zu tarcza ostrzegawcza, z blokady półsamoczynnej: usuń ją w narzędziu Sygnalizatory (H)"
-msgstr[1] "Stoją na nim %zu tarcze ostrzegawcze, z blokady półsamoczynnej: usuń je w narzędziu Sygnalizatory (H)"
-msgstr[2] "Stoi na nim %zu tarcz ostrzegawczych, z blokady półsamoczynnej: usuń je w narzędziu Sygnalizatory (H)"
-
-msgid "%zu block signal stands along it, of the automatic block: delete it in the Signals tool"
-msgid_plural "%zu block signals stand along it, of the automatic block: delete them in the Signals tool"
-msgstr[0] "Stoi na nim %zu semafor SBL, z blokady samoczynnej: usuń go w narzędziu Sygnalizatory (H)"
-msgstr[1] "Stoją na nim %zu semafory SBL, z blokady samoczynnej: usuń je w narzędziu Sygnalizatory (H)"
-msgstr[2] "Stoi na nim %zu semaforów SBL, z blokady samoczynnej: usuń je w narzędziu Sygnalizatory (H)"
-
 msgid "LMB: fly to the first of them"
 msgstr "LPM: leć do pierwszego z nich"
+
+msgid "SBL, 3 aspects"
+msgstr "SBL trzystawna"
+
+msgid "SBL, 4 aspects"
+msgstr "SBL czterostawna"
+
+msgid "Automatic block, 3 aspects (SBL)"
+msgstr "Samoczynna blokada liniowa trzystawna (SBL)"
+
+msgid "Automatic block, 4 aspects (SBL)"
+msgstr "Samoczynna blokada liniowa czterostawna (SBL)"
+
+msgid "A block signal tells of the next one, Ie-1: red, orange for the next at stop, green. The block sections no shorter than the braking distance"
+msgstr "Semafor SBL zapowiada następny, Ie-1: czerwone, pomarańczowe gdy następny wskazuje Stój, zielone. Odstępy nie krótsze niż droga hamowania"
+
+msgid "A block signal tells of the next two, Ie-1: red, orange for the next at stop, green flashing for the one after it at stop, green. The block sections no shorter than half the braking distance, two of them no shorter than it"
+msgstr "Semafor SBL zapowiada dwa następne, Ie-1: czerwone, pomarańczowe gdy następny wskazuje Stój, zielone migające gdy Stój wskazuje ten za nim, zielone. Odstępy nie krótsze niż połowa drogi hamowania, dwa razem nie krótsze niż cała"
+
+msgid "No block section of the editor switches its block signals: it keeps the block of the scenery as it stands"
+msgstr "Jego semaforów SBL nie przełącza żaden odstęp edytora: zostaje blokada scenerii, tak jak stoi"
+
+msgid "of the scenery"
+msgstr "ze scenerii"
+
+msgid "Block signals stand along the line, none of them switched by a block section of the editor: the line keeps the block of the scenery as it stands"
+msgstr "Na szlaku stoją semafory SBL, ale żadnego nie przełącza odstęp edytora: szlak zostaje z blokadą scenerii, tak jak stoi"
+
+msgid "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal chosen in the Signals tool, else the semi-automatic one"
+msgstr "Blokada szlaku, na obu torach dwutorowego taka sama. Samoczynna (SBL): semafory SBL z odstępami, bez tarczy ostrzegawczej, trzy- albo czterostawna; szablony stojących semaforów SBL zostają podmienione na te o właściwej liczbie stawności. Półsamoczynna: tarcza ostrzegawcza ToA w drodze hamowania przed semaforem wjazdowym. Auto: samoczynna, gdy na szlaku stoją semafory SBL (stawność jak u nich) albo szlak jest dwutorowy (stawność jak u semafora SBL wybranego w narzędziu Sygnalizatory), inaczej półsamoczynna"
+
+msgid "Draw the block boundaries"
+msgstr "Rysuj granice odstępów"
+
+msgid "LMB on a track of a line of the automatic block, beyond the entry signal: block signals across both tracks there, numbered after the hectometre ahead of them, the tracks cut 15 m beyond them and the new block sections named; LMB on a block boundary standing takes its signals away, the sections either side joined. A line whose block signals stand keeps them: Set the line signals places them evenly only on a line without any. One step of undo each"
+msgstr "LPM na torze szlaku z SBL, za semaforem wjazdowym: semafory SBL na obu torach w tym miejscu, numerowane po hektometrze przed nimi, tory przecięte 15 m za nimi i nazwane nowe odstępy. LPM na istniejącej granicy zabiera jej semafory, a odstępy po obu stronach łączą się w jeden. Szlak, na którym stoją już semafory SBL, je zachowuje: Ustaw sygnalizatory szlakowe rozstawia je równo tylko na szlaku bez żadnego. Każde kliknięcie to jeden krok cofania"
+
+msgid "LMB on a track of a line beyond the entry signal: a block boundary there; on one standing: taken away"
+msgstr "LPM na torze szlaku za semaforem wjazdowym: granica odstępu w tym miejscu; na istniejącej granicy: usunięcie"
+
+msgid "No block section of the editor switches the block signals beyond %s: the line keeps them as they stand"
+msgstr "Semaforów SBL za %s nie przełącza żaden odstęp edytora: szlak zostaje, tak jak stoi"
+
+msgid "The line beyond %s has the semi-automatic block: choose the automatic one for it in the table of the lines"
+msgstr "Szlak za %s ma blokadę półsamoczynną: wybierz dla niego SBL w tabeli szlaków"
+
+msgid "The line beyond %s is single-track: the editor draws the block boundaries of double-track lines only"
+msgstr "Szlak za %s jest jednotorowy: edytor rysuje granice odstępów tylko na szlakach dwutorowych"
+
+msgid "A block boundary stands %.0f m or more from the entry signals"
+msgstr "Granica odstępu musi stać co najmniej %.0f m od semaforów wjazdowych"
+
+msgid "Click: take the block signals %s away, the block sections either side joined: %.2f km"
+msgstr "Klik: usuń semafory SBL %s, odstępy po obu stronach połączone: %.2f km"
+
+msgid "Click: block signals %s here: the block sections %.2f km and %.2f km"
+msgstr "Klik: semafory SBL %s tutaj, odstępy %.2f km i %.2f km"
+
+msgid "shorter than half the braking distance, %.0f m, of the 4-aspect block"
+msgstr "krótszy niż połowa drogi hamowania (%.0f m), a to SBL czterostawna"
+
+msgid "shorter than the braking distance, %.0f m"
+msgstr "krótszy niż droga hamowania, %.0f m"
+
+msgid "The line drawn on isn't there any more"
+msgstr "Szlaku, na którym rysujesz, już nie ma"
+
+msgid "The line beyond %s has no automatic block the editor sets: choose one for it in the table of the lines"
+msgstr "Szlak za %s nie ma SBL, którą ustawia edytor: wybierz ją w tabeli szlaków"
+
+msgid "The block section to %s is %.0f m long, shorter than half the braking distance of %.0f m, of the 4-aspect block"
+msgstr "Odstęp do %s ma %.0f m, mniej niż połowa drogi hamowania %.0f m, a to SBL czterostawna"
+
+msgid "Drawing the block boundaries: LMB on a track of a line out of the station, beyond its entry signal"
+msgstr "Rysowanie granic odstępów: LPM na torze szlaku wychodzącego ze stacji, za semaforem wjazdowym"
+
+msgid "%zu warning disc stands along it, of the semi-automatic block: Set the line signals takes it away"
+msgid_plural "%zu warning discs stand along it, of the semi-automatic block: Set the line signals takes them away"
+msgstr[0] "Stoi na nim %zu tarcza ostrzegawcza z blokady półsamoczynnej: Ustaw sygnalizatory szlakowe ją usunie"
+msgstr[1] "Stoją na nim %zu tarcze ostrzegawcze z blokady półsamoczynnej: Ustaw sygnalizatory szlakowe je usunie"
+msgstr[2] "Stoi na nim %zu tarcz ostrzegawczych z blokady półsamoczynnej: Ustaw sygnalizatory szlakowe je usunie"
+
+msgid "%zu block signal stands along it, of the automatic block: Set the line signals takes it away"
+msgid_plural "%zu block signals stand along it, of the automatic block: Set the line signals takes them away"
+msgstr[0] "Stoi na nim %zu semafor SBL z blokady samoczynnej: Ustaw sygnalizatory szlakowe go usunie"
+msgstr[1] "Stoją na nim %zu semafory SBL z blokady samoczynnej: Ustaw sygnalizatory szlakowe je usunie"
+msgstr[2] "Stoi na nim %zu semaforów SBL z blokady samoczynnej: Ustaw sygnalizatory szlakowe je usunie"
+
+msgid "%zu signal taken away"
+msgid_plural "%zu signals taken away"
+msgstr[0] "usunięto %zu sygnalizator"
+msgstr[1] "usunięto %zu sygnalizatory"
+msgstr[2] "usunięto %zu sygnalizatorów"
+
+msgid "%zu given the template of the aspects of its line"
+msgid_plural "%zu given the templates of the aspects of their lines"
+msgstr[0] "%zu dostał szablon o stawności swojego szlaku"
+msgstr[1] "%zu dostały szablony o stawności swoich szlaków"
+msgstr[2] "%zu dostało szablony o stawności swoich szlaków"
+
+msgid "Ctrl+Z takes it back"
+msgstr "Ctrl+Z cofa"

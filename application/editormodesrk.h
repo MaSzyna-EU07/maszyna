@@ -37,6 +37,12 @@ class srk_tool final : public editor_tool
 	void forget(scene::basic_node const *Node) override;
 	editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) override;
 	void set_open(bool const Open) { m_open = Open; }
+	// the block boundaries drawn by hand on the lines out of the open station
+	bool drawing() const { return m_open && m_drawing && m_layout.has_value(); }
+	// what a click at the point of a track does while the block boundaries are drawn, for the label at the mouse; Valid: it does
+	// something
+	std::string boundary_hover(glm::dvec3 const &Point, bool &Valid);
+	void boundary_click();
 	// the stations described go to the files of their layers, as "//$s" lines
 	void store();
 
@@ -46,6 +52,13 @@ class srk_tool final : public editor_tool
 	editor_history &m_history;
 	editor_templates &m_templates;
 	editor_signals &m_signals;
+	// the block of a line out of the station
+	enum class block_kind
+	{
+		semi, // semi-automatic: a warning disc before the entry signal
+		three, // the automatic one of three aspects: the block sections no shorter than the braking distance
+		four // of four aspects, the warning two signals ahead: the sections no shorter than half of it
+	};
 	// where the block of a line out of the station comes from
 	enum class block_reason
 	{
@@ -66,7 +79,7 @@ class srk_tool final : public editor_tool
 		std::string km; // of the axis of the station along the line, empty while unknown
 		bool reversed{false}; // the km rise to the left of the schematic, the switches numbered from there
 		int braking{0}; // m, the braking distance of the line set by hand, 0: after its speed
-		std::map<std::string, bool> blocks; // of the lines by their entry signals: the automatic block on it, as set by hand
+		std::map<std::string, block_kind> blocks; // of the lines by their entry signals, as set by hand
 	};
 	// the schematic: the chainage across, the offsets upwards, exaggerated
 	struct view
@@ -180,8 +193,14 @@ class srk_tool final : public editor_tool
 		std::string next; // the entry signal of the next station facing out along it, shown; empty for none
 		bool station{false}; // ends at the next station rather than at the end of the tracks
 		std::size_t blocks{0}; // the block signals standing along it
-		bool automatic{false}; // of the automatic block
+		std::vector<std::pair<double, std::string>> stops; // the same, out along it, shown
+		block_kind block{block_kind::semi};
 		block_reason why{block_reason::single}; // the block it has, so
+		block_kind own{block_kind::semi}; // the block it has by itself, unless set by hand
+		block_reason own_why{block_reason::single};
+		// block signals stand along it, none switched by block sections of the editor: it keeps the block of the scenery as it stands
+		bool legacy{false};
+		double braking{0.0}; // m, the braking distance on it
 		// the signals of the other block standing along it: warning discs on a line of the automatic block, block signals on one of the
 		// semi-automatic one, the first of them
 		std::size_t leftovers{0};
@@ -189,7 +208,28 @@ class srk_tool final : public editor_tool
 		glm::dvec2 leftover_travel{0.0, 1.0};
 	};
 	std::vector<line_row> m_lines;
+	std::vector<station::line> m_line_ways; // of the lines listed
 	std::string m_lines_problem; // why the station has no lines listed
+	bool m_drawing{false}; // the block boundaries drawn by hand
+	// a block boundary under the mouse while they are drawn: block signals across the line there, or the ones standing taken away
+	struct boundary
+	{
+		bool valid{false};
+		bool remove{false};
+		std::string entry; // of the line under the mouse, its entry signal shown
+		glm::dvec3 point{0.0}; // on its axis
+		std::vector<glm::dvec3> places; // of the signals, on the axes of the tracks
+		std::vector<glm::dvec3> ways; // the trains run there
+		std::vector<std::string> names;
+	};
+	boundary m_boundary;
+	// a block boundary drawn on a line of the automatic block of the open station
+	struct block_edit
+	{
+		std::string entry; // of the line, its entry signal shown
+		glm::dvec3 point{0.0}; // on its axis
+		bool remove{false}; // the block signals standing there taken away, else placed
+	};
 	std::string m_status;
 
 	void load();
@@ -233,13 +273,22 @@ class srk_tool final : public editor_tool
 	int length_of(TTrack const *Track) const;
 	// the signals of the lines out of the station: on a double-track line the block signals to the next station and the block
 	// sections between them, on a single-track one a warning disc before the entry signal; one step of the history
-	void set_lines();
+	void set_lines(block_edit const *Edit = nullptr);
 	// the lines out of the open station from its entry signals standing, Entries: the signals of the plan they begin at, Owners:
 	// the standing ones; false with the reason while it has none
 	bool lines_of_open(std::vector<standing_signal> const &Standing, std::vector<station::line> &Lines, std::vector<station::signal> &Entries, std::vector<std::size_t> &Owners, std::string &Problem) const;
-	// the line has the automatic block: as set by hand for its entry signal, else where block signals stand along it, else on a
-	// double-track line
-	bool automatic_block(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, block_reason &Why, std::size_t &Blocks) const;
+	// the block of the line: as set by hand for its entry signal, else the automatic one where block signals stand along it, of four
+	// aspects where one of them has, else on a double-track line, of the aspects of the block signal chosen in the Signals tool, else
+	// the semi-automatic one; Own: the block it has by itself
+	block_kind block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads, block_reason &Why, block_kind &Own, block_reason &Own_why, std::size_t &Blocks) const;
+	// the line of the kilometrage a line out of the open station runs along: of the station, at a junction another one
+	std::string km_line(station::line const &Line) const;
+	// the km out along the line, Number: of the line of its kilometrage
+	double km_along(station::line const &Line, std::string const &Number, double const Distance) const;
+	// the trains of the line run towards the higher km
+	bool km_rising(station::line const &Line, std::string const &Number) const;
+	// m, the braking distance at the highest speed out along the line, at 160 km/h while its tracks have none, unless set by hand
+	double line_braking(station::line const &Line) const;
 	// the lines out of the open station, for the panel
 	void survey_lines(std::vector<standing_signal> const &Standing);
 	void render_lines();
