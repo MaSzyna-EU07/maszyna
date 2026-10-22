@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodelineside.h"
 #include "application/editormodeparallel.h"
 #include "application/editormodespeed.h"
+#include "application/editormodesrk.h"
 #include "application/editormodevehicle.h"
 #include "application/editortool.h"
 #include "scene/sceneeditor.h"
@@ -1544,7 +1545,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		editor_icons::icon picture;
 		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
-	static std::array<track_mode, 11> const &track_modes();
+	static std::array<track_mode, 12> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
 	track_tab plan_tab_for(TTrack const *Track) const;
 	// the objects along the track: a tab for each tool
@@ -2380,7 +2381,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
 	parallel_tool m_parallel{*this, *this, *this, *this};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel};
+	srk_tool m_srk{*this, *this, *this};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk};
 
 	void infra_rebase();
 	void render_infra_search();

@@ -411,9 +411,9 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 11> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 11> const modes{{
+	static std::array<track_mode, 12> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters", editor_icons::icon::select, 0},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track", editor_icons::icon::lay_track, 0},
 	    {"Plan", "G", track_tab::straights, "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too", editor_icons::icon::curve, 0},
@@ -421,6 +421,7 @@ std::array<editor_mode::track_mode, 11> const &editor_mode::track_modes()
 	    {"Parallel", "N", track_tab::parallel, "A second track beside a track: LMB on it, then the side and the spacing", editor_icons::icon::parallel, 0},
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it", editor_icons::icon::turntable, 1},
 	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by", editor_icons::icon::signal, 1},
+	    {"Signalling", "I", track_tab::srk, "The signalling of a station: LMB on a switch lays its station out as a schematic", editor_icons::icon::station, 1},
 	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, trainsets", editor_icons::icon::objects, 1},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line", editor_icons::icon::profile, 2},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows", editor_icons::icon::speed, 2},
@@ -565,6 +566,7 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::infra: return STR_C("Infrastructure");
 	case track_tab::parallel: return STR_C("Parallel track");
 	case track_tab::signals: return STR_C("Signal");
+	case track_tab::srk: return STR_C("Signalling");
 	case track_tab::turntable: return STR_C("Turntable");
 	default: return STR_C("Select");
 	}
@@ -577,6 +579,7 @@ void editor_mode::render_track_inspector()
 	m_speed.set_open(m_track_window_open && m_track_tab == track_tab::speed);
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
 	m_joints.set_open(m_track_window_open && m_track_tab == track_tab::joints);
+	m_srk.set_open(m_track_window_open && m_track_tab == track_tab::srk);
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
 	{
 		m_sweep.open = false;
@@ -618,6 +621,7 @@ void editor_mode::render_track_inspector()
 	m_profile.strip_top = -1.0f;
 	if (m_track_tab == track_tab::profile && m_track_window_open)
 		render_profile_strip();
+	m_srk.render_windows();
 }
 
 void editor_mode::render_track_tool_options()
@@ -659,6 +663,7 @@ void editor_mode::render_track_tool_options()
 		break;
 	case track_tab::lineside: render_lineside_ui(); break;
 	case track_tab::signals: render_signal_ui(); break;
+	case track_tab::srk: m_srk.render_options(); break;
 	case track_tab::turntable: render_turntable_ui(); break;
 	default:
 		render_track_set_ui();

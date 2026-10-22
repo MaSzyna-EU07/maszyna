@@ -51,6 +51,7 @@ enum class icon
 	gauge,
 	turntable,
 	parallel,
+	station,
 	more,
 	// the fields of work
 	work_surroundings,

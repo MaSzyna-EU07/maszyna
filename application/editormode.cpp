@@ -1505,12 +1505,14 @@ bool editor_mode::update()
         draw_tape();
         m_speed.update();
         m_joints.update();
+        m_srk.update();
         draw_track_hints();
         draw_empty_scenery_hint();
         draw_profile_overlay();
         draw_infra_overlay();
         m_speed.draw_overlay();
         m_joints.draw_overlay();
+        m_srk.draw_overlay();
     }
     else
     {
@@ -2978,6 +2980,7 @@ bool editor_mode::save()
     switch_store::tidy();
     switch_store::settle();
     infra_store();
+    m_srk.store();
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {
         m_saved_camera = std::make_pair(glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle});

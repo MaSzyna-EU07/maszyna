@@ -331,6 +331,15 @@ def parallel(d):
     arrowhead(d, 40, 32, 0, 10)
 
 
+def station(d):
+    # two tracks of a station with a crossover between them, and the insulated joints of its track circuits
+    line(d, [(4, 22), (60, 22)], W - 6)
+    line(d, [(4, 46), (60, 46)], W - 6)
+    line(d, [(14, 46), (32, 22)], W - 6)
+    line(d, [(46, 12), (46, 32)], W - 10)
+    line(d, [(46, 36), (46, 56)], W - 10)
+
+
 def more(d):
     for x in (12, 32, 52):
         circle(d, x, 32, 6)
@@ -381,7 +390,7 @@ def work_terrain(d):
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
-         vehicle, profile, speed, joints, infra, gauge, turntable, parallel, more, work_surroundings,
+         vehicle, profile, speed, joints, infra, gauge, turntable, parallel, station, more, work_surroundings,
          work_tracks, work_roads, work_terrain]
 
 

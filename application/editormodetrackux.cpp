@@ -458,6 +458,13 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		}
 		return intent;
 	}
+	if (m_track_tab == track_tab::srk && m_hover.track != nullptr)
+	{
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.point;
+		return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+	}
 	if (m_track_style.picking && (m_track_tab == track_tab::path || m_track_tab == track_tab::turnout))
 	{
 		intent.track = m_hover.track;

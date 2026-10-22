@@ -5981,8 +5981,8 @@ msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowani
 msgid "Crossover, double, scissors, ladder"
 msgstr "Przejście rozjazdowe, podwójne przejście rozjazdowe, nożyce, ulica zwrotnicowa"
 
-msgid "Turntable, signals, objects, trainset, profile, speed, joints, gauge"
-msgstr "Obrotnica, sygnalizatory, obiekty, skład, profil, prędkość, styki, skrajnia"
+msgid "Turntable, signals, signalling, objects, trainset, profile, speed, joints, gauge"
+msgstr "Obrotnica, sygnalizatory, SRK, obiekty, skład, profil, prędkość, styki, skrajnia"
 
 msgid "No switch drive models"
 msgstr "Brak modeli napędów"
@@ -10270,3 +10270,98 @@ msgstr "Wyłączone: tor kładziony od innego toru albo dołączany do niego bie
 
 msgid "Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel"
 msgstr "Wyłączone: tor kładziony od innego toru albo dołączany do niego jest projektowany na prędkość tamtego toru i ją dostaje.\nWłączone: jest projektowany na prędkość z pola powyżej i nowe tory ją dostają.\nW trakcie kładzenia: Ctrl+Shift+kółko"
+
+# scenery editor: the signalling of a station (SRK)
+msgid "Signalling"
+msgstr "SRK"
+
+msgid "The signalling of a station: LMB on a switch lays its station out as a schematic"
+msgstr "Sterowanie ruchem na stacji: LPM na rozjazd rozkłada jego stację w schemat"
+
+msgid "Click: the station of this switch"
+msgstr "Klik: stacja tego rozjazdu"
+
+msgid "Click: the station of the switch nearest along this track"
+msgstr "Klik: stacja najbliższego rozjazdu wzdłuż tego toru"
+
+msgid "No switch near this track: it isn't a part of a station"
+msgstr "Przy tym torze nie ma rozjazdu: nie należy do żadnej stacji"
+
+msgid "Station of %s"
+msgstr "Stacja rozjazdu %s"
+
+msgid "Find the stations of the scenery"
+msgstr "Znajdź stacje w scenerii"
+
+msgid "Each group of switches joined by tracks shorter than 1.5 km is a station"
+msgstr "Stacją jest każda grupa rozjazdów połączonych torami krótszymi niż 1.5 km"
+
+msgid "The signalling of a station: its schematic, the numbers of the switches and the tracks, the track circuits and the signals"
+msgstr "SRK stacji: jej schemat, numery rozjazdów i torów, izolacje i semafory"
+
+msgid "LMB on a switch"
+msgstr "LPM na rozjazd"
+
+msgid "opens its station"
+msgstr "otwiera jego stację"
+
+msgid "switches"
+msgstr "rozjazdy"
+
+msgid "Code"
+msgstr "Skrót"
+
+msgid "The abbreviation of the station: the names of its switches, track circuits and signals begin with it"
+msgstr "Skrót nazwy stacji: od niego zaczynają się nazwy jej rozjazdów, izolacji i semaforów"
+
+msgid "Line"
+msgstr "Linia"
+
+msgid "The number of the railway line the station lies on, as the block sections between the stations are named after it"
+msgstr "Numer linii kolejowej, na której leży stacja: od niego biorą nazwy odstępy blokady między stacjami"
+
+msgid "Type"
+msgstr "Typ"
+
+msgid "km"
+msgstr "km"
+
+msgid "Another station"
+msgstr "Inna stacja"
+
+msgid "Leaves this station; LMB on a switch opens another one"
+msgstr "Zamyka tę stację; LPM na rozjazd otwiera inną"
+
+msgid "Station schematic"
+msgstr "Schemat stacji"
+
+msgid "Shows the whole station"
+msgstr "Pokazuje całą stację"
+
+msgid "offsets x%.0f"
+msgstr "rozstawy x%.0f"
+
+msgid "How much the offsets of the tracks are stretched against the lengths, also Ctrl+wheel over the plot"
+msgstr "Ile razy rozstawy torów są rozciągnięte względem długości, także Ctrl+kółko nad schematem"
+
+msgid "Wheel: zoom, drag: move, LMB on a track: select it"
+msgstr "Kółko: przybliżenie, przeciąganie: przesunięcie, LPM na tor: zaznacza go"
+
+msgid "line out of the station"
+msgstr "szlak wychodzący ze stacji"
+
+msgid "LMB: select it"
+msgstr "LPM: zaznacza go"
+
+msgid "%zu station"
+msgid_plural "%zu stations"
+msgstr[0] "%zu stacja"
+msgstr[1] "%zu stacje"
+msgstr[2] "%zu stacji"
+
+msgid "%s: %zu switch"
+msgid_plural "%s: %zu switches"
+msgstr[0] "%s: %zu rozjazd"
+msgstr[1] "%s: %zu rozjazdy"
+msgstr[2] "%s: %zu rozjazdów"
+

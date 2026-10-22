@@ -843,16 +843,17 @@ bool node_layers::pending() const
 namespace
 {
 // marks of the lines the editor keeps track of
-std::array<char const *, 6> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o"};
+std::array<char const *, 7> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s"};
 
 // other tools put lines of their own after some of these marks: Rainsted its includes after //$r, the launcher the descriptions
 // of the trainsets after //$o. The editor's lines of them are told by their first word
 bool editor_line(char const *Mark, std::string const &Text)
 {
-	static std::array<std::pair<std::string_view, std::array<std::string_view, 9>>, 3> const words{{
+	static std::array<std::pair<std::string_view, std::array<std::string_view, 9>>, 4> const words{{
 	    {"//$h", {"#", "alignment", "source", "ends", "norms", "pieces", "vertex", "element", "end"}},
 	    {"//$r", {"#", "switch", "slip", "crossing", "double", "connection"}},
 	    {"//$o", {"on"}},
+	    {"//$s", {"#", "station"}},
 	}};
 	auto const lookup{std::find_if(words.begin(), words.end(), [&](auto const &Entry) { return Entry.first == Mark; })};
 	if (lookup == words.end())
