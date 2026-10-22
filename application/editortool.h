@@ -73,6 +73,33 @@ struct standing_template
 	std::vector<std::string> values;
 };
 
+// a signal to stand by a track, of the kind of the signal templates: main, shunt...
+struct signal_order
+{
+	TTrack *track{nullptr};
+	int path{0};
+	glm::dvec3 point{0.0}; // on the axis
+	int facing{1}; // the trains it faces run 1: towards the end of the path, -1: towards its start
+	int side{1}; // 1: on the right of the path, -1: on the left
+	std::string kind;
+	std::string name;
+	std::string plate; // the name on the plate under the head, when the template has one
+};
+struct signal_rename
+{
+	scene::instance_handle instance{0};
+	std::string name;
+	std::string plate;
+};
+struct standing_signal
+{
+	scene::instance_handle instance{0};
+	std::string name;
+	std::string kind;
+	glm::dvec3 position{0.0};
+	double yaw{0.0};
+};
+
 struct nmt_place
 {
 	glm::dvec3 position{0.0}; // on the axis of the path
@@ -145,6 +172,19 @@ class editor_templates
 	~editor_templates() = default;
 };
 
+class editor_signals
+{
+  public:
+	// false while the signal templates are still being looked for
+	virtual bool standing_signals(std::vector<standing_signal> &Signals, bool const Wait) = 0;
+	// the signals placed by the templates chosen for their kinds and the standing ones renamed, with the tracks changed before:
+	// one step of the history. returns: how many were placed
+	virtual std::size_t signal_batch(std::vector<signal_order> const &Placed, std::vector<signal_rename> const &Renamed, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) = 0;
+
+  protected:
+	~editor_signals() = default;
+};
+
 class editor_ground
 {
   public:
@@ -180,7 +220,7 @@ class editor_guide
 	~editor_guide() = default;
 };
 
-class editor_services : public editor_selection, public editor_view, public editor_history, public editor_templates, public editor_ground, public editor_track_design, public editor_guide
+class editor_services : public editor_selection, public editor_view, public editor_history, public editor_templates, public editor_signals, public editor_ground, public editor_track_design, public editor_guide
 {
   protected:
 	~editor_services() = default;

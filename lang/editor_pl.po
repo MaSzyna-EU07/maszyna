@@ -10455,3 +10455,36 @@ msgstr "Stacja ma już tor %s"
 msgid "Track %s is track %s now"
 msgstr "Tor %s ma teraz numer %s"
 
+msgid "Set the signals"
+msgstr "Ustaw semafory"
+
+msgid "Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on each line, A, B... from the start of the km, Z, Y... from the end, the circuit from it to the station bpd_ita; an exit signal at the end of each station track a train is sent out of, F1, G2 towards the start, R1, P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets its name, none is doubled. The kinds of signals chosen in the Signals tool. One step of undo"
+msgstr "Stawia semafory stacji jak na liniach PKP PLK i nazywa je od jej skrótu: wjazdowy 300 m przed stacją na każdej linii, A, B... od początku km, Z, Y... od końca, a odcinek od niego do stacji to bpd_ita; wyjazdowy na końcu każdego toru, z którego wyprawia się pociągi, F1, G2 w stronę początku, R1, P2 w stronę końca; tarcza manewrowa Tm1, Tm2... na końcu krótszego toru. Semafor, który już stoi w miejscu któregoś z nich, dostaje tylko jego nazwę, nic się nie dubluje. Modele semaforów te wybrane w narzędziu Sygnalizatory. Jeden krok cofania"
+
+msgid "Give the station its code first: the signals are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy semaforów"
+
+msgid "Set the track circuits first: the signals stand at their joints"
+msgstr "Najpierw ustaw izolacje: semafory stają przy stykach"
+
+msgid "The signals are set already"
+msgstr "Semafory są już ustawione"
+
+msgid "The signals couldn't be placed: %s"
+msgstr "Nie udało się postawić semaforów: %s"
+
+msgid "no template of the kind %s"
+msgstr "brak szablonu rodzaju %s"
+
+msgid "%zu signal placed"
+msgid_plural "%zu signals placed"
+msgstr[0] "Postawiono %zu semafor"
+msgstr[1] "Postawiono %zu semafory"
+msgstr[2] "Postawiono %zu semaforów"
+
+msgid "%zu renamed"
+msgid_plural "%zu renamed"
+msgstr[0] "%zu przemianowany"
+msgstr[1] "%zu przemianowane"
+msgstr[2] "%zu przemianowanych"
+

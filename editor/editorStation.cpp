@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -236,6 +237,11 @@ double constexpr kReach{120.0}; // m, along a branch looked for its fouling poin
 double constexpr kSection{30.0}; // m, the shortest stretch between two joints made a track circuit of its own
 double constexpr kSnap{0.3}; // m, a joint this close to the end of a track lies at the end
 double constexpr kThrough{400.0}; // m, of the switches a station track is followed through for its circuits beyond
+double constexpr kEntry{300.0}; // m, from the joint of the station out to its entry signal
+double constexpr kJoint{3.5}; // m, from a signal to the joint of the circuit it guards
+double constexpr kStopping{200.0}; // m, the shortest circuit of a station track a train is sent out of by an exit signal
+double constexpr kSignalSide{2.25}; // m, from the axis to a signal
+double constexpr kSignalClear{2.5}; // m, the least from a signal to the axis of another track
 
 // the points of the way out of an end of the track, as a train runs: along the main path of a switch run into from its start,
 // back along the path of one run into from the end of it
@@ -975,6 +981,277 @@ std::vector<std::string> track_numbers(layout const &Layout, std::vector<circuit
 std::vector<TTrack *> switches_of(TTrack &Switch, options const &Options)
 {
 	return collect(Switch, Options).switches;
+}
+
+namespace
+{
+
+// the point the distance in from the end of the plain track, and the way to the end there
+std::pair<glm::dvec3, glm::dvec3> in_from(TTrack const &Track, bool const Atend, double const Distance)
+{
+	double length{0.0};
+	auto points{dense_points(Track, 0, length)};
+	if (Atend)
+		std::reverse(points.begin(), points.end());
+	double along{0.0};
+	for (std::size_t i = 1; i < points.size(); ++i)
+	{
+		auto const step{plan_distance(points[i - 1], points[i])};
+		if (along + step >= Distance || i + 1 == points.size())
+		{
+			auto const t{step > 1e-9 ? std::clamp((Distance - along) / step, 0.0, 1.0) : 0.0};
+			return {glm::mix(points[i - 1], points[i], t), points[i - 1] - points[i]};
+		}
+		along += step;
+	}
+	return {points.front(), glm::dvec3{0.0, 0.0, 1.0}};
+}
+
+// how far a signal on the side of the track at the point keeps from the other tracks; Way: of the path there
+double side_gap(layout const &Layout, glm::dvec3 const &Point, glm::dvec3 const &Way, int const Side)
+{
+	glm::dvec2 const way{glm::normalize(glm::dvec2{Way.x, Way.z} + glm::dvec2{1e-12, 0.0})};
+	glm::dvec2 const right{-way.y, way.x};
+	auto const spot{glm::dvec2{Point.x, Point.z} + right * (Side * kSignalSide)};
+	glm::dvec3 const at{spot.x, Point.y, spot.y};
+	auto gap{std::numeric_limits<double>::max()};
+	for (auto const &path : Layout.paths)
+		if (plan_gap(Point, path.points) > 1.0)
+			gap = std::min(gap, plan_gap(at, path.points));
+	return gap;
+}
+
+// on the right of the trains, unless another track runs too close by there and less so on the left
+int side_for(layout const &Layout, glm::dvec3 const &Point, glm::dvec3 const &Way, int const Facing)
+{
+	auto const right{side_gap(Layout, Point, Way, Facing)};
+	if (right >= kSignalClear)
+		return Facing;
+	auto const left{side_gap(Layout, Point, Way, -Facing)};
+	return left >= kSignalClear || left > right ? -Facing : Facing;
+}
+
+// the ends of the tracks out of the set, Free where no track goes on
+struct track_end
+{
+	TTrack *track{nullptr};
+	bool atend{false};
+	glm::dvec3 point{0.0};
+	bool free{false};
+};
+
+std::vector<track_end> ends_out(std::vector<TTrack *> const &Tracks)
+{
+	std::unordered_set<TTrack const *> const own(Tracks.begin(), Tracks.end());
+	std::vector<track_end> result;
+	for (auto *track : Tracks)
+	{
+		if (node(*track))
+			continue;
+		for (auto const atend : {false, true})
+		{
+			auto const *next{neighbour(*track, 0, atend)};
+			if (next != nullptr && rail(*next) && own.count(next) > 0)
+				continue;
+			result.push_back({track, atend, end_of(*track, 0, atend), next == nullptr || false == rail(*next)});
+		}
+	}
+	return result;
+}
+
+char next_letter(char Letter, int const Step)
+{
+	do
+		Letter = static_cast<char>(Letter + Step);
+	while (Letter == 'I' || Letter == 'Q');
+	return Letter;
+}
+
+} // namespace
+
+std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &Tracks, std::function<bool(TTrack const &)> const &Inside)
+{
+	std::vector<signal> result;
+	auto const middle{(Layout.from + Layout.to) * 0.5};
+	// the entry signals: out along each line from where it leaves the circuits of the station
+	struct entry
+	{
+		signal placed;
+		double offset{0.0};
+		bool start{false};
+	};
+	std::vector<entry> entries;
+	for (auto const &line : Layout.lines)
+	{
+		auto const outside{std::find_if(line.begin(), line.end(), [&](TTrack const *Track) { return false == Inside(*Track); })};
+		if (outside == line.end() || node(**outside))
+			continue;
+		// the joint: the end of the first track out of the station by the track before it
+		auto *track{*outside};
+		bool atend{false};
+		if (outside != line.begin())
+		{
+			int path{0};
+			bool end{false};
+			atend = false == (end_at(**std::prev(outside), end_of(*track, 0, false), path, end));
+		}
+		else
+		{
+			auto const start{end_of(*track, 0, false)};
+			atend = std::none_of(Layout.switches.begin(), Layout.switches.end(), [&](TTrack const *Switch) {
+				return std::any_of(Switch->m_paths.begin(), Switch->m_paths.end(), [&](auto const &Path) { return glm::distance(Path.points[segment_data::point::start], start) < same_point || glm::distance(Path.points[segment_data::point::end], start) < same_point; });
+			});
+		}
+		// out from the joint: along the path when the joint is its start
+		entry found;
+		auto const joint{end_of(*track, 0, atend)};
+		found.offset = project(Layout, joint).y;
+		found.start = project(Layout, joint).x < middle;
+		double along{0.0};
+		auto point{joint};
+		auto *next{track};
+		std::unordered_set<TTrack const *> seen;
+		while (next != nullptr && rail(*next) && false == node(*next) && seen.insert(next).second)
+		{
+			int path{0};
+			bool end{false};
+			if (false == end_at(*next, point, path, end))
+				break;
+			auto const outward{false == end};
+			auto const length{plan_length(*next, 0)};
+			found.placed.run.emplace_back(next, outward);
+			if (along + length >= kEntry)
+			{
+				auto const [at, way] = in_from(*next, end, kEntry - along);
+				found.placed.track = next;
+				found.placed.point = at;
+				found.placed.facing = outward ? -1 : 1;
+				found.placed.side = side_for(Layout, at, outward ? -way : way, found.placed.facing);
+				found.placed.travel = way;
+				break;
+			}
+			along += length;
+			point = end_of(*next, 0, outward);
+			next = neighbour(*next, 0, outward);
+		}
+		if (found.placed.track == nullptr && false == found.placed.run.empty() && along > 30.0)
+		{
+			// the line ends sooner, by the edge of the scenery: as far out as it goes
+			auto const &[last, outward] = found.placed.run.back();
+			auto const length{plan_length(*last, 0)};
+			auto const [at, way] = in_from(*last, outward, std::min(10.0, length * 0.5));
+			found.placed.track = last;
+			found.placed.point = at;
+			found.placed.facing = outward ? -1 : 1;
+			found.placed.side = side_for(Layout, at, outward ? way : -way, found.placed.facing);
+			found.placed.travel = -way;
+		}
+		if (found.placed.track != nullptr)
+			entries.push_back(std::move(found));
+	}
+	std::sort(entries.begin(), entries.end(), [](entry const &A, entry const &B) { return A.offset > B.offset; });
+	char from_start{'A'};
+	char from_end{'Z'};
+	char last_start{'@'};
+	char first_end{'['};
+	for (auto &found : entries)
+	{
+		auto &letter{found.start ? from_start : from_end};
+		found.placed.kind = signal::role::entry;
+		found.placed.name = std::string(1, letter);
+		(found.start ? last_start : first_end) = letter;
+		letter = next_letter(letter, found.start ? 1 : -1);
+		result.push_back(std::move(found.placed));
+	}
+	// the exit signals, a letter for the odd tracks and one for the even ones at each end, clear of the entry ones
+	auto letter_after = [](char Letter, char const Limit, int const Step) {
+		while (Step > 0 ? Letter <= Limit : Letter >= Limit)
+			Letter = next_letter(Letter, Step);
+		return Letter;
+	};
+	auto const odd_start{letter_after('F', last_start, 1)};
+	auto const even_start{next_letter(odd_start, 1)};
+	auto const odd_end{letter_after('R', first_end, -1)};
+	auto const even_end{next_letter(odd_end, -1)};
+	auto const lines_at = [&](bool const Start) { return std::any_of(entries.begin(), entries.end(), [&](entry const &Entry) { return Entry.start == Start; }); };
+	auto const starts{lines_at(true)};
+	auto const ends{lines_at(false)};
+	std::vector<signal> shunting;
+	for (auto const &track : Tracks)
+	{
+		auto const digit{std::find_if(track.number.rbegin(), track.number.rend(), [](char const Letter) { return std::isdigit(static_cast<unsigned char>(Letter)) != 0; })};
+		auto const odd{digit == track.number.rend() || (*digit - '0') % 2 == 1};
+		auto upper{track.number};
+		std::transform(upper.begin(), upper.end(), upper.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+		// the outer ends of the outermost circuits long enough, else of the outermost ones
+		struct reach
+		{
+			track_end low;
+			track_end high;
+			double low_x{std::numeric_limits<double>::max()};
+			double high_x{std::numeric_limits<double>::lowest()};
+		};
+		reach longest;
+		reach any;
+		for (auto const &circuit : track.circuits)
+		{
+			double length{0.0};
+			for (auto const *part : circuit)
+				length += node(*part) ? 0.0 : plan_length(*part, 0);
+			for (auto const &end : ends_out(circuit))
+			{
+				auto const x{project(Layout, end.point).x};
+				for (auto *found : {&any, length >= kStopping ? &longest : static_cast<reach *>(nullptr)})
+				{
+					if (found == nullptr)
+						continue;
+					if (x < found->low_x)
+					{
+						found->low_x = x;
+						found->low = end;
+					}
+					if (x > found->high_x)
+					{
+						found->high_x = x;
+						found->high = end;
+					}
+				}
+			}
+		}
+		auto const stopping{longest.low.track != nullptr};
+		auto const &chosen{stopping ? longest : any};
+		for (auto const start : {true, false})
+		{
+			auto const &end{start ? chosen.low : chosen.high};
+			if (end.track == nullptr || end.free)
+				continue;
+			signal placed;
+			auto const [at, way] = in_from(*end.track, end.atend, std::min(kJoint, plan_length(*end.track, 0) * 0.5));
+			placed.track = end.track;
+			placed.point = at;
+			placed.facing = end.atend ? 1 : -1;
+			placed.side = side_for(Layout, at, end.atend ? way : -way, placed.facing);
+			placed.travel = way;
+			if (stopping && (start ? starts : ends))
+			{
+				placed.kind = signal::role::exit;
+				placed.name = std::string(1, start ? (odd ? odd_start : even_start) : (odd ? odd_end : even_end)) + upper;
+				result.push_back(std::move(placed));
+			}
+			else
+			{
+				placed.kind = signal::role::shunting;
+				shunting.push_back(std::move(placed));
+			}
+		}
+	}
+	std::sort(shunting.begin(), shunting.end(), [&](signal const &A, signal const &B) { return project(Layout, A.point).x < project(Layout, B.point).x; });
+	for (std::size_t index = 0; index < shunting.size(); ++index)
+	{
+		shunting[index].name = "Tm" + std::to_string(index + 1);
+		result.push_back(std::move(shunting[index]));
+	}
+	return result;
 }
 
 } // namespace station

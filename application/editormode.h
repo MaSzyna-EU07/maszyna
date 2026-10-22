@@ -1890,6 +1890,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t move_templates(std::vector<std::pair<standing_template, template_item>> const &Moves) override;
 	// takes them out, as one step of the undo
 	std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances) override;
+	bool standing_signals(std::vector<standing_signal> &Signals, bool const Wait) override;
+	std::size_t signal_batch(std::vector<signal_order> const &Placed, std::vector<signal_rename> const &Renamed, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) override;
 
 	struct signal_template
 	{
@@ -2381,7 +2383,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
 	parallel_tool m_parallel{*this, *this, *this, *this};
-	srk_tool m_srk{*this, *this, *this};
+	srk_tool m_srk{*this, *this, *this, *this};
 	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk};
 
 	void infra_rebase();

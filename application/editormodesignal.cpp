@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace
 {
@@ -872,6 +873,119 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 	Snapshot.action = EditorSnapshot::Action::TrackEdit;
 	Snapshot.node_ptr = Snapshot.tracks.front().first;
 	Snapshot.node_name = Snapshot.tracks.front().first->name();
+}
+
+bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool const Wait)
+{
+	Signals.clear();
+	signal_scan(Wait);
+	if (m_signal.templates.empty())
+		return false;
+	signal_refresh(true);
+	for (auto const &standing : m_signal.standing)
+		if (standing.kind >= 0)
+			Signals.push_back({standing.include.instance, standing.name, kKinds[standing.kind], standing.include.location, standing.include.yaw});
+	return true;
+}
+
+std::size_t editor_mode::signal_batch(std::vector<signal_order> const &Placed, std::vector<signal_rename> const &Renamed, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error)
+{
+	auto &tool{m_signal};
+	signal_scan();
+	signal_refresh(true);
+	std::vector<template_item> items;
+	std::vector<std::pair<signal_spot, std::string>> reads;
+	for (auto const &order : Placed)
+	{
+		auto const kind{kind_index(order.kind)};
+		auto const *item{kind >= 0 && tool.chosen[kind] >= 0 && tool.chosen[kind] < static_cast<int>(tool.templates.size()) ? &tool.templates[tool.chosen[kind]] : nullptr};
+		if (item == nullptr)
+		{
+			Error = format(STR_C("no template of the kind %s"), STR(kKindLabels[std::max(0, kind)]).c_str());
+			break;
+		}
+		signal_spot spot;
+		if (order.track == nullptr || false == signal_spot_at(*order.track, order.path, order.point, order.point, order.facing, order.side, *item, spot))
+			continue;
+		template_item placing;
+		placing.file = signal_variant(*item, spot);
+		placing.location = spot.position;
+		placing.yaw = spot.yaw;
+		placing.described = true;
+		placing.values["name"] = order.name;
+		auto const *variant{signal_template_of(placing.file)};
+		if (variant == nullptr)
+			variant = item;
+		if (variant->plate)
+			placing.values["#6"] = plate_for(std::string{}, order.plate);
+		if (variant->linked)
+			placing.values["#7"] = "none";
+		items.push_back(std::move(placing));
+		reads.emplace_back(spot, variant->read.empty() ? std::string{} : editor_includes::substitute(variant->read, {order.name}));
+	}
+	// the names passed round among the signals go through ones of their own first, or a read event renamed would be renamed again
+	EditorSnapshot step;
+	step.tracks = std::move(States);
+	std::vector<std::pair<scene::instance_handle, std::string>> directives;
+	for (auto const temporary : {true, false})
+		for (auto const &rename : Renamed)
+		{
+			auto const *standing{signal_standing_of(rename.instance)};
+			auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
+			auto const before{scene::Layers.directive(rename.instance)};
+			std::string file;
+			std::vector<std::string> values;
+			if (item == nullptr || false == editor_includes::parse_directive(before, file, values) || values.empty())
+				continue;
+			auto const read_before{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
+			values[0] = rename.name + (temporary ? "~" : "");
+			if (item->plate && values.size() > 5)
+				values[5] = plate_for(std::string{}, rename.plate);
+			auto const read_after{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
+			auto const directive{editor_includes::compose_directive(file, values)};
+			if (directive == before)
+				continue;
+			if (temporary)
+				directives.emplace_back(rename.instance, before);
+			set_include_directive(rename.instance, directive);
+			if (read_before != read_after)
+				signal_renamed(read_before, read_after, step);
+		}
+	std::vector<scene::instance_handle> instances;
+	if (Error.empty() && false == items.empty())
+	{
+		if (place_templates(items, Error) == 0)
+			reads.clear();
+		else
+		{
+			auto placed{std::move(m_history.back())};
+			m_history.pop_back();
+			instances = std::move(placed.instances);
+		}
+	}
+	else
+		reads.clear();
+	std::unordered_set<TTrack const *> const created(Created.begin(), Created.end());
+	for (auto const &[spot, read] : reads)
+	{
+		if (read.empty() || false == spot.track->Dynamics.empty() || false == scene::Layers.editable(spot.track))
+			continue;
+		if (created.count(spot.track) == 0 && std::none_of(step.tracks.begin(), step.tracks.end(), [&](auto const &State) { return State.first == spot.track; }))
+			step.tracks.emplace_back(spot.track, editor_track::capture(*spot.track));
+		editor_track::events(*spot.track, spot.list).emplace_back(ToLower(read), nullptr);
+		std::string missing;
+		editor_track::bind_events(*spot.track, missing);
+		spot.track->mark_dirty();
+	}
+	auto const count{instances.size()};
+	if (step.tracks.empty() && Created.empty() && instances.empty() && directives.empty())
+		return 0;
+	push_track_snapshot(std::move(step.tracks), std::move(Created));
+	auto &pushed{m_history.back()};
+	pushed.instances = std::move(instances);
+	pushed.directives.insert(pushed.directives.end(), directives.begin(), directives.end());
+	signal_refresh(true);
+	return count;
 }
 
 void editor_mode::signal_select(scene::instance_handle const Instance)

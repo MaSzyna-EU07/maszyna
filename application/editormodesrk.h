@@ -24,7 +24,7 @@ http://mozilla.org/MPL/2.0/.
 class srk_tool final : public editor_tool
 {
   public:
-	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History) : m_selection{Selection}, m_view{View}, m_history{History} {}
+	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_signals &Signals) : m_selection{Selection}, m_view{View}, m_history{History}, m_signals{Signals} {}
 	void update() override;
 	void draw_overlay() const override;
 	void render_options() override;
@@ -39,6 +39,7 @@ class srk_tool final : public editor_tool
 	editor_selection &m_selection;
 	editor_view &m_view;
 	editor_history &m_history;
+	editor_signals &m_signals;
 	// a station described: found again by a switch of it
 	struct record
 	{
@@ -82,6 +83,14 @@ class srk_tool final : public editor_tool
 	std::vector<int> m_circuit_of; // of each path of the layout, an index into m_circuits, -1 for none
 	std::vector<circuit_mark> m_circuits;
 	std::vector<glm::dvec2> m_ticks; // the joints between the circuits, in the schematic
+	struct signal_mark
+	{
+		glm::dvec2 at{0.0}; // in the schematic
+		bool ahead{true}; // the trains it faces run along the chainage
+		std::string text;
+	};
+	std::vector<signal_mark> m_signal_marks;
+	bool m_signals_known{false}; // the signals standing surveyed, once their templates are found
 	std::string m_status;
 
 	void load();
@@ -99,6 +108,11 @@ class srk_tool final : public editor_tool
 	void set_circuits();
 	// the track circuits as the tracks have them, for the schematic
 	void survey();
+	// the signals placed where the station has none and the standing ones named, the circuits before the entry signals set too; one
+	// step of the history
+	void set_signals();
+	// the signals standing by the station, for the schematic
+	void survey_signals();
 	// the names of the switches and the circuits of the open station begin with it, empty while it has no code
 	std::string stem_of_open() const;
 	// the circuits of the station track of the track renamed after another number; one step of the history

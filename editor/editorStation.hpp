@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -106,5 +107,42 @@ std::vector<circuit> circuits(layout const &Layout, std::vector<unit> const &Uni
 std::vector<std::string> track_numbers(layout const &Layout, std::vector<circuit> const &Circuits);
 // the switches of the station of the switch, without laying it out
 std::vector<TTrack *> switches_of(TTrack &Switch, options const &Options = {});
+
+// a station track by its number, with its track circuits
+struct numbered
+{
+	std::string number;
+	std::vector<std::vector<TTrack *>> circuits;
+};
+
+// a signal of the station, as PKP PLK places and names them
+struct signal
+{
+	enum class role
+	{
+		entry,
+		exit,
+		shunting
+	};
+	role kind{role::entry};
+	std::string name; // without the code of the station: A, F1, Tm3
+	TTrack *track{nullptr};
+	int path{0};
+	glm::dvec3 point{0.0}; // on the axis
+	int facing{1}; // the trains it faces run 1: towards the end of the path, -1: towards its start
+	int side{1}; // 1: on the right of the path, -1: on the left
+	glm::dvec3 travel{0.0}; // the way the trains it faces run, in the plan
+	// of an entry signal: the tracks of its line from the joint of the station out to it, each with the way out along it, true
+	// towards the end of the path; a circuit named after the signal runs between the two
+	std::vector<std::pair<TTrack *, bool>> run;
+};
+
+// the signals of the station: the entry ones 300 m out along the lines beyond the circuits of the station, A, B... from the start
+// of the chainage, Z, Y... from its end, the leftmost first; the exit ones facing out at the outer ends of the outermost circuits
+// at least 200 m long of the station tracks, a letter for the odd tracks and one for the even ones at each end, with the number:
+// F1, G2 towards the start, R1, P2 towards the end; the shunting ones at the ends of the shorter tracks, Tm1, Tm2... along the
+// chainage. Each on the right of the trains, unless another track runs too close by there. Inside: a track of the circuits of the
+// station
+std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &Tracks, std::function<bool(TTrack const &)> const &Inside);
 
 } // namespace station
