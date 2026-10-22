@@ -41,7 +41,8 @@ namespace
 
 char const *const kMark{"//$s"};
 double constexpr kOverlayRange{4000.0};
-double constexpr kJointRange{1500.0}; // m, of the joints and the names of the circuits shown in the scenery
+double constexpr kJointRange{1500.0}; // m, of the joints shown in the scenery
+double constexpr kLabelRange{700.0}; // m, of the names shown there, farther ones crowd the horizon
 double constexpr kRailHead{0.18}; // m, above the axis of a path
 
 ImU32 constexpr kPlain{IM_COL32(170, 176, 188, 255)};
@@ -371,7 +372,7 @@ void srk_tool::draw_overlay() const
 		auto const &points{m_layout->paths[index].points};
 		for (std::size_t i = 1; i < points.size(); ++i)
 			if (near_enough(points[i], kOverlayRange))
-				projection.line(drawlist, points[i - 1] + lift, points[i] + lift, colour, 3.0f);
+				projection.line(drawlist, points[i - 1] + lift, points[i] + lift, colour, Global.EditorOrtho ? 6.0f : 3.0f);
 	}
 	for (auto const &joint : m_joints)
 	{
@@ -387,7 +388,7 @@ void srk_tool::draw_overlay() const
 	for (auto const &mark : m_circuits)
 	{
 		ImVec2 screen;
-		if (false == mark.labelled || false == near_enough(mark.world, kJointRange) || false == projection.project(mark.world + glm::dvec3{0.0, 0.8, 0.0}, screen))
+		if (false == mark.labelled || false == near_enough(mark.world, kLabelRange) || false == projection.project(mark.world + glm::dvec3{0.0, 0.8, 0.0}, screen))
 			continue;
 		auto const size{ImGui::CalcTextSize(mark.text.c_str())};
 		drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 3.0f, screen.y - size.y - 2.0f), ImVec2(screen.x + size.x * 0.5f + 3.0f, screen.y + 2.0f), IM_COL32(0, 0, 0, 160), 3.0f);
@@ -403,12 +404,21 @@ void srk_tool::draw_overlay() const
 	{
 		auto const start{track->m_paths.front().points[segment_data::point::start] + glm::dvec3{0.0, 1.0, 0.0}};
 		ImVec2 screen;
-		if ((false == Global.EditorOrtho && glm::distance(start, camera) > kOverlayRange) || false == projection.project(start, screen))
+		if (false == near_enough(start, kLabelRange) || false == projection.project(start, screen))
 			continue;
 		auto const text{track->name()};
 		auto const size{ImGui::CalcTextSize(text.c_str())};
 		drawlist->AddRectFilled(ImVec2(screen.x - 3.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x + 3.0f, screen.y), IM_COL32(0, 0, 0, 160), 3.0f);
 		drawlist->AddText(ImVec2(screen.x, screen.y - size.y - 2.0f), kSwitch, text.c_str());
+	}
+	for (auto const &mark : m_signal_marks)
+	{
+		ImVec2 screen;
+		if (false == near_enough(mark.head, kLabelRange) || false == projection.project(mark.head, screen))
+			continue;
+		auto const size{ImGui::CalcTextSize(mark.text.c_str())};
+		drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 4.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x * 0.5f + 4.0f, screen.y), kSignal, 3.0f);
+		drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), IM_COL32(255, 255, 255, 255), mark.text.c_str());
 	}
 }
 
@@ -1025,7 +1035,7 @@ void srk_tool::survey_signals()
 		auto const travel{travel_of(signal.yaw)};
 		auto const at{station::project(*m_layout, signal.position)};
 		auto const ahead{station::project(*m_layout, signal.position + glm::dvec3{travel.x, 0.0, travel.y} * 5.0)};
-		m_signal_marks.push_back({at, ahead.x > at.x, signal_shown(signal.name, stem)});
+		m_signal_marks.push_back({at, ahead.x > at.x, signal_shown(signal.name, stem), signal.position + glm::dvec3{0.0, signal.kind == "shunt" ? 3.0 : 7.0, 0.0}});
 	}
 }
 
@@ -1332,7 +1342,7 @@ void srk_tool::render_canvas(float const Height)
 
 void srk_tool::render_windows()
 {
-	if (false == m_open || false == m_layout.has_value())
+	if (false == m_open || false == m_strip || false == m_layout.has_value())
 		return;
 	auto const &io{ImGui::GetIO()};
 	// along the bottom of the 3d view, as the vertical profile
@@ -1485,6 +1495,14 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		for (auto const &mark : m_signal_marks)
 			list += format(" %s@%.0f/%.1f%s", mark.text.c_str(), mark.at.x, mark.at.y, mark.ahead ? ">" : "<");
 		WriteLog(format("SELFTEST srksignals %zu:", m_signal_marks.size()) + list);
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkstrip")
+	{
+		// srkstrip shown=0: the schematic hidden, the 3d view whole for a screenshot
+		auto const values{selftest_values(Words)};
+		auto const shown{values.find("shown")};
+		m_strip = shown == values.end() || shown->second != "0";
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstations")

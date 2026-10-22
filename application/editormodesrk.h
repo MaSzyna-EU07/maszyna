@@ -59,6 +59,7 @@ class srk_tool final : public editor_tool
 		float exaggeration{0.0f}; // 0: fit at the next draw
 	};
 	bool m_open{false};
+	bool m_strip{true}; // the schematic shown, off for the screenshots of the self-tests
 	bool m_loaded{false};
 	bool m_changed{false};
 	std::vector<record> m_records;
@@ -95,6 +96,7 @@ class srk_tool final : public editor_tool
 		glm::dvec2 at{0.0}; // in the schematic
 		bool ahead{true}; // the trains it faces run along the chainage
 		std::string text;
+		glm::dvec3 head{0.0}; // above its lamps, in the scenery
 	};
 	std::vector<signal_mark> m_signal_marks;
 	bool m_signals_known{false}; // the signals standing surveyed, once their templates are found
