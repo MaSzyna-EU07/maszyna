@@ -1077,7 +1077,17 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 	auto const count{instances.size()};
 	if (step.tracks.empty() && Created.empty() && instances.empty() && directives.empty())
 		return 0;
-	push_track_snapshot(std::move(step.tracks), std::move(Created));
+	if (step.tracks.empty() && Created.empty())
+	{
+		EditorSnapshot only;
+		auto const *file{scene::Layers.instance(directives.empty() ? instances.front() : directives.front().first).file};
+		only.node_name = file != nullptr ? *file : std::string{};
+		trim_history();
+		m_history.push_back(std::move(only));
+		g_redo.clear();
+	}
+	else
+		push_track_snapshot(std::move(step.tracks), std::move(Created));
 	auto &pushed{m_history.back()};
 	pushed.instances = std::move(instances);
 	pushed.directives.insert(pushed.directives.end(), directives.begin(), directives.end());
