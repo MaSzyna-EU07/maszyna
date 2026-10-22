@@ -314,7 +314,7 @@ void editor_mode::restore_kilometrage(EditorSnapshot &Snapshot)
 {
 	if (false == Snapshot.kilometrage.has_value())
 		return;
-	auto current{kilometrage::marks()};
+	auto current{kilometrage::current()};
 	kilometrage::restore(std::move(*Snapshot.kilometrage));
 	Snapshot.kilometrage = std::move(current);
 }

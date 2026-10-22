@@ -163,7 +163,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<stored_profile> profile_library;
 		std::optional<std::vector<alignment_store::record>> alignments; // the kept horizontal alignments changed too, these were the ones before
 		std::optional<std::vector<switch_store::record>> switch_records; // the kept switches changed too, these were the ones before
-		std::optional<std::vector<kilometrage::mark>> kilometrage; // the marks of the kilometrage before the change (Action::Kilometrage)
+		std::optional<kilometrage::state> kilometrage; // the kilometrage before the change (Action::Kilometrage)
 		std::vector<array_copy> copies; // models an array added to the one it was made of
 		bool joined{false}; // undone and redone together with the change before it
 		std::shared_ptr<terrain_streamer::change const> terrain; // the heightmap terrain from before the change (Action::Terrain)
@@ -188,7 +188,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void terrain_history_step();
 	// puts the terrain back as the step recorded it, the step left with the state it replaced
 	void restore_terrain(EditorSnapshot &Snapshot);
-	// swaps the marks of the kilometrage with the ones the snapshot keeps
+	// swaps the kilometrage with the one the snapshot keeps
 	void restore_kilometrage(EditorSnapshot &Snapshot);
 	bool m_history_busy{false}; // undo or redo under way
 	void handle_brush_mouse_hold(int Action, int Button);

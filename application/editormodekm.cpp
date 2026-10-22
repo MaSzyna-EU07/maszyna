@@ -278,7 +278,9 @@ void km_tool::pick(TTrack &Track, glm::dvec3 const &Point)
 	entry.point = editor_track::point_at(Track, t);
 	auto const ahead{plan_of(editor_track::point_at(Track, std::min(1.0, t + 0.01)) - editor_track::point_at(Track, std::max(0.0, t - 0.01)))};
 	entry.along = glm::length(ahead) > 1e-9 ? glm::normalize(ahead) : glm::dvec2{0.0, 1.0};
+	entry.path = kilometrage::path_near(Track, Point, entry.on);
 	m_status.clear();
+	m_route_status.clear();
 	m_edited = -1;
 	auto const &marks{kilometrage::marks()};
 	auto nearest{kPickReach};
@@ -398,6 +400,84 @@ void km_tool::show(std::size_t const Index)
 	if (auto *track{kilometrage::track_near(point, 6.0)}; track != nullptr)
 		pick(*track, point);
 	m_view.fly_to(point, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 40.0);
+}
+
+void km_tool::show_via(std::size_t const Index)
+{
+	auto const &vias{kilometrage::vias()};
+	if (Index >= vias.size())
+		return;
+	auto const point{vias[Index].point};
+	auto const line{vias[Index].line};
+	int path{0};
+	if (auto *track{kilometrage::track_near(point, 6.0, path)}; track != nullptr)
+	{
+		pick(*track, point);
+		m_line = line;
+	}
+	m_view.fly_to(point, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 40.0);
+}
+
+int km_tool::via_here() const
+{
+	if (false == m_pick.has_value() || m_pick->track == nullptr)
+		return -1;
+	auto const &vias{kilometrage::vias()};
+	for (std::size_t index = 0; index < vias.size(); ++index)
+	{
+		if (vias[index].line != m_line)
+			continue;
+		int path{0};
+		if (kilometrage::track_near(vias[index].point, 6.0, path) == m_pick->track && path == m_pick->path)
+			return static_cast<int>(index);
+	}
+	return -1;
+}
+
+void km_tool::lead_along()
+{
+	m_route_status.clear();
+	if (false == m_pick.has_value() || m_pick->track == nullptr)
+		return;
+	auto const line{line_of(m_line)};
+	if (line.empty())
+	{
+		m_route_status = STR("Give the number of the line first");
+		return;
+	}
+	auto const astray_of = [&]() {
+		auto const *axis{kilometrage::axis_of(line)};
+		return axis != nullptr ? axis->astray.size() : kilometrage::marks().size();
+	};
+	auto const before{kilometrage::current()};
+	auto const astray{astray_of()};
+	kilometrage::via entry;
+	entry.line = line;
+	entry.point = m_pick->on;
+	kilometrage::put(entry);
+	auto const *axis{kilometrage::axis_of(line)};
+	if (axis == nullptr || false == axis->runs_along(m_pick->track, m_pick->path))
+	{
+		kilometrage::restore(before);
+		m_route_status = STR("The line can't run along this track: no way leads from it onto the line");
+		return;
+	}
+	m_line = line;
+	m_history.push_kilometrage_snapshot();
+	m_route_status = format(STR_C("Line %s runs along this track now"), line.c_str());
+	if (auto const lost{astray_of()}; lost > astray)
+		m_route_status += "\n" + format(STR_P("%zu point of the km is off the line now: the track leads it away from it", "%zu points of the km are off the line now: the track leads it away from them", lost - astray), lost - astray);
+}
+
+void km_tool::drop_via()
+{
+	m_route_status.clear();
+	auto const index{via_here()};
+	if (index < 0)
+		return;
+	kilometrage::remove_via(static_cast<std::size_t>(index));
+	m_history.push_kilometrage_snapshot();
+	m_route_status = format(STR_C("Line %s runs along the straight paths of the switches here again"), m_line.c_str());
 }
 
 void km_tool::read_posts()
@@ -635,7 +715,36 @@ void km_tool::render_options()
 		}
 	}
 
-	step_heading(2, STR_C("From the posts"));
+	step_heading(2, STR_C("The way through a station"));
+	auto const *line_axis{m_line.empty() ? nullptr : kilometrage::axis_of(m_line)};
+	if (false == m_pick.has_value() || m_pick->track == nullptr)
+		ImGui::TextDisabled("%s", STR_C("Through a station the km run along the straight paths of the switches. Click a track of the station to lead them along it instead"));
+	else if (line_axis == nullptr)
+		ImGui::TextDisabled("%s", STR_C("Put a point of the km of the line first"));
+	else if (auto const via{via_here()}; via >= 0)
+	{
+		if (std::find(line_axis->blocked.begin(), line_axis->blocked.end(), static_cast<std::size_t>(via)) != line_axis->blocked.end())
+			ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", STR_C("The line doesn't run along this track: another track chosen leads it elsewhere"));
+		else
+			ImGui::TextUnformatted(format(STR_C("Line %s runs along this track, as chosen"), m_line.c_str()).c_str());
+		if (ImGui::Button(STR_C("Back onto the straight paths"), ImVec2(-1.0f, 0.0f)))
+			drop_via();
+		item_tooltip("The track chosen is forgotten, the line runs along the straight paths of the switches here again. One step of undo");
+	}
+	else if (line_axis->runs_along(m_pick->track, m_pick->path))
+		ImGui::TextDisabled("%s", format(STR_C("Line %s runs along this track"), m_line.c_str()).c_str());
+	else
+	{
+		ImGui::TextDisabled("%s", format(STR_C("Line %s doesn't run along this track"), m_line.c_str()).c_str());
+		if (ImGui::Button(STR_C("Lead the km along this track"), ImVec2(-1.0f, 0.0f)))
+			lead_along();
+		item_tooltip("The line runs along the track clicked, along the path of the switch clicked, and on along the straight paths of the switches "
+		             "until it meets its tracks again; where it doesn't, as at a junction, it goes on that way. One step of undo");
+	}
+	if (false == m_route_status.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", m_route_status.c_str());
+
+	step_heading(3, STR_C("From the posts"));
 	if (ImGui::Button(STR_C("Read the km from the posts"), ImVec2(-1.0f, 0.0f)))
 		read_posts();
 	item_tooltip("Reads the hectometre posts standing along the line through the track clicked: a point of the km at the first and the last "
@@ -643,7 +752,7 @@ void km_tool::render_options()
 	if (false == m_status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", m_status.c_str());
 
-	step_heading(3, STR_C("The points of the lines"));
+	step_heading(4, STR_C("The points of the lines"));
 	if (lines.empty())
 	{
 		ImGui::TextDisabled("%s", STR_C("None yet"));
@@ -666,6 +775,22 @@ void km_tool::render_options()
 			ImGui::TextDisabled("%s", format(STR_P("%zu stretch with the tracks on formations of their own", "%zu stretches with the tracks on formations of their own", axis->sides.size()), axis->sides.size()).c_str());
 			item_tooltip("Where the tracks part more than 15 m and come together again, the km run along the longer one, the shorter one goes by "
 			             "its own length and its last hectometre before they meet takes up the difference, as PKP GK-1 gives it (6.1.12)");
+		}
+		auto const &vias{kilometrage::vias()};
+		for (std::size_t index = 0; index < vias.size(); ++index)
+		{
+			if (vias[index].line != line)
+				continue;
+			auto const blocked{std::find(axis->blocked.begin(), axis->blocked.end(), index) != axis->blocked.end()};
+			double km{0.0};
+			auto const label{kilometrage::km_at(line, vias[index].point, km, kReadoutReach) ? format(STR_C("Along the track chosen by km %s"), kilometrage::text(km).c_str()) : std::string{STR_C("Along the track chosen")}};
+			if (blocked)
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.4f, 1.0f));
+			if (ImGui::Selectable((label + "##kmvia" + std::to_string(index)).c_str(), false))
+				show_via(index);
+			if (blocked)
+				ImGui::PopStyleColor();
+			item_tooltip(blocked ? "The line doesn't run along this track: another track chosen leads it elsewhere" : "Through the station the line runs along this track, not along the straight paths of the switches");
 		}
 		auto const rows{axis->anchors.size() + axis->astray.size()};
 		if (false == ImGui::BeginTable(("##kmmarks" + line).c_str(), 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(260.0f, ImGui::GetTextLineHeightWithSpacing() * (rows + 1.5f)))))
@@ -776,6 +901,23 @@ void km_tool::draw_overlay() const
 		if (projection.project(top, screen))
 			draw_label(drawlist, screen, colour, IM_COL32(16, 18, 22, 255), mark.line + ": " + mark_text(mark));
 	}
+	// the tracks chosen for the way through a station: a rhombus on the track
+	auto const &vias{kilometrage::vias()};
+	for (std::size_t index = 0; index < vias.size(); ++index)
+	{
+		auto const &via{vias[index]};
+		ImVec2 screen;
+		if (false == near_enough(via.point, kLabelRange * 2.0) || false == projection.project(via.point + lift, screen))
+			continue;
+		auto blocked{false};
+		if (auto const *axis{kilometrage::axis_of(via.line)}; axis != nullptr)
+			blocked = std::find(axis->blocked.begin(), axis->blocked.end(), index) != axis->blocked.end();
+		auto const colour{blocked ? kAstray : kAxis};
+		auto const r{8.0f};
+		drawlist->AddQuadFilled(ImVec2(screen.x, screen.y - r), ImVec2(screen.x + r, screen.y), ImVec2(screen.x, screen.y + r), ImVec2(screen.x - r, screen.y), colour);
+		drawlist->AddQuad(ImVec2(screen.x, screen.y - r), ImVec2(screen.x + r, screen.y), ImVec2(screen.x, screen.y + r), ImVec2(screen.x - r, screen.y), IM_COL32(16, 18, 22, 255), 1.5f);
+		draw_label(drawlist, ImVec2(screen.x, screen.y - r - 2.0f), colour, IM_COL32(16, 18, 22, 255), format(STR_C("%s: this way"), via.line.c_str()));
+	}
 	if (m_pick.has_value() && m_edited < 0)
 	{
 		auto const foot{m_pick->point + lift};
@@ -800,8 +942,11 @@ editor_selftest_result km_tool::selftest(std::string const &Command, std::istrin
 			return editor_selftest_result::handled;
 		}
 		auto const at{values.count("at") ? std::atof(values.at("at").c_str()) : 0.5};
-		pick(*track, editor_track::point_at(*track, at));
-		WriteLog(format("SELFTEST kmpick %s: line %s km %s jump %d against %d edited %d at %.1f %.1f", track->name().c_str(), m_line.c_str(), kilometrage::text(m_km).c_str(), m_jump ? 1 : 0, m_against ? 1 : 0, m_edited, m_pick->point.x, m_pick->point.z));
+		auto const path{values.count("path") ? std::atoi(values.at("path").c_str()) : 0};
+		pick(*track, path > 0 && path < static_cast<int>(track->m_paths.size()) ? geometry::bezier{track->m_paths[path]}.point(at) : editor_track::point_at(*track, at));
+		auto const *axis{m_line.empty() ? nullptr : kilometrage::axis_of(m_line)};
+		WriteLog(format("SELFTEST kmpick %s: line %s km %s jump %d against %d edited %d at %.1f %.1f path %d along %d via %d", track->name().c_str(), m_line.c_str(), kilometrage::text(m_km).c_str(), m_jump ? 1 : 0, m_against ? 1 : 0, m_edited, m_pick->point.x, m_pick->point.z,
+		                m_pick->path, axis != nullptr && axis->runs_along(m_pick->track, m_pick->path) ? 1 : 0, via_here()));
 		return editor_selftest_result::handled;
 	}
 	if (Command == "kmset")
@@ -819,6 +964,21 @@ editor_selftest_result km_tool::selftest(std::string const &Command, std::istrin
 			m_against = against->second == "1";
 		put();
 		WriteLog("SELFTEST kmset: " + m_status);
+		return editor_selftest_result::handled;
+	}
+	if (Command == "kmvia")
+	{
+		// kmvia [line=<number>] [remove=1]: the line led along the track picked, or back onto the straight paths there
+		auto const values{selftest_values(Words)};
+		if (auto const line{values.find("line")}; line != values.end())
+			m_line = line->second;
+		if (values.count("remove") > 0)
+			drop_via();
+		else
+			lead_along();
+		auto text{m_route_status};
+		std::replace(text.begin(), text.end(), '\n', ';');
+		WriteLog("SELFTEST kmvia: " + text);
 		return editor_selftest_result::handled;
 	}
 	if (Command == "kmremove")
@@ -877,7 +1037,7 @@ editor_selftest_result km_tool::selftest(std::string const &Command, std::istrin
 			for (auto const &side : axis->sides)
 				WriteLog(format("SELFTEST kmlist apart: %.1f m of track by %.1f m of axis (%.1f..%.1f), km %s..%s", side.length, side.to - side.from, side.from, side.to, kilometrage::text(kilometrage::km_on(*axis, side, 0.0)).c_str(),
 				                kilometrage::text(kilometrage::km_on(*axis, side, side.length)).c_str()));
-			WriteLog(format("SELFTEST kmlist line %s: axis %.0f m %s growth %d, %zu astray, km %s..%s:", line.c_str(), axis->length(), axis->between ? "between" : "along", axis->growth, axis->astray.size(), kilometrage::text(kilometrage::km_on(*axis, 0.0)).c_str(),
+			WriteLog(format("SELFTEST kmlist line %s: axis %.0f m %s growth %d, %zu astray, %zu blocked, km %s..%s:", line.c_str(), axis->length(), axis->between ? "between" : "along", axis->growth, axis->astray.size(), axis->blocked.size(), kilometrage::text(kilometrage::km_on(*axis, 0.0)).c_str(),
 			                kilometrage::text(kilometrage::km_on(*axis, axis->length())).c_str()) +
 			         list);
 		}

@@ -2188,7 +2188,7 @@ bool editor_track::find_route(TTrack *From, TTrack *To, route &Route, std::strin
 	return true;
 }
 
-editor_track::route editor_track::run_route(TTrack &Track, double const Maximum)
+editor_track::route editor_track::run_route(TTrack &Track, double const Maximum, int const Path)
 {
 	route result;
 	if (false == is_supported(Track))
@@ -2228,7 +2228,7 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum)
 		}
 		return nodes;
 	};
-	auto const own{main_of(Track)};
+	auto const own{Path >= 0 && Path < static_cast<int>(Track.m_paths.size()) ? Path : main_of(Track)};
 	auto const ahead{walk({&Track, own, true})};
 	auto const behind{walk({&Track, own, false})};
 	for (auto node = behind.rbegin(); node != behind.rend(); ++node)

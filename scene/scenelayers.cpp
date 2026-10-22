@@ -854,7 +854,7 @@ bool editor_line(char const *Mark, std::string const &Text)
 	    {"//$r", {"#", "switch", "slip", "crossing", "double", "connection"}},
 	    {"//$o", {"on"}},
 	    {"//$s", {"#", "station"}},
-	    {"//$k", {"#", "mark"}},
+	    {"//$k", {"#", "mark", "via"}},
 	}};
 	auto const lookup{std::find_if(words.begin(), words.end(), [&](auto const &Entry) { return Entry.first == Mark; })};
 	if (lookup == words.end())

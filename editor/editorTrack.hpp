@@ -375,8 +375,9 @@ class editor_track
 		double length{0.0};
 	};
 	static bool find_route(TTrack *From, TTrack *To, route &Route, std::string &Error);
-	// continues both ways from the path, through switches along their path 0
-	static route run_route(TTrack &Track, double const Maximum);
+	// continues both ways from the path, through switches along their path 0; Path: the path of the track to start along, -1 for its
+	// main one
+	static route run_route(TTrack &Track, double const Maximum, int const Path = -1);
 	static route route_of(chain const &Chain);
 	// the speed most of the sampled route is laid for, by the length: a few tracks set faster or slower don't set the curves of
 	// all of it. 100 where none is set

@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <set>
@@ -46,9 +47,11 @@ double const kCell{10.0}; // m, of the squares the track beside is sorted into
 double const kApart{15.0}; // m between the tracks, of a double-track line on two formations
 double const kBlend{100.0}; // m, the axis takes to go over from between the tracks to one of them
 double const kLonger{1.0}; // m, of the track beside longer than the track of the line, for the axis to follow it
+double const kDetour{20000.0}; // m, of the tracks followed each way from a via back onto the line
 
 std::vector<mark> g_marks;
-std::vector<mark> g_base; // as they were before the changes not yet in the undo history
+std::vector<via> g_vias;
+state g_base; // as it was before the changes not yet in the undo history
 bool g_changed{false};
 bool g_loaded{false};
 std::size_t g_edits{0};
@@ -70,18 +73,22 @@ std::string word(std::string const &Text)
 
 // format of the lines, coordinates in the space of the file:
 //   mark <line> <x y z> way <x z> km <km> [beyond <km>]
+//   via <line> <x y z>
 void store(scene::layer_handle const Layer)
 {
 	if (false == scene::Layers.valid(Layer))
 		return;
 	auto const &context{scene::Layers.layer(Layer).context_insert()};
 	std::vector<std::string> lines;
+	auto const heading = [&]() {
+		if (lines.empty())
+			lines.emplace_back("# kilometrage of the lines set in the track editor, the simulation skips these lines");
+	};
 	for (auto const &entry : g_marks)
 	{
 		if (entry.layer != Layer)
 			continue;
-		if (lines.empty())
-			lines.emplace_back("# kilometrage of the lines set in the track editor, the simulation skips these lines");
+		heading();
 		auto const point{context.to_local(entry.point)};
 		auto const ahead{context.to_local(entry.point + glm::dvec3{entry.way.x, 0.0, entry.way.y})};
 		auto way{plan_of(ahead - point)};
@@ -90,6 +97,14 @@ void store(scene::layer_handle const Layer)
 		if (entry.beyond.has_value())
 			text += format(" beyond %.3f", *entry.beyond);
 		lines.push_back(text);
+	}
+	for (auto const &entry : g_vias)
+	{
+		if (entry.layer != Layer)
+			continue;
+		heading();
+		auto const point{context.to_local(entry.point)};
+		lines.push_back(format("via %s %.4f %.4f %.4f", word(entry.line).c_str(), point.x, point.y, point.z));
 	}
 	scene::Layers.mark(Layer, kMark, std::move(lines));
 }
@@ -139,6 +154,79 @@ std::vector<span> once(std::vector<span> const &Spans)
 	return result;
 }
 
+// the route runs along the track of the via, along the path of a switch it stands on
+bool runs_by(editor_track::route const &Route, std::size_t const Via)
+{
+	int path{0};
+	auto const *track{track_near(g_vias[Via].point, kNear, path)};
+	return track != nullptr && std::any_of(Route.spans.begin(), Route.spans.end(), [&](span const &Entry) { return Entry.track == track && Entry.path == path; });
+}
+
+// the route led along the tracks of the vias: from the track of each the run along the straight paths of the switches both ways
+// back onto the route takes the place of the stretch of the route between where it comes back; where it comes back one way only,
+// as at a junction, the route goes on along it from there
+void through(editor_track::route &Route, std::vector<std::size_t> const &Vias)
+{
+	for (auto const index : Vias)
+	{
+		int path{0};
+		auto *track{track_near(g_vias[index].point, kNear, path)};
+		if (track == nullptr || runs_by(Route, index))
+			continue;
+		auto const run{editor_track::run_route(*track, kDetour, path)};
+		auto const at{index_of(run.spans, track)};
+		if (at == run.spans.size())
+			continue;
+		auto const none{Route.spans.size()};
+		auto const on = [&](std::size_t const Index) { return index_of(Route.spans, run.spans[Index].track); };
+		std::optional<std::size_t> low;
+		for (auto i = at; i-- > 0;)
+			if (on(i) != none)
+			{
+				low = i;
+				break;
+			}
+		std::optional<std::size_t> high;
+		for (auto i = at + 1; i < run.spans.size(); ++i)
+			if (on(i) != none)
+			{
+				high = i;
+				break;
+			}
+		auto const part = [&](std::size_t const From, std::size_t const To) { return std::vector<span>{run.spans.begin() + From, run.spans.begin() + To}; };
+		auto const head = [&](std::size_t const To) { return std::vector<span>{Route.spans.begin(), Route.spans.begin() + To}; };
+		auto const tail = [&](std::size_t const From) { return std::vector<span>{Route.spans.begin() + From, Route.spans.end()}; };
+		auto const joined = [](std::vector<std::vector<span>> const &Parts) {
+			std::vector<span> result;
+			for (auto const &entry : Parts)
+				result.insert(result.end(), entry.begin(), entry.end());
+			return result;
+		};
+		std::vector<span> spans;
+		if (low && high)
+		{
+			auto const from{on(*low)};
+			auto const to{on(*high)};
+			if (from == to)
+				continue;
+			spans = from < to ? joined({head(from), part(*low, *high + 1), tail(to + 1)}) : joined({head(to), flipped(part(*low, *high + 1)), tail(from + 1)});
+		}
+		else if (low)
+		{
+			auto const from{on(*low)};
+			spans = run.spans[*low].forward == Route.spans[from].forward ? joined({head(from), part(*low, run.spans.size())}) : joined({flipped(part(*low, run.spans.size())), tail(from + 1)});
+		}
+		else if (high)
+		{
+			auto const to{on(*high)};
+			spans = run.spans[*high].forward == Route.spans[to].forward ? joined({part(0, *high + 1), tail(to + 1)}) : joined({head(to), flipped(part(0, *high + 1))});
+		}
+		else
+			continue;
+		Route.spans = once(spans);
+	}
+}
+
 double plan_gap(std::vector<editor_track::route_sample> const &Samples, glm::dvec3 const &Point)
 {
 	auto best{std::numeric_limits<double>::max()};
@@ -150,18 +238,20 @@ double plan_gap(std::vector<editor_track::route_sample> const &Samples, glm::dve
 // the track beside the line: of each sample of the line the sample of it beside, where they run side by side
 struct pairing
 {
+	editor_track::route route; // of the track beside
 	std::vector<editor_track::route_sample> partner; // along the track beside, empty for none
 	std::vector<int> match; // of each sample, -1 where the track beside isn't there
 	std::vector<double> across; // to the sample beside, along the normal of the sample
 };
 
-pairing pair_with(std::vector<editor_track::route_sample> const &Samples, TTrack &Beside)
+pairing pair_with(std::vector<editor_track::route_sample> const &Samples, TTrack &Beside, std::vector<std::size_t> const &Vias)
 {
 	pairing result;
 	result.match.assign(Samples.size(), -1);
 	result.across.assign(Samples.size(), 0.0);
-	auto other{editor_track::run_route(Beside, kReach)};
-	result.partner = editor_track::sample_route(other, kStep);
+	result.route = editor_track::run_route(Beside, kReach);
+	through(result.route, Vias);
+	result.partner = editor_track::sample_route(result.route, kStep);
 	auto const &partner{result.partner};
 	auto const cell = [](glm::dvec3 const &Point) { return std::make_pair(static_cast<long>(std::floor(Point.x / kCell)), static_cast<long>(std::floor(Point.z / kCell))); };
 	std::map<std::pair<long, long>, std::vector<std::size_t>> grid;
@@ -195,9 +285,29 @@ pairing pair_with(std::vector<editor_track::route_sample> const &Samples, TTrack
 	return result;
 }
 
+// the track beside comes back onto the line between the stretches it runs beside it, or both ways, as a track of a station or a
+// passing loop does: not the other track
+bool looped(pairing const &Pairs, std::unordered_set<TTrack const *> const &Own)
+{
+	auto low{Pairs.partner.size()};
+	std::size_t high{0};
+	for (auto const match : Pairs.match)
+		if (match >= 0)
+		{
+			low = std::min(low, static_cast<std::size_t>(match));
+			high = std::max(high, static_cast<std::size_t>(match));
+		}
+	auto const on_line = [&](editor_track::route_sample const &Sample) { return Sample.span < Pairs.route.spans.size() && Own.count(Pairs.route.spans[Sample.span].track) > 0; };
+	if (low >= Pairs.partner.size())
+		return false;
+	auto const first{Pairs.partner.begin() + static_cast<std::ptrdiff_t>(low)};
+	auto const last{Pairs.partner.begin() + static_cast<std::ptrdiff_t>(high) + 1};
+	return std::any_of(first, last, on_line) || (std::any_of(Pairs.partner.begin(), first, on_line) && std::any_of(last, Pairs.partner.end(), on_line));
+}
+
 // the track beside the line, looked for by the first mark and then every 500 m along the line: a track the line doesn't run
 // through, the spacing of a double-track line away, beside it for 100 m at least
-pairing pair_up(std::vector<editor_track::route_sample> const &Samples, editor_track::route const &Route, std::size_t const Origin)
+pairing pair_up(std::vector<editor_track::route_sample> const &Samples, editor_track::route const &Route, std::size_t const Origin, std::vector<std::size_t> const &Vias)
 {
 	std::unordered_set<TTrack const *> own;
 	for (auto const &entry : Route.spans)
@@ -220,8 +330,8 @@ pairing pair_up(std::vector<editor_track::route_sample> const &Samples, editor_t
 				auto *track{track_near({probe.x, at.position.y, probe.y}, 1.6)};
 				if (track == nullptr || own.count(track) > 0 || false == tried.insert(track).second)
 					continue;
-				auto result{pair_with(Samples, *track)};
-				if (std::count_if(result.match.begin(), result.match.end(), [](int const Match) { return Match >= 0; }) * kStep >= 100.0)
+				auto result{pair_with(Samples, *track, Vias)};
+				if (std::count_if(result.match.begin(), result.match.end(), [](int const Match) { return Match >= 0; }) * kStep >= 100.0 && false == looped(result, own))
 					return result;
 			}
 		}
@@ -372,7 +482,12 @@ std::optional<axis> build(std::string const &Line)
 		return std::nullopt;
 	auto *first{*start};
 	auto const first_mark{own[static_cast<std::size_t>(start - tracks.begin())]};
+	std::vector<std::size_t> passes;
+	for (std::size_t index = 0; index < g_vias.size(); ++index)
+		if (g_vias[index].line == Line)
+			passes.push_back(index);
 	auto route{editor_track::run_route(*first, kReach)};
+	through(route, passes);
 	if (route.spans.empty())
 		return std::nullopt;
 	// the marks the main paths of the switches lead away from: the line goes their way
@@ -393,7 +508,10 @@ std::optional<axis> build(std::string const &Line)
 	for (std::size_t round = 0; round <= own.size(); ++round)
 	{
 		samples = editor_track::sample_route(route, kStep);
-		pairs = pair_up(samples, route, origin_of(samples));
+		// the track beside goes along the vias the line doesn't
+		std::vector<std::size_t> beside;
+		std::copy_if(passes.begin(), passes.end(), std::back_inserter(beside), [&](std::size_t const Via) { return false == runs_by(route, Via); });
+		pairs = pair_up(samples, route, origin_of(samples), beside);
 		std::size_t away{own.size()};
 		for (std::size_t k = 0; k < own.size() && away == own.size(); ++k)
 			if (tracks[k] != nullptr && tried.count(k) == 0 && plan_gap(samples, g_marks[own[k]].point) > kOnAxis && plan_gap(pairs.partner, g_marks[own[k]].point) > kOnAxis)
@@ -424,12 +542,22 @@ std::optional<axis> build(std::string const &Line)
 			spans.insert(spans.end(), route.spans.begin() + at + 1, route.spans.end());
 		}
 		route.spans = once(spans);
+		through(route, passes);
 	}
 	if (samples.size() < 2)
 		return std::nullopt;
 	axis result;
 	result.line = Line;
 	compose(result, samples, pairs);
+	for (auto const &entry : route.spans)
+		result.paths.emplace_back(entry.track, entry.path);
+	auto const paired{std::any_of(pairs.match.begin(), pairs.match.end(), [](int const Match) { return Match >= 0; })};
+	if (paired)
+		for (auto const &entry : pairs.route.spans)
+			result.paths.emplace_back(entry.track, entry.path);
+	for (auto const index : passes)
+		if (false == runs_by(route, index) && (false == paired || false == runs_by(pairs.route, index)))
+			result.blocked.push_back(index);
 	for (auto const index : own)
 	{
 		axis::anchor anchor;
@@ -462,7 +590,8 @@ std::optional<axis> build(std::string const &Line)
 void reset()
 {
 	g_marks.clear();
-	g_base.clear();
+	g_vias.clear();
+	g_base = {};
 	drop_axes();
 	g_changed = false;
 	g_loaded = false;
@@ -474,6 +603,7 @@ void load()
 		return;
 	g_loaded = true;
 	g_marks.clear();
+	g_vias.clear();
 	drop_axes();
 	for (auto const layer : scene::Layers.marked_layers(kMark))
 	{
@@ -487,6 +617,18 @@ void load()
 			glm::dvec3 point{0.0};
 			glm::dvec2 way{0.0, 1.0};
 			line >> keyword;
+			if (keyword == "via")
+			{
+				via entry;
+				entry.layer = layer;
+				glm::dvec3 point{0.0};
+				line >> entry.line >> point.x >> point.y >> point.z;
+				if (line.fail() || entry.line.empty())
+					continue;
+				entry.point = context.to_world(point);
+				g_vias.push_back(std::move(entry));
+				continue;
+			}
 			if (keyword != "mark")
 				continue;
 			line >> entry.line >> point.x >> point.y >> point.z >> keyword >> way.x >> way.y >> keyword >> entry.km;
@@ -505,16 +647,27 @@ void load()
 			g_marks.push_back(std::move(entry));
 		}
 	}
-	g_base = g_marks;
+	g_base = current();
 	g_changed = false;
 	if (false == g_marks.empty())
-		WriteLog("Editor: " + std::to_string(g_marks.size()) + " kilometrage mark(s) read from the scenery", logtype::generic);
+		WriteLog("Editor: " + std::to_string(g_marks.size()) + " kilometrage mark(s) and " + std::to_string(g_vias.size()) + " via(s) read from the scenery", logtype::generic);
 }
 
 std::vector<mark> const &marks()
 {
 	load();
 	return g_marks;
+}
+
+std::vector<via> const &vias()
+{
+	load();
+	return g_vias;
+}
+
+state current()
+{
+	return {g_marks, g_vias};
 }
 
 void put(mark Entry)
@@ -549,29 +702,56 @@ void remove(std::size_t const Index)
 	changed({layer});
 }
 
-std::optional<std::vector<mark>> take_changes()
+void put(via Entry)
+{
+	load();
+	int path{0};
+	auto *track{track_near(Entry.point, kNear, path)};
+	Entry.layer = track != nullptr ? alignment_store::layer_of(*track) : scene::Layers.active();
+	if (false == scene::Layers.valid(Entry.layer))
+		Entry.layer = 1;
+	auto const layer{Entry.layer};
+	g_vias.push_back(std::move(Entry));
+	changed({layer});
+}
+
+void remove_via(std::size_t const Index)
+{
+	load();
+	if (Index >= g_vias.size())
+		return;
+	auto const layer{g_vias[Index].layer};
+	g_vias.erase(g_vias.begin() + static_cast<std::ptrdiff_t>(Index));
+	changed({layer});
+}
+
+std::optional<state> take_changes()
 {
 	if (false == g_changed)
 		return std::nullopt;
 	auto before{std::move(g_base)};
-	g_base = g_marks;
+	g_base = current();
 	g_changed = false;
 	return before;
 }
 
 void settle()
 {
-	g_base = g_marks;
+	g_base = current();
 	g_changed = false;
 }
 
-void restore(std::vector<mark> Marks)
+void restore(state State)
 {
 	std::set<scene::layer_handle> layers;
-	for (auto const *list : {&g_marks, &Marks})
+	for (auto const *list : {&g_marks, &State.marks})
 		for (auto const &entry : *list)
 			layers.insert(entry.layer);
-	g_marks = std::move(Marks);
+	for (auto const *list : {&g_vias, &State.vias})
+		for (auto const &entry : *list)
+			layers.insert(entry.layer);
+	g_marks = std::move(State.marks);
+	g_vias = std::move(State.vias);
 	changed(layers);
 	settle();
 }
@@ -764,6 +944,60 @@ TTrack *track_near(glm::dvec3 const &Point, double const Reach)
 		{
 			nearest = distance;
 			best = track;
+		}
+	}
+	return best;
+}
+
+int path_near(TTrack const &Track, glm::dvec3 const &Point, glm::dvec3 &On)
+{
+	int result{0};
+	auto nearest{std::numeric_limits<double>::max()};
+	On = Point;
+	for (int path = 0; path < static_cast<int>(Track.m_paths.size()); ++path)
+	{
+		geometry::bezier const curve{Track.m_paths[path]};
+		auto previous{curve.point(0.0)};
+		for (int i = 1; i <= 64; ++i)
+		{
+			auto const next{curve.point(i / 64.0)};
+			auto const ab{plan_of(next - previous)};
+			auto const length2{glm::dot(ab, ab)};
+			auto const t{length2 > 1e-12 ? std::clamp(glm::dot(plan_of(Point - previous), ab) / length2, 0.0, 1.0) : 0.0};
+			auto const at{glm::mix(previous, next, t)};
+			// where the paths of a switch run together, the first one
+			if (auto const distance{plan_distance(at, Point)}; distance < nearest - 1e-3)
+			{
+				nearest = distance;
+				result = path;
+				On = at;
+			}
+			previous = next;
+		}
+	}
+	return result;
+}
+
+TTrack *track_near(glm::dvec3 const &Point, double const Reach, int &Path)
+{
+	TTrack *best{nullptr};
+	auto nearest{Reach};
+	Path = 0;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 1) == 0 || false == editor_track::is_supported(*track) || track->m_paths.empty())
+			continue;
+		auto const &ends{track->m_paths.front().points};
+		auto const chord{plan_distance(ends[segment_data::point::start], ends[segment_data::point::end])};
+		if (std::min(plan_distance(ends[segment_data::point::start], Point), plan_distance(ends[segment_data::point::end], Point)) > chord * 0.8 + nearest + 1.0)
+			continue;
+		glm::dvec3 on{0.0};
+		auto const path{path_near(*track, Point, on)};
+		if (auto const distance{plan_distance(on, Point)}; distance < nearest)
+		{
+			nearest = distance;
+			best = track;
+			Path = path;
 		}
 	}
 	return best;

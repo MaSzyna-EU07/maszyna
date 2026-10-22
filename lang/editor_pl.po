@@ -10720,3 +10720,63 @@ msgstr[2] "%zu odcinków z torami na osobnych torowiskach"
 msgid "Where the tracks part more than 15 m and come together again, the km run along the longer one, the shorter one goes by its own length and its last hectometre before they meet takes up the difference, as PKP GK-1 gives it (6.1.12)"
 msgstr "Gdzie tory rozchodzą się na więcej niż 15 m i znów schodzą, kilometraż biegnie po dłuższym, krótszy liczy się po własnej długości, a różnicę bierze jego ostatni hektometr przed zejściem, jak podaje PKP GK-1 (6.1.12)"
 
+msgid "The way through a station"
+msgstr "Przebieg przez stację"
+
+msgid "Through a station the km run along the straight paths of the switches. Click a track of the station to lead them along it instead"
+msgstr "Przez stację kilometraż biegnie po prostych torach rozjazdów. Kliknij tor stacji, żeby poprowadzić go tamtędy"
+
+msgid "Put a point of the km of the line first"
+msgstr "Najpierw wstaw punkt kilometra linii"
+
+msgid "The line doesn't run along this track: another track chosen leads it elsewhere"
+msgstr "Linia nie biegnie tym torem: inny wybrany tor prowadzi ją gdzie indziej"
+
+msgid "Line %s runs along this track, as chosen"
+msgstr "Linia %s biegnie tym torem, tak jak wybrano"
+
+msgid "Back onto the straight paths"
+msgstr "Wróć na proste tory rozjazdów"
+
+msgid "The track chosen is forgotten, the line runs along the straight paths of the switches here again. One step of undo"
+msgstr "Wybór toru znika, linia znów biegnie tu po prostych torach rozjazdów. Jeden krok cofania"
+
+msgid "Line %s runs along this track"
+msgstr "Linia %s biegnie tym torem"
+
+msgid "Line %s doesn't run along this track"
+msgstr "Linia %s nie biegnie tym torem"
+
+msgid "Lead the km along this track"
+msgstr "Prowadź kilometraż tym torem"
+
+msgid "The line runs along the track clicked, along the path of the switch clicked, and on along the straight paths of the switches until it meets its tracks again; where it doesn't, as at a junction, it goes on that way. One step of undo"
+msgstr "Linia pobiegnie klikniętym torem, przez rozjazd tą jego drogą, którą kliknięto, i dalej po prostych torach rozjazdów, aż wróci na swoje tory; gdzie nie wraca, jak na odgałęzieniu, pobiegnie dalej tamtędy. Jeden krok cofania"
+
+msgid "The line can't run along this track: no way leads from it onto the line"
+msgstr "Linia nie może biec tym torem: żadna droga nie prowadzi z niego na linię"
+
+msgid "Line %s runs along this track now"
+msgstr "Linia %s biegnie teraz tym torem"
+
+msgid "%zu point of the km is off the line now: the track leads it away from it"
+msgid_plural "%zu points of the km are off the line now: the track leads it away from them"
+msgstr[0] "%zu punkt kilometra jest teraz poza linią: ten tor wyprowadza ją od niego"
+msgstr[1] "%zu punkty kilometra są teraz poza linią: ten tor wyprowadza ją od nich"
+msgstr[2] "%zu punktów kilometra jest teraz poza linią: ten tor wyprowadza ją od nich"
+
+msgid "Line %s runs along the straight paths of the switches here again"
+msgstr "Linia %s znów biegnie tu po prostych torach rozjazdów"
+
+msgid "Along the track chosen by km %s"
+msgstr "Wybrany tor przy km %s"
+
+msgid "Along the track chosen"
+msgstr "Wybrany tor"
+
+msgid "Through the station the line runs along this track, not along the straight paths of the switches"
+msgstr "Przez stację linia biegnie tym torem, a nie po prostych torach rozjazdów"
+
+msgid "%s: this way"
+msgstr "%s: tędy"
+
