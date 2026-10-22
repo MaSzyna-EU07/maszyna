@@ -50,6 +50,7 @@ double constexpr kLabelRange{700.0}; // m, of the names shown there, farther one
 double constexpr kRailHead{0.18}; // m, above the axis of a path
 
 double constexpr kLineLimit{30000.0}; // m, of a line followed out to the next station
+double constexpr kGapReach{1500.0}; // m, the tracks going on beyond the end of a line found within it
 double constexpr kBlockShare{1.1}; // of the braking distance, the block sections towards the end of the tracks
 double constexpr kPredicted{305.0}; // m, out from the next station to its entry signal, while it has none
 // the events of a block section, switching the block signal guarding it
@@ -1151,6 +1152,7 @@ void srk_tool::render_options()
 	metric_tiles({{format("%zu", layout.switches.size()), STR_C("switches"), kSwitch},
 	              {format("%zu", tracks.size() - layout.switches.size()), STR_C("tracks"), kPlain},
 	              {format("%.0f m", layout.to - layout.from), STR_C("length"), ImGui::GetColorU32(ImGuiCol_Text)}});
+	render_problems();
 	if (begin_fields("##srkstation"))
 	{
 		auto const text = [&](char const *Label, char const *Id, std::string const &Value, char const *Hint, auto const &Set) {
@@ -2784,6 +2786,10 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			if (k > 0 && row.sections.size() > 1 && row.sections.back().from == line.distances[k])
 				row.sections[row.sections.size() - 2].to = line.distances[k];
 		}
+		std::vector<std::pair<double, double>> bare;
+		for (std::size_t k = 1; k + 1 < row.sections.size(); ++k)
+			if (row.sections[k].name.empty() && row.sections[k].from >= 0.0 && row.sections[k].to - row.sections[k].from >= 1.0)
+				bare.emplace_back(row.sections[k].from, row.sections[k].to);
 		row.sections.erase(std::remove_if(row.sections.begin(), row.sections.end(), [](line_row::run const &Run) { return Run.name.empty() || Run.to - std::max(0.0, Run.from) < 1.0; }), row.sections.end());
 		for (auto &run : row.sections)
 		{
@@ -2791,6 +2797,8 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			run.km_to = km_along(line, row.km_number, run.to);
 		}
 		row.legacy = false == row.stops.empty() && false == switched;
+		if (false == row.legacy && row.block != block_kind::semi)
+			row.bare = std::move(bare);
 		auto const next{next_entry(line, Standing, row.length)};
 		row.next = next >= 0 ? signal_shown(Standing[next].name, stem) : std::string{};
 		m_lines.push_back(std::move(row));
@@ -2818,6 +2826,125 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			row.leftover_travel = travel_of(signal.yaw);
 		}
 	}
+}
+
+void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
+{
+	m_problems.clear();
+	if (false == m_layout.has_value())
+		return;
+	auto const stem{stem_of_open()};
+	auto const plan = [](glm::dvec3 const &Point) { return glm::dvec2{Point.x, Point.z}; };
+	auto const by_open = [&](glm::dvec3 const &Point) {
+		if (gap_to(*m_layout, Point) <= 8.0)
+			return true;
+		return std::any_of(m_line_ways.begin(), m_line_ways.end(), [&](station::line const &Line) {
+			double gap{0.0};
+			auto const distance{station::distance_on(Line, Point, gap)};
+			return gap <= 8.0 && distance > -50.0 && distance < Line.length() + 1.0;
+		});
+	};
+	for (auto const &signal : Standing)
+		if (false == signal.read.empty() && signal.track == nullptr && by_open(signal.position))
+			m_problems.push_back({format(STR_C("Signal %s: no track reads it"), signal_shown(signal.name, stem).c_str()), signal.position, signal.instance});
+	for (std::size_t index = 0; index < m_lines.size() && index < m_line_ways.size(); ++index)
+	{
+		auto const &row{m_lines[index]};
+		auto const &line{m_line_ways[index]};
+		if (false == row.station && line.points.size() > 1 && line.length() < kLineLimit - 50.0)
+		{
+			// the tracks go on beyond a gap: one missing, deleted maybe
+			auto const end{line.points.back()};
+			auto const step{plan(line.points.back() - line.points[line.points.size() - 2])};
+			if (glm::length(step) > 1e-9)
+			{
+				auto const way{glm::normalize(step)};
+				std::vector<TTrack const *> own(line.tracks.begin(), line.tracks.end());
+				for (auto const &target : editor_track::free_ends(nullptr, 1, end, kGapReach, own))
+				{
+					auto const ahead{plan(target.position - end)};
+					auto const along{glm::dot(ahead, way)};
+					auto const direction{plan(target.direction)};
+					if (along < 5.0 || along < glm::length(ahead) * 0.8 || glm::length(direction) < 1e-9 || std::abs(glm::dot(glm::normalize(direction), way)) < 0.7)
+						continue;
+					m_problems.push_back({format(STR_C("The line out of %s breaks off %.0f m beyond it, the tracks go on %.0f m farther"), row.entry.c_str(), line.length(), glm::length(ahead)), end});
+					break;
+				}
+			}
+		}
+		for (auto const &bare : row.bare)
+			m_problems.push_back({format(STR_C("The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"), row.entry.c_str(), bare.second - bare.first, bare.first), station::point_on(line, (bare.first + bare.second) * 0.5).point, 0, true});
+	}
+	// the block sections their controls switch, the tracks gone
+	std::unordered_set<std::string> circuits;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			for (auto const *isolated : track->Isolated)
+				if (isolated != nullptr)
+					circuits.insert(ToLower(isolated->asName));
+	for (auto const &control : m_templates.standing_templates([](std::string const &File) { return File == kControl; }))
+		if (false == control.values.empty() && circuits.count(ToLower(control.values[0])) == 0 && by_open(control.location))
+			m_problems.push_back({format(STR_C("Block section %s has no track"), control.values[0].c_str()), control.location});
+}
+
+void srk_tool::render_problems()
+{
+	if (m_problems.empty())
+		return;
+	ImGui::Spacing();
+	ImGui::PushStyleColor(ImGuiCol_Text, kWrong);
+	auto const open{ImGui::CollapsingHeader(format("%s (%zu)###srkproblems", STR_C("To repair"), m_problems.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen)};
+	ImGui::PopStyleColor();
+	item_tooltip("What the station and its lines need yet: signals no track reads, lines broken off where a track is missing, tracks of a line of the automatic block in no block section, block sections whose tracks are gone. Click a row to see the place");
+	if (false == open)
+		return;
+	for (std::size_t index = 0; index < m_problems.size(); ++index)
+	{
+		auto const &problem{m_problems[index]};
+		ImGui::PushStyleColor(ImGuiCol_Text, problem.signal != 0 || problem.lines ? kDoubtful : kWrong);
+		if (ImGui::Selectable((problem.text + "##srkproblem" + std::to_string(index)).c_str()))
+			m_view.fly_to(problem.at + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{0.3, -0.5, 0.8}), 60.0);
+		ImGui::PopStyleColor();
+	}
+	auto const fixable{static_cast<std::size_t>(std::count_if(m_problems.begin(), m_problems.end(), [](problem const &Problem) { return Problem.signal != 0 || Problem.lines; }))};
+	if (fixable == 0)
+	{
+		ImGui::TextDisabled("%s", STR_C("A track missing is laid in the Track tool: laid in the place of a deleted one it takes over its events and its track circuit"));
+		return;
+	}
+	if (main_button(format("%s (%zu)###srkfix", STR_C("Repair"), fixable).c_str(), ImVec2(-1.0f, 0.0f)))
+		fix_problems();
+	item_tooltip("The signals no track reads are read by the track they stand by again, as moving them does, the lines with tracks in no block section get their line signals set again. A track missing is laid in the Track tool. A step of undo each");
+}
+
+void srk_tool::fix_problems()
+{
+	std::vector<scene::instance_handle> signals;
+	auto lines{false};
+	for (auto const &problem : m_problems)
+	{
+		if (problem.signal != 0)
+			signals.push_back(problem.signal);
+		lines = lines || problem.lines;
+	}
+	std::vector<std::string> done;
+	if (false == signals.empty())
+	{
+		auto const read{m_signals.signal_reattach(signals)};
+		done.push_back(format(STR_P("%zu of %zu signal read again", "%zu of %zu signals read again", static_cast<long long>(signals.size())), read, signals.size()));
+		if (read < signals.size())
+			done.back() += STR(": the rest stand farther than 10 m from a track, by vehicles or their events are gone");
+	}
+	auto const status{done.empty() ? std::string{} : done.front()};
+	if (lines)
+	{
+		m_status.clear();
+		set_lines();
+		if (false == status.empty())
+			m_status = status + (m_status.empty() ? "" : "\n" + m_status);
+	}
+	else
+		m_status = status;
 }
 
 void srk_tool::set_lines(block_edit const *Edit)
@@ -3506,6 +3633,7 @@ void srk_tool::survey_signals()
 		m_heads_known = false;
 		m_lines.clear();
 		m_line_ways.clear();
+		m_problems.clear();
 		m_lines_problem = STR("Looking for the signal templates...");
 		if (false == m_measured)
 			measure({});
@@ -3513,6 +3641,7 @@ void srk_tool::survey_signals()
 	}
 	check_heads(standing);
 	survey_lines(standing);
+	survey_problems(standing);
 	auto const stem{stem_of_open()};
 	std::vector<station::signal> stops;
 	for (auto const &signal : standing)
@@ -4881,7 +5010,48 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 					WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " switched by " + control.values[index] + ", which doesn't stand");
 				}
 		}
-		WriteLog(format("SELFTEST srkcheck: %zu signals, %zu block sections, %zu bad", standing.size(), controls.size(), bad));
+		std::size_t unread{0};
+		for (auto const &signal : standing)
+			if (false == signal.read.empty() && signal.track == nullptr)
+			{
+				++unread;
+				WriteLog("SELFTEST srkcheck: signal " + signal.name + " read by no track, its event " + signal.read);
+			}
+		std::unordered_set<std::string> circuits;
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved)
+				for (auto const *isolated : track->Isolated)
+					if (isolated != nullptr)
+						circuits.insert(ToLower(isolated->asName));
+		std::size_t bare{0};
+		for (auto const &control : controls)
+			if (false == control.values.empty() && circuits.count(ToLower(control.values[0])) == 0)
+			{
+				++bare;
+				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " without a track");
+			}
+		bad += unread + bare;
+		if (m_layout.has_value())
+		{
+			survey_signals();
+			for (auto const &problem : m_problems)
+				WriteLog(format("SELFTEST srkcheck: open station: %s at %.1f %.1f%s%s", problem.text.c_str(), problem.at.x, problem.at.z, problem.signal != 0 ? " (signal)" : "", problem.lines ? " (lines)" : ""));
+		}
+		WriteLog(format("SELFTEST srkcheck: %zu signals, %zu block sections, %zu unread, %zu without a track, %zu problems of the open station, %zu bad", standing.size(), controls.size(), unread, bare, m_problems.size(), bad));
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkfix")
+	{
+		// srkfix: the Repair of the check of the open station
+		if (false == m_layout.has_value())
+		{
+			WriteLog("SELFTEST srkfix: no station open");
+			return editor_selftest_result::handled;
+		}
+		survey_signals();
+		auto const before{m_problems.size()};
+		fix_problems();
+		WriteLog(format("SELFTEST srkfix: %zu problems before, status %s", before, m_status.c_str()));
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstrip")

@@ -105,6 +105,7 @@ struct standing_signal
 	std::string file; // of its template
 	TTrack *track{nullptr}; // the trains read it on, nullptr while none does
 	int facing{0}; // the trains it faces run 1: towards the end of the path of the track, -1: towards its start, 0 unknown
+	std::string read; // its event the trains read, empty for a template without one
 };
 // a signal template as the signalling picks one: the lights it has and the speeds its events show
 struct signal_head
@@ -216,6 +217,8 @@ class editor_signals
 	virtual std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) = 0;
 	// the signal templates with lights, false while they are still being looked for
 	virtual bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) = 0;
+	// the signals given which no track reads, read again by the track they stand by: one step of the history. returns: how many
+	virtual std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) = 0;
 
   protected:
 	~editor_signals() = default;

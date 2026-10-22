@@ -11394,3 +11394,66 @@ msgstr[2] "%zu dostało szablony o stawności swoich szlaków"
 
 msgid "Ctrl+Z takes it back"
 msgstr "Ctrl+Z cofa"
+
+msgid "the read of signal %s"
+msgid_plural "the reads of signals %s"
+msgstr[0] "odczyt semafora %s"
+msgstr[1] "odczyty semaforów %s"
+msgstr[2] "odczyty semaforów %s"
+
+msgid "%zu event"
+msgid_plural "%zu events"
+msgstr[0] "%zu zdarzenie"
+msgstr[1] "%zu zdarzenia"
+msgstr[2] "%zu zdarzeń"
+
+msgid "the track circuit %s"
+msgid_plural "the track circuits %s"
+msgstr[0] "odcinek izolowany %s"
+msgstr[1] "odcinki izolowane %s"
+msgstr[2] "odcinki izolowane %s"
+
+msgid "Taken over from the deleted track: %s"
+msgstr "Przejęte po usuniętym torze: %s"
+
+msgid "The deleted track carried %s: a track laid in its place takes it over, Ctrl+Z brings it back"
+msgid_plural "The deleted tracks carried %s: tracks laid in their place take it over, Ctrl+Z brings them back"
+msgstr[0] "Usunięty tor niósł %s: tor ułożony w tym miejscu przejmie to sam, Ctrl+Z cofa"
+msgstr[1] "Usunięte tory niosły %s: tory ułożone w tym miejscu przejmą to same, Ctrl+Z cofa"
+msgstr[2] "Usunięte tory niosły %s: tory ułożone w tym miejscu przejmą to same, Ctrl+Z cofa"
+
+msgid "Signal %s: no track reads it"
+msgstr "Semafor %s: żaden tor go nie odczytuje"
+
+msgid "The line out of %s breaks off %.0f m beyond it, the tracks go on %.0f m farther"
+msgstr "Szlak za semaforem %s urywa się po %.0f m, tory biegną dalej %.0f m za przerwą"
+
+msgid "The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"
+msgstr "Szlak za semaforem %s: %.0f m torów %.0f m za semaforem nie należy do żadnego odstępu"
+
+msgid "Block section %s has no track"
+msgstr "Odstęp %s nie ma już toru"
+
+msgid "To repair"
+msgstr "Do naprawy"
+
+msgid "What the station and its lines need yet: signals no track reads, lines broken off where a track is missing, tracks of a line of the automatic block in no block section, block sections whose tracks are gone. Click a row to see the place"
+msgstr "Czego stacji i jej szlakom jeszcze brakuje: semafory, których żaden tor nie odczytuje, szlaki urwane tam, gdzie brakuje toru, tory szlaku z SBL poza odstępami, odstępy, których tory zniknęły. Kliknij wiersz, żeby zobaczyć miejsce"
+
+msgid "A track missing is laid in the Track tool: laid in the place of a deleted one it takes over its events and its track circuit"
+msgstr "Brakujący tor układa się narzędziem Tor: ułożony w miejscu usuniętego przejmuje jego zdarzenia i odcinek izolowany"
+
+msgid "Repair"
+msgstr "Napraw"
+
+msgid "The signals no track reads are read by the track they stand by again, as moving them does, the lines with tracks in no block section get their line signals set again. A track missing is laid in the Track tool. A step of undo each"
+msgstr "Semafory, których żaden tor nie odczytuje, znów odczyta tor, przy którym stoją, tak jak po ich przesunięciu; szlakom z torami poza odstępami sygnalizacja zostanie ustawiona jeszcze raz. Brakujący tor układa się narzędziem Tor. Każda poprawka to jeden krok cofania"
+
+msgid "%zu of %zu signal read again"
+msgid_plural "%zu of %zu signals read again"
+msgstr[0] "Odczyt przywrócony: %zu z %zu semafora"
+msgstr[1] "Odczyt przywrócony: %zu z %zu semaforów"
+msgstr[2] "Odczyt przywrócony: %zu z %zu semaforów"
+
+msgid ": the rest stand farther than 10 m from a track, by vehicles or their events are gone"
+msgstr ": pozostałe stoją dalej niż 10 m od toru, przy torze z pojazdami albo ich zdarzenia już nie istnieją"

@@ -55,6 +55,17 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		glm::dvec3 a{0.0};
 		glm::dvec3 b{0.0};
 		words >> a.x >> a.z >> b.x >> b.z;
+		double radius{0.0};
+		int variant{0};
+		int transitions{0};
+		double height{0.0};
+		if (command == "join")
+		{
+			words >> radius >> variant >> transitions;
+			// of the ends, for sceneries far above zero
+			if (words >> height)
+				a.y = b.y = height;
+		}
 		auto const from{editor_track::find_free_end(nullptr, 1, a, 3.0, {})};
 		extend_tool tool;
 		if (from.track == nullptr || false == free_end(*from.track, from.point.path, from.point.kind == editor_track::point_kind::end, tool))
@@ -67,10 +78,6 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		double length{0.0};
 		if (command == "join")
 		{
-			double radius{0.0};
-			int variant{0};
-			int transitions{0};
-			words >> radius >> variant >> transitions;
 			auto const to{editor_track::find_free_end(nullptr, 1, b, 3.0, {from.track})};
 			if (to.track == nullptr)
 			{

@@ -1905,6 +1905,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool standing_signals(std::vector<standing_signal> &Signals, bool const Wait) override;
 	std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) override;
 	bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) override;
+	std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) override;
 
 	struct signal_template
 	{
@@ -1978,6 +1979,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	signal_template const *signal_template_of(std::string const &File) const;
 	bool signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const &Point, glm::dvec3 const &Cursor, int const Facing, int const Side, signal_template const &Template, signal_spot &Spot) const;
 	void signal_refresh(bool const Force = false);
+	// the signals standing, read by the tracks as they are now, the templates as found so far
+	std::vector<signal_standing> signal_standing_now() const;
 	int signal_hit() const;
 	void signal_press(track_intent const &Intent);
 	void signal_release();
@@ -2001,6 +2004,22 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_signal_overlay() const;
 	std::string signal_intent_label(signal_template const &Template, signal_spot const &Spot) const;
 	std::string signal_variant(signal_template const &Template, signal_spot const &Spot) const;
+	// what a deleted track carried and no other one took, its read events and track circuits, for a track laid in its place
+	struct orphan_record
+	{
+		TTrack *track{nullptr}; // retired; the record waits while it stays so
+		std::vector<std::pair<std::string, int>> events; // the name, the list it was on
+		std::vector<std::string> circuits;
+		// the tracks given the circuits: while one stays the circuits don't wait, once a step other than an undo removes one they
+		// are its own
+		std::vector<TTrack *> given;
+		bool fresh{false}; // made by the step being taken
+	};
+	std::vector<orphan_record> m_orphans;
+	std::string m_orphan_note; // shown by the cursor after the step which made it
+	void orphans_register(std::vector<TTrack *> const &Removed, std::vector<TTrack *> const &Kept);
+	// Created: made by the step, their circuits the ones of the tracks they were made from; Changed: the others it changed
+	void orphans_take_over(std::vector<TTrack *> const &Created, std::vector<TTrack *> const &Changed);
 
 	// a model laid along the track: bent to follow it, or repeated along it
 	struct sweep_tool

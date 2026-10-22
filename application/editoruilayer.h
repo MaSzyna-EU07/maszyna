@@ -162,6 +162,8 @@ class editor_ui : public ui_layer
 	static void register_settings();
 	// shows outcome of an operation in the layers window
 	void set_status(std::string const &Status, bool const Error = false);
+	// a warning after an operation done: added to its status, shown by the cursor for a while
+	void set_notice(std::string const &Notice);
 
   private:
 	// methods
@@ -211,6 +213,8 @@ class editor_ui : public ui_layer
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
 	std::string m_refusal;
 	double m_refusaltime{-100.0};
+	bool m_refusalnotice{false}; // a warning rather than a refusal
+	double m_statustime{-100.0};
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};
 	bool m_sceneopen{true};

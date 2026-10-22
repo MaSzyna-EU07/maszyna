@@ -277,6 +277,14 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	if (States.empty() && Created.empty() && Removed.empty())
 		return;
 
+	// what the tracks removed carried goes to the ones laid in their place, now or later, in the step which lays them
+	std::vector<TTrack *> changed;
+	for (auto const &entry : States)
+		changed.push_back(entry.first);
+	auto kept{Created};
+	kept.insert(kept.end(), changed.begin(), changed.end());
+	orphans_register(Removed, kept);
+	orphans_take_over(Created, changed);
 	trim_history();
 	auto *track = false == States.empty() ? States.front().first : false == Created.empty() ? Created.front() : Removed.front();
 	EditorSnapshot snap;

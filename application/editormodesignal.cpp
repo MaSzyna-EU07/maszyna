@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "world/Event.h"
 #include "world/Track.h"
 
 #include "imgui/imgui.h"
@@ -48,6 +49,9 @@ float const kDragStart{6.0f};
 double const kDragTravel{1.0};
 double const kRefreshPeriod{2.0};
 double const kSignalReach{10.0};
+// a track laid in the place of a deleted one runs within it of its axis
+double const kOrphanReach{1.0};
+std::size_t const kOrphanRecords{64};
 
 char const *const kKinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
 char const *const kKindLabels[] = {"Semaphore", "Automatic block", "Warning signal", "Shunting signal", "Stop signal", "Substitute signal", "Repeater"};
@@ -222,6 +226,54 @@ void draw_signal_icon(ImDrawList *Draw, ImVec2 const Origin, ImVec2 const Size, 
 		Draw->AddCircleFilled(ImVec2(centre, headtop + 2.0f + lamp * 1.1f + i * lamp * 2.2f), lamp, lamp_colour(Lamps[i]));
 }
 
+
+// the point of an axis of the track nearest in the plan to the one given: how far, on which path, where on it
+double plan_gap(TTrack const &Track, glm::dvec3 const &Point, int &Path, double &Parameter)
+{
+	auto best{std::numeric_limits<double>::max()};
+	for (int path = 0; path < static_cast<int>(Track.m_paths.size()); ++path)
+	{
+		auto const parameter{nearest_on(Track, path, Point)};
+		auto const distance{geometry::plan_distance(bezier{Track.m_paths[path]}.point(parameter), Point)};
+		if (distance < best)
+		{
+			best = distance;
+			Path = path;
+			Parameter = parameter;
+		}
+	}
+	return best;
+}
+
+bool plan_overlaps(TTrack const &A, TTrack const &B, double const Margin)
+{
+	auto const box = [](TTrack const &Track, glm::dvec2 &Low, glm::dvec2 &High) {
+		Low = glm::dvec2{std::numeric_limits<double>::max()};
+		High = -Low;
+		for (auto const &path : Track.m_paths)
+		{
+			bezier const curve{path};
+			for (auto const &point : {curve.p0, curve.p1, curve.p2, curve.p3})
+			{
+				Low = glm::min(Low, plan_of(point));
+				High = glm::max(High, plan_of(point));
+			}
+		}
+	};
+	glm::dvec2 low_a, high_a, low_b, high_b;
+	box(A, low_a, high_a);
+	box(B, low_b, high_b);
+	return low_a.x - Margin <= high_b.x && low_b.x - Margin <= high_a.x && low_a.y - Margin <= high_b.y && low_b.y - Margin <= high_a.y;
+}
+
+std::string listed(std::vector<std::string> const &Names)
+{
+	std::string text;
+	for (auto const &name : Names)
+		text += (text.empty() ? "" : ", ") + name;
+	return text;
+}
+
 } // namespace
 
 bool editor_mode::signal_scan(bool const Wait)
@@ -369,38 +421,7 @@ void editor_mode::signal_refresh(bool const Force)
 	tool.standing_history = m_history.size();
 	tool.standing_redo = g_redo.size();
 	tool.standing_time = now;
-	tool.standing.clear();
-	if (scene::Layers.empty())
-		return;
-	auto const found{standing_templates([this](std::string const &File) { return signal_template_of(File) != nullptr; })};
-	std::unordered_map<std::string, std::pair<TTrack *, int>> readers;
-	for (auto *track : simulation::Paths.sequence())
-	{
-		if (track == nullptr || track->m_editorremoved)
-			continue;
-		for (int list = 0; list < 6; ++list)
-			for (auto const &event : editor_track::events(*track, list))
-				if (false == event.first.empty())
-					readers.emplace(ToLower(event.first), std::make_pair(track, list));
-	}
-	for (auto const &include : found)
-	{
-		auto const *item{signal_template_of(include.file)};
-		signal_standing standing;
-		standing.include = include;
-		standing.kind = kind_index(item->kind);
-		standing.name = include.values.empty() ? std::string{} : include.values.front();
-		if (false == item->read.empty())
-		{
-			standing.read = editor_includes::substitute(item->read, include.values);
-			if (auto const reader{readers.find(ToLower(standing.read))}; reader != readers.end())
-			{
-				standing.track = reader->second.first;
-				standing.list = reader->second.second;
-			}
-		}
-		tool.standing.push_back(std::move(standing));
-	}
+	tool.standing = signal_standing_now();
 	if (tool.selected != 0 && std::none_of(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; }))
 		tool.selected = 0;
 }
@@ -511,6 +532,45 @@ void editor_mode::signal_move_update()
 		path = tool.home.path;
 	}
 	tool.moved_valid = track != nullptr && signal_drop_at(*found, *track, path, held, 0, tool.moved);
+}
+
+std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() const
+{
+	std::vector<signal_standing> standing;
+	if (scene::Layers.empty() || m_signal.templates.empty())
+		return standing;
+	auto const found{standing_templates([this](std::string const &File) { return signal_template_of(File) != nullptr; })};
+	std::unordered_map<std::string, std::pair<TTrack *, int>> readers;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		for (int list = 0; list < 6; ++list)
+			for (auto const &event : editor_track::events(*track, list))
+				if (false == event.first.empty())
+					readers.emplace(ToLower(event.first), std::make_pair(track, list));
+	}
+	for (auto const &include : found)
+	{
+		auto const *item{signal_template_of(include.file)};
+		if (item == nullptr)
+			continue;
+		signal_standing signal;
+		signal.include = include;
+		signal.kind = kind_index(item->kind);
+		signal.name = include.values.empty() ? std::string{} : include.values.front();
+		if (false == item->read.empty())
+		{
+			signal.read = editor_includes::substitute(item->read, include.values);
+			if (auto const reader{readers.find(ToLower(signal.read))}; reader != readers.end())
+			{
+				signal.track = reader->second.first;
+				signal.list = reader->second.second;
+			}
+		}
+		standing.push_back(std::move(signal));
+	}
+	return standing;
 }
 
 editor_mode::signal_standing const *editor_mode::signal_standing_of(scene::instance_handle const Instance) const
@@ -841,6 +901,287 @@ void editor_mode::signal_detach_events(std::string const &Read, std::vector<std:
 	}
 }
 
+void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::vector<TTrack *> const &Kept)
+{
+	auto const carries = [](TTrack &Track) {
+		for (int list = 0; list < 6; ++list)
+			for (auto const &event : editor_track::events(Track, list))
+				if (false == event.first.empty())
+					return true;
+		return false == Track.Isolated.empty();
+	};
+	// a record of a track removed again, after an undo brought it back, is the step's to make anew
+	m_orphans.erase(std::remove_if(m_orphans.begin(), m_orphans.end(), [&](orphan_record const &Record) { return std::find(Removed.begin(), Removed.end(), Record.track) != Removed.end(); }), m_orphans.end());
+	// a track which took the circuits over, removed by the step, leaves them to what the step made
+	for (auto &record : m_orphans)
+		if (std::any_of(record.given.begin(), record.given.end(), [&](TTrack const *Track) { return std::find(Removed.begin(), Removed.end(), Track) != Removed.end(); }))
+		{
+			record.circuits.clear();
+			record.given.clear();
+		}
+	std::vector<TTrack *> gone;
+	for (auto *track : Removed)
+		if (track != nullptr && track->m_editorremoved && false == track->m_paths.empty() && carries(*track))
+			gone.push_back(track);
+	if (gone.empty())
+		return;
+	// what the step moved onto the tracks left isn't lost
+	std::unordered_set<std::string> carried;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			for (int list = 0; list < 6; ++list)
+				for (auto const &event : editor_track::events(*track, list))
+					carried.insert(ToLower(event.first));
+	std::unordered_set<std::string> circuits;
+	for (auto *track : Kept)
+		if (track != nullptr && false == track->m_editorremoved)
+			for (auto const *isolated : track->Isolated)
+				if (isolated != nullptr)
+					circuits.insert(ToLower(isolated->asName));
+	for (auto *track : gone)
+	{
+		orphan_record record;
+		record.track = track;
+		record.fresh = true;
+		for (int list = 0; list < 6; ++list)
+			for (auto const &event : editor_track::events(*track, list))
+			{
+				auto const name{ToLower(event.first)};
+				if (false == name.empty() && carried.count(name) == 0 && std::none_of(record.events.begin(), record.events.end(), [&](auto const &Event) { return Event.first == name; }))
+					record.events.emplace_back(name, list);
+			}
+		for (auto const *isolated : track->Isolated)
+			if (isolated != nullptr && circuits.count(ToLower(isolated->asName)) == 0)
+				record.circuits.push_back(isolated->asName);
+		if (record.events.empty() && record.circuits.empty())
+			continue;
+		m_orphans.push_back(std::move(record));
+	}
+	if (m_orphans.size() > kOrphanRecords)
+		m_orphans.erase(m_orphans.begin(), m_orphans.begin() + static_cast<std::ptrdiff_t>(m_orphans.size() - kOrphanRecords));
+}
+
+void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::vector<TTrack *> const &Changed)
+{
+	// a record waits while its track stays deleted, so the step laying another one in its place, undone and laid again, gets it again
+	if (std::none_of(m_orphans.begin(), m_orphans.end(), [](orphan_record const &Record) { return Record.track->m_editorremoved; }))
+		return;
+	std::vector<TTrack *> candidates;
+	for (auto const *tracks : {&Created, &Changed})
+		for (auto *track : *tracks)
+			if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty() && track->Dynamics.empty() && editor_track::is_supported(*track) &&
+			    std::find(candidates.begin(), candidates.end(), track) == candidates.end())
+				candidates.push_back(track);
+	if (candidates.empty() && std::none_of(m_orphans.begin(), m_orphans.end(), [](orphan_record const &Record) { return Record.fresh; }))
+		return;
+	std::unordered_set<std::string> carried;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			for (int list = 0; list < 6; ++list)
+				for (auto const &event : editor_track::events(*track, list))
+					carried.insert(ToLower(event.first));
+	// not the list of the Signals tool, nor its templates once found: the step taken may hold one of them; looked for once an event
+	// waits
+	std::vector<signal_standing> signals;
+	std::unordered_map<std::string, signal_standing const *> readers;
+	auto known{false};
+	auto const reader_of = [&](std::string const &Name) -> signal_standing const * {
+		if (false == known)
+		{
+			known = true;
+			if (m_signal.templates.empty())
+				signal_scan(false);
+			signals = signal_standing_now();
+			for (auto const &standing : signals)
+				if (false == standing.read.empty())
+					readers.emplace(ToLower(standing.read), &standing);
+		}
+		auto const found{readers.find(Name)};
+		return found != readers.end() ? found->second : nullptr;
+	};
+	std::vector<std::string> taken;
+	std::vector<std::string> left;
+	std::size_t taken_events{0};
+	std::size_t left_events{0};
+	std::vector<std::string> taken_circuits;
+	std::vector<std::string> left_circuits;
+	std::size_t deleted{0};
+	for (auto &record : m_orphans)
+	{
+		if (false == record.track->m_editorremoved)
+		{
+			record.fresh = false;
+			continue;
+		}
+		if (candidates.empty() && false == record.fresh)
+			continue;
+		auto const &old{*record.track};
+		deleted += record.fresh ? 1 : 0;
+		for (auto const &[name, list] : record.events)
+		{
+			if (carried.count(name) > 0)
+				continue;
+			auto const *standing{reader_of(name)};
+			auto got{false};
+			// an event no longer there, of a signal taken away, stays off the tracks
+			if (false == candidates.empty() && simulation::Events.FindEvent(name) != nullptr)
+			{
+				// the place on the old axis: by the signal reading it, else the middle of the track
+				int old_path{0};
+				double old_parameter{0.5};
+				auto const by_signal{standing != nullptr && plan_gap(old, standing->include.location, old_path, old_parameter) <= kSignalReach};
+				if (false == by_signal)
+				{
+					old_path = 0;
+					old_parameter = 0.5;
+				}
+				auto const anchor{bezier{old.m_paths[old_path]}.point(old_parameter)};
+				auto const old_forward{forward_at(old, old_path, old_parameter)};
+				TTrack *best{nullptr};
+				int best_path{0};
+				double best_parameter{0.0};
+				auto nearest{kOrphanReach};
+				for (auto *track : candidates)
+				{
+					int path{0};
+					double parameter{0.0};
+					auto const gap{plan_gap(*track, anchor, path, parameter)};
+					if (gap <= nearest && std::abs(glm::dot(forward_at(*track, path, parameter), old_forward)) > 0.9)
+					{
+						nearest = gap;
+						best = track;
+						best_path = path;
+						best_parameter = parameter;
+					}
+				}
+				if (best != nullptr)
+				{
+					// laid the other way round, the trains running towards its end read it at its start
+					auto const reversed{glm::dot(forward_at(*best, best_path, best_parameter), old_forward) < 0.0};
+					auto target{reversed && list % 3 != 0 ? list + (list % 3 == 1 ? 1 : -1) : list};
+					if (by_signal)
+					{
+						auto const &location{standing->include.location};
+						auto const axis{bezier{best->m_paths[best_path]}.point(nearest_on(*best, best_path, location))};
+						auto const side{glm::dot(plan_of(location) - plan_of(axis), right_of(travel_of(standing->include.yaw))) >= 0.0 ? 1 : -1};
+						signal_spot spot;
+						if (signal_drop_at(*standing, *best, best_path, location, side, spot))
+							target = spot.list + (list >= 3 ? 3 : 0);
+					}
+					editor_track::events(*best, target).emplace_back(name, nullptr);
+					std::string missing;
+					editor_track::bind_events(*best, missing);
+					best->mark_dirty();
+					carried.insert(name);
+					got = true;
+				}
+			}
+			if (got)
+			{
+				if (standing != nullptr)
+					taken.push_back(standing->name);
+				else
+					++taken_events;
+			}
+			else if (record.fresh)
+			{
+				if (standing != nullptr)
+					left.push_back(standing->name);
+				else
+					++left_events;
+			}
+		}
+		if (false == record.circuits.empty() && std::all_of(record.given.begin(), record.given.end(), [](TTrack const *Track) { return Track->m_editorremoved; }))
+		{
+			auto got{false};
+			// a track lying in the place of the old one for the most part: a new one, in the circuit of the track it was made from,
+			// or one without a circuit
+			for (auto *track : candidates)
+			{
+				auto const made{std::find(Created.begin(), Created.end(), track) != Created.end()};
+				if ((false == made && false == track->Isolated.empty()) || false == plan_overlaps(*track, old, 2.0))
+					continue;
+				auto const same{track->Isolated.size() == record.circuits.size() && std::equal(record.circuits.begin(), record.circuits.end(), track->Isolated.begin(), [](std::string const &Name, TIsolated const *Isolated) { return Isolated != nullptr && ToLower(Isolated->asName) == ToLower(Name); })};
+				if (same)
+					continue;
+				std::size_t on{0};
+				std::size_t all{0};
+				for (auto const &path : track->m_paths)
+				{
+					bezier const curve{path};
+					for (int k = 0; k <= 32; ++k)
+					{
+						int old_path{0};
+						double old_parameter{0.0};
+						++all;
+						if (plan_gap(old, curve.point(k / 32.0), old_path, old_parameter) <= kOrphanReach)
+							++on;
+					}
+				}
+				if (all == 0 || on * 2 < all)
+					continue;
+				editor_track::isolated(*track, record.circuits);
+				if (std::find(record.given.begin(), record.given.end(), track) == record.given.end())
+					record.given.push_back(track);
+				got = true;
+			}
+			if (got)
+				taken_circuits.insert(taken_circuits.end(), record.circuits.begin(), record.circuits.end());
+			else if (record.fresh)
+				left_circuits.insert(left_circuits.end(), record.circuits.begin(), record.circuits.end());
+		}
+		record.fresh = false;
+	}
+	auto const parts = [](std::vector<std::string> const &Signals, std::size_t const Events, std::vector<std::string> const &Circuits) {
+		std::vector<std::string> part;
+		if (false == Signals.empty())
+			part.push_back(format(STR_P("the read of signal %s", "the reads of signals %s", static_cast<long long>(Signals.size())), listed(Signals).c_str()));
+		if (Events > 0)
+			part.push_back(format(STR_P("%zu event", "%zu events", static_cast<long long>(Events)), Events));
+		if (false == Circuits.empty())
+			part.push_back(format(STR_P("the track circuit %s", "the track circuits %s", static_cast<long long>(Circuits.size())), listed(Circuits).c_str()));
+		return listed(part);
+	};
+	std::string note;
+	if (auto const got{parts(taken, taken_events, taken_circuits)}; false == got.empty())
+		note = format(STR_C("Taken over from the deleted track: %s"), got.c_str());
+	if (auto const lost{parts(left, left_events, left_circuits)}; false == lost.empty())
+		note += (note.empty() ? "" : "\n") +
+		        format(STR_P("The deleted track carried %s: a track laid in its place takes it over, Ctrl+Z brings it back", "The deleted tracks carried %s: tracks laid in their place take it over, Ctrl+Z brings them back", static_cast<long long>(std::max<std::size_t>(deleted, 1))), lost.c_str());
+	if (false == note.empty())
+		m_orphan_note += (m_orphan_note.empty() ? "" : "\n") + note;
+}
+
+std::size_t editor_mode::signal_reattach(std::vector<scene::instance_handle> const &Instances)
+{
+	signal_refresh(true);
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::size_t attached{0};
+	for (auto const instance : Instances)
+	{
+		auto const *standing{signal_standing_of(instance)};
+		if (standing == nullptr || standing->read.empty() || standing->track != nullptr || simulation::Events.FindEvent(ToLower(standing->read)) == nullptr)
+			continue;
+		signal_spot spot;
+		if (false == signal_standing_spot(*standing, spot) || spot.track == nullptr || false == spot.track->Dynamics.empty())
+			continue;
+		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == spot.track; }))
+			states.emplace_back(spot.track, editor_track::capture(*spot.track));
+		auto &events{editor_track::events(*spot.track, spot.list)};
+		if (std::none_of(events.begin(), events.end(), [&](auto const &Event) { return ToLower(Event.first) == ToLower(standing->read); }))
+			events.emplace_back(ToLower(standing->read), nullptr);
+		std::string missing;
+		editor_track::bind_events(*spot.track, missing);
+		spot.track->mark_dirty();
+		++attached;
+	}
+	if (states.empty())
+		return 0;
+	push_track_snapshot(std::move(states));
+	signal_refresh(true);
+	return attached;
+}
+
 bool editor_mode::signal_delete(scene::instance_handle const Instance)
 {
 	if (false == scene::Layers.tracked(Instance) || false == scene::Layers.removable(Instance))
@@ -922,6 +1263,7 @@ bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool c
 		signal.file = standing.include.file;
 		signal.track = standing.track;
 		signal.facing = standing.track == nullptr ? 0 : standing.list % 3 == 2 ? 1 : standing.list % 3 == 1 ? -1 : 0;
+		signal.read = standing.read;
 	}
 	return true;
 }

@@ -1333,6 +1333,13 @@ bool editor_mode::update()
 {
     Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
+    // after the tool has told its own status
+    if (false == m_orphan_note.empty())
+    {
+        ui()->set_notice(m_orphan_note);
+        WriteLog("Editor: " + m_orphan_note);
+        m_orphan_note.clear();
+    }
     if (m_vehicle.take_leave())
     {
         Application.pop_mode();
@@ -6202,6 +6209,7 @@ void editor_mode::exit()
 
     g_redo.clear();
     m_history.clear();
+    m_orphans.clear();
     m_fill_last.clear();
     m_orthophoto.cancel_pending();
     m_orthophoto.detach_scene(); // the layer is an editor aid, keep it out of the other modes

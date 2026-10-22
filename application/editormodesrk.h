@@ -226,6 +226,7 @@ class srk_tool final : public editor_tool
 			double km_to{0.0};
 		};
 		std::vector<run> sections; // the track circuits along it, out from the station
+		std::vector<std::pair<double, double>> bare; // out along it, tracks between its block sections in none, of the automatic block
 		struct post
 		{
 			double distance{0.0}; // out along the line
@@ -244,6 +245,16 @@ class srk_tool final : public editor_tool
 	std::vector<station::line> m_line_ways; // of the lines listed
 	std::unordered_set<std::string> m_signal_names; // of the signals of the scenery, lowercase: a block signal drawn on one's number takes a letter
 	std::string m_lines_problem; // why the station has no lines listed
+	// what the check of the open station finds wrong: signals no track reads, lines broken off, tracks between the block sections of
+	// a line in none, block sections without a track
+	struct problem
+	{
+		std::string text;
+		glm::dvec3 at{0.0};
+		scene::instance_handle signal{0}; // Repair has a track read it again
+		bool lines{false}; // Repair sets the line signals again
+	};
+	std::vector<problem> m_problems;
 	bool m_drawing{false}; // the block boundaries drawn by hand
 	// a block boundary under the mouse while they are drawn: block signals across the line there, or the ones standing taken away
 	struct boundary
@@ -334,6 +345,11 @@ class srk_tool final : public editor_tool
 	// the lines out of the open station, for the panel
 	void survey_lines(std::vector<standing_signal> const &Standing);
 	void render_lines();
+	void survey_problems(std::vector<standing_signal> const &Standing);
+	void render_problems();
+	// the signals no track reads read by the tracks they stand by, the lines with tracks in no block section set again; a step of
+	// the history each
+	void fix_problems();
 	// the SHP track resonators placed where the signals checked need them and have none: 200 m before an entry signal, a block
 	// signal and a warning disc, at an exit signal onto a line of the automatic block, the track cut where none of its joints lies
 	// within 5 m, its event put on the track the trains run into there; one step of the history
