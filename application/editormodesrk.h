@@ -182,6 +182,11 @@ class srk_tool final : public editor_tool
 		std::size_t blocks{0}; // the block signals standing along it
 		bool automatic{false}; // of the automatic block
 		block_reason why{block_reason::single}; // the block it has, so
+		// the signals of the other block standing along it: warning discs on a line of the automatic block, block signals on one of the
+		// semi-automatic one, the first of them
+		std::size_t leftovers{0};
+		glm::dvec3 leftover{0.0};
+		glm::dvec2 leftover_travel{0.0, 1.0};
 	};
 	std::vector<line_row> m_lines;
 	std::string m_lines_problem; // why the station has no lines listed

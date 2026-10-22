@@ -1276,8 +1276,17 @@ void srk_tool::render_lines()
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 			auto const track{row.number == 0 ? std::string{STR_C("single track")} : format(STR_C("track %d"), row.number)};
-			if (ImGui::Selectable(format("%s, %s##srkline", row.entry.c_str(), track.c_str()).c_str(), false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
-				m_view.fly_to(row.position + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{row.travel.x, -0.3, row.travel.y}), 30.0);
+			if (row.leftovers > 0)
+				ImGui::PushStyleColor(ImGuiCol_Text, kDoubtful);
+			auto const clicked{ImGui::Selectable(format("%s, %s##srkline", row.entry.c_str(), track.c_str()).c_str(), false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)};
+			if (row.leftovers > 0)
+				ImGui::PopStyleColor();
+			if (clicked)
+			{
+				auto const &position{row.leftovers > 0 ? row.leftover : row.position};
+				auto const &travel{row.leftovers > 0 ? row.leftover_travel : row.travel};
+				m_view.fly_to(position + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{travel.x, -0.3, travel.y}), 30.0);
+			}
 			if (ImGui::IsItemHovered())
 			{
 				ImGui::BeginTooltip();
@@ -1289,7 +1298,14 @@ void srk_tool::render_lines()
 					ImGui::TextUnformatted(STR_C("A single-track line"));
 				ImGui::TextUnformatted(format(STR_P("%zu block signal stands along it", "%zu block signals stand along it", row.blocks), row.blocks).c_str());
 				ImGui::TextUnformatted(format(STR_C("Block: %s, %s"), kind(row.automatic), reason(row.why)).c_str());
-				ImGui::TextDisabled("%s", STR_C("LMB: fly to the entry signal"));
+				if (row.leftovers > 0)
+				{
+					ImGui::TextColored(kDoubtful, "%s", (row.automatic ? format(STR_P("%zu warning disc stands along it, of the semi-automatic block: delete it in the Signals tool", "%zu warning discs stand along it, of the semi-automatic block: delete them in the Signals tool", row.leftovers), row.leftovers)
+					                                                  : format(STR_P("%zu block signal stands along it, of the automatic block: delete it in the Signals tool", "%zu block signals stand along it, of the automatic block: delete them in the Signals tool", row.leftovers), row.leftovers)).c_str());
+					ImGui::TextDisabled("%s", STR_C("LMB: fly to the first of them"));
+				}
+				else
+					ImGui::TextDisabled("%s", STR_C("LMB: fly to the entry signal"));
 				ImGui::PopTextWrapPos();
 				ImGui::EndTooltip();
 			}
@@ -2317,6 +2333,20 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		row.position = Standing[owners[line.entry]].position;
 		row.travel = travel_of(Standing[owners[line.entry]].yaw);
 		row.automatic = automatic_block(line, row.entry, Standing, row.why, row.blocks);
+		for (auto const &signal : Standing)
+		{
+			if (signal.kind != (row.automatic ? "warning" : "block"))
+				continue;
+			double gap{0.0};
+			auto const distance{station::distance_on(line, signal.position, gap)};
+			if (gap > 4.5 || distance < 50.0 || distance > line.length() - 1.0)
+				continue;
+			if (row.leftovers++ == 0)
+			{
+				row.leftover = signal.position;
+				row.leftover_travel = travel_of(signal.yaw);
+			}
+		}
 		auto const next{next_entry(line, Standing, row.length)};
 		row.next = next >= 0 ? signal_shown(Standing[next].name, stem) : std::string{};
 		m_lines.push_back(std::move(row));
@@ -3910,7 +3940,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		if (false == m_lines_problem.empty())
 			WriteLog("SELFTEST srkblock: " + m_lines_problem);
 		for (auto const &row : m_lines)
-			WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks, row.automatic ? "sbl" : "semi", static_cast<int>(row.why)));
+			WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d leftovers %zu", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks, row.automatic ? "sbl" : "semi", static_cast<int>(row.why), row.leftovers));
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstrip")

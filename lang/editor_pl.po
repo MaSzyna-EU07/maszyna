@@ -11250,3 +11250,18 @@ msgid_plural "%zu with the tracks ending short of the places of their resonators
 msgstr[0] "%zu ma tory kończące się przed miejscem rezonatora"
 msgstr[1] "%zu mają tory kończące się przed miejscem rezonatora"
 msgstr[2] "%zu ma tory kończące się przed miejscem rezonatora"
+
+msgid "%zu warning disc stands along it, of the semi-automatic block: delete it in the Signals tool"
+msgid_plural "%zu warning discs stand along it, of the semi-automatic block: delete them in the Signals tool"
+msgstr[0] "Stoi na nim %zu tarcza ostrzegawcza, z blokady półsamoczynnej: usuń ją w narzędziu Sygnalizatory (H)"
+msgstr[1] "Stoją na nim %zu tarcze ostrzegawcze, z blokady półsamoczynnej: usuń je w narzędziu Sygnalizatory (H)"
+msgstr[2] "Stoi na nim %zu tarcz ostrzegawczych, z blokady półsamoczynnej: usuń je w narzędziu Sygnalizatory (H)"
+
+msgid "%zu block signal stands along it, of the automatic block: delete it in the Signals tool"
+msgid_plural "%zu block signals stand along it, of the automatic block: delete them in the Signals tool"
+msgstr[0] "Stoi na nim %zu semafor SBL, z blokady samoczynnej: usuń go w narzędziu Sygnalizatory (H)"
+msgstr[1] "Stoją na nim %zu semafory SBL, z blokady samoczynnej: usuń je w narzędziu Sygnalizatory (H)"
+msgstr[2] "Stoi na nim %zu semaforów SBL, z blokady samoczynnej: usuń je w narzędziu Sygnalizatory (H)"
+
+msgid "LMB: fly to the first of them"
+msgstr "LPM: leć do pierwszego z nich"
