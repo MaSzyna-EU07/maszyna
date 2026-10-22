@@ -615,7 +615,8 @@ void hekto_tool::render_options()
 	};
 	if (false == tool.line.empty())
 	{
-		ImGui::TextWrapped("%s", format(STR_C("The km of line %s, as the Kilometrage tool sets them, its jumps too: km %s at the point"), tool.line.c_str(), kilometrage::text(tool.km).c_str()).c_str());
+		ImGui::TextWrapped("%s", format(STR_C("The km of line %s, as the Kilometrage tool sets them, its jumps too"), tool.line.c_str()).c_str());
+		ImGui::TextDisabled("%s", format(STR_C("km %s at the point"), kilometrage::text(tool.km).c_str()).c_str());
 		if (ImGui::SmallButton(STR_C("Give the km here instead")))
 		{
 			tool.own_km = true;

@@ -10786,8 +10786,11 @@ msgstr "%s, z kilometrażu linii %s"
 msgid "The km of the middle of the station, as the Kilometrage tool sets them for the line, the jumps too: the block signals of the lines are numbered after them"
 msgstr "Kilometr środka stacji z kilometrażu linii ustalonego w narzędziu Kilometraż, z uskokami: według niego numeruje się semafory SBL"
 
-msgid "The km of line %s, as the Kilometrage tool sets them, its jumps too: km %s at the point"
-msgstr "Kilometraż linii %s z narzędzia Kilometraż, razem z uskokami: km %s w punkcie"
+msgid "The km of line %s, as the Kilometrage tool sets them, its jumps too"
+msgstr "Kilometraż linii %s z narzędzia Kilometraż, razem z uskokami"
+
+msgid "km %s at the point"
+msgstr "km %s w punkcie"
 
 msgid "Give the km here instead"
 msgstr "Podaj kilometr tutaj"
