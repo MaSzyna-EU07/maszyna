@@ -165,6 +165,16 @@ public:
     // debug methods
     virtual auto info_times() const -> std::string const & = 0;
     virtual auto info_stats() const -> std::string const & = 0;
+    // the same data in sections, for the debug panel to show each under a header of its own, the ones marked open unfolded at
+    // first. none: the panel shows info_times() and info_stats() as they are
+    struct info_section {
+        std::string title;
+        std::string text;
+        bool open { false };
+    };
+    virtual auto info_sections() const -> std::vector<info_section> const & {
+        static std::vector<info_section> const none;
+        return none; }
     // imgui renderer
 	  virtual class imgui_renderer *GetImguiRenderer() = 0;
 	  virtual void MakeScreenshot() = 0;

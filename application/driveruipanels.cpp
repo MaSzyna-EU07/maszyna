@@ -600,7 +600,7 @@ debug_panel::render() {
             ImGui::Checkbox( "Debug Traction", &DebugTractionFlag );
         }
         render_section( "Camera", m_cameralines );
-        render_section( "Gfx Renderer / Statistics", m_rendererlines );
+        render_section_renderer();
         render_section_settings();
 		render_section_developer(); // Developer tools
 #ifdef WITH_UART
@@ -1438,7 +1438,7 @@ debug_panel::update_section_camera( std::vector<text_line> &Output ) const {
 }
 
 void
-debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
+debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
 
             // gfx renderer data
             auto textline =
@@ -1471,9 +1471,12 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 
 			Output.emplace_back( textline, Global.UITextColor );
 
-            // renderer stats
-            Output.emplace_back( GfxRenderer->info_times(), Global.UITextColor );
-            Output.emplace_back( GfxRenderer->info_stats(), Global.UITextColor );
+            // renderer stats, in sections when the renderer has them (render_section_renderer())
+            m_renderersections = GfxRenderer->info_sections();
+            if( m_renderersections.empty() ) {
+                Output.emplace_back( GfxRenderer->info_times(), Global.UITextColor );
+                Output.emplace_back( GfxRenderer->info_stats(), Global.UITextColor );
+            }
 
             // CPU related
             Output.emplace_back("CPU:", Global.UITextColor);
@@ -1491,6 +1494,26 @@ debug_panel::render_section( std::string const &Header, std::vector<text_line> c
 	if( false == ImGui::CollapsingHeader( Header.c_str() ) ) { return false; }
 
     return render_section( Lines );
+}
+
+// the lines of the renderer, then its data in sections which fold, the long lines wrapped to the width of the panel
+bool
+debug_panel::render_section_renderer() {
+
+    if( false == render_section( "Gfx Renderer / Statistics", m_rendererlines ) ) { return false; }
+
+    ImGui::PushStyleColor( ImGuiCol_Text, { Global.UITextColor.r, Global.UITextColor.g, Global.UITextColor.b, Global.UITextColor.a } );
+    ImGui::PushTextWrapPos( 0.f );
+    for( auto const &section : m_renderersections ) {
+        ImGui::SetNextItemOpen( section.open, ImGuiCond_Once );
+        if( true == ImGui::TreeNode( section.title.c_str() ) ) {
+            ImGui::TextUnformatted( section.text.c_str() );
+            ImGui::TreePop();
+        }
+    }
+    ImGui::PopTextWrapPos();
+    ImGui::PopStyleColor();
+    return true;
 }
 
 bool

@@ -165,6 +165,8 @@ class opengl46_renderer : public gfx_renderer {
         info_times() const override;
     std::string const &
         info_stats() const override;
+    std::vector<info_section> const &
+        info_sections() const override;
 	  void MakeScreenshot() override;
     bool Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) override;
 
@@ -614,6 +616,7 @@ class opengl46_renderer : public gfx_renderer {
 	std::string m_pickdebuginfo;
 	//debug_stats m_debugstats;
 	std::string m_debugstatstext;
+	std::vector<info_section> m_debugsections; // the same data in sections, for the debug panel
     struct simulation_state {
         std::string weather;
         std::string season;
@@ -905,6 +908,27 @@ class opengl46_renderer : public gfx_renderer {
 	GLuint64 m_gllasttime = 0;
 	// gpu time of the parts of the frame, marks put one after another through the main view (the context of m_window)
 	gl::gpu_timeline m_gputimeline;
+	// cpu time of the same parts, marked at the same places: a part lasts from its mark to the next one, the parts of the same
+	// name are added up in a frame and averaged over the frames the way Timer::stopwatch averages
+	struct cpu_timeline {
+		struct part {
+			char const *name;
+			float time { 0.f }; // average, ms
+			float frame { 0.f }; // in the frame under way, ms
+		};
+		std::vector<part> parts; // in the order they came first
+		std::size_t current { 0 };
+		std::chrono::steady_clock::time_point mark;
+		bool active { false };
+		// starts the frame with its first part. the names are kept as pointers: string literals
+		void begin( char const *Name );
+		// ends the part under way and starts the next one
+		void next( char const *Name );
+		void end();
+		// average of the part of the name, or none
+		std::optional<float> time( char const *Name ) const;
+	};
+	cpu_timeline m_cputimeline;
 	// gpu time of the light cluster compute passes; the debug panel shows it once a pass measures it
 	gl::gpu_timer m_clusterstimer;
 	// gpu time of assigning the lights to the clusters, done every frame

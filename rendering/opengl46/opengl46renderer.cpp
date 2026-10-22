@@ -675,6 +675,7 @@ bool opengl46_renderer::Render()
 	}
 	// the context of the main view is current here, the one of the previous frame's end
 	m_gputimeline.begin("frame setup");
+	m_cputimeline.begin("frame setup");
 
 	// fetch simulation data
 	if (simulation::is_ready)
@@ -765,6 +766,7 @@ bool opengl46_renderer::Render()
 
 	m_current_viewport = &(*m_viewports.front());
 	m_gputimeline.end();
+	m_cputimeline.end();
 /*
 	m_debugtimestext += "cpu: " + to_string(Timer::subsystem.gfx_color.average(), 2) + " ms (" + std::to_string(m_cellqueue.size()) + " sectors)\n" +=
 	    "cpu swap: " + to_string(Timer::subsystem.gfx_swap.average(), 2) + " ms\n" += "uilayer: " + to_string(Timer::subsystem.gfx_gui.average(), 2) + "ms\n" +=
@@ -801,89 +803,151 @@ void opengl46_renderer::SwapBuffers()
 
 	Timer::subsystem.gfx_swap.stop();
 
-    m_debugtimestext.clear();
-    // the whole frame of the main loop and its parts: the update of the simulation, Render() with the ui drawn in it, the swap,
-    // and what's left (input, terrain streaming, tasks, network), measured by none of them
+    // the debug data, in sections for the panel. info_times() and info_stats() hold the same, joined
+    m_debugsections.clear();
+    // a line of a table of times: the name indented and padded to a column, then the time(s)
+    auto const timeline = []( int const Indent, std::string const &Name, std::string const &Values ) {
+        auto line { std::string( static_cast<std::size_t>( Indent ), ' ' ) + Name };
+        line.resize( std::max<std::size_t>( line.size() + 1, 34 ), ' ' );
+        return line + Values + "\n";
+    };
+    auto const ms = []( double const Value, int const Precision = 2 ) {
+        auto text { to_string( Value, Precision ) };
+        return std::string( std::max<int>( 0, 7 - static_cast<int>( text.size() ) ), ' ' ) + text;
+    };
+
+    // the whole frame of the main loop on the cpu and its parts, the simulation with its own; what's left is measured by none
     {
-        auto const mainloop { Timer::subsystem.mainloop_total.average() };
-        auto const simulation { Timer::subsystem.sim_total.average() };
-        auto const render { Timer::subsystem.gfx_total.average() };
-        auto const swap { Timer::subsystem.gfx_swap.average() };
-        m_debugtimestext =
-            "mainloop total: " + to_string( mainloop, 2 ) + " ms\n"
-            + " simulation: " + to_string( simulation, 2 ) + " ms\n"
-            + " render: " + to_string( render, 2 ) + " ms (ui " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms)\n"
-            + " swap: " + to_string( swap, 2 ) + " ms\n"
-            + " other: " + to_string( mainloop - simulation - render - swap, 2 ) + " ms\n";
+        auto const &timers { Timer::subsystem };
+        auto const mainloop { timers.mainloop_total.average() };
+        auto const simulation { timers.sim_total.average() };
+        auto const render { timers.gfx_total.average() };
+        auto const swap { timers.gfx_swap.average() };
+        auto const simulationparts {
+            timers.sim_scripting.average() + timers.sim_environment.average() + timers.sim_precipitation.average() + timers.sim_dynamics.average()
+            + timers.sim_secondary.average() + timers.sim_trains.average() + timers.sim_events.average() + timers.sim_lights.average()
+            + timers.sim_commands.average() + timers.sim_ui.average() + timers.sim_camera.average() };
+        auto const loopparts {
+            timers.loop_input.average() + simulation + timers.loop_audio.average() + timers.loop_particles.average() + timers.loop_renderer_update.average()
+            + timers.loop_terrain.average() + timers.loop_tasks.average() + render + swap };
+        std::string text;
+        text += timeline( 0, "main loop", ms( mainloop ) + " ms (" + std::to_string( static_cast<int>( std::round( 1000.f / std::max( mainloop, 0.001f ) ) ) ) + " fps)" );
+        text += timeline( 1, "input, start of the ui frame", ms( timers.loop_input.average() ) );
+        text += timeline( 1, "simulation", ms( simulation ) );
+        text += timeline( 2, "clocks, scripting", ms( timers.sim_scripting.average() ) );
+        text += timeline( 2, "environment", ms( timers.sim_environment.average() + timers.sim_precipitation.average() ) );
+        text += timeline( 2, "vehicles (physics, ai)", ms( timers.sim_dynamics.average() ) );
+        text += timeline( 2, "secondary steps", ms( timers.sim_secondary.average() ) );
+        text += timeline( 2, "trains (cabs)", ms( timers.sim_trains.average() ) );
+        text += timeline( 2, "events", ms( timers.sim_events.average() ) );
+        text += timeline( 2, "lights", ms( timers.sim_lights.average() ) );
+        text += timeline( 2, "commands", ms( timers.sim_commands.average() ) );
+        text += timeline( 2, "ui panels, tooltips (50 Hz)", ms( timers.sim_ui.average() ) );
+        text += timeline( 2, "camera", ms( timers.sim_camera.average() ) );
+        text += timeline( 2, "rest", ms( simulation - simulationparts ) );
+        text += timeline( 1, "sounds", ms( timers.loop_audio.average() ) );
+        text += timeline( 1, "particles", ms( timers.loop_particles.average() ) );
+        text += timeline( 1, "renderer update", ms( timers.loop_renderer_update.average() ) );
+        text += timeline( 1, "terrain streaming", ms( timers.loop_terrain.average() ) );
+        text += timeline( 1, "tasks", ms( timers.loop_tasks.average() ) );
+        text += timeline( 1, "render", ms( render ) );
+        text += timeline( 1, "swap", ms( swap ) );
+        text += timeline( 1, "rest", ms( mainloop - loopparts ) );
+        m_debugsections.push_back( { "CPU: main loop", std::move( text ), true } );
     }
-    m_debugtimestext +=
-        "cpu frame total: " + to_string( Timer::subsystem.gfx_color.average() + Timer::subsystem.gfx_shadows.average() + ( Global.gfx_envmap_enabled ? Timer::subsystem.gfx_reflections.average() : 0.f ) + Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n"
-        + " color: " + to_string( Timer::subsystem.gfx_color.average(), 2 ) + " ms (" + std::to_string( m_cellqueue.size() ) + " sectors)\n";
-    if( Global.gfx_shadowmap_enabled ) {
-        m_debugtimestext +=
-            " shadows: " + to_string( Timer::subsystem.gfx_shadows.average(), 2 ) + " ms\n";
-    }
-    if( Global.gfx_envmap_enabled ) {
-        m_debugtimestext +=
-            " reflections: " + to_string( Timer::subsystem.gfx_reflections.average(), 2 ) + " ms\n";
-    }
-    m_debugtimestext += " swap: " + to_string( Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n";
-    if (m_gllasttime)
-        m_debugtimestext += "gpu frame total: " + to_string((double)(m_gllasttime / 1000ULL) / 1000.0, 3) + " ms\n";
-    // the parts follow one another and add up to the frame; the steps below are timed each on its own and can hold the tail
-    // of the work before them
-    if( auto const &gpuparts { m_gputimeline.result() }; false == gpuparts.empty() ) {
-        m_debugtimestext += "gpu frame parts: " + to_string( static_cast<double>( m_gputimeline.total() ) / 1000000.0, 3 ) + " ms\n";
-        for( auto const &part : gpuparts ) {
-            m_debugtimestext += " " + std::string{ part.name } + ": " + to_string( static_cast<double>( part.time ) / 1000000.0, 3 ) + " ms\n";
+
+    // the parts of the frame of the renderer, cpu and gpu side by side. the gpu ones follow one another and add up to the frame;
+    // while the gpu waits for the cpu, the wait goes to the part drawn next
+    {
+        std::string text;
+        text += timeline( 0, "part", "    cpu      gpu  ms" );
+        auto const &gpuparts { m_gputimeline.result() };
+        auto cputotal { 0.f };
+        for( auto const &part : m_cputimeline.parts ) {
+            cputotal += part.time;
+            std::string gpu { "        -" };
+            for( auto const &gpupart : gpuparts ) {
+                if( std::strcmp( gpupart.name, part.name ) == 0 ) {
+                    gpu = "  " + ms( static_cast<double>( gpupart.time ) / 1000000.0, 3 );
+                    break;
+                }
+            }
+            text += timeline( 1, part.name, ms( part.time ) + gpu );
         }
-        m_debugtimestext += "gpu steps:\n";
-    }
-    if (auto const clusterstime = m_clusterstimer.result())
-        m_debugtimestext += " clusters: " + to_string(static_cast<double>(*clusterstime) / 1000000.0, 3) + " ms\n";
-    if (auto const culltime = m_cullstimer.result())
-        m_debugtimestext += " cull: " + to_string(static_cast<double>(*culltime) / 1000000.0, 3) + " ms\n";
-    m_debugtimestext += m_sky.info_times();
-    m_debugtimestext += m_weather.info_times();
-    m_debugtimestext += m_exposure.info_times();
-    m_debugtimestext += m_ao.info_times();
-    m_debugtimestext += m_instancecull.info_times();
-    // the cullings of the other passes; the environment map is drawn now and then, its numbers are of its last update
-    if( Global.gfx_gpucull_shadows ) {
-        for( std::size_t cascade = 0; cascade < m_shadowcull.size(); ++cascade ) {
-            m_debugtimestext += m_shadowcull[ cascade ].info_times( "instance cull shadows " + std::to_string( cascade + 1 ) );
+        // parts the gpu measured and the cpu didn't, if any
+        for( auto const &gpupart : gpuparts ) {
+            if( false == m_cputimeline.time( gpupart.name ).has_value() ) {
+                text += timeline( 1, gpupart.name, "      -  " + ms( static_cast<double>( gpupart.time ) / 1000000.0, 3 ) );
+            }
         }
-    }
-    if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
-        m_debugtimestext += m_reflectioncull.info_times( "instance cull reflections, last face" );
-    }
-    m_debugtimestext += Light_Shadow_Cull_Info( true );
-    if( Global.gfx_depthprepass_scene || m_contactshadowslast ) {
-        if( auto const scenedepthtime = m_scenedepthtimer.result() )
-            m_debugtimestext += " scene depth: " + to_string( static_cast<double>( *scenedepthtime ) / 1000000.0, 3 ) + " ms\n";
-    }
-    if( m_contactshadowslast ) {
-        if( auto const contacttime = m_contactshadowstimer.result() )
-            m_debugtimestext += " contact shadows depth: " + to_string( static_cast<double>( *contacttime ) / 1000000.0, 3 ) + " ms\n";
-    }
-    if( Global.gfx_gpucull == 1 ) {
-        auto const twophase { m_instancecull.two_phase() };
-        m_debugtimestext += m_hiz.info_times( twophase );
-        if( auto const prepasstime = m_prepasstimer.result() ) {
-            m_debugtimestext += " depth prepass: " + to_string( static_cast<double>( *prepasstime ) / 1000000.0, 3 ) + " ms";
-            auto const firsttime { m_prepassfirsttimer.result() };
-            if( twophase && firsttime )
-                m_debugtimestext += " (+" + to_string( static_cast<double>( *firsttime ) / 1000000.0, 3 ) + " ms of the instances drawn first)";
-            m_debugtimestext += "\n";
+        text += timeline(
+            0, "total",
+            ms( cputotal ) + "  " + ( gpuparts.empty() ? std::string{ "      -" } : ms( static_cast<double>( m_gputimeline.total() ) / 1000000.0, 3 ) ) );
+        text += "\n";
+        text += timeline( 0, "cpu of the passes", "" );
+        text += timeline( 1, "colour (" + std::to_string( m_cellqueue.size() ) + " sectors)", ms( Timer::subsystem.gfx_color.average() ) );
+        if( Global.gfx_shadowmap_enabled ) {
+            text += timeline( 1, "shadows", ms( Timer::subsystem.gfx_shadows.average() ) );
         }
+        if( Global.gfx_envmap_enabled ) {
+            text += timeline( 1, "reflections", ms( Timer::subsystem.gfx_reflections.average() ) );
+        }
+        text += timeline( 1, "ui", ms( Timer::subsystem.gfx_gui.average() ) );
+        if( m_gllasttime ) {
+            text += timeline( 0, "gpu frame (query)", ms( static_cast<double>( m_gllasttime / 1000ULL ) / 1000.0, 3 ) );
+        }
+        m_debugsections.push_back( { "Render: cpu / gpu by part", std::move( text ), true } );
     }
-    m_debugtimestext += m_localshadows.info_times();
-    if( Global.gfx_shadow_sdsm )
-        m_debugtimestext += m_shadowfit.info_times();
-    m_debugtimestext += m_gpuparticles.info_times();
-    m_debugtimestext += "uilayer: " + to_string( Timer::subsystem.gfx_gui.average(), 2 ) + " ms\n";
-    if( DebugModeFlag )
-        m_debugtimestext += m_textures.info();
+
+    // the steps below are timed each on its own on the gpu and can hold the tail of the work before them
+    {
+        std::string text;
+        if (auto const clusterstime = m_clusterstimer.result())
+            text += " clusters: " + to_string(static_cast<double>(*clusterstime) / 1000000.0, 3) + " ms\n";
+        if (auto const culltime = m_cullstimer.result())
+            text += " cull: " + to_string(static_cast<double>(*culltime) / 1000000.0, 3) + " ms\n";
+        text += m_sky.info_times();
+        text += m_weather.info_times();
+        text += m_exposure.info_times();
+        text += m_ao.info_times();
+        text += m_instancecull.info_times();
+        // the cullings of the other passes; the environment map is drawn now and then, its numbers are of its last update
+        if( Global.gfx_gpucull_shadows ) {
+            for( std::size_t cascade = 0; cascade < m_shadowcull.size(); ++cascade ) {
+                text += m_shadowcull[ cascade ].info_times( "instance cull shadows " + std::to_string( cascade + 1 ) );
+            }
+        }
+        if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
+            text += m_reflectioncull.info_times( "instance cull reflections, last face" );
+        }
+        text += Light_Shadow_Cull_Info( true );
+        if( Global.gfx_depthprepass_scene || m_contactshadowslast ) {
+            if( auto const scenedepthtime = m_scenedepthtimer.result() )
+                text += " scene depth: " + to_string( static_cast<double>( *scenedepthtime ) / 1000000.0, 3 ) + " ms\n";
+        }
+        if( m_contactshadowslast ) {
+            if( auto const contacttime = m_contactshadowstimer.result() )
+                text += " contact shadows depth: " + to_string( static_cast<double>( *contacttime ) / 1000000.0, 3 ) + " ms\n";
+        }
+        if( Global.gfx_gpucull == 1 ) {
+            auto const twophase { m_instancecull.two_phase() };
+            text += m_hiz.info_times( twophase );
+            if( auto const prepasstime = m_prepasstimer.result() ) {
+                text += " depth prepass: " + to_string( static_cast<double>( *prepasstime ) / 1000000.0, 3 ) + " ms";
+                auto const firsttime { m_prepassfirsttimer.result() };
+                if( twophase && firsttime )
+                    text += " (+" + to_string( static_cast<double>( *firsttime ) / 1000000.0, 3 ) + " ms of the instances drawn first)";
+                text += "\n";
+            }
+        }
+        text += m_localshadows.info_times();
+        if( Global.gfx_shadow_sdsm )
+            text += m_shadowfit.info_times();
+        text += m_gpuparticles.info_times();
+        if( DebugModeFlag )
+            text += m_textures.info();
+        m_debugsections.push_back( { "GPU steps", std::move( text ), false } );
+    }
 
     debug_stats shadowstats;
     for( auto const &shadowpass : m_shadowpass ) {
@@ -920,7 +984,7 @@ void opengl46_renderer::SwapBuffers()
         shadowcascadestext += "\n";
     }
 
-    m_debugstatstext =
+    std::string statstext =
         "triangles: " + to_string( static_cast<int>(m_geometry.primitives_count()), 7 ) + "\n"
         + "vehicles:  " + to_string( m_colorpass.draw_stats.dynamics, 7 ) + " +" + to_string( shadowstats.dynamics, 7 )
         + " =" + to_string( m_colorpass.draw_stats.dynamics + shadowstats.dynamics, 7 ) + "\n"
@@ -980,26 +1044,91 @@ void opengl46_renderer::SwapBuffers()
         + ( Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string( std::max( Global.DynamicLightCount, 0 ) ) )
         + "\n" + m_locallights.info()
         + m_localshadows.info()
-        + m_gpuparticles.info()
-        + m_instancecull.info();
-    if( Global.gfx_gpucull_shadows ) {
-        for( std::size_t cascade = 0; cascade < m_shadowcull.size(); ++cascade ) {
-            if( false == m_shadowcull[ cascade ].ran() ) { continue; }
-            m_shadowcull[ cascade ].collect();
-            m_debugstatstext += m_shadowcull[ cascade ].info( "gpu cull shadows " + std::to_string( cascade + 1 ), false );
-        }
-    }
-    if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
-        m_reflectioncull.collect();
-        m_debugstatstext += m_reflectioncull.info( "gpu cull reflections, last face", false );
-    }
-    m_debugstatstext += Light_Shadow_Cull_Info( false );
+        + m_gpuparticles.info();
     if( auto const cullstats = ( m_viewports.empty() || !( Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap ) ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
-        m_debugstatstext +=
+        statstext +=
             "\ncluster lists: " + std::to_string( cullstats->index_count )
             + ", overflow " + std::to_string( cullstats->overflow_count )
             + " (peak " + std::to_string( cullstats->overflow_peak ) + ")";
     }
+    auto culltext { m_instancecull.info() };
+    if( Global.gfx_gpucull_shadows ) {
+        for( std::size_t cascade = 0; cascade < m_shadowcull.size(); ++cascade ) {
+            if( false == m_shadowcull[ cascade ].ran() ) { continue; }
+            m_shadowcull[ cascade ].collect();
+            culltext += m_shadowcull[ cascade ].info( "gpu cull shadows " + std::to_string( cascade + 1 ), false );
+        }
+    }
+    if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
+        m_reflectioncull.collect();
+        culltext += m_reflectioncull.info( "gpu cull reflections, last face", false );
+    }
+    culltext += Light_Shadow_Cull_Info( false );
+    m_debugsections.push_back( { "Scene statistics", std::move( statstext ), false } );
+    m_debugsections.push_back( { "GPU culling", std::move( culltext ), false } );
+
+    // the parts of the sections start with a line break here and there, and end with one or not
+    for( auto &section : m_debugsections ) {
+        auto &text { section.text };
+        text.erase( 0, text.find_first_not_of( '\n' ) == std::string::npos ? text.size() : text.find_first_not_of( '\n' ) );
+        while( ( false == text.empty() ) && ( text.back() == '\n' ) ) { text.pop_back(); }
+    }
+    // the same joined, the first three sections times, the others statistics
+    m_debugtimestext.clear();
+    m_debugstatstext.clear();
+    for( std::size_t index = 0; index < m_debugsections.size(); ++index ) {
+        auto &target { index < 3 ? m_debugtimestext : m_debugstatstext };
+        target += ( target.empty() ? "" : "\n" ) + m_debugsections[ index ].title + ":\n" + m_debugsections[ index ].text;
+    }
+}
+
+void opengl46_renderer::cpu_timeline::begin( char const *Name )
+{
+	if( active ) { end(); }
+	active = true;
+	mark = std::chrono::steady_clock::now();
+	current = parts.size();
+	next( Name );
+}
+
+void opengl46_renderer::cpu_timeline::next( char const *Name )
+{
+	if( false == active ) { return; }
+	auto const now { std::chrono::steady_clock::now() };
+	if( current < parts.size() ) {
+		parts[ current ].frame += std::chrono::duration<float, std::milli>( now - mark ).count();
+	}
+	mark = now;
+	current = 0;
+	while( ( current < parts.size() ) && ( parts[ current ].name != Name ) && ( std::strcmp( parts[ current ].name, Name ) != 0 ) ) {
+		++current;
+	}
+	if( current == parts.size() ) {
+		parts.push_back( { Name } );
+	}
+}
+
+void opengl46_renderer::cpu_timeline::end()
+{
+	if( false == active ) { return; }
+	auto const now { std::chrono::steady_clock::now() };
+	if( current < parts.size() ) {
+		parts[ current ].frame += std::chrono::duration<float, std::milli>( now - mark ).count();
+	}
+	// the average of Timer::stopwatch: the last 20 frames or so. parts left out in the frame fade away
+	for( auto &part : parts ) {
+		part.time = 0.95f * part.time + 0.05f * part.frame;
+		part.frame = 0.f;
+	}
+	active = false;
+}
+
+std::optional<float> opengl46_renderer::cpu_timeline::time( char const *Name ) const
+{
+	for( auto const &part : parts ) {
+		if( ( part.name == Name ) || ( std::strcmp( part.name, Name ) == 0 ) ) { return part.time; }
+	}
+	return std::nullopt;
 }
 
 void opengl46_renderer::draw_debug_ui()
@@ -1216,7 +1345,10 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		// parts of the gpu time of the frame; the marks go through the main view only, in the context they were begun in
 		auto const gpupart = [this, &vp](char const *Name) {
 			if (vp.main)
+			{
 				m_gputimeline.next(Name);
+				m_cputimeline.next(Name);
+			}
 		};
 
 		scene_ubs.time = Timer::GetTime();
@@ -1723,6 +1855,7 @@ if (!Global.gfx_skippipeline)
             static char const *const gpuparts[] = { "sun shadows 1", "sun shadows 2", "sun shadows 3" };
             static_assert( std::size( gpuparts ) == std::tuple_size_v<decltype( m_shadowpass )> );
             m_gputimeline.next( gpuparts[ idx ] );
+            m_cputimeline.next( gpuparts[ idx ] );
 
             m_shadow_fb->attach( *m_shadow_tex, GL_DEPTH_ATTACHMENT, idx );
             m_shadow_fb->clear( GL_DEPTH_BUFFER_BIT );
@@ -8162,6 +8295,11 @@ std::string const &opengl46_renderer::info_times() const
 {
 
 	return m_debugtimestext;
+}
+
+std::vector<gfx_renderer::info_section> const &opengl46_renderer::info_sections() const
+{
+	return m_debugsections;
 }
 
 std::string const &opengl46_renderer::info_stats() const

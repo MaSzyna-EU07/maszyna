@@ -63,7 +63,24 @@ struct subsystem_stopwatches {
     stopwatch sim_dynamics;
     stopwatch sim_events;
     stopwatch sim_ai;
+    // parts of sim_total for the debug panel, measured in driver_mode::update()
+    stopwatch sim_scripting; // clocks and the scripting interface
+    stopwatch sim_environment; // sky and weather
+    stopwatch sim_precipitation;
+    stopwatch sim_secondary; // secondary fixed step routines
+    stopwatch sim_trains; // cabs of the trains
+    stopwatch sim_lights;
+    stopwatch sim_commands;
+    stopwatch sim_ui; // 50 Hz routines: ui panels, tooltips
+    stopwatch sim_camera;
     stopwatch mainloop_total;
+    // parts of the main loop outside the simulation and Render(), for the debug panel
+    stopwatch loop_input; // events, head tracking, start of the ui frame
+    stopwatch loop_audio; // sounds of the scenery and the audio renderer
+    stopwatch loop_particles; // cpu particles
+    stopwatch loop_renderer_update; // gfx_renderer::Update()
+    stopwatch loop_terrain; // terrain streaming
+    stopwatch loop_tasks; // task queue
 };
 
 extern subsystem_stopwatches subsystem;

@@ -491,12 +491,14 @@ int eu07_application::run()
 	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
 	{
 		Timer::subsystem.mainloop_total.start();
+		Timer::subsystem.loop_input.start();
 		glfwPollEvents();
 
 		if (m_headtrack)
 			m_headtrack->update();
 
 		begin_ui_frame();
+		Timer::subsystem.loop_input.stop();
 
 		// -------------------------------------------------------------------
 		// multiplayer command relaying logic can seem a bit complex
@@ -624,10 +626,14 @@ int eu07_application::run()
 
 		// keep streamed terrain loaded around the active camera in every mode (editor + driver),
 		// once the simulation is live (avoid streaming while the scenery is still loading)
+		Timer::subsystem.loop_terrain.start();
 		if (simulation::is_ready && EditorTerrain.active())
 			EditorTerrain.update(Global.pCamera.Pos);
+		Timer::subsystem.loop_terrain.stop();
 
+		Timer::subsystem.loop_tasks.start();
 		m_taskqueue.update();
+		Timer::subsystem.loop_tasks.stop();
 		opengl_texture::reset_unit_cache();
 
 		if (!GfxRenderer->Render())
