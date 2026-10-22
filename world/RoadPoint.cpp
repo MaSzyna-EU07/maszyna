@@ -691,9 +691,16 @@ void roadpoint_node::bind_crossing()
 		m_stops[idx].track->m_events2.emplace_back(event->m_name, event);
 	}
 
-	// rails: the tracks passing between the stop lines, and what leads to them within the warning distance
-	std::vector<std::pair<TTrack *, double>> reached;
-	auto const known = [&reached](TTrack const *Track) { return std::any_of(reached.begin(), reached.end(), [Track](std::pair<TTrack *, double> const &Entry) { return Entry.first == Track; }); };
+	// rails: the tracks passing between the stop lines, and what leads to them within the warning distance.
+	// each is reached with the distance along the rails from the crossing to its end the way leads in by
+	struct rail_reach
+	{
+		TTrack *track;
+		double distance; // to the end of the track the way leads in by
+		std::array<double, 2> ends; // for a track of the crossing: to each of its ends, Point1 and Point2; negative for a track led to
+	};
+	std::vector<rail_reach> reached;
+	auto const known = [&reached](TTrack const *Track) { return std::any_of(reached.begin(), reached.end(), [Track](rail_reach const &Entry) { return Entry.track == Track; }); };
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 1) == 0)
@@ -711,41 +718,43 @@ void roadpoint_node::bind_crossing()
 			auto const t{curve.nearest(m_state.position, distance)};
 			if (distance <= m_state.clearance && std::abs(curve.point(t).y - m_state.position.y) <= 3.0)
 			{
-				reached.emplace_back(track, 0.0);
+				// the crossing can be anywhere along the track, which can be much longer than the warning distance
+				auto const station{curve.station(t)};
+				reached.push_back({track, 0.0, {station, curve.length() - station}});
 				break;
 			}
 		}
 	}
 	for (std::size_t idx = 0; idx < reached.size(); ++idx)
 	{
-		auto *track{reached[idx].first};
+		auto *track{reached[idx].track};
+		auto const ends{reached[idx].ends};
+		auto const crossed{ends[0] >= 0.0};
 		double length{0.0};
 		for (auto const &path : track->m_paths)
 		{
 			length = std::max(length, path_curve{path}.length());
 		}
-		auto const travelled{reached[idx].second + length};
-		if (travelled > m_state.warning)
-		{
-			continue;
-		}
-		std::vector<TTrack *> neighbours{track->trPrev, track->trNext};
+		// distance from the crossing to the tracks joined at Point1 and at Point2 of this one
+		auto const travelled{reached[idx].distance + length};
+		std::array<double, 2> const onwards{crossed ? ends[0] : travelled, crossed ? ends[1] : travelled};
+		std::vector<std::pair<TTrack *, int>> neighbours{{track->trPrev, 0}, {track->trNext, 1}};
 		if (track->SwitchExtension != nullptr)
 		{
 			// both ways of a switch count, as the train can come by either
-			neighbours.insert(neighbours.end(), {track->SwitchExtension->pPrevs[0], track->SwitchExtension->pPrevs[1], track->SwitchExtension->pNexts[0], track->SwitchExtension->pNexts[1]});
+			neighbours.insert(neighbours.end(), {{track->SwitchExtension->pPrevs[0], 0}, {track->SwitchExtension->pPrevs[1], 0}, {track->SwitchExtension->pNexts[0], 1}, {track->SwitchExtension->pNexts[1], 1}});
 		}
-		for (auto *neighbour : neighbours)
+		for (auto const &[neighbour, end] : neighbours)
 		{
-			if (neighbour != nullptr && (neighbour->iCategoryFlag & 1) != 0 && false == known(neighbour))
+			if (neighbour != nullptr && (neighbour->iCategoryFlag & 1) != 0 && onwards[end] <= m_state.warning && false == known(neighbour))
 			{
-				reached.emplace_back(neighbour, travelled);
+				reached.push_back({neighbour, onwards[end], {-1.0, -1.0}});
 			}
 		}
 	}
 	for (auto const &entry : reached)
 	{
-		m_rails.emplace_back(entry.first);
+		m_rails.emplace_back(entry.track);
 	}
 	// lanes the vehicles wait on while the crossing is closed: the ones with the stops, and what leads to them
 	for (auto const &stop : m_stops)
@@ -933,8 +942,9 @@ void roadpoint_node::update_crossing(double const Deltatime)
 				auto const distance{planar_distance(vehicle->GetPosition(), m_state.position)};
 				seen.emplace(vehicle, distance);
 				auto const before{m_seen.find(vehicle)};
-				// a vehicle getting closer is on its way here; one which stands still or goes away isn't, unless it's at the crossing itself
-				if (distance < m_state.clearance + near_zone || (before != m_seen.end() && distance < before->second - 0.01))
+				// a vehicle getting closer is on its way here; one which stands still or goes away isn't, unless it's at the crossing itself.
+				// a watched track can reach further than the warning distance, what's beyond it doesn't count yet
+				if (distance < m_state.clearance + near_zone || (before != m_seen.end() && distance < before->second - 0.01 && distance <= m_state.warning))
 				{
 					m_hold = hold_time;
 				}
