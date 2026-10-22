@@ -75,6 +75,7 @@ class srk_tool final : public editor_tool
 	struct circuit_mark
 	{
 		glm::dvec2 at{0.0}; // in the schematic
+		glm::dvec3 world{0.0};
 		std::string text;
 		ImU32 colour{0};
 		double length{0.0};
@@ -83,6 +84,12 @@ class srk_tool final : public editor_tool
 	std::vector<int> m_circuit_of; // of each path of the layout, an index into m_circuits, -1 for none
 	std::vector<circuit_mark> m_circuits;
 	std::vector<glm::dvec2> m_ticks; // the joints between the circuits, in the schematic
+	struct joint_mark
+	{
+		glm::dvec3 at{0.0};
+		glm::dvec3 across{0.0}; // of the track there, in the plan
+	};
+	std::vector<joint_mark> m_joints; // the same in the scenery
 	struct signal_mark
 	{
 		glm::dvec2 at{0.0}; // in the schematic

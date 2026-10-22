@@ -41,12 +41,15 @@ namespace
 
 char const *const kMark{"//$s"};
 double constexpr kOverlayRange{4000.0};
+double constexpr kJointRange{1500.0}; // m, of the joints and the names of the circuits shown in the scenery
+double constexpr kRailHead{0.18}; // m, above the axis of a path
 
 ImU32 constexpr kPlain{IM_COL32(170, 176, 188, 255)};
 ImU32 constexpr kSwitch{IM_COL32(240, 200, 90, 255)};
 ImU32 constexpr kApproach{IM_COL32(95, 100, 112, 255)};
 ImU32 constexpr kHovered{IM_COL32(255, 255, 255, 255)};
 ImU32 constexpr kSignal{IM_COL32(240, 95, 85, 255)};
+ImU32 constexpr kJoint{IM_COL32(255, 255, 255, 235)};
 
 bool is_switch(TTrack const &Track)
 {
@@ -357,6 +360,39 @@ void srk_tool::draw_overlay() const
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	glm::dvec3 const camera{Global.pCamera.Pos};
+	auto const near_enough = [&](glm::dvec3 const &Point, double const Range) { return Global.EditorOrtho || glm::distance(Point, camera) < Range; };
+	glm::dvec3 const lift{0.0, kRailHead, 0.0};
+	// the track circuits: the tracks in their colours, a bar across them at each joint with a post, the station tracks named
+	for (std::size_t index = 0; index < m_layout->paths.size() && index < m_circuit_of.size(); ++index)
+	{
+		if (m_circuit_of[index] < 0)
+			continue;
+		auto const colour{(m_circuits[m_circuit_of[index]].colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 200)};
+		auto const &points{m_layout->paths[index].points};
+		for (std::size_t i = 1; i < points.size(); ++i)
+			if (near_enough(points[i], kOverlayRange))
+				projection.line(drawlist, points[i - 1] + lift, points[i] + lift, colour, 3.0f);
+	}
+	for (auto const &joint : m_joints)
+	{
+		if (false == near_enough(joint.at, kJointRange))
+			continue;
+		auto const centre{joint.at + lift};
+		projection.line(drawlist, centre - joint.across * 1.7, centre + joint.across * 1.7, kJoint, 4.0f);
+		projection.line(drawlist, centre + joint.across * 1.7, centre + joint.across * 1.7 + glm::dvec3{0.0, 1.2, 0.0}, kJoint, 2.0f);
+		ImVec2 top;
+		if (projection.project(centre + joint.across * 1.7 + glm::dvec3{0.0, 1.2, 0.0}, top))
+			drawlist->AddCircleFilled(top, 3.0f, kJoint);
+	}
+	for (auto const &mark : m_circuits)
+	{
+		ImVec2 screen;
+		if (false == mark.labelled || false == near_enough(mark.world, kJointRange) || false == projection.project(mark.world + glm::dvec3{0.0, 0.8, 0.0}, screen))
+			continue;
+		auto const size{ImGui::CalcTextSize(mark.text.c_str())};
+		drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 3.0f, screen.y - size.y - 2.0f), ImVec2(screen.x + size.x * 0.5f + 3.0f, screen.y + 2.0f), IM_COL32(0, 0, 0, 160), 3.0f);
+		drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y), mark.colour, mark.text.c_str());
+	}
 	if (m_hover >= 0 && m_hover < static_cast<int>(m_layout->paths.size()))
 	{
 		auto const &points{m_layout->paths[m_hover].points};
@@ -1015,7 +1051,7 @@ void srk_tool::survey()
 		auto found{std::find_if(m_circuits.begin(), m_circuits.end(), [&](circuit_mark const &Mark) { return Mark.text == name; })};
 		if (found == m_circuits.end())
 		{
-			found = m_circuits.insert(m_circuits.end(), {glm::dvec2{0.0}, name, circuit_colour(name)});
+			found = m_circuits.insert(m_circuits.end(), {glm::dvec2{0.0}, glm::dvec3{0.0}, name, circuit_colour(name)});
 			found->labelled = stem.empty() || name.compare(0, stem.size() + 2, stem + "iz") != 0;
 			weights.push_back(0.0);
 		}
@@ -1037,11 +1073,12 @@ void srk_tool::survey()
 		glm::dvec2 on{mark.at};
 		for (std::size_t path = 0; path < layout.paths.size(); ++path)
 			if (m_circuit_of[path] == static_cast<int>(index))
-				for (auto const &point : layout.paths[path].schematic)
-					if (auto const distance{glm::distance(point, mark.at)}; distance < nearest)
+				for (std::size_t k = 0; k < layout.paths[path].schematic.size(); ++k)
+					if (auto const distance{glm::distance(layout.paths[path].schematic[k], mark.at)}; distance < nearest)
 					{
 						nearest = distance;
-						on = point;
+						on = layout.paths[path].schematic[k];
+						mark.world = layout.paths[path].points[k];
 					}
 		mark.at = on;
 		auto const entry{entry_circuit(mark.text, stem)};
@@ -1055,23 +1092,32 @@ void srk_tool::survey()
 			std::transform(mark.text.begin() + 2, mark.text.end(), mark.text.begin() + 2, [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
 	}
 	// the joints: the ends where paths of different circuits meet
-	std::vector<std::pair<glm::dvec3, int>> ends;
+	struct end
+	{
+		glm::dvec3 point;
+		glm::dvec3 way;
+		int circuit;
+	};
+	std::vector<end> ends;
 	for (std::size_t index = 0; index < layout.paths.size(); ++index)
 	{
-		auto const &path{layout.paths[index]};
-		if (path.approach && m_circuit_of[index] < 0)
-		{
-			for (auto const &point : {path.points.front(), path.points.back()})
-				ends.emplace_back(point, -1);
+		auto const &points{layout.paths[index].points};
+		if (points.size() < 2)
 			continue;
-		}
-		for (auto const &point : {path.points.front(), path.points.back()})
-			ends.emplace_back(point, m_circuit_of[index]);
+		auto const circuit{m_circuit_of[index]};
+		ends.push_back({points.front(), points[1] - points.front(), circuit});
+		ends.push_back({points.back(), points.back() - points[points.size() - 2], circuit});
 	}
+	m_joints.clear();
 	for (std::size_t i = 0; i < ends.size(); ++i)
 		for (std::size_t j = i + 1; j < ends.size(); ++j)
-			if (ends[i].second != ends[j].second && (ends[i].second >= 0 || ends[j].second >= 0) && glm::distance(ends[i].first, ends[j].first) < 0.05)
-				m_ticks.push_back(station::project(layout, ends[i].first));
+			if (ends[i].circuit != ends[j].circuit && (ends[i].circuit >= 0 || ends[j].circuit >= 0) && glm::distance(ends[i].point, ends[j].point) < 0.05 &&
+			    std::none_of(m_joints.begin(), m_joints.end(), [&](joint_mark const &Joint) { return glm::distance(Joint.at, ends[i].point) < 0.05; }))
+			{
+				m_ticks.push_back(station::project(layout, ends[i].point));
+				glm::dvec2 const way{glm::normalize(glm::dvec2{ends[i].way.x, ends[i].way.z} + glm::dvec2{1e-12, 0.0})};
+				m_joints.push_back({ends[i].point, glm::dvec3{-way.y, 0.0, way.x}});
+			}
 	survey_signals();
 }
 
