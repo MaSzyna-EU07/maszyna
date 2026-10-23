@@ -1177,6 +1177,34 @@ void opengl46_renderer::Update_Memory_Info()
 		text += "process: " + mb( process.resident ) + " resident (peak " + mb( process.peak ) + ")"
 			+ ( process.committed > 0 ? ", " + mb( process.committed ) + " private" : std::string{} ) + "\n";
 	}
+	// the memory of the card, all processes: GL_NVX_gpu_memory_info (in kB)
+	if( m_nvxmemory < 0 ) {
+		m_nvxmemory = 0;
+		GLint extensions { 0 };
+		::glGetIntegerv( GL_NUM_EXTENSIONS, &extensions );
+		for( GLint index = 0; index < extensions; ++index ) {
+			auto const *name { reinterpret_cast<char const *>( ::glGetStringi( GL_EXTENSIONS, static_cast<GLuint>( index ) ) ) };
+			if( ( name != nullptr ) && ( std::strcmp( name, "GL_NVX_gpu_memory_info" ) == 0 ) ) {
+				m_nvxmemory = 1;
+				break;
+			}
+		}
+	}
+	if( m_nvxmemory > 0 ) {
+		GLint dedicated { 0 }, available { 0 }, evicted { 0 };
+		::glGetIntegerv( 0x9047, &dedicated ); // GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX
+		::glGetIntegerv( 0x9049, &available ); // GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
+		::glGetIntegerv( 0x904B, &evicted ); // GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX
+		text += "card memory, all programs: " + mb( static_cast<std::uint64_t>( std::max( dedicated - available, 0 ) ) * 1024 ) + " used of "
+			+ mb( static_cast<std::uint64_t>( dedicated ) * 1024 ) + ( evicted > 0 ? ", " + mb( static_cast<std::uint64_t>( evicted ) * 1024 ) + " evicted" : std::string{} ) + "\n";
+	}
+
+	// the rest needs new and delete counted, which slows the loading down: only with debug.memorystats
+	if( false == heap_counting() ) {
+		text += "the memory of the parts of the program: off (debug.memorystats yes in eu07.ini, it slows the loading down)";
+		m_memorytext = std::move( text );
+		return;
+	}
 	// what the program took with new: the rest of the private memory is of the drivers, libraries and the c runtime
 	auto const heap { query_heap_memory() };
 	text += "taken with new: " + mb( heap.bytes ) + " in " + std::to_string( heap.blocks ) + " blocks"
@@ -1200,28 +1228,28 @@ void opengl46_renderer::Update_Memory_Info()
 		}
 		text += "\n";
 	}
-	// the memory of the card, all processes: GL_NVX_gpu_memory_info (in kB)
-	if( m_nvxmemory < 0 ) {
-		m_nvxmemory = 0;
-		GLint extensions { 0 };
-		::glGetIntegerv( GL_NUM_EXTENSIONS, &extensions );
-		for( GLint index = 0; index < extensions; ++index ) {
-			auto const *name { reinterpret_cast<char const *>( ::glGetStringi( GL_EXTENSIONS, static_cast<GLuint>( index ) ) ) };
-			if( ( name != nullptr ) && ( std::strcmp( name, "GL_NVX_gpu_memory_info" ) == 0 ) ) {
-				m_nvxmemory = 1;
-				break;
+	// where the large blocks come from
+	{
+		auto const large { query_large_blocks() };
+		text += " blocks of " + std::to_string( large_blocks::LARGE_BLOCK / 1024 ) + " KB and more by the place which took them:\n";
+		std::size_t const shown { 15 };
+		std::uint64_t restbytes { 0 }, restblocks { 0 };
+		for( std::size_t index = 0; index < large.sites.size(); ++index ) {
+			auto const &site { large.sites[ index ] };
+			if( index >= shown ) {
+				restbytes += site.bytes;
+				restblocks += site.blocks;
+				continue;
 			}
+			text += "  " + mb( site.bytes ) + " in " + std::to_string( site.blocks ) + ": " + site.place + "\n";
+		}
+		if( restblocks > 0 ) {
+			text += "  " + mb( restbytes ) + " in " + std::to_string( restblocks ) + ": " + std::to_string( large.sites.size() - shown ) + " other places\n";
+		}
+		if( large.untracked > 0 ) {
+			text += "  " + std::to_string( large.untracked ) + " blocks not followed, the table of them was full\n";
 		}
 	}
-	if( m_nvxmemory > 0 ) {
-		GLint dedicated { 0 }, available { 0 }, evicted { 0 };
-		::glGetIntegerv( 0x9047, &dedicated ); // GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX
-		::glGetIntegerv( 0x9049, &available ); // GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
-		::glGetIntegerv( 0x904B, &evicted ); // GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX
-		text += "card memory, all programs: " + mb( static_cast<std::uint64_t>( std::max( dedicated - available, 0 ) ) * 1024 ) + " used of "
-			+ mb( static_cast<std::uint64_t>( dedicated ) * 1024 ) + ( evicted > 0 ? ", " + mb( static_cast<std::uint64_t>( evicted ) * 1024 ) + " evicted" : std::string{} ) + "\n";
-	}
-
 	std::uint64_t accounted { 0 };
 	// textures: the copies of the data kept in the process after the upload
 	auto const textures { m_textures.memory() };

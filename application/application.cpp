@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
 #include "utilities/Timer.h"
+#include "utilities/memorystats.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include <chrono>
@@ -1145,6 +1146,10 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	else
 	{
 		Global.LoadIniFile("eu07.ini");
+	}
+	if (Global.debug_memorystats)
+	{
+		start_heap_counting();
 	}
 
 	// process command line arguments

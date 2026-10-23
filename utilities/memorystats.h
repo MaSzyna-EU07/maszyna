@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 // memory of the process, as the system counts it, for the debug panel
@@ -37,6 +38,31 @@ struct heap_memory
 };
 
 heap_memory query_heap_memory();
+
+// the counting of new and delete is off until this turns it on (debug.memorystats in the ini): it costs time with every block the
+// program takes, which shows most in the loading of a scenery. once on, it stays on; the blocks taken before aren't counted
+void start_heap_counting();
+bool heap_counting();
+
+// where the large blocks taken with new come from: the blocks of LARGE_BLOCK bytes or more, live now, summed up by the place in the
+// program which took them (the first function of the call stack outside the standard library, and the one which called it)
+struct heap_site
+{
+	std::string place;
+	std::uint64_t bytes{0};
+	std::uint64_t blocks{0};
+};
+
+struct large_blocks
+{
+	static constexpr std::uint64_t LARGE_BLOCK{256 * 1024};
+	std::vector<heap_site> sites; // the most memory first
+	std::uint64_t untracked{0}; // blocks taken while the table of them was full, since the counting began
+};
+
+// goes through the call stacks of the blocks, which takes a while the first time (the symbols of the program get loaded). not for
+// more threads at once
+large_blocks query_large_blocks();
 
 // what a part of the program keeps in memory: things and bytes
 struct memory_count

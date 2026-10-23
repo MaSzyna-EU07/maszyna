@@ -1150,6 +1150,12 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "debug.memorystats")
+    {
+        ParseOne(Parser, debug_memorystats);
+        return true;
+    }
+
     if (token == "debuglog")
     {
         std::string value;
@@ -1915,6 +1921,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "physics.roadlod", physics_roadlod );
     export_as_text( Output, "physics.pipewake", physics_pipewake );
     export_as_text( Output, "performance.multithreading", performance_multithreading );
+    export_as_text( Output, "debug.memorystats", debug_memorystats );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
     export_as_text( Output, "multiplelogs", MultipleLogs );
     export_as_text( Output, "showsystemconsole", ShowSystemConsole );
