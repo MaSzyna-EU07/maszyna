@@ -172,8 +172,11 @@ editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &c
 			std::string text{format("SELFTEST fastenings %s at %.2f %.2f:", track->name().c_str(), middle.x, middle.z)};
 			for (auto const &fastening : rails.on(beam, *model))
 			{
-				text += format(" %s %.3f %.3f %+.0f", track_sleepers::part_names[fastening.part], fastening.point.x, fastening.point.z, glm::degrees(std::atan2(fastening.across.y, fastening.across.x)));
-				++counts[fastening.part];
+				text += format(" %s%s %.3f %.3f %+.0f", fastening.pad ? "pad:" : "", track_sleepers::part_names[fastening.part], fastening.point.x, fastening.point.z, glm::degrees(std::atan2(fastening.across.y, fastening.across.x)));
+				if (fastening.lift != 0.f)
+					text += format(" ^%.3f", fastening.lift);
+				if (false == fastening.pad)
+					++counts[fastening.part];
 			}
 			WriteLog(text);
 		}

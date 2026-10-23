@@ -383,6 +383,7 @@ struct rail_piece {
     float lift { 0.f };
     float wallu { -1.f };
     knots::line rises;
+    knots::line lows;
 };
 
 struct top_band {
@@ -609,6 +610,7 @@ private:
     double const m_guardoffset;
     double const m_rise; // of the feet of the wing rails of the low section
     glm::dvec2 const m_stock; // the stretch the rail is the stock rail of a blade along
+    double const m_heel; // of the blade the rail goes on from
     std::size_t m_topfirst;
     std::size_t m_toplast { 0 };
     std::vector<material_handle> m_tints;
@@ -632,6 +634,7 @@ TTrack::rail_layer::rail_layer( TTrack &Track, rail_layout const &Layout, rail_d
     m_guardoffset { -( flangeway + Drawing.size.head ) },
     m_rise { track_sleepers::wing_rise( Track ) },
     m_stock { track_sleepers::stock_stretch( Track, Path, Side ) },
+    m_heel { track_sleepers::blade_heel( Track, Path, Side ) },
     m_topfirst { Profile.size() } {
     // the running surface on top of the head is split along the edge of the wheel treads, the part of it out of their reach goes matte; the rest of the profile and the end faces are laid whole
     for( std::size_t j = 0; j < Profile.size(); ++j ) {
@@ -797,7 +800,8 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
         // a piece carved between two cuts has the same lines at both
         auto const own { i < Cuts.size() && false == ( i > 0 && Cuts[ i - 1 ].carved && Cuts[ i ].carved ) };
         auto const pieceoffsets { part_offsets( i > 0 ? &Cuts[ i - 1 ] : nullptr, i < Cuts.size() ? &Cuts[ i ] : nullptr ) };
-        auto const piecerises { part_rises( i > 0 ? &Cuts[ i - 1 ] : nullptr, i < Cuts.size() ? &Cuts[ i ] : nullptr, Wheels ? m_rise : 0.0, m_stock ) };
+        auto const pieceshares { Wheels && m_rise > 0.0 ? wing_shares( i > 0 ? &Cuts[ i - 1 ] : nullptr, i < Cuts.size() ? &Cuts[ i ] : nullptr, m_stock ) : knots::line {} };
+        auto const piecerises { part_rises( pieceshares, Wheels ? m_rise : 0.0, m_heel ) };
         // the limits of the head from both ends can overlap along a short piece, as the planed wing rail of one frog and the cut of the next: the tighter of them holds
         auto const pieceextents { own ? knots::bound( extents, Cuts[ i ].endextents, true ) : extents };
         auto const pieceinner { own ? knots::bound( inner, Cuts[ i ].endinner, false ) : inner };
@@ -846,7 +850,8 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
                     .capto = k + 1 == splits.size() && capend,
                     .walls = false == Wheels,
                     .wallu = Wallu,
-                    .rises = piecerises };
+                    .rises = piecerises,
+                    .lows = pieceshares };
                 if( Wheels && tread != nullptr && false == tread->edge.empty() && m_topfirst < m_toplast ) {
                     treaded( whole, *tread, ends );
                 }
@@ -1279,9 +1284,10 @@ loft_span TTrack::rail_layer::span( rail_piece const &Piece, piece_ends const &E
     result.walls = Piece.walls;
     result.wallu = Piece.wallu;
     result.rises = Piece.rises;
+    result.lows = Piece.lows;
     if( false == Piece.rises.empty() ) {
         result.head = { m_drawing.size.neck, m_drawing.size.crest };
-        result.low = { m_rise, low_web, low_inward, low_outward, low_edge, low_root };
+        result.low = { low_web, low_inward, low_outward, low_edge, low_root };
     }
     if( std::abs( Piece.from - Ends.from ) < 1e-6 ) {
         result.fromend = Ends.fromend;

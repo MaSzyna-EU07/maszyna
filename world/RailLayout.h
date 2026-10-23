@@ -185,21 +185,21 @@ inline knots::line part_offsets( rail_cut const *Before, rail_cut const *After )
     knots::sort( result );
     return result;
 }
-// how far the foot of a part of a rail between two cuts is raised, Rise along a wing rail of the low section: from wing_low before the throat on,
-// down to the plain rail past it along its forged end; the rail whole along Stock, the stock rail of a blade there
-inline knots::line part_rises( rail_cut const *Before, rail_cut const *After, double const Rise, glm::dvec2 const &Stock ) {
+// how much of the low section of the blades a part of a rail between two cuts is of along it, 0 to 1: a wing rail from wing_low before the throat
+// on, down to the plain rail past it along its forged end; the rail whole along Stock, the stock rail of a blade there
+inline knots::line wing_shares( rail_cut const *Before, rail_cut const *After, glm::dvec2 const &Stock ) {
 
     knots::line result;
     auto const going { Before != nullptr && Before->startkind == rail_end::point };
     auto const coming { After != nullptr && After->endkind == rail_end::point };
-    if( Rise <= 0.0 || ( false == going && false == coming ) ) {
+    if( false == going && false == coming ) {
         return result;
     }
     auto const lowto { going ? Before->startanchor + wing_low : 0.0 };
     auto const lowfrom { coming ? After->endanchor - wing_low : 0.0 };
     auto const through { going && coming && lowto + 2.0 * wing_forged >= lowfrom };
     auto const stock { Stock.y > Stock.x };
-    // the share of the rise: whole along the low section, none along the stock rail, between along the forged ends
+    // whole along the low section, none along the stock rail, between along the forged ends
     auto const share = [&]( double const At ) {
         auto const low { through ? 1.0 : std::max(
             going ? std::clamp( ( lowto + wing_forged - At ) / wing_forged, 0.0, 1.0 ) : 0.0,
@@ -210,7 +210,33 @@ inline knots::line part_rises( rail_cut const *Before, rail_cut const *After, do
     std::sort( places.begin(), places.end() );
     for( auto const at : places ) {
         if( result.empty() || at > result.back().x + 1e-6 ) {
-            result.emplace_back( at, Rise * share( at ) );
+            result.emplace_back( at, share( at ) );
+        }
+    }
+    return result;
+}
+// how far the foot of the part is raised: by Rise along the low section of a wing rail of Shares, and from the heel of a blade at Heel, the
+// rail going on from it, down to the plain rail along the forged end of the blade; not along the blade itself, raised on its own
+inline knots::line part_rises( knots::line const &Shares, double const Rise, double const Heel ) {
+
+    knots::line result;
+    if( Rise <= 0.0 || ( Shares.empty() && Heel <= 0.0 ) ) {
+        return result;
+    }
+    std::vector<double> places;
+    for( auto const &knot : Shares ) {
+        places.push_back( knot.x );
+    }
+    if( Heel > 0.0 ) {
+        places.push_back( Heel - 1e-3 );
+        places.push_back( Heel );
+        places.push_back( Heel + wing_forged );
+    }
+    std::sort( places.begin(), places.end() );
+    for( auto const at : places ) {
+        if( result.empty() || at > result.back().x + 1e-6 ) {
+            auto const heel { Heel > 0.0 && at >= Heel ? std::clamp( ( Heel + wing_forged - at ) / wing_forged, 0.0, 1.0 ) : 0.0 };
+            result.emplace_back( at, Rise * std::max( knots::sample( Shares, at, 0.0 ), heel ) );
         }
     }
     return result;

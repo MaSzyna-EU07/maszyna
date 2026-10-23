@@ -85,6 +85,14 @@ glm::dvec2 stock_stretch( TTrack const &Track, int const Path, int const Side ) 
     return { std::max( 0.0, ( shape.valid ? shape.tip : 0.0 ) - chair_lead ), track_rails::blade_length( Track, 1 - Path ) };
 }
 
+double blade_heel( TTrack const &Track, int const Path, int const Side ) {
+
+    if( Track.eType != tt_Switch || Track.SwitchExtension == nullptr || Side != ( Track.SwitchExtension->RightSwitch == ( Path == 0 ) ? 1 : -1 ) ) {
+        return 0.0;
+    }
+    return track_rails::blade_length( Track, Path );
+}
+
 std::vector<std::pair<double, double>> shared_zones( TTrack const &Track, int const Path ) {
 
     std::vector<std::pair<double, double>> result;

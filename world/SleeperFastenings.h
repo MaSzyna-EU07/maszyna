@@ -64,7 +64,7 @@ private:
         TTrack *track { nullptr };
         int path { 0 };
         int side { 1 };
-        knots::line rises; // of its foot, along the path, a wing rail of the low section raised as the blades
+        knots::line rises; // of its foot, along the path: a wing rail of the low section raised as the blades, the rail going on from the heel of a blade
         std::vector<glm::dvec2> points;
         std::vector<double> heights;
         std::vector<glm::dvec2> inward; // unit vectors in plan from the rail toward the middle of its path
@@ -92,8 +92,8 @@ private:
     // the fastenings of rails close by fitted to the room between them: narrowed across, a plate cut short at the fastening of the
     // rail beside it or left out, the plates of two rails lying over each other made one
     static void fit( std::vector<fastening> &Fastenings, beam const &Beam, beam_model const &Model );
-    // the fastenings under the raised rails: one holding only rails raised as much moved up as far on a pad, a rail raised
-    // over a fastening with others on a pad of its own on it
+    // the fastenings under the raised rails: one holding them moved up on a pad as far as the least raised of them, a rail not raised
+    // sunk in it, a rail raised more on a pad of its own on it
     static void lift( std::vector<fastening> &Fastenings, std::vector<hit> const &Rails, beam const &Beam, beam_model const &Model );
 
     std::vector<rail> m_rails;

@@ -717,7 +717,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     for( auto distance { std::ceil( Span.from / 0.5 ) * 0.5 }; distance < std::min( Span.to, m_dense ); distance += 0.5 ) {
         stations.push_back( distance );
     }
-    for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops, &Span.rises } ) {
+    for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops, &Span.rises, &Span.lows } ) {
         for( auto const &knot : *line ) {
             if( knot.x > Span.from && knot.x < Span.to ) {
                 stations.push_back( knot.x );
@@ -771,7 +771,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     } drawn;
     auto const across = [&]( gfx::basic_vertex const &Point ) {
         return static_cast<double>( Span.side * Point.position.x - Span.halfwidth ); };
-    auto low { Span.low.full > 0.0 && Span.head.x > bottom };
+    auto low { false == Span.lows.empty() && Span.head.x > bottom };
     if( low ) {
         glm::dvec2 foot { 1e6, -1e6 };
         for( auto const &point : ShapePoints ) {
@@ -806,11 +806,11 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         }
         low = ( drawn.web < std::min( drawn.inward, drawn.outward ) && drawn.web < drawn.head && drawn.edge > 0.0 && drawn.edge < drawn.root && drawn.root < Span.head.x - bottom && drawn.underside < 1e6 );
     }
-    // the profile made over into the low section with its foot raised by Rise, by as much of it as the rise is of the full one: below the
-    // head the web thickened, the foot reshaped, the web shortened
+    // the profile with its foot raised by Rise made over into the low section by Share of it: below the head the web thickened, the foot
+    // reshaped, the web shortened; with none of it, only raised
     std::vector<gfx::basic_vertex> lowpoints;
-    auto const lowered = [&]( double const Rise ) -> gfx::vertex_array const & {
-        auto const share { std::clamp( Rise / Span.low.full, 0.0, 1.0 ) };
+    auto const lowered = [&]( double const Rise, double const Share ) -> gfx::vertex_array const & {
+        auto const share { std::clamp( Share, 0.0, 1.0 ) };
         auto const web { drawn.web * glm::mix( 1.0, Span.low.web, share ) };
         auto const inward { drawn.inward * glm::mix( 1.0, Span.low.inward, share ) };
         auto const outward { drawn.outward * glm::mix( 1.0, Span.low.outward, share ) };
@@ -840,7 +840,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                     height <= drawn.edge ? height * edge / drawn.edge :
                     height <= drawn.root ? edge + ( height - drawn.edge ) * ( root - edge ) / ( drawn.root - drawn.edge ) :
                     root + ( height - drawn.root ) * ( top - root ) / ( below - drawn.root ) };
-                point.position.y = static_cast<float>( bottom + below - top + made );
+                point.position.y = static_cast<float>( glm::mix( static_cast<double>( raised( point.position.y, Rise ) ), bottom + below - top + made, share ) );
             }
             point.position.x = static_cast<float>( Span.side * ( Span.halfwidth + drawn.middle + std::copysign( moved, off ) ) );
         }
@@ -879,7 +879,8 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         auto const worn { knots::sample( Span.ramp, Distance, -1e6 ) };
         auto const drop { knots::sample( Span.drops, Distance, 0.0 ) };
         auto const sampled { Span.rises.empty() ? Span.rise : knots::sample( Span.rises, Distance, 0.0 ) };
-        auto const &points { low && sampled > 0.0 ? lowered( sampled ) : ShapePoints };
+        auto const share { low ? knots::sample( Span.lows, Distance, 0.0 ) : 0.0 };
+        auto const &points { low && ( sampled > 0.0 || share > 0.0 ) ? lowered( sampled, share ) : ShapePoints };
         auto const rise { low ? 0.0 : sampled };
         static loft_end const unshaped;
         auto const &shaped { Distance <= Span.from ? Span.fromend : Distance >= Span.to ? Span.toend : unshaped };

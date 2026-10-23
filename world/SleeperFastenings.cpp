@@ -53,14 +53,11 @@ fastened_rails::fastened_rails( TTrack &Track ) {
         auto const cut { track_rails::cut_rails( *track ) };
         auto const switched { track->eType == tt_Switch && track->SwitchExtension != nullptr };
         auto const rise { wing_rise( *track ) };
-        // the side of the blade of the path
-        auto const bladeside = [&]( int const Path ) {
-            return ( track->SwitchExtension->RightSwitch == ( Path == 0 ) ? 1 : -1 ); };
         // what the rail is along the path: a blade, the stock rail of a blade, checked
         auto const add = [&]( rail &&Line, int const Path, int const Side ) {
             if( switched ) {
-                if( Side == bladeside( Path ) ) {
-                    Line.blade = { 0.0, track_rails::blade_length( *track, Path ) };
+                if( auto const heel { blade_heel( *track, Path, Side ) }; heel > 0.0 ) {
+                    Line.blade = { 0.0, heel };
                 }
                 Line.stock = stock_stretch( *track, Path, Side );
             }
@@ -95,7 +92,7 @@ fastened_rails::fastened_rails( TTrack &Track ) {
                     line.track = track;
                     line.path = path;
                     line.side = side;
-                    line.rises = track_rails::part_rises( before, after, rise, stock_stretch( *track, path, side ) );
+                    line.rises = track_rails::part_rises( rise > 0.0 ? track_rails::wing_shares( before, after, stock_stretch( *track, path, side ) ) : knots::line {}, rise, blade_heel( *track, path, side ) );
                     line.foot = size.web - size.low;
                     line.low = glm::dvec2 { std::numeric_limits<double>::max() };
                     line.high = glm::dvec2 { std::numeric_limits<double>::lowest() };
@@ -673,33 +670,34 @@ void fastened_rails::lift( std::vector<fastening> &Fastenings, std::vector<hit> 
         auto const reach { footprint( Fastening ) };
         return Fastening.part != part_chair && Rail.at >= reach.x && Rail.at <= reach.y; };
     std::vector<fastening> pads;
-    std::vector<bool> lifted( Fastenings.size(), false );
+    for( auto &fastening : Fastenings ) {
+        if( fastening.pad || fastening.part == part_chair ) {
+            continue;
+        }
+        // moved up on a pad as wide as it as far as the least raised of the raised rails it holds, a rail not raised sunk in it
+        auto lift { 0.0 };
+        for( auto const &rail : Rails ) {
+            if( rail.rise >= pad_least && holds( fastening, rail ) ) {
+                lift = ( lift > 0.0 ? std::min( lift, rail.rise ) : rail.rise );
+            }
+        }
+        if( lift <= 0.0 ) {
+            continue;
+        }
+        auto const &span { Model.spans[ fastening.part ] };
+        auto const a { fastening.placed( span.x, fastening.scale ) };
+        auto const b { fastening.placed( span.y, fastening.scale ) };
+        pads.push_back( pad( fastening, std::min( a, b ), std::max( a, b ), Model.bed, Model.heights[ fastening.part ].x + static_cast<float>( lift ) ) );
+        fastening.lift = static_cast<float>( lift );
+    }
+    // a rail raised more than its fastening on a pad of its own on it, as wide as its foot, short of the rails beside
     for( std::size_t index = 0; index < Rails.size(); ++index ) {
         auto const &rail { Rails[ index ] };
-        if( rail.rise < pad_least ) {
+        auto const under { std::find_if( Fastenings.begin(), Fastenings.end(), [&]( fastening const &Fastening ) {
+            return false == Fastening.pad && holds( Fastening, rail ); } ) };
+        if( under == Fastenings.end() || rail.rise - under->lift < pad_least ) {
             continue;
         }
-        auto const under { std::find_if( Fastenings.begin(), Fastenings.end(), [&]( fastening const &Fastening ) { return holds( Fastening, rail ); } ) };
-        if( under == Fastenings.end() ) {
-            continue;
-        }
-        auto const which { static_cast<std::size_t>( under - Fastenings.begin() ) };
-        if( lifted[ which ] ) {
-            continue;
-        }
-        auto const alike { std::all_of( Rails.begin(), Rails.end(), [&]( hit const &Other ) {
-            return false == holds( *under, Other ) || std::abs( Other.rise - rail.rise ) < pad_least; } ) };
-        if( alike ) {
-            // the fastening holding only the rails raised as much, moved up as far on a pad as wide as it
-            auto const &span { Model.spans[ under->part ] };
-            auto const a { under->placed( span.x, under->scale ) };
-            auto const b { under->placed( span.y, under->scale ) };
-            pads.push_back( pad( *under, std::min( a, b ), std::max( a, b ), Model.bed, Model.heights[ under->part ].x + static_cast<float>( rail.rise ) ) );
-            under->lift = static_cast<float>( rail.rise );
-            lifted[ which ] = true;
-            continue;
-        }
-        // the rail on a pad of its own on the fastening, as wide as its foot, short of the rails beside
         auto low { rail.foot };
         auto high { rail.foot };
         if( index > 0 ) {
@@ -712,7 +710,7 @@ void fastened_rails::lift( std::vector<fastening> &Fastenings, std::vector<hit> 
             continue;
         }
         fastening const at { padpart, Beam.from + ( Beam.to - Beam.from ) * ( rail.at / glm::length( plan( Beam.to - Beam.from ) ) ), axis };
-        pads.push_back( pad( at, -low, high, Model.seat, Model.seat + static_cast<float>( rail.rise ) ) );
+        pads.push_back( pad( at, -low, high, Model.seat + under->lift, Model.seat + static_cast<float>( rail.rise ) ) );
     }
     Fastenings.insert( Fastenings.end(), pads.begin(), pads.end() );
 }

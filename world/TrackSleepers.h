@@ -130,6 +130,8 @@ double wing_rise( TTrack const &Track );
 // the stretch along the path its rail of Side is the stock rail of the blade of the other path along, with the slide chairs from
 // a little before the tip of the blade to its heel; from past to where there's none
 glm::dvec2 stock_stretch( TTrack const &Track, int const Path, int const Side );
+// how far along the path its rail of Side is the blade of the path, to its heel, the rail going on from there; 0 where it's none
+double blade_heel( TTrack const &Track, int const Path, int const Side );
 // where along the path of the track its rails lie on timbers shared with other tracks: where another track runs so near that
 // the plain sleepers of the two would touch, of the lengths of the models they'd be made of. this goes by the shape of the
 // tracks alone, so it holds whether the beams are drawn or not. the stretches in the order along the path, none where there
