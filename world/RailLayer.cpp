@@ -785,16 +785,12 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
             return ( A == null_handle ? B : A );
         }
         return ( tread_brightness( B, m_track.tread_band() ) > tread_brightness( A, m_track.tread_band() ) ? B : A ); };
-    knots::line offsets, extents, inner;
+    knots::line extents, inner;
     for( std::size_t i = 0; i <= Cuts.size(); ++i ) {
         auto const end { i < Cuts.size() ? Cuts[ i ].end : 1e9 };
         // a piece carved between two cuts has the same lines at both
         auto const own { i < Cuts.size() && false == ( i > 0 && Cuts[ i - 1 ].carved && Cuts[ i ].carved ) };
-        auto pieceoffsets { offsets };
-        if( own ) {
-            pieceoffsets.insert( pieceoffsets.end(), Cuts[ i ].endoffsets.begin(), Cuts[ i ].endoffsets.end() );
-        }
-        knots::sort( pieceoffsets );
+        auto const pieceoffsets { part_offsets( i > 0 ? &Cuts[ i - 1 ] : nullptr, i < Cuts.size() ? &Cuts[ i ] : nullptr ) };
         // the limits of the head from both ends can overlap along a short piece, as the planed wing rail of one frog and the cut of the next: the tighter of them holds
         auto const pieceextents { own ? knots::bound( extents, Cuts[ i ].endextents, true ) : extents };
         auto const pieceinner { own ? knots::bound( inner, Cuts[ i ].endinner, false ) : inner };
@@ -861,7 +857,6 @@ void TTrack::rail_layer::lay_cuts( gfx::vertex_array const &Shape, std::vector<r
             start = Cuts[ i ].start;
             startcap = Cuts[ i ].startcap;
             startbend = Cuts[ i ].startbend;
-            offsets = Cuts[ i ].startoffsets;
             extents = Cuts[ i ].startextents;
             inner = Cuts[ i ].startinner;
         }

@@ -164,6 +164,17 @@ struct rail_cut {
 struct rail_plan {
     std::vector<rail_cut> cuts;
 };
+// how far out a part of a rail between two cuts is laid: as it goes on from the one and comes to the other, once where both are carved, which
+// gives both its lines
+inline knots::line part_offsets( rail_cut const *Before, rail_cut const *After ) {
+
+    knots::line result { Before != nullptr ? Before->startoffsets : knots::line {} };
+    if( After != nullptr && false == ( Before != nullptr && Before->carved && After->carved ) ) {
+        result.insert( result.end(), After->endoffsets.begin(), After->endoffsets.end() );
+    }
+    knots::sort( result );
+    return result;
+}
 struct rail_tread {
     double from { 0.0 };
     double to { 0.0 };

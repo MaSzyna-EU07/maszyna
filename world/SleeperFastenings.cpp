@@ -94,7 +94,7 @@ fastened_rails::fastened_rails( TTrack &Track ) {
                     if( to - from < fastening_merge ) {
                         continue;
                     }
-                    auto const offsets { knots::sum( before != nullptr ? before->startoffsets : knots::line {}, after != nullptr ? after->endoffsets : knots::line {} ) };
+                    auto const offsets { track_rails::part_offsets( before, after ) };
                     auto const count { std::max( 1, static_cast<int>( std::ceil( ( to - from ) / fastening_step ) ) ) };
                     rail line;
                     line.track = track;
