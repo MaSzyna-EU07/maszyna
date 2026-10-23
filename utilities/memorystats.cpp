@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/memorystats.h"
 
 #include <atomic>
+#include <bit>
 #include <cstdlib>
 #include <new>
 
@@ -34,6 +35,14 @@ namespace
 
 std::atomic<std::uint64_t> g_heapbytes{0};
 std::atomic<std::uint64_t> g_heapblocks{0};
+// by the size of the blocks, see heap_memory
+std::array<std::atomic<std::uint64_t>, heap_memory::CLASSES> g_classbytes{};
+std::array<std::atomic<std::uint64_t>, heap_memory::CLASSES> g_classblocks{};
+
+std::size_t size_class(std::size_t const Size)
+{
+	return std::min<std::size_t>(std::bit_width(Size), heap_memory::CLASSES - 1);
+}
 
 std::size_t block_size(void *Block)
 {
@@ -56,8 +65,11 @@ void *counted_new(std::size_t Size)
 	{
 		if (auto *block{std::malloc(Size)})
 		{
-			g_heapbytes.fetch_add(block_size(block), std::memory_order_relaxed);
+			auto const size{block_size(block)};
+			g_heapbytes.fetch_add(size, std::memory_order_relaxed);
 			g_heapblocks.fetch_add(1, std::memory_order_relaxed);
+			g_classbytes[size_class(size)].fetch_add(size, std::memory_order_relaxed);
+			g_classblocks[size_class(size)].fetch_add(1, std::memory_order_relaxed);
 			return block;
 		}
 		auto const handler{std::get_new_handler()};
@@ -75,8 +87,11 @@ void counted_delete(void *Block) noexcept
 	{
 		return;
 	}
-	g_heapbytes.fetch_sub(block_size(Block), std::memory_order_relaxed);
+	auto const size{block_size(Block)};
+	g_heapbytes.fetch_sub(size, std::memory_order_relaxed);
 	g_heapblocks.fetch_sub(1, std::memory_order_relaxed);
+	g_classbytes[size_class(size)].fetch_sub(size, std::memory_order_relaxed);
+	g_classblocks[size_class(size)].fetch_sub(1, std::memory_order_relaxed);
 	std::free(Block);
 }
 
@@ -148,7 +163,15 @@ void operator delete[](void *Block, std::nothrow_t const &) noexcept
 
 heap_memory query_heap_memory()
 {
-	return {g_heapbytes.load(std::memory_order_relaxed), g_heapblocks.load(std::memory_order_relaxed)};
+	heap_memory result;
+	result.bytes = g_heapbytes.load(std::memory_order_relaxed);
+	result.blocks = g_heapblocks.load(std::memory_order_relaxed);
+	for (std::size_t index = 0; index < heap_memory::CLASSES; ++index)
+	{
+		result.classbytes[index] = g_classbytes[index].load(std::memory_order_relaxed);
+		result.classblocks[index] = g_classblocks[index].load(std::memory_order_relaxed);
+	}
+	return result;
 }
 
 process_memory query_process_memory()

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -29,6 +30,10 @@ struct heap_memory
 {
 	std::uint64_t bytes{0};
 	std::uint64_t blocks{0};
+	// the same by the size of the blocks: class N holds the blocks of 2^(N-1) to 2^N - 1 bytes
+	static constexpr std::size_t CLASSES{48};
+	std::array<std::uint64_t, CLASSES> classbytes{};
+	std::array<std::uint64_t, CLASSES> classblocks{};
 };
 
 heap_memory query_heap_memory();

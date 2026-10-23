@@ -18,6 +18,9 @@ http://mozilla.org/MPL/2.0/.
 #include "model/MdlMngr.h"
 #include "audio/audiorenderer.h"
 #include "world/Track.h"
+#include "world/Traction.h"
+#include "world/MemCell.h"
+#include "audio/sound.h"
 #include "utilities/memorystats.h"
 #include "utilities/Logs.h"
 #include "simulation/simulationtime.h"
@@ -1178,6 +1181,25 @@ void opengl46_renderer::Update_Memory_Info()
 	auto const heap { query_heap_memory() };
 	text += "taken with new: " + mb( heap.bytes ) + " in " + std::to_string( heap.blocks ) + " blocks"
 		+ ( process.valid && ( process.committed > heap.bytes ) ? ", the rest of the private memory " + mb( process.committed - heap.bytes ) + " (drivers, libraries)" : std::string{} ) + "\n";
+	// the same by the size of the blocks, in wider ranges
+	{
+		struct range { std::size_t last; char const *name; }; // classes up to last, see heap_memory
+		static range const ranges[] = {
+			{ 6, "below 64 B" }, { 8, "64-255 B" }, { 10, "256 B-1 KB" }, { 12, "1-4 KB" }, { 16, "4-64 KB" }, { 20, "64 KB-1 MB" }, { 24, "1-16 MB" }, { heap_memory::CLASSES - 1, "16 MB and more" } };
+		std::size_t first { 0 };
+		text += " by block size:";
+		for( auto const &item : ranges ) {
+			std::uint64_t bytes { 0 }, blocks { 0 };
+			for( auto index { first }; index <= item.last; ++index ) {
+				bytes += heap.classbytes[ index ];
+				blocks += heap.classblocks[ index ];
+			}
+			first = item.last + 1;
+			if( blocks == 0 ) { continue; }
+			text += std::string( " " ) + item.name + ": " + mb( bytes ) + " in " + std::to_string( blocks ) + ";";
+		}
+		text += "\n";
+	}
 	// the memory of the card, all processes: GL_NVX_gpu_memory_info (in kB)
 	if( m_nvxmemory < 0 ) {
 		m_nvxmemory = 0;
@@ -1252,6 +1274,18 @@ void opengl46_renderer::Update_Memory_Info()
 	accounted += sounds.bytes;
 	text += "sounds: " + counted( sounds, "buffers" ) + " " + mb( sounds.bytes ) + "\n";
 	text += "vehicles: " + std::to_string( simulation::Vehicles.sequence().size() ) + "\n";
+	// the objects of the tables of the simulation, without what they hold
+	{
+		auto const table = [ & ]( char const *Name, std::size_t const Count, std::size_t const Size ) {
+			return std::string( Name ) + " " + std::to_string( Count ) + " (" + mb( static_cast<std::uint64_t>( Count ) * Size ) + ")"; };
+		auto const tables {
+			table( "tracks", simulation::Paths.sequence().size(), sizeof( TTrack ) ) + ", "
+			+ table( "traction", simulation::Traction.sequence().size(), sizeof( TTraction ) ) + ", "
+			+ table( "memory cells", simulation::Memory.sequence().size(), sizeof( TMemCell ) ) + ", "
+			+ table( "instances in the table", simulation::Instances.sequence().size(), sizeof( TAnimModel ) ) + ", "
+			+ table( "sounds", simulation::Sounds.sequence().size(), sizeof( sound_source ) ) };
+		text += "tables: " + tables + "\n";
+	}
 	if( process.valid ) {
 		auto const total { process.committed > 0 ? process.committed : process.resident };
 		text += "counted above: " + mb( accounted ) + " of " + mb( total ) + ( process.committed > 0 ? " private" : " resident" ) + ", the rest "
