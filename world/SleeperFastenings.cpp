@@ -243,7 +243,29 @@ std::vector<fastening> fastened_rails::on( beam const &Beam, beam_model const &M
             }
             return;
         }
-        result.push_back( { part_check, point( origin ), axis * turn, 1.f, static_cast<float>( 0.5 * check_seats ), 0.f, true, covered > 2 } );
+        fastening part { part_check, point( origin ), axis * turn, 1.f, static_cast<float>( 0.5 * check_seats ), 0.f, true, covered > 2 };
+        if( part.whole ) {
+            // holding more rails than its seats, as the rails of a frog: stretched under them all, its ends with the clips past the feet
+            // of the outer ones, short of the feet of the rails beside
+            auto const last { from + covered - 1 };
+            auto const a { origin + turn * reach.x };
+            auto const b { origin + turn * reach.y };
+            auto low { rails[ from ].at - rails[ from ].foot - fastening_clip };
+            auto high { rails[ last ].at + rails[ last ].foot + fastening_clip };
+            if( from > 0 ) {
+                low = std::max( low, rails[ from - 1 ].at + rails[ from - 1 ].foot + fastening_gap );
+            }
+            if( last + 1 < rails.size() ) {
+                high = std::min( high, rails[ last + 1 ].at - rails[ last + 1 ].foot - fastening_gap );
+            }
+            low = std::min( low, std::min( a, b ) );
+            high = std::max( high, std::max( a, b ) );
+            auto const scale { ( high - low ) / ( reach.y - reach.x ) };
+            part.pivot = 0.f;
+            part.scale = static_cast<float>( scale );
+            part.shift = static_cast<float>( turn * ( 0.5 * ( low + high ) - origin ) - scale * 0.5 * ( reach.x + reach.y ) );
+        }
+        result.push_back( part );
         if( from > First ) {
             crowd( First, from - 1 );
         }
@@ -365,7 +387,7 @@ void fastened_rails::fit( std::vector<fastening> &Fastenings, beam const &Beam, 
         switch( Fastening.part ) {
             case part_plate: { return plate_least; }
             case part_slide: { return slide_least; }
-            case part_check: { return Fastening.whole ? 1.0 : check_least; }
+            case part_check: { return Fastening.whole ? static_cast<double>( Fastening.scale ) : check_least; }
             default: { return 1.0; }
         } };
     // those of one rail together, the rails in the order along the timber

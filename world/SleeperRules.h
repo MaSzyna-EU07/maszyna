@@ -61,6 +61,8 @@ double constexpr fastening_nose { 0.05 };
 double constexpr fastening_crowd { 0.3 };
 // how far apart the rails lie in the fastening of both, the check part of the model
 double constexpr check_seats { 0.113 };
+// how far past the edge of the foot of a rail its fastening reaches, with the clip holding it
+double constexpr fastening_clip { 0.09 };
 // the room left between the fastenings of rails close by, and how narrow their plates get to keep it
 double constexpr fastening_gap { 0.01 };
 double constexpr plate_least { 0.6 };
