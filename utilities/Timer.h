@@ -63,6 +63,9 @@ public:
         stop() {
             m_frame += std::chrono::duration<float, std::milli>( std::chrono::steady_clock::now() - m_start ).count(); }
     void
+        add( float const Milliseconds ) {
+            m_frame += Milliseconds; }
+    void
         commit() {
             m_accumulator = 0.95f * m_accumulator + m_frame;
             m_frame = 0.f; }
@@ -106,6 +109,11 @@ struct subsystem_stopwatches {
     frame_stopwatch vehicles_forces; // forces and the steps of the physics
     frame_stopwatch vehicles_update; // TDynamicObject::Update(), with the ai in it
     frame_stopwatch vehicles_ai; // TController::Update() of the vehicles with a driver
+    // the forces and the update by the kind of the vehicle: rail within VEHICLE_NEAR of the camera, rail farther, road within,
+    // road farther
+    static constexpr double VEHICLE_NEAR { 1000.0 };
+    std::array<frame_stopwatch, 4> vehicles_forces_kind;
+    std::array<frame_stopwatch, 4> vehicles_update_kind;
     // what the vehicle update went through in the last frame: vehicles, of them enabled, road vehicles, with a driver run by the
     // ai, with the physics active; and the steps of the physics
     struct vehicle_counts {
@@ -115,6 +123,9 @@ struct subsystem_stopwatches {
         unsigned int ai { 0 };
         unsigned int active { 0 };
         unsigned int steps { 0 };
+        // enabled vehicles of each kind (see vehicles_forces_kind), and of them the ones standing still
+        std::array<unsigned int, 4> kind {};
+        std::array<unsigned int, 4> standing {};
     };
     vehicle_counts vehicles; // of the frame under way
     vehicle_counts vehicleslast; // of the last frame
@@ -123,6 +134,10 @@ struct subsystem_stopwatches {
         commit_frame() {
             for( auto *part : { &sim_animations, &sim_powergrid, &sim_roads, &vehicles_prepare, &vehicles_forces, &vehicles_update, &vehicles_ai } ) {
                 part->commit(); }
+            for( auto &part : vehicles_forces_kind ) {
+                part.commit(); }
+            for( auto &part : vehicles_update_kind ) {
+                part.commit(); }
             vehicleslast = vehicles;
             vehicles = {}; }
     stopwatch mainloop_total;

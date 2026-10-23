@@ -856,6 +856,19 @@ void opengl46_renderer::SwapBuffers()
                 std::to_string( counts.all ) + " vehicles: " + std::to_string( counts.enabled ) + " enabled, " + std::to_string( counts.active ) + " active, "
                     + std::to_string( counts.road ) + " road, " + std::to_string( counts.ai ) + " ai",
                 "" );
+            // by kind: how many, standing still, the time of the forces and of the update
+            auto const count = []( unsigned int const Value ) {
+                auto text { std::to_string( Value ) };
+                return std::string( std::max<int>( 0, 6 - static_cast<int>( text.size() ) ), ' ' ) + text; };
+            auto const nearlimit { std::to_string( static_cast<int>( Timer::subsystem.VEHICLE_NEAR ) ) + " m" };
+            char const *const kindnames[] = { "rail, within ", "rail, farther", "road, within ", "road, farther" };
+            text += timeline( 3, "by kind (near: " + nearlimit + ")", " count  stand  forces  update" );
+            for( std::size_t kind = 0; kind < 4; ++kind ) {
+                text += timeline(
+                    4, kindnames[ kind ],
+                    count( counts.kind[ kind ] ) + " " + count( counts.standing[ kind ] ) + " " + ms( timers.vehicles_forces_kind[ kind ].average() ) + " "
+                        + ms( timers.vehicles_update_kind[ kind ].average() ) );
+            }
         }
         text += timeline( 2, "secondary steps", ms( timers.sim_secondary.average() ) );
         text += timeline( 2, "trains (cabs)", ms( timers.sim_trains.average() ) );

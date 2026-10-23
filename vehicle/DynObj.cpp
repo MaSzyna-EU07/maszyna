@@ -8612,7 +8612,30 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     auto &counts { Timer::subsystem.vehicles };
     counts.all = static_cast<unsigned int>( m_items.size() );
     counts.enabled = counts.road = counts.ai = counts.active = 0;
+    counts.kind = {};
+    counts.standing = {};
     counts.steps += static_cast<unsigned int>( std::max( Iterationcount, 1 ) );
+    // the kind of each vehicle: rail or road, near the camera or farther. the time of each vehicle in the loops below goes to its
+    // kind, measured from the end of the one before it
+    static std::vector<std::uint8_t> kinds;
+    kinds.resize( m_items.size() );
+    auto const camera { Global.pCamera.Pos };
+    for( std::size_t index = 0; index < m_items.size(); ++index ) {
+        auto const *vehicle { m_items[ index ] };
+        auto const road { ( vehicle->MoverParameters->CategoryFlag & 2 ) != 0 };
+        auto const far { glm::length2( vehicle->GetPosition() - camera ) > Timer::subsystem.VEHICLE_NEAR * Timer::subsystem.VEHICLE_NEAR };
+        kinds[ index ] = static_cast<std::uint8_t>( ( road ? 2 : 0 ) + ( far ? 1 : 0 ) );
+        if( false == vehicle->bEnabled ) { continue; }
+        ++counts.kind[ kinds[ index ] ];
+        if( vehicle->MoverParameters->Vel < 0.01 ) { ++counts.standing[ kinds[ index ] ]; }
+    }
+    auto const lap = [ & ]( std::size_t const Index, std::array<Timer::frame_stopwatch, 4> &Times, std::chrono::steady_clock::time_point &Mark ) {
+        auto const now { std::chrono::steady_clock::now() };
+        if( Index < kinds.size() ) {
+            Times[ kinds[ Index ] ].add( std::chrono::duration<float, std::milli>( now - Mark ).count() );
+        }
+        Mark = now;
+    };
     for( auto const *vehicle : m_items ) {
         if( false == vehicle->bEnabled ) { continue; }
         ++counts.enabled;
@@ -8633,28 +8656,42 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     }
     Timer::subsystem.vehicles_prepare.stop();
     Timer::subsystem.vehicles_forces.start();
+    auto mark { std::chrono::steady_clock::now() };
     if( Iterationcount > 1 ) {
         // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
         for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
+            std::size_t index { 0 };
             for( auto *vehicle : m_items ) {
                 vehicle->UpdateForce( Deltatime );
+                lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
             }
+            index = 0;
             for( auto *vehicle : m_items ) {
                 vehicle->FastUpdate( Deltatime );
+                lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
             }
         }
     }
-    for( auto *vehicle : m_items ) {
-        vehicle->UpdateForce( Deltatime );
+    {
+        std::size_t index { 0 };
+        for( auto *vehicle : m_items ) {
+            vehicle->UpdateForce( Deltatime );
+            lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
+        }
     }
     Timer::subsystem.vehicles_forces.stop();
 
     auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
 
     Timer::subsystem.vehicles_update.start();
-    for( auto *vehicle : m_items ) {
-        // Ra 2015-01: tylko tu przelicza sieć trakcyjną
-        vehicle->Update( Deltatime, totaltime );
+    {
+        std::size_t index { 0 };
+        mark = std::chrono::steady_clock::now();
+        for( auto *vehicle : m_items ) {
+            // Ra 2015-01: tylko tu przelicza sieć trakcyjną
+            vehicle->Update( Deltatime, totaltime );
+            lap( index++, Timer::subsystem.vehicles_update_kind, mark );
+        }
     }
     Timer::subsystem.vehicles_update.stop();
 
