@@ -118,8 +118,11 @@ public:
 
     // takes over the data read by a worker thread, waiting for it if needed
     void complete_data();
-    // has a worker thread read the data of the texture, if it's waiting for that (gfx.textures.streaming)
-    void prefetch();
+    // has a worker thread read the data of the texture, if it's waiting for that (gfx.textures.streaming). Origin: the camera,
+    // for data read ahead of it
+    void prefetch( glm::dvec3 const *Origin = nullptr );
+    // the data is read from the file when it's needed and not kept after the upload (gfx.textures.streaming)
+    bool streamed() const;
 
 // members
     std::shared_ptr<texture_request> request; // data being read by a worker thread
@@ -199,10 +202,11 @@ public:
         memory() const;
     // has the data of a texture read, if it's waiting for that (gfx.textures.streaming)
     void
-        prefetch( texture_handle const Texture );
-    // gives back the data read for textures which nothing drew within the specified time since it was asked for
+        prefetch( texture_handle const Texture, glm::dvec3 const &Origin );
+    // gives back the data read for textures which nothing drew within the specified time since it was asked for, or read ahead of
+    // the camera which went farther than the specified distance from there since
     std::size_t
-        drop_read_ahead( std::chrono::steady_clock::duration const Age );
+        drop_read_ahead( std::chrono::steady_clock::duration const Age, glm::dvec3 const &Camera, double const Distance );
 
 private:
 // types:

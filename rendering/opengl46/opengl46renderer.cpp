@@ -714,6 +714,7 @@ bool opengl46_renderer::Render()
 		m_sleeperrecords.clear();
 		m_modelrecords.clear();
 		m_cascaderecords.clear();
+		m_walkrecords.clear();
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -1139,6 +1140,14 @@ void opengl46_renderer::SwapBuffers()
         culltext += m_reflectioncull.info( "gpu cull reflections, last face", false );
     }
     culltext += Light_Shadow_Cull_Info( false );
+    if( Global.gfx_gpucull == 1 ) {
+        // all passes of the last frame
+        auto const &walks { m_lastwalkcounts };
+        culltext +=
+            "walks of the submodel trees in the frame: " + std::to_string( walks.walked ) + " made (" + std::to_string( walks.changing ) + " not kept), "
+            + std::to_string( walks.reused ) + " kept from earlier frames (" + std::to_string( m_walkrecords.size() ) + " groups), cpu " + to_string( walks.walktime, 3 )
+            + " ms; the draws put in order and sent, cpu " + to_string( walks.ordertime, 3 ) + " ms\n";
+    }
     m_debugsections.push_back( { "Scene statistics", std::move( statstext ), false } );
     m_debugsections.push_back( { "GPU culling", std::move( culltext ), false } );
     m_debugsections.push_back( { "Memory", m_memorytext, true } );
@@ -1514,6 +1523,7 @@ void opengl46_renderer::draw_debug_ui()
             ImGui::Checkbox("the same for the sleepers of the tracks of the view (gfx.gpucull.sleepers)", &Global.gfx_gpucull_sleepers);
             ImGui::Checkbox("the same for the models drawn on their own, with lights, animations or skins of their own (gfx.gpucull.models)", &Global.gfx_gpucull_models);
             ImGui::Checkbox("leave out the models of a cell lying wholly out of view, beyond their range or too small before the culling (gfx.gpucull.bucketrange)", &Global.gfx_gpucull_bucketrange);
+            ImGui::Checkbox("keep the walks of the submodel trees of the instances from frame to frame (gfx.gpucull.walkcache)", &Global.gfx_gpucull_walkcache);
         }
         ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
         if (Global.gfx_contactshadows > 0)
@@ -5055,10 +5065,44 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 			}
 		}
 	}
+	if( m_walkcountsframe != m_framestamp ) {
+		m_walkcountsframe = m_framestamp;
+		m_lastwalkcounts = m_walkcounts;
+		m_walkcounts = {};
+	}
+	auto const walkstart { std::chrono::steady_clock::now() };
+	// the walks of earlier frames. they go when the switch is off, as the models may change meanwhile without the walks noticing
+	// it the next time (the season), and when the shadows take other submodels
+	auto const walkcache { Global.gfx_gpucull_walkcache && ( false == m_previewing ) };
+	if( ( false == Global.gfx_gpucull_walkcache ) || ( m_walkrankcutoff != Global.gfx_shadow_rank_cutoff ) ) {
+		m_walkrecords.clear();
+		m_walkrankcutoff = Global.gfx_shadow_rank_cutoff;
+	}
+	if( walkcache && ( ( m_framestamp % 256 ) == 0 ) ) {
+		// the groups not drawn for a while
+		for( auto records { m_walkrecords.begin() }; records != m_walkrecords.end(); ) {
+			if( m_framestamp - records->second.frame > 256 ) { records = m_walkrecords.erase( records ); }
+			else { ++records; }
+		}
+	}
+	auto const shadows { m_renderpass.draw_mode == rendermode::shadows };
 	m_indirectrecording = true;
 	for( auto const &group : Cull.draw_groups() ) {
 		auto *model { group.key->pModel };
 		if( ( model == nullptr ) || ( model->Root == nullptr ) || ( ( group.instance == nullptr ) && ( false == group.sleepers ) ) ) { continue; }
+		// a model drawn on its own is prepared with its lights and animations each time; the others are prepared only for a walk.
+		// the version is taken before, so a walk prepared by something which changes the model isn't taken up again
+		walk_record *kept { nullptr };
+		if( walkcache && ( group.key->instance == nullptr ) ) {
+			kept = &m_walkrecords[ *group.key ];
+			kept->frame = m_framestamp;
+			auto &bands { kept->bands[ shadows ? 1 : 0 ] };
+			if( bands.size() != group.lodcount + 1 ) {
+				bands.clear();
+				bands.resize( group.lodcount + 1 );
+			}
+		}
+		auto const modelversion { model->state_version() };
 		material_handle const *skins { nullptr };
 		auto alpha { 0x30300030 };
 		auto prepared { false };
@@ -5095,7 +5139,7 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 				walks->bands.assign( group.lodcount + 1, cascade_band { nowalk, 0 } );
 			}
 		}
-		else {
+		else if( kept == nullptr ) {
 			prepare();
 		}
 		for( std::uint32_t band = 0; band <= group.lodcount; ++band ) {
@@ -5117,17 +5161,47 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 				m_renderpass.draw_stats.drawcalls += static_cast<int>( walk.count );
 				continue;
 			}
-			if( false == prepared ) {
-				prepare();
-			}
 			auto const walkfirst { m_indirectdraws.size() };
-			::glPushMatrix();
-			::glLoadIdentity();
-			model->Root->fSquareDist = bandmin;
-			model->Root->ReplacableSet( skins, alpha );
-			model->Root->pRoot = model;
-			Render( model->Root );
-			::glPopMatrix();
+			auto *keptwalk { kept != nullptr ? &kept->bands[ shadows ? 1 : 0 ][ band ] : nullptr };
+			if( ( keptwalk != nullptr )
+			 && ( keptwalk->valid )
+			 && ( keptwalk->bandmin == bandmin )
+			 && ( keptwalk->modelversion == modelversion )
+			 && ( keptwalk->blending == m_blendingenabled ) ) {
+				// walked in an earlier frame, with the model as it is now
+				Replay_Walk( *keptwalk, shadows );
+				++m_walkcounts.reused;
+			}
+			else {
+				if( false == prepared ) {
+					prepare();
+				}
+				auto const blending { m_blendingenabled };
+				m_indirectchanging = false;
+				::glPushMatrix();
+				::glLoadIdentity();
+				model->Root->fSquareDist = bandmin;
+				model->Root->ReplacableSet( skins, alpha );
+				model->Root->pRoot = model;
+				Render( model->Root );
+				::glPopMatrix();
+				++m_walkcounts.walked;
+				if( m_indirectchanging ) {
+					++m_walkcounts.changing;
+				}
+				if( keptwalk != nullptr ) {
+					keptwalk->valid = ( false == m_indirectchanging );
+					if( keptwalk->valid ) {
+						keptwalk->draws.assign( m_indirectdraws.begin() + walkfirst, m_indirectdraws.end() );
+						keptwalk->bandmin = bandmin;
+						keptwalk->modelversion = modelversion;
+						keptwalk->blending = blending;
+					}
+					else {
+						keptwalk->draws.clear();
+					}
+				}
+			}
 			if( walks != nullptr ) {
 				walks->bands[ band ] = cascade_band {
 					static_cast<std::uint32_t>( m_cascadedraws.size() ),
@@ -5138,6 +5212,8 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 		}
 	}
 	m_indirectrecording = false;
+	auto const orderstart { std::chrono::steady_clock::now() };
+	m_walkcounts.walktime += std::chrono::duration<double, std::milli>( orderstart - walkstart ).count();
 
 	// with multi draws the draws with the same state follow one another, and their model blocks are in a buffer the programs
 	// of the multi draws read them from. the order goes into the commands, so it comes first
@@ -5148,6 +5224,34 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 	}
 
 	Cull.fill_commands( m_indirectcommands );
+	m_walkcounts.ordertime += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - orderstart ).count();
+}
+
+void opengl46_renderer::Replay_Walk( walk_band const &Walk, bool const Shadows )
+{
+	for( auto const &walkdraw : Walk.draws ) {
+		// the place of the chunk in its bank is asked for again: the bank may have been let go since and made anew, which the
+		// question (as the walk) takes care of, uploading the chunk
+		gfx::indirect_source source;
+		if( false == m_geometry.indirect_source( walkdraw.geometry, source ) ) { continue; }
+		m_indirectcommands.push_back( { source.count, 0, source.first, static_cast<std::uint32_t>( source.basevertex ), 0, m_indirectentry, ( source.indexed ? 1u : 0u ), 0 } );
+		auto &draw { m_indirectdraws.emplace_back( walkdraw ) };
+		draw.type = source.type;
+		// the walk sets the placement of the submodel, and before each draw of the colour passes the parameters of its material
+		// (Bind_Material()); the rest of the block is what the pass has at the moment, as the walk would leave it
+		auto const &walked { walkdraw.ubs };
+		draw.ubs = model_ubs;
+		draw.ubs.modelview = walked.modelview;
+		draw.ubs.modelviewnormal = walked.modelviewnormal;
+		if( false == Shadows ) {
+			std::memcpy( &draw.ubs.param[ 0 ], &walked.param[ 0 ], sizeof( draw.ubs.param ) );
+			draw.ubs.opacity = walked.opacity;
+			draw.ubs.alpha_mult = walked.alpha_mult;
+		}
+	}
+	// as the walk would count them
+	m_renderpass.draw_stats.submodels += static_cast<int>( Walk.draws.size() );
+	m_renderpass.draw_stats.drawcalls += static_cast<int>( Walk.draws.size() );
 }
 
 opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer )
@@ -6138,7 +6242,7 @@ void opengl46_renderer::Update_Texture_Prefetch()
 	auto const camera{m_colorpass.pass_camera.position()};
 	auto const range{static_cast<double>(m_colorpass.draw_range) * Global.fDistanceFactor + margin};
 
-	auto const prefetch_material = [this](material_handle const Material) {
+	auto const prefetch_material = [this, &camera](material_handle const Material) {
 		if (Material <= 0)
 		{
 			return;
@@ -6146,24 +6250,24 @@ void opengl46_renderer::Update_Texture_Prefetch()
 		auto const &material{m_materials.material(Material)};
 		for (auto const texture : material.textures)
 		{
-			m_textures.prefetch(texture);
+			m_textures.prefetch(texture, camera);
 		}
 		for (auto const &variant : material.texture_variants)
 		{
 			for (auto const texture : variant)
 			{
-				m_textures.prefetch(texture);
+				m_textures.prefetch(texture, camera);
 			}
 		}
 	};
-	auto const prefetch_model = [this](TModel3d *Model) {
+	auto const prefetch_model = [this, &camera](TModel3d *Model) {
 		if (Model == nullptr)
 		{
 			return;
 		}
 		for (auto const texture : Model_Textures(Model))
 		{
-			m_textures.prefetch(texture);
+			m_textures.prefetch(texture, camera);
 		}
 	};
 
@@ -6280,12 +6384,12 @@ void opengl46_renderer::Update_Texture_Prefetch()
 			}
 		}
 	}
-	// the data read for what wasn't drawn after all (the details of models seen only from close, or a turn not taken) goes after a
-	// while
-	if (now - m_prefetchdroptime >= std::chrono::seconds(10))
+	// the data read for what wasn't drawn after all goes: when the camera went away from where it was read for (the instances which
+	// wanted it are out of reach then), or after a while (the details of models seen only from close, a turn not taken)
+	if (now - m_prefetchdroptime >= std::chrono::seconds(2))
 	{
 		m_prefetchdroptime = now;
-		m_textures.drop_read_ahead(std::chrono::minutes(5));
+		m_textures.drop_read_ahead(std::chrono::minutes(5), camera, 2.0 * range);
 	}
 }
 
@@ -7071,6 +7175,8 @@ void opengl46_renderer::Render(TSubModel *Submodel)
 
 				glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
 				model_ubs.future *= (mv * Submodel->future_transform) * glm::inverse(mv);
+				// the placement may be different in the next frame: the walk isn't kept (Record_Indirect_Draws())
+				m_indirectchanging = true;
 			}
 		}
 
@@ -7108,6 +7214,11 @@ void opengl46_renderer::Render(TSubModel *Submodel)
 
 					// ...luminance
 					auto const isemissive { ( Submodel->f4Emision.a > 0.f ) && ( Global.fLuminance < Submodel->fLight ) };
+					if( ( Submodel->f4Emision.a > 0.f ) && ( Submodel->fLight > -1.f ) )
+					{
+						// lit or not by the luminance of the moment: the walk isn't kept (Record_Indirect_Draws())
+						m_indirectchanging = true;
+					}
 					if (isemissive)
 						model_ubs.emission = Submodel->f4Emision.a;
 
@@ -7185,6 +7296,7 @@ void opengl46_renderer::Render(TSubModel *Submodel)
 			case rendermode::color:
 			case rendermode::reflections:
 			{
+				m_indirectchanging = true;
 				if (Global.fLuminance < Submodel->fLight)
 				{
 					Bind_Material(Submodel->m_material, Submodel);
@@ -8662,6 +8774,8 @@ void opengl46_renderer::Update(double const Deltatime)
         if( changed ) {
             // the heightmap terrain keeps copies of the textures of its layer materials
             m_terrainmaterials.on_environment_change();
+            // the seasonal variants of the models are shown and hidden anew
+            m_walkrecords.clear();
         }
     }
 

@@ -294,6 +294,7 @@ private:
     bool m_instancesubmodelslocated { false };
     std::vector<float> m_lodbounds; // filled on first use, see lod_bounds()
     bool m_lodboundsfound { false };
+    std::uint32_t m_stateversion { 0 }; // see state_version()
 
 public:
     TModel3d() = default;
@@ -308,6 +309,13 @@ public:
     // returns the distinct bounds of the visibility ranges of the submodels (fSquareMinDist and fSquareMaxDist, squared), sorted:
     // they split the distance into bands in which the same submodels are drawn. found once for the model, like instance_parts()
     std::vector<float> const & lod_bounds();
+    // the submodels of the model are shared by everything drawn with it, which sets their state (lights, animations, visibility)
+    // before it's drawn. the version changes when something which may set it differently than the last time did, or the submodels
+    // changed, so the renderer can tell whether what it worked out from them still holds
+    std::uint32_t state_version() const {
+        return m_stateversion; }
+    void state_changed() {
+        ++m_stateversion; }
 	TSubModel * AddToNamed(const char *Name, TSubModel *SubModel);
     nameoffset_sequence const & find_smoke_sources();
 	void AddTo(TSubModel *tmp, TSubModel *SubModel);

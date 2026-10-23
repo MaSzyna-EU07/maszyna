@@ -824,6 +824,18 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
     // NBMX wrzesien, MC listopad: zuniwersalnione
     btnOn = false; // czy przywrócić stan domyślny po renderowaniu
 
+    // the submodels set below are shared with whatever else is drawn with the same models
+    for( auto *model : { mdModel, mdLoad, mdLowPolyInt, mdKabina } ) {
+        if( model != nullptr ) {
+            model->state_changed();
+        }
+    }
+    for( auto *model : mdAttachments ) {
+        if( model != nullptr ) {
+            model->state_changed();
+        }
+    }
+
     if (mdLoad) // tymczasowo ładunek na poziom podłogi
         if (vFloor.z > 0.0)
             mdLoad->GetSMRoot()->SetTranslate(modelShake + vFloor);

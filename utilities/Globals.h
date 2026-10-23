@@ -323,6 +323,10 @@ struct global_settings {
     // the submodels of their model) are left out of a pass before the culling, the gpu one included, which would leave out
     // each of their instances anyway
     bool gfx_gpucull_bucketrange = true;
+    // the walks of the submodel trees which record the draws of the instances culled on the gpu are kept from frame to frame and
+    // made again only when the model changes: the trees of animated models, ones lit by the luminance and the models drawn on their
+    // own are walked every time
+    bool gfx_gpucull_walkcache = true;
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
     // (opengl 4.6) the depth pass of the scene (gfx_depthprepass_scene, or the one of the contact shadows) walks the scene for

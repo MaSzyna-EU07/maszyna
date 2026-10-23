@@ -46,6 +46,8 @@ struct texture_request {
     // handed to the workers (opengl_texture::prefetch()), and when: the main thread only
     bool submitted { false };
     std::chrono::steady_clock::time_point submittime;
+    bool ahead { false }; // read ahead of the camera, which was at the origin then
+    glm::dvec3 origin { 0.0 };
     // results, written by the thread reading the data
     std::vector<unsigned char> data;
     bool failed { false };
@@ -1052,6 +1054,12 @@ opengl_texture::create( bool const Static ) {
                 components_hint = GL_SRGB_ALPHA;
 
             GLint internal_format = mapping[components][components_hint];
+            if( ( internal_format == 0 )
+             && ( f_it != precompressed_formats.end() ) ) {
+                // data read back from the card (Global.ResourceMove) is in the format it was made in, which can be one the
+                // mapping doesn't start from (srgb)
+                internal_format = data_format;
+            }
 
             auto blocksize_it = precompressed_formats.find(internal_format);
 
@@ -1090,7 +1098,8 @@ opengl_texture::create( bool const Static ) {
             }
 
             if( true == Global.ResourceMove
-             || false == Global.ResourceSweep ) {
+             || false == Global.ResourceSweep
+             || true == streamed() ) {
                 // if garbage collection is disabled we don't expect having to upload the texture more than once
                 data = std::vector<unsigned char>();
                 data_state = resource_state::none;
@@ -1133,15 +1142,38 @@ opengl_texture::complete_data() {
     size = data.size() / 1024;
 }
 
-// has a worker thread read the data of the texture, if it's waiting for that
+// has a worker thread read the data of the texture, if it's waiting for that. Origin: the camera, for data read ahead of it
 void
-opengl_texture::prefetch() {
+opengl_texture::prefetch( glm::dvec3 const *Origin ) {
 
+    if( ( request == nullptr )
+     && ( id == invalid_id )
+     && ( data_state == resource_state::none )
+     && ( true == reload_on_use )
+     && ( true == streamed() ) ) {
+        // the data went with the gl texture, it's read from the file again
+        reload_on_use = false;
+        load();
+    }
     if( ( request == nullptr ) || ( true == request->submitted ) ) { return; }
 
     request->submitted = true;
     request->submittime = std::chrono::steady_clock::now();
+    request->ahead = ( Origin != nullptr );
+    if( Origin != nullptr ) {
+        request->origin = *Origin;
+    }
     texture_loader::instance().submit( request );
+}
+
+// the data of the texture is read from its file by worker threads when it's needed (gfx.textures.streaming), and not kept
+// after the upload: it can be read again
+bool
+opengl_texture::streamed() const {
+
+    return ( ( true == Global.gfx_texture_streaming )
+          && ( type == ".dds" )
+          && ( false == is_rendertarget ) );
 }
 
 // releases resources allocated on the opengl end, storing local copy if requested
@@ -1151,7 +1183,13 @@ opengl_texture::release() {
     if( id == -1 ) { return; }
     if( is_static ) { return; }
 
-    if( true == Global.ResourceMove && !is_rendertarget ) {
+    if( true == streamed() ) {
+        // no copy of the data is kept, it's read from the file again when the texture is needed (prefetch(), create())
+        data = std::vector<unsigned char>();
+        data_state = resource_state::none;
+        reload_on_use = true;
+    }
+    else if( true == Global.ResourceMove && !is_rendertarget ) {
         // if resource move is enabled we don't keep a cpu side copy after upload
         // so need to re-acquire the data before release
         // TBD, TODO: instead of vram-ram transfer fetch the data 'normally' from the disk using worker thread
@@ -1552,19 +1590,19 @@ texture_manager::memory() const {
 
 // has the data of a texture read, if it's waiting for that
 void
-texture_manager::prefetch( texture_handle const Texture ) {
+texture_manager::prefetch( texture_handle const Texture, glm::dvec3 const &Origin ) {
 
     if( ( Texture <= 0 )
      || ( Texture >= static_cast<texture_handle>( m_textures.size() ) ) ) {
         return;
     }
-    m_textures[ Texture ].first->prefetch();
+    m_textures[ Texture ].first->prefetch( &Origin );
 }
 
-// gives back the data read for textures which nothing drew within the specified time since it was asked for. it's read again when
-// a texture is needed
+// gives back the data read for textures which nothing drew within the specified time since it was asked for, or read ahead of the
+// camera which went farther than the specified distance from there since. it's read again when a texture is needed
 std::size_t
-texture_manager::drop_read_ahead( std::chrono::steady_clock::duration const Age ) {
+texture_manager::drop_read_ahead( std::chrono::steady_clock::duration const Age, glm::dvec3 const &Camera, double const Distance ) {
 
     auto const now { std::chrono::steady_clock::now() };
     std::size_t count { 0 };
@@ -1574,8 +1612,11 @@ texture_manager::drop_read_ahead( std::chrono::steady_clock::duration const Age 
             continue;
         }
         auto &request { *texture.first->request };
-        if( ( false == request.submitted )
-         || ( now - request.submittime < Age ) ) {
+        if( false == request.submitted ) {
+            continue;
+        }
+        if( ( now - request.submittime < Age )
+         && ( ( false == request.ahead ) || ( glm::length2( Camera - request.origin ) <= Distance * Distance ) ) ) {
             continue;
         }
         if( true == texture_loader::instance().drop( request ) ) {

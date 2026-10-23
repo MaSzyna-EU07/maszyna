@@ -1617,6 +1617,7 @@ void TModel3d::AddTo(TSubModel *tmp, TSubModel *SubModel)
 	++iSubModelsCount; // teraz jest o 1 submodel więcej
 	iFlags |= 0x0200; // submodele są oddzielne
 	m_lodboundsfound = false; // the new submodel may have its own range
+	state_changed();
 };
 
 TSubModel *TModel3d::GetFromName(std::string const &Name) const

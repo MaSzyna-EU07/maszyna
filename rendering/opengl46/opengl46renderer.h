@@ -765,6 +765,39 @@ class opengl46_renderer : public gfx_renderer {
 	std::vector<indirect_draw> m_cascadedraws;
 	std::vector<gl::instance_draw_command> m_cascadecommands;
 	unsigned int m_cascaderecordframe { 0 };
+	// the walks Record_Indirect_Draws() made in earlier frames (Global.gfx_gpucull_walkcache). what the walk of a group of instances
+	// in a lod band records depends on the model with its skins, the band and whether the pass draws shadows, not on the camera,
+	// so it's kept while the shared state of the model stays the same (TModel3d::state_version()) and used instead of walking the
+	// tree again. a walk meeting an animated submodel, one lit by the luminance or the stars isn't kept. the models drawn on their
+	// own (with an instance in the key) are walked every time
+	struct walk_band {
+		std::vector<indirect_draw> draws; // as recorded
+		float bandmin { 0.f };
+		std::uint32_t modelversion { 0 };
+		bool blending { false }; // the state the walk began in
+		bool valid { false };
+	};
+	struct walk_record {
+		unsigned int frame { 0 }; // used last
+		std::array<std::vector<walk_band>, 2> bands; // of the colour passes (the main view, the environment map) and of the shadows
+	};
+	std::unordered_map<scene::basic_cell::instance_bucket_key, walk_record, scene::basic_cell::instance_bucket_key_hash> m_walkrecords;
+	int m_walkrankcutoff { 0 }; // Global.gfx_shadow_rank_cutoff the walks were made with
+	bool m_indirectchanging { false }; // the walk under way met a submodel which may look different in the next frame
+	// what the walks of the frame did, for the panel: walks made, of them not kept, walks taken from earlier frames, and the cpu time
+	// of the walks and of putting the draws in order with their blocks uploaded
+	struct walk_counts {
+		std::uint32_t walked { 0 };
+		std::uint32_t changing { 0 };
+		std::uint32_t reused { 0 };
+		double walktime { 0.0 };
+		double ordertime { 0.0 };
+	};
+	walk_counts m_walkcounts;
+	walk_counts m_lastwalkcounts;
+	unsigned int m_walkcountsframe { 0 };
+	// appends the draws of a walk kept from an earlier frame to the recorded draws, with the commands of the entry under way
+	void Replay_Walk( walk_band const &Walk, bool const Shadows );
 	// multi draws of the recorded draws: whether they were recorded for them (ordered, their model blocks uploaded), and where
 	// the blocks are
 	bool m_indirectmultidraw { false };

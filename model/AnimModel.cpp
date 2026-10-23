@@ -658,6 +658,11 @@ void TAnimModel::on_season_update() {
 
 void TAnimModel::RaPrepare()
 { // ustawia światła i animacje we wzorcu modelu przed renderowaniem egzemplarza
+	if ((pModel != nullptr) && ((iNumLights > 0) || (false == m_animlist.empty())))
+	{
+		// the lights and animations of this instance are set in the submodels the other instances share
+		pModel->state_changed();
+	}
 	if (Global.UpdateMaterials)
 	    on_season_update();
     for (int i = 0; i < iNumLights; ++i)
