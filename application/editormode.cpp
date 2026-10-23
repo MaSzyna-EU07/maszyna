@@ -2986,8 +2986,9 @@ bool editor_mode::save()
     }
     first_step_done(first_step::save);
 
-    // the heightmap terrain is kept in files of its own, the scenery only needs the directive which loads it
+    // the heightmap terrain is kept in files of its own, the scenery only needs the directive which loads it, in a layer of its own
     std::vector<std::string> rootstatements;
+    std::map<scene::layer_handle, std::vector<std::string>> statements;
     if (m_streamer.active())
     {
         std::string error;
@@ -2997,7 +2998,13 @@ bool editor_mode::save()
             return false;
         }
         if (false == scene::Layers.terrain_directive())
-            rootstatements.emplace_back("heightmap_terrain " + m_streamer.name() + " endheightmap_terrain");
+        {
+            auto const directive{"heightmap_terrain " + m_streamer.name() + " endheightmap_terrain"};
+            if (auto const layer{output_layer("teren")}; layer != null_handle)
+                statements[layer].push_back(directive);
+            else
+                rootstatements.push_back(directive);
+        }
     }
 
     if (m_profile.changed)
@@ -3016,14 +3023,14 @@ bool editor_mode::save()
         m_orthophoto_mark = map;
         scene::Layers.mark(scene::layer_handle{1}, "//$o", {map});
     }
-    auto const terrainadded{false == rootstatements.empty()};
+    auto const terrainadded{false == rootstatements.empty() || false == statements.empty()};
     auto const controls{turntable_controls(rootstatements)};
     auto const noses{nose_controls(rootstatements)};
     std::vector<std::string> trailing;
     auto const placed{m_vehicle.trainset_lines(trailing)};
     if (placed == 0)
         starter_trainset(trailing);
-    auto const result = scene::Layers.save(rootstatements, trailing);
+    auto const result = scene::Layers.save(rootstatements, trailing, statements);
     if (result.success && controls)
         m_turntable_included = true;
     if (result.success && noses)

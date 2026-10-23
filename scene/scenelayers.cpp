@@ -558,7 +558,7 @@ void node_layers::stat(layer_handle const Layer)
 }
 
 // creates empty layer, included from specified one. returns: handle to the new layer, or null_handle with the explanation in Reason
-layer_handle node_layers::create(std::string Name, layer_handle Parent, std::string &Reason)
+layer_handle node_layers::create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate)
 {
 	Parent = resolve(Parent);
 	if (false == valid(Parent) || layer(Parent).removed || layer(Parent).binary)
@@ -639,7 +639,10 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 	created.context_begin = valid(anchor) ? layer(anchor).context_end : layer(Parent).context_insert();
 	created.context_end = created.context_begin;
 
-	active(layerhandle);
+	if (Activate)
+	{
+		active(layerhandle);
+	}
 
 	return layerhandle;
 }

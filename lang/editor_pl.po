@@ -11469,3 +11469,6 @@ msgstr[2] "Odczyt przywrócony: %zu z %zu semaforów"
 
 msgid ": the rest stand farther than 10 m from a track, by vehicles or their events are gone"
 msgstr ": pozostałe stoją dalej niż 10 m od toru, przy torze z pojazdami albo ich zdarzenia już nie istnieją"
+
+msgid " (layer \"%s\")"
+msgstr " (warstwa \"%s\")"

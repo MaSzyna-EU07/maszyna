@@ -844,7 +844,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	if (Template.linked)
 		item.values["#7"] = tool.linked[0] != '\0' ? std::string{tool.linked} : std::string{"none"};
 	std::string error;
-	if (place_templates({item}, error) == 0)
+	if (place_templates({item}, error, output_layer("srk")) == 0)
 	{
 		tool.status = refused(STR_C("The signal couldn't be placed: ") + error);
 		return false;
@@ -1452,7 +1452,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 	std::vector<scene::instance_handle> instances;
 	if (Error.empty() && false == items.empty())
 	{
-		if (place_templates(items, Error) == 0)
+		if (place_templates(items, Error, output_layer("srk")) == 0)
 			reads.clear();
 		else
 		{

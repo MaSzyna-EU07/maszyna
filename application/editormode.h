@@ -1896,8 +1896,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void apply_switch_drive_choice(TTrack &Switch);
 	void switch_drive_captured(TTrack const &Track);
 	void switch_drives_committed(std::vector<TTrack *> const &Tracks);
-	// places them in the active layer, as one step of the undo. returns: how many were placed
-	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error) override;
+	scene::layer_handle output_layer(std::string const &Part) override;
+	// places them in the active layer or the given one, as one step of the undo. returns: how many were placed
+	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error, scene::layer_handle Layer = scene::layer_handle{}) override;
 	// moves them, as one step of the undo
 	std::size_t move_templates(std::vector<std::pair<standing_template, template_item>> const &Moves) override;
 	// takes them out, as one step of the undo

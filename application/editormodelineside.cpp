@@ -243,7 +243,41 @@ std::vector<editor_mode::standing_template> editor_mode::standing_templates(std:
 	return result;
 }
 
-std::size_t editor_mode::place_templates(std::vector<template_item> const &Items, std::string &Error)
+scene::layer_handle editor_mode::output_layer(std::string const &Part)
+{
+	if (scene::Layers.empty())
+		return null_handle;
+	auto stem{scene::Layers.layer(scene::layer_handle{1}).name};
+	if (auto const slash{stem.find_last_of("/\\")}; slash != std::string::npos)
+		stem.erase(0, slash + 1);
+	if (auto const dot{stem.rfind('.')}; dot != std::string::npos)
+		stem.erase(dot);
+	stem.erase(0, stem.find_first_not_of('$'));
+	if (stem.empty())
+		stem = "scenery";
+	std::string reason;
+	// a file of that name the scenery doesn't include, or one which can't take more, gives way to the next number
+	for (int attempt = 1; attempt <= 9; ++attempt)
+	{
+		auto const name{ToLower(stem + "_" + Part + (attempt > 1 ? std::to_string(attempt) : std::string{}) + ".scm")};
+		auto layer{null_handle};
+		for (std::size_t index = 1; index <= scene::Layers.size() && layer == null_handle; ++index)
+			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && existing.name == name)
+				layer = scene::Layers.resolve(static_cast<scene::layer_handle>(index));
+		if (layer == null_handle)
+			layer = scene::Layers.create(name, scene::layer_handle{1}, reason, false);
+		if (layer != null_handle && scene::Layers.accepts(layer, &reason))
+		{
+			scene::Layers.visible(layer, true);
+			scene::Layers.locked(layer, false);
+			return layer;
+		}
+	}
+	WriteLog("Editor: no layer for " + Part + ", the active one takes it: " + reason, logtype::generic);
+	return null_handle;
+}
+
+std::size_t editor_mode::place_templates(std::vector<template_item> const &Items, std::string &Error, scene::layer_handle const Layer)
 {
 	if (Items.empty())
 		return 0;
@@ -252,7 +286,7 @@ std::size_t editor_mode::place_templates(std::vector<template_item> const &Items
 		Error = STR_C("Templates can be placed only in a scenery opened for editing (-edit)");
 		return 0;
 	}
-	auto const layer{scene::Layers.resolve(scene::Layers.active())};
+	auto const layer{scene::Layers.resolve(Layer != null_handle ? Layer : scene::Layers.active())};
 	if (std::string reason; false == scene::Layers.accepts(layer, &reason))
 	{
 		Error = STR_C("The active layer can't take them: ") + (reason.empty() ? std::string{STR_C("there's no active layer")} : reason);
@@ -569,8 +603,11 @@ void hekto_tool::hekto_place()
 		items.push_back(std::move(item));
 	}
 	std::string error;
-	auto const placed{m_templates.place_templates(items, error)};
+	auto const layer{items.empty() ? null_handle : m_templates.output_layer("hektometry")};
+	auto const placed{m_templates.place_templates(items, error, layer)};
 	tool.status = placed > 0 ? format(STR_P("%zu hectometre post placed, Ctrl+Z takes it back", "%zu hectometre posts placed, Ctrl+Z takes them back", static_cast<long long>(placed)), placed) : error;
+	if (placed > 0 && layer != null_handle)
+		tool.status += format(STR_C(" (layer \"%s\")"), scene::Layers.layer(layer).name.c_str());
 	if (placed > 0)
 		m_guide.first_step_done(editor_first_step::posts);
 	WriteLog("Editor: " + tool.status, logtype::generic);

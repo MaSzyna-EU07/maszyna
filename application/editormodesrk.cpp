@@ -879,7 +879,9 @@ srk_tool::record &srk_tool::record_of_open()
 		auto *first{m_layout->switches.front()};
 		entry.anchor = first->name();
 		entry.track = first;
-		entry.layer = alignment_store::layer_of(*first);
+		entry.layer = m_templates.output_layer("srk");
+		if (entry.layer == null_handle)
+			entry.layer = alignment_store::layer_of(*first);
 		m_records.push_back(std::move(entry));
 		m_record = static_cast<int>(m_records.size()) - 1;
 		m_anchor = first;
