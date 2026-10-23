@@ -3570,8 +3570,8 @@ msgstr "krawędź peronu od osi toru"
 msgid "Signals"
 msgstr "Sygnalizatory"
 
-msgid "Signals by the track, from the templates of the scenery, with the event the train reads them by"
-msgstr "Sygnalizatory przy torze, z szablonów scenerii, z eventem, którym pociąg je odczytuje"
+msgid "Click: stop placing"
+msgstr "Klik: koniec stawiania"
 
 msgid "moves the signal along the track"
 msgstr "przesuwa sygnalizator wzdłuż toru"
@@ -3600,8 +3600,20 @@ msgstr "usuwa zaznaczony sygnalizator razem z jego eventem"
 msgid "Click: select the signal %s, drag: move it along the track"
 msgstr "LPM: zaznacz sygnalizator %s, przeciągnij: przesuń go wzdłuż toru"
 
-msgid "Choose the type of the signal in the Tracks window first"
-msgstr "Najpierw wybierz typ sygnalizatora w oknie Tory"
+msgid "Click: place it by a track, the signalling of the station places its signals of this kind with it too"
+msgstr "Klik: stawiaj go przy torze; SRK stacji stawia nim też swoje sygnalizatory tego rodzaju"
+
+msgid "Stop placing (Esc)"
+msgstr "Zakończ stawianie (Esc)"
+
+msgid "Place by a track"
+msgstr "Stawiaj przy torze"
+
+msgid "stops placing"
+msgstr "kończy stawianie"
+
+msgid "A click by a track places the chosen signal on that side, a press dragged along it turns it to the trains running that way. The signalling of the station places its signals of each kind with the template chosen here"
+msgstr "Klik przy torze stawia wybrany sygnalizator po tej stronie, wciśnięcie przeciągnięte wzdłuż toru obraca go do pociągów jadących w tę stronę. SRK stacji stawia swoje sygnalizatory każdego rodzaju szablonem wybranym tutaj"
 
 msgid "Semaphore"
 msgstr "Semafor"
@@ -5981,8 +5993,8 @@ msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowani
 msgid "Crossover, double, scissors, ladder"
 msgstr "Przejście rozjazdowe, podwójne przejście rozjazdowe, nożyce, ulica zwrotnicowa"
 
-msgid "Turntable, signals, signalling, kilometrage, objects, trainset, profile, speed, joints, gauge"
-msgstr "Obrotnica, sygnalizatory, SRK, kilometraż, obiekty, skład, profil, prędkość, styki, skrajnia"
+msgid "Turntable, signalling and signals, kilometrage, objects, trainset, profile, speed, joints, gauge"
+msgstr "Obrotnica, SRK i sygnalizatory, kilometraż, obiekty, skład, profil, prędkość, styki, skrajnia"
 
 msgid "No switch drive models"
 msgstr "Brak modeli napędów"
@@ -7499,8 +7511,8 @@ msgstr "B: słupki hektometrowe całej linii naraz"
 msgid "Signals and posts"
 msgstr "Sygnalizatory i słupki"
 
-msgid "The signals tool: the type of the signal in the panel, from the templates of the scenery"
-msgstr "Narzędzie Sygnalizatory: typ sygnalizatora w panelu, z szablonów scenerii"
+msgid "The signalling tool: click a type of signal in its Signals, from the templates of the scenery"
+msgstr "Narzędzie SRK: kliknij typ sygnalizatora w sekcji Sygnalizatory, z szablonów scenerii"
 
 msgid "A click by a track places the signal on that side"
 msgstr "Klik przy torze stawia sygnalizator po tej stronie"
@@ -7520,8 +7532,8 @@ msgstr "Postaw sygnalizator"
 msgid "Place the hectometre posts of a line"
 msgstr "Postaw słupki hektometrowe linii"
 
-msgid "The signals tool (H)"
-msgstr "Narzędzie Sygnalizatory (H)"
+msgid "The signalling tool (I)"
+msgstr "Narzędzie SRK (I)"
 
 msgid "\nPaths off the route brought to its height:"
 msgstr "\nTory obok trasy doprowadzone do jej wysokości:"
@@ -10281,8 +10293,8 @@ msgstr "Wyłączone: tor kładziony od innego toru albo dołączany do niego jes
 msgid "Signalling"
 msgstr "SRK"
 
-msgid "The signalling of a station: LMB on a switch lays its station out as a schematic"
-msgstr "Sterowanie ruchem na stacji: LPM na rozjazd rozkłada jego stację w schemat"
+msgid "The signals and the signalling of the stations: LMB on a switch lays its station out as a schematic, the signals placed by hand from the templates in the panel"
+msgstr "Sygnalizatory i sterowanie ruchem na stacjach: LPM na rozjazd rozkłada jego stację w schemat, sygnalizatory stawia się ręcznie z szablonów w panelu"
 
 msgid "Click: the station of this switch"
 msgstr "Klik: stacja tego rozjazdu"
@@ -10464,8 +10476,8 @@ msgstr "Tor %s ma teraz numer %s"
 msgid "Set the signals"
 msgstr "Ustaw semafory"
 
-msgid "Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on each line, A, B... from the start of the km, Z, Y... from the end, the circuit from 15 m beyond it to the station bpd_ita; an exit signal 15 m before the joint at the end of each station track a train is sent out of, F1, G2 towards the start, R1, P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets its name, none is doubled. The kinds of signals chosen in the Signals tool. One step of undo"
-msgstr "Stawia semafory stacji jak na liniach PKP PLK i nazywa je od jej skrótu: wjazdowy 300 m przed stacją na każdej linii, A, B... od początku km, Z, Y... od końca, a odcinek od 15 m za nim do stacji to bpd_ita; wyjazdowy 15 m przed stykiem na końcu każdego toru, z którego wyprawia się pociągi, F1, G2 w stronę początku, R1, P2 w stronę końca; tarcza manewrowa Tm1, Tm2... na końcu krótszego toru. Semafor, który już stoi w miejscu któregoś z nich, dostaje tylko jego nazwę, nic się nie dubluje. Modele semaforów te wybrane w narzędziu Sygnalizatory. Jeden krok cofania"
+msgid "Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on each line, A, B... from the start of the km, Z, Y... from the end, the circuit from 15 m beyond it to the station bpd_ita; an exit signal 15 m before the joint at the end of each station track a train is sent out of, F1, G2 towards the start, R1, P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets its name, none is doubled. Each kind with its template chosen in Signals below. One step of undo"
+msgstr "Stawia semafory stacji jak na liniach PKP PLK i nazywa je od jej skrótu: wjazdowy 300 m przed stacją na każdej linii, A, B... od początku km, Z, Y... od końca, a odcinek od 15 m za nim do stacji to bpd_ita; wyjazdowy 15 m przed stykiem na końcu każdego toru, z którego wyprawia się pociągi, F1, G2 w stronę początku, R1, P2 w stronę końca; tarcza manewrowa Tm1, Tm2... na końcu krótszego toru. Semafor, który już stoi w miejscu któregoś z nich, dostaje tylko jego nazwę, nic się nie dubluje. Każdy rodzaj szablonem wybranym niżej w Sygnalizatorach. Jeden krok cofania"
 
 msgid "Give the station its code first: the signals are named after it"
 msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy semaforów"
@@ -11038,8 +11050,8 @@ msgstr "Daje każdemu zaznaczonemu semaforowi szablon tego samego rodzaju i moco
 msgid "The lights go by the routes of the trains: 40 km/h through the switches 1:9, 60 through 1:12 and 1:14, 100 through 1:18.5, by their radii, for these a lower orange light, with an orange strip for 60, a green one for 100, Ie-1; an upper orange one where the next signal can show stop; the white one of the substitute signal. A signal telling of the next one standing nearer than the braking distance slows the trains with it at stop, Ie-4 § 8 ust. 5"
 msgstr "Światła wynikają z przebiegów pociągów: 40 km/h przez rozjazdy 1:9, 60 przez 1:12 i 1:14, 100 przez 1:18,5, liczone z ich promieni; dla nich dolne światło pomarańczowe, z pomarańczowym pasem dla 60 i zielonym dla 100, Ie-1; górne pomarańczowe, gdy następny semafor może pokazać stój; białe dla sygnału zastępczego. Semafor zapowiadający następny, który stoi bliżej niż droga hamowania, zmniejsza prędkość pociągów, gdy tamten pokazuje stój, Ie-4 § 8 ust. 5"
 
-msgid "No template has the lights %s need, they got the one chosen in the Signals tool: see Signal heads"
-msgstr "Żaden szablon nie ma świateł potrzebnych dla %s, dostały ten wybrany w narzędziu Sygnalizatory: zobacz Komory semaforów"
+msgid "No template has the lights %s need, they got the one chosen in Signals: see Signal heads"
+msgstr "Żaden szablon nie ma świateł potrzebnych dla %s, dostały ten wybrany w Sygnalizatorach: zobacz Komory semaforów"
 
 msgid "No main signal within %.0f m ahead of it to tell of"
 msgstr "Na %.0f m przed nią nie ma semafora do zapowiadania"
@@ -11278,8 +11290,8 @@ msgstr "ze scenerii"
 msgid "Block signals stand along the line, none of them switched by a block section of the editor: the line keeps the block of the scenery as it stands"
 msgstr "Na szlaku stoją semafory SBL, ale żadnego nie przełącza odstęp edytora: szlak zostaje z blokadą scenerii, tak jak stoi"
 
-msgid "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal chosen in the Signals tool, else the semi-automatic one"
-msgstr "Blokada szlaku, na obu torach dwutorowego taka sama. Samoczynna (SBL): semafory SBL z odstępami, bez tarczy ostrzegawczej, trzy- albo czterostawna; szablony stojących semaforów SBL zostają podmienione na te o właściwej liczbie stawności. Półsamoczynna: tarcza ostrzegawcza ToA w drodze hamowania przed semaforem wjazdowym. Auto: samoczynna, gdy na szlaku stoją semafory SBL (stawność jak u nich) albo szlak jest dwutorowy (stawność jak u semafora SBL wybranego w narzędziu Sygnalizatory), inaczej półsamoczynna"
+msgid "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal chosen in Signals below, else the semi-automatic one"
+msgstr "Blokada szlaku, na obu torach dwutorowego taka sama. Samoczynna (SBL): semafory SBL z odstępami, bez tarczy ostrzegawczej, trzy- albo czterostawna; szablony stojących semaforów SBL zostają podmienione na te o właściwej liczbie stawności. Półsamoczynna: tarcza ostrzegawcza ToA w drodze hamowania przed semaforem wjazdowym. Auto: samoczynna, gdy na szlaku stoją semafory SBL (stawność jak u nich) albo szlak jest dwutorowy (stawność jak u semafora SBL wybranego niżej w Sygnalizatorach), inaczej półsamoczynna"
 
 msgid "Draw the block boundaries"
 msgstr "Rysuj granice odstępów"

@@ -53,7 +53,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap")
 	{
 		auto values{selftest_values(words)};
-		show_track_tab(track_tab::signals);
+		show_track_tab(track_tab::srk);
 		signal_scan();
 		signal_refresh(true);
 		auto &tool{m_signal};
@@ -96,12 +96,12 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			auto const side{values["side"] == "left" ? -1 : 1};
 			auto const facing{values["facing"] == "along" ? 1 : values["facing"] == "against" ? -1 : 0};
 			signal_spot spot;
-			if (false == spot_on(*signal_armed(), facing, side, spot))
+			if (false == spot_on(*signal_current(), facing, side, spot))
 			{
 				WriteLog("SELFTEST signal: no such track " + values["track"]);
 				return selftest_result::handled;
 			}
-			auto const placed{signal_place(spot, *signal_armed())};
+			auto const placed{signal_place(spot, *signal_current())};
 			WriteLog(format("SELFTEST signal %s: %s", placed ? "placed" : "failed", tool.status.c_str()));
 		}
 		else if (command == "signalmove")

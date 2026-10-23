@@ -424,40 +424,6 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
-	if (m_track_tab == track_tab::signals)
-	{
-		if (auto const hit{signal_hit()}; hit >= 0)
-		{
-			auto const &standing{m_signal.standing[hit]};
-			intent.index = hit;
-			intent.position = standing.include.location;
-			intent.action = format(STR_C("Click: select the signal %s, drag: move it along the track"), standing.name.c_str());
-			intent.what = kind::signal_move;
-			return intent;
-		}
-		auto const *armed{signal_armed()};
-		if (m_hover.track != nullptr && armed != nullptr)
-		{
-			signal_spot spot;
-			if (signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
-			{
-				intent.track = m_hover.track;
-				intent.path = m_hover.path;
-				intent.position = spot.position;
-				intent.action = signal_intent_label(*armed, spot);
-				intent.what = kind::signal_place;
-				return intent;
-			}
-		}
-		if (m_hover.track != nullptr)
-		{
-			intent.track = m_hover.track;
-			intent.path = m_hover.path;
-			intent.position = m_hover.point;
-			return make(kind::select, "Choose the type of the signal in the Tracks window first");
-		}
-		return intent;
-	}
 	if (m_track_tab == track_tab::srk && m_srk.drawing())
 	{
 		bool valid{false};
@@ -468,12 +434,38 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.what = kind::srk_boundary;
 		return intent;
 	}
-	if (m_track_tab == track_tab::srk && m_hover.track != nullptr)
+	if (m_track_tab == track_tab::srk)
 	{
-		intent.track = m_hover.track;
-		intent.path = m_hover.path;
-		intent.position = m_hover.point;
-		return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+		if (auto const hit{signal_hit()}; hit >= 0)
+		{
+			auto const &standing{m_signal.standing[hit]};
+			intent.index = hit;
+			intent.position = standing.include.location;
+			intent.action = format(STR_C("Click: select the signal %s, drag: move it along the track"), standing.name.c_str());
+			intent.what = kind::signal_move;
+			return intent;
+		}
+		if (auto const *armed{signal_armed()}; armed != nullptr)
+		{
+			signal_spot spot;
+			if (m_hover.track != nullptr && signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
+			{
+				intent.track = m_hover.track;
+				intent.path = m_hover.path;
+				intent.position = spot.position;
+				intent.action = signal_intent_label(*armed, spot);
+				intent.what = kind::signal_place;
+			}
+			return intent;
+		}
+		if (m_hover.track != nullptr)
+		{
+			intent.track = m_hover.track;
+			intent.path = m_hover.path;
+			intent.position = m_hover.point;
+			return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+		}
+		return intent;
 	}
 	if (m_track_tab == track_tab::kilometrage && m_hover.track != nullptr)
 	{

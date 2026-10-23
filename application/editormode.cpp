@@ -1502,7 +1502,7 @@ bool editor_mode::update()
         draw_switch_slide();
         if (m_track_tab == track_tab::turntable)
             draw_turntable_overlay();
-        if (m_track_tab == track_tab::signals)
+        if (m_track_tab == track_tab::srk)
         {
             signal_refresh();
             signal_move_update();
@@ -5232,7 +5232,7 @@ void editor_mode::render_first_steps()
 	     trial::turnout},
 	    {"Signals and posts",
 	     nullptr,
-	     {{"H", "The signals tool: the type of the signal in the panel, from the templates of the scenery"},
+	     {{"I", "The signalling tool: click a type of signal in its Signals, from the templates of the scenery"},
 	      {"LMB", "A click by a track places the signal on that side"},
 	      {"LMB + move", "Press by the track and drag along it: the trains running that way see the signal"},
 	      {"LMB + move", "Drag a standing signal: it moves along its track"},
@@ -5382,11 +5382,11 @@ void editor_mode::render_first_steps()
 		}
 		case trial::signals:
 		{
-			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::signals);
-			if (ImGui::Button(STR_C("The signals tool (H)")))
+			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::srk);
+			if (ImGui::Button(STR_C("The signalling tool (I)")))
 			{
 				choose_work_area(work_area::tracks);
-				show_track_tab(track_tab::signals);
+				show_track_tab(track_tab::srk);
 			}
 			ImGui::EndDisabled();
 			break;
@@ -5657,7 +5657,7 @@ void editor_mode::render_gizmo_options()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Off: the top view draws the rails and sleepers of the tracks without the ballast, so the ground under them shows"));
     }
-    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::signals &&
+    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::srk &&
         m_track_tab != track_tab::lineside)
         return;
     int op{m_gizmo_enabled ? static_cast<int>(m_gizmo_op) : -1};
@@ -5911,7 +5911,7 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
 
     // in the signal tool a press on the mast drags the signal along its track: the gizmo, whose up axis runs along the
     // mast, gives way over a signal and while one is dragged
-    auto const yield{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::signals && false == ImGuizmo::IsUsing() && (m_signal.moving || m_signal.placing || signal_hit() >= 0)};
+    auto const yield{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::srk && false == ImGuizmo::IsUsing() && (m_signal.moving || m_signal.placing || signal_hit() >= 0)};
     ImGuizmo::Enable(false == yield);
     ImGuizmo::Manipulate(glm::value_ptr(View), glm::value_ptr(Projection), static_cast<ImGuizmo::OPERATION>(operation), mode, glm::value_ptr(matrix), nullptr, snap);
     ImGuizmo::Enable(true);
@@ -6505,6 +6505,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 cancel_track_tools();
                 m_straights.tool = 0;
             }
+            else if (m_track_tab == track_tab::srk && m_signal.armed)
+                m_signal.armed = false;
             else if (m_track_tab == track_tab::path && m_track_set.size() >= 2)
                 select_tracks({});
             else if (m_track_tab != track_tab::path)

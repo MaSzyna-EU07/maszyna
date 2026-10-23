@@ -36,7 +36,7 @@ enum class editor_selftest_result
 
 enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, count };
 
-enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals, parallel, srk, kilometrage };
+enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, srk, kilometrage };
 
 struct track_hover
 {
@@ -116,7 +116,7 @@ struct signal_head
 	std::string mount;
 	std::string lamps; // its chambers from the top: z green, c red, p orange, b white, n blue, x blind
 	std::vector<int> speeds; // of the signal itself, km/h: -1 the highest allowed, 20 the substitute signal
-	bool chosen{false}; // the Signals tool places it for its kind
+	bool chosen{false}; // chosen for its kind among the templates of the signals, placed by hand and with the signalling
 	int aspects{0}; // of a block signal: 3, or 4 with the warning two signals ahead
 	std::string lean; // its head leans towards the track: left, standing on the right of it, right, or none
 };
@@ -219,6 +219,10 @@ class editor_signals
 	virtual bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) = 0;
 	// the signals given which no track reads, read again by the track they stand by: one step of the history. returns: how many
 	virtual std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) = 0;
+	// the signal picked, its card at the top of the panel
+	virtual void select_signal(scene::instance_handle const Instance) = 0;
+	// the templates of the signals: the one of each kind placed by hand and with the signalling of a station
+	virtual void render_signal_templates() = 0;
 
   protected:
 	~editor_signals() = default;

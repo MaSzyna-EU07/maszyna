@@ -328,7 +328,7 @@ class srk_tool final : public editor_tool
 	// the standing ones; false with the reason while it has none
 	bool lines_of_open(std::vector<standing_signal> const &Standing, std::vector<station::line> &Lines, std::vector<station::signal> &Entries, std::vector<std::size_t> &Owners, std::string &Problem) const;
 	// the block of the line: as set by hand for its entry signal, else the automatic one where block signals stand along it, of four
-	// aspects where one of them has, else on a double-track line, of the aspects of the block signal chosen in the Signals tool, else
+	// aspects where one of them has, else on a double-track line, of the aspects of the block signal chosen in Signals, else
 	// the semi-automatic one; Own: the block it has by itself
 	block_kind block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads, block_reason &Why, block_kind &Own, block_reason &Own_why, std::size_t &Blocks) const;
 	// the automatic block of the double-track line both ways: as set by hand for its entry signal, else where block signals stand

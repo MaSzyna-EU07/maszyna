@@ -1557,7 +1557,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		editor_icons::icon picture;
 		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
-	static std::array<track_mode, 13> const &track_modes();
+	static std::array<track_mode, 12> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
 	track_tab plan_tab_for(TTrack const *Track) const;
 	// the objects along the track: a tab for each tool
@@ -1906,6 +1906,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) override;
 	bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) override;
 	std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) override;
+	void select_signal(scene::instance_handle const Instance) override;
+	void render_signal_templates() override;
 
 	struct signal_template
 	{
@@ -1950,6 +1952,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int revision{-1};
 		int kind{0};
 		std::array<int, 7> chosen{-1, -1, -1, -1, -1, -1, -1};
+		bool armed{false}; // a click by a track places the chosen template
 		char filter[64]{};
 		char name[64]{"A"};
 		char plate[64]{};
@@ -1975,6 +1978,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	};
 	signal_tool m_signal;
 	bool signal_scan(bool Wait = true);
+	signal_template const *signal_current() const;
 	signal_template const *signal_armed() const;
 	signal_template const *signal_template_of(std::string const &File) const;
 	bool signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const &Point, glm::dvec3 const &Cursor, int const Facing, int const Side, signal_template const &Template, signal_spot &Spot) const;

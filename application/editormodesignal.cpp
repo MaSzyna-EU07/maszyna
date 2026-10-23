@@ -350,13 +350,18 @@ bool editor_mode::signal_scan(bool const Wait)
 	return true;
 }
 
-editor_mode::signal_template const *editor_mode::signal_armed() const
+editor_mode::signal_template const *editor_mode::signal_current() const
 {
 	auto const &tool{m_signal};
 	if (tool.kind < 0 || tool.kind >= kKindCount)
 		return nullptr;
 	auto const index{tool.chosen[tool.kind]};
 	return index >= 0 && index < static_cast<int>(tool.templates.size()) ? &tool.templates[index] : nullptr;
+}
+
+editor_mode::signal_template const *editor_mode::signal_armed() const
+{
+	return m_signal.armed ? signal_current() : nullptr;
 }
 
 editor_mode::signal_template const *editor_mode::signal_template_of(std::string const &File) const
@@ -980,7 +985,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 			for (int list = 0; list < 6; ++list)
 				for (auto const &event : editor_track::events(*track, list))
 					carried.insert(ToLower(event.first));
-	// not the list of the Signals tool, nor its templates once found: the step taken may hold one of them; looked for once an event
+	// not the signals standing as last listed, nor the templates once found: the step taken may hold one of them; looked for once an event
 	// waits
 	std::vector<signal_standing> signals;
 	std::unordered_map<std::string, signal_standing const *> readers;
@@ -1504,7 +1509,7 @@ void editor_mode::render_signal_palette()
 	ImGui::SetNextItemWidth(-1.0f);
 	ImGui::InputTextWithHint("##signalfilter", STR_C("filter: name, w24, sbl..."), tool.filter, sizeof(tool.filter));
 	auto const filter{ToLower(tool.filter)};
-	auto const *armed{signal_armed()};
+	auto const *current{signal_current()};
 	std::vector<std::vector<int>> groups;
 	std::vector<std::string> keys;
 	for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
@@ -1538,20 +1543,24 @@ void editor_mode::render_signal_palette()
 	{
 		auto const &group{groups[g]};
 		auto const &first{tool.templates[group.front()]};
-		auto const chosen{armed != nullptr && group_of(armed->mount, armed->lamps) == keys[g] && armed->kind == first.kind};
+		auto const chosen{current != nullptr && group_of(current->mount, current->lamps) == keys[g] && current->kind == first.kind};
 		if (g % columns != 0)
 			ImGui::SameLine();
 		ImGui::PushID(g);
 		auto const origin{ImGui::GetCursorScreenPos()};
 		if (ImGui::InvisibleButton("##tile", tile))
 		{
-			auto pick{group.front()};
-			if (armed != nullptr && chosen)
-				pick = tool.chosen[tool.kind];
-			tool.chosen[tool.kind] = pick;
+			if (chosen && tool.armed)
+				tool.armed = false;
+			else
+			{
+				tool.chosen[tool.kind] = chosen ? tool.chosen[tool.kind] : group.front();
+				tool.armed = true;
+			}
 		}
 		auto const hovered{ImGui::IsItemHovered()};
-		draw->AddRectFilled(origin, ImVec2(origin.x + tile.x, origin.y + tile.y), chosen ? IM_COL32(60, 90, 140, 255) : hovered ? IM_COL32(60, 60, 60, 255) : IM_COL32(40, 40, 40, 255), 4.0f);
+		auto const armed{chosen && tool.armed};
+		draw->AddRectFilled(origin, ImVec2(origin.x + tile.x, origin.y + tile.y), armed ? IM_COL32(45, 110, 60, 255) : chosen ? IM_COL32(60, 90, 140, 255) : hovered ? IM_COL32(60, 60, 60, 255) : IM_COL32(40, 40, 40, 255), 4.0f);
 		draw_signal_icon(draw, origin, ImVec2(tile.x, tile.y - 14.0f), first.mount, first.lamps, chosen ? overlay_color::selected : IM_COL32(120, 120, 120, 255));
 		auto const caption{first.lamps.empty() ? first.name : first.lamps};
 		auto const captionsize{ImGui::CalcTextSize(caption.c_str())};
@@ -1564,24 +1573,25 @@ void editor_mode::render_signal_palette()
 			ImGui::TextUnformatted(first.description.empty() ? first.name.c_str() : first.description.c_str());
 			ImGui::TextDisabled(STR_C("%zu variants, e.g. %s"), group.size(), first.file.c_str());
 			ImGui::TextDisabled("%s", first.read.empty() ? STR_C("The train doesn't read it") : STR_C("The train reads it by an event of the path"));
+			ImGui::TextDisabled("%s", armed ? STR_C("Click: stop placing") : STR_C("Click: place it by a track, the signalling of the station places its signals of this kind with it too"));
 			ImGui::EndTooltip();
 		}
 		ImGui::PopID();
 	}
 	ImGui::EndChild();
-	if (armed == nullptr)
+	if (current == nullptr)
 		return;
-	auto const key{group_of(armed->mount, armed->lamps)};
+	auto const key{group_of(current->mount, current->lamps)};
 	ImGui::SetNextItemWidth(-1.0f);
-	if (ImGui::BeginCombo("##signalvariant", armed->name.c_str()))
+	if (ImGui::BeginCombo("##signalvariant", current->name.c_str()))
 	{
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 		{
 			auto const &item{tool.templates[i]};
-			if (item.kind != armed->kind || group_of(item.mount, item.lamps) != key)
+			if (item.kind != current->kind || group_of(item.mount, item.lamps) != key)
 				continue;
 			auto const label{item.name + (item.lean == "left" ? std::string{"  \xE2\x86\x96"} : item.lean == "right" ? std::string{"  \xE2\x86\x97"} : std::string{}) + "##" + item.file};
-			if (ImGui::Selectable(label.c_str(), &item == armed))
+			if (ImGui::Selectable(label.c_str(), &item == current))
 				tool.chosen[tool.kind] = i;
 			if (ImGui::IsItemHovered() && false == item.description.empty())
 				ImGui::SetTooltip("%s\n%s", item.description.c_str(), item.file.c_str());
@@ -1590,20 +1600,27 @@ void editor_mode::render_signal_palette()
 	}
 	if (ImGui::IsItemHovered())
 	{
-		auto const read{armed->read.empty() ? std::string{armed->kind == "warning" || armed->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it")}
-		                                    : format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(armed->read, {tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}}).c_str())};
+		auto const read{current->read.empty() ? std::string{current->kind == "warning" || current->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it")}
+		                                      : format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(current->read, {tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}}).c_str())};
 		ImGui::SetTooltip("%s\n%s", STR_C("Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"), read.c_str());
 	}
-	if (false == armed->description.empty())
-		ImGui::TextWrapped("%s", armed->description.c_str());
+	if (false == current->description.empty())
+		ImGui::TextWrapped("%s", current->description.c_str());
+	if (tool.armed)
+	{
+		if (ImGui::Button(STR_C("Stop placing (Esc)"), ImVec2(-1.0f, 0.0f)))
+			tool.armed = false;
+	}
+	else if (main_button(STR_C("Place by a track"), ImVec2(-1.0f, 0.0f)))
+		tool.armed = true;
+	item_tooltip("A click by a track places the chosen signal on that side, a press dragged along it turns it to the trains running that way. The signalling of the station places its signals of each kind with the template chosen here");
 }
 
 void editor_mode::render_signal_selected()
 {
-	auto const *found{signal_standing_of(m_signal.selected)};
+	auto const *found{m_signal.selected == m_instance ? signal_standing_of(m_signal.selected) : nullptr};
 	if (found == nullptr)
 		return;
-	ImGui::Separator();
 	ImGui::TextUnformatted(format(STR_C("Selected: %s (%s)"), found->name.c_str(), found->include.file.c_str()).c_str());
 	item_tooltip("Name, plate and the linked signal: in the node properties. Del removes it with its event");
 	if (found->read.empty())
@@ -1640,6 +1657,22 @@ void editor_mode::render_signal_selected()
 	if (ImGui::Button(STR_C("Turn around"), ImVec2(width, 0.0f)))
 		signal_turn(instance);
 	item_tooltip("Turns the signal to the trains of the other direction, they read it by the other event of the path");
+	ImGui::Separator();
+}
+
+void editor_mode::select_signal(scene::instance_handle const Instance)
+{
+	signal_refresh(true);
+	signal_select(Instance);
+}
+
+void editor_mode::render_signal_templates()
+{
+	ImGui::Spacing();
+	if (ImGui::CollapsingHeader(format("%s###srksignals", STR_C("Signals")).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+		render_signal_ui();
+	else
+		m_signal.armed = false;
 }
 
 void editor_mode::render_signal_ui()
@@ -1669,8 +1702,7 @@ void editor_mode::render_signal_ui()
 		tool.kind = kinds.front().value;
 	choice_chips("signalkinds", tool.kind, kinds);
 	render_signal_palette();
-	auto const *armed{signal_armed()};
-	ImGui::Separator();
+	auto const *armed{signal_current()};
 	if (begin_fields("##signalnames", 0.3f))
 	{
 		field_row("Name");
@@ -1746,7 +1778,6 @@ void editor_mode::render_signal_ui()
 	ImGui::PopID();
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
-	render_signal_selected();
 }
 
 void editor_mode::draw_signal_overlay() const

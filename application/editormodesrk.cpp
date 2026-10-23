@@ -630,7 +630,7 @@ int resonator_at(std::vector<station::approach_point> const &Way, double const W
 	return best;
 }
 
-// the template of a block signal of the aspects wanted, Like: the one standing, empty for the one chosen in the Signals tool, taken
+// the template of a block signal of the aspects wanted, Like: the one standing, empty for the one chosen in Signals, taken
 // where it has them, else the one of their mount with them, its counterpart by the name first, then of its lights; not the first of
 // a line, whose events tell a station signal; Wrong: of a wrong-track one, standing on the left, its head leaning right where one
 // does, a head leaning so only for it; empty for none
@@ -1135,12 +1135,11 @@ void srk_tool::render_options()
 	if (false == m_layout.has_value())
 	{
 		ImGui::TextDisabled("%s", STR_C("The signalling of a station: its schematic, the numbers of the switches and the tracks, the track circuits and the signals"));
-		ImGui::Spacing();
-		gesture_rows({{"LMB on a switch", "opens its station"}});
 		if (false == m_status.empty())
 			ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
 		ImGui::Spacing();
 		render_found();
+		m_signals.render_signal_templates();
 		return;
 	}
 	auto const &layout{*m_layout};
@@ -1253,7 +1252,7 @@ void srk_tool::render_options()
 	             "each line, A, B... from the start of the km, Z, Y... from the end, the circuit from 15 m beyond it to the station bpd_ita; "
 	             "an exit signal 15 m before the joint at the end of each station track a train is sent out of, F1, G2 towards the start, R1, "
 	             "P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets "
-	             "its name, none is doubled. The kinds of signals chosen in the Signals tool. One step of undo");
+	             "its name, none is doubled. Each kind with its template chosen in Signals below. One step of undo");
 	step_heading(4, STR_C("Lines"));
 	render_lines();
 	if (ImGui::Button(STR_C("Set the line signals"), ImVec2(-1.0f, 0.0f)))
@@ -1303,6 +1302,7 @@ void srk_tool::render_options()
 		}
 	if (false == m_status.empty())
 		ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
+	m_signals.render_signal_templates();
 	ImGui::Spacing();
 	m_length_hover = -1;
 	if (ImGui::CollapsingHeader(format("%s (%zu)###srklengths", STR_C("Track lengths"), m_lengths.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
@@ -1499,7 +1499,7 @@ void srk_tool::render_lines()
 			                          "warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. "
 			                          "Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where "
 			                          "block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal "
-			                          "chosen in the Signals tool, else the semi-automatic one");
+			                          "chosen in Signals below, else the semi-automatic one");
 			ImGui::PopID();
 		}
 		ImGui::EndTable();
@@ -1818,7 +1818,10 @@ void srk_tool::render_heads()
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 			if (ImGui::Selectable((head.name + "##srkhead" + std::to_string(index)).c_str(), static_cast<int>(index) == m_head_hover, ImGuiSelectableFlags_SpanAllColumns))
+			{
 				m_view.fly_to(head.position + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{head.travel.x, -0.3, head.travel.y}), 30.0);
+				m_signals.select_signal(head.instance);
+			}
 			if (ImGui::IsItemHovered())
 			{
 				m_head_hover = static_cast<int>(index);
@@ -2541,7 +2544,7 @@ void srk_tool::set_signals()
 		std::string names;
 		for (auto const &name : unfit)
 			names += (names.empty() ? "" : ", ") + name;
-		m_status += "\n" + format(STR_C("No template has the lights %s need, they got the one chosen in the Signals tool: see Signal heads"), names.c_str());
+		m_status += "\n" + format(STR_C("No template has the lights %s need, they got the one chosen in Signals: see Signal heads"), names.c_str());
 	}
 }
 

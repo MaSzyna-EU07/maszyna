@@ -453,17 +453,16 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 13> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 13> const modes{{
+	static std::array<track_mode, 12> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters", editor_icons::icon::select, 0},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track", editor_icons::icon::lay_track, 0},
 	    {"Plan", "G", track_tab::straights, "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too", editor_icons::icon::curve, 0},
 	    {"Switch", "T", track_tab::turnout, "Puts switches into the selected straight or curve, edits the geometry of the selected switch", editor_icons::icon::turnout, 0},
 	    {"Parallel", "N", track_tab::parallel, "A second track beside a track: LMB on it, then the side and the spacing", editor_icons::icon::parallel, 0},
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it", editor_icons::icon::turntable, 1},
-	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by", editor_icons::icon::signal, 1},
-	    {"Signalling", "I", track_tab::srk, "The signalling of a station: LMB on a switch lays its station out as a schematic", editor_icons::icon::station, 1},
+	    {"Signalling", "I", track_tab::srk, "The signals and the signalling of the stations: LMB on a switch lays its station out as a schematic, the signals placed by hand from the templates in the panel", editor_icons::icon::signal, 1},
 	    {"Kilometrage", "X", track_tab::kilometrage, "The km of the railway lines: LMB on a track puts a point of the km there, a jump of the km too", editor_icons::icon::kilometrage, 1},
 	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, trainsets", editor_icons::icon::objects, 1},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line", editor_icons::icon::profile, 2},
@@ -492,6 +491,7 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 	m_lay.status.clear();
 	m_lay.active = Tab == track_tab::lay;
 	m_switch.armed = -1;
+	m_signal.armed = false;
 	m_track_tab = Tab;
 	if ((Tab == track_tab::lay || Tab == track_tab::straights || Tab == track_tab::route) && false == m_norms_asked && EditorSettings.norms() == editorSettings::track_norms::ask && std::getenv("EU07_EDITOR_SELFTEST") == nullptr)
 	{
@@ -525,7 +525,7 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 		scan_turntables(false);
 		turntable_read(track);
 		break;
-	case track_tab::signals:
+	case track_tab::srk:
 		signal_refresh(true);
 		break;
 	default:
@@ -608,7 +608,6 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::lineside: return STR_C("Objects along the track");
 	case track_tab::infra: return STR_C("Infrastructure");
 	case track_tab::parallel: return STR_C("Parallel track");
-	case track_tab::signals: return STR_C("Signal");
 	case track_tab::srk: return STR_C("Signalling");
 	case track_tab::kilometrage: return STR_C("Kilometrage");
 	case track_tab::turntable: return STR_C("Turntable");
@@ -707,8 +706,10 @@ void editor_mode::render_track_tool_options()
 		ImGui::TextDisabled("%s", STR_C("What the check finds is listed in its window"));
 		break;
 	case track_tab::lineside: render_lineside_ui(); break;
-	case track_tab::signals: render_signal_ui(); break;
-	case track_tab::srk: m_srk.render_options(); break;
+	case track_tab::srk:
+		render_signal_selected();
+		m_srk.render_options();
+		break;
 	case track_tab::kilometrage: m_km.render_options(); break;
 	case track_tab::turntable: render_turntable_ui(); break;
 	default:
@@ -1711,16 +1712,17 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB on a track", "the line the objects go along"}};
 	else if (m_track_window_open && m_track_tab == track_tab::parallel)
 		hints = {{"LMB on a track", "the new track goes beside it"}, {"Click on a side in the panel", "the side of the new track"}};
-	else if (m_track_window_open && m_track_tab == track_tab::signals && m_signal.moving)
+	else if (m_track_window_open && m_track_tab == track_tab::srk && m_signal.moving)
 		hints = {{"Drag along", "moves the signal along the track"}, {"Drag over the track", "to the other side"}, {"Release", "done"}, {"Esc", "cancel"}};
-	else if (m_track_window_open && m_track_tab == track_tab::signals && m_signal.placing)
+	else if (m_track_window_open && m_track_tab == track_tab::srk && m_signal.placing)
 		hints = {{"Drag along", "the trains it faces run that way"}, {"Release", "done"}, {"Esc", "cancel"}};
-	else if (m_track_window_open && m_track_tab == track_tab::signals && signal_armed() == nullptr)
-		hints = {{"List in the panel", "the type of the signal"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
-	else if (m_track_window_open && m_track_tab == track_tab::signals)
+	else if (m_track_window_open && m_track_tab == track_tab::srk && false == m_srk.drawing())
 	{
-		hints = {{"LMB by a track", "places the signal on that side"}, {"Press+drag along", "the trains it faces run that way"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
-		if (m_signal.selected != 0)
+		if (signal_armed() != nullptr)
+			hints = {{"LMB by a track", "places the signal on that side"}, {"Press+drag along", "the trains it faces run that way"}, {"Esc", "stops placing"}};
+		else
+			hints = {{"LMB on a switch", "opens its station"}, {"List in the panel", "the type of the signal"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
+		if (m_signal.selected != 0 && m_signal.selected == m_instance)
 			hints.push_back({"Del", "removes the selected signal with its event"});
 	}
 	else if (m_track_window_open && m_track_tab == track_tab::turntable && m_turntable.placing)
