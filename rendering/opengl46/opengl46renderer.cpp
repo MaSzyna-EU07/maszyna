@@ -861,6 +861,13 @@ void opengl46_renderer::SwapBuffers()
                 auto text { std::to_string( Value ) };
                 return std::string( std::max<int>( 0, 6 - static_cast<int>( text.size() ) ), ' ' ) + text; };
             auto const nearlimit { std::to_string( static_cast<int>( Timer::subsystem.VEHICLE_NEAR ) ) + " m" };
+            text += timeline(
+                3,
+                ( counts.threads > 1 ?
+                    "steps on " + std::to_string( counts.threads ) + " threads: " + std::to_string( counts.groups ) + " groups, largest "
+                        + std::to_string( counts.largestgroup ) + ", " + std::to_string( counts.maingroups ) + " in the main thread (forces by kind not timed)" :
+                    std::string{ "steps on 1 thread" } ),
+                "" );
             char const *const kindnames[] = { "rail, within ", "rail, farther", "road, within ", "road, farther" };
             text += timeline( 3, "by kind (near: " + nearlimit + ")", " count  stand  forces  update" );
             for( std::size_t kind = 0; kind < 4; ++kind ) {

@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <chrono>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -111,8 +112,10 @@ public:
         unsigned int busiestevents { 0 };
     };
     // Owner: the vehicle, Label: its type and name, read only when the second ends
+    // can be called by many threads at once (the physics of the vehicles in parallel)
     void
         note( source const Source, void const *Owner, std::string const *Type, std::string const *Name ) {
+            std::scoped_lock lock( m_mutex );
             ++m_events[ Source ];
             auto &owner { m_owners[ Owner ] };
             ++owner.events;
@@ -123,6 +126,7 @@ public:
         update() {
             auto const now { std::chrono::steady_clock::now() };
             if( now - m_start < std::chrono::seconds( 1 ) ) { return; }
+            std::scoped_lock lock( m_mutex );
             m_last = {};
             m_last.events = m_events;
             for( auto const &owner : m_owners ) {
@@ -147,6 +151,7 @@ private:
     std::array<unsigned int, source::count> m_events {};
     std::unordered_map<void const *, owner_data> m_owners;
     result m_last;
+    std::mutex m_mutex;
 };
 
 struct subsystem_stopwatches {
@@ -196,6 +201,12 @@ struct subsystem_stopwatches {
         // enabled vehicles of each kind (see vehicles_forces_kind), and of them the ones standing still
         std::array<unsigned int, 4> kind {};
         std::array<unsigned int, 4> standing {};
+        // the steps of the physics: threads, the groups of vehicles they were split in, the largest one, the groups done in the main
+        // thread (vehicle_table::update_steps_parallel())
+        unsigned int threads { 1 };
+        unsigned int groups { 0 };
+        unsigned int largestgroup { 0 };
+        unsigned int maingroups { 0 };
         // rail vehicles standing still (below 0.01 km/h) with the physics on, and what keeps it on by the test of
         // TMoverParameters::ComputeTotalForce(); a vehicle can have several of these
         struct awake_reasons {

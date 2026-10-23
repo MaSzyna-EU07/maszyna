@@ -94,6 +94,7 @@ list(APPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_PATH}/share")
 set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
+"utilities/workerpool.cpp"
 "world/Track.cpp"
 "world/TrackSleepers.cpp"
 "world/TrackBlend.cpp"

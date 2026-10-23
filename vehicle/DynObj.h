@@ -880,6 +880,9 @@ public:
     // legacy method, checks for presence and height of traction wire for specified vehicle
     void
         update_traction( TDynamicObject *Vehicle );
+    // the steps of the physics of update() on many threads, see the definition
+    void
+        update_steps_parallel( double const Deltatime, int const Iterationcount, std::vector<std::uint8_t> const &Coarse );
     // legacy method, sends list of vehicles over network
     void
         DynamicList( bool const Onlycontrolled = false ) const;
@@ -888,6 +891,14 @@ private:
     // maintenance; removes from tracks consists with vehicles marked as disabled
     bool
         erase_disabled();
+    // working space of update_steps_parallel(), kept between the updates: the groups of the vehicles (joined by union find, by
+    // the vehicle and by its mover), the group of each root, the groups done on the threads and in the main thread
+    std::vector<std::uint32_t> m_groupparent;
+    std::unordered_map<void const *, std::uint32_t> m_grouplookup;
+    std::vector<std::uint32_t> m_groupof;
+    std::vector<std::vector<std::uint32_t>> m_groups;
+    std::vector<std::uint32_t> m_threadgroups;
+    std::vector<std::uint32_t> m_maingroups;
 };
 
 

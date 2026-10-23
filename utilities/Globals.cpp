@@ -497,6 +497,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "performance.cpucores")
+    {
+        ParseOne(Parser, performance_cpucores);
+        return true;
+    }
+
     if (token == "enabletraction")
     {
         ParseOne(Parser, bEnableTraction);
@@ -1908,6 +1914,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "physics.sleepheld", physics_sleepheld );
     export_as_text( Output, "physics.roadlod", physics_roadlod );
     export_as_text( Output, "physics.pipewake", physics_pipewake );
+    export_as_text( Output, "performance.cpucores", performance_cpucores );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
     export_as_text( Output, "multiplelogs", MultipleLogs );
     export_as_text( Output, "showsystemconsole", ShowSystemConsole );
