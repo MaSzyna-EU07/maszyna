@@ -167,7 +167,7 @@ bool editor_mode::vehicle_place()
 		nodes += "node -1 0 " + name + " dynamic " + item.vehicle->path.parent_path().generic_string() + " " + item.skin->skin + " " + stem + " " + (item.turned ? "-1" : "0") + " " + (leads && tool.driver == 0 ? "headdriver" : "nobody") + " 3 0 enddynamic\n";
 	}
 	auto const offset{against ? along - kHalfVehicle : along + kHalfVehicle};
-	auto const vehicles{simulation::State.insert_trainset(head, tool.track, offset, nodes, against)};
+	auto const vehicles{simulation::State.insert_trainset(head, tool.track, offset, 0, nodes, against)};
 	if (vehicles.empty())
 	{
 		tool.status = STR_C("The vehicle couldn't be placed, the log says why");

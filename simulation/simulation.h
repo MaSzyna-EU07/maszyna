@@ -42,7 +42,7 @@ public:
 	    create_model(const std::string &src, const std::string &name, const glm::dvec3 &position);
 	// places the vehicles, given as their node statements, as a trainset on the path. returns: the vehicles made
 	std::vector<TDynamicObject *>
-	    insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed = false);
+	    insert_trainset(std::string const &Name, TTrack *Path, double Offset, double Velocity, std::string const &Vehicles, bool Reversed = false);
 	// create eventlauncher from node string
 	TEventLauncher *
 	    create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position);
@@ -54,6 +54,8 @@ public:
 	// to them for a few frames; pass them to Instances.purge() afterwards
 	std::pair<int, int>
 	    rebuild_include(scene::instance_handle Instance, std::vector<TAnimModel *> &Retired);
+	// create trainset from trainset string
+	void create_trainset(const std::string &src);
 	// delete TAnimModel instance
 	void
 	    delete_model(TAnimModel *model);

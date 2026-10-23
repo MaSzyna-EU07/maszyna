@@ -503,8 +503,8 @@ TAnimModel * state_manager::create_model(const std::string &src, const std::stri
 	return m_serializer.create_model(src, name, position);
 }
 
-std::vector<TDynamicObject *> state_manager::insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed) {
-	return m_serializer.insert_trainset(Name, Path, Offset, Vehicles, Reversed);
+std::vector<TDynamicObject *> state_manager::insert_trainset(std::string const &Name, TTrack *Path, double const Offset, double const Velocity, std::string const &Vehicles, bool const Reversed) {
+	return m_serializer.insert_trainset(Name, Path, Offset, Velocity, Vehicles, Reversed);
 }
 
 TEventLauncher * state_manager::create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position) {
@@ -558,6 +558,10 @@ std::pair<int, int> state_manager::rebuild_include(scene::instance_handle const 
 		}
 	}
 	return result;
+}
+
+void state_manager::create_trainset(const std::string &src) {
+	m_serializer.insert_trainset_full(src);
 }
 
 void state_manager::delete_model(TAnimModel *model) {
