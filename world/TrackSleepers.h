@@ -72,6 +72,8 @@ struct beam_model {
     glm::vec2 span { -1.3f, 1.3f }; // from and to along x, of the most detailed submodels of the whole model
     float seat { 0.f }; // the height in the model the feet of the rails go to
     float slide { 0.f }; // how far over the seat the blades of a switch slide, on the slide plates of the chairs; 0 without chairs
+    float bed { 0.f }; // the height in the model of the top of the timber
+    std::array<glm::vec2, part_count> heights {}; // from and to along y, of the parts
     std::vector<float> bands; // the squared distances the levels of detail of the model are seen from, the nearest first
     float length() const { return span.y - span.x; }
     // the model has the fastenings of the rails, put where the rails lie on its timbers
@@ -123,6 +125,11 @@ bool lays( TTrack const &Track );
 // how far the feet of the blades of the switch ride over those of its other rails, on the slide plates of the chairs of its
 // timbers; 0 where it lays none with chairs
 double blade_rise( TTrack const &Track );
+// how far the feet of its wing rails of the low section of the blades are raised as the blades; 0 where it lays no timbers with chairs
+double wing_rise( TTrack const &Track );
+// the stretch along the path its rail of Side is the stock rail of the blade of the other path along, with the slide chairs from
+// a little before the tip of the blade to its heel; from past to where there's none
+glm::dvec2 stock_stretch( TTrack const &Track, int const Path, int const Side );
 // where along the path of the track its rails lie on timbers shared with other tracks: where another track runs so near that
 // the plain sleepers of the two would touch, of the lengths of the models they'd be made of. this goes by the shape of the
 // tracks alone, so it holds whether the beams are drawn or not. the stretches in the order along the path, none where there

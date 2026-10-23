@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/SleeperRules.h"
 #include "world/SleeperWorker.h"
 #include "world/Track.h"
+#include "world/TrackRails.h"
 #include "simulation/simulation.h"
 #include "scene/scene.h"
 #include "utilities/utilities.h"
@@ -67,7 +68,21 @@ bool lays( TTrack const &Track ) {
 
 double blade_rise( TTrack const &Track ) {
 
-    return ( Track.eType == tt_Switch && lays( Track ) ? timber_model( Track )->slide : 0.0 );
+    return ( Track.eType == tt_Switch ? wing_rise( Track ) : 0.0 );
+}
+
+double wing_rise( TTrack const &Track ) {
+
+    return ( lays( Track ) ? timber_model( Track )->slide : 0.0 );
+}
+
+glm::dvec2 stock_stretch( TTrack const &Track, int const Path, int const Side ) {
+
+    if( Track.eType != tt_Switch || Track.SwitchExtension == nullptr || Side != ( Track.SwitchExtension->RightSwitch == ( Path == 1 ) ? 1 : -1 ) ) {
+        return glm::dvec2 { -1.0 };
+    }
+    auto const &shape { Track.blade( 1 - Path ) };
+    return { std::max( 0.0, ( shape.valid ? shape.tip : 0.0 ) - chair_lead ), track_rails::blade_length( Track, 1 - Path ) };
 }
 
 std::vector<std::pair<double, double>> shared_zones( TTrack const &Track, int const Path ) {
@@ -255,9 +270,9 @@ void lay( TTrack &Track ) {
                 place[ 1 ] = glm::vec4 { glm::vec3 { y }, 0.f };
                 place[ 2 ] = glm::vec4 { glm::vec3 { glm::cross( across, y ) }, 0.f };
                 place[ 3 ] = glm::vec4 { glm::vec3 { fastening.point - Track.m_origin }, 1.f };
-                auto const pivot { glm::vec3 { fastening.pivot, 0.f, 0.f } };
+                auto const pivot { glm::vec3 { fastening.pivot, parts.heights[ fastening.part ].x, 0.f } };
                 laid.instances[ fastening.part ].emplace_back(
-                    glm::translate( glm::scale( glm::translate( place, glm::vec3 { fastening.shift, -parts.seat, 0.f } + pivot ), glm::vec3 { fastening.scale, 1.f, 1.f } ), -pivot ) );
+                    glm::translate( glm::scale( glm::translate( place, glm::vec3 { fastening.shift, fastening.lift - parts.seat, 0.f } + pivot ), glm::vec3 { fastening.scale, fastening.height, 1.f } ), -pivot ) );
             }
         }
         runbeams.emplace_back( middle, half );

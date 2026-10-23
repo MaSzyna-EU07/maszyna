@@ -717,7 +717,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     for( auto distance { std::ceil( Span.from / 0.5 ) * 0.5 }; distance < std::min( Span.to, m_dense ); distance += 0.5 ) {
         stations.push_back( distance );
     }
-    for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops } ) {
+    for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops, &Span.rises } ) {
         for( auto const &knot : *line ) {
             if( knot.x > Span.from && knot.x < Span.to ) {
                 stations.push_back( knot.x );
@@ -759,11 +759,11 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
     for( auto const &point : ShapePoints ) {
         bottom = std::min( bottom, point.position.y );
     }
-    auto const raised = [&]( float const Height ) {
-        if( Span.rise <= 0.0 || Height >= Span.head.x || Span.head.x <= bottom ) {
+    auto const raised = [&]( float const Height, double const Rise ) {
+        if( Rise <= 0.0 || Height >= Span.head.x || Span.head.x <= bottom ) {
             return Height;
         }
-        return static_cast<float>( Height + Span.rise * ( Span.head.x - Height ) / ( Span.head.x - bottom ) ); };
+        return static_cast<float>( Height + Rise * ( Span.head.x - Height ) / ( Span.head.x - bottom ) ); };
 
     auto const ring = [&]( double const Distance, double const Middle, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
         glm::dvec3 point;
@@ -797,6 +797,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         }
         auto const worn { knots::sample( Span.ramp, Distance, -1e6 ) };
         auto const drop { knots::sample( Span.drops, Distance, 0.0 ) };
+        auto const rise { Span.rises.empty() ? Span.rise : knots::sample( Span.rises, Distance, 0.0 ) };
         static loft_end const unshaped;
         auto const &shaped { Distance <= Span.from ? Span.fromend : Distance >= Span.to ? Span.toend : unshaped };
         auto const bend { shaped.bend };
@@ -830,7 +831,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             // nothing of the profile between the limits there: the ring shrinks to one point, the step draws nothing
             auto const outside { std::clamp( 0.5 * ( std::min( extent, farthest ) + std::max( innerextent, nearest ) ), nearest, farthest ) };
             auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position };
-            pt.y += raised( ShapePoints.front().position.y ) + Span.lift;
+            pt.y += raised( ShapePoints.front().position.y, rise ) + Span.lift;
             for( std::size_t j = 0; j < count; ++j ) {
                 Ring.emplace_back( pt, glm::vec3{ 0.f, 1.f, 0.f }, glm::vec2{ ShapePoints[ j ].texture.x, 0.f } );
                 Wear.push_back( 1.f );
@@ -909,7 +910,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             if( drop > 0.0 && shape.position.y > Span.head.x && Span.head.y > Span.head.x ) {
                 shape.position.y -= static_cast<float>( drop * ( shape.position.y - Span.head.x ) / ( Span.head.y - Span.head.x ) );
             }
-            shape.position.y = raised( shape.position.y );
+            shape.position.y = raised( shape.position.y, rise );
             auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position + along * static_cast<float>( outside + offset ) };
             pt.y += shape.position.y + Span.lift;
             auto norm { shape.normal.x * parallel };

@@ -73,6 +73,9 @@ double constexpr check_least { 0.8 };
 double constexpr chair_lead { 0.3 };
 // how far from the stock rail toward its blade the slide plate of a chair is measured
 double constexpr slide_probe { 0.12 };
+// a rail raised less than this goes without a pad under it, and a pad narrower than the second one is left out
+double constexpr pad_least { 0.002 };
+double constexpr pad_narrowest { 0.02 };
 // how far two fastenings on a timber may reach over one another before the check counts them
 double constexpr fastening_overlap { 0.01 };
 // how far from the camera the fastenings are drawn at most

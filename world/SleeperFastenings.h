@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <glm/glm.hpp>
 
+#include "world/Knots.h"
 #include "world/TrackSleepers.h"
 
 // the fastenings of the rails on the timbers: where a rail lies on a timber, the part of the model of the timbers which holds it
@@ -32,6 +33,9 @@ struct fastening {
     float shift { 0.f }; // along its x, how far the pivot is moved
     bool both { false }; // the fastening of two rails close beside each other, neither with a check rail of its own seated
     bool whole { false }; // holding more rails than its seats, out to its ends: not narrowed
+    float lift { 0.f }; // how far up it's moved, under a rail of the low section raised as a blade
+    float height { 1.f }; // along its y, from the bottom of the part: a pad stretched to fill under a raised rail
+    bool pad { false }; // under a raised rail or its fastening, not holding a rail itself
     // where an x of the part lands along its across, at the scale
     double placed( double const X, double const Scale ) const {
         return pivot + shift + Scale * ( X - pivot ); }
@@ -60,6 +64,7 @@ private:
         TTrack *track { nullptr };
         int path { 0 };
         int side { 1 };
+        knots::line rises; // of its foot, along the path, a wing rail of the low section raised as the blades
         std::vector<glm::dvec2> points;
         std::vector<double> heights;
         std::vector<glm::dvec2> inward; // unit vectors in plan from the rail toward the middle of its path
@@ -79,6 +84,7 @@ private:
         role kind { role::plain };
         glm::dvec2 inward { 1.0, 0.0 };
         double foot { 0.0 };
+        double rise { 0.0 };
     };
 
     // the rails lying on the timber, in the order along it, one where several lie on one another, but the blades
@@ -86,6 +92,9 @@ private:
     // the fastenings of rails close by fitted to the room between them: narrowed across, a plate cut short at the fastening of the
     // rail beside it or left out, the plates of two rails lying over each other made one
     static void fit( std::vector<fastening> &Fastenings, beam const &Beam, beam_model const &Model );
+    // the fastenings under the raised rails: one holding only rails raised as much moved up as far on a pad, a rail raised
+    // over a fastening with others on a pad of its own on it
+    static void lift( std::vector<fastening> &Fastenings, std::vector<hit> const &Rails, beam const &Beam, beam_model const &Model );
 
     std::vector<rail> m_rails;
 };

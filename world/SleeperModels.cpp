@@ -122,13 +122,16 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
                     continue;
                 }
                 glm::vec2 span { std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest() };
+                glm::vec2 heights { std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest() };
                 auto const timber { part < timber_parts };
                 vertices_of( model.parts[ part ], [&]( glm::vec3 const &Position ) {
                     span = { std::min( span.x, Position.x ), std::max( span.y, Position.x ) };
+                    heights = { std::min( heights.x, Position.y ), std::max( heights.y, Position.y ) };
                     if( timber ) {
                         top = std::max( top, Position.y );
                     } } );
                 model.spans[ part ] = span;
+                model.heights[ part ] = heights;
                 if( timber ) {
                     model.span = { std::min( model.span.x, span.x ), std::max( model.span.y, span.y ) };
                 }
@@ -155,6 +158,7 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
         }
         std::sort( model.bands.begin(), model.bands.end() );
         // the rails sit on the seat of the sleeper, below the fastenings sticking up over it, or on the plate of the fastening
+        model.bed = top;
         model.seat = ( Seat >= 0.f ? Seat : top );
         if( Seat < 0.f && model.fastened() ) {
             model.seat = std::max( top, surface_at( model.parts[ part_plate ], 0.f, 0.f ).value_or( top ) );
