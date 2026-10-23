@@ -864,9 +864,9 @@ void opengl46_renderer::SwapBuffers()
             text += timeline(
                 3,
                 ( counts.threads > 1 ?
-                    "steps on " + std::to_string( counts.threads ) + " threads: " + std::to_string( counts.groups ) + " groups, largest "
+                    "steps on " + std::to_string( counts.threads ) + " of " + std::to_string( counts.capacity ) + " threads: " + std::to_string( counts.groups ) + " groups, largest "
                         + std::to_string( counts.largestgroup ) + ", " + std::to_string( counts.maingroups ) + " in the main thread (forces by kind not timed)" :
-                    "steps on 1 thread (pool of " + std::to_string( counts.pool ) + ( counts.singlethread.empty() ? std::string{ ")" } : ", off by " + counts.singlethread + ")" ) ),
+                    "steps on 1 thread of " + std::to_string( counts.capacity ) + ( counts.singlethread.empty() ? std::string{} : ": " + counts.singlethread ) ),
                 "" );
             char const *const kindnames[] = { "rail, within ", "rail, farther", "road, within ", "road, farther" };
             text += timeline( 3, "by kind (near: " + nearlimit + ")", " count  stand  forces  update" );

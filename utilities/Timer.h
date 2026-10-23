@@ -204,7 +204,7 @@ struct subsystem_stopwatches {
         // the steps of the physics: threads, the groups of vehicles they were split in, the largest one, the groups done in the main
         // thread (vehicle_table::update_steps_parallel())
         unsigned int threads { 1 };
-        unsigned int pool { 1 }; // threads of worker_pool
+        unsigned int capacity { 1 }; // threads a job of worker_pool can get
         std::string singlethread; // what keeps the steps in one thread, if anything
         unsigned int groups { 0 };
         unsigned int largestgroup { 0 };

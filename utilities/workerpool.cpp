@@ -15,63 +15,42 @@ http://mozilla.org/MPL/2.0/.
 
 #include <random>
 
-namespace
-{
-
-// threads by the setting: all the logical cores of the machine when it's 0 or less, otherwise as many as it says, up to a sane limit
-std::size_t wanted_threads()
-{
-	auto const cores{static_cast<int>(std::max(1u, std::thread::hardware_concurrency()))};
-	auto const setting{Global.performance_cpucores};
-	return static_cast<std::size_t>(setting > 0 ? std::min(setting, 64) : cores);
-}
-
-} // namespace
-
 worker_pool::~worker_pool()
 {
-	resize(0);
+	m_stop = true;
+	for (auto &data : m_threads)
+	{
+		data->start.release();
+	}
+	for (auto &data : m_threads)
+	{
+		data->thread.join();
+	}
 }
 
-std::size_t worker_pool::size()
+std::size_t worker_pool::capacity()
 {
-	auto const wanted{wanted_threads()};
-	if (wanted != m_threads.size() + 1)
+	if (false == Global.performance_multithreading)
 	{
-		resize(wanted - 1);
+		return 1;
 	}
-	return m_threads.size() + 1;
+	return std::max<std::size_t>(1, std::thread::hardware_concurrency());
 }
 
-void worker_pool::resize(std::size_t const Workers)
+void worker_pool::grow(std::size_t const Workers)
 {
-	{
-		std::scoped_lock lock(m_mutex);
-		m_stop = true;
-	}
-	m_start.notify_all();
-	for (auto &thread : m_threads)
-	{
-		thread.join();
-	}
-	m_threads.clear();
-	m_stop = false;
-
 	m_threads.reserve(Workers);
-	for (std::size_t index = 0; index < Workers; ++index)
+	while (m_threads.size() < Workers)
 	{
-		// the generation of the jobs is given from here: read by the thread, a job begun meanwhile would be taken for done
-		m_threads.emplace_back(&worker_pool::worker, this, m_generation);
+		auto &data{*m_threads.emplace_back(std::make_unique<thread_data>())};
+		data.thread = std::thread(&worker_pool::worker, this, std::ref(data));
 	}
 }
 
-void worker_pool::run(std::size_t const Count, std::function<void(std::size_t)> const &Work)
+void worker_pool::run(std::size_t const Count, std::size_t const Threads, std::function<void(std::size_t)> const &Work)
 {
-	if (Count == 0)
-	{
-		return;
-	}
-	if ((size() == 1) || (Count == 1))
+	auto const threads{std::min({Threads, capacity(), Count})};
+	if (threads <= 1)
 	{
 		for (std::size_t index = 0; index < Count; ++index)
 		{
@@ -79,17 +58,21 @@ void worker_pool::run(std::size_t const Count, std::function<void(std::size_t)> 
 		}
 		return;
 	}
+	grow(threads - 1);
 
 	{
 		std::scoped_lock lock(m_mutex);
 		m_work = &Work;
 		m_count = Count;
 		m_next = 0;
-		m_busy = m_threads.size();
+		m_busy = threads - 1;
 		m_exception = nullptr;
-		++m_generation;
 	}
-	m_start.notify_all();
+	// the job is set before the threads are woken: the semaphores pass it on to them
+	for (std::size_t thread = 0; thread < threads - 1; ++thread)
+	{
+		m_threads[thread]->start.release();
+	}
 	// the calling thread works too
 	work(Work, Count);
 
@@ -126,25 +109,23 @@ void worker_pool::work(std::function<void(std::size_t)> const &Work, std::size_t
 	}
 }
 
-void worker_pool::worker(unsigned int Generation)
+void worker_pool::worker(thread_data &Data)
 {
 	// draws of Random() in this thread go to an engine of its own: the one of the simulation can't be shared between threads
 	std::mt19937 randomengine(static_cast<std::mt19937::result_type>(true_random_seed()));
 	set_thread_random_engine(&randomengine);
 
-	auto generation{Generation};
 	while (true)
 	{
+		Data.start.acquire();
+		if (m_stop)
+		{
+			break;
+		}
 		std::function<void(std::size_t)> const *job{nullptr};
 		std::size_t count{0};
 		{
-			std::unique_lock lock(m_mutex);
-			m_start.wait(lock, [&]() { return m_stop || (m_generation != generation); });
-			if (m_stop)
-			{
-				break;
-			}
-			generation = m_generation;
+			std::scoped_lock lock(m_mutex);
 			job = m_work;
 			count = m_count;
 		}
@@ -152,8 +133,9 @@ void worker_pool::worker(unsigned int Generation)
 		{
 			std::scoped_lock lock(m_mutex);
 			--m_busy;
+			// notified under the lock: the job and the pool stay as they are until the caller sees the count
+			m_done.notify_one();
 		}
-		m_done.notify_one();
 	}
 	set_thread_random_engine(nullptr);
 }

@@ -117,7 +117,7 @@ struct global_settings {
     bool physics_sleepheld{ true }; // vehicles standing still and held by their brakes let their physics sleep, see TMoverParameters::accelerating()
     bool physics_roadlod{ true }; // road vehicles far from the camera go by one step of the physics in a frame, see vehicle_table::update()
     float physics_pipewake{ 0.001f }; // bar: air flowing along a pipe wakes the physics of a vehicle when it changes its pressure by more than this. 0: any flow does
-    int performance_cpucores{ 0 }; // threads for the work done in parallel (worker_pool), the main one included. 0: all logical cores of the machine
+    bool performance_multithreading{ true }; // work split over the logical cores of the machine (worker_pool), as many as each job is worth
     bool bnewAirCouplers{ true };
     float fMoveLight{ 0.f }; // numer dnia w roku albo -1
     bool FakeLight{ false }; // toggle between fixed and dynamic daylight
