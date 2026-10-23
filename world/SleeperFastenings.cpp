@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 
 #include <algorithm>
+#include <functional>
 #include <numeric>
 #include <optional>
 
@@ -57,50 +58,67 @@ fastened_rails::fastened_rails( TTrack &Track ) {
         auto const bladestretch = [&]( int const Path ) {
             auto const &shape { track->blade( Path ) };
             return glm::dvec2 { shape.valid ? shape.tip : 0.0, track_rails::blade_length( *track, Path ) }; };
+        // what the rail is along the path: a blade, the stock rail of a blade, checked
+        auto const add = [&]( rail &&Line, int const Path, int const Side ) {
+            if( switched ) {
+                if( Side == bladeside( Path ) ) {
+                    Line.blade = { 0.0, bladestretch( Path ).y };
+                }
+                if( Side == bladeside( 1 - Path ) ) {
+                    auto const stretch { bladestretch( 1 - Path ) };
+                    Line.stock = { std::max( 0.0, stretch.x - chair_lead ), stretch.y };
+                }
+            }
+            if( cut ) {
+                for( auto const &check : track_rails::rail_checks( *track )[ Path ][ Side > 0 ? 1 : 0 ] ) {
+                    Line.checks.emplace_back( check.from, check.to );
+                }
+            }
+            m_rails.emplace_back( std::move( Line ) ); };
         for( int path = 0; path < path_count( *track ); ++path ) {
             auto const *segment { path_segment( *track, path ) };
             if( segment == nullptr ) {
                 continue;
             }
             auto const length { segment->GetLength() };
-            auto const count { std::max( 1, static_cast<int>( std::ceil( length / fastening_step ) ) ) };
             for( auto const side : { -1, 1 } ) {
-                rail line;
-                line.track = track;
-                line.path = path;
-                line.side = side;
-                line.foot = size.web - size.low;
-                line.low = glm::dvec2 { std::numeric_limits<double>::max() };
-                line.high = glm::dvec2 { std::numeric_limits<double>::lowest() };
-                for( int step = 0; step <= count; ++step ) {
-                    auto const distance { length * step / count };
-                    glm::dvec3 point, across;
-                    segment->plan_frame( distance, point, across );
-                    auto const flat { plan( across ) };
-                    auto const inward { glm::length( flat ) > 1e-9 ? glm::normalize( flat ) * static_cast<double>( -side ) : glm::dvec2 { 1.0, 0.0 } };
-                    auto const position { plan( point ) - inward * middle };
-                    line.points.push_back( position );
-                    line.heights.push_back( point.y );
-                    line.inward.push_back( inward );
-                    line.distances.push_back( distance );
-                    line.low = glm::min( line.low, position );
-                    line.high = glm::max( line.high, position );
-                }
-                if( switched ) {
-                    if( side == bladeside( path ) ) {
-                        line.blade = { 0.0, bladestretch( path ).y };
+                // the rail in its parts between the cuts at the crossings, as they're laid: a wing rail bent out from the path; on over the
+                // gap at an obtuse crossing, where its check rail lies
+                auto cuts { cut ? track->m_railplans[ path ][ side > 0 ].cuts : std::vector<track_rails::rail_cut> {} };
+                std::stable_sort( cuts.begin(), cuts.end(), []( track_rails::rail_cut const &A, track_rails::rail_cut const &B ) { return A.at < B.at; } );
+                for( std::size_t part = 0; part <= cuts.size(); ++part ) {
+                    auto const *before { part > 0 ? &cuts[ part - 1 ] : nullptr };
+                    auto const *after { part < cuts.size() ? &cuts[ part ] : nullptr };
+                    auto const from { std::max( 0.0, before != nullptr ? before->start : 0.0 ) };
+                    auto const to { std::min( length, after != nullptr ? std::max( after->end, after->start ) : length ) };
+                    if( to - from < fastening_merge ) {
+                        continue;
                     }
-                    if( side == bladeside( 1 - path ) ) {
-                        auto const stretch { bladestretch( 1 - path ) };
-                        line.stock = { std::max( 0.0, stretch.x - chair_lead ), stretch.y };
+                    auto const offsets { knots::sum( before != nullptr ? before->startoffsets : knots::line {}, after != nullptr ? after->endoffsets : knots::line {} ) };
+                    auto const count { std::max( 1, static_cast<int>( std::ceil( ( to - from ) / fastening_step ) ) ) };
+                    rail line;
+                    line.track = track;
+                    line.path = path;
+                    line.side = side;
+                    line.foot = size.web - size.low;
+                    line.low = glm::dvec2 { std::numeric_limits<double>::max() };
+                    line.high = glm::dvec2 { std::numeric_limits<double>::lowest() };
+                    for( int step = 0; step <= count; ++step ) {
+                        auto const distance { from + ( to - from ) * step / count };
+                        glm::dvec3 point, across;
+                        segment->plan_frame( distance, point, across );
+                        auto const flat { plan( across ) };
+                        auto const inward { glm::length( flat ) > 1e-9 ? glm::normalize( flat ) * static_cast<double>( -side ) : glm::dvec2 { 1.0, 0.0 } };
+                        auto const position { plan( point ) - inward * ( middle + knots::sample( offsets, distance, 0.0 ) ) };
+                        line.points.push_back( position );
+                        line.heights.push_back( point.y );
+                        line.inward.push_back( inward );
+                        line.distances.push_back( distance );
+                        line.low = glm::min( line.low, position );
+                        line.high = glm::max( line.high, position );
                     }
+                    add( std::move( line ), path, side );
                 }
-                if( cut ) {
-                    for( auto const &check : track_rails::rail_checks( *track )[ path ][ side > 0 ? 1 : 0 ] ) {
-                        line.checks.emplace_back( check.from, check.to );
-                    }
-                }
-                m_rails.emplace_back( std::move( line ) );
             }
         }
     }
@@ -189,47 +207,54 @@ std::vector<fastening> fastened_rails::on( beam const &Beam, beam_model const &M
         return Beam.from + span * ( At / length ); };
     auto const has = [&]( int const Part ) {
         return Model.parts[ Part ] != nullptr; };
-    // the rails from the first to the last under fastenings of two rails in turn, each with its seats under two rails side by side
-    // and over as many of the rails after them as it reaches
-    auto const crowd = [&]( std::size_t First, std::size_t const Last ) {
+    // the rails from the first to the last under fastenings of two rails, each with its seats under two rails side by side and over as
+    // many of the rails around as it reaches: the one holding the most first, the rails before and after it in turn
+    std::function<void( std::size_t, std::size_t )> crowd = [&]( std::size_t const First, std::size_t const Last ) {
         auto const &reach { Model.spans[ part_check ] };
-        while( First <= Last ) {
-            std::size_t covered { 0 };
-            auto origin { 0.0 };
-            auto turn { 1.0 };
-            for( auto seat { First }; seat < Last; ++seat ) {
-                for( auto const direction : { 1.0, -1.0 } ) {
-                    auto const at { 0.5 * ( rails[ seat ].at + rails[ seat + 1 ].at - direction * check_seats ) };
-                    auto const from { at + std::min( direction * reach.x, direction * reach.y ) };
-                    auto const to { at + std::max( direction * reach.x, direction * reach.y ) };
-                    if( rails[ First ].at < from ) {
-                        continue;
-                    }
-                    std::size_t count { 0 };
-                    while( First + count <= Last && rails[ First + count ].at <= to ) {
-                        ++count;
-                    }
-                    if( count > covered ) {
-                        covered = count;
-                        origin = at;
-                        turn = direction;
-                    }
+        std::size_t covered { 0 };
+        std::size_t from { First };
+        auto origin { 0.0 };
+        auto turn { 1.0 };
+        for( auto seat { First }; seat < Last; ++seat ) {
+            for( auto const direction : { 1.0, -1.0 } ) {
+                auto const at { 0.5 * ( rails[ seat ].at + rails[ seat + 1 ].at - direction * check_seats ) };
+                auto const low { at + std::min( direction * reach.x, direction * reach.y ) };
+                auto const high { at + std::max( direction * reach.x, direction * reach.y ) };
+                auto start { seat };
+                while( start > First && rails[ start - 1 ].at >= low ) {
+                    --start;
+                }
+                auto end { seat + 1 };
+                while( end < Last && rails[ end + 1 ].at <= high ) {
+                    ++end;
+                }
+                if( end - start + 1 > covered ) {
+                    covered = end - start + 1;
+                    from = start;
+                    origin = at;
+                    turn = direction;
                 }
             }
-            if( covered < 2 ) {
-                result.push_back( { part_plate, point( rails[ First ].at ), rails[ First ].inward } );
-                ++First;
-                continue;
+        }
+        if( covered < 2 ) {
+            for( auto rail { First }; rail <= Last; ++rail ) {
+                result.push_back( { part_plate, point( rails[ rail ].at ), rails[ rail ].inward } );
             }
-            result.push_back( { part_check, point( origin ), axis * turn, 1.f, static_cast<float>( 0.5 * check_seats ), 0.f, true } );
-            First += covered;
+            return;
+        }
+        result.push_back( { part_check, point( origin ), axis * turn, 1.f, static_cast<float>( 0.5 * check_seats ), 0.f, true, covered > 2 } );
+        if( from > First ) {
+            crowd( First, from - 1 );
+        }
+        if( from + covered <= Last ) {
+            crowd( from + covered, Last );
         }
     };
     for( std::size_t index = 0; index < rails.size(); ++index ) {
         auto const &rail { rails[ index ] };
         // three rails or more close beside one another, as at the crossings of the slips, none a stock rail or with a check rail
         auto last { index };
-        while( last + 1 < rails.size() && rails[ last + 1 ].at - rails[ last ].at < fastening_pair && rails[ last ].kind == role::plain && rails[ last + 1 ].kind == role::plain ) {
+        while( last + 1 < rails.size() && rails[ last + 1 ].at - rails[ last ].at < fastening_crowd && rails[ last ].kind == role::plain && rails[ last + 1 ].kind == role::plain ) {
             ++last;
         }
         if( last >= index + 2 && has( part_check ) ) {
@@ -338,7 +363,7 @@ void fastened_rails::fit( std::vector<fastening> &Fastenings, beam const &Beam, 
         switch( Fastening.part ) {
             case part_plate: { return plate_least; }
             case part_slide: { return slide_least; }
-            case part_check: { return check_least; }
+            case part_check: { return Fastening.whole ? 1.0 : check_least; }
             default: { return 1.0; }
         } };
     // those of one rail together, the rails in the order along the timber
@@ -451,8 +476,8 @@ void fastened_rails::fit( std::vector<fastening> &Fastenings, beam const &Beam, 
             kept = index;
             continue;
         }
-        auto const firstreach { extent( first ) };
-        auto const secondreach { extent( second ) };
+        auto firstreach { extent( first ) };
+        auto secondreach { extent( second ) };
         auto const drop = [&]( std::pair<std::size_t, std::size_t> const &Rail ) {
             for( auto member { Rail.first }; member < Rail.second; ++member ) {
                 dropped[ order[ member ] ] = true;
@@ -468,8 +493,13 @@ void fastened_rails::fit( std::vector<fastening> &Fastenings, beam const &Beam, 
                 auto const turn { glm::dot( fastening.across, axis ) };
                 auto const toward { turn * Toward > 0.0 ? span.y : span.x };
                 auto const away { turn * Toward > 0.0 ? span.x : span.y };
-                auto const stays { fastening.placed( away, 1.0 ) };
-                auto const scale { ( Toward * turn * Room - stays ) / ( toward - away ) };
+                // the other end where the narrowing left it, or as the plate was if that leaves too little of it
+                auto stays { fastening.placed( away, fastening.scale ) };
+                auto scale { ( Toward * turn * Room - stays ) / ( toward - away ) };
+                if( scale < clip_least ) {
+                    stays = fastening.placed( away, 1.0 );
+                    scale = ( Toward * turn * Room - stays ) / ( toward - away );
+                }
                 if( scale < clip_least ) {
                     return false;
                 }
@@ -489,15 +519,24 @@ void fastened_rails::fit( std::vector<fastening> &Fastenings, beam const &Beam, 
             }
             return Rail; };
         // the brace of a chair where the rail beside comes too close for it, its slide plate kept
-        auto const brace = [&]( std::pair<std::size_t, std::size_t> const &Rail, int const Side ) {
+        auto const brace = [&]( std::pair<std::size_t, std::size_t> const &Rail, int const Side, double const Reaching = fastening_gap ) {
             for( auto member { Rail.first }; member < Rail.second; ++member ) {
                 auto const &fastening { Fastenings[ order[ member ] ] };
-                if( fastening.part == part_chair && reach( fastening, fastening.scale )[ Side ] > fastening_gap ) {
+                if( fastening.part == part_chair && false == dropped[ order[ member ] ] && reach( fastening, fastening.scale )[ Side ] > Reaching ) {
                     dropped[ order[ member ] ] = true;
                     return true;
                 }
             }
             return false; };
+        // a rail lying on the brace of a chair beside takes the brace away
+        if( brace( first, 1, apart ) || brace( second, 0, apart ) ) {
+            if( false == overlaps() ) {
+                kept = index;
+                continue;
+            }
+            firstreach = extent( first );
+            secondreach = extent( second );
+        }
         // of two rails with check rails, the one with its check rail toward the other one, lying on the fastening of the other
         // one then, goes in a plate cut short at that fastening, or without its own, the other one keeping its check rail seated
         if( checks( first ) && checks( second ) && faces( first, 1.0 ) != faces( second, -1.0 ) ) {

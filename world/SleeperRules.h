@@ -57,6 +57,8 @@ double constexpr fastening_merge { 0.03 };
 // one, as the legs of the nose where they're joined, in one plate between them
 double constexpr fastening_pair { 0.2 };
 double constexpr fastening_nose { 0.05 };
+// three rails or more with less than this between each and the next, as the legs of a nose with the wing rails beside, are held together
+double constexpr fastening_crowd { 0.3 };
 // how far apart the rails lie in the fastening of both, the check part of the model
 double constexpr check_seats { 0.113 };
 // the room left between the fastenings of rails close by, and how narrow their plates get to keep it

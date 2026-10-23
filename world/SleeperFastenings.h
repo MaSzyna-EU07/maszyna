@@ -31,6 +31,7 @@ struct fastening {
     float pivot { 0.f }; // the x of the part kept in place as it's narrowed
     float shift { 0.f }; // along its x, how far the pivot is moved
     bool both { false }; // the fastening of two rails close beside each other, neither with a check rail of its own seated
+    bool whole { false }; // holding more rails than its seats, out to its ends: not narrowed
     // where an x of the part lands along its across, at the scale
     double placed( double const X, double const Scale ) const {
         return pivot + shift + Scale * ( X - pivot ); }

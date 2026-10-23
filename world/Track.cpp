@@ -1595,6 +1595,11 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         auto const layout { plan_rails( Bank != 0 ) };
         if( Bank != 0 ) {
             m_crossings = layout.crossed;
+            for( int path = 0; path < 2; ++path ) {
+                for( int side = 0; side < 2; ++side ) {
+                    m_railplans[ path ][ side ] = layout.plans[ path ][ side ];
+                }
+            }
         }
         auto const lay_rail = [&]( int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
             return this->lay_rail( layout, drawing, Path, Profile, Side, Texturelength, From, Openstart, Openend, Geometry, Cuts ); };
