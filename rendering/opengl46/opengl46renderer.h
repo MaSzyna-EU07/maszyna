@@ -44,6 +44,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46localshadows.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 #include "rendering/opengl46/opengl46hiz.h"
+#include "rendering/opengl46/opengl46timbers.h"
 #include "rendering/opengl46/opengl46shadowfit.h"
 
 // bare-bones render controller, in lack of anything better yet
@@ -376,6 +377,8 @@ class opengl46_renderer : public gfx_renderer {
 	static scene::bounding_area Bucket_Area( scene::basic_cell::instance_bucket const &Bucket );
 	// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
 	std::uint32_t Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count );
+	// the room for Count modelviews in the instance buffer of the frame, for the gpu to write. returns: base instance of the first
+	std::uint32_t Reserve_Instance_Modelviews( std::size_t const Count );
 	// binds the instance buffer of the frame for the vertex shaders (INSTANCE_SSBO_BINDING)
 	void Bind_Instance_Stream() const;
 	// draws the instances queued in the pass from the result of the gpu culling (Global.gfx_gpucull 1): makes the depth
@@ -491,9 +494,11 @@ class opengl46_renderer : public gfx_renderer {
 	// queues the sleepers of a track in the gpu culling of the pass (Global.gfx_gpucull_sleepers), with the gates of
 	// Render_Sleepers(), making their records first when they're missing or out of date
 	void Queue_Sleepers( TTrack *Track );
-	// renders the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of date.
-	// the parts of the model are drawn in instanced batches for the whole run of tracks, the runs of beams out of sight left out
+	// gathers the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of
+	// date. the parts of the model are drawn in instanced batches for all the cells of the pass, the runs of beams out of sight left out
 	void Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
+	// draws what Render_Timbers() gathered in the pass since the last time
+	void Flush_Timbers();
 	// queues a model instance drawn on its own in the gpu culling of the pass (Global.gfx_gpucull_models), as a bucket of
 	// its own, making its record first when it's missing or out of date. Inrange: the cell of the instance lies within the
 	// range of the pass. returns true when the instance isn't drawn by the cpu in the pass: it's drawn from the result of the
@@ -709,6 +714,7 @@ class opengl46_renderer : public gfx_renderer {
 	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<std::uint32_t>, scene::basic_cell::instance_bucket_key_hash> m_sleeperbandcounts;
 	// depth pyramid for the occlusion test of the gpu culling
 	opengl46_hiz m_hiz;
+	opengl46_timbers m_timbers; // the instances of the sleepers and timbers of the tracks on the gpu
 	// the cascades of the sun shadows fitted to the depth of the main view (Global.gfx_shadow_sdsm)
 	opengl46_shadow_fit m_shadowfit;
 	// with a cascade fitted: the corners of the area its map is to cover, for setup_pass()
@@ -989,15 +995,20 @@ class opengl46_renderer : public gfx_renderer {
 	// per-instance modelview from instance_ssbo[gl_BaseInstance + gl_InstanceID]. Reset to 0 on exit.
 	std::size_t m_current_instance_count { 0 };
 	std::uint32_t m_current_instance_base { 0 };
-	// camera-space transforms of the sleepers and timbers drawn by Render_Timbers, by the model and its part or its level of
-	// detail; kept from frame to frame to reuse their allocations
+	// the runs of the instances of the sleepers and timbers drawn by Render_Timbers, by the model and its part or its level of
+	// detail, where they lie in m_timbers; kept from frame to frame to reuse their allocations
 	struct timber_bucket {
 		track_sleepers::beam_model const *model { nullptr };
 		int part { -1 }; // of a model put together from parts; -1: the whole model
 		float band { 0.f }; // the squared distance the level of detail of the whole model is seen from
-		std::vector<glm::mat4> instances;
+		std::vector<gl::timber_range> runs;
+		std::uint32_t count { 0 }; // instances of the runs
+		std::uint32_t first { 0 }; // base instance of their modelviews in the instance buffer of the frame
 	};
 	std::vector<timber_bucket> m_timberbuckets;
+	std::vector<TTrack *> m_timbertracks; // the tracks of a cell with beams to draw
+	std::vector<gl::timber_range> m_timberranges; // the runs of all the buckets, as they're expanded
+	std::vector<glm::mat4> m_timberorigins; // the modelviews of the cells of the runs
 	// persistent scratch buffer for Render_Instanced(): holds the per-instance
 	// camera-space root modelview matrices for the batch currently being built.
 	// Kept as a member rather than a function-local so its heap allocation is

@@ -125,11 +125,15 @@ std::pair<double, double> shared_zone( TTrack const &Track, int const Path ) {
 
 namespace {
 
+// the instances made so far, of all the tracks
+std::uint64_t makings { 0 };
+
 // the beams as instances of the parts of the model of the track: those of the fastenings with them, or left for later and the beams
 // kept for them meanwhile
 void instance( TTrack &Track, std::vector<beam> &&Beams, bool const Fastened ) {
 
     auto &laid { Track.m_sleepers3d };
+    laid.made = ++makings;
     for( auto &instances : laid.instances ) {
         instances.clear();
     }

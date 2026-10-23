@@ -1,0 +1,46 @@
+// the modelviews of the instances of the timbers and sleepers of the tracks drawn in a pass (opengl46_timbers): their transforms
+// are kept relative to the origins of the tracks, each run of them is turned by the modelview of the origin of its cell and written
+// to the instance buffer of the frame, where the instanced draws read it. a work group a run
+
+#include <common>
+
+layout(local_size_x = TIMBER_GROUP_SIZE) in;
+
+struct timber_range
+{
+	uint source;
+	uint count;
+	uint target;
+	uint origin;
+};
+
+layout(std430, binding = TIMBER_LOCAL_SSBO_BINDING) readonly buffer timber_local_ssbo
+{
+	mat4 timber_local[];
+};
+
+layout(std430, binding = TIMBER_RANGE_SSBO_BINDING) readonly buffer timber_range_ssbo
+{
+	timber_range timber_ranges[];
+};
+
+layout(std430, binding = TIMBER_OUTPUT_SSBO_BINDING) writeonly buffer timber_output_ssbo
+{
+	mat4 timber_output[];
+};
+
+layout(std430, binding = TIMBER_ORIGIN_SSBO_BINDING) readonly buffer timber_origin_ssbo
+{
+	mat4 timber_origins[];
+};
+
+// x: the first run of the dispatch, y: the first modelview of the origins
+layout(location = 0) uniform uvec4 params;
+
+void main()
+{
+	timber_range range = timber_ranges[params.x + gl_WorkGroupID.x];
+	mat4 origin = timber_origins[params.y + range.origin];
+	for (uint index = gl_LocalInvocationID.x; index < range.count; index += TIMBER_GROUP_SIZE)
+		timber_output[range.target + index] = origin * timber_local[range.source + index];
+}

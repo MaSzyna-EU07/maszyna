@@ -142,6 +142,17 @@ void gl::frame_stream::next_frame()
 
 GLintptr gl::frame_stream::push(void const *Data, GLsizeiptr Size)
 {
+	auto const offset{reserve(Size)};
+	auto const &current{m_slots[m_slot]};
+	if (current.data != nullptr)
+		std::memcpy(current.data + offset, Data, static_cast<std::size_t>(Size));
+	else
+		glNamedBufferSubData(current.buffer, offset, Size, Data);
+	return offset;
+}
+
+GLintptr gl::frame_stream::reserve(GLsizeiptr Size)
+{
 	auto *current{&m_slots[m_slot]};
 	auto offset{align_up(m_fill, m_alignment)};
 	if (offset + Size > current->size)
@@ -167,13 +178,8 @@ GLintptr gl::frame_stream::push(void const *Data, GLsizeiptr Size)
 			glFinish();
 			++m_waits;
 		}
-		current = &m_slots[m_slot];
 		offset = m_start;
 	}
-	if (current->data != nullptr)
-		std::memcpy(current->data + offset, Data, static_cast<std::size_t>(Size));
-	else
-		glNamedBufferSubData(current->buffer, offset, Size, Data);
 	m_fill = offset + Size;
 	return offset;
 }

@@ -103,6 +103,7 @@ struct laid {
     std::vector<glm::mat4> whole; // transforms of the timbers of a model without parts, drawn whole
     std::vector<glm::mat4> plain; // transforms of the plain sleepers, whole models, relative to the origin of the track
     std::vector<chunk> chunks;
+    std::uint64_t made { 0 }; // which making of the instances they are, none other of any track the same: a copy of them tells by it
     bool fastened { false }; // the fastenings are laid, else they're laid as the track comes near where they're drawn
     std::vector<beam> beams; // kept for the fastenings till they're laid
 };
