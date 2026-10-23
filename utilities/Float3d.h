@@ -125,15 +125,6 @@ inline float4 Slerp(const float4 &q0, const float4 &q1, float t)
                   q0.w * k0 + new_q1.w * k1);
 }
 
-struct float8
-{ // wierchołek 3D z wektorem normalnym i mapowaniem, pojedyncza precyzja
-  public:
-    float3 Point;
-    float3 Normal;
-    float tu;
-    float tv;
-};
-
 class float4x4
 { // macierz transformacji pojedynczej precyzji
 public:
