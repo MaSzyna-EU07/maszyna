@@ -83,6 +83,30 @@ struct circuit
 	double length{0.0};
 };
 
+// the schematic generalized for the plot: each station track on a row of its own, level, the rows evenly apart in the order the
+// tracks lie side by side, a path between them on a straight slant; the plain stretches between the switches shortened
+struct drawing
+{
+	struct run
+	{
+		std::vector<std::size_t> paths; // of the layout, joined end to end without a switch between
+		double offset{0.0}; // the middle one of its stretches along the axis
+		int row{0};
+	};
+	std::vector<run> runs;
+	double spacing{4.75}; // m, of the tracks of the station
+	std::vector<glm::dvec2> warp; // the chainage and the x of the plot at the breakpoints, by the chainage
+	std::vector<std::vector<glm::dvec2>> paths; // of each path of the layout, its points in the plot: the x and the height
+	std::vector<std::vector<glm::dvec2>> schematic; // the same in the schematic
+	double x(double const Chainage) const;
+	double chainage(double const X) const;
+	// the point of the schematic in the plot: on the path nearest to it, unless none runs near
+	glm::dvec2 at(glm::dvec2 const &Schematic) const;
+};
+// m of the plot between two rows
+double constexpr row_height{5.0};
+drawing generalize(layout const &Layout);
+
 // the station of the switch, or of the plain track near one
 std::optional<layout> find(TTrack &From, options const &Options = {});
 // the chainage along the axis and the offset to the left of it, as the map shows it

@@ -96,6 +96,7 @@ class srk_tool final : public editor_tool
 	bool m_changed{false};
 	std::vector<record> m_records;
 	std::optional<station::layout> m_layout;
+	station::drawing m_plot; // the schematic of the layout as the plot draws it
 	int m_record{-1}; // of the open station, -1 while it has none
 	TTrack *m_anchor{nullptr}; // the switch the open station was found from
 	bool m_reversed{false}; // the switches numbered from the right end of the schematic
@@ -114,10 +115,12 @@ class srk_tool final : public editor_tool
 		ImU32 colour{0};
 		double length{0.0};
 		bool labelled{true}; // the circuits of the switches go without, named after them
+		glm::dvec2 drawn{0.0}; // in the plot
 	};
 	std::vector<int> m_circuit_of; // of each path of the layout, an index into m_circuits, -1 for none
 	std::vector<circuit_mark> m_circuits;
 	std::vector<glm::dvec2> m_ticks; // the joints between the circuits, in the schematic
+	std::vector<glm::dvec2> m_ticks_drawn; // the same in the plot
 	struct joint_mark
 	{
 		glm::dvec3 at{0.0};
@@ -131,6 +134,8 @@ class srk_tool final : public editor_tool
 		std::string text;
 		glm::dvec3 head{0.0}; // above its lamps, in the scenery
 		bool unfit{false}; // its lights don't show what its routes need
+		glm::dvec2 drawn{0.0}; // on its track in the plot
+		float side{0.0f}; // 1: it stands to the left of the track in the plot, -1: to the right
 	};
 	std::vector<signal_mark> m_signal_marks;
 	bool m_signals_known{false}; // the signals standing surveyed, once their templates are found

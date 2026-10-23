@@ -834,6 +834,7 @@ void srk_tool::open(TTrack &Track)
 		return;
 	}
 	m_layout = std::move(found);
+	m_plot = station::generalize(*m_layout);
 	m_hover = -1;
 	m_view_state.exaggeration = 0.0f;
 	m_history_revision = m_history.history_revision();
@@ -3656,6 +3657,18 @@ void srk_tool::survey_signals()
 		auto const ahead{station::project(*m_layout, signal.position + glm::dvec3{travel.x, 0.0, travel.y} * 5.0)};
 		auto const unfit{std::any_of(m_heads.begin(), m_heads.end(), [&](head_check const &Head) { return Head.instance == signal.instance && (false == Head.fits || false == Head.problems.empty()); })};
 		m_signal_marks.push_back({at, ahead.x > at.x, signal_shown(signal.name, stem), signal.position + glm::dvec3{0.0, signal.kind == "shunt" ? 3.0 : 7.0, 0.0}, unfit});
+		// in the plot on the track it stands by, to its side
+		auto &mark{m_signal_marks.back()};
+		mark.drawn = m_plot.at(at);
+		auto nearest{6.0};
+		for (std::size_t path = 0; path < m_layout->paths.size(); ++path)
+			for (std::size_t k = 0; k < m_layout->paths[path].schematic.size(); ++k)
+				if (auto const &point{m_layout->paths[path].schematic[k]}; glm::distance(point, at) < nearest)
+				{
+					nearest = glm::distance(point, at);
+					mark.drawn = m_plot.paths[path][k];
+					mark.side = at.y > point.y ? 1.0f : -1.0f;
+				}
 		if (signal.kind != "main" && signal.kind != "shunt")
 			continue;
 		station::signal stop;
@@ -4095,6 +4108,7 @@ void srk_tool::survey()
 	m_circuit_of.assign(m_layout.has_value() ? m_layout->paths.size() : 0, -1);
 	m_circuits.clear();
 	m_ticks.clear();
+	m_ticks_drawn.clear();
 	m_lengths.clear();
 	m_measured = false;
 	m_numbered = false;
@@ -4143,6 +4157,7 @@ void srk_tool::survey()
 						nearest = distance;
 						on = layout.paths[path].schematic[k];
 						mark.world = layout.paths[path].points[k];
+						mark.drawn = m_plot.paths[path][k];
 					}
 		mark.at = on;
 		auto const entry{entry_circuit(mark.text, stem)};
@@ -4161,6 +4176,7 @@ void srk_tool::survey()
 		glm::dvec3 point;
 		glm::dvec3 way;
 		int circuit;
+		glm::dvec2 drawn;
 	};
 	std::vector<end> ends;
 	for (std::size_t index = 0; index < layout.paths.size(); ++index)
@@ -4169,8 +4185,8 @@ void srk_tool::survey()
 		if (points.size() < 2)
 			continue;
 		auto const circuit{m_circuit_of[index]};
-		ends.push_back({points.front(), points[1] - points.front(), circuit});
-		ends.push_back({points.back(), points.back() - points[points.size() - 2], circuit});
+		ends.push_back({points.front(), points[1] - points.front(), circuit, m_plot.paths[index].front()});
+		ends.push_back({points.back(), points.back() - points[points.size() - 2], circuit, m_plot.paths[index].back()});
 	}
 	m_joints.clear();
 	for (std::size_t i = 0; i < ends.size(); ++i)
@@ -4179,6 +4195,7 @@ void srk_tool::survey()
 			    std::none_of(m_joints.begin(), m_joints.end(), [&](joint_mark const &Joint) { return glm::distance(Joint.at, ends[i].point) < 0.05; }))
 			{
 				m_ticks.push_back(station::project(layout, ends[i].point));
+				m_ticks_drawn.push_back(ends[i].drawn);
 				glm::dvec2 const way{glm::normalize(glm::dvec2{ends[i].way.x, ends[i].way.z} + glm::dvec2{1e-12, 0.0})};
 				m_joints.push_back({ends[i].point, glm::dvec3{-way.y, 0.0, way.x}});
 			}
@@ -4203,12 +4220,25 @@ void srk_tool::fit_view(float const Width, float const Height)
 			from = std::min(from, row.chainage + row.outward * row.length);
 			to = std::max(to, row.chainage + row.outward * row.length);
 		}
+	from = m_plot.x(from);
+	to = m_plot.x(to);
 	auto const span{std::max(50.0, to - from)};
 	view.from = from - span * 0.04 - 30.0;
 	view.to = to + span * 0.04 + 30.0;
-	view.centre = (layout.low + layout.high) * 0.5;
+	auto low{std::numeric_limits<double>::max()};
+	auto high{std::numeric_limits<double>::lowest()};
+	for (std::size_t index = 0; index < layout.paths.size() && index < m_plot.paths.size(); ++index)
+		if (false == layout.paths[index].approach)
+			for (auto const &point : m_plot.paths[index])
+			{
+				low = std::min(low, point.y);
+				high = std::max(high, point.y);
+			}
+	if (low > high)
+		low = high = 0.0;
+	view.centre = (low + high) * 0.5;
 	auto const across{(view.to - view.from) / std::max(1.0f, Width)};
-	auto const vertical{(layout.high - layout.low + 20.0) / std::max(1.0f, Height * 0.75f)};
+	auto const vertical{(high - low + 2.0 * station::row_height) / std::max(1.0f, Height * 0.85f)};
 	view.exaggeration = static_cast<float>(std::clamp(across / vertical, 1.0, 500.0));
 }
 
@@ -4245,9 +4275,16 @@ void srk_tool::render_canvas(float const Height)
 		view.to -= io.MouseDelta.x * across;
 		view.centre += io.MouseDelta.y * vertical;
 	}
-	auto const x_of = [&](double const Chainage) { return corner.x + static_cast<float>((Chainage - view.from) / across); };
-	auto const y_of = [&](double const Offset) { return corner.y + size.y * 0.5f - static_cast<float>((Offset - view.centre) / vertical); };
-	auto const screen_of = [&](glm::dvec2 const &Point) { return ImVec2(x_of(Point.x), y_of(Point.y)); };
+	// the plot draws the generalized schematic: its x shortens the chainage between the switches, its height puts the tracks on rows
+	auto const plot_x = [&](double const X) { return corner.x + static_cast<float>((X - view.from) / across); };
+	auto const plot_y = [&](double const Height) { return corner.y + size.y * 0.5f - static_cast<float>((Height - view.centre) / vertical); };
+	auto const x_of = [&](double const Chainage) { return plot_x(m_plot.x(Chainage)); };
+	auto const screen_of = [&](glm::dvec2 const &Point) { return ImVec2(plot_x(Point.x), plot_y(Point.y)); };
+	auto const chainage_at = [&](float const Mouse) { return m_plot.chainage(view.from + (Mouse - corner.x) * across); };
+	auto const drawn_of = [&](std::size_t const Index) -> std::vector<glm::dvec2> const & {
+		static std::vector<glm::dvec2> const none;
+		return Index < m_plot.paths.size() ? m_plot.paths[Index] : none;
+	};
 
 	// the path under the mouse
 	if (hovered && false == m_dragging)
@@ -4257,7 +4294,7 @@ void srk_tool::render_canvas(float const Height)
 		auto const &mouse{io.MousePos};
 		for (int index = 0; index < static_cast<int>(layout.paths.size()); ++index)
 		{
-			auto const &points{layout.paths[index].schematic};
+			auto const &points{drawn_of(index)};
 			for (std::size_t i = 1; i < points.size(); ++i)
 			{
 				auto const a{screen_of(points[i - 1])};
@@ -4286,8 +4323,8 @@ void srk_tool::render_canvas(float const Height)
 		for (std::size_t index = 0; index < m_lines.size() && index < m_line_ways.size() && line_hover < 0; ++index)
 		{
 			auto const &row{m_lines[index]};
-			auto const distance{(view.from + (io.MousePos.x - corner.x) * across - row.chainage) * row.outward};
-			if (std::abs(io.MousePos.y - y_of(row.offset)) < 6.0f && distance >= 0.0 && distance <= row.length)
+			auto const distance{(chainage_at(io.MousePos.x) - row.chainage) * row.outward};
+			if (std::abs(io.MousePos.y - plot_y(m_plot.at({row.chainage, row.offset}).y)) < 6.0f && distance >= 0.0 && distance <= row.length)
 			{
 				line_hover = static_cast<int>(index);
 				line_at = distance;
@@ -4318,37 +4355,44 @@ void srk_tool::render_canvas(float const Height)
 	draw->PushClipRect(corner, corner_end, true);
 	// the km, or the chainage, along the top
 	{
-		auto const metres{across * 90.0};
+		auto const first{chainage_at(corner.x)};
+		auto const last{chainage_at(corner_end.x)};
+		auto const metres{(last - first) / size.x * 90.0};
 		double step{10.0};
 		for (auto const candidate : {10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0})
 			if ((step = candidate) >= metres)
 				break;
-		// the km of the station where it has them, else the chainage
+		// the km of the station where it has them, else the chainage; the shortened stretches skip the marks too near
 		double km_from{0.0};
 		double km_to{0.0};
-		auto const kilometrage{km_of_open(view.from, km_from) && km_of_open(view.to, km_to) && std::abs(km_to - km_from) > 1e-6};
-		auto const low{kilometrage ? std::min(km_from, km_to) * 1000.0 : view.from};
-		auto const high{kilometrage ? std::max(km_from, km_to) * 1000.0 : view.to};
+		auto const kilometrage{km_of_open(first, km_from) && km_of_open(last, km_to) && std::abs(km_to - km_from) > 1e-6};
+		auto const low{kilometrage ? std::min(km_from, km_to) * 1000.0 : first};
+		auto const high{kilometrage ? std::max(km_from, km_to) * 1000.0 : last};
+		auto shown{std::numeric_limits<float>::lowest()};
 		for (auto mark{std::ceil(low / step) * step}; mark <= high; mark += step)
 		{
-			auto const x{x_of(kilometrage ? view.from + (mark / 1000.0 - km_from) / (km_to - km_from) * (view.to - view.from) : mark)};
-			draw->AddLine(ImVec2(x, corner.y), ImVec2(x, corner_end.y), IM_COL32(255, 255, 255, 16));
+			auto const x{x_of(kilometrage ? first + (mark / 1000.0 - km_from) / (km_to - km_from) * (last - first) : mark)};
 			auto const label{kilometrage ? format("km %.3f", mark / 1000.0) : format("%.0f m", mark)};
+			if (std::abs(x - shown) < ImGui::CalcTextSize(label.c_str()).x + 12.0f)
+				continue;
+			shown = x;
+			draw->AddLine(ImVec2(x, corner.y), ImVec2(x, corner_end.y), IM_COL32(255, 255, 255, 16));
 			draw->AddText(ImVec2(x + 3.0f, corner.y + 2.0f), IM_COL32(150, 155, 165, 255), label.c_str());
 		}
 	}
 	auto const *selected{m_selection.selected_track()};
-	auto const draw_path = [&](station::path const &Path, ImU32 const Colour, float const Width) {
-		for (std::size_t i = 1; i < Path.schematic.size(); ++i)
-			draw->AddLine(screen_of(Path.schematic[i - 1]), screen_of(Path.schematic[i]), Colour, Width);
+	auto const draw_path = [&](std::size_t const Index, ImU32 const Colour, float const Width) {
+		auto const &points{drawn_of(Index)};
+		for (std::size_t i = 1; i < points.size(); ++i)
+			draw->AddLine(screen_of(points[i - 1]), screen_of(points[i]), Colour, Width);
 	};
-	for (auto const &path : layout.paths)
-		if (path.approach)
-			draw_path(path, kApproach, 2.0f);
+	for (std::size_t index = 0; index < layout.paths.size(); ++index)
+		if (layout.paths[index].approach)
+			draw_path(index, kApproach, 2.0f);
 	for (std::size_t index = 0; index < layout.paths.size(); ++index)
 		if (auto const &path{layout.paths[index]}; false == path.approach || m_circuit_of[index] >= 0)
-			draw_path(path, m_circuit_of[index] >= 0 ? m_circuits[m_circuit_of[index]].colour : is_switch(*path.track) ? kSwitch : kPlain, 2.5f);
-	for (auto const &tick : m_ticks)
+			draw_path(index, m_circuit_of[index] >= 0 ? m_circuits[m_circuit_of[index]].colour : is_switch(*path.track) ? kSwitch : kPlain, 2.5f);
+	for (auto const &tick : m_ticks_drawn)
 	{
 		auto const at{screen_of(tick)};
 		draw->AddLine(ImVec2(at.x, at.y - 5.0f), ImVec2(at.x, at.y + 5.0f), IM_COL32(255, 255, 255, 220), 2.0f);
@@ -4358,7 +4402,7 @@ void srk_tool::render_canvas(float const Height)
 	for (std::size_t index = 0; index < m_lines.size(); ++index)
 	{
 		auto const &row{m_lines[index]};
-		auto const y{y_of(row.offset)};
+		auto const y{plot_y(m_plot.at({row.chainage, row.offset}).y)};
 		draw->AddLine(ImVec2(line_x(row, 0.0), y), ImVec2(line_x(row, row.length), y), kApproach, 2.0f);
 		for (std::size_t k = 0; k < row.sections.size(); ++k)
 		{
@@ -4376,11 +4420,11 @@ void srk_tool::render_canvas(float const Height)
 			draw->AddTriangleFilled(ImVec2(x - 4.0f * way, y - 4.0f), ImVec2(x - 4.0f * way, y + 4.0f), ImVec2(x + 4.0f * way, y), kSignal);
 		}
 	}
-	for (auto const &path : layout.paths)
-		if (path.track == selected)
-			draw_path(path, overlay_color::selected, 4.0f);
+	for (std::size_t index = 0; index < layout.paths.size(); ++index)
+		if (layout.paths[index].track == selected)
+			draw_path(index, overlay_color::selected, 4.0f);
 	if (m_hover >= 0)
-		draw_path(layout.paths[m_hover], kHovered, 4.0f);
+		draw_path(static_cast<std::size_t>(m_hover), kHovered, 4.0f);
 	// the useful lengths of the station track shown: of the trains to the right over it, to the left under it, an arrowhead where
 	// they stop
 	std::vector<std::pair<std::string, ImVec2>> useful;
@@ -4396,7 +4440,7 @@ void srk_tool::render_canvas(float const Height)
 			std::vector<ImVec2> line;
 			for (auto const &point : stretch_of(track, part.rear.along, part.head.along))
 			{
-				auto at{screen_of(station::project(layout, point))};
+				auto at{screen_of(m_plot.at(station::project(layout, point)))};
 				at.y += shift;
 				line.push_back(at);
 			}
@@ -4433,7 +4477,10 @@ void srk_tool::render_canvas(float const Height)
 	for (std::size_t index = 0; index < layout.switches.size(); ++index)
 	{
 		auto const *track{layout.switches[index]};
-		auto const at{screen_of(station::project(layout, track->m_paths.front().points[segment_data::point::start]))};
+		auto at{screen_of(m_plot.at(station::project(layout, track->m_paths.front().points[segment_data::point::start])))};
+		for (std::size_t path = 0; path < layout.paths.size(); ++path)
+			if (layout.paths[path].track == track && layout.paths[path].index == 0 && false == drawn_of(path).empty())
+				at = screen_of(drawn_of(path).front());
 		draw->AddCircleFilled(at, 3.5f, kSwitch);
 		auto text{track->name()};
 		if (false == stem.empty() && text.size() > stem.size() && text.compare(0, stem.size(), stem) == 0)
@@ -4448,7 +4495,8 @@ void srk_tool::render_canvas(float const Height)
 	// the signals: a flag pointing the way of the trains they face
 	for (auto const &mark : m_signal_marks)
 	{
-		auto const at{screen_of(mark.at)};
+		auto at{screen_of(mark.drawn)};
+		at.y -= mark.side * 6.0f;
 		auto const way{mark.ahead ? 1.0f : -1.0f};
 		auto const colour{mark.unfit ? kUnfit : kSignal};
 		draw->AddTriangleFilled(ImVec2(at.x - 4.0f * way, at.y - 4.0f), ImVec2(at.x - 4.0f * way, at.y + 4.0f), ImVec2(at.x + 4.0f * way, at.y), colour);
@@ -4458,7 +4506,7 @@ void srk_tool::render_canvas(float const Height)
 	// track of a double-track one, under the lower
 	for (auto const &row : m_lines)
 	{
-		auto const y{y_of(row.offset)};
+		auto const y{plot_y(m_plot.at({row.chainage, row.offset}).y)};
 		auto const up{row.partner < 0 || row.partner >= static_cast<int>(m_lines.size()) || row.offset >= m_lines[row.partner].offset};
 		auto const outside = [&](float const Tall, float const Level) { return up ? y - 5.0f - (Tall + 3.0f) * Level + 3.0f : y + 5.0f + (Tall + 3.0f) * (Level - 1.0f); };
 		auto const tall{height * (row.km_known ? 2.0f : 1.0f)};
@@ -4483,14 +4531,14 @@ void srk_tool::render_canvas(float const Height)
 	for (auto const index : order)
 	{
 		auto const &mark{m_circuits[index]};
-		auto const at{screen_of(mark.at)};
+		auto const at{screen_of(mark.drawn)};
 		label(mark.text, mark.colour, {ImVec2(at.x, at.y + 4.0f), ImVec2(at.x, at.y - height - 4.0f)});
 	}
 	draw->PopClipRect();
 	if (hovered && m_hover >= 0 && false == m_dragging)
 	{
 		auto const &path{layout.paths[m_hover]};
-		auto const along{view.from + (io.MousePos.x - corner.x) * across};
+		auto const along{chainage_at(io.MousePos.x)};
 		ImGui::BeginTooltip();
 		ImGui::TextUnformatted(path.track->name().empty() ? STR_C("(no name)") : path.track->name().c_str());
 		ImGui::TextDisabled("%s, %.1f m", is_switch(*path.track) ? STR_C("switch") : path.approach ? STR_C("line out of the station") : STR_C("track"), path.length);
@@ -5055,6 +5103,66 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		auto const before{m_problems.size()};
 		fix_problems();
 		WriteLog(format("SELFTEST srkfix: %zu problems before, status %s", before, m_status.c_str()));
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkdrawing")
+	{
+		// srkdrawing [track=<circuit>]: the schematic as the plot draws it: the rows of the tracks, the shortened chainage, the points
+		// on the rows, on slants, the corners; the points of the paths of the circuit, offset > row
+		if (false == m_layout.has_value())
+		{
+			WriteLog("SELFTEST srkdrawing: no station open");
+			return editor_selftest_result::handled;
+		}
+		auto const &layout{*m_layout};
+		std::map<int, std::string> rows;
+		for (auto const &run : m_plot.runs)
+			if (false == run.paths.empty())
+				rows[run.row] += format(" %s@%.1f", layout.paths[run.paths.front()].track->name().c_str(), run.offset);
+		std::string list;
+		for (auto const &[row, names] : rows)
+			list += format(" |%d:", row) + names;
+		WriteLog(format("SELFTEST srkdrawing tracks %zu, rows %zu, spacing %.2f", m_plot.runs.size(), rows.size(), m_plot.spacing));
+		WriteLog("SELFTEST srkdrawing rows" + list);
+		WriteLog(format("SELFTEST srkdrawing switches over %.0f..%.0f m drawn %.0f..%.0f, back %.1f..%.1f", layout.from, layout.to, m_plot.x(layout.from), m_plot.x(layout.to), m_plot.chainage(m_plot.x(layout.from)), m_plot.chainage(m_plot.x(layout.to))));
+		std::size_t on_rows{0};
+		std::size_t between{0};
+		std::size_t bends{0};
+		std::size_t backwards{0};
+		for (std::size_t index = 0; index < layout.paths.size(); ++index)
+		{
+			if (layout.paths[index].approach)
+				continue;
+			auto const &points{m_plot.paths[index]};
+			for (auto const &point : points)
+			{
+				auto const rows{point.y / station::row_height};
+				if (std::abs(rows - std::round(rows)) < 1e-6)
+					++on_rows;
+				else
+					++between;
+			}
+			for (std::size_t k = 2; k < points.size(); ++k)
+			{
+				auto const a{points[k - 1] - points[k - 2]};
+				auto const b{points[k] - points[k - 1]};
+				if (std::abs(a.x) > 1e-6 && std::abs(b.x) > 1e-6 && (std::abs(a.y) > 1e-6 || std::abs(b.y) > 1e-6) && std::abs(a.y / a.x - b.y / b.x) > 1e-3)
+					++bends;
+			}
+			for (std::size_t k = 1; k < points.size(); ++k)
+				if ((points[k].x - points[k - 1].x) * (layout.paths[index].schematic[k].x - layout.paths[index].schematic[k - 1].x) < 0.0)
+					++backwards;
+		}
+		WriteLog(format("SELFTEST srkdrawing points on rows %zu, between %zu, bends %zu, x backwards %zu", on_rows, between, bends, backwards));
+		if (auto const values{selftest_values(Words)}; values.count("track"))
+			for (std::size_t index = 0; index < layout.paths.size(); ++index)
+				if (auto const &path{layout.paths[index]}; false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == values.at("track"))
+				{
+					std::string list;
+					for (std::size_t k = 0; k < path.schematic.size(); k += 4)
+						list += format(" %.0f/%.2f>%.2f", path.schematic[k].x, path.schematic[k].y, m_plot.paths[index][k].y / station::row_height);
+					WriteLog(format("SELFTEST srkdrawing %s/%d:", path.track->name().c_str(), path.index) + list);
+				}
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkstrip")

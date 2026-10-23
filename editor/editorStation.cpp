@@ -641,6 +641,435 @@ double km_of(layout const &Layout, double const Chainage)
 	return Layout.km + Chainage / 1000.0;
 }
 
+namespace
+{
+
+// a track rising more than this to the chainage runs across the rows
+double constexpr kAcross{0.04};
+// m, two tracks this far apart lie side by side
+double constexpr kSideBySide{1.0};
+// m of the chainage, points of two tracks compared side by side
+double constexpr kAbreast{3.0};
+// m, a plain stretch between the switches keeps this much of its length in the plot, the rest shortened to kKept of it
+double constexpr kWhole{60.0};
+double constexpr kKept{0.3};
+// m, how far a slant is followed over the tracks to the row it ends on
+double constexpr kSlantSearch{400.0};
+// m, the plot puts a point of the schematic on a path no farther from it
+double constexpr kNearPath{15.0};
+
+double shortened(double const Length)
+{
+	return Length <= kWhole ? Length : kWhole + (Length - kWhole) * kKept;
+}
+
+double lengthened(double const Length)
+{
+	return Length <= kWhole ? Length : kWhole + (Length - kWhole) / kKept;
+}
+
+// rows, for the offset gone off a row: at most three rows further
+double rows_off(double const Steps)
+{
+	auto const size{std::abs(Steps)};
+	return std::copysign(size <= 1.0 ? size : 1.0 + 2.0 * (1.0 - std::exp((1.0 - size) * 0.5)), Steps);
+}
+
+} // namespace
+
+double drawing::x(double const Chainage) const
+{
+	if (warp.empty())
+		return Chainage;
+	if (Chainage <= warp.front().x)
+		return warp.front().y - shortened(warp.front().x - Chainage);
+	if (Chainage >= warp.back().x)
+		return warp.back().y + shortened(Chainage - warp.back().x);
+	auto const next{std::upper_bound(warp.begin(), warp.end(), Chainage, [](double const Value, glm::dvec2 const &Point) { return Value < Point.x; })};
+	auto const &a{*(next - 1)};
+	auto const &b{*next};
+	return a.y + (b.y - a.y) * (Chainage - a.x) / std::max(1e-9, b.x - a.x);
+}
+
+double drawing::chainage(double const X) const
+{
+	if (warp.empty())
+		return X;
+	if (X <= warp.front().y)
+		return warp.front().x - lengthened(warp.front().y - X);
+	if (X >= warp.back().y)
+		return warp.back().x + lengthened(X - warp.back().y);
+	auto const next{std::upper_bound(warp.begin(), warp.end(), X, [](double const Value, glm::dvec2 const &Point) { return Value < Point.y; })};
+	auto const &a{*(next - 1)};
+	auto const &b{*next};
+	return a.x + (b.x - a.x) * (X - a.y) / std::max(1e-9, b.y - a.y);
+}
+
+glm::dvec2 drawing::at(glm::dvec2 const &Schematic) const
+{
+	auto best{kNearPath * kNearPath};
+	glm::dvec2 result{x(Schematic.x), Schematic.y / spacing * row_height};
+	if (false == runs.empty())
+	{
+		auto const [low, high]{std::minmax_element(runs.begin(), runs.end(), [](run const &A, run const &B) { return A.row < B.row; })};
+		result.y = std::clamp(result.y, (low->row - 3.0) * row_height, (high->row + 3.0) * row_height);
+	}
+	for (std::size_t p = 0; p < schematic.size() && p < paths.size(); ++p)
+	{
+		auto const &points{schematic[p]};
+		if (points.empty() || std::max(points.front().x, points.back().x) + 2.0 * kNearPath < Schematic.x || std::min(points.front().x, points.back().x) - 2.0 * kNearPath > Schematic.x)
+			continue;
+		for (std::size_t i = 1; i < points.size(); ++i)
+		{
+			auto const &a{points[i - 1]};
+			auto const along{points[i] - a};
+			auto const length2{glm::dot(along, along)};
+			auto const t{length2 > 1e-12 ? std::clamp(glm::dot(Schematic - a, along) / length2, 0.0, 1.0) : 0.0};
+			auto const gap{a + along * t - Schematic};
+			if (auto const distance2{glm::dot(gap, gap)}; distance2 < best)
+			{
+				best = distance2;
+				result = paths[p][i - 1] + (paths[p][i] - paths[p][i - 1]) * t;
+			}
+		}
+	}
+	return result;
+}
+
+drawing generalize(layout const &Layout)
+{
+	drawing result;
+	auto const &paths{Layout.paths};
+	auto const count{paths.size()};
+	for (auto const &path : paths)
+		result.schematic.push_back(path.schematic);
+	auto const plain = [&](std::size_t const Path) { return paths[Path].track == nullptr || false == node(*paths[Path].track); };
+	auto const usable = [&](std::size_t const Path) { return paths[Path].points.size() >= 2 && paths[Path].points.size() == paths[Path].schematic.size(); };
+	auto const end_point = [&](std::size_t const Path, bool const Atend) { return Atend ? paths[Path].points.back() : paths[Path].points.front(); };
+	// the ends of the paths which meet: of each path, at its start and at its end
+	std::vector<std::array<std::vector<std::pair<std::size_t, bool>>, 2>> met(count);
+	for (std::size_t p = 0; p < count; ++p)
+		for (std::size_t q = p + 1; q < count && usable(p); ++q)
+			for (auto const pend : {false, true})
+				for (auto const qend : {false, true})
+					if (usable(q) && plan_distance(end_point(p, pend), end_point(q, qend)) < 0.05)
+					{
+						met[p][pend].emplace_back(q, qend);
+						met[q][qend].emplace_back(p, pend);
+					}
+	// the points running along the axis rather than across it
+	std::vector<std::vector<char>> along(count);
+	for (std::size_t p = 0; p < count; ++p)
+	{
+		auto const &points{paths[p].schematic};
+		for (std::size_t i = 0; i < points.size(); ++i)
+		{
+			auto const &a{points[i > 0 ? i - 1 : i]};
+			auto const &b{points[i + 1 < points.size() ? i + 1 : i]};
+			along[p].push_back(std::abs(b.x - a.x) > 1e-3 && std::abs(b.y - a.y) < std::abs(b.x - a.x) * kAcross);
+		}
+	}
+	// the station tracks: plain paths joined end to end where nothing else meets them, each on a row of its own
+	std::vector<int> run_of(count, -1);
+	for (std::size_t p = 0; p < count; ++p)
+	{
+		if (run_of[p] >= 0 || false == plain(p) || false == usable(p))
+			continue;
+		auto const index{static_cast<int>(result.runs.size())};
+		result.runs.emplace_back();
+		run_of[p] = index;
+		std::vector<std::size_t> stack{p};
+		while (false == stack.empty())
+		{
+			auto const current{stack.back()};
+			stack.pop_back();
+			result.runs[index].paths.push_back(current);
+			for (auto const atend : {false, true})
+			{
+				if (met[current][atend].size() != 1)
+					continue;
+				auto const [other, otherend]{met[current][atend].front()};
+				if (plain(other) && run_of[other] < 0 && met[other][otherend].size() == 1)
+				{
+					run_of[other] = index;
+					stack.push_back(other);
+				}
+			}
+		}
+	}
+	// of each run the points along the axis, by the chainage: the middle offset of them, which other runs lie beside it on the right
+	auto &runs{result.runs};
+	std::vector<std::vector<glm::dvec2>> samples(runs.size());
+	std::vector<char> level(runs.size(), 0);
+	for (std::size_t r = 0; r < runs.size(); ++r)
+	{
+		for (auto const p : runs[r].paths)
+			for (std::size_t i = 0; i < paths[p].schematic.size(); ++i)
+				if (along[p][i])
+					samples[r].push_back(paths[p].schematic[i]);
+		if (samples[r].empty())
+			continue;
+		level[r] = 1;
+		std::sort(samples[r].begin(), samples[r].end(), [](glm::dvec2 const &A, glm::dvec2 const &B) { return A.x < B.x; });
+		std::vector<double> offsets;
+		for (auto const &sample : samples[r])
+			offsets.push_back(sample.y);
+		std::nth_element(offsets.begin(), offsets.begin() + offsets.size() / 2, offsets.end());
+		runs[r].offset = offsets[offsets.size() / 2];
+	}
+	std::vector<std::vector<std::size_t>> below(runs.size());
+	std::vector<double> gaps;
+	for (std::size_t a = 0; a < runs.size(); ++a)
+		for (std::size_t b = a + 1; b < runs.size(); ++b)
+		{
+			if (0 == level[a] || 0 == level[b] || samples[a].back().x + kAbreast < samples[b].front().x || samples[b].back().x + kAbreast < samples[a].front().x)
+				continue;
+			auto votes{0};
+			for (auto const &sample : samples[a])
+			{
+				auto const found{std::lower_bound(samples[b].begin(), samples[b].end(), sample.x - kAbreast, [](glm::dvec2 const &Sample, double const Value) { return Sample.x < Value; })};
+				if (found == samples[b].end() || found->x > sample.x + kAbreast || std::abs(sample.y - found->y) <= kSideBySide)
+					continue;
+				votes += sample.y > found->y ? 1 : -1;
+				// of the tracks next to each other
+				if (auto const gap{std::abs(sample.y - found->y)}; gap > 3.0 && gap < 8.0)
+					gaps.push_back(gap);
+			}
+			if (votes > 0)
+				below[a].push_back(b);
+			else if (votes < 0)
+				below[b].push_back(a);
+		}
+	if (false == gaps.empty())
+	{
+		std::nth_element(gaps.begin(), gaps.begin() + gaps.size() / 2, gaps.end());
+		result.spacing = std::clamp(gaps[gaps.size() / 2], 3.5, 12.0);
+	}
+	// the rows: by the offsets, then pushed apart away from the axis where a track lies beside another on the same row or beyond
+	for (std::size_t r = 0; r < runs.size(); ++r)
+		runs[r].row = static_cast<int>(std::lround(runs[r].offset / result.spacing));
+	for (std::size_t pass = 0; pass < runs.size() + 1; ++pass)
+	{
+		auto changed{false};
+		for (std::size_t a = 0; a < runs.size(); ++a)
+			for (auto const b : below[a])
+				if (runs[a].row <= runs[b].row)
+				{
+					if (runs[a].offset + runs[b].offset >= 0.0)
+						runs[a].row = runs[b].row + 1;
+					else
+						runs[b].row = runs[a].row - 1;
+					changed = true;
+				}
+		if (false == changed)
+			break;
+	}
+	// the main track through the station on the middle row
+	if (false == Layout.main.empty())
+		for (std::size_t p = 0; p < count; ++p)
+			if (run_of[p] >= 0 && level[run_of[p]] && paths[p].track == Layout.main.front())
+			{
+				auto const shift{runs[run_of[p]].row};
+				for (auto &run : runs)
+					run.row -= shift;
+				break;
+			}
+	// a group of tracks far aside, as a yard, closer: no more than one row left empty before it
+	{
+		std::vector<int> used;
+		for (std::size_t r = 0; r < runs.size(); ++r)
+			if (level[r])
+				used.push_back(runs[r].row);
+		used.push_back(0);
+		std::sort(used.begin(), used.end());
+		used.erase(std::unique(used.begin(), used.end()), used.end());
+		std::map<int, int> closer{{0, 0}};
+		auto const middle{static_cast<std::size_t>(std::find(used.begin(), used.end(), 0) - used.begin())};
+		for (auto i{middle + 1}; i < used.size(); ++i)
+			closer[used[i]] = closer[used[i - 1]] + std::min(used[i] - used[i - 1], 2);
+		for (auto i{middle}; i > 0; --i)
+			closer[used[i - 1]] = closer[used[i]] - std::min(used[i] - used[i - 1], 2);
+		for (std::size_t r = 0; r < runs.size(); ++r)
+			if (level[r])
+				runs[r].row = closer[runs[r].row];
+	}
+	// the breakpoints at the ends of the switches, the stretches between them shortened
+	std::vector<double> stops;
+	for (std::size_t p = 0; p < count; ++p)
+		if (false == paths[p].approach && false == plain(p) && false == paths[p].schematic.empty())
+		{
+			stops.push_back(paths[p].schematic.front().x);
+			stops.push_back(paths[p].schematic.back().x);
+		}
+	if (stops.empty())
+		stops = {Layout.from, Layout.to};
+	std::sort(stops.begin(), stops.end());
+	for (auto const stop : stops)
+		if (result.warp.empty())
+			result.warp.emplace_back(stop, stop);
+		else if (stop - result.warp.back().x > 1.0)
+			result.warp.emplace_back(stop, result.warp.back().y + shortened(stop - result.warp.back().x));
+	// the row of each point: the row of its track where it runs along it; a switch going straight on takes the row of the track it
+	// joins, its curved path keeps it at its ends only
+	auto constexpr none{std::numeric_limits<int>::min()};
+	std::vector<std::vector<int>> rows(count);
+	for (std::size_t p = 0; p < count; ++p)
+	{
+		rows[p].assign(paths[p].schematic.size(), none);
+		if (run_of[p] >= 0 && level[run_of[p]])
+			for (std::size_t i = 0; i < rows[p].size(); ++i)
+				if (along[p][i])
+					rows[p][i] = runs[run_of[p]].row;
+	}
+	for (int pass = 0; pass < 32; ++pass)
+	{
+		auto changed{false};
+		for (std::size_t p = 0; p < count; ++p)
+		{
+			if (plain(p) || false == usable(p))
+				continue;
+			auto const joined = [&](bool const Atend) {
+				for (auto const &[other, otherend] : met[p][Atend])
+					if (auto const value{otherend ? rows[other].back() : rows[other].front()}; value != none)
+						return value;
+				return none;
+			};
+			auto &row{rows[p]};
+			auto const straight{std::all_of(along[p].begin(), along[p].end(), [](char const Along) { return Along != 0; })};
+			auto const first{along[p].front() ? joined(false) : none};
+			auto const last{along[p].back() ? joined(true) : none};
+			std::vector<int> wanted(row.size(), none);
+			if (straight && first != none && (last == none || last == first))
+				std::fill(wanted.begin(), wanted.end(), first);
+			else if (straight && last != none && first == none)
+				std::fill(wanted.begin(), wanted.end(), last);
+			else
+			{
+				wanted.front() = first;
+				wanted.back() = last;
+			}
+			if (wanted != row)
+			{
+				row = std::move(wanted);
+				changed = true;
+			}
+		}
+		if (false == changed)
+			break;
+	}
+	auto const height = [&](int const Row) { return static_cast<double>(Row) * row_height; };
+	// the way along the path from its end, the chord of its first metres
+	auto const leaving = [&](std::size_t const Path, bool const Atend) {
+		auto const &points{paths[Path].points};
+		auto const reach{std::min<std::size_t>(5, points.size() - 1)};
+		auto const way{Atend ? points[points.size() - 1 - reach] - points.back() : points[reach] - points.front()};
+		return glm::normalize(glm::dvec2{way.x, way.z} + glm::dvec2{1e-12, 0.0});
+	};
+	struct on_row
+	{
+		glm::dvec2 drawn{0.0};
+		double offset{0.0}; // in the schematic
+	};
+	// the first point on a row along the tracks on from the end of the path, away from it: at a switch along the path going on the
+	// straightest, so a slant over a ladder of switches runs to its far end
+	auto const outward = [&](std::size_t const From, bool const Atend, on_row &Found) {
+		auto current{From};
+		auto exit{Atend};
+		auto walked{0.0};
+		std::unordered_set<std::size_t> seen{From};
+		while (walked <= kSlantSearch)
+		{
+			auto const away{-leaving(current, exit)};
+			auto best{0.0};
+			auto next{count};
+			auto entered{false};
+			for (auto const &[other, otherend] : met[current][exit])
+				if (seen.count(other) == 0)
+					if (auto const straightness{glm::dot(leaving(other, otherend), away)}; straightness > best)
+					{
+						best = straightness;
+						next = other;
+						entered = otherend;
+					}
+			if (next == count)
+				return false;
+			seen.insert(next);
+			auto const &row{rows[next]};
+			auto const &schematic{paths[next].schematic};
+			auto const size{row.size()};
+			for (std::size_t k = 0; k < size; ++k)
+			{
+				auto const index{entered ? size - 1 - k : k};
+				if (k > 0)
+					walked += glm::distance(schematic[index], schematic[entered ? index + 1 : index - 1]);
+				if (walked > kSlantSearch)
+					return false;
+				if (row[index] != none)
+				{
+					Found = {{result.x(schematic[index].x), height(row[index])}, schematic[index].y};
+					return true;
+				}
+			}
+			current = next;
+			exit = false == entered;
+		}
+		return false;
+	};
+	// the points in the plot: on their rows, between them on a straight slant from the last row to the next; far from any row a few
+	// rows beyond the outer ones at most
+	auto lowest{0};
+	auto highest{0};
+	for (std::size_t r = 0; r < runs.size(); ++r)
+		if (level[r])
+		{
+			lowest = std::min(lowest, runs[r].row);
+			highest = std::max(highest, runs[r].row);
+		}
+	auto const loose = [&](double const Offset) { return std::clamp(Offset / result.spacing, lowest - 3.0, highest + 3.0) * row_height; };
+	result.paths.resize(count);
+	for (std::size_t p = 0; p < count; ++p)
+	{
+		auto const &points{paths[p].schematic};
+		auto const &row{rows[p]};
+		auto &drawn{result.paths[p]};
+		for (std::size_t i = 0; i < points.size(); ++i)
+			drawn.emplace_back(result.x(points[i].x), row[i] != none ? height(row[i]) : loose(points[i].y));
+		if (false == usable(p))
+			continue;
+		for (std::size_t i = 0; i < points.size();)
+		{
+			if (row[i] != none)
+			{
+				++i;
+				continue;
+			}
+			auto end{i};
+			while (end + 1 < points.size() && row[end + 1] == none)
+				++end;
+			on_row before{i > 0 ? on_row{drawn[i - 1], points[i - 1].y} : on_row{}};
+			on_row after{end + 1 < points.size() ? on_row{drawn[end + 1], points[end + 1].y} : on_row{}};
+			auto const from{i > 0 || outward(p, false, before)};
+			auto const to{end + 1 < points.size() || outward(p, true, after)};
+			for (auto k{i}; k <= end; ++k)
+			{
+				if (from && to && std::abs(after.drawn.x - before.drawn.x) > 0.5)
+				{
+					auto const t{std::clamp((drawn[k].x - before.drawn.x) / (after.drawn.x - before.drawn.x), 0.0, 1.0)};
+					drawn[k].y = before.drawn.y + (after.drawn.y - before.drawn.y) * t;
+				}
+				// off a row towards no other, a line out leaving the station aside
+				else if (from || to)
+				{
+					auto const &known{from ? before : after};
+					drawn[k].y = known.drawn.y + row_height * rows_off((points[k].y - known.offset) / result.spacing);
+				}
+			}
+			i = end + 1;
+		}
+	}
+	return result;
+}
+
 std::vector<TTrack *> stations(options const &Options)
 {
 	std::vector<TTrack *> result;
