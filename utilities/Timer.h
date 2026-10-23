@@ -126,6 +126,17 @@ struct subsystem_stopwatches {
         // enabled vehicles of each kind (see vehicles_forces_kind), and of them the ones standing still
         std::array<unsigned int, 4> kind {};
         std::array<unsigned int, 4> standing {};
+        // rail vehicles standing still (below 0.01 km/h) with the physics on, and what keeps it on by the test of
+        // TMoverParameters::ComputeTotalForce(); a vehicle can have several of these
+        struct awake_reasons {
+            unsigned int vehicles { 0 };
+            unsigned int cab { 0 }; // CabActive
+            unsigned int speed { 0 }; // Vel above 0.0001 km/h
+            unsigned int acceleration { 0 }; // AccS above 0.0001 m/s2
+            unsigned int switching { 0 }; // LastSwitchingTime below 5 s
+            unsigned int multipleunit { 0 }; // EZT, DMU
+            unsigned int neighbour { 0 }; // a neighbour moving or accelerating
+        } awake;
     };
     vehicle_counts vehicles; // of the frame under way
     vehicle_counts vehicleslast; // of the last frame

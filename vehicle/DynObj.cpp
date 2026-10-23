@@ -8614,6 +8614,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     counts.enabled = counts.road = counts.ai = counts.active = 0;
     counts.kind = {};
     counts.standing = {};
+    counts.awake = {};
     counts.steps += static_cast<unsigned int>( std::max( Iterationcount, 1 ) );
     // the kind of each vehicle: rail or road, near the camera or farther. the time of each vehicle in the loops below goes to its
     // kind, measured from the end of the one before it
@@ -8627,7 +8628,24 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         kinds[ index ] = static_cast<std::uint8_t>( ( road ? 2 : 0 ) + ( distant ? 1 : 0 ) );
         if( false == vehicle->bEnabled ) { continue; }
         ++counts.kind[ kinds[ index ] ];
-        if( vehicle->MoverParameters->Vel < 0.01 ) { ++counts.standing[ kinds[ index ] ]; }
+        auto const *mover { vehicle->MoverParameters };
+        if( mover->Vel < 0.01 ) {
+            ++counts.standing[ kinds[ index ] ];
+            if( ( false == road ) && mover->PhysicActivation ) {
+                // the test of TMoverParameters::ComputeTotalForce(), part by part
+                auto const moving = []( neighbour_data const &Neighbour ) {
+                    return ( Neighbour.vehicle != nullptr )
+                        && ( ( Neighbour.vehicle->MoverParameters->Vel > 0.0001 ) || ( std::abs( Neighbour.vehicle->MoverParameters->AccS ) > 0.0001 ) ); };
+                auto &awake { counts.awake };
+                ++awake.vehicles;
+                if( mover->CabActive != 0 ) { ++awake.cab; }
+                if( mover->Vel > 0.0001 ) { ++awake.speed; }
+                if( std::abs( mover->AccS ) > 0.0001 ) { ++awake.acceleration; }
+                if( mover->LastSwitchingTime < 5 ) { ++awake.switching; }
+                if( ( mover->TrainType == dt_EZT ) || ( mover->TrainType == dt_DMU ) ) { ++awake.multipleunit; }
+                if( moving( mover->Neighbours[ end::front ] ) || moving( mover->Neighbours[ end::rear ] ) ) { ++awake.neighbour; }
+            }
+        }
     }
     auto const lap = [ & ]( std::size_t const Index, std::array<Timer::frame_stopwatch, 4> &Times, std::chrono::steady_clock::time_point &Mark ) {
         auto const now { std::chrono::steady_clock::now() };

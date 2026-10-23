@@ -869,6 +869,13 @@ void opengl46_renderer::SwapBuffers()
                     count( counts.kind[ kind ] ) + " " + count( counts.standing[ kind ] ) + " " + ms( timers.vehicles_forces_kind[ kind ].average() ) + " "
                         + ms( timers.vehicles_update_kind[ kind ].average() ) );
             }
+            auto const &awake { counts.awake };
+            text += timeline(
+                3,
+                std::to_string( awake.vehicles ) + " rail standing with physics on: cab " + std::to_string( awake.cab ) + ", speed " + std::to_string( awake.speed )
+                    + ", acceleration " + std::to_string( awake.acceleration ) + ", switching " + std::to_string( awake.switching ) + ", ezt/dmu "
+                    + std::to_string( awake.multipleunit ) + ", neighbour " + std::to_string( awake.neighbour ),
+                "" );
         }
         text += timeline( 2, "secondary steps", ms( timers.sim_secondary.average() ) );
         text += timeline( 2, "trains (cabs)", ms( timers.sim_trains.average() ) );
