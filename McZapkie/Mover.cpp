@@ -4958,13 +4958,13 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	// McZapkie-031103: sprawdzanie czy warto liczyc fizyke i inne updaty
 	// ABu 300105: cos tu mieszalem , dziala teraz troche lepiej, wiec zostawiam
 	{
-		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || std::abs(AccS) > 0.0001 || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
+		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
 
 		auto const movingvehicleahead{Neighbours[end::front].vehicle != nullptr &&
-		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || std::abs(Neighbours[end::front].vehicle->MoverParameters->AccS) > 0.0001)};
+		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::front].vehicle->MoverParameters->accelerating())};
 
 		auto const movingvehiclebehind{Neighbours[end::rear].vehicle != nullptr &&
-		                               (Neighbours[end::rear].vehicle->MoverParameters->Vel > 0.0001 || std::abs(Neighbours[end::rear].vehicle->MoverParameters->AccS) > 0.0001)};
+		                               (Neighbours[end::rear].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::rear].vehicle->MoverParameters->accelerating())};
 
 		auto const calculatephysics{vehicleisactive || movingvehicleahead || movingvehiclebehind};
 
@@ -8916,6 +8916,19 @@ double TMoverParameters::GetTrainsetHighVoltage() const
 {
 
 	return std::max(GetTrainsetVoltage(coupling::highvoltage), HeatingAllow ? GetTrainsetVoltage(coupling::heating) : 0.0);
+}
+
+// *************************************************************************************************
+// whether the vehicle accelerates, for the test which turns the physics off in vehicles standing still
+// *************************************************************************************************
+bool TMoverParameters::accelerating() const
+{
+	if (std::abs(AccS) <= 0.0001)
+		return false;
+	// standing still and held by the brakes and the resistance, against the slope and the couplers: the test ComputeMovement()
+	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by
+	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain)};
+	return false == held;
 }
 
 // *************************************************************************************************

@@ -8635,12 +8635,12 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
                 // the test of TMoverParameters::ComputeTotalForce(), part by part
                 auto const moving = []( neighbour_data const &Neighbour ) {
                     return ( Neighbour.vehicle != nullptr )
-                        && ( ( Neighbour.vehicle->MoverParameters->Vel > 0.0001 ) || ( std::abs( Neighbour.vehicle->MoverParameters->AccS ) > 0.0001 ) ); };
+                        && ( ( Neighbour.vehicle->MoverParameters->Vel > 0.0001 ) || Neighbour.vehicle->MoverParameters->accelerating() ); };
                 auto &awake { counts.awake };
                 ++awake.vehicles;
                 if( mover->CabActive != 0 ) { ++awake.cab; }
                 if( mover->Vel > 0.0001 ) { ++awake.speed; }
-                if( std::abs( mover->AccS ) > 0.0001 ) { ++awake.acceleration; }
+                if( mover->accelerating() ) { ++awake.acceleration; }
                 if( mover->LastSwitchingTime < 5 ) { ++awake.switching; }
                 if( ( mover->TrainType == dt_EZT ) || ( mover->TrainType == dt_DMU ) ) { ++awake.multipleunit; }
                 if( moving( mover->Neighbours[ end::front ] ) || moving( mover->Neighbours[ end::rear ] ) ) { ++awake.neighbour; }

@@ -2325,6 +2325,10 @@ class TMoverParameters
 	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
 	double GetTrainsetHighVoltage() const;
 	bool switch_physics(bool const State);
+	// whether the vehicle accelerates, for the test which turns the physics off in vehicles standing still (ComputeTotalForce()).
+	// standing still, its acceleration is the pull of the slope and of the couplers, as the brakes and the resistance count only
+	// against a speed (FTotal); with Global.physics_sleepheld one held by them, the way ComputeMovement() keeps it standing, doesn't
+	bool accelerating() const;
 	double LocalBrakeRatio(void) const;
 	double ManualBrakeRatio(void) const;
 	double PipeRatio(void) const; /*ile napelniac*/

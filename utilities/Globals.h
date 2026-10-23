@@ -114,6 +114,7 @@ struct global_settings {
     std::string Weather{ "cloudy:" }; // current weather
     std::string Period{}; // time of the day, based on sun position
     bool FullPhysics{ true }; // full calculations performed for each simulation step
+    bool physics_sleepheld{ true }; // vehicles standing still and held by their brakes let their physics sleep, see TMoverParameters::accelerating()
     bool bnewAirCouplers{ true };
     float fMoveLight{ 0.f }; // numer dnia w roku albo -1
     bool FakeLight{ false }; // toggle between fixed and dynamic daylight

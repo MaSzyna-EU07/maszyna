@@ -132,7 +132,7 @@ struct subsystem_stopwatches {
             unsigned int vehicles { 0 };
             unsigned int cab { 0 }; // CabActive
             unsigned int speed { 0 }; // Vel above 0.0001 km/h
-            unsigned int acceleration { 0 }; // AccS above 0.0001 m/s2
+            unsigned int acceleration { 0 }; // AccS above 0.0001 m/s2, and not held by the brakes (TMoverParameters::accelerating())
             unsigned int switching { 0 }; // LastSwitchingTime below 5 s
             unsigned int multipleunit { 0 }; // EZT, DMU
             unsigned int neighbour { 0 }; // a neighbour moving or accelerating
