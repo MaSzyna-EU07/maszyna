@@ -577,9 +577,9 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 13> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 12> const modes{{
+	static std::array<track_mode, 13> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters"},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track"},
 	    {"Switch", "T", track_tab::turnout, "Puts switches into the selected straight or curve, edits the geometry of the selected switch"},
@@ -587,6 +587,7 @@ std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 	    {"Straight", "G", track_tab::straights, "The whole straight through the selected path: drag its ends or the middle, break it, shift it"},
 	    {"Curve", "C", track_tab::route, "The line through the path, switch to switch: vertices with the radii, transitions and cant of the curves"},
 	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by"},
+	    {"Catenary", "N", track_tab::catenary, "Poles with cantilevers by the track, the card chosen from the catalogue by the distance of the pole; the spans checked against the catalogue"},
 	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, a vehicle to drive"},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line"},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows"},
@@ -643,6 +644,9 @@ void editor_mode::show_track_tab(track_tab const Tab)
 	case track_tab::signals:
 		signal_scan();
 		signal_refresh(true);
+		break;
+	case track_tab::catenary:
+		catenary_scan();
 		break;
 	default:
 		break;
@@ -719,6 +723,8 @@ std::string editor_mode::track_mode_name() const
 		if (m_signal.placing)
 			return STR_C("Signal: drag along the track sets the direction of the trains, release to place it");
 		return signal_armed() != nullptr ? STR_C("Signal: LMB by the track places it on that side") : STR_C("Signal: choose its type below");
+	case track_tab::catenary:
+		return catenary_mode_name();
 	case track_tab::turntable:
 		if (m_turntable.placing)
 			return STR_C("Turntable: drag to turn the bridge, release to place it");
@@ -737,6 +743,7 @@ void editor_mode::render_track_inspector()
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
 		m_sweep.open = m_hekto.open = m_fouling.open = m_parallel.open = m_vehicle.open = false;
 	ui()->set_track(m_track_window_open);
+	ui()->set_track_title(m_track_tab == track_tab::catenary ? STR("Catenary") : std::string{});
 	if (false == m_track_window_open)
 	{
 		// a closed window takes its mode with it
@@ -774,9 +781,13 @@ void editor_mode::render_track_tool_options()
 {
 	auto *track{selected_track()};
 	// the tools themselves are in the toolbar
-	render_track_search();
-	ImGui::Spacing();
-	render_track_guide();
+	if (m_track_tab != track_tab::catenary)
+	{
+		// the catenary is a field of work of its own: no search of the paths there
+		render_track_search();
+		ImGui::Spacing();
+		render_track_guide();
+	}
 	switch (m_track_tab)
 	{
 	case track_tab::lay:
@@ -804,6 +815,7 @@ void editor_mode::render_track_tool_options()
 		break;
 	case track_tab::lineside: render_lineside_ui(); break;
 	case track_tab::signals: render_signal_ui(); break;
+	case track_tab::catenary: render_catenary_ui(); break;
 	case track_tab::turntable: render_turntable_ui(); break;
 	default:
 		render_track_set_ui();
@@ -3515,6 +3527,10 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		if (m_signal.selected != 0)
 			hints.push_back({"Del", "removes the selected signal with its event"});
 	}
+	else if (m_track_window_open && m_track_tab == track_tab::catenary)
+	{
+		catenary_key_hints(hints);
+	}
 	else if (m_track_window_open && m_track_tab == track_tab::joints)
 		hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
 	else if (m_track_window_open && m_track_tab == track_tab::infra)
@@ -5053,8 +5069,11 @@ void editor_mode::draw_build_overlay() const
 		}
 	};
 	auto const &display{ImGui::GetIO().DisplaySize};
+	// the ends of all the paths; not in the catenary, where they're of no use and cost a lot in a big scenery
 	for (auto const *track : simulation::Paths.sequence())
 	{
+		if (m_track_tab == track_tab::catenary)
+			break;
 		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
 			continue;
 		for (auto const &path : track->m_paths)

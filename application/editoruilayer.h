@@ -55,6 +55,8 @@ class editor_ui : public ui_layer
 		m_filloptions = std::move(Renderer);
 	}
 	// the open track window takes the mouse over, whichever toolset tab is chosen
+	// the title of the tool options of the tracks; empty: "Tracks"
+	void set_track_title(std::string Title) { m_tracktitle = std::move(Title); }
 	void set_track(bool const Track)
 	{
 		m_track = Track;
@@ -207,6 +209,7 @@ class editor_ui : public ui_layer
 	bool m_sceneopen{true};
 	std::function<void(scene::basic_node *, bool)> m_sceneselect;
 	std::function<void()> m_tracktools;
+	std::string m_tracktitle;
 	std::function<void()> m_trackselection;
 	int m_toolmode{-1}; // edit mode or field of work the tool options were drawn for the last time
 	workspace m_workspace{workspace::none};

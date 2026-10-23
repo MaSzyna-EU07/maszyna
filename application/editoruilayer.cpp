@@ -736,7 +736,7 @@ void editor_ui::render_tool_options()
 			name = STR_C("Copy to bank");
 			break;
 		case nodebank_panel::TRACK:
-			name = STR_C("Tracks");
+			name = m_tracktitle.empty() ? STR_C("Tracks") : m_tracktitle.c_str();
 			break;
 		default:
 			break;

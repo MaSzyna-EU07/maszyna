@@ -5213,3 +5213,684 @@ msgstr "Punkt znikania"
 
 msgid "Pedestrian crossing"
 msgstr "Przejście dla pieszych"
+
+msgid "No pole: the catalogue (data/traction_cantilevers.txt, data/traction_supports.txt) isn't loaded or has no poles"
+msgstr "Brak słupa: katalog (data/traction_cantilevers.txt, data/traction_supports.txt) nie jest wczytany albo nie ma w nim słupów"
+
+msgid "No card %d0-%d9 in execution %d for A = %.2f m (cards cover A 1.45-4.45 m, not all of them are in every family)"
+msgstr "Brak karty %d0-%d9 w wykonaniu %d dla A = %.2f m (karty obejmują A 1,45-4,45 m, nie w każdej rodzinie są wszystkie)"
+
+msgid "curve R %.0f m"
+msgstr "łuk R %.0f m"
+
+msgid "towards the pole"
+msgstr "do słupa"
+
+msgid "away from the pole"
+msgstr "od słupa"
+
+msgid "Pole here, %s, wires %s: %s"
+msgstr "Słup tutaj, %s, odsuw %s: %s"
+
+msgid "Click: pole %s, card %d execution %d, A = %.2f m (%s, wires %s)"
+msgstr "Klik: słup %s, karta %d wykonanie %d, A = %.2f m (%s, odsuw %s)"
+
+msgid "The suspension isn't by any track: it can't be changed here"
+msgstr "Podwieszenie nie stoi przy żadnym torze: tutaj go nie zmienisz"
+
+msgid "Pole %s with card %d execution %d placed, A = %.2f m"
+msgstr "Postawiony słup %s z kartą %d wykonanie %d, A = %.2f m"
+
+msgid " - the cantilever didn't assemble, see the log"
+msgstr " - wysięgnik się nie złożył, szczegóły w logu"
+
+msgid "Pole removed"
+msgstr "Słup usunięty"
+
+msgid "Taken back"
+msgstr "Cofnięte"
+
+msgid "The cantilever catalogue isn't loaded: data/traction_cantilevers.txt and data/traction_supports.txt (with the poles) are needed"
+msgstr "Katalog wysięgników nie jest wczytany: potrzebne są data/traction_cantilevers.txt i data/traction_supports.txt (ze słupami)"
+
+msgid "Catenary file"
+msgstr "Plik sieci"
+
+msgid "File in the scenery directory the new poles go to; a new one is added to the scenery with the directive catenary <file> endcatenary when it's saved"
+msgstr "Plik w katalogu scenerii, do którego trafiają nowe słupy; nowy plik jest dopisywany do scenerii dyrektywą catenary <plik> endcatenary przy zapisie"
+
+msgid "Selected pole (%s): changes apply to it at once"
+msgstr "Zaznaczony słup (%s): zmiany od razu na nim"
+
+msgid "Pole"
+msgstr "Słup"
+
+msgid "Face of the pole from the track axis (m)"
+msgstr "Czoło słupa od osi toru (m)"
+
+msgid "Structure gauge 2.20 or 2.50 m by the catalogue (card 0007); drag it and the cantilever follows, the card changes with band A. Ctrl+click types a value"
+msgstr "Skrajnia 2,20 albo 2,50 m wg katalogu (karta 0007); przeciągnij, a wysięgnik idzie za tym, karta zmienia się z pasmem A. Ctrl+klik wpisuje wartość"
+
+msgid "Stagger of the wires (m)"
+msgstr "Odsuw przewodów (m)"
+
+msgid "Wires towards the pole"
+msgstr "Odsuw do słupa"
+
+msgid "On a straight the wires zigzag: towards the pole and away from it in turn. On a curve they go to its outside, which decides it"
+msgstr "Na prostej odsuw na zmianę do słupa i od słupa. Na łuku przewody idą na zewnątrz łuku i to rozstrzyga"
+
+msgid "In turn"
+msgstr "Na zmianę"
+
+msgid "After a pole on a straight is placed, the next one gets the wires the other way"
+msgstr "Po postawieniu słupa na prostej następny dostaje odsuw w drugą stronę"
+
+msgid "by the track"
+msgstr "wg toru"
+
+msgid "curve"
+msgstr "łuk"
+
+msgid "Cards for"
+msgstr "Karty dla"
+
+msgid "Swinging cantilever (11xx)"
+msgstr "Wysięgnik przechylny (11xx)"
+
+msgid "Off: the fixed ones (12xx)"
+msgstr "Wyłączone: nieprzechylne (12xx)"
+
+msgid "Execution"
+msgstr "Wykonanie"
+
+msgid "Contact wires over the rails (m)"
+msgstr "Przewody jezdne nad główką szyny (m)"
+
+msgid "25 kV insulators"
+msgstr "Izolatory 25 kV"
+
+msgid "Network (for the spans)"
+msgstr "Typ sieci (do przęseł)"
+
+msgid "Wind zone I"
+msgstr "Strefa wiatrowa I"
+
+msgid "Wind zone II"
+msgstr "Strefa wiatrowa II"
+
+msgid "No data/traction_layout.txt: the spans aren't checked"
+msgstr "Brak data/traction_layout.txt: rozpiętości przęseł nie są sprawdzane"
+
+msgid "Card %d execution %d, A = %.2f m, %zu parts"
+msgstr "Karta %d wykonanie %d, A = %.2f m, części: %zu"
+
+msgid "The cantilever doesn't assemble:"
+msgstr "Wysięgnik się nie składa:"
+
+msgid "Remove the pole"
+msgstr "Usuń słup"
+
+msgid "Take back"
+msgstr "Cofnij"
+
+msgid "Takes back the last change of the catenary (Ctrl+Z of the editor doesn't)"
+msgstr "Cofa ostatnią zmianę sieci (Ctrl+Z edytora jej nie cofa)"
+
+msgid "The catenary files are written when the scenery is saved"
+msgstr "Pliki sieci zapisują się razem ze scenerią"
+
+msgid "doesn't assemble"
+msgstr "nie składa się"
+
+msgid "1 - two contact wires, light arms, hk 1.70"
+msgstr "1 - sieć dwudrutowa, ramiona lekkie, hk 1,70"
+
+msgid "2 - two contact wires, heavy arms, hk 1.70"
+msgstr "2 - sieć dwudrutowa, ramiona ciężkie, hk 1,70"
+
+msgid "3 - one contact wire, heavy arms, hk 1.70"
+msgstr "3 - sieć jednodrutowa, ramiona ciężkie, hk 1,70"
+
+msgid "4 - one contact wire, heavy arms, hk 1.30"
+msgstr "4 - sieć jednodrutowa, ramiona ciężkie, hk 1,30"
+
+msgid "5 - one contact wire, light arms, hk 1.70"
+msgstr "5 - sieć jednodrutowa, ramiona lekkie, hk 1,70"
+
+msgid "Catenary"
+msgstr "Sieć trakcyjna"
+
+msgid "Poles with cantilevers by the track, the card chosen from the catalogue by the distance of the pole; the spans checked against the catalogue"
+msgstr "Słupy z wysięgnikami przy torze, karta z katalogu dobierana z odległości słupa; przęsła sprawdzane z tablicami katalogu"
+
+msgid "Catenary: the selected pole follows the settings below"
+msgstr "Sieć trakcyjna: zaznaczony słup idzie za ustawieniami poniżej"
+
+msgid "Catenary: LMB by the track places a pole on that side, LMB on a pole selects it"
+msgstr "Sieć trakcyjna: LPM przy torze stawia słup po tej stronie, LPM na słupie go zaznacza"
+
+msgid "places a pole on that side, with the card for its distance"
+msgstr "stawia słup po tej stronie, z kartą dobraną do odległości"
+
+msgid "LMB on a pole"
+msgstr "LPM na słupie"
+
+msgid "selects it: the settings then change it at once"
+msgstr "zaznacza go: ustawienia od razu go zmieniają"
+
+msgid "removes the selected pole"
+msgstr "usuwa zaznaczony słup"
+
+msgid "Click: select the pole"
+msgstr "Klik: zaznacz słup"
+
+msgid "The catenary couldn't be saved: %s"
+msgstr "Nie udało się zapisać sieci: %s"
+
+msgid "with the span from the last pole, %.1f m"
+msgstr "z przęsłem od ostatniego słupa, %.1f m"
+
+msgid "Settings copied to %zu poles"
+msgstr "Ustawienia skopiowane na słupy: %zu"
+
+msgid "Settings copied to %zu poles, %zu couldn't take them (no card for their A or not by a track)"
+msgstr "Ustawienia skopiowane na słupy: %zu, nie dało się na: %zu (brak karty dla ich A albo nie stoją przy torze)"
+
+msgid "New chains take these settings; LMB on a span selects its chain"
+msgstr "Nowe łańcuchy dostają te ustawienia; LPM na przęśle zaznacza jego łańcuch"
+
+msgid "Chain %s: %zu poles, %zu spans; changes apply to all of them"
+msgstr "Łańcuch %s: słupy %zu, przęsła %zu; zmiany od razu na całym łańcuchu"
+
+msgid "Network type"
+msgstr "Typ sieci"
+
+msgid "Material"
+msgstr "Materiał"
+
+msgid "Wires"
+msgstr "Druty"
+
+msgid "Power source"
+msgstr "Zasilacz"
+
+msgid "Voltage (V)"
+msgstr "Napięcie (V)"
+
+msgid "Continue the chain from its end"
+msgstr "Ciągnij łańcuch od końca"
+
+msgid "from its start"
+msgstr "od początku"
+
+msgid "Chain: a span from the last pole"
+msgstr "Łańcuch: przęsło od ostatniego słupa"
+
+msgid "Each pole placed is joined with a span to the one placed before it, one chain from anchor to anchor"
+msgstr "Każdy stawiany słup łączy się przęsłem z poprzednim, jeden łańcuch od kotwy do kotwy"
+
+msgid "End the chain"
+msgstr "Zakończ łańcuch"
+
+msgid "The next pole of the chain gets the wires the other way than the last one; after three the same way in a row it keeps that way, until one goes the other way"
+msgstr "Następny słup łańcucha dostaje odsuw w drugą stronę niż ostatni; po trzech z rzędu w tę samą stronę zostaje tak, aż któryś pójdzie w drugą"
+
+msgid "Copy to:"
+msgstr "Kopiuj na:"
+
+msgid "previous"
+msgstr "poprzedni"
+
+msgid "next"
+msgstr "następny"
+
+msgid "both"
+msgstr "oba"
+
+msgid "the whole chain"
+msgstr "cały łańcuch"
+
+msgid "The pole, its face from the track, execution, height of the wires and insulators; each pole keeps its stagger"
+msgstr "Słup, czoło od toru, wykonanie, wysokość drutów i izolatory; każdy słup zachowuje swój odsuw"
+
+msgid "Click: select the chain of this span"
+msgstr "Klik: zaznacz łańcuch tego przęsła"
+
+msgid "new"
+msgstr "nowe"
+
+msgid "worn"
+msgstr "przejściowe"
+
+msgid "tarnished"
+msgstr "zaśniedziałe"
+
+msgid "No drops in the catalogue for this beam"
+msgstr "Brak w katalogu zwisów do tego dźwigara"
+
+msgid "The track runs along the beam of the gantry"
+msgstr "Tor biegnie wzdłuż dźwigara bramki"
+
+msgid "The drop would be off the beam of the gantry"
+msgstr "Zwis wypadłby poza dźwigarem bramki"
+
+msgid "The cantilevers now go on drops on this gantry: LMB over a track"
+msgstr "Wysięgniki idą teraz na zwisy tej bramki: LPM nad torem"
+
+msgid "Gantry %s with beam %s placed; LMB over a track puts a drop with a cantilever on it"
+msgstr "Postawiona bramka %s z dźwigarem %s; LPM nad torem wiesza na niej zwis z wysięgnikiem"
+
+msgid "First mast"
+msgstr "Pierwszy słup"
+
+msgid "Second mast"
+msgstr "Drugi słup"
+
+msgid "Beam:"
+msgstr "Dźwigar:"
+
+msgid "lower mount"
+msgstr "dolne mocowanie"
+
+msgid "upper mount"
+msgstr "górne mocowanie"
+
+msgid "Beam on side +"
+msgstr "Dźwigar po stronie +"
+
+msgid "Beam on side -"
+msgstr "Dźwigar po stronie -"
+
+msgid "On which side of the masts, along the track, the beam is fixed"
+msgstr "Po której stronie słupów (wzdłuż toru) mocowany jest dźwigar"
+
+msgid "Cancel the gantry"
+msgstr "Anuluj bramkę"
+
+msgid "Place a gantry"
+msgstr "Postaw bramkę"
+
+msgid "LMB the first mast, LMB the second: the beam is the one of the catalogue nearest to that distance"
+msgstr "LPM pierwszy słup, LPM drugi: dźwigar z katalogu najbliższy tej odległości"
+
+msgid "Gantry %s, beam %s: the cantilevers go on drops on it"
+msgstr "Bramka %s, dźwigar %s: wysięgniki idą na zwisy na niej"
+
+msgid "Remove the gantry"
+msgstr "Usuń bramkę"
+
+msgid "Back to the poles"
+msgstr "Wróć do słupów"
+
+msgid "Click: the second mast, as far as the nearest beam spans"
+msgstr "Klik: drugi słup, w odległości najbliższego dźwigara"
+
+msgid "Click: the first mast of the gantry"
+msgstr "Klik: pierwszy słup bramki"
+
+msgid "Click: put the cantilevers on drops on this gantry"
+msgstr "Klik: wysięgniki na zwisach tej bramki"
+
+msgid "The cantilevers now go on drops on this gantry: LMB over a track; drag the beam to move the gantry"
+msgstr "Wysięgniki idą teraz na zwisy tej bramki: LPM nad torem; przeciągnij dźwigar, żeby przesunąć bramkę"
+
+msgid "Square to the track"
+msgstr "Prostopadle do toru"
+
+msgid "The beam goes square to the track the first mast is put by"
+msgstr "Dźwigar prostopadle do toru, przy którym stoi pierwszy słup"
+
+msgid "Texture"
+msgstr "Tekstura"
+
+msgid "Replaceable texture of the masts, the beam and the drops of the new gantry (the models have none of their own)"
+msgstr "Tekstura wymienna słupów, dźwigara i zwisów nowej bramki (modele nie mają własnej)"
+
+msgid "Mast %d at the height (m)"
+msgstr "Słup %d na wysokości (m)"
+
+msgid "The zero of the mast is at the rail heads (the clearance of the beam is counted from it); the ground is taken by the foundation head of the variant -1...-4. Drag or Ctrl+click to type"
+msgstr "Zero słupa jest w główce szyny (od niej liczony jest prześwit dźwigara); teren bierze głowica fundamentu wykonania -1…-4. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid "Give it the texture"
+msgstr "Nadaj teksturę"
+
+msgid "Drag: move the gantry"
+msgstr "Przeciągnij: przesuń bramkę"
+
+msgid "Click: put the cantilevers on drops on this gantry, drag: move it"
+msgstr "Klik: wysięgniki na zwisach tej bramki, przeciągnij: przesuń ją"
+
+msgid "Beam"
+msgstr "Dźwigar"
+
+msgid "Take the masts"
+msgstr "Weź słupy"
+
+msgid "The masts chosen above go to this gantry; the first mast stays, the second goes as far as the beam needs"
+msgstr "Słupy wybrane wyżej idą do tej bramki; pierwszy zostaje, drugi odsuwa się tyle, ile trzeba dźwigarowi"
+
+msgid "Turn (degrees)"
+msgstr "Obrót (stopnie)"
+
+msgid "Drag sideways: turns the gantry around its middle"
+msgstr "Przeciągnij w bok: obraca bramkę wokół jej środka"
+
+msgid "No track near the gantry"
+msgstr "Brak toru przy bramce"
+
+msgid "Gantry %s: beam %s, masts %.3f m apart"
+msgstr "Bramka %s: dźwigar %s, słupy %.3f m od siebie"
+
+msgid "Takes back the last change of the catenary (also Ctrl+Z while this tool is open)"
+msgstr "Cofa ostatnią zmianę sieci (także Ctrl+Z przy otwartym tym narzędziu)"
+
+msgid "the shortest which fits"
+msgstr "najkrótszy, który pasuje"
+
+msgid "Drop"
+msgstr "Zwis"
+
+msgid "Drop of the pole"
+msgstr "Zwis wysięgnika"
+
+msgid "Gantry at the height (m)"
+msgstr "Bramka na wysokości (m)"
+
+msgid "On drops"
+msgstr "Na zwisach"
+
+msgid "On the masts"
+msgstr "Na słupach bramki"
+
+msgid "LMB over a track hangs the cantilever on a drop moved along the beam to the track"
+msgstr "LPM nad torem wiesza wysięgnik na zwisie przesuniętym po dźwigarze nad tor"
+
+msgid "LMB by a track puts the cantilever straight on the mast of the gantry on that side; the card from the distance of the mast"
+msgstr "LPM przy torze stawia wysięgnik wprost na słupie bramki po tej stronie; karta z odległości słupa"
+
+msgid "No mast of this gantry on that side of the track"
+msgstr "Po tej stronie toru nie ma słupa tej bramki"
+
+msgid "Mast %s has no mounts for a cantilever (strut/stay in its entry in traction_supports.txt)"
+msgstr "Słup %s nie ma mocowań wysięgnika (strut/stay w jego wpisie w traction_supports.txt)"
+
+msgid "Click: pole %s, card %04d execution %d, A = %.2f m (%s, wires %s)"
+msgstr "Klik: słup %s, karta %04d wykonanie %d, A = %.2f m (%s, odsuw %s)"
+
+msgid "No card of the group for A = %.2f m"
+msgstr "W tej grupie nie ma karty dla A = %.2f m"
+
+msgid "execution %d has no card for this A, execution %d taken"
+msgstr "wykonanie %d nie ma karty dla tego A, wzięte wykonanie %d"
+
+msgid "Kind"
+msgstr "Rodzaj"
+
+msgid "Family"
+msgstr "Rodzina"
+
+msgid "Card"
+msgstr "Karta"
+
+msgid "by the track and the stagger"
+msgstr "z toru i odsuwu"
+
+msgid "by the distance A"
+msgstr "z odległości A"
+
+msgid "Automatic: the family for a straight or a curve and for the wires towards or away from the pole, as the place by the track has it"
+msgstr "Automatycznie: rodzina na prostą albo łuk i do odsuwu do słupa albo od słupa, tak jak wypada w tym miejscu toru"
+
+msgid "execution %d"
+msgstr "wykonanie %d"
+
+msgid "Execution: from the distance A (the band of the card)"
+msgstr "Wykonanie: z odległości A (pasmo karty)"
+
+msgid ", on piles"
+msgstr ", na palach"
+
+msgid ", on a cast foundation"
+msgstr ", na fundamencie wylewanym"
+
+msgid ", on the line"
+msgstr ", na szlaku"
+
+msgid ", in a station"
+msgstr ", na stacji"
+
+msgid ", on a platform"
+msgstr ", na peronie"
+
+msgid "Other (not described in traction_catalog.txt)"
+msgstr "Inne (bez opisu w traction_catalog.txt)"
+
+msgid "Next span from mast %d"
+msgstr "Następne przęsło od słupa %d"
+
+msgid "LMB: the next mast of the gantry, as far as the nearest beam spans (the mast type: the second one above)"
+msgstr "LPM: następny słup bramki, tak daleko, jak sięga najbliższy dźwigar (typ słupa: drugi z wybranych wyżej)"
+
+msgid "An end mast: a beam can go on one side of it only; a through mast is needed"
+msgstr "Słup końcowy: dźwigar może być tylko z jednej strony; potrzebny słup przelotowy"
+
+msgid "This mast has beams on both sides already"
+msgstr "Ten słup ma już dźwigary z obu stron"
+
+msgid "The beam of the next span on the other side of this through mast, in line with this span"
+msgstr "Dźwigar następnego przęsła po drugiej stronie tego słupa przelotowego, w linii z tym przęsłem"
+
+msgid "(through)"
+msgstr " (przelotowy)"
+
+msgid " (end)"
+msgstr " (końcowy)"
+
+msgid "Place a single beam element"
+msgstr "Postaw pojedynczy element dźwigara"
+
+msgid "LMB the through mast (the first mast above), LMB where the element points: the element of the catalogue nearest to that length"
+msgstr "LPM: słup przelotowy (pierwszy słup wybrany wyżej), LPM: dokąd sięga element - element z katalogu najbliższy tej długości"
+
+msgid "A single beam element (3017-3025, 1910) on one through mast: on one side fixed to the mast, on the other end to a console"
+msgstr "Pojedynczy element dźwigara (3017-3025, 1910) na jednym słupie przelotowym: z jednej strony mocowany do słupa, z drugiej do konsoli"
+
+msgid "Single element from mast %d"
+msgstr "Pojedynczy element od słupa %d"
+
+msgid "LMB: as far as the single element should reach, in line with this span"
+msgstr "LPM: dokąd ma sięgać pojedynczy element, w linii z tym przęsłem"
+
+msgid "A single beam element (3017-3025, 1910) on the other side of this through mast, in line with this span"
+msgstr "Pojedynczy element dźwigara (3017-3025, 1910) po drugiej stronie tego słupa przelotowego, w linii z tym przęsłem"
+
+msgid "Own system height"
+msgstr "Własna wysokość konstrukcyjna"
+
+msgid "Off: the system height of the card (1.70 / 1.30 ...). On: the messenger at the height set here over the contact wires; the stay mount goes with it, the solver warns when the cantilever can't take it"
+msgstr "Wyłączone: wysokość konstrukcyjna z karty (1,70 / 1,30 ...). Włączone: lina nośna na podanej wysokości nad przewodami jezdnymi; mocowanie odciągu idzie za nią, solver ostrzega, gdy wysięgnik się nie złoży"
+
+msgid "hk (m)"
+msgstr "hk (m)"
+
+msgid "Beam of this gantry:"
+msgstr "Dźwigar tej bramki:"
+
+msgid "Gantry %s: the beam on the upper mount"
+msgstr "Bramka %s: dźwigar na górnym mocowaniu"
+
+msgid "Gantry %s: the beam on the lower mount"
+msgstr "Bramka %s: dźwigar na dolnym mocowaniu"
+
+msgid "Stop hanging the wires"
+msgstr "Zakończ rozwieszanie"
+
+msgid "Hang the wires to another pole"
+msgstr "Rozwieś druty do innego słupa"
+
+msgid "LMB the next pole: the span from this one is hung to it; then the next one, and so on"
+msgstr "LPM na następny słup: rozwiesza się do niego przęsło od tego; potem kolejny i tak dalej"
+
+msgid "Joins this pole with the poles clicked after it: it goes on the chain at its end, a new chain of the two, or two chains become one"
+msgstr "Łączy ten słup z klikniętymi po nim: dołącza do końca łańcucha, tworzy nowy łańcuch z dwóch słupów albo skleja dwa łańcuchy w jeden"
+
+msgid "The poles are in different files: a chain can't join them"
+msgstr "Słupy są w różnych plikach: łańcuch ich nie połączy"
+
+msgid "Both poles are in this chain already"
+msgstr "Oba słupy są już w tym łańcuchu"
+
+msgid "The pole is in the middle of a chain: the spans go on from the ends of a chain only"
+msgstr "Słup jest w środku łańcucha: przęsła dokłada się tylko od końców łańcucha"
+
+msgid "Span %s - %s hung; LMB the next pole, or stop with the button"
+msgstr "Przęsło %s - %s rozwieszone; LPM na następny słup albo zakończ przyciskiem"
+
+msgid "Click: hang the span to this pole"
+msgstr "Klik: rozwieś przęsło do tego słupa"
+
+msgid " (second mast %.2f m from the track axis)"
+msgstr " (drugi słup %.2f m od osi toru)"
+
+msgid "Cantilevers"
+msgstr "Wysięgniki"
+
+msgid "Face from the track axis (m)##placing"
+msgstr "Lico od osi toru (m)##placing"
+
+msgid "First mast from the track"
+msgstr "Pierwszy słup od toru"
+
+msgid "From the axis of the nearest track to the face of the mast; drag or Ctrl+click and type: the whole gantry moves square to that track"
+msgstr "Od osi najbliższego toru do lica słupa; przeciągnij albo Ctrl+klik i wpisz: cała bramka przesuwa się prostopadle do tego toru"
+
+msgid "Gantries"
+msgstr "Bramki"
+
+msgid "Gantries: LMB by a track puts a cantilever on the selected gantry, drag the beam to move it"
+msgstr "Bramki: LPM przy torze wstawia wysięgnik na zaznaczonej bramce, przeciągnij dźwigar, żeby ją przesunąć"
+
+msgid "Gantries: LMB on a gantry selects it, or place a new one below"
+msgstr "Bramki: LPM na bramce ją zaznacza, albo postaw nową niżej"
+
+msgid "Gantries: LMB the masts"
+msgstr "Bramki: LPM – słupy"
+
+msgid "Gantries: masts and beams, the cantilevers on their drops and masts"
+msgstr "Bramki: słupy i dźwigary, wysięgniki na zwisach i na słupach"
+
+msgid "Gantry %s: mast %d %.2f m from the track axis"
+msgstr "Bramka %s: słup %d %.2f m od osi toru"
+
+msgid "LMB on a pole selects it: the wires can then be hung from it to the next poles; LMB on a span selects its chain"
+msgstr "LPM na słupie go zaznacza: potem można od niego rozwiesić druty do kolejnych słupów; LPM na przęśle zaznacza jego łańcuch"
+
+msgid "Mast %d: face from the track axis (m)"
+msgstr "Słup %d: lico od osi toru (m)"
+
+msgid "Pole %s"
+msgstr "Słup %s"
+
+msgid "Poles"
+msgstr "Słupy"
+
+msgid "Poles with cantilevers: LMB by a track places one, LMB on a pole selects it"
+msgstr "Słupy z wysięgnikami: LPM przy torze stawia słup, LPM na słupie go zaznacza"
+
+msgid "The chains: the type of the network, the wires, the spans between the poles"
+msgstr "Łańcuchy: typ sieci, druty, przęsła między słupami"
+
+msgid "The first mast goes with its face at this distance from the axis of the track under the cursor, on the side of the cursor; the second one as far as the beam spans"
+msgstr "Pierwszy słup staje licem w tej odległości od osi toru pod kursorem, po stronie kursora; drugi tak daleko, jak sięga dźwigar"
+
+msgid "The overhead catenary: poles with cantilevers, gantries, the wires of the chains"
+msgstr "Sieć trakcyjna: słupy z wysięgnikami, bramki, druty łańcuchów"
+
+msgid "Wires: LMB on a span selects its chain, LMB on a pole selects it"
+msgstr "Druty: LPM na przęśle zaznacza łańcuch, LPM na słupie zaznacza słup"
+
+msgid "Wires: LMB on the next pole hangs the span to it"
+msgstr "Druty: LPM na następnym słupie rozwiesza do niego przęsło"
+
+msgid "From the axis of the track to the face of the first mast. Placing: the first mast goes there. A gantry selected: drag or Ctrl+click and type, the gantry moves square to the track; dragged with the mouse it goes only along the track, at this distance"
+msgstr "Od osi toru do lica pierwszego słupa. Przy wstawianiu: tam staje pierwszy słup. Przy zaznaczonej bramce: przeciągnij albo Ctrl+klik i wpisz – bramka przesuwa się prostopadle do toru; przeciągana myszą jedzie tylko wzdłuż toru, w tej odległości"
+
+msgid "Drag sideways: turns the gantry around its first mast"
+msgstr "Przeciągnij w bok: obraca bramkę wokół pierwszego słupa"
+
+msgid "ERROR: pole %s doesn't stand by a switch, take a steel one"
+msgstr "BŁĄD: słup %s nie może stać przy rozjeździe, daj stalowy"
+
+msgid "%s by a switch"
+msgstr "%s przy rozjeździe!"
+
+msgid "Anchors (weight tensioning, card 23-0461)"
+msgstr "Kotwienia (ciężarowe, karta 23-0461)"
+
+msgid "Anchor the start of the chain"
+msgstr "Zakotwij początek łańcucha"
+
+msgid "Anchor the end of the chain"
+msgstr "Zakotwij koniec łańcucha"
+
+msgid "Anchored: the last span goes without droppers to the tensioning device"
+msgstr "Zakotwiono: ostatnie przęsło bez wieszaków do urządzenia naprężającego"
+
+msgid "An anchor pole 24 m past the last pole, in line with it, with the weight tensioning device; the last span hangs without droppers"
+msgstr "Słup kotwowy 24 m za ostatnim słupem, w jego linii, z urządzeniem naprężającym; ostatnie przęsło wisi bez wieszaków"
+
+msgid "Start: anchor %s"
+msgstr "Początek: kotwienie %s"
+
+msgid "End: anchor %s"
+msgstr "Koniec: kotwienie %s"
+
+msgid "Anchor pole from the last pole (m)"
+msgstr "Słup kotwowy od ostatniego słupa (m)"
+
+msgid "Anchor pole"
+msgstr "Słup kotwowy"
+
+msgid "From the middle anchor (m)"
+msgstr "Od kotwienia środkowego (m)"
+
+msgid "Half-section length (from the middle or fixed anchor): the weights and the pulley move with the air temperature this much more"
+msgstr "Długość półodcinka (od kotwienia środkowego albo stałego): o tyle więcej ciężary i rolka chodzą z temperaturą powietrza"
+
+msgid "Weights"
+msgstr "Ciężary"
+
+msgid "Top weight"
+msgstr "Najwyższy ciężar"
+
+msgid "Weights missing"
+msgstr "Brakujące ciężary"
+
+msgid "Stolen from the top of the stack: about 100 daN less tension each"
+msgstr "Zdjęte z góry stosu: każdy to ok. 100 daN naciągu mniej"
+
+msgid "Wires stretched since regulated (cm)"
+msgstr "Wydłużenie sieci od regulacji (cm)"
+
+msgid "Creep and wear of an old network: the weights hang 4 times this much lower; on the ground the network loses its tension"
+msgstr "Pełzanie i zużycie starej sieci: ciężary wiszą 4 razy tyle niżej; oparte o grunt - sieć traci naciąg"
+
+msgid "%.1f deg C: pulley %.2f m from the pole, weights %.2f m over the rails; %d weights, messenger %.0f daN, contact wires %.0f daN"
+msgstr "%.1f °C: rolka %.2f m od słupa, ciężary %.2f m nad szynami; ciężarów %d, lina %.0f daN, przewody %.0f daN"
+
+msgid "Remove the anchor"
+msgstr "Usuń kotwienie"
+
+msgid "yellow"
+msgstr "żółte"
+
+msgid "grey"
+msgstr "szare"
+
+msgid "yellow, brushed"
+msgstr "żółte, pędzlowane"
+
+msgid "grey, shabby"
+msgstr "szare, brzydkie"

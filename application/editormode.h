@@ -48,6 +48,8 @@ struct vehicle_desc;
 struct skin_set;
 }
 
+struct catenary_editor; // application/editormodecatenary.h
+
 class editor_mode : public application_mode, private editor_track::observer
 {
 
@@ -606,7 +608,8 @@ class editor_mode : public application_mode, private editor_track::observer
 		surroundings,
 		tracks,
 		roads,
-		terrain
+		terrain,
+		catenary // the catenary tool of the tracks, as a field of work of its own
 	};
 	work_area current_work_area() const;
 	void choose_work_area(work_area const Area);
@@ -1013,7 +1016,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void update_build_tools();
 	void draw_build_overlay() const;
 	// modes of the track editor, one at a time: path is the plain selection
-	enum class track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals };
+	enum class track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, signals, catenary };
 	struct track_mode
 	{
 		char const *label;
@@ -1021,7 +1024,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		track_tab tab;
 		char const *tooltip;
 	};
-	static std::array<track_mode, 12> const &track_modes();
+	static std::array<track_mode, 13> const &track_modes();
 	// the objects along the track: a tab for each tool
 	int m_lineside_tab{0};
 	void render_lineside_ui();
@@ -1078,7 +1081,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, catenary };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -1087,6 +1090,7 @@ class editor_mode : public application_mode, private editor_track::observer
 		glm::dvec3 position{0.0};
 		editor_track::snap_target snap;
 		std::string action;
+		int detail{0}; // what the tool of the intent means by it (catenary: what was hit)
 	};
 	track_intent m_intent;
 	track_intent track_intent_at(int const Mods);
@@ -1488,6 +1492,28 @@ class editor_mode : public application_mode, private editor_track::observer
 	void draw_signal_overlay() const;
 	std::string signal_intent_label(signal_template const &Template, signal_spot const &Spot) const;
 	std::string signal_variant(signal_template const &Template, signal_spot const &Spot) const;
+
+	// catenary (sieć trakcyjna): the whole tool, its state and its workings are in application/editormodecatenary.h/.cpp;
+	// here only the fixed hooks the rest of the editor calls, so changes of the tool rebuild only its own file
+	friend struct catenary_editor;
+	std::shared_ptr<catenary_editor> m_catenary_editor;
+	catenary_editor &catenary_tool();
+	void catenary_scan();
+	bool catenary_intent(track_intent &Intent); // in the catenary tab: what a click would do; false: nothing
+	void catenary_press(track_intent const &Intent);
+	void catenary_release();
+	bool catenary_dragging() const;
+	void catenary_drag_update();
+	void draw_catenary_overlay() const;
+	void render_catenary_ui();
+	bool catenary_delete_selected();
+	bool catenary_undo(); // false: nothing of its own to take back
+	bool catenary_on_key(int const Key, int const Action, int const Mods); // true: the key was used by the tool
+	std::string catenary_mode_name() const;
+	void catenary_key_hints(std::vector<key_hint> &Hints) const;
+	// the page of the catenary field of work: 0 poles, 1 gantries, 2 wires
+	int catenary_page();
+	void catenary_choose_page(int const Page);
 
 	// a model laid along the track: bent to follow it, or repeated along it
 	struct sweep_tool

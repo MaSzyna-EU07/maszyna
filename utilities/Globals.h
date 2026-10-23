@@ -78,6 +78,7 @@ struct global_settings {
     // filesystem
     bool bLoadTraction{ true };
     bool bSmoothTraction{ true };
+    bool CatenaryProcedural{ true }; // przęsła z dopiskiem "type" rysowane wg typu sieci (lina nośna, wieszaki i Y liczone)
     bool CreateSwitchTrackbeds{ true };
     std::string szTexturesTGA{ ".tga" }; // lista tekstur od TGA
     std::string szTexturesDDS{ ".dds" }; // lista tekstur od DDS

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "world/catenary_span.h"
 #include "Console.h"
 #include "scripting/PyInt.h"
 #include "utilities/Timer.h"
@@ -587,6 +588,20 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     if (token == "smoothtraction")
     {
         ParseOne(Parser, bSmoothTraction);
+        return true;
+    }
+
+    if (token == "catenary.procedural")
+    {
+        ParseOne(Parser, CatenaryProcedural);
+        return true;
+    }
+
+    if (token == "catenary.solidrange")
+    {
+        // zasięg rysowania przewodów sieci trakcyjnej jako brył [m]; 0 wyłącza
+        ParseOne(Parser, CatenarySettings.solid_range);
+        CatenarySettings.solid_range = std::clamp(CatenarySettings.solid_range, 0.f, 2000.f);
         return true;
     }
 
@@ -1624,6 +1639,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.smoke", Smoke );
     export_as_text( Output, "gfx.smoke.fidelity", SmokeFidelity );
     export_as_text( Output, "smoothtraction", bSmoothTraction );
+    export_as_text( Output, "catenary.procedural", CatenaryProcedural );
+    export_as_text( Output, "catenary.solidrange", CatenarySettings.solid_range );
     export_as_text( Output, "splinefidelity", SplineFidelity );
     export_as_text( Output, "sleeperdistance", SleeperDistance );
     export_as_text( Output, "rendercab", render_cab );

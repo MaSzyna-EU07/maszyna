@@ -1686,6 +1686,78 @@ glm::vec3 TSubModel::offset(float const Geometrytestoffsetthreshold) const
 	return offset;
 }
 
+namespace
+{
+// Fazy szczegółowości nazwane "<nazwa>_LOD<n>" (części sieci trakcyjnej) dostają zakresy widoczności tutaj,
+// żeby nie trzeba było wpisywać ich w modelach: kolejne fazy zmieniają się na 20, 40, 100, 300 i 400 m,
+// a ostatnia faza, jaką część ma, zostaje widoczna do 400 m (drobnica: model mieszczący się w promieniu 0,5 m
+// od swojego zera) albo do 500 m (części większe, a także model, którego rozmiar nie jest jeszcze znany).
+// Ruszane są tylko submodele głównego poziomu, którym model zostawił zakres domyślny (MaxDistance -1, MinDistance 0).
+// Wołane po Init(), żeby promień modelu był już policzony, a zakresy nie trafiały do zapisywanego pliku e3d.
+// Dotyczy wyłącznie modeli sieci trakcyjnej (katalog siec_trakcyjna); w innych modelach dopisek _LOD niczego nie zmienia.
+void assign_lod_ranges(TSubModel *Root, std::string const &Filename)
+{
+	if (Root == nullptr)
+		return;
+	{
+		std::string path{Filename};
+		for (auto &character : path)
+		{
+			if (character == '\\')
+				character = '/';
+			else if (character >= 'A' && character <= 'Z')
+				character = static_cast<char>(character - 'A' + 'a');
+		}
+		if (path.find("siec_trakcyjna/") == std::string::npos)
+			return;
+	}
+	static float const limits[]{0.f, 20.f, 40.f, 100.f, 300.f, 400.f};
+	int const limitcount{6};
+	auto const radius{Root->m_boundingradius};
+	float const vanish{(radius > 0.f && radius < 0.5f) ? 400.f : 500.f};
+	float const farthest{15000.f}; // zakres nadawany przy wczytaniu, gdy model nie podał własnego
+	struct lod_phase
+	{
+		TSubModel *submodel;
+		std::string base;
+		int index;
+	};
+	std::vector<lod_phase> phases;
+	for (auto *submodel = Root; submodel != nullptr; submodel = submodel->NextGet())
+	{
+		auto const &name{submodel->pName};
+		if (name.size() < 6)
+			continue;
+		auto const mark{name.size() - 5};
+		auto const digit{name[mark + 4]};
+		if (name[mark] != '_' || (name[mark + 1] != 'l' && name[mark + 1] != 'L') || (name[mark + 2] != 'o' && name[mark + 2] != 'O') ||
+		    (name[mark + 3] != 'd' && name[mark + 3] != 'D') || digit < '0' || digit > '9')
+			continue;
+		if (submodel->fSquareMinDist != 0.f || submodel->fSquareMaxDist < farthest * farthest * 0.99f)
+			continue;
+		phases.push_back({submodel, name.substr(0, mark), digit - '0'});
+	}
+	for (auto const &phase : phases)
+	{
+		auto last{true};
+		for (auto const &other : phases)
+		{
+			if (other.base == phase.base && other.index > phase.index)
+			{
+				last = false;
+				break;
+			}
+		}
+		auto const nearlimit{limits[std::min(phase.index, limitcount - 1)]};
+		auto farlimit{phase.index + 1 < limitcount ? limits[phase.index + 1] : farthest};
+		if (last)
+			farlimit = vanish;
+		phase.submodel->fSquareMinDist = nearlimit * nearlimit;
+		phase.submodel->fSquareMaxDist = farlimit * farlimit;
+	}
+}
+} // namespace
+
 bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
 {
 	// wczytanie modelu z pliku
@@ -1711,18 +1783,21 @@ bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
 		LoadFromTextFile(name + ".t3d", dynamic);
 		if (!dynamic)
 			Init();
+		assign_lod_ranges(Root, name);
 	}
 	else if (FileExists(asBinary))
 	{
 		LoadFromBinFile(asBinary, dynamic);
 		asBinary = "";
 		Init();
+		assign_lod_ranges(Root, name);
 	}
 	else if (FileExists(name + ".t3d"))
 	{
 		LoadFromTextFile(name + ".t3d", dynamic);
 		if (!dynamic)
 			Init();
+		assign_lod_ranges(Root, name);
 	}
 
 	bool const result = Root ? iSubModelsCount > 0 : false; // brak pliku albo problem z wczytaniem

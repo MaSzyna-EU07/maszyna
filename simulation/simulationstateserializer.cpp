@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "rendering/lightarray.h"
 #include "world/TractionPower.h"
+#include "world/catenary_scene.h"
 #include "world/Road.h"
 #include "world/Sweep.h"
 #include "world/RoadPoint.h"
@@ -58,6 +59,9 @@ state_serializer::deserialize_begin( std::string const &Scenariofile ) {
     // its sections, which those chunks referenced) is destroyed below
     EditorTerrain.reset();
     scene::terrain_file::references().clear();
+
+    // podwieszenia sieci trakcyjnej poprzedniej scenerii
+    catenary_scene_clear();
 
     // TODO: move initialization to separate routine so we can reuse it
     SafeDelete( Region );
@@ -165,6 +169,10 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
 		auto lookup = state->functionmap.find( token );
 		if( lookup != state->functionmap.end() ) {
             lookup->second();
+        }
+        else if( token == "catenary" ) {
+            // sieć trakcyjna: plik z podwieszeniami, "catenary <plik> endcatenary"
+            catenary_scene_load( Input );
         }
         else {
             ErrorLog( "Bad scenario: unexpected token \"" + token + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + ")" );
@@ -447,6 +455,7 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
     // crossings and traffic points go by the lanes, which are complete at this point
     simulation::Roadpoints.InitRoadpoints();
     simulation::Traction.InitTraction();
+    catenary_scene_resolve();
     simulation::Events.InitEvents();
     simulation::Events.InitLaunchers();
     simulation::Memory.InitCells();

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "world/Event.h"
 #include "world/TractionPower.h"
+#include "world/catenary_span.h"
 #include "vehicle/Camera.h"
 #include "world/mtable.h"
 #include "vehicle/Train.h"
@@ -1539,6 +1540,10 @@ debug_panel::render_section_settings() const {
     ImGui::SliderInt( ( std::to_string( Global.gfx_shadow_rank_cutoff ) + "###shadowrankcutoff" ).c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks" );
     if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2f, "Shadow angle cutoff" ) ) {
         Global.gfx_shadow_angle_min = quantize( Global.gfx_shadow_angle_min, 0.05f );
+    }
+    // sieć trakcyjna: zasięg rysowania przewodów, lin i uchwytów jako brył; 0 wyłącza bryły
+    if( ImGui::SliderFloat( ( to_string( CatenarySettings.solid_range, 0 ) + " m###catenarysolidrange" ).c_str(), &CatenarySettings.solid_range, 0.0f, 500.0f, "3D overhead wires range" ) ) {
+        CatenarySettings.solid_range = quantize( CatenarySettings.solid_range, 10.0f );
     }
     if( DebugModeFlag ) {
         // sky sliders

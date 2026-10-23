@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "application/application.h"
 #include "model/AnimModel.h"
+#include "world/catenary_span.h"
 #include "rendering/opengl33geometrybank.h"
 #include "rendering/screenshot.h"
 #include "rendering/editoroverlay.h"
@@ -4822,6 +4823,72 @@ void opengl33_renderer::Render_Alpha(TTraction *Traction)
 		m_line_shader->bind();
 
 	draw(Traction->m_geometry);
+
+	// z bliska dodatkowo bryły przęsła: przewody i liny w prawdziwej grubości oraz osprzęt, cieniowane jak metal
+	if (auto const solid{catenary_span_solid(*Traction, Global.pCamera.Pos)}; solid.wires != null_handle)
+	{
+		// wygląd metalu przewodów i osprzętu wg materiału i stanu z wpisu przęsła
+		auto const &wiremetal{catenary_span_metal(*Traction, false)};
+		auto const &fittingmetal{catenary_span_metal(*Traction, true)};
+
+		auto lit{false};
+		if (m_renderpass.draw_mode != rendermode::shadows)
+		{
+			// shader przewodów; gdy brak go w katalogu shaderów, standardowy shader kolorowy, a w ostateczności kolor linii
+			static std::shared_ptr<gl::program> wireshader;
+			static bool wireshadertried{false};
+			if (false == wireshadertried)
+			{
+				wireshadertried = true;
+				for (auto const *name : {"wire", "colored"})
+				{
+					try
+					{
+						wireshader = Fetch_Shader(name);
+						break;
+					}
+					catch (...)
+					{
+						ErrorLog("Catenary: shader \"mat_" + std::string(name) + ".frag\" can't be loaded");
+					}
+				}
+			}
+			if (wireshader)
+			{
+				wireshader->bind();
+				model_ubs.emission = 0.0f;
+				model_ubs.alpha_mult = 1.0f;
+				lit = true;
+			}
+		}
+		auto const set_metal = [&](catenary_metal const &Metal) {
+			if (lit)
+			{
+				glm::vec3 const color{Metal.color[0], Metal.color[1], Metal.color[2]};
+				model_ubs.param[0] = glm::vec4(color, 1.0f);
+				model_ubs.param[1] = glm::vec4(std::max(color.r, std::max(color.g, color.b)), Metal.metalness, Metal.reflection, Metal.gloss);
+			}
+			else
+			{
+				model_ubs.param[0] = glm::vec4(Traction->wire_color(), 1.0f);
+			}
+		};
+		// bryły są nieprzezroczyste, więc muszą zapisywać głębię, inaczej zasłaniają się nawzajem wg kolejności rysowania,
+		// a nie odległości; przęsła rysowane są w przebiegu elementów przezroczystych, gdzie zapis głębi jest wyłączony
+		GLboolean depthwrite{GL_TRUE};
+		::glGetBooleanv(GL_DEPTH_WRITEMASK, &depthwrite);
+		::glDepthMask(GL_TRUE);
+		set_metal(wiremetal);
+		draw(solid.wires);
+		++m_renderpass.draw_stats.drawcalls;
+		if (solid.fittings != null_handle)
+		{
+			set_metal(fittingmetal);
+			draw(solid.fittings);
+			++m_renderpass.draw_stats.drawcalls;
+		}
+		::glDepthMask(depthwrite);
+	}
 
 	// debug data
 	++m_renderpass.draw_stats.traction;

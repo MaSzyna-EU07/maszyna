@@ -100,6 +100,16 @@ set(SOURCES
 "world/Sweep.cpp"
 "world/RoadPoint.cpp"
 "world/Traction.cpp"
+"world/catenary_solver.cpp"
+"world/catenary_network.cpp"
+"world/catenary_span.cpp"
+"world/catenary_tensioner.cpp"
+"world/catenary_suspension.cpp"
+"world/catenary_scene.cpp"
+"world/catenary_cantilever.cpp"
+"world/catenary_layout.cpp"
+"world/catenary_catalog.cpp"
+"world/catenary_scene_objects.cpp"
 "world/TractionPower.cpp"
 "vehicle/Train.cpp"
 "world/TrkFoll.cpp"
@@ -199,6 +209,7 @@ set(SOURCES
 "application/editormodeselection.cpp"
 "application/editormodeviewport.cpp"
 "application/editormodesignal.cpp"
+"application/editormodecatenary.cpp"
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
 "application/editormodeselftest.cpp"
@@ -737,4 +748,4 @@ if(WITH_TESTS)
 	# Visual Studio builds rerun them with the next change of the game)
 	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
 		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
-endif()
+endif()

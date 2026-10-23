@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "model/AnimModel.h"
 #include "world/Traction.h"
+#include "world/catenary_span.h"
 #include "application/application.h"
 #include "utilities/Logs.h"
 #include "rendering/openglgeometrybank.h"
@@ -3659,6 +3660,21 @@ opengl_renderer::Render_Alpha( TTraction *Traction ) {
                 linealpha } ) );
     // render
     m_geometry.draw( Traction->m_geometry );
+    // z bliska dodatkowo bryły przęsła: przewody i liny w prawdziwej grubości oraz uchwyty
+    if( auto const solid { catenary_span_solid( *Traction, Global.pCamera.Pos ) }; solid.wires != null_handle ) {
+        // bryły są nieprzezroczyste, więc muszą zapisywać głębię; w tym przebiegu zapis głębi jest wyłączony
+        GLboolean depthwrite { GL_TRUE };
+        ::glGetBooleanv( GL_DEPTH_WRITEMASK, &depthwrite );
+        ::glDepthMask( GL_TRUE );
+        ::glColor4fv( glm::value_ptr( glm::vec4{ Traction->wire_color(), 1.f } ) );
+        m_geometry.draw( solid.wires );
+        ++m_renderpass.draw_stats.drawcalls;
+        if( solid.fittings != null_handle ) {
+            m_geometry.draw( solid.fittings );
+            ++m_renderpass.draw_stats.drawcalls;
+        }
+        ::glDepthMask( depthwrite );
+    }
     // debug data
     ++m_renderpass.draw_stats.traction;
     ++m_renderpass.draw_stats.drawcalls;

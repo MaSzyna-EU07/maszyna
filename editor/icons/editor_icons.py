@@ -321,6 +321,19 @@ def turntable(d):
         line(d, [(32 + math.cos(r) * 24, 32 + math.sin(r) * 24), (32 + math.cos(r) * 31, 32 + math.sin(r) * 31)], W - 4)
 
 
+def catenary(d):
+    # a lattice pole with a swinging cantilever, the wire under its end
+    line(d, [(10, 60), (12, 6)], W - 8)
+    line(d, [(22, 60), (20, 6)], W - 8)
+    for y0 in (8, 26, 44):
+        line(d, [(11, y0), (21, y0 + 16)], W - 12)
+        line(d, [(21, y0), (11, y0 + 16)], W - 12)
+    line(d, [(22, 12), (56, 12)], W - 8)
+    line(d, [(22, 40), (54, 14)], W - 6)
+    line(d, [(46, 20), (46, 36)], W - 10)
+    line(d, [(30, 38), (62, 38)], W - 6)
+
+
 # the fields of work of the editor, in the row over the toolbar
 
 
@@ -363,11 +376,46 @@ def work_terrain(d):
         line(d, [at(u, v) for v in steps], W - 6)
 
 
+def work_catenary(d):
+    # a pole with its cantilever and the span of the catenary going off from it: the messenger sagging, the droppers, the contact wire
+    def sag(x):
+        return 12 + 14 * (1 - ((x - 42) / 20.0) ** 2)
+    line(d, [(8, 60), (8, 6)], W - 2)
+    line(d, [(8, 12), (24, 12)], W - 8)
+    line(d, [(8, 30), (24, 12)], W - 8)
+    line(d, [(x, sag(x)) for x in range(22, 63, 2)], W - 8)
+    for x in (30, 42, 54):
+        line(d, [(x, sag(x)), (x, 36)], W - 12)
+    line(d, [(22, 38), (62, 38)], W - 6)
+    line(d, [(2, 60), (34, 60)], W - 8)
+
+
+def gantry(d):
+    # two lattice masts and the beam over the tracks, a drop with the wire under it
+    for x in (8, 56):
+        line(d, [(x, 60), (x, 8)], W - 2)
+    rect(d, 8, 8, 56, 18, outline=True, width=W - 8)
+    for x0 in (14, 26, 38):
+        line(d, [(x0, 18), (x0 + 12, 8)], W - 12)
+    line(d, [(32, 18), (32, 34)], W - 8)
+    line(d, [(18, 40), (46, 40)], W - 6)
+
+
+def wires(d):
+    # one span: the messenger sagging between its points, the droppers and the contact wire under it
+    def sag(x):
+        return 10 + 20 * (1 - ((x - 32) / 28.0) ** 2)
+    line(d, [(x, sag(x)) for x in range(4, 61, 2)], W - 6)
+    for x in (14, 23, 32, 41, 50):
+        line(d, [(x, sag(x)), (x, 46)], W - 12)
+    line(d, [(4, 48), (60, 48)], W - 4)
+
+
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
-         vehicle, profile, speed, joints, infra, gauge, turntable, work_surroundings,
-         work_tracks, work_roads, work_terrain]
+         vehicle, profile, speed, joints, infra, gauge, turntable, catenary, work_surroundings,
+         work_tracks, work_roads, work_terrain, work_catenary, gantry, wires]
 
 
 def cutouts(name, d):

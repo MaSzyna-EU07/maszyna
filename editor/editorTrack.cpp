@@ -2280,9 +2280,17 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		double b;
 	};
 	definition const definitions[] = {
+		// a = R tg(alfa/2) (do punktu matematycznego), b = a + prosta za lukiem (wzdluz toru zwrotnego). Geometria 49E1 jak DB EW 49-190:
+		// prosta za lukiem 1:9 6,092 m (Glowacki s. 418), 1:7,5 4,817 m, 1:7,5/6,6 (luk do 1:6,6) 1,415 m; dlugosc 1:7,5 i 1:6,6 ta sama 30,04 m
+		// (s21-modellgleis.de, zusiwiki). 1:12 R500 - krzyzownica lukowa, luk do konca: b = a (rozstaw na koncu 1,729 m sie zgadza).
+		{"Rz 1:6,6 R190", 190.0, 6.6, 14.312, 15.727},
+		{"Rz 1:7,5 R190", 190.0, 7.5, 12.611, 17.428},
 		{"Rz 1:9 R190", 190.0, 9.0, 10.523, 16.615},
 		{"Rz 1:9 R300", 300.0, 9.0, 16.615, 16.615},
-		{"Rz 1:12 R500", 500.0, 12.0, 20.797, 0.0},
+		{"Rz 1:12 R500", 500.0, 12.0, 20.797, 20.797},
+		// 1:14 R500 - krzyzownica prosta; rozstaw na koncu 1,749 m jak w 49-300-1:14 (b 24,537 = 10,701 + prosta 13,836, s21-modellgleis.de),
+		// wiec ten sam koniec: b = 24,537, prosta za lukiem 6,703 m
+		{"Rz 1:14 R500", 500.0, 14.0, 17.834, 24.537},
 		{"Rz 1:14 R760", 760.0, 14.0, 0.0, 0.0},
 		{"Rz 1:18,5 R1200", 1200.0, 18.5, 32.409, 34.943},
 		{"Rz 1:26,5 R2500", 2500.0, 26.5, 0.0, 0.0},

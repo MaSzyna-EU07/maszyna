@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "world/Traction.h"
+#include "world/catenary_span.h"
 
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
@@ -138,18 +139,24 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
     m_visible = parser->getToken<std::string>() == "vis";
 
     std::string token { parser->getToken<std::string>() };
-    if( token == "parallel" ) {
-        // jawne wskazanie innego przęsła, na które może przestawić się pantograf
-        parser->getTokens();
-        *parser >> asParallel;
-    }
+    std::string catenarytype;
     while( false == token.empty()
         && token != "endtraction" ) {
 
+        if( token == "parallel" ) {
+            // jawne wskazanie innego przęsła, na które może przestawić się pantograf
+            parser->getTokens();
+            *parser >> asParallel;
+        }
+        else if( token == "type" ) {
+            // symbol typu sieci, np. YwsC120-2C; starsze wersje symulatora pomijają ten dopisek
+            catenarytype = parser->getToken<std::string>( false );
+        }
         token = parser->getToken<std::string>();
     }
 
     Init(); // przeliczenie parametrów
+    catenary_span_assign( *this, catenarytype );
 
     // calculate traction location
     location( glm::mix( pPoint2, pPoint1, 0.5 ) );
@@ -169,6 +176,14 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Geometrybank ) {
     }
 
     gfx::vertex_array vertices;
+
+    if( catenary_span_lines( *this, vertices ) ) {
+        // przęsło z typem sieci: lina nośna, podwieszenie Y i wieszaki policzone, zamiast przybliżenia poniżej
+        auto const elementcount = vertices.size() / 2;
+        gfx::userdata_array empty_userdata{};
+        m_geometry = GfxRenderer->Insert( vertices, empty_userdata, Geometrybank, GL_LINES );
+        return elementcount;
+    }
 
     double ddp = std::hypot( pPoint2.x - pPoint1.x, pPoint2.z - pPoint1.z );
     if( Wires == 2 )
@@ -567,6 +582,10 @@ TTraction::wire_color() const {
             }
             default: {break; }
         }
+        if( TestFlag( DamageFlag, 2 ) && false == TestFlag( DamageFlag, 1 ) ) {
+            // stan przejściowy między nową a zaśniedziałą: ciemniejsza
+            color *= 0.75f;
+        }
 		color *= 0.2;
         // w zaleźności od koloru swiatła
         color.r *= Global.DayLight.ambient[ 0 ];
@@ -673,6 +692,9 @@ TTraction::export_as_text_( std::ostream &Output ) const {
     // optional attributes
     if( false == asParallel.empty() ) {
         Output << "parallel " << asParallel << ' ';
+    }
+    if( auto const catenarytype { catenary_span_symbol( *this ) }; false == catenarytype.empty() ) {
+        Output << "type " << catenarytype << ' ';
     }
     // footer
     Output
