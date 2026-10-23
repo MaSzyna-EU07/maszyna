@@ -188,25 +188,44 @@ editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &c
 		auto const verbose{mode == "all"};
 		auto const start{std::chrono::steady_clock::now()};
 		auto const rows{track_sleepers::check_fastenings()};
-		std::size_t beams{0}, overlaps{0}, tracks{0};
+		std::size_t beams{0}, overlaps{0}, tracks{0}, bare{0};
 		std::array<std::size_t, track_sleepers::part_count> parts{};
 		for (auto const &row : rows)
 		{
 			beams += row.beams;
 			overlaps += row.overlaps;
+			bare += row.bares.size();
 			tracks += (row.overlaps > 0 ? 1 : 0);
 			for (int part = 0; part < track_sleepers::part_count; ++part)
 				parts[part] += row.parts[part];
-			WriteLog(format("SELFTEST fastencheck %s: %zu timbers, %zu plates, %zu chairs, %zu checks, %zu overlaps%s",
-			    row.track.c_str(), row.beams, row.parts[track_sleepers::part_plate], row.parts[track_sleepers::part_chair], row.parts[track_sleepers::part_check], row.overlaps,
+			WriteLog(format("SELFTEST fastencheck %s: %zu timbers, %zu plates, %zu chairs, %zu checks, %zu bare rails, %zu overlaps%s",
+			    row.track.c_str(), row.beams, row.parts[track_sleepers::part_plate], row.parts[track_sleepers::part_chair], row.parts[track_sleepers::part_check], row.bares.size(), row.overlaps,
 			    row.overlaps > 0 ? format(", worst %.3f m %s at %.2f %.2f", row.worst, row.worstparts.c_str(), row.worstat.x, row.worstat.z).c_str() : ""));
+			if (verbose)
+				for (auto const &at : row.bares)
+					WriteLog(format("SELFTEST fastencheck bare %s at %.3f %.3f", row.track.c_str(), at.x, at.y));
 			if (verbose)
 				for (auto const &overlap : row.cases)
 					WriteLog(format("SELFTEST fastencheck overlap %s %d %d apart %.3f over %.3f at %.2f %.2f", row.track.c_str(), overlap.parts[0], overlap.parts[1], overlap.apart, overlap.over, overlap.at.x, overlap.at.z));
 		}
-		WriteLog(format("SELFTEST fastencheck: %zu tracks, %zu timbers, %zu plates, %zu chairs, %zu checks, %zu overlaps on %zu tracks; in %.1f ms",
-		    rows.size(), beams, parts[track_sleepers::part_plate], parts[track_sleepers::part_chair], parts[track_sleepers::part_check], overlaps, tracks,
+		WriteLog(format("SELFTEST fastencheck: %zu tracks, %zu timbers, %zu plates, %zu chairs, %zu checks, %zu bare rails, %zu overlaps on %zu tracks; in %.1f ms",
+		    rows.size(), beams, parts[track_sleepers::part_plate], parts[track_sleepers::part_chair], parts[track_sleepers::part_check], bare, overlaps, tracks,
 		    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count()));
+		return selftest_result::handled;
+	}
+	if (command == "checkseats")
+	{
+		// the check rails with timbers under them and no fastening seating them, along how much of them
+		auto const gaps{track_sleepers::check_rail_seats()};
+		double bare{0.0};
+		std::size_t unsupported{0};
+		for (auto const &gap : gaps)
+		{
+			bare += gap.bare;
+			unsupported += gap.unsupported;
+			WriteLog(format("SELFTEST checkseats %s path %d side %+d %.2f-%.2f: %.0f of %zu timbers bare, %zu with nothing under, first at %.2f %.2f", gap.track.c_str(), gap.path, gap.side, gap.from, gap.to, gap.bare, gap.timbers, gap.unsupported, gap.at.x, gap.at.y));
+		}
+		WriteLog(format("SELFTEST checkseats: %zu check rails with %.0f timbers bare, %zu with nothing under", gaps.size(), bare, unsupported));
 		return selftest_result::handled;
 	}
 	if (command == "sleepercheck")

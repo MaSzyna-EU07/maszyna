@@ -62,6 +62,8 @@ double constexpr check_seats { 0.113 };
 // the room left between the fastenings of rails close by, and how narrow their plates get to keep it
 double constexpr fastening_gap { 0.01 };
 double constexpr plate_least { 0.6 };
+// a plate cut short at the fastening of the rail beside, as on one plate with it, no narrower than this
+double constexpr clip_least { 0.4 };
 double constexpr slide_least { 0.25 };
 // a fastening of two rails narrowed no more than this, the rails lying a little off its seats then
 double constexpr check_least { 0.8 };
