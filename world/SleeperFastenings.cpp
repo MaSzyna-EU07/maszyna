@@ -181,7 +181,24 @@ std::vector<fastening> fastened_rails::on( beam const &Beam, beam_model const &M
         auto const &rail { rails[ index ] };
         if( index + 1 < rails.size() && rails[ index + 1 ].at - rail.at < fastening_pair && rail.kind != role::stock && rails[ index + 1 ].kind != role::stock ) {
             auto const &other { rails[ index + 1 ] };
-            if( other.at - rail.at < fastening_nose ) {
+            // a rail of the two with its check rail on the side away from the other one in the fastening with the check rail,
+            // the other one in a plate of its own
+            auto const away = [&]( hit const &Rail, double const Toward ) {
+                return Rail.kind == role::checked && glm::dot( Rail.inward, axis ) * Toward < 0.0; };
+            auto const awayfirst { away( rail, 1.0 ) };
+            auto const awaysecond { away( other, -1.0 ) };
+            if( has( part_check ) && ( awayfirst || awaysecond ) ) {
+                auto const joined { other.at - rail.at < fastening_nose };
+                for( auto const &[ one, checked ] : { std::make_pair( &rail, awayfirst ), std::make_pair( &other, awaysecond ) } ) {
+                    if( checked ) {
+                        result.push_back( { part_check, point( one->at ), one->inward, 1.f, static_cast<float>( 0.5 * check_seats ) } );
+                    }
+                    else if( false == joined ) {
+                        result.push_back( { part_plate, point( one->at ), one->inward } );
+                    }
+                }
+            }
+            else if( other.at - rail.at < fastening_nose ) {
                 result.push_back( { part_plate, point( 0.5 * ( rail.at + other.at ) ), rail.inward } );
             }
             else if( has( part_check ) ) {
@@ -307,6 +324,13 @@ void fastened_rails::fit( std::vector<fastening> &Fastenings, beam const &Beam, 
             }
         }
         return false; };
+    auto const plates = [&]( std::pair<std::size_t, std::size_t> const &Rail ) {
+        for( auto member { Rail.first }; member < Rail.second; ++member ) {
+            if( Fastenings[ order[ member ] ].part != part_plate ) {
+                return false;
+            }
+        }
+        return true; };
     auto const extent = [&]( std::pair<std::size_t, std::size_t> const &Rail ) {
         glm::dvec2 result { 0.0 };
         for( auto member { Rail.first }; member < Rail.second; ++member ) {
@@ -353,6 +377,16 @@ void fastened_rails::fit( std::vector<fastening> &Fastenings, beam const &Beam, 
             brace( first, 1 );
             if( overlaps() ) {
                 brace( second, 0 );
+            }
+        }
+        // a rail in a plate still lying over the fastening of a rail beside held with more than a plate goes without its own
+        if( overlaps() ) {
+            if( plates( second ) && false == plates( first ) ) {
+                drop( second );
+                continue;
+            }
+            if( plates( first ) && false == plates( second ) ) {
+                drop( first );
             }
         }
         kept = index;
