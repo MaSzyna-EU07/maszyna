@@ -808,7 +808,7 @@ void opengl46_renderer::SwapBuffers()
     // a line of a table of times: the name indented and padded to a column, then the time(s)
     auto const timeline = []( int const Indent, std::string const &Name, std::string const &Values ) {
         auto line { std::string( static_cast<std::size_t>( Indent ), ' ' ) + Name };
-        line.resize( std::max<std::size_t>( line.size() + 1, 34 ), ' ' );
+        line.resize( std::max<std::size_t>( line.size() + 1, 44 ), ' ' );
         return line + Values + "\n";
     };
     auto const ms = []( double const Value, int const Precision = 2 ) {
@@ -828,15 +828,35 @@ void opengl46_renderer::SwapBuffers()
             + timers.sim_secondary.average() + timers.sim_trains.average() + timers.sim_events.average() + timers.sim_lights.average()
             + timers.sim_commands.average() + timers.sim_ui.average() + timers.sim_camera.average() };
         auto const loopparts {
-            timers.loop_input.average() + simulation + timers.loop_audio.average() + timers.loop_particles.average() + timers.loop_renderer_update.average()
+            timers.loop_input.average() + timers.loop_ui_frame.average() + simulation + timers.loop_audio.average() + timers.loop_particles.average() + timers.loop_renderer_update.average()
             + timers.loop_terrain.average() + timers.loop_tasks.average() + render + swap };
         std::string text;
         text += timeline( 0, "main loop", ms( mainloop ) + " ms (" + std::to_string( static_cast<int>( std::round( 1000.f / std::max( mainloop, 0.001f ) ) ) ) + " fps)" );
-        text += timeline( 1, "input, start of the ui frame", ms( timers.loop_input.average() ) );
+        text += timeline( 1, "input, head tracking", ms( timers.loop_input.average() ) );
+        text += timeline( 1, "start of the ui frame", ms( timers.loop_ui_frame.average() ) );
         text += timeline( 1, "simulation", ms( simulation ) );
         text += timeline( 2, "clocks, scripting", ms( timers.sim_scripting.average() ) );
         text += timeline( 2, "environment", ms( timers.sim_environment.average() + timers.sim_precipitation.average() ) );
         text += timeline( 2, "vehicles (physics, ai)", ms( timers.sim_dynamics.average() ) );
+        {
+            auto const &counts { timers.vehicleslast };
+            auto const dynamicsparts {
+                timers.sim_animations.average() + timers.sim_powergrid.average() + timers.sim_roads.average()
+                + timers.vehicles_prepare.average() + timers.vehicles_forces.average() + timers.vehicles_update.average() };
+            text += timeline( 3, "scenery animations", ms( timers.sim_animations.average() ) );
+            text += timeline( 3, "power grid", ms( timers.sim_powergrid.average() ) );
+            text += timeline( 3, "road junctions, spawn points", ms( timers.sim_roads.average() ) );
+            text += timeline( 3, "wires, constants, neighbours", ms( timers.vehicles_prepare.average() ) );
+            text += timeline( 3, "forces, " + std::to_string( counts.steps ) + " steps", ms( timers.vehicles_forces.average() ) );
+            text += timeline( 3, "vehicle update", ms( timers.vehicles_update.average() ) );
+            text += timeline( 4, "of it ai drivers", ms( timers.vehicles_ai.average() ) );
+            text += timeline( 3, "rest", ms( timers.sim_dynamics.average() - dynamicsparts ) );
+            text += timeline(
+                3,
+                std::to_string( counts.all ) + " vehicles: " + std::to_string( counts.enabled ) + " enabled, " + std::to_string( counts.active ) + " active, "
+                    + std::to_string( counts.road ) + " road, " + std::to_string( counts.ai ) + " ai",
+                "" );
+        }
         text += timeline( 2, "secondary steps", ms( timers.sim_secondary.average() ) );
         text += timeline( 2, "trains (cabs)", ms( timers.sim_trains.average() ) );
         text += timeline( 2, "events", ms( timers.sim_events.average() ) );

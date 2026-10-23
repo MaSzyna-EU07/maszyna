@@ -496,9 +496,11 @@ int eu07_application::run()
 
 		if (m_headtrack)
 			m_headtrack->update();
-
-		begin_ui_frame();
 		Timer::subsystem.loop_input.stop();
+
+		Timer::subsystem.loop_ui_frame.start();
+		begin_ui_frame();
+		Timer::subsystem.loop_ui_frame.stop();
 
 		// -------------------------------------------------------------------
 		// multiplayer command relaying logic can seem a bit complex

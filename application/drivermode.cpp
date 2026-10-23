@@ -434,6 +434,8 @@ bool driver_mode::update()
 	Timer::subsystem.sim_precipitation.stop();
 
 	Timer::subsystem.sim_total.stop();
+	// the parts of the vehicle update made in the frame, none when paused
+	Timer::subsystem.commit_frame();
 
 	Timer::subsystem.loop_audio.start();
 	simulation::Region->update_sounds();

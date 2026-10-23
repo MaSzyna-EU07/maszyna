@@ -51,6 +51,31 @@ private:
     std::chrono::microseconds m_last;
 };
 
+// time of a part made many times in a frame (for each vehicle, for each step of the physics): the times are added up in the
+// frame, and the sums averaged over the frames the way stopwatch averages them. commit() ends the frame
+class frame_stopwatch {
+
+public:
+    void
+        start() {
+            m_start = std::chrono::steady_clock::now(); }
+    void
+        stop() {
+            m_frame += std::chrono::duration<float, std::milli>( std::chrono::steady_clock::now() - m_start ).count(); }
+    void
+        commit() {
+            m_accumulator = 0.95f * m_accumulator + m_frame;
+            m_frame = 0.f; }
+    float
+        average() const {
+            return m_accumulator / 20.f; }
+
+private:
+    std::chrono::time_point<std::chrono::steady_clock> m_start { std::chrono::steady_clock::now() };
+    float m_frame { 0.f };
+    float m_accumulator { 0.f };
+};
+
 struct subsystem_stopwatches {
     stopwatch gfx_total;
     stopwatch gfx_color;
@@ -73,9 +98,37 @@ struct subsystem_stopwatches {
     stopwatch sim_commands;
     stopwatch sim_ui; // 50 Hz routines: ui panels, tooltips
     stopwatch sim_camera;
+    // parts of sim_dynamics, simulation::state_manager::update() and vehicle_table::update(), made a few times in a frame
+    frame_stopwatch sim_animations; // queued animations of the scenery models
+    frame_stopwatch sim_powergrid;
+    frame_stopwatch sim_roads; // road junctions, level crossings, spawn points of road vehicles
+    frame_stopwatch vehicles_prepare; // traction wires, constants, neighbours
+    frame_stopwatch vehicles_forces; // forces and the steps of the physics
+    frame_stopwatch vehicles_update; // TDynamicObject::Update(), with the ai in it
+    frame_stopwatch vehicles_ai; // TController::Update() of the vehicles with a driver
+    // what the vehicle update went through in the last frame: vehicles, of them enabled, road vehicles, with a driver run by the
+    // ai, with the physics active; and the steps of the physics
+    struct vehicle_counts {
+        unsigned int all { 0 };
+        unsigned int enabled { 0 };
+        unsigned int road { 0 };
+        unsigned int ai { 0 };
+        unsigned int active { 0 };
+        unsigned int steps { 0 };
+    };
+    vehicle_counts vehicles; // of the frame under way
+    vehicle_counts vehicleslast; // of the last frame
+    // ends the frame of the frame_stopwatches and of the counts
+    void
+        commit_frame() {
+            for( auto *part : { &sim_animations, &sim_powergrid, &sim_roads, &vehicles_prepare, &vehicles_forces, &vehicles_update, &vehicles_ai } ) {
+                part->commit(); }
+            vehicleslast = vehicles;
+            vehicles = {}; }
     stopwatch mainloop_total;
     // parts of the main loop outside the simulation and Render(), for the debug panel
-    stopwatch loop_input; // events, head tracking, start of the ui frame
+    stopwatch loop_input; // events, head tracking
+    stopwatch loop_ui_frame; // start of the ui frame
     stopwatch loop_audio; // sounds of the scenery and the audio renderer
     stopwatch loop_particles; // cpu particles
     stopwatch loop_renderer_update; // gfx_renderer::Update()

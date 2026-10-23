@@ -3556,7 +3556,9 @@ bool TDynamicObject::Update(double dt, double dt1)
 			MED_oldFED = FzadED;
         }
 
+        Timer::subsystem.vehicles_ai.start();
         Mechanik->Update(dt1); // przebłyski świadomości AI
+        Timer::subsystem.vehicles_ai.stop();
     }
 
     // fragment "z EXE Kursa"
@@ -8606,6 +8608,20 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     //    na którą by się zapisywały wszystkie pojazdy będące w ruchu
     //    pojazdy stojące nie potrzebują aktualizacji, chyba że np. ktoś im zmieni nastawę hamulca
     //    oddzielną listę można by zrobić na pojazdy z napędem, najlepiej posortowaną wg typu napędu
+    // what the update goes through, for the debug panel. the counts are of the last call in the frame
+    auto &counts { Timer::subsystem.vehicles };
+    counts.all = static_cast<unsigned int>( m_items.size() );
+    counts.enabled = counts.road = counts.ai = counts.active = 0;
+    counts.steps += static_cast<unsigned int>( std::max( Iterationcount, 1 ) );
+    for( auto const *vehicle : m_items ) {
+        if( false == vehicle->bEnabled ) { continue; }
+        ++counts.enabled;
+        if( vehicle->MoverParameters->CategoryFlag & 2 ) { ++counts.road; }
+        if( ( vehicle->Mechanik != nullptr ) && vehicle->Mechanik->AIControllFlag ) { ++counts.ai; }
+        if( vehicle->MoverParameters->PhysicActivation || vehicle->MechInside ) { ++counts.active; }
+    }
+
+    Timer::subsystem.vehicles_prepare.start();
     for( auto *vehicle : m_items ) {
         if( false == vehicle->bEnabled ) { continue; }
         // Ra: zmienić warunek na sprawdzanie pantografów w jednej zmiennej: czy pantografy i czy podniesione
@@ -8615,6 +8631,8 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         vehicle->MoverParameters->ComputeConstans();
         vehicle->update_neighbours();
     }
+    Timer::subsystem.vehicles_prepare.stop();
+    Timer::subsystem.vehicles_forces.start();
     if( Iterationcount > 1 ) {
         // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
         for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
@@ -8629,13 +8647,16 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     for( auto *vehicle : m_items ) {
         vehicle->UpdateForce( Deltatime );
     }
+    Timer::subsystem.vehicles_forces.stop();
 
     auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
 
+    Timer::subsystem.vehicles_update.start();
     for( auto *vehicle : m_items ) {
         // Ra 2015-01: tylko tu przelicza sieć trakcyjną
         vehicle->Update( Deltatime, totaltime );
     }
+    Timer::subsystem.vehicles_update.stop();
 
     // jeśli jest coś do usunięcia z listy, to trzeba na końcu
     erase_disabled();

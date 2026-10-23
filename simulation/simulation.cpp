@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Train.h"
 #include "application/application.h"
 #include "utilities/Logs.h"
+#include "utilities/Timer.h"
 #include "vehicle/Driver.h"
 
 namespace simulation {
@@ -128,12 +129,18 @@ state_manager::update( double const Deltatime, int Iterationcount ) {
 
     auto const totaltime { Deltatime * Iterationcount };
     // NOTE: we perform animations first, as they can determine factors like contact with powergrid
+    Timer::subsystem.sim_animations.start();
     TAnimModel::AnimUpdate( totaltime ); // wykonanie zakolejkowanych animacji
+    Timer::subsystem.sim_animations.stop();
 
+    Timer::subsystem.sim_powergrid.start();
     simulation::Powergrid.update( totaltime );
+    Timer::subsystem.sim_powergrid.stop();
     // road junctions, level crossings and the points road vehicles appear at; ahead of the vehicles, so the drivers act on what these decide
+    Timer::subsystem.sim_roads.start();
     simulation::Junctions.update( totaltime );
     simulation::Roadpoints.update( totaltime );
+    Timer::subsystem.sim_roads.stop();
     simulation::Vehicles.update( Deltatime, Iterationcount );
 }
 
