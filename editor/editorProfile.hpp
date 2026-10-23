@@ -179,6 +179,9 @@ std::vector<departure> bridged(std::vector<double> const &Chainages, std::vector
 
 // chainages where the paths have to end so that each of them carries a single grade or a single curve
 std::vector<double> breaks(line const &Line);
+// of the breaks those the paths between Joints can't do without: a path from one joint or break kept to the next follows the line
+// within Tolerance with the heights and the grades of its ends
+std::vector<double> fewest_breaks(line const &Line, std::vector<double> Joints, double const Tolerance);
 
 std::string format_chainage(double const Chainage);
 

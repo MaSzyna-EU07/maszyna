@@ -66,7 +66,7 @@ void editor_mode::update_build_tools()
 			m_extend.mouse = cursor_terrain(m_extend.point.y);
 		m_extend.snap = m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
 		if (m_extend.snap.track == nullptr)
-			m_extend.mouse.y = bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
+			m_extend.mouse.y = EditorSettings.heights() == editorSettings::lay_heights::level ? m_extend.point.y : bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
 		joining(m_extend.snap);
 	}
 	if (m_switch.placing)
@@ -634,12 +634,14 @@ void editor_mode::finish_extend()
 	give_own_speed(created);
 	editor_track::commit(created);
 	digitize_drawn(created);
+	auto const from{m_history.size()};
 	push_track_snapshot({}, created);
 	first_step_done(first_step::laid);
 	if (target.track != nullptr)
 		first_step_done(first_step::join);
 	m_node = created.back();
 	ui()->set_node(m_node);
+	nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
 	straight_refresh();
 }
 
@@ -1122,6 +1124,8 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	give_own_speed(created);
 	editor_track::commit(created);
 	digitize_drawn(created);
+	if (tool.chain.empty())
+		tool.history = m_history.size();
 	push_track_snapshot({}, created);
 	first_step_done(first_step::laid);
 	if (End.track != nullptr)
@@ -1152,11 +1156,13 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	}
 	if (scene::Layers.active() == null_handle && style == nullptr)
 		tool.status += "\n" + STR("The scenery isn't opened for editing: new track won't be saved");
+	m_node = created.back();
+	ui()->set_node(m_node);
+	if (nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
+		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.points.clear();
 	tool.start = {};
-	m_node = created.back();
-	ui()->set_node(m_node);
 	straight_refresh();
 }
 
@@ -1522,6 +1528,16 @@ void editor_mode::render_lay_ui()
 	                          : "Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	if (auto const [from, to]{laying_ends()}; false == m_norms_free && (from != nullptr || to != nullptr))
 		ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
+	ImGui::TextDisabled("%s", STR_C("Height of the track on the ground"));
+	if (int heights{static_cast<int>(EditorSettings.heights())};
+	    segmented("layheights", heights,
+	              {{0, STR_C("Fitted"), "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past, the earthworks made by the terrain. On the terrain model the whole track laid in a row is fitted again at each click"},
+	               {1, STR_C("Point to point"), "Each point clicked at the height of the ground, an even grade between them: the grade changes only where you click"},
+	               {2, STR_C("Flat"), "The track goes on at the height it's laid from, whatever the ground; the first point on the ground"}}))
+	{
+		EditorSettings.heights(static_cast<editorSettings::lay_heights>(heights));
+		EditorSettings.save();
+	}
 	if (auto *track{selected_track()}; track != nullptr)
 	{
 		std::string reason;

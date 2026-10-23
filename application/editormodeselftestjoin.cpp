@@ -129,6 +129,14 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
 		return selftest_result::handled;
 	}
+	if (command == "layheights")
+	{
+		std::string which;
+		words >> which;
+		EditorSettings.heights(which == "points" ? editorSettings::lay_heights::points : which == "level" ? editorSettings::lay_heights::level : editorSettings::lay_heights::fitted);
+		WriteLog("SELFTEST layheights: " + which);
+		return selftest_result::handled;
+	}
 	if (command == "norms")
 	{
 		std::string which;
@@ -237,34 +245,47 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		double hanging{0.0};
 		double buried{0.0};
 		int paths{0};
+		// the paths laid as they lie now, along the line: a grade line fitted afterwards cut some of them
+		std::vector<TTrack const *> laid;
 		for (auto step{before}; step < m_history.size(); ++step)
 			for (auto const *track : m_history[step].created)
+				if (track != nullptr && false == track->m_editorremoved && std::find(laid.begin(), laid.end(), track) == laid.end())
+					laid.push_back(track);
+		if (false == laid.empty())
+		{
+			auto const origin{laid.front()->m_paths.front().points[segment_data::point::start]};
+			auto const along{glm::normalize(geometry::plan_of(laid.back()->m_paths.front().points[segment_data::point::end] - origin) + glm::dvec2{1e-9, 0.0})};
+			std::stable_sort(laid.begin(), laid.end(), [&](TTrack const *A, TTrack const *B) {
+				return glm::dot(geometry::plan_of(A->m_paths.front().points[segment_data::point::start] - origin), along) < glm::dot(geometry::plan_of(B->m_paths.front().points[segment_data::point::start] - origin), along);
+			});
+		}
+		for (auto const *track : laid)
+		{
+			auto const &path{track->m_paths.front()};
+			geometry::bezier const curve{path};
+			auto const begin{glm::normalize(geometry::plan_of(curve.first(0.0)))};
+			auto const &a{path.points[segment_data::point::start]};
+			auto const &b{path.points[segment_data::point::end]};
+			auto const rise = [](glm::dvec3 const &Tangent) { return Tangent.y / std::max(1e-9, glm::length(geometry::plan_of(Tangent))); };
+			WriteLog(format("SELFTEST layclicks path %s: %.2f %.2f -> %.2f %.2f, L %.2f m, R %.1f m, kink %.4f deg, step %.4f m, y %.3f -> %.3f, grade %.2f -> %.2f permille, grade break %.3f permille", track->name().c_str(), a.x, a.z, b.x, b.z, curve.plan_length(), static_cast<double>(path.radius),
+			                first ? 0.0 : glm::degrees(std::abs(geometry::signed_angle(heading, begin))), first ? 0.0 : glm::distance(previous, a), a.y, b.y, 1000.0 * rise(curve.first(0.0)), 1000.0 * rise(curve.first(1.0)),
+			                first ? 0.0 : 1000.0 * std::abs(rise(curve.first(0.0)) - slope)));
+			slope = rise(curve.first(1.0));
+			heading = glm::normalize(geometry::plan_of(curve.first(1.0)));
+			previous = b;
+			first = false;
+			auto const count{std::max(1, static_cast<int>(std::ceil(curve.plan_length() / 2.0)))};
+			for (int k = 0; k <= count; ++k)
 			{
-				auto const &path{track->m_paths.front()};
-				geometry::bezier const curve{path};
-				auto const begin{glm::normalize(geometry::plan_of(curve.first(0.0)))};
-				auto const &a{path.points[segment_data::point::start]};
-				auto const &b{path.points[segment_data::point::end]};
-				auto const rise = [](glm::dvec3 const &Tangent) { return Tangent.y / std::max(1e-9, glm::length(geometry::plan_of(Tangent))); };
-				WriteLog(format("SELFTEST layclicks path %s: %.2f %.2f -> %.2f %.2f, L %.2f m, R %.1f m, kink %.4f deg, step %.4f m, y %.3f -> %.3f, grade %.2f -> %.2f permille, grade break %.3f permille", track->name().c_str(), a.x, a.z, b.x, b.z, curve.plan_length(), static_cast<double>(path.radius),
-				                first ? 0.0 : glm::degrees(std::abs(geometry::signed_angle(heading, begin))), first ? 0.0 : glm::distance(previous, a), a.y, b.y, 1000.0 * rise(curve.first(0.0)), 1000.0 * rise(curve.first(1.0)),
-				                first ? 0.0 : 1000.0 * std::abs(rise(curve.first(0.0)) - slope)));
-				slope = rise(curve.first(1.0));
-				heading = glm::normalize(geometry::plan_of(curve.first(1.0)));
-				previous = b;
-				first = false;
-				auto const count{std::max(1, static_cast<int>(std::ceil(curve.plan_length() / 2.0)))};
-				for (int k = 0; k <= count; ++k)
-				{
-					auto const t{curve.parameter(curve.plan_length() * k / count)};
-					auto const target{bed_heights({curve.point(t) + glm::dvec3{0.0, 50.0, 0.0}}, {geometry::plan_of(curve.first(t))}, track).front()};
-					if (std::isnan(target))
-						continue;
-					hanging = std::max(hanging, curve.point(t).y - target);
-					buried = std::max(buried, target - curve.point(t).y);
-				}
-				++paths;
+				auto const t{curve.parameter(curve.plan_length() * k / count)};
+				auto const target{bed_heights({curve.point(t) + glm::dvec3{0.0, 50.0, 0.0}}, {geometry::plan_of(curve.first(t))}, track).front()};
+				if (std::isnan(target))
+					continue;
+				hanging = std::max(hanging, curve.point(t).y - target);
+				buried = std::max(buried, target - curve.point(t).y);
 			}
+			++paths;
+		}
 		WriteLog(format("SELFTEST layclicks %d paths, ballast foot over the ground up to %.3f m, under it up to %.3f m", paths, hanging, buried));
 		return selftest_result::handled;
 	}

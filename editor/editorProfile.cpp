@@ -1203,6 +1203,55 @@ std::vector<double> breaks(line const &Line)
 	return result;
 }
 
+std::vector<double> fewest_breaks(line const &Line, std::vector<double> Joints, double const Tolerance)
+{
+	std::sort(Joints.begin(), Joints.end());
+	Joints.erase(std::unique(Joints.begin(), Joints.end(), [](double const A, double const B) { return std::abs(A - B) < 1e-6; }), Joints.end());
+	auto const all{breaks(Line)};
+	auto const inward = [&](double const Chainage, double const Other) { return grade(Line, Chainage + std::min(1e-3, std::abs(Other - Chainage) * 0.5) * (Other > Chainage ? 1.0 : -1.0)); };
+	auto const follows = [&](double const From, double const To) {
+		auto const length{To - From};
+		auto const h0{elevation(Line, From)};
+		auto const h1{elevation(Line, To)};
+		auto const g0{inward(From, To) * length};
+		auto const g1{inward(To, From) * length};
+		auto const count{std::max(4, static_cast<int>(std::ceil(length)))};
+		for (int i = 1; i < count; ++i)
+		{
+			auto const u{static_cast<double>(i) / count};
+			auto const u2{u * u};
+			auto const u3{u2 * u};
+			auto const height{(2.0 * u3 - 3.0 * u2 + 1.0) * h0 + (u3 - 2.0 * u2 + u) * g0 + (-2.0 * u3 + 3.0 * u2) * h1 + (u3 - u2) * g1};
+			if (std::abs(height - elevation(Line, From + u * length)) > Tolerance)
+				return false;
+		}
+		return true;
+	};
+	std::vector<double> result;
+	for (std::size_t k = 0; k + 1 < Joints.size(); ++k)
+	{
+		std::vector<double> stops;
+		for (auto const chainage : all)
+			if (chainage > Joints[k] + 1e-6 && chainage < Joints[k + 1] - 1e-6)
+				stops.push_back(chainage);
+		stops.push_back(Joints[k + 1]);
+		auto from{Joints[k]};
+		std::size_t next{0};
+		while (next + 1 < stops.size())
+		{
+			auto reach{next};
+			for (auto i{next + 1}; i < stops.size() && follows(from, stops[i]); ++i)
+				reach = i;
+			if (reach + 1 == stops.size())
+				break;
+			result.push_back(stops[reach]);
+			from = stops[reach];
+			next = reach + 1;
+		}
+	}
+	return result;
+}
+
 std::string format_chainage(double const Chainage)
 {
 	auto const value{std::abs(Chainage)};

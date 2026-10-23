@@ -1450,7 +1450,7 @@ void editor_mode::profile_frame_view()
 	fly_to(centre - right * (shift.x * pixel) + above * (shift.y * pixel), look, distance, 0.35);
 }
 
-void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departure> const &Bridges)
+void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departure> const &Bridges, double const Fewest)
 {
 	auto &state{m_profile};
 	state.status.clear();
@@ -1475,12 +1475,14 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	auto const before{state.samples};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
-	auto cuts{profile::breaks(line)};
+	std::vector<double> ends;
+	for (auto const &span : state.route.spans)
+		ends.insert(ends.end(), {span.from, span.to});
+	auto cuts{Fewest > 0.0 ? profile::fewest_breaks(line, ends, Fewest) : profile::breaks(line)};
 	// a bridge ends at a joint or a break of the line by its abutment rather than leave a sliver of a path there
 	double constexpr kBridgeSnap{1.0}; // m
 	auto joints{cuts};
-	for (auto const &span : state.route.spans)
-		joints.insert(joints.end(), {span.from, span.to});
+	joints.insert(joints.end(), ends.begin(), ends.end());
 	auto bridges{Bridges};
 	for (auto &bridge : bridges)
 		for (auto *end : {&bridge.from, &bridge.to})

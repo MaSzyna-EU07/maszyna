@@ -751,20 +751,6 @@ bool editor_mode::nmt_ahead(double const X, double const Z, double &Height) cons
 	return true;
 }
 
-bool editor_mode::nmt_formed(std::vector<glm::dvec2> const &Points) const
-{
-	auto const &state{m_nmt_state};
-	if (false == state.shape || false == m_nmt.placed() || false == m_streamer.active())
-		return false;
-	bool foreign{false};
-	if (nmt_terrain_offset(Points, foreign).has_value())
-		return true;
-	if (foreign)
-		return false;
-	double height;
-	return std::all_of(Points.begin(), Points.end(), [&](glm::dvec2 const &Point) { return false == m_streamer.height_at(Point.x, Point.y, height) && nmt_ahead(Point.x, Point.y, height); });
-}
-
 editor_mode::nmt_chunk editor_mode::add_chunk_from_nmt(heightmap::chunk_key const &Key, std::optional<double> const Offset)
 {
 	auto const low{heightmap::chunk_corner(Key)};
@@ -1675,11 +1661,10 @@ void editor_mode::nmt_auto_start()
 	state.status = STR("Fetching the terrain model under the tracks...");
 }
 
-bool editor_mode::nmt_fit_line(TTrack &Track)
+bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)> const &Fitted, bool const Laid)
 {
 	auto &profile{m_profile};
-	auto const &done{m_nmt_state.done};
-	auto const fitted = [&](TTrack const *Other) { return std::find(done.begin(), done.end(), Other) != done.end(); };
+	auto const &fitted{Fitted};
 	// the line runs over the tracks not fitted yet around the track: the ones fitted stay as they are
 	auto route{editor_track::run_route(Track, profile.run_length)};
 	auto const at{std::find_if(route.spans.begin(), route.spans.end(), [&](auto const &Span) { return Span.track == &Track; })};
@@ -2076,11 +2061,12 @@ bool editor_mode::nmt_fit_line(TTrack &Track)
 	// spans a few metres apart are one bridge on its piers; what is shorter than that is a culvert under the embankment
 	double constexpr kPier{5.0}; // m
 	double constexpr kCulvert{3.0}; // m
+	double constexpr kFewest{0.03}; // m, how far a path just laid may part from the line before it's cut
 	std::vector<double> heights(count);
 	for (std::size_t i = 0; i < count; ++i)
 		heights[i] = profile::elevation(fitted_line, sampled[i]);
 	std::vector<profile::departure> bridges;
-	for (auto const &stretch : profile::bridged(sampled, heights, model, kBridged, kAbutment))
+	for (auto const &stretch : Laid ? std::vector<profile::departure>{} : profile::bridged(sampled, heights, model, kBridged, kAbutment))
 		if (false == bridges.empty() && stretch.from - bridges.back().to < kPier)
 		{
 			bridges.back().to = stretch.to;
@@ -2089,7 +2075,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track)
 		else
 			bridges.push_back(stretch);
 	bridges.erase(std::remove_if(bridges.begin(), bridges.end(), [&](profile::departure const &Bridge) { return Bridge.to - Bridge.from < kCulvert; }), bridges.end());
-	profile_apply(false, bridges);
+	profile_apply(false, bridges, Laid ? kFewest : 0.0);
 	auto const applied{profile.error.empty()};
 	// where the line parts from the model: under it a gap, a bridge or a viaduct, over it a wall or a structure above the track
 	auto const parted{profile::departures(fitted_line, sampled, model, 2.0 * kModel)};
@@ -2186,6 +2172,200 @@ bool editor_mode::nmt_fit_line(TTrack &Track)
 	return applied;
 }
 
+void editor_mode::nmt_sample_paths(TTrack const &Track, std::map<std::pair<int, int>, std::vector<nmt_state::laid_point>> &Points)
+{
+	for (auto const &path : Track.m_paths)
+	{
+		geometry::bezier const curve{path};
+		auto const chord{glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end])};
+		auto const count{std::max(1, static_cast<int>(std::ceil(chord * 1.1)))};
+		for (int i = 0; i <= count; ++i)
+		{
+			auto const t{static_cast<double>(i) / count};
+			auto const at{curve.point(t)};
+			auto const tangent{curve.first(t)};
+			auto const run{glm::length(glm::dvec2{tangent.x, tangent.z})};
+			if (run > 1e-9)
+				Points[{static_cast<int>(std::floor(at.x / kPlanCell)), static_cast<int>(std::floor(at.z / kPlanCell))}].push_back(
+				    {at, glm::dvec2{tangent.x, tangent.z} / run, tangent.y / run, at.y, static_cast<double>(Track.rail_height()), &Track});
+		}
+	}
+}
+
+void editor_mode::nmt_merge_laid(std::unordered_set<TTrack const *> &Laid)
+{
+	auto const direction = [](segment_data const &Path) {
+		auto const control{geometry::plan_of(Path.points[segment_data::point::control1])};
+		auto const chord{geometry::plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
+		auto const along{glm::length(control) > 1e-6 ? control : chord};
+		return along / std::max(1e-12, glm::length(along));
+	};
+	auto const straight = [&](segment_data const &Path) {
+		if (std::abs(Path.radius) > 1e-3f)
+			return false;
+		auto const along{direction(Path)};
+		return std::abs(geometry::cross(along, geometry::plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start]))) < 1e-3
+		    && std::abs(geometry::cross(along, geometry::plan_of(Path.points[segment_data::point::control2]))) < 1e-3;
+	};
+	struct circle
+	{
+		glm::dvec2 centre{0.0};
+		double radius{0.0};
+		int side{0};
+		double angle{0.0};
+	};
+	auto const arc = [&](segment_data const &Path) -> std::optional<circle> {
+		auto const radius{std::abs(static_cast<double>(Path.radius))};
+		if (radius < 1e-3 || glm::length(geometry::plan_of(Path.points[segment_data::point::control1])) < 1e-6)
+			return std::nullopt;
+		auto const start{geometry::plan_of(Path.points[segment_data::point::start])};
+		auto const end{geometry::plan_of(Path.points[segment_data::point::end])};
+		auto const along{direction(Path)};
+		auto const side{geometry::cross(along, end - start) > 0.0 ? 1 : -1};
+		circle result{start + glm::dvec2{-along.y, along.x} * (side * radius), radius, side, 0.0};
+		if (std::abs(glm::distance(result.centre, end) - radius) > 0.01)
+			return std::nullopt;
+		result.angle = std::abs(geometry::signed_angle(start - result.centre, end - result.centre));
+		return result;
+	};
+	auto const alike = [](TTrack const &A, TTrack const &B) {
+		return editor_track::velocity(A) == editor_track::velocity(B) && A.eEnvironment == B.eEnvironment && A.iCategoryFlag == B.iCategoryFlag && A.iDamageFlag == B.iDamageFlag;
+	};
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> removed;
+	for (bool merged{true}; merged;)
+	{
+		merged = false;
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || false == Laid.contains(track) || track->eType != tt_Normal || track->m_paths.size() != 1)
+				continue;
+			auto *next{track->trNext};
+			if (next == nullptr || next == track || next->m_editorremoved || false == Laid.contains(next) || next->eType != tt_Normal || next->m_paths.size() != 1 || next->trPrev != track || false == alike(*track, *next))
+				continue;
+			auto const &first{track->m_paths.front()};
+			auto const &second{next->m_paths.front()};
+			if (glm::distance(first.points[segment_data::point::end], second.points[segment_data::point::start]) > 1e-3)
+				continue;
+			auto const length{geometry::bezier(first).plan_length() + geometry::bezier(second).plan_length()};
+			if (length > geometry::longest_path)
+				continue;
+			auto path{first};
+			path.pieces.clear();
+			if (straight(first) && straight(second) && std::abs(geometry::cross(direction(first), direction(second))) < 1e-5 && glm::dot(direction(first), direction(second)) > 0.0)
+			{
+				path.points[segment_data::point::control1] = {};
+				path.points[segment_data::point::control2] = {};
+				path.radius = 0.f;
+			}
+			else if (auto const a{arc(first)}, b{arc(second)};
+			         a && b && a->side == b->side && std::abs(a->radius - b->radius) < 1e-3 * a->radius && glm::distance(a->centre, b->centre) < 0.01 && a->angle + b->angle <= glm::radians(90.0))
+			{
+				auto const pieces{geometry::arc_pieces(first.points[segment_data::point::start], direction(first), 0.0, a->radius, a->angle + b->angle, a->side)};
+				if (pieces.size() != 1)
+					continue;
+				path.points[segment_data::point::control1] = pieces.front().points[segment_data::point::control1];
+				path.points[segment_data::point::control2] = pieces.front().points[segment_data::point::control2];
+			}
+			else
+				continue;
+			path.points[segment_data::point::end] = second.points[segment_data::point::end];
+			path.rolls[1] = second.rolls[1];
+			if (std::none_of(states.begin(), states.end(), [&](auto const &Entry) { return Entry.first == track; }))
+				states.emplace_back(track, editor_track::capture(*track));
+			editor_track::retire(*next);
+			Laid.erase(next);
+			removed.push_back(next);
+			track->m_paths.front() = path;
+			editor_track::commit({track});
+			merged = true;
+		}
+	}
+	if (false == removed.empty())
+		push_track_snapshot(std::move(states), {}, std::move(removed));
+}
+
+bool editor_mode::nmt_fit_laid(std::size_t const From, glm::dvec3 const End)
+{
+	auto &state{m_nmt_state};
+	if (EditorSettings.heights() != editorSettings::lay_heights::fitted || state.stage != nmt_state::automatic::idle || false == m_nmt.placed() || From >= m_history.size())
+		return false;
+	std::unordered_set<TTrack const *> laid;
+	for (auto step{From}; step < m_history.size(); ++step)
+		for (auto const *track : m_history[step].created)
+			if (track != nullptr && false == track->m_editorremoved && rail(*track))
+				laid.insert(track);
+	auto const at_end = [&]() -> TTrack * {
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && laid.contains(track) && track->eType == tt_Normal && geometry::plan_distance(track->m_paths.front().points[segment_data::point::end], End) < 0.01)
+				return track;
+		return nullptr;
+	};
+	auto const steps{m_history.size()};
+	nmt_merge_laid(laid);
+	auto *last{at_end()};
+	if (last == nullptr)
+		return false;
+	// the tracks around stay as they are, as lines fitted already: the line keeps level with the ones beside it, the more closely
+	// the nearer they are, and crosses the ones it crosses at their height
+	double constexpr kAround{60.0}; // m
+	glm::dvec2 low{std::numeric_limits<double>::max()};
+	glm::dvec2 high{std::numeric_limits<double>::lowest()};
+	for (auto const *track : laid)
+		for (auto const &path : track->m_paths)
+			for (auto const end : {segment_data::point::start, segment_data::point::end})
+			{
+				low = glm::min(low, geometry::plan_of(path.points[end]));
+				high = glm::max(high, geometry::plan_of(path.points[end]));
+			}
+	low -= kAround;
+	high += kAround;
+	std::map<std::pair<int, int>, std::vector<nmt_state::laid_point>> around;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || false == rail(*track) || laid.contains(track))
+			continue;
+		auto const &points{track->m_paths.front().points};
+		auto const a{geometry::plan_of(points[segment_data::point::start])};
+		auto const b{geometry::plan_of(points[segment_data::point::end])};
+		if (std::max(a.x, b.x) < low.x || std::min(a.x, b.x) > high.x || std::max(a.y, b.y) < low.y || std::min(a.y, b.y) > high.y)
+			continue;
+		nmt_sample_paths(*track, around);
+	}
+	// the state of the tracks going onto the terrain lent to the one line, the profile tool left as it was
+	auto const profile{m_profile};
+	auto fitted_lines{std::exchange(state.laid, around)};
+	auto paths{std::exchange(state.paths, std::move(around))};
+	auto loose{std::exchange(state.loose, {})};
+	auto const departures{state.departures};
+	auto const applied{nmt_fit_line(*last, [&](TTrack const *Other) { return false == laid.contains(Other); }, true)};
+	auto const error{m_profile.error};
+	state.laid = std::move(fitted_lines);
+	state.paths = std::move(paths);
+	state.loose = std::move(loose);
+	state.departures = departures;
+	m_profile = profile;
+	// taken back with the laying
+	for (auto step{steps}; step < m_history.size(); ++step)
+		m_history[step].joined = true;
+	if (applied)
+	{
+		laid.clear();
+		for (auto step{From}; step < m_history.size(); ++step)
+			for (auto const *track : m_history[step].created)
+				if (track != nullptr && false == track->m_editorremoved)
+					laid.insert(track);
+		if (auto *track{at_end()}; track != nullptr)
+		{
+			m_node = track;
+			ui()->set_node(m_node);
+		}
+	}
+	else if (false == error.empty())
+		WriteLog("Editor: the track laid not put onto the terrain model - " + error, logtype::generic);
+	return applied;
+}
+
 void editor_mode::nmt_auto_step()
 {
 	auto &state{m_nmt_state};
@@ -2247,22 +2427,7 @@ void editor_mode::nmt_auto_step()
 		state.paths.clear();
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && rail(*track))
-				for (auto const &path : track->m_paths)
-				{
-					geometry::bezier const curve{path};
-					auto const chord{glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end])};
-					auto const count{std::max(1, static_cast<int>(std::ceil(chord * 1.1)))};
-					for (int i = 0; i <= count; ++i)
-					{
-						auto const t{static_cast<double>(i) / count};
-						auto const at{curve.point(t)};
-						auto const tangent{curve.first(t)};
-						auto const run{glm::length(glm::dvec2{tangent.x, tangent.z})};
-						if (run > 1e-9)
-							state.paths[{static_cast<int>(std::floor(at.x / kPlanCell)), static_cast<int>(std::floor(at.z / kPlanCell))}].push_back(
-							    {at, glm::dvec2{tangent.x, tangent.z} / run, tangent.y / run, at.y, static_cast<double>(track->rail_height()), track});
-					}
-				}
+				nmt_sample_paths(*track, state.paths);
 		state.stage = nmt_state::automatic::fitting;
 		return;
 	}
@@ -2289,7 +2454,7 @@ void editor_mode::nmt_auto_step()
 		auto *track{state.left.front()};
 		auto const name{track->name()};
 		auto const known{simulation::Paths.sequence().size()};
-		if (nmt_fit_line(*track))
+		if (nmt_fit_line(*track, [&](TTrack const *Other) { return fitted.contains(Other); }, false))
 			++state.lines;
 		else
 			++state.refused;

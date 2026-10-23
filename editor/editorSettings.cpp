@@ -116,6 +116,8 @@ bool editorSettings::load()
 			m_top_rails = static_cast<std::uint32_t>(std::strtoul(value.c_str(), nullptr, 16)) | 0xff000000u;
 		else if (key == "track_norms")
 			m_norms = value == "free" ? track_norms::free_laying : value == "plk" ? track_norms::plk : track_norms::ask;
+		else if (key == "lay_heights")
+			m_heights = value == "points" ? lay_heights::points : value == "level" ? lay_heights::level : lay_heights::fitted;
 		else if (key.rfind(origin_prefix, 0) == 0)
 		{
 			// northing;easting
@@ -165,6 +167,7 @@ bool editorSettings::save()
 	stream << "top_tracks " << m_top_tracks << "\n";
 	stream << "top_rails " << std::hex << (m_top_rails & 0xffffffu) << std::dec << "\n";
 	stream << "track_norms " << (m_norms == track_norms::free_laying ? "free" : m_norms == track_norms::plk ? "plk" : "ask") << "\n";
+	stream << "lay_heights " << (m_heights == lay_heights::points ? "points" : m_heights == lay_heights::level ? "level" : "fitted") << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)
 		stream << origin.first << " " << origin.second.first << ";" << origin.second.second << "\n";

@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorGroundFollow.hpp"
+#include "editor/editorSettings.hpp"
 
 #include "utilities/Globals.h"
 #include "world/Track.h"
@@ -26,9 +27,7 @@ using geometry::plan_distance;
 using geometry::plan_of;
 
 double constexpr kSteepest{1000.0}; // per mille: the grades of the user's own track aren't capped
-double constexpr kFormed{0.5}; // m, how closely the line keeps to the ground the formation is made in
-double constexpr kBare{0.1}; // m, to the ground left as it is
-double constexpr kBareRadius{300.0}; // m, the vertical curves over it
+double constexpr kModel{0.15}; // m, how closely the line keeps to the ground, as to the terrain model
 
 } // namespace
 
@@ -129,35 +128,35 @@ double editor_mode::bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direct
 
 void editor_mode::follow_ground(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const
 {
-	std::vector<glm::dvec2> points;
-	for (auto const &piece : Pieces)
+	// from point to point or level the heights lead from one end to the other, whatever the ground between
+	if (EditorSettings.heights() != editorSettings::lay_heights::fitted)
 	{
-		geometry::bezier const curve{piece};
-		auto const count{std::max(6, static_cast<int>(std::ceil(curve.plan_length() / 10.0)))};
-		for (int i = 0; i <= count; ++i)
-			points.push_back(plan_of(curve.point(static_cast<double>(i) / count)));
+		ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
+		return;
 	}
-	// the ground the formation is made in lets the line keep to the norms of the profile, cutting and filling; the ground left as
-	// it is the line follows, bending as sharply as it has to
-	auto const formed{nmt_formed(points)};
+	// the line goes over the ground as the tracks go onto the terrain: the vertical curves of the norms, the grades as steep as the
+	// ground has them, a rise or a hollow longer than a structure followed closely, the bumps and what parts from it gone past
 	ground_follow::grading grading;
 	grading.settings.norms = m_profile.line.norms;
 	grading.settings.norms.grade_max = kSteepest;
 	grading.settings.norms.curve_threshold = 0.0;
-	if (false == formed)
-	{
-		grading.settings.norms.radius_factor = 0.0;
-		grading.settings.norms.radius_min = kBareRadius;
-	}
 	grading.settings.speed = design_speed(Style, nullptr);
 	grading.fit.grade_max = kSteepest;
-	grading.fit.tolerance = formed ? kFormed : kBare;
+	grading.fit.tolerance = kModel;
+	grading.fit.follow_length = 60.0;
+	grading.fit.follow_height = 4.0;
+	grading.fit.follow_steepest = 100.0;
+	grading.fit.follow_tolerance = 0.05;
+	grading.reach = kModel;
 	ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, [&](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions) { return bed_heights(Points, Directions, Style); }, grading);
 }
 
 glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point)
 {
 	auto const &tool{m_lay};
+	// level: on at the height the laying goes on from, the first point on the ground
+	if (EditorSettings.heights() == editorSettings::lay_heights::level && false == tool.points.empty())
+		return {Point.x, tool.points.back().y, Point.z};
 	TTrack const *style{tool.start.track != nullptr ? tool.start.track : tool.copy_selected ? selected_track() : nullptr};
 	return {Point.x, bed_height(Point, tool.points.empty() ? glm::dvec2{0.0} : plan_of(Point - tool.points.back()), style), Point.z};
 }

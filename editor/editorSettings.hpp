@@ -76,6 +76,16 @@ public:
 	};
 	track_norms norms() const { return m_norms; }
 	void norms(track_norms Norms) { m_norms = Norms; }
+	// the heights of the tracks laid on the ground: fitted to it as the tracks go onto the terrain, the points clicked on it with
+	// even grades between them, level
+	enum class lay_heights
+	{
+		fitted,
+		points,
+		level
+	};
+	lay_heights heights() const { return m_heights; }
+	void heights(lay_heights Heights) { m_heights = Heights; }
 
 private:
 	movement_scheme m_movement{movement_scheme::wsad};
@@ -92,6 +102,7 @@ private:
 	int m_top_tracks{0}; // the railway in the top view: whole, without the ballast, the rails alone
 	std::uint32_t m_top_rails{0xffff6e28}; // colour of the rails alone, as ImGui keeps it: ABGR
 	track_norms m_norms{track_norms::ask};
+	lay_heights m_heights{lay_heights::fitted};
 };
 
 // global editor settings instance

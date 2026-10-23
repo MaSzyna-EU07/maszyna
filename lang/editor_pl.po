@@ -11502,3 +11502,27 @@ msgstr "Kolor szyn, żeby odcinały się od ortofotomapy i mapy"
 
 msgid "(c) OpenStreetMap contributors, geoportal.gov.pl"
 msgstr "(c) współtwórcy OpenStreetMap, geoportal.gov.pl"
+
+msgid "The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain"
+msgstr "Pochylenia całego toru kładzionego za jednym razem dopasowane do modelu terenu, tak jak w „Tory na teren”"
+
+msgid "Height of the track on the ground"
+msgstr "Wysokość toru na terenie"
+
+msgid "Fitted"
+msgstr "Dopasowana"
+
+msgid "Point to point"
+msgstr "Punkt–punkt"
+
+msgid "Flat"
+msgstr "Poziomo"
+
+msgid "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past, the earthworks made by the terrain. On the terrain model the whole track laid in a row is fitted again at each click"
+msgstr "Pochylenia dopasowane do terenu tak jak w „Tory na teren”: łuki pionowe według norm, drobne nierówności terenu pominięte, nasypy i wykopy robi teren. Na modelu terenu (NMT) cały tor kładziony za jednym razem jest dopasowywany od nowa przy każdym kliknięciu"
+
+msgid "Each point clicked at the height of the ground, an even grade between them: the grade changes only where you click"
+msgstr "Każdy kliknięty punkt na wysokości terenu, między punktami równe pochylenie: pochylenie zmienia się tylko tam, gdzie klikniesz"
+
+msgid "The track goes on at the height it's laid from, whatever the ground; the first point on the ground"
+msgstr "Tor idzie dalej na wysokości, z której go kładziesz, bez względu na teren; pierwszy punkt na terenie"

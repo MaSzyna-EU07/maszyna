@@ -436,8 +436,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void nmt_follow_tracks();
 	// the height the ground will have where the terrain is made ahead of the track laid and isn't there yet
 	bool nmt_ahead(double const X, double const Z, double &Height) const;
-	// a track laid through the points gets its formation from the terrain of the model: it needn't keep to every bump of it
-	bool nmt_formed(std::vector<glm::dvec2> const &Points) const;
 	// the squares of the model under the rectangle are in, none of them waiting to be asked for again
 	bool nmt_ready(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	// Only: the paths of these tracks are shaped anew, the modifiers of those removed taken away; null: all of them. the number
@@ -466,8 +464,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t nmt_join_ends();
 	void nmt_auto_start();
 	void nmt_auto_step();
-	// the grade line of the line of tracks through the track fitted to the terrain model and applied; false if it couldn't be
-	bool nmt_fit_line(TTrack &Track);
+	// the grade line of the line of tracks through the track fitted to the terrain model and applied; false if it couldn't be.
+	// The line runs over the tracks not Fitted, the ones fitted stay as they are and the line meets them. Where the model falls
+	// away under the line by the abutments the tracks go over on a bridge; Laid: the tracks just laid, the formation fills it and
+	// they are cut only where they can't follow the line otherwise
+	bool nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)> const &Fitted, bool const Laid);
+	// the tracks laid in one go since the history step From put onto the terrain model as one line, as the tracks go onto the
+	// terrain: the track ending at End then the one the laying goes on from
+	bool nmt_fit_laid(std::size_t const From, glm::dvec3 const End);
+	// the tracks laid one after another on one straight or one arc, cut by the grade lines fitted before, made one again
+	void nmt_merge_laid(std::unordered_set<TTrack const *> &Laid);
+	// the points of the paths of the track about a metre apart, in squares of the plan
+	static void nmt_sample_paths(TTrack const &Track, std::map<std::pair<int, int>, std::vector<nmt_state::laid_point>> &Points);
 	// the tool of the terrain the left mouse button works
 	enum class terrain_tool
 	{
@@ -1384,6 +1392,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			glm::dvec3 point{0.0};
 		};
 		std::vector<step> chain;
+		std::size_t history{0}; // the step of the history the chain was begun at
 	};
 	lay_tool m_lay;
 	bool m_norms_free{false};
@@ -2335,7 +2344,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profile_check();
 	// Terrain: the heightmap terrain follows the tracks changed. Bridges: stretches of the route over a bridge or a viaduct, the
 	// paths over them cut off at their ends and set to the bridge environment
-	void profile_apply(bool const Terrain = false, std::vector<profile::departure> const &Bridges = {});
+	void profile_apply(bool const Terrain = false, std::vector<profile::departure> const &Bridges = {}, double const Fewest = 0.0);
 	// the terrain under the tracks changed by the last Edits steps of the history which changed tracks
 	void profile_follow_terrain(std::size_t const Edits);
 	void profile_fit_view();
