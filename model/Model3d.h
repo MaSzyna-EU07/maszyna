@@ -200,9 +200,7 @@ public:
 #endif
 	void SetRotate(float3 vNewRotateAxis, float fNewAngle);
 	void SetRotateXYZ(glm::vec3 vNewAngles);
-	void SetRotateXYZ(float3 vNewAngles);
 	void SetTranslate(glm::vec3 vNewTransVector);
-	void SetTranslate(float3 vNewTransVector);
 	void SetRotateIK1(float3 vNewAngles);
 	TSubModel * GetFromName( std::string const &search, bool i = true );
     // text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order

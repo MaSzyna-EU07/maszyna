@@ -12,63 +12,11 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 //---------------------------------------------------------------------------
 
-class float3
-{ // wapółrzędne wierchołka 3D o pojedynczej precyzji
-  public:
-    float x;
-    float y;
-    float z;
-    float3() = default;
-    float3(float a, float b, float c) : x(a), y(b), z(c) {}
-    float Length() const;
-    float LengthSquared() const;
+using float3 = glm::vec3;
 
-	operator glm::vec3() const
-	{
-		return glm::vec3(x, y, z);
-	}
-};
-
-inline bool operator==(const float3 &v1, const float3 &v2)
-{
-    return v1.x == v2.x && v1.y == v2.y && v1.z == v2.z;
-};
-inline float3 &operator+=(float3 &v1, const float3 &v2)
-{
-    v1.x += v2.x;
-    v1.y += v2.y;
-    v1.z += v2.z;
-    return v1;
-};
-inline float3 operator-(const float3 &v)
-{
-    return float3(-v.x, -v.y, -v.z);
-};
-inline float3 operator-(const float3 &v1, const float3 &v2)
-{
-    return float3(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z);
-};
-inline float3 operator+(const float3 &v1, const float3 &v2)
-{
-    return float3(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z);
-};
-inline float float3::Length() const
-{
-    return std::sqrt(LengthSquared());
-};
-inline float float3::LengthSquared() const {
-    return x * x + y * y + z * z;
-}
-inline float3 operator*( float3 const &v, float const  k ) {
-    return float3( v.x * k, v.y * k, v.z * k );
-};
-inline float3 operator/( float3 const &v, float const k )
-{
-    return float3(v.x / k, v.y / k, v.z / k);
-};
 inline float3 SafeNormalize(const float3 &v)
 { // bezpieczna normalizacja (wektor długości 1.0)
-    auto const l = v.Length();
+    auto const l = glm::length(v);
     float3 retVal;
     if (l == 0)
     {
@@ -80,19 +28,6 @@ inline float3 SafeNormalize(const float3 &v)
         retVal = v / l;
     return retVal;
 };
-inline float3 CrossProduct( float3 const &v1, float3 const &v2 )
-{
-    return float3(v1.y * v2.z - v1.z * v2.y, v2.x * v1.z - v2.z * v1.x, v1.x * v2.y - v1.y * v2.x);
-}
-inline float DotProduct( float3 const &v1, float3 const &v2 ) {
-
-    return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-}
-
-inline float3 Interpolate( float3 const &First, float3 const &Second, float const Factor ) {
-
-    return First * (1.0f - Factor) + Second * Factor;
-}
 
 class float4
 { // kwaternion obrotu
@@ -259,13 +194,6 @@ public:
         return (float3 *)(e + 12);
     }
 };
-
-inline float3 operator*(const float4x4 &m, const float3 &v)
-{ // mnożenie wektora przez macierz
-    return float3(v.x * m[0][0] + v.y * m[1][0] + v.z * m[2][0] + m[3][0],
-                  v.x * m[0][1] + v.y * m[1][1] + v.z * m[2][1] + m[3][1],
-                  v.x * m[0][2] + v.y * m[1][2] + v.z * m[2][2] + m[3][2]);
-}
 
 inline glm::vec3 operator*( const float4x4 &m, const glm::vec3 &v ) { // mnożenie wektora przez macierz
     return glm::vec3(

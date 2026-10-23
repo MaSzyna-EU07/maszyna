@@ -1093,7 +1093,7 @@ void TSubModel::SetRotate(float3 vNewRotateAxis, float fNewAngle)
 	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
 }
 
-void TSubModel::SetRotateXYZ(float3 vNewAngles)
+void TSubModel::SetRotateXYZ(glm::vec3 vNewAngles)
 { // obrócenie submodelu o
   // podane kąty wokół osi
   // lokalnego układu
@@ -1103,31 +1103,9 @@ void TSubModel::SetRotateXYZ(float3 vNewAngles)
 	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
 }
 
-void TSubModel::SetRotateXYZ(glm::vec3 vNewAngles)
-{ // obrócenie submodelu o
-  // podane kąty wokół osi
-  // lokalnego układu
-	v_Angles.x = vNewAngles.x;
-	v_Angles.y = vNewAngles.y;
-	v_Angles.z = vNewAngles.z;
-	b_Anim = TAnimType::at_RotateXYZ;
-	b_aAnim = TAnimType::at_RotateXYZ;
-	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
-}
-
-void TSubModel::SetTranslate(float3 vNewTransVector)
-{ // przesunięcie submodelu (np. w kabinie)
-	v_TransVector = vNewTransVector;
-	b_Anim = TAnimType::at_Translate;
-	b_aAnim = TAnimType::at_Translate;
-	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
-}
-
 void TSubModel::SetTranslate(glm::vec3 vNewTransVector)
 { // przesunięcie submodelu (np. w kabinie)
-	v_TransVector.x = vNewTransVector.x;
-	v_TransVector.y = vNewTransVector.y;
-	v_TransVector.z = vNewTransVector.z;
+	v_TransVector = vNewTransVector;
 	b_Anim = TAnimType::at_Translate;
 	b_aAnim = TAnimType::at_Translate;
 	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
