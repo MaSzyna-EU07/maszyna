@@ -8623,8 +8623,8 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     for( std::size_t index = 0; index < m_items.size(); ++index ) {
         auto const *vehicle { m_items[ index ] };
         auto const road { ( vehicle->MoverParameters->CategoryFlag & 2 ) != 0 };
-        auto const far { glm::length2( vehicle->GetPosition() - camera ) > Timer::subsystem.VEHICLE_NEAR * Timer::subsystem.VEHICLE_NEAR };
-        kinds[ index ] = static_cast<std::uint8_t>( ( road ? 2 : 0 ) + ( far ? 1 : 0 ) );
+        auto const distant { glm::length2( vehicle->GetPosition() - camera ) > Timer::subsystem.VEHICLE_NEAR * Timer::subsystem.VEHICLE_NEAR };
+        kinds[ index ] = static_cast<std::uint8_t>( ( road ? 2 : 0 ) + ( distant ? 1 : 0 ) );
         if( false == vehicle->bEnabled ) { continue; }
         ++counts.kind[ kinds[ index ] ];
         if( vehicle->MoverParameters->Vel < 0.01 ) { ++counts.standing[ kinds[ index ] ]; }
