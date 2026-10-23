@@ -420,6 +420,32 @@ geometry_bank::userdata( gfx::geometry_handle const &Geometry ) const {
 // geometry bank manager, holds collection of geometry banks
 
 // performs a resource sweep
+// what the chunks keep in the process, added to the counts
+void
+geometry_bank::count_memory( memory_count &Vertices, memory_count &Indices, memory_count &Userdata ) const {
+
+    for( auto const &chunk : m_chunks ) {
+        ++Vertices.count;
+        Vertices.bytes += memory_of( chunk.vertices );
+        Indices.bytes += memory_of( chunk.indices );
+        Userdata.bytes += memory_of( chunk.userdata );
+    }
+    Indices.count = Userdata.count = Vertices.count;
+}
+
+// what the banks keep in the process, for the debug panel
+auto
+geometrybank_manager::memory() const -> memory_data {
+
+    memory_data result;
+    for( auto const &bank : m_geometrybanks ) {
+        if( bank.first == nullptr ) { continue; }
+        ++result.banks;
+        bank.first->count_memory( result.vertices, result.indices, result.userdata );
+    }
+    return result;
+}
+
 void
 geometrybank_manager::update() {
 

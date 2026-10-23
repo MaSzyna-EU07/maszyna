@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "model/ResourceManager.h"
+#include "utilities/memorystats.h"
 
 struct world_vertex;
 
@@ -161,6 +162,9 @@ public:
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
     // primitive type of specified chunk, 0 if there's no such chunk
     auto type( gfx::geometry_handle const &Geometry ) const -> unsigned int;
+    // what the chunks keep in the process (a copy of what went to the gpu), added to the counts: chunks and vertex bytes, index bytes,
+    // user data bytes
+    void count_memory( memory_count &Vertices, memory_count &Indices, memory_count &Userdata ) const;
 
 protected:
 // types:
@@ -272,6 +276,14 @@ public:
     auto indices( gfx::geometry_handle const &Geometry ) const -> gfx::index_array const &;
 	// provides direct access to vertex data of specfied chunk
 	auto vertices( gfx::geometry_handle const &Geometry ) const -> gfx::vertex_array const &;
+    // what the banks keep in the process, for the debug panel: banks, chunks with their vertex bytes, index bytes and user data bytes
+    struct memory_data {
+        std::uint64_t banks { 0 };
+        memory_count vertices;
+        memory_count indices;
+        memory_count userdata;
+    };
+    auto memory() const -> memory_data;
 	// provides direct access to vertex data of specfied chunk
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
     // primitive type of specified chunk, 0 if there's no such chunk

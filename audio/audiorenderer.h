@@ -108,6 +108,8 @@ public:
     audio::openal_buffer const &buffer( audio::buffer_handle const Buffer ) const;
     // makes buffers of all sound files still decoded in the background (sound.asyncload), waiting for them
     void complete_buffers();
+    // the sound buffers and the bytes of their data, for the debug panel
+    memory_count buffers_memory() const { return m_buffers.memory(); }
 
     bool init();
 
@@ -164,4 +166,4 @@ private:
 extern openal_renderer renderer;
 extern bool event_volume_change;
 
-} // namespace audio
+} // namespace audio

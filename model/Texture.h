@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <istream>
 #include <limits>
 #include "winheaders.h"
+#include "utilities/memorystats.h"
 #include <string>
 #include "model/ResourceManager.h"
 #include "gl/ubo.h"
@@ -180,6 +181,14 @@ public:
     // debug performance string
     std::string
         info() const;
+    // what the textures keep in memory, for the debug panel: copies of the data kept in the process (count, bytes), and the
+    // textures made on the gpu with the size of their data (count, bytes)
+    struct memory_data {
+        memory_count cpu;
+        memory_count gpu;
+    };
+    memory_data
+        memory() const;
 
 private:
 // types:

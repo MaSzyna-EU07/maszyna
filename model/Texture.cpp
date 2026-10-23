@@ -1484,6 +1484,25 @@ texture_manager::update() {
     }
 }
 
+// what the textures keep in memory, for the debug panel
+texture_manager::memory_data
+texture_manager::memory() const {
+
+    memory_data result;
+    for( auto const &texture : m_textures ) {
+        if( texture.first == nullptr ) { continue; }
+        if( false == texture.first->data.empty() ) {
+            ++result.cpu.count;
+            result.cpu.bytes += memory_of( texture.first->data );
+        }
+        if( texture.first->id != opengl_texture::invalid_id ) {
+            ++result.gpu.count;
+            result.gpu.bytes += static_cast<std::uint64_t>( texture.first->size ) * 1024;
+        }
+    }
+    return result;
+}
+
 // debug performance string
 std::string
 texture_manager::info() const {

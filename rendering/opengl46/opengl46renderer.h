@@ -617,6 +617,12 @@ class opengl46_renderer : public gfx_renderer {
 	//debug_stats m_debugstats;
 	std::string m_debugstatstext;
 	std::vector<info_section> m_debugsections; // the same data in sections, for the debug panel
+	// what the process and its parts keep in memory, for the debug panel, gathered every 2 s; whether the card tells its memory
+	// (GL_NVX_gpu_memory_info), -1 not asked yet
+	void Update_Memory_Info();
+	std::string m_memorytext;
+	std::chrono::steady_clock::time_point m_memorytime {};
+	int m_nvxmemory { -1 };
     struct simulation_state {
         std::string weather;
         std::string season;

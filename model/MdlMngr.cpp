@@ -40,6 +40,29 @@ TMdlContainer::LoadModel(std::string const &Name, bool const Dynamic) {
 TModelsManager::modelcontainer_sequence TModelsManager::m_models { 1, TMdlContainer{} };
 TModelsManager::stringmodelcontainerindex_map TModelsManager::m_modelsmap;
 
+// what the loaded models keep in memory, for the debug panel
+TModelsManager::memory_data
+TModelsManager::memory() {
+
+    memory_data result;
+    std::vector<TSubModel const *> pending;
+    for( auto const &container : m_models ) {
+        if( container.Model == nullptr ) { continue; }
+        ++result.models;
+        pending.assign( 1, container.Model->Root );
+        while( false == pending.empty() ) {
+            auto const *submodel { pending.back() };
+            pending.pop_back();
+            if( submodel == nullptr ) { continue; }
+            ++result.submodels.count;
+            result.submodels.bytes += memory_of( submodel->Vertices ) + memory_of( submodel->Userdata ) + memory_of( submodel->Indices );
+            pending.push_back( submodel->Child );
+            pending.push_back( submodel->Next );
+        }
+    }
+    return result;
+}
+
 // wczytanie modelu do tablicy
 TModel3d *
 TModelsManager::LoadModel(std::string const &Name, std::string const &virtualName, bool dynamic) {

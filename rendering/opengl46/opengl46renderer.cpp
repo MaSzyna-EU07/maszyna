@@ -15,6 +15,10 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Train.h"
 #include "vehicle/Camera.h"
 #include "simulation/simulation.h"
+#include "model/MdlMngr.h"
+#include "audio/audiorenderer.h"
+#include "world/Track.h"
+#include "utilities/memorystats.h"
 #include "utilities/Logs.h"
 #include "simulation/simulationtime.h"
 #include "application/application.h"
@@ -805,6 +809,7 @@ void opengl46_renderer::SwapBuffers()
 
     // the debug data, in sections for the panel. info_times() and info_stats() hold the same, joined
     m_debugsections.clear();
+    Update_Memory_Info();
     // a line of a table of times: the name indented and padded to a column, then the time(s)
     auto const timeline = []( int const Indent, std::string const &Name, std::string const &Values ) {
         auto line { std::string( static_cast<std::size_t>( Indent ), ' ' ) + Name };
@@ -1133,6 +1138,7 @@ void opengl46_renderer::SwapBuffers()
     culltext += Light_Shadow_Cull_Info( false );
     m_debugsections.push_back( { "Scene statistics", std::move( statstext ), false } );
     m_debugsections.push_back( { "GPU culling", std::move( culltext ), false } );
+    m_debugsections.push_back( { "Memory", m_memorytext, true } );
 
     // the parts of the sections start with a line break here and there, and end with one or not
     for( auto &section : m_debugsections ) {
@@ -1147,6 +1153,105 @@ void opengl46_renderer::SwapBuffers()
         auto &target { index < 3 ? m_debugtimestext : m_debugstatstext };
         target += ( target.empty() ? "" : "\n" ) + m_debugsections[ index ].title + ":\n" + m_debugsections[ index ].text;
     }
+}
+
+// what the process and its parts keep in memory, for the debug panel (m_memorytext). gathered every 2 s: it goes through every
+// texture, geometry chunk, model and scenery shape
+void opengl46_renderer::Update_Memory_Info()
+{
+	auto const now { std::chrono::steady_clock::now() };
+	if( ( false == m_memorytext.empty() ) && ( now - m_memorytime < std::chrono::seconds( 2 ) ) ) { return; }
+	m_memorytime = now;
+
+	auto const mb = []( std::uint64_t const Bytes ) {
+		return to_string( static_cast<double>( Bytes ) / ( 1024.0 * 1024.0 ), 1 ) + " MB"; };
+	auto const counted = []( memory_count const &Count, char const *Name ) {
+		return std::to_string( Count.count ) + " " + Name; };
+	std::string text;
+
+	auto const process { query_process_memory() };
+	if( process.valid ) {
+		text += "process: " + mb( process.resident ) + " resident (peak " + mb( process.peak ) + ")"
+			+ ( process.committed > 0 ? ", " + mb( process.committed ) + " private" : std::string{} ) + "\n";
+	}
+	// the memory of the card, all processes: GL_NVX_gpu_memory_info (in kB)
+	if( m_nvxmemory < 0 ) {
+		m_nvxmemory = 0;
+		GLint extensions { 0 };
+		::glGetIntegerv( GL_NUM_EXTENSIONS, &extensions );
+		for( GLint index = 0; index < extensions; ++index ) {
+			auto const *name { reinterpret_cast<char const *>( ::glGetStringi( GL_EXTENSIONS, static_cast<GLuint>( index ) ) ) };
+			if( ( name != nullptr ) && ( std::strcmp( name, "GL_NVX_gpu_memory_info" ) == 0 ) ) {
+				m_nvxmemory = 1;
+				break;
+			}
+		}
+	}
+	if( m_nvxmemory > 0 ) {
+		GLint dedicated { 0 }, available { 0 }, evicted { 0 };
+		::glGetIntegerv( 0x9047, &dedicated ); // GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX
+		::glGetIntegerv( 0x9049, &available ); // GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
+		::glGetIntegerv( 0x904B, &evicted ); // GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX
+		text += "card memory, all programs: " + mb( static_cast<std::uint64_t>( std::max( dedicated - available, 0 ) ) * 1024 ) + " used of "
+			+ mb( static_cast<std::uint64_t>( dedicated ) * 1024 ) + ( evicted > 0 ? ", " + mb( static_cast<std::uint64_t>( evicted ) * 1024 ) + " evicted" : std::string{} ) + "\n";
+	}
+
+	std::uint64_t accounted { 0 };
+	// textures: the copies of the data kept in the process after the upload
+	auto const textures { m_textures.memory() };
+	accounted += textures.cpu.bytes;
+	text += "textures: " + std::to_string( textures.cpu.count ) + " keep their data in ram, " + mb( textures.cpu.bytes ) + "; "
+		+ std::to_string( textures.gpu.count ) + " on the card, ~" + mb( textures.gpu.bytes ) + "\n";
+	// geometry: the copies of the chunks sent to the card
+	auto const geometry { m_geometry.memory() };
+	accounted += geometry.vertices.bytes + geometry.indices.bytes + geometry.userdata.bytes;
+	text += "geometry banks: " + std::to_string( geometry.banks ) + ", " + counted( geometry.vertices, "chunks" ) + ": vertices " + mb( geometry.vertices.bytes )
+		+ ", indices " + mb( geometry.indices.bytes ) + ", user data " + mb( geometry.userdata.bytes ) + "\n";
+	// models: the geometry their submodels keep of their own
+	auto const models { TModelsManager::memory() };
+	accounted += models.submodels.bytes;
+	text += "models: " + std::to_string( models.models ) + ", " + counted( models.submodels, "submodels" ) + ", their own geometry " + mb( models.submodels.bytes ) + "\n";
+	// scenery: the world space vertices the shapes and lines keep, the transforms of the sleepers, the model instances
+	memory_count shapes, lines, sleepers;
+	std::uint64_t instances { 0 };
+	if( simulation::Region != nullptr ) {
+		auto const shape = [ &shapes ]( scene::shape_node const &Shape ) {
+			++shapes.count;
+			shapes.bytes += memory_of( Shape.data().vertices ) + memory_of( Shape.data().userdata ); };
+		for( auto const *section : simulation::Region->m_sections ) {
+			if( section == nullptr ) { continue; }
+			for( auto const &item : section->m_shapes ) { shape( item ); }
+			for( auto const &cell : section->m_cells ) {
+				for( auto const &item : cell.m_shapesopaque ) { shape( item ); }
+				for( auto const &item : cell.m_shapestranslucent ) { shape( item ); }
+				for( auto const &item : cell.m_lines ) {
+					++lines.count;
+					lines.bytes += memory_of( item.data().vertices );
+				}
+				for( auto const *track : cell.m_paths ) {
+					if( track->m_sleeper_local_transforms.empty() ) { continue; }
+					++sleepers.count;
+					sleepers.bytes += memory_of( track->m_sleeper_local_transforms );
+				}
+				instances += cell.m_instancesopaque.size() + cell.m_instancetranslucent.size();
+			}
+		}
+	}
+	accounted += shapes.bytes + lines.bytes + sleepers.bytes;
+	text += "scenery: " + counted( shapes, "shapes" ) + " " + mb( shapes.bytes ) + ", " + counted( lines, "lines" ) + " " + mb( lines.bytes ) + ", sleepers of "
+		+ counted( sleepers, "tracks" ) + " " + mb( sleepers.bytes ) + ", " + std::to_string( instances ) + " model instances\n";
+	// sounds: the data of the buffers, which the AL keeps in the process
+	auto const sounds { audio::renderer.buffers_memory() };
+	accounted += sounds.bytes;
+	text += "sounds: " + counted( sounds, "buffers" ) + " " + mb( sounds.bytes ) + "\n";
+	text += "vehicles: " + std::to_string( simulation::Vehicles.sequence().size() ) + "\n";
+	if( process.valid ) {
+		auto const total { process.committed > 0 ? process.committed : process.resident };
+		text += "counted above: " + mb( accounted ) + " of " + mb( total ) + ( process.committed > 0 ? " private" : " resident" ) + ", the rest "
+			+ mb( total > accounted ? total - accounted : 0 ) + " (other data, the heaps, the driver)\n";
+	}
+	text += "gathered in " + to_string( std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - now ).count(), 2 ) + " ms, every 2 s";
+	m_memorytext = std::move( text );
 }
 
 void opengl46_renderer::cpu_timeline::begin( char const *Name )

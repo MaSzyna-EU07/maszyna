@@ -95,6 +95,7 @@ set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
 "utilities/workerpool.cpp"
+"utilities/memorystats.cpp"
 "world/Track.cpp"
 "world/TrackSleepers.cpp"
 "world/TrackBlend.cpp"
