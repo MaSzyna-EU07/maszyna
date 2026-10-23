@@ -8681,15 +8681,22 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     Timer::subsystem.vehicles_prepare.stop();
     Timer::subsystem.vehicles_forces.start();
     auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
-    // the steps of the physics on many threads (Global.performance_cpucores). not in a network session, which keeps the draws of
-    // Random() in step across the machines: the threads have engines of their own
+    // the steps of the physics on many threads (Global.performance_cpucores). not in a network session (network.server, .client),
+    // which keeps the draws of Random() in step across the machines: the threads have engines of their own. the messages to
+    // external programs (Global.iMultiplayer) don't mind
     auto &workers { Workers() };
     auto const parallel {
         ( workers.size() > 1 )
-        && ( Global.iMultiplayer == 0 )
         && Global.network_servers.empty()
         && ( false == Global.network_client.has_value() ) };
     counts.threads = ( parallel ? static_cast<unsigned int>( workers.size() ) : 1u );
+    // why not, for the debug panel
+    counts.pool = static_cast<unsigned int>( workers.size() );
+    counts.singlethread =
+        ( workers.size() <= 1 ? "performance.cpucores " + std::to_string( Global.performance_cpucores ) :
+          false == Global.network_servers.empty() ? std::string{ "network.server" } :
+          Global.network_client.has_value() ? std::string{ "network.client" } :
+          std::string{} );
     if( parallel ) {
         update_steps_parallel( Deltatime, Iterationcount, coarse );
     }
