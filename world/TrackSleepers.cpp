@@ -141,8 +141,8 @@ void lay( TTrack &Track ) {
     // the layout of the cluster isn't needed by this track any more, the instances below are what's drawn
     forget_layout( Track );
 
-    // the rails around, where they lie on the timbers, for the fastenings of the model
-    std::optional<fastened_rails> const rails { parts.fastened() ? std::make_optional<fastened_rails>( Track ) : std::nullopt };
+    // the rails around, where they lie on the timbers, for the fastenings of the model; found at the first timber, none for plain sleepers
+    std::optional<fastened_rails> rails;
 
     auto const partlength = [&]( int const Part ) {
         return static_cast<double>( parts.spans[ Part ].y - parts.spans[ Part ].x ); };
@@ -242,7 +242,10 @@ void lay( TTrack &Track ) {
             put( part_end, scale, parts.spans[ part_end ].x, -half );
             put( part_begin, scale, parts.spans[ part_begin ].y, half );
         }
-        if( rails && false == ( beam.plain && laid.plains != nullptr ) ) {
+        if( parts.fastened() && false == ( beam.plain && laid.plains != nullptr ) ) {
+            if( false == rails.has_value() ) {
+                rails.emplace( Track );
+            }
             // each square to its rail on the top of the timber, the plate under the foot of the rail
             for( auto const &fastening : rails->on( beam, parts ) ) {
                 auto across { glm::dvec3 { fastening.across.x, 0.0, fastening.across.y } };
@@ -252,7 +255,9 @@ void lay( TTrack &Track ) {
                 place[ 1 ] = glm::vec4 { glm::vec3 { y }, 0.f };
                 place[ 2 ] = glm::vec4 { glm::vec3 { glm::cross( across, y ) }, 0.f };
                 place[ 3 ] = glm::vec4 { glm::vec3 { fastening.point - Track.m_origin }, 1.f };
-                laid.instances[ fastening.part ].emplace_back( glm::translate( place, glm::vec3 { 0.f, -parts.seat, 0.f } ) );
+                auto const pivot { glm::vec3 { fastening.pivot, 0.f, 0.f } };
+                laid.instances[ fastening.part ].emplace_back(
+                    glm::translate( glm::scale( glm::translate( place, glm::vec3 { fastening.shift, -parts.seat, 0.f } + pivot ), glm::vec3 { fastening.scale, 1.f, 1.f } ), -pivot ) );
             }
         }
         runbeams.emplace_back( middle, half );

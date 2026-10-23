@@ -55,12 +55,22 @@ double constexpr fastening_step { 0.25 };
 double constexpr fastening_merge { 0.03 };
 // two rails closer than this lie in one fastening of both, as a rail of the frog with the one beside it; closer than the second
 // one, as the legs of the nose where they're joined, in one plate between them
-double constexpr fastening_pair { 0.24 };
+double constexpr fastening_pair { 0.2 };
 double constexpr fastening_nose { 0.05 };
+// how far apart the rails lie in the fastening of both, the check part of the model
+double constexpr check_seats { 0.113 };
+// the room left between the fastenings of rails close by, and how narrow their plates get to keep it
+double constexpr fastening_gap { 0.01 };
+double constexpr plate_least { 0.6 };
+double constexpr slide_least { 0.25 };
+// a fastening of two rails narrowed no more than this, the rails lying a little off its seats then
+double constexpr check_least { 0.8 };
 // how far before the tip of the blade the slide chairs of its stock rail begin
 double constexpr chair_lead { 0.3 };
 // how far from the stock rail toward its blade the slide plate of a chair is measured
 double constexpr slide_probe { 0.12 };
+// how far two fastenings on a timber may reach over one another before the check counts them
+double constexpr fastening_overlap { 0.01 };
 // how far from the camera the fastenings are drawn at most
 double constexpr fastening_range { 120.0 };
 

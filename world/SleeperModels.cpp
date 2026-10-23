@@ -109,22 +109,29 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
             model.skin = GfxRenderer->Fetch_Material( Skin );
         }
         // a timber put together from its parts, with a part between the ends stretched and repeated to the length
-        std::array<char const *, part_count> const names { "begin", "main", "end", "plate", "chair", "check" };
         model.stretchable = true;
         for( int part = 0; part < part_count; ++part ) {
-            model.parts[ part ] = model.model->GetFromName( names[ part ] );
+            model.parts[ part ] = model.model->GetFromName( part_names[ part ] );
             model.stretchable = model.stretchable && ( part >= timber_parts || model.parts[ part ] != nullptr );
         }
         auto top { std::numeric_limits<float>::lowest() };
         model.span = { std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest() };
         if( model.stretchable ) {
-            for( int part = 0; part < timber_parts; ++part ) {
+            for( int part = 0; part < part_count; ++part ) {
+                if( model.parts[ part ] == nullptr ) {
+                    continue;
+                }
                 glm::vec2 span { std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest() };
+                auto const timber { part < timber_parts };
                 vertices_of( model.parts[ part ], [&]( glm::vec3 const &Position ) {
                     span = { std::min( span.x, Position.x ), std::max( span.y, Position.x ) };
-                    top = std::max( top, Position.y ); } );
+                    if( timber ) {
+                        top = std::max( top, Position.y );
+                    } } );
                 model.spans[ part ] = span;
-                model.span = { std::min( model.span.x, span.x ), std::max( model.span.y, span.y ) };
+                if( timber ) {
+                    model.span = { std::min( model.span.x, span.x ), std::max( model.span.y, span.y ) };
+                }
             }
             model.stretchable = model.spans[ part_main ].y > model.spans[ part_main ].x;
         }
@@ -152,8 +159,12 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
         if( Seat < 0.f && model.fastened() ) {
             model.seat = std::max( top, surface_at( model.parts[ part_plate ], 0.f, 0.f ).value_or( top ) );
         }
-        if( model.fastened() && model.parts[ part_chair ] != nullptr ) {
-            model.slide = std::max( 0.f, surface_at( model.parts[ part_chair ], static_cast<float>( -slide_probe ), 0.f ).value_or( model.seat ) - model.seat );
+        if( model.fastened() ) {
+            for( auto const part : { part_chair, part_slide } ) {
+                if( model.parts[ part ] != nullptr ) {
+                    model.slide = std::max( model.slide, surface_at( model.parts[ part ], static_cast<float>( -slide_probe ), 0.f ).value_or( model.seat ) - model.seat );
+                }
+            }
         }
         if( model.length() < 0.5f ) {
             ErrorLog( "Bad sleepers3d: model \"" + Name + "\" has no beam along x" );
@@ -167,7 +178,7 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
                 ", main " + to_string( model.spans[ part_main ].x, 3 ) + ".." + to_string( model.spans[ part_main ].y, 3 ) :
                 std::string {} )
             + ( model.fastened() ?
-                std::string { ", fastenings plate" } + ( model.parts[ part_chair ] != nullptr ? " chair" : "" ) + ( model.parts[ part_check ] != nullptr ? " check" : "" ) :
+                std::string { ", fastenings plate" } + ( model.parts[ part_chair ] != nullptr ? " chair" : "" ) + ( model.parts[ part_check ] != nullptr ? " check" : "" ) + ( model.parts[ part_slide ] != nullptr ? " slide" : "" ) :
                 std::string {} )
             + ", seat " + to_string( model.seat, 3 )
             + ( model.slide > 0.f ? ", slide " + to_string( model.slide, 3 ) : std::string {} ) );

@@ -36,11 +36,15 @@ enum part : int {
     part_main, // the piece between the ends
     part_end, // the end on the -x side
     part_plate, // the fastening of a rail, its origin under the middle of the foot of the rail
-    part_chair, // the slide chair of a stock rail with the blade beside it, its origin under the stock rail, the slide plate on its -x side
+    part_chair, // the brace of the slide chair of a stock rail with the blade beside it, its origin under the stock rail, on its +x side
     part_check, // the fastening of a rail with another one close beside it, as a check rail or a rail of the frog, its origin under the
                 // rail, the other one on its +x side
+    part_slide, // the slide plate of the chair, apart from it on its -x side, from the edge of the foot of the stock rail on, shortened
+                // toward it where another rail lies close
     part_count
 };
+// the names of the submodels of the parts
+inline constexpr std::array<char const *, part_count> part_names { "begin", "main", "end", "plate", "chair", "check", "slide" };
 // the parts a timber is put together from, the fastenings after them
 int constexpr timber_parts { part_end + 1 };
 
