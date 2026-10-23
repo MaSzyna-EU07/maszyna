@@ -11499,3 +11499,6 @@ msgstr "Jak widok z góry rysuje tory"
 
 msgid "The colour of the rails, to stand out on the imagery and the map"
 msgstr "Kolor szyn, żeby odcinały się od ortofotomapy i mapy"
+
+msgid "(c) OpenStreetMap contributors, geoportal.gov.pl"
+msgstr "(c) współtwórcy OpenStreetMap, geoportal.gov.pl"

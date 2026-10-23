@@ -106,6 +106,10 @@ class editor_orthophoto
 	// true for geometry created by the layer, so ground queries can skip it
 	static bool owns(gfx::geometry_handle const &Geometry);
 
+	// a top view of Scale metres a pixel shows the base map of OpenStreetMap in place of the imagery, as far as Reach from the
+	// camera; 0: the imagery
+	void overview(double const Scale, double const Reach);
+	bool overview() const { return m_map_level > 0; }
 	// main thread, once per frame: schedules tiles around the camera and uploads finished ones
 	void update(glm::dvec3 const &Camera);
 	// main thread, inside an ImGui frame: emits the overlay into the background draw list.
@@ -135,6 +139,7 @@ class editor_orthophoto
 	struct job
 	{
 		tile_key key;
+		int map{0};          // level of a tile of the map, 256 m << map a side; 0: of the imagery
 		int level{0};        // requested texture size in pixels
 		std::uint8_t alpha{255}; // baked into the texture, for translucency in the scene
 		source src;
@@ -144,6 +149,7 @@ class editor_orthophoto
 	struct result
 	{
 		tile_key key;
+		int map{0};
 		int level{0};
 		std::uint8_t alpha{255};
 		std::uint32_t generation{0};
@@ -188,7 +194,7 @@ class editor_orthophoto
 	static int level_for(int Distance, bool Hires);
 	tile_key camera_tile(glm::dvec3 const &Camera) const;
 	glm::dvec2 tile_corner(tile_key const &Key) const; // world (x,z) of the north-west corner
-	void schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha);
+	void schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha, int const Map = 0);
 	std::uint8_t texture_alpha() const; // alpha the textures should carry with the current settings
 	std::size_t apply(result &Result, double Now); // returns bytes uploaded
 	void release_tile(tile &Tile);
@@ -198,6 +204,8 @@ class editor_orthophoto
 	void remove_shape(tile &Tile);
 	void release_geometry(tile &Tile);
 	void update_scene();
+	void update_map(glm::dvec3 const &Camera, double const Now);
+	void draw_map(glm::mat4 const &ViewProjection, glm::dvec3 const &CameraPos, float ScreenWidth, float ScreenHeight) const;
 	void start_workers();
 	void worker();
 
@@ -205,6 +213,10 @@ class editor_orthophoto
 	bool m_enabled{false};
 	std::map<tile_key, tile> m_tiles; // main thread only
 	tile_key m_camera_tile{0, 0};
+	using map_key = std::pair<int, tile_key>; // level, then the place on the grid of the tiles of that level
+	std::map<map_key, tile> m_maps; // main thread only
+	int m_map_level{0};      // of the map shown, 0: the imagery
+	double m_map_reach{0.0}; // m from the camera the view of the map reaches
 	std::vector<texture_slot> m_free_slots; // pool of textures, reused between tiles
 	int m_texture_count{0};
 	ground_query m_ground;

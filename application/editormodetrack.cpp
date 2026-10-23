@@ -2201,8 +2201,12 @@ void editor_mode::draw_build_overlay() const
 	// in the 3D view only near the camera, where they can be told apart; from above all of them
 	glm::dvec3 const eye{Global.pCamera.Pos};
 	auto const in_reach = [&](glm::dvec3 const &Point) { return Global.EditorOrtho || glm::distance(Point, eye) <= kDotsRange; };
+	// far out the joints of the pieces would cover the tracks, only the free ends are told
+	auto const joints{false == Global.EditorOrtho || display.y <= 0.0f || 2.0 * static_cast<double>(Global.EditorOrthoExtent) / display.y <= 1.0};
 	for (auto const *track : simulation::Paths.sequence())
 	{
+		if (false == joints)
+			break;
 		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
 			continue;
 		for (auto const &path : track->m_paths)

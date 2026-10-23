@@ -1470,6 +1470,14 @@ bool editor_mode::update()
         draw_terrain_overlay();
 
     // --- geoportal orthophoto: streamed around the camera, drawn beneath the other overlays ---
+    // far out the top view shows the base map in place of the imagery, and the ground isn't drawn under it
+    {
+        auto const &io{ImGui::GetIO()};
+        auto const metres{Global.EditorOrtho && io.DisplaySize.y > 0.0f ? 2.0 * static_cast<double>(Global.EditorOrthoExtent) / io.DisplaySize.y : 0.0};
+        auto const aspect{io.DisplaySize.y > 0.0f ? static_cast<double>(io.DisplaySize.x / io.DisplaySize.y) : 1.0};
+        Global.EditorOrthoMap = m_orthophoto.enabled() && metres >= (m_orthophoto.overview() ? 1.6 : 2.0);
+        m_orthophoto.overview(Global.EditorOrthoMap ? metres : 0.0, static_cast<double>(Global.EditorOrthoExtent) * std::sqrt(1.0 + aspect * aspect));
+    }
     m_orthophoto.update(Camera.Pos);
     nmt_update();
     draw_orthophoto();
@@ -1486,7 +1494,7 @@ bool editor_mode::update()
         draw_track_labels();
         draw_track_legend();
     }
-    else if (Global.EditorOrtho && Global.EditorOrthoTracks > 1)
+    else if (Global.EditorOrtho && (Global.EditorOrthoTracks > 1 || Global.EditorOrthoMap))
         draw_track_lines();
     if (selected_track())
         draw_track_overlay();
@@ -2494,6 +2502,15 @@ void editor_mode::draw_orthophoto()
     ImGuiIO const &io = ImGui::GetIO();
     float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
     m_orthophoto.draw(editor_mode::projection_matrix(aspect) * view, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
+    if (false == m_orthophoto.overview())
+        return;
+    char const *credit{STR_C("(c) OpenStreetMap contributors, geoportal.gov.pl")};
+    auto const size{ImGui::CalcTextSize(credit)};
+    auto const corner{editor_ui::view_max()};
+    ImVec2 const from{corner.x - size.x - 12.0f, corner.y - size.y - 44.0f};
+    auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+    drawlist->AddRectFilled(ImVec2(from.x - 4.0f, from.y - 2.0f), ImVec2(from.x + size.x + 4.0f, from.y + size.y + 2.0f), IM_COL32(255, 255, 255, 190), 3.0f);
+    drawlist->AddText(from, IM_COL32(40, 40, 40, 255), credit);
 }
 
 void editor_mode::draw_ortho_compass() const

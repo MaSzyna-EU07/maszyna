@@ -2649,7 +2649,8 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 		case rendermode::shadows:
         case rendermode::pickscenery:
 		{
-			if (false == section->m_shapes.empty())
+			// the top view of the editor far out has the map in place of the ground
+			if (false == section->m_shapes.empty() && false == (EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoMap))
 			{
 				// since all shapes of the section share center point we can optimize out a few calls here
 				::glPushMatrix();

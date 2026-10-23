@@ -598,7 +598,7 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 	}
 
 	// the top view of the tracks wants the terrain as far as the corners of the screen, as fine as its pixels need
-	auto const top{Global.EditorOrtho && Global.editor_tracks};
+	auto const top{Global.EditorOrtho && Global.editor_tracks && false == Global.EditorOrthoMap};
 	auto const aspect{Global.window_size.x / std::max(1.0, static_cast<double>(Global.window_size.y))};
 	auto const reach{top ? Global.EditorOrthoExtent * std::sqrt(1.0 + aspect * aspect) : 0.0};
 	m_pixel = top ? 2.0 * Global.EditorOrthoExtent / std::max(1, Global.window_size.y) : 0.0;

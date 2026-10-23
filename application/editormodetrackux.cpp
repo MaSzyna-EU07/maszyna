@@ -204,7 +204,7 @@ void editor_mode::draw_track_lines() const
 	auto const metres{ortho_metres_per_pixel()};
 	auto const colouring{ui()->mode() == nodebank_panel::TRACK ? m_track_colouring : track_colouring::plain};
 	// the top view of the rails alone draws them in a colour of their own, as on a plan: both rails where they're apart on the screen
-	auto const rails{metres > 0.0 && Global.EditorOrthoTracks > 1 && colouring == track_colouring::plain};
+	auto const rails{metres > 0.0 && (Global.EditorOrthoTracks > 1 || Global.EditorOrthoMap) && colouring == track_colouring::plain};
 	if (metres < kLinesFrom && colouring == track_colouring::plain && false == rails)
 		return;
 	auto const &io{ImGui::GetIO()};

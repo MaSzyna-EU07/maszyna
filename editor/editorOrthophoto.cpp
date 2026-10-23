@@ -40,6 +40,9 @@ namespace fs = std::filesystem;
 constexpr int standard_pixels{1024}; // ~25 cm/px for a 256 m tile, matches the standard orthophoto
 constexpr int hires_pixels{4096};    // ~6 cm/px, the WMS MaxWidth/MaxHeight of the geoportal services
 constexpr int probe_pixels{64};      // coverage test of the high-resolution product
+constexpr int map_pixels{1024};      // a side of a tile of the map, whatever its size in metres
+constexpr int map_stamp{32};         // rows under a tile of the map the service writes its credit into, cut off
+constexpr char const *map_service{"https://mapy.geoportal.gov.pl/wss/ext/OSM/BaseMap/service"};
 constexpr int worker_count{3};       // concurrent requests; the service is slow but shouldn't be hammered
 constexpr std::size_t upload_budget{16u << 20}; // bytes of texture data uploaded per frame (always at least one tile)
 constexpr std::size_t vertex_budget{60000};     // ImGui uses 16-bit indices and not every backend supports vertex offsets
@@ -336,6 +339,31 @@ bool load_tile(http_client &Client, tile_request const &Request, image &Out, boo
 	return true;
 }
 
+// the base map of OpenStreetMap from geoportal.gov.pl, in the metres of PUWG 1992 as the imagery. the service writes its credit into
+// the corner of every image: the image reaches a little further south and the rows with it are cut off
+bool load_map(http_client &Client, int const Level, int const Ix, int const Iy, image &Out, std::string &Error, stop_check const &Stop)
+{
+	auto const size{static_cast<long long>(editor_orthophoto::tile_size) << Level};
+	auto const below{size * map_stamp / map_pixels};
+	auto const url{std::string{map_service} + "?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=osm&STYLES=&SRS=EPSG:2180&FORMAT=image/png&WIDTH=" + std::to_string(map_pixels) +
+	               "&HEIGHT=" + std::to_string(map_pixels + map_stamp) + "&BBOX=" + std::to_string(Ix * size) + "," + std::to_string(Iy * size - below) + "," + std::to_string((Ix + 1) * size) + "," +
+	               std::to_string((Iy + 1) * size)};
+	std::vector<std::uint8_t> data;
+	auto const path{cache_root() / "osm" / (std::to_string(size) + "_" + std::to_string(Iy) + "_" + std::to_string(Ix) + ".png")};
+	if (!fetch(Client, url, path, data, Error, Stop) || !decode(data, Out, Error))
+		return false;
+	if (Out.width != map_pixels || Out.height != map_pixels + map_stamp)
+	{
+		Error = "unexpected size of the map " + std::to_string(Out.width) + "x" + std::to_string(Out.height);
+		std::error_code ec;
+		fs::remove(path, ec);
+		return false;
+	}
+	Out.height = map_pixels;
+	Out.rgba.resize(static_cast<std::size_t>(map_pixels) * map_pixels * 4);
+	return true;
+}
+
 // the services cover Poland only (EPSG:2180 extent from their capabilities, plus a margin); no point asking about other places
 bool in_service_area(int Ix, int Iy)
 {
@@ -550,6 +578,9 @@ void editor_orthophoto::enabled(bool State)
 	for (auto &entry : m_tiles)
 		release_tile(entry.second);
 	m_tiles.clear();
+	for (auto &entry : m_maps)
+		release_tile(entry.second);
+	m_maps.clear();
 	++m_generation; // results still in flight are now stale
 	std::lock_guard<std::mutex> lock(m_mutex);
 	m_done.clear();
@@ -604,6 +635,8 @@ void editor_orthophoto::cancel_pending()
 	// jobs already picked up by a worker still deliver their result, which is accepted if the tile is still wanted
 	for (auto &entry : m_tiles)
 		entry.second.requested = 0;
+	for (auto &entry : m_maps)
+		entry.second.requested = 0;
 }
 
 void editor_orthophoto::clear_cache()
@@ -612,6 +645,9 @@ void editor_orthophoto::clear_cache()
 	for (auto &entry : m_tiles)
 		release_tile(entry.second);
 	m_tiles.clear();
+	for (auto &entry : m_maps)
+		release_tile(entry.second);
+	m_maps.clear();
 	++m_generation;
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -628,21 +664,28 @@ void editor_orthophoto::retry_failed()
 		entry.second.failures = 0;
 		entry.second.retry_at = 0.0;
 	}
+	for (auto &entry : m_maps)
+	{
+		entry.second.failures = 0;
+		entry.second.retry_at = 0.0;
+	}
 }
 
 editor_orthophoto::statistics editor_orthophoto::stats() const
 {
 	statistics out;
-	for (auto const &entry : m_tiles)
-	{
-		tile const &t = entry.second;
+	auto const count = [&](tile const &t) {
 		if (t.level > 0 && !t.empty && t.slot.texture != null_handle)
 			++out.resident;
 		if (t.requested != 0)
 			++out.loading;
 		else if (t.failures > 0 && t.level == 0)
 			++out.failed;
-	}
+	};
+	for (auto const &entry : m_tiles)
+		count(entry.second);
+	for (auto const &entry : m_maps)
+		count(entry.second);
 	return out;
 }
 
@@ -706,12 +749,12 @@ void editor_orthophoto::release_tile(tile &Tile)
 	Tile.slot = texture_slot{};
 }
 
-void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha)
+void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha, int const Map)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
-		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == Key; }), m_queue.end());
-		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires}, m_generation.load()});
+		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == Key && Job.map == Map; }), m_queue.end());
+		m_queue.push_back(job{Key, Map, Level, Alpha, source{m_config.year, m_config.hires}, m_generation.load()});
 	}
 	Tile.requested = Level;
 	Tile.requested_alpha = Alpha;
@@ -728,10 +771,17 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 {
 	if (Result.generation != m_generation.load())
 		return 0;
-	auto const lookup = m_tiles.find(Result.key);
-	if (lookup == m_tiles.end())
+	tile *found{nullptr};
+	if (Result.map > 0)
+	{
+		if (auto const lookup = m_maps.find({Result.map, Result.key}); lookup != m_maps.end())
+			found = &lookup->second;
+	}
+	else if (auto const lookup = m_tiles.find(Result.key); lookup != m_tiles.end())
+		found = &lookup->second;
+	if (found == nullptr)
 		return 0; // left the area in the meantime; the imagery stays in the disk cache
-	tile &t = lookup->second;
+	tile &t = *found;
 	bool const current = (t.requested == Result.level && t.requested_alpha == Result.alpha);
 	if (current)
 		t.requested = 0;
@@ -1104,6 +1154,19 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_focus = centre;
 	}
+	if (m_map_level > 0)
+	{
+		update_map(Camera, now);
+		return;
+	}
+	if (false == m_maps.empty())
+	{
+		for (auto &entry : m_maps)
+			release_tile(entry.second);
+		m_maps.clear();
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [](job const &Job) { return Job.map > 0; }), m_queue.end());
+	}
 	int const radius = m_config.radius;
 	auto const distance = [&](tile_key const &Key) { return std::max(std::abs(Key.first - centre.first), std::abs(Key.second - centre.second)); };
 
@@ -1133,7 +1196,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 	if (evicted)
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
-		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return distance(Job.key) > radius; }), m_queue.end());
+		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.map == 0 && distance(Job.key) > radius; }), m_queue.end());
 	}
 
 	// tiles which need (different) imagery
@@ -1175,6 +1238,59 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 	update_scene();
 }
 
+void editor_orthophoto::overview(double const Scale, double const Reach)
+{
+	// a pixel of a tile of the map is as large as one of the screen, or up to twice as small
+	m_map_level = Scale > 0.0 ? std::clamp(static_cast<int>(std::floor(std::log2(Scale * map_pixels / tile_size))), 2, 9) : 0;
+	m_map_reach = Reach;
+}
+
+void editor_orthophoto::update_map(glm::dvec3 const &Camera, double const Now)
+{
+	// the imagery gives way to the map, its tiles come back from the disk cache once the view is near again
+	if (false == m_tiles.empty())
+	{
+		for (auto &entry : m_tiles)
+			release_tile(entry.second);
+		m_tiles.clear();
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [](job const &Job) { return Job.map == 0; }), m_queue.end());
+	}
+	double const east = m_config.east - Camera.x;
+	double const north = m_config.north + Camera.z;
+	auto const in_view = [&](map_key const &Key) {
+		auto const size{tile_size * static_cast<double>(1 << Key.first)};
+		return (Key.second.first + 1) * size > east - m_map_reach && Key.second.first * size < east + m_map_reach && (Key.second.second + 1) * size > north - m_map_reach &&
+		       Key.second.second * size < north + m_map_reach;
+	};
+	// the tiles of the other levels stay under the ones of the level shown until these come
+	auto const size{tile_size * static_cast<double>(1 << m_map_level)};
+	auto complete{true};
+	for (int iy = static_cast<int>(std::floor((north - m_map_reach) / size)); iy <= static_cast<int>(std::floor((north + m_map_reach) / size)); ++iy)
+		for (int ix = static_cast<int>(std::floor((east - m_map_reach) / size)); ix <= static_cast<int>(std::floor((east + m_map_reach) / size)); ++ix)
+		{
+			map_key const key{m_map_level, {ix, iy}};
+			tile &t = m_maps[key];
+			if (t.level == 0 && false == t.empty)
+				complete = false;
+			if (t.empty || t.level == map_pixels || t.requested == map_pixels || Now < t.retry_at)
+				continue;
+			schedule(key.second, t, map_pixels, 255, m_map_level);
+		}
+	for (auto it = m_maps.begin(); it != m_maps.end();)
+	{
+		if (false == in_view(it->first) || std::abs(it->first.first - m_map_level) > 1 || (complete && it->first.first != m_map_level))
+		{
+			release_tile(it->second);
+			it = m_maps.erase(it);
+		}
+		else
+			++it;
+	}
+	std::lock_guard<std::mutex> lock(m_mutex);
+	m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.map > 0 && m_maps.count({Job.map, Job.key}) == 0; }), m_queue.end());
+}
+
 void editor_orthophoto::worker()
 {
 	stbi_set_flip_vertically_on_load_thread(0); // the texture loader flips globally; tiles keep the north edge in the first row
@@ -1194,8 +1310,10 @@ void editor_orthophoto::worker()
 			long long bestdistance = LLONG_MAX;
 			for (auto it = m_queue.begin(); it != m_queue.end(); ++it)
 			{
-				long long const dx = it->key.first - m_focus.first;
-				long long const dy = it->key.second - m_focus.second;
+				// a tile of the map is that many tiles of the imagery a side
+				long long const scale = 1ll << it->map;
+				long long const dx = it->key.first * scale + scale / 2 - m_focus.first;
+				long long const dy = it->key.second * scale + scale / 2 - m_focus.second;
 				long long const d = dx * dx + dy * dy;
 				if (d < bestdistance)
 				{
@@ -1209,6 +1327,7 @@ void editor_orthophoto::worker()
 
 		result out;
 		out.key = current.key;
+		out.map = current.map;
 		out.level = current.level;
 		out.generation = current.generation;
 		out.alpha = current.alpha;
@@ -1216,11 +1335,11 @@ void editor_orthophoto::worker()
 		image picture;
 		std::string error;
 		tile_request const request{current.key.first, current.key.second, current.level, current.src.year, current.src.hires};
-		out.ok = load_tile(client, request, picture, out.empty, error, stopping);
+		out.ok = current.map > 0 ? load_map(client, current.map, current.key.first, current.key.second, picture, error, stopping) : load_tile(client, request, picture, out.empty, error, stopping);
 		if (m_stop)
 			return;
 		if (!out.ok)
-			ErrorLog("Editor orthophoto: tile " + std::to_string(current.key.second) + "_" + std::to_string(current.key.first) + " failed: " + error);
+			ErrorLog(std::string("Editor orthophoto: ") + (current.map > 0 ? "map " + std::to_string(current.map) + " " : std::string{}) + "tile " + std::to_string(current.key.second) + "_" + std::to_string(current.key.first) + " failed: " + error);
 		if (out.ok && current.alpha < 255)
 			for (std::size_t i = 3; i < picture.rgba.size(); i += 4)
 				picture.rgba[i] = static_cast<std::uint8_t>((picture.rgba[i] * current.alpha + 127u) / 255u);
@@ -1235,7 +1354,14 @@ void editor_orthophoto::worker()
 
 void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &CameraPos, float ScreenWidth, float ScreenHeight) const
 {
-	if (!m_enabled || m_config.in_scene || m_config.opacity <= 0.0f || ScreenWidth <= 0.0f || ScreenHeight <= 0.0f)
+	if (!m_enabled || ScreenWidth <= 0.0f || ScreenHeight <= 0.0f)
+		return;
+	if (m_map_level > 0)
+	{
+		draw_map(ViewProjection, CameraPos, ScreenWidth, ScreenHeight);
+		return;
+	}
+	if (m_config.in_scene || m_config.opacity <= 0.0f)
 		return;
 
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
@@ -1379,4 +1505,47 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 			}
 		drawlist->PopTextureID();
 	}
+}
+
+void editor_orthophoto::draw_map(glm::mat4 const &ViewProjection, glm::dvec3 const &CameraPos, float ScreenWidth, float ScreenHeight) const
+{
+	// the map takes the place of the ground, opaque; the top view sees it straight down, a tile is one quad
+	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
+	auto const toscreen = [&](glm::vec4 const &Clip) { return ImVec2((Clip.x / Clip.w * 0.5f + 0.5f) * ScreenWidth, (0.5f - Clip.y / Clip.w * 0.5f) * ScreenHeight); };
+	float constexpr guard{1.02f};
+	for (auto const shown : {false, true})
+		for (auto const &entry : m_maps)
+		{
+			if ((entry.first.first == m_map_level) != shown)
+				continue;
+			tile const &t = entry.second;
+			if (t.level == 0 || t.empty || t.slot.texture == null_handle)
+				continue;
+			std::size_t const textureid = GfxRenderer->Texture(t.slot.texture).get_id();
+			if (textureid == 0 || textureid == static_cast<std::size_t>(static_cast<std::uint32_t>(-1)))
+				continue;
+			auto const size{tile_size * static_cast<double>(1 << entry.first.first)};
+			glm::dvec2 const corner{m_config.east - entry.first.second.first * size, (entry.first.second.second + 1) * size - m_config.north};
+			auto const at = [&](double U, double V) { return ViewProjection * glm::vec4(glm::vec3(glm::dvec3(corner.x - U * size, CameraPos.y - 1.0, corner.y - V * size) - CameraPos), 1.0f); };
+			clip_vertex buffer0[12] = {{at(0.0, 0.0), {0.0f, 0.0f}}, {at(1.0, 0.0), {1.0f, 0.0f}}, {at(1.0, 1.0), {1.0f, 1.0f}}, {at(0.0, 1.0), {0.0f, 1.0f}}};
+			clip_vertex buffer1[12];
+			int count = clip_polygon(buffer0, 4, buffer1, [&](glm::vec4 const &v) { return v.w * guard - v.x; });
+			count = clip_polygon(buffer1, count, buffer0, [&](glm::vec4 const &v) { return v.w * guard + v.x; });
+			count = clip_polygon(buffer0, count, buffer1, [&](glm::vec4 const &v) { return v.w * guard - v.y; });
+			count = clip_polygon(buffer1, count, buffer0, [&](glm::vec4 const &v) { return v.w * guard + v.y; });
+			if (count < 3)
+				continue;
+			drawlist->PushTextureID((ImTextureID)(intptr_t)(textureid));
+			drawlist->PrimReserve((count - 2) * 3, count);
+			auto const base = static_cast<ImDrawIdx>(drawlist->_VtxCurrentIdx);
+			for (int k = 1; k + 1 < count; ++k)
+			{
+				drawlist->PrimWriteIdx(base);
+				drawlist->PrimWriteIdx(static_cast<ImDrawIdx>(base + k));
+				drawlist->PrimWriteIdx(static_cast<ImDrawIdx>(base + k + 1));
+			}
+			for (int k = 0; k < count; ++k)
+				drawlist->PrimWriteVtx(toscreen(buffer0[k].position), ImVec2(buffer0[k].uv.x, buffer0[k].uv.y), IM_COL32_WHITE);
+			drawlist->PopTextureID();
+		}
 }
