@@ -1281,6 +1281,7 @@ loft_span TTrack::rail_layer::span( rail_piece const &Piece, piece_ends const &E
     result.rises = Piece.rises;
     if( false == Piece.rises.empty() ) {
         result.head = { m_drawing.size.neck, m_drawing.size.crest };
+        result.low = { m_rise, low_web, low_inward, low_outward, low_edge, low_root };
     }
     if( std::abs( Piece.from - Ends.from ) < 1e-6 ) {
         result.fromend = Ends.fromend;

@@ -52,6 +52,13 @@ double constexpr blade_spacing { 0.5 };
 double constexpr blade_runon_margin { 0.2 }; // how far short of the end of the plain track a blade running on into it ends
 double constexpr wing_low { 1.5 }; // how far before the throat the wing rails are of the low section of the blades, raised on their timbers as the blades
 double constexpr wing_forged { 0.5 }; // how long the end of a wing rail forged to the plain rail is, going down to it
+// the low section of the blades, Zu1-60 (60E1A1) against 60E1: its web 44 mm thick against 16.5, its foot 55 mm inwards and 85 mm outwards
+// of the middle against 75 both ways, the edges of its foot 20 mm high against 11.5, its web from 36 mm up against 30.6
+double constexpr low_web { 44.0 / 16.5 };
+double constexpr low_inward { 55.0 / 75.0 };
+double constexpr low_outward { 85.0 / 75.0 };
+double constexpr low_edge { 20.0 / 11.5 };
+double constexpr low_root { 36.0 / 30.6 };
 
 // where the inner rails of the two paths of a switch cross, found from their gauge lines behind the blades
 struct switch_frog {

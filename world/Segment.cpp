@@ -764,6 +764,87 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             return Height;
         }
         return static_cast<float>( Height + Rise * ( Span.head.x - Height ) / ( Span.head.x - bottom ) ); };
+    // the profile below its head as drawn, about the middle of its foot: how far the foot reaches inwards and outwards, how thick the web
+    // is, how wide the head, where its underside is, how high the top of the edges of the foot and the root of the web are
+    struct {
+        double middle { 0.0 }, inward { 0.0 }, outward { 0.0 }, web { 1e6 }, head { 0.0 }, underside { 1e6 }, edge { 0.0 }, root { 1e6 };
+    } drawn;
+    auto const across = [&]( gfx::basic_vertex const &Point ) {
+        return static_cast<double>( Span.side * Point.position.x - Span.halfwidth ); };
+    auto low { Span.low.full > 0.0 && Span.head.x > bottom };
+    if( low ) {
+        glm::dvec2 foot { 1e6, -1e6 };
+        for( auto const &point : ShapePoints ) {
+            if( point.position.y < bottom + 0.0005f ) {
+                foot = { std::min( foot.x, across( point ) ), std::max( foot.y, across( point ) ) };
+            }
+        }
+        drawn.middle = 0.5 * ( foot.x + foot.y );
+        drawn.inward = drawn.middle - foot.x;
+        drawn.outward = foot.y - drawn.middle;
+        for( auto const &point : ShapePoints ) {
+            auto const off { std::abs( across( point ) - drawn.middle ) };
+            if( point.position.y >= Span.head.x ) {
+                drawn.head = std::max( drawn.head, off );
+            }
+            else if( point.position.y > bottom + 0.25 * ( Span.head.x - bottom ) ) {
+                drawn.web = std::min( drawn.web, off );
+            }
+        }
+        for( auto const &point : ShapePoints ) {
+            auto const off { std::abs( across( point ) - drawn.middle ) };
+            auto const height { static_cast<double>( point.position.y - bottom ) };
+            if( point.position.y >= Span.head.x && off >= drawn.head - 0.001 ) {
+                drawn.underside = std::min( drawn.underside, static_cast<double>( point.position.y ) );
+            }
+            if( point.position.y < Span.head.x && off <= drawn.web + 0.0005 ) {
+                drawn.root = std::min( drawn.root, height );
+            }
+            if( off >= 0.9 * std::min( drawn.inward, drawn.outward ) ) {
+                drawn.edge = std::max( drawn.edge, height );
+            }
+        }
+        low = ( drawn.web < std::min( drawn.inward, drawn.outward ) && drawn.web < drawn.head && drawn.edge > 0.0 && drawn.edge < drawn.root && drawn.root < Span.head.x - bottom && drawn.underside < 1e6 );
+    }
+    // the profile made over into the low section with its foot raised by Rise, by as much of it as the rise is of the full one: below the
+    // head the web thickened, the foot reshaped, the web shortened
+    std::vector<gfx::basic_vertex> lowpoints;
+    auto const lowered = [&]( double const Rise ) -> gfx::vertex_array const & {
+        auto const share { std::clamp( Rise / Span.low.full, 0.0, 1.0 ) };
+        auto const web { drawn.web * glm::mix( 1.0, Span.low.web, share ) };
+        auto const inward { drawn.inward * glm::mix( 1.0, Span.low.inward, share ) };
+        auto const outward { drawn.outward * glm::mix( 1.0, Span.low.outward, share ) };
+        auto const edge { drawn.edge * glm::mix( 1.0, Span.low.edge, share ) };
+        auto const root { drawn.root * glm::mix( 1.0, Span.low.root, share ) };
+        auto const below { Span.head.x - bottom };
+        auto const top { std::max( below - Rise, root + 0.001 ) };
+        lowpoints = ShapePoints;
+        for( auto &point : lowpoints ) {
+            if( point.position.y >= drawn.underside ) {
+                continue;
+            }
+            auto const off { across( point ) - drawn.middle };
+            auto const distance { std::abs( off ) };
+            auto moved { distance };
+            if( point.position.y >= Span.head.x ) {
+                moved = web + ( std::max( distance, drawn.web ) - drawn.web ) * ( drawn.head - web ) / std::max( drawn.head - drawn.web, 1e-6 );
+            }
+            else {
+                auto const was { off < 0.0 ? drawn.inward : drawn.outward };
+                auto const reach { off < 0.0 ? inward : outward };
+                moved = ( distance <= drawn.web ?
+                    distance * web / drawn.web :
+                    web + ( distance - drawn.web ) * ( reach - web ) / std::max( was - drawn.web, 1e-6 ) );
+                auto const height { static_cast<double>( point.position.y - bottom ) };
+                auto const made {
+                    height <= drawn.edge ? height * edge / drawn.edge :
+                    height <= drawn.root ? edge + ( height - drawn.edge ) * ( root - edge ) / ( drawn.root - drawn.edge ) :
+                    root + ( height - drawn.root ) * ( top - root ) / ( below - drawn.root ) };
+                point.position.y = static_cast<float>( bottom + below - top + made );
+            }
+            point.position.x = static_cast<float>( Span.side * ( Span.halfwidth + drawn.middle + std::copysign( moved, off ) ) );
+        }
+        return lowpoints; };
 
     auto const ring = [&]( double const Distance, double const Middle, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
         glm::dvec3 point;
@@ -797,7 +878,9 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         }
         auto const worn { knots::sample( Span.ramp, Distance, -1e6 ) };
         auto const drop { knots::sample( Span.drops, Distance, 0.0 ) };
-        auto const rise { Span.rises.empty() ? Span.rise : knots::sample( Span.rises, Distance, 0.0 ) };
+        auto const sampled { Span.rises.empty() ? Span.rise : knots::sample( Span.rises, Distance, 0.0 ) };
+        auto const &points { low && sampled > 0.0 ? lowered( sampled ) : ShapePoints };
+        auto const rise { low ? 0.0 : sampled };
         static loft_end const unshaped;
         auto const &shaped { Distance <= Span.from ? Span.fromend : Distance >= Span.to ? Span.toend : unshaped };
         auto const bend { shaped.bend };
@@ -813,11 +896,11 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         }
         Ring.clear();
         Wear.clear();
-        auto const count { ShapePoints.size() };
+        auto const count { points.size() };
         auto const reach = [&]( std::size_t const Index ) {
-            return static_cast<double>( Span.side * ShapePoints[ Index ].position.x - Span.halfwidth ); };
+            return static_cast<double>( Span.side * points[ Index ].position.x - Span.halfwidth ); };
         auto const twin = [&]( std::size_t const A, std::size_t const B ) {
-            return ShapePoints[ A ].position.x == ShapePoints[ B ].position.x && ShapePoints[ A ].position.y == ShapePoints[ B ].position.y; };
+            return points[ A ].position.x == points[ B ].position.x && points[ A ].position.y == points[ B ].position.y; };
         auto const clamped = [&]( std::size_t const Index ) {
             auto const outside { reach( Index ) };
             return ( outside > middleextent ? 1 : outside < middleinner ? -1 : 0 ); };
@@ -831,15 +914,15 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             // nothing of the profile between the limits there: the ring shrinks to one point, the step draws nothing
             auto const outside { std::clamp( 0.5 * ( std::min( extent, farthest ) + std::max( innerextent, nearest ) ), nearest, farthest ) };
             auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position };
-            pt.y += raised( ShapePoints.front().position.y, rise ) + Span.lift;
+            pt.y += raised( points.front().position.y, rise ) + Span.lift;
             for( std::size_t j = 0; j < count; ++j ) {
-                Ring.emplace_back( pt, glm::vec3{ 0.f, 1.f, 0.f }, glm::vec2{ ShapePoints[ j ].texture.x, 0.f } );
+                Ring.emplace_back( pt, glm::vec3{ 0.f, 1.f, 0.f }, glm::vec2{ points[ j ].texture.x, 0.f } );
                 Wear.push_back( 1.f );
             }
             return;
         }
         for( std::size_t j = 0; j < count; ++j ) {
-            auto shape { ShapePoints[ j ] };
+            auto shape { points[ j ] };
             auto outside { reach( j ) };
             auto wall { glm::vec3{ 0.f } };
             auto const side { clamped( j ) };
@@ -866,7 +949,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                     if( false == open( neighbour ) ) {
                         continue;
                     }
-                    auto const &other { ShapePoints[ neighbour ] };
+                    auto const &other { points[ neighbour ] };
                     auto const t { std::clamp( static_cast<float>( ( limit - reach( neighbour ) ) / ( side > 0 ? std::max( outside - reach( neighbour ), 1e-6 ) : std::min( outside - reach( neighbour ), -1e-6 ) ) ), 0.f, 1.f ) };
                     shape.position.y = glm::mix( other.position.y, shape.position.y, t );
                     shape.texture.x = glm::mix( other.texture.x, shape.texture.x, t );
@@ -889,7 +972,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                             continue;
                         }
                         auto const t { static_cast<float>( ( limit - reach( static_cast<std::size_t>( neighbour ) ) ) / ( reach( static_cast<std::size_t>( index ) ) - reach( static_cast<std::size_t>( neighbour ) ) ) ) };
-                        auto const height { glm::mix( ShapePoints[ neighbour ].position.y, ShapePoints[ index ].position.y, t ) };
+                        auto const height { glm::mix( points[ neighbour ].position.y, points[ index ].position.y, t ) };
                         top = std::max( top, height );
                         bottom = std::min( bottom, height );
                         ++ends;
