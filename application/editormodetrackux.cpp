@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodetrackshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorSettings.hpp"
 #include "editor/editorSwitchStore.hpp"
 
 #include "utilities/Globals.h"
@@ -201,14 +202,18 @@ void editor_mode::update_track_hover()
 void editor_mode::draw_track_lines() const
 {
 	auto const metres{ortho_metres_per_pixel()};
-	auto const colouring{m_track_colouring};
-	if (metres < kLinesFrom && colouring == track_colouring::plain)
+	auto const colouring{ui()->mode() == nodebank_panel::TRACK ? m_track_colouring : track_colouring::plain};
+	// the top view of the rails alone draws them in a colour of their own, as on a plan: both rails where they're apart on the screen
+	auto const rails{metres > 0.0 && Global.EditorOrthoTracks > 1 && colouring == track_colouring::plain};
+	if (metres < kLinesFrom && colouring == track_colouring::plain && false == rails)
 		return;
 	auto const &io{ImGui::GetIO()};
 	screen_projection const projection;
 	glm::dvec2 const centre{Global.pCamera.Pos.x, Global.pCamera.Pos.z};
 	auto const reach{Global.EditorOrtho ? 0.5 * metres * std::hypot(static_cast<double>(io.DisplaySize.x), static_cast<double>(io.DisplaySize.y)) : kColouredReach};
-	auto const width{colouring == track_colouring::plain ? 1.5f : 3.0f};
+	auto const width{rails ? std::max(2.0f, static_cast<float>(0.07 / metres)) : colouring == track_colouring::plain ? 1.5f : 3.0f};
+	auto const railcolour{EditorSettings.top_rails()};
+	std::vector<glm::dvec3> points;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	for (auto *track : simulation::Paths.sequence())
 	{
@@ -220,7 +225,7 @@ void editor_mode::draw_track_lines() const
 			bezier const curve{path};
 			if (false == plan_near(curve, centre, reach))
 				continue;
-			auto colour{IM_COL32(235, 235, 235, 150)};
+			auto colour{rails ? railcolour : IM_COL32(235, 235, 235, 150)};
 			if (colouring == track_colouring::radius)
 			{
 				auto const radius{::track_mode::piece_plan_radius(path)};
@@ -229,7 +234,24 @@ void editor_mode::draw_track_lines() const
 			else if (colouring == track_colouring::speed)
 				colour = velocity > 0.0 ? band_colour(kSpeedBands, velocity) : kUncoloured;
 			auto const length{curve.plan_length(4)};
-			auto const count{std::clamp(static_cast<int>(length / std::max(metres, 0.5) / 8.0), colouring == track_colouring::grade ? std::clamp(static_cast<int>(length / 10.0), 1, 8) : 1, 32)};
+			auto const count{std::clamp(static_cast<int>(length / std::max(metres, 0.5) / 8.0), colouring == track_colouring::grade ? std::clamp(static_cast<int>(length / 10.0), 1, 8) : 1, rails ? 128 : 32)};
+			if (rails && track->fTrackWidth / metres > 6.0)
+			{
+				points.clear();
+				for (int k = 0; k <= count; ++k)
+					points.push_back(curve.point(static_cast<double>(k) / count));
+				auto const half{(track->fTrackWidth + 0.07) * 0.5};
+				auto const across = [&](std::size_t const K) {
+					auto const along{points[std::min(K + 1, points.size() - 1)] - points[K > 0 ? K - 1 : 0]};
+					auto const normal{glm::dvec3{-along.z, 0.0, along.x}};
+					auto const size{glm::length(normal)};
+					return size > 1e-9 ? normal * (half / size) : glm::dvec3{0.0};
+				};
+				for (auto const side : {-1.0, 1.0})
+					for (std::size_t k = 1; k < points.size(); ++k)
+						projection.line(drawlist, points[k - 1] + across(k - 1) * side, points[k] + across(k) * side, colour, width);
+				continue;
+			}
 			auto previous{curve.point(0.0)};
 			for (int k = 1; k <= count; ++k)
 			{

@@ -109,7 +109,11 @@ bool editorSettings::load()
 		else if (key == "track_tools_all")
 			m_track_tools_more = (value == "1");
 		else if (key == "top_ballast")
-			m_top_ballast = (value == "1");
+			m_top_tracks = value == "1" ? 0 : 1;
+		else if (key == "top_tracks")
+			m_top_tracks = std::clamp(std::atoi(value.c_str()), 0, 2);
+		else if (key == "top_rails")
+			m_top_rails = static_cast<std::uint32_t>(std::strtoul(value.c_str(), nullptr, 16)) | 0xff000000u;
 		else if (key == "track_norms")
 			m_norms = value == "free" ? track_norms::free_laying : value == "plk" ? track_norms::plk : track_norms::ask;
 		else if (key.rfind(origin_prefix, 0) == 0)
@@ -158,7 +162,8 @@ bool editorSettings::save()
 	stream << "first_steps " << (m_first_steps ? 1 : 0) << "\n";
 	stream << "terrain_offer " << (m_terrain_offer ? 1 : 0) << "\n";
 	stream << "track_tools_all " << (m_track_tools_more ? 1 : 0) << "\n";
-	stream << "top_ballast " << (m_top_ballast ? 1 : 0) << "\n";
+	stream << "top_tracks " << m_top_tracks << "\n";
+	stream << "top_rails " << std::hex << (m_top_rails & 0xffffffu) << std::dec << "\n";
 	stream << "track_norms " << (m_norms == track_norms::free_laying ? "free" : m_norms == track_norms::plk ? "plk" : "ask") << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)

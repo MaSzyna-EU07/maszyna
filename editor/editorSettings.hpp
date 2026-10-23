@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <utility>
@@ -62,8 +63,10 @@ public:
 	bool track_tools_more() const { return m_track_tools_more; }
 	void track_tools_more(bool Show) { m_track_tools_more = Show; }
 	// the ballast of the railway drawn in the top view
-	bool top_ballast() const { return m_top_ballast; }
-	void top_ballast(bool Show) { m_top_ballast = Show; }
+	int top_tracks() const { return m_top_tracks; }
+	void top_tracks(int const Tracks) { m_top_tracks = Tracks; }
+	std::uint32_t top_rails() const { return m_top_rails; }
+	void top_rails(std::uint32_t const Colour) { m_top_rails = Colour; }
 	// how the new tracks are laid: asked as the laying starts, or the choice kept
 	enum class track_norms
 	{
@@ -86,7 +89,8 @@ private:
 	bool m_first_steps{true};
 	bool m_terrain_offer{true};
 	bool m_track_tools_more{false};
-	bool m_top_ballast{true};
+	int m_top_tracks{0}; // the railway in the top view: whole, without the ballast, the rails alone
+	std::uint32_t m_top_rails{0xffd246ff}; // colour of the rails alone, as ImGui keeps it: ABGR
 	track_norms m_norms{track_norms::ask};
 };
 

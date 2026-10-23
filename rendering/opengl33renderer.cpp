@@ -54,7 +54,14 @@ editor_track_view_range(float const Range, bool const Apply)
 bool
 editor_ballast_hidden(TTrack const *Track, bool const Colour)
 {
-	return Colour && EditorModeFlag && Global.EditorOrtho && false == Global.EditorOrthoBallast && (Track->iCategoryFlag & 15) == 1;
+	return Colour && EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoTracks > 0 && (Track->iCategoryFlag & 15) == 1;
+}
+
+// ...or the sleepers and the timbers of the switches too, the rails alone as on a plan
+bool
+editor_sleepers_hidden()
+{
+	return EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoTracks > 1;
 }
 
 // the top view draws the scenery as far as the tracks; its models keep their own ranges
@@ -4701,6 +4708,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	switch( m_renderpass.draw_mode ) {
 	case rendermode::color:
 	case rendermode::reflections: {
+		if( editor_sleepers_hidden() ) { break; }
 		for( auto first { First }; first != Last; ++first ) {
 			auto *track = *first;
 			if( false == track->m_visible )       { continue; }

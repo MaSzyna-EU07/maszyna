@@ -174,7 +174,7 @@ struct global_settings {
     float FieldOfView{ 45.f }; // vertical field of view for the camera. TODO: move it to the renderer
     bool EditorOrtho{ false };
     float EditorOrthoExtent{ 150.f };
-    bool EditorOrthoBallast{ true }; // the ballast of the railway drawn in the top view of the editor
+    int EditorOrthoTracks{ 0 }; // the railway in the top view of the editor: 0 whole, 1 without the ballast, 2 the rails alone
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px

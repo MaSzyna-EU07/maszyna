@@ -765,6 +765,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_gizmo();
 	// gizmo settings, drawn in the toolset window
 	void render_gizmo_options();
+	// how the top view draws the tracks: as a combo with the colour of the rails, or as items of a menu
+	void render_top_tracks_choice(bool const Combo);
 	// the tools of the field of work in the toolbar under the menu
 	void render_toolbar();
 	// an edit mode of the node bank as the field of work, from the toolbar or its key (1-5)

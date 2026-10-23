@@ -283,8 +283,8 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		if (extent > 0.0f)
 			Global.EditorOrthoExtent = std::clamp(extent, 5.0f, 50000.0f);
 		if (false == ballast.empty())
-			Global.EditorOrthoBallast = ballast != "noballast";
-		WriteLog(format("SELFTEST ortho extent %.0f ballast %d", Global.EditorOrthoExtent, Global.EditorOrthoBallast ? 1 : 0));
+			Global.EditorOrthoTracks = ballast == "rails" ? 2 : ballast == "noballast" ? 1 : 0;
+		WriteLog(format("SELFTEST ortho extent %.0f tracks %d", Global.EditorOrthoExtent, Global.EditorOrthoTracks));
 		return selftest_result::handled;
 	}
 	if (command == "mapstate")

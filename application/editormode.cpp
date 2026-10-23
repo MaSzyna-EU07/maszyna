@@ -645,7 +645,7 @@ editor_ui *editor_mode::ui() const
 bool editor_mode::init()
 {
     EditorSettings.load();
-    Global.EditorOrthoBallast = EditorSettings.top_ballast();
+    Global.EditorOrthoTracks = EditorSettings.top_tracks();
     set_norms_free(EditorSettings.norms() == editorSettings::track_norms::free_laying);
     EditorModelSets.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
@@ -1486,6 +1486,8 @@ bool editor_mode::update()
         draw_track_labels();
         draw_track_legend();
     }
+    else if (Global.EditorOrtho && Global.EditorOrthoTracks > 1)
+        draw_track_lines();
     if (selected_track())
         draw_track_overlay();
     if (route_active())
@@ -3627,13 +3629,11 @@ void editor_mode::render_view_menu()
         toggle_ortho();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
-    if (ImGui::MenuItem(STR_C("Ballast in the top view"), nullptr, &Global.EditorOrthoBallast))
+    if (ImGui::BeginMenu(STR_C("Tracks in the top view")))
     {
-        EditorSettings.top_ballast(Global.EditorOrthoBallast);
-        EditorSettings.save();
+        render_top_tracks_choice(false);
+        ImGui::EndMenu();
     }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", STR_C("Off: the top view draws the rails and sleepers of the tracks without the ballast, so the ground under them shows"));
     if (ImGui::BeginMenu(STR_C("Track colours")))
     {
         char const *const names[]{"Plain", "By the radius", "By the speed", "By the grade"};
@@ -5656,13 +5656,7 @@ void editor_mode::render_gizmo_options()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Wheel zooms. Hold the wheel and drag to pan."));
         ImGui::SameLine();
-        if (ImGui::Checkbox(STR_C("Ballast"), &Global.EditorOrthoBallast))
-        {
-            EditorSettings.top_ballast(Global.EditorOrthoBallast);
-            EditorSettings.save();
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", STR_C("Off: the top view draws the rails and sleepers of the tracks without the ballast, so the ground under them shows"));
+        render_top_tracks_choice(true);
     }
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::srk &&
         m_track_tab != track_tab::lineside)
@@ -6998,4 +6992,52 @@ void editor_mode::starter_trainset(std::vector<std::string> &Trailing)
         WriteLog("Editor: the scenery has no trainset, a WMB10 is put on " + track->name() + " to drive");
         return;
     }
+}
+
+void editor_mode::render_top_tracks_choice(bool const Combo)
+{
+    static char const *const labels[]{"Whole", "Without ballast", "Rails only"};
+    static char const *const tooltips[]{"The tracks as in the 3D view", "The rails and the sleepers, the ground under them shows", "The rails alone, without the sleepers and the timbers of the switches, as on a plan"};
+    auto chosen{std::clamp(Global.EditorOrthoTracks, 0, 2)};
+    auto const pick = [&](int const Choice) {
+        Global.EditorOrthoTracks = Choice;
+        EditorSettings.top_tracks(Choice);
+        EditorSettings.save();
+    };
+    if (false == Combo)
+    {
+        for (int choice = 0; choice < 3; ++choice)
+        {
+            if (ImGui::MenuItem(STR_C(labels[choice]), nullptr, chosen == choice))
+                pick(choice);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C(tooltips[choice]));
+        }
+        return;
+    }
+    ImGui::SetNextItemWidth(130.0f);
+    if (ImGui::BeginCombo(STR_C("Tracks"), STR_C(labels[chosen])))
+    {
+        for (int choice = 0; choice < 3; ++choice)
+        {
+            if (ImGui::Selectable(STR_C(labels[choice]), chosen == choice))
+                pick(choice);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C(tooltips[choice]));
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("How the top view draws the tracks"));
+    if (chosen < 2)
+        return;
+    ImGui::SameLine();
+    auto colour{ImGui::ColorConvertU32ToFloat4(EditorSettings.top_rails())};
+    if (ImGui::ColorEdit3("##toprails", &colour.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
+    {
+        EditorSettings.top_rails(ImGui::ColorConvertFloat4ToU32(ImVec4(colour.x, colour.y, colour.z, 1.0f)));
+        EditorSettings.save();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("The colour of the rails, to stand out on the imagery and the map"));
 }

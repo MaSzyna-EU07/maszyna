@@ -11472,3 +11472,30 @@ msgstr ": pozostałe stoją dalej niż 10 m od toru, przy torze z pojazdami albo
 
 msgid " (layer \"%s\")"
 msgstr " (warstwa \"%s\")"
+
+msgid "Tracks in the top view"
+msgstr "Tory w widoku z góry"
+
+msgid "Whole"
+msgstr "Całe"
+
+msgid "Without ballast"
+msgstr "Bez podsypki"
+
+msgid "Rails only"
+msgstr "Same szyny"
+
+msgid "The tracks as in the 3D view"
+msgstr "Tory jak w widoku 3D"
+
+msgid "The rails and the sleepers, the ground under them shows"
+msgstr "Szyny i podkłady, spod nich widać teren"
+
+msgid "The rails alone, without the sleepers and the timbers of the switches, as on a plan"
+msgstr "Same szyny, bez podkładów i podrozjazdnic, jak na planie"
+
+msgid "How the top view draws the tracks"
+msgstr "Jak widok z góry rysuje tory"
+
+msgid "The colour of the rails, to stand out on the imagery and the map"
+msgstr "Kolor szyn, żeby odcinały się od ortofotomapy i mapy"
