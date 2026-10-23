@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/translation.h"
 #include "world/Track.h"
+#include "world/TrackSleepers.h"
 
 #include "imgui/imgui.h"
 #include <algorithm>
@@ -390,6 +391,7 @@ void editor_mode::render_switch_ui()
 			arm_switch();
 		}
 		item_tooltip("Looks for the switches of the scenery, to use their shapes as the templates");
+		render_switch_timbers();
 		ImGui::TreePop();
 	}
 	ImGui::PopID();
@@ -403,6 +405,35 @@ void editor_mode::render_switch_ui()
 	if (ImGui::Button(STR_C("Template editor...")))
 		m_switch_designer.open = true;
 	item_tooltip("Own switch templates: diverging tracks of straights, arcs and transition curves, double switches");
+}
+
+// the timbers of all the switches and crossings of the scenery at once: a button for each model of timbers of the scenery data
+void editor_mode::render_switch_timbers()
+{
+	ImGui::TextDisabled("%s", STR_C("Timbers of all the switches"));
+	auto first{true};
+	auto const button = [&](std::string const &Model, std::string const &Label) {
+		if (false == first)
+			ImGui::SameLine();
+		first = false;
+		if (ImGui::Button((Label + "##switchtimbers" + Model).c_str()))
+			m_switch.status = format(STR_C("Timbers %s set on %d tracks"), Label.c_str(), static_cast<int>(set_switch_timbers(Model)));
+		item_tooltip("Sets the model of the timbers, with the fastenings where it has them, on all the switches and crossings of the scenery, in one step of the undo");
+	};
+	for (auto const &model : track_sleepers::pack_models())
+		if (model.timber)
+			button(model.name, model.name.substr(model.name.find_last_of('/') + 1));
+	button({}, STR_C("As in eu07.ini"));
+}
+
+std::size_t editor_mode::set_switch_timbers(std::string const &Model)
+{
+	std::vector<TTrack *> tracks;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved && (track->iCategoryFlag & 15) == 1 && (track->eType == tt_Switch || false == track->m_crossings.empty())
+		    && track->m_timber_model_name != Model)
+			tracks.push_back(track);
+	return tracks_apply(tracks, [&](TTrack &Track) { Track.m_timber_model_name = Model; return true; }, true, "Timber model");
 }
 
 // a track with no rail profile, as the sceneries of the older editors have them: the templates of all the rails are offered.

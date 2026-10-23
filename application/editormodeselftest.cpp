@@ -68,6 +68,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   railtime                             lays out the rails of every track, as when its geometry is made, and logs how long it took
 //   throw <0|1>                          sets every switch to the path and moves its blades there at once
 //   crossings [name]                     logs where rails of tracks cross rails of other tracks and of what kind (acute, obtuse, middle acute or obtuse, wide), checks that each acute crossing has one partner and one nose
+//   switchtimbers <model|none>           the model of the timbers set on all the switches and crossings, as the buttons of the switch tool do it
 //   frogkey name [on|off]                sets or clears the frogs key of a switch (one undo step); logs the key, whether it is written, the frog and the crossings
 //   geomhash [name]                      logs the number of vertices and a hash of the drawn geometry of each rail track (rails, trackbed, cut faces), to compare builds; exact: the bits of every value, userdata and tread materials too
 //   sweep <key>=<value>...               model, params (separated by commas), lateral, height, side (origin, near, far,

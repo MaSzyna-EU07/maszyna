@@ -324,6 +324,15 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 		WriteLog(format("SELFTEST geom total: tracks %d, vertices %zu, hash %016llx, exact %016llx", tracks, vertices, static_cast<unsigned long long>(total), static_cast<unsigned long long>(exacttotal)));
 		return selftest_result::handled;
 	}
+	if (command == "switchtimbers")
+	{
+		std::string model;
+		words >> model;
+		if (model == "none")
+			model.clear();
+		WriteLog(format("SELFTEST switchtimbers %s: %zu tracks", model.c_str(), set_switch_timbers(model)));
+		return selftest_result::handled;
+	}
 	if (command == "frogkey")
 	{
 		std::string name, value;

@@ -10378,3 +10378,15 @@ msgstr "Odczytaj ponownie"
 
 msgid "Pick a memory cell from the list to set what's in it"
 msgstr "Wybierz komórkę pamięci z listy, aby ustawić jej zawartość"
+
+msgid "Timbers of all the switches"
+msgstr "Podrozjazdnice wszystkich rozjazdów"
+
+msgid "Timbers %s set on %d tracks"
+msgstr "Podrozjazdnice %s ustawione na %d torach"
+
+msgid "As in eu07.ini"
+msgstr "Jak w eu07.ini"
+
+msgid "Sets the model of the timbers, with the fastenings where it has them, on all the switches and crossings of the scenery, in one step of the undo"
+msgstr "Ustawia model podrozjazdnic, razem z przytwierdzeniami tam, gdzie je ma, na wszystkich rozjazdach i skrzyżowaniach scenerii, jednym krokiem cofania"
