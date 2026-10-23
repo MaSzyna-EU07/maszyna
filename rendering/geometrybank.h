@@ -145,6 +145,10 @@ public:
     // with a single glMultiDrawElementsIndirect (or glMultiDrawArraysIndirect). the chunks have to be of the type of the
     // specified one and indexed alike. returns: false if the bank can't, nothing is drawn then
     auto draw_indirect_multi( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) -> bool;
+    // the buffers the bank keeps its geometry in, when they're shared with other banks: chunks of banks of the same group can go
+    // in one multi draw (draw_indirect_multi()). 0 when the bank has buffers of its own. valid once the chunks were made ready
+    // for drawing (indirect_source())
+    auto draw_group() const -> std::uint32_t;
     // draws geometry stored in supplied list of chunks
     template <typename Iterator_>
     auto draw( Iterator_ First, Iterator_ Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) ->std::size_t {
@@ -225,6 +229,8 @@ private:
     virtual auto indirect_source_( gfx::geometry_handle const & /*Geometry*/, gfx::indirect_source & /*Source*/ ) -> bool { return false; }
     virtual void draw_indirect_( gfx::geometry_handle const & /*Geometry*/, std::intptr_t const /*Offset*/, unsigned int const /*Streams*/ ) {}
     virtual auto draw_indirect_multi_( gfx::geometry_handle const & /*Geometry*/, std::intptr_t const /*Offset*/, std::uint32_t const /*Count*/, std::uint32_t const /*Stride*/ ) -> bool { return false; }
+    // draw_group() subclass details. by default the bank keeps its geometry to itself
+    virtual auto draw_group_() const -> std::uint32_t { return 0; }
     // resource release subclass details
     virtual void release_() = 0;
 };
@@ -267,6 +273,10 @@ public:
     // draws chunks of the bank of the specified one, of its type and indexed alike, with Count commands from Offset in the bound
     // draw indirect buffer, Stride bytes apart, in one call. returns: false if the bank can't, nothing is drawn then
     auto draw_indirect_multi( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) -> bool;
+    // what the chunks of a multi draw (draw_indirect_multi()) have to share, besides their type and whether they're indexed: the
+    // buffers of the bank of the specified chunk. the same for chunks of banks which share their buffers, the bank otherwise.
+    // valid once the chunk was made ready for drawing (indirect_source())
+    auto draw_group( gfx::geometry_handle const &Geometry ) const -> std::uint32_t;
     template <typename Iterator_>
     void draw( Iterator_ First, Iterator_ Last, unsigned int const Streams = basic_streams ) {
             while( First != Last ) { 

@@ -381,6 +381,13 @@ geometry_bank::draw_indirect_multi( gfx::geometry_handle const &Geometry, std::i
     return draw_indirect_multi_( Geometry, Offset, Count, Stride );
 }
 
+// the buffers the bank keeps its geometry in, when they're shared with other banks, 0 otherwise
+std::uint32_t
+geometry_bank::draw_group() const {
+    // template method implementation
+    return draw_group_();
+}
+
 // frees subclass-specific resources associated with the bank, typically called when the bank wasn't in use for a period of time
 void
 geometry_bank::release() {
@@ -586,6 +593,17 @@ geometrybank_manager::draw_indirect_multi( gfx::geometry_handle const &Geometry,
 
     bankrecord.second = m_garbagecollector.timestamp();
     return bankrecord.first->draw_indirect_multi( Geometry, Offset, Count, Stride );
+}
+
+// what the chunks of a multi draw have to share: the shared buffers of the bank of the chunk, or the bank itself. the groups of
+// shared buffers have the highest bit set, apart from the numbers of the banks
+std::uint32_t
+geometrybank_manager::draw_group( gfx::geometry_handle const &Geometry ) const {
+
+    if( Geometry == null_handle ) { return 0; }
+
+    auto const group { bank( Geometry ).first->draw_group() };
+    return ( group != 0 ? ( group | 0x80000000u ) : Geometry.bank );
 }
 
 // provides direct access to index data of specfied chunk

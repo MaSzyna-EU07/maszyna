@@ -1552,6 +1552,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_gpucull_walkcache;
     }
+    else if (Token == "gfx.geometry.shared")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_geometry_shared;
+    }
     else if (Token == "gfx.depthprepass.scene")
     {
         Parser.getTokens(1);
@@ -2130,6 +2135,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.gpucull.models", gfx_gpucull_models );
     export_as_text( Output, "gfx.gpucull.bucketrange", gfx_gpucull_bucketrange );
     export_as_text( Output, "gfx.gpucull.walkcache", gfx_gpucull_walkcache );
+    export_as_text( Output, "gfx.geometry.shared", gfx_geometry_shared );
     export_as_text( Output, "gfx.depthprepass.scene", gfx_depthprepass_scene );
     export_as_text( Output, "gfx.depthprepass.replay", gfx_depthprepass_replay );
     export_as_text( Output, "gfx.grass", gfx_grass );

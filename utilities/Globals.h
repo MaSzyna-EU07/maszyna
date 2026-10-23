@@ -327,6 +327,9 @@ struct global_settings {
     // made again only when the model changes: the trees of animated models, ones lit by the luminance and the models drawn on their
     // own are walked every time
     bool gfx_gpucull_walkcache = true;
+    // (opengl 4.6) the geometry of the banks without user data (models, scenery) is kept in a few large buffers shared by them, so
+    // the multi draws can take the chunks of many models at once. read when a bank sets its buffers up (load time)
+    bool gfx_geometry_shared = true;
     // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
     bool gfx_depthprepass_scene = false;
     // (opengl 4.6) the depth pass of the scene (gfx_depthprepass_scene, or the one of the contact shadows) walks the scene for

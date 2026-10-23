@@ -15,7 +15,12 @@ http://mozilla.org/MPL/2.0/.
 
 namespace gfx {
 
-// opengl vao/vbo-based variant of the geometry bank
+struct opengl46_geometry_page;
+
+// opengl vao/vbo-based variant of the geometry bank.
+// a bank without user data keeps its geometry in a part of a large vertex and index buffer shared with other banks, with one
+// vao for all of them (opengl46_geometry_page), so the chunks of many banks can be drawn in one multi draw; the offsets of its
+// chunks are places in the shared buffers. a bank with user data (an extra vertex stream) has buffers and a vao of its own
 
 class opengl46_vaogeometrybank : public geometry_bank {
 
@@ -29,6 +34,10 @@ public:
     static
     void
         reset() {;}
+    // a line for the debug panel: the pages of the shared buffers and how much of them the banks take
+    static
+    std::string
+        shared_info();
 
 private:
 // types:
@@ -71,8 +80,21 @@ private:
     // release() subclass details
     void
         release_() override;
+    // draw_group() subclass details: the shared buffers, if the bank keeps its geometry in them
+    auto
+        draw_group_() const -> std::uint32_t override;
     void
         setup_buffer();
+    // the buffers of the bank were set up
+    bool
+        has_buffer() const {
+            return ( ( m_page != nullptr ) || m_vertexbuffer.has_value() ); }
+    // binds the vao the bank is drawn with
+    void
+        bind_vao();
+    // sends the data of a chunk to the buffers, unless they hold it already
+    void
+        upload_chunk( chunk_record &Record, geometry_chunk const &Chunk );
     void
         setup_attrib(size_t offset = 0);
 	void
@@ -86,6 +108,12 @@ private:
 	std::optional<gl::vao> m_vao;
     chunkrecord_sequence m_chunkrecords; // helper data for all stored geometry chunks, in matching order
 	int m_vertex_count;
+    // the shared buffers holding the geometry of the bank, and its part of them: places of the first vertex and index, counts
+    opengl46_geometry_page *m_page { nullptr };
+    std::size_t m_pagevertexoffset { 0 };
+    std::size_t m_pagevertexcount { 0 };
+    std::size_t m_pageindexoffset { 0 };
+    std::size_t m_pageindexcount { 0 };
 };
 
 } // namespace gfx

@@ -748,6 +748,7 @@ class opengl46_renderer : public gfx_renderer {
 		gfx::geometry_handle geometry;
 		unsigned int type; // primitive
 		bool blending; // drawn with the transparency hack of submodels faded out
+		std::uint32_t group { 0 }; // the buffers of the geometry, which the draws of a multi draw share (geometrybank_manager::draw_group())
 	};
 	std::vector<indirect_draw> m_indirectdraws;
 	std::vector<gl::instance_draw_command> m_indirectcommands; // in the order of m_indirectdraws

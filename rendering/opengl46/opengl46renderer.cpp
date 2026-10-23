@@ -1280,6 +1280,7 @@ void opengl46_renderer::Update_Memory_Info()
 	accounted += geometry.vertices.bytes + geometry.indices.bytes + geometry.userdata.bytes;
 	text += "geometry banks: " + std::to_string( geometry.banks ) + ", " + counted( geometry.vertices, "chunks" ) + ": vertices " + mb( geometry.vertices.bytes )
 		+ ", indices " + mb( geometry.indices.bytes ) + ", user data " + mb( geometry.userdata.bytes ) + "\n";
+	text += gfx::opengl46_vaogeometrybank::shared_info();
 	// models: the geometry their submodels keep of their own
 	auto const models { TModelsManager::memory() };
 	accounted += models.submodels.bytes;
@@ -4186,7 +4187,7 @@ void opengl46_renderer::draw(const gfx::geometry_handle &handle)
 		gfx::indirect_source source;
 		if( m_geometry.indirect_source( handle, source ) ) {
 			m_indirectcommands.push_back( { source.count, 0, source.first, static_cast<std::uint32_t>( source.basevertex ), 0, m_indirectentry, ( source.indexed ? 1u : 0u ), 0 } );
-			m_indirectdraws.push_back( { model_ubs, m_indirectmaterial, m_indirectsubmodel, handle, source.type, m_blendingenabled } );
+			m_indirectdraws.push_back( { model_ubs, m_indirectmaterial, m_indirectsubmodel, handle, source.type, m_blendingenabled, m_geometry.draw_group( handle ) } );
 		}
 		return;
 	}
@@ -5259,6 +5260,7 @@ void opengl46_renderer::Replay_Walk( walk_band const &Walk, bool const Shadows )
 		m_indirectcommands.push_back( { source.count, 0, source.first, static_cast<std::uint32_t>( source.basevertex ), 0, m_indirectentry, ( source.indexed ? 1u : 0u ), 0 } );
 		auto &draw { m_indirectdraws.emplace_back( walkdraw ) };
 		draw.type = source.type;
+		draw.group = m_geometry.draw_group( walkdraw.geometry );
 		// the walk sets the placement of the submodel, and before each draw of the colour passes the parameters of its material
 		// (Bind_Material()); the rest of the block is what the pass has at the moment, as the walk would leave it
 		auto const &walked { walkdraw.ubs };
@@ -5344,7 +5346,7 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 				auto last { index + 1 };
 				texture_handle othertexture;
 				while( ( last < count )
-					&& ( m_indirectdraws[ last ].geometry.bank == draw.geometry.bank )
+					&& ( m_indirectdraws[ last ].group == draw.group )
 					&& ( m_indirectdraws[ last ].type == draw.type )
 					&& ( m_indirectcommands[ last ].indexed == m_indirectcommands[ index ].indexed )
 					&& ( prepass_texture( last, prepassclass, othertexture ) )
@@ -5446,7 +5448,7 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 			// the draws which follow in the same bank and of the same primitive, with the same texture for the alpha test
 			auto last { index + 1 };
 			while( ( last < count )
-				&& ( m_indirectdraws[ last ].geometry.bank == draw.geometry.bank )
+				&& ( m_indirectdraws[ last ].group == draw.group )
 				&& ( m_indirectdraws[ last ].type == draw.type )
 				&& ( m_indirectcommands[ last ].indexed == m_indirectcommands[ index ].indexed )
 				&& ( Indirect_Shadow_Texture( m_indirectdraws[ last ].material ) == texture ) ) {
@@ -5537,7 +5539,7 @@ void opengl46_renderer::Order_Indirect_Draws()
 	for( std::size_t index = 0; index < count; ++index ) {
 		auto const &draw { m_indirectdraws[ index ] };
 		if( shadows ) {
-			m_indirectstatekeys.push_back( { Indirect_Shadow_Texture( draw.material ), 0u, draw.geometry.bank, draw.type, m_indirectcommands[ index ].indexed, draw.blending, static_cast<std::uint32_t>( index ) } );
+			m_indirectstatekeys.push_back( { Indirect_Shadow_Texture( draw.material ), 0u, draw.group, draw.type, m_indirectcommands[ index ].indexed, draw.blending, static_cast<std::uint32_t>( index ) } );
 			continue;
 		}
 		auto variant { 0u };
@@ -5547,7 +5549,7 @@ void opengl46_renderer::Order_Indirect_Draws()
 				variant = TSubModel::VariantId( draw.submodel ) % static_cast<std::uint32_t>( material.texture_variants.size() );
 			}
 		}
-		m_indirectstatekeys.push_back( { draw.material, variant, draw.geometry.bank, draw.type, m_indirectcommands[ index ].indexed, draw.blending, static_cast<std::uint32_t>( index ) } );
+		m_indirectstatekeys.push_back( { draw.material, variant, draw.group, draw.type, m_indirectcommands[ index ].indexed, draw.blending, static_cast<std::uint32_t>( index ) } );
 	}
 	std::sort(
 		std::begin( m_indirectstatekeys ), std::end( m_indirectstatekeys ),
@@ -5654,7 +5656,7 @@ bool opengl46_renderer::Indirect_Mergeable( std::size_t const First, std::size_t
 	if( ( first.material != other.material )
 	 || ( first.blending != other.blending )
 	 || ( first.type != other.type )
-	 || ( first.geometry.bank != other.geometry.bank )
+	 || ( first.group != other.group )
 	 || ( m_indirectcommands[ First ].indexed != m_indirectcommands[ Other ].indexed ) ) {
 		return false;
 	}
@@ -5873,7 +5875,8 @@ void opengl46_renderer::Render_Scene_Prepass()
 		auto &item { m_sceneprepassitems.emplace_back() };
 		item.prepassclass = draw.prepassclass;
 		item.texture = ( draw.prepassclass == 2 ? draw.prepasstexture : null_handle );
-		item.bank = chunk.geometry.bank;
+		// the buffers the geometry lies in, shared by many banks
+		item.bank = m_geometry.draw_group( chunk.geometry );
 		item.type = source.type;
 		item.indexed = ( source.indexed ? 1u : 0u );
 		item.instancebuffer = draw.instancebuffer;
