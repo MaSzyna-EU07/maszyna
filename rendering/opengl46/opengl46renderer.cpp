@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46geometrybank.h"
 #include "rendering/screenshot.h"
 #include "rendering/editoroverlay.h"
+#include "world/SleeperRules.h"
 #include <imgui/imgui_impl_opengl3.h>
 
 //#define EU07_DEBUG_OPENGL
@@ -6263,6 +6264,9 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 			if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ centre, chunk.radius } ) ) { continue; }
 			if( laid.timbers->stretchable ) {
 				for( int part = 0; part < track_sleepers::part_count; ++part ) {
+					if( chunk.last[ part ] <= chunk.first[ part ] ) { continue; }
+					// the fastenings only near, they're small
+					if( part >= track_sleepers::timber_parts && distance > std::min( range, track_sleepers::fastening_range ) + chunk.radius ) { continue; }
 					auto &instances = bucket_for( laid.timbers, part, 0.f );
 					for( auto index = chunk.first[ part ]; index < chunk.last[ part ]; ++index ) {
 						instances.emplace_back( trackmodelview * laid.instances[ part ][ index ] );
@@ -6289,7 +6293,9 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 		if( bucket.part >= 0 ) {
 			// only the part of the model is visible, its siblings are skipped as the model is walked
 			for( int part = 0; part < track_sleepers::part_count; ++part ) {
-				beammodel.parts[ part ]->iVisible = ( part == bucket.part ? 1 : 0 );
+				if( beammodel.parts[ part ] != nullptr ) {
+					beammodel.parts[ part ]->iVisible = ( part == bucket.part ? 1 : 0 );
+				}
 			}
 		}
 		material_data skins {};
@@ -6314,7 +6320,9 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 		++m_renderpass.draw_stats.instanced_drawcalls;
 		if( bucket.part >= 0 ) {
 			for( int part = 0; part < track_sleepers::part_count; ++part ) {
-				beammodel.parts[ part ]->iVisible = 1;
+				if( beammodel.parts[ part ] != nullptr ) {
+					beammodel.parts[ part ]->iVisible = 1;
+				}
 			}
 		}
 	}

@@ -47,6 +47,7 @@ struct loft_span {
     loft_end toend;
     knots::line drops;
     glm::dvec2 head { 0.0 };
+    double rise { 0.0 }; // how far the foot of the profile is raised, the web below the head (head.x) shortened by as much
 };
 
 struct segment_data {

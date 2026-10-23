@@ -49,6 +49,20 @@ double constexpr level_tolerance { 1.0 };
 double constexpr around_margin { 20.0 };
 // how many beams make a run drawn or left out together
 std::size_t constexpr chunk_beams { 16 };
+// how far apart the points of the rails are, as the places they lie on the timbers are found
+double constexpr fastening_step { 0.25 };
+// rails closer than this where they cross a timber are one rail there, held by one fastening
+double constexpr fastening_merge { 0.03 };
+// two rails closer than this lie in one fastening of both, as a rail of the frog with the one beside it; closer than the second
+// one, as the legs of the nose where they're joined, in one plate between them
+double constexpr fastening_pair { 0.24 };
+double constexpr fastening_nose { 0.05 };
+// how far before the tip of the blade the slide chairs of its stock rail begin
+double constexpr chair_lead { 0.3 };
+// how far from the stock rail toward its blade the slide plate of a chair is measured
+double constexpr slide_probe { 0.12 };
+// how far from the camera the fastenings are drawn at most
+double constexpr fastening_range { 120.0 };
 
 // how many tracks a cluster takes at most
 std::size_t constexpr cluster_cap { 256 };

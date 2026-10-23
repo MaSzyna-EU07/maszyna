@@ -2259,8 +2259,9 @@ void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::ver
             offsets.emplace_back( bend.x, -thrown * bend.y );
         }
         auto const size { rail_dimensions() };
+        auto const rise { track_sleepers::blade_rise( *this ) };
         auto const length { SwitchExtension->Segments[ Path ]->GetLength() };
-        SwitchExtension->Segments[ Path ]->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = shape.tip, .to = std::min( shape.heel, length ), .offsets = offsets, .extents = shape.extents, .walls = true, .drops = shape.drops, .head = { size.neck, size.crest } } );
+        SwitchExtension->Segments[ Path ]->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = shape.tip, .to = std::min( shape.heel, length ), .offsets = offsets, .extents = shape.extents, .walls = true, .drops = shape.drops, .head = { size.neck, size.crest }, .rise = rise } );
         // the blade running on past the end of the path goes on along the plain track joined there, whose rail starts behind the heel
         if( auto const *next { track_rails::runon_track( *this, Path ) }; next != nullptr && shape.heel > length + 1e-3 ) {
             auto const along = [&]( std::vector<glm::dvec2> const &Knots ) {
@@ -2269,7 +2270,7 @@ void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::ver
                     result.emplace_back( knot.x - length, knot.y );
                 }
                 return result; };
-            next->Segment->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = 0.0, .to = shape.heel - length, .offsets = along( offsets ), .extents = along( shape.extents ), .walls = true, .drops = along( shape.drops ), .head = { size.neck, size.crest } } );
+            next->Segment->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = 0.0, .to = shape.heel - length, .offsets = along( offsets ), .extents = along( shape.extents ), .walls = true, .drops = along( shape.drops ), .head = { size.neck, size.crest }, .rise = rise } );
         }
         return;
     }

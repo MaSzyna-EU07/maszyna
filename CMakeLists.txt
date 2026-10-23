@@ -100,6 +100,7 @@ set(SOURCES
 "world/SleeperPaths.cpp"
 "world/SleeperFeatures.cpp"
 "world/SleeperLines.cpp"
+"world/SleeperFastenings.cpp"
 "world/SleeperLayout.cpp"
 "world/SleeperModels.cpp"
 "world/SleeperWorker.cpp"

@@ -26,6 +26,8 @@ class TSubModel;
 // them, repeated and stretched to the length of the beam, so one model makes the timbers of any length; a model without such
 // parts is drawn whole, stretched. The sleepers of plain tracks are a whole model of their own, set with sleepers3dplain, drawn
 // at their own length. A track can have models of its own: of its sleepers with sleepermodel, of its timbers with timbermodel.
+// A model of timbers put together from parts can have the fastenings of the rails among its submodels too: plate, chair and
+// check, put on the timbers where the rails lie on them, and the rails sit on the plate.
 namespace track_sleepers {
 
 // the parts of the model a beam is put together from, by the names of the submodels
@@ -33,8 +35,14 @@ enum part : int {
     part_begin, // the end of the beam on its +x side
     part_main, // the piece between the ends
     part_end, // the end on the -x side
+    part_plate, // the fastening of a rail, its origin under the middle of the foot of the rail
+    part_chair, // the slide chair of a stock rail with the blade beside it, its origin under the stock rail, the slide plate on its -x side
+    part_check, // the fastening of a rail with another one close beside it, as a check rail or a rail of the frog, its origin under the
+                // rail, the other one on its +x side
     part_count
 };
+// the parts a timber is put together from, the fastenings after them
+int constexpr timber_parts { part_end + 1 };
 
 // a sleeper or a timber, by the middle of its top face at both ends
 struct beam {
@@ -59,8 +67,11 @@ struct beam_model {
     std::array<glm::vec2, part_count> spans {}; // from and to along x, of the parts
     glm::vec2 span { -1.3f, 1.3f }; // from and to along x, of the most detailed submodels of the whole model
     float seat { 0.f }; // the height in the model the feet of the rails go to
+    float slide { 0.f }; // how far over the seat the blades of a switch slide, on the slide plates of the chairs; 0 without chairs
     std::vector<float> bands; // the squared distances the levels of detail of the model are seen from, the nearest first
     float length() const { return span.y - span.x; }
+    // the model has the fastenings of the rails, put where the rails lie on its timbers
+    bool fastened() const { return stretchable && parts[ part_plate ] != nullptr; }
 };
 
 // a run of beams of a track drawn or left out together, by the sphere around them
@@ -105,6 +116,9 @@ double plain_length( TTrack const &Track );
 bool bedded( TTrack const &Track );
 // whether the track gets beams: a rail track with the ballast made by the simulator, and the model is there, its own or of eu07.ini
 bool lays( TTrack const &Track );
+// how far the feet of the blades of the switch ride over those of its other rails, on the slide plates of the chairs of its
+// timbers; 0 where it lays none with chairs
+double blade_rise( TTrack const &Track );
 // where along the path of the track its rails lie on timbers shared with other tracks: where another track runs so near that
 // the plain sleepers of the two would touch, of the lengths of the models they'd be made of. this goes by the shape of the
 // tracks alone, so it holds whether the beams are drawn or not. the stretches in the order along the path, none where there

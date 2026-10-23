@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "world/TrackSleepers.h"
+#include "world/SleeperFastenings.h"
 #include "world/SleeperGeometry.h"
 #include "world/SleeperLayout.h"
 #include "world/SleeperPaths.h"
@@ -24,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 
 namespace track_sleepers {
@@ -61,6 +63,11 @@ bool lays( TTrack const &Track ) {
 
     // the model of the track itself (timbermodel) is enough, without sleepers3d in eu07.ini
     return bedded( Track ) && timber_model( Track ) != nullptr;
+}
+
+double blade_rise( TTrack const &Track ) {
+
+    return ( Track.eType == tt_Switch && lays( Track ) ? timber_model( Track )->slide : 0.0 );
 }
 
 std::vector<std::pair<double, double>> shared_zones( TTrack const &Track, int const Path ) {
@@ -133,6 +140,9 @@ void lay( TTrack &Track ) {
     laid.laying = false;
     // the layout of the cluster isn't needed by this track any more, the instances below are what's drawn
     forget_layout( Track );
+
+    // the rails around, where they lie on the timbers, for the fastenings of the model
+    std::optional<fastened_rails> const rails { parts.fastened() ? std::make_optional<fastened_rails>( Track ) : std::nullopt };
 
     auto const partlength = [&]( int const Part ) {
         return static_cast<double>( parts.spans[ Part ].y - parts.spans[ Part ].x ); };
@@ -231,6 +241,19 @@ void lay( TTrack &Track ) {
             auto const scale { length / std::max( 0.01, beginlength + endlength ) };
             put( part_end, scale, parts.spans[ part_end ].x, -half );
             put( part_begin, scale, parts.spans[ part_begin ].y, half );
+        }
+        if( rails && false == ( beam.plain && laid.plains != nullptr ) ) {
+            // each square to its rail on the top of the timber, the plate under the foot of the rail
+            for( auto const &fastening : rails->on( beam, parts ) ) {
+                auto across { glm::dvec3 { fastening.across.x, 0.0, fastening.across.y } };
+                across = glm::normalize( across - y * glm::dot( across, y ) );
+                glm::mat4 place { 1.f };
+                place[ 0 ] = glm::vec4 { glm::vec3 { across }, 0.f };
+                place[ 1 ] = glm::vec4 { glm::vec3 { y }, 0.f };
+                place[ 2 ] = glm::vec4 { glm::vec3 { glm::cross( across, y ) }, 0.f };
+                place[ 3 ] = glm::vec4 { glm::vec3 { fastening.point - Track.m_origin }, 1.f };
+                laid.instances[ fastening.part ].emplace_back( glm::translate( place, glm::vec3 { 0.f, -parts.seat, 0.f } ) );
+            }
         }
         runbeams.emplace_back( middle, half );
         if( runbeams.size() >= chunk_beams ) {

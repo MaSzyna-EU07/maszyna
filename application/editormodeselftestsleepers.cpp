@@ -49,6 +49,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodeselftest.h"
 
 #include "world/TrackSleepers.h"
+#include "world/SleeperFastenings.h"
 
 editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &command, std::istringstream &words)
 {
@@ -147,6 +148,37 @@ editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &c
 				WriteLog(format("SELFTEST beam %s: %.2f %.2f -> %.2f %.2f, %.2f m, along %.1f deg%s", track->name().c_str(), beam.from.x, beam.from.z, beam.to.x, beam.to.z, glm::length(beam.to - beam.from), glm::degrees(std::atan2(beam.along.x, beam.along.z)), beam.plain ? " plain" : ""));
 			}
 		}
+		return selftest_result::handled;
+	}
+	if (command == "fastenings")
+	{
+		// the fastenings on the timbers of the track: along the track, the part and where across it, which way its +x goes
+		std::string name;
+		words >> name;
+		auto *track{simulation::Paths.find(name)};
+		auto const *model{track != nullptr ? track_sleepers::timber_model(*track) : nullptr};
+		if (model == nullptr || false == model->fastened())
+		{
+			WriteLog("SELFTEST fastenings: no track " + name + " with the fastenings in the model of its timbers");
+			return selftest_result::handled;
+		}
+		std::array<char const *, track_sleepers::part_count> const names{"begin", "main", "end", "plate", "chair", "check"};
+		track_sleepers::fastened_rails const rails{*track};
+		std::array<int, track_sleepers::part_count> counts{};
+		for (auto const &beam : track_sleepers::place(*track))
+		{
+			if (beam.plain)
+				continue;
+			auto const middle{0.5 * (beam.from + beam.to)};
+			std::string text{format("SELFTEST fastenings %s at %.2f %.2f:", track->name().c_str(), middle.x, middle.z)};
+			for (auto const &fastening : rails.on(beam, *model))
+			{
+				text += format(" %s %.3f %.3f %+.0f", names[fastening.part], fastening.point.x, fastening.point.z, glm::degrees(std::atan2(fastening.across.y, fastening.across.x)));
+				++counts[fastening.part];
+			}
+			WriteLog(text);
+		}
+		WriteLog(format("SELFTEST fastenings %s: %d plates, %d chairs, %d checks", track->name().c_str(), counts[track_sleepers::part_plate], counts[track_sleepers::part_chair], counts[track_sleepers::part_check]));
 		return selftest_result::handled;
 	}
 	if (command == "sleepercheck")
