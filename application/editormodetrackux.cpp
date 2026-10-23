@@ -96,7 +96,6 @@ double constexpr kBeyond{std::numeric_limits<double>::max()};
 ImU32 const kUncoloured{IM_COL32(200, 200, 200, 170)};
 double const kColouredReach{1500.0}; // m around the camera in the 3D view
 double const kLabelsTo{1.0}; // m a pixel of the top view, farther out the labels of the tracks are left out
-double const kLabelledLength{5.0}; // m, shorter curves get no label
 std::vector<colour_band> const kRadiusBands{{300.0, IM_COL32(235, 60, 60, 235), "R < 300 m"}, {600.0, IM_COL32(245, 140, 50, 235), "R 300-600 m"}, {1200.0, IM_COL32(240, 220, 60, 235), "R 600-1200 m"},
                                             {3000.0, IM_COL32(110, 210, 80, 235), "R 1200-3000 m"}, {kBeyond, IM_COL32(70, 190, 235, 235), "R > 3000 m"}};
 std::vector<colour_band> const kSpeedBands{{40.5, IM_COL32(235, 60, 60, 235), "<= 40 km/h"}, {60.5, IM_COL32(245, 140, 50, 235), "50-60 km/h"}, {80.5, IM_COL32(240, 220, 60, 235), "70-80 km/h"},
@@ -280,30 +279,25 @@ void editor_mode::draw_track_labels() const
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const low{editor_ui::view_min()};
 	auto const high{editor_ui::view_max()};
-	// a label which would cover another one is left out: the switches go first, then the sharper curves
-	std::vector<std::pair<ImVec2, ImVec2>> taken;
-	auto const write = [&](glm::dvec3 const &Point, std::string const &Text, ImU32 const Colour) {
-		ImVec2 at;
-		if (false == projection.project(Point, at))
-			return;
-		auto const size{ImGui::CalcTextSize(Text.c_str())};
-		ImVec2 const from{at.x - size.x * 0.5f - 4.0f, at.y - size.y - 12.0f};
-		ImVec2 const to{at.x + size.x * 0.5f + 4.0f, at.y - 8.0f};
-		if (from.x < low.x || from.y < low.y || to.x > high.x || to.y > high.y)
-			return;
-		if (std::any_of(taken.begin(), taken.end(), [&](auto const &Rect) { return from.x < Rect.second.x + 6.0f && to.x > Rect.first.x - 6.0f && from.y < Rect.second.y + 3.0f && to.y > Rect.first.y - 3.0f; }))
-			return;
-		taken.emplace_back(from, to);
-		drawlist->AddRectFilled(from, to, IM_COL32(0, 0, 0, 165), 3.0f);
-		drawlist->AddText(ImVec2(from.x + 4.0f, from.y), Colour, Text.c_str());
-	};
-	struct curve_label
+	struct track_label
 	{
-		double radius;
+		int rank;
+		double order;
 		glm::dvec3 point;
 		std::string text;
+		ImU32 colour;
 	};
-	std::vector<curve_label> curves;
+	std::vector<track_label> labels;
+	// the screen in cells, the ones the tracks are drawn over marked: a label keeps off them when it can
+	float constexpr cell{8.0f};
+	auto const columns{std::max(1, static_cast<int>((high.x - low.x) / cell) + 1)};
+	auto const rows{std::max(1, static_cast<int>((high.y - low.y) / cell) + 1)};
+	std::vector<char> covered(static_cast<std::size_t>(columns) * rows, 0);
+	auto const cell_of = [&](float const X, float const Y, int &Column, int &Row) {
+		Column = static_cast<int>((X - low.x) / cell);
+		Row = static_cast<int>((Y - low.y) / cell);
+		return Column >= 0 && Row >= 0 && Column < columns && Row < rows;
+	};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == rail(*track) || track->m_paths.empty())
@@ -311,21 +305,112 @@ void editor_mode::draw_track_labels() const
 		bezier const first{track->m_paths.front()};
 		if (false == plan_near(first, centre, reach))
 			continue;
+		for (auto const &path : track->m_paths)
+		{
+			bezier const curve{path};
+			auto const count{std::clamp(static_cast<int>(curve.plan_length() / (metres * cell)), 2, 256)};
+			ImVec2 previous;
+			bool known{false};
+			for (int k = 0; k <= count; ++k)
+			{
+				ImVec2 at;
+				if (false == projection.project(curve.point(static_cast<double>(k) / count), at))
+				{
+					known = false;
+					continue;
+				}
+				if (known)
+				{
+					auto const steps{std::max(1, static_cast<int>(std::max(std::abs(at.x - previous.x), std::abs(at.y - previous.y)) / cell * 2.0f))};
+					for (int step = 0; step <= steps; ++step)
+					{
+						auto const t{static_cast<float>(step) / steps};
+						int column, row;
+						if (cell_of(previous.x + (at.x - previous.x) * t, previous.y + (at.y - previous.y) * t, column, row))
+							covered[static_cast<std::size_t>(row) * columns + column] = 1;
+					}
+				}
+				previous = at;
+				known = true;
+			}
+		}
 		if (track->eType == tt_Switch)
 		{
 			auto text{name_of(*track)};
 			if (auto const record{switch_store::of(*track)})
 				text += "  " + switch_store::label(*record);
-			write(first.point(0.0), text, IM_COL32(255, 220, 120, 255));
+			labels.push_back({0, 0.0, first.point(0.0), text, IM_COL32(255, 220, 120, 255)});
 			continue;
 		}
+		auto const length{first.plan_length()};
+		if (length < 0.5)
+			continue;
 		auto const radius{::track_mode::piece_plan_radius(track->m_paths.front())};
-		if (radius >= 0.5 && first.plan_length() >= kLabelledLength)
-			curves.push_back({radius, first.point(0.5), format("R %.0f  L %.1f", radius, first.plan_length())});
+		if (radius >= 0.5)
+			labels.push_back({1, radius, first.point(0.5), format("R %.0f  L %.1f", radius, length), IM_COL32(235, 235, 235, 240)});
+		else
+			labels.push_back({2, -length, first.point(0.5), format("L %.1f", length), IM_COL32(200, 215, 230, 225)});
 	}
-	std::sort(curves.begin(), curves.end(), [](curve_label const &A, curve_label const &B) { return A.radius < B.radius; });
-	for (auto const &curve : curves)
-		write(curve.point, curve.text, IM_COL32(235, 235, 235, 240));
+	std::sort(labels.begin(), labels.end(), [](track_label const &A, track_label const &B) { return A.rank != B.rank ? A.rank < B.rank : A.order < B.order; });
+	// each label where it reads best: beside its track if it's free there, else moved out to the nearest room, a line leading back
+	std::vector<std::pair<ImVec2, ImVec2>> taken;
+	auto const tracks_under = [&](ImVec2 const &From, ImVec2 const &To) {
+		int count{0};
+		for (auto y = From.y; y <= To.y + cell * 0.5f; y += cell)
+			for (auto x = From.x; x <= To.x + cell * 0.5f; x += cell)
+			{
+				int column, row;
+				if (cell_of(std::min(x, To.x), std::min(y, To.y), column, row))
+					count += covered[static_cast<std::size_t>(row) * columns + column];
+			}
+		return count;
+	};
+	float constexpr kRings[]{0.0f, 26.0f, 42.0f, 62.0f, 86.0f, 116.0f, 150.0f};
+	int constexpr kDirections{16};
+	for (auto const &label : labels)
+	{
+		ImVec2 at;
+		if (false == projection.project(label.point, at) || at.x < low.x || at.y < low.y || at.x > high.x || at.y > high.y)
+			continue;
+		auto const size{ImGui::CalcTextSize(label.text.c_str())};
+		auto const width{size.x + 8.0f};
+		auto const height{size.y + 4.0f};
+		ImVec2 const nearest{at.x, at.y - 10.0f - height * 0.5f};
+		auto best{std::numeric_limits<float>::max()};
+		ImVec2 from, to;
+		for (auto const ring : kRings)
+			for (int k = 0; k < (ring > 0.0f ? kDirections : 1); ++k)
+			{
+				auto const angle{static_cast<float>(k) * 6.2831853f / kDirections};
+				ImVec2 const middle{nearest.x + std::cos(angle) * ring * 1.6f, nearest.y + std::sin(angle) * ring};
+				ImVec2 const a{middle.x - width * 0.5f, middle.y - height * 0.5f};
+				ImVec2 const b{middle.x + width * 0.5f, middle.y + height * 0.5f};
+				if (a.x < low.x || a.y < low.y || b.x > high.x || b.y > high.y)
+					continue;
+				if (std::any_of(taken.begin(), taken.end(), [&](auto const &Rect) { return a.x < Rect.second.x + 4.0f && b.x > Rect.first.x - 4.0f && a.y < Rect.second.y + 2.0f && b.y > Rect.first.y - 2.0f; }))
+					continue;
+				auto const cost{ring + 5.0f * static_cast<float>(tracks_under(a, b))};
+				if (cost < best)
+				{
+					best = cost;
+					from = a;
+					to = b;
+				}
+			}
+		if (best == std::numeric_limits<float>::max())
+			continue;
+		taken.emplace_back(from, to);
+		ImVec2 const middle{(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f};
+		if (std::hypot(middle.x - nearest.x, middle.y - nearest.y) > 1.0f)
+		{
+			ImVec2 const end{std::clamp(at.x, from.x, to.x), std::clamp(at.y, from.y, to.y)};
+			auto const lead{(label.colour & 0x00ffffffu) | (170u << 24)};
+			drawlist->AddLine(at, end, lead, 1.0f);
+			drawlist->AddCircleFilled(at, 2.5f, lead);
+		}
+		drawlist->AddRectFilled(from, to, IM_COL32(0, 0, 0, 165), 3.0f);
+		drawlist->AddText(ImVec2(from.x + 4.0f, from.y + 2.0f), label.colour, label.text.c_str());
+	}
 }
 
 void editor_mode::draw_track_legend() const
