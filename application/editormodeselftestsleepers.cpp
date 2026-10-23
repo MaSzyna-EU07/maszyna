@@ -153,8 +153,8 @@ editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &c
 	if (command == "fastenings")
 	{
 		// the fastenings on the timbers of the track: along the track, the part and where across it, which way its +x goes
-		std::string name;
-		words >> name;
+		std::string name, detail;
+		words >> name >> detail;
 		auto *track{simulation::Paths.find(name)};
 		auto const *model{track != nullptr ? track_sleepers::timber_model(*track) : nullptr};
 		if (model == nullptr || false == model->fastened())
@@ -170,11 +170,25 @@ editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &c
 				continue;
 			auto const middle{0.5 * (beam.from + beam.to)};
 			std::string text{format("SELFTEST fastenings %s at %.2f %.2f:", track->name().c_str(), middle.x, middle.z)};
+			if (detail == "rails")
+			{
+				auto const span{beam.to - beam.from};
+				auto const length{glm::length(glm::dvec2{span.x, span.z})};
+				text += " rails";
+				for (auto const &rail : rails.lying(beam))
+				{
+					auto const at{beam.from + span * (rail.at / length)};
+					text += format(" %.3f %.3f k%d r%.3f;", at.x, at.z, static_cast<int>(rail.kind), rail.rise);
+				}
+				text += " parts";
+			}
 			for (auto const &fastening : rails.on(beam, *model))
 			{
 				text += format(" %s%s %.3f %.3f %+.0f", fastening.pad ? "pad:" : "", track_sleepers::part_names[fastening.part], fastening.point.x, fastening.point.z, glm::degrees(std::atan2(fastening.across.y, fastening.across.x)));
 				if (fastening.lift != 0.f)
 					text += format(" ^%.3f", fastening.lift);
+				if (detail == "rails" && (fastening.scale != 1.f || fastening.shift != 0.f))
+					text += format(" s%.3f/%.3f/%.3f", fastening.scale, fastening.pivot, fastening.shift);
 				if (false == fastening.pad)
 					++counts[fastening.part];
 			}

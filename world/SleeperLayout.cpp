@@ -203,6 +203,12 @@ private:
         return result;
     }
 
+    // the sine of the angle the paths of a grid cross at, no less than of 30 degrees
+    static double grid_sine( feature const &Feature ) {
+
+        return std::max( 0.5, std::sin( 2.0 * std::asin( Feature.sine ) ) );
+    }
+
     // the pins of the lines led along the path: the rails of a path crossing this one so wide it's laid on a grid of beams; elsewhere
     // the lines are spread evenly
     std::vector<double> pins( sampled_path const &Path ) const {
@@ -216,15 +222,44 @@ private:
                 if( feature.paths[ side ] != &Path ) {
                     continue;
                 }
-                // under the rails of the other path, which runs across the beams
+                // under the middles of the rails of the other path, which runs across the beams
                 auto const *other { feature.paths[ 1 - side ] };
-                auto const sine { std::max( 0.5, std::sin( 2.0 * std::asin( feature.sine ) ) ) };
-                result.push_back( feature.at[ side ] - 0.5 * other->gauge / sine );
-                result.push_back( feature.at[ side ] + 0.5 * other->gauge / sine );
+                auto const rail { ( 0.5 * other->gauge + rail_web ) / grid_sine( feature ) };
+                result.push_back( feature.at[ side ] - rail );
+                result.push_back( feature.at[ side ] + rail );
             }
         }
         std::sort( result.begin(), result.end() );
         return result;
+    }
+
+    // whether the beam of the path at the distance is a timber of a crossing at a wide angle: where it crosses another path so wide
+    // they're laid as a grid, the other path laying none there, or under the guard rails of the crossing, as far as they reach
+    bool crossing_timber( sampled_path const &Path, double const Distance ) const {
+
+        return std::any_of( features.begin(), features.end(), [&]( feature const &Feature ) {
+            if( Feature.frog ) {
+                return false;
+            }
+            auto const angle { 2.0 * std::asin( std::min( 1.0, Feature.sine ) ) };
+            auto const acute { std::min( angle, glm::pi<double>() - angle ) };
+            for( int side = 0; side < 2; ++side ) {
+                if( Feature.paths[ side ] != &Path ) {
+                    continue;
+                }
+                auto const *other { Feature.paths[ 1 - side ] };
+                auto reach { Feature.grid ? ( other->half + half_width + end_gap ) / grid_sine( Feature ) : 0.0 };
+                if( acute > track_rails::wide_angle ) {
+                    // past where the rails cross, as far as the guard rails go on along them, a beam reaching under their ends too
+                    reach = std::max(
+                        reach,
+                        ( 0.5 * other->gauge + 0.5 * Path.gauge * std::cos( acute ) + track_rails::flangeway + rail_head + track_rails::guard_reach ) / std::sin( acute ) + half_width );
+                }
+                if( std::abs( Distance - Feature.at[ side ] ) < reach ) {
+                    return true;
+                }
+            }
+            return false; } );
     }
 
     // the line of the timbers carrying the path nearest to the distance on the side, between the distance and the reach from it
@@ -343,8 +378,10 @@ private:
         }
         std::vector<anchor> anchors { start };
         for( auto const pin : pins( path ) ) {
-            if( pin > start.at + 0.5 * pitch_min && pin < end.at - 0.5 * pitch_min && pin - anchors.back().at >= pitch_min ) {
-                anchors.push_back( { pin, 0.0 } );
+            // two timbers side by side under the rail running along them, its fastenings on both
+            if( pin - half_width > start.at + 0.5 * pitch_min && pin + half_width < end.at - 0.5 * pitch_min && pin - half_width - anchors.back().at >= pitch_min ) {
+                anchors.push_back( { pin - half_width, 0.0 } );
+                anchors.push_back( { pin + half_width, 0.0 } );
             }
         }
         anchors.push_back( end );
@@ -515,7 +552,7 @@ private:
         auto const top { point - rolledup * static_cast<double>( path.track->rail_height() ) };
         // a sleeper of a plain track running alone and square to it, the rest are the timbers of the switches and crossings
         auto const carried { std::count_if( bands.begin(), bands.end(), []( band const &Band ) { return Band.carried; } ) };
-        auto const plain { path.track->eType == tt_Normal && carried == 1 && pieces.size() == 1 && false == pieces.front().clipped && std::abs( glm::dot( forward, along ) ) > 0.9998 };
+        auto const plain { path.track->eType == tt_Normal && carried == 1 && pieces.size() == 1 && false == pieces.front().clipped && std::abs( glm::dot( forward, along ) ) > 0.9998 && false == crossing_timber( path, Distance ) };
         for( std::size_t index = 0; index < pieces.size(); ++index ) {
             auto const &piece { pieces[ index ] };
             auto const &way { turned[ index ] };

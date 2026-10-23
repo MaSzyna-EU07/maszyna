@@ -45,13 +45,6 @@ struct fastening {
 class fastened_rails {
 
 public:
-    explicit fastened_rails( TTrack &Track );
-    // the fastenings of the rails on the timber, of the parts the model has
-    std::vector<fastening> on( beam const &Beam, beam_model const &Model ) const;
-    // where the rails on the timber lie over none of the fastenings
-    std::vector<glm::dvec2> bare( beam const &Beam, beam_model const &Model, std::vector<fastening> const &Fastenings ) const;
-
-private:
     // what a rail is where it lies on a timber
     enum class role {
         plain,
@@ -59,6 +52,24 @@ private:
         stock, // the stock rail of a switch with the blade beside it
         checked // a rail with a check rail beside it
     };
+    // where a rail crosses a timber
+    struct hit {
+        double at { 0.0 }; // along the timber, from its from end
+        role kind { role::plain };
+        glm::dvec2 inward { 1.0, 0.0 };
+        double foot { 0.0 };
+        double rise { 0.0 };
+    };
+
+    explicit fastened_rails( TTrack &Track );
+    // the fastenings of the rails on the timber, of the parts the model has
+    std::vector<fastening> on( beam const &Beam, beam_model const &Model ) const;
+    // the rails lying on the timber, in the order along it
+    std::vector<hit> lying( beam const &Beam ) const;
+    // where the rails on the timber lie over none of the fastenings
+    std::vector<glm::dvec2> bare( beam const &Beam, beam_model const &Model, std::vector<fastening> const &Fastenings ) const;
+
+private:
     // a rail by points along its middle
     struct rail {
         TTrack *track { nullptr };
@@ -76,15 +87,10 @@ private:
         glm::dvec2 blade { -1.0 };
         glm::dvec2 stock { -1.0 };
         std::vector<glm::dvec2> checks;
+        std::vector<glm::dvec2> guards; // with the guard rail of a crossing at a wide angle inside it
+        bool guard { false }; // the guard rail itself
         role at( double const Distance ) const;
-    };
-    // where a rail crosses a timber
-    struct hit {
-        double at { 0.0 }; // along the timber, from its from end
-        role kind { role::plain };
-        glm::dvec2 inward { 1.0, 0.0 };
-        double foot { 0.0 };
-        double rise { 0.0 };
+        bool guarded( double const Distance ) const;
     };
 
     // the rails lying on the timber, in the order along it, one where several lie on one another, but the blades
@@ -95,6 +101,10 @@ private:
     // the fastenings under the raised rails: one holding them moved up on a pad as far as the least raised of them, a rail not raised
     // sunk in it, a rail raised more on a pad of its own on it
     static void lift( std::vector<fastening> &Fastenings, std::vector<hit> const &Rails, beam const &Beam, beam_model const &Model );
+    // the plates of the rails lying along the timber rather than across it, as of a track crossing another square to it, on two
+    // timbers side by side under each of its rails: as far apart as the beams at most, in the room the fastenings of the rails
+    // across leave, on the timber with the rail over its middle or over its side toward the next one
+    void along( std::vector<fastening> &Fastenings, beam const &Beam, beam_model const &Model ) const;
 
     std::vector<rail> m_rails;
 };

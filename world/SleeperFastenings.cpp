@@ -40,6 +40,11 @@ fastened_rails::role fastened_rails::rail::at( double const Distance ) const {
     return role::plain;
 }
 
+bool fastened_rails::rail::guarded( double const Distance ) const {
+
+    return std::any_of( guards.begin(), guards.end(), [&]( glm::dvec2 const &Stretch ) { return Distance >= Stretch.x && Distance <= Stretch.y; } );
+}
+
 fastened_rails::fastened_rails( TTrack &Track ) {
 
     std::vector<TTrack *> tracks;
@@ -65,8 +70,35 @@ fastened_rails::fastened_rails( TTrack &Track ) {
                 for( auto const &check : track_rails::rail_checks( *track )[ Path ][ Side > 0 ? 1 : 0 ] ) {
                     Line.checks.emplace_back( check.from, check.to );
                 }
+                Line.guards = track->m_railguards[ Path ][ Side > 0 ? 1 : 0 ];
             }
             m_rails.emplace_back( std::move( Line ) ); };
+        // the rail of the side of the path from and to along it, by points the given way out from the middle of the path
+        auto const sampled = [&]( int const Path, int const Side, double const From, double const To, double const Middle, knots::line const &Offsets ) {
+            auto const *segment { path_segment( *track, Path ) };
+            auto const count { std::max( 1, static_cast<int>( std::ceil( ( To - From ) / fastening_step ) ) ) };
+            rail line;
+            line.track = track;
+            line.path = Path;
+            line.side = Side;
+            line.foot = size.web - size.low;
+            line.low = glm::dvec2 { std::numeric_limits<double>::max() };
+            line.high = glm::dvec2 { std::numeric_limits<double>::lowest() };
+            for( int step = 0; step <= count; ++step ) {
+                auto const distance { From + ( To - From ) * step / count };
+                glm::dvec3 point, across;
+                segment->plan_frame( distance, point, across );
+                auto const flat { plan( across ) };
+                auto const inward { glm::length( flat ) > 1e-9 ? glm::normalize( flat ) * static_cast<double>( -Side ) : glm::dvec2 { 1.0, 0.0 } };
+                auto const position { plan( point ) - inward * ( Middle + knots::sample( Offsets, distance, 0.0 ) ) };
+                line.points.push_back( position );
+                line.heights.push_back( point.y );
+                line.inward.push_back( inward );
+                line.distances.push_back( distance );
+                line.low = glm::min( line.low, position );
+                line.high = glm::max( line.high, position );
+            }
+            return line; };
         for( int path = 0; path < path_count( *track ); ++path ) {
             auto const *segment { path_segment( *track, path ) };
             if( segment == nullptr ) {
@@ -86,31 +118,20 @@ fastened_rails::fastened_rails( TTrack &Track ) {
                     if( to - from < fastening_merge ) {
                         continue;
                     }
-                    auto const offsets { track_rails::part_offsets( before, after ) };
-                    auto const count { std::max( 1, static_cast<int>( std::ceil( ( to - from ) / fastening_step ) ) ) };
-                    rail line;
-                    line.track = track;
-                    line.path = path;
-                    line.side = side;
+                    auto line { sampled( path, side, from, to, middle, track_rails::part_offsets( before, after ) ) };
                     line.rises = track_rails::part_rises( rise > 0.0 ? track_rails::wing_shares( before, after, stock_stretch( *track, path, side ) ) : knots::line {}, rise, blade_heel( *track, path, side ) );
-                    line.foot = size.web - size.low;
-                    line.low = glm::dvec2 { std::numeric_limits<double>::max() };
-                    line.high = glm::dvec2 { std::numeric_limits<double>::lowest() };
-                    for( int step = 0; step <= count; ++step ) {
-                        auto const distance { from + ( to - from ) * step / count };
-                        glm::dvec3 point, across;
-                        segment->plan_frame( distance, point, across );
-                        auto const flat { plan( across ) };
-                        auto const inward { glm::length( flat ) > 1e-9 ? glm::normalize( flat ) * static_cast<double>( -side ) : glm::dvec2 { 1.0, 0.0 } };
-                        auto const position { plan( point ) - inward * ( middle + knots::sample( offsets, distance, 0.0 ) ) };
-                        line.points.push_back( position );
-                        line.heights.push_back( point.y );
-                        line.inward.push_back( inward );
-                        line.distances.push_back( distance );
-                        line.low = glm::min( line.low, position );
-                        line.high = glm::max( line.high, position );
-                    }
                     add( std::move( line ), path, side );
+                }
+                // the guard rails of the crossings at wide angles inside the rail, the flangeway from it
+                for( auto const &guard : cut ? track->m_railguards[ path ][ side > 0 ] : std::vector<glm::dvec2> {} ) {
+                    auto const from { std::max( 0.0, guard.x ) };
+                    auto const to { std::min( length, guard.y ) };
+                    if( to - from < fastening_merge ) {
+                        continue;
+                    }
+                    auto line { sampled( path, side, from, to, middle - ( track_rails::flangeway + size.head ), {} ) };
+                    line.guard = true;
+                    m_rails.emplace_back( std::move( line ) );
                 }
             }
         }
@@ -345,7 +366,150 @@ std::vector<fastening> fastened_rails::on( beam const &Beam, beam_model const &M
     }
     fit( result, Beam, Model );
     lift( result, rails, Beam, Model );
+    along( result, Beam, Model );
     return result;
+}
+
+void fastened_rails::along( std::vector<fastening> &Fastenings, beam const &Beam, beam_model const &Model ) const {
+
+    auto const span { Beam.to - Beam.from };
+    auto const length { glm::length( plan( span ) ) };
+    auto const start { plan( Beam.from ) };
+    auto const axis { plan( span ) / length };
+    auto const side { glm::normalize( plan( Beam.along ) ) };
+    auto const low { glm::min( start, plan( Beam.to ) ) - 2.0 * half_width };
+    auto const high { glm::max( start, plan( Beam.to ) ) + 2.0 * half_width };
+    // where the rail lies over the timber, along it: a stretch of a chord of the rail
+    struct stretch {
+        rail const *line;
+        std::size_t index; // of the end of the chord
+        double from; // along the timber
+        double to;
+    };
+    std::vector<stretch> stretches;
+    for( auto const &line : m_rails ) {
+        // a guard rail along the timber lies in the fastening of its running rail
+        if( line.guard || line.high.x < low.x || line.low.x > high.x || line.high.y < low.y || line.low.y > high.y ) {
+            continue;
+        }
+        for( std::size_t index = 1; index < line.points.size(); ++index ) {
+            auto const chord { line.points[ index ] - line.points[ index - 1 ] };
+            if( glm::length( chord ) < 1e-6 || std::abs( cross( axis, glm::normalize( chord ) ) ) >= crossing_sine_min ) {
+                continue;
+            }
+            if( std::abs( line.heights[ index ] - glm::mix( Beam.from.y, Beam.to.y, std::clamp( glm::dot( line.points[ index ] - start, axis ) / length, 0.0, 1.0 ) ) ) > level_tolerance ) {
+                continue;
+            }
+            // the share of the chord over the middle of the timber or its side toward the next one, and over its length
+            auto const u0 { glm::dot( line.points[ index - 1 ] - start, axis ) };
+            auto const u1 { glm::dot( line.points[ index ] - start, axis ) };
+            auto const w0 { glm::dot( line.points[ index - 1 ] - start, side ) };
+            auto const w1 { glm::dot( line.points[ index ] - start, side ) };
+            auto from { 0.0 };
+            auto to { 1.0 };
+            auto const clip = [&]( double const A, double const B, double const Low, double const High ) {
+                if( std::abs( B - A ) < 1e-9 ) {
+                    if( A <= Low || A > High ) {
+                        to = -1.0;
+                    }
+                    return;
+                }
+                auto const a { ( Low - A ) / ( B - A ) };
+                auto const b { ( High - A ) / ( B - A ) };
+                from = std::max( from, std::min( a, b ) );
+                to = std::min( to, std::max( a, b ) ); };
+            clip( w0, w1, -half_width + 2.0 * fastening_gap, half_width + 2.0 * fastening_gap );
+            clip( u0, u1, 0.0, length );
+            if( to <= from ) {
+                continue;
+            }
+            auto const a { glm::mix( u0, u1, from ) };
+            auto const b { glm::mix( u0, u1, to ) };
+            stretches.push_back( { &line, index, std::min( a, b ), std::max( a, b ) } );
+        }
+    }
+    if( stretches.empty() ) {
+        return;
+    }
+    // kept clear of the fastenings of the rails across the timber, and of its ends
+    std::vector<glm::dvec2> taken;
+    for( auto const &fastening : Fastenings ) {
+        auto const at { glm::dot( plan( fastening.point ) - start, axis ) };
+        auto const turn { glm::dot( fastening.across, axis ) };
+        auto const &reach { Model.spans[ fastening.part ] };
+        auto const a { at + turn * fastening.placed( reach.x, fastening.scale ) };
+        auto const b { at + turn * fastening.placed( reach.y, fastening.scale ) };
+        taken.emplace_back( std::min( a, b ) - 0.5 * fastening_length - fastening_gap, std::max( a, b ) + 0.5 * fastening_length + fastening_gap );
+    }
+    auto const end { 0.5 * fastening_length + fastening_gap };
+    std::sort( stretches.begin(), stretches.end(), []( stretch const &Left, stretch const &Right ) { return Left.line != Right.line ? Left.line < Right.line : Left.from < Right.from; } );
+    for( std::size_t first = 0; first < stretches.size(); ) {
+        // the stretches of one rail going on one from another
+        auto last { first };
+        auto to { stretches[ first ].to };
+        while( last + 1 < stretches.size() && stretches[ last + 1 ].line == stretches[ first ].line && stretches[ last + 1 ].from <= to + 0.01 ) {
+            to = std::max( to, stretches[ ++last ].to );
+        }
+        std::vector<glm::dvec2> free { glm::dvec2 { std::max( stretches[ first ].from, end ), std::min( to, length - end ) } };
+        for( auto const &blocked : taken ) {
+            std::vector<glm::dvec2> left;
+            for( auto const &room : free ) {
+                if( blocked.y <= room.x || blocked.x >= room.y ) {
+                    left.push_back( room );
+                    continue;
+                }
+                if( blocked.x > room.x ) {
+                    left.emplace_back( room.x, blocked.x );
+                }
+                if( blocked.y < room.y ) {
+                    left.emplace_back( blocked.y, room.y );
+                }
+            }
+            free = std::move( left );
+        }
+        auto const plate = [&]( double const At ) {
+            for( auto index { first }; index <= last; ++index ) {
+                auto const &piece { stretches[ index ] };
+                if( At < piece.from - 1e-6 || At > piece.to + 1e-6 ) {
+                    continue;
+                }
+                auto const &line { *piece.line };
+                auto const u0 { glm::dot( line.points[ piece.index - 1 ] - start, axis ) };
+                auto const u1 { glm::dot( line.points[ piece.index ] - start, axis ) };
+                auto const share { std::abs( u1 - u0 ) > 1e-9 ? std::clamp( ( At - u0 ) / ( u1 - u0 ), 0.0, 1.0 ) : 0.0 };
+                auto const offset { glm::dot( glm::mix( line.points[ piece.index - 1 ], line.points[ piece.index ], share ) - start, side ) };
+                auto const inward { glm::normalize( glm::mix( line.inward[ piece.index - 1 ], line.inward[ piece.index ], share ) ) };
+                auto const point { Beam.from + span * ( At / length ) + glm::dvec3 { side.x, 0.0, side.y } * offset };
+                // with its check rail, or the guard rail of the crossing, in the fastening of both
+                auto const distance { glm::mix( line.distances[ piece.index - 1 ], line.distances[ piece.index ], share ) };
+                if( Model.parts[ part_check ] != nullptr && ( line.at( distance ) == role::checked || line.guarded( distance ) ) ) {
+                    Fastenings.push_back( { part_check, point, inward, 1.f, static_cast<float>( 0.5 * check_seats ) } );
+                }
+                else {
+                    Fastenings.push_back( { part_plate, point, inward } );
+                }
+                return;
+            } };
+        for( auto const &room : free ) {
+            if( room.y < room.x ) {
+                continue;
+            }
+            if( room.y - room.x < 0.5 * pitch ) {
+                plate( 0.5 * ( room.x + room.y ) );
+                continue;
+            }
+            auto const count { static_cast<int>( std::ceil( ( room.y - room.x ) / pitch ) ) + 1 };
+            for( int index = 0; index < count; ++index ) {
+                plate( glm::mix( room.x, room.y, static_cast<double>( index ) / ( count - 1 ) ) );
+            }
+        }
+        first = last + 1;
+    }
+}
+
+std::vector<fastened_rails::hit> fastened_rails::lying( beam const &Beam ) const {
+
+    return rails_on( Beam );
 }
 
 std::vector<glm::dvec2> fastened_rails::bare( beam const &Beam, beam_model const &Model, std::vector<fastening> const &Fastenings ) const {
@@ -807,10 +971,15 @@ std::vector<check_rail_gap> check_rail_seats() {
             }
             auto const length { segment->GetLength() };
             for( auto const side : { -1, 1 } ) {
+                // the check rails and the guard rails of the crossings at wide angles
+                auto spans { track->m_railguards[ path ][ side > 0 ? 1 : 0 ] };
                 for( auto const &check : checks[ path ][ side > 0 ? 1 : 0 ] ) {
-                    check_line line { { track->name(), path, side, check.from, check.to } };
-                    auto const from { std::max( 0.0, check.from ) };
-                    auto const to { std::min( length, check.to ) };
+                    spans.emplace_back( check.from, check.to );
+                }
+                for( auto const &check : spans ) {
+                    check_line line { { track->name(), path, side, check.x, check.y } };
+                    auto const from { std::max( 0.0, check.x ) };
+                    auto const to { std::min( length, check.y ) };
                     auto const count { static_cast<int>( std::ceil( ( to - from ) / fastening_step ) ) };
                     for( int step = 0; step <= count && to > from; ++step ) {
                         glm::dvec3 point, across;

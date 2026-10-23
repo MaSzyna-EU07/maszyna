@@ -218,6 +218,7 @@ public:
     bool m_editorremoved { false };
     std::vector<TTrack *> m_crossings; // tracks whose rails cross the rails of this one, found when its geometry was made
     track_rails::rail_plan m_railplans[ 2 ][ 2 ]; // the cuts of its rails, by path and right side, as its geometry was made
+    std::vector<glm::dvec2> m_railguards[ 2 ][ 2 ]; // the guard rails inside its rails at the crossings at wide angles, from and to along the path, as its geometry was made
     scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
     std::array<float, 3> m_routeweights { 0.f, 0.f, 0.f }; // odds of each route through a crossroads being picked by a driver, by the number of the route. all zero: even odds
 	int iterate_stamp = 0;

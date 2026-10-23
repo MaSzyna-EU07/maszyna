@@ -20,6 +20,9 @@ double constexpr pitch_min { 0.83 * pitch };
 double constexpr pitch_max { 1.08 * pitch };
 // how far out from the middle of a track its rail reaches past half the gauge: the foot of the rail outside the gauge line
 double constexpr rail_reach { 0.1115 };
+// how far out from the gauge line the middle of the rail is, and how wide its head is
+double constexpr rail_web { 0.0365 };
+double constexpr rail_head { 0.0735 };
 // how far a beam reaches out past the foot of the rail, 2.6 m sleepers under the standard gauge, and how far at least
 double constexpr overhang { 0.471 };
 double constexpr overhang_min { 0.25 };
@@ -61,6 +64,8 @@ double constexpr fastening_nose { 0.05 };
 double constexpr fastening_crowd { 0.3 };
 // how far apart the rails lie in the fastening of both, the check part of the model
 double constexpr check_seats { 0.113 };
+// how long a fastening is along its rail, at most
+double constexpr fastening_length { 0.19 };
 // how far past the edge of the foot of a rail its fastening reaches, with the clip holding it
 double constexpr fastening_clip { 0.09 };
 // the room left between the fastenings of rails close by, and how narrow their plates get to keep it

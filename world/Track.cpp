@@ -1598,6 +1598,10 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
             for( int path = 0; path < 2; ++path ) {
                 for( int side = 0; side < 2; ++side ) {
                     m_railplans[ path ][ side ] = layout.plans[ path ][ side ];
+                    m_railguards[ path ][ side ].clear();
+                    for( auto const &guard : layout.guards[ path ][ side ] ) {
+                        m_railguards[ path ][ side ].emplace_back( guard.from, guard.to );
+                    }
                 }
             }
         }
