@@ -1516,6 +1516,7 @@ debug_panel::render_section_renderer() {
     // the physics of the vehicles, timed in the section of the main loop
     ImGui::Checkbox( "let vehicles standing still and held by their brakes sleep (physics.sleepheld)", &Global.physics_sleepheld );
     ImGui::Checkbox( "one step of the physics in a frame for road vehicles farther than 1 km (physics.roadlod)", &Global.physics_roadlod );
+    ImGui::SliderFloat( "bar: change of the pressure in a pipe which wakes the physics of a vehicle, 0 any (physics.pipewake)", &Global.physics_pipewake, 0.f, 0.05f, "%.4f" );
     return true;
 }
 

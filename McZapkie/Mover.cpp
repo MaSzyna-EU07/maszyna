@@ -4720,6 +4720,20 @@ void TMoverParameters::UpdatePipePressure(double dt)
 // Q: 20160713
 // Aktualizacja ciśnienia w przewodzie zasilającym
 // *************************************************************************************************
+namespace
+{
+// whether the air flowing to a coupled vehicle along a pipe wakes its physics: any flow did, but a vehicle standing next to one
+// whose physics is on gets a trickle of it all the time, as their pressures settle, and each wake kept it on for 5 s. with
+// Global.physics_pipewake only a flow which brings its pressure, with what has flown in while it slept, that much away from the
+// pressure of the vehicle the air comes from
+bool pipe_wakes(double const Flow, double const Pressure, TReservoir const &Pipe)
+{
+	if (Flow * Flow <= 0.00000000000001)
+		return false;
+	return (Global.physics_pipewake <= 0.f) || (std::abs(Pressure - Pipe.P_pending()) > Global.physics_pipewake);
+}
+} // namespace
+
 void TMoverParameters::UpdateScndPipePressure(double dt)
 {
 	if (ScndPipePress > 1.0)
@@ -4744,18 +4758,18 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 	{
 		c = Couplers[0].Connected; // skrot
 		dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true, wake_cause::scndpipe);
 		c->Pipe2->Flow(-dv1);
+		if (pipe_wakes(dv1, ScndPipePress, *c->Pipe2))
+			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true, wake_cause::scndpipe);
 		c->Pipe2->Flow(-dv2);
+		if (pipe_wakes(dv2, ScndPipePress, *c->Pipe2))
+			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
@@ -4832,18 +4846,18 @@ double TMoverParameters::GetDVc(double dt)
 	{ //*0.85
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
 		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
-		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true, wake_cause::mainpipe);
 		c->Pipe->Flow(-dv1);
+		if (pipe_wakes(dv1, PipePress, *c->Pipe))
+			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
-		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true, wake_cause::mainpipe);
 		c->Pipe->Flow(-dv2);
+		if (pipe_wakes(dv2, PipePress, *c->Pipe))
+			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// if ((Couplers[1].Connected != NULL) && (Couplers[0].Connected != NULL))
 	//     if ((TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic)) &&
