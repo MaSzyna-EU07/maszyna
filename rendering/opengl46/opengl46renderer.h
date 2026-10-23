@@ -507,6 +507,8 @@ class opengl46_renderer : public gfx_renderer {
 	void Update_Texture_Release();
 	// textures used by materials of the sub-models of specified model, replaceable skins excluded
 	std::vector<texture_handle> const &Model_Textures( TModel3d *Model );
+	// has the data of the textures read ahead of the camera, with gfx.textures.streaming
+	void Update_Texture_Prefetch();
 	void Render(TMemCell *Memcell);
 	void Render_particles();
 	void Render_precipitation();
@@ -647,6 +649,10 @@ class opengl46_renderer : public gfx_renderer {
 	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<queued_instance>, scene::basic_cell::instance_bucket_key_hash> m_frame_instance_buckets;
 	// textures used by vehicle models, for the release of far textures
 	std::unordered_map<TModel3d const *, std::vector<texture_handle>> m_modeltextures;
+	// the read ahead of textures (Update_Texture_Prefetch()): the cell it goes on with
+	std::size_t m_prefetchcursor { 0 };
+	std::chrono::steady_clock::time_point m_prefetchvehicletime;
+	std::chrono::steady_clock::time_point m_prefetchdroptime;
 	// geometry of neighbouring tracks of a cell which share the material, gathered to be drawn together. reused by each Render(path_sequence)
 	std::vector<gfx::geometrybank_handle> m_pathbatch;
 	// instance records kept by the buckets of scene cells are good as long as they carry this number.

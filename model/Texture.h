@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <istream>
+#include <chrono>
 #include <limits>
 #include "winheaders.h"
 #include "utilities/memorystats.h"
@@ -117,6 +118,8 @@ public:
 
     // takes over the data read by a worker thread, waiting for it if needed
     void complete_data();
+    // has a worker thread read the data of the texture, if it's waiting for that (gfx.textures.streaming)
+    void prefetch();
 
 // members
     std::shared_ptr<texture_request> request; // data being read by a worker thread
@@ -183,12 +186,23 @@ public:
         info() const;
     // what the textures keep in memory, for the debug panel: copies of the data kept in the process (count, bytes), and the
     // textures made on the gpu with the size of their data (count, bytes)
+    // with gfx.textures.streaming also the data read for textures not made yet (count, bytes), the textures which wait for a
+    // worker to read it, and the ones which wait to be asked for it
     struct memory_data {
         memory_count cpu;
         memory_count gpu;
+        memory_count readahead;
+        std::uint64_t reading { 0 };
+        std::uint64_t waiting { 0 };
     };
     memory_data
         memory() const;
+    // has the data of a texture read, if it's waiting for that (gfx.textures.streaming)
+    void
+        prefetch( texture_handle const Texture );
+    // gives back the data read for textures which nothing drew within the specified time since it was asked for
+    std::size_t
+        drop_read_ahead( std::chrono::steady_clock::duration const Age );
 
 private:
 // types:

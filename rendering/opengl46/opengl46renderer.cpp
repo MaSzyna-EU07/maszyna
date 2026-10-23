@@ -1254,8 +1254,13 @@ void opengl46_renderer::Update_Memory_Info()
 	// textures: the copies of the data kept in the process after the upload
 	auto const textures { m_textures.memory() };
 	accounted += textures.cpu.bytes;
+	accounted += textures.readahead.bytes;
 	text += "textures: " + std::to_string( textures.cpu.count ) + " keep their data in ram, " + mb( textures.cpu.bytes ) + "; "
 		+ std::to_string( textures.gpu.count ) + " on the card, ~" + mb( textures.gpu.bytes ) + "\n";
+	if( textures.readahead.count + textures.reading + textures.waiting > 0 ) {
+		text += " streamed: " + std::to_string( textures.readahead.count ) + " read ahead, not drawn yet, " + mb( textures.readahead.bytes ) + "; "
+			+ std::to_string( textures.reading ) + " being read; " + std::to_string( textures.waiting ) + " not read until they're needed\n";
+	}
 	// geometry: the copies of the chunks sent to the card
 	auto const geometry { m_geometry.memory() };
 	accounted += geometry.vertices.bytes + geometry.indices.bytes + geometry.userdata.bytes;
@@ -6118,6 +6123,172 @@ void opengl46_renderer::Update_Texture_Release()
 	m_textures.release_unneeded();
 }
 
+// with gfx.textures.streaming the data of a texture is read when it's going to be drawn, not with the scenery: the textures of the
+// whole scenery don't fit in memory. the cells of the region within the draw range and a margin around the camera are gone through
+// a few in a frame, and the textures of what they hold which will be seen from there are read ahead, as are the ones of the vehicles
+// nearby. what is drawn without that waits for its data to be read
+void opengl46_renderer::Update_Texture_Prefetch()
+{
+	if (m_colorpass.draw_range <= 0.f)
+	{
+		return;
+	}
+	double const margin{500.0}; // m: the way the data has to arrive
+	std::size_t const cellsperframe{32};
+	auto const camera{m_colorpass.pass_camera.position()};
+	auto const range{static_cast<double>(m_colorpass.draw_range) * Global.fDistanceFactor + margin};
+
+	auto const prefetch_material = [this](material_handle const Material) {
+		if (Material <= 0)
+		{
+			return;
+		}
+		auto const &material{m_materials.material(Material)};
+		for (auto const texture : material.textures)
+		{
+			m_textures.prefetch(texture);
+		}
+		for (auto const &variant : material.texture_variants)
+		{
+			for (auto const texture : variant)
+			{
+				m_textures.prefetch(texture);
+			}
+		}
+	};
+	auto const prefetch_model = [this](TModel3d *Model) {
+		if (Model == nullptr)
+		{
+			return;
+		}
+		for (auto const texture : Model_Textures(Model))
+		{
+			m_textures.prefetch(texture);
+		}
+	};
+
+	// the sections around the camera, the same way Render(scene::basic_region *) picks them
+	int constexpr cellspersection{(scene::EU07_SECTIONSIZE / scene::EU07_CELLSIZE) * (scene::EU07_SECTIONSIZE / scene::EU07_CELLSIZE)};
+	auto const camerax{static_cast<int>(std::floor(camera.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2))};
+	auto const cameraz{static_cast<int>(std::floor(camera.z / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2))};
+	int const segmentcount{2 * static_cast<int>(std::ceil(range / scene::EU07_SECTIONSIZE))};
+	int const side{segmentcount + 1};
+	int const originx{camerax - segmentcount / 2};
+	int const originz{cameraz - segmentcount / 2};
+	auto const cellcount{static_cast<std::size_t>(side) * side * cellspersection};
+	auto *region{simulation::Region};
+
+	// the first time the whole range at once: the textures around the start are read by the workers, not one by one by the first frame
+	auto const steps{m_prefetchcursor == 0 ? cellcount : cellsperframe};
+	for (std::size_t step = 0; step < steps; ++step, ++m_prefetchcursor)
+	{
+		auto const index{m_prefetchcursor % cellcount};
+		auto const sectionindex{static_cast<int>(index / cellspersection)};
+		auto const cellindex{index % cellspersection};
+		auto const row{originz + sectionindex / side};
+		auto const column{originx + sectionindex % side};
+		if ((row < 0) || (row >= scene::EU07_REGIONSIDESECTIONCOUNT) || (column < 0) || (column >= scene::EU07_REGIONSIDESECTIONCOUNT))
+		{
+			continue;
+		}
+		auto *section{region->m_sections[row * scene::EU07_REGIONSIDESECTIONCOUNT + column]};
+		if (section == nullptr)
+		{
+			continue;
+		}
+		if ((cellindex == 0) && (glm::length(section->m_area.center - camera) - section->m_area.radius <= range))
+		{
+			for (auto const &shape : section->m_shapes)
+			{
+				prefetch_material(shape.data().material);
+			}
+		}
+		auto const &cell{section->m_cells[cellindex]};
+		if ((false == cell.m_active) || (glm::length(cell.m_area.center - camera) - cell.m_area.radius > range))
+		{
+			continue;
+		}
+		for (auto const &shape : cell.m_shapesopaque)
+		{
+			prefetch_material(shape.data().material);
+		}
+		for (auto const &shape : cell.m_shapestranslucent)
+		{
+			prefetch_material(shape.data().material);
+		}
+		for (auto const *track : cell.m_paths)
+		{
+			prefetch_material(track->m_material1);
+			prefetch_material(track->m_material2);
+			prefetch_material(track->m_sleeper_skin);
+			if (track->SwitchExtension != nullptr)
+			{
+				prefetch_material(track->SwitchExtension->m_material3);
+			}
+		}
+		// the instances which will be seen from within the margin. the ones asked for once aren't gone through again until they're
+		// out of reach, it's when their data could have been dropped
+		auto const prefetch_instances = [&](scene::basic_cell::instance_sequence const &Instances) {
+			for (auto *instance : Instances)
+			{
+				auto const distance{glm::length(instance->location() - camera)};
+				auto const reach{std::sqrt(instance->m_rangesquaredmax * Global.fDistanceFactor) + margin};
+				if ((distance > reach) || (false == instance->visible()))
+				{
+					if (distance > reach + margin)
+					{
+						instance->m_texturesprefetched = false;
+					}
+					continue;
+				}
+				if (true == instance->m_texturesprefetched)
+				{
+					continue;
+				}
+				instance->m_texturesprefetched = true;
+				prefetch_model(instance->Model());
+				for (auto const skin : instance->Material()->replacable_skins)
+				{
+					prefetch_material(skin);
+				}
+			}
+		};
+		prefetch_instances(cell.m_instancesopaque);
+		prefetch_instances(cell.m_instancetranslucent);
+	}
+
+	auto const now{std::chrono::steady_clock::now()};
+	if (now - m_prefetchvehicletime >= std::chrono::seconds(1))
+	{
+		m_prefetchvehicletime = now;
+		for (auto *vehicle : simulation::Vehicles.sequence())
+		{
+			if ((vehicle == nullptr) || (glm::length(vehicle->vPosition - camera) - vehicle->radius() > range))
+			{
+				continue;
+			}
+			prefetch_model(vehicle->mdModel);
+			prefetch_model(vehicle->mdLowPolyInt);
+			prefetch_model(vehicle->mdLoad);
+			for (auto *attachment : vehicle->mdAttachments)
+			{
+				prefetch_model(attachment);
+			}
+			for (auto const skin : vehicle->m_materialdata.replacable_skins)
+			{
+				prefetch_material(skin);
+			}
+		}
+	}
+	// the data read for what wasn't drawn after all (the details of models seen only from close, or a turn not taken) goes after a
+	// while
+	if (now - m_prefetchdroptime >= std::chrono::seconds(10))
+	{
+		m_prefetchdroptime = now;
+		m_textures.drop_read_ahead(std::chrono::minutes(5));
+	}
+}
+
 // textures used by materials of the sub-models of specified model, replaceable skins excluded
 std::vector<texture_handle> const &opengl46_renderer::Model_Textures(TModel3d *Model)
 {
@@ -8504,6 +8675,11 @@ void opengl46_renderer::Update(double const Deltatime)
 	if ((Global.gfx_texture_releasedistance > 0.f) && (true == simulation::is_ready))
 	{
 		Update_Texture_Release();
+	}
+
+	if ((true == Global.gfx_texture_streaming) && (true == simulation::is_ready) && (simulation::Region != nullptr))
+	{
+		Update_Texture_Prefetch();
 	}
 
 	if ((true == Global.ControlPicking) && (false == FreeFlyModeFlag))

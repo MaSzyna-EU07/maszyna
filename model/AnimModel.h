@@ -202,6 +202,7 @@ public:
     glm::vec3 m_rotationscaleangles { 0.0f, 0.0f, 0.0f };
     glm::vec3 m_rotationscalescale { 1.0f, 1.0f, 1.0f };
     bool m_rotationscalevalid { false };
+    bool m_texturesprefetched { false }; // the renderer had the data of its textures read ahead (gfx.textures.streaming)
     material_data m_materialdata;
 
     std::string asText; // tekst dla wyświetlacza znakowego

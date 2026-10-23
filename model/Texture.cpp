@@ -43,6 +43,9 @@ struct texture_request {
     int height { 0 };
     int mapcount { 0 };
     int blocksize { 0 };
+    // handed to the workers (opengl_texture::prefetch()), and when: the main thread only
+    bool submitted { false };
+    std::chrono::steady_clock::time_point submittime;
     // results, written by the thread reading the data
     std::vector<unsigned char> data;
     bool failed { false };
@@ -89,6 +92,22 @@ public:
             return;
         }
         m_read.wait( lock, [ &Request ]() { return Request->done; } ); }
+
+    // bytes of the data read for a request, 0 while it isn't there yet
+    std::size_t read_size( texture_request const &Request ) {
+        std::lock_guard<std::mutex> lock( m_mutex );
+        return ( Request.done ? Request.data.capacity() : 0 ); }
+
+    // gives back the data read for a request, once it's there. the request can be submitted again then
+    bool drop( texture_request &Request ) {
+        std::lock_guard<std::mutex> lock( m_mutex );
+        if( false == Request.done ) {
+            return false;
+        }
+        Request.data = std::vector<unsigned char>();
+        Request.done = false;
+        Request.failed = false;
+        return true; }
 
     ~texture_loader() {
         {
@@ -613,7 +632,8 @@ opengl_texture::load_DDS() {
         request->height = data_height;
         request->mapcount = data_mapcount;
         request->blocksize = blockSize;
-        texture_loader::instance().submit( request );
+        // the data is read when it's going to be needed (prefetch()), or the first time the texture is made: the data of textures
+        // nothing draws yet would take the memory for nothing
 
         data_components =
             ddsd.ddpfPixelFormat.dwFourCC == FOURCC_DXT1 ? GL_RGB : GL_RGBA;
@@ -1096,6 +1116,8 @@ opengl_texture::complete_data() {
 
     if( request == nullptr ) { return; }
 
+    // read right away if nothing asked for the data before
+    prefetch();
     texture_loader::instance().wait( request );
     auto const completed { std::move( request ) };
 
@@ -1109,6 +1131,17 @@ opengl_texture::complete_data() {
     data.swap( completed->data );
     data_state = resource_state::good;
     size = data.size() / 1024;
+}
+
+// has a worker thread read the data of the texture, if it's waiting for that
+void
+opengl_texture::prefetch() {
+
+    if( ( request == nullptr ) || ( true == request->submitted ) ) { return; }
+
+    request->submitted = true;
+    request->submittime = std::chrono::steady_clock::now();
+    texture_loader::instance().submit( request );
 }
 
 // releases resources allocated on the opengl end, storing local copy if requested
@@ -1424,6 +1457,7 @@ texture_manager::mark_as_needed( texture_handle const Texture, bool const Near )
             // the vehicle came back, the texture is read again before it's drawn (in the background with gfx.textures.streaming)
             texture.reload_on_use = false;
             texture.load();
+            texture.prefetch();
         }
     }
     else if( needed == resource_timestamp() ) {
@@ -1499,8 +1533,57 @@ texture_manager::memory() const {
             ++result.gpu.count;
             result.gpu.bytes += static_cast<std::uint64_t>( texture.first->size ) * 1024;
         }
+        if( texture.first->request != nullptr ) {
+            auto const &request { *texture.first->request };
+            if( false == request.submitted ) {
+                ++result.waiting;
+            }
+            else if( auto const size { texture_loader::instance().read_size( request ) }; size > 0 ) {
+                ++result.readahead.count;
+                result.readahead.bytes += size;
+            }
+            else {
+                ++result.reading;
+            }
+        }
     }
     return result;
+}
+
+// has the data of a texture read, if it's waiting for that
+void
+texture_manager::prefetch( texture_handle const Texture ) {
+
+    if( ( Texture <= 0 )
+     || ( Texture >= static_cast<texture_handle>( m_textures.size() ) ) ) {
+        return;
+    }
+    m_textures[ Texture ].first->prefetch();
+}
+
+// gives back the data read for textures which nothing drew within the specified time since it was asked for. it's read again when
+// a texture is needed
+std::size_t
+texture_manager::drop_read_ahead( std::chrono::steady_clock::duration const Age ) {
+
+    auto const now { std::chrono::steady_clock::now() };
+    std::size_t count { 0 };
+    for( auto const &texture : m_textures ) {
+        if( ( texture.first == nullptr )
+         || ( texture.first->request == nullptr ) ) {
+            continue;
+        }
+        auto &request { *texture.first->request };
+        if( ( false == request.submitted )
+         || ( now - request.submittime < Age ) ) {
+            continue;
+        }
+        if( true == texture_loader::instance().drop( request ) ) {
+            request.submitted = false;
+            ++count;
+        }
+    }
+    return count;
 }
 
 // debug performance string
