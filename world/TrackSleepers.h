@@ -103,6 +103,8 @@ struct laid {
     std::vector<glm::mat4> whole; // transforms of the timbers of a model without parts, drawn whole
     std::vector<glm::mat4> plain; // transforms of the plain sleepers, whole models, relative to the origin of the track
     std::vector<chunk> chunks;
+    bool fastened { false }; // the fastenings are laid, else they're laid as the track comes near where they're drawn
+    std::vector<beam> beams; // kept for the fastenings till they're laid
 };
 
 // how far the ballast of a track with beams is lowered, so they stick out of it
@@ -147,10 +149,14 @@ struct pack_model {
 // the models of sleepers and timbers in the scenery data, found once in models/ by the names of their files telling sleepers
 // or timbers: podklad, podrozjazd, sleeper, timber. the timber ones first, then by the name
 std::vector<pack_model> const &pack_models();
-// the beams of the track placed anew, as instances of the parts of the model
-void lay( TTrack &Track );
+// the beams of the track placed anew, as instances of the parts of the model; with the fastenings, or those left for later
+void lay( TTrack &Track, bool const Fastened = true );
+// the fastenings left out laid on the beams of the track
+void fasten( TTrack &Track );
 // the beams of the tracks around the track to be placed again, as they depend on where it runs
 void unsettle_around( TTrack &Track );
+// the rails of the track kept for the fastenings of the tracks around let go, as they're laid anew or the track goes far
+void forget_rails( TTrack const &Track );
 // the beams worked out in a thread of their own as the tracks come near, while the simulation runs; off in the editor, where the
 // tracks change and the beams are worked out as they're needed. turning it off waits for the beams being worked out
 void lay_in_background( bool const Background );

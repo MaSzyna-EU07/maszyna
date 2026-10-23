@@ -52,90 +52,119 @@ fastened_rails::fastened_rails( TTrack &Track ) {
         if( bedded( *Other ) && std::find( tracks.begin(), tracks.end(), Other ) == tracks.end() ) {
             tracks.push_back( Other );
         } } );
+    auto &kept { fastened_rails::kept() };
     for( auto *track : tracks ) {
-        auto const size { track->rail_dimensions() };
-        auto const middle { 0.5 * std::abs( track->fTrackWidth ) + size.web };
-        auto const cut { track_rails::cut_rails( *track ) };
-        auto const switched { track->eType == tt_Switch && track->SwitchExtension != nullptr };
-        auto const rise { wing_rise( *track ) };
-        // what the rail is along the path: a blade, the stock rail of a blade, checked
-        auto const add = [&]( rail &&Line, int const Path, int const Side ) {
-            if( switched ) {
-                if( auto const heel { blade_heel( *track, Path, Side ) }; heel > 0.0 ) {
-                    Line.blade = { 0.0, heel };
-                }
-                Line.stock = stock_stretch( *track, Path, Side );
+        auto &rails { kept[ track ] };
+        if( rails == nullptr ) {
+            rails = std::make_shared<std::vector<rail> const>( rails_of( *track ) );
+        }
+        m_kept.push_back( rails );
+        m_rails.insert( m_rails.end(), rails->begin(), rails->end() );
+    }
+}
+
+fastened_rails::kept_rails &fastened_rails::kept() {
+
+    static kept_rails tracks;
+    static unsigned int stamp { 0 };
+    if( stamp != track_rails::memo_stamp() ) {
+        tracks.clear();
+        stamp = track_rails::memo_stamp();
+    }
+    return tracks;
+}
+
+void forget_rails( TTrack const &Track ) {
+
+    fastened_rails::kept().erase( &Track );
+}
+
+std::vector<fastened_rails::rail> fastened_rails::rails_of( TTrack &Track ) {
+
+    std::vector<rail> result;
+    auto const size { Track.rail_dimensions() };
+    auto const middle { 0.5 * std::abs( Track.fTrackWidth ) + size.web };
+    auto const cut { track_rails::cut_rails( Track ) };
+    auto const switched { Track.eType == tt_Switch && Track.SwitchExtension != nullptr };
+    auto const rise { wing_rise( Track ) };
+    // what the rail is along the path: a blade, the stock rail of a blade, checked
+    auto const add = [&]( rail &&Line, int const Path, int const Side ) {
+        if( switched ) {
+            if( auto const heel { blade_heel( Track, Path, Side ) }; heel > 0.0 ) {
+                Line.blade = { 0.0, heel };
             }
-            if( cut ) {
-                for( auto const &check : track_rails::rail_checks( *track )[ Path ][ Side > 0 ? 1 : 0 ] ) {
-                    Line.checks.emplace_back( check.from, check.to );
-                }
-                Line.guards = track->m_railguards[ Path ][ Side > 0 ? 1 : 0 ];
+            Line.stock = stock_stretch( Track, Path, Side );
+        }
+        if( cut ) {
+            for( auto const &check : track_rails::rail_checks( Track )[ Path ][ Side > 0 ? 1 : 0 ] ) {
+                Line.checks.emplace_back( check.from, check.to );
             }
-            m_rails.emplace_back( std::move( Line ) ); };
-        // the rail of the side of the path from and to along it, by points the given way out from the middle of the path
-        auto const sampled = [&]( int const Path, int const Side, double const From, double const To, double const Middle, knots::line const &Offsets ) {
-            auto const *segment { path_segment( *track, Path ) };
-            auto const count { std::max( 1, static_cast<int>( std::ceil( ( To - From ) / fastening_step ) ) ) };
-            rail line;
-            line.track = track;
-            line.path = Path;
-            line.side = Side;
-            line.foot = size.web - size.low;
-            line.low = glm::dvec2 { std::numeric_limits<double>::max() };
-            line.high = glm::dvec2 { std::numeric_limits<double>::lowest() };
-            for( int step = 0; step <= count; ++step ) {
-                auto const distance { From + ( To - From ) * step / count };
-                glm::dvec3 point, across;
-                segment->plan_frame( distance, point, across );
-                auto const flat { plan( across ) };
-                auto const inward { glm::length( flat ) > 1e-9 ? glm::normalize( flat ) * static_cast<double>( -Side ) : glm::dvec2 { 1.0, 0.0 } };
-                auto const position { plan( point ) - inward * ( Middle + knots::sample( Offsets, distance, 0.0 ) ) };
-                line.points.push_back( position );
-                line.heights.push_back( point.y );
-                line.inward.push_back( inward );
-                line.distances.push_back( distance );
-                line.low = glm::min( line.low, position );
-                line.high = glm::max( line.high, position );
-            }
-            return line; };
-        for( int path = 0; path < path_count( *track ); ++path ) {
-            auto const *segment { path_segment( *track, path ) };
-            if( segment == nullptr ) {
-                continue;
-            }
-            auto const length { segment->GetLength() };
-            for( auto const side : { -1, 1 } ) {
-                // the rail in its parts between the cuts at the crossings, as they're laid: a wing rail bent out from the path; on over the
-                // gap at an obtuse crossing, where its check rail lies
-                auto cuts { cut ? track->m_railplans[ path ][ side > 0 ].cuts : std::vector<track_rails::rail_cut> {} };
-                std::stable_sort( cuts.begin(), cuts.end(), []( track_rails::rail_cut const &A, track_rails::rail_cut const &B ) { return A.at < B.at; } );
-                for( std::size_t part = 0; part <= cuts.size(); ++part ) {
-                    auto const *before { part > 0 ? &cuts[ part - 1 ] : nullptr };
-                    auto const *after { part < cuts.size() ? &cuts[ part ] : nullptr };
-                    auto const from { std::max( 0.0, before != nullptr ? before->start : 0.0 ) };
-                    auto const to { std::min( length, after != nullptr ? std::max( after->end, after->start ) : length ) };
-                    if( to - from < fastening_merge ) {
-                        continue;
-                    }
-                    auto line { sampled( path, side, from, to, middle, track_rails::part_offsets( before, after ) ) };
-                    line.rises = track_rails::part_rises( rise > 0.0 ? track_rails::wing_shares( before, after, stock_stretch( *track, path, side ) ) : knots::line {}, rise, blade_heel( *track, path, side ) );
-                    add( std::move( line ), path, side );
+            Line.guards = Track.m_railguards[ Path ][ Side > 0 ? 1 : 0 ];
+        }
+        result.emplace_back( std::move( Line ) ); };
+    // the rail of the side of the path from and to along it, by points the given way out from the middle of the path
+    auto const sampled = [&]( int const Path, int const Side, double const From, double const To, double const Middle, knots::line const &Offsets ) {
+        auto const *segment { path_segment( Track, Path ) };
+        auto const count { std::max( 1, static_cast<int>( std::ceil( ( To - From ) / fastening_step ) ) ) };
+        rail line;
+        line.track = &Track;
+        line.path = Path;
+        line.side = Side;
+        line.foot = size.web - size.low;
+        line.low = glm::dvec2 { std::numeric_limits<double>::max() };
+        line.high = glm::dvec2 { std::numeric_limits<double>::lowest() };
+        for( int step = 0; step <= count; ++step ) {
+            auto const distance { From + ( To - From ) * step / count };
+            glm::dvec3 point, across;
+            segment->plan_frame( distance, point, across );
+            auto const flat { plan( across ) };
+            auto const inward { glm::length( flat ) > 1e-9 ? glm::normalize( flat ) * static_cast<double>( -Side ) : glm::dvec2 { 1.0, 0.0 } };
+            auto const position { plan( point ) - inward * ( Middle + knots::sample( Offsets, distance, 0.0 ) ) };
+            line.points.push_back( position );
+            line.heights.push_back( point.y );
+            line.inward.push_back( inward );
+            line.distances.push_back( distance );
+            line.low = glm::min( line.low, position );
+            line.high = glm::max( line.high, position );
+        }
+        return line; };
+    for( int path = 0; path < path_count( Track ); ++path ) {
+        auto const *segment { path_segment( Track, path ) };
+        if( segment == nullptr ) {
+            continue;
+        }
+        auto const length { segment->GetLength() };
+        for( auto const side : { -1, 1 } ) {
+            // the rail in its parts between the cuts at the crossings, as they're laid: a wing rail bent out from the path; on over the
+            // gap at an obtuse crossing, where its check rail lies
+            auto cuts { cut ? Track.m_railplans[ path ][ side > 0 ].cuts : std::vector<track_rails::rail_cut> {} };
+            std::stable_sort( cuts.begin(), cuts.end(), []( track_rails::rail_cut const &A, track_rails::rail_cut const &B ) { return A.at < B.at; } );
+            for( std::size_t part = 0; part <= cuts.size(); ++part ) {
+                auto const *before { part > 0 ? &cuts[ part - 1 ] : nullptr };
+                auto const *after { part < cuts.size() ? &cuts[ part ] : nullptr };
+                auto const from { std::max( 0.0, before != nullptr ? before->start : 0.0 ) };
+                auto const to { std::min( length, after != nullptr ? std::max( after->end, after->start ) : length ) };
+                if( to - from < fastening_merge ) {
+                    continue;
                 }
-                // the guard rails of the crossings at wide angles inside the rail, the flangeway from it
-                for( auto const &guard : cut ? track->m_railguards[ path ][ side > 0 ] : std::vector<glm::dvec2> {} ) {
-                    auto const from { std::max( 0.0, guard.x ) };
-                    auto const to { std::min( length, guard.y ) };
-                    if( to - from < fastening_merge ) {
-                        continue;
-                    }
-                    auto line { sampled( path, side, from, to, middle - ( track_rails::flangeway + size.head ), {} ) };
-                    line.guard = true;
-                    m_rails.emplace_back( std::move( line ) );
+                auto line { sampled( path, side, from, to, middle, track_rails::part_offsets( before, after ) ) };
+                line.rises = track_rails::part_rises( rise > 0.0 ? track_rails::wing_shares( before, after, stock_stretch( Track, path, side ) ) : knots::line {}, rise, blade_heel( Track, path, side ) );
+                add( std::move( line ), path, side );
+            }
+            // the guard rails of the crossings at wide angles inside the rail, the flangeway from it
+            for( auto const &guard : cut ? Track.m_railguards[ path ][ side > 0 ] : std::vector<glm::dvec2> {} ) {
+                auto const from { std::max( 0.0, guard.x ) };
+                auto const to { std::min( length, guard.y ) };
+                if( to - from < fastening_merge ) {
+                    continue;
                 }
+                auto line { sampled( path, side, from, to, middle - ( track_rails::flangeway + size.head ), {} ) };
+                line.guard = true;
+                result.emplace_back( std::move( line ) );
             }
         }
     }
+    return result;
 }
 
 std::vector<fastened_rails::hit> fastened_rails::rails_on( beam const &Beam ) const {
@@ -150,7 +179,7 @@ std::vector<fastened_rails::hit> fastened_rails::rails_on( beam const &Beam ) co
     auto const low { glm::min( start, plan( Beam.to ) ) };
     auto const high { glm::max( start, plan( Beam.to ) ) };
     std::vector<hit> hits;
-    for( auto const &line : m_rails ) {
+    for( rail const &line : m_rails ) {
         if( line.high.x < low.x || line.low.x > high.x || line.high.y < low.y || line.low.y > high.y ) {
             continue;
         }
@@ -387,7 +416,7 @@ void fastened_rails::along( std::vector<fastening> &Fastenings, beam const &Beam
         double to;
     };
     std::vector<stretch> stretches;
-    for( auto const &line : m_rails ) {
+    for( rail const &line : m_rails ) {
         // a guard rail along the timber lies in the fastening of its running rail
         if( line.guard || line.high.x < low.x || line.low.x > high.x || line.high.y < low.y || line.low.y > high.y ) {
             continue;

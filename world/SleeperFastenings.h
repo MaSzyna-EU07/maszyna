@@ -10,7 +10,10 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <array>
+#include <functional>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -92,6 +95,13 @@ private:
         role at( double const Distance ) const;
         bool guarded( double const Distance ) const;
     };
+    // the rails of each track, worked out as the first track around it is laid and kept until it's laid anew or goes far, or
+    // the crossings change
+    using kept_rails = std::unordered_map<TTrack const *, std::shared_ptr<std::vector<rail> const>>;
+    static kept_rails &kept();
+    friend void forget_rails( TTrack const &Track );
+    // the rails of the track, in their parts between the cuts, and its guard rails
+    static std::vector<rail> rails_of( TTrack &Track );
 
     // the rails lying on the timber, in the order along it, one where several lie on one another, but the blades
     std::vector<hit> rails_on( beam const &Beam ) const;
@@ -106,7 +116,8 @@ private:
     // across leave, on the timber with the rail over its middle or over its side toward the next one
     void along( std::vector<fastening> &Fastenings, beam const &Beam, beam_model const &Model ) const;
 
-    std::vector<rail> m_rails;
+    std::vector<std::shared_ptr<std::vector<rail> const>> m_kept;
+    std::vector<std::reference_wrapper<rail const>> m_rails;
 };
 
 // the fastenings of a track with them in the model of its timbers, as laid on the timbers laid with it

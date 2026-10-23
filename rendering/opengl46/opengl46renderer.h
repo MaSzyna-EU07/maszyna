@@ -610,6 +610,8 @@ class opengl46_renderer : public gfx_renderer {
 
 	unsigned int m_framestamp; // id of currently rendered gfx frame
 	unsigned int m_timbersweepframe { 0 }; // the frame the beams of the tracks far away were last let go in
+	unsigned int m_timberlayframe { 0 }; // the frame the time spent laying the beams is counted for
+	double m_timberlaying { 0.0 }; // in ms
 	float m_framerate;
 	double m_updateaccumulator{0.0};
 	std::string m_debugtimestext;

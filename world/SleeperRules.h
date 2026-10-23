@@ -87,6 +87,12 @@ double constexpr pad_narrowest { 0.02 };
 double constexpr fastening_overlap { 0.01 };
 // how far from the camera the fastenings are drawn at most
 double constexpr fastening_range { 120.0 };
+// how much further out the fastenings are laid, there as the camera comes near
+double constexpr fastening_lead { 30.0 };
+// how near the camera the beams of a track are laid at once as they're needed; further out while the laying in a frame took less
+// than the budget, in ms, the rest left for the frames after
+double constexpr lay_near { 50.0 };
+double constexpr lay_budget { 2.0 };
 
 // how many tracks a cluster takes at most
 std::size_t constexpr cluster_cap { 256 };

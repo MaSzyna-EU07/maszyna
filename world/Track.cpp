@@ -1604,6 +1604,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                     }
                 }
             }
+            track_sleepers::forget_rails( *this );
         }
         auto const lay_rail = [&]( int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
             return this->lay_rail( layout, drawing, Path, Profile, Side, Texturelength, From, Openstart, Openend, Geometry, Cuts ); };

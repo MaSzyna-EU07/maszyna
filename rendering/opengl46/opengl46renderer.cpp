@@ -6203,6 +6203,12 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 		m_timbersweepframe = m_framestamp;
 		track_sleepers::release_far( camera, range + 600.0 );
 	}
+	if( m_timberlayframe != m_framestamp ) {
+		m_timberlayframe = m_framestamp;
+		m_timberlaying = 0.0;
+	}
+	// the fastenings laid out to a little past where they're drawn
+	auto const fasteningrange = std::min( static_cast<double>( Global.SleeperDistance ), track_sleepers::fastening_range ) + track_sleepers::fastening_lead;
 	glm::mat4 const originmodelview = OpenGLMatrices.data( GL_MODELVIEW );
 	for( auto &bucket : m_timberbuckets ) {
 		bucket.instances.clear();
@@ -6243,15 +6249,28 @@ void opengl46_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 	for( auto first { First }; first != Last; ++first ) {
 		auto *track = *first;
 		if( false == track->m_visible || false == track->m_sleepers3d.active ) { continue; }
-		if( glm::length( track->location() - camera ) > range + track->radius() ) {
+		auto const trackdistance = glm::length( track->location() - camera );
+		if( trackdistance > range + track->radius() ) {
 			// worked out ahead, in the background, before it comes in range
-			if( false == shadows && track->m_sleepers3d.dirty && glm::length( track->location() - camera ) < range + track->radius() + 300.0 ) {
+			if( false == shadows && track->m_sleepers3d.dirty && trackdistance < range + track->radius() + 300.0 ) {
 				track_sleepers::prefetch( *track );
 			}
 			continue;
 		}
-		if( track->m_sleepers3d.dirty ) {
-			track_sleepers::lay( *track );
+		auto const fastened = ( trackdistance < fasteningrange + track->radius() );
+		if( track->m_sleepers3d.dirty || ( fastened && false == track->m_sleepers3d.fastened ) ) {
+			// the nearest at once, the others while the frame has the time, the cells nearest coming first; till then a track draws
+			// what it had
+			if( trackdistance < track_sleepers::lay_near + track->radius() || m_timberlaying < track_sleepers::lay_budget ) {
+				auto const start = std::chrono::steady_clock::now();
+				if( track->m_sleepers3d.dirty ) {
+					track_sleepers::lay( *track, fastened );
+				}
+				else {
+					track_sleepers::fasten( *track );
+				}
+				m_timberlaying += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+			}
 		}
 		auto const &laid = track->m_sleepers3d;
 		if( laid.timbers == nullptr ) { continue; }
