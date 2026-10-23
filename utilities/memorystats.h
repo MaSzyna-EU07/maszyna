@@ -23,6 +23,16 @@ struct process_memory
 
 process_memory query_process_memory();
 
+// what the program took with new and hasn't given back with delete (the global operators of the executable count it): bytes of
+// the blocks, as the c runtime made them, and blocks. what libraries, the c runtime and the drivers take otherwise isn't in it
+struct heap_memory
+{
+	std::uint64_t bytes{0};
+	std::uint64_t blocks{0};
+};
+
+heap_memory query_heap_memory();
+
 // what a part of the program keeps in memory: things and bytes
 struct memory_count
 {

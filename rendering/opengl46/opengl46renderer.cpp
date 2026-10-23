@@ -1174,6 +1174,10 @@ void opengl46_renderer::Update_Memory_Info()
 		text += "process: " + mb( process.resident ) + " resident (peak " + mb( process.peak ) + ")"
 			+ ( process.committed > 0 ? ", " + mb( process.committed ) + " private" : std::string{} ) + "\n";
 	}
+	// what the program took with new: the rest of the private memory is of the drivers, libraries and the c runtime
+	auto const heap { query_heap_memory() };
+	text += "taken with new: " + mb( heap.bytes ) + " in " + std::to_string( heap.blocks ) + " blocks"
+		+ ( process.valid && ( process.committed > heap.bytes ) ? ", the rest of the private memory " + mb( process.committed - heap.bytes ) + " (drivers, libraries)" : std::string{} ) + "\n";
 	// the memory of the card, all processes: GL_NVX_gpu_memory_info (in kB)
 	if( m_nvxmemory < 0 ) {
 		m_nvxmemory = 0;
@@ -1239,7 +1243,10 @@ void opengl46_renderer::Update_Memory_Info()
 	}
 	accounted += shapes.bytes + lines.bytes + sleepers.bytes;
 	text += "scenery: " + counted( shapes, "shapes" ) + " " + mb( shapes.bytes ) + ", " + counted( lines, "lines" ) + " " + mb( lines.bytes ) + ", sleepers of "
-		+ counted( sleepers, "tracks" ) + " " + mb( sleepers.bytes ) + ", " + std::to_string( instances ) + " model instances\n";
+		+ counted( sleepers, "tracks" ) + " " + mb( sleepers.bytes ) + "\n";
+	// the objects of the model instances themselves, without the strings and the containers they hold
+	accounted += instances * sizeof( TAnimModel );
+	text += "model instances: " + std::to_string( instances ) + ", their objects " + mb( instances * sizeof( TAnimModel ) ) + " (" + std::to_string( sizeof( TAnimModel ) ) + " bytes each)\n";
 	// sounds: the data of the buffers, which the AL keeps in the process
 	auto const sounds { audio::renderer.buffers_memory() };
 	accounted += sounds.bytes;
