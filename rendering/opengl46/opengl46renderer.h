@@ -793,6 +793,18 @@ class opengl46_renderer : public gfx_renderer {
 		double walktime { 0.0 };
 		double ordertime { 0.0 };
 	};
+	// cpu time of the parts of the culling and the draws of the instances of the main view (Render_Instances_Indirect() and
+	// _Pending()), for the panel: the depth of the recorded walk of the scene drawn before the culling, the depth pyramids, the
+	// culling passes, the walks with putting the draws in order, the depth and the colour of the instances
+	struct cull_parts {
+		double scenedepth { 0.0 };
+		double pyramid { 0.0 };
+		double culling { 0.0 };
+		double record { 0.0 };
+		double depth { 0.0 };
+		double colour { 0.0 };
+	};
+	cull_parts m_cullparts;
 	walk_counts m_walkcounts;
 	walk_counts m_lastwalkcounts;
 	unsigned int m_walkcountsframe { 0 };

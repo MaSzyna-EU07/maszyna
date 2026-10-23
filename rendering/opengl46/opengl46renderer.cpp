@@ -1141,6 +1141,11 @@ void opengl46_renderer::SwapBuffers()
     }
     culltext += Light_Shadow_Cull_Info( false );
     if( Global.gfx_gpucull == 1 ) {
+        auto const &parts { m_cullparts };
+        culltext +=
+            "gpu cull, cpu by part: depth of the scene so far " + to_string( parts.scenedepth, 3 ) + ", depth pyramid " + to_string( parts.pyramid, 3 )
+            + ", culling " + to_string( parts.culling, 3 ) + ", walks and order " + to_string( parts.record, 3 ) + ", depth draws " + to_string( parts.depth, 3 )
+            + ", colour draws " + to_string( parts.colour, 3 ) + " ms\n";
         // all passes of the last frame
         auto const &walks { m_lastwalkcounts };
         culltext +=
@@ -4911,12 +4916,20 @@ void opengl46_renderer::Render_Instances_Indirect()
 {
 	auto const cpustart { std::chrono::steady_clock::now() };
 	auto *viewport { m_current_viewport };
+	// the cpu time of the parts, for the panel
+	auto partstart { cpustart };
+	auto const part = [ &partstart ]( double &Part ) {
+		auto const now { std::chrono::steady_clock::now() };
+		Part += std::chrono::duration<double, std::milli>( now - partstart ).count();
+		partstart = now; };
+	m_cullparts = {};
 
 	if( m_scenerecording ) {
 		// the depth of what the recorded walk of the depth pass of the scene went through so far, for the occlusion test
 		// and for the depth of the instances to be tested against
 		Render_Scene_Prepass();
 	}
+	part( m_cullparts.scenedepth );
 	// occlusion test against the depth drawn so far in the pass: cab, terrain, shapes, tracks, vehicles, other models
 	opengl46_instance_cull::occlusion_setup occlusion;
 	auto const useocclusion {
@@ -4932,15 +4945,18 @@ void opengl46_renderer::Render_Instances_Indirect()
 		occlusion.screen = glm::vec2{ m_hiz.source_size() };
 		occlusion.projection = OpenGLMatrices.data( GL_PROJECTION );
 	}
+	part( m_cullparts.pyramid );
 	// in two phases the instances seen in the previous frame are drawn first, and the others are tested against a pyramid
 	// made again with their depth in it (not in wireframe, which doesn't draw surfaces)
 	m_instancecull.dispatch(
 		OpenGLMatrices.data( GL_MODELVIEW ),
 		( useocclusion ? &occlusion : nullptr ),
 		( Global.gfx_gpucull_occlusion_instances && ( false == Global.bWireFrame ) ) );
+	part( m_cullparts.culling );
 
 	// the draws, recorded while the gpu culls
 	Record_Indirect_Draws( m_instancecull );
+	part( m_cullparts.record );
 
 	using command_set = opengl46_instance_cull::command_set;
 	auto const twophase { m_instancecull.two_phase() };
@@ -4959,27 +4975,33 @@ void opengl46_renderer::Render_Instances_Indirect()
 			m_instancecull.bind_draw();
 			if( depthfirst ) {
 				prepasscounts += Render_Instances_Indirect_Prepass( command_set::first, m_prepassfirsttimer );
+				part( m_cullparts.depth );
 			}
 			else {
 				colourcounts += Render_Instances_Indirect_Colour( command_set::first );
+				part( m_cullparts.colour );
 			}
 			m_hiz.build( *viewport->msaa_fb, viewport->width, viewport->height, true );
 			occlusion.pyramid = m_hiz.texture();
+			part( m_cullparts.pyramid );
 		}
 		// the others are tested against it; with no draws the instances are only marked for the next frame
 		m_instancecull.dispatch_second( occlusion );
 		colourset = ( depthfirst ? command_set::all : command_set::second );
+		part( m_cullparts.culling );
 	}
 	if( draws ) {
 		m_instancecull.bind_draw();
 		if( depthfirst ) {
 			prepasscounts += Render_Instances_Indirect_Prepass( ( twophase ? command_set::second : command_set::first ), m_prepasstimer );
+			part( m_cullparts.depth );
 		}
 		if( false == m_scenedepthpass ) {
 			colourcounts += Render_Instances_Indirect_Colour( colourset );
 		}
 		::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
 		Bind_Instance_Stream();
+		part( m_cullparts.colour );
 	}
 	if( m_scenedepthpass ) {
 		// the colour pass takes the draws from here, and counts them
@@ -6074,6 +6096,7 @@ void opengl46_renderer::Render_Instances_Indirect_Pending()
 		colourcounts = Render_Instances_Indirect_Colour( m_indirectcolourset );
 		::glBindBuffer( GL_DRAW_INDIRECT_BUFFER, 0 );
 		Bind_Instance_Stream();
+		m_cullparts.colour += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - cpustart ).count();
 		m_instancecull.draw_result(
 			colourcounts.draws,
 			m_instancecull.prepass_draws(),
