@@ -94,7 +94,15 @@ public:
         compressor_off,
         mains,
         diesel,
-        wake, // switch_physics( true ) of a vehicle whose physics was off
+        // switch_physics( true ) of a vehicle whose physics was off, by TMoverParameters::wake_cause, in its order
+        wake,
+        wake_mainpipe,
+        wake_scndpipe,
+        wake_command,
+        wake_speed,
+        wake_acceleration,
+        wake_neighbour,
+        wake_rest,
         count
     };
     struct result {

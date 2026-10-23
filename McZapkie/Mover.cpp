@@ -4745,7 +4745,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 		c = Couplers[0].Connected; // skrot
 		dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
 		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true);
+			c->switch_physics(true, wake_cause::scndpipe);
 		c->Pipe2->Flow(-dv1);
 	}
 	// sprzeg 2
@@ -4754,7 +4754,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
 		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true);
+			c->switch_physics(true, wake_cause::scndpipe);
 		c->Pipe2->Flow(-dv2);
 	}
 	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
@@ -4833,7 +4833,7 @@ double TMoverParameters::GetDVc(double dt)
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
 		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
 		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true);
+			c->switch_physics(true, wake_cause::mainpipe);
 		c->Pipe->Flow(-dv1);
 	}
 	// sprzeg 2
@@ -4842,7 +4842,7 @@ double TMoverParameters::GetDVc(double dt)
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
 		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true);
+			c->switch_physics(true, wake_cause::mainpipe);
 		c->Pipe->Flow(-dv2);
 	}
 	// if ((Couplers[1].Connected != NULL) && (Couplers[0].Connected != NULL))
@@ -4974,7 +4974,10 @@ void TMoverParameters::ComputeTotalForce(double dt)
 
 		auto const calculatephysics{vehicleisactive || movingvehicleahead || movingvehiclebehind};
 
-		switch_physics(calculatephysics);
+		switch_physics(calculatephysics, Vel > 0.0001                     ? wake_cause::speed :
+		                                 accelerating()                   ? wake_cause::acceleration :
+		                                 vehicleisactive                  ? wake_cause::rest :
+		                                                                    wake_cause::neighbour);
 	}
 
 	if (false == PhysicActivation)
@@ -8941,7 +8944,7 @@ bool TMoverParameters::accelerating() const
 // *************************************************************************************************
 // Kasowanie zmiennych pracy fizyki
 // *************************************************************************************************
-bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA KONCU
+bool TMoverParameters::switch_physics(bool const State, wake_cause const Cause) // DO PRZETLUMACZENIA NA KONCU
 {
 	if (PhysicActivation == State)
 	{
@@ -8952,7 +8955,7 @@ bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA
 	if (true == State)
 	{
 		LastSwitchingTime = 0;
-		Timer::subsystem.switching.note(Timer::switching_counter::wake, this, &TypeName, &Name);
+		Timer::subsystem.switching.note(static_cast<Timer::switching_counter::source>(Timer::switching_counter::wake + static_cast<std::size_t>(Cause)), this, &TypeName, &Name);
 	}
 
 	return true;
@@ -12720,7 +12723,7 @@ bool TMoverParameters::RunInternalCommand()
 			CommandIn.Location.X = 0;
 			CommandIn.Location.Y = 0;
 			CommandIn.Location.Z = 0;
-			switch_physics(true);
+			switch_physics(true, wake_cause::command);
 		}
 	}
 	else

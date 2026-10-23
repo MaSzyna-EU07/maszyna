@@ -2324,7 +2324,19 @@ class TMoverParameters
 	// Q *******************************************************************************************
 	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
 	double GetTrainsetHighVoltage() const;
-	bool switch_physics(bool const State);
+	// what turns the physics on, counted for the debug panel (Timer::switching_counter)
+	enum class wake_cause
+	{
+		other,
+		mainpipe, // air flowing in from a neighbour along the brake pipe
+		scndpipe, // along the main reservoir pipe
+		command,
+		speed, // the test of ComputeTotalForce(): the vehicle moves
+		acceleration, // accelerates
+		neighbour, // a neighbour moves or accelerates
+		rest // active cab, switching, ezt/dmu
+	};
+	bool switch_physics(bool const State, wake_cause const Cause = wake_cause::other);
 	// whether the vehicle accelerates, for the test which turns the physics off in vehicles standing still (ComputeTotalForce()).
 	// standing still, its acceleration is the pull of the slope and of the couplers, as the brakes and the resistance count only
 	// against a speed (FTotal); with Global.physics_sleepheld one held by them, the way ComputeMovement() keeps it standing, doesn't

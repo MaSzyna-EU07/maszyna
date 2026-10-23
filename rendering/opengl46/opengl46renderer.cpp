@@ -883,7 +883,15 @@ void opengl46_renderer::SwapBuffers()
                 3,
                 "switching per second: compressor on " + std::to_string( switching.events[ source::compressor_on ] ) + ", off "
                     + std::to_string( switching.events[ source::compressor_off ] ) + ", mains " + std::to_string( switching.events[ source::mains ] ) + ", diesel "
-                    + std::to_string( switching.events[ source::diesel ] ) + ", physics woken " + std::to_string( switching.events[ source::wake ] ),
+                    + std::to_string( switching.events[ source::diesel ] ),
+                "" );
+            text += timeline(
+                3,
+                "physics woken per second: brake pipe " + std::to_string( switching.events[ source::wake_mainpipe ] ) + ", main reservoir pipe "
+                    + std::to_string( switching.events[ source::wake_scndpipe ] ) + ", command " + std::to_string( switching.events[ source::wake_command ] )
+                    + ", speed " + std::to_string( switching.events[ source::wake_speed ] ) + ", acceleration "
+                    + std::to_string( switching.events[ source::wake_acceleration ] ) + ", neighbour " + std::to_string( switching.events[ source::wake_neighbour ] )
+                    + ", cab/ezt " + std::to_string( switching.events[ source::wake_rest ] ) + ", other " + std::to_string( switching.events[ source::wake ] ),
                 "" );
             if( switching.busiestevents > 0 ) {
                 text += timeline( 3, "most often: " + switching.busiest + " (" + std::to_string( switching.busiestevents ) + ")", "" );
