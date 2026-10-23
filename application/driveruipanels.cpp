@@ -1515,6 +1515,7 @@ debug_panel::render_section_renderer() {
     ImGui::PopStyleColor();
     // the physics of the vehicles, timed in the section of the main loop
     ImGui::Checkbox( "let vehicles standing still and held by their brakes sleep (physics.sleepheld)", &Global.physics_sleepheld );
+    ImGui::Checkbox( "one step of the physics in a frame for road vehicles farther than 1 km (physics.roadlod)", &Global.physics_roadlod );
     return true;
 }
 

@@ -876,6 +876,18 @@ void opengl46_renderer::SwapBuffers()
                     + ", acceleration " + std::to_string( awake.acceleration ) + ", switching " + std::to_string( awake.switching ) + ", ezt/dmu "
                     + std::to_string( awake.multipleunit ) + ", neighbour " + std::to_string( awake.neighbour ),
                 "" );
+            // what resets the switching time of the vehicles, in the last second
+            auto const &switching { timers.switching.last() };
+            using source = Timer::switching_counter::source;
+            text += timeline(
+                3,
+                "switching per second: compressor on " + std::to_string( switching.events[ source::compressor_on ] ) + ", off "
+                    + std::to_string( switching.events[ source::compressor_off ] ) + ", mains " + std::to_string( switching.events[ source::mains ] ) + ", diesel "
+                    + std::to_string( switching.events[ source::diesel ] ) + ", physics woken " + std::to_string( switching.events[ source::wake ] ),
+                "" );
+            if( switching.busiestevents > 0 ) {
+                text += timeline( 3, "most often: " + switching.busiest + " (" + std::to_string( switching.busiestevents ) + ")", "" );
+            }
         }
         text += timeline( 2, "secondary steps", ms( timers.sim_secondary.average() ) );
         text += timeline( 2, "trains (cabs)", ms( timers.sim_trains.average() ) );

@@ -8620,12 +8620,17 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     // kind, measured from the end of the one before it
     static std::vector<std::uint8_t> kinds;
     kinds.resize( m_items.size() );
+    // road vehicles far from the camera with nobody inside go by one step of the physics in the frame, as long as all the steps
+    // together (Global.physics_roadlod): their movement goes on, in coarser steps nobody is close enough to tell
+    static std::vector<std::uint8_t> coarse;
+    coarse.assign( m_items.size(), 0 );
     auto const camera { Global.pCamera.Pos };
     for( std::size_t index = 0; index < m_items.size(); ++index ) {
         auto const *vehicle { m_items[ index ] };
         auto const road { ( vehicle->MoverParameters->CategoryFlag & 2 ) != 0 };
         auto const distant { glm::length2( vehicle->GetPosition() - camera ) > Timer::subsystem.VEHICLE_NEAR * Timer::subsystem.VEHICLE_NEAR };
         kinds[ index ] = static_cast<std::uint8_t>( ( road ? 2 : 0 ) + ( distant ? 1 : 0 ) );
+        coarse[ index ] = static_cast<std::uint8_t>( Global.physics_roadlod && road && distant && ( false == vehicle->MechInside ) && ( Iterationcount > 1 ) );
         if( false == vehicle->bEnabled ) { continue; }
         ++counts.kind[ kinds[ index ] ];
         auto const *mover { vehicle->MoverParameters };
@@ -8680,34 +8685,40 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
             std::size_t index { 0 };
             for( auto *vehicle : m_items ) {
-                vehicle->UpdateForce( Deltatime );
+                if( ( index >= coarse.size() ) || ( coarse[ index ] == 0 ) ) {
+                    vehicle->UpdateForce( Deltatime );
+                }
                 lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
             }
             index = 0;
             for( auto *vehicle : m_items ) {
-                vehicle->FastUpdate( Deltatime );
+                if( ( index >= coarse.size() ) || ( coarse[ index ] == 0 ) ) {
+                    vehicle->FastUpdate( Deltatime );
+                }
                 lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
             }
         }
     }
+    auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
     {
         std::size_t index { 0 };
         for( auto *vehicle : m_items ) {
-            vehicle->UpdateForce( Deltatime );
+            // the vehicles going by one step take it with the time of all of them
+            auto const coarsestep { ( index < coarse.size() ) && ( coarse[ index ] != 0 ) };
+            vehicle->UpdateForce( coarsestep ? totaltime : Deltatime );
             lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
         }
     }
     Timer::subsystem.vehicles_forces.stop();
-
-    auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
 
     Timer::subsystem.vehicles_update.start();
     {
         std::size_t index { 0 };
         mark = std::chrono::steady_clock::now();
         for( auto *vehicle : m_items ) {
+            auto const coarsestep { ( index < coarse.size() ) && ( coarse[ index ] != 0 ) };
             // Ra 2015-01: tylko tu przelicza sieć trakcyjną
-            vehicle->Update( Deltatime, totaltime );
+            vehicle->Update( coarsestep ? totaltime : Deltatime, totaltime );
             lap( index++, Timer::subsystem.vehicles_update_kind, mark );
         }
     }

@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "Oerlikon_ESt.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/Timer.h"
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
 //---------------------------------------------------------------------------
@@ -3608,6 +3609,7 @@ void TMoverParameters::MainSwitch_(bool const State)
 		if (Mains != initialstate)
 		{
 			LastSwitchingTime = 0;
+			Timer::subsystem.switching.note(Timer::switching_counter::mains, this, &TypeName, &Name);
 		}
 	}
 }
@@ -4362,6 +4364,10 @@ void TMoverParameters::CompressorCheck(double dt)
 	{
 		// jeśli została załączona to trzeba ograniczyć ponowne włączenie
 		LastSwitchingTime = 0;
+	}
+	if (CompressorFlag != compressorflag)
+	{
+		Timer::subsystem.switching.note(CompressorFlag ? Timer::switching_counter::compressor_on : Timer::switching_counter::compressor_off, this, &TypeName, &Name);
 	}
 
 	if (false == CompressorFlag)
@@ -7804,6 +7810,7 @@ bool TMoverParameters::dizel_Update(double dt)
 		dizel_ignition = false;
 		// TODO: split engine and main circuit state indicator in two separate flags
 		LastSwitchingTime = 0;
+		Timer::subsystem.switching.note(Timer::switching_counter::diesel, this, &TypeName, &Name);
 		Mains = true;
 		dizel_spinup = true;
 		enrot = std::max(enrot,
@@ -8945,6 +8952,7 @@ bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA
 	if (true == State)
 	{
 		LastSwitchingTime = 0;
+		Timer::subsystem.switching.note(Timer::switching_counter::wake, this, &TypeName, &Name);
 	}
 
 	return true;

@@ -9,6 +9,11 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
+#include <chrono>
+#include <string>
+#include <unordered_map>
+
 namespace Timer {
 
 double GetTime();
@@ -79,6 +84,63 @@ private:
     float m_accumulator { 0.f };
 };
 
+// what resets TMoverParameters::LastSwitchingTime, which keeps the physics of a vehicle on for 5 s: counted over a second,
+// with the vehicle which did it most often, for the debug panel
+class switching_counter {
+
+public:
+    enum source : std::size_t {
+        compressor_on = 0,
+        compressor_off,
+        mains,
+        diesel,
+        wake, // switch_physics( true ) of a vehicle whose physics was off
+        count
+    };
+    struct result {
+        std::array<unsigned int, source::count> events {};
+        std::string busiest; // type and name of the vehicle with the most events
+        unsigned int busiestevents { 0 };
+    };
+    // Owner: the vehicle, Label: its type and name, read only when the second ends
+    void
+        note( source const Source, void const *Owner, std::string const *Type, std::string const *Name ) {
+            ++m_events[ Source ];
+            auto &owner { m_owners[ Owner ] };
+            ++owner.events;
+            owner.type = Type;
+            owner.name = Name; }
+    // ends the second when it's over. to be called once a frame, while the vehicles noted in it still exist
+    void
+        update() {
+            auto const now { std::chrono::steady_clock::now() };
+            if( now - m_start < std::chrono::seconds( 1 ) ) { return; }
+            m_last = {};
+            m_last.events = m_events;
+            for( auto const &owner : m_owners ) {
+                if( owner.second.events > m_last.busiestevents ) {
+                    m_last.busiestevents = owner.second.events;
+                    m_last.busiest = ( owner.second.type ? *owner.second.type : std::string{} ) + " " + ( owner.second.name ? *owner.second.name : std::string{} ); } }
+            m_events = {};
+            m_owners.clear();
+            m_start = now; }
+    // of the last whole second
+    result const &
+        last() const {
+            return m_last; }
+
+private:
+    struct owner_data {
+        unsigned int events { 0 };
+        std::string const *type { nullptr };
+        std::string const *name { nullptr };
+    };
+    std::chrono::time_point<std::chrono::steady_clock> m_start { std::chrono::steady_clock::now() };
+    std::array<unsigned int, source::count> m_events {};
+    std::unordered_map<void const *, owner_data> m_owners;
+    result m_last;
+};
+
 struct subsystem_stopwatches {
     stopwatch gfx_total;
     stopwatch gfx_color;
@@ -139,6 +201,7 @@ struct subsystem_stopwatches {
         } awake;
     };
     vehicle_counts vehicles; // of the frame under way
+    switching_counter switching;
     vehicle_counts vehicleslast; // of the last frame
     // ends the frame of the frame_stopwatches and of the counts
     void
