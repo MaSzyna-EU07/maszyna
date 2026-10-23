@@ -671,6 +671,7 @@ void trim( carve_rail &Rail, carve_part &Part ) {
 struct body_hit {
     bool in { false };
     bool heads { false }; // or only the feet of two rails back to back
+    bool faces { false }; // the feet of two rails face to face across a flangeway, ourfoot and theirfoot how far in they reach
     double removed[ 2 ] {};
     glm::dvec2 ours { 0.0 };
     glm::dvec2 theirs { 0.0 };
@@ -693,7 +694,8 @@ struct body_hit {
 
 // the bounds of ours where its head lies under theirs, Above, or over it: the two meet in the middle of where they lie over each other, as far as
 // the wheels of each leave room; a head giving way runs on past the meeting over the rounded shoulder of the other one, facing it with its outer edge.
-// Two rails back to back meet with their feet in the middle between them too, and the wheels of theirs roll on ours planed flush against it
+// Two rails back to back meet with their feet in the middle between them too, and the wheels of theirs roll on ours planed flush against it;
+// two face to face, as a wing rail and the leg of the nose, with their feet in the middle of the flangeway, the heads left whole
 void settle( body_hit const &Hit, bool const Above, double &Upper, double &Lower, double &Worn ) {
 
     auto const slant { std::max( std::abs( Hit.facing ), cos_wide ) };
@@ -713,6 +715,11 @@ void settle( body_hit const &Hit, bool const Above, double &Upper, double &Lower
     // as far from both bounds, whichever way they run: the same line from either rail
     auto const between = []( bound const &A, bound const &B ) {
         return bound { ( A.at * A.slant + B.at * B.slant ) / ( A.slant + B.slant ), 1.0 }; };
+    if( Hit.faces ) {
+        auto const feet { between( { Hit.ourfoot, Hit.footslant.x }, { Hit.theirfoot, Hit.footslant.y } ).at };
+        Lower = std::max( Lower, std::min( feet + slack, Hit.ours.x - slack ) );
+        return;
+    }
     auto const a { higher( { Hit.ours.x, Hit.ourslant.x }, { Hit.theirs.x, Hit.theirslant.x } ) };
     auto const b { lower( { Hit.ours.y, Hit.ourslant.y }, { Hit.theirs.y, Hit.theirslant.y } ) };
     auto const overlap { Hit.heads && b.at > a.at };
@@ -860,6 +867,7 @@ carved_lines carve( carve_rail &Rail, carve_part &Part ) {
                     // how the bounds of ours run, once something of theirs is in their way
                     glm::dvec2 ourslant { 1.0 };
                     auto footslant { 1.0 };
+                    auto innerslant { 1.0 };
                     auto slanted { false };
                     if( theirs.track == Rail.track && theirs.side == Rail.side && distance < theirs.heel + heel_margin ) {
                         continue;
@@ -870,18 +878,19 @@ carved_lines carve( carve_rail &Rail, carve_part &Part ) {
                             continue;
                         }
                         trim( theirs, part );
-                        // the head of theirs and how far out its profile reaches, out from its gauge line: the bound Which (from, to, out to)
-                        // and how it runs on
+                        // the head of theirs and how far its profile reaches, out from its gauge line: the bound Which (from, to, out to, the
+                        // crown, in to) and how it runs on
                         auto const trimmed { distance >= part.trimfrom && distance <= part.trimto };
                         auto const theirclearup { theirsize.high + 0.01 };
                         auto const theirclearlow { theirsize.low - 0.01 };
                         auto const bound = [&]( int const Which ) {
                             return [&, Which]( double const At, bool &Bounding ) {
                                 auto const offset { knots::sample( part.carve, At, 0.0 ) };
-                                if( Which == 0 ) {
+                                if( Which == 0 || Which == 4 ) {
+                                    auto const reach { Which == 0 ? 0.0 : theirsize.low };
                                     auto const theirlow { trimmed ? knots::sample( part.lower, At, theirclearlow ) : theirclearlow };
-                                    Bounding = theirlow > 0.0;
-                                    return offset + std::max( 0.0, theirlow );
+                                    Bounding = theirlow > reach;
+                                    return offset + std::max( reach, theirlow );
                                 }
                                 auto const reach { Which == 1 ? theirsize.head : Which == 2 ? theirsize.high : theirsize.head - theirsize.shoulder };
                                 auto const theirup { trimmed ? knots::sample( part.upper, At, theirclearup ) : theirclearup };
@@ -905,16 +914,18 @@ carved_lines carve( carve_rail &Rail, carve_part &Part ) {
                         glm::dvec2 const heads { std::min( m0, m1 ), std::max( m0, m1 ) };
                         auto const overlap { std::min( ours.y, heads.y ) - std::max( ours.x, heads.x ) };
                         auto const above { heads.x + heads.y > ours.x + ours.y };
-                        auto const ourfoot { here.offset + std::min( size.high, up ) };
                         auto const backs { facing < 0.0 && above };
-                        auto const theirfoot { ( overlap > 2.0 * slack || backs ) ? meets( bound( 2 ) ) : 0.0 };
-                        auto const feet { backs && ourfoot > theirfoot + 2.0 * slack };
+                        auto const faces { facing < 0.0 && false == above && overlap <= 2.0 * slack };
+                        auto const ourfoot { faces ? here.offset + std::max( size.low, low ) : here.offset + std::min( size.high, up ) };
+                        auto const theirfoot { faces ? meets( bound( 4 ) ) : ( overlap > 2.0 * slack || backs ) ? meets( bound( 2 ) ) : 0.0 };
+                        auto const feet { faces ? theirfoot > ourfoot + 2.0 * slack : backs && ourfoot > theirfoot + 2.0 * slack };
                         if( overlap <= 2.0 * slack && false == feet ) {
                             continue;
                         }
                         if( false == slanted ) {
                             ourslant = { square( run_of( ourbound( Part.lower, clearlow, 0.0, false ), s ) ), square( run_of( ourbound( Part.upper, clearup, size.head, true ), s ) ) };
                             footslant = square( run_of( ourbound( Part.upper, clearup, size.high, true ), s ) );
+                            innerslant = square( run_of( ourbound( Part.lower, clearlow, size.low, false ), s ) );
                             slanted = true;
                         }
                         auto &hit { hits[ j ][ static_cast<std::size_t>( k - a ) ] };
@@ -927,7 +938,8 @@ carved_lines carve( carve_rail &Rail, carve_part &Part ) {
                         hit.theirshoulder = theirsize.shoulder;
                         hit.ourfoot = ourfoot;
                         hit.theirfoot = theirfoot;
-                        hit.footslant = { footslant, slant( bound( 2 ), theirfoot ) };
+                        hit.footslant = ( faces ? glm::dvec2 { innerslant, slant( bound( 4 ), theirfoot ) } : glm::dvec2 { footslant, slant( bound( 2 ), theirfoot ) } );
+                        hit.faces = faces;
                         hit.ourcrown = here.offset + std::min( size.head - size.shoulder, up );
                         hit.theircrown = meets( bound( 3 ) );
                         hit.heads = ( overlap > 2.0 * slack );
@@ -939,7 +951,7 @@ carved_lines carve( carve_rail &Rail, carve_part &Part ) {
                             hit.removed[ 1 ] = b - ours.x;
                         }
                         else {
-                            hit.removed[ 0 ] = hit.ourfoot - hit.theirfoot;
+                            hit.removed[ 0 ] = std::abs( hit.ourfoot - hit.theirfoot );
                             hit.removed[ 1 ] = unbounded;
                         }
                         if( false == here.runon ) {
