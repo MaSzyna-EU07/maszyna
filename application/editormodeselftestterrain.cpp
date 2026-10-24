@@ -471,6 +471,22 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog("SELFTEST terrainadd: " + m_terrain_status);
 		return selftest_result::handled;
 	}
+	if (command == "trackterrain")
+	{
+		// the terrain drawn to the named tracks, or their formations taken out of it, as the buttons of the panel of the tracks
+		std::string action;
+		words >> action;
+		std::vector<TTrack *> tracks;
+		for (std::string name; words >> name;)
+			if (auto *track{simulation::Paths.find(name)})
+				tracks.push_back(track);
+		if (action == "pull")
+			nmt_pull_terrain(tracks);
+		else
+			nmt_restore_terrain(tracks);
+		WriteLog(format("SELFTEST trackterrain %s %zu tracks: %s, %zu modifiers", action.c_str(), tracks.size(), m_nmt_state.status.c_str(), m_streamer.modifiers().size()));
+		return selftest_result::handled;
+	}
 	if (command == "terrainhash")
 	{
 		// the heights of the chunks in memory hashed, to compare the ground two builds made

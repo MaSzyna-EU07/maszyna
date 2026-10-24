@@ -751,6 +751,7 @@ void editor_mode::render_track_selection()
 		if (false == sheet)
 			return;
 		render_track_select_tools(tracks);
+		render_track_terrain(tracks);
 		render_track_style(tracks);
 		render_track_properties(tracks);
 		ImGui::Spacing();
@@ -1451,6 +1452,7 @@ void editor_mode::render_path_ui()
 	}
 	std::vector<TTrack *> const tracks{track};
 	render_track_select_tools(tracks);
+	render_track_terrain(tracks);
 	render_track_style(tracks);
 	render_track_properties(tracks);
 	render_path_events(*track);

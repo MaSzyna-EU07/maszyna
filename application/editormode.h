@@ -333,6 +333,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool shape{true}; // the formation and the slopes of the tracks as modifiers of the terrain
 		bool grow{true}; // while a track is laid, the terrain is made around the cursor where there's none
 		bool laying{false}; // the tracks committed are being laid: they leave the terrain as it is
+		bool follow{true}; // a track with its formation edited takes it along, the formation led anew
 		bool grown{false}; // the chunks waiting were all asked for by growing: the formations aren't made anew after them
 		double grow_time{-10.0};
 		double slope{1.5};
@@ -454,6 +455,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool render_nmt_place(bool const Moving, bool const Button);
 	// the work under way: what's left of it and the button to stop it; Compact: one line, for the 3d view
 	void render_nmt_progress(bool const Compact);
+	// the formations of the tracks led into the terrain, down or up to it, or taken out of it; one step of the history each
+	void nmt_pull_terrain(std::vector<TTrack *> const &Tracks);
+	void nmt_restore_terrain(std::vector<TTrack *> const &Tracks);
+	// the terrain of the selected tracks in the panel of the tracks
+	void render_track_terrain(std::vector<TTrack *> const &Tracks);
 	// the chunks waiting for the terrain model and the tiles of the imagery asked for outlined where they will be, so it's seen
 	// what's on its way
 	void draw_nmt_pending() const;

@@ -682,6 +682,12 @@ void editor_mode::nmt_follow_tracks()
 	auto &state{m_nmt_state};
 	if (state.changed.empty() && state.gone.empty())
 		return;
+	if (false == state.follow)
+	{
+		state.changed.clear();
+		state.gone.clear();
+		return;
+	}
 	if (state.stage != nmt_state::automatic::idle || state.fitting || ImGui::GetTime() - state.changed_time < 0.3 || ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right))
 		return;
 	// laying on, from the end of the track laid or dragged from a free end, the terrain waits for the laying to end: shaping it
@@ -878,6 +884,10 @@ std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
 			       });
 		};
 		auto const &existing{m_streamer.modifiers()};
+		// the formations the tracks have, the ones as they are already too: those only aren't led again, nor taken out as gone
+		std::unordered_set<std::string> kept;
+		for (auto const &modifier : laid)
+			kept.insert(modifier.name);
 		std::erase_if(laid, [&](heightmap::modifier const &Modifier) {
 			auto const found{std::find_if(existing.begin(), existing.end(), [&](heightmap::modifier const &Other) { return Other.name == Modifier.name; })};
 			return found != existing.end() && same(*found, Modifier);
@@ -892,7 +902,7 @@ std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
 				continue;
 			auto const own{"nmt " + track->name()};
 			for (auto const &modifier : m_streamer.modifiers())
-				if ((modifier.name == own || modifier.name.starts_with(own + " ")) && std::none_of(laid.begin(), laid.end(), [&](heightmap::modifier const &Laid) { return Laid.name == modifier.name; }))
+				if ((modifier.name == own || modifier.name.starts_with(own + " ")) && false == kept.contains(modifier.name))
 					gone.push_back(modifier.name);
 		}
 		for (auto const &name : gone)
@@ -1158,6 +1168,104 @@ void editor_mode::render_nmt_progress(bool const Compact)
 	if (ImGui::Button(stop, ImVec2(0.0f, Compact ? 0.0f : tall_button_height())))
 		nmt_stop();
 	item_tooltip("Stops loading: the terrain made so far stays");
+}
+
+void editor_mode::nmt_pull_terrain(std::vector<TTrack *> const &Tracks)
+{
+	auto &state{m_nmt_state};
+	std::vector<TTrack *> rails;
+	for (auto *track : Tracks)
+		if (track != nullptr && false == track->m_editorremoved && rail(*track))
+			rails.push_back(track);
+	if (rails.empty())
+	{
+		state.status = STR("No tracks to draw the terrain to");
+		return;
+	}
+	if (false == ensure_terrain())
+	{
+		state.status = STR("The heightmap terrain can't be opened");
+		return;
+	}
+	terrain_history_step();
+	auto const laid{nmt_shape_tracks(&rails)};
+	terrain_history_step();
+	state.status = format(STR_P("The terrain drawn to %zu track: %zu formations led into it, Ctrl+Z takes it back", "The terrain drawn to %zu tracks: %zu formations led into it, Ctrl+Z takes it back", rails.size()), rails.size(), laid);
+	WriteLog("Editor: NMT - " + state.status, logtype::generic);
+}
+
+void editor_mode::nmt_restore_terrain(std::vector<TTrack *> const &Tracks)
+{
+	auto &state{m_nmt_state};
+	if (false == m_streamer.active())
+		return;
+	std::vector<std::string> gone;
+	for (auto const *track : Tracks)
+	{
+		if (track == nullptr)
+			continue;
+		auto const own{"nmt " + formation_name(*track)};
+		for (auto const &modifier : m_streamer.modifiers())
+			if ((modifier.name == own || modifier.name.starts_with(own + " ")) && std::find(gone.begin(), gone.end(), modifier.name) == gone.end())
+				gone.push_back(modifier.name);
+	}
+	terrain_history_step();
+	for (auto const &name : gone)
+		m_streamer.remove_modifier(name);
+	if (false == gone.empty())
+		forget_ground();
+	terrain_history_step();
+	state.status = format(STR_P("%zu formation taken out of the terrain, Ctrl+Z takes it back", "%zu formations taken out of the terrain, Ctrl+Z takes it back", gone.size()), gone.size());
+	WriteLog("Editor: NMT - " + state.status, logtype::generic);
+}
+
+void editor_mode::render_track_terrain(std::vector<TTrack *> const &Tracks)
+{
+	auto &state{m_nmt_state};
+	// a scenery with no terrain made nor any place on the map has nothing to draw to its tracks
+	if (false == m_streamer.active() && false == m_nmt.placed())
+		return;
+	if (false == ImGui::CollapsingHeader(format("%s###trackterrain", STR_C("Terrain")).c_str()))
+		return;
+	auto const busy{nmt_busy()};
+	auto const spacing{ImGui::GetStyle().ItemSpacing.x};
+	auto const half{std::floor((ImGui::GetContentRegionAvail().x - spacing) * 0.5f)};
+	ImGui::BeginDisabled(busy);
+	if (ImGui::Button(STR_C("Draw the terrain to the track"), ImVec2(half, 0.0f)))
+		nmt_pull_terrain(Tracks);
+	item_tooltip("The formation and the slopes of the selected tracks led into the terrain, down or up to it; elsewhere the terrain stays as it is");
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("The whole run"), ImVec2(-FLT_MIN, 0.0f)))
+	{
+		m_track_set = Tracks;
+		track_set_grow();
+		select_tracks(m_track_set);
+		nmt_pull_terrain(m_track_set);
+	}
+	item_tooltip("The tracks joined to the selected ones added to the selection, by the rules of the spread, and the terrain drawn to all of them");
+	if (ImGui::Button(STR_C("Restore the terrain"), ImVec2(half, 0.0f)))
+		nmt_restore_terrain(Tracks);
+	item_tooltip("The formations of the selected tracks taken out of the terrain: the ground goes back to how it was before them");
+	ImGui::EndDisabled();
+	toggle_chips("nmtfollow", {{STR_C("The terrain follows the tracks edited"), &state.follow, "A track with its formation moved or changed takes it along; off: the terrain stays as it is until it's drawn to the tracks again"}});
+	ImGui::TextDisabled("%s", STR_C("All the tracks of the scenery"));
+	ImGui::BeginDisabled(busy || false == m_nmt.placed());
+	if (ImGui::Button(STR_C("Tracks onto the terrain"), ImVec2(half, 0.0f)))
+		nmt_auto_start();
+	item_tooltip("The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported");
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Terrain under the tracks"), ImVec2(-FLT_MIN, 0.0f)))
+		nmt_under_start();
+	item_tooltip("The tracks aren't touched: the terrain model is loaded along them and drawn to them, at each place by as much as the tracks lie above or below it there, fading out away from them, so its relief stays and the tracks don't end up in deep cuttings; then the formation and the slopes along them. For a scenery built level or at its own heights");
+	ImGui::EndDisabled();
+	if (busy)
+		render_nmt_progress(true);
+	if (false == state.status.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", state.status.c_str());
+		ImGui::PopTextWrapPos();
+	}
 }
 
 void editor_mode::draw_nmt_pending() const

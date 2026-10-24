@@ -6731,6 +6731,48 @@ msgstr "Wczytywanie NMT"
 msgid "Orthophoto loading"
 msgstr "Wczytywanie ortofotomapy"
 
+msgid "No tracks to draw the terrain to"
+msgstr "Brak torów, do których można dociągnąć teren"
+
+msgid "The terrain drawn to %zu track: %zu formations led into it, Ctrl+Z takes it back"
+msgid_plural "The terrain drawn to %zu tracks: %zu formations led into it, Ctrl+Z takes it back"
+msgstr[0] "Teren dociągnięty do %zu toru: wprowadzone formacje: %zu, Ctrl+Z cofa"
+msgstr[1] "Teren dociągnięty do %zu torów: wprowadzone formacje: %zu, Ctrl+Z cofa"
+msgstr[2] "Teren dociągnięty do %zu torów: wprowadzone formacje: %zu, Ctrl+Z cofa"
+
+msgid "%zu formation taken out of the terrain, Ctrl+Z takes it back"
+msgid_plural "%zu formations taken out of the terrain, Ctrl+Z takes it back"
+msgstr[0] "%zu formacja usunięta z terenu, Ctrl+Z cofa"
+msgstr[1] "%zu formacje usunięte z terenu, Ctrl+Z cofa"
+msgstr[2] "%zu formacji usuniętych z terenu, Ctrl+Z cofa"
+
+msgid "Draw the terrain to the track"
+msgstr "Dociągnij teren do toru"
+
+msgid "The formation and the slopes of the selected tracks led into the terrain, down or up to it; elsewhere the terrain stays as it is"
+msgstr "Formacja i skarpy zaznaczonych torów wprowadzone w teren, w dół albo w górę do niego; poza nimi teren zostaje bez zmian"
+
+msgid "The whole run"
+msgstr "Cały ciąg"
+
+msgid "The tracks joined to the selected ones added to the selection, by the rules of the spread, and the terrain drawn to all of them"
+msgstr "Tory połączone z zaznaczonymi dodane do zaznaczenia według zasad rozszerzania i teren dociągnięty do nich wszystkich"
+
+msgid "Restore the terrain"
+msgstr "Przywróć teren"
+
+msgid "The formations of the selected tracks taken out of the terrain: the ground goes back to how it was before them"
+msgstr "Formacje zaznaczonych torów usunięte z terenu: grunt wraca do stanu sprzed nich"
+
+msgid "The terrain follows the tracks edited"
+msgstr "Teren podąża za edytowanymi torami"
+
+msgid "A track with its formation moved or changed takes it along; off: the terrain stays as it is until it's drawn to the tracks again"
+msgstr "Przesunięty lub zmieniony tor z formacją pociąga ją za sobą; wyłączone: teren zostaje bez zmian, dopóki nie dociągniesz go do torów ponownie"
+
+msgid "All the tracks of the scenery"
+msgstr "Wszystkie tory scenerii"
+
 msgid "By hand: the model as it is, the tracks stay"
 msgstr "Ręcznie: NMT bez zmian, tory zostają"
 
