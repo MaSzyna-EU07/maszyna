@@ -1,0 +1,69 @@
+// light scattered more than once, for the multiple scattering table (Hillaire 2020, section 5.5): for a point at a height
+// lit by the sun at an angle, the second order scattering from 64 directions around it, summed as a geometric series of
+// all the orders. one work group per texel, one invocation per direction. run after the transmittance table
+
+#include <common>
+#include <atmosphere_common.glsl>
+
+layout(binding = ATMOSPHERE_TRANSMITTANCE_UNIT) uniform sampler2D atmo_transmittance_lut;
+#include <atmosphere_integrate.glsl>
+
+layout(local_size_x = 64) in;
+
+layout(binding = ATMOSPHERE_MULTISCATTERING_UNIT, rgba16f) writeonly uniform image2D multiscattering_target;
+
+const int MULTISCATTERING_SAMPLES = 20;
+const int SQRT_DIRECTIONS = 8;
+
+shared vec3 shared_luminance[64];
+shared vec3 shared_multiscattering[64];
+
+void main()
+{
+	ivec2 texel = ivec2(gl_WorkGroupID.xy);
+	uint index = gl_LocalInvocationID.x;
+
+	vec2 uv = (vec2(texel) + 0.5) / float(ATMOSPHERE_MULTISCATTERING_SIZE);
+	uv = vec2(atmo_sub_uv_to_unit(uv.x, float(ATMOSPHERE_MULTISCATTERING_SIZE)), atmo_sub_uv_to_unit(uv.y, float(ATMOSPHERE_MULTISCATTERING_SIZE)));
+	uv = clamp(uv, 0.0, 1.0);
+
+	float cossunzenith = uv.x * 2.0 - 1.0;
+	vec3 sundirection = vec3(0.0, sqrt(max(1.0 - cossunzenith * cossunzenith, 0.0)), cossunzenith);
+	float radius = atmo_bottom_radius + clamp(uv.y + 1e-4, 0.0, 1.0) * (atmo_top_radius - atmo_bottom_radius - 1e-3);
+	vec3 origin = vec3(0.0, 0.0, radius);
+
+	// directions spread evenly over the sphere
+	float a = (0.5 + float(index / uint(SQRT_DIRECTIONS))) / float(SQRT_DIRECTIONS);
+	float b = (0.5 + float(index % uint(SQRT_DIRECTIONS))) / float(SQRT_DIRECTIONS);
+	float theta = 2.0 * ATMO_PI * a;
+	float phi = acos(clamp(1.0 - 2.0 * b, -1.0, 1.0));
+	vec3 direction = vec3(cos(theta) * sin(phi), sin(theta) * sin(phi), cos(phi));
+
+	atmo_scattering_s result = atmo_integrate(origin, direction, sundirection, true, MULTISCATTERING_SAMPLES, false, false);
+
+	const float spheresolidangle = 4.0 * ATMO_PI;
+	const float directions = float(SQRT_DIRECTIONS * SQRT_DIRECTIONS);
+	shared_luminance[index] = result.luminance * spheresolidangle / directions;
+	shared_multiscattering[index] = result.multiscattering_as_1 * spheresolidangle / directions;
+	barrier();
+
+	for (uint stride = 32U; stride > 0U; stride >>= 1)
+	{
+		if (index < stride)
+		{
+			shared_luminance[index] += shared_luminance[index + stride];
+			shared_multiscattering[index] += shared_multiscattering[index + stride];
+		}
+		barrier();
+	}
+
+	if (index != 0U)
+		return;
+
+	const float isotropicphase = 1.0 / spheresolidangle;
+	vec3 inscatteredluminance = shared_luminance[0] * isotropicphase;
+	vec3 multiscatteringas1 = shared_multiscattering[0] * isotropicphase;
+	// every further order of scattering is the previous one times multiscatteringas1
+	vec3 luminance = inscatteredluminance / max(vec3(1.0) - multiscatteringas1, vec3(1e-3));
+	imageStore(multiscattering_target, texel, vec4(luminance, 1.0));
+}

@@ -299,6 +299,21 @@ buffer_manager::buffer( audio::buffer_handle const Buffer ) const {
 }
 
 // creates AL buffers for files decoded in the background so far, or for all of them if requested
+// the AL buffers made and the bytes of their sound data, for the debug panel
+memory_count
+buffer_manager::memory() const {
+
+    memory_count result;
+    for( auto const &buffer : m_buffers ) {
+        if( buffer.id == null_resource ) { continue; }
+        ALint size { 0 };
+        ::alGetBufferi( buffer.id, AL_SIZE, &size );
+        ++result.count;
+        result.bytes += static_cast<std::uint64_t>( std::max( size, 0 ) );
+    }
+    return result;
+}
+
 void
 buffer_manager::update( bool const Wait ) {
 

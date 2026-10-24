@@ -62,6 +62,9 @@ inline long Round(double const f)
 
 double Random(double a, double b);
 int Random(int min, int max);
+// the engine Random() draws from in the calling thread, in place of Global.random_engine, or none for that one again. the threads
+// of worker_pool have engines of their own: the one of the simulation can't be shared between threads
+void set_thread_random_engine(std::mt19937 *Engine);
 
 /// @author lxvia
 /// @brief Returns a random seed from the system's entropy source, if available. Otherwise, falls back to a clock-based seed.
@@ -217,6 +220,9 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
 bool FileExists(std::string const &Filename);
+// the file as it's named on the disk when only the case of its name differs, as in the sceneries made on Windows; empty when
+// there's none
+std::string FileCased(std::string const &Filename);
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 

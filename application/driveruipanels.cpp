@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/driveruipanels.h"
+#include "application/editoruipanels.h"
 
 #include "utilities/Globals.h"
 #include "application/application.h"
@@ -544,6 +545,22 @@ void debug_panel::update()
 #endif
 }
 
+namespace {
+
+// memory cells of the scenery, to look into and play with while the simulation runs
+bool render_section_memcells() {
+
+    if( false == ImGui::CollapsingHeader( "Memory Cells" ) ) { return false; }
+    static memcells_panel memcells { "Memory cells", true };
+    memcells.listheight = ImGui::GetTextLineHeightWithSpacing() * 12.f;
+    ImGui::PushID( "memcells" );
+    memcells.render_body();
+    ImGui::PopID();
+    return true;
+}
+
+} // namespace
+
 void
 debug_panel::render() {
     if( false == is_open ) { return; }
@@ -577,12 +594,13 @@ debug_panel::render() {
         render_section( "Vehicle Scan Table", m_scantablelines );
         render_section_scenario();
         render_section_eventqueue();
+        render_section_memcells();
         if( true == render_section( "Power Grid", m_powergridlines ) ) {
             // traction state debug
             ImGui::Checkbox( "Debug Traction", &DebugTractionFlag );
         }
         render_section( "Camera", m_cameralines );
-        render_section( "Gfx Renderer / Statistics", m_rendererlines );
+        render_section_renderer();
         render_section_settings();
 		render_section_developer(); // Developer tools
 #ifdef WITH_UART
@@ -1420,7 +1438,7 @@ debug_panel::update_section_camera( std::vector<text_line> &Output ) const {
 }
 
 void
-debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
+debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
 
             // gfx renderer data
             auto textline =
@@ -1442,30 +1460,6 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 	        {
 		        textline += "Shaders";
 	        }
-            else if (Global.GfxRenderer == "experimental")
-            {
-		        textline += "NVRHI on ";
-            }
-	        else
-	        {
-		        if (Global.BasicRenderer)
-		        {
-			        textline += "Legacy Simple";
-		        }
-		        else
-		        {
-			        textline += "Legacy";
-		        }
-	        }
-
-	        if (Global.bUseVBO)
-	        {
-		        textline += ", VBO";
-	        }
-	        else
-	        {
-		        textline += ", Display Lists";
-	        }
 
 	        textline += " ";
 
@@ -1477,9 +1471,12 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 
 			Output.emplace_back( textline, Global.UITextColor );
 
-            // renderer stats
-            Output.emplace_back( GfxRenderer->info_times(), Global.UITextColor );
-            Output.emplace_back( GfxRenderer->info_stats(), Global.UITextColor );
+            // renderer stats, in sections when the renderer has them (render_section_renderer())
+            m_renderersections = GfxRenderer->info_sections();
+            if( m_renderersections.empty() ) {
+                Output.emplace_back( GfxRenderer->info_times(), Global.UITextColor );
+                Output.emplace_back( GfxRenderer->info_stats(), Global.UITextColor );
+            }
 
             // CPU related
             Output.emplace_back("CPU:", Global.UITextColor);
@@ -1497,6 +1494,30 @@ debug_panel::render_section( std::string const &Header, std::vector<text_line> c
 	if( false == ImGui::CollapsingHeader( Header.c_str() ) ) { return false; }
 
     return render_section( Lines );
+}
+
+// the lines of the renderer, then its data in sections which fold, the long lines wrapped to the width of the panel
+bool
+debug_panel::render_section_renderer() {
+
+    if( false == render_section( "Gfx Renderer / Statistics", m_rendererlines ) ) { return false; }
+
+    ImGui::PushStyleColor( ImGuiCol_Text, { Global.UITextColor.r, Global.UITextColor.g, Global.UITextColor.b, Global.UITextColor.a } );
+    ImGui::PushTextWrapPos( 0.f );
+    for( auto const &section : m_renderersections ) {
+        ImGui::SetNextItemOpen( section.open, ImGuiCond_Once );
+        if( true == ImGui::TreeNode( section.title.c_str() ) ) {
+            ImGui::TextUnformatted( section.text.c_str() );
+            ImGui::TreePop();
+        }
+    }
+    ImGui::PopTextWrapPos();
+    ImGui::PopStyleColor();
+    // the physics of the vehicles, timed in the section of the main loop
+    ImGui::Checkbox( "let vehicles standing still and held by their brakes sleep (physics.sleepheld)", &Global.physics_sleepheld );
+    ImGui::Checkbox( "one step of the physics in a frame for road vehicles farther than 1 km (physics.roadlod)", &Global.physics_roadlod );
+    ImGui::SliderFloat( "bar: change of the pressure in a pipe which wakes the physics of a vehicle, 0 any (physics.pipewake)", &Global.physics_pipewake, 0.f, 0.05f, "%.4f" );
+    return true;
 }
 
 bool

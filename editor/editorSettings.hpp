@@ -54,6 +54,17 @@ public:
 	int palette() const { return m_palette; }
 	void palette(int Palette) { m_palette = Palette; }
 
+	bool first_steps() const { return m_first_steps; }
+	void first_steps(bool Show) { m_first_steps = Show; }
+	// a scenery begun with no terrain is offered the terrain model as the first track is laid
+	bool terrain_offer() const { return m_terrain_offer; }
+	void terrain_offer(bool Offer) { m_terrain_offer = Offer; }
+	bool track_tools_more() const { return m_track_tools_more; }
+	void track_tools_more(bool Show) { m_track_tools_more = Show; }
+	// the ballast of the railway drawn in the top view
+	bool top_ballast() const { return m_top_ballast; }
+	void top_ballast(bool Show) { m_top_ballast = Show; }
+
 private:
 	movement_scheme m_movement{movement_scheme::wsad};
 	orthophoto_settings m_orthophoto;
@@ -63,6 +74,10 @@ private:
 	bool m_nodebank_previews{true};
 	int m_nodebank_card{96};
 	int m_palette{0};
+	bool m_first_steps{true};
+	bool m_terrain_offer{true};
+	bool m_track_tools_more{false};
+	bool m_top_ballast{true};
 };
 
 // global editor settings instance

@@ -1,0 +1,134 @@
+// the tiling noises the clouds and the fog are made of, made once at the start (opengl46_weather::init).
+// kind 0, the shape (3d): r perlin-worley (perlin fbm with the worley cells carved in), g b a worley fbm of rising frequency;
+// kind 1, the detail (3d): r g b worley fbm of rising frequency;
+// kind 2, the coverage (2d): r g b three perlin fbm, spread evenly over 0-1 so a threshold of 1 - c leaves a share c above it
+
+#include <common>
+#include <random.glsl>
+
+layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, local_size_z = 1) in;
+
+layout(rgba8, binding = 0) uniform writeonly image3D noise_volume;
+layout(rgba8, binding = 1) uniform writeonly image2D noise_plane;
+
+layout(location = 0) uniform int kind;
+layout(location = 1) uniform int size;
+
+vec3 hash3(ivec3 cell, int period, uint seed)
+{
+	uvec3 wrapped = uvec3((cell % period + period) % period);
+	uint h = Hash(uvec3(wrapped.x + seed * 977U, wrapped.y, wrapped.z));
+	uint h2 = Hash(h + 0x68bc21ebU);
+	uint h3 = Hash(h2 + 0x02e5be93U);
+	return vec3(float(h & 0xffffU), float(h2 & 0xffffU), float(h3 & 0xffffU)) / 65535.0;
+}
+
+// gradient noise repeating every Period cells, -1..1 about
+float perlin(vec3 position, int period, uint seed)
+{
+	ivec3 cell = ivec3(floor(position));
+	vec3 local = fract(position);
+	vec3 fade = local * local * local * (local * (local * 6.0 - 15.0) + 10.0);
+	float corners[8];
+	for (int i = 0; i < 8; i++)
+	{
+		ivec3 offset = ivec3(i & 1, (i >> 1) & 1, (i >> 2) & 1);
+		vec3 gradient = normalize(hash3(cell + offset, period, seed) * 2.0 - 1.0 + 1e-4);
+		corners[i] = dot(gradient, local - vec3(offset));
+	}
+	float x0 = mix(corners[0], corners[1], fade.x);
+	float x1 = mix(corners[2], corners[3], fade.x);
+	float x2 = mix(corners[4], corners[5], fade.x);
+	float x3 = mix(corners[6], corners[7], fade.x);
+	return mix(mix(x0, x1, fade.y), mix(x2, x3, fade.y), fade.z) * 1.6;
+}
+
+// inverted distance to the nearest of the points scattered one per cell, 0-1, repeating every Period cells
+float worley(vec3 position, int period, uint seed)
+{
+	ivec3 cell = ivec3(floor(position));
+	vec3 local = fract(position);
+	float nearest = 1.0;
+	for (int z = -1; z <= 1; z++)
+		for (int y = -1; y <= 1; y++)
+			for (int x = -1; x <= 1; x++)
+			{
+				ivec3 offset = ivec3(x, y, z);
+				vec3 point = vec3(offset) + hash3(cell + offset, period, seed);
+				nearest = min(nearest, length(point - local));
+			}
+	return 1.0 - clamp(nearest, 0.0, 1.0);
+}
+
+float perlin_fbm(vec3 position, int frequency, int octaves, uint seed)
+{
+	float sum = 0.0;
+	float amplitude = 0.5;
+	float total = 0.0;
+	for (int i = 0; i < octaves; i++)
+	{
+		sum += perlin(position * float(frequency), frequency, seed + uint(i)) * amplitude;
+		total += amplitude;
+		amplitude *= 0.5;
+		frequency *= 2;
+	}
+	return sum / total;
+}
+
+float worley_fbm(vec3 position, int frequency, uint seed)
+{
+	return worley(position * float(frequency), frequency, seed) * 0.625
+	     + worley(position * float(frequency * 2), frequency * 2, seed + 1U) * 0.25
+	     + worley(position * float(frequency * 4), frequency * 4, seed + 2U) * 0.125;
+}
+
+// octaves of the coverage noise: it only places the clouds and gives their outline. it is the same at every height, so its finer
+// octaves would stand as upright grooves down the sides of the clouds; their small shapes come from the 3d noises
+const int COVERAGE_OCTAVES = 4;
+
+// the worley fbm keeps about to this range (5th and 95th percentile 0.35 and 0.61)
+const float WORLEY_FBM_LOW = 0.30;
+const float WORLEY_FBM_HIGH = 0.65;
+
+float remap(float value, float low, float high, float newlow, float newhigh)
+{
+	return newlow + (value - low) / (high - low) * (newhigh - newlow);
+}
+
+// a sum of noises is about normally distributed; this spreads it about evenly over 0-1
+float even(float value, float spread)
+{
+	return clamp(0.5 + 0.5 * tanh(value / spread * 1.1), 0.0, 1.0);
+}
+
+void main()
+{
+	ivec3 texel = ivec3(gl_GlobalInvocationID);
+	if (any(greaterThanEqual(texel.xy, ivec2(size))))
+		return;
+	if (kind == 2)
+	{
+		vec3 position = vec3((vec2(texel.xy) + 0.5) / float(size), 0.0);
+		float first = perlin_fbm(position, 4, COVERAGE_OCTAVES, 11U);
+		float second = perlin_fbm(position + vec3(0.0, 0.0, 0.5), 8, 5, 23U);
+		float third = perlin_fbm(position + vec3(0.0, 0.0, 0.25), 8, 5, 29U);
+		imageStore(noise_plane, texel.xy, vec4(even(first, 0.22), even(second, 0.22), even(third, 0.22), 1.0));
+		return;
+	}
+	if (texel.z >= size)
+		return;
+	vec3 position = (vec3(texel) + 0.5) / float(size);
+	if (kind == 0)
+	{
+		// both spread over 0-1 first: as sums of octaves they keep to a narrow band about the middle, and a cloud made of them
+		// would be an even block with no lumps. the cells then cut the perlin noise into rounded heaps: whole in their middles,
+		// only the highest perlin left between them
+		float low = even(perlin_fbm(position, 4, 4, 3U), 0.22);
+		float cells = worley_fbm(position, 4, 5U);
+		float spreadcells = clamp((cells - WORLEY_FBM_LOW) / (WORLEY_FBM_HIGH - WORLEY_FBM_LOW), 0.0, 1.0);
+		float perlinworley = clamp(remap(low, (1.0 - spreadcells) * 0.6, 1.0, 0.0, 1.0), 0.0, 1.0);
+		imageStore(noise_volume, texel, vec4(perlinworley, cells, worley_fbm(position, 8, 7U), worley_fbm(position, 16, 9U)));
+	}
+	else
+		imageStore(noise_volume, texel, vec4(worley_fbm(position, 4, 13U), worley_fbm(position, 8, 15U), worley_fbm(position, 16, 17U), 1.0));
+}

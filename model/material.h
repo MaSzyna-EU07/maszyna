@@ -142,6 +142,20 @@ public:
     // material described by provided text (the content of a .mat file), not kept in a file. returns: handle to the material or null_handle
     material_handle
         create_from_text( std::string const &Name, std::string const &Definition );
+    // copy of provided material with its specular highlights and reflections damped. returns: handle to the copy, made once per material
+    material_handle
+        create_matte( material_handle const Material );
+    material_handle
+        create_tinted( material_handle const Material, glm::vec3 const &Colour );
+    // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of
+    // the user data of the vertices (mat_trackblend). returns: handle to it, made once, or the material itself where it can't be blended
+    material_handle
+        create_blend( material_handle const Material, std::array<material_handle, 3> const &Others );
+    // whether the material can be blended so: a diffuse texture lit as mat_default, or with a normal map (and a specgloss map)
+    // lit as normalmap, sunlessnormalmap or shadowlessnormalmap (and their _specgloss), or parallax; not tinted. the blending materials take the
+    // textures of another season or weather with the materials they blend
+    bool
+        blendable( material_handle const Material );
     opengl_material const &
         material( material_handle const Material ) const { return m_materials[ Material ]; }
     opengl_material &
@@ -157,10 +171,22 @@ private:
 // types
     typedef std::vector<opengl_material> material_sequence;
     typedef std::unordered_map<std::string, std::size_t> index_map;
+    // a blending material: the material of the track, those it blends into at the ends
+    using blend_key = std::tuple<material_handle, material_handle, material_handle, material_handle>;
 // methods:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.
     material_handle
         find_in_databank( std::string const &Materialname ) const;
+    // how the material is lit, of the materials a track blends: 0 as mat_default, 1 normalmap, 2 sunlessnormalmap,
+    // 3 shadowlessnormalmap, 4 more for their _specgloss, 9 parallax; -1 where it can't be blended
+    int
+        blend_lighting( material_handle const Material );
+    // the blending material made of the current textures of the materials. returns: false when they can't be blended
+    bool
+        build_blend( blend_key const &Key, opengl_material &Blend );
+    // the blending materials made again in their places, after the materials changed their textures
+    void
+        rebuild_blends();
     public:
     // checks whether specified file exists. returns name of the located file, or empty string.
     static std::pair<std::string, std::string>
@@ -170,6 +196,11 @@ private:
 	  // members:
     material_sequence m_materials;
     index_map m_materialmappings;
+    std::unordered_map<material_handle, material_handle> m_mattes;
+    std::map<std::tuple<material_handle, float, float, float>, material_handle> m_tints;
+    std::map<blend_key, material_handle> m_blends;
+    std::vector<std::pair<material_handle, blend_key>> m_blendsources;
+    std::unordered_map<material_handle, int> m_blendables;
 };
 
 //---------------------------------------------------------------------------

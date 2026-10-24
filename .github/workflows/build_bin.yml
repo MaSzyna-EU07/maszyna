@@ -215,7 +215,6 @@ jobs:
             -S . \
             -B build \
             -DCMAKE_BUILD_TYPE="${CONFIG_LINUX}" \
-            -DWITH_BETTER_RENDERER=OFF \
             -DWITH_ZMQ=OFF \
             -DWITH_OPENVR=OFF \
             -DUSE_LTO=OFF \

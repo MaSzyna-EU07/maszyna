@@ -30,7 +30,6 @@ http://mozilla.org/MPL/2.0/.
 
 #define EU07_SOUND_PROOFINGUSESRANGE
 
-class opengl_renderer;
 class sound_source;
 
 using uint32_sequence = std::vector<std::uint32_t>;
@@ -101,8 +100,6 @@ private:
 
 class openal_renderer {
 
-    friend opengl_renderer;
-
 public:
     openal_renderer() = default;
     ~openal_renderer();
@@ -111,6 +108,8 @@ public:
     audio::openal_buffer const &buffer( audio::buffer_handle const Buffer ) const;
     // makes buffers of all sound files still decoded in the background (sound.asyncload), waiting for them
     void complete_buffers();
+    // the sound buffers and the bytes of their data, for the debug panel
+    memory_count buffers_memory() const { return m_buffers.memory(); }
 
     bool init();
 
@@ -167,4 +166,4 @@ private:
 extern openal_renderer renderer;
 extern bool event_volume_change;
 
-} // namespace audio
+} // namespace audio

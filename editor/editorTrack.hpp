@@ -11,13 +11,17 @@ http:
 
 #include <array>
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 #include <glm/glm.hpp>
 
 #include "world/Segment.h"
+#include "editor/editorAlignment.hpp"
+#include "editor/editorSwitchDesign.hpp"
 #include "utilities/Classes.h"
+#include "world/TrackBlend.h"
 
 class TTrack;
 class basic_event;
@@ -49,6 +53,10 @@ class editor_track
 		material_handle material1{0};
 		material_handle material2{0};
 		material_handle material3{0};
+		bool frogs{false};
+		bool movablenose{false};
+		double bladeheel{0.0};
+		double bladethrow{0.0};
 		float texlength{4.f};
 		float texheight{0.6f};
 		float texwidth{0.9f};
@@ -61,6 +69,11 @@ class editor_track
 		std::string sleeper_skin;
 		glm::vec3 sleeper_offset{0.f};
 		float sleeper_ballast{0.f};
+		std::string timber_model;
+		std::string timber_skin;
+		std::array<std::array<float, 3>, 2> blend{{{track_blend::default_length, track_blend::default_length, track_blend::default_length},
+		                                           {track_blend::default_length, track_blend::default_length, track_blend::default_length}}};
+		std::pair<std::string, int> rail_profile;
 		std::array<std::vector<std::pair<std::string, basic_event *>>, 6> events;
 		std::string name;
 	};
@@ -116,6 +129,117 @@ class editor_track
 	static std::vector<joint> joints(TTrack const &Track);
 	// moves the joined ends to where the ends of the track are now, turning them as the track turned there
 	static void follow(TTrack const &Track, std::vector<joint> const &Joints);
+	static void follow_grade(TTrack const &Track, std::vector<joint> const &Joints);
+	static void conform_switch(TTrack &Track);
+	static double switch_station(TTrack const &Track, glm::dvec3 const &Position);
+	static std::vector<int> hold_controls(TTrack &Track);
+	static void settle_controls(TTrack &Track, std::vector<int> const &Paths);
+	static std::vector<std::pair<TTrack *, point_ref>> partners(TTrack &Track, point_ref const &End);
+	static void align_controls(TTrack const &Track, point_ref const &Control, std::vector<std::pair<TTrack *, point_ref>> const &Partners);
+	static point_ref end_of(point_ref const &Control);
+	static glm::dvec3 control_vector(TTrack const &Track, point_ref const &Control);
+	static glm::dvec3 outward(TTrack const &Track, point_ref const &Point);
+	static point_ref switch_main(TTrack const &Track, point_ref Point);
+	static std::size_t driven_paths(TTrack const &Track);
+	static double joint_roll(TTrack const &Track, point_ref const &Point);
+	static void roll_joined(TTrack &Other, point_ref const &Theirs, float const Roll);
+	static void match_rolls(TTrack const &Track, std::vector<joint> const &Joints);
+
+	struct path_end
+	{
+		int path{0};
+		bool atend{true};
+	};
+	static std::optional<path_end> stretch_end(TTrack const &Track, point_ref const &Point);
+	static std::vector<segment_data> stretched(segment_data const &Path, bool const Atend, double const Length);
+	static std::pair<glm::dvec3, glm::dvec3> end_axis(segment_data const &Path, bool const Atend);
+	static point_ref stretch_remap(point_ref Point, int const Path, std::size_t const Pieces);
+
+	struct middle_point
+	{
+		glm::dvec3 point{0.0};
+		glm::dvec3 tangent{0.0, 0.0, 1.0};
+		double chainage{0.0};
+	};
+	static middle_point middle(TTrack const &Track);
+
+	enum class layout
+	{
+		arc_straight,
+		straight_arc,
+		arc,
+		straight
+	};
+	static std::vector<segment_data> layout_pieces(layout const Kind, glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec3 const &Target, double const Radius);
+
+	// the curve a track ends with at Joint, as it goes on beyond the joint, and a transition curve leading out of it to the straight
+	struct easing
+	{
+		double curvature{0.0}; // positive turning from x towards z
+		double length{0.0};
+		glm::dvec3 end{0.0};
+		glm::dvec2 direction{0.0};
+		std::vector<segment_data> pieces;
+	};
+	static easing ease_out_of(TTrack const &Neighbour, glm::dvec3 const &Joint, double const Grade, double const Speed, alignment::limits const &Limits);
+	static bool eases_room(easing const &In, easing const &Out, glm::dvec3 const &Start, glm::dvec2 const &Startdirection, glm::dvec3 const &End, glm::dvec2 const &Enddirection);
+	static std::vector<segment_data> eased_pieces(easing const &In, std::vector<segment_data> const &Middle, easing const &Out);
+	static double eased_length(easing const &In, double const Middle, easing const &Out);
+
+	struct edit
+	{
+		std::vector<std::pair<TTrack *, state>> states;
+		std::vector<TTrack *> created;
+		std::vector<TTrack *> removed;
+		std::vector<TTrack *> changed;
+		void capture(TTrack &Track);
+	};
+
+	struct drive_spot
+	{
+		glm::dvec3 location{0.0};
+		double yaw{0.0};
+		glm::dvec2 tilt{0.0};
+		bool rightswitch{false};
+	};
+	static std::optional<drive_spot> drive_spot_of(TTrack const &Switch);
+
+	struct straight_axis
+	{
+		glm::dvec3 origin{0.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double length{0.0};
+		double along(glm::dvec3 const &Point) const;
+		double lateral(glm::dvec3 const &Point) const;
+	};
+	static std::optional<straight_axis> main_axis(TTrack const &Switch);
+	static std::vector<segment_data> slid(TTrack const &Switch, double const Distance);
+
+	struct branch_end
+	{
+		glm::dvec3 position{0.0};
+		glm::dvec2 direction{0.0, 1.0};
+		double grade{0.0};
+		double roll{0.0};
+	};
+	struct branch_link
+	{
+		bool valid{false};
+		double trim{0.0};
+		double radius{0.0};
+		double before{0.0};
+		double after{0.0};
+		double shortfall{0.0};
+		bool reverse{false};
+		double insert{0.0};
+		glm::dvec3 landing{0.0};
+		std::vector<segment_data> pieces;
+	};
+	static double branch_radius(segment_data const &Diverging);
+	static double reverse_insert(double const Speed);
+	static double diverging_speed(double const Radius);
+	static std::optional<double> branch_shift(branch_end const &From, glm::dvec2 const &Slide, double const Radius, branch_end const &To, double const Kink);
+	static branch_link link_branch(branch_end const &From, double const Radius, branch_end const &To, double const Kink, double const Insert, bool const Stretch);
 
 	struct snap_target
 	{
@@ -204,6 +328,8 @@ class editor_track
 			double transition{0.0};
 		};
 		std::vector<arc_part> arcs;
+		// the parameters of the vertex in the alignment kept in the scenery, in the direction of the run, when the paths follow one
+		std::optional<alignment::vertex> designed;
 	};
 	static bool find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve);
 	// curve made of the given paths, each with the flag of being run from its start
@@ -217,7 +343,7 @@ class editor_track
 		curve shape;
 		bool kink{false}; // the straights meet with no curve between them
 	};
-	static std::vector<line_vertex> recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge);
+	static std::vector<line_vertex> recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge, alignment::transition_shape const Shape = alignment::transition_shape::cubic_parabola);
 	// regular straight paths continuing a chain end in line, which the chain can take over
 	struct straight_run
 	{
@@ -261,7 +387,8 @@ class editor_track
 	static double sampled_grade(std::vector<route_sample> const &Samples, double const Chainage);
 	static glm::dvec3 sampled_position(std::vector<route_sample> const &Samples, double const Chainage);
 	// grade of the path which adjoins the end of the route, positive rising along the route
-	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade);
+	// Adjoining, Path, Entered: the path met, and whether it's met at its start
+	static bool adjoining_grade(route const &Route, bool const Atend, double &Grade, TTrack **Adjoining = nullptr, int *Path = nullptr, bool *Entered = nullptr);
 	// path off the route whose end no longer met the adjoining path in height
 	struct height_gap
 	{
@@ -289,11 +416,59 @@ class editor_track
 		double a{0.0};
 		double b{0.0};
 		bool double_slip{false};
+		std::string type{"Rz"};
+		std::string rail{"-"};
+		// the second switch of a double one, starting on the main track of the first at the stagger
+		std::array<segment_data, 2> second;
+		segment_data link; // plain track from the main track of the first switch to the start of the second one
+		double stagger{0.0};
+		bool own{false};
+		bool movable{false}; // the frog with a movable nose
+		double heel{0.0}; // where the moving blades end, 0: as long as the flangeway behind them needs
+		double bladethrow{0.0}; // how far the tips of the blades move over, 0: the usual throw
+		int design{-1}; // in the list of the designs the template was built from
+		double middle{0.0}; // a double slip with the blades outside of the diamond: the radius in the middle of its slip curves, below 0 a straight there
+		bool twofold() const { return stagger > 0.0; }
+		// the name of the template for a list: the label without the lengths a and b and the hint in brackets, which
+		// the full label gives
+		std::string title() const;
 	};
+	// the diverging curve of a slip turning by Angle: arcs of Radius at both ends, each Ends long, and the arc of Middle,
+	// Between long, between them; a straight when Middle is 0. With blades cutting into the stock rails the curve starts and ends
+	// with a straight Lead long along them, the arcs of Radius meeting it at Entry
+	struct slip_curve
+	{
+		double radius{0.0};
+		double ends{0.0};
+		double middle{0.0};
+		double between{0.0};
+		double angle{0.0};
+		double tip{0.0}; // of the blades from each end of the curve, 0: where the blades get as thin as they may
+		double lead{0.0};
+		double entry{0.0}; // radians
+		double length() const { return 2.0 * (lead + ends) + between; }
+		// the point and the heading at Along of the curve starting at the origin along x and turning towards y; the heading at the ends
+		// of the leads is the one of the arcs
+		glm::dvec2 point(double const Along) const;
+		double heading(double const Along) const;
+		// from the start of the curve to the crossing of its tangents
+		double tangent() const;
+		// from the middle of the curve to the crossing of its tangents
+		double offset() const;
+		slip_curve scaled(double const Factor) const { return {radius * Factor, ends * Factor, middle * Factor, between * Factor, angle, Factor == 1.0 ? tip : 0.0, lead * Factor, entry}; }
+	};
+	// one arc of Radius, or with Middle the slip curves of a double slip with the blades outside of the diamond, their near rails
+	// touching in its middle: Pass from the crossing, half of the gauge and the width of the head; a straight there when Middle < 0
+	static slip_curve slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead = 0.0, double const Entry = 0.0);
 	static std::vector<switch_template> standard_switch_templates();
+	// the rail of the switch templates fitting the track, by the rail profile it's laid with; empty where the profile doesn't tell
+	static std::string rail_of(TTrack const *Track);
+	static std::optional<switch_template> template_of(switch_design::design const &Design, std::string &Error);
 	static std::vector<switch_template> find_switch_templates();
+	// the switch of the scenery as a template of its own shape; none when its tracks don't start at one point
+	static std::optional<switch_template> template_of_switch(TTrack *Track);
 	static TTrack *load_path(std::string const &Text, TTrack const &Template, std::string const &Name = {});
-	static TTrack *create_path(TTrack const &Style, segment_data const &Path);
+	static TTrack *create_path(TTrack const &Style, segment_data const &Path, std::string const &Name = {});
 	// parameters of a path laid where there's no other path to copy them from
 	struct path_style
 	{
@@ -304,7 +479,8 @@ class editor_track
 	};
 	// the path goes to the layer receiving the items created in the editor
 	static TTrack *create_path(path_style const &Style, segment_data const &Path);
-	static TTrack *split_path(TTrack &Track, double const T);
+	// Name: of the new piece, else after the track
+	static TTrack *split_path(TTrack &Track, double const T, std::string const &Name = {});
 	static double nearest_parameter(TTrack const &Track, glm::dvec3 const &Point);
 	// point of the first path at the parameter of nearest_parameter()
 	static glm::dvec3 point_at(TTrack const &Track, double const T);
@@ -312,8 +488,10 @@ class editor_track
 	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name = {});
 	static TTrack *create_turntable(segment_data const &Path, TTrack const *Style, std::string const &Name);
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
-	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces);
+	static std::vector<TTrack *> relay(chain const &Chain, std::vector<segment_data> const &Pieces, TTrack **Last = nullptr);
 	static void retire(TTrack &Track);
+	// a retired path back in the scenery, found by its name again; it's committed by the caller
+	static void revive(TTrack &Track);
 
 	static std::string material_name(material_handle const Material);
 	static material_handle fetch_material(std::string const &Name);
@@ -348,7 +526,7 @@ class editor_track
 	static void bind_switch_path(TTrack &Switch, int const Path);
 	static void store_switch_path(TTrack &Switch, int const Path);
 	static void rebuild_geometry(TTrack &Track);
-	static TTrack *clone(TTrack const &Template);
+	static TTrack *clone(TTrack const &Template, std::string const &Name = {});
 	static TTrack *load_text(std::string const &Text, TTrack const *Template, std::string const &Name);
 	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member);
 };

@@ -167,9 +167,13 @@ bool driver_mode::update()
 
 	double const deltatime = Timer::GetDeltaTime(); // 0.0 gdy pauza
 
+	Timer::subsystem.sim_scripting.start();
 	simulation::State.update_clocks();
 	simulation::State.update_scripting_interface();
+	Timer::subsystem.sim_scripting.stop();
+	Timer::subsystem.sim_environment.start();
 	simulation::Environment.update();
+	Timer::subsystem.sim_environment.stop();
 
 	if (deltatime != 0.0 || false == simulation::is_ready)
 	{
@@ -233,6 +237,7 @@ bool driver_mode::update()
 		Timer::subsystem.sim_dynamics.stop();
 
 		// secondary fixed step simulation time routines
+		Timer::subsystem.sim_secondary.start();
 		while (m_secondaryupdateaccumulator >= m_secondaryupdaterate)
 		{
 
@@ -252,6 +257,7 @@ bool driver_mode::update()
 
 			m_secondaryupdateaccumulator -= m_secondaryupdaterate; // these should be inexpensive enough we have no cap
 		}
+		Timer::subsystem.sim_secondary.stop();
 
 		// variable step simulation time routines
 
@@ -298,24 +304,33 @@ bool driver_mode::update()
 		else
 			TSubModel::iInstance = 0;
 
+		Timer::subsystem.sim_trains.start();
 		if (Global.trainThreads > 0)
 			simulation::Trains.updateAsync(deltatime);
 		else
 			simulation::Trains.update(deltatime);
+		Timer::subsystem.sim_trains.stop();
+		Timer::subsystem.sim_events.start();
 		simulation::Events.update();
 		simulation::Region->update_events();
+		Timer::subsystem.sim_events.stop();
+		Timer::subsystem.sim_lights.start();
 		simulation::Lights.update();
+		Timer::subsystem.sim_lights.stop();
 	}
 
 	// render time routines follow:
 
 	auto const deltarealtime = Timer::GetDeltaRenderTime(); // nie uwzględnia pauzowania ani mnożenia czasu
+	Timer::subsystem.sim_commands.start();
 	simulation::State.process_commands();
+	Timer::subsystem.sim_commands.stop();
 
 	// fixed step render time routines
 
 	fTime50Hz += deltarealtime; // w pauzie też trzeba zliczać czas, bo przy dużym FPS będzie problem z odczytem ramek
 	bool runonce{false};
+	Timer::subsystem.sim_ui.start();
 	while (fTime50Hz >= 1.0 / 50.0)
 	{
 #ifdef _WIN32
@@ -406,22 +421,36 @@ bool driver_mode::update()
 
 		fTime50Hz -= 1.0 / 50.0;
 	}
+	Timer::subsystem.sim_ui.stop();
 
 	// variable step render time routines
 
+	Timer::subsystem.sim_camera.start();
 	update_camera(deltarealtime);
+	Timer::subsystem.sim_camera.stop();
 
+	Timer::subsystem.sim_precipitation.start();
 	simulation::Environment.update_precipitation(); // has to be launched after camera step to work properly
+	Timer::subsystem.sim_precipitation.stop();
 
 	Timer::subsystem.sim_total.stop();
+	// the parts of the vehicle update made in the frame, none when paused
+	Timer::subsystem.commit_frame();
+	Timer::subsystem.switching.update();
 
+	Timer::subsystem.loop_audio.start();
 	simulation::Region->update_sounds();
 	audio::renderer.update(Global.iPause ? 0.0 : deltarealtime);
+	Timer::subsystem.loop_audio.stop();
 
 	// NOTE: particle system runs on simulation time, but needs actual camera position to determine how to update each particle source
+	Timer::subsystem.loop_particles.start();
 	simulation::Particles.update();
+	Timer::subsystem.loop_particles.stop();
 
+	Timer::subsystem.loop_renderer_update.start();
 	GfxRenderer->Update(deltarealtime);
+	Timer::subsystem.loop_renderer_update.stop();
 
 	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview";
 

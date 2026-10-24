@@ -39,7 +39,7 @@ gfx_renderer_factory *gfx_renderer_factory::get_instance()
 
 gfx_renderer_factory *gfx_renderer_factory::instance;
 
-material_handle gfx_renderer::Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement )
+material_handle gfx_renderer::Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement, int const HoleSamples, std::uint8_t const *Holes )
 {
     // without blending the chunk gets the material which covers the most of it
     if( Layers.empty() ) {

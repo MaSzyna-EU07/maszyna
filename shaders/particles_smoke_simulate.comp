@@ -1,0 +1,95 @@
+// the smoke of the gpu (opengl46_gpu_particles), once per update of the simulation: a thread per place of the storage. the
+// particles the sources had born in the update take the places after the ones of the last update (each source keeps its
+// places as a ring, the oldest give way), spread along the way the emitter went since the update before; the living ones
+// change as smoke_source::update() changes them on the cpu
+
+#include <common>
+#include <particle_common.glsl>
+
+layout(local_size_x = PARTICLE_GROUP_SIZE) in;
+
+layout(std430, binding = PARTICLE_SSBO_BINDING) buffer particle_ssbo
+{
+	smoke_particle_s particles[];
+};
+layout(std430, binding = PARTICLE_SOURCE_SSBO_BINDING) readonly buffer particle_source_ssbo
+{
+	smoke_source_s sources[];
+};
+// the source of every place
+layout(std430, binding = PARTICLE_OWNER_SSBO_BINDING) readonly buffer particle_owner_ssbo
+{
+	uint owners[];
+};
+
+layout(location = 0) uniform uint places;
+// x: seconds of the update, yzw: added to the positions, as the origin moved
+layout(location = 1) uniform vec4 step;
+// xyz: the wind, m/s; w unused
+layout(location = 2) uniform vec4 wind;
+// x: number of the update, for the random numbers
+layout(location = 3) uniform uint seed;
+
+// smoke_source::update( Particle ); false when the particle is dead
+bool advance(inout smoke_particle_s particle, smoke_source_s source, float seconds)
+{
+	particle.state.x = clamp(particle.state.x + source.opacitychange.x * seconds, source.opacitychange.y, source.opacitychange.z);
+	if (particle.state.x <= 0.0)
+		return false;
+	particle.velocity.w = clamp(particle.velocity.w + source.sizechange.x * seconds, source.sizechange.y, source.sizechange.z);
+	// the jet widens with the way it goes
+	if (source.sizechange.w > 0.0)
+		particle.velocity.w = min(particle.velocity.w + source.sizechange.w * length(particle.velocity.xyz) * seconds, source.sizechange.z);
+	if (source.settling.z > 0.5)
+	{
+		// the drag of the air takes the particle towards the velocity it settles at
+		particle.velocity.xyz += (vec3(0.0, source.settling.x, 0.0) - particle.velocity.xyz) * (1.0 - exp(-source.settling.y * seconds));
+	}
+	else
+	{
+		// crude smoke dispersion
+		particle.velocity.y += source.motion.x * particle.velocity.y * seconds;
+		particle.velocity.y -= source.motion.y * particle.velocity.y * seconds;
+		particle.velocity.y = max(source.motion.z, particle.velocity.y);
+	}
+	particle.position.xyz += particle.velocity.xyz * seconds;
+	particle.position.xyz += 0.1 * particle.state.y * wind.xyz * seconds;
+	particle.state.y += seconds;
+	return true;
+}
+
+void main()
+{
+	uint place = gl_GlobalInvocationID.x;
+	if (place >= places)
+		return;
+	smoke_source_s source = sources[owners[place]];
+	smoke_particle_s particle = particles[place];
+	particle.position.xyz += step.yzw;
+
+	uint size = source.pool.y;
+	uint order = (place - source.pool.x + size - source.pool.z) % size;
+	if (order < source.pool.w)
+	{
+		// born in the update: smoke_source::particle_emitter::initialize()
+		uint state = particle_hash(place ^ particle_hash(seed));
+		float polar = mix(source.launch.x, source.launch.y, particle_random(state));
+		float azimuth = radians(mix(-180.0, 180.0, particle_random(state)));
+		vec3 direction = vec3(-sin(polar) * sin(azimuth), cos(polar), sin(polar) * cos(azimuth));
+		particle.velocity.xyz = direction * mix(source.launch.z, source.launch.w, particle_random(state));
+		particle.position.w = radians(mix(0.0, 360.0, particle_random(state)));
+		particle.velocity.w = mix(source.initial.x, source.initial.y, particle_random(state));
+		particle.state = vec4(mix(source.initial.z, source.initial.w, particle_random(state)), 0.0, 0.0, 0.0);
+		// the births spread over the update: where the emitter was then, and the time since
+		float share = (float(order) + 0.5) / float(source.pool.w);
+		particle.position.xyz = mix(source.previous.xyz, source.location.xyz, share);
+		if (false == advance(particle, source, step.x * (1.0 - share)))
+			particle.state.x = 0.0;
+	}
+	else if (particle.state.x > 0.0)
+	{
+		if (false == advance(particle, source, step.x))
+			particle.state.x = 0.0;
+	}
+	particles[place] = particle;
+}

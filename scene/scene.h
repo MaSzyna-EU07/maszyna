@@ -26,8 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "input/command.h"
 #include "utilities/utilities.h"
 
-class opengl_renderer;
-class opengl33_renderer;
+class opengl46_renderer;
 
 namespace scene {
 
@@ -96,8 +95,7 @@ struct terrain_block {
 // TBD, TODO: replace with quadtree scheme?
 class basic_cell {
 
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
 public:
 // constructors
@@ -223,9 +221,12 @@ public:
     struct instance_bucket_key {
         TModel3d *pModel { nullptr };
         std::array<material_handle, 5> skins {};
+        // an instance drawn on its own (not instanceable) culled on the gpu as a bucket of its own: it isn't drawn
+        // together with other instances of the model, as its submodel tree is prepared and walked for it alone
+        TAnimModel const *instance { nullptr };
 
         bool operator==( instance_bucket_key const &other ) const {
-            return pModel == other.pModel && skins == other.skins;
+            return pModel == other.pModel && skins == other.skins && instance == other.instance;
         }
     };
     struct instance_bucket_key_hash {
@@ -235,23 +236,53 @@ public:
                 // boost-style hash combine
                 h ^= std::hash<int>()( s ) + 0x9e3779b9 + ( h << 6 ) + ( h >> 2 );
             }
+            h ^= std::hash<TAnimModel const *>()( k.instance ) + 0x9e3779b9 + ( h << 6 ) + ( h >> 2 );
             return h;
         }
     };
     using instance_bucket_map = std::unordered_map< instance_bucket_key, std::vector<TAnimModel *>, instance_bucket_key_hash >;
-    // what it takes to tell that an instance is out of sight, copied from the instance.
+    // what it takes to cull and place an instance, copied from the instance.
     // a cell can hold thousands of instances, each of them large and placed wherever the memory was free, and a render
-    // pass rejects most of them. the renderer makes the copies and goes by them, to fetch only the instances it may draw
-    struct instance_bounds {
-        glm::vec3 center { 0.f }; // location of the instance, in the precision the frustum test takes it
+    // pass rejects most of them. the renderer makes the copies and goes by them, and reads the instance itself only
+    // for the first one of a batch drawn. the layout follows std430, for the copies to be handed to the gpu as they are
+    struct instance_record {
+        packed_vec3 position { 0.f }; // location of the instance, relative to the origin of the records of its bucket
         float radius { 0.f };
-        float rangesquaredmax { 0.f }; // past it the instance isn't drawn: by its own range, or the lod stages of its model
+        float rangesquaredmin { 0.f }; // visibility range of the instance
+        float rangesquaredmax { 0.f };
+        std::uint32_t flags { 0 }; // instance_record_flags
+        std::uint32_t pad { 0 }; // the copy of the gpu culling keeps there whether the instance was seen in the last frame
+        glm::vec4 rotationscale[ 3 ] {}; // columns of rotation and scale of the instance, w unused
+    };
+    static_assert( sizeof( instance_record ) == 80, "instance_record has to keep its std430 layout" );
+    static_assert( offsetof( instance_record, radius ) == 12, "instance_record has to keep its std430 layout" );
+    static_assert( offsetof( instance_record, flags ) == 24, "instance_record has to keep its std430 layout" );
+    static_assert( offsetof( instance_record, rotationscale ) == 32, "instance_record has to keep its std430 layout" );
+    enum instance_record_flags : std::uint32_t {
+        instance_visible = 1 << 0,
+        instance_instanceable = 1 << 1, // false once an event gave the instance animations or a skin of its own
     };
     struct instance_bucket {
         std::vector<TAnimModel *> instances;
         // caches owned by the renderer; emptied whenever the content of the bucket changes
-        mutable std::vector<instance_bounds> bounds; // copies for the instances, in the same order
-        mutable unsigned int boundsversion { 0 };
+        mutable std::vector<instance_record> records; // copies for the instances, in the same order
+        mutable glm::dvec3 recordorigin { 0.0 }; // the records hold locations relative to it
+        mutable float lodrangesquared { 0.f }; // past it no submodel of the model of the bucket is drawn
+        mutable float rangesquared { std::numeric_limits<float>::max() }; // past it no instance of the bucket is drawn: the largest range of its instances, within lodrangesquared
+        // bounds of the visible instances of the records, for the tests of a whole bucket: a sphere around their locations
+        // (recordcenter, recordlocationradius), the radius of the sphere which holds the instances whole (negative when none
+        // of them is visible), and the largest radius of an instance
+        mutable glm::dvec3 recordcenter { 0.0 };
+        mutable float recordlocationradius { 0.f };
+        mutable float recordradius { -1.f };
+        mutable float recordradiusmax { 0.f };
+        mutable unsigned int recordsversion { 0 };
+        // place of the records in the record buffer of the gpu culling: first record, room, and the generation of
+        // the buffer it is good for. gpustale: the records changed since they were sent
+        mutable std::uint32_t gpufirst { 0 };
+        mutable std::uint32_t gpucapacity { 0 };
+        mutable unsigned int gpugeneration { 0 };
+        mutable bool gpustale { true };
     };
     using instance_bucketdata_map = std::unordered_map< instance_bucket_key, instance_bucket, instance_bucket_key_hash >;
     using sound_sequence = std::vector<sound_source *>;
@@ -294,8 +325,7 @@ public:
 // basic scene partitioning structure, holds terrain geometry and collection of cells
 class basic_section {
 
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
 public:
 // constructors
@@ -418,8 +448,7 @@ public:
 // top-level of scene spatial structure, holds collection of sections
 class basic_region {
 
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
 public:
 // constructors

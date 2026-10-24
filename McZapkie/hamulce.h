@@ -265,6 +265,14 @@ class TReservoir
 	/// <param name="dv">Volume change to add to dVol.</param>
 	void Flow(double dv);
 	/// <summary>
+	/// Pressure the reservoir will have once the flow accumulated for the step is applied (Vol + dVol) / Cap, in bar.
+	/// Of a vehicle whose physics sleeps, the flow keeps accumulating, as nothing applies it.
+	/// </summary>
+	double P_pending() const
+	{
+		return std::max(0.0, Vol + dVol) / Cap;
+	}
+	/// <summary>
 	/// Applies the accumulated flow (dVol) to the volume and resets dVol.
 	/// Volume is clamped to be non-negative.
 	/// </summary>

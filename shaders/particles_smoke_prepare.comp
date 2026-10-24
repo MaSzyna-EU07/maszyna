@@ -1,0 +1,56 @@
+// the smoke of the gpu (opengl46_gpu_particles), in every colour pass which draws it: a thread per place of the storage. the
+// living particles the view sees are lit (particle_light.glsl) and added to the draw (particles_smoke.vert)
+
+#include <common>
+#include <weather_common.glsl>
+#include <particle_light.glsl>
+#include <particle_common.glsl>
+
+layout(local_size_x = PARTICLE_GROUP_SIZE) in;
+
+layout(std430, binding = PARTICLE_SSBO_BINDING) readonly buffer particle_ssbo
+{
+	smoke_particle_s particles[];
+};
+layout(std430, binding = PARTICLE_SOURCE_SSBO_BINDING) readonly buffer particle_source_ssbo
+{
+	smoke_source_s sources[];
+};
+layout(std430, binding = PARTICLE_OWNER_SSBO_BINDING) readonly buffer particle_owner_ssbo
+{
+	uint owners[];
+};
+
+layout(location = 0) uniform uint places;
+// xyz: the origin of the particles less the camera, metres along the world axes
+layout(location = 1) uniform vec3 origin;
+// the world axes around the camera to the view space of the pass
+layout(location = 2) uniform mat4 view;
+// x: 1 when the smoke is lit by the lights of the pass, y: how much it scatters the light onwards, z: places for the draws
+layout(location = 3) uniform vec4 options;
+// planes of the view (world axes around the camera): a point is inside when dot(xyz, point) + w >= 0
+layout(location = 4) uniform vec4 planes[5];
+
+void main()
+{
+	uint place = gl_GlobalInvocationID.x;
+	if (place >= places)
+		return;
+	smoke_particle_s particle = particles[place];
+	if (particle.state.x <= 0.0)
+		return;
+	vec3 world = particle.position.xyz + origin;
+	float size = particle.velocity.w;
+	// the corners of the billboard turned anyhow
+	if (false == particle_visible(planes, world, size * 0.7072))
+		return;
+	smoke_source_s source = sources[owners[place]];
+	vec3 color = source.oldcolor.rgb;
+	if (options.x > 0.5)
+		color = source.color.rgb * particle_light((view * vec4(world, 1.0)).xyz, world, options.y);
+	float opacity = clamp(particle.state.x, 0.0, 1.0);
+	// showing up after the birth (smoke_source::fade_in())
+	if (source.settling.w > 0.0)
+		opacity *= smoothstep(0.0, source.settling.w, particle.state.y);
+	particle_emit(world, size, vec3(particle.position.w, 0.0, 0.0), color, opacity, uint(options.z));
+}

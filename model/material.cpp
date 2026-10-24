@@ -662,12 +662,312 @@ material_manager::create_from_text( std::string const &Name, std::string const &
     return materialhandle;
 }
 
+namespace {
+
+opengl_material
+variant_of( opengl_material const &Source, std::string const &Suffix ) {
+
+    opengl_material variant;
+    variant.textures = Source.textures;
+    variant.texture_variants = Source.texture_variants;
+    variant.params = Source.params;
+    variant.params_state = Source.params_state;
+    variant.shader = Source.shader;
+    variant.opacity = Source.opacity;
+    variant.selfillum = Source.selfillum;
+    variant.shadow_rank = Source.shadow_rank;
+    variant.name = Source.name + Suffix;
+    variant.size = Source.size;
+    variant.is_good = Source.is_good;
+    variant.path = Source.path;
+    return variant;
+}
+
+} // namespace
+
+material_handle
+material_manager::create_matte( material_handle const Material ) {
+
+    if( Material == null_handle || Material >= m_materials.size() ) {
+        return Material;
+    }
+    auto const lookup { m_mattes.find( Material ) };
+    if( lookup != m_mattes.end() ) {
+        return lookup->second;
+    }
+    auto matte { variant_of( m_materials[ Material ], ":matte" ) };
+    matte.glossiness = 0.1f;
+    if( matte.shader ) {
+        for( auto const &[ key, value ] : std::vector<std::pair<std::string, glm::vec4>>{ { "weathering", glm::vec4{ 1.f } } } ) {
+            auto const entry { matte.shader->param_conf.find( key ) };
+            if( entry == matte.shader->param_conf.end() ) {
+                continue;
+            }
+            for( std::size_t i = 0; i < entry->second.size; ++i ) {
+                matte.params[ entry->second.location ][ entry->second.offset + i ] = value[ static_cast<glm::length_t>( i ) ];
+            }
+            matte.params_state.erase(
+                std::remove_if(
+                    std::begin( matte.params_state ), std::end( matte.params_state ),
+                    [&]( gl::shader::param_entry const &State ) {
+                        return State.location == entry->second.location && State.offset == entry->second.offset; } ),
+                std::end( matte.params_state ) );
+        }
+    }
+    auto const mattehandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( matte ) );
+    m_mattes.emplace( Material, mattehandle );
+    return mattehandle;
+}
+
+material_handle
+material_manager::create_tinted( material_handle const Material, glm::vec3 const &Colour ) {
+
+    if( Material == null_handle || Material >= m_materials.size() || !m_materials[ Material ].shader ) {
+        return Material;
+    }
+    auto const key { std::make_tuple( Material, Colour.r, Colour.g, Colour.b ) };
+    if( auto const lookup { m_tints.find( key ) }; lookup != m_tints.end() ) {
+        return lookup->second;
+    }
+    auto const &conf { m_materials[ Material ].shader->param_conf };
+    auto const weathering { conf.find( "weathering" ) };
+    if( weathering == conf.end()
+     || weathering->second.offset != 3
+     || std::any_of(
+            std::begin( conf ), std::end( conf ),
+            [&]( auto const &Entry ) {
+                return Entry.first != weathering->first && Entry.second.location == weathering->second.location; } ) ) {
+        return Material;
+    }
+    auto tinted { variant_of( m_materials[ Material ], ":tinted" ) };
+    tinted.glossiness = m_materials[ Material ].glossiness;
+    auto const location { weathering->second.location };
+    tinted.params[ location ] = glm::vec4{ Colour, -1.f };
+    tinted.params_state.erase(
+        std::remove_if(
+            std::begin( tinted.params_state ), std::end( tinted.params_state ),
+            [&]( gl::shader::param_entry const &State ) {
+                return State.location == location; } ),
+        std::end( tinted.params_state ) );
+    auto const tintedhandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( tinted ) );
+    m_tints.emplace( key, tintedhandle );
+    return tintedhandle;
+}
+
+namespace {
+
+// the shaders a material is lit by which the blending shaders can light the same way, by the names they're fetched by, in the
+// order of the lighting they stand for (1 normalmap, 2 sunless, 3 shadowless)
+char const *const blend_normal_shaders[] = { "normalmap", "sunlessnormalmap", "shadowlessnormalmap" };
+char const *const blend_specgloss_shaders[] = { "normalmap_specgloss", "sunlessnormalmap_specgloss", "shadowlessnormalmap_specgloss" };
+int constexpr blend_specgloss { 4 }; // added to the lighting for a material with a specgloss map
+int constexpr blend_parallax { 8 }; // added to the lighting (1, normalmap) of a parallax material
+
+std::string
+blend_shader( int const Lighting ) {
+
+    std::string name { "trackblend" };
+    if( Lighting & blend_specgloss ) { name += "_specgloss"; }
+    else if( Lighting & blend_parallax ) { name += "_parallax"; }
+    else if( Lighting > 0 ) { name += "_normalmap"; }
+    return name;
+}
+
+} // namespace
+
+int
+material_manager::blend_lighting( material_handle const Material ) {
+
+    if( Material == null_handle || Material >= m_materials.size() ) {
+        return -1;
+    }
+    if( auto const lookup { m_blendables.find( Material ) }; lookup != m_blendables.end() ) {
+        return lookup->second;
+    }
+    auto result { -1 };
+    auto const &material { m_materials[ Material ] };
+    auto const &conf { material.shader ? material.shader->texture_conf : decltype( material.shader->texture_conf ) {} };
+    auto const has = [&]( char const *Name ) {
+        auto const found { conf.find( Name ) };
+        return found != conf.end() && material.textures[ found->second.id ] != null_handle; };
+    if( material.is_good
+     && material.shader
+     && material.texture_variants.empty()
+     // a tint takes the parameters the blending shader keeps its lighting in
+     && false == ( material.params[ 2 ].w < 0.f )
+     && has( "diffuse" ) ) {
+        try {
+            auto lighting { -1 };
+            auto const lit_as = [&]( char const *const ( &Shaders )[ 3 ], int const Extra ) {
+                for( int index = 0; index < 3; ++index ) {
+                    if( material.shader == GfxRenderer->Fetch_Shader( Shaders[ index ] ) ) {
+                        lighting = index + 1 + Extra;
+                    }
+                } };
+            if( conf.size() == 1 ) {
+                lighting = 0;
+            }
+            else if( conf.size() == 2 && has( "normalmap" ) ) {
+                lit_as( blend_normal_shaders, 0 );
+                if( material.shader == GfxRenderer->Fetch_Shader( "parallax" ) ) {
+                    lighting = 1 + blend_parallax;
+                }
+            }
+            else if( conf.size() == 3 && has( "normalmap" ) && has( "specgloss" ) ) {
+                lit_as( blend_specgloss_shaders, blend_specgloss );
+            }
+            if( lighting >= 0 ) {
+                // the parameters of the material go to the blending one as they are, so they have to be in the same places in both
+                auto const blend { GfxRenderer->Fetch_Shader( blend_shader( lighting ) ) };
+                auto const fits { std::all_of(
+                    std::begin( material.shader->param_conf ), std::end( material.shader->param_conf ),
+                    [&]( auto const &Entry ) {
+                        auto const found { blend->param_conf.find( Entry.first ) };
+                        return found != blend->param_conf.end()
+                            && found->second.location == Entry.second.location
+                            && found->second.offset == Entry.second.offset
+                            && found->second.size == Entry.second.size; } ) };
+                result = ( fits ? lighting : -1 );
+            }
+        }
+        catch( gl::shader_exception const &e ) {
+            ErrorLog( "invalid shader: " + std::string( e.what() ) );
+        }
+    }
+    if( result < 0 ) {
+        // once for each material a track would blend, which of the conditions it fails
+        std::string textures;
+        for( auto const &entry : conf ) {
+            textures += ( textures.empty() ? "" : ", " ) + entry.first;
+        }
+        WriteLog(
+            "track blend: material \"" + material.name + "\" isn't blended:"
+            + ( material.is_good ? "" : " not good;" )
+            + ( material.shader ? " shader \"" + GfxRenderer->Shader_Name( material.shader ) + "\" with the textures " + textures + ";" : " no shader;" )
+            + ( material.texture_variants.empty() ? "" : " texture variants;" )
+            + ( material.params[ 2 ].w < 0.f ? " tinted;" : "" ) );
+    }
+    m_blendables.emplace( Material, result );
+    return result;
+}
+
+bool
+material_manager::blendable( material_handle const Material ) {
+
+    return blend_lighting( Material ) >= 0;
+}
+
+bool
+material_manager::build_blend( blend_key const &Key, opengl_material &Blend ) {
+
+    auto const material { std::get<0>( Key ) };
+    std::array<material_handle, 3> const others { std::get<1>( Key ), std::get<2>( Key ), std::get<3>( Key ) };
+    auto const lighting { blend_lighting( material ) };
+    if( lighting < 0 ) {
+        return false;
+    }
+    auto const texture_of = [&]( material_handle const Source, char const *Name ) -> texture_handle {
+        if( false == blendable( Source ) ) {
+            return null_handle;
+        }
+        auto const &source { m_materials[ Source ] };
+        auto const found { source.shader->texture_conf.find( Name ) };
+        return ( found != source.shader->texture_conf.end() ? source.textures[ found->second.id ] : null_handle );
+    };
+    // the slots of the textures in the blending shaders (mat_trackblend*.frag), parallax as normalmap: with a specgloss map there's room for the textures
+    // of two ends alone, p1 and p2, which is all the rails of a plain track have
+    auto const normals { lighting > 0 };
+    auto const specgloss { ( lighting & blend_specgloss ) != 0 };
+    int const diffuseslots[] = { 0, 1, 2, 3 };
+    int const normalslots[] = { ( specgloss ? 3 : 4 ), ( specgloss ? 4 : 5 ), ( specgloss ? 5 : 6 ), 7 };
+    auto const ends { specgloss ? 2 : 3 };
+    try {
+        Blend = variant_of( m_materials[ material ], ":blend" );
+        Blend.shader = GfxRenderer->Fetch_Shader( blend_shader( lighting ) );
+        Blend.texture_variants.clear();
+        Blend.textures.fill( null_handle );
+        auto const owndiffuse { texture_of( material, "diffuse" ) };
+        auto const ownnormal { texture_of( material, "normalmap" ) };
+        Blend.textures[ diffuseslots[ 0 ] ] = owndiffuse;
+        if( normals ) {
+            Blend.textures[ normalslots[ 0 ] ] = ownnormal;
+        }
+        if( specgloss ) {
+            Blend.textures[ 6 ] = texture_of( material, "specgloss" );
+        }
+        for( int end = 0; end < ends; ++end ) {
+            // the slots of the ends nothing is blended at take the own textures, the shader samples them only with a weight; a
+            // material without a normal map blended into one with it takes its normal map
+            auto const diffuse { texture_of( others[ end ], "diffuse" ) };
+            Blend.textures[ diffuseslots[ 1 + end ] ] = ( diffuse != null_handle ? diffuse : owndiffuse );
+            if( normals ) {
+                auto const normal { texture_of( others[ end ], "normalmap" ) };
+                Blend.textures[ normalslots[ 1 + end ] ] = ( normal != null_handle ? normal : ownnormal );
+            }
+        }
+        // lit as the shader of the material: 0 mat_default, 1 normalmap, 2 sunless, 3 shadowless
+        Blend.params[ 2 ].x = static_cast<float>( lighting & 3 );
+        // the parameters taken from the bindings again, by the shader
+        Blend.params_state.clear();
+        Blend.finalize( true );
+        return Blend.is_good;
+    }
+    catch( gl::shader_exception const &e ) {
+        ErrorLog( "invalid shader: " + std::string( e.what() ) );
+    }
+    return false;
+}
+
+material_handle
+material_manager::create_blend( material_handle const Material, std::array<material_handle, 3> const &Others ) {
+
+    if( false == blendable( Material ) ) {
+        return Material;
+    }
+    blend_key const key { Material, Others[ 0 ], Others[ 1 ], Others[ 2 ] };
+    if( auto const lookup { m_blends.find( key ) }; lookup != m_blends.end() ) {
+        return lookup->second;
+    }
+    auto result { Material };
+    opengl_material blend;
+    if( build_blend( key, blend ) ) {
+        result = static_cast<material_handle>( m_materials.size() );
+        m_materials.emplace_back( std::move( blend ) );
+        m_blendsources.emplace_back( result, key );
+    }
+    m_blends.emplace( key, result );
+    return result;
+}
+
+void
+material_manager::rebuild_blends() {
+
+    if( m_blendsources.empty() ) {
+        return;
+    }
+    // the materials blended took the textures of another season or weather, the blending ones take them anew in their places
+    m_blendables.clear();
+    for( auto const &[ handle, key ] : m_blendsources ) {
+        opengl_material blend;
+        if( build_blend( key, blend ) ) {
+            m_materials[ handle ] = std::move( blend );
+        }
+        else {
+            // can't be blended any more: drawn as the material of the track itself, the weights of its vertices unused
+            m_materials[ handle ] = variant_of( m_materials[ std::get<0>( key ) ], ":blend" );
+        }
+    }
+}
+
 void
 material_manager::on_weather_change() {
 
     for( auto &material : m_materials ) {
         if( material.update_on_weather_change ) { material.update(); }
     }
+    rebuild_blends();
 }
 
 void
@@ -676,6 +976,7 @@ material_manager::on_season_change() {
     for( auto &material : m_materials ) {
         if( material.update_on_season_change ) { material.update(); }
     }
+    rebuild_blends();
 }
 
 // checks whether specified material is in the material bank. returns handle to the material, or a null handle

@@ -17,11 +17,9 @@ http://mozilla.org/MPL/2.0/.
 
 void TSky::Init() {
 
-    if (Global.asSky != "1"
-     && Global.asSky != "0" ) {
-
-        mdCloud = TModelsManager::GetModel( Global.asSky );
-    }
+    // the clouds are worked out from the weather (environment/weather.h) and drawn by the renderer; the cloud model the sky
+    // section of a scenery names (Global.asSky) is no longer loaded
+    mdCloud = nullptr;
 };
 
 //---------------------------------------------------------------------------

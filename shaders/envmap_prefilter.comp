@@ -1,0 +1,100 @@
+// prefilters the environment map with the GGX lobe for rough reflections (split sum approximation, Karis 2013), one level
+// of the prefiltered map per dispatch. filtered importance sampling (Krivanek, Colbert 2008): each sample reads the mipmap
+// of the source whose texels are about as large as the solid angle the sample stands for, so a few dozen samples give a
+// smooth result. run when an update of the environment map is complete
+
+#include <common>
+
+layout(local_size_x = ENVMAP_GGX_GROUP_SIZE, local_size_y = ENVMAP_GGX_GROUP_SIZE) in;
+
+layout(binding = 0, rgba16f) writeonly uniform imageCube prefilter_target;
+// the plain map with its box filtered mipmaps, on the unit gl::program binds envmap to
+uniform samplerCube envmap;
+
+// perceptual roughness of the level being written
+layout(location = 0) uniform float roughness;
+// size of the level being written, and of the first level of the source
+layout(location = 1) uniform int target_size;
+layout(location = 2) uniform float source_size;
+layout(location = 3) uniform int sample_count;
+
+const float PI = 3.14159265359;
+
+// direction through the centre of a texel of a cube map face, in the order and orientation of GL_TEXTURE_CUBE_MAP_POSITIVE_X..
+vec3 cube_direction(ivec3 texel, int size)
+{
+	vec2 uv = (vec2(texel.xy) + 0.5) / float(size) * 2.0 - 1.0;
+	switch (texel.z)
+	{
+	case 0: return vec3(1.0, -uv.y, -uv.x);
+	case 1: return vec3(-1.0, -uv.y, uv.x);
+	case 2: return vec3(uv.x, 1.0, uv.y);
+	case 3: return vec3(uv.x, -1.0, -uv.y);
+	case 4: return vec3(uv.x, -uv.y, 1.0);
+	default: return vec3(-uv.x, -uv.y, -1.0);
+	}
+}
+
+vec2 hammersley(uint i, uint n)
+{
+	uint bits = bitfieldReverse(i);
+	return vec2(float(i) / float(n), float(bits) * 2.3283064365386963e-10);
+}
+
+// half vector around N for the GGX distribution of linear roughness a
+vec3 importance_sample_ggx(vec2 xi, float a, vec3 N)
+{
+	float phi = 2.0 * PI * xi.x;
+	float costheta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+	float sintheta = sqrt(max(1.0 - costheta * costheta, 0.0));
+	vec3 H = vec3(sintheta * cos(phi), sintheta * sin(phi), costheta);
+	vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+	vec3 tangentx = normalize(cross(up, N));
+	vec3 tangenty = cross(N, tangentx);
+	return tangentx * H.x + tangenty * H.y + N * H.z;
+}
+
+float distribution_ggx(float NdotH, float a)
+{
+	float a2 = a * a;
+	float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
+	return a2 / (PI * d * d);
+}
+
+void main()
+{
+	ivec3 texel = ivec3(gl_GlobalInvocationID);
+	if (texel.x >= target_size || texel.y >= target_size)
+		return;
+
+	vec3 N = normalize(cube_direction(texel, target_size));
+	// the view is taken along the normal, which is what the split sum approximation assumes
+	vec3 V = N;
+	float a = max(roughness * roughness, 1e-3);
+	float texelsolidangle = 4.0 * PI / (6.0 * source_size * source_size);
+
+	vec3 sum = vec3(0.0);
+	float weight = 0.0;
+	uint count = uint(sample_count);
+	for (uint i = 0U; i < count; ++i)
+	{
+		vec3 H = importance_sample_ggx(hammersley(i, count), a, N);
+		float VdotH = dot(V, H);
+		vec3 L = 2.0 * VdotH * H - V;
+		float NdotL = dot(N, L);
+		if (NdotL <= 0.0)
+			continue;
+		float NdotH = max(dot(N, H), 0.0);
+		// pdf of L: D * NdotH / (4 * VdotH)
+		float pdf = distribution_ggx(NdotH, a) * NdotH / max(4.0 * VdotH, 1e-4);
+		float samplesolidangle = 1.0 / (float(count) * max(pdf, 1e-6));
+		float level = max(0.5 * log2(samplesolidangle / texelsolidangle) + 1.0, 0.0);
+		vec3 color = textureLod(envmap, L, level).rgb;
+		if (any(isnan(color)) || any(isinf(color)))
+			color = vec3(0.0);
+		sum += max(color, vec3(0.0)) * NdotL;
+		weight += NdotL;
+	}
+
+	imageStore(prefilter_target, texel, vec4(sum / max(weight, 1e-4), 1.0));
+}

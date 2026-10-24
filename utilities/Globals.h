@@ -114,6 +114,11 @@ struct global_settings {
     std::string Weather{ "cloudy:" }; // current weather
     std::string Period{}; // time of the day, based on sun position
     bool FullPhysics{ true }; // full calculations performed for each simulation step
+    bool physics_sleepheld{ true }; // vehicles standing still and held by their brakes let their physics sleep, see TMoverParameters::accelerating()
+    bool physics_roadlod{ true }; // road vehicles far from the camera go by one step of the physics in a frame, see vehicle_table::update()
+    float physics_pipewake{ 0.001f }; // bar: air flowing along a pipe wakes the physics of a vehicle when it changes its pressure by more than this. 0: any flow does
+    bool performance_multithreading{ true }; // work split over the logical cores of the machine (worker_pool), as many as each job is worth
+    bool debug_memorystats{ false }; // the memory of the parts of the program in the debug panel, with new and delete counted (start_heap_counting()). slows the loading down
     bool bnewAirCouplers{ true };
     float fMoveLight{ 0.f }; // numer dnia w roku albo -1
     bool FakeLight{ false }; // toggle between fixed and dynamic daylight
@@ -153,9 +158,6 @@ struct global_settings {
     int DynamicLightCount{ 7 };
     bool ScaleSpecularValues{ true };
     std::string GfxRenderer{ "default" };
-    bool LegacyRenderer{ false };
-    bool NvRenderer{ false };
-    bool BasicRenderer{ false };
     bool RenderShadows{ true };
 	bool applicationQuitOrder{false};
     int RenderCabShadowsRange{ 0 };
@@ -169,16 +171,21 @@ struct global_settings {
         float range_instances{ 750.f };
         float range_vehicles{ 250.f };
     } reflectiontune;
-    bool bUseVBO{ true }; // czy jest VBO w karcie graficznej (czy użyć)
     float AnisotropicFiltering{ 8.f }; // requested level of anisotropic filtering. TODO: move it to renderer object
     float FieldOfView{ 45.f }; // vertical field of view for the camera. TODO: move it to the renderer
     bool EditorOrtho{ false };
     float EditorOrthoExtent{ 150.f };
+    bool EditorOrthoBallast{ true }; // the ballast of the railway drawn in the top view of the editor
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px
     float SplineFidelity{ 1.f }; // determines segment size during conversion of splines to geometry
     float SleeperDistance{ 250.f }; // max distance (in meters) at which per-track sleeper models are still drawn; 0 disables sleeper rendering entirely
+    std::string Sleepers3D; // model of the sleepers and switch timbers laid where the simulator makes the ballast; empty: none
+    std::string Sleepers3DPlain { "quark/podklad1" }; // model of the sleepers of a track running alone, those of Sleepers3D being the timbers of switches and crossings; empty: the timbers there too
+    std::string Sleepers3DPlainSkin { "quark/podklad_betonowy1" };
+    bool Sleepers3DBed { true }; // whether the ballast is laid under the tracks with 3D sleepers
+    float Sleepers3DPlainSeat { 0.24f }; // how high the rails sit on the plain sleeper above the origin of its model; below 0: on its top
     bool Smoke{ true }; // toggles smoke simulation and visualization
     float SmokeFidelity{ 1.f }; // determines amount of generated smoke particles
     bool ResourceSweep{ true }; // gfx resource garbage collection
@@ -286,6 +293,70 @@ struct global_settings {
     int gfx_framebuffer_height = -1;
     bool gfx_shadowmap_enabled = true;
     bool gfx_envmap_enabled = true;
+    bool gfx_lights_clustered = true; // headlights from the light lists of the clusters (no limit of lit headlights) or the first dynamiclights of them
+    bool gfx_lights_clusterheatmap = false; // debug view of the light clusters
+    // culling of the model instances of the main view (opengl 4.6): 0 on the cpu, 1 in a compute pass, which the instances are
+    // drawn from with indirect draws, 2 on the cpu, which draws, and in a compute pass too, for the results to be compared
+    int gfx_gpucull = 0;
+    bool gfx_gpucull_occlusion = true; // with gfx_gpucull 1: instances hidden behind the depth drawn before them are left out
+    bool gfx_gpucull_occlusion_instances = true; // with gfx_gpucull_occlusion: in two phases, so that instances hide one another too
+    bool gfx_depthprepass = true; // with gfx_gpucull 1: the depth of the instances is drawn before their colour
+    // with gfx_gpucull 1: the draws of the instances which follow one another with the same material and geometry bank are
+    // made with one multi draw, their model blocks read from a storage buffer by the number of the draw
+    bool gfx_gpucull_multidraw = true;
+    // with gfx_gpucull 1 or 2: the instances of the cascades of the sun shadows and of the faces of the environment map are
+    // culled in compute passes as well (drawn from their result, or compared), not only those of the main view
+    bool gfx_gpucull_shadows = true;
+    bool gfx_gpucull_reflections = true;
+    // with gfx_gpucull 1 or 2: the same for the maps of the headlights of vehicles and for the scenery parts of the maps of
+    // scenery lamps, each map with a culling of its own
+    bool gfx_gpucull_shadows_headlights = true;
+    bool gfx_gpucull_shadows_lamps = true;
+    // with gfx_gpucull 1 or 2: the sleepers of the tracks (sleepermodel) of the main view are culled with the instances as well,
+    // and with 1 drawn from the result
+    bool gfx_gpucull_sleepers = true;
+    // with gfx_gpucull 1 or 2: the model instances drawn on their own (with lights, animations or skins of their own, which
+    // keep them out of the instanced draws) are culled with the instances as well, each one a group of its own, in every pass
+    // culled on the gpu, and with 1 drawn from the result. models with billboards stay on the cpu
+    bool gfx_gpucull_models = true;
+    // the buckets of instances of a scene cell lying wholly beyond their range (the largest range of their instances and of
+    // the submodels of their model) are left out of a pass before the culling, the gpu one included, which would leave out
+    // each of their instances anyway
+    bool gfx_gpucull_bucketrange = true;
+    // the walks of the submodel trees which record the draws of the instances culled on the gpu are kept from frame to frame and
+    // made again only when the model changes: the trees of animated models, ones lit by the luminance and the models drawn on their
+    // own are walked every time
+    bool gfx_gpucull_walkcache = true;
+    // (opengl 4.6) the geometry of the banks without user data (models, scenery) is kept in a few large buffers shared by them, so
+    // the multi draws can take the chunks of many models at once. read when a bank sets its buffers up (load time)
+    bool gfx_geometry_shared = true;
+    // (opengl 4.6) the depth of the whole opaque scene of the main view is drawn before its colour, the instances included
+    bool gfx_depthprepass_scene = false;
+    // (opengl 4.6) the depth pass of the scene (gfx_depthprepass_scene, or the one of the contact shadows) walks the scene for
+    // the colour pass as well: its opaque draws are recorded once, their depth drawn from the record (with the contact shadows
+    // alone only within their reach) and their colour too. false: the scene is walked twice, as before
+    bool gfx_depthprepass_replay = true;
+    // (opengl 4.6) grass of the heightmap terrain, grown where it's painted: drawn, how far from the camera (metres), and how
+    // many blades of the density painted (1: all)
+    bool gfx_grass = true;
+    float gfx_grass_distance = 60.f;
+    // (opengl 4.6) the grass thins out from gfx_grass_distance to here, where it ends
+    float gfx_grass_fadedistance = 70.f;
+    float gfx_grass_density = 1.f;
+    // (opengl 4.6) the smoke is simulated and drawn on the gpu (opengl46_gpu_particles), lit by the sun, the sky and the lamps
+    // when gfx_smoke_lighting; false: simulated on the cpu and drawn as before
+    bool gfx_smoke_gpu = true;
+    bool gfx_smoke_lighting = true;
+    // (opengl 4.6) the particles of the gpu fade where they near what is behind them, over this share of their size (smoke) or of
+    // a few decimetres (rain, snow), instead of being cut by it; 0: cut, as before
+    float gfx_particles_soft = 1.f;
+    // (opengl 4.6) rain and snow as particles around the camera, lit like the smoke (opengl46_gpu_particles), at most this many of
+    // them in the heaviest rain or snow; false: the textured cylinder, as before
+    bool gfx_precipitation_gpu = true;
+    int gfx_precipitation_particles = 65536;
+    // (opengl 4.6) the model block of every draw and the matrices of instances are written to persistently mapped buffers,
+    // one for each of the last frames, instead of with glBufferSubData. read at the start
+    bool gfx_bufferstreaming = true;
     bool gfx_postfx_motionblur_enabled = true;
     float gfx_postfx_motionblur_shutter = 0.01f;
     GLenum gfx_postfx_motionblur_format = GL_RG16F;
@@ -295,8 +366,6 @@ struct global_settings {
     bool gfx_skippipeline = false;
     bool gfx_extraeffects = true;
     bool gfx_shadergamma = false;
-    bool gfx_usegles = false;
-    std::string gfx_angleplatform;
     bool gfx_gldebug = false;
     bool vr = false;
     std::string vr_backend;
@@ -304,6 +373,107 @@ struct global_settings {
     float gfx_distance_factor_max { 3.f };
     float gfx_shadow_angle_min { -0.2f };
     int gfx_shadow_rank_cutoff { 3 };
+    // (opengl 4.6) the cascades of the sun shadows are fitted to the depth of the main view of a frame or two before (SDSM):
+    // the distances they cover go from the nearest to the farthest pixel which isn't the sky, and the map of each covers only
+    // the area of the pixels it takes. false: the fixed cascades of shadowtune
+    bool gfx_shadow_sdsm { false };
+    // with gfx_shadow_sdsm: how the distances between the nearest and the farthest pixel are split between the cascades,
+    // 0: in equal lengths, 1: in equal ratios
+    float gfx_shadow_sdsm_split { 0.9f };
+
+    // sky light and exposure of the opengl 4.6 renderer. the switches can also be changed at run time in the debug window
+    // "Sky and exposure"; the scales are multipliers of the calibrated defaults (1 = as calibrated)
+    bool gfx_ambient_sh { true }; // the ambient light depends on where a surface faces: the sky above, the ground below
+    float gfx_ambient_sh_strength { 1.f }; // 0 = uniform ambient light as before, 1 = full directional difference
+    float gfx_ambient_groundalbedo { 0.1f }; // how much light the ground below the horizon gives back
+    bool gfx_envmap_ggx { true }; // rough reflections from the environment map prefiltered with the GGX lobe
+    bool gfx_atmosphere { true }; // sky, sun, ambient light and fog colour from the physical atmosphere (Hillaire 2020)
+    float gfx_atmosphere_sky { 1.f }; // brightness of the drawn sky and of the fog
+    float gfx_atmosphere_ambient { 1.f }; // brightness of the ambient light
+    float gfx_atmosphere_sun { 1.f }; // brightness of the sunlight
+    float gfx_atmosphere_haze { 1.f }; // amount of aerosols (mie scattering) on a clear day; grows with the overcast
+    float gfx_atmosphere_altitude { 200.f }; // height of the scenery above the sea level, in metres
+    bool gfx_postfx_autoexposure { true }; // the exposure follows the brightness of the image, within limits
+    float gfx_postfx_autoexposure_key { 0.3f }; // average luminance of the image the exposure is set for
+    float gfx_postfx_autoexposure_min { -1.f }; // lowest exposure correction, EV (darkening of bright images)
+    float gfx_postfx_autoexposure_max { 0.5f }; // highest exposure correction, EV (brightening of dark images, tunnels)
+    float gfx_postfx_autoexposure_speed_dark { 1.f }; // rate of adaptation to a darker image, 1/s
+    float gfx_postfx_autoexposure_speed_bright { 3.f }; // rate of adaptation to a brighter image, 1/s
+    float gfx_postfx_autoexposure_compensation { 0.f }; // fixed exposure correction, EV, applied with and without the adaptation
+    bool gfx_postfx_bloom { true }; // glow around bright parts of the image
+    float gfx_postfx_bloom_intensity { 0.04f }; // share of the blurred image in the result
+    float gfx_postfx_bloom_threshold { 0.f }; // luminance below which nothing glows, 0 = everything contributes
+    // screen space ambient occlusion of the opengl 4.6 renderer, applied to the image (debug window "Sky and exposure").
+    // 0 off, 1 the older ssao, 2 ground truth ambient occlusion; when 0 at the start the targets are not made at all
+    int gfx_postfx_ao { 2 };
+    float gfx_postfx_ao_radius { 1.5f }; // reach of the occluders, metres
+    float gfx_postfx_ao_strength { 1.f }; // power the occlusion is raised to, 1 = as computed, 0 = none
+    float gfx_postfx_ao_bounce { 0.3f }; // albedo of the surfaces assumed for the light coming back after more bounces
+    int gfx_postfx_ao_slices { 3 }; // directions searched around each pixel
+    int gfx_postfx_ao_steps { 4 }; // samples on each side of a direction
+    // local lights of the opengl 4.6 renderer, besides the sun and the vehicle headlights (debug window "Light clusters").
+    // they go through the light clusters, so they need gfx_lights_clustered
+    bool gfx_lights_scenery { true }; // light points (freespot lights) of scenery models light their surroundings
+    bool gfx_lights_vehicles { true }; // light points of vehicles and their lit compartments light their surroundings
+    // the old lighting ahead of vehicles: the beam of their headlights (light_array, the projected texture of the beam), with its
+    // shadows and its light in the fog. off: the vehicles light what is ahead of them only with the light points of their lamps
+    bool gfx_lights_headlights { true };
+    bool gfx_lights_cab { true }; // the lamp of the occupied cab is a point light instead of an addition to the ambient light
+    float gfx_lights_freespot_intensity { 10.f }; // brightness of a light point of a model
+    float gfx_lights_compartment_intensity { 1.f }; // brightness of the light of a lit vehicle compartment
+    float gfx_lights_cab_intensity { 1.5f }; // brightness of the cab lamp
+    float gfx_lights_cab_bounce { 0.3f }; // share of the former ambient light of the cab lamp kept, for the light which bounces around the cab
+    float gfx_lights_range { 300.f }; // distance from the camera the lights of models and vehicles are taken from, metres
+    // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
+    // occupied cab, its shadows cast by the cab
+    int gfx_lights_shadows { 2 };
+    // shadows of the lamps of scenery models (cube maps of the scenery around them, kept; vehicles added as they pass), with
+    // gfx_lights_shadows above 0: how many lamps at once, the size of a face of their maps, the distance from the camera within
+    // which lamps get shadows and within which vehicles (and the cab) cast them
+    int gfx_lights_shadows_lamps { 8 };
+    int gfx_lights_shadows_lamps_size { 512 };
+    float gfx_lights_shadows_lamps_range { 100.f };
+    float gfx_lights_shadows_vehicles_range { 50.f };
+    // shadows of the headlights of vehicles (a map drawn with the projector of the beam), with gfx_lights_shadows above 0: for how
+    // many sets of headlights at once (the most important ones, 0-4), and the distance ahead of the vehicle within which things
+    // cast them, metres
+    int gfx_lights_shadows_headlights { 2 };
+    float gfx_lights_shadows_headlights_range { 250.f };
+    // (opengl 4.6) contact shadows: short rays through the depth of the scene drawn before its colour (which they turn on, see
+    // gfx_depthprepass_scene) towards the sun and the nearest lamps. 0 none, 1 low (the sun), 2 medium (and 2 lamps), 3 high
+    // (and 4 lamps, more steps); the length of the rays and the distance from the camera within which they are traced, metres
+    int gfx_contactshadows { 0 };
+    float gfx_contactshadows_length { 0.5f };
+    float gfx_contactshadows_range { 50.f };
+    // weather of the opengl 4.6 renderer (debug window "Weather"); the weather itself comes from the scenery, see
+    // environment/weather.h. fog: 1 volumetric (a volume over the view with the shafts of the sun, the shadows of the clouds and
+    // the light of lamps and headlights, worked out along the ray past it), 0 analytic (the same fog along the ray only, the way
+    // the old one was drawn); the quality of the volume 1-4 (low, medium, high, ultra), its depth (metres), the brightness of the
+    // lamps in it (0: none), whether the sun and the headlights cast their shadows into it, blending over frames and the share of
+    // a new frame in the blend (lower: smoother, but the light of moving lamps lags more behind them)
+    int gfx_fog { 1 };
+    int gfx_fog_quality { 2 };
+    float gfx_fog_range { 1500.f };
+    float gfx_fog_lights { 1.f };
+    bool gfx_fog_shadows { true };
+    bool gfx_fog_temporal { true };
+    float gfx_fog_temporal_share { 0.2f };
+    // volumetric clouds, 0 none, 1-4 the quality (low, medium, high, ultra); the farthest they are drawn (metres); the shadows
+    // they cast (a map around the camera: its size in texels and in metres)
+    int gfx_clouds { 2 };
+    float gfx_clouds_distance { 40000.f };
+    bool gfx_clouds_shadows { true };
+    int gfx_clouds_shadows_size { 512 };
+    float gfx_clouds_shadows_range { 16000.f };
+    // stars from the catalogue, and their brightness
+    bool gfx_stars { true };
+    float gfx_stars_brightness { 1.f };
+    // brightness of the sun disc against the radiance its sunlight gives it (1: physical, held within the range of the image),
+    // and of the moon disc
+    float gfx_sun_disc { 1.f };
+    float gfx_moon_disc { 1.f };
+    // how much the moon lights the scenery at night (its direct light, the night light that comes with it and the moonlit sky)
+    float gfx_moonlight { 1.f };
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;
@@ -313,7 +483,6 @@ struct global_settings {
 
 	std::string exec_on_exit;
     std::string prepend_scn;
-	bool gfx_postfx_ssao_enabled {false};
 
 	struct extraviewport_config {
 		std::string monitor;
@@ -378,6 +547,8 @@ struct global_settings {
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
+	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*, gfx.postfx.ao*)
+	bool ConfigParse_gfx_sky( cParser &parser, std::string_view const Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;

@@ -67,7 +67,6 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DWITH_BETTER_RENDERER=OFF \
             -DWITH_ZMQ=OFF -DWITH_OPENVR=OFF -DUSE_LTO=OFF \
             -DCMAKE_CXX_FLAGS="-Wno-attributes -fno-inline-functions-called-once" \
             -DPython3_EXECUTABLE="$(which python3)"

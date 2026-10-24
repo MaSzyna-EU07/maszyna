@@ -1,0 +1,127 @@
+// what the cpu needs from the atmosphere, worked out from the sky-view table in one work group: the light arriving at the
+// observer from every direction as spherical harmonics (the ground below the horizon lit by the sun and the sky), the
+// transmittance towards the sun, and the average light of the sky above the horizon and over the whole sky.
+// run after the sky-view table; the result is read back by the cpu a few frames later
+
+#include <common>
+#include <atmosphere_common.glsl>
+
+layout(binding = ATMOSPHERE_TRANSMITTANCE_UNIT) uniform sampler2D atmo_transmittance_lut;
+layout(binding = ATMOSPHERE_SKYVIEW_UNIT) uniform sampler2D atmo_skyview_lut;
+
+layout(local_size_x = ATMOSPHERE_AMBIENT_GROUP_SIZE) in;
+
+layout(std430, binding = ATMOSPHERE_RESULT_SSBO_BINDING) writeonly buffer atmosphere_result_ssbo
+{
+	vec4 result_radiance_sh[9];
+	vec4 result_sun_transmittance;
+	vec4 result_horizon;
+	vec4 result_average;
+	vec4 result_zenith_transmittance;
+};
+
+// directions of the upper hemisphere each invocation takes
+const uint DIRECTIONS_PER_INVOCATION = 4U;
+const uint DIRECTIONS = ATMOSPHERE_AMBIENT_GROUP_SIZE * DIRECTIONS_PER_INVOCATION;
+// the sky up to this sine of the elevation is the horizon (about 6 degrees)
+const float HORIZON_BAND = 0.1;
+
+// partial sums: the 9 coefficients, the light on an upward facing surface, the horizon and its weight, the sky average
+const int SUMS = 12;
+shared vec4 shared_sums[ATMOSPHERE_AMBIENT_GROUP_SIZE];
+
+void sh_basis(vec3 n, out float basis[9])
+{
+	basis[0] = 0.282095;
+	basis[1] = 0.488603 * n.y;
+	basis[2] = 0.488603 * n.z;
+	basis[3] = 0.488603 * n.x;
+	basis[4] = 1.092548 * n.x * n.y;
+	basis[5] = 1.092548 * n.y * n.z;
+	basis[6] = 0.315392 * (3.0 * n.z * n.z - 1.0);
+	basis[7] = 1.092548 * n.x * n.z;
+	basis[8] = 0.546274 * (n.x * n.x - n.y * n.y);
+}
+
+// sum of the value of every invocation, valid in invocation 0
+vec4 reduce(vec4 value)
+{
+	uint index = gl_LocalInvocationID.x;
+	barrier();
+	shared_sums[index] = value;
+	barrier();
+	for (uint stride = ATMOSPHERE_AMBIENT_GROUP_SIZE / 2U; stride > 0U; stride >>= 1)
+	{
+		if (index < stride)
+			shared_sums[index] += shared_sums[index + stride];
+		barrier();
+	}
+	return shared_sums[0];
+}
+
+void main()
+{
+	uint index = gl_LocalInvocationID.x;
+	vec3 sundirection = normalize(atmo_sun_direction.xyz);
+
+	vec3 sums[SUMS];
+	for (int i = 0; i < SUMS; ++i)
+		sums[i] = vec3(0.0);
+
+	// even spread over the upper hemisphere: a fibonacci spiral in the sine of the elevation
+	const float goldenangle = 2.39996323;
+	const float solidangle = 2.0 * ATMO_PI / float(DIRECTIONS);
+	for (uint k = 0U; k < DIRECTIONS_PER_INVOCATION; ++k)
+	{
+		uint i = index * DIRECTIONS_PER_INVOCATION + k;
+		float y = (float(i) + 0.5) / float(DIRECTIONS);
+		float r = sqrt(max(1.0 - y * y, 0.0));
+		float azimuth = goldenangle * float(i);
+		vec3 direction = vec3(r * cos(azimuth), y, r * sin(azimuth));
+
+		vec3 radiance = textureLod(atmo_skyview_lut, atmo_skyview_uv_world(direction, sundirection), 0.0).rgb;
+		float basis[9];
+		sh_basis(direction, basis);
+		for (int c = 0; c < 9; ++c)
+			sums[c] += radiance * (basis[c] * solidangle);
+		sums[9] += radiance * (y * solidangle);
+		if (y < HORIZON_BAND)
+		{
+			sums[10] += radiance;
+			sums[11] += vec3(1.0);
+		}
+	}
+
+	vec3 total[SUMS];
+	for (int i = 0; i < SUMS; ++i)
+		total[i] = reduce(vec4(sums[i], 0.0)).rgb;
+
+	if (index != 0U)
+		return;
+
+	// the transmittance towards the sun, zero once the planet is in the way
+	float radius = atmo_observer_radius;
+	vec3 origin = vec3(0.0, radius, 0.0);
+	vec3 suntransmittance = texture(atmo_transmittance_lut, atmo_transmittance_uv(radius, sundirection.y)).rgb;
+	if (atmo_ray_sphere_nearest(origin, sundirection, atmo_bottom_radius) >= 0.0)
+		suntransmittance = vec3(0.0);
+
+	// the ground, a lambertian surface lit by the sun and the sky, fills the lower hemisphere with uniform light. its
+	// spherical harmonics have only the constant term and the vertical one: for a uniform radiance L over the lower
+	// hemisphere, 0.282095 * 2 pi * L and 0.488603 * (-pi) * L
+	// the band 0 coefficient of the sky alone over the solid angle of the hemisphere
+	vec3 skyaverage = total[0] / (0.282095 * 2.0 * ATMO_PI);
+	vec3 irradiance = suntransmittance * max(sundirection.y, 0.0) + total[9];
+	vec3 groundradiance = atmo_ground.rgb / ATMO_PI * irradiance;
+
+	total[0] += groundradiance * (0.282095 * 2.0 * ATMO_PI);
+	total[1] += groundradiance * (0.488603 * -ATMO_PI);
+	for (int c = 0; c < 9; ++c)
+		result_radiance_sh[c] = vec4(total[c], 0.0);
+
+	result_sun_transmittance = vec4(suntransmittance, 0.0);
+	result_horizon = vec4(total[10] / max(total[11].x, 1.0), 0.0);
+	result_average = vec4(skyaverage, 0.0);
+	// what the sun high in the sky looks like at the observer, for the white balance
+	result_zenith_transmittance = vec4(texture(atmo_transmittance_lut, atmo_transmittance_uv(radius, 1.0)).rgb, 0.0);
+}

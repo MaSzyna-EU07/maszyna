@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
 #include "utilities/Timer.h"
+#include "utilities/memorystats.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include <chrono>
@@ -80,6 +81,8 @@ void focus_callback(GLFWwindow *window, int focus)
 
 void cursor_enter_callback(GLFWwindow *window, int entered)
 {
+	if (scripted_input::driving())
+		return;
 	ui_layer::cursor_enter_callback(entered);
 }
 
@@ -96,6 +99,8 @@ void window_resize_callback(GLFWwindow *, int w, int h)
 
 void cursor_pos_callback(GLFWwindow *window, double x, double y)
 {
+	if (scripted_input::driving())
+		return;
 	ui_layer::cursor_pos_callback(x, y);
 	Global.cursor_pos = glm::ivec2(x, y);
 	Application.on_cursor_pos(x, y);
@@ -103,22 +108,30 @@ void cursor_pos_callback(GLFWwindow *window, double x, double y)
 
 void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_mouse_button(button, action, mods);
 }
 
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_scroll(xoffset, yoffset);
 }
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
+	if (scripted_input::driving())
+		return;
 
 	Application.on_key(key, scancode, action, mods);
 }
 
 void char_callback(GLFWwindow *window, unsigned int c)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_char(c);
 }
 
@@ -270,7 +283,11 @@ void eu07_application::DiscordRPCService()
 		}
 
 		if (currentMode != mode::driver)
+		{
+			// the editor and the other modes: nothing to tell, without spinning a core on it
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			continue;
+		}
 
 		// Discord RPC updater
 		if (simulation::is_ready)
@@ -357,10 +374,6 @@ int eu07_application::init(int Argc, char *Argv[])
 		WriteLog(settingspipe.str());
 	}
 
-	// cruel way to prevent crashes because of threaded upload from python
-	if (Global.NvRenderer)
-		Global.python_threadedupload = false;
-
 	WriteLog("// startup");
 
 	if ((result = init_glfw()) != 0)
@@ -368,7 +381,7 @@ int eu07_application::init(int Argc, char *Argv[])
 		ErrorLog("Failed to initialize glfw!");
 		return result;
 	}
-	if (needs_ogl() && (result = init_ogl()) != 0)
+	if ((result = init_ogl()) != 0)
 	{
 		ErrorLog("Failed to initialize ogl!");
 		return result;
@@ -479,12 +492,16 @@ int eu07_application::run()
 	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
 	{
 		Timer::subsystem.mainloop_total.start();
+		Timer::subsystem.loop_input.start();
 		glfwPollEvents();
 
 		if (m_headtrack)
 			m_headtrack->update();
+		Timer::subsystem.loop_input.stop();
 
+		Timer::subsystem.loop_ui_frame.start();
 		begin_ui_frame();
+		Timer::subsystem.loop_ui_frame.stop();
 
 		// -------------------------------------------------------------------
 		// multiplayer command relaying logic can seem a bit complex
@@ -612,10 +629,14 @@ int eu07_application::run()
 
 		// keep streamed terrain loaded around the active camera in every mode (editor + driver),
 		// once the simulation is live (avoid streaming while the scenery is still loading)
+		Timer::subsystem.loop_terrain.start();
 		if (simulation::is_ready && EditorTerrain.active())
 			EditorTerrain.update(Global.pCamera.Pos);
+		Timer::subsystem.loop_terrain.stop();
 
+		Timer::subsystem.loop_tasks.start();
 		m_taskqueue.update();
+		Timer::subsystem.loop_tasks.stop();
 		opengl_texture::reset_unit_cache();
 
 		if (!GfxRenderer->Render())
@@ -986,11 +1007,6 @@ std::string eu07_application::describe_monitor(GLFWmonitor *monitor) const
 
 // private:
 
-bool eu07_application::needs_ogl() const
-{
-	return !Global.NvRenderer;
-}
-
 void eu07_application::init_debug()
 {
 
@@ -1132,6 +1148,10 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	{
 		Global.LoadIniFile("eu07.ini");
 	}
+	if (Global.debug_memorystats)
+	{
+		start_heap_counting();
+	}
 
 	// process command line arguments
 	bool sceneryfromcommandline{false};
@@ -1202,35 +1222,35 @@ int eu07_application::init_locale()
 	return 0;
 }
 
+// the context of the required version couldn't be created. a context with default settings tells which version the
+// driver does provide, so the user can be told what is missing
+static std::string describe_gl_driver()
+{
+	glfwDefaultWindowHints();
+	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+	auto *probe = glfwCreateWindow(64, 64, "eu07 opengl probe", nullptr, nullptr);
+	if (probe == nullptr)
+		return "no OpenGL context";
+
+	glfwMakeContextCurrent(probe);
+	std::string description;
+	auto const getstring = reinterpret_cast<PFNGLGETSTRINGPROC>(glfwGetProcAddress("glGetString"));
+	if (getstring != nullptr)
+	{
+		auto const text = [&](GLenum const Name) {
+			auto const *value = reinterpret_cast<char const *>(getstring(Name));
+			return std::string(value != nullptr ? value : "?");
+		};
+		description = "OpenGL " + text(GL_VERSION) + ", " + text(GL_RENDERER) + " (" + text(GL_VENDOR) + ")";
+	}
+	glfwMakeContextCurrent(nullptr);
+	glfwDestroyWindow(probe);
+
+	return description.empty() ? "unknown OpenGL version" : description;
+}
+
 int eu07_application::init_glfw()
 {
-	{
-		int glfw_major, glfw_minor, glfw_rev;
-		glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);
-		m_glfwversion = glfw_major * 10000 + glfw_minor * 100 + glfw_minor;
-	}
-
-#ifdef GLFW_ANGLE_PLATFORM_TYPE
-	if (m_glfwversion >= 30400)
-	{
-		int platform = GLFW_ANGLE_PLATFORM_TYPE_NONE;
-		if (Global.gfx_angleplatform == "opengl")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_OPENGL;
-		else if (Global.gfx_angleplatform == "opengles")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_OPENGLES;
-		else if (Global.gfx_angleplatform == "d3d9")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_D3D9;
-		else if (Global.gfx_angleplatform == "d3d11")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_D3D11;
-		else if (Global.gfx_angleplatform == "vulkan")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_VULKAN;
-		else if (Global.gfx_angleplatform == "metal")
-			platform = GLFW_ANGLE_PLATFORM_TYPE_METAL;
-
-		glfwInitHint(GLFW_ANGLE_PLATFORM_TYPE, platform);
-	}
-#endif
-
 	if (glfwInit() == GLFW_FALSE)
 	{
 		ErrorLog("Bad init: failed to initialize glfw");
@@ -1253,57 +1273,22 @@ int eu07_application::init_glfw()
 		monitor = glfwGetPrimaryMonitor();
 
 	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
-	if ((Global.gfx_skippipeline || Global.LegacyRenderer) && Global.iMultisampling > 0)
+	if (Global.gfx_skippipeline && Global.iMultisampling > 0)
 	{
 		glfwWindowHint(GLFW_SAMPLES, 1 << Global.iMultisampling);
 	}
 
 	crashreport_add_info("gfxrenderer", Global.GfxRenderer);
 
-	if (!needs_ogl())
-	{
-		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	}
-	else
-	{
-		if (!Global.LegacyRenderer)
-		{
-			Global.bUseVBO = true;
-			// activate core profile for opengl 3.3 renderer
-			if (!Global.gfx_usegles)
-			{
-				glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-				glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-				glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-				glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-			}
-			else
-			{
-#ifdef GLFW_CONTEXT_CREATION_API
-				if (m_glfwversion >= 30200)
-					glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-#endif
-				glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-				glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-				glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-			}
-		}
-		else
-		{
-			if (Global.gfx_usegles)
-			{
-				ErrorLog("legacy renderer not supported in gles mode");
-				return -1;
-			}
-			Global.gfx_shadergamma = false;
-			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
-		}
+	// activate core profile for opengl 4.6 renderer
+	// NOTE: the hints stay in effect for the additional windows and shared contexts created later through window()
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 
-		if (Global.gfx_gldebug)
-			glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
-	}
+	if (Global.gfx_gldebug)
+		glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 
 	glfwWindowHint(GLFW_SRGB_CAPABLE, !Global.gfx_shadergamma);
 
@@ -1319,6 +1304,18 @@ int eu07_application::init_glfw()
 
 	if (mainwindow == nullptr)
 	{
+		char const *glfwerror = nullptr;
+		glfwGetError(&glfwerror);
+		std::string const reason = (glfwerror != nullptr ? glfwerror : "unknown error");
+		auto const driver = describe_gl_driver();
+		ErrorLog("Bad init: failed to create OpenGL 4.6 core profile context (" + reason + "); the graphics card/driver provides: " + driver);
+#ifdef _WIN32
+		auto const message = "MaSzyna requires OpenGL 4.6 (core profile), but the OpenGL 4.6 context could not be created.\n\n"
+		                     "Your graphics card/driver provides:\n" + driver + "\n\n"
+		                     "Details: " + reason + "\n\n"
+		                     "Update the graphics driver or use a graphics card with OpenGL 4.6 support.";
+		MessageBoxA(nullptr, message.c_str(), "MaSzyna", MB_ICONERROR | MB_OK);
+#endif
 		ErrorLog("Bad init: failed to create glfw window");
 		return -1;
 	}
@@ -1364,21 +1361,10 @@ void eu07_application::init_callbacks()
 
 int eu07_application::init_ogl()
 {
-	if (!Global.gfx_usegles)
+	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
-		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-		{
-			ErrorLog("Bad init: failed to initialize glad");
-			return -1;
-		}
-	}
-	else
-	{
-		if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress))
-		{
-			ErrorLog("Bad init: failed to initialize glad");
-			return -1;
-		}
+		ErrorLog("Bad init: failed to initialize glad");
+		return -1;
 	}
 
 	return 0;
@@ -1397,21 +1383,8 @@ int eu07_application::init_ui()
 int eu07_application::init_gfx()
 {
 
-	if (Global.GfxRenderer == "default")
-	{
-		// default render path
-		GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
-	}
-	else if (Global.GfxRenderer == "experimental")
-	{
-		GfxRenderer = gfx_renderer_factory::get_instance()->create(Global.GfxRenderer);
-	}
-	else
-	{
-		// legacy render path
-		GfxRenderer = gfx_renderer_factory::get_instance()->create("legacy");
-		Global.DisabledLogTypes |= static_cast<unsigned int>(logtype::material);
-	}
+	// NOTE: global_settings maps unsupported gfxrenderer values (e.g. the removed "legacy") to "default"
+	GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
 
 	if (!GfxRenderer)
 	{

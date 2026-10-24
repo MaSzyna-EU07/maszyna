@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "Oerlikon_ESt.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/Timer.h"
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
 //---------------------------------------------------------------------------
@@ -1346,6 +1347,8 @@ void TMoverParameters::Derail(DerailReason const Reason)
 			ErrorLog("Bad dynamic: " + Name + " derailed due to wrong track type"); // błąd w scenerii
 		else if (Reason == COLLISION)
 			WriteLog("Bad driving: " + Name + " derailed"); // This reason also generates its own message in `TMoverParameters::CollisionDetect()`
+		else if (Reason == TRAILED_SWITCH)
+			ErrorLog("Bad driving: " + Name + " derailed trailing through a switch with a movable nose set the other way");
 	}
 }
 
@@ -3606,6 +3609,7 @@ void TMoverParameters::MainSwitch_(bool const State)
 		if (Mains != initialstate)
 		{
 			LastSwitchingTime = 0;
+			Timer::subsystem.switching.note(Timer::switching_counter::mains, this, &TypeName, &Name);
 		}
 	}
 }
@@ -4361,6 +4365,10 @@ void TMoverParameters::CompressorCheck(double dt)
 		// jeśli została załączona to trzeba ograniczyć ponowne włączenie
 		LastSwitchingTime = 0;
 	}
+	if (CompressorFlag != compressorflag)
+	{
+		Timer::subsystem.switching.note(CompressorFlag ? Timer::switching_counter::compressor_on : Timer::switching_counter::compressor_off, this, &TypeName, &Name);
+	}
 
 	if (false == CompressorFlag)
 	{
@@ -4712,6 +4720,20 @@ void TMoverParameters::UpdatePipePressure(double dt)
 // Q: 20160713
 // Aktualizacja ciśnienia w przewodzie zasilającym
 // *************************************************************************************************
+namespace
+{
+// whether the air flowing to a coupled vehicle along a pipe wakes its physics: any flow did, but a vehicle standing next to one
+// whose physics is on gets a trickle of it all the time, as their pressures settle, and each wake kept it on for 5 s. with
+// Global.physics_pipewake only a flow which brings its pressure, with what has flown in while it slept, that much away from the
+// pressure of the vehicle the air comes from
+bool pipe_wakes(double const Flow, double const Pressure, TReservoir const &Pipe)
+{
+	if (Flow * Flow <= 0.00000000000001)
+		return false;
+	return (Global.physics_pipewake <= 0.f) || (std::abs(Pressure - Pipe.P_pending()) > Global.physics_pipewake);
+}
+} // namespace
+
 void TMoverParameters::UpdateScndPipePressure(double dt)
 {
 	if (ScndPipePress > 1.0)
@@ -4736,18 +4758,18 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 	{
 		c = Couplers[0].Connected; // skrot
 		dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true);
 		c->Pipe2->Flow(-dv1);
+		if (pipe_wakes(dv1, ScndPipePress, *c->Pipe2))
+			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
-		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true);
 		c->Pipe2->Flow(-dv2);
+		if (pipe_wakes(dv2, ScndPipePress, *c->Pipe2))
+			c->switch_physics(true, wake_cause::scndpipe);
 	}
 	if (Couplers[1].Connected != nullptr && Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic) && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
@@ -4824,18 +4846,18 @@ double TMoverParameters::GetDVc(double dt)
 	{ //*0.85
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
 		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
-		if (dv1 * dv1 > 0.00000000000001)
-			c->switch_physics(true);
 		c->Pipe->Flow(-dv1);
+		if (pipe_wakes(dv1, PipePress, *c->Pipe))
+			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// sprzeg 2
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
 		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
-		if (dv2 * dv2 > 0.00000000000001)
-			c->switch_physics(true);
 		c->Pipe->Flow(-dv2);
+		if (pipe_wakes(dv2, PipePress, *c->Pipe))
+			c->switch_physics(true, wake_cause::mainpipe);
 	}
 	// if ((Couplers[1].Connected != NULL) && (Couplers[0].Connected != NULL))
 	//     if ((TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic)) &&
@@ -4956,17 +4978,20 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	// McZapkie-031103: sprawdzanie czy warto liczyc fizyke i inne updaty
 	// ABu 300105: cos tu mieszalem , dziala teraz troche lepiej, wiec zostawiam
 	{
-		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || std::abs(AccS) > 0.0001 || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
+		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
 
 		auto const movingvehicleahead{Neighbours[end::front].vehicle != nullptr &&
-		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || std::abs(Neighbours[end::front].vehicle->MoverParameters->AccS) > 0.0001)};
+		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::front].vehicle->MoverParameters->accelerating())};
 
 		auto const movingvehiclebehind{Neighbours[end::rear].vehicle != nullptr &&
-		                               (Neighbours[end::rear].vehicle->MoverParameters->Vel > 0.0001 || std::abs(Neighbours[end::rear].vehicle->MoverParameters->AccS) > 0.0001)};
+		                               (Neighbours[end::rear].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::rear].vehicle->MoverParameters->accelerating())};
 
 		auto const calculatephysics{vehicleisactive || movingvehicleahead || movingvehiclebehind};
 
-		switch_physics(calculatephysics);
+		switch_physics(calculatephysics, Vel > 0.0001                     ? wake_cause::speed :
+		                                 accelerating()                   ? wake_cause::acceleration :
+		                                 vehicleisactive                  ? wake_cause::rest :
+		                                                                    wake_cause::neighbour);
 	}
 
 	if (false == PhysicActivation)
@@ -7802,6 +7827,7 @@ bool TMoverParameters::dizel_Update(double dt)
 		dizel_ignition = false;
 		// TODO: split engine and main circuit state indicator in two separate flags
 		LastSwitchingTime = 0;
+		Timer::subsystem.switching.note(Timer::switching_counter::diesel, this, &TypeName, &Name);
 		Mains = true;
 		dizel_spinup = true;
 		enrot = std::max(enrot,
@@ -8917,9 +8943,22 @@ double TMoverParameters::GetTrainsetHighVoltage() const
 }
 
 // *************************************************************************************************
+// whether the vehicle accelerates, for the test which turns the physics off in vehicles standing still
+// *************************************************************************************************
+bool TMoverParameters::accelerating() const
+{
+	if (std::abs(AccS) <= 0.0001)
+		return false;
+	// standing still and held by the brakes and the resistance, against the slope and the couplers: the test ComputeMovement()
+	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by
+	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain)};
+	return false == held;
+}
+
+// *************************************************************************************************
 // Kasowanie zmiennych pracy fizyki
 // *************************************************************************************************
-bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA KONCU
+bool TMoverParameters::switch_physics(bool const State, wake_cause const Cause) // DO PRZETLUMACZENIA NA KONCU
 {
 	if (PhysicActivation == State)
 	{
@@ -8930,6 +8969,7 @@ bool TMoverParameters::switch_physics(bool const State) // DO PRZETLUMACZENIA NA
 	if (true == State)
 	{
 		LastSwitchingTime = 0;
+		Timer::subsystem.switching.note(static_cast<Timer::switching_counter::source>(Timer::switching_counter::wake + static_cast<std::size_t>(Cause)), this, &TypeName, &Name);
 	}
 
 	return true;
@@ -12697,7 +12737,7 @@ bool TMoverParameters::RunInternalCommand()
 			CommandIn.Location.X = 0;
 			CommandIn.Location.Y = 0;
 			CommandIn.Location.Z = 0;
-			switch_physics(true);
+			switch_physics(true, wake_cause::command);
 		}
 	}
 	else

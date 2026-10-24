@@ -9,4 +9,7 @@ void main()
 {
 	gl_Position = (projection * effective_modelview()) * vec4(v_vert, 1.0f);
 	f_coord = v_coord;
+#ifdef MODEL_DRAWS
+	f_model_draw = uint(gl_DrawID);
+#endif
 }

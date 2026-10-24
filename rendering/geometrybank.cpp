@@ -309,6 +309,27 @@ geometry_bank::replace( gfx::vertex_array &Vertices, userdata_array &Userdata, g
     return true;
 }
 
+// replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts
+bool
+geometry_bank::replace( gfx::index_array &Indices, gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return false; }
+
+    auto &chunk = gfx::geometry_bank::chunk( Geometry );
+    // the place of the chunk in the buffers of the bank is kept, so the sizes have to stay
+    if( ( Indices.size() != chunk.indices.size() )
+     || ( Vertices.size() != chunk.vertices.size() )
+     || ( Userdata.size() != chunk.userdata.size() ) ) {
+        return false;
+    }
+    chunk.indices.swap( Indices );
+    chunk.vertices.swap( Vertices );
+    chunk.userdata.swap( Userdata );
+    // template method implementation; the chunk is uploaded whole the next time it's drawn
+    replace_( Geometry );
+    return true;
+}
+
 // adds supplied vertex data at the end of specified chunk
 bool
 geometry_bank::append( gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
@@ -327,9 +348,9 @@ geometry_bank::draw( gfx::geometry_handle const &Geometry, gfx::stream_units con
 
 // draws geometry stored in specified chunk InstanceCount times via instanced draw call
 std::size_t
-geometry_bank::draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) {
+geometry_bank::draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams ) {
     if( InstanceCount == 0 ) { return 0; }
-    return draw_instanced_( Geometry, Units, InstanceCount, Streams );
+    return draw_instanced_( Geometry, Units, InstanceCount, BaseInstance, Streams );
 }
 
 // draws geometry stored in supplied sequence of chunks of the bank
@@ -337,6 +358,34 @@ std::size_t
 geometry_bank::draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams ) {
     // template method implementation
     return draw_batch_( First, Last, Units, Streams );
+}
+
+// makes the data of specified chunk ready for drawing and tells where it lies
+bool
+geometry_bank::indirect_source( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source ) {
+    // template method implementation
+    return indirect_source_( Geometry, Source );
+}
+
+// draws geometry stored in specified chunk with the command at Offset in the bound draw indirect buffer
+void
+geometry_bank::draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams ) {
+    // template method implementation
+    draw_indirect_( Geometry, Offset, Streams );
+}
+
+// draws chunks of the bank with Count commands from Offset in the bound draw indirect buffer, in one call
+bool
+geometry_bank::draw_indirect_multi( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) {
+    // template method implementation
+    return draw_indirect_multi_( Geometry, Offset, Count, Stride );
+}
+
+// the buffers the bank keeps its geometry in, when they're shared with other banks, 0 otherwise
+std::uint32_t
+geometry_bank::draw_group() const {
+    // template method implementation
+    return draw_group_();
 }
 
 // frees subclass-specific resources associated with the bank, typically called when the bank wasn't in use for a period of time
@@ -360,6 +409,14 @@ geometry_bank::vertices( gfx::geometry_handle const &Geometry ) const {
     return geometry_bank::chunk( Geometry ).vertices;
 }
 
+// primitive type of specified chunk, 0 if there's no such chunk
+unsigned int
+geometry_bank::type( gfx::geometry_handle const &Geometry ) const {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return 0; }
+    return geometry_bank::chunk( Geometry ).type;
+}
+
 // provides direct access to vertex user data of specfied chunk
 userdata_array const &
 geometry_bank::userdata( gfx::geometry_handle const &Geometry ) const {
@@ -370,6 +427,32 @@ geometry_bank::userdata( gfx::geometry_handle const &Geometry ) const {
 // geometry bank manager, holds collection of geometry banks
 
 // performs a resource sweep
+// what the chunks keep in the process, added to the counts
+void
+geometry_bank::count_memory( memory_count &Vertices, memory_count &Indices, memory_count &Userdata ) const {
+
+    for( auto const &chunk : m_chunks ) {
+        ++Vertices.count;
+        Vertices.bytes += memory_of( chunk.vertices );
+        Indices.bytes += memory_of( chunk.indices );
+        Userdata.bytes += memory_of( chunk.userdata );
+    }
+    Indices.count = Userdata.count = Vertices.count;
+}
+
+// what the banks keep in the process, for the debug panel
+auto
+geometrybank_manager::memory() const -> memory_data {
+
+    memory_data result;
+    for( auto const &bank : m_geometrybanks ) {
+        if( bank.first == nullptr ) { continue; }
+        ++result.banks;
+        bank.first->count_memory( result.vertices, result.indices, result.userdata );
+    }
+    return result;
+}
+
 void
 geometrybank_manager::update() {
 
@@ -412,6 +495,13 @@ geometrybank_manager::replace( gfx::vertex_array &Vertices, userdata_array &User
     return bank( Geometry ).first->replace( Vertices, Userdata, Geometry, Offset );
 }
 
+// replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts
+bool
+geometrybank_manager::replace( gfx::index_array &Indices, gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
+
+    return bank( Geometry ).first->replace( Indices, Vertices, Userdata, Geometry );
+}
+
 // adds supplied vertex data at the end of specified chunk
 bool
 geometrybank_manager::append( gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
@@ -432,7 +522,7 @@ geometrybank_manager::draw( gfx::geometry_handle const &Geometry, unsigned int c
 
 // draws geometry stored in specified chunk InstanceCount times via instanced draw call
 void
-geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, unsigned int const Streams ) {
+geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, std::uint32_t const BaseInstance, unsigned int const Streams ) {
 
     if( Geometry == null_handle ) { return; }
     if( InstanceCount == 0 ) { return; }
@@ -440,7 +530,7 @@ geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std:
     auto &bankrecord = bank( Geometry );
 
     bankrecord.second = m_garbagecollector.timestamp();
-    m_primitivecount += bankrecord.first->draw_instanced( Geometry, m_units, InstanceCount, Streams );
+    m_primitivecount += bankrecord.first->draw_instanced( Geometry, m_units, InstanceCount, BaseInstance, Streams );
 }
 
 // draws geometry stored in supplied sequence of chunks
@@ -469,6 +559,53 @@ geometrybank_manager::draw_batch( gfx::geometry_handle const *First, gfx::geomet
     }
 }
 
+// makes the data of specified chunk ready for an indirect draw and tells where it lies
+bool
+geometrybank_manager::indirect_source( gfx::geometry_handle const &Geometry, gfx::indirect_source &Source ) {
+
+    if( Geometry == null_handle ) { return false; }
+
+    auto &bankrecord = bank( Geometry );
+
+    bankrecord.second = m_garbagecollector.timestamp();
+    return bankrecord.first->indirect_source( Geometry, Source );
+}
+
+// draws geometry stored in specified chunk with the command at Offset in the bound draw indirect buffer
+void
+geometrybank_manager::draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams ) {
+
+    if( Geometry == null_handle ) { return; }
+
+    auto &bankrecord = bank( Geometry );
+
+    bankrecord.second = m_garbagecollector.timestamp();
+    bankrecord.first->draw_indirect( Geometry, Offset, Streams );
+}
+
+// draws chunks of the bank of the specified one with Count commands from Offset in the bound draw indirect buffer, in one call
+bool
+geometrybank_manager::draw_indirect_multi( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, std::uint32_t const Count, std::uint32_t const Stride ) {
+
+    if( Geometry == null_handle ) { return false; }
+
+    auto &bankrecord = bank( Geometry );
+
+    bankrecord.second = m_garbagecollector.timestamp();
+    return bankrecord.first->draw_indirect_multi( Geometry, Offset, Count, Stride );
+}
+
+// what the chunks of a multi draw have to share: the shared buffers of the bank of the chunk, or the bank itself. the groups of
+// shared buffers have the highest bit set, apart from the numbers of the banks
+std::uint32_t
+geometrybank_manager::draw_group( gfx::geometry_handle const &Geometry ) const {
+
+    if( Geometry == null_handle ) { return 0; }
+
+    auto const group { bank( Geometry ).first->draw_group() };
+    return ( group != 0 ? ( group | 0x80000000u ) : Geometry.bank );
+}
+
 // provides direct access to index data of specfied chunk
 gfx::index_array const &
 geometrybank_manager::indices( gfx::geometry_handle const &Geometry ) const {
@@ -481,6 +618,14 @@ gfx::vertex_array const &
 geometrybank_manager::vertices( gfx::geometry_handle const &Geometry ) const {
 
     return bank( Geometry ).first->vertices( Geometry );
+}
+
+// primitive type of specified chunk, 0 if there's no such chunk
+unsigned int
+geometrybank_manager::type( gfx::geometry_handle const &Geometry ) const {
+
+    if( false == valid( Geometry ) ) { return 0; }
+    return bank( Geometry ).first->type( Geometry );
 }
 
 // provides direct access to vertex user data of specfied chunk

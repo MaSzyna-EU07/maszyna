@@ -14,7 +14,79 @@ void gl::glsl_common_setup()
     "#define MAX_LIGHTS " + std::to_string(MAX_LIGHTS) + "U\n" +
     "#define MAX_CASCADES " + std::to_string(MAX_CASCADES) + "U\n" +
     "#define MAX_PARAMS " + std::to_string(MAX_PARAMS) + "U\n" +
-    "#define MAX_INSTANCES_PER_BATCH " + std::to_string(MAX_INSTANCES_PER_BATCH) + "U\n" +
+    "#define INSTANCE_SSBO_BINDING " + std::to_string(INSTANCE_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_RECORD_SSBO_BINDING " + std::to_string(INSTANCE_RECORD_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_JOB_SSBO_BINDING " + std::to_string(INSTANCE_JOB_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_GROUP_SSBO_BINDING " + std::to_string(INSTANCE_GROUP_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_LOD_SSBO_BINDING " + std::to_string(INSTANCE_LOD_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_COUNTER_SSBO_BINDING " + std::to_string(INSTANCE_COUNTER_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_OUTPUT_SSBO_BINDING " + std::to_string(INSTANCE_OUTPUT_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_COMMAND_SSBO_BINDING " + std::to_string(INSTANCE_COMMAND_SSBO_BINDING) + "\n" +
+    "#define MODEL_DRAW_SSBO_BINDING " + std::to_string(MODEL_DRAW_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_CULL_GROUP_SIZE " + std::to_string(INSTANCE_CULL_GROUP_SIZE) + "\n" +
+    "#define INSTANCE_OFFSETS_GROUP_SIZE " + std::to_string(INSTANCE_OFFSETS_GROUP_SIZE) + "\n" +
+    "#define INSTANCE_COMMAND_GROUP_SIZE " + std::to_string(INSTANCE_COMMAND_GROUP_SIZE) + "\n" +
+    "#define HIZ_GROUP_SIZE " + std::to_string(HIZ_GROUP_SIZE) + "\n" +
+    "#define SHADOW_FIT_GROUP_SIZE " + std::to_string(SHADOW_FIT_GROUP_SIZE) + "\n" +
+    "#define SHADOW_FIT_SSBO_BINDING " + std::to_string(SHADOW_FIT_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_GROUP_SIZE " + std::to_string(PARTICLE_GROUP_SIZE) + "\n" +
+    "#define PARTICLE_SSBO_BINDING " + std::to_string(PARTICLE_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_SOURCE_SSBO_BINDING " + std::to_string(PARTICLE_SOURCE_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_OWNER_SSBO_BINDING " + std::to_string(PARTICLE_OWNER_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_OUTPUT_SSBO_BINDING " + std::to_string(PARTICLE_OUTPUT_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_COMMAND_SSBO_BINDING " + std::to_string(PARTICLE_COMMAND_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
+    "#define INSTANCE_JOB_SLEEPERS " + std::to_string(INSTANCE_JOB_SLEEPERS) + "U\n" +
+    "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_GRID_X " + std::to_string(CLUSTER_GRID_X) + "\n" +
+    "#define CLUSTER_GRID_Y " + std::to_string(CLUSTER_GRID_Y) + "\n" +
+    "#define CLUSTER_GRID_Z " + std::to_string(CLUSTER_GRID_Z) + "\n" +
+    "#define CLUSTER_COUNT " + std::to_string(CLUSTER_COUNT) + "\n" +
+    "#define MAX_LIGHTS_PER_CLUSTER " + std::to_string(MAX_LIGHTS_PER_CLUSTER) + "\n" +
+    "#define CLUSTER_BUILD_GROUP_SIZE " + std::to_string(CLUSTER_BUILD_GROUP_SIZE) + "\n" +
+    "#define CLUSTER_CULL_GROUP_SIZE " + std::to_string(CLUSTER_CULL_GROUP_SIZE) + "\n" +
+    "#define CLUSTER_UBO_BINDING " + std::to_string(CLUSTER_UBO_BINDING) + "\n" +
+    "#define CLUSTER_AABB_SSBO_BINDING " + std::to_string(CLUSTER_AABB_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_RANGE_SSBO_BINDING " + std::to_string(CLUSTER_RANGE_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_INDEX_SSBO_BINDING " + std::to_string(CLUSTER_INDEX_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_COUNTER_SSBO_BINDING " + std::to_string(CLUSTER_COUNTER_SSBO_BINDING) + "\n" +
+    "#define ENVMAP_GGX_LEVELS " + std::to_string(ENVMAP_GGX_LEVELS) + "\n" +
+    "#define ENVMAP_GGX_ROUGHNESS_MIN " + std::to_string(ENVMAP_GGX_ROUGHNESS_MIN) + "\n" +
+    "#define ENVMAP_GGX_GROUP_SIZE " + std::to_string(ENVMAP_GGX_GROUP_SIZE) + "\n" +
+    "#define SKY_SSBO_BINDING " + std::to_string(SKY_SSBO_BINDING) + "\n" +
+    "#define EXPOSURE_SSBO_BINDING " + std::to_string(EXPOSURE_SSBO_BINDING) + "\n" +
+    "#define EXPOSURE_HISTOGRAM_BINS " + std::to_string(EXPOSURE_HISTOGRAM_BINS) + "\n" +
+    "#define EXPOSURE_HISTOGRAM_GROUP_SIZE " + std::to_string(EXPOSURE_HISTOGRAM_GROUP_SIZE) + "\n" +
+    "#define ATMOSPHERE_UBO_BINDING " + std::to_string(ATMOSPHERE_UBO_BINDING) + "\n" +
+    "#define ATMOSPHERE_RESULT_SSBO_BINDING " + std::to_string(ATMOSPHERE_RESULT_SSBO_BINDING) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_WIDTH " + std::to_string(ATMOSPHERE_TRANSMITTANCE_WIDTH) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_HEIGHT " + std::to_string(ATMOSPHERE_TRANSMITTANCE_HEIGHT) + "\n" +
+    "#define ATMOSPHERE_MULTISCATTERING_SIZE " + std::to_string(ATMOSPHERE_MULTISCATTERING_SIZE) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_WIDTH " + std::to_string(ATMOSPHERE_SKYVIEW_WIDTH) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_HEIGHT " + std::to_string(ATMOSPHERE_SKYVIEW_HEIGHT) + "\n" +
+    "#define ATMOSPHERE_AMBIENT_GROUP_SIZE " + std::to_string(ATMOSPHERE_AMBIENT_GROUP_SIZE) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_UNIT " + std::to_string(ATMOSPHERE_TRANSMITTANCE_UNIT) + "\n" +
+    "#define ATMOSPHERE_MULTISCATTERING_UNIT " + std::to_string(ATMOSPHERE_MULTISCATTERING_UNIT) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_UNIT " + std::to_string(ATMOSPHERE_SKYVIEW_UNIT) + "\n" +
+    "#define SKY_VIEW_TEX " + std::to_string(SKY_VIEW_TEX) + "\n" +
+    "#define LOCAL_SHADOW_TEX " + std::to_string(LOCAL_SHADOW_TEX) + "\n" +
+    "#define LOCAL_SHADOW_LAMPS_TEX " + std::to_string(LOCAL_SHADOW_LAMPS_TEX) + "\n" +
+    "#define HEADLIGHT_SHADOW_TEX " + std::to_string(HEADLIGHT_SHADOW_TEX) + "\n" +
+    "#define MAX_HEADLIGHT_SHADOWS " + std::to_string(MAX_HEADLIGHT_SHADOWS) + "U\n" +
+    "#define FOG_VOLUME_TEX " + std::to_string(FOG_VOLUME_TEX) + "\n" +
+    "#define CLOUD_SHADOW_TEX " + std::to_string(CLOUD_SHADOW_TEX) + "\n" +
+    "#define CLOUD_TEX " + std::to_string(CLOUD_TEX) + "\n" +
+    "#define CLOUD_SHAPE_TEX " + std::to_string(CLOUD_SHAPE_TEX) + "\n" +
+    "#define CLOUD_DETAIL_TEX " + std::to_string(CLOUD_DETAIL_TEX) + "\n" +
+    "#define CLOUD_COVERAGE_TEX " + std::to_string(CLOUD_COVERAGE_TEX) + "\n" +
+    "#define CLOUD_HISTORY_TEX " + std::to_string(CLOUD_HISTORY_TEX) + "\n" +
+    "#define SCENE_DEPTH_TEX " + std::to_string(SCENE_DEPTH_TEX) + "\n" +
+    "#define WEATHER_UBO_BINDING " + std::to_string(WEATHER_UBO_BINDING) + "\n" +
+    "#define WEATHER_SCRATCH_SSBO_BINDING " + std::to_string(WEATHER_SCRATCH_SSBO_BINDING) + "\n" +
+    "#define MAX_CLOUD_LAYERS " + std::to_string(MAX_CLOUD_LAYERS) + "\n" +
+    "#define FOG_HORIZON_SAMPLES " + std::to_string(FOG_HORIZON_SAMPLES) + "\n" +
+    "#define WEATHER_GROUP_SIZE " + std::to_string(WEATHER_GROUP_SIZE) + "\n" +
+    "#define FOG_VOLUME_BIAS " + std::to_string(FOG_VOLUME_BIAS) + "\n" +
     R"STRING(
     const uint LIGHT_SPOT = 0U;
     const uint LIGHT_POINT = 1U;
@@ -42,17 +114,94 @@ void gl::glsl_common_setup()
             vec4 headlight_weights;
     };
 
-    layout(std140) uniform light_ubo
+    // storage blocks are guaranteed only in fragment and compute shaders (GL 4.6 minimum for the other stages is 0)
+    #if defined(STAGE_FRAGMENT) || defined(STAGE_COMPUTE)
+    layout(std430, binding = LIGHT_SSBO_BINDING) readonly buffer light_ssbo
     {
             vec3 ambient;
+            // lights stored in lights[], what the cluster culling goes through
+            uint lights_total;
 
             vec3 fog_color;
+            // lights the shading loop goes through when the lights are not clustered
             uint lights_count;
+            // 1 if the shading takes the lights from the list of the cluster of a fragment, see cluster_ubo
+            uint lights_clustered;
+            // scale of the directional part of the sky ambient light, see sky_ssbo
+            float sky_ambient_factor;
+            // 1 if rough reflections come from the prefiltered environment map
+            uint env_ggx;
 
-            light_s lights[MAX_LIGHTS];
+            light_s lights[];
     };
 
-    layout (std140) uniform model_ubo
+    // directional part of the sky ambient light: real spherical harmonics (bands 1 and 2, band 0 is ambient) of the light
+    // a surface facing a world space direction gets, in units of ambient. see gl::sky_data
+    layout(std430, binding = SKY_SSBO_BINDING) readonly buffer sky_ssbo
+    {
+            vec4 sky_ambient_sh[9];
+    };
+    #endif
+
+    // light clusters, see gl/cluster_grid.h
+    struct cluster_aabb_s
+    {
+            vec4 lower;
+            vec4 upper;
+    };
+
+    struct cluster_range_s
+    {
+            uint offset;
+            uint count;
+    };
+
+    #if defined(STAGE_FRAGMENT) || defined(STAGE_COMPUTE)
+    // parameters of the grid for the pass being drawn
+    layout(std140, binding = CLUSTER_UBO_BINDING) uniform cluster_ubo
+    {
+            mat4 cluster_projection;
+            float cluster_znear;
+            float cluster_zfar;
+            float cluster_slice_scale;
+            float cluster_slice_bias;
+            vec2 cluster_viewport_size;
+            uint cluster_valid;
+    };
+
+    // the compute passes fill the cluster buffers, shading only reads them
+    #ifdef STAGE_COMPUTE
+    #define CLUSTER_SSBO_ACCESS
+    layout(std430, binding = CLUSTER_AABB_SSBO_BINDING) buffer cluster_aabb_ssbo
+    {
+            cluster_aabb_s cluster_aabbs[];
+    };
+
+    layout(std430, binding = CLUSTER_COUNTER_SSBO_BINDING) buffer cluster_counter_ssbo
+    {
+            uint cluster_index_count;
+            uint cluster_overflow_count;
+    };
+    #else
+    #define CLUSTER_SSBO_ACCESS readonly
+    #endif
+
+    layout(std430, binding = CLUSTER_RANGE_SSBO_BINDING) CLUSTER_SSBO_ACCESS buffer cluster_range_ssbo
+    {
+            cluster_range_s cluster_ranges[];
+    };
+
+    layout(std430, binding = CLUSTER_INDEX_SSBO_BINDING) CLUSTER_SSBO_ACCESS buffer cluster_index_ssbo
+    {
+            uint cluster_light_indices[];
+    };
+    #endif
+
+    #ifdef MODEL_DRAWS
+    // programs of the multi draws of the instances drawn from the gpu culling: the model block of every draw comes from a
+    // storage buffer, picked by the number of the draw in the multi draw. the fragment stage gets the number from the vertex
+    // stage (which writes f_model_draw), and the names of the uniform block below stand for the fields of the draw
+    struct model_draw_s
     {
             mat4 modelview;
             mat3 modelviewnormal;
@@ -66,6 +215,46 @@ void gl::glsl_common_setup()
             float shadow_tone;
     };
 
+    layout(std430, binding = MODEL_DRAW_SSBO_BINDING) readonly buffer model_draw_ssbo
+    {
+            model_draw_s model_draws[];
+    };
+
+    #if defined(STAGE_VERTEX)
+    flat out uint f_model_draw;
+    #define MODEL_DRAW gl_DrawID
+    #elif defined(STAGE_FRAGMENT)
+    flat in uint f_model_draw;
+    #define MODEL_DRAW f_model_draw
+    #else
+    #define MODEL_DRAW 0
+    #endif
+
+    #define modelview model_draws[MODEL_DRAW].modelview
+    #define modelviewnormal model_draws[MODEL_DRAW].modelviewnormal
+    #define param model_draws[MODEL_DRAW].param
+    #define future model_draws[MODEL_DRAW].future
+    #define opacity model_draws[MODEL_DRAW].opacity
+    #define emission model_draws[MODEL_DRAW].emission
+    #define fog_density model_draws[MODEL_DRAW].fog_density
+    #define alpha_mult model_draws[MODEL_DRAW].alpha_mult
+    #define shadow_tone model_draws[MODEL_DRAW].shadow_tone
+    #else
+    layout (std140) uniform model_ubo
+    {
+            mat4 modelview;
+            mat3 modelviewnormal;
+            vec4 param[MAX_PARAMS];
+
+            mat4 future;
+            float opacity;
+            float emission;
+            float fog_density;
+            float alpha_mult;
+            float shadow_tone;
+    };
+    #endif
+
     layout (std140) uniform scene_ubo
     {
         mat4 projection;
@@ -77,26 +266,31 @@ void gl::glsl_common_setup()
 		vec4 wiper_pos;
 		vec4 wiper_timer_out;
 		vec4 wiper_timer_return;
-    };
-
-    // Per-instance modelview matrices for GPU-instanced draws.
-    // The UBO itself is declared in every stage so the binding stays valid,
-    // but the helper functions reference gl_InstanceID which is vertex-only,
-    // so they are guarded behind STAGE_VERTEX.
-    layout (std140) uniform instance_ubo
-    {
-        mat4 instance_modelview[MAX_INSTANCES_PER_BATCH];
+        // shadow maps of the headlights, see gl::scene_ubs
+        mat4 headlight_shadow[MAX_HEADLIGHT_SHADOWS];
+        vec4 headlight_shadow_params[MAX_HEADLIGHT_SHADOWS];
+        // contact shadows, see gl::scene_ubs
+        vec4 contact_shadow_params;
+        vec4 contact_shadow_lamps;
+        // cascades of the sun shadows fitted to the depth of the view, see gl::scene_ubs
+        vec4 shadow_fit;
     };
 
     #ifdef STAGE_VERTEX
-    // For non-instanced draws gl_InstanceID == 0 and slot 0 is permanently set
-    // to identity, so effective_modelview() reduces to model_ubo.modelview.
-    // For instanced draws the C++ side uploads camera-space root transforms for
-    // instances 0..N-1 and sets model_ubo.modelview to the submodel-local chain
-    // (computed from identity, NOT from the camera/instance), so the product
+    // Per-instance modelview matrices for GPU-instanced draws, element 0 is identity.
+    // Draws which aren't instanced have gl_BaseInstance == 0 and gl_InstanceID == 0,
+    // so effective_modelview() reduces to model_ubo.modelview. For instanced draws
+    // the C++ side uploads camera-space root transforms of the instances and draws
+    // them from base instance onwards, with model_ubo.modelview set to the submodel-local
+    // chain (computed from identity, NOT from the camera/instance), so the product
     // gives the correct final transform per instance per submodel.
+    layout(std430, binding = INSTANCE_SSBO_BINDING) readonly buffer instance_ssbo
+    {
+        mat4 instance_modelview[];
+    };
+
     mat4 effective_modelview() {
-        return instance_modelview[gl_InstanceID] * modelview;
+        return instance_modelview[gl_BaseInstance + gl_InstanceID] * modelview;
     }
     mat3 effective_modelviewnormal() {
         // instance_modelview can include per-instance scale (uniform or per-axis),
@@ -104,7 +298,7 @@ void gl::glsl_common_setup()
         // case. Compute the correct normal matrix via transpose(inverse(...)).
         // For pure rotation+translation this still produces the rotation matrix
         // (one extra mat3 inverse per vertex — modern GPUs handle it cheaply).
-        mat3 instance_mv3 = mat3(instance_modelview[gl_InstanceID]);
+        mat3 instance_mv3 = mat3(instance_modelview[gl_BaseInstance + gl_InstanceID]);
         mat3 instance_normal = transpose(inverse(instance_mv3));
         return instance_normal * modelviewnormal;
     }

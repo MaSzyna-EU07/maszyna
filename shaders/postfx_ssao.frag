@@ -9,8 +9,9 @@ uniform sampler2D noise_tex;
 
 #include <common>
 
+// the depth is reversed (glClipControl GL_ZERO_TO_ONE, 1 at the near plane, 0 at infinity), so it is the clip z itself
 vec3 view_pos_from_depth(vec2 uv, float depth) {
-    vec4 clip = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 view = inverse(projection) * clip;
     return view.xyz / view.w;
 }
@@ -31,7 +32,7 @@ vec3 kernel_sample(int i) {
 
 void main() {
     float d = texture(depth_tex, f_coords).r;
-    if (d >= 1.0) { out_color = vec4(1.0); return; }   // skybox -> no occlusion
+    if (d <= 0.0) { out_color = vec4(1.0); return; }   // skybox -> no occlusion
 
     vec3 pos = view_pos_from_depth(f_coords, d);
 

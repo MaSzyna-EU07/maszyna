@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/uilayer.h"
 #include "utilities/Classes.h"
+#include "rendering/renderer.h"
 
 class drivingaid_panel : public ui_expandable_panel {
 
@@ -87,7 +88,7 @@ private:
     void update_section_eventqueue( std::vector<text_line> &Output );
     void update_section_powergrid( std::vector<text_line> &Output ) const;
     void update_section_camera( std::vector<text_line> &Output ) const;
-    void update_section_renderer( std::vector<text_line> &Output ) const;
+    void update_section_renderer( std::vector<text_line> &Output );
 #ifdef WITH_UART
     void update_section_uart( std::vector<text_line> &Output ) const;
 #endif
@@ -99,6 +100,7 @@ private:
     bool render_section( std::vector<text_line> const &Lines ) const;
     bool render_section_scenario();
     bool render_section_eventqueue();
+    bool render_section_renderer();
     bool render_section_settings() const;
 	bool render_section_developer() const;
 	    // members
@@ -114,6 +116,7 @@ private:
     std::vector<text_line> m_eventqueuelines;
     std::vector<text_line> m_powergridlines;
     std::vector<text_line> m_rendererlines;
+    std::vector<gfx_renderer::info_section> m_renderersections; // the data of the renderer, each part under a header of its own
     std::vector<text_line> m_uartlines;
 
 	double last_time = std::numeric_limits<double>::quiet_NaN();

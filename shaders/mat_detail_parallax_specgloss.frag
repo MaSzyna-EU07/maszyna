@@ -38,6 +38,8 @@ uniform sampler2D detailnormalmap;
 
 
 #define PARALLAX
+// param[2].w is the height offset, not the weathering
+#define NO_WEATHERING
 #include <light_common.glsl>
 #include <apply_fog.glsl>
 #include <tonemapping.glsl>
@@ -98,36 +100,41 @@ vec2 ParallaxMapping(vec2 f_coord, vec3 viewDir)
 {	
 
 	float pos_len = length(f_pos.xyz);
+	// gradients of the coordinates taken here: inside the loop the fragments of a quad don't go the same way
+	vec2 dcoorddx = dFdx(f_coord);
+	vec2 dcoorddy = dFdy(f_coord);
 
 	if (pos_len > 100.0) {
 		return f_coord;
 	}
+	// the shift fades out before the distance it stops at, so it doesn't switch off at once there
+	float fade = 1.0 - smoothstep(80.0, 100.0, pos_len);
 
 #if EXTRAEFFECTS_ENABLED
 	const float minLayers = 8.0;
 	const float maxLayers = 32.0;
 	float LayersWeight = pos_len / 20.0;
 	vec2  currentTexCoords = f_coord;
-	float currentDepthMapValue = texture(normalmap, currentTexCoords).b;
+	float currentDepthMapValue = textureGrad(normalmap, currentTexCoords, dcoorddx, dcoorddy).b;
 	LayersWeight = min(abs(dot(vec3(0.0, 0.0, 1.0), viewDir)),LayersWeight);
 	float numLayers = mix(maxLayers, minLayers, clamp(LayersWeight, 0.0, 1.0)); // number of depth layers
 	float layerDepth = 1.0 / numLayers; // calculate the size of each layer
 	float currentLayerDepth = 0.0; // depth of current layer
-	vec2 P = viewDir.xy * param[2].z; // the amount to shift the texture coordinates per layer (from vector P)
+	vec2 P = viewDir.xy * param[2].z * fade; // the amount to shift the texture coordinates per layer (from vector P)
 	vec2 deltaTexCoords = P / numLayers;
 
 	  
 	while(currentLayerDepth < currentDepthMapValue)
 	{
 		currentTexCoords -= deltaTexCoords;		// shift texture coordinates along direction of P
-		currentDepthMapValue = texture(normalmap, currentTexCoords).b;		// get depthmap value at current texture coordinates
+		currentDepthMapValue = textureGrad(normalmap, currentTexCoords, dcoorddx, dcoorddy).b;		// get depthmap value at current texture coordinates
 		currentLayerDepth += layerDepth;  		// get depth of next layer
 	}
 	
 	vec2 prevTexCoords = currentTexCoords + deltaTexCoords; // get texture coordinates before collision (reverse operations)
 
 	float afterDepth  = currentDepthMapValue - currentLayerDepth; // get depth after and before collision for linear interpolation
-	float beforeDepth = texture(normalmap, prevTexCoords).b - currentLayerDepth + layerDepth;
+	float beforeDepth = textureGrad(normalmap, prevTexCoords, dcoorddx, dcoorddy).b - currentLayerDepth + layerDepth;
 	 
 	float weight = afterDepth / (afterDepth - beforeDepth); // interpolation of texture coordinates
 	vec2 finalTexCoords = prevTexCoords * weight + currentTexCoords * (1.0 - weight);
@@ -135,7 +142,7 @@ vec2 ParallaxMapping(vec2 f_coord, vec3 viewDir)
 	return finalTexCoords;
 #else
 	float height = texture(normalmap, f_coord).b;
-	vec2 p = viewDir.xy / viewDir.z * (height * (param[2].z - param[2].w) * 0.2);
+	vec2 p = viewDir.xy / viewDir.z * (height * (param[2].z - param[2].w) * 0.2) * fade;
 	return f_coord - p;
 #endif
 } 

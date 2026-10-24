@@ -58,6 +58,8 @@ class editor_ui : public ui_layer
 	void set_track(bool const Track)
 	{
 		m_track = Track;
+		// the models of the node bank aren't laid with the track tools
+		m_nodebankpanel.suppressed = Track;
 	}
 	// draws menus of the editor mode in the menu bar, past the ones of the user interface
 	void set_menu_options(std::function<void()> Renderer)
@@ -73,6 +75,11 @@ class editor_ui : public ui_layer
 	void set_edit_menu(std::function<void()> Renderer)
 	{
 		m_editmenu = std::move(Renderer);
+	}
+	// draws the items of the editor mode in the tools menu, after the common ones
+	void set_tools_menu(std::function<void()> Renderer)
+	{
+		m_toolsmenu = std::move(Renderer);
 	}
 	// draws the fields of work of the editor mode in a row above the toolbar
 	void set_workspace_bar(std::function<void()> Renderer)
@@ -101,6 +108,7 @@ class editor_ui : public ui_layer
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
 	void set_new_scenery(std::function<void()> New) { m_newscenery = std::move(New); }
 	void set_open_scenery(std::function<void()> Open) { m_openscenery = std::move(Open); }
+	void set_memcell_focus(std::function<void(scene::basic_node *)> Focus) { m_memcellspanel.focus = std::move(Focus); }
 	// part of the main window between the docked windows, where the 3d view is seen; for the overlays placed in it
 	static glm::vec2 view_min()
 	{
@@ -168,6 +176,7 @@ class editor_ui : public ui_layer
 	void scene_row(std::size_t const Entry);
 	void render_menu_contents() override;
 	void render_windows_menu() override;
+	void render_tools_menu() override;
 	int palette() const override;
 	void render_dockspace() override;
 	void render_() override;
@@ -189,6 +198,7 @@ class editor_ui : public ui_layer
 	nodebank_panel m_nodebankpanel{"Node bank", true}; // templates to insert, paint or fill with
 	layers_panel m_layerspanel{"Layers", true};
 	includes_panel m_includespanel{"Include database", false};
+	memcells_panel m_memcellspanel{"Memory cells", false};
 	std::function<void()> m_save;
 	std::function<void()> m_export;
 	std::function<void()> m_newscenery;
@@ -201,6 +211,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
 	std::function<void()> m_editmenu;
+	std::function<void()> m_toolsmenu;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};

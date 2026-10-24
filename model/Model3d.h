@@ -56,8 +56,7 @@ class TSubModel
 { // klasa submodelu - pojedyncza siatka, punkt świetlny albo grupa punktów
     //m7todo: zrobić normalną serializację
 
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
     friend TModel3d; // temporary workaround. TODO: clean up class content/hierarchy
     friend TDynamicObject; // temporary etc
     friend scene::shape_node; // temporary etc
@@ -116,7 +115,7 @@ public:
         f4Emision { 1.0f,1.0f,1.0f,1.0f };
     glm::vec3 DiffuseOverride { -1.f };
     normalization m_normalizenormals { normalization::none }; // indicates vectors need to be normalized due to scaling etc
-	float diffuseMultiplier {1.0};
+	float fHotspotPower { 1.0f }; // natężenie światła punktowego (hotspotpower/100), kolor określa tylko f4Diffuse
     float fWireSize { 0.0f }; // nie używane, ale wczytywane
     float fSquareMaxDist { 10000.0f * 10000.0f };
     float fSquareMinDist { 0.0f };
@@ -268,8 +267,7 @@ public:
 
 class TModel3d
 {
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
 
 public:
     // submodels which scenery instances of the model refer to by name
@@ -294,6 +292,9 @@ private:
     nameoffset_sequence m_smokesources; // list of particle sources defined in the model
     instance_submodels m_instancesubmodels; // filled on first use, see instance_parts()
     bool m_instancesubmodelslocated { false };
+    std::vector<float> m_lodbounds; // filled on first use, see lod_bounds()
+    bool m_lodboundsfound { false };
+    std::uint32_t m_stateversion { 0 }; // see state_version()
 
 public:
     TModel3d() = default;
@@ -305,6 +306,16 @@ public:
     // returns submodels which scenery instances of the model refer to by name. the search for a name goes through the whole
     // submodel tree, so it's done once for the model instead of once for each of its instances
     instance_submodels const & instance_parts();
+    // returns the distinct bounds of the visibility ranges of the submodels (fSquareMinDist and fSquareMaxDist, squared), sorted:
+    // they split the distance into bands in which the same submodels are drawn. found once for the model, like instance_parts()
+    std::vector<float> const & lod_bounds();
+    // the submodels of the model are shared by everything drawn with it, which sets their state (lights, animations, visibility)
+    // before it's drawn. the version changes when something which may set it differently than the last time did, or the submodels
+    // changed, so the renderer can tell whether what it worked out from them still holds
+    std::uint32_t state_version() const {
+        return m_stateversion; }
+    void state_changed() {
+        ++m_stateversion; }
 	TSubModel * AddToNamed(const char *Name, TSubModel *SubModel);
     nameoffset_sequence const & find_smoke_sources();
 	void AddTo(TSubModel *tmp, TSubModel *SubModel);

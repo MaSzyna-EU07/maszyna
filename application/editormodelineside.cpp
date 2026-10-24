@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
@@ -38,6 +39,7 @@ using geometry::plan_of;
 double const kSampleStep{2.0}; // m between the samples of the line
 double const kLineCorridor{15.0}; // m from the axis, posts farther away belong to another line
 double const kOverlayRange{3000.0};
+float const kFoulingPick{12.0f}; // px from a point of the fouling overlay a click takes it
 double const kFoulingTrace{250.0}; // m from the start of a switch the tracks are followed for
 double const kRailHeight{0.18}; // m from the points of a track to the heads of its rails
 int const kRailCategory{1};
@@ -524,7 +526,7 @@ void editor_mode::hekto_remove_duplicates()
 		if (found.duplicate)
 			instances.push_back(found.post.instance);
 	auto const removed{remove_templates(instances)};
-	tool.status = format(STR_C("%zu duplicate hectometre posts removed, Ctrl+Z brings them back"), removed);
+	tool.status = format(STR_P("%zu duplicate hectometre post removed, Ctrl+Z brings it back", "%zu duplicate hectometre posts removed, Ctrl+Z brings them back", static_cast<long long>(removed)), removed);
 	WriteLog("Editor: " + tool.status);
 	tool.dirty = true;
 }
@@ -547,7 +549,9 @@ void editor_mode::hekto_place()
 	}
 	std::string error;
 	auto const placed{place_templates(items, error)};
-	tool.status = placed > 0 ? format(STR_C("%zu hectometre posts placed, Ctrl+Z takes them back"), placed) : error;
+	tool.status = placed > 0 ? format(STR_P("%zu hectometre post placed, Ctrl+Z takes it back", "%zu hectometre posts placed, Ctrl+Z takes them back", static_cast<long long>(placed)), placed) : error;
+	if (placed > 0)
+		first_step_done(first_step::posts);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
 }
@@ -567,7 +571,7 @@ void editor_mode::hekto_fix()
 		moves.emplace_back(tool.found[post.standing].post, item);
 	}
 	auto const moved{move_templates(moves)};
-	tool.status = format(STR_C("%zu hectometre posts moved to their places, Ctrl+Z takes it back"), moved);
+	tool.status = format(STR_P("%zu hectometre post moved to its place, Ctrl+Z takes it back", "%zu hectometre posts moved to their places, Ctrl+Z takes it back", static_cast<long long>(moved)), moved);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
 }
@@ -589,44 +593,46 @@ void editor_mode::render_hekto_ui()
 		if (Changed)
 			tool.dirty = true;
 	};
-	ImGui::PushItemWidth(110.0f);
-	changed(ImGui::InputDouble(STR_C("Kilometre at the point (km)"), &tool.km, 0.0, 0.0, "%.3f"));
-	ImGui::SameLine();
-	if (ImGui::SmallButton(STR_C("Read from the posts")))
+	if (begin_fields("##hektokm", 0.45f))
 	{
-		tool.km_read = false;
-		tool.dirty = true;
+		field_row("Kilometre at the point (km)");
+		changed(ImGui::InputDouble("##hektokilometre", &tool.km, 0.0, 0.0, "%.3f"));
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(1);
+		if (ImGui::Button(STR_C("Read from the posts"), ImVec2(-FLT_MIN, 0.0f)))
+		{
+			tool.km_read = false;
+			tool.dirty = true;
+		}
+		ImGui::EndTable();
 	}
 	ImGui::TextDisabled("%s", STR_C("The kilometrage grows"));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("along the line"), &tool.growth, 1));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("against it"), &tool.growth, -1));
+	changed(segmented("growth", tool.growth, {{1, STR_C("along the line")}, {-1, STR_C("against it")}}));
 	ImGui::TextDisabled("%s", STR_C("Side, looking where it grows"));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("right"), &tool.side, 1));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("left"), &tool.side, -1));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("alternately"), &tool.side, 0));
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("The even hectometres on the right, the odd ones on the left"));
-	changed(ImGui::InputDouble(STR_C("From the axis (m)"), &tool.offset, 0.0, 0.0, "%.2f"));
-	tool.offset = std::clamp(tool.offset, 1.5, 30.0);
-	char const *styles[] = {"nowy", "stary", "zgnity", "mixed"};
-	ImGui::Combo(STR_C("Posts"), &tool.style, styles, IM_ARRAYSIZE(styles));
-	char const *turns[] = {"0", "90", "180", "270"};
-	int turn{tool.turn / 90};
-	if (ImGui::Combo(STR_C("Turned by (deg)"), &turn, turns, IM_ARRAYSIZE(turns)))
+	changed(segmented("side", tool.side, {{1, STR_C("on the right")}, {-1, STR_C("on the left")}, {0, STR_C("alternately"), "The even hectometres on the right, the odd ones on the left"}}));
+	if (ImGui::TreeNode(STR_C("More settings")))
 	{
-		tool.turn = turn * 90;
-		tool.dirty = true;
+		ImGui::TextDisabled("%s", STR_C("Look"));
+		segmented("hektostyle", tool.style, {{0, STR_C("new")}, {1, STR_C("old")}, {2, STR_C("rotten")}, {3, STR_C("mixed"), "New, old and rotten ones at random, mostly new"}});
+		ImGui::TextDisabled("%s", STR_C("Turned by (deg)"));
+		if (segmented("hektoturn", tool.turn, {{0, "0"}, {90, "90"}, {180, "180"}, {270, "270"}}))
+			tool.dirty = true;
+		if (begin_fields("##hektofields", 0.6f))
+		{
+			field_row("From the axis (m)");
+			changed(ImGui::InputDouble("##hektooffset", &tool.offset, 0.0, 0.0, "%.2f"));
+			field_row("Along the line each way (m)");
+			changed(ImGui::InputDouble("##hektoreach", &tool.reach, 0.0, 0.0, "%.0f"));
+			field_row("Tolerance (m)");
+			changed(ImGui::InputDouble("##hektotolerance", &tool.tolerance, 0.0, 0.0, "%.1f"));
+			item_tooltip("A post standing farther than this from its place counts as wrong");
+			ImGui::EndTable();
+		}
+		ImGui::TreePop();
 	}
-	changed(ImGui::InputDouble(STR_C("Along the line each way (m)"), &tool.reach, 0.0, 0.0, "%.0f"));
+	tool.offset = std::clamp(tool.offset, 1.5, 30.0);
 	tool.reach = std::clamp(tool.reach, 100.0, 100000.0);
-	changed(ImGui::InputDouble(STR_C("A post standing off by more (m) is wrong"), &tool.tolerance, 0.0, 0.0, "%.1f"));
 	tool.tolerance = std::clamp(tool.tolerance, 0.5, 50.0);
-	ImGui::PopItemWidth();
 	hekto_update();
 	if (false == tool.error.empty())
 	{
@@ -636,15 +642,21 @@ void editor_mode::render_hekto_ui()
 	auto const missing{std::count_if(tool.posts.begin(), tool.posts.end(), [](hekto_post const &Post) { return Post.standing < 0; })};
 	auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](hekto_found const &Post) { return Post.wrong; })};
 	auto const duplicates{std::count_if(tool.found.begin(), tool.found.end(), [](hekto_found const &Post) { return Post.duplicate; })};
-	ImGui::Text(STR_C("Line %.0f m, km %s - %s: %d posts to place, %zu standing, %d of them wrong"), tool.samples.empty() ? 0.0 : tool.samples.back().chainage, tool.posts.empty() ? "-" : km_text(std::min(tool.posts.front().hectometres, tool.posts.back().hectometres)).c_str(),
-	            tool.posts.empty() ? "-" : km_text(std::max(tool.posts.front().hectometres, tool.posts.back().hectometres)).c_str(), static_cast<int>(missing), tool.found.size(), static_cast<int>(wrong));
-	if (missing > 0 && ImGui::Button(format(STR_C("Place %d posts"), static_cast<int>(missing)).c_str()))
-		hekto_place();
+	ImGui::Text(STR_C("To place: %d"), static_cast<int>(missing));
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip(STR_C("Line %.0f m, km %s - %s. Standing: %zu, %d of them wrong"), tool.samples.empty() ? 0.0 : tool.samples.back().chainage, tool.posts.empty() ? "-" : km_text(std::min(tool.posts.front().hectometres, tool.posts.back().hectometres)).c_str(),
+		                  tool.posts.empty() ? "-" : km_text(std::max(tool.posts.front().hectometres, tool.posts.back().hectometres)).c_str(), tool.found.size(), static_cast<int>(wrong));
+	if (missing > 0)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
+		if (ImGui::Button(format(STR_P("Place %d post", "Place %d posts", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, std::round(ImGui::GetFrameHeight() * 1.3f))))
+			hekto_place();
+		ImGui::PopStyleColor(2);
+	}
 	if (duplicates > 0)
 	{
-		if (missing > 0)
-			ImGui::SameLine();
-		if (ImGui::Button(format(STR_C("Remove %d duplicate posts"), static_cast<int>(duplicates)).c_str()))
+		if (ImGui::Button(format(STR_P("Remove %d duplicate post", "Remove %d duplicate posts", static_cast<long long>(duplicates)), static_cast<int>(duplicates)).c_str()))
 			hekto_remove_duplicates();
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("Posts with a number another post nearer to its place already has"));
@@ -653,9 +665,9 @@ void editor_mode::render_hekto_ui()
 	{
 		if (wrong > 0)
 		{
-			if (missing > 0 || duplicates > 0)
+			if (duplicates > 0)
 				ImGui::SameLine();
-			if (ImGui::Button(format(STR_C("Move %d wrong posts to their places"), static_cast<int>(wrong)).c_str()))
+			if (ImGui::Button(format(STR_P("Move %d wrong post to its place", "Move %d wrong posts to their places", static_cast<long long>(wrong)), static_cast<int>(wrong)).c_str()))
 				hekto_fix();
 		}
 		ImGui::BeginChild("##hektowrong", ImVec2(0.0f, std::min(6, static_cast<int>(wrong + duplicates)) * ImGui::GetTextLineHeightWithSpacing() + 6.0f), true);
@@ -666,14 +678,7 @@ void editor_mode::render_hekto_ui()
 			auto const label{post.duplicate ? format(STR_C("km %s duplicate##%u"), km_text(post.hectometres).c_str(), post.post.instance) : format(STR_C("km %s stands %.1f m from its place##%u"), km_text(post.hectometres).c_str(), post.distance, post.post.instance)};
 			if (ImGui::Selectable(label.c_str()))
 			{
-				glm::dvec3 const look{glm::normalize(glm::dvec3{-1.0, -0.8, -1.0})};
-				m_focus_start_pos = Camera.Pos;
-				m_focus_start_angle = Camera.Angle;
-				m_focus_target_pos = post.post.location - look * 20.0;
-				m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(look.y)), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
-				m_focus_active = true;
-				m_focus_time = 0.0;
-				m_focus_duration = 0.6;
+				fly_to(post.post.location, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 20.0);
 			}
 		}
 		ImGui::EndChild();
@@ -832,14 +837,15 @@ void editor_mode::fouling_update()
 	tool.status = format(STR_C("%zu switches, %zu fouling points: %d without a marker, %d markers standing wrong"), switches.size(), tool.points.size(), static_cast<int>(missing), static_cast<int>(wrong));
 }
 
-void editor_mode::fouling_place()
+void editor_mode::fouling_place(int const Only)
 {
 	auto &tool{m_fouling};
 	fouling_update();
 	std::vector<template_item> items;
-	for (auto const &point : tool.points)
+	for (int i = 0; i < static_cast<int>(tool.points.size()); ++i)
 	{
-		if (point.standing >= 0)
+		auto const &point{tool.points[i]};
+		if (point.standing >= 0 || (Only >= 0 && i != Only))
 			continue;
 		template_item item;
 		item.file = kFoulingModels[std::clamp(tool.model, 0, 3)];
@@ -851,19 +857,20 @@ void editor_mode::fouling_place()
 	}
 	std::string error;
 	auto const placed{place_templates(items, error)};
-	tool.status = placed > 0 ? format(STR_C("%zu fouling point markers placed, Ctrl+Z takes them back"), placed) : error;
+	tool.status = placed > 0 ? format(STR_P("%zu fouling point marker placed, Ctrl+Z takes it back", "%zu fouling point markers placed, Ctrl+Z takes them back", static_cast<long long>(placed)), placed) : error;
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
 }
 
-void editor_mode::fouling_fix()
+void editor_mode::fouling_fix(int const Only)
 {
 	auto &tool{m_fouling};
 	fouling_update();
 	std::vector<std::pair<standing_template, template_item>> moves;
-	for (auto const &found : tool.found)
+	for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
 	{
-		if (false == found.wrong)
+		auto const &found{tool.found[i]};
+		if (false == found.wrong || (Only >= 0 && i != Only))
 			continue;
 		template_item item;
 		auto const &point{tool.points[found.point]};
@@ -881,72 +888,147 @@ void editor_mode::fouling_fix()
 		moves.emplace_back(found.marker, item);
 	}
 	auto const moved{move_templates(moves)};
-	tool.status = format(STR_C("%zu fouling point markers moved to their places, Ctrl+Z takes it back"), moved);
+	tool.status = format(STR_P("%zu fouling point marker moved to its place, Ctrl+Z takes it back", "%zu fouling point markers moved to their places, Ctrl+Z takes it back", static_cast<long long>(moved)), moved);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
+}
+
+std::optional<std::pair<int, bool>> editor_mode::fouling_hit() const
+{
+	auto const &tool{m_fouling};
+	screen_projection const projection;
+	auto const &mouse{ImGui::GetIO().MousePos};
+	glm::dvec3 const camera{Global.pCamera.Pos};
+	std::optional<std::pair<int, bool>> result;
+	auto best{kFoulingPick * kFoulingPick};
+	auto const consider = [&](glm::dvec3 const &Position, int const Index, bool const Marker) {
+		ImVec2 screen;
+		if (glm::distance(Position, camera) > kOverlayRange || false == projection.project(Position, screen))
+			return;
+		auto const distance2{(screen.x - mouse.x) * (screen.x - mouse.x) + (screen.y - mouse.y) * (screen.y - mouse.y)};
+		if (distance2 < best)
+		{
+			best = distance2;
+			result = std::make_pair(Index, Marker);
+		}
+	};
+	for (int i = 0; i < static_cast<int>(tool.points.size()); ++i)
+		if (tool.points[i].standing < 0)
+			consider(tool.points[i].position, i, false);
+	for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
+		if (tool.found[i].wrong)
+			consider(tool.found[i].marker.location, i, true);
+	return result;
 }
 
 void editor_mode::render_fouling_ui()
 {
 	auto &tool{m_fouling};
-	ImGui::TextDisabled("%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"));
 	auto const changed = [&](bool const Changed) {
 		if (Changed)
 			tool.dirty = true;
 	};
-	changed(ImGui::RadioButton(STR_C("The selected switch"), &tool.scope, 0));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("Around the camera"), &tool.scope, 1));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("Whole scenery"), &tool.scope, 2));
-	ImGui::PushItemWidth(110.0f);
-	if (tool.scope == 1)
-		changed(ImGui::InputDouble(STR_C("Around the camera (m)"), &tool.reach, 0.0, 0.0, "%.0f"));
-	changed(ImGui::InputDouble(STR_C("Spacing of the axes (m)"), &tool.spacing, 0.0, 0.0, "%.2f"));
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("3.5 m on the straight track; more on the curves, where the cars lean out"));
-	changed(ImGui::InputDouble(STR_C("A marker off by more (m) is wrong"), &tool.tolerance, 0.0, 0.0, "%.1f"));
-	changed(ImGui::RadioButton(STR_C("On the ground"), &tool.height_mode, 0));
-	ImGui::SameLine();
-	changed(ImGui::RadioButton(STR_C("Over the rail heads"), &tool.height_mode, 1));
-	if (tool.height_mode == 1)
+	changed(segmented("foulingscope", tool.scope, {{0, STR_C("The selected switch")}, {1, STR_C("Around the camera")}, {2, STR_C("Whole scenery")}}));
+	fouling_update();
+	if (false == tool.error.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", tool.error.c_str());
+	else
 	{
-		ImGui::SameLine();
-		changed(ImGui::InputDouble(STR_C("by (m)"), &tool.height, 0.0, 0.0, "%.3f"));
-		changed(ImGui::InputDouble(STR_C("A marker higher or lower by more (m) is wrong"), &tool.height_tolerance, 0.0, 0.0, "%.3f"));
-		tool.height_tolerance = std::clamp(tool.height_tolerance, 0.005, 1.0);
+		ImGui::TextWrapped("%s", tool.status.c_str());
+		auto const missing{std::count_if(tool.points.begin(), tool.points.end(), [](fouling_point const &Point) { return Point.standing < 0; })};
+		auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](fouling_found const &Found) { return Found.wrong; })};
+		auto const tall{std::round(ImGui::GetFrameHeight() * 1.3f)};
+		if (missing > 0)
+		{
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
+			if (ImGui::Button(format(STR_P("Place %d marker", "Place %d markers", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, tall)))
+				fouling_place();
+			ImGui::PopStyleColor(2);
+		}
+		if (wrong > 0)
+		{
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.4f, 0.1f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.48f, 0.15f, 1.0f));
+			if (ImGui::Button(format(STR_P("Move %d wrong marker to its place", "Move %d wrong markers to their places", static_cast<long long>(wrong)), static_cast<int>(wrong)).c_str(), ImVec2(-1.0f, tall)))
+				fouling_fix();
+			ImGui::PopStyleColor(2);
+		}
+		if (missing + wrong > 0)
+		{
+			// each one: a click flies there, the button fixes it alone; in the view a click on its point does the same
+			ImGui::TextDisabled("%s", STR_C("Click the green or red point in the view: that one only"));
+			ImGui::BeginChild("##foulinglist", ImVec2(0.0f, std::min(8, static_cast<int>(missing + wrong)) * ImGui::GetFrameHeightWithSpacing() + 6.0f), true);
+			auto const look{glm::normalize(glm::dvec3{-1.0, -0.8, -1.0})};
+			for (int i = 0; i < static_cast<int>(tool.points.size()); ++i)
+			{
+				auto const &point{tool.points[i]};
+				if (point.standing >= 0)
+					continue;
+				ImGui::PushID(i);
+				if (ImGui::SmallButton(STR_C("Place")))
+					fouling_place(i);
+				ImGui::SameLine();
+				if (ImGui::Selectable(format(STR_C("%s: no W17"), point.track->name().c_str()).c_str()))
+					fly_to(point.position, look, 25.0);
+				ImGui::PopID();
+			}
+			for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
+			{
+				auto const &found{tool.found[i]};
+				if (false == found.wrong)
+					continue;
+				ImGui::PushID(1000000 + i);
+				if (ImGui::SmallButton(STR_C("Fix")))
+					fouling_fix(i);
+				ImGui::SameLine();
+				if (ImGui::Selectable(format(STR_C("%s: W17 %.1f m off, %+.2f m high"), tool.points[found.point].track->name().c_str(), found.error, found.height_error).c_str()))
+					fly_to(found.marker.location, look, 25.0);
+				ImGui::PopID();
+			}
+			ImGui::EndChild();
+		}
 	}
-	char const *models[] = {"w17", "w17_new", "w17_old", "w17_dwuteo"};
-	ImGui::Combo(STR_C("Marker"), &tool.model, models, IM_ARRAYSIZE(models));
-	char const *turns[] = {"0", "90", "180", "270"};
-	int turn{tool.turn / 90};
-	if (ImGui::Combo(STR_C("Turned by (deg)"), &turn, turns, IM_ARRAYSIZE(turns)))
+	if (ImGui::TreeNode(STR_C("More settings")))
 	{
-		tool.turn = turn * 90;
-		tool.dirty = true;
+		if (begin_fields("##foulingfields", 0.6f))
+		{
+			if (tool.scope == 1)
+			{
+				field_row("Around the camera (m)");
+				changed(ImGui::InputDouble("##foulingreach", &tool.reach, 0.0, 0.0, "%.0f"));
+			}
+			field_row("Spacing of the axes (m)");
+			changed(ImGui::InputDouble("##foulingspacing", &tool.spacing, 0.0, 0.0, "%.2f"));
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s\n%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"), STR_C("3.5 m on the straight track; more on the curves, where the cars lean out"));
+			field_row("Tolerance (m)");
+			changed(ImGui::InputDouble("##foulingtolerance", &tool.tolerance, 0.0, 0.0, "%.1f"));
+			item_tooltip("A marker standing farther than this from its place counts as wrong");
+			ImGui::EndTable();
+		}
+		changed(segmented("foulingheight", tool.height_mode, {{0, STR_C("On the ground")}, {1, STR_C("Over the rail heads")}}));
+		if (tool.height_mode == 1 && begin_fields("##foulingheights", 0.6f))
+		{
+			field_row("by (m)");
+			changed(ImGui::InputDouble("##foulingby", &tool.height, 0.0, 0.0, "%.3f"));
+			field_row("Height tolerance (m)");
+			changed(ImGui::InputDouble("##foulingheighttolerance", &tool.height_tolerance, 0.0, 0.0, "%.3f"));
+			item_tooltip("A marker higher or lower than its place by more than this counts as wrong");
+			tool.height_tolerance = std::clamp(tool.height_tolerance, 0.005, 1.0);
+			ImGui::EndTable();
+		}
+		ImGui::TextDisabled("%s", STR_C("Marker"));
+		segmented("foulingmodel", tool.model,
+		          {{0, "w17", "Round post (ip/pkp/w17.inc)"}, {1, "w17_new", "Round post, taller than w17 (ip/pkp/w17_new.inc)"}, {2, "w17_old", "Square post (ip/pkp/w17_old.inc)"}, {3, STR_C("I-beam"), "Post of an HEB I-beam (ip/pkp/w17_dwuteo.inc)"}});
+		ImGui::TextDisabled("%s", STR_C("Turned by (deg)"));
+		if (segmented("foulingturn", tool.turn, {{0, "0"}, {90, "90"}, {180, "180"}, {270, "270"}}))
+			tool.dirty = true;
+		ImGui::TreePop();
 	}
-	ImGui::PopItemWidth();
 	tool.reach = std::clamp(tool.reach, 50.0, 50000.0);
 	tool.spacing = std::clamp(tool.spacing, 2.0, 10.0);
 	tool.tolerance = std::clamp(tool.tolerance, 0.2, 20.0);
-	fouling_update();
-	if (false == tool.error.empty())
-	{
-		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", tool.error.c_str());
-		return;
-	}
-	ImGui::TextWrapped("%s", tool.status.c_str());
-	auto const missing{std::count_if(tool.points.begin(), tool.points.end(), [](fouling_point const &Point) { return Point.standing < 0; })};
-	auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](fouling_found const &Found) { return Found.wrong; })};
-	if (missing > 0 && ImGui::Button(format(STR_C("Place %d markers"), static_cast<int>(missing)).c_str()))
-		fouling_place();
-	if (wrong > 0)
-	{
-		if (missing > 0)
-			ImGui::SameLine();
-		if (ImGui::Button(format(STR_C("Move %d wrong markers to their places"), static_cast<int>(wrong)).c_str()))
-			fouling_fix();
-	}
 }
 
 void editor_mode::draw_fouling_overlay() const

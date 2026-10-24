@@ -20,6 +20,10 @@ http://mozilla.org/MPL/2.0/.
 namespace geometry
 {
 
+// m, the longest path of a track the editor lays or leaves after a change: longer ones are cut into equal pieces
+double constexpr longest_path{400.0};
+
+
 // points of the paths closer than this are taken for the same point
 double constexpr same_point{0.05};
 
@@ -90,7 +94,10 @@ inline std::vector<segment_data> arc_pieces(glm::dvec3 const &Point, glm::dvec2 
 // path as a cubic Bezier curve; a path without control points is a straight with evenly spread parameter
 struct bezier
 {
-	glm::dvec3 p0, p1, p2, p3;
+	glm::dvec3 p0;
+	glm::dvec3 p1;
+	glm::dvec3 p2;
+	glm::dvec3 p3;
 
 	explicit bezier(segment_data const &Path)
 	{
@@ -157,6 +164,74 @@ struct bezier
 inline double chord_length(segment_data const &Path)
 {
 	return glm::length(plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start]));
+}
+
+inline bool has_controls(segment_data const &Path)
+{
+	return Path.points[segment_data::point::control1] != glm::dvec3{} || Path.points[segment_data::point::control2] != glm::dvec3{};
+}
+
+inline segment_data reversed(segment_data const &Path)
+{
+	segment_data result{Path};
+	result.points[segment_data::point::start] = Path.points[segment_data::point::end];
+	result.points[segment_data::point::end] = Path.points[segment_data::point::start];
+	result.points[segment_data::point::control1] = Path.points[segment_data::point::control2];
+	result.points[segment_data::point::control2] = Path.points[segment_data::point::control1];
+	result.rolls = {-Path.rolls[1], -Path.rolls[0]};
+	return result;
+}
+
+inline std::vector<segment_data> straight_piece(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, double const Length)
+{
+	if (Length < 0.5)
+		return {};
+	segment_data path;
+	path.points[segment_data::point::start] = Point;
+	path.points[segment_data::point::end] = {Point.x + Direction.x * Length, Point.y + Grade * Length, Point.z + Direction.y * Length};
+	return {path};
+}
+
+inline segment_data part_of(segment_data const &Piece, double const From, double const To)
+{
+	bezier const curve{Piece};
+	segment_data result{Piece};
+	result.points[segment_data::point::start] = curve.point(From);
+	result.points[segment_data::point::end] = curve.point(To);
+	if (has_controls(Piece))
+	{
+		result.points[segment_data::point::control1] = curve.first(From) * ((To - From) / 3.0);
+		result.points[segment_data::point::control2] = -curve.first(To) * ((To - From) / 3.0);
+	}
+	result.rolls = {glm::mix(Piece.rolls[0], Piece.rolls[1], static_cast<float>(From)), glm::mix(Piece.rolls[0], Piece.rolls[1], static_cast<float>(To))};
+	return result;
+}
+
+inline std::vector<segment_data> arc_through(glm::dvec3 const &Point, glm::dvec2 const &Direction, double const Grade, glm::dvec2 const &Offset)
+{
+	auto const along{glm::dot(Offset, Direction)};
+	auto const lateral{cross(Direction, Offset)};
+	auto const chord{glm::length(Offset)};
+	if (along <= 0.0 || chord < 0.5)
+		return {};
+	if (std::abs(lateral) < 0.005 * chord + 0.05)
+		return straight_piece(Point, Direction, Grade, along);
+	auto const angle{2.0 * std::atan2(std::abs(lateral), along)};
+	return arc_pieces(Point, Direction, Grade, chord / (2.0 * std::sin(angle * 0.5)), angle, lateral > 0.0 ? 1 : -1);
+}
+
+inline double hermite(double const Length, double const Height0, double const Grade0, double const Height1, double const Grade1, double const T, double &Grade)
+{
+	auto const t2{T * T};
+	auto const t3{t2 * T};
+	Grade = (6.0 * t2 - 6.0 * T) * (Height0 - Height1) / Length + (3.0 * t2 - 4.0 * T + 1.0) * Grade0 + (3.0 * t2 - 2.0 * T) * Grade1;
+	return (2.0 * t3 - 3.0 * t2 + 1.0) * Height0 + (t3 - 2.0 * t2 + T) * Length * Grade0 + (3.0 * t2 - 2.0 * t3) * Height1 + (t3 - t2) * Length * Grade1;
+}
+
+inline glm::dvec3 level(glm::dvec3 const &Vector)
+{
+	glm::dvec3 const flat{Vector.x, 0.0, Vector.z};
+	return glm::length(flat) > 1e-9 ? glm::normalize(flat) : glm::dvec3{0.0, 0.0, 1.0};
 }
 
 } // namespace geometry

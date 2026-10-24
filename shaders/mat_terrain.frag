@@ -43,6 +43,8 @@ uniform highp sampler2DArray layerspecgloss;
 uniform highp sampler2D layertable;
 
 #define NORMALMAP
+// param[2] holds the placement of the chunk, not the weathering
+#define NO_WEATHERING
 #include <light_common.glsl>
 #include <apply_fog.glsl>
 #include <tonemapping.glsl>
@@ -51,6 +53,12 @@ void main()
 {
 	// place within the chunk, 0..1 along x and z, and the paint samples around it
 	vec2 local = clamp(vec2(f_coord.x - param[2].x, -f_coord.y - param[2].y) * param[2].z, 0.0, 1.0);
+#if TERRAIN_HOLES
+	// the openings cut in the ground (mat_terrain_holes.frag): the mask led between its samples, cut over the half.
+	// discarded at the end, the neighbours of the fragment still need it for their derivatives
+	float holeside = float(textureSize(holes, 0).x);
+	bool cut = (texture(holes, (local * (holeside - 1.0) + 0.5) / holeside).r > 0.5);
+#endif
 	float samples = param[2].w;
 	vec2 paintcoord = (local * samples + 0.5) / (samples + 1.0);
 	vec4 w0 = texture(weights0, paintcoord);
@@ -105,7 +113,9 @@ void main()
 		}
 		else
 		{
-			gloss += weight;
+			// a layer without a specgloss map: a dielectric of the glossiness: of the material (a blinn-phong exponent)
+			specularity += 0.5 * weight;
+			gloss += (1.0 - phong_roughness(abs(param[1].w))) * weight;
 		}
 		reflectivity += layerreflection * weight;
 		total += weight;
@@ -122,6 +132,10 @@ void main()
 	vec3 fragcolor = ambient;
 	fragcolor = apply_lights(fragcolor, fragnormal, albedo, reflectivity, specularity, shadow_tone);
 
+#if TERRAIN_HOLES
+	if (cut)
+		discard;
+#endif
 	vec4 color = vec4(apply_fog(fragcolor), alpha_mult);
 #if POSTFX_ENABLED
 	out_color = color;

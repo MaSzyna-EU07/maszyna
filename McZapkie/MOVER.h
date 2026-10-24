@@ -169,6 +169,8 @@ enum DerailReason
 	WRONG_TRACK_TYPE = 4, // Ra: powód wykolejenia: nieodpowiednia trajektoria
 	/// <summary>Collision with another vehicle.</summary>
 	COLLISION = 5, //     powód wykolejenia: zderzenie z innym pojazdem
+	/// <summary>Trailing through a switch with a movable nose set the other way.</summary>
+	TRAILED_SWITCH = 6, // powód wykolejenia: rozprucie rozjazdu z ruchomym dziobem
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
@@ -2322,7 +2324,23 @@ class TMoverParameters
 	// Q *******************************************************************************************
 	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
 	double GetTrainsetHighVoltage() const;
-	bool switch_physics(bool const State);
+	// what turns the physics on, counted for the debug panel (Timer::switching_counter)
+	enum class wake_cause
+	{
+		other,
+		mainpipe, // air flowing in from a neighbour along the brake pipe
+		scndpipe, // along the main reservoir pipe
+		command,
+		speed, // the test of ComputeTotalForce(): the vehicle moves
+		acceleration, // accelerates
+		neighbour, // a neighbour moves or accelerates
+		rest // active cab, switching, ezt/dmu
+	};
+	bool switch_physics(bool const State, wake_cause const Cause = wake_cause::other);
+	// whether the vehicle accelerates, for the test which turns the physics off in vehicles standing still (ComputeTotalForce()).
+	// standing still, its acceleration is the pull of the slope and of the couplers, as the brakes and the resistance count only
+	// against a speed (FTotal); with Global.physics_sleepheld one held by them, the way ComputeMovement() keeps it standing, doesn't
+	bool accelerating() const;
 	double LocalBrakeRatio(void) const;
 	double ManualBrakeRatio(void) const;
 	double PipeRatio(void) const; /*ile napelniac*/

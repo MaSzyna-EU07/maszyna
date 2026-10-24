@@ -1,0 +1,315 @@
+// the fog volume of the main view, first pass: in every cell of a grid laid over the view (slices spaced exponentially in the
+// depth), how dense the fog is and how much light it scatters towards the camera. the density: the haze, the patches of the
+// ground fog, the low clouds; the light: the colour the fog has towards the horizon (weather_common.glsl), less what the
+// shadows of the sun and of the clouds hold back, and the lamps and headlights of the light clusters. blended with the
+// previous frame, found where the cell was then; the cells are sampled at another point every frame, each cell going through
+// the points from a place of its own, so the volume doesn't flicker as a whole, and the blending smooths what a cell holds over
+// its whole size: a beam doesn't swim over the grid of the cells as the camera moves and turns. what the cell takes the lights
+// from doesn't depend on the point (the clusters of the middle of the cell)
+// rgb: light scattered towards the camera per metre, a: extinction per metre
+
+#include <common>
+#include <clouds_common.glsl>
+
+layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, local_size_z = 1) in;
+
+layout(rgba16f, binding = 0) uniform writeonly image3D fog_scattering;
+layout(binding = CLOUD_HISTORY_TEX) uniform sampler3D fog_history;
+
+#if SHADOWMAP_ENABLED
+uniform sampler2DArrayShadow shadowmap;
+#endif
+uniform sampler2D headlightmap;
+layout(binding = HEADLIGHT_SHADOW_TEX) uniform sampler2DArrayShadow headlight_shadowmap;
+
+layout(location = 0) uniform ivec3 grid;
+layout(location = 1) uniform mat4 inverse_projection;
+layout(location = 2) uniform mat4 view_to_world;
+// x: near, y: far, z: slices / log((far + FOG_VOLUME_BIAS) / (near + FOG_VOLUME_BIAS)), w: where in its slice the cell is
+// sampled this frame (0-1)
+layout(location = 3) uniform vec4 slicing;
+// world axes to the clip space of the previous frame, the camera of the previous frame at the origin
+layout(location = 4) uniform mat4 previous_projection_view;
+layout(location = 5) uniform vec3 previous_camera;
+// x: share of this frame (1 without history), y: brightness of the lamps in the fog (0: none), z: 1 when the sun casts shadows
+// into the fog, w: 1 when the headlights cast shadows into it
+layout(location = 6) uniform vec4 options;
+// the light of the cab lamp, which lights no fog (the air of the cab is clear), or -1
+layout(location = 7) uniform int cablamp;
+// x: near, y: slices / log((far + FOG_VOLUME_BIAS) / (near + FOG_VOLUME_BIAS)) of the previous frame
+layout(location = 8) uniform vec2 previous_slicing;
+// where in its cell the cell is sampled this frame across the view (0-1), as slicing.w is along the depth
+layout(location = 9) uniform vec2 jitter;
+
+// ray of the view space through a point of the view (0-1), one metre of the depth long
+vec3 view_ray(vec2 coords)
+{
+	vec4 near = inverse_projection * vec4(coords * 2.0 - 1.0, 1.0, 1.0);
+	vec3 ray = near.xyz / near.w;
+	return ray / -ray.z;
+}
+
+// view depth at a place along the slices: slice number and the part of the slice
+float slice_depth(float slice)
+{
+	return (slicing.x + FOG_VOLUME_BIAS) * exp(slice / slicing.z) - FOG_VOLUME_BIAS;
+}
+
+// where in the cell it is sampled this frame, 0-1 on each axis: the point of the sequence of the frames moved by a value of
+// the cell's own (pcg3d hash), the middle without the blending
+vec3 cell_offset(ivec3 cell)
+{
+	if (options.x >= 1.0)
+		return vec3(0.5);
+	uvec3 v = uvec3(cell) * 1664525U + 1013904223U;
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+	v ^= v >> 16U;
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+	return fract(vec3(jitter, slicing.w) + vec3(v >> 8U) * (1.0 / 16777216.0));
+}
+
+float henyey_greenstein(float cosangle, float g)
+{
+	float g2 = g * g;
+	return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosangle, 1e-4), 1.5);
+}
+
+// share of the sunlight the shadow map holds back at a point of the view space, one comparison
+float sun_shadow(vec3 position)
+{
+#if SHADOWMAP_ENABLED
+	float span_distance = dot(position, position);
+	uint cascade;
+	for (cascade = 0U; cascade < MAX_CASCADES; cascade++)
+		if (span_distance <= cascade_end[cascade])
+			break;
+	for (; cascade < MAX_CASCADES; cascade++)
+	{
+		vec4 lightpos = lightview[cascade] * vec4(position, 1.0);
+		vec3 coords = lightpos.xyz / lightpos.w;
+		if (all(greaterThanEqual(coords.xy, vec2(0.0))) && all(lessThanEqual(coords.xy, vec2(1.0))))
+		{
+			if (coords.z < 0.0)
+				return 0.0;
+			return texture(shadowmap, vec4(coords.xy, float(cascade), coords.z + 0.0001 * float(cascade + 1U)));
+		}
+		// outside the map: lit, unless the cascades are fitted to the depth of the view (gfx.shadow.sdsm), whose maps cover
+		// only the area of the surfaces seen; then the first further cascade whose map holds the point
+		if (shadow_fit.x <= 0.0)
+			return 0.0;
+	}
+	return 0.0;
+#else
+	return 0.0;
+#endif
+}
+
+// light of a lamp or of the beam of headlights at a point of the view space, before the phase
+vec3 lamp_light(light_s light, vec3 position)
+{
+	if (light.type == LIGHT_HEADLIGHTS)
+	{
+		vec4 projected = light.headlight_projection * vec4(position, 1.0);
+		vec3 coords = projected.xyz / projected.w;
+		if (coords.z < 0.0 || coords.z > 1.0 || any(lessThan(coords.xy, vec2(0.0))) || any(greaterThan(coords.xy, vec2(1.0))))
+			return vec3(0.0);
+		float span_distance = length(light.pos - position);
+		float atten = 1.0 / (1.0 + light.linear * span_distance + light.quadratic * span_distance * span_distance);
+		atten *= mix(1.0, 0.0, clamp((coords.z - 0.998) * 500.0, 0.0, 1.0));
+		vec3 beam = textureLod(headlightmap, coords.xy, 1.0).rgb * light.headlight_weights.rgb;
+		float intensity = max(max(beam.r, beam.g), beam.b);
+		if ((options.w > 0.5) && (light.headlight_weights.w > 0.5) && (intensity > 0.0))
+		{
+			// the shadow map of the beam, as in light_common.glsl without the offset along a normal
+			uint map = uint(light.headlight_weights.w - 0.5);
+			vec4 shadowpos = headlight_shadow[map] * vec4(position, 1.0);
+			if (shadowpos.w > 0.0)
+			{
+				vec2 shadowcoords = shadowpos.xy / shadowpos.w;
+				if (all(greaterThanEqual(shadowcoords, vec2(0.0))) && all(lessThanEqual(shadowcoords, vec2(1.0))))
+				{
+					float texel = headlight_shadow_params[map].x * shadowpos.w;
+					float reference = shadowpos.z / max(shadowpos.w - texel * 1.5, 1e-3);
+					intensity *= 1.0 - texture(headlight_shadowmap, vec4(shadowcoords, float(map), reference));
+				}
+			}
+		}
+		return light.color * (atten * intensity * light.intensity);
+	}
+	vec3 tolight = light.pos - position;
+	float distance2 = dot(tolight, tolight);
+	float edge = clamp(1.0 - distance2 * distance2 * (light.quadratic * light.quadratic), 0.0, 1.0);
+	float atten = edge * edge / max(distance2, 0.01);
+	if (light.type == LIGHT_SPOT)
+		atten *= smoothstep(light.out_cutoff, light.in_cutoff, dot(-tolight * inversesqrt(max(distance2, 1e-8)), normalize(light.dir)));
+	return light.color * (atten * light.intensity);
+}
+
+// light of a lamp or of the beam of headlights scattered towards the camera, the average per metre along a segment of the ray
+// of a cell (start, unit direction, length; view space). point samples of a lamp next to the ray change many times over with
+// where in the cell they fall (the light falls off with the square of the distance), so the falloff of a lamp is integrated
+// along the segment and only the rest of its light (the cone, the edge of its reach, the phase) is sampled, at two points the
+// integral spreads by itself (equi-angular sampling, Kulla & Fajardo 2012). next to the lamp the light is spread over the size
+// of a cell: the distance of the lamp from the ray grows by the width of the cell there, and the cone of a spot light starts
+// that far behind the lamp. the point sampled moves within the cell from frame to frame, and the ray of the cell would pass at
+// almost no distance from the lamp in one frame and a cell away in the next, above the tip of the cone and below it. Part:
+// where between the two halves of the segment the points are (0-1)
+vec3 lamp_segment(light_s lamp, light_s cone, vec3 start, vec3 direction, float span, float width, float part);
+vec3 lamp_scattering(light_s lamp, vec3 start, vec3 direction, float span, float cellwidth, float part)
+{
+	vec3 sum = vec3(0.0);
+	if (lamp.type == LIGHT_HEADLIGHTS)
+	{
+		// the beam falls off slowly, two points spread evenly along the segment
+		for (int i = 0; i < 2; i++)
+		{
+			vec3 position = start + direction * (span * (float(i) + part) * 0.5);
+			sum += lamp_light(lamp, position) * henyey_greenstein(dot(normalize(position - lamp.pos), -direction), 0.4);
+		}
+		return sum * 0.5;
+	}
+	float closest = dot(lamp.pos - start, direction);
+	vec3 nearest = start + direction * closest;
+	float width = max(cellwidth * max(-nearest.z, 0.0), 1e-3);
+	light_s cone = lamp;
+	if (lamp.type == LIGHT_SPOT)
+		cone.pos -= normalize(lamp.dir) * width;
+	if (dot(lamp.pos - nearest, lamp.pos - nearest) < 9.0 * width * width)
+	{
+		// a lamp within a few cells of the ray: the light of the cell is taken along four rays spread over the cell, so it
+		// doesn't depend on which side of the lamp the ray of this frame passes, and the points along the rays are staggered,
+		// eight along the cell, where the cone changes the most (its tip)
+		vec3 across = normalize(cross(direction, vec3(0.0, 1.0, 0.0) + vec3(1e-4, 0.0, 0.0)));
+		vec3 up = cross(across, direction);
+		for (int k = 0; k < 4; k++)
+		{
+			vec2 shift = (vec2(float(k & 1), float(k >> 1)) - 0.5) * 0.5 * width;
+			sum += lamp_segment(lamp, cone, start + across * shift.x + up * shift.y, direction, span, width, fract(part + 0.25 * float(k)));
+		}
+		return sum * 0.25;
+	}
+	return lamp_segment(lamp, cone, start, direction, span, width, part);
+}
+
+// lamp_scattering() along one ray: Cone the lamp with the tip of its cone moved behind it, Width the width of the cell at the lamp
+vec3 lamp_segment(light_s lamp, light_s cone, vec3 start, vec3 direction, float span, float width, float part)
+{
+	vec3 sum = vec3(0.0);
+	float closest = dot(lamp.pos - start, direction);
+	vec3 nearest = start + direction * closest;
+	float reach = sqrt(dot(lamp.pos - nearest, lamp.pos - nearest) + width * width);
+	float first = atan(-closest, reach);
+	float last = atan(span - closest, reach);
+	for (int i = 0; i < 2; i++)
+	{
+		vec3 position = start + direction * (closest + reach * tan(mix(first, last, (float(i) + part) * 0.5)));
+		vec3 tolight = cone.pos - position;
+		// the light without its falloff, which the integral holds
+		vec3 fromlamp = position - lamp.pos;
+		sum += lamp_light(cone, position) * max(dot(tolight, tolight), 0.01) * henyey_greenstein(dot(fromlamp, -direction) * inversesqrt(max(dot(fromlamp, fromlamp), 1e-8)), 0.4);
+	}
+	return sum * (0.5 * (last - first) / (reach * max(span, 1e-4)));
+}
+
+void main()
+{
+	ivec3 cell = ivec3(gl_GlobalInvocationID);
+	if (any(greaterThanEqual(cell, grid)))
+		return;
+	vec3 offset = cell_offset(cell);
+	vec2 coords = (vec2(cell.xy) + offset.xy) / vec2(grid.xy);
+	float depth = slice_depth(float(cell.z) + offset.z);
+	vec3 ray = view_ray(coords);
+	vec3 view = ray * depth;
+	// the segment of the ray through the cell, for the light which changes within the cell
+	float raylength = length(ray);
+	vec3 raydirection = ray / raylength;
+	float front = slice_depth(float(cell.z));
+	vec3 start = ray * front;
+	float span = (slice_depth(float(cell.z) + 1.0) - front) * raylength;
+	vec3 world = mat3(view_to_world) * view;
+	float height = weather_camera.x + world.y;
+
+	// density
+	float haze = fog_haze.x * exp(-fog_haze.y * max(height, 0.0));
+	float ground = fog_ground.x * exp(-fog_ground.y * max(height - fog_ground.z, 0.0));
+	if (ground > 0.0 && fog_ground.w > 0.0)
+	{
+		float patches = textureLod(cloud_shape_noise, (world + fog_noise.xyz) * fog_noise.w, 0.0).g;
+		ground *= mix(1.0, clamp((patches - 0.3) * 2.6, 0.0, 2.2), fog_ground.w);
+	}
+	float clouds = cloud_density_coarse(world);
+	float extinction = haze + ground + clouds;
+
+	vec4 result = vec4(0.0);
+	if (extinction > 1e-7)
+	{
+		vec3 direction = normalize(world);
+		// the light of the sky and the sun, held back by the shadows
+		float sunlit = cloud_shadow(world);
+		if (options.z > 0.5 && sunlit > 0.0)
+		{
+			// two points of the segment, one in each half: a shaft of light no longer comes and goes with the one point sampled
+			float shadow = sun_shadow(start + raydirection * (span * 0.5 * offset.z)) + sun_shadow(start + raydirection * (span * 0.5 * (offset.z + 1.0)));
+			sunlit *= 1.0 - 0.5 * shadow;
+		}
+		vec3 light = fog_whiten(fog_color_world(direction), (ground + clouds) / extinction) * fog_light_factor(sunlit);
+		// lamps and headlights of the clusters the segment of the cell goes through, each part of the segment with the lights of
+		// its own cluster. the lights of the cluster of the point sampled would change with the point, frame to frame, where the
+		// cell reaches into two clusters which don't hold the same lights (a full cluster leaves the least important out)
+		if (options.y > 0.0 && lights_clustered != 0U && cluster_valid != 0U)
+		{
+			vec2 middle = (vec2(cell.xy) + 0.5) / vec2(grid.xy);
+			ivec2 tile = clamp(ivec2(middle * vec2(CLUSTER_GRID_X, CLUSTER_GRID_Y)), ivec2(0), ivec2(CLUSTER_GRID_X - 1, CLUSTER_GRID_Y - 1));
+			float back = front + span / raylength;
+			int first = clamp(int(floor(cluster_slice_bias + log(max(front, 1e-4)) * cluster_slice_scale)), 0, CLUSTER_GRID_Z - 1);
+			int last = clamp(int(floor(cluster_slice_bias + log(max(back, 1e-4)) * cluster_slice_scale)), first, min(first + 3, CLUSTER_GRID_Z - 1));
+			float cellwidth = length(view_ray(coords + vec2(1.0 / float(grid.x), 0.0)) - ray);
+			vec3 lamps = vec3(0.0);
+			for (int slice = first; slice <= last; slice++)
+			{
+				float partfront = (slice == first) ? front : exp((float(slice) - cluster_slice_bias) / cluster_slice_scale);
+				float partback = (slice == last) ? back : exp((float(slice + 1) - cluster_slice_bias) / cluster_slice_scale);
+				float partspan = max(partback - partfront, 0.0) * raylength;
+				if (partspan <= 0.0)
+					continue;
+				vec3 partstart = ray * partfront;
+				cluster_range_s range = cluster_ranges[uint(tile.x + CLUSTER_GRID_X * (tile.y + CLUSTER_GRID_Y * slice))];
+				vec3 partlamps = vec3(0.0);
+				for (uint i = 0U; i < range.count; i++)
+				{
+					uint index = cluster_light_indices[range.offset + i];
+					if (int(index) == cablamp)
+						continue;
+					partlamps += lamp_scattering(lights[index], partstart, raydirection, partspan, cellwidth, offset.z);
+				}
+				lamps += partlamps * (partspan / max(span, 1e-4));
+			}
+			light += lamps * options.y;
+		}
+		result = vec4(light * fog_haze.w * extinction, extinction);
+	}
+
+	// the previous frame, where the middle of the cell was then: the cells of the history hold what the cells were on the whole,
+	// not at the point they were sampled at
+	float share = options.x;
+	if (share < 1.0)
+	{
+		vec3 centre = mat3(view_to_world) * (view_ray((vec2(cell.xy) + 0.5) / vec2(grid.xy)) * slice_depth(float(cell.z) + 0.5));
+		vec4 clip = previous_projection_view * vec4(centre - previous_camera, 1.0);
+		if (clip.w > 0.0)
+		{
+			float previousslice = log(max((clip.w + FOG_VOLUME_BIAS) / (previous_slicing.x + FOG_VOLUME_BIAS), 1e-6)) * previous_slicing.y;
+			vec3 previous = vec3(clip.xy / clip.w * 0.5 + 0.5, previousslice / float(grid.z));
+			if (all(greaterThanEqual(previous, vec3(0.0))) && all(lessThanEqual(previous, vec3(1.0))))
+				result = mix(textureLod(fog_history, previous, 0.0), result, share);
+		}
+	}
+	if (any(isnan(result)))
+		result = vec4(0.0);
+	imageStore(fog_scattering, cell, result);
+}

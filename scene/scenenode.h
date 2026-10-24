@@ -345,6 +345,10 @@ private:
 
 
 
+// changes whenever a node is shown or hidden, or a model instance stops being drawn along with other instances of its
+// model. copies of these states (instance records of the renderer) are made anew once it changes
+inline unsigned int node_state_version { 1 };
+
 // base interface for nodes which can be actvated in scenario editor
 class basic_node {
 
@@ -460,6 +464,9 @@ basic_node::location() {
 inline
 void
 basic_node::visible( bool const Visible ) {
+    if( Visible != m_visible ) {
+        ++node_state_version;
+    }
     m_visible = Visible;
 }
 
