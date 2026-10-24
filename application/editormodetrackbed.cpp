@@ -134,6 +134,16 @@ void editor_mode::follow_ground(std::vector<segment_data> &Pieces, double const 
 		ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
 		return;
 	}
+	auto const grading{laying_grading(Style)};
+	auto const bed = [&](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions) { return bed_heights(Points, Directions, Style); };
+	if (m_follow_preview)
+		ground_follow::follow_meanwhile(Pieces, {Height0, Grade0, Height1, Grade1}, bed, grading, m_fitter);
+	else
+		ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, bed, grading, &m_fitter);
+}
+
+ground_follow::grading editor_mode::laying_grading(TTrack const *Style) const
+{
 	// the line goes over the ground as the tracks go onto the terrain: the vertical curves of the norms, the grades as steep as the
 	// ground has them, a rise or a hollow longer than a structure followed closely, the bumps and what parts from it gone past
 	ground_follow::grading grading;
@@ -148,7 +158,7 @@ void editor_mode::follow_ground(std::vector<segment_data> &Pieces, double const 
 	grading.fit.follow_steepest = 100.0;
 	grading.fit.follow_tolerance = 0.05;
 	grading.reach = kModel;
-	ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, [&](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions) { return bed_heights(Points, Directions, Style); }, grading);
+	return grading;
 }
 
 glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point)

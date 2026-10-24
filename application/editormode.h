@@ -39,6 +39,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
 #include "editor/editorProfile.hpp"
+#include "editor/editorGroundFollow.hpp"
 #include "editor/editorInfra.hpp"
 #include "editor/editorGauge.hpp"
 #include "editor/editorClips.hpp"
@@ -1512,6 +1513,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool start_extend(editor_track::snap_target const &End);
 	void finish_extend();
 	std::vector<segment_data> extend_pieces() const;
+	// the same for the track shown while it's dragged: its grade line fitted on the thread of the fitter, the frame not waiting for it
+	std::vector<segment_data> extend_preview() const;
 	// the free end of the path as the start of a new track; false if it isn't free or has no direction
 	static bool free_end(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool);
 	// the free end new pieces are added at: the selected point if it's one, else the end, else the start
@@ -1732,6 +1735,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static std::pair<double, double> trackbed(TTrack const *Style);
 	std::vector<double> bed_heights(std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions, TTrack const *Style) const;
 	void follow_ground(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const;
+	ground_follow::grading laying_grading(TTrack const *Style) const;
+	// the grade lines of the tracks shown while they're laid are fitted on a thread of their own, not to hold up the frames
+	mutable ground_follow::fitter m_fitter;
+	mutable bool m_follow_preview{false};
 	glm::dvec3 lay_bed(glm::dvec3 const &Point);
 	std::optional<glm::dvec3> m_cursor_override;
 	bool sweep_grabs(glm::dvec3 const &Point);

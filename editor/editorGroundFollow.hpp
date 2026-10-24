@@ -9,7 +9,11 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <condition_variable>
 #include <functional>
+#include <mutex>
+#include <optional>
+#include <thread>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -49,7 +53,54 @@ struct grading
 	double reach{100.0}; // m, how far the ground may part from the line and still be followed
 };
 
-// where Bed finds no ground, the heights lead from one end to the other
-void follow(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const &Bed, grading const &Grading = {});
+// the ground under a track, sampled along it, and what the grade line is fitted to
+struct request
+{
+	std::vector<double> chainages;
+	std::vector<double> targets; // the height of the bed at each chainage, NaN where there's no ground
+	double total{0.0}; // m, the length in plan
+	ends heights;
+	grading grades;
+
+	bool operator==(request const &Other) const;
+};
+
+// the grade lines of the track shown while it's laid, fitted on a thread of their own: fitting one takes some milliseconds,
+// tens of them on a long track over the terrain model, and the track follows the cursor frame after frame. The latest one
+// asked for is fitted, the ones asked for meanwhile are left out
+class fitter
+{
+  public:
+	~fitter();
+	// the line of exactly this request, once fitted; graded false: none was found, the heights lead from end to end
+	bool done(request const &Request, profile::line &Line, bool &Graded) const;
+	// the line fitted last, of whatever request
+	bool latest(request &Request, profile::line &Line, bool &Graded) const;
+	void ask(request Request);
+
+  private:
+	struct result
+	{
+		request asked;
+		profile::line line;
+		bool graded{false};
+	};
+	void work();
+
+	mutable std::mutex m_mutex;
+	std::condition_variable m_wake;
+	std::optional<request> m_asked;
+	std::optional<request> m_fitting;
+	std::optional<result> m_result;
+	bool m_stop{false};
+	std::thread m_thread;
+};
+
+// where Bed finds no ground, the heights lead from one end to the other. With a fitter the line it fitted for the same ground
+// is taken instead of fitting it again
+void follow(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const &Bed, grading const &Grading = {}, fitter const *Fitted = nullptr);
+// the same, though the line is fitted by the fitter: until it has it, the track gets the line it fitted last stretched over its
+// length, if it went on from the same end, or the heights from end to end
+void follow_meanwhile(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const &Bed, grading const &Grading, fitter &Fitter);
 
 } // namespace ground_follow

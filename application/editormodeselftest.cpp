@@ -151,7 +151,11 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   screenshot
 //   save
 //   log <text>
-//   perf <label>                         the frames drawn since the last perf and the time per frame logged, with the timings and counts of the renderer
+//   perf <label>                         the frames drawn since the last perf and the time per frame logged, the longest frame and those over 33 ms,
+//                                        with the timings and counts of the renderer
+//   fittime <metres>...                  the grade line of a straight over rolling ground of each length fitted, as at a click, and the time the
+//                                        frame waits for it while the track is laid, the line fitted on the thread of the fitter
+//   terrainhash                          a hash of the heights of the terrain chunks in memory, to compare the ground two builds made
 //   rebuildall                           the geometry of every path in the sections made already laid anew, the time it took logged,
 //                                        and the 3d sleepers of all the tracks laid anew, timed apart
 //   sleepercheck                         the 3d sleepers of all the tracks checked for beams over each other and rails without enough under them
@@ -177,6 +181,16 @@ void editor_mode::selftest_step()
 		set_norms_free(true);
 	}
 	++editor_selftest::frames();
+	// how long each frame took, for the longest one perf tells
+	{
+		static auto last{std::chrono::steady_clock::now()};
+		auto const now{std::chrono::steady_clock::now()};
+		auto const frame{std::chrono::duration<double, std::milli>(now - last).count()};
+		last = now;
+		editor_selftest::frame_longest() = std::max(editor_selftest::frame_longest(), frame);
+		if (frame > 33.0)
+			++editor_selftest::frames_slow();
+	}
 	if (test.wait > 0)
 	{
 		--test.wait;

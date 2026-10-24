@@ -24,6 +24,19 @@ inline std::size_t &frames()
 	return count;
 }
 
+// the longest frame since the last perf, and the frames longer than 33 ms
+inline double &frame_longest()
+{
+	static double value{0.0};
+	return value;
+}
+
+inline std::size_t &frames_slow()
+{
+	static std::size_t count{0};
+	return count;
+}
+
 inline std::string one_line(std::string Text)
 {
 	std::replace(Text.begin(), Text.end(), '\n', ';');

@@ -113,9 +113,11 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		auto const now{std::chrono::steady_clock::now()};
 		auto const frames{editor_selftest::frames() - lastframe};
 		auto const elapsed{std::chrono::duration<double, std::milli>(now - last).count()};
-		WriteLog(format("SELFTEST perf %s: %zu frames, %.3f ms per frame | %s | %s", label.c_str(), frames, frames > 0 ? elapsed / frames : 0.0, editor_selftest::one_line(GfxRenderer->info_times()).c_str(), editor_selftest::one_line(GfxRenderer->info_stats()).c_str()));
+		WriteLog(format("SELFTEST perf %s: %zu frames, %.3f ms per frame, the longest %.1f ms, %zu over 33 ms | %s | %s", label.c_str(), frames, frames > 0 ? elapsed / frames : 0.0, editor_selftest::frame_longest(), editor_selftest::frames_slow(), editor_selftest::one_line(GfxRenderer->info_times()).c_str(), editor_selftest::one_line(GfxRenderer->info_stats()).c_str()));
 		last = now;
 		lastframe = editor_selftest::frames();
+		editor_selftest::frame_longest() = 0.0;
+		editor_selftest::frames_slow() = 0;
 		return selftest_result::handled;
 	}
 	if (command == "rebuildall")

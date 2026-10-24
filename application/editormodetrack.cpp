@@ -1832,7 +1832,7 @@ std::string editor_mode::track_readout() const
 	{
 		double length{0.0};
 		double radius{0.0};
-		auto const pieces{extend_pieces()};
+		auto const pieces{extend_preview()};
 		for (auto const &piece : pieces)
 		{
 			length += bezier{piece}.plan_length();
@@ -2238,7 +2238,7 @@ void editor_mode::draw_build_overlay() const
 			ImVec2 screen;
 			if (projection.project(target.position, screen))
 				drawlist->AddCircle(screen, 14.0f, IM_COL32(255, 60, 255, 255), 20, 3.0f);
-			for (auto const &piece : extend_pieces())
+			for (auto const &piece : extend_preview())
 				drawpath(piece, overlay_color::marked);
 		}
 		else if (plan_crossover(plan))
@@ -2249,7 +2249,7 @@ void editor_mode::draw_build_overlay() const
 		}
 		else
 		{
-			for (auto const &piece : extend_pieces())
+			for (auto const &piece : extend_preview())
 				drawpath(piece, overlay_color::marked);
 		}
 	}

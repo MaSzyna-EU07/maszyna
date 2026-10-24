@@ -42,6 +42,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -468,6 +469,23 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		m_terrain_spacing = heightmap::valid_spacing(spacing);
 		add_chunks_around(std::clamp(count, 1, 8));
 		WriteLog("SELFTEST terrainadd: " + m_terrain_status);
+		return selftest_result::handled;
+	}
+	if (command == "terrainhash")
+	{
+		// the heights of the chunks in memory hashed, to compare the ground two builds made
+		std::vector<editor_terrain *> chunks;
+		m_streamer.collect(chunks);
+		std::sort(chunks.begin(), chunks.end(), [](editor_terrain const *A, editor_terrain const *B) { return A->key() < B->key(); });
+		std::uint64_t hash{1469598103934665603ull};
+		for (auto const *chunk : chunks)
+			for (auto const height : chunk->heights())
+			{
+				std::uint32_t bits;
+				std::memcpy(&bits, &height, sizeof(bits));
+				hash = (hash ^ bits) * 1099511628211ull;
+			}
+		WriteLog(format("SELFTEST terrainhash: %zu chunks, %016llx", chunks.size(), static_cast<unsigned long long>(hash)));
 		return selftest_result::handled;
 	}
 	if (command == "terrainprobe")

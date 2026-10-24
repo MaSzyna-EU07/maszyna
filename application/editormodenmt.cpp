@@ -691,6 +691,10 @@ void editor_mode::nmt_follow_tracks()
 		return;
 	if (state.stage != nmt_state::automatic::idle || state.fitting || ImGui::GetTime() - state.changed_time < 0.3 || ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right))
 		return;
+	// laying on, from the end of the track laid or dragged from a free end, the terrain waits for the laying to end: shaping it
+	// goes through every chunk under the tracks, a stall each click
+	if ((m_lay.active && false == m_lay.points.empty()) || m_extend.active)
+		return;
 	if (false == m_streamer.active())
 	{
 		state.changed.clear();

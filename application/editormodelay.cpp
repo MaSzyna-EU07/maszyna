@@ -101,7 +101,9 @@ void editor_mode::update_build_tools()
 		if (plan_distance(lay.mouse, points.back()) > 1.0)
 			points.push_back(lay.mouse);
 	}
+	m_follow_preview = true;
 	lay.preview = lay_pieces(points, end, lay.preview_length, lay.preview_error);
+	m_follow_preview = false;
 }
 
 bool editor_mode::free_end(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool)
@@ -487,6 +489,14 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	auto const eased{eased_layout(tool.track, tool.point, tool.direction, tool.mouse, radius)};
 	auto pieces{eased.has_value() && false == eased->pieces.empty() ? eased->pieces : editor_track::layout_pieces(m_track_layout, tool.point, tool.direction, tool.grade, tool.mouse, radius)};
 	follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
+	return pieces;
+}
+
+std::vector<segment_data> editor_mode::extend_preview() const
+{
+	m_follow_preview = true;
+	auto pieces{extend_pieces()};
+	m_follow_preview = false;
 	return pieces;
 }
 

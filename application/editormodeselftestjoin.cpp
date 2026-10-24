@@ -129,6 +129,35 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
 		return selftest_result::handled;
 	}
+	if (command == "fittime")
+	{
+		// the grade line of a straight laid over rolling ground fitted, as at a click, and as while the track follows the
+		// cursor: the frame then waits only for the ground to be sampled
+		for (double length{0.0}; words >> length;)
+		{
+			auto const ground = [](double const X) { return 130.0 + 4.0 * std::sin(X / 180.0) + 1.5 * std::sin(X / 37.0) + 0.2 * std::sin(X / 6.0); };
+			auto const bed = [&](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) {
+				std::vector<double> heights;
+				for (auto const &point : Points)
+					heights.push_back(ground(point.x));
+				return heights;
+			};
+			auto const pieces{geometry::straight_piece({0.0, ground(0.0), 0.0}, {1.0, 0.0}, 0.0, length)};
+			ground_follow::ends const ends{ground(0.0), std::numeric_limits<double>::quiet_NaN(), ground(length), std::numeric_limits<double>::quiet_NaN()};
+			auto const grading{laying_grading(nullptr)};
+			auto fitted{pieces};
+			auto const start{std::chrono::steady_clock::now()};
+			ground_follow::follow(fitted, ends, bed, grading);
+			auto const fit{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count()};
+			ground_follow::fitter fitter;
+			auto shown{pieces};
+			auto const asked{std::chrono::steady_clock::now()};
+			ground_follow::follow_meanwhile(shown, ends, bed, grading, fitter);
+			auto const meanwhile{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - asked).count()};
+			WriteLog(format("SELFTEST fittime %.0f m: fitted in %.1f ms, %zu pieces; while laid %.2f ms", length, fit, fitted.size(), meanwhile));
+		}
+		return selftest_result::handled;
+	}
 	if (command == "layheights")
 	{
 		std::string which;
