@@ -17,10 +17,15 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Names.h"
 
 class TTractionPowerSource;
+namespace gfx
+{
+class scene_walk;
+}
 
 class TTraction : public scene::basic_node
 {
     friend opengl46_renderer;
+    friend gfx::scene_walk;
 
   public: // na razie
     TTractionPowerSource *psPower[ 2 ] { nullptr, nullptr }; // najbliższe zasilacze z obu kierunków

@@ -1,5 +1,6 @@
 #version 460 core
 #define STAGE_VERTEX 1
+#define LAYOUT_UI 1
 // the user interface (imgui), drawn by vk14::imgui_backend over the image of the window
 
 #include "common.glsl"

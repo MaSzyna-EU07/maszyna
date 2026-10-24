@@ -40,14 +40,15 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46weather.h"
 #include "rendering/opengl46/opengl46exposure.h"
 #include "rendering/opengl46/opengl46ao.h"
-#include "rendering/opengl46/opengl46locallights.h"
+#include "rendering/common/locallights.h"
 #include "rendering/opengl46/opengl46localshadows.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 #include "rendering/opengl46/opengl46hiz.h"
 #include "rendering/opengl46/opengl46shadowfit.h"
+#include "rendering/common/scenewalk.h"
 
 // bare-bones render controller, in lack of anything better yet
-class opengl46_renderer : public gfx_renderer {
+class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
   public:
 // constructors
     opengl46_renderer() = default;
@@ -189,64 +190,42 @@ class opengl46_renderer : public gfx_renderer {
     static gfx_backend_desc backend_desc();
 
   private:
+	using gfx::scene_walk::Render;
+	using gfx::scene_walk::Render_Alpha;
+	// the draws of the shared walk of the scene
+	void walk_material(material_handle const Material, TSubModel const *Submodel = nullptr, lighting_data const *Lighting = nullptr) override;
+	void walk_shadow_material(material_handle const Material) override;
+	opengl_material const &walk_material_data(material_handle const Material) const override;
+	opengl_material const &walk_material_data(TSubModel const *Submodel) const override;
+	void walk_program(walk_shader const Program) override;
+	void walk_texture(std::size_t const Unit, texture_handle const Texture) override;
+	void walk_blending(bool const Alpha) override;
+	void walk_sunlight(float const Factor = 1.f) override;
+	void walk_environment(TEnvironmentType const Environment = e_flat) override;
+	void walk_ambient_save() override;
+	void walk_ambient_add(glm::vec3 const &Addition) override;
+	void walk_ambient_restore() override;
+	glm::vec4 walk_sun_ambient() const override;
+	void walk_draw(gfx::geometry_handle const &Geometry) override;
+	void walk_draw(std::vector<gfx::geometrybank_handle>::iterator First, std::vector<gfx::geometrybank_handle>::iterator Last) override;
+	std::uint32_t walk_instances(glm::mat4 const *Modelviews, std::size_t const Count) override;
+	void walk_cull_face(bool const Enabled) override;
+	void walk_glare(bool const Enabled) override;
+	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
+	void walk_light_query(TSubModel *Submodel, bool const Begin) override;
+	// the gpu culling of the instances, models and sleepers, the depth pass of the whole scene
+	void walk_region_begin() override;
+	void walk_editor_cursor() override;
+	bool walk_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, bool const Bucketrange, scene::bounding_area const &Area) override;
+	void walk_bucket_culled(scene::basic_cell::instance_bucket const &Bucket) override;
+	bool walk_queue_model(TAnimModel *Instance, bool const Inrange) override;
+	bool walk_queue_sleepers(TTrack *Track) override;
+	void walk_sleepers_drawn(TTrack const &Track, std::vector<float> const &Lodbounds, std::vector<std::pair<float, glm::mat4>> const &Drawn) override;
+	bool walk_instances_begin() override;
+	void walk_instances_compare(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts) override;
+	void walk_instances_end() override;
+
 	// types
-	enum class rendermode
-	{
-		none,
-		color,
-		shadows,
-		reflections,
-		pickcontrols,
-		pickscenery
-	};
-
-	struct debug_stats
-	{
-		int dynamics{0};
-		int models{0};
-		int submodels{0};
-		int paths{0};
-		int traction{0};
-		int shapes{0};
-		int lines{0};
-    int particles{0};
-		int drawcalls{0};
-    int instanced_drawcalls{0}; // drawcalls issued via instanced render path (one per TModel3d batch)
-    int instances{0}; // total instances drawn via instanced render path
-    int triangles{0};
-
-    debug_stats& operator+=( const debug_stats& Right ) {
-        dynamics += Right.dynamics;
-        models += Right.models;
-        submodels += Right.submodels;
-        paths += Right.paths;
-        traction += Right.traction;
-        shapes += Right.shapes;
-        lines += Right.lines;
-        particles += Right.particles;
-        drawcalls += Right.drawcalls;
-        instanced_drawcalls += Right.instanced_drawcalls;
-        instances += Right.instances;
-        return *this; }
-	};
-
-	using section_sequence = std::vector<scene::basic_section *>;
-	using distancecell_pair = std::pair<double, scene::basic_cell *>;
-	using cell_sequence = std::vector<distancecell_pair>;
-
-	struct renderpass_config
-	{
-		opengl_camera pass_camera;
-		opengl_camera viewport_camera;
-		rendermode draw_mode{rendermode::none};
-		float draw_range{0.0f};
-		// depth range of the projection of a color pass; the far plane is only the end of the range which is drawn,
-		// as the projection matrix itself has none
-		float znear{0.0f};
-		float zfar{0.0f};
-    debug_stats draw_stats;
-	};
-
 	struct viewport_config {
 		int width;
 		int height;
@@ -349,33 +328,6 @@ class opengl46_renderer : public gfx_renderer {
 	// Position in world space, Rotation from world axes to its axes; Near is the distance of the near plane from the projector
 	void Headlight_Projector(light_array::light_record const &Light, glm::dvec3 &Position, glm::mat3 &Rotation, glm::mat4 &Projection, float &Near, float &Fieldofview);
 	bool Render(world_environment *Environment);
-	void Render(scene::basic_region *Region);
-	void Render(section_sequence::iterator First, section_sequence::iterator Last);
-	void Render(cell_sequence::iterator First, cell_sequence::iterator Last);
-    void Render(scene::shape_node const &Shape, bool const Ignorerange);
-	void Render(TAnimModel *Instance);
-	// an instance of a bucket of a scene cell, queued to be drawn by Render_Instanced()
-	struct queued_instance {
-		scene::basic_cell::instance_bucket const *bucket;
-		std::size_t index; // of the instance and its record in the bucket
-	};
-	// batched render path for many TAnimModel instances that share the same TModel3d.
-	// Caller guarantees every instance was instanceable when bucketed (no per-instance lights,
-	// no submodel animation, same replacable skins); the records of the instances tell which
-	// ones still are. Instances are individually frustum/distance culled by their records, the
-	// TAnimModel itself is read only for the first instance drawn. Each lod band drawn counts as
-	// one instanced_drawcall in draw_stats; the instances drawn are added to the instances counter.
-	// Bandcounts, when given, gets the number of instances drawn in each lod band.
-	void Render_Instanced( TModel3d *Model, std::vector<queued_instance> const &Instances, std::vector<std::uint32_t> *Bandcounts = nullptr );
-	// adds the bucketed instances of a scene cell to the frame-level buckets drawn by Render_Instanced(),
-	// less the ones their records show to be out of sight in the current render pass
-	void Queue_Instances( scene::basic_cell const *Cell );
-	// makes the records of the instances held by a bucket of a scene cell, with locations relative to Origin
-	void Update_Instance_Records( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket, glm::dvec3 const &Origin );
-	// whether none of the instances of a bucket can pass the culling of the current pass, by the bounds of their records
-	bool Bucket_Culled( scene::basic_cell::instance_bucket const &Bucket ) const;
-	// the sphere around the locations of the visible instances of a bucket, with a margin for the precision of the records
-	static scene::bounding_area Bucket_Area( scene::basic_cell::instance_bucket const &Bucket );
 	// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
 	std::uint32_t Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count );
 	// binds the instance buffer of the frame for the vertex shaders (INSTANCE_SSBO_BINDING)
@@ -479,39 +431,20 @@ class opengl46_renderer : public gfx_renderer {
 	                 std::array<std::optional<std::array<glm::vec3, 8>>, gl::MAX_CASCADES> &Areas );
 	// whether the depth pass of the whole scene draws the material bound last (Bind_Material()) and the geometry
 	bool Scene_Depth_Draws( gfx::geometry_handle const &Geometry ) const;
-	bool Render(TDynamicObject *Dynamic);
-    bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
-	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
-	void Render(TSubModel *Submodel);
-	void Render(TTrack *Track);
-	void Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last);
-	// renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) via GPU instancing.
-	// caller must already have the camera-relative world-space transform set on the matrix stack.
-	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
-	// Global.SleeperDistance from the track origin.
-	void Render_Sleepers( TTrack *Track );
 	// queues the sleepers of a track in the gpu culling of the pass (Global.gfx_gpucull_sleepers), with the gates of
 	// Render_Sleepers(), making their records first when they're missing or out of date
 	void Queue_Sleepers( TTrack *Track );
-	// renders the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of date.
-	// the parts of the model are drawn in instanced batches for the whole run of tracks, the runs of beams out of sight left out
-	void Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
 	// queues a model instance drawn on its own in the gpu culling of the pass (Global.gfx_gpucull_models), as a bucket of
 	// its own, making its record first when it's missing or out of date. Inrange: the cell of the instance lies within the
 	// range of the pass. returns true when the instance isn't drawn by the cpu in the pass: it's drawn from the result of the
 	// culling, or it was culled and recorded by the depth pass of the whole scene, or it lies out of range
 	bool Queue_Model( TAnimModel *Instance, bool const Inrange );
-	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
-    bool Render_interior( bool const Alpha = false );
-    bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
-    bool Render_coupler_adapter( TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha = false );
 	// releases gl textures used only by vehicles farther than gfx.textures.releasedistance times the draw range
 	void Update_Texture_Release();
 	// textures used by materials of the sub-models of specified model, replaceable skins excluded
 	std::vector<texture_handle> const &Model_Textures( TModel3d *Model );
 	// has the data of the textures read ahead of the camera, with gfx.textures.streaming
 	void Update_Texture_Prefetch();
-	void Render(TMemCell *Memcell);
 	void Render_particles();
 	void Render_precipitation();
 	// the view of the colour pass being drawn, for the particles of the gpu
@@ -519,24 +452,14 @@ class opengl46_renderer : public gfx_renderer {
 	// the grass of the heightmap terrain around the camera of the main view; Future: the matrix of the motion vectors
 	void Render_grass(glm::mat4 const &Future);
   void Render_vr_models();
-	void Render_Alpha(scene::basic_region *Region);
-	void Render_Alpha(cell_sequence::reverse_iterator First, cell_sequence::reverse_iterator Last);
-	void Render_Alpha(TAnimModel *Instance);
-	void Render_Alpha(TTraction *Traction);
-    void Render_Alpha(scene::lines_node const &Lines);
 	void Render_editor_overlay();
-	bool Render_Alpha(TDynamicObject *Dynamic);
-	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
-	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
-	void Render_Alpha(TSubModel *Submodel);
-	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
 	// writes the lighting of the pass about to be drawn to the light buffer: the sun, the ambient light and the fog, and the headlights of Lights
 	// unless Headlights is false, as in the pass which draws the environment map, where lights of vehicles would only get baked into the map.
 	// Clustered tells the shading to take the headlights from the lists of the clusters (see Cull_Lights()) and not to go through the first few.
 	// with Headlights and Clustered the cab lamp (first) and the lamps of models and vehicles (after the headlights) are written as well
 	void Update_Lights(light_array &Lights, bool const Headlights = true, bool const Clustered = false);
 	// writes a light of a model or a vehicle, or the cab lamp, to the slot of the light buffer, in the view space of the pass
-	void Write_Local_Light(gl::light_element &Light, opengl46_local_lights::light const &Source, glm::dvec3 const &Camera, glm::mat4 const &View);
+	void Write_Local_Light(gl::light_element &Light, gfx::local_lights::light const &Source, glm::dvec3 const &Camera, glm::mat4 const &View);
 	// brings the light cluster grid of the viewport up to date with the projection of the color pass being drawn.
 	// Targetsize is the size in pixels of what the pass draws to, which gl_FragCoord of the shading counts in
 	void Update_Clusters(viewport_config &vp, glm::ivec2 const &Targetsize);
@@ -547,8 +470,6 @@ class opengl46_renderer : public gfx_renderer {
 	void Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize);
 	// ambient occlusion from the resolved depth (vp.main_texd), multiplied into the image of Target. Mode: Global.gfx_postfx_ao
 	void Render_ambient_occlusion(viewport_config &vp, gl::framebuffer &Target, int const Mode);
-	glm::vec3 pick_color(std::size_t const Index);
-	std::size_t pick_index(glm::ivec3 const &Color);
 
 	bool init_viewport(viewport_config &vp);
 
@@ -590,8 +511,6 @@ class opengl46_renderer : public gfx_renderer {
 	/*
 	    float m_sunandviewangle; // cached dot product of sunlight and camera vectors
     */
-    gfx::geometry_handle m_billboardgeometry{0, 0};
-	texture_handle m_glaretexture{-1};
 	texture_handle m_suntexture{-1};
     texture_handle m_moontexture{-1};
 	texture_handle m_smoketexture{-1};
@@ -612,8 +531,6 @@ class opengl46_renderer : public gfx_renderer {
     opengl46_gpu_particles m_gpuparticles; // the smoke, rain and snow of the gpu (gfx.smoke.gpu, gfx.precipitation.gpu)
     bool m_particlesoft{false}; // the depth for the soft particles is bound in the colour pass being drawn
 
-	unsigned int m_framestamp; // id of currently rendered gfx frame
-	unsigned int m_timbersweepframe { 0 }; // the frame the beams of the tracks far away were last let go in
 	float m_framerate;
 	double m_updateaccumulator{0.0};
 	std::string m_debugtimestext;
@@ -638,29 +555,12 @@ class opengl46_renderer : public gfx_renderer {
 	float m_specularopaquescalefactor{1.f};
     float m_speculartranslucentscalefactor{1.f};
 
-	float m_fogrange = 2000.0f;
-
-	renderpass_config m_renderpass; // parameters for current render pass
-	section_sequence m_sectionqueue; // list of sections in current render pass
-	cell_sequence m_cellqueue;
-	// frame-level accumulation of per-cell opaque instance buckets. Each visited
-	// cell's buckets are merged here keyed by (TModel3d*, skins), so that
-	// Render_Instanced() runs once per unique model across the whole pass instead
-	// of once per cell -- collapsing many tiny instanced draws into a few large
-	// batches. Reused every pass; the vectors are emptied (not freed) at the top of Render(scene::basic_region*).
-	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<queued_instance>, scene::basic_cell::instance_bucket_key_hash> m_frame_instance_buckets;
 	// textures used by vehicle models, for the release of far textures
 	std::unordered_map<TModel3d const *, std::vector<texture_handle>> m_modeltextures;
 	// the read ahead of textures (Update_Texture_Prefetch()): the cell it goes on with
 	std::size_t m_prefetchcursor { 0 };
 	std::chrono::steady_clock::time_point m_prefetchvehicletime;
 	std::chrono::steady_clock::time_point m_prefetchdroptime;
-	// geometry of neighbouring tracks of a cell which share the material, gathered to be drawn together. reused by each Render(path_sequence)
-	std::vector<gfx::geometrybank_handle> m_pathbatch;
-	// instance records kept by the buckets of scene cells are good as long as they carry this number.
-	// it changes with each frame drawn with the scenery editor active, as the editor moves and resizes instances in place,
-	// and whenever scene::node_state_version does, as instances are shown, hidden or drawn on their own
-	unsigned int m_instancerecordsversion { 1 };
 	unsigned int m_nodestateversion { 0 }; // scene::node_state_version which m_instancerecordsversion was last checked against
 	// culling of instances in compute passes, run along the first color pass of the main viewport of a frame
 	// when Global.gfx_gpucull is set: the instances of the pass are drawn from its result (1), or the result is compared
@@ -683,7 +583,6 @@ class opengl46_renderer : public gfx_renderer {
 	int m_shadowcascade { -1 }; // the region is drawn for this cascade of the sun shadows
 	// Instances_Cast_Shadow() of the groups of the shadow pass under way
 	std::unordered_map<scene::basic_cell::instance_bucket_key, bool, scene::basic_cell::instance_bucket_key_hash> m_shadowcasters;
-	std::vector<std::uint32_t> m_instance_bandcounts; // reported by Render_Instanced() for the comparison
 	// the sleepers of tracks culled on the gpu with the instances of the main view (Global.gfx_gpucull_sleepers): records made
 	// from TTrack::m_sleeper_local_transforms when the track is queued first, and again when they or the instance records
 	// (editor, m_instancerecordsversion) went out of date. the records of tracks not queued for a while are let go
@@ -710,10 +609,6 @@ class opengl46_renderer : public gfx_renderer {
 	std::unordered_map<TAnimModel const *, model_records> m_modelrecords;
 	bool m_modelspass { false }; // the models drawn on their own of the pass under way go to its gpu culling
 	bool m_indirectcolourmodels { false }; // with m_indirectcolourpending: the depth pass culled and recorded them too
-	// comparison (Global.gfx_gpucull 2): the key of the model Render( TAnimModel * ) is called for, and the models it drew in
-	// the pass with their scaled squared distances, reported once the culling ran
-	scene::basic_cell::instance_bucket_key const *m_modelcomparekey { nullptr };
-	std::vector<std::pair<scene::basic_cell::instance_bucket_key, float>> m_modelcpudistances;
 	bool m_sleeperspass { false }; // the sleepers of the pass under way go to its gpu culling (the one of the main view)
 	bool m_indirectcoloursleepers { false }; // with m_indirectcolourpending: the depth pass culled and recorded the sleepers too
 	// counts per lod band of the sleepers Render_Sleepers() drew in the pass, by model and skin, for the comparison (they're
@@ -786,7 +681,6 @@ class opengl46_renderer : public gfx_renderer {
 	};
 	std::unordered_map<scene::basic_cell::instance_bucket_key, walk_record, scene::basic_cell::instance_bucket_key_hash> m_walkrecords;
 	int m_walkrankcutoff { 0 }; // Global.gfx_shadow_rank_cutoff the walks were made with
-	bool m_indirectchanging { false }; // the walk under way met a submodel which may look different in the next frame
 	// what the walks of the frame did, for the panel: walks made, of them not kept, walks taken from earlier frames, and the cpu time
 	// of the walks and of putting the draws in order with their blocks uploaded
 	struct walk_counts {
@@ -949,14 +843,10 @@ class opengl46_renderer : public gfx_renderer {
 	bool m_contactshadowslast { false };
 	// a vehicle drawn in the colour pass of the last frame moved, and one drawn in this frame did (motion blur, Render_pass())
 	bool m_vehiclesmoved { true };
-	bool m_vehiclesmoving { false };
 	gl::gpu_timer m_contactshadowstimer; // resolve of the depth
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
-	std::vector<TSubModel const *> m_pickcontrolsitems;
-  std::vector<TSubModel const *> m_picksurfaceitems;
 	TSubModel const *m_pickcontrolitem{nullptr};
-    std::vector<scene::basic_node *> m_picksceneryitems;
     scene::basic_node *m_picksceneryitem{nullptr};
     glm::vec3 m_worldmousecoordinates { 0.f };
     bool m_mousehit { false };
@@ -997,21 +887,16 @@ class opengl46_renderer : public gfx_renderer {
 	uint32_t m_lights_lit = 0;
 	uint32_t m_lights_dropped = 0;
 	// lights of models and vehicles and the cab lamp, gathered once per frame for the light clusters
-	opengl46_local_lights m_locallights;
-	// the last Update_Lights() placed the cab lamp in the light buffer: the cab is lit by it, not by an addition to the ambient light
-	bool m_cablamplit = false;
+	gfx::local_lights m_locallights;
+	// the ambient light of the light buffer while the cab is lit (walk_ambient_save())
+	packed_vec3 m_cabambient { 0.f };
 	// cube shadow maps of the lamps
 	opengl46_local_shadows m_localshadows;
 	// the shadow pass draws to a cube shadow map, with the programs of m_localshadows
 	bool m_cubeshadows = false;
-	// the shadow pass draws the kept scenery part of the map of a lamp: no vehicles, and not the model of the lamp itself
-	bool m_cubescenery = false;
-	TAnimModel const *m_cubeskipinstance = nullptr;
 	// vehicles near the camera which cast the shadows of scenery lamps, and those of them by the lamp being drawn
 	std::vector<TDynamicObject *> m_lampshadowvehicles;
 	std::vector<TDynamicObject *> m_lampshadowslot;
-	// the shadow pass leaves this vehicle out (the one the headlights of the map being drawn belong to)
-	TDynamicObject const *m_shadowskipvehicle = nullptr;
 	// headlights which may get shadow maps in this frame, and their importance
 	std::vector<std::pair<float, light_array::light_record const *>> m_headlightshadowcandidates;
 	std::vector<light_array::light_record const *> m_headlightshadowpicked;
@@ -1041,44 +926,7 @@ class opengl46_renderer : public gfx_renderer {
 	// matrices of their instances past the ones placed earlier in the frame, and draw them from that base instance.
 	// persistently mapped with Global.gfx_bufferstreaming
 	std::unique_ptr<gl::frame_stream> m_instancestream;
-	// when > 0, the renderer is inside a Render_Instanced() call. The draw(handle)
-	// method routes to glDrawElementsInstanced* with this many instances from
-	// m_current_instance_base onwards rather than a single regular draw. The vertex shader reads
-	// per-instance modelview from instance_ssbo[gl_BaseInstance + gl_InstanceID]. Reset to 0 on exit.
-	std::size_t m_current_instance_count { 0 };
-	std::uint32_t m_current_instance_base { 0 };
-	// camera-space transforms of the sleepers and timbers drawn by Render_Timbers, by the model and its part or its level of
-	// detail; kept from frame to frame to reuse their allocations
-	struct timber_bucket {
-		track_sleepers::beam_model const *model { nullptr };
-		int part { -1 }; // of a model put together from parts; -1: the whole model
-		float band { 0.f }; // the squared distance the level of detail of the whole model is seen from
-		std::vector<glm::mat4> instances;
-	};
-	std::vector<timber_bucket> m_timberbuckets;
-	// persistent scratch buffer for Render_Instanced(): holds the per-instance
-	// camera-space root modelview matrices for the batch currently being built.
-	// Kept as a member rather than a function-local so its heap allocation is
-	// reused across calls -- clear() retains capacity, so once it has grown to
-	// the largest batch seen, steady-state frames perform no allocation here.
-	std::vector<glm::mat4> m_instance_modelviews;
-	// further persistent scratch buffers for Render_Instanced(): culled instances paired with their
-	// squared distance, and the lod bounds of the drawn model which split them into lod bands
-	struct instance_survivor {
-		glm::mat4 modelview;
-		float distancesquared;
-		std::uint32_t band;
-	};
-	std::vector<instance_survivor> m_instance_survivors;
-	std::vector<float> m_instance_lodbounds;
-	std::vector<TSubModel const *> m_instance_lodpending;
-	// per sort key (lod band and distance slot): first index in m_instance_modelviews (with end sentinel)
-	// and fill cursor; per lod band: nearest distance
-	std::vector<std::size_t> m_instance_bandstarts;
-	std::vector<std::size_t> m_instance_bandcursors;
-	std::vector<float> m_instance_banddistances;
 	gl::scene_ubs scene_ubs;
-	gl::model_ubs model_ubs;
 	gl::light_data light_data;
 
 	std::unordered_map<std::string, std::shared_ptr<gl::program>> m_shaders;
@@ -1167,8 +1015,6 @@ class opengl46_renderer : public gfx_renderer {
 		std::unique_ptr<opengl_texture> ldr_tex;
 		std::unique_ptr<gl::framebuffer> ldr_fb;
 	} m_preview;
-	// set while a preview is drawn: submodels faded out entirely are skipped, instead of being drawn invisible over the stencil
-	bool m_previewing { false };
 
     static bool renderer_register;
 

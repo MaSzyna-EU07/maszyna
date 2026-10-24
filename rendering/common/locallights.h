@@ -28,15 +28,18 @@ class TSubModel;
 class TAnimModel;
 class TDynamicObject;
 
-// lights of the opengl 4.6 renderer other than the sun and the vehicle headlights, which go to the light clusters:
+// lights of the scene other than the sun and the vehicle headlights, which go to the light clusters of the renderers:
 // - the light points (freespot lights) of scenery models and of vehicles, taken the way the experimental renderer takes them:
 //   a point which is visible, has self-illumination (emission) and is past its self-illumination threshold shines as a spot
 //   light along the -z axis of its submodel, with the cone of its glare. lamps of scenery models switched with Light_On / Light_Off
 //   and the self-illumination of vehicle compartments (TDynamicObject::Sections) work through the same state
 // - the lit compartments of vehicles (low poly interior sections) without light points of their own: a point light in the middle
 // - the lamp of the occupied cab: a point light under the top of the cab model, in place of the ambient light it used to add
-// gathered once per frame around the camera, written to the light buffer by opengl46_renderer::Update_Lights()
-class opengl46_local_lights
+// gathered once per frame around the camera, written to the light buffers by the renderers (Update_Lights())
+namespace gfx
+{
+
+class local_lights
 {
   public:
 	struct light
@@ -53,9 +56,9 @@ class opengl46_local_lights
 		void const *part{nullptr};
 	};
 
-	opengl46_local_lights() = default;
-	opengl46_local_lights(const opengl46_local_lights &) = delete;
-	opengl46_local_lights &operator=(const opengl46_local_lights &) = delete;
+	local_lights() = default;
+	local_lights(const local_lights &) = delete;
+	local_lights &operator=(const local_lights &) = delete;
 
 	// collects the lights within Global.gfx_lights_range of Camera, for the frame about to be drawn. it sets the state of the
 	// shared models of the instances and vehicles it goes through, as the render does before it draws each of them.
@@ -139,3 +142,5 @@ class opengl46_local_lights
 	std::uint32_t m_dropped{0};
 	double m_gathertime{0.0}; // milliseconds, smoothed
 };
+
+} // namespace gfx

@@ -41,3 +41,25 @@ source, compile the binaries again (or delete them): a binary older than its sou
 * The constants of the game (bindings, sizes) are written in `ogl46/common.glsl` and `vk14/common.glsl` for the binaries; the
   game puts its own values before the sources and checks at the start that the files have the same ones (the shader
   validator in `ci_shadervalidator` checks them too).
+
+## vk14
+
+The shaders of `vk14/` are those of `ogl46/` made for the descriptor sets of the Vulkan renderer
+(`rendering/vulkan14/vulkan14bindings.h`), drawn with the same matrices and the same conventions as the OpenGL renderer
+(nothing is turned upside down but the picture shown in the window, `present.frag`).
+
+* A stage file includes `common.glsl` right after its stage define. The pipeline layout it is drawn with is picked by a
+  define before that include: none for the passes of the scene, `LAYOUT_POST` for the post-processing (with `quad.vert`),
+  `LAYOUT_CLUSTER` for the compute passes of the light clusters, `LAYOUT_UI` for the user interface.
+* The scene: set `PASS_SET` holds the blocks of the scene, of the draws (`model_draws[]`, the one of a draw picked by the push
+  constant `pc.draw`), of the instances and of the lights and clusters, and the shadow, environment and headlight maps;
+  set `MATERIAL_SET` the textures of the material at `MATERIAL_TEXTURE_FIRST + unit` of their `#pragma texture`. The names of
+  the model block (`modelview`, `param`, `opacity` ...) stand for the fields of the draw, as in the `MODEL_DRAWS` variant of
+  `ogl46/`.
+* The push constants (`pc`, `PUSH_CONSTANTS_SIZE` bytes) carry the draw and the parameters of the special shaders in
+  `pc.data[]`; each of those says at the top what it takes from them. In the post-processing `param` stands for `pc.data`.
+* The settings are specialization constants with the ids `SPEC_*` (`vk14/settings.glsl`).
+* The features of the later stages of the renderer (the shadows of the lamps and the headlights, the contact shadows, the
+  weather and its fog, the sky ambient light, the prefiltered environment map, the automatic exposure, soft and gpu
+  particles) aren't in `vk14/` yet; the code paths are the ones `ogl46/` takes with them off, the fog is an analytic one
+  (`vk14/apply_fog.glsl`).

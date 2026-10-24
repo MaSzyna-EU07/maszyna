@@ -1,5 +1,6 @@
 #version 460 core
 #define STAGE_FRAGMENT 1
+#define LAYOUT_UI 1
 // the user interface (imgui): the colour of the vertices times the texture of the draw (the font, an image, a texture), pushed
 // with the draw
 

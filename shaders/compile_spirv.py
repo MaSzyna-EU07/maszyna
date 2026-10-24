@@ -23,9 +23,10 @@ import sys
 
 STAGES = ('.vert', '.frag', '.geom', '.comp')
 TREES = {
-    # source directory, binary directory, target environment, variants of the vertex and fragment shaders
-    'ogl46': ('ogl46', 'ogl46bin', 'opengl4.5', ['MODEL_DRAWS']),
-    'vk14': ('vk14', 'vk14bin', 'vulkan1.4', []),
+    # source directory, binary directory, target environment, variants of the vertex and fragment shaders, whether a variant is
+    # made only for the files which use its name (opengl links a program from the binaries of all of its stages or from none)
+    'ogl46': ('ogl46', 'ogl46bin', 'opengl4.5', ['MODEL_DRAWS'], False),
+    'vk14': ('vk14', 'vk14bin', 'vulkan1.4', ['NO_MOTION_OUTPUT'], True),
 }
 INCLUDE = re.compile(r'^[ \t]*#include[ \t]*[<"]([^>"]+)[>"]', re.M)
 
@@ -84,7 +85,7 @@ def main():
 
     failed = []
     count = 0
-    for key, (sourcedir, binarydir, env, variants) in TREES.items():
+    for key, (sourcedir, binarydir, env, variants, onlyused) in TREES.items():
         if args.only and args.only != key:
             continue
         sources = os.path.join(args.shaders, sourcedir)
@@ -96,13 +97,17 @@ def main():
         names = sorted(n for n in os.listdir(sources) if os.path.splitext(n)[1] in STAGES)
         for name in names:
             jobs = [('', [])]
-            if os.path.splitext(name)[1] in ('.vert', '.frag'):
-                jobs += [(v, ['-D%s=1' % v]) for v in variants]
             try:
                 deps = dependencies(sources, name)
             except OSError as e:
                 failed.append('%s/%s (%s)' % (sourcedir, name, e))
                 continue
+            if os.path.splitext(name)[1] in ('.vert', '.frag'):
+                text = ''
+                for dep in deps:
+                    with open(os.path.join(sources, dep), 'r', encoding='utf-8', errors='replace') as f:
+                        text += f.read()
+                jobs += [(v, ['-D%s=1' % v]) for v in variants if (not onlyused) or (v in text)]
             for variant, defines in jobs:
                 binary = name + ('.' + variant if variant else '') + '.spv'
                 command = [glslc, '--target-env=' + env] + defines + [os.path.join(sources, name), '-o', os.path.join(binaries, binary)]

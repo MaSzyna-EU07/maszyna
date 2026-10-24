@@ -76,7 +76,10 @@ enum class blend_mode
 	none,
 	alpha, // the colour over what is there by its alpha, the alpha kept for what's behind (the user interface)
 	premultiplied,
-	additive
+	additive,
+	// the blending of the scene, as glBlendFunc() of the opengl renderer gives it to the colour and the alpha alike
+	scene_alpha, // GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
+	scene_additive // GL_SRC_ALPHA, GL_ONE (the glare of the lamps)
 };
 
 struct vertex_layout

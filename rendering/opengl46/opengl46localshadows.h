@@ -18,7 +18,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "gl/shader.h"
 #include "gl/query.h"
-#include "rendering/opengl46/opengl46locallights.h"
+#include "rendering/common/locallights.h"
 #include "rendering/lightarray.h"
 
 class TDynamicObject;
@@ -98,7 +98,7 @@ class opengl46_local_shadows
 	// a lamp with a slot
 	struct lamp_slot
 	{
-		void const *owner{nullptr}; // the light it is, see opengl46_local_lights::light
+		void const *owner{nullptr}; // the light it is, see gfx::local_lights::light
 		void const *part{nullptr};
 		glm::dvec3 position{0.0}; // world space
 		float range{0.f}; // of the light, metres
@@ -111,7 +111,7 @@ class opengl46_local_shadows
 	// picks the lamps which get shadows in this frame from the gathered lights (the most important first): the scenery lamps
 	// within reach of Camera. a lamp keeps its slot while it is picked; one which got a slot or moved, and all of them when the
 	// scene changes (Version), need their scenery drawn. (re)makes the maps when their count or size changed
-	void update_lamps(std::vector<opengl46_local_lights::light> const &Lights, glm::dvec3 const &Camera, std::uint64_t const Version, unsigned int const Framestamp);
+	void update_lamps(std::vector<gfx::local_lights::light> const &Lights, glm::dvec3 const &Camera, std::uint64_t const Version, unsigned int const Framestamp);
 	// forgets the lamps: the scene they come from is about to be replaced (a scenery being loaded)
 	void reset_lamps();
 	// slots of the lamps picked in this frame
@@ -141,7 +141,7 @@ class opengl46_local_shadows
 	void lamps_timer_begin();
 	void lamps_timer_end();
 	// the slot of the lamp the light is, if it has its shadows ready, nullptr otherwise
-	lamp_slot const *lamp(opengl46_local_lights::light const &Light, std::size_t &Slot) const;
+	lamp_slot const *lamp(gfx::local_lights::light const &Light, std::size_t &Slot) const;
 	// the headlight_weights of the light of the lamp in the slot, see weights()
 	glm::vec4 lamp_weights(std::size_t const Slot) const;
 

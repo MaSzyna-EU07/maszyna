@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14shaders.h"
 #include "rendering/vulkan14/vulkan14device.h"
+#include "rendering/vulkan14/vulkan14bindings.h"
+#include "gl/ubo.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
@@ -562,6 +564,24 @@ VkPipeline pipeline_library::get(pipeline_desc const &Desc)
 			attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 			attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 			break;
+		case blend_mode::scene_alpha:
+			attachment.blendEnable = VK_TRUE;
+			attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+			attachment.colorBlendOp = VK_BLEND_OP_ADD;
+			attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+			attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+			break;
+		case blend_mode::scene_additive:
+			attachment.blendEnable = VK_TRUE;
+			attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+			attachment.colorBlendOp = VK_BLEND_OP_ADD;
+			attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+			attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+			break;
 		case blend_mode::additive:
 			attachment.blendEnable = VK_TRUE;
 			attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -700,6 +720,63 @@ void set_draw_state(VkCommandBuffer Commands, VkExtent2D Extent)
 	vkCmdSetDepthBias(Commands, 0.f, 0.f, 0.f);
 	vkCmdSetPrimitiveRestartEnable(Commands, VK_FALSE);
 	vkCmdSetStencilTestEnable(Commands, VK_FALSE);
+}
+
+} // namespace vk14
+
+namespace vk14
+{
+
+std::string binding_preamble()
+{
+	std::string preamble{"#define MASZYNA_CONSTANTS 1\n"};
+	auto const define = [&preamble](char const *Name, auto const Value, char const *Suffix = "") { preamble += std::string("#define ") + Name + " " + std::to_string(Value) + Suffix + "\n"; };
+	using namespace vk14::bindings;
+	define("UI_SET", UI_SET);
+	define("UI_TEXTURE", UI_TEXTURE);
+	define("PASS_SET", PASS_SET);
+	define("MATERIAL_SET", MATERIAL_SET);
+	define("SCENE_UBO", SCENE_UBO);
+	define("DRAW_SSBO", DRAW_SSBO);
+	define("INSTANCE_SSBO", INSTANCE_SSBO);
+	define("LIGHT_SSBO", LIGHT_SSBO);
+	define("CLUSTER_UBO", CLUSTER_UBO);
+	define("CLUSTER_RANGE_SSBO", CLUSTER_RANGE_SSBO);
+	define("CLUSTER_INDEX_SSBO", CLUSTER_INDEX_SSBO);
+	define("SHADOW_TEX", SHADOW_TEX);
+	define("ENV_TEX", ENV_TEX);
+	define("HEADLIGHT_TEX", HEADLIGHT_TEX);
+	define("PASS_BINDING_COUNT", PASS_BINDING_COUNT);
+	define("MATERIAL_TEXTURE_FIRST", MATERIAL_TEXTURE_FIRST);
+	define("CL_CLUSTER_UBO", CL_CLUSTER_UBO);
+	define("CL_AABB_SSBO", CL_AABB_SSBO);
+	define("CL_RANGE_SSBO", CL_RANGE_SSBO);
+	define("CL_INDEX_SSBO", CL_INDEX_SSBO);
+	define("CL_COUNTER_SSBO", CL_COUNTER_SSBO);
+	define("CL_LIGHT_SSBO", CL_LIGHT_SSBO);
+	define("POST_SET", POST_SET);
+	define("POST_TEXTURE_FIRST", POST_TEXTURE_FIRST);
+	define("PUSH_CONSTANTS_SIZE", PUSH_CONSTANTS_SIZE);
+	define("SPEC_OUTPUT_GAMMA", SPEC_OUTPUT_GAMMA);
+	define("SPEC_SHADOWMAP_ENABLED", SPEC_SHADOWMAP_ENABLED);
+	define("SPEC_ENVMAP_ENABLED", SPEC_ENVMAP_ENABLED);
+	define("SPEC_MOTIONBLUR_ENABLED", SPEC_MOTIONBLUR_ENABLED);
+	define("SPEC_POSTFX_ENABLED", SPEC_POSTFX_ENABLED);
+	define("SPEC_EXTRAEFFECTS_ENABLED", SPEC_EXTRAEFFECTS_ENABLED);
+	define("SPEC_COUNT", SPEC_COUNT);
+	// the constants of the game the blocks of the shaders are sized by, the same as for the opengl renderer (gl/ubo.h)
+	define("MAX_LIGHTS", static_cast<unsigned int>(gl::MAX_LIGHTS), "U");
+	define("MAX_CASCADES", static_cast<unsigned int>(gl::MAX_CASCADES), "U");
+	define("MAX_PARAMS", static_cast<unsigned int>(gl::MAX_PARAMS), "U");
+	define("MAX_HEADLIGHT_SHADOWS", static_cast<unsigned int>(gl::MAX_HEADLIGHT_SHADOWS), "U");
+	define("CLUSTER_GRID_X", gl::CLUSTER_GRID_X);
+	define("CLUSTER_GRID_Y", gl::CLUSTER_GRID_Y);
+	define("CLUSTER_GRID_Z", gl::CLUSTER_GRID_Z);
+	define("CLUSTER_COUNT", gl::CLUSTER_COUNT);
+	define("MAX_LIGHTS_PER_CLUSTER", gl::MAX_LIGHTS_PER_CLUSTER);
+	define("CLUSTER_BUILD_GROUP_SIZE", gl::CLUSTER_BUILD_GROUP_SIZE);
+	define("CLUSTER_CULL_GROUP_SIZE", gl::CLUSTER_CULL_GROUP_SIZE);
+	return preamble;
 }
 
 } // namespace vk14

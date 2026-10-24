@@ -91,6 +91,8 @@ class buffer
 	}
 	// makes the writes of the cpu seen by the gpu where the memory isn't coherent
 	void flush(VkDeviceSize Offset, VkDeviceSize Size) const;
+	// makes the writes of the gpu seen by the cpu where the memory isn't coherent (readback memory may be cached)
+	void invalidate(VkDeviceSize Offset, VkDeviceSize Size) const;
 	explicit operator bool() const
 	{
 		return m_buffer != VK_NULL_HANDLE;
@@ -214,7 +216,8 @@ struct ring_slice
 class frame_ring
 {
   public:
-	bool create(allocator const &Allocator, VkDeviceSize SizePerFrame, std::uint32_t Frames, VkBufferUsageFlags Usage, std::string const &Name);
+	// Tail: bytes past the part of the last frame, so a descriptor of a fixed range can be given an offset anywhere in a part
+	bool create(allocator const &Allocator, VkDeviceSize SizePerFrame, std::uint32_t Frames, VkBufferUsageFlags Usage, std::string const &Name, VkDeviceSize Tail = 0);
 	void destroy();
 	// the part of the frame Frame is used from its start again
 	void begin_frame(std::uint32_t Frame);
@@ -226,9 +229,19 @@ class frame_ring
 	{
 		return m_used;
 	}
+	// the offset in the buffer the next allocation aligned to Alignment would get
+	VkDeviceSize next_offset(VkDeviceSize Alignment) const
+	{
+		auto const alignment{std::max<VkDeviceSize>(Alignment, 4)};
+		return m_base + (m_used + alignment - 1) / alignment * alignment;
+	}
 	VkDeviceSize capacity() const
 	{
 		return m_sizeperframe;
+	}
+	VkBuffer handle() const
+	{
+		return m_buffer.handle();
 	}
 
   private:

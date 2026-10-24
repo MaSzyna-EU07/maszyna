@@ -94,7 +94,7 @@ int opengl_material::texture_slot( std::string const &Key )
             return lookup->second;
         }
         // ignore unrecognized texture bindings in legacy render mode, it's most likely data for more advanced shaders
-        if( Global.GfxRenderer == "default" ) {
+        if( ( Global.GfxRenderer == "default" ) || ( Global.GfxRenderer == "vulkan" ) ) {
             log_error( "unknown texture binding: " + key );
             is_good = false;
         }
@@ -175,7 +175,7 @@ void opengl_material::finalize(bool Loadnow)
         }
 
         // TBD, TODO: move material validation to renderer, to eliminate branching?
-        if( Global.GfxRenderer == "default" ) {
+        if( ( Global.GfxRenderer == "default" ) || ( Global.GfxRenderer == "vulkan" ) ) {
 
             if( !shader ) {
                 is_good = false;
@@ -222,7 +222,7 @@ void opengl_material::finalize(bool Loadnow)
         parse_info.reset();
     }
 
-    if( Global.GfxRenderer != "default" ) {
+    if( ( Global.GfxRenderer != "default" ) && ( Global.GfxRenderer != "vulkan" ) ) {
         // basic texture validation for legacy branch
         for( auto texturehandle : textures ) {
             if( texturehandle == null_handle ) {

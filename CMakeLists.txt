@@ -309,6 +309,8 @@ set(SOURCES
 "gl/cubemap.cpp"
 "gl/glsl_common.cpp"
 "rendering/common/shadersource.cpp"
+"rendering/common/scenewalk.cpp"
+"rendering/common/locallights.cpp"
 "gl/buffer.cpp"
 "gl/fence.cpp"
 "gl/pbo.cpp"
@@ -394,7 +396,6 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46weather.cpp"
             "rendering/opengl46/opengl46exposure.cpp"
             "rendering/opengl46/opengl46ao.cpp"
-            "rendering/opengl46/opengl46locallights.cpp"
             "rendering/opengl46/opengl46localshadows.cpp"
             "rendering/opengl46/opengl46instancecull.cpp"
             "rendering/opengl46/opengl46hiz.cpp"
@@ -433,6 +434,9 @@ if (WITH_VULKAN)
 		"rendering/vulkan14/vulkan14texture.cpp"
 		"rendering/vulkan14/vulkan14imgui.cpp"
 		"rendering/vulkan14/vulkan14renderer.cpp"
+		"rendering/vulkan14/vulkan14geometry.cpp"
+		"rendering/vulkan14/vulkan14scene.cpp"
+		"rendering/vulkan14/vulkan14frame.cpp"
 		"ref/volk/volk.c")
 	set(DEFINITIONS ${DEFINITIONS} "WITH_VULKAN")
 

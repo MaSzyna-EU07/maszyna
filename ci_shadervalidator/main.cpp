@@ -116,7 +116,15 @@ bool check_ogl46(std::string const &Name)
 bool check_vk14(std::string const &Name)
 {
 	std::cout << "spir-v..." << std::flush;
-	auto const suc{check_text(gfx::preprocess_shader(gfx::shader_api::vulkan14, Name, {}, {}, false, vk14_dir), "-V --target-env " + vulkan_env)};
+	auto const source{gfx::preprocess_shader(gfx::shader_api::vulkan14, Name, {}, {}, false, vk14_dir)};
+	auto suc{check_text(source, "-V --target-env " + vulkan_env)};
+	// the variant of the passes without the velocity target, of the shaders which have one
+	if (source.text.find("NO_MOTION_OUTPUT") != std::string::npos)
+	{
+		std::cout << "done, no motion output..." << std::flush;
+		if (!check_text(gfx::preprocess_shader(gfx::shader_api::vulkan14, Name, "#define NO_MOTION_OUTPUT 1\n", {}, false, vk14_dir), "-V --target-env " + vulkan_env))
+			suc = false;
+	}
 	std::cout << "done" << std::flush;
 	return suc;
 }

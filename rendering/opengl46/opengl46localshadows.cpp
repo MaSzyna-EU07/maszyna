@@ -350,7 +350,7 @@ glm::vec4 opengl46_local_shadows::weights() const
 	return glm::vec4{static_cast<float>(CAB_SLOT), SHADOW_NEAR, 2.f / static_cast<float>(std::max(m_size, 1)), setup(m_level).radius};
 }
 
-void opengl46_local_shadows::update_lamps(std::vector<opengl46_local_lights::light> const &Lights, glm::dvec3 const &Camera, std::uint64_t const Version, unsigned int const Framestamp)
+void opengl46_local_shadows::update_lamps(std::vector<gfx::local_lights::light> const &Lights, glm::dvec3 const &Camera, std::uint64_t const Version, unsigned int const Framestamp)
 {
 	m_frame = Framestamp;
 	m_wanted.clear();
@@ -368,7 +368,7 @@ void opengl46_local_shadows::update_lamps(std::vector<opengl46_local_lights::lig
 	m_sceneryleft = setup(level).sceneryperframe;
 	auto const reach{static_cast<double>(Global.gfx_lights_shadows_lamps_range)};
 	// the lights come the most important first: the first ones within reach get the slots
-	std::vector<opengl46_local_lights::light const *> picked;
+	std::vector<gfx::local_lights::light const *> picked;
 	for (auto const &light : Lights)
 	{
 		if (picked.size() >= m_slots.size())
@@ -382,7 +382,7 @@ void opengl46_local_shadows::update_lamps(std::vector<opengl46_local_lights::lig
 		picked.emplace_back(&light);
 	}
 	// lamps which already have a slot keep it
-	std::vector<opengl46_local_lights::light const *> unplaced;
+	std::vector<gfx::local_lights::light const *> unplaced;
 	for (auto const *light : picked)
 	{
 		auto placed{false};
@@ -520,7 +520,7 @@ void opengl46_local_shadows::lamps_timer_end()
 	m_lampscputime = (m_lampscputime == 0.0 ? elapsed : m_lampscputime * 0.9 + elapsed * 0.1);
 }
 
-opengl46_local_shadows::lamp_slot const *opengl46_local_shadows::lamp(opengl46_local_lights::light const &Light, std::size_t &Slot) const
+opengl46_local_shadows::lamp_slot const *opengl46_local_shadows::lamp(gfx::local_lights::light const &Light, std::size_t &Slot) const
 {
 	if (Light.owner == nullptr)
 	{

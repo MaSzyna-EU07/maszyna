@@ -177,6 +177,14 @@ void buffer::flush(VkDeviceSize Offset, VkDeviceSize Size) const
 	}
 }
 
+void buffer::invalidate(VkDeviceSize Offset, VkDeviceSize Size) const
+{
+	if ((m_allocation != VK_NULL_HANDLE) && (Size > 0))
+	{
+		vmaInvalidateAllocation(m_allocator, m_allocation, Offset, Size);
+	}
+}
+
 // image
 
 image::~image()
@@ -334,12 +342,12 @@ void deletion_queue::flush()
 
 // frame ring
 
-bool frame_ring::create(allocator const &Allocator, VkDeviceSize SizePerFrame, std::uint32_t Frames, VkBufferUsageFlags Usage, std::string const &Name)
+bool frame_ring::create(allocator const &Allocator, VkDeviceSize SizePerFrame, std::uint32_t Frames, VkBufferUsageFlags Usage, std::string const &Name, VkDeviceSize Tail)
 {
 	m_sizeperframe = SizePerFrame;
 	m_base = 0;
 	m_used = 0;
-	return m_buffer.create(Allocator, SizePerFrame * Frames, Usage, memory_kind::upload, Name) && (m_buffer.mapped() != nullptr);
+	return m_buffer.create(Allocator, SizePerFrame * Frames + Tail, Usage, memory_kind::upload, Name) && (m_buffer.mapped() != nullptr);
 }
 
 void frame_ring::destroy()

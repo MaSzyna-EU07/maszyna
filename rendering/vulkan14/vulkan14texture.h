@@ -54,6 +54,10 @@ class uploader
 	// copies Data into Image (the levels given, the others made by blits of the first one when Mipmaps), the image left ready to be
 	// sampled. Data is copied away. false: no staging memory, nothing will be copied
 	bool upload(std::shared_ptr<image> const &Image, void const *Data, VkDeviceSize Size, std::vector<level> const &Levels, bool const Mipmaps);
+	// copies Data into Target, done before the draws of the frame read it (and after the frames sent before did). Data holds the
+	// pieces of Parts (offset in Target, size) one after another; all of Data goes to the start of Target when there are none.
+	// false: no staging memory
+	bool upload_buffer(std::shared_ptr<buffer> const &Target, void const *Data, VkDeviceSize Size, std::vector<std::pair<VkDeviceSize, VkDeviceSize>> const &Parts = {});
 	// the bytes uploaded since the start, for the debug panel
 	std::uint64_t uploaded() const
 	{
@@ -69,6 +73,9 @@ class uploader
 		std::shared_ptr<buffer> staging;
 		std::vector<level> levels;
 		bool mipmaps{false};
+		// a copy to a buffer instead: the pieces copied
+		std::shared_ptr<buffer> buffertarget;
+		std::vector<std::pair<VkDeviceSize, VkDeviceSize>> parts;
 	};
 	void record(job &Job);
 
@@ -78,6 +85,8 @@ class uploader
 	VkCommandBuffer m_commands{VK_NULL_HANDLE};
 	std::uint64_t m_value{0};
 	bool m_recorded{false};
+	// buffers were copied to in the frame: the barriers before the first copy and after the last one
+	bool m_buffercopies{false};
 	std::vector<job> m_pending;
 	std::uint64_t m_uploaded{0};
 	mutable std::unordered_map<VkFormat, bool> m_blittable;
@@ -153,9 +162,10 @@ struct vulkan14_texture : public texture_source
 
 	bool create(bool const Static = false) override;
 	void release() override;
+	// as the opengl textures give it: one not made yet has no id of 0, which the materials take for a texture which is missing
 	size_t get_id() const override
 	{
-		return static_cast<size_t>(m_id);
+		return (m_made ? static_cast<size_t>(m_id) : std::numeric_limits<size_t>::max());
 	}
 	void update_from_memory(size_t width, size_t height, const uint8_t *data) override;
 	bool resident() const override

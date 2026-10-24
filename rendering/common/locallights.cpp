@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 
-#include "rendering/opengl46/opengl46locallights.h"
+#include "rendering/common/locallights.h"
 
 #include <algorithm>
 #include <array>
@@ -107,7 +107,7 @@ void extend_bounds(TSubModel const *Submodel, glm::mat4 const &Transform, gfx::g
 }
 } // namespace
 
-void opengl46_local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Region, gfx::geometrybank_manager const &Geometry, unsigned int const Framestamp)
+void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Region, gfx::geometrybank_manager const &Geometry, unsigned int const Framestamp)
 {
 	auto const start{std::chrono::steady_clock::now()};
 
@@ -185,7 +185,7 @@ void opengl46_local_lights::gather(glm::dvec3 const &Camera, scene::basic_region
 	m_gathertime = (m_gathertime == 0.0 ? elapsed : m_gathertime * 0.95 + elapsed * 0.05);
 }
 
-void opengl46_local_lights::reset()
+void gfx::local_lights::reset()
 {
 	m_lights.clear();
 	m_cablampon = false;
@@ -196,7 +196,7 @@ void opengl46_local_lights::reset()
 	m_scenerycount = m_vehiclecount = m_compartmentcount = m_placed = m_dropped = 0;
 }
 
-void opengl46_local_lights::gather_instance(TAnimModel *Instance, glm::dvec3 const &Camera, float const Brightness, unsigned int const Framestamp)
+void gfx::local_lights::gather_instance(TAnimModel *Instance, glm::dvec3 const &Camera, float const Brightness, unsigned int const Framestamp)
 {
 	if ((false == Instance->m_visible) || (Instance->pModel == nullptr))
 	{
@@ -226,7 +226,7 @@ void opengl46_local_lights::gather_instance(TAnimModel *Instance, glm::dvec3 con
 	m_scenerycount += static_cast<std::uint32_t>(m_lights.size() - count);
 }
 
-void opengl46_local_lights::gather_vehicle(TDynamicObject *Vehicle, glm::dvec3 const &Camera, gfx::geometrybank_manager const &Geometry, float const Freespotbrightness,
+void gfx::local_lights::gather_vehicle(TDynamicObject *Vehicle, glm::dvec3 const &Camera, gfx::geometrybank_manager const &Geometry, float const Freespotbrightness,
                                            float const Compartmentbrightness)
 {
 	if ((false == Global.render_cab) && (Global.pCamera.m_owner == Vehicle))
@@ -303,7 +303,7 @@ void opengl46_local_lights::gather_vehicle(TDynamicObject *Vehicle, glm::dvec3 c
 	}
 }
 
-void opengl46_local_lights::gather_cab_lamp(gfx::geometrybank_manager const &Geometry)
+void gfx::local_lights::gather_cab_lamp(gfx::geometrybank_manager const &Geometry)
 {
 	// the cab is drawn, Render_cab() conditions
 	if (FreeFlyModeFlag || (false == Global.render_cab) || (simulation::Train == nullptr))
@@ -343,7 +343,7 @@ void opengl46_local_lights::gather_cab_lamp(gfx::geometrybank_manager const &Geo
 	m_cablampon = (max_component(m_cablamp.color) > 0.f);
 }
 
-void opengl46_local_lights::walk(TSubModel *Submodel, glm::mat4 const &Transform, glm::dmat4 const &Placement, float const Brightness)
+void gfx::local_lights::walk(TSubModel *Submodel, glm::mat4 const &Transform, glm::dmat4 const &Placement, float const Brightness)
 {
 	// visibility, lod ranges, transforms and animations as in opengl46_renderer::Render_Alpha(TSubModel *)
 	for (auto *submodel{Submodel}; submodel != nullptr; submodel = submodel->Next)
@@ -375,7 +375,7 @@ void opengl46_local_lights::walk(TSubModel *Submodel, glm::mat4 const &Transform
 	}
 }
 
-void opengl46_local_lights::add_light_point(TSubModel const &Submodel, glm::mat4 const &Transform, glm::dmat4 const &Placement, float const Brightness)
+void gfx::local_lights::add_light_point(TSubModel const &Submodel, glm::mat4 const &Transform, glm::dmat4 const &Placement, float const Brightness)
 {
 	// lit points: with self-illumination, past its threshold. the compartments of vehicles set it with their lights
 	if ((Submodel.f4Emision.a <= 0.f) || (Global.fLuminance >= Submodel.fLight) || (Submodel.fVisible <= 0.f))
@@ -409,7 +409,7 @@ void opengl46_local_lights::add_light_point(TSubModel const &Submodel, glm::mat4
 	m_lights.emplace_back(lightpoint);
 }
 
-bool opengl46_local_lights::has_light_points(TModel3d *Model)
+bool gfx::local_lights::has_light_points(TModel3d *Model)
 {
 	auto lookup{m_modellights.find(Model)};
 	if (lookup != m_modellights.end())
@@ -439,7 +439,7 @@ bool opengl46_local_lights::has_light_points(TModel3d *Model)
 	return found;
 }
 
-opengl46_local_lights::cell_data const &opengl46_local_lights::cell_instances(scene::basic_cell &Cell, bool const Rebuild)
+gfx::local_lights::cell_data const &gfx::local_lights::cell_instances(scene::basic_cell &Cell, bool const Rebuild)
 {
 	// light points are drawn in the translucent phase, so the instances which have them are on the translucent list of the cell
 	auto &instances{Cell.m_instancetranslucent};
@@ -460,7 +460,7 @@ opengl46_local_lights::cell_data const &opengl46_local_lights::cell_instances(sc
 	return data;
 }
 
-opengl46_local_lights::section_data const &opengl46_local_lights::section(TModel3d *Model, TSubModel *Section, gfx::geometrybank_manager const &Geometry)
+gfx::local_lights::section_data const &gfx::local_lights::section(TModel3d *Model, TSubModel *Section, gfx::geometrybank_manager const &Geometry)
 {
 	auto lookup{m_sections.find(Section)};
 	if (lookup != m_sections.end())
@@ -483,7 +483,7 @@ opengl46_local_lights::section_data const &opengl46_local_lights::section(TModel
 	return m_sections.emplace(Section, data).first->second;
 }
 
-opengl46_local_lights::section_data const &opengl46_local_lights::model_bounds(TModel3d *Model, gfx::geometrybank_manager const &Geometry)
+gfx::local_lights::section_data const &gfx::local_lights::model_bounds(TModel3d *Model, gfx::geometrybank_manager const &Geometry)
 {
 	auto lookup{m_models.find(Model)};
 	if (lookup != m_models.end())
@@ -502,14 +502,14 @@ opengl46_local_lights::section_data const &opengl46_local_lights::model_bounds(T
 	return m_models.emplace(Model, data).first->second;
 }
 
-std::string opengl46_local_lights::info() const
+std::string gfx::local_lights::info() const
 {
 	return "local lights: " + std::to_string(m_lights.size()) + " (scenery " + std::to_string(m_scenerycount) + ", vehicles " + std::to_string(m_vehiclecount) + ", compartments " +
 	       std::to_string(m_compartmentcount) + ")" + (m_cablampon ? " + cab lamp" : "") + ", placed " + std::to_string(m_placed) + ", over capacity " + std::to_string(m_dropped) +
 	       ", gather " + to_string(m_gathertime, 2) + " ms";
 }
 
-void opengl46_local_lights::draw_debug_ui()
+void gfx::local_lights::draw_debug_ui()
 {
 	ImGui::TextUnformatted("local lights (need clustered lights)");
 	ImGui::Checkbox("light points of scenery models", &Global.gfx_lights_scenery);

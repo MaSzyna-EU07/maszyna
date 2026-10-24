@@ -8,18 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "rendering/vulkan14/vulkan14renderer.h"
-#include "rendering/vulkan14/vulkan14common.h"
-#include "rendering/vulkan14/vulkan14instance.h"
-#include "rendering/vulkan14/vulkan14device.h"
-#include "rendering/vulkan14/vulkan14swapchain.h"
-#include "rendering/vulkan14/vulkan14memory.h"
-#include "rendering/vulkan14/vulkan14shaders.h"
-#include "rendering/vulkan14/vulkan14descriptors.h"
-#include "rendering/vulkan14/vulkan14passes.h"
-#include "rendering/vulkan14/vulkan14texture.h"
-#include "rendering/vulkan14/vulkan14imgui.h"
-#include "rendering/vulkan14/vulkan14bindings.h"
+#include "rendering/vulkan14/vulkan14context.h"
 #include "rendering/nullrenderer.h"
 #include "application/application.h"
 #include "simulation/simulation.h"
@@ -37,8 +26,11 @@ namespace
 // background of the opengl renderer (srgb). before that the windows are black, as with the opengl renderer
 glm::vec3 const clear_colour{51.f / 255.f, 102.f / 255.f, 85.f / 255.f};
 
-// the ring each frame in flight streams its data through (the user interface for now)
-VkDeviceSize const ring_size{8 * 1024 * 1024};
+// the ring each frame in flight streams its data through: the user interface, the blocks of the scene and of the light clusters,
+// the light buffers of the passes, the vertices of the particles and the sky; the descriptors read the light buffers with the range
+// of the whole gl::light_data, which the tail past the last frame leaves room for
+VkDeviceSize const ring_size{16 * 1024 * 1024};
+VkDeviceSize const ring_tail{(sizeof(gl::light_data) + 65535) / 65536 * 65536};
 
 float srgb_to_linear(float const Value)
 {
@@ -47,192 +39,157 @@ float srgb_to_linear(float const Value)
 
 } // namespace
 
-// the objects of the vulkan api. destroyed in the reverse order: the swapchains and the frames, then the device, then the instance
-struct vulkan14_renderer::context
+bool vulkan14_renderer::context::create_frames(std::uint32_t const Count, std::string &Reason)
 {
-	struct frame
-	{
-		VkCommandPool pool{VK_NULL_HANDLE};
-		// the uploads of the frame go to the queue first, then the commands of the frame
-		VkCommandBuffer uploads{VK_NULL_HANDLE};
-		VkCommandBuffer commands{VK_NULL_HANDLE};
-		// the value of the timeline semaphore the gpu reaches when it's done with the frame; 0: never submitted
-		std::uint64_t done{0};
-		// the number of the frame, for the report of a lost device
-		std::uint64_t number{0};
-	};
+	auto const handle{device.handle()};
 
-	vk14::instance instance;
-	vk14::device device;
-	vk14::allocator memory;
-	vk14::deletion_queue deletions;
-	vk14::uploader uploads;
-	vk14::image_table images;
-	vk14::samplers sampling;
-	vk14::frame_ring ring;
-	vk14::shader_library shaders;
-	vk14::pipeline_library pipelines;
-	vk14::pass_list passes;
-	vk14::pending_textures pending;
-	vk14::resources resources;
-	vk14::imgui_backend imgui;
-	// the textures of the files; made after the objects above and gone before them
-	std::unique_ptr<texture_bank> textures;
-	// [0]: the main window, then the windows of the extra viewports
-	std::vector<std::unique_ptr<vk14::swapchain>> windows;
-	std::vector<frame> frames;
-	// one semaphore counts the frames done by the gpu; the binary ones are only between the swapchains and the queue
-	VkSemaphore timeline{VK_NULL_HANDLE};
-	std::uint64_t timelinevalue{0};
-	// frames recorded since the start
-	std::uint64_t framecount{0};
-	// the windows with an image acquired in the frame being made
-	std::vector<vk14::swapchain *> acquired;
-	bool devicelost{false};
-
-	~context()
+	VkSemaphoreTypeCreateInfo timelineinfo{};
+	timelineinfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+	timelineinfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+	timelineinfo.initialValue = 0;
+	VkSemaphoreCreateInfo semaphoreinfo{};
+	semaphoreinfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	semaphoreinfo.pNext = &timelineinfo;
+	if (!VK14_VERIFY(vkCreateSemaphore(handle, &semaphoreinfo, nullptr, &timeline)))
 	{
-		destroy();
+		Reason = "no timeline semaphore";
+		return false;
 	}
+	instance.set_object_name(handle, VK_OBJECT_TYPE_SEMAPHORE, reinterpret_cast<std::uint64_t>(timeline), "frame timeline");
 
-	bool create_frames(std::uint32_t const Count, std::string &Reason)
+	frames.resize(Count);
+	for (std::uint32_t i = 0; i < Count; ++i)
 	{
-		auto const handle{device.handle()};
-
-		VkSemaphoreTypeCreateInfo timelineinfo{};
-		timelineinfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-		timelineinfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-		timelineinfo.initialValue = 0;
-		VkSemaphoreCreateInfo semaphoreinfo{};
-		semaphoreinfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-		semaphoreinfo.pNext = &timelineinfo;
-		if (!VK14_VERIFY(vkCreateSemaphore(handle, &semaphoreinfo, nullptr, &timeline)))
+		VkCommandPoolCreateInfo poolinfo{};
+		poolinfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolinfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+		poolinfo.queueFamilyIndex = device.families().graphics;
+		if (!VK14_VERIFY(vkCreateCommandPool(handle, &poolinfo, nullptr, &frames[i].pool)))
 		{
-			Reason = "no timeline semaphore";
+			Reason = "no command pool";
 			return false;
 		}
-		instance.set_object_name(handle, VK_OBJECT_TYPE_SEMAPHORE, reinterpret_cast<std::uint64_t>(timeline), "frame timeline");
-
-		frames.resize(Count);
-		for (std::uint32_t i = 0; i < Count; ++i)
+		VkCommandBuffer buffers[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+		VkCommandBufferAllocateInfo bufferinfo{};
+		bufferinfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		bufferinfo.commandPool = frames[i].pool;
+		bufferinfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		bufferinfo.commandBufferCount = 2;
+		if (!VK14_VERIFY(vkAllocateCommandBuffers(handle, &bufferinfo, buffers)))
 		{
-			VkCommandPoolCreateInfo poolinfo{};
-			poolinfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-			poolinfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-			poolinfo.queueFamilyIndex = device.families().graphics;
-			if (!VK14_VERIFY(vkCreateCommandPool(handle, &poolinfo, nullptr, &frames[i].pool)))
-			{
-				Reason = "no command pool";
-				return false;
-			}
-			VkCommandBuffer buffers[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-			VkCommandBufferAllocateInfo bufferinfo{};
-			bufferinfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-			bufferinfo.commandPool = frames[i].pool;
-			bufferinfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-			bufferinfo.commandBufferCount = 2;
-			if (!VK14_VERIFY(vkAllocateCommandBuffers(handle, &bufferinfo, buffers)))
-			{
-				Reason = "no command buffer";
-				return false;
-			}
-			frames[i].uploads = buffers[0];
-			frames[i].commands = buffers[1];
-			instance.set_object_name(handle, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<std::uint64_t>(frames[i].uploads), "uploads " + std::to_string(i));
-			instance.set_object_name(handle, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<std::uint64_t>(frames[i].commands), "frame " + std::to_string(i));
+			Reason = "no command buffer";
+			return false;
 		}
+		frames[i].uploads = buffers[0];
+		frames[i].commands = buffers[1];
+		instance.set_object_name(handle, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<std::uint64_t>(frames[i].uploads), "uploads " + std::to_string(i));
+		instance.set_object_name(handle, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<std::uint64_t>(frames[i].commands), "frame " + std::to_string(i));
+	}
+	return true;
+}
+
+// the parts of the renderer made once the device is there
+bool vulkan14_renderer::context::create_core(std::uint32_t const Frames, std::string &Reason)
+{
+	if (false == memory.create(instance, device, Reason))
+	{
+		return false;
+	}
+	uploads.init(memory, deletions, device.physical());
+	if (false == sampling.create(device, static_cast<float>(Global.AnisotropicFiltering), Reason))
+	{
+		return false;
+	}
+	auto const &limits{device.caps().limits};
+	(void)limits;
+	if (false == ring.create(memory, ring_size, Frames, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, "frame ring", ring_tail))
+	{
+		Reason = "no ring for the data of the frames";
+		return false;
+	}
+	if ((false == shaders.init(vk14::binding_preamble(), Reason)) || (false == pipelines.init(device, Reason)) || (false == passes.create(device, Frames, Reason)))
+	{
+		return false;
+	}
+	resources.gpu = &device;
+	resources.memory = &memory;
+	resources.uploads = &uploads;
+	resources.deletions = &deletions;
+	resources.sampling = &sampling;
+	resources.images = &images;
+	resources.thread = std::this_thread::get_id();
+	resources.pending = &pending;
+	textures = std::make_unique<texture_bank>([this]() -> texture_source * { return new vk14::vulkan14_texture(resources); });
+	return imgui.create(resources, shaders, pipelines, ring, Reason);
+}
+
+// the value of the timeline the gpu reached, 0 when it can't be read
+std::uint64_t vulkan14_renderer::context::completed() const
+{
+	std::uint64_t value{0};
+	if ((timeline == VK_NULL_HANDLE) || (vkGetSemaphoreCounterValue(device.handle(), timeline, &value) != VK_SUCCESS))
+	{
+		return 0;
+	}
+	return value;
+}
+
+bool vulkan14_renderer::context::wait(std::uint64_t const Value) const
+{
+	if ((Value == 0) || (completed() >= Value))
+	{
 		return true;
 	}
+	VkSemaphoreWaitInfo wait{};
+	wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+	wait.semaphoreCount = 1;
+	wait.pSemaphores = &timeline;
+	wait.pValues = &Value;
+	return VK14_VERIFY(vkWaitSemaphores(device.handle(), &wait, UINT64_MAX));
+}
 
-	// the parts of the renderer made once the device is there
-	bool create_core(std::uint32_t const Frames, std::string &Reason)
+void vulkan14_renderer::context::destroy()
+{
+	auto const handle{device.handle()};
+	if (handle != VK_NULL_HANDLE)
 	{
-		if (false == memory.create(instance, device, Reason))
-		{
-			return false;
-		}
-		uploads.init(memory, deletions, device.physical());
-		if (false == sampling.create(device, static_cast<float>(Global.AnisotropicFiltering), Reason))
-		{
-			return false;
-		}
-		auto const &limits{device.caps().limits};
-		(void)limits;
-		if (false == ring.create(memory, ring_size, Frames, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, "frame ring"))
-		{
-			Reason = "no ring for the data of the frames";
-			return false;
-		}
-		if ((false == shaders.init(vk14::binding_preamble(), Reason)) || (false == pipelines.init(device, Reason)) || (false == passes.create(device, Frames, Reason)))
-		{
-			return false;
-		}
-		resources.gpu = &device;
-		resources.memory = &memory;
-		resources.uploads = &uploads;
-		resources.deletions = &deletions;
-		resources.sampling = &sampling;
-		resources.images = &images;
-		resources.thread = std::this_thread::get_id();
-		resources.pending = &pending;
-		textures = std::make_unique<texture_bank>([this]() -> texture_source * { return new vk14::vulkan14_texture(resources); });
-		return imgui.create(resources, shaders, pipelines, ring, Reason);
+		// the end of the renderer, not a frame: everything on the gpu has to be done
+		vkDeviceWaitIdle(handle);
 	}
-
-	// the value of the timeline the gpu reached, 0 when it can't be read
-	std::uint64_t completed() const
+	acquired.clear();
+	windows.clear();
+	imgui.destroy();
+	// the textures give their images to the deletion queue, which goes now that the gpu is idle
+	textures.reset();
+	uploads.end_frame();
+	uploads = vk14::uploader{};
+	images.clear();
+	deletions.flush();
+	pipelines.shutdown();
+	shaders.shutdown();
+	passes.destroy();
+	ring.destroy();
+	if (handle != VK_NULL_HANDLE)
 	{
-		std::uint64_t value{0};
-		if ((timeline == VK_NULL_HANDLE) || (vkGetSemaphoreCounterValue(device.handle(), timeline, &value) != VK_SUCCESS))
+		sampling.destroy(handle);
+		for (auto &frame : frames)
 		{
-			return 0;
-		}
-		return value;
-	}
-
-	void destroy()
-	{
-		auto const handle{device.handle()};
-		if (handle != VK_NULL_HANDLE)
-		{
-			// the end of the renderer, not a frame: everything on the gpu has to be done
-			vkDeviceWaitIdle(handle);
-		}
-		acquired.clear();
-		windows.clear();
-		imgui.destroy();
-		// the textures give their images to the deletion queue, which goes now that the gpu is idle
-		textures.reset();
-		uploads.end_frame();
-		uploads = vk14::uploader{};
-		images.clear();
-		deletions.flush();
-		pipelines.shutdown();
-		shaders.shutdown();
-		passes.destroy();
-		ring.destroy();
-		if (handle != VK_NULL_HANDLE)
-		{
-			sampling.destroy(handle);
-			for (auto &frame : frames)
+			if (frame.pool != VK_NULL_HANDLE)
 			{
-				if (frame.pool != VK_NULL_HANDLE)
-				{
-					vkDestroyCommandPool(handle, frame.pool, nullptr);
-				}
-			}
-			if (timeline != VK_NULL_HANDLE)
-			{
-				vkDestroySemaphore(handle, timeline, nullptr);
+				vkDestroyCommandPool(handle, frame.pool, nullptr);
 			}
 		}
-		memory.destroy();
-		frames.clear();
-		timeline = VK_NULL_HANDLE;
-		device.destroy();
-		instance.destroy();
+		if (timeline != VK_NULL_HANDLE)
+		{
+			vkDestroySemaphore(handle, timeline, nullptr);
+		}
 	}
-};
+	memory.destroy();
+	frames.clear();
+	timeline = VK_NULL_HANDLE;
+	device.destroy();
+	instance.destroy();
+}
 
 namespace
 {
@@ -320,10 +277,20 @@ bool vulkan14_renderer::Init(GLFWwindow *Window)
 		return false;
 	}
 
+	if (false == init_scene(reason))
+	{
+		vk14::log_error("the renderer can't start: " + reason);
+		destroy_scene();
+		m_context.reset();
+		return false;
+	}
+	init_frame_data();
+
 	vk14::log_info(std::to_string(framesinflight) + " frames in flight");
 	// until the stages of the plan bring them, these parts of the simulator aren't there with vulkan
-	vk14::log_info("not available with vulkan yet: the scenery and the vehicles (D1-D7), picking, mouse position in the scene and screenshots (D6), the map panel, "
-	               "python screens in their own windows (N5), panels in their own windows (R5b), VR (X4)");
+	vk14::log_info("not available with vulkan yet: the atmosphere, the sky ambient light, automatic exposure and bloom, stars (P1), the weather fog and clouds (P2), "
+	               "ambient occlusion and contact shadows (P3), shadows of lamps and headlights (P4), the culling on the gpu (P5), the heightmap terrain, grass and the particles "
+	               "of the gpu (P6), the map panel, python screens in their own windows (N5), panels in their own windows (R5b), VR (X4)");
 	WriteLog("Gfx Renderer: setup complete");
 	update_info();
 	return true;
@@ -331,38 +298,64 @@ bool vulkan14_renderer::Init(GLFWwindow *Window)
 
 bool vulkan14_renderer::AddViewport(global_settings::extraviewport_config const &conf)
 {
-	if (!m_context)
+	if (!m_context || m_viewports.empty())
 	{
 		return false;
 	}
+	viewport_config *viewport{nullptr};
 	if (conf.monitor == "MAIN")
 	{
-		// the projection of the main window is changed only, which the drawing of the scenery takes care of (D6)
-		vk14::log_info("extra viewport on the main window: drawn from the stage D6 of the plan");
-		return true;
+		// the main window drawn with the projection of the viewport
+		viewport = &m_viewports.front();
 	}
-
-	// a window of its own, without an opengl context
-	auto *window{Application.window(-1, true, conf.width, conf.height, Application.find_monitor(conf.monitor), true, false)};
-	if (window == nullptr)
+	else
 	{
-		vk14::log_error("the window of the extra viewport on " + conf.monitor + " couldn't be made");
-		return false;
+		// a window of its own, without an opengl context, with a swapchain of its own
+		auto *window{Application.window(-1, true, conf.width, conf.height, Application.find_monitor(conf.monitor), true, false)};
+		if (window == nullptr)
+		{
+			vk14::log_error("the window of the extra viewport on " + conf.monitor + " couldn't be made");
+			return false;
+		}
+		auto &ctx{*m_context};
+		auto swapchain{std::make_unique<vk14::swapchain>()};
+		std::string reason;
+		if (false == swapchain->create(ctx.instance, ctx.device, window, "viewport " + conf.monitor, static_cast<std::uint32_t>(ctx.frames.size()), reason))
+		{
+			vk14::log_error(reason);
+			return false;
+		}
+		ctx.windows.emplace_back(std::move(swapchain));
+		m_viewports.emplace_back();
+		viewport = &m_viewports.back();
+		viewport->window = ctx.windows.size() - 1;
 	}
-	auto &ctx{*m_context};
-	auto viewport{std::make_unique<vk14::swapchain>()};
-	std::string reason;
-	if (false == viewport->create(ctx.instance, ctx.device, window, "viewport " + conf.monitor, static_cast<std::uint32_t>(ctx.frames.size()), reason))
-	{
-		vk14::log_error(reason);
-		return false;
-	}
-	ctx.windows.emplace_back(std::move(viewport));
+	viewport->width = conf.width;
+	viewport->height = conf.height;
+	viewport->projection = conf.projection;
+	viewport->proj_type = viewport_config::custom;
+	viewport->draw_range = conf.draw_range;
+	vk14::log_info("viewport " + conf.monitor + ": " + std::to_string(conf.width) + "x" + std::to_string(conf.height));
 	return true;
 }
 
 void vulkan14_renderer::Shutdown()
 {
+	if (m_context && (m_context->device.handle() != VK_NULL_HANDLE))
+	{
+		// the end of the renderer, not a frame: everything on the gpu has to be done
+		vkDeviceWaitIdle(m_context->device.handle());
+	}
+	// the geometry on the gpu goes with the context; the data of the banks stays for the simulation
+	for (auto *bank : m_banks)
+	{
+		if (bank != nullptr)
+		{
+			bank->release();
+		}
+	}
+	destroy_scene();
+	m_draw.reset();
 	m_context.reset();
 }
 
@@ -385,184 +378,6 @@ void vulkan14_renderer::report_device_lost(char const *Where)
 	}
 	vk14::log_error(report);
 	crashreport_add_info("vulkan_device_lost", report);
-}
-
-bool vulkan14_renderer::Render()
-{
-	if (!m_context || m_context->devicelost)
-	{
-		return false;
-	}
-	auto &ctx{*m_context};
-	auto const device{ctx.device.handle()};
-	auto const slot{static_cast<std::uint32_t>(ctx.framecount % ctx.frames.size())};
-	auto &frame{ctx.frames[slot]};
-
-	Timer::subsystem.gfx_total.start();
-
-	// the gpu has to be done with the frame which used the slot before
-	if (frame.done > 0)
-	{
-		VkSemaphoreWaitInfo wait{};
-		wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-		wait.semaphoreCount = 1;
-		wait.pSemaphores = &ctx.timeline;
-		wait.pValues = &frame.done;
-		if (!VK14_VERIFY(vkWaitSemaphores(device, &wait, UINT64_MAX)))
-		{
-			report_device_lost("waiting for a frame");
-			return false;
-		}
-		ctx.passes.collect(slot);
-	}
-	// what the frames done used last goes
-	ctx.deletions.collect(std::max(ctx.completed(), frame.done));
-	VK14_VERIFY(vkResetCommandPool(device, frame.pool, 0));
-	ctx.ring.begin_frame(slot);
-
-	VkCommandBufferBeginInfo begin{};
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	VK14_VERIFY(vkBeginCommandBuffer(frame.uploads, &begin));
-	VK14_VERIFY(vkBeginCommandBuffer(frame.commands, &begin));
-	auto const value{ctx.timelinevalue + 1};
-	ctx.uploads.begin_frame(frame.uploads, value);
-	// the content other threads gave the textures (python)
-	{
-		std::vector<vk14::vulkan14_texture *> pending;
-		{
-			std::lock_guard<std::mutex> lock(ctx.pending.mutex);
-			pending.swap(ctx.pending.textures);
-		}
-		for (auto *texture : pending)
-		{
-			texture->apply_pending();
-		}
-	}
-
-	ctx.acquired.clear();
-	for (auto &window : ctx.windows)
-	{
-		switch (window->acquire(slot))
-		{
-		case vk14::swapchain::acquire_result::ready:
-			ctx.acquired.push_back(window.get());
-			break;
-		case vk14::swapchain::acquire_result::skipped:
-			break;
-		default:
-			report_device_lost("acquiring an image");
-			return false;
-		}
-	}
-
-	// the user interface: imgui makes its frame, the images it asks for are uploaded in this frame
-	Timer::subsystem.gfx_gui.start();
-	Application.render_ui();
-	Timer::subsystem.gfx_gui.stop();
-
-	frame.number = ctx.framecount;
-	ctx.passes.begin_frame(frame.commands, slot, ctx.framecount);
-	auto const background{simulation::is_ready ? clear_colour : glm::vec3{0.f}};
-	bool uidrawn{false};
-	for (auto *window : ctx.acquired)
-	{
-		auto const colour{window->srgb() ? glm::vec3{srgb_to_linear(background.r), srgb_to_linear(background.g), srgb_to_linear(background.b)} : background};
-		if (window != ctx.windows.front().get())
-		{
-			// the extra viewports: their colour only, until the scenery is drawn into them (D6)
-			window->record_clear(frame.commands, glm::vec4{colour, 1.f});
-			continue;
-		}
-		// the main window: cleared, the user interface over it, shown
-		ctx.passes.begin_pass("ui", {window->use(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT)});
-		VkRenderingAttachmentInfo attachment{};
-		attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-		attachment.imageView = window->view();
-		attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		attachment.clearValue.color = {{colour.r, colour.g, colour.b, 1.f}};
-		VkRenderingInfo rendering{};
-		rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-		rendering.renderArea = {{0, 0}, window->extent()};
-		rendering.layerCount = 1;
-		rendering.colorAttachmentCount = 1;
-		rendering.pColorAttachments = &attachment;
-		vkCmdBeginRendering(frame.commands, &rendering);
-		ctx.imgui.record(frame.commands, window->extent(), window->format(), window->srgb());
-		vkCmdEndRendering(frame.commands);
-		ctx.passes.end_pass();
-		vk14::barriers(frame.commands, {window->use(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE)});
-		uidrawn = true;
-	}
-	if (false == uidrawn)
-	{
-		// the main window is minimized: the frame of imgui has nowhere to go
-		ctx.imgui.skip();
-	}
-	ctx.passes.end_frame();
-	auto const uploaded{ctx.uploads.end_frame()};
-	VK14_VERIFY(vkEndCommandBuffer(frame.uploads));
-	VK14_VERIFY(vkEndCommandBuffer(frame.commands));
-	ctx.ring.flush();
-
-	std::vector<VkSemaphoreSubmitInfo> waits;
-	std::vector<VkSemaphoreSubmitInfo> signals;
-	for (auto *window : ctx.acquired)
-	{
-		VkSemaphoreSubmitInfo wait{};
-		wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-		wait.semaphore = window->acquire_semaphore(slot);
-		wait.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-		waits.push_back(wait);
-
-		VkSemaphoreSubmitInfo signal{};
-		signal.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-		signal.semaphore = window->present_semaphore();
-		signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-		signals.push_back(signal);
-	}
-	VkSemaphoreSubmitInfo timelinesignal{};
-	timelinesignal.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-	timelinesignal.semaphore = ctx.timeline;
-	timelinesignal.value = value;
-	timelinesignal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-	signals.push_back(timelinesignal);
-
-	// the uploads first, in the same submit: their barriers make them done before the frame samples the images
-	std::vector<VkCommandBufferSubmitInfo> commands;
-	if (uploaded)
-	{
-		VkCommandBufferSubmitInfo info{};
-		info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-		info.commandBuffer = frame.uploads;
-		commands.push_back(info);
-	}
-	{
-		VkCommandBufferSubmitInfo info{};
-		info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-		info.commandBuffer = frame.commands;
-		commands.push_back(info);
-	}
-
-	VkSubmitInfo2 submit{};
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-	submit.waitSemaphoreInfoCount = static_cast<std::uint32_t>(waits.size());
-	submit.pWaitSemaphoreInfos = waits.data();
-	submit.commandBufferInfoCount = static_cast<std::uint32_t>(commands.size());
-	submit.pCommandBufferInfos = commands.data();
-	submit.signalSemaphoreInfoCount = static_cast<std::uint32_t>(signals.size());
-	submit.pSignalSemaphoreInfos = signals.data();
-	if (!VK14_VERIFY(vkQueueSubmit2(ctx.device.graphics_queue(), 1, &submit, VK_NULL_HANDLE)))
-	{
-		report_device_lost("submitting a frame");
-		return false;
-	}
-	frame.done = ctx.timelinevalue = value;
-
-	Timer::subsystem.gfx_total.stop();
-	return true;
 }
 
 void vulkan14_renderer::SwapBuffers()
@@ -616,143 +431,71 @@ float vulkan14_renderer::Framerate()
 	return m_framerate;
 }
 
-// geometry: kept in memory for the simulation, nothing on the gpu until D1
-
-gfx::geometrybank_handle vulkan14_renderer::Create_Bank()
-{
-	return m_geometry.register_bank(std::make_unique<null_geometrybank>());
-}
-
-gfx::geometry_handle vulkan14_renderer::Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type)
-{
-	// NOTE: we expect indexed geometry to come with calculated tangents
-	return m_geometry.create_chunk(Indices, Vertices, Userdata, Geometry, Type);
-}
-
-gfx::geometry_handle vulkan14_renderer::Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type)
-{
-	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
-	return m_geometry.create_chunk(Vertices, Userdata, Geometry, Type);
-}
-
-bool vulkan14_renderer::Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, std::size_t const Offset)
-{
-	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
-	return m_geometry.replace(Vertices, Userdata, Geometry, Offset);
-}
-
-bool vulkan14_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type)
-{
-	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
-	return m_geometry.append(Vertices, Userdata, Geometry);
-}
-
-gfx::index_array const &vulkan14_renderer::Indices(gfx::geometry_handle const &Geometry) const
-{
-	return m_geometry.indices(Geometry);
-}
-
-gfx::vertex_array const &vulkan14_renderer::Vertices(gfx::geometry_handle const &Geometry) const
-{
-	return m_geometry.vertices(Geometry);
-}
-
-gfx::userdata_array const &vulkan14_renderer::UserData(gfx::geometry_handle const &Geometry) const
-{
-	return m_geometry.userdata(Geometry);
-}
-
-// materials and their shaders: none until D1
-
-material_handle vulkan14_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
-{
-	return null_handle;
-}
-
-void vulkan14_renderer::Bind_Material(material_handle const Material, TSubModel const *sm, lighting_data const *lighting) {}
-
-IMaterial const *vulkan14_renderer::Material(material_handle const Material) const
-{
-	return IMaterial::null_material();
-}
-
-std::shared_ptr<gfx::shader_program> vulkan14_renderer::Fetch_Shader(std::string const &name)
-{
-	return nullptr;
-}
-
-// textures: the files read and decoded as for the opengl renderer, made into images when they are first used (create(), e.g. by the
-// launcher); the materials of the scene take them from D1
-
-texture_handle vulkan14_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
-{
-	if (!m_context || !m_context->textures)
-	{
-		return null_handle;
-	}
-	return m_context->textures->create(Filename, Loadnow, format_hint);
-}
-
-// the shaders take the textures by the pushed descriptors (D1), there's nothing to bind
-void vulkan14_renderer::Bind_Texture(texture_handle const Texture) {}
-
-void vulkan14_renderer::Bind_Texture(std::size_t const Unit, texture_handle const Texture) {}
-
-ITexture &vulkan14_renderer::Texture(texture_handle const Texture)
-{
-	if ((Texture == null_handle) || !m_context || !m_context->textures)
-	{
-		return *ITexture::null_texture();
-	}
-	return m_context->textures->mark_as_used(Texture);
-}
-
-ITexture const &vulkan14_renderer::Texture(texture_handle const Texture) const
-{
-	if ((Texture == null_handle) || !m_context || !m_context->textures)
-	{
-		return *ITexture::null_texture();
-	}
-	return m_context->textures->texture(Texture);
-}
-
-// picking: D6
-
-void vulkan14_renderer::Pick_Control_Callback(std::function<void(TSubModel const *, glm::vec2 const)> Callback) {}
-
-void vulkan14_renderer::Pick_Node_Callback(std::function<void(scene::basic_node *)> Callback) {}
-
-TSubModel const *vulkan14_renderer::Pick_Control() const
-{
-	return nullptr;
-}
-
-scene::basic_node const *vulkan14_renderer::Pick_Node() const
-{
-	return nullptr;
-}
-
-glm::dvec3 vulkan14_renderer::Mouse_Position() const
-{
-	return glm::dvec3(0.0);
-}
-
 // maintenance
 
 void vulkan14_renderer::Update(double const Deltatime)
 {
-	if (m_context && m_context->textures && (true == Global.ResourceSweep) && (true == simulation::is_ready))
-	{
-		// textures nothing used for a while give their images back
-		m_context->textures->update();
-	}
+	Update_Pick_Control();
+	Update_Pick_Node();
+	update_screenshot();
+
 	m_updateaccumulator += Deltatime;
 	if (m_updateaccumulator < 1.0)
 	{
+		// too early for any work
 		return;
 	}
 	m_updateaccumulator = 0.0;
 	m_framerate = 1000.f / Timer::subsystem.mainloop_total.average();
+
+	// adjust draw ranges etc, based on recent performance (opengl46_renderer::Update())
+	if (Global.targetfps != 0.0f)
+	{
+		float fps_diff = Global.targetfps - m_framerate;
+		if (fps_diff > 0.0f)
+			Global.fDistanceFactor = std::max(0.5f, Global.fDistanceFactor - 0.05f);
+		else
+			Global.fDistanceFactor = std::min(Global.gfx_distance_factor_max, Global.fDistanceFactor + 0.05f);
+	}
+	// legacy framerate parameters
+	else if (Global.fFpsAverage != 0.f)
+	{
+		auto const fps_diff = m_framerate - Global.fFpsAverage;
+		if (fps_diff < -Global.fFpsDeviation)
+		{
+			Global.fDistanceFactor = std::min(std::max(1.0f, Global.fDistanceFactor - 0.05f), Global.gfx_distance_factor_max);
+		}
+		else if (fps_diff > Global.fFpsDeviation)
+		{
+			Global.fDistanceFactor = std::min(std::min(3.0f, Global.fDistanceFactor + 0.05f), Global.gfx_distance_factor_max);
+		}
+	}
+
+	if (Global.UpdateMaterials)
+	{
+		// update resources if there was environmental change
+		simulation_state simulationstate{Global.Weather, Global.Season};
+		std::swap(m_simulationstate, simulationstate);
+		if ((m_simulationstate.season != simulationstate.season) && (false == simulationstate.season.empty()))
+		{
+			m_materials.on_season_change();
+		}
+		if ((m_simulationstate.weather != simulationstate.weather) && (false == simulationstate.weather.empty()))
+		{
+			m_materials.on_weather_change();
+		}
+	}
+
+	if (m_context && m_context->textures && (true == Global.ResourceSweep) && (true == simulation::is_ready))
+	{
+		// garbage collection
+		m_geometry.update();
+		m_context->textures->update();
+	}
+	if ((Global.gfx_texture_releasedistance > 0.f) && (true == simulation::is_ready))
+	{
+		update_texture_release();
+	}
 	update_info();
 }
 
@@ -781,15 +524,6 @@ void vulkan14_renderer::update_info()
 	}
 }
 
-void vulkan14_renderer::Update_Pick_Control() {}
-
-void vulkan14_renderer::Update_Pick_Node() {}
-
-glm::dvec3 vulkan14_renderer::Update_Mouse_Position()
-{
-	return glm::dvec3(0.0);
-}
-
 bool vulkan14_renderer::Debug_Ui_State(std::optional<bool> State)
 {
 	if (State)
@@ -812,9 +546,4 @@ std::string const &vulkan14_renderer::info_stats() const
 imgui_renderer *vulkan14_renderer::GetImguiRenderer()
 {
 	return (m_context ? &m_context->imgui : nullptr);
-}
-
-void vulkan14_renderer::MakeScreenshot()
-{
-	vk14::log_warning("screenshots aren't made by the vulkan renderer yet (D6)");
 }

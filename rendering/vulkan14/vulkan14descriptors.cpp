@@ -37,9 +37,10 @@ bool samplers::create(device const &Device, float Anisotropy, std::string &Reaso
 		}
 		if (Compare)
 		{
-			// reverse z: the fragment is lit where it's nearer the light than the map, its depth greater
+			// as GL_LEQUAL of the opengl renderer: 1 (in the shadow) where the reference isn't nearer the light than the map (reverse
+			// z: its depth isn't greater), the shaders take the result as the amount of the shadow
 			info.compareEnable = VK_TRUE;
-			info.compareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+			info.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 			info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
 		}
 		if (!VK14_VERIFY(vkCreateSampler(handle, &info, nullptr, &Sampler)))
@@ -53,7 +54,7 @@ bool samplers::create(device const &Device, float Anisotropy, std::string &Reaso
 	};
 	return make(repeat_aniso, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, Anisotropy, false, "repeat aniso") && make(clamp_aniso, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, true, Anisotropy, false, "clamp aniso") &&
 	       make(clamp_linear, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, true, 1.f, false, "clamp linear") && make(clamp_nearest, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, false, 1.f, false, "clamp nearest") &&
-	       make(shadow, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, false, 1.f, true, "shadow");
+	       make(shadow, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, false, 1.f, true, "shadow");
 }
 
 void samplers::destroy(VkDevice Device)

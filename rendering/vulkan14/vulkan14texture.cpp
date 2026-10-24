@@ -57,8 +57,57 @@ void uploader::begin_frame(VkCommandBuffer Commands, std::uint64_t Value)
 
 bool uploader::end_frame()
 {
+	if (m_buffercopies && (m_commands != VK_NULL_HANDLE))
+	{
+		// the draws of the frame read what was copied
+		VkMemoryBarrier2 barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+		VkDependencyInfo dependency{};
+		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency.memoryBarrierCount = 1;
+		dependency.pMemoryBarriers = &barrier;
+		vkCmdPipelineBarrier2(m_commands, &dependency);
+	}
+	m_buffercopies = false;
 	m_commands = VK_NULL_HANDLE;
 	return m_recorded;
+}
+
+bool uploader::upload_buffer(std::shared_ptr<buffer> const &Target, void const *Data, VkDeviceSize Size, std::vector<std::pair<VkDeviceSize, VkDeviceSize>> const &Parts)
+{
+	if ((Target == nullptr) || (Size == 0))
+	{
+		return true;
+	}
+	job upload;
+	upload.buffertarget = Target;
+	upload.parts = Parts;
+	if (upload.parts.empty())
+	{
+		upload.parts.emplace_back(0, Size);
+	}
+	upload.staging = std::make_shared<buffer>();
+	if ((false == upload.staging->create(*m_allocator, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memory_kind::upload)) || (upload.staging->mapped() == nullptr))
+	{
+		log_error("no staging buffer of " + memory_size_string(Size) + " for an upload");
+		return false;
+	}
+	std::memcpy(upload.staging->mapped(), Data, static_cast<std::size_t>(Size));
+	upload.staging->flush(0, Size);
+	m_uploaded += Size;
+	if (m_commands != VK_NULL_HANDLE)
+	{
+		record(upload);
+	}
+	else
+	{
+		m_pending.emplace_back(std::move(upload));
+	}
+	return true;
 }
 
 bool uploader::upload(std::shared_ptr<image> const &Image, void const *Data, VkDeviceSize Size, std::vector<level> const &Levels, bool const Mipmaps)
@@ -89,6 +138,47 @@ bool uploader::upload(std::shared_ptr<image> const &Image, void const *Data, VkD
 
 void uploader::record(job &Job)
 {
+	if (Job.buffertarget != nullptr)
+	{
+		if (false == m_buffercopies)
+		{
+			// the frames sent before may still read the buffers the copies write to
+			VkMemoryBarrier2 barrier{};
+			barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+			barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+			barrier.srcAccessMask = VK_ACCESS_2_NONE;
+			barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+			barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+			VkDependencyInfo dependency{};
+			dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+			dependency.memoryBarrierCount = 1;
+			dependency.pMemoryBarriers = &barrier;
+			vkCmdPipelineBarrier2(m_commands, &dependency);
+			m_buffercopies = true;
+		}
+		std::vector<VkBufferCopy2> regions;
+		VkDeviceSize source{0};
+		for (auto const &part : Job.parts)
+		{
+			VkBufferCopy2 region{};
+			region.sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2;
+			region.srcOffset = source;
+			region.dstOffset = part.first;
+			region.size = part.second;
+			regions.push_back(region);
+			source += part.second;
+		}
+		VkCopyBufferInfo2 copy{};
+		copy.sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2;
+		copy.srcBuffer = Job.staging->handle();
+		copy.dstBuffer = Job.buffertarget->handle();
+		copy.regionCount = static_cast<std::uint32_t>(regions.size());
+		copy.pRegions = regions.data();
+		vkCmdCopyBuffer2(m_commands, &copy);
+		m_recorded = true;
+		m_deletions->push(m_value, [staging = Job.staging, target = Job.buffertarget]() {});
+		return;
+	}
 	auto &target{*Job.target};
 	auto const commands{m_commands};
 	auto const aspect{target.aspect()};
