@@ -286,5 +286,12 @@ TEST_CASE("alignment: bends clicked close along a curve make one compound curve,
 	// the straight before the curve and the one after it
 	CHECK(straights <= 2);
 	CHECK(line.curves.size() <= 2);
+	// the arcs of a compound curve meet through transition curves, the curvature not jumping from one radius to another
+	for (std::size_t i = 0; i + 1 < line.elements.size(); ++i) {
+		auto const &a{line.elements[i]};
+		auto const &b{line.elements[i + 1]};
+		if (a.kind == alignment::element_kind::spiral && b.kind == alignment::element_kind::spiral && a.vertex == b.vertex)
+			CHECK(a.curvature_end == doctest::Approx(b.curvature_start).epsilon(1e-6));
+	}
 	CHECK(design.vertices.size() < 12);
 }

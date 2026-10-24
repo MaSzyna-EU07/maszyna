@@ -3181,9 +3181,11 @@ std::optional<trace_stretch> fit_arcs(design const &Single, std::vector<glm::dve
 			else
 				curve.arcs.push_back({radius, 0.0, share});
 		}
-		// arcs meeting with no transitions between them: the points of a curve clicked by hand ask for the radius to change
-		// quicker than the transitions of the norms let it
+		// the radii found with the arcs meeting directly, which follows the points easily, then with the transitions of the norms
+		// between the arcs, fitted again from there
 		fit_compound(shaped, 0, Points, false);
+		recommend_between(shaped.vertices.front(), Single.speed, Single.norms);
+		fit_compound(shaped, 0, Points, true);
 		// none of an arc too short to be one: a kink the points made
 		auto const fitted{compute(shaped)};
 		auto const kinked{std::any_of(fitted.elements.begin(), fitted.elements.end(), [](element const &Element) {
