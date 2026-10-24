@@ -51,6 +51,8 @@ struct record
 	glm::dvec2 low{0.0};
 	glm::dvec2 high{0.0};
 	std::vector<glm::dvec2> samples;
+	// the points clicked when the line was laid, its curves fitted to them, so they can be fitted again
+	std::vector<glm::dvec3> clicks;
 };
 
 struct hit
@@ -84,8 +86,12 @@ std::optional<designed_vertex> vertex_of(std::vector<std::pair<TTrack *, bool>> 
 int find(glm::dvec3 const &Start, glm::dvec3 const &End, bool &Reversed);
 // stored alignment near the tracks, whose line they no longer follow; Departure receives the largest distance
 int departed(std::vector<TTrack *> const &Tracks, double &Departure);
-// keeps the design in the file of the layer, in place of the one with the same ends
-int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source = "designed", double const Fit = 0.0);
+// keeps the design in the file of the layer, in place of the one with the same ends; with no points clicked given it keeps the
+// ones of the design it takes the place of
+int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source = "designed", double const Fit = 0.0,
+          std::vector<glm::dvec3> const &Clicks = {});
+// the points clicked when the lines were laid, kept with them, which lie by the line within the reach, between its ends
+std::vector<glm::dvec3> clicks_along(alignment::result const &Result, double const Reach);
 bool follows(alignment::result const &Result, std::vector<TTrack *> const &Tracks);
 double deviation(alignment::result const &Result, std::vector<TTrack *> const &Tracks, TTrack *&Worst);
 std::optional<double> chainage_on(alignment::result const &Result, glm::dvec3 const &Point);

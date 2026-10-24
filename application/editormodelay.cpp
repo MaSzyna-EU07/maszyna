@@ -1429,8 +1429,9 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	// the scenery keeps the design the tracks were laid by, as it is, for the plan to edit; read from the paths again it wouldn't be
 	// the same, a compound curve with transitions between its arcs least of all. A track laid with no design of the line, between two
 	// free ends or back from one, keeps none: the plan reads its curves when it's opened
+	// with the points clicked, which the plan fits the curves to again when their transitions or cants change
 	if (plan.shape.valid && false == created.empty() && false == scene::Layers.empty())
-		alignment_store::store(plan.design, plan.shape, 0.0, alignment_store::layer_of(*created.front()), "drawn");
+		alignment_store::store(plan.design, plan.shape, 0.0, alignment_store::layer_of(*created.front()), "drawn", 0.0, tool.points);
 	if (tool.chain.empty())
 		tool.history = m_history.size();
 	push_track_snapshot({}, created);

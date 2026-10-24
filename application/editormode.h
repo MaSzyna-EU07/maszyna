@@ -985,6 +985,35 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			float metres{1.0f}; // pixels of a metre and of a unit of the curvature, kept as the drag goes
 			float curvature{1.0f};
 		} band;
+		// the part of a curve whose field the mouse is over in the panel, or which is being edited there, shown in the view
+		struct curve_focus
+		{
+			enum class part
+			{
+				whole,
+				entry,
+				exit,
+				arc, // of the radius `arc`, the first one 0
+				between // the transition leading into the arc of the radius `arc`
+			};
+			int vertex{-1};
+			part what{part::whole};
+			int arc{0};
+			bool held{false}; // by a field being edited, the mouse over the others doesn't move it
+		} focus;
+		// the points clicked when the fragment was laid, kept with its design: the curves keep to them as their transitions and cants
+		// change, while hold is on
+		std::vector<glm::dvec3> clicks;
+		bool hold{true};
+		struct click_state
+		{
+			double offset{0.0}; // from the line, m
+			int vertex{-1}; // whose curve it's a point of
+			bool corner{false}; // a bend of straights clicked, the vertex itself rather than a point of its curve
+		};
+		std::vector<click_state> click_states; // as the line was at the revision measured
+		int revision{0}; // of the result, counted as it's computed
+		int measured{-1};
 		// points clicked along the middle of the track seen on the orthophoto, the radii of the curves and their shares fitted to them after each click
 		struct trace_state
 		{
@@ -1003,6 +1032,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool render_route_vertex(int const Index);
 	void render_route_result();
 	void render_route_trace();
+	// the camera over the stretch of the line between the chainages, a curve seen whole
+	void route_show_curve(double const From, double const To);
+	// the departures of the points clicked from the line and the curves they belong to, measured again when the line changed
+	void route_measure_clicks();
+	// the points clicked along the curve of the vertex, in the plan, the bends of straights left out
+	std::vector<glm::dvec2> route_clicks_of(int const Vertex) const;
+	// the radii of the curve of the vertex fitted again to the points clicked along it, its transitions and cants as they are
+	bool route_hold_clicks(int const Vertex);
+	// the elements of the part of the curve in focus in the panel, in their order along the line
+	std::vector<std::size_t> route_focused() const;
 	void route_trace_start();
 	void route_trace_fit();
 	void route_trace_end(bool const Keep);
@@ -1072,6 +1111,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	{
 		m_route.design.norms.checked = true;
 		m_route.result = alignment::compute(m_route.design);
+		++m_route.revision;
 	}
 	void route_apply();
 	void route_lay();

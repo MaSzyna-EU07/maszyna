@@ -303,6 +303,49 @@ TEST_CASE("alignment: each arc of a compound curve has a cant of its own, ramped
 	CHECK(vertex.arcs.front().transition == doctest::Approx(alignment::transition_between(design.speed, 1.0 / 1200.0, 40.0, 1.0 / 700.0, 110.0, design.norms)));
 }
 
+TEST_CASE("alignment: an arc of a compound curve with no cant gets a longer transition, the curve fitted again to the points it was laid through") {
+	auto design{straights({600.0, 600.0}, {35.0 * pi / 180.0}, 100.0)};
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 1200.0;
+	vertex.compound = true;
+	vertex.share = 0.5;
+	vertex.arcs = {{700.0, 0.0, 0.5}};
+	vertex.transition_in = vertex.transition_out = 80.0;
+	vertex.cant = 120.0;
+	alignment::recommend_between(vertex, design.speed, design.norms);
+	auto const line{alignment::compute(design)};
+	REQUIRE(line.valid);
+	auto const points{traced(line, 15.0, 0.0)};
+	auto const before{vertex.arcs.front().transition};
+
+	// the second arc with no cant, the first one keeping its own
+	auto lowered{design};
+	auto &shape{lowered.vertices.front()};
+	shape.first_cant = 70.0;
+	shape.arcs.front().cant = 0.0;
+	alignment::norm_transitions(shape, lowered.speed, lowered.norms);
+	auto const between{shape.arcs.front().transition};
+	CHECK(between == doctest::Approx(alignment::transition_between(lowered.speed, 1.0 / 1200.0, 70.0, 1.0 / 700.0, 0.0, lowered.norms)));
+	CHECK(between > before);
+
+	auto const departure = [&](alignment::design const &Design) {
+		double sum{0.0};
+		std::vector<glm::dvec2> plan(points.begin(), points.end());
+		for (auto const &projection : alignment::project(alignment::compute(Design), plan))
+			sum += projection.offset * projection.offset;
+		return std::sqrt(sum / static_cast<double>(points.size()));
+	};
+	auto const fit{alignment::refit_radii(lowered, 0, points)};
+	REQUIRE(fit.valid);
+	// the transitions and the cants as they were set, the radii moved to keep to the points
+	CHECK(fit.fitted.arcs.front().transition == doctest::Approx(between));
+	CHECK(fit.fitted.transition_in == doctest::Approx(shape.transition_in));
+	CHECK(fit.fitted.arcs.front().cant == doctest::Approx(0.0));
+	CHECK(fit.fitted.first_cant == doctest::Approx(70.0));
+	CHECK(fit.rms < departure(lowered));
+	CHECK(fit.rms < 0.3);
+}
+
 TEST_CASE("alignment: bends clicked close along a curve make one compound curve, not curves with short straights between them") {
 	// the points clicked in the scenery abc, at 60 km/h: from a straight along z into a curve to the left
 	alignment::design design;

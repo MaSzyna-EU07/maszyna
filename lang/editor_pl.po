@@ -11920,3 +11920,57 @@ msgstr "Przechyłka łuku znów proporcjonalna do jego krzywizny"
 
 msgid "Height of the outer rail above the inner one on the sharpest arc; the arcs with no cant of their own get it in proportion to their curvature"
 msgstr "Wysokość szyny zewnętrznej ponad wewnętrzną na najostrzejszym łuku; łuki bez własnej przechyłki dostają ją proporcjonalnie do swojej krzywizny"
+
+msgid "Curve W%d"
+msgstr "Łuk W%d"
+
+msgid "Show in the view"
+msgstr "Pokaż w widoku"
+
+msgid "The camera flies over the curve, which is lit up in the view while the mouse is over its fields"
+msgstr "Kamera przelatuje nad łuk; łuk świeci w widoku, gdy mysz jest nad jego polami"
+
+msgid "points clicked %zu: %.0f cm on average, at most %.0f cm"
+msgstr "kliknięte punkty %zu: średnio %.0f cm, najwyżej %.0f cm"
+
+msgid "The points clicked along the curve when it was laid, kept in the scenery, and how far the curve is from them now"
+msgstr "Punkty kliknięte wzdłuż łuku przy kładzeniu, zapisane w scenerii, i jak daleko łuk jest teraz od nich"
+
+msgid "Fit to them"
+msgstr "Dopasuj do nich"
+
+msgid "The radii of the curve and their shares fitted again to the points clicked, the transitions and the cants as they are"
+msgstr "Promienie łuku i ich udziały dopasowane od nowa do klikniętych punktów; przejściówki i przechyłki bez zmian"
+
+msgid "Keep to the points clicked"
+msgstr "Trzymaj się kliknięć"
+
+msgid "The scenery keeps the points clicked when the line was laid: a curve whose transitions or cants are changed gets its radii fitted to them again, so it stays where it was seen on the photo"
+msgstr "Sceneria pamięta punkty kliknięte przy kładzeniu linii: łuk ze zmienioną przejściówką albo przechyłką dostaje promienie dopasowane do nich od nowa, więc zostaje tam, gdzie był widoczny na zdjęciu"
+
+msgid "Fit all to them"
+msgstr "Dopasuj wszystkie"
+
+msgid "The radii of every curve fitted again to the points clicked along it, the transitions and the cants as they are"
+msgstr "Promienie każdego łuku dopasowane od nowa do punktów klikniętych wzdłuż niego; przejściówki i przechyłki bez zmian"
+
+msgid "Transitions for these cants"
+msgstr "Przejściówki do tych przechyłek"
+
+msgid "The transition curves as long as the norms ask for at these radii and cants, the cants staying: a cant lowered asks for longer ones"
+msgstr "Krzywe przejściowe tak długie, jak normy wymagają przy tych promieniach i przechyłkach; przechyłki zostają. Mniejsza przechyłka wymaga dłuższych przejściówek"
+
+msgid "W%d  transition in %.0f m"
+msgstr "W%d  przejściowa wejściowa %.0f m"
+
+msgid "W%d  transition out %.0f m"
+msgstr "W%d  przejściowa wyjściowa %.0f m"
+
+msgid "W%d  transition R%d-R%d %.0f m"
+msgstr "W%d  przejściowa R%d-R%d %.0f m"
+
+msgid "W%d  R%d %.0f m  cant %.0f mm"
+msgstr "W%d  R%d %.0f m  przechyłka %.0f mm"
+
+msgid "W%d  R %.0f m  cant %.0f mm"
+msgstr "W%d  R %.0f m  przechyłka %.0f mm"

@@ -1700,6 +1700,26 @@ void recommend_between(vertex &Vertex, double const Speed, limits const &Limits)
 	}
 }
 
+void norm_transitions(vertex &Vertex, double const Speed, limits const &Limits)
+{
+	if (Vertex.spirals)
+		return;
+	if (false == Vertex.compound || Vertex.arcs.empty())
+	{
+		Vertex.transition_in = Vertex.transition_out = transition_length(std::max(1.0, Speed), std::max(1.0, Vertex.radius), std::max(0.0, Vertex.cant), Limits);
+		return;
+	}
+	// at the speed the sharpest arc allows, as the warnings of compute check them
+	auto sharpest{std::max(1.0, Vertex.radius)};
+	for (auto const &arc : Vertex.arcs)
+		sharpest = std::min(sharpest, std::max(1.0, arc.radius));
+	auto const allowed{std::max(1.0, std::min(Speed, speed_limit(sharpest, Limits)))};
+	auto const cants{compound_cants(Vertex)};
+	Vertex.transition_in = transition_length(allowed, std::max(1.0, Vertex.radius), cants.front(), Limits);
+	Vertex.transition_out = transition_length(allowed, std::max(1.0, Vertex.arcs.back().radius), cants.back(), Limits);
+	recommend_between(Vertex, Speed, Limits);
+}
+
 bool tangent_intersection(design const &Design, glm::dvec2 &Point)
 {
 	auto const start{plan_of(Design.start)};
@@ -2042,8 +2062,9 @@ constexpr double kPointsWithin{0.3};
 // m, how far they may be from it, clicked by hand far out: a row of bends making a curve no closer is cut in parts
 constexpr double kPointsLoose{1.0};
 
-// the parameters: the logarithms of the radii, then the weights of the shares of all but the first radius, as logarithms too
-vertex traced_shape(design const &Design, vertex const &Base, std::vector<double> const &Parameters, int const Radii)
+// the parameters: the logarithms of the radii, then the weights of the shares of all but the first radius, as logarithms too.
+// Between: the transitions between the arcs those of the norms, else the ones of the base
+vertex traced_shape(design const &Design, vertex const &Base, std::vector<double> const &Parameters, int const Radii, bool const Between = true)
 {
 	auto shape{Base};
 	auto const radius = [&](int const Index) { return std::exp(std::clamp(Parameters[Index], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax))); };
@@ -2072,9 +2093,67 @@ vertex traced_shape(design const &Design, vertex const &Base, std::vector<double
 		arc.share = weights[i] / total;
 		shape.arcs.push_back(arc);
 	}
-	if (Design.norms.checked)
+	if (Between && Design.norms.checked)
 		recommend_between(shape, Design.speed, Design.norms);
 	return shape;
+}
+
+// the departures of the points from the curve of the vertex shaped by the parameters, as traced_shape takes them
+residuals_of trace_residuals(design const &Design, std::size_t const Vertex, std::vector<glm::dvec2> const &Points, int const Count, bool const Between)
+{
+	return [&Design, &Points, Vertex, Count, Between](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
+		auto trial{Design};
+		trial.norms.checked = false;
+		trial.vertices[Vertex] = traced_shape(Design, Design.vertices[Vertex], Parameters, Count, Between);
+		// a compound curve alone made straight away
+		if (Count >= 2 && trial.vertices.size() == 1)
+			return compound_residuals(trial, Points, Residuals);
+		auto const result{compute(trial)};
+		if (false == result.valid)
+			return false;
+		auto from{std::numeric_limits<double>::max()};
+		auto to{std::numeric_limits<double>::lowest()};
+		for (auto const &e : result.elements)
+		{
+			if (e.vertex != static_cast<int>(Vertex))
+				continue;
+			from = std::min(from, e.chainage);
+			to = std::max(to, e.chainage + e.length);
+		}
+		if (from > to)
+			return false;
+		auto const line{sample_plan(result, from - 1.0, to + 1.0, std::clamp((to - from) / 300.0, 0.25, 2.0))};
+		Residuals.clear();
+		for (auto const &point : Points)
+		{
+			// a point clicked by mistake far off pulls the curve less than the square of its departure would
+			auto const offset{project_on(line, point).offset};
+			auto const departure{std::abs(offset)};
+			Residuals.push_back(departure <= kTraceRobust ? offset : std::copysign(std::sqrt(2.0 * kTraceRobust * departure - kTraceRobust * kTraceRobust), offset));
+		}
+		return true;
+	};
+}
+
+// the curve of the vertex given the shape, and how far the points are from it
+trace_fit trace_of(design const &Design, std::size_t const Vertex, vertex const &Shape, std::vector<glm::dvec2> const &Points)
+{
+	trace_fit fit;
+	auto trial{Design};
+	trial.vertices[Vertex] = Shape;
+	auto const result{compute(trial)};
+	if (false == result.valid)
+		return fit;
+	fit.valid = true;
+	fit.fitted = Shape;
+	double sum{0.0};
+	for (auto const &projection : project(result, Points))
+	{
+		sum += projection.offset * projection.offset;
+		fit.worst = std::max(fit.worst, std::abs(projection.offset));
+	}
+	fit.rms = std::sqrt(sum / static_cast<double>(Points.size()));
+	return fit;
 }
 
 } // namespace
@@ -2096,40 +2175,7 @@ trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<
 	if (Vertex >= Design.vertices.size() || Points.empty())
 		return best;
 	auto const &base{Design.vertices[Vertex]};
-	auto const residuals = [&](int const Count) -> residuals_of {
-		return [&, Count](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
-			auto trial{Design};
-			trial.norms.checked = false;
-			trial.vertices[Vertex] = traced_shape(Design, base, Parameters, Count);
-			// a compound curve alone made straight away
-			if (Count >= 2 && trial.vertices.size() == 1)
-				return compound_residuals(trial, Points, Residuals);
-			auto const result{compute(trial)};
-			if (false == result.valid)
-				return false;
-			auto from{std::numeric_limits<double>::max()};
-			auto to{std::numeric_limits<double>::lowest()};
-			for (auto const &e : result.elements)
-			{
-				if (e.vertex != static_cast<int>(Vertex))
-					continue;
-				from = std::min(from, e.chainage);
-				to = std::max(to, e.chainage + e.length);
-			}
-			if (from > to)
-				return false;
-			auto const line{sample_plan(result, from - 1.0, to + 1.0, std::clamp((to - from) / 300.0, 0.25, 2.0))};
-			Residuals.clear();
-			for (auto const &point : Points)
-			{
-				// a point clicked by mistake far off pulls the curve less than the square of its departure would
-				auto const offset{project_on(line, point).offset};
-				auto const departure{std::abs(offset)};
-				Residuals.push_back(departure <= kTraceRobust ? offset : std::copysign(std::sqrt(2.0 * kTraceRobust * departure - kTraceRobust * kTraceRobust), offset));
-			}
-			return true;
-		};
-	};
+	auto const residuals = [&](int const Count) { return trace_residuals(Design, Vertex, Points, Count, true); };
 	auto const cost_of = [](residuals_of const &Residuals, std::vector<double> const &Parameters) {
 		std::vector<double> values;
 		return Residuals(Parameters, values) ? squares(values) : std::numeric_limits<double>::max();
@@ -2240,21 +2286,31 @@ trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<
 		arc.radius = std::max(kTraceRadiusMin, std::round(arc.radius));
 	if (Design.norms.checked)
 		recommend_between(shape, Design.speed, Design.norms);
-	auto trial{Design};
-	trial.vertices[Vertex] = shape;
-	auto const result{compute(trial)};
-	if (false == result.valid)
-		return best;
-	best.valid = true;
-	best.fitted = shape;
-	double sum{0.0};
-	for (auto const &projection : project(result, Points))
+	return trace_of(Design, Vertex, shape, Points);
+}
+
+trace_fit refit_radii(design const &Design, std::size_t const Vertex, std::vector<glm::dvec2> const &Points)
+{
+	if (Vertex >= Design.vertices.size() || Points.empty())
+		return {};
+	auto const &base{Design.vertices[Vertex]};
+	auto const compound{base.compound && false == base.arcs.empty()};
+	auto const count{compound ? static_cast<int>(base.arcs.size()) + 1 : 1};
+	// started from the curve as it is: the radii, then the shares weighed against the one of the first arc
+	std::vector<double> parameters{std::log(std::max(kTraceRadiusMin, base.radius))};
+	if (compound)
 	{
-		sum += projection.offset * projection.offset;
-		best.worst = std::max(best.worst, std::abs(projection.offset));
+		for (auto const &arc : base.arcs)
+			parameters.push_back(std::log(std::max(kTraceRadiusMin, arc.radius)));
+		for (auto const &arc : base.arcs)
+			parameters.push_back(std::log(std::max(1e-3, arc.share) / std::max(1e-3, base.share)));
 	}
-	best.rms = std::sqrt(sum / static_cast<double>(Points.size()));
-	return best;
+	least_squares(parameters, trace_residuals(Design, Vertex, Points, count, false));
+	auto shape{traced_shape(Design, base, parameters, count, false)};
+	shape.radius = std::max(kTraceRadiusMin, std::round(shape.radius));
+	for (auto &arc : shape.arcs)
+		arc.radius = std::max(kTraceRadiusMin, std::round(arc.radius));
+	return trace_of(Design, Vertex, shape, Points);
 }
 
 std::vector<double> breaks_at(result const &Result, std::vector<glm::dvec2> const &Points, double const From, double const To)

@@ -230,6 +230,9 @@ struct trace_fit
 // the radii of the curve of the vertex and their shares which follow the points traced along the track best; the tangents, the
 // transitions and the cant stay. Radii 0 takes the fewest radii, up to three, which follow the points about as well as more would
 trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<glm::dvec2> const &Points, int const Radii);
+// the radii of the curve of the vertex and their shares fitted again to the points, as many radii as it has; its transitions, the
+// ones between the arcs too, and its cants kept: a curve whose transitions were lengthened keeps to the points it was laid through
+trace_fit refit_radii(design const &Design, std::size_t const Vertex, std::vector<glm::dvec2> const &Points);
 
 std::size_t minimum_pieces(result const &Result, design const &Design);
 // Breaks: ascending chainages at which pieces have to end. Counts: least number of the pieces between the consecutive breaks,
@@ -333,8 +336,11 @@ struct lay_result
 
 std::optional<lay_result> lay_on(lay_request const &Request);
 
-// the transitions between the arcs of a compound curve which the norms ask for at the speed, the cant of the vertex on its sharpest arc
+// the transitions between the arcs of a compound curve which the norms ask for at the speed and at the cants of the arcs
 void recommend_between(vertex &Vertex, double const Speed, limits const &Limits);
+// all the transitions of the vertex as long as the norms ask for at its radii and its cants, the cants kept: a cant lowered
+// lengthens them, the acceleration across left changing more along them
+void norm_transitions(vertex &Vertex, double const Speed, limits const &Limits);
 
 // the length of each of the two transition curves of a vertex with spirals, meeting at the curvature of the radius
 double spirals_length(transition_shape const Shape, double const Deflection, double const Radius);

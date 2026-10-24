@@ -48,6 +48,7 @@ bool g_loaded{false};
 //   vertex <x> <z> <offset> <R> <L in> <L out> <cant> <reverse 0/1> <compound 0/1> <share> <arcs> [<R> <L> <share>]... [spirals 1]
 //     spirals: two transition curves with no arc between them, their lengths following from R
 //     [cants <first> <arc>...]: the cants of the radii of a compound curve set one by one, below 0 the cant in proportion to the curvature
+//   click <x y z>: a point clicked when the line was laid, its curves fitted to them
 //   element <straight|transition|arc> <vertex> <chainage> <length> <R at the start> <R at the end> <cant> <start x> <start z> <direction x> <direction z>
 //     radii signed with the turn, 0 for no curvature
 //   end
@@ -148,6 +149,8 @@ void mark(scene::layer_handle const Layer)
 			}
 			lines.push_back(text);
 		}
+		for (auto const &click : entry.clicks)
+			lines.push_back("click " + local(click));
 		for (auto const &e : entry.result.elements)
 		{
 			auto const station{alignment::evaluate(entry.result, e.chainage)};
@@ -193,6 +196,14 @@ void finish(record &Record)
 	sample(Record);
 }
 
+// the points clicked added to the ones there, each once
+void add_clicks(std::vector<glm::dvec3> &To, std::vector<glm::dvec3> const &From)
+{
+	for (auto const &click : From)
+		if (std::none_of(To.begin(), To.end(), [&](glm::dvec3 const &Other) { return glm::distance(Other, click) < 0.01; }))
+			To.push_back(click);
+}
+
 // the curves of a design whose vertices are vertices of a stored alignment are taken into that alignment, in place of its own
 int merge(record const &Entry)
 {
@@ -214,6 +225,7 @@ int merge(record const &Entry)
 				if (false == same)
 					continue;
 				auto merged{g_records[r]};
+				add_clicks(merged.clicks, Entry.clicks);
 				for (std::size_t k = 0; k < vertices.size(); ++k)
 				{
 					auto const shape{backwards ? reversed_vertex(Entry.design.vertices[k]) : Entry.design.vertices[k]};
@@ -377,6 +389,12 @@ void read_part(record &Entry, std::string const &Keyword, std::istringstream &Li
 		Line >> e.kind >> e.vertex >> e.chainage >> e.length >> e.radius_start >> e.radius_end >> e.cant;
 		if (false == Line.fail())
 			Entry.elements.push_back(e);
+	}
+	else if (Keyword == "click")
+	{
+		glm::dvec3 point;
+		if (Line >> point.x >> point.y >> point.z)
+			Entry.clicks.push_back(Context.to_world(point));
 	}
 }
 
@@ -756,12 +774,34 @@ std::optional<double> chainage_on(alignment::result const &Result, glm::dvec3 co
 	return found->chainage;
 }
 
-int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source, double const Fit)
+std::vector<glm::dvec3> clicks_along(alignment::result const &Result, double const Reach)
+{
+	load();
+	std::vector<glm::dvec3> along;
+	if (false == Result.valid || Result.elements.empty())
+		return along;
+	std::vector<glm::dvec3> all;
+	for (auto const &entry : g_records)
+		add_clicks(all, entry.clicks);
+	if (all.empty())
+		return along;
+	std::vector<glm::dvec2> plan;
+	for (auto const &click : all)
+		plan.push_back(plan_of(click));
+	auto const projections{alignment::project(Result, plan)};
+	for (std::size_t i = 0; i < all.size() && i < projections.size(); ++i)
+		if (projections[i].chainage > 0.0 && projections[i].chainage < Result.length && std::abs(projections[i].offset) <= Reach)
+			along.push_back(all[i]);
+	return along;
+}
+
+int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source, double const Fit, std::vector<glm::dvec3> const &Clicks)
 {
 	load();
 	record entry;
 	entry.source = Source;
 	entry.fit = Fit;
+	entry.clicks = Clicks;
 	entry.design = Design;
 	entry.design.start_reserve = 0.0;
 	entry.design.end_reserve = 0.0;
@@ -780,6 +820,8 @@ int store(alignment::design const &Design, alignment::result const &Result, doub
 	if (index >= 0)
 	{
 		entry.layer = g_records[index].layer;
+		if (entry.clicks.empty())
+			entry.clicks = g_records[index].clicks;
 		g_records[index] = std::move(entry);
 	}
 	else if ((index = merge(entry)) >= 0)
@@ -842,6 +884,8 @@ void transform(int const Index, glm::dvec3 const &From, glm::dvec2 const &Fromdi
 	design.end_direction = geometry::turned(design.end_direction, angle);
 	for (auto &vertex : design.vertices)
 		vertex.position = plan_of(place({vertex.position.x, 0.0, vertex.position.y}));
+	for (auto &click : entry.clicks)
+		click = place(click);
 	finish(entry);
 	entry.elements.clear();
 	for (auto const &e : entry.result.elements)
