@@ -560,18 +560,12 @@ editor_mode::editor_mode() {
 	m_orthophoto.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
 	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
 	m_orthophoto.guess_source([this](double const X, double const Z, double &Height) {
-		if (nmt_ahead(X, Z, Height))
+		if (nmt_ground(X, Z, Height))
 			return true;
-		if (false == m_nmt.placed())
-			return false;
-		if (false == m_nmt.height(X, Z, Height))
-		{
-			// asked for, the tile goes onto it once it comes
+		// asked for, the tile goes onto it once it comes
+		if (m_nmt.placed())
 			m_nmt.request({X - 1.0, Z - 1.0}, {X + 1.0, Z + 1.0});
-			return false;
-		}
-		Height += nmt_offset_at(X, Z);
-		return true;
+		return false;
 	});
 	editor_track::observe(this);
  }

@@ -11522,7 +11522,7 @@ msgid "Height of the track on the ground"
 msgstr "Wysokość toru na terenie"
 
 msgid "Fitted"
-msgstr "Dopasowana"
+msgstr "Wygładzona niweleta"
 
 msgid "Point to point"
 msgstr "Punkt–punkt"

@@ -748,6 +748,16 @@ bool editor_mode::nmt_ahead(double const X, double const Z, double &Height) cons
 	return true;
 }
 
+bool editor_mode::nmt_ground(double const X, double const Z, double &Height) const
+{
+	if (nmt_ahead(X, Z, Height))
+		return true;
+	if (false == m_nmt.placed() || false == m_nmt.height(X, Z, Height))
+		return false;
+	Height += nmt_offset_at(X, Z);
+	return true;
+}
+
 editor_mode::nmt_chunk editor_mode::add_chunk_from_nmt(heightmap::chunk_key const &Key, std::optional<double> const Offset)
 {
 	auto const low{heightmap::chunk_corner(Key)};
@@ -1040,9 +1050,16 @@ void editor_mode::nmt_grow()
 {
 	auto &state{m_nmt_state};
 	auto const now{ImGui::GetTime()};
-	if (false == state.grow || now - state.grow_time < 0.5 || (false == m_lay.active && false == m_extend.active) || m_streamer.resident() == 0 || false == m_nmt.placed())
+	if (false == state.grow || now - state.grow_time < 0.5 || (false == m_lay.active && false == m_extend.active) || false == m_nmt.placed())
 		return;
 	state.grow_time = now;
+	// the model under the cursor, for the heights of the points laid where there's no terrain yet, as over the base map
+	{
+		auto const at{m_extend.active ? m_extend.mouse : m_lay.mouse};
+		m_nmt.request({at.x - 100.0, at.z - 100.0}, {at.x + 100.0, at.z + 100.0});
+	}
+	if (m_streamer.resident() == 0)
+		return;
 	auto const at{m_extend.active ? m_extend.mouse : m_lay.mouse};
 	glm::dvec2 const cursor{at.x, at.z};
 	double constexpr grow_reach{400.0}; // m around the cursor
@@ -1173,13 +1190,8 @@ void editor_mode::draw_nmt_pending() const
 					}
 	}
 	auto const height = [&](double const X, double const Z, double &Height) {
-		if (m_streamer.height_at(X, Z, Height) || nmt_ahead(X, Z, Height))
+		if (m_streamer.height_at(X, Z, Height) || nmt_ground(X, Z, Height))
 			return true;
-		if (m_nmt.placed() && m_nmt.height(X, Z, Height))
-		{
-			Height += nmt_offset_at(X, Z);
-			return true;
-		}
 		Height = fallback;
 		return true;
 	};

@@ -38,7 +38,7 @@ glm::dvec3 editor_mode::cursor_terrain(double const Height)
 	{
 		std::vector<char> found;
 		auto ground{ground_heights({glm::dvec3{point.x, std::max(point.y, static_cast<double>(Global.pCamera.Pos.y)), point.z}}, true, &found).front()};
-		if (found[0] == 0 && false == nmt_ahead(point.x, point.z, ground))
+		if (found[0] == 0 && false == nmt_ground(point.x, point.z, ground))
 			ground = nearby_ground(point);
 		if (std::isnan(ground))
 			return point;
@@ -99,7 +99,7 @@ std::vector<double> editor_mode::bed_heights(std::vector<glm::dvec3> const &Poin
 	std::vector<char> found;
 	auto heights{ground_heights(probes, true, &found)};
 	for (std::size_t i = 0; i < probes.size(); ++i)
-		if (found[i] == 0 && nmt_ahead(probes[i].x, probes[i].z, heights[i]))
+		if (found[i] == 0 && nmt_ground(probes[i].x, probes[i].z, heights[i]))
 			found[i] = 1;
 	std::vector<double> result(Points.size(), std::numeric_limits<double>::quiet_NaN());
 	for (std::size_t i = 0; i < Points.size(); ++i)

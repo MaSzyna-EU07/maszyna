@@ -439,6 +439,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void nmt_follow_tracks();
 	// the height the ground will have where the terrain is made ahead of the track laid and isn't there yet
 	bool nmt_ahead(double const X, double const Z, double &Height) const;
+	// the same, else the height of the model with the offset of the scenery where its square is in: the ground where there's no
+	// terrain made yet, as under the base map of the top view
+	bool nmt_ground(double const X, double const Z, double &Height) const;
 	// the squares of the model under the rectangle are in, none of them waiting to be asked for again
 	bool nmt_ready(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	// Only: the paths of these tracks are shaped anew, the modifiers of those removed taken away; null: all of them. the number
