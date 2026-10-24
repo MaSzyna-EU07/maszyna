@@ -198,6 +198,32 @@ editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &c
 		WriteLog(format("SELFTEST fastenings %s: %d plates, %d chairs, %d checks", track->name().c_str(), counts[track_sleepers::part_plate], counts[track_sleepers::part_chair], counts[track_sleepers::part_check]));
 		return selftest_result::handled;
 	}
+	if (command == "fastentour")
+	{
+		// the camera over each cell of the grid with switches or crossings laying timbers, in turn, as the tracks get their beams only
+		// near it: the steps of the tour go in after this one, a fastencheck after them takes the whole scenery
+		double cell{400.0};
+		int frames{40};
+		words >> cell >> frames;
+		std::map<std::pair<long, long>, glm::dvec3> stops;
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || (track->eType != tt_Switch && track->m_crossings.empty()) || false == track_sleepers::lays(*track))
+				continue;
+			auto const at{track->location()};
+			stops.emplace(std::make_pair(std::lround(std::floor(at.x / cell)), std::lround(std::floor(at.z / cell))), at);
+		}
+		std::vector<std::string> steps;
+		for (auto const &stop : stops)
+		{
+			auto const &at{stop.second};
+			steps.push_back(format("camera %.2f %.2f %.2f %.2f %.2f %.2f", at.x, at.y + 60.0, at.z + 1.0, at.x, at.y, at.z));
+			steps.push_back("wait " + std::to_string(frames));
+		}
+		m_selftest.lines.insert(m_selftest.lines.begin() + static_cast<std::ptrdiff_t>(m_selftest.next), steps.begin(), steps.end());
+		WriteLog(format("SELFTEST fastentour: %zu stops of %.0f m", stops.size(), cell));
+		return selftest_result::handled;
+	}
 	if (command == "fastencheck")
 	{
 		// the fastenings of all the tracks laying timbers with them: of each kind, and those over one another on a timber
