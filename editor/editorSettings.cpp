@@ -114,8 +114,18 @@ bool editorSettings::load()
 			m_top_tracks = std::clamp(std::atoi(value.c_str()), 0, 2);
 		else if (key == "top_rails")
 			m_top_rails = static_cast<std::uint32_t>(std::strtoul(value.c_str(), nullptr, 16)) | 0xff000000u;
-		else if (key == "track_norms")
-			m_norms = value == "free" ? track_norms::free_laying : value == "plk" ? track_norms::plk : track_norms::ask;
+		else if (key == "corner_radii")
+		{
+			// low;high
+			double low{0.0}, high{0.0};
+			if (auto const separator{value.find(';')}; separator != std::string::npos)
+			{
+				parse(value.substr(0, separator), low);
+				parse(value.substr(separator + 1), high);
+				if (low >= 10.0 && high >= low)
+					corners(low, high);
+			}
+		}
 		// under a key of its own since the laying goes from point to point unless told otherwise: the fitted heights chosen
 		// before, when they were the default, are left behind
 		else if (key == "laying_heights")
@@ -168,7 +178,7 @@ bool editorSettings::save()
 	stream << "track_tools_all " << (m_track_tools_more ? 1 : 0) << "\n";
 	stream << "top_tracks " << m_top_tracks << "\n";
 	stream << "top_rails " << std::hex << (m_top_rails & 0xffffffu) << std::dec << "\n";
-	stream << "track_norms " << (m_norms == track_norms::free_laying ? "free" : m_norms == track_norms::plk ? "plk" : "ask") << "\n";
+	stream << "corner_radii " << m_corner_low << ";" << m_corner_high << "\n";
 	stream << "laying_heights " << (m_heights == lay_heights::points ? "points" : m_heights == lay_heights::level ? "level" : "fitted") << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)

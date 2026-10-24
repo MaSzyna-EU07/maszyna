@@ -61,6 +61,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		double height{0.0};
 		if (command == "join")
 		{
+			// the transitions word left from the free laying: they follow the norms
 			words >> radius >> variant >> transitions;
 			// of the ends, for sceneries far above zero
 			if (words >> height)
@@ -86,7 +87,6 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			}
 			m_join_radius = radius;
 			m_join_variant = variant;
-			m_lay.transitions = transitions != 0;
 			pieces = join_pieces(tool.track, from.point, tool.point, tool.direction, to, length, error);
 		}
 		else
@@ -168,10 +168,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 	}
 	if (command == "norms")
 	{
-		std::string which;
-		words >> which;
-		set_norms_free(which != "plk");
-		WriteLog(std::string{"SELFTEST norms: "} + (m_norms_free ? "free" : "plk"));
+		// the tracks are laid to the norms only
+		WriteLog("SELFTEST norms: plk");
 		return selftest_result::handled;
 	}
 	if (command == "layspeed")

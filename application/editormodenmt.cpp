@@ -1551,7 +1551,7 @@ void editor_mode::nmt_place_scenery(glm::dvec2 const &Point)
 void editor_mode::nmt_offer()
 {
 	auto &state{m_nmt_state};
-	if (state.offered || m_norms_prompt || false == m_lay.active || false == EditorSettings.terrain_offer())
+	if (state.offered || false == m_lay.active || false == EditorSettings.terrain_offer())
 		return;
 	state.offered = true;
 	if (m_streamer.resident() > 0 || std::any_of(simulation::Paths.sequence().begin(), simulation::Paths.sequence().end(), [](TTrack const *Track) { return Track != nullptr && rail(*Track); }))

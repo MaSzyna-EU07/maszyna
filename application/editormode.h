@@ -1070,7 +1070,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_route_stored();
 	void route_update()
 	{
-		m_route.design.norms.checked = false == m_norms_free;
+		m_route.design.norms.checked = true;
 		m_route.result = alignment::compute(m_route.design);
 	}
 	void route_apply();
@@ -1396,7 +1396,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string preview_error;
 		double preview_length{0.0};
 		double radius{500.0};
-		bool transitions{false};
 		double piece_length{100.0};
 		bool copy_selected{false};
 		editor_track::path_style style;
@@ -1413,16 +1412,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::size_t history{0}; // the step of the history the chain was begun at
 	};
 	lay_tool m_lay;
-	bool m_norms_free{false};
-	// the choice between the free laying and the norms, asked once a session as the laying or the plan is opened first
-	bool m_norms_prompt{false};
-	bool m_norms_asked{false};
-	bool m_norms_remember{false};
 	alignment::limits laying_norms() const;
-	// returns: a card was clicked
-	bool render_norms_choice();
-	void render_norms_prompt();
-	void set_norms_free(bool const Free);
 	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const;
 	// the straight track Alt turns the laid straight to: the nearest one the straight from From to To crosses, or one along From
 	TTrack const *skew_reference(glm::dvec3 const &From, glm::dvec3 const &To, double const Reach) const;
@@ -1546,7 +1536,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	TTrack const *m_join_track{nullptr};
 	editor_track::point_ref m_join_point;
 	mutable alignment::join_result m_join_last;
-	// the layout laid on from the end of From with the transition curves of the norms; none in the free laying, or where it doesn't fit
+	// the layout laid on from the end of From with the transition curves of the norms; none where it doesn't fit
 	std::optional<alignment::lay_result> eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const;
 	mutable std::optional<alignment::lay_result> m_eased_last;
 	mutable std::optional<std::pair<alignment::lay_request, std::optional<alignment::lay_result>>> m_eased_cache;

@@ -442,8 +442,7 @@ void editor_mode::render_straight_ui()
 		ImGui::TextDisabled("%s", STR_C("Transition curves"));
 		int transitions{state.auto_transitions ? 0 : 1};
 		if (segmented("straighttransitions", transitions,
-		              {m_norms_free ? segment_option{0, STR_C("None"), "Plain arcs: the free design has no transition curves, the PKP PLK norms work them out from the speed of the line"}
-		                            : segment_option{0, STR_C("From the line speed"), "Lengths of the transition curves from the speed of the paths and the limits of the curve design"},
+		              {{0, STR_C("From the line speed"), "Lengths of the transition curves from the speed of the paths and the limits of the curve design"},
 		               {1, STR_C("Given length"), "The same length of the transition curves at every curve"}}))
 			state.auto_transitions = transitions == 0;
 		if (false == state.auto_transitions)

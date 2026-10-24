@@ -182,8 +182,6 @@ void editor_mode::selftest_step()
 			if (false == line.empty() && line.front() != '#')
 				test.lines.push_back(line);
 		WriteLog("SELFTEST: " + std::to_string(test.lines.size()) + " steps from " + file);
-		// the scripts were written for the free laying, "norms plk" takes the norms
-		set_norms_free(true);
 	}
 	++editor_selftest::frames();
 	// how long each frame took, for the longest one perf tells

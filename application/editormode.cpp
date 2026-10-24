@@ -657,7 +657,6 @@ bool editor_mode::init()
 {
     EditorSettings.load();
     Global.EditorOrthoTracks = EditorSettings.top_tracks();
-    set_norms_free(EditorSettings.norms() == editorSettings::track_norms::free_laying);
     EditorModelSets.load();
     EditorTrackPresets.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
@@ -1598,7 +1597,6 @@ bool editor_mode::update()
     render_open_scenery_popup();
     render_shortcuts_window();
     render_first_steps();
-    render_norms_prompt();
     render_nmt_prompt();
     render_nmt_banner();
     render_orthophoto_window();
@@ -1640,18 +1638,6 @@ void editor_mode::render_settings()
 
             ImGui::Separator();
             ImGui::Checkbox(STR_C("Transform gizmo (ImGuizmo)"), &m_gizmo_enabled);
-
-            ImGui::Separator();
-            ImGui::TextUnformatted(STR_C("Laying of new tracks"));
-            const char *norms[] = {STR_C("Ask as the laying starts"), STR_C("Free laying"), STR_C("To the PKP PLK norms")};
-            int chosen = static_cast<int>(EditorSettings.norms());
-            if (ImGui::Combo("##tracknorms", &chosen, norms, IM_ARRAYSIZE(norms)))
-            {
-                EditorSettings.norms(static_cast<editorSettings::track_norms>(chosen));
-                EditorSettings.save();
-                if (chosen > 0)
-                    set_norms_free(chosen == 1);
-            }
 
             ImGui::Separator();
             ImGui::TextUnformatted(STR_C("Colours of the editor"));

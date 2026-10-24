@@ -1345,8 +1345,6 @@ void editor_mode::render_route_gizmo()
 void editor_mode::render_route_ui()
 {
 	auto &route{m_route};
-	render_norms_choice();
-	ImGui::Separator();
 	if (false == route.error.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", route.error.c_str());
 	if (route.chain.tracks.empty())
@@ -1805,7 +1803,6 @@ bool editor_mode::render_route_vertex(int const Index)
 	vertex.transition_in = std::max(0.0, vertex.transition_in);
 	vertex.transition_out = std::max(0.0, vertex.transition_out);
 	vertex.cant = std::max(0.0, vertex.cant);
-	if (false == m_norms_free)
 	{
 		if (ImGui::SmallButton(STR_C("Apply recommended for V")))
 		{

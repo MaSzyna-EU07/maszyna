@@ -67,15 +67,14 @@ public:
 	void top_tracks(int const Tracks) { m_top_tracks = Tracks; }
 	std::uint32_t top_rails() const { return m_top_rails; }
 	void top_rails(std::uint32_t const Colour) { m_top_rails = Colour; }
-	// how the new tracks are laid: asked as the laying starts, or the choice kept
-	enum class track_norms
+	// the radii the laying from point to point eases the bends of the straights with, at the peak of the two transition curves
+	double corner_low() const { return m_corner_low; }
+	double corner_high() const { return m_corner_high; }
+	void corners(double const Low, double const High)
 	{
-		ask,
-		free_laying,
-		plk
-	};
-	track_norms norms() const { return m_norms; }
-	void norms(track_norms Norms) { m_norms = Norms; }
+		m_corner_low = Low;
+		m_corner_high = High;
+	}
 	// the heights of the tracks laid on the ground: fitted to it as the tracks go onto the terrain, the points clicked on it with
 	// even grades between them, level
 	enum class lay_heights
@@ -101,7 +100,8 @@ private:
 	bool m_track_tools_more{false};
 	int m_top_tracks{0}; // the railway in the top view: whole, without the ballast, the rails alone
 	std::uint32_t m_top_rails{0xffff6e28}; // colour of the rails alone, as ImGui keeps it: ABGR
-	track_norms m_norms{track_norms::ask};
+	double m_corner_low{3000.0};
+	double m_corner_high{6000.0};
 	lay_heights m_heights{lay_heights::points};
 };
 
