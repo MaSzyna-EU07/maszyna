@@ -9,8 +9,12 @@ http:
 
 #pragma once
 
+#include <condition_variable>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -62,6 +66,9 @@ struct vertex
 	bool compound{false};
 	double share{1.0};
 	std::vector<compound_arc> arcs;
+	// two transition curves meeting at the curvature of the radius, with no arc between them and no cant: the bend of two straights
+	// eased the way the lines are drawn. Their lengths follow from the radius and the deflection, the ones given are left out
+	bool spirals{false};
 };
 
 struct design
@@ -144,6 +151,8 @@ struct curve_report
 	double jerk_in{0.0};
 	double jerk_out{0.0};
 	recommendation recommended;
+	bool spirals{false}; // two transition curves with no arc between them
+	double cant{0.0};
 };
 
 struct profile_point
@@ -316,5 +325,67 @@ std::optional<lay_result> lay_on(lay_request const &Request);
 
 // the transitions between the arcs of a compound curve which the norms ask for at the speed, the cant of the vertex on its sharpest arc
 void recommend_between(vertex &Vertex, double const Speed, limits const &Limits);
+
+// the length of each of the two transition curves of a vertex with spirals, meeting at the curvature of the radius
+double spirals_length(transition_shape const Shape, double const Deflection, double const Radius);
+// the curve keeps to the norms at the speed of the design: the radius, the acceleration across, the transitions long enough
+bool meets_norms(curve_report const &Curve, design const &Design);
+
+// the radii the bends of the straights are eased with: the two transition curves meet at a radius from High down to Low, or above
+// High where they'd be too short for the speed; where they don't fit, an arc with the transitions and the cant of the norms
+struct corner_radii
+{
+	double low{3000.0};
+	double high{6000.0};
+};
+// the vertices marked are given the curves of the bends of straights clicked on the photo, as large as fit between the neighbouring
+// ones, these sharing the straights between them; the vertices stay where they are, a curve below the norms is left with its warnings
+result ease_corners(design &Design, std::vector<char> const &Corners, corner_radii const &Radii);
+
+// a stretch of the line traced on the photo: the points clicked along the middle of the track, from the straight Base starts on to
+// the one it ends on, both fixed by the points clicked on them
+struct trace_stretch
+{
+	bool valid{false};
+	// the curves of the stretch with their places: one, of up to three radii, or two with a straight between them where the points
+	// follow those better; none where the stretch is straight
+	std::vector<vertex> vertices;
+	std::vector<double> offsets; // of the points from the line laid, positive to the left
+	double rms{0.0};
+	double worst{0.0};
+};
+trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights);
+
+// the stretches traced fitted on a thread of their own while the cursor moves: fitting one takes tens of milliseconds. The latest one
+// asked for is fitted, the ones asked for meanwhile are left out
+class stretch_fitter
+{
+  public:
+	struct request
+	{
+		std::vector<double> key; // tells the requests apart
+		design base;
+		std::vector<glm::dvec2> points;
+		int radii{0};
+		bool straights{true};
+	};
+	~stretch_fitter();
+	void ask(request Request);
+	// the fit of the request of the key, once it's done
+	bool done(std::vector<double> const &Key, trace_stretch &Fit) const;
+	// the fit done last, of whatever request
+	bool latest(std::vector<double> &Key, trace_stretch &Fit) const;
+
+  private:
+	void work();
+
+	mutable std::mutex m_mutex;
+	std::condition_variable m_wake;
+	std::optional<request> m_asked;
+	std::optional<request> m_fitting;
+	std::optional<std::pair<std::vector<double>, trace_stretch>> m_result;
+	bool m_stop{false};
+	std::thread m_thread;
+};
 
 }

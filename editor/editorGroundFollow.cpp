@@ -371,4 +371,86 @@ void follow_meanwhile(std::vector<segment_data> &Pieces, ends const &Ends, bed_q
 	lay_on(Pieces, lengths, total, Ends, stretched ? &graded : nullptr, stretched ? last.total / total : 1.0);
 }
 
+void follow_points(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> const &Points, ends const &Ends)
+{
+	std::vector<double> lengths;
+	double total{0.0};
+	for (auto const &piece : Pieces)
+		total += lengths.emplace_back(bezier{piece}.plan_length(256));
+	if (total < 1e-3)
+		return;
+	// the plan of the pieces as a line of short chords, each point of it with its chainage
+	std::vector<glm::dvec2> line;
+	std::vector<double> chainages;
+	{
+		double from{0.0};
+		for (std::size_t i = 0; i < Pieces.size(); ++i)
+		{
+			bezier const curve{Pieces[i]};
+			auto const steps{std::max(4, static_cast<int>(std::ceil(lengths[i] / kStep)))};
+			for (int j = (i == 0 ? 0 : 1); j <= steps; ++j)
+			{
+				line.push_back(plan_of(curve.point(curve.parameter(lengths[i] * j / steps))));
+				chainages.push_back(from + lengths[i] * j / steps);
+			}
+			from += lengths[i];
+		}
+	}
+	auto const chainage_of = [&](glm::dvec2 const &Point) {
+		auto best{std::numeric_limits<double>::max()};
+		double chainage{0.0};
+		for (std::size_t i = 0; i + 1 < line.size(); ++i)
+		{
+			auto const chord{line[i + 1] - line[i]};
+			auto const length2{glm::dot(chord, chord)};
+			auto const t{length2 > 1e-18 ? std::clamp(glm::dot(Point - line[i], chord) / length2, 0.0, 1.0) : 0.0};
+			auto const offset{Point - (line[i] + chord * t)};
+			if (auto const distance2{glm::dot(offset, offset)}; distance2 < best)
+			{
+				best = distance2;
+				chainage = chainages[i] + (chainages[i + 1] - chainages[i]) * t;
+			}
+		}
+		return chainage;
+	};
+	// the knots: the ends, and between them the points in their order along the track, none too near the one before
+	std::vector<double> knots{0.0};
+	std::vector<double> heights{Ends.height0};
+	for (auto const &point : Points)
+	{
+		auto const chainage{chainage_of(plan_of(point))};
+		if (chainage < knots.back() + 1.0 || chainage > total - 1.0)
+			continue;
+		knots.push_back(chainage);
+		heights.push_back(point.y);
+	}
+	knots.push_back(total);
+	heights.push_back(Ends.height1);
+	auto const last{knots.size() - 1};
+	// the height at the chainage on the stretch Middle is on, an end of it taken at a knot
+	auto const at = [&](double const Chainage, double const Middle, double &Grade) {
+		std::size_t stretch{0};
+		while (stretch + 1 < last && Middle > knots[stretch + 1])
+			++stretch;
+		auto const span{knots[stretch + 1] - knots[stretch]};
+		auto const even{(heights[stretch + 1] - heights[stretch]) / span};
+		auto const from{stretch == 0 && false == std::isnan(Ends.grade0) ? Ends.grade0 : even};
+		auto const to{stretch + 1 == last && false == std::isnan(Ends.grade1) ? Ends.grade1 : even};
+		// a cubic of Hermite, a straight grade where both ends keep the even one
+		auto const t{std::clamp((Chainage - knots[stretch]) / span, 0.0, 1.0)};
+		auto const t2{t * t};
+		auto const t3{t2 * t};
+		Grade = ((6.0 * t2 - 6.0 * t) * heights[stretch] + (3.0 * t2 - 4.0 * t + 1.0) * from * span + (6.0 * t - 6.0 * t2) * heights[stretch + 1] + (3.0 * t2 - 2.0 * t) * to * span) / span;
+		return (2.0 * t3 - 3.0 * t2 + 1.0) * heights[stretch] + (t3 - 2.0 * t2 + t) * from * span + (3.0 * t2 - 2.0 * t3) * heights[stretch + 1] + (t3 - t2) * to * span;
+	};
+	std::vector<std::pair<double, double>> spans;
+	auto result{cut(Pieces, lengths, std::vector<double>(knots.begin() + 1, knots.end() - 1), spans)};
+	for (std::size_t i = 0; i < result.size(); ++i)
+	{
+		auto const middle{(spans[i].first + spans[i].second) * 0.5};
+		lift(result[i], spans[i], [&](double const Chainage, double &Grade) { return at(Chainage, middle, Grade); });
+	}
+	Pieces = std::move(result);
+}
+
 } // namespace ground_follow

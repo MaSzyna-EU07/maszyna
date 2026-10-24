@@ -102,5 +102,8 @@ void follow(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const
 // the same, though the line is fitted by the fitter: until it has it, the track gets the line it fitted last stretched over its
 // length, if it went on from the same end, or the heights from end to end
 void follow_meanwhile(std::vector<segment_data> &Pieces, ends const &Ends, bed_query const &Bed, grading const &Grading, fitter &Fitter);
+// from point to point: the points set square onto the pieces, an even grade between each two of them, the grade breaking only at
+// them; from the ends of the heights given, a grade given there led on into the first and the last stretch
+void follow_points(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> const &Points, ends const &Ends);
 
 } // namespace ground_follow

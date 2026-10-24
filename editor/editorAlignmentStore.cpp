@@ -45,7 +45,8 @@ bool g_loaded{false};
 //   ends <start direction x z> <end direction x z> <start grade> <end grade> <start R> <end R>
 //   norms <gauge> <unbalanced> <cant max> <cant rate> <ramp factor> <jerk> <straight between curves, s> <arc min> <arc min factor>
 //   pieces <pieces of a transition> <angle of an arc piece>
-//   vertex <x> <z> <offset> <R> <L in> <L out> <cant> <reverse 0/1> <compound 0/1> <share> <arcs> [<R> <L> <share>]...
+//   vertex <x> <z> <offset> <R> <L in> <L out> <cant> <reverse 0/1> <compound 0/1> <share> <arcs> [<R> <L> <share>]... [spirals 1]
+//     spirals: two transition curves with no arc between them, their lengths following from R
 //   element <straight|transition|arc> <vertex> <chainage> <length> <R at the start> <R at the end> <cant> <start x> <start z> <direction x> <direction z>
 //     radii signed with the turn, 0 for no curvature
 //   end
@@ -136,6 +137,8 @@ void mark(scene::layer_handle const Layer)
 			                  vertex.share, vertex.arcs.size())};
 			for (auto const &arc : vertex.arcs)
 				text += format(" %.3f %.3f %.9f", arc.radius, arc.transition, arc.share);
+			if (vertex.spirals)
+				text += " spirals 1";
 			lines.push_back(text);
 		}
 		for (auto const &e : entry.result.elements)
@@ -307,6 +310,10 @@ std::optional<alignment::vertex> read_vertex(std::istringstream &Line, scene::la
 	}
 	if (Line.fail())
 		return std::nullopt;
+	// written since the bends of the straights are eased with two transition curves, the lines of before end with the arcs
+	for (std::string word; Line >> word;)
+		if (int value{0}; word == "spirals" && Line >> value)
+			vertex.spirals = (value != 0);
 	position = Context.to_world(position);
 	vertex.position = {position.x, position.z};
 	vertex.reverse_turn = (reverse != 0);
