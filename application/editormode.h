@@ -335,10 +335,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool laying{false}; // the tracks committed are being laid: they leave the terrain as it is
 		bool follow{true}; // a track with its formation edited takes it along, the formation led anew
 		bool grown{false}; // the chunks waiting were all asked for by growing: the formations aren't made anew after them
+		bool reshape{false}; // the formations of the tracks laid anew once the chunks waiting are made, as the tracks are put onto the terrain
 		double grow_time{-10.0};
 		double slope{1.5};
 		double reach{60.0};
 		std::vector<heightmap::chunk_key> pending; // chunks to make once their model is in
+		std::set<heightmap::chunk_key> given_up; // chunks the growing gave up, next to terrain not from the model: not asked for again
 		std::size_t made{0};
 		std::size_t empty{0}; // chunks not made: the model has no data there
 		std::size_t foreign{0}; // chunks not made ahead: the terrain beside isn't of the model
@@ -395,7 +397,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::map<std::pair<int, int>, std::vector<std::size_t>> anchor_cells; // the anchors in squares of the plan
 		bool offered{false}; // the terrain was offered to the scenery begun without it
 		bool prompt{false}; // the offer is shown
-		int mode{0}; // 0: the tracks go onto the terrain, 1: the terrain is drawn to the tracks
 		bool moving{false}; // the place being picked again
 		char place[96]{}; // typed: degrees or PUWG 1992
 		int shown{-1}; // the frame the terrain panel showed how far the work got
@@ -405,7 +406,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	editor_map m_nmt_map;
 	std::vector<nmt_place> nmt_track_places(double const Step) const override;
 	void nmt_locate() override;
-	bool nmt_choice_card(int const Index, char const *Title, char const *Text, float const Width, float const TextHeight, bool const Chosen) const;
 	void nmt_fit();
 	void nmt_finish_fit();
 	// the terrain under the tracks, the tracks left as they are: the model drawn to each of them, its relief kept
@@ -432,7 +432,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the same along the edges the chunk shares with the chunks beside it in memory
 	std::optional<double> nmt_seam_offset(heightmap::chunk_key const &Key, bool &Foreign) const;
 	// the terrain beside the formation of the track is the one made from the model; Waiting: its squares of the model aren't in yet
-	bool nmt_terrain_along(TTrack const &Track, bool &Waiting);
 	// the tracks changed by hand are told to the terrain: their formations laid anew, of the tracks removed taken away, a
 	// track laid onto the terrain of the model given its own, once the mouse lets go; in the step of the history of the change
 	void nmt_track_changed(std::vector<TTrack *> const &Tracks);

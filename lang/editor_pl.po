@@ -6773,6 +6773,18 @@ msgstr "Przesunięty lub zmieniony tor z formacją pociąga ją za sobą; wyłą
 msgid "All the tracks of the scenery"
 msgstr "Wszystkie tory scenerii"
 
+msgid "A chunk there is already is never made anew. The tracks and the terrain are fitted to each other in the panel of the tracks: Terrain, with a track selected"
+msgstr "Istniejący kafel nigdy nie jest tworzony od nowa. Tory i teren dopasowuje się do siebie w panelu torów: Teren, przy zaznaczonym torze"
+
+msgid "Make the terrain around the camera and ahead of the laying"
+msgstr "Twórz teren wokół kamery i przed kładzionym torem"
+
+msgid "Where the terrain of the scenery ends, the terrain model is made on around the camera, and around the cursor of a track laid past it; the chunks there are stay as they are"
+msgstr "Tam, gdzie kończy się teren scenerii, NMT jest dokładany wokół kamery i wokół kursora toru kładzionego poza nim; istniejące kafle zostają bez zmian"
+
+msgid "Height offset of the model"
+msgstr "Przesunięcie wysokości modelu"
+
 msgid "By hand: the model as it is, the tracks stay"
 msgstr "Ręcznie: NMT bez zmian, tory zostają"
 

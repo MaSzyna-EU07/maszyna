@@ -545,6 +545,7 @@ void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool c
 		return;
 	}
 	nmt_locate();
+	state.given_up.clear();
 	std::size_t queued{0};
 	for (auto const &key : Keys)
 		if (false == m_streamer.exists(key) && std::find(state.pending.begin(), state.pending.end(), key) == state.pending.end())
@@ -557,7 +558,10 @@ void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool c
 	state.foreign = 0;
 	state.error.clear();
 	if (queued > 0)
+	{
 		state.grown = false;
+		state.reshape = Reshape;
+	}
 	// the terrain comes with its photos
 	if (queued > 0 && false == m_orthophoto.enabled())
 		m_orthophoto.enabled(true);
@@ -617,46 +621,6 @@ std::optional<double> editor_mode::nmt_seam_offset(heightmap::chunk_key const &K
 	return nmt_terrain_offset(points, Foreign);
 }
 
-bool editor_mode::nmt_terrain_along(TTrack const &Track, bool &Waiting)
-{
-	Waiting = false;
-	if (false == m_nmt.placed() || Track.m_paths.empty())
-		return false;
-	auto const half{profile_ballast(Track).second};
-	std::vector<glm::dvec2> points;
-	glm::dvec2 low{std::numeric_limits<double>::max()};
-	glm::dvec2 high{std::numeric_limits<double>::lowest()};
-	for (auto const &path : Track.m_paths)
-	{
-		geometry::bezier const curve{path};
-		auto const count{std::max(2, static_cast<int>(std::ceil(curve.plan_length() / 10.0)))};
-		for (int i = 0; i <= count; ++i)
-		{
-			auto const t{static_cast<double>(i) / count};
-			auto const at{geometry::plan_of(curve.point(t))};
-			auto const along{geometry::plan_of(curve.first(t))};
-			if (glm::length(along) < 1e-9)
-				continue;
-			auto const across{glm::dvec2{-along.y, along.x} / glm::length(along) * (half + 15.0)};
-			for (auto const &point : {at + across, at - across})
-			{
-				points.push_back(point);
-				low = glm::min(low, point);
-				high = glm::max(high, point);
-			}
-		}
-	}
-	if (points.empty())
-		return false;
-	if (false == nmt_ready(low - glm::dvec2{2.0}, high + glm::dvec2{2.0}))
-	{
-		Waiting = true;
-		return false;
-	}
-	bool foreign{false};
-	return nmt_terrain_offset(points, foreign).has_value();
-}
-
 void editor_mode::nmt_track_changed(std::vector<TTrack *> const &Tracks)
 {
 	auto &state{m_nmt_state};
@@ -709,24 +673,16 @@ void editor_mode::nmt_follow_tracks()
 				if (of(modifier, name))
 					dropped.push_back(modifier.name);
 	state.gone.clear();
+	// the tracks with a formation take it along; one with none leaves the terrain as it is, until it's drawn to the track
 	std::vector<TTrack *> shaped;
-	std::set<TTrack *> waiting;
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == state.changed.contains(track) || track->m_editorremoved || false == rail(*track) || track->name().empty())
 			continue;
 		if (std::any_of(modifiers.begin(), modifiers.end(), [&](heightmap::modifier const &Modifier) { return of(Modifier, track->name()); }))
-		{
 			shaped.push_back(track);
-			continue;
-		}
-		bool wait{false};
-		if (state.shape && nmt_terrain_along(*track, wait))
-			shaped.push_back(track);
-		else if (wait)
-			waiting.insert(track);
 	}
-	state.changed = std::move(waiting);
+	state.changed.clear();
 	if (dropped.empty() && shaped.empty())
 		return;
 	// the terrain follows in the step of the history of the change of the tracks
@@ -963,7 +919,6 @@ void editor_mode::nmt_update()
 	}
 	int made{0};
 	std::size_t apart{0};
-	std::set<heightmap::chunk_key> fresh;
 	for (auto it{state.pending.begin()}; it != state.pending.end() && made < 4;)
 	{
 		if (m_streamer.exists(*it))
@@ -979,6 +934,7 @@ void editor_mode::nmt_update()
 			offset = nmt_seam_offset(*it, foreign);
 			if (foreign)
 			{
+				state.given_up.insert(*it);
 				it = state.pending.erase(it);
 				++state.foreign;
 				++made;
@@ -998,10 +954,7 @@ void editor_mode::nmt_update()
 			continue;
 		}
 		if (offset.has_value() && chunk == nmt_chunk::made)
-		{
 			state.ahead = offset;
-			fresh.insert(*it);
-		}
 		it = state.pending.erase(it);
 		++made;
 		if (chunk == nmt_chunk::made)
@@ -1013,6 +966,7 @@ void editor_mode::nmt_update()
 	if (made == 0 && apart > 0 && apart == state.pending.size())
 	{
 		state.foreign += apart;
+		state.given_up.insert(state.pending.begin(), state.pending.end());
 		state.pending.clear();
 		made = 1;
 	}
@@ -1026,7 +980,7 @@ void editor_mode::nmt_update()
 			state.status += format(STR_P("; %zu chunk not made ahead, the terrain beside isn't the real one", "; %zu chunks not made ahead, the terrain beside isn't the real one", state.foreign), state.foreign);
 		if (state.pending.empty())
 		{
-			if (state.shape && false == state.grown)
+			if (state.shape && state.reshape)
 			{
 				nmt_shape_tracks();
 				state.status += format(STR_P("; the formation of %zu path shaped", "; the formation of %zu paths shaped", state.shaped), state.shaped);
@@ -1036,22 +990,6 @@ void editor_mode::nmt_update()
 			first_step_done(first_step::nmt);
 		}
 	}
-	// the tracks laid ahead of the terrain get their formations once it's there under them
-	if (state.shape && false == fresh.empty())
-	{
-		auto const crosses = [&](segment_data const &Path) {
-			geometry::bezier const curve{Path};
-			auto const count{std::max(1, static_cast<int>(std::ceil(curve.plan_length() / 50.0)))};
-			for (int i = 0; i <= count; ++i)
-				if (auto const at{curve.point(static_cast<double>(i) / count)}; fresh.contains(heightmap::chunk_at(at.x, at.z)))
-					return true;
-			return false;
-		};
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && false == track->m_editorremoved && rail(*track) && std::any_of(track->m_paths.begin(), track->m_paths.end(), crosses))
-				state.changed.insert(track);
-		state.changed_time = ImGui::GetTime();
-	}
 	if (unrecorded)
 		m_streamer.begin_change();
 }
@@ -1060,17 +998,19 @@ void editor_mode::nmt_grow()
 {
 	auto &state{m_nmt_state};
 	auto const now{ImGui::GetTime()};
-	if (false == state.grow || now - state.grow_time < 0.5 || (false == m_lay.active && false == m_extend.active) || false == m_nmt.placed())
+	if (false == state.grow || now - state.grow_time < 0.5 || false == m_nmt.placed())
 		return;
 	state.grow_time = now;
-	// the model under the cursor, for the heights of the points laid where there's no terrain yet, as over the base map
-	{
-		auto const at{m_extend.active ? m_extend.mouse : m_lay.mouse};
-		m_nmt.request({at.x - 100.0, at.z - 100.0}, {at.x + 100.0, at.z + 100.0});
-	}
+	// laying, around the cursor; else around the camera, in a scenery whose terrain is made from the model: the terrain is there
+	// wherever it's looked at
+	auto const laying{m_lay.active || m_extend.active};
+	if (false == laying && false == m_streamer.active())
+		return;
+	auto const at{m_extend.active ? m_extend.mouse : m_lay.active ? m_lay.mouse : glm::dvec3{Camera.Pos}};
+	// the model under it, for the heights of the points laid where there's no terrain yet, as over the base map
+	m_nmt.request({at.x - 100.0, at.z - 100.0}, {at.x + 100.0, at.z + 100.0});
 	if (m_streamer.resident() == 0)
 		return;
-	auto const at{m_extend.active ? m_extend.mouse : m_lay.mouse};
 	glm::dvec2 const cursor{at.x, at.z};
 	double constexpr grow_reach{400.0}; // m around the cursor
 	auto const reach{static_cast<int>(std::ceil(grow_reach / heightmap::chunk_size))};
@@ -1083,7 +1023,7 @@ void editor_mode::nmt_grow()
 			auto const low{heightmap::chunk_corner(key)};
 			glm::dvec2 const nearest{std::clamp(cursor.x, low.x, low.x + heightmap::chunk_size), std::clamp(cursor.y, low.y, low.y + heightmap::chunk_size)};
 			auto const distance{glm::distance(nearest, cursor)};
-			if (distance <= grow_reach && false == m_streamer.exists(key) && std::find(state.pending.begin(), state.pending.end(), key) == state.pending.end())
+			if (distance <= grow_reach && false == m_streamer.exists(key) && false == state.given_up.contains(key) && std::find(state.pending.begin(), state.pending.end(), key) == state.pending.end())
 				missing.emplace_back(distance, key);
 		}
 	if (missing.empty())
@@ -1249,6 +1189,8 @@ void editor_mode::render_track_terrain(std::vector<TTrack *> const &Tracks)
 	ImGui::EndDisabled();
 	toggle_chips("nmtfollow", {{STR_C("The terrain follows the tracks edited"), &state.follow, "A track with its formation moved or changed takes it along; off: the terrain stays as it is until it's drawn to the tracks again"}});
 	ImGui::TextDisabled("%s", STR_C("All the tracks of the scenery"));
+	toggle_chips("nmtshape", {{STR_C("Formation and slopes along the tracks"), &state.shape,
+	                           "Each track gets its formation with slopes 1:1.5 down or up to the terrain, as a modifier of the terrain; bridges and tunnels keep the model under them"}});
 	ImGui::BeginDisabled(busy || false == m_nmt.placed());
 	if (ImGui::Button(STR_C("Tracks onto the terrain"), ImVec2(half, 0.0f)))
 		nmt_auto_start();
@@ -1324,7 +1266,7 @@ void editor_mode::draw_nmt_pending() const
 				outline.push_back(screen);
 			}
 		auto const edge{IM_COL32(Red, Green, Blue, static_cast<int>(140.0f + 100.0f * pulse))};
-		drawlist->AddConvexPolyFilled(outline.data(), static_cast<int>(outline.size()), IM_COL32(Red, Green, Blue, static_cast<int>(25.0f + 35.0f * pulse)));
+		drawlist->AddConvexPolyFilled(outline.data(), static_cast<int>(outline.size()), IM_COL32(Red, Green, Blue, static_cast<int>(10.0f + 15.0f * pulse)));
 		drawlist->AddPolyline(outline.data(), static_cast<int>(outline.size()), edge, ImDrawFlags_Closed, 2.0f);
 		// named where the name fits in
 		auto const middle{(Low + High) * 0.5};
@@ -1478,70 +1420,47 @@ void editor_mode::render_nmt_ui()
 	}
 
 	auto const tracks{std::any_of(simulation::Paths.sequence().begin(), simulation::Paths.sequence().end(), [](TTrack const *Track) { return Track != nullptr && rail(*Track); })};
-	step_heading(2, tracks ? STR_C("What gives way") : STR_C("Terrain"));
-	if (tracks)
-	{
-		auto const spacing{ImGui::GetStyle().ItemSpacing.x};
-		auto const width{std::floor((ImGui::GetContentRegionAvail().x - spacing) * 0.5f)};
-		char const *const titles[]{STR_C("Tracks onto the terrain"), STR_C("Terrain under the tracks")};
-		char const *const texts[]{STR_C("The tracks go down or up onto the real ground: grade lines fitted to it within the limits, switches level with their tracks"),
-		                          STR_C("The tracks stay where they are; the real ground is drawn to them and keeps its relief farther away")};
-		auto const wrap{width - 16.0f};
-		auto const textheight{std::max(ImGui::CalcTextSize(texts[0], nullptr, false, wrap).y, ImGui::CalcTextSize(texts[1], nullptr, false, wrap).y)};
-		for (int index = 0; index < 2; ++index)
-		{
-			if (index > 0)
-				ImGui::SameLine();
-			if (nmt_choice_card(index, titles[index], texts[index], width, textheight, state.mode == index) && false == busy)
-				state.mode = index;
-		}
-	}
-	else
-	{
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", STR_C("No tracks yet: the terrain is made around the camera, the tracks laid then go along it"));
-		ImGui::PopTextWrapPos();
-		if (begin_fields("##nmtarea"))
-		{
-			field_row("Area");
-			segmented("nmtarea", m_terrain_add_count, {{2, "0.5 km", "A square of 500 m around the camera"}, {4, "1 km", "A square of 1 km around the camera"}, {8, "2 km", "A square of 2 km around the camera"}});
-			ImGui::EndTable();
-		}
-	}
-
-	step_heading(3, STR_C("Load"));
-	if (tracks && m_streamer.resident() > 0 && false == busy)
-	{
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.75f, 0.3f, 1.0f));
-		ImGui::TextWrapped("%s", STR_C("The scenery has terrain already: along the tracks it's made anew from the model, its painting too"));
-		ImGui::PopStyleColor();
-	}
+	step_heading(2, STR_C("Load"));
 	if (busy)
 		render_nmt_progress(false);
 	else
 	{
-		char const *label{tracks ? (state.mode == 0 ? STR_C("Load the terrain, put the tracks onto it") : STR_C("Load the terrain under the tracks")) : STR_C("Load the terrain around the camera")};
-		if (main_button(label, ImVec2(-FLT_MIN, tall_button_height())))
+		auto const half{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
+		if (tracks)
 		{
-			if (false == tracks)
-			{
-				state.offset = 0.0;
-				nmt_make(nmt_keys_around());
-			}
-			else if (state.mode == 0)
-				nmt_auto_start();
-			else
-				nmt_under_start();
+			if (main_button(STR_C("Load along the tracks"), ImVec2(half, tall_button_height())))
+				nmt_make(nmt_keys_along_tracks());
+			item_tooltip("Loads the terrain model as it is along the tracks, with the height offset above; the tracks stay where they are");
+			ImGui::SameLine();
 		}
-		if (ImGui::IsItemHovered())
+		if (main_button(STR_C("Load around the camera"), ImVec2(-FLT_MIN, tall_button_height())))
 		{
-			auto const *text{tracks ? (state.mode == 0 ? STR_C("The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported") :
-			                                             STR_C("The tracks aren't touched: the terrain model is loaded along them and drawn to them, at each place by as much as the tracks lie above or below it there, fading out away from them, so its relief stays and the tracks don't end up in deep cuttings; then the formation and the slopes along them. For a scenery built level or at its own heights")) :
-			                           STR_C("Loads the terrain model, the real relief of the ground, around the camera")};
-			ImGui::SetTooltip("%s\n%s", text, STR_C("Terrain model: GUGiK, geoportal.gov.pl"));
+			if (false == tracks && m_streamer.resident() == 0)
+				state.offset = 0.0;
+			nmt_make(nmt_keys_around());
+		}
+		item_tooltip("Loads the terrain model as it is around the camera, with the height offset above; the tracks stay where they are");
+		if (begin_fields("##nmtload", 0.5f))
+		{
+			if (tracks)
+			{
+				field_row("Band along the tracks (m)");
+				ImGui::InputDouble("##nmtbandwidth", &state.band, 50.0, 250.0, "%.0f");
+				item_tooltip("How far from the tracks, on both sides, the terrain model is loaded");
+			}
+			else
+			{
+				field_row("Area");
+				segmented("nmtarea", m_terrain_add_count, {{2, "0.5 km", "A square of 500 m around the camera"}, {4, "1 km", "A square of 1 km around the camera"}, {8, "2 km", "A square of 2 km around the camera"}});
+			}
+			ImGui::EndTable();
 		}
 	}
-	toggle_chips("nmtgrow", {{STR_C("Make the terrain ahead while laying"), &state.grow, "Where a track is laid past the edge of the terrain, the terrain model is made around the cursor as it goes"}});
+	ImGui::PushTextWrapPos(0.0f);
+	ImGui::TextDisabled("%s", STR_C("A chunk there is already is never made anew. The tracks and the terrain are fitted to each other in the panel of the tracks: Terrain, with a track selected"));
+	ImGui::PopTextWrapPos();
+	toggle_chips("nmtgrow", {{STR_C("Make the terrain around the camera and ahead of the laying"), &state.grow, "Where the terrain of the scenery ends, the terrain model is made on around the camera, and around the cursor of a track laid past it; the chunks there are stay as they are"}});
+	ImGui::TextDisabled("%s", STR_C("Terrain model: GUGiK, geoportal.gov.pl"));
 	if (false == state.status.empty())
 	{
 		ImGui::PushTextWrapPos(0.0f);
@@ -1565,23 +1484,8 @@ void editor_mode::render_nmt_ui()
 		if (again)
 			item_tooltip("The squares of the model the service didn't give are asked for again; it happens by itself every 15 s too");
 	}
-	ImGui::PushID("nmtmore");
-	if (tracks && ImGui::TreeNode(STR_C("More settings")))
-	{
-		if (begin_fields("##nmtband", 0.5f))
-		{
-			field_row("Band along the tracks (m)");
-			ImGui::InputDouble("##nmtbandwidth", &state.band, 50.0, 250.0, "%.0f");
-			item_tooltip("How far from the tracks, on both sides, the terrain model is loaded");
-			ImGui::EndTable();
-		}
-		toggle_chips("nmtshape", {{STR_C("Formation and slopes along the tracks"), &state.shape,
-		                           "Each track gets its formation with slopes 1:1.5 down or up to the terrain, as a modifier of the terrain; bridges and tunnels keep the model under them"}});
-		ImGui::TreePop();
-	}
-	ImGui::PopID();
 	state.band = std::clamp(state.band, 50.0, 3000.0);
-	if (tracks && ImGui::TreeNode(STR_C("By hand: the model as it is, the tracks stay")))
+	if (tracks && ImGui::TreeNode(STR_C("Height offset of the model")))
 	{
 		if (begin_fields("##nmtoffset", 0.5f))
 		{
@@ -1594,74 +1498,8 @@ void editor_mode::render_nmt_ui()
 			item_tooltip("Compares the formation of the tracks with the terrain model and moves the model up or down to meet them, as a scenery built at height 0 needs");
 			ImGui::EndTable();
 		}
-		auto const half{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
-		ImGui::BeginDisabled(busy);
-		if (ImGui::Button(STR_C("Load along the tracks"), ImVec2(half, 0.0f)))
-			nmt_make(nmt_keys_along_tracks());
-		item_tooltip("Loads the terrain model as it is along the tracks, with the height offset above; the tracks stay where they are");
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Load around the camera"), ImVec2(-FLT_MIN, 0.0f)))
-			nmt_make(nmt_keys_around());
-		item_tooltip("Loads the terrain model as it is around the camera, with the height offset above; the tracks stay where they are");
-		ImGui::EndDisabled();
 		ImGui::TreePop();
 	}
-}
-
-bool editor_mode::nmt_choice_card(int const Index, char const *Title, char const *Text, float const Width, float const TextHeight, bool const Chosen) const
-{
-	auto const line{ImGui::GetTextLineHeight()};
-	auto const picture{std::round(line * 3.2f)};
-	auto const pad{8.0f};
-	ImVec2 const size{Width, pad + picture + pad * 0.5f + line + 4.0f + TextHeight + pad};
-	auto const at{ImGui::GetCursorScreenPos()};
-	ImGui::PushID(Index);
-	auto const clicked{ImGui::InvisibleButton("##nmtcard", size)};
-	ImGui::PopID();
-	auto const hovered{ImGui::IsItemHovered()};
-	auto *draw{ImGui::GetWindowDrawList()};
-	ImVec2 const end{at.x + size.x, at.y + size.y};
-	draw->AddRectFilled(at, end, ImGui::GetColorU32(Chosen ? ImGuiCol_Header : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), 6.0f);
-	draw->AddRect(at, end, Chosen ? ImGui::GetColorU32(ImGuiCol_CheckMark) : ImGui::GetColorU32(ImGuiCol_Border), 6.0f, 0, Chosen ? 2.0f : 1.0f);
-	// the cross-section: the ground and the track over it, the one giving way moving
-	ImVec2 const low{at.x + pad, at.y + pad};
-	ImVec2 const high{end.x - pad, at.y + pad + picture};
-	draw->AddRectFilled(low, high, IM_COL32(18, 22, 30, 255), 4.0f);
-	draw->PushClipRect(low, high, true);
-	auto const phase{0.5f - 0.5f * std::cos(static_cast<float>(ImGui::GetTime()) * 1.6f)};
-	auto const amount{Chosen || hovered ? phase : 1.0f};
-	auto const steps{48};
-	auto const ground = [&](float const U) { return 0.62f + 0.22f * std::sin(U * 6.2f + 0.6f) * std::sin(U * 2.3f + 1.1f); };
-	auto const level{0.4f};
-	std::vector<ImVec2> terrain, rails;
-	for (int i = 0; i <= steps; ++i)
-	{
-		auto const u{static_cast<float>(i) / steps};
-		auto const x{low.x + (high.x - low.x) * u};
-		auto const closeness{std::clamp(1.0f - std::abs(u - 0.5f) * 2.4f, 0.0f, 1.0f)};
-		float soil{ground(u)};
-		float track{level};
-		if (Index == 0)
-			track = level + (ground(u) - 0.1f - level) * amount;
-		else
-			soil = ground(u) + (level + 0.1f - ground(u)) * amount * (0.35f + 0.65f * closeness);
-		terrain.emplace_back(x, low.y + (high.y - low.y) * soil);
-		rails.emplace_back(x, low.y + (high.y - low.y) * track);
-	}
-	for (int i = 0; i < steps; ++i)
-		draw->AddQuadFilled(terrain[i], terrain[i + 1], ImVec2(terrain[i + 1].x, high.y), ImVec2(terrain[i].x, high.y), IM_COL32(120, 85, 50, 255));
-	draw->AddPolyline(terrain.data(), static_cast<int>(terrain.size()), IM_COL32(170, 120, 70, 255), 0, 2.0f);
-	draw->AddPolyline(rails.data(), static_cast<int>(rails.size()), IM_COL32(215, 220, 230, 255), 0, 3.0f);
-	for (int i = 2; i < steps; i += 4)
-		draw->AddLine(ImVec2(rails[i].x, rails[i].y - 3.0f), ImVec2(rails[i].x, rails[i].y + 3.0f), IM_COL32(150, 120, 90, 255), 2.0f);
-	draw->PopClipRect();
-	auto *font{ImGui::GetFont()};
-	auto const titley{high.y + pad * 0.5f};
-	draw->AddText(font, ImGui::GetFontSize(), ImVec2(low.x, titley), ImGui::GetColorU32(Chosen ? ImGuiCol_Text : ImGuiCol_Text, Chosen ? 1.0f : 0.85f), Title);
-	if (Chosen)
-		draw->AddText(font, ImGui::GetFontSize(), ImVec2(low.x + 0.6f, titley), ImGui::GetColorU32(ImGuiCol_Text), Title);
-	draw->AddText(font, ImGui::GetFontSize(), ImVec2(low.x, titley + line + 4.0f), ImGui::GetColorU32(ImGuiCol_TextDisabled), Text, nullptr, Width - 2.0f * pad);
-	return clicked;
 }
 
 void editor_mode::nmt_place_scenery(glm::dvec2 const &Point)
