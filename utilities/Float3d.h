@@ -12,21 +12,6 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 //---------------------------------------------------------------------------
 
-inline glm::vec3 SafeNormalize(const glm::vec3 &v)
-{ // bezpieczna normalizacja (wektor długości 1.0)
-    auto const l = glm::length(v);
-	glm::vec3 retVal;
-    if (l == 0)
-    {
-        retVal.x = 0;
-        retVal.y = 0;
-        retVal.z = 0;
-    }
-    else
-        retVal = v / l;
-    return retVal;
-};
-
 inline glm::quat SafeNormalize(const glm::quat &q)
 {
 	const float len2 = glm::dot(q, q);
@@ -54,16 +39,3 @@ void deserialize_float32(std::istream &s, glm::mat4 &matrix);
 void deserialize_float64(std::istream &s, glm::mat4 &matrix);
 
 void serialize_float32(std::ostream &s, const glm::mat4 &matrix);
-
-
-// From code in Graphics Gems; p. 766
-inline float Det2x2(float a, float b, float c, float d)
-{ // obliczenie wyznacznika macierzy 2×2
-    return a * d - b * c;
-};
-
-inline float Det3x3(float a1, float a2, float a3, float b1, float b2, float b3, float c1, float c2,
-                    float c3)
-{ // obliczenie wyznacznika macierzy 3×3
-    return +a1 * Det2x2(b2, b3, c2, c3) - b1 * Det2x2(a2, a3, c2, c3) + c1 * Det2x2(a2, a3, b2, b3);
-};
