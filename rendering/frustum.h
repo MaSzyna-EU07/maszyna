@@ -9,8 +9,6 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "utilities/Float3d.h"
-
 inline std::vector<glm::vec4> const ndcfrustumshapepoints //
     {
         {-1, -1, -1, 1}, //

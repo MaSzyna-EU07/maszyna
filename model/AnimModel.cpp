@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
+#include "utilities/glmHelpers.h"
 #include "rendering/renderer.h"
 
 std::list<std::weak_ptr<TAnimContainer>> TAnimModel::acAnimList;

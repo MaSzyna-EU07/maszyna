@@ -42,7 +42,6 @@ extern char **environ;
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include "world/Track.h"
-#include "utilities/Float3d.h"
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
 #include "scene/sceneterrain.h"

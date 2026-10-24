@@ -10,7 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "utilities/Classes.h"
-#include "utilities/Float3d.h"
 #include "rendering/geometrybank.h"
 #include "model/material.h"
 #include "gl/query.h"

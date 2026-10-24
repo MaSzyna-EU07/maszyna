@@ -25,6 +25,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "world/mtable.h"
 #include "scene/sn_utils.h"
 #include "utilities/serialize.h"
+#include "utilities/glmHelpers.h"
 
 #include <bit>
 
