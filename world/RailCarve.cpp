@@ -26,6 +26,7 @@ double constexpr window { 0.25 }; // how far around a station with a rail near t
 double constexpr nearby { 0.4 }; // how far along past the ends of a rail around it's near enough to be looked at closer
 double constexpr across_margin { 0.05 }; // and how far across from its reach, more where it runs at an angle
 double constexpr outside { 10.0 }; // how far past the ends of the track a part is looked at for where it ends
+double constexpr joint_gap { 0.01 }; // how far past its ends the flangeway of a rail around keeps ours out, over the gap of a joint
 double constexpr slack { 0.0002 }; // how far a head reaches into a flangeway or another head unnoticed, and how far two heads planed against each other are kept apart
 double constexpr point_width { 0.001 }; // a wing rail ends where less than this is left of its head
 double constexpr blunt_width { 0.5 * nose_tip }; // the legs of a nose and the points of an obtuse crossing begin where this much is left of their heads
@@ -251,7 +252,7 @@ bool continues( carve_rail const &A, carve_rail const &B ) {
     }
     for( int a = 0; a < 2; ++a ) {
         for( int b = 0; b < 2; ++b ) {
-            if( glm::length( plan( A.ends[ a ] - B.ends[ b ] ) ) < 0.05 && std::abs( glm::dot( A.directions[ a ], B.directions[ b ] ) ) > 0.99 ) {
+            if( glm::length( plan( A.ends[ a ] - B.ends[ b ] ) ) < 0.05 && std::abs( glm::dot( A.directions[ a ], B.directions[ b ] ) ) > 0.999 ) {
                 return true;
             }
         }
@@ -529,12 +530,13 @@ double run_of( Value const &Bound, double const At ) {
 }
 
 // how a run of stations along a part, where it runs into a flangeway or a head, planes it: from the side its head leaves that at the end of the
-// run nearer the middle of the part; running into it all the way, from the side taking less of it where it takes least
+// run nearer the middle of the part; running into it all the way, from the side taking less of it where it takes least; Outer, always from
+// the outer side
 template <typename Hit, typename Apply>
-void settle_runs( std::vector<Hit> const &Hits, long const First, double const Middle, Apply const &Applied ) {
+void settle_runs( std::vector<Hit> const &Hits, long const First, double const Middle, Apply const &Applied, bool const Outer = false ) {
 
     auto const upper_at = [&]( std::size_t const I ) {
-        return Hits[ I ].removed[ 0 ] <= Hits[ I ].removed[ 1 ]; };
+        return Outer || Hits[ I ].removed[ 0 ] <= Hits[ I ].removed[ 1 ]; };
     std::size_t i { 0 };
     while( i < Hits.size() ) {
         if( false == Hits[ i ].in ) {
@@ -586,7 +588,7 @@ band_hit band_at( station const &Station, carve_rail const &Ours, carve_rail con
     auto const centre { Station.offset + 0.5 * Ours.size.head };
     glm::dvec2 outwards;
     auto const lateral { project( Theirs, across( Station, centre ), Distance, outwards ) };
-    if( Distance < 0.0 || Distance > Theirs.length ) {
+    if( Distance < -joint_gap || Distance > Theirs.length + joint_gap ) {
         return hit;
     }
     // where the blades of a switch are, the rails of both paths on a side lie at each other as they're made to
@@ -614,6 +616,25 @@ band_hit band_at( station const &Station, carve_rail const &Ours, carve_rail con
     return hit;
 }
 
+// the part is the point of an obtuse crossing and theirs the knuckle it lies at, the rest of its head under the knuckle: the point keeps the
+// gauge side of its head, which tracks the crossing is split among
+bool beside_knuckle( carve_part const &Part, carve_rail const &Theirs ) {
+
+    for( int end = 0; end < 2; ++end ) {
+        if( false == Part.obtuse[ end ] || Part.kinds[ end ] != rail_end::blunt ) {
+            continue;
+        }
+        for( auto const &other : Theirs.parts ) {
+            for( int otherend = 0; otherend < 2; ++otherend ) {
+                if( other.obtuse[ otherend ] && glm::length( Part.marks[ end ] - other.marks[ otherend ] ) < 0.1 ) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 // the part kept out of the flangeways of the rails around
 void trim( carve_rail &Rail, carve_part &Part ) {
 
@@ -633,10 +654,12 @@ void trim( carve_rail &Rail, carve_part &Part ) {
     std::vector<double> lower( scan.count(), -unbounded );
     auto const around { around_of( *Rail.track ) };
     for( auto *other : around ) {
+        design( *other, nullptr );
         for( auto &theirs : track_of( *other ).rails ) {
             if( false == flangeway_counts( Rail, Part, theirs ) ) {
                 continue;
             }
+            auto const knuckle { beside_knuckle( Part, theirs ) };
             auto const windows { scan.stations_near( theirs, [&]( double ) { return glm::dvec2 { -flangeway - 0.5 * size.head, 0.5 * size.head }; }, { -nearby, theirs.length + nearby }, flangeway + size.head + nearby ) };
             for( auto const &[ a, b ] : windows ) {
                 if( debugging( Rail ) ) {
@@ -657,7 +680,7 @@ void trim( carve_rail &Rail, carve_part &Part ) {
                     }
                     else {
                         lower[ index ] = std::max( lower[ index ], hits[ I ].lower );
-                    } } );
+                    } }, knuckle );
             }
         }
     }
