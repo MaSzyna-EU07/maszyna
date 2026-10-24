@@ -246,8 +246,15 @@ TEST_CASE("alignment: a compound curve traced is followed closely") {
 	auto const fit{alignment::fit_trace_stretch(stretch_base(truth, points), points, 0, true)};
 
 	REQUIRE(fit.valid);
-	CHECK(fit.rms < 0.05);
-	CHECK(fit.worst < 0.15);
+	REQUIRE(fit.vertices.size() == 1);
+	// the transition between the arcs the one of the norms, 45 m, not the 60 m of the line traced
+	auto const &curve{fit.vertices.front()};
+	REQUIRE(curve.compound);
+	REQUIRE(curve.arcs.size() == 1);
+	CHECK(curve.radius == doctest::Approx(1200.0).epsilon(0.05));
+	CHECK(curve.arcs.front().radius == doctest::Approx(700.0).epsilon(0.05));
+	CHECK(fit.rms < 0.1);
+	CHECK(fit.worst < 0.2);
 }
 
 TEST_CASE("alignment: bends clicked close along a curve make one compound curve, not curves with short straights between them") {

@@ -2996,6 +2996,14 @@ bool compound_residuals(design const &Trial, std::vector<glm::dvec2> const &Poin
 	return true;
 }
 
+// the longest transition a fit gives an arc of the radius at the speed: half as long again as the norms ask for, 30 m at least; one
+// longer only keeps to points clicked a little off better, not to the track
+double longest_transition(double const Speed, double const Radius, limits const &Norms)
+{
+	auto const allowed{std::max(1.0, std::min(std::max(1.0, Speed), speed_limit(Radius, Norms)))};
+	return std::max(30.0, 1.5 * recommend(allowed, Radius, Norms).transition);
+}
+
 // a curve of one radius with transitions of the length: the cant of the norms for it, as much as the transitions ramp
 void plain_curve(vertex &Vertex, double const Radius, double const Transition, double const Speed, limits const &Norms)
 {
@@ -3019,7 +3027,7 @@ void fit_curve(design &Design, std::size_t const Vertex, std::vector<glm::dvec2>
 	auto const shaped = [&](std::vector<double> const &Parameters, design &Trial) {
 		Trial = Design;
 		auto const radius{std::exp(std::clamp(Parameters[0], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax)))};
-		plain_curve(Trial.vertices[Vertex], radius, std::min(Parameters[1] * Parameters[1], radius * deflection), speed, Trial.norms);
+		plain_curve(Trial.vertices[Vertex], radius, std::min({Parameters[1] * Parameters[1], radius * deflection, longest_transition(speed, radius, Trial.norms)}), speed, Trial.norms);
 	};
 	residuals_of const residuals{[&](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
 		design trial;
@@ -3034,7 +3042,8 @@ void fit_curve(design &Design, std::size_t const Vertex, std::vector<glm::dvec2>
 	auto lowest{std::numeric_limits<double>::max()};
 	for (auto const length : {std::max(Design.vertices[Vertex].transition_in, 10.0), std::max(recommend(allowed, radius, Design.norms).transition, 10.0)})
 	{
-		std::vector<double> parameters{std::log(radius), std::sqrt(length)};
+		// started below the longest transition: above it the length is held, the fit no longer moving it
+		std::vector<double> parameters{std::log(radius), std::sqrt(std::min(length, 0.9 * std::min(radius * deflection, longest_transition(speed, radius, Design.norms))))};
 		if (auto const cost{least_squares(parameters, residuals)}; cost < lowest)
 		{
 			lowest = cost;
@@ -3084,7 +3093,7 @@ void fit_compound(design &Design, std::size_t const Vertex, std::vector<glm::dve
 		if (false == Between)
 			for (auto &arc : curve.arcs)
 				arc.transition = 0.0;
-		curve.transition_in = curve.transition_out = std::min(Parameters.back() * Parameters.back(), reach(curve));
+		curve.transition_in = curve.transition_out = std::min({Parameters.back() * Parameters.back(), reach(curve), longest_transition(speed, curve.radius, Trial.norms), longest_transition(speed, curve.arcs.empty() ? curve.radius : curve.arcs.back().radius, Trial.norms)});
 	};
 	residuals_of const residuals{[&](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
 		design trial;
@@ -3093,10 +3102,15 @@ void fit_compound(design &Design, std::size_t const Vertex, std::vector<glm::dve
 	}};
 	std::vector<double> best;
 	auto lowest{std::numeric_limits<double>::max()};
-	for (auto const length : {base.transition_in, 0.5 * base.transition_in})
+	// from the transitions it has, from half of them and from those of the norms for its sharpest arc
+	auto sharpest{base.radius};
+	for (auto const &arc : base.arcs)
+		sharpest = std::min(sharpest, arc.radius);
+	auto const allowed{std::max(1.0, std::min(speed, speed_limit(sharpest, Design.norms)))};
+	for (auto const length : {base.transition_in, 0.5 * base.transition_in, recommend(allowed, sharpest, Design.norms).transition})
 	{
 		auto parameters{start};
-		parameters.push_back(std::sqrt(std::max(length, 10.0)));
+		parameters.push_back(std::sqrt(std::max(std::min(length, 0.9 * std::min({reach(base), longest_transition(speed, base.radius, Design.norms), longest_transition(speed, base.arcs.back().radius, Design.norms)})), 10.0)));
 		if (auto const cost{least_squares(parameters, residuals)}; cost < lowest)
 		{
 			lowest = cost;
@@ -3109,19 +3123,20 @@ void fit_compound(design &Design, std::size_t const Vertex, std::vector<glm::dve
 	shaped(best, fitted);
 	auto &curve{fitted.vertices[Vertex]};
 	curve.radius = std::max(kTraceRadiusMin, std::round(curve.radius));
-	auto sharpest{curve.radius};
+	auto smallest{curve.radius};
 	for (auto &arc : curve.arcs)
-		sharpest = std::min(sharpest, arc.radius = std::max(kTraceRadiusMin, std::round(arc.radius)));
+		smallest = std::min(smallest, arc.radius = std::max(kTraceRadiusMin, std::round(arc.radius)));
 	curve.transition_in = curve.transition_out = std::round(curve.transition_in);
-	auto const allowed{std::max(1.0, std::min(speed, speed_limit(sharpest, fitted.norms)))};
-	curve.cant = curve.transition_in > 0.0 ? ramped_cant(recommend(allowed, sharpest, fitted.norms).cant, curve.transition_in, allowed, fitted.norms) : 0.0;
+	auto const limit{std::max(1.0, std::min(speed, speed_limit(smallest, fitted.norms)))};
+	curve.cant = curve.transition_in > 0.0 ? ramped_cant(recommend(limit, smallest, fitted.norms).cant, curve.transition_in, limit, fitted.norms) : 0.0;
 	if (Between)
 		recommend_between(curve, speed, fitted.norms);
 	Design = fitted;
 }
 
-// the one curve of the design, where three radii don't keep within kPointsWithin of the points: a compound curve of more of them,
-// up to Most, as few as keep to the points; each arc started from the curvature the points show along its share of the curve
+// the one curve of the design as a compound curve of more arcs than it has, up to Most, as few as keep within kPointsWithin of the
+// points, all along with the transitions of the norms between the arcs: each count started from the curve fitted with an arc less,
+// its longest arc cut in two, and from the curvature the points show, the better fit taken
 std::optional<trace_stretch> fit_arcs(design const &Single, std::vector<glm::dvec2> const &Points, int const Most)
 {
 	auto const laid{compute(Single)};
@@ -3150,54 +3165,88 @@ std::optional<trace_stretch> fit_arcs(design const &Single, std::vector<glm::dve
 		curvatures.emplace_back(projections[i].chainage, 2.0 * std::abs(cross(Points[i] - Points[i - 1], Points[i + 1] - Points[i - 1])) / (a * b * c));
 	}
 	auto const &single{Single.vertices.front()};
-	std::optional<trace_stretch> best;
-	for (int arcs = 4; arcs <= Most; ++arcs)
-	{
+	// the arcs of a curve as a list, the first one too, and back
+	auto const arcs_of = [](vertex const &Curve) {
+		std::vector<compound_arc> arcs{{Curve.radius, 0.0, Curve.compound ? Curve.share : 1.0}};
+		if (Curve.compound)
+			arcs.insert(arcs.end(), Curve.arcs.begin(), Curve.arcs.end());
+		return arcs;
+	};
+	auto const shaped_of = [&](std::vector<compound_arc> const &Arcs) {
 		auto shaped{Single};
 		auto &curve{shaped.vertices.front()};
 		curve.compound = true;
 		curve.spirals = false;
-		curve.arcs.clear();
-		auto const span{(to - from) / arcs};
-		for (int j = 0; j < arcs; ++j)
+		curve.radius = Arcs.front().radius;
+		curve.share = Arcs.front().share;
+		curve.arcs.assign(Arcs.begin() + 1, Arcs.end());
+		return shaped;
+	};
+	// a curve with the transitions of the norms between its arcs fitted from the shape given, all along with them; none where an
+	// arc came out too short to be one, a kink the points made
+	auto const fitted = [&](design Shaped) -> std::optional<std::pair<design, trace_stretch>> {
+		recommend_between(Shaped.vertices.front(), Single.speed, Single.norms);
+		fit_compound(Shaped, 0, Points);
+		auto const laid{compute(Shaped)};
+		if (std::any_of(laid.elements.begin(), laid.elements.end(), [](element const &Element) {
+			    return Element.vertex == 0 && Element.curvature_start == Element.curvature_end && Element.curvature_start > 0.0 && Element.length < 10.0;
+		    }))
+			return std::nullopt;
+		auto const stretch{stretch_of(Shaped, Points)};
+		if (false == stretch.has_value())
+			return std::nullopt;
+		return std::make_pair(Shaped, *stretch);
+	};
+	std::vector<trace_stretch> counts; // the fit of each count of arcs, the fewest first
+	auto previous{Single};
+	for (auto count{arcs_of(single).size() + 1}; count <= static_cast<std::size_t>(Most); ++count)
+	{
+		// from the curve fitted with one arc less, its longest arc cut in two, one a little sharper than the other
+		auto arcs{arcs_of(previous.vertices.front())};
+		auto longest{arcs.begin()};
+		for (auto arc{arcs.begin()}; arc != arcs.end(); ++arc)
+			if (arc->share * arc->radius > longest->share * longest->radius)
+				longest = arc;
+		auto const cut{*longest};
+		*longest = {cut.radius * 0.9, cut.transition, cut.share * 0.5};
+		arcs.insert(std::next(longest), {cut.radius * 1.1, 0.0, cut.share * 0.5});
+		auto choice{fitted(shaped_of(arcs))};
+		// and from the curvature the points show, each arc along its share of the curve
+		std::vector<compound_arc> shown;
+		auto const span{(to - from) / count};
+		for (std::size_t j = 0; j < count; ++j)
 		{
 			double sum{0.0};
-			int count{0};
+			int points{0};
 			for (auto const &[chainage, curvature] : curvatures)
 				if (chainage >= from + span * j && chainage < from + span * (j + 1))
 				{
 					sum += curvature;
-					++count;
+					++points;
 				}
-			auto const curvature{count > 0 ? sum / count : 1.0 / std::max(kTraceRadiusMin, single.radius)};
-			auto const radius{std::clamp(1.0 / std::max(curvature, 1.0 / kTraceRadiusMax), kTraceRadiusMin, kTraceRadiusMax)};
-			// the share of the angle: of the curvature along the span
-			auto const share{span * std::max(curvature, 1e-6)};
-			if (j == 0)
-			{
-				curve.radius = radius;
-				curve.share = share;
-			}
-			else
-				curve.arcs.push_back({radius, 0.0, share});
+			auto const curvature{points > 0 ? sum / points : 1.0 / std::max(kTraceRadiusMin, single.radius)};
+			shown.push_back({std::clamp(1.0 / std::max(curvature, 1.0 / kTraceRadiusMax), kTraceRadiusMin, kTraceRadiusMax), 0.0, span * std::max(curvature, 1e-6)});
 		}
-		// the radii found with the arcs meeting directly, which follows the points easily, then with the transitions of the norms
-		// between the arcs, fitted again from there
-		fit_compound(shaped, 0, Points, false);
-		recommend_between(shaped.vertices.front(), Single.speed, Single.norms);
-		fit_compound(shaped, 0, Points, true);
-		// none of an arc too short to be one: a kink the points made
-		auto const fitted{compute(shaped)};
-		auto const kinked{std::any_of(fitted.elements.begin(), fitted.elements.end(), [](element const &Element) {
-			return Element.vertex == 0 && Element.curvature_start == Element.curvature_end && Element.curvature_start > 0.0 && Element.length < 10.0;
-		})};
-		auto const candidate{kinked ? std::nullopt : stretch_of(shaped, Points)};
-		if (candidate.has_value() && (false == best.has_value() || candidate->worst < best->worst))
-			best = candidate;
-		if (best.has_value() && best->worst <= kPointsWithin)
+		if (auto other{fitted(shaped_of(shown))}; other.has_value() && (false == choice.has_value() || other->second.worst < choice->second.worst))
+			choice = other;
+		if (false == choice.has_value())
+			continue;
+		previous = choice->first;
+		counts.push_back(choice->second);
+		if (choice->second.worst <= kPointsWithin)
 			break;
 	}
-	return best;
+	if (counts.empty())
+		return std::nullopt;
+	// the fewest arcs within kPointsWithin; where none keeps within it, the fewest no more than 0.1 m further off than the closest:
+	// more arcs only to follow points clicked a little off aren't worth it
+	auto closest{counts.front().worst};
+	for (auto const &fit : counts)
+		closest = std::min(closest, fit.worst);
+	for (auto const &fit : counts)
+		if (fit.worst <= std::max(kPointsWithin, closest + 0.1))
+			return fit;
+	return counts.back();
 }
 
 } // namespace
@@ -3262,25 +3311,24 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 			spirals.vertices.front().radius = std::round(std::exp(std::clamp(radius[0], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax))));
 			if (auto const candidate{stretch_of(spirals, Points)}; candidate.has_value() && (false == one.has_value() || candidate->rms < one->rms))
 				one = candidate;
-			// a compound curve is the one curve which keeps to the points the closest: of up to three radii, of more where those leave
-			// a point further than kPointsWithin off
+			// a compound curve is the one curve which keeps to the points the closest: of as few radii as keep within kPointsWithin of
+			// them, up to three, or up to eight where three don't; fitted with the transitions between the arcs from several starts,
+			// the problem having more than one bottom
 			auto const loose = [&]() { return one->rms > kStretchClose || one->worst > kPointsWithin; };
 			if (one.has_value() && Radii != 1 && (Radii > 1 || loose()))
-				if (auto const compound{fit_trace(single, 0, Points, Radii)}; compound.valid && compound.fitted.compound)
+			{
+				std::optional<trace_stretch> compound;
+				if (auto const fit{fit_trace(single, 0, Points, Radii)}; fit.valid && fit.fitted.compound)
 				{
 					auto several{single};
-					several.vertices.front() = compound.fitted;
+					several.vertices.front() = fit.fitted;
 					fit_compound(several, 0, Points);
-					if (auto const candidate{stretch_of(several, Points)};
-					    candidate.has_value() && (Radii > 1 || candidate->rms < 0.75 * one->rms || (one->worst > kPointsWithin && candidate->worst < one->worst)))
-						one = candidate;
+					compound = stretch_of(several, Points);
 				}
-			if (one.has_value() && Radii == 0 && one->worst > kPointsWithin)
-			{
-				auto best{single};
-				best.vertices.front() = one->vertices.front();
-				if (auto const candidate{fit_arcs(best, Points, 8)}; candidate.has_value() && candidate->worst < one->worst)
-					one = candidate;
+				if (auto const more{fit_arcs(single, Points, Radii > 1 ? Radii : 8)}; more.has_value() && (false == compound.has_value() || more->worst < compound->worst))
+					compound = more;
+				if (compound.has_value() && (Radii > 1 || compound->rms < 0.75 * one->rms || (one->worst > kPointsWithin && compound->worst < one->worst)))
+					one = compound;
 			}
 		}
 		take(one);
@@ -3317,7 +3365,7 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 			{
 				auto const radius{std::exp(std::clamp(Parameters[2 + i], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax)))};
 				auto const length{Parameters.size() > kParameters ? Parameters[kParameters + i] * Parameters[kParameters + i] : transition};
-				plain_curve(Trial.vertices[i], radius, std::min(length, radius * vertex_deflection(Trial, i)), speed, Trial.norms);
+				plain_curve(Trial.vertices[i], radius, std::min({length, radius * vertex_deflection(Trial, i), longest_transition(speed, radius, Trial.norms)}), speed, Trial.norms);
 			}
 			return true;
 		};
