@@ -2155,18 +2155,20 @@ void editor_mode::draw_build_overlay() const
 {
 	screen_projection const projection;
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
+	// over a dark edge: the light colours of the tracks being built stay seen over the light base map of the top view too
 	auto const drawpath = [&](segment_data const &Path, ImU32 const Color) {
-		for (auto const &piece : Path.pieces.empty() ? std::vector<segment_data>{Path} : Path.pieces)
-		{
-			bezier const curve{piece};
-			auto previous{curve.point(0.0)};
-			for (int i = 1; i <= 24; ++i)
+		for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 170), 6.0f}, std::pair{Color, 3.0f}})
+			for (auto const &piece : Path.pieces.empty() ? std::vector<segment_data>{Path} : Path.pieces)
 			{
-				auto const next{curve.point(i / 24.0)};
-				projection.line(drawlist, previous, next, Color, 3.0f);
-				previous = next;
+				bezier const curve{piece};
+				auto previous{curve.point(0.0)};
+				for (int i = 1; i <= 24; ++i)
+				{
+					auto const next{curve.point(i / 24.0)};
+					projection.line(drawlist, previous, next, colour, width);
+					previous = next;
+				}
 			}
-		}
 	};
 	if (false == GfxRenderer->Mouse_Hit() && false == ImGui::GetIO().WantCaptureMouse)
 	{
@@ -2392,13 +2394,17 @@ void editor_mode::draw_build_overlay() const
 			}
 			i = j;
 		}
-		for (std::size_t i = 0; i + 1 < lay.points.size(); ++i)
-			projection.line(drawlist, lay.points[i], lay.points[i + 1], IM_COL32(255, 255, 255, 90), 1.0f);
+		for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 120), 3.0f}, std::pair{IM_COL32(255, 255, 255, 160), 1.0f}})
+			for (std::size_t i = 0; i + 1 < lay.points.size(); ++i)
+				projection.line(drawlist, lay.points[i], lay.points[i + 1], colour, width);
 		for (auto const &point : lay.points)
 		{
 			ImVec2 screen;
 			if (projection.project(point, screen))
+			{
 				drawlist->AddCircleFilled(screen, 5.0f, overlay_color::grip);
+				drawlist->AddCircle(screen, 5.0f, IM_COL32(0, 0, 0, 170), 12, 1.5f);
+			}
 		}
 		ImVec2 screen;
 		if (lay.mouse_snap.track != nullptr && projection.project(lay.mouse_snap.position, screen))
