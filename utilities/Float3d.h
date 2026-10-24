@@ -33,9 +33,3 @@ inline void InitialRotateMatrix(glm::mat4 &matrix)
 		matrix[i][2] = f; // zamiana Y i Z
 	}
 }
-
-void deserialize_float32(std::istream &s, glm::mat4 &matrix);
-
-void deserialize_float64(std::istream &s, glm::mat4 &matrix);
-
-void serialize_float32(std::ostream &s, const glm::mat4 &matrix);

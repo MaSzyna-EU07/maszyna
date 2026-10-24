@@ -6,28 +6,27 @@ distributed with this file, You can
 obtain one at
 http://mozilla.org/MPL/2.0/.
 */
+#pragma once
 
-#include "stdafx.h"
-#include "utilities/Float3d.h"
 #include "scene/sn_utils.h"
 
 //---------------------------------------------------------------------------
 
-void deserialize_float32(std::istream &s, glm::mat4 &matrix)
+inline void deserialize_float32(std::istream &s, glm::mat4 &matrix)
 {
 	for (int column = 0; column < 4; ++column)
 		for (int row = 0; row < 4; ++row)
 			matrix[column][row] = sn_utils::ld_float32(s);
 }
 
-void deserialize_float64(std::istream &s, glm::mat4 &matrix)
+inline void deserialize_float64(std::istream &s, glm::mat4 &matrix)
 {
 	for (int column = 0; column < 4; ++column)
 		for (int row = 0; row < 4; ++row)
 			matrix[column][row] = static_cast<float>(sn_utils::ld_float64(s));
 }
 
-void serialize_float32(std::ostream &s, const glm::mat4 &matrix)
+inline void serialize_float32(std::ostream &s, const glm::mat4 &matrix)
 {
 	for (int column = 0; column < 4; ++column)
 		for (int row = 0; row < 4; ++row)

@@ -24,6 +24,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "simulation/simulationtime.h"
 #include "world/mtable.h"
 #include "scene/sn_utils.h"
+#include "utilities/serialize.h"
 
 #include <bit>
 

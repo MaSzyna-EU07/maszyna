@@ -116,7 +116,6 @@ set(SOURCES
 "nodebank_previews_standalone.cpp"
 "world/Event.cpp"
 "world/EvLaunch.cpp"
-"utilities/Float3d.cpp"
 "vehicle/Gauge.cpp"
 "utilities/Globals.cpp"
 "utilities/Logs.cpp"
@@ -735,4 +734,4 @@ if(WITH_TESTS)
 	# Visual Studio builds rerun them with the next change of the game)
 	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
 		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
-endif()
+endif()
