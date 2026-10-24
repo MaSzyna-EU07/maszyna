@@ -39,7 +39,7 @@ class TAnimVocaloidFrame
   public:
     char cBone[15]; // nazwa kości, może być po japońsku
     int iFrame; // numer ramki
-    float3 f3Vector; // przemieszczenie
+	glm::vec3 f3Vector; // przemieszczenie
     glm::quat qAngle; // kwaternion obrotu // TODO: Is it used somewhere?
     char cBezier[64]; // krzywe Béziera do interpolacji dla x,y,z i obrotu
 };

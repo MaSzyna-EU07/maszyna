@@ -48,7 +48,7 @@ private:
     int const m_tesselation;
     std::vector<glm::vec3> m_vertices;
     std::vector<std::uint16_t> m_indices;
-//    std::vector<float3> m_normals;
+//    std::vector<glm::vec3> m_normals;
     std::vector<glm::vec3> m_colours;
     bool m_dirty { true }; // indicates sync state between simulation and gpu sides
 

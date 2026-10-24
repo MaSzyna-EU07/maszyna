@@ -143,11 +143,11 @@ public:
     bool bWire { false }; // nie używane, ale wczytywane
     float Opacity { 1.0f };
     float f_Angle { 0.0f };
-    float3 v_RotateAxis { 0.0f, 0.0f, 0.0f };
-	float3 v_Angles { 0.0f, 0.0f, 0.0f };
+	glm::vec3 v_RotateAxis{0.0f};
+	glm::vec3 v_Angles{0.0f};
 
 public: // chwilowo
-    float3 v_TransVector { 0.0f, 0.0f, 0.0f };
+	glm::vec3 v_TransVector{0.0f};
     geometry_data m_geometry { /*this,*/ { 0, 0 }, 0, 0, 0, 0 };
     gfx::vertex_array Vertices;
 	gfx::userdata_array Userdata;
@@ -198,10 +198,10 @@ public:
 #ifndef EU07_USE_GEOMETRYINDEXING
 	int TriangleAdd(TModel3d *m, material_handle tex, int tri);
 #endif
-	void SetRotate(float3 vNewRotateAxis, float fNewAngle);
+	void SetRotate(glm::vec3 vNewRotateAxis, float fNewAngle);
 	void SetRotateXYZ(glm::vec3 vNewAngles);
 	void SetTranslate(glm::vec3 vNewTransVector);
-	void SetRotateIK1(float3 vNewAngles);
+	void SetRotateIK1(glm::vec3 vNewAngles);
 	TSubModel * GetFromName( std::string const &search, bool i = true );
     // text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order
     std::vector<TSubModel *> const & text_letters( std::string const &Text );
@@ -238,9 +238,9 @@ public:
     void SetLightLevel( glm::vec4 const &Level, bool const Includechildren = false, bool const Includesiblings = false );
     // sets activation threshold of self-illumination to specitied value
     void SetSelfIllum( float const Threshold, bool const Includechildren = false, bool const Includesiblings = false );
-	inline float3 Translation1Get() {
+	inline glm::vec3 Translation1Get() {
 		return fMatrix ? glm::vec3((*fMatrix)[3]) + v_TransVector : v_TransVector; }
-	inline float3 Translation2Get() {
+	inline glm::vec3 Translation2Get() {
 		return glm::vec3((*fMatrix)[3]) + Child->Translation1Get(); }
     material_handle GetMaterial() const {
 		return m_material; }

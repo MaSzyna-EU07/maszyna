@@ -12,12 +12,10 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 //---------------------------------------------------------------------------
 
-using float3 = glm::vec3;
-
-inline float3 SafeNormalize(const float3 &v)
+inline glm::vec3 SafeNormalize(const glm::vec3 &v)
 { // bezpieczna normalizacja (wektor długości 1.0)
     auto const l = glm::length(v);
-    float3 retVal;
+	glm::vec3 retVal;
     if (l == 0)
     {
         retVal.x = 0;

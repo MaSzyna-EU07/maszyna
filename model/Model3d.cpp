@@ -1078,7 +1078,7 @@ uint32_t TSubModel::FlagsCheck()
 	return iFlags;
 };
 
-void TSubModel::SetRotate(float3 vNewRotateAxis, float fNewAngle)
+void TSubModel::SetRotate(glm::vec3 vNewRotateAxis, float fNewAngle)
 { // obrócenie submodelu wg podanej
   // osi (np. wskazówki w kabinie)
 	v_RotateAxis = vNewRotateAxis;
@@ -1109,7 +1109,7 @@ void TSubModel::SetTranslate(glm::vec3 vNewTransVector)
 	iAnimOwner = iInstance; // zapamiętanie czyja jest animacja
 }
 
-void TSubModel::SetRotateIK1(float3 vNewAngles)
+void TSubModel::SetRotateIK1(glm::vec3 vNewAngles)
 { // obrócenie submodelu o
   // podane kąty wokół osi
   // lokalnego układu
@@ -1215,7 +1215,7 @@ void TSubModel::RaAnimation(glm::mat4 &m, TAnimType a)
 	case TAnimType::at_Billboard: // obrót w pionie do kamery
 	{
 		glm::mat4 mat = glm::make_mat4(OpenGLMatrices.data_array(GL_MODELVIEW));
-		float3 gdzie = float3(mat[3][0], mat[3][1], mat[3][2]); // początek układu współrzędnych submodelu względem kamery
+		glm::vec3 gdzie = glm::vec3(mat[3]); // początek układu współrzędnych submodelu względem kamery
 		m = glm::mat4(1.0f);
 		m = glm::translate(m, glm::vec3(gdzie.x, gdzie.y, gdzie.z)); // początek układu zostaje bez zmian
 		m = glm::rotate(m, (float)atan2(gdzie.x, gdzie.z), glm::vec3(0.0f, 1.0f, 0.0f)); // jedynie obracamy w pionie o kąt
@@ -1239,7 +1239,7 @@ void TSubModel::RaAnimation(glm::mat4 &m, TAnimType a)
 				if (sm->pName[0] >= '0' && sm->pName[0] <= '5')
 				{
 					// zegarek ma 6 cyfr maksymalnie
-					sm->SetRotate(float3(0, 1, 0), -Global.fClockAngleDeg[sm->pName[0] - '0']);
+					sm->SetRotate(glm::vec3(0.0f, 1.0f, 0.0f), -Global.fClockAngleDeg[sm->pName[0] - '0']);
 				}
 			}
 			sm = sm->NextGet();
