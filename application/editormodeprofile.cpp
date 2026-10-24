@@ -83,6 +83,7 @@ double nice_step(double const Approximate)
 }
 
 std::string const kProfileMark{"//$p"};
+std::string const kFittedMark{"//$f"};
 
 profile::line reversed_line(profile::line Line, double const Length)
 {
@@ -246,6 +247,90 @@ void editor_mode::profile_library_mark(std::vector<scene::layer_handle> Layers)
 		}
 		scene::Layers.mark(layer, kProfileMark, std::move(lines));
 	}
+}
+
+std::uint64_t editor_mode::fitted_shape(TTrack const &Track)
+{
+	// the points of the paths to a centimetre: what's read back from the files is the same shape
+	std::uint64_t hash{1469598103934665603ull};
+	auto const add = [&](std::int64_t const Value) {
+		for (int i = 0; i < 8; ++i)
+			hash = (hash ^ static_cast<std::uint64_t>((Value >> (8 * i)) & 0xff)) * 1099511628211ull;
+	};
+	for (auto const &path : Track.m_paths)
+		for (auto const &point : path.points)
+			for (int axis = 0; axis < 3; ++axis)
+				add(std::llround(point[axis] * 100.0));
+	return hash;
+}
+
+void editor_mode::fitted_load()
+{
+	if (m_fitted_loaded)
+		return;
+	m_fitted_loaded = true;
+	m_fitted.clear();
+	for (auto const layer : scene::Layers.marked_layers(kFittedMark))
+		for (auto const &text : scene::Layers.marked(layer, kFittedMark))
+		{
+			std::istringstream line{text};
+			std::string keyword, name, shape;
+			line >> keyword >> name >> shape;
+			if (keyword == "fitted" && false == line.fail())
+				m_fitted[name] = {layer, std::strtoull(shape.c_str(), nullptr, 16)};
+		}
+}
+
+void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks)
+{
+	fitted_load();
+	std::vector<scene::layer_handle> layers;
+	for (auto const *track : Tracks)
+	{
+		if (track == nullptr || track->m_editorremoved || track->name().empty())
+			continue;
+		scene::layer_handle layer{null_handle};
+		if (false == scene::Layers.empty())
+		{
+			layer = scene::Layers.resolve(track->layer());
+			if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
+				layer = scene::Layers.active();
+		}
+		if (auto const found{m_fitted.find(track->name())}; found != m_fitted.end() && found->second.layer != layer)
+			layers.push_back(found->second.layer);
+		m_fitted[track->name()] = {layer, fitted_shape(*track)};
+		layers.push_back(layer);
+	}
+	if (scene::Layers.empty())
+		return;
+	std::sort(layers.begin(), layers.end());
+	layers.erase(std::unique(layers.begin(), layers.end()), layers.end());
+	for (auto const layer : layers)
+	{
+		if (false == scene::Layers.valid(layer))
+			continue;
+		// the marks of the tracks there are no more, or changed since, aren't written again
+		std::vector<std::string> lines;
+		for (auto const &[name, mark] : m_fitted)
+		{
+			if (mark.layer != layer)
+				continue;
+			auto const *track{simulation::Paths.find(name)};
+			if (track == nullptr || track->m_editorremoved || fitted_shape(*track) != mark.shape)
+				continue;
+			if (lines.empty())
+				lines.emplace_back("# the tracks whose grade line was fitted in the track editor, with their shape then; the simulation skips these lines");
+			lines.push_back(format("fitted %s %016llx", name.c_str(), static_cast<unsigned long long>(mark.shape)));
+		}
+		scene::Layers.mark(layer, kFittedMark, std::move(lines));
+	}
+}
+
+bool editor_mode::grade_fitted(TTrack const &Track)
+{
+	fitted_load();
+	auto const found{m_fitted.find(Track.name())};
+	return found != m_fitted.end() && found->second.shape == fitted_shape(Track);
 }
 
 int editor_mode::profile_find(bool &Reversed) const
@@ -1507,6 +1592,11 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	auto const changed{states.size()};
 	auto const added{created.size()};
 	state.created = created;
+	{
+		auto marked{tracks};
+		marked.insert(marked.end(), created.begin(), created.end());
+		fitted_set(marked);
+	}
 	// the stored design changes with the paths, an undo takes both back
 	profile_library_load();
 	auto library{m_profiles};

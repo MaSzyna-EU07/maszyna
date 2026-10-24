@@ -1170,6 +1170,21 @@ void editor_mode::render_track_terrain(std::vector<TTrack *> const &Tracks)
 	auto const busy{nmt_busy()};
 	auto const spacing{ImGui::GetStyle().ItemSpacing.x};
 	auto const half{std::floor((ImGui::GetContentRegionAvail().x - spacing) * 0.5f)};
+	{
+		std::size_t rails{0}, done{0};
+		for (auto const *track : Tracks)
+			if (track != nullptr && rail(*track))
+			{
+				++rails;
+				if (grade_fitted(*track))
+					++done;
+			}
+		if (rails == 1)
+			ImGui::TextDisabled("%s", done > 0 ? STR_C("Its grade line is fitted to the terrain") : STR_C("Its grade line isn't fitted to the terrain yet"));
+		else if (rails > 1)
+			ImGui::TextDisabled(STR_C("Grade lines fitted to the terrain: %zu of %zu"), done, rails);
+		item_tooltip("A track is fitted when its grade line was fitted to the terrain model or applied with the profile, and it wasn't changed since");
+	}
 	ImGui::BeginDisabled(busy);
 	if (ImGui::Button(STR_C("Draw the terrain to the track"), ImVec2(half, 0.0f)))
 		nmt_pull_terrain(Tracks);
@@ -1191,11 +1206,24 @@ void editor_mode::render_track_terrain(std::vector<TTrack *> const &Tracks)
 	ImGui::TextDisabled("%s", STR_C("All the tracks of the scenery"));
 	toggle_chips("nmtshape", {{STR_C("Formation and slopes along the tracks"), &state.shape,
 	                           "Each track gets its formation with slopes 1:1.5 down or up to the terrain, as a modifier of the terrain; bridges and tunnels keep the model under them"}});
+	std::size_t unfitted{0}, all{0};
+	for (auto const *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved && rail(*track))
+		{
+			++all;
+			if (false == grade_fitted(*track))
+				++unfitted;
+		}
 	ImGui::BeginDisabled(busy || false == m_nmt.placed());
 	if (ImGui::Button(STR_C("Tracks onto the terrain"), ImVec2(half, 0.0f)))
 		nmt_auto_start();
 	item_tooltip("The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported");
 	ImGui::SameLine();
+	ImGui::BeginDisabled(unfitted == 0);
+	if (ImGui::Button(format(STR_C("Only the ones not fitted (%zu of %zu)"), unfitted, all).c_str(), ImVec2(-FLT_MIN, 0.0f)))
+		nmt_auto_start(true);
+	ImGui::EndDisabled();
+	item_tooltip("The same for the tracks whose grade line isn't fitted yet, or was changed since: the ones fitted stay as they are and the new lines meet them; the scenery isn't moved");
 	if (ImGui::Button(STR_C("Terrain under the tracks"), ImVec2(-FLT_MIN, 0.0f)))
 		nmt_under_start();
 	item_tooltip("The tracks aren't touched: the terrain model is loaded along them and drawn to them, at each place by as much as the tracks lie above or below it there, fading out away from them, so its relief stays and the tracks don't end up in deep cuttings; then the formation and the slopes along them. For a scenery built level or at its own heights");
@@ -1685,15 +1713,16 @@ std::size_t editor_mode::nmt_join_ends()
 	return joined;
 }
 
-void editor_mode::nmt_auto_start()
+void editor_mode::nmt_auto_start(bool const Unfitted)
 {
 	auto &state{m_nmt_state};
 	state.error.clear();
 	state.under = false;
+	state.unfitted = Unfitted;
 	nmt_locate();
 	state.probes.clear();
 	for (auto const &place : nmt_track_places(20.0))
-		if (place.shapes)
+		if (place.shapes && (false == Unfitted || false == grade_fitted(*place.track)))
 			state.probes.push_back(place);
 	if (state.probes.empty())
 	{
@@ -2446,28 +2475,41 @@ void editor_mode::nmt_auto_step()
 				scenery.push_back(track);
 		std::string reason;
 		state.lifted = 0.0;
-		state.offset = 0.0;
-		if (std::abs(lift) > 0.05 && tracks_editable(scenery, reason))
+		if (state.unfitted)
 		{
-			nmt_lift_scenery(lift);
-			state.lifted = lift;
+			// the tracks fitted already stay where they are, and so does the offset of the model they were fitted to
+			WriteLog(format("Editor: NMT - the tracks not fitted yet lie %+.2f m against the terrain model, its offset kept at %+.2f m", -lift - state.offset, state.offset), logtype::generic);
 		}
-		else if (std::abs(lift) > 0.05)
+		else
 		{
-			state.offset = -lift;
-			WriteLog(format("Editor: NMT - the terrain model offset %+.2f m to the scenery, which can't be moved: ", -lift) + reason, logtype::generic);
+			state.offset = 0.0;
+			if (std::abs(lift) > 0.05 && tracks_editable(scenery, reason))
+			{
+				nmt_lift_scenery(lift);
+				state.lifted = lift;
+			}
+			else if (std::abs(lift) > 0.05)
+			{
+				state.offset = -lift;
+				WriteLog(format("Editor: NMT - the terrain model offset %+.2f m to the scenery, which can't be moved: ", -lift) + reason, logtype::generic);
+			}
 		}
 		state.fitted = true;
 		nmt_join_ends();
 		// the longest tracks first: the main lines lead, the sidings join them
 		state.left.clear();
 		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && rail(*track))
+			if (track != nullptr && rail(*track) && (false == state.unfitted || false == grade_fitted(*track)))
 				state.left.push_back(track);
 		std::sort(state.left.begin(), state.left.end(), [](TTrack *Left, TTrack *Right) { return Left->Length() > Right->Length(); });
 		state.tracks = state.left.size();
 		state.split = 0;
 		state.done.clear();
+		// the tracks fitted before are lines fitted already: the new ones run up to them and meet them as they are
+		if (state.unfitted)
+			for (auto *track : simulation::Paths.sequence())
+				if (track != nullptr && rail(*track) && grade_fitted(*track))
+					state.done.push_back(track);
 		state.laid.clear();
 		state.bridged.clear();
 		// every path sampled as laid, for the crossings of the lines

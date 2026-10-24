@@ -6785,6 +6785,24 @@ msgstr "Tam, gdzie kończy się teren scenerii, NMT jest dokładany wokół kame
 msgid "Height offset of the model"
 msgstr "Przesunięcie wysokości modelu"
 
+msgid "Its grade line is fitted to the terrain"
+msgstr "Niweleta dopasowana do terenu"
+
+msgid "Its grade line isn't fitted to the terrain yet"
+msgstr "Niweleta jeszcze niedopasowana do terenu"
+
+msgid "Grade lines fitted to the terrain: %zu of %zu"
+msgstr "Niwelety dopasowane do terenu: %zu z %zu"
+
+msgid "A track is fitted when its grade line was fitted to the terrain model or applied with the profile, and it wasn't changed since"
+msgstr "Tor jest dopasowany, gdy jego niweletę dopasowano do NMT albo zastosowano w profilu i od tego czasu się nie zmienił"
+
+msgid "Only the ones not fitted (%zu of %zu)"
+msgstr "Tylko niedopasowane (%zu z %zu)"
+
+msgid "The same for the tracks whose grade line isn't fitted yet, or was changed since: the ones fitted stay as they are and the new lines meet them; the scenery isn't moved"
+msgstr "To samo dla torów, których niweleta nie jest jeszcze dopasowana albo zmieniła się od tego czasu: dopasowane zostają bez zmian, a nowe niwelety się z nimi łączą; sceneria nie jest przesuwana"
+
 msgid "By hand: the model as it is, the tracks stay"
 msgstr "Ręcznie: NMT bez zmian, tory zostają"
 

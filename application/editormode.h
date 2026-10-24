@@ -336,6 +336,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool follow{true}; // a track with its formation edited takes it along, the formation led anew
 		bool grown{false}; // the chunks waiting were all asked for by growing: the formations aren't made anew after them
 		bool reshape{false}; // the formations of the tracks laid anew once the chunks waiting are made, as the tracks are put onto the terrain
+		bool unfitted{false}; // the tracks put onto the terrain are only the ones whose grade line isn't fitted yet
 		double grow_time{-10.0};
 		double slope{1.5};
 		double reach{60.0};
@@ -476,7 +477,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the whole scenery: tracks, includes and models, moved up or down as one undo step
 	void nmt_lift_scenery(double const Offset);
 	std::size_t nmt_join_ends();
-	void nmt_auto_start();
+	// Unfitted: only the tracks whose grade line isn't fitted yet, the scenery left at its height
+	void nmt_auto_start(bool const Unfitted = false);
 	void nmt_auto_step();
 	// the grade line of the line of tracks through the track fitted to the terrain model and applied; false if it couldn't be.
 	// The line runs over the tracks not Fitted, the ones fitted stay as they are and the line meets them. Where the model falls
@@ -2346,6 +2348,19 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_profiles_loaded{false};
 	void profile_library_load();
 	void profile_library_mark(std::vector<scene::layer_handle> Layers);
+	// the tracks whose grade line was fitted, by name, with the shape they had then, kept as "//$f" comment lines: a track
+	// changed since, by hand or taken back, isn't fitted any more
+	struct fitted_mark
+	{
+		scene::layer_handle layer{null_handle};
+		std::uint64_t shape{0};
+	};
+	std::map<std::string, fitted_mark> m_fitted;
+	bool m_fitted_loaded{false};
+	void fitted_load();
+	void fitted_set(std::vector<TTrack *> const &Tracks);
+	bool grade_fitted(TTrack const &Track);
+	static std::uint64_t fitted_shape(TTrack const &Track);
 	int profile_find(bool &Reversed) const;
 	bool profile_restore();
 	bool profile_restore_parts();

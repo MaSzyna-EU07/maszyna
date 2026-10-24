@@ -165,9 +165,42 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	}
 	if (command == "nmtauto")
 	{
-		// the tracks put onto the terrain model, as the button of the terrain panel does; nmtwait waits for the end
-		nmt_auto_start();
-		WriteLog("SELFTEST nmtauto: " + m_nmt_state.status);
+		// the tracks put onto the terrain model, as the button of the panel of the tracks does, all or the ones not fitted yet;
+		// nmtwait waits for the end
+		std::string which;
+		words >> which;
+		nmt_auto_start(which == "unfitted");
+		WriteLog("SELFTEST nmtauto " + which + ": " + m_nmt_state.status);
+		return selftest_result::handled;
+	}
+	if (command == "fittedstate")
+	{
+		// the tracks whose grade line is fitted, as the panel of the tracks tells it; reload: the marks read again from the lines
+		// they go to the files with
+		std::string reload;
+		words >> reload;
+		if (reload == "reload")
+		{
+			m_fitted.clear();
+			m_fitted_loaded = false;
+		}
+		std::size_t rails{0}, done{0};
+		std::string names;
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && (track->iCategoryFlag & 1) != 0)
+			{
+				++rails;
+				if (grade_fitted(*track))
+				{
+					++done;
+					if (names.size() < 200)
+						names += " " + track->name();
+				}
+			}
+		std::size_t written{0};
+		for (auto const layer : scene::Layers.marked_layers("//$f"))
+			written += scene::Layers.marked(layer, "//$f").size();
+		WriteLog(format("SELFTEST fittedstate: %zu of %zu tracks fitted, %zu marks kept, %zu lines for the files;", done, rails, m_fitted.size(), written) + names);
 		return selftest_result::handled;
 	}
 	if (command == "nmtprobe")
