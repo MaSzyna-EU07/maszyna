@@ -1029,7 +1029,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	if (EditorSettings.heights() == editorSettings::lay_heights::fitted)
 		follow_ground(pieces, Points.front().y, grade0, Points.back().y, grade1, style);
 	else
-		ground_follow::follow_points(pieces, std::vector<glm::dvec3>(Points.begin() + 1, Points.end() - 1), {Points.front().y, grade0, Points.back().y, grade1});
+		ground_follow::follow_points(pieces, plan.knots, {Points.front().y, grade0, Points.back().y, grade1});
 	if (Plan != nullptr)
 		*Plan = std::move(plan);
 	return pieces;
@@ -1278,6 +1278,18 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	{
 		Error = Plan.shape.errors.empty() ? std::string{STR_C("The track can't be laid through these points")} : Plan.shape.errors.front();
 		return false;
+	}
+	// the grade breaks at the bends which stayed bends; along a curve, traced or made of bends, it goes on even from end to end
+	for (std::size_t k = 0; k < design.vertices.size() && k < Plan.corners.size(); ++k)
+	{
+		if (Plan.corners[k] != 1)
+			continue;
+		for (auto const &bend : bends)
+			if (bend.corner && glm::distance(plan_of(bend.position), design.vertices[k].position) < 1e-3)
+			{
+				Plan.knots.push_back(bend.position);
+				break;
+			}
 	}
 	return true;
 }
@@ -1739,7 +1751,7 @@ void editor_mode::render_lay_ui()
 	if (int heights{static_cast<int>(EditorSettings.heights())};
 	    segmented("layheights", heights,
 	              {{0, STR_C("Fitted"), "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past; the terrain is left as it is. On the terrain model the whole track laid in a row is fitted again at each click"},
-	               {1, STR_C("Point to point"), "Each point clicked at the height of the ground, an even grade between them: the grade changes only where you click"},
+	               {1, STR_C("Point to point"), "Each bend of the straights clicked at the height of the ground, an even grade between them: the grade changes only at the bends. A curve traced, or bends clicked close along a curve, goes at an even grade from one end of it to the other"},
 	               {2, STR_C("Flat"), "The track goes on at the height it's laid from, whatever the ground; the first point on the ground"}}))
 	{
 		EditorSettings.heights(static_cast<editorSettings::lay_heights>(heights));

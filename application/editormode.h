@@ -1409,6 +1409,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<lay_trace> traces;
 		// the straights of a fixed direction the next bend slides along: from a free end, out of a curve traced
 		std::vector<std::pair<glm::dvec3, glm::dvec3>> guides;
+		// where the grade breaks from point to point: the bends kept as such, at the heights clicked; a curve traced, or bends made
+		// one curve, goes at one grade from end to end
+		std::vector<glm::dvec3> knots;
 	};
 	// lays new track through the clicked points, with no path needed to start from
 	struct lay_tool

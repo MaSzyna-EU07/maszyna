@@ -427,10 +427,13 @@ void follow_points(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> co
 	knots.push_back(total);
 	heights.push_back(Ends.height1);
 	auto const last{knots.size() - 1};
-	// the height at the chainage on the stretch Middle is on, an end of it taken at a knot
+	// the height at the chainage on its stretch; at a knot itself on the one Middle is on, for the grade of the piece there. A piece
+	// not cut at a knot too near its end lies on two stretches, each of its ends on its own
 	auto const at = [&](double const Chainage, double const Middle, double &Grade) {
 		std::size_t stretch{0};
-		while (stretch + 1 < last && Middle > knots[stretch + 1])
+		while (stretch + 1 < last && Chainage > knots[stretch + 1] + 1e-6)
+			++stretch;
+		if (stretch + 1 < last && std::abs(Chainage - knots[stretch + 1]) <= 1e-6 && Middle > knots[stretch + 1])
 			++stretch;
 		auto const span{knots[stretch + 1] - knots[stretch]};
 		auto const even{(heights[stretch + 1] - heights[stretch]) / span};

@@ -11902,3 +11902,6 @@ msgstr "Dwie krzywe przejściowe, bez łuku"
 
 msgid "The bend eased the way the lines are drawn: two transition curves meeting at the radius, with no arc between them and no cant; their lengths follow from the radius and the angle"
 msgstr "Załamanie wyokrąglone tak, jak projektuje się linie: dwie krzywe przejściowe stykające się przy promieniu, bez łuku między nimi i bez przechyłki; ich długości wynikają z promienia i kąta"
+
+msgid "Each bend of the straights clicked at the height of the ground, an even grade between them: the grade changes only at the bends. A curve traced, or bends clicked close along a curve, goes at an even grade from one end of it to the other"
+msgstr "Każde kliknięte załamanie prostych na wysokości terenu, między nimi równe pochylenie: pochylenie zmienia się tylko na załamaniach. Łuk odrysowany albo załamania kliknięte gęsto wzdłuż łuku idą jednym pochyleniem od jego początku do końca"
