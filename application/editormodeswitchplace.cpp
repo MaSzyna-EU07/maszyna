@@ -51,12 +51,10 @@ std::vector<segment_data> editor_mode::switch_preview() const
 		return {};
 	if (tool.curved)
 	{
-		auto const sample{sample_at(tool.frame, tool.along)};
-		glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
-		auto const forward{glm::dot(offset, sample.tangent) >= 0.0 ? 1 : -1};
-		glm::dvec2 const direction{sample.tangent * static_cast<double>(forward)};
-		auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
-		return curved_switch_paths(tool.templates[tool.armed], tool.frame, tool.along, forward, side);
+		int forward;
+		int side;
+		curved_switch_pose(forward, side);
+		return curved_switch_paths(tool.templates[tool.armed], tool.frame, curved_switch_start(forward), forward, side);
 	}
 	if (switch_link plan; plan_switch_link(plan))
 	{
@@ -116,6 +114,7 @@ bool editor_mode::start_switch_placement()
 			return false;
 		tool.curved = true;
 		tool.along = nearest_station(tool.frame, ground);
+		tool.pressed = tool.along;
 		tool.point = sample_at(tool.frame, tool.along).position;
 		if (plan_distance(tool.point, ground) > kSwitchReach)
 			return false;
@@ -167,11 +166,10 @@ void editor_mode::finish_switch_placement()
 	}
 	if (tool.curved)
 	{
-		auto const sample{sample_at(tool.frame, tool.along)};
-		glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
-		auto const forward{glm::dot(offset, sample.tangent) >= 0.0 ? 1 : -1};
-		glm::dvec2 const direction{sample.tangent * static_cast<double>(forward)};
-		auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
+		int forward;
+		int side;
+		curved_switch_pose(forward, side);
+		tool.along = curved_switch_start(forward);
 		insert_curved_switch(forward, side);
 		return;
 	}
@@ -1256,6 +1254,89 @@ double editor_mode::nearest_station(std::vector<curve_sample> const &Frame, glm:
 	return station;
 }
 
+std::vector<switch_curve::track_point> editor_mode::frame_points(std::vector<curve_sample> const &Frame) const
+{
+	auto const gauge{m_route.design.norms.gauge};
+	std::vector<switch_curve::track_point> points;
+	for (auto const &sample : Frame)
+	{
+		switch_curve::track_point point;
+		point.station = sample.station;
+		point.heading = std::atan2(sample.tangent.y, sample.tangent.x);
+		// the headings go on through a half turn, so that their differences are the turns between them
+		if (false == points.empty())
+			point.heading = points.back().heading + std::remainder(point.heading - points.back().heading, 2.0 * glm::pi<double>());
+		point.cant = gauge * std::sin(glm::radians(static_cast<double>(sample.roll)));
+		points.push_back(point);
+	}
+	return points;
+}
+
+void editor_mode::curved_switch_pose(int &Direction, int &Side) const
+{
+	auto const &tool{m_switch};
+	auto const sample{sample_at(tool.frame, tool.pressed)};
+	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
+	Direction = glm::dot(offset, sample.tangent) >= 0.0 ? 1 : -1;
+	glm::dvec2 const direction{sample.tangent * static_cast<double>(Direction)};
+	Side = direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1;
+}
+
+double editor_mode::curved_switch_start(int const Direction, std::string *What) const
+{
+	auto const &tool{m_switch};
+	if (What != nullptr)
+		What->clear();
+	if (tool.frame.size() < 2 || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
+		return tool.pressed;
+	auto const length{tool.templates[tool.armed].length};
+	std::string what;
+	auto const start{switch_curve::snapped_start(switch_curve::ramp_ends(frame_points(tool.frame)), tool.pressed, length, Direction, 3.0, &what)};
+	// a start which would put the switch off the curve isn't one
+	auto const total{tool.frame.back().station};
+	if (Direction > 0 ? start < 0.0 || start > total - length : start < length || start > total)
+		return tool.pressed;
+	if (What != nullptr)
+		*What = what;
+	return start;
+}
+
+switch_curve::switch_report editor_mode::curved_switch_report(std::vector<segment_data> const &Paths, double const Station, int const Direction) const
+{
+	auto const &tool{m_switch};
+	if (Paths.size() < 2 || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
+		return {};
+	// a path of the switch from its start, in the plan
+	auto const along = [](segment_data const &Path) {
+		std::vector<switch_curve::track_point> points;
+		auto const add = [&](segment_data const &Piece) {
+			bezier const curve{Piece};
+			auto const steps{std::max(4, static_cast<int>(std::ceil(curve.plan_length() / 0.25)))};
+			for (int k = points.empty() ? 0 : 1; k <= steps; ++k)
+			{
+				auto const t{static_cast<double>(k) / steps};
+				auto const position{plan_of(curve.point(t))};
+				auto const tangent{plan_of(curve.first(t))};
+				switch_curve::track_point point;
+				point.heading = std::atan2(tangent.y, tangent.x);
+				if (false == points.empty())
+				{
+					point.station = points.back().station + glm::distance(position, plan_of(curve.point(static_cast<double>(k - 1) / steps)));
+					point.heading = points.back().heading + std::remainder(point.heading - points.back().heading, 2.0 * glm::pi<double>());
+				}
+				points.push_back(point);
+			}
+		};
+		if (Path.pieces.empty())
+			add(Path);
+		for (auto const &piece : Path.pieces)
+			add(piece);
+		return points;
+	};
+	auto const &shape{tool.templates[tool.armed]};
+	return switch_curve::check(along(Paths[0]), along(Paths[1]), frame_points(tool.frame), Station, Station + Direction * shape.length, shape.radius, shape.ratio);
+}
+
 std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side)
 {
 	auto const map = [&](glm::dvec3 const &Local, glm::dvec2 &Tangent, glm::dvec2 const &Localtangent) {
@@ -1393,10 +1474,16 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 		}
 	}
 	auto const paths{curved_switch_paths(shape, tool.frame, station, Direction, Side)};
+	auto const report{curved_switch_report(paths, station, Direction)};
 	auto const made{create_switch_set(shape, paths, *tool.frame_tracks.front(), switch_name_for_new())};
 	created.insert(created.end(), made.begin(), made.end());
 	if (made.size() == 1)
 		tool.status = format(STR_C("Switch %s inserted into the curve, Ctrl+Z takes it back"), made.front()->name().c_str());
+	// what the norms say of it stays in the status
+	if (report.transition)
+		tool.status += "\n" + report.notes.front();
+	for (auto const &warning : report.warnings)
+		tool.status += "\n" + warning;
 	auto const placed{created};
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();

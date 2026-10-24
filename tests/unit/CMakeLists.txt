@@ -20,6 +20,8 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the heights of the tracks laid
 	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
+	# and the switches laid into the curves
+	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

@@ -35,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorAlignment.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "editor/editorSwitchCurve.hpp"
 #include "editor/editorKilometrage.hpp"
 #include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
@@ -1240,6 +1241,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int last{0}; // template armed the last time
 		bool placing{false};
 		double along{0.0};
+		double pressed{0.0}; // along a curve: where the press was, the start of the switch drawn from it to the ends of the cant ramps
 		glm::dvec3 point{0.0};
 		glm::dvec3 mouse{0.0};
 		editor_track::straight line;
@@ -1528,6 +1530,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void switch_placed(std::vector<TTrack *> const &Created);
 	static std::vector<curve_sample> sample_chain(editor_track::chain const &Chain);
 	static curve_sample sample_at(std::vector<curve_sample> const &Frame, double const Station);
+	// the curve a switch goes into as the norms look at it: its headings and its cant along it
+	std::vector<switch_curve::track_point> frame_points(std::vector<curve_sample> const &Frame) const;
+	// the way the switch being placed into a curve goes along it and the side its diverging track leaves to, from the drag
+	void curved_switch_pose(int &Direction, int &Side) const;
+	// the start of the switch being placed into a curve: where it was pressed, drawn to where the switch meets an end of a cant ramp or
+	// keeps 6 m off it; What receives which
+	double curved_switch_start(int const Direction, std::string *What = nullptr) const;
+	// the switch made of the paths, laid into the curve at the station, as ST-T1-A6 sees it
+	switch_curve::switch_report curved_switch_report(std::vector<segment_data> const &Paths, double const Station, int const Direction) const;
 	static double nearest_station(std::vector<curve_sample> const &Frame, glm::dvec3 const &Point);
 	static std::vector<segment_data> curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side);
 	void insert_curved_switch(int const Direction, int const Side);

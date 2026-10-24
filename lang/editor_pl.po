@@ -11974,3 +11974,75 @@ msgstr "W%d  R%d %.0f m  przechyłka %.0f mm"
 
 msgid "W%d  R %.0f m  cant %.0f mm"
 msgstr "W%d  R %.0f m  przechyłka %.0f mm"
+
+msgid "On a transition curve: only by way of exception, by consent of the Zaklad Linii Kolejowych (9.7 pkt 12); the plan gives the radii of both tracks at the start and at the end of the switch"
+msgstr "Na krzywej przejściowej: tylko wyjątkowo, za zgodą Zakładu Linii Kolejowych (9.7 pkt 12); na planie podaje się promienie obu torów na początku i na końcu rozjazdu"
+
+msgid "The curvature of the diverging track turns from one side to the other within the switch (KZW II), which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru zwrotnego zmienia znak w obrębie rozjazdu (KZW II), co jest niedozwolone (9.7 pkt 12)"
+
+msgid "The curvature of the main track turns from one side to the other within the switch, which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru zasadniczego zmienia znak w obrębie rozjazdu, co jest niedozwolone (9.7 pkt 12)"
+
+msgid "The basic switch of R %.0f m isn't in table 11.9, its limiting curvature isn't checked"
+msgstr "Rozjazdu podstawowego R %.0f m nie ma w tabeli 11.9, jego krzywizna graniczna nie jest sprawdzana"
+
+msgid "The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km of table 11.9, up to %.3f 1/km only by consent of the Zaklad Linii Kolejowych"
+msgstr "Krzywizna toru zwrotnego %.3f 1/km ponad graniczną %.3f 1/km z tabeli 11.9; do %.3f 1/km tylko za zgodą Zakładu Linii Kolejowych"
+
+msgid "The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km for the switch of R %.0f m (table 11.9)"
+msgstr "Krzywizna toru zwrotnego %.3f 1/km ponad graniczną %.3f 1/km dla rozjazdu R %.0f m (tabela 11.9)"
+
+msgid "The main track bent to R %.0f m, below the least %.0f m of table 11.9, down to %.0f m only by consent of the Zaklad Linii Kolejowych"
+msgstr "Tor zasadniczy wygięty do R %.0f m, poniżej najmniejszego %.0f m z tabeli 11.9; do %.0f m tylko za zgodą Zakładu Linii Kolejowych"
+
+msgid "The main track bent to R %.0f m, below the least %.0f m for the switch of R %.0f m (table 11.9)"
+msgstr "Tor zasadniczy wygięty do R %.0f m, poniżej najmniejszego %.0f m dla rozjazdu R %.0f m (tabela 11.9)"
+
+msgid "A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4)"
+msgstr "Rozjazdu 1:%.3f nie łukuje się w torach szlakowych i głównych: ani 1:9,403, ani o skosie większym niż 1:9 (11.4 pkt 4)"
+
+msgid "The cant changes within the switch, %.0f to %.0f mm: it's to stay the same over it (11.4 pkt 7); a straight ramp through the switch only by consent of the Zaklad Linii Kolejowych"
+msgstr "Przechyłka zmienia się w obrębie rozjazdu, z %.0f na %.0f mm: ma być stała na całej jego długości (11.4 pkt 7); prostoliniowa rampa w rozjeździe tylko za zgodą Zakładu Linii Kolejowych"
+
+msgid "A cant ramp starts or ends within the switch, %.1f m from its start: at the start or the end of the switch, or 6 m off it at least (9.6 pkt 16-17)"
+msgstr "Rampa przechyłkowa zaczyna się albo kończy w obrębie rozjazdu, %.1f m od jego początku: ma się zaczynać na początku albo końcu rozjazdu, albo co najmniej 6 m od niego (9.6 pkt 16-17)"
+
+msgid "A cant ramp starts or ends at an end of the switch"
+msgstr "Rampa przechyłkowa zaczyna się albo kończy na początku lub końcu rozjazdu"
+
+msgid "A cant ramp ends %.1f m off the switch, 6 m at least (9.6 pkt 16)"
+msgstr "Koniec rampy przechyłkowej %.1f m od rozjazdu, ma być co najmniej 6 m (9.6 pkt 16)"
+
+msgid "Cant %.0f mm in a bent switch, over 100 mm (table 9.6)"
+msgstr "Przechyłka %.0f mm w rozjeździe łukowym, ponad 100 mm (tabela 9.6)"
+
+msgid "Cant %.0f mm: over the 60 mm recommended for a bent switch, up to 100 mm (table 9.6)"
+msgstr "Przechyłka %.0f mm: ponad zalecane 60 mm dla rozjazdu łukowego, dopuszczalne do 100 mm (tabela 9.6)"
+
+msgid "Cant %.0f mm in a straight switch: none recommended, up to 100 mm (table 9.6)"
+msgstr "Przechyłka %.0f mm w rozjeździe zwyczajnym: zalecana żadna, dopuszczalne do 100 mm (tabela 9.6)"
+
+msgid "the switch starts at an end of the cant ramp"
+msgstr "początek rozjazdu na krańcu rampy przechyłkowej"
+
+msgid "the switch ends at an end of the cant ramp"
+msgstr "koniec rozjazdu na krańcu rampy przechyłkowej"
+
+msgid "the switch starts 6 m off the cant ramp"
+msgstr "początek rozjazdu 6 m od rampy przechyłkowej"
+
+msgid "the switch ends 6 m off the cant ramp"
+msgstr "koniec rozjazdu 6 m od rampy przechyłkowej"
+
+msgid "ramp"
+msgstr "rampa"
+
+msgid "main track R %s at the start, %s at the end"
+msgstr "tor zasadniczy R %s na początku, %s na końcu"
+
+msgid "diverging track R %s at the start, %s at the end"
+msgstr "tor zwrotny R %s na początku, %s na końcu"
+
+msgid "cant %.0f mm at the start, %.0f mm at the end"
+msgstr "przechyłka %.0f mm na początku, %.0f mm na końcu"

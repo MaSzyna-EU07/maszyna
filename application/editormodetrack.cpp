@@ -2354,8 +2354,64 @@ void editor_mode::draw_build_overlay() const
 	}
 	else if (m_switch.placing)
 	{
-		for (auto const &piece : switch_preview())
+		auto const preview{switch_preview()};
+		for (auto const &piece : preview)
 			drawpath(piece, overlay_color::marked);
+		// into a curve: the ends of the cant ramps, what the start was drawn to, the radii at the ends of the switch and the norms
+		if (auto const &tool{m_switch}; tool.curved && tool.connection < 0 && preview.size() >= 2)
+		{
+			auto const points{frame_points(tool.frame)};
+			for (auto const end : switch_curve::ramp_ends(points))
+			{
+				auto const sample{sample_at(tool.frame, end)};
+				glm::dvec3 const across{-sample.tangent.y * 2.5, 0.0, sample.tangent.x * 2.5};
+				projection.line(drawlist, sample.position - across, sample.position + across, IM_COL32(255, 170, 40, 255), 3.0f);
+				ImVec2 screen;
+				if (projection.project(sample.position + across, screen))
+					drawlist->AddText({screen.x + 4.0f, screen.y - 7.0f}, IM_COL32(255, 170, 40, 255), STR_C("ramp"));
+			}
+			int forward;
+			int side;
+			curved_switch_pose(forward, side);
+			std::string snapped;
+			auto const station{curved_switch_start(forward, &snapped)};
+			auto const report{curved_switch_report(preview, station, forward)};
+			// a radius counted positive the way the line turns, the other way with a minus
+			auto const radius = [](double const Curvature) { return std::abs(Curvature) < 2e-5 ? std::string{STR_C("straight")} : format("%.0f m", 1.0 / Curvature); };
+			std::vector<std::pair<std::string, ImU32>> lines;
+			if (false == snapped.empty())
+				lines.emplace_back(snapped, IM_COL32(255, 170, 40, 255));
+			if (report.curved)
+			{
+				lines.emplace_back(format(STR_C("main track R %s at the start, %s at the end"), radius(report.main_start).c_str(), radius(report.main_end).c_str()), IM_COL32(255, 255, 255, 235));
+				lines.emplace_back(format(STR_C("diverging track R %s at the start, %s at the end"), radius(report.branch_start).c_str(), radius(report.branch_end).c_str()), IM_COL32(255, 255, 255, 235));
+			}
+			lines.emplace_back(format(STR_C("cant %.0f mm at the start, %.0f mm at the end"), report.cant_start, report.cant_end), IM_COL32(255, 255, 255, 235));
+			for (auto const &note : report.notes)
+				lines.emplace_back(note, IM_COL32(170, 200, 230, 235));
+			for (auto const &warning : report.warnings)
+				lines.emplace_back(warning, overlay_color::invalid);
+			ImVec2 screen;
+			if (projection.project(sample_at(tool.frame, station).position, screen))
+			{
+				auto const wrap{460.0f};
+				auto height{0.0f};
+				auto width{0.0f};
+				for (auto const &[text, colour] : lines)
+				{
+					auto const size{ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap)};
+					height += size.y + 2.0f;
+					width = std::max(width, size.x);
+				}
+				ImVec2 corner{screen.x + 24.0f, screen.y + 24.0f};
+				drawlist->AddRectFilled({corner.x - 6.0f, corner.y - 4.0f}, {corner.x + width + 6.0f, corner.y + height + 4.0f}, IM_COL32(10, 20, 30, 215), 4.0f);
+				for (auto const &[text, colour] : lines)
+				{
+					drawlist->AddText(ImGui::GetFont(), ImGui::GetFontSize(), corner, colour, text.c_str(), nullptr, wrap);
+					corner.y += ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap).y + 2.0f;
+				}
+			}
+		}
 		switch_link plan;
 		auto const linked{plan_switch_link(plan)};
 		ImVec2 screen;
