@@ -93,6 +93,37 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		WriteLog(format("SELFTEST selectat %.1f %.1f: %s", point.x, point.z, m_node != nullptr ? m_node->name().c_str() : "nothing"));
 		return selftest_result::handled;
 	}
+	if (command == "kbreak")
+	{
+		// K on the track nearest the point: split there, the point between at the height of the ground and the ballast
+		glm::dvec3 point{0.0};
+		words >> point.x >> point.z;
+		TTrack *nearest{nullptr};
+		double distance{1e9};
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty() && track->eType == tt_Normal)
+				if (auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)}; d < distance)
+				{
+					distance = d;
+					nearest = track;
+				}
+		if (nearest == nullptr || distance > 3.0)
+		{
+			WriteLog(format("SELFTEST kbreak %.1f %.1f: no track", point.x, point.z));
+			return selftest_result::handled;
+		}
+		auto const tracks{simulation::Paths.sequence().size()};
+		split_track_at(*nearest, point);
+		auto const &path{nearest->m_paths.front()};
+		auto const joint{path.points[segment_data::point::end]};
+		std::vector<char> found;
+		auto const ground{ground_heights({glm::dvec3{joint.x, joint.y + 50.0, joint.z}}, true, &found).front()};
+		geometry::bezier const curve{path};
+		auto const rise = [](glm::dvec3 const &Tangent) { return 1000.0 * Tangent.y / std::max(1e-9, glm::length(geometry::plan_of(Tangent))); };
+		WriteLog(format("SELFTEST kbreak %s: %zu tracks more, joint %.2f %.3f %.2f, ground %.3f (found %d), grade %.2f -> %.2f permille", nearest->name().c_str(), simulation::Paths.sequence().size() - tracks, joint.x, joint.y, joint.z, ground, found[0], rise(curve.first(0.0)),
+		                rise(curve.first(1.0))));
+		return selftest_result::handled;
+	}
 	if (command == "select")
 	{
 		std::string name;

@@ -240,8 +240,8 @@ msgstr "zastosuj"
 msgid "release the vertex"
 msgstr "puszcza wierzchołek"
 
-msgid "split the path under the cursor"
-msgstr "podziel tor pod kursorem"
+msgid "split the path under the cursor, a break of the grade at the height of the ground"
+msgstr "podziel tor pod kursorem, załamanie niwelety na wysokości terenu"
 
 msgid "top view"
 msgstr "widok z góry"
@@ -1743,8 +1743,8 @@ msgstr "Rozstaw torów (m)"
 msgid "Speed check of the line"
 msgstr "Sprawdź prędkość linii"
 
-msgid "Split here"
-msgstr "Podziel tutaj"
+msgid "Split here, a break of the grade"
+msgstr "Podziel tutaj, załamanie niwelety"
 
 msgid "Step (m)"
 msgstr "Uskok (m)"
@@ -4083,8 +4083,8 @@ msgstr "Przyciąganie do kroku z ustawień gizma"
 msgid "Split the road at the cursor, or make a point there"
 msgstr "Podziel drogę przy kursorze albo zrób tam punkt"
 
-msgid "Split the selected track at the cursor"
-msgstr "Podziel zaznaczony tor przy kursorze"
+msgid "Split the selected track at the cursor, a break of the grade at the height of the ground"
+msgstr "Podziel zaznaczony tor przy kursorze, załamanie niwelety na wysokości terenu"
 
 msgid "Takes the last change back"
 msgstr "Cofa ostatnią zmianę"

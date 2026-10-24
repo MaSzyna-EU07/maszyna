@@ -1800,7 +1800,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	{
 		if (gizmo && m_gizmo_snap > 0.0f)
 			hints.push_back({"Ctrl", format("gizmo snaps by %.2f m", m_gizmo_snap)});
-		hints.push_back({"K", "split the path under the cursor"});
+		hints.push_back({"K", "split the path under the cursor, a break of the grade at the height of the ground"});
 		hints.push_back({"O", "top view"});
 		hints.push_back({"Esc", "back to Select"});
 		if (Global.EditorOrtho)

@@ -5583,7 +5583,7 @@ void editor_mode::render_shortcuts_window()
 	      {"Ctrl+F", "Find a track by its name"},
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
 	      {"RMB on a track", "What can be done with it"},
-	      {"K", "Split the selected track at the cursor"},
+	      {"K", "Split the selected track at the cursor, a break of the grade at the height of the ground"},
 	      {"L, LMB, LMB...", "Lay track: each click lays a piece and goes on from its end"},
 	      {"Drag from a free end", "Lead a track out of it; onto another free end: join the two"},
 	      {"Ctrl+wheel", "Laying: radius"},

@@ -1076,6 +1076,22 @@ void editor_mode::split_track_at(TTrack &Track, glm::dvec3 const &Point)
 	auto const before{editor_track::capture(Track)};
 	if (auto *created{editor_track::split_path(Track, parameter)})
 	{
+		// a break of the grade, as a point of a road: the point between the two takes the height of the ground and the ballast
+		// there, each of them an even grade from its other end up to it
+		auto const &path{Track.m_paths.front()};
+		auto const joint{path.points[segment_data::point::end]};
+		auto const height{bed_height(joint, geometry::plan_of(geometry::bezier{path}.first(1.0)), &Track)};
+		auto const none{std::numeric_limits<double>::quiet_NaN()};
+		auto const unknown = [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); };
+		for (auto *part : {&Track, created})
+		{
+			std::vector<segment_data> pieces{part->m_paths.front()};
+			auto &points{pieces.front().points};
+			points[part == &Track ? segment_data::point::end : segment_data::point::start].y = height;
+			ground_follow::follow(pieces, {points[segment_data::point::start].y, none, points[segment_data::point::end].y, none}, unknown);
+			part->m_paths.front() = pieces.front();
+		}
+		editor_track::commit({&Track, created});
 		push_track_snapshot({{&Track, before}}, {created});
 		straight_refresh();
 	}
@@ -1147,7 +1163,7 @@ void editor_mode::render_track_context()
 		ImGui::EndMenu();
 	}
 	ImGui::Separator();
-	if (ImGui::MenuItem(STR_C("Split here"), "K", false, normal))
+	if (ImGui::MenuItem(STR_C("Split here, a break of the grade"), "K", false, normal))
 		split_track_at(*track, point);
 	ImGui::Separator();
 	if (ImGui::MenuItem(STR_C("Switch"), "T", false, normal || track->eType == tt_Switch))
