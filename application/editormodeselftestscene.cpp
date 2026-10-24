@@ -93,6 +93,26 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		WriteLog(format("SELFTEST selectat %.1f %.1f: %s", point.x, point.z, m_node != nullptr ? m_node->name().c_str() : "nothing"));
 		return selftest_result::handled;
 	}
+	if (command == "trackends")
+	{
+		// the ends of the first path of the track, against the ground under them
+		std::string name;
+		words >> name;
+		auto const *track{simulation::Paths.find(name)};
+		if (track == nullptr || track->m_paths.empty())
+		{
+			WriteLog("SELFTEST trackends " + name + ": no such track");
+			return selftest_result::handled;
+		}
+		for (auto const end : {segment_data::point::start, segment_data::point::end})
+		{
+			auto const &point{track->m_paths.front().points[end]};
+			std::vector<char> found;
+			auto const ground{ground_heights({glm::dvec3{point.x, point.y + 50.0, point.z}}, true, &found).front()};
+			WriteLog(format("SELFTEST trackends %s %s: %.2f %.3f %.2f, ground %.3f (found %d)", name.c_str(), end == segment_data::point::start ? "start" : "end", point.x, point.y, point.z, ground, found[0]));
+		}
+		return selftest_result::handled;
+	}
 	if (command == "kbreak")
 	{
 		// K on the track nearest the point: split there, the point between at the height of the ground and the ballast

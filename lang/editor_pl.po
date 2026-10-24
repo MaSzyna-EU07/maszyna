@@ -2204,8 +2204,8 @@ msgstr "koniec się z nim łączy"
 msgid "done"
 msgstr "gotowe"
 
-msgid "moves it, an end dropped on a free end joins it"
-msgstr "przesuwa go, koniec upuszczony na wolny koniec łączy się"
+msgid "moves it, an end onto the ground (Shift: keeps its height), dropped on a free end joins it"
+msgstr "przesuwa go, koniec na teren (Shift: zostaje na swojej wysokości), upuszczony na wolny koniec łączy się"
 
 msgid "Gizmo"
 msgstr "Gizmo"

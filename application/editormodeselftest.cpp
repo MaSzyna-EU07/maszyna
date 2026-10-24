@@ -65,6 +65,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   camera <x> <y> <z> <x> <y> <z>        from the first point, looking at the second
 //   select <track name>
 //   selectat <x> <z>                     the path nearest the point, within 3 m, as a click on it
+//   trackends <name>                     logs the ends of the first path of the track against the ground under them
 //   kbreak <x> <z>                       K on the track nearest the point: split there, a break of the grade at the height of the ground
 //   blade [name]                         logs the blades of each switch cut from the rails: tip, 50 mm head, full head, heel, drop of the head, open flangeway, the gauge lines apart against x^2/2R, vertices in both positions
 //   frog [name]                          logs where the inner rails of each switch cross: distance on both paths, 1:n, throat, nose, check rails

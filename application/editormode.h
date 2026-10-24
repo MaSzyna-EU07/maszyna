@@ -1730,7 +1730,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	};
 	handle_drag m_handle_drag;
 	void handle_drag_start(glm::dvec3 const &Anchor);
-	bool handle_drag_step(glm::dvec3 &Position);
+	// Ground: the handle goes onto the ground, at the height of the ballast of the track, unless Shift is held
+	bool handle_drag_step(glm::dvec3 &Position, TTrack const *Ground = nullptr);
 	void point_drag_start(editor_track::point_ref const &Point);
 	void point_drag_update();
 	void point_drag_finish();

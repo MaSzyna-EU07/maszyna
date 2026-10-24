@@ -1781,7 +1781,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			action = "rings about the point: direction, grade, cant; the joined tracks follow";
 		else if (m_gizmo_op == gizmo_operation::scale && selected != nullptr && track_gizmo_operation(*selected, true) == gizmo_operation::scale)
 			action = "lengthens the track at this end, the curve keeps its radius";
-		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", action}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Esc", "releases the point"}};
+		hints = {{"Drag a point", "moves it, an end onto the ground (Shift: keeps its height), dropped on a free end joins it"}, {"Gizmo", action}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Esc", "releases the point"}};
 		gizmo = true;
 	}
 	else

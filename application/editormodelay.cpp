@@ -283,7 +283,7 @@ void editor_mode::handle_drag_start(glm::dvec3 const &Anchor)
 		m_handle_drag.offset = {Anchor.x - level.x, 0.0, Anchor.z - level.z};
 }
 
-bool editor_mode::handle_drag_step(glm::dvec3 &Position)
+bool editor_mode::handle_drag_step(glm::dvec3 &Position, TTrack const *Ground)
 {
 	auto &drag{m_handle_drag};
 	auto const &io{ImGui::GetIO()};
@@ -301,7 +301,13 @@ bool editor_mode::handle_drag_step(glm::dvec3 &Position)
 	screen_projection const projection;
 	glm::dvec3 level;
 	if (projection.on_level(io.MousePos, drag.height, level) && (Global.editor_tracks || glm::distance(level, glm::dvec3{Global.pCamera.Pos}) <= static_cast<double>(kMaxPlacementDistance)))
+	{
 		drag.position = level + drag.offset;
+		if (Ground != nullptr && false == io.KeyShift)
+			drag.position.y = bed_height(drag.position, {0.0, 0.0}, Ground);
+		else
+			drag.position.y = drag.height;
+	}
 	Position = drag.position;
 	return true;
 }
@@ -376,6 +382,13 @@ void editor_mode::point_drag_update()
 	glm::dvec3 position;
 	if (false == projection.on_level(io.MousePos, drag.height, position) || (false == Global.editor_tracks && glm::distance(position, glm::dvec3{Global.pCamera.Pos}) > static_cast<double>(kMaxPlacementDistance)))
 		return;
+	// an end goes onto the ground at the height of the ballast, as a point laid; with Shift it keeps its height
+	if (editor_track::is_end(m_track_point.kind) && false == io.KeyShift)
+	{
+		auto const &path{track->m_paths[m_track_point.path]};
+		auto const tangent{geometry::bezier{path}.first(m_track_point.kind == editor_track::point_kind::end ? 1.0 : 0.0)};
+		position.y = bed_height(position, plan_of(tangent), track);
+	}
 	m_track_snap = {};
 	if (editor_track::is_end(m_track_point.kind) && m_track_drag_points.empty())
 	{

@@ -604,7 +604,8 @@ void editor_mode::render_straight_gizmo()
 
 	glm::dvec3 const anchors[] = {line.start, line.end, (line.start + line.end) * 0.5};
 	glm::dvec3 handled{anchors[state.handle]};
-	bool const held{handle_drag_step(handled)};
+	// the ends go onto the ground, the middle moves the line in plan alone
+	bool const held{handle_drag_step(handled, state.handle == 2 ? nullptr : line.tracks.front())};
 	if (false == held && false == state.dragging)
 		return;
 
