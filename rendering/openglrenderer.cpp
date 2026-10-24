@@ -937,6 +937,8 @@ bool
 opengl_renderer::Render_reflections() {
 
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
+    // the top view of the editor shows nothing the reflections would be seen on: the cube map stays as it was
+    if( EditorModeFlag && Global.EditorOrtho ) { return false; }
 
     auto const timestamp { Timer::GetRenderTime() };
     if( ( timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval )

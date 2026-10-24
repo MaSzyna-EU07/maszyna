@@ -1458,6 +1458,8 @@ bool opengl33_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float c
 bool opengl33_renderer::Render_reflections(viewport_config &vp)
 {
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
+    // the top view of the editor shows nothing the reflections would be seen on: the cube map stays as it was
+    if( EditorModeFlag && Global.EditorOrtho ) { return false; }
 
     if( m_environmentupdateface >= 6 ) {
         // no update in progress, check whether it's time for another one
