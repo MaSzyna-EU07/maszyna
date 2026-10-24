@@ -71,7 +71,7 @@ if (APPLE)
 endif()
 
 option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
-option(WITH_VULKAN "Compile with the Vulkan 1.4 renderer (gfxrenderer vulkan); needs the submodules ref/volk and ref/Vulkan-Headers" OFF)
+option(WITH_VULKAN "Compile with the Vulkan 1.4 renderer (gfxrenderer vulkan); needs the submodules ref/volk and ref/Vulkan-Headers" ON)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
