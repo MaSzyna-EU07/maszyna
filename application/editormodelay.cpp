@@ -669,7 +669,6 @@ void editor_mode::finish_extend()
 		created.push_back(editor_track::create_path(*style, piece));
 	give_own_speed(created);
 	editor_track::commit(created);
-	digitize_drawn(created);
 	auto const from{m_history.size()};
 	push_track_snapshot({}, created);
 	first_step_done(first_step::laid);
@@ -705,7 +704,6 @@ void editor_mode::extend_add(int const Side)
 	for (auto const &piece : pieces)
 		created.push_back(editor_track::create_path(*tool.track, piece));
 	editor_track::commit(created);
-	digitize_drawn(created);
 	push_track_snapshot({}, created);
 	m_node = created.back();
 	ui()->set_node(m_node);
@@ -1404,7 +1402,8 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	lay_trim();
 	double length;
 	std::string error;
-	auto const pieces{lay_pieces(tool.points, tool.modes, End, length, error)};
+	lay_line_plan plan;
+	auto const pieces{lay_pieces(tool.points, tool.modes, End, length, error, &plan)};
 	auto const eased{m_eased_last};
 	tool.status_time = ImGui::GetTime();
 	if (pieces.empty())
@@ -1427,7 +1426,11 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		created.push_back(style != nullptr ? editor_track::create_path(*style, piece) : editor_track::create_path(tool.style, piece));
 	give_own_speed(created);
 	editor_track::commit(created);
-	digitize_drawn(created);
+	// the scenery keeps the design the tracks were laid by, as it is, for the plan to edit; read from the paths again it wouldn't be
+	// the same, a compound curve with transitions between its arcs least of all. A track laid with no design of the line, between two
+	// free ends or back from one, keeps none: the plan reads its curves when it's opened
+	if (plan.shape.valid && false == created.empty() && false == scene::Layers.empty())
+		alignment_store::store(plan.design, plan.shape, 0.0, alignment_store::layer_of(*created.front()), "drawn");
 	if (tool.chain.empty())
 		tool.history = m_history.size();
 	push_track_snapshot({}, created);
