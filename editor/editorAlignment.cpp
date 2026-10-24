@@ -2987,7 +2987,14 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 		{
 			for (auto &curve : two.vertices)
 				plain_curve(curve, std::max(kTraceRadiusMin, std::round(curve.radius)), std::round(curve.transition_in), speed, two.norms);
-			take(stretch_of(two, Points));
+			// none where a curve ran to the end of the radii tried, turns hardly at all, or doesn't fit between the straights: the
+			// points made the fit find two curves where they show one
+			auto const laid{compute(two)};
+			auto const sound{laid.valid && laid.radius_warnings.empty() && laid.curves.size() == 2 && std::all_of(laid.curves.begin(), laid.curves.end(), [](curve_report const &Curve) {
+				return Curve.radius > 1.05 * kTraceRadiusMin && Curve.radius < 0.95 * kTraceRadiusMax && Curve.deflection > 0.25 * kPi / 180.0;
+			})};
+			if (sound)
+				take(stretch_of(two, Points));
 		}
 	}
 	return chosen;
