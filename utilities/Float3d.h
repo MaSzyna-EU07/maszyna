@@ -29,100 +29,14 @@ inline float3 SafeNormalize(const float3 &v)
     return retVal;
 };
 
-class float4
-{ // kwaternion obrotu
-  public:
-    float x;
-    float y;
-    float z;
-    float w;
-    float4() : x(0.f), y(0.f), z(0.f), w(1.f) {}
-    float4(float a, float b, float c, float d) : x(a), y(b), z(c), w(d) {}
-    float inline LengthSquared() const
-    {
-        return x * x + y * y + z * z + w * w;
-    };
-    float inline Length() const
-    {
-        return static_cast<float>(sqrt(x * x + y * y + z * z + w * w));
-    };
-};
-inline float4 operator*(const float4 &q1, const float4 &q2)
-{ // mnożenie to prawie jak mnożenie macierzy
-    return float4(q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
-                  q1.w * q2.y + q1.y * q2.w + q1.z * q2.x - q1.x * q2.z,
-                  q1.w * q2.z + q1.z * q2.w + q1.x * q2.y - q1.y * q2.x,
-                  q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z);
-}
-inline float4 operator-(const float4 &q)
-{ // sprzężony; odwrotny tylko dla znormalizowanych!
-    return float4(-q.x, -q.y, -q.z, q.w);
-};
-inline float4 operator-(const float4 &q1, const float4 &q2)
-{ // z odejmowaniem nie ma lekko
-    return -q1 * q2; // inwersja tylko dla znormalizowanych!
-};
-inline float4 operator+(const float4 &v1, const float4 &v2)
+inline glm::quat SafeNormalize(const glm::quat &q)
 {
-    return float4(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z, v1.w + v2.w);
-};
-inline float4 operator/(const float4 &v, float const k)
-{
-    return float4(v.x / k, v.y / k, v.z / k, v.w / k);
-};
-inline float4 Normalize(const float4 &v)
-{ // bezpieczna normalizacja (wektor długości 1.0)
-    auto const lengthsquared = v.LengthSquared();
-    if (lengthsquared == 1.0)
-        return v;
-    if (lengthsquared == 0.0)
-        return float4(); // wektor zerowy, w=1
-    else
-        return v / std::sqrt(lengthsquared); // pierwiastek liczony tylko jeśli trzeba wykonać dzielenia
-};
-inline
-float Dot(const float4 &q1, const float4 &q2)
-{ // iloczyn skalarny
-    return q1.x * q2.x + q1.y * q2.y + q1.z * q2.z + q1.w * q2.w;
-}
-inline float4 &operator*=(float4 &v1, float const d)
-{ // mnożenie przez skalar, jaki ma sens?
-    v1.x *= d;
-    v1.y *= d;
-    v1.z *= d;
-    v1.w *= d;
-    return v1;
-};
-inline float4 Slerp(const float4 &q0, const float4 &q1, float t)
-// void Slerp(QUATERNION *Out, const QUATERNION &q0, const QUATERNION &q1, float t)
-{ // interpolacja sweryczna
-    float cosOmega = Dot(q0, q1);
-    float4 new_q1(q1);
-    if (cosOmega < 0.0f)
-    { // jeżeli są niezgodne kierunki, jeden z nich trzeba zanegować
-        new_q1.x = -new_q1.x;
-        new_q1.y = -new_q1.y;
-        new_q1.z = -new_q1.z;
-        new_q1.w = -new_q1.w;
-        cosOmega = -cosOmega;
-    }
-    float k0;
-    float k1;
-    if (cosOmega > 0.9999f)
-    { // jeśli jesteśmy z (t) na maksimum kosinusa, to tam prawie liniowo jest
-        k0 = 1.0f - t;
-        k1 = t;
-    }
-    else
-    { // a w ogólnym przypadku trzeba liczyć na trygonometrię
-        auto const sinOmega = std::sqrt(1.0f - cosOmega * cosOmega); // sinus z jedynki tryg.
-        auto const omega = std::atan2(sinOmega, cosOmega); // wyznaczenie kąta
-        auto const oneOverSinOmega = 1.0f / sinOmega; // odwrotność sinusa, bo sinus w mianowniku
-        k0 = static_cast<float>(sin((1.0f - t) * omega) * oneOverSinOmega);
-        k1 = static_cast<float>(sin(t * omega) * oneOverSinOmega);
-    }
-    return float4(q0.x * k0 + new_q1.x * k1, q0.y * k0 + new_q1.y * k1, q0.z * k0 + new_q1.z * k1,
-                  q0.w * k0 + new_q1.w * k1);
+	const float len2 = glm::dot(q, q);
+
+	if (len2 == 0.0f)
+		return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+	return glm::normalize(q);
 }
 
 class float4x4
@@ -179,7 +93,7 @@ public:
                 return false;
         return true;
     }
-    void Quaternion(float4 const *q);
+	void Quaternion(glm::quat const *q);
     inline float3 *TranslationGet()
     {
         return (float3 *)(e + 12);

@@ -40,7 +40,7 @@ class TAnimVocaloidFrame
     char cBone[15]; // nazwa kości, może być po japońsku
     int iFrame; // numer ramki
     float3 f3Vector; // przemieszczenie
-    float4 qAngle; // kwaternion obrotu
+    glm::quat qAngle; // kwaternion obrotu // TODO: Is it used somewhere?
     char cBezier[64]; // krzywe Béziera do interpolacji dla x,y,z i obrotu
 };
 
@@ -57,9 +57,9 @@ class TAnimContainer : public std::enable_shared_from_this<TAnimContainer>
 	glm::dvec3 vTranslation;
 	glm::dvec3 vTranslateTo;
     double fTranslateSpeed; // może tu dać wektor?
-    float4 qCurrent; // aktualny interpolowany
-    float4 qStart; // pozycja początkowa (0 dla interpolacji)
-    float4 qDesired; // pozycja końcowa (1 dla interpolacji)
+    glm::quat qCurrent; // aktualny interpolowany
+    glm::quat qStart; // pozycja początkowa (0 dla interpolacji)
+    glm::quat qDesired; // pozycja końcowa (1 dla interpolacji)
     float fAngleCurrent; // parametr interpolacyjny: 0=start, 1=docelowy
     float fAngleSpeed; // zmiana parametru interpolacji w sekundach
   public:

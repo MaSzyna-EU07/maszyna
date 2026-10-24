@@ -212,9 +212,9 @@ void TAnimContainer::PrepareModel()
                 else
                 { // obliczanie pozycji pośredniej
                     // normalizacja jest wymagana do interpolacji w następnej animacji
-                    qCurrent = Normalize(
-                        Slerp(qStart, qDesired, fAngleCurrent)); // interpolacja sferyczna kąta
-                    // qCurrent=Slerp(qStart,qDesired,fAngleCurrent); //interpolacja sferyczna kąta
+                    qCurrent = SafeNormalize(
+                        glm::slerp(qStart, qDesired, fAngleCurrent)); // interpolacja sferyczna kąta
+                    // qCurrent=glm::slerp(qStart,qDesired,fAngleCurrent); //interpolacja sferyczna kąta
                     if (qCurrent.w ==
                         1.0) // rozpoznać brak obrotu i wyłączyć w iAnim w takim przypadku
                         iAnim &= ~4; // kąty są zerowe
