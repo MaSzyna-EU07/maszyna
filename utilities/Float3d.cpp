@@ -13,43 +13,23 @@ http://mozilla.org/MPL/2.0/.
 
 //---------------------------------------------------------------------------
 
-void float4x4::deserialize_float32(std::istream &s)
+void deserialize_float32(std::istream &s, glm::mat4 &matrix)
 {
-	for (auto &elemententry : e)
-		elemententry = sn_utils::ld_float32(s);
+	for (int column = 0; column < 4; ++column)
+		for (int row = 0; row < 4; ++row)
+			matrix[column][row] = sn_utils::ld_float32(s);
 }
 
-void float4x4::deserialize_float64(std::istream &s)
+void deserialize_float64(std::istream &s, glm::mat4 &matrix)
 {
-	for (auto &elemententry : e)
-		elemententry = (float)sn_utils::ld_float64(s);
+	for (int column = 0; column < 4; ++column)
+		for (int row = 0; row < 4; ++row)
+			matrix[column][row] = static_cast<float>(sn_utils::ld_float64(s));
 }
 
-void float4x4::serialize_float32(std::ostream &s) const
+void serialize_float32(std::ostream &s, const glm::mat4 &matrix)
 {
-	for (auto &element : e)
-		sn_utils::ls_float32(s, element);
+	for (int column = 0; column < 4; ++column)
+		for (int row = 0; row < 4; ++row)
+			sn_utils::ls_float32(s, matrix[column][row]);
 }
-
-void float4x4::Quaternion(glm::quat const *q)
-{ // konwersja kwaternionu obrotu na macierz obrotu
-    float xx = q->x * q->x;
-    float yy = q->y * q->y;
-    float zz = q->z * q->z;
-    float xy = q->x * q->y;
-    float xz = q->x * q->z;
-    float yz = q->y * q->z;
-    float wx = q->w * q->x;
-    float wy = q->w * q->y;
-    float wz = q->w * q->z;
-    e[0] = 1.0f - yy - yy - zz - zz;
-    e[1] = xy + xy + wz + wz;
-    e[2] = xz + xz - wy - wy;
-    e[4] = xy + xy - wz - wz;
-    e[5] = 1.0f - xx - xx - zz - zz;
-    e[6] = yz + yz + wx + wx;
-    e[8] = xz + xz + wy + wy;
-    e[9] = yz + yz - wx - wx;
-    e[10] = 1.0f - xx - xx - yy - yy;
-    // czwartej kolumny i czwartego wiersza nie ruszamy
-};

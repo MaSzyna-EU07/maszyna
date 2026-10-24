@@ -4048,7 +4048,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 		{
 			::glPushMatrix();
 			if (Submodel->fMatrix)
-				::glMultMatrixf(Submodel->fMatrix->readArray());
+				::glMultMatrixf(glm::value_ptr(*(Submodel->fMatrix)));
 			if (Submodel->b_aAnim != TAnimType::at_None)
 			{
 				Submodel->RaAnimation(Submodel->b_aAnim);
@@ -5049,7 +5049,7 @@ void opengl33_renderer::Render_Alpha_text(TSubModel *Submodel)
 	{ // translucent only, for the time being
 		Render_Alpha(p);
 		if (p->fMatrix)
-			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+			::glMultMatrixf(glm::value_ptr(*(p->fMatrix))); // move on to the place of the next character
 	}
 }
 
@@ -5064,7 +5064,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 		{
 			::glPushMatrix();
 			if (Submodel->fMatrix)
-				::glMultMatrixf(Submodel->fMatrix->readArray());
+				::glMultMatrixf(glm::value_ptr(*(Submodel->fMatrix)));
 			if (Submodel->b_aAnim != TAnimType::at_None)
 			{
 				Submodel->RaAnimation(Submodel->b_aAnim);
@@ -5632,7 +5632,7 @@ void opengl33_renderer::Preview_Bounds(TSubModel const *Submodel, glm::dmat4 con
 		auto transform{Transform};
 		if ((submodel->iFlags & 0xC000) && (submodel->fMatrix != nullptr))
 		{
-			transform *= glm::dmat4{glm::make_mat4(submodel->fMatrix->readArray())};
+			transform *= glm::dmat4{*(submodel->fMatrix)};
 		}
 		if ((submodel->eType < TP_ROTATOR) && (submodel->m_geometry.handle != null_handle))
 		{

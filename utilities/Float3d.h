@@ -39,128 +39,24 @@ inline glm::quat SafeNormalize(const glm::quat &q)
 	return glm::normalize(q);
 }
 
-class float4x4
-{ // macierz transformacji pojedynczej precyzji
-public:
-    float e[16];
-
-	void deserialize_float32(std::istream&);
-	void deserialize_float64(std::istream&);
-	void serialize_float32(std::ostream&) const;
-    float4x4() = default;
-    explicit float4x4(const float f[16])
-    {
-        for (int i = 0; i < 16; ++i)
-            e[i] = f[i];
-    };
-    float * operator()(int i)
-    {
-        return &e[i << 2];
-    }
-    const float * readArray(void) const
-    {
-        return e;
-    }
-    void Identity()
-    {
-        for (auto &element : e)
-            element = 0;
-        e[0] = 1.0f;
-        e[5] = 1.0f;
-        e[10] = 1.0f;
-        e[15] = 1.0f;
-    }
-    const float *operator[](int i) const
-    {
-        return &e[i << 2];
-    };
-    void InitialRotate()
-    { // taka specjalna rotacja, nie ma co ciągać trygonometrii
-        float f;
-        for (int i = 0; i < 16; i += 4)
-        {
-            e[i] = -e[i]; // zmiana znaku X
-            f = e[i + 1];
-            e[i + 1] = e[i + 2];
-            e[i + 2] = f; // zamiana Y i Z
-        }
-    };
-    float4x4 &Rotation(float const angle, float3 const &axis);
-    inline bool IdentityIs() const
-    { // sprawdzenie jednostkowości
-        for (int i = 0; i < 16; ++i)
-            if (e[i] != (i % 5 ? 0.0 : 1.0)) // jedynki tylko na 0, 5, 10 i 15
-                return false;
-        return true;
-    }
-	void Quaternion(glm::quat const *q);
-    inline float3 *TranslationGet()
-    {
-        return (float3 *)(e + 12);
-    }
-};
-
-inline glm::vec3 operator*( const float4x4 &m, const glm::vec3 &v ) { // mnożenie wektora przez macierz
-    return glm::vec3(
-        v.x * m[ 0 ][ 0 ] + v.y * m[ 1 ][ 0 ] + v.z * m[ 2 ][ 0 ] + m[ 3 ][ 0 ],
-        v.x * m[ 0 ][ 1 ] + v.y * m[ 1 ][ 1 ] + v.z * m[ 2 ][ 1 ] + m[ 3 ][ 1 ],
-        v.x * m[ 0 ][ 2 ] + v.y * m[ 1 ][ 2 ] + v.z * m[ 2 ][ 2 ] + m[ 3 ][ 2 ] );
-}
-
-inline float4x4 &float4x4::Rotation(float const Angle, float3 const &Axis)
+inline void InitialRotateMatrix(glm::mat4 &matrix)
 {
-    auto const c = std::cos(Angle);
-    auto const s = std::sin(Angle);
-    // One minus c (short name for legibility of formulai)
-    auto const omc = 1.f - c;
-    auto const axis = SafeNormalize(Axis);
-    auto const xs = axis.x * s;
-    auto const ys = axis.y * s;
-    auto const zs = axis.z * s;
-    auto const xyomc = axis.x * axis.y * omc;
-    auto const xzomc = axis.x * axis.z * omc;
-    auto const yzomc = axis.y * axis.z * omc;
-    e[0] = axis.x * axis.x * omc + c;
-    e[1] = xyomc + zs;
-    e[2] = xzomc - ys;
-    e[3] = 0;
-    e[4] = xyomc - zs;
-    e[5] = axis.y * axis.y * omc + c;
-    e[6] = yzomc + xs;
-    e[7] = 0;
-    e[8] = xzomc + ys;
-    e[9] = yzomc - xs;
-    e[10] = axis.z * axis.z * omc + c;
-    e[11] = 0;
-    e[12] = 0;
-    e[13] = 0;
-    e[14] = 0;
-    e[15] = 1;
-    return *this;
-};
-
-inline bool operator==(const float4x4& v1, const float4x4& v2)
-{
-	for (size_t i = 0; i < 16; i++)
+	for (int i = 0; i < 4; ++i)
 	{
-		if (v1.e[i] != v2.e[i])
-			return false;
+		matrix[i][0] = -matrix[i][0]; // zmiana znaku X
+
+		const float f = matrix[i][1];
+		matrix[i][1] = matrix[i][2];
+		matrix[i][2] = f; // zamiana Y i Z
 	}
-	return true;
 }
 
-inline float4x4 operator*(const float4x4 &m1, const float4x4 &m2)
-{ // iloczyn macierzy
-    float4x4 retVal;
-    for (int x = 0; x < 4; ++x)
-        for (int y = 0; y < 4; ++y)
-        {
-            retVal(x)[y] = 0;
-            for (int i = 0; i < 4; ++i)
-                retVal(x)[y] += m1[i][y] * m2[x][i];
-        }
-    return retVal;
-};
+void deserialize_float32(std::istream &s, glm::mat4 &matrix);
+
+void deserialize_float64(std::istream &s, glm::mat4 &matrix);
+
+void serialize_float32(std::ostream &s, const glm::mat4 &matrix);
+
 
 // From code in Graphics Gems; p. 766
 inline float Det2x2(float a, float b, float c, float d)
@@ -172,29 +68,4 @@ inline float Det3x3(float a1, float a2, float a3, float b1, float b2, float b3, 
                     float c3)
 { // obliczenie wyznacznika macierzy 3×3
     return +a1 * Det2x2(b2, b3, c2, c3) - b1 * Det2x2(a2, a3, c2, c3) + c1 * Det2x2(a2, a3, b2, b3);
-};
-
-inline
-float Det(const float4x4 &m)
-{ // obliczenie wyznacznika macierzy 4×4
-    float a1 = m[0][0];
-    float a2 = m[1][0];
-    float a3 = m[2][0];
-    float a4 = m[3][0];
-    float b1 = m[0][1];
-    float b2 = m[1][1];
-    float b3 = m[2][1];
-    float b4 = m[3][1];
-    float c1 = m[0][2];
-    float c2 = m[1][2];
-    float c3 = m[2][2];
-    float c4 = m[3][2];
-    float d1 = m[0][3];
-    float d2 = m[1][3];
-    float d3 = m[2][3];
-    float d4 = m[3][3];
-    return +a1 * Det3x3(b2, b3, b4, c2, c3, c4, d2, d3, d4) -
-           b1 * Det3x3(a2, a3, a4, c2, c3, c4, d2, d3, d4) +
-           c1 * Det3x3(a2, a3, a4, b2, b3, b4, d2, d3, d4) -
-           d1 * Det3x3(a2, a3, a4, b2, b3, b4, c2, c3, c4);
 };

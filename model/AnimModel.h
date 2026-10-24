@@ -66,7 +66,7 @@ class TAnimContainer : public std::enable_shared_from_this<TAnimContainer>
     TSubModel *pSubModel;
 
   private:
-	std::shared_ptr<float4x4> mAnim; // macierz do animacji kwaternionowych
+	std::shared_ptr<glm::mat4> mAnim; // macierz do animacji kwaternionowych
     // dla kinematyki odwróconej używane są kwaterniony
     float fLength; // długość kości dla IK
     int iAnim; // animacja: +1-obrót Eulera, +2-przesuw, +4-obrót kwaternionem, +8-IK

@@ -121,7 +121,7 @@ namespace
         {
             glm::dmat4 mlocal = M;
             if (sub->iFlags & 0xC000 && sub->GetMatrix() != nullptr)
-                mlocal = M * glm::dmat4(glm::make_mat4(sub->GetMatrix()->readArray()));
+			    mlocal = M * glm::dmat4(*(sub->GetMatrix()));
 
             if (sub->eType < TP_ROTATOR) // a drawable mesh, not a rotator/light/etc.
             {

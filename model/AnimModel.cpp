@@ -220,7 +220,7 @@ void TAnimContainer::PrepareModel()
                         iAnim &= ~4; // kąty są zerowe
                 }
             }
-            mAnim->Quaternion(&qCurrent); // wypełnienie macierzy (wymaga normalizacji?)
+			*mAnim = glm::mat4_cast(qCurrent); // wypełnienie macierzy (wymaga normalizacji?)
             pSubModel->mAnimMatrix = mAnim; // użyczenie do submodelu (na czas renderowania!)
         }
     }

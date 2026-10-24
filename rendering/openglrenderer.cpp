@@ -2786,7 +2786,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
         if( Submodel->iFlags & 0xC000 ) {
             ::glPushMatrix();
             if( Submodel->fMatrix )
-                ::glMultMatrixf( Submodel->fMatrix->readArray() );
+                ::glMultMatrixf(glm::value_ptr(*(Submodel->fMatrix)));
             if( Submodel->b_Anim != TAnimType::at_None )
                 Submodel->RaAnimation( Submodel->b_Anim );
         }
@@ -3858,7 +3858,7 @@ opengl_renderer::Render_Alpha_text( TSubModel *Submodel ) {
     for( auto *p : Submodel->text_letters( *TSubModel::pasText ) ) { // translucent only, for the time being
         Render_Alpha( p );
         if( p->fMatrix )
-            ::glMultMatrixf( p->fMatrix->readArray() ); // move on to the place of the next character
+			::glMultMatrixf(glm::value_ptr(*(p->fMatrix))); // move on to the place of the next character
     }
 }
 
@@ -3872,7 +3872,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
         if( Submodel->iFlags & 0xC000 ) {
             ::glPushMatrix();
             if( Submodel->fMatrix )
-                ::glMultMatrixf( Submodel->fMatrix->readArray() );
+				::glMultMatrixf(glm::value_ptr(*(Submodel->fMatrix)));
             if( Submodel->b_aAnim != TAnimType::at_None )
                 Submodel->RaAnimation( Submodel->b_aAnim );
         }
