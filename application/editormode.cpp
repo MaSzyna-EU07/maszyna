@@ -558,6 +558,21 @@ editor_mode::editor_mode() {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out, true, Heightmap);
 	});
 	m_orthophoto.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
+	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
+	m_orthophoto.guess_source([this](double const X, double const Z, double &Height) {
+		if (nmt_ahead(X, Z, Height))
+			return true;
+		if (false == m_nmt.placed())
+			return false;
+		if (false == m_nmt.height(X, Z, Height))
+		{
+			// asked for, the tile goes onto it once it comes
+			m_nmt.request({X - 1.0, Z - 1.0}, {X + 1.0, Z + 1.0});
+			return false;
+		}
+		Height += nmt_offset_at(X, Z);
+		return true;
+	});
 	editor_track::observe(this);
  }
 
@@ -1481,6 +1496,14 @@ bool editor_mode::update()
         Global.EditorOrthoMap = m_orthophoto.enabled() && metres >= (m_orthophoto.overview() ? 1.6 : 2.0);
         m_orthophoto.overview(Global.EditorOrthoMap ? metres : 0.0, static_cast<double>(Global.EditorOrthoExtent) * std::sqrt(1.0 + aspect * aspect));
     }
+    // chunks of the terrain come from the files and from the model: the imagery lying at guessed heights goes onto them
+    // and so do the squares of the model it lies on meanwhile
+    auto const resident{m_streamer.resident()};
+    auto const waiting{m_nmt.waiting()};
+    if (resident > m_ortho_resident || waiting < m_ortho_waiting)
+        m_orthophoto.ground_arrived();
+    m_ortho_resident = resident;
+    m_ortho_waiting = waiting;
     m_orthophoto.update(Camera.Pos);
     nmt_update();
     draw_orthophoto();

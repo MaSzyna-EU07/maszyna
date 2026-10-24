@@ -685,6 +685,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void load_orthophoto_settings();
 	void save_orthophoto_settings();
 	editor_orthophoto m_orthophoto;
+	std::size_t m_ortho_resident{0}; // chunks of the terrain in memory, as the imagery last heard of them
+	std::size_t m_ortho_waiting{0}; // squares of the terrain model asked for and not in yet, the same
 	std::string m_orthophoto_scenery;            // scenery whose origin is loaded
 	std::string m_orthophoto_mark;
 	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends

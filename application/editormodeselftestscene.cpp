@@ -292,7 +292,10 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	if (command == "mapstate")
 	{
 		auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")};
-		WriteLog(format("SELFTEST mapstate orthophoto %d top %d extent %.0f mark %s camera %.1f %.1f %.1f", m_orthophoto.enabled() ? 1 : 0, Global.EditorOrtho ? 1 : 0, Global.EditorOrthoExtent, marked.empty() ? "-" : marked.front().c_str(), Camera.Pos.x, Camera.Pos.y, Camera.Pos.z));
+		WriteLog(format("SELFTEST mapstate orthophoto %d top %d extent %.0f camera %.1f %.1f %.1f", m_orthophoto.enabled() ? 1 : 0, Global.EditorOrtho ? 1 : 0, Global.EditorOrthoExtent, Camera.Pos.x, Camera.Pos.y, Camera.Pos.z));
+		WriteLog("SELFTEST mapstate mark " + (marked.empty() ? std::string{"-"} : marked.front()));
+		auto const [grounded, guessed]{m_orthophoto.grounded()};
+		WriteLog(format("SELFTEST mapstate tiles on the ground %zu, at guessed heights %zu", grounded, guessed));
 		return selftest_result::handled;
 	}
 	if (command == "selectmodel")

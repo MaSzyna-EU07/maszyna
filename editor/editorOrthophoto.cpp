@@ -617,6 +617,27 @@ void editor_orthophoto::refit()
 		entry.second.grounded = false;
 }
 
+void editor_orthophoto::ground_arrived()
+{
+	if (!m_height)
+		return;
+	for (auto &entry : m_tiles)
+	{
+		auto &t{entry.second};
+		if (!t.grounded || !t.guessed)
+			continue;
+		// the middle and the corners: a chunk of the terrain is much larger than a tile, it covers some of these when it comes. A tile
+		// lying flat, with nothing to go by, also goes onto the model once it's in
+		glm::dvec2 const corner = tile_corner(entry.first);
+		for (auto const &[u, v] : {std::pair{0.5, 0.5}, std::pair{0.0, 0.0}, std::pair{1.0, 0.0}, std::pair{0.0, 1.0}, std::pair{1.0, 1.0}})
+			if (double y; m_height(corner.x - u * tile_size, corner.y - v * tile_size, y) || (t.heights.empty() && m_guess && m_guess(corner.x - u * tile_size, corner.y - v * tile_size, y)))
+			{
+				t.grounded = false;
+				break;
+			}
+	}
+}
+
 void editor_orthophoto::detach_scene()
 {
 	for (auto &entry : m_tiles)
@@ -819,9 +840,46 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 	return Result.pixels.size();
 }
 
+std::pair<std::size_t, std::size_t> editor_orthophoto::grounded() const
+{
+	std::pair<std::size_t, std::size_t> result{0, 0};
+	for (auto const &entry : m_tiles)
+		if (entry.second.grounded && false == entry.second.heights.empty())
+		{
+			++result.first;
+			if (entry.second.guessed)
+				++result.second;
+		}
+	return result;
+}
+
+bool editor_orthophoto::sampled_height(tile_key const &Own, double const X, double const Z, float &Height) const
+{
+	auto const key{camera_tile({X, 0.0, Z})};
+	if (key == Own)
+		return false;
+	auto const found{m_tiles.find(key)};
+	if (found == m_tiles.end() || !found->second.grounded || found->second.guessed || found->second.heights.empty())
+		return false;
+	auto const &heights{found->second.heights};
+	int constexpr samples{ground_grid + 1};
+	double constexpr step{tile_size / ground_grid};
+	glm::dvec2 const corner = tile_corner(key);
+	auto const u{std::clamp((corner.x - X) / step, 0.0, static_cast<double>(ground_grid))};
+	auto const v{std::clamp((corner.y - Z) / step, 0.0, static_cast<double>(ground_grid))};
+	auto const i{std::min(static_cast<int>(u), ground_grid - 1)};
+	auto const j{std::min(static_cast<int>(v), ground_grid - 1)};
+	auto const at = [&](int const I, int const J) { return static_cast<double>(heights[static_cast<std::size_t>(J) * samples + I]); };
+	auto const fu{u - i};
+	auto const fv{v - j};
+	Height = static_cast<float>((at(i, j) * (1.0 - fu) + at(i + 1, j) * fu) * (1.0 - fv) + (at(i, j + 1) * (1.0 - fu) + at(i + 1, j + 1) * fu) * fv);
+	return true;
+}
+
 void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 {
 	Tile.grounded = true;
+	Tile.guessed = false;
 	Tile.scene_dirty = true;
 	Tile.heights.clear();
 	Tile.surface.clear();
@@ -899,7 +957,32 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	// holes (places without ground) take the average of their neighbours, spreading inwards
 	std::size_t missing = std::count(heights.begin(), heights.end(), no_height);
 	if (missing == heights.size())
-		return; // no ground at all: the tile stays flat at the layer height
+	{
+		// no ground at all yet: the heights of the terrain model it waits for, else those of the tiles beside along its edges
+		for (int j = 0; j < samples; ++j)
+			for (int i = 0; i < samples; ++i)
+				if (double y; m_guess && m_guess(corner.x - i * step, corner.y - j * step, y))
+					heights[static_cast<std::size_t>(j) * samples + i] = static_cast<float>(y);
+		if (std::count(heights.begin(), heights.end(), no_height) == static_cast<std::ptrdiff_t>(heights.size()))
+		{
+			double constexpr outward{0.01};
+			for (int j = 0; j < samples; ++j)
+				for (int i = 0; i < samples; ++i)
+				{
+					if (i != 0 && i != ground_grid && j != 0 && j != ground_grid)
+						continue;
+					auto const x{corner.x - i * step + (i == 0 ? outward : i == ground_grid ? -outward : 0.0)};
+					auto const z{corner.y - j * step + (j == 0 ? outward : j == ground_grid ? -outward : 0.0)};
+					if (float y; sampled_height(Key, x, z, y))
+						heights[static_cast<std::size_t>(j) * samples + i] = y;
+				}
+		}
+		// nothing to go by yet: the tile stays flat at the layer height, and is sampled again when something comes
+		Tile.guessed = true;
+		missing = std::count(heights.begin(), heights.end(), no_height);
+		if (missing == heights.size())
+			return;
+	}
 	while (missing > 0)
 	{
 		std::vector<float> next = heights;

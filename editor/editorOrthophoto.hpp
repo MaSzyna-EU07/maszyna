@@ -99,8 +99,15 @@ class editor_orthophoto
 	void settings(config const &Config);
 	void ground_source(ground_query Query) { m_ground = std::move(Query); }
 	void height_source(height_query Query) { m_height = std::move(Query); }
+	// the heights the ground will have where there's none yet, as of the terrain model on its way: a tile laid out before its
+	// ground comes lies there, or level with the tiles beside, rather than at the height of the layer far below or above
+	void guess_source(height_query Query) { m_guess = std::move(Query); }
 	// samples the ground again (after it was edited); tiles are refitted progressively
 	void refit();
+	// the tiles lying at guessed heights sampled again where the ground has come under them
+	void ground_arrived();
+	// the tiles with the ground sampled under them, and of these the ones at guessed heights
+	std::pair<std::size_t, std::size_t> grounded() const;
 	// takes the scene geometry out of the region (e.g. when the editor is left); it's re-created on the next update
 	void detach_scene();
 	// true for geometry created by the layer, so ground queries can skip it
@@ -183,6 +190,7 @@ class editor_orthophoto
 		float height_min{0.0f};
 		float height_max{0.0f};
 		std::vector<glm::dvec3> surface;  // upward facing ground triangles clipped to the tile (3 vertices each)
+		bool guessed{false};              // no ground under it when sampled: the heights guessed, from the terrain model or the tiles beside
 		// scene geometry
 		scene::basic_section *section{nullptr}; // section holding the shape (nullptr = not in the scene)
 		scene::basic_cell *cell{nullptr};       // set instead of the section's shape list when the shape is translucent
@@ -200,6 +208,8 @@ class editor_orthophoto
 	void release_tile(tile &Tile);
 	texture_slot acquire_slot();
 	void sample_ground(tile_key const &Key, tile &Tile);
+	// the height of the ground sampled under a tile beside Own at the point, the tiles with guessed heights left out
+	bool sampled_height(tile_key const &Own, double const X, double const Z, float &Height) const;
 	void build_shape(tile_key const &Key, tile &Tile);
 	void remove_shape(tile &Tile);
 	void release_geometry(tile &Tile);
@@ -221,6 +231,7 @@ class editor_orthophoto
 	int m_texture_count{0};
 	ground_query m_ground;
 	height_query m_height;
+	height_query m_guess;
 	scene::basic_region *m_region{nullptr};                  // region the scene geometry was put into
 	std::multimap<std::size_t, gfx::geometry_handle> m_free_chunks; // geometry chunks by capacity, reused between tiles
 	// the scene opacity is baked into the textures, which means reading the tiles again; applied once the value settles
