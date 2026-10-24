@@ -48,6 +48,8 @@ bool g_loaded{false};
 //   vertex <x> <z> <offset> <R> <L in> <L out> <cant> <reverse 0/1> <compound 0/1> <share> <arcs> [<R> <L> <share>]... [spirals 1]
 //     spirals: two transition curves with no arc between them, their lengths following from R
 //     [cants <first> <arc>...]: the cants of the radii of a compound curve set one by one, below 0 the cant in proportion to the curvature
+//     [ramps <in offset> <in length> <out offset> <out length>]: the cant ramps of the curve where they don't go along its transitions,
+//       their outer ends from the start and from the end of the curve, into it above 0; a length below 0 keeps the ramp along the transition
 //   click <x y z>: a point clicked when the line was laid, its curves fitted to them
 //   element <straight|transition|arc> <vertex> <chainage> <length> <R at the start> <R at the end> <cant> <start x> <start z> <direction x> <direction z>
 //     radii signed with the turn, 0 for no curvature
@@ -147,6 +149,8 @@ void mark(scene::layer_handle const Layer)
 				for (auto const &arc : vertex.arcs)
 					text += format(" %.1f", arc.cant);
 			}
+			if (vertex.own_ramps())
+				text += format(" ramps %.3f %.3f %.3f %.3f", vertex.ramp_in_offset, vertex.ramp_in_length, vertex.ramp_out_offset, vertex.ramp_out_length);
 			lines.push_back(text);
 		}
 		for (auto const &click : entry.clicks)
@@ -168,6 +172,8 @@ void mark(scene::layer_handle const Layer)
 alignment::vertex reversed_vertex(alignment::vertex Vertex)
 {
 	std::swap(Vertex.transition_in, Vertex.transition_out);
+	std::swap(Vertex.ramp_in_offset, Vertex.ramp_out_offset);
+	std::swap(Vertex.ramp_in_length, Vertex.ramp_out_length);
 	if (Vertex.compound && false == Vertex.arcs.empty())
 	{
 		struct part
@@ -343,6 +349,8 @@ std::optional<alignment::vertex> read_vertex(std::istringstream &Line, scene::la
 			for (auto &arc : vertex.arcs)
 				Line >> arc.cant;
 		}
+		if (word == "ramps")
+			Line >> vertex.ramp_in_offset >> vertex.ramp_in_length >> vertex.ramp_out_offset >> vertex.ramp_out_length;
 	}
 	position = Context.to_world(position);
 	vertex.position = {position.x, position.z};

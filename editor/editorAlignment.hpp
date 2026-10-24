@@ -74,6 +74,14 @@ struct vertex
 	// two transition curves meeting at the curvature of the radius, with no arc between them and no cant: the bend of two straights
 	// eased the way the lines are drawn. Their lengths follow from the radius and the deflection, the ones given are left out
 	bool spirals{false};
+	// the cant ramp at each end of the curve where it doesn't go along the transition curve (ST-T1-A6 9.6 pkt 5 and 11): how far its
+	// outer end lies into the curve from the start of the curve, or from its end, below 0 out along the straight, and its length; a
+	// length below 0 keeps the ramp along the transition, as the norms recommend
+	double ramp_in_offset{0.0};
+	double ramp_in_length{-1.0};
+	double ramp_out_offset{0.0};
+	double ramp_out_length{-1.0};
+	bool own_ramps() const { return ramp_in_length >= 0.0 || ramp_out_length >= 0.0; }
 };
 
 struct design
@@ -187,6 +195,19 @@ struct result
 	std::vector<element> elements;
 	std::vector<curve_report> curves;
 	std::vector<profile_point> profile;
+	// the cant along the line, mm at the chainages, between them changing evenly; signed with the turn of the curve it belongs to,
+	// as the rolls of the paths are
+	std::vector<glm::dvec2> cants;
+	// the cant ramps at the ends of the curves, where the cant goes from 0 to the one of the curve
+	struct cant_ramp
+	{
+		int vertex{-1};
+		double from{0.0};
+		double to{0.0};
+		double cant{0.0}; // mm, at the end of the ramp in the curve
+		bool own{false}; // not along the transition curve
+	};
+	std::vector<cant_ramp> ramps;
 	double length{0.0};
 	glm::dvec3 start{0.0};
 	glm::dvec3 end{0.0};

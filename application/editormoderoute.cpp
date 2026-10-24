@@ -1227,6 +1227,22 @@ void editor_mode::draw_route_overlay() const
 				previous = next;
 			}
 		}
+		// the cant ramps: their ends across the track, the ones moved off the transitions brighter, with how the cant goes along them
+		for (auto const &ramp : result.ramps)
+		{
+			if (ramp.cant < 0.5)
+				continue;
+			auto const colour{ramp.own ? IM_COL32(255, 170, 40, 255) : IM_COL32(255, 170, 40, 120)};
+			for (auto const end : {ramp.from, ramp.to})
+			{
+				auto const station{alignment::evaluate(result, end)};
+				glm::dvec3 const across{-station.direction.z * 2.0, 0.0, station.direction.x * 2.0};
+				projection.line(drawlist, station.position - across, station.position + across, colour, 3.0f);
+			}
+			ImVec2 screen;
+			if (ramp.own && projection.project(alignment::evaluate(result, (ramp.from + ramp.to) * 0.5).position, screen))
+				drawlist->AddText({screen.x + 8.0f, screen.y + 6.0f}, colour, format(STR_C("ramp %.0f m, %.0f mm"), ramp.to - ramp.from, ramp.cant).c_str());
+		}
 		// the part of the curve whose fields are pointed at or edited in the panel, lit up and named
 		if (auto const focused{route_focused()}; false == focused.empty())
 		{
@@ -2160,6 +2176,47 @@ bool editor_mode::render_route_vertex(int const Index)
 			item_tooltip("The transition curves as long as the norms ask for at these radii and cants, the cants staying: a cant lowered asks for longer ones");
 			mark(part::whole, 0);
 		}
+	}
+	// the cant ramps at the ends of the curve: along its transitions, or where they're put, off a switch laid on a transition say
+	if (false == vertex.spirals && ImGui::TreeNode(STR_C("Cant ramps")))
+	{
+		std::vector<alignment::result::cant_ramp> ramps;
+		for (auto const &ramp : route.result.ramps)
+			if (ramp.vertex == Index)
+				ramps.push_back(ramp);
+		auto const ramp = [&](char const *Id, char const *Label, double &Offset, double &Length, std::size_t const Which, part const What) {
+			ImGui::PushID(Id);
+			auto along{Length < 0.0};
+			if (ImGui::Checkbox(Label, &along))
+			{
+				// let go of the transition where it lay along it, to be moved from there
+				Length = along ? -1.0 : Which < ramps.size() ? ramps[Which].to - ramps[Which].from : 0.0;
+				Offset = 0.0;
+				changed = true;
+			}
+			mark(What, 0);
+			item_tooltip("The norms recommend the cant ramp along the transition curve; off it, it may lie on the straight before the curve or on the arc, a switch on the transition keeping the same cant all along");
+			if (false == along)
+			{
+				ImGui::SetNextItemWidth(half);
+				changed |= ImGui::DragScalar("##offset", ImGuiDataType_Double, &Offset, 0.5f, nullptr, nullptr, STR_C("into the curve %.1f m"));
+				mark(What, 0);
+				item_tooltip("How far the outer end of the ramp lies into the curve from its end, below 0 out along the straight before it");
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth(half);
+				changed |= ImGui::DragScalar("##length", ImGuiDataType_Double, &Length, 0.5f, nullptr, nullptr, STR_C("length %.1f m"));
+				mark(What, 0);
+				item_tooltip("The length of the ramp, the cant rising evenly along it");
+				Length = std::max(0.0, Length);
+			}
+			if (Which < ramps.size() && ramps[Which].to > ramps[Which].from)
+				ImGui::TextDisabled(STR_C("km %s - %s, %.2f mm/m"), profile::format_chainage(route.origin + ramps[Which].from).c_str(), profile::format_chainage(route.origin + ramps[Which].to).c_str(),
+				                    ramps[Which].cant / (ramps[Which].to - ramps[Which].from));
+			ImGui::PopID();
+		};
+		ramp("in", STR_C("Ramp in along the transition curve"), vertex.ramp_in_offset, vertex.ramp_in_length, 0, part::entry);
+		ramp("out", STR_C("Ramp out along the transition curve"), vertex.ramp_out_offset, vertex.ramp_out_length, 1, part::exit);
+		ImGui::TreePop();
 	}
 	if (ImGui::TreeNode(STR_C("Details")))
 	{

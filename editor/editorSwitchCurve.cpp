@@ -30,17 +30,15 @@ constexpr double kAtEnd{0.3};
 constexpr double kRampClear{6.0};
 
 // the curved switches bent from the basic ones, table 11.9: the radius of the basic switch, the limiting curvature of the
-// diverging track and the least radius of the main track, the values allowed by way of exception in the brackets, 0 for none
+// diverging track and the least radius of the main track; the values in its brackets, allowed only by way of exception, are past
+// them as well
 struct bent_limit
 {
 	double radius;
 	double branch;
-	double branch_exception;
 	double main;
-	double main_exception;
 };
-constexpr bent_limit kBent[]{
-    {300.0, 4.000e-3, 4.673e-3, 1505.522, 749.722}, {500.0, 4.000e-3, 4.673e-3, 501.730, 375.638}, {760.0, 3.333e-3, 0.0, 497.250, 0.0}, {1200.0, 2.169e-3, 0.0, 750.001, 0.0}, {2500.0, 1.063e-3, 0.0, 1510.0, 0.0}};
+constexpr bent_limit kBent[]{{300.0, 4.000e-3, 1505.522}, {500.0, 4.000e-3, 501.730}, {760.0, 3.333e-3, 497.250}, {1200.0, 2.169e-3, 750.001}, {2500.0, 1.063e-3, 1510.0}};
 
 double heading_at(std::vector<track_point> const &Track, double const Station)
 {
@@ -147,8 +145,6 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 	report.curved = main.sharpest > kStraight;
 	report.transition = report.curved && std::abs(main.last - main.first) > std::max(2e-6, 0.05 * std::max(std::abs(main.first), std::abs(main.last)));
 
-	if (report.transition)
-		report.notes.emplace_back(STR_C("On a transition curve: only by way of exception, by consent of the Zaklad Linii Kolejowych (9.7 pkt 12); the plan gives the radii of both tracks at the start and at the end of the switch"));
 	// the curvature of each track of one sign all along it, the cases KZW I and KZW III of 9.7 pkt 12, not KZW II
 	if (branch.low < -kStraight && branch.high > kStraight)
 		report.warnings.emplace_back(STR_C("The curvature of the diverging track turns from one side to the other within the switch (KZW II), which isn't allowed (9.7 pkt 12)"));
@@ -162,14 +158,9 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 		else
 		{
 			if (branch.sharpest > limit->branch + 1e-9)
-				report.warnings.emplace_back(limit->branch_exception > 0.0 && branch.sharpest <= limit->branch_exception + 1e-9 ?
-				                                 format(STR_C("The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km of table 11.9, up to %.3f 1/km only by consent of the Zaklad Linii Kolejowych"), branch.sharpest * 1000.0,
-				                                        limit->branch * 1000.0, limit->branch_exception * 1000.0) :
-				                                 format(STR_C("The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km for the switch of R %.0f m (table 11.9)"), branch.sharpest * 1000.0, limit->branch * 1000.0, Radius));
+				report.warnings.emplace_back(format(STR_C("The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km for the switch of R %.0f m (table 11.9)"), branch.sharpest * 1000.0, limit->branch * 1000.0, Radius));
 			if (main.sharpest > kStraight && 1.0 / main.sharpest < limit->main - 1e-6)
-				report.warnings.emplace_back(limit->main_exception > 0.0 && 1.0 / main.sharpest >= limit->main_exception - 1e-6 ?
-				                                 format(STR_C("The main track bent to R %.0f m, below the least %.0f m of table 11.9, down to %.0f m only by consent of the Zaklad Linii Kolejowych"), 1.0 / main.sharpest, limit->main, limit->main_exception) :
-				                                 format(STR_C("The main track bent to R %.0f m, below the least %.0f m for the switch of R %.0f m (table 11.9)"), 1.0 / main.sharpest, limit->main, Radius));
+				report.warnings.emplace_back(format(STR_C("The main track bent to R %.0f m, below the least %.0f m for the switch of R %.0f m (table 11.9)"), 1.0 / main.sharpest, limit->main, Radius));
 		}
 		if (Ratio > 0.0 && Ratio < 9.41)
 			report.warnings.emplace_back(format(STR_C("A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4)"), Ratio));
@@ -177,8 +168,7 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 
 	// the cant: the same all along the switch, a ramp off it by 6 m at least or ending at its ends (11.4 pkt 7, 9.6 pkt 16-17)
 	if (std::abs(report.cant_end - report.cant_start) > 1.0)
-		report.warnings.emplace_back(format(STR_C("The cant changes within the switch, %.0f to %.0f mm: it's to stay the same over it (11.4 pkt 7); a straight ramp through the switch only by consent of the Zaklad Linii Kolejowych"),
-		                                    report.cant_start, report.cant_end));
+		report.warnings.emplace_back(format(STR_C("The cant changes within the switch, %.0f to %.0f mm: it's to stay the same over it (11.4 pkt 7)"), report.cant_start, report.cant_end));
 	auto const low{std::min(From, To)};
 	auto const high{std::max(From, To)};
 	for (auto const end : ramp_ends(Line))

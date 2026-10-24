@@ -102,6 +102,9 @@ class TSegment
     std::vector<double> m_starts; // distance from Point1 to the start of each part
     std::optional<std::pair<glm::dvec3, glm::dvec3>> m_joints[ 2 ];
     double m_dense { 0.0 };
+    // a switch makes the profiles of its rails and its bed at the mean of the rolls of its paths: lofted along a path, they're turned
+    // from it to the roll of the path there, so a switch on a cant ramp follows it; none for the other paths
+    std::optional<float> m_baked_roll;
 
     glm::dvec3 GetFirstDerivative(double const fTime) const;
 	double RombergIntegral(double const fA, double const fB) const;
@@ -111,6 +114,8 @@ class TSegment
 	glm::dvec3 RaInterpolate(double const t) const;
 	glm::dvec3 RaInterpolate0(double const t) const;
     std::size_t piece_at(double const s) const;
+    // the vertex of a profile lofted at the point and across the path there, turned from the baked roll to the one of the path at the distance
+    void roll_vertex( gfx::basic_vertex &Vertex, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const;
 
 public:
     bool bCurve = false;
@@ -200,6 +205,9 @@ public:
     void
         set_dense( double const Distance ) {
             m_dense = Distance; }
+    void
+        set_baked_roll( std::optional<float> const Roll ) {
+            m_baked_roll = Roll; }
 /*
     void
         Render();

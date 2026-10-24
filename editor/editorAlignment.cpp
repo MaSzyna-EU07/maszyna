@@ -228,6 +228,25 @@ element const &element_at(result const &Result, double const Chainage)
 	return lookup == Result.elements.begin() ? Result.elements.front() : *std::prev(lookup);
 }
 
+// the cant of the line at the chainage, signed with the turn of its curve; where it changes all at once there, the one before the
+// chainage or the one after it
+double signed_cant(result const &Result, element const &Element, double const Distance, bool const Before)
+{
+	auto const &cants{Result.cants};
+	if (cants.empty())
+		return Element.turn * element_cant(Element, Distance);
+	auto const chainage{Element.chainage + Distance};
+	auto const next{Before ? std::lower_bound(cants.begin(), cants.end(), chainage, [](glm::dvec2 const &Point, double const Value) { return Point.x < Value; })
+	                       : std::upper_bound(cants.begin(), cants.end(), chainage, [](double const Value, glm::dvec2 const &Point) { return Value < Point.x; })};
+	if (next == cants.begin())
+		return cants.front().y;
+	if (next == cants.end())
+		return cants.back().y;
+	auto const previous{std::prev(next)};
+	auto const span{next->x - previous->x};
+	return span < 1e-9 ? next->y : previous->y + (next->y - previous->y) * (chainage - previous->x) / span;
+}
+
 glm::dvec2 blossom(std::array<glm::dvec2, 4> const &Points, double const A, double const B, double const C)
 {
 	glm::dvec2 r[3], s[2];
@@ -376,6 +395,126 @@ bool meets_norms(curve_report const &Curve, design const &Design)
 
 namespace
 {
+
+// the length of a straight cant ramp the norms ask for to raise the cant at the speed: slow enough in time and along the track
+double ramp_length(double const Speed, double const Cant, limits const &Limits)
+{
+	if (Cant <= 0.0)
+		return 0.0;
+	return ceil_to(std::max(Speed * Cant / (3.6 * Limits.cant_rate), Cant / 1000.0 * Limits.ramp_factor * Speed), 5.0);
+}
+
+// the cant along the line: in each curve as its elements carry it, raised from 0 and lowered back to it on its ramps, which go along
+// its transition curves unless the vertex gives them a place and a length of their own
+void make_cants(design const &Design, result &R)
+{
+	R.cants.clear();
+	R.ramps.clear();
+	auto const push = [&](double const Chainage, double const Cant) {
+		if (false == R.cants.empty() && std::abs(R.cants.back().x - Chainage) < 1e-6 && std::abs(R.cants.back().y - Cant) < 1e-6)
+			return;
+		R.cants.push_back({Chainage, Cant});
+	};
+	double reached{0.0}; // where the cant of the curve before is down to 0 again
+	for (std::size_t k = 0; k < Design.vertices.size(); ++k)
+	{
+		auto const &vertex{Design.vertices[k]};
+		int first{-1};
+		int last{-1};
+		for (std::size_t i = 0; i < R.elements.size(); ++i)
+			if (R.elements[i].vertex == static_cast<int>(k) && R.elements[i].length > 1e-6)
+			{
+				first = first < 0 ? static_cast<int>(i) : first;
+				last = static_cast<int>(i);
+			}
+		if (first < 0)
+			continue;
+		auto const &head{R.elements[first]};
+		auto const &tail{R.elements[last]};
+		auto const start{head.chainage};
+		auto const end{tail.chainage + tail.length};
+		auto const turn{static_cast<double>(head.turn)};
+		// the transitions at the ends: the first and the last element, where the curvature grows from 0 and goes back to it
+		auto const entry{head.kind == element_kind::transition_in || (head.kind == element_kind::spiral && head.curvature_start == 0.0 && head.curvature_end > 0.0) ? head.length : 0.0};
+		auto const exit{tail.kind == element_kind::transition_out || (tail.kind == element_kind::spiral && tail.curvature_end == 0.0 && tail.curvature_start > 0.0) ? tail.length : 0.0};
+		auto const cantin{element_cant(head, entry)};
+		auto const cantout{element_cant(tail, tail.length - exit)};
+		if (std::max(cantin, cantout) < 0.5)
+		{
+			reached = end;
+			continue;
+		}
+		result::cant_ramp in{static_cast<int>(k), start, start + entry, cantin, vertex.ramp_in_length >= 0.0};
+		result::cant_ramp out{static_cast<int>(k), end - exit, end, cantout, vertex.ramp_out_length >= 0.0};
+		if (in.own)
+		{
+			in.from = start + vertex.ramp_in_offset;
+			in.to = in.from + vertex.ramp_in_length;
+		}
+		if (out.own)
+		{
+			out.to = end - vertex.ramp_out_offset;
+			out.from = out.to - vertex.ramp_out_length;
+		}
+		// the ramps kept off the curve before, within the line and off each other
+		if (in.from < reached - 1e-6)
+		{
+			R.warnings.emplace_back(R.ramps.empty() ? format(STR_C("Vertex %zu: the cant ramp in reaches back past the start of the line, cut %.1f m shorter"), k + 1, reached - in.from) :
+			                                          format(STR_C("Vertex %zu: the cant ramp in reaches back into the curve before it, cut %.1f m shorter"), k + 1, reached - in.from));
+			in.from = std::min(reached, in.to);
+		}
+		if (out.to > R.length + 1e-6)
+		{
+			R.warnings.emplace_back(format(STR_C("Vertex %zu: the cant ramp out reaches past the end of the line, cut %.1f m shorter"), k + 1, out.to - R.length));
+			out.to = std::max(R.length, out.from);
+		}
+		if (in.to > out.from + 1e-6)
+		{
+			R.warnings.emplace_back(format(STR_C("Vertex %zu: the cant ramps in and out of the curve overlap by %.1f m"), k + 1, in.to - out.from));
+			auto const middle{(in.to + out.from) * 0.5};
+			in.to = std::max(in.from, middle);
+			out.from = std::min(out.to, middle);
+		}
+		auto const speed{std::max(1.0, Design.speed)};
+		for (auto const *ramp : {&in, &out})
+			if (ramp->own && Design.norms.checked)
+				if (auto const required{ramp_length(speed, ramp->cant, Design.norms)}; ramp->to - ramp->from + 1e-6 < required)
+					R.warnings.emplace_back(format(STR_C("Vertex %zu: the cant ramp of %.1f m is shorter than the %.0f m a cant of %.0f mm asks for"), k + 1, ramp->to - ramp->from, required, ramp->cant));
+		// the curve between its ramps as its elements carry the cant, the transitions at its ends with the full cant of the curve where
+		// the ramps went off them
+		push(in.from, 0.0);
+		push(in.to, turn * cantin);
+		auto const low{std::max(in.to, start + entry)};
+		auto const high{std::min(out.from, end - exit)};
+		if (high > low + 1e-6)
+		{
+			push(low, turn * cantin);
+			for (auto i{first}; i <= last; ++i)
+			{
+				auto const &e{R.elements[i]};
+				for (auto const distance : {0.0, e.length})
+					if (auto const chainage{e.chainage + distance}; chainage > low + 1e-6 && chainage < high - 1e-6)
+						push(chainage, turn * element_cant(e, distance));
+			}
+			push(high, turn * cantout);
+		}
+		push(out.from, turn * cantout);
+		push(out.to, 0.0);
+		R.ramps.push_back(in);
+		R.ramps.push_back(out);
+		reached = out.to;
+		// the time the cant takes to rise along the ramps of their own
+		for (auto &curve : R.curves)
+			if (curve.vertex == static_cast<int>(k))
+			{
+				if (in.own && in.to > in.from)
+					curve.cant_rate_in = cantin * speed / 3.6 / (in.to - in.from);
+				if (out.own && out.to > out.from)
+					curve.cant_rate_out = cantout * speed / 3.6 / (out.to - out.from);
+			}
+	}
+	std::stable_sort(R.cants.begin(), R.cants.end(), [](glm::dvec2 const &A, glm::dvec2 const &B) { return A.x < B.x; });
+}
 
 result fit_between(design const &Design)
 {
@@ -953,6 +1092,7 @@ result fit_between(design const &Design)
 		r.warnings.emplace_back(format(STR_C("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly"), Design.start_radius));
 	if (Design.end_radius > 0.0 && Design.end_radius < 10000.0)
 		r.warnings.emplace_back(format(STR_C("The adjoining track at the end is curved (R %.0f m), the curvature changes abruptly"), Design.end_radius));
+	make_cants(Design, r);
 
 	r.valid = r.errors.empty() && r.length > 1e-3;
 	return r;
@@ -1828,8 +1968,10 @@ station evaluate(result const &Result, double const Chainage)
 	element_point(e, Result.shape, distance, position, direction);
 	result.position = {position.x, elevation(Result, s), position.y};
 	result.direction = glm::normalize(glm::dvec3{direction.x, grade(Result, s), direction.y});
-	result.cant = element_cant(e, distance);
-	result.turn = e.turn;
+	// a cant ramp of its own may lie on the straight before the curve, its cant turned the way the curve turns
+	auto const cant{signed_cant(Result, e, distance, false)};
+	result.cant = std::abs(cant);
+	result.turn = e.turn != 0 ? e.turn : (cant > 0.0) - (cant < 0.0);
 	return result;
 }
 
@@ -2435,6 +2577,12 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 		spans.insert(std::next(Span), second);
 	};
 	double constexpr margin{0.01};
+	// the ends of the cant ramps of their own, where the cant starts or stops changing along a straight, a transition or an arc
+	for (auto const &ramp : Result.ramps)
+		for (auto const chainage : {ramp.from, ramp.to})
+			if (auto inside{std::find_if(spans.begin(), spans.end(), [&](span const &Span) { return chainage_from(Span) < chainage - margin && chainage_to(Span) > chainage + margin; })};
+			    ramp.own && inside != spans.end())
+				split(inside, chainage);
 	for (auto const chainage : Breaks)
 	{
 		auto inside{std::find_if(spans.begin(), spans.end(), [&](span const &Span) { return chainage_from(Span) < chainage - margin && chainage_to(Span) > chainage + margin; })};
@@ -2566,15 +2714,16 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 		auto const y1{y0 + grade(Result, s0) * glm::distance(p0, p1)};
 		auto const y2{y3 - grade(Result, s3) * glm::distance(p2, p3)};
 
-		auto const roll = [&](double const Cant) { return static_cast<float>(e.turn * glm::degrees(std::asin(std::clamp(Cant / Design.norms.gauge, -1.0, 1.0)))); };
+		// the cant signed with the turn, a ramp of its own on a straight too; where it changes all at once, the one of the piece itself
+		auto const roll = [&](double const Cant) { return static_cast<float>(glm::degrees(std::asin(std::clamp(Cant / Design.norms.gauge, -1.0, 1.0)))); };
 
 		segment_data path;
 		path.points[segment_data::point::start] = {p0.x, y0, p0.y};
 		path.points[segment_data::point::end] = {p3.x, y3, p3.y};
 		path.points[segment_data::point::control1] = glm::dvec3{p1.x, y1, p1.y} - path.points[segment_data::point::start];
 		path.points[segment_data::point::control2] = glm::dvec3{p2.x, y2, p2.y} - path.points[segment_data::point::end];
-		path.rolls[0] = roll(element_cant(e, piece.from));
-		path.rolls[1] = roll(element_cant(e, piece.to));
+		path.rolls[0] = roll(signed_cant(Result, e, piece.from, false));
+		path.rolls[1] = roll(signed_cant(Result, e, piece.to, true));
 		path.radius = e.kind == element_kind::straight ? 0.f : static_cast<float>(e.radius);
 		if (e.kind == element_kind::spiral)
 		{

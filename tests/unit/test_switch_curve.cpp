@@ -55,7 +55,6 @@ TEST_CASE("switch on a curve: the curvatures of its tracks on a transition curve
 	CHECK(report.branch_start < 0.0);
 	CHECK(report.branch_end < 0.0);
 	CHECK(false == says(report.warnings, "KZW II"));
-	CHECK(says(report.notes, "transition curve"));
 	// laid on the ramp, the cant changing under it
 	CHECK(report.cant_start == doctest::Approx(25.0).epsilon(0.02));
 	CHECK(report.cant_end == doctest::Approx(40.0).epsilon(0.02));

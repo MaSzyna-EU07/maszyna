@@ -1086,6 +1086,13 @@ void TTrack::init_segments( bool const Initial ) {
                 fTexHeightOffset = texheightoffset;
                 SwitchExtension->Segments[ index ]->InitChain( std::move( chain ) );
             }
+            // the profiles of the switch are made at the mean of the rolls of its paths; lofted, they're turned from it to the roll of
+            // each path along it, so a switch on a cant ramp follows the ramp to its ends
+            float mean1, mean2;
+            profile_rolls( mean1, mean2 );
+            for( std::size_t index = 0; index < 2; ++index ) {
+                SwitchExtension->Segments[ index ]->set_baked_roll( mean1 );
+            }
         }
 
         if( Initial ) {

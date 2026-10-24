@@ -2,7 +2,9 @@
 #include "doctest.h"
 #include "editor/editorAlignment.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace {
 
@@ -390,4 +392,49 @@ TEST_CASE("alignment: bends clicked close along a curve make one compound curve,
 			CHECK(a.curvature_end == doctest::Approx(b.curvature_start).epsilon(1e-6));
 	}
 	CHECK(design.vertices.size() < 12);
+}
+
+TEST_CASE("alignment: a cant ramp moved off the transition curve onto the straight before it") {
+	auto design{straights({300.0, 300.0}, {30.0 * pi / 180.0}, 80.0)};
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 800.0;
+	vertex.transition_in = vertex.transition_out = 60.0;
+	vertex.cant = 60.0;
+	auto const along{alignment::compute(design)};
+	REQUIRE(along.valid);
+	REQUIRE(along.ramps.size() == 2);
+	auto const start{along.ramps.front().from};
+	CHECK(along.ramps.front().to - start == doctest::Approx(60.0));
+	CHECK(alignment::evaluate(along, start + 30.0).cant == doctest::Approx(30.0));
+
+	// the whole ramp on the straight, the transition with the full cant all along it, as a switch laid on it wants it
+	vertex.ramp_in_offset = -40.0;
+	vertex.ramp_in_length = 40.0;
+	auto const moved{alignment::compute(design)};
+	REQUIRE(moved.valid);
+	REQUIRE(moved.ramps.size() == 2);
+	CHECK(moved.ramps.front().own);
+	CHECK(moved.ramps.front().from == doctest::Approx(start - 40.0));
+	CHECK(moved.ramps.front().to == doctest::Approx(start));
+	CHECK(alignment::evaluate(moved, start - 50.0).cant == doctest::Approx(0.0));
+	CHECK(alignment::evaluate(moved, start - 20.0).cant == doctest::Approx(30.0));
+	CHECK(alignment::evaluate(moved, start + 10.0).cant == doctest::Approx(60.0));
+	CHECK(alignment::evaluate(moved, start + 50.0).cant == doctest::Approx(60.0));
+	// on the straight the cant leans the way the curve turns
+	CHECK(alignment::evaluate(moved, start - 20.0).turn == alignment::evaluate(moved, start + 100.0).turn);
+	// 40 m are too short to raise 60 mm at 80 km/h
+	CHECK(std::any_of(moved.warnings.begin(), moved.warnings.end(), [](std::string const &Warning) { return Warning.find("cant ramp of") != std::string::npos; }));
+
+	// the paths end where the ramp starts and ends, their rolls going along it
+	auto const paths{alignment::pieces(moved, design, alignment::minimum_pieces(moved, design))};
+	auto const meets = [&](double const Chainage) {
+		auto const point{alignment::evaluate(moved, Chainage).position};
+		return std::any_of(paths.begin(), paths.end(), [&](segment_data const &Path) { return glm::distance(Path.points[segment_data::point::start], point) < 0.05; });
+	};
+	CHECK(meets(start - 40.0));
+	CHECK(meets(start));
+	for (std::size_t i = 1; i < paths.size(); ++i)
+		CHECK(paths[i].rolls[0] == doctest::Approx(paths[i - 1].rolls[1]).epsilon(1e-4));
+	auto const turned{std::max_element(paths.begin(), paths.end(), [](segment_data const &A, segment_data const &B) { return std::abs(A.rolls[1]) < std::abs(B.rolls[1]); })};
+	CHECK(std::abs(turned->rolls[1]) == doctest::Approx(glm::degrees(std::asin(60.0 / design.norms.gauge))).epsilon(1e-3));
 }

@@ -578,6 +578,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         pt,
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm1 * ShapePoints[ j ].texture.x + m1 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv1 } );
+                    roll_vertex( Output.back(), pos1, parallel1, s - step );
                 }
                 // jeśli jest wskaźnik do tablicy
                 if (p && *p && !j) // to dla pierwszego punktu
@@ -596,6 +597,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         pt,
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm2 * ShapePoints[ j ].texture.x + m2 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv2 } );
+                    roll_vertex( Output.back(), pos2, parallel2, s );
                 }
                 // jeśli jest wskaźnik do tablicy
                 // to dla pierwszego punktu
@@ -618,6 +620,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         pt,
                         glm::normalize( norm ),
                         glm::vec2 { ShapePoints[ j ].texture.x / texturescale, tv1 } );
+                    roll_vertex( Output.back(), pos1, parallel1, s - step );
 
                     pt = parallel2 * ( jmm2 * ( ShapePoints[ j ].position.x - fOffsetX.first ) + m2 * ( ShapePoints[ j ].position.x - fOffsetX.second ) ) + pos2;
                     pt.y += ShapePoints[ j ].position.y;
@@ -628,6 +631,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         pt,
                         glm::normalize( norm ),
                         glm::vec2 { ShapePoints[ j ].texture.x / texturescale, tv2 } );
+                    roll_vertex( Output.back(), pos2, parallel2, s );
                 }
             }
         }
@@ -637,6 +641,25 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
     }
     return true;
 };
+
+void TSegment::roll_vertex( gfx::basic_vertex &Vertex, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const {
+    if( false == m_baked_roll.has_value() ) {
+        return;
+    }
+    auto const delta { GetRoll( std::clamp( Distance, 0.0, fLength ) ) - *m_baked_roll };
+    if( std::abs( delta ) < 1e-6f ) {
+        return;
+    }
+    auto const c { std::cos( delta ) };
+    auto const s { std::sin( delta ) };
+    // across the path and up turned the way the profiles are turned by the roll, along the path as it was
+    auto const turn = [&]( glm::vec3 const &Vector ) {
+        auto const across { glm::dot( Vector, Parallel ) };
+        auto const along { Vector - Parallel * across - glm::vec3 { 0.f, Vector.y, 0.f } };
+        return along + Parallel * ( across * c + Vector.y * s ) + glm::vec3 { 0.f, -across * s + Vector.y * c, 0.f }; };
+    Vertex.position = Position + turn( Vertex.position - Position );
+    Vertex.normal = turn( Vertex.normal );
+}
 
 bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, double fTextureLength, int const Steps ) const
 {
@@ -675,7 +698,8 @@ bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Ori
         point.y += rest * from.position.y + Share * to.position.y;
         auto normal { ( rest * from.normal.x + Share * to.normal.x ) * Parallel };
         normal.y += rest * from.normal.y + Share * to.normal.y;
-        Output.emplace_back( point, glm::normalize( normal ), glm::vec2 { rest * from.texture.x + Share * to.texture.x, V } ); };
+        Output.emplace_back( point, glm::normalize( normal ), glm::vec2 { rest * from.texture.x + Share * to.texture.x, V } );
+        roll_vertex( Output.back(), Position, Parallel, Share * fLength ); };
 
     glm::vec3 pos1, pos2, parallel1, parallel2;
     station( 0, pos1, parallel1 );
@@ -916,6 +940,9 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             }
             Ring.emplace_back( pt, glm::normalize( norm ), glm::vec2{ shape.texture.x, 0.f } );
             Wear.push_back( Span.rampwidth != 0.0 ? static_cast<float>( std::clamp( ( Span.rampwidth > 0.0 ? outside - worn : worn - outside ) / std::abs( Span.rampwidth ) + 1.0, 0.0, 1.0 ) ) : 1.f );
+        }
+        for( auto &vertex : Ring ) {
+            roll_vertex( vertex, position, parallel, Distance );
         }
     };
 

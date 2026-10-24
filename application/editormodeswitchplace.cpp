@@ -1480,8 +1480,6 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	if (made.size() == 1)
 		tool.status = format(STR_C("Switch %s inserted into the curve, Ctrl+Z takes it back"), made.front()->name().c_str());
 	// what the norms say of it stays in the status
-	if (report.transition)
-		tool.status += "\n" + report.notes.front();
 	for (auto const &warning : report.warnings)
 		tool.status += "\n" + warning;
 	auto const placed{created};

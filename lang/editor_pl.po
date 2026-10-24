@@ -11975,8 +11975,6 @@ msgstr "W%d  R%d %.0f m  przechyłka %.0f mm"
 msgid "W%d  R %.0f m  cant %.0f mm"
 msgstr "W%d  R %.0f m  przechyłka %.0f mm"
 
-msgid "On a transition curve: only by way of exception, by consent of the Zaklad Linii Kolejowych (9.7 pkt 12); the plan gives the radii of both tracks at the start and at the end of the switch"
-msgstr "Na krzywej przejściowej: tylko wyjątkowo, za zgodą Zakładu Linii Kolejowych (9.7 pkt 12); na planie podaje się promienie obu torów na początku i na końcu rozjazdu"
 
 msgid "The curvature of the diverging track turns from one side to the other within the switch (KZW II), which isn't allowed (9.7 pkt 12)"
 msgstr "Krzywizna toru zwrotnego zmienia znak w obrębie rozjazdu (KZW II), co jest niedozwolone (9.7 pkt 12)"
@@ -11987,14 +11985,10 @@ msgstr "Krzywizna toru zasadniczego zmienia znak w obrębie rozjazdu, co jest ni
 msgid "The basic switch of R %.0f m isn't in table 11.9, its limiting curvature isn't checked"
 msgstr "Rozjazdu podstawowego R %.0f m nie ma w tabeli 11.9, jego krzywizna graniczna nie jest sprawdzana"
 
-msgid "The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km of table 11.9, up to %.3f 1/km only by consent of the Zaklad Linii Kolejowych"
-msgstr "Krzywizna toru zwrotnego %.3f 1/km ponad graniczną %.3f 1/km z tabeli 11.9; do %.3f 1/km tylko za zgodą Zakładu Linii Kolejowych"
 
 msgid "The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km for the switch of R %.0f m (table 11.9)"
 msgstr "Krzywizna toru zwrotnego %.3f 1/km ponad graniczną %.3f 1/km dla rozjazdu R %.0f m (tabela 11.9)"
 
-msgid "The main track bent to R %.0f m, below the least %.0f m of table 11.9, down to %.0f m only by consent of the Zaklad Linii Kolejowych"
-msgstr "Tor zasadniczy wygięty do R %.0f m, poniżej najmniejszego %.0f m z tabeli 11.9; do %.0f m tylko za zgodą Zakładu Linii Kolejowych"
 
 msgid "The main track bent to R %.0f m, below the least %.0f m for the switch of R %.0f m (table 11.9)"
 msgstr "Tor zasadniczy wygięty do R %.0f m, poniżej najmniejszego %.0f m dla rozjazdu R %.0f m (tabela 11.9)"
@@ -12002,8 +11996,6 @@ msgstr "Tor zasadniczy wygięty do R %.0f m, poniżej najmniejszego %.0f m dla r
 msgid "A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4)"
 msgstr "Rozjazdu 1:%.3f nie łukuje się w torach szlakowych i głównych: ani 1:9,403, ani o skosie większym niż 1:9 (11.4 pkt 4)"
 
-msgid "The cant changes within the switch, %.0f to %.0f mm: it's to stay the same over it (11.4 pkt 7); a straight ramp through the switch only by consent of the Zaklad Linii Kolejowych"
-msgstr "Przechyłka zmienia się w obrębie rozjazdu, z %.0f na %.0f mm: ma być stała na całej jego długości (11.4 pkt 7); prostoliniowa rampa w rozjeździe tylko za zgodą Zakładu Linii Kolejowych"
 
 msgid "A cant ramp starts or ends within the switch, %.1f m from its start: at the start or the end of the switch, or 6 m off it at least (9.6 pkt 16-17)"
 msgstr "Rampa przechyłkowa zaczyna się albo kończy w obrębie rozjazdu, %.1f m od jego początku: ma się zaczynać na początku albo końcu rozjazdu, albo co najmniej 6 m od niego (9.6 pkt 16-17)"
@@ -12046,3 +12038,51 @@ msgstr "tor zwrotny R %s na początku, %s na końcu"
 
 msgid "cant %.0f mm at the start, %.0f mm at the end"
 msgstr "przechyłka %.0f mm na początku, %.0f mm na końcu"
+
+msgid "The cant changes within the switch, %.0f to %.0f mm: it's to stay the same over it (11.4 pkt 7)"
+msgstr "Przechyłka zmienia się w obrębie rozjazdu, z %.0f na %.0f mm: ma być stała na całej jego długości (11.4 pkt 7)"
+
+msgid "Vertex %zu: the cant ramp in reaches back past the start of the line, cut %.1f m shorter"
+msgstr "Wierzchołek %zu: rampa wejściowa sięga przed początek linii, skrócona o %.1f m"
+
+msgid "Vertex %zu: the cant ramp in reaches back into the curve before it, cut %.1f m shorter"
+msgstr "Wierzchołek %zu: rampa wejściowa sięga w łuk przed nim, skrócona o %.1f m"
+
+msgid "Vertex %zu: the cant ramp out reaches past the end of the line, cut %.1f m shorter"
+msgstr "Wierzchołek %zu: rampa wyjściowa sięga za koniec linii, skrócona o %.1f m"
+
+msgid "Vertex %zu: the cant ramps in and out of the curve overlap by %.1f m"
+msgstr "Wierzchołek %zu: rampy wejściowa i wyjściowa łuku zachodzą na siebie o %.1f m"
+
+msgid "Vertex %zu: the cant ramp of %.1f m is shorter than the %.0f m a cant of %.0f mm asks for"
+msgstr "Wierzchołek %zu: rampa przechyłkowa %.1f m jest krótsza niż %.0f m, których wymaga przechyłka %.0f mm"
+
+msgid "Cant ramps"
+msgstr "Rampy przechyłkowe"
+
+msgid "Ramp in along the transition curve"
+msgstr "Rampa wejściowa wzdłuż krzywej przejściowej"
+
+msgid "Ramp out along the transition curve"
+msgstr "Rampa wyjściowa wzdłuż krzywej przejściowej"
+
+msgid "The norms recommend the cant ramp along the transition curve; off it, it may lie on the straight before the curve or on the arc, a switch on the transition keeping the same cant all along"
+msgstr "Normy zalecają rampę przechyłkową wzdłuż krzywej przejściowej; poza nią może leżeć na prostej przed łukiem albo na łuku, a rozjazd na przejściówce ma wtedy na całej długości tę samą przechyłkę"
+
+msgid "into the curve %.1f m"
+msgstr "w głąb łuku %.1f m"
+
+msgid "How far the outer end of the ramp lies into the curve from its end, below 0 out along the straight before it"
+msgstr "Jak daleko w głąb łuku od jego końca leży zewnętrzny koniec rampy; poniżej 0 na prostej przed łukiem"
+
+msgid "length %.1f m"
+msgstr "długość %.1f m"
+
+msgid "The length of the ramp, the cant rising evenly along it"
+msgstr "Długość rampy, przechyłka rośnie wzdłuż niej równomiernie"
+
+msgid "km %s - %s, %.2f mm/m"
+msgstr "km %s - %s, %.2f mm/m"
+
+msgid "ramp %.0f m, %.0f mm"
+msgstr "rampa %.0f m, %.0f mm"
