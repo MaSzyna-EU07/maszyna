@@ -245,7 +245,7 @@ bool editor_map::render(glm::vec2 const &Size)
 	drawlist->PushClipRect(origin, ImVec2(origin.x + Size.x, origin.y + Size.y), true);
 	drawlist->AddRectFilled(origin, ImVec2(origin.x + Size.x, origin.y + Size.y), IM_COL32(200, 214, 222, 255));
 	if (m_texture != 0)
-		drawlist->AddImage(static_cast<ImTextureID>(m_texture), to_screen({m_image_low.x, m_image_high.y}), to_screen({m_image_high.x, m_image_low.y}), ImVec2(0, 1), ImVec2(1, 0));
+		drawlist->AddImage(static_cast<ImTextureID>(m_texture), to_screen({m_image_low.x, m_image_high.y}), to_screen({m_image_high.x, m_image_low.y}), ImVec2(0, 0), ImVec2(1, 1));
 	if (m_picked)
 	{
 		auto const at{to_screen(m_point)};
@@ -294,6 +294,9 @@ void editor_map::request(glm::vec2 const &Size)
 		if (false == editor_http_get(url, data, result.error))
 			return result;
 		int w{0}, h{0}, components{0};
+		// the texture loader turns the stb flip on for the whole process only once it loads its first texture: this thread
+		// keeps the north edge in the first row whatever it is by then
+		stbi_set_flip_vertically_on_load_thread(0);
 		auto *pixels{stbi_load_from_memory(data.data(), static_cast<int>(data.size()), &w, &h, &components, 4)};
 		if (pixels == nullptr)
 		{
