@@ -28,6 +28,16 @@ struct loft_end {
     double bend { 0.0 };
 };
 
+// a rail profile made over below its head into a lower section, as the wing rails of a frog of the section of the blades: its web, its
+// foot inwards and outwards as many times as thick and wide, the top of the edges of its foot and the root of its web as many times as high
+struct loft_low {
+    double web { 1.0 };
+    double inward { 1.0 };
+    double outward { 1.0 };
+    double edge { 1.0 };
+    double root { 1.0 };
+};
+
 struct loft_span {
     int side { 1 };
     float halfwidth { 0.f };
@@ -47,6 +57,10 @@ struct loft_span {
     loft_end toend;
     knots::line drops;
     glm::dvec2 head { 0.0 };
+    double rise { 0.0 }; // how far the foot of the profile is raised, the web below the head (head.x) shortened by as much
+    knots::line rises; // along the span, in place of rise where given
+    knots::line lows; // along the span, how much of the low section the profile is made over into below its head, 0 to 1
+    loft_low low; // what the profile is made over into along lows
 };
 
 struct segment_data {

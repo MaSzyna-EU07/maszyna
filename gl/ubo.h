@@ -506,6 +506,24 @@ namespace gl
     const GLuint PARTICLE_OUTPUT_SSBO_BINDING = 12; // what the draw reads, a particle_draw per particle drawn
     const GLuint PARTICLE_COMMAND_SSBO_BINDING = 13; // the indirect draw command, whose instances the passes count
 
+    // the instances of the timbers of the tracks (opengl46_timbers, timber_instances.comp): work group of the pass and the binding
+    // points of its buffers, ones of the instance culling, which binds its buffers before every use; the pass binds its own
+    const GLuint TIMBER_GROUP_SIZE = 64;
+    const GLuint TIMBER_LOCAL_SSBO_BINDING = 9; // the transforms of the instances of the tracks, relative to the origins of the tracks
+    const GLuint TIMBER_RANGE_SSBO_BINDING = 11; // the runs of them drawn, a timber_range each
+    const GLuint TIMBER_OUTPUT_SSBO_BINDING = 12; // the instance buffer of the frame, their modelviews written there
+    const GLuint TIMBER_ORIGIN_SSBO_BINDING = 13; // the modelviews of the origins of the cells of the runs
+
+    // layout std430: GLSL timber_range. a run of instances: count of them from source in the transforms, to target in the output,
+    // turned by the modelview of origin
+    struct timber_range
+    {
+        uint32_t source;
+        uint32_t count;
+        uint32_t target;
+        uint32_t origin;
+    };
+
     // layout std430: GLSL smoke_particle_s
     struct particle_smoke
     {

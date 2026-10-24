@@ -29,6 +29,11 @@ void gl::glsl_common_setup()
     "#define HIZ_GROUP_SIZE " + std::to_string(HIZ_GROUP_SIZE) + "\n" +
     "#define SHADOW_FIT_GROUP_SIZE " + std::to_string(SHADOW_FIT_GROUP_SIZE) + "\n" +
     "#define SHADOW_FIT_SSBO_BINDING " + std::to_string(SHADOW_FIT_SSBO_BINDING) + "\n" +
+    "#define TIMBER_GROUP_SIZE " + std::to_string(TIMBER_GROUP_SIZE) + "\n" +
+    "#define TIMBER_LOCAL_SSBO_BINDING " + std::to_string(TIMBER_LOCAL_SSBO_BINDING) + "\n" +
+    "#define TIMBER_RANGE_SSBO_BINDING " + std::to_string(TIMBER_RANGE_SSBO_BINDING) + "\n" +
+    "#define TIMBER_OUTPUT_SSBO_BINDING " + std::to_string(TIMBER_OUTPUT_SSBO_BINDING) + "\n" +
+    "#define TIMBER_ORIGIN_SSBO_BINDING " + std::to_string(TIMBER_ORIGIN_SSBO_BINDING) + "\n" +
     "#define PARTICLE_GROUP_SIZE " + std::to_string(PARTICLE_GROUP_SIZE) + "\n" +
     "#define PARTICLE_SSBO_BINDING " + std::to_string(PARTICLE_SSBO_BINDING) + "\n" +
     "#define PARTICLE_SOURCE_SSBO_BINDING " + std::to_string(PARTICLE_SOURCE_SSBO_BINDING) + "\n" +

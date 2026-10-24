@@ -10,12 +10,14 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "world/TrackSleepers.h"
+#include "world/SleeperFastenings.h"
 #include "world/SleeperGeometry.h"
 #include "world/SleeperLayout.h"
 #include "world/SleeperPaths.h"
 #include "world/SleeperRules.h"
 #include "world/SleeperWorker.h"
 #include "world/Track.h"
+#include "world/TrackRails.h"
 #include "simulation/simulation.h"
 #include "scene/scene.h"
 #include "utilities/utilities.h"
@@ -24,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 
 namespace track_sleepers {
@@ -63,6 +66,33 @@ bool lays( TTrack const &Track ) {
     return bedded( Track ) && timber_model( Track ) != nullptr;
 }
 
+double blade_rise( TTrack const &Track ) {
+
+    return ( Track.eType == tt_Switch ? wing_rise( Track ) : 0.0 );
+}
+
+double wing_rise( TTrack const &Track ) {
+
+    return ( lays( Track ) ? timber_model( Track )->slide : 0.0 );
+}
+
+glm::dvec2 stock_stretch( TTrack const &Track, int const Path, int const Side ) {
+
+    if( Track.eType != tt_Switch || Track.SwitchExtension == nullptr || Side != ( Track.SwitchExtension->RightSwitch == ( Path == 1 ) ? 1 : -1 ) ) {
+        return glm::dvec2 { -1.0 };
+    }
+    auto const &shape { Track.blade( 1 - Path ) };
+    return { std::max( 0.0, ( shape.valid ? shape.tip : 0.0 ) - chair_lead ), track_rails::blade_length( Track, 1 - Path ) };
+}
+
+double blade_heel( TTrack const &Track, int const Path, int const Side ) {
+
+    if( Track.eType != tt_Switch || Track.SwitchExtension == nullptr || Side != ( Track.SwitchExtension->RightSwitch == ( Path == 0 ) ? 1 : -1 ) ) {
+        return 0.0;
+    }
+    return track_rails::blade_length( Track, Path );
+}
+
 std::vector<std::pair<double, double>> shared_zones( TTrack const &Track, int const Path ) {
 
     std::vector<std::pair<double, double>> result;
@@ -93,29 +123,26 @@ std::pair<double, double> shared_zone( TTrack const &Track, int const Path ) {
     return { zones.front().first, zones.back().second };
 }
 
-void lay( TTrack &Track ) {
+namespace {
+
+// the instances made so far, of all the tracks
+std::uint64_t makings { 0 };
+
+// the beams as instances of the parts of the model of the track: those of the fastenings with them, or left for later and the beams
+// kept for them meanwhile
+void instance( TTrack &Track, std::vector<beam> &&Beams, bool const Fastened ) {
 
     auto &laid { Track.m_sleepers3d };
-    std::vector<beam> placed;
-    if( laid.active && in_background() && timber_model( Track ) != nullptr ) {
-        // worked out in the background; till then the track keeps what it has, and tries again
-        auto beams { laid_out( Track ) };
-        if( false == beams.has_value() ) {
-            ask_layout( Track );
-            return;
-        }
-        placed = std::move( *beams );
-    }
-    laid.dirty = false;
+    laid.made = ++makings;
     for( auto &instances : laid.instances ) {
         instances.clear();
     }
     laid.whole.clear();
     laid.plain.clear();
     laid.chunks.clear();
-    laid.timbers = timber_model( Track );
-    laid.plains = plain_model( Track );
-    if( false == laid.active || laid.timbers == nullptr ) {
+    laid.fastened = true;
+    std::vector<beam> {}.swap( laid.beams );
+    if( laid.timbers == nullptr ) {
         return;
     }
     // the sleepers of the model of the track itself (sleepermodel) at the height they're drawn at without the 3D sleepers: the
@@ -123,16 +150,9 @@ void lay( TTrack &Track ) {
     auto const ownplains { laid.plains != nullptr && Track.m_sleeper_enabled && laid.plains != plain_model() };
     auto const plainlift { ownplains ? Track.rail_height() + Track.m_sleeper_offset.z : 0.f };
     auto const &parts { *laid.timbers };
-    if( auto const panel { panel_off_plane( Track ) }; panel.first > coplanar_tolerance ) {
-        WriteLog(
-            "sleepers3d: switch \"" + Track.name() + "\" has its paths " + to_string( panel.first * 1000.0, 1 ) + " mm off one plane "
-            + to_string( panel.second, 2 ) + " m along, where they share the timbers of its panel" );
-    }
-    laid.laying = true;
-    auto const beams { in_background() ? std::move( placed ) : place( Track ) };
-    laid.laying = false;
-    // the layout of the cluster isn't needed by this track any more, the instances below are what's drawn
-    forget_layout( Track );
+
+    // the rails around, where they lie on the timbers, for the fastenings of the model; found at the first timber, none for plain sleepers
+    std::optional<fastened_rails> rails;
 
     auto const partlength = [&]( int const Part ) {
         return static_cast<double>( parts.spans[ Part ].y - parts.spans[ Part ].x ); };
@@ -166,7 +186,7 @@ void lay( TTrack &Track ) {
         runbeams.clear();
     };
 
-    for( auto const &beam : beams ) {
+    for( auto const &beam : Beams ) {
         if( runbeams.empty() ) {
             for( int part = 0; part < part_count; ++part ) {
                 run.first[ part ] = static_cast<std::uint32_t>( laid.instances[ part ].size() );
@@ -232,6 +252,24 @@ void lay( TTrack &Track ) {
             put( part_end, scale, parts.spans[ part_end ].x, -half );
             put( part_begin, scale, parts.spans[ part_begin ].y, half );
         }
+        if( Fastened && parts.fastened() && false == ( beam.plain && laid.plains != nullptr ) ) {
+            if( false == rails.has_value() ) {
+                rails.emplace( Track );
+            }
+            // each square to its rail on the top of the timber, the plate under the foot of the rail
+            for( auto const &fastening : rails->on( beam, parts ) ) {
+                auto across { glm::dvec3 { fastening.across.x, 0.0, fastening.across.y } };
+                across = glm::normalize( across - y * glm::dot( across, y ) );
+                glm::mat4 place { 1.f };
+                place[ 0 ] = glm::vec4 { glm::vec3 { across }, 0.f };
+                place[ 1 ] = glm::vec4 { glm::vec3 { y }, 0.f };
+                place[ 2 ] = glm::vec4 { glm::vec3 { glm::cross( across, y ) }, 0.f };
+                place[ 3 ] = glm::vec4 { glm::vec3 { fastening.point - Track.m_origin }, 1.f };
+                auto const pivot { glm::vec3 { fastening.pivot, parts.heights[ fastening.part ].x, 0.f } };
+                laid.instances[ fastening.part ].emplace_back(
+                    glm::translate( glm::scale( glm::translate( place, glm::vec3 { fastening.shift, fastening.lift - parts.seat, 0.f } + pivot ), glm::vec3 { fastening.scale, fastening.height, 1.f } ), -pivot ) );
+            }
+        }
         runbeams.emplace_back( middle, half );
         if( runbeams.size() >= chunk_beams ) {
             close_run();
@@ -245,6 +283,56 @@ void lay( TTrack &Track ) {
     laid.whole.shrink_to_fit();
     laid.plain.shrink_to_fit();
     laid.chunks.shrink_to_fit();
+    if( false == Fastened && parts.fastened() ) {
+        laid.fastened = false;
+        laid.beams = std::move( Beams );
+    }
+}
+
+} // namespace
+
+void lay( TTrack &Track, bool const Fastened ) {
+
+    auto &laid { Track.m_sleepers3d };
+    std::vector<beam> placed;
+    if( laid.active && in_background() && timber_model( Track ) != nullptr ) {
+        // worked out in the background; till then the track keeps what it has, and tries again
+        auto beams { laid_out( Track ) };
+        if( false == beams.has_value() ) {
+            ask_layout( Track );
+            return;
+        }
+        placed = std::move( *beams );
+    }
+    laid.dirty = false;
+    laid.timbers = timber_model( Track );
+    laid.plains = plain_model( Track );
+    if( false == laid.active || laid.timbers == nullptr ) {
+        instance( Track, {}, true );
+        return;
+    }
+    if( auto const panel { panel_off_plane( Track ) }; panel.first > coplanar_tolerance ) {
+        WriteLog(
+            "sleepers3d: switch \"" + Track.name() + "\" has its paths " + to_string( panel.first * 1000.0, 1 ) + " mm off one plane "
+            + to_string( panel.second, 2 ) + " m along, where they share the timbers of its panel" );
+    }
+    laid.laying = true;
+    auto beams { in_background() ? std::move( placed ) : place( Track ) };
+    laid.laying = false;
+    laid.timbers = timber_model( Track, beams );
+    // the layout of the cluster isn't needed by this track any more, the instances below are what's drawn
+    forget_layout( Track );
+    instance( Track, std::move( beams ), Fastened );
+}
+
+void fasten( TTrack &Track ) {
+
+    auto &laid { Track.m_sleepers3d };
+    if( laid.fastened || laid.dirty ) {
+        return;
+    }
+    auto beams { std::move( laid.beams ) };
+    instance( Track, std::move( beams ), true );
 }
 
 void release_far( glm::dvec3 const &Camera, double const Range ) {
@@ -258,15 +346,19 @@ void release_far( glm::dvec3 const &Camera, double const Range ) {
             next = 0;
         }
         auto *track { tracks[ next++ ] };
-        if( track == nullptr || false == track->m_sleepers3d.active || track->m_sleepers3d.laying ) {
+        if( track == nullptr || track->m_sleepers3d.laying ) {
             continue;
         }
         if( glm::length( track->location() - Camera ) - track->radius() <= Range ) {
             continue;
         }
+        forget_rails( *track );
+        if( false == track->m_sleepers3d.active ) {
+            continue;
+        }
         auto &laid { track->m_sleepers3d };
         forget_layout( *track );
-        auto const holds { laid.chunks.capacity() > 0 || laid.whole.capacity() > 0 || laid.plain.capacity() > 0
+        auto const holds { laid.chunks.capacity() > 0 || laid.whole.capacity() > 0 || laid.plain.capacity() > 0 || laid.beams.capacity() > 0
             || std::any_of( laid.instances.begin(), laid.instances.end(), []( std::vector<glm::mat4> const &Instances ) { return Instances.capacity() > 0; } ) };
         if( false == holds ) {
             continue;
@@ -277,6 +369,7 @@ void release_far( glm::dvec3 const &Camera, double const Range ) {
         std::vector<glm::mat4> {}.swap( laid.whole );
         std::vector<glm::mat4> {}.swap( laid.plain );
         std::vector<chunk> {}.swap( laid.chunks );
+        std::vector<beam> {}.swap( laid.beams );
         laid.dirty = true;
     }
 }

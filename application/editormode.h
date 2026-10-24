@@ -1411,6 +1411,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
 	alignment::result lay_shape(std::vector<glm::dvec3> const &Points, glm::dvec2 const &Startdirection, glm::dvec2 const &Enddirection, alignment::design &Design) const;
 	void render_switch_ui();
+	void render_switch_timbers();
 	void render_rail_profile_hint(TTrack &Track);
 	bool start_switch_placement();
 	void finish_switch_placement();
@@ -1780,6 +1781,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	void select_tracks(std::vector<TTrack *> const &Tracks);
 	// changes each track which can be changed, in one step of the undo; false from Change: the track stays as it was
 	std::size_t tracks_apply(std::vector<TTrack *> const &Tracks, std::function<bool(TTrack &)> const &Change, bool const Rebuild, char const *What);
+	// the model of the timbers, with the fastenings where it has them, set on all the switches and crossings of the scenery, in one
+	// step of the undo; empty: the one of eu07.ini. returns: the tracks changed
+	std::size_t set_switch_timbers(std::string const &Model);
 	int track_property_index(std::string const &Key) const;
 	std::size_t track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text);
 	void track_field_settle();

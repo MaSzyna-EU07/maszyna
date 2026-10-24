@@ -20,6 +20,9 @@ double constexpr pitch_min { 0.83 * pitch };
 double constexpr pitch_max { 1.08 * pitch };
 // how far out from the middle of a track its rail reaches past half the gauge: the foot of the rail outside the gauge line
 double constexpr rail_reach { 0.1115 };
+// how far out from the gauge line the middle of the rail is, and how wide its head is
+double constexpr rail_web { 0.0365 };
+double constexpr rail_head { 0.0735 };
 // how far a beam reaches out past the foot of the rail, 2.6 m sleepers under the standard gauge, and how far at least
 double constexpr overhang { 0.471 };
 double constexpr overhang_min { 0.25 };
@@ -47,8 +50,52 @@ double constexpr level_tolerance { 1.0 };
 // how far around a track the tracks are taken in to lay its beams: those whose beams it carries, or which carry its own, and
 // those which set where the beams of these go
 double constexpr around_margin { 20.0 };
+// a timber whose line carries no track with a model of timbers of its own, as under the short tracks between the halves of a slip,
+// is of the model of the nearest timber with one so far from it
+double constexpr panel_reach { 1.5 };
 // how many beams make a run drawn or left out together
 std::size_t constexpr chunk_beams { 16 };
+// how far apart the points of the rails are, as the places they lie on the timbers are found
+double constexpr fastening_step { 0.25 };
+// rails closer than this where they cross a timber are one rail there, held by one fastening
+double constexpr fastening_merge { 0.03 };
+// two rails closer than this lie in one fastening of both, as a rail of the frog with the one beside it; closer than the second
+// one, as the legs of the nose where they're joined, in one plate between them
+double constexpr fastening_pair { 0.2 };
+double constexpr fastening_nose { 0.05 };
+// three rails or more with less than this between each and the next, as the legs of a nose with the wing rails beside, are held together
+double constexpr fastening_crowd { 0.3 };
+// how far apart the rails lie in the fastening of both, the check part of the model
+double constexpr check_seats { 0.113 };
+// how long a fastening is along its rail, at most
+double constexpr fastening_length { 0.19 };
+// how far past the edge of the foot of a rail its fastening reaches, with the clip holding it
+double constexpr fastening_clip { 0.09 };
+// the room left between the fastenings of rails close by, and how narrow their plates get to keep it
+double constexpr fastening_gap { 0.01 };
+double constexpr plate_least { 0.6 };
+// a plate cut short at the fastening of the rail beside, as on one plate with it, no narrower than this
+double constexpr clip_least { 0.4 };
+double constexpr slide_least { 0.25 };
+// a fastening of two rails narrowed no more than this, the rails lying a little off its seats then
+double constexpr check_least { 0.8 };
+// how far before the tip of the blade the slide chairs of its stock rail begin
+double constexpr chair_lead { 0.3 };
+// how far from the stock rail toward its blade the slide plate of a chair is measured
+double constexpr slide_probe { 0.12 };
+// a rail raised less than this goes without a pad under it, and a pad narrower than the second one is left out
+double constexpr pad_least { 0.002 };
+double constexpr pad_narrowest { 0.02 };
+// how far two fastenings on a timber may reach over one another before the check counts them
+double constexpr fastening_overlap { 0.01 };
+// how far from the camera the fastenings are drawn at most
+double constexpr fastening_range { 120.0 };
+// how much further out the fastenings are laid, there as the camera comes near
+double constexpr fastening_lead { 30.0 };
+// how near the camera the beams of a track are laid at once as they're needed; further out while the laying in a frame took less
+// than the budget, in ms, the rest left for the frames after
+double constexpr lay_near { 50.0 };
+double constexpr lay_budget { 2.0 };
 
 // how many tracks a cluster takes at most
 std::size_t constexpr cluster_cap { 256 };
