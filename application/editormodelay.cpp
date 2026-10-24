@@ -638,6 +638,8 @@ void editor_mode::finish_extend()
 	m_extend.active = false;
 	if (pieces.empty() || style == nullptr)
 		return;
+	// the track laid takes only its heights from the ground: the terrain is shaped under it by the buttons of the terrain model
+	m_nmt_state.laying = true;
 	std::vector<TTrack *> created;
 	for (auto const &piece : pieces)
 		created.push_back(editor_track::create_path(*style, piece));
@@ -652,6 +654,7 @@ void editor_mode::finish_extend()
 	m_node = created.back();
 	ui()->set_node(m_node);
 	nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
+	m_nmt_state.laying = false;
 	straight_refresh();
 }
 
@@ -1128,6 +1131,8 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	auto const *style{tool.start.track != nullptr ? tool.start.track : End.track};
 	if (style == nullptr && tool.copy_selected)
 		style = selected_track();
+	// the track laid takes only its heights from the ground: the terrain is shaped under it by the buttons of the terrain model
+	m_nmt_state.laying = true;
 	std::vector<TTrack *> created;
 	for (auto const &piece : pieces)
 		created.push_back(style != nullptr ? editor_track::create_path(*style, piece) : editor_track::create_path(tool.style, piece));
@@ -1170,6 +1175,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	ui()->set_node(m_node);
 	if (nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
 		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
+	m_nmt_state.laying = false;
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.points.clear();
 	tool.start = {};
@@ -1541,7 +1547,7 @@ void editor_mode::render_lay_ui()
 	ImGui::TextDisabled("%s", STR_C("Height of the track on the ground"));
 	if (int heights{static_cast<int>(EditorSettings.heights())};
 	    segmented("layheights", heights,
-	              {{0, STR_C("Fitted"), "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past, the earthworks made by the terrain. On the terrain model the whole track laid in a row is fitted again at each click"},
+	              {{0, STR_C("Fitted"), "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past; the terrain is left as it is. On the terrain model the whole track laid in a row is fitted again at each click"},
 	               {1, STR_C("Point to point"), "Each point clicked at the height of the ground, an even grade between them: the grade changes only where you click"},
 	               {2, STR_C("Flat"), "The track goes on at the height it's laid from, whatever the ground; the first point on the ground"}}))
 	{

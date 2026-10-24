@@ -102,7 +102,7 @@ private:
 	int m_top_tracks{0}; // the railway in the top view: whole, without the ballast, the rails alone
 	std::uint32_t m_top_rails{0xffff6e28}; // colour of the rails alone, as ImGui keeps it: ABGR
 	track_norms m_norms{track_norms::ask};
-	lay_heights m_heights{lay_heights::fitted};
+	lay_heights m_heights{lay_heights::points};
 };
 
 // global editor settings instance

@@ -11524,8 +11524,8 @@ msgstr "Punkt–punkt"
 msgid "Flat"
 msgstr "Poziomo"
 
-msgid "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past, the earthworks made by the terrain. On the terrain model the whole track laid in a row is fitted again at each click"
-msgstr "Pochylenia dopasowane do terenu tak jak w „Tory na teren”: łuki pionowe według norm, drobne nierówności terenu pominięte, nasypy i wykopy robi teren. Na modelu terenu (NMT) cały tor kładziony za jednym razem jest dopasowywany od nowa przy każdym kliknięciu"
+msgid "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past; the terrain is left as it is. On the terrain model the whole track laid in a row is fitted again at each click"
+msgstr "Pochylenia dopasowane do terenu tak jak w „Tory na teren”: łuki pionowe według norm, drobne nierówności terenu pominięte; teren zostaje bez zmian. Na modelu terenu (NMT) cały tor kładziony za jednym razem jest dopasowywany od nowa przy każdym kliknięciu"
 
 msgid "Each point clicked at the height of the ground, an even grade between them: the grade changes only where you click"
 msgstr "Każdy kliknięty punkt na wysokości terenu, między punktami równe pochylenie: pochylenie zmienia się tylko tam, gdzie klikniesz"

@@ -534,7 +534,7 @@ std::vector<heightmap::chunk_key> editor_mode::nmt_keys_along_tracks() const
 	return {keys.begin(), keys.end()};
 }
 
-void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool const Rebuild)
+void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool const Reshape)
 {
 	auto &state{m_nmt_state};
 	if (false == ensure_terrain())
@@ -543,21 +543,6 @@ void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool c
 		return;
 	}
 	nmt_locate();
-	if (Rebuild)
-	{
-		// the terrain made for the tracks before, as they lay then: the formation of the earlier runs, and the chunks along them,
-		// whose heights went with it
-		auto const dropped{m_streamer.drop_modifiers("nmt ")};
-		std::size_t removed{0};
-		for (auto const &key : Keys)
-			if (m_streamer.exists(key))
-			{
-				m_streamer.remove_chunk(key.first, key.second);
-				++removed;
-			}
-		forget_ground();
-		WriteLog(format("Editor: NMT - made anew: %zu chunks, %zu formations of the tracks forgotten", removed, dropped), logtype::generic);
-	}
 	std::size_t queued{0};
 	for (auto const &key : Keys)
 		if (false == m_streamer.exists(key) && std::find(state.pending.begin(), state.pending.end(), key) == state.pending.end())
@@ -575,6 +560,12 @@ void editor_mode::nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool c
 	if (queued > 0 && false == m_orthophoto.enabled())
 		m_orthophoto.enabled(true);
 	state.status = queued > 0 ? format(STR_P("%zu chunk to make from the terrain model", "%zu chunks to make from the terrain model", queued), queued) : STR("There's terrain there already");
+	// with chunks to make the formations are laid once they're made
+	if (Reshape && queued == 0 && state.shape)
+	{
+		nmt_shape_tracks();
+		state.status += format(STR_P("; the formation of %zu path shaped", "; the formation of %zu paths shaped", state.shaped), state.shaped);
+	}
 }
 
 bool editor_mode::nmt_ready(glm::dvec2 const &Min, glm::dvec2 const &Max)
@@ -667,7 +658,7 @@ bool editor_mode::nmt_terrain_along(TTrack const &Track, bool &Waiting)
 void editor_mode::nmt_track_changed(std::vector<TTrack *> const &Tracks)
 {
 	auto &state{m_nmt_state};
-	if (state.restoring || state.stage != nmt_state::automatic::idle || Tracks.empty() || false == m_streamer.active())
+	if (state.restoring || state.laying || state.stage != nmt_state::automatic::idle || Tracks.empty() || false == m_streamer.active())
 		return;
 	for (auto *track : Tracks)
 		if (track != nullptr)

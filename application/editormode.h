@@ -332,6 +332,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double band{300.0}; // m from the tracks the chunks made along them reach
 		bool shape{true}; // the formation and the slopes of the tracks as modifiers of the terrain
 		bool grow{true}; // while a track is laid, the terrain is made around the cursor where there's none
+		bool laying{false}; // the tracks committed are being laid: they leave the terrain as it is
 		bool grown{false}; // the chunks waiting were all asked for by growing: the formations aren't made anew after them
 		double grow_time{-10.0};
 		double slope{1.5};
@@ -413,8 +414,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	double nmt_offset_at(double const X, double const Z) const;
 	std::vector<heightmap::chunk_key> nmt_keys_around() const;
 	std::vector<heightmap::chunk_key> nmt_keys_along_tracks() const;
-	// Rebuild: the chunks there already are made anew too, and the formation laid before is forgotten, as when the tracks moved
-	void nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool const Rebuild = false);
+	// only the chunks there are none of yet: a chunk there is, made from the model or by hand, edited or not, is never made anew.
+	// Reshape: the formations of the tracks laid anew as the tracks lie now, as when they moved
+	void nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool const Reshape = false);
 	enum class nmt_chunk
 	{
 		waiting, // for its squares of the model
