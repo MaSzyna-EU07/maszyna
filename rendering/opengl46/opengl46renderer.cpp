@@ -200,8 +200,8 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		return false;
 	}
 
-	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), 0);
-	model_ubo = std::make_unique<gl::stream_ubo>(sizeof(gl::model_ubs), 1, Global.gfx_bufferstreaming);
+	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), gl::SCENE_UBO_BINDING);
+	model_ubo = std::make_unique<gl::stream_ubo>(sizeof(gl::model_ubs), gl::MODEL_UBO_BINDING, Global.gfx_bufferstreaming);
 	light_ssbo = std::make_unique<gl::ssbo>(sizeof(gl::light_data), gl::LIGHT_SSBO_BINDING);
 	light_ssbo->bind_base();
 	{
@@ -673,6 +673,8 @@ std::unique_ptr<gl::program> opengl46_renderer::make_shader(std::string v, std::
 
 bool opengl46_renderer::Render()
 {
+	// the texture names bound before may have been given to other textures since the last frame
+	opengl_texture::reset_unit_cache();
 	Timer::subsystem.gfx_total.start();
 
 	std::optional<int64_t> result = m_timequery->result();
@@ -3270,7 +3272,7 @@ bool opengl46_renderer::Blendable_Material(material_handle const Material)
 	return m_materials.blendable(Material);
 }
 
-std::string opengl46_renderer::Shader_Name(std::shared_ptr<gl::program> const &Program) const
+std::string opengl46_renderer::Shader_Name(std::shared_ptr<gfx::shader_program> const &Program) const
 {
 	for (auto const &shader : m_shaders)
 		if (shader.second == Program)
@@ -3278,7 +3280,7 @@ std::string opengl46_renderer::Shader_Name(std::shared_ptr<gl::program> const &P
 	return {};
 }
 
-std::shared_ptr<gl::program> opengl46_renderer::Fetch_Shader(const std::string &name)
+std::shared_ptr<gfx::shader_program> opengl46_renderer::Fetch_Shader(const std::string &name)
 {
 	auto it = m_shaders.find(name);
 	if (it == m_shaders.end())
@@ -3472,7 +3474,7 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 		if (lastdiff)
 			glBindTextures(0, lastdiff, &opengl_texture::units[0]);
 
-		auto *program{material.shader.get()};
+		auto *program{static_cast<gl::program *>(material.shader.get())};
 		if (m_bindmultidraw)
 		{
 			// the replay of the instances drawn from the gpu culling with multi draws (Render_Instances_Indirect_Colour())
@@ -4887,7 +4889,7 @@ int opengl46_renderer::Prepass_Class( material_handle const Material )
 	if( Material == null_handle ) { return 0; }
 	auto const &material { m_materials.material( Material ) };
 	if( ( false == material.is_good ) || ( material.shader == nullptr ) ) { return 0; }
-	auto const lookup { m_prepassclasses.find( material.shader.get() ) };
+	auto const lookup { m_prepassclasses.find( static_cast<gl::program const *>( material.shader.get() ) ) };
 	if( lookup != m_prepassclasses.end() ) { return lookup->second; }
 
 	// names the programs are fetched by: mat_<name>.frag
@@ -4904,7 +4906,7 @@ int opengl46_renderer::Prepass_Class( material_handle const Material )
 		prepassclass = ( alphatested.count( shader.first ) > 0 ? 2 : solid.count( shader.first ) > 0 ? 1 : 0 );
 		break;
 	}
-	m_prepassclasses.emplace( material.shader.get(), prepassclass );
+	m_prepassclasses.emplace( static_cast<gl::program const *>( material.shader.get() ), prepassclass );
 	return prepassclass;
 }
 
@@ -5678,7 +5680,7 @@ gl::program const *opengl46_renderer::Indirect_Program( material_handle Material
 		material = &m_materials.material( m_invalid_material );
 		if( false == material->is_good ) { return nullptr; }
 	}
-	return material->shader.get();
+	return static_cast<gl::program const *>( material->shader.get() );
 }
 
 gl::program *opengl46_renderer::Multidraw_Program( gl::program const *Program )
@@ -8867,7 +8869,11 @@ std::string const &opengl46_renderer::info_stats() const
 
 void opengl46_renderer::MakeScreenshot()
 {
-	screenshot_manager::make_screenshot();
+    // rows are tightly packed RGB: the renderer sets GL_PACK_ALIGNMENT to 1
+    auto img = new char[Global.fb_size.x * Global.fb_size.y * 3];
+    glReadPixels(0, 0, Global.fb_size.x, Global.fb_size.y, GL_RGB, GL_UNSIGNED_BYTE, (GLvoid*)img);
+	//m7t: use pbo
+	screenshot_manager::save(img, Global.fb_size.x, Global.fb_size.y);
 }
 
 // model previews
@@ -10239,9 +10245,14 @@ void opengl46_renderer::opengl46_imgui_renderer::Render()
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-std::uint64_t opengl46_renderer::opengl46_imgui_renderer::Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+std::uint64_t opengl46_renderer::opengl46_imgui_renderer::Create_Image(std::uint8_t const *Rgba, int const Width, int const Height, image_options const &Options)
 {
-	// the ui colours are made linear in its shaders, the image is too, by sampling it as srgb. the bindings the renderer
+	return Update_Image(0, Rgba, Width, Height, Options);
+}
+
+std::uint64_t opengl46_renderer::opengl46_imgui_renderer::Update_Image(std::uint64_t const Image, std::uint8_t const *Rgba, int const Width, int const Height, image_options const &Options)
+{
+	// the ui colours are made linear in its shaders, an srgb image is too, by sampling it as srgb. the bindings the renderer
 	// keeps track of are put back as they were
 	GLint texture{0}, unpack{0}, alignment{4};
 	glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
@@ -10249,14 +10260,18 @@ std::uint64_t opengl46_renderer::opengl46_imgui_renderer::Create_Image(std::uint
 	glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	GLuint image{0};
-	glGenTextures(1, &image);
+	auto image{static_cast<GLuint>(Image)};
+	if (image == 0)
+		glGenTextures(1, &image);
 	glBindTexture(GL_TEXTURE_2D, image);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	auto const filter{Options.nearest ? GL_NEAREST : GL_LINEAR};
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, Options.mipmaps ? (Options.nearest ? GL_NEAREST_MIPMAP_NEAREST : GL_LINEAR_MIPMAP_LINEAR) : filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, Width, Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, Rgba);
+	glTexImage2D(GL_TEXTURE_2D, 0, Options.srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8, Width, Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, Rgba);
+	if (Options.mipmaps)
+		glGenerateMipmap(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(unpack));
 	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);

@@ -145,15 +145,12 @@ void eu07_application::queue_screenshot()
 int eu07_application::run_crashgui()
 {
 	bool autoup = false;
+	bool y{false}, n{false};
 
-	while (!glfwWindowShouldClose(m_windows.front()))
-	{
-		glfwPollEvents();
-
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	// the questions are the ui of the frames the renderer draws (render_ui()), whichever api it is: the window has no opengl
+	// context with vulkan
+	m_crashui = [&]() {
 		ui_layer::begin_ui_frame_internal();
-
-		bool y, n;
 
 		if (Global.asLang == "pl")
 		{
@@ -201,22 +198,35 @@ int eu07_application::run_crashgui()
 		}
 
 		ui_layer::render_internal();
-		glfwSwapBuffers(m_windows.front());
+	};
+
+	while (!glfwWindowShouldClose(m_windows.front()))
+	{
+		glfwPollEvents();
+
+		y = false;
+		n = false;
+		if (!GfxRenderer->Render())
+			break;
+		GfxRenderer->SwapBuffers();
 
 		if (y)
 		{
 			crashreport_upload_accept();
 			if (autoup)
 				crashreport_set_autoupload();
+			m_crashui = nullptr;
 			return 0;
 		}
 
 		if (n)
 		{
 			crashreport_upload_reject();
+			m_crashui = nullptr;
 			return 0;
 		}
 	}
+	m_crashui = nullptr;
 	return -1;
 }
 #if WITH_DISCORD_RPC
@@ -382,15 +392,6 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
-	if (crashreport_is_pending())
-	{ // run crashgui as early as possible
-		if ((result = run_crashgui()) != 0)
-		{
-			ErrorLog("Failed to run crash gui!");
-			return result;
-		}
-	}
-
 	if ((result = init_locale()) != 0)
 	{
 		ErrorLog("Failed to initialize locales! Maybe you're missing lang directory?");
@@ -407,6 +408,14 @@ int eu07_application::init(int Argc, char *Argv[])
 	{ // ui now depends on activated renderer
 		ErrorLog("Failed to init UI!");
 		return result;
+	}
+	if (crashreport_is_pending())
+	{ // run crashgui as early as possible: it's drawn by the renderer
+		if ((result = run_crashgui()) != 0)
+		{
+			ErrorLog("Failed to run crash gui!");
+			return result;
+		}
 	}
 	if ((result = init_audio()) != 0)
 	{
@@ -632,7 +641,6 @@ int eu07_application::run()
 		Timer::subsystem.loop_tasks.start();
 		m_taskqueue.update();
 		Timer::subsystem.loop_tasks.stop();
-		opengl_texture::reset_unit_cache();
 
 		if (!GfxRenderer->Render())
 			break;
@@ -747,6 +755,11 @@ void eu07_application::exit()
 
 void eu07_application::render_ui()
 {
+	if (m_crashui)
+	{
+		m_crashui();
+		return;
+	}
 
 	if (m_modestack.empty())
 	{

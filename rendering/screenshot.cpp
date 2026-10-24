@@ -40,14 +40,9 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
 	delete[] img;
 }
 
-void screenshot_manager::make_screenshot()
+void screenshot_manager::save(char *Image, int Width, int Height)
 {
-    // rows are tightly packed RGB: the renderer sets GL_PACK_ALIGNMENT to 1
-    auto img = new char[Global.fb_size.x * Global.fb_size.y * 3];
-    glReadPixels(0, 0, Global.fb_size.x, Global.fb_size.y, GL_RGB, GL_UNSIGNED_BYTE, (GLvoid*)img);
-	//m7t: use pbo
-	
-    std::thread t(screenshot_save_thread, img, Global.fb_size.x, Global.fb_size.y);
+    std::thread t(screenshot_save_thread, Image, Width, Height);
 	t.detach();
 }
 

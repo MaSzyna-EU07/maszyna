@@ -123,6 +123,8 @@ private:
 // members
 
     bool m_screenshot_queued = false;
+    // the ui of the crash gui, drawn in the frames of the renderer instead of the ui of the modes while it's there
+    std::function<void()> m_crashui;
 
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode

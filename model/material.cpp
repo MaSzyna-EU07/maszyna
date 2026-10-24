@@ -204,7 +204,7 @@ void opengl_material::finalize(bool Loadnow)
                     key.pop_back();
                     if (shader->param_conf.find(key) != shader->param_conf.end())
                     {
-                        gl::shader::param_entry entry = shader->param_conf[key];
+                        gfx::shader_param_entry entry = shader->param_conf[key];
                         for (size_t i = 0; i < entry.size; i++)
                             params[entry.location][entry.offset + i] = value[i];
                     }
@@ -242,17 +242,17 @@ void opengl_material::finalize(bool Loadnow)
 
     for (auto it : shader->param_conf)
     {
-        gl::shader::param_entry entry = it.second;
+        gfx::shader_param_entry entry = it.second;
         if (std::isnan(params[entry.location][entry.offset]))
         {
             float value = std::numeric_limits<float>::quiet_NaN();
-            if (entry.defaultparam == gl::shader::defaultparam_e::one)
+            if (entry.defaultparam == gfx::shader_param_default::one)
                 value = 1.0f;
-            else if (entry.defaultparam == gl::shader::defaultparam_e::zero)
+            else if (entry.defaultparam == gfx::shader_param_default::zero)
                 value = 0.0f;
-            else if (entry.defaultparam == gl::shader::defaultparam_e::required)
+            else if (entry.defaultparam == gfx::shader_param_default::required)
                 log_error("unspecified required param: " + it.first);
-            else if (entry.defaultparam != gl::shader::defaultparam_e::nan)
+            else if (entry.defaultparam != gfx::shader_param_default::nan)
             {
                 params_state.push_back(entry);
                 continue;
@@ -265,7 +265,7 @@ void opengl_material::finalize(bool Loadnow)
 
     for (auto it : shader->texture_conf)
     {
-        gl::shader::texture_entry &entry = it.second;
+        gfx::shader_texture_entry &entry = it.second;
         texture_handle handle = textures[entry.id];
         // NOTE: texture validation at this stage relies on forced texture load behaviour during its create() call
         // TODO: move texture id validation to later stage if/when deferred texture loading is implemented
@@ -302,7 +302,7 @@ bool opengl_material::update() {
             finalize( true );
             result = true;
         }
-        catch( gl::shader_exception const &e ) {
+        catch( gfx::shader_exception const &e ) {
             ErrorLog( "invalid shader: " + std::string( e.what() ) );
         }
     }
@@ -434,7 +434,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
                 shader = GfxRenderer->Fetch_Shader(value);
                 m_shader_priority = Priority;
             }
-            catch (gl::shader_exception const &e)
+            catch (gfx::shader_exception const &e)
             {
                 log_error("invalid shader: " + std::string(e.what()));
             }
@@ -591,7 +591,7 @@ material_manager::create( std::string const &Filename, bool const Loadnow ) {
 	        {
 	            material.shader = GfxRenderer->Fetch_Shader("default_1");
 	        }
-	        catch (gl::shader_exception const &e)
+	        catch (gfx::shader_exception const &e)
 	        {
 	            ErrorLog("invalid shader: " + std::string(e.what()));
 	        }
@@ -625,7 +625,7 @@ material_manager::create( std::string const &Filename, bool const Loadnow ) {
 			materialhandle = m_materials.size();
 			m_materials.emplace_back( std::move(material) );
 			m_materialmappings.emplace( m_materials.back().name, materialhandle );
-		} catch (gl::shader_exception const &e) {
+		} catch (gfx::shader_exception const &e) {
 			ErrorLog("invalid shader: " + std::string(e.what()));
 			// record the failure so subsequent Fetch_Material(filename) calls
 			// short-circuit without re-running the failing compile.
@@ -652,7 +652,7 @@ material_manager::create_from_text( std::string const &Name, std::string const &
     try {
         material.finalize( true );
     }
-    catch( gl::shader_exception const &e ) {
+    catch( gfx::shader_exception const &e ) {
         ErrorLog( "invalid shader: " + std::string( e.what() ) );
         return null_handle;
     }
@@ -709,7 +709,7 @@ material_manager::create_matte( material_handle const Material ) {
             matte.params_state.erase(
                 std::remove_if(
                     std::begin( matte.params_state ), std::end( matte.params_state ),
-                    [&]( gl::shader::param_entry const &State ) {
+                    [&]( gfx::shader_param_entry const &State ) {
                         return State.location == entry->second.location && State.offset == entry->second.offset; } ),
                 std::end( matte.params_state ) );
         }
@@ -747,7 +747,7 @@ material_manager::create_tinted( material_handle const Material, glm::vec3 const
     tinted.params_state.erase(
         std::remove_if(
             std::begin( tinted.params_state ), std::end( tinted.params_state ),
-            [&]( gl::shader::param_entry const &State ) {
+            [&]( gfx::shader_param_entry const &State ) {
                 return State.location == location; } ),
         std::end( tinted.params_state ) );
     auto const tintedhandle { static_cast<material_handle>( m_materials.size() ) };
@@ -832,7 +832,7 @@ material_manager::blend_lighting( material_handle const Material ) {
                 result = ( fits ? lighting : -1 );
             }
         }
-        catch( gl::shader_exception const &e ) {
+        catch( gfx::shader_exception const &e ) {
             ErrorLog( "invalid shader: " + std::string( e.what() ) );
         }
     }
@@ -914,7 +914,7 @@ material_manager::build_blend( blend_key const &Key, opengl_material &Blend ) {
         Blend.finalize( true );
         return Blend.is_good;
     }
-    catch( gl::shader_exception const &e ) {
+    catch( gfx::shader_exception const &e ) {
         ErrorLog( "invalid shader: " + std::string( e.what() ) );
     }
     return false;

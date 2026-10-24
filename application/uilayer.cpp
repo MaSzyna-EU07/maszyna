@@ -421,7 +421,11 @@ void ui_layer::shutdown()
 {
 	ImGui::EndFrame();
 
-	GfxRenderer->GetImguiRenderer()->Shutdown();
+	// the vulkan renderer is gone by now (its backend of imgui went with it)
+	if (auto *renderer{GfxRenderer->GetImguiRenderer()})
+	{
+		renderer->Shutdown();
+	}
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 }

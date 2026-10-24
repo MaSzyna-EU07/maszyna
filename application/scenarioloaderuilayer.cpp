@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/scenarioloaderuilayer.h"
 
 #include "utilities/Globals.h"
+#include "rendering/renderer.h"
 #include "utilities/translation.h"
 #include <nlohmann/json.hpp>
 #include "utilities/Logs.h"
@@ -309,18 +310,13 @@ void scenarioloader_ui::generate_gradient_tex()
 			image_data[(y * image_width + x) * 4 + 3] = std::clamp(static_cast<int>(pow(y / 1023.f, 0.7) * 255), 0, 255);
 		}
 
-	// Create a OpenGL texture identifier
-	GLuint image_texture;
-	glGenTextures(1, &image_texture);
-	glBindTexture(GL_TEXTURE_2D, image_texture);
-
-	// Setup filtering parameters for display
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-	// Upload pixels into texture
-	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data);
+	// an image of the user interface: the values as they are (not srgb), the nearest texel
+	imgui_renderer::image_options options;
+	options.srgb = false;
+	options.nearest = true;
+	std::uint64_t image_texture{0};
+	if (auto *renderer{GfxRenderer->GetImguiRenderer()})
+		image_texture = renderer->Create_Image(reinterpret_cast<std::uint8_t const *>(image_data), image_width, image_height, options);
 
 	delete[] image_data;
 

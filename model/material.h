@@ -12,7 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "interfaces/IMaterial.h"
 #include "utilities/Classes.h"
 #include "model/Texture.h"
-#include "gl/shader.h"
+#include "rendering/common/shadersource.h"
 #include "gl/ubo.h"
 
 // a collection of parameters for the rendering setup.
@@ -26,9 +26,9 @@ struct opengl_material : public IMaterial {
     // NOTE: all variants share the remaining material properties, opacity and translucency included
     std::vector<texture_set> texture_variants;
     std::array<glm::vec4, gl::MAX_PARAMS> params;
-    std::vector<gl::shader::param_entry> params_state;
+    std::vector<gfx::shader_param_entry> params_state;
 
-    std::shared_ptr<gl::program> shader;
+    std::shared_ptr<gfx::shader_program> shader;
     std::optional<float> opacity;
     std::optional<float> selfillum;
     float glossiness { 10.f };

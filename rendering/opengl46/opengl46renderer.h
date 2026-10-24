@@ -117,8 +117,8 @@ class opengl46_renderer : public gfx_renderer {
     void
         Terrain_Grass( std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks ) override;
     // shader methods
-    auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override;
-    auto Shader_Name( std::shared_ptr<gl::program> const &Program ) const -> std::string override;
+    auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gfx::shader_program> override;
+    auto Shader_Name( std::shared_ptr<gfx::shader_program> const &Program ) const -> std::string override;
     // texture methods
     texture_handle
         Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) override;
@@ -1178,7 +1178,9 @@ class opengl46_renderer : public gfx_renderer {
 		virtual void Shutdown() override;
 		virtual void BeginFrame() override;
 		virtual void Render() override;
-		virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height) override;
+		using imgui_renderer::Create_Image;
+		virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height, image_options const &Options) override;
+		virtual std::uint64_t Update_Image(std::uint64_t const Image, std::uint8_t const *Rgba, int const Width, int const Height, image_options const &Options) override;
 		virtual void Release_Image(std::uint64_t const Image) override;
 	} m_imgui_renderer;
 

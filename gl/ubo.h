@@ -247,7 +247,11 @@ namespace gl
     const GLuint CLUSTER_BUILD_GROUP_SIZE = 64;
     const GLuint CLUSTER_CULL_GROUP_SIZE = 64;
 
-    // binding points of the cluster buffers: layout(binding = ...) in glsl_common.
+    // binding points of the blocks of the scene and of the model being drawn (common.glsl)
+    const GLuint SCENE_UBO_BINDING = 0;
+    const GLuint MODEL_UBO_BINDING = 1;
+
+    // binding points of the cluster buffers: layout(binding = ...) in common.glsl.
     // the uniform block numbers go together with scene (0), model (1) and instance (3) blocks
     const GLuint CLUSTER_UBO_BINDING = 2;
     const GLuint CLUSTER_AABB_SSBO_BINDING = 1;

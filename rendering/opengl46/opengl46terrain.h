@@ -92,8 +92,8 @@ class opengl46_terrain_materials
 	std::vector<slot> m_slots;
 	std::vector<std::size_t> m_free;
 	std::unordered_map<material_handle, std::size_t> m_slotof;
-	std::shared_ptr<gl::program> m_program; // of the chunks, mat_terrain
-	std::shared_ptr<gl::program> m_holesprogram; // of the chunks with holes, mat_terrain_holes
+	std::shared_ptr<gfx::shader_program> m_program; // of the chunks, mat_terrain
+	std::shared_ptr<gfx::shader_program> m_holesprogram; // of the chunks with holes, mat_terrain_holes
 	std::unique_ptr<gl::postfx> m_copy;
 	std::unique_ptr<gl::framebuffer> m_framebuffer;
 };

@@ -54,7 +54,7 @@ class scenerywizard_panel : public ui_panel
 	bool m_dragging{false};
 
 	std::future<map_result> m_request;
-	unsigned int m_texture{0};
+	std::uint64_t m_texture{0}; // imgui_renderer image
 	glm::dvec2 m_image_low{0.0};
 	glm::dvec2 m_image_high{0.0};
 	std::string m_map_error;

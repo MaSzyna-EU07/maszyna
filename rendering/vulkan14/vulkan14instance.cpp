@@ -249,6 +249,7 @@ bool instance::collect_extensions(std::vector<char const *> &Extensions, instanc
 {
 	Extensions.clear();
 	m_debug_utils_enabled = false;
+	debug_utils_enabled = false;
 
 	std::uint32_t glfwcount{0};
 	auto const **glfwextensions{glfwGetRequiredInstanceExtensions(&glfwcount)};
@@ -281,6 +282,7 @@ bool instance::collect_extensions(std::vector<char const *> &Extensions, instanc
 				Extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 			}
 			m_debug_utils_enabled = true;
+			debug_utils_enabled = true;
 		}
 		else
 		{
@@ -337,6 +339,7 @@ void instance::destroy()
 	}
 	m_validation_enabled = false;
 	m_debug_utils_enabled = false;
+	debug_utils_enabled = false;
 }
 
 } // namespace vk14

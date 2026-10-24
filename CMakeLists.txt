@@ -49,6 +49,7 @@ file(GLOB HEADERS "*.h"
 "simulation/*.h"
 "scene/*.h"
 "rendering/*.h"
+"rendering/common/*.h"
 "rendering/opengl46/*.h"
 "rendering/vulkan14/*.h"
 "audio/*.h"
@@ -307,6 +308,7 @@ set(SOURCES
 "gl/postfx.cpp"
 "gl/cubemap.cpp"
 "gl/glsl_common.cpp"
+"rendering/common/shadersource.cpp"
 "gl/buffer.cpp"
 "gl/fence.cpp"
 "gl/pbo.cpp"
@@ -411,8 +413,11 @@ if (WITH_VULKAN)
 	# the vulkan loader is loaded by volk when the program runs, so the program starts without it (and runs with opengl)
 	set(VULKAN_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/Vulkan-Headers/include")
 	set(VOLK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/volk")
-	if (NOT EXISTS "${VOLK_DIR}/volk.h" OR NOT EXISTS "${VULKAN_HEADERS_DIR}/vulkan/vulkan_core.h")
-		message(FATAL_ERROR "WITH_VULKAN=ON needs the submodules ref/volk and ref/Vulkan-Headers: git submodule update --init ref/volk ref/Vulkan-Headers")
+	# the memory allocator (header only) and the shader compiler of the renderer
+	set(VMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/VulkanMemoryAllocator/include")
+	set(GLSLANG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/glslang")
+	if (NOT EXISTS "${VOLK_DIR}/volk.h" OR NOT EXISTS "${VULKAN_HEADERS_DIR}/vulkan/vulkan_core.h" OR NOT EXISTS "${VMA_DIR}/vk_mem_alloc.h" OR NOT EXISTS "${GLSLANG_DIR}/CMakeLists.txt")
+		message(FATAL_ERROR "WITH_VULKAN=ON needs the submodules ref/volk, ref/Vulkan-Headers, ref/VulkanMemoryAllocator and ref/glslang: git submodule update --init ref/volk ref/Vulkan-Headers ref/VulkanMemoryAllocator ref/glslang")
 	endif()
 	set(SOURCES ${SOURCES}
 		"rendering/vulkan14/vulkan14common.cpp"
@@ -420,9 +425,26 @@ if (WITH_VULKAN)
 		"rendering/vulkan14/vulkan14instance.cpp"
 		"rendering/vulkan14/vulkan14device.cpp"
 		"rendering/vulkan14/vulkan14swapchain.cpp"
+		"rendering/vulkan14/vulkan14memory.cpp"
+		"rendering/vulkan14/vulkan14vma.cpp"
+		"rendering/vulkan14/vulkan14shaders.cpp"
+		"rendering/vulkan14/vulkan14descriptors.cpp"
+		"rendering/vulkan14/vulkan14passes.cpp"
+		"rendering/vulkan14/vulkan14texture.cpp"
+		"rendering/vulkan14/vulkan14imgui.cpp"
 		"rendering/vulkan14/vulkan14renderer.cpp"
 		"ref/volk/volk.c")
 	set(DEFINITIONS ${DEFINITIONS} "WITH_VULKAN")
+
+	# glslang compiles the shaders of shaders/vk14 when the program runs (no spirv-tools, no hlsl, no programs of its own)
+	set(GLSLANG_TESTS OFF CACHE BOOL "" FORCE)
+	set(GLSLANG_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+	set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+	set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
+	set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
+	set(ENABLE_SPVREMAPPER OFF CACHE BOOL "" FORCE)
+	set(BUILD_EXTERNAL OFF CACHE BOOL "" FORCE)
+	add_subdirectory("${GLSLANG_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/glslang" EXCLUDE_FROM_ALL)
 endif()
 
 add_subdirectory("${DEPS_DIR}/glfw/" EXCLUDE_FROM_ALL)
@@ -552,8 +574,8 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 target_link_libraries(${PROJECT_NAME} eu07_core)
 if (WITH_VULKAN)
 	# the vulkan headers are seen by the files of rendering/vulkan14 only, they include them
-	target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_HEADERS_DIR}" "${VOLK_DIR}")
-	target_link_libraries(${PROJECT_NAME} ${CMAKE_DL_LIBS})
+	target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_HEADERS_DIR}" "${VOLK_DIR}" "${VMA_DIR}")
+	target_link_libraries(${PROJECT_NAME} ${CMAKE_DL_LIBS} glslang glslang-default-resource-limits)
 endif()
 
 target_compile_definitions(eu07_settings INTERFACE ${DEFINITIONS})

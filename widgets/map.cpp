@@ -16,9 +16,10 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
 #ifdef WITH_OPENGL_MODERN
+    // the map is drawn with the geometry banks and the framebuffers of the opengl renderer
     opengl46_renderer *renderer = dynamic_cast<opengl46_renderer*>(GfxRenderer.get());
     if (!renderer) {
-        ErrorLog("map not supported on old renderer");
+        WriteLog("map: drawn by the opengl renderer only");
         return;
     }
 #else

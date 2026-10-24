@@ -1,8 +1,9 @@
 # .github/workflows/shaders.yml
 # UNTRUSTED CONTEXT. This workflow runs fork-authored code and must not reference `secrets.*`.
 #
-# Checks every shader in shaders/ against GLSL 4.60 (compute stage included) with glslang,
-# after the same preprocessing the game does (ci_shadervalidator). No graphics card is needed.
+# Checks every shader of shaders/ogl46 against GLSL 4.60 (compute stage included) with glslang, after the same
+# preprocessing the game does, and as SPIR-V for OpenGL as glslc compiles the binaries of shaders/ogl46bin; the shaders of
+# shaders/vk14 as SPIR-V for Vulkan (ci_shadervalidator). No graphics card is needed.
 
 name: Shaders
 
@@ -13,6 +14,7 @@ on:
     paths:
       - 'shaders/**'
       - 'gl/**'
+      - 'rendering/common/**'
       - 'ci_shadervalidator/**'
       - '.github/workflows/shaders.yml'
   pull_request:
@@ -20,6 +22,7 @@ on:
     paths:
       - 'shaders/**'
       - 'gl/**'
+      - 'rendering/common/**'
       - 'ci_shadervalidator/**'
       - '.github/workflows/shaders.yml'
 
@@ -27,7 +30,7 @@ permissions: {}
 
 jobs:
   validate:
-    name: Validate shaders (GLSL 4.60)
+    name: Validate shaders (GLSL 4.60, SPIR-V)
     runs-on: ubuntu-24.04
     permissions:
       contents: read

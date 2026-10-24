@@ -1711,6 +1711,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_shadergamma;
     }
+    else if (Token == "gfx.shaders.binaries")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_shader_binaries;
+    }
     else if (Token == "gfx.drawrange.factor.max")
     {
         Parser.getTokens(1);
@@ -2181,6 +2186,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.skippipeline", gfx_skippipeline );
     export_as_text( Output, "gfx.extraeffects", gfx_extraeffects );
     export_as_text( Output, "gfx.shadergamma", gfx_shadergamma );
+    export_as_text( Output, "gfx.shaders.binaries", gfx_shader_binaries );
     export_as_text( Output, "gfx.vulkan.device", gfx_vulkan_device );
     export_as_text( Output, "gfx.vulkan.validation", gfx_vulkan_validation );
     export_as_text( Output, "gfx.vulkan.framesinflight", gfx_vulkan_framesinflight );

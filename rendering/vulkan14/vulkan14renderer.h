@@ -7,10 +7,11 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the vulkan 1.4 renderer, picked with gfxrenderer vulkan. so far the frame of the renderer only: the gpu, the windows with
-// their swapchains, the frames in flight; each window is cleared to a colour. the scenery, the materials and the textures
-// come in the later stages of the plan (claude/vulkan14-renderer-plan.md); until then those methods keep the data the
-// simulation reads back and draw nothing.
+// the vulkan 1.4 renderer, picked with gfxrenderer vulkan. so far the core of the renderer (the track R of the plan,
+// claude/vulkan14-renderer-plan.md): the gpu, the windows with their swapchains, the frames in flight, the memory and the
+// uploads, the shaders and the pipelines, the pushed descriptors, the passes with their barriers and gpu times, the textures
+// and the user interface (imgui) with the launcher. the scenery and the materials come in the later stages of the plan; until
+// then those methods keep the data the simulation reads back and draw nothing.
 //
 // the vulkan headers stay in the files of rendering/vulkan14: the objects of the api live in vulkan14_renderer::context
 
@@ -46,7 +47,7 @@ class vulkan14_renderer : public gfx_renderer
 	void Bind_Material(material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr) override;
 	IMaterial const *Material(material_handle const Material) const override;
 	// shaders
-	std::shared_ptr<gl::program> Fetch_Shader(std::string const &name) override;
+	std::shared_ptr<gfx::shader_program> Fetch_Shader(std::string const &name) override;
 	// textures
 	texture_handle Fetch_Texture(std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA) override;
 	void Bind_Texture(texture_handle const Texture) override;
@@ -80,22 +81,13 @@ class vulkan14_renderer : public gfx_renderer
 	// the objects of the vulkan api (vulkan14renderer.cpp)
 	struct context;
 
-	// imgui without drawing: the frames of the ui go on (its input works), nothing is drawn until the stage R5 of the plan
-	class imgui_stub : public imgui_renderer
-	{
-	  public:
-		bool Init() override;
-		void Shutdown() override;
-		void BeginFrame() override;
-		void Render() override;
-	};
-
 	void update_info();
+	// the device was lost: what was on the gpu goes to the log
+	void report_device_lost(char const *Where);
 
 	std::unique_ptr<context> m_context;
 	// the data of the geometry, which the simulation reads back; nothing on the gpu yet
 	gfx::geometrybank_manager m_geometry;
-	imgui_stub m_imgui;
 	float m_framerate{0.f};
 	double m_updateaccumulator{0.0};
 	bool m_debug_ui_active{false};

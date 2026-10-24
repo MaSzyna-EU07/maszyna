@@ -16,9 +16,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
+#include "rendering/renderer.h"
 
 #include "stb/stb_image.h"
-#include <glad/glad.h>
 
 #include <algorithm>
 #include <chrono>
@@ -100,8 +100,8 @@ ui::scenerywizard_panel::~scenerywizard_panel()
 {
 	if (m_request.valid())
 		m_request.wait();
-	if (m_texture != 0)
-		glDeleteTextures(1, &m_texture);
+	if ((m_texture != 0) && (GfxRenderer != nullptr) && (GfxRenderer->GetImguiRenderer() != nullptr))
+		GfxRenderer->GetImguiRenderer()->Release_Image(m_texture);
 }
 
 void ui::scenerywizard_panel::render_contents()
@@ -245,16 +245,11 @@ void ui::scenerywizard_panel::upload_map()
 		return;
 	}
 	m_map_error.clear();
-	if (m_texture == 0)
-		glGenTextures(1, &m_texture);
-	glBindTexture(GL_TEXTURE_2D, m_texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, result.width, result.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, result.pixels.data());
-	glBindTexture(GL_TEXTURE_2D, 0);
+	// the map as the service sends it, its values taken as they are (not as srgb), with the linear filtering
+	imgui_renderer::image_options options;
+	options.srgb = false;
+	if (auto *renderer{GfxRenderer->GetImguiRenderer()})
+		m_texture = renderer->Update_Image(m_texture, result.pixels.data(), result.width, result.height, options);
 	m_image_low = result.low;
 	m_image_high = result.high;
 }

@@ -71,6 +71,11 @@ class device
 	{
 		return m_graphics_queue;
 	}
+	// VK_EXT_memory_budget is on (the allocator keeps to the budget of the heaps)
+	bool memory_budget_enabled() const
+	{
+		return m_memory_budget;
+	}
 
   private:
 	static queue_families find_queue_families(VkInstance Instance, VkPhysicalDevice Physical, VkSurfaceKHR Surface, std::uint32_t &TimestampBits);
@@ -82,6 +87,7 @@ class device
 	queue_families m_families;
 	feature_chain m_queried;
 	bool m_portability_subset{false};
+	bool m_memory_budget{false};
 
 	VkQueue m_graphics_queue{VK_NULL_HANDLE};
 	VkQueue m_compute_queue{VK_NULL_HANDLE};

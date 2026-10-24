@@ -95,19 +95,19 @@ bool opengl46_grass::init()
 		return false;
 	}
 	m_vao = std::make_unique<gl::vao>();
-	auto const location = [&](char const *Name) { return ::glGetUniformLocation(*m_program, Name); };
-	m_uniforms.tile = location("grass_tile");
-	m_uniforms.part = location("grass_part");
-	m_uniforms.chunk = location("grass_chunk");
-	m_uniforms.camera = location("grass_camera");
-	m_uniforms.lod = location("grass_lod");
-	m_uniforms.wind = location("grass_wind");
-	m_uniforms.base = location("grass_base");
-	m_uniforms.tip = location("grass_tip");
-	m_uniforms.shape = location("grass_shape");
-	m_uniforms.share = location("grass_share");
-	m_uniforms.dry = location("grass_dry");
-	m_uniforms.season = location("grass_season");
+	// the locations grass.vert gives its uniforms (a program loaded from SPIR-V doesn't know their names)
+	m_uniforms.tile = 0;
+	m_uniforms.part = 1;
+	m_uniforms.chunk = 2;
+	m_uniforms.camera = 3;
+	m_uniforms.lod = 4;
+	m_uniforms.wind = 5;
+	m_uniforms.base = 6;
+	m_uniforms.tip = 10;
+	m_uniforms.shape = 14;
+	m_uniforms.share = 18;
+	m_uniforms.dry = 19;
+	m_uniforms.season = 23;
 	m_state = 1;
 	return true;
 }

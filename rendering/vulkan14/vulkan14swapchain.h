@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "rendering/vulkan14/vulkan14common.h"
+#include "rendering/vulkan14/vulkan14passes.h"
 
 namespace vk14
 {
@@ -44,6 +45,20 @@ class swapchain
 	acquire_result acquire(std::uint32_t const Frame);
 	// the image acquired, from undefined to cleared with Colour (linear) and ready to be shown
 	void record_clear(VkCommandBuffer Commands, glm::vec4 const &Colour) const;
+	// the image acquired and its view
+	VkImage image() const
+	{
+		return m_images[m_image];
+	}
+	VkImageView view() const
+	{
+		return m_views[m_image];
+	}
+	// a use of the image acquired by a pass (vk14::pass_list); the image starts the frame undefined, after the acquire semaphore
+	image_use use(VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access)
+	{
+		return image_use{m_images[m_image], VK_IMAGE_ASPECT_COLOR_BIT, &m_states[m_image], Layout, Stage, Access};
+	}
 	// the semaphore signalled when the image of the frame Frame is acquired
 	VkSemaphore acquire_semaphore(std::uint32_t const Frame) const
 	{
@@ -111,6 +126,8 @@ class swapchain
 	bool m_rebuild{false};
 
 	std::vector<VkImage> m_images;
+	// the states of the images for the barriers of the passes
+	std::vector<image_state> m_states;
 	std::vector<VkImageView> m_views;
 	// one per image: a semaphore given to the presentation can be reused only once the image comes back
 	std::vector<VkSemaphore> m_presentsemaphores;

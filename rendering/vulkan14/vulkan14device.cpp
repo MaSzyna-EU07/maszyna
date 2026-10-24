@@ -281,6 +281,12 @@ bool device::create(instance const &Instance, std::string &Reason)
 		{
 			extensions.push_back("VK_KHR_portability_subset");
 		}
+		// the allocator keeps to the budget of the memory heaps where the driver tells it
+		m_memory_budget = m_capabilities.ext_memory_budget;
+		if (m_memory_budget)
+		{
+			extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+		}
 	}
 
 	VkDeviceCreateInfo create{};

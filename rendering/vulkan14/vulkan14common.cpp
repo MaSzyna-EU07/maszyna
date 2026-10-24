@@ -127,6 +127,43 @@ bool verify_result(VkResult Result, char const *Call, char const *File, int Line
 	return false;
 }
 
+bool debug_utils_enabled{false};
+
+void name_object(VkDevice Device, VkObjectType Type, std::uint64_t Handle, std::string const &Name)
+{
+	if ((false == debug_utils_enabled) || (vkSetDebugUtilsObjectNameEXT == nullptr) || (Device == VK_NULL_HANDLE) || (Handle == 0) || Name.empty())
+	{
+		return;
+	}
+	VkDebugUtilsObjectNameInfoEXT info{};
+	info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+	info.objectType = Type;
+	info.objectHandle = Handle;
+	info.pObjectName = Name.c_str();
+	vkSetDebugUtilsObjectNameEXT(Device, &info);
+}
+
+void begin_label(VkCommandBuffer Commands, char const *Name)
+{
+	if ((false == debug_utils_enabled) || (vkCmdBeginDebugUtilsLabelEXT == nullptr))
+	{
+		return;
+	}
+	VkDebugUtilsLabelEXT label{};
+	label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+	label.pLabelName = Name;
+	vkCmdBeginDebugUtilsLabelEXT(Commands, &label);
+}
+
+void end_label(VkCommandBuffer Commands)
+{
+	if ((false == debug_utils_enabled) || (vkCmdEndDebugUtilsLabelEXT == nullptr))
+	{
+		return;
+	}
+	vkCmdEndDebugUtilsLabelEXT(Commands);
+}
+
 void log_info(std::string const &Message)
 {
 	WriteLog("vulkan: " + Message);

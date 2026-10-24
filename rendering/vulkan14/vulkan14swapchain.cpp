@@ -280,6 +280,7 @@ bool swapchain::build(std::string &Reason)
 	vkGetSwapchainImagesKHR(device, m_swapchain, &count, nullptr);
 	m_images.resize(count);
 	vkGetSwapchainImagesKHR(device, m_swapchain, &count, m_images.data());
+	m_states.assign(count, image_state{});
 
 	VkSemaphoreCreateInfo semaphoreinfo{};
 	semaphoreinfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -324,6 +325,15 @@ swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame)
 	}
 
 	auto const result{vkAcquireNextImageKHR(m_device->handle(), m_swapchain, UINT64_MAX, m_acquiresemaphores[Frame], VK_NULL_HANDLE, &m_image)};
+	if ((result == VK_SUCCESS) || (result == VK_SUBOPTIMAL_KHR))
+	{
+		// what the image held is of no use; its use waits for the acquire semaphore, which the submit waits for at the colour output
+		if (m_states.size() < m_images.size())
+		{
+			m_states.resize(m_images.size());
+		}
+		m_states[m_image] = image_state{VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE};
+	}
 	switch (result)
 	{
 	case VK_SUCCESS:
@@ -422,6 +432,7 @@ void swapchain::release_images()
 	m_views.clear();
 	m_presentsemaphores.clear();
 	m_images.clear();
+	m_states.clear();
 }
 
 void swapchain::destroy()

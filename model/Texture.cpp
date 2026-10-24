@@ -43,7 +43,7 @@ struct texture_request {
     int height { 0 };
     int mapcount { 0 };
     int blocksize { 0 };
-    // handed to the workers (opengl_texture::prefetch()), and when: the main thread only
+    // handed to the workers (texture_source::prefetch()), and when: the main thread only
     bool submitted { false };
     std::chrono::steady_clock::time_point submittime;
     bool ahead { false }; // read ahead of the camera, which was at the origin then
@@ -138,7 +138,7 @@ private:
             m_read.notify_all();
         } }
 
-    // same as the reading part of opengl_texture::load_DDS()
+    // same as the reading part of texture_source::load_DDS()
     static void read( texture_request &Request ) {
         std::ifstream file( Request.file, std::ios::binary );
         if( false == file.is_open() ) {
@@ -182,7 +182,7 @@ private:
 std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> opengl_texture::units = { 0 };
 GLint opengl_texture::m_activeunit = -1;
 
-std::unordered_map<GLint, int> opengl_texture::precompressed_formats =
+std::unordered_map<GLint, int> texture_source::precompressed_formats =
 {
     { GL_COMPRESSED_RGBA8_ETC2_EAC, 16 },
     { GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC, 16 },
@@ -257,16 +257,25 @@ std::unordered_map<GLint, std::unordered_map<GLint, GLint>> opengl_texture::mapp
                                           { GL_RED,        GL_R8 } } },
 };
 
-texture_manager::texture_manager() {
+texture_bank::texture_bank( std::function<texture_source *()> Make ) :
+    m_make( std::move( Make ) ) {
 
     // since index 0 is used to indicate no texture, we put a blank entry in the first texture slot
-    m_textures.emplace_back( new opengl_texture(), std::chrono::steady_clock::time_point() );
+    m_textures.emplace_back( m_make(), std::chrono::steady_clock::time_point() );
 }
+
+texture_bank::~texture_bank() {
+
+    delete_textures();
+}
+
+texture_manager::texture_manager() :
+    texture_bank( []() -> texture_source * { return new opengl_texture(); } ) {}
 
 // loads texture data from specified file
 // TODO: wrap it in a workitem class, for the job system deferred loading
 void
-opengl_texture::load() {
+texture_source::load() {
 	if (data_state == resource_state::good)
 		return;
 
@@ -319,11 +328,11 @@ fail:
     data_state = resource_state::failed;
     ErrorLog( "Bad texture: failed to load texture \"" + name + "\"" );
     // NOTE: temporary workaround for texture assignment errors
-    id = 0;
+    on_failed();
     return;
 }
 
-void opengl_texture::load_PNG()
+void texture_source::load_PNG()
 {
 	//png_image png;
 	//memset(&png, 0, sizeof(png_image));
@@ -370,7 +379,7 @@ void opengl_texture::load_PNG()
     //data_state = resource_state::good;
 }
 
-void opengl_texture::load_STBI()
+void texture_source::load_STBI()
 {
 	int x, y, n;
 	stbi_set_flip_vertically_on_load(1);
@@ -395,7 +404,7 @@ void opengl_texture::load_STBI()
 }
 
 void
-opengl_texture::make_stub()
+texture_source::make_stub()
 {
     data_width = 2;
     data_height = 2;
@@ -410,7 +419,7 @@ opengl_texture::make_stub()
 }
 
 void
-opengl_texture::make_from_memory(size_t width, size_t height, const uint8_t *raw)
+texture_source::make_from_memory(size_t width, size_t height, const uint8_t *raw)
 {
     release();
 
@@ -467,7 +476,7 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 }
 
 void
-opengl_texture::make_request() {
+texture_source::make_request() {
 
     auto const components { Split( name, '?' ) };
 
@@ -479,7 +488,7 @@ opengl_texture::make_request() {
 	Application.request( { ToLower( components.front() ), dictionary, rt } );
 }
 
-DDCOLORKEY opengl_texture::deserialize_ddck(std::istream &s)
+DDCOLORKEY texture_source::deserialize_ddck(std::istream &s)
 {
 	DDCOLORKEY ddck;
 
@@ -489,7 +498,7 @@ DDCOLORKEY opengl_texture::deserialize_ddck(std::istream &s)
 	return ddck;
 }
 
-DDPIXELFORMAT opengl_texture::deserialize_ddpf(std::istream &s)
+DDPIXELFORMAT texture_source::deserialize_ddpf(std::istream &s)
 {
 	DDPIXELFORMAT ddpf;
 
@@ -505,7 +514,7 @@ DDPIXELFORMAT opengl_texture::deserialize_ddpf(std::istream &s)
 	return ddpf;
 }
 
-DDSCAPS2 opengl_texture::deserialize_ddscaps(std::istream &s)
+DDSCAPS2 texture_source::deserialize_ddscaps(std::istream &s)
 {
 	DDSCAPS2 ddsc;
 
@@ -517,7 +526,7 @@ DDSCAPS2 opengl_texture::deserialize_ddscaps(std::istream &s)
 	return ddsc;
 }
 
-DDSURFACEDESC2 opengl_texture::deserialize_ddsd(std::istream &s)
+DDSURFACEDESC2 texture_source::deserialize_ddsd(std::istream &s)
 {
 	DDSURFACEDESC2 ddsd;
 
@@ -544,7 +553,7 @@ DDSURFACEDESC2 opengl_texture::deserialize_ddsd(std::istream &s)
 }
 
 void
-opengl_texture::load_DDS() {
+texture_source::load_DDS() {
 
     std::ifstream file( name + type, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
     std::size_t filesize = static_cast<size_t>(file.tellg());   // ios::ate already positioned us at the end of the file
@@ -689,7 +698,7 @@ opengl_texture::load_DDS() {
 }
 
 void
-opengl_texture::load_KTX() {
+texture_source::load_KTX() {
     std::ifstream file( name + type, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
     std::size_t filesize = static_cast<size_t>(file.tellg());   // ios::ate already positioned us at the end of the file
     file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
@@ -749,7 +758,7 @@ opengl_texture::load_KTX() {
 }
 
 void
-opengl_texture::load_TEX() {
+texture_source::load_TEX() {
 
     std::ifstream file( name + type, std::ios::binary ); file.unsetf( std::ios::skipws );
 
@@ -796,7 +805,7 @@ opengl_texture::load_TEX() {
 }
 
 void
-opengl_texture::load_TGA() {
+texture_source::load_TGA() {
 
     std::ifstream file( name + type, std::ios::binary ); file.unsetf( std::ios::skipws );
 
@@ -1121,7 +1130,7 @@ opengl_texture::create( bool const Static ) {
 
 // takes over the data read by a worker thread, waiting for it if needed
 void
-opengl_texture::complete_data() {
+texture_source::complete_data() {
 
     if( request == nullptr ) { return; }
 
@@ -1134,7 +1143,7 @@ opengl_texture::complete_data() {
         data_state = resource_state::failed;
         ErrorLog( "Bad texture: failed to load texture \"" + name + "\"" );
         // NOTE: temporary workaround for texture assignment errors, same as in load()
-        id = 0;
+        on_failed();
         return;
     }
     data.swap( completed->data );
@@ -1144,10 +1153,10 @@ opengl_texture::complete_data() {
 
 // has a worker thread read the data of the texture, if it's waiting for that. Origin: the camera, for data read ahead of it
 void
-opengl_texture::prefetch( glm::dvec3 const *Origin ) {
+texture_source::prefetch( glm::dvec3 const *Origin ) {
 
     if( ( request == nullptr )
-     && ( id == invalid_id )
+     && ( false == resident() )
      && ( data_state == resource_state::none )
      && ( true == reload_on_use )
      && ( true == streamed() ) ) {
@@ -1169,7 +1178,7 @@ opengl_texture::prefetch( glm::dvec3 const *Origin ) {
 // the data of the texture is read from its file by worker threads when it's needed (gfx.textures.streaming), and not kept
 // after the upload: it can be read again
 bool
-opengl_texture::streamed() const {
+texture_source::streamed() const {
 
     return ( ( true == Global.gfx_texture_streaming )
           && ( type == ".dds" )
@@ -1256,7 +1265,7 @@ opengl_texture::alloc_rendertarget( GLint format, GLint components, int width, i
 }
 
 void
-opengl_texture::set_components_hint( GLint hint ) {
+texture_source::set_components_hint( GLint hint ) {
 
     components_hint = hint;
 }
@@ -1284,7 +1293,7 @@ opengl_texture::set_filtering() const
 }
 
 void
-opengl_texture::downsize( GLuint const Format ) {
+texture_source::downsize( GLuint const Format ) {
 
     while( data_width > Global.CurrentMaxTextureSize || data_height > Global.CurrentMaxTextureSize ) {
         // scale down the base texture, if it's larger than allowed maximum
@@ -1313,7 +1322,7 @@ opengl_texture::downsize( GLuint const Format ) {
 }
 
 void
-opengl_texture::flip_vertical() {
+texture_source::flip_vertical() {
 
     auto const swapsize { data_width * 4 };
     auto destination { data.begin() + ( data_height - 1 ) * swapsize };
@@ -1338,7 +1347,7 @@ texture_manager::unit( GLint const Textureunit ) {
 
 // ustalenie numeru tekstury, wczytanie jeśli jeszcze takiej nie było
 texture_handle
-texture_manager::create( std::string Filename, bool const Loadnow, GLint Formathint ) {
+texture_bank::create( std::string Filename, bool const Loadnow, GLint Formathint ) {
 
     if( contains( Filename, '|' ) ) {
         Filename.erase( Filename.find( '|' ) ); // po | może być nazwa kolejnej tekstury
@@ -1411,7 +1420,7 @@ texture_manager::create( std::string Filename, bool const Loadnow, GLint Formath
         }
     }
 
-    auto texture = new opengl_texture();
+    auto texture = m_make();
     texture->name = locator.first;
     texture->type = locator.second;
     texture->traits = traits;
@@ -1424,9 +1433,9 @@ texture_manager::create( std::string Filename, bool const Loadnow, GLint Formath
 
     if( true == Loadnow ) {
 
-        texture_manager::texture( textureindex ).load();
+        texture_bank::texture( textureindex ).load();
 #ifndef EU07_DEFERRED_TEXTURE_UPLOAD
-        texture_manager::texture( textureindex ).create();
+        texture_bank::texture( textureindex ).create();
         // texture creation binds a different texture, force a re-bind on next use
         m_activetexture = -1;
 #endif
@@ -1446,8 +1455,8 @@ texture_manager::bind( std::size_t const Unit, texture_handle const Texture ) {
         opengl_texture::unbind(Unit);
 }
 
-opengl_texture &
-texture_manager::mark_as_used(const texture_handle Texture) {
+texture_source &
+texture_bank::mark_as_used(const texture_handle Texture) {
 
     auto &pair = m_textures[ Texture ];
     pair.second = m_garbagecollector.timestamp();
@@ -1455,20 +1464,34 @@ texture_manager::mark_as_used(const texture_handle Texture) {
 }
 
 void
-texture_manager::delete_textures() {
+texture_bank::delete_textures() {
     for( auto const &texture : m_textures ) {
         // usunięcie wszyskich tekstur (bez usuwania struktury)
-        if( texture.first->id > 0
-         && texture.first->id != -1 ) {
-            ::glDeleteTextures( 1, &texture.first->id );
-        }
+        texture.first->destroy();
         delete texture.first;
     }
+    m_textures.clear();
+}
+
+void
+opengl_texture::destroy() {
+
+    if( id > 0
+     && id != -1 ) {
+        ::glDeleteTextures( 1, &id );
+    }
+}
+
+void
+opengl_texture::on_failed() {
+
+    // NOTE: temporary workaround for texture assignment errors: the texture counts as made, with no gl texture
+    id = 0;
 }
 
 // starts a scan for gl textures used only by vehicles far away
 void
-texture_manager::begin_release_scan() {
+texture_bank::begin_release_scan() {
 
     m_releasescantime = std::chrono::steady_clock::now();
     // textures bound from now on are stamped with the time of this scan, the sweep may not be running
@@ -1480,7 +1503,7 @@ texture_manager::begin_release_scan() {
 
 // marks texture of a vehicle as needed if the vehicle is near, otherwise only as one used by vehicles
 void
-texture_manager::mark_as_needed( texture_handle const Texture, bool const Near ) {
+texture_bank::mark_as_needed( texture_handle const Texture, bool const Near ) {
 
     if( ( Texture <= 0 )
      || ( Texture >= static_cast<texture_handle>( m_neededtimes.size() ) ) ) {
@@ -1506,7 +1529,7 @@ texture_manager::mark_as_needed( texture_handle const Texture, bool const Near )
 
 // releases gl textures of vehicles not needed nor drawn for a while
 void
-texture_manager::release_unneeded() {
+texture_bank::release_unneeded() {
 
     // the delay keeps textures of a vehicle moving back and forth around the release distance from going in and out
     auto const delay { std::chrono::seconds{ 10 } };
@@ -1520,8 +1543,8 @@ texture_manager::release_unneeded() {
         }
         auto &record { m_textures[ index ] };
         auto &texture { *record.first };
-        if( ( texture.id == static_cast<GLuint>( -1 ) )
-         || ( texture.id == 0 )
+        if( ( false == texture.resident() )
+         || ( texture.get_id() == 0 )
          || ( true == texture.is_static )
          || ( true == texture.is_rendertarget )
          || ( texture.type == "make:" )
@@ -1539,26 +1562,30 @@ texture_manager::release_unneeded() {
     }
     if( releasecount > 0 ) {
         // released gl names can be given to new textures, the unit cache can't trust them
-        for( auto &unit : opengl_texture::units ) {
-            unit = -1;
-        }
+        released();
     }
 }
 
 // performs a resource sweep
 void
-texture_manager::update() {
+texture_bank::update() {
 
     if( m_garbagecollector.sweep() > 0 ) {
-        for( auto &unit : opengl_texture::units ) {
-            unit = -1;
-        }
+        released();
+    }
+}
+
+void
+texture_manager::released() {
+
+    for( auto &unit : opengl_texture::units ) {
+        unit = -1;
     }
 }
 
 // what the textures keep in memory, for the debug panel
-texture_manager::memory_data
-texture_manager::memory() const {
+texture_bank::memory_data
+texture_bank::memory() const {
 
     memory_data result;
     for( auto const &texture : m_textures ) {
@@ -1567,7 +1594,7 @@ texture_manager::memory() const {
             ++result.cpu.count;
             result.cpu.bytes += memory_of( texture.first->data );
         }
-        if( texture.first->id != opengl_texture::invalid_id ) {
+        if( true == texture.first->resident() ) {
             ++result.gpu.count;
             result.gpu.bytes += static_cast<std::uint64_t>( texture.first->size ) * 1024;
         }
@@ -1590,7 +1617,7 @@ texture_manager::memory() const {
 
 // has the data of a texture read, if it's waiting for that
 void
-texture_manager::prefetch( texture_handle const Texture, glm::dvec3 const &Origin ) {
+texture_bank::prefetch( texture_handle const Texture, glm::dvec3 const &Origin ) {
 
     if( ( Texture <= 0 )
      || ( Texture >= static_cast<texture_handle>( m_textures.size() ) ) ) {
@@ -1602,7 +1629,7 @@ texture_manager::prefetch( texture_handle const Texture, glm::dvec3 const &Origi
 // gives back the data read for textures which nothing drew within the specified time since it was asked for, or read ahead of the
 // camera which went farther than the specified distance from there since. it's read again when a texture is needed
 std::size_t
-texture_manager::drop_read_ahead( std::chrono::steady_clock::duration const Age, glm::dvec3 const &Camera, double const Distance ) {
+texture_bank::drop_read_ahead( std::chrono::steady_clock::duration const Age, glm::dvec3 const &Camera, double const Distance ) {
 
     auto const now { std::chrono::steady_clock::now() };
     std::size_t count { 0 };
@@ -1629,7 +1656,7 @@ texture_manager::drop_read_ahead( std::chrono::steady_clock::duration const Age,
 
 // debug performance string
 std::string
-texture_manager::info() const {
+texture_bank::info() const {
 
     // TODO: cache this data and update only during resource sweep
     std::size_t totaltexturecount{ m_textures.size() - 1 };
@@ -1668,7 +1695,7 @@ texture_manager::info() const {
 
 // checks whether specified texture is in the texture bank. returns texture id, or npos.
 texture_handle
-texture_manager::find_in_databank( std::string const &Texturename ) const {
+texture_bank::find_in_databank( std::string const &Texturename ) const {
 
     std::vector<std::string> const filenames {
         Global.asCurrentTexturePath + Texturename,
@@ -1687,7 +1714,7 @@ texture_manager::find_in_databank( std::string const &Texturename ) const {
 
 // checks whether specified file exists.
 std::pair<std::string, std::string>
-texture_manager::find_on_disk( std::string const &Texturename ) {
+texture_bank::find_on_disk( std::string const &Texturename ) {
 
     std::vector<std::string> const filenames {
         Global.asCurrentTexturePath + Texturename,

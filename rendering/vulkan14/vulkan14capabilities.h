@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "rendering/vulkan14/vulkan14common.h"
 
+#include <array>
+
 namespace vk14
 {
 
@@ -72,6 +74,11 @@ struct capabilities
 	std::uint32_t device_id{0};
 	VkDeviceSize device_local_memory{0};
 	float timestamp_period{0.f}; // nanoseconds per tick
+	// the limits of the device, the identity of its pipeline cache (VkPipelineCache data of another device or driver is
+	// thrown away) and the bindings a push descriptor set can have
+	VkPhysicalDeviceLimits limits{};
+	std::array<std::uint8_t, VK_UUID_SIZE> pipeline_cache_uuid{};
+	std::uint32_t max_push_descriptors{0};
 
 	// device extensions
 	bool ext_swapchain{false};

@@ -15,40 +15,33 @@ http://mozilla.org/MPL/2.0/.
 #include "winheaders.h"
 #include "utilities/memorystats.h"
 #include <string>
+#include <functional>
 #include "model/ResourceManager.h"
 #include "gl/ubo.h"
 #include "interfaces/ITexture.h"
 
 struct texture_request; // texture data read by a worker thread, with gfx.textures.streaming
 
-struct opengl_texture : public ITexture {
+// a texture as its file gives it, whichever api draws it: read and decoded (dds, tga, png, bmp, jpg, ktx, tex), with the mipmaps
+// the file has, kept within maxtexturesize; with gfx.textures.streaming the data of a dds file is read by worker threads. the
+// data is laid out as opengl takes it (the bottom row first) and its formats are the values of opengl (GL_RGBA,
+// GL_COMPRESSED_RGBA_S3TC_DXT1_EXT ...), which the renderers take as they are. a renderer makes its own object of the texture
+// from the data (create())
+struct texture_source : public ITexture {
     static DDSURFACEDESC2 deserialize_ddsd(std::istream&);
     static DDCOLORKEY deserialize_ddck(std::istream&);
     static DDPIXELFORMAT deserialize_ddpf(std::istream&);
     static DDSCAPS2 deserialize_ddscaps(std::istream&);
 
 // constructors
-    opengl_texture() = default;
+    texture_source() = default;
 // methods
     void
         load();
-    bool
-        bind( size_t unit );
-    static void
-        unbind( size_t unit );
-    virtual bool
-        create( bool const Static = false ) override;
-    // releases resources allocated on the opengl end, storing local copy if requested
-    void
-        release() override;
     void
         make_stub() override;
-    void
-        alloc_rendertarget( GLint format, GLint components, int width, int height, int layers = 1, int samples = 1, GLint wrap = GL_CLAMP_TO_EDGE );
     virtual void
         set_components_hint( GLint hint ) override;
-    static void
-        reset_unit_cache();
     virtual int
         get_width() const override {
             return data_width; }
@@ -56,10 +49,6 @@ struct opengl_texture : public ITexture {
     int
         get_height() const override {
             return data_height; }
-    virtual
-    size_t
-        get_id() const override {
-            return id; }
     virtual
     bool
         is_stub() const override {
@@ -86,11 +75,15 @@ struct opengl_texture : public ITexture {
 		return type; }
 
     virtual void make_from_memory(size_t width, size_t height, const uint8_t *data) override;
-	virtual void update_from_memory(size_t width, size_t height, const uint8_t *data) override;
+
+    // whether the texture has its object made by the renderer (it may be the failed one, with the id 0)
+    virtual bool
+        resident() const = 0;
+    // the object of the renderer goes, with the bank of the textures
+    virtual void
+        destroy() = 0;
 
 // members
-    static constexpr GLuint invalid_id { std::numeric_limits<GLuint>::max() }; // id value of texture without GL resource
-    GLuint id{ invalid_id }; // associated GL resource
     bool has_alpha{ false }; // indicates the texture has alpha channel
     bool is_ready{ false }; // indicates the texture was processed and is ready for use
     std::string traits; // requested texture attributes: wrapping modes etc
@@ -98,10 +91,6 @@ struct opengl_texture : public ITexture {
     std::string type; // type of the texture source file
     std::size_t size{ 0 }; // size of the texture data, in kb
     GLint components_hint = 0; // components that material wants
-
-    GLenum target = GL_TEXTURE_2D;
-    static std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> units;
-    static GLint m_activeunit;
 
 public:
 // methods
@@ -112,7 +101,6 @@ public:
     void load_TEX();
     void load_STBI();
     void load_TGA();
-    void set_filtering() const;
     void downsize( GLuint const Format );
     void flip_vertical();
 
@@ -129,8 +117,6 @@ public:
     bool reload_on_use = false; // the data was dropped along with the gl texture of a far texture, it's read again when the texture is needed
     bool is_static = false; // is excluded from garbage collection
     bool is_rendertarget = false; // is used as postfx rendertarget, without loaded data
-    int samples = 1;
-    int layers = 1;
     bool is_texstub = false; // for make_from_memory internal_src: functionality
     std::vector<unsigned char> data; // texture data (stored GL-style, bottom-left origin)
     resource_state data_state{ resource_state::none }; // current state of texture data
@@ -140,36 +126,90 @@ public:
     GLint data_format{ 0 },
         data_components{ 0 };
     GLint data_type = GL_UNSIGNED_BYTE;
-    GLint wrap_mode_s = GL_REPEAT;
-    GLint wrap_mode_t = GL_REPEAT;
 /*
     std::atomic<bool> is_loaded{ false }; // indicates the texture data was loaded and can be processed
     std::atomic<bool> is_good{ false }; // indicates the texture data was retrieved without errors
 */
+    // the compressed formats the files give, with the bytes of their blocks of 4x4 texels
     static std::unordered_map<GLint, int> precompressed_formats;
-    static std::unordered_map<GLint, GLint> drivercompressed_formats;
-    static std::unordered_map<GLint, std::unordered_map<GLint, GLint>> mapping;
+
+protected:
+    // the data of the texture couldn't be read (load(), complete_data())
+    virtual void
+        on_failed() {}
 };
 
-class texture_manager {
+// a texture of the opengl renderer
+struct opengl_texture : public texture_source {
+// constructors
+    opengl_texture() = default;
+// methods
+    bool
+        bind( size_t unit );
+    static void
+        unbind( size_t unit );
+    virtual bool
+        create( bool const Static = false ) override;
+    // releases resources allocated on the opengl end, storing local copy if requested
+    void
+        release() override;
+    void
+        alloc_rendertarget( GLint format, GLint components, int width, int height, int layers = 1, int samples = 1, GLint wrap = GL_CLAMP_TO_EDGE );
+    static void
+        reset_unit_cache();
+    virtual
+    size_t
+        get_id() const override {
+            return id; }
+	virtual void update_from_memory(size_t width, size_t height, const uint8_t *data) override;
+    bool
+        resident() const override {
+            return id != invalid_id; }
+    void
+        destroy() override;
+
+// members
+    static constexpr GLuint invalid_id { std::numeric_limits<GLuint>::max() }; // id value of texture without GL resource
+    GLuint id{ invalid_id }; // associated GL resource
+
+    GLenum target = GL_TEXTURE_2D;
+    static std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> units;
+    static GLint m_activeunit;
 
 public:
-    texture_manager();
-    ~texture_manager() { delete_textures(); }
+// methods
+    void set_filtering() const;
 
-    // activates specified texture unit
+// members
+    int samples = 1;
+    int layers = 1;
+    GLint wrap_mode_s = GL_REPEAT;
+    GLint wrap_mode_t = GL_REPEAT;
+
+    static std::unordered_map<GLint, GLint> drivercompressed_formats;
+    static std::unordered_map<GLint, std::unordered_map<GLint, GLint>> mapping;
+
+protected:
     void
-        unit( GLint const Textureunit );
+        on_failed() override;
+};
+
+// the textures of a renderer: made from their files the first time they are asked for, given back by their handles, released
+// when nothing used them for a while (gfx.resource.sweep) or when only vehicles far away use them (gfx.textures.releasedistance).
+// the objects of the textures come from the renderer (the function given to the constructor)
+class texture_bank {
+
+public:
+    explicit texture_bank( std::function<texture_source *()> Make );
+    virtual ~texture_bank();
+
     // creates texture object out of data stored in specified file
     texture_handle
         create( std::string Filename, bool const Loadnow = true, GLint Formathint = GL_SRGB_ALPHA );
-    // binds specified texture to specified texture unit
-    void
-        bind( std::size_t const Unit, texture_handle const Texture );
-    opengl_texture &
+    texture_source &
         mark_as_used( texture_handle const Texture );
     // provides direct access to specified texture object
-    opengl_texture &
+    texture_source &
         texture( texture_handle const Texture ) const { return *m_textures[Texture].first; }
     // performs a resource sweep
     void
@@ -208,10 +248,15 @@ public:
     std::size_t
         drop_read_ahead( std::chrono::steady_clock::duration const Age, glm::dvec3 const &Camera, double const Distance );
 
+protected:
+    // objects of textures were released, the renderer can't trust what it knew of their names
+    virtual void
+        released() {}
+
 private:
 // types:
     typedef std::pair<
-        opengl_texture *,
+        texture_source *,
         resource_timestamp > texturetimepoint_pair;
 
     typedef std::vector< texturetimepoint_pair > texturetimepointpair_sequence;
@@ -233,12 +278,38 @@ private:
         delete_textures();
 
 // members:
+    std::function<texture_source *()> m_make;
     texture_handle const npos { 0 }; // should be -1, but the rest of the code uses -1 for something else
     texturetimepointpair_sequence m_textures;
     index_map m_texturemappings;
     std::vector<resource_timestamp> m_neededtimes; // last time a vehicle near enough needed the texture, blank for textures not used by vehicles
     resource_timestamp m_releasescantime; // time of the current release scan
     garbage_collector<texturetimepointpair_sequence> m_garbagecollector { m_textures, 600, 60, "texture" };
+};
+
+// the textures of the opengl renderer
+class texture_manager : public texture_bank {
+
+public:
+    texture_manager();
+
+    // activates specified texture unit
+    void
+        unit( GLint const Textureunit );
+    // binds specified texture to specified texture unit
+    void
+        bind( std::size_t const Unit, texture_handle const Texture );
+    opengl_texture &
+        mark_as_used( texture_handle const Texture ) {
+            return static_cast<opengl_texture &>( texture_bank::mark_as_used( Texture ) ); }
+    // provides direct access to specified texture object
+    opengl_texture &
+        texture( texture_handle const Texture ) const {
+            return static_cast<opengl_texture &>( texture_bank::texture( Texture ) ); }
+
+protected:
+    void
+        released() override;
 };
 
 // reduces provided data image to half of original size, using basic 2x2 average

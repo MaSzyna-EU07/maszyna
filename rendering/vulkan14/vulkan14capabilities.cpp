@@ -197,6 +197,8 @@ void query_capabilities(VkPhysicalDevice Physical, feature_chain &Queried, capab
 	Caps.driver_name = properties12.driverName;
 	Caps.driver_info = properties12.driverInfo;
 	Caps.timestamp_period = properties.properties.limits.timestampPeriod;
+	Caps.limits = properties.properties.limits;
+	std::copy(std::begin(properties.properties.pipelineCacheUUID), std::end(properties.properties.pipelineCacheUUID), Caps.pipeline_cache_uuid.begin());
 
 	VkPhysicalDeviceMemoryProperties memory{};
 	vkGetPhysicalDeviceMemoryProperties(Physical, &memory);
@@ -213,6 +215,17 @@ void query_capabilities(VkPhysicalDevice Physical, feature_chain &Queried, capab
 	{
 		Caps.missing.push_back("the driver gives vulkan " + version_string(Caps.api_version) + ", the renderer needs 1.4");
 		return;
+	}
+
+	// the properties of 1.4, asked for once the driver is known to have them
+	{
+		VkPhysicalDeviceVulkan14Properties properties14{};
+		properties14.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES;
+		VkPhysicalDeviceProperties2 properties2{};
+		properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		properties2.pNext = &properties14;
+		vkGetPhysicalDeviceProperties2(Physical, &properties2);
+		Caps.max_push_descriptors = properties14.maxPushDescriptors;
 	}
 
 	// features

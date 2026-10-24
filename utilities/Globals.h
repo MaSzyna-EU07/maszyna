@@ -367,6 +367,8 @@ struct global_settings {
     bool gfx_extraeffects = true;
     bool gfx_shadergamma = false;
     bool gfx_gldebug = false;
+    // the shaders are loaded from the SPIR-V binaries of shaders/ogl46bin and shaders/vk14bin where there are up to date ones
+    bool gfx_shader_binaries = true;
     // (vulkan) the gpu to run on: its index in the list of the log or a part of its name; empty: the best one
     std::string gfx_vulkan_device;
     // (vulkan) 0: no validation layer, 1: validation layer, 2: also gpu-assisted validation

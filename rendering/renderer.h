@@ -19,9 +19,9 @@ http://mozilla.org/MPL/2.0/.
 
 struct lighting_data;
 
-namespace gl
+namespace gfx
 {
-class program;
+class shader_program;
 }
 
 namespace gfx
@@ -132,9 +132,9 @@ public:
     // again. chunks left out are dropped. backends which can't draw grass ignore it
     virtual void Terrain_Grass( std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks ) {}
     // shader methods
-    virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> = 0;
+    virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gfx::shader_program> = 0;
     // the name the program was fetched by, empty where it wasn't fetched by Fetch_Shader()
-    virtual auto Shader_Name( std::shared_ptr<gl::program> const &Program ) const -> std::string { return {}; }
+    virtual auto Shader_Name( std::shared_ptr<gfx::shader_program> const &Program ) const -> std::string { return {}; }
     // texture methods
     virtual auto Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) -> texture_handle = 0;
     virtual void Bind_Texture( texture_handle const Texture ) = 0;
@@ -228,15 +228,33 @@ private:
 class imgui_renderer
 {
   public:
+	// how an image of the user interface is sampled
+	struct image_options
+	{
+		bool srgb{true}; // the colours are srgb, made linear by the sampling; plain values otherwise
+		bool nearest{false}; // the nearest texel instead of the linear filtering
+		bool mipmaps{false}; // mipmaps made of the image, for an image drawn smaller than it is
+	};
+
 	virtual bool Init() = 0;
 	virtual void Shutdown() = 0;
 	virtual void BeginFrame() = 0;
 	virtual void Render() = 0;
 	// images of the user interface itself (e.g. the previews of the node bank), apart from the textures of the scene: rgba, rows
-	// from the top, in srgb. returns: id for ImGui::Image, 0 if the renderer can't make them
-	virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+	// from the top. returns: id for ImGui::Image, 0 if the renderer can't make them
+	virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height, image_options const &Options)
 	{
 		return 0;
+	}
+	std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+	{
+		return Create_Image(Rgba, Width, Height, image_options{});
+	}
+	// the image given other content, of the same or another size (Image 0: a new one). returns: its id, which can be a new one
+	virtual std::uint64_t Update_Image(std::uint64_t const Image, std::uint8_t const *Rgba, int const Width, int const Height, image_options const &Options)
+	{
+		Release_Image(Image);
+		return Create_Image(Rgba, Width, Height, Options);
 	}
 	virtual void Release_Image(std::uint64_t const Image) {}
 };

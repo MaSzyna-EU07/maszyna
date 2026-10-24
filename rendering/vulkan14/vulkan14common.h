@@ -31,6 +31,26 @@ std::string memory_size_string(VkDeviceSize Bytes);
 // logs a failed call and gives back false; true for VK_SUCCESS
 bool verify_result(VkResult Result, char const *Call, char const *File, int Line);
 
+// whether VK_EXT_debug_utils is on (set by vk14::instance): the names of the objects and the labels of the passes
+extern bool debug_utils_enabled;
+// the 64 bit value of a handle, for the names of the objects
+template <typename Handle_> std::uint64_t handle_value(Handle_ Handle)
+{
+	if constexpr (std::is_pointer_v<Handle_>)
+	{
+		return reinterpret_cast<std::uint64_t>(Handle);
+	}
+	else
+	{
+		return static_cast<std::uint64_t>(Handle);
+	}
+}
+// a name of an object for the messages of the validation layer and for captures; nothing without debug utils
+void name_object(VkDevice Device, VkObjectType Type, std::uint64_t Handle, std::string const &Name);
+// a label of a part of the commands (a pass), for captures and the messages of the validation layer
+void begin_label(VkCommandBuffer Commands, char const *Name);
+void end_label(VkCommandBuffer Commands);
+
 // the log of the renderer, with the "vulkan: " prefix
 void log_info(std::string const &Message);
 void log_warning(std::string const &Message);

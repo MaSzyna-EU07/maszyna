@@ -20,3 +20,15 @@
 [submodule "ref/json"]
 	path = ref/json
 	url = https://github.com/nlohmann/json
+[submodule "ref/volk"]
+	path = ref/volk
+	url = https://github.com/zeux/volk.git
+[submodule "ref/Vulkan-Headers"]
+	path = ref/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "ref/VulkanMemoryAllocator"]
+	path = ref/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "ref/glslang"]
+	path = ref/glslang
+	url = https://github.com/KhronosGroup/glslang.git
