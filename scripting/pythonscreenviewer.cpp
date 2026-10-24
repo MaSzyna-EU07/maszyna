@@ -46,6 +46,12 @@ python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::s
 
             conf->window = Application.window(-1, true, conf->window_size.x, conf->window_size.y,
 			                                 monitor, false, Global.python_sharectx);
+			if (conf->window == nullptr)
+			{
+				// e.g. the renderer has no opengl context to share
+				ErrorLog("python screen \"" + surfacename + "\": window couldn't be made");
+				continue;
+			}
 
             {
                 int w;

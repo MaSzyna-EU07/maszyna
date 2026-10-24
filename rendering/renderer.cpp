@@ -15,15 +15,29 @@ std::unique_ptr<gfx_renderer> GfxRenderer;
 
 bool gfx_renderer_factory::register_backend(const std::string &backend, gfx_renderer_factory::create_method func)
 {
-    backends[backend] = func;
+    gfx_backend_desc desc;
+    desc.name = backend;
+    desc.create = func;
+    return register_backend(backend, desc);
+}
+
+bool gfx_renderer_factory::register_backend(const std::string &backend, gfx_backend_desc const &desc)
+{
+    backends[backend] = desc;
     return true;
+}
+
+gfx_backend_desc const *gfx_renderer_factory::backend(const std::string &name) const
+{
+    auto it = backends.find(name);
+    return (it != backends.end() ? &it->second : nullptr);
 }
 
 std::unique_ptr<gfx_renderer> gfx_renderer_factory::create(const std::string &backend)
 {
     auto it = backends.find(backend);
-    if (it != backends.end())
-        return it->second();
+    if ((it != backends.end()) && (it->second.create != nullptr))
+        return it->second.create();
 
     ErrorLog("renderer \"" + backend + "\" not found!");
     return nullptr;

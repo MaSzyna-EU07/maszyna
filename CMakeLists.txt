@@ -50,6 +50,7 @@ file(GLOB HEADERS "*.h"
 "scene/*.h"
 "rendering/*.h"
 "rendering/opengl46/*.h"
+"rendering/vulkan14/*.h"
 "audio/*.h"
 "environment/*.h"
 "application/*.h"
@@ -69,6 +70,7 @@ if (APPLE)
 endif()
 
 option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
+option(WITH_VULKAN "Compile with the Vulkan 1.4 renderer (gfxrenderer vulkan); needs the submodules ref/volk and ref/Vulkan-Headers" OFF)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
@@ -400,8 +402,27 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46gpuparticles.cpp"
             "rendering/opengl46/opengl46terrain.cpp"
             "rendering/opengl46/opengl46grass.cpp"
+            "rendering/opengl46/opengl46backend.cpp"
             "rendering/opengl46/opengl46renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
+endif()
+
+if (WITH_VULKAN)
+	# the vulkan loader is loaded by volk when the program runs, so the program starts without it (and runs with opengl)
+	set(VULKAN_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/Vulkan-Headers/include")
+	set(VOLK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/volk")
+	if (NOT EXISTS "${VOLK_DIR}/volk.h" OR NOT EXISTS "${VULKAN_HEADERS_DIR}/vulkan/vulkan_core.h")
+		message(FATAL_ERROR "WITH_VULKAN=ON needs the submodules ref/volk and ref/Vulkan-Headers: git submodule update --init ref/volk ref/Vulkan-Headers")
+	endif()
+	set(SOURCES ${SOURCES}
+		"rendering/vulkan14/vulkan14common.cpp"
+		"rendering/vulkan14/vulkan14capabilities.cpp"
+		"rendering/vulkan14/vulkan14instance.cpp"
+		"rendering/vulkan14/vulkan14device.cpp"
+		"rendering/vulkan14/vulkan14swapchain.cpp"
+		"rendering/vulkan14/vulkan14renderer.cpp"
+		"ref/volk/volk.c")
+	set(DEFINITIONS ${DEFINITIONS} "WITH_VULKAN")
 endif()
 
 add_subdirectory("${DEPS_DIR}/glfw/" EXCLUDE_FROM_ALL)
@@ -529,6 +550,11 @@ set_target_properties(eu07_core PROPERTIES
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 target_link_libraries(${PROJECT_NAME} eu07_core)
+if (WITH_VULKAN)
+	# the vulkan headers are seen by the files of rendering/vulkan14 only, they include them
+	target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_HEADERS_DIR}" "${VOLK_DIR}")
+	target_link_libraries(${PROJECT_NAME} ${CMAKE_DL_LIBS})
+endif()
 
 target_compile_definitions(eu07_settings INTERFACE ${DEFINITIONS})
 

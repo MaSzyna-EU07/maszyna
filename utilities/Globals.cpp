@@ -317,10 +317,13 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     {
         ParseOne(Parser, GfxRenderer);
 
-        if (GfxRenderer == "full")
+        // "default": the opengl 4.6 renderer, "vulkan": the vulkan 1.4 one (opengl when it can't run on the machine)
+        if ((GfxRenderer == "full") || (GfxRenderer == "opengl") || (GfxRenderer == "gl46"))
             GfxRenderer = "default";
+        else if (GfxRenderer == "vulkan14")
+            GfxRenderer = "vulkan";
 
-        if (GfxRenderer != "default")
+        if ((GfxRenderer != "default") && (GfxRenderer != "vulkan"))
         {
             // the legacy OpenGL 2.1 renderer ("legacy", "simple" and other values) and the NVRHI renderer ("experimental") were removed
             WriteLog("eu07.ini: gfxrenderer \"" + GfxRenderer + "\" is no longer supported, using \"default\"");
@@ -1741,6 +1744,26 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_shadow_sdsm_split;
         gfx_shadow_sdsm_split = std::clamp(gfx_shadow_sdsm_split, 0.f, 1.f);
     }
+    else if (Token == "gfx.vulkan.device")
+    {
+        // index of the gpu in the list of the log, or a part of its name
+        Parser.getTokens(1, false);
+        Parser >> gfx_vulkan_device;
+    }
+    else if (Token == "gfx.vulkan.validation")
+    {
+        // no/yes, 2: also gpu-assisted
+        std::string value;
+        Parser.getTokens(1);
+        Parser >> value;
+        gfx_vulkan_validation = (value == "2" ? 2 : (value == "yes" || value == "true" || value == "1") ? 1 : 0);
+    }
+    else if (Token == "gfx.vulkan.framesinflight")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_framesinflight;
+        gfx_vulkan_framesinflight = std::clamp(gfx_vulkan_framesinflight, 2, 3);
+    }
     else if (ConfigParse_gfx_sky(Parser, Token))
     {
         // parsed
@@ -2158,6 +2181,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.skippipeline", gfx_skippipeline );
     export_as_text( Output, "gfx.extraeffects", gfx_extraeffects );
     export_as_text( Output, "gfx.shadergamma", gfx_shadergamma );
+    export_as_text( Output, "gfx.vulkan.device", gfx_vulkan_device );
+    export_as_text( Output, "gfx.vulkan.validation", gfx_vulkan_validation );
+    export_as_text( Output, "gfx.vulkan.framesinflight", gfx_vulkan_framesinflight );
     export_as_text( Output, "gfx.shadow.angle.min", gfx_shadow_angle_min );
     export_as_text( Output, "gfx.shadow.rank.cutoff", gfx_shadow_rank_cutoff );
     export_as_text( Output, "gfx.shadow.sdsm", gfx_shadow_sdsm );

@@ -185,6 +185,8 @@ class opengl46_renderer : public gfx_renderer {
     GLenum static const sunlight{0};
 
     static std::unique_ptr<gfx_renderer> create_func();
+    // how the windows of the renderer are made (opengl46backend.cpp)
+    static gfx_backend_desc backend_desc();
 
   private:
 	// types

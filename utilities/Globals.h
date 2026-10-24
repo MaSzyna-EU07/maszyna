@@ -367,6 +367,12 @@ struct global_settings {
     bool gfx_extraeffects = true;
     bool gfx_shadergamma = false;
     bool gfx_gldebug = false;
+    // (vulkan) the gpu to run on: its index in the list of the log or a part of its name; empty: the best one
+    std::string gfx_vulkan_device;
+    // (vulkan) 0: no validation layer, 1: validation layer, 2: also gpu-assisted validation
+    int gfx_vulkan_validation { 0 };
+    // (vulkan) frames recorded while the gpu works on the earlier ones, 2 or 3
+    int gfx_vulkan_framesinflight { 2 };
     bool vr = false;
     std::string vr_backend;
 

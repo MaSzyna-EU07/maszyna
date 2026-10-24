@@ -381,11 +381,6 @@ int eu07_application::init(int Argc, char *Argv[])
 		ErrorLog("Failed to initialize glfw!");
 		return result;
 	}
-	if ((result = init_ogl()) != 0)
-	{
-		ErrorLog("Failed to initialize ogl!");
-		return result;
-	}
 
 	if (crashreport_is_pending())
 	{ // run crashgui as early as possible
@@ -966,6 +961,13 @@ GLFWwindow *eu07_application::window(int const Windowindex, bool visible, int wi
 
 	glfwWindowHint(GLFW_VISIBLE, visible);
 
+	if (share_ctx && (m_gfxbackend != nullptr) && (false == m_gfxbackend->gl_context))
+	{
+		// the windows of the renderer have no opengl context to share
+		WriteLog("window with an opengl context shared with the main window isn't available with the " + m_gfxbackend->name + " renderer");
+		return nullptr;
+	}
+
 	auto *childwindow = glfwCreateWindow(width, height, "eu07window", monitor, share_ctx ? m_windows.front() : nullptr);
 	if (!childwindow)
 		return nullptr;
@@ -1221,33 +1223,6 @@ int eu07_application::init_locale()
 	return 0;
 }
 
-// the context of the required version couldn't be created. a context with default settings tells which version the
-// driver does provide, so the user can be told what is missing
-static std::string describe_gl_driver()
-{
-	glfwDefaultWindowHints();
-	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-	auto *probe = glfwCreateWindow(64, 64, "eu07 opengl probe", nullptr, nullptr);
-	if (probe == nullptr)
-		return "no OpenGL context";
-
-	glfwMakeContextCurrent(probe);
-	std::string description;
-	auto const getstring = reinterpret_cast<PFNGLGETSTRINGPROC>(glfwGetProcAddress("glGetString"));
-	if (getstring != nullptr)
-	{
-		auto const text = [&](GLenum const Name) {
-			auto const *value = reinterpret_cast<char const *>(getstring(Name));
-			return std::string(value != nullptr ? value : "?");
-		};
-		description = "OpenGL " + text(GL_VERSION) + ", " + text(GL_RENDERER) + " (" + text(GL_VENDOR) + ")";
-	}
-	glfwMakeContextCurrent(nullptr);
-	glfwDestroyWindow(probe);
-
-	return description.empty() ? "unknown OpenGL version" : description;
-}
-
 int eu07_application::init_glfw()
 {
 	if (glfwInit() == GLFW_FALSE)
@@ -1267,29 +1242,64 @@ int eu07_application::init_glfw()
 		}
 	}
 
+	select_gfx_backend();
+
+	return create_main_window();
+}
+
+void eu07_application::select_gfx_backend()
+{
+	auto *factory{gfx_renderer_factory::get_instance()};
+	m_gfxbackend = nullptr;
+
+	if (Global.GfxRenderer == "vulkan")
+	{
+		// a renderer which can't run here falls back to opengl, so a setting in eu07.ini doesn't leave the user with a black screen
+		std::string reason;
+		auto const *vulkan{factory->backend("vulkan")};
+		if (vulkan == nullptr)
+		{
+			reason = "this build of the simulator has no vulkan renderer";
+		}
+		else if ((vulkan->probe == nullptr) || vulkan->probe(reason))
+		{
+			m_gfxbackend = vulkan;
+		}
+		if (m_gfxbackend == nullptr)
+		{
+			WriteLog("gfxrenderer vulkan: not available (" + reason + "), using opengl");
+			crashreport_add_info("gfxrenderer_fallback", reason);
+			Global.GfxRenderer = "default";
+		}
+	}
+
+	if (m_gfxbackend == nullptr)
+	{
+		m_gfxbackend = factory->backend("modern");
+	}
+
+	crashreport_add_info("gfxrenderer", Global.GfxRenderer);
+	WriteLog("renderer: " + (m_gfxbackend != nullptr ? m_gfxbackend->name : std::string("none")));
+}
+
+int eu07_application::create_main_window()
+{
+	if (m_gfxbackend == nullptr)
+	{
+		ErrorLog("Bad init: no renderer found");
+		return -1;
+	}
+
 	auto *monitor{find_monitor(Global.fullscreen_monitor)};
 	if (!monitor)
 		monitor = glfwGetPrimaryMonitor();
 
+	// the window may be made a second time, after another backend was tried
+	glfwDefaultWindowHints();
 	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
-	if (Global.gfx_skippipeline && Global.iMultisampling > 0)
-	{
-		glfwWindowHint(GLFW_SAMPLES, 1 << Global.iMultisampling);
-	}
-
-	crashreport_add_info("gfxrenderer", Global.GfxRenderer);
-
-	// activate core profile for opengl 4.6 renderer
 	// NOTE: the hints stay in effect for the additional windows and shared contexts created later through window()
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-
-	if (Global.gfx_gldebug)
-		glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
-
-	glfwWindowHint(GLFW_SRGB_CAPABLE, !Global.gfx_shadergamma);
+	if (m_gfxbackend->window_hints != nullptr)
+		m_gfxbackend->window_hints();
 
 	if (Global.fullscreen_windowed)
 	{
@@ -1306,21 +1316,16 @@ int eu07_application::init_glfw()
 		char const *glfwerror = nullptr;
 		glfwGetError(&glfwerror);
 		std::string const reason = (glfwerror != nullptr ? glfwerror : "unknown error");
-		auto const driver = describe_gl_driver();
-		ErrorLog("Bad init: failed to create OpenGL 4.6 core profile context (" + reason + "); the graphics card/driver provides: " + driver);
-#ifdef _WIN32
-		auto const message = "MaSzyna requires OpenGL 4.6 (core profile), but the OpenGL 4.6 context could not be created.\n\n"
-		                     "Your graphics card/driver provides:\n" + driver + "\n\n"
-		                     "Details: " + reason + "\n\n"
-		                     "Update the graphics driver or use a graphics card with OpenGL 4.6 support.";
-		MessageBoxA(nullptr, message.c_str(), "MaSzyna", MB_ICONERROR | MB_OK);
-#endif
+		if (m_gfxbackend->window_failed != nullptr)
+			m_gfxbackend->window_failed(reason);
 		ErrorLog("Bad init: failed to create glfw window");
 		return -1;
 	}
 
-	glfwMakeContextCurrent(mainwindow);
-	glfwSwapInterval(Global.VSync ? 1 : 0); // vsync
+	if ((m_gfxbackend->after_window != nullptr) && (false == m_gfxbackend->after_window(mainwindow)))
+	{
+		return -1;
+	}
 
 	{
 		int width, height;
@@ -1343,6 +1348,23 @@ int eu07_application::init_glfw()
 	return 0;
 }
 
+int eu07_application::fallback_to_opengl(std::string const &Reason)
+{
+	WriteLog("gfxrenderer vulkan: " + Reason + ", using opengl");
+	crashreport_add_info("gfxrenderer_fallback", Reason);
+	Global.GfxRenderer = "default";
+	m_gfxbackend = gfx_renderer_factory::get_instance()->backend("modern");
+	crashreport_add_info("gfxrenderer", Global.GfxRenderer);
+	WriteLog("renderer: " + (m_gfxbackend != nullptr ? m_gfxbackend->name : std::string("none")));
+
+	// nothing hangs on the window yet (the ui is set up later), so it can be made anew with the hints of opengl
+	for (auto *window : m_windows)
+		glfwDestroyWindow(window);
+	m_windows.clear();
+
+	return create_main_window();
+}
+
 void eu07_application::init_callbacks()
 {
 
@@ -1356,17 +1378,6 @@ void eu07_application::init_callbacks()
 	glfwSetCharCallback(window, char_callback);
 	glfwSetWindowFocusCallback(window, focus_callback);
 	glfwSetCursorEnterCallback(window, cursor_enter_callback);
-}
-
-int eu07_application::init_ogl()
-{
-	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-	{
-		ErrorLog("Bad init: failed to initialize glad");
-		return -1;
-	}
-
-	return 0;
 }
 
 int eu07_application::init_ui()
@@ -1383,7 +1394,7 @@ int eu07_application::init_gfx()
 {
 
 	// NOTE: global_settings maps unsupported gfxrenderer values (e.g. the removed "legacy") to "default"
-	GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
+	GfxRenderer = (m_gfxbackend != nullptr && m_gfxbackend->create != nullptr) ? m_gfxbackend->create() : nullptr;
 
 	if (!GfxRenderer)
 	{
@@ -1393,7 +1404,22 @@ int eu07_application::init_gfx()
 
 	if (false == GfxRenderer->Init(m_windows.front()))
 	{
-		return -1;
+		if (Global.GfxRenderer != "vulkan")
+		{
+			return -1;
+		}
+		// the reason is in the log already
+		GfxRenderer->Shutdown();
+		GfxRenderer.reset();
+		if (fallback_to_opengl("the renderer failed to start") != 0)
+		{
+			return -1;
+		}
+		GfxRenderer = m_gfxbackend->create();
+		if (!GfxRenderer || (false == GfxRenderer->Init(m_windows.front())))
+		{
+			return -1;
+		}
 	}
 
 	for (const global_settings::extraviewport_config &conf : Global.extra_viewports)

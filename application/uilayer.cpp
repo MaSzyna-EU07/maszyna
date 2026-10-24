@@ -389,7 +389,11 @@ bool ui_layer::init(GLFWwindow *Window)
 
 	imgui_style();
 
-    ImGui_ImplGlfw_InitForOpenGL(m_window, false);
+    // a window without an opengl context belongs to the vulkan renderer
+    if (glfwGetWindowAttrib(m_window, GLFW_CLIENT_API) == GLFW_NO_API)
+        ImGui_ImplGlfw_InitForVulkan(m_window, false);
+    else
+        ImGui_ImplGlfw_InitForOpenGL(m_window, false);
 
     if (!GfxRenderer->GetImguiRenderer() || !GfxRenderer->GetImguiRenderer()->Init())
 	  {

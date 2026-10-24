@@ -10215,7 +10215,7 @@ std::unique_ptr<gfx_renderer> opengl46_renderer::create_func()
     return std::unique_ptr<gfx_renderer>(new opengl46_renderer());
 }
 
-bool opengl46_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("modern", opengl46_renderer::create_func);
+bool opengl46_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("modern", opengl46_renderer::backend_desc());
 
 bool opengl46_renderer::opengl46_imgui_renderer::Init()
 {

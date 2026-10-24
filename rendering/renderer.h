@@ -184,18 +184,44 @@ public:
     virtual auto Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) -> bool { return false; }
 };
 
+// what the application has to know about a backend before its renderer exists: whether it can run here at all, and how its
+// windows are made. a window made for opengl can't be drawn to with vulkan and the other way round, so the application asks
+// the backend picked by gfxrenderer before the main window is made, and falls back to opengl when it can't run
+struct gfx_backend_desc
+{
+    using create_method = std::unique_ptr<gfx_renderer>(*)();
+
+    std::string name; // for the log
+    create_method create { nullptr };
+    // whether the backend can run on this machine. false: Reason tells why. null: it always can
+    bool (*probe)( std::string &Reason ) { nullptr };
+    // glfw hints of the windows of the backend, set over the defaults before the main window is made. they stay in effect for
+    // the windows made after it
+    void (*window_hints)() { nullptr };
+    // after the main window was made, before the renderer is. false: the backend can't use the window
+    bool (*after_window)( GLFWwindow *Window ) { nullptr };
+    // the main window couldn't be made; Reason is the error of glfw. tells the user what is missing
+    void (*window_failed)( std::string const &Reason ) { nullptr };
+    // the windows have an opengl context, which the windows made later can share
+    bool gl_context { true };
+};
+
 class gfx_renderer_factory
 {
 public:
-    using create_method = std::unique_ptr<gfx_renderer>(*)();
+    using create_method = gfx_backend_desc::create_method;
 
+    // a backend with no window of its own to care about (e.g. "null")
     bool register_backend(const std::string &backend, create_method func);
+    bool register_backend(const std::string &backend, gfx_backend_desc const &desc);
+    // the description of the backend registered by the name, null if there's none (e.g. not built in)
+    gfx_backend_desc const *backend(const std::string &name) const;
     std::unique_ptr<gfx_renderer> create(const std::string &name);
 
     static gfx_renderer_factory* get_instance();
 
 private:
-    std::unordered_map<std::string, create_method> backends;
+    std::unordered_map<std::string, gfx_backend_desc> backends;
     static gfx_renderer_factory *instance;
 };
 
