@@ -106,12 +106,14 @@ local_point spiral_point(double const Start, double const End, double const Leng
 
 struct compound_curve
 {
-	std::vector<std::array<double, 3>> segments;
+	// the curvature at the start and at the end, the length, the cant at the start and at the end
+	std::vector<std::array<double, 5>> segments;
 	local_point end;
 	double shortened{1.0};
 };
 
-compound_curve build_compound(double const Deflection, std::vector<compound_arc> const &Arcs, double const Lengthin, double const Lengthout)
+// Cants: of the arcs, the cants of the segments stay 0 without them
+compound_curve build_compound(double const Deflection, std::vector<compound_arc> const &Arcs, double const Lengthin, double const Lengthout, std::vector<double> const &Cants = {})
 {
 	compound_curve result;
 	if (Arcs.empty())
@@ -119,6 +121,7 @@ compound_curve build_compound(double const Deflection, std::vector<compound_arc>
 	std::vector<double> curvatures;
 	for (auto const &arc : Arcs)
 		curvatures.push_back(1.0 / std::max(1.0, arc.radius));
+	auto const cant = [&](std::size_t const Arc) { return Arc < Cants.size() ? Cants[Arc] : 0.0; };
 	auto transitions{curvatures.front() * Lengthin + curvatures.back() * Lengthout};
 	for (std::size_t i = 1; i < Arcs.size(); ++i)
 		transitions += (curvatures[i - 1] + curvatures[i]) * std::max(0.0, Arcs[i].transition);
@@ -130,15 +133,15 @@ compound_curve build_compound(double const Deflection, std::vector<compound_arc>
 	double total{0.0};
 	for (auto const &arc : Arcs)
 		total += std::max(0.0, arc.share);
-	std::vector<std::array<double, 3>> segments{{0.0, curvatures.front(), Lengthin * f}};
+	std::vector<std::array<double, 5>> segments{{0.0, curvatures.front(), Lengthin * f, 0.0, cant(0)}};
 	for (std::size_t i = 0; i < Arcs.size(); ++i)
 	{
 		if (i > 0)
-			segments.push_back({curvatures[i - 1], curvatures[i], std::max(0.0, Arcs[i].transition) * f});
+			segments.push_back({curvatures[i - 1], curvatures[i], std::max(0.0, Arcs[i].transition) * f, cant(i - 1), cant(i)});
 		auto const share{total > 0.0 ? std::max(0.0, Arcs[i].share) / total : 1.0 / static_cast<double>(Arcs.size())};
-		segments.push_back({curvatures[i], curvatures[i], share * arcs / curvatures[i]});
+		segments.push_back({curvatures[i], curvatures[i], share * arcs / curvatures[i], cant(i), cant(i)});
 	}
-	segments.push_back({curvatures.back(), 0.0, Lengthout * f});
+	segments.push_back({curvatures.back(), 0.0, Lengthout * f, cant(Arcs.size() - 1), 0.0});
 	double x{0.0};
 	double y{0.0};
 	double heading{0.0};
@@ -154,6 +157,18 @@ compound_curve build_compound(double const Deflection, std::vector<compound_arc>
 	}
 	result.end = {x, y, heading};
 	return result;
+}
+
+// the cants of the arcs, each its own or Cant at the sharpest of them in proportion to the curvature
+std::vector<double> arc_cants(std::vector<compound_arc> const &Arcs, double const Cant)
+{
+	auto sharpest{std::numeric_limits<double>::max()};
+	for (auto const &arc : Arcs)
+		sharpest = std::min(sharpest, std::max(1.0, arc.radius));
+	std::vector<double> cants;
+	for (auto const &arc : Arcs)
+		cants.push_back(arc.cant >= 0.0 ? arc.cant : std::max(0.0, Cant) * sharpest / std::max(1.0, arc.radius));
+	return cants;
 }
 
 void element_point(element const &Element, transition_shape const Shape, double const Distance, glm::dvec2 &Position, glm::dvec2 &Direction)
@@ -202,11 +217,7 @@ double element_cant(element const &Element, double const Distance)
 	case element_kind::transition_in: return Element.cant * Distance / Element.transition;
 	case element_kind::transition_out: return Element.cant * (1.0 - Distance / Element.transition);
 	case element_kind::arc: return Element.cant;
-	case element_kind::spiral:
-	{
-		auto const curvature{Element.curvature_start + (Element.curvature_end - Element.curvature_start) * Distance / std::max(Element.length, 1e-9)};
-		return Element.curvature_peak > 0.0 ? Element.cant * curvature / Element.curvature_peak : 0.0;
-	}
+	case element_kind::spiral: return Element.cant_start + (Element.cant_end - Element.cant_start) * std::clamp(Distance / std::max(Element.length, 1e-9), 0.0, 1.0);
 	default: return 0.0;
 	}
 }
@@ -259,6 +270,15 @@ double unbalanced_acceleration(double const Speed, double const Radius, double c
 	if (Radius <= 0.0)
 		return 0.0;
 	return Speed * Speed / (12.96 * Radius) - kGravity * Cant / Limits.gauge;
+}
+
+std::vector<double> compound_cants(vertex const &Vertex)
+{
+	if (false == Vertex.compound || Vertex.arcs.empty())
+		return {std::max(0.0, Vertex.cant)};
+	std::vector<compound_arc> arcs{{Vertex.radius, 0.0, Vertex.share, Vertex.first_cant}};
+	arcs.insert(arcs.end(), Vertex.arcs.begin(), Vertex.arcs.end());
+	return arc_cants(arcs, Vertex.cant);
 }
 
 double transition_length(double const Speed, double const Radius, double const Cant, limits const &Limits)
@@ -346,6 +366,10 @@ bool meets_norms(curve_report const &Curve, design const &Design)
 		return false;
 	if (false == Curve.spirals && sharpest < Curve.recommended.radius_min - 1e-6)
 		return false;
+	if (Curve.radii.size() > 1 && Curve.cants.size() == Curve.radii.size())
+		// a compound curve ramps the cant of its first arc in and the one of its last arc out
+		return Curve.transition_in + 1e-6 >= transition_length(Design.speed, Curve.radii.front(), Curve.cants.front(), norms) &&
+		       Curve.transition_out + 1e-6 >= transition_length(Design.speed, Curve.radii.back(), Curve.cants.back(), norms);
 	auto const required{transition_length(Design.speed, sharpest, Curve.cant, norms)};
 	return Curve.transition_in + 1e-6 >= required && Curve.transition_out + 1e-6 >= required;
 }
@@ -494,9 +518,9 @@ result fit_between(design const &Design)
 		if (vertex.compound && false == vertex.arcs.empty())
 		{
 			fit.compound = true;
-			fit.arcs = {{fit.radius, 0.0, vertex.share}};
+			fit.arcs = {{fit.radius, 0.0, vertex.share, vertex.first_cant}};
 			for (auto const &arc : vertex.arcs)
-				fit.arcs.push_back({std::max(1.0, arc.radius), std::max(0.0, arc.transition), arc.share});
+				fit.arcs.push_back({std::max(1.0, arc.radius), std::max(0.0, arc.transition), arc.share, arc.cant});
 			fit.deflection = deflection;
 			fit.tangents = [&, k, directionin, directionout, side, scaled](double const Radius, double &Tangentin, double &Tangentout) {
 				auto const &own{fits[k]};
@@ -674,7 +698,8 @@ result fit_between(design const &Design)
 		}
 		if (fit.compound)
 		{
-			auto const shape{build_compound(deflection, fit.arcs, fit.transition_in, fit.transition_out)};
+			auto const cants{arc_cants(fit.arcs, fit.cant)};
+			auto const shape{build_compound(deflection, fit.arcs, fit.transition_in, fit.transition_out, cants)};
 			if (shape.shortened < 1.0)
 				r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to fit the deflection angle"), k + 1));
 			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
@@ -693,17 +718,17 @@ result fit_between(design const &Design)
 			auto sharpest{fit.radius};
 			for (auto const &arc : fit.arcs)
 				sharpest = std::min(sharpest, arc.radius);
-			auto const peak{1.0 / sharpest};
 			for (auto const &segment : shape.segments)
 			{
 				element piece;
 				piece.kind = element_kind::spiral;
 				piece.vertex = static_cast<int>(k);
 				piece.turn = side;
-				piece.cant = std::max(0.0, vertex.cant);
+				piece.cant = std::max(segment[3], segment[4]);
+				piece.cant_start = segment[3];
+				piece.cant_end = segment[4];
 				piece.curvature_start = segment[0];
 				piece.curvature_end = segment[1];
-				piece.curvature_peak = peak;
 				piece.radius = std::max(segment[0], segment[1]) > 0.0 ? 1.0 / std::max(segment[0], segment[1]) : 0.0;
 				piece.length = segment[2];
 				piece.origin = origin;
@@ -728,14 +753,37 @@ result fit_between(design const &Design)
 			report.arc_length = chainage - startchainage;
 			report.tangent_in = glm::distance(position, curvestart);
 			report.tangent_out = glm::distance(position, cursor);
-			report.unbalanced = unbalanced_acceleration(Design.speed, sharpest, std::max(0.0, vertex.cant), Design.norms);
-			report.cant = std::max(0.0, vertex.cant);
+			report.cants = cants;
+			report.unbalanced = -std::numeric_limits<double>::max();
+			for (std::size_t i = 0; i < cants.size(); ++i)
+			{
+				report.unbalanced = std::max(report.unbalanced, unbalanced_acceleration(Design.speed, fit.arcs[i].radius, cants[i], Design.norms));
+				report.cant = std::max(report.cant, cants[i]);
+			}
 			report.recommended = recommend(Design.speed, sharpest, Design.norms);
 			r.curves.push_back(report);
-			if (Design.norms.checked && sharpest < report.recommended.radius_min - 1e-6)
+			auto const &norms{Design.norms};
+			if (false == norms.checked)
+				continue;
+			if (sharpest < report.recommended.radius_min - 1e-6)
 				r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, sharpest, report.recommended.radius_min, Design.speed));
-			if (Design.norms.checked && report.unbalanced > Design.norms.unbalanced + 1e-6)
-				r.warnings.emplace_back(format(STR_C("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2"), k + 1, report.unbalanced, Design.norms.unbalanced));
+			if (report.unbalanced > norms.unbalanced + 1e-6)
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2"), k + 1, report.unbalanced, norms.unbalanced));
+			if (report.cant > norms.cant_max + 1e-6)
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: cant %.0f mm exceeds %.0f mm"), k + 1, report.cant, norms.cant_max));
+			// each transition long enough for the change of the curvature and of the cant along it, at the speed the sharpest arc
+			// allows, as the transitions of the norms are set between the arcs
+			auto const allowed{std::max(1.0, std::min(Design.speed, speed_limit(sharpest, norms)))};
+			auto const requiredin{transition_length(allowed, fit.arcs.front().radius, cants.front(), norms)};
+			auto const requiredout{transition_length(allowed, fit.arcs.back().radius, cants.back(), norms)};
+			if (report.transition_in + 1e-6 < requiredin || report.transition_out + 1e-6 < requiredout)
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shorter than the required %.0f m"), k + 1, std::max(requiredin, requiredout)));
+			for (std::size_t i = 1; i < fit.arcs.size(); ++i)
+			{
+				auto const required{transition_between(allowed, 1.0 / fit.arcs[i - 1].radius, cants[i - 1], 1.0 / fit.arcs[i].radius, cants[i], norms)};
+				if (fit.arcs[i].transition * shape.shortened + 1e-6 < required)
+					r.warnings.emplace_back(format(STR_C("Vertex %zu: the transition curve between R %.0f and R %.0f m shorter than the required %.0f m"), k + 1, fit.arcs[i - 1].radius, fit.arcs[i].radius, required));
+			}
 			continue;
 		}
 		auto const radius{fit.radius};
@@ -1276,8 +1324,8 @@ void chain_spiral(element_chain &Chain, double const From, double const To, doub
 	spiral.turn = turn;
 	spiral.curvature_start = From * turn;
 	spiral.curvature_end = To * turn;
-	spiral.curvature_peak = std::max(std::abs(From), std::abs(To));
-	spiral.radius = spiral.curvature_peak > 1e-12 ? 1.0 / spiral.curvature_peak : 0.0;
+	auto const peak{std::max(std::abs(From), std::abs(To))};
+	spiral.radius = peak > 1e-12 ? 1.0 / peak : 0.0;
 	spiral.length = Length;
 	spiral.origin = Chain.position;
 	spiral.direction = Chain.direction;
@@ -1641,12 +1689,13 @@ void recommend_between(vertex &Vertex, double const Speed, limits const &Limits)
 	for (auto const &arc : Vertex.arcs)
 		sharpest = std::min(sharpest, std::max(1.0, arc.radius));
 	auto const speed{std::max(1.0, std::min(Speed, speed_limit(sharpest, Limits)))};
-	auto const cant_of = [&](double const Radius) { return Vertex.cant * sharpest / Radius; };
+	auto const cants{compound_cants(Vertex)};
 	auto previous{std::max(1.0, Vertex.radius)};
-	for (auto &arc : Vertex.arcs)
+	for (std::size_t i = 0; i < Vertex.arcs.size(); ++i)
 	{
+		auto &arc{Vertex.arcs[i]};
 		auto const radius{std::max(1.0, arc.radius)};
-		arc.transition = transition_between(speed, 1.0 / previous, cant_of(previous), 1.0 / radius, cant_of(radius), Limits);
+		arc.transition = transition_between(speed, 1.0 / previous, cants[i], 1.0 / radius, cants[i + 1], Limits);
 		previous = radius;
 	}
 }
@@ -2019,6 +2068,7 @@ vertex traced_shape(design const &Design, vertex const &Base, std::vector<double
 		compound_arc arc;
 		arc.radius = radius(i);
 		arc.transition = i - 1 < static_cast<int>(Base.arcs.size()) ? Base.arcs[i - 1].transition : 0.0;
+		arc.cant = i - 1 < static_cast<int>(Base.arcs.size()) ? Base.arcs[i - 1].cant : -1.0;
 		arc.share = weights[i] / total;
 		shape.arcs.push_back(arc);
 	}

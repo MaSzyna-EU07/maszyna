@@ -257,6 +257,52 @@ TEST_CASE("alignment: a compound curve traced is followed closely") {
 	CHECK(fit.worst < 0.2);
 }
 
+TEST_CASE("alignment: each arc of a compound curve has a cant of its own, ramped along the transitions between them") {
+	auto design{straights({500.0, 500.0}, {35.0 * pi / 180.0}, 100.0)};
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 1200.0;
+	vertex.compound = true;
+	vertex.share = 0.5;
+	vertex.arcs = {{700.0, 60.0, 0.5}};
+	vertex.transition_in = vertex.transition_out = 80.0;
+	vertex.cant = 120.0;
+
+	// until they're set, the cants of the arcs go with their curvature, the cant of the curve on the sharpest one
+	auto const proportional{alignment::compound_cants(vertex)};
+	REQUIRE(proportional.size() == 2);
+	CHECK(proportional[0] == doctest::Approx(70.0));
+	CHECK(proportional[1] == doctest::Approx(120.0));
+
+	vertex.first_cant = 40.0;
+	vertex.arcs.front().cant = 110.0;
+	auto const line{alignment::compute(design)};
+	REQUIRE(line.valid);
+	REQUIRE(line.curves.size() == 1);
+	auto const &curve{line.curves.front()};
+	REQUIRE(curve.cants.size() == 2);
+	CHECK(curve.cants[0] == doctest::Approx(40.0));
+	CHECK(curve.cants[1] == doctest::Approx(110.0));
+	CHECK(curve.cant == doctest::Approx(110.0));
+
+	std::vector<alignment::element> pieces;
+	for (auto const &e : line.elements)
+		if (e.vertex == 0)
+			pieces.push_back(e);
+	// in, R1, between, R2, out
+	REQUIRE(pieces.size() == 5);
+	auto const cant = [&](alignment::element const &Element, double const Along) { return alignment::evaluate(line, Element.chainage + Element.length * Along).cant; };
+	CHECK(cant(pieces[0], 0.0) == doctest::Approx(0.0).epsilon(1e-6));
+	CHECK(cant(pieces[0], 0.5) == doctest::Approx(20.0));
+	CHECK(cant(pieces[1], 0.5) == doctest::Approx(40.0));
+	CHECK(cant(pieces[2], 0.5) == doctest::Approx(75.0));
+	CHECK(cant(pieces[3], 0.5) == doctest::Approx(110.0));
+	CHECK(cant(pieces[4], 0.5) == doctest::Approx(55.0));
+
+	// the transition between the arcs of the norms for the change of the cant set
+	alignment::recommend_between(vertex, design.speed, design.norms);
+	CHECK(vertex.arcs.front().transition == doctest::Approx(alignment::transition_between(design.speed, 1.0 / 1200.0, 40.0, 1.0 / 700.0, 110.0, design.norms)));
+}
+
 TEST_CASE("alignment: bends clicked close along a curve make one compound curve, not curves with short straights between them") {
 	// the points clicked in the scenery abc, at 60 km/h: from a straight along z into a curve to the left
 	alignment::design design;

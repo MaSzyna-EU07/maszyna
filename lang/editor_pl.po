@@ -11905,3 +11905,18 @@ msgstr "Załamanie wyokrąglone tak, jak projektuje się linie: dwie krzywe prze
 
 msgid "Each bend of the straights clicked at the height of the ground, an even grade between them: the grade changes only at the bends. A curve traced, or bends clicked close along a curve, goes at an even grade from one end of it to the other"
 msgstr "Każde kliknięte załamanie prostych na wysokości terenu, między nimi równe pochylenie: pochylenie zmienia się tylko na załamaniach. Łuk odrysowany albo załamania kliknięte gęsto wzdłuż łuku idą jednym pochyleniem od jego początku do końca"
+
+msgid "Vertex %zu: the transition curve between R %.0f and R %.0f m shorter than the required %.0f m"
+msgstr "Wierzchołek %zu: krzywa przejściowa między R %.0f a R %.0f m krótsza niż wymagane %.0f m"
+
+msgid "Cant of R%d (mm)"
+msgstr "Przechyłka R%d (mm)"
+
+msgid "The cant of this arc, ramped along the transition curves to the arcs either side of it; until it's set here, the cant of the curve in proportion to the curvature of the arc"
+msgstr "Przechyłka tego łuku, zmieniana na krzywych przejściowych do łuków po obu jego stronach; dopóki nie jest tu ustawiona, przechyłka łuku koszowego proporcjonalna do krzywizny tego łuku"
+
+msgid "The cant of the arc in proportion to its curvature again"
+msgstr "Przechyłka łuku znów proporcjonalna do jego krzywizny"
+
+msgid "Height of the outer rail above the inner one on the sharpest arc; the arcs with no cant of their own get it in proportion to their curvature"
+msgstr "Wysokość szyny zewnętrznej ponad wewnętrzną na najostrzejszym łuku; łuki bez własnej przechyłki dostają ją proporcjonalnie do swojej krzywizny"

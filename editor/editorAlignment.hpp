@@ -53,6 +53,8 @@ struct compound_arc
 	double radius{600.0};
 	double transition{0.0};
 	double share{1.0};
+	// the cant of the arc; below 0 the cant of the vertex, which is the one of the sharpest arc, in proportion to the curvature
+	double cant{-1.0};
 };
 
 struct vertex
@@ -67,6 +69,8 @@ struct vertex
 	bool compound{false};
 	double share{1.0};
 	std::vector<compound_arc> arcs;
+	// the cant of the first arc of a compound curve, as the ones of the arcs after it
+	double first_cant{-1.0};
 	// two transition curves meeting at the curvature of the radius, with no arc between them and no cant: the bend of two straights
 	// eased the way the lines are drawn. Their lengths follow from the radius and the deflection, the ones given are left out
 	bool spirals{false};
@@ -107,6 +111,8 @@ double transition_length(double const Speed, double const Radius, double const C
 // turning one way, the cant with the same sign as the curvature it leans into
 double transition_between(double const Speed, double const Curvature0, double const Cant0, double const Curvature1, double const Cant1, limits const &Limits);
 double unbalanced_acceleration(double const Speed, double const Radius, double const Cant, limits const &Limits);
+// the cants of the arcs of a compound curve, the first one's first: each its own, or the one in proportion to its curvature
+std::vector<double> compound_cants(vertex const &Vertex);
 
 enum class element_kind
 {
@@ -129,7 +135,9 @@ struct element
 	double cant{0.0};
 	double curvature_start{0.0};
 	double curvature_end{0.0};
-	double curvature_peak{0.0};
+	// the cant of a spiral at its start and at its end, going from the one to the other along it
+	double cant_start{0.0};
+	double cant_end{0.0};
 	glm::dvec2 origin{0.0};
 	glm::dvec2 direction{0.0, 1.0};
 	glm::dvec2 normal{0.0};
@@ -140,6 +148,7 @@ struct curve_report
 	int vertex{-1};
 	double radius{0.0};
 	std::vector<double> radii;
+	std::vector<double> cants; // of the radii of a compound curve
 	double transition_in{0.0};
 	double transition_out{0.0};
 	double deflection{0.0};

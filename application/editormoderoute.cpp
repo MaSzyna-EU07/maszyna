@@ -58,6 +58,10 @@ void editor_mode::route_recommend(alignment::vertex &Vertex) const
 			sharpest = std::min(sharpest, arc.radius);
 	auto const recommended{alignment::recommend(m_route.design.speed, sharpest, laying_norms())};
 	Vertex.cant = recommended.cant;
+	// the cants of the arcs in proportion to their curvature, as the norms recommend them
+	Vertex.first_cant = -1.0;
+	for (auto &arc : Vertex.arcs)
+		arc.cant = -1.0;
 	Vertex.transition_in = recommended.transition;
 	Vertex.transition_out = recommended.transition;
 	alignment::recommend_between(Vertex, m_route.design.speed, laying_norms());
@@ -1740,7 +1744,9 @@ bool editor_mode::render_route_vertex(int const Index)
 	ImU32 const transition{IM_COL32(255, 140, 30, 255)};
 	changed |= field("##radius", vertex.radius, 5.0f, vertex.compound ? STR_C("R1 %.0f m") : STR_C("R %.0f m"), overlay_color::grip, "Radius of the arc: drag sideways, or a double click to type it");
 	ImGui::SameLine();
-	changed |= field("##cant", vertex.cant, 1.0f, STR_C("cant %.0f mm"), IM_COL32(240, 170, 60, 255), "Height of the outer rail above the inner one");
+	changed |= field("##cant", vertex.cant, 1.0f, STR_C("cant %.0f mm"), IM_COL32(240, 170, 60, 255),
+	                 vertex.compound ? "Height of the outer rail above the inner one on the sharpest arc; the arcs with no cant of their own get it in proportion to their curvature"
+	                                 : "Height of the outer rail above the inner one");
 	changed |= field("##entry", vertex.transition_in, 1.0f, STR_C("entry %.0f m"), transition, "Length of the transition curve leading into the arc");
 	ImGui::SameLine();
 	changed |= field("##exit", vertex.transition_out, 1.0f, STR_C("exit %.0f m"), transition, "Length of the transition curve leading out of the arc");
@@ -1766,9 +1772,29 @@ bool editor_mode::render_route_vertex(int const Index)
 		for (auto const &arc : vertex.arcs)
 			total += std::max(0.0, arc.share);
 		auto const percent = [&](double const Share) { return total > 0.0 ? 100.0 * std::max(0.0, Share) / total : 0.0; };
+		auto const cants{alignment::compound_cants(vertex)};
+		// the cant of one arc: the one in proportion to the curvature until it's given its own
+		auto const arc_cant = [&](int const Arc, double &Cant) {
+			auto value{static_cast<std::size_t>(Arc) < cants.size() ? cants[Arc] : std::max(0.0, Cant)};
+			auto edited{ImGui::DragScalar(format(STR_C("Cant of R%d (mm)"), Arc + 1).c_str(), ImGuiDataType_Double, &value, 1.0f, nullptr, nullptr, "%.0f")};
+			if (edited)
+				Cant = std::max(0.0, value);
+			item_tooltip("The cant of this arc, ramped along the transition curves to the arcs either side of it; until it's set here, the cant of the curve in proportion to the curvature of the arc");
+			ImGui::SameLine();
+			if (Cant < 0.0)
+				ImGui::TextDisabled("%s", STR_C("auto"));
+			else if (ImGui::SmallButton(STR_C("auto")))
+			{
+				Cant = -1.0;
+				edited = true;
+			}
+			item_tooltip("The cant of the arc in proportion to its curvature again");
+			return edited;
+		};
 		changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), 1).c_str(), ImGuiDataType_Double, &vertex.share, 0.01f, nullptr, nullptr, "%.2f");
 		ImGui::SameLine();
 		ImGui::TextDisabled("%.0f%%", percent(vertex.share));
+		changed |= arc_cant(0, vertex.first_cant);
 		int removed{-1};
 		for (int k = 0; k < static_cast<int>(vertex.arcs.size()); ++k)
 		{
@@ -1784,6 +1810,7 @@ bool editor_mode::render_route_vertex(int const Index)
 			changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), k + 2).c_str(), ImGuiDataType_Double, &arc.share, 0.01f, nullptr, nullptr, "%.2f");
 			ImGui::SameLine();
 			ImGui::TextDisabled("%.0f%%", percent(arc.share));
+			changed |= arc_cant(k + 1, arc.cant);
 			arc.radius = std::max(1.0, arc.radius);
 			arc.transition = std::max(0.0, arc.transition);
 			arc.share = std::max(0.0, arc.share);

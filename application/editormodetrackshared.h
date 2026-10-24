@@ -92,7 +92,12 @@ inline std::string curve_label(alignment::curve_report const &Curve, alignment::
 		text += format(i == 0 ? "%.0f" : "/%.0f", Curve.radii[i]);
 	if (Curve.transition_in > 0.0 || Curve.transition_out > 0.0)
 		text += std::abs(Curve.transition_in - Curve.transition_out) < 0.5 ? format("  L %.0f", Curve.transition_in) : format("  L %.0f/%.0f", Curve.transition_in, Curve.transition_out);
-	if (Curve.cant > 0.0)
+	// a compound curve shows the cant of each arc where they aren't all the same
+	auto const varied{std::any_of(Curve.cants.begin(), Curve.cants.end(), [&](double const Cant) { return std::abs(Cant - Curve.cants.front()) >= 0.5; })};
+	if (varied)
+		for (std::size_t i = 0; i < Curve.cants.size(); ++i)
+			text += format(i == 0 ? "  h %.0f" : "/%.0f", Curve.cants[i]);
+	else if (Curve.cant > 0.0)
 		text += format("  h %.0f", Curve.cant);
 	return text + speed_of(curve_sharpest(Curve), Limits);
 }
@@ -301,6 +306,7 @@ inline void compound_from(editor_track::curve const &Curve, alignment::vertex &V
 	Vertex.compound = true;
 	Vertex.radius = std::round(Curve.arcs.front().radius);
 	Vertex.share = Curve.arcs.front().turn;
+	Vertex.first_cant = -1.0;
 	Vertex.arcs.clear();
 	for (std::size_t i = 1; i < Curve.arcs.size(); ++i)
 		Vertex.arcs.push_back({std::round(Curve.arcs[i].radius), std::round(Curve.arcs[i].transition), Curve.arcs[i].turn});
