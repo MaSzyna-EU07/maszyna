@@ -10,6 +10,7 @@ http:
 #pragma once
 
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -338,26 +339,32 @@ struct corner_radii
 	double low{3000.0};
 	double high{6000.0};
 };
-// the vertices marked are given the curves of the bends of straights clicked on the photo, as large as fit between the neighbouring
-// ones, these sharing the straights between them; the vertices stay where they are, a curve below the norms is left with its warnings
-result ease_corners(design &Design, std::vector<char> const &Corners, corner_radii const &Radii);
-
 // a stretch of the line traced on the photo: the points clicked along the middle of the track, from the straight Base starts on to
 // the one it ends on, both fixed by the points clicked on them
 struct trace_stretch
 {
 	bool valid{false};
 	// the curves of the stretch with their places: one, of up to three radii, or two with a straight between them where the points
-	// follow those better; none where the stretch is straight
+	// follow those much better; none where the stretch is straight
 	std::vector<vertex> vertices;
 	std::vector<double> offsets; // of the points from the line laid, positive to the left
 	double rms{0.0};
 	double worst{0.0};
 };
 trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights);
+// the fit of a stretch traced, with up to three radii and no straight in it; none while it's being fitted elsewhere
+using stretch_fit = std::function<std::optional<trace_stretch>(design const &, std::vector<glm::dvec2> const &)>;
 
-// the stretches traced fitted on a thread of their own while the cursor moves: fitting one takes tens of milliseconds. The latest one
-// asked for is fitted, the ones asked for meanwhile are left out
+// the vertices marked 1 are given the curves of the bends of straights clicked on the photo, as large as fit between the neighbouring
+// ones, these sharing the straights between them; the vertices stay where they are, a curve below the norms is left with its
+// warnings. A row of bends turning the same way, clicked so close that the straights between their curves would be shorter than
+// the shortest element, is taken for points along a curve: one curve, compound where it has to, is fitted through them, or one for
+// each part of the row where the whole doesn't keep to them; such a vertex is marked 0 then. Fit fits it, by fit_trace_stretch
+// where none is given
+result ease_corners(design &Design, std::vector<char> &Corners, corner_radii const &Radii, stretch_fit const &Fit = {});
+
+// the stretches traced fitted on a thread of their own while the cursor moves: fitting one takes tens of milliseconds. The one asked
+// for last is fitted first, the oldest of too many waiting left out, the fits of the last ones kept
 class stretch_fitter
 {
   public:
@@ -381,9 +388,9 @@ class stretch_fitter
 
 	mutable std::mutex m_mutex;
 	std::condition_variable m_wake;
-	std::optional<request> m_asked;
+	std::vector<request> m_asked;
 	std::optional<request> m_fitting;
-	std::optional<std::pair<std::vector<double>, trace_stretch>> m_result;
+	std::vector<std::pair<std::vector<double>, trace_stretch>> m_results; // the last done first
 	bool m_stop{false};
 	std::thread m_thread;
 };

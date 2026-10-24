@@ -1005,7 +1005,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			easeddesign.vertices.front().offset = std::max(0.1, glm::dot(shape.vertices.front() - plan_of(easeddesign.start), glm::normalize(easeddesign.start_direction)));
 			easeddesign.vertices.back().offset = std::max(0.1, glm::dot(plan_of(easeddesign.end) - shape.vertices.back(), glm::normalize(easeddesign.end_direction)));
 		}
-		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {EditorSettings.corner_low(), EditorSettings.corner_high()})};
+		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {EditorSettings.corner_low(), EditorSettings.corner_high()}, bends_fit())};
 		if (easedshape.valid)
 		{
 			Length = editor_track::eased_length(in, easedshape.length, out);
@@ -1181,7 +1181,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 			// the curve may begin before the point the straight was clicked at, and end past the last point where the line goes on
 			base.start_reserve = behind;
 			base.end_reserve = last == inner ? 0.0 : 1e4;
-			auto const fitted{traced_stretch(base, traced)};
+			auto const fitted{traced_stretch(base, traced, tool.radii, tool.straights_between)};
 			if (false == fitted.has_value())
 			{
 				Error = STR_C("Fitting the curve to the points...");
@@ -1273,7 +1273,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 		design.vertices.front().offset = glm::dot(plan_of(bends.front().position - design.start), design.start_direction);
 		design.vertices.back().offset = glm::dot(plan_of(end - bends.back().position), design.end_direction);
 	}
-	Plan.shape = alignment::ease_corners(design, Plan.corners, {EditorSettings.corner_low(), EditorSettings.corner_high()});
+	Plan.shape = alignment::ease_corners(design, Plan.corners, {EditorSettings.corner_low(), EditorSettings.corner_high()}, bends_fit());
 	if (false == Plan.shape.valid)
 	{
 		Error = Plan.shape.errors.empty() ? std::string{STR_C("The track can't be laid through these points")} : Plan.shape.errors.front();
@@ -1282,12 +1282,11 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	return true;
 }
 
-std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points) const
+std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights, bool const Meanwhile) const
 {
-	auto const &tool{m_lay};
 	// the stretches traced before the one the cursor moves along are the same from frame to frame: their fits are kept
 	std::vector<double> key{Base.start.x, Base.start.z, Base.start_direction.x, Base.start_direction.y, Base.end.x, Base.end.z, Base.end_direction.x, Base.end_direction.y, Base.speed,
-	                        static_cast<double>(Base.shape), static_cast<double>(tool.radii), tool.straights_between ? 1.0 : 0.0, Base.start_reserve, Base.end_reserve};
+	                        static_cast<double>(Base.shape), static_cast<double>(Radii), Straights ? 1.0 : 0.0, Base.start_reserve, Base.end_reserve};
 	for (auto const &point : Points)
 	{
 		key.push_back(point.x);
@@ -1308,7 +1307,7 @@ std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::d
 	alignment::trace_stretch fit;
 	if (false == m_follow_preview)
 	{
-		fit = alignment::fit_trace_stretch(Base, Points, tool.radii, tool.straights_between);
+		fit = alignment::fit_trace_stretch(Base, Points, Radii, Straights);
 		keep(fit);
 		return fit;
 	}
@@ -1319,10 +1318,10 @@ std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::d
 		keep(fit);
 		return fit;
 	}
-	m_stretch_fitter.ask({key, Base, Points, tool.radii, tool.straights_between});
+	m_stretch_fitter.ask({key, Base, Points, Radii, Straights});
 	std::vector<double> last;
 	auto const header{std::size_t{14}};
-	if (m_stretch_fitter.latest(last, fit) && last.size() >= header + 2 && key.size() >= header + 2 && std::equal(key.begin(), key.begin() + 4, last.begin()) &&
+	if (Meanwhile && m_stretch_fitter.latest(last, fit) && last.size() >= header + 2 && key.size() >= header + 2 && std::equal(key.begin(), key.begin() + 4, last.begin()) &&
 	    std::equal(key.begin() + 8, key.begin() + header, last.begin() + 8))
 	{
 		auto const common{std::min(last.size(), key.size()) - 2};

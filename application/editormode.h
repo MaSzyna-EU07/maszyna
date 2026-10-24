@@ -1464,8 +1464,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	                                     lay_line_plan *Plan = nullptr) const;
 	bool lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error) const;
 	// the curves of a stretch traced, the ones fitted lately kept for the same points
-	// none while the stretch the cursor moves along is still being fitted
-	std::optional<alignment::trace_stretch> traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points) const;
+	// none while the stretch the cursor moves along is still being fitted; Meanwhile: the fit done last of the same points but the one
+	// at the cursor until then
+	std::optional<alignment::trace_stretch> traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights, bool const Meanwhile = true) const;
+	// the curve through a row of bends clicked close along one, by traced_stretch
+	alignment::stretch_fit bends_fit() const
+	{
+		return [this](alignment::design const &Base, std::vector<glm::dvec2> const &Points) { return traced_stretch(Base, Points, 0, false, false); };
+	}
 	mutable std::vector<std::pair<std::vector<double>, alignment::trace_stretch>> m_stretch_cache;
 	// the stretch the cursor moves along is fitted on a thread, the frames drawn meanwhile with the fit done last
 	mutable alignment::stretch_fitter m_stretch_fitter;

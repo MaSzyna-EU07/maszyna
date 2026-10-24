@@ -79,7 +79,8 @@ alignment::design stretch_base(alignment::design const &Line, std::vector<glm::d
 
 TEST_CASE("alignment: a slight bend of straights is eased with two transition curves meeting, with no cant") {
 	auto design{straights({500.0, 500.0}, {3.0 * pi / 180.0}, 160.0)};
-	auto const line{alignment::ease_corners(design, {1}, {3000.0, 6000.0})};
+	std::vector<char> corners{1};
+	auto const line{alignment::ease_corners(design, corners, {3000.0, 6000.0})};
 
 	REQUIRE(line.valid);
 	REQUIRE(line.curves.size() == 1);
@@ -97,7 +98,8 @@ TEST_CASE("alignment: a slight bend of straights is eased with two transition cu
 
 TEST_CASE("alignment: a bend too slight for transitions long enough at the radii given takes a larger radius") {
 	auto design{straights({500.0, 500.0}, {0.2 * pi / 180.0}, 160.0)};
-	auto const line{alignment::ease_corners(design, {1}, {3000.0, 6000.0})};
+	std::vector<char> corners{1};
+	auto const line{alignment::ease_corners(design, corners, {3000.0, 6000.0})};
 
 	REQUIRE(line.valid);
 	REQUIRE(line.curves.size() == 1);
@@ -110,7 +112,8 @@ TEST_CASE("alignment: a bend too slight for transitions long enough at the radii
 
 TEST_CASE("alignment: a sharp bend between short straights is laid where clicked, an arc with cant below the norms") {
 	auto design{straights({120.0, 120.0}, {60.0 * pi / 180.0}, 160.0)};
-	auto const line{alignment::ease_corners(design, {1}, {3000.0, 6000.0})};
+	std::vector<char> corners{1};
+	auto const line{alignment::ease_corners(design, corners, {3000.0, 6000.0})};
 
 	REQUIRE(line.valid);
 	REQUIRE(line.curves.size() == 1);
@@ -126,7 +129,8 @@ TEST_CASE("alignment: a sharp bend between short straights is laid where clicked
 
 TEST_CASE("alignment: two bends share the straight between them") {
 	auto design{straights({600.0, 250.0, 600.0}, {4.0 * pi / 180.0, -5.0 * pi / 180.0}, 120.0)};
-	auto const line{alignment::ease_corners(design, {1, 1}, {3000.0, 6000.0})};
+	std::vector<char> corners{1, 1};
+	auto const line{alignment::ease_corners(design, corners, {3000.0, 6000.0})};
 
 	REQUIRE(line.valid);
 	REQUIRE(line.curves.size() == 2);
@@ -244,4 +248,43 @@ TEST_CASE("alignment: a compound curve traced is followed closely") {
 	REQUIRE(fit.valid);
 	CHECK(fit.rms < 0.05);
 	CHECK(fit.worst < 0.15);
+}
+
+TEST_CASE("alignment: bends clicked close along a curve make one compound curve, not curves with short straights between them") {
+	// the points clicked in the scenery abc, at 60 km/h: from a straight along z into a curve to the left
+	alignment::design design;
+	design.speed = 60.0;
+	design.shape = alignment::transition_shape::clothoid;
+	design.start = {-399.8169, 0.0, 419.0340};
+	design.end = {-665.1078, 0.0, 1138.5287};
+	design.start_direction = glm::normalize(glm::dvec2{0.024027152, 0.999711306});
+	design.end_direction = glm::normalize(glm::dvec2{-0.831198797, 0.555975323});
+	for (auto const &point : std::vector<glm::dvec2>{{-394.5230, 639.2978}, {-395.0216, 680.5362}, {-400.4562, 753.8415}, {-405.1477, 807.6113}, {-410.4658, 847.8606}, {-419.7362, 885.8522},
+	                                                 {-435.3280, 924.7706}, {-458.2043, 961.0863}, {-485.8050, 994.2479}, {-531.7847, 1039.0865}, {-565.5341, 1067.6467}, {-637.3993, 1119.9949}}) {
+		alignment::vertex vertex;
+		vertex.position = point;
+		design.vertices.push_back(vertex);
+	}
+	design.vertices.front().offset = glm::dot(design.vertices.front().position - glm::dvec2{design.start.x, design.start.z}, design.start_direction);
+	design.vertices.back().offset = glm::dot(glm::dvec2{design.end.x, design.end.z} - design.vertices.back().position, design.end_direction);
+	std::vector<char> corners(design.vertices.size(), 1);
+
+	auto const line{alignment::ease_corners(design, corners, {3000.0, 6000.0})};
+
+	REQUIRE(line.valid);
+	auto const shortest{std::max(30.0, design.speed)};
+	int straights{0};
+	for (std::size_t i = 0; i < line.elements.size(); ++i) {
+		auto const &e{line.elements[i]};
+		if (e.kind != alignment::element_kind::straight || e.length < 1e-3)
+			continue;
+		++straights;
+		// none short between two curves turning the same way
+		if (i > 0 && i + 1 < line.elements.size() && line.elements[i - 1].turn == line.elements[i + 1].turn)
+			CHECK(e.length >= shortest - 1e-6);
+	}
+	// the straight before the curve and the one after it
+	CHECK(straights <= 2);
+	CHECK(line.curves.size() <= 2);
+	CHECK(design.vertices.size() < 12);
 }
