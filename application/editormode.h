@@ -451,6 +451,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool render_nmt_place(bool const Moving, bool const Button);
 	// the work under way: what's left of it and the button to stop it; Compact: one line, for the 3d view
 	void render_nmt_progress(bool const Compact);
+	// the chunks waiting for the terrain model and the tiles of the imagery asked for outlined where they will be, so it's seen
+	// what's on its way
+	void draw_nmt_pending() const;
 	// over the 3d view while the terrain panel isn't seen
 	void render_nmt_banner();
 	bool nmt_busy() const;

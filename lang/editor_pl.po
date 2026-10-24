@@ -6725,6 +6725,12 @@ msgstr "Niwelety: dopasowano %zu, zostało %zu torów"
 msgid "Chunks: %zu of %zu"
 msgstr "Kafle: %zu z %zu"
 
+msgid "Terrain model loading"
+msgstr "Wczytywanie NMT"
+
+msgid "Orthophoto loading"
+msgstr "Wczytywanie ortofotomapy"
+
 msgid "By hand: the model as it is, the tracks stay"
 msgstr "Ręcznie: NMT bez zmian, tory zostają"
 

@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
+#include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorSettings.hpp"
@@ -29,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <set>
 #include <unordered_set>
 
@@ -1139,6 +1141,98 @@ void editor_mode::render_nmt_progress(bool const Compact)
 	if (ImGui::Button(stop, ImVec2(0.0f, Compact ? 0.0f : tall_button_height())))
 		nmt_stop();
 	item_tooltip("Stops loading: the terrain made so far stays");
+}
+
+void editor_mode::draw_nmt_pending() const
+{
+	auto const &state{m_nmt_state};
+	auto const imagery{m_orthophoto.waiting()};
+	if (state.pending.empty() && imagery.empty())
+		return;
+	// where the ground will be: by the terrain there or beside it, else the model with the offset of the scenery, else level
+	// with the nearest chunk there is, or the nearest track
+	glm::dvec2 const camera{Camera.Pos.x, Camera.Pos.z};
+	double fallback{0.0};
+	{
+		auto nearest{std::numeric_limits<double>::max()};
+		std::vector<editor_terrain *> chunks;
+		m_streamer.collect(chunks);
+		for (auto const *chunk : chunks)
+			if (auto const middle{chunk->centre()}; glm::distance(glm::dvec2{middle.x, middle.z}, camera) < nearest)
+			{
+				nearest = glm::distance(glm::dvec2{middle.x, middle.z}, camera);
+				fallback = middle.y;
+			}
+		if (chunks.empty())
+			for (auto const *track : simulation::Paths.sequence())
+				if (track != nullptr && false == track->m_paths.empty())
+					if (auto const &point{track->m_paths.front().points[segment_data::point::start]}; glm::distance(geometry::plan_of(point), camera) < nearest)
+					{
+						nearest = glm::distance(geometry::plan_of(point), camera);
+						fallback = point.y;
+					}
+	}
+	auto const height = [&](double const X, double const Z, double &Height) {
+		if (m_streamer.height_at(X, Z, Height) || nmt_ahead(X, Z, Height))
+			return true;
+		if (m_nmt.placed() && m_nmt.height(X, Z, Height))
+		{
+			Height += nmt_offset_at(X, Z);
+			return true;
+		}
+		Height = fallback;
+		return true;
+	};
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	auto const time{ImGui::GetTime()};
+	auto const pulse{static_cast<float>(0.5 + 0.5 * std::sin(time * 4.0))};
+	auto const dots{std::string(static_cast<std::size_t>(time * 3.0) % 4, '.')};
+	int constexpr steps{8}; // points along each edge, the outline following the ground
+	auto const square = [&](glm::dvec2 const &Low, glm::dvec2 const &High, int const Red, int const Green, int const Blue, std::string const &Label) {
+		auto const size{High - Low};
+		std::vector<ImVec2> outline;
+		for (int side = 0; side < 4; ++side)
+			for (int i = 0; i < steps; ++i)
+			{
+				auto const along{static_cast<double>(i) / steps};
+				glm::dvec2 const point{side == 0 ? Low + glm::dvec2{size.x * along, 0.0} : side == 1 ? Low + glm::dvec2{size.x, size.y * along} : side == 2 ? High - glm::dvec2{size.x * along, 0.0} : High - glm::dvec2{size.x, size.y * along}};
+				double y;
+				ImVec2 screen;
+				if (false == height(point.x, point.y, y) || false == projection.project({point.x, y + 0.5, point.y}, screen))
+					return;
+				outline.push_back(screen);
+			}
+		auto const edge{IM_COL32(Red, Green, Blue, static_cast<int>(140.0f + 100.0f * pulse))};
+		drawlist->AddConvexPolyFilled(outline.data(), static_cast<int>(outline.size()), IM_COL32(Red, Green, Blue, static_cast<int>(25.0f + 35.0f * pulse)));
+		drawlist->AddPolyline(outline.data(), static_cast<int>(outline.size()), edge, ImDrawFlags_Closed, 2.0f);
+		// named where the name fits in
+		auto const middle{(Low + High) * 0.5};
+		auto const text{Label + dots};
+		auto const extent{ImGui::CalcTextSize(text.c_str())};
+		auto const [left, right]{std::minmax_element(outline.begin(), outline.end(), [](ImVec2 const &A, ImVec2 const &B) { return A.x < B.x; })};
+		double y;
+		ImVec2 label;
+		if (right->x - left->x > extent.x * 1.1f && height(middle.x, middle.y, y) && projection.project({middle.x, y + 0.5, middle.y}, label))
+			drawlist->AddText({label.x - extent.x * 0.5f, label.y - extent.y * 0.5f}, edge, text.c_str());
+	};
+	// the nearest first, as many as can be drawn without the frame feeling it
+	auto const nearest = [&](std::vector<std::pair<glm::dvec2, glm::dvec2>> Areas, std::size_t const Most) {
+		auto const away = [&](std::pair<glm::dvec2, glm::dvec2> const &Area) { return glm::distance((Area.first + Area.second) * 0.5, camera); };
+		if (Areas.size() > Most)
+		{
+			std::nth_element(Areas.begin(), Areas.begin() + Most, Areas.end(), [&](auto const &A, auto const &B) { return away(A) < away(B); });
+			Areas.resize(Most);
+		}
+		return Areas;
+	};
+	for (auto const &[low, high] : nearest(imagery, 64))
+		square(low, high, 255, 190, 70, STR("Orthophoto loading"));
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> chunks;
+	for (auto const &key : state.pending)
+		chunks.emplace_back(heightmap::chunk_corner(key), heightmap::chunk_corner(key) + glm::dvec2{heightmap::chunk_size});
+	for (auto const &[low, high] : nearest(chunks, 64))
+		square(low, high, 90, 170, 255, STR("Terrain model loading"));
 }
 
 void editor_mode::render_nmt_banner()

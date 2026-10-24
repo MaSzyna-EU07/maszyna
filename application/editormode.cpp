@@ -1507,6 +1507,7 @@ bool editor_mode::update()
     m_orthophoto.update(Camera.Pos);
     nmt_update();
     draw_orthophoto();
+    draw_nmt_pending();
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();

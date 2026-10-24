@@ -853,6 +853,20 @@ std::pair<std::size_t, std::size_t> editor_orthophoto::grounded() const
 	return result;
 }
 
+std::vector<std::pair<glm::dvec2, glm::dvec2>> editor_orthophoto::waiting() const
+{
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> result;
+	if (false == m_enabled || m_map_level > 0)
+		return result;
+	for (auto const &entry : m_tiles)
+		if (entry.second.level == 0 && entry.second.requested > 0 && false == entry.second.empty)
+		{
+			glm::dvec2 const corner = tile_corner(entry.first);
+			result.emplace_back(corner - glm::dvec2{tile_size}, corner);
+		}
+	return result;
+}
+
 bool editor_orthophoto::sampled_height(tile_key const &Own, double const X, double const Z, float &Height) const
 {
 	auto const key{camera_tile({X, 0.0, Z})};

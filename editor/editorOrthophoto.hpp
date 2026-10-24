@@ -108,6 +108,8 @@ class editor_orthophoto
 	void ground_arrived();
 	// the tiles with the ground sampled under them, and of these the ones at guessed heights
 	std::pair<std::size_t, std::size_t> grounded() const;
+	// the rectangles (x, z) of the tiles of the imagery asked for and not shown yet
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> waiting() const;
 	// takes the scene geometry out of the region (e.g. when the editor is left); it's re-created on the next update
 	void detach_scene();
 	// true for geometry created by the layer, so ground queries can skip it
