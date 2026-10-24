@@ -50,6 +50,9 @@ double constexpr level_tolerance { 1.0 };
 // how far around a track the tracks are taken in to lay its beams: those whose beams it carries, or which carry its own, and
 // those which set where the beams of these go
 double constexpr around_margin { 20.0 };
+// a timber whose line carries no track with a model of timbers of its own, as under the short tracks between the halves of a slip,
+// is of the model of the nearest timber with one so far from it
+double constexpr panel_reach { 1.5 };
 // how many beams make a run drawn or left out together
 std::size_t constexpr chunk_beams { 16 };
 // how far apart the points of the rails are, as the places they lie on the timbers are found

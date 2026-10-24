@@ -156,7 +156,8 @@ editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &c
 		std::string name, detail;
 		words >> name >> detail;
 		auto *track{simulation::Paths.find(name)};
-		auto const *model{track != nullptr ? track_sleepers::timber_model(*track) : nullptr};
+		auto const beams{track != nullptr ? track_sleepers::place(*track) : std::vector<track_sleepers::beam>{}};
+		auto const *model{track != nullptr ? track_sleepers::timber_model(*track, beams) : nullptr};
 		if (model == nullptr || false == model->fastened())
 		{
 			WriteLog("SELFTEST fastenings: no track " + name + " with the fastenings in the model of its timbers");
@@ -164,7 +165,7 @@ editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &c
 		}
 		track_sleepers::fastened_rails const rails{*track};
 		std::array<int, track_sleepers::part_count> counts{};
-		for (auto const &beam : track_sleepers::place(*track))
+		for (auto const &beam : beams)
 		{
 			if (beam.plain)
 				continue;

@@ -319,6 +319,7 @@ void lay( TTrack &Track, bool const Fastened ) {
     laid.laying = true;
     auto beams { in_background() ? std::move( placed ) : place( Track ) };
     laid.laying = false;
+    laid.timbers = timber_model( Track, beams );
     // the layout of the cluster isn't needed by this track any more, the instances below are what's drawn
     forget_layout( Track );
     instance( Track, std::move( beams ), Fastened );

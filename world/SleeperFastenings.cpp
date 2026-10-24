@@ -915,14 +915,15 @@ std::vector<fastening_row> check_fastenings() {
         if( track == nullptr || track->m_editorremoved || false == track->m_sleepers3d.active ) {
             continue;
         }
-        auto const *model { timber_model( *track ) };
+        auto const beams { place( *track ) };
+        auto const *model { timber_model( *track, beams ) };
         if( model == nullptr || false == model->fastened() ) {
             continue;
         }
         fastening_row row;
         row.track = track->name();
         std::optional<fastened_rails> rails;
-        for( auto const &beam : place( *track ) ) {
+        for( auto const &beam : beams ) {
             if( beam.plain ) {
                 continue;
             }
@@ -1036,12 +1037,13 @@ std::vector<check_rail_gap> check_rail_seats() {
         if( track == nullptr || track->m_editorremoved || false == track->m_sleepers3d.active ) {
             continue;
         }
-        auto const *model { timber_model( *track ) };
+        auto const beams { place( *track ) };
+        auto const *model { timber_model( *track, beams ) };
         if( model == nullptr || false == model->fastened() ) {
             continue;
         }
         std::optional<fastened_rails> rails;
-        for( auto const &beam : place( *track ) ) {
+        for( auto const &beam : beams ) {
             if( beam.plain ) {
                 continue;
             }

@@ -152,6 +152,7 @@ public:
         keep_apart();
         fill_gaps();
         keep_apart();
+        share_panels();
         for( auto const &laid : beams ) {
             result->beams[ laid.owner ].push_back( laid.value );
         }
@@ -553,17 +554,47 @@ private:
         // a sleeper of a plain track running alone and square to it, the rest are the timbers of the switches and crossings
         auto const carried { std::count_if( bands.begin(), bands.end(), []( band const &Band ) { return Band.carried; } ) };
         auto const plain { path.track->eType == tt_Normal && carried == 1 && pieces.size() == 1 && false == pieces.front().clipped && std::abs( glm::dot( forward, along ) ) > 0.9998 && false == crossing_timber( path, Distance ) };
+        auto const owner { std::find_if( bands.begin(), bands.end(), []( band const &Band ) {
+            return Band.carried && false == Band.path->track->m_timber_model_name.empty(); } ) };
+        TTrack const *panel { owner != bands.end() ? owner->path->track : nullptr };
         for( std::size_t index = 0; index < pieces.size(); ++index ) {
             auto const &piece { pieces[ index ] };
             auto const &way { turned[ index ] };
             if( way == along ) {
-                beams.push_back( { path.track, { top + rolledacross * piece.from, top + rolledacross * piece.to, glm::dvec3 { along.x, 0.0, along.y }, plain, piece.corefrom - piece.from, piece.coreto - piece.from } } );
+                beams.push_back( { path.track, { top + rolledacross * piece.from, top + rolledacross * piece.to, glm::dvec3 { along.x, 0.0, along.y }, plain, piece.corefrom - piece.from, piece.coreto - piece.from, panel } } );
                 continue;
             }
             // turned about where the middle of its track crosses the line
             auto const centre { top + rolledacross * piece.single->centre };
             glm::dvec3 const turnedacross { glm::dvec3 { -way.y, 0.0, way.x } * std::cos( roll ) - up * std::sin( roll ) };
-            beams.push_back( { path.track, { centre + turnedacross * ( piece.from - piece.single->centre ), centre + turnedacross * ( piece.to - piece.single->centre ), glm::dvec3 { way.x, 0.0, way.y }, false, piece.corefrom - piece.from, piece.coreto - piece.from } } );
+            beams.push_back( { path.track, { centre + turnedacross * ( piece.from - piece.single->centre ), centre + turnedacross * ( piece.to - piece.single->centre ), glm::dvec3 { way.x, 0.0, way.y }, false, piece.corefrom - piece.from, piece.coreto - piece.from, panel } } );
+        }
+    }
+
+    // the timbers whose lines carry no track with a model of timbers of its own of the model of the nearest timber with one
+    void share_panels() {
+
+        std::vector<std::pair<glm::dvec2, TTrack const *>> panels;
+        for( auto const &laid : beams ) {
+            if( false == laid.value.plain && laid.value.panel != nullptr ) {
+                panels.emplace_back( plan( 0.5 * ( laid.value.from + laid.value.to ) ), laid.value.panel );
+            }
+        }
+        if( panels.empty() ) {
+            return;
+        }
+        for( auto &laid : beams ) {
+            if( laid.value.plain || laid.value.panel != nullptr ) {
+                continue;
+            }
+            auto const middle { plan( 0.5 * ( laid.value.from + laid.value.to ) ) };
+            auto nearest { panel_reach };
+            for( auto const &[ at, panel ] : panels ) {
+                if( auto const distance { glm::length( at - middle ) }; distance < nearest ) {
+                    nearest = distance;
+                    laid.value.panel = panel;
+                }
+            }
         }
     }
 

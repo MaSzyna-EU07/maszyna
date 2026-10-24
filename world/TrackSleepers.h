@@ -56,6 +56,8 @@ struct beam {
     bool plain { false }; // a sleeper of a track running alone, square to it, not a timber of a switch or a crossing
     double corefrom { 0.0 }; // the stretch the feet of the rails it carries take, along it from its from end
     double coreto { 0.0 };
+    TTrack const *panel { nullptr }; // of the tracks its line carries, the one with a model of timbers of its own: its own track first; else
+                                     // that of the nearest timber with one
 };
 
 // a model sleepers or timbers are made of, as found in it
@@ -119,6 +121,9 @@ beam_model const *plain_model();
 // the models the track lays its beams of: those set for it with timbermodel and sleepermodel, else the ones of eu07.ini
 beam_model const *timber_model( TTrack const &Track );
 beam_model const *plain_model( TTrack const &Track );
+// the model the track lays the timbers of the beams of: its own, else that of the tracks most of its timbers carry with one of their
+// own, as a switch it shares its timbers with, else the one of eu07.ini
+beam_model const *timber_model( TTrack const &Track, std::vector<beam> const &Beams );
 // how long the plain sleepers of the track are, of the model it lays them of; 2.6 m at the standard gauge where there's none
 double plain_length( TTrack const &Track );
 // whether the track has the ballast the simulator makes, which the beams are laid on when there's a model of them

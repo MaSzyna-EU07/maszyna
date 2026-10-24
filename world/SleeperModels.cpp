@@ -216,6 +216,27 @@ beam_model const *timber_model( TTrack const &Track ) {
     return timber_model();
 }
 
+beam_model const *timber_model( TTrack const &Track, std::vector<beam> const &Beams ) {
+
+    if( false == Track.m_timber_model_name.empty() ) {
+        return timber_model( Track );
+    }
+    std::vector<std::pair<TTrack const *, std::size_t>> panels;
+    for( auto const &beam : Beams ) {
+        if( beam.plain || beam.panel == nullptr ) {
+            continue;
+        }
+        auto found { std::find_if( panels.begin(), panels.end(), [&]( auto const &Panel ) { return Panel.first == beam.panel; } ) };
+        if( found == panels.end() ) {
+            panels.emplace_back( beam.panel, 0 );
+            found = std::prev( panels.end() );
+        }
+        ++found->second;
+    }
+    auto const most { std::max_element( panels.begin(), panels.end(), []( auto const &Left, auto const &Right ) { return Left.second < Right.second; } ) };
+    return ( most != panels.end() ? timber_model( *most->first ) : timber_model( Track ) );
+}
+
 beam_model const *plain_model( TTrack const &Track ) {
 
     if( Track.m_sleeper_enabled && false == Track.m_sleeper_model_name.empty() ) {
