@@ -180,6 +180,180 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		WriteLog(format("SELFTEST layspeed: %.0f km/h, own %d", m_lay.style.velocity, m_lay.own_speed ? 1 : 0));
 		return selftest_result::handled;
 	}
+	// the point clicked by the lay tool at x z, on the ground there, a free end within 3 m reached
+	auto const lay_point = [this](glm::dvec3 Point) {
+		Point.y = 5000.0;
+		std::vector<char> found;
+		auto const ground{ground_heights({Point}, true, &found)};
+		Point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+		m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, Point, 3.0, {});
+		m_lay.mouse = m_lay.mouse_snap.track != nullptr ? Point : lay_bed(Point);
+		lay_click();
+	};
+	// the line the points clicked make now, as Enter would lay it: its vertices and curves, the warnings, the fits of the curves traced
+	auto const lay_report = [this](std::string const &Label) {
+		lay_trim();
+		lay_line_plan plan;
+		std::string error;
+		// timed as the first frame the points are clicked in, the fits kept for them dropped
+		m_stretch_cache.clear();
+		auto const started{std::chrono::steady_clock::now()};
+		auto const made{m_lay.points.size() >= 2 && lay_line(m_lay.points, m_lay.modes, {}, plan, error)};
+		auto const took{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()};
+		WriteLog(format("SELFTEST layplan %s: %s, %zu points, %zu vertices, L %.2f m, %.1f ms %s", Label.c_str(), made ? "valid" : "invalid", m_lay.points.size(), plan.design.vertices.size(), plan.shape.length, took, error.c_str()));
+		if (false == made)
+			return;
+		for (std::size_t k = 0; k < plan.design.vertices.size(); ++k)
+		{
+			auto const &vertex{plan.design.vertices[k]};
+			auto text{format("SELFTEST layplan vertex %zu: %s at %.3f %.3f", k, plan.corners[k] != 0 ? "bend" : "traced", k < plan.shape.vertices.size() ? plan.shape.vertices[k].x : 0.0, k < plan.shape.vertices.size() ? plan.shape.vertices[k].y : 0.0)};
+			for (auto const &curve : plan.shape.curves)
+				if (curve.vertex == static_cast<int>(k))
+				{
+					text += format(", %s R %.1f", curve.spirals ? "spirals" : "arc", curve.radius);
+					for (auto const radius : curve.radii)
+						text += format("/%.1f", radius);
+					text += format(", L %.1f/%.1f, cant %.0f, deflection %.3f deg, tangents %.1f/%.1f, arc %.1f m, norms %d", curve.transition_in, curve.transition_out, curve.cant, glm::degrees(curve.deflection), curve.tangent_in, curve.tangent_out, curve.arc_length,
+					               alignment::meets_norms(curve, plan.design) ? 1 : 0);
+				}
+			WriteLog(text);
+		}
+		for (auto const &e : plan.shape.elements)
+			if (e.kind == alignment::element_kind::straight)
+				WriteLog(format("SELFTEST layplan straight at %.1f m: %.1f m", e.chainage, e.length));
+		for (auto const &warning : plan.shape.warnings)
+			WriteLog("SELFTEST layplan warning: " + warning);
+		for (auto const &trace : plan.traces)
+			WriteLog(format("SELFTEST layplan trace: %zu points, %zu curves, departure %.3f m, at most %.3f m", trace.points.size(), trace.curves, trace.rms, trace.worst));
+	};
+	if (command == "laymode")
+	{
+		std::string which;
+		words >> which;
+		if ((which == "curve") != (m_lay.mode == lay_mode::curve))
+			lay_switch_mode();
+		WriteLog("SELFTEST laymode: " + std::string{m_lay.mode == lay_mode::curve ? "curve" : "straights"});
+		return selftest_result::handled;
+	}
+	if (command == "layradius")
+	{
+		double low{3000.0};
+		double high{6000.0};
+		words >> low >> high;
+		EditorSettings.corners(low, high);
+		WriteLog(format("SELFTEST layradius: %.0f - %.0f m", EditorSettings.corner_low(), EditorSettings.corner_high()));
+		return selftest_result::handled;
+	}
+	if (command == "laytrace")
+	{
+		int straights{1};
+		words >> m_lay.radii >> straights;
+		m_lay.straights_between = straights != 0;
+		WriteLog(format("SELFTEST laytrace: radii %d, straights %d", m_lay.radii, straights));
+		return selftest_result::handled;
+	}
+	if (command == "layp")
+	{
+		m_lay.active = true;
+		for (glm::dvec3 point{0.0}; words >> point.x >> point.z;)
+			lay_point(point);
+		WriteLog(format("SELFTEST layp: %zu points, %s", m_lay.points.size(), m_lay.status.c_str()));
+		return selftest_result::handled;
+	}
+	if (command == "layreport")
+	{
+		std::string label;
+		words >> label;
+		lay_report(label);
+		return selftest_result::handled;
+	}
+	if (command == "layenter" || command == "laycancel" || command == "layback")
+	{
+		m_typed.clear();
+		m_lay.mouse_snap = {};
+		if (command == "layenter")
+			lay_enter();
+		else if (command == "layback")
+			lay_back();
+		else
+			lay_cancel();
+		WriteLog(format("SELFTEST %s: %zu points, chain %zu, history %zu, %s", command.c_str(), m_lay.points.size(), m_lay.chain.size(), m_history.size(), m_lay.status.c_str()));
+		return selftest_result::handled;
+	}
+	// a line of known curves, turning by the deflections given (degrees, to the left positive), the points along its curves clicked as
+	// they would be on the photo: the start as a bend, then in the mode of a curve from 30 m before the first curve to the end of the
+	// last one and two on the straight after it, every Spacing metres, shifted across by up to Noise
+	if (command == "laysample")
+	{
+		double x{0.0}, z{0.0}, heading{0.0}, spacing{20.0}, noise{0.0}, deflection{30.0}, radius{1000.0};
+		words >> x >> z >> heading >> spacing >> noise >> deflection >> radius;
+		double apart{0.0}, second{0.0}, secondradius{0.0};
+		auto const two{static_cast<bool>(words >> apart >> second >> secondradius)};
+		alignment::design truth;
+		truth.norms = laying_norms();
+		truth.shape = m_route.design.shape;
+		truth.speed = design_speed(nullptr, nullptr);
+		glm::dvec2 const start{x, z};
+		glm::dvec2 direction{std::cos(glm::radians(heading)), std::sin(glm::radians(heading))};
+		auto const corner1{start + direction * 400.0};
+		direction = geometry::turned(direction, glm::radians(deflection));
+		auto corner2{corner1};
+		if (two)
+		{
+			corner2 = corner1 + direction * apart;
+			direction = geometry::turned(direction, glm::radians(second));
+		}
+		auto const end{corner2 + direction * 400.0};
+		truth.start = {start.x, 0.0, start.y};
+		truth.end = {end.x, 0.0, end.y};
+		truth.start_direction = glm::normalize(corner1 - start);
+		truth.end_direction = direction;
+		auto const curve_of = [&](double const Radius) {
+			alignment::vertex vertex;
+			vertex.radius = Radius;
+			auto const recommended{alignment::recommend(std::min(truth.speed, alignment::speed_limit(Radius, truth.norms)), Radius, truth.norms)};
+			vertex.transition_in = vertex.transition_out = recommended.transition;
+			vertex.cant = recommended.cant;
+			vertex.offset = 400.0;
+			return vertex;
+		};
+		truth.vertices.push_back(curve_of(radius));
+		if (two)
+			truth.vertices.push_back(curve_of(secondradius));
+		auto const result{alignment::compute(truth)};
+		for (auto const &curve : result.curves)
+			WriteLog(format("SELFTEST laysample truth %d: R %.1f, L %.1f/%.1f, cant %.0f, deflection %.3f deg, valid %d", curve.vertex, curve.radius, curve.transition_in, curve.transition_out, curve.cant, glm::degrees(curve.deflection), result.valid ? 1 : 0));
+		if (false == result.valid)
+			return selftest_result::handled;
+		auto from{result.length};
+		auto to{0.0};
+		for (auto const &e : result.elements)
+			if (e.kind != alignment::element_kind::straight)
+			{
+				from = std::min(from, e.chainage);
+				to = std::max(to, e.chainage + e.length);
+			}
+		m_lay.active = true;
+		lay_cancel();
+		if (m_lay.mode != lay_mode::straights)
+			lay_switch_mode();
+		auto const along = [&](double const Chainage, double const Shift) {
+			auto const station{alignment::evaluate(result, Chainage)};
+			glm::dvec3 const across{-station.direction.z, 0.0, station.direction.x};
+			return station.position + glm::normalize(across) * Shift;
+		};
+		lay_point(truth.start);
+		lay_switch_mode();
+		int count{0};
+		for (auto chainage{std::max(0.0, from - 30.0)}; chainage <= to; chainage += spacing, ++count)
+			lay_point(along(chainage, noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)));
+		lay_point(along(to + 30.0, noise * 0.5));
+		lay_point(along(to + 60.0, -noise * 0.5));
+		lay_switch_mode();
+		WriteLog(format("SELFTEST laysample: %zu points clicked over %.1f m of curves", m_lay.points.size(), to - from));
+		lay_report("sample");
+		return selftest_result::handled;
+	}
 	if (command == "tracktab")
 	{
 		std::string key;
@@ -210,16 +384,20 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				undo_last();
 			else if (word == "r")
 				redo_last();
+			else if (word == "e")
+			{
+				m_lay.mouse_snap = {};
+				lay_enter();
+			}
+			else if (word == "t")
+				lay_switch_mode();
+			else if (word == "p")
+				lay_report("chain");
 			else
 			{
 				glm::dvec3 point{std::strtod(word.c_str(), nullptr), 5000.0, 0.0};
 				words >> point.z;
-				std::vector<char> found;
-				auto const ground{ground_heights({point}, true, &found)};
-				point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
-				m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
-				m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
-				lay_click();
+				lay_point(point);
 				word += format(" %.1f", point.z);
 			}
 			report(word);
@@ -253,9 +431,12 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			WriteLog(format("SELFTEST layclicks ground %.3f, track %.3f", point.y, m_lay.mouse.y));
 			if (false == m_lay.points.empty())
 			{
+				lay_trim();
 				auto points{m_lay.points};
+				auto modes{m_lay.modes};
+				modes.push_back(m_lay.mode);
 				points.push_back(m_lay.mouse_snap.track != nullptr ? m_lay.mouse_snap.position : m_lay.mouse);
-				m_lay.preview = lay_pieces(points, m_lay.mouse_snap, m_lay.preview_length, m_lay.preview_error);
+				m_lay.preview = lay_pieces(points, modes, m_lay.mouse_snap, m_lay.preview_length, m_lay.preview_error);
 				auto readout{track_readout()};
 				std::replace(readout.begin(), readout.end(), '\n', '|');
 				WriteLog("SELFTEST layclicks readout: " + readout);
@@ -263,6 +444,11 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			lay_click();
 			WriteLog(format("SELFTEST layclicks %.1f %.1f: %s", point.x, point.z, m_lay.status.c_str()));
 		}
+		// the points clicked are laid at one go, as Enter lays them
+		m_typed.clear();
+		m_lay.mouse_snap = {};
+		lay_enter();
+		WriteLog("SELFTEST layclicks enter: " + m_lay.status);
 		lay_cancel();
 		m_lay.active = active;
 		glm::dvec2 heading{0.0};

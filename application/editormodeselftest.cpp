@@ -126,6 +126,13 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined
 //   layspeed <km/h> <own 0|1>            the speed set for the laying, and whether it goes also on from a track with its own
+//   laymode <straights|curve>, layradius <R from> <R to>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them
+//   layp <x> <z>...                      the points clicked in the mode set, on the ground, a free end within 3 m reached
+//   layreport <label>                    logs the line the points clicked make, as Enter would lay it: its bends and curves, warnings, traces
+//   layenter, layback, laycancel         as Enter, Backspace and Esc while laying
+//   laysample <x> <z> <heading> <spacing> <noise> <deflection> <R> [<from the first vertex to the second, m> <deflection> <R>]
+//                                        a line of known curves, the points along them clicked as a curve traced, the line they make logged
+//   laychain <layout> <R> <x> <z> | b | u | r | e | t | p...   the points clicked, Backspace, undo, redo, Enter, Tab, the line logged
 //   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged, every issue with free ends without points
 //   route <x> <z> <single 0|1>          the route design of the path nearest the point, a curve or the whole line
 //   routevertex <i> <R> <L in> <L out> <cant>, routearc <i> <R> <L> <share>, routeshare <i> <share>, routekm <km>

@@ -1745,13 +1745,21 @@ bool editor_mode::render_route_vertex(int const Index)
 	ImGui::SameLine();
 	changed |= field("##exit", vertex.transition_out, 1.0f, STR_C("exit %.0f m"), transition, "Length of the transition curve leading out of the arc");
 	ImGui::PushItemWidth(110.0f);
-	if (ImGui::Checkbox(STR_C("Compound curve (several radii)"), &vertex.compound))
+	if (ImGui::Checkbox(STR_C("Two transition curves, no arc"), &vertex.spirals))
+	{
+		changed = true;
+		if (vertex.spirals)
+			vertex.compound = false;
+	}
+	item_tooltip("The bend eased the way the lines are drawn: two transition curves meeting at the radius, with no arc between them and no cant; their lengths follow from the radius and the angle");
+	if (false == vertex.spirals && ImGui::Checkbox(STR_C("Compound curve (several radii)"), &vertex.compound))
 	{
 		changed = true;
 		if (vertex.compound && vertex.arcs.empty())
 			vertex.arcs.push_back({std::max(10.0, std::round(vertex.radius * 0.6 / 10.0) * 10.0), 0.0, 1.0});
 	}
-	item_tooltip("Curve made of arcs of different radii, each one its own path, joined with transitions");
+	if (false == vertex.spirals)
+		item_tooltip("Curve made of arcs of different radii, each one its own path, joined with transitions");
 	if (vertex.compound)
 	{
 		auto total{std::max(0.0, vertex.share)};

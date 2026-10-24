@@ -5570,15 +5570,16 @@ void editor_mode::render_shortcuts_window()
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
 	      {"RMB on a track", "What can be done with it"},
 	      {"K", "Split the selected track at the cursor, a break of the grade at the height of the ground"},
-	      {"L, LMB, LMB...", "Lay track: each click lays a piece and goes on from its end"},
+	      {"L, LMB, LMB...", "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them and goes on from the end"},
+	      {"Tab while laying", "The points clicked next go along the middle of a curve seen on the photo, the last two on the straight after it; Tab again: back to the bends"},
 	      {"Drag from a free end", "Lead a track out of it; onto another free end: join the two"},
 	      {"Ctrl+wheel", "Laying: radius"},
 	      {"Shift+wheel", "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"},
-	      {"0-9 while laying", "Type the length (or the radius) of the next piece, Enter lays it"},
+	      {"0-9 while laying", "Type the length of the next straight, Enter puts the point"},
 	      {"Alt held while laying", "The direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track; the first click with Alt goes onto the axis of the track"},
 	      {"N", "Parallel track: LMB on a track, then the side and the spacing"},
 	      {"Shift+LMB on a track in L", "The Parallel tool (N) with it"},
-	      {"Enter / Backspace", "Laying track: lay up to the cursor / take the last piece back"},
+	      {"Enter / Backspace", "Laying track: lay the points clicked / take back the last point, then the last piece laid"},
 	      {"Del", "Delete the selected tracks"}}},
 	    {"Plan of a curve",
 	     {{"G, LMB on a curve", "Its design: the vertex and the radius to drag in the view, the curvature in the panel"},
@@ -6543,6 +6544,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 ui()->set_node(nullptr);
             }
         }
+        break;
+
+    case GLFW_KEY_TAB:
+        // laying: the bends of straights or a curve traced, for the points clicked from now on
+        if (is_press(Action) && false == anyModifier && ui()->mode() == nodebank_panel::TRACK && m_lay.active && false == ImGui::GetIO().WantTextInput)
+            lay_switch_mode();
         break;
 
     case GLFW_KEY_BACKSPACE:

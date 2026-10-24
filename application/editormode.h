@@ -1384,11 +1384,42 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<TTrack *> line;
 	};
 	extend_tool m_extend;
+	// what a point clicked while laying is: a bend of the straights, eased with a large curve, or a point along the middle of a curve
+	// seen on the photo, the last two of these on the straight after it
+	enum class lay_mode
+	{
+		straights,
+		curve
+	};
+	// a curve traced on the photo as it's laid, how far the points clicked along it are from it
+	struct lay_trace
+	{
+		std::vector<glm::dvec3> points;
+		std::vector<double> offsets;
+		double rms{0.0};
+		double worst{0.0};
+		std::size_t curves{0};
+	};
+	// the line the points clicked make: its design, the bends among its vertices, the curves traced
+	struct lay_line_plan
+	{
+		alignment::design design;
+		alignment::result shape;
+		std::vector<char> corners;
+		std::vector<lay_trace> traces;
+		// the straights of a fixed direction the next bend slides along: from a free end, out of a curve traced
+		std::vector<std::pair<glm::dvec3, glm::dvec3>> guides;
+	};
 	// lays new track through the clicked points, with no path needed to start from
 	struct lay_tool
 	{
 		bool active{false};
 		std::vector<glm::dvec3> points;
+		std::vector<lay_mode> modes; // of the points, as each was clicked
+		lay_mode mode{lay_mode::straights};
+		int radii{0}; // of a curve traced: 0 as many as the points need, up to three
+		bool straights_between{true}; // a curve traced may be two with a straight between them
+		lay_line_plan plan; // of the line shown
 		editor_track::snap_target start; // free end the track starts from, if any
 		glm::dvec3 mouse{0.0};
 		editor_track::snap_target mouse_snap;
@@ -1424,8 +1455,20 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void lay_finish(editor_track::snap_target const &End);
 	void lay_cancel();
 	void lay_enter();
-	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
-	alignment::result lay_shape(std::vector<glm::dvec3> const &Points, glm::dvec2 const &Startdirection, glm::dvec2 const &Enddirection, alignment::design &Design) const;
+	// Tab: the bends of straights or the curve traced, for the points clicked from now on
+	void lay_switch_mode();
+	// the points the same in number as their modes, a point with none a bend of straights
+	void lay_trim();
+	// the track through the points clicked, each the way its mode says; End: the free end it finishes at, the last point then
+	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, double &Length, std::string &Error,
+	                                     lay_line_plan *Plan = nullptr) const;
+	bool lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error) const;
+	// the curves of a stretch traced, the ones fitted lately kept for the same points
+	// none while the stretch the cursor moves along is still being fitted
+	std::optional<alignment::trace_stretch> traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points) const;
+	mutable std::vector<std::pair<std::vector<double>, alignment::trace_stretch>> m_stretch_cache;
+	// the stretch the cursor moves along is fitted on a thread, the frames drawn meanwhile with the fit done last
+	mutable alignment::stretch_fitter m_stretch_fitter;
 	void render_switch_ui();
 	void render_switch_timbers();
 	void render_rail_profile_hint(TTrack &Track);

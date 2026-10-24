@@ -2228,9 +2228,6 @@ msgstr "odznacza"
 msgid "Enter"
 msgstr "Enter"
 
-msgid "lay up to the cursor"
-msgstr "układa do kursora"
-
 msgid "Shift"
 msgstr "Shift"
 
@@ -3984,9 +3981,6 @@ msgstr "Skróty klawiszowe"
 msgid "Lay track / switch / turntable"
 msgstr "Układanie / Rozjazd / Obrotnica"
 
-msgid "Laying track: lay up to the cursor / take the last piece back"
-msgstr "Układanie toru: ułóż do kursora / cofnij ostatni odcinek"
-
 msgid "Leave the editor"
 msgstr "Wyjście z edytora"
 
@@ -4533,9 +4527,6 @@ msgstr "Pokazuj po otwarciu edytora"
 msgid "L, LMB, LMB..."
 msgstr "L, LPM, LPM..."
 
-msgid "Lay track: each click lays a piece and goes on from its end"
-msgstr "Układanie toru: każdy klik układa odcinek i ciągnie tor dalej z jego końca"
-
 msgid "Lead a track out of it; onto another free end: join the two"
 msgstr "Wyprowadza z niego tor; na inny wolny koniec: łączy oba"
 
@@ -4547,9 +4538,6 @@ msgstr "Układanie: łuk i prosta, prosta i łuk, łuk, prosta; na wolnym końcu
 
 msgid "0-9 while laying"
 msgstr "0-9 w trakcie układania"
-
-msgid "Type the length (or the radius) of the next piece, Enter lays it"
-msgstr "Wpisz długość (lub promień) następnego odcinka, Enter go układa"
 
 msgid "canyon"
 msgstr "jar"
@@ -4626,17 +4614,8 @@ msgstr "Więcej"
 msgid "Less"
 msgstr "Mniej"
 
-msgid "Plain arcs with no transition curves and no cant, no warnings about the norms: the track goes where it's clicked"
-msgstr "Zwykłe łuki bez krzywych przejściowych i przechyłki, bez ostrzeżeń o normach: tor idzie tam, gdzie klikniesz"
-
-msgid "Transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms"
-msgstr "Krzywe przejściowe i przechyłka dla prędkości projektowej; ostrzeżenia, gdy promień, przechyłka albo krzywe przejściowe nie spełniają norm"
-
 msgid "Drag to change, Ctrl+click to type the value. While laying: Ctrl+wheel"
 msgstr "Przeciągnij, by zmienić, Ctrl+LPM, by wpisać. W trakcie układania: Ctrl+kółko"
-
-msgid "Speed limit of the new paths; the speed of the track joined comes first"
-msgstr "Ograniczenie prędkości nowych torów; pierwszeństwo ma prędkość dołączanego toru"
 
 msgid "The Parallel tool (N) with it"
 msgstr "Narzędzie Równoległy (N) z tym torem"
@@ -4730,12 +4709,6 @@ msgstr "układa kształt do kursora"
 
 msgid "a parallel track (N)"
 msgstr "tor równoległy (N)"
-
-msgid "lay the shape up to here"
-msgstr "układa kształt do tego miejsca"
-
-msgid "lay the straight up to here"
-msgstr "układa prostą do tego miejsca"
 
 msgid "another shape"
 msgstr "inny kształt"
@@ -7000,18 +6973,6 @@ msgstr "Wyposażenie"
 
 msgid "F1: all the shortcuts"
 msgstr "F1: wszystkie skróty"
-
-msgid "Free laying"
-msgstr "Swobodnie"
-
-msgid "Plain arcs, no transition curves nor cant"
-msgstr "Same łuki, bez krzywych przejściowych i przechyłki"
-
-msgid "To the PKP PLK norms"
-msgstr "Według norm PKP PLK"
-
-msgid "Transition curves and cant for the speed, checked against the norms"
-msgstr "Krzywe przejściowe i przechyłka dobrane do prędkości"
 
 msgid "its properties show here"
 msgstr "jego właściwości pokazują się tutaj"
@@ -10109,9 +10070,6 @@ msgstr "Przechyłka (mm)"
 msgid "Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path"
 msgstr "Przechyłka na początku i na końcu: o ile jedna szyna jest wyżej, + podnosi lewą szynę patrząc wzdłuż toru"
 
-msgid "Plain arcs: the free design has no transition curves, the PKP PLK norms work them out from the speed of the line"
-msgstr "Zwykłe łuki: projekt wolny nie ma krzywych przejściowych, normy PKP PLK liczą je z prędkości linii"
-
 msgid "The place lies outside of the terrain model of Poland: check the location of the scenery"
 msgstr "To miejsce leży poza NMT Polski: sprawdź położenie scenerii"
 
@@ -10261,24 +10219,6 @@ msgstr "LPM: początek pomiaru. M albo Esc: koniec"
 
 msgid "Measure"
 msgstr "Miarka"
-
-msgid "How to lay the tracks###normsprompt"
-msgstr "Jak kłaść tory###normsprompt"
-
-msgid "Choose how the new tracks are laid. It can be changed any time at the top of the panels of laying and of the plan."
-msgstr "Wybierz, jak mają się kłaść nowe tory. Zmienisz to w każdej chwili na górze paneli Układanie i Plan."
-
-msgid "Remember the choice, don't ask again"
-msgstr "Zapamiętaj wybór, nie pytaj więcej"
-
-msgid "Asking again can be switched on in the settings of the editor (General)"
-msgstr "Pytanie można włączyć z powrotem w ustawieniach edytora (Ogólne)"
-
-msgid "Laying of new tracks"
-msgstr "Kładzenie nowych torów"
-
-msgid "Ask as the laying starts"
-msgstr "Pytaj przy rozpoczęciu kładzenia"
 
 msgid "Trace the curve on the photo"
 msgstr "Odrysuj łuk ze zdjęcia"
@@ -11840,3 +11780,125 @@ msgstr "Jak w eu07.ini"
 
 msgid "Sets the model of the timbers, with the fastenings where it has them, on all the switches and crossings of the scenery, in one step of the undo"
 msgstr "Ustawia model podrozjazdnic, razem z przytwierdzeniami tam, gdzie je ma, na wszystkich rozjazdach i skrzyżowaniach scenerii, jednym krokiem cofania"
+
+# scenery editor: laying by the bends of straights and by curves traced on the photo
+
+msgid "Vertex %zu: the transition curves meet at R %.0f m, with no cant at least %.0f m for %.0f km/h"
+msgstr "Wierzchołek %zu: krzywe przejściowe stykają się przy R %.0f m, bez przechyłki potrzeba co najmniej %.0f m dla %.0f km/h"
+
+msgid "Vertex %zu"
+msgstr "Wierzchołek %zu"
+
+msgid "The straight before the curve and the one after it don't meet"
+msgstr "Prosta przed łukiem i prosta za nim się nie przecinają"
+
+msgid "No curve follows the points clicked along it"
+msgstr "Żaden łuk nie przechodzi przez punkty kliknięte wzdłuż niego"
+
+msgid "Curve: click points along the middle of the track, the last two on the straight after the curve. Tab: back to the straights"
+msgstr "Łuk: klikaj punkty po środku toru, dwa ostatnie na prostej za łukiem. Tab: z powrotem proste"
+
+msgid "Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo"
+msgstr "Proste: każdy kliknięty punkt to załamanie prostych, wyokrąglone dużym łukiem. Tab: łuk odrysowany ze zdjęcia"
+
+msgid "Straights   Tab"
+msgstr "Proste   Tab"
+
+msgid "Curve   Tab"
+msgstr "Łuk   Tab"
+
+msgid "Each point clicked is a bend of the straights: the bend eased with two transition curves meeting, with no cant, of a large radius; where they don't fit, an arc with the transitions and the cant of the norms, as large as fits"
+msgstr "Każdy kliknięty punkt to załamanie prostych: wyokrąglone dwiema stycznymi krzywymi przejściowymi bez przechyłki, o dużym promieniu; gdzie się nie mieszczą, łukiem z krzywymi przejściowymi i przechyłką według norm, tak dużym, jak się mieści"
+
+msgid "Click points along the middle of a curve seen on the photo, the last two on the straight after it: the curve, compound or with a straight in it, is fitted to them. It comes from the straight before it, of the points clicked before or of the free end"
+msgstr "Klikaj punkty po środku łuku widocznego na zdjęciu, dwa ostatnie na prostej za nim: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem"
+
+msgid "Bends: R from (m)"
+msgstr "Załamania: R od (m)"
+
+msgid "to (m)"
+msgstr "do (m)"
+
+msgid "The radius the two transition curves of a bend meet at, at least; where they don't fit at it, an arc of the norms as large as fits"
+msgstr "Promień, przy którym stykają się dwie krzywe przejściowe załamania, co najmniej; gdzie się przy nim nie mieszczą, łuk według norm tak duży, jak się mieści"
+
+msgid "The radius tried first; a bend too slight for transitions long enough at the speed takes a larger one"
+msgstr "Promień próbowany najpierw; załamanie zbyt małe na krzywe przejściowe dość długie dla prędkości dostaje większy"
+
+msgid "Two curves with a straight between them, where the points show one"
+msgstr "Dwa łuki z prostą między nimi, gdy punkty ją pokazują"
+
+msgid "The points along the curve may make two curves, turning the same way or not, with a straight between them, where these follow the points much closer than one curve"
+msgstr "Punkty wzdłuż łuku mogą dać dwa łuki, w tę samą stronę albo przeciwne, z prostą między nimi, gdy trzymają się punktów dużo lepiej niż jeden łuk"
+
+msgid "Click points along the middle of the track on the photo, the last two on the straight after the curve"
+msgstr "Klikaj punkty po środku toru na zdjęciu, dwa ostatnie na prostej za łukiem"
+
+msgid "Curves of the track laid"
+msgstr "Łuki kładzionego toru"
+
+msgid "Meets the norms for the speed"
+msgstr "Spełnia normy dla prędkości"
+
+msgid "Dragged from a free end, or laid from a point to one"
+msgstr "Przeciąganie z wolnego końca albo kładzenie od punktu do wolnego końca"
+
+msgid "Drag to change, Ctrl+click to type the value. While dragging: Ctrl+wheel"
+msgstr "Przeciągnij, aby zmienić, Ctrl+klik, aby wpisać wartość. W trakcie przeciągania: Ctrl+kółko"
+
+msgid "straight %.0f m"
+msgstr "prosta %.0f m"
+
+msgid "this curve doesn't meet the norms, it's laid all the same"
+msgstr "ten łuk nie spełnia norm, zostanie położony mimo to"
+
+msgid "%zu points, departure %.0f cm, at most %.0f cm"
+msgstr "%zu punktów, odchyłka %.0f cm, najwięcej %.0f cm"
+
+msgid "Curve traced, Tab: the bends of straights"
+msgstr "Łuk odrysowywany, Tab: załamania prostych"
+
+msgid "Bends of straights, Tab: a curve traced"
+msgstr "Załamania prostych, Tab: łuk odrysowywany"
+
+msgid "back to the bends of straights"
+msgstr "z powrotem załamania prostych"
+
+msgid "trace a curve on the photo"
+msgstr "odrysuj łuk ze zdjęcia"
+
+msgid "a point along the middle of the curve, the last two on the straight after it"
+msgstr "punkt po środku łuku, dwa ostatnie na prostej za nim"
+
+msgid "a bend of the straights, eased with a large curve"
+msgstr "załamanie prostych, wyokrąglone dużym łukiem"
+
+msgid "lay the points clicked, then go on"
+msgstr "kładzie kliknięte punkty i prowadzi dalej"
+
+msgid "drop the points not laid"
+msgstr "porzuca niepołożone punkty"
+
+msgid "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them and goes on from the end"
+msgstr "Układanie toru: każdy klik to załamanie prostych, wyokrąglone dużym łukiem; Enter je kładzie i prowadzi tor dalej od końca"
+
+msgid "Tab while laying"
+msgstr "Tab przy układaniu"
+
+msgid "The points clicked next go along the middle of a curve seen on the photo, the last two on the straight after it; Tab again: back to the bends"
+msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, dwa ostatnie na prostej za nim; ponownie Tab: z powrotem załamania"
+
+msgid "Type the length of the next straight, Enter puts the point"
+msgstr "Wpisz długość następnej prostej, Enter stawia punkt"
+
+msgid "Laying track: lay the points clicked / take back the last point, then the last piece laid"
+msgstr "Układanie toru: połóż kliknięte punkty / cofnij ostatni punkt, potem ostatni położony odcinek"
+
+msgid "Fitting the curve to the points..."
+msgstr "Dopasowuję łuk do punktów..."
+
+msgid "Two transition curves, no arc"
+msgstr "Dwie krzywe przejściowe, bez łuku"
+
+msgid "The bend eased the way the lines are drawn: two transition curves meeting at the radius, with no arc between them and no cant; their lengths follow from the radius and the angle"
+msgstr "Załamanie wyokrąglone tak, jak projektuje się linie: dwie krzywe przejściowe stykające się przy promieniu, bez łuku między nimi i bez przechyłki; ich długości wynikają z promienia i kąta"

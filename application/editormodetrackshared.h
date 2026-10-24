@@ -70,6 +70,33 @@ inline std::string speed_of(double const Radius, alignment::limits const &Limits
 	return speed > 0.0 ? format(STR_C("  (up to %.0f km/h)"), speed) : std::string{};
 }
 
+// the sharpest arc of a curve, of a compound one too
+inline double curve_sharpest(alignment::curve_report const &Curve)
+{
+	auto sharpest{Curve.radius};
+	for (auto const radius : Curve.radii)
+		sharpest = std::min(sharpest, radius);
+	return sharpest;
+}
+
+// a curve of the line laid in short: two transition curves meeting at the radius, or the radii with the transitions and the cant, the
+// speed the sharpest arc lets the trains through at
+inline std::string curve_label(alignment::curve_report const &Curve, alignment::limits const &Limits)
+{
+	if (Curve.spirals)
+		return format("2xL %.0f m  R %.0f", Curve.transition_in, Curve.radius) + speed_of(Curve.radius, Limits);
+	std::string text{"R "};
+	if (Curve.radii.empty())
+		text += format("%.0f", Curve.radius);
+	for (std::size_t i = 0; i < Curve.radii.size(); ++i)
+		text += format(i == 0 ? "%.0f" : "/%.0f", Curve.radii[i]);
+	if (Curve.transition_in > 0.0 || Curve.transition_out > 0.0)
+		text += std::abs(Curve.transition_in - Curve.transition_out) < 0.5 ? format("  L %.0f", Curve.transition_in) : format("  L %.0f/%.0f", Curve.transition_in, Curve.transition_out);
+	if (Curve.cant > 0.0)
+		text += format("  h %.0f", Curve.cant);
+	return text + speed_of(curve_sharpest(Curve), Limits);
+}
+
 // the transition curves and the cant the norms put in a layout, a compound curve where it goes on from an arc turning the same way
 inline std::string eased_of(std::optional<alignment::lay_result> const &Eased)
 {

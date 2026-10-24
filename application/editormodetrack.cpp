@@ -485,6 +485,8 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 	cancel_track_tools();
 	m_straights.tool = 0;
 	m_lay.points.clear();
+	m_lay.modes.clear();
+	m_lay.plan = {};
 	m_lay.start = {};
 	m_lay.chain.clear();
 	m_lay.preview.clear();
@@ -1654,15 +1656,17 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	auto const *selected{selected_track()};
 	if (m_lay.active)
 	{
+		bool const curve{m_lay.mode == lay_mode::curve};
+		auto const *tab{curve ? "back to the bends of straights" : "trace a curve on the photo"};
 		if (m_lay.points.empty())
-			hints = {{"LMB", "start, on the ground or at a free end"}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Esc", "stop laying"}};
+			hints = {{"LMB", "start, on the ground or at a free end"}, {"Tab", tab}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Esc", "stop laying"}};
 		else
 		{
-			bool const chained{m_lay.start.track != nullptr};
-			hints = {{"LMB", chained ? "lay the shape up to here" : "lay the straight up to here"}, {"LMB on a free end", "join and lay"}};
-			if (chained || m_lay.mouse_snap.track != nullptr)
+			hints = {{"LMB", curve ? "a point along the middle of the curve, the last two on the straight after it" : "a bend of the straights, eased with a large curve"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}};
+			if (m_lay.points.size() == 1 && m_lay.mouse_snap.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
-			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", "lay up to the cursor"}, {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "cancel"}});
+			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", m_lay.points.size() > 1 ? "lay the points clicked, then go on" : "stop laying"},
+			                           {"Backspace", m_lay.points.size() > 1 || m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "drop the points not laid"}});
 		}
 	}
 	else if (false == m_straights.detour.empty())
@@ -1864,6 +1868,28 @@ std::string editor_mode::track_readout() const
 		std::string text;
 		if (lay.points.empty())
 			text = lay.mouse_snap.track != nullptr ? format(STR_C("starts at the end of %s"), name(lay.mouse_snap.track).c_str()) : std::string{STR_C("start")};
+		else if (false == lay.preview.empty() && lay.plan.shape.valid)
+		{
+			// the curve the cursor makes now: of the last bend, or the one traced
+			auto const &plan{lay.plan};
+			text = format("L %.1f m", lay.preview_length);
+			if (false == plan.shape.curves.empty())
+			{
+				auto const &curve{plan.shape.curves.back()};
+				text += "   " + curve_label(curve, laying_norms());
+				if (false == alignment::meets_norms(curve, plan.design))
+					text += "\n" + STR("this curve doesn't meet the norms, it's laid all the same");
+			}
+			if (lay.mode == lay_mode::curve && false == plan.traces.empty() && false == plan.traces.back().offsets.empty())
+			{
+				auto const &trace{plan.traces.back()};
+				text += "\n" + format(STR_C("%zu points, departure %.0f cm, at most %.0f cm"), trace.points.size(), trace.rms * 100.0, trace.worst * 100.0);
+			}
+			auto const [from, to]{laying_ends()};
+			text += "\n" + design_speed_of(from, to);
+			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
+				text += "\n" + vertical;
+		}
 		else if (false == lay.preview.empty())
 		{
 			double radius{0.0};
@@ -1895,8 +1921,9 @@ std::string editor_mode::track_readout() const
 			text += "\n" + format(STR_C("joins %s"), name(lay.mouse_snap.track).c_str());
 		if (false == lay.preview_error.empty())
 			text += "\n" + lay.preview_error;
-		if (lay.points.size() == 1 && (lay.start.track != nullptr || lay.mouse_snap.track != nullptr))
-			text += "\n" + track_shaping(lay.mouse_snap.track != nullptr && lay.start.track != nullptr);
+		if (lay.points.size() == 1 && lay.mouse_snap.track != nullptr)
+			text += "\n" + track_shaping(lay.start.track != nullptr);
+		text += "\n" + std::string{lay.mode == lay_mode::curve ? STR_C("Curve traced, Tab: the bends of straights") : STR_C("Bends of straights, Tab: a curve traced")};
 		if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
 			text += "\n" + (lay.skew.empty() ? format(STR_C("azimuth %.0f deg"), azimuth(lay.points.back(), lay.mouse)) : lay.skew);
 		if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
@@ -2342,14 +2369,43 @@ void editor_mode::draw_build_overlay() const
 	if (m_lay.active)
 	{
 		auto const &lay{m_lay};
+		auto const &plan{lay.plan};
 		auto const piece_colour = [&](segment_data const &Path) {
-			if (false == lay.preview_error.empty())
+			if (false == lay.preview_error.empty() && plan.shape.warnings.empty())
 				return overlay_color::warning;
 			return piece_plan_radius(Path) < 0.5 ? IM_COL32(255, 255, 255, 230) : overlay_color::marked;
 		};
 		for (auto const &piece : lay.preview)
 			drawpath(piece, piece_colour(piece));
-		for (std::size_t i = 0, n = lay.preview.size(); i < n;)
+		auto const label_at = [&](glm::dvec3 const &Point, std::string const &Text, ImU32 const Colour) {
+			ImVec2 screen;
+			if (false == projection.project(Point, screen))
+				return;
+			auto const size{ImGui::CalcTextSize(Text.c_str())};
+			drawlist->AddRectFilled(ImVec2(screen.x + 6.0f, screen.y - 8.0f), ImVec2(screen.x + 14.0f + size.x, screen.y + 8.0f), IM_COL32(0, 0, 0, 180), 3.0f);
+			drawlist->AddText(ImVec2(screen.x + 10.0f, screen.y - 8.0f), Colour, Text.c_str());
+		};
+		// the straights the next bend slides along, dashed
+		for (auto const &[from, to] : plan.guides)
+		{
+			auto const length{plan_distance(from, to)};
+			auto const dashes{std::clamp(static_cast<int>(length / 4.0), 1, 400)};
+			for (int k = 0; k < dashes; k += 2)
+				projection.line(drawlist, glm::mix(from, to, static_cast<double>(k) / dashes), glm::mix(from, to, static_cast<double>(k + 1) / dashes), IM_COL32(255, 255, 255, 150), 1.5f);
+		}
+		// the curves of the line laid by the points: the bends eased, the curves traced, in the colour of a warning where they don't meet
+		// the norms; the length of the straights between them
+		if (plan.shape.valid)
+		{
+			for (auto const &curve : plan.shape.curves)
+				if (curve.vertex >= 0 && curve.vertex < static_cast<int>(plan.shape.vertex_chainages.size()))
+					label_at(alignment::evaluate(plan.shape, plan.shape.vertex_chainages[curve.vertex]).position, curve_label(curve, laying_norms()),
+					         alignment::meets_norms(curve, plan.design) ? overlay_color::marked : overlay_color::warning);
+			for (auto const &e : plan.shape.elements)
+				if (e.kind == alignment::element_kind::straight && e.length >= 20.0)
+					label_at(alignment::evaluate(plan.shape, e.chainage + e.length * 0.5).position, format(STR_C("straight %.0f m"), e.length), overlay_color::highlight);
+		}
+		for (std::size_t i = 0, n = plan.shape.valid ? 0 : lay.preview.size(); i < n;)
 		{
 			auto const radius{piece_plan_radius(lay.preview[i])};
 			bool const curved{radius >= 0.5};
@@ -2390,14 +2446,35 @@ void editor_mode::draw_build_overlay() const
 		for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 120), 3.0f}, std::pair{IM_COL32(255, 255, 255, 160), 1.0f}})
 			for (std::size_t i = 0; i + 1 < lay.points.size(); ++i)
 				projection.line(drawlist, lay.points[i], lay.points[i + 1], colour, width);
-		for (auto const &point : lay.points)
+		// the bends of straights as squares, the points along a curve as dots in the colour of how far the line laid is from them
+		auto const departure = [&](glm::dvec3 const &Point) {
+			for (auto const &trace : plan.traces)
+				for (std::size_t k = 0; k < trace.points.size() && k < trace.offsets.size(); ++k)
+					if (glm::distance(trace.points[k], Point) < 1e-6)
+						return std::abs(trace.offsets[k]);
+			return -1.0;
+		};
+		for (std::size_t i = 0; i < lay.points.size(); ++i)
 		{
 			ImVec2 screen;
-			if (projection.project(point, screen))
+			if (false == projection.project(lay.points[i], screen))
+				continue;
+			if (i > 0 && i < lay.modes.size() && lay.modes[i] == lay_mode::curve)
 			{
-				drawlist->AddCircleFilled(screen, 5.0f, overlay_color::grip);
-				drawlist->AddCircle(screen, 5.0f, IM_COL32(0, 0, 0, 170), 12, 1.5f);
+				auto const off{departure(lay.points[i])};
+				auto const colour{off < 0.0 ? overlay_color::grip : off <= 0.1 ? IM_COL32(90, 220, 110, 255) : off <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255)};
+				drawlist->AddCircleFilled(screen, 4.5f, colour);
+				drawlist->AddCircle(screen, 4.5f, IM_COL32(0, 0, 0, 170), 12, 1.5f);
+				continue;
 			}
+			drawlist->AddRectFilled(ImVec2(screen.x - 4.5f, screen.y - 4.5f), ImVec2(screen.x + 4.5f, screen.y + 4.5f), overlay_color::grip);
+			drawlist->AddRect(ImVec2(screen.x - 4.5f, screen.y - 4.5f), ImVec2(screen.x + 4.5f, screen.y + 4.5f), IM_COL32(0, 0, 0, 170), 0.0f, 0, 1.5f);
+		}
+		// the point the cursor would add along a curve
+		if (ImVec2 cursor; lay.mode == lay_mode::curve && false == lay.points.empty() && lay.mouse_snap.track == nullptr && projection.project(lay.mouse, cursor))
+		{
+			auto const off{departure(lay.mouse)};
+			drawlist->AddCircle(cursor, 6.0f, off < 0.0 ? overlay_color::grip : off <= 0.1 ? IM_COL32(90, 220, 110, 255) : off <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255), 16, 2.0f);
 		}
 		ImVec2 screen;
 		if (lay.mouse_snap.track != nullptr && projection.project(lay.mouse_snap.position, screen))
