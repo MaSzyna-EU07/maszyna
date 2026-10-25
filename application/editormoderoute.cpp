@@ -79,6 +79,8 @@ void editor_mode::route_bind_ends()
 	design.end_grade = grade_of(chain.end_direction);
 	design.start_radius = chain.start_radius;
 	design.end_radius = chain.end_radius;
+	design.start_turn = chain.start_turn;
+	design.end_turn = chain.end_turn;
 	design.start_reserve = editor_track::run_reserve(editor_track::straight_beyond(chain, false, m_straights.tolerance));
 	design.end_reserve = editor_track::run_reserve(editor_track::straight_beyond(chain, true, m_straights.tolerance));
 }
@@ -450,6 +452,8 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	design.end_grade = grade_of(Chain.end_direction);
 	design.start_radius = Chain.start_radius;
 	design.end_radius = Chain.end_radius;
+	design.start_turn = Chain.start_turn;
+	design.end_turn = Chain.end_turn;
 	auto const preferred{m_route.design.shape};
 	auto const other{preferred == alignment::transition_shape::clothoid ? alignment::transition_shape::cubic_parabola : alignment::transition_shape::clothoid};
 	alignment::result result;

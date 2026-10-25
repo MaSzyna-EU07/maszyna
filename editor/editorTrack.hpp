@@ -272,6 +272,9 @@ class editor_track
 		glm::dvec3 end_direction{0.0};
 		double start_radius{0.0};
 		double end_radius{0.0};
+		// the side the adjoining track turns to there, going from the start to the end: 1 left, -1 right, 0 straight
+		int start_turn{0};
+		int end_turn{0};
 		double length{0.0};
 		double velocity{-1.0};
 		double radius{0.0};

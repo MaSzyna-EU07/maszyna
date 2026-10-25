@@ -94,6 +94,10 @@ struct design
 	double end_grade{0.0};
 	double start_radius{0.0};
 	double end_radius{0.0};
+	// the side the adjoining track turns to at the start and at the end, going from the one to the other: 1 left, -1 right, 0 not
+	// known; a design going on at the curvature of the adjoining track doesn't change it abruptly
+	int start_turn{0};
+	int end_turn{0};
 	// length of the straight beyond the start and the end, which the curves can take over
 	double start_reserve{0.0};
 	double end_reserve{0.0};

@@ -129,6 +129,36 @@ TEST_CASE("alignment: a sharp bend between short straights is laid where clicked
 	CHECK(line.vertices.front().x == doctest::Approx(120.0));
 }
 
+TEST_CASE("alignment: a curve going on at the radius of the curved track before it doesn't change the curvature abruptly") {
+	auto const adjoining = [](alignment::result const &Line) {
+		return std::any_of(Line.warnings.begin(), Line.warnings.end(), [](std::string const &Warning) { return Warning.find("adjoining track at the start") != std::string::npos; });
+	};
+	// R 300 with no transition from the very start, as a curve after the diverging track of a switch, R 301 there
+	auto const tangent{300.0 * std::tan(10.0 * pi / 180.0)};
+	auto design{straights({tangent, 200.0}, {20.0 * pi / 180.0}, 40.0)};
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 300.0;
+	vertex.transition_in = 0.0;
+	vertex.transition_out = 0.0;
+	design.start_radius = 301.0;
+	design.start_turn = 1;
+	auto const line{alignment::compute(design)};
+	REQUIRE(line.valid);
+	REQUIRE_FALSE(line.elements.empty());
+	CHECK(line.elements.front().kind == alignment::element_kind::arc);
+	CHECK_FALSE(adjoining(line));
+	// the track before turning the other way, or the curve starting with a straight: the curvature jumps
+	design.start_turn = -1;
+	CHECK(adjoining(alignment::compute(design)));
+	design.start_turn = 1;
+	auto later{straights({tangent + 80.0, 200.0}, {20.0 * pi / 180.0}, 40.0)};
+	later.vertices.front() = vertex;
+	later.vertices.front().position = {tangent + 80.0, 0.0};
+	later.start_radius = 301.0;
+	later.start_turn = 1;
+	CHECK(adjoining(alignment::compute(later)));
+}
+
 TEST_CASE("alignment: two bends share the straight between them") {
 	auto design{straights({600.0, 250.0, 600.0}, {4.0 * pi / 180.0, -5.0 * pi / 180.0}, 120.0)};
 	std::vector<char> corners{1, 1};

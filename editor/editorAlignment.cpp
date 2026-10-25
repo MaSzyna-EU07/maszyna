@@ -1088,9 +1088,37 @@ result fit_between(design const &Design)
 		auto const gradeafter{(r.profile[i + 1].elevation - point.elevation) / (r.profile[i + 1].chainage - point.chainage)};
 		point.tangent = point.radius * std::abs(gradeafter - gradebefore) / 2.0;
 	}
-	if (Design.start_radius > 0.0 && Design.start_radius < 10000.0)
+	// a curved track adjoining is a jump of the curvature only where the design meets it at another one: a curve going on from
+	// the diverging track of a switch at its radius isn't. The curvature of the design there is signed by the side it turns to, a
+	// piece shorter than 1 cm, as a straight the fit leaves before the curve, passed over
+	auto const curvature_at = [&](bool const End) {
+		for (std::size_t n = 0; n < r.elements.size(); ++n)
+		{
+			auto const &e{r.elements[End ? r.elements.size() - 1 - n : n]};
+			if (e.length < 0.01)
+				continue;
+			auto const arc{e.radius > 0.0 ? 1.0 / e.radius : 0.0};
+			switch (e.kind)
+			{
+			case element_kind::arc: return arc * e.turn;
+			case element_kind::transition_in: return End ? arc * e.turn : 0.0;
+			case element_kind::transition_out: return End ? 0.0 : arc * e.turn;
+			case element_kind::spiral: return (End ? e.curvature_end : e.curvature_start) * e.turn;
+			default: return 0.0;
+			}
+		}
+		return 0.0;
+	};
+	auto const abrupt = [](double const Radius, int const Turn, double const Own) {
+		if (Radius <= 0.0 || Radius >= 10000.0)
+			return false;
+		// the side not known, as of a design kept in the scenery before it was: taken for the one the design turns to
+		auto const theirs{(Turn != 0 ? Turn : Own < 0.0 ? -1 : 1) / Radius};
+		return std::abs(theirs - Own) > 0.05 * std::max(1.0 / Radius, std::abs(Own));
+	};
+	if (abrupt(Design.start_radius, Design.start_turn, curvature_at(false)))
 		r.warnings.emplace_back(format(STR_C("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly"), Design.start_radius));
-	if (Design.end_radius > 0.0 && Design.end_radius < 10000.0)
+	if (abrupt(Design.end_radius, Design.end_turn, curvature_at(true)))
 		r.warnings.emplace_back(format(STR_C("The adjoining track at the end is curved (R %.0f m), the curvature changes abruptly"), Design.end_radius));
 	make_cants(Design, r);
 

@@ -97,7 +97,7 @@ double path_radius(segment_data const &Path, double const T)
 	return curvature > 1e-7 ? 1.0 / curvature : 0.0;
 }
 
-bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool const Leaving, glm::dvec3 &Direction, double &Radius)
+bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool const Leaving, glm::dvec3 &Direction, double &Radius, int &Turn)
 {
 	if (Neighbour == nullptr)
 		return false;
@@ -109,8 +109,18 @@ bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool 
 			if (glm::distance(point, Joint) > kSamePoint)
 				continue;
 			auto const tangent{glm::normalize(path_tangent(path, atend))};
-			Direction = (Leaving != atend) ? tangent : -tangent;
+			auto const along{Leaving != atend};
+			Direction = along ? tangent : -tangent;
 			Radius = path_radius(path, atend ? 1.0 : 0.0);
+			// the side it turns to as the chain runs, the path gone against its points turning the other way
+			Turn = 0;
+			if (Radius > 0.0)
+			{
+				bezier const curve{path};
+				auto const first{curve.first(atend ? 1.0 : 0.0)};
+				auto const second{curve.second(atend ? 1.0 : 0.0)};
+				Turn = (first.x * second.z - first.z * second.x > 0.0) == along ? 1 : -1;
+			}
 			return true;
 		}
 	}
@@ -1335,14 +1345,14 @@ bool editor_track::complete_chain(chain &Chain, std::string &Error)
 	auto const firstforward{Chain.forward.front()};
 	Chain.start = first.points[firstforward ? segment_data::point::start : segment_data::point::end];
 	Chain.start_direction = firstforward ? path_tangent(first, false) : -path_tangent(first, true);
-	adjoining_direction(firstforward ? from->trPrev : from->trNext, Chain.start, false, Chain.start_direction, Chain.start_radius);
+	adjoining_direction(firstforward ? from->trPrev : from->trNext, Chain.start, false, Chain.start_direction, Chain.start_radius, Chain.start_turn);
 	Chain.start_direction = glm::normalize(Chain.start_direction);
 
 	auto const &last{to->m_paths.front()};
 	auto const lastforward{Chain.forward.back()};
 	Chain.end = last.points[lastforward ? segment_data::point::end : segment_data::point::start];
 	Chain.end_direction = lastforward ? path_tangent(last, true) : -path_tangent(last, false);
-	adjoining_direction(lastforward ? to->trNext : to->trPrev, Chain.end, true, Chain.end_direction, Chain.end_radius);
+	adjoining_direction(lastforward ? to->trNext : to->trPrev, Chain.end, true, Chain.end_direction, Chain.end_radius, Chain.end_turn);
 	Chain.end_direction = glm::normalize(Chain.end_direction);
 
 	Error.clear();
