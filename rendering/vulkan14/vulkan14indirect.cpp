@@ -329,8 +329,12 @@ bool vulkan14_renderer::draw_indirect(vk14::instance_cull &Cull, command_set con
 	std::uint32_t block{~0u};
 	if (Count == 1)
 	{
+		// the block of the recorded draw; the walk goes on with its own model block. what a recorded draw leaves in it (the
+		// emission of a lit lamp) would light the tracks and the shapes the walk draws next
+		auto const walkubs{model_ubs};
 		model_ubs = first.ubs;
 		block = push_draw_block();
+		model_ubs = walkubs;
 	}
 	else
 	{
@@ -587,10 +591,6 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_shadow(vk14:
 		}
 		++counts.calls;
 		index = last;
-	}
-	if (count > 0)
-	{
-		model_ubs = m_indirectdraws.back().ubs;
 	}
 	return counts;
 }

@@ -3746,7 +3746,10 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 		}
 		return true;
 	};
-	auto lastdrawn { count };
+	// the walk goes on with its own model block: what a recorded draw leaves in it (the emission of a lit lamp) would light the
+	// tracks and the shapes the walk draws next
+	auto const walkubs { model_ubs };
+	auto drawn { false };
 	// the draws without the alpha test first, then the ones with it, one program each
 	for( auto prepassclass = 1; prepassclass <= 2; ++prepassclass ) {
 		auto &program { prepassclass == 1 ? *m_prepass_shader : *m_prepass_alpha_shader };
@@ -3787,7 +3790,7 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 				m_geometry.draw_indirect_multi( draw.geometry, m_indirectcull->draw_command_offset( Set, index ), drawcount, sizeof( gl::instance_draw_command ) );
 				counts.draws += drawcount;
 				++counts.calls;
-				lastdrawn = last - 1;
+				drawn = true;
 				index = last;
 				continue;
 			}
@@ -3800,12 +3803,12 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 			m_geometry.draw_indirect( draw.geometry, m_indirectcull->draw_command_offset( Set, index ) );
 			++counts.draws;
 			++counts.calls;
+			drawn = true;
 			++index;
 		}
 	}
-	if( lastdrawn < count ) {
-		// the model block the draws made one by one leave behind
-		model_ubs = m_indirectdraws[ lastdrawn ].ubs;
+	model_ubs = walkubs;
+	if( drawn ) {
 		model_ubo->update( model_ubs );
 	}
 	return counts;
@@ -3858,6 +3861,8 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 
 opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Shadow( opengl46_instance_cull::command_set const Set )
 {
+	// the walk goes on with its own model block, as after Render_Instances_Indirect_Depth()
+	auto const walkubs { model_ubs };
 	indirect_counts counts;
 	auto const count { m_indirectdraws.size() };
 	for( std::size_t index = 0; index < count; ) {
@@ -3899,9 +3904,8 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 		}
 		++counts.calls;
 	}
-	if( m_indirectmultidraw && ( count > 0 ) ) {
-		// the model block the draws made one by one leave behind
-		model_ubs = m_indirectdraws.back().ubs;
+	model_ubs = walkubs;
+	if( count > 0 ) {
 		model_ubo->update( model_ubs );
 	}
 	return counts;
