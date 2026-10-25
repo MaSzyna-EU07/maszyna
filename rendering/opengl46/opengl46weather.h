@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/vao.h"
 #include "gl/buffer.h"
 #include "gl/query.h"
+#include "rendering/common/weatherstate.h"
 
 class opengl46_sky;
 
@@ -64,22 +65,22 @@ class opengl46_weather
 	// true when the volumetric clouds are drawn (the sky leaves its own overcast look then)
 	bool clouds_drawn() const
 	{
-		return m_clouds_drawn;
+		return m_state.clouds_drawn();
 	}
 	// true when the clouds cast shadows (the sunlight isn't dimmed by the overcast then, the shadows do it)
 	bool cloud_shadows() const
 	{
-		return m_shadows_valid;
+		return m_state.cloud_shadows();
 	}
 	// fog density of a regular draw (model_ubs.fog_density): 1 / the fog range
 	float fog_density() const
 	{
-		return 1.f / m_fog_range;
+		return m_state.fog_density();
 	}
 	// distance the fog hides things at, for the draw range: a dark object fades to about 2% there
 	float fog_range() const
 	{
-		return m_fog_range;
+		return m_state.fog_range();
 	}
 	// lines for the gpu times of the debug panel
 	std::string info_times();
@@ -87,16 +88,7 @@ class opengl46_weather
 	void draw_debug_ui();
 
   private:
-	struct quality_level
-	{
-		int divisor; // of the resolution of the clouds of the main view
-		int steps; // samples through a layer at most
-		int light_steps; // samples towards the sun
-		bool detail; // with the small noise
-		glm::ivec2 panorama; // size of the panorama
-		glm::ivec3 fog_grid; // cells of the fog volume
-	};
-	static quality_level quality(int const Clouds, int const Fog);
+	using quality_level = gfx::weather_state::quality_level;
 
 	static GLuint create_texture(GLenum Target, GLenum Format, glm::ivec3 const &Size, GLint Filter, GLint Wrap);
 	static void release(GLuint &Texture);
@@ -119,8 +111,8 @@ class opengl46_weather
 	std::unique_ptr<gl::program> m_stars_program;
 
 	std::unique_ptr<gl::ubo> m_weather_ubo;
-	gl::weather_ubs m_weather{};
-	bool m_horizon_on_gpu{false};
+	// the block and the decisions of the frame, shared with the vulkan renderer
+	gfx::weather_state m_state;
 
 	// noise
 	GLuint m_shape_noise{0};
@@ -130,7 +122,6 @@ class opengl46_weather
 	// shadows of the clouds
 	GLuint m_shadow_map{0};
 	int m_shadow_size{0};
-	bool m_shadows_valid{false};
 	gl::gpu_timer m_shadow_timer;
 
 	// clouds of the main view
@@ -140,51 +131,21 @@ class opengl46_weather
 	GLuint m_clouds_depth{0};
 	std::array<GLuint, 2> m_clouds_history{0, 0};
 	int m_clouds_current{0}; // the history holding the latest result
-	bool m_clouds_view_valid{false}; // render_view() made the clouds of the frame
 	gl::gpu_timer m_clouds_timer;
 	// panorama
 	GLuint m_panorama{0};
 	glm::ivec2 m_panorama_size{0};
-	int m_panorama_band{0};
-	bool m_panorama_full{false}; // every band was drawn once since it was made
 	gl::gpu_timer m_panorama_timer;
-	bool m_clouds_drawn{false};
 
 	// fog volume
 	glm::ivec3 m_fog_grid{0};
 	std::array<GLuint, 2> m_fog_scattering{0, 0};
 	int m_fog_current{0};
 	GLuint m_fog_integrated{0};
-	bool m_fog_volume_valid{false};
-	float m_fog_range{5000.f};
-	glm::vec4 m_fog_slicing{0.f};
 	gl::gpu_timer m_fog_timer;
-
-	// the camera of the previous frame of the main view, for the blending over frames
-	struct view_state
-	{
-		glm::mat4 projection_view{1.f}; // world axes to clip space, camera at the origin
-		glm::dvec3 camera{0.0};
-		glm::vec4 slicing{0.f};
-		bool valid{false};
-	};
-	view_state m_previous_clouds;
-	view_state m_previous_fog;
-	int m_frame{0};
 
 	// stars
 	std::optional<gl::vao> m_stars_vao;
 	std::optional<gl::buffer> m_stars_buffer;
 	int m_stars_count{0};
-
-	// tuning of the look of the clouds in the debug window, not saved: scales of their sunlight, of their sky light and of the
-	// erosion of their edges by the detail noise (weather_sun_color.w, weather_ambient.w, cloud_wind.w)
-	float m_cloud_sun_scale{1.f};
-	float m_cloud_sky_scale{1.f};
-	float m_cloud_detail_scale{1.f};
-	// what the debug window shows
-	float m_sun_share{0.f};
-	float m_average_transmittance{1.f};
-	std::string m_report;
-	char m_report_input[256]{};
 };

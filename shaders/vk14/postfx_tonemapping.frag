@@ -13,16 +13,13 @@ layout(set = POST_SET, binding = POST_TEXTURE_FIRST + 0) uniform sampler2D tex1;
 #pragma texture(bloom_tex, 1, RGB)
 layout(set = POST_SET, binding = POST_TEXTURE_FIRST + 1) uniform sampler2D bloom_tex;
 
-// the automatic exposure (exposure_ssbo of the opengl renderer, exposure_average.comp) comes in a later stage: the fixed
-// exposure multiplier alone
-const float exposure = 0.0;
 
 #include "tonemapping.glsl"
 #include "dither.glsl"
 
 // param is pc.data of the push constants (the model block in the opengl renderer).
 // param[0].x: share of the bloom in the image (0: no bloom, the texture is not read), param[0].y: 1 if the automatic
-// exposure is applied (there is none yet, so it has no effect), param[0].z: fixed exposure multiplier, param[0].w: scale of
+// exposure is applied (exposure_ssbo of common.glsl, worked out by exposure_average.comp), param[0].z: fixed exposure multiplier, param[0].w: scale of
 // the bloom texture (it holds the sum of the levels of the chain), param[1].x: 1 when this is the last pass before the
 // window, which takes the dither
 void main()

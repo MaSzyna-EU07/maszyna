@@ -43,7 +43,7 @@ class uploader
 	void init(allocator const &Allocator, deletion_queue &Deletions, VkPhysicalDevice Physical);
 	// the commands of the uploads go to Commands until end_frame(); Value: the value of the timeline the gpu reaches when it's done
 	// with the frame. the uploads waiting from between the frames are recorded first
-	void begin_frame(VkCommandBuffer Commands, std::uint64_t Value);
+	void begin_frame(command_stream *Commands, std::uint64_t Value);
 	// whether anything was recorded to the commands of the frame
 	bool end_frame();
 	// the last value of the timeline the gpu may use the objects with: the frame being made, or the last one sent
@@ -82,7 +82,7 @@ class uploader
 	allocator const *m_allocator{nullptr};
 	deletion_queue *m_deletions{nullptr};
 	VkPhysicalDevice m_physical{VK_NULL_HANDLE};
-	VkCommandBuffer m_commands{VK_NULL_HANDLE};
+	command_stream *m_commands{nullptr};
 	std::uint64_t m_value{0};
 	bool m_recorded{false};
 	// buffers were copied to in the frame: the barriers before the first copy and after the last one
@@ -176,6 +176,13 @@ struct vulkan14_texture : public texture_source
 
 	// the content given by update_from_memory() from another thread, uploaded by the thread of the renderer
 	void apply_pending();
+	// the image of a texture the renderer fills itself (the textures of the heightmap terrain): sampled with Sampler from now on,
+	// the image it had before goes once the gpu is done with it
+	void adopt(std::shared_ptr<image> const &Image, VkSampler Sampler);
+	std::shared_ptr<image> const &adopted() const
+	{
+		return m_image;
+	}
 
   protected:
 	void on_failed() override;

@@ -37,6 +37,17 @@ float srgb_to_linear(float const Value)
 	return (Value <= 0.04045f ? Value / 12.92f : std::pow((Value + 0.055f) / 1.055f, 2.4f));
 }
 
+// the threads of the renderer (gfx.threads), the calling one with them: 0, the cores less two
+std::size_t render_threads()
+{
+	if (Global.gfx_threads > 0)
+	{
+		return static_cast<std::size_t>(Global.gfx_threads);
+	}
+	auto const cores{static_cast<std::size_t>(std::thread::hardware_concurrency())};
+	return (cores > 3 ? cores - 2 : 1);
+}
+
 } // namespace
 
 bool vulkan14_renderer::context::create_frames(std::uint32_t const Count, std::string &Reason)
@@ -69,23 +80,248 @@ bool vulkan14_renderer::context::create_frames(std::uint32_t const Count, std::s
 			Reason = "no command pool";
 			return false;
 		}
-		VkCommandBuffer buffers[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 		VkCommandBufferAllocateInfo bufferinfo{};
 		bufferinfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		bufferinfo.commandPool = frames[i].pool;
 		bufferinfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		bufferinfo.commandBufferCount = 2;
-		if (!VK14_VERIFY(vkAllocateCommandBuffers(handle, &bufferinfo, buffers)))
+		bufferinfo.commandBufferCount = 1;
+		if (!VK14_VERIFY(vkAllocateCommandBuffers(handle, &bufferinfo, &frames[i].uploads)))
 		{
 			Reason = "no command buffer";
 			return false;
 		}
-		frames[i].uploads = buffers[0];
-		frames[i].commands = buffers[1];
 		instance.set_object_name(handle, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<std::uint64_t>(frames[i].uploads), "uploads " + std::to_string(i));
-		instance.set_object_name(handle, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<std::uint64_t>(frames[i].commands), "frame " + std::to_string(i));
+	}
+	if (Global.gfx_vulkan_renderthread)
+	{
+		start_render_thread();
 	}
 	return true;
+}
+
+bool vulkan14_renderer::context::record(frame &Frame, bool const Uploads)
+{
+	auto const handle{device.handle()};
+	auto const start{std::chrono::steady_clock::now()};
+	Frame.upload_stream.finish();
+	Frame.commands.finish();
+	VkCommandBufferBeginInfo begin{};
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	if (Uploads)
+	{
+		VK14_VERIFY(vkBeginCommandBuffer(Frame.uploads, &begin));
+		Frame.upload_stream.replay(Frame.uploads);
+		VK14_VERIFY(vkEndCommandBuffer(Frame.uploads));
+	}
+	// the chunks split evenly between the workers, each with a command pool of its own (a pool is used by one thread at a time);
+	// which worker records a chunk doesn't matter: each chunk has a command buffer of its own, they go to the queue in their order
+	auto const chunks{Frame.commands.chunks()};
+	auto const threads{std::max<std::size_t>(1, std::min<std::size_t>(render_threads(), chunks))};
+	while (Frame.workers.size() < threads)
+	{
+		VkCommandPoolCreateInfo poolinfo{};
+		poolinfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolinfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+		poolinfo.queueFamilyIndex = device.families().graphics;
+		VkCommandPool pool{VK_NULL_HANDLE};
+		if (!VK14_VERIFY(vkCreateCommandPool(handle, &poolinfo, nullptr, &pool)))
+		{
+			return false;
+		}
+		Frame.workers.emplace_back().pool = pool;
+	}
+	Frame.chunks.assign(chunks, VK_NULL_HANDLE);
+	workers.run(threads, threads, [&](std::size_t const Worker) {
+		auto &commands{Frame.workers[Worker]};
+		for (auto chunk = chunks * Worker / threads; chunk < chunks * (Worker + 1) / threads; ++chunk)
+		{
+			if (commands.used == commands.buffers.size())
+			{
+				VkCommandBufferAllocateInfo bufferinfo{};
+				bufferinfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+				bufferinfo.commandPool = commands.pool;
+				bufferinfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+				bufferinfo.commandBufferCount = 1;
+				VkCommandBuffer buffer{VK_NULL_HANDLE};
+				if (!VK14_VERIFY(vkAllocateCommandBuffers(handle, &bufferinfo, &buffer)))
+				{
+					return;
+				}
+				commands.buffers.push_back(buffer);
+			}
+			auto const buffer{commands.buffers[commands.used++]};
+			VK14_VERIFY(vkBeginCommandBuffer(buffer, &begin));
+			Frame.commands.replay(chunk, buffer);
+			VK14_VERIFY(vkEndCommandBuffer(buffer));
+			Frame.chunks[chunk] = buffer;
+		}
+	});
+	record_threads = threads;
+	record_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	record_calls = Frame.commands.calls();
+	record_chunks = chunks;
+	return std::find(Frame.chunks.begin(), Frame.chunks.end(), VK_NULL_HANDLE) == Frame.chunks.end();
+}
+
+bool vulkan14_renderer::context::execute(render_job &Job, char const *&Failure)
+{
+	auto &frame{*Job.target};
+	if (false == record(frame, Job.uploaded))
+	{
+		Failure = "recording a frame";
+		return false;
+	}
+	// the uploads first, in the same submit: their barriers make them done before the frame uses what they copied
+	std::vector<VkCommandBufferSubmitInfo> commands;
+	if (Job.uploaded)
+	{
+		VkCommandBufferSubmitInfo info{};
+		info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+		info.commandBuffer = frame.uploads;
+		commands.push_back(info);
+	}
+	// the chunks of the frame in their order: a rendering suspended at the end of one is resumed at the start of the next
+	for (auto const chunk : frame.chunks)
+	{
+		VkCommandBufferSubmitInfo info{};
+		info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+		info.commandBuffer = chunk;
+		commands.push_back(info);
+	}
+	VkSubmitInfo2 submit{};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+	submit.waitSemaphoreInfoCount = static_cast<std::uint32_t>(Job.waits.size());
+	submit.pWaitSemaphoreInfos = Job.waits.data();
+	submit.commandBufferInfoCount = static_cast<std::uint32_t>(commands.size());
+	submit.pCommandBufferInfos = commands.data();
+	submit.signalSemaphoreInfoCount = static_cast<std::uint32_t>(Job.signals.size());
+	submit.pSignalSemaphoreInfos = Job.signals.data();
+	if (!VK14_VERIFY(vkQueueSubmit2(device.graphics_queue(), 1, &submit, VK_NULL_HANDLE)))
+	{
+		Failure = "submitting a frame";
+		return false;
+	}
+	if ((false == Job.windows.empty()) && (false == present(Job.windows)))
+	{
+		Failure = "presenting";
+		return false;
+	}
+	return true;
+}
+
+bool vulkan14_renderer::context::present(std::vector<vk14::swapchain *> const &Windows)
+{
+	std::vector<VkSemaphore> waits;
+	std::vector<VkSwapchainKHR> swapchains;
+	std::vector<std::uint32_t> images;
+	std::vector<VkResult> results(Windows.size(), VK_SUCCESS);
+	for (auto *window : Windows)
+	{
+		waits.push_back(window->present_semaphore());
+		swapchains.push_back(window->handle());
+		images.push_back(window->image_index());
+	}
+	VkPresentInfoKHR info{};
+	info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	info.waitSemaphoreCount = static_cast<std::uint32_t>(waits.size());
+	info.pWaitSemaphores = waits.data();
+	info.swapchainCount = static_cast<std::uint32_t>(swapchains.size());
+	info.pSwapchains = swapchains.data();
+	info.pImageIndices = images.data();
+	info.pResults = results.data();
+	auto const result{vkQueuePresentKHR(device.graphics_queue(), &info)};
+	for (std::size_t i = 0; i < Windows.size(); ++i)
+	{
+		Windows[i]->presented(results[i]);
+	}
+	if ((result == VK_ERROR_DEVICE_LOST) || (result == VK_ERROR_SURFACE_LOST_KHR))
+	{
+		vk14::log_error(std::string("vkQueuePresentKHR failed with ") + vk14::result_string(result));
+		return false;
+	}
+	return true;
+}
+
+void vulkan14_renderer::context::start_render_thread()
+{
+	render_stop = false;
+	render_thread = std::thread([this]() {
+		std::unique_lock<std::mutex> lock(render_mutex);
+		while (true)
+		{
+			render_wake.wait(lock, [this]() { return render_stop || render_queued; });
+			if (false == render_queued)
+			{
+				// stopped, with nothing left to do
+				break;
+			}
+			lock.unlock();
+			char const *failure{nullptr};
+			auto done{false};
+			try
+			{
+				done = execute(render_pending, failure);
+			}
+			catch (std::exception const &Error)
+			{
+				vk14::log_error(std::string("the render thread failed: ") + Error.what());
+				failure = "recording a frame";
+			}
+			catch (...)
+			{
+				vk14::log_error("the render thread failed");
+				failure = "recording a frame";
+			}
+			lock.lock();
+			if ((false == done) && (render_failure == nullptr))
+			{
+				render_failure = (failure != nullptr ? failure : "recording a frame");
+			}
+			render_queued = false;
+			render_idle.notify_all();
+		}
+	});
+}
+
+void vulkan14_renderer::context::stop_render_thread()
+{
+	if (false == render_thread.joinable())
+	{
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lock(render_mutex);
+		render_stop = true;
+	}
+	render_wake.notify_all();
+	render_thread.join();
+}
+
+void vulkan14_renderer::context::hand_over(render_job &&Job)
+{
+	{
+		std::unique_lock<std::mutex> lock(render_mutex);
+		render_idle.wait(lock, [this]() { return false == render_queued; });
+		render_pending = std::move(Job);
+		render_queued = true;
+	}
+	render_wake.notify_one();
+}
+
+char const *vulkan14_renderer::context::drain()
+{
+	if (false == render_threaded())
+	{
+		return nullptr;
+	}
+	auto const start{std::chrono::steady_clock::now()};
+	std::unique_lock<std::mutex> lock(render_mutex);
+	render_idle.wait(lock, [this]() { return false == render_queued; });
+	render_wait = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	auto const failure{render_failure};
+	render_failure = nullptr;
+	return failure;
 }
 
 // the parts of the renderer made once the device is there
@@ -102,7 +338,7 @@ bool vulkan14_renderer::context::create_core(std::uint32_t const Frames, std::st
 	}
 	auto const &limits{device.caps().limits};
 	(void)limits;
-	if (false == ring.create(memory, ring_size, Frames, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, "frame ring", ring_tail))
+	if (false == ring.create(memory, ring_size, Frames, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, "frame ring", ring_tail))
 	{
 		Reason = "no ring for the data of the frames";
 		return false;
@@ -151,6 +387,8 @@ bool vulkan14_renderer::context::wait(std::uint64_t const Value) const
 void vulkan14_renderer::context::destroy()
 {
 	auto const handle{device.handle()};
+	// the frame given to the render thread goes to the queue first
+	stop_render_thread();
 	if (handle != VK_NULL_HANDLE)
 	{
 		// the end of the renderer, not a frame: everything on the gpu has to be done
@@ -177,6 +415,10 @@ void vulkan14_renderer::context::destroy()
 			if (frame.pool != VK_NULL_HANDLE)
 			{
 				vkDestroyCommandPool(handle, frame.pool, nullptr);
+			}
+			for (auto &worker : frame.workers)
+			{
+				vkDestroyCommandPool(handle, worker.pool, nullptr);
 			}
 		}
 		if (timeline != VK_NULL_HANDLE)
@@ -288,9 +530,11 @@ bool vulkan14_renderer::Init(GLFWwindow *Window)
 
 	vk14::log_info(std::to_string(framesinflight) + " frames in flight");
 	// until the stages of the plan bring them, these parts of the simulator aren't there with vulkan
-	vk14::log_info("not available with vulkan yet: the atmosphere, the sky ambient light, automatic exposure and bloom, stars (P1), the weather fog and clouds (P2), "
-	               "ambient occlusion and contact shadows (P3), shadows of lamps and headlights (P4), the culling on the gpu (P5), the heightmap terrain, grass and the particles "
-	               "of the gpu (P6), the map panel, python screens in their own windows (N5), panels in their own windows (R5b), VR (X4)");
+	vk14::log_info("not available with vulkan yet: the map panel, python screens in their own windows (N5), panels in their own windows (R5b), VR (X4)");
+	// the settings of eu07.ini which only the opengl renderer takes; everything else of gfx.* is taken here as there
+	vk14::log_info("settings of the opengl renderer without effect with vulkan: compresstex (the textures go to the gpu as the files give them), gfx.depthprepass.replay (the scene "
+	               "is walked again for its depth), gfx.bufferstreaming, gfx.geometry.shared, gfx.format.color, gfx.format.depth, gfx.postfx.motionblur.format (the formats of the "
+	               "targets are fixed), gfx.gldebug (gfx.vulkan.validation instead)");
 	WriteLog("Gfx Renderer: setup complete");
 	update_info();
 	return true;
@@ -318,6 +562,12 @@ bool vulkan14_renderer::AddViewport(global_settings::extraviewport_config const 
 			return false;
 		}
 		auto &ctx{*m_context};
+		// the windows the render thread presents are left as they are until it's done
+		if (auto const *failure{ctx.drain()})
+		{
+			report_device_lost(failure);
+			return false;
+		}
 		auto swapchain{std::make_unique<vk14::swapchain>()};
 		std::string reason;
 		if (false == swapchain->create(ctx.instance, ctx.device, window, "viewport " + conf.monitor, static_cast<std::uint32_t>(ctx.frames.size()), reason))
@@ -343,7 +593,8 @@ void vulkan14_renderer::Shutdown()
 {
 	if (m_context && (m_context->device.handle() != VK_NULL_HANDLE))
 	{
-		// the end of the renderer, not a frame: everything on the gpu has to be done
+		// the end of the renderer, not a frame: everything on the gpu has to be done, the frame of the render thread with it
+		m_context->stop_render_thread();
 		vkDeviceWaitIdle(m_context->device.handle());
 	}
 	// the geometry on the gpu goes with the context; the data of the banks stays for the simulation
@@ -389,34 +640,11 @@ void vulkan14_renderer::SwapBuffers()
 	auto &ctx{*m_context};
 	Timer::subsystem.gfx_swap.start();
 
+	// with the render thread the windows are presented by it (ctx.acquired was handed over to it)
 	if (false == ctx.acquired.empty())
 	{
-		std::vector<VkSemaphore> waits;
-		std::vector<VkSwapchainKHR> swapchains;
-		std::vector<std::uint32_t> images;
-		std::vector<VkResult> results(ctx.acquired.size(), VK_SUCCESS);
-		for (auto *window : ctx.acquired)
+		if (false == ctx.present(ctx.acquired))
 		{
-			waits.push_back(window->present_semaphore());
-			swapchains.push_back(window->handle());
-			images.push_back(window->image_index());
-		}
-		VkPresentInfoKHR present{};
-		present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		present.waitSemaphoreCount = static_cast<std::uint32_t>(waits.size());
-		present.pWaitSemaphores = waits.data();
-		present.swapchainCount = static_cast<std::uint32_t>(swapchains.size());
-		present.pSwapchains = swapchains.data();
-		present.pImageIndices = images.data();
-		present.pResults = results.data();
-		auto const result{vkQueuePresentKHR(ctx.device.graphics_queue(), &present)};
-		for (std::size_t i = 0; i < ctx.acquired.size(); ++i)
-		{
-			ctx.acquired[i]->presented(results[i]);
-		}
-		if ((result == VK_ERROR_DEVICE_LOST) || (result == VK_ERROR_SURFACE_LOST_KHR))
-		{
-			vk14::log_error(std::string("vkQueuePresentKHR failed with ") + vk14::result_string(result));
 			report_device_lost("presenting");
 		}
 		ctx.acquired.clear();
@@ -484,6 +712,17 @@ void vulkan14_renderer::Update(double const Deltatime)
 		{
 			m_materials.on_weather_change();
 		}
+		if (((m_simulationstate.season != simulationstate.season) && (false == simulationstate.season.empty())) ||
+		    ((m_simulationstate.weather != simulationstate.weather) && (false == simulationstate.weather.empty())))
+		{
+			// the heightmap terrain keeps copies of the textures of its layer materials
+			if (m_context && m_context->scene.terrain)
+			{
+				m_context->scene.terrain->on_environment_change();
+			}
+			// the seasonal variants of the models are shown and hidden anew: the walks kept by the gpu culling go
+			m_walkrecords.clear();
+		}
 	}
 
 	if (m_context && m_context->textures && (true == Global.ResourceSweep) && (true == simulation::is_ready))
@@ -511,7 +750,9 @@ void vulkan14_renderer::update_info()
 	auto const &caps{ctx.device.caps()};
 	m_infotimes = "vulkan " + vk14::version_string(caps.api_version) + ": " + caps.device_name + " (" + caps.driver_name + ")\n" + "frames: " + std::to_string(ctx.framecount) + ", in flight " + std::to_string(ctx.frames.size()) + "\n" +
 	              "mainloop total: " + to_string(Timer::subsystem.mainloop_total.average(), 2) + " ms, frame cpu: " + to_string(Timer::subsystem.gfx_total.average(), 2) + " ms, ui: " + to_string(Timer::subsystem.gfx_gui.average(), 2) +
-	              " ms, present: " + to_string(Timer::subsystem.gfx_swap.average(), 2) + " ms\n" + "gpu frame parts:\n" + ctx.passes.info();
+	              " ms, present: " + to_string(Timer::subsystem.gfx_swap.average(), 2) + " ms\n" + "command buffers recorded: " + to_string(ctx.record_time, 2) + " ms, " + std::to_string(ctx.record_calls) + " calls in " +
+	              std::to_string(ctx.record_chunks) + " chunks, " + std::to_string(ctx.record_threads) + (ctx.record_threads == 1 ? " thread" : " threads") +
+	              (ctx.render_threaded() ? ", on the render thread; waited for it: " + to_string(ctx.render_wait, 2) + " ms\n" : "\n") + "gpu frame parts:\n" + ctx.passes.info();
 	VkDeviceSize usage{0}, budget{0};
 	ctx.memory.budget(usage, budget);
 	m_infostats = "device memory: " + vk14::memory_size_string(usage) + " of " + vk14::memory_size_string(budget) + (ctx.device.memory_budget_enabled() ? "" : " (no budget from the driver)") + "\n" + "images: " + std::to_string(ctx.images.size()) +
@@ -522,6 +763,9 @@ void vulkan14_renderer::update_info()
 		auto const extent{window->extent()};
 		m_infostats += "window: " + std::to_string(extent.width) + "x" + std::to_string(extent.height) + (window->srgb() ? ", srgb" : ", unorm") + (window->present_mode() == VK_PRESENT_MODE_FIFO_KHR ? ", vsync" : ", no vsync") + "\n";
 	}
+	// the statistics of the scene and of the cullings, as the opengl renderer gives them
+	collect_cluster_stats();
+	m_infostats += "\n" + scene_info() + cull_info();
 }
 
 bool vulkan14_renderer::Debug_Ui_State(std::optional<bool> State)

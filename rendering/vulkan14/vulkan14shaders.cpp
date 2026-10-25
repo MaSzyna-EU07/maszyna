@@ -9,8 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14shaders.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14device.h"
 #include "rendering/vulkan14/vulkan14bindings.h"
+#include "rendering/common/localshadows.h"
 #include "gl/ubo.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
@@ -439,6 +441,7 @@ std::uint64_t pipeline_library::key_of(pipeline_desc const &Desc) const
 	}
 	hash_value(hash, Desc.depth_format);
 	hash_value(hash, Desc.samples);
+	hash_value(hash, Desc.view_mask);
 	for (auto const value : Desc.specialization)
 	{
 		hash_value(hash, value);
@@ -546,6 +549,9 @@ VkPipeline pipeline_library::get(pipeline_desc const &Desc)
 		{
 		case blend_mode::none:
 			break;
+		case blend_mode::no_colour:
+			attachment.colorWriteMask = 0;
+			break;
 		case blend_mode::alpha:
 			attachment.blendEnable = VK_TRUE;
 			attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -582,6 +588,24 @@ VkPipeline pipeline_library::get(pipeline_desc const &Desc)
 			attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
 			attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 			break;
+		case blend_mode::under_transmittance:
+			attachment.blendEnable = VK_TRUE;
+			attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+			attachment.dstColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			attachment.colorBlendOp = VK_BLEND_OP_ADD;
+			attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+			attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+			break;
+		case blend_mode::multiply:
+			attachment.blendEnable = VK_TRUE;
+			attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+			attachment.dstColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
+			attachment.colorBlendOp = VK_BLEND_OP_ADD;
+			attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+			attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+			break;
 		case blend_mode::additive:
 			attachment.blendEnable = VK_TRUE;
 			attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -609,6 +633,7 @@ VkPipeline pipeline_library::get(pipeline_desc const &Desc)
 	rendering.colorAttachmentCount = static_cast<std::uint32_t>(Desc.colour_formats.size());
 	rendering.pColorAttachmentFormats = Desc.colour_formats.data();
 	rendering.depthAttachmentFormat = Desc.depth_format;
+	rendering.viewMask = Desc.view_mask;
 
 	VkGraphicsPipelineCreateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -703,23 +728,23 @@ std::string pipeline_library::info() const
 	return "pipelines: " + std::to_string(m_pipelines.size()) + " (made in " + buffer + " ms)";
 }
 
-void set_draw_state(VkCommandBuffer Commands, VkExtent2D Extent)
+void set_draw_state(command_stream *Commands, VkExtent2D Extent)
 {
 	VkViewport viewport{0.f, 0.f, static_cast<float>(Extent.width), static_cast<float>(Extent.height), 0.f, 1.f};
-	vkCmdSetViewport(Commands, 0, 1, &viewport);
+	Commands->set_viewport(0, 1, &viewport);
 	VkRect2D scissor{{0, 0}, Extent};
-	vkCmdSetScissor(Commands, 0, 1, &scissor);
-	vkCmdSetCullMode(Commands, VK_CULL_MODE_NONE);
-	vkCmdSetFrontFace(Commands, VK_FRONT_FACE_COUNTER_CLOCKWISE);
-	vkCmdSetPrimitiveTopology(Commands, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-	vkCmdSetDepthTestEnable(Commands, VK_FALSE);
-	vkCmdSetDepthWriteEnable(Commands, VK_FALSE);
+	Commands->set_scissor(0, 1, &scissor);
+	Commands->set_cull_mode(VK_CULL_MODE_NONE);
+	Commands->set_front_face(VK_FRONT_FACE_COUNTER_CLOCKWISE);
+	Commands->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	Commands->set_depth_test_enable(VK_FALSE);
+	Commands->set_depth_write_enable(VK_FALSE);
 	// reverse z, as the opengl renderer
-	vkCmdSetDepthCompareOp(Commands, VK_COMPARE_OP_GREATER_OR_EQUAL);
-	vkCmdSetDepthBiasEnable(Commands, VK_FALSE);
-	vkCmdSetDepthBias(Commands, 0.f, 0.f, 0.f);
-	vkCmdSetPrimitiveRestartEnable(Commands, VK_FALSE);
-	vkCmdSetStencilTestEnable(Commands, VK_FALSE);
+	Commands->set_depth_compare_op(VK_COMPARE_OP_GREATER_OR_EQUAL);
+	Commands->set_depth_bias_enable(VK_FALSE);
+	Commands->set_depth_bias(0.f, 0.f, 0.f);
+	Commands->set_primitive_restart_enable(VK_FALSE);
+	Commands->set_stencil_test_enable(VK_FALSE);
 }
 
 } // namespace vk14
@@ -746,6 +771,21 @@ std::string binding_preamble()
 	define("SHADOW_TEX", SHADOW_TEX);
 	define("ENV_TEX", ENV_TEX);
 	define("HEADLIGHT_TEX", HEADLIGHT_TEX);
+	define("SKY_SSBO", SKY_SSBO);
+	define("ATMOSPHERE_UBO", ATMOSPHERE_UBO);
+	define("SKY_VIEW_TEX", SKY_VIEW_TEX);
+	define("ENV_GGX_TEX", ENV_GGX_TEX);
+	define("WEATHER_UBO", WEATHER_UBO);
+	define("WEATHER_HORIZON_UBO", WEATHER_HORIZON_UBO);
+	define("FOG_VOLUME_TEX", FOG_VOLUME_TEX);
+	define("CLOUD_SHADOW_TEX", CLOUD_SHADOW_TEX);
+	define("CLOUD_SHAPE_TEX", CLOUD_SHAPE_TEX);
+	define("CLOUD_DETAIL_TEX", CLOUD_DETAIL_TEX);
+	define("CLOUD_COVERAGE_TEX", CLOUD_COVERAGE_TEX);
+	define("LOCAL_SHADOW_TEX", LOCAL_SHADOW_TEX);
+	define("LOCAL_SHADOW_LAMPS_TEX", LOCAL_SHADOW_LAMPS_TEX);
+	define("HEADLIGHT_SHADOW_TEX", HEADLIGHT_SHADOW_TEX);
+	define("SCENE_DEPTH_TEX", SCENE_DEPTH_TEX);
 	define("PASS_BINDING_COUNT", PASS_BINDING_COUNT);
 	define("MATERIAL_TEXTURE_FIRST", MATERIAL_TEXTURE_FIRST);
 	define("CL_CLUSTER_UBO", CL_CLUSTER_UBO);
@@ -756,6 +796,9 @@ std::string binding_preamble()
 	define("CL_LIGHT_SSBO", CL_LIGHT_SSBO);
 	define("POST_SET", POST_SET);
 	define("POST_TEXTURE_FIRST", POST_TEXTURE_FIRST);
+	define("POST_TEXTURES", POST_TEXTURES);
+	define("POST_EXPOSURE_SSBO", POST_EXPOSURE_SSBO);
+	define("COMPUTE_SET", COMPUTE_SET);
 	define("PUSH_CONSTANTS_SIZE", PUSH_CONSTANTS_SIZE);
 	define("SPEC_OUTPUT_GAMMA", SPEC_OUTPUT_GAMMA);
 	define("SPEC_SHADOWMAP_ENABLED", SPEC_SHADOWMAP_ENABLED);
@@ -776,6 +819,31 @@ std::string binding_preamble()
 	define("MAX_LIGHTS_PER_CLUSTER", gl::MAX_LIGHTS_PER_CLUSTER);
 	define("CLUSTER_BUILD_GROUP_SIZE", gl::CLUSTER_BUILD_GROUP_SIZE);
 	define("CLUSTER_CULL_GROUP_SIZE", gl::CLUSTER_CULL_GROUP_SIZE);
+	// the sizes of the stages P: the light of the sky, the exposure, the weather, the culling on the gpu, the shadow fit, the particles
+	define("ENVMAP_GGX_LEVELS", static_cast<unsigned int>(gl::ENVMAP_GGX_LEVELS), "U");
+	preamble += "#define ENVMAP_GGX_ROUGHNESS_MIN " + std::to_string(gl::ENVMAP_GGX_ROUGHNESS_MIN) + "\n";
+	define("ENVMAP_GGX_GROUP_SIZE", static_cast<unsigned int>(gl::ENVMAP_GGX_GROUP_SIZE));
+	define("EXPOSURE_HISTOGRAM_BINS", gl::EXPOSURE_HISTOGRAM_BINS);
+	define("EXPOSURE_HISTOGRAM_GROUP_SIZE", gl::EXPOSURE_HISTOGRAM_GROUP_SIZE);
+	define("ATMOSPHERE_TRANSMITTANCE_WIDTH", gl::ATMOSPHERE_TRANSMITTANCE_WIDTH);
+	define("ATMOSPHERE_TRANSMITTANCE_HEIGHT", gl::ATMOSPHERE_TRANSMITTANCE_HEIGHT);
+	define("ATMOSPHERE_MULTISCATTERING_SIZE", gl::ATMOSPHERE_MULTISCATTERING_SIZE);
+	define("ATMOSPHERE_SKYVIEW_WIDTH", gl::ATMOSPHERE_SKYVIEW_WIDTH);
+	define("ATMOSPHERE_SKYVIEW_HEIGHT", gl::ATMOSPHERE_SKYVIEW_HEIGHT);
+	define("ATMOSPHERE_AMBIENT_GROUP_SIZE", gl::ATMOSPHERE_AMBIENT_GROUP_SIZE);
+	define("MAX_CLOUD_LAYERS", static_cast<unsigned int>(gl::MAX_CLOUD_LAYERS));
+	define("FOG_HORIZON_SAMPLES", static_cast<unsigned int>(gl::FOG_HORIZON_SAMPLES));
+	define("WEATHER_GROUP_SIZE", gl::WEATHER_GROUP_SIZE);
+	preamble += "#define FOG_VOLUME_BIAS " + std::to_string(gl::FOG_VOLUME_BIAS) + "\n";
+	define("INSTANCE_CULL_GROUP_SIZE", gl::INSTANCE_CULL_GROUP_SIZE);
+	define("INSTANCE_OFFSETS_GROUP_SIZE", gl::INSTANCE_OFFSETS_GROUP_SIZE);
+	define("INSTANCE_COMMAND_GROUP_SIZE", gl::INSTANCE_COMMAND_GROUP_SIZE);
+	define("INSTANCE_COUNTER_HEADER", gl::INSTANCE_COUNTER_HEADER);
+	define("INSTANCE_JOB_SLEEPERS", static_cast<unsigned int>(gl::INSTANCE_JOB_SLEEPERS), "U");
+	define("HIZ_GROUP_SIZE", gl::HIZ_GROUP_SIZE);
+	define("SHADOW_FIT_GROUP_SIZE", gl::SHADOW_FIT_GROUP_SIZE);
+	preamble += "#define LOCAL_SHADOW_NEAR " + std::to_string(gfx::local_shadows::shadow_near) + "\n";
+	define("PARTICLE_GROUP_SIZE", gl::PARTICLE_GROUP_SIZE);
 	return preamble;
 }
 

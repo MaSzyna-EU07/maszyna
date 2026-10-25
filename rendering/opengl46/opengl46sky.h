@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/query.h"
 #include "gl/readback.h"
 #include "rendering/opengl46/opengl46light.h"
+#include "rendering/common/skylight.h"
 
 class CSkyDome;
 
@@ -32,7 +33,8 @@ class CSkyDome;
 //   them (sky_atmosphere.frag), and the sunlight, ambient light and fog colour read back from them a few frames later.
 //   these are values for the render only: the simulation (Global.DayLight, fLuminance) keeps its own
 // - the environment map prefiltered with the GGX lobe, for rough reflections (envmap_prefilter.comp)
-// all of it is switched by Global.gfx_ambient_sh, gfx_atmosphere and gfx_envmap_ggx; off, the renderer works as before
+// all of it is switched by Global.gfx_ambient_sh, gfx_atmosphere and gfx_envmap_ggx; off, the renderer works as before.
+// what isn't the work of the gpu is the light of the sky shared with the vulkan renderer (gfx::sky_light)
 class opengl46_sky
 {
   public:
@@ -52,7 +54,7 @@ class opengl46_sky
 	// share of the atmosphere in the sky of the frame; 0 when the old sky is drawn alone
 	float atmosphere_weight() const
 	{
-		return m_weight;
+		return m_light.atmosphere_weight();
 	}
 	// the sky-view table of the atmosphere, its white balance, brightness and the overcast it was drawn with, for the colours of
 	// the fog (opengl46_weather)
@@ -62,22 +64,21 @@ class opengl46_sky
 	}
 	glm::vec3 const &white_balance() const
 	{
-		return m_white_balance;
+		return m_light.white_balance();
 	}
 	float sky_scale() const
 	{
-		return m_sky_scale;
+		return m_light.sky_scale();
 	}
 	float overcast() const
 	{
-		return m_overcast;
+		return m_light.overcast();
 	}
 	// the volumetric clouds are drawn over the sky (it doesn't take the overcast look then), and their shadows hold back the
 	// sunlight (it isn't dimmed by the overcast then)
 	void set_clouds(bool const Clouds, bool const Shadows)
 	{
-		m_clouds = Clouds;
-		m_cloud_shadows = Shadows;
+		m_light.set_clouds(Clouds, Shadows);
 	}
 	// sets the shader parameters of the sky drawn with the atmosphere (sky_atmosphere.frag) and binds its table
 	void setup_sky(gl::model_ubs &Model) const;
@@ -96,11 +97,6 @@ class opengl46_sky
 	void draw_debug_ui();
 
   private:
-	// spherical harmonics of order 2, rgb
-	using sh_coefficients = std::array<glm::vec3, gl::SKY_SH_COEFFICIENTS>;
-
-	// directional part of the ambient light from the colours of the dome, scaled so its average is Ambient
-	sh_coefficients dome_directional(CSkyDome const &Skydome, glm::vec3 const &Ambient, glm::vec3 const &Sunlight, float const Sunheight) const;
 	// sets up the parameters of the atmosphere for the frame and runs the passes whose input changed
 	void update_atmosphere(glm::vec3 const &Sundirection);
 	// creates an immutable 2d texture for a look-up table
@@ -121,31 +117,11 @@ class opengl46_sky
 	GLuint m_transmittance_table{0};
 	GLuint m_multiscattering_table{0};
 	GLuint m_skyview_table{0};
-	gl::atmosphere_ubs m_atmosphere{};
-	// inputs the tables were last made for: the transmittance and multiple scattering tables depend on the medium only,
-	// the sky-view table also on the sun
-	std::optional<glm::vec4> m_tables_medium;
-	std::optional<glm::vec3> m_tables_sun;
 	gl::readback m_result_readback{sizeof(gl::atmosphere_result)};
-	std::optional<gl::atmosphere_result> m_result;
 	gl::gpu_timer m_atmosphere_timer;
 
-	// what update() made of the frame, for the sky, the sun disc and the debug window
-	float m_weight{0.f};
-	glm::vec3 m_white_balance{1.f};
-	float m_sky_scale{0.f};
-	float m_overcast{0.f};
-	bool m_clouds{false};
-	bool m_cloud_shadows{false};
-	float m_sky_flat_luminance{0.f};
-	glm::vec3 m_sun_disc_color{1.f};
-	glm::vec3 m_sunlight{0.f};
-	glm::vec3 m_ambient{0.f};
-	glm::vec3 m_fog{0.f};
-
-	// cache of the directional ambient light of the dome, remade when its inputs change
-	std::optional<std::array<glm::vec4, 3>> m_dome_key;
-	sh_coefficients m_dome_sh{};
+	// the light of the sky, shared with the vulkan renderer
+	gfx::sky_light m_light;
 
 	// prefiltered environment map
 	std::unique_ptr<gl::program> m_prefilter_program;

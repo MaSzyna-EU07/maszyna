@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14imgui.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14bindings.h"
 #include "rendering/vulkan14/vulkan14device.h"
 #include "imgui/imgui.h"
@@ -216,7 +217,7 @@ void imgui_backend::Release_Image(std::uint64_t const Image)
 	m_resources->images->remove(Image, *m_resources->deletions, m_resources->uploads->current_value());
 }
 
-void imgui_backend::record(VkCommandBuffer Commands, VkExtent2D Extent, VkFormat Format, bool Srgb)
+void imgui_backend::record(command_stream *Commands, VkExtent2D Extent, VkFormat Format, bool Srgb)
 {
 	auto const *drawdata{m_drawdata};
 	m_drawdata = nullptr;
@@ -270,10 +271,10 @@ void imgui_backend::record(VkCommandBuffer Commands, VkExtent2D Extent, VkFormat
 		indexdata += commands->IdxBuffer.Size * sizeof(ImDrawIdx);
 	}
 
-	vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+	Commands->bind_pipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 	set_draw_state(Commands, Extent);
-	vkCmdBindVertexBuffers(Commands, 0, 1, &vertices.buffer, &vertices.offset);
-	vkCmdBindIndexBuffer(Commands, indices.buffer, indices.offset, sizeof(ImDrawIdx) == 2 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
+	Commands->bind_vertex_buffers(0, 1, &vertices.buffer, &vertices.offset);
+	Commands->bind_index_buffer(indices.buffer, indices.offset, sizeof(ImDrawIdx) == 2 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
 
 	// the pixels of the display (top left origin, y down) to the clip space of vulkan (y down too)
 	float transform[4];
@@ -288,7 +289,7 @@ void imgui_backend::record(VkCommandBuffer Commands, VkExtent2D Extent, VkFormat
 	push.offset = 0;
 	push.size = sizeof(transform);
 	push.pValues = transform;
-	vkCmdPushConstants2(Commands, &push);
+	Commands->push_constants2(&push);
 
 	auto const clipoffset{drawdata->DisplayPos};
 	std::uint32_t vertexoffset{0}, indexoffset{0};
@@ -324,14 +325,14 @@ void imgui_backend::record(VkCommandBuffer Commands, VkExtent2D Extent, VkFormat
 				continue;
 			}
 			VkRect2D scissor{{static_cast<std::int32_t>(minx), static_cast<std::int32_t>(miny)}, {static_cast<std::uint32_t>(maxx - minx), static_cast<std::uint32_t>(maxy - miny)}};
-			vkCmdSetScissor(Commands, 0, 1, &scissor);
+			Commands->set_scissor(0, 1, &scissor);
 			if (pushed != command.GetTexID())
 			{
 				VkDescriptorImageInfo info{entry->sampler, entry->target->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 				m_set.push(Commands, m_layout, &info);
 				pushed = command.GetTexID();
 			}
-			vkCmdDrawIndexed(Commands, command.ElemCount, 1, command.IdxOffset + indexoffset, static_cast<std::int32_t>(command.VtxOffset + vertexoffset), 0);
+			Commands->draw_indexed(command.ElemCount, 1, command.IdxOffset + indexoffset, static_cast<std::int32_t>(command.VtxOffset + vertexoffset), 0);
 		}
 		vertexoffset += static_cast<std::uint32_t>(commands->VtxBuffer.Size);
 		indexoffset += static_cast<std::uint32_t>(commands->IdxBuffer.Size);

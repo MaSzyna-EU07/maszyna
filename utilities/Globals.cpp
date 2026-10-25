@@ -1769,6 +1769,19 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_vulkan_framesinflight;
         gfx_vulkan_framesinflight = std::clamp(gfx_vulkan_framesinflight, 2, 3);
     }
+    else if (Token == "gfx.vulkan.renderthread")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_renderthread;
+    }
+    else if (Token == "gfx.threads")
+    {
+        // 0: the cores less two
+        Parser.getTokens(1);
+        Parser >> gfx_threads;
+        gfx_threads = std::clamp(gfx_threads, 0, 64);
+    }
+
     else if (ConfigParse_gfx_sky(Parser, Token))
     {
         // parsed
@@ -2190,6 +2203,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.vulkan.device", gfx_vulkan_device );
     export_as_text( Output, "gfx.vulkan.validation", gfx_vulkan_validation );
     export_as_text( Output, "gfx.vulkan.framesinflight", gfx_vulkan_framesinflight );
+    export_as_text( Output, "gfx.vulkan.renderthread", gfx_vulkan_renderthread );
+    export_as_text( Output, "gfx.threads", gfx_threads );
     export_as_text( Output, "gfx.shadow.angle.min", gfx_shadow_angle_min );
     export_as_text( Output, "gfx.shadow.rank.cutoff", gfx_shadow_rank_cutoff );
     export_as_text( Output, "gfx.shadow.sdsm", gfx_shadow_sdsm );

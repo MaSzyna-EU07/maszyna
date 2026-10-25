@@ -1,6 +1,9 @@
 #version 460 core
 #define STAGE_VERTEX 1
+// the full screen quad of the post-processing, or with QUAD_SCENE of a pass of the scene (the layout of the scene)
+#ifndef QUAD_SCENE
 #define LAYOUT_POST 1
+#endif
 #include "common.glsl"
 const vec2 vert[4] = vec2[]
 (

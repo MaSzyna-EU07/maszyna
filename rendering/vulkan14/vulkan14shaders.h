@@ -79,7 +79,10 @@ enum class blend_mode
 	additive,
 	// the blending of the scene, as glBlendFunc() of the opengl renderer gives it to the colour and the alpha alike
 	scene_alpha, // GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
-	scene_additive // GL_SRC_ALPHA, GL_ONE (the glare of the lamps)
+	scene_additive, // GL_SRC_ALPHA, GL_ONE (the glare of the lamps)
+	under_transmittance, // GL_ONE, GL_SRC_ALPHA: the colour added, what is there kept by the alpha (the clouds and the fog over the sky)
+	multiply, // GL_ZERO, GL_SRC_COLOR: what is there times the colour (the ambient occlusion)
+	no_colour // the colour isn't written, only the depth (the depth prepass of the instances inside the colour pass)
 };
 
 struct vertex_layout
@@ -100,6 +103,8 @@ struct pipeline_desc
 	std::vector<VkFormat> colour_formats;
 	VkFormat depth_format{VK_FORMAT_UNDEFINED};
 	VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
+	// the views drawn at once (multiview, the cube shadow maps of the lamps), 0: none
+	std::uint32_t view_mask{0};
 	// the values of the specialization constants 0, 1, 2 ... of all the stages
 	std::vector<std::uint32_t> specialization;
 	std::string name;
@@ -132,6 +137,6 @@ class pipeline_library
 };
 
 // the dynamic state of a pipeline in its plain form: the whole of Extent, no culling, no depth, triangles
-void set_draw_state(VkCommandBuffer Commands, VkExtent2D Extent);
+void set_draw_state(command_stream *Commands, VkExtent2D Extent);
 
 } // namespace vk14

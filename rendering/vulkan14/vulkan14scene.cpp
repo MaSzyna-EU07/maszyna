@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14context.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/nullrenderer.h"
 #include "model/Model3d.h"
 #include "model/AnimModel.h"
@@ -21,6 +22,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/color.h"
+
+#include <unordered_set>
 
 namespace
 {
@@ -64,6 +67,11 @@ vk14::vertex_layout layout_of(vk14::vertex_kind const Kind)
 		layout.bindings = {{0, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX}, {1, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX}};
 		layout.attributes = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 1, VK_FORMAT_R32G32B32_SFLOAT, 0}};
 		break;
+	case vk14::vertex_kind::star:
+		// gfx::weather_state::star_vertices(): the direction and the magnitude, then the colour and the phase, of each star
+		layout.bindings = {{0, 2 * sizeof(glm::vec4), VK_VERTEX_INPUT_RATE_VERTEX}};
+		layout.attributes = {{0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0}, {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, sizeof(glm::vec4)}};
+		break;
 	case vk14::vertex_kind::particle:
 		// position, colour, texture coordinates (opengl46_particles::particle_vertex)
 		layout.bindings = {{0, 36, VK_VERTEX_INPUT_RATE_VERTEX}};
@@ -72,6 +80,11 @@ vk14::vertex_layout layout_of(vk14::vertex_kind const Kind)
 	case vk14::vertex_kind::position_uv:
 		layout.bindings = {{0, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX}, {1, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX}};
 		layout.attributes = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 1, VK_FORMAT_R32G32_SFLOAT, 0}};
+		break;
+	case vk14::vertex_kind::particle_instance:
+		// the instances drawn from the storage the compute passes of the particles fill (gl::particle_draw)
+		layout.bindings = {{0, sizeof(gl::particle_draw), VK_VERTEX_INPUT_RATE_INSTANCE}};
+		layout.attributes = {{0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0}, {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, sizeof(glm::vec4)}, {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 2 * sizeof(glm::vec4)}};
 		break;
 	case vk14::vertex_kind::none:
 	default:
@@ -120,6 +133,112 @@ std::vector<std::uint32_t> vertex_input_locations(std::vector<std::uint32_t> con
 	return result;
 }
 
+// the type of a binding of the pass set
+VkDescriptorType pass_binding_type(std::uint32_t const Binding)
+{
+	using namespace vk14::bindings;
+	switch (Binding)
+	{
+	case SCENE_UBO:
+	case CLUSTER_UBO:
+	case WEATHER_UBO:
+		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+	case DRAW_SSBO:
+	case INSTANCE_SSBO:
+	case LIGHT_SSBO:
+		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+	case CLUSTER_RANGE_SSBO:
+	case CLUSTER_INDEX_SSBO:
+	case SKY_SSBO:
+		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	case ATMOSPHERE_UBO:
+	case WEATHER_HORIZON_UBO:
+		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	default:
+		return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	}
+}
+
+// the views of the images each pass set holds, by the binding (the buffers and the beams of the headlights aside): the real
+// images where the set reads them, the stand-ins elsewhere
+std::array<std::array<VkImageView, vk14::bindings::PASS_BINDING_COUNT>, 3> pass_set_images(vk14::scene_state const &scene)
+{
+	using namespace vk14::bindings;
+	std::array<std::array<VkImageView, PASS_BINDING_COUNT>, 3> result{};
+	static_assert(vk14::scene_state::set_count == 3, "the pass sets");
+	for (std::size_t set = 0; set < result.size(); ++set)
+	{
+		auto &views{result[set]};
+		auto const colour{set == vk14::scene_state::set_colour};
+		auto const plain{set == vk14::scene_state::set_plain};
+		views[SHADOW_TEX] = ((false == plain) && scene.shadow_map ? scene.shadow_map->view() : scene.shadow_empty->view());
+		views[ENV_TEX] = (colour && scene.env_map ? scene.env_map->view() : scene.env_empty->view());
+		views[SKY_VIEW_TEX] = scene.sky.skyview->view();
+		views[ENV_GGX_TEX] = (colour && scene.sky.ggx ? scene.sky.ggx->view() : scene.env_empty->view());
+		auto const volume{scene.volume_empty->view()};
+		views[FOG_VOLUME_TEX] = (colour && scene.weather.fog_integrated ? scene.weather.fog_integrated->view() : volume);
+		views[CLOUD_SHADOW_TEX] = (scene.weather.shadow_map ? scene.weather.shadow_map->view() : scene.white->view());
+		views[CLOUD_SHAPE_TEX] = (scene.weather.shape_noise ? scene.weather.shape_noise->view() : volume);
+		views[CLOUD_DETAIL_TEX] = (scene.weather.detail_noise ? scene.weather.detail_noise->view() : volume);
+		views[CLOUD_COVERAGE_TEX] = (scene.weather.coverage_noise ? scene.weather.coverage_noise->view() : scene.white->view());
+		// the shadow maps of the lamps and the headlights, which the light buffers of the colour passes read
+		auto const *cab{scene.lamps.cab_map()};
+		auto const *lamps{scene.lamps.lamp_maps()};
+		auto const *headlights{scene.lamps.headlight_maps()};
+		views[LOCAL_SHADOW_TEX] = (cab != nullptr ? cab->view() : scene.cube_shadow_empty->view());
+		views[LOCAL_SHADOW_LAMPS_TEX] = (lamps != nullptr ? lamps->view() : scene.cube_shadow_empty->view());
+		views[HEADLIGHT_SHADOW_TEX] = (headlights != nullptr ? headlights->view() : scene.headlight_shadow_empty->view());
+		// the depth of the scene of the main view drawn before its colour, which the contact shadows read
+		views[SCENE_DEPTH_TEX] = (colour && (false == scene.targets.empty()) && scene.targets.front().scene_depth ? scene.targets.front().scene_depth->view() : scene.depth_empty->view());
+	}
+	return result;
+}
+
+// a pool for Count pass sets, and the sets
+VkDescriptorPool make_pass_pool(VkDevice const Device, VkDescriptorSetLayout const Layout, std::uint32_t const Count, VkDescriptorSet *Sets)
+{
+	using namespace vk14::bindings;
+	std::array<std::uint32_t, 4> perset{};
+	for (std::uint32_t binding = 0; binding < PASS_BINDING_COUNT; ++binding)
+	{
+		switch (pass_binding_type(binding))
+		{
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: ++perset[0]; break;
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: ++perset[1]; break;
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: ++perset[2]; break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: ++perset[3]; break;
+		default: break;
+		}
+	}
+	std::array<VkDescriptorPoolSize, 5> sizes{{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, perset[0] * Count},
+	                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, perset[1] * Count},
+	                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, perset[2] * Count},
+	                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, perset[3] * Count},
+	                                           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (PASS_BINDING_COUNT - perset[0] - perset[1] - perset[2] - perset[3]) * Count}}};
+	VkDescriptorPoolCreateInfo poolinfo{};
+	poolinfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolinfo.maxSets = Count;
+	poolinfo.poolSizeCount = static_cast<std::uint32_t>(sizes.size());
+	poolinfo.pPoolSizes = sizes.data();
+	VkDescriptorPool pool{VK_NULL_HANDLE};
+	if (!VK14_VERIFY(vkCreateDescriptorPool(Device, &poolinfo, nullptr, &pool)))
+	{
+		return VK_NULL_HANDLE;
+	}
+	std::vector<VkDescriptorSetLayout> layouts(Count, Layout);
+	VkDescriptorSetAllocateInfo allocation{};
+	allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocation.descriptorPool = pool;
+	allocation.descriptorSetCount = Count;
+	allocation.pSetLayouts = layouts.data();
+	if (!VK14_VERIFY(vkAllocateDescriptorSets(Device, &allocation, Sets)))
+	{
+		vkDestroyDescriptorPool(Device, pool, nullptr);
+		return VK_NULL_HANDLE;
+	}
+	return pool;
+}
+
 // a view of one layer (and the first level) of an image
 VkImageView layer_view(VkDevice Device, vk14::image const &Image, std::uint32_t const Layer, std::string const &Name)
 {
@@ -150,15 +269,15 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 	auto const frames{static_cast<std::uint32_t>(ctx.frames.size())};
 	using namespace vk14::bindings;
 
-	// the pass set: the blocks of the frame with dynamic offsets, the clusters, the maps
+	// the pass set: the blocks of the frame with dynamic offsets, the clusters, the maps, the light of the sky, the weather, the
+	// shadows of the lamps and the depth of the scene. the compute kernels read it too
 	{
-		auto const stages{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT};
-		std::vector<VkDescriptorSetLayoutBinding> bindings{
-		    {SCENE_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, stages, nullptr},     {DRAW_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1, stages, nullptr},
-		    {INSTANCE_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1, stages, nullptr}, {LIGHT_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1, stages, nullptr},
-		    {CLUSTER_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, stages, nullptr},   {CLUSTER_RANGE_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stages, nullptr},
-		    {CLUSTER_INDEX_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stages, nullptr},    {SHADOW_TEX, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, stages, nullptr},
-		    {ENV_TEX, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, stages, nullptr},       {HEADLIGHT_TEX, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, stages, nullptr}};
+		auto const stages{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT};
+		std::vector<VkDescriptorSetLayoutBinding> bindings;
+		for (std::uint32_t binding = 0; binding < PASS_BINDING_COUNT; ++binding)
+		{
+			bindings.push_back({binding, pass_binding_type(binding), 1, stages, nullptr});
+		}
 		VkDescriptorSetLayoutCreateInfo info{};
 		info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 		info.bindingCount = static_cast<std::uint32_t>(bindings.size());
@@ -190,13 +309,15 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		Reason = "no layout of the pipelines of the scene";
 		return false;
 	}
-	// the post-processing: the images it reads, pushed
+	// the post-processing: the images it reads and the exposure, pushed
 	{
 		std::vector<VkDescriptorSetLayoutBinding> bindings;
-		for (std::uint32_t image = 0; image < 4; ++image)
+		for (std::uint32_t image = 0; image < POST_TEXTURES; ++image)
 		{
 			bindings.push_back({POST_TEXTURE_FIRST + image, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
 		}
+		static_assert(POST_EXPOSURE_SSBO == POST_TEXTURE_FIRST + POST_TEXTURES, "the exposure follows the images of the template");
+		bindings.push_back({POST_EXPOSURE_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
 		if (false == scene.post_set.create(device, bindings, POST_SET, VK_PIPELINE_BIND_POINT_GRAPHICS, sizeof(VkDescriptorImageInfo), "post-processing images"))
 		{
 			Reason = "no layout of the post-processing";
@@ -345,9 +466,65 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 			return false;
 		}
 	}
+	{
+		// the stand-ins of the images of the stages P
+		vk14::image_desc desc;
+		desc.type = VK_IMAGE_TYPE_3D;
+		desc.view_type = VK_IMAGE_VIEW_TYPE_3D;
+		desc.format = VK_FORMAT_R8G8B8A8_UNORM;
+		desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		if (false == make_image(scene.volume_empty, desc, "empty volume"))
+		{
+			return false;
+		}
+		desc = vk14::image_desc{};
+		desc.format = VK_FORMAT_D32_SFLOAT;
+		desc.view_type = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+		desc.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+		desc.layers = 6;
+		desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		if (false == make_image(scene.cube_shadow_empty, desc, "empty cube shadow maps"))
+		{
+			return false;
+		}
+		desc = vk14::image_desc{};
+		desc.format = VK_FORMAT_D32_SFLOAT;
+		desc.view_type = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+		desc.layers = static_cast<std::uint32_t>(gl::MAX_HEADLIGHT_SHADOWS);
+		desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		if (false == make_image(scene.headlight_shadow_empty, desc, "empty headlight shadow maps"))
+		{
+			return false;
+		}
+		desc = vk14::image_desc{};
+		desc.format = VK_FORMAT_R32_SFLOAT;
+		desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		if (false == make_image(scene.depth_empty, desc, "empty scene depth"))
+		{
+			return false;
+		}
+		if (false == scene.weather_horizon.create(ctx.memory, sizeof(glm::vec4) * gl::FOG_HORIZON_SAMPLES, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		                                          vk14::memory_kind::device, "fog horizon"))
+		{
+			Reason = "no buffer of the colours of the fog";
+			return false;
+		}
+	}
+	{
+		VkFormatProperties properties{};
+		vkGetPhysicalDeviceFormatProperties(ctx.device.physical(), scene.bloom_format, &properties);
+		auto const needed{VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT};
+		if ((properties.optimalTilingFeatures & needed) != needed)
+		{
+			scene.bloom_format = VK_FORMAT_R16G16B16A16_SFLOAT;
+		}
+	}
 	// the formats of the passes which don't depend on the viewport
 	scene.shadow_formats.depth = VK_FORMAT_D32_SFLOAT;
 	scene.shadow_formats.id = ++scene.formats_count;
+	scene.cube_formats.depth = VK_FORMAT_D32_SFLOAT;
+	scene.cube_formats.view_mask = 0x3f;
+	scene.cube_formats.id = ++scene.formats_count;
 	scene.reflection_formats.colour[0] = VK_FORMAT_R16G16B16A16_SFLOAT;
 	scene.reflection_formats.colours = 1;
 	scene.reflection_formats.depth = VK_FORMAT_D32_SFLOAT;
@@ -364,7 +541,8 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		if ((false == clusters.aabbs.create(ctx.memory, sizeof(gl::cluster_aabb) * gl::CLUSTER_COUNT, usage, vk14::memory_kind::device, "cluster boxes")) ||
 		    (false == clusters.ranges.create(ctx.memory, sizeof(gl::cluster_range) * gl::CLUSTER_COUNT, usage, vk14::memory_kind::device, "cluster ranges")) ||
 		    (false == clusters.indices.create(ctx.memory, sizeof(std::uint32_t) * gl::CLUSTER_COUNT * gl::MAX_LIGHTS_PER_CLUSTER, usage, vk14::memory_kind::device, "cluster lights")) ||
-		    (false == clusters.counters.create(ctx.memory, sizeof(gl::cluster_counters), usage, vk14::memory_kind::device, "cluster counters")))
+		    (false == clusters.counters.create(ctx.memory, sizeof(gl::cluster_counters), usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, vk14::memory_kind::device, "cluster counters")) ||
+		    (false == clusters.counters_readback.create(ctx.memory, sizeof(gl::cluster_counters), frames, "cluster counters read back")))
 		{
 			Reason = "no buffers of the light clusters";
 			return false;
@@ -397,6 +575,7 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 			result->vertex = ctx.shaders.get(Vertex);
 			result->fragment = ctx.shaders.get(Fragment);
 			result->fragment_name = Fragment;
+			result->vertex_name = Vertex;
 			result->vertices = Kind;
 			result->name = std::string(Vertex) + " + " + Fragment;
 			return result;
@@ -412,6 +591,10 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		scene.skydome = program("vbocolor.vert", "color.frag", vk14::vertex_kind::colour);
 		scene.smoke = program("smoke.vert", "smoke.frag", vk14::vertex_kind::particle);
 		scene.precipitation = program("precipitation.vert", "precipitation.frag", vk14::vertex_kind::position_uv);
+		scene.prepass = program("depthprepass.vert", "depthprepass.frag", vk14::vertex_kind::scene);
+		scene.prepass_alpha = program("depthprepass.vert", "depthprepass_alpha.frag", vk14::vertex_kind::scene);
+		scene.cube_shadow = program("shadowcube.vert", "shadowmap.frag", vk14::vertex_kind::scene);
+		scene.cube_alpha_shadow = program("shadowcube.vert", "alphashadowmap.frag", vk14::vertex_kind::scene);
 		scene.quad = ctx.shaders.get("quad.vert");
 		for (auto const *name : {"copy.frag", "present.frag", "postfx_tonemapping.frag", "postfx_motionblur.frag", "postfx_chromaticaberration.frag"})
 		{
@@ -427,6 +610,109 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		Reason = std::string("invalid shader: ") + e.what();
 		return false;
 	}
+
+	// the light of the sky, the exposure, the weather
+	if ((false == init_sky(Reason)) || (false == init_weather(Reason)) || (false == init_ao(Reason)))
+	{
+		return false;
+	}
+
+	scene.lamps.init(device, ctx.memory, ctx.deletions);
+	// the layer maps of the heightmap terrain drawn into the layers of its arrays by the copy shader
+	scene.terrain = std::make_unique<vk14::terrain_materials>(m_materials, *ctx.textures);
+	scene.grass.init(ctx.resources);
+	{
+		vk14::gpu_particles::host host;
+		host.compute = [this]() {
+			suspend_rendering();
+			return m_context->commands;
+		};
+		host.bind = [this](vk14::compute_kernel const &Kernel) { bind_compute_set(Kernel); };
+		host.draw = [this](vk14::scene_program &Program, VkBuffer const Output, VkBuffer const Command, glm::vec4 const &Data0, glm::vec4 const &Data1) {
+			// the rendering goes on where the compute passes ended it; the model block is the one the caller set up
+			resume_rendering();
+			auto &draw{*m_draw};
+			if ((false == draw.rendering) || (draw.targets == nullptr) || (false == bind_scene_pipeline(Program, *draw.targets, vk14::blend_mode::scene_alpha, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP)))
+			{
+				return;
+			}
+			auto const cullface{draw.cullface};
+			draw.cullface = false;
+			apply_draw_state();
+			if (draw.set_dirty)
+			{
+				bind_pass_set();
+			}
+			auto const block{push_draw_block()};
+			if (block != ~0u)
+			{
+				if (draw.textures_dirty)
+				{
+					push_textures();
+				}
+				vk14::draw_constants constants;
+				constants.draw = block;
+				constants.data[0] = Data0;
+				constants.data[1] = Data1;
+				push_constants(&constants);
+				VkDeviceSize const offset{0};
+				draw.commands->bind_vertex_buffers(0, 1, &Output, &offset);
+				draw.commands->draw_indirect(Command, 0, 1, 4 * sizeof(std::uint32_t));
+				draw.vertices = VK_NULL_HANDLE;
+				draw.userdata = VK_NULL_HANDLE;
+				++draw.draws;
+			}
+			draw.cullface = cullface;
+			apply_draw_state();
+		};
+		host.slot = [this]() { return m_context->slot; };
+		host.value = [this]() { return m_context->timelinevalue + 1; };
+		host.completed = [this]() { return m_context->completed(); };
+		scene.particles.init(device, ctx.pipelines, ctx.shaders, scene.pass_layout, ctx.memory, ctx.uploads, ctx.deletions, ctx.ring, ctx.device.caps().limits.minUniformBufferOffsetAlignment, frames,
+		                     std::move(host));
+	}
+	scene.terrain->init(ctx.resources, [this](vk14::command_stream *const Commands, VkImageView const Target, VkFormat const Format, VkExtent2D const Extent, VkImageView const Source, VkSampler const Sampler) {
+		auto &scene{m_context->scene};
+		auto const pipeline{post_pipeline("copy.frag", static_cast<int>(Format))};
+		if (pipeline == nullptr)
+		{
+			return;
+		}
+		VkRenderingAttachmentInfo attachment{};
+		attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+		attachment.imageView = Target;
+		attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		VkRenderingInfo rendering{};
+		rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+		rendering.renderArea = {{0, 0}, Extent};
+		rendering.layerCount = 1;
+		rendering.colorAttachmentCount = 1;
+		rendering.pColorAttachments = &attachment;
+		Commands->begin_rendering(&rendering);
+		vk14::set_draw_state(Commands, Extent);
+		Commands->bind_pipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, reinterpret_cast<VkPipeline>(pipeline));
+		Commands->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+		// the texture as its material samples it, as the copy of the opengl renderer draws it
+		std::array<vk14::descriptor, vk14::bindings::POST_TEXTURES + 1> descriptors;
+		for (std::size_t i = 0; i < vk14::bindings::POST_TEXTURES; ++i)
+		{
+			descriptors[i] = vk14::image_descriptor(Sampler, Source, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		}
+		descriptors[vk14::bindings::POST_EXPOSURE_SSBO] = vk14::buffer_descriptor(scene.exposure.data.handle(), 0, sizeof(gl::exposure_data));
+		scene.post_set.push(Commands, scene.post_layout, descriptors.data());
+		vk14::draw_constants const constants;
+		VkPushConstantsInfo info{};
+		info.sType = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+		info.layout = scene.post_layout;
+		info.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		info.size = sizeof(constants);
+		info.pValues = &constants;
+		Commands->push_constants2(&info);
+		Commands->draw(4, 1, 0, 0);
+		Commands->end_rendering();
+	});
 
 	m_draw = std::make_unique<draw_state>();
 	m_draw->textures.fill(null_handle);
@@ -446,6 +732,18 @@ void vulkan14_renderer::destroy_scene()
 	{
 		return;
 	}
+	destroy_cull();
+	scene.lamps.destroy();
+	scene.terrain.reset();
+	scene.grass.destroy();
+	scene.particles.destroy();
+	scene.grass_program.reset();
+	scene.grass_tried = false;
+	scene.cluster_heatmap.reset();
+	scene.cluster_heatmap_tried = false;
+	destroy_sky();
+	destroy_weather();
+	destroy_ao();
 	for (auto *pool : scene.occlusion_pools)
 	{
 		vkDestroyQueryPool(device, pool, nullptr);
@@ -499,6 +797,11 @@ void vulkan14_renderer::destroy_scene()
 	scene.env_depth.reset();
 	scene.pick_colour.reset();
 	scene.pick_depth.reset();
+	scene.volume_empty.reset();
+	scene.cube_shadow_empty.reset();
+	scene.headlight_shadow_empty.reset();
+	scene.depth_empty.reset();
+	scene.weather_horizon.destroy();
 	scene.pick_controls = {};
 	scene.pick_scenery = {};
 	scene.cursor = {};
@@ -507,16 +810,16 @@ void vulkan14_renderer::destroy_scene()
 	scene.clusters.ranges.destroy();
 	scene.clusters.indices.destroy();
 	scene.clusters.counters.destroy();
+	scene.clusters.counters_readback.destroy();
 	scene.draws.ring.destroy();
 	scene.instances.ring.destroy();
 }
 
 // the pass sets, made anew when the images they read changed: the old ones go once the gpu is done with them
-void vulkan14_renderer::bind_pass_set()
+void vulkan14_renderer::update_pass_sets()
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
-	auto &draw{*m_draw};
 	auto const device{ctx.device.handle()};
 	using namespace vk14::bindings;
 
@@ -537,98 +840,185 @@ void vulkan14_renderer::bind_pass_set()
 	{
 		scene.pass_sets_stale = true;
 	}
-	if (scene.pass_sets_stale)
+	auto const pass_images{pass_set_images(scene)};
+	if (pass_images != scene.pass_images)
 	{
-		scene.pass_sets_stale = false;
-		scene.headlights_view = headlights;
-		if (scene.pass_pool != VK_NULL_HANDLE)
-		{
-			ctx.deletions.push(ctx.uploads.current_value(), [device, pool = scene.pass_pool]() { vkDestroyDescriptorPool(device, pool, nullptr); });
-			scene.pass_pool = VK_NULL_HANDLE;
-		}
-		auto const count{static_cast<std::uint32_t>(vk14::scene_state::set_count)};
-		std::array<VkDescriptorPoolSize, 4> sizes{{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 2 * count},
-		                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 3 * count},
-		                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * count},
-		                                           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 * count}}};
-		VkDescriptorPoolCreateInfo poolinfo{};
-		poolinfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolinfo.maxSets = count;
-		poolinfo.poolSizeCount = static_cast<std::uint32_t>(sizes.size());
-		poolinfo.pPoolSizes = sizes.data();
-		if (!VK14_VERIFY(vkCreateDescriptorPool(device, &poolinfo, nullptr, &scene.pass_pool)))
-		{
-			scene.pass_pool = VK_NULL_HANDLE;
-			return;
-		}
-		std::array<VkDescriptorSetLayout, vk14::scene_state::set_count> layouts;
-		layouts.fill(scene.pass_layout);
-		VkDescriptorSetAllocateInfo allocation{};
-		allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocation.descriptorPool = scene.pass_pool;
-		allocation.descriptorSetCount = count;
-		allocation.pSetLayouts = layouts.data();
-		if (!VK14_VERIFY(vkAllocateDescriptorSets(device, &allocation, scene.pass_sets.data())))
-		{
-			return;
-		}
-		VkDescriptorBufferInfo const sceneblock{ctx.ring.handle(), 0, sizeof(gl::scene_ubs)};
-		VkDescriptorBufferInfo const draws{scene.draws.ring.handle(), 0, draw_window};
-		VkDescriptorBufferInfo const instances{scene.instances.ring.handle(), 0, instance_window};
-		VkDescriptorBufferInfo const lights{ctx.ring.handle(), 0, sizeof(gl::light_data)};
-		VkDescriptorBufferInfo const clusterblock{ctx.ring.handle(), 0, sizeof(gl::cluster_ubs)};
-		VkDescriptorBufferInfo const ranges{scene.clusters.ranges.handle(), 0, VK_WHOLE_SIZE};
-		VkDescriptorBufferInfo const indices{scene.clusters.indices.handle(), 0, VK_WHOLE_SIZE};
-		VkDescriptorImageInfo const headlightsinfo{headlightssampler, headlights, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		VkDescriptorImageInfo const emptyshadows{ctx.sampling.shadow, scene.shadow_empty->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		VkDescriptorImageInfo const shadows{ctx.sampling.shadow, scene.shadow_map ? scene.shadow_map->view() : scene.shadow_empty->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		VkDescriptorImageInfo const emptyenvironment{ctx.sampling.clamp_linear, scene.env_empty->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		VkDescriptorImageInfo const environment{ctx.sampling.clamp_linear, scene.env_map ? scene.env_map->view() : scene.env_empty->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		std::vector<VkWriteDescriptorSet> writes;
-		auto write = [&](VkDescriptorSet Set, std::uint32_t Binding, VkDescriptorType Type, VkDescriptorBufferInfo const *Buffer, VkDescriptorImageInfo const *Image) {
-			VkWriteDescriptorSet entry{};
-			entry.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			entry.dstSet = Set;
-			entry.dstBinding = Binding;
-			entry.descriptorCount = 1;
-			entry.descriptorType = Type;
-			entry.pBufferInfo = Buffer;
-			entry.pImageInfo = Image;
-			writes.push_back(entry);
-		};
-		for (std::uint32_t set = 0; set < count; ++set)
-		{
-			auto const handle{scene.pass_sets[set]};
-			write(handle, SCENE_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, &sceneblock, nullptr);
-			write(handle, DRAW_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, &draws, nullptr);
-			write(handle, INSTANCE_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, &instances, nullptr);
-			write(handle, LIGHT_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, &lights, nullptr);
-			write(handle, CLUSTER_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, &clusterblock, nullptr);
-			write(handle, CLUSTER_RANGE_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &ranges, nullptr);
-			write(handle, CLUSTER_INDEX_SSBO, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &indices, nullptr);
-			write(handle, SHADOW_TEX, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, (set == vk14::scene_state::set_plain ? &emptyshadows : &shadows));
-			write(handle, ENV_TEX, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, (set == vk14::scene_state::set_colour ? &environment : &emptyenvironment));
-			write(handle, HEADLIGHT_TEX, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, &headlightsinfo);
-		}
-		vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
+		scene.pass_sets_stale = true;
 	}
+	if (false == scene.pass_sets_stale)
+	{
+		return;
+	}
+	scene.pass_sets_stale = false;
+	scene.headlights_view = headlights;
+	scene.pass_images = pass_images;
+	if (scene.pass_pool != VK_NULL_HANDLE)
+	{
+		ctx.deletions.push(ctx.uploads.current_value(), [device, pool = scene.pass_pool]() { vkDestroyDescriptorPool(device, pool, nullptr); });
+		scene.pass_pool = VK_NULL_HANDLE;
+	}
+	scene.headlights_sampler = headlightssampler;
+	scene.pass_pool = make_pass_pool(device, scene.pass_layout, static_cast<std::uint32_t>(vk14::scene_state::set_count), scene.pass_sets.data());
+	if (scene.pass_pool == VK_NULL_HANDLE)
+	{
+		return;
+	}
+	write_pass_sets(nullptr);
+	++scene.pass_generation;
+}
+
+// the bindings of the pass sets, or of those of a culling: the same but for the instance buffer, its output
+void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const device{ctx.device.handle()};
+	auto const count{static_cast<std::uint32_t>(vk14::scene_state::set_count)};
+	using namespace vk14::bindings;
+	auto const &pass_images{scene.pass_images};
+	auto const *sets{Cull != nullptr ? Cull->sets.data() : scene.pass_sets.data()};
+	VkDescriptorBufferInfo const sceneblock{ctx.ring.handle(), 0, sizeof(gl::scene_ubs)};
+	VkDescriptorBufferInfo const draws{scene.draws.ring.handle(), 0, scene.draws.window};
+	VkDescriptorBufferInfo const instances{Cull != nullptr ? VkDescriptorBufferInfo{Cull->output_buffer(), 0, Cull->output_size()} : VkDescriptorBufferInfo{scene.instances.ring.handle(), 0, scene.instances.window}};
+	VkDescriptorBufferInfo const lights{ctx.ring.handle(), 0, sizeof(gl::light_data)};
+	VkDescriptorBufferInfo const clusterblock{ctx.ring.handle(), 0, sizeof(gl::cluster_ubs)};
+	VkDescriptorBufferInfo const ranges{scene.clusters.ranges.handle(), 0, VK_WHOLE_SIZE};
+	VkDescriptorBufferInfo const indices{scene.clusters.indices.handle(), 0, VK_WHOLE_SIZE};
+	VkDescriptorBufferInfo const skyblock{scene.sky.sky.handle(), 0, sizeof(gl::sky_data)};
+	VkDescriptorBufferInfo const atmosphereblock{scene.sky.atmosphere.handle(), 0, sizeof(gl::atmosphere_ubs)};
+	VkDescriptorBufferInfo const weatherblock{ctx.ring.handle(), 0, offsetof(gl::weather_ubs, fog_horizon)};
+	VkDescriptorBufferInfo const horizonblock{scene.weather_horizon.handle(), 0, sizeof(glm::vec4) * gl::FOG_HORIZON_SAMPLES};
+	VkDescriptorImageInfo const headlightsinfo{scene.headlights_sampler, scene.headlights_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+	std::vector<VkWriteDescriptorSet> writes;
+	std::vector<std::unique_ptr<VkDescriptorImageInfo>> images;
+	auto write = [&](VkDescriptorSet Set, std::uint32_t Binding, VkDescriptorBufferInfo const *Buffer, VkDescriptorImageInfo const *Image) {
+		VkWriteDescriptorSet entry{};
+		entry.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		entry.dstSet = Set;
+		entry.dstBinding = Binding;
+		entry.descriptorCount = 1;
+		entry.descriptorType = pass_binding_type(Binding);
+		entry.pBufferInfo = Buffer;
+		entry.pImageInfo = Image;
+		writes.push_back(entry);
+	};
+	auto image = [&](VkSampler Sampler, VkImageView View) {
+		images.push_back(std::make_unique<VkDescriptorImageInfo>(VkDescriptorImageInfo{Sampler, View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}));
+		return images.back().get();
+	};
+	for (std::uint32_t set = 0; set < count; ++set)
+	{
+		auto const handle{sets[set]};
+		auto const &views{pass_images[set]};
+		write(handle, SCENE_UBO, &sceneblock, nullptr);
+		write(handle, DRAW_SSBO, &draws, nullptr);
+		write(handle, INSTANCE_SSBO, &instances, nullptr);
+		write(handle, LIGHT_SSBO, &lights, nullptr);
+		write(handle, CLUSTER_UBO, &clusterblock, nullptr);
+		write(handle, CLUSTER_RANGE_SSBO, &ranges, nullptr);
+		write(handle, CLUSTER_INDEX_SSBO, &indices, nullptr);
+		write(handle, SKY_SSBO, &skyblock, nullptr);
+		write(handle, ATMOSPHERE_UBO, &atmosphereblock, nullptr);
+		write(handle, WEATHER_UBO, &weatherblock, nullptr);
+		write(handle, WEATHER_HORIZON_UBO, &horizonblock, nullptr);
+		write(handle, HEADLIGHT_TEX, nullptr, &headlightsinfo);
+		write(handle, SHADOW_TEX, nullptr, image(ctx.sampling.shadow, views[SHADOW_TEX]));
+		write(handle, ENV_TEX, nullptr, image(ctx.sampling.clamp_linear, views[ENV_TEX]));
+		write(handle, SKY_VIEW_TEX, nullptr, image(ctx.sampling.clamp_linear, views[SKY_VIEW_TEX]));
+		write(handle, ENV_GGX_TEX, nullptr, image(ctx.sampling.clamp_linear, views[ENV_GGX_TEX]));
+		write(handle, FOG_VOLUME_TEX, nullptr, image(ctx.sampling.clamp_linear, views[FOG_VOLUME_TEX]));
+		write(handle, CLOUD_SHADOW_TEX, nullptr, image(ctx.sampling.clamp_linear, views[CLOUD_SHADOW_TEX]));
+		write(handle, CLOUD_SHAPE_TEX, nullptr, image(ctx.sampling.repeat_linear, views[CLOUD_SHAPE_TEX]));
+		write(handle, CLOUD_DETAIL_TEX, nullptr, image(ctx.sampling.repeat_linear, views[CLOUD_DETAIL_TEX]));
+		write(handle, CLOUD_COVERAGE_TEX, nullptr, image(ctx.sampling.repeat_linear, views[CLOUD_COVERAGE_TEX]));
+		write(handle, LOCAL_SHADOW_TEX, nullptr, image(ctx.sampling.shadow, views[LOCAL_SHADOW_TEX]));
+		write(handle, LOCAL_SHADOW_LAMPS_TEX, nullptr, image(ctx.sampling.shadow, views[LOCAL_SHADOW_LAMPS_TEX]));
+		write(handle, HEADLIGHT_SHADOW_TEX, nullptr, image(ctx.sampling.shadow, views[HEADLIGHT_SHADOW_TEX]));
+		write(handle, SCENE_DEPTH_TEX, nullptr, image(ctx.sampling.clamp_nearest, views[SCENE_DEPTH_TEX]));
+	}
+	vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
+void vulkan14_renderer::use_cull_pass_sets(vk14::instance_cull *Cull)
+{
+	auto &draw{*m_draw};
+	if (Cull == nullptr)
+	{
+		if (draw.cull_sets != nullptr)
+		{
+			draw.cull_sets = nullptr;
+			draw.set_dirty = true;
+		}
+		return;
+	}
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	update_pass_sets();
+	if ((Cull->set_pool == VK_NULL_HANDLE) || (Cull->sets_generation != scene.pass_generation) || (Cull->sets_output != Cull->output_buffer()))
+	{
+		auto const device{ctx.device.handle()};
+		if (Cull->set_pool != VK_NULL_HANDLE)
+		{
+			ctx.deletions.push(ctx.uploads.current_value(), [device, pool = Cull->set_pool]() { vkDestroyDescriptorPool(device, pool, nullptr); });
+		}
+		Cull->set_pool = make_pass_pool(device, scene.pass_layout, static_cast<std::uint32_t>(vk14::scene_state::set_count), Cull->sets.data());
+		if (Cull->set_pool == VK_NULL_HANDLE)
+		{
+			draw.cull_sets = nullptr;
+			return;
+		}
+		write_pass_sets(Cull);
+		Cull->sets_generation = scene.pass_generation;
+		Cull->sets_output = Cull->output_buffer();
+	}
+	draw.cull_sets = Cull->sets.data();
+	draw.set_dirty = true;
+}
+
+void vulkan14_renderer::bind_pass_set()
+{
+	auto &draw{*m_draw};
+	update_pass_sets();
 	if (false == draw.rendering)
 	{
 		return;
 	}
+	auto &scene{m_context->scene};
 	// the dynamic offsets in the order of the bindings
-	std::array<std::uint32_t, 5> const offsets{draw.scene_offset, static_cast<std::uint32_t>(scene.draws.base), static_cast<std::uint32_t>(scene.instances.base), draw.light_offset, draw.cluster_offset};
+	// the instances of the indirect draws come from the output of the culling, in the pass sets of the culling
+	auto const instancebase{draw.cull_sets != nullptr ? 0u : static_cast<std::uint32_t>(scene.instances.base)};
+	std::array<std::uint32_t, vk14::bindings::PASS_DYNAMIC_OFFSETS> const offsets{draw.scene_offset, static_cast<std::uint32_t>(scene.draws.base), instancebase, draw.light_offset, draw.cluster_offset, draw.weather_offset};
 	VkBindDescriptorSetsInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO;
 	info.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	info.layout = scene.scene_layout;
-	info.firstSet = PASS_SET;
+	info.firstSet = vk14::bindings::PASS_SET;
 	info.descriptorSetCount = 1;
-	info.pDescriptorSets = &scene.pass_sets[draw.set];
+	info.pDescriptorSets = (draw.cull_sets != nullptr ? &draw.cull_sets[draw.set] : &scene.pass_sets[draw.set]);
 	info.dynamicOffsetCount = static_cast<std::uint32_t>(offsets.size());
 	info.pDynamicOffsets = offsets.data();
-	vkCmdBindDescriptorSets2(draw.commands, &info);
+	draw.commands->bind_descriptor_sets2(&info);
 	draw.set_dirty = false;
+}
+
+// the pass set of the colour of the main view bound for the compute kernels (their layouts share set 0 and the push constants),
+// with the offsets of the blocks the frame wrote last
+void vulkan14_renderer::bind_compute_set(vk14::compute_kernel const &Kernel)
+{
+	auto &scene{m_context->scene};
+	auto &draw{*m_draw};
+	update_pass_sets();
+	std::array<std::uint32_t, vk14::bindings::PASS_DYNAMIC_OFFSETS> const offsets{draw.scene_offset, static_cast<std::uint32_t>(scene.draws.base), static_cast<std::uint32_t>(scene.instances.base), draw.light_offset, draw.cluster_offset, draw.weather_offset};
+	VkBindDescriptorSetsInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO;
+	info.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	info.layout = Kernel.layout();
+	info.firstSet = vk14::bindings::PASS_SET;
+	info.descriptorSetCount = 1;
+	info.pDescriptorSets = &scene.pass_sets[vk14::scene_state::set_colour];
+	info.dynamicOffsetCount = static_cast<std::uint32_t>(offsets.size());
+	info.pDynamicOffsets = offsets.data();
+	m_context->commands->bind_descriptor_sets2(&info);
 }
 
 // geometry
@@ -733,6 +1123,37 @@ IMaterial const *vulkan14_renderer::Material(material_handle const Material) con
 	return &m_materials.material(Material);
 }
 
+material_handle vulkan14_renderer::Terrain_Material(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
+                                                    int const HoleSamples, std::uint8_t const *Holes)
+{
+	if (m_context && m_context->scene.terrain)
+	{
+		auto const material{m_context->scene.terrain->make(Reuse, Layers, Samples, Weights, Placement, HoleSamples, Holes)};
+		if (material != null_handle)
+		{
+			return material;
+		}
+	}
+	// the terrain shader can't be used, the chunk makes do with a plain material
+	return gfx_renderer::Terrain_Material(Reuse, Layers, Samples, Weights, Placement, HoleSamples, Holes);
+}
+
+void vulkan14_renderer::Terrain_Release(material_handle const Material)
+{
+	if (m_context && m_context->scene.terrain)
+	{
+		m_context->scene.terrain->release(Material);
+	}
+}
+
+void vulkan14_renderer::Terrain_Grass(std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks)
+{
+	if (m_context)
+	{
+		m_context->scene.grass.update(Kinds, Chunks);
+	}
+}
+
 std::shared_ptr<gfx::shader_program> vulkan14_renderer::Fetch_Shader(std::string const &name)
 {
 	if (!m_context)
@@ -750,6 +1171,7 @@ std::shared_ptr<gfx::shader_program> vulkan14_renderer::Fetch_Shader(std::string
 	program->vertex = m_context->shaders.get("vertex.vert");
 	program->fragment = m_context->shaders.get("mat_" + name + ".frag");
 	program->fragment_name = "mat_" + name + ".frag";
+	program->vertex_name = "vertex.vert";
 	program->vertices = vk14::vertex_kind::scene;
 	program->name = "mat_" + name;
 	// the directives of the material, of both stages as the opengl program has them
@@ -875,10 +1297,54 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 		model_ubs.opacity = (m_draw->blending ? 0.0f : 0.5f);
 	}
 	model_ubs.alpha_mult = (Submodel ? Submodel->fVisible : 1.0f);
+	if (m_indirectrecording)
+	{
+		// the walk of the groups of the gpu culling only notes what would be bound, it's bound when the draw is made
+		m_indirectmaterial = Material;
+		m_indirectsubmodel = Submodel;
+		return;
+	}
 
 	// materials which declare texture variants provide a different texture set per model instance
 	auto const &materialtextures{material.texture_variants.empty() ? material.textures : material.GetTextures(TSubModel::VariantId(Submodel))};
 	auto &draw{*m_draw};
+	if (draw.depthpass)
+	{
+		// the depth of the whole scene: the programs of the depth prepass. what they can't draw (blended, materials of other programs)
+		// is left to the colour pass
+		draw.depthskip = true;
+		if (draw.blending || (model_ubs.opacity < 0.f))
+		{
+			return;
+		}
+		auto const prepassclass{prepass_class(Material)};
+		if (prepassclass == 0)
+		{
+			return;
+		}
+		auto &scene{m_context->scene};
+		if (prepassclass == 2)
+		{
+			// a texture which isn't there (yet) would leave the one bound before to the alpha test
+			if (materialtextures[0] == null_handle)
+			{
+				return;
+			}
+			auto &texture{m_context->textures->mark_as_used(materialtextures[0])};
+			if ((false == texture.create()) || (m_context->images.find(texture.get_id()) == nullptr))
+			{
+				return;
+			}
+			walk_texture(0, materialtextures[0]);
+			draw.program = scene.prepass_alpha.get();
+		}
+		else
+		{
+			draw.program = scene.prepass.get();
+		}
+		draw.depthskip = false;
+		return;
+	}
 	for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)
 	{
 		if (draw.textures[unit] != materialtextures[unit])
@@ -892,16 +1358,24 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 
 void vulkan14_renderer::walk_shadow_material(material_handle const Material)
 {
+	if (m_indirectrecording)
+	{
+		// the walk of the groups of the gpu culling of a shadow pass only notes the material
+		m_indirectmaterial = Material;
+		m_indirectsubmodel = nullptr;
+		return;
+	}
 	auto &draw{*m_draw};
 	auto &scene{m_context->scene};
+	// the cube maps of the lamps with programs of their own (the faces drawn by multiview)
 	if ((Material != null_handle) && (m_materials.material(Material).textures[0] != null_handle))
 	{
 		walk_texture(0, m_materials.material(Material).textures[0]);
-		draw.program = scene.alpha_shadow.get();
+		draw.program = (m_cubeshadows ? scene.cube_alpha_shadow.get() : scene.alpha_shadow.get());
 	}
 	else
 	{
-		draw.program = scene.shadow.get();
+		draw.program = (m_cubeshadows ? scene.cube_shadow.get() : scene.shadow.get());
 	}
 }
 
@@ -953,6 +1427,16 @@ void vulkan14_renderer::walk_blending(bool const Alpha)
 	m_draw->blending = Alpha;
 }
 
+gfx::geometrybank_manager &vulkan14_renderer::walk_geometry()
+{
+	return m_geometry;
+}
+
+bool vulkan14_renderer::walk_blending_enabled() const
+{
+	return (m_draw != nullptr) && m_draw->blending;
+}
+
 void vulkan14_renderer::walk_cull_face(bool const Enabled)
 {
 	m_draw->cullface = Enabled;
@@ -994,11 +1478,11 @@ void vulkan14_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)
 		}
 		draw.query = static_cast<std::uint32_t>(submodels.size());
 		submodels.push_back(Submodel);
-		vkCmdBeginQuery(draw.commands, scene.occlusion_pools[m_context->slot], draw.query, 0);
+		draw.commands->begin_query(scene.occlusion_pools[m_context->slot], draw.query, 0);
 	}
 	else if (draw.query != ~0u)
 	{
-		vkCmdEndQuery(draw.commands, scene.occlusion_pools[m_context->slot], draw.query);
+		draw.commands->end_query(scene.occlusion_pools[m_context->slot], draw.query);
 		draw.query = ~0u;
 	}
 }
@@ -1054,8 +1538,7 @@ void vulkan14_renderer::setup_sunlight_intensity(float const Factor)
 	m_sunlight.factor = Factor;
 	light_data.lights[0].intensity = m_sunlight.factor * (1.0f - Global.Overcast * 0.33f);
 	light_data.ambient = m_sunlight.ambient * m_sunlight.factor;
-	// the directional ambient light of the sky comes with the stage P1
-	light_data.sky_ambient_factor = 0.f;
+	light_data.sky_ambient_factor = (Global.gfx_ambient_sh ? m_sunlight.factor : 0.f);
 	upload_light_header();
 }
 
@@ -1131,6 +1614,12 @@ void vulkan14_renderer::open_instance_window()
 void vulkan14_renderer::walk_draw(gfx::geometry_handle const &Geometry)
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+	if (m_indirectrecording)
+	{
+		// the draw is made later, from the gpu culling, with this state
+		Record_Indirect_Draw(Geometry);
+		return;
+	}
 	draw_chunk(Geometry, true);
 }
 
@@ -1165,6 +1654,11 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	}
 	auto const &chunk{static_cast<vk14::vulkan14_geometrybank *>(m_banks[Geometry.bank - 1])->last()};
 
+	if (draw.depthpass && (draw.depthskip || (topology_class(chunk.topology) != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)))
+	{
+		// the depth of the scene: what the programs of the prepass don't draw, and no points or lines
+		return;
+	}
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto const commands{draw.commands};
@@ -1202,14 +1696,14 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 		info.offset = 0;
 		info.size = sizeof(constants);
 		info.pValues = &constants;
-		vkCmdPushConstants2(commands, &info);
+		commands->push_constants2(&info);
 		draw.pushed_draw = draw.block;
 	}
 	if ((chunk.vertices != draw.vertices) || (chunk.userdata != draw.userdata))
 	{
 		VkBuffer const buffers[2]{chunk.vertices, chunk.userdata};
 		VkDeviceSize const offsets[2]{0, 0};
-		vkCmdBindVertexBuffers(commands, 0, 2, buffers, offsets);
+		commands->bind_vertex_buffers(0, 2, buffers, offsets);
 		draw.vertices = chunk.vertices;
 		draw.userdata = chunk.userdata;
 	}
@@ -1219,14 +1713,14 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	{
 		if (chunk.indices != draw.indices)
 		{
-			vkCmdBindIndexBuffer(commands, chunk.indices, 0, VK_INDEX_TYPE_UINT32);
+			commands->bind_index_buffer(chunk.indices, 0, VK_INDEX_TYPE_UINT32);
 			draw.indices = chunk.indices;
 		}
-		vkCmdDrawIndexed(commands, chunk.count, instances, chunk.first, chunk.basevertex, firstinstance);
+		commands->draw_indexed(chunk.count, instances, chunk.first, chunk.basevertex, firstinstance);
 	}
 	else
 	{
-		vkCmdDraw(commands, chunk.count, instances, chunk.first, firstinstance);
+		commands->draw(chunk.count, instances, chunk.first, firstinstance);
 	}
 	++draw.draws;
 }
@@ -1260,7 +1754,7 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 			{
 				try
 				{
-					Program.fragment_single = ctx.shaders.get(Program.fragment_name, "#define NO_MOTION_OUTPUT\n");
+					Program.fragment_single = ctx.shaders.get(Program.fragment_name, Program.defines + "#define NO_MOTION_OUTPUT\n");
 				}
 				catch (gfx::shader_exception const &Exception)
 				{
@@ -1287,6 +1781,7 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 		desc.colour_formats.assign(Targets.colour.begin(), Targets.colour.begin() + Targets.colours);
 		desc.depth_format = Targets.depth;
 		desc.samples = Targets.samples;
+		desc.view_mask = Targets.view_mask;
 		desc.specialization = {settings & 1u, (settings >> 1) & 1u, (settings >> 2) & 1u, (settings >> 3) & 1u, (settings >> 4) & 1u, (settings >> 5) & 1u};
 		desc.name = Program.name;
 		pipeline = ctx.pipelines.get(desc);
@@ -1298,12 +1793,12 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 	}
 	if (pipeline != draw.pipeline)
 	{
-		vkCmdBindPipeline(draw.commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+		draw.commands->bind_pipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 		draw.pipeline = pipeline;
 	}
 	if (topology != draw.topology)
 	{
-		vkCmdSetPrimitiveTopology(draw.commands, topology);
+		draw.commands->set_primitive_topology(topology);
 		draw.topology = topology;
 	}
 	return true;
@@ -1316,19 +1811,19 @@ void vulkan14_renderer::apply_draw_state()
 	auto const cull{draw.cullface ? (draw.shadows ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT) : VK_CULL_MODE_NONE};
 	if (cull != draw.cull)
 	{
-		vkCmdSetCullMode(draw.commands, cull);
+		draw.commands->set_cull_mode(cull);
 		draw.cull = cull;
 	}
 	auto const depthtest{draw.glare ? 0 : 1};
 	if (depthtest != draw.depthtest)
 	{
-		vkCmdSetDepthTestEnable(draw.commands, depthtest ? VK_TRUE : VK_FALSE);
+		draw.commands->set_depth_test_enable(depthtest ? VK_TRUE : VK_FALSE);
 		draw.depthtest = depthtest;
 	}
 	auto const depthwrite{(draw.blending || draw.depthmask_off) ? 0 : 1};
 	if (depthwrite != draw.depthwrite)
 	{
-		vkCmdSetDepthWriteEnable(draw.commands, depthwrite ? VK_TRUE : VK_FALSE);
+		draw.commands->set_depth_write_enable(depthwrite ? VK_TRUE : VK_FALSE);
 		draw.depthwrite = depthwrite;
 	}
 }
@@ -1360,6 +1855,45 @@ void vulkan14_renderer::push_textures()
 	}
 	scene.material_set.push(draw.commands, scene.scene_layout, images.data());
 	draw.textures_dirty = false;
+}
+
+// which program of the depth prepass stands for the program of the material (opengl46_renderer::Prepass_Class()): 0 none, 1 the
+// one without the alpha test, 2 the one with it
+int vulkan14_renderer::prepass_class(material_handle const Material)
+{
+	if (Material == null_handle)
+	{
+		return 0;
+	}
+	auto const &material{m_materials.material(Material)};
+	if ((false == material.is_good) || (material.shader == nullptr))
+	{
+		return 0;
+	}
+	auto &scene{m_context->scene};
+	auto const lookup{scene.prepass_classes.find(material.shader.get())};
+	if (lookup != scene.prepass_classes.end())
+	{
+		return lookup->second;
+	}
+	// names the programs are fetched by: mat_<name>.frag
+	static std::unordered_set<std::string> const alphatested{"default",           "default_1",           "default_2",    "default_detail",        "default_specgloss",
+	                                                         "detail_normalmap",  "detail_normalmap_specgloss", "normalmap", "normalmap_specgloss", "reflmap",
+	                                                         "reflmap_specgloss", "shadowlessnormalmap", "shadowlessnormalmap_specgloss", "sunlessnormalmap", "sunlessnormalmap_specgloss",
+	                                                         "trackblend",        "trackblend_normalmap", "trackblend_specgloss"};
+	static std::unordered_set<std::string> const solid{"colored", "default_0", "terrain", "water", "water_specgloss", "invalid"};
+	auto prepassclass{0};
+	for (auto const &program : scene.materials)
+	{
+		if (program.second.get() != material.shader.get())
+		{
+			continue;
+		}
+		prepassclass = (alphatested.count(program.first) > 0 ? 2 : solid.count(program.first) > 0 ? 1 : 0);
+		break;
+	}
+	scene.prepass_classes.emplace(material.shader.get(), prepassclass);
+	return prepassclass;
 }
 
 // textures: the files read and decoded as for the opengl renderer, made into images when they are first used

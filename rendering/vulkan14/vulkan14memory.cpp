@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14memory.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14instance.h"
 #include "rendering/vulkan14/vulkan14device.h"
 
@@ -278,14 +279,28 @@ void image::destroy()
 	state = image_state{};
 }
 
-void transition(VkCommandBuffer Commands, image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access)
+void transition(command_stream *Commands, image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access)
 {
 	auto const writes{VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT |
 	                  VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT};
 	auto const &from{Image.state};
-	// reads after reads in the same layout need nothing
+	// reads after reads in the same layout need nothing, unless they are in stages the barrier after the last write didn't wait
+	// for: those wait for the stages which read the image already (which came after the write)
 	if ((from.layout == Layout) && ((from.access & writes) == 0) && ((Access & writes) == 0))
 	{
+		if ((Stage & ~from.stage) != 0)
+		{
+			VkMemoryBarrier2 chain{};
+			chain.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+			chain.srcStageMask = (from.stage != VK_PIPELINE_STAGE_2_NONE ? from.stage : VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);
+			chain.dstStageMask = Stage;
+			chain.dstAccessMask = Access;
+			VkDependencyInfo dependency{};
+			dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+			dependency.memoryBarrierCount = 1;
+			dependency.pMemoryBarriers = &chain;
+			Commands->pipeline_barrier2(&dependency);
+		}
 		Image.state.stage |= Stage;
 		Image.state.access |= Access;
 		return;
@@ -307,7 +322,7 @@ void transition(VkCommandBuffer Commands, image &Image, VkImageLayout Layout, Vk
 	dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 	dependency.imageMemoryBarrierCount = 1;
 	dependency.pImageMemoryBarriers = &barrier;
-	vkCmdPipelineBarrier2(Commands, &dependency);
+	Commands->pipeline_barrier2(&dependency);
 
 	Image.state = image_state{Layout, Stage, Access};
 }

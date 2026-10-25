@@ -1,0 +1,291 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// culls the model instances of the buckets queued in a render pass and assigns them their lod bands, with the tests
+// gfx::scene_walk::Render_Instanced() makes on the cpu. one invocation per record of a queued bucket. the sleepers of the
+// tracks queued come as buckets too, with the tests of gfx::scene_walk::Render_Sleepers().
+// stage 0 counts the instances which pass the tests, per entry (lod band of a group); after instance_cull_offsets.comp
+// turned the counts into the first slots of the entries, stage 1 writes the modelview matrices of the instances drawn first
+// there, in no particular order, and stage 2 (two phases) those of the instances drawn second after them.
+// with the occlusion test on, an instance whose bounding sphere lies whole behind the depth already drawn in the pass
+// (the farthest depth of the pyramid over the part of the view it takes, see hiz_build.comp) is left out as well.
+// in two phases (the second phase of the culling) stage 1 takes only the instances seen in the previous frame,
+// which are drawn, the pyramid is made again with them in it, and stage 2 tests the others against it; it also keeps for
+// the next frame which instances it found in view. an instance seen before but hidden behind the depth of the first
+// pyramid is hidden behind the second one as well (it only holds nearer depth), so each instance is drawn at most once,
+// and everything left out is hidden behind something drawn
+
+#define LAYOUT_COMPUTE 1
+#include "common.glsl"
+
+layout(local_size_x = INSTANCE_CULL_GROUP_SIZE) in;
+
+// scene::basic_cell::instance_record
+struct instance_record
+{
+	vec3 position; // relative to the origin of the bucket
+	float radius;
+	float rangesquaredmin;
+	float rangesquaredmax;
+	uint flags;
+	uint visible; // the instance was seen in the previous frame (written by stage 2, 0 when the cpu sends the record)
+	vec4 rotationscale[3];
+};
+
+struct instance_cull_job
+{
+	vec3 origin;
+	uint first;
+	vec3 distanceorigin;
+	uint count;
+	uint group;
+	uint candidatestart;
+	uint flags;
+	uint pad;
+};
+
+struct instance_cull_group
+{
+	uint lodfirst;
+	uint lodcount;
+	uint entryfirst;
+	uint pad;
+};
+
+layout(std430, set = COMPUTE_SET, binding = 0) buffer instance_record_ssbo
+{
+	instance_record records[];
+};
+layout(std430, set = COMPUTE_SET, binding = 1) readonly buffer instance_job_ssbo
+{
+	instance_cull_job jobs[];
+};
+layout(std430, set = COMPUTE_SET, binding = 2) readonly buffer instance_group_ssbo
+{
+	instance_cull_group groups[];
+};
+layout(std430, set = COMPUTE_SET, binding = 3) readonly buffer instance_lod_ssbo
+{
+	float lodbounds[];
+};
+layout(std430, set = COMPUTE_SET, binding = 4) buffer instance_counter_ssbo
+{
+	uint counters[];
+};
+layout(std430, set = COMPUTE_SET, binding = 5) writeonly buffer instance_output_ssbo
+{
+	mat4 modelviews[];
+};
+
+// the parameters of the kernel (a block of the ring of the frame: more of them than the push constants hold)
+layout(std140, set = COMPUTE_SET, binding = 7) uniform kernel_block
+{
+	// rotation of the view of the pass: the instances are placed relative to its camera
+	mat4 view;
+	// planes of the frustum of the pass, relative to its camera
+	vec4 planes[6];
+	// x: scale of the squared distance, y: added to it past the range test, z: range of the scaled distance before the
+	// addition (reflections), w: squared draw range
+	vec4 distance_params;
+	// x: zoom factor
+	vec4 size_params;
+	// occlusion test: projection of the pass, x: on, y: levels of the pyramid, zw: size of its first level
+	mat4 hiz_projection;
+	ivec4 hiz_params;
+	// xy: size of the depth the pyramid was made from, pixels
+	vec4 hiz_screen;
+	// x: two phases, stage 1 takes only the instances seen in the previous frame
+	uvec4 phases;
+};
+// the parameters which change from stage to stage (push constants). x: jobs, y: records in all jobs, z: entries, w: stage
+layout(push_constant) uniform kernel_constants
+{
+	uvec4 counts;
+};
+
+// depth pyramid, farthest (smallest, reversed) depth per texel
+layout(set = COMPUTE_SET, binding = 6) uniform sampler2D hiz;
+
+const uint INSTANCE_VISIBLE = 1u;
+const uint INSTANCE_INSTANCEABLE = 2u;
+// smallest part of the view an instance has to take
+const float MIN_SCREEN_SIZE = 0.003;
+// header of the counters, see gl::INSTANCE_COUNTER_HEADER
+const uint COUNTER_OCCLUDED = 3u;
+const uint COUNTER_FIRST = 4u;
+
+// the job which holds the given record: the last one starting at it or before it
+uint find_job(uint candidate)
+{
+	uint low = 0u;
+	uint high = counts.x - 1u;
+	while (low < high)
+	{
+		uint middle = (low + high + 1u) / 2u;
+		if (jobs[middle].candidatestart <= candidate)
+			low = middle;
+		else
+			high = middle - 1u;
+	}
+	return low;
+}
+
+// whether a sphere (view space) lies whole behind the depth in the pyramid over the rectangle of the view it takes
+bool occluded(vec3 center, float radius)
+{
+	vec2 low = vec2(1.0);
+	vec2 high = vec2(-1.0);
+	float nearest = 0.0;
+	for (int corner = 0; corner < 8; ++corner)
+	{
+		vec3 offset = vec3(((corner & 1) != 0) ? radius : -radius, ((corner & 2) != 0) ? radius : -radius, ((corner & 4) != 0) ? radius : -radius);
+		vec4 clip = hiz_projection * vec4(center + offset, 1.0);
+		// reaches the plane of the camera: no rectangle to test
+		if (clip.w <= 1e-3)
+			return false;
+		vec3 ndc = clip.xyz / clip.w;
+		low = min(low, ndc.xy);
+		high = max(high, ndc.xy);
+		nearest = max(nearest, ndc.z);
+	}
+	if (any(greaterThan(low, vec2(1.0))) || any(lessThan(high, vec2(-1.0))) || (nearest >= 1.0))
+		return false;
+
+	// pixels of the rectangle, then texels of the first level: each covers 2x2 pixels
+	ivec2 size = hiz_params.zw;
+	ivec2 pixelfirst = ivec2(clamp((low * 0.5 + 0.5) * hiz_screen.xy, vec2(0.0), hiz_screen.xy - 1.0));
+	ivec2 pixellast = ivec2(clamp((high * 0.5 + 0.5) * hiz_screen.xy, vec2(0.0), hiz_screen.xy - 1.0));
+	ivec2 first = min(pixelfirst / 2, size - 1);
+	ivec2 last = min(pixellast / 2, size - 1);
+	// the level where the rectangle takes at most 2x2 texels
+	int level = 0;
+	while ((level < hiz_params.y - 1) && any(greaterThan((last >> level) - (first >> level), ivec2(1))))
+		++level;
+	ivec2 levelsize = max(size >> level, ivec2(1));
+	first = min(first >> level, levelsize - 1);
+	last = min(last >> level, levelsize - 1);
+
+	float farthest = 1.0;
+	for (int y = first.y; y <= last.y; ++y)
+	{
+		for (int x = first.x; x <= last.x; ++x)
+			farthest = min(farthest, texelFetch(hiz, ivec2(x, y), level).r);
+	}
+	return nearest < farthest;
+}
+
+// the tests of the cpu (Render_Instanced(), for sleepers Render_Sleepers()), all but the occlusion one: the entry of the instance, or false when it's left out.
+// Location: relative to the camera of the pass
+bool passes(instance_cull_job job, instance_record record, out vec3 location, out uint entry)
+{
+	location = job.origin + record.position;
+	entry = 0u;
+	// instances hidden, or drawn on their own after getting animations or skins from events
+	if ((record.flags & (INSTANCE_VISIBLE | INSTANCE_INSTANCEABLE)) != (INSTANCE_VISIBLE | INSTANCE_INSTANCEABLE))
+		return false;
+
+	for (int plane = 0; plane < 6; ++plane)
+	{
+		if (dot(planes[plane].xyz, location) + planes[plane].w <= -record.radius)
+			return false;
+	}
+
+	float distancesquared;
+	if ((job.flags & INSTANCE_JOB_SLEEPERS) != 0u)
+	{
+		// the sleepers of a track, as Render_Sleepers() takes them: the lod by the plain distance from the camera of the pass
+		distancesquared = dot(location, location);
+	}
+	else
+	{
+		vec3 offset = job.distanceorigin + record.position;
+		distancesquared = dot(offset, offset) * distance_params.x;
+		if (distancesquared > distance_params.z)
+			return false;
+		distancesquared += distance_params.y;
+		if ((distancesquared < record.rangesquaredmin) || (distancesquared >= record.rangesquaredmax))
+			return false;
+		if (distancesquared > distance_params.w)
+			return false;
+		if (record.radius * record.radius * size_params.x / distancesquared < MIN_SCREEN_SIZE * MIN_SCREEN_SIZE)
+			return false;
+	}
+
+	// band: the number of lod bounds the distance reached, like upper_bound over the sorted bounds
+	instance_cull_group group = groups[job.group];
+	uint band = 0u;
+	for (uint bound = 0u; bound < group.lodcount; ++bound)
+	{
+		if (lodbounds[group.lodfirst + bound] <= distancesquared)
+			band = bound + 1u;
+	}
+	entry = group.entryfirst + band;
+	return true;
+}
+
+void write(uint entry, instance_record record, vec3 location, instance_cull_job job)
+{
+	uint slot = atomicAdd(counters[INSTANCE_COUNTER_HEADER + counts.z + entry], 1u);
+	if ((job.flags & INSTANCE_JOB_SLEEPERS) != 0u)
+	{
+		// in the order Render_Sleepers() multiplies them (the view moved to the origin of the track, then the transform of the
+		// sleeper), which gives the very same matrix: the other order rounds differently, enough to shift the edges of sleepers
+		// sunk in the ballast by a pixel here and there
+		mat4 originview = view * mat4(vec4(1.0, 0.0, 0.0, 0.0), vec4(0.0, 1.0, 0.0, 0.0), vec4(0.0, 0.0, 1.0, 0.0), vec4(job.origin, 1.0));
+		modelviews[slot] = originview * mat4(record.rotationscale[0], record.rotationscale[1], record.rotationscale[2], vec4(record.position, 1.0));
+		return;
+	}
+	modelviews[slot] = view * mat4(record.rotationscale[0], record.rotationscale[1], record.rotationscale[2], vec4(location, 1.0));
+}
+
+void main()
+{
+	// the dispatch can be two dimensional when the records don't fit in the work group count limit of one
+	uint candidate = (gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x) * INSTANCE_CULL_GROUP_SIZE + gl_LocalInvocationIndex;
+	if (candidate >= counts.y)
+		return;
+
+	instance_cull_job job = jobs[find_job(candidate)];
+	uint index = job.first + (candidate - job.candidatestart);
+	instance_record record = records[index];
+	vec3 location;
+	uint entry;
+	bool passed = passes(job, record, location, entry);
+
+	if (counts.w == 0u)
+	{
+		// room in the output for every instance which passes, whatever the occlusion test says
+		if (passed)
+			atomicAdd(counters[INSTANCE_COUNTER_HEADER + entry], 1u);
+		return;
+	}
+
+	bool seen = (record.visible != 0u);
+	if (counts.w == 1u)
+	{
+		// the ones seen in the previous frame first, the others wait for stage 2
+		if ((false == passed) || ((phases.x != 0u) && (false == seen)))
+			return;
+		if ((hiz_params.x != 0) && occluded((view * vec4(location, 1.0)).xyz, record.radius))
+		{
+			atomicAdd(counters[COUNTER_OCCLUDED], 1u);
+			return;
+		}
+		write(entry, record, location, job);
+		if (phases.x != 0u)
+			atomicAdd(counters[COUNTER_FIRST], 1u);
+		return;
+	}
+
+	// stage 2, against the pyramid with the instances drawn first in it
+	bool inview = passed && (false == occluded((view * vec4(location, 1.0)).xyz, record.radius));
+	if (passed && (false == seen))
+	{
+		if (inview)
+			write(entry, record, location, job);
+		else
+			atomicAdd(counters[COUNTER_OCCLUDED], 1u);
+	}
+	uint visible = (inview ? 1u : 0u);
+	if (visible != record.visible)
+		records[index].visible = visible;
+}

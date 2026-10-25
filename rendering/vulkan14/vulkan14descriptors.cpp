@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14descriptors.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14device.h"
 
 namespace vk14
@@ -20,14 +21,17 @@ bool samplers::create(device const &Device, float Anisotropy, std::string &Reaso
 {
 	auto const handle{Device.handle()};
 	auto const maxanisotropy{Device.caps().limits.maxSamplerAnisotropy};
-	auto const make = [&](VkSampler &Sampler, VkFilter Filter, VkSamplerAddressMode Address, bool Mipmaps, float Aniso, bool Compare, char const *Name) {
+	VkFormatProperties depthformat{};
+	vkGetPhysicalDeviceFormatProperties(Device.physical(), VK_FORMAT_D32_SFLOAT, &depthformat);
+	auto const depthlinear{(depthformat.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0};
+	auto const make = [&](VkSampler &Sampler, VkFilter Filter, VkSamplerAddressMode Address, bool Mipmaps, float Aniso, bool Compare, char const *Name, VkSamplerAddressMode AddressV = VK_SAMPLER_ADDRESS_MODE_MAX_ENUM) {
 		VkSamplerCreateInfo info{};
 		info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		info.magFilter = Filter;
 		info.minFilter = Filter;
 		info.mipmapMode = (Filter == VK_FILTER_LINEAR ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST);
 		info.addressModeU = Address;
-		info.addressModeV = Address;
+		info.addressModeV = (AddressV != VK_SAMPLER_ADDRESS_MODE_MAX_ENUM ? AddressV : Address);
 		info.addressModeW = Address;
 		info.maxLod = (Mipmaps ? VK_LOD_CLAMP_NONE : 0.f);
 		if (Aniso > 1.f)
@@ -35,6 +39,8 @@ bool samplers::create(device const &Device, float Anisotropy, std::string &Reaso
 			info.anisotropyEnable = VK_TRUE;
 			info.maxAnisotropy = std::min(Aniso, maxanisotropy);
 		}
+		// the border of the clamped samplers: the farthest depth of the reverse z, black
+		info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
 		if (Compare)
 		{
 			// as GL_LEQUAL of the opengl renderer: 1 (in the shadow) where the reference isn't nearer the light than the map (reverse
@@ -54,12 +60,16 @@ bool samplers::create(device const &Device, float Anisotropy, std::string &Reaso
 	};
 	return make(repeat_aniso, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, Anisotropy, false, "repeat aniso") && make(clamp_aniso, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, true, Anisotropy, false, "clamp aniso") &&
 	       make(clamp_linear, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, true, 1.f, false, "clamp linear") && make(clamp_nearest, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, false, 1.f, false, "clamp nearest") &&
-	       make(shadow, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, false, 1.f, true, "shadow");
+	       make(shadow, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, false, 1.f, true, "shadow") &&
+	       make(repeat_linear, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, 1.f, false, "repeat linear") &&
+	       make(panorama, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, false, 1.f, false, "panorama", VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE) &&
+	       make(repeat_nearest, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT, false, 1.f, false, "repeat nearest") &&
+	       make(depth, (depthlinear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, false, 1.f, false, "depth");
 }
 
 void samplers::destroy(VkDevice Device)
 {
-	for (auto *sampler : {&repeat_aniso, &clamp_aniso, &clamp_linear, &clamp_nearest, &shadow})
+	for (auto *sampler : {&repeat_aniso, &clamp_aniso, &clamp_linear, &clamp_nearest, &shadow, &repeat_linear, &panorama, &repeat_nearest, &depth})
 	{
 		if (*sampler != VK_NULL_HANDLE)
 		{
@@ -138,7 +148,7 @@ void push_set::destroy(VkDevice Device)
 	}
 }
 
-void push_set::push(VkCommandBuffer Commands, VkPipelineLayout Layout, void const *Data) const
+void push_set::push(command_stream *Commands, VkPipelineLayout Layout, void const *Data) const
 {
 	VkPushDescriptorSetWithTemplateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_WITH_TEMPLATE_INFO;
@@ -146,7 +156,7 @@ void push_set::push(VkCommandBuffer Commands, VkPipelineLayout Layout, void cons
 	info.layout = Layout;
 	info.set = set;
 	info.pData = Data;
-	vkCmdPushDescriptorSetWithTemplate2(Commands, &info);
+	Commands->push_descriptor_set_with_template2(&info, m_bindings.size() * m_stride, bind_point);
 }
 
 VkPipelineLayout make_pipeline_layout(VkDevice Device, std::vector<VkDescriptorSetLayout> const &Sets, std::vector<VkPushConstantRange> const &PushConstants, std::string const &Name)

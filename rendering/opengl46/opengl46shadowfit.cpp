@@ -10,26 +10,9 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/opengl46/opengl46shadowfit.h"
 
-#include <cstring>
-
 #include "model/Texture.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
-
-namespace
-{
-
-// the nearest distance the first cascade may start from and the least one the last reaches, metres: the cascades don't
-// get any closer to the camera than this, however close the pixels are
-float const SPLIT_NEAR_MIN{0.5f};
-float const SPLIT_FAR_MIN{16.f};
-// how far past its distances a cascade takes the pixels, this many metres and this share of the distance: the camera moves
-// in the frame or two before the cascades are drawn from the measurement, and a pixel which came into another cascade since
-// has to be within its map
-float const MARGIN_METRES{1.f};
-float const MARGIN_SHARE{0.05f};
-
-} // namespace
 
 opengl46_shadow_fit::~opengl46_shadow_fit()
 {
@@ -97,20 +80,7 @@ void opengl46_shadow_fit::measure(GLuint const Depth, GLuint const Source, int c
 		depth = m_depth;
 	}
 
-	// numbers start from 1, 0 is no measurement
-	if (++m_measurement == 0)
-		++m_measurement;
-	gl::shadow_fit_data data{};
-	data.measurement = m_measurement;
-	data.depthmin = std::numeric_limits<float>::infinity();
-	for (std::size_t cascade = 0; cascade < gl::MAX_CASCADES; ++cascade)
-	{
-		for (std::size_t axis = 0; axis < 4; ++axis)
-		{
-			data.bounds[cascade * 8 + axis] = 0xFFFFFFFFu;
-			data.bounds[cascade * 8 + 4 + axis] = 0u;
-		}
-	}
+	auto const data{begin_measurement(View, Frame)};
 	m_buffer->update(data);
 	m_buffer->bind_base();
 
@@ -124,11 +94,12 @@ void opengl46_shadow_fit::measure(GLuint const Depth, GLuint const Source, int c
 	m_depthprogram->dispatch(groupsx, groupsy);
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-	auto const farmin{std::min(SPLIT_FAR_MIN, View.range)};
+	auto const bounds{bounds_params(View)};
+	auto const margins{margin_params()};
 	glProgramUniformMatrix4fv(*m_boundsprogram, 0, 1, GL_FALSE, glm::value_ptr(inverseprojection));
 	glProgramUniformMatrix4fv(*m_boundsprogram, 4, 1, GL_FALSE, glm::value_ptr(viewtolight));
-	glProgramUniform4f(*m_boundsprogram, 8, View.range, std::min(SPLIT_NEAR_MIN, farmin * 0.25f), farmin, std::clamp(Global.gfx_shadow_sdsm_split, 0.f, 1.f));
-	glProgramUniform4f(*m_boundsprogram, 9, MARGIN_METRES, MARGIN_SHARE, 0.f, 0.f);
+	glProgramUniform4f(*m_boundsprogram, 8, bounds.x, bounds.y, bounds.z, bounds.w);
+	glProgramUniform4f(*m_boundsprogram, 9, margins.x, margins.y, margins.z, margins.w);
 	m_boundsprogram->dispatch(groupsx, groupsy);
 	// for the copy of the read back
 	glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
@@ -139,27 +110,14 @@ void opengl46_shadow_fit::measure(GLuint const Depth, GLuint const Source, int c
 	m_timer.end();
 
 	m_readback->push(*m_buffer);
-	m_pending[m_measurement % PENDING] = pending{m_measurement, View, Frame};
 }
 
 opengl46_shadow_fit::result const *opengl46_shadow_fit::latest()
 {
 	gl::shadow_fit_data data;
 	if (m_readback && m_readback->pop(&data))
-	{
-		auto const &source{m_pending[data.measurement % PENDING]};
-		if ((data.measurement != 0) && (source.measurement == data.measurement))
-			m_latest = result{data, source.source, source.frame};
-	}
-	return m_latest ? &(*m_latest) : nullptr;
-}
-
-float opengl46_shadow_fit::unorder(std::uint32_t const Value)
-{
-	auto const bits{((Value & 0x80000000u) != 0u) ? (Value & 0x7FFFFFFFu) : ~Value};
-	float result;
-	std::memcpy(&result, &bits, sizeof(result));
-	return result;
+		arrived(data);
+	return gfx::shadow_fit::latest();
 }
 
 std::string opengl46_shadow_fit::info_times()

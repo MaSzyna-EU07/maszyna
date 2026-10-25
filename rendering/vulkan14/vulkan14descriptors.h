@@ -28,6 +28,12 @@ struct samplers
 	VkSampler clamp_linear{VK_NULL_HANDLE}; // images of the user interface, post-processing
 	VkSampler clamp_nearest{VK_NULL_HANDLE};
 	VkSampler shadow{VK_NULL_HANDLE}; // depth compared (shadow maps, reverse z)
+	VkSampler repeat_linear{VK_NULL_HANDLE}; // repeated, mipmapped, without anisotropy (the noises of the clouds)
+	VkSampler panorama{VK_NULL_HANDLE}; // repeated across, clamped up and down (the panorama of the clouds around the camera)
+	VkSampler repeat_nearest{VK_NULL_HANDLE}; // repeated, texel by texel (the noise of the ssao)
+	// the depth of the scene read by the post-processing, as the render targets of the depth of the opengl renderer: filtered where
+	// the device filters the depth format, the border the farthest depth (0)
+	VkSampler depth{VK_NULL_HANDLE};
 
 	bool create(device const &Device, float Anisotropy, std::string &Reason);
 	void destroy(VkDevice Device);
@@ -48,7 +54,7 @@ struct push_set
 	bool create_template(VkDevice Device, VkPipelineLayout Layout, std::string const &Name);
 	void destroy(VkDevice Device);
 	// pushes Data (laid out as create() was told)
-	void push(VkCommandBuffer Commands, VkPipelineLayout Layout, void const *Data) const;
+	void push(command_stream *Commands, VkPipelineLayout Layout, void const *Data) const;
 
   private:
 	std::vector<VkDescriptorSetLayoutBinding> m_bindings;

@@ -177,7 +177,7 @@ class image
 
 // a barrier of an image from its state to the given one, the state of the image updated. nothing when the image already is
 // in the layout and was only read by the same stage
-void transition(VkCommandBuffer Commands, image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access);
+void transition(command_stream *Commands, image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access);
 
 // objects destroyed once the gpu is done with the frame which used them last
 class deletion_queue

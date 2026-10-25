@@ -375,6 +375,11 @@ struct global_settings {
     int gfx_vulkan_validation { 0 };
     // (vulkan) frames recorded while the gpu works on the earlier ones, 2 or 3
     int gfx_vulkan_framesinflight { 2 };
+    // (vulkan) the command buffers of the frame recorded, submitted and presented by a thread of its own while the simulation goes on
+    // with the next frame
+    bool gfx_vulkan_renderthread { true };
+    // threads recording the command buffers of the vulkan renderer; 0: the cores less two, 1: one thread records them all
+    int gfx_threads { 0 };
     bool vr = false;
     std::string vr_backend;
 

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14common.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "utilities/Logs.h"
 
 namespace vk14
@@ -143,7 +144,7 @@ void name_object(VkDevice Device, VkObjectType Type, std::uint64_t Handle, std::
 	vkSetDebugUtilsObjectNameEXT(Device, &info);
 }
 
-void begin_label(VkCommandBuffer Commands, char const *Name)
+void begin_label(command_stream *Commands, char const *Name)
 {
 	if ((false == debug_utils_enabled) || (vkCmdBeginDebugUtilsLabelEXT == nullptr))
 	{
@@ -152,16 +153,16 @@ void begin_label(VkCommandBuffer Commands, char const *Name)
 	VkDebugUtilsLabelEXT label{};
 	label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
 	label.pLabelName = Name;
-	vkCmdBeginDebugUtilsLabelEXT(Commands, &label);
+	Commands->begin_debug_utils_label(&label);
 }
 
-void end_label(VkCommandBuffer Commands)
+void end_label(command_stream *Commands)
 {
 	if ((false == debug_utils_enabled) || (vkCmdEndDebugUtilsLabelEXT == nullptr))
 	{
 		return;
 	}
-	vkCmdEndDebugUtilsLabelEXT(Commands);
+	Commands->end_debug_utils_label();
 }
 
 void log_info(std::string const &Message)

@@ -26,7 +26,10 @@ http://mozilla.org/MPL/2.0/.
 #include "world/TrackSleepers.h"
 #include "model/material.h"
 #include "gl/ubo.h"
+#include "rendering/common/instancecull.h"
 
+#include <array>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -230,32 +233,65 @@ class scene_walk
 	virtual void walk_region_begin() {}
 	// the opaque ground of the colour pass is drawn, the editor takes the position of the cursor from the depth
 	virtual void walk_editor_cursor() {}
-	// a bucket of instances of a cell: false when the backend took the instances (the walk leaves them out); Area is the cell's
-	virtual bool walk_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, bool const Bucketrange, scene::bounding_area const &Area)
-	{
-		return true;
-	}
+	// a bucket of instances of a cell: false when the gpu culling took the instances (the walk leaves them out); Area is the cell's
+	bool walk_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, bool const Bucketrange, scene::bounding_area const &Area);
 	// a bucket left out of the pass as wholly out of sight
-	virtual void walk_bucket_culled(scene::basic_cell::instance_bucket const &Bucket) {}
-	// a model drawn on its own: true when the backend took it. Inrange: the cell of the instance lies within the range of the pass
-	virtual bool walk_queue_model(TAnimModel *Instance, bool const Inrange)
-	{
-		return false;
-	}
-	// the sleepers of a track: true when the backend took them
-	virtual bool walk_queue_sleepers(TTrack *Track)
-	{
-		return false;
-	}
+	void walk_bucket_culled(scene::basic_cell::instance_bucket const &Bucket);
+	// a model drawn on its own: true when the gpu culling took it. Inrange: the cell of the instance lies within the range of the pass
+	bool walk_queue_model(TAnimModel *Instance, bool const Inrange);
+	// the sleepers of a track: true when the gpu culling took them
+	bool walk_queue_sleepers(TTrack *Track);
 	// the sleepers the walk drew for a track, by their squared distances, and the lod bounds of their model
-	virtual void walk_sleepers_drawn(TTrack const &Track, std::vector<float> const &Lodbounds, std::vector<std::pair<float, glm::mat4>> const &Drawn) {}
+	void walk_sleepers_drawn(TTrack const &Track, std::vector<float> const &Lodbounds, std::vector<std::pair<float, glm::mat4>> const &Drawn);
 	// the instances of the cells are about to be drawn: whether the walk reports what it drew of each bucket (walk_instances_compare())
 	virtual bool walk_instances_begin()
 	{
 		return false;
 	}
-	virtual void walk_instances_compare(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts) {}
+	void walk_instances_compare(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts);
 	virtual void walk_instances_end() {}
+	// the geometry of the backend and whether it draws blended now, for the draws recorded for the gpu culling
+	virtual gfx::geometrybank_manager &walk_geometry() = 0;
+	virtual bool walk_blending_enabled() const = 0;
+
+	// the gpu culling of the instances (Global.gfx_gpucull, stage N6c): what the walk queues in the culling of the pass and the
+	// draws it records for the indirect draws made from its result. the backend picks the culling of the pass, runs it and
+	// makes the draws
+	// starts the culling of the pass, or none (nullptr). Mainview: the culling of the main view, which takes the sleepers
+	void Begin_Pass_Cull(gfx::instance_cull *Cull, bool const Mainview);
+	// with the cpu drawing (Global.gfx_gpucull 2): what it drew of the sleepers and of the models drawn on their own, for the
+	// comparison with the culling dispatched already
+	void Compare_Pass_Cull();
+	// ends the culling of the pass
+	void End_Pass_Cull();
+	// queues the sleepers of a track in the gpu culling of the pass (Global.gfx_gpucull_sleepers), with the gates of
+	// Render_Sleepers(), making their records first when they're missing or out of date
+	void Queue_Sleepers(TTrack *Track);
+	// queues a model instance drawn on its own in the gpu culling of the pass (Global.gfx_gpucull_models), as a bucket of
+	// its own, making its record first when it's missing or out of date. Inrange: the cell of the instance lies within the
+	// range of the pass. returns true when the instance isn't drawn by the cpu in the pass: it's drawn from the result of the
+	// culling, or it was culled and recorded by the depth pass of the whole scene, or it lies out of range
+	bool Queue_Model(TAnimModel *Instance, bool const Inrange);
+	// whether a model with its skins has any part the sun shadows draw: the same test Render_Instanced() makes. the answer
+	// is kept for the rest of the pass
+	bool Instances_Cast_Shadow(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket);
+	// the walk of the submodel trees of the groups culled by Cull, once per lod band, which records their draws
+	// (m_indirectdraws, m_indirectcommands). Cascade: the pass is one of the cascades of the sun shadows, which share the walks
+	void Walk_Indirect_Draws(gfx::instance_cull const &Cull, bool const Cascade);
+	// a draw of the walk of Walk_Indirect_Draws(), with the state the walk left for it (model_ubs with the modelview set)
+	void Record_Indirect_Draw(gfx::geometry_handle const &Geometry);
+	// multi draws of the recorded draws (Global.gfx_gpucull_multidraw): puts the draws in an order in which the ones with the
+	// same state follow one another, the draws of one entry kept in the order of the walk
+	void Order_Indirect_Draws();
+	// whether two recorded draws can go in one multi draw of the colour pass: the same material and texture variant, geometry
+	// bank, primitive and blending
+	bool Indirect_Mergeable(std::size_t const First, std::size_t const Other) const;
+	// the texture the shadow material binds for the alpha test of a material, or null_handle (no test)
+	texture_handle Indirect_Shadow_Texture(material_handle const Material) const;
+	// the records of the sleepers and of the models drawn on their own not queued for a while are let go
+	void Expire_Indirect_Records();
+	// a scenery is being loaded: the tracks and the models the records were made for may be gone
+	void Clear_Indirect_Records();
 
 	// members
 	renderpass_config m_renderpass; // parameters for current render pass
@@ -320,6 +356,150 @@ class scene_walk
 	scene::basic_cell::instance_bucket_key const *m_modelcomparekey{nullptr};
 	std::vector<std::pair<scene::basic_cell::instance_bucket_key, float>> m_modelcpudistances;
 	bool m_indirectchanging{false}; // the walk under way met a submodel which may look different in the next frame
+	// the gpu culling of the pass under way (Begin_Pass_Cull()), and whether there's one
+	gfx::instance_cull *m_passcull{nullptr};
+	bool m_instancecullpass{false};
+	bool m_modelspass{false}; // the models drawn on their own of the pass under way go to its gpu culling
+	bool m_indirectcolourmodels{false}; // with m_indirectcolourpending: the depth pass culled and recorded them too
+	bool m_sleeperspass{false}; // the sleepers of the pass under way go to its gpu culling (the one of the main view)
+	bool m_indirectcoloursleepers{false}; // with m_indirectcolourpending: the depth pass culled and recorded the sleepers too
+	// the instances were culled in the depth pass of the whole scene, the colour pass draws them from the recorded draws
+	bool m_indirectcolourpending{false};
+	// Instances_Cast_Shadow() of the groups of the shadow pass under way
+	std::unordered_map<scene::basic_cell::instance_bucket_key, bool, scene::basic_cell::instance_bucket_key_hash> m_shadowcasters;
+	// the sleepers of tracks culled on the gpu with the instances of the main view (Global.gfx_gpucull_sleepers): records made
+	// from TTrack::m_sleeper_local_transforms when the track is queued first, and again when they or the instance records
+	// (editor, m_instancerecordsversion) went out of date. the records of tracks not queued for a while are let go
+	struct sleeper_records
+	{
+		scene::basic_cell::instance_bucket bucket; // the records only, no instances
+		scene::basic_cell::instance_bucket_key key; // the model, and the skin in the slot Render_Sleepers() sets it in
+		scene::bounding_area area; // of the locations of the sleepers
+		TModel3d const *model{nullptr}; // what the records were made from
+		material_handle skin{null_handle};
+		glm::mat4 const *transforms{nullptr};
+		std::size_t count{0};
+		unsigned int frame{0}; // queued last
+	};
+	std::unordered_map<TTrack const *, sleeper_records> m_sleeperrecords;
+	// the model instances drawn on their own culled on the gpu (Global.gfx_gpucull_models), each one a bucket of its own with
+	// a group of its own: the record made when the instance is queued first, and again when the instance records went out of
+	// date (editor, events: m_instancerecordsversion). the records of instances not queued for a while are let go
+	struct model_records
+	{
+		scene::basic_cell::instance_bucket bucket; // the instance alone
+		scene::basic_cell::instance_bucket_key key; // the model, the skins and the instance
+		scene::bounding_area area; // the location of the instance
+		unsigned int frame{0}; // queued last
+	};
+	std::unordered_map<TAnimModel const *, model_records> m_modelrecords;
+	// counts per lod band of the sleepers Render_Sleepers() drew in the pass, by model and skin, for the comparison (they're
+	// drawn before the culling runs)
+	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<std::uint32_t>, scene::basic_cell::instance_bucket_key_hash> m_sleeperbandcounts;
+	// a draw recorded from the walk of the submodel tree of a group in one lod band (Walk_Indirect_Draws()), to be replayed once
+	// the instances of its command are known: the state the walk left for it and what it bound
+	struct indirect_draw
+	{
+		gl::model_ubs ubs;
+		material_handle material;
+		TSubModel const *submodel;
+		gfx::geometry_handle geometry;
+		unsigned int type; // primitive
+		bool blending; // drawn with the transparency hack of submodels faded out
+		std::uint32_t group{0}; // the buffers of the geometry, which the draws of a multi draw share (geometrybank_manager::draw_group())
+	};
+	std::vector<indirect_draw> m_indirectdraws;
+	std::vector<gl::instance_draw_command> m_indirectcommands; // in the order of m_indirectdraws
+	bool m_indirectrecording{false}; // the draws and the material binds of the backend record instead of drawing
+	std::uint32_t m_indirectentry{0}; // entry (group and lod band) recorded
+	material_handle m_indirectmaterial{null_handle}; // what the last material bind noted while recording
+	TSubModel const *m_indirectsubmodel{nullptr};
+	// the walks Walk_Indirect_Draws() made for the cascades of the sun shadows in the frame, for the other cascades to copy: the
+	// draws and commands recorded for a group (model and skins) in each of its lod bands, first none where no cascade walked it
+	struct cascade_band
+	{
+		std::uint32_t first;
+		std::uint32_t count;
+	};
+	struct cascade_record
+	{
+		unsigned int frame{0};
+		std::vector<cascade_band> bands;
+	};
+	std::unordered_map<scene::basic_cell::instance_bucket_key, cascade_record, scene::basic_cell::instance_bucket_key_hash> m_cascaderecords;
+	std::vector<indirect_draw> m_cascadedraws;
+	std::vector<gl::instance_draw_command> m_cascadecommands;
+	unsigned int m_cascaderecordframe{0};
+	// the walks Walk_Indirect_Draws() made in earlier frames (Global.gfx_gpucull_walkcache). what the walk of a group of instances
+	// in a lod band records depends on the model with its skins, the band and whether the pass draws shadows, not on the camera,
+	// so it's kept while the shared state of the model stays the same (TModel3d::state_version()) and used instead of walking the
+	// tree again. a walk meeting an animated submodel, one lit by the luminance or the stars isn't kept. the models drawn on their
+	// own (with an instance in the key) are walked every time
+	struct walk_band
+	{
+		std::vector<indirect_draw> draws; // as recorded
+		float bandmin{0.f};
+		std::uint32_t modelversion{0};
+		bool blending{false}; // the state the walk began in
+		bool valid{false};
+	};
+	struct walk_record
+	{
+		unsigned int frame{0}; // used last
+		std::array<std::vector<walk_band>, 2> bands; // of the colour passes (the main view, the environment map) and of the shadows
+	};
+	std::unordered_map<scene::basic_cell::instance_bucket_key, walk_record, scene::basic_cell::instance_bucket_key_hash> m_walkrecords;
+	int m_walkrankcutoff{0}; // Global.gfx_shadow_rank_cutoff the walks were made with
+	// what the walks of the frame did, for the panel: walks made, of them not kept, walks taken from earlier frames, and the cpu time
+	// of the walks and of putting the draws in order with their blocks uploaded
+	struct walk_counts
+	{
+		std::uint32_t walked{0};
+		std::uint32_t changing{0};
+		std::uint32_t reused{0};
+		double walktime{0.0};
+		double ordertime{0.0};
+	};
+	walk_counts m_walkcounts;
+	walk_counts m_lastwalkcounts;
+	unsigned int m_walkcountsframe{0};
+	// appends the draws of a walk kept from an earlier frame to the recorded draws, with the commands of the entry under way
+	void Replay_Walk(walk_band const &Walk, bool const Shadows);
+	// working space of Order_Indirect_Draws(), kept between frames
+	struct indirect_queue
+	{
+		std::uint32_t next; // draw
+		std::uint32_t end;
+		std::uint32_t link; // next queue waiting for the same state
+	};
+	struct indirect_state
+	{
+		std::uint32_t head;
+		std::uint32_t tail;
+	};
+	// what a multi draw has in common, and the draw which has it
+	struct indirect_state_key
+	{
+		material_handle material;
+		std::uint32_t variant; // of the textures of the material
+		std::uint32_t bank;
+		unsigned int type;
+		std::uint32_t indexed;
+		bool blending;
+		std::uint32_t draw;
+		auto tie() const
+		{
+			return std::tie(material, variant, bank, type, indexed, blending);
+		}
+	};
+	std::vector<indirect_state_key> m_indirectstatekeys;
+	std::vector<std::uint32_t> m_indirectdrawstates;
+	std::vector<indirect_queue> m_indirectqueues;
+	std::vector<indirect_state> m_indirectstates;
+	std::vector<std::uint32_t> m_indirectstateorder;
+	std::vector<std::uint32_t> m_indirectorder;
+	std::vector<indirect_draw> m_indirectdrawsordered;
+	std::vector<gl::instance_draw_command> m_indirectcommandsordered;
 	// a vehicle drawn in the colour pass of this frame moved (motion blur)
 	bool m_vehiclesmoving{false};
 	// set while a preview is drawn: submodels faded out entirely are skipped, instead of being drawn invisible over the stencil

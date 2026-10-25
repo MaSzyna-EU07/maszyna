@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14texture.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14device.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
@@ -42,7 +43,7 @@ bool uploader::can_blit(VkFormat Format) const
 	return result;
 }
 
-void uploader::begin_frame(VkCommandBuffer Commands, std::uint64_t Value)
+void uploader::begin_frame(command_stream *Commands, std::uint64_t Value)
 {
 	m_commands = Commands;
 	m_value = Value;
@@ -57,7 +58,7 @@ void uploader::begin_frame(VkCommandBuffer Commands, std::uint64_t Value)
 
 bool uploader::end_frame()
 {
-	if (m_buffercopies && (m_commands != VK_NULL_HANDLE))
+	if (m_buffercopies && (m_commands != nullptr))
 	{
 		// the draws of the frame read what was copied
 		VkMemoryBarrier2 barrier{};
@@ -70,10 +71,10 @@ bool uploader::end_frame()
 		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 		dependency.memoryBarrierCount = 1;
 		dependency.pMemoryBarriers = &barrier;
-		vkCmdPipelineBarrier2(m_commands, &dependency);
+		m_commands->pipeline_barrier2(&dependency);
 	}
 	m_buffercopies = false;
-	m_commands = VK_NULL_HANDLE;
+	m_commands = nullptr;
 	return m_recorded;
 }
 
@@ -99,7 +100,7 @@ bool uploader::upload_buffer(std::shared_ptr<buffer> const &Target, void const *
 	std::memcpy(upload.staging->mapped(), Data, static_cast<std::size_t>(Size));
 	upload.staging->flush(0, Size);
 	m_uploaded += Size;
-	if (m_commands != VK_NULL_HANDLE)
+	if (m_commands != nullptr)
 	{
 		record(upload);
 	}
@@ -125,7 +126,7 @@ bool uploader::upload(std::shared_ptr<image> const &Image, void const *Data, VkD
 	std::memcpy(upload.staging->mapped(), Data, static_cast<std::size_t>(Size));
 	upload.staging->flush(0, Size);
 	m_uploaded += Size;
-	if (m_commands != VK_NULL_HANDLE)
+	if (m_commands != nullptr)
 	{
 		record(upload);
 	}
@@ -153,7 +154,7 @@ void uploader::record(job &Job)
 			dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 			dependency.memoryBarrierCount = 1;
 			dependency.pMemoryBarriers = &barrier;
-			vkCmdPipelineBarrier2(m_commands, &dependency);
+			m_commands->pipeline_barrier2(&dependency);
 			m_buffercopies = true;
 		}
 		std::vector<VkBufferCopy2> regions;
@@ -174,7 +175,7 @@ void uploader::record(job &Job)
 		copy.dstBuffer = Job.buffertarget->handle();
 		copy.regionCount = static_cast<std::uint32_t>(regions.size());
 		copy.pRegions = regions.data();
-		vkCmdCopyBuffer2(m_commands, &copy);
+		m_commands->copy_buffer2(&copy);
 		m_recorded = true;
 		m_deletions->push(m_value, [staging = Job.staging, target = Job.buffertarget]() {});
 		return;
@@ -204,7 +205,7 @@ void uploader::record(job &Job)
 	copy.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	copy.regionCount = static_cast<std::uint32_t>(regions.size());
 	copy.pRegions = regions.data();
-	vkCmdCopyBufferToImage2(commands, &copy);
+	commands->copy_buffer_to_image2(&copy);
 
 	auto const given{static_cast<std::uint32_t>(Job.levels.size())};
 	if (Job.mipmaps && (mips > given) && (given > 0))
@@ -227,7 +228,7 @@ void uploader::record(job &Job)
 			dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 			dependency.imageMemoryBarrierCount = 1;
 			dependency.pImageMemoryBarriers = &entry;
-			vkCmdPipelineBarrier2(commands, &dependency);
+			commands->pipeline_barrier2(&dependency);
 		};
 		auto const extent{target.desc().extent};
 		for (std::uint32_t level = given; level < mips; ++level)
@@ -249,7 +250,7 @@ void uploader::record(job &Job)
 			info.regionCount = 1;
 			info.pRegions = &blit;
 			info.filter = VK_FILTER_LINEAR;
-			vkCmdBlitImage2(commands, &info);
+			commands->blit_image2(&info);
 		}
 		barrier(0, mips - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 		barrier(mips - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
@@ -626,6 +627,31 @@ void vulkan14_texture::apply_pending()
 	{
 		upload_rgba(pending.data(), width, height);
 	}
+}
+
+void vulkan14_texture::adopt(std::shared_ptr<image> const &Image, VkSampler const Sampler)
+{
+	if (m_id != 0)
+	{
+		if (m_image != Image)
+		{
+			m_resources.deletions->push(m_resources.uploads->current_value(), [old = m_image]() {});
+		}
+		m_resources.images->replace(m_id, Image, Sampler);
+	}
+	else
+	{
+		m_id = m_resources.images->add(Image, Sampler);
+	}
+	m_image = Image;
+	m_made = true;
+	if (Image)
+	{
+		data_width = Image->desc().extent.width;
+		data_height = Image->desc().extent.height;
+	}
+	is_ready = true;
+	is_static = true;
 }
 
 void vulkan14_texture::upload_rgba(std::uint8_t const *Data, std::size_t Width, std::size_t Height)

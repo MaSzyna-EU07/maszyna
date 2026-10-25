@@ -39,7 +39,7 @@ struct image_use
 image_use use_of(image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access);
 
 // the barriers which bring the images from their states to the uses, the states updated
-void barriers(VkCommandBuffer Commands, std::vector<image_use> const &Uses);
+void barriers(command_stream *Commands, std::vector<image_use> const &Uses);
 
 class pass_list
 {
@@ -53,7 +53,7 @@ class pass_list
 	void destroy();
 
 	// the frame Frame (index of the frame in flight) is recorded to Commands from now on; Number counts the frames
-	void begin_frame(VkCommandBuffer Commands, std::uint32_t Frame, std::uint64_t Number);
+	void begin_frame(command_stream *Commands, std::uint32_t Frame, std::uint64_t Number);
 	// a pass: the barriers of its images, its label and the timestamp of its start
 	void begin_pass(char const *Name, std::vector<image_use> const &Uses = {});
 	void end_pass();
@@ -85,7 +85,7 @@ class pass_list
 	float m_period{1.f}; // ns per tick
 	std::uint64_t m_mask{~0ull}; // the valid bits of the timestamps
 	std::vector<frame_queries> m_frames;
-	VkCommandBuffer m_commands{VK_NULL_HANDLE};
+	command_stream *m_commands{nullptr};
 	std::uint32_t m_frame{0};
 	int m_open{-1};
 	// averaged times of the parts, ms

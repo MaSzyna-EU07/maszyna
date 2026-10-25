@@ -22,6 +22,9 @@ extern "C" GLFWAPI int glfwGetPhysicalDevicePresentationSupport(VkInstance insta
 namespace vk14
 {
 
+// the commands of a frame, recorded later into command buffers (vulkan14commands.h)
+class command_stream;
+
 // human readable VkResult, for the log
 char const *result_string(VkResult Result);
 // "1.4.309"
@@ -48,8 +51,8 @@ template <typename Handle_> std::uint64_t handle_value(Handle_ Handle)
 // a name of an object for the messages of the validation layer and for captures; nothing without debug utils
 void name_object(VkDevice Device, VkObjectType Type, std::uint64_t Handle, std::string const &Name);
 // a label of a part of the commands (a pass), for captures and the messages of the validation layer
-void begin_label(VkCommandBuffer Commands, char const *Name);
-void end_label(VkCommandBuffer Commands);
+void begin_label(command_stream *Commands, char const *Name);
+void end_label(command_stream *Commands);
 
 // the log of the renderer, with the "vulkan: " prefix
 void log_info(std::string const &Message);

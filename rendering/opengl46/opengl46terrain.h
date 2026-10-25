@@ -9,91 +9,44 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include <array>
 #include <memory>
-#include <unordered_map>
-#include <vector>
 
-#include "rendering/renderer.h"
-#include "model/material.h"
-#include "model/Texture.h"
+#include "rendering/common/terrainmaterials.h"
 #include "gl/framebuffer.h"
 #include "gl/postfx.h"
 
-// materials of the heightmap terrain for the opengl 4.6 renderer (shader mat_terrain, mat_terrain_holes for chunks with holes).
-// the textures of the layer materials are copied into texture arrays shared by all chunks; each chunk gets a material
-// of its own, with textures holding the weights of its layers and a table of what its layers are
-class opengl46_terrain_materials
+// materials of the heightmap terrain for the opengl 4.6 renderer (shader mat_terrain, mat_terrain_holes for chunks with holes):
+// the textures of gfx::terrain_materials as opengl textures, the layer maps copied into the arrays by a draw of the copy shader
+class opengl46_terrain_materials : public gfx::terrain_materials
 {
   public:
-	opengl46_terrain_materials(material_manager &Materials, texture_manager &Textures) : m_materials(Materials), m_textures(Textures) {}
+	opengl46_terrain_materials(material_manager &Materials, texture_manager &Textures) : gfx::terrain_materials(Materials, Textures), m_gltextures(Textures) {}
 
-	// see gfx_renderer::Terrain_Material. returns null_handle if the terrain shader can't be used
-	material_handle make(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
-	                     int const HoleSamples = 0, std::uint8_t const *Holes = nullptr);
-	void release(material_handle const Material);
-	// copies the textures of new layers into the arrays; to be called before the frame is drawn
-	void update();
-	// the layer materials which change with the season or the weather were reloaded, their textures are copied again
-	void on_environment_change();
+  protected:
+	bool gpu_init() override;
+	void gpu_texture(texture_source &Texture, texture_kind const Kind) override;
+	void gpu_white(texture_source &Texture) override;
+	void gpu_storage(texture_array const &Array, int const Layers, bool const Fresh) override;
+	void gpu_blank(slot const &Slot) override;
+	void gpu_weights(texture_handle const Texture, int const Side, std::uint8_t const *Texels) override;
+	void gpu_table(texture_handle const Texture, float const *Table) override;
+	void gpu_holes(texture_handle const Texture, int const Side, std::uint8_t const *Samples) override;
+	void gpu_begin_copies() override;
+	void gpu_copy(texture_array const &Array, int const Layer, texture_source *Source, std::array<float, 4> const &Default) override;
+	void gpu_end_copies(bool const Copied) override;
+	void gpu_changed() override;
 
   private:
-	static constexpr std::size_t max_layers{8};
-
-	struct layer
-	{
-		material_handle material{null_handle};
-		float size{0.f}; // as given by the chunk
-		float repeat{8.f}; // metres the textures are repeated at
-		int index{0}; // in the arrays
-		bool normalmap{false};
-		bool specgloss{false};
-		float reflection{0.f};
-		bool copied{false};
-		int attempts{0};
-	};
-	struct texture_array
-	{
-		texture_handle handle{null_handle};
-		int size{0};
-		GLint format{0};
-		bool srgb{false};
-	};
-	struct slot
-	{
-		material_handle material{null_handle};
-		std::array<texture_handle, 2> weights{null_handle, null_handle};
-		texture_handle table{null_handle};
-		texture_handle holes{null_handle}; // where the ground is cut, R8; a single texel of 0 without holes
-		bool used{false};
-		// what the table was made of, kept to make it again when a layer changes
-		std::size_t count{0};
-		std::array<int, max_layers> layers{};
-		std::array<float, max_layers> rotations{};
-	};
-
-	bool init();
-	texture_handle make_texture(std::string const &Name, GLenum const Target);
-	void make_storage(texture_array &Array, int const Layers);
-	void read_material(layer &Layer);
-	int layer_index(gfx::terrain_layer const &Layer);
-	void write_table(slot const &Slot);
-	bool copy_layer(layer &Layer);
-	std::size_t acquire_slot(material_handle const Reuse);
-
-	material_manager &m_materials;
-	texture_manager &m_textures;
-	int m_state{0}; // 0: not set up yet, 1: ready, -1: can't be used
-	texture_handle m_white{null_handle};
-	std::array<texture_array, 3> m_arrays; // diffuse, normal maps, specular/gloss
-	int m_capacity{0}; // layers the arrays have room for
-	std::vector<layer> m_layers;
-	bool m_pending{false};
-	std::vector<slot> m_slots;
-	std::vector<std::size_t> m_free;
-	std::unordered_map<material_handle, std::size_t> m_slotof;
-	std::shared_ptr<gfx::shader_program> m_program; // of the chunks, mat_terrain
-	std::shared_ptr<gfx::shader_program> m_holesprogram; // of the chunks with holes, mat_terrain_holes
+	texture_manager &m_gltextures;
 	std::unique_ptr<gl::postfx> m_copy;
 	std::unique_ptr<gl::framebuffer> m_framebuffer;
+	// the state of opengl the copies change, given back after them
+	struct
+	{
+		GLboolean blend{GL_FALSE};
+		GLboolean scissor{GL_FALSE};
+		GLboolean cull{GL_FALSE};
+		GLboolean depth{GL_FALSE};
+		GLboolean srgb{GL_FALSE};
+	} m_saved;
 };

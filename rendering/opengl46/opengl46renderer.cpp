@@ -412,6 +412,12 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 
 	WriteLog("picking objects created");
 
+	if (Global.gfx_threads != 0)
+	{
+		// the threads of the renderers (gfx.threads) record the command buffers of the vulkan renderer; the opengl renderer walks and
+		// draws the scene on the main thread
+		WriteLog("Gfx Renderer: gfx.threads without effect with opengl");
+	}
 	WriteLog("Gfx Renderer: setup complete");
 
     return true;
@@ -657,10 +663,7 @@ bool opengl46_renderer::Render()
 		m_localshadows.reset_lamps();
 		m_localshadows.reset_headlights();
 		// and so may the tracks the sleeper records were made for, and the models drawn on their own
-		m_sleeperrecords.clear();
-		m_modelrecords.clear();
-		m_cascaderecords.clear();
-		m_walkrecords.clear();
+		Clear_Indirect_Records();
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
@@ -672,19 +675,8 @@ bool opengl46_renderer::Render()
 		++m_instancerecordsversion;
 		m_nodestateversion = scene::node_state_version;
 	}
-	if( ( m_framestamp % 256 ) == 0 ) {
-		// the sleeper records of tracks out of sight for a while. their places in the record buffer of the gpu culling are
-		// dropped when it starts over
-		for( auto records { m_sleeperrecords.begin() }; records != m_sleeperrecords.end(); ) {
-			if( m_framestamp - records->second.frame > 256 ) { records = m_sleeperrecords.erase( records ); }
-			else { ++records; }
-		}
-		// and so are the records of the models drawn on their own
-		for( auto records { m_modelrecords.begin() }; records != m_modelrecords.end(); ) {
-			if( m_framestamp - records->second.frame > 256 ) { records = m_modelrecords.erase( records ); }
-			else { ++records; }
-		}
-	}
+	// the sleeper records of tracks out of sight for a while, and the records of the models drawn on their own
+	Expire_Indirect_Records();
 	// scenery lamps which get shadows in this frame. their maps hold the scenery as of the version of the instance records
 	if (simulation::is_ready && (false == Global.gfx_skiprendering))
 		m_localshadows.update_lamps(m_locallights.lights(), Global.pCamera.Pos, m_instancerecordsversion, m_framestamp);
@@ -2449,45 +2441,8 @@ void opengl46_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         pass_camera /= bounding_viewports_count;
 
 		// ...a cascade fitted to the depth of the view (gfx.shadow.sdsm) covers the area of the pixels it takes, within the
-		// slice of the view. the areas are compared across the light, the depth along it stays the one of the slice...
-		auto quantizationstep{0.f};
-		{
-			auto const lightrotation{Shadow_Light_Rotation()};
-			glm::vec3 slicemin{std::numeric_limits<float>::max()}, slicemax{std::numeric_limits<float>::lowest()};
-			for (auto const &point : frustumchunkshapepoints)
-			{
-				auto const lightpoint{lightrotation * glm::vec3{point}};
-				slicemin = glm::min(slicemin, lightpoint);
-				slicemax = glm::max(slicemax, lightpoint);
-			}
-			m_shadowslicesize = std::max(slicemax.x - slicemin.x, slicemax.y - slicemin.y);
-			if (m_shadowfitarea != nullptr)
-			{
-				glm::vec3 areamin{std::numeric_limits<float>::max()}, areamax{std::numeric_limits<float>::lowest()};
-				for (auto const &point : *m_shadowfitarea)
-				{
-					auto const lightpoint{lightrotation * point};
-					areamin = glm::min(areamin, lightpoint);
-					areamax = glm::max(areamax, lightpoint);
-				}
-				auto const fitmin{glm::vec2{glm::max(glm::vec2{slicemin}, glm::vec2{areamin})}};
-				auto const fitmax{glm::vec2{glm::min(glm::vec2{slicemax}, glm::vec2{areamax})}};
-				if ((fitmin.x < fitmax.x) && (fitmin.y < fitmax.y))
-				{
-					// the size changes in steps of a power of two of about 1/16 of it, so that the texels of the map keep
-					// their size until the area grows or shrinks by a step
-					auto const size{std::max(fitmax.x - fitmin.x, fitmax.y - fitmin.y)};
-					quantizationstep = std::exp2(std::ceil(std::log2(std::max(size, 1.f) / 16.f)));
-					frustumchunkshapepoints.clear();
-					auto const inverserotation{glm::transpose(lightrotation)};
-					for (int corner = 0; corner < 8; ++corner)
-					{
-						auto const lightpoint{glm::vec3{(corner & 1) ? fitmax.x : fitmin.x, (corner & 2) ? fitmax.y : fitmin.y, (corner & 4) ? slicemax.z : slicemin.z}};
-						frustumchunkshapepoints.emplace_back(inverserotation * lightpoint, 1.f);
-					}
-				}
-			}
-		}
+		// slice of the view...
+		auto quantizationstep{gfx::shadow_fit::fit_slice(frustumchunkshapepoints, m_shadowfitarea, Shadow_Light_Rotation(), m_shadowslicesize)};
 
 		// ...modelview matrix: determine the centre of frustum chunk in world space...
 		glm::vec3 frustumchunkmin, frustumchunkmax;
@@ -3424,11 +3379,7 @@ void opengl46_renderer::draw(const gfx::geometry_handle &handle)
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
 	if( m_indirectrecording ) {
 		// the walk of Render_Instances_Indirect(): the draw is made later, from the gpu culling, with this state
-		gfx::indirect_source source;
-		if( m_geometry.indirect_source( handle, source ) ) {
-			m_indirectcommands.push_back( { source.count, 0, source.first, static_cast<std::uint32_t>( source.basevertex ), 0, m_indirectentry, ( source.indexed ? 1u : 0u ), 0 } );
-			m_indirectdraws.push_back( { model_ubs, m_indirectmaterial, m_indirectsubmodel, handle, source.type, m_blendingenabled, m_geometry.draw_group( handle ) } );
-		}
+		Record_Indirect_Draw( handle );
 		return;
 	}
 	if( m_scenerecording ) {
@@ -3468,65 +3419,6 @@ void opengl46_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it,
 	Draw_Geometry(it, end);
 }
 
-
-
-// queues a model instance drawn on its own in the gpu culling of the pass, as a bucket and a group of its own. the culling
-// makes the tests of Render( TAnimModel * ): visibility, frustum, the range of the instance, the draw range, the size on the
-// screen, and gives it the lod band of the bounds of its submodels (mindistance/maxdistance) its distance falls in, then
-// Record_Indirect_Draws() animates, prepares and walks its submodel tree from its origin, like it does for a group of
-// instanced ones
-bool opengl46_renderer::Queue_Model( TAnimModel *Instance, bool const Inrange )
-{
-	// a billboard is turned to the camera from the modelview of the instance, which a walk from its origin doesn't have
-	if( ( false == Instance->m_cameraindependent ) || ( Instance->Model() == nullptr ) ) { return false; }
-	if( false == m_modelspass ) {
-		// the depth pass of the whole scene culled and recorded it, the colour pass draws what it recorded
-		return ( m_indirectcolourpending && m_indirectcolourmodels );
-	}
-	auto const drawing { m_passcull->drawing() };
-	// a model hidden by an event, or in a cell wholly out of the range of the pass, would be left out by the culling
-	if( ( false == Instance->visible() ) || ( false == Inrange ) ) { return drawing; }
-
-	auto &records { m_modelrecords[ Instance ] };
-	auto &bucket { records.bucket };
-	if( ( bucket.recordsversion != m_instancerecordsversion ) || ( bucket.records.size() != 1 ) ) {
-		// the key, the instance and the record anew: the editor may have given the instance another model or skins, or
-		// another instance may have taken the place of a deleted one
-		auto &key { records.key };
-		key = {};
-		key.pModel = Instance->Model();
-		if( auto const *material { Instance->Material() } ) {
-			for( int skin = 0; skin < 5; ++skin ) { key.skins[ skin ] = material->replacable_skins[ skin ]; }
-		}
-		key.instance = Instance;
-		bucket.instances.assign( 1, Instance );
-		// the location of the instance as the origin of the record, which keeps the precision
-		Update_Instance_Records( key.pModel, bucket, Instance->location() );
-		// drawn by its bucket, though it isn't instanceable
-		bucket.records.front().flags |= scene::basic_cell::instance_instanceable;
-		records.area = scene::bounding_area{ Instance->location(), 0.f };
-	}
-	records.frame = m_framestamp;
-	if( m_renderpass.draw_mode == rendermode::shadows ) {
-		// a model with nothing to draw in the shadows is left out of them, like the instances. the answer depends on the
-		// model and the skins only, and is shared by the instances with them
-		auto modelkey { records.key };
-		modelkey.instance = nullptr;
-		if( false == Instances_Cast_Shadow( modelkey, bucket ) ) { return drawing; }
-	}
-	// out of the frustum of the pass, beyond its range or too small on the screen by its record: the culling would leave it out,
-	// and the walk of Record_Indirect_Draws() isn't made for it
-	if( Global.gfx_gpucull_bucketrange && ( false == EditorModeFlag ) && Bucket_Culled( bucket ) ) {
-		m_passcull->skip_bucket( bucket );
-		return drawing;
-	}
-	m_passcull->add_bucket( records.key, bucket, records.area );
-	if( false == drawing ) {
-		// the cpu draws it too, and tells what it drew for the comparison
-		m_modelcomparekey = &records.key;
-	}
-	return drawing;
-}
 
 
 // places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
@@ -3709,7 +3601,7 @@ void opengl46_renderer::Render_Instances_Indirect()
 void opengl46_renderer::Render_Instances_Indirect_Pass()
 {
 	auto const cpustart { std::chrono::steady_clock::now() };
-	auto &cull { *m_passcull };
+	auto &cull { Pass_Cull() };
 	cull.dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
 	Record_Indirect_Draws( cull );
 
@@ -3734,178 +3626,12 @@ void opengl46_renderer::Render_Instances_Indirect_Pass()
 void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 {
 	m_indirectcull = &Cull;
-	m_indirectdraws.clear();
-	m_indirectcommands.clear();
-	auto const &lodbounds { Cull.lod_bounds() };
-	// the cascades of the sun shadows make the same walks: the mode, the lod band and the state of the models are the same in all
-	// of them within a frame, only the instances differ, and those the gpu fills in. the walk of a group in a band is made by the
-	// first cascade which draws it, the others copy its draws and commands with entries of their own
+	// the cascades of the sun shadows share the walks
 	auto const cascade {
-		( m_renderpass.draw_mode == rendermode::shadows )
-		&& ( &Cull >= m_shadowcull.data() )
+		( &Cull >= m_shadowcull.data() )
 		&& ( &Cull < m_shadowcull.data() + m_shadowcull.size() ) };
-	auto constexpr nowalk { std::numeric_limits<std::uint32_t>::max() };
-	if( cascade && ( m_cascaderecordframe != m_framestamp ) ) {
-		m_cascaderecordframe = m_framestamp;
-		m_cascadedraws.clear();
-		m_cascadecommands.clear();
-		if( ( m_framestamp % 256 ) == 0 ) {
-			// the groups not drawn for a while
-			for( auto records { m_cascaderecords.begin() }; records != m_cascaderecords.end(); ) {
-				if( m_framestamp - records->second.frame > 256 ) { records = m_cascaderecords.erase( records ); }
-				else { ++records; }
-			}
-		}
-	}
-	if( m_walkcountsframe != m_framestamp ) {
-		m_walkcountsframe = m_framestamp;
-		m_lastwalkcounts = m_walkcounts;
-		m_walkcounts = {};
-	}
-	auto const walkstart { std::chrono::steady_clock::now() };
-	// the walks of earlier frames. they go when the switch is off, as the models may change meanwhile without the walks noticing
-	// it the next time (the season), and when the shadows take other submodels
-	auto const walkcache { Global.gfx_gpucull_walkcache && ( false == m_previewing ) };
-	if( ( false == Global.gfx_gpucull_walkcache ) || ( m_walkrankcutoff != Global.gfx_shadow_rank_cutoff ) ) {
-		m_walkrecords.clear();
-		m_walkrankcutoff = Global.gfx_shadow_rank_cutoff;
-	}
-	if( walkcache && ( ( m_framestamp % 256 ) == 0 ) ) {
-		// the groups not drawn for a while
-		for( auto records { m_walkrecords.begin() }; records != m_walkrecords.end(); ) {
-			if( m_framestamp - records->second.frame > 256 ) { records = m_walkrecords.erase( records ); }
-			else { ++records; }
-		}
-	}
-	auto const shadows { m_renderpass.draw_mode == rendermode::shadows };
-	m_indirectrecording = true;
-	for( auto const &group : Cull.draw_groups() ) {
-		auto *model { group.key->pModel };
-		if( ( model == nullptr ) || ( model->Root == nullptr ) || ( ( group.instance == nullptr ) && ( false == group.sleepers ) ) ) { continue; }
-		// a model drawn on its own is prepared with its lights and animations each time; the others are prepared only for a walk.
-		// the version is taken before, so a walk prepared by something which changes the model isn't taken up again
-		walk_record *kept { nullptr };
-		if( walkcache && ( group.key->instance == nullptr ) ) {
-			kept = &m_walkrecords[ *group.key ];
-			kept->frame = m_framestamp;
-			auto &bands { kept->bands[ shadows ? 1 : 0 ] };
-			if( bands.size() != group.lodcount + 1 ) {
-				bands.clear();
-				bands.resize( group.lodcount + 1 );
-			}
-		}
-		auto const modelversion { model->state_version() };
-		material_handle const *skins { nullptr };
-		auto alpha { 0x30300030 };
-		auto prepared { false };
-		auto const prepare = [ & ]() {
-			prepared = true;
-			if( group.sleepers ) {
-				// as Render_Sleepers() sets them up: the skin of the track, if any. like scenery models they pick no texture
-				// variants of their own
-				if( group.key->skins[ 1 ] != null_handle ) {
-					skins = group.key->skins.data();
-				}
-				TSubModel::iVariantSeed = 0;
-			}
-			else {
-				if( group.key->instance != nullptr ) {
-					// a model drawn on its own: its lights and animations, the way Render( TAnimModel * ) sets them up
-					group.instance->RaAnimate( m_framestamp );
-				}
-				group.instance->RaPrepare();
-				auto const *material { group.instance->Material() };
-				if( material != nullptr ) {
-					skins = material->replacable_skins;
-					alpha = material->textures_alpha;
-				}
-			}
-			alpha ^= 0x0F0F000F;
-		};
-		// the walks of the group the cascades made in this frame. a group whose bands were all walked already isn't prepared
-		cascade_record *walks { nullptr };
-		if( cascade ) {
-			walks = &m_cascaderecords[ *group.key ];
-			if( ( walks->frame != m_framestamp ) || ( walks->bands.size() != group.lodcount + 1 ) ) {
-				walks->frame = m_framestamp;
-				walks->bands.assign( group.lodcount + 1, cascade_band { nowalk, 0 } );
-			}
-		}
-		else if( kept == nullptr ) {
-			prepare();
-		}
-		for( std::uint32_t band = 0; band <= group.lodcount; ++band ) {
-			// a band holds the squared distances from its lower bound up to the next one; any of them selects the same lod
-			auto const bandmin { band == 0 ? 0.f : lodbounds[ group.lodfirst + band - 1 ] };
-			auto const bandmax { band == group.lodcount ? std::numeric_limits<float>::max() : lodbounds[ group.lodfirst + band ] };
-			if( ( bandmin > group.distancemax ) || ( bandmax <= group.distancemin ) ) { continue; }
-			m_indirectentry = group.entryfirst + band;
-			if( ( walks != nullptr ) && ( walks->bands[ band ].first != nowalk ) ) {
-				// walked by another cascade: its draws, for the instances of this entry
-				auto const &walk { walks->bands[ band ] };
-				m_indirectdraws.insert( m_indirectdraws.end(), m_cascadedraws.begin() + walk.first, m_cascadedraws.begin() + walk.first + walk.count );
-				for( std::uint32_t draw = 0; draw < walk.count; ++draw ) {
-					auto &command { m_indirectcommands.emplace_back( m_cascadecommands[ walk.first + draw ] ) };
-					command.entry = m_indirectentry;
-				}
-				// as the walk would count them
-				m_renderpass.draw_stats.submodels += static_cast<int>( walk.count );
-				m_renderpass.draw_stats.drawcalls += static_cast<int>( walk.count );
-				continue;
-			}
-			auto const walkfirst { m_indirectdraws.size() };
-			auto *keptwalk { kept != nullptr ? &kept->bands[ shadows ? 1 : 0 ][ band ] : nullptr };
-			if( ( keptwalk != nullptr )
-			 && ( keptwalk->valid )
-			 && ( keptwalk->bandmin == bandmin )
-			 && ( keptwalk->modelversion == modelversion )
-			 && ( keptwalk->blending == m_blendingenabled ) ) {
-				// walked in an earlier frame, with the model as it is now
-				Replay_Walk( *keptwalk, shadows );
-				++m_walkcounts.reused;
-			}
-			else {
-				if( false == prepared ) {
-					prepare();
-				}
-				auto const blending { m_blendingenabled };
-				m_indirectchanging = false;
-				::glPushMatrix();
-				::glLoadIdentity();
-				model->Root->fSquareDist = bandmin;
-				model->Root->ReplacableSet( skins, alpha );
-				model->Root->pRoot = model;
-				Render( model->Root );
-				::glPopMatrix();
-				++m_walkcounts.walked;
-				if( m_indirectchanging ) {
-					++m_walkcounts.changing;
-				}
-				if( keptwalk != nullptr ) {
-					keptwalk->valid = ( false == m_indirectchanging );
-					if( keptwalk->valid ) {
-						keptwalk->draws.assign( m_indirectdraws.begin() + walkfirst, m_indirectdraws.end() );
-						keptwalk->bandmin = bandmin;
-						keptwalk->modelversion = modelversion;
-						keptwalk->blending = blending;
-					}
-					else {
-						keptwalk->draws.clear();
-					}
-				}
-			}
-			if( walks != nullptr ) {
-				walks->bands[ band ] = cascade_band {
-					static_cast<std::uint32_t>( m_cascadedraws.size() ),
-					static_cast<std::uint32_t>( m_indirectdraws.size() - walkfirst ) };
-				m_cascadedraws.insert( m_cascadedraws.end(), m_indirectdraws.begin() + walkfirst, m_indirectdraws.end() );
-				m_cascadecommands.insert( m_cascadecommands.end(), m_indirectcommands.begin() + walkfirst, m_indirectcommands.end() );
-			}
-		}
-	}
-	m_indirectrecording = false;
+	Walk_Indirect_Draws( Cull, cascade );
 	auto const orderstart { std::chrono::steady_clock::now() };
-	m_walkcounts.walktime += std::chrono::duration<double, std::milli>( orderstart - walkstart ).count();
 
 	// with multi draws the draws with the same state follow one another, and their model blocks are in a buffer the programs
 	// of the multi draws read them from. the order goes into the commands, so it comes first
@@ -3917,34 +3643,6 @@ void opengl46_renderer::Record_Indirect_Draws( opengl46_instance_cull &Cull )
 
 	Cull.fill_commands( m_indirectcommands );
 	m_walkcounts.ordertime += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - orderstart ).count();
-}
-
-void opengl46_renderer::Replay_Walk( walk_band const &Walk, bool const Shadows )
-{
-	for( auto const &walkdraw : Walk.draws ) {
-		// the place of the chunk in its bank is asked for again: the bank may have been let go since and made anew, which the
-		// question (as the walk) takes care of, uploading the chunk
-		gfx::indirect_source source;
-		if( false == m_geometry.indirect_source( walkdraw.geometry, source ) ) { continue; }
-		m_indirectcommands.push_back( { source.count, 0, source.first, static_cast<std::uint32_t>( source.basevertex ), 0, m_indirectentry, ( source.indexed ? 1u : 0u ), 0 } );
-		auto &draw { m_indirectdraws.emplace_back( walkdraw ) };
-		draw.type = source.type;
-		draw.group = m_geometry.draw_group( walkdraw.geometry );
-		// the walk sets the placement of the submodel, and before each draw of the colour passes the parameters of its material
-		// (Bind_Material()); the rest of the block is what the pass has at the moment, as the walk would leave it
-		auto const &walked { walkdraw.ubs };
-		draw.ubs = model_ubs;
-		draw.ubs.modelview = walked.modelview;
-		draw.ubs.modelviewnormal = walked.modelviewnormal;
-		if( false == Shadows ) {
-			std::memcpy( &draw.ubs.param[ 0 ], &walked.param[ 0 ], sizeof( draw.ubs.param ) );
-			draw.ubs.opacity = walked.opacity;
-			draw.ubs.alpha_mult = walked.alpha_mult;
-		}
-	}
-	// as the walk would count them
-	m_renderpass.draw_stats.submodels += static_cast<int>( Walk.draws.size() );
-	m_renderpass.draw_stats.drawcalls += static_cast<int>( Walk.draws.size() );
 }
 
 opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_Prepass( opengl46_instance_cull::command_set const Set, gl::gpu_timer &Timer )
@@ -4151,149 +3849,6 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 	return counts;
 }
 
-texture_handle opengl46_renderer::Indirect_Shadow_Texture( material_handle const Material )
-{
-	if( Material == null_handle ) { return null_handle; }
-	return m_materials.material( Material ).textures[ 0 ];
-}
-
-bool opengl46_renderer::Instances_Cast_Shadow( scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket )
-{
-	auto const lookup { m_shadowcasters.find( Key ) };
-	if( lookup != m_shadowcasters.end() ) { return lookup->second; }
-
-	// the skins of the instance Render_Instanced() would take them from
-	TAnimModel const *instance { nullptr };
-	for( auto const *candidate : Bucket.instances ) {
-		if( candidate != nullptr ) {
-			instance = candidate;
-			break;
-		}
-	}
-	auto const *skins { instance != nullptr && instance->Material() != nullptr ? instance->Material()->replacable_skins : nullptr };
-	auto castsshadow { false };
-	m_instance_lodpending.clear();
-	m_instance_lodpending.push_back( Key.pModel != nullptr ? Key.pModel->Root : nullptr );
-	while( ( false == castsshadow ) && ( false == m_instance_lodpending.empty() ) ) {
-		auto const *submodel = m_instance_lodpending.back();
-		m_instance_lodpending.pop_back();
-		if( submodel == nullptr ) { continue; }
-		if( submodel->eType < TP_ROTATOR ) {
-			auto const material { submodel->m_material >= 0 ? submodel->m_material : ( skins != nullptr ? skins[ -submodel->m_material ] : null_handle ) };
-			castsshadow = ( Material( material ).shadow_rank <= Global.gfx_shadow_rank_cutoff );
-		}
-		m_instance_lodpending.push_back( submodel->Child );
-		m_instance_lodpending.push_back( submodel->Next );
-	}
-	m_shadowcasters.emplace( Key, castsshadow );
-	return castsshadow;
-}
-
-// the order of the recorded draws for multi draws. draws go in one multi draw when they follow one another with the same
-// state (material and its texture variant, geometry bank, primitive, blending; Indirect_Mergeable()). the draws of one entry,
-// the walk of one submodel tree in one lod band, keep their order: submodels of a model may lie on one another and rely on
-// the later one being drawn over the earlier one. the draws of different entries are drawn for different instances, which
-// the gpu draws in no particular order anyway, so they're free to move. the entries are queues of draws; the draws at the
-// heads of the queues which have the state taken next all go, each queue as far as its draws keep that state, then the
-// queues wait for the state of their next draw. the states go in the order in which the queues first reach them
-void opengl46_renderer::Order_Indirect_Draws()
-{
-	auto const count { m_indirectdraws.size() };
-	if( count < 2 ) { return; }
-
-	// a number for each state the draws have, by sorting the states (the buffers are kept between frames)
-	m_indirectstatekeys.clear();
-	// the sun shadows draw with the program and the texture of the alpha test, whatever the material
-	auto const shadows { m_renderpass.draw_mode == rendermode::shadows };
-	for( std::size_t index = 0; index < count; ++index ) {
-		auto const &draw { m_indirectdraws[ index ] };
-		if( shadows ) {
-			m_indirectstatekeys.push_back( { Indirect_Shadow_Texture( draw.material ), 0u, draw.group, draw.type, m_indirectcommands[ index ].indexed, draw.blending, static_cast<std::uint32_t>( index ) } );
-			continue;
-		}
-		auto variant { 0u };
-		if( draw.material != null_handle ) {
-			auto const &material { m_materials.material( draw.material ) };
-			if( false == material.texture_variants.empty() ) {
-				variant = TSubModel::VariantId( draw.submodel ) % static_cast<std::uint32_t>( material.texture_variants.size() );
-			}
-		}
-		m_indirectstatekeys.push_back( { draw.material, variant, draw.group, draw.type, m_indirectcommands[ index ].indexed, draw.blending, static_cast<std::uint32_t>( index ) } );
-	}
-	std::sort(
-		std::begin( m_indirectstatekeys ), std::end( m_indirectstatekeys ),
-		[]( indirect_state_key const &Left, indirect_state_key const &Right ) {
-			return Left.tie() < Right.tie(); } );
-	m_indirectdrawstates.resize( count );
-	std::uint32_t statecount { 0 };
-	for( std::size_t index = 0; index < count; ++index ) {
-		if( ( index > 0 ) && ( m_indirectstatekeys[ index ].tie() != m_indirectstatekeys[ index - 1 ].tie() ) ) {
-			++statecount;
-		}
-		m_indirectdrawstates[ m_indirectstatekeys[ index ].draw ] = statecount;
-	}
-	++statecount;
-	if( statecount == count ) {
-		// no two draws share a state, nothing would go together
-		return;
-	}
-
-	auto constexpr none { std::numeric_limits<std::uint32_t>::max() };
-	m_indirectstates.assign( statecount, indirect_state { none, none } );
-	m_indirectstateorder.clear();
-	m_indirectqueues.clear();
-	// the queue waits for the state of its next draw, behind the queues waiting for it already
-	auto const enqueue = [ this, none ]( std::uint32_t const Queue ) {
-		auto &queue { m_indirectqueues[ Queue ] };
-		auto &state { m_indirectstates[ m_indirectdrawstates[ queue.next ] ] };
-		queue.link = none;
-		if( state.head == none ) {
-			state.head = Queue;
-			m_indirectstateorder.push_back( m_indirectdrawstates[ queue.next ] );
-		}
-		else {
-			m_indirectqueues[ state.tail ].link = Queue;
-		}
-		state.tail = Queue;
-	};
-	for( std::size_t index = 0; index < count; ) {
-		auto end { index + 1 };
-		while( ( end < count ) && ( m_indirectcommands[ end ].entry == m_indirectcommands[ index ].entry ) ) { ++end; }
-		m_indirectqueues.push_back( { static_cast<std::uint32_t>( index ), static_cast<std::uint32_t>( end ), none } );
-		index = end;
-	}
-	for( std::uint32_t queue = 0; queue < m_indirectqueues.size(); ++queue ) {
-		enqueue( queue );
-	}
-	m_indirectorder.clear();
-	for( std::size_t taken = 0; taken < m_indirectstateorder.size(); ++taken ) {
-		auto const stateindex { m_indirectstateorder[ taken ] };
-		auto queueindex { m_indirectstates[ stateindex ].head };
-		m_indirectstates[ stateindex ] = { none, none };
-		while( queueindex != none ) {
-			auto &queue { m_indirectqueues[ queueindex ] };
-			auto const nextqueue { queue.link };
-			while( ( queue.next < queue.end ) && ( m_indirectdrawstates[ queue.next ] == stateindex ) ) {
-				m_indirectorder.push_back( queue.next );
-				++queue.next;
-			}
-			if( queue.next < queue.end ) {
-				enqueue( queueindex );
-			}
-			queueindex = nextqueue;
-		}
-	}
-
-	m_indirectdrawsordered.clear();
-	m_indirectcommandsordered.clear();
-	for( auto const index : m_indirectorder ) {
-		m_indirectdrawsordered.push_back( m_indirectdraws[ index ] );
-		m_indirectcommandsordered.push_back( m_indirectcommands[ index ] );
-	}
-	m_indirectdraws.swap( m_indirectdrawsordered );
-	m_indirectcommands.swap( m_indirectcommandsordered );
-}
-
 void opengl46_renderer::Upload_Indirect_Blocks()
 {
 	m_indirectblocks.clear();
@@ -4316,24 +3871,6 @@ void opengl46_renderer::Bind_Indirect_Blocks( std::size_t const First, std::size
 	GLsizeiptr const size { static_cast<GLsizeiptr>( Count * sizeof( gl::model_ubs ) ) };
 	// the plural form leaves the general GL_SHADER_STORAGE_BUFFER binding alone, as gl::ssbo does
 	::glBindBuffersRange( GL_SHADER_STORAGE_BUFFER, gl::MODEL_DRAW_SSBO_BINDING, 1, &buffer, &offset, &size );
-}
-
-bool opengl46_renderer::Indirect_Mergeable( std::size_t const First, std::size_t const Other ) const
-{
-	auto const &first { m_indirectdraws[ First ] };
-	auto const &other { m_indirectdraws[ Other ] };
-	if( ( first.material != other.material )
-	 || ( first.blending != other.blending )
-	 || ( first.type != other.type )
-	 || ( first.group != other.group )
-	 || ( m_indirectcommands[ First ].indexed != m_indirectcommands[ Other ].indexed ) ) {
-		return false;
-	}
-	if( first.material == null_handle ) { return true; }
-	// the texture set Bind_Material() binds
-	auto const &material { m_materials.material( first.material ) };
-	if( material.texture_variants.empty() ) { return true; }
-	return ( &material.GetTextures( TSubModel::VariantId( first.submodel ) ) == &material.GetTextures( TSubModel::VariantId( other.submodel ) ) );
 }
 
 gl::program const *opengl46_renderer::Indirect_Program( material_handle Material ) const
@@ -5143,71 +4680,6 @@ std::vector<texture_handle> const &opengl46_renderer::Model_Textures(TModel3d *M
 	return textures;
 }
 
-namespace {
-
-// the group of the sleepers of a track in the gpu culling: their model, and the skin in the slot Render_Sleepers() sets it in
-scene::basic_cell::instance_bucket_key sleeper_key( TTrack const &Track ) {
-	scene::basic_cell::instance_bucket_key key;
-	key.pModel = Track.m_sleeper_model;
-	key.skins[ 1 ] = Track.m_sleeper_skin;
-	return key;
-}
-
-} // namespace
-
-void opengl46_renderer::Queue_Sleepers( TTrack *Track )
-{
-	// the gates of Render_Sleepers(); the range is tested for the whole track
-	if( ( Track->m_sleeper_model == nullptr ) || Track->m_sleeper_local_transforms.empty() || ( Global.SleeperDistance <= 0.f ) ) { return; }
-	auto const distsq { glm::length2( Track->location() - m_renderpass.pass_camera.position() ) };
-	auto const cutoffsq { static_cast<double>( Global.SleeperDistance ) * static_cast<double>( Global.SleeperDistance ) };
-	if( distsq > cutoffsq ) { return; }
-
-	auto &records { m_sleeperrecords[ Track ] };
-	auto const &transforms { Track->m_sleeper_local_transforms };
-	if( ( records.bucket.recordsversion != m_instancerecordsversion )
-	 || ( records.model != Track->m_sleeper_model )
-	 || ( records.skin != Track->m_sleeper_skin )
-	 || ( records.transforms != transforms.data() )
-	 || ( records.count != transforms.size() ) ) {
-		// each sleeper is a record placed and turned by its transform, relative to the origin of the track (the centre of its
-		// cell), with the sphere Render_Sleepers() tests against the frustum
-		auto const radius { std::max( Track->m_sleeper_model->bounding_radius(), 2.0f ) };
-		auto &bucket { records.bucket };
-		bucket.records.clear();
-		bucket.records.reserve( transforms.size() );
-		glm::vec3 low { std::numeric_limits<float>::max() };
-		glm::vec3 high { std::numeric_limits<float>::lowest() };
-		for( auto const &local : transforms ) {
-			scene::basic_cell::instance_record record;
-			glm::vec3 const position { local[ 3 ] };
-			record.position = packed_vec3{ position };
-			record.radius = radius;
-			record.rangesquaredmin = 0.f;
-			record.rangesquaredmax = std::numeric_limits<float>::max();
-			record.flags = scene::basic_cell::instance_visible | scene::basic_cell::instance_instanceable;
-			for( int column = 0; column < 3; ++column ) {
-				record.rotationscale[ column ] = local[ column ];
-			}
-			bucket.records.emplace_back( record );
-			low = glm::min( low, position );
-			high = glm::max( high, position );
-		}
-		bucket.recordorigin = Track->m_origin;
-		bucket.lodrangesquared = std::numeric_limits<float>::max();
-		bucket.recordsversion = m_instancerecordsversion;
-		bucket.gpustale = true;
-		records.key = sleeper_key( *Track );
-		records.area = scene::bounding_area{ Track->m_origin + glm::dvec3{ ( low + high ) * 0.5f }, 0.5f * glm::length( high - low ) };
-		records.model = Track->m_sleeper_model;
-		records.skin = Track->m_sleeper_skin;
-		records.transforms = transforms.data();
-		records.count = transforms.size();
-	}
-	records.frame = m_framestamp;
-	m_passcull->add_sleepers( records.key, records.bucket, records.area );
-}
-
 // the draws of the shared walk of the scene (gfx::scene_walk), made at once
 
 void opengl46_renderer::walk_material(material_handle const Material, TSubModel const *Submodel, lighting_data const *Lighting)
@@ -5359,20 +4831,19 @@ void opengl46_renderer::walk_region_begin()
 	// the gpu culling runs along the first color pass of the main viewport of a frame, and the passes of the cascades of the
 	// sun shadows, of the faces of the environment map and of the maps of headlights and lamps drawn for it, each with a culling
 	// of its own. its result is drawn (Global.gfx_gpucull 1), or compared with the one of the cpu, which draws (2)
-	m_instancecullpass = false;
-	m_passcull = nullptr;
+	opengl46_instance_cull *passcull { nullptr };
 	if( ( Global.gfx_gpucull != 0 )
 	 && ( m_current_viewport != nullptr )
 	 && ( m_current_viewport->main ) ) {
 		if( ( m_renderpass.draw_mode == rendermode::color )
 		 && ( m_instancecullframe != m_framestamp ) ) {
 			m_instancecullframe = m_framestamp;
-			m_passcull = &m_instancecull;
+			passcull = &m_instancecull;
 		}
 		else if( ( m_renderpass.draw_mode == rendermode::shadows )
 		      && ( m_lightshadowcull != nullptr ) ) {
 			// the map of a set of headlights or the scenery part of the map of a lamp, which picked its culling
-			m_passcull = m_lightshadowcull;
+			passcull = m_lightshadowcull;
 			m_shadowcasters.clear();
 		}
 		else if( ( m_renderpass.draw_mode == rendermode::shadows )
@@ -5381,41 +4852,16 @@ void opengl46_renderer::walk_region_begin()
 		      && ( m_shadowcascade < static_cast<int>( m_shadowcull.size() ) )
 		      && ( false == m_cubeshadows ) ) {
 			// the cascades of the sun
-			m_passcull = &m_shadowcull[ m_shadowcascade ];
+			passcull = &m_shadowcull[ m_shadowcascade ];
 			m_shadowcasters.clear();
 		}
 		else if( ( m_renderpass.draw_mode == rendermode::reflections )
 		      && ( Global.gfx_gpucull_reflections )
 		      && ( Global.reflectiontune.fidelity >= 1 ) ) {
-			m_passcull = &m_reflectioncull;
+			passcull = &m_reflectioncull;
 		}
 	}
-	if( m_passcull != nullptr ) {
-		m_instancecullpass = true;
-		// the same choices as in Render_Instanced()
-		auto const reflections { m_renderpass.draw_mode == rendermode::reflections };
-		opengl46_instance_cull::pass_setup setup;
-		setup.frame = m_framestamp;
-		setup.camera = m_renderpass.pass_camera.position();
-		setup.distancecamera = ( m_renderpass.draw_mode == rendermode::shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() );
-		setup.frustum = &m_renderpass.pass_camera.frustum();
-		setup.distancescale = ( reflections ? 1.f : static_cast<float>( 1.0 / ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.fDistanceFactor ) ) ) );
-		setup.distanceoffset = ( reflections ? static_cast<float>( sq( EU07_REFLECTIONFIDELITYOFFSET ) ) : 0.f );
-		setup.distancerange = ( reflections ? static_cast<float>( sq( Global.reflectiontune.range_instances ) ) : std::numeric_limits<float>::max() );
-		setup.drawrange = static_cast<float>( sq( m_renderpass.draw_range + 250 ) );
-		setup.zoom = Global.ZoomFactor;
-		setup.drawing = ( Global.gfx_gpucull == 1 );
-		m_passcull->begin_pass( setup );
-	}
-	// the sleepers of tracks go with the instances of the main view
-	m_sleeperspass = ( ( m_passcull == &m_instancecull ) && Global.gfx_gpucull_sleepers );
-	if( m_sleeperspass && ( false == m_passcull->drawing() ) ) {
-		for( auto &counts : m_sleeperbandcounts ) {
-			counts.second.clear();
-		}
-	}
-	// the models drawn on their own go with the instances of every pass culled on the gpu
-	m_modelspass = ( m_instancecullpass && Global.gfx_gpucull_models );
+	Begin_Pass_Cull( passcull, ( passcull == &m_instancecull ) );
 }
 
 void opengl46_renderer::walk_editor_cursor()
@@ -5429,70 +4875,6 @@ void opengl46_renderer::walk_editor_cursor()
 			Render_Scene_Prepass();
 		}
 		Update_Mouse_Position();
-	}
-}
-
-bool opengl46_renderer::walk_bucket(scene::basic_cell::instance_bucket_key const &Key, scene::basic_cell::instance_bucket const &Bucket, bool const Bucketrange, scene::bounding_area const &Area)
-{
-	if( m_instancecullpass ) {
-		// the gpu tests every instance of the bucket, the way Render_Instanced() does. models with nothing to draw in the
-		// sun shadows are left out of them, as Render_Instanced() leaves them
-		if( ( m_renderpass.draw_mode != rendermode::shadows ) || Instances_Cast_Shadow( Key, Bucket ) ) {
-			m_passcull->add_bucket( Key, Bucket, ( Bucketrange ? Bucket_Area( Bucket ) : Area ) );
-		}
-		// and when the instances are drawn from its result, the cpu has nothing more to do with them
-		if( m_passcull->drawing() ) { return false; }
-	}
-	// the depth pass of the whole scene culled them already, the colour pass draws what it recorded
-	if( m_indirectcolourpending ) { return false; }
-	return true;
-}
-
-void opengl46_renderer::walk_bucket_culled(scene::basic_cell::instance_bucket const &Bucket)
-{
-	if( m_instancecullpass ) {
-		m_passcull->skip_bucket( Bucket );
-	}
-}
-
-bool opengl46_renderer::walk_queue_model(TAnimModel *Instance, bool const Inrange)
-{
-	return Queue_Model( Instance, Inrange );
-}
-
-bool opengl46_renderer::walk_queue_sleepers(TTrack *Track)
-{
-	if( m_sleeperspass ) {
-		// culled with the instances of the pass and drawn from the result, or drawn by the cpu as well to compare
-		Queue_Sleepers( Track );
-		if( m_passcull->drawing() ) { return true; }
-	}
-	else if( m_indirectcolourpending && m_indirectcoloursleepers ) {
-		// the depth pass of the whole scene culled and recorded them, the colour pass draws what it recorded
-		return true;
-	}
-	return false;
-}
-
-void opengl46_renderer::walk_sleepers_drawn(TTrack const &Track, std::vector<float> const &Lodbounds, std::vector<std::pair<float, glm::mat4>> const &Drawn)
-{
-	if( m_sleeperspass && m_instancecullpass && ( false == m_passcull->drawing() ) ) {
-		// the comparison with the gpu culling: the sleepers drawn by lod band, the bands as the culling makes them, split by
-		// the bounds of the model past 0 and short of the largest float
-		auto const counted = []( float const Bound ) {
-			return ( Bound > 0.f ) && ( Bound < std::numeric_limits<float>::max() ); };
-		auto &counts { m_sleeperbandcounts[ sleeper_key( Track ) ] };
-		auto const bands { static_cast<std::size_t>( std::count_if( Lodbounds.begin(), Lodbounds.end(), counted ) ) + 1 };
-		if( counts.size() < bands ) {
-			counts.resize( bands, 0 );
-		}
-		for( auto const &survivor : Drawn ) {
-			std::size_t band { 0 };
-			for( auto const bound : Lodbounds ) {
-				if( counted( bound ) && ( bound <= survivor.first ) ) { ++band; }
-			}
-			++counts[ band ];
-		}
 	}
 }
 
@@ -5514,38 +4896,27 @@ bool opengl46_renderer::walk_instances_begin()
 		}
 		else {
 			// the view of the pass is in place here, the one Render_Instanced() takes
-			m_passcull->dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
-			// the sleepers the cpu drew along the tracks, before the culling ran
-			if( m_sleeperspass ) {
-				for( auto const &counts : m_sleeperbandcounts ) {
-					if( false == counts.second.empty() ) {
-						m_passcull->cpu_result( counts.first, counts.second, true );
-					}
-				}
-			}
-			// and the models drawn on their own
-			for( auto const &model : m_modelcpudistances ) {
-				m_passcull->cpu_instance( model.first, model.second );
-			}
+			Pass_Cull().dispatch( OpenGLMatrices.data( GL_MODELVIEW ) );
+			// what the cpu drew of the sleepers and the models drawn on their own
+			Compare_Pass_Cull();
 		}
 	}
 	return m_instancecullpass;
 }
 
-void opengl46_renderer::walk_instances_compare(scene::basic_cell::instance_bucket_key const &Key, std::vector<std::uint32_t> const &Bandcounts)
-{
-	m_passcull->cpu_result( Key, Bandcounts );
-}
-
 void opengl46_renderer::walk_instances_end()
 {
-	if( m_instancecullpass ) {
-		m_passcull->end_pass();
-		m_instancecullpass = false;
-		m_passcull = nullptr;
-	}
-	m_sleeperspass = false;
-	m_modelspass = false;
+	End_Pass_Cull();
+}
+
+gfx::geometrybank_manager &opengl46_renderer::walk_geometry()
+{
+	return m_geometry;
+}
+
+bool opengl46_renderer::walk_blending_enabled() const
+{
+	return m_blendingenabled;
 }
 
 
@@ -6730,23 +6101,9 @@ void opengl46_renderer::Render_lamp_shadows()
 		return;
 
 	// vehicles near the camera cast the shadows of the lamps, and the occupied cab
-	m_lampshadowvehicles.clear();
+	m_localshadows.lamp_vehicles(Global.pCamera.Pos);
 	auto const vehiclesrange{static_cast<double>(Global.gfx_lights_shadows_vehicles_range)};
-	if (vehiclesrange > 0.0)
-	{
-		for (auto *vehicle : simulation::Vehicles.sequence())
-		{
-			if (glm::length(vehicle->GetPosition() - Global.pCamera.Pos) <= vehiclesrange + vehicle->radius())
-				m_lampshadowvehicles.emplace_back(vehicle);
-		}
-	}
-	TDynamicObject *cab{nullptr};
-	if ((vehiclesrange > 0.0) && (false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr))
-	{
-		cab = simulation::Train->Dynamic();
-		if ((cab != nullptr) && ((false == cab->bDisplayCab) || (cab->mdKabina == nullptr) || (cab->mdKabina == cab->mdModel)))
-			cab = nullptr;
-	}
+	auto *cab{vehiclesrange > 0.0 ? m_localshadows.shadow_cab() : nullptr};
 
 	auto timing{false};
 	for (auto const idx : lamps)
@@ -6764,14 +6121,9 @@ void opengl46_renderer::Render_lamp_shadows()
 		if (false == slot.scenery)
 			continue;
 		// the vehicles by the lamp, within its reach
-		m_lampshadowslot.clear();
-		for (auto *vehicle : m_lampshadowvehicles)
-		{
-			if (glm::length(vehicle->GetPosition() - slot.position) <= slot.range + vehicle->radius())
-				m_lampshadowslot.emplace_back(vehicle);
-		}
+		auto const &slotvehicles{m_localshadows.slot_vehicles(slot)};
 		auto *slotcab{(cab != nullptr) && (glm::length(cab->GetPosition() - slot.position) <= slot.range + cab->radius()) ? cab : nullptr};
-		if (m_lampshadowslot.empty() && (slotcab == nullptr))
+		if (slotvehicles.empty() && (slotcab == nullptr))
 		{
 			m_localshadows.no_vehicles(idx);
 			continue;
@@ -6812,7 +6164,7 @@ void opengl46_renderer::Render_lamp_shadow(std::size_t const Slot, bool const Ve
 	m_cubeshadows = true;
 	if (Vehicles)
 	{
-		for (auto *vehicle : m_lampshadowslot)
+		for (auto *vehicle : m_localshadows.slot_vehicles())
 		{
 			Render(vehicle);
 		}
@@ -6864,43 +6216,8 @@ void opengl46_renderer::Render_headlight_shadows()
 {
 	// the headlights which shine, the most important first (in the order of Update_Lights()), whose beam may be seen within the
 	// reach of the shadows
-	m_headlightshadowpicked.clear();
-	auto const count{(Global.gfx_lights_headlights && (std::clamp(Global.gfx_lights_shadows, 0, 3) > 0)) ? std::clamp(Global.gfx_lights_shadows_headlights, 0, static_cast<int>(gl::MAX_HEADLIGHT_SHADOWS)) : 0};
-	if (count > 0)
-	{
-		m_headlightshadowcandidates.clear();
-		auto const camera{m_colorpass.pass_camera.position()};
-		auto const range{static_cast<double>(Global.gfx_lights_shadows_headlights_range)};
-		for (auto const &light : simulation::Lights.data)
-		{
-			if (light.intensity == 0.f)
-				continue;
-			// as in Update_Lights(): by day the light around takes the beam down to nothing
-			auto luminance{static_cast<float>(Global.fLuminance)};
-			if (light.owner->fShade > 0.f)
-				luminance *= light.owner->fShade;
-			auto const beam{light.color - glm::vec3{luminance}};
-			if (std::max(beam.r, std::max(beam.g, beam.b)) <= 0.f)
-				continue;
-			// the part of the beam the shadows are cast in: from the end of the vehicle to the reach ahead of it
-			auto const &dimensions{light.owner->MoverParameters->Dim};
-			auto const radius{range * 0.5 + std::max(dimensions.W, dimensions.H) + 2.0};
-			auto const centre{light.position + glm::dvec3{light.direction} * (range * 0.5 + 2.0)};
-			if (glm::length(centre - camera) - radius > range)
-				continue;
-			if (false == m_colorpass.pass_camera.visible(scene::bounding_area{centre, static_cast<float>(radius)}))
-				continue;
-			m_headlightshadowcandidates.emplace_back(static_cast<float>(glm::length2(camera - light.position)) / light.intensity, &light);
-		}
-		auto const picked{std::min(m_headlightshadowcandidates.size(), static_cast<std::size_t>(count))};
-		std::partial_sort(std::begin(m_headlightshadowcandidates), std::begin(m_headlightshadowcandidates) + picked, std::end(m_headlightshadowcandidates),
-		                  [](auto const &Left, auto const &Right) { return Left.first < Right.first; });
-		for (std::size_t idx = 0; idx < picked; ++idx)
-		{
-			m_headlightshadowpicked.emplace_back(m_headlightshadowcandidates[idx].second);
-		}
-	}
-	m_localshadows.update_headlights(m_headlightshadowpicked, m_framestamp);
+	auto const &picked{m_localshadows.pick_headlights(simulation::Lights, m_colorpass.pass_camera)};
+	m_localshadows.update_headlights(picked, m_framestamp);
 	// the maps may have been made anew, in place of the ones bound for this frame
 	m_localshadows.bind();
 	auto const &slots{m_localshadows.headlights()};
@@ -6908,23 +6225,17 @@ void opengl46_renderer::Render_headlight_shadows()
 		return;
 
 	// the occupied cab, as in Render_lamp_shadows()
-	TDynamicObject *cab{nullptr};
-	if ((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr))
-	{
-		cab = simulation::Train->Dynamic();
-		if ((cab != nullptr) && ((false == cab->bDisplayCab) || (cab->mdKabina == nullptr) || (cab->mdKabina == cab->mdModel)))
-			cab = nullptr;
-	}
+	auto *cab{m_localshadows.shadow_cab()};
 	auto timing{false};
 	for (auto const idx : slots)
 	{
 		auto const &slot{m_localshadows.headlight(idx)};
 		light_array::light_record const *light{nullptr};
-		for (auto const *picked : m_headlightshadowpicked)
+		for (auto const *candidate : picked)
 		{
-			if ((picked->owner == slot.owner) && (picked->index == slot.index))
+			if ((candidate->owner == slot.owner) && (candidate->index == slot.index))
 			{
-				light = picked;
+				light = candidate;
 				break;
 			}
 		}
@@ -7115,154 +6426,35 @@ bool opengl46_renderer::Resolved_Depth_Target(viewport_config &vp)
 
 glm::vec3 opengl46_renderer::Shadow_Light_Vector() const
 {
-	// cap the vertical angle to keep shadows from getting too long
-	return glm::normalize(glm::vec3{m_sunlight.direction.x, std::min(m_sunlight.direction.y, Global.gfx_shadow_angle_min), m_sunlight.direction.z});
+	return gfx::shadow_fit::light_vector(m_sunlight.direction);
 }
 
 glm::mat3 opengl46_renderer::Shadow_Light_Rotation() const
 {
-	// the rotation of the view of the shadow pass (setup_pass())
-	return glm::mat3{glm::lookAt(glm::vec3{0.f}, Shadow_Light_Vector(), glm::vec3{0.f, 1.f, 0.f})};
+	return gfx::shadow_fit::light_rotation(m_sunlight.direction);
 }
 
 std::array<float, gl::MAX_CASCADES + 1> opengl46_renderer::Shadow_Fixed_Splits() const
 {
-	static_assert(gl::MAX_CASCADES == 3, "the fixed cascades are made for 3 of them");
-	std::array<float, gl::MAX_CASCADES + 1> splits{0.0f, Global.shadowtune.range / 32, Global.shadowtune.range / 8, Global.shadowtune.range};
-	if (Global.shadowtune.map_size > 2048)
-	{
-		// increase coverage if our shadow map is large enough to produce decent results
-		for (std::size_t idx = 1; idx < splits.size(); ++idx)
-			splits[idx] *= Global.shadowtune.map_size / 2048;
-	}
-	return splits;
+	return gfx::shadow_fit::fixed_splits();
 }
 
 char const *opengl46_renderer::Shadow_Fit_Unavailable(viewport_config const &Viewport) const
 {
-	if (false == Global.gfx_shadowmap_enabled)
-		return "no shadow maps";
-	if (Global.bWireFrame)
-		return "wireframe";
-	// the shadows follow the camera, the view shows another one
-	if (DebugCameraFlag)
-		return "debug camera";
-	if (Global.gfx_skippipeline || (Viewport.msaa_fb == nullptr))
-		return "no post processing";
-	if (EditorModeFlag && Global.EditorOrtho)
-		return "orthographic view";
 	auto const shadowviews{std::count_if(m_viewports.begin(), m_viewports.end(), [](auto const &View) { return View->shadow; })};
-	if ((false == Viewport.shadow) || (shadowviews != 1))
-		return "the shadows cover more than one view";
-	return nullptr;
+	return gfx::shadow_fit::unavailable((false == Global.gfx_skippipeline) && (Viewport.msaa_fb != nullptr), Viewport.shadow, static_cast<std::size_t>(shadowviews));
 }
 
 bool opengl46_renderer::Shadow_Fit(viewport_config const &Viewport, std::array<float, gl::MAX_CASCADES + 1> &Splits,
                                    std::array<std::optional<std::array<glm::vec3, 8>>, gl::MAX_CASCADES> &Areas)
 {
-	// a measurement older than this many frames, made with the camera this many metres away or the view turned this many
-	// degrees from the one now, isn't used
-	constexpr unsigned int AGE_MAX{6};
-	constexpr float SHIFT_MAX{25.f};
-	constexpr float TURN_MAX{20.f};
-	// metres an area grows by on each side: the vehicles move in the frames since the measurement too
-	constexpr float MARGIN{0.25f};
-
-	auto &state{m_shadowfitstate};
-	state = shadow_fit_state{};
-	if (false == Global.gfx_shadow_sdsm)
-		return false;
-	if ((state.reason = Shadow_Fit_Unavailable(Viewport)) != nullptr)
-		return false;
-	auto const *latest{m_shadowfit.latest()};
-	if (latest == nullptr)
+	auto const *unavailable{Global.gfx_shadow_sdsm ? Shadow_Fit_Unavailable(Viewport) : nullptr};
+	if (Global.gfx_shadow_sdsm && (unavailable == nullptr))
 	{
-		state.reason = "no measurement yet";
-		return false;
+		// takes in what came back
+		m_shadowfit.latest();
 	}
-	auto const &data{latest->data};
-	auto const &source{latest->source};
-	state.age = m_framestamp - latest->frame;
-	state.depthmin = data.depthmin;
-	state.depthmax = data.depthmax;
-	if (state.age > AGE_MAX)
-	{
-		state.reason = "the measurement is too old";
-		return false;
-	}
-	if (data.samples == 0)
-	{
-		state.reason = "only the sky in the view";
-		return false;
-	}
-	if (source.range != Shadow_Fixed_Splits().back())
-	{
-		state.reason = "the range of the shadows changed";
-		return false;
-	}
-	// the shadows of this frame are made for its colour pass
-	auto const &camera{m_colorpass.pass_camera};
-	auto const shift{glm::vec3{source.camera - camera.position()}};
-	if (glm::length(shift) > SHIFT_MAX)
-	{
-		state.reason = "the camera jumped";
-		return false;
-	}
-	auto const turnmatrix{glm::mat3{camera.modelview()} * glm::transpose(source.rotation)};
-	auto const turn{std::acos(std::clamp((turnmatrix[0][0] + turnmatrix[1][1] + turnmatrix[2][2] - 1.f) * 0.5f, -1.f, 1.f))};
-	state.turn = glm::degrees(turn);
-	if (state.turn > TURN_MAX)
-	{
-		state.reason = "the view turned too fast";
-		return false;
-	}
-	auto const &projection{camera.projection()};
-	if ((std::abs(projection[0][0] - source.projection[0][0]) > 0.02f * std::abs(projection[0][0]))
-	 || (std::abs(projection[1][1] - source.projection[1][1]) > 0.02f * std::abs(projection[1][1])))
-	{
-		state.reason = "the field of view changed";
-		return false;
-	}
-
-	// the first cascade from the camera, like the fixed ones. setup_pass() takes distances up to 1 m as shares of the far
-	// end, so the others start past that
-	Splits[0] = 0.f;
-	for (std::size_t split = 1; split < Splits.size(); ++split)
-		Splits[split] = std::max(data.splits[split], Splits[split - 1] + 1.5f);
-	if (false == std::isfinite(Splits.back()))
-	{
-		state.reason = "invalid measurement";
-		return false;
-	}
-
-	auto const inverselight{glm::transpose(source.light)};
-	// the scenery stays where it was while the camera moved, the cab and the train the camera rides with moved along. an area
-	// covers both
-	auto const lightshift{source.light * shift};
-	auto const chord{2.f * std::sin(turn * 0.5f)};
-	for (std::size_t cascade = 0; cascade < gl::MAX_CASCADES; ++cascade)
-	{
-		// with nothing of the view in a cascade, its map covers the whole slice
-		if (data.counts[cascade] == 0)
-			continue;
-		auto const *bounds{&data.bounds[cascade * 8]};
-		glm::vec3 low{opengl46_shadow_fit::unorder(bounds[0]), opengl46_shadow_fit::unorder(bounds[1]), opengl46_shadow_fit::unorder(bounds[2])};
-		glm::vec3 high{opengl46_shadow_fit::unorder(bounds[4]), opengl46_shadow_fit::unorder(bounds[5]), opengl46_shadow_fit::unorder(bounds[6])};
-		if ((false == std::isfinite(low.x + low.y + high.x + high.y)) || (low.x > high.x) || (low.y > high.y))
-			continue;
-		low = glm::min(low, low + lightshift);
-		high = glm::max(high, high + lightshift);
-		// and what came into the view as it turned, out to the reach of the cascade
-		auto const reach{Splits[cascade + 1] + static_cast<float>(gl::MAX_CASCADES - cascade)};
-		auto const margin{reach * chord + MARGIN + 0.01f * std::max(high.x - low.x, high.y - low.y)};
-		low -= glm::vec3{margin};
-		high += glm::vec3{margin};
-		auto &area{Areas[cascade].emplace()};
-		for (int corner = 0; corner < 8; ++corner)
-			area[corner] = inverselight * glm::vec3{(corner & 1) ? high.x : low.x, (corner & 2) ? high.y : low.y, (corner & 4) ? high.z : low.z};
-	}
-	state.fitted = true;
-	return true;
+	return m_shadowfit.fit(m_framestamp, m_colorpass.pass_camera, unavailable, Splits, Areas, m_shadowfitstate);
 }
 
 void opengl46_renderer::Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize)

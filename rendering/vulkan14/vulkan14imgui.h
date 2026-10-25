@@ -50,7 +50,7 @@ class imgui_backend : public imgui_renderer
 	}
 	// records the frame of imgui into Commands, in a rendering to an image of Extent and Format begun by the renderer. Srgb: the
 	// image encodes the colour itself
-	void record(VkCommandBuffer Commands, VkExtent2D Extent, VkFormat Format, bool Srgb);
+	void record(command_stream *Commands, VkExtent2D Extent, VkFormat Format, bool Srgb);
 	// the frame of imgui is dropped (nothing to draw it to)
 	void skip()
 	{

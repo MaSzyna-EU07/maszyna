@@ -44,7 +44,7 @@ class swapchain
 	// the image of the frame Frame (index of the frame in flight)
 	acquire_result acquire(std::uint32_t const Frame);
 	// the image acquired, from undefined to cleared with Colour (linear) and ready to be shown
-	void record_clear(VkCommandBuffer Commands, glm::vec4 const &Colour) const;
+	void record_clear(command_stream *Commands, glm::vec4 const &Colour) const;
 	// the image acquired and its view
 	VkImage image() const
 	{

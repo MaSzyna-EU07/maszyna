@@ -6,10 +6,14 @@
 //
 // the pipeline layout is picked by a define before the include of this file:
 //   (none)         the passes of the scene (materials, shadows, picking, lines, sprites, sky, particles): set PASS_SET with
-//                  the blocks of the scene, of the draws, of the instances, the lights, the clusters and the shadow,
-//                  environment and headlight maps; set MATERIAL_SET with the textures of the material
-//   LAYOUT_POST    the post-processing and the copies of whole images: set POST_SET pushed with the images read, the
-//                  parameters in the push constants (param stands for pc.data)
+//                  the blocks of the scene, of the draws, of the instances, the lights, the clusters, the shadow,
+//                  environment and headlight maps, the light of the sky, the weather, the shadows of the lamps and the depth
+//                  of the scene; set MATERIAL_SET with the textures of the material
+//   LAYOUT_COMPUTE the compute kernels (vk14::compute_kernel): set PASS_SET as above (the block of the scene, the lights, the
+//                  clusters, the light of the sky; the weather and the atmosphere with their includes), set COMPUTE_SET
+//                  pushed with the bindings the kernel declares from 0 on, its parameters in push constants of its own
+//   LAYOUT_POST    the post-processing and the copies of whole images: set POST_SET pushed with the images read and the
+//                  exposure, the parameters in the push constants (param stands for pc.data)
 //   LAYOUT_CLUSTER the compute passes of the light clusters: set 0 pushed at the CL_* bindings
 //   LAYOUT_UI      the user interface: none of the above, its own push constants
 //
@@ -40,7 +44,22 @@
 #define SHADOW_TEX 7
 #define ENV_TEX 8
 #define HEADLIGHT_TEX 9
-#define PASS_BINDING_COUNT 10
+#define SKY_SSBO 10
+#define ATMOSPHERE_UBO 11
+#define SKY_VIEW_TEX 12
+#define ENV_GGX_TEX 13
+#define WEATHER_UBO 14
+#define WEATHER_HORIZON_UBO 15
+#define FOG_VOLUME_TEX 16
+#define CLOUD_SHADOW_TEX 17
+#define CLOUD_SHAPE_TEX 18
+#define CLOUD_DETAIL_TEX 19
+#define CLOUD_COVERAGE_TEX 20
+#define LOCAL_SHADOW_TEX 21
+#define LOCAL_SHADOW_LAMPS_TEX 22
+#define HEADLIGHT_SHADOW_TEX 23
+#define SCENE_DEPTH_TEX 24
+#define PASS_BINDING_COUNT 25
 #define MATERIAL_TEXTURE_FIRST 0
 #define CL_CLUSTER_UBO 0
 #define CL_AABB_SSBO 1
@@ -50,6 +69,9 @@
 #define CL_LIGHT_SSBO 5
 #define POST_SET 0
 #define POST_TEXTURE_FIRST 0
+#define POST_TEXTURES 4
+#define POST_EXPOSURE_SSBO 4
+#define COMPUTE_SET 1
 #define PUSH_CONSTANTS_SIZE 112
 #define SPEC_OUTPUT_GAMMA 0
 #define SPEC_SHADOWMAP_ENABLED 1
@@ -69,11 +91,35 @@
 #define MAX_LIGHTS_PER_CLUSTER 64
 #define CLUSTER_BUILD_GROUP_SIZE 64
 #define CLUSTER_CULL_GROUP_SIZE 64
+#define ENVMAP_GGX_LEVELS 7U
+#define ENVMAP_GGX_ROUGHNESS_MIN 0.200000
+#define ENVMAP_GGX_GROUP_SIZE 8
+#define EXPOSURE_HISTOGRAM_BINS 256
+#define EXPOSURE_HISTOGRAM_GROUP_SIZE 16
+#define ATMOSPHERE_TRANSMITTANCE_WIDTH 256
+#define ATMOSPHERE_TRANSMITTANCE_HEIGHT 64
+#define ATMOSPHERE_MULTISCATTERING_SIZE 32
+#define ATMOSPHERE_SKYVIEW_WIDTH 192
+#define ATMOSPHERE_SKYVIEW_HEIGHT 108
+#define ATMOSPHERE_AMBIENT_GROUP_SIZE 256
+#define MAX_CLOUD_LAYERS 4
+#define FOG_HORIZON_SAMPLES 32
+#define WEATHER_GROUP_SIZE 8
+#define FOG_VOLUME_BIAS 10.000000
+#define INSTANCE_CULL_GROUP_SIZE 64
+#define INSTANCE_OFFSETS_GROUP_SIZE 1024
+#define INSTANCE_COMMAND_GROUP_SIZE 64
+#define INSTANCE_COUNTER_HEADER 8
+#define INSTANCE_JOB_SLEEPERS 1U
+#define HIZ_GROUP_SIZE 8
+#define SHADOW_FIT_GROUP_SIZE 16
+#define LOCAL_SHADOW_NEAR 0.150000
+#define PARTICLE_GROUP_SIZE 64
 #endif
 
 #include "settings.glsl"
 
-#ifndef LAYOUT_UI
+#if !defined(LAYOUT_UI) && !defined(LAYOUT_COMPUTE)
 // vk14::draw_constants, PUSH_CONSTANTS_SIZE bytes, visible in every stage. draw: the element of model_draws[] the draw reads
 // (the passes of the scene); flags and data: the parameters of the special shaders, each says what it takes from them
 layout(push_constant) uniform draw_constants_block
@@ -171,8 +217,9 @@ layout(std430, set = 0, binding = CL_LIGHT_SSBO) readonly buffer light_ssbo
 	uint lights_count;
 	// 1 if the shading takes the lights from the list of the cluster of a fragment, see cluster_ubo
 	uint lights_clustered;
-	// not used by the shaders of this renderer yet (the sky ambient light and the prefiltered environment map come later)
+	// scale of the directional part of the sky ambient light, see sky_ssbo
 	float sky_ambient_factor;
+	// 1 if rough reflections come from the prefiltered environment map
 	uint env_ggx;
 
 	light_s lights[];
@@ -182,6 +229,16 @@ layout(std430, set = 0, binding = CL_LIGHT_SSBO) readonly buffer light_ssbo
 
 // the post-processing reads the parameters the opengl renderer gives it in the model block from the push constants
 #define param pc.data
+
+// exposure worked out by exposure_average.comp, gl::exposure_data
+layout(std430, set = POST_SET, binding = POST_EXPOSURE_SSBO) readonly buffer exposure_ssbo
+{
+	uint histogram[EXPOSURE_HISTOGRAM_BINS];
+	float adapted_luminance;
+	float exposure;
+	float average_luminance;
+	uint valid;
+};
 
 #elif !defined(LAYOUT_UI)
 
@@ -204,7 +261,8 @@ layout(std140, set = PASS_SET, binding = SCENE_UBO) uniform scene_ubo
 	vec4 shadow_fit;
 };
 
-// the model block of a draw, gl::model_ubs (256 bytes), the one of the draw picked by pc.draw. the names below stand for its
+#ifndef LAYOUT_COMPUTE
+// the model block of a draw, gl::model_ubs (256 bytes), the one of the draw picked by pc.draw (MODEL_DRAW). the names below stand for its
 // fields, so the shaders read them as the uniform block of the opengl renderer
 struct model_draw_s
 {
@@ -225,15 +283,32 @@ layout(std430, set = PASS_SET, binding = DRAW_SSBO) readonly buffer model_draw_s
 	model_draw_s model_draws[];
 };
 
-#define modelview model_draws[pc.draw].modelview
-#define modelviewnormal model_draws[pc.draw].modelviewnormal
-#define param model_draws[pc.draw].param
-#define future model_draws[pc.draw].future
-#define opacity model_draws[pc.draw].opacity
-#define emission model_draws[pc.draw].emission
-#define fog_density model_draws[pc.draw].fog_density
-#define alpha_mult model_draws[pc.draw].alpha_mult
-#define shadow_tone model_draws[pc.draw].shadow_tone
+#ifdef MODEL_DRAWS
+// programs of the multi draws of the instances drawn from the gpu culling: the blocks of the draws of a multi draw follow one
+// another from the one of pc.draw, picked by the number of the draw in it. the fragment stage gets the block from the vertex
+// stage (which writes f_model_draw)
+#if defined(STAGE_VERTEX)
+layout(location = 11) flat out uint f_model_draw;
+#define MODEL_DRAW (pc.draw + uint(gl_DrawID))
+#elif defined(STAGE_FRAGMENT)
+layout(location = 11) flat in uint f_model_draw;
+#define MODEL_DRAW f_model_draw
+#else
+#define MODEL_DRAW pc.draw
+#endif
+#else
+#define MODEL_DRAW pc.draw
+#endif
+
+#define modelview model_draws[MODEL_DRAW].modelview
+#define modelviewnormal model_draws[MODEL_DRAW].modelviewnormal
+#define param model_draws[MODEL_DRAW].param
+#define future model_draws[MODEL_DRAW].future
+#define opacity model_draws[MODEL_DRAW].opacity
+#define emission model_draws[MODEL_DRAW].emission
+#define fog_density model_draws[MODEL_DRAW].fog_density
+#define alpha_mult model_draws[MODEL_DRAW].alpha_mult
+#define shadow_tone model_draws[MODEL_DRAW].shadow_tone
 
 // per-instance modelview matrices of the instanced draws, element 0 the identity. a draw which isn't instanced is drawn with
 // firstInstance 0, an instanced one from its base instance on, with modelview set to the submodel-local chain (computed from
@@ -242,6 +317,7 @@ layout(std430, set = PASS_SET, binding = INSTANCE_SSBO) readonly buffer instance
 {
 	mat4 instance_modelview[];
 };
+#endif
 
 // the light buffer of the pass, gl::light_data
 layout(std430, set = PASS_SET, binding = LIGHT_SSBO) readonly buffer light_ssbo
@@ -255,11 +331,19 @@ layout(std430, set = PASS_SET, binding = LIGHT_SSBO) readonly buffer light_ssbo
 	uint lights_count;
 	// 1 if the shading takes the lights from the list of the cluster of a fragment, see cluster_ubo
 	uint lights_clustered;
-	// not used by the shaders of this renderer yet (the sky ambient light and the prefiltered environment map come later)
+	// scale of the directional part of the sky ambient light, see sky_ssbo
 	float sky_ambient_factor;
+	// 1 if rough reflections come from the prefiltered environment map
 	uint env_ggx;
 
 	light_s lights[];
+};
+
+// directional part of the sky ambient light: real spherical harmonics (bands 1 and 2, band 0 is ambient) of the light
+// a surface facing a world space direction gets, in units of ambient. see gl::sky_data
+layout(std430, set = PASS_SET, binding = SKY_SSBO) readonly buffer sky_ssbo
+{
+	vec4 sky_ambient_sh[9];
 };
 
 // the grid of the light clusters of the pass, gl::cluster_ubs; the compute passes fill the lists, shading only reads them

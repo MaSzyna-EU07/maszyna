@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/opengl46/opengl46exposure.h"
+#include "rendering/common/exposure.h"
 
 #include "model/Texture.h"
 #include "utilities/Globals.h"
@@ -17,16 +18,8 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
-// luminance range of the histogram, log2: 2^-12 .. 2^6. darker pixels count as black, brighter ones as the brightest
-float const HISTOGRAM_LOG_MIN{-12.f};
-float const HISTOGRAM_LOG_MAX{6.f};
-// the bloom chain goes down this many levels at most, and not below this size
-std::size_t const BLOOM_LEVELS{6};
-int const BLOOM_MIN_SIZE{8};
 // format of the levels: no alpha, no negative values, half the memory of rgba16f
 GLint const BLOOM_FORMAT{GL_R11F_G11F_B10F};
-// soft knee of the threshold, a fraction of it
-float const BLOOM_KNEE{0.5f};
 
 } // namespace
 
@@ -58,12 +51,8 @@ void opengl46_exposure::bind()
 std::unique_ptr<opengl46_exposure::bloom_chain> opengl46_exposure::make_bloom_chain(int const Width, int const Height)
 {
 	auto chain{std::make_unique<bloom_chain>()};
-	glm::ivec2 size{Width, Height};
-	for (std::size_t level = 0; level < BLOOM_LEVELS; ++level)
+	for (auto const &size : gfx::exposure_settings::bloom_sizes(Width, Height))
 	{
-		size = glm::max(size / 2, glm::ivec2{1});
-		if (level > 0 && std::min(size.x, size.y) < BLOOM_MIN_SIZE)
-			break;
 		chain->sizes.push_back(size);
 		auto &texture{chain->down.emplace_back(std::make_unique<opengl_texture>())};
 		texture->alloc_rendertarget(BLOOM_FORMAT, GL_RGB, size.x, size.y, 1, 1, GL_CLAMP_TO_EDGE);
@@ -94,19 +83,18 @@ void opengl46_exposure::measure(opengl_texture &Image, double const Deltatime)
 	m_exposure_timer.begin();
 	m_exposure_ssbo->bind_base();
 	Image.bind(0);
-	auto const bins{static_cast<float>(gl::EXPOSURE_HISTOGRAM_BINS - 2)};
-	glProgramUniform2f(*m_histogram_program, 0, HISTOGRAM_LOG_MIN, bins / (HISTOGRAM_LOG_MAX - HISTOGRAM_LOG_MIN));
+	auto const histogramrange{gfx::exposure_settings::histogram_range()};
+	glProgramUniform2f(*m_histogram_program, 0, histogramrange.x, histogramrange.y);
 	auto const groupsize{2 * static_cast<int>(gl::EXPOSURE_HISTOGRAM_GROUP_SIZE)};
 	m_histogram_program->dispatch((Image.get_width() + groupsize - 1) / groupsize, (Image.get_height() + groupsize - 1) / groupsize);
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-	glProgramUniform2f(*m_average_program, 0, HISTOGRAM_LOG_MIN, (HISTOGRAM_LOG_MAX - HISTOGRAM_LOG_MIN) / bins);
-	glProgramUniform4f(*m_average_program, 1,
-	    static_cast<float>(std::clamp(Deltatime, 0.0, 1.0)),
-	    Global.gfx_postfx_autoexposure_speed_dark,
-	    Global.gfx_postfx_autoexposure_speed_bright,
-	    Global.gfx_postfx_autoexposure_key);
-	glProgramUniform2f(*m_average_program, 2, std::exp2(Global.gfx_postfx_autoexposure_min), std::exp2(Global.gfx_postfx_autoexposure_max));
+	auto const averagerange{gfx::exposure_settings::average_range()};
+	auto const adaptation{gfx::exposure_settings::adaptation(Deltatime)};
+	auto const exposurerange{gfx::exposure_settings::exposure_range()};
+	glProgramUniform2f(*m_average_program, 0, averagerange.x, averagerange.y);
+	glProgramUniform4f(*m_average_program, 1, adaptation.x, adaptation.y, adaptation.z, adaptation.w);
+	glProgramUniform2f(*m_average_program, 2, exposurerange.x, exposurerange.y);
 	m_average_program->dispatch(1);
 	// read by the tonemapping, and copied for the debug window
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
@@ -122,7 +110,7 @@ opengl_texture *opengl46_exposure::bloom(bloom_chain &Chain, opengl_texture &Ima
 	// down, the first step from the image itself
 	for (std::size_t level = 0; level < Chain.sizes.size(); ++level)
 	{
-		Model.param[0] = glm::vec4{(level == 0 ? 1.f : 0.f), Global.gfx_postfx_bloom_threshold, BLOOM_KNEE, 0.f};
+		Model.param[0] = gfx::exposure_settings::bloom_params(level);
 		Modelubo.update(Model);
 		glViewport(0, 0, Chain.sizes[level].x, Chain.sizes[level].y);
 		m_bloom_down->apply(level == 0 ? Image : *Chain.down[level - 1], Chain.down_fb[level].get());
@@ -141,12 +129,7 @@ opengl_texture *opengl46_exposure::bloom(bloom_chain &Chain, opengl_texture &Ima
 
 glm::vec4 opengl46_exposure::tonemap_params(std::size_t const Bloomlevels) const
 {
-	auto const bloom{(Global.gfx_postfx_bloom && Bloomlevels > 0) ? Global.gfx_postfx_bloom_intensity : 0.f};
-	return glm::vec4{
-	    bloom,
-	    Global.gfx_postfx_autoexposure ? 1.f : 0.f,
-	    std::exp2(Global.gfx_postfx_autoexposure_compensation),
-	    Bloomlevels > 0 ? 1.f / static_cast<float>(Bloomlevels) : 0.f};
+	return gfx::exposure_settings::tonemap_params(Bloomlevels);
 }
 
 std::string opengl46_exposure::info_times()
@@ -161,15 +144,5 @@ std::string opengl46_exposure::info_times()
 
 void opengl46_exposure::draw_debug_ui()
 {
-	ImGui::Checkbox("automatic exposure (gfx.postfx.autoexposure)", &Global.gfx_postfx_autoexposure);
-	ImGui::SliderFloat("key", &Global.gfx_postfx_autoexposure_key, 0.02f, 2.f, "%.3f", ImGuiSliderFlags_Logarithmic);
-	ImGui::SliderFloat("min EV", &Global.gfx_postfx_autoexposure_min, -4.f, 0.f);
-	ImGui::SliderFloat("max EV", &Global.gfx_postfx_autoexposure_max, 0.f, 4.f);
-	ImGui::SliderFloat("adaptation to dark (1/s)", &Global.gfx_postfx_autoexposure_speed_dark, 0.05f, 10.f);
-	ImGui::SliderFloat("adaptation to bright (1/s)", &Global.gfx_postfx_autoexposure_speed_bright, 0.05f, 10.f);
-	ImGui::SliderFloat("compensation EV", &Global.gfx_postfx_autoexposure_compensation, -4.f, 4.f);
-	ImGui::Text("average luminance %.3f, adapted %.3f, exposure %.3f (%+.2f EV)", m_readback_data[2], m_readback_data[0], m_readback_data[1], std::log2(std::max(m_readback_data[1], 1e-6f)));
-	ImGui::Checkbox("bloom (gfx.postfx.bloom)", &Global.gfx_postfx_bloom);
-	ImGui::SliderFloat("bloom intensity", &Global.gfx_postfx_bloom_intensity, 0.f, 0.5f);
-	ImGui::SliderFloat("bloom threshold", &Global.gfx_postfx_bloom_threshold, 0.f, 10.f);
+	gfx::exposure_settings::draw_debug_ui(m_readback_data);
 }

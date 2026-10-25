@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14swapchain.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14instance.h"
 #include "rendering/vulkan14/vulkan14device.h"
 #include "utilities/Globals.h"
@@ -360,7 +361,7 @@ void swapchain::presented(VkResult const Result)
 	}
 }
 
-void swapchain::record_clear(VkCommandBuffer Commands, glm::vec4 const &Colour) const
+void swapchain::record_clear(command_stream *Commands, glm::vec4 const &Colour) const
 {
 	VkImageMemoryBarrier2 barrier{};
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -380,7 +381,7 @@ void swapchain::record_clear(VkCommandBuffer Commands, glm::vec4 const &Colour) 
 	dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 	dependency.imageMemoryBarrierCount = 1;
 	dependency.pImageMemoryBarriers = &barrier;
-	vkCmdPipelineBarrier2(Commands, &dependency);
+	Commands->pipeline_barrier2(&dependency);
 
 	VkRenderingAttachmentInfo colour{};
 	colour.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -396,8 +397,8 @@ void swapchain::record_clear(VkCommandBuffer Commands, glm::vec4 const &Colour) 
 	rendering.layerCount = 1;
 	rendering.colorAttachmentCount = 1;
 	rendering.pColorAttachments = &colour;
-	vkCmdBeginRendering(Commands, &rendering);
-	vkCmdEndRendering(Commands);
+	Commands->begin_rendering(&rendering);
+	Commands->end_rendering();
 
 	barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 	barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
@@ -405,7 +406,7 @@ void swapchain::record_clear(VkCommandBuffer Commands, glm::vec4 const &Colour) 
 	barrier.dstAccessMask = VK_ACCESS_2_NONE;
 	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	vkCmdPipelineBarrier2(Commands, &dependency);
+	Commands->pipeline_barrier2(&dependency);
 }
 
 void swapchain::release_images()

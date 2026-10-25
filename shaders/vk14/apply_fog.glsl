@@ -1,20 +1,21 @@
-// fog between the camera and a fragment, the api of shaders/ogl46/apply_fog.glsl. the fog volume and the weather of the opengl
-// renderer come with the stage P2 of the plan; until then the fog is analytic: exponential with the distance, of the density of
-// the draw (fog_density of the model block, a draw with 0 is not fogged), of the colour fog_color of the light buffer, turned
-// towards the colour of the sun around its direction
+// fog between the camera and a fragment, see fog_volume.glsl and weather_common.glsl. a draw with a fog_density of 0 is not
+// fogged; one with another density than the regular one (the glare of lamps) gets the optical depth scaled by the ratio
+#include "fog_volume.glsl"
+
 // rgb: light the fog adds, a: what it lets through
 vec4 fog_at_fragment()
 {
 	if (fog_density <= 0.0)
 		return vec4(0.0, 0.0, 0.0, 1.0);
-	float amount = 1.0 - clamp(exp(-length(f_pos.xyz) * fog_density), 0.0, 1.0);
-	vec3 color = fog_color;
-	if ((lights_count >= 1U) && (lights[0].type == LIGHT_DIR))
+	vec4 fog = fog_along_view(f_pos.xyz, gl_FragCoord.xy);
+	float scale = fog_density / max(fog_light.w, 1e-12);
+	if (abs(scale - 1.0) > 1e-3)
 	{
-		float sunward = pow(max(dot(normalize(f_pos.xyz), normalize(-lights[0].dir)), 0.0), 30.0);
-		color = mix(color, lights[0].color, sunward);
+		float transmittance = exp(log(max(fog.a, 1e-8)) * scale);
+		fog.rgb *= (1.0 - transmittance) / max(1.0 - fog.a, 1e-4);
+		fog.a = transmittance;
 	}
-	return vec4(color * amount, 1.0 - amount);
+	return fog;
 }
 
 vec3 get_fog_color()

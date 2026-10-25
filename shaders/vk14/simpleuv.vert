@@ -11,4 +11,8 @@ void main()
 {
 	gl_Position = (projection * effective_modelview()) * vec4(v_vert, 1.0f);
 	f_coord = v_coord;
+#ifdef MODEL_DRAWS
+	// which block of the multi draw the fragments read (common.glsl)
+	f_model_draw = MODEL_DRAW;
+#endif
 }

@@ -47,7 +47,31 @@ constexpr std::uint32_t CLUSTER_INDEX_SSBO = 6;
 constexpr std::uint32_t SHADOW_TEX = 7;
 constexpr std::uint32_t ENV_TEX = 8;
 constexpr std::uint32_t HEADLIGHT_TEX = 9;
-constexpr std::uint32_t PASS_BINDING_COUNT = 10;
+// the light of the sky (the stage P1): the directional part of the ambient light (gl::sky_data), the parameters of the
+// atmosphere (gl::atmosphere_ubs), its sky-view table, the environment map prefiltered with the GGX lobe
+constexpr std::uint32_t SKY_SSBO = 10;
+constexpr std::uint32_t ATMOSPHERE_UBO = 11;
+constexpr std::uint32_t SKY_VIEW_TEX = 12;
+constexpr std::uint32_t ENV_GGX_TEX = 13;
+// the weather (the stage P2): its block (gl::weather_ubs without the colours of the horizon, dynamic offset: it differs from
+// pass to pass), the colours of the fog towards the horizon (written by fog_horizon.comp or by the cpu), the fog volume of the
+// main view, the shadows of the clouds and the noises of the clouds
+constexpr std::uint32_t WEATHER_UBO = 14;
+constexpr std::uint32_t WEATHER_HORIZON_UBO = 15;
+constexpr std::uint32_t FOG_VOLUME_TEX = 16;
+constexpr std::uint32_t CLOUD_SHADOW_TEX = 17;
+constexpr std::uint32_t CLOUD_SHAPE_TEX = 18;
+constexpr std::uint32_t CLOUD_DETAIL_TEX = 19;
+constexpr std::uint32_t CLOUD_COVERAGE_TEX = 20;
+// the shadows of the lamps (the stage P4): the cube maps of the cab lamp and of the scenery lamps, the maps of the headlights
+constexpr std::uint32_t LOCAL_SHADOW_TEX = 21;
+constexpr std::uint32_t LOCAL_SHADOW_LAMPS_TEX = 22;
+constexpr std::uint32_t HEADLIGHT_SHADOW_TEX = 23;
+// the depth of the opaque scene drawn before its colour (the stage P3: the contact shadows; the soft particles of P6)
+constexpr std::uint32_t SCENE_DEPTH_TEX = 24;
+constexpr std::uint32_t PASS_BINDING_COUNT = 25;
+// the offsets of the bindings above with dynamic offsets, in the order of the bindings
+constexpr std::uint32_t PASS_DYNAMIC_OFFSETS = 6;
 // the textures of a material take the bindings of their units (#pragma texture(name, unit, ...)), 0 .. MAX_TEXTURES - 1
 constexpr std::uint32_t MATERIAL_TEXTURE_FIRST = 0;
 
@@ -59,9 +83,16 @@ constexpr std::uint32_t CL_INDEX_SSBO = 3;
 constexpr std::uint32_t CL_COUNTER_SSBO = 4;
 constexpr std::uint32_t CL_LIGHT_SSBO = 5;
 
-// the post-processing and the copies of whole images: set 0 pushed, the images it reads from binding 0 on
+// the post-processing and the copies of whole images: set 0 pushed, the images it reads from binding 0 on, and the exposure
+// worked out on the gpu (gl::exposure_data, the stage P1)
 constexpr std::uint32_t POST_SET = 0;
 constexpr std::uint32_t POST_TEXTURE_FIRST = 0;
+constexpr std::uint32_t POST_TEXTURES = 4;
+constexpr std::uint32_t POST_EXPOSURE_SSBO = 4;
+
+// the compute kernels (vk14::compute_kernel): set 0 the pass set of the scene, set 1 pushed with the dispatch, its bindings
+// those the shader declares from 0 on
+constexpr std::uint32_t COMPUTE_SET = 1;
 
 // the push constants of the graphics pipelines of the scene and of the post-processing (vk14::draw_constants): the draw, and
 // the parameters of the special shaders (the celestial bodies, the post-processing)

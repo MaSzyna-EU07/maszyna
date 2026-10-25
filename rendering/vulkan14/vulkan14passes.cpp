@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14passes.h"
+#include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14device.h"
 
 namespace vk14
@@ -19,7 +20,7 @@ image_use use_of(image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage
 	return image_use{Image.handle(), Image.aspect(), &Image.state, Layout, Stage, Access};
 }
 
-void barriers(VkCommandBuffer Commands, std::vector<image_use> const &Uses)
+void barriers(command_stream *Commands, std::vector<image_use> const &Uses)
 {
 	auto const writes{VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT |
 	                  VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT};
@@ -31,9 +32,23 @@ void barriers(VkCommandBuffer Commands, std::vector<image_use> const &Uses)
 			continue;
 		}
 		auto &state{*use.state};
-		// reads after reads in the same layout need nothing
+		// reads after reads in the same layout need nothing, unless they are in stages the barrier after the last write didn't
+		// wait for: those wait for the stages which read the image already (which came after the write)
 		if ((state.layout == use.layout) && ((state.access & writes) == 0) && ((use.access & writes) == 0))
 		{
+			if ((use.stage & ~state.stage) != 0)
+			{
+				VkMemoryBarrier2 chain{};
+				chain.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+				chain.srcStageMask = (state.stage != VK_PIPELINE_STAGE_2_NONE ? state.stage : VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);
+				chain.dstStageMask = use.stage;
+				chain.dstAccessMask = use.access;
+				VkDependencyInfo dependency{};
+				dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+				dependency.memoryBarrierCount = 1;
+				dependency.pMemoryBarriers = &chain;
+				Commands->pipeline_barrier2(&dependency);
+			}
 			state.stage |= use.stage;
 			state.access |= use.access;
 			continue;
@@ -61,7 +76,7 @@ void barriers(VkCommandBuffer Commands, std::vector<image_use> const &Uses)
 	dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 	dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(list.size());
 	dependency.pImageMemoryBarriers = list.data();
-	vkCmdPipelineBarrier2(Commands, &dependency);
+	Commands->pipeline_barrier2(&dependency);
 }
 
 pass_list::~pass_list()
@@ -114,7 +129,7 @@ void pass_list::destroy()
 	m_device = VK_NULL_HANDLE;
 }
 
-void pass_list::begin_frame(VkCommandBuffer Commands, std::uint32_t Frame, std::uint64_t Number)
+void pass_list::begin_frame(command_stream *Commands, std::uint32_t Frame, std::uint64_t Number)
 {
 	m_commands = Commands;
 	m_frame = Frame;
@@ -124,7 +139,7 @@ void pass_list::begin_frame(VkCommandBuffer Commands, std::uint32_t Frame, std::
 	frame.used = 0;
 	frame.number = Number;
 	frame.recorded = true;
-	vkCmdResetQueryPool(Commands, frame.pool, 0, max_passes * 2);
+	Commands->reset_query_pool(frame.pool, 0, max_passes * 2);
 }
 
 void pass_list::begin_pass(char const *Name, std::vector<image_use> const &Uses)
@@ -139,7 +154,7 @@ void pass_list::begin_pass(char const *Name, std::vector<image_use> const &Uses)
 	// (no timestamps on a queue without valid bits; the device is chosen with them, this is for safety)
 	if ((frame.used < max_passes) && (m_mask != 0))
 	{
-		vkCmdWriteTimestamp2(m_commands, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, frame.pool, frame.used * 2);
+		m_commands->write_timestamp2(VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, frame.pool, frame.used * 2);
 		frame.names.emplace_back(Name);
 		m_open = static_cast<int>(frame.used);
 		++frame.used;
@@ -158,7 +173,7 @@ void pass_list::end_pass()
 	}
 	if (m_open < static_cast<int>(max_passes))
 	{
-		vkCmdWriteTimestamp2(m_commands, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, m_frames[m_frame].pool, static_cast<std::uint32_t>(m_open) * 2 + 1);
+		m_commands->write_timestamp2(VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, m_frames[m_frame].pool, static_cast<std::uint32_t>(m_open) * 2 + 1);
 	}
 	end_label(m_commands);
 	m_open = -1;
@@ -167,7 +182,7 @@ void pass_list::end_pass()
 void pass_list::end_frame()
 {
 	end_pass();
-	m_commands = VK_NULL_HANDLE;
+	m_commands = nullptr;
 }
 
 void pass_list::collect(std::uint32_t Frame)
