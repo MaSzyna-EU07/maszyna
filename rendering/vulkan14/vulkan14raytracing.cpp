@@ -634,7 +634,8 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 			}
 		}
 		instance.instanceCustomIndex = written;
-		instance.mask = 0xFF;
+		// the shaders tell the alpha tested ones by the mask (shaders/vk14/rt_reflections.glsl, RT_MASK_*)
+		instance.mask = (alpha ? 0x02 : 0x01);
 		instance.instanceShaderBindingTableRecordOffset = 0;
 		// the models have faces of one side, seen from both in the reflections; an alpha tested texture leaves holes in its faces
 		instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR | (alpha ? VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR);

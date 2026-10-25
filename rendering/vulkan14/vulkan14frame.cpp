@@ -33,6 +33,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "utilities/color.h"
 
+#include <chrono>
+
 namespace
 {
 
@@ -1351,7 +1353,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	scene_ubs.shadow_fit = glm::vec4{0.f};
 	// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour pass of
 	// the main view only
-	scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, 0.f, 0.f, 0.f};
+	scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, (m_rtfoliage ? 0.f : 1.f), 0.f, 0.f};
 	gfx::screen_reflections::clear(scene_ubs);
 
 	if (vp.main)
@@ -1774,6 +1776,7 @@ void vulkan14_renderer::render_ray_scene(viewport_config &Viewport)
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
+	auto const walkstart{std::chrono::steady_clock::now()};
 	m_rtdraws.clear();
 	m_rtinstances.clear();
 	auto const skipvehicle{m_shadowskipvehicle};
@@ -1797,9 +1800,13 @@ void vulkan14_renderer::render_ray_scene(viewport_config &Viewport)
 	m_renderpass = colourpass;
 	setup_matrices();
 
+	auto const buildstart{std::chrono::steady_clock::now()};
 	ctx.passes.begin_pass("ray tracing scene");
 	scene.raytracing->build(ctx.commands, ctx.slot, ctx.uploads.current_value(), m_framestamp, m_rtdraws, ctx.images);
 	ctx.passes.end_pass();
+	auto const buildend{std::chrono::steady_clock::now()};
+	m_rtwalkms += (std::chrono::duration<double, std::milli>(buildstart - walkstart).count() - m_rtwalkms) * 0.05;
+	m_rtbuildms += (std::chrono::duration<double, std::milli>(buildend - buildstart).count() - m_rtbuildms) * 0.05;
 }
 
 // a draw of the walk noted for the ray tracing: the chunk with its data on the gpu, the transform, the texture and the colour of the

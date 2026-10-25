@@ -3,8 +3,8 @@
 // the rays, GL_EXT_buffer_reference2 and _uvec2 for the vertices read by their device addresses, GL_EXT_nonuniform_qualifier for the
 // textures picked by the instance hit). what the screen space reflections don't find is traced through the scenery around the camera
 // the renderer gathered for the frame (the walk of the scene in its reflection mode: the sections, the models and the vehicles within
-// gfx.raytracing.range, as gfx.reflections.fidelity says), and the point hit is lit by the sky, the sun with a ray of its own towards
-// it and its own emission. the space of the rays is the world around the camera: the axes of the world, the camera at the origin
+// gfx.raytracing.range, as gfx.reflections.fidelity says), and the point hit is lit by the sky, the sun (its shadow map where it
+// holds the point, a ray of its own towards it elsewhere) and its own emission. the space of the rays is the world around the camera: the axes of the world, the camera at the origin
 
 layout(set = RT_SET, binding = RT_SCENE) uniform accelerationStructureEXT rt_scene;
 
@@ -39,6 +39,12 @@ layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer rt_
 
 const uint RT_FLAG_ALPHA = 1U;
 const uint RT_VERTEX_FLOATS = 12U;
+// the masks of the instances (vk14::ray_tracing): the opaque ones, the alpha tested ones (the foliage). the shadow rays take the
+// opaque ones only, and the reflections leave out the alpha tested ones when the renderer says so (env_params.y, 1)
+const uint RT_MASK_OPAQUE = 1U;
+const uint RT_MASK_ALPHA = 2U;
+// the longest ray towards the sun from a point hit, metres
+const float RT_SHADOW_REACH = 100.0;
 
 // the vertices of a triangle of the record
 uvec3 rt_triangle(rt_record record, uint primitive)
@@ -68,6 +74,49 @@ vec3 rt_normal(rt_record record, uvec3 triangle, vec2 weights)
 	return a * (1.0 - weights.x - weights.y) + b * weights.x + c * weights.y;
 }
 
+// the share of the sun reaching a point hit (Hit in the world around the camera, Normal facing the ray): the shadow map of the sun
+// where it holds the point, which costs no ray, otherwise a ray of its own towards the sun (Sun)
+float rt_sun_visible(vec3 hit, vec3 normal, vec3 sun, float distance)
+{
+	if (SHADOWMAP_ENABLED)
+	{
+		mat3 toview = transpose(mat3(inv_view));
+		vec3 position = toview * hit;
+		vec3 viewnormal = toview * normal;
+		float span = dot(position, position);
+		uint cascade;
+		for (cascade = 0U; cascade < MAX_CASCADES; cascade++)
+			if (span <= cascade_end[cascade])
+				break;
+		for (; cascade < MAX_CASCADES; cascade++)
+		{
+			mat4 shadowview = lightview[cascade];
+			// the point pushed off its surface by a texel and a half of the map, as calc_shadow_map() does
+			float texelspermetre = min(length(vec3(shadowview[0][0], shadowview[1][0], shadowview[2][0])), length(vec3(shadowview[0][1], shadowview[1][1], shadowview[2][1]))) *
+			                       float(textureSize(shadowmap, 0).x);
+			vec4 lightpos = shadowview * vec4(position + viewnormal * (1.5 / max(texelspermetre, 1e-3)), 1.0);
+			vec3 coords = lightpos.xyz / lightpos.w;
+			if (all(greaterThanEqual(coords.xy, vec2(0.0))) && all(lessThanEqual(coords.xy, vec2(1.0))))
+			{
+				if (coords.z < 0.0)
+					return 1.0;
+				return 1.0 - texture(shadowmap, vec4(coords.xy, float(cascade), coords.z + 0.0001 * float(cascade + 1U)));
+			}
+			// the cascades fitted to the depth of the view (gfx.shadow.sdsm) cover the area of the surfaces seen only: a further one may
+			// hold the point
+			if (shadow_fit.x <= 0.0)
+				break;
+		}
+	}
+	rayQueryEXT shadow;
+	rayQueryInitializeEXT(shadow, rt_scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT, RT_MASK_OPAQUE, hit + normal * (0.02 + distance * 0.0005), 0.0, sun,
+	                      min(ssr_params2.w, RT_SHADOW_REACH));
+	while (rayQueryProceedEXT(shadow))
+	{
+	}
+	return (rayQueryGetIntersectionTypeEXT(shadow, true) == gl_RayQueryCommittedIntersectionNoneEXT ? 1.0 : 0.0);
+}
+
 // the reflection the scenery gives, of a surface at Position (view space) with the geometric normal Normal (view space, either side),
 // for a ray along Direction (view space, normalized) and the perceptual roughness Roughness: the colour (rgb, times a) and whether
 // the ray hit something (a)
@@ -83,7 +132,8 @@ vec4 rt_trace(vec3 position, vec3 normal, vec3 direction, float roughness)
 	vec3 origin = point + face * (0.02 + length(point) * 0.0005);
 
 	rayQueryEXT query;
-	rayQueryInitializeEXT(query, rt_scene, gl_RayFlagsNoneEXT, 0xFF, origin, 0.0, ray, ssr_params2.w);
+	uint mask = ((uint(env_params.y) & 1U) != 0U ? RT_MASK_OPAQUE : (RT_MASK_OPAQUE | RT_MASK_ALPHA));
+	rayQueryInitializeEXT(query, rt_scene, gl_RayFlagsNoneEXT, mask, origin, 0.0, ray, ssr_params2.w);
 	while (rayQueryProceedEXT(query))
 	{
 		// the instances with alpha tested textures aren't opaque: the texture tells whether the triangle is hit there
@@ -131,13 +181,9 @@ vec4 rt_trace(vec3 position, vec3 normal, vec3 direction, float roughness)
 		float facing = dot(hitnormal, sun);
 		if (facing > 0.0)
 		{
-			rayQueryEXT shadow;
-			rayQueryInitializeEXT(shadow, rt_scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT, 0xFF, hit + hitnormal * (0.02 + distance * 0.0005), 0.0, sun, ssr_params2.w);
-			while (rayQueryProceedEXT(shadow))
-			{
-			}
-			if (rayQueryGetIntersectionTypeEXT(shadow, true) == gl_RayQueryCommittedIntersectionNoneEXT)
-				light += lights[0].color * (SUN_DIFFUSE_SCALE * lights[0].intensity * cloud_shadow(hit) * pow(facing, SUN_NDOTL_SHARPNESS));
+			float visible = rt_sun_visible(hit, hitnormal, sun, distance);
+			if (visible > 0.0)
+				light += lights[0].color * (SUN_DIFFUSE_SCALE * lights[0].intensity * visible * cloud_shadow(hit) * pow(facing, SUN_NDOTL_SHARPNESS));
 		}
 	}
 	vec3 color = albedo * (light + vec3(record.glow));

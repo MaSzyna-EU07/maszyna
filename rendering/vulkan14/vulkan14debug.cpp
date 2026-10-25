@@ -23,6 +23,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "imgui/imgui.h"
 
+#include <cstdio>
+
 namespace
 {
 
@@ -323,7 +325,14 @@ void vulkan14_renderer::draw_debug_ui()
 		{
 			ImGui::Checkbox("ray traced reflections where the screen has none (gfx.raytracing)", &m_raytracingon);
 			ImGui::SliderFloat("range of their rays and of the scenery, m (gfx.raytracing.range)", &Global.gfx_raytracing_range, 10.f, 5000.f, "%.0f", ImGuiSliderFlags_Logarithmic);
+			ImGui::Checkbox("alpha tested geometry (foliage) in the traced reflections", &m_rtfoliage);
 			raytracing = m_context->scene.raytracing->info();
+			if (m_raytracingon)
+			{
+				char cpu[96];
+				std::snprintf(cpu, sizeof(cpu), "\nprocessor: walk %.2f ms, build %.2f ms, %zu draws", m_rtwalkms, m_rtbuildms, m_rtdraws.size());
+				raytracing += cpu;
+			}
 		}
 		else
 		{

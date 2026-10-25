@@ -696,18 +696,21 @@ vec3 reflection_surroundings(vec3 fragnormal, float roughness)
 #include "rt_reflections.glsl"
 #endif
 
-// the least weight of the reflection of the surroundings (its specular colour times its share) a surface traces the scene for
+// the least weight of the reflection of the surroundings (its specular colour times its share) a surface traces the scene for,
+// and the least weight of what the screen left to the ray tracing (the weight times the share the screen didn't give) a ray is
+// traced for: below it the sky and the ground of the environment map do
 const float REFLECTION_SCENE_WEIGHT = 0.004;
+const float REFLECTION_RAY_WEIGHT = 0.012;
 
 // the reflection of the scene in a surface of the given perceptual roughness: the colour times how much of the reflection the
 // scene gives (rgb), and that share (a), the rest is left to reflection_surroundings()
-vec4 reflection_scene(vec3 fragnormal, float roughness)
+vec4 reflection_scene(vec3 fragnormal, float roughness, float weight)
 {
     vec3 direction = normalize(reflect(f_pos.xyz, fragnormal));
     vec4 result = ssr_trace(f_pos.xyz, normalize(f_normal), direction, roughness);
 #ifdef REFLECTION_RAYS_ACTIVE
     // what the screen doesn't hold is traced through the scenery (shaders/vk14/rt_reflections.glsl)
-    if ((result.a < 0.99) && (ssr_params2.z > 0.0) && (roughness <= ssr_params.z))
+    if ((weight * (1.0 - result.a) > REFLECTION_RAY_WEIGHT) && (ssr_params2.z > 0.0) && (roughness <= ssr_params.z))
     {
         vec4 traced = rt_trace(f_pos.xyz, normalize(f_normal), direction, roughness);
         result.rgb += traced.rgb * (1.0 - result.a);
@@ -801,8 +804,9 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     if (!matte)
     {
         envcolor = reflection_surroundings(fragnormal, env_roughness);
-        if (((ssr_params.x > 0.0) || (ssr_params2.z > 0.0)) && (cubemap_share * dot(cubemap_spec, vec3(1.0 / 3.0)) > REFLECTION_SCENE_WEIGHT))
-            scenecolor = reflection_scene(fragnormal, env_roughness);
+        float sceneweight = cubemap_share * dot(cubemap_spec, vec3(1.0 / 3.0));
+        if (((ssr_params.x > 0.0) || (ssr_params2.z > 0.0)) && (sceneweight > REFLECTION_SCENE_WEIGHT))
+            scenecolor = reflection_scene(fragnormal, env_roughness, sceneweight);
     }
 
     if (lights_count == 0U)

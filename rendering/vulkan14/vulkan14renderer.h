@@ -281,6 +281,9 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void gather_ray_draw(gfx::geometry_handle const &Geometry);
 	bool m_rtgather{false};
 	bool m_raytracingon{true}; // switched off in the debug window
+	bool m_rtfoliage{true}; // the alpha tested geometry in the traced reflections, switched off in the debug window
+	double m_rtwalkms{0.0}; // the processor time of the walk and of the build of the ray tracing, averaged
+	double m_rtbuildms{0.0};
 	std::vector<vk14::ray_draw> m_rtdraws;
 	std::vector<glm::mat4> m_rtinstances; // the modelviews of the instanced draws noted (walk_instances())
 	void render_picking(rendermode const Mode);
