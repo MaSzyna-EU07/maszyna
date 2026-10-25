@@ -3151,6 +3151,14 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 	auto const distancelimit { slack * ( reflections ? sq( static_cast<double>( Global.reflectiontune.range_instances ) ) : sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) };
 	// up close the rounding of the copies is too large a part of the distance for the slack to cover it
 	auto const distancetested { sq( 64.0 ) };
+	// the nearest point of the bounding sphere of the cell, which holds the locations of all its instances. no instance
+	// of the cell is closer, so where this distance fails the range test below for the largest range in a bucket,
+	// it fails it for each instance of that bucket, and the bucket can be skipped without going through them.
+	// a scenery with many small instances of a short range (grass, bushes) has them in nearly every cell up to the
+	// draw range, and going through all of them in each frame takes more time than everything else drawn
+	auto const cellnearestdistance { std::max( 0.0, glm::length( Cell->m_area.center - cameraposition ) - Cell->m_area.radius ) };
+	auto const cellnearestdistancesquared { cellnearestdistance * cellnearestdistance };
+	auto const cellscaleddistancesquared { cellnearestdistancesquared * distancescale };
 
 	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
 		auto const &instances { bucket.second.instances };
@@ -3162,6 +3170,10 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 		if( ( bucket.second.boundsversion != m_instanceboundsversion )
 		 || ( bucket.second.bounds.size() != instances.size() ) ) {
 			Update_Instance_Bounds( bucket.first.pModel, bucket.second );
+		}
+		if( ( cellnearestdistancesquared > distancetested )
+		 && ( cellscaleddistancesquared + distanceoffset >= slack * bucket.second.rangesquaredmax ) ) {
+			continue;
 		}
 		auto const &bounds { bucket.second.bounds };
 		std::vector<TAnimModel *> *dest { nullptr }; // looked up when there's something to put in it
@@ -3202,6 +3214,7 @@ void opengl33_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::ba
 
 	Bucket.bounds.clear();
 	Bucket.bounds.reserve( Bucket.instances.size() );
+	Bucket.rangesquaredmax = 0.f;
 	for( auto const *instance : Bucket.instances ) {
 		scene::basic_cell::instance_bounds instancebounds;
 		if( instance != nullptr ) {
@@ -3209,6 +3222,7 @@ void opengl33_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::ba
 			instancebounds.radius = instance->m_area.radius;
 			instancebounds.rangesquaredmax = std::min( lodrangesquared, static_cast<float>( std::min( instance->m_rangesquaredmax, static_cast<double>( std::numeric_limits<float>::max() ) ) ) );
 		}
+		Bucket.rangesquaredmax = std::max( Bucket.rangesquaredmax, instancebounds.rangesquaredmax );
 		Bucket.bounds.emplace_back( instancebounds );
 	}
 	Bucket.boundsversion = m_instanceboundsversion;

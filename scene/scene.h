@@ -251,6 +251,7 @@ public:
         std::vector<TAnimModel *> instances;
         // caches owned by the renderer; emptied whenever the content of the bucket changes
         mutable std::vector<instance_bounds> bounds; // copies for the instances, in the same order
+        mutable float rangesquaredmax { 0.f }; // the largest rangesquaredmax of the copies; past it no instance of the bucket is drawn
         mutable unsigned int boundsversion { 0 };
     };
     using instance_bucketdata_map = std::unordered_map< instance_bucket_key, instance_bucket, instance_bucket_key_hash >;
