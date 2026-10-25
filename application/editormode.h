@@ -1554,7 +1554,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void insert_curved_switch(int const Direction, int const Side);
 	// a crossover between two tracks running side by side along a curve (editormodeconnectioncurve.cpp)
 	struct curve_mapping;
-	static bool curve_of(TTrack &Track, editor_track::straight_tolerance const &Tolerance, double const Gauge, std::vector<curve_sample> &Frame, std::vector<TTrack *> &Tracks);
+	// Beyond: the straights past the ends of the curve go with it up to that far, and a straight track that near the curve is taken
+	// as its part
+	static bool curve_of(TTrack &Track, editor_track::straight_tolerance const &Tolerance, double const Gauge, std::vector<curve_sample> &Frame, std::vector<TTrack *> &Tracks, double const Beyond = 0.0);
 	static void cut_curve(std::vector<TTrack *> &Candidates, std::vector<curve_sample> const &Frame, glm::dvec3 const &First, glm::dvec3 const &Second, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed);
 	void insert_curved_connection();
 	struct curved_crossover
@@ -2453,6 +2455,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_profiles_loaded{false};
 	void profile_library_load();
 	void profile_library_mark(std::vector<scene::layer_handle> Layers);
+	// the last step takes the kept grade lines back to the library given, as they were before it changed them
+	void profiles_to_history(std::vector<stored_profile> Library);
+	// the kept grade lines back to the library given, the step changing them given up before it went to the history
+	void profiles_restore(std::vector<stored_profile> Library);
 	// the tracks whose grade line was fitted, by name, with the shape they had then, kept as "//$f" comment lines: a track
 	// changed since, by hand or taken back, isn't fitted any more
 	struct fitted_mark

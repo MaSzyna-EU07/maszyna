@@ -110,6 +110,17 @@ bool editor_mode::start_switch_placement()
 			}
 		tool.frame = sample_chain(chain);
 		tool.frame_tracks = chain.tracks;
+		// a crossover along the curve goes on onto the straights past its ends, its first switch drawn so as it's dragged
+		if (tool.connection >= 0)
+		{
+			std::vector<curve_sample> frame;
+			std::vector<TTrack *> tracks;
+			if (curve_of(*track, m_straights.tolerance, m_route.design.norms.gauge, frame, tracks, kCrossoverStraights))
+			{
+				tool.frame = std::move(frame);
+				tool.frame_tracks = std::move(tracks);
+			}
+		}
 		if (tool.frame.size() < 2)
 			return false;
 		tool.curved = true;

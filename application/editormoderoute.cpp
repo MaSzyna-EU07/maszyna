@@ -667,16 +667,23 @@ void editor_mode::route_lay()
 			std::vector<std::pair<TTrack *, editor_track::state>> states;
 			std::vector<TTrack *> created;
 			std::vector<TTrack *> removed;
+			// the designs of the outer tracks come down with the lifts taken back, an undo puts them back
+			profile_library_load();
+			auto library{m_profiles};
+			bool lifted{false};
 			for (auto *switchtrack : switches)
 				if (auto const crossover{crossover_of(*switchtrack)})
 				{
 					TTrack *first{nullptr};
 					TTrack *second{nullptr};
+					lifted = lifted || std::abs(crossover->record.lift) > 0.002;
 					take_out_crossover(*crossover, states, created, removed, first, second);
 				}
 			switch_store::follow();
 			push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 			records_to_history();
+			if (lifted)
+				profiles_to_history(std::move(library));
 			show_track_tab(tab);
 			// the line between the same points again: taking the lift back may have cut its paths
 			auto const end_at = [&](glm::dvec3 const &Point) -> TTrack * {

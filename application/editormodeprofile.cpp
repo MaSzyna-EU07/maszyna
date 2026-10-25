@@ -249,6 +249,24 @@ void editor_mode::profile_library_mark(std::vector<scene::layer_handle> Layers)
 	}
 }
 
+void editor_mode::profiles_to_history(std::vector<stored_profile> Library)
+{
+	if (m_history.empty() || m_history.back().action != EditorSnapshot::Action::TrackEdit || m_history.back().profiles)
+		return;
+	m_history.back().profiles = true;
+	m_history.back().profile_library = std::move(Library);
+}
+
+void editor_mode::profiles_restore(std::vector<stored_profile> Library)
+{
+	std::vector<scene::layer_handle> layers;
+	for (auto const *library : {&std::as_const(m_profiles), &std::as_const(Library)})
+		for (auto const &entry : *library)
+			layers.push_back(entry.layer);
+	m_profiles = std::move(Library);
+	profile_library_mark(std::move(layers));
+}
+
 std::uint64_t editor_mode::fitted_shape(TTrack const &Track)
 {
 	// the points of the paths to a centimetre: what's read back from the files is the same shape

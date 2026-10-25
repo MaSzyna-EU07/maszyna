@@ -208,6 +208,9 @@ double const kLaySnapRadius{5.0};
 float const kSnapPixels{16.0f};
 double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
 double const kSlipReach{12.0}; // m; a slip goes to the crossing nearest the cursor, if it's this close
+// m, of the straights past the ends of a curve a crossover laid along it reaches onto: from a transition it goes on onto the
+// straight after it
+double const kCrossoverStraights{250.0};
 double const kSkewSeat{2.0}; // m; the first point laid with Alt this close to a straight track goes onto its axis
 double const kSkewReach{30.0}; // m; Alt while laying turns the straight to a straight track this close to its start, or one it crosses
 double const kSkewRatios[]{4.8, 6.6, 7.5, 9.0, 12.0, 14.0, 18.5, 26.5};

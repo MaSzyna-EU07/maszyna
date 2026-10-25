@@ -280,6 +280,20 @@ void editor_mode::trim_history()
 
 void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::vector<TTrack *> Removed)
 {
+	// a path made and taken out again within the step was never there for an undo or a redo: an undo retiring the paths made and
+	// then reviving the ones taken out would bring it back
+	for (auto made{Created.begin()}; made != Created.end();)
+	{
+		auto const gone{std::find(Removed.begin(), Removed.end(), *made)};
+		if (gone == Removed.end())
+		{
+			++made;
+			continue;
+		}
+		Removed.erase(gone);
+		States.erase(std::remove_if(States.begin(), States.end(), [&](auto const &Entry) { return Entry.first == *made; }), States.end());
+		made = Created.erase(made);
+	}
 	if (States.empty() && Created.empty() && Removed.empty())
 		return;
 
