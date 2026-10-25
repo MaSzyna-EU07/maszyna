@@ -274,7 +274,7 @@ public:
         std::array<TSubModel *, 8> lights_off {}; // Light_Off00 - Light_Off07
         std::array<TSubModel *, 4> variants {}; // winter_variant, spring_variant, summer_variant, autumn_variant
     };
-    TSubModel *Root { nullptr }; // drzewo submodeli
+    TSubModel *Root { nullptr }; // drzewo submodeli TODO: Fix missing delete for this array (or use vector from std)
     uint32_t iFlags { 0 }; // Ra: czy submodele mają przezroczyste tekstury
 public: // Ra: tymczasowo
     gfx::geometrybank_handle m_geometrybank;
