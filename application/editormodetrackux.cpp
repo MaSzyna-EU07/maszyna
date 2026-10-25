@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include <unordered_set>
 #include <unordered_map>
 #include <queue>
+#include <deque>
 #include <array>
 #include <functional>
 #include <cctype>
@@ -298,6 +299,67 @@ void editor_mode::draw_track_labels() const
 		Row = static_cast<int>((Y - low.y) / cell);
 		return Column >= 0 && Row >= 0 && Column < columns && Row < rows;
 	};
+	// one label for a curve, from its first transition curve to its last, and one for a row of straights in line, not one for each
+	// of their paths: the paths of a curve are pieces of it, a piece of a transition curve has no radius of its own to name
+	std::unordered_set<TTrack const *> labelled;
+	auto const plain = [&](TTrack const *Other) { return Other != nullptr && Other->eType == tt_Normal && rail(*Other) && false == Other->m_paths.empty(); };
+	auto const heading = [](TTrack const &Other) { return plan_of(Other.m_paths.front().points[segment_data::point::end] - Other.m_paths.front().points[segment_data::point::start]); };
+	auto const own_turn = [](TTrack const &Other, bool const Forward) {
+		bezier const curve{Other.m_paths.front()};
+		auto const begin{plan_of(curve.first(0.0))};
+		auto const finish{plan_of(curve.first(1.0))};
+		if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9)
+			return 0.0;
+		auto const turn{geometry::signed_angle(glm::normalize(begin), glm::normalize(finish))};
+		return Forward ? turn : -turn;
+	};
+	// the paths joined in a row with the one given, both ways, as long as each next one belongs with it; each with the flag of being
+	// gone along from its start
+	auto const row = [&](TTrack &Track, std::function<bool(TTrack const &, bool)> const &Belongs) {
+		std::deque<std::pair<TTrack *, bool>> run{{&Track, true}};
+		auto const known = [&](TTrack const *Other) { return std::any_of(run.begin(), run.end(), [&](auto const &Member) { return Member.first == Other; }); };
+		for (auto const throughend : {true, false})
+		{
+			TTrack *previous{&Track};
+			TTrack *current{throughend ? Track.trNext : Track.trPrev};
+			while (plain(current) && false == known(current) && false == labelled.contains(current))
+			{
+				auto const entersatstart{current->trPrev == previous};
+				if (false == entersatstart && current->trNext != previous)
+					break;
+				if (false == Belongs(*current, throughend == entersatstart))
+					break;
+				if (throughend)
+					run.emplace_back(current, entersatstart);
+				else
+					run.emplace_front(current, false == entersatstart);
+				previous = current;
+				current = entersatstart ? current->trNext : current->trPrev;
+			}
+		}
+		return std::vector<std::pair<TTrack *, bool>>{run.begin(), run.end()};
+	};
+	// the curve as the plan reads it: the radius of the arc, of each arc of a compound one, the transition curves and the cant
+	auto const curve_text = [](editor_track::curve const &Curve) {
+		if (Curve.designed.has_value() && Curve.designed->spirals)
+			return format("2xL %.0f  R %.0f", Curve.transition_in, Curve.radius);
+		std::string text{"R "};
+		if (Curve.compound && Curve.arcs.size() >= 2)
+			for (std::size_t i = 0; i < Curve.arcs.size(); ++i)
+				text += format(i == 0 ? "%.0f" : "/%.0f", Curve.arcs[i].radius);
+		else
+			text += format("%.0f", Curve.radius);
+		if (Curve.transition_in >= 0.5 || Curve.transition_out >= 0.5)
+			text += std::abs(Curve.transition_in - Curve.transition_out) < 0.5 ? format("  L %.0f", Curve.transition_in) : format("  L %.0f/%.0f", Curve.transition_in, Curve.transition_out);
+		// the arcs of a compound curve kept with its design have each a cant of their own: all shown where they aren't the same
+		auto const cants{Curve.designed.has_value() && Curve.compound ? alignment::compound_cants(*Curve.designed) : std::vector<double>{}};
+		if (std::any_of(cants.begin(), cants.end(), [&](double const Cant) { return std::abs(Cant - cants.front()) >= 0.5; }))
+			for (std::size_t i = 0; i < cants.size(); ++i)
+				text += format(i == 0 ? "  h %.0f" : "/%.0f", cants[i]);
+		else if (Curve.cant >= 0.5)
+			text += format("  h %.0f", Curve.cant);
+		return text;
+	};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == rail(*track) || track->m_paths.empty())
@@ -342,14 +404,57 @@ void editor_mode::draw_track_labels() const
 			labels.push_back({0, 0.0, first.point(0.0), text, IM_COL32(255, 220, 120, 255)});
 			continue;
 		}
-		auto const length{first.plan_length()};
+		if (labelled.contains(track) || false == plain(track))
+			continue;
+		auto const straight{editor_track::is_straight(*track, m_straights.tolerance)};
+		std::vector<std::pair<TTrack *, bool>> run;
+		if (straight)
+		{
+			// the straights in line: the next one parallel to this one, a bend between them is the end of the row
+			auto const along{heading(*track)};
+			run = row(*track, [&](TTrack const &Other, bool) {
+				auto const other{heading(Other)};
+				return editor_track::is_straight(Other, m_straights.tolerance) && glm::length(along) > 1e-6 && glm::length(other) > 1e-6 &&
+				       std::abs(geometry::cross(glm::normalize(along), glm::normalize(other))) < 0.002;
+			});
+		}
+		else
+		{
+			// the pieces of a curve turning the same way: one turning the other way starts a curve of its own
+			auto const side{own_turn(*track, true)};
+			run = row(*track, [&](TTrack const &Other, bool const Forward) { return false == editor_track::is_straight(Other, m_straights.tolerance) && own_turn(Other, Forward) * side >= 0.0; });
+		}
+		double length{0.0};
+		for (auto const &member : run)
+		{
+			labelled.insert(member.first);
+			length += bezier{member.first->m_paths.front()}.plan_length();
+		}
 		if (length < 0.5)
 			continue;
-		auto const radius{::track_mode::piece_plan_radius(track->m_paths.front())};
-		if (radius >= 0.5)
-			labels.push_back({1, radius, first.point(0.5), format("R %.0f  L %.1f", radius, length), IM_COL32(235, 235, 235, 240)});
-		else
-			labels.push_back({2, -length, first.point(0.5), format("L %.1f", length), IM_COL32(200, 215, 230, 225)});
+		// the label in the middle of the row
+		glm::dvec3 middle{first.point(0.5)};
+		auto left{length * 0.5};
+		for (auto const &[member, forward] : run)
+		{
+			bezier const piece{member->m_paths.front()};
+			auto const span{piece.plan_length()};
+			if (left <= span || &member == &run.back().first)
+			{
+				auto const share{std::clamp(span > 1e-6 ? left / span : 0.5, 0.0, 1.0)};
+				middle = piece.point(forward ? share : 1.0 - share);
+				break;
+			}
+			left -= span;
+		}
+		if (straight)
+		{
+			labels.push_back({2, -length, middle, format(STR_C("straight %.0f m"), length), IM_COL32(200, 215, 230, 225)});
+			continue;
+		}
+		editor_track::curve shape;
+		if (editor_track::analyse_curve(run, m_route.design.norms.gauge, shape) && shape.radius >= 0.5)
+			labels.push_back({1, shape.radius, middle, curve_text(shape), IM_COL32(235, 235, 235, 240)});
 	}
 	std::sort(labels.begin(), labels.end(), [](track_label const &A, track_label const &B) { return A.rank != B.rank ? A.rank < B.rank : A.order < B.order; });
 	// each label where it reads best: beside its track if it's free there, else moved out to the nearest room, a line leading back

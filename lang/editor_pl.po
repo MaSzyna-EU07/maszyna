@@ -5969,14 +5969,17 @@ msgstr "Tylko szablony na szynę zaznaczonego toru"
 msgid "The switch tool; at the top: what to place"
 msgstr "Narzędzie Rozjazd; na górze: co stawiasz"
 
-msgid "Click a track: the switch goes into it"
-msgstr "Kliknij tor: rozjazd wejdzie w niego"
+msgid "Click a track: the one the switch goes into"
+msgstr "Kliknij tor: ten, w który wejdzie rozjazd"
 
-msgid "Press on it and drag: along the direction, sideways the side"
-msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru zmienia kierunek, w bok stronę"
+msgid "Press on it and drag: along the direction, sideways the side; let go: the switch is laid"
+msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru zmienia kierunek, w bok stronę; puszczenie kładzie rozjazd"
 
-msgid "Connection: drag from a straight onto the other track"
-msgstr "Połączenie: przeciągnij z prostej na drugi tor"
+msgid "Connection: drag from a straight onto the other track; a crossover, a double one or scissors, as chosen at the top"
+msgstr "Połączenie: przeciągnij z prostej na drugi tor; przejście rozjazdowe, podwójne albo nożyce, jak wybrano na górze"
+
+msgid "Switch ladder: drag from the straight to the side the tracks go off to; the ones missing are laid with it"
+msgstr "Ulica zwrotnicowa: przeciągnij z prostej w stronę, w którą odchodzą tory; brakujące tory układają się razem z nią"
 
 msgid "Click the green or red point in the view: that one only"
 msgstr "Kliknij zielony albo czerwony punkt w widoku: postawi albo poprawi tylko ten wskaźnik"
@@ -12093,8 +12096,8 @@ msgstr "Wyklikaj kilka punktów i ułóż je Enterem"
 msgid "Click the bends of the line: each gets a curve as large as fits; one too sharp for the speed set in the panel has its label in orange"
 msgstr "Klikaj załamania linii: każde dostaje łuk tak duży, jak się zmieści; łuk za ostry dla prędkości ustawionej w panelu ma pomarańczowy opis"
 
-msgid "A curve seen on the photo: click points along its middle, the last two on the straight after it"
-msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, dwa ostatnie na prostej za nim"
+msgid "A curve seen on the photo: click points along its middle, the last two on the straight after it; one of two or three radii comes out a compound curve"
+msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, dwa ostatnie na prostej za nim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
 
 msgid "Lay a track with a bend in it"
 msgstr "Ułóż tor z załamaniem"
