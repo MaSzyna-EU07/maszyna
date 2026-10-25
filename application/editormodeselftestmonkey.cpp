@@ -37,6 +37,8 @@ http://mozilla.org/MPL/2.0/.
 //   undoall                              undoes every change in the history
 //   trackhash                            logs the number of the tracks and a hash of their names and points to the millimetre
 //   tutorial <page>                      opens the tutorial at the lesson, from 0; -1 closes it
+//   badge [<x> <y> <gesture>]            the mouse or the keys drawn with the bottom left corner at the point of the window, as
+//                                        "LMB" or "Enter", for the clips of the tutorial; with nothing after it none
 //   shortcuts [filter]                   opens the list of the shortcuts
 editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &command, std::istringstream &words)
 {
@@ -309,6 +311,14 @@ editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &com
 		words >> page;
 		m_first_steps_open = page >= 0;
 		m_tutorial_page = std::max(0, page);
+		return selftest_result::handled;
+	}
+	if (command == "badge")
+	{
+		std::string gesture;
+		words >> m_selftest.badge_at.x >> m_selftest.badge_at.y;
+		std::getline(words >> std::ws, gesture);
+		m_selftest.badge = gesture;
 		return selftest_result::handled;
 	}
 	if (command == "shortcuts")

@@ -1499,6 +1499,9 @@ bool editor_mode::update()
     m_ortho_waiting = waiting;
     m_orthophoto.update(Camera.Pos);
     nmt_update();
+    // what's drawn over the 3d view stays in it, the docks around it are see-through a little
+    auto *background{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+    background->PushClipRect(ImVec2(editor_ui::view_min().x, editor_ui::view_min().y), ImVec2(editor_ui::view_max().x, editor_ui::view_max().y), true);
     draw_orthophoto();
     draw_nmt_pending();
 
@@ -1591,6 +1594,7 @@ bool editor_mode::update()
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
         draw_area_fill_outline();
+    background->PopClipRect();
     draw_ortho_compass();
 
     render_new_scenery_popup();
@@ -4950,7 +4954,7 @@ void tutorial_signal_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hig
 			List.AddText(ImVec2(foot.x - height * 0.06f - ImGui::CalcTextSize("S1").x, foot.y - line), IM_COL32(255, 255, 255, 230), "S1");
 		}
 		gesture_mouse(List, ImVec2(cursor.x + 2.0f, cursor.y + 2.0f), std::round(height * 0.16f), "LMB");
-		List.AddText(ImVec2(Low.x + 6.0f, Low.y + 4.0f), IM_COL32(230, 230, 230, 230), STR_C("H: by the track, drag along: the way the trains run"));
+		List.AddText(ImVec2(Low.x + 6.0f, Low.y + 4.0f), IM_COL32(230, 230, 230, 230), STR_C("LMB by the track, drag along: the way the trains run"));
 		return;
 	}
 	// the hectometre posts of the line, one after the other
@@ -5217,22 +5221,21 @@ void editor_mode::render_first_steps()
 	     "lay",
 	     {{"F3", "The Tracks field of work"},
 	      {"L", "The lay tool"},
-	      {"LMB", "A click on the ground: the first point; the next click: a straight up to it"},
-	      {"LMB", "Each next click lays a piece on from the end of the last one"},
-	      {"Ctrl + wheel", "The radius of the curve, while laying on from an end"},
-	      {"Shift + wheel", "The shape: arc then straight, straight then arc, arc, straight"},
-	      {"Backspace", "Takes the last piece back"},
-	      {"Esc", "Ends laying"}},
-	     {{first_step::tracks, "Open the Tracks field of work"}, {first_step::lay, "Turn the lay tool on"}, {first_step::laid, "Lay a track"}},
+	      {"LMB", "A click on the ground or on a free end: where the track starts"},
+	      {"LMB", "Each next click: a bend of the line, the curve at it made by itself. The line shown isn't a track yet"},
+	      {"Enter", "Lays the track clicked; the clicks after it go on from its end"},
+	      {"Backspace", "Takes the last point back, then the last piece laid"},
+	      {"Esc", "Ends laying; the points not laid yet go only with the second Esc"}},
+	     {{first_step::tracks, "Open the Tracks field of work"}, {first_step::lay, "Turn the lay tool on"}, {first_step::laid, "Click a few points and lay them with Enter"}},
 	     trial::lay},
 	    {"Curves",
 	     "curves",
-	     {{"Ctrl + wheel", "The radius of the curve, while laying on from an end"},
-	      {"Shift + wheel", "The shape: arc then straight, straight then arc, arc, straight"},
+	     {{"LMB", "Click the bends of the line: each gets a curve as large as fits; one too sharp for the speed set in the panel has its label in orange"},
+	      {"Tab", "A curve seen on the photo: click points along its middle, the last two on the straight after it"},
 	      {"Alt", "Held: the direction turns in steps of 15 degrees, or to 1:9, 1:6.6... to a straight track it starts by or crosses"},
-	      {"0 1 2 3", "Type the length of the next piece, Enter lays it"},
+	      {"0 1 2 3", "Type the length of the next straight, Enter puts the point"},
 	      {"wheel", "Alone it zooms, as everywhere"}},
-	     {{first_step::wheel, "Change the radius with Ctrl+wheel"}, {first_step::shape, "Change the shape with Shift+wheel"}},
+	     {{first_step::bend, "Lay a track with a bend in it"}, {first_step::trace, "Switch to tracing a curve with Tab"}},
 	     trial::lay},
 	    {"Correcting a curve",
 	     nullptr,
@@ -5250,7 +5253,7 @@ void editor_mode::render_first_steps()
 	      {"LMB", "Let go on another free end: a curve joins the two tracks"},
 	      {"Ctrl + wheel", "While over the other end: the radius of the joining curve"},
 	      {"Shift + wheel", "While over the other end: another way to join"}},
-	     {{first_step::join, "Join two free ends"}},
+	     {{first_step::join, "Join two free ends"}, {first_step::wheel, "Change the radius of the joining curve with Ctrl+wheel"}},
 	     trial::lay},
 	    {"Switches",
 	     "switch",
@@ -5276,8 +5279,7 @@ void editor_mode::render_first_steps()
 	     {{"Esc", "The select tool"},
 	      {"LMB", "Click a track: it is selected, with its points"},
 	      {"LMB + move", "Drag a point: the end or the curve follows"},
-	      {"Q W E", "Move, turn or scale with the gizmo"},
-	      {"Gizmo", "Tool options, Gizmo, Off: the track won't move by chance"},
+	      {"Q W E", "The gizmo on the selected track: move, turn, lengthen. Hidden until then, so the track won't move by chance; the arrow above the view hides it again"},
 	      {"RMB", "A click on a track: what can be done with it"},
 	      {"Del", "Deletes the selected"},
 	      {"Ctrl + Z", "Takes the last change back; Ctrl+Y brings it back again"}},
@@ -5297,11 +5299,12 @@ void editor_mode::render_first_steps()
 	     tutorial_route_sketch},
 	    {"Terrain from the terrain model",
 	     nullptr,
-	     {{"F5", "The Terrain field of work: the terrain model (NMT) is in its tool options"},
-	      {"1", "Location: where the scenery lies in PUWG 1992; a scenery begun from nothing asks for it with its first track"},
-	      {"2", "What gives way: the tracks go onto the terrain, or the terrain is drawn to the tracks"},
-	      {"3", "Load: the model comes from geoportal.gov.pl, the terrain is made along the tracks with the formation and the slopes"},
-	      {"Ctrl + Z", "Takes the changes of the tracks back"}},
+	     {{"L", "In a scenery begun from nothing the first L asks: the real terrain of the place, or the flat plane"},
+	      {"F5", "The Terrain field of work: the terrain model (NMT) is in its tool options"},
+	      {"1", "Location: where the scenery lies, a click on the map or the place typed"},
+	      {"2", "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"},
+	      {"3", "Tracks, select a track, Terrain in the inspector: draw the terrain to the track, or put the tracks onto the terrain"},
+	      {"Ctrl + Z", "Takes the changes back"}},
 	     {{first_step::terrain, "Open the Terrain field of work"}, {first_step::nmt, "Load terrain from the model"}},
 	     trial::terrain,
 	     tutorial_terrain_sketch},
@@ -5336,13 +5339,14 @@ void editor_mode::render_first_steps()
 		m_tutorial_since = ImGui::GetTime();
 	}
 	auto const scale{Global.ui_scale};
-	auto const width{520.0f * scale};
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 	ImGui::SetNextWindowBgAlpha(1.0f);
 	ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(FLT_MAX, ImGui::GetIO().DisplaySize.y - 60.0f));
 	keep_on_screen("###tutorial");
 	if (ImGui::Begin((std::string(STR_C("Tutorial")) + "###tutorial").c_str(), &m_first_steps_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
 	{
+		// floating it's as wide as the clips; docked it takes the width of its dock, the texts wrapped to it
+		auto const width{ImGui::IsWindowDocked() ? std::max(160.0f * scale, ImGui::GetContentRegionAvail().x) : 520.0f * scale};
 		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
 		ImGui::TextDisabled(STR_C("Lesson %d of %d"), m_tutorial_page + 1, static_cast<int>(lessons.size()));
 		ImGui::SameLine();
@@ -5545,10 +5549,10 @@ void editor_mode::render_shortcuts_window()
 	      {"F", "Fly to the selected"},
 	      {"O", "Top view, orthographic"}}},
 	    {"Gizmo",
-	     {{"Q / W / E", "Translate / rotate / scale"},
+	     {{"Q / W / E", "Translate / rotate / scale; in the tracks they bring the hidden gizmo out"},
 	      {"R", "Local space"},
 	      {"Ctrl held while dragging", "Snap to the step set in the gizmo settings"},
-	      {"Tool options, Gizmo, Off", "Hides the gizmo, so nothing moves by chance"}}},
+	      {"Tool options, Gizmo, Off", "Hides the gizmo, so nothing moves by chance; in the tracks it is hidden until Q, W or E"}}},
 	    {"Surroundings",
 	     {{"1 2 3 4 5", "Select, insert, brush, area fill, copy to bank"},
 	      {"LMB", "Select a model, or place one in the insert and brush modes"},
@@ -5564,7 +5568,7 @@ void editor_mode::render_shortcuts_window()
 	     {{"Esc", "Select tool; cancels what's going on first"},
 	      {"L / T / U", "Lay track / switch / turntable"},
 	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
-	      {"H / B", "Signals / objects along the track"},
+	      {"I / B", "Signalling / objects along the track"},
 	      {"P / V / J", "Profile / speed / joints"},
 	      {"Ctrl+F", "Find a track by its name"},
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
@@ -5573,13 +5577,14 @@ void editor_mode::render_shortcuts_window()
 	      {"L, LMB, LMB...", "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them and goes on from the end"},
 	      {"Tab while laying", "The points clicked next go along the middle of a curve seen on the photo, the last two on the straight after it; Tab again: back to the bends"},
 	      {"Drag from a free end", "Lead a track out of it; onto another free end: join the two"},
-	      {"Ctrl+wheel", "Laying: radius"},
-	      {"Shift+wheel", "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"},
+	      {"Ctrl+wheel", "Dragging from a free end: radius"},
+	      {"Shift+wheel", "Dragging from a free end: arc then straight, straight then arc, arc, straight; over another free end: another way to join"},
 	      {"0-9 while laying", "Type the length of the next straight, Enter puts the point"},
 	      {"Alt held while laying", "The direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track; the first click with Alt goes onto the axis of the track"},
 	      {"N", "Parallel track: LMB on a track, then the side and the spacing"},
 	      {"Shift+LMB on a track in L", "The Parallel tool (N) with it"},
 	      {"Enter / Backspace", "Laying track: lay the points clicked / take back the last point, then the last piece laid"},
+	      {"Esc twice while laying", "Drop the points clicked and not laid yet"},
 	      {"Del", "Delete the selected tracks"}}},
 	    {"Plan of a curve",
 	     {{"G, LMB on a curve", "Its design: the vertex and the radius to drag in the view, the curvature in the panel"},
@@ -5667,6 +5672,11 @@ void editor_mode::render_shortcuts_window()
 	ImGui::End();
 }
 
+bool editor_mode::gizmo_shown() const
+{
+	return ui()->mode() == nodebank_panel::TRACK ? m_track_gizmo_on : m_gizmo_enabled;
+}
+
 void editor_mode::render_gizmo_options()
 {
     if (ImGui::Button(Global.EditorOrtho ? STR_C("3D view (O)") : STR_C("Top view, orthographic (O)")))
@@ -5686,18 +5696,19 @@ void editor_mode::render_gizmo_options()
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::srk &&
         m_track_tab != track_tab::lineside)
         return;
-    int op{m_gizmo_enabled ? static_cast<int>(m_gizmo_op) : -1};
+    auto &enabled{ui()->mode() == nodebank_panel::TRACK ? m_track_gizmo_on : m_gizmo_enabled};
+    int op{enabled ? static_cast<int>(m_gizmo_op) : -1};
     if (segmented("gizmo", op,
                   {{-1, STR_C("Off"), "The gizmo hidden: the selected things won't move by chance"},
                    {static_cast<int>(gizmo_operation::translate), STR_C("Translate (Q)"), "Arrows which move the selected thing"},
                    {static_cast<int>(gizmo_operation::rotate), STR_C("Rotate (W)"), "Rings which turn the selected thing"},
                    {static_cast<int>(gizmo_operation::scale), STR_C("Scale (E)"), "Handles which scale the selected thing; a track is lengthened"}}))
     {
-        m_gizmo_enabled = op >= 0;
-        if (m_gizmo_enabled)
+        enabled = op >= 0;
+        if (enabled)
             m_gizmo_op = static_cast<gizmo_operation>(op);
     }
-    if (!m_gizmo_enabled)
+    if (!enabled)
         return;
     if (terrain_brush() || terrain_clicking())
     {
@@ -5741,9 +5752,10 @@ void editor_mode::render_gizmo()
     }
 
     // the transform gizmo is suppressed while editing terrain, so the brush/chunk tool owns the mouse
-    if (!m_gizmo_enabled || terrain_brush() || terrain_clicking())
+    if (!gizmo_shown() || terrain_brush() || terrain_clicking())
     {
         m_gizmo_using = false;
+        m_track_gizmo_using = false;
         return;
     }
 
@@ -6190,7 +6202,8 @@ void editor_mode::enter()
             std::vector<char> found;
             auto const ground{ground_heights({glm::dvec3{0.0, 5000.0, 0.0}}, true, &found).front()};
             Camera.Pos = glm::dvec3{0.0, (found.front() != 0 ? ground : 0.0) + 60.0, 0.0};
-            Camera.Angle = glm::vec3(glm::radians(-45.0f), 0.0f, 0.0f);
+            // facing north, the top view with the north up as on a map: the yaw 0 looks along -z, to the south
+            Camera.Angle = glm::vec3(glm::radians(-45.0f), glm::pi<float>(), 0.0f);
             Camera.m_owner = nullptr;
             FreeFlyModeFlag = true;
             if (false == Global.EditorOrtho)
@@ -6366,9 +6379,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         switch (Key)
         {
         case GLFW_KEY_O: toggle_ortho(); break;
-        case GLFW_KEY_Q: m_gizmo_op = gizmo_operation::translate; break;
-        case GLFW_KEY_W: m_gizmo_op = gizmo_operation::rotate; break;
-        case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; break;
+        // in the tracks they also bring the gizmo out, hidden until then
+        case GLFW_KEY_Q: m_gizmo_op = gizmo_operation::translate; m_track_gizmo_on |= ui()->mode() == nodebank_panel::TRACK; break;
+        case GLFW_KEY_W: m_gizmo_op = gizmo_operation::rotate; m_track_gizmo_on |= ui()->mode() == nodebank_panel::TRACK; break;
+        case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; m_track_gizmo_on |= ui()->mode() == nodebank_panel::TRACK; break;
         case GLFW_KEY_R: m_gizmo_local = !m_gizmo_local; break;
         case GLFW_KEY_B: handled = ui()->mode() != nodebank_panel::TRACK && bend_shortcut(); break;
         case GLFW_KEY_F1: m_shortcuts_open = !m_shortcuts_open; break;
@@ -6523,7 +6537,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             else if (m_route.trace.active && route_active())
                 route_trace_end(false);
             else if (m_lay.active && false == m_lay.points.empty())
-                lay_cancel();
+                lay_escape();
             else if (m_track_style.picking)
                 m_track_style.picking = false;
             else if (track_busy())

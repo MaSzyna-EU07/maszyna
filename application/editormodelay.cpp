@@ -1351,6 +1351,8 @@ void editor_mode::lay_switch_mode()
 {
 	auto &tool{m_lay};
 	tool.mode = tool.mode == lay_mode::straights ? lay_mode::curve : lay_mode::straights;
+	if (tool.mode == lay_mode::curve)
+		first_step_done(first_step::trace);
 	tool.status = tool.mode == lay_mode::curve ? STR("Curve: click points along the middle of the track, the last two on the straight after the curve. Tab: back to the straights")
 	                                           : STR("Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo");
 	tool.status_time = ImGui::GetTime();
@@ -1436,9 +1438,11 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		tool.history = m_history.size();
 	push_track_snapshot({}, created);
 	first_step_done(first_step::laid);
+	if (plan.shape.valid && false == plan.shape.curves.empty())
+		first_step_done(first_step::bend);
 	if (End.track != nullptr)
 		first_step_done(first_step::join);
-	tool.status = format(STR_P("Laid %zu track, %.1f m, Ctrl+Z takes it back", "Laid %zu tracks, %.1f m, Ctrl+Z takes them back", static_cast<long long>(created.size())), created.size(), length);
+	tool.status = format(STR_P("Laid %.1f m of track in %zu piece, Ctrl+Z takes it back", "Laid %.1f m of track in %zu pieces, Ctrl+Z takes it back", static_cast<long long>(created.size())), length, created.size());
 	if (false == error.empty())
 		tool.status += "\n" + error;
 	if (eased.has_value() && eased->compound)
@@ -1532,6 +1536,30 @@ void editor_mode::lay_cancel()
 	tool.preview.clear();
 	tool.plan = {};
 	tool.status.clear();
+}
+
+std::size_t editor_mode::lay_pending() const
+{
+	// the first point of a chain going on is the end of the track laid before it, not clicked
+	auto const &tool{m_lay};
+	return tool.chain.empty() ? tool.points.size() : tool.points.size() - std::min<std::size_t>(1, tool.points.size());
+}
+
+void editor_mode::lay_escape()
+{
+	auto &tool{m_lay};
+	lay_trim();
+	// the points clicked are no track yet and nothing brings them back: a slip of Esc only warns, the second one drops them
+	auto const pending{lay_pending()};
+	if (tool.points.size() < 2 || ImGui::GetTime() - tool.escape_time < 3.0)
+	{
+		lay_cancel();
+		tool.escape_time = -100.0;
+		return;
+	}
+	tool.escape_time = ImGui::GetTime();
+	tool.status = format(STR_P("Esc again drops the point not laid, Enter lays it", "Esc again drops the %zu points not laid, Enter lays them", static_cast<long long>(pending)), pending);
+	tool.status_time = tool.escape_time;
 }
 
 void editor_mode::lay_after_history(bool const Undo)
@@ -1677,6 +1705,26 @@ alignment::limits editor_mode::laying_norms() const
 void editor_mode::render_lay_ui()
 {
 	auto &tool{m_lay};
+	// the points clicked are no track until they're laid: said first, with the keys as buttons
+	if (tool.points.size() > 1)
+	{
+		auto const pending{lay_pending()};
+		ImGui::TextColored(ImVec4(1.0f, 0.83f, 0.3f, 1.0f), "%s", format(STR_P("Not laid yet: %zu point", "Not laid yet: %zu points", static_cast<long long>(pending)), pending).c_str());
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.45f, 0.22f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.56f, 0.28f, 1.0f));
+		if (ImGui::Button(STR_C("Lay  (Enter)")))
+		{
+			// the cursor is over the panel: no free end under it to join
+			tool.mouse_snap = {};
+			lay_enter();
+		}
+		ImGui::PopStyleColor(2);
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Drop the points")))
+			lay_cancel();
+		item_tooltip("Esc twice does the same");
+		ImGui::Separator();
+	}
 	if (int mode{tool.mode == lay_mode::curve ? 1 : 0};
 	    segmented("laymode", mode,
 	              {{0, STR_C("Straights   Tab"), "Each point clicked is a bend of the straights: the bend eased with two transition curves meeting, with no cant, of a large radius; where they don't fit, an arc with the transitions and the cant of the norms, as large as fits"},
@@ -1688,7 +1736,8 @@ void editor_mode::render_lay_ui()
 	{
 		double low{EditorSettings.corner_low()};
 		double high{EditorSettings.corner_high()};
-		auto changed{ImGui::DragScalar(STR_C("Bends: R from (m)"), ImGuiDataType_Double, &low, 10.0f, nullptr, nullptr, "%.0f")};
+		ImGui::TextDisabled("%s", STR_C("Radius of the curves at the bends"));
+		auto changed{ImGui::DragScalar(STR_C("from (m)"), ImGuiDataType_Double, &low, 10.0f, nullptr, nullptr, "%.0f")};
 		item_tooltip("The radius the two transition curves of a bend meet at, at least; where they don't fit at it, an arc of the norms as large as fits");
 		changed |= ImGui::DragScalar(STR_C("to (m)"), ImGuiDataType_Double, &high, 10.0f, nullptr, nullptr, "%.0f");
 		item_tooltip("The radius tried first; a bend too slight for transitions long enough at the speed takes a larger one");
@@ -1747,7 +1796,7 @@ void editor_mode::render_lay_ui()
 	value_chips("speeds", tool.style.velocity, {40.0, 60.0, 80.0, 100.0, 120.0, 160.0}, "%.0f");
 	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
 	ImGui::PopItemWidth();
-	ImGui::Checkbox(STR_C("This speed also on from a track with its own"), &tool.own_speed);
+	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
 	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	if (auto const [from, to]{laying_ends()}; from != nullptr || to != nullptr)
 		ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());

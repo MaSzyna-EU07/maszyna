@@ -1660,20 +1660,27 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		auto const *tab{curve ? "back to the bends of straights" : "trace a curve on the photo"};
 		if (m_lay.points.empty())
 			hints = {{"LMB", "start, on the ground or at a free end"}, {"Tab", tab}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Esc", "stop laying"}};
+		else if (m_lay.points.size() > 1)
+		{
+			// the points clicked are no track until Enter: it comes right after the click, where the bar at the bottom shows it
+			hints = {{"LMB", curve ? "a point along the middle of the curve, the last two on the straight after it" : "a bend of the straights, eased with a large curve"}, {"Enter", "lay the points clicked, then go on"},
+			         {"Backspace", "take back the point"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"},
+			         {"Esc", "twice: drop the points not laid"}};
+		}
 		else
 		{
 			hints = {{"LMB", curve ? "a point along the middle of the curve, the last two on the straight after it" : "a bend of the straights, eased with a large curve"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}};
-			if (m_lay.points.size() == 1 && m_lay.mouse_snap.track != nullptr)
+			if (m_lay.mouse_snap.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
-			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", m_lay.points.size() > 1 ? "lay the points clicked, then go on" : "stop laying"},
-			                           {"Backspace", m_lay.points.size() > 1 || m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "drop the points not laid"}});
+			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", "stop laying"},
+			                           {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "stop laying"}});
 		}
 	}
 	else if (false == m_straights.detour.empty())
 	{
 		char const *const steps[] = {"leave the axis", "shifted", "start back", "back on the axis"};
 		auto const step{std::min<std::size_t>(m_straights.detour.size(), 3)};
-		hints = {{m_straights.tool == 2 ? "LMB" : "Shift+click", format("point %zu of 4: %s", step + 1, steps[step])}, {"Esc", "cancel"}};
+		hints = {{m_straights.tool == 2 ? "LMB" : "Shift+click", format(STR_C("point %zu of 4: %s"), step + 1, STR_C(steps[step]))}, {"Esc", "cancel"}};
 	}
 	else if (m_extend.active)
 		hints = {{"Drag", "lays the shape to the cursor, to a free end: joins it"}, {"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}, {"Release", "build"}, {"Esc", "cancel"}};
@@ -1795,12 +1802,27 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", action}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"L", "new track, also from a free end"}, {"Esc", "deselects"}, {"Del", "deletes the track"}};
 		gizmo = true;
 	}
+	// the gizmo hidden has no handles to drag: Q, W and E bring it out
+	if (gizmo && false == m_track_gizmo_on)
+	{
+		auto const named = [](char const *Key) { return [Key](key_hint const &Hint) { return std::string_view{Hint.key} == Key; }; };
+		auto const handles{std::find_if(hints.begin(), hints.end(), named("Gizmo"))};
+		if (auto const keys{std::find_if(hints.begin(), hints.end(), named("Q W E"))}; keys != hints.end())
+		{
+			keys->action = "bring out the gizmo: move, turn, lengthen";
+			if (handles != hints.end())
+				hints.erase(handles);
+		}
+		else if (handles != hints.end())
+			*handles = {"Q W E", "bring out the gizmo: move, turn, lengthen"};
+		gizmo = false;
+	}
 	if (auto const *meaning{typed_meaning()}; meaning != nullptr)
 		hints.insert(hints.begin() + std::min<std::size_t>(1, hints.size()), {"0-9", meaning});
 	if (All)
 	{
 		if (gizmo && m_gizmo_snap > 0.0f)
-			hints.push_back({"Ctrl", format("gizmo snaps by %.2f m", m_gizmo_snap)});
+			hints.push_back({"Ctrl", format(STR_C("gizmo snaps by %.2f m"), m_gizmo_snap)});
 		hints.push_back({"K", "split the path under the cursor, a break of the grade at the height of the ground"});
 		hints.push_back({"O", "top view"});
 		hints.push_back({"Esc", "back to Select"});
@@ -1808,7 +1830,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints.push_back({"Hold the wheel", "pans the view"});
 		hints.push_back({"Ctrl+Z", "undo"});
 		hints.push_back({"Ctrl+Y", "redo"});
-		hints.push_back({"L T G C B P V J I", "modes: lay, switch, straight, curve, objects, profile, speed, joints, infra"});
+		hints.push_back({"L T G N I B P V J", "tools: lay, switch, plan, parallel, signalling, objects, profile, speed, joints"});
 	}
 	for (auto &hint : hints)
 	{
@@ -1865,6 +1887,14 @@ std::string editor_mode::track_readout() const
 	if (m_lay.active)
 	{
 		auto const &lay{m_lay};
+		// of a list of warnings only the first one by the cursor, the panel lists them all
+		auto const first_of = [](std::string const &Lines) {
+			auto const end{Lines.find('\n')};
+			if (end == std::string::npos)
+				return Lines;
+			auto const more{static_cast<std::size_t>(std::count(Lines.begin() + end, Lines.end(), '\n'))};
+			return Lines.substr(0, end) + "\n" + format(STR_P("and %zu more, in the panel", "and %zu more, in the panel", static_cast<long long>(more)), more);
+		};
 		std::string text;
 		if (lay.points.empty())
 			text = lay.mouse_snap.track != nullptr ? format(STR_C("starts at the end of %s"), name(lay.mouse_snap.track).c_str()) : std::string{STR_C("start")};
@@ -1920,14 +1950,19 @@ std::string editor_mode::track_readout() const
 		if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
 			text += "\n" + format(STR_C("joins %s"), name(lay.mouse_snap.track).c_str());
 		if (false == lay.preview_error.empty())
-			text += "\n" + lay.preview_error;
+			text += "\n" + first_of(lay.preview_error);
 		if (lay.points.size() == 1 && lay.mouse_snap.track != nullptr)
 			text += "\n" + track_shaping(lay.start.track != nullptr);
-		text += "\n" + std::string{lay.mode == lay_mode::curve ? STR_C("Curve traced, Tab: the bends of straights") : STR_C("Bends of straights, Tab: a curve traced")};
+		// the bends are laid by default, the bar at the bottom tells of Tab: only the curve traced is named
+		if (lay.mode == lay_mode::curve)
+			text += "\n" + std::string{STR_C("Curve traced, Tab: the bends of straights")};
 		if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
 			text += "\n" + (lay.skew.empty() ? format(STR_C("azimuth %.0f deg"), azimuth(lay.points.back(), lay.mouse)) : lay.skew);
-		if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
-			text += "\n" + lay.status;
+		// the warning of the first Esc leads, where it's read first
+		if (ImGui::GetTime() - lay.escape_time < 3.0)
+			text = lay.status + "\n" + text;
+		else if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
+			text += "\n" + first_of(lay.status);
 		return text;
 	}
 	auto const &state{m_straights};
@@ -2064,8 +2099,8 @@ void editor_mode::draw_empty_scenery_hint()
 	std::vector<std::pair<char const *, char const *>> rows;
 	if (m_track_tab == track_tab::path)
 		rows.emplace_back("L", "the lay tool");
-	rows.emplace_back("LMB", "on the ground: the first point, then each next one lays a piece");
-	rows.emplace_back("Ctrl+wheel", "the radius of the curve while laying");
+	rows.emplace_back("LMB", "on the ground: the first point, then the bends of the line, the curves at them made by themselves");
+	rows.emplace_back("Enter", "lays the track clicked");
 	rows.emplace_back("F1", "all the shortcuts, and the tutorial");
 	auto const width{std::min(high.x - low.x - 2.0f * pad, std::round(font * 30.0f))};
 	auto const column{std::round(picture * 5.0f)};
@@ -2163,9 +2198,16 @@ void editor_mode::draw_track_hints()
 		return;
 	auto *foreground{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 	auto const size{ImGui::CalcTextSize(readout.c_str())};
+	// right below the cursor, or on its other side where the view ends: it doesn't cover the panels by the view
+	auto const low{editor_ui::view_min()};
+	auto const high{editor_ui::view_max()};
 	ImVec2 at{io.MousePos.x + 20.0f, io.MousePos.y + 20.0f};
-	at.x = std::min(at.x, io.DisplaySize.x - size.x - 10.0f);
-	at.y = std::min(at.y, io.DisplaySize.y - size.y - 10.0f);
+	if (at.x + size.x + 10.0f > high.x)
+		at.x = io.MousePos.x - 20.0f - size.x;
+	if (at.y + size.y + 10.0f > high.y)
+		at.y = io.MousePos.y - 20.0f - size.y;
+	at.x = std::max(at.x, low.x + 10.0f);
+	at.y = std::max(at.y, low.y + 10.0f);
 	foreground->AddRectFilled(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), IM_COL32(0, 0, 0, 190), 4.0f);
 	foreground->AddRect(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), overlay_color::marked, 4.0f);
 	foreground->AddText(at, IM_COL32(255, 255, 255, 255), readout.c_str());

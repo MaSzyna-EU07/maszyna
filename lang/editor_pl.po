@@ -490,9 +490,6 @@ msgstr "powrót do Wyboru"
 msgid "move the selected switch"
 msgstr "przesuwa zaznaczony rozjazd"
 
-msgid "modes: lay, switch, straight, curve, profile, speed, infra"
-msgstr "tryby: układanie, rozjazd, prosta, łuk, profil, prędkość, infrastruktura"
-
 msgid "Select"
 msgstr "Zaznaczanie"
 
@@ -1833,9 +1830,6 @@ msgstr "łączy końce, wyrównuje je"
 msgid "kink"
 msgstr "załamanie"
 
-msgid "modes: lay, switch, straight, curve, profile, speed, joints, infra"
-msgstr "tryby: układanie, rozjazd, prosta, łuk, profil, prędkość, styki, infrastruktura"
-
 msgid "show the place"
 msgstr "pokazuje miejsce"
 
@@ -2087,9 +2081,6 @@ msgstr "układa"
 
 msgid "the line the objects go along"
 msgstr "linia, wzdłuż której idą obiekty"
-
-msgid "modes: lay, switch, straight, curve, objects, profile, speed, joints, infra"
-msgstr "tryby: układanie, rozjazd, prosta, łuk, obiekty, profil, prędkość, styki, infrastruktura"
 
 msgid "Fouling points"
 msgstr "Ukresy W17"
@@ -4068,8 +4059,8 @@ msgstr "Zaznaczanie, Wstawianie, Pędzel, Wypełnianie obszaru, Kopiuj do banku"
 msgid "Select: add a point, or take it out"
 msgstr "Zaznaczanie: dodaj punkt do zaznaczenia albo go z niego zdejmij"
 
-msgid "Signals / objects along the track"
-msgstr "Sygnalizatory / obiekty wzdłuż toru"
+msgid "Signalling / objects along the track"
+msgstr "SRK / obiekty wzdłuż toru"
 
 msgid "Snap to the step set in the gizmo settings"
 msgstr "Przyciąganie do kroku z ustawień gizma"
@@ -4112,9 +4103,6 @@ msgstr "Ta lista skrótów"
 
 msgid "Top view, orthographic"
 msgstr "Widok z góry"
-
-msgid "Translate / rotate / scale"
-msgstr "Przesuń / Obróć / Skaluj"
 
 msgid "Undo"
 msgstr "Cofnij"
@@ -4529,12 +4517,6 @@ msgstr "L, LPM, LPM..."
 
 msgid "Lead a track out of it; onto another free end: join the two"
 msgstr "Wyprowadza z niego tor; na inny wolny koniec: łączy oba"
-
-msgid "Laying: radius"
-msgstr "Układanie: promień"
-
-msgid "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"
-msgstr "Układanie: łuk i prosta, prosta i łuk, łuk, prosta; na wolnym końcu: inny sposób połączenia"
 
 msgid "0-9 while laying"
 msgstr "0-9 w trakcie układania"
@@ -5334,50 +5316,20 @@ msgstr "Dział Tory"
 msgid "The lay tool"
 msgstr "Narzędzie Układanie"
 
-msgid "A click on the ground: the first point; the next click: a straight up to it"
-msgstr "Klik na ziemi: pierwszy punkt; następny klik: prosta do niego"
-
-msgid "Each next click lays a piece on from the end of the last one"
-msgstr "Każdy kolejny klik układa kawałek dalej, od końca poprzedniego"
-
-msgid "Takes the last piece back"
-msgstr "Cofa ostatni kawałek"
-
-msgid "Ends laying"
-msgstr "Kończy układanie"
-
 msgid "Open the Tracks field of work"
 msgstr "Otwórz dział Tory"
 
 msgid "Turn the lay tool on"
 msgstr "Włącz układanie"
 
-msgid "Lay a track"
-msgstr "Ułóż tor"
-
 msgid "Curves"
 msgstr "Łuki"
-
-msgid "The radius of the curve, while laying on from an end"
-msgstr "Promień łuku, gdy układasz dalej od końca toru"
-
-msgid "The shape: arc then straight, straight then arc, arc, straight"
-msgstr "Kształt: łuk i prosta, prosta i łuk, sam łuk, prosta"
 
 msgid "Held: the direction turns in steps of 15 degrees, or to 1:9, 1:6.6... to a straight track it starts by or crosses"
 msgstr "Trzymany: kierunek zmienia się co 15 stopni albo na 1:9, 1:6,6… do prostego toru, przy którym się zaczyna albo który przecina"
 
-msgid "Type the length of the next piece, Enter lays it"
-msgstr "Wpisz długość następnego kawałka, Enter go układa"
-
 msgid "Alone it zooms, as everywhere"
 msgstr "Samo kółko przybliża, jak wszędzie"
-
-msgid "Change the radius with Ctrl+wheel"
-msgstr "Zmień promień: Ctrl+kółko"
-
-msgid "Change the shape with Shift+wheel"
-msgstr "Zmień kształt: Shift+kółko"
 
 msgid "Joining tracks"
 msgstr "Łączenie torów"
@@ -5414,9 +5366,6 @@ msgstr "Kliknij tor: zostaje zaznaczony, widać jego punkty"
 
 msgid "Drag a point: the end or the curve follows"
 msgstr "Przeciągnij punkt: koniec albo łuk idzie za nim"
-
-msgid "Move, turn or scale with the gizmo"
-msgstr "Przesuwanie, obracanie, skalowanie gizmem"
 
 msgid "A click on a track: what can be done with it"
 msgstr "Klik na torze: co można z nim zrobić"
@@ -6022,9 +5971,6 @@ msgstr "Narzędzie Rozjazd; na górze: co stawiasz"
 
 msgid "Click a track: the switch goes into it"
 msgstr "Kliknij tor: rozjazd wejdzie w niego"
-
-msgid "Tool options, Gizmo, Off: the track won't move by chance"
-msgstr "Opcje narzędzia, Gizmo, Wył.: tor nie przesunie się przypadkiem"
 
 msgid "Press on it and drag: along the direction, sideways the side"
 msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru zmienia kierunek, w bok stronę"
@@ -7043,18 +6989,6 @@ msgstr "Teren z modelu terenu"
 msgid "The Terrain field of work: the terrain model (NMT) is in its tool options"
 msgstr "Dział Teren: numeryczny model terenu (NMT) jest w jego opcjach narzędzia"
 
-msgid "Location: where the scenery lies in PUWG 1992; a scenery begun from nothing asks for it with its first track"
-msgstr "Położenie: gdzie na mapie leży sceneria; nowa sceneria pyta o nie przy pierwszym torze"
-
-msgid "What gives way: the tracks go onto the terrain, or the terrain is drawn to the tracks"
-msgstr "Co dopasować: tory kładą się na teren albo teren dociąga się do torów"
-
-msgid "Load: the model comes from geoportal.gov.pl, the terrain is made along the tracks with the formation and the slopes"
-msgstr "Wczytaj: model przychodzi z geoportal.gov.pl, teren powstaje wzdłuż torów razem z torowiskiem i skarpami"
-
-msgid "Takes the changes of the tracks back"
-msgstr "Cofa zmiany torów"
-
 msgid "Open the Terrain field of work"
 msgstr "Otwórz dział Teren"
 
@@ -7349,12 +7283,6 @@ msgstr "Sceneria nie ma jeszcze torów"
 msgid "the lay tool"
 msgstr "narzędzie układania"
 
-msgid "on the ground: the first point, then each next one lays a piece"
-msgstr "na terenie: pierwszy punkt, każdy następny układa kawałek"
-
-msgid "the radius of the curve while laying"
-msgstr "promień łuku przy układaniu"
-
 msgid "all the shortcuts, and the tutorial"
 msgstr "wszystkie skróty i samouczek"
 
@@ -7490,9 +7418,6 @@ msgstr "Stawia pociąg na torze i od razu daje kabinę"
 msgid "Tool options, Gizmo, Off"
 msgstr "Opcje narzędzia, Gizmo, Wył."
 
-msgid "Hides the gizmo, so nothing moves by chance"
-msgstr "Ukrywa gizmo, żeby nic nie przesunęło się przypadkiem"
-
 msgid "the grade line of its whole line"
 msgstr "niweleta całej jego linii"
 
@@ -7546,9 +7471,6 @@ msgstr "Narzędzie Skład"
 
 msgid "Twelve short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the grade line, terrain, older sceneries, saving and driving"
 msgstr "Dwanaście krótkich lekcji z filmikami i rysunkami: kamera, układanie toru, łuki, poprawianie łuku, łączenie, rozjazdy, sygnalizatory i słupki, poprawki, niweleta, teren, starsze scenerie, zapis i jazda"
-
-msgid "H: by the track, drag along: the way the trains run"
-msgstr "H: przy torze, przeciągnij wzdłuż: kierunek pociągów"
 
 msgid "B: the hectometre posts of the whole line at once"
 msgstr "B: słupki hektometrowe całej linii naraz"
@@ -8606,11 +8528,11 @@ msgstr[0] "Usunięty %zu tor, Ctrl+Z go przywraca"
 msgstr[1] "Usunięte %zu tory, Ctrl+Z je przywraca"
 msgstr[2] "Usuniętych %zu torów, Ctrl+Z je przywraca"
 
-msgid "Laid %zu track, %.1f m, Ctrl+Z takes it back"
-msgid_plural "Laid %zu tracks, %.1f m, Ctrl+Z takes them back"
-msgstr[0] "Ułożony %zu tor, %.1f m, Ctrl+Z cofa"
-msgstr[1] "Ułożone %zu tory, razem %.1f m, Ctrl+Z cofa"
-msgstr[2] "Ułożonych %zu torów, razem %.1f m, Ctrl+Z cofa"
+msgid "Laid %.1f m of track in %zu piece, Ctrl+Z takes it back"
+msgid_plural "Laid %.1f m of track in %zu pieces, Ctrl+Z takes it back"
+msgstr[0] "Ułożono %.1f m toru (%zu odcinek), Ctrl+Z cofa"
+msgstr[1] "Ułożono %.1f m toru (%zu odcinki), Ctrl+Z cofa"
+msgstr[2] "Ułożono %.1f m toru (%zu odcinków), Ctrl+Z cofa"
 
 msgid "The geometry allows any speed up to %.0f km/h"
 msgstr "Geometria pozwala na dowolną prędkość do %.0f km/h"
@@ -10304,8 +10226,8 @@ msgstr "prędkość projektowa %.0f km/h, ustawiona do kładzenia"
 msgid ", Ctrl+Shift+wheel: speed"
 msgstr ", Ctrl+Shift+kółko: prędkość"
 
-msgid "This speed also on from a track with its own"
-msgstr "Ta prędkość także od toru z własną"
+msgid "This speed also on from a track with a speed of its own"
+msgstr "Ta prędkość także przy torze z własną prędkością"
 
 msgid "Off: a track laid on from another one, or joined to it, takes the speed of that track.\nOn: the new tracks get the speed above"
 msgstr "Wyłączone: tor kładziony od innego toru albo dołączany do niego bierze prędkość tamtego toru.\nWłączone: nowe tory dostają prędkość z pola powyżej"
@@ -11813,8 +11735,11 @@ msgstr "Każdy kliknięty punkt to załamanie prostych: wyokrąglone dwiema styc
 msgid "Click points along the middle of a curve seen on the photo, the last two on the straight after it: the curve, compound or with a straight in it, is fitted to them. It comes from the straight before it, of the points clicked before or of the free end"
 msgstr "Klikaj punkty po środku łuku widocznego na zdjęciu, dwa ostatnie na prostej za nim: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem"
 
-msgid "Bends: R from (m)"
-msgstr "Załamania: R od (m)"
+msgid "Radius of the curves at the bends"
+msgstr "Promień łuków na załamaniach"
+
+msgid "from (m)"
+msgstr "od (m)"
 
 msgid "to (m)"
 msgstr "do (m)"
@@ -11858,9 +11783,6 @@ msgstr "%zu punktów, odchyłka %.0f cm, najwięcej %.0f cm"
 msgid "Curve traced, Tab: the bends of straights"
 msgstr "Łuk odrysowywany, Tab: załamania prostych"
 
-msgid "Bends of straights, Tab: a curve traced"
-msgstr "Załamania prostych, Tab: łuk odrysowywany"
-
 msgid "back to the bends of straights"
 msgstr "z powrotem załamania prostych"
 
@@ -11875,9 +11797,6 @@ msgstr "załamanie prostych, wyokrąglone dużym łukiem"
 
 msgid "lay the points clicked, then go on"
 msgstr "kładzie kliknięte punkty i prowadzi dalej"
-
-msgid "drop the points not laid"
-msgstr "porzuca niepołożone punkty"
 
 msgid "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them and goes on from the end"
 msgstr "Układanie toru: każdy klik to załamanie prostych, wyokrąglone dużym łukiem; Enter je kładzie i prowadzi tor dalej od końca"
@@ -12086,3 +12005,141 @@ msgstr "km %s - %s, %.2f mm/m"
 
 msgid "ramp %.0f m, %.0f mm"
 msgstr "rampa %.0f m, %.0f mm"
+
+
+# scenery editor: laying and editing the track, as a beginner meets them
+
+msgid "No gizmo"
+msgstr "Bez gizma"
+
+msgid "The gizmo hidden: a track is changed by dragging its points, and won't move by chance"
+msgstr "Gizmo ukryte: tor zmienia się przeciąganiem jego punktów i nie przesunie się przypadkiem"
+
+msgid "bring out the gizmo: move, turn, lengthen"
+msgstr "pokazuje gizmo: przesuń, obróć, wydłuż"
+
+msgid "gizmo snaps by %.2f m"
+msgstr "gizmo przeskakuje co %.2f m"
+
+msgid "point %zu of 4: %s"
+msgstr "punkt %zu z 4: %s"
+
+msgid "start back"
+msgstr "początek powrotu"
+
+msgid "back on the axis"
+msgstr "z powrotem na osi"
+
+msgid "moves it, an end dropped on a free end joins it"
+msgstr "przesuwa go; koniec upuszczony na wolny koniec łączy się z nim"
+
+msgid "and %zu more, in the panel"
+msgid_plural "and %zu more, in the panel"
+msgstr[0] "i jeszcze %zu, w panelu"
+msgstr[1] "i jeszcze %zu, w panelu"
+msgstr[2] "i jeszcze %zu, w panelu"
+
+msgid "on the ground: the first point, then the bends of the line, the curves at them made by themselves"
+msgstr "na terenie: pierwszy punkt, potem załamania linii; łuki na nich powstają same"
+
+msgid "lays the track clicked"
+msgstr "układa wyklikany tor"
+
+msgid "tools: lay, switch, plan, parallel, signalling, objects, profile, speed, joints"
+msgstr "narzędzia: układanie, rozjazd, plan, równoległy, SRK, obiekty, profil, prędkość, styki"
+
+msgid "Esc again drops the point not laid, Enter lays it"
+msgid_plural "Esc again drops the %zu points not laid, Enter lays them"
+msgstr[0] "Esc jeszcze raz porzuca nieułożony punkt, Enter go układa"
+msgstr[1] "Esc jeszcze raz porzuca %zu nieułożone punkty, Enter je układa"
+msgstr[2] "Esc jeszcze raz porzuca %zu nieułożonych punktów, Enter je układa"
+
+msgid "twice: drop the points not laid"
+msgstr "dwa razy: porzuca nieułożone punkty"
+
+msgid "Not laid yet: %zu point"
+msgid_plural "Not laid yet: %zu points"
+msgstr[0] "Jeszcze nieułożony: %zu punkt"
+msgstr[1] "Jeszcze nieułożone: %zu punkty"
+msgstr[2] "Jeszcze nieułożonych: %zu punktów"
+
+msgid "Lay  (Enter)"
+msgstr "Ułóż  (Enter)"
+
+msgid "Drop the points"
+msgstr "Porzuć punkty"
+
+msgid "Esc twice does the same"
+msgstr "To samo robi dwa razy Esc"
+
+msgid "A click on the ground or on a free end: where the track starts"
+msgstr "Klik na terenie albo na wolnym końcu: tu zaczyna się tor"
+
+msgid "Each next click: a bend of the line, the curve at it made by itself. The line shown isn't a track yet"
+msgstr "Każdy następny klik: załamanie linii, łuk na nim powstaje sam. Pokazana linia nie jest jeszcze torem"
+
+msgid "Lays the track clicked; the clicks after it go on from its end"
+msgstr "Układa wyklikany tor; kolejne kliki idą dalej od jego końca"
+
+msgid "Takes the last point back, then the last piece laid"
+msgstr "Cofa ostatni punkt, potem ostatni ułożony odcinek"
+
+msgid "Ends laying; the points not laid yet go only with the second Esc"
+msgstr "Kończy układanie; nieułożone punkty znikają dopiero po drugim Esc"
+
+msgid "Click a few points and lay them with Enter"
+msgstr "Wyklikaj kilka punktów i ułóż je Enterem"
+
+msgid "Click the bends of the line: each gets a curve as large as fits; one too sharp for the speed set in the panel has its label in orange"
+msgstr "Klikaj załamania linii: każde dostaje łuk tak duży, jak się zmieści; łuk za ostry dla prędkości ustawionej w panelu ma pomarańczowy opis"
+
+msgid "A curve seen on the photo: click points along its middle, the last two on the straight after it"
+msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, dwa ostatnie na prostej za nim"
+
+msgid "Lay a track with a bend in it"
+msgstr "Ułóż tor z załamaniem"
+
+msgid "Switch to tracing a curve with Tab"
+msgstr "Przełącz klawiszem Tab na odrysowywanie łuku"
+
+msgid "Change the radius of the joining curve with Ctrl+wheel"
+msgstr "Zmień promień łuku łączącego Ctrl+kółkiem"
+
+msgid "The gizmo on the selected track: move, turn, lengthen. Hidden until then, so the track won't move by chance; the arrow above the view hides it again"
+msgstr "Gizmo na zaznaczonym torze: przesuń, obróć, wydłuż. Do tego czasu ukryte, więc tor nie przesunie się przypadkiem; strzałka nad widokiem chowa je z powrotem"
+
+msgid "In a scenery begun from nothing the first L asks: the real terrain of the place, or the flat plane"
+msgstr "W scenerii zaczętej od zera pierwsze L pyta: prawdziwy teren tego miejsca czy płaska płaszczyzna"
+
+msgid "Location: where the scenery lies, a click on the map or the place typed"
+msgstr "Położenie: gdzie leży sceneria, klik na mapie albo wpisane miejsce"
+
+msgid "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"
+msgstr "Wczytaj wzdłuż torów albo wokół kamery: model pochodzi z geoportal.gov.pl"
+
+msgid "Tracks, select a track, Terrain in the inspector: draw the terrain to the track, or put the tracks onto the terrain"
+msgstr "Tory, zaznacz tor, Teren w inspektorze: dociągnij teren do toru albo połóż tory na terenie"
+
+msgid "Takes the changes back"
+msgstr "Cofa zmiany"
+
+msgid "LMB by the track, drag along: the way the trains run"
+msgstr "LPM przy torze, przeciągnij wzdłuż: kierunek jazdy pociągów"
+
+msgid "Translate / rotate / scale; in the tracks they bring the hidden gizmo out"
+msgstr "Przesuń / obróć / skaluj; w torach pokazują ukryte gizmo"
+
+msgid "Hides the gizmo, so nothing moves by chance; in the tracks it is hidden until Q, W or E"
+msgstr "Chowa gizmo, żeby nic nie przesunęło się przypadkiem; w torach jest ukryte aż do Q, W albo E"
+
+msgid "Dragging from a free end: radius"
+msgstr "Przeciąganie z wolnego końca: promień"
+
+msgid "Dragging from a free end: arc then straight, straight then arc, arc, straight; over another free end: another way to join"
+msgstr "Przeciąganie z wolnego końca: łuk i prosta, prosta i łuk, łuk, prosta; nad innym wolnym końcem: inny sposób połączenia"
+
+msgid "Esc twice while laying"
+msgstr "Esc dwa razy przy układaniu"
+
+msgid "Drop the points clicked and not laid yet"
+msgstr "Porzuca kliknięte, jeszcze nieułożone punkty"

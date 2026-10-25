@@ -14,6 +14,8 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
+#include "application/editorgestures.h"
+#include "imgui/imgui.h"
 
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -200,6 +202,17 @@ void editor_mode::selftest_step()
 		editor_selftest::frame_longest() = std::max(editor_selftest::frame_longest(), frame);
 		if (frame > 33.0)
 			++editor_selftest::frames_slow();
+	}
+	// the gesture of the clip being recorded, its bottom left corner where the clip has it
+	if (false == test.badge.empty())
+	{
+		auto const words{gesture_picture(test.badge)};
+		auto const height{std::round(ImGui::GetTextLineHeight() * 1.6f)};
+		auto const pad{std::round(height * 0.25f)};
+		ImVec2 const at{test.badge_at.x + pad, test.badge_at.y - pad - height};
+		auto &list{*ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
+		list.AddRectFilled(ImVec2(at.x - pad, at.y - pad), ImVec2(at.x + gesture_width(height, words) + pad, at.y + height + pad), IM_COL32(16, 20, 26, 225), pad);
+		gesture_draw(list, at, height, words, IM_COL32(235, 235, 235, 255));
 	}
 	if (test.wait > 0)
 	{

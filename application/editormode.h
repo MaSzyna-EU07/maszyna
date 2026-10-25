@@ -810,6 +810,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void choose_work_area(work_area const Area);
 	void render_workspaces();
 	bool m_gizmo_enabled{true};                                  // master switch for the in-viewport gizmo
+	bool m_track_gizmo_on{false};                                // the gizmo in the tracks: off until Q, W or E, so a track isn't moved by chance
+	bool gizmo_shown() const;                                    // the switch of the field of work in use
 	bool m_gizmo_using{false};                                   // tracks an ongoing drag, so a single undo snapshot is taken per drag
 	bool m_gizmo_local{false};                                   // manipulate in the object's local space instead of world space
 	gizmo_operation m_gizmo_op{gizmo_operation::translate};      // current transform mode (translate/rotate/scale)
@@ -1479,6 +1481,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string status;
 		double status_time{-100.0};
 		std::string skew; // what Alt turned the straight to
+		double escape_time{-100.0}; // when Esc was pressed over points not laid: the second Esc drops them
 		struct step
 		{
 			editor_track::snap_target start;
@@ -1494,6 +1497,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	TTrack const *skew_reference(glm::dvec3 const &From, glm::dvec3 const &To, double const Reach) const;
 	void lay_after_history(bool const Undo);
 	void lay_back();
+	void lay_escape();
+	std::size_t lay_pending() const; // the points clicked and not laid yet
 	void render_lay_ui();
 	void render_lay_status();
 	void lay_click();
@@ -2323,6 +2328,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int wait{0};
 		bool quitting{false};
 		scripted_input input;
+		std::string badge; // the mouse or the keys drawn over the view, for the clips of the tutorial
+		glm::vec2 badge_at{0.0f}; // its bottom left corner, in the pixels of the window
 	};
 	selftest m_selftest;
 	using selftest_result = editor_selftest_result;

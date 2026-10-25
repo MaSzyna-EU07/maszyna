@@ -412,24 +412,35 @@ void editor_mode::render_toolbar_tools()
 void editor_mode::render_viewport_gizmo()
 {
 	// the gizmo moves the models and the tracks; on the terrain the mouse is the brush's
-	if (false == m_gizmo_enabled || current_work_area() == work_area::terrain || (ui()->mode() == nodebank_panel::TRACK && track_plan_tab()))
+	// in the tracks the row stays with the gizmo hidden, so it can be brought out with a click
+	auto const tracks{ui()->mode() == nodebank_panel::TRACK};
+	if ((false == tracks && false == m_gizmo_enabled) || current_work_area() == work_area::terrain || (tracks && track_plan_tab()))
 		return;
 	auto const tooltip{STR_C("What the handles of the gizmo on the selection do when dragged; Ctrl held snaps the values")};
-	std::array<tool_button, 4> const buttons{{
-	    {icon::translate, STR_C("Translate"), "Q", tooltip, m_gizmo_op == gizmo_operation::translate, [this]() { m_gizmo_op = gizmo_operation::translate; }},
-	    {icon::rotate, STR_C("Rotate"), "W", tooltip, m_gizmo_op == gizmo_operation::rotate, [this]() { m_gizmo_op = gizmo_operation::rotate; }},
-	    {icon::scale, STR_C("Scale"), "E", tooltip, m_gizmo_op == gizmo_operation::scale, [this]() { m_gizmo_op = gizmo_operation::scale; }},
-	    // the gizmo always scales along the axes of the model
-	    {icon::local_space, STR_C("Local space"), "R", STR_C("The handles along the axes of the selected model instead of the axes of the world"), m_gizmo_local || m_gizmo_op == gizmo_operation::scale,
-	     [this]() { m_gizmo_local = !m_gizmo_local; }, true, m_gizmo_op != gizmo_operation::scale},
-	}};
+	auto const on{gizmo_shown()};
+	auto const choose = [this](gizmo_operation const Operation) {
+		m_gizmo_op = Operation;
+		if (ui()->mode() == nodebank_panel::TRACK)
+			m_track_gizmo_on = true;
+	};
+	std::vector<tool_button> buttons;
+	if (tracks)
+		buttons.push_back({icon::select, STR_C("No gizmo"), nullptr, STR_C("The gizmo hidden: a track is changed by dragging its points, and won't move by chance"), false == on, [this]() { m_track_gizmo_on = false; }});
+	buttons.push_back({icon::translate, STR_C("Translate"), "Q", tooltip, on && m_gizmo_op == gizmo_operation::translate, [choose]() { choose(gizmo_operation::translate); }, tracks});
+	buttons.push_back({icon::rotate, STR_C("Rotate"), "W", tooltip, on && m_gizmo_op == gizmo_operation::rotate, [choose]() { choose(gizmo_operation::rotate); }});
+	buttons.push_back({icon::scale, STR_C("Scale"), "E", tooltip, on && m_gizmo_op == gizmo_operation::scale, [choose]() { choose(gizmo_operation::scale); }});
+	// the gizmo always scales along the axes of the model
+	buttons.push_back({icon::local_space, STR_C("Local space"), "R", STR_C("The handles along the axes of the selected model instead of the axes of the world"), on && (m_gizmo_local || m_gizmo_op == gizmo_operation::scale),
+	                   [this]() { m_gizmo_local = !m_gizmo_local; }, true, on && m_gizmo_op != gizmo_operation::scale});
 	// in a row at the top, in the middle
 	auto const side{button_side()};
 	auto const gap{2.0f * scale()};
 	auto const groupgap{8.0f * scale()};
 	auto const margin{8.0f * scale()};
 	auto const pad{3.0f * scale()};
-	auto const width{4.0f * side + 2.0f * gap + groupgap};
+	float width{0.0f};
+	for (auto const &button : buttons)
+		width += side + (&button == &buttons.front() ? 0.0f : button.group ? groupgap : gap);
 	ImVec2 const origin{std::round((editor_ui::view_min().x + editor_ui::view_max().x - width) * 0.5f), editor_ui::view_min().y + margin};
 	if (begin_overlay("##viewportgizmo", ImVec2(origin.x - pad, origin.y - pad), ImVec2(width + 2.0f * pad, side + 2.0f * pad)))
 	{

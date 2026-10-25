@@ -537,6 +537,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			words >> operation;
 			choose_work_area(work_area::tracks);
 			m_gizmo_op = operation == "rotate" ? gizmo_operation::rotate : operation == "scale" ? gizmo_operation::scale : gizmo_operation::translate;
+			// as the key of the operation does, the gizmo hidden in the tracks is brought out
+			m_track_gizmo_on = true;
 			int path{-1};
 			std::string kind;
 			words >> path >> kind;
