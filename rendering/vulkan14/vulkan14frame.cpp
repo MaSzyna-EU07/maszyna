@@ -1244,6 +1244,8 @@ void vulkan14_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 			// going to the world around the camera; a box of the range of the rays stands for the frustum
 			auto const range{Global.gfx_raytracing_range};
 			camera.position() = m_colorpass.pass_camera.position();
+			// the frustum is tested in the world, the draws keep only the rotation of the view (none here)
+			viewmatrix = glm::translate(viewmatrix, -camera.position());
 			camera.projection() = ortho_projection(-range, range, -range, range, -range, range);
 			frustumtest_proj = ortho_frustumtest_projection(-range, range, -range, range, -range, range);
 			Config.draw_range = range;
