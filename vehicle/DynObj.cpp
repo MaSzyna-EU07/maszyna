@@ -5448,7 +5448,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                 pants[i].fParamPants->vPos.y = m[3][1]; // przesunięcie w górę odczytane z modelu
                                 if ((sm = pants[i].smElement[0]->ChildGet()) != nullptr)
                                 { // jeśli ma potomny, można policzyć długość (odległość potomnego od osi obrotu)
-									m = *(sm->GetMatrix()); // wystarczyłby wskaźnik, nie trzeba kopiować
+									m = sm->GetMatrix(); // wystarczyłby wskaźnik, nie trzeba kopiować
                                     // może trzeba: pobrać macierz dolnego ramienia, wyzerować przesunięcie, przemnożyć przez macierz górnego
                                     pants[i].fParamPants->fHoriz = -fabs(m[3][1]);
                                     pants[i].fParamPants->fLenL1 = hypot(m[3][1], m[3][2]); // po osi OX nie potrzeba
@@ -5462,7 +5462,7 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                                     pants[i].fParamPants->fAngleL = pants[i].fParamPants->fAngleL0; // początkowy kąt dolnego ramienia
                                     if ((sm = sm->ChildGet()) != nullptr)
                                     { // jeśli dalej jest ślizg, można policzyć długość górnego ramienia
-										m = *(sm->GetMatrix()); // wystarczyłby wskaźnik,
+										m = sm->GetMatrix(); // wystarczyłby wskaźnik,
                                         // nie trzeba kopiować trzeba by uwzględnić macierz dolnego ramienia, żeby uzyskać kąt do poziomu...
                                         pants[i].fParamPants->fHoriz += fabs(m[3][1]); // różnica długości rzutów ramion na
                                         // płaszczyznę podstawy (jedna dodatnia, druga ujemna)
@@ -5525,12 +5525,12 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 								if( pants[ i ].fParamPants->vPos.y == 0.0 ) {
                                     // jeśli pierwsze ramię nie ustawiło tej wartości, próbować drugim
                                     //!!!! docelowo zrobić niezależną animację ramion z każdej strony
-									m = *(sm->GetMatrix()); // skopiowanie, bo będziemy mnożyć
+									m = sm->GetMatrix(); // skopiowanie, bo będziemy mnożyć
 									m[ 3 ][ 1 ] =
 										m[ 3 ][ 1 ] + 0.054; // w górę o wysokość ślizgu (na razie tak)
 									while( sm->Parent ) {
-										if( sm->Parent->GetMatrix() )
-                                            m = *sm->Parent->GetMatrix() * m;
+										if (sm->Parent->iFlags & 0x8000)
+                                            m = sm->Parent->GetMatrix() * m;
                                         sm = sm->Parent;
                                     }
 									pants[ i ].fParamPants->vPos.z = m[3][0]; // przesunięcie w bok (asymetria)

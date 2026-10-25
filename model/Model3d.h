@@ -102,7 +102,7 @@ public:
 				// bit 15: =1 wymagane przechowanie macierzy (transform niejedynkowy)
 	union
 	{ // transform, nie każdy submodel musi mieć
-		glm::mat4 *fMatrix = nullptr; // pojedyncza precyzja wystarcza
+		glm::mat4 fMatrix { 1.0f }; // pojedyncza precyzja wystarcza
 		int iMatrix; // w pliku binarnym jest numer matrycy
 	};
 	float transformscalestack { 1.0f }; // tolerancescale used in calculate_indices for whole matrix chain
@@ -204,8 +204,7 @@ public:
 	TSubModel * GetFromName( std::string const &search, bool i = true );
     // text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order
     std::vector<TSubModel *> const & text_letters( std::string const &Text );
-	inline glm::mat4 * GetMatrix() { return fMatrix; };
-    inline glm::mat4 const * GetMatrix() const { return fMatrix; };
+	inline glm::mat4 GetMatrix() const { return fMatrix; };
     // returns offset vector from root
     glm::vec3 offset( float const Geometrytestoffsetthreshold = 0.f ) const;
     inline void Hide() { iVisible = 0; };
@@ -215,7 +214,7 @@ public:
 	void WillBeAnimated() {
         iFlags |= 0x4000; };
 	void InitialRotate(bool doit);
-	void BinInit(TSubModel *s, glm::mat4 *m, std::vector<std::string> *t, std::vector<std::string> *n, bool dynamic);
+	void BinInit(TSubModel *s, std::vector<glm::mat4> &m, std::vector<std::string> *t, std::vector<std::string> *n, bool dynamic);
 	static void ReplacableSet(material_handle const *r, int a) {
 		ReplacableSkinId = r;
 		iAlpha = a; };
@@ -238,9 +237,9 @@ public:
     // sets activation threshold of self-illumination to specitied value
     void SetSelfIllum( float const Threshold, bool const Includechildren = false, bool const Includesiblings = false );
 	inline glm::vec3 Translation1Get() {
-		return fMatrix ? glm::vec3((*fMatrix)[3]) + v_TransVector : v_TransVector; }
+		return glm::vec3(fMatrix[3]) + v_TransVector; }
 	inline glm::vec3 Translation2Get() {
-		return glm::vec3((*fMatrix)[3]) + Child->Translation1Get(); }
+		return glm::vec3(fMatrix[3]) + Child->Translation1Get(); }
     material_handle GetMaterial() const {
 		return m_material; }
 	void ParentMatrix(glm::mat4 *m) const;
@@ -283,7 +282,6 @@ public: // Ra: tymczasowo
 private:
 	std::vector<std::string> Textures; // nazwy tekstur
 	std::vector<std::string> Names; // nazwy submodeli
-    std::vector<glm::mat4> Matrices; // submodel matrices
     int iSubModelsCount { 0 }; // Ra: używane do tworzenia binarnych
 	std::string asBinary; // nazwa pod którą zapisać model binarny
     std::string m_filename;

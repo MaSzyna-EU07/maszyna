@@ -56,7 +56,6 @@ TSubModel::~TSubModel()
 	{ // wczytany z pliku tekstowego musi sam posprzątać
 		SafeDelete(Next);
 		SafeDelete(Child);
-		delete fMatrix; // własny transform trzeba usunąć (zawsze jeden)
 	}
 };
 
@@ -500,15 +499,15 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 	fSquareMinDist *= fSquareMinDist;
 
 	// transformation matrix
-	fMatrix = new glm::mat4();
-	readMatrix(parser, *fMatrix); // wczytanie transform
+	fMatrix =glm::mat4();
+	readMatrix(parser, fMatrix); // wczytanie transform
 	if (Parent != nullptr)
 		transformscalestack = Parent->transformscalestack;
-	if (*fMatrix != glm::mat4(1.0f))
+	if (fMatrix != glm::mat4(1.0f))
 	{
 		iFlags |= 0x8000; // transform niejedynkowy - trzeba go przechować
 		// check the scaling
-		glm::vec3 const scale{glm::length(glm::vec3((*fMatrix)[0])), glm::length(glm::vec3((*fMatrix)[1])), glm::length(glm::vec3((*fMatrix)[2]))};
+		glm::vec3 const scale{glm::length(glm::vec3(fMatrix[0])), glm::length(glm::vec3(fMatrix[1])), glm::length(glm::vec3(fMatrix[2]))};
 		if (std::abs(scale.x - 1.0f) > 0.01 || std::abs(scale.y - 1.0f) > 0.01 || std::abs(scale.z - 1.0f) > 0.01)
 		{
 			ErrorLog("Bad model: transformation matrix for sub-model \"" + pName + "\" imposes geometry scaling (factors: " + to_string(scale) + ")", logtype::model);
@@ -822,14 +821,9 @@ void TSubModel::InitialRotate(bool doit)
 		if (doit)
 		{
 			// obrót lewostronny
-			if (!fMatrix)
-			{
-				// macierzy może nie być w dodanym "bananie"
-				fMatrix = new glm::mat4(1.0f); // tworzy macierz jednostkową
-			}
 			iFlags |= 0x8000; // po obróceniu będzie raczej niejedynkowy matrix
-			InitialRotateMatrix(*fMatrix); // zmiana znaku X oraz zamiana Y i Z
-			if (*fMatrix == glm::mat4(1.0f))
+			InitialRotateMatrix(fMatrix); // zmiana znaku X oraz zamiana Y i Z
+			if (fMatrix == glm::mat4(1.0f))
 				iFlags &= ~0x8000; // jednak jednostkowa po obróceniu
 		}
 		if (Child)
@@ -843,26 +837,25 @@ void TSubModel::InitialRotate(bool doit)
 			if ((iFlags & 0xC000) == 0x8000 // o ile nie ma animacji
 			    && false == is_emitter()) // don't optimize smoke emitter attachment points
 			{ // jak nie ma potomnych, można wymnożyć przez transform i wyjedynkować go
-				glm::mat4 *mat = GetMatrix(); // transform submodelu
 				if (false == Vertices.empty())
 				{
 					for (auto &vertex : Vertices)
 					{
-						vertex.position = glm::vec3(*mat * glm::vec4(vertex.position, 1.0f));
+						vertex.position = glm::vec3(fMatrix * glm::vec4(vertex.position, 1.0f));
 					}
 					// zerujemy przesunięcie przed obracaniem normalnych
-					(*mat)[3][0] = (*mat)[3][1] = (*mat)[3][2] = 0.0f;
+					fMatrix[3][0] = fMatrix[3][1] = fMatrix[3][2] = 0.0f;
 					if (eType != TP_STARS)
 					{
 						// gwiazdki mają kolory zamiast normalnych, to ich wtedy nie ruszamy
 						for (auto &vertex : Vertices)
 						{
-							vertex.normal = glm::vec3(*mat * glm::vec4(vertex.normal, 0.0f));
-							vertex.tangent.xyz = glm::vec3(*mat * glm::vec4(vertex.tangent.xyz, 0.0f));
+							vertex.normal = glm::vec3(fMatrix * glm::vec4(vertex.normal, 0.0f));
+							vertex.tangent.xyz = glm::vec3(fMatrix * glm::vec4(vertex.tangent.xyz, 0.0f));
 						}
 					}
 				}
-				*mat = glm::mat4(1.0f); // jedynkowanie transformu po przeliczeniu wierzchołków
+				fMatrix = glm::mat4(1.0f); // jedynkowanie transformu po przeliczeniu wierzchołków
 				iFlags &= ~0x8000; // transform jedynkowy
 			}
 		}
@@ -1470,11 +1463,7 @@ void TSubModel::ParentMatrix(glm::mat4 *m) const
 	{
 		// for given step in hierarchy there can be custom transformation matrix, or no transformation
 		// retrieve it...
-		submodelmatrix = glm::mat4(1.0f);
-		if (submodel->GetMatrix())
-		{
-			submodelmatrix = *(submodel->GetMatrix());
-		}
+		submodelmatrix = submodel->GetMatrix();
 		// ...potentially adjust transformations of the root matrix if the model wasn't yet initialized...
 		if (submodel->Parent == nullptr && false == submodel->m_rotation_init_done)
 		{
@@ -1490,7 +1479,7 @@ void TSubModel::ParentMatrix(glm::mat4 *m) const
 	/*
 	    if( fMatrix != nullptr ) {
 	        // skopiowanie, bo będziemy mnożyć
-	        *m = *fMatrix;
+	        *m = *fMatrix; It will not work, fMatrix is not a pointer anymore
 	    }
 	    else {
 	        m->Identity();
@@ -1748,7 +1737,7 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 	if (m_material > 0 && Global.iConvertModels & 16)
 		flags &= ~0x30; // don't save phase information, will be guessed on binary load from material
 	sn_utils::ls_uint32(s, flags);
-	sn_utils::ls_int32(s, (int32_t)get_container_pos(transforms, *fMatrix));
+	sn_utils::ls_int32(s, (int32_t)get_container_pos(transforms, fMatrix));
 
 	sn_utils::ls_int32(s, m_geometry.vertex_count);
 	sn_utils::ls_int32(s, m_geometry.vertex_offset);
@@ -2090,6 +2079,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 	bool hastangents{false};
 	bool hasuserdata{false};
 
+	std::vector<glm::mat4> Matrices; // submodel matrices
 	while (s.tellg() < end)
 	{
 		uint32_t type = sn_utils::ld_uint32(s);
@@ -2429,7 +2419,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 
 	for (size_t i = 0; (int)i < iSubModelsCount; ++i)
 	{
-		Root[i].BinInit(Root, Matrices.data(), &Textures, &Names, dynamic);
+		Root[i].BinInit(Root, Matrices, &Textures, &Names, dynamic);
 
 		if (Root[i].ChildGet())
 			Root[i].ChildGet()->Parent = &Root[i];
@@ -2460,13 +2450,15 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 	}
 }
 
-void TSubModel::BinInit(TSubModel *s, glm::mat4 *m, std::vector<std::string> *t, std::vector<std::string> *n, bool dynamic)
+void TSubModel::BinInit(TSubModel *s, std::vector<glm::mat4> &m, std::vector<std::string> *t, std::vector<std::string> *n, bool dynamic)
 { // ustawienie wskaźników w submodelu
 	// m7todo: brzydko
 	iVisible = 1; // tymczasowo używane
 	Child = iChild > 0 ? s + iChild : nullptr; // zerowy nie może być potomnym
 	Next = iNext > 0 ? s + iNext : nullptr; // zerowy nie może być następnym
-	fMatrix = iMatrix >= 0 && m ? m + iMatrix : nullptr;
+
+	if (m.size() > iMatrix)
+		fMatrix = m[iMatrix];
 
 	if (n->size() && iName >= 0)
 	{
@@ -2584,14 +2576,11 @@ void TSubModel::BinInit(TSubModel *s, glm::mat4 *m, std::vector<std::string> *t,
 
 	iFlags &= ~0x0200; // wczytano z pliku binarnego (nie jest właścicielem tablic)
 
-	if (fMatrix != nullptr)
+	glm::vec3 const scale{glm::length(glm::vec3(fMatrix[0])), glm::length(glm::vec3(fMatrix[1])), glm::length(glm::vec3(fMatrix[2]))};
+	if (std::abs(scale.x - 1.0f) > 0.01 || std::abs(scale.y - 1.0f) > 0.01 || std::abs(scale.z - 1.0f) > 0.01)
 	{
-		glm::vec3 const scale{glm::length(glm::vec3(((*fMatrix)[0]))), glm::length(glm::vec3(((*fMatrix)[1]))), glm::length(glm::vec3(((*fMatrix)[2])))};
-		if (std::abs(scale.x - 1.0f) > 0.01 || std::abs(scale.y - 1.0f) > 0.01 || std::abs(scale.z - 1.0f) > 0.01)
-		{
-			ErrorLog("Bad model: transformation matrix for sub-model \"" + pName + "\" imposes geometry scaling (factors: " + to_string(scale) + ")", logtype::model);
-			m_normalizenormals = std::abs(scale.x - scale.y) < 0.01f && std::abs(scale.y - scale.z) < 0.01f ? rescale : normalize;
-		}
+		ErrorLog("Bad model: transformation matrix for sub-model \"" + pName + "\" imposes geometry scaling (factors: " + to_string(scale) + ")", logtype::model);
+		m_normalizenormals = std::abs(scale.x - scale.y) < 0.01f && std::abs(scale.y - scale.z) < 0.01f ? rescale : normalize;
 	}
 }
 
@@ -2663,7 +2652,7 @@ TSubModel *TModel3d::AppendChildFromGeometry(const std::string &name, const std:
 	sm->eType = GL_TRIANGLES;
 	sm->pName = name;
 	sm->m_material = GfxRenderer->Fetch_Material("colored");
-	sm->fMatrix = new glm::mat4(1.0f);
+	sm->fMatrix = glm::mat4(1.0f);
 	sm->iFlags |= 0x10;
 	sm->iFlags |= 0x8000;
 	sm->WillBeAnimated();
