@@ -2640,7 +2640,11 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 				if ((true == cell.m_active) && (m_renderpass.pass_camera.visible(cell.m_area)))
 				{
 					// a cell with nothing but instances too far to be drawn is left out of the color pass altogether
-					if( ( m_renderpass.draw_mode == rendermode::color ) && Cell_Out_Of_Range( cell ) ) { continue; }
+					if( ( true == Prepare_Instances( cell ) )
+					 && ( m_renderpass.draw_mode == rendermode::color )
+					 && ( true == Cell_Out_Of_Range( cell ) ) ) {
+						continue;
+					}
 					// store visible cells with content as well as their current distance, for sorting later
 					m_cellqueue.emplace_back(glm::length2(m_renderpass.pass_camera.position() - cell.m_area.center), &cell);
 				}
@@ -2655,6 +2659,7 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 			{
 				if ((true == cell.m_active) && (m_renderpass.pass_camera.visible(cell.m_area)))
 				{
+					Prepare_Instances( cell );
 					// store visible cells with content as well as their current distance, for sorting later
 					m_cellqueue.emplace_back(glm::length2(m_renderpass.pass_camera.position() - cell.m_area.center), &cell);
 				}
@@ -2846,8 +2851,10 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 					Queue_Instances( cell );
 				}
 			}
-			// remaining (non-instanceable) opaque instance nodes go through the per-node path
-			for (auto *instance : cell->instances_single())
+			// remaining (non-instanceable) opaque instance nodes go through the per-node path. the list of them kept for
+			// the cell spares going through every instance of it only to skip the instanceable ones - with many of these
+			// (vegetation) that took more time than drawing everything else
+			for (auto *instance : ( Instance_Cache_Valid( *cell ) ? cell->m_instancecache.single : cell->m_instancesopaque ))
 			{
 				if( instance->m_instanceable ) { continue; } // already handled via bucket
 				Render(instance);
@@ -3155,12 +3162,9 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 	auto const distancetested { sq( 64.0 ) };
 	// the nearest point of the bounding sphere of the cell, which holds the locations of all its instances. no instance
 	// of the cell is closer, so where this distance fails the range test below for the largest range in a bucket,
-	// it fails it for each instance of that bucket, and the bucket can be skipped without going through them.
-	// a scenery with many small instances of a short range (grass, bushes) has them in nearly every cell up to the
-	// draw range, and going through all of them in each frame takes more time than everything else drawn
+	// it fails it for each instance of that bucket, and the bucket can be skipped without going through them
 	auto const cellnearestdistance { std::max( 0.0, glm::length( Cell->m_area.center - cameraposition ) - Cell->m_area.radius ) };
 	auto const cellnearestdistancesquared { cellnearestdistance * cellnearestdistance };
-	auto const cellscaleddistancesquared { cellnearestdistancesquared * distancescale };
 
 	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
 		auto const &instances { bucket.second.instances };
@@ -3173,8 +3177,9 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 		 || ( bucket.second.bounds.size() != instances.size() ) ) {
 			Update_Instance_Bounds( bucket.first.pModel, bucket.second );
 		}
-		if( ( cellnearestdistancesquared > distancetested )
-		 && ( cellscaleddistancesquared + distanceoffset >= slack * bucket.second.rangesquaredmax ) ) {
+		else if( ( bucket.second.rangeversion == m_instanceboundsversion )
+		      && ( cellnearestdistancesquared > distancetested )
+		      && ( cellnearestdistancesquared * distancescale + distanceoffset >= slack * bucket.second.rangesquaredmax ) ) {
 			continue;
 		}
 		auto const &bounds { bucket.second.bounds };
@@ -3197,29 +3202,66 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 	}
 }
 
+// brings up to date what the renderer keeps of the instances of the cell: the copies of the bounds of the instances
+// and the largest range in each bucket, the largest range in the cell, and the list of its instances drawn one by one.
+// rebuilt after the content of the cell changed, or any instance lost its instanceable status (an event added an
+// animation container, or changed a skin). returns: true if the cache can be used; it can't in the editor, which
+// moves and resizes the instances in place, as with the copies of their bounds
+bool opengl33_renderer::Prepare_Instances( scene::basic_cell &Cell )
+{
+	if( EditorModeFlag ) { return false; }
+	if( Instance_Cache_Valid( Cell ) ) { return true; }
+
+	auto &cache { Cell.m_instancecache };
+	cache.rangesquaredmax = 0.f;
+	for( auto &[ key, bucket ] : Cell.m_instancebuckets_opaque ) {
+		if( ( bucket.boundsversion != m_instanceboundsversion )
+		 || ( bucket.bounds.size() != bucket.instances.size() ) ) {
+			Update_Instance_Bounds( key.pModel, bucket );
+		}
+		auto rangesquaredmax { 0.f };
+		for( auto const &instancebounds : bucket.bounds ) {
+			rangesquaredmax = std::max( rangesquaredmax, instancebounds.rangesquaredmax );
+		}
+		bucket.rangesquaredmax = rangesquaredmax;
+		bucket.rangeversion = m_instanceboundsversion;
+		cache.rangesquaredmax = std::max( cache.rangesquaredmax, rangesquaredmax );
+	}
+	cache.single.clear();
+	for( auto *instance : Cell.m_instancesopaque ) {
+		if( false == instance->m_instanceable ) {
+			cache.single.emplace_back( instance );
+		}
+	}
+	cache.instancedonly =
+		( false == Cell.m_instancebuckets_opaque.empty() )
+		&& Cell.m_paths.empty()
+		&& Cell.m_shapesopaque.empty()
+		&& Cell.m_shapestranslucent.empty()
+		&& Cell.m_lines.empty()
+		&& Cell.m_traction.empty()
+		&& Cell.m_instancetranslucent.empty()
+		&& cache.single.empty();
+	cache.boundsversion = m_instanceboundsversion;
+	cache.revoked = TAnimModel::s_instanceable_revoked;
+	return true;
+}
+
+bool opengl33_renderer::Instance_Cache_Valid( scene::basic_cell const &Cell ) const
+{
+	return ( false == EditorModeFlag )
+		&& ( Cell.m_instancecache.boundsversion == m_instanceboundsversion )
+		&& ( Cell.m_instancecache.revoked == TAnimModel::s_instanceable_revoked );
+}
+
 // true if nothing of the cell would be drawn by the color pass: it holds only instances drawn with the instanced path,
 // and the nearest point of the cell is past the largest range of them. the test is the one made for each bucket in
 // Queue_Instances(), done before the cell is put in the cell queue: a scenery with many small instances of a short
 // range has them in nearly every cell up to the draw range, and queueing, sorting and visiting these cells only
 // to skip all their buckets took a good part of the frame
-bool opengl33_renderer::Cell_Out_Of_Range( scene::basic_cell const &Cell )
+bool opengl33_renderer::Cell_Out_Of_Range( scene::basic_cell const &Cell ) const
 {
-	// the editor moves and resizes the instances in place, the copies of their bounds can't be relied on while it's active
-	if( EditorModeFlag ) { return false; }
-	if( false == Cell.holds_instanced_only() ) { return false; }
-	if( ( false == Cell.m_instancerangevalid ) || ( Cell.m_instancerangeversion != m_instanceboundsversion ) ) {
-		auto rangesquaredmax { 0.f };
-		for( auto const &bucket : Cell.m_instancebuckets_opaque ) {
-			if( ( bucket.second.boundsversion != m_instanceboundsversion )
-			 || ( bucket.second.bounds.size() != bucket.second.instances.size() ) ) {
-				Update_Instance_Bounds( bucket.first.pModel, bucket.second );
-			}
-			rangesquaredmax = std::max( rangesquaredmax, bucket.second.rangesquaredmax );
-		}
-		Cell.m_instancerangesquaredmax = rangesquaredmax;
-		Cell.m_instancerangevalid = true;
-		Cell.m_instancerangeversion = m_instanceboundsversion;
-	}
+	if( ( false == Instance_Cache_Valid( Cell ) ) || ( false == Cell.m_instancecache.instancedonly ) ) { return false; }
 	// same measures as in Queue_Instances() for the color pass
 	auto const distancescale { 1.0 / ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.fDistanceFactor ) ) };
 	auto const slack { 1.001 };
@@ -3227,7 +3269,7 @@ bool opengl33_renderer::Cell_Out_Of_Range( scene::basic_cell const &Cell )
 	auto const cellnearestdistance { std::max( 0.0, glm::length( Cell.m_area.center - m_renderpass.pass_camera.position() ) - Cell.m_area.radius ) };
 	auto const cellnearestdistancesquared { cellnearestdistance * cellnearestdistance };
 	return ( cellnearestdistancesquared > distancetested )
-		&& ( cellnearestdistancesquared * distancescale >= slack * Cell.m_instancerangesquaredmax );
+		&& ( cellnearestdistancesquared * distancescale >= slack * Cell.m_instancecache.rangesquaredmax );
 }
 
 // makes the copies of the bounds of the instances held by a bucket of a scene cell
@@ -3249,7 +3291,6 @@ void opengl33_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::ba
 
 	Bucket.bounds.clear();
 	Bucket.bounds.reserve( Bucket.instances.size() );
-	Bucket.rangesquaredmax = 0.f;
 	for( auto const *instance : Bucket.instances ) {
 		scene::basic_cell::instance_bounds instancebounds;
 		if( instance != nullptr ) {
@@ -3257,7 +3298,6 @@ void opengl33_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::ba
 			instancebounds.radius = instance->m_area.radius;
 			instancebounds.rangesquaredmax = std::min( lodrangesquared, static_cast<float>( std::min( instance->m_rangesquaredmax, static_cast<double>( std::numeric_limits<float>::max() ) ) ) );
 		}
-		Bucket.rangesquaredmax = std::max( Bucket.rangesquaredmax, instancebounds.rangesquaredmax );
 		Bucket.bounds.emplace_back( instancebounds );
 	}
 	Bucket.boundsversion = m_instanceboundsversion;

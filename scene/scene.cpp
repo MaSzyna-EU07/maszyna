@@ -347,46 +347,12 @@ basic_cell::insert( TTraction *Traction ) {
     enclose_area( Traction );
 }
 
-// the opaque instances of the cell drawn one by one. built from m_instancesopaque when the content of the cell
-// changes, or when any instance lost its instanceable status since the last build
-basic_cell::instance_sequence const &
-basic_cell::instances_single() const {
-
-    if( ( false == m_instancessinglevalid )
-     || ( m_instancessinglerevoked != TAnimModel::s_instanceable_revoked ) ) {
-        m_instancessingle.clear();
-        for( auto *instance : m_instancesopaque ) {
-            if( false == instance->m_instanceable ) {
-                m_instancessingle.emplace_back( instance );
-            }
-        }
-        m_instancessinglevalid = true;
-        m_instancessinglerevoked = TAnimModel::s_instanceable_revoked;
-    }
-    return m_instancessingle;
-}
-
-// true if the cell holds nothing to draw but instances drawn with the instanced path
-bool
-basic_cell::holds_instanced_only() const {
-
-    return ( false == m_instancebuckets_opaque.empty() )
-        && m_paths.empty()
-        && m_shapesopaque.empty()
-        && m_shapestranslucent.empty()
-        && m_lines.empty()
-        && m_traction.empty()
-        && m_instancetranslucent.empty()
-        && instances_single().empty();
-}
-
 // adds provided model instance to the cell
 void
 basic_cell::insert( TAnimModel *Instance ) {
 
     m_active = true;
-    m_instancessinglevalid = false;
-    m_instancerangevalid = false;
+    m_instancecache.boundsversion = 0; // the renderer builds it anew
 
     auto const flags = Instance->Flags();
     auto alpha =
@@ -489,8 +455,7 @@ basic_cell::unregister_end( TTrack *Path ) {
 void
 basic_cell::erase( TAnimModel *Instance ) {
 
-    m_instancessinglevalid = false;
-    m_instancerangevalid = false;
+    m_instancecache.boundsversion = 0; // the renderer builds it anew
 
     auto const flags = Instance->Flags();
     auto alpha =
