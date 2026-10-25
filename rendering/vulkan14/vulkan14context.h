@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14particles.h"
 #include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14raytracing.h"
+#include "rendering/vulkan14/vulkan14dlss.h"
 #include "utilities/workerpool.h"
 #include "model/material.h"
 #include "gl/ubo.h"
@@ -119,6 +120,14 @@ struct viewport_targets
 	std::shared_ptr<image> colour;
 	std::shared_ptr<image> motion_image;
 	std::shared_ptr<image> depth;
+	// the size of the images after the upscaling of dlss (the window), the same as extent without it; dlss is on for the viewport
+	VkExtent2D output_extent{0, 0};
+	bool dlss{false};
+	// dlss (gfx.antialiasing dlss): the velocities it takes (those of the sky made from the motion of the camera), the exposure of the
+	// tonemapping in a texel, and its output, the size of the window (hdr, a storage image)
+	std::shared_ptr<image> dlss_motion;
+	std::shared_ptr<image> dlss_exposure;
+	std::shared_ptr<image> dlss_output;
 	// the colour after the motion blur (hdr)
 	std::shared_ptr<image> blurred;
 	// the temporal anti-aliasing (gfx.antialiasing taa, the main viewport): the two images of the history, written in turn (hdr, the
@@ -459,6 +468,9 @@ struct vulkan14_renderer::context
 	vk14::resources resources;
 	vk14::imgui_backend imgui;
 	vk14::scene_state scene;
+	// dlss of the main viewport (gfx.antialiasing dlss), with the bias of the mipmaps of the textures of the scene it wants
+	vk14::dlss dlss;
+	float lod_bias{0.f};
 	// the textures of the files; made after the objects above and gone before them
 	std::unique_ptr<texture_bank> textures;
 	// [0]: the main window, then the windows of the extra viewports

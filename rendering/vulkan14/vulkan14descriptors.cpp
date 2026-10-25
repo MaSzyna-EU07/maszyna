@@ -17,10 +17,12 @@ namespace vk14
 
 // samplers
 
-bool samplers::create(device const &Device, float Anisotropy, std::string &Reason)
+bool samplers::create(device const &Device, float Anisotropy, std::string &Reason, float const LodBias)
 {
 	auto const handle{Device.handle()};
 	auto const maxanisotropy{Device.caps().limits.maxSamplerAnisotropy};
+	auto const maxbias{Device.caps().limits.maxSamplerLodBias};
+	auto const lodbias{std::clamp(LodBias, -maxbias, maxbias)};
 	VkFormatProperties depthformat{};
 	vkGetPhysicalDeviceFormatProperties(Device.physical(), VK_FORMAT_D32_SFLOAT, &depthformat);
 	auto const depthlinear{(depthformat.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0};
@@ -38,6 +40,12 @@ bool samplers::create(device const &Device, float Anisotropy, std::string &Reaso
 		{
 			info.anisotropyEnable = VK_TRUE;
 			info.maxAnisotropy = std::min(Aniso, maxanisotropy);
+		}
+		// the textures of the scene (the mipmapped samplers with the anisotropy of the settings), sampled as at the size of the
+		// window when the scene is drawn smaller for dlss
+		if ((&Sampler == &repeat_aniso) || (&Sampler == &clamp_aniso))
+		{
+			info.mipLodBias = lodbias;
 		}
 		// the border of the clamped samplers: the farthest depth of the reverse z, black
 		info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;

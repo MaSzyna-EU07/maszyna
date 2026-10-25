@@ -301,6 +301,12 @@ void vulkan14_renderer::draw_debug_ui()
 		ImGui::Separator();
 		gfx::exposure_settings::draw_debug_ui(scene.exposure.values);
 		ImGui::Separator();
+		// dlss (gfx.antialiasing dlss), set at the start
+		if (Global.gfx_dlss() || (m_dlssrender.x > 0))
+		{
+			m_context->dlss.draw_debug_ui();
+			ImGui::Separator();
+		}
 		// the ambient occlusion (opengl46_ao::draw_debug_ui()): its images are made with the targets of the viewports
 		if (scene.targets.empty() || (scene.targets.front().ssao == nullptr))
 		{

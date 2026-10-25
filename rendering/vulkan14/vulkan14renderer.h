@@ -133,8 +133,12 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// another projection)
 	struct viewport_config
 	{
+		// the size the scene is drawn at
 		int width{0};
 		int height{0};
+		// the size of the image after the upscaling of dlss (the window); 0: the size above
+		int output_width{0};
+		int output_height{0};
 		float draw_range{1.f};
 		bool main{false};
 		bool shadow{false}; // its view is taken into the sun shadows
@@ -297,6 +301,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void render_editor_overlay();
 	// the post-processing of a viewport: the motion blur, the tonemapping, the chromatic aberration
 	void render_post(std::size_t const Viewport, bool const Motionblur);
+	void render_dlss(std::size_t const Viewport);
 	// the output of a viewport to its window, with the user interface over it for the main window
 	void present_viewport(std::size_t const Viewport);
 	// the light buffer of the pass: the sun, the ambient light, the fog, the headlights, the lamps (the clustered lights)
@@ -427,8 +432,16 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	double m_environmentupdatetime{0.0};
 	glm::dvec3 m_environmentupdatelocation{0.0};
 	bool m_vehiclesmoved{true};
-	// the temporal anti-aliasing of the main viewport (gfx.antialiasing taa)
+	// the temporal anti-aliasing of the main viewport (gfx.antialiasing taa), whose jitter and history dlss takes too
 	gfx::temporal_aa m_taa;
+	// dlss of the main viewport (gfx.antialiasing dlss): the size the scene is drawn at and the window it's upscaled to, planned at
+	// the start (0: dlss is off); the next frame starts its history anew
+	glm::ivec2 m_dlssrender{0};
+	glm::ivec2 m_dlssoutput{0};
+	bool m_dlssreset{true};
+	void start_dlss();
+	// dlss is used for the main viewport this frame
+	bool dlss_active() const;
 	texture_handle m_suntexture{-1};
 	texture_handle m_moontexture{-1};
 	texture_handle m_smoketexture{-1};

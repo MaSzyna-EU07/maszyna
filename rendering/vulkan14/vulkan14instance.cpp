@@ -299,6 +299,22 @@ bool instance::collect_extensions(std::vector<char const *> &Extensions, instanc
 	{
 		Extensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
 	}
+	// what a library asks for; without one of them the library says it can't start
+	for (auto const &name : Config.wanted_extensions)
+	{
+		if (contains(Extensions, name.c_str()))
+		{
+			continue;
+		}
+		if (has_extension(available, name.c_str()))
+		{
+			Extensions.push_back(name.c_str());
+		}
+		else
+		{
+			log_warning("the instance extension " + name + " asked for isn't available");
+		}
+	}
 
 	std::string list;
 	for (auto const *name : Extensions)

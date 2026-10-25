@@ -77,6 +77,12 @@ void global_settings::FinalizeConfig()
 #endif
 }
 
+glm::ivec2 global_settings::gfx_buffer_size(float const Scale) const
+{
+    auto const scale{Scale > 0.f ? Scale : gfx_buffer_scale};
+    return glm::max(glm::ivec2(glm::round(glm::vec2(fb_size) * scale)), glm::ivec2(1));
+}
+
 bool global_settings::ConfigParseGeneral(cParser& Parser, const std::string& token)
 {
     if (token == "sceneryfile")
@@ -1463,15 +1469,24 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1, false);
         Parser >> reflectiontune.range_vehicles;
     }
-    else if (Token == "gfx.framebuffer.width")
+    else if ((Token == "gfx.framebuffer.width") || (Token == "gfx.framebuffer.height"))
     {
+        // the size of the image is a part of the size of the window now (gfx.buffer.percent)
         Parser.getTokens(1, false);
-        Parser >> gfx_framebuffer_width;
+        int ignored{0};
+        Parser >> ignored;
+        WriteLog("eu07.ini: \"" + std::string(Token) + "\" is no longer supported and was ignored, use gfx.buffer.percent");
     }
-    else if (Token == "gfx.framebuffer.height")
+    else if (Token == "gfx.buffer.percent")
     {
+        // a part of the window: 0.5 is half its width and half its height. a value over 4 is taken as percents (50: 0.5)
         Parser.getTokens(1, false);
-        Parser >> gfx_framebuffer_height;
+        Parser >> gfx_buffer_scale;
+        if (gfx_buffer_scale > 4.f)
+        {
+            gfx_buffer_scale *= 0.01f;
+        }
+        gfx_buffer_scale = std::clamp(gfx_buffer_scale, 0.25f, 2.f);
     }
     else if (Token == "gfx.shadowmap.enabled")
     {
@@ -1914,13 +1929,18 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         Parser >> level;
         gfx_fog_quality = ( level == "low" || level == "1" ) ? 1 : ( level == "high" || level == "3" ) ? 3 : ( level == "ultra" || level == "4" ) ? 4 : 2; }
     else if( Token == "gfx.antialiasing" ) {
-        // off, msaax2, msaax4, msaax8 or taa; it sets the multisampling too, the key which used to say it
+        // off, msaax2, msaax4, msaax8, taa, dlss or dlaa; it sets the multisampling too, the key which used to say it
         Parser.getTokens( 1 );
         std::string mode;
         Parser >> mode;
         std::transform( mode.begin(), mode.end(), mode.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        gfx_dlss_native = false;
         if( mode == "taa" ) {
             gfx_antialiasing = antialiasing_mode::taa;
+            iMultisampling = 0; }
+        else if( mode == "dlss" || mode == "dlaa" ) {
+            gfx_antialiasing = antialiasing_mode::dlss;
+            gfx_dlss_native = ( mode == "dlaa" );
             iMultisampling = 0; }
         else if( mode == "msaax2" || mode == "msaax4" || mode == "msaax8" || mode == "msaax16" ) {
             gfx_antialiasing = antialiasing_mode::msaa;
@@ -1929,7 +1949,19 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
             gfx_antialiasing = antialiasing_mode::off;
             iMultisampling = 0; }
         else {
-            ErrorLog( "Bad config: unknown gfx.antialiasing \"" + mode + "\", expected off, msaax2, msaax4, msaax8 or taa" ); } }
+            ErrorLog( "Bad config: unknown gfx.antialiasing \"" + mode + "\", expected off, msaax2, msaax4, msaax8, taa, dlss or dlaa" ); } }
+    else if( Token == "gfx.dlss.preset" ) {
+        // the presets of the dlss sdk 310 (the others are gone, deprecated or reserved)
+        Parser.getTokens( 1 );
+        std::string preset;
+        Parser >> preset;
+        std::transform( preset.begin(), preset.end(), preset.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        gfx_dlss_preset = ( preset == "j" ) ? 10 : ( preset == "k" ) ? 11 : ( preset == "l" ) ? 12 : ( preset == "m" ) ? 13 : 0;
+        if( ( gfx_dlss_preset == 0 ) && ( preset != "default" ) ) {
+            ErrorLog( "Bad config: unknown gfx.dlss.preset \"" + preset + "\", expected default, j, k, l or m" ); } }
+    else if( Token == "gfx.dlss.autoexposure" ) { readswitch( gfx_dlss_autoexposure ); }
+    else if( Token == "gfx.dlss.lodbias" ) { readvalue( gfx_dlss_lodbias, -2.f, 2.f ); }
+    else if( Token == "gfx.dlss.developer" ) { readswitch( gfx_dlss_developer ); }
     else if( Token == "gfx.fog.range" ) { readvalue( gfx_fog_range, 100.f, 10000.f ); }
     else if( Token == "gfx.fog.lights" ) { readvalue( gfx_fog_lights, 0.f, 10.f ); }
     else if( Token == "gfx.fog.shadows" ) { readswitch( gfx_fog_shadows ); }
@@ -2065,7 +2097,12 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.reflections.fidelity", reflectiontune.fidelity );
     export_as_text( Output, "timespeed", fTimeSpeed );
     export_as_text( Output, "multisampling", iMultisampling );
-    export_as_text( Output, "gfx.antialiasing", std::string{ gfx_antialiasing == antialiasing_mode::taa ? "taa" : ( gfx_antialiasing == antialiasing_mode::off || iMultisampling == 0 ) ? "off" : "msaax" + std::to_string( 1 << iMultisampling ) } );
+    export_as_text( Output, "gfx.antialiasing", std::string{ gfx_antialiasing == antialiasing_mode::taa ? "taa" : gfx_antialiasing == antialiasing_mode::dlss ? ( gfx_dlss_native ? "dlaa" : "dlss" ) : ( gfx_antialiasing == antialiasing_mode::off || iMultisampling == 0 ) ? "off" : "msaax" + std::to_string( 1 << iMultisampling ) } );
+    export_as_text( Output, "gfx.buffer.percent", gfx_buffer_scale );
+    export_as_text( Output, "gfx.dlss.preset", std::string{ gfx_dlss_preset == 10 ? "j" : gfx_dlss_preset == 11 ? "k" : gfx_dlss_preset == 12 ? "l" : gfx_dlss_preset == 13 ? "m" : "default" } );
+    export_as_text( Output, "gfx.dlss.autoexposure", gfx_dlss_autoexposure );
+    export_as_text( Output, "gfx.dlss.lodbias", gfx_dlss_lodbias );
+    export_as_text( Output, "gfx.dlss.developer", gfx_dlss_developer );
     export_as_text( Output, "latitude", fLatitudeDeg );
     export_as_text( Output, "convertmodels", iConvertModels );
     export_as_text( Output, "file.binary.terrain", file_binary_terrain );
@@ -2188,8 +2225,6 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << extcam_res.y << "\n";
 
     export_as_text( Output, "compresstex", compress_tex );
-    export_as_text( Output, "gfx.framebuffer.width", gfx_framebuffer_width );
-    export_as_text( Output, "gfx.framebuffer.height", gfx_framebuffer_height );
     export_as_text( Output, "gfx.shadowmap.enabled", gfx_shadowmap_enabled );
     // TODO: export fpslimit
     export_as_text( Output, "randomseed", Global.random_seed );

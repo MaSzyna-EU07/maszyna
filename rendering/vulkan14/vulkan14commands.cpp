@@ -64,7 +64,8 @@ enum call_type : std::uint32_t
 	call_end_query,
 	call_begin_label,
 	call_end_label,
-	call_build_acceleration_structures
+	call_build_acceleration_structures,
+	call_external
 };
 
 struct call_header
@@ -173,6 +174,11 @@ struct build_call
 	std::size_t infos;
 	std::size_t geometries;
 	std::size_t ranges;
+};
+struct external_call
+{
+	command_stream::external_function function;
+	void *data;
 };
 // the copies and the blit: the info with its regions
 template <typename Info_> struct copy_call
@@ -728,6 +734,14 @@ void command_stream::build_acceleration_structures(std::uint32_t const Count, Vk
 	work();
 }
 
+void command_stream::external(external_function const Function, void *const Data)
+{
+	assert(m_rendering == no_call);
+	auto const call{add(call_external, sizeof(external_call))};
+	payload<external_call>(call) = external_call{Function, Data};
+	work();
+}
+
 // the replay
 
 void command_stream::execute(std::size_t const Call, VkCommandBuffer const Buffer, VkRenderingFlags const Flags) const
@@ -1013,6 +1027,12 @@ void command_stream::execute(std::size_t const Call, VkCommandBuffer const Buffe
 			}
 		}
 		vkCmdBuildAccelerationStructuresKHR(Buffer, data.count, infos.data(), ranges.data());
+		break;
+	}
+	case call_external:
+	{
+		auto const &data{payload<external_call>(Call)};
+		data.function(Buffer, data.data);
 		break;
 	}
 	default:

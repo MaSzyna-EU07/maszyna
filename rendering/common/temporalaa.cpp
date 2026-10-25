@@ -15,8 +15,6 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
-// the offsets go round this many frames: enough to cover a pixel evenly, few enough for the history to hold all of them
-constexpr std::uint32_t JITTER_PHASES{8};
 // the camera moved farther than this from one frame to the next (another camera, another vehicle, a jump): the history is dropped
 constexpr double CAMERA_JUMP{50.0};
 
@@ -38,7 +36,8 @@ float halton(std::uint32_t Index, std::uint32_t const Base)
 
 glm::mat4 gfx::temporal_aa::begin_frame(glm::mat4 const &Projection, glm::dmat3 const &View, glm::dvec3 const &Camera, TDynamicObject const *Cab, glm::ivec2 const &Size)
 {
-	m_phase = (m_phase + 1) % JITTER_PHASES;
+	// the offsets go round m_phases frames: enough to cover a pixel evenly, few enough for the history to hold all of them
+	m_phase = (m_phase + 1) % m_phases;
 	// the first element of the sequence is 0 in every base; from the second one on they are spread over the pixel
 	m_jitter = glm::vec2{halton(m_phase + 1, 2), halton(m_phase + 1, 3)} - 0.5f;
 	glm::dvec2 const size{static_cast<double>(std::max(Size.x, 1)), static_cast<double>(std::max(Size.y, 1))};

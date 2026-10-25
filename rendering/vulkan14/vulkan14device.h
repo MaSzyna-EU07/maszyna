@@ -48,7 +48,8 @@ class device
 	// glfw). Verbose: every gpu and why it can't be used goes to the log. false: no usable gpu, Reason tells why
 	bool select(VkInstance Instance, VkSurfaceKHR Surface, std::string const &Wanted, bool const Verbose, std::string &Reason);
 	// makes the VkDevice of the gpu picked by select()
-	bool create(instance const &Instance, std::string &Reason);
+	// Wanted: the extensions a library asks for (dlss), taken where the device has them, with the features of vulkan 1.2 it uses
+	bool create(instance const &Instance, std::string &Reason, std::vector<std::string> const &Wanted = {});
 	void destroy();
 
 	VkPhysicalDevice physical() const

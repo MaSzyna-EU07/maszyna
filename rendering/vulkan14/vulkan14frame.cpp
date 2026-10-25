@@ -265,20 +265,28 @@ void vulkan14_renderer::init_frame_data()
 	{
 		WriteLog("using multisampling x" + std::to_string(1 << Global.iMultisampling));
 	}
-	if (Global.gfx_framebuffer_width == -1)
+	// the image of the main window: a part of the window (gfx.buffer.percent) stretched to it, or with dlss the size it planned,
+	// upscaled to the window
+	if (m_dlssrender.x > 0)
 	{
-		Global.gfx_framebuffer_width = Global.fb_size.x;
+		Global.gfx_framebuffer_width = m_dlssrender.x;
+		Global.gfx_framebuffer_height = m_dlssrender.y;
 	}
-	if (Global.gfx_framebuffer_height == -1)
+	else if ((Global.gfx_framebuffer_width == -1) || (Global.gfx_framebuffer_height == -1))
 	{
-		Global.gfx_framebuffer_height = Global.fb_size.y;
+		auto const size{Global.gfx_buffer_size()};
+		Global.gfx_framebuffer_width = size.x;
+		Global.gfx_framebuffer_height = size.y;
 	}
-	WriteLog("main window size: " + std::to_string(Global.gfx_framebuffer_width) + "x" + std::to_string(Global.gfx_framebuffer_height));
+	WriteLog("main window size: " + std::to_string(Global.fb_size.x) + "x" + std::to_string(Global.fb_size.y) + ", drawn at " + std::to_string(Global.gfx_framebuffer_width) + "x" + std::to_string(Global.gfx_framebuffer_height) +
+	         (m_dlssrender.x > 0 ? " for dlss" : ""));
 
 	m_viewports.clear();
 	auto &main{m_viewports.emplace_back()};
 	main.width = Global.gfx_framebuffer_width;
 	main.height = Global.gfx_framebuffer_height;
+	main.output_width = (m_dlssrender.x > 0 ? m_dlssoutput.x : 0);
+	main.output_height = (m_dlssrender.x > 0 ? m_dlssoutput.y : 0);
 	main.main = true;
 	main.shadow = true;
 	main.window = 0;
@@ -310,10 +318,10 @@ namespace
 {
 
 bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std::uint64_t const Value, std::uint32_t &Formatscount, VkSampleCountFlags const Samplecounts, VkFormat const Bloomformat, VkFormat const Historyformat,
-                  vk14::viewport_targets &Targets, int const Width, int const Height, bool const Srgb, bool const Taa, bool const Reflections)
+                  vk14::viewport_targets &Targets, int const Width, int const Height, int const OutputWidth, int const OutputHeight, bool const Srgb, bool const Taa, bool const Reflections, bool const Dlss)
 {
-	// as many samples as asked for, as far as the device has them for the colour and the depth
-	auto samples{static_cast<VkSampleCountFlagBits>(std::clamp(1 << Global.iMultisampling, 1, 8))};
+	// as many samples as asked for, as far as the device has them for the colour and the depth; one for dlss
+	auto samples{static_cast<VkSampleCountFlagBits>(Dlss ? 1 : std::clamp(1 << Global.iMultisampling, 1, 8))};
 	while ((samples > VK_SAMPLE_COUNT_1_BIT) && (0 == (Samplecounts & samples)))
 	{
 		samples = static_cast<VkSampleCountFlagBits>(samples >> 1);
@@ -321,8 +329,10 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	auto const motion{Global.gfx_motion_vectors()};
 	auto const aberration{Global.gfx_postfx_chromaticaberration_enabled};
 	VkExtent2D const extent{static_cast<std::uint32_t>(std::max(Width, 1)), static_cast<std::uint32_t>(std::max(Height, 1))};
-	if ((Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.aberration == aberration) &&
-	    (Targets.srgb == Srgb) && (Targets.reflections == Reflections) && Targets.output)
+	// the images after the upscaling of dlss have the size of the window, the others that of the scene
+	VkExtent2D const outputextent{Dlss ? VkExtent2D{static_cast<std::uint32_t>(std::max(OutputWidth, 1)), static_cast<std::uint32_t>(std::max(OutputHeight, 1))} : extent};
+	if ((Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.output_extent.width == outputextent.width) && (Targets.output_extent.height == outputextent.height) &&
+	    (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.dlss == Dlss) && (Targets.aberration == aberration) && (Targets.srgb == Srgb) && (Targets.reflections == Reflections) && Targets.output)
 	{
 		return true;
 	}
@@ -333,6 +343,8 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	auto const olddepth{Targets.depth_formats};
 	Targets = vk14::viewport_targets{};
 	Targets.extent = extent;
+	Targets.output_extent = outputextent;
+	Targets.dlss = Dlss;
 	Targets.samples = samples;
 	Targets.motion = motion;
 	Targets.taa = Taa;
@@ -340,10 +352,10 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	Targets.srgb = Srgb;
 	Targets.reflections = Reflections;
 
-	auto make = [&](std::shared_ptr<vk14::image> &Image, VkFormat Format, VkImageUsageFlags Usage, VkSampleCountFlagBits Samples, char const *Name) {
+	auto make = [&](std::shared_ptr<vk14::image> &Image, VkFormat Format, VkImageUsageFlags Usage, VkSampleCountFlagBits Samples, char const *Name, VkExtent2D const Size = VkExtent2D{0, 0}) {
 		vk14::image_desc desc;
 		desc.format = Format;
-		desc.extent = {extent.width, extent.height, 1};
+		desc.extent = {Size.width > 0 ? Size.width : extent.width, Size.height > 0 ? Size.height : extent.height, 1};
 		desc.samples = Samples;
 		desc.usage = Usage;
 		Image = std::make_shared<vk14::image>();
@@ -377,7 +389,7 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	}
 	if (motion && Global.gfx_postfx_motionblur_enabled)
 	{
-		ok = ok && make(Targets.blurred, hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "motion blurred");
+		ok = ok && make(Targets.blurred, hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "motion blurred", outputextent);
 	}
 	if (Taa)
 	{
@@ -402,9 +414,16 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	auto const output{Srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM};
 	if (aberration)
 	{
-		ok = ok && make(Targets.tonemapped, output, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "tonemapped");
+		ok = ok && make(Targets.tonemapped, output, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "tonemapped", outputextent);
 	}
-	ok = ok && make(Targets.output, output, sampledcolour | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT, "output");
+	ok = ok && make(Targets.output, output, sampledcolour | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT, "output", outputextent);
+	if (Dlss)
+	{
+		// what dlss takes besides the scene, and its output, which the post-processing reads (and the history of the reflections is
+		// copied from)
+		ok = ok && make(Targets.dlss_motion, velocity, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "dlss velocity") && make(Targets.dlss_exposure, VK_FORMAT_R32_SFLOAT, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "dlss exposure", VkExtent2D{1, 1}) &&
+		     make(Targets.dlss_output, hdr, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | historysource, VK_SAMPLE_COUNT_1_BIT, "dlss output", outputextent);
+	}
 	// the ambient occlusion, half the size, when it's on
 	if (ok && (Global.gfx_postfx_ao != 0))
 	{
@@ -431,7 +450,7 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	// the bloom chain, made whether the bloom is on or not: it can be switched on in the debug window
 	if (ok)
 	{
-		auto const sizes{gfx::exposure_settings::bloom_sizes(static_cast<int>(extent.width), static_cast<int>(extent.height))};
+		auto const sizes{gfx::exposure_settings::bloom_sizes(static_cast<int>(outputextent.width), static_cast<int>(outputextent.height))};
 		auto makelevel = [&](std::vector<std::shared_ptr<vk14::image>> &Levels, glm::ivec2 const &Size, char const *Name) {
 			vk14::image_desc desc;
 			desc.format = Bloomformat;
@@ -515,6 +534,11 @@ bool vulkan14_renderer::Render()
 	{
 		report_device_lost(failure);
 		return false;
+	}
+	// what the replay left to dlss; failed: off from now on, the scene of the main window stretched to it without anti-aliasing
+	if (auto const error{ctx.dlss.sync()}; false == error.empty())
+	{
+		vk14::log_error(error + "; dlss is off, the scene is stretched to the window without anti-aliasing");
 	}
 
 	// the gpu has to be done with the frame which used the slot before
@@ -816,7 +840,7 @@ bool vulkan14_renderer::Render()
 	{
 		scene.screenshot_wanted = false;
 		auto &output{*scene.targets.front().output};
-		auto const extent{scene.targets.front().extent};
+		VkExtent2D const extent{output.desc().extent.width, output.desc().extent.height};
 		scene.screenshot = std::make_shared<vk14::buffer>();
 		if (scene.screenshot->create(ctx.memory, static_cast<VkDeviceSize>(extent.width) * extent.height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::readback, "screenshot"))
 		{
@@ -914,17 +938,20 @@ void vulkan14_renderer::render_scene()
 		auto const &viewport{m_viewports[i]};
 		auto const srgb{false == Global.gfx_shadergamma};
 		auto const *history{scene.targets[i].taa_history[0].get()};
+		auto const *upscaled{scene.targets[i].dlss_output.get()};
 		auto const *reflections{scene.targets[i].ssr_history.get()};
+		auto const dlss{viewport.main && dlss_active() && (viewport.output_width > 0) && (viewport.output_height > 0)};
 		if (false == make_targets(ctx.memory, ctx.deletions, ctx.uploads.current_value(), scene.formats_count, ctx.device.caps().limits.framebufferColorSampleCounts & ctx.device.caps().limits.framebufferDepthSampleCounts, scene.bloom_format,
-		                          scene.history_format, scene.targets[i], viewport.width, viewport.height, srgb, viewport.main && Global.gfx_taa(),
-		                          viewport.main && (false == Global.gfx_skippipeline) && ((Global.gfx_ssr > 0) || (m_raytracingon && scene.raytracing))))
+		                          scene.history_format, scene.targets[i], viewport.width, viewport.height, viewport.output_width, viewport.output_height, srgb, viewport.main && Global.gfx_taa(),
+		                          viewport.main && (false == Global.gfx_skippipeline) && ((Global.gfx_ssr > 0) || (m_raytracingon && scene.raytracing)), dlss))
 		{
 			continue;
 		}
-		if (viewport.main && (scene.targets[i].taa_history[0].get() != history))
+		if (viewport.main && ((scene.targets[i].taa_history[0].get() != history) || (scene.targets[i].dlss_output.get() != upscaled)))
 		{
 			// new images of the history, nothing in them yet
 			m_taa.reset();
+			m_dlssreset = true;
 		}
 		auto &targets{scene.targets[i]};
 		if (targets.ssr_history.get() != reflections)
@@ -1284,12 +1311,15 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	m_current_viewport = &vp;
 
 	setup_pass(vp, m_renderpass, rendermode::color);
-	// the temporal anti-aliasing: the projection of the frame moved by a part of a pixel, the velocities pointed to the last frame
-	auto const taa{vp.main && targets.taa && Global.gfx_taa()};
+	// the temporal anti-aliasing or dlss: the projection of the frame moved by a part of a pixel, the velocities pointed to the last
+	// frame. dlss goes through more offsets the smaller the scene is drawn
+	auto const dlss{vp.main && targets.dlss && targets.dlss_output && dlss_active()};
+	auto const taa{(vp.main && targets.taa && Global.gfx_taa()) || dlss};
 	m_motionhistory = taa;
 	m_cabfuture = glm::mat4{1.f};
 	if (taa)
 	{
+		m_taa.set_phases(dlss ? m_context->dlss.jitter_phases() : 8);
 		auto const *cab{((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr)) ? simulation::Train->Dynamic() : nullptr};
 		m_renderpass.pass_camera.projection() = m_taa.begin_frame(
 		    m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height});
@@ -3005,6 +3035,57 @@ void vulkan14_renderer::post_pass(char const *Fragment, vk14::image &Target, std
 	commands->end_rendering();
 }
 
+// dlss of the main viewport (gfx.antialiasing dlss): its inputs made (the velocities of the sky, which has none drawn, from the
+// motion of the camera; the exposure of the tonemapping in a texel), then its evaluation into the output of the size of the window
+void vulkan14_renderer::render_dlss(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &targets{ctx.scene.targets[Index]};
+	vk14::draw_constants motion;
+	auto const &reprojection{m_taa.reprojection()};
+	for (int column = 0; column < 4; ++column)
+	{
+		motion.data[2 + column] = reprojection[column];
+	}
+	post_pass("postfx_dlss_motion.frag", *targets.dlss_motion, {targets.motion_image.get(), targets.depth.get()}, motion, "dlss inputs");
+	vk14::image *exposure{nullptr};
+	if (false == Global.gfx_dlss_autoexposure)
+	{
+		vk14::draw_constants constants;
+		constants.data[0] = gfx::exposure_settings::tonemap_params(0);
+		post_pass("postfx_dlss_exposure.frag", *targets.dlss_exposure, {targets.colour.get()}, constants);
+		exposure = targets.dlss_exposure.get();
+	}
+	// the inputs read and the output written by the passes of the library, whichever stages they are
+	auto const stage{VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+	std::vector<vk14::image_use> uses{vk14::use_of(*targets.colour, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage, VK_ACCESS_2_SHADER_READ_BIT),
+	                                  vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage, VK_ACCESS_2_SHADER_READ_BIT),
+	                                  vk14::use_of(*targets.dlss_motion, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage, VK_ACCESS_2_SHADER_READ_BIT),
+	                                  vk14::use_of(*targets.dlss_output, VK_IMAGE_LAYOUT_GENERAL, stage, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT)};
+	if (exposure != nullptr)
+	{
+		uses.push_back(vk14::use_of(*exposure, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage, VK_ACCESS_2_SHADER_READ_BIT));
+	}
+	ctx.passes.begin_pass("dlss", uses);
+	vk14::dlss::frame_inputs inputs;
+	inputs.colour = targets.colour.get();
+	inputs.depth = targets.depth.get();
+	inputs.motion = targets.dlss_motion.get();
+	inputs.exposure = exposure;
+	inputs.output = targets.dlss_output.get();
+	inputs.jitter = m_taa.jitter();
+	inputs.reset = m_dlssreset || (false == m_taa.history_valid());
+	inputs.frame_time = static_cast<float>(Timer::GetDeltaRenderTime() * 1000.0);
+	ctx.dlss.evaluate(*ctx.commands, inputs, ctx.deletions, ctx.uploads.current_value());
+	m_dlssreset = false;
+	ctx.passes.end_pass();
+}
+
+bool vulkan14_renderer::dlss_active() const
+{
+	return (m_dlssrender.x > 0) && Global.gfx_dlss() && m_context && m_context->dlss.available() && (false == m_context->dlss.failed());
+}
+
 // the post-processing of a viewport: from the colour of the scene to its output, which the window shows (the part of
 // opengl46_renderer::Render_pass() after the colour pass)
 void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionblur)
@@ -3023,6 +3104,12 @@ void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionbl
 		render_ao(Index, aomode);
 	}
 	auto *hdr{targets.colour.get()};
+	// dlss: the scene anti-aliased and upscaled to the window, into the images the rest of the post-processing reads
+	if (m_motionhistory && targets.dlss && targets.dlss_output && targets.dlss_motion && targets.motion_image && dlss_active())
+	{
+		render_dlss(Index);
+		hdr = targets.dlss_output.get();
+	}
 	// the temporal anti-aliasing: the scene blended into its history (the motion blur takes the result)
 	if (m_motionhistory && targets.taa && targets.taa_history[0] && targets.taa_history[1] && targets.motion_image)
 	{
@@ -3076,8 +3163,9 @@ void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionbl
 	{
 		post_pass("postfx_tonemapping.frag", *targets.output, tonemapinput, tonemap, "tonemapping, output");
 	}
-	// the lights of the clusters of the pixels over the image, for the debugging of the lights
-	if (Global.gfx_lights_clusterheatmap)
+	// the lights of the clusters of the pixels over the image, for the debugging of the lights (the clusters are those of the size the
+	// scene is drawn at, which dlss upscales)
+	if (Global.gfx_lights_clusterheatmap && (false == targets.dlss))
 	{
 		render_cluster_heatmap(Index);
 	}

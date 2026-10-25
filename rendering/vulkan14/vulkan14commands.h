@@ -80,6 +80,11 @@ class command_stream
 	void end_debug_utils_label();
 	// the builds of acceleration structures (VK_KHR_acceleration_structure, gfx.raytracing), outside of a rendering
 	void build_acceleration_structures(std::uint32_t Count, VkAccelerationStructureBuildGeometryInfoKHR const *Infos, VkAccelerationStructureBuildRangeInfoKHR const *const *Ranges);
+	// a call of a library recording its own commands (the evaluation of dlss), outside of a rendering: Function gets the command
+	// buffer of the replay and Data, which has to live until the replay is done. what it binds is left as it leaves it, so the
+	// calls after it bind what they use again
+	using external_function = void (*)(VkCommandBuffer Buffer, void *Data);
+	void external(external_function Function, void *Data);
 
 	// the stream is made anew
 	void clear();

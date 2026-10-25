@@ -26,6 +26,8 @@ struct instance_config
 	int validation{0};
 	// VK_EXT_debug_utils: the messages of the validation layer in the log, names of objects
 	bool debug_utils{false};
+	// the extensions a library asks for (dlss), taken where the loader has them
+	std::vector<std::string> wanted_extensions;
 };
 
 class instance

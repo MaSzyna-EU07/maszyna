@@ -234,7 +234,7 @@ bool device::select(VkInstance Instance, VkSurfaceKHR Surface, std::string const
 	return true;
 }
 
-bool device::create(instance const &Instance, std::string &Reason)
+bool device::create(instance const &Instance, std::string &Reason, std::vector<std::string> const &Wanted)
 {
 	if (m_device != VK_NULL_HANDLE)
 	{
@@ -271,6 +271,9 @@ bool device::create(instance const &Instance, std::string &Reason)
 
 	// everything else the renderer uses is in the core of vulkan 1.4
 	std::vector<char const *> extensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+	// the names asked for by a library, kept for the call which makes the device
+	std::vector<std::string> wantednames;
+	wantednames.reserve(Wanted.size());
 	{
 		// a device of the portability subset (vulkan on metal) has to be told the program knows it
 		std::uint32_t count{0};
@@ -287,6 +290,38 @@ bool device::create(instance const &Instance, std::string &Reason)
 		if (m_memory_budget)
 		{
 			extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+		}
+		// what a library asks for (dlss, with the features of vulkan 1.2 it takes for granted). the buffer device address of ext
+		// can't go with the one of the core, it's taken as the extension of khr
+		for (auto name : Wanted)
+		{
+			if (name == VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME)
+			{
+				name = VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME;
+			}
+			if (std::any_of(extensions.begin(), extensions.end(), [&](char const *Entry) { return name == Entry; }))
+			{
+				continue;
+			}
+			if (std::none_of(available.begin(), available.end(), [&](VkExtensionProperties const &Entry) { return name == Entry.extensionName; }))
+			{
+				log_warning("the device extension " + name + " asked for isn't available");
+				continue;
+			}
+			if (std::find(wantednames.begin(), wantednames.end(), name) == wantednames.end())
+			{
+				wantednames.push_back(name);
+			}
+		}
+		for (auto const &name : wantednames)
+		{
+			extensions.push_back(name.c_str());
+		}
+		if (false == Wanted.empty())
+		{
+			enabled.v12.timelineSemaphore = m_queried.v12.timelineSemaphore;
+			enabled.v12.descriptorIndexing = m_queried.v12.descriptorIndexing;
+			enabled.v12.bufferDeviceAddress = m_queried.v12.bufferDeviceAddress;
 		}
 	}
 

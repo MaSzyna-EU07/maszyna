@@ -182,12 +182,30 @@ struct global_settings {
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px
-    // gfx.antialiasing: off, msaax2/x4/x8 (the samples go to iMultisampling) or taa (one sample, with the history of the last frames;
-    // iMultisampling 0). the old key multisampling sets msaa or off. read at the start
-    enum class antialiasing_mode { off, msaa, taa };
+    // gfx.antialiasing: off, msaax2/x4/x8 (the samples go to iMultisampling), taa (one sample, with the history of the last frames;
+    // iMultisampling 0) or dlss (nvidia dlss of the vulkan renderer, one sample: the image of gfx.buffer.percent upscaled to the
+    // window; dlaa is dlss at the full size of the window). the old key multisampling sets msaa or off. read at the start; where dlss
+    // can't be had at the start (the opengl renderers, no nvidia rtx, a build without WITH_DLSS) the renderer takes taa instead, a
+    // failure of dlss later leaves the scene stretched to the window without anti-aliasing
+    enum class antialiasing_mode { off, msaa, taa, dlss };
     antialiasing_mode gfx_antialiasing{ antialiasing_mode::msaa };
     // the temporal anti-aliasing is on: asked for, and the post-processing which does it is there
     bool gfx_taa() const { return ( gfx_antialiasing == antialiasing_mode::taa ) && ( false == gfx_skippipeline ); }
+    // dlss is on: asked for, with the post-processing (the renderer sets gfx_antialiasing to taa where it can't have it)
+    bool gfx_dlss() const { return ( gfx_antialiasing == antialiasing_mode::dlss ) && ( false == gfx_skippipeline ); }
+    // gfx.buffer.percent: the size of the image the scene of the main window is drawn to, as a part of the size of the window
+    // (0.5: half its width and half its height). dlss upscales it to the window, the other modes stretch it. read at the start
+    float gfx_buffer_scale{ 1.f };
+    // gfx.antialiasing dlaa: dlss at the full size of the window whatever gfx.buffer.percent says
+    bool gfx_dlss_native{ false };
+    // gfx.dlss.preset: default, j, k, l or m, the value of NVSDK_NGX_DLSS_Hint_Render_Preset (0, 10, 11, 12, 13)
+    int gfx_dlss_preset{ 0 };
+    // gfx.dlss.autoexposure: dlss works the exposure out itself instead of taking the one of the tonemapping
+    bool gfx_dlss_autoexposure{ false };
+    // gfx.dlss.lodbias: added to the bias of the mipmaps of the textures of the scene dlss is given (log2(render / window) - 1)
+    float gfx_dlss_lodbias{ 0.f };
+    // gfx.dlss.developer: the development library of dlss (ngx_dev/ next to the program) with its indicator and debug keys
+    bool gfx_dlss_developer{ false };
     float SplineFidelity{ 1.f }; // determines segment size during conversion of splines to geometry
     float SleeperDistance{ 250.f }; // max distance (in meters) at which per-track sleeper models are still drawn; 0 disables sleeper rendering entirely
     std::string Sleepers3D; // model of the sleepers and switch timbers laid where the simulator makes the ballast; empty: none
@@ -298,8 +316,13 @@ struct global_settings {
 	std::chrono::duration<float> python_minframetime {0.01f};
 
     bool gfx_skiprendering = false;
+    // the size of the image the scene of the main window is drawn to: -1 until the renderer works it out from the window and
+    // gfx.buffer.percent (the old keys gfx.framebuffer.width and .height aren't taken any more)
     int gfx_framebuffer_width = -1;
     int gfx_framebuffer_height = -1;
+    // the size of the image of the main window drawn from the window and gfx.buffer.percent (Scale: the part of the window, 0: that
+    // of the settings), at least a pixel
+    glm::ivec2 gfx_buffer_size( float Scale = 0.f ) const;
     bool gfx_shadowmap_enabled = true;
     bool gfx_envmap_enabled = true;
     bool gfx_lights_clustered = true; // headlights from the light lists of the clusters (no limit of lit headlights) or the first dynamiclights of them
@@ -367,8 +390,8 @@ struct global_settings {
     // one for each of the last frames, instead of with glBufferSubData. read at the start
     bool gfx_bufferstreaming = true;
     bool gfx_postfx_motionblur_enabled = true;
-    // the colour pass writes the velocities of the pixels: for the motion blur, or for the temporal anti-aliasing
-    bool gfx_motion_vectors() const { return gfx_postfx_motionblur_enabled || gfx_taa(); }
+    // the colour pass writes the velocities of the pixels: for the motion blur, the temporal anti-aliasing or dlss
+    bool gfx_motion_vectors() const { return gfx_postfx_motionblur_enabled || gfx_taa() || gfx_dlss(); }
     float gfx_postfx_motionblur_shutter = 0.01f;
     GLenum gfx_postfx_motionblur_format = GL_RG16F;
     GLenum gfx_format_color = GL_RGB16F;

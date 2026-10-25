@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <glm/glm.hpp>
 
@@ -38,6 +39,12 @@ class temporal_aa
 	void reset()
 	{
 		m_previous.valid = false;
+	}
+	// the offsets go round Phases frames (at least 1); 8 for the temporal anti-aliasing, more when dlss upscales (8 for each pixel
+	// of the window)
+	void set_phases(std::uint32_t const Phases)
+	{
+		m_phases = std::max<std::uint32_t>(Phases, 1);
 	}
 	// the frame has a history: the last frame was drawn the same way
 	bool history_valid() const
@@ -83,6 +90,7 @@ class temporal_aa
 
 	frame m_previous;
 	std::uint32_t m_phase{0};
+	std::uint32_t m_phases{8};
 	glm::vec2 m_jitter{0.f};
 	glm::mat4 m_worldfuture{1.f};
 	glm::mat4 m_cabfuture{1.f};

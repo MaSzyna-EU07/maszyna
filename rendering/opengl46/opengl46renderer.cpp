@@ -74,6 +74,13 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	if (!Init_caps())
 		return false;
 
+	if (Global.gfx_antialiasing == global_settings::antialiasing_mode::dlss)
+	{
+		// dlss is of the vulkan renderer only: the temporal anti-aliasing of this one instead
+		WriteLog("gfx.antialiasing dlss isn't available with opengl, using taa");
+		Global.gfx_antialiasing = global_settings::antialiasing_mode::taa;
+	}
+
 	WriteLog("preparing renderer..");
 
 	m_window = Window;
@@ -6744,12 +6751,15 @@ bool opengl46_renderer::Init_caps()
 		WriteLog("using multisampling x" + std::to_string(1 << Global.iMultisampling));
 	}
 
-	if (Global.gfx_framebuffer_width == -1)
-        Global.gfx_framebuffer_width = Global.fb_size.x;
-	if (Global.gfx_framebuffer_height == -1)
-        Global.gfx_framebuffer_height = Global.fb_size.y;
+	// the image of the main window: a part of the window (gfx.buffer.percent), stretched to it
+	if ((Global.gfx_framebuffer_width == -1) || (Global.gfx_framebuffer_height == -1))
+	{
+		auto const size{Global.gfx_buffer_size()};
+		Global.gfx_framebuffer_width = size.x;
+		Global.gfx_framebuffer_height = size.y;
+	}
 
-	WriteLog("main window size: " + std::to_string(Global.gfx_framebuffer_width) + "x" + std::to_string(Global.gfx_framebuffer_height));
+	WriteLog("main window size: " + std::to_string(Global.fb_size.x) + "x" + std::to_string(Global.fb_size.y) + ", drawn at " + std::to_string(Global.gfx_framebuffer_width) + "x" + std::to_string(Global.gfx_framebuffer_height));
 
 	return true;
 }

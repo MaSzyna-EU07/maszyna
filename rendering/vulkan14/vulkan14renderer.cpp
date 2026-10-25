@@ -26,6 +26,9 @@ namespace
 // background of the opengl renderer (srgb). before that the windows are black, as with the opengl renderer
 glm::vec3 const clear_colour{51.f / 255.f, 102.f / 255.f, 85.f / 255.f};
 
+// VkPhysicalDeviceProperties::vendorID of nvidia, the gpus dlss runs on
+std::uint32_t constexpr nvidia_vendor_id{0x10de};
+
 // the ring each frame in flight streams its data through: the user interface, the blocks of the scene and of the light clusters,
 // the light buffers of the passes, the vertices of the particles and the sky; the descriptors read the light buffers with the range
 // of the whole gl::light_data, which the tail past the last frame leaves room for
@@ -332,7 +335,7 @@ bool vulkan14_renderer::context::create_core(std::uint32_t const Frames, std::st
 		return false;
 	}
 	uploads.init(memory, deletions, device.physical());
-	if (false == sampling.create(device, static_cast<float>(Global.AnisotropicFiltering), Reason))
+	if (false == sampling.create(device, static_cast<float>(Global.AnisotropicFiltering), Reason, lod_bias))
 	{
 		return false;
 	}
@@ -404,6 +407,8 @@ void vulkan14_renderer::context::destroy()
 	uploads = vk14::uploader{};
 	images.clear();
 	deletions.flush();
+	// the features of dlss released by the deletions above, ngx goes before the device
+	dlss.shutdown();
 	pipelines.shutdown();
 	shaders.shutdown();
 	passes.destroy();
@@ -494,6 +499,34 @@ gfx_backend_desc vulkan14_renderer::backend_desc()
 
 bool vulkan14_renderer::renderer_register = gfx_renderer_factory::get_instance()->register_backend("vulkan", vulkan14_renderer::backend_desc());
 
+// dlss on the device made for it, and the size the scene of the main window is drawn at; where it can't be had, taa instead
+void vulkan14_renderer::start_dlss()
+{
+	auto &ctx{*m_context};
+	std::string reason;
+	glm::ivec2 render{0};
+	auto const output{glm::max(Global.fb_size, glm::ivec2(1))};
+	if (ctx.device.caps().vendor_id != nvidia_vendor_id)
+	{
+		reason = ctx.device.caps().device_name + " isn't an nvidia gpu";
+	}
+	else if (ctx.dlss.init(ctx.instance.handle(), ctx.device.physical(), ctx.device.handle(), reason))
+	{
+		if (ctx.dlss.plan(output, Global.gfx_dlss_native ? 1.f : Global.gfx_buffer_scale, render))
+		{
+			m_dlssrender = render;
+			m_dlssoutput = output;
+			ctx.lod_bias = ctx.dlss.lod_bias();
+			vk14::log_info("dlss: the bias of the mipmaps of the scene " + std::to_string(ctx.lod_bias) + ", " + std::to_string(ctx.dlss.jitter_phases()) + " offsets of the jitter");
+			return;
+		}
+		reason = "it doesn't upscale to the window of " + std::to_string(output.x) + "x" + std::to_string(output.y);
+	}
+	ctx.dlss.shutdown();
+	vk14::log_info("gfx.antialiasing dlss: " + reason + ", using taa");
+	Global.gfx_antialiasing = global_settings::antialiasing_mode::taa;
+}
+
 bool vulkan14_renderer::Init(GLFWwindow *Window)
 {
 	m_context = std::make_unique<context>();
@@ -504,9 +537,30 @@ bool vulkan14_renderer::Init(GLFWwindow *Window)
 	config.validation = Global.gfx_vulkan_validation;
 	config.debug_utils = (Global.gfx_vulkan_validation > 0);
 
+	// dlss (gfx.antialiasing dlss): the extensions ngx needs go into the instance and the device; where it can't be had, taa
+	if (Global.gfx_dlss() && (false == vk14::dlss::compiled()))
+	{
+		vk14::log_info("gfx.antialiasing dlss: this build is without the dlss sdk (WITH_DLSS), using taa");
+		Global.gfx_antialiasing = global_settings::antialiasing_mode::taa;
+	}
+	if (Global.gfx_dlss())
+	{
+		vk14::dlss::instance_extensions(config.wanted_extensions);
+	}
+
 	auto const framesinflight{static_cast<std::uint32_t>(std::clamp(Global.gfx_vulkan_framesinflight, 2, 3))};
-	auto ok{ctx.instance.create(config, reason) && ctx.device.select(ctx.instance.handle(), VK_NULL_HANDLE, Global.gfx_vulkan_device, false, reason) && ctx.device.create(ctx.instance, reason) && ctx.create_frames(framesinflight, reason) &&
-	        ctx.create_core(framesinflight, reason)};
+	auto ok{ctx.instance.create(config, reason) && ctx.device.select(ctx.instance.handle(), VK_NULL_HANDLE, Global.gfx_vulkan_device, false, reason)};
+	std::vector<std::string> deviceextensions;
+	if (ok && Global.gfx_dlss() && (ctx.device.caps().vendor_id == nvidia_vendor_id))
+	{
+		vk14::dlss::device_extensions(ctx.instance.handle(), ctx.device.physical(), deviceextensions);
+	}
+	ok = ok && ctx.device.create(ctx.instance, reason, deviceextensions);
+	if (ok && Global.gfx_dlss())
+	{
+		start_dlss();
+	}
+	ok = ok && ctx.create_frames(framesinflight, reason) && ctx.create_core(framesinflight, reason);
 	if (ok)
 	{
 		auto mainwindow{std::make_unique<vk14::swapchain>()};
@@ -580,6 +634,13 @@ bool vulkan14_renderer::AddViewport(global_settings::extraviewport_config const 
 		m_viewports.emplace_back();
 		viewport = &m_viewports.back();
 		viewport->window = ctx.windows.size() - 1;
+	}
+	if (viewport->main && (viewport->output_width > 0))
+	{
+		// the size dlss was planned for isn't the one of the viewport: the main window without it
+		vk14::log_info("dlss: off for the main window, drawn by the viewport " + conf.monitor + " at a size of its own");
+		viewport->output_width = 0;
+		viewport->output_height = 0;
 	}
 	viewport->width = conf.width;
 	viewport->height = conf.height;
@@ -763,6 +824,11 @@ void vulkan14_renderer::update_info()
 	{
 		auto const extent{window->extent()};
 		m_infostats += "window: " + std::to_string(extent.width) + "x" + std::to_string(extent.height) + (window->srgb() ? ", srgb" : ", unorm") + (window->present_mode() == VK_PRESENT_MODE_FIFO_KHR ? ", vsync" : ", no vsync") + "\n";
+	}
+	if (false == m_viewports.empty())
+	{
+		auto const &main{m_viewports.front()};
+		m_infostats += "scene drawn at " + std::to_string(main.width) + "x" + std::to_string(main.height) + (dlss_active() ? ", " + ctx.dlss.info() : std::string{}) + "\n";
 	}
 	// the statistics of the scene and of the cullings, as the opengl renderer gives them
 	collect_cluster_stats();

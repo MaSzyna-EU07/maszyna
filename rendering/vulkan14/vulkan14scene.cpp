@@ -630,6 +630,13 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		{
 			scene.post_fragments.emplace("postfx_taa.frag", ctx.shaders.get("postfx_taa.frag"));
 		}
+		if (Global.gfx_dlss())
+		{
+			for (auto const *name : {"postfx_dlss_motion.frag", "postfx_dlss_exposure.frag"})
+			{
+				scene.post_fragments.emplace(name, ctx.shaders.get(name));
+			}
+		}
 		auto const build{ctx.shaders.get("cluster_build.comp")};
 		auto const cull{ctx.shaders.get("cluster_cull.comp")};
 		scene.cluster_build = ctx.pipelines.compute(build, scene.cluster_layout, {}, "cluster build");

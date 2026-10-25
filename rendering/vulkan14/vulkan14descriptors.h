@@ -35,7 +35,8 @@ struct samplers
 	// the device filters the depth format, the border the farthest depth (0)
 	VkSampler depth{VK_NULL_HANDLE};
 
-	bool create(device const &Device, float Anisotropy, std::string &Reason);
+	// LodBias: the bias of the mipmaps of the textures of the scene (the anisotropic ones), for dlss
+	bool create(device const &Device, float Anisotropy, std::string &Reason, float LodBias = 0.f);
 	void destroy(VkDevice Device);
 };
 

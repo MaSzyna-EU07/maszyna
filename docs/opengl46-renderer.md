@@ -91,8 +91,26 @@ anti-aliasing with it. The velocities are drawn with it whether the motion blur 
 motion blur smears the image after the TAA, and it also blurs the turning of the camera. Thin lines across the
 pixels (rails and wires far away) are locked in the history for 8 frames on the world standing still farther
 than 20..40 m, so the frames whose offset misses them don't make them flicker; on near or fast moving pixels the
-usual check of the history against the colours around the pixel applies. Further anti-aliasing modes (FSR, DLSS) are meant to be added to
+usual check of the history against the colours around the pixel applies. Further anti-aliasing modes (FSR) are meant to be added to
 the same entry.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.antialiasing dlss/dlaa` | | NVIDIA DLSS of the Vulkan renderer: the scene of the main window drawn at `gfx.buffer.percent` of the window with one sample, the jitter of `taa` (more offsets the smaller the image: 8 for each pixel of the window) and anti-aliased and upscaled to the window by DLSS. `dlaa` is DLSS at the full size of the window whatever `gfx.buffer.percent` says. Needs a build with `WITH_DLSS`, a GeForce RTX and its driver; otherwise, and with OpenGL, `taa` is taken at the start (the log says why). Should DLSS fail later, the scene is stretched to the window without anti-aliasing (the negative bias of the mipmaps stays until the restart) |
+| `gfx.buffer.percent` | `1.0` | the size of the image the scene of the main window is drawn at, as a part of the size of the window (`0.5`: half its width and half its height; a value over 4 is taken as percents). With `dlss` it's kept within what the DLSS mode nearest to it takes (about 0.33..1.0) and upscaled by it; with the other modes the image is stretched to the window. Replaces `gfx.framebuffer.width` and `gfx.framebuffer.height`, which aren't read any more. Read at the start |
+| `gfx.dlss.preset default/j/k/l/m` | `default` | the preset of the DLSS model (the DLSS SDK 310 has these; `default` lets the library pick per mode) |
+| `gfx.dlss.autoexposure yes/no` | `no` | DLSS works the exposure out itself instead of being given the exposure of the tonemapping |
+| `gfx.dlss.lodbias` | `0` | added to the bias of the mipmaps of the textures of the scene with DLSS, `log2(drawn / window) - 1` (less negative against moiré, more for sharper textures) |
+| `gfx.dlss.developer yes/no` | `no` | the development library of DLSS (`ngx_dev/` next to the program): its indicator and the debug keys of the DLSS programming guide (Ctrl+Alt+F12 debug views, Ctrl+Alt+F9 jitter configurations) |
+
+DLSS needs the NVIDIA DLSS SDK at build time, which isn't in the repository (it keeps the binaries of every platform in
+git): `cmake -P tools/fetch_dlss_sdk.cmake` takes the headers and the libraries of the platform into `ref/DLSS`
+(ignored by git), then configure with `-DWITH_DLSS=ON` (`-DDLSS_SDK_ROOT=<dir>` for another place). The build copies
+`nvngx_dlss.dll` (Windows) or `libnvidia-ngx-dlss.so.<version>` (Linux) next to the program, where NGX looks for it,
+and the development library into `ngx_dev/`; a program copied elsewhere needs the library next to it. The velocities DLSS
+is given are those of `taa`, the sky (which has none drawn) gets the motion of the camera; animated parts of models other
+than wheels (gauges, levers, wipers) have no velocity of their own yet. The debug window of the Vulkan renderer shows the
+mode and the sizes, and can turn the jitter offsets the other way (to check their direction) and drop the history.
 
 ### Ambient occlusion
 
