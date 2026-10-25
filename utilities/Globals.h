@@ -179,6 +179,12 @@ struct global_settings {
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px
+    // gfx.antialiasing: off, msaax2/x4/x8 (the samples go to iMultisampling) or taa (one sample, with the history of the last frames;
+    // iMultisampling 0). the old key multisampling sets msaa or off. read at the start
+    enum class antialiasing_mode { off, msaa, taa };
+    antialiasing_mode gfx_antialiasing{ antialiasing_mode::msaa };
+    // the temporal anti-aliasing is on: asked for, and the post-processing which does it is there
+    bool gfx_taa() const { return ( gfx_antialiasing == antialiasing_mode::taa ) && ( false == gfx_skippipeline ); }
     float SplineFidelity{ 1.f }; // determines segment size during conversion of splines to geometry
     float SleeperDistance{ 250.f }; // max distance (in meters) at which per-track sleeper models are still drawn; 0 disables sleeper rendering entirely
     std::string Sleepers3D; // model of the sleepers and switch timbers laid where the simulator makes the ballast; empty: none
@@ -358,6 +364,8 @@ struct global_settings {
     // one for each of the last frames, instead of with glBufferSubData. read at the start
     bool gfx_bufferstreaming = true;
     bool gfx_postfx_motionblur_enabled = true;
+    // the colour pass writes the velocities of the pixels: for the motion blur, or for the temporal anti-aliasing
+    bool gfx_motion_vectors() const { return gfx_postfx_motionblur_enabled || gfx_taa(); }
     float gfx_postfx_motionblur_shutter = 0.01f;
     GLenum gfx_postfx_motionblur_format = GL_RG16F;
     GLenum gfx_format_color = GL_RGB16F;

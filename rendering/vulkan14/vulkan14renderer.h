@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/weatherstate.h"
 #include "rendering/common/shadowfit.h"
 #include "rendering/common/gpuparticles.h"
+#include "rendering/common/temporalaa.h"
 #include "rendering/particles.h"
 #include "model/material.h"
 #include "vehicle/Camera.h"
@@ -399,6 +400,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	double m_environmentupdatetime{0.0};
 	glm::dvec3 m_environmentupdatelocation{0.0};
 	bool m_vehiclesmoved{true};
+	// the temporal anti-aliasing of the main viewport (gfx.antialiasing taa)
+	gfx::temporal_aa m_taa;
 	texture_handle m_suntexture{-1};
 	texture_handle m_moontexture{-1};
 	texture_handle m_smoketexture{-1};

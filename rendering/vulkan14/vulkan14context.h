@@ -107,7 +107,8 @@ struct viewport_targets
 {
 	VkExtent2D extent{0, 0};
 	VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
-	bool motion{false}; // the velocity is drawn, for the motion blur
+	bool motion{false}; // the velocity is drawn, for the motion blur or the temporal anti-aliasing
+	bool taa{false};
 	bool aberration{false};
 	// with more than one sample: the images drawn to, resolved to the ones below
 	std::shared_ptr<image> msaa_colour;
@@ -119,6 +120,9 @@ struct viewport_targets
 	std::shared_ptr<image> depth;
 	// the colour after the motion blur (hdr)
 	std::shared_ptr<image> blurred;
+	// the temporal anti-aliasing (gfx.antialiasing taa, the main viewport): the two images of the history, written in turn (hdr, the
+	// lock of the thin things in alpha)
+	std::array<std::shared_ptr<image>, 2> taa_history;
 	// the tonemapped image, before the chromatic aberration, and the one which goes to the window
 	std::shared_ptr<image> tonemapped;
 	std::shared_ptr<image> output;

@@ -368,6 +368,7 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     {
         ParseOne(Parser, iMultisampling, 1, false);
         iMultisampling = std::clamp(iMultisampling, 0, 4);
+        gfx_antialiasing = (iMultisampling > 0 ? antialiasing_mode::msaa : antialiasing_mode::off);
         return true;
     }
 
@@ -1898,6 +1899,23 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         std::string level;
         Parser >> level;
         gfx_fog_quality = ( level == "low" || level == "1" ) ? 1 : ( level == "high" || level == "3" ) ? 3 : ( level == "ultra" || level == "4" ) ? 4 : 2; }
+    else if( Token == "gfx.antialiasing" ) {
+        // off, msaax2, msaax4, msaax8 or taa; it sets the multisampling too, the key which used to say it
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        std::transform( mode.begin(), mode.end(), mode.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        if( mode == "taa" ) {
+            gfx_antialiasing = antialiasing_mode::taa;
+            iMultisampling = 0; }
+        else if( mode == "msaax2" || mode == "msaax4" || mode == "msaax8" || mode == "msaax16" ) {
+            gfx_antialiasing = antialiasing_mode::msaa;
+            iMultisampling = ( mode == "msaax2" ) ? 1 : ( mode == "msaax4" ) ? 2 : ( mode == "msaax8" ) ? 3 : 4; }
+        else if( mode == "off" || mode == "no" || mode == "none" || mode == "0" ) {
+            gfx_antialiasing = antialiasing_mode::off;
+            iMultisampling = 0; }
+        else {
+            ErrorLog( "Bad config: unknown gfx.antialiasing \"" + mode + "\", expected off, msaax2, msaax4, msaax8 or taa" ); } }
     else if( Token == "gfx.fog.range" ) { readvalue( gfx_fog_range, 100.f, 10000.f ); }
     else if( Token == "gfx.fog.lights" ) { readvalue( gfx_fog_lights, 0.f, 10.f ); }
     else if( Token == "gfx.fog.shadows" ) { readswitch( gfx_fog_shadows ); }
@@ -2033,6 +2051,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.reflections.fidelity", reflectiontune.fidelity );
     export_as_text( Output, "timespeed", fTimeSpeed );
     export_as_text( Output, "multisampling", iMultisampling );
+    export_as_text( Output, "gfx.antialiasing", std::string{ gfx_antialiasing == antialiasing_mode::taa ? "taa" : ( gfx_antialiasing == antialiasing_mode::off || iMultisampling == 0 ) ? "off" : "msaax" + std::to_string( 1 << iMultisampling ) } );
     export_as_text( Output, "latitude", fLatitudeDeg );
     export_as_text( Output, "convertmodels", iConvertModels );
     export_as_text( Output, "file.binary.terrain", file_binary_terrain );

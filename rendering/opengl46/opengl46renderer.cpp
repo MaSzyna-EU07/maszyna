@@ -234,6 +234,8 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		glEnable(GL_MULTISAMPLE);
 
 	m_pfx_motionblur = std::make_unique<gl::postfx>("motionblur");
+	if (Global.gfx_taa())
+		m_pfx_taa = std::make_unique<gl::postfx>("taa");
 	m_pfx_tonemapping = std::make_unique<gl::postfx>("tonemapping");
     m_pfx_chromaticaberration = std::make_unique<gl::postfx>( "chromaticaberration" );
 
@@ -519,7 +521,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 		vp.msaa_fb->attach(*vp.msaa_rbc, GL_COLOR_ATTACHMENT0);
 		vp.msaa_fb->attach(*vp.msaa_rbd, GL_DEPTH_ATTACHMENT);
 
-		if (Global.gfx_postfx_chromaticaberration_enabled || Global.gfx_postfx_motionblur_enabled || Global.gfx_postfx_ao != 0)
+		if (Global.gfx_postfx_chromaticaberration_enabled || Global.gfx_motion_vectors() || Global.gfx_postfx_ao != 0)
 		{
 			vp.main_tex = std::make_unique<opengl_texture>();
 			vp.main_tex->alloc_rendertarget(Global.gfx_format_color, GL_RGB, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
@@ -531,7 +533,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 			vp.main_fb->attach(*vp.main_tex, GL_COLOR_ATTACHMENT0);
 			vp.main_fb->attach(*vp.main_texd, GL_DEPTH_ATTACHMENT);
 
-			if (Global.gfx_postfx_motionblur_enabled)
+			if (Global.gfx_motion_vectors())
 			{
 				vp.main_texv = std::make_unique<opengl_texture>();
 				vp.main_texv->alloc_rendertarget(Global.gfx_postfx_motionblur_format, GL_RG, vp.width, vp.height);
@@ -544,13 +546,14 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 			}
 		}
 
-		if (Global.gfx_postfx_motionblur_enabled)
+		if (Global.gfx_motion_vectors())
 		{
 			vp.msaa_rbv = std::make_unique<gl::renderbuffer>();
 			vp.msaa_rbv->alloc(Global.gfx_postfx_motionblur_format, vp.width, vp.height, samples);
 			vp.msaa_fb->attach(*vp.msaa_rbv, GL_COLOR_ATTACHMENT1);
 
-			WriteLog("motion blur enabled");
+			if (Global.gfx_postfx_motionblur_enabled)
+				WriteLog("motion blur enabled");
 		}
 
         if( !vp.msaa_fb->is_complete() ) {
@@ -581,7 +584,7 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 			vp.ssao_blur_fb->attach(*vp.ssao_blur_tex, GL_COLOR_ATTACHMENT0);
 			if (!vp.ssao_blur_fb->is_complete()) { ErrorLog("ssao blur framebuffer setup failed"); return false; }
 
-			if (Global.gfx_postfx_motionblur_enabled)
+			if (Global.gfx_motion_vectors())
 			{
 				vp.ao_apply_fb = std::make_unique<gl::framebuffer>();
 				vp.ao_apply_fb->attach(*vp.main_tex, GL_COLOR_ATTACHMENT0);
@@ -596,6 +599,24 @@ bool opengl46_renderer::init_viewport(viewport_config &vp)
 		vp.bloom = opengl46_exposure::make_bloom_chain(vp.width, vp.height);
 		if (!vp.bloom)
 			ErrorLog("bloom framebuffer setup failed, no bloom");
+
+		// the two images of the history of the temporal anti-aliasing, of the main view (not the eyes of the vr)
+		if (Global.gfx_taa() && vp.main && (vp.proj_type != viewport_config::vr_left) && (vp.proj_type != viewport_config::vr_right))
+		{
+			for (std::size_t i = 0; i < vp.taa_tex.size(); ++i)
+			{
+				vp.taa_tex[i] = std::make_unique<opengl_texture>();
+				vp.taa_tex[i]->alloc_rendertarget(GL_RGBA16F, GL_RGBA, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
+				vp.taa_fb[i] = std::make_unique<gl::framebuffer>();
+				vp.taa_fb[i]->attach(*vp.taa_tex[i], GL_COLOR_ATTACHMENT0);
+				if (!vp.taa_fb[i]->is_complete())
+				{
+					ErrorLog("temporal anti-aliasing framebuffer setup failed");
+					return false;
+				}
+			}
+			WriteLog("temporal anti-aliasing enabled");
+		}
 	}
 
     if (vp.custom_backbuffer)
@@ -1541,6 +1562,18 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			break;
 		}
 
+		// the temporal anti-aliasing: the projection of the frame moved by a part of a pixel, the velocities pointed to the last frame
+		auto const taa{Taa_View(vp)};
+		m_motionhistory = taa;
+		m_cabfuture = glm::mat4{1.f};
+		if (taa)
+		{
+			auto const *cab{((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr)) ? simulation::Train->Dynamic() : nullptr};
+			m_renderpass.pass_camera.projection() = m_taa.begin_frame(
+			    m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height});
+			m_cabfuture = m_taa.cab_future();
+		}
+
         m_colorpass = m_renderpass; // cache pass data
 		// parts of the gpu time of the frame; the marks go through the main view only, in the context they were begun in
 		auto const gpupart = [this, &vp](char const *Name) {
@@ -1665,7 +1698,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		{
 			vp.msaa_fb->bind();
 
-			if (motionblur)
+			if (motionblur || taa)
 				vp.msaa_fb->setup_drawing(2);
 			else
 				vp.msaa_fb->setup_drawing(1);
@@ -1709,7 +1742,11 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
 		model_ubs.future = glm::mat4();
         glm::mat4 future;
-		if (Global.pCamera.m_owner != nullptr)
+		if (taa)
+		{
+			future = m_taa.world_future();
+		}
+		else if (Global.pCamera.m_owner != nullptr)
 		{
 			auto const *vehicle = Global.pCamera.m_owner;
 			glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
@@ -1792,7 +1829,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			if (!FreeFlyModeFlag && Global.Overcast <= 1.0f && Global.render_cab)
 			{
 				glDebug("render opaque cab");
-	            model_ubs.future = glm::mat4();
+	            model_ubs.future = m_cabfuture;
 	            auto const *vehicle{ simulation::Train->Dynamic() };
 	            // the lamp lighting the shadows of the sun, unless it is a light of its own
 	            if( ( vehicle->InteriorLightLevel > 0.f ) && ( false == m_cablamplit ) ) {
@@ -1843,7 +1880,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		// cab render
 		if (false == FreeFlyModeFlag && Global.render_cab)
 		{
-			model_ubs.future = glm::mat4();
+			model_ubs.future = m_cabfuture;
             auto *vehicle { simulation::Train->Dynamic() };
             if( ( vehicle->InteriorLightLevel > 0.f ) && ( false == m_cablamplit ) ) {
                 setup_shadow_color( glm::min( colors::white, m_shadowcolor + glm::vec4( vehicle->InteriorLight * vehicle->InteriorLightLevel, 1.f ) ) );
@@ -1865,6 +1902,10 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 
             if( Global.Overcast > 1.0f ) {
                 // with the cab in place we can (finally) safely draw translucent part of the occupied vehicle
+                if( taa ) {
+                    // the vehicle adds its own motion to the view of the world (the cab future has it already)
+                    model_ubs.future = m_taa.world_future();
+                }
                 Render_Alpha( vehicle );
             }
         }
@@ -1893,7 +1934,7 @@ if (!Global.gfx_skippipeline)
 			gpupart("resolve, ambient occlusion, motion blur");
 			// the targets of the ambient occlusion are there only when it was on at the start
 			auto const aomode{(vp.ssao_tex != nullptr) ? Global.gfx_postfx_ao : 0};
-			if (motionblur)
+			if (motionblur || taa)
 			{
 				vp.main_fb->clear(GL_COLOR_BUFFER_BIT);
                 vp.main_fb->setup_drawing(2);
@@ -1905,9 +1946,26 @@ if (!Global.gfx_skippipeline)
 				if (aomode != 0)
 					Render_ambient_occlusion(vp, *vp.ao_apply_fb, aomode);
 
-				model_ubs.param[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
-				model_ubo->update(model_ubs);
-				m_pfx_motionblur->apply({vp.main_tex.get(), vp.main_texv.get(), vp.main_texd.get()}, vp.main2_fb.get());
+				// the image the motion blur takes: the scene, or the scene blended into its history
+				auto *image{vp.main_tex.get()};
+				if (taa)
+				{
+					gpupart("temporal anti-aliasing");
+					Render_taa(vp);
+					image = vp.taa_tex[m_taa.target()].get();
+				}
+				if (motionblur)
+				{
+					if (taa)
+						gpupart("motion blur");
+					model_ubs.param[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
+					model_ubo->update(model_ubs);
+					m_pfx_motionblur->apply({image, vp.main_texv.get(), vp.main_texd.get()}, vp.main2_fb.get());
+				}
+				else
+				{
+					vp.taa_fb[m_taa.target()]->blit_to(vp.main2_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT0);
+				}
 			}
 			else
 			{
@@ -1925,7 +1983,7 @@ if (!Global.gfx_skippipeline)
 			// (gfx.shadow.sdsm). the main framebuffer holds it resolved for the motion blur or the ambient occlusion
 			if (vp.main && Global.gfx_shadow_sdsm && (Shadow_Fit_Unavailable(vp) == nullptr))
 			{
-				auto const resolved{(vp.main_texd != nullptr) && (motionblur || (aomode != 0))};
+				auto const resolved{(vp.main_texd != nullptr) && (motionblur || taa || (aomode != 0))};
 				opengl46_shadow_fit::view const view{
 				    m_colorpass.pass_camera.position(),
 				    m_colorpass.pass_camera.projection(),
@@ -3961,7 +4019,7 @@ void opengl46_renderer::Render_Scene_Depth( glm::mat4 const &Future, bool const 
 		}
 
 		if( ( false == FreeFlyModeFlag ) && ( Global.Overcast <= 1.0f ) && ( Global.render_cab ) ) {
-			model_ubs.future = glm::mat4();
+			model_ubs.future = m_cabfuture;
 			auto const *vehicle { simulation::Train->Dynamic() };
 			if( ( vehicle->InteriorLightLevel > 0.f ) && ( false == m_cablamplit ) ) {
 				setup_shadow_color( glm::min( colors::white, m_shadowcolor + glm::vec4( vehicle->InteriorLight * vehicle->InteriorLightLevel, 1.f ) ) );
@@ -3980,7 +4038,7 @@ void opengl46_renderer::Render_Scene_Depth( glm::mat4 const &Future, bool const 
 	else {
 		// the conditions of the cab drawn early by the colour pass
 		if( ( false == FreeFlyModeFlag ) && ( Global.Overcast <= 1.0f ) && ( Global.render_cab ) ) {
-			model_ubs.future = glm::mat4();
+			model_ubs.future = m_cabfuture;
 			auto const *vehicle { simulation::Train->Dynamic() };
 			Render_cab( vehicle, vehicle->InteriorLightLevel, false );
 		}
@@ -6377,6 +6435,28 @@ void opengl46_renderer::Cull_Lights(viewport_config &vp)
 	m_cullstimer.begin();
 	grid.cull(*m_cluster_cull_shader);
 	m_cullstimer.end();
+}
+
+// the temporal anti-aliasing of the main view: the scene of the frame (main_tex, with its velocities and depth) blended into the
+// history of the last frames (postfx_taa.frag), to the image of the history of this frame
+void opengl46_renderer::Render_taa(viewport_config &vp)
+{
+	auto const target{m_taa.target()};
+	// the near plane gives the distance of the pixels from their depth
+	model_ubs.param[0] = glm::vec4{m_taa.history_valid() ? 1.f : 0.f, m_colorpass.znear, 0.f, 0.f};
+	model_ubs.future = m_taa.reprojection();
+	model_ubo->update(model_ubs);
+	glViewport(0, 0, vp.width, vp.height);
+	// the alpha of the history is the lock of the thin things, written as it is (the blending is on after the translucent parts)
+	glDisable(GL_BLEND);
+	m_pfx_taa->apply({vp.main_tex.get(), vp.main_texv.get(), vp.main_texd.get(), vp.taa_tex[1 - target].get()}, vp.taa_fb[target].get());
+	if (m_blendingenabled)
+		glEnable(GL_BLEND);
+}
+
+bool opengl46_renderer::Taa_View(viewport_config const &vp) const
+{
+	return Global.gfx_taa() && vp.main && (vp.taa_tex[0] != nullptr) && (m_pfx_taa != nullptr);
 }
 
 void opengl46_renderer::Render_ambient_occlusion(viewport_config &vp, gl::framebuffer &Target, int const Mode)

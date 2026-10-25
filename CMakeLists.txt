@@ -321,6 +321,7 @@ set(SOURCES
 "rendering/common/skylight.cpp"
 "rendering/common/weatherstate.cpp"
 "rendering/common/exposure.cpp"
+"rendering/common/temporalaa.cpp"
 "gl/buffer.cpp"
 "gl/fence.cpp"
 "gl/pbo.cpp"

@@ -46,6 +46,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46hiz.h"
 #include "rendering/opengl46/opengl46shadowfit.h"
 #include "rendering/common/scenewalk.h"
+#include "rendering/common/temporalaa.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
@@ -267,6 +268,10 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 		// main_tex alone, for the ambient occlusion to be applied to it before the motion blur (main_fb holds the depth it reads)
 		std::unique_ptr<gl::framebuffer> ao_apply_fb;
 
+		// the temporal anti-aliasing (main viewport only): the two images of the history, written in turn
+		std::array<std::unique_ptr<opengl_texture>, 2> taa_tex;
+		std::array<std::unique_ptr<gl::framebuffer>, 2> taa_fb;
+
         // LDR backbuffer for offscreen rendering
         std::unique_ptr<gl::framebuffer> backbuffer_fb;
         std::unique_ptr<opengl_texture> backbuffer_tex;
@@ -451,6 +456,9 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	void Render_cluster_heatmap(viewport_config &vp, gl::framebuffer *Target, glm::ivec2 const &Targetsize);
 	// ambient occlusion from the resolved depth (vp.main_texd), multiplied into the image of Target. Mode: Global.gfx_postfx_ao
 	void Render_ambient_occlusion(viewport_config &vp, gl::framebuffer &Target, int const Mode);
+	// the temporal anti-aliasing of the main view (gfx.antialiasing taa), and whether the viewport has it
+	void Render_taa(viewport_config &vp);
+	bool Taa_View(viewport_config const &vp) const;
 
 	bool init_viewport(viewport_config &vp);
 
@@ -786,6 +794,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	std::vector<std::unique_ptr<viewport_config>> m_viewports;
 
 	std::unique_ptr<gl::postfx> m_pfx_motionblur;
+	std::unique_ptr<gl::postfx> m_pfx_taa;
+	gfx::temporal_aa m_taa;
 	std::unique_ptr<gl::postfx> m_pfx_tonemapping;
   std::unique_ptr<gl::postfx> m_pfx_chromaticaberration;
 

@@ -308,7 +308,7 @@ namespace
 {
 
 bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std::uint64_t const Value, std::uint32_t &Formatscount, VkSampleCountFlags const Samplecounts, VkFormat const Bloomformat, vk14::viewport_targets &Targets,
-                  int const Width, int const Height, bool const Srgb)
+                  int const Width, int const Height, bool const Srgb, bool const Taa)
 {
 	// as many samples as asked for, as far as the device has them for the colour and the depth
 	auto samples{static_cast<VkSampleCountFlagBits>(std::clamp(1 << Global.iMultisampling, 1, 8))};
@@ -316,11 +316,11 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	{
 		samples = static_cast<VkSampleCountFlagBits>(samples >> 1);
 	}
-	auto const motion{Global.gfx_postfx_motionblur_enabled};
+	auto const motion{Global.gfx_motion_vectors()};
 	auto const aberration{Global.gfx_postfx_chromaticaberration_enabled};
 	VkExtent2D const extent{static_cast<std::uint32_t>(std::max(Width, 1)), static_cast<std::uint32_t>(std::max(Height, 1))};
-	if ((Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.samples == samples) && (Targets.motion == motion) && (Targets.aberration == aberration) && (Targets.srgb == Srgb) &&
-	    Targets.output)
+	if ((Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.aberration == aberration) &&
+	    (Targets.srgb == Srgb) && Targets.output)
 	{
 		return true;
 	}
@@ -333,6 +333,7 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	Targets.extent = extent;
 	Targets.samples = samples;
 	Targets.motion = motion;
+	Targets.taa = Taa;
 	Targets.aberration = aberration;
 	Targets.srgb = Srgb;
 
@@ -367,7 +368,15 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	     make(Targets.depth, depth, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT, "scene depth");
 	if (motion)
 	{
-		ok = ok && make(Targets.motion_image, velocity, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "scene velocity") && make(Targets.blurred, hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "motion blurred");
+		ok = ok && make(Targets.motion_image, velocity, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "scene velocity");
+	}
+	if (motion && Global.gfx_postfx_motionblur_enabled)
+	{
+		ok = ok && make(Targets.blurred, hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "motion blurred");
+	}
+	if (Taa)
+	{
+		ok = ok && make(Targets.taa_history[0], hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "taa history") && make(Targets.taa_history[1], hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "taa history");
 	}
 	auto const output{Srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM};
 	if (aberration)
@@ -873,10 +882,16 @@ void vulkan14_renderer::render_scene()
 	{
 		auto const &viewport{m_viewports[i]};
 		auto const srgb{false == Global.gfx_shadergamma};
+		auto const *history{scene.targets[i].taa_history[0].get()};
 		if (false == make_targets(ctx.memory, ctx.deletions, ctx.uploads.current_value(), scene.formats_count, ctx.device.caps().limits.framebufferColorSampleCounts & ctx.device.caps().limits.framebufferDepthSampleCounts, scene.bloom_format,
-		                          scene.targets[i], viewport.width, viewport.height, srgb))
+		                          scene.targets[i], viewport.width, viewport.height, srgb, viewport.main && Global.gfx_taa()))
 		{
 			continue;
+		}
+		if (viewport.main && (scene.targets[i].taa_history[0].get() != history))
+		{
+			// new images of the history, nothing in them yet
+			m_taa.reset();
 		}
 		render_viewport(i);
 	}
@@ -1206,6 +1221,17 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	m_current_viewport = &vp;
 
 	setup_pass(vp, m_renderpass, rendermode::color);
+	// the temporal anti-aliasing: the projection of the frame moved by a part of a pixel, the velocities pointed to the last frame
+	auto const taa{vp.main && targets.taa && Global.gfx_taa()};
+	m_motionhistory = taa;
+	m_cabfuture = glm::mat4{1.f};
+	if (taa)
+	{
+		auto const *cab{((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr)) ? simulation::Train->Dynamic() : nullptr};
+		m_renderpass.pass_camera.projection() = m_taa.begin_frame(
+		    m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height});
+		m_cabfuture = m_taa.cab_future();
+	}
 	m_colorpass = m_renderpass;
 
 	scene_ubs.time = Timer::GetTime();
@@ -1294,13 +1320,18 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	}
 
 	// the motion blur only when something in the view moves (see opengl46_renderer::Render_pass())
-	auto const motionblur{targets.motion && (m_vehiclesmoved || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
+	auto const motionblur{Global.gfx_postfx_motionblur_enabled && targets.motion &&
+	                      (m_vehiclesmoved || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
 
 	setup_matrices();
 	m_renderpass.draw_stats = {};
 	model_ubs.future = glm::mat4();
 	glm::mat4 future;
-	if (Global.pCamera.m_owner != nullptr)
+	if (taa)
+	{
+		future = m_taa.world_future();
+	}
+	else if (Global.pCamera.m_owner != nullptr)
 	{
 		auto const *vehicle = Global.pCamera.m_owner;
 		glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
@@ -1377,7 +1408,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	// without rain/snow we can render the cab early to limit the overdraw
 	if (!FreeFlyModeFlag && Global.Overcast <= 1.0f && Global.render_cab && simulation::Train)
 	{
-		model_ubs.future = glm::mat4();
+		model_ubs.future = m_cabfuture;
 		auto const *vehicle{simulation::Train->Dynamic()};
 		// the lamp lighting the shadows of the sun, unless it is a light of its own
 		if ((vehicle->InteriorLightLevel > 0.f) && (false == m_cablamplit))
@@ -1413,7 +1444,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	// cab render
 	if ((false == FreeFlyModeFlag) && Global.render_cab && simulation::Train)
 	{
-		model_ubs.future = glm::mat4();
+		model_ubs.future = m_cabfuture;
 		auto *vehicle{simulation::Train->Dynamic()};
 		if ((vehicle->InteriorLightLevel > 0.f) && (false == m_cablamplit))
 		{
@@ -1433,6 +1464,11 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		if (Global.Overcast > 1.0f)
 		{
 			// with the cab in place we can (finally) safely draw translucent part of the occupied vehicle
+			if (taa)
+			{
+				// the vehicle adds its own motion to the view of the world (the cab future has it already)
+				model_ubs.future = m_taa.world_future();
+			}
 			Render_Alpha(vehicle);
 		}
 	}
@@ -1529,7 +1565,7 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 	// the conditions of the cab drawn early by the colour pass
 	if ((false == FreeFlyModeFlag) && (Global.Overcast <= 1.0f) && Global.render_cab && simulation::Train)
 	{
-		model_ubs.future = glm::mat4();
+		model_ubs.future = m_cabfuture;
 		auto const *vehicle{simulation::Train->Dynamic()};
 		Render_cab(vehicle, vehicle->InteriorLightLevel, false);
 	}
@@ -2669,11 +2705,26 @@ void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionbl
 		render_ao(Index, aomode);
 	}
 	auto *hdr{targets.colour.get()};
+	// the temporal anti-aliasing: the scene blended into its history (the motion blur takes the result)
+	if (m_motionhistory && targets.taa && targets.taa_history[0] && targets.taa_history[1] && targets.motion_image)
+	{
+		auto const target{m_taa.target()};
+		vk14::draw_constants constants;
+		// the near plane gives the distance of the pixels from their depth
+		constants.data[0] = glm::vec4{m_taa.history_valid() ? 1.f : 0.f, m_colorpass.znear, 0.f, 0.f};
+		auto const &reprojection{m_taa.reprojection()};
+		for (int column = 0; column < 4; ++column)
+		{
+			constants.data[2 + column] = reprojection[column];
+		}
+		post_pass("postfx_taa.frag", *targets.taa_history[target], {targets.colour.get(), targets.motion_image.get(), targets.depth.get(), targets.taa_history[1 - target].get()}, constants, "temporal anti-aliasing");
+		hdr = targets.taa_history[target].get();
+	}
 	if (Motionblur && targets.blurred)
 	{
 		vk14::draw_constants constants;
 		constants.data[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
-		post_pass("postfx_motionblur.frag", *targets.blurred, {targets.colour.get(), targets.motion_image.get(), targets.depth.get()}, constants, "resolve, ambient occlusion, motion blur");
+		post_pass("postfx_motionblur.frag", *targets.blurred, {hdr, targets.motion_image.get(), targets.depth.get()}, constants, "resolve, ambient occlusion, motion blur");
 		hdr = targets.blurred.get();
 	}
 	ctx.passes.begin_pass("exposure, bloom");

@@ -80,6 +80,20 @@ existed.
 The automatic exposure and the bloom need the post processing pipeline (`gfx.skippipeline no`, the default).
 Model previews of the editor use none of these.
 
+### Anti-aliasing
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.antialiasing off/msaax2/msaax4/msaax8/taa` | `msaax4` | `msaax2`..`msaax8`: multisampling of the colour pass. `taa`: temporal anti-aliasing of the main view: one sample per pixel, the projection moved by a part of a pixel every frame (8 offsets) and the frame blended into the history of the last frames along the velocities of the pixels. Also in the Vulkan renderer. Read at the start; the older `multisampling 0..4` still works, the entry later in the file wins |
+
+TAA needs the post processing pipeline (`gfx.skippipeline no`); extra viewports and the eyes of the VR get no
+anti-aliasing with it. The velocities are drawn with it whether the motion blur is on or not; with both on the
+motion blur smears the image after the TAA, and it also blurs the turning of the camera. Thin lines across the
+pixels (rails and wires far away) are locked in the history for 8 frames on the world standing still farther
+than 20..40 m, so the frames whose offset misses them don't make them flicker; on near or fast moving pixels the
+usual check of the history against the colours around the pixel applies. Further anti-aliasing modes (FSR, DLSS) are meant to be added to
+the same entry.
+
 ### Ambient occlusion
 
 Darkening of creases, corners and the ground under objects, worked out from the depth of the image (screen space)

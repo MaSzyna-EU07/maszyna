@@ -502,6 +502,12 @@ class scene_walk
 	std::vector<gl::instance_draw_command> m_indirectcommandsordered;
 	// a vehicle drawn in the colour pass of this frame moved (motion blur)
 	bool m_vehiclesmoving{false};
+	// the velocities point to the last frame (the temporal anti-aliasing, gfx::temporal_aa) instead of the next one (the motion
+	// blur alone): the moving vehicles and the turning wheels add their motion to the future of the draws backwards
+	bool m_motionhistory{false};
+	// the future of the draws of the cab and the interiors of its vehicle: the identity (they move with the camera), or the matrix
+	// of their view of the last frame (gfx::temporal_aa::cab_future())
+	glm::mat4 m_cabfuture{1.f};
 	// set while a preview is drawn: submodels faded out entirely are skipped, instead of being drawn invisible over the stencil
 	bool m_previewing{false};
 	// the last lighting of the pass placed the cab lamp among the lights: the cab is lit by it, not by an addition to the ambient light

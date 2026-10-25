@@ -1640,7 +1640,7 @@ bool scene_walk::Render(TDynamicObject *Dynamic)
 	glm::mat4 future_stack = model_ubs.future;
 
 	glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
-	model_ubs.future *= glm::translate(mv, glm::vec3(Dynamic->get_future_movement())) * glm::inverse(mv);
+	model_ubs.future *= glm::translate(mv, glm::vec3(m_motionhistory ? -Dynamic->get_future_movement() : Dynamic->get_future_movement())) * glm::inverse(mv);
 	// the velocity it leaves in the colour pass keeps the motion blur on (Render_pass())
 	if ((m_renderpass.draw_mode == rendermode::color) && (Dynamic->get_future_movement() != glm::dvec3{0.0}))
 		m_vehiclesmoving = true;
@@ -1901,7 +1901,7 @@ void scene_walk::Render(TSubModel *Submodel)
 				Submodel->RaAnimation(Submodel->b_aAnim);
 
 				glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
-				model_ubs.future *= (mv * Submodel->future_transform) * glm::inverse(mv);
+				model_ubs.future *= (mv * (m_motionhistory ? glm::inverse(Submodel->future_transform) : Submodel->future_transform)) * glm::inverse(mv);
 				// the placement may be different in the next frame: the walk isn't kept (Record_Indirect_Draws())
 				m_indirectchanging = true;
 			}
@@ -2716,7 +2716,7 @@ bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
 	glm::mat4 future_stack = model_ubs.future;
 
 	glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
-	model_ubs.future *= glm::translate(mv, glm::vec3(Dynamic->get_future_movement())) * glm::inverse(mv);
+	model_ubs.future *= glm::translate(mv, glm::vec3(m_motionhistory ? -Dynamic->get_future_movement() : Dynamic->get_future_movement())) * glm::inverse(mv);
 	// the velocity it leaves in the colour pass keeps the motion blur on (Render_pass())
 	if ((m_renderpass.draw_mode == rendermode::color) && (Dynamic->get_future_movement() != glm::dvec3{0.0}))
 		m_vehiclesmoving = true;
@@ -2846,7 +2846,7 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 				Submodel->RaAnimation(Submodel->b_aAnim);
 
 				glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
-				model_ubs.future *= (mv * Submodel->future_transform) * glm::inverse(mv);
+				model_ubs.future *= (mv * (m_motionhistory ? glm::inverse(Submodel->future_transform) : Submodel->future_transform)) * glm::inverse(mv);
 			}
 		}
 

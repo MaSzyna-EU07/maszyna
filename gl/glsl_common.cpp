@@ -100,7 +100,7 @@ std::string gl::glsl_settings_defines()
     return
         "#define SHADOWMAP_ENABLED_VALUE " + value(Global.gfx_shadowmap_enabled) + "\n"
         "#define ENVMAP_ENABLED_VALUE " + value(Global.gfx_envmap_enabled) + "\n"
-        "#define MOTIONBLUR_ENABLED_VALUE " + value(Global.gfx_postfx_motionblur_enabled) + "\n"
+        "#define MOTIONBLUR_ENABLED_VALUE " + value(Global.gfx_motion_vectors()) + "\n"
         "#define POSTFX_ENABLED_VALUE " + value(!Global.gfx_skippipeline) + "\n"
         "#define EXTRAEFFECTS_ENABLED_VALUE " + value(Global.gfx_extraeffects) + "\n"
         "#define OUTPUT_GAMMA_VALUE " + value(Global.gfx_shadergamma) + "\n";
@@ -112,7 +112,7 @@ std::array<GLuint, 6> gl::glsl_settings_values()
     return {
         static_cast<GLuint>(Global.gfx_shadowmap_enabled),
         static_cast<GLuint>(Global.gfx_envmap_enabled),
-        static_cast<GLuint>(Global.gfx_postfx_motionblur_enabled),
+        static_cast<GLuint>(Global.gfx_motion_vectors()),
         static_cast<GLuint>(!Global.gfx_skippipeline),
         static_cast<GLuint>(Global.gfx_extraeffects),
         static_cast<GLuint>(Global.gfx_shadergamma) };
