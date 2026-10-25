@@ -2822,6 +2822,37 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	auto const interval = [&](span const &Span) {
 		return static_cast<std::size_t>(std::upper_bound(Breaks.begin(), Breaks.end(), (chainage_from(Span) + chainage_to(Span)) * 0.5) - Breaks.begin());
 	};
+	// no path of a few millimetres, as an arc of a compound curve squeezed to almost nothing or a joint by the end of an element
+	// leaves: the simulation takes a path under 5 cm for one of no length. Such a stretch goes to the path next to it, the one
+	// between the same joints if there's one
+	double constexpr shortest_piece{0.1};
+	for (std::size_t i = 0; i < spans.size() && spans.size() > 1;)
+	{
+		if (extent(spans[i]) >= shortest_piece)
+		{
+			++i;
+			continue;
+		}
+		auto const own{interval(spans[i])};
+		auto const backward{i > 0 && (i + 1 == spans.size() || interval(spans[i - 1]) == own || interval(spans[i + 1]) != own)};
+		if (backward)
+		{
+			auto &previous{spans[i - 1]};
+			previous.start = chainage_from(previous);
+			previous.end = chainage_to(spans[i]);
+			previous.generic = true;
+		}
+		else
+		{
+			auto &next{spans[i + 1]};
+			next.end = chainage_to(next);
+			next.start = chainage_from(spans[i]);
+			next.generic = true;
+		}
+		spans.erase(spans.begin() + static_cast<std::ptrdiff_t>(i));
+		if (i > 0)
+			--i;
+	}
 	for (std::size_t k = 0; k < Counts.size(); ++k)
 	{
 		while (true)
@@ -2846,7 +2877,8 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 	{
 		auto const from{chainage_from(spans[i])};
 		auto const length{chainage_to(spans[i]) - from};
-		if (length <= geometry::longest_path)
+		// a length not finite would be split for ever
+		if (length <= geometry::longest_path || false == std::isfinite(length))
 		{
 			++i;
 			continue;

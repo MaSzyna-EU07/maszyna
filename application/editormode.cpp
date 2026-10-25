@@ -6006,6 +6006,9 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
         // no nearer than 2 m to the point, not through it
         if (notches > 0.0)
             step = std::max(0.0, std::min(step, distance - 2.0));
+        // a point under the cursor which isn't a number, as one on a broken path, moves the camera nowhere
+        if (false == std::isfinite(step) || glm::any(glm::isnan(direction)) || glm::any(glm::isinf(direction)))
+            return;
         Camera.Pos += direction * step;
         Global.pCamera = Camera;
         return;
@@ -6061,6 +6064,24 @@ void editor_mode::update_camera(double const Deltatime)
 
     // reset window state (will be set again if UI requires it)
     Global.CabWindowOpen = false;
+
+    // a camera at no finite place, as a zoom or a framing aimed at a broken path could put it, draws nothing sane and can
+    // stall the graphics card: it goes back to where it last was
+    auto const number = [](auto const &Vector) { return false == glm::any(glm::isnan(Vector)) && false == glm::any(glm::isinf(Vector)); };
+    if (number(Camera.Pos) && number(Camera.Angle))
+    {
+        m_camera_finite_pos = Camera.Pos;
+        m_camera_finite_angle = Camera.Angle;
+        m_camera_finite = true;
+    }
+    else if (m_camera_finite)
+    {
+        WriteLog("Editor: the camera went to no finite place, back where it was", logtype::generic);
+        Camera.Pos = m_camera_finite_pos;
+        Camera.Angle = m_camera_finite_angle;
+        Camera.Velocity = glm::dvec3(0.0);
+        m_focus_active = false;
+    }
 
     // publish camera back to global copy
     Global.pCamera = Camera;

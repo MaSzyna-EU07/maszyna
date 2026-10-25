@@ -214,6 +214,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::vec3 m_focus_target_angle{0.0f};  // camera pitch/yaw/roll facing the focused object
 	double m_focus_time{0.0};
 	double m_focus_duration{0.6};
+	// the last place and angles of the camera which were numbers: a camera gone to no finite place goes back there
+	glm::dvec3 m_camera_finite_pos{0.0, 0.0, 0.0};
+	glm::vec3 m_camera_finite_angle{0.0f};
+	bool m_camera_finite{false};
 
 	double fTime50Hz{0.0}; // bufor czasu dla komunikacji z PoKeys
 	scene::basic_editor m_editor;

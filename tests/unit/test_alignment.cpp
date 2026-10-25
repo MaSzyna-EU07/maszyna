@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <random>
 #include <string>
 
 namespace {
@@ -746,4 +747,54 @@ TEST_CASE("alignment: a curve laid into a curved free end ends at it with its cu
 	auto const last{alignment::evaluate(line, line.length)};
 	CHECK(glm::distance(glm::dvec2{last.position.x, last.position.z}, end.position) < 1e-3);
 	CHECK(std::none_of(line.warnings.begin(), line.warnings.end(), [](std::string const &Warning) { return Warning.find("adjoining track at the end") != std::string::npos; }));
+}
+
+TEST_CASE("alignment: the pieces of a compound curve are never of no length, whatever its arcs and transitions") {
+	std::mt19937 random{20261025};
+	auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>(Low, High)(random); };
+	auto const pick = [&](int const Count) { return std::uniform_int_distribution<int>(0, Count - 1)(random); };
+	int bad{0}, valid{0};
+	for (int run = 0; run < 4000 && bad < 5; ++run) {
+		auto design{straights({600.0 + uniform(0.0, 800.0), 600.0 + uniform(0.0, 800.0)}, {uniform(20.0, 110.0) * pi / 180.0}, 100.0)};
+		design.transition_pieces = 1 + pick(2);
+		design.arc_piece_angle = pick(2) == 0 ? 10.0 : 2.0;
+		auto &vertex{design.vertices.front()};
+		vertex.radius = uniform(300.0, 1500.0);
+		vertex.transition_in = pick(4) == 0 ? 0.0 : uniform(0.0, 200.0);
+		vertex.transition_out = pick(4) == 0 ? 0.0 : uniform(0.0, 200.0);
+		vertex.cant = pick(3) == 0 ? 0.0 : uniform(0.0, 150.0);
+		vertex.compound = true;
+		vertex.share = pick(5) == 0 ? 0.0 : uniform(0.0, 1.5);
+		for (int i = 0, count = 1 + pick(2); i < count; ++i)
+			vertex.arcs.push_back({uniform(300.0, 1500.0), pick(3) == 0 ? 0.0 : uniform(0.0, 120.0), pick(5) == 0 ? 0.0 : uniform(0.0, 0.5)});
+		auto const line{alignment::compute(design)};
+		if (false == line.valid)
+			continue;
+		++valid;
+		// as the plan lays them over the paths there, each kept between the joints it had, or all over again
+		std::vector<glm::dvec2> joints;
+		auto const count{static_cast<std::size_t>(10 + pick(80))};
+		for (std::size_t i = 1; i < count; ++i) {
+			auto const at{alignment::evaluate(line, line.length * i / count + (pick(2) == 0 ? 0.0 : uniform(-3.0, 3.0)))};
+			joints.emplace_back(at.position.x, at.position.z);
+		}
+		std::vector<std::size_t> intervals;
+		for (auto const &paths : {alignment::pieces_at(line, design, count, joints, intervals), alignment::pieces(line, design, count)})
+			for (std::size_t i = 0; i < paths.size(); ++i) {
+				auto const &path{paths[i]};
+				auto const length{glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end])};
+				auto const finite{std::isfinite(length) && std::isfinite(path.points[segment_data::point::control1].x) && std::isfinite(path.points[segment_data::point::control2].x)};
+				// the simulation takes a path under 5 cm for one of no length
+				if (finite && length >= 0.05)
+					continue;
+				++bad;
+				std::string arcs;
+				for (auto const &arc : vertex.arcs)
+					arcs += " [R " + std::to_string(arc.radius) + " L " + std::to_string(arc.transition) + " share " + std::to_string(arc.share) + "]";
+				MESSAGE("piece " << i << " of " << paths.size() << ": " << length << " m; R " << vertex.radius << " L " << vertex.transition_in << " / " << vertex.transition_out << " cant " << vertex.cant << " share " << vertex.share << arcs << ", count " << count << ", pieces " << design.transition_pieces << " angle " << design.arc_piece_angle);
+				break;
+			}
+	}
+	MESSAGE(valid << " valid designs");
+	CHECK(bad == 0);
 }
