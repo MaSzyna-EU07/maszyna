@@ -97,6 +97,9 @@ class ray_tracing
 		std::uint64_t generation{0}; // of the data of the chunk it was built from
 		std::uint64_t used{0}; // the frame it was last met in
 		VkDeviceSize bytes{0};
+		// the triangles of a strip or a fan, which the structure is built from and the shading reads
+		std::shared_ptr<buffer> indices;
+		VkDeviceAddress index_address{0};
 	};
 	struct frame_data
 	{

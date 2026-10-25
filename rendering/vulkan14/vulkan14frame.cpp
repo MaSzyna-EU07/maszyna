@@ -1821,7 +1821,7 @@ void vulkan14_renderer::gather_ray_draw(gfx::geometry_handle const &Geometry)
 		return;
 	}
 	auto const &chunk{static_cast<vk14::vulkan14_geometrybank *>(m_banks[Geometry.bank - 1])->last()};
-	if ((chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) || (chunk.vertex_address == 0))
+	if (((chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) && (chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP) && (chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN)) || (chunk.vertex_address == 0))
 	{
 		return;
 	}

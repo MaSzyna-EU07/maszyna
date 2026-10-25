@@ -205,7 +205,7 @@ void ray_tracing::clear(std::uint64_t const Value)
 	auto const handle{m_device->handle()};
 	for (auto &entry : m_bottoms)
 	{
-		m_deletions->push(Value, [handle, structure = entry.second.handle, storage = entry.second.storage]() { destroy_structure(handle, structure); });
+		m_deletions->push(Value, [handle, structure = entry.second.handle, storage = entry.second.storage, indices = entry.second.indices]() { destroy_structure(handle, structure); });
 	}
 	m_bottoms.clear();
 	m_bottombytes = 0;
@@ -440,10 +440,36 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		}
 		auto const &source{draw.source};
 		auto const indexed{source.indices != VK_NULL_HANDLE};
-		auto const primitives{source.count / 3};
+		// the strips and the fans (the tracks and the roads are strips) get triangles of their own, as indices kept with the structure
+		auto const strip{source.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP};
+		auto const fan{source.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN};
+		if ((strip || fan) && indexed)
+		{
+			continue;
+		}
+		auto const primitives{(strip || fan) ? (source.count >= 3 ? source.count - 2 : 0) : source.count / 3};
 		if ((primitives == 0) || (source.vertex_address == 0) || (indexed && (source.index_address == 0)) || (source.vertexcount == 0))
 		{
 			continue;
+		}
+		std::shared_ptr<buffer> generated;
+		if (strip || fan)
+		{
+			auto const bytes{sizeof(std::uint32_t) * 3 * static_cast<VkDeviceSize>(primitives)};
+			generated = std::make_shared<buffer>();
+			if ((false == generated->create(*m_memory, bytes, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, memory_kind::upload, "ray tracing strip indices")) ||
+			    (generated->mapped() == nullptr))
+			{
+				continue;
+			}
+			auto *indices{reinterpret_cast<std::uint32_t *>(generated->mapped())};
+			for (std::uint32_t triangle = 0; triangle < primitives; ++triangle)
+			{
+				indices[triangle * 3 + 0] = (strip ? triangle : 0);
+				indices[triangle * 3 + 1] = triangle + 1;
+				indices[triangle * 3 + 2] = triangle + 2;
+			}
+			generated->flush(0, bytes);
 		}
 		pending_build build{};
 		build.geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -454,8 +480,8 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		triangles_data.vertexData.deviceAddress = source.vertex_address + vertex_stride * source.vertexfirst;
 		triangles_data.vertexStride = vertex_stride;
 		triangles_data.maxVertex = source.vertexcount - 1;
-		triangles_data.indexType = (indexed ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_NONE_KHR);
-		triangles_data.indexData.deviceAddress = (indexed ? source.index_address + sizeof(std::uint32_t) * source.first : 0);
+		triangles_data.indexType = ((indexed || generated) ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_NONE_KHR);
+		triangles_data.indexData.deviceAddress = (generated ? generated->address() : indexed ? source.index_address + sizeof(std::uint32_t) * source.first : 0);
 		build.range.primitiveCount = primitives;
 		build.info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
 		build.info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
@@ -486,7 +512,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		{
 			// the data of the chunk changed: the old structure goes once the frames which read it are done
 			m_bottombytes -= lookup->second.bytes;
-			m_deletions->push(Value, [handle, old = lookup->second.handle, oldstorage = lookup->second.storage]() { destroy_structure(handle, old); });
+			m_deletions->push(Value, [handle, old = lookup->second.handle, oldstorage = lookup->second.storage, oldindices = lookup->second.indices]() { destroy_structure(handle, old); });
 		}
 		VkAccelerationStructureDeviceAddressInfoKHR addressinfo{};
 		addressinfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
@@ -497,7 +523,9 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		entry.address = vkGetAccelerationStructureDeviceAddressKHR(handle, &addressinfo);
 		entry.generation = source.generation;
 		entry.used = Frame;
-		entry.bytes = sizes.accelerationStructureSize;
+		entry.bytes = sizes.accelerationStructureSize + (generated ? generated->size() : 0);
+		entry.index_address = (generated ? generated->address() : 0);
+		entry.indices = std::move(generated);
 		m_bottombytes += entry.bytes;
 		build.info.dstAccelerationStructure = structure;
 		build.scratch = scratchsize;
@@ -520,7 +548,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 					if (it->second.handle == build.info.dstAccelerationStructure)
 					{
 						m_bottombytes -= it->second.bytes;
-						m_deletions->push(Value, [handle, old = it->second.handle, oldstorage = it->second.storage]() { destroy_structure(handle, old); });
+						m_deletions->push(Value, [handle, old = it->second.handle, oldstorage = it->second.storage, oldindices = it->second.indices]() { destroy_structure(handle, old); });
 						m_bottoms.erase(it);
 						break;
 					}
@@ -589,7 +617,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		}
 		auto &entry{records[written]};
 		entry.vertices = source.vertex_address + vertex_stride * source.vertexfirst;
-		entry.indices = (source.indices != VK_NULL_HANDLE ? source.index_address + sizeof(std::uint32_t) * source.first : 0);
+		entry.indices = (lookup->second.index_address != 0 ? lookup->second.index_address : source.indices != VK_NULL_HANDLE ? source.index_address + sizeof(std::uint32_t) * source.first : 0);
 		entry.texture = texture;
 		auto const alpha{(texture != 0) && (draw.cutoff > 0.f)};
 		entry.flags = (alpha ? record_alpha : 0);
@@ -702,7 +730,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		if (it->second.used + bottom_lifetime < Frame)
 		{
 			m_bottombytes -= it->second.bytes;
-			m_deletions->push(Value, [handle, old = it->second.handle, oldstorage = it->second.storage]() { destroy_structure(handle, old); });
+			m_deletions->push(Value, [handle, old = it->second.handle, oldstorage = it->second.storage, oldindices = it->second.indices]() { destroy_structure(handle, old); });
 			it = m_bottoms.erase(it);
 		}
 		else

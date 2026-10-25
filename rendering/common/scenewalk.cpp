@@ -482,6 +482,8 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
 			// opaque non-instanced shapes
 			for (auto const &shape : cell->m_shapesopaque)
 				Render(shape, false);
+			// tracks: the ray traced reflections (the one user of this mode) show the trackbed and the platforms made of roads
+			Render(std::begin(cell->m_paths), std::end(cell->m_paths));
 
 			// post-render cleanup
 			::glPopMatrix();
