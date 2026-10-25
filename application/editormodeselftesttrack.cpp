@@ -233,6 +233,13 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 				text += format(" [R %.3f L %.3f share %.4f]", arc.radius, arc.transition, arc.share);
 			WriteLog(text);
 		}
+		// the curves the design lays, going on from the curves of the tracks adjoining where they do, and its warnings
+		WriteLog(format("SELFTEST route ends: start R %.1f turn %d curved %d, end R %.1f turn %d curved %d", m_route.design.start_radius, m_route.design.start_turn, m_route.design.start_curved ? 1 : 0, m_route.design.end_radius, m_route.design.end_turn, m_route.design.end_curved ? 1 : 0));
+		for (auto const &curve : m_route.result.curves)
+			WriteLog(format("SELFTEST route curve %d: R %.1f, L %.1f/%.1f, from R %.1f, into R %.1f", curve.vertex, curve.radius, curve.transition_in, curve.transition_out, curve.curvature_in > 0.0 ? 1.0 / curve.curvature_in : 0.0,
+			                curve.curvature_out > 0.0 ? 1.0 / curve.curvature_out : 0.0));
+		for (auto const &warning : m_route.result.warnings)
+			WriteLog("SELFTEST route warning: " + warning);
 		return selftest_result::handled;
 	}
 	if (command == "routevertex" || command == "routearc" || command == "routeshare")

@@ -12152,3 +12152,39 @@ msgstr "Esc dwa razy przy układaniu"
 
 msgid "Drop the points clicked and not laid yet"
 msgstr "Porzuca kliknięte, jeszcze nieułożone punkty"
+
+# laying on from a curved free end: the curve next to it goes on from its curvature
+
+msgid "Vertex %zu: no curve goes on from the curve of the adjoining track (R %.0f m) to the straight after it"
+msgstr "Wierzchołek %zu: żaden łuk nie przejdzie od łuku przylegającego toru (R %.0f m) do prostej za nim"
+
+msgid "Vertex %zu: no curve goes on from the straight before it into the curve of the adjoining track (R %.0f m)"
+msgstr "Wierzchołek %zu: żaden łuk nie przejdzie od prostej przed nim w łuk przylegającego toru (R %.0f m)"
+
+msgid "Goes on from the curve of the track at the start (R %.0f m)"
+msgstr "Kontynuuje łuk toru na początku (R %.0f m)"
+
+msgid "Goes into the curve of the track at the end (R %.0f m)"
+msgstr "Przechodzi w łuk toru na końcu (R %.0f m)"
+
+msgid "The curve begins right at the end of the fragment, at the curvature of the track adjoining there, where it turns the same way; its radius is the one which begins it there, the transition at that end goes between the two curves"
+msgstr "Łuk zaczyna się dokładnie na końcu odcinka, z krzywizną przylegającego tam toru, jeśli skręca w tę samą stronę; jego promień to ten, przy którym zaczyna się właśnie tam, a krzywa przejściowa na tym końcu łączy oba łuki"
+
+msgid "goes on from R %.0f m of the track it starts at"
+msgstr "kontynuuje R %.0f m toru, od którego się zaczyna"
+
+msgid "goes on from R %.0f m of the track it starts at, a transition of %.0f m between them"
+msgstr "kontynuuje R %.0f m toru, od którego się zaczyna, z krzywą przejściową %.0f m między nimi"
+
+msgid "goes into R %.0f m of the track it ends at"
+msgstr "przechodzi w R %.0f m toru, na którym się kończy"
+
+msgid "goes into R %.0f m of the track it ends at, a transition of %.0f m between them"
+msgstr "przechodzi w R %.0f m toru, na którym się kończy, z krzywą przejściową %.0f m między nimi"
+
+msgid "Curve %d %s"
+msgstr "Łuk %d %s"
+
+msgid "Vertex %zu: the transition curve between the curve of the adjoining track and R %.0f m is shorter than the required %.0f m"
+msgstr "Wierzchołek %zu: krzywa przejściowa między łukiem przylegającego toru a R %.0f m jest krótsza niż wymagane %.0f m"
+

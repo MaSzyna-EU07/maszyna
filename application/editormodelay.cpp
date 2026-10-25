@@ -46,6 +46,29 @@ http:
 
 using namespace track_mode;
 
+namespace
+{
+
+// the curve of the track of a free end the line laid goes on from at its start, or into at its end: its radius, the side it turns to
+// as the line runs and its cant leaning into the turn; nothing on a straight
+void adjoining_curve(editor_track::snap_target const &End, bool const Atend, double const Gauge, alignment::design &Design)
+{
+	if (End.track == nullptr || (End.track->eType != tt_Normal && End.track->eType != tt_Switch))
+		return;
+	auto const bend{editor_track::bend_at(*End.track, End.position)};
+	if (false == bend.has_value() || std::abs(bend->curvature) < 1e-4)
+		return;
+	// the curvature as the track goes on beyond its end: the way the line runs at its start, against it at its end
+	auto const curvature{Atend ? -bend->curvature : bend->curvature};
+	auto const cant{Gauge * std::sin(glm::radians(bend->roll)) * (bend->curvature > 0.0 ? 1.0 : -1.0)};
+	(Atend ? Design.end_radius : Design.start_radius) = 1.0 / std::abs(curvature);
+	(Atend ? Design.end_turn : Design.start_turn) = curvature > 0.0 ? 1 : -1;
+	(Atend ? Design.end_cant : Design.start_cant) = std::max(0.0, cant);
+	(Atend ? Design.end_curved : Design.start_curved) = true;
+}
+
+} // namespace
+
 void editor_mode::update_build_tools()
 {
 	glm::dvec3 const ground{cursor_ground()};
@@ -437,7 +460,8 @@ void editor_mode::point_drag_finish()
 std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const
 {
 	m_eased_last.reset();
-	if (From == nullptr || From->eType != tt_Normal)
+	// from the diverging track of a switch a curve goes on from its curvature, a straight goes on right from its end, as from the switch
+	if (From == nullptr || (From->eType != tt_Normal && (From->eType != tt_Switch || m_track_layout == track_layout::straight)))
 		return std::nullopt;
 	auto const end{editor_track::bend_at(*From, Point)};
 	if (false == end.has_value())
@@ -971,7 +995,8 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		return std::max(alignment::minimum_pieces(Shape, Design), static_cast<std::size_t>(std::ceil(Shape.length / std::max(5.0, tool.piece_length))));
 	};
 	std::vector<segment_data> pieces;
-	// the curvature of the track laid has to go on from the one of the track it joins, a jump gets a transition curve between them
+	// the curvature of the track laid has to go on from the one of the track it joins, a jump gets a transition curve between them. Not
+	// at a switch: its diverging track ends its curve with a jump as it begins it, a straight going on right from there
 	auto const grade{(Points.back().y - Points.front().y) / std::max(1.0, plan_distance(Points.front(), Points.back()))};
 	auto const eased = [&](editor_track::snap_target const &Joint, double const Chainage, double const Sign) {
 		if (Joint.track == nullptr || Joint.track->eType != tt_Normal)
@@ -987,15 +1012,22 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	if ((false == in.pieces.empty() || false == out.pieces.empty()) && editor_track::eases_room(in, out, Points.front(), design.start_direction, Points.back(), design.end_direction))
 	{
 		auto easeddesign{design};
+		// an end moved out of the curve of the adjoining track is on a straight
 		if (false == in.pieces.empty())
 		{
 			easeddesign.start = in.end;
 			easeddesign.start_direction = in.direction;
+			easeddesign.start_curved = false;
+			easeddesign.start_radius = 0.0;
+			easeddesign.start_turn = 0;
 		}
 		if (false == out.pieces.empty())
 		{
 			easeddesign.end = out.end;
 			easeddesign.end_direction = -out.direction;
+			easeddesign.end_curved = false;
+			easeddesign.end_radius = 0.0;
+			easeddesign.end_turn = 0;
 		}
 		// the bends stay where they are, measured from the ends moved
 		if (easeddesign.vertices.size() >= 2 && shape.vertices.size() == easeddesign.vertices.size())
@@ -1019,6 +1051,12 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	{
 		Length = shape.length;
 		pieces = alignment::pieces(shape, design, count(shape, design));
+		// a line lay_line begins at the end of the transition out of the curve of the free end keeps the transition before it
+		auto const after = [&](editor_track::easing const &Easing, glm::dvec3 const &Joint, glm::dvec3 const &Own) { return false == Easing.pieces.empty() && plan_distance(Joint, Own) > 0.01; };
+		auto const &before{after(in, Points.front(), design.start) ? in : editor_track::easing{}};
+		auto const &beyond{after(out, Points.back(), design.end) ? out : editor_track::easing{}};
+		Length = editor_track::eased_length(before, Length, beyond);
+		pieces = editor_track::eased_pieces(before, pieces, beyond);
 	}
 	// the heights: fitted to the ground, or from point to point through the points clicked
 	TTrack const *style{tool.start.track != nullptr ? tool.start.track : End.track != nullptr ? End.track : tool.copy_selected ? selected_track() : nullptr};
@@ -1033,7 +1071,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	return pieces;
 }
 
-bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error) const
+bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining) const
 {
 	auto const &tool{m_lay};
 	Plan = {};
@@ -1043,6 +1081,22 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	design.speed = design_speed(tool.start.track, End.track);
 	design.start = Points.front();
 	auto const joined{End.track != nullptr && glm::length(plan_of(End.direction)) > 1e-6};
+	// from a free end on a curve, or to one, the curve laid next to it turning its way goes on from its curvature: it begins right at the
+	// end, not on a straight, its transition going from that curvature. Where no such curve fits, the line is laid from a straight there,
+	// which lay_pieces eases out of the curve
+	if (Adjoining)
+	{
+		if (tool.start.track != nullptr && glm::length(plan_of(tool.start.direction)) > 1e-6)
+			adjoining_curve(tool.start, false, design.norms.gauge, design);
+		if (joined)
+			adjoining_curve(End, true, design.norms.gauge, design);
+	}
+	auto const curved{design.start_curved || design.end_curved};
+	auto const from_straight = [&]() { return curved && lay_line(Points, Modes, End, Plan, Error, false); };
+	// the end of the transition out of the curve of the free end, the start of the line where a curve traced next to it is laid from a
+	// straight there; the same at the end
+	std::optional<std::pair<glm::dvec3, glm::dvec2>> easedstart;
+	std::optional<std::pair<glm::dvec3, glm::dvec2>> easedend;
 	// the points between the start and the end: a free end reached is the last point
 	auto const inner{Points.size() - (joined ? 1 : 0)};
 	auto const mode_of = [&](std::size_t const Index) { return Index < Modes.size() ? Modes[Index] : lay_mode::straights; };
@@ -1117,6 +1171,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 			traced.push_back(plan_of(Points[k]));
 		}
 		i = last;
+		// the curve right from the free end the line starts at
+		auto const fromend{bends.empty() && Plan.traces.empty() && along.has_value()};
 		// the straight the curve comes from: the one of the free end or of the curve before, else the one through the last two
 		// points clicked before the curve, the last of them then no bend
 		auto entry{anchor};
@@ -1179,17 +1235,88 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 			// the curve may begin before the point the straight was clicked at, and end past the last point where the line goes on
 			base.start_reserve = behind;
 			base.end_reserve = last == inner ? 0.0 : 1e4;
-			auto const fitted{traced_stretch(base, traced, tool.radii, tool.straights_between)};
+			// it goes on from the curve of the free end it starts at, or into the one it finishes at
+			base.start_curved = design.start_curved && fromend;
+			base.end_curved = design.end_curved && reaching;
+			auto fitted{traced_stretch(base, traced, tool.radii, tool.straights_between)};
 			if (false == fitted.has_value())
 			{
 				Error = STR_C("Fitting the curve to the points...");
 				return false;
 			}
+			// next to a free end on a curve the stretch goes on from that curve, or begins from a straight there: eased out of the curve
+			// by the transition lay_pieces lays, or right from the end of the diverging track of a switch, as the switch goes on. The
+			// straight one where the curve next to the free end doesn't go on from it, or where that one doesn't keep to the points and
+			// this one keeps much closer
+			if (base.start_curved || base.end_curved)
+			{
+				auto plain{base};
+				plain.start_curved = plain.end_curved = false;
+				std::vector<glm::dvec2> kept;
+				auto const easing = [&](editor_track::snap_target const &Joint, double const Grade) {
+					return Joint.track != nullptr && Joint.track->eType == tt_Normal ? editor_track::ease_out_of(*Joint.track, Joint.position, Grade, design.speed, design.norms) : editor_track::easing{};
+				};
+				auto const in{base.start_curved ? easing(tool.start, 0.0) : editor_track::easing{}};
+				auto const out{base.end_curved ? easing(End, 0.0) : editor_track::easing{}};
+				if (false == in.pieces.empty())
+				{
+					plain.start = in.end;
+					plain.start_direction = in.direction;
+				}
+				if (false == out.pieces.empty())
+				{
+					plain.end = out.end;
+					plain.end_direction = -out.direction;
+				}
+				// the points along the transitions out of the curves left out, the line from the straights after them
+				for (auto const &point : traced)
+					if ((in.pieces.empty() || glm::distance(point, plan_of(base.start)) > in.length) && (out.pieces.empty() || glm::distance(point, plan_of(base.end)) > out.length))
+						kept.push_back(point);
+				auto const other{kept.size() >= 2 ? traced_stretch(plain, kept, tool.radii, tool.straights_between) : std::optional<alignment::trace_stretch>{alignment::trace_stretch{}}};
+				if (false == other.has_value())
+				{
+					Error = STR_C("Fitting the curve to the points...");
+					return false;
+				}
+				auto goes_on{false};
+				if (fitted->valid)
+				{
+					auto laid{base};
+					laid.vertices = fitted->vertices;
+					for (auto const &curve : alignment::compute(laid).curves)
+						goes_on = goes_on || curve.curvature_in > 0.0 || curve.curvature_out > 0.0;
+				}
+				// a curve going on which keeps to the points within 8 cm on average and 30 cm at most, as the fits take it for one keeping to
+				// them, stays: the straight one fits the points clicked a little off closer with the radii it has more
+				auto const loose{fitted->valid && (fitted->rms > 0.08 || fitted->worst > 0.3)};
+				if (other->valid && (false == fitted->valid || false == goes_on || (loose && other->rms < 0.75 * fitted->rms)))
+				{
+					fitted = other;
+					// the line laid from the end of the transition out of the curve, which lay_pieces lays before it
+					if (false == in.pieces.empty())
+						easedstart = std::make_pair(in.end, in.direction);
+					if (false == out.pieces.empty())
+						easedend = std::make_pair(out.end, -out.direction);
+					// from a straight there; at a switch with the jump of the curvature it has, which isn't warned of
+					auto const straight_at = [&](editor_track::snap_target const &Joint, bool &Curved, double &Radius, int &Turn) {
+						Curved = false;
+						if (Joint.track != nullptr && Joint.track->eType == tt_Switch)
+						{
+							Radius = 0.0;
+							Turn = 0;
+						}
+					};
+					if (base.start_curved)
+						straight_at(tool.start, design.start_curved, design.start_radius, design.start_turn);
+					if (base.end_curved)
+						straight_at(End, design.end_curved, design.end_radius, design.end_turn);
+				}
+			}
 			auto const &fit{*fitted};
 			if (false == fit.valid)
 			{
 				Error = STR_C("No curve follows the points clicked along it");
-				return false;
+				return from_straight();
 			}
 			for (auto const &vertex : fit.vertices)
 				bends.push_back({lifted(vertex.position, entry.y), vertex, false});
@@ -1259,6 +1386,13 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 			return false;
 		design.start_direction = glm::normalize(first);
 	}
+	if (easedstart.has_value())
+		std::tie(design.start, design.start_direction) = *easedstart;
+	if (easedend.has_value())
+	{
+		std::tie(design.end, design.end_direction) = *easedend;
+		end = design.end;
+	}
 	for (auto const &bend : bends)
 	{
 		auto vertex{bend.corner ? alignment::vertex{} : bend.vertex};
@@ -1275,7 +1409,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	if (false == Plan.shape.valid)
 	{
 		Error = Plan.shape.errors.empty() ? std::string{STR_C("The track can't be laid through these points")} : Plan.shape.errors.front();
-		return false;
+		return from_straight();
 	}
 	// the grade breaks at the bends which stayed bends; along a curve, traced or made of bends, it goes on even from end to end
 	for (std::size_t k = 0; k < design.vertices.size() && k < Plan.corners.size(); ++k)
@@ -1295,8 +1429,12 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights, bool const Meanwhile) const
 {
 	// the stretches traced before the one the cursor moves along are the same from frame to frame: their fits are kept
+	// the curves of the adjoining tracks it goes on from or into, signed by their turn, and their cants
+	auto const curvature = [](bool const Curved, double const Radius, int const Turn) { return Curved && Radius > 0.0 ? Turn / Radius : 0.0; };
 	std::vector<double> key{Base.start.x, Base.start.z, Base.start_direction.x, Base.start_direction.y, Base.end.x, Base.end.z, Base.end_direction.x, Base.end_direction.y, Base.speed,
-	                        static_cast<double>(Base.shape), static_cast<double>(Radii), Straights ? 1.0 : 0.0, Base.start_reserve, Base.end_reserve};
+	                        static_cast<double>(Base.shape), static_cast<double>(Radii), Straights ? 1.0 : 0.0, Base.start_reserve, Base.end_reserve,
+	                        curvature(Base.start_curved, Base.start_radius, Base.start_turn), Base.start_curved ? Base.start_cant : 0.0, curvature(Base.end_curved, Base.end_radius, Base.end_turn),
+	                        Base.end_curved ? Base.end_cant : 0.0};
 	for (auto const &point : Points)
 	{
 		key.push_back(point.x);
@@ -1330,7 +1468,7 @@ std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::d
 	}
 	m_stretch_fitter.ask({key, Base, Points, Radii, Straights});
 	std::vector<double> last;
-	auto const header{std::size_t{14}};
+	auto const header{std::size_t{18}};
 	if (Meanwhile && m_stretch_fitter.latest(last, fit) && last.size() >= header + 2 && key.size() >= header + 2 && std::equal(key.begin(), key.begin() + 4, last.begin()) &&
 	    std::equal(key.begin() + 8, key.begin() + header, last.begin() + 8))
 	{
@@ -1447,6 +1585,11 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		tool.status += "\n" + error;
 	if (eased.has_value() && eased->compound)
 		tool.status += "\n" + format(STR_C("Compound curve: R %.0f m goes on into R %.0f m through a transition curve of %.0f m"), eased->from_radius, eased->radius, eased->entry);
+	// the curves next to the free ends going on from the curves of their tracks
+	if (plan.shape.valid)
+		for (auto const &curve : plan.shape.curves)
+			if (auto const on{curve_goes_on(curve)}; false == on.empty())
+				tool.status += "\n" + format(STR_C("Curve %d %s"), curve.vertex + 1, on.c_str());
 	if (eased.has_value() && false == eased->note.empty())
 		tool.status += "\n" + eased->note;
 	{

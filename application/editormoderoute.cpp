@@ -277,6 +277,11 @@ void editor_mode::route_take_stored(int const Index)
 	design.norms = stored.design.norms;
 	design.transition_pieces = stored.design.transition_pieces;
 	design.arc_piece_angle = stored.design.arc_piece_angle;
+	// a curve laid going on from the curve of the track adjoining keeps going on from it, its radius the one which begins it there
+	design.start_curved = stored.design.start_curved;
+	design.end_curved = stored.design.end_curved;
+	design.start_cant = stored.design.start_cant;
+	design.end_cant = stored.design.end_cant;
 	route.designed = static_cast<int>(design.vertices.size());
 	route.origin = stored.origin;
 	route.vertex = -1;
@@ -2105,6 +2110,19 @@ bool editor_mode::render_route_vertex(int const Index)
 		return edited;
 	};
 	ImU32 const transition{IM_COL32(255, 140, 30, 255)};
+	// the first curve, or the last one, may go on from the curve of the track adjoining at that end: it begins right there, its radius
+	// the one which begins it there, its entry, or exit, the transition between the two curves
+	auto const count{static_cast<int>(design.vertices.size())};
+	for (auto const atend : {false, true})
+	{
+		auto const radius{atend ? design.end_radius : design.start_radius};
+		if ((atend ? Index + 1 != count : Index != 0) || radius <= 0.0 || radius >= 10000.0 || (atend && count == 1 && design.start_curved))
+			continue;
+		auto &curved{atend ? design.end_curved : design.start_curved};
+		changed |= ImGui::Checkbox((format(atend ? STR_C("Goes into the curve of the track at the end (R %.0f m)") : STR_C("Goes on from the curve of the track at the start (R %.0f m)"), radius) + (atend ? "##curvedend" : "##curvedstart")).c_str(), &curved);
+		item_tooltip("The curve begins right at the end of the fragment, at the curvature of the track adjoining there, where it turns the same way; its radius is the one "
+		             "which begins it there, the transition at that end goes between the two curves");
+	}
 	changed |= field("##radius", vertex.radius, 5.0f, vertex.compound ? STR_C("R1 %.0f m") : STR_C("R %.0f m"), overlay_color::grip, "Radius of the arc: drag sideways, or a double click to type it", part::arc);
 	ImGui::SameLine();
 	changed |= field("##cant", vertex.cant, 1.0f, STR_C("cant %.0f mm"), IM_COL32(240, 170, 60, 255),

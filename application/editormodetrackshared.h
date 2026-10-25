@@ -102,6 +102,22 @@ inline std::string curve_label(alignment::curve_report const &Curve, alignment::
 	return text + speed_of(curve_sharpest(Curve), Limits);
 }
 
+// how a curve laid goes on from the curve of the track it starts at, or into the one of the track it ends at; empty from a straight
+inline std::string curve_goes_on(alignment::curve_report const &Curve)
+{
+	std::vector<std::string> lines;
+	if (Curve.curvature_in > 0.0)
+		lines.push_back(Curve.transition_in < 1.0 ? format(STR_C("goes on from R %.0f m of the track it starts at"), 1.0 / Curve.curvature_in) :
+		                                            format(STR_C("goes on from R %.0f m of the track it starts at, a transition of %.0f m between them"), 1.0 / Curve.curvature_in, Curve.transition_in));
+	if (Curve.curvature_out > 0.0)
+		lines.push_back(Curve.transition_out < 1.0 ? format(STR_C("goes into R %.0f m of the track it ends at"), 1.0 / Curve.curvature_out) :
+		                                             format(STR_C("goes into R %.0f m of the track it ends at, a transition of %.0f m between them"), 1.0 / Curve.curvature_out, Curve.transition_out));
+	std::string text;
+	for (auto const &line : lines)
+		text += (text.empty() ? "" : "\n") + line;
+	return text;
+}
+
 // the transition curves and the cant the norms put in a layout, a compound curve where it goes on from an arc turning the same way
 inline std::string eased_of(std::optional<alignment::lay_result> const &Eased)
 {

@@ -46,6 +46,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <array>
 #include "application/editormodeselftest.h"
 
 editor_mode::selftest_result editor_mode::selftest_join(std::string const &command, std::istringstream &words)
@@ -127,6 +128,87 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		}
 		if (false == created.empty())
 			WriteLog(format("SELFTEST %s end: %.3f m from the target", command.c_str(), geometry::plan_distance(previous, b)));
+		return selftest_result::handled;
+	}
+	if (command == "endcurves")
+	{
+		// every free end of the rails: where, the way out of it and the curvature of its track as it would go on beyond it
+		for (auto const &end : editor_track::free_ends(nullptr, 1, glm::dvec3{0.0}, 1e7, {}))
+		{
+			auto const bend{editor_track::bend_at(*end.track, end.position)};
+			auto const curvature{bend.has_value() ? bend->curvature : 0.0};
+			WriteLog(format("SELFTEST freeend %s[%d].%s: %.3f %.3f %.3f, out %.6f %.6f, k %.6f (R %.1f), roll %.3f", end.track->name().c_str(), end.point.path, end.point.kind == editor_track::point_kind::end ? "end" : "start", end.position.x, end.position.y,
+			                end.position.z, bend.has_value() ? bend->direction.x : 0.0, bend.has_value() ? bend->direction.y : 0.0, curvature, std::abs(curvature) > 1e-9 ? 1.0 / std::abs(curvature) : 0.0, bend.has_value() ? bend->roll : 0.0));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "curvejoint")
+	{
+		// the paths meeting at the point: the curvature of each, signed the way the first one runs into the point, and the jumps of the
+		// curvature and of the direction from the ones before the point to the ones after it
+		glm::dvec3 point{0.0};
+		words >> point.x >> point.z;
+		// the end of a path nearest the point, within 3 m
+		auto nearest{3.0};
+		auto const given{point};
+		for (auto const *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved)
+				for (auto const &path : track->m_paths)
+					for (auto const index : {segment_data::point::start, segment_data::point::end})
+						if (auto const distance{geometry::plan_distance(path.points[index], given)}; distance < nearest)
+						{
+							nearest = distance;
+							point = path.points[index];
+						}
+		struct meeting
+		{
+			TTrack const *track;
+			int path;
+			bool atend;
+			double curvature; // as the path goes away from the point
+			double roll;
+			glm::dvec2 out;
+		};
+		std::vector<meeting> meetings;
+		for (auto const *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved)
+				continue;
+			for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
+				for (auto const atend : {false, true})
+				{
+					auto const &path{track->m_paths[i]};
+					if (geometry::plan_distance(path.points[atend ? segment_data::point::end : segment_data::point::start], point) > 0.05)
+						continue;
+					geometry::bezier const curve{path};
+					auto const first{curve.first(atend ? 1.0 : 0.0)};
+					auto const second{curve.second(atend ? 1.0 : 0.0)};
+					auto const speed{std::hypot(first.x, first.z)};
+					if (speed < 1e-9)
+						continue;
+					auto const curvature{(first.x * second.z - first.z * second.x) / (speed * speed * speed)};
+					glm::dvec2 const along{first.x / speed, first.z / speed};
+					meetings.push_back({track, i, atend, atend ? -curvature : curvature, static_cast<double>(atend ? path.rolls[1] : path.rolls[0]), atend ? -along : along});
+				}
+		}
+		if (meetings.empty())
+		{
+			WriteLog(format("SELFTEST curvejoint %.1f %.1f: no path ends there", point.x, point.z));
+			return selftest_result::handled;
+		}
+		auto const into{-meetings.front().out};
+		std::vector<std::pair<double, glm::dvec2>> before;
+		std::vector<std::pair<double, glm::dvec2>> after;
+		for (auto const &each : meetings)
+		{
+			auto const leaving{glm::dot(each.out, into) > 0.0};
+			auto const curvature{leaving ? each.curvature : -each.curvature};
+			(leaving ? after : before).emplace_back(curvature, leaving ? each.out : -each.out);
+			WriteLog(format("SELFTEST curvejoint %s[%d].%s: %s, k %.6f (R %.1f), roll %.3f", each.track->name().c_str(), each.path, each.atend ? "end" : "start", leaving ? "after" : "before", curvature, std::abs(curvature) > 1e-9 ? 1.0 / std::abs(curvature) : 0.0, each.roll));
+		}
+		for (auto const &[k0, d0] : before)
+			for (auto const &[k1, d1] : after)
+				WriteLog(format("SELFTEST curvejoint jump: k %.6f -> %.6f, by %.6f 1/m (%.1f%%), kink %.4f deg", k0, k1, k1 - k0, std::abs(k0) > 1e-9 ? 100.0 * std::abs(k1 - k0) / std::abs(k0) : 0.0, glm::degrees(std::abs(geometry::signed_angle(d0, d1)))));
 		return selftest_result::handled;
 	}
 	if (command == "fittime")
@@ -265,6 +347,123 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		std::string label;
 		words >> label;
 		lay_report(label);
+		return selftest_result::handled;
+	}
+	// a line of known curves going on from the free end nearest the point, within 60 m: segments of the curvature going evenly from the
+	// first to the second (1/m, positive turning the way the track of the end turns, to the left from a straight one) over the length. from: the free end
+	// clicked, then in the mode of a curve the points along the line every Spacing metres and two on the straight after it, 30 and 60 m
+	// on, left for Enter; into: the same line laid towards the free end, the point 60 m on clicked first, the one 30 m on and the ones
+	// along the line in the mode of a curve, the free end last, which lays it. The points shifted across by up to Noise
+	if (command == "laywalk")
+	{
+		std::string way;
+		glm::dvec3 around{0.0};
+		double spacing{10.0};
+		double noise{0.0};
+		words >> way >> around.x >> around.z >> spacing >> noise;
+		std::vector<std::array<double, 3>> segments;
+		for (std::array<double, 3> segment; words >> segment[0] >> segment[1] >> segment[2];)
+			segments.push_back(segment);
+		auto const end{editor_track::find_free_end(nullptr, 1, around, 60.0, {})};
+		auto const bend{end.track != nullptr ? editor_track::bend_at(*end.track, end.position) : std::nullopt};
+		if (false == bend.has_value() || segments.empty() || spacing <= 0.0)
+		{
+			WriteLog("SELFTEST laywalk: no free end near the point, or no line");
+			return selftest_result::handled;
+		}
+		glm::dvec2 position{end.position.x, end.position.z};
+		auto heading{std::atan2(bend->direction.y, bend->direction.x)};
+		auto const sense{bend->curvature < 0.0 ? -1.0 : 1.0};
+		double chainage{0.0};
+		std::vector<glm::dvec2> along;
+		std::vector<glm::dvec2> across;
+		auto next{spacing};
+		for (auto const &[from, to, length] : segments)
+		{
+			auto const steps{std::max(1, static_cast<int>(std::ceil(length / 0.05)))};
+			auto const step{length / steps};
+			auto const start{heading};
+			auto const angle = [&, from = from * sense, to = to * sense, length = length](double const S) { return start + from * S + (to - from) * S * S / (2.0 * length); };
+			for (int i = 0; i < steps; ++i)
+			{
+				auto const middle{angle((i + 0.5) * step)};
+				position += glm::dvec2{std::cos(middle), std::sin(middle)} * step;
+				chainage += step;
+				if (chainage >= next - 1e-6)
+				{
+					auto const now{angle((i + 1) * step)};
+					along.push_back(position);
+					across.push_back({-std::sin(now), std::cos(now)});
+					next += spacing;
+				}
+			}
+			heading = angle(length);
+		}
+		glm::dvec2 const out{std::cos(heading), std::sin(heading)};
+		glm::dvec2 const side{-out.y, out.x};
+		auto const shifted = [&](glm::dvec2 const &Point, glm::dvec2 const &Across, int const Count) {
+			auto const shift{noise * (Count % 3 == 0 ? 1.0 : Count % 3 == 1 ? -0.6 : 0.2)};
+			return glm::dvec3{Point.x + Across.x * shift, 0.0, Point.y + Across.y * shift};
+		};
+		WriteLog(format("SELFTEST laywalk %s from %s[%d]: %.3f %.3f heading %.4f, k %.6f, line %.1f m to %.3f %.3f heading %.4f, %zu points along it", way.c_str(), end.track->name().c_str(), end.point.path, end.position.x, end.position.z, std::atan2(bend->direction.y, bend->direction.x),
+		                bend->curvature, chainage, position.x, position.y, heading, along.size()));
+		m_lay.active = true;
+		lay_cancel();
+		if (m_lay.mode != lay_mode::straights)
+			lay_switch_mode();
+		if (way == "into")
+		{
+			lay_point(shifted(position + out * 60.0, side, 0));
+			lay_switch_mode();
+			lay_point(shifted(position + out * 30.0, side, 1));
+			for (auto i{along.size()}; i-- > 0;)
+				if (glm::distance(along[i], glm::dvec2{end.position.x, end.position.z}) > 3.5)
+					lay_point(shifted(along[i], across[i], static_cast<int>(i)));
+			lay_point(end.position);
+			WriteLog(format("SELFTEST laywalk into: %zu points, %s", m_lay.points.size(), m_lay.status.c_str()));
+		}
+		else
+		{
+			lay_point(end.position);
+			lay_switch_mode();
+			for (std::size_t i = 0; i < along.size(); ++i)
+				lay_point(shifted(along[i], across[i], static_cast<int>(i)));
+			lay_point(shifted(position + out * 30.0, side, 1));
+			lay_point(shifted(position + out * 60.0, side, 2));
+			WriteLog(format("SELFTEST laywalk from: %zu points, start %s", m_lay.points.size(), m_lay.start.track != nullptr ? m_lay.start.track->name().c_str() : "-"));
+		}
+		lay_switch_mode();
+		return selftest_result::handled;
+	}
+	// the bends of straights from the free end nearest the point, within 60 m: the free end clicked, then each point the distance on
+	// along the way it goes, which then turns by the angle (degrees, positive the way the track of the end turns, to the left from a
+	// straight one); the last one the end, left for Enter
+	if (command == "laybends")
+	{
+		glm::dvec3 around{0.0};
+		words >> around.x >> around.z;
+		auto const end{editor_track::find_free_end(nullptr, 1, around, 60.0, {})};
+		auto const bend{end.track != nullptr ? editor_track::bend_at(*end.track, end.position) : std::nullopt};
+		if (false == bend.has_value())
+		{
+			WriteLog("SELFTEST laybends: no free end near the point");
+			return selftest_result::handled;
+		}
+		m_lay.active = true;
+		lay_cancel();
+		if (m_lay.mode != lay_mode::straights)
+			lay_switch_mode();
+		lay_point(end.position);
+		glm::dvec2 position{end.position.x, end.position.z};
+		auto heading{std::atan2(bend->direction.y, bend->direction.x)};
+		for (double distance{0.0}; words >> distance;)
+		{
+			position += glm::dvec2{std::cos(heading), std::sin(heading)} * distance;
+			lay_point({position.x, 0.0, position.y});
+			if (double turn{0.0}; words >> turn)
+				heading += glm::radians(turn) * (bend->curvature < 0.0 ? -1.0 : 1.0);
+		}
+		WriteLog(format("SELFTEST laybends from %s[%d] %.3f %.3f: %zu points", end.track->name().c_str(), end.point.path, end.position.x, end.position.z, m_lay.points.size()));
 		return selftest_result::handled;
 	}
 	if (command == "layenter" || command == "laycancel" || command == "layback")

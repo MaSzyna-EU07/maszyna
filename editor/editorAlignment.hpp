@@ -98,6 +98,16 @@ struct design
 	// known; a design going on at the curvature of the adjoining track doesn't change it abruptly
 	int start_turn{0};
 	int end_turn{0};
+	// the curve of the first vertex goes on from the curve of the adjoining track at the start, where it turns its way, as a track laid on
+	// from a curved free end: it begins right at the start, with no straight before it, its transition in going from the curvature and
+	// the cant of the adjoining track (start_radius, start_turn, start_cant) to those of its first arc. The radii of its arcs are the
+	// ones which begin it there, the transitions and the shares as given. The same for the curve of the last vertex at the end; a curve
+	// of the only vertex goes on from the start alone
+	bool start_curved{false};
+	bool end_curved{false};
+	// mm, the cant of the adjoining track at the start and at the end, leaning into its turn
+	double start_cant{0.0};
+	double end_cant{0.0};
 	// length of the straight beyond the start and the end, which the curves can take over
 	double start_reserve{0.0};
 	double end_reserve{0.0};
@@ -175,6 +185,11 @@ struct curve_report
 	recommendation recommended;
 	bool spirals{false}; // two transition curves with no arc between them
 	double cant{0.0};
+	// the curvature and the cant of the curve of the adjoining track it goes on from at its start, and into at its end; 0 from a straight
+	double curvature_in{0.0};
+	double cant_in{0.0};
+	double curvature_out{0.0};
+	double cant_out{0.0};
 };
 
 struct profile_point

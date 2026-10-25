@@ -130,7 +130,13 @@ void mark(scene::layer_handle const Layer)
 		lines.push_back(format("source %s origin %.4f shape %s speed %.1f", entry.source.c_str(), entry.origin, shape_name(design.shape), design.speed) + (entry.fit > 0.0 ? format(" fit %.3f", entry.fit) : std::string{}));
 		auto const startdirection{local_direction(context, design.start, design.start_direction)};
 		auto const enddirection{local_direction(context, design.end, design.end_direction)};
-		lines.push_back(format("ends %.9f %.9f %.9f %.9f %.6f %.6f %.3f %.3f", startdirection.x, startdirection.y, enddirection.x, enddirection.y, design.start_grade, design.end_grade, design.start_radius, design.end_radius));
+		auto ends{format("ends %.9f %.9f %.9f %.9f %.6f %.6f %.3f %.3f", startdirection.x, startdirection.y, enddirection.x, enddirection.y, design.start_grade, design.end_grade, design.start_radius, design.end_radius)};
+		// the sides the adjoining tracks turn to, and the curves going on from them with their cants, written since there are such
+		if (design.start_turn != 0 || design.end_turn != 0)
+			ends += format(" turns %d %d", design.start_turn, design.end_turn);
+		if (design.start_curved || design.end_curved)
+			ends += format(" curved %d %d %.1f %.1f", design.start_curved ? 1 : 0, design.end_curved ? 1 : 0, design.start_cant, design.end_cant);
+		lines.push_back(ends);
 		auto const &norms{design.norms};
 		lines.push_back(format("norms %.1f %.3f %.1f %.1f %.2f %.3f %.2f %.2f %.3f", norms.gauge, norms.unbalanced, norms.cant_max, norms.cant_rate, norms.ramp_factor, norms.jerk, norms.tangent_min_time, norms.arc_min, norms.arc_min_factor));
 		lines.push_back(format("pieces %d %.3f", design.transition_pieces, design.arc_piece_angle));
@@ -378,6 +384,16 @@ void read_part(record &Entry, std::string const &Keyword, std::istringstream &Li
 		Line >> startdirection.x >> startdirection.y >> enddirection.x >> enddirection.y >> design.start_grade >> design.end_grade >> design.start_radius >> design.end_radius;
 		design.start_direction = world_direction(Context, Context.to_local(design.start), startdirection);
 		design.end_direction = world_direction(Context, Context.to_local(design.end), enddirection);
+		for (std::string key; Line >> key;)
+		{
+			if (key == "turns")
+				Line >> design.start_turn >> design.end_turn;
+			if (int start{0}, end{0}; key == "curved" && Line >> start >> end >> design.start_cant >> design.end_cant)
+			{
+				design.start_curved = (start != 0);
+				design.end_curved = (end != 0);
+			}
+		}
 	}
 	else if (Keyword == "norms")
 	{

@@ -129,6 +129,11 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined
 //   layspeed <km/h> <own 0|1>            the speed set for the laying, and whether it goes also on from a track with its own
 //   laymode <straights|curve>, layradius <R from> <R to>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them
+//   endcurves                            logs every free end of the rails: where, the way out and the curvature its track goes on with
+//   curvejoint <x> <z>                   logs the paths meeting at the end nearest the point, the curvature of each and its jump from the ones before to the ones after
+//   laywalk <from|into> <x> <z> <spacing> <noise> <k0> <k1> <L>...   a line of known curves on from the free end nearest the point,
+//                                        the points along it clicked in the mode of a curve, from the end or towards it (see the command)
+//   laybends <x> <z> <distance> <degrees> ... <distance>   the bends of straights clicked from the free end nearest the point
 //   layp <x> <z>...                      the points clicked in the mode set, on the ground, a free end within 3 m reached
 //   layreport <label>                    logs the line the points clicked make, as Enter would lay it: its bends and curves, warnings, traces
 //   layenter, layback, laycancel         as Enter, Backspace and Esc while laying

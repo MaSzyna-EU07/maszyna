@@ -1909,6 +1909,11 @@ std::string editor_mode::track_readout() const
 				text += "   " + curve_label(curve, laying_norms());
 				if (false == alignment::meets_norms(curve, plan.design))
 					text += "\n" + STR("this curve doesn't meet the norms, it's laid all the same");
+				// the curves next to the free ends going on from the curves of their tracks: the first and the last one
+				if (auto const on{curve_goes_on(plan.shape.curves.front())}; false == on.empty())
+					text += "\n" + on;
+				if (auto const on{curve_goes_on(curve)}; plan.shape.curves.size() > 1 && false == on.empty())
+					text += "\n" + on;
 			}
 			if (lay.mode == lay_mode::curve && false == plan.traces.empty() && false == plan.traces.back().offsets.empty())
 			{

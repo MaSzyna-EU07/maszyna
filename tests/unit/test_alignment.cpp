@@ -3,6 +3,7 @@
 #include "editor/editorAlignment.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <string>
 
@@ -65,6 +66,56 @@ std::vector<glm::dvec2> traced(alignment::result const &Line, double const Spaci
 	points.push_back(along(to + 30.0, Noise * 0.5));
 	points.push_back(along(to + 60.0, -Noise * 0.5));
 	return points;
+}
+
+// a line from the origin along x through segments of the curvature going evenly from the first to the second (to the left positive) over
+// the length, as the end it comes to and the heading there; small steps of Simpson
+struct line_end {
+	glm::dvec2 position{0.0};
+	double heading{0.0};
+};
+line_end walked(std::vector<std::array<double, 3>> const &Segments) {
+	line_end end;
+	for (auto const &[from, to, length] : Segments) {
+		int const steps{std::max(2, static_cast<int>(std::ceil(length / 0.25)) * 2)};
+		auto const h{length / steps};
+		auto const angle = [&, from = from, to = to, length = length](double const S) { return end.heading + from * S + (to - from) * S * S / (2.0 * length); };
+		glm::dvec2 sum{0.0};
+		for (int i = 0; i <= steps; ++i) {
+			double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
+			sum += weight * glm::dvec2{std::cos(angle(i * h)), std::sin(angle(i * h))};
+		}
+		end.position += sum * (h / 3.0);
+		end.heading = angle(length);
+	}
+	return end;
+}
+
+// the curvature of the line at the chainage, positive to the left, from the headings half a metre either side
+double curvature_of(alignment::result const &Line, double const Chainage) {
+	auto const a{std::clamp(Chainage - 0.25, 0.0, Line.length)};
+	auto const b{std::clamp(Chainage + 0.25, 0.0, Line.length)};
+	auto const from{alignment::evaluate(Line, a).direction};
+	auto const to{alignment::evaluate(Line, b).direction};
+	return (std::atan2(to.z, to.x) - std::atan2(from.z, from.x)) / (b - a);
+}
+
+// a design from the origin along x, on from a curve to the left of the radius, to the straight the segments end at, 200 m along it; one
+// vertex where the straights meet
+alignment::design curved_from(double const Radius, std::vector<std::array<double, 3>> const &Segments, double const Speed) {
+	auto const end{walked(Segments)};
+	alignment::design design;
+	design.speed = Speed;
+	design.start = {0.0, 0.0, 0.0};
+	design.start_direction = heading(0.0);
+	auto const beyond{end.position + heading(end.heading) * 200.0};
+	design.end = {beyond.x, 0.0, beyond.y};
+	design.end_direction = heading(end.heading);
+	design.start_radius = Radius;
+	design.start_turn = 1;
+	design.start_curved = true;
+	design.vertices.emplace_back();
+	return design;
 }
 
 // the stretch traced as the lay tool asks for it: from the start of the line along its first straight, to the last point along the
@@ -467,4 +518,232 @@ TEST_CASE("alignment: a cant ramp moved off the transition curve onto the straig
 		CHECK(paths[i].rolls[0] == doctest::Approx(paths[i - 1].rolls[1]).epsilon(1e-4));
 	auto const turned{std::max_element(paths.begin(), paths.end(), [](segment_data const &A, segment_data const &B) { return std::abs(A.rolls[1]) < std::abs(B.rolls[1]); })};
 	CHECK(std::abs(turned->rolls[1]) == doctest::Approx(glm::degrees(std::asin(60.0 / design.norms.gauge))).epsilon(1e-3));
+}
+
+TEST_CASE("alignment: a curve laid on from the diverging track of a switch begins at its end with its curvature") {
+	auto const adjoining = [](alignment::result const &Line) {
+		return std::any_of(Line.warnings.begin(), Line.warnings.end(), [](std::string const &Warning) { return Warning.find("adjoining track at the start") != std::string::npos; });
+	};
+	// R 300 on for 100 m, then a transition of 40 m out to the straight, at 40 km/h
+	auto design{curved_from(300.0, {{1.0 / 300.0, 1.0 / 300.0, 100.0}, {1.0 / 300.0, 0.0, 40.0}}, 40.0)};
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 1000.0;
+	vertex.transition_in = 0.0;
+	vertex.transition_out = 40.0;
+	auto const line{alignment::compute(design)};
+	REQUIRE(line.valid);
+	REQUIRE(line.curves.size() == 1);
+	auto const &curve{line.curves.front()};
+	// the radius is the one which begins the curve at the start, whatever was given
+	CHECK(curve.radius == doctest::Approx(300.0).epsilon(1e-3));
+	CHECK(curve.curvature_in == doctest::Approx(1.0 / 300.0));
+	// no straight before it: the curvature of the switch from the very start, which is where it was
+	CHECK(line.elements.front().kind != alignment::element_kind::straight);
+	CHECK(curvature_of(line, 0.25) == doctest::Approx(1.0 / 300.0).epsilon(0.01));
+	auto const start{alignment::evaluate(line, 0.0)};
+	CHECK(std::abs(start.position.x) < 1e-6);
+	CHECK(std::abs(start.position.z) < 1e-6);
+	CHECK(std::abs(start.direction.z) < 1e-6);
+	CHECK_FALSE(adjoining(line));
+	CHECK(alignment::meets_norms(curve, design));
+	// the line through the end as given
+	auto const end{alignment::evaluate(line, line.length)};
+	CHECK(glm::distance(glm::dvec2{end.position.x, end.position.z}, glm::dvec2{design.end.x, design.end.z}) < 1e-3);
+
+	// the track before turning the other way: the curve from a straight, the jump of the curvature left to the one laying it, which eases
+	// out of the curve there; a design not asked to go on from it, as the plan of a line laid before, warns of it
+	auto other{design};
+	other.start_turn = -1;
+	auto const jump{alignment::compute(other)};
+	REQUIRE(jump.valid);
+	CHECK(jump.curves.front().curvature_in == doctest::Approx(0.0));
+	CHECK_FALSE(adjoining(jump));
+	other.start_curved = false;
+	CHECK(adjoining(alignment::compute(other)));
+}
+
+TEST_CASE("alignment: the cant of the curved track adjoining goes on into the curve with no transition between them") {
+	auto design{curved_from(600.0, {{1.0 / 600.0, 1.0 / 600.0, 150.0}, {1.0 / 600.0, 0.0, 80.0}}, 100.0)};
+	design.start_cant = 60.0;
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 600.0;
+	vertex.transition_out = 80.0;
+	vertex.cant = 100.0;
+	auto const line{alignment::compute(design)};
+	REQUIRE(line.valid);
+	// the cant of the track adjoining from the very start, ramped out along the transition to the straight
+	CHECK(alignment::evaluate(line, 0.0).cant == doctest::Approx(60.0));
+	CHECK(alignment::evaluate(line, 50.0).cant == doctest::Approx(60.0));
+	auto const out{line.elements.back().kind == alignment::element_kind::straight ? line.elements[line.elements.size() - 2] : line.elements.back()};
+	CHECK(alignment::evaluate(line, out.chainage + out.length * 0.5).cant == doctest::Approx(30.0).epsilon(0.02));
+	CHECK(alignment::evaluate(line, out.chainage + out.length + 1.0).cant == doctest::Approx(0.0));
+	REQUIRE(line.ramps.size() == 1);
+	CHECK(line.ramps.front().from == doctest::Approx(out.chainage));
+	// the paths roll with the cant from the first one
+	auto const paths{alignment::pieces(line, design, alignment::minimum_pieces(line, design))};
+	REQUIRE_FALSE(paths.empty());
+	CHECK(paths.front().rolls[0] == doctest::Approx(glm::degrees(std::asin(60.0 / design.norms.gauge))).epsilon(1e-3));
+}
+
+TEST_CASE("alignment: a curve traced on from the diverging track of a switch keeps its curvature from the start") {
+	// the curve on the photo: R 300 from the end of the switch for 80 m, a transition of 25 m out, then the straight, at 40 km/h
+	auto truth{curved_from(300.0, {{1.0 / 300.0, 1.0 / 300.0, 80.0}, {1.0 / 300.0, 0.0, 25.0}}, 40.0)};
+	auto &vertex{truth.vertices.front()};
+	vertex.radius = 300.0;
+	vertex.transition_out = 25.0;
+	auto const line{alignment::compute(truth)};
+	REQUIRE(line.valid);
+	auto const points{traced(line, 10.0, 0.02)};
+
+	auto const base{stretch_base(truth, points)};
+	auto const fit{alignment::fit_trace_stretch(base, points, 0, true)};
+
+	REQUIRE(fit.valid);
+	REQUIRE(fit.vertices.size() == 1);
+	auto const &curve{fit.vertices.front()};
+	CHECK(curve.radius == doctest::Approx(300.0).epsilon(0.02));
+	CHECK(curve.transition_in < 8.0);
+	CHECK(curve.transition_out == doctest::Approx(25.0).epsilon(0.2));
+	CHECK(fit.rms < 0.03);
+	// clicked exactly, the diverging track read as R 300.9 as the editor reads a switch: the curve goes on at its radius with no transition
+	// between them and with the cant of the switch, none
+	auto const exact{traced(line, 10.0, 0.0)};
+	auto exactbase{stretch_base(truth, exact)};
+	exactbase.start_radius = 300.9;
+	auto const along{alignment::fit_trace_stretch(exactbase, exact, 0, true)};
+	REQUIRE(along.valid);
+	REQUIRE(along.vertices.size() == 1);
+	CHECK(along.vertices.front().transition_in == doctest::Approx(0.0));
+	CHECK(along.vertices.front().transition_out == doctest::Approx(25.0).epsilon(0.05));
+	CHECK(along.vertices.front().radius == doctest::Approx(300.0).epsilon(0.005));
+	CHECK(along.vertices.front().cant == doctest::Approx(0.0));
+	CHECK(along.rms < 0.005);
+	// laid as fitted: the curvature of the switch at the very start
+	auto laid{base};
+	laid.vertices = fit.vertices;
+	auto const shape{alignment::compute(laid)};
+	REQUIRE(shape.valid);
+	CHECK(shape.elements.front().kind != alignment::element_kind::straight);
+	CHECK(curvature_of(shape, 0.25) == doctest::Approx(1.0 / 300.0).epsilon(0.02));
+
+	// from a track turning the other way the curve is fitted from a straight, as before
+	auto other{base};
+	other.start_turn = -1;
+	auto const straight{alignment::fit_trace_stretch(other, points, 0, true)};
+	REQUIRE(straight.valid);
+	REQUIRE_FALSE(straight.vertices.empty());
+	auto apart{other};
+	apart.vertices = straight.vertices;
+	auto const from{alignment::compute(apart)};
+	REQUIRE(from.valid);
+	CHECK(from.curves.front().curvature_in == doctest::Approx(0.0));
+}
+
+TEST_CASE("alignment: a curve traced on from a curved free end through a transition into a larger radius") {
+	// R 300 at the free end, a transition of 30 m into R 500 for 60 m, 40 m out to the straight, at 60 km/h
+	auto truth{curved_from(300.0, {{1.0 / 300.0, 1.0 / 500.0, 30.0}, {1.0 / 500.0, 1.0 / 500.0, 60.0}, {1.0 / 500.0, 0.0, 40.0}}, 60.0)};
+	auto &vertex{truth.vertices.front()};
+	vertex.radius = 500.0;
+	vertex.transition_in = 30.0;
+	vertex.transition_out = 40.0;
+	auto const line{alignment::compute(truth)};
+	REQUIRE(line.valid);
+	REQUIRE(line.curves.size() == 1);
+	CHECK(line.curves.front().radius == doctest::Approx(500.0).epsilon(1e-3));
+
+	// clicked exactly, the curve found again
+	auto const exact{traced(line, 10.0, 0.0)};
+	auto const fit{alignment::fit_trace_stretch(stretch_base(truth, exact), exact, 0, true)};
+	REQUIRE(fit.valid);
+	REQUIRE(fit.vertices.size() == 1);
+	auto const &curve{fit.vertices.front()};
+	CHECK(curve.radius == doctest::Approx(500.0).epsilon(0.01));
+	CHECK(curve.transition_in == doctest::Approx(30.0).epsilon(0.05));
+	CHECK(curve.transition_out == doctest::Approx(40.0).epsilon(0.05));
+	CHECK(fit.rms < 0.01);
+
+	// clicked 2 cm off: the straight after the curve, through the last two points, a little off too, the curve keeps to the points as well
+	auto const points{traced(line, 10.0, 0.02)};
+	auto const noisy{alignment::fit_trace_stretch(stretch_base(truth, points), points, 0, true)};
+	REQUIRE(noisy.valid);
+	REQUIRE(noisy.vertices.size() == 1);
+	CHECK(noisy.vertices.front().radius == doctest::Approx(500.0).epsilon(0.03));
+	CHECK(noisy.rms < 0.025);
+}
+
+TEST_CASE("alignment: a bend clicked ahead of a curved free end, turning its way, is eased with a curve going on from it") {
+	alignment::design design;
+	design.speed = 60.0;
+	design.start_direction = heading(0.0);
+	design.start_radius = 300.0;
+	design.start_turn = 1;
+	design.start_curved = true;
+	// the bend 150 m ahead, 20 degrees to the left, the end 300 m after it
+	alignment::vertex bend;
+	bend.position = {150.0, 0.0};
+	design.vertices.push_back(bend);
+	auto const end{bend.position + heading(20.0 * pi / 180.0) * 300.0};
+	design.end = {end.x, 0.0, end.y};
+	design.end_direction = heading(20.0 * pi / 180.0);
+	std::vector<char> corners{1};
+	auto const line{alignment::ease_corners(design, corners, {3000.0, 6000.0})};
+
+	REQUIRE(line.valid);
+	REQUIRE(line.curves.size() == 1);
+	auto const &curve{line.curves.front()};
+	CHECK(line.elements.front().kind != alignment::element_kind::straight);
+	CHECK(curvature_of(line, 0.25) == doctest::Approx(1.0 / 300.0).epsilon(0.02));
+	// all of the straight before the bend taken by the curve, larger than the one it goes on from, through a transition between them
+	CHECK(curve.tangent_in == doctest::Approx(150.0).epsilon(1e-4));
+	CHECK(curve.radius > 400.0);
+	CHECK(curve.transition_in > 5.0);
+	CHECK(alignment::meets_norms(curve, design));
+	CHECK(line.vertices.front().x == doctest::Approx(150.0));
+	CHECK(std::abs(line.vertices.front().y) < 1e-9);
+	// the design keeps the radius it's laid with
+	CHECK(design.vertices.front().radius == doctest::Approx(curve.radius).epsilon(1e-6));
+
+	// a second bend after it: the curve going on from the free end keeps its size, the next one makes room for it
+	auto two{design};
+	two.vertices = {bend, bend};
+	two.vertices[1].position = bend.position + heading(20.0 * pi / 180.0) * 220.0;
+	auto const after{two.vertices[1].position + heading(-5.0 * pi / 180.0) * 300.0};
+	two.end = {after.x, 0.0, after.y};
+	two.end_direction = heading(-5.0 * pi / 180.0);
+	two.vertices.front().offset = 150.0;
+	two.vertices.back().offset = 300.0;
+	std::vector<char> both{1, 1};
+	auto const pair{alignment::ease_corners(two, both, {3000.0, 6000.0})};
+	REQUIRE(pair.valid);
+	REQUIRE(pair.curves.size() == 2);
+	CHECK(pair.curves[0].radius == doctest::Approx(curve.radius).epsilon(1e-3));
+	CHECK(pair.curves[0].tangent_out + pair.curves[1].tangent_in <= 220.0 + 1e-3);
+	CHECK(curvature_of(pair, 0.25) == doctest::Approx(1.0 / 300.0).epsilon(0.02));
+}
+
+TEST_CASE("alignment: a curve laid into a curved free end ends at it with its curvature") {
+	// a straight of 100 m, a transition of 40 m into R 400 to the right, the arc 60 m on to the free end
+	auto const end{walked({{0.0, 0.0, 100.0}, {0.0, -1.0 / 400.0, 40.0}, {-1.0 / 400.0, -1.0 / 400.0, 60.0}})};
+	alignment::design design;
+	design.speed = 80.0;
+	design.start_direction = heading(0.0);
+	design.end = {end.position.x, 0.0, end.position.y};
+	design.end_direction = heading(end.heading);
+	design.end_radius = 400.0;
+	design.end_turn = -1;
+	design.end_curved = true;
+	alignment::vertex vertex;
+	vertex.radius = 2000.0;
+	vertex.transition_in = 40.0;
+	design.vertices.push_back(vertex);
+	auto const line{alignment::compute(design)};
+	REQUIRE(line.valid);
+	REQUIRE(line.curves.size() == 1);
+	CHECK(line.curves.front().radius == doctest::Approx(400.0).epsilon(1e-3));
+	CHECK(line.curves.front().curvature_out == doctest::Approx(1.0 / 400.0));
+	CHECK(line.elements.back().kind != alignment::element_kind::straight);
+	CHECK(curvature_of(line, line.length - 0.25) == doctest::Approx(-1.0 / 400.0).epsilon(0.01));
+	auto const last{alignment::evaluate(line, line.length)};
+	CHECK(glm::distance(glm::dvec2{last.position.x, last.position.z}, end.position) < 1e-3);
+	CHECK(std::none_of(line.warnings.begin(), line.warnings.end(), [](std::string const &Warning) { return Warning.find("adjoining track at the end") != std::string::npos; }));
 }

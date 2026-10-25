@@ -112,8 +112,18 @@ struct compound_curve
 	double shortened{1.0};
 };
 
+// the curvature and the cant a curve goes on from at its start and into at its end, those of the curve of the adjoining track turning
+// its way; 0 on a straight
+struct curve_ends
+{
+	double from{0.0};
+	double to{0.0};
+	double from_cant{0.0};
+	double to_cant{0.0};
+};
+
 // Cants: of the arcs, the cants of the segments stay 0 without them
-compound_curve build_compound(double const Deflection, std::vector<compound_arc> const &Arcs, double const Lengthin, double const Lengthout, std::vector<double> const &Cants = {})
+compound_curve build_compound(double const Deflection, std::vector<compound_arc> const &Arcs, double const Lengthin, double const Lengthout, std::vector<double> const &Cants = {}, curve_ends const &Ends = {})
 {
 	compound_curve result;
 	if (Arcs.empty())
@@ -122,7 +132,7 @@ compound_curve build_compound(double const Deflection, std::vector<compound_arc>
 	for (auto const &arc : Arcs)
 		curvatures.push_back(1.0 / std::max(1.0, arc.radius));
 	auto const cant = [&](std::size_t const Arc) { return Arc < Cants.size() ? Cants[Arc] : 0.0; };
-	auto transitions{curvatures.front() * Lengthin + curvatures.back() * Lengthout};
+	auto transitions{(Ends.from + curvatures.front()) * Lengthin + (curvatures.back() + Ends.to) * Lengthout};
 	for (std::size_t i = 1; i < Arcs.size(); ++i)
 		transitions += (curvatures[i - 1] + curvatures[i]) * std::max(0.0, Arcs[i].transition);
 	transitions *= 0.5;
@@ -133,7 +143,7 @@ compound_curve build_compound(double const Deflection, std::vector<compound_arc>
 	double total{0.0};
 	for (auto const &arc : Arcs)
 		total += std::max(0.0, arc.share);
-	std::vector<std::array<double, 5>> segments{{0.0, curvatures.front(), Lengthin * f, 0.0, cant(0)}};
+	std::vector<std::array<double, 5>> segments{{Ends.from, curvatures.front(), Lengthin * f, Ends.from_cant, cant(0)}};
 	for (std::size_t i = 0; i < Arcs.size(); ++i)
 	{
 		if (i > 0)
@@ -141,7 +151,7 @@ compound_curve build_compound(double const Deflection, std::vector<compound_arc>
 		auto const share{total > 0.0 ? std::max(0.0, Arcs[i].share) / total : 1.0 / static_cast<double>(Arcs.size())};
 		segments.push_back({curvatures[i], curvatures[i], share * arcs / curvatures[i], cant(i), cant(i)});
 	}
-	segments.push_back({curvatures.back(), 0.0, Lengthout * f, cant(Arcs.size() - 1), 0.0});
+	segments.push_back({curvatures.back(), Ends.to, Lengthout * f, cant(Arcs.size() - 1), Ends.to_cant});
 	double x{0.0};
 	double y{0.0};
 	double heading{0.0};
@@ -375,6 +385,20 @@ double spirals_length(transition_shape const Shape, double const Deflection, dou
 	return Shape == transition_shape::clothoid ? 2.0 * Radius * half : 2.0 * Radius * std::tan(half);
 }
 
+namespace
+{
+
+// the transition between the curve of an adjoining track and the arc next to it, as between two arcs; none where the curvature differs
+// by 5 % at most and the cant by less than 5 mm, the curve going on at the radius of the adjoining one
+double between_curves(double const Speed, double const Curvature0, double const Cant0, double const Curvature1, double const Cant1, limits const &Limits)
+{
+	if (std::abs(Curvature1 - Curvature0) <= 0.05 * std::max(std::abs(Curvature0), std::abs(Curvature1)) && std::abs(Cant1 - Cant0) < 5.0)
+		return 0.0;
+	return transition_between(Speed, Curvature0, Cant0, Curvature1, Cant1, Limits);
+}
+
+} // namespace
+
 bool meets_norms(curve_report const &Curve, design const &Design)
 {
 	auto const &norms{Design.norms};
@@ -385,6 +409,16 @@ bool meets_norms(curve_report const &Curve, design const &Design)
 		return false;
 	if (false == Curve.spirals && sharpest < Curve.recommended.radius_min - 1e-6)
 		return false;
+	// going on from the curve of an adjoining track, or into it: the transition there between its curvature and cant and those of the
+	// arc next to it
+	if ((Curve.curvature_in > 0.0 || Curve.curvature_out > 0.0) && false == Curve.radii.empty() && Curve.cants.size() == Curve.radii.size())
+	{
+		auto const required = [&](double const Curvature, double const Cant, double const Radius, double const Arccant) {
+			return Curvature > 0.0 ? between_curves(Design.speed, Curvature, Cant, 1.0 / Radius, Arccant, norms) : transition_length(Design.speed, Radius, Arccant, norms);
+		};
+		return Curve.transition_in + 1e-6 >= required(Curve.curvature_in, Curve.cant_in, Curve.radii.front(), Curve.cants.front()) &&
+		       Curve.transition_out + 1e-6 >= required(Curve.curvature_out, Curve.cant_out, Curve.radii.back(), Curve.cants.back());
+	}
 	if (Curve.radii.size() > 1 && Curve.cants.size() == Curve.radii.size())
 		// a compound curve ramps the cant of its first arc in and the one of its last arc out
 		return Curve.transition_in + 1e-6 >= transition_length(Design.speed, Curve.radii.front(), Curve.cants.front(), norms) &&
@@ -439,6 +473,26 @@ void make_cants(design const &Design, result &R)
 		auto const exit{tail.kind == element_kind::transition_out || (tail.kind == element_kind::spiral && tail.curvature_end == 0.0 && tail.curvature_start > 0.0) ? tail.length : 0.0};
 		auto const cantin{element_cant(head, entry)};
 		auto const cantout{element_cant(tail, tail.length - exit)};
+		// a curve going on from the curve of the adjoining track, or into it, has its cant there from the first: no ramp at that end
+		auto const continuedin{head.kind == element_kind::spiral && head.curvature_start > 0.0};
+		auto const continuedout{tail.kind == element_kind::spiral && tail.curvature_end > 0.0};
+		if (continuedin || continuedout)
+		{
+			push(start, continuedin ? turn * cantin : 0.0);
+			for (auto i{first}; i <= last; ++i)
+			{
+				auto const &e{R.elements[i]};
+				for (auto const distance : {0.0, e.length})
+					push(e.chainage + distance, turn * element_cant(e, distance));
+			}
+			push(end, continuedout ? turn * element_cant(tail, tail.length) : 0.0);
+			if (false == continuedin && cantin >= 0.5)
+				R.ramps.push_back({static_cast<int>(k), start, start + entry, cantin, false});
+			if (false == continuedout && cantout >= 0.5)
+				R.ramps.push_back({static_cast<int>(k), end - exit, end, cantout, false});
+			reached = end;
+			continue;
+		}
 		if (std::max(cantin, cantout) < 0.5)
 		{
 			reached = end;
@@ -621,6 +675,9 @@ result fit_between(design const &Design)
 		double cant{0.0};
 		bool compound{false};
 		bool spirals{false};
+		// going on from the curve of the adjoining track: its size is fixed by the start or by the end, the curves next to it make room
+		bool curved{false};
+		curve_ends ends;
 		std::vector<compound_arc> arcs;
 		std::function<void(double, double &, double &)> tangents;
 	};
@@ -653,6 +710,116 @@ result fit_between(design const &Design)
 		{
 			r.errors.emplace_back(format(STR_C("Vertex %zu: a turn of about 180 or 360 degrees needs one more vertex"), k + 1));
 			return r;
+		}
+		// the curve going on from the curve of the adjoining track turning its way, at the start or at the end: a compound curve of the
+		// arcs it has, one or more, as large as begin it right at the start, or end it at the end
+		auto const from{k == 0 && Design.start_curved && Design.start_radius > 0.0 && Design.start_turn == side};
+		auto const to{k + 1 == count && Design.end_curved && Design.end_radius > 0.0 && Design.end_turn == side && false == from};
+		if ((from || to) && false == reverse && false == vertex.spirals)
+		{
+			fit.compound = true;
+			fit.curved = true;
+			fit.deflection = deflection;
+			fit.arcs = {{fit.radius, 0.0, 1.0, -1.0}};
+			if (vertex.compound && false == vertex.arcs.empty())
+			{
+				fit.arcs.front() = {fit.radius, 0.0, vertex.share, vertex.first_cant};
+				for (auto const &arc : vertex.arcs)
+					fit.arcs.push_back({std::max(1.0, arc.radius), std::max(0.0, arc.transition), arc.share, arc.cant});
+			}
+			if (from)
+			{
+				fit.ends.from = 1.0 / Design.start_radius;
+				fit.ends.from_cant = std::max(0.0, Design.start_cant);
+				// with no transition between them the cant of the adjoining track goes on into the arc
+				if (fit.transition_in < 1.0)
+					fit.arcs.front().cant = fit.ends.from_cant;
+			}
+			else
+			{
+				fit.ends.to = 1.0 / Design.end_radius;
+				fit.ends.to_cant = std::max(0.0, Design.end_cant);
+				if (fit.transition_out < 1.0)
+					fit.arcs.back().cant = fit.ends.to_cant;
+			}
+			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
+			auto const tangents_at = [&](double const Scale, double &Tangentin, double &Tangentout) {
+				auto arcs{fit.arcs};
+				for (auto &arc : arcs)
+					arc.radius *= Scale;
+				auto const shape{build_compound(deflection, arcs, fit.transition_in, fit.transition_out, {}, fit.ends)};
+				auto const end{directionin * shape.end.x + normalin * shape.end.y};
+				Tangentin = cross(directionout, end) / cross(directionout, directionin);
+				Tangentout = glm::dot(end - directionin * Tangentin, directionout);
+			};
+			// the straight it begins at, or ends at, all along the tangent: no straight between
+			auto const wanted{from ? glm::distance(polygon[0], polygon[1]) : glm::distance(polygon[count], polygon[count + 1])};
+			auto const miss = [&](double const Scale) {
+				double in;
+				double out;
+				tangents_at(Scale, in, out);
+				return (from ? in : out) - wanted;
+			};
+			// the radii grow with the tangent: from those given the way the miss says, doubled or halved until it changes its sign, then
+			// the root between, by the regula falsi of Illinois
+			auto low{1.0};
+			auto lowmiss{miss(low)};
+			auto high{low};
+			auto highmiss{lowmiss};
+			auto const smallest{5.0 / fit.radius};
+			auto const largest{1e6 / fit.radius};
+			while ((lowmiss < 0.0) == (highmiss < 0.0) && high < largest && low > smallest)
+			{
+				if (lowmiss < 0.0)
+				{
+					low = high;
+					lowmiss = highmiss;
+					high *= 2.0;
+					highmiss = miss(high);
+				}
+				else
+				{
+					high = low;
+					highmiss = lowmiss;
+					low *= 0.5;
+					lowmiss = miss(low);
+				}
+			}
+			if ((lowmiss < 0.0) == (highmiss < 0.0))
+			{
+				r.errors.emplace_back(from ? format(STR_C("Vertex %zu: no curve goes on from the curve of the adjoining track (R %.0f m) to the straight after it"), k + 1, Design.start_radius) :
+				                             format(STR_C("Vertex %zu: no curve goes on from the straight before it into the curve of the adjoining track (R %.0f m)"), k + 1, Design.end_radius));
+				return r;
+			}
+			auto scale{low};
+			for (int i = 0, kept = 0; i < 60; ++i)
+			{
+				scale = (low * highmiss - high * lowmiss) / (highmiss - lowmiss);
+				auto const value{miss(scale)};
+				if (std::abs(value) < 1e-7 || high - low < 1e-12 * high)
+					break;
+				if ((value < 0.0) == (lowmiss < 0.0))
+				{
+					low = scale;
+					lowmiss = value;
+					if (kept == -1)
+						highmiss *= 0.5;
+					kept = -1;
+				}
+				else
+				{
+					high = scale;
+					highmiss = value;
+					if (kept == 1)
+						lowmiss *= 0.5;
+					kept = 1;
+				}
+			}
+			for (auto &arc : fit.arcs)
+				arc.radius *= scale;
+			fit.radius = fit.arcs.front().radius;
+			tangents_at(1.0, fit.tangent_in, fit.tangent_out);
+			continue;
 		}
 		if (vertex.compound && false == vertex.arcs.empty())
 		{
@@ -713,13 +880,27 @@ result fit_between(design const &Design)
 	for (std::size_t leg = 0; leg + 1 < polygon.size(); ++leg)
 	{
 		auto const available{glm::distance(polygon[leg], polygon[leg + 1]) + (leg == 0 ? startreserve : 0.0) + (leg == count ? endreserve : 0.0)};
-		auto const required{(leg > 0 ? fits[leg - 1].tangent_out : 0.0) + (leg < count ? fits[leg].tangent_in : 0.0)};
-		if (required <= available + 1e-6)
+		auto const before{leg > 0 ? fits[leg - 1].tangent_out : 0.0};
+		auto const after{leg < count ? fits[leg].tangent_in : 0.0};
+		if (before + after <= available + 1e-6)
 			continue;
-		auto const scale{available / required * (1.0 - 1e-9)};
-		if (leg > 0)
+		// a curve going on from the adjoining track keeps its size, the one on the other side of the straight makes room for it
+		auto const fixedbefore{leg > 0 && fits[leg - 1].curved};
+		auto const fixedafter{leg < count && fits[leg].curved};
+		if (fixedbefore != fixedafter)
+		{
+			auto const other{fixedbefore ? after : before};
+			if (other > 1e-9)
+			{
+				auto &kept{scales[fixedbefore ? leg : leg - 1]};
+				kept = std::min(kept, std::clamp((available - (fixedbefore ? before : after)) / other, 1e-3, 1.0) * (1.0 - 1e-9));
+			}
+			continue;
+		}
+		auto const scale{available / (before + after) * (1.0 - 1e-9)};
+		if (leg > 0 && false == fits[leg - 1].curved)
 			scales[leg - 1] = std::min(scales[leg - 1], scale);
-		if (leg < count)
+		if (leg < count && false == fits[leg].curved)
 			scales[leg] = std::min(scales[leg], scale);
 	}
 	for (std::size_t k = 0; k < count; ++k)
@@ -838,7 +1019,7 @@ result fit_between(design const &Design)
 		if (fit.compound)
 		{
 			auto const cants{arc_cants(fit.arcs, fit.cant)};
-			auto const shape{build_compound(deflection, fit.arcs, fit.transition_in, fit.transition_out, cants)};
+			auto const shape{build_compound(deflection, fit.arcs, fit.transition_in, fit.transition_out, cants, fit.ends)};
 			if (shape.shortened < 1.0)
 				r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to fit the deflection angle"), k + 1));
 			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
@@ -893,6 +1074,10 @@ result fit_between(design const &Design)
 			report.tangent_in = glm::distance(position, curvestart);
 			report.tangent_out = glm::distance(position, cursor);
 			report.cants = cants;
+			report.curvature_in = fit.ends.from;
+			report.cant_in = fit.ends.from_cant;
+			report.curvature_out = fit.ends.to;
+			report.cant_out = fit.ends.to_cant;
 			report.unbalanced = -std::numeric_limits<double>::max();
 			for (std::size_t i = 0; i < cants.size(); ++i)
 			{
@@ -913,10 +1098,22 @@ result fit_between(design const &Design)
 			// each transition long enough for the change of the curvature and of the cant along it, at the speed the sharpest arc
 			// allows, as the transitions of the norms are set between the arcs
 			auto const allowed{std::max(1.0, std::min(Design.speed, speed_limit(sharpest, norms)))};
-			auto const requiredin{transition_length(allowed, fit.arcs.front().radius, cants.front(), norms)};
-			auto const requiredout{transition_length(allowed, fit.arcs.back().radius, cants.back(), norms)};
-			if (report.transition_in + 1e-6 < requiredin || report.transition_out + 1e-6 < requiredout)
-				r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shorter than the required %.0f m"), k + 1, std::max(requiredin, requiredout)));
+			// from the curve of an adjoining track, or into it, as between two arcs, at the speed the sharper of them allows
+			auto const slower = [&](double const Curvature) { return Curvature > 0.0 ? std::max(1.0, std::min(allowed, speed_limit(1.0 / Curvature, norms))) : allowed; };
+			auto const requiredin{fit.ends.from > 0.0 ? between_curves(slower(fit.ends.from), fit.ends.from, fit.ends.from_cant, 1.0 / fit.arcs.front().radius, cants.front(), norms) :
+			                                            transition_length(allowed, fit.arcs.front().radius, cants.front(), norms)};
+			auto const requiredout{fit.ends.to > 0.0 ? between_curves(slower(fit.ends.to), 1.0 / fit.arcs.back().radius, cants.back(), fit.ends.to, fit.ends.to_cant, norms) :
+			                                           transition_length(allowed, fit.arcs.back().radius, cants.back(), norms)};
+			// the transition between the curve of the adjoining track and the arc told apart from the one to the straight
+			auto const shortin{report.transition_in + 1e-6 < requiredin};
+			auto const shortout{report.transition_out + 1e-6 < requiredout};
+			auto const betweenin{fit.ends.from > 0.0};
+			auto const betweenout{fit.ends.to > 0.0};
+			if ((shortin && betweenin) || (shortout && betweenout))
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: the transition curve between the curve of the adjoining track and R %.0f m is shorter than the required %.0f m"), k + 1,
+				                               shortin && betweenin ? fit.arcs.front().radius : fit.arcs.back().radius, shortin && betweenin ? requiredin : requiredout));
+			if ((shortin && false == betweenin) || (shortout && false == betweenout))
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shorter than the required %.0f m"), k + 1, std::max(shortin && false == betweenin ? requiredin : 0.0, shortout && false == betweenout ? requiredout : 0.0)));
 			for (std::size_t i = 1; i < fit.arcs.size(); ++i)
 			{
 				auto const required{transition_between(allowed, 1.0 / fit.arcs[i - 1].radius, cants[i - 1], 1.0 / fit.arcs[i].radius, cants[i], norms)};
@@ -1116,9 +1313,11 @@ result fit_between(design const &Design)
 		auto const theirs{(Turn != 0 ? Turn : Own < 0.0 ? -1 : 1) / Radius};
 		return std::abs(theirs - Own) > 0.05 * std::max(1.0 / Radius, std::abs(Own));
 	};
-	if (abrupt(Design.start_radius, Design.start_turn, curvature_at(false)))
+	// a design asked to go on from the curve where its curve turns its way leaves the end where it doesn't to the one laying it: it eases
+	// out of the curve there, or keeps the jump at the end of the diverging track of a switch, as the switch has it at its start
+	if (false == Design.start_curved && abrupt(Design.start_radius, Design.start_turn, curvature_at(false)))
 		r.warnings.emplace_back(format(STR_C("The adjoining track at the start is curved (R %.0f m), the curvature changes abruptly"), Design.start_radius));
-	if (abrupt(Design.end_radius, Design.end_turn, curvature_at(true)))
+	if (false == Design.end_curved && abrupt(Design.end_radius, Design.end_turn, curvature_at(true)))
 		r.warnings.emplace_back(format(STR_C("The adjoining track at the end is curved (R %.0f m), the curvature changes abruptly"), Design.end_radius));
 	make_cants(Design, r);
 
@@ -1150,6 +1349,9 @@ result compute(design const &Design)
 	extended.end = along_end(Design.end, Design.end_direction, Design.end_grade, endextension);
 	extended.start_reserve = 0.0;
 	extended.end_reserve = 0.0;
+	// a curve going on from the adjoining track begins right at the end, which isn't moved; an end moved is on a straight
+	extended.start_curved = Design.start_curved && startextension == 0.0;
+	extended.end_curved = Design.end_curved && endextension == 0.0;
 	if (extended.vertices.size() >= 2)
 	{
 		extended.vertices.front().offset += startextension;
@@ -2861,11 +3063,90 @@ result ease_bends(design &Design, std::vector<char> const &Corners, corner_radii
 	auto const low{std::max(10.0, std::min(Radii.low, Radii.high))};
 	auto const high{std::max(low, Radii.high)};
 
+	// a bend at the start, or at the end, turning the way of the curve of the adjoining track goes on from it: its curve begins right
+	// there, as large as the bend makes it, with the transitions and the cant of the norms between it and the adjoining curve and out of
+	// it to the straight. Its size fixed so, the curves next to it share the straight with it as with a curve left as it is
+	std::vector<char> fixed(count, 0);
+	for (std::size_t k = 0; k < count; ++k)
+	{
+		if (false == corner(k) || (k > 0 && k + 1 < count))
+			continue;
+		auto const in{polygon[k + 1] - polygon[k]};
+		auto const out{polygon[k + 2] - polygon[k + 1]};
+		if (glm::length(in) < 1e-6 || glm::length(out) < 1e-6)
+			continue;
+		int const side{cross(in, out) > 0.0 ? 1 : -1};
+		auto const from{k == 0 && Design.start_curved && Design.start_radius > 0.0 && Design.start_turn == side};
+		auto const to{k + 1 == count && Design.end_curved && Design.end_radius > 0.0 && Design.end_turn == side && false == from};
+		if (false == from && false == to)
+			continue;
+		// the bend alone between the end and the point after it, or before it, the straight there as long as the curve wants
+		auto single{Design};
+		single.vertices.assign(1, vertex{});
+		if (from)
+		{
+			single.end = {polygon[k + 2].x, Design.end.y, polygon[k + 2].y};
+			single.end_direction = glm::normalize(out);
+			single.end_curved = false;
+			single.end_reserve = 1e4;
+		}
+		else
+		{
+			single.start = {polygon[k].x, Design.start.y, polygon[k].y};
+			single.start_direction = glm::normalize(in);
+			single.start_curved = false;
+			single.start_reserve = 1e4;
+		}
+		auto const adjoining{from ? 1.0 / Design.start_radius : 1.0 / Design.end_radius};
+		auto const adjoiningcant{std::max(0.0, from ? Design.start_cant : Design.end_cant)};
+		auto &shape{single.vertices.front()};
+		shape.radius = std::max(1.0, Design.vertices[k].radius);
+		std::optional<curve_report> made;
+		// the transitions and the cant follow the radius, which the transitions move a little
+		for (int pass = 0; pass < 6; ++pass)
+		{
+			auto const allowed{std::max(1.0, std::min(speed, speed_limit(shape.radius, norms)))};
+			auto const recommended{recommend(allowed, shape.radius, norms)};
+			auto const slower{std::max(1.0, std::min(allowed, speed_limit(1.0 / adjoining, norms)))};
+			auto const along{recommended.transition};
+			auto const cant{ramped_cant(recommended.cant, along, allowed, norms)};
+			auto const between{between_curves(slower, adjoining, adjoiningcant, 1.0 / shape.radius, cant, norms)};
+			(from ? shape.transition_in : shape.transition_out) = between;
+			(from ? shape.transition_out : shape.transition_in) = along;
+			shape.cant = cant;
+			auto const laid{compute(single)};
+			if (false == laid.valid || laid.curves.size() != 1)
+			{
+				made.reset();
+				break;
+			}
+			auto const previous{shape.radius};
+			made = laid.curves.front();
+			shape.radius = made->radius;
+			if (std::abs(shape.radius - previous) < 0.01)
+				break;
+		}
+		if (false == made.has_value())
+			continue;
+		auto &vertex{Design.vertices[k]};
+		vertex.spirals = false;
+		vertex.radius = shape.radius;
+		vertex.transition_in = shape.transition_in;
+		vertex.transition_out = shape.transition_out;
+		vertex.cant = shape.cant;
+		vertex.reverse_turn = false;
+		vertex.compound = false;
+		vertex.share = 1.0;
+		vertex.arcs.clear();
+		fixed[k] = 1;
+		kept[k] = {made->tangent_in, made->tangent_out};
+	}
+
 	// the shapes each bend can take, the best first
 	std::vector<std::vector<corner_shape>> ladders(count);
 	for (std::size_t k = 0; k < count; ++k)
 	{
-		if (false == corner(k))
+		if (false == corner(k) || fixed[k] != 0)
 			continue;
 		auto const in{polygon[k + 1] - polygon[k]};
 		auto const out{polygon[k + 2] - polygon[k + 1]};
@@ -2955,7 +3236,7 @@ result ease_bends(design &Design, std::vector<char> const &Corners, corner_radii
 	auto const reach_of = [&](std::size_t const K, bool const Out) {
 		if (false == ladders[K].empty())
 			return ladders[K][picks[K]].reach;
-		return corner(K) ? 0.0 : kept[K][Out ? 1 : 0];
+		return corner(K) && fixed[K] == 0 ? 0.0 : kept[K][Out ? 1 : 0];
 	};
 	auto const best_within = [&](std::size_t const K, double const Room) {
 		auto const &ladder{ladders[K]};
@@ -3097,6 +3378,9 @@ result ease_corners(design &Design, std::vector<char> &Corners, corner_radii con
 				base.end_direction = glm::normalize(polygon[m + 2] - polygon[m + 1]);
 				base.start_reserve = 0.0;
 				base.end_reserve = 0.0;
+				// the curve of the row goes on from the curve of the adjoining track where the row begins at the start, or ends at the end
+				base.start_curved = Design.start_curved && k == 0;
+				base.end_curved = Design.end_curved && m + 1 == static_cast<int>(Design.vertices.size());
 				std::vector<glm::dvec2> points(polygon.begin() + k + 1, polygon.begin() + m + 2);
 				// two bends don't show the curve between them: the curve goes through the line their two curves laid, with no
 				// straight between them, from where the first begins to where the second ends, the straights either side its room
@@ -3120,6 +3404,8 @@ result ease_corners(design &Design, std::vector<char> &Corners, corner_radii con
 					base.end_direction = glm::normalize(plan_of(after.direction));
 					base.start_reserve = from - (first > 0 ? curves[first - 1].to : 0.0);
 					base.end_reserve = (last + 1 < curves.size() ? curves[last + 1].from : line.length) - to;
+					base.start_curved = base.start_curved && from < 1e-6;
+					base.end_curved = base.end_curved && to > line.length - 1e-6;
 					within = kPointsWithin;
 				}
 				auto const fit{Fit ? Fit(base, points) : std::optional<trace_stretch>{fit_trace_stretch(base, points, 0, false)}};
@@ -3185,6 +3471,16 @@ std::optional<trace_stretch> stretch_of(design const &Design, std::vector<glm::d
 	stretch.vertices = Design.vertices;
 	for (std::size_t k = 0; k < stretch.vertices.size() && k < laid.vertices.size(); ++k)
 		stretch.vertices[k].position = laid.vertices[k];
+	// a curve going on from an adjoining one with the radii it was laid with, which begin it at the end
+	for (auto const &curve : laid.curves)
+		if ((curve.curvature_in > 0.0 || curve.curvature_out > 0.0) && curve.vertex >= 0 && curve.vertex < static_cast<int>(stretch.vertices.size()))
+		{
+			auto &vertex{stretch.vertices[curve.vertex]};
+			auto const scale{curve.radius / std::max(1.0, vertex.radius)};
+			vertex.radius = curve.radius;
+			for (auto &arc : vertex.arcs)
+				arc.radius *= scale;
+		}
 	double sum{0.0};
 	for (auto const &projection : project(laid, Points))
 	{
@@ -3196,15 +3492,12 @@ std::optional<trace_stretch> stretch_of(design const &Design, std::vector<glm::d
 	return stretch;
 }
 
-// how far the points are from the line the design lays, a point clicked by mistake far off pulling it less than the square of its
-// departure would
-bool stretch_residuals(design Trial, std::vector<glm::dvec2> const &Points, std::vector<double> &Residuals)
+// how far the points are from the line laid, a point clicked by mistake far off pulling it less than the square of its departure would
+bool laid_residuals(result const &Laid, std::vector<glm::dvec2> const &Points, std::vector<double> &Residuals)
 {
-	Trial.norms.checked = false;
-	auto const laid{compute(Trial)};
-	if (false == laid.valid)
+	if (false == Laid.valid)
 		return false;
-	auto const line{sample_plan(laid, 0.0, laid.length, std::clamp(laid.length / 300.0, 0.5, 4.0))};
+	auto const line{sample_plan(Laid, 0.0, Laid.length, std::clamp(Laid.length / 300.0, 0.5, 4.0))};
 	Residuals.clear();
 	for (auto const &point : Points)
 	{
@@ -3215,11 +3508,19 @@ bool stretch_residuals(design Trial, std::vector<glm::dvec2> const &Points, std:
 	return true;
 }
 
+// the same for the line the design lays
+bool stretch_residuals(design Trial, std::vector<glm::dvec2> const &Points, std::vector<double> &Residuals)
+{
+	Trial.norms.checked = false;
+	return laid_residuals(compute(Trial), Points, Residuals);
+}
+
 // the same for a design of one compound curve, its shape made straight away as fit_between makes it, many times quicker than the whole
 // design laid: the fits of compound curves try it some thousand times
 bool compound_residuals(design const &Trial, std::vector<glm::dvec2> const &Points, std::vector<double> &Residuals)
 {
-	if (Trial.vertices.size() != 1 || false == Trial.vertices.front().compound || Trial.vertices.front().arcs.empty())
+	// a curve going on from an adjoining one is placed by its end, not by the vertex: laid as a whole
+	if (Trial.vertices.size() != 1 || false == Trial.vertices.front().compound || Trial.vertices.front().arcs.empty() || Trial.start_curved || Trial.end_curved)
 		return stretch_residuals(Trial, Points, Residuals);
 	glm::dvec2 corner;
 	if (false == tangent_intersection(Trial, corner))
@@ -3298,6 +3599,113 @@ void plain_curve(vertex &Vertex, double const Radius, double const Transition, d
 	Vertex.transition_in = Vertex.transition_out = Transition;
 	auto const allowed{std::max(1.0, std::min(Speed, speed_limit(Radius, Norms)))};
 	Vertex.cant = Transition > 0.0 ? ramped_cant(recommend(allowed, Radius, Norms).cant, Transition, allowed, Norms) : 0.0;
+}
+
+// the cant of the norms for a curve going on from the curve of an adjoining track, or into it, as much as its transitions ramp: the one
+// to the straight from 0, the one between it and the adjoining curve from the cant of that one, which goes on into the arc with none
+double curved_cant(double const Radius, double const Between, double const Out, double const Adjoining, double const Speed, limits const &Norms)
+{
+	if (Between < 1.0)
+		return Adjoining;
+	auto const allowed{std::max(1.0, std::min(Speed, speed_limit(Radius, Norms)))};
+	auto const cant{ramped_cant(recommend(allowed, Radius, Norms).cant, Out, allowed, Norms)};
+	auto const reach{std::min(Between * 1000.0 / (Norms.ramp_factor * allowed), Norms.cant_rate * 3.6 * Between / allowed)};
+	if (std::abs(cant - Adjoining) <= reach)
+		return cant;
+	auto const ramped{cant > Adjoining ? Adjoining + std::floor(reach / 5.0) * 5.0 : Adjoining - std::floor(reach / 5.0) * 5.0};
+	return std::max(0.0, ramped);
+}
+
+// the transitions of the curve of the vertex going on from the curve of the adjoining track at the start, or into the one at the end,
+// following the points best: its radius the one which begins it there, its cant that of the norms as far as the transitions ramp it
+void fit_curved(design &Design, std::size_t const Vertex, std::vector<glm::dvec2> const &Points, bool const Fromstart)
+{
+	auto const speed{std::max(1.0, Design.speed)};
+	auto const fromstart{Fromstart};
+	auto const adjoining{std::max(kTraceRadiusMin, fromstart ? Design.start_radius : Design.end_radius)};
+	auto const adjoiningcant{std::max(0.0, fromstart ? Design.start_cant : Design.end_cant)};
+	auto const longest{longest_transition(speed, adjoining, Design.norms)};
+	// the radius is sought from the one laid last, a step of the fit moving it little
+	auto radius{adjoining};
+	// the square roots of the lengths of the transitions, between the curves and to the straight, a 30th of them: the step the fit takes
+	// its derivatives with moving the curve more than the chords the points are measured against do; one parameter: none between them,
+	// the curve going on at the radius of the adjoining one
+	constexpr double kScale{30.0};
+	auto const length_of = [](double const Parameter) { return kScale * kScale * Parameter * Parameter; };
+	auto const parameter_of = [](double const Length) { return std::sqrt(Length) / kScale; };
+	auto const shaped = [&](std::vector<double> const &Parameters, design &Trial) {
+		Trial = Design;
+		auto &curve{Trial.vertices[Vertex]};
+		curve = {curve.position, curve.offset, radius};
+		auto const between{Parameters.size() > 1 ? std::min(length_of(Parameters[0]), longest) : 0.0};
+		auto const out{std::min(length_of(Parameters.back()), longest)};
+		curve.transition_in = fromstart ? between : out;
+		curve.transition_out = fromstart ? out : between;
+		curve.cant = 0.0;
+	};
+	auto const laid_with = [&](result const &Laid) {
+		for (auto const &curve : Laid.curves)
+			if (curve.vertex == static_cast<int>(Vertex))
+				radius = curve.radius;
+	};
+	residuals_of const residuals{[&](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
+		design trial;
+		shaped(Parameters, trial);
+		trial.norms.checked = false;
+		auto const laid{compute(trial)};
+		laid_with(laid);
+		return laid_residuals(laid, Points, Residuals);
+	}};
+	// the transition between the curves short or none, as where the curve goes on at the radius of the adjoining one, or as long as the
+	// one to the straight; this one as long as the norms ask for at the radius of the adjoining curve. The square roots of the lengths,
+	// a length of nought holding the step at nought
+	auto const allowed{std::max(1.0, std::min(speed, speed_limit(adjoining, Design.norms)))};
+	auto const out{std::clamp(recommend(allowed, adjoining, Design.norms).transition, 10.0, 0.9 * longest)};
+	std::vector<double> best;
+	auto lowest{std::numeric_limits<double>::max()};
+	for (auto const between : {2.0, 0.5 * out})
+	{
+		radius = adjoining;
+		std::vector<double> parameters{parameter_of(between), parameter_of(out)};
+		if (auto const cost{least_squares(parameters, residuals)}; cost < lowest)
+		{
+			lowest = cost;
+			best = parameters;
+		}
+	}
+	// the curve going on at the radius of the adjoining one, with no transition between them, where it keeps to the points about as well:
+	// a short transition the fit leaves only follows points clicked a little off
+	{
+		radius = adjoining;
+		std::vector<double> parameters{parameter_of(out)};
+		auto const cost{least_squares(parameters, residuals)};
+		auto const points{static_cast<double>(std::max<std::size_t>(1, Points.size()))};
+		// the radius it begins with the one of the adjoining curve, within 5 %, else the curvature would jump between them
+		design trial;
+		shaped(parameters, trial);
+		trial.norms.checked = false;
+		laid_with(compute(trial));
+		auto const along{std::abs(radius - adjoining) <= 0.05 * adjoining};
+		if (along && cost < std::numeric_limits<double>::max() && (best.empty() || std::sqrt(cost / points) <= std::sqrt(lowest / points) + 0.01))
+		{
+			lowest = cost;
+			best = parameters;
+		}
+	}
+	if (best.empty())
+		return;
+	design fitted;
+	shaped(best, fitted);
+	auto &curve{fitted.vertices[Vertex]};
+	curve.transition_in = std::round(curve.transition_in);
+	curve.transition_out = std::round(curve.transition_out);
+	auto const laid{compute(fitted)};
+	if (false == laid.valid)
+		return;
+	laid_with(laid);
+	curve.radius = radius;
+	curve.cant = fromstart ? curved_cant(radius, curve.transition_in, curve.transition_out, adjoiningcant, speed, fitted.norms) : curved_cant(radius, curve.transition_out, curve.transition_in, adjoiningcant, speed, fitted.norms);
+	Design = fitted;
 }
 
 // the radius and the length of the transitions of the curve of the vertex following the points best, the rest of the design kept: the
@@ -3572,7 +3980,29 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 		single.vertices.assign(1, vertex{});
 		auto &curve{single.vertices.front()};
 		curve.transition_in = curve.transition_out = curve.cant = 0.0;
-		if (auto const arc{fit_trace(single, 0, Points, 1)}; arc.valid)
+		// a curve going on from the curve of the adjoining track at the start, or into the one at the end, turning its way: the
+		// transitions the points show, the radius the one which begins it there; the radii of a compound curve where they're asked for
+		// or one doesn't keep to the points
+		int const side{cross(startdirection, enddirection) > 0.0 ? 1 : -1};
+		auto const fromstart{Base.start_curved && Base.start_radius > 0.0 && Base.start_turn == side};
+		auto const curved{fromstart || (Base.end_curved && Base.end_radius > 0.0 && Base.end_turn == side)};
+		if (curved)
+		{
+			curve.radius = fromstart ? Base.start_radius : Base.end_radius;
+			fit_curved(single, 0, Points, fromstart);
+			one = stretch_of(single, Points);
+			auto const loose{one.has_value() && (one->rms > kStretchClose || one->worst > kPointsWithin)};
+			if (one.has_value() && Radii != 1 && (Radii > 1 || loose))
+				if (auto const fit{fit_trace(single, 0, Points, Radii > 1 ? Radii : 2)}; fit.valid && fit.fitted.compound)
+				{
+					auto several{single};
+					several.vertices.front() = fit.fitted;
+					fit_compound(several, 0, Points);
+					if (auto const compound{stretch_of(several, Points)}; compound.has_value() && (Radii > 1 || compound->rms < 0.75 * one->rms))
+						one = compound;
+				}
+		}
+		else if (auto const arc{fit_trace(single, 0, Points, 1)}; arc.valid)
 		{
 			curve = arc.fitted;
 			fit_curve(single, 0, Points);
@@ -3695,8 +4125,10 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 			// none where a curve ran to the end of the radii tried, turns hardly at all, or doesn't fit between the straights: the
 			// points made the fit find two curves where they show one
 			auto const laid{compute(two)};
+			// a curve of the two going on from the curve of an adjoining track has its transitions tied together here, to the straight
+			// and between the curves alike: none such, the one curve going on from it is fitted on its own
 			auto const sound{laid.valid && laid.radius_warnings.empty() && laid.curves.size() == 2 && std::all_of(laid.curves.begin(), laid.curves.end(), [](curve_report const &Curve) {
-				return Curve.radius > 1.05 * kTraceRadiusMin && Curve.radius < 0.95 * kTraceRadiusMax && Curve.deflection > 0.25 * kPi / 180.0;
+				return Curve.radius > 1.05 * kTraceRadiusMin && Curve.radius < 0.95 * kTraceRadiusMax && Curve.deflection > 0.25 * kPi / 180.0 && Curve.curvature_in <= 0.0 && Curve.curvature_out <= 0.0;
 			})};
 			// one compound curve rather than two turning the same way with a short straight between them; two such only where the
 			// straight is long and they keep to the points much closer

@@ -1513,7 +1513,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the track through the points clicked, each the way its mode says; End: the free end it finishes at, the last point then
 	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, double &Length, std::string &Error,
 	                                     lay_line_plan *Plan = nullptr) const;
-	bool lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error) const;
+	// Adjoining: the curve next to a free end on a curve goes on from its curvature, where it turns its way; else from a straight there
+	bool lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining = true) const;
 	// the curves of a stretch traced, the ones fitted lately kept for the same points
 	// none while the stretch the cursor moves along is still being fitted; Meanwhile: the fit done last of the same points but the one
 	// at the cursor until then
