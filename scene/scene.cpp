@@ -366,12 +366,27 @@ basic_cell::instances_single() const {
     return m_instancessingle;
 }
 
+// true if the cell holds nothing to draw but instances drawn with the instanced path
+bool
+basic_cell::holds_instanced_only() const {
+
+    return ( false == m_instancebuckets_opaque.empty() )
+        && m_paths.empty()
+        && m_shapesopaque.empty()
+        && m_shapestranslucent.empty()
+        && m_lines.empty()
+        && m_traction.empty()
+        && m_instancetranslucent.empty()
+        && instances_single().empty();
+}
+
 // adds provided model instance to the cell
 void
 basic_cell::insert( TAnimModel *Instance ) {
 
     m_active = true;
     m_instancessinglevalid = false;
+    m_instancerangevalid = false;
 
     auto const flags = Instance->Flags();
     auto alpha =
@@ -475,6 +490,7 @@ void
 basic_cell::erase( TAnimModel *Instance ) {
 
     m_instancessinglevalid = false;
+    m_instancerangevalid = false;
 
     auto const flags = Instance->Flags();
     auto alpha =

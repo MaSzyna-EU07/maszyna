@@ -293,6 +293,8 @@ class opengl33_renderer : public gfx_renderer {
 	// adds the bucketed instances of a scene cell to the frame-level buckets drawn by Render_Instanced(),
 	// less the ones the copies of their bounds show to be out of sight in the current render pass
 	void Queue_Instances( scene::basic_cell const *Cell );
+	// true if nothing of the cell would be drawn by the color pass from the camera of the pass
+	bool Cell_Out_Of_Range( scene::basic_cell const &Cell );
 	// makes the copies of the bounds of the instances held by a bucket of a scene cell
 	void Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket );
 	bool Render(TDynamicObject *Dynamic);

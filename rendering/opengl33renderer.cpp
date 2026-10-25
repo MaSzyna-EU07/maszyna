@@ -2639,6 +2639,8 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 			{
 				if ((true == cell.m_active) && (m_renderpass.pass_camera.visible(cell.m_area)))
 				{
+					// a cell with nothing but instances too far to be drawn is left out of the color pass altogether
+					if( ( m_renderpass.draw_mode == rendermode::color ) && Cell_Out_Of_Range( cell ) ) { continue; }
 					// store visible cells with content as well as their current distance, for sorting later
 					m_cellqueue.emplace_back(glm::length2(m_renderpass.pass_camera.position() - cell.m_area.center), &cell);
 				}
@@ -3193,6 +3195,39 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 			dest->emplace_back( instances[ idx ] );
 		}
 	}
+}
+
+// true if nothing of the cell would be drawn by the color pass: it holds only instances drawn with the instanced path,
+// and the nearest point of the cell is past the largest range of them. the test is the one made for each bucket in
+// Queue_Instances(), done before the cell is put in the cell queue: a scenery with many small instances of a short
+// range has them in nearly every cell up to the draw range, and queueing, sorting and visiting these cells only
+// to skip all their buckets took a good part of the frame
+bool opengl33_renderer::Cell_Out_Of_Range( scene::basic_cell const &Cell )
+{
+	// the editor moves and resizes the instances in place, the copies of their bounds can't be relied on while it's active
+	if( EditorModeFlag ) { return false; }
+	if( false == Cell.holds_instanced_only() ) { return false; }
+	if( ( false == Cell.m_instancerangevalid ) || ( Cell.m_instancerangeversion != m_instanceboundsversion ) ) {
+		auto rangesquaredmax { 0.f };
+		for( auto const &bucket : Cell.m_instancebuckets_opaque ) {
+			if( ( bucket.second.boundsversion != m_instanceboundsversion )
+			 || ( bucket.second.bounds.size() != bucket.second.instances.size() ) ) {
+				Update_Instance_Bounds( bucket.first.pModel, bucket.second );
+			}
+			rangesquaredmax = std::max( rangesquaredmax, bucket.second.rangesquaredmax );
+		}
+		Cell.m_instancerangesquaredmax = rangesquaredmax;
+		Cell.m_instancerangevalid = true;
+		Cell.m_instancerangeversion = m_instanceboundsversion;
+	}
+	// same measures as in Queue_Instances() for the color pass
+	auto const distancescale { 1.0 / ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.fDistanceFactor ) ) };
+	auto const slack { 1.001 };
+	auto const distancetested { sq( 64.0 ) };
+	auto const cellnearestdistance { std::max( 0.0, glm::length( Cell.m_area.center - m_renderpass.pass_camera.position() ) - Cell.m_area.radius ) };
+	auto const cellnearestdistancesquared { cellnearestdistance * cellnearestdistance };
+	return ( cellnearestdistancesquared > distancetested )
+		&& ( cellnearestdistancesquared * distancescale >= slack * Cell.m_instancerangesquaredmax );
 }
 
 // makes the copies of the bounds of the instances held by a bucket of a scene cell

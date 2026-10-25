@@ -274,6 +274,10 @@ public:
     mutable instance_sequence m_instancessingle; // cache for instances_single()
     mutable bool m_instancessinglevalid { false };
     mutable unsigned int m_instancessinglerevoked { 0 }; // TAnimModel::s_instanceable_revoked at the time of its build
+    // the largest rangesquaredmax of the instance buckets, cached by the renderer
+    mutable float m_instancerangesquaredmax { 0.f };
+    mutable bool m_instancerangevalid { false };
+    mutable unsigned int m_instancerangeversion { 0 }; // version of the bounds of the renderer it was taken with
     instance_sequence m_instancetranslucent;
     // batched instance buckets keyed by shared TModel3d*; populated alongside
     // m_instancesopaque for nodes whose TAnimModel::m_instanceable == true.
@@ -283,6 +287,8 @@ public:
     // instead of m_instancesopaque, which holds every instance of the cell - with many instanced ones (vegetation)
     // going through all of them in each frame only to skip them took more time than drawing everything else
     instance_sequence const &instances_single() const;
+    // true if the cell holds nothing to draw but instances drawn with the instanced path
+    bool holds_instanced_only() const;
     traction_sequence m_traction;
     sound_sequence m_sounds;
     eventlauncher_sequence m_eventlaunchers;
