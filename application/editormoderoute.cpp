@@ -1694,7 +1694,46 @@ bool editor_mode::render_route_band()
 	auto const mouse{ImGui::GetIO().MousePos};
 	auto const count{static_cast<int>(result.elements.size())};
 
-	// the element under the mouse and what of it a drag changes: near the ends of a plateau its transitions, also the ones of no length yet
+	// what of its vertex each element is: an arc, the arcs of a compound curve counted from the first one, which are elements of an even
+	// curvature as an arc is, or a transition, in from the straight, out to it, or between two arcs, which goes on from the arc before it
+	struct role
+	{
+		int part{0};
+		int arc{0};
+	};
+	std::vector<role> roles(static_cast<std::size_t>(count));
+	std::vector<int> arcs(design.vertices.size(), 0);
+	{
+		int vertex{-1};
+		int arc{-1};
+		double last{0.0};
+		for (int i = 0; i < count; ++i)
+		{
+			auto const &element{result.elements[i]};
+			if (element.vertex != vertex)
+			{
+				vertex = element.vertex;
+				arc = -1;
+				last = 0.0;
+			}
+			if (element.vertex < 0 || element.vertex >= static_cast<int>(design.vertices.size()) || element.kind == alignment::element_kind::straight)
+				continue;
+			auto const [from, to]{ends(element)};
+			if (element.kind == alignment::element_kind::arc || (std::abs(from - to) <= 1e-6 * std::abs(from) && std::abs(from) > 1e-9))
+			{
+				// the next arc where the curvature isn't the one of the arc before, an arc cut in parts staying one
+				if (arc < 0 || std::abs(std::abs(from) - last) > 1e-6 * std::abs(from))
+					++arc;
+				last = std::abs(from);
+				roles[i] = {1, arc};
+				arcs[element.vertex] = std::max(arcs[element.vertex], arc + 1);
+			}
+			else
+				roles[i] = std::abs(from) <= 1e-9 ? role{2, 0} : std::abs(to) <= 1e-9 ? role{3, 0} : role{4, arc + 1};
+		}
+	}
+	// the element under the mouse and what of it a drag changes: near the ends of a plateau the transitions either side of it, also the
+	// ones of no length yet
 	int under{-1};
 	int part{0};
 	if (hovered && false == dragging)
@@ -1702,27 +1741,38 @@ bool editor_mode::render_route_band()
 		for (int i = 0; i < count; ++i)
 		{
 			auto const &element{result.elements[i]};
+	int arc{0};
 			if (mouse.x < x_of(element.chainage) || mouse.x >= x_of(element.chainage + element.length))
 				continue;
 			under = i;
-			auto const from{x_of(element.chainage)};
-			auto const to{x_of(element.chainage + element.length)};
-			auto const edge{std::min(std::round(font * 0.5f), (to - from) * 0.25f)};
-			switch (element.kind)
+			part = roles[i].part;
+			arc = roles[i].arc;
+			if (part == 1)
 			{
-			case alignment::element_kind::arc: part = mouse.x < from + edge ? 2 : mouse.x >= to - edge ? 3 : 1; break;
-			case alignment::element_kind::transition_in: part = 2; break;
-			case alignment::element_kind::transition_out: part = 3; break;
-			default: break;
+				auto const from{x_of(element.chainage)};
+				auto const to{x_of(element.chainage + element.length)};
+				auto const edge{std::min(std::round(font * 0.5f), (to - from) * 0.25f)};
+				if (mouse.x < from + edge)
+					part = arc == 0 ? 2 : 4;
+				else if (mouse.x >= to - edge)
+				{
+					part = arc + 1 >= arcs[element.vertex] ? 3 : 4;
+					arc += 1;
+				}
 			}
-			if (element.vertex < 0 || element.vertex >= static_cast<int>(design.vertices.size()))
-				part = 0;
 			break;
 		}
 	}
-	auto const value_of = [&](int const Vertex, int const Part) -> double & {
+	auto const value_of = [&](int const Vertex, int const Part, int const Arc) -> double & {
 		auto &vertex{design.vertices[Vertex]};
-		return Part == 1 ? vertex.radius : Part == 2 ? vertex.transition_in : vertex.transition_out;
+		auto const later{Arc >= 1 && Arc <= static_cast<int>(vertex.arcs.size())};
+		switch (Part)
+		{
+		case 1: return later ? vertex.arcs[Arc - 1].radius : vertex.radius;
+		case 2: return vertex.transition_in;
+		case 3: return vertex.transition_out;
+		default: return later ? vertex.arcs[Arc - 1].transition : vertex.transition_in;
+		}
 	};
 	auto const rounded_radius = [](double const Radius) {
 		auto const step{Radius < 1000.0 ? 1.0 : 10.0};
@@ -1733,14 +1783,15 @@ bool editor_mode::render_route_band()
 	{
 		band.vertex = result.elements[under].vertex;
 		band.part = part;
-		band.value = value_of(band.vertex, part);
+		band.arc = arc;
+		band.value = value_of(band.vertex, part, arc);
 		band.press = mouse;
 		band.metres = metres;
 		band.curvature = curvature;
 	}
 	if (band.vertex >= 0 && band.vertex < static_cast<int>(design.vertices.size()) && active)
 	{
-		auto &value{value_of(band.vertex, band.part)};
+		auto &value{value_of(band.vertex, band.part, band.arc)};
 		double wanted{value};
 		if (band.part == 1)
 		{
@@ -1759,6 +1810,7 @@ bool editor_mode::render_route_band()
 		}
 		if (wanted != value)
 		{
+			// the transition in grows to the left, from where it starts; the others to the right
 			value = wanted;
 			changed = true;
 		}
@@ -1773,7 +1825,7 @@ bool editor_mode::render_route_band()
 		ImGui::SetMouseCursor(part == 1 ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
 		if (auto const wheel{ImGui::GetIO().MouseWheel}; wheel != 0.0f)
 		{
-			auto &value{value_of(result.elements[under].vertex, part)};
+			auto &value{value_of(result.elements[under].vertex, part, arc)};
 			value = part == 1 ? rounded_radius(value * (wheel > 0.0f ? 0.95 : 1.0 / 0.95)) : std::max(0.0, std::round(value / 5.0) * 5.0 + (wheel > 0.0f ? 5.0 : -5.0));
 			changed = true;
 		}
@@ -1862,8 +1914,8 @@ bool editor_mode::render_route_band()
 	}
 	if (dragging && band.vertex >= 0 && band.vertex < static_cast<int>(design.vertices.size()))
 	{
-		auto const &vertex{design.vertices[band.vertex]};
-		auto const text{band.part == 1 ? format("R %.0f m", vertex.radius) : format("%.0f m", band.part == 2 ? vertex.transition_in : vertex.transition_out)};
+		auto const value{value_of(band.vertex, band.part, band.arc)};
+		auto const text{band.part == 1 ? format("R %.0f m", value) : format("%.0f m", value)};
 		auto const size{ImGui::CalcTextSize(text.c_str())};
 		ImVec2 const at{std::clamp(mouse.x + pad, top.x, bottom.x - size.x - pad), std::clamp(mouse.y - size.y - pad, top.y, bottom.y - size.y)};
 		list->AddRectFilled(ImVec2(at.x - 3.0f, at.y - 1.0f), ImVec2(at.x + size.x + 3.0f, at.y + size.y + 1.0f), IM_COL32(0, 0, 0, 170), 3.0f);
@@ -1875,12 +1927,18 @@ bool editor_mode::render_route_band()
 
 	if (part != 0 && false == dragging && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 	{
-		auto const &vertex{design.vertices[result.elements[under].vertex]};
+		auto const index{result.elements[under].vertex};
+		auto const &vertex{design.vertices[index]};
+		auto const value{value_of(index, part, arc)};
 		ImGui::BeginTooltip();
-		if (part == 1)
-			ImGui::Text(STR_C("Curve %d: R %.0f m, cant %.0f mm"), result.elements[under].vertex + 1, vertex.radius, vertex.cant);
+		if (part == 1 && arcs[index] > 1)
+			ImGui::Text(STR_C("Curve %d, arc R%d: %.0f m"), index + 1, arc + 1, value);
+		else if (part == 1)
+			ImGui::Text(STR_C("Curve %d: R %.0f m, cant %.0f mm"), index + 1, value, vertex.cant);
+		else if (part == 4)
+			ImGui::Text(STR_C("Curve %d, transition between R%d and R%d: %.0f m"), index + 1, arc, arc + 1, value);
 		else
-			ImGui::Text(part == 2 ? STR_C("Transition into curve %d: %.0f m") : STR_C("Transition out of curve %d: %.0f m"), result.elements[under].vertex + 1, part == 2 ? vertex.transition_in : vertex.transition_out);
+			ImGui::Text(part == 2 ? STR_C("Transition into curve %d: %.0f m") : STR_C("Transition out of curve %d: %.0f m"), index + 1, value);
 		gesture_rows({{"Drag", part == 1 ? "up or down: the radius" : "sideways: the length"}, {"Wheel", part == 1 ? "the radius by 5%" : "the length by 5 m"}});
 		ImGui::EndTooltip();
 	}

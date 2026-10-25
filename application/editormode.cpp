@@ -5046,85 +5046,6 @@ void tutorial_trainset_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const H
 		List.AddText(ImVec2(cursor.x + height * 0.16f, cursor.y), IM_COL32(255, 220, 120, 255), "x2");
 }
 
-// the plan of a curve over the band of its curvature: the plateau of the arc goes up and down under the mouse, the curve tightens
-// and opens with it over the plan kept faint as it was
-void tutorial_curve_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
-{
-	auto const width{High.x - Low.x};
-	auto const height{High.y - Low.y};
-	auto const lift{static_cast<float>(0.5 + 0.5 * std::sin(Time * 1.3))};
-	auto const curvature = [](float const Share, float const Peak) {
-		if (Share < 0.15f || Share > 0.85f)
-			return 0.0f;
-		if (Share < 0.35f)
-			return Peak * (Share - 0.15f) / 0.2f;
-		if (Share > 0.65f)
-			return Peak * (0.85f - Share) / 0.2f;
-		return Peak;
-	};
-	auto const colour = [](float const Share) {
-		if (Share < 0.15f || Share > 0.85f)
-			return IM_COL32(255, 255, 255, 230);
-		if (Share < 0.35f || Share > 0.65f)
-			return IM_COL32(255, 140, 30, 255);
-		return IM_COL32(60, 230, 90, 255);
-	};
-	int constexpr steps{90};
-	auto const plan_height{height * 0.5f};
-	float scale{1.0f};
-	ImVec2 start{0.0f, 0.0f};
-	auto const plan = [&](float const Peak) {
-		std::vector<ImVec2> points;
-		float heading{0.0f}, x{0.0f}, y{0.0f};
-		for (int i = 0; i <= steps; ++i)
-		{
-			points.emplace_back(start.x + x * scale, start.y + y * scale);
-			auto const share{(i + 0.5f) / steps};
-			heading += curvature(share, Peak) / steps;
-			x += std::cos(heading) / steps;
-			y -= std::sin(heading) / steps;
-		}
-		return points;
-	};
-	// the scale fits the plan of the sharpest curve, the least sharp one is the widest
-	auto const sharpest{plan(2.8f)};
-	auto const widest{plan(1.6f)};
-	scale = std::min(width * 0.85f / std::max(1e-3f, widest.back().x), plan_height / std::max(1e-3f, -sharpest.back().y));
-	start = ImVec2(Low.x + (width - widest.back().x * scale) * 0.5f, Low.y + height * 0.06f + plan_height);
-	auto const before{plan(1.6f)};
-	List.AddPolyline(before.data(), static_cast<int>(before.size()), IM_COL32(170, 170, 170, 90), 0, 1.5f);
-	auto const peak{1.6f + 1.2f * lift};
-	auto const now{plan(peak)};
-	for (int i = 0; i < steps; ++i)
-		List.AddLine(now[i], now[i + 1], colour((i + 0.5f) / steps), 3.0f);
-	// the band under the plan
-	auto const band_top{Low.y + height * 0.66f};
-	auto const band_bottom{High.y - height * 0.06f};
-	auto const left{Low.x + width * 0.06f};
-	auto const band_width{width * 0.88f};
-	List.AddRectFilled(ImVec2(left - 6.0f, band_top - 6.0f), ImVec2(left + band_width + 6.0f, band_bottom + 4.0f), ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
-	List.AddLine(ImVec2(left, band_bottom), ImVec2(left + band_width, band_bottom), ImGui::GetColorU32(ImGuiCol_TextDisabled));
-	auto const k_scale{(band_bottom - band_top) * 0.9f / 2.8f};
-	for (int i = 0; i < steps; ++i)
-	{
-		auto const a{static_cast<float>(i) / steps};
-		auto const b{static_cast<float>(i + 1) / steps};
-		ImVec2 const p{left + a * band_width, band_bottom - curvature(a, peak) * k_scale};
-		ImVec2 const q{left + b * band_width, band_bottom - curvature(b, peak) * k_scale};
-		auto const tint{colour((a + b) * 0.5f)};
-		auto const flags{List.Flags};
-		List.Flags &= ~ImDrawListFlags_AntiAliasedFill;
-		List.AddQuadFilled(ImVec2(p.x, band_bottom), p, q, ImVec2(q.x, band_bottom), (tint & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 50));
-		List.Flags = flags;
-		List.AddLine(p, q, tint, 2.0f);
-	}
-	char text[32];
-	std::snprintf(text, sizeof(text), "R %.0f", std::round(900.0f / peak / 5.0f) * 5.0f);
-	ImVec2 const plateau{left + band_width * 0.5f, band_bottom - peak * k_scale};
-	List.AddText(ImVec2(plateau.x - ImGui::CalcTextSize(text).x * 0.5f, plateau.y - ImGui::GetTextLineHeight() - 2.0f), IM_COL32(60, 230, 90, 255), text);
-	gesture_mouse(List, ImVec2(plateau.x + band_width * 0.08f, plateau.y - height * 0.06f), height * 0.16f, "LMB");
-}
-
 // the terrain model under the tracks: the track laid level sinks onto the ground along, the formation and the slopes under it
 void tutorial_terrain_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
 {
@@ -5238,15 +5159,14 @@ void editor_mode::render_first_steps()
 	     {{first_step::bend, "Lay a track with a bend in it"}, {first_step::trace, "Switch to tracing a curve with Tab"}},
 	     trial::lay},
 	    {"Correcting a curve",
-	     nullptr,
+	     "plan",
 	     {{"G", "The plan tool: a click on a curve shows its design, the vertex and the radius to drag in the view"},
-	      {"LMB + move", "In the panel, the band of the curvature: drag the plateau of the arc up or down for its radius"},
+	      {"LMB + move", "In the panel, the band of the curvature: drag the plateau of an arc up or down for its radius, each arc of a compound curve its own"},
 	      {"LMB + move", "Drag a ramp sideways: the transition curve gets longer or shorter"},
 	      {"wheel", "Over the band: the radius by 5%, a transition by 5 m"},
 	      {"LMB", "Apply to the scenery: the tracks are laid by the design"}},
 	     {{first_step::plan, "Open the plan of a curve"}, {first_step::plan_band, "Change the curve in the band"}, {first_step::plan_apply, "Apply it to the scenery"}},
-	     trial::plan,
-	     tutorial_curve_sketch},
+	     trial::plan},
 	    {"Joining tracks",
 	     "join",
 	     {{"LMB + move", "Press on a free end (a magenta ring) and drag: a new track goes out of it"},

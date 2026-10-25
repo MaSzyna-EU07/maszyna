@@ -982,7 +982,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			int hot{-1};
 			double at{-1.0};
 			int vertex{-1};
-			int part{0}; // 1 the radius, 2 the transition in, 3 the transition out
+			int part{0}; // 1 the radius, 2 the transition in, 3 the transition out, 4 the transition between two arcs of a compound curve
+			int arc{0}; // the arc of a compound curve the radius is of, 0 the first; of a transition between arcs the one after it
 			double value{0.0};
 			ImVec2 press{0.0f, 0.0f};
 			float metres{1.0f}; // pixels of a metre and of a unit of the curvature, kept as the drag goes

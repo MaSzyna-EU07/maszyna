@@ -7094,6 +7094,12 @@ msgstr "Łuk %d: R %.0f m, przechyłka %.0f mm"
 msgid "Transition into curve %d: %.0f m"
 msgstr "Przejściowa na wejściu w łuk %d: %.0f m"
 
+msgid "Curve %d, arc R%d: %.0f m"
+msgstr "Łuk %d, promień R%d: %.0f m"
+
+msgid "Curve %d, transition between R%d and R%d: %.0f m"
+msgstr "Łuk %d, przejściowa między R%d a R%d: %.0f m"
+
 msgid "Transition out of curve %d: %.0f m"
 msgstr "Przejściowa na wyjściu z łuku %d: %.0f m"
 
@@ -7151,8 +7157,8 @@ msgstr "Poprawianie łuku"
 msgid "The plan tool: a click on a curve shows its design, the vertex and the radius to drag in the view"
 msgstr "Narzędzie Plan: klik na łuku pokazuje jego projekt, wierzchołek i promień do przeciągania w widoku"
 
-msgid "In the panel, the band of the curvature: drag the plateau of the arc up or down for its radius"
-msgstr "W panelu pasek krzywizny: półka łuku przeciągnięta w górę albo w dół zmienia jego promień"
+msgid "In the panel, the band of the curvature: drag the plateau of an arc up or down for its radius, each arc of a compound curve its own"
+msgstr "W panelu pasek krzywizny: półka łuku przeciągnięta w górę albo w dół zmienia jego promień, każdy łuk koszowego osobno"
 
 msgid "Drag a ramp sideways: the transition curve gets longer or shorter"
 msgstr "Rampa przeciągnięta w bok: krzywa przejściowa wydłuża się albo skraca"
