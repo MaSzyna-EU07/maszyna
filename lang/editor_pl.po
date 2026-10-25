@@ -952,6 +952,9 @@ msgstr "Kliknij co najmniej dwa punkty"
 msgid "The curvature changes abruptly where the track joins, there's no room for a transition curve"
 msgstr "Na styku z torem krzywizna zmienia się skokowo, nie ma miejsca na krzywą przejściową"
 
+msgid "At the end of the switch the line goes on with the curve of the switch, and there's no room for the transition out of it here"
+msgstr "Za końcem rozjazdu tor kontynuuje łuk rozjazdu, a nie ma tu miejsca na krzywą przejściową wychodzącą z niego"
+
 msgid "Compound curve: R %.0f m meets R %.0f m with no transition curve between them"
 msgstr "Łuk koszowy: R %.0f m styka się z R %.0f m bez krzywej przejściowej między nimi"
 

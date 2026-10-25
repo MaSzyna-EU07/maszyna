@@ -460,8 +460,9 @@ void editor_mode::point_drag_finish()
 std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const
 {
 	m_eased_last.reset();
-	// from the diverging track of a switch a curve goes on from its curvature, a straight goes on right from its end, as from the switch
-	if (From == nullptr || (From->eType != tt_Normal && (From->eType != tt_Switch || m_track_layout == track_layout::straight)))
+	// from the end of a curved track, the diverging track of a switch too, the line goes on from its curvature: a curve from it, a
+	// straight after a transition out of it, never with a jump of the curvature at the end
+	if (From == nullptr || (From->eType != tt_Normal && From->eType != tt_Switch))
 		return std::nullopt;
 	auto const end{editor_track::bend_at(*From, Point)};
 	if (false == end.has_value())
@@ -483,6 +484,10 @@ std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *Fro
 	request.speed = design_speed(From, nullptr);
 	request.piece_length = m_lay.piece_length;
 	request.norms = laying_norms();
+	// the diverging track of a switch has no cant: the line out of its curve is laid for the speed the curve lets with the unbalanced
+	// acceleration alone, as ease_out_of does
+	if (From->eType == tt_Switch && std::abs(end->curvature) > 1e-9)
+		request.speed = std::min(request.speed, std::sqrt(12.96 * request.norms.unbalanced / std::abs(end->curvature)));
 	if (false == m_eased_cache.has_value() || m_eased_cache->first != request)
 		m_eased_cache.emplace(request, alignment::lay_on(request));
 	m_eased_last = m_eased_cache->second;
@@ -615,8 +620,9 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 	if (result.kind != alignment::join_kind::straight && result.kind != alignment::join_kind::arc && glm::length(request.end.direction) > 1e-9)
 	{
 		auto const grade{(End.position.y - Start.y) / std::max(1.0, plan_distance(Start, End.position))};
-		auto const in{From != nullptr && From->eType == tt_Normal ? editor_track::ease_out_of(*From, Start, grade, request.speed, request.norms) : editor_track::easing{}};
-		auto const out{End.track != nullptr && End.track->eType == tt_Normal ? editor_track::ease_out_of(*End.track, End.position, -grade, request.speed, request.norms) : editor_track::easing{}};
+		auto const curved = [](TTrack const *Track) { return Track != nullptr && (Track->eType == tt_Normal || Track->eType == tt_Switch); };
+		auto const in{curved(From) ? editor_track::ease_out_of(*From, Start, grade, request.speed, request.norms) : editor_track::easing{}};
+		auto const out{curved(End.track) ? editor_track::ease_out_of(*End.track, End.position, -grade, request.speed, request.norms) : editor_track::easing{}};
 		if (auto eased{eased_join(request, in, out)})
 			result = std::move(*eased);
 	}
@@ -995,11 +1001,11 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		return std::max(alignment::minimum_pieces(Shape, Design), static_cast<std::size_t>(std::ceil(Shape.length / std::max(5.0, tool.piece_length))));
 	};
 	std::vector<segment_data> pieces;
-	// the curvature of the track laid has to go on from the one of the track it joins, a jump gets a transition curve between them. Not
-	// at a switch: its diverging track ends its curve with a jump as it begins it, a straight going on right from there
+	// the curvature of the track laid has to go on from the one of the track it joins, a jump gets a transition curve between them; at
+	// the end of the diverging track of a switch as well, the curve of the switch going on
 	auto const grade{(Points.back().y - Points.front().y) / std::max(1.0, plan_distance(Points.front(), Points.back()))};
 	auto const eased = [&](editor_track::snap_target const &Joint, double const Chainage, double const Sign) {
-		if (Joint.track == nullptr || Joint.track->eType != tt_Normal)
+		if (Joint.track == nullptr || (Joint.track->eType != tt_Normal && Joint.track->eType != tt_Switch))
 			return editor_track::easing{};
 		auto result{editor_track::ease_out_of(*Joint.track, Joint.position, grade * Sign, design.speed, design.norms)};
 		auto const own{Sign * curvature_at(shape, Chainage)};
@@ -1029,6 +1035,15 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			easeddesign.end_radius = 0.0;
 			easeddesign.end_turn = 0;
 		}
+		// a straight with no bend, clicked on from the end the way it went: after the transition it runs on the way the transition leaves,
+		// as far as the point clicked
+		if (false == in.pieces.empty() && out.pieces.empty() && End.track == nullptr && easeddesign.vertices.empty())
+		{
+			auto const along{glm::normalize(in.direction)};
+			auto const distance{glm::dot(plan_of(easeddesign.end - in.end), along)};
+			easeddesign.end = {in.end.x + along.x * distance, easeddesign.end.y, in.end.z + along.y * distance};
+			easeddesign.end_direction = along;
+		}
 		// the bends stay where they are, measured from the ends moved
 		if (easeddesign.vertices.size() >= 2 && shape.vertices.size() == easeddesign.vertices.size())
 		{
@@ -1055,6 +1070,15 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		auto const after = [&](editor_track::easing const &Easing, glm::dvec3 const &Joint, glm::dvec3 const &Own) { return false == Easing.pieces.empty() && plan_distance(Joint, Own) > 0.01; };
 		auto const &before{after(in, Points.front(), design.start) ? in : editor_track::easing{}};
 		auto const &beyond{after(out, Points.back(), design.end) ? out : editor_track::easing{}};
+		// at the diverging track of a switch the curve goes on, a line jumping from it isn't laid
+		auto const jumps = [](editor_track::snap_target const &Joint, editor_track::easing const &Needed, editor_track::easing const &Laid) {
+			return Joint.track != nullptr && Joint.track->eType == tt_Switch && false == Needed.pieces.empty() && Laid.pieces.empty();
+		};
+		if (jumps(tool.start, in, before) || jumps(End, out, beyond))
+		{
+			Error = STR("At the end of the switch the line goes on with the curve of the switch, and there's no room for the transition out of it here") + (Error.empty() ? std::string{} : "\n" + Error);
+			return {};
+		}
 		Length = editor_track::eased_length(before, Length, beyond);
 		pieces = editor_track::eased_pieces(before, pieces, beyond);
 	}
@@ -1244,8 +1268,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 				Error = STR_C("Fitting the curve to the points...");
 				return false;
 			}
-			// next to a free end on a curve the stretch goes on from that curve, or begins from a straight there: eased out of the curve
-			// by the transition lay_pieces lays, or right from the end of the diverging track of a switch, as the switch goes on. The
+			// next to a free end on a curve the stretch goes on from that curve, or begins from a straight there, eased out of the curve by
+			// the transition lay_pieces lays; at the end of the diverging track of a switch too, the curve of the switch going on. The
 			// straight one where the curve next to the free end doesn't go on from it, or where that one doesn't keep to the points and
 			// this one keeps much closer
 			if (base.start_curved || base.end_curved)
@@ -1254,7 +1278,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 				plain.start_curved = plain.end_curved = false;
 				std::vector<glm::dvec2> kept;
 				auto const easing = [&](editor_track::snap_target const &Joint, double const Grade) {
-					return Joint.track != nullptr && Joint.track->eType == tt_Normal ? editor_track::ease_out_of(*Joint.track, Joint.position, Grade, design.speed, design.norms) : editor_track::easing{};
+					return Joint.track != nullptr && (Joint.track->eType == tt_Normal || Joint.track->eType == tt_Switch) ? editor_track::ease_out_of(*Joint.track, Joint.position, Grade, design.speed, design.norms) : editor_track::easing{};
 				};
 				auto const in{base.start_curved ? easing(tool.start, 0.0) : editor_track::easing{}};
 				auto const out{base.end_curved ? easing(End, 0.0) : editor_track::easing{}};
@@ -1297,19 +1321,11 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 						easedstart = std::make_pair(in.end, in.direction);
 					if (false == out.pieces.empty())
 						easedend = std::make_pair(out.end, -out.direction);
-					// from a straight there; at a switch with the jump of the curvature it has, which isn't warned of
-					auto const straight_at = [&](editor_track::snap_target const &Joint, bool &Curved, double &Radius, int &Turn) {
-						Curved = false;
-						if (Joint.track != nullptr && Joint.track->eType == tt_Switch)
-						{
-							Radius = 0.0;
-							Turn = 0;
-						}
-					};
+					// from a straight there
 					if (base.start_curved)
-						straight_at(tool.start, design.start_curved, design.start_radius, design.start_turn);
+						design.start_curved = false;
 					if (base.end_curved)
-						straight_at(End, design.end_curved, design.end_radius, design.end_turn);
+						design.end_curved = false;
 				}
 			}
 			auto const &fit{*fitted};

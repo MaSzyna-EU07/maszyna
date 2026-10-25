@@ -680,7 +680,12 @@ editor_track::easing editor_track::ease_out_of(TTrack const &Neighbour, glm::dve
 	result.curvature = end->curvature;
 	if (std::abs(end->curvature) < 1e-4)
 		return result;
-	result.length = std::max(20.0, alignment::recommend(Speed, 1.0 / std::abs(end->curvature), Limits).transition);
+	// the diverging track of a switch has no cant: run no faster than its curve lets with the unbalanced acceleration alone, the
+	// transition out of it is the one for that speed
+	auto speed{Speed};
+	if (Neighbour.eType == tt_Switch)
+		speed = std::min(Speed, std::sqrt(12.96 * Limits.unbalanced / std::abs(end->curvature)));
+	result.length = std::max(20.0, alignment::recommend(speed, 1.0 / std::abs(end->curvature), Limits).transition);
 	lay_transition(result, Joint, end->direction, Grade, end->roll);
 	return result;
 }
