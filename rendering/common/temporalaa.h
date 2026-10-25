@@ -65,6 +65,11 @@ class temporal_aa
 	{
 		return m_reprojection;
 	}
+	// the same without the offsets of the frames (the frame generation of dlss)
+	glm::mat4 const &reprojection_without_offset() const
+	{
+		return m_reprojectionnooffset;
+	}
 	// the image of the history written this frame (0 or 1); the other one holds the last frame
 	int target() const
 	{
@@ -95,6 +100,7 @@ class temporal_aa
 	glm::mat4 m_worldfuture{1.f};
 	glm::mat4 m_cabfuture{1.f};
 	glm::mat4 m_reprojection{1.f};
+	glm::mat4 m_reprojectionnooffset{1.f};
 	int m_target{0};
 	bool m_historyvalid{false};
 };

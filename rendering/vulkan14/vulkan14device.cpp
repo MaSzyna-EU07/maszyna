@@ -325,6 +325,40 @@ bool device::create(instance const &Instance, std::string &Reason, std::vector<s
 		}
 	}
 
+	// reflex (gfx.reflex, and with the frame generation of dlss, which takes it for granted): the sleep of the driver before the
+	// simulation of a frame and the markers of the frame, with the ids of the presents the markers are for
+	VkPhysicalDevicePresentIdFeaturesKHR presentid{};
+	presentid.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+	m_low_latency = false;
+	if ((Global.gfx_reflex > 0) || (Global.gfx_framegeneration > 1))
+	{
+		std::uint32_t count{0};
+		vkEnumerateDeviceExtensionProperties(m_physical, nullptr, &count, nullptr);
+		std::vector<VkExtensionProperties> available(count);
+		vkEnumerateDeviceExtensionProperties(m_physical, nullptr, &count, available.data());
+		auto const has = [&](char const *Name) { return std::any_of(available.begin(), available.end(), [Name](VkExtensionProperties const &Entry) { return std::strcmp(Entry.extensionName, Name) == 0; }); };
+		VkPhysicalDeviceFeatures2 features{};
+		features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		features.pNext = &presentid;
+		vkGetPhysicalDeviceFeatures2(m_physical, &features);
+		presentid.pNext = nullptr;
+		m_low_latency = has(VK_NV_LOW_LATENCY_2_EXTENSION_NAME) && has(VK_KHR_PRESENT_ID_EXTENSION_NAME) && (presentid.presentId == VK_TRUE);
+		if (m_low_latency)
+		{
+			for (auto const *name : {VK_NV_LOW_LATENCY_2_EXTENSION_NAME, VK_KHR_PRESENT_ID_EXTENSION_NAME})
+			{
+				if (std::none_of(extensions.begin(), extensions.end(), [name](char const *Entry) { return std::strcmp(Entry, name) == 0; }))
+				{
+					extensions.push_back(name);
+				}
+			}
+		}
+		else
+		{
+			log_info("gfx.reflex: " + m_capabilities.device_name + " has no VK_NV_low_latency2 with VK_KHR_present_id, reflex stays off");
+		}
+	}
+
 	// the ray traced reflections, asked for in eu07.ini (gfx.raytracing), where the device has what they need
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration{};
 	acceleration.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
@@ -354,6 +388,12 @@ bool device::create(instance const &Instance, std::string &Reason, std::vector<s
 	VkDeviceCreateInfo create{};
 	create.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	create.pNext = enabled.head();
+	if (m_low_latency)
+	{
+		presentid.presentId = VK_TRUE;
+		presentid.pNext = const_cast<void *>(create.pNext);
+		create.pNext = &presentid;
+	}
 	create.queueCreateInfoCount = static_cast<std::uint32_t>(queues.size());
 	create.pQueueCreateInfos = queues.data();
 	create.enabledExtensionCount = static_cast<std::uint32_t>(extensions.size());
@@ -381,6 +421,10 @@ bool device::create(instance const &Instance, std::string &Reason, std::vector<s
 	if (m_raytracing)
 	{
 		log_info("ray queries on, for the ray traced reflections (gfx.raytracing)");
+	}
+	if (m_low_latency)
+	{
+		log_info("VK_NV_low_latency2 on, for reflex (gfx.reflex)");
 	}
 	return true;
 }

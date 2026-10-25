@@ -83,6 +83,11 @@ class device
 	{
 		return m_raytracing;
 	}
+	// VK_NV_low_latency2 with VK_KHR_present_id is on (reflex, gfx.reflex)
+	bool low_latency_enabled() const
+	{
+		return m_low_latency;
+	}
 
   private:
 	static queue_families find_queue_families(VkInstance Instance, VkPhysicalDevice Physical, VkSurfaceKHR Surface, std::uint32_t &TimestampBits);
@@ -96,6 +101,7 @@ class device
 	bool m_portability_subset{false};
 	bool m_memory_budget{false};
 	bool m_raytracing{false};
+	bool m_low_latency{false};
 
 	VkQueue m_graphics_queue{VK_NULL_HANDLE};
 	VkQueue m_compute_queue{VK_NULL_HANDLE};

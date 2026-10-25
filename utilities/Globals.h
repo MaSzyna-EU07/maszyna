@@ -206,6 +206,12 @@ struct global_settings {
     float gfx_dlss_lodbias{ 0.f };
     // gfx.dlss.developer: the development library of dlss (ngx_dev/ next to the program) with its indicator and debug keys
     bool gfx_dlss_developer{ false };
+    // gfx.framegeneration off, x2, x3, x4: the frames shown for each frame drawn (dlss frame generation of the vulkan renderer, with
+    // gfx.antialiasing dlss or dlaa; x3 and x4 where the gpu has multi frame generation, else x2). 1: off. read at the start
+    int gfx_framegeneration{ 1 };
+    // gfx.reflex off, on, boost: nvidia reflex of the vulkan renderer (VK_NV_low_latency2), the frame begun as late as the gpu
+    // allows; on at least with the frame generation. read at the start
+    int gfx_reflex{ 0 };
     float SplineFidelity{ 1.f }; // determines segment size during conversion of splines to geometry
     float SleeperDistance{ 250.f }; // max distance (in meters) at which per-track sleeper models are still drawn; 0 disables sleeper rendering entirely
     std::string Sleepers3D; // model of the sleepers and switch timbers laid where the simulator makes the ballast; empty: none

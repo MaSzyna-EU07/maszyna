@@ -19,10 +19,13 @@ http://mozilla.org/MPL/2.0/.
 #if defined(WITH_DLSS)
 #include <nvsdk_ngx_helpers.h>
 #include <nvsdk_ngx_helpers_vk.h>
+#include <nvsdk_ngx_helpers_dlssg_vk.h>
 #endif
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <system_error>
 
@@ -196,16 +199,48 @@ struct dlss::state
 	feature seen_feature;
 	unsigned long long seen_memory{0};
 
+	// the frame generation: the most frames it makes between two, its own parameters (one map for each feature, as the guide of
+	// the frame generation asks), the feature the frames ask for and the one made
+	std::uint32_t generation_max{0};
+	NVSDK_NGX_Parameter *generation_parameters{nullptr};
+	struct generation_feature
+	{
+		glm::ivec2 output{0};
+		glm::ivec2 render{0};
+		VkFormat format{VK_FORMAT_UNDEFINED};
+		bool operator==(generation_feature const &Other) const
+		{
+			return (output == Other.output) && (render == Other.render) && (format == Other.format);
+		}
+	};
+	generation_feature generation_wanted;
+	generation_feature generation_made;
+	NVSDK_NGX_Handle *generation_handle{nullptr};
+	// what the replay of the frame evaluates, as the resources above
+	resource backbuffer, hudless, generation_depth, generation_motion;
+	std::vector<resource> generated;
+	NVSDK_NGX_DLSSG_Opt_Eval_Params generation_options{};
+	// set by the replay, read by the main thread once it waited for it
+	bool generation_failed{false};
+	std::string generation_error;
+	bool generation_error_told{false};
+	bool seen_generation_failed{false};
+	std::uint64_t generations{0};
+	std::uint64_t seen_generations{0};
+
 	// the debug window: the offsets of the jitter turned the other way, the history dropped
 	bool flip_x{false};
 	bool flip_y{false};
 	bool reset_wanted{false};
+	// the frame generation: the clip space of its matrices turned over (as the images it's given), its history dropped
+	bool generation_clip_flip{false};
+	bool generation_reset_wanted{false};
 
-	NVSDK_NGX_FeatureDiscoveryInfo discovery() const
+	NVSDK_NGX_FeatureDiscoveryInfo discovery(NVSDK_NGX_Feature const Feature) const
 	{
 		NVSDK_NGX_FeatureDiscoveryInfo info{};
 		info.SDKVersion = NVSDK_NGX_Version_API;
-		info.FeatureID = NVSDK_NGX_Feature_SuperSampling;
+		info.FeatureID = Feature;
 		info.Identifier.IdentifierType = NVSDK_NGX_Application_Identifier_Type_Project_Id;
 		info.Identifier.v.ProjectDesc.ProjectId = project_id;
 		info.Identifier.v.ProjectDesc.EngineType = NVSDK_NGX_ENGINE_TYPE_CUSTOM;
@@ -354,6 +389,138 @@ struct dlss::state
 		}
 	}
 
+	// a failed frame generation: the frames it was to make are the backbuffer, shown again
+	void copy_backbuffer(VkCommandBuffer const Buffer) const
+	{
+		if (false == backbuffer.valid)
+		{
+			return;
+		}
+		for (auto const &output : generated)
+		{
+			if (false == output.valid)
+			{
+				continue;
+			}
+			VkImageCopy2 region{};
+			region.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
+			region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+			region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+			region.extent = {std::min(backbuffer.width, output.width), std::min(backbuffer.height, output.height), 1};
+			VkCopyImageInfo2 copy{};
+			copy.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
+			copy.srcImage = backbuffer.image;
+			copy.srcImageLayout = VK_IMAGE_LAYOUT_GENERAL;
+			copy.dstImage = output.image;
+			copy.dstImageLayout = VK_IMAGE_LAYOUT_GENERAL;
+			copy.regionCount = 1;
+			copy.pRegions = &region;
+			vkCmdCopyImage2(Buffer, &copy);
+		}
+		VkMemoryBarrier2 barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT;
+		VkDependencyInfo dependency{};
+		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency.memoryBarrierCount = 1;
+		dependency.pMemoryBarriers = &barrier;
+		vkCmdPipelineBarrier2(Buffer, &dependency);
+	}
+
+	void fail_generation(std::string const &Error)
+	{
+		if (generation_error.empty())
+		{
+			generation_error = Error;
+		}
+		generation_failed = true;
+	}
+
+	// the replay of the frame: the feature of the frame generation made when it isn't there, then evaluated once for each frame it
+	// makes, from the first one shown on
+	static void record_generation(VkCommandBuffer const Buffer, void *const Data)
+	{
+		auto &self{*static_cast<state *>(Data)};
+		if (self.generation_failed || (self.generation_parameters == nullptr) || self.generated.empty())
+		{
+			self.copy_backbuffer(Buffer);
+			return;
+		}
+		auto *parameters{self.generation_parameters};
+		if (self.generation_handle == nullptr)
+		{
+			NVSDK_NGX_DLSSG_Create_Params create{};
+			create.Width = static_cast<unsigned int>(self.generation_wanted.output.x);
+			create.Height = static_cast<unsigned int>(self.generation_wanted.output.y);
+			create.NativeBackbufferFormat = static_cast<unsigned int>(self.generation_wanted.format);
+			create.RenderWidth = static_cast<unsigned int>(self.generation_wanted.render.x);
+			create.RenderHeight = static_cast<unsigned int>(self.generation_wanted.render.y);
+			create.DynamicResolutionScaling = false;
+			// the helper of vulkan leaves out the size of the depth and the velocities, which the one of d3d12 gives
+			NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_DLSSG_Parameter_Width, create.Width);
+			NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_DLSSG_Parameter_Height, create.Height);
+			NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_DLSSG_Parameter_InternalWidth, create.RenderWidth);
+			NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_DLSSG_Parameter_InternalHeight, create.RenderHeight);
+			NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_DLSSG_Parameter_DynamicResolution, 0);
+			auto const result{NGX_VK_CREATE_DLSSG(Buffer, 1, 1, &self.generation_handle, parameters, &create)};
+			if (NVSDK_NGX_FAILED(result) || (self.generation_handle == nullptr))
+			{
+				self.generation_handle = nullptr;
+				self.fail_generation("the feature of the frame generation of dlss can't be made: " + result_text(result));
+				self.copy_backbuffer(Buffer);
+				return;
+			}
+			self.generation_made = self.generation_wanted;
+		}
+		auto backbuffer{wrap(self.backbuffer, true)};
+		auto hudless{wrap(self.hudless, true)};
+		auto depth{wrap(self.generation_depth, true)};
+		auto motion{wrap(self.generation_motion, true)};
+		auto options{self.generation_options};
+		options.multiFrameCount = static_cast<unsigned int>(self.generated.size());
+		for (std::size_t i = 0; i < self.generated.size(); ++i)
+		{
+			auto output{wrap(self.generated[i], true)};
+			NVSDK_NGX_VK_DLSSG_Eval_Params evaluation{};
+			evaluation.pBackbuffer = &backbuffer;
+			evaluation.pDepth = &depth;
+			evaluation.pMVecs = &motion;
+			evaluation.pHudless = (self.hudless.valid ? &hudless : nullptr);
+			evaluation.pOutputInterpFrame = &output;
+			options.multiFrameIndex = static_cast<unsigned int>(i + 1);
+			auto const result{NGX_VK_EVALUATE_DLSSG(Buffer, self.generation_handle, parameters, &evaluation, &options)};
+			if (NVSDK_NGX_FAILED(result))
+			{
+				self.fail_generation("the frame generation of dlss can't be evaluated: " + result_text(result));
+				self.copy_backbuffer(Buffer);
+				return;
+			}
+		}
+		++self.generations;
+	}
+
+	void release_generation(deletion_queue *Deletions, std::uint64_t const Value)
+	{
+		if (generation_handle == nullptr)
+		{
+			return;
+		}
+		auto *old{generation_handle};
+		generation_handle = nullptr;
+		generation_made = generation_feature{};
+		if (Deletions != nullptr)
+		{
+			Deletions->push(Value, [old]() { NVSDK_NGX_VULKAN_ReleaseFeature(old); });
+		}
+		else
+		{
+			NVSDK_NGX_VULKAN_ReleaseFeature(old);
+		}
+	}
+
 	void release(deletion_queue *Deletions, std::uint64_t const Value)
 	{
 		if (handle == nullptr)
@@ -386,22 +553,50 @@ bool dlss::compiled()
 	return true;
 }
 
+namespace
+{
+
+// the features of ngx the renderer uses: the super resolution, and the frame generation where it's asked for
+std::vector<NVSDK_NGX_Feature> wanted_features()
+{
+	std::vector<NVSDK_NGX_Feature> features{NVSDK_NGX_Feature_SuperSampling};
+	if (Global.gfx_framegeneration > 1)
+	{
+		features.push_back(NVSDK_NGX_Feature_FrameGeneration);
+	}
+	return features;
+}
+
+void add_extensions(VkExtensionProperties const *Properties, std::uint32_t const Count, std::vector<std::string> &Extensions)
+{
+	for (std::uint32_t i = 0; i < Count; ++i)
+	{
+		std::string const name{Properties[i].extensionName};
+		if (std::find(Extensions.begin(), Extensions.end(), name) == Extensions.end())
+		{
+			Extensions.push_back(name);
+		}
+	}
+}
+
+} // namespace
+
 void dlss::instance_extensions(std::vector<std::string> &Extensions)
 {
 	state temporary;
 	temporary.prepare_paths();
-	auto const info{temporary.discovery()};
-	std::uint32_t count{0};
-	VkExtensionProperties *properties{nullptr};
-	auto const result{NVSDK_NGX_VULKAN_GetFeatureInstanceExtensionRequirements(&info, &count, &properties)};
-	if (NVSDK_NGX_FAILED(result))
+	for (auto const feature : wanted_features())
 	{
-		log_warning("dlss: the instance extensions it needs can't be had from ngx: " + result_text(result));
-		return;
-	}
-	for (std::uint32_t i = 0; i < count; ++i)
-	{
-		Extensions.emplace_back(properties[i].extensionName);
+		auto const info{temporary.discovery(feature)};
+		std::uint32_t count{0};
+		VkExtensionProperties *properties{nullptr};
+		auto const result{NVSDK_NGX_VULKAN_GetFeatureInstanceExtensionRequirements(&info, &count, &properties)};
+		if (NVSDK_NGX_FAILED(result))
+		{
+			log_warning(std::string("dlss: the instance extensions ") + (feature == NVSDK_NGX_Feature_FrameGeneration ? "its frame generation" : "it") + " needs can't be had from ngx: " + result_text(result));
+			continue;
+		}
+		add_extensions(properties, count, Extensions);
 	}
 }
 
@@ -409,18 +604,18 @@ void dlss::device_extensions(VkInstance const Instance, VkPhysicalDevice const P
 {
 	state temporary;
 	temporary.prepare_paths();
-	auto const info{temporary.discovery()};
-	std::uint32_t count{0};
-	VkExtensionProperties *properties{nullptr};
-	auto const result{NVSDK_NGX_VULKAN_GetFeatureDeviceExtensionRequirements(Instance, Physical, &info, &count, &properties)};
-	if (NVSDK_NGX_FAILED(result))
+	for (auto const feature : wanted_features())
 	{
-		log_warning("dlss: the device extensions it needs can't be had from ngx: " + result_text(result));
-		return;
-	}
-	for (std::uint32_t i = 0; i < count; ++i)
-	{
-		Extensions.emplace_back(properties[i].extensionName);
+		auto const info{temporary.discovery(feature)};
+		std::uint32_t count{0};
+		VkExtensionProperties *properties{nullptr};
+		auto const result{NVSDK_NGX_VULKAN_GetFeatureDeviceExtensionRequirements(Instance, Physical, &info, &count, &properties)};
+		if (NVSDK_NGX_FAILED(result))
+		{
+			log_warning(std::string("dlss: the device extensions ") + (feature == NVSDK_NGX_Feature_FrameGeneration ? "its frame generation" : "it") + " needs can't be had from ngx: " + result_text(result));
+			continue;
+		}
+		add_extensions(properties, count, Extensions);
 	}
 }
 
@@ -477,6 +672,47 @@ bool dlss::init(VkInstance const Instance, VkPhysicalDevice const Physical, VkDe
 		return false;
 	}
 	s.available = true;
+	// the frame generation, where it's asked for; without it dlss goes on alone
+	if (Global.gfx_framegeneration > 1)
+	{
+		std::string reason;
+		int fg{0};
+		int fgupdate{0};
+		unsigned int framesmax{0};
+		if (NVSDK_NGX_SUCCEED(s.parameters->Get(NVSDK_NGX_Parameter_FrameGeneration_NeedsUpdatedDriver, &fgupdate)) && (fgupdate != 0))
+		{
+			unsigned int major{0}, minor{0};
+			s.parameters->Get(NVSDK_NGX_Parameter_FrameGeneration_MinDriverVersionMajor, &major);
+			s.parameters->Get(NVSDK_NGX_Parameter_FrameGeneration_MinDriverVersionMinor, &minor);
+			reason = "the graphics driver is too old for it, it needs " + std::to_string(major) + "." + std::to_string(minor) + " or newer";
+		}
+		else if (NVSDK_NGX_FAILED(s.parameters->Get(NVSDK_NGX_Parameter_FrameGeneration_Available, &fg)) || (fg == 0))
+		{
+			reason = "it isn't available on this gpu (it needs a geforce rtx of the 40 series or newer) or with this driver";
+		}
+		else if (NVSDK_NGX_FAILED(NVSDK_NGX_VULKAN_AllocateParameters(&s.generation_parameters)) || (s.generation_parameters == nullptr))
+		{
+			s.generation_parameters = nullptr;
+			reason = "ngx gives no parameters for it";
+		}
+		else
+		{
+			// more than one frame between two (x3, x4) from the rtx 50 series on
+			if (NVSDK_NGX_FAILED(s.parameters->Get(NVSDK_NGX_DLSSG_Parameter_MultiFrameCountMax, &framesmax)) || (framesmax < 1))
+			{
+				framesmax = 1;
+			}
+			s.generation_max = std::min(framesmax, 3u);
+		}
+		if (s.generation_max == 0)
+		{
+			log_info("gfx.framegeneration: " + reason + ", the frames aren't generated");
+		}
+		else
+		{
+			log_info("dlss: the frame generation can make up to " + std::to_string(s.generation_max) + (s.generation_max == 1 ? " frame" : " frames") + " between two (x" + std::to_string(s.generation_max + 1) + ")");
+		}
+	}
 	return true;
 }
 
@@ -487,8 +723,15 @@ void dlss::shutdown()
 	{
 		return;
 	}
-	// the gpu is idle: the feature goes at once
+	// the gpu is idle: the features go at once
 	s.release(nullptr, 0);
+	s.release_generation(nullptr, 0);
+	if (s.generation_parameters != nullptr)
+	{
+		NVSDK_NGX_VULKAN_DestroyParameters(s.generation_parameters);
+	}
+	s.generation_parameters = nullptr;
+	s.generation_max = 0;
 	if (s.parameters != nullptr)
 	{
 		NVSDK_NGX_VULKAN_DestroyParameters(s.parameters);
@@ -643,6 +886,125 @@ void dlss::evaluate(command_stream &Commands, frame_inputs const &Inputs, deleti
 	Commands.external(&state::record, &s);
 }
 
+std::uint32_t dlss::generation_max() const
+{
+	auto const &s{*m_state};
+	return (s.available ? s.generation_max : 0);
+}
+
+bool dlss::generation_failed() const
+{
+	return m_state->seen_generation_failed;
+}
+
+namespace
+{
+
+// a matrix of glm (columns of column vectors) as ngx takes it: rows, for row vectors multiplied by it from the left, which is the
+// same memory
+void ngx_matrix(glm::mat4 const &Matrix, float (&Target)[4][4])
+{
+	std::memcpy(Target, &Matrix[0][0], sizeof(Target));
+}
+
+} // namespace
+
+void dlss::generate(command_stream &Commands, generation_inputs const &Inputs, deletion_queue &Deletions, std::uint64_t const Value)
+{
+	auto &s{*m_state};
+	if ((false == s.available) || (s.generation_max == 0) || (Inputs.backbuffer == nullptr) || (Inputs.depth == nullptr) || (Inputs.motion == nullptr) || Inputs.outputs.empty())
+	{
+		return;
+	}
+	state::generation_feature feature;
+	feature.output = {static_cast<int>(Inputs.backbuffer->desc().extent.width), static_cast<int>(Inputs.backbuffer->desc().extent.height)};
+	feature.render = {static_cast<int>(Inputs.depth->desc().extent.width), static_cast<int>(Inputs.depth->desc().extent.height)};
+	feature.format = Inputs.backbuffer->desc().format;
+	if ((s.generation_handle != nullptr) && (false == (feature == s.generation_made)))
+	{
+		s.release_generation(&Deletions, Value);
+	}
+	s.generation_wanted = feature;
+	auto const describe = [](image const *Image, state::resource &Resource) {
+		Resource.valid = (Image != nullptr);
+		if (Image == nullptr)
+		{
+			return;
+		}
+		Resource.image = Image->handle();
+		Resource.view = Image->view();
+		Resource.format = Image->desc().format;
+		Resource.aspect = Image->aspect();
+		Resource.width = Image->desc().extent.width;
+		Resource.height = Image->desc().extent.height;
+	};
+	describe(Inputs.backbuffer, s.backbuffer);
+	describe(Inputs.hudless, s.hudless);
+	describe(Inputs.depth, s.generation_depth);
+	describe(Inputs.motion, s.generation_motion);
+	s.generated.resize(std::min<std::size_t>(Inputs.outputs.size(), s.generation_max));
+	for (std::size_t i = 0; i < s.generated.size(); ++i)
+	{
+		describe(Inputs.outputs[i], s.generated[i]);
+	}
+
+	auto &options{s.generation_options};
+	options = NVSDK_NGX_DLSSG_Opt_Eval_Params{};
+	// the clip space of the renderer has its rows from the bottom of the picture up, as the images; the images the frame generation
+	// is given are turned over, and its clip space (that of d3d12, y up the picture) is the one of the renderer as it is. the debug
+	// window turns it over for the other way
+	glm::mat4 flip{1.f};
+	if (s.generation_clip_flip)
+	{
+		flip[1][1] = -1.f;
+	}
+	auto const viewtoclip{flip * Inputs.view_to_clip};
+	auto const cliptoprevious{flip * Inputs.clip_to_previous_clip * flip};
+	ngx_matrix(viewtoclip, options.cameraViewToClip);
+	ngx_matrix(glm::inverse(viewtoclip), options.clipToCameraView);
+	ngx_matrix(glm::mat4{1.f}, options.clipToLensClip);
+	ngx_matrix(cliptoprevious, options.clipToPrevClip);
+	ngx_matrix(glm::inverse(cliptoprevious), options.prevClipToClip);
+	// the offset as dlss takes it, along the rows turned over
+	auto const jitter{Inputs.jitter * glm::vec2{s.flip_x ? -1.f : 1.f, s.flip_y ? 1.f : -1.f}};
+	options.jitterOffset[0] = jitter.x;
+	options.jitterOffset[1] = jitter.y;
+	// the velocities are parts of the image along the rows of the renderer: pixels of the image turned over
+	options.mvecScale[0] = static_cast<float>(s.generation_depth.width);
+	options.mvecScale[1] = -static_cast<float>(s.generation_depth.height);
+	options.cameraPinholeOffset[0] = 0.f;
+	options.cameraPinholeOffset[1] = 0.f;
+	for (int i = 0; i < 3; ++i)
+	{
+		options.cameraPos[i] = Inputs.position[i];
+		options.cameraUp[i] = Inputs.up[i];
+		options.cameraRight[i] = Inputs.right[i];
+		options.cameraFwd[i] = Inputs.forward[i];
+	}
+	options.cameraNear = Inputs.znear;
+	options.cameraFar = Inputs.zfar;
+	options.cameraFOV = Inputs.fov;
+	options.cameraAspectRatio = Inputs.aspect;
+	options.colorBuffersHDR = false;
+	options.depthInverted = true;
+	options.cameraMotionIncluded = true;
+	options.reset = Inputs.reset || s.generation_reset_wanted;
+	s.generation_reset_wanted = false;
+	options.automodeOverrideReset = false;
+	options.notRenderingGameFrames = false;
+	options.orthoProjection = false;
+	// no value the velocities have marks them as missing
+	options.motionVectorsInvalidValue = FLT_MAX;
+	options.motionVectorsDilated = false;
+	options.menuDetectionEnabled = false;
+	options.mvecsSubrectSize = {s.generation_motion.width, s.generation_motion.height};
+	options.depthSubrectSize = {s.generation_depth.width, s.generation_depth.height};
+	options.hudLessSubrectSize = {s.hudless.width, s.hudless.height};
+	options.backbufferSubrectSize = {s.backbuffer.width, s.backbuffer.height};
+	options.outputInterpSubrectSize = {s.backbuffer.width, s.backbuffer.height};
+	Commands.external(&state::record_generation, &s);
+}
+
 std::string dlss::sync()
 {
 	auto &s{*m_state};
@@ -650,12 +1012,19 @@ std::string dlss::sync()
 	s.seen_error = s.error;
 	s.seen_feature = ((s.handle != nullptr) ? s.made : s.wanted);
 	s.seen_memory = s.memory;
-	if ((false == s.failed) || s.error_told)
+	s.seen_generation_failed = s.generation_failed;
+	s.seen_generations = s.generations;
+	if (s.failed && (false == s.error_told))
 	{
-		return {};
+		s.error_told = true;
+		return s.error;
 	}
-	s.error_told = true;
-	return s.error;
+	if (s.generation_failed && (false == s.generation_error_told))
+	{
+		s.generation_error_told = true;
+		return s.generation_error;
+	}
+	return {};
 }
 
 bool dlss::failed() const
@@ -682,7 +1051,10 @@ std::string dlss::info() const
 	// the presets l and m take no exposure, they work it out themselves (the dlss programming guide, 3.9)
 	return std::string("dlss: ") + mode_name(feature.mode) + ", preset " + preset_name(feature.preset) + ", " + std::to_string(feature.render.x) + "x" + std::to_string(feature.render.y) + " to " + std::to_string(feature.output.x) + "x" +
 	       std::to_string(feature.output.y) + ((feature.flags & NVSDK_NGX_DLSS_Feature_Flags_AutoExposure) != 0 ? ", its own exposure" : ", given the exposure of the tonemapping") + ", " +
-	       std::to_string(s.seen_memory / (1024 * 1024)) + " MiB";
+	       std::to_string(s.seen_memory / (1024 * 1024)) + " MiB" +
+	       (s.generation_max == 0       ? std::string{}
+	        : s.seen_generation_failed ? ", the frame generation off after an error"
+	                                   : ", the frame generation up to x" + std::to_string(s.generation_max + 1) + " (" + std::to_string(s.seen_generations) + " frames generated from)");
 }
 
 void dlss::draw_debug_ui()
@@ -699,6 +1071,15 @@ void dlss::draw_debug_ui()
 	if (ImGui::Button("dlss: drop its history"))
 	{
 		s.reset_wanted = true;
+	}
+	if (s.generation_max > 0)
+	{
+		ImGui::Checkbox("frame generation: the clip space of its matrices turned over", &s.generation_clip_flip);
+		ImGui::SameLine();
+		if (ImGui::Button("drop its history"))
+		{
+			s.generation_reset_wanted = true;
+		}
 	}
 }
 
@@ -750,6 +1131,18 @@ std::uint32_t dlss::jitter_phases() const
 }
 
 void dlss::evaluate(command_stream &, frame_inputs const &, deletion_queue &, std::uint64_t) {}
+
+std::uint32_t dlss::generation_max() const
+{
+	return 0;
+}
+
+bool dlss::generation_failed() const
+{
+	return false;
+}
+
+void dlss::generate(command_stream &, generation_inputs const &, deletion_queue &, std::uint64_t) {}
 
 std::string dlss::sync()
 {

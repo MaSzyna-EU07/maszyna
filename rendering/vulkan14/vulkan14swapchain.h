@@ -16,6 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14common.h"
 #include "rendering/vulkan14/vulkan14passes.h"
 
+#include <algorithm>
+
 namespace vk14
 {
 
@@ -39,10 +41,31 @@ class swapchain
 
 	// the surface of the window and, when the window isn't minimized, the swapchain. Frames: frames in flight
 	bool create(instance const &Instance, device const &Device, GLFWwindow *Window, std::string const &Name, std::uint32_t const Frames, std::string &Reason);
+	// before create(): the most images generated (dlss frame generation) shown with each frame drawn, which the swapchain has room
+	// for, and the low latency mode of reflex (0 off, 1 on, 2 boost; where the device has VK_NV_low_latency2)
+	void set_generated(std::uint32_t const Count)
+	{
+		m_generatedcapacity = Count;
+	}
+	void set_low_latency(int const Mode)
+	{
+		m_lowlatency = Mode;
+	}
+	// reflex is on for the swapchain
+	bool low_latency() const
+	{
+		return m_lowlatencyon;
+	}
+	// reflex: the sleep of the driver before the simulation of a frame (once between two presents), Semaphore (a timeline) gets
+	// Value when it's over; false: no sleep, nothing to wait for. the main thread only
+	bool latency_sleep(VkSemaphore Semaphore, std::uint64_t Value) const;
+	// reflex: the point Marker of the frame with the id PresentId reached
+	void latency_marker(std::uint64_t PresentId, VkLatencyMarkerNV Marker) const;
 	void destroy();
 
-	// the image of the frame Frame (index of the frame in flight)
-	acquire_result acquire(std::uint32_t const Frame);
+	// the image of the frame Frame (index of the frame in flight), and Generated more for the frames generated from it, which are
+	// shown before it (as many of them as there is room for, generated_count())
+	acquire_result acquire(std::uint32_t const Frame, std::uint32_t const Generated = 0);
 	// the image acquired, from undefined to cleared with Colour (linear) and ready to be shown
 	void record_clear(command_stream *Commands, glm::vec4 const &Colour) const;
 	// the image acquired and its view
@@ -62,7 +85,7 @@ class swapchain
 	// the semaphore signalled when the image of the frame Frame is acquired
 	VkSemaphore acquire_semaphore(std::uint32_t const Frame) const
 	{
-		return m_acquiresemaphores[Frame];
+		return m_acquiresemaphores[Frame * (1 + m_generatedcapacity)];
 	}
 	// the semaphore the presentation of the acquired image waits for
 	VkSemaphore present_semaphore() const
@@ -79,6 +102,40 @@ class swapchain
 	}
 	// the result of the presentation of the image: out of date or suboptimal makes the swapchain anew before the next image
 	void presented(VkResult const Result);
+	// the most images of the generated frames it can acquire with an image (as made, within what the program may hold at once)
+	std::uint32_t generated_room() const
+	{
+		return std::min(m_generatedcapacity, m_acquirable - 1);
+	}
+	// the images acquired for the generated frames of the frame, in the order they are shown
+	std::uint32_t generated_count() const
+	{
+		return static_cast<std::uint32_t>(m_generated.size());
+	}
+	VkImage generated_image(std::uint32_t const Index) const
+	{
+		return m_images[m_generated[Index]];
+	}
+	VkImageView generated_view(std::uint32_t const Index) const
+	{
+		return m_views[m_generated[Index]];
+	}
+	std::uint32_t generated_index(std::uint32_t const Index) const
+	{
+		return m_generated[Index];
+	}
+	image_use generated_use(std::uint32_t const Index, VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access)
+	{
+		return image_use{m_images[m_generated[Index]], VK_IMAGE_ASPECT_COLOR_BIT, &m_states[m_generated[Index]], Layout, Stage, Access};
+	}
+	VkSemaphore generated_acquire_semaphore(std::uint32_t const Frame, std::uint32_t const Index) const
+	{
+		return m_acquiresemaphores[Frame * (1 + m_generatedcapacity) + 1 + Index];
+	}
+	VkSemaphore generated_present_semaphore(std::uint32_t const Index) const
+	{
+		return m_presentsemaphores[m_generated[Index]];
+	}
 
 	GLFWwindow *window() const
 	{
@@ -131,9 +188,16 @@ class swapchain
 	std::vector<VkImageView> m_views;
 	// one per image: a semaphore given to the presentation can be reused only once the image comes back
 	std::vector<VkSemaphore> m_presentsemaphores;
-	// one per frame in flight: free again once the frame which waited for it is done
+	// one per frame in flight (and one more for each generated frame): free again once the frame which waited for it is done
 	std::vector<VkSemaphore> m_acquiresemaphores;
 	std::uint32_t m_image{0};
+	// the generated frames: room for them, the images acquired for them in this frame
+	std::uint32_t m_generatedcapacity{0};
+	std::uint32_t m_acquirable{1};
+	std::vector<std::uint32_t> m_generated;
+	// reflex: asked for, and on for the swapchain made
+	int m_lowlatency{0};
+	bool m_lowlatencyon{false};
 };
 
 } // namespace vk14

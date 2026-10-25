@@ -94,8 +94,8 @@ bool swapchain::create(instance const &Instance, device const &Device, GLFWwindo
 
 	VkSemaphoreCreateInfo semaphoreinfo{};
 	semaphoreinfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	m_acquiresemaphores.assign(Frames, VK_NULL_HANDLE);
-	for (std::uint32_t i = 0; i < Frames; ++i)
+	m_acquiresemaphores.assign(Frames * (1 + m_generatedcapacity), VK_NULL_HANDLE);
+	for (std::uint32_t i = 0; i < m_acquiresemaphores.size(); ++i)
 	{
 		if (!VK14_VERIFY(vkCreateSemaphore(Device.handle(), &semaphoreinfo, nullptr, &m_acquiresemaphores[i])))
 		{
@@ -210,7 +210,8 @@ bool swapchain::build(std::string &Reason)
 		}
 	}
 
-	auto imagecount{capabilities.minImageCount + 1};
+	// with the generated frames one image more for each of them: all the images of a frame are acquired at once
+	auto imagecount{capabilities.minImageCount + 1 + m_generatedcapacity};
 	if (capabilities.maxImageCount > 0)
 	{
 		imagecount = std::min(imagecount, capabilities.maxImageCount);
@@ -253,6 +254,15 @@ bool swapchain::build(std::string &Reason)
 	create.presentMode = presentmode;
 	create.clipped = VK_TRUE;
 	create.oldSwapchain = oldswapchain;
+	// reflex (VK_NV_low_latency2) is told about the swapchain when it's made
+	VkSwapchainLatencyCreateInfoNV latency{};
+	latency.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV;
+	latency.latencyModeEnable = VK_TRUE;
+	auto const lowlatency{(m_lowlatency > 0) && m_device->low_latency_enabled()};
+	if (lowlatency)
+	{
+		create.pNext = &latency;
+	}
 
 	VkSwapchainKHR swapchain{VK_NULL_HANDLE};
 	auto const created{vkCreateSwapchainKHR(device, &create, nullptr, &swapchain)};
@@ -267,6 +277,21 @@ bool swapchain::build(std::string &Reason)
 		return false;
 	}
 	m_swapchain = swapchain;
+	m_lowlatencyon = false;
+	if (lowlatency && (vkSetLatencySleepModeNV != nullptr))
+	{
+		VkLatencySleepModeInfoNV mode{};
+		mode.sType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV;
+		mode.lowLatencyMode = VK_TRUE;
+		mode.lowLatencyBoost = (m_lowlatency > 1 ? VK_TRUE : VK_FALSE);
+		mode.minimumIntervalUs = 0;
+		auto const result{vkSetLatencySleepModeNV(device, m_swapchain, &mode)};
+		m_lowlatencyon = (result == VK_SUCCESS);
+		if (false == m_lowlatencyon)
+		{
+			log_warning(m_name + ": reflex can't be turned on (" + result_string(result) + ")");
+		}
+	}
 	m_format = chosen.format;
 	m_colorspace = chosen.colorSpace;
 	m_presentmode = presentmode;
@@ -281,6 +306,8 @@ bool swapchain::build(std::string &Reason)
 	vkGetSwapchainImagesKHR(device, m_swapchain, &count, nullptr);
 	m_images.resize(count);
 	vkGetSwapchainImagesKHR(device, m_swapchain, &count, m_images.data());
+	// the images the program may hold acquired at once (an acquire which waits without end may be done only within them)
+	m_acquirable = (count > capabilities.minImageCount ? count - capabilities.minImageCount : 1);
 	m_states.assign(count, image_state{});
 
 	VkSemaphoreCreateInfo semaphoreinfo{};
@@ -309,8 +336,9 @@ bool swapchain::build(std::string &Reason)
 	return true;
 }
 
-swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame)
+swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame, std::uint32_t const Generated)
 {
+	m_generated.clear();
 	if (outdated())
 	{
 		std::string reason;
@@ -325,7 +353,7 @@ swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame)
 		return acquire_result::skipped;
 	}
 
-	auto const result{vkAcquireNextImageKHR(m_device->handle(), m_swapchain, UINT64_MAX, m_acquiresemaphores[Frame], VK_NULL_HANDLE, &m_image)};
+	auto const result{vkAcquireNextImageKHR(m_device->handle(), m_swapchain, UINT64_MAX, acquire_semaphore(Frame), VK_NULL_HANDLE, &m_image)};
 	if ((result == VK_SUCCESS) || (result == VK_SUBOPTIMAL_KHR))
 	{
 		// what the image held is of no use; its use waits for the acquire semaphore, which the submit waits for at the colour output
@@ -334,6 +362,28 @@ swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame)
 			m_states.resize(m_images.size());
 		}
 		m_states[m_image] = image_state{VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE};
+	}
+	// the images of the generated frames, shown before the one drawn; the swapchain has one image more for each of them, so the
+	// images of a frame can all be acquired. one which can't be had leaves fewer of them
+	if ((result == VK_SUCCESS) || (result == VK_SUBOPTIMAL_KHR))
+	{
+		auto const room{std::min(std::min(Generated, m_generatedcapacity), m_acquirable - 1)};
+		for (std::uint32_t i = 0; i < room; ++i)
+		{
+			std::uint32_t image{0};
+			auto const extra{vkAcquireNextImageKHR(m_device->handle(), m_swapchain, UINT64_MAX, generated_acquire_semaphore(Frame, i), VK_NULL_HANDLE, &image)};
+			if ((extra != VK_SUCCESS) && (extra != VK_SUBOPTIMAL_KHR))
+			{
+				m_rebuild = true;
+				break;
+			}
+			if (extra == VK_SUBOPTIMAL_KHR)
+			{
+				m_rebuild = true;
+			}
+			m_states[image] = image_state{VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE};
+			m_generated.push_back(image);
+		}
 	}
 	switch (result)
 	{
@@ -351,6 +401,39 @@ swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame)
 	}
 	log_error(std::string("vkAcquireNextImageKHR of ") + m_name + " failed with " + result_string(result));
 	return acquire_result::failed;
+}
+
+bool swapchain::latency_sleep(VkSemaphore const Semaphore, std::uint64_t const Value) const
+{
+	if ((false == m_lowlatencyon) || (m_swapchain == VK_NULL_HANDLE) || (vkLatencySleepNV == nullptr))
+	{
+		return false;
+	}
+	// minimized: nothing is presented, the driver has nothing to measure (the main thread, as glfw wants)
+	int width{0}, height{0};
+	glfwGetFramebufferSize(m_window, &width, &height);
+	if ((width <= 0) || (height <= 0))
+	{
+		return false;
+	}
+	VkLatencySleepInfoNV info{};
+	info.sType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV;
+	info.signalSemaphore = Semaphore;
+	info.value = Value;
+	return (vkLatencySleepNV(m_device->handle(), m_swapchain, &info) == VK_SUCCESS);
+}
+
+void swapchain::latency_marker(std::uint64_t const PresentId, VkLatencyMarkerNV const Marker) const
+{
+	if ((false == m_lowlatencyon) || (m_swapchain == VK_NULL_HANDLE) || (vkSetLatencyMarkerNV == nullptr))
+	{
+		return;
+	}
+	VkSetLatencyMarkerInfoNV info{};
+	info.sType = VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV;
+	info.presentID = PresentId;
+	info.marker = Marker;
+	vkSetLatencyMarkerNV(m_device->handle(), m_swapchain, &info);
 }
 
 void swapchain::presented(VkResult const Result)
@@ -456,6 +539,7 @@ void swapchain::destroy()
 	}
 	m_swapchain = VK_NULL_HANDLE;
 	m_acquiresemaphores.clear();
+	m_generated.clear();
 	if ((m_surface != VK_NULL_HANDLE) && (m_instance != nullptr) && (m_instance->handle() != VK_NULL_HANDLE))
 	{
 		vkDestroySurfaceKHR(m_instance->handle(), m_surface, nullptr);

@@ -102,15 +102,26 @@ the same entry.
 | `gfx.dlss.autoexposure yes/no` | `no` | DLSS works the exposure out itself instead of being given the exposure of the tonemapping |
 | `gfx.dlss.lodbias` | `0` | added to the bias of the mipmaps of the textures of the scene with DLSS, `log2(drawn / window) - 1` (less negative against moiré, more for sharper textures) |
 | `gfx.dlss.developer yes/no` | `no` | the development library of DLSS (`ngx_dev/` next to the program): its indicator and the debug keys of the DLSS programming guide (Ctrl+Alt+F12 debug views, Ctrl+Alt+F9 jitter configurations) |
+| `gfx.framegeneration off/x2/x3/x4` | `off` | DLSS Frame Generation of the Vulkan renderer, with `dlss` or `dlaa`: one (`x2`) to three (`x4`) frames made by DLSS between two frames drawn, shown before the frame drawn and spaced over the time of a frame. Needs a GeForce RTX of the 40 series (`x2`) or the 50 series (`x3`, `x4`; a gpu which can't is given the most it can) and `nvngx_dlssg.dll` / `libnvidia-ngx-dlssg.so.<version>` next to the program; otherwise the frames aren't generated (the log says why). Turns on Reflex. The presents are spaced by the render thread (`gfx.vulkan.renderthread`); without it they go at once, which works with vsync. The motion blur is shortened as many times. Read at the start |
+| `gfx.reflex off/on/boost` | `off` | NVIDIA Reflex of the Vulkan renderer (`VK_NV_low_latency2`): the driver keeps the cpu from running ahead of the gpu, the main loop waits for it before the input of a frame; `boost` keeps the clocks of the gpu up too. On by itself with `gfx.framegeneration`. Read at the start |
 
 DLSS needs the NVIDIA DLSS SDK at build time, which isn't in the repository (it keeps the binaries of every platform in
 git): `cmake -P tools/fetch_dlss_sdk.cmake` takes the headers and the libraries of the platform into `ref/DLSS`
 (ignored by git), then configure with `-DWITH_DLSS=ON` (`-DDLSS_SDK_ROOT=<dir>` for another place). The build copies
 `nvngx_dlss.dll` (Windows) or `libnvidia-ngx-dlss.so.<version>` (Linux) next to the program, where NGX looks for it,
-and the development library into `ngx_dev/`; a program copied elsewhere needs the library next to it. The velocities DLSS
+with `nvngx_dlssg.dll` / `libnvidia-ngx-dlssg.so.<version>` of the frame generation, and the development libraries into
+`ngx_dev/`; a program copied elsewhere needs the libraries next to it. The velocities DLSS
 is given are those of `taa`, the sky (which has none drawn) gets the motion of the camera; animated parts of models other
 than wheels (gauges, levers, wipers) have no velocity of their own yet. The debug window of the Vulkan renderer shows the
 mode and the sizes, and can turn the jitter offsets the other way (to check their direction) and drop the history.
+
+The frame generation is given the frame of the main window with the user interface and without it (the "hudless", so it
+tells the user interface apart), the depth and the velocities of the scene turned the way up of the window, and the
+camera without the jitter. It makes its frames into images of its own, copied to images of the swapchain acquired with
+the frame (the swapchain of the main window has one image more for each of them). If it fails, the frames it was to make
+are the frame drawn and it stays off. Its debug keys (Ctrl+Shift+V, Ctrl+Shift+T, see the DLSS-FG programming guide) are
+in the development library (`gfx.dlss.developer yes`); the debug window can turn the clip space of its matrices over,
+should its test of the matrices show the camera motion the wrong way.
 
 ### Ambient occlusion
 

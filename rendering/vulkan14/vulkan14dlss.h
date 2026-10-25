@@ -10,7 +10,11 @@ http://mozilla.org/MPL/2.0/.
 // nvidia dlss (the super resolution of the ngx sdk, built with WITH_DLSS) of the main viewport, gfx.antialiasing dlss: the colour of
 // the scene with its depth and velocities, drawn at the size gfx.buffer.percent gives, anti-aliased and upscaled to the size of the
 // window. dlaa is the same at the full size. the sdk isn't part of the repository (tools/fetch_dlss_sdk.cmake, DLSS_SDK_ROOT); without
-// it dlss is never available and the renderer takes taa
+// it dlss is never available and the renderer takes taa.
+//
+// the frame generation of dlss (gfx.framegeneration x2|x3|x4, with dlss or dlaa) makes one to three frames between the last frame
+// and this one, from the images of both with the depth and the velocities; they are shown before this one, the presents spaced
+// over the time of a frame (vulkan14_renderer::context::present())
 
 #pragma once
 
@@ -48,6 +52,31 @@ class dlss
 		float frame_time{0.f}; // milliseconds
 	};
 
+	// what the frame generation is given, the images in the general layout: the backbuffer and the hudless the size and the format
+	// of the outputs (what the window shows, the rows from the top down), the depth and the velocities the size the scene is drawn
+	// at, turned over to the same way up (postfx_fg_flip.frag)
+	struct generation_inputs
+	{
+		image *backbuffer{nullptr}; // the frame as the window shows it, the user interface with it
+		image *hudless{nullptr}; // the same without the user interface
+		image *depth{nullptr}; // r32, reverse z
+		image *motion{nullptr}; // the velocities dlss takes, in parts of the image (uv) along the rows of the images of the renderer
+		std::vector<image *> outputs; // the frames generated, in the order they are shown
+		// the matrices without the offset of the frame, for the clip space of the image of the renderer (the rows from the bottom up)
+		glm::mat4 view_to_clip{1.f};
+		glm::mat4 clip_to_previous_clip{1.f};
+		glm::vec3 position{0.f}; // the camera in the world, and its axes
+		glm::vec3 up{0.f, 1.f, 0.f};
+		glm::vec3 right{1.f, 0.f, 0.f};
+		glm::vec3 forward{0.f, 0.f, -1.f};
+		float znear{0.1f};
+		float zfar{1000.f};
+		float fov{1.f}; // vertical, in radians
+		float aspect{1.f};
+		glm::vec2 jitter{0.f}; // as the frame_inputs, in pixels of the depth
+		bool reset{false};
+	};
+
 	dlss();
 	~dlss();
 	dlss(dlss const &) = delete;
@@ -79,6 +108,13 @@ class dlss
 	std::string sync();
 	// the feature couldn't be made or evaluated: dlss stays off from then on (as of the last sync())
 	bool failed() const;
+	// the most frames the frame generation makes between two frames drawn (1 for x2, 3 for x4), 0 where it isn't available (not
+	// asked for at the start, an older gpu than the rtx 40 series, the driver)
+	std::uint32_t generation_max() const;
+	// the frames between the last frame and this one recorded to Commands (Inputs.outputs.size() of them); where the feature can't be
+	// made or evaluated the outputs get the backbuffer and the frame generation stays off from then on (generation_failed())
+	void generate(command_stream &Commands, generation_inputs const &Inputs, deletion_queue &Deletions, std::uint64_t Value);
+	bool generation_failed() const;
 	// the mode and the sizes, for the statistics (as of the last sync())
 	std::string info() const;
 	// the part of the debug window

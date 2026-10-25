@@ -75,12 +75,14 @@ glm::mat4 gfx::temporal_aa::begin_frame(glm::mat4 const &Projection, glm::dmat3 
 		m_worldfuture = glm::mat4{projectionfix * world};
 		m_cabfuture = glm::mat4{projectionfix * cab};
 		m_reprojection = glm::mat4{previous * world * inverseprojection};
+		m_reprojectionnooffset = glm::mat4{m_previous.projection * world * glm::inverse(current.projection)};
 	}
 	else
 	{
 		m_worldfuture = glm::mat4{1.f};
 		m_cabfuture = glm::mat4{1.f};
 		m_reprojection = glm::mat4{1.f};
+		m_reprojectionnooffset = glm::mat4{1.f};
 	}
 	m_target = 1 - m_target;
 	m_previous = current;

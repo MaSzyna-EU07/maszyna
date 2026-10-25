@@ -109,6 +109,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	glm::dvec3 Camera_Position() const override;
 	// maintenance
 	void Update(double const Deltatime) override;
+	// reflex (gfx.reflex): the sleep of the driver before the simulation of the frame
+	void Frame_Start() override;
 	void Update_Pick_Control() override;
 	void Update_Pick_Node() override;
 	glm::dvec3 Update_Mouse_Position() override;
@@ -302,8 +304,14 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// the post-processing of a viewport: the motion blur, the tonemapping, the chromatic aberration
 	void render_post(std::size_t const Viewport, bool const Motionblur);
 	void render_dlss(std::size_t const Viewport);
-	// the output of a viewport to its window, with the user interface over it for the main window
-	void present_viewport(std::size_t const Viewport);
+	// the output of a viewport to its window (inside its rendering), or to Target (the images of the frame generation)
+	void present_viewport(std::size_t const Viewport, vk14::image const *Target = nullptr);
+	// the frame generation of dlss for the main window (gfx.framegeneration): its images ready for the size and the format of the
+	// window, the depth and the velocities of the scene turned over for it; the frames generated, then the frames of the window
+	// copied to its images
+	bool prepare_generation(std::size_t const Viewport);
+	void flip_generation_inputs(std::size_t const Viewport);
+	void render_generation(std::size_t const Viewport);
 	// the light buffer of the pass: the sun, the ambient light, the fog, the headlights, the lamps (the clustered lights)
 	void update_lights(light_array &Lights, bool const Headlights = true, bool const Clustered = false);
 	void write_local_light(gl::light_element &Light, gfx::local_lights::light const &Source, glm::dvec3 const &Camera, glm::mat4 const &View);
@@ -439,6 +447,18 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	glm::ivec2 m_dlssrender{0};
 	glm::ivec2 m_dlssoutput{0};
 	bool m_dlssreset{true};
+	// the frame generation of dlss: the frames generated for each frame drawn as set at the start (0: off), and the frames of the
+	// frame being made (fewer, or none, where the window has no room for them or isn't ready); the matrices of the main view it takes
+	std::uint32_t m_generated{0};
+	std::uint32_t m_generatedframe{0};
+	bool m_generationinputs{false}; // the depth and the velocities of the frame are turned over for it
+	std::uint64_t m_generationframe{0}; // the last frame it made frames for
+	struct generation_camera
+	{
+		glm::mat4 projection{1.f};
+		glm::vec3 position{0.f};
+		glm::mat3 view{1.f};
+	} m_generationcamera;
 	void start_dlss();
 	// dlss is used for the main viewport this frame
 	bool dlss_active() const;

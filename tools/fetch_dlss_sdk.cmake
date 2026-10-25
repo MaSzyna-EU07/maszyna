@@ -1,5 +1,5 @@
 # fetches the parts of the NVIDIA DLSS SDK (github.com/NVIDIA/DLSS) the Vulkan renderer builds with (WITH_DLSS): the headers, the
-# static library of NGX and the DLSS library for the platform. the SDK keeps the binaries of every platform in git (hundreds of MB a
+# static library of NGX and the libraries of DLSS and of its frame generation for the platform. the SDK keeps the binaries of every platform in git (hundreds of MB a
 # release), so it isn't a submodule: this takes only the files needed, with a sparse checkout of one tag.
 #
 #   cmake -P tools/fetch_dlss_sdk.cmake [-DDLSS_SDK_ROOT=<dir>] [-DDLSS_SDK_TAG=<tag>] [-DDLSS_SDK_PLATFORMS=windows;linux] [-DDLSS_SDK_ARCH=x86_64|aarch64]
@@ -36,8 +36,8 @@ endif()
 find_package(Git REQUIRED)
 
 # the headers, the license, and for each platform the static library of ngx (the variants of the dynamic c runtime the program
-# builds with, /MD and /MDd) with the release and the development library of dlss (the latter shows the indicator and takes the
-# debug keys, gfx.dlss.developer)
+# builds with, /MD and /MDd) with the release and the development libraries of dlss and of its frame generation (the latter show
+# the indicator and take the debug keys, gfx.dlss.developer)
 set(patterns "/include/" "/LICENSE.txt")
 foreach(platform IN LISTS DLSS_SDK_PLATFORMS)
 	if(platform STREQUAL "windows")
@@ -50,12 +50,16 @@ foreach(platform IN LISTS DLSS_SDK_PLATFORMS)
 			"${static}/nvsdk_ngx_d.lib"
 			"${static}/nvsdk_ngx_d_dbg.lib"
 			"/lib/Windows_${DLSS_SDK_ARCH}/rel/nvngx_dlss.dll"
-			"/lib/Windows_${DLSS_SDK_ARCH}/dev/nvngx_dlss.dll")
+			"/lib/Windows_${DLSS_SDK_ARCH}/dev/nvngx_dlss.dll"
+			"/lib/Windows_${DLSS_SDK_ARCH}/rel/nvngx_dlssg.dll"
+			"/lib/Windows_${DLSS_SDK_ARCH}/dev/nvngx_dlssg.dll")
 	elseif(platform STREQUAL "linux")
 		list(APPEND patterns
 			"/lib/Linux_${DLSS_SDK_ARCH}/libnvsdk_ngx.a"
 			"/lib/Linux_${DLSS_SDK_ARCH}/rel/libnvidia-ngx-dlss.so.*"
-			"/lib/Linux_${DLSS_SDK_ARCH}/dev/libnvidia-ngx-dlss.so.*")
+			"/lib/Linux_${DLSS_SDK_ARCH}/dev/libnvidia-ngx-dlss.so.*"
+			"/lib/Linux_${DLSS_SDK_ARCH}/rel/libnvidia-ngx-dlssg.so.*"
+			"/lib/Linux_${DLSS_SDK_ARCH}/dev/libnvidia-ngx-dlssg.so.*")
 	else()
 		message(FATAL_ERROR "unknown platform \"${platform}\" in DLSS_SDK_PLATFORMS, expected windows or linux")
 	endif()

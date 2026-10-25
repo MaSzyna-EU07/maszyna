@@ -496,6 +496,7 @@ int eu07_application::run()
 	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
 	{
 		Timer::subsystem.mainloop_total.start();
+		GfxRenderer->Frame_Start();
 		Timer::subsystem.loop_input.start();
 		glfwPollEvents();
 

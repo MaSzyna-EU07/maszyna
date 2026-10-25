@@ -158,6 +158,8 @@ public:
     virtual auto Camera_Position() const -> glm::dvec3 { return glm::dvec3( 0.0 ); }
     // maintenance methods
     virtual void Update( double const Deltatime ) = 0;
+    // the main loop begins a frame, before it reads the input: a renderer keeping the latency low waits here (reflex of vulkan)
+    virtual void Frame_Start() {}
     virtual void Update_Pick_Control() = 0;
     virtual void Update_Pick_Node() = 0;
     virtual auto Update_Mouse_Position() -> glm::dvec3 = 0;

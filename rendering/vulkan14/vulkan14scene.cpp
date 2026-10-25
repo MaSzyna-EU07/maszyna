@@ -632,7 +632,7 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		}
 		if (Global.gfx_dlss())
 		{
-			for (auto const *name : {"postfx_dlss_motion.frag", "postfx_dlss_exposure.frag"})
+			for (auto const *name : {"postfx_dlss_motion.frag", "postfx_dlss_exposure.frag", "postfx_fg_flip.frag"})
 			{
 				scene.post_fragments.emplace(name, ctx.shaders.get(name));
 			}
@@ -831,6 +831,7 @@ void vulkan14_renderer::destroy_scene()
 	// the pipelines belong to the pipeline library
 	scene.materials.clear();
 	scene.targets.clear();
+	scene.generation = vk14::generation_targets{};
 	scene.white.reset();
 	scene.shadow_empty.reset();
 	scene.shadow_map.reset();

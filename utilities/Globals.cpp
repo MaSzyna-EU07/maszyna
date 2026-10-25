@@ -1962,6 +1962,22 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.dlss.autoexposure" ) { readswitch( gfx_dlss_autoexposure ); }
     else if( Token == "gfx.dlss.lodbias" ) { readvalue( gfx_dlss_lodbias, -2.f, 2.f ); }
     else if( Token == "gfx.dlss.developer" ) { readswitch( gfx_dlss_developer ); }
+    else if( Token == "gfx.framegeneration" ) {
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        std::transform( mode.begin(), mode.end(), mode.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        gfx_framegeneration = ( mode == "x2" || mode == "on" || mode == "yes" || mode == "2" ) ? 2 : ( mode == "x3" || mode == "3" ) ? 3 : ( mode == "x4" || mode == "4" ) ? 4 : 1;
+        if( ( gfx_framegeneration == 1 ) && ( mode != "off" ) && ( mode != "no" ) && ( mode != "1" ) ) {
+            ErrorLog( "Bad config: unknown gfx.framegeneration \"" + mode + "\", expected off, x2, x3 or x4" ); } }
+    else if( Token == "gfx.reflex" ) {
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        std::transform( mode.begin(), mode.end(), mode.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        gfx_reflex = ( mode == "on" || mode == "yes" || mode == "1" ) ? 1 : ( mode == "boost" || mode == "2" ) ? 2 : 0;
+        if( ( gfx_reflex == 0 ) && ( mode != "off" ) && ( mode != "no" ) && ( mode != "0" ) ) {
+            ErrorLog( "Bad config: unknown gfx.reflex \"" + mode + "\", expected off, on or boost" ); } }
     else if( Token == "gfx.fog.range" ) { readvalue( gfx_fog_range, 100.f, 10000.f ); }
     else if( Token == "gfx.fog.lights" ) { readvalue( gfx_fog_lights, 0.f, 10.f ); }
     else if( Token == "gfx.fog.shadows" ) { readswitch( gfx_fog_shadows ); }
@@ -2103,6 +2119,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.dlss.autoexposure", gfx_dlss_autoexposure );
     export_as_text( Output, "gfx.dlss.lodbias", gfx_dlss_lodbias );
     export_as_text( Output, "gfx.dlss.developer", gfx_dlss_developer );
+    export_as_text( Output, "gfx.framegeneration", std::string{ gfx_framegeneration > 1 ? "x" + std::to_string( gfx_framegeneration ) : "off" } );
+    export_as_text( Output, "gfx.reflex", std::string{ gfx_reflex == 2 ? "boost" : gfx_reflex == 1 ? "on" : "off" } );
     export_as_text( Output, "latitude", fLatitudeDeg );
     export_as_text( Output, "convertmodels", iConvertModels );
     export_as_text( Output, "file.binary.terrain", file_binary_terrain );

@@ -217,10 +217,13 @@ void imgui_backend::Release_Image(std::uint64_t const Image)
 	m_resources->images->remove(Image, *m_resources->deletions, m_resources->uploads->current_value());
 }
 
-void imgui_backend::record(command_stream *Commands, VkExtent2D Extent, VkFormat Format, bool Srgb)
+void imgui_backend::record(command_stream *Commands, VkExtent2D Extent, VkFormat Format, bool Srgb, bool const Keep)
 {
 	auto const *drawdata{m_drawdata};
-	m_drawdata = nullptr;
+	if (false == Keep)
+	{
+		m_drawdata = nullptr;
+	}
 	if ((drawdata == nullptr) || (drawdata->CmdListsCount == 0) || (drawdata->TotalVtxCount == 0) || (m_resources == nullptr))
 	{
 		return;
