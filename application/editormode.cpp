@@ -965,6 +965,8 @@ void editor_mode::restore_terrain(EditorSnapshot &Snapshot)
 void editor_mode::undo_last()
 {
     first_step_done(first_step::undo);
+    // the warning by the cursor told of the step taken back now: "Ctrl+Z takes it back" is done
+    ui()->drop_refusal();
     // a change of the terrain made a moment ago is a step of its own before it's taken back
     m_history_busy = true;
     terrain_history_step();

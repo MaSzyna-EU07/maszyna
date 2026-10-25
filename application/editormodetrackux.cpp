@@ -452,9 +452,12 @@ void editor_mode::draw_track_labels() const
 			labels.push_back({2, -length, middle, format(STR_C("straight %.0f m"), length), IM_COL32(200, 215, 230, 225)});
 			continue;
 		}
+		// a track bent by hand, as an S between two points dragged, has no radius to read: its length alone
 		editor_track::curve shape;
-		if (editor_track::analyse_curve(run, m_route.design.norms.gauge, shape) && shape.radius >= 0.5)
+		if (editor_track::analyse_curve(run, m_route.design.norms.gauge, shape) && shape.radius >= 0.5 && shape.radius <= 50000.0)
 			labels.push_back({1, shape.radius, middle, curve_text(shape), IM_COL32(235, 235, 235, 240)});
+		else
+			labels.push_back({2, -length, middle, format("L %.0f m", length), IM_COL32(235, 235, 235, 240)});
 	}
 	std::sort(labels.begin(), labels.end(), [](track_label const &A, track_label const &B) { return A.rank != B.rank ? A.rank < B.rank : A.order < B.order; });
 	// each label where it reads best: beside its track if it's free there, else moved out to the nearest room, a line leading back

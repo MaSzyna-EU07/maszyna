@@ -836,9 +836,11 @@ void TTrack::init_segments( bool const Initial ) {
         }
 
         // length2 is better than length for comparing because it does not require sqrt function
-        if( glm::length2((p1 + p1 + p2) / 3.0 - p1 - cp1) < sq(0.02)
-         || glm::length2((p1 + p2 + p2) / 3.0 - p2 + cp1) < sq(0.02) ) {
-            // "prostowanie" prostych z kontrolnymi, dokładność 2cm
+        // "prostowanie" prostych z kontrolnymi, dokładność 2cm: a straight only where both control vectors lie along it, or aren't
+        // given; one of them moved off it, the other one left where a straight has it, makes a curve
+        auto const startalong { cp1 == glm::dvec3() || glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 ) };
+        auto const endalong { cp2 == glm::dvec3() || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) };
+        if( startalong && endalong ) {
 			cp1 = cp2 = glm::dvec3(0, 0, 0);
         }
 

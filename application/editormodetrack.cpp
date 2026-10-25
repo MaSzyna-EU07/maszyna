@@ -2267,7 +2267,8 @@ void editor_mode::draw_build_overlay() const
 				projection.line(drawlist, origin + glm::dvec3{i * cell, 0.0, j * cell}, origin + glm::dvec3{(i + 1) * cell, 0.0, j * cell}, colour, 1.0f);
 		}
 	}
-	if (m_track_tab == track_tab::path && false == m_lay.active && false == m_track_gizmo_using)
+	// none while a point is dragged: there is nothing to split then
+	if (m_track_tab == track_tab::path && false == m_lay.active && false == m_track_gizmo_using && false == m_point_drag.active && false == m_handle_drag.active)
 		if (auto const spot{split_spot()}; spot.track != nullptr)
 		{
 			ImVec2 at;

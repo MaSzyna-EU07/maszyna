@@ -169,6 +169,8 @@ class editor_ui : public ui_layer
 	void set_status(std::string const &Status, bool const Error = false);
 	// a warning after an operation done: added to its status, shown by the cursor for a while
 	void set_notice(std::string const &Notice);
+	// the refusal or warning by the cursor taken away before its time, when what it tells of was taken back
+	void drop_refusal() { m_refusal.clear(); }
 
   private:
 	// methods
