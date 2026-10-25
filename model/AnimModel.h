@@ -237,6 +237,9 @@ public:
     // diagnostic counters (process-wide). Updated inside update_instanceable_flag()
     // so the renderer can surface load-time classification stats in the debug overlay.
     static int s_instanceable_total;       // count of TAnimModel*'s classified instanceable
+    // bumped whenever an instance loses its instanceable status after it was put in a scene cell (an event adds
+    // an animation container, or changes a skin); the cells rebuild their lists of instances drawn one by one then
+    static unsigned int s_instanceable_revoked;
     static int s_classified_total;         // count of TAnimModel*'s that ran through the classifier
     static int s_rejected_no_pmodel;
     static int s_rejected_lights;

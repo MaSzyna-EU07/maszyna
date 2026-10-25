@@ -252,6 +252,18 @@ public:
         // caches owned by the renderer; emptied whenever the content of the bucket changes
         mutable std::vector<instance_bounds> bounds; // copies for the instances, in the same order
         mutable unsigned int boundsversion { 0 };
+        // the largest rangesquaredmax of the copies - past it no instance of the bucket is drawn - and the version
+        // of the bounds it was taken with. set by the renderer before the cell is drawn, see Prepare_Instances()
+        float rangesquaredmax { 0.f };
+        unsigned int rangeversion { 0 };
+    };
+    // what the renderer keeps of the instances of the cell, set by it before the cell is drawn
+    struct instance_cache {
+        instance_sequence single; // the opaque instances drawn one by one, as they aren't instanceable
+        float rangesquaredmax { 0.f }; // the largest rangesquaredmax of the instance buckets
+        bool instancedonly { false }; // the cell holds nothing to draw but instances drawn with the instanced path
+        unsigned int boundsversion { 0 }; // version of the bounds of the renderer it was built with, 0: not built
+        unsigned int revoked { 0 }; // TAnimModel::s_instanceable_revoked at the time of the build
     };
     using instance_bucketdata_map = std::unordered_map< instance_bucket_key, instance_bucket, instance_bucket_key_hash >;
     using sound_sequence = std::vector<sound_source *>;
@@ -275,6 +287,7 @@ public:
     // m_instancesopaque for nodes whose TAnimModel::m_instanceable == true.
     // The renderer uses these to amortise per-model state setup across many instances.
     instance_bucketdata_map m_instancebuckets_opaque;
+    instance_cache m_instancecache;
     traction_sequence m_traction;
     sound_sequence m_sounds;
     eventlauncher_sequence m_eventlaunchers;
