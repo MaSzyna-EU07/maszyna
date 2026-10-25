@@ -2845,7 +2845,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 				}
 			}
 			// remaining (non-instanceable) opaque instance nodes go through the per-node path
-			for (auto *instance : cell->m_instancesopaque)
+			for (auto *instance : cell->instances_single())
 			{
 				if( instance->m_instanceable ) { continue; } // already handled via bucket
 				Render(instance);

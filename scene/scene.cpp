@@ -347,11 +347,31 @@ basic_cell::insert( TTraction *Traction ) {
     enclose_area( Traction );
 }
 
+// the opaque instances of the cell drawn one by one. built from m_instancesopaque when the content of the cell
+// changes, or when any instance lost its instanceable status since the last build
+basic_cell::instance_sequence const &
+basic_cell::instances_single() const {
+
+    if( ( false == m_instancessinglevalid )
+     || ( m_instancessinglerevoked != TAnimModel::s_instanceable_revoked ) ) {
+        m_instancessingle.clear();
+        for( auto *instance : m_instancesopaque ) {
+            if( false == instance->m_instanceable ) {
+                m_instancessingle.emplace_back( instance );
+            }
+        }
+        m_instancessinglevalid = true;
+        m_instancessinglerevoked = TAnimModel::s_instanceable_revoked;
+    }
+    return m_instancessingle;
+}
+
 // adds provided model instance to the cell
 void
 basic_cell::insert( TAnimModel *Instance ) {
 
     m_active = true;
+    m_instancessinglevalid = false;
 
     auto const flags = Instance->Flags();
     auto alpha =
@@ -453,6 +473,8 @@ basic_cell::unregister_end( TTrack *Path ) {
 // removes provided model instance from the cell
 void
 basic_cell::erase( TAnimModel *Instance ) {
+
+    m_instancessinglevalid = false;
 
     auto const flags = Instance->Flags();
     auto alpha =

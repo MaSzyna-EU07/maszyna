@@ -271,11 +271,18 @@ public:
     linesnode_sequence m_lines;
     path_sequence m_paths; // path pieces
     instance_sequence m_instancesopaque;
+    mutable instance_sequence m_instancessingle; // cache for instances_single()
+    mutable bool m_instancessinglevalid { false };
+    mutable unsigned int m_instancessinglerevoked { 0 }; // TAnimModel::s_instanceable_revoked at the time of its build
     instance_sequence m_instancetranslucent;
     // batched instance buckets keyed by shared TModel3d*; populated alongside
     // m_instancesopaque for nodes whose TAnimModel::m_instanceable == true.
     // The renderer uses these to amortise per-model state setup across many instances.
     instance_bucketdata_map m_instancebuckets_opaque;
+    // the opaque instances drawn one by one, as they aren't instanceable: the renderer goes through these
+    // instead of m_instancesopaque, which holds every instance of the cell - with many instanced ones (vegetation)
+    // going through all of them in each frame only to skip them took more time than drawing everything else
+    instance_sequence const &instances_single() const;
     traction_sequence m_traction;
     sound_sequence m_sounds;
     eventlauncher_sequence m_eventlaunchers;
