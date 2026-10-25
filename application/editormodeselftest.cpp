@@ -890,7 +890,7 @@ void editor_mode::selftest_step()
 						glm::dmat4 local{1.0};
 						for (auto *parent = submodel; parent != nullptr; parent = parent->Parent)
 							if ((parent->iFlags & 0xC000) != 0 && (parent->iFlags & 0x8000))
-								local = glm::dmat4(parent->GetMatrix()) * local;
+								local = glm::dmat4(parent->fMatrix) * local;
 						for (auto const &vertex : GfxRenderer->Vertices(submodel->m_geometry.handle))
 						{
 							auto const world{glm::dvec3(transform * local * glm::dvec4(glm::dvec3(vertex.position), 1.0))};

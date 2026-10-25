@@ -204,7 +204,6 @@ public:
 	TSubModel * GetFromName( std::string const &search, bool i = true );
     // text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order
     std::vector<TSubModel *> const & text_letters( std::string const &Text );
-	inline glm::mat4 GetMatrix() const { return fMatrix; };
     // returns offset vector from root
     glm::vec3 offset( float const Geometrytestoffsetthreshold = 0.f ) const;
     inline void Hide() { iVisible = 0; };

@@ -306,7 +306,7 @@ template <typename Visitor> void visit_triangles(TSubModel *Submodel, glm::dmat4
 			continue;
 		auto matrix{Matrix};
 		if ((submodel->iFlags & 0xC000) && (submodel->iFlags & 0x8000))
-			matrix *= glm::dmat4(submodel->GetMatrix());
+			matrix *= glm::dmat4(submodel->fMatrix);
 		if (submodel->eType == GL_TRIANGLES && submodel->m_geometry.handle != null_handle)
 		{
 			auto const &vertices{GfxRenderer->Vertices(submodel->m_geometry.handle)};
