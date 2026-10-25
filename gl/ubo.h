@@ -78,6 +78,9 @@ namespace gl
     // the depth of the opaque scene of the main view drawn before its colour, resolved, for the contact shadows (light_common.glsl).
     // bound directly, like the ones above
     const size_t SCENE_DEPTH_TEX = MAX_TEXTURES + HELPER_TEXTURES + 11;
+    // the image of the last frame of the main view with its mipmaps, which the screen space reflections take their colour from
+    // (light_common.glsl, gl::scene_ubs::ssr_params). bound directly, like the ones above
+    const size_t SSR_HISTORY_TEX = MAX_TEXTURES + HELPER_TEXTURES + 12;
 
     struct scene_ubs
     {
@@ -104,9 +107,26 @@ namespace gl
         // x: 1 when the cascades of the sun shadows are fitted to the depth of the view (gfx.shadow.sdsm, opengl46_shadow_fit):
         // a point outside the map of its cascade goes to the next cascade whose map holds it. yzw unused
         glm::vec4 shadow_fit;
+        // the screen space reflections (gfx.ssr, gfx::screen_reflections), set only for the colour pass of the main view, zero
+        // elsewhere: the view space of the pass to the clip space of the frame whose image the history (SSR_HISTORY_TEX) holds, for
+        // the world standing still and for the cab with its vehicle, which moves with the camera
+        glm::mat4 ssr_reprojection;
+        glm::mat4 ssr_reprojection_cab;
+        // the view space of the pass to the box around the vehicle of the cab, -1 .. 1 inside: what is in it is taken to the history
+        // with ssr_reprojection_cab
+        glm::mat4 ssr_cab_box;
+        // x: steps of a ray (0: off), y: the longest ray, metres, z: the roughest surface they're traced for, w: the noise of the
+        // frame, 0 .. 1
+        glm::vec4 ssr_params;
+        // x: the last level of the mipmaps of the history, y: 1 with the box of the cab, z: 1 when the ray tracing fills in what the
+        // screen doesn't hold (the vulkan renderer, gfx.raytracing), w: the longest traced ray, metres
+        glm::vec4 ssr_params2;
+        // the reflection of the surroundings the screen space reflections and the ray tracing don't find, for every pass: x: albedo
+        // of the ground below the horizon of the environment map (gfx.ambient.groundalbedo), yzw unused
+        glm::vec4 env_params;
     };
 
-    static_assert(sizeof(scene_ubs) == 448 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 688 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 

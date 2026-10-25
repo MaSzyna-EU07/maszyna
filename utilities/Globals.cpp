@@ -1888,6 +1888,20 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
             0; }
     else if( Token == "gfx.contactshadows.length" ) { readvalue( gfx_contactshadows_length, 0.05f, 5.f ); }
     else if( Token == "gfx.contactshadows.range" ) { readvalue( gfx_contactshadows_range, 1.f, 1000.f ); }
+    else if( Token == "gfx.ssr" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_ssr =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.ssr.range" ) { readvalue( gfx_ssr_range, 10.f, 2000.f ); }
+    else if( Token == "gfx.ssr.roughness" ) { readvalue( gfx_ssr_roughness, 0.f, 1.f ); }
+    else if( Token == "gfx.raytracing" ) { readswitch( gfx_raytracing ); }
+    else if( Token == "gfx.raytracing.range" ) { readvalue( gfx_raytracing_range, 10.f, 5000.f ); }
     else if( Token == "gfx.fog" ) {
         // volumetric (yes) or analytic (no, old): the same weather either way
         Parser.getTokens( 1 );
@@ -2272,6 +2286,11 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.contactshadows", std::string{ gfx_contactshadows == 3 ? "high" : gfx_contactshadows == 2 ? "medium" : gfx_contactshadows == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.contactshadows.length", gfx_contactshadows_length );
     export_as_text( Output, "gfx.contactshadows.range", gfx_contactshadows_range );
+    export_as_text( Output, "gfx.ssr", std::string{ gfx_ssr == 3 ? "high" : gfx_ssr == 2 ? "medium" : gfx_ssr == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.ssr.range", gfx_ssr_range );
+    export_as_text( Output, "gfx.ssr.roughness", gfx_ssr_roughness );
+    export_as_text( Output, "gfx.raytracing", gfx_raytracing );
+    export_as_text( Output, "gfx.raytracing.range", gfx_raytracing_range );
     export_as_text( Output, "gfx.fog", std::string{ gfx_fog == 1 ? "volumetric" : "analytic" } );
     export_as_text( Output, "gfx.fog.quality", std::string{ gfx_fog_quality == 1 ? "low" : gfx_fog_quality == 3 ? "high" : gfx_fog_quality == 4 ? "ultra" : "medium" } );
     export_as_text( Output, "gfx.fog.range", gfx_fog_range );

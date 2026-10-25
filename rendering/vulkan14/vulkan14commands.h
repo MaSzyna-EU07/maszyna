@@ -78,6 +78,8 @@ class command_stream
 	void end_query(VkQueryPool Pool, std::uint32_t Query);
 	void begin_debug_utils_label(VkDebugUtilsLabelEXT const *Label);
 	void end_debug_utils_label();
+	// the builds of acceleration structures (VK_KHR_acceleration_structure, gfx.raytracing), outside of a rendering
+	void build_acceleration_structures(std::uint32_t Count, VkAccelerationStructureBuildGeometryInfoKHR const *Infos, VkAccelerationStructureBuildRangeInfoKHR const *const *Ranges);
 
 	// the stream is made anew
 	void clear();

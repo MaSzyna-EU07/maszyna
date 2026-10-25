@@ -59,7 +59,8 @@
 #define LOCAL_SHADOW_LAMPS_TEX 22
 #define HEADLIGHT_SHADOW_TEX 23
 #define SCENE_DEPTH_TEX 24
-#define PASS_BINDING_COUNT 25
+#define SSR_HISTORY_TEX 25
+#define PASS_BINDING_COUNT 26
 #define MATERIAL_TEXTURE_FIRST 0
 #define CL_CLUSTER_UBO 0
 #define CL_AABB_SSBO 1
@@ -72,6 +73,10 @@
 #define POST_TEXTURES 4
 #define POST_EXPOSURE_SSBO 4
 #define COMPUTE_SET 1
+#define RT_SET 2
+#define RT_SCENE 0
+#define RT_RECORDS 1
+#define RT_TEXTURES 2
 #define PUSH_CONSTANTS_SIZE 112
 #define SPEC_OUTPUT_GAMMA 0
 #define SPEC_SHADOWMAP_ENABLED 1
@@ -259,6 +264,12 @@ layout(std140, set = PASS_SET, binding = SCENE_UBO) uniform scene_ubo
 	vec4 contact_shadow_params;
 	vec4 contact_shadow_lamps;
 	vec4 shadow_fit;
+	mat4 ssr_reprojection;
+	mat4 ssr_reprojection_cab;
+	mat4 ssr_cab_box;
+	vec4 ssr_params;
+	vec4 ssr_params2;
+	vec4 env_params;
 };
 
 #ifndef LAYOUT_COMPUTE

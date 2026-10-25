@@ -1559,8 +1559,11 @@ debug_panel::render_section_settings() const {
     ImGui::PushStyleColor( ImGuiCol_Text, { Global.UITextColor.r, Global.UITextColor.g, Global.UITextColor.b, Global.UITextColor.a } );
     ImGui::TextUnformatted( "Graphics" );
     ImGui::PopStyleColor();
-    // reflection fidelity
-    ImGui::SliderInt( ( std::to_string( Global.reflectiontune.fidelity ) + "###reflectionfidelity" ).c_str(), &Global.reflectiontune.fidelity, 0, 2, "Reflection fidelity" );
+    // screen space reflections
+    {
+        char const *ssrlevels[] { "off", "low", "medium", "high" };
+        ImGui::SliderInt( ( std::string( ssrlevels[ std::clamp( Global.gfx_ssr, 0, 3 ) ] ) + "###screenreflections" ).c_str(), &Global.gfx_ssr, 0, 3, "Reflections" );
+    }
     ImGui::SliderInt( ( std::to_string( Global.gfx_shadow_rank_cutoff ) + "###shadowrankcutoff" ).c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks" );
     if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2f, "Shadow angle cutoff" ) ) {
         Global.gfx_shadow_angle_min = quantize( Global.gfx_shadow_angle_min, 0.05f );

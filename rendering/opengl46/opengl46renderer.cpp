@@ -204,7 +204,6 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_instancecull.init();
 		for (auto &shadowcull : m_shadowcull)
 			shadowcull.init(&m_instancecull);
-		m_reflectioncull.init(&m_instancecull);
 		m_hiz.init();
 		m_shadowfit.init();
 		m_exposure.init();
@@ -952,9 +951,6 @@ void opengl46_renderer::SwapBuffers()
                 text += m_shadowcull[ cascade ].info_times( "instance cull shadows " + std::to_string( cascade + 1 ) );
             }
         }
-        if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
-            text += m_reflectioncull.info_times( "instance cull reflections, last face" );
-        }
         text += Light_Shadow_Cull_Info( true );
         if( Global.gfx_depthprepass_scene || m_contactshadowslast ) {
             if( auto const scenedepthtime = m_scenedepthtimer.result() )
@@ -963,6 +959,10 @@ void opengl46_renderer::SwapBuffers()
         if( m_contactshadowslast ) {
             if( auto const contacttime = m_contactshadowstimer.result() )
                 text += " contact shadows depth: " + to_string( static_cast<double>( *contacttime ) / 1000000.0, 3 ) + " ms\n";
+        }
+        if( Global.gfx_ssr > 0 ) {
+            if( auto const historytime = m_ssrhistorytimer.result() )
+                text += " reflections, image of the frame: " + to_string( static_cast<double>( *historytime ) / 1000000.0, 3 ) + " ms\n";
         }
         if( Global.gfx_gpucull == 1 ) {
             auto const twophase { m_instancecull.two_phase() };
@@ -1093,10 +1093,6 @@ void opengl46_renderer::SwapBuffers()
             m_shadowcull[ cascade ].collect();
             culltext += m_shadowcull[ cascade ].info( "gpu cull shadows " + std::to_string( cascade + 1 ), false );
         }
-    }
-    if( Global.gfx_gpucull_reflections && m_reflectioncull.ran() ) {
-        m_reflectioncull.collect();
-        culltext += m_reflectioncull.info( "gpu cull reflections, last face", false );
     }
     culltext += Light_Shadow_Cull_Info( false );
     if( Global.gfx_gpucull == 1 ) {
@@ -1461,6 +1457,8 @@ void opengl46_renderer::draw_debug_ui()
         m_exposure.draw_debug_ui();
         ImGui::Separator();
         m_ao.draw_debug_ui(!m_viewports.empty() && m_viewports.front()->ssao_tex != nullptr);
+        ImGui::Separator();
+        m_ssr.draw_debug_ui(nullptr);
     }
     ImGui::End();
 
@@ -1482,7 +1480,6 @@ void opengl46_renderer::draw_debug_ui()
         if (Global.gfx_gpucull != 0)
         {
             ImGui::Checkbox("the same for the cascades of the sun shadows (gfx.gpucull.shadows)", &Global.gfx_gpucull_shadows);
-            ImGui::Checkbox("the same for the environment map, when it's drawn next (gfx.gpucull.reflections)", &Global.gfx_gpucull_reflections);
             ImGui::Checkbox("the same for the shadow maps of headlights (gfx.gpucull.shadows.headlights)", &Global.gfx_gpucull_shadows_headlights);
             ImGui::Checkbox("the same for the scenery of the shadow maps of lamps, when it's drawn next (gfx.gpucull.shadows.lamps)", &Global.gfx_gpucull_shadows_lamps);
             ImGui::Checkbox("the same for the sleepers of the tracks of the view (gfx.gpucull.sleepers)", &Global.gfx_gpucull_sleepers);
@@ -1510,8 +1507,6 @@ void opengl46_renderer::draw_debug_ui()
                     info += m_shadowcull[cascade].info("gpu cull shadows " + std::to_string(cascade + 1), false);
             }
         }
-        if (Global.gfx_gpucull_reflections && m_reflectioncull.ran())
-            info += m_reflectioncull.info("gpu cull reflections, last face", false);
         info += Light_Shadow_Cull_Info(false);
         if (!info.empty())
             ImGui::TextUnformatted(info.c_str() + 1);
@@ -1573,6 +1568,14 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			    m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height});
 			m_cabfuture = m_taa.cab_future();
 		}
+		// the screen space reflections: where the points the rays hit were in the image of the history
+		m_ssrframe = Ssr_View(vp);
+		if (m_ssrframe)
+		{
+			auto const *cab{((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr)) ? simulation::Train->Dynamic() : nullptr};
+			m_ssr.begin_frame(
+			    m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height}, vp.ssr_levels);
+		}
 
         m_colorpass = m_renderpass; // cache pass data
 		// parts of the gpu time of the frame; the marks go through the main view only, in the context they were begun in
@@ -1625,6 +1628,10 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 				scene_ubs.wiper_timer_return = glm::vec4{-1000.};
 			}
 		}
+		// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour
+		// pass of the main view only
+		scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, 0.f, 0.f, 0.f};
+		gfx::screen_reflections::clear(scene_ubs);
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
         scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_colorpass.pass_camera.modelview() } } );
         scene_ubo->update(scene_ubs);
@@ -1797,15 +1804,21 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		m_indirectcolourpending = false;
 		m_scenerecorded = false;
 		auto const contactshadows{Contact_Shadows_Wanted(vp)};
-		if ((Global.gfx_depthprepass_scene || contactshadows) && vp.main && (false == Global.bWireFrame))
+		// the screen space reflections trace the depth of the whole scene, not only of what the contact shadows reach
+		auto const reflections{m_ssrframe && (false == Global.bWireFrame)};
+		if ((Global.gfx_depthprepass_scene || contactshadows || reflections) && vp.main && (false == Global.bWireFrame))
 		{
 			glDebug("render scene depth");
 			gpupart("scene depth");
-			Render_Scene_Depth(future, contactshadows && (false == Global.gfx_depthprepass_scene));
+			Render_Scene_Depth(future, contactshadows && (false == Global.gfx_depthprepass_scene) && (false == reflections));
 			if (contactshadows)
 			{
 				gpupart("contact shadows depth");
 				Setup_Contact_Shadows(vp);
+			}
+			if (reflections)
+			{
+				Setup_Screen_Reflections(vp, taa);
 			}
 		}
 		if (vp.main)
@@ -1910,12 +1923,14 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
             }
         }
 
-		if (m_contactshadows)
+		if (m_contactshadows || m_ssractive)
 		{
 			// the depth they read is of this view only
 			m_contactshadows = false;
+			m_ssractive = false;
 			scene_ubs.contact_shadow_params = glm::vec4{0.f};
 			scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
+			gfx::screen_reflections::clear(scene_ubs);
 			scene_ubo->update(scene_ubs);
 		}
 
@@ -1954,6 +1969,14 @@ if (!Global.gfx_skippipeline)
 					Render_taa(vp);
 					image = vp.taa_tex[m_taa.target()].get();
 				}
+				// the image before the blur is the one the reflections of the next frame take
+				if (m_ssrframe)
+				{
+					if (taa)
+						Store_Ssr_History(vp, *vp.taa_fb[m_taa.target()], GL_COLOR_ATTACHMENT0);
+					else
+						Store_Ssr_History(vp, *vp.main_fb, GL_COLOR_ATTACHMENT0);
+				}
 				if (motionblur)
 				{
 					if (taa)
@@ -1977,7 +2000,10 @@ if (!Global.gfx_skippipeline)
 					vp.msaa_fb->blit_to(vp.main_fb.get(), vp.width, vp.height, GL_DEPTH_BUFFER_BIT, GL_DEPTH_ATTACHMENT);
 					Render_ambient_occlusion(vp, *vp.main2_fb, aomode);
 				}
+				if (m_ssrframe)
+					Store_Ssr_History(vp, *vp.main2_fb, GL_COLOR_ATTACHMENT0);
 			}
+			m_ssrframe = false;
 
 			// the depth of the finished view, which the cascades of the sun shadows of the next frames are fitted to
 			// (gfx.shadow.sdsm). the main framebuffer holds it resolved for the motion blur or the ambient occlusion
@@ -2170,12 +2196,11 @@ if (!Global.gfx_skippipeline)
 
 		setup_matrices();
 		// the light buffer holds what the last color pass left in it, in the view space of its camera, while the face is drawn
-		// in its own. the lights go in anew; the map is a cache of the surroundings which lasts for seconds, so the headlights
-		// of the vehicles around are left out of it and the cost of the pass does not depend on how many of them are on
+		// in its own: the sun goes in anew, for the fog and the clouds over the sky
 		Update_Lights(simulation::Lights, false);
 
-		// render
-        // environment...
+		// the sky and the clouds alone: the scenery is reflected by the screen space reflections (gfx.ssr), the environment map
+		// gives what they don't find
 		setup_drawing(true);
 
         setup_shadow_empty_map();
@@ -2184,12 +2209,8 @@ if (!Global.gfx_skippipeline)
 		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
-		// opaque parts...
+		// the passes after this one expect the state the opaque scenery left behind (depth writes on, no blending)
 		setup_drawing(false);
-		setup_shadow_bind_map();
-		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
-		scene_ubo->update(scene_ubs);
-		Render(simulation::Region);
 
 		m_env_fb->unbind();
 
@@ -2276,9 +2297,8 @@ bool opengl46_renderer::Render_reflections(viewport_config &vp)
         m_environmentupdatelocation = m_renderpass.pass_camera.position();
         m_environmentupdateface = 0;
     }
-	// an update draws the scene six times, which is too much for a single frame. its cost is spread
-	// by drawing one face of the map per frame, all of them as seen from the place the update began at.
-	// the first update is done in one go, as there's nothing to show in the meantime
+	// an update draws the sky six times. its cost is spread by drawing one face of the map per frame, all of them as seen
+	// from the place the update began at. the first update is done in one go, as there's nothing to show in the meantime
 	auto const lastface{ m_environmentready ? m_environmentupdateface : 5 };
 	glViewport(0, 0, gl::ENVMAP_SIZE, gl::ENVMAP_SIZE);
 	for (; m_environmentupdateface <= lastface; ++m_environmentupdateface)
@@ -4917,11 +4937,6 @@ void opengl46_renderer::walk_region_begin()
 			passcull = &m_shadowcull[ m_shadowcascade ];
 			m_shadowcasters.clear();
 		}
-		else if( ( m_renderpass.draw_mode == rendermode::reflections )
-		      && ( Global.gfx_gpucull_reflections )
-		      && ( Global.reflectiontune.fidelity >= 1 ) ) {
-			passcull = &m_reflectioncull;
-		}
 	}
 	Begin_Pass_Cull( passcull, ( passcull == &m_instancecull ) );
 }
@@ -6461,6 +6476,90 @@ void opengl46_renderer::Render_taa(viewport_config &vp)
 bool opengl46_renderer::Taa_View(viewport_config const &vp) const
 {
 	return Global.gfx_taa() && vp.main && (vp.taa_tex[0] != nullptr) && (m_pfx_taa != nullptr);
+}
+
+// the screen space reflections of the main view trace the depth of the scene drawn before the colour and work out the distance of
+// a surface from its depth the way a perspective projection with the far plane at infinity gives it, as the contact shadows do:
+// not in the orthographic view of the editor
+bool opengl46_renderer::Ssr_View(viewport_config const &vp) const
+{
+	if ((Global.gfx_ssr <= 0) || (false == vp.main) || Global.bWireFrame || Global.gfx_skippipeline || (vp.msaa_fb == nullptr))
+		return false;
+	if ((vp.proj_type == viewport_config::vr_left) || (vp.proj_type == viewport_config::vr_right))
+		return false;
+	auto const &projection{m_renderpass.pass_camera.projection()};
+	return (projection[2][3] != 0.f) && (projection[2][2] == 0.f) && (projection[3][2] > 0.f);
+}
+
+void opengl46_renderer::Setup_Screen_Reflections(viewport_config &vp, bool const Temporal)
+{
+	if (false == Ssr_History_Target(vp))
+		return;
+	if (false == m_contactshadows)
+	{
+		// the depth resolved apart from the buffer the colour pass draws to, as for the contact shadows
+		if (false == Resolved_Depth_Target(vp))
+			return;
+		vp.msaa_fb->bind();
+		auto const scissor{::glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE};
+		if (scissor)
+			::glDisable(GL_SCISSOR_TEST);
+		::glBlitNamedFramebuffer(*vp.msaa_fb, *vp.clusters_depth_fb, 0, 0, vp.width, vp.height, 0, 0, vp.width, vp.height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+		if (scissor)
+			::glEnable(GL_SCISSOR_TEST);
+		::glBindTextureUnit(gl::SCENE_DEPTH_TEX, vp.clusters_depth_tex->id);
+	}
+	::glBindTextureUnit(gl::SSR_HISTORY_TEX, vp.ssr_tex->id);
+	m_ssr.setup(scene_ubs, gfx::screen_reflections::steps(Global.gfx_ssr), false, 0.f, Temporal);
+	scene_ubo->update(scene_ubs);
+	m_ssractive = true;
+}
+
+// the finished image of the frame, before the motion blur, copied to the history the reflections of the next frame take their colour
+// from, with its mipmaps for the rough surfaces
+void opengl46_renderer::Store_Ssr_History(viewport_config &vp, gl::framebuffer &Source, GLenum const Attachment)
+{
+	if (false == Ssr_History_Target(vp))
+		return;
+	m_ssrhistorytimer.begin();
+	auto const scissor{::glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE};
+	if (scissor)
+		::glDisable(GL_SCISSOR_TEST);
+	Source.blit_to(vp.ssr_fb.get(), vp.width, vp.height, GL_COLOR_BUFFER_BIT, Attachment);
+	if (scissor)
+		::glEnable(GL_SCISSOR_TEST);
+	::glGenerateTextureMipmap(vp.ssr_tex->id);
+	m_ssrhistorytimer.end();
+	m_ssr.end_frame();
+}
+
+bool opengl46_renderer::Ssr_History_Target(viewport_config &vp)
+{
+	if (vp.ssr_fb)
+		return true;
+	// a colour of three floats without a sign in 32 bits: half the memory of rgba16f, and the image of the scene has no alpha
+	auto texture{std::make_unique<opengl_texture>()};
+	texture->alloc_rendertarget(GL_R11F_G11F_B10F, GL_RGB, vp.width, vp.height, 1, 1, GL_CLAMP_TO_EDGE);
+	auto const levels{static_cast<int>(std::floor(std::log2(static_cast<float>(std::max({vp.width, vp.height, 1}))))) + 1};
+	// the levels below the first are made by glGenerateTextureMipmap() with each copy
+	::glTextureParameteri(texture->id, GL_TEXTURE_MAX_LEVEL, levels - 1);
+	::glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	::glGenerateTextureMipmap(texture->id);
+	auto framebuffer{std::make_unique<gl::framebuffer>()};
+	framebuffer->attach(*texture, GL_COLOR_ATTACHMENT0);
+	if (false == framebuffer->is_complete())
+	{
+		ErrorLog("reflection history framebuffer setup failed, no screen space reflections");
+		Global.gfx_ssr = 0;
+		return false;
+	}
+	gl::framebuffer::unbind();
+	vp.ssr_tex = std::move(texture);
+	vp.ssr_fb = std::move(framebuffer);
+	vp.ssr_levels = levels;
+	m_ssr.reset();
+	WriteLog("screen space reflections: history " + std::to_string(vp.width) + " x " + std::to_string(vp.height) + ", " + std::to_string(levels) + " levels");
+	return true;
 }
 
 void opengl46_renderer::Render_ambient_occlusion(viewport_config &vp, gl::framebuffer &Target, int const Mode)

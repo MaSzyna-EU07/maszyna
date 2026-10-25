@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/shadowfit.h"
 #include "rendering/common/gpuparticles.h"
 #include "rendering/common/temporalaa.h"
+#include "rendering/common/screenreflections.h"
 #include "rendering/particles.h"
 #include "model/material.h"
 #include "vehicle/Camera.h"
@@ -46,6 +47,7 @@ struct draw_constants;
 enum class blend_mode;
 class instance_cull;
 struct image_use;
+struct ray_draw;
 } // namespace vk14
 
 class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
@@ -271,6 +273,16 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void render_shadows(viewport_config &Viewport);
 	bool render_reflections(viewport_config &Viewport);
 	void render_reflection_face(viewport_config &Viewport);
+	// the ray traced reflections (gfx.raytracing, vulkan14raytracing.h): whether the colour pass of the viewport gets them, and the
+	// scenery around the camera gathered by the walk in its reflection mode (the draws noted instead of made) and built into the
+	// acceleration structures of the frame; a draw noted, with the state of the walk
+	bool raytracing_wanted(viewport_config const &Viewport) const;
+	void render_ray_scene(viewport_config &Viewport);
+	void gather_ray_draw(gfx::geometry_handle const &Geometry);
+	bool m_rtgather{false};
+	bool m_raytracingon{true}; // switched off in the debug window
+	std::vector<vk14::ray_draw> m_rtdraws;
+	std::vector<glm::mat4> m_rtinstances; // the modelviews of the instanced draws noted (walk_instances())
 	void render_picking(rendermode const Mode);
 	// the sky dome and the sun and the moon
 	void render_environment(world_environment *Environment);
@@ -302,6 +314,15 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	bool contact_shadows_wanted(viewport_config const &Viewport) const;
 	void setup_contact_shadows(std::size_t const Viewport);
 	bool m_contactshadows{false};
+	// the screen space reflections (gfx.ssr) of the main viewport: whether its colour pass gets them (they need the depth of the
+	// scene drawn before the colour), the parameters of the pass set for them, the finished image of the frame (before the motion
+	// blur) copied to the history with its mipmaps; the matrices and the state, begun for the frame and set up for its colour pass
+	bool ssr_wanted(viewport_config const &Viewport) const;
+	void setup_screen_reflections(std::size_t const Viewport, bool const Temporal);
+	void store_ssr_history(std::size_t const Viewport, vk14::image &Source);
+	gfx::screen_reflections m_ssr;
+	bool m_ssrframe{false};
+	bool m_ssractive{false};
 	// the materials
 	material_handle invalid_material() const
 	{

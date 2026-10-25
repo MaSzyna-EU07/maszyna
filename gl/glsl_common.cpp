@@ -86,6 +86,7 @@ void gl::glsl_common_setup()
     "#define CLOUD_COVERAGE_TEX " + std::to_string(CLOUD_COVERAGE_TEX) + "\n" +
     "#define CLOUD_HISTORY_TEX " + std::to_string(CLOUD_HISTORY_TEX) + "\n" +
     "#define SCENE_DEPTH_TEX " + std::to_string(SCENE_DEPTH_TEX) + "\n" +
+    "#define SSR_HISTORY_TEX " + std::to_string(SSR_HISTORY_TEX) + "\n" +
     "#define WEATHER_UBO_BINDING " + std::to_string(WEATHER_UBO_BINDING) + "\n" +
     "#define WEATHER_SCRATCH_SSBO_BINDING " + std::to_string(WEATHER_SCRATCH_SSBO_BINDING) + "\n" +
     "#define MAX_CLOUD_LAYERS " + std::to_string(MAX_CLOUD_LAYERS) + "\n" +

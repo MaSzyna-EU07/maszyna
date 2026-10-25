@@ -47,6 +47,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46shadowfit.h"
 #include "rendering/common/scenewalk.h"
 #include "rendering/common/temporalaa.h"
+#include "rendering/common/screenreflections.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
@@ -272,6 +273,12 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 		std::array<std::unique_ptr<opengl_texture>, 2> taa_tex;
 		std::array<std::unique_ptr<gl::framebuffer>, 2> taa_fb;
 
+		// the screen space reflections (main viewport only): the finished image of the last frame with its mipmaps, which they take
+		// their colour from (Ssr_History_Target()), and the number of its levels. made when it is first needed
+		std::unique_ptr<opengl_texture> ssr_tex;
+		std::unique_ptr<gl::framebuffer> ssr_fb;
+		int ssr_levels { 0 };
+
         // LDR backbuffer for offscreen rendering
         std::unique_ptr<gl::framebuffer> backbuffer_fb;
         std::unique_ptr<opengl_texture> backbuffer_tex;
@@ -459,6 +466,14 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// the temporal anti-aliasing of the main view (gfx.antialiasing taa), and whether the viewport has it
 	void Render_taa(viewport_config &vp);
 	bool Taa_View(viewport_config const &vp) const;
+	// the screen space reflections (gfx.ssr): whether the colour pass of the viewport gets them (they need the depth pass of the
+	// scene), the depth resolved for them with the history bound and the parameters of the pass set, the finished image of the
+	// frame copied to the history (from the colour attachment Attachment of Source), and the target of the history made when it
+	// isn't there yet (false if it can't be made)
+	bool Ssr_View(viewport_config const &vp) const;
+	void Setup_Screen_Reflections(viewport_config &vp, bool const Temporal);
+	void Store_Ssr_History(viewport_config &vp, gl::framebuffer &Source, GLenum const Attachment);
+	bool Ssr_History_Target(viewport_config &vp);
 
 	bool init_viewport(viewport_config &vp);
 
@@ -556,10 +571,9 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// with the one of the cpu (2)
 	opengl46_instance_cull m_instancecull;
 	unsigned int m_instancecullframe { ~0u }; // frame it last ran in
-	// the cullings of the cascades of the sun shadows and of the faces of the environment map (Global.gfx_gpucull_shadows,
-	// _reflections), with records and programs shared with m_instancecull
+	// the cullings of the cascades of the sun shadows (Global.gfx_gpucull_shadows), with records and programs shared with
+	// m_instancecull
 	std::array<opengl46_instance_cull, 3> m_shadowcull;
-	opengl46_instance_cull m_reflectioncull;
 	// the cullings of the maps of headlights, by the slot of the map, and of the scenery parts of the maps of lamps, by their order
 	// among those drawn in a frame: the passes of a frame don't share the buffers of a culling. made when first needed
 	std::vector<std::unique_ptr<opengl46_instance_cull>> m_headlightcull;
@@ -695,6 +709,12 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// a vehicle drawn in the colour pass of the last frame moved, and one drawn in this frame did (motion blur, Render_pass())
 	bool m_vehiclesmoved { true };
 	gl::gpu_timer m_contactshadowstimer; // resolve of the depth
+	// the screen space reflections of the main view: the matrices and the parameters, set up for the colour pass under way, begun
+	// for the frame (the history written at its end), and the copy of the image to the history with its mipmaps
+	gfx::screen_reflections m_ssr;
+	bool m_ssractive { false };
+	bool m_ssrframe { false };
+	gl::gpu_timer m_ssrhistorytimer;
   renderpass_config m_colorpass; // parametrs of most recent color pass
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	TSubModel const *m_pickcontrolitem{nullptr};

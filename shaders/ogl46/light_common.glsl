@@ -10,6 +10,7 @@ layout(binding = HEADLIGHT_SHADOW_TEX) uniform sampler2DArrayShadow headlight_sh
 layout(binding = SCENE_DEPTH_TEX) uniform sampler2D scene_depth;
 
 #include "envmapping.glsl"
+#include "ssr.glsl"
 #include "conversion.glsl"
 #include "weather_common.glsl"
 
@@ -657,6 +658,55 @@ vec3 add_sky_ambient(vec3 basecolor, vec3 fragnormal)
     return max(basecolor + sky_ambient_directional(worldnormal) * (sky_ambient_factor * share), vec3(0.0));
 }
 
+// the light of the ground below the horizon of the environment map, which holds the sky alone: the ground of the albedo
+// env_params.x lit by the sky and the sun, as a surface facing up
+vec3 reflection_ground()
+{
+    vec3 light = ambient;
+    if (sky_ambient_factor != 0.0)
+        light = max(light + sky_ambient_directional(vec3(0.0, 1.0, 0.0)) * sky_ambient_factor, vec3(0.0));
+    light *= AMBIENT_SCALE;
+    if (lights_count > 0U)
+    {
+        vec3 sun = -normalize(mat3(inv_view) * lights[0].dir);
+        light += lights[0].color * (SUN_DIFFUSE_SCALE * lights[0].intensity * max(sun.y, 0.0));
+    }
+    return light * env_params.x;
+}
+
+// the reflection of the surroundings the scene doesn't give (the screen space reflections, the ray tracing): the environment
+// map above the horizon (the sky and the clouds), the ground below it
+vec3 reflection_surroundings(vec3 fragnormal, float roughness)
+{
+    vec3 direction = normalize(envmap_direction(fragnormal));
+    vec3 sky = envmap_sample_rough(normalize(vec3(direction.x, max(direction.y, 0.0), direction.z)), roughness);
+    float below = smoothstep(0.0, 0.25, -direction.y);
+    if ((below <= 0.0) || (false == ENVMAP_ENABLED))
+        return sky;
+    return mix(sky, reflection_ground(), below);
+}
+
+// the least weight of the reflection of the surroundings (its specular colour times its share) a surface traces the scene for
+const float REFLECTION_SCENE_WEIGHT = 0.004;
+
+// the reflection of the scene in a surface of the given perceptual roughness: the colour times how much of the reflection the
+// scene gives (rgb), and that share (a), the rest is left to reflection_surroundings()
+vec4 reflection_scene(vec3 fragnormal, float roughness)
+{
+    vec3 direction = normalize(reflect(f_pos.xyz, fragnormal));
+    vec4 result = ssr_trace(f_pos.xyz, normalize(f_normal), direction, roughness);
+#ifdef REFLECTION_RAYS_ACTIVE
+    // what the screen doesn't hold is traced through the scenery (shaders/vk14/rt_reflections.glsl)
+    if ((result.a < 0.99) && (ssr_params2.z > 0.0) && (roughness <= ssr_params.z))
+    {
+        vec4 traced = rt_trace(f_pos.xyz, normalize(f_normal), direction, roughness);
+        result.rgb += traced.rgb * (1.0 - result.a);
+        result.a += traced.a * (1.0 - result.a);
+    }
+#endif
+    return result;
+}
+
 // lights the surface: the ambient light, the sun (the moon), the headlights and lamps and the reflection of the surroundings.
 // the units are the ones of the ambient light, the irradiance over pi: a white lambertian surface lit by 1 of it shows 1.
 // Texturecolor is the albedo (the base colour of a metal), Specularity the specular level of a dielectric (0.5 is the
@@ -734,13 +784,22 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
         ambient_share = 1.0;
         diffuse_albedo *= 1.0 - cubemap_spec * min(cubemap_share, 1.0);
     }
-    vec3 envcolor = (matte ? vec3(0.0) : envmap_color_rough(fragnormal, env_roughness));
+    // the reflection of the surroundings: the scene where the screen (or the ray tracing) gives it, the sky and the ground of the
+    // environment map elsewhere
+    vec3 envcolor = vec3(0.0);
+    vec4 scenecolor = vec4(0.0);
+    if (!matte)
+    {
+        envcolor = reflection_surroundings(fragnormal, env_roughness);
+        if (((ssr_params.x > 0.0) || (ssr_params2.z > 0.0)) && (cubemap_share * dot(cubemap_spec, vec3(1.0 / 3.0)) > REFLECTION_SCENE_WEIGHT))
+            scenecolor = reflection_scene(fragnormal, env_roughness);
+    }
 
     if (lights_count == 0U)
         return fragcolor * diffuse_albedo
              + emissioncolor * texturecolor
              + fragcolor * env_spec * ambient_share
-             + envcolor * cubemap_spec * cubemap_share;
+             + (scenecolor.rgb + envcolor * (1.0 - scenecolor.a)) * cubemap_spec * cubemap_share;
 
     vec3 light_dir = normalize(-lights[0].dir);
     float NdotL = max(dot(fragnormal, light_dir), 0.0);
@@ -757,7 +816,8 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     if (shadowtone < 1.0)
         shadow = clamp(calc_shadow(), 0.0, 1.0);
 
-    // the cubemap knows nothing of what shades the fragment: it is dimmed a little in the shadow of the sun
+    // the environment map knows nothing of what shades the fragment: it is dimmed a little in the shadow of the sun (the scene the
+    // reflection finds is lit as it is)
     float cubemap_shadow = 1.0;
     if (sunless)
     {
@@ -771,7 +831,7 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
 
     // the reflection of the surroundings, before the light of the sun and the lamps joins the ambient light
     vec3 env_reflection = fragcolor * env_spec * ambient_share
-                        + envcolor * cubemap_spec * (cubemap_share * cubemap_shadow);
+                        + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * cubemap_shadow)) * cubemap_spec * cubemap_share;
 
     // the shadow leaves the share of the sun Shadowtone tells (the old shadow colour of the scenery) to the diffuse light,
     // nothing to the highlight

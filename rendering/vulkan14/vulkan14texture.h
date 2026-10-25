@@ -139,6 +139,8 @@ struct resources
 	// the thread of the renderer: the content given by other threads waits for it (update_from_memory())
 	std::thread::id thread;
 	pending_textures *pending{nullptr};
+	// the ray tracing is on (gfx.raytracing): the geometry is built into acceleration structures and read by its device address
+	bool raytracing{false};
 };
 
 // the vulkan format of the data of a texture and how the data has to be changed for it

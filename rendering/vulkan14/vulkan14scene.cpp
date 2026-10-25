@@ -190,6 +190,8 @@ std::array<std::array<VkImageView, vk14::bindings::PASS_BINDING_COUNT>, 3> pass_
 		views[HEADLIGHT_SHADOW_TEX] = (headlights != nullptr ? headlights->view() : scene.headlight_shadow_empty->view());
 		// the depth of the scene of the main view drawn before its colour, which the contact shadows read
 		views[SCENE_DEPTH_TEX] = (colour && (false == scene.targets.empty()) && scene.targets.front().scene_depth ? scene.targets.front().scene_depth->view() : scene.depth_empty->view());
+		// the image of the last frame of the main view, which the screen space reflections take their colour from
+		views[SSR_HISTORY_TEX] = (colour && (false == scene.targets.empty()) && scene.targets.front().ssr_history ? scene.targets.front().ssr_history->view() : scene.white->view());
 	}
 	return result;
 }
@@ -303,7 +305,20 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		}
 	}
 	VkPushConstantRange const graphicsconstants{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, PUSH_CONSTANTS_SIZE};
-	scene.scene_layout = vk14::make_pipeline_layout(device, {scene.pass_layout, scene.material_set.layout}, {graphicsconstants}, "scene");
+	// the ray traced reflections: the scenery around the camera, set RT_SET of the scene, which the shaders of the scene read when they
+	// were made with REFLECTION_RAYS (vk14::binding_preamble())
+	std::vector<VkDescriptorSetLayout> scenesets{scene.pass_layout, scene.material_set.layout};
+	if (ctx.device.raytracing_enabled())
+	{
+		scene.raytracing = std::make_unique<vk14::ray_tracing>();
+		static_assert(RT_SET == 2, "the set of the ray tracing follows the pass set and the material set");
+		if (false == scene.raytracing->init(ctx.device, ctx.memory, ctx.deletions, frames, Reason))
+		{
+			return false;
+		}
+		scenesets.push_back(scene.raytracing->layout());
+	}
+	scene.scene_layout = vk14::make_pipeline_layout(device, scenesets, {graphicsconstants}, "scene");
 	if ((scene.scene_layout == VK_NULL_HANDLE) || (false == scene.material_set.create_template(device, scene.scene_layout, "material textures")))
 	{
 		Reason = "no layout of the pipelines of the scene";
@@ -386,6 +401,10 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		}
 		std::uint32_t const white{0xffffffff};
 		ctx.uploads.upload(scene.white, &white, sizeof(white), {{0, {1, 1, 1}}}, false);
+		if (scene.raytracing)
+		{
+			scene.raytracing->set_white(scene.white->view(), ctx.sampling.repeat_aniso);
+		}
 	}
 	{
 		vk14::image_desc desc;
@@ -517,6 +536,13 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		if ((properties.optimalTilingFeatures & needed) != needed)
 		{
 			scene.bloom_format = VK_FORMAT_R16G16B16A16_SFLOAT;
+		}
+		// the history of the screen space reflections is copied and filtered by blits
+		vkGetPhysicalDeviceFormatProperties(ctx.device.physical(), scene.history_format, &properties);
+		auto const blits{VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT};
+		if ((properties.optimalTilingFeatures & blits) != blits)
+		{
+			scene.history_format = VK_FORMAT_R16G16B16A16_SFLOAT;
 		}
 	}
 	// the formats of the passes which don't depend on the viewport
@@ -737,6 +763,11 @@ void vulkan14_renderer::destroy_scene()
 		return;
 	}
 	destroy_cull();
+	if (scene.raytracing)
+	{
+		scene.raytracing->destroy();
+		scene.raytracing.reset();
+	}
 	scene.lamps.destroy();
 	scene.terrain.reset();
 	scene.grass.destroy();
@@ -939,6 +970,7 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 		write(handle, LOCAL_SHADOW_LAMPS_TEX, nullptr, image(ctx.sampling.shadow, views[LOCAL_SHADOW_LAMPS_TEX]));
 		write(handle, HEADLIGHT_SHADOW_TEX, nullptr, image(ctx.sampling.shadow, views[HEADLIGHT_SHADOW_TEX]));
 		write(handle, SCENE_DEPTH_TEX, nullptr, image(ctx.sampling.clamp_nearest, views[SCENE_DEPTH_TEX]));
+		write(handle, SSR_HISTORY_TEX, nullptr, image(ctx.sampling.clamp_linear, views[SSR_HISTORY_TEX]));
 	}
 	vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
@@ -1003,6 +1035,19 @@ void vulkan14_renderer::bind_pass_set()
 	info.pDynamicOffsets = offsets.data();
 	draw.commands->bind_descriptor_sets2(&info);
 	draw.set_dirty = false;
+	// the set of the ray tracing of the frame, which the shaders of the scene made with REFLECTION_RAYS read
+	if (scene.raytracing)
+	{
+		VkDescriptorSet const rtset{scene.raytracing->set(m_context->slot)};
+		VkBindDescriptorSetsInfo rt{};
+		rt.sType = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO;
+		rt.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		rt.layout = scene.scene_layout;
+		rt.firstSet = vk14::bindings::RT_SET;
+		rt.descriptorSetCount = 1;
+		rt.pDescriptorSets = &rtset;
+		draw.commands->bind_descriptor_sets2(&rt);
+	}
 }
 
 // the pass set of the colour of the main view bound for the compute kernels (their layouts share set 0 and the push constants),
@@ -1575,6 +1620,13 @@ std::uint32_t vulkan14_renderer::push_draw_block()
 
 std::uint32_t vulkan14_renderer::walk_instances(glm::mat4 const *Modelviews, std::size_t const Count)
 {
+	if (m_rtgather)
+	{
+		// noted for the ray tracing: the base is the index of the first of them among those noted
+		auto const base{static_cast<std::uint32_t>(m_rtinstances.size())};
+		m_rtinstances.insert(m_rtinstances.end(), Modelviews, Modelviews + Count);
+		return base;
+	}
 	auto &scene{m_context->scene};
 	auto &instances{scene.instances};
 	auto const capacity{static_cast<std::size_t>(instances.window / instances.stride) - 1};
@@ -1618,6 +1670,11 @@ void vulkan14_renderer::open_instance_window()
 void vulkan14_renderer::walk_draw(gfx::geometry_handle const &Geometry)
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+	if (m_rtgather)
+	{
+		gather_ray_draw(Geometry);
+		return;
+	}
 	if (m_indirectrecording)
 	{
 		// the draw is made later, from the gpu culling, with this state
@@ -1630,6 +1687,14 @@ void vulkan14_renderer::walk_draw(gfx::geometry_handle const &Geometry)
 void vulkan14_renderer::walk_draw(std::vector<gfx::geometrybank_handle>::iterator First, std::vector<gfx::geometrybank_handle>::iterator Last)
 {
 	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+	if (m_rtgather)
+	{
+		for (; First != Last; ++First)
+		{
+			gather_ray_draw(*First);
+		}
+		return;
+	}
 	// the chunks drawn together share the block of the draw
 	auto newblock{true};
 	for (; First != Last; ++First)

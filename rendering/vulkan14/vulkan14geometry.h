@@ -36,6 +36,13 @@ struct chunk_source
 	std::uint32_t first{0}; // first index, or vertex
 	std::int32_t basevertex{0};
 	VkPrimitiveTopology topology{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+	// for the ray tracing: the vertices of the chunk in the buffer of the bank, the device addresses of the buffers (0 without the ray
+	// tracing), and the number the data of the chunk on the gpu has: another one when the buffers were made anew or the chunk changed
+	std::uint32_t vertexfirst{0};
+	std::uint32_t vertexcount{0};
+	VkDeviceAddress vertex_address{0};
+	VkDeviceAddress index_address{0};
+	std::uint64_t generation{0};
 };
 
 // the vulkan primitive of a primitive of opengl (GL_TRIANGLES ...)
@@ -68,6 +75,7 @@ class vulkan14_geometrybank : public gfx::geometry_bank
 		std::uint32_t indexfirst{0};
 		std::uint32_t indexcount{0};
 		bool dirty{true};
+		std::uint64_t generation{0}; // of its data on the gpu, for the ray tracing (chunk_source::generation)
 	};
 
 	void create_(gfx::geometry_handle const &Geometry) override;

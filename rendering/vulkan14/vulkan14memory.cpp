@@ -35,6 +35,11 @@ bool allocator::create(instance const &Instance, device const &Device, std::stri
 	{
 		info.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
 	}
+	if (Device.raytracing_enabled())
+	{
+		// the acceleration structures are built from the device addresses of the buffers
+		info.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	}
 	// the functions as volk loaded them
 	VmaVulkanFunctions functions{};
 	if (!VK14_VERIFY(vmaImportVulkanFunctionsFromVolk(&info, &functions)))
@@ -109,6 +114,7 @@ buffer &buffer::operator=(buffer &&Other) noexcept
 		std::swap(m_allocation, Other.m_allocation);
 		std::swap(m_size, Other.m_size);
 		std::swap(m_mapped, Other.m_mapped);
+		std::swap(m_address, Other.m_address);
 	}
 	return *this;
 }
@@ -167,6 +173,22 @@ void buffer::destroy()
 	m_allocation = VK_NULL_HANDLE;
 	m_size = 0;
 	m_mapped = nullptr;
+	m_address = 0;
+}
+
+VkDeviceAddress buffer::address() const
+{
+	if ((m_buffer == VK_NULL_HANDLE) || (m_address != 0))
+	{
+		return m_address;
+	}
+	VmaAllocatorInfo allocator{};
+	vmaGetAllocatorInfo(m_allocator, &allocator);
+	VkBufferDeviceAddressInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	info.buffer = m_buffer;
+	m_address = vkGetBufferDeviceAddress(allocator.device, &info);
+	return m_address;
 }
 
 void buffer::flush(VkDeviceSize Offset, VkDeviceSize Size) const

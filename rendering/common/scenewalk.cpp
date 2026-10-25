@@ -638,9 +638,10 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
                 }
             }
             if( Global.reflectiontune.fidelity >= 2 ) {
-                // opaque parts of vehicles
+                // opaque parts of vehicles, but the one the backend leaves out (the vehicle of the cab, seen from the inside)
                 for( auto *path : cell->m_paths ) {
                     for( auto *dynamic : path->Dynamics ) {
+                        if( dynamic == m_shadowskipvehicle ) { continue; }
                         Render( dynamic );
                     }
                 }

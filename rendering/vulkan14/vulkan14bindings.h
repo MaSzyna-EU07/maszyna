@@ -69,7 +69,9 @@ constexpr std::uint32_t LOCAL_SHADOW_LAMPS_TEX = 22;
 constexpr std::uint32_t HEADLIGHT_SHADOW_TEX = 23;
 // the depth of the opaque scene drawn before its colour (the stage P3: the contact shadows; the soft particles of P6)
 constexpr std::uint32_t SCENE_DEPTH_TEX = 24;
-constexpr std::uint32_t PASS_BINDING_COUNT = 25;
+// the image of the last frame of the main view with its mipmaps, which the screen space reflections take their colour from
+constexpr std::uint32_t SSR_HISTORY_TEX = 25;
+constexpr std::uint32_t PASS_BINDING_COUNT = 26;
 // the offsets of the bindings above with dynamic offsets, in the order of the bindings
 constexpr std::uint32_t PASS_DYNAMIC_OFFSETS = 6;
 // the textures of a material take the bindings of their units (#pragma texture(name, unit, ...)), 0 .. MAX_TEXTURES - 1
@@ -94,6 +96,14 @@ constexpr std::uint32_t POST_EXPOSURE_SSBO = 4;
 // those the shader declares from 0 on
 constexpr std::uint32_t COMPUTE_SET = 1;
 
+// the ray traced reflections (gfx.raytracing, vk14::ray_tracing): set 2 of the pipelines of the scene, one for each frame in flight,
+// written with the frame: the acceleration structure of the scenery around the camera, the records of its instances, and the
+// textures they read (an array of as many as the device allows, partly bound, the last binding)
+constexpr std::uint32_t RT_SET = 2;
+constexpr std::uint32_t RT_SCENE = 0;
+constexpr std::uint32_t RT_RECORDS = 1;
+constexpr std::uint32_t RT_TEXTURES = 2;
+
 // the push constants of the graphics pipelines of the scene and of the post-processing (vk14::draw_constants): the draw, and
 // the parameters of the special shaders (the celestial bodies, the post-processing)
 constexpr std::uint32_t PUSH_CONSTANTS_SIZE = 112;
@@ -115,7 +125,8 @@ namespace vk14
 {
 
 // the bindings above as #define lines, with the constants of the game the shaders share with the opengl renderer (the sizes of
-// the blocks, the cluster grid), and MASZYNA_CONSTANTS, which tells shaders/vk14/common.glsl not to write its own
-std::string binding_preamble();
+// the blocks, the cluster grid), and MASZYNA_CONSTANTS, which tells shaders/vk14/common.glsl not to write its own. Raytracing:
+// the shaders of the scene trace the reflections the screen doesn't hold (REFLECTION_RAYS, with the extensions it needs)
+std::string binding_preamble(bool const Raytracing = false);
 
 } // namespace vk14

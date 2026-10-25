@@ -343,7 +343,7 @@ bool vulkan14_renderer::context::create_core(std::uint32_t const Frames, std::st
 		Reason = "no ring for the data of the frames";
 		return false;
 	}
-	if ((false == shaders.init(vk14::binding_preamble(), Reason)) || (false == pipelines.init(device, Reason)) || (false == passes.create(device, Frames, Reason)))
+	if ((false == shaders.init(vk14::binding_preamble(device.raytracing_enabled()), Reason)) || (false == pipelines.init(device, Reason)) || (false == passes.create(device, Frames, Reason)))
 	{
 		return false;
 	}
@@ -355,6 +355,7 @@ bool vulkan14_renderer::context::create_core(std::uint32_t const Frames, std::st
 	resources.images = &images;
 	resources.thread = std::this_thread::get_id();
 	resources.pending = &pending;
+	resources.raytracing = device.raytracing_enabled();
 	textures = std::make_unique<texture_bank>([this]() -> texture_source * { return new vk14::vulkan14_texture(resources); });
 	return imgui.create(resources, shaders, pipelines, ring, Reason);
 }

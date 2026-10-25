@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14device.h"
 #include "rendering/vulkan14/vulkan14instance.h"
+#include "utilities/Globals.h"
 
 #include <cstring>
 
@@ -289,6 +290,32 @@ bool device::create(instance const &Instance, std::string &Reason)
 		}
 	}
 
+	// the ray traced reflections, asked for in eu07.ini (gfx.raytracing), where the device has what they need
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration{};
+	acceleration.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+	VkPhysicalDeviceRayQueryFeaturesKHR rayquery{};
+	rayquery.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+	m_raytracing = Global.gfx_raytracing && m_capabilities.ray_query;
+	if (m_raytracing)
+	{
+		extensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+		extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+		extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+		enabled.v12.bufferDeviceAddress = VK_TRUE;
+		enabled.v12.runtimeDescriptorArray = VK_TRUE;
+		enabled.v12.descriptorBindingPartiallyBound = VK_TRUE;
+		enabled.v12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+		enabled.v12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+		acceleration.accelerationStructure = VK_TRUE;
+		rayquery.rayQuery = VK_TRUE;
+		acceleration.pNext = &rayquery;
+		enabled.v14.pNext = &acceleration;
+	}
+	else if (Global.gfx_raytracing)
+	{
+		log_info("gfx.raytracing: " + m_capabilities.device_name + " has no ray queries (or not what they need), the reflections keep to the screen and the environment map");
+	}
+
 	VkDeviceCreateInfo create{};
 	create.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	create.pNext = enabled.head();
@@ -316,6 +343,10 @@ bool device::create(instance const &Instance, std::string &Reason)
 
 	log_info("using " + m_capabilities.device_name + ", queue families: graphics " + std::to_string(m_families.graphics) + ", compute " + std::to_string(m_families.compute) + (m_families.dedicated_compute ? " (own)" : " (shared)") + ", transfer " +
 	         std::to_string(m_families.transfer) + (m_families.dedicated_transfer ? " (own)" : " (shared)"));
+	if (m_raytracing)
+	{
+		log_info("ray queries on, for the ray traced reflections (gfx.raytracing)");
+	}
 	return true;
 }
 

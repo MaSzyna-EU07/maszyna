@@ -32,6 +32,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14grass.h"
 #include "rendering/vulkan14/vulkan14particles.h"
 #include "rendering/vulkan14/vulkan14commands.h"
+#include "rendering/vulkan14/vulkan14raytracing.h"
 #include "utilities/workerpool.h"
 #include "model/material.h"
 #include "gl/ubo.h"
@@ -123,6 +124,11 @@ struct viewport_targets
 	// the temporal anti-aliasing (gfx.antialiasing taa, the main viewport): the two images of the history, written in turn (hdr, the
 	// lock of the thin things in alpha)
 	std::array<std::shared_ptr<image>, 2> taa_history;
+	// the screen space reflections (gfx.ssr, the main viewport): the finished image of the last frame with its mipmaps, which they take
+	// their colour from, and whether it was cleared once it was made (it's read before the first frame is copied to it)
+	std::shared_ptr<image> ssr_history;
+	bool ssr_cleared{false};
+	bool reflections{false}; // the history was asked for (it can be missing when it couldn't be made)
 	// the tonemapped image, before the chromatic aberration, and the one which goes to the window
 	std::shared_ptr<image> tonemapped;
 	std::shared_ptr<image> output;
@@ -275,7 +281,6 @@ struct cull_resources
 {
 	instance_cull main;
 	std::array<instance_cull, 3> cascades;
-	instance_cull reflections;
 	// the maps of headlights, by the slot of the map, and the scenery parts of the maps of lamps, by their order among those drawn
 	// in a frame: the passes of a frame don't share the buffers of a culling. made when first needed
 	std::vector<std::unique_ptr<instance_cull>> headlights;
@@ -361,6 +366,8 @@ struct scene_state
 	bool grass_tried{false};
 	// the smoke and the rain or snow of the gpu
 	gpu_particles particles;
+	// the ray traced reflections (gfx.raytracing), on a device with ray queries; its set is set RT_SET of the pipelines of the scene
+	std::unique_ptr<ray_tracing> raytracing;
 	// the heatmap of the light clusters (gfx.lights.clusterheatmap), made when it's first drawn
 	std::shared_ptr<scene_program> cluster_heatmap;
 	bool cluster_heatmap_tried{false};
@@ -369,6 +376,8 @@ struct scene_state
 	// the format of the levels of the bloom chains: no alpha, no negative values, half the memory of rgba16f, where the device
 	// draws to it
 	VkFormat bloom_format{VK_FORMAT_B10G11R11_UFLOAT_PACK32};
+	// the same for the history of the screen space reflections, where the device blits and filters it
+	VkFormat history_format{VK_FORMAT_B10G11R11_UFLOAT_PACK32};
 	// the formats of the passes which don't depend on the viewport
 	target_formats shadow_formats;
 	target_formats reflection_formats;

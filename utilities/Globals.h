@@ -166,8 +166,11 @@ struct global_settings {
         float range{ 250.f };
     } shadowtune;
     struct reflectiontune_t {
+        // how often the environment map (the sky and the clouds around the camera, the reflection of what the screen space
+        // reflections and the ray tracing don't find) is drawn anew
         double update_interval{ 300.0 };
-        int fidelity{ 0 }; // 0: sections, 1: +static models, 2: +vehicles
+        // what the ray traced reflections of the vulkan renderer hold (gfx.raytracing): 0: sections, 1: +static models, 2: +vehicles
+        int fidelity{ 2 };
         float range_instances{ 750.f };
         float range_vehicles{ 250.f };
     } reflectiontune;
@@ -466,6 +469,18 @@ struct global_settings {
     int gfx_contactshadows { 0 };
     float gfx_contactshadows_length { 0.5f };
     float gfx_contactshadows_range { 50.f };
+    // screen space reflections of the opengl 4.6 and vulkan renderers, in place of the scenery in the environment map: the
+    // reflection of a surface traced through the depth of the scene drawn before its colour (which they turn on, see
+    // gfx_depthprepass_scene) and taken from the image of the last frame; where the screen doesn't hold it, the environment map
+    // (the sky) or the ray tracing. 0 none, 1 low, 2 medium, 3 high (steps of the rays); the longest ray, metres, and the
+    // roughest surface they're traced for (perceptual roughness, rougher ones reflect the environment map)
+    int gfx_ssr { 2 };
+    float gfx_ssr_range { 250.f };
+    float gfx_ssr_roughness { 0.6f };
+    // (vulkan) ray traced reflections where the screen space ones find nothing, on a gpu with ray queries: the scenery within
+    // the range, metres, as gfx.reflections.fidelity says. taken at the start
+    bool gfx_raytracing { false };
+    float gfx_raytracing_range { 500.f };
     // weather of the opengl 4.6 renderer (debug window "Weather"); the weather itself comes from the scenery, see
     // environment/weather.h. fog: 1 volumetric (a volume over the view with the shafts of the sun, the shadows of the clouds and
     // the light of lamps and headlights, worked out along the ray past it), 0 analytic (the same fog along the ray only, the way

@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14geometry.h"
 #include "rendering/vulkan14/vulkan14texture.h"
 
+#include <atomic>
+
 namespace vk14
 {
 
@@ -19,6 +21,9 @@ namespace
 
 // what opengl reads for the user data of a vertex without any (the attribute isn't given)
 gfx::vertex_userdata const no_userdata{glm::vec4{0.f, 0.f, 0.f, 1.f}};
+
+// the numbers the data of the banks get, unique across the banks (a bank made where another one was gets a new one)
+std::atomic<std::uint64_t> g_generation{0};
 
 } // namespace
 
@@ -140,6 +145,7 @@ bool vulkan14_geometrybank::build()
 		}
 		place.indexcount = static_cast<std::uint32_t>(indices.size()) - place.indexfirst;
 		place.dirty = false;
+		place.generation = ++g_generation;
 	}
 	m_layoutdirty = false;
 	m_chunksdirty = false;
@@ -150,9 +156,11 @@ bool vulkan14_geometrybank::build()
 
 	auto &memory{*m_resources.memory};
 	auto &uploads{*m_resources.uploads};
+	// with the ray tracing the vertices and the indices are built into acceleration structures, and the shading reads them
+	auto const raytracing{m_resources.raytracing ? (VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : 0};
 	auto const make = [&](std::shared_ptr<buffer> &Buffer, void const *Data, VkDeviceSize const Size, VkBufferUsageFlags const Usage, char const *Name) {
 		Buffer = std::make_shared<buffer>();
-		if ((false == Buffer->create(memory, Size, Usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memory_kind::device, Name)) || (false == uploads.upload_buffer(Buffer, Data, Size)))
+		if ((false == Buffer->create(memory, Size, Usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT | raytracing, memory_kind::device, Name)) || (false == uploads.upload_buffer(Buffer, Data, Size)))
 		{
 			Buffer.reset();
 			return false;
@@ -196,6 +204,7 @@ void vulkan14_geometrybank::update()
 			continue;
 		}
 		place.dirty = false;
+		place.generation = ++g_generation;
 		auto const &chunk{m_chunks[i]};
 		gpu_vertices(chunk, vertices, userdata);
 		vertexparts.emplace_back(place.vertexfirst * sizeof(gfx::basic_vertex), place.vertexcount * sizeof(gfx::basic_vertex));
@@ -245,6 +254,14 @@ bool vulkan14_geometrybank::source(gfx::geometry_handle const &Geometry, chunk_s
 	Source.vertices = m_vertices->handle();
 	Source.userdata = m_userdata->handle();
 	Source.topology = topology_of(m_chunks[index].type);
+	Source.vertexfirst = place.vertexfirst;
+	Source.vertexcount = place.vertexcount;
+	Source.generation = place.generation;
+	if (m_resources.raytracing)
+	{
+		Source.vertex_address = m_vertices->address();
+		Source.index_address = (m_indices ? m_indices->address() : 0);
+	}
 	if (place.indexcount > 0)
 	{
 		Source.indices = m_indices->handle();

@@ -322,6 +322,7 @@ set(SOURCES
 "rendering/common/weatherstate.cpp"
 "rendering/common/exposure.cpp"
 "rendering/common/temporalaa.cpp"
+"rendering/common/screenreflections.cpp"
 "gl/buffer.cpp"
 "gl/fence.cpp"
 "gl/pbo.cpp"
@@ -461,6 +462,7 @@ if (WITH_VULKAN)
 		"rendering/vulkan14/vulkan14particles.cpp"
 		"rendering/vulkan14/vulkan14debug.cpp"
 		"rendering/vulkan14/vulkan14commands.cpp"
+		"rendering/vulkan14/vulkan14raytracing.cpp"
 		"ref/volk/volk.c")
 	set(DEFINITIONS ${DEFINITIONS} "WITH_VULKAN")
 

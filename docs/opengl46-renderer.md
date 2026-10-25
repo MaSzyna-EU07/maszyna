@@ -229,6 +229,40 @@ order of the light buffer: the cab lamp, the headlights, then the lamps of model
 
 All three can be changed while the simulator runs, in the **Light clusters** debug window.
 
+### Reflections
+
+The reflections of the scenery are found in the image (screen space reflections): the reflected ray of each pixel of a
+shiny surface is followed through the depth of the scene drawn before its colour, and where it meets a surface, the colour
+is taken from the image of the last frame (moved to where that surface is now; the cab is moved with the vehicle). What the
+image doesn't hold (what is out of view, behind something else or behind the camera, the backs of things) reflects the
+environment map, which now holds the sky and the clouds only, with the ground below the horizon in the colour of
+`gfx.ambient.groundalbedo`. The scenery is no longer drawn into the environment map, so its cost is gone. The image of the
+last frame is copied after the anti-aliasing and the ambient occlusion and before the motion blur; the first frame, a jump
+of the camera of more than 50 metres and a change of the size of the window go without it (the sky only). Like the contact
+shadows they need the depth of the whole scene before its colour, so they turn on the depth pass of `gfx.depthprepass.scene`
+(see its cost below), and they are there only in the main view, with the post processing on and not in the orthographic
+view of the editor. The rough surfaces read a blurrier copy of the image; those rougher than `gfx.ssr.roughness` reflect
+the environment map only.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.ssr` | `medium` | `no`/`low`/`medium`/`high` (or 0..3): steps of the rays, 16, 32 or 64. `no`: the environment map only (the sky) |
+| `gfx.ssr.range` | `250` | 10..2000: the longest ray, metres |
+| `gfx.ssr.roughness` | `0.6` | 0..1: the roughest surface (perceptual roughness) that reflects the scene |
+| `gfx.raytracing yes/no` | `no` | Vulkan renderer only, on a graphics card with ray queries (`VK_KHR_ray_query`): what the screen space reflections don't find is traced through the scenery around the camera instead of reflecting the sky. Read at the start; with `gfx.ssr no` all the reflections of the scenery are traced |
+| `gfx.raytracing.range` | `500` | 10..5000: the scenery within this distance from the camera takes part in the traced reflections, and the rays are this long, metres |
+
+The traced reflections hold what the environment map held before, as `gfx.reflections.fidelity` says: the tracks and the
+terrain (0), the models within `gfx.reflections.range_instances` (1) and the vehicles within
+`gfx.reflections.range_vehicles` (2, the default now), except the vehicle of the cab. `gfx.reflections.fidelity` and the
+two ranges have no other use now; `gfx.reflections.framerate` still says how often the environment map (the sky) is
+drawn. The point hit is lit by the sky, by the sun where nothing stands between them (a ray of its own) and by its own light; the lamps and headlights don't light it. Each part of a model gets its structure
+for the tracing the first time it's met (a few a frame, so a new place fills in over some frames), and loses it when it
+isn't met for half a minute.
+
+All the entries can be changed while the simulator runs, in the **Sky and exposure** debug window (the ray tracing can be
+turned off and on there once it was started).
+
 ### Weather
 
 The clouds, the fog and the stars are drawn from the weather of the simulation (a `weather` section of the scenery, or its
@@ -312,8 +346,7 @@ are no longer loaded.
 Many models of the scenery (trees, bushes, poles, fences: models without lights and animations) are drawn in batches, one
 batch per model and level of detail. Which of them are drawn, and at which level of detail, can be worked out on the
 processor (as before) or on the graphics card. On the graphics card the processor no longer goes through the models one by
-one, so with dense vegetation it is much less loaded. The main view, the three cascades of the sun shadows and the faces of
-the environment map (reflections), the shadow maps of headlights and the scenery of the shadow maps of scenery lamps are drawn
+one, so with dense vegetation it is much less loaded. The main view, the three cascades of the sun shadows, the shadow maps of headlights and the scenery of the shadow maps of scenery lamps are drawn
 this way, and so are the sleepers of the tracks with a `sleepermodel` in the main view; the shadow map of the cab lamp, the
 cab and other views go as before.
 
@@ -325,7 +358,7 @@ cab and other views go as before.
 | `gfx.depthprepass yes/no` | `yes` | with `gfx.gpucull yes`: the depth of the models is drawn first, so the colour is worked out only for what stays in view (dense foliage) |
 | `gfx.gpucull.multidraw yes/no` | `yes` | with `gfx.gpucull yes`: parts of models with the same material (and texture variant) in the same model are drawn with one call (multi draw), see below |
 | `gfx.gpucull.shadows yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the cascades of the sun shadows too (each cascade with its own camera and the distances from the real camera, as before; models none of whose materials cast shadows are left out at once) |
-| `gfx.gpucull.reflections yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the faces of the environment map too (its own range of models, as before) |
+| `gfx.gpucull.reflections yes/no` | `yes` | no longer used: the environment map holds the sky only (see Reflections) |
 | `gfx.gpucull.shadows.headlights yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the shadow maps of headlights too (each map tested against the beam it is drawn with, to its reach, the distances from the real camera, as before) |
 | `gfx.gpucull.shadows.lamps yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the models of the scenery part of the shadow maps of scenery lamps too (each map tested against the reach of its lamp, as before); the part with the vehicles has no models of the scenery |
 | `gfx.gpucull.sleepers yes/no` | `yes` | with `gfx.gpucull yes` or `compare`: the sleepers of the tracks (`sleepermodel`) of the main view too, each one tested against the view and given its level of detail by its distance, as before (the tracks within `sleeperdistance` are chosen as before); they also take the occlusion test, the depth prepass and the two phases of the models |
@@ -345,7 +378,7 @@ is not worked out with the depth prepass on). Models whose material is not one o
 like) are left out of the depth prepass and drawn as before; with the depth prepass on, they don't hide the others either.
 All of these can be changed while the simulator runs, in the **Instance culling** debug window.
 
-The shadows and the reflections take the same tests as before (which models are in the cascade or the face, their distance
+The shadows take the same tests as before (which models are in the cascade or the map, their distance
 and level of detail), without the occlusion test, the depth prepass and the two phases, which belong to the main view. The
 copies of the models are sent to the graphics card once and serve all of these views. In the shadows the parts with the
 same texture for the alpha test (or with none) in the same model go in one call with `gfx.gpucull.multidraw yes`, whatever
@@ -409,8 +442,8 @@ read, but it only takes effect with `gfx.lights.clustered no`.
 - **Outside the beam texture a headlight adds nothing.** Before, the edge of the texture was stretched
   beyond the beam, which could leave a faint glow around vehicles. This also applies with
   `gfx.lights.clustered no`.
-- **Reflections (environment map)** are lit with the sun as seen from the reflection itself, and vehicle
-  headlights no longer light the scene in them.
+- **Reflections** of the scenery come from the image (screen space reflections, see above) instead of the
+  environment map, which holds the sky only.
 - **Motion blur and ambient occlusion** read the real depth of the scene. Before, the depth texture was read in a way the
   specification leaves undefined, and the result depended on the driver.
 - **Lines are 1 pixel wide**, as they always were on this kind of context. The widths the code asked for
@@ -455,10 +488,9 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   made them — fewer than the draws with `gfx.gpucull.multidraw yes` — and the processor time of the whole step) and the timings `instance cull:`, `occlusion depth:` (the depth pyramid of the test) and
   `depth prepass:`; in two phases each of them adds in brackets the time of the second phase, of the second pyramid and of
   the depth of the models drawn first. With `compare` it shows how many models both counted and how many levels of detail
-  differ. With `gfx.gpucull.shadows` and `gfx.gpucull.reflections` the same rows (without the occlusion test and the
-  prepass) follow for each cascade, `gpu cull shadows 1:` to `3:` (1 the nearest), and for the environment map,
-  `gpu cull reflections, last face:` (the last face of the map drawn, as the map is drawn now and then), with the timings
-  `instance cull shadows 1:` … and `instance cull reflections, last face:`. With `gfx.gpucull.shadows.headlights` and
+  differ. With `gfx.gpucull.shadows` the same rows (without the occlusion test and the
+  prepass) follow for each cascade, `gpu cull shadows 1:` to `3:` (1 the nearest), with the timings
+  `instance cull shadows 1:` …. With `gfx.gpucull.shadows.headlights` and
   `gfx.gpucull.shadows.lamps` they follow for each map of headlights drawn so far, `gpu cull headlight shadows 1:` … (by the
   slot of the map), and for the scenery of the maps of lamps, `gpu cull lamp shadows, scenery 1:` and `2:` (the first and
   the second drawn in a frame), each with the numbers of its last drawing and the timings `instance cull headlight shadows 1:`
@@ -490,7 +522,8 @@ editor goes through the first `dynamiclights` headlights, the reflections throug
   (`frame setup`, `sun shadows 1` to `3` — 1 the nearest, with the culling of the cascade —, `reflections`, `lamp and
   headlight shadows`, `clear, clusters, lights`, `clouds, fog volume`, `sky`, `scene depth` and `contact shadows depth` when
   drawn, `colour, opaque` — with the culling, the occlusion depth and the depth prepass of the instances —,
-  `colour, translucent and cab`, `resolve, ambient occlusion, motion blur`, `exposure, bloom`, `tonemapping, output`, `ui`,
+  `colour, translucent and cab`, `resolve, ambient occlusion, motion blur` — with the copy of the image for the
+  reflections —, `exposure, bloom`, `tonemapping, output`, `ui`,
   and `other viewports` when there are more of them; only those in the context of the main window are counted). The timings
   under `gpu steps:` are measured each from its own pair of marks, and the first mark of a pair can be put while the graphics
   card still works on what came before, so a short step right after a heavy one may show some of that work; the parts don't.

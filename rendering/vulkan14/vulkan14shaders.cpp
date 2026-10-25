@@ -181,6 +181,12 @@ bool shader_library::init(std::string const &Preamble, std::string &Reason)
 	m_cachedir = user_cache_dir("shaders");
 
 	m_binaries = Global.gfx_shader_binaries;
+	if (m_binaries && (Preamble.find("#define REFLECTION_RAYS") != std::string::npos))
+	{
+		// the binaries are made without the ray traced reflections
+		log_info("shaders: the ray traced reflections are on (gfx.raytracing), the SPIR-V binaries aren't used");
+		m_binaries = false;
+	}
 	if (m_binaries)
 	{
 		// the binaries are compiled with the constants written in the files, the sources get those of the renderer
@@ -752,9 +758,18 @@ void set_draw_state(command_stream *Commands, VkExtent2D Extent)
 namespace vk14
 {
 
-std::string binding_preamble()
+std::string binding_preamble(bool const Raytracing)
 {
 	std::string preamble{"#define MASZYNA_CONSTANTS 1\n"};
+	if (Raytracing)
+	{
+		// the extensions go before anything else of the source; shaders/vk14/rt_reflections.glsl says what they're for
+		preamble += "#extension GL_EXT_ray_query : require\n"
+		            "#extension GL_EXT_buffer_reference2 : require\n"
+		            "#extension GL_EXT_buffer_reference_uvec2 : require\n"
+		            "#extension GL_EXT_nonuniform_qualifier : require\n"
+		            "#define REFLECTION_RAYS 1\n";
+	}
 	auto const define = [&preamble](char const *Name, auto const Value, char const *Suffix = "") { preamble += std::string("#define ") + Name + " " + std::to_string(Value) + Suffix + "\n"; };
 	using namespace vk14::bindings;
 	define("UI_SET", UI_SET);
@@ -786,6 +801,7 @@ std::string binding_preamble()
 	define("LOCAL_SHADOW_LAMPS_TEX", LOCAL_SHADOW_LAMPS_TEX);
 	define("HEADLIGHT_SHADOW_TEX", HEADLIGHT_SHADOW_TEX);
 	define("SCENE_DEPTH_TEX", SCENE_DEPTH_TEX);
+	define("SSR_HISTORY_TEX", SSR_HISTORY_TEX);
 	define("PASS_BINDING_COUNT", PASS_BINDING_COUNT);
 	define("MATERIAL_TEXTURE_FIRST", MATERIAL_TEXTURE_FIRST);
 	define("CL_CLUSTER_UBO", CL_CLUSTER_UBO);
@@ -799,6 +815,10 @@ std::string binding_preamble()
 	define("POST_TEXTURES", POST_TEXTURES);
 	define("POST_EXPOSURE_SSBO", POST_EXPOSURE_SSBO);
 	define("COMPUTE_SET", COMPUTE_SET);
+	define("RT_SET", RT_SET);
+	define("RT_SCENE", RT_SCENE);
+	define("RT_RECORDS", RT_RECORDS);
+	define("RT_TEXTURES", RT_TEXTURES);
 	define("PUSH_CONSTANTS_SIZE", PUSH_CONSTANTS_SIZE);
 	define("SPEC_OUTPUT_GAMMA", SPEC_OUTPUT_GAMMA);
 	define("SPEC_SHADOWMAP_ENABLED", SPEC_SHADOWMAP_ENABLED);

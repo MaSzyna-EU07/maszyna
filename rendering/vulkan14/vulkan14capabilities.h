@@ -93,6 +93,12 @@ struct capabilities
 	bool pipeline_statistics_query{false};
 	bool sampler_filter_minmax{false};
 	bool shader_output_layer{false};
+	// ray queries in the shaders with what they need (VK_KHR_acceleration_structure, VK_KHR_ray_query, VK_KHR_deferred_host_operations,
+	// the device addresses of buffers and arrays of textures indexed in the shaders), for the ray traced reflections (gfx.raytracing).
+	// the alignment of the scratch memory of the builds of acceleration structures, and the most textures the shading may index
+	bool ray_query{false};
+	std::uint32_t scratch_alignment{256};
+	std::uint32_t max_indexed_textures{0};
 
 	// empty when the renderer can run on the device, otherwise one line per missing thing
 	std::vector<std::string> missing;

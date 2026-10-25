@@ -125,6 +125,17 @@ bool check_vk14(std::string const &Name)
 		if (!check_text(gfx::preprocess_shader(gfx::shader_api::vulkan14, Name, "#define NO_MOTION_OUTPUT 1\n", {}, false, vk14_dir), "-V --target-env " + vulkan_env))
 			suc = false;
 	}
+	// the ray traced reflections (gfx.raytracing): the renderer puts the extensions and REFLECTION_RAYS before the sources
+	// (vk14::binding_preamble()), the shaders which shade with light_common.glsl trace the rays
+	if (source.text.find("REFLECTION_RAYS_ACTIVE") != std::string::npos)
+	{
+		std::cout << "done, ray traced reflections..." << std::flush;
+		std::string const raytracing{
+		    "#extension GL_EXT_ray_query : require\n#extension GL_EXT_buffer_reference2 : require\n#extension GL_EXT_buffer_reference_uvec2 : require\n"
+		    "#extension GL_EXT_nonuniform_qualifier : require\n#define REFLECTION_RAYS 1\n"};
+		if (!check_text(gfx::preprocess_shader(gfx::shader_api::vulkan14, Name, raytracing, {}, false, vk14_dir), "-V --target-env " + vulkan_env))
+			suc = false;
+	}
 	std::cout << "done" << std::flush;
 	return suc;
 }

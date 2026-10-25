@@ -307,8 +307,8 @@ void vulkan14_renderer::init_frame_data()
 namespace
 {
 
-bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std::uint64_t const Value, std::uint32_t &Formatscount, VkSampleCountFlags const Samplecounts, VkFormat const Bloomformat, vk14::viewport_targets &Targets,
-                  int const Width, int const Height, bool const Srgb, bool const Taa)
+bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std::uint64_t const Value, std::uint32_t &Formatscount, VkSampleCountFlags const Samplecounts, VkFormat const Bloomformat, VkFormat const Historyformat,
+                  vk14::viewport_targets &Targets, int const Width, int const Height, bool const Srgb, bool const Taa, bool const Reflections)
 {
 	// as many samples as asked for, as far as the device has them for the colour and the depth
 	auto samples{static_cast<VkSampleCountFlagBits>(std::clamp(1 << Global.iMultisampling, 1, 8))};
@@ -320,7 +320,7 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	auto const aberration{Global.gfx_postfx_chromaticaberration_enabled};
 	VkExtent2D const extent{static_cast<std::uint32_t>(std::max(Width, 1)), static_cast<std::uint32_t>(std::max(Height, 1))};
 	if ((Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.aberration == aberration) &&
-	    (Targets.srgb == Srgb) && Targets.output)
+	    (Targets.srgb == Srgb) && (Targets.reflections == Reflections) && Targets.output)
 	{
 		return true;
 	}
@@ -336,6 +336,7 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	Targets.taa = Taa;
 	Targets.aberration = aberration;
 	Targets.srgb = Srgb;
+	Targets.reflections = Reflections;
 
 	auto make = [&](std::shared_ptr<vk14::image> &Image, VkFormat Format, VkImageUsageFlags Usage, VkSampleCountFlagBits Samples, char const *Name) {
 		vk14::image_desc desc;
@@ -364,7 +365,9 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 			ok = ok && make(Targets.msaa_motion, velocity, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, samples, "msaa velocity");
 		}
 	}
-	ok = ok && make(Targets.colour, hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "scene colour") &&
+	// the images of the scene the history of the screen space reflections is copied from (blits) are a source of transfers as well
+	auto const historysource{Reflections ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0u};
+	ok = ok && make(Targets.colour, hdr, sampledcolour | historysource, VK_SAMPLE_COUNT_1_BIT, "scene colour") &&
 	     make(Targets.depth, depth, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT, "scene depth");
 	if (motion)
 	{
@@ -376,7 +379,23 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	}
 	if (Taa)
 	{
-		ok = ok && make(Targets.taa_history[0], hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "taa history") && make(Targets.taa_history[1], hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "taa history");
+		ok = ok && make(Targets.taa_history[0], hdr, sampledcolour | historysource, VK_SAMPLE_COUNT_1_BIT, "taa history") &&
+		     make(Targets.taa_history[1], hdr, sampledcolour | historysource, VK_SAMPLE_COUNT_1_BIT, "taa history");
+	}
+	if (ok && Reflections)
+	{
+		// the history of the screen space reflections, with its mipmaps made by blits; without it they're off
+		vk14::image_desc desc;
+		desc.format = Historyformat;
+		desc.extent = {extent.width, extent.height, 1};
+		desc.mips = static_cast<std::uint32_t>(std::floor(std::log2(static_cast<float>(std::max(extent.width, extent.height))))) + 1;
+		desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		Targets.ssr_history = std::make_shared<vk14::image>();
+		if (false == Targets.ssr_history->create(Memory, desc, "reflection history"))
+		{
+			ErrorLog("reflection history setup failed, no screen space reflections");
+			Targets.ssr_history.reset();
+		}
 	}
 	auto const output{Srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM};
 	if (aberration)
@@ -653,6 +672,11 @@ bool vulkan14_renderer::Render()
 		clear_sky_images();
 		ctx.passes.end_pass();
 	}
+	// the set of the ray tracing of the frame has a structure to read from its first frame on
+	if (scene.raytracing)
+	{
+		scene.raytracing->begin_frame(ctx.commands, slot, value);
+	}
 	// the block of the weather and the scene for the compute passes before the first pass of the scene
 	m_draw->scene_offset = 0;
 	m_draw->light_offset = 0;
@@ -693,6 +717,11 @@ bool vulkan14_renderer::Render()
 		// and so may the tracks the sleeper records were made for, and the models drawn on their own
 		Clear_Indirect_Records();
 		scene.glare_visible.clear();
+		// and the geometry the structures of the ray tracing were built from
+		if (scene.raytracing)
+		{
+			scene.raytracing->clear(ctx.uploads.current_value());
+		}
 	}
 	if ((EditorModeFlag) || (m_nodestateversion != scene::node_state_version))
 	{
@@ -883,8 +912,10 @@ void vulkan14_renderer::render_scene()
 		auto const &viewport{m_viewports[i]};
 		auto const srgb{false == Global.gfx_shadergamma};
 		auto const *history{scene.targets[i].taa_history[0].get()};
+		auto const *reflections{scene.targets[i].ssr_history.get()};
 		if (false == make_targets(ctx.memory, ctx.deletions, ctx.uploads.current_value(), scene.formats_count, ctx.device.caps().limits.framebufferColorSampleCounts & ctx.device.caps().limits.framebufferDepthSampleCounts, scene.bloom_format,
-		                          scene.targets[i], viewport.width, viewport.height, srgb, viewport.main && Global.gfx_taa()))
+		                          scene.history_format, scene.targets[i], viewport.width, viewport.height, srgb, viewport.main && Global.gfx_taa(),
+		                          viewport.main && (false == Global.gfx_skippipeline) && ((Global.gfx_ssr > 0) || (m_raytracingon && scene.raytracing))))
 		{
 			continue;
 		}
@@ -892,6 +923,23 @@ void vulkan14_renderer::render_scene()
 		{
 			// new images of the history, nothing in them yet
 			m_taa.reset();
+		}
+		auto &targets{scene.targets[i]};
+		if (targets.ssr_history.get() != reflections)
+		{
+			m_ssr.reset();
+		}
+		if (targets.ssr_history && (false == targets.ssr_cleared))
+		{
+			// the pass sets hold the history from now on, it's read (by none of the pixels) before the first frame goes to it
+			targets.ssr_cleared = true;
+			auto &image{*targets.ssr_history};
+			ctx.passes.begin_pass("reflection history", {vk14::use_of(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
+			VkClearColorValue const black{{0.f, 0.f, 0.f, 0.f}};
+			VkImageSubresourceRange const range{VK_IMAGE_ASPECT_COLOR_BIT, 0, image.desc().mips, 0, 1};
+			ctx.commands->clear_color_image(image.handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+			vk14::barriers(ctx.commands, {vk14::use_of(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+			ctx.passes.end_pass();
 		}
 		render_viewport(i);
 	}
@@ -1190,6 +1238,17 @@ void vulkan14_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 	}
 	case rendermode::reflections:
 	{
+		if (m_rtgather)
+		{
+			// the scenery for the ray traced reflections: around the camera of the colour pass in the axes of the world, the draws
+			// going to the world around the camera; a box of the range of the rays stands for the frustum
+			auto const range{Global.gfx_raytracing_range};
+			camera.position() = m_colorpass.pass_camera.position();
+			camera.projection() = ortho_projection(-range, range, -range, range, -range, range);
+			frustumtest_proj = ortho_frustumtest_projection(-range, range, -range, range, -range, range);
+			Config.draw_range = range;
+			break;
+		}
 		// the faces of the map are drawn over a few frames. each is drawn from the place the camera was at
 		// when the update began, so they fit together along the edges when the camera moves in the meantime
 		camera.position() = m_environmentupdatelocation;
@@ -1231,6 +1290,15 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		m_renderpass.pass_camera.projection() = m_taa.begin_frame(
 		    m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height});
 		m_cabfuture = m_taa.cab_future();
+	}
+	// the screen space reflections: where the points the rays hit were in the image of the history. the ray traced ones fill in what
+	// they don't find, or go on their own without them
+	m_ssrframe = (ssr_wanted(vp) || raytracing_wanted(vp)) && targets.ssr_history;
+	if (m_ssrframe)
+	{
+		auto const *cab{((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr)) ? simulation::Train->Dynamic() : nullptr};
+		m_ssr.begin_frame(m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height},
+		                  static_cast<int>(targets.ssr_history->desc().mips));
 	}
 	m_colorpass = m_renderpass;
 
@@ -1279,6 +1347,10 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	scene_ubs.contact_shadow_params = glm::vec4{0.f};
 	scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
 	scene_ubs.shadow_fit = glm::vec4{0.f};
+	// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour pass of
+	// the main view only
+	scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, 0.f, 0.f, 0.f};
+	gfx::screen_reflections::clear(scene_ubs);
 
 	if (vp.main)
 	{
@@ -1317,6 +1389,12 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		render_lamp_shadows();
 		render_headlight_shadows();
 		ready_lamp_maps();
+	}
+	// the scenery around the camera the reflections are traced through, before the passes which trace them
+	auto const raytracing{raytracing_wanted(vp)};
+	if (raytracing)
+	{
+		render_ray_scene(vp);
 	}
 
 	// the motion blur only when something in the view moves (see opengl46_renderer::Render_pass())
@@ -1393,12 +1471,17 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	// the depth of the whole opaque scene before its colour, which the contact shadows need
 	m_indirectcolourpending = false;
 	auto const contactshadows{contact_shadows_wanted(vp)};
-	if ((Global.gfx_depthprepass_scene || contactshadows) && vp.main && (false == Global.bWireFrame))
+	auto const reflections{m_ssrframe && (false == Global.bWireFrame)};
+	if ((Global.gfx_depthprepass_scene || contactshadows || reflections) && vp.main && (false == Global.bWireFrame))
 	{
 		render_scene_depth(Index, future);
 		if (contactshadows)
 		{
 			setup_contact_shadows(Index);
+		}
+		if (reflections)
+		{
+			setup_screen_reflections(Index, taa);
 		}
 	}
 
@@ -1474,12 +1557,14 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	}
 	commands->end_rendering();
 	end_draws();
-	if (m_contactshadows)
+	if (m_contactshadows || m_ssractive)
 	{
 		// the depth they read is of this view only
 		m_contactshadows = false;
+		m_ssractive = false;
 		scene_ubs.contact_shadow_params = glm::vec4{0.f};
 		scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
+		gfx::screen_reflections::clear(scene_ubs);
 	}
 	// the images resolved and drawn are read by the post-processing
 	m_colorpass.draw_stats = m_renderpass.draw_stats;
@@ -1502,7 +1587,8 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 	auto &draw{*m_draw};
 	auto const commands{ctx.commands};
 	auto const msaa{targets.samples != VK_SAMPLE_COUNT_1_BIT};
-	auto const contact{contact_shadows_wanted(m_viewports[Index])};
+	// the depth copied apart from the one the colour pass goes on with, for the contact shadows and the screen space reflections
+	auto const contact{contact_shadows_wanted(m_viewports[Index]) || m_ssrframe};
 	commands->end_rendering();
 	// what the draws go on with
 	auto const set{draw.set};
@@ -1641,6 +1727,211 @@ void vulkan14_renderer::setup_contact_shadows(std::size_t const Index)
 	scene_ubs.contact_shadow_lamps = glm::vec4{level.lamps, 0.f, 0.f, 0.f};
 	upload_scene_block();
 	m_contactshadows = true;
+}
+
+// the screen space reflections of the main view trace the depth of the scene drawn before the colour and work out the distance of a
+// surface from its depth as the contact shadows do: not in the orthographic view of the editor (opengl46_renderer::Ssr_View())
+bool vulkan14_renderer::ssr_wanted(viewport_config const &Viewport) const
+{
+	if ((Global.gfx_ssr <= 0) || (false == Viewport.main) || Global.bWireFrame || Global.gfx_skippipeline)
+	{
+		return false;
+	}
+	auto const &projection{m_renderpass.pass_camera.projection()};
+	return (projection[2][3] != 0.f) && (projection[2][2] == 0.f) && (projection[3][2] > 0.f);
+}
+
+void vulkan14_renderer::setup_screen_reflections(std::size_t const Index, bool const Temporal)
+{
+	auto &targets{m_context->scene.targets[Index]};
+	if ((false == bool(targets.scene_depth)) || (false == bool(targets.ssr_history)))
+	{
+		return;
+	}
+	m_ssr.setup(scene_ubs, gfx::screen_reflections::steps(Global.gfx_ssr), raytracing_wanted(m_viewports[Index]), Global.gfx_raytracing_range, Temporal);
+	upload_scene_block();
+	m_ssractive = true;
+}
+
+// the ray traced reflections, of the main view only (as the screen space ones, which they fill in)
+bool vulkan14_renderer::raytracing_wanted(viewport_config const &Viewport) const
+{
+	if ((false == m_raytracingon) || (false == bool(m_context->scene.raytracing)) || (false == Viewport.main) || Global.bWireFrame || Global.gfx_skippipeline)
+	{
+		return false;
+	}
+	auto const &projection{m_renderpass.pass_camera.projection()};
+	return (projection[2][3] != 0.f) && (projection[2][2] == 0.f) && (projection[3][2] > 0.f);
+}
+
+// the scenery around the camera for the ray traced reflections: the walk of the scene in its reflection mode (the sections, the models
+// and the vehicles in their ranges, gfx.reflections.*) around the camera of the colour pass, noting the draws instead of making them,
+// built into the acceleration structures of the frame. the vehicle of the cab is left out: from the inside of the cab it would be its
+// own shell that the rays hit
+void vulkan14_renderer::render_ray_scene(viewport_config &Viewport)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	m_rtdraws.clear();
+	m_rtinstances.clear();
+	auto const skipvehicle{m_shadowskipvehicle};
+	if ((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr))
+	{
+		m_shadowskipvehicle = simulation::Train->Dynamic();
+	}
+	auto const colourpass{m_renderpass};
+	m_rtgather = true;
+	setup_pass(Viewport, m_renderpass, rendermode::reflections);
+	setup_matrices();
+	// the walk binds materials and notes the draws; nothing is recorded
+	auto &draw{*m_draw};
+	auto const rendering{draw.rendering};
+	draw.rendering = false;
+	draw.blending = false;
+	Render(simulation::Region);
+	draw.rendering = rendering;
+	m_rtgather = false;
+	m_shadowskipvehicle = skipvehicle;
+	m_renderpass = colourpass;
+	setup_matrices();
+
+	ctx.passes.begin_pass("ray tracing scene");
+	scene.raytracing->build(ctx.commands, ctx.slot, ctx.uploads.current_value(), m_framestamp, m_rtdraws, ctx.images);
+	ctx.passes.end_pass();
+}
+
+// a draw of the walk noted for the ray tracing: the chunk with its data on the gpu, the transform, the texture and the colour of the
+// material, for each instance of an instanced draw
+void vulkan14_renderer::gather_ray_draw(gfx::geometry_handle const &Geometry)
+{
+	auto &draw{*m_draw};
+	if ((Geometry == null_handle) || (draw.program == nullptr) || (draw.program->vertices != vk14::vertex_kind::scene) || draw.blending || draw.glare)
+	{
+		return;
+	}
+	if ((Geometry.bank == 0) || (Geometry.bank > m_banks.size()) || (m_banks[Geometry.bank - 1] == nullptr))
+	{
+		return;
+	}
+	gfx::indirect_source indirect;
+	if (false == m_geometry.indirect_source(Geometry, indirect))
+	{
+		return;
+	}
+	auto const &chunk{static_cast<vk14::vulkan14_geometrybank *>(m_banks[Geometry.bank - 1])->last()};
+	if ((chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) || (chunk.vertex_address == 0))
+	{
+		return;
+	}
+	vk14::ray_draw ray;
+	ray.key = static_cast<std::uint64_t>(Geometry);
+	ray.source = chunk;
+	// the diffuse colour of the material as material_diffuse() of the shaders makes it
+	glm::vec3 const colour{glm::pow(glm::max(glm::vec3{model_ubs.param[0]}, glm::vec3{0.f}), glm::vec3{2.2f})};
+	auto const value{std::max({model_ubs.param[0].r, model_ubs.param[0].g, model_ubs.param[0].b})};
+	ray.colour = (value > 0.f ? colour * (model_ubs.param[1].x / value) : glm::vec3{0.f});
+	ray.glow = model_ubs.emission;
+	// the diffuse texture of the material, and its alpha test when it has an alpha channel
+	if (draw.textures[0] != null_handle)
+	{
+		auto &texture{m_context->textures->mark_as_used(draw.textures[0])};
+		if (texture.create() && (m_context->images.find(texture.get_id()) != nullptr))
+		{
+			ray.texture = texture.get_id();
+			ray.cutoff = (texture.get_has_alpha() ? std::max(model_ubs.opacity, 0.f) : 0.f);
+		}
+	}
+	glm::mat4 const modelview{model_ubs.modelview};
+	if (m_current_instance_count > 0)
+	{
+		for (std::size_t instance = 0; instance < m_current_instance_count; ++instance)
+		{
+			auto const index{static_cast<std::size_t>(m_current_instance_base) + instance};
+			if (index >= m_rtinstances.size())
+			{
+				break;
+			}
+			ray.transform = m_rtinstances[index] * modelview;
+			m_rtdraws.push_back(ray);
+		}
+	}
+	else
+	{
+		ray.transform = modelview;
+		m_rtdraws.push_back(ray);
+	}
+}
+
+// the finished image of the frame (before the motion blur) copied to the history the reflections of the next frame take their colour
+// from, with its mipmaps for the rough surfaces, each level blitted from the one before it
+void vulkan14_renderer::store_ssr_history(std::size_t const Index, vk14::image &Source)
+{
+	auto &ctx{*m_context};
+	auto &targets{ctx.scene.targets[Index]};
+	if (false == bool(targets.ssr_history))
+	{
+		return;
+	}
+	auto const commands{ctx.commands};
+	auto &image{*targets.ssr_history};
+	auto const mips{image.desc().mips};
+	auto const width{static_cast<std::int32_t>(image.desc().extent.width)};
+	auto const height{static_cast<std::int32_t>(image.desc().extent.height)};
+	ctx.passes.begin_pass("reflections, image of the frame", {vk14::use_of(Source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
+	                                                          vk14::use_of(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
+	auto blit = [&](VkImage From, std::uint32_t FromLevel, VkImageLayout FromLayout, std::uint32_t ToLevel, glm::ivec2 const &FromSize, glm::ivec2 const &ToSize) {
+		VkImageBlit2 region{};
+		region.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+		region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, FromLevel, 0, 1};
+		region.srcOffsets[1] = {FromSize.x, FromSize.y, 1};
+		region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, ToLevel, 0, 1};
+		region.dstOffsets[1] = {ToSize.x, ToSize.y, 1};
+		VkBlitImageInfo2 info{};
+		info.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+		info.srcImage = From;
+		info.srcImageLayout = FromLayout;
+		info.dstImage = image.handle();
+		info.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		info.regionCount = 1;
+		info.pRegions = &region;
+		info.filter = VK_FILTER_LINEAR;
+		commands->blit_image2(&info);
+	};
+	auto barrier = [&](std::uint32_t Level, VkImageLayout From, VkImageLayout To, VkPipelineStageFlags2 SrcStage, VkAccessFlags2 SrcAccess, VkPipelineStageFlags2 DstStage, VkAccessFlags2 DstAccess) {
+		VkImageMemoryBarrier2 entry{};
+		entry.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+		entry.srcStageMask = SrcStage;
+		entry.srcAccessMask = SrcAccess;
+		entry.dstStageMask = DstStage;
+		entry.dstAccessMask = DstAccess;
+		entry.oldLayout = From;
+		entry.newLayout = To;
+		entry.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		entry.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		entry.image = image.handle();
+		entry.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, Level, 1, 0, 1};
+		VkDependencyInfo dependency{};
+		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency.imageMemoryBarrierCount = 1;
+		dependency.pImageMemoryBarriers = &entry;
+		commands->pipeline_barrier2(&dependency);
+	};
+	glm::ivec2 const sourcesize{static_cast<std::int32_t>(Source.desc().extent.width), static_cast<std::int32_t>(Source.desc().extent.height)};
+	blit(Source.handle(), 0, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 0, sourcesize, {width, height});
+	for (std::uint32_t level = 1; level < mips; ++level)
+	{
+		barrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+		blit(image.handle(), level - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, level, {std::max(width >> (level - 1), 1), std::max(height >> (level - 1), 1)}, {std::max(width >> level, 1), std::max(height >> level, 1)});
+	}
+	// the levels read from are in the layout of the sources, the last one in that of the destination: all of them read by the shaders
+	for (std::uint32_t level = 0; level < mips; ++level)
+	{
+		auto const from{(level + 1 < mips) ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL};
+		barrier(level, from, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, sampled_stage, sampled_access);
+	}
+	image.state = vk14::image_state{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access};
+	ctx.passes.end_pass();
+	m_ssr.end_frame();
 }
 
 // the rendering of the colour of a viewport: begun with the images cleared, or again after the depth under the cursor was read
@@ -1815,7 +2106,7 @@ void vulkan14_renderer::render_shadows(viewport_config &Viewport)
 	vk14::barriers(commands, {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
 }
 
-// the environment map, a face of it per frame (opengl46_renderer::Render_reflections())
+// the environment map (the sky and the clouds around the camera), a face of it per frame (opengl46_renderer::Render_reflections())
 bool vulkan14_renderer::render_reflections(viewport_config &Viewport)
 {
 	auto &ctx{*m_context};
@@ -1957,12 +2248,9 @@ void vulkan14_renderer::render_reflection_face(viewport_config &Viewport)
 	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
 	upload_scene_block();
+	// the sky and the clouds alone: the scenery is reflected by the screen space reflections (gfx.ssr) and the ray tracing, the
+	// environment map gives what they don't find
 	render_environment(&simulation::Environment);
-	// opaque parts...
-	walk_blending(false);
-	setup_shadow_matrices();
-	upload_scene_block();
-	Render(simulation::Region);
 
 	commands->end_rendering();
 	end_draws();
@@ -2720,6 +3008,12 @@ void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionbl
 		post_pass("postfx_taa.frag", *targets.taa_history[target], {targets.colour.get(), targets.motion_image.get(), targets.depth.get(), targets.taa_history[1 - target].get()}, constants, "temporal anti-aliasing");
 		hdr = targets.taa_history[target].get();
 	}
+	// the image before the blur is the one the reflections of the next frame take
+	if (m_ssrframe && m_viewports[Index].main)
+	{
+		store_ssr_history(Index, *hdr);
+	}
+	m_ssrframe = false;
 	if (Motionblur && targets.blurred)
 	{
 		vk14::draw_constants constants;

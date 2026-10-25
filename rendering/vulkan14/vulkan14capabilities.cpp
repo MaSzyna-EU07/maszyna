@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14capabilities.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace vk14
@@ -239,6 +240,38 @@ void query_capabilities(VkPhysicalDevice Physical, feature_chain &Queried, capab
 	Caps.sampler_filter_minmax = (Queried.v12.samplerFilterMinmax == VK_TRUE);
 	Caps.shader_output_layer = (Queried.v12.shaderOutputLayer == VK_TRUE);
 
+	// the ray queries: the structures of the extensions are asked about only where the device has the extensions
+	if (hasextension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) && hasextension(VK_KHR_RAY_QUERY_EXTENSION_NAME) && hasextension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME))
+	{
+		VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration{};
+		acceleration.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+		VkPhysicalDeviceRayQueryFeaturesKHR rayquery{};
+		rayquery.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+		acceleration.pNext = &rayquery;
+		VkPhysicalDeviceFeatures2 features{};
+		features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		features.pNext = &acceleration;
+		vkGetPhysicalDeviceFeatures2(Physical, &features);
+		VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationproperties{};
+		accelerationproperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+		VkPhysicalDeviceVulkan12Properties indexing{};
+		indexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+		indexing.pNext = &accelerationproperties;
+		VkPhysicalDeviceProperties2 properties2{};
+		properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		properties2.pNext = &indexing;
+		vkGetPhysicalDeviceProperties2(Physical, &properties2);
+		Caps.scratch_alignment = std::max<std::uint32_t>(accelerationproperties.minAccelerationStructureScratchOffsetAlignment, 1);
+		// the textures of the scenery the reflections are traced through, beside the other bindings of the stage
+		// (combined image samplers: they count as samplers too)
+		auto const textures{std::min({Caps.limits.maxPerStageDescriptorSampledImages, Caps.limits.maxDescriptorSetSampledImages, Caps.limits.maxPerStageDescriptorSamplers,
+		                              Caps.limits.maxDescriptorSetSamplers, Caps.limits.maxPerStageResources})};
+		Caps.max_indexed_textures = std::min<std::uint32_t>(textures > 64 ? textures - 64 : 0, 65536);
+		Caps.ray_query = (acceleration.accelerationStructure == VK_TRUE) && (rayquery.rayQuery == VK_TRUE) && (Queried.v12.bufferDeviceAddress == VK_TRUE) &&
+		                 (Queried.v12.runtimeDescriptorArray == VK_TRUE) && (Queried.v12.descriptorBindingPartiallyBound == VK_TRUE) && (Queried.v12.descriptorBindingVariableDescriptorCount == VK_TRUE) &&
+		                 (Queried.v12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE) && (Caps.max_indexed_textures >= 256);
+	}
+
 	// can the renderer run on it
 	if (!Caps.ext_swapchain)
 	{
@@ -294,6 +327,7 @@ std::string capability_report(capabilities const &Caps)
 	line(std::string("shader output layer     ") + flag(Caps.shader_output_layer));
 	line(std::string("fill mode non solid     ") + flag(Caps.fill_mode_non_solid));
 	line(std::string("pipeline statistics     ") + flag(Caps.pipeline_statistics_query));
+	line(std::string("ray queries             ") + flag(Caps.ray_query));
 
 	return report;
 }

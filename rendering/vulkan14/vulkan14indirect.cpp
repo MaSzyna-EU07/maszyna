@@ -57,7 +57,7 @@ bool vulkan14_renderer::init_cull()
 			return false;
 		}
 	}
-	if ((false == cull.reflections.init(environment, device, ctx.pipelines, ctx.shaders, scene.pass_layout, &cull.main)) || (false == cull.hiz.init(device, ctx.pipelines, ctx.shaders, scene.pass_layout)))
+	if (false == cull.hiz.init(device, ctx.pipelines, ctx.shaders, scene.pass_layout))
 	{
 		return false;
 	}
@@ -90,7 +90,6 @@ void vulkan14_renderer::destroy_cull()
 		}
 		culls->clear();
 	}
-	cull.reflections.destroy(device);
 	cull.main.destroy(device);
 	cull.hiz.destroy(device);
 	cull.shadowfit.destroy(device);
@@ -139,10 +138,6 @@ void vulkan14_renderer::walk_region_begin()
 				// the cascades of the sun
 				passcull = &cull.cascades[m_shadowcascade];
 				m_shadowcasters.clear();
-			}
-			else if ((m_renderpass.draw_mode == rendermode::reflections) && Global.gfx_gpucull_reflections && (Global.reflectiontune.fidelity >= 1))
-			{
-				passcull = &cull.reflections;
 			}
 		}
 	}

@@ -89,6 +89,8 @@ class buffer
 	{
 		return m_mapped;
 	}
+	// the device address of the buffer, made with VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT (the ray tracing)
+	VkDeviceAddress address() const;
 	// makes the writes of the cpu seen by the gpu where the memory isn't coherent
 	void flush(VkDeviceSize Offset, VkDeviceSize Size) const;
 	// makes the writes of the gpu seen by the cpu where the memory isn't coherent (readback memory may be cached)
@@ -104,6 +106,7 @@ class buffer
 	VmaAllocation m_allocation{VK_NULL_HANDLE};
 	VkDeviceSize m_size{0};
 	std::uint8_t *m_mapped{nullptr};
+	mutable VkDeviceAddress m_address{0}; // asked for the first time it's needed
 };
 
 // the state of an image the barriers start from: its layout and the last stage and access which used it

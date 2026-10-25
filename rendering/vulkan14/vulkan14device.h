@@ -76,6 +76,12 @@ class device
 	{
 		return m_memory_budget;
 	}
+	// the ray queries are on with what they need (gfx.raytracing on a device which has them): the device addresses of buffers, the
+	// acceleration structures, the arrays of textures indexed in the shaders
+	bool raytracing_enabled() const
+	{
+		return m_raytracing;
+	}
 
   private:
 	static queue_families find_queue_families(VkInstance Instance, VkPhysicalDevice Physical, VkSurfaceKHR Surface, std::uint32_t &TimestampBits);
@@ -88,6 +94,7 @@ class device
 	feature_chain m_queried;
 	bool m_portability_subset{false};
 	bool m_memory_budget{false};
+	bool m_raytracing{false};
 
 	VkQueue m_graphics_queue{VK_NULL_HANDLE};
 	VkQueue m_compute_queue{VK_NULL_HANDLE};

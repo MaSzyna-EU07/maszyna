@@ -515,7 +515,8 @@ class scene_walk
 	// the shadow pass draws the kept scenery part of the map of a lamp: no vehicles, and not the model of the lamp itself
 	bool m_cubescenery{false};
 	TAnimModel const *m_cubeskipinstance{nullptr};
-	// the shadow pass leaves this vehicle out (the one the headlights of the map being drawn belong to)
+	// the shadow pass leaves this vehicle out (the one the headlights of the map being drawn belong to), and so does the walk of the
+	// reflection mode (the vehicle of the cab, for the ray traced reflections of the vulkan renderer)
 	TDynamicObject const *m_shadowskipvehicle{nullptr};
 	// what the picking passes drew, by the index of their colours
 	std::vector<TSubModel const *> m_pickcontrolsitems;

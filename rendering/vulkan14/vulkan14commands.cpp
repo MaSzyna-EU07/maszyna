@@ -63,7 +63,8 @@ enum call_type : std::uint32_t
 	call_begin_query,
 	call_end_query,
 	call_begin_label,
-	call_end_label
+	call_end_label,
+	call_build_acceleration_structures
 };
 
 struct call_header
@@ -164,6 +165,14 @@ struct update_call
 	VkBuffer buffer;
 	VkDeviceSize offset, size;
 	std::size_t data;
+};
+// the builds of acceleration structures: the infos, the geometries of all of them one after another and their ranges
+struct build_call
+{
+	std::uint32_t count;
+	std::size_t infos;
+	std::size_t geometries;
+	std::size_t ranges;
 };
 // the copies and the blit: the info with its regions
 template <typename Info_> struct copy_call
@@ -689,6 +698,36 @@ void command_stream::end_debug_utils_label()
 	add(call_end_label, 0);
 }
 
+void command_stream::build_acceleration_structures(std::uint32_t const Count, VkAccelerationStructureBuildGeometryInfoKHR const *Infos, VkAccelerationStructureBuildRangeInfoKHR const *const *Ranges)
+{
+	if (Count == 0)
+	{
+		return;
+	}
+	std::vector<VkAccelerationStructureBuildGeometryInfoKHR> infos(Infos, Infos + Count);
+	std::vector<VkAccelerationStructureGeometryKHR> geometries;
+	std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges;
+	for (std::uint32_t i = 0; i < Count; ++i)
+	{
+		auto const &info{Infos[i]};
+		assert(info.pNext == nullptr);
+		for (std::uint32_t geometry = 0; geometry < info.geometryCount; ++geometry)
+		{
+			geometries.push_back(info.pGeometries != nullptr ? info.pGeometries[geometry] : *info.ppGeometries[geometry]);
+			ranges.push_back(Ranges[i][geometry]);
+		}
+		infos[i].pGeometries = nullptr;
+		infos[i].ppGeometries = nullptr;
+	}
+	auto const call{add(call_build_acceleration_structures, sizeof(build_call))};
+	auto const infodata{append(infos.data(), sizeof(VkAccelerationStructureBuildGeometryInfoKHR) * infos.size())};
+	auto const geometrydata{append(geometries.data(), sizeof(VkAccelerationStructureGeometryKHR) * geometries.size())};
+	auto const rangedata{append(ranges.data(), sizeof(VkAccelerationStructureBuildRangeInfoKHR) * ranges.size())};
+	payload<build_call>(call) = build_call{Count, infodata, geometrydata, rangedata};
+	close(call);
+	work();
+}
+
 // the replay
 
 void command_stream::execute(std::size_t const Call, VkCommandBuffer const Buffer, VkRenderingFlags const Flags) const
@@ -956,6 +995,26 @@ void command_stream::execute(std::size_t const Call, VkCommandBuffer const Buffe
 			vkCmdEndDebugUtilsLabelEXT(Buffer);
 		}
 		break;
+	case call_build_acceleration_structures:
+	{
+		auto const &data{payload<build_call>(Call)};
+		std::vector<VkAccelerationStructureBuildGeometryInfoKHR> infos(at<VkAccelerationStructureBuildGeometryInfoKHR>(data.infos), at<VkAccelerationStructureBuildGeometryInfoKHR>(data.infos) + data.count);
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR const *> ranges(data.count);
+		auto const *geometries{data.geometries != no_data ? at<VkAccelerationStructureGeometryKHR>(data.geometries) : nullptr};
+		auto const *range{data.ranges != no_data ? at<VkAccelerationStructureBuildRangeInfoKHR>(data.ranges) : nullptr};
+		for (std::uint32_t i = 0; i < data.count; ++i)
+		{
+			infos[i].pGeometries = geometries;
+			ranges[i] = range;
+			if (geometries != nullptr)
+			{
+				geometries += infos[i].geometryCount;
+				range += infos[i].geometryCount;
+			}
+		}
+		vkCmdBuildAccelerationStructuresKHR(Buffer, data.count, infos.data(), ranges.data());
+		break;
+	}
 	default:
 		break;
 	}

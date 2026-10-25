@@ -72,11 +72,6 @@ std::string vulkan14_renderer::cull_info()
 			text += cull.cascades[cascade].info("gpu cull shadows " + std::to_string(cascade + 1), false);
 		}
 	}
-	if (Global.gfx_gpucull_reflections && cull.reflections.ran())
-	{
-		cull.reflections.collect();
-		text += cull.reflections.info("gpu cull reflections, last face", false);
-	}
 	if (Global.gfx_gpucull != 0)
 	{
 		// the maps are drawn now and then, the numbers are of the last drawing of each
@@ -176,6 +171,10 @@ std::string vulkan14_renderer::scene_info()
 	if (stats.valid && (Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap))
 	{
 		text += "cluster lists: " + std::to_string(stats.index_count) + ", overflow " + std::to_string(stats.overflow_count) + " (peak " + std::to_string(stats.overflow_peak) + ")\n";
+	}
+	if (scene.raytracing && m_raytracingon)
+	{
+		text += scene.raytracing->info() + "\n";
 	}
 	return text;
 }
@@ -318,6 +317,19 @@ void vulkan14_renderer::draw_debug_ui()
 				ImGui::SliderInt("ao steps per side", &Global.gfx_postfx_ao_steps, 1, 16);
 			}
 		}
+		ImGui::Separator();
+		std::string raytracing;
+		if (m_context->scene.raytracing)
+		{
+			ImGui::Checkbox("ray traced reflections where the screen has none (gfx.raytracing)", &m_raytracingon);
+			ImGui::SliderFloat("range of their rays and of the scenery, m (gfx.raytracing.range)", &Global.gfx_raytracing_range, 10.f, 5000.f, "%.0f", ImGuiSliderFlags_Logarithmic);
+			raytracing = m_context->scene.raytracing->info();
+		}
+		else
+		{
+			raytracing = (Global.gfx_raytracing ? "ray traced reflections: the gpu has no ray queries" : "ray traced reflections: off (gfx.raytracing yes in eu07.ini, taken at the start)");
+		}
+		m_ssr.draw_debug_ui(raytracing.c_str());
 	}
 	ImGui::End();
 
@@ -338,7 +350,6 @@ void vulkan14_renderer::draw_debug_ui()
 		if (Global.gfx_gpucull != 0)
 		{
 			ImGui::Checkbox("the same for the cascades of the sun shadows (gfx.gpucull.shadows)", &Global.gfx_gpucull_shadows);
-			ImGui::Checkbox("the same for the environment map, when it's drawn next (gfx.gpucull.reflections)", &Global.gfx_gpucull_reflections);
 			ImGui::Checkbox("the same for the shadow maps of headlights (gfx.gpucull.shadows.headlights)", &Global.gfx_gpucull_shadows_headlights);
 			ImGui::Checkbox("the same for the scenery of the shadow maps of lamps, when it's drawn next (gfx.gpucull.shadows.lamps)", &Global.gfx_gpucull_shadows_lamps);
 			ImGui::Checkbox("the same for the sleepers of the tracks of the view (gfx.gpucull.sleepers)", &Global.gfx_gpucull_sleepers);

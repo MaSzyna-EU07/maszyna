@@ -95,6 +95,7 @@
 #define CLOUD_COVERAGE_TEX 21
 #define CLOUD_HISTORY_TEX 22
 #define SCENE_DEPTH_TEX 23
+#define SSR_HISTORY_TEX 24
 #define WEATHER_UBO_BINDING 5
 #define WEATHER_SCRATCH_SSBO_BINDING 9
 #define MAX_CLOUD_LAYERS 4
@@ -289,6 +290,13 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     vec4 contact_shadow_lamps;
     // cascades of the sun shadows fitted to the depth of the view, see gl::scene_ubs
     vec4 shadow_fit;
+    // screen space reflections and the reflection of the surroundings, see gl::scene_ubs
+    mat4 ssr_reprojection;
+    mat4 ssr_reprojection_cab;
+    mat4 ssr_cab_box;
+    vec4 ssr_params;
+    vec4 ssr_params2;
+    vec4 env_params;
 };
 
 #ifdef STAGE_VERTEX
