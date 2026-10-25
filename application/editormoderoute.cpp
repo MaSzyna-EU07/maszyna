@@ -1741,12 +1741,12 @@ bool editor_mode::render_route_band()
 	// ones of no length yet
 	int under{-1};
 	int part{0};
+	int arc{0};
 	if (hovered && false == dragging)
 	{
 		for (int i = 0; i < count; ++i)
 		{
 			auto const &element{result.elements[i]};
-	int arc{0};
 			if (mouse.x < x_of(element.chainage) || mouse.x >= x_of(element.chainage + element.length))
 				continue;
 			under = i;
@@ -1810,12 +1810,12 @@ bool editor_mode::render_route_band()
 		}
 		else
 		{
+			// the transition in grows to the left, from where it starts; the others to the right
 			auto const shift{(mouse.x - band.press.x) / std::max(1e-6f, metres)};
 			wanted = std::max(0.0, std::round(band.value + (band.part == 2 ? -shift : shift)));
 		}
 		if (wanted != value)
 		{
-			// the transition in grows to the left, from where it starts; the others to the right
 			value = wanted;
 			changed = true;
 		}

@@ -425,7 +425,7 @@ void editor_mode::render_viewport_gizmo()
 	};
 	std::vector<tool_button> buttons;
 	if (tracks)
-		buttons.push_back({icon::select, STR_C("No gizmo"), nullptr, STR_C("The gizmo hidden: a track is changed by dragging its points, and won't move by chance"), false == on, [this]() { m_track_gizmo_on = false; }});
+		buttons.push_back({icon::select, STR_C("No gizmo"), nullptr, STR_C("The gizmo hidden: a track is changed by dragging its ends, and won't move nor bend by chance; its control vectors come out with the gizmo"), false == on, [this]() { m_track_gizmo_on = false; }});
 	buttons.push_back({icon::translate, STR_C("Translate"), "Q", tooltip, on && m_gizmo_op == gizmo_operation::translate, [choose]() { choose(gizmo_operation::translate); }, tracks});
 	buttons.push_back({icon::rotate, STR_C("Rotate"), "W", tooltip, on && m_gizmo_op == gizmo_operation::rotate, [choose]() { choose(gizmo_operation::rotate); }});
 	buttons.push_back({icon::scale, STR_C("Scale"), "E", tooltip, on && m_gizmo_op == gizmo_operation::scale, [choose]() { choose(gizmo_operation::scale); }});

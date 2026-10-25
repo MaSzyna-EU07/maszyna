@@ -5361,11 +5361,44 @@ msgstr "Zaznaczanie i poprawki"
 msgid "The select tool"
 msgstr "Narzędzie Zaznaczanie"
 
-msgid "Click a track: it is selected, with its points"
-msgstr "Kliknij tor: zostaje zaznaczony, widać jego punkty"
+msgid "Click a track: it is selected, with its ends"
+msgstr "Kliknij tor: zostaje zaznaczony, widać jego końce"
 
-msgid "Drag a point: the end or the curve follows"
-msgstr "Przeciągnij punkt: koniec albo łuk idzie za nim"
+msgid "The gizmo, to move, turn or bend the track: the next lesson"
+msgstr "Gizmo do przesuwania, obracania i wyginania toru: następna lekcja"
+
+msgid "Editing with the gizmo"
+msgstr "Edycja z gizmo"
+
+msgid "The gizmo on the selected track, hidden until then: arrows which move it"
+msgstr "Gizmo na zaznaczonym torze, do tej pory ukryte: strzałki, które go przesuwają"
+
+msgid "Rings which turn it: its direction, its grade and its cant; the tracks joined to it follow"
+msgstr "Pierścienie, które go obracają: kierunek, pochylenie i przechyłka; połączone tory idą za nim"
+
+msgid "Handles which lengthen it at its free end, the curve keeping its radius"
+msgstr "Uchwyty, które wydłużają go na wolnym końcu, łuk zachowuje promień"
+
+msgid "With the gizmo out the control vectors are there too: drag one, the curve follows it"
+msgstr "Z gizmo widać też wektory sterujące: przeciągnij jeden, łuk idzie za nim"
+
+msgid "A click on a point of the track: the gizmo goes to it, that point alone is moved or turned"
+msgstr "Klik na punkcie toru: gizmo przechodzi do niego, przesuwa albo obraca tylko ten punkt"
+
+msgid "Held while dragging: the gizmo goes by its step"
+msgstr "Trzymany przy przeciąganiu: gizmo przeskakuje o swój krok"
+
+msgid "Releases the point; the arrow above the view hides the gizmo again"
+msgstr "Puszcza punkt; strzałka nad widokiem chowa gizmo z powrotem"
+
+msgid "Bring out the gizmo with Q, W or E"
+msgstr "Pokaż gizmo klawiszem Q, W albo E"
+
+msgid "Bend a track by a control vector, or move it with the gizmo"
+msgstr "Wygnij tor wektorem sterującym albo przesuń go gizmem"
+
+msgid "Drag an end: at a joint the neighbours follow, from a free end a new track goes out, with Ctrl the end moves"
+msgstr "Przeciągnij koniec: na styku sąsiednie tory idą za nim, z wolnego końca wychodzi nowy tor, z Ctrl koniec się przesuwa"
 
 msgid "A click on a track: what can be done with it"
 msgstr "Klik na torze: co można z nim zrobić"
@@ -7478,8 +7511,8 @@ msgstr "Postaw i jedź: pociąg staje na torze, a kabina jest twoja"
 msgid "The trainset tool"
 msgstr "Narzędzie Skład"
 
-msgid "Twelve short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the grade line, terrain, older sceneries, saving and driving"
-msgstr "Dwanaście krótkich lekcji z filmikami i rysunkami: kamera, układanie toru, łuki, poprawianie łuku, łączenie, rozjazdy, sygnalizatory i słupki, poprawki, niweleta, teren, starsze scenerie, zapis i jazda"
+msgid "Thirteen short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
+msgstr "Trzynaście krótkich lekcji z filmikami i rysunkami: kamera, układanie toru, łuki, poprawianie łuku, łączenie, rozjazdy, sygnalizatory i słupki, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
 
 msgid "B: the hectometre posts of the whole line at once"
 msgstr "B: słupki hektometrowe całej linii naraz"
@@ -12021,11 +12054,17 @@ msgstr "rampa %.0f m, %.0f mm"
 msgid "No gizmo"
 msgstr "Bez gizma"
 
-msgid "The gizmo hidden: a track is changed by dragging its points, and won't move by chance"
-msgstr "Gizmo ukryte: tor zmienia się przeciąganiem jego punktów i nie przesunie się przypadkiem"
+msgid "The gizmo hidden: a track is changed by dragging its ends, and won't move nor bend by chance; its control vectors come out with the gizmo"
+msgstr "Gizmo ukryte: tor zmienia się przeciąganiem jego końców i nie przesunie się ani nie wygnie przypadkiem; wektory sterujące pojawiają się razem z gizmo"
 
-msgid "bring out the gizmo: move, turn, lengthen"
-msgstr "pokazuje gizmo: przesuń, obróć, wydłuż"
+msgid "bring out the gizmo: move, turn, lengthen, bend by the control vectors"
+msgstr "pokazuje gizmo: przesuń, obróć, wydłuż, wygnij wektorami sterującymi"
+
+msgid "Drag an end"
+msgstr "Przeciągnij koniec"
+
+msgid "a joint: the neighbours follow; a free end: a new track out of it, with Ctrl it moves"
+msgstr "styk: sąsiednie tory idą za nim; wolny koniec: wychodzi z niego nowy tor, z Ctrl się przesuwa"
 
 msgid "gizmo snaps by %.2f m"
 msgstr "gizmo przeskakuje co %.2f m"
@@ -12113,9 +12152,6 @@ msgstr "Przełącz klawiszem Tab na odrysowywanie łuku"
 
 msgid "Change the radius of the joining curve with Ctrl+wheel"
 msgstr "Zmień promień łuku łączącego Ctrl+kółkiem"
-
-msgid "The gizmo on the selected track: move, turn, lengthen. Hidden until then, so the track won't move by chance; the arrow above the view hides it again"
-msgstr "Gizmo na zaznaczonym torze: przesuń, obróć, wydłuż. Do tego czasu ukryte, więc tor nie przesunie się przypadkiem; strzałka nad widokiem chowa je z powrotem"
 
 msgid "In a scenery begun from nothing the first L asks: the real terrain of the place, or the flat plane"
 msgstr "W scenerii zaczętej od zera pierwsze L pyta: prawdziwy teren tego miejsca czy płaska płaszczyzna"

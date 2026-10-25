@@ -177,6 +177,9 @@ editor_track::point_ref editor_mode::track_handle_hit() const
 	{
 		for (auto const kind : kPointKinds)
 		{
+			// the control vectors only with the gizmo out: hidden, a track is changed by its ends and won't bend by chance
+			if (false == m_track_gizmo_on && false == editor_track::is_end(kind))
+				continue;
 			editor_track::point_ref const point{i, kind};
 			float const distance = projection.mouse_distance2(editor_track::point_position(*track, point)) * (editor_track::is_end(kind) ? 0.5f : 1.0f);
 			if (distance < best)
@@ -217,8 +220,9 @@ void editor_mode::draw_track_overlay() const
 	if (false == trackmode || m_route_tab || false == editor_track::is_supported(*track))
 		return;
 
+	// the control vectors are drawn, and dragged, only with the gizmo out
 	ImU32 const vectorcolor = IM_COL32(200, 200, 200, 160);
-	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
+	for (int i = 0; m_track_gizmo_on && i < static_cast<int>(track->m_paths.size()); ++i)
 	{
 		projection.line(drawlist, editor_track::point_position(*track, {i, editor_track::point_kind::start}), editor_track::point_position(*track, {i, editor_track::point_kind::control1}), vectorcolor, 1.0f);
 		projection.line(drawlist, editor_track::point_position(*track, {i, editor_track::point_kind::end}), editor_track::point_position(*track, {i, editor_track::point_kind::control2}), vectorcolor, 1.0f);
@@ -227,6 +231,8 @@ void editor_mode::draw_track_overlay() const
 	{
 		for (auto const kind : kPointKinds)
 		{
+			if (false == m_track_gizmo_on && false == editor_track::is_end(kind))
+				continue;
 			editor_track::point_ref const point{i, kind};
 			ImVec2 screen;
 			if (false == projection.project(editor_track::point_position(*track, point), screen))
@@ -1809,12 +1815,15 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		auto const handles{std::find_if(hints.begin(), hints.end(), named("Gizmo"))};
 		if (auto const keys{std::find_if(hints.begin(), hints.end(), named("Q W E"))}; keys != hints.end())
 		{
-			keys->action = "bring out the gizmo: move, turn, lengthen";
+			keys->action = "bring out the gizmo: move, turn, lengthen, bend by the control vectors";
 			if (handles != hints.end())
 				hints.erase(handles);
 		}
 		else if (handles != hints.end())
-			*handles = {"Q W E", "bring out the gizmo: move, turn, lengthen"};
+			*handles = {"Q W E", "bring out the gizmo: move, turn, lengthen, bend by the control vectors"};
+		// with it hidden only the ends of the track are there to drag, the control vectors come out with it
+		if (auto const points{std::find_if(hints.begin(), hints.end(), named("Drag a point"))}; points != hints.end())
+			*points = {"Drag an end", "a joint: the neighbours follow; a free end: a new track out of it, with Ctrl it moves"};
 		gizmo = false;
 	}
 	if (auto const *meaning{typed_meaning()}; meaning != nullptr)

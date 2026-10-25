@@ -4759,7 +4759,7 @@ void editor_mode::render_help_menu()
 		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
 	ImGui::MenuItem(STR_C("Tutorial"), nullptr, &m_first_steps_open);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Twelve short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the grade line, terrain, older sceneries, saving and driving"));
+		ImGui::SetTooltip("%s", STR_C("Thirteen short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"));
 	ImGui::EndMenu();
 }
 
@@ -5107,6 +5107,10 @@ void editor_mode::render_first_steps()
 		first_step_done(first_step::terrain);
 	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::route && false == m_route.chain.tracks.empty())
 		first_step_done(first_step::plan);
+	if (ui()->mode() == nodebank_panel::TRACK && m_track_gizmo_on)
+		first_step_done(first_step::gizmo);
+	if (m_track_gizmo_using || (m_point_drag.moved && m_track_point.valid() && false == editor_track::is_end(m_track_point.kind)))
+		first_step_done(first_step::vector);
 	enum class trial { none, top, lay, turnout, select, profile, terrain, plan, trainset, signals };
 	struct input
 	{
@@ -5198,13 +5202,24 @@ void editor_mode::render_first_steps()
 	    {"Selecting and fixing",
 	     "edit",
 	     {{"Esc", "The select tool"},
-	      {"LMB", "Click a track: it is selected, with its points"},
-	      {"LMB + move", "Drag a point: the end or the curve follows"},
-	      {"Q W E", "The gizmo on the selected track: move, turn, lengthen. Hidden until then, so the track won't move by chance; the arrow above the view hides it again"},
+	      {"LMB", "Click a track: it is selected, with its ends"},
+	      {"LMB + move", "Drag an end: at a joint the neighbours follow, from a free end a new track goes out, with Ctrl the end moves"},
 	      {"RMB", "A click on a track: what can be done with it"},
 	      {"Del", "Deletes the selected"},
-	      {"Ctrl + Z", "Takes the last change back; Ctrl+Y brings it back again"}},
+	      {"Ctrl + Z", "Takes the last change back; Ctrl+Y brings it back again"},
+	      {"Q W E", "The gizmo, to move, turn or bend the track: the next lesson"}},
 	     {{first_step::select, "Select a track"}, {first_step::undo, "Take a change back"}},
+	     trial::select},
+	    {"Editing with the gizmo",
+	     "gizmo",
+	     {{"Q", "The gizmo on the selected track, hidden until then: arrows which move it"},
+	      {"W", "Rings which turn it: its direction, its grade and its cant; the tracks joined to it follow"},
+	      {"E", "Handles which lengthen it at its free end, the curve keeping its radius"},
+	      {"LMB + move", "With the gizmo out the control vectors are there too: drag one, the curve follows it"},
+	      {"LMB", "A click on a point of the track: the gizmo goes to it, that point alone is moved or turned"},
+	      {"Ctrl", "Held while dragging: the gizmo goes by its step"},
+	      {"Esc", "Releases the point; the arrow above the view hides the gizmo again"}},
+	     {{first_step::gizmo, "Bring out the gizmo with Q, W or E"}, {first_step::vector, "Bend a track by a control vector, or move it with the gizmo"}},
 	     trial::select},
 	    {"The grade line",
 	     nullptr,
