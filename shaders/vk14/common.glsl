@@ -76,7 +76,8 @@
 #define RT_SET 2
 #define RT_SCENE 0
 #define RT_RECORDS 1
-#define RT_TEXTURES 2
+#define RT_TERRAIN 2
+#define RT_TEXTURES 3
 #define PUSH_CONSTANTS_SIZE 112
 #define SPEC_OUTPUT_GAMMA 0
 #define SPEC_SHADOWMAP_ENABLED 1

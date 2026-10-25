@@ -475,7 +475,7 @@ struct global_settings {
     // (the sky) or the ray tracing. 0 none, 1 low, 2 medium, 3 high (steps of the rays); the longest ray, metres, and the
     // roughest surface they're traced for (perceptual roughness, rougher ones reflect the environment map)
     int gfx_ssr { 2 };
-    float gfx_ssr_range { 250.f };
+    float gfx_ssr_range { 1000.f };
     float gfx_ssr_roughness { 0.6f };
     // (vulkan) ray traced reflections where the screen space ones find nothing, on a gpu with ray queries: the scenery within
     // the range, metres, as gfx.reflections.fidelity says. taken at the start

@@ -818,6 +818,7 @@ std::string binding_preamble(bool const Raytracing)
 	define("RT_SET", RT_SET);
 	define("RT_SCENE", RT_SCENE);
 	define("RT_RECORDS", RT_RECORDS);
+	define("RT_TERRAIN", RT_TERRAIN);
 	define("RT_TEXTURES", RT_TEXTURES);
 	define("PUSH_CONSTANTS_SIZE", PUSH_CONSTANTS_SIZE);
 	define("SPEC_OUTPUT_GAMMA", SPEC_OUTPUT_GAMMA);

@@ -97,12 +97,14 @@ constexpr std::uint32_t POST_EXPOSURE_SSBO = 4;
 constexpr std::uint32_t COMPUTE_SET = 1;
 
 // the ray traced reflections (gfx.raytracing, vk14::ray_tracing): set 2 of the pipelines of the scene, one for each frame in flight,
-// written with the frame: the acceleration structure of the scenery around the camera, the records of its instances, and the
-// textures they read (an array of as many as the device allows, partly bound, the last binding)
+// written with the frame: the acceleration structure of the scenery around the camera, the records of its instances, the layers
+// of the heightmap terrain (the texture array of their diffuse maps, partly bound) and the textures they read (an array of as many
+// as the device allows, partly bound, the last binding)
 constexpr std::uint32_t RT_SET = 2;
 constexpr std::uint32_t RT_SCENE = 0;
 constexpr std::uint32_t RT_RECORDS = 1;
-constexpr std::uint32_t RT_TEXTURES = 2;
+constexpr std::uint32_t RT_TERRAIN = 2;
+constexpr std::uint32_t RT_TEXTURES = 3;
 
 // the push constants of the graphics pipelines of the scene and of the post-processing (vk14::draw_constants): the draw, and
 // the parameters of the special shaders (the celestial bodies, the post-processing)

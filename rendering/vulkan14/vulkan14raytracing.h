@@ -43,6 +43,12 @@ struct ray_draw
 	glm::vec3 colour{1.f}; // the diffuse colour of the material, linear
 	float cutoff{0.f}; // the alpha test of the texture, 0: none
 	float glow{0.f}; // the light of its own
+	// a chunk of the heightmap terrain: its weights (two maps of four layers), its table of the layers (the ids of the images) and
+	// the texture array of the diffuse maps of the layers, shared by the chunks; placement: param[2] of its material
+	std::uint64_t terrain_weights[2]{0, 0};
+	std::uint64_t terrain_table{0};
+	std::uint64_t terrain_layers{0};
+	glm::vec4 placement{0.f};
 };
 
 class ray_tracing
@@ -122,6 +128,7 @@ class ray_tracing
 			std::weak_ptr<image> source; // a view made after this one is gone can get its handle
 		};
 		std::vector<written_texture> written_textures;
+		written_texture written_terrain;
 	};
 
 	// a buffer of the frame at least Size bytes, grown when it isn't (the old one stays when the new one can't be made)

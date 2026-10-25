@@ -35,6 +35,8 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "gl/ubo.h"
 
+#include <array>
+
 class world_environment;
 struct VkRenderingInfo;
 namespace vk14
@@ -282,6 +284,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	bool m_rtgather{false};
 	bool m_raytracingon{true}; // switched off in the debug window
 	bool m_rtfoliage{true}; // the alpha tested geometry in the traced reflections, switched off in the debug window
+	std::array<vk14::scene_program const *, 2> m_rtterrain{nullptr, nullptr}; // the programs of the heightmap terrain, the draws of it noted as such
 	double m_rtwalkms{0.0}; // the processor time of the walk and of the build of the ray tracing, averaged
 	double m_rtbuildms{0.0};
 	std::vector<vk14::ray_draw> m_rtdraws;

@@ -247,7 +247,7 @@ the environment map only.
 | Entry | Default | Meaning |
 |---|---|---|
 | `gfx.ssr` | `medium` | `no`/`low`/`medium`/`high` (or 0..3): steps of the rays, 16, 32 or 64. `no`: the environment map only (the sky) |
-| `gfx.ssr.range` | `250` | 10..2000: the longest ray, metres |
+| `gfx.ssr.range` | `1000` | 10..2000: the longest ray, metres; what is farther from the reflecting surface reflects the sky |
 | `gfx.ssr.roughness` | `0.6` | 0..1: the roughest surface (perceptual roughness) that reflects the scene |
 | `gfx.raytracing yes/no` | `no` | Vulkan renderer only, on a graphics card with ray queries (`VK_KHR_ray_query`): what the screen space reflections don't find is traced through the scenery around the camera instead of reflecting the sky. Read at the start; with `gfx.ssr no` all the reflections of the scenery are traced |
 | `gfx.raytracing.range` | `500` | 10..5000: the scenery within this distance from the camera takes part in the traced reflections, and the rays are this long, metres |
@@ -256,7 +256,9 @@ The traced reflections hold what the environment map held before, as `gfx.reflec
 and the large shapes of the scenery (0), the tracks, the roads and the models within `gfx.reflections.range_instances` (1)
 and the vehicles within `gfx.reflections.range_vehicles` (2, the default now), except the vehicle of the cab. `gfx.reflections.fidelity` and the
 two ranges have no other use now; `gfx.reflections.framerate` still says how often the environment map (the sky) is
-drawn. The point hit is lit by the sky, by the sun where nothing stands between them (a ray of its own) and by its own light; the lamps and headlights don't light it. Each part of a model gets its structure
+drawn. The point hit has the colour of the diffuse texture of its material (the heightmap terrain: its layers blended by their
+weights, without the normal and specular maps; the holes cut in it are not), and is lit by the sky, by the sun (its shadow map
+where the map holds the point, a ray of its own elsewhere) and by its own light; the lamps and headlights don't light it. Each part of a model gets its structure
 for the tracing the first time it's met (a few a frame, so a new place fills in over some frames), and loses it when it
 isn't met for half a minute.
 

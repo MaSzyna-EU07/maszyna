@@ -37,6 +37,9 @@ struct record
 static_assert(sizeof(record) == 48, "the record of an instance of the ray tracing doesn't match the shaders");
 
 std::uint32_t constexpr record_alpha{1};
+// a chunk of the heightmap terrain: texture holds the index of its first weights, the bits of cutoff the second weights, the bits of
+// glow the table of its layers, colour the placement of the chunk (param[2] of its material)
+std::uint32_t constexpr record_terrain{2};
 // the bottom level structures built in a frame at most, and their triangles: the rest waits for the next frames
 std::uint32_t constexpr builds_per_frame{96};
 std::uint64_t constexpr triangles_per_frame{2000000};
@@ -94,11 +97,14 @@ bool ray_tracing::init(device const &Device, allocator &Memory, deletion_queue &
 	m_texturecount = std::min<std::uint32_t>(Device.caps().max_indexed_textures, 16384);
 	auto const handle{Device.handle()};
 
-	// the structure, the records and the textures, the last binding as many as the set is made with and partly bound
-	std::array<VkDescriptorSetLayoutBinding, 3> bindings{{{RT_SCENE, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+	// the structure, the records, the layers of the terrain (written once a chunk of it is met) and the textures, the last binding as
+	// many as the set is made with and partly bound
+	static_assert((RT_TERRAIN == 2) && (RT_TEXTURES == 3), "the bindings of the set of the ray tracing go in this order");
+	std::array<VkDescriptorSetLayoutBinding, 4> bindings{{{RT_SCENE, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
 	                                                       {RT_RECORDS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+	                                                       {RT_TERRAIN, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
 	                                                       {RT_TEXTURES, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_texturecount, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}}};
-	std::array<VkDescriptorBindingFlags, 3> const flags{0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
+	std::array<VkDescriptorBindingFlags, 4> const flags{0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
 	VkDescriptorSetLayoutBindingFlagsCreateInfo bindingflags{};
 	bindingflags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
 	bindingflags.bindingCount = static_cast<std::uint32_t>(flags.size());
@@ -116,7 +122,7 @@ bool ray_tracing::init(device const &Device, allocator &Memory, deletion_queue &
 	}
 	name_object(handle, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, handle_value(m_layout), "ray tracing set");
 
-	std::array<VkDescriptorPoolSize, 3> const sizes{{{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, Frames}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Frames}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_texturecount * Frames}}};
+	std::array<VkDescriptorPoolSize, 3> const sizes{{{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, Frames}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Frames}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (m_texturecount + 1) * Frames}}};
 	VkDescriptorPoolCreateInfo pool{};
 	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	pool.maxSets = Frames;
@@ -597,6 +603,23 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 	auto *records{reinterpret_cast<record *>(frame.records ? frame.records->mapped() : nullptr)};
 	auto *instances{reinterpret_cast<VkAccelerationStructureInstanceKHR *>(frame.instances ? frame.instances->mapped() : nullptr)};
 	std::vector<std::uint32_t> usedtextures;
+	// the texture array of the layers of the terrain the chunks read: a 2d array of the image table, or the chunks shade with their
+	// colour (the binding is read only for the chunks marked as terrain)
+	std::uint64_t terrainlayers{0};
+	std::uint64_t checkedlayers{0};
+	image_table::entry const *layersentry{nullptr};
+	auto const layers_valid = [&](std::uint64_t const Id) {
+		if (Id != checkedlayers)
+		{
+			checkedlayers = Id;
+			layersentry = Images.find(Id);
+			if ((layersentry != nullptr) && ((false == bool(layersentry->target)) || (layersentry->target->desc().view_type != VK_IMAGE_VIEW_TYPE_2D_ARRAY) || (layersentry->sampler == VK_NULL_HANDLE)))
+			{
+				layersentry = nullptr;
+			}
+		}
+		return (layersentry != nullptr) && ((terrainlayers == 0) || (terrainlayers == Id));
+	};
 	std::uint32_t written{0};
 	for (auto const &draw : Draws)
 	{
@@ -610,7 +633,8 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 			continue;
 		}
 		auto const &source{draw.source};
-		auto const texture{texture_index(draw.texture, Frame)};
+		auto const terrain{draw.terrain_table != 0};
+		auto const texture{texture_index(terrain ? draw.terrain_weights[0] : draw.texture, Frame)};
 		if (texture != 0)
 		{
 			usedtextures.push_back(texture);
@@ -619,11 +643,36 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		entry.vertices = source.vertex_address + vertex_stride * source.vertexfirst;
 		entry.indices = (lookup->second.index_address != 0 ? lookup->second.index_address : source.indices != VK_NULL_HANDLE ? source.index_address + sizeof(std::uint32_t) * source.first : 0);
 		entry.texture = texture;
-		auto const alpha{(texture != 0) && (draw.cutoff > 0.f)};
+		auto const alpha{(false == terrain) && (texture != 0) && (draw.cutoff > 0.f)};
 		entry.flags = (alpha ? record_alpha : 0);
 		entry.cutoff = draw.cutoff;
 		entry.glow = draw.glow;
 		entry.colour = glm::vec4{draw.colour, 1.f};
+		if (terrain)
+		{
+			// the shading blends the layers as the terrain shader does, from the weights and the table (indices in the bits of the floats)
+			auto const weights{texture_index(draw.terrain_weights[1], Frame)};
+			auto const table{texture_index(draw.terrain_table, Frame)};
+			for (auto const index : {weights, table})
+			{
+				if (index != 0)
+				{
+					usedtextures.push_back(index);
+				}
+			}
+			if ((texture != 0) && (weights != 0) && (table != 0) && (draw.terrain_layers != 0) && layers_valid(draw.terrain_layers))
+			{
+				entry.flags = record_terrain;
+				std::memcpy(&entry.cutoff, &weights, sizeof(weights));
+				std::memcpy(&entry.glow, &table, sizeof(table));
+				entry.colour = draw.placement;
+				terrainlayers = draw.terrain_layers;
+			}
+			else
+			{
+				entry.texture = 0;
+			}
+		}
 		auto &instance{instances[written]};
 		// the rows of the transform, which glm keeps by the columns
 		for (int row = 0; row < 3; ++row)
@@ -719,6 +768,25 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		write.pImageInfo = &images.back();
 		writes.push_back(write);
+	}
+	VkDescriptorImageInfo terraininfo{};
+	if ((terrainlayers != 0) && layers_valid(terrainlayers))
+	{
+		auto const &target{layersentry->target};
+		auto &cached{frame.written_terrain};
+		if ((cached.view != target->view()) || (cached.sampler != layersentry->sampler) || (cached.source.lock() != target))
+		{
+			cached = {target->view(), layersentry->sampler, target};
+			terraininfo = {layersentry->sampler, target->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			VkWriteDescriptorSet write{};
+			write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			write.dstSet = frame.set;
+			write.dstBinding = vk14::bindings::RT_TERRAIN;
+			write.descriptorCount = 1;
+			write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			write.pImageInfo = &terraininfo;
+			writes.push_back(write);
+		}
 	}
 	if (false == writes.empty())
 	{

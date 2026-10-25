@@ -26,6 +26,8 @@ layout(std430, set = RT_SET, binding = RT_RECORDS) readonly buffer rt_record_ssb
 };
 
 layout(set = RT_SET, binding = RT_TEXTURES) uniform sampler2D rt_textures[];
+// the diffuse maps of the layers of the heightmap terrain (mat_terrain.glsl, layerdiffuse), read for its chunks only
+layout(set = RT_SET, binding = RT_TERRAIN) uniform sampler2DArray rt_terrain_layers;
 
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer rt_vertex_data
 {
@@ -38,6 +40,9 @@ layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer rt_
 };
 
 const uint RT_FLAG_ALPHA = 1U;
+// a chunk of the heightmap terrain: texindex its first weights, the bits of cutoff its second weights, the bits of glow the table
+// of its layers, colour its placement (param[2] of its material)
+const uint RT_FLAG_TERRAIN = 2U;
 const uint RT_VERTEX_FLOATS = 12U;
 // the masks of the instances (vk14::ray_tracing): the opaque ones, the alpha tested ones (the foliage). the shadow rays take the
 // opaque ones only, and the reflections leave out the alpha tested ones when the renderer says so (env_params.y, 1)
@@ -72,6 +77,37 @@ vec3 rt_normal(rt_record record, uvec3 triangle, vec2 weights)
 	vec3 b = vec3(vertices.rt_vertex[triangle.y * RT_VERTEX_FLOATS + 3U], vertices.rt_vertex[triangle.y * RT_VERTEX_FLOATS + 4U], vertices.rt_vertex[triangle.y * RT_VERTEX_FLOATS + 5U]);
 	vec3 c = vec3(vertices.rt_vertex[triangle.z * RT_VERTEX_FLOATS + 3U], vertices.rt_vertex[triangle.z * RT_VERTEX_FLOATS + 4U], vertices.rt_vertex[triangle.z * RT_VERTEX_FLOATS + 5U]);
 	return a * (1.0 - weights.x - weights.y) + b * weights.x + c * weights.y;
+}
+
+// the colour of a chunk of the heightmap terrain at the texture coordinates Coords: its layers blended by its weights, as
+// mat_terrain.glsl does (without the normal and the specular maps), at the level Lod of the maps of the layers
+vec3 rt_terrain_albedo(rt_record record, vec2 coords, float lod)
+{
+	vec4 placement = record.colour;
+	vec2 local = clamp(vec2(coords.x - placement.x, -coords.y - placement.y) * placement.z, 0.0, 1.0);
+	vec2 paintcoord = (local * placement.w + 0.5) / (placement.w + 1.0);
+	uint second = floatBitsToUint(record.cutoff);
+	uint table = floatBitsToUint(record.glow);
+	vec4 w0 = textureLod(rt_textures[nonuniformEXT(record.texindex)], paintcoord, 0.0);
+	vec4 w1 = textureLod(rt_textures[nonuniformEXT(second)], paintcoord, 0.0);
+	float weights[8] = float[8](w0.r, w0.g, w0.b, w0.a, w1.r, w1.g, w1.b, w1.a);
+	float painted = dot(w0, vec4(1.0)) + dot(w1, vec4(1.0));
+	vec3 albedo = vec3(0.0);
+	float total = 0.0;
+	for (int i = 0; i < 8; ++i)
+	{
+		// a chunk without weights shows its first layer
+		float weight = (painted < 0.004 ? (i == 0 ? 1.0 : 0.0) : weights[i]);
+		if (weight < 0.004)
+			continue;
+		vec4 info = texelFetch(rt_textures[nonuniformEXT(table)], ivec2(i, 0), 0);
+		vec4 extra = texelFetch(rt_textures[nonuniformEXT(table)], ivec2(i, 1), 0);
+		vec2 turn = (extra.y == 0.0 && extra.z == 0.0) ? vec2(1.0, 0.0) : extra.yz;
+		mat2 rotation = mat2(turn.x, -turn.y, turn.y, turn.x);
+		albedo += textureLod(rt_terrain_layers, vec3(rotation * coords * info.y, info.x), lod).rgb * weight;
+		total += weight;
+	}
+	return albedo / max(total, 0.004);
 }
 
 // the share of the sun reaching a point hit (Hit in the world around the camera, Normal facing the ray): the shadow map of the sun
@@ -167,10 +203,16 @@ vec4 rt_trace(vec3 position, vec3 normal, vec3 direction, float roughness)
 
 	// the colour of the surface: the farther and the rougher, the blurrier the level of the texture
 	vec3 albedo = record.colour.rgb;
-	if (record.texindex != 0U)
+	float glow = record.glow;
+	float lod = clamp(log2(1.0 + distance * 0.05) * 2.0 + roughness * 6.0, 0.0, 12.0);
+	if ((record.flags & RT_FLAG_TERRAIN) != 0U)
+	{
+		albedo = rt_terrain_albedo(record, rt_coords(record, triangle, weights), lod);
+		glow = 0.0;
+	}
+	else if (record.texindex != 0U)
 	{
 		vec2 coords = rt_coords(record, triangle, weights);
-		float lod = clamp(log2(1.0 + distance * 0.05) * 2.0 + roughness * 6.0, 0.0, 12.0);
 		albedo *= textureLod(rt_textures[nonuniformEXT(record.texindex)], coords, lod).rgb;
 	}
 	// the light of the sky, the sun where nothing stands between the point and it, and the light of its own
@@ -186,7 +228,7 @@ vec4 rt_trace(vec3 position, vec3 normal, vec3 direction, float roughness)
 				light += lights[0].color * (SUN_DIFFUSE_SCALE * lights[0].intensity * visible * cloud_shadow(hit) * pow(facing, SUN_NDOTL_SHARPNESS));
 		}
 	}
-	vec3 color = albedo * (light + vec3(record.glow));
+	vec3 color = albedo * (light + vec3(glow));
 	if (any(isnan(color)) || any(isinf(color)))
 		return vec4(0.0);
 	return vec4(max(color, vec3(0.0)), 1.0);

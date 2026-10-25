@@ -1785,6 +1785,12 @@ void vulkan14_renderer::render_ray_scene(viewport_config &Viewport)
 		m_shadowskipvehicle = simulation::Train->Dynamic();
 	}
 	auto const colourpass{m_renderpass};
+	// the chunks of the heightmap terrain are told by their programs (mat_terrain.frag, mat_terrain_holes.frag)
+	auto const program_of = [&](char const *Name) -> vk14::scene_program const * {
+		auto const lookup{scene.materials.find(Name)};
+		return (lookup != scene.materials.end() ? lookup->second.get() : nullptr);
+	};
+	m_rtterrain = {program_of("terrain"), program_of("terrain_holes")};
 	m_rtgather = true;
 	setup_pass(Viewport, m_renderpass, rendermode::reflections);
 	setup_matrices();
@@ -1840,15 +1846,30 @@ void vulkan14_renderer::gather_ray_draw(gfx::geometry_handle const &Geometry)
 	auto const value{std::max({model_ubs.param[0].r, model_ubs.param[0].g, model_ubs.param[0].b})};
 	ray.colour = (value > 0.f ? colour * (model_ubs.param[1].x / value) : glm::vec3{0.f});
 	ray.glow = model_ubs.emission;
-	// the diffuse texture of the material, and its alpha test when it has an alpha channel
-	if (draw.textures[0] != null_handle)
-	{
-		auto &texture{m_context->textures->mark_as_used(draw.textures[0])};
-		if (texture.create() && (m_context->images.find(texture.get_id()) != nullptr))
+	// the id of a texture of the material in the image table, 0: none (yet)
+	auto const image_of = [&](texture_handle const Texture) -> std::uint64_t {
+		if (Texture == null_handle)
 		{
-			ray.texture = texture.get_id();
-			ray.cutoff = (texture.get_has_alpha() ? std::max(model_ubs.opacity, 0.f) : 0.f);
+			return 0;
 		}
+		auto &texture{m_context->textures->mark_as_used(Texture)};
+		return ((texture.create() && (m_context->images.find(texture.get_id()) != nullptr)) ? texture.get_id() : 0);
+	};
+	if ((draw.program != nullptr) && ((draw.program == m_rtterrain[0]) || (draw.program == m_rtterrain[1])))
+	{
+		// a chunk of the heightmap terrain: its layers blended by its weights (mat_terrain.glsl: weights0 1, weights1 2, the array of the
+		// diffuse maps of the layers 3, the table 6, the placement param[2])
+		ray.terrain_weights[0] = image_of(draw.textures[1]);
+		ray.terrain_weights[1] = image_of(draw.textures[2]);
+		ray.terrain_layers = image_of(draw.textures[3]);
+		ray.terrain_table = image_of(draw.textures[6]);
+		ray.placement = model_ubs.param[2];
+	}
+	else if (auto const texture{image_of(draw.textures[0])}; texture != 0)
+	{
+		// the diffuse texture of the material, and its alpha test when it has an alpha channel
+		ray.texture = texture;
+		ray.cutoff = (m_context->textures->mark_as_used(draw.textures[0]).get_has_alpha() ? std::max(model_ubs.opacity, 0.f) : 0.f);
 	}
 	glm::mat4 const modelview{model_ubs.modelview};
 	if (m_current_instance_count > 0)
