@@ -5241,7 +5241,7 @@ void editor_mode::render_first_steps()
 	      {"F5", "The Terrain field of work: the terrain model (NMT) is in its tool options"},
 	      {"1", "Location: where the scenery lies, a click on the map or the place typed"},
 	      {"2", "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"},
-	      {"3", "Tracks, select a track, Terrain in the inspector: draw the terrain to the track, or put the tracks onto the terrain"},
+	      {"3", "Tracks onto the terrain: all the tracks go onto the model; the terrain to some tracks only: select them, Terrain in the inspector"},
 	      {"Ctrl + Z", "Takes the changes back"}},
 	     {{first_step::terrain, "Open the Terrain field of work"}, {first_step::nmt, "Load terrain from the model"}},
 	     trial::terrain,

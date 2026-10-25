@@ -6728,8 +6728,29 @@ msgstr "Przesunięty lub zmieniony tor z formacją pociąga ją za sobą; wyłą
 msgid "All the tracks of the scenery"
 msgstr "Wszystkie tory scenerii"
 
-msgid "A chunk there is already is never made anew. The tracks and the terrain are fitted to each other in the panel of the tracks: Terrain, with a track selected"
-msgstr "Istniejący kafel nigdy nie jest tworzony od nowa. Tory i teren dopasowuje się do siebie w panelu torów: Teren, przy zaznaczonym torze"
+msgid "A chunk there is already is never made anew"
+msgstr "Istniejący kafel nigdy nie jest tworzony od nowa"
+
+msgid "Tracks and terrain"
+msgstr "Tory i teren"
+
+msgid "First the place of the scenery on the map: F5 Terrain, Terrain model (NMT), step 1"
+msgstr "Najpierw położenie scenerii na mapie: F5 Teren, Prawdziwy teren z map (NMT), krok 1"
+
+msgid "All the tracks go down or up onto the terrain model, which is loaded along them by itself"
+msgstr "Wszystkie tory schodzą albo wchodzą na model terenu, który wczytuje się sam wzdłuż nich"
+
+msgid "Or:"
+msgstr "Albo:"
+
+msgid "Only the tracks laid or changed since the last time; the ones fitted stay as they are"
+msgstr "Tylko tory ułożone albo zmienione od ostatniego razu; dopasowane zostają, jak są"
+
+msgid "The tracks stay at their heights and the terrain comes up or down to them"
+msgstr "Tory zostają na swojej wysokości, a teren podnosi się albo obniża do nich"
+
+msgid "The terrain to some of the tracks only: select them (F3), Terrain in the inspector"
+msgstr "Teren tylko pod wybrane tory: zaznacz je (F3), sekcja Teren w inspektorze"
 
 msgid "Make the terrain around the camera and ahead of the laying"
 msgstr "Twórz teren wokół kamery i przed kładzionym torem"
@@ -12162,8 +12183,8 @@ msgstr "Położenie: gdzie leży sceneria, klik na mapie albo wpisane miejsce"
 msgid "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"
 msgstr "Wczytaj wzdłuż torów albo wokół kamery: model pochodzi z geoportal.gov.pl"
 
-msgid "Tracks, select a track, Terrain in the inspector: draw the terrain to the track, or put the tracks onto the terrain"
-msgstr "Tory, zaznacz tor, Teren w inspektorze: dociągnij teren do toru albo połóż tory na terenie"
+msgid "Tracks onto the terrain: all the tracks go onto the model; the terrain to some tracks only: select them, Terrain in the inspector"
+msgstr "Tory na teren: wszystkie tory idą na model; teren tylko pod wybrane tory: zaznacz je, sekcja Teren w inspektorze"
 
 msgid "Takes the changes back"
 msgstr "Cofa zmiany"

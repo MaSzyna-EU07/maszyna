@@ -1203,9 +1203,27 @@ void editor_mode::render_track_terrain(std::vector<TTrack *> const &Tracks)
 	item_tooltip("The formations of the selected tracks taken out of the terrain: the ground goes back to how it was before them");
 	ImGui::EndDisabled();
 	toggle_chips("nmtfollow", {{STR_C("The terrain follows the tracks edited"), &state.follow, "A track with its formation moved or changed takes it along; off: the terrain stays as it is until it's drawn to the tracks again"}});
+	ImGui::Separator();
 	ImGui::TextDisabled("%s", STR_C("All the tracks of the scenery"));
-	toggle_chips("nmtshape", {{STR_C("Formation and slopes along the tracks"), &state.shape,
-	                           "Each track gets its formation with slopes 1:1.5 down or up to the terrain, as a modifier of the terrain; bridges and tunnels keep the model under them"}});
+	render_nmt_all_tracks(false);
+	if (busy)
+		render_nmt_progress(true);
+	if (false == state.status.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", state.status.c_str());
+		ImGui::PopTextWrapPos();
+	}
+}
+
+// the tracks of the whole scenery and the terrain model: the way to take first big, what it does told under it, then the other
+// two, each with the case it's for; step 3 of the terrain model in the field of the terrain (Terrain_panel), and in the panel of
+// the tracks
+void editor_mode::render_nmt_all_tracks(bool const Terrain_panel)
+{
+	auto &state{m_nmt_state};
+	auto const busy{nmt_busy()};
+	auto const placed{m_nmt.placed()};
 	std::size_t unfitted{0}, all{0};
 	for (auto const *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved && rail(*track))
@@ -1214,27 +1232,43 @@ void editor_mode::render_track_terrain(std::vector<TTrack *> const &Tracks)
 			if (false == grade_fitted(*track))
 				++unfitted;
 		}
-	ImGui::BeginDisabled(busy || false == m_nmt.placed());
-	if (ImGui::Button(STR_C("Tracks onto the terrain"), ImVec2(half, 0.0f)))
+	auto const told{[](char const *Text) {
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", Text);
+		ImGui::PopTextWrapPos();
+	}};
+	ImGui::BeginDisabled(busy || false == placed || all == 0);
+	if (main_button(STR_C("Tracks onto the terrain"), ImVec2(-FLT_MIN, tall_button_height())))
 		nmt_auto_start();
 	item_tooltip("The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported");
-	ImGui::SameLine();
-	ImGui::BeginDisabled(unfitted == 0);
+	ImGui::EndDisabled();
+	if (false == placed)
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", STR_C("First the place of the scenery on the map: F5 Terrain, Terrain model (NMT), step 1"));
+		ImGui::PopTextWrapPos();
+	}
+	told(STR_C("All the tracks go down or up onto the terrain model, which is loaded along them by itself"));
+	toggle_chips("nmtshape", {{STR_C("Formation and slopes along the tracks"), &state.shape,
+	                           "Each track gets its formation with slopes 1:1.5 down or up to the terrain, as a modifier of the terrain; bridges and tunnels keep the model under them"}});
+	ImGui::Spacing();
+	ImGui::TextDisabled("%s", STR_C("Or:"));
+	ImGui::BeginDisabled(busy || false == placed || unfitted == 0);
 	if (ImGui::Button(format(STR_C("Only the ones not fitted (%zu of %zu)"), unfitted, all).c_str(), ImVec2(-FLT_MIN, 0.0f)))
 		nmt_auto_start(true);
-	ImGui::EndDisabled();
 	item_tooltip("The same for the tracks whose grade line isn't fitted yet, or was changed since: the ones fitted stay as they are and the new lines meet them; the scenery isn't moved");
+	ImGui::EndDisabled();
+	told(STR_C("Only the tracks laid or changed since the last time; the ones fitted stay as they are"));
+	ImGui::BeginDisabled(busy || false == placed || all == 0);
 	if (ImGui::Button(STR_C("Terrain under the tracks"), ImVec2(-FLT_MIN, 0.0f)))
 		nmt_under_start();
 	item_tooltip("The tracks aren't touched: the terrain model is loaded along them and drawn to them, at each place by as much as the tracks lie above or below it there, fading out away from them, so its relief stays and the tracks don't end up in deep cuttings; then the formation and the slopes along them. For a scenery built level or at its own heights");
 	ImGui::EndDisabled();
-	if (busy)
-		render_nmt_progress(true);
-	if (false == state.status.empty())
+	told(STR_C("The tracks stay at their heights and the terrain comes up or down to them"));
+	if (Terrain_panel)
 	{
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", state.status.c_str());
-		ImGui::PopTextWrapPos();
+		ImGui::Spacing();
+		told(STR_C("The terrain to some of the tracks only: select them (F3), Terrain in the inspector"));
 	}
 }
 
@@ -1448,11 +1482,14 @@ void editor_mode::render_nmt_ui()
 	}
 
 	auto const tracks{std::any_of(simulation::Paths.sequence().begin(), simulation::Paths.sequence().end(), [](TTrack const *Track) { return Track != nullptr && rail(*Track); })};
+	// the progress shown at the step whose button began it
+	auto const tracks_busy{state.stage != nmt_state::automatic::idle || (state.fitting && state.under)};
 	step_heading(2, STR_C("Load"));
-	if (busy)
+	if (busy && false == tracks_busy)
 		render_nmt_progress(false);
 	else
 	{
+		ImGui::BeginDisabled(busy);
 		auto const half{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
 		if (tracks)
 		{
@@ -1483,12 +1520,38 @@ void editor_mode::render_nmt_ui()
 			}
 			ImGui::EndTable();
 		}
+		ImGui::EndDisabled();
 	}
 	ImGui::PushTextWrapPos(0.0f);
-	ImGui::TextDisabled("%s", STR_C("A chunk there is already is never made anew. The tracks and the terrain are fitted to each other in the panel of the tracks: Terrain, with a track selected"));
+	ImGui::TextDisabled("%s", STR_C("A chunk there is already is never made anew"));
 	ImGui::PopTextWrapPos();
 	toggle_chips("nmtgrow", {{STR_C("Make the terrain around the camera and ahead of the laying"), &state.grow, "Where the terrain of the scenery ends, the terrain model is made on around the camera, and around the cursor of a track laid past it; the chunks there are stay as they are"}});
-	ImGui::TextDisabled("%s", STR_C("Terrain model: GUGiK, geoportal.gov.pl"));
+	state.band = std::clamp(state.band, 50.0, 3000.0);
+	if (tracks && ImGui::TreeNode(STR_C("Height offset of the model")))
+	{
+		if (begin_fields("##nmtoffset", 0.5f))
+		{
+			field_row("Height offset (m)");
+			ImGui::InputDouble("##nmtheightoffset", &state.offset, 0.1, 1.0, "%.2f");
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(1);
+			if (ImGui::Button(STR_C("Fit to the tracks"), ImVec2(-FLT_MIN, 0.0f)))
+				nmt_fit();
+			item_tooltip("Compares the formation of the tracks with the terrain model and moves the model up or down to meet them, as a scenery built at height 0 needs");
+			ImGui::EndTable();
+		}
+		ImGui::TreePop();
+	}
+
+	if (tracks)
+	{
+		step_heading(3, STR_C("Tracks and terrain"));
+		if (tracks_busy)
+			render_nmt_progress(false);
+		else
+			render_nmt_all_tracks(true);
+	}
+	ImGui::Spacing();
 	if (false == state.status.empty())
 	{
 		ImGui::PushTextWrapPos(0.0f);
@@ -1512,22 +1575,7 @@ void editor_mode::render_nmt_ui()
 		if (again)
 			item_tooltip("The squares of the model the service didn't give are asked for again; it happens by itself every 15 s too");
 	}
-	state.band = std::clamp(state.band, 50.0, 3000.0);
-	if (tracks && ImGui::TreeNode(STR_C("Height offset of the model")))
-	{
-		if (begin_fields("##nmtoffset", 0.5f))
-		{
-			field_row("Height offset (m)");
-			ImGui::InputDouble("##nmtheightoffset", &state.offset, 0.1, 1.0, "%.2f");
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(1);
-			if (ImGui::Button(STR_C("Fit to the tracks"), ImVec2(-FLT_MIN, 0.0f)))
-				nmt_fit();
-			item_tooltip("Compares the formation of the tracks with the terrain model and moves the model up or down to meet them, as a scenery built at height 0 needs");
-			ImGui::EndTable();
-		}
-		ImGui::TreePop();
-	}
+	ImGui::TextDisabled("%s", STR_C("Terrain model: GUGiK, geoportal.gov.pl"));
 }
 
 void editor_mode::nmt_place_scenery(glm::dvec2 const &Point)

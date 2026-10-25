@@ -461,6 +461,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void nmt_restore_terrain(std::vector<TTrack *> const &Tracks);
 	// the terrain of the selected tracks in the panel of the tracks
 	void render_track_terrain(std::vector<TTrack *> const &Tracks);
+	// all the tracks of the scenery onto the terrain model, or it under them: step 3 of the terrain model (Terrain_panel), and in
+	// the panel of the tracks
+	void render_nmt_all_tracks(bool const Terrain_panel);
 	// the chunks waiting for the terrain model and the tiles of the imagery asked for outlined where they will be, so it's seen
 	// what's on its way
 	void draw_nmt_pending() const;
