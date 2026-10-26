@@ -2988,13 +2988,32 @@ bool editor_mode::save()
             rootstatements.emplace_back("heightmap_terrain " + m_streamer.name() + " endheightmap_terrain");
     }
 
+    auto const terrainadded{false == rootstatements.empty()};
     if (m_profile.changed)
         profile_store();
     switch_store::tidy();
     switch_store::settle();
     infra_store();
-    // the catenary (cantilevers on the poles) lives in files of its own; a file made in the editor needs the directive
+    // the catenary (cantilevers on the poles) lives in files of its own; a file made in the editor needs the directive, in the file
+    // of the layer it was made on (the scenario file when that layer can't take it)
     std::vector<std::string> catenarynew;
+    std::map<scene::layer_handle, std::vector<std::string>> layerstatements;
+    auto const same_file = [](std::string const &A, std::string const &B) {
+        auto a{std::filesystem::path(A).lexically_normal().generic_string()}, b{std::filesystem::path(B).lexically_normal().generic_string()};
+        std::transform(a.begin(), a.end(), a.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
+        std::transform(b.begin(), b.end(), b.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
+        return a == b;
+    };
+    for (auto const &file : catenary_scene_files())
+    {
+        // a catenary file of the name of a scenery file would take its place, and the scenery its directive
+        for (std::size_t layer = 1; layer <= scene::Layers.size(); ++layer)
+            if (scene::Layers.listed(static_cast<scene::layer_handle>(layer)) && same_file(scene::Layers.layer(static_cast<scene::layer_handle>(layer)).name, file))
+            {
+                ui()->set_status(format(STR_C("The catenary couldn't be saved: its file \"%s\" is a file of the scenery; give the catenary another file"), file.c_str()), true);
+                return false;
+            }
+    }
     if (catenary_scene_changed())
     {
         std::string message;
@@ -3007,7 +3026,11 @@ bool editor_mode::save()
     }
     for (auto const &file : catenary_scene_new_files())
     {
-        rootstatements.emplace_back("catenary " + file + " endcatenary");
+        auto const layer{static_cast<scene::layer_handle>(catenary_scene_file_layer(file))};
+        if (layer > 1 && scene::Layers.accepts(layer))
+            layerstatements[scene::Layers.resolve(layer)].emplace_back("catenary " + file + " endcatenary");
+        else
+            rootstatements.emplace_back("catenary " + file + " endcatenary");
         catenarynew.push_back(file);
     }
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
@@ -3020,7 +3043,6 @@ bool editor_mode::save()
         m_orthophoto_mark = map;
         scene::Layers.mark(scene::layer_handle{1}, "//$o", {map});
     }
-    auto const terrainadded{false == rootstatements.empty()};
     auto const controls{turntable_controls(rootstatements)};
     auto const noses{nose_controls(rootstatements)};
     std::vector<std::string> trailing;
@@ -3033,7 +3055,7 @@ bool editor_mode::save()
         trailing.insert(trailing.end(), trainset.lines.begin(), trainset.lines.end());
     if (placed == 0)
         starter_trainset(trailing);
-    auto const result = scene::Layers.save(rootstatements, trailing);
+    auto const result = scene::Layers.save(rootstatements, trailing, layerstatements);
     if (result.success && controls)
         m_turntable_included = true;
     if (result.success && noses)

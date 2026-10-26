@@ -349,7 +349,8 @@ class node_layers
 	// writes changes made in the editor to the scenery files: changed, created and deleted model instances and
 	// memory cells, and layer changes. the files are left intact unless the whole operation can be performed.
 	// Rootstatements: additional statements to place at the end of the scenario file
-	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {});
+	// Layerstatements: additional statements to place in the files of specified layers, the same way
+	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {}, std::map<layer_handle, std::vector<std::string>> const &Layerstatements = {});
 	std::string check_sources() const;
 
   private:

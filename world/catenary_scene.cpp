@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include <set>
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
+#include "scene/scenelayers.h"
 
 #include <algorithm>
 #include <limits>
@@ -75,6 +76,8 @@ struct scene_file {
     bool changed { false };             // są zmiany do zapisania
 };
 std::vector<scene_file> Files;
+// warstwa scenerii (plik), która dołącza plik sieci dyrektywą "catenary"; dla plików z edytora ta, do której trafi dyrektywa
+std::map<std::string, std::size_t> FileLayers;
 
 // łańcuch sieci z pliku: przęsła od podwieszenia do podwieszenia
 struct scene_chain {
@@ -1713,6 +1716,8 @@ catenary_scene_load( cParser &Input ) {
         Chains.emplace_back( chain );
         rebuild_chain( Chains.back() );
     }
+    // wczytywany z pliku tej warstwy (tylko przy otwarciu scenerii do edycji, inaczej warstw nie ma)
+    FileLayers.emplace( filename, static_cast<std::size_t>( scene::Layers.handle() ) );
     if( file_named( filename ) == nullptr ) {
         // komentarze z początku pliku, żeby zapis z edytora ich nie zgubił
         scene_file known;
@@ -1831,6 +1836,7 @@ catenary_scene_clear() {
     Gantries.clear();
     Anchors.clear();
     Files.clear();
+    FileLayers.clear();
     Notes.clear();
     Resolved = 0;
     Initialized = false;
@@ -2091,6 +2097,19 @@ catenary_scene_new_files() {
 void
 catenary_scene_file_included( std::string const &File ) {
     if( auto *file { file_named( File ) }; file != nullptr ) { file->created = false; }
+}
+
+std::size_t
+catenary_scene_file_layer( std::string const &File ) {
+    auto const found { FileLayers.find( File ) };
+    return ( found != FileLayers.end() ? found->second : 0 );
+}
+
+void
+catenary_scene_file_layer( std::string const &File, std::size_t const Layer ) {
+    // plik już dołączony przez scenerię zostaje przy swojej warstwie
+    if( auto const *file { file_named( File ) }; file != nullptr && false == file->created ) { return; }
+    FileLayers[ File ] = Layer;
 }
 
 bool

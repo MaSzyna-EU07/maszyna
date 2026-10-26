@@ -11707,3 +11707,23 @@ msgstr "Kliknij: wysięgnik na słupie kotwowym, karta %04d, wykonanie %d, A = %
 
 msgid "Anchor: LMB by the track the cantilever on the anchor pole reaches to; Esc stops"
 msgstr "Kotwienie: LPM przy torze, do którego sięga wysięgnik na słupie kotwowym; Esc przerywa"
+
+# scenery editor: catenary - the file of the catenary by the active layer
+
+msgid "File in the scenery directory the new poles go to; a new one is added to the scenery with the directive catenary <file> endcatenary when it's saved, in the file of the active layer. By default the catenary file of the active layer, or a new one named after it"
+msgstr "Plik w katalogu scenerii, do którego trafiają nowe słupy; nowy plik jest przy zapisie dopisywany do scenerii dyrektywą catenary <plik> endcatenary, w pliku aktywnej warstwy. Domyślnie plik sieci aktywnej warstwy albo nowy, nazwany od niej"
+
+msgid "by the layer"
+msgstr "wg warstwy"
+
+msgid "The catenary file follows the active layer again"
+msgstr "Plik sieci znowu idzie za aktywną warstwą"
+
+msgid "included by %s"
+msgstr "dołączony przez %s"
+
+msgid "new: the save writes it and its directive into %s"
+msgstr "nowy: zapis utworzy go i dopisze dyrektywę do %s"
+
+msgid "The catenary couldn't be saved: its file \"%s\" is a file of the scenery; give the catenary another file"
+msgstr "Nie udało się zapisać sieci trakcyjnej: jej plik \"%s\" jest plikiem scenerii; podaj sieci inny plik"

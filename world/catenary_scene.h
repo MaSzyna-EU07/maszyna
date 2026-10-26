@@ -70,6 +70,10 @@ bool catenary_scene_changed();
 std::vector<std::string> catenary_scene_new_files();
 // sceneria dołącza już plik (edytor dopisał dyrektywę "catenary")
 void catenary_scene_file_included( std::string const &File );
+// warstwa scenerii (uchwyt scene::Layers), której plik dołącza plik sieci, a dla pliku założonego w edytorze ta, do której ma
+// trafić jego dyrektywa; 0 gdy nieznana (wtedy plik scenariusza)
+std::size_t catenary_scene_file_layer( std::string const &File );
+void catenary_scene_file_layer( std::string const &File, std::size_t Layer );
 // zapisuje zmienione pliki sieci do katalogu scenerii. Message: co zapisano albo co poszło źle
 bool catenary_scene_save( std::string &Message );
 

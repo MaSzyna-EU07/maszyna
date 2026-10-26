@@ -633,7 +633,7 @@ bool node_layers::compose(save_state &State, layer_handle const Layer, compositi
 }
 
 // writes changes made in the editor to the scenery files
-save_result node_layers::save(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements)
+save_result node_layers::save(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements, std::map<layer_handle, std::vector<std::string>> const &Layerstatements)
 {
 	save_result result;
 	if (m_layers.empty())
@@ -1455,7 +1455,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			continue;
 		}
 		if (layer(candidate).created || state.patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 || placed.count(candidate) != 0 ||
-		    markedtext.count(candidate) != 0 || (candidate == root && (false == Rootstatements.empty() || false == Trailingstatements.empty())))
+		    markedtext.count(candidate) != 0 || (candidate == root && (false == Rootstatements.empty() || false == Trailingstatements.empty())) || Layerstatements.count(candidate) != 0)
 		{
 			outputs.emplace_back(candidate);
 		}
@@ -1563,6 +1563,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		if (output == root)
 		{
 			for (auto const &statement : Rootstatements)
+			{
+				ensure_newline(added.text, eol);
+				added.text += statement + eol;
+			}
+		}
+		if (auto const lookup{Layerstatements.find(output)}; lookup != Layerstatements.end())
+		{
+			for (auto const &statement : lookup->second)
 			{
 				ensure_newline(added.text, eol);
 				added.text += statement + eol;
