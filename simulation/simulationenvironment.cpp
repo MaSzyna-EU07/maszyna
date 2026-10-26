@@ -167,9 +167,8 @@ world_environment::update() {
     // the impact of sun component is reduced proportionally to overcast level, as overcast increases role of ambient light
     auto const diffuselevel = std::lerp( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
     // ...update light colours and intensity.
-    keylightcolor = keylightcolor * diffuselevel;
-    Global.DayLight.diffuse = glm::vec4( keylightcolor, Global.DayLight.diffuse.a );
-    Global.DayLight.specular = glm::vec4( keylightcolor * 0.85f, diffuselevel );
+    Global.DayLight.diffuse = glm::vec4( keylightcolor * diffuselevel, Global.DayLight.diffuse.a );
+    Global.DayLight.specular = glm::vec4( keylightcolor * diffuselevel * 0.85f, diffuselevel );
 
     // tonal impact of skydome color is inversely proportional to how high the sun is above the horizon
     // (this is pure conjecture, aimed more to 'look right' than be accurate)
