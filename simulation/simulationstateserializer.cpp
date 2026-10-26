@@ -583,6 +583,12 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         road->create_lanes();
         scene::Layers.track( road, { sourcebegin, Input.TokenEnd() } );
     }
+    else if( nodedata.type == "suspension" || nodedata.type == "chain" || nodedata.type == "gantry" || nodedata.type == "anchor" ) {
+        // the catenary straight in the scenery file: it belongs to the file (layer) it's in, the scenery save writes it there
+        auto const layer { scene::Layers.handle() };
+        auto const file { ( layer != null_handle && Input.InLayerFile() ) ? scene::Layers.layer( layer ).name : Input.Name() };
+        catenary_scene_node( Input, nodedata.type, nodedata.range_max, nodedata.range_min, nodedata.name, file );
+    }
     else if( nodedata.type == "sweep" ) {
 
         auto *sweep { new sweep_node( nodedata ) };

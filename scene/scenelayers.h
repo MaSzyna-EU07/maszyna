@@ -144,6 +144,14 @@ struct shape_source
 	bool erased{false}; // the definition goes from the file on save
 };
 
+// node definitions the editor writes all at once for a layer (the catenary): on save the definitions "node ... <kind> ... end<kind>"
+// of these kinds are taken out of the files of the given layers and the given lines go into them instead, like the new definitions
+struct node_blocks
+{
+	std::set<std::string> kinds; // node types, lower case
+	std::map<layer_handle, std::vector<std::string>> lines;
+};
+
 struct save_result
 {
 	bool success{false};
@@ -350,7 +358,8 @@ class node_layers
 	// memory cells, and layer changes. the files are left intact unless the whole operation can be performed.
 	// Rootstatements: additional statements to place at the end of the scenario file
 	// Layerstatements: additional statements to place in the files of specified layers, the same way
-	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {}, std::map<layer_handle, std::vector<std::string>> const &Layerstatements = {});
+	// Blocks: node definitions written anew as a whole, see node_blocks
+	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {}, std::map<layer_handle, std::vector<std::string>> const &Layerstatements = {}, node_blocks const *Blocks = nullptr);
 	std::string check_sources() const;
 
   private:

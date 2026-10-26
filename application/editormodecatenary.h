@@ -170,6 +170,8 @@ struct catenary_editor
 	void catenary_scan();
 	// the catenary file of the new poles follows the active layer of the scenery
 	void catenary_file_follow();
+	// the scenery layer of this file name; 0 none
+	static std::size_t catenary_layer_of(std::string const &File);
 	// Placing: the spot of a new pole, which takes the zigzag proposed after the last pole and the step of the span
 	bool catenary_spot_at(TTrack &Track, int const Path, glm::dvec3 const &Point, glm::dvec3 const &Cursor, int const Side, catenary_spot &Spot, bool const Placing = false) const;
 	// the zigzag (Iet-107): the largest staggers allowed for the speed of the line, and those the next poles get

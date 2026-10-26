@@ -695,27 +695,32 @@ void catenary_editor::catenary_file_follow()
 	auto const active{scene::Layers.active()};
 	if (false == scene::Layers.valid(active))
 		return; // the scenery wasn't opened for editing: no layers
-	// the catenary file of the active layer (the one it includes), or a new one named after it next to it; not while a chain
-	// goes on (a chain is in one file) nor when the user gave the file
+	// the new poles go into the file of the active layer, as its node entries; not while a chain goes on (a chain is in one
+	// file) nor when the user gave the file
 	if (false == tool.file_own && tool.last < 0 && tool.selected < 0)
-	{
-		std::string wanted;
-		for (auto const &file : catenary_scene_files())
-			if (catenary_scene_file_layer(file) == active)
-			{
-				wanted = file;
-				break;
-			}
-		if (wanted.empty())
-		{
-			std::filesystem::path const name{scene::Layers.layer(active).name};
-			wanted = (name.parent_path() / (name.stem().string() + "_siec.scm")).generic_string();
-		}
-		std::snprintf(tool.file, sizeof(tool.file), "%s", wanted.c_str());
-	}
-	// a file the scenery doesn't include yet gets its directive in the file of the active layer
-	if (tool.file[0] != '\0')
+		std::snprintf(tool.file, sizeof(tool.file), "%s", scene::Layers.layer(active).name.c_str());
+	if (tool.file[0] == '\0')
+		return;
+	// the file of a layer takes the entries straight; another one is a catenary file of its own (catenary <file> endcatenary),
+	// whose directive goes into the file of the active layer
+	if (catenary_layer_of(tool.file) != 0)
+		catenary_scene_file_inline(tool.file, true);
+	else if (false == catenary_scene_file_inline(tool.file))
 		catenary_scene_file_layer(tool.file, active);
+}
+
+std::size_t catenary_editor::catenary_layer_of(std::string const &File)
+{
+	auto const same = [](std::string const &A, std::string const &B) {
+		auto a{std::filesystem::path(A).lexically_normal().generic_string()}, b{std::filesystem::path(B).lexically_normal().generic_string()};
+		std::transform(a.begin(), a.end(), a.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
+		std::transform(b.begin(), b.end(), b.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
+		return a == b;
+	};
+	for (std::size_t layer = 1; layer <= scene::Layers.size(); ++layer)
+		if (scene::Layers.listed(static_cast<scene::layer_handle>(layer)) && same(scene::Layers.layer(static_cast<scene::layer_handle>(layer)).name, File))
+			return layer;
+	return 0;
 }
 
 bool catenary_editor::typed_span() const
@@ -4278,7 +4283,7 @@ void catenary_editor::render_catenary_cantilever_ui()
 		if (ImGui::InputText(STR_C("Catenary file"), tool.file, sizeof(tool.file)))
 			tool.file_own = true;
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("File in the scenery directory the new poles go to; a new one is added to the scenery with the directive catenary <file> endcatenary when it's saved, in the file of the active layer. By default the catenary file of the active layer, or a new one named after it"));
+			ImGui::SetTooltip("%s", STR_C("Where the new poles go: by default the file of the active layer, as its node entries (node ... suspension / chain / gantry / anchor), saved with the scenery. Another file name makes a catenary file of its own, included with catenary <file> endcatenary from the file of the active layer"));
 		if (tool.file_own)
 		{
 			ImGui::SameLine();
@@ -4288,15 +4293,20 @@ void catenary_editor::render_catenary_cantilever_ui()
 				ImGui::SetTooltip("%s", STR_C("The catenary file follows the active layer again"));
 		}
 		{
-			// where it ends up: the file, and the layer whose file includes it
-			auto const layer{static_cast<scene::layer_handle>(catenary_scene_file_layer(tool.file))};
-			auto const files{catenary_scene_files()};
-			auto const known{std::find(files.begin(), files.end(), std::string{tool.file}) != files.end()};
-			auto const fresh{catenary_scene_new_files()};
-			auto const created{known && std::find(fresh.begin(), fresh.end(), std::string{tool.file}) != fresh.end()};
-			auto const layername{scene::Layers.valid(layer) ? scene::Layers.layer(layer).name : std::string{}};
-			if (false == layername.empty())
-				ImGui::TextDisabled("%s", format(known && false == created ? STR_C("included by %s") : STR_C("new: the save writes it and its directive into %s"), layername.c_str()).c_str());
+			// where it ends up: straight in the file of a layer, or a catenary file of its own and the layer whose file includes it
+			if (catenary_scene_file_inline(tool.file))
+				ImGui::TextDisabled("%s", STR_C("node entries in this scenery file (layer), saved with the scenery"));
+			else
+			{
+				auto const layer{static_cast<scene::layer_handle>(catenary_scene_file_layer(tool.file))};
+				auto const files{catenary_scene_files()};
+				auto const known{std::find(files.begin(), files.end(), std::string{tool.file}) != files.end()};
+				auto const fresh{catenary_scene_new_files()};
+				auto const created{known && std::find(fresh.begin(), fresh.end(), std::string{tool.file}) != fresh.end()};
+				auto const layername{scene::Layers.valid(layer) ? scene::Layers.layer(layer).name : std::string{}};
+				if (false == layername.empty())
+					ImGui::TextDisabled("%s", format(known && false == created ? STR_C("catenary file included by %s") : STR_C("catenary file of its own: the save writes it and its directive into %s"), layername.c_str()).c_str());
+			}
 		}
 		render_catenary_chain_state();
 	}

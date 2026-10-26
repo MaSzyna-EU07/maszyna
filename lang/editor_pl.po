@@ -11747,3 +11747,23 @@ msgstr "Część sieci trakcyjnej: jej kotwienie jest zaznaczone w narzędziu Si
 
 msgid "A part of the catenary: its chain is selected in the Catenary tool"
 msgstr "Część sieci trakcyjnej: jej łańcuch jest zaznaczony w narzędziu Sieć trakcyjna"
+
+# scenery editor: catenary - straight in the scenery files
+
+msgid "node entries in this scenery file (layer), saved with the scenery"
+msgstr "wpisy node w tym pliku scenerii (warstwie), zapisywane razem ze scenerią"
+
+msgid "catenary file included by %s"
+msgstr "osobny plik sieci, dołączany przez %s"
+
+msgid "catenary file of its own: the save writes it and its directive into %s"
+msgstr "osobny plik sieci: zapis utworzy go i dopisze dyrektywę do %s"
+
+msgid "Where the new poles go: by default the file of the active layer, as its node entries (node ... suspension / chain / gantry / anchor), saved with the scenery. Another file name makes a catenary file of its own, included with catenary <file> endcatenary from the file of the active layer"
+msgstr "Gdzie trafiają nowe słupy: domyślnie do pliku aktywnej warstwy, jako jej wpisy node (node ... suspension / chain / gantry / anchor), zapisywane razem ze scenerią. Inna nazwa pliku tworzy osobny plik sieci, dołączany dyrektywą catenary <plik> endcatenary z pliku aktywnej warstwy"
+
+msgid "it isn't in a scenery file the editor can rewrite (an include template)"
+msgstr "nie jest w pliku scenerii, który edytor może przepisać (szablon include)"
+
+msgid "The catenary in \"%s\" couldn't be saved: %s"
+msgstr "Nie udało się zapisać sieci trakcyjnej w \"%s\": %s"

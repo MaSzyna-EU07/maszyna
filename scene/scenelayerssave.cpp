@@ -633,7 +633,75 @@ bool node_layers::compose(save_state &State, layer_handle const Layer, compositi
 }
 
 // writes changes made in the editor to the scenery files
-save_result node_layers::save(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements, std::map<layer_handle, std::vector<std::string>> const &Layerstatements)
+namespace
+{
+
+// locations of the node definitions of specified kinds in the text of a scenery file: from "node" to the closing "end<kind>",
+// tokens split as the parser does it, comments skipped
+std::vector<source_span> node_definitions(std::string const &Text, std::set<std::string> const &Kinds)
+{
+	std::vector<source_span> result;
+	std::size_t position{0};
+	auto const size{Text.size()};
+	auto const separator = [&](std::size_t const At) { return Text[At] == ' ' || Text[At] == '\t' || Text[At] == '\n' || Text[At] == '\r' || Text[At] == ';'; };
+	auto const comment = [&](std::size_t const At) { return At + 1 < size && Text[At] == '/' && (Text[At + 1] == '/' || Text[At + 1] == '*'); };
+	// the next token: its range, false at the end of the text
+	auto const next = [&](std::size_t &Begin, std::size_t &End) {
+		while (position < size)
+		{
+			if (separator(position))
+				++position;
+			else if (comment(position))
+			{
+				auto const block{Text[position + 1] == '*'};
+				auto const close{block ? Text.find("*/", position + 2) : Text.find('\n', position + 2)};
+				position = close == std::string::npos ? size : close + (block ? 2 : 1);
+			}
+			else
+				break;
+		}
+		if (position >= size)
+			return false;
+		Begin = position;
+		while (position < size && false == separator(position) && false == comment(position))
+			++position;
+		End = position;
+		return true;
+	};
+	auto const word = [&](std::size_t const Begin, std::size_t const End) {
+		auto text{Text.substr(Begin, End - Begin)};
+		std::transform(text.begin(), text.end(), text.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
+		return text;
+	};
+	std::size_t begin{0}, end{0};
+	while (next(begin, end))
+	{
+		if (word(begin, end) != "node")
+			continue;
+		auto const start{begin};
+		// range max, range min, name, type
+		auto complete{true};
+		for (int k = 0; k < 4 && complete; ++k)
+			complete = next(begin, end);
+		if (false == complete)
+			break;
+		auto const kind{word(begin, end)};
+		if (Kinds.count(kind) == 0)
+			continue;
+		auto const closing{"end" + kind};
+		while (next(begin, end))
+			if (word(begin, end) == closing)
+			{
+				result.push_back({static_cast<std::streamoff>(start), static_cast<std::streamoff>(end)});
+				break;
+			}
+	}
+	return result;
+}
+
+} // namespace
+
+save_result node_layers::save(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements, std::map<layer_handle, std::vector<std::string>> const &Layerstatements, node_blocks const *Blocks)
 {
 	save_result result;
 	if (m_layers.empty())
@@ -1316,6 +1384,30 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		}
 	}
 
+	// node definitions written anew as a whole: the old ones go, the new ones are added to the file like new definitions
+	std::map<layer_handle, std::vector<std::string>> blocktext;
+	if (Blocks != nullptr)
+	{
+		for (auto const &[blocklayer, lines] : Blocks->lines)
+		{
+			auto const target{resolve(blocklayer)};
+			if (false == is_output(target))
+			{
+				continue;
+			}
+			if (false == load(target))
+			{
+				return fail(state.error);
+			}
+			for (auto const &span : node_definitions(state.content[target], Blocks->kinds))
+			{
+				push_edit(target, span, {}, nullptr);
+			}
+			auto &text{blocktext[target]};
+			text.insert(text.end(), lines.begin(), lines.end());
+		}
+	}
+
 	// includes of templates
 	std::map<layer_handle, std::vector<instance_handle>> placed; // directives made in the editor, by target layer
 	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)
@@ -1455,7 +1547,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			continue;
 		}
 		if (layer(candidate).created || state.patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 || placed.count(candidate) != 0 ||
-		    markedtext.count(candidate) != 0 || (candidate == root && (false == Rootstatements.empty() || false == Trailingstatements.empty())) || Layerstatements.count(candidate) != 0)
+		    markedtext.count(candidate) != 0 || (candidate == root && (false == Rootstatements.empty() || false == Trailingstatements.empty())) || Layerstatements.count(candidate) != 0 ||
+		    blocktext.count(candidate) != 0)
 		{
 			outputs.emplace_back(candidate);
 		}
@@ -1574,6 +1667,14 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			{
 				ensure_newline(added.text, eol);
 				added.text += statement + eol;
+			}
+		}
+		if (auto const lookup{blocktext.find(output)}; lookup != blocktext.end())
+		{
+			for (auto const &line : lookup->second)
+			{
+				ensure_newline(added.text, eol);
+				added.text += line + eol;
 			}
 		}
 		if (output == root && false == Trailingstatements.empty())

@@ -3004,15 +3004,30 @@ bool editor_mode::save()
         std::transform(b.begin(), b.end(), b.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
         return a == b;
     };
+    // the catenary straight in the scenery files: the node entries of the changed ones go into the files of their layers anew
+    scene::node_blocks catenaryblocks;
+    catenaryblocks.kinds = {"suspension", "chain", "gantry", "anchor"};
+    std::vector<std::string> catenaryinline;
     for (auto const &file : catenary_scene_files())
     {
-        // a catenary file of the name of a scenery file would take its place, and the scenery its directive
-        for (std::size_t layer = 1; layer <= scene::Layers.size(); ++layer)
+        if (false == catenary_scene_file_inline(file) || false == catenary_scene_file_changed(file))
+            continue;
+        scene::layer_handle target{null_handle};
+        for (std::size_t layer = 1; layer <= scene::Layers.size() && target == null_handle; ++layer)
             if (scene::Layers.listed(static_cast<scene::layer_handle>(layer)) && same_file(scene::Layers.layer(static_cast<scene::layer_handle>(layer)).name, file))
-            {
-                ui()->set_status(format(STR_C("The catenary couldn't be saved: its file \"%s\" is a file of the scenery; give the catenary another file"), file.c_str()), true);
-                return false;
-            }
+                target = static_cast<scene::layer_handle>(layer);
+        std::string reason;
+        if (target == null_handle)
+            reason = STR("it isn't in a scenery file the editor can rewrite (an include template)");
+        else
+            scene::Layers.accepts(target, &reason);
+        if (target == null_handle || false == scene::Layers.accepts(target))
+        {
+            ui()->set_status(format(STR_C("The catenary in \"%s\" couldn't be saved: %s"), file.c_str(), reason.c_str()), true);
+            return false;
+        }
+        catenaryblocks.lines[target] = catenary_scene_entries(file);
+        catenaryinline.push_back(file);
     }
     if (catenary_scene_changed())
     {
@@ -3055,7 +3070,10 @@ bool editor_mode::save()
         trailing.insert(trailing.end(), trainset.lines.begin(), trainset.lines.end());
     if (placed == 0)
         starter_trainset(trailing);
-    auto const result = scene::Layers.save(rootstatements, trailing, layerstatements);
+    auto const result = scene::Layers.save(rootstatements, trailing, layerstatements, &catenaryblocks);
+    if (result.success)
+        for (auto const &file : catenaryinline)
+            catenary_scene_file_saved(file);
     if (result.success && controls)
         m_turntable_included = true;
     if (result.success && noses)
