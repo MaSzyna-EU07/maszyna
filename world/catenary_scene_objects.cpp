@@ -30,6 +30,8 @@ catenary_part_detach( TAnimModel *Model ) {
     if( Model == nullptr ) { return; }
     scene::Layers.count( Model->layer(), scene::layer_item::model, -1 );
     Model->layer( null_handle );
+    // edytor nie rusza jej jak zwykłego modelu (przesunięta albo usunięta osobno odpadłaby od sieci, która ją trzyma)
+    Model->m_catenary = true;
 }
 
 void
@@ -52,6 +54,7 @@ catenary_span_create( std::string const &Name, double const RangeMax, double con
     cParser parser( Body );
     auto *span { new TTraction( nodedata ) };
     span->Load( &parser, glm::dvec3() );
+    span->m_catenary = true;
     if( false == simulation::Traction.insert( span ) ) {
         ErrorLog( "Bad scenario: duplicate traction piece name \"" + span->name() + "\" made by a catenary chain" );
     }

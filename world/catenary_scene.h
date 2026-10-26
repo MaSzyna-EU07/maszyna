@@ -43,6 +43,9 @@ catenary::cantilever_catalog const *catenary_scene_catalog();
 catenary::layout_tables const &catenary_scene_layout();
 // opisany katalog konstrukcji dla edytora (traction_catalog.txt): kategorie, grupy, rodziny kart, grupy słupów; pusty gdy brak pliku
 catenary::structure_catalog const &catenary_scene_structures();
+// do czego należy model wstawiony przez sieć (część wysięgnika, słupa, bramki, kotwienia): 1 podwieszenie, 2 bramka, 3 kotwienie,
+// 4 łańcuch (kotwienie środkowe); Index - jego numer. 0 gdy to nie część sieci
+int catenary_scene_part_owner( void const *Part, std::size_t &Index );
 // liczba miejsc na liście podwieszeń (z usuniętymi)
 std::size_t catenary_scene_size();
 // podwieszenie o podanym numerze; nullptr gdy usunięte albo numer spoza listy

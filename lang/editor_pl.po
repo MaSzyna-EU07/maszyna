@@ -11727,3 +11727,23 @@ msgstr "nowy: zapis utworzy go i dopisze dyrektywę do %s"
 
 msgid "The catenary couldn't be saved: its file \"%s\" is a file of the scenery; give the catenary another file"
 msgstr "Nie udało się zapisać sieci trakcyjnej: jej plik \"%s\" jest plikiem scenerii; podaj sieci inny plik"
+
+# scenery editor: catenary - its parts picked as nodes
+
+msgid "it's a part of the catenary, which is changed with the Catenary tool (F6)"
+msgstr "to część sieci trakcyjnej, którą zmienia się narzędziem Sieć trakcyjna (F6)"
+
+msgid "A part of the catenary: it's changed with the Catenary tool (F6)"
+msgstr "Część sieci trakcyjnej: zmienia się ją narzędziem Sieć trakcyjna (F6)"
+
+msgid "A part of the catenary: its pole is selected in the Catenary tool, it moves along the track by a drag"
+msgstr "Część sieci trakcyjnej: jej słup jest zaznaczony w narzędziu Sieć trakcyjna, przeciągnięcie przesuwa go wzdłuż toru"
+
+msgid "A part of the catenary: its gantry is selected in the Catenary tool"
+msgstr "Część sieci trakcyjnej: jej bramka jest zaznaczona w narzędziu Sieć trakcyjna"
+
+msgid "A part of the catenary: its anchor is selected in the Catenary tool; a drag of its pole or tensioning device moves it along the track"
+msgstr "Część sieci trakcyjnej: jej kotwienie jest zaznaczone w narzędziu Sieć trakcyjna; przeciągnięcie słupa kotwowego albo urządzenia naprężającego przesuwa je wzdłuż toru"
+
+msgid "A part of the catenary: its chain is selected in the Catenary tool"
+msgstr "Część sieci trakcyjnej: jej łańcuch jest zaznaczony w narzędziu Sieć trakcyjna"

@@ -6851,6 +6851,14 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     // in a scenery opened for editing selection has its limits. nodes of locked layers are off limits.
                     // nodes defined by a scenery template can't be rewritten one by one on save, so a click on one
                     // selects the include of the template as a whole
+                    // a part of the catenary: the catenary tool takes what it belongs to (moved or deleted as a node it would part
+                    // from the catenary which keeps it)
+                    if (node && node->m_catenary && mode == nodebank_panel::MODIFY)
+                    {
+                        if (false == catenary_pick_part(node))
+                            ui()->set_status(STR("A part of the catenary: it's changed with the Catenary tool (F6)"), true);
+                        return;
+                    }
                     if (node && mode == nodebank_panel::MODIFY)
                     {
                         std::string reason;

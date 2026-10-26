@@ -364,6 +364,8 @@ struct catenary_editor
 	void catenary_choose_page(int const Page);
 	void draw_catenary_overlay() const;
 	std::string catenary_intent_label(catenary_spot const &Spot) const;
+	// a part picked as a node: what it belongs to selected in the tool
+	bool catenary_pick_part(void const *Node);
 	// the hooks of editor_mode
 	bool catenary_intent(track_intent &Intent);
 	std::string catenary_mode_name() const;

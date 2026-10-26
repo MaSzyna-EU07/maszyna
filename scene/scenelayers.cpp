@@ -392,6 +392,15 @@ bool node_layers::editable(basic_node const *Node, std::string *Reason) const
 	{
 		return false;
 	}
+	if (Node->m_catenary)
+	{
+		// moved, copied or deleted by itself it would part from the catenary which keeps it (and is rebuilt from its own file)
+		if (Reason != nullptr)
+		{
+			*Reason = STR_C("it's a part of the catenary, which is changed with the Catenary tool (F6)");
+		}
+		return false;
+	}
 	auto const nodelayer{resolve(Node->layer())};
 	if (false == valid(nodelayer))
 	{

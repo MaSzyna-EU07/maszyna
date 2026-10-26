@@ -2099,6 +2099,27 @@ catenary_scene_file_included( std::string const &File ) {
     if( auto *file { file_named( File ) }; file != nullptr ) { file->created = false; }
 }
 
+int
+catenary_scene_part_owner( void const *Part, std::size_t &Index ) {
+    if( Part == nullptr ) { return 0; }
+    auto const has = [ Part ]( std::vector<TAnimModel *> const &Parts ) {
+        return std::any_of( Parts.begin(), Parts.end(), [ Part ]( TAnimModel const *Model ) { return static_cast<void const *>( Model ) == Part; } );
+    };
+    for( std::size_t index = 0; index < Suspensions.size(); ++index ) {
+        if( false == Suspensions[ index ].removed && has( Suspensions[ index ].parts ) ) { Index = index; return 1; }
+    }
+    for( std::size_t index = 0; index < Gantries.size(); ++index ) {
+        if( false == Gantries[ index ].removed && has( Gantries[ index ].parts ) ) { Index = index; return 2; }
+    }
+    for( std::size_t index = 0; index < Anchors.size(); ++index ) {
+        if( false == Anchors[ index ].removed && has( Anchors[ index ].parts ) ) { Index = index; return 3; }
+    }
+    for( std::size_t index = 0; index < Chains.size(); ++index ) {
+        if( false == Chains[ index ].removed && has( Chains[ index ].middle_parts ) ) { Index = index; return 4; }
+    }
+    return 0;
+}
+
 std::size_t
 catenary_scene_file_layer( std::string const &File ) {
     auto const found { FileLayers.find( File ) };

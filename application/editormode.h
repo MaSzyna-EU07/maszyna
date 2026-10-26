@@ -2200,6 +2200,9 @@ class editor_mode : public application_mode, private editor_track::observer
 	void catenary_key_hints(std::vector<key_hint> &Hints) const;
 	// the digits typed are the span of the next pole from the last one
 	bool catenary_takes_typed() const;
+	// a part of the catenary picked as a node: the catenary tool takes what it belongs to (the pole, the gantry, the anchor).
+	// false when it belongs to none of them
+	bool catenary_pick_part(scene::basic_node const *Node);
 	// the page of the catenary field of work: 0 poles, 1 gantries, 2 wires
 	int catenary_page();
 	void catenary_choose_page(int const Page);
