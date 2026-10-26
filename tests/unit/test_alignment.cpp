@@ -882,3 +882,70 @@ TEST_CASE("alignment: reverse curves traced in the mode of a curve, with no stra
 		CHECK(line.radius_warnings.empty());
 	}
 }
+
+TEST_CASE("alignment: a straight between two curves turning the same way, traced in the mode of a curve, is laid as a straight") {
+	// the points clicked in a scenery, from the start of the straight before the curves on, a curve of about 550 m, about 200 m of
+	// straight, a curve of about 550 m turning the same way and the end; once fitted as one compound curve of eight arcs, its straight
+	// two arcs of R 10360
+	std::vector<glm::dvec2> const clicks{{-1495.4964, 300.4092}, {-1653.8092, 290.0271}, {-1680.8739, 287.7361}, {-1707.4353, 284.2790}, {-1739.5235, 278.3567}, {-1780.0393, 268.1851},
+	                                     {-1803.7878, 260.7141}, {-1845.8626, 244.5926}, {-1872.4781, 232.3500}, {-1917.3815, 210.9899}, {-1955.5608, 192.7801}, {-2037.0277, 153.8567},
+	                                     {-2053.8111, 145.8379}, {-2077.7168, 132.9264}, {-2087.3488, 127.3010}, {-2097.1702, 121.5480}};
+	alignment::design base;
+	base.speed = 100.0;
+	base.start = {clicks.front().x, 0.0, clicks.front().y};
+	base.start_direction = glm::normalize(clicks[1] - clicks[0]);
+	base.end = {clicks.back().x, 0.0, clicks.back().y};
+	base.end_direction = glm::normalize(clicks.back() - clicks[clicks.size() - 2]);
+	std::vector<glm::dvec2> const points(clicks.begin() + 1, clicks.end());
+	auto const fit{alignment::fit_trace_stretch(base, points, 0, true)};
+	REQUIRE(fit.valid);
+	auto laid{base};
+	laid.vertices = fit.vertices;
+	auto const line{alignment::compute(laid)};
+	REQUIRE(line.valid);
+	// no arc flatter than R 3000 between the curves, the straight a straight
+	for (auto const &element : line.elements)
+		if (element.vertex >= 0 && element.radius > 0.0)
+			CHECK(element.radius < 3000.0);
+	CHECK(line.curves.size() == 2);
+	CHECK(fit.worst < 1.0);
+}
+
+TEST_CASE("alignment: curves turning the same way with straights between them, traced in the mode of a curve, two or three") {
+	double const k{1.0 / 300.0};
+	double const m{1.0 / 500.0};
+	struct shape {
+		char const *name;
+		std::vector<std::array<double, 3>> segments;
+		std::vector<double> radii;
+		double noise;
+	};
+	std::vector<shape> const shapes{
+	    {"two, a straight of 150 m between", {{0, 0, 20}, {0, k, 40}, {k, k, 60}, {k, 0, 40}, {0, 0, 150}, {0, m, 40}, {m, m, 40}, {m, 0, 40}}, {300.0, 500.0}, 0.0},
+	    {"the same clicked 5 cm off", {{0, 0, 20}, {0, k, 40}, {k, k, 60}, {k, 0, 40}, {0, 0, 150}, {0, m, 40}, {m, m, 40}, {m, 0, 40}}, {300.0, 500.0}, 0.05},
+	    {"three, straights of 120 m between", {{0, 0, 20}, {0, k, 40}, {k, k, 40}, {k, 0, 40}, {0, 0, 120}, {0, m, 40}, {m, m, 60}, {m, 0, 40}, {0, 0, 120}, {0, k, 40}, {k, k, 40}, {k, 0, 40}},
+	     {300.0, 500.0, 300.0}, 0.0},
+	};
+	for (auto const &each : shapes) {
+		std::string const name{each.name};
+		CAPTURE(name);
+		line_end end;
+		auto points{walked_points(each.segments, 10.0, end)};
+		for (std::size_t i = 0; i < points.size(); ++i)
+			points[i].y += each.noise * (i % 3 == 0 ? 1.0 : i % 3 == 1 ? -0.6 : 0.2);
+		alignment::design base;
+		base.speed = 60.0;
+		base.start = {0.0, 0.0, 0.0};
+		base.start_direction = heading(0.0);
+		base.end = {end.position.x, 0.0, end.position.y};
+		base.end_direction = heading(end.heading);
+		auto const fit{alignment::fit_trace_stretch(base, points, 0, true)};
+		REQUIRE(fit.valid);
+		REQUIRE(fit.vertices.size() == each.radii.size());
+		for (std::size_t i = 0; i < each.radii.size(); ++i) {
+			CHECK_FALSE(fit.vertices[i].compound);
+			CHECK(fit.vertices[i].radius == doctest::Approx(each.radii[i]).epsilon(0.03));
+		}
+		CHECK(fit.rms < 0.02 + each.noise);
+	}
+}

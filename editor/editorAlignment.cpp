@@ -3857,6 +3857,25 @@ void fit_compound(design &Design, std::size_t const Vertex, std::vector<glm::dve
 	Design = fitted;
 }
 
+// a compound curve of an arc this many times flatter than its sharpest one follows a straight the points show between two curves turning
+// the same way, or off the straight at its end: curves with a straight between them are taken over it where they keep to the points
+// about as closely
+constexpr double kCompoundSpread{4.0};
+
+bool flattened(vertex const &Curve)
+{
+	if (false == Curve.compound || Curve.arcs.empty())
+		return false;
+	auto sharpest{Curve.radius};
+	auto flattest{Curve.radius};
+	for (auto const &arc : Curve.arcs)
+	{
+		sharpest = std::min(sharpest, arc.radius);
+		flattest = std::max(flattest, arc.radius);
+	}
+	return flattest > kCompoundSpread * sharpest;
+}
+
 // the one curve of the design as a compound curve of more arcs than it has, up to Most, as few as keep within kPointsWithin of the
 // points, all along with the transitions of the norms between the arcs: each count started from the curve fitted with an arc less,
 // its longest arc cut in two, and from the curvature the points show, the better fit taken
@@ -3977,11 +3996,42 @@ std::optional<trace_stretch> fit_arcs(design const &Single, std::vector<glm::dve
 namespace
 {
 
+// the curves of the design with the radii and the transitions they were laid with, to the metre, or, Exact, as they were laid, a hair
+// under: where a curve fills the room up to an end of the stretch or to the next curve, a metre more doesn't fit there, the design laid
+// again warning of radii made smaller
+design settled_curves(design Design, result const &Laid, bool const Exact, double const Speed)
+{
+	for (auto const &curve : Laid.curves)
+	{
+		if (curve.vertex < 0 || curve.vertex >= static_cast<int>(Design.vertices.size()))
+			continue;
+		auto &curved{Design.vertices[curve.vertex]};
+		auto const radius{Exact ? curve.radius * (1.0 - 1e-6) : std::max(kTraceRadiusMin, std::round(curve.radius))};
+		auto const in{Exact ? curve.transition_in * (1.0 - 1e-6) : std::round(curve.transition_in)};
+		auto const out{Exact ? curve.transition_out * (1.0 - 1e-6) : std::round(curve.transition_out)};
+		plain_curve(curved, radius, std::min(in, out), Speed, Design.norms);
+		curved.transition_in = in;
+		curved.transition_out = out;
+	}
+	return Design;
+}
+
+// the same laid again: to the metre where that gives no warning, else as laid
+design settled_curves(design const &Design, double const Speed)
+{
+	auto const laid{compute(Design)};
+	auto rounded{settled_curves(Design, laid, false, Speed)};
+	if (auto const again{compute(rounded)}; again.valid && false == again.radius_warnings.empty())
+		return settled_curves(Design, laid, true, Speed);
+	return rounded;
+}
+
 // a chain of curves the points show, two to four: a curve where they turn one way, the next where they turn the other way or after a
 // straight. The lines between the curves, the common tangents of two curves of a reverse curve, are fitted with the radii and the
 // transitions; two curves turning the other way may meet with no straight between them, their tangents filling the room between their
-// vertices. Two turning the same way are two curves only with a straight of shortest_between between them, else one compound curve
-std::optional<trace_stretch> fit_chain(design const &Base, std::vector<glm::dvec2> const &Points, double const Speed)
+// vertices. Two turning the same way are two curves only with a straight of shortest_between between them, else one compound curve, and
+// only with Straights
+std::optional<trace_stretch> fit_chain(design const &Base, std::vector<glm::dvec2> const &Points, double const Speed, bool const Straights)
 {
 	auto const n{Points.size()};
 	if (n < 6)
@@ -4041,7 +4091,7 @@ std::optional<trace_stretch> fit_chain(design const &Base, std::vector<glm::dvec
 		else
 			++i;
 	auto const count{parts.size()};
-	if (count < 2 || count > 4 || std::none_of(parts.begin() + 1, parts.end(), [&](part const &Part) { return Part.side != (&Part - 1)->side; }))
+	if (count < 2 || count > 4 || (false == Straights && std::any_of(parts.begin() + 1, parts.end(), [&](part const &Part) { return Part.side == (&Part - 1)->side; })))
 		return std::nullopt;
 
 	// the parameters: of each line between two curves its direction and its distance from the start across it, then the logarithms of the
@@ -4141,37 +4191,11 @@ std::optional<trace_stretch> fit_chain(design const &Base, std::vector<glm::dvec
 	design chain;
 	if (false == shaped(best, chain))
 		return std::nullopt;
-	auto const laid{compute(chain)};
-	if (false == laid.valid || laid.curves.size() != count)
+	if (auto const laid{compute(chain)}; false == laid.valid || laid.curves.size() != count)
 		return std::nullopt;
-	// the radii and the transitions the curves were laid with, to the metre; where two curves of a reverse curve meet, filling the room
-	// between their vertices, a metre more doesn't fit: those as they were laid, a hair under, the design laid again giving no warning
-	auto const settled = [&](bool const Exact) {
-		auto settle{chain};
-		for (auto const &curve : laid.curves)
-		{
-			if (curve.vertex < 0 || curve.vertex >= static_cast<int>(count))
-				return std::optional<design>{};
-			auto &curved{settle.vertices[curve.vertex]};
-			auto const radius{Exact ? curve.radius * (1.0 - 1e-6) : std::max(kTraceRadiusMin, std::round(curve.radius))};
-			auto const in{Exact ? curve.transition_in * (1.0 - 1e-6) : std::round(curve.transition_in)};
-			auto const out{Exact ? curve.transition_out * (1.0 - 1e-6) : std::round(curve.transition_out)};
-			plain_curve(curved, radius, std::min(in, out), Speed, settle.norms);
-			curved.transition_in = in;
-			curved.transition_out = out;
-		}
-		return std::optional<design>{settle};
-	};
-	auto rounded{settled(false)};
-	if (false == rounded.has_value())
-		return std::nullopt;
-	chain = *rounded;
-	auto again{compute(chain)};
-	if (again.valid && false == again.radius_warnings.empty())
-	{
-		chain = *settled(true);
-		again = compute(chain);
-	}
+	// where two curves of a reverse curve meet, filling the room between their vertices, as they were laid
+	chain = settled_curves(chain, Speed);
+	auto const again{compute(chain)};
 	if (false == again.valid || again.curves.size() != count || false == again.radius_warnings.empty())
 		return std::nullopt;
 	for (auto const &curve : again.curves)
@@ -4196,11 +4220,15 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 	auto const startdirection{glm::normalize(Base.start_direction)};
 	auto const end{plan_of(Base.end)};
 	auto const enddirection{glm::normalize(Base.end_direction)};
-	// a shape with more curves is taken where it follows the points much closer than the simpler one, which doesn't keep to them
+	// one compound curve with an arc flattened to a straight between its curves, where straights between curves may be laid
+	auto const flat = [&]() { return Straights && chosen.valid && chosen.vertices.size() == 1 && flattened(chosen.vertices.front()); };
+	// a shape with more curves is taken where it follows the points much closer than the simpler one, which doesn't keep to them; curves
+	// with straights between them over such a compound curve where they keep to the points about as closely
 	auto const take = [&](std::optional<trace_stretch> const &Candidate) {
 		if (false == Candidate.has_value())
 			return;
-		if (false == chosen.valid || (chosen.rms > kStretchClose && Candidate->rms < 0.6 * chosen.rms))
+		if (false == chosen.valid || (chosen.rms > kStretchClose && Candidate->rms < 0.6 * chosen.rms) ||
+		    (flat() && Candidate->vertices.size() >= 2 && Candidate->rms < std::max(kStretchClose, 2.0 * chosen.rms)))
 			chosen = *Candidate;
 	};
 
@@ -4295,7 +4323,7 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 	// the curves. The parameters: the direction of the straight, its distance from the start across it, the logarithms of the radii,
 	// first with the transitions of the single curve, then with the square roots of the lengths of the transitions of each curve too
 	constexpr std::size_t kParameters{4};
-	if (Straights && Points.size() > kParameters && (false == chosen.valid || chosen.rms > kStretchClose))
+	if (Straights && Points.size() > kParameters && (false == chosen.valid || chosen.rms > kStretchClose || flat()))
 	{
 		auto const transition{one.has_value() && false == one->vertices.empty() ? one->vertices.front().transition_in : 0.0};
 		auto const shaped = [&](std::vector<double> const &Parameters, design &Trial) {
@@ -4364,8 +4392,8 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 		}
 		if (design two; false == best.empty() && shaped(best, two))
 		{
-			for (auto &curve : two.vertices)
-				plain_curve(curve, std::max(kTraceRadiusMin, std::round(curve.radius)), std::round(curve.transition_in), speed, two.norms);
+			// a curve ending at the last point, filling the room up to the end, as it was laid
+			two = settled_curves(two, speed);
 			// none where a curve ran to the end of the radii tried, turns hardly at all, or doesn't fit between the straights: the
 			// points made the fit find two curves where they show one
 			auto const laid{compute(two)};
@@ -4379,14 +4407,21 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 			auto const candidate{sound ? stretch_of(two, Points) : std::nullopt};
 			auto const curves{laid_curves(laid)};
 			auto const same{curves.size() == 2 && curves[0].side == curves[1].side};
-			if (candidate.has_value() && (false == same || (curves[1].from - curves[0].to >= shortest_between(Base) && (false == chosen.valid || candidate->rms < 0.5 * chosen.rms))))
+			if (candidate.has_value() && (false == same || (curves[1].from - curves[0].to >= shortest_between(Base) && (false == chosen.valid || candidate->rms < 0.5 * chosen.rms || flat()))))
 				take(candidate);
 		}
 	}
 
-	// a reverse curve, or more curves turning to and fro
-	if (false == chosen.valid || chosen.rms > kStretchClose)
-		take(fit_chain(Base, Points, speed));
+	// a reverse curve, or more curves turning to and fro or the same way with straights between them; of no more curves than the two
+	// fitted above, the closer one
+	if (false == chosen.valid || chosen.rms > kStretchClose || chosen.vertices.size() >= 2 || flat())
+		if (auto const chain{fit_chain(Base, Points, speed, Straights)}; chain.has_value())
+		{
+			if (chosen.valid && chosen.vertices.size() >= 2 && chain->vertices.size() <= chosen.vertices.size() && chain->rms < chosen.rms)
+				chosen = *chain;
+			else
+				take(chain);
+		}
 	return chosen;
 }
 
