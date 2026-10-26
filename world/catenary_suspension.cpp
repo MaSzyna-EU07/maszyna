@@ -33,7 +33,7 @@ std::string normalize_path( std::string Path ) {
 
 // słowa kluczowe wewnątrz wpisu podwieszenia
 bool is_keyword( std::string const &Token ) {
-    static std::set<std::string> const keywords { "support", "scheme", "messenger", "contact", "insulators", "override", "skin", "at", "attach", "rope", "pole", "umbrella", "endsuspension" };
+    static std::set<std::string> const keywords { "support", "scheme", "messenger", "contact", "insulators", "override", "skin", "at", "attach", "rope", "pole", "umbrella", "spread", "shared_pole", "endsuspension" };
     return keywords.find( Token ) != keywords.end();
 }
 
@@ -101,6 +101,15 @@ void parse_suspensions( std::vector<std::string> const &Tokens, std::string cons
                 else if( key == "parallel" ) { one( line.parallel ); }
                 else if( key == "anchor_start" ) { one( line.anchor_start ); }
                 else if( key == "anchor_end" ) { one( line.anchor_end ); }
+                else if( key == "anchor_start_contact" ) { one( line.anchor_start_contact ); }
+                else if( key == "anchor_end_contact" ) { one( line.anchor_end_contact ); }
+                else if( key == "middle" ) { one( line.middle ); }
+                else if( key == "middle_device" ) { one( line.middle_device ); }
+                else if( key == "middle_height" ) { number( line.middle_heights[ 0 ] ); number( line.middle_heights[ 1 ] ); }
+                else if( key == "messenger_from" ) {
+                    std::string listed, holder;
+                    if( one( listed ) && one( holder ) ) { line.messenger_from.emplace_back( listed, holder ); }
+                }
                 else if( key == "hangers" ) { for( auto &value : line.hangers ) { number( value ); } }
                 else if( key == "suspensions" ) {
                     while( index < count && Tokens[ index ] != "endchain" && Tokens[ index ] != "node" ) { line.suspensions.push_back( Tokens[ index++ ] ); }
@@ -177,12 +186,21 @@ void parse_suspensions( std::vector<std::string> const &Tokens, std::string cons
                 else if( key == "network" ) { line.network = one(); }
                 else if( key == "pole" ) { line.pole_type = one(); point( line.pole ); haspole = true; }
                 else if( key == "toward" ) { point( line.toward ); hastoward = true; }
+                else if( key == "on" ) { line.on = one(); }
                 else if( key == "distance" ) { number( line.distance ); }
                 else if( key == "color" ) { line.color = one(); }
                 else if( key == "top_color" ) { line.top_color = one(); }
                 else if( key == "elongation" ) { number( line.elongation ); }
                 else if( key == "missing" ) { double value { 0.0 }; number( value ); line.missing = static_cast<int>( value ); }
                 else if( key == "ground" ) { number( line.ground ); }
+                else if( key == "height" ) { number( line.height ); }
+                else if( key == "rope_height" ) { number( line.rope_height ); }
+                else if( key == "insulators" ) {
+                    line.insulators = one();
+                    if( line.insulators != "new" && line.insulators != "old" && line.insulators != "messenger" && line.insulators != "contact" ) {
+                        report( line.name, "\"insulators\" takes new, old, messenger or contact" ); good = false;
+                    }
+                }
                 else if( key == "skin" ) { line.skin = one(); }
                 else { report( line.name, "unexpected token \"" + key + "\" in an anchor" ); good = false; }
             }
@@ -250,6 +268,14 @@ void parse_suspensions( std::vector<std::string> const &Tokens, std::string cons
                 }
                 else { report( entry.name, "\"" + key + "\" needs three numbers: a point in scenery coordinates" ); good = false; }
             }
+            else if( key == "shared_pole" ) {
+                if( list.empty() ) { entry.shared_pole = true; }
+                else { report( entry.name, "\"shared_pole\" takes no values" ); good = false; }
+            }
+            else if( key == "spread" ) {
+                if( list.size() == 3 && to_number( list[ 0 ], entry.spread[ 0 ] ) && to_number( list[ 1 ], entry.spread[ 1 ] ) && to_number( list[ 2 ], entry.spread[ 2 ] ) ) { entry.has_spread = true; }
+                else { report( entry.name, "\"spread\" needs three numbers: the point on the console in the plane of the cantilever" ); good = false; }
+            }
             else if( key == "umbrella" ) {
                 if( list.size() == 1 ) { entry.umbrella = list.front(); }
                 else { report( entry.name, "\"umbrella\" needs exactly one name" ); good = false; }
@@ -270,6 +296,8 @@ void parse_suspensions( std::vector<std::string> const &Tokens, std::string cons
                 if( entry.has_attach && entry.has_pole ) { report( entry.name, "\"attach\" and \"pole\" can't be used together" ); good = false; }
                 if( entry.card == 0 ) { report( entry.name, "explicit points need a \"scheme\"" ); good = false; }
                 if( false == entry.umbrella.empty() && false == entry.has_pole ) { report( entry.name, "\"umbrella\" needs a \"pole\"" ); good = false; }
+                if( entry.shared_pole && false == entry.has_pole ) { report( entry.name, "\"shared_pole\" needs a \"pole\"" ); good = false; }
+                if( entry.has_spread && false == entry.has_pole ) { report( entry.name, "\"spread\" needs a \"pole\"" ); good = false; }
             }
             else {
                 if( entry.support.empty() ) { report( entry.name, "missing \"support\"" ); good = false; }
@@ -318,7 +346,16 @@ std::string write_suspension( suspension const &Entry ) {
     if( Entry.has_attach ) { text += " attach " + point( Entry.attach ); }
     if( Entry.has_pole ) { text += " pole " + Entry.pole_type + " " + point( Entry.pole ); }
     if( false == Entry.umbrella.empty() ) { text += " umbrella " + Entry.umbrella; }
+    if( Entry.has_spread ) { text += " spread " + point( Entry.spread ); }
+    if( Entry.shared_pole ) { text += " shared_pole"; }
     return text + " endsuspension";
+}
+
+std::string const &messenger_holder( chain const &Chain, std::string const &Listed ) {
+    for( auto const &pair : Chain.messenger_from ) {
+        if( pair.first == Listed && false == pair.second.empty() ) { return pair.second; }
+    }
+    return Listed;
 }
 
 std::string write_chain( chain const &Entry ) {
@@ -337,6 +374,13 @@ std::string write_chain( chain const &Entry ) {
     if( false == Entry.parallel.empty() ) { text += " parallel " + Entry.parallel; }
     if( false == Entry.anchor_start.empty() ) { text += " anchor_start " + Entry.anchor_start; }
     if( false == Entry.anchor_end.empty() ) { text += " anchor_end " + Entry.anchor_end; }
+    if( false == Entry.anchor_start_contact.empty() ) { text += " anchor_start_contact " + Entry.anchor_start_contact; }
+    if( false == Entry.anchor_end_contact.empty() ) { text += " anchor_end_contact " + Entry.anchor_end_contact; }
+    if( false == Entry.middle.empty() ) {
+        text += " middle " + Entry.middle + ( Entry.middle_device != "0406" ? " middle_device " + Entry.middle_device : std::string() );
+        if( Entry.middle_heights[ 0 ] > 0.0 || Entry.middle_heights[ 1 ] > 0.0 ) { text += " middle_height " + number( Entry.middle_heights[ 0 ] ) + " " + number( Entry.middle_heights[ 1 ] ); }
+    }
+    for( auto const &pair : Entry.messenger_from ) { text += " messenger_from " + pair.first + " " + pair.second; }
     text += " suspensions";
     for( auto const &name : Entry.suspensions ) { text += " " + name; }
     return text + " endchain";
@@ -378,12 +422,17 @@ std::string write_anchor( anchor const &Entry ) {
     std::string text { "node " + number( Entry.range_max, 0 ) + " " + number( Entry.range_min, 0 ) + " " + ( Entry.name.empty() ? std::string( "none" ) : Entry.name ) + " anchor" };
     text += " device " + Entry.device;
     if( false == Entry.network.empty() ) { text += " network " + Entry.network; }
-    text += " pole " + Entry.pole_type + " " + point( Entry.pole ) + " toward " + point( Entry.toward ) + " distance " + number( Entry.distance, 1 );
+    text += " pole " + Entry.pole_type + " " + point( Entry.pole );
+    if( false == Entry.on.empty() ) { text += " on " + Entry.on; }
+    text += " toward " + point( Entry.toward ) + " distance " + number( Entry.distance, 1 );
     if( false == Entry.color.empty() ) { text += " color " + Entry.color; }
     if( false == Entry.top_color.empty() ) { text += " top_color " + Entry.top_color; }
     if( Entry.elongation != 0.0 ) { text += " elongation " + number( Entry.elongation, 3 ); }
     if( Entry.missing != 0 ) { text += " missing " + std::to_string( Entry.missing ); }
     if( Entry.ground != -0.50 ) { text += " ground " + number( Entry.ground, 2 ); }
+    if( Entry.height > 0.0 ) { text += " height " + number( Entry.height, 3 ); }
+    if( Entry.rope_height > 0.0 ) { text += " rope_height " + number( Entry.rope_height, 3 ); }
+    if( false == Entry.insulators.empty() ) { text += " insulators " + Entry.insulators; }
     if( false == Entry.skin.empty() ) { text += " skin " + Entry.skin; }
     return text + " endanchor";
 }

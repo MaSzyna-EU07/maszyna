@@ -280,6 +280,7 @@ void cantilever_catalog::parse( std::vector<std::string> const &Tokens, std::str
                     else if( key == "top" ) { number( pole.top, good ); }
                     else if( key == "length" ) { number( pole.length, good ); }
                     else if( key == "depth" ) { number( pole.depth_top, good ); number( pole.depth_base, good ); }
+                    else if( key == "width" ) { number( pole.width, good ); }
                     else if( key == "mount_max" ) { number( pole.mount_max, good ); }
                     else if( key == "mount_min" ) { number( pole.mount_min, good ); pole.has_mount_min = true; }
                     else if( key == "turn" ) { number( pole.turn, good ); }
@@ -287,10 +288,13 @@ void cantilever_catalog::parse( std::vector<std::string> const &Tokens, std::str
                     else if( key == "strut" ) { text( pole.strut ); }
                     else if( key == "stay" ) { text( pole.stay ); }
                     else if( key == "steady" ) { text( pole.steady ); }
+                    else if( key == "console" ) { text( pole.console ); }
+                    else if( key == "steady_console" ) { text( pole.steady_console ); }
                     else { report( entry, "unknown keyword \"" + key + "\"" ); good = false; --index; }
                 }
                 else {
                     if( key == "back" ) { text( mount.back ); }
+                    else if( key == "console" ) { mount.console = true; number( mount.console_x[ 0 ], good ); number( mount.console_x[ 1 ], good ); number( mount.console_face, good ); }
                     else if( key == "hinge" ) { text( mount.hinge ); number( mount.hinge_eye[ 0 ], good ); number( mount.hinge_eye[ 1 ], good ); }
                     else if( key == "rod" ) { text( mount.rod ); }
                     else if( key == "twin" ) { text( mount.twin ); }
@@ -2071,6 +2075,20 @@ bool solve_cantilever_on_pole( cantilever_catalog const &Catalog, cantilever_sch
     return solve_cantilever_on_pole( Catalog, Scheme, Pole, Distance, RailHead, Messenger, Overrides, cantilever_umbrella(), Result );
 }
 
+void spread_mounts( cantilever_pole const &Pole, cantilever_result const &First, cantilever_result const &Second,
+    cantilever_umbrella &FirstSide, cantilever_umbrella &SecondSide ) {
+
+    FirstSide.shared.clear();
+    SecondSide.shared.clear();
+    for( auto const *role : { "stay", "strut", "steady" } ) {
+        auto const a { First.values.find( std::string( "mount." ) + role ) }, b { Second.values.find( std::string( "mount." ) + role ) };
+        if( a == First.values.end() || b == Second.values.end() ) { continue; }
+        auto shared { 0.5 * ( a->second + b->second ) };
+        if( Pole.mount_max != 0.0 ) { shared = std::min( shared, std::max( Pole.mount_max, std::min( a->second, b->second ) ) ); }
+        FirstSide.shared[ role ] = SecondSide.shared[ role ] = shared;
+    }
+}
+
 void umbrella_mounts( cantilever_catalog const &Catalog, cantilever_pole const &Pole, cantilever_result const &First, cantilever_result const &Second,
     cantilever_umbrella &FirstSide, cantilever_umbrella &SecondSide ) {
 
@@ -2142,17 +2160,40 @@ bool solve_on_pole_once( cantilever_catalog const &Catalog, cantilever_scheme co
         if( mount == nullptr ) { fail( std::string( Use ) + " mount \"" + Name + "\" isn't in the catalogue" ); }
         return mount;
     };
-    auto const *strut { mountpart( Pole.strut, "strut" ) };
-    auto const *stay { mountpart( Pole.stay, "stay" ) };
-    auto const *steady { Scheme.steady_mounted ? mountpart( Pole.steady, "steady arm" ) : nullptr };
+    // wysięgniki rozstawione: mocowania -06 tej samej karty (4610-06, 4620-06, 4630-06) na konsoli słupa (4890); rozstawione
+    // wysięgi pomocnicze (0167, bez ukośnika i odciągu) na belce 4690 (steady_console, karta 33-0519), gdy słup ją ma
+    auto const onconsole = [ & ]( std::string const &Name ) {
+        if( false == Umbrella.spread || Name.empty() ) { return Name; }
+        return Name.substr( 0, Name.find( '-' ) ) + "-06";
+    };
+    auto const steadyonly { Scheme.roles.count( "strut" ) == 0 && Scheme.roles.count( "stay" ) == 0 };
+    std::map<std::string, cantilever_mount const *> consoles;
+    if( Umbrella.spread ) {
+        for( auto const *role : { "stay", "strut", "steady" } ) {
+            if( ( std::string( role ) != "steady" && steadyonly ) || ( std::string( role ) == "steady" && false == Scheme.steady_mounted ) ) { continue; }
+            // sam wysięg pomocniczy (0167) na belce 4690; wysięg wysięgnika trzyzaczepowego na tej samej konsoli 4890, co reszta
+            auto const &name { steadyonly && false == Pole.steady_console.empty() ? Pole.steady_console : Pole.console };
+            auto const *found { name.empty() ? nullptr : Catalog.mount( name ) };
+            if( found == nullptr || false == found->console ) {
+                return fail( name.empty() ? "the pole has no console for spread cantilevers (\"console\" / \"steady_console\" in its entry)" : "console \"" + name + "\" isn't in the catalogue as a console" );
+            }
+            consoles[ role ] = found;
+        }
+    }
+    auto const *strut { mountpart( onconsole( Pole.strut ), "strut" ) };
+    auto const *stay { mountpart( onconsole( Pole.stay ), "stay" ) };
+    auto const *steady { Scheme.steady_mounted ? mountpart( onconsole( Pole.steady ), "steady arm" ) : nullptr };
     if( strut == nullptr || stay == nullptr || ( Scheme.steady_mounted && steady == nullptr ) ) { return false; }
+    // oś słupa wzdłuż toru: przy wysięgnikach rozstawionych przesunięta od płaszczyzny wysięgnika
+    auto const polex { Umbrella.spread ? Umbrella.console_x : 0.0 };
 
     std::vector<cantilever_placement> poleparts;
-    auto const add = [ & ]( std::string const &Role, std::string const &Part, std::string const &Model, double const Y, double const Z ) {
+    auto const add = [ & ]( std::string const &Role, std::string const &Part, std::string const &Model, double const Y, double const Z, double const X = 0.0 ) {
         cantilever_placement placement;
         placement.role = Role;
         placement.part = Part;
         placement.model = Model;
+        placement.position[ 0 ] = X;
         placement.position[ 1 ] = Y;
         placement.position[ 2 ] = Z;
         poleparts.push_back( placement );
@@ -2163,15 +2204,25 @@ bool solve_on_pole_once( cantilever_catalog const &Catalog, cantilever_scheme co
     auto const fix = [ & ]( std::string const &Role, cantilever_mount const &Mount, double Bolts ) {
         // parasol: mocowanie dwustronne na wspólnej wysokości, bez tyłu; po stronie z nakrętkami jego połówka "twin"
         auto const shared { Umbrella.shared.find( Role ) };
-        auto const twin { shared != Umbrella.shared.end() && false == Mount.twin.empty() };
-        if( twin ) { Bolts = RailHead + shared->second; }
+        auto const twin { false == Umbrella.spread && shared != Umbrella.shared.end() && false == Mount.twin.empty() };
+        if( twin || ( Umbrella.spread && shared != Umbrella.shared.end() ) ) { Bolts = RailHead + shared->second; }
         auto const height { Bolts - RailHead };
         heights[ Role ] = height;
         if( height > Pole.top ) { notes.push_back( Role + " mount " + to_text( height - Pole.top ) + " m above the top of the pole" ); }
         auto const depth { Pole.depth( height ) };
-        auto const face { Distance - 0.5 * depth };
+        auto face { Distance - 0.5 * depth };
+        auto const found { consoles.find( Role ) };
+        auto const *console { found != consoles.end() ? found->second : nullptr };
+        if( console != nullptr ) {
+            // konsola na słupie (jedna na rolę, stawia ją jedna strona), mocowanie na jej punkcie, bliżej toru o jej grubość
+            if( Umbrella.console_parts ) {
+                add( Role + "_console", console->name, "", face, Bolts, polex );
+                if( false == console->back.empty() ) { add( Role + "_console_back", console->back, "", face + depth, Bolts, polex ); }
+            }
+            face += console->console_face;
+        }
         add( Role + "_mount", ( twin && Umbrella.nuts.count( Role ) ) ? Mount.twin : Mount.name, "", face, Bolts );
-        if( false == twin && false == Mount.back.empty() ) { add( Role + "_back", Mount.back, "", face + depth, Bolts ); }
+        if( false == twin && console == nullptr && false == Mount.back.empty() ) { add( Role + "_back", Mount.back, "", face + depth, Bolts ); }
         if( false == Mount.hinge.empty() ) { add( Role + "_hinge", Mount.hinge, "", face + Mount.point[ 0 ], Bolts + Mount.point[ 1 ] ); }
         if( false == Mount.rod.empty() ) { add( Role + "_rod", Mount.rod, "", face + Mount.point[ 0 ], Bolts + Mount.point[ 1 ] ); }
         return cantilever_point { face + Mount.attach_y(), Bolts + Mount.attach_z() };
@@ -2179,7 +2230,7 @@ bool solve_on_pole_once( cantilever_catalog const &Catalog, cantilever_scheme co
 
     // słup bramki stawia bramka
     if( Umbrella.pole && false == Pole.gantry ) {
-        add( "pole", Pole.name, Pole.model, Distance, RailHead );
+        add( "pole", Pole.name, Pole.model, Distance, RailHead, polex );
         if( Pole.turn != 0.0 ) {
             // model obrócony wokół pionu (zwis na bramce: profil szerszym bokiem wzdłuż toru)
             auto const angle { Pole.turn * 3.14159265358979323846 / 180.0 };
@@ -2188,7 +2239,7 @@ bool solve_on_pole_once( cantilever_catalog const &Catalog, cantilever_scheme co
             std::copy( std::begin( turned ), std::end( turned ), poleparts.back().rotation );
         }
         // fundament ma to samo zero co słup (oś słupa na wysokości główki szyny)
-        if( false == Pole.foundation.empty() ) { add( "foundation", Pole.name + "_foundation", Pole.foundation, Distance, RailHead ); }
+        if( false == Pole.foundation.empty() ) { add( "foundation", Pole.name + "_foundation", Pole.foundation, Distance, RailHead, polex ); }
     }
     auto const raise { Messenger.z - Scheme.height };
     auto staybolts { Scheme.mount_stay + raise - stay->attach_z() };

@@ -4887,6 +4887,13 @@ void opengl33_renderer::Render_Alpha(TTraction *Traction)
 			draw(solid.fittings);
 			++m_renderpass.draw_stats.drawcalls;
 		}
+		// lina urządzenia naprężającego przy końcu przęsła (stal)
+		if (solid.rope != null_handle)
+		{
+			set_metal(catenary_rope_metal());
+			draw(solid.rope);
+			++m_renderpass.draw_stats.drawcalls;
+		}
 		::glDepthMask(depthwrite);
 	}
 

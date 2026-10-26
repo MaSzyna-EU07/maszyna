@@ -99,7 +99,10 @@ void type_registry::load_tables() {
             double mass { 0.0 }, diameter { 0.0 };
             stream >> mass >> diameter;
             if( stream.fail() || mass <= 0.0 ) { report( "Catenary: bad wire entry in \"" + filename + "\" (line " + std::to_string( linenumber ) + ")" ); continue; }
-            m_wires[ key ] = { mass, diameter * 0.001 };
+            // dalej opcjonalnie: przekrój mm² i moduł sprężystości GPa
+            double area { 0.0 }, modulus { 0.0 };
+            if( stream >> area ) { stream >> modulus; }
+            m_wires[ key ] = { mass, diameter * 0.001, std::max( 0.0, area ) * 1e-6, std::max( 0.0, modulus ) * 1e9 };
         }
         else if( kind == "spacing" ) {
             int span { 0 };
@@ -267,25 +270,34 @@ bool solve_span_points( network_definition const &Definition, std::vector<double
     input.y_at_start = Ystart;
     input.y_at_end = Yend;
     span_result result;
-    try {
-        // bez rozstawu wieszaków: odcinek do kotwienia, same liny
-        result = ( Hangergaps.empty() ?
-            solve_free_span( type, length, input.height_start, input.height_end ) :
-            solve_span( type, input, 4.0 ) );
-    }
-    catch( std::exception const &exception ) {
-        Error = exception.what();
-        return false;
-    }
-    // lina poniżej przewodu jezdnego: przęsło za długie albo za mała wysokość konstrukcyjna dla tego typu sieci
-    for( auto const *line : { &result.messenger, &result.y_start, &result.y_end } ) {
-        for( auto const &point : *line ) {
-            if( point.y - ( type.messenger_count > 1 ? type.messenger_stack : 0.0 ) < -0.01 ) {
-                Error = "messenger wire would hang below the contact wire (span too long or suspension too low for this network type)";
-                return false;
+    auto solved { false };
+    // nietypowe przęsła (niska wysokość konstrukcyjna jednego końca, naciąg liny obniżony brakującymi ciężarami poniżej naciągu
+    // linki Y): zamiast rysowania po staremu najpierw bez linek Y, potem jako odcinek bez wieszaków
+    for( int attempt = 0; attempt < 3 && false == solved; ++attempt ) {
+        try {
+            if( attempt == 2 || Hangergaps.empty() ) { result = solve_free_span( type, length, input.height_start, input.height_end ); }
+            else {
+                if( attempt == 1 ) { input.y_at_start = input.y_at_end = false; }
+                result = solve_span( type, input, 4.0 );
             }
+            solved = true;
+        }
+        catch( std::exception const &exception ) {
+            Error = exception.what();
         }
     }
+    if( false == solved ) { return false; }
+    // lina poniżej przewodu jezdnego (przęsło za długie albo za mała wysokość konstrukcyjna dla tego typu sieci): podciągnięta
+    // nad przewód, wieszaki skrócone - przęsło wygląda dziwnie, ale się rysuje
+    // (końce zostają tam, gdzie są punkty przęsła: najniżej na prostej między nimi)
+    auto const lowest { ( type.messenger_count > 1 ? type.messenger_stack : 0.0 ) + 0.02 };
+    for( auto *line : { &result.messenger, &result.y_start, &result.y_end } ) {
+        for( auto &point : *line ) {
+            auto const chord { input.height_start + ( input.height_end - input.height_start ) * std::clamp( point.x / length, 0.0, 1.0 ) };
+            point.y = std::max( point.y, std::min( lowest, chord ) );
+        }
+    }
+    for( auto &hanger : result.hangers ) { hanger.length = std::max( hanger.length, 0.0 ); }
     Solution.length = length;
     Solution.result = std::move( result );
     return true;
@@ -435,10 +447,27 @@ void build_geometry( network_definition const &Definition, span_solution const &
         if( type.messenger_count > 1 ) {
             std::vector<vec3> middle;
             if( false == start.empty() ) { middle.push_back( start.back() ); }
+            // końce dolnej liny podane osobno (kotwienie): przesunięcie rozłożone liniowo wzdłuż przęsła
+            vec3 shiftstart { 0.0, 0.0, 0.0 }, shiftend { 0.0, 0.0, 0.0 };
+            if( Points.messenger2_start_set && false == result.messenger.empty() ) {
+                auto const from { rope( result.messenger.front().x, result.messenger.front().y - type.messenger_stack ) };
+                shiftstart = vec3 { Points.messenger2_start.x - from.x, Points.messenger2_start.y - from.y, Points.messenger2_start.z - from.z };
+            }
+            if( Points.messenger2_end_set && false == result.messenger.empty() ) {
+                auto const to { rope( result.messenger.back().x, result.messenger.back().y - type.messenger_stack ) };
+                shiftend = vec3 { Points.messenger2_end.x - to.x, Points.messenger2_end.y - to.y, Points.messenger2_end.z - to.z };
+            }
             for( auto const &point : result.messenger ) {
                 auto const instart { reachstart > 0.0 && point.x < reachstart + 1e-6 };
                 auto const inend { reachend > 0.0 && point.x > length - reachend - 1e-6 };
-                if( false == instart && false == inend ) { middle.push_back( rope( point.x, point.y - type.messenger_stack ) ); }
+                if( false == instart && false == inend ) {
+                    auto at { rope( point.x, point.y - type.messenger_stack ) };
+                    auto const t { length > 1e-9 ? point.x / length : 0.0 };
+                    at.x += shiftstart.x * ( 1.0 - t ) + shiftend.x * t;
+                    at.y += shiftstart.y * ( 1.0 - t ) + shiftend.y * t;
+                    at.z += shiftstart.z * ( 1.0 - t ) + shiftend.z * t;
+                    middle.push_back( at );
+                }
             }
             if( false == end.empty() ) { middle.push_back( end.front() ); }
             polyline( middle, element_kind::messenger );

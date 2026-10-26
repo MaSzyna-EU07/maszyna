@@ -16,6 +16,8 @@ namespace catenary {
 struct wire_data {
     double mass { 0.0 };        // kg/m
     double diameter { 0.0 };    // m
+    double area { 0.0 };        // m², przekrój czynny (do wydłużeń sprężystych); 0 = nieznany
+    double modulus { 0.0 };     // Pa, moduł sprężystości przewodu (liny skręcane: niższy niż drutu); 0 = nieznany
 };
 
 // pełny opis typu sieci: dane dla solvera i dane potrzebne tylko do rysowania
@@ -67,6 +69,9 @@ struct vec3 { double x, y, z; };
 struct span_points {
     vec3 contact_start, contact_end;
     vec3 messenger_start, messenger_end;
+    // druga (dolna) lina nośna kończy się gdzie indziej niż o odstęp lin pod pierwszą (uchwyt krańcowy w kotwieniu z dwiema liniami)
+    bool messenger2_start_set { false }, messenger2_end_set { false };
+    vec3 messenger2_start, messenger2_end;
 };
 
 // policzone przęsło

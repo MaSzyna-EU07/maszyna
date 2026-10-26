@@ -3673,6 +3673,13 @@ opengl_renderer::Render_Alpha( TTraction *Traction ) {
             m_geometry.draw( solid.fittings );
             ++m_renderpass.draw_stats.drawcalls;
         }
+        // lina urządzenia naprężającego przy końcu przęsła (stal)
+        if( solid.rope != null_handle ) {
+            auto const &steel { catenary_rope_metal() };
+            ::glColor4fv( glm::value_ptr( glm::vec4{ steel.color[ 0 ], steel.color[ 1 ], steel.color[ 2 ], 1.f } ) );
+            m_geometry.draw( solid.rope );
+            ++m_renderpass.draw_stats.drawcalls;
+        }
         ::glDepthMask( depthwrite );
     }
     // debug data

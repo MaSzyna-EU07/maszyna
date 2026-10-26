@@ -45,6 +45,8 @@ double const kSpanSearch{150.0}; // m, the farthest a neighbouring pole of the s
 double const kSameLine{1.5}; // m across the span, farther the two poles belong to different tracks
 double const kCurveRadius{4000.0}; // m, a track bent less is a straight for the cards (table 0007)
 float const kPolePick{12.0f};
+double const kInsertWidth{1.5}; // m in the plan from the line of a span: a pole placed there goes into the span
+double const kInsertEnds{2.0}; // m from the ends of the span where it doesn't
 double const kSwitchRange{8.0}; // m from a pole to a switch path: the pole stands by the switch (also on the neighbouring track)
 
 double nearest_parameter(TTrack const &Track, int const Path, glm::dvec3 const &Point)
@@ -61,7 +63,18 @@ double nearest_parameter(TTrack const &Track, int const Path, glm::dvec3 const &
 			parameter = k / 256.0;
 		}
 	}
-	return parameter;
+	// on a long path a step of the search is metres: refined around the best one, so that a point square to the track (a pole
+	// given by another cantilever on it) gets its own foot on the track and not one a metre off
+	auto low{std::max(0.0, parameter - 1.0 / 256.0)}, high{std::min(1.0, parameter + 1.0 / 256.0)};
+	for (int k = 0; k < 40; ++k)
+	{
+		auto const a{low + (high - low) / 3.0}, b{high - (high - low) / 3.0};
+		if (geometry::plan_distance(curve.point(a), Point) < geometry::plan_distance(curve.point(b), Point))
+			high = b;
+		else
+			low = a;
+	}
+	return 0.5 * (low + high);
 }
 
 glm::dvec2 forward_at(TTrack const &Track, int const Path, double const Parameter)
@@ -85,6 +98,23 @@ glm::dvec3 pole_of(catenary::suspension const &Data)
 glm::dvec3 wire_of(catenary::suspension const &Data)
 {
 	return {Data.at[0], Data.at[1], Data.at[2]};
+}
+
+// the suspensions on the pole of this one (the same type at the same point, as the scenery pairs an umbrella): this one too
+std::vector<std::size_t> pole_sharers(std::size_t const Index)
+{
+	std::vector<std::size_t> list;
+	auto const *own{catenary_scene_get(Index)};
+	if (own == nullptr || false == own->has_pole)
+		return list;
+	for (std::size_t index = 0; index < catenary_scene_size(); ++index)
+	{
+		auto const *data{catenary_scene_get(index)};
+		if (data != nullptr && data->has_pole && data->pole_type == own->pole_type
+		    && glm::length(glm::dvec3{data->pole[0] - own->pole[0], data->pole[1] - own->pole[1], data->pole[2] - own->pole[2]}) < 0.05)
+			list.push_back(index);
+	}
+	return list;
 }
 
 // from the pole towards the wires, in the plan; across the track
@@ -404,6 +434,11 @@ bool catenary_editor::catenary_spot_at(TTrack &Track, int const Path, glm::dvec3
 	auto const after{curve.point(std::min(1.0, parameter + step))};
 	double a[2]{before.x, before.z}, b[2]{Spot.axis.x, Spot.axis.z}, c[2]{after.x, after.z};
 	Spot.radius = catenary::plan_radius(a, b, c);
+	{
+		// the centre of the bend is on the side of the chord's middle
+		auto const bend{glm::dot(0.5 * (plan_of(before) + plan_of(after)) - plan_of(Spot.axis), right)};
+		Spot.inward = std::abs(bend) < 1e-6 ? 0 : bend > 0.0 ? 1 : -1;
+	}
 	switch (m_catenary.bend)
 	{
 	case 1: Spot.curve = false; break;
@@ -812,6 +847,32 @@ bool catenary_editor::catenary_switch_error(std::size_t const Index) const
 	return check.error;
 }
 
+double catenary_editor::catenary_cant(catenary_spot const &Spot)
+{
+	if (Spot.track == nullptr || Spot.path < 0 || Spot.path >= static_cast<int>(Spot.track->m_paths.size()))
+		return 0.0;
+	auto const &rolls{Spot.track->m_paths[Spot.path].rolls};
+	return std::abs(glm::radians(glm::mix(static_cast<double>(rolls[0]), static_cast<double>(rolls[1]), std::clamp(Spot.parameter, 0.0, 1.0))));
+}
+
+glm::dvec3 catenary_editor::catenary_cant_shift(catenary_spot const &Spot, double const Height)
+{
+	auto const cant{catenary_cant(Spot)};
+	if (cant < 1e-4)
+		return glm::dvec3{0.0};
+	// towards the centre of the bend; on a cant without a bend (shouldn't be) by the sign of the roll: a positive one lifts the left rail
+	auto side{Spot.inward};
+	if (side == 0)
+	{
+		auto const &rolls{Spot.track->m_paths[Spot.path].rolls};
+		side = glm::mix(rolls[0], rolls[1], static_cast<float>(Spot.parameter)) > 0.0f ? 1 : -1;
+	}
+	auto const right{right_of(Spot.forward) * static_cast<double>(side)};
+	auto const shift{Height * std::sin(cant)};
+	// the rail heads: the lower rail stays at the points of the track, the middle goes up by half the cant (TSegment::Init)
+	return glm::dvec3{right.x * shift, 0.75 * std::sin(cant), right.y * shift};
+}
+
 void catenary_editor::catenary_compose(catenary_spot &Spot, double const Clearance, double const Stagger, bool const Toward, std::string const &Pole) const
 {
 	auto const &tool{m_catenary};
@@ -832,8 +893,9 @@ void catenary_editor::catenary_compose(catenary_spot &Spot, double const Clearan
 	auto const axisdistance{Clearance + 0.5 * pole->depth(0.0)};
 	auto const offset{Toward ? Stagger : -Stagger};
 	auto const polepoint{glm::dvec3{Spot.axis.x, railhead, Spot.axis.z} + out * axisdistance};
-	auto const wire{glm::dvec3{Spot.axis.x, railhead + height, Spot.axis.z} + out * offset};
-	Spot.reach = axisdistance - offset - 0.5 * pole->depth(height);
+	// on a superelevated track the stagger is measured from the leaning axis of the track (table 23-0007)
+	auto const wire{glm::dvec3{Spot.axis.x, railhead + height, Spot.axis.z} + catenary_cant_shift(Spot, height) + out * offset};
+	Spot.reach = glm::dot(plan_of(polepoint) - plan_of(wire), plan_of(out)) - 0.5 * pole->depth(height);
 	// the card: from the group of the described catalogue, or (without it) from the tubular families 11xx/12xx
 	catenary::cantilever_scheme const *scheme{nullptr};
 	auto const &structures{catenary_scene_structures()};
@@ -935,7 +997,8 @@ catenary_editor::catenary_spot const *catenary_editor::catenary_spot_of(std::siz
 	}
 	// what the suspension has, not what the panel would make
 	auto const right{right_of(spot.forward) * static_cast<double>(spot.side)};
-	spot.toward = glm::dot(plan_of(wire) - plan_of(spot.axis), right) >= 0.0;
+	auto const lean{catenary_cant_shift(spot, wire.y - (spot.axis.y + kRailTop))};
+	spot.toward = glm::dot(plan_of(wire) - plan_of(spot.axis + lean), right) >= 0.0;
 	spot.data = *data;
 	spot.card = data->card;
 	auto const decade{(data->card / 10) % 10};
@@ -946,7 +1009,9 @@ catenary_editor::catenary_spot const *catenary_editor::catenary_spot_of(std::siz
 
 std::string catenary_editor::catenary_intent_label(catenary_spot const &Spot) const
 {
-	auto const where{Spot.curve ? format(STR_C("curve R %.0f m"), Spot.radius) : std::string{STR("straight")}};
+	auto where{Spot.curve ? format(STR_C("curve R %.0f m"), Spot.radius) : std::string{STR("straight")}};
+	if (auto const cant{catenary_cant(Spot)}; cant >= 1e-4)
+		where += format(STR_C(", superelevation %.0f mm"), 1500.0 * std::sin(cant));
 	auto const offset{Spot.toward ? STR("towards the pole") : STR("away from the pole")};
 	if (Spot.card == 0)
 		return format(STR_C("Pole here, %s, wires %s: %s"), where.c_str(), offset.c_str(), Spot.problem.c_str());
@@ -976,7 +1041,13 @@ int catenary_editor::catenary_hit() const
 		auto const foot{pole_of(*data)};
 		if (glm::distance(foot, camera) > kCatenaryRange)
 			continue;
-		auto const distance{mouse_to_segment(projection, foot, foot + glm::dvec3{0.0, pole_top(*data), 0.0})};
+		// the pole, or the cantilever from it to the wires (two cantilevers of an umbrella or spread ones share one pole: the
+		// cantilever tells them apart, and wins a tie with the pole)
+		auto const wire{wire_of(*data)};
+		auto const plane{data->has_spread ? glm::dvec3{data->spread[0], foot.y, data->spread[2]} : foot};
+		glm::dvec3 const root{plane.x, wire.y, plane.z};
+		auto const arm{mouse_to_segment(projection, root, root + (wire - root) * 0.85)}; // not up to the wires: the span is picked there
+		auto const distance{std::min(mouse_to_segment(projection, foot, foot + glm::dvec3{0.0, pole_top(*data), 0.0}), arm * 0.999f)};
 		if (distance < best)
 		{
 			best = distance;
@@ -1015,9 +1086,36 @@ int catenary_editor::catenary_span_hit() const
 	return result;
 }
 
+// the anchor whose device is under the cursor: the line from the face of the pole to the moving pulley, or the column of weights
+int catenary_editor::catenary_anchor_hit() const
+{
+	screen_projection const projection;
+	auto best{kPolePick * kPolePick * 0.5f};
+	int result{-1};
+	glm::dvec3 const camera{Global.pCamera.Pos};
+	for (std::size_t index = 0; index < catenary_anchor_size(); ++index)
+	{
+		double shape[4][3];
+		if (false == catenary_anchor_shape(index, shape))
+			continue;
+		glm::dvec3 const face{shape[0][0], shape[0][1], shape[0][2]}, lever{shape[1][0], shape[1][1], shape[1][2]};
+		glm::dvec3 const top{shape[2][0], shape[2][1], shape[2][2]}, bottom{shape[3][0], shape[3][1], shape[3][2]};
+		if (glm::distance(face, camera) > kCatenaryRange)
+			continue;
+		auto const distance{std::min(mouse_to_segment(projection, face, lever), mouse_to_segment(projection, top, bottom))};
+		if (distance < best)
+		{
+			best = distance;
+			result = static_cast<int>(index);
+		}
+	}
+	return result;
+}
+
 void catenary_editor::catenary_select(int const Index)
 {
 	auto &tool{m_catenary};
+	tool.anchor_selected = -1;
 	tool.selected = Index;
 	tool.probed = false;
 	auto const *data{Index >= 0 ? catenary_scene_get(static_cast<std::size_t>(Index)) : nullptr};
@@ -1089,6 +1187,9 @@ void catenary_editor::catenary_apply(catenary_spot const &Spot)
 	data.skin = current->skin;
 	data.overrides = current->overrides;
 	data.umbrella = current->umbrella;
+	data.has_spread = current->has_spread;
+	data.shared_pole = current->shared_pole;
+	std::copy(std::begin(current->spread), std::end(current->spread), data.spread);
 	// dragging a slider changes it many times: all of that is taken back at once
 	auto const &last{tool.undo.empty() ? catenary_change{} : tool.undo.back()};
 	if (tool.undo.empty() || last.chain || last.index != index || last.removed || false == last.before.has_value())
@@ -1128,6 +1229,8 @@ void catenary_editor::catenary_copy(std::vector<std::size_t> const &Targets)
 			catenary_compose(spot, glm::dot(plan_of(pole_of(*current)) - plan_of(spot.axis), right) - 0.5 * own->depth(0.0), std::abs(offset), offset >= 0.0, current->pole_type);
 			std::copy(std::begin(current->pole), std::end(current->pole), spot.data.pole);
 		}
+		else if (false == drop && pole_sharers(index).size() > 1)
+			catenary_keep_pole(spot, *current, std::abs(offset), offset >= 0.0);
 		else
 			catenary_compose(spot, tool.clearance, std::abs(offset), offset >= 0.0, drop ? current->pole_type : std::string{});
 		if (drop)
@@ -1144,6 +1247,9 @@ void catenary_editor::catenary_copy(std::vector<std::size_t> const &Targets)
 		data.skin = current->skin;
 		data.overrides = current->overrides;
 		data.umbrella = current->umbrella;
+		data.has_spread = current->has_spread;
+		data.shared_pole = current->shared_pole;
+		std::copy(std::begin(current->spread), std::end(current->spread), data.spread);
 		tool.undo.push_back({tool.group, false, index, *current, std::nullopt, false});
 		catenary_scene_update(index, data);
 		tool.spots[index] = spot;
@@ -1194,12 +1300,108 @@ bool catenary_editor::catenary_propose_toward(bool &Toward)
 	return true;
 }
 
+bool catenary_editor::catenary_insert_at(catenary_spot const &Spot, chain_insert &Insert) const
+{
+	auto const &tool{m_catenary};
+	if (false == tool.insert_spans || false == Spot.data.has_at || (tool.page == 1 && tool.gantry_selected >= 0))
+		return false;
+	auto const wire{plan_of(wire_of(Spot.data))};
+	glm::dvec3 const camera{Global.pCamera.Pos};
+	auto best{kInsertWidth};
+	auto found{false};
+	for (std::size_t chain = 0; chain < catenary_chain_size(); ++chain)
+	{
+		if (catenary_chain_get(chain) == nullptr)
+			continue;
+		auto const members{catenary_chain_members(chain)};
+		for (std::size_t k = 0; k + 1 < members.size(); ++k)
+		{
+			auto const *a{catenary_scene_get(members[k])};
+			auto const *b{catenary_scene_get(members[k + 1])};
+			if (a == nullptr || b == nullptr || false == a->has_at || false == b->has_at || glm::distance(wire_of(*a), camera) > kCatenaryRange)
+				continue;
+			auto const pa{plan_of(wire_of(*a))}, pb{plan_of(wire_of(*b))};
+			auto const span{pb - pa};
+			auto const length{glm::length(span)};
+			if (length < 2.0 * kInsertEnds)
+				continue;
+			auto const along{glm::dot(wire - pa, span / length)};
+			// not at the ends: a pole there is the pole of the end, or the next one past it
+			if (along < kInsertEnds || along > length - kInsertEnds)
+				continue;
+			auto const aside{std::abs(glm::dot(wire - pa, glm::dvec2{-span.y, span.x} / length))};
+			if (aside < best)
+			{
+				best = aside;
+				Insert.chain = static_cast<int>(chain);
+				Insert.after = k;
+				Insert.from = members[k];
+				Insert.to = members[k + 1];
+				found = true;
+			}
+		}
+	}
+	return found;
+}
+
+void catenary_editor::catenary_chain_end()
+{
+	auto &tool{m_catenary};
+	tool.chain = -1;
+	tool.last = -1;
+	tool.connect_from = -1;
+	tool.anchor_pick = -1;
+	tool.status = STR("The chain is ended: the next pole starts a new one");
+}
+
+bool catenary_editor::catenary_chain_continue(std::size_t const Pole)
+{
+	auto &tool{m_catenary};
+	auto const *data{catenary_scene_get(Pole)};
+	if (data == nullptr || false == data->has_at)
+		return false;
+	std::size_t position{0};
+	auto const chain{catenary_chain_of(Pole, position)};
+	if (chain >= 0)
+	{
+		auto const members{catenary_chain_members(static_cast<std::size_t>(chain))};
+		auto const atend{position + 1 == members.size()};
+		if (position != 0 && false == atend)
+		{
+			tool.status = STR("The pole is in the middle of a chain: the chain goes on from its ends only");
+			return false;
+		}
+		tool.chain = chain;
+		tool.append = atend;
+		tool.chain_selected = chain;
+	}
+	else
+		tool.chain = -1; // a new chain from this pole
+	// the next poles go to the file of this one: a chain is in one file
+	std::snprintf(tool.file, sizeof(tool.file), "%s", catenary_scene_file_of(Pole).c_str());
+	tool.last = static_cast<int>(Pole);
+	tool.chaining = true;
+	tool.connect_from = -1;
+	tool.anchor_pick = -1;
+	tool.anchor_selected = -1;
+	tool.selected = -1;
+	tool.probed = false;
+	tool.page = 0;
+	if (bool toward{tool.toward}; catenary_propose_toward(toward))
+		tool.toward = toward;
+	tool.status = format(STR_C("The next poles go on from %s: LMB by the track; Esc ends the chain"), data->name.empty() ? "-" : data->name.c_str());
+	return true;
+}
+
 void catenary_editor::catenary_place(catenary_spot const &Spot)
 {
 	auto &tool{m_catenary};
 	++tool.group;
 	auto data{Spot.data};
-	std::string const file{tool.file};
+	// in a span of a chain: the pole goes into the chain between the two, in the file of the chain
+	chain_insert insert;
+	auto const inserting{catenary_insert_at(Spot, insert)};
+	std::string const file{inserting ? catenary_chain_file(static_cast<std::size_t>(insert.chain)) : std::string{tool.file}};
 	data.name = catenary_scene_new_name(file);
 	// a drop on a gantry takes the texture of the gantry
 	if (auto const *gantry{tool.gantry_selected >= 0 ? catenary_gantry_get(static_cast<std::size_t>(tool.gantry_selected)) : nullptr}; gantry != nullptr && data.pole_type != tool.poles[std::clamp(tool.pole, 0, static_cast<int>(tool.poles.size()) - 1)])
@@ -1212,6 +1414,23 @@ void catenary_editor::catenary_place(catenary_spot const &Spot)
 	tool.status = format(STR_C("Pole %s with card %d execution %d placed, A = %.2f m"), data.pole_type.c_str(), Spot.card, data.execution, Spot.reach);
 	if (catenary_scene_parts(index) == 0)
 		tool.status += STR(" - the cantilever didn't assemble, see the log");
+	if (inserting)
+	{
+		// the chain going on (tool.last) stays as it was
+		if (auto const *chain{catenary_chain_get(static_cast<std::size_t>(insert.chain))}; chain != nullptr && insert.after + 1 < chain->suspensions.size())
+		{
+			auto changed{*chain};
+			tool.undo.push_back({tool.group, true, static_cast<std::size_t>(insert.chain), std::nullopt, *chain, false});
+			changed.suspensions.insert(changed.suspensions.begin() + static_cast<std::ptrdiff_t>(insert.after + 1), data.name);
+			auto const name{changed.name};
+			catenary_chain_update(static_cast<std::size_t>(insert.chain), changed);
+			tool.chain_selected = insert.chain;
+			auto const *a{catenary_scene_get(insert.from)};
+			auto const *b{catenary_scene_get(insert.to)};
+			tool.status += format(STR_C("; put into chain %s between %s and %s"), name.c_str(), a != nullptr ? a->name.c_str() : "-", b != nullptr ? b->name.c_str() : "-");
+		}
+		return;
+	}
 	// the span from the last pole: a new chain of the two, or one more pole of the chain
 	auto const *previous{tool.chaining && tool.last >= 0 ? catenary_scene_get(static_cast<std::size_t>(tool.last)) : nullptr};
 	if (previous != nullptr && catenary_scene_file_of(static_cast<std::size_t>(tool.last)) == file)
@@ -1257,6 +1476,352 @@ void catenary_editor::catenary_place(catenary_spot const &Spot)
 	// the next one: the other way, unless the user keeps putting them the same way
 	if (bool toward{tool.toward}; catenary_propose_toward(toward))
 		tool.toward = toward;
+}
+
+bool catenary_editor::catenary_umbrella_spot(TTrack &Track, int const Path, catenary_spot &Spot)
+{
+	auto &tool{m_catenary};
+	auto const *source{tool.umbrella_from >= 0 ? catenary_scene_get(static_cast<std::size_t>(tool.umbrella_from)) : nullptr};
+	auto const *catalog{catenary_scene_catalog()};
+	auto const *pole{source != nullptr && catalog != nullptr ? catalog->pole(source->pole_type) : nullptr};
+	if (pole == nullptr || false == source->has_pole || false == source->has_at)
+		return false;
+	auto const foot{pole_of(*source)};
+	{
+		// square to the pole on this track, on the side of the pole; not onto a drop of the selected gantry
+		without_gantry const plain{tool.gantry_selected};
+		if (false == catenary_spot_at(Track, Path, foot, foot, 0, Spot))
+			return false;
+	}
+	// the cantilever on the same pole (or drop): its distance is the one of the pole, the panel gives the rest
+	auto const right{right_of(Spot.forward) * static_cast<double>(Spot.side)};
+	auto const clearance{glm::dot(plan_of(foot) - plan_of(Spot.axis), right) - 0.5 * pole->depth(0.0)};
+	auto const stagger{Spot.curve ? std::max(static_cast<double>(tool.stagger), catenary_scene_layout().curve_stagger()) : static_cast<double>(tool.stagger)};
+	catenary_compose(Spot, clearance, stagger, Spot.toward, source->pole_type);
+	std::copy(std::begin(source->pole), std::end(source->pole), Spot.data.pole);
+	if (Spot.card == 0)
+		return true;
+	// the second cantilever goes the other way from the pole than the first one
+	auto const mine{plan_of(wire_of(Spot.data)) - plan_of(foot)};
+	auto const other{plan_of(wire_of(*source)) - plan_of(foot)};
+	if (glm::dot(mine, other) > 0.0)
+	{
+		Spot.card = 0;
+		Spot.problem = STR("This track is on the same side of the pole as its cantilever: the second cantilever of an umbrella goes to a track on the other side");
+	}
+	return true;
+}
+
+void catenary_editor::catenary_umbrella_place(catenary_spot const &Spot)
+{
+	auto &tool{m_catenary};
+	auto const from{static_cast<std::size_t>(tool.umbrella_from)};
+	auto const *source{tool.umbrella_from >= 0 ? catenary_scene_get(from) : nullptr};
+	tool.umbrella_from = -1;
+	if (source == nullptr)
+		return;
+	++tool.group;
+	auto const file{catenary_scene_file_of(from)};
+	auto sourcedata{*source};
+	tool.undo.push_back({tool.group, false, from, sourcedata, std::nullopt, false});
+	if (sourcedata.name.empty())
+		sourcedata.name = catenary_scene_new_name(file); // a pole from before the editor had no name
+	// a name of the umbrella no other suspension has
+	std::string name;
+	for (int k = 1; name.empty(); ++k)
+	{
+		auto const candidate{"parasol_" + sourcedata.name + (k > 1 ? "_" + std::to_string(k) : std::string{})};
+		auto used{false};
+		for (std::size_t index = 0; index < catenary_scene_size() && false == used; ++index)
+			if (auto const *data{catenary_scene_get(index)}; data != nullptr && data->umbrella == candidate)
+				used = true;
+		if (false == used)
+			name = candidate;
+	}
+	// the first one named first, so that the second gets a name of its own
+	sourcedata.umbrella = name;
+	catenary_scene_update(from, sourcedata);
+	if (auto found{tool.spots.find(from)}; found != tool.spots.end())
+		found->second.data = sourcedata;
+	auto data{Spot.data};
+	data.name = catenary_scene_new_name(file);
+	data.skin = sourcedata.skin;
+	data.umbrella = name;
+	auto const index{catenary_scene_add(file, data)};
+	tool.spots[index] = Spot;
+	tool.spots[index].data = data;
+	tool.undo.push_back({tool.group, false, index, std::nullopt, std::nullopt, false});
+	catenary_select(static_cast<int>(index));
+	tool.status = format(STR_C("Umbrella %s: the second cantilever (card %d execution %d, A = %.2f m) on pole %s of %s; hang its wires with the button below or C"), name.c_str(), Spot.card, data.execution, Spot.reach, data.pole_type.c_str(), sourcedata.name.c_str());
+	if (catenary_scene_parts(index) == 0)
+		tool.status += STR(" - the cantilever didn't assemble, see the log");
+}
+
+void catenary_editor::catenary_keep_pole(catenary_spot &Spot, catenary::suspension const &Current, double const Stagger, bool const Toward) const
+{
+	auto const *catalog{catenary_scene_catalog()};
+	auto const *own{catalog != nullptr ? catalog->pole(Current.pole_type) : nullptr};
+	if (own == nullptr)
+	{
+		Spot.card = 0;
+		Spot.problem = STR("No pole: the catalogue (data/traction_cantilevers.txt, data/traction_supports.txt) isn't loaded or has no poles");
+		return;
+	}
+	// the plane of the cantilever: through the pole, or through its mount on the console of spread cantilevers
+	auto const plane{Current.has_spread ? glm::dvec3{Current.spread[0], Current.pole[1], Current.spread[2]} : pole_of(Current)};
+	auto const right{right_of(Spot.forward) * static_cast<double>(Spot.side)};
+	catenary_compose(Spot, glm::dot(plan_of(plane) - plan_of(Spot.axis), right) - 0.5 * own->depth(0.0), Stagger, Toward, Current.pole_type);
+	std::copy(std::begin(Current.pole), std::end(Current.pole), Spot.data.pole);
+	Spot.data.has_spread = Current.has_spread;
+	std::copy(std::begin(Current.spread), std::end(Current.spread), Spot.data.spread);
+}
+
+void catenary_editor::catenary_spread_create(std::size_t const Index)
+{
+	auto &tool{m_catenary};
+	auto const *current{catenary_scene_get(Index)};
+	auto const *found{catenary_spot_of(Index)};
+	auto const *catalog{catenary_scene_catalog()};
+	auto const *pole{current != nullptr && catalog != nullptr ? catalog->pole(current->pole_type) : nullptr};
+	// a cantilever without strut and stay (spread steady arms 0167) goes on the beam 4690, the others on the console 4890
+	auto const *scheme{current != nullptr && catalog != nullptr ? catalog->scheme(current->card, current->execution) : nullptr};
+	auto const steadyonly{scheme != nullptr && scheme->roles.count("strut") == 0 && scheme->roles.count("stay") == 0};
+	auto const consolename{pole == nullptr ? std::string{} : steadyonly && false == pole->steady_console.empty() ? pole->steady_console : pole->console};
+	auto const *console{false == consolename.empty() ? catalog->mount(consolename) : nullptr};
+	if (current == nullptr || found == nullptr || false == current->has_pole || false == current->umbrella.empty())
+		return;
+	if (console == nullptr || false == console->console)
+	{
+		tool.status = format(STR_C("Pole %s carries no console for spread cantilevers (\"console\" in its entry in traction_supports.txt)"), current->pole_type.c_str());
+		return;
+	}
+	auto const sourcedata{*current};
+	auto const spot{*found};
+	auto const foot{pole_of(sourcedata)};
+	// the axis of the console mounts (the X axis of the cantilevers): along the track, square to the way from the track to the pole
+	auto const out{right_of(spot.forward) * static_cast<double>(spot.side)};
+	glm::dvec3 const xaxis{-out.y, 0.0, out.x};
+	auto const right{right_of(spot.forward) * static_cast<double>(spot.side)};
+	auto const offset{glm::dot(plan_of(wire_of(sourcedata)) - plan_of(spot.axis), right)};
+	catenary_spot spots[2];
+	for (int k = 0; k < 2; ++k)
+	{
+		auto const point{foot + xaxis * console->console_x[k]};
+		{
+			without_gantry const plain{tool.gantry_selected};
+			if (false == catenary_spot_at(*spot.track, spot.path, point, foot, spot.side, spots[k]))
+				return;
+		}
+		spots[k].curve = spot.curve;
+		catenary::suspension planned{sourcedata};
+		planned.has_spread = true;
+		planned.spread[0] = point.x;
+		planned.spread[1] = foot.y;
+		planned.spread[2] = point.z;
+		catenary_keep_pole(spots[k], planned, std::abs(offset), offset >= 0.0);
+		if (spots[k].card == 0)
+		{
+			tool.status = spots[k].problem;
+			return;
+		}
+	}
+	++tool.group;
+	auto const file{catenary_scene_file_of(Index)};
+	tool.undo.push_back({tool.group, false, Index, sourcedata, std::nullopt, false});
+	auto first{spots[0].data};
+	first.name = sourcedata.name.empty() ? catenary_scene_new_name(file) : sourcedata.name;
+	first.range_max = sourcedata.range_max;
+	first.range_min = sourcedata.range_min;
+	first.skin = sourcedata.skin;
+	first.overrides = sourcedata.overrides;
+	std::string name;
+	for (int k = 1; name.empty(); ++k)
+	{
+		auto const candidate{"rozstaw_" + first.name + (k > 1 ? "_" + std::to_string(k) : std::string{})};
+		auto used{false};
+		for (std::size_t index = 0; index < catenary_scene_size() && false == used; ++index)
+			if (auto const *data{catenary_scene_get(index)}; data != nullptr && data->umbrella == candidate)
+				used = true;
+		if (false == used)
+			name = candidate;
+	}
+	first.umbrella = name;
+	catenary_scene_update(Index, first);
+	tool.spots[Index] = spots[0];
+	tool.spots[Index].data = first;
+	auto second{spots[1].data};
+	second.name = catenary_scene_new_name(file);
+	second.skin = sourcedata.skin;
+	second.umbrella = name;
+	auto const added{catenary_scene_add(file, second)};
+	tool.spots[added] = spots[1];
+	tool.spots[added].data = second;
+	tool.undo.push_back({tool.group, false, added, std::nullopt, std::nullopt, false});
+	catenary_select(static_cast<int>(added));
+	tool.status = format(STR_C("Spread cantilevers %s on console %s: %s and %s, %.2f m apart; give each its chain, \"Messenger held by\" splits the messenger and the wires between them"),
+	                     name.c_str(), console->name.c_str(), first.name.c_str(), second.name.c_str(), console->console_x[0] - console->console_x[1]);
+	if (catenary_scene_parts(added) == 0 || catenary_scene_parts(Index) == 0)
+		tool.status += STR(" - the cantilever didn't assemble, see the log");
+}
+
+void catenary_editor::catenary_third_create(std::size_t const Index)
+{
+	auto &tool{m_catenary};
+	auto const *current{catenary_scene_get(Index)};
+	auto const *found{catenary_spot_of(Index)};
+	if (current == nullptr || found == nullptr || found->track == nullptr || false == current->has_pole)
+		return;
+	auto const sourcedata{*current};
+	auto const source{*found};
+	auto const foot{pole_of(sourcedata)};
+	// in the axis of the pole, on its own mounts, to the same track; the pole is stood by the spread pair
+	catenary_spot spot;
+	{
+		without_gantry const plain{tool.gantry_selected};
+		if (false == catenary_spot_at(*source.track, source.path, foot, foot, source.side, spot))
+			return;
+	}
+	spot.curve = source.curve;
+	catenary::suspension planned{sourcedata};
+	planned.has_spread = false;
+	planned.umbrella.clear();
+	planned.shared_pole = true;
+	catenary_keep_pole(spot, planned, tool.stagger, tool.toward);
+	if (spot.card == 0)
+	{
+		tool.status = spot.problem;
+		return;
+	}
+	auto data{spot.data};
+	auto const file{catenary_scene_file_of(Index)};
+	data.name = catenary_scene_new_name(file);
+	data.skin = sourcedata.skin;
+	data.shared_pole = true;
+	++tool.group;
+	auto const added{catenary_scene_add(file, data)};
+	tool.spots[added] = spot;
+	tool.spots[added].data = data;
+	tool.undo.push_back({tool.group, false, added, std::nullopt, std::nullopt, false});
+	catenary_select(static_cast<int>(added));
+	tool.status = format(STR_C("Cantilever %s in the axis of pole %s (card %d execution %d): set its card (a messenger only one: 1002-1015, 1290-1297), hang it in a chain, an umbrella to the other track can go on it too"),
+	                     data.name.c_str(), data.pole_type.c_str(), data.card, data.execution);
+	if (catenary_scene_parts(added) == 0)
+		tool.status += STR(" - the cantilever didn't assemble, see the log");
+}
+
+void catenary_editor::catenary_pair_move(std::size_t const Selected, glm::dvec3 const &Foot, bool const Panel)
+{
+	auto &tool{m_catenary};
+	auto const *current{catenary_scene_get(Selected)};
+	if (current == nullptr || false == current->has_pole)
+		return;
+	auto const oldfoot{pole_of(*current)};
+	std::vector<std::pair<std::size_t, catenary_spot>> moved;
+	for (auto const index : pole_sharers(Selected))
+	{
+		auto const *data{catenary_scene_get(index)};
+		if (data == nullptr)
+			continue;
+		auto const *found{catenary_spot_of(index)};
+		if (found == nullptr || found->track == nullptr)
+			return;
+		auto const found_copy{*found};
+		// each keeps its place against the pole (its console mount) and its stagger, on its own track
+		auto const plane{data->has_spread ? glm::dvec3{data->spread[0], data->pole[1], data->spread[2]} : pole_of(*data)};
+		auto planenew{Foot + (plane - oldfoot)};
+		planenew.y = Foot.y;
+		auto const right{right_of(found_copy.forward) * static_cast<double>(found_copy.side)};
+		auto offset{glm::dot(plan_of(wire_of(*data)) - plan_of(found_copy.axis), right)};
+		// from the panel: the selected one takes its stagger from there
+		if (Panel && index == Selected)
+			offset = tool.toward ? static_cast<double>(tool.stagger) : -static_cast<double>(tool.stagger);
+		catenary_spot spot;
+		{
+			without_gantry const plain{tool.gantry_selected};
+			if (false == catenary_spot_at(*found_copy.track, found_copy.path, planenew, Foot, found_copy.side, spot))
+				return;
+		}
+		spot.curve = found_copy.curve;
+		catenary::suspension planned{*data};
+		planned.pole[0] = Foot.x;
+		planned.pole[1] = Foot.y;
+		planned.pole[2] = Foot.z;
+		planned.spread[0] = planenew.x;
+		planned.spread[1] = Foot.y;
+		planned.spread[2] = planenew.z;
+		catenary_keep_pole(spot, planned, std::abs(offset), offset >= 0.0);
+		if (spot.card == 0)
+		{
+			tool.status = spot.problem;
+			return;
+		}
+		auto &result{spot.data};
+		result.name = data->name;
+		result.range_max = data->range_max;
+		result.range_min = data->range_min;
+		result.skin = data->skin;
+		result.overrides = data->overrides;
+		result.umbrella = data->umbrella;
+		result.shared_pole = data->shared_pole;
+		moved.emplace_back(index, spot);
+	}
+	// one undo group for the whole drag (of the pole, or of the slider of its distance)
+	auto record{false};
+	int group{0};
+	if (Panel)
+	{
+		record = tool.shift_group == 0 || tool.undo.empty() || tool.undo.back().group != tool.shift_group;
+		if (record)
+			tool.shift_group = ++tool.group;
+		group = tool.shift_group;
+	}
+	else
+	{
+		record = tool.drag_undo == 0;
+		if (record)
+			tool.drag_undo = ++tool.group;
+		group = tool.drag_undo;
+	}
+	for (auto const &[index, spot] : moved)
+	{
+		if (record)
+			tool.undo.push_back({group, false, index, *catenary_scene_get(index), std::nullopt, false});
+		catenary_scene_update(index, spot.data);
+		tool.spots[index] = spot;
+	}
+	tool.probed = false;
+}
+
+void catenary_editor::catenary_umbrella_break(std::size_t const Index)
+{
+	auto &tool{m_catenary};
+	auto const *current{catenary_scene_get(Index)};
+	if (current == nullptr || current->umbrella.empty())
+		return;
+	auto const name{current->umbrella};
+	++tool.group;
+	// another one on the pole stands it already (the third one by spread cantilevers stands none)
+	auto placed{false};
+	for (auto const other : pole_sharers(Index))
+		if (auto const *data{catenary_scene_get(other)}; data != nullptr && data->umbrella != name && false == data->shared_pole)
+			placed = true;
+	for (std::size_t index = 0; index < catenary_scene_size(); ++index)
+	{
+		auto const *data{catenary_scene_get(index)};
+		if (data == nullptr || data->umbrella != name)
+			continue;
+		auto changed{*data};
+		tool.undo.push_back({tool.group, false, index, changed, std::nullopt, false});
+		changed.umbrella.clear();
+		changed.has_spread = false; // a cantilever off its console pair stands by the pole as one of its own
+		changed.shared_pole = changed.shared_pole || placed; // the pole stands once
+		placed = placed || false == changed.shared_pole;
+		catenary_scene_update(index, changed);
+		if (auto found{tool.spots.find(index)}; found != tool.spots.end())
+			found->second.data = changed;
+	}
+	tool.probed = false;
+	tool.status = format(STR_C("Umbrella %s separated: two cantilevers on their own mounts"), name.c_str());
 }
 
 // the span from the suspension the wires are being hung from (tool.connect_from) to To: To goes on the chain at its end,
@@ -1409,6 +1974,14 @@ void catenary_editor::catenary_press(track_intent const &Intent)
 	tool.pressed = {mouse.x, mouse.y};
 	if (is_intent(Intent, intent_detail::select))
 	{
+		if (tool.anchor_pick >= 0)
+		{
+			// the tensioning device on this pole
+			if (catenary_anchor_create(static_cast<std::size_t>(tool.anchor_pick), tool.anchor_pick_start, Intent.index, tool.anchor_pick_contact))
+				tool.anchor_pick = -1;
+			return;
+		}
+		tool.umbrella_from = -1;
 		if (tool.connect_from >= 0)
 		{
 			// hanging the wires on: the span from the last pole to this one
@@ -1428,6 +2001,7 @@ void catenary_editor::catenary_press(track_intent const &Intent)
 	{
 		tool.gantry_selected = Intent.index;
 		tool.selected = -1;
+		tool.anchor_selected = -1;
 		tool.page = 1;
 		tool.status = STR("The cantilevers now go on drops on this gantry: LMB over a track; drag the beam to move the gantry");
 		// held and dragged: the whole gantry goes with the cursor
@@ -1523,24 +2097,37 @@ void catenary_editor::catenary_press(track_intent const &Intent)
 	}
 	if (is_intent(Intent, intent_detail::chain))
 	{
-		tool.selected = -1;
-		tool.page = 2;
-		tool.chain_selected = Intent.index;
-		if (auto const *chain{catenary_chain_get(static_cast<std::size_t>(Intent.index))}; chain != nullptr)
-		{
-			// the panel shows what the chain has
-			std::snprintf(tool.power, sizeof(tool.power), "%s", chain->power.c_str());
-			tool.voltage = static_cast<float>(chain->voltage);
-			tool.material = chain->material == "al" ? 1 : 0;
-			tool.state = chain->state == 2 ? 1 : chain->state == 1 ? 2 : 0;
-			if (auto const found{std::find(tool.networks.begin(), tool.networks.end(), chain->type)}; found != tool.networks.end())
-				tool.network = static_cast<int>(found - tool.networks.begin());
-		}
+		tool.anchor_selected = -1;
+		catenary_chain_show(Intent.index);
+		return;
+	}
+	if (is_intent(Intent, intent_detail::anchor))
+	{
+		// the anchor: its chain on the wires page, the anchor marked in the panel
+		bool start{false};
+		auto const chain{catenary_anchor_chain(static_cast<std::size_t>(Intent.index), start)};
+		catenary_chain_show(chain);
+		tool.anchor_selected = Intent.index;
+		tool.anchor_scroll = true;
+		if (auto const *anchor{catenary_anchor_get(static_cast<std::size_t>(Intent.index))}; anchor != nullptr)
+			tool.status = chain >= 0 ? format(STR_C("Anchor %s selected: its settings are below, Del removes it"), anchor->name.c_str())
+			                         : format(STR_C("Anchor %s isn't at the end of any chain"), anchor->name.c_str());
 		return;
 	}
 	if (Intent.track == nullptr)
 		return;
 	catenary_spot spot;
+	if (tool.umbrella_from >= 0)
+	{
+		// the second cantilever of an umbrella on the pole of the first one
+		if (false == catenary_umbrella_spot(*Intent.track, Intent.path, spot))
+			return;
+		if (spot.card == 0)
+			tool.status = spot.problem;
+		else
+			catenary_umbrella_place(spot);
+		return;
+	}
 	if (false == catenary_spot_at(*Intent.track, Intent.path, e.m_hover.point, e.cursor_level(e.m_hover.point.y), 0, spot))
 		return;
 	if (spot.card == 0)
@@ -1549,6 +2136,24 @@ void catenary_editor::catenary_press(track_intent const &Intent)
 		return;
 	}
 	catenary_place(spot);
+}
+
+void catenary_editor::catenary_chain_show(int const Chain)
+{
+	auto &tool{m_catenary};
+	tool.selected = -1;
+	tool.page = 2;
+	tool.chain_selected = Chain;
+	if (auto const *chain{Chain >= 0 ? catenary_chain_get(static_cast<std::size_t>(Chain)) : nullptr}; chain != nullptr)
+	{
+		// the panel shows what the chain has
+		std::snprintf(tool.power, sizeof(tool.power), "%s", chain->power.c_str());
+		tool.voltage = static_cast<float>(chain->voltage);
+		tool.material = chain->material == "al" ? 1 : 0;
+		tool.state = chain->state == 2 ? 1 : chain->state == 1 ? 2 : 0;
+		if (auto const found{std::find(tool.networks.begin(), tool.networks.end(), chain->type)}; found != tool.networks.end())
+			tool.network = static_cast<int>(found - tool.networks.begin());
+	}
 }
 
 // the panel settings of the chain go to the selected chain
@@ -1578,6 +2183,35 @@ bool catenary_editor::catenary_delete_selected()
 {
 	auto &tool{m_catenary};
 	tool.connect_from = -1;
+	tool.anchor_pick = -1;
+	if (tool.selected < 0 && tool.anchor_selected >= 0)
+	{
+		// the anchor picked in the view
+		auto const picked{static_cast<std::size_t>(tool.anchor_selected)};
+		tool.anchor_selected = -1;
+		auto const *anchor{catenary_anchor_get(picked)};
+		if (anchor == nullptr)
+			return false;
+		bool start{false};
+		if (auto const chain{catenary_anchor_chain(picked, start)}; chain >= 0)
+		{
+			auto const *owner{catenary_chain_get(static_cast<std::size_t>(chain))};
+			auto const contact{owner != nullptr && (start ? owner->anchor_start_contact : owner->anchor_end_contact) == anchor->name};
+			catenary_anchor_delete(static_cast<std::size_t>(chain), start, contact);
+		}
+		else
+		{
+			catenary_change removed;
+			removed.group = ++tool.group;
+			removed.anchor = true;
+			removed.index = picked;
+			removed.anchor_before = *anchor;
+			tool.undo.push_back(removed);
+			catenary_anchor_remove(picked);
+		}
+		tool.status = STR("Anchor removed");
+		return true;
+	}
 	if (tool.selected < 0)
 		return false;
 	auto const index{static_cast<std::size_t>(tool.selected)};
@@ -1590,8 +2224,43 @@ bool catenary_editor::catenary_delete_selected()
 	{
 		auto const *data{catenary_chain_get(chain)};
 		if (data != nullptr && false == current->name.empty() && catenary_chain_file(chain) == catenary_scene_file_of(index)
-		    && std::find(data->suspensions.begin(), data->suspensions.end(), current->name) != data->suspensions.end())
+		    && (std::find(data->suspensions.begin(), data->suspensions.end(), current->name) != data->suspensions.end()
+		        || std::any_of(data->messenger_from.begin(), data->messenger_from.end(), [&](auto const &Pair) { return Pair.first == current->name || Pair.second == current->name; })))
 			tool.undo.push_back({tool.group, true, chain, std::nullopt, *data, false});
+	}
+	// the other cantilever of its umbrella stays alone
+	if (false == current->umbrella.empty())
+		for (std::size_t other = 0; other < catenary_scene_size(); ++other)
+		{
+			auto const *data{catenary_scene_get(other)};
+			if (other == index || data == nullptr || data->umbrella != current->umbrella)
+				continue;
+			auto changed{*data};
+			tool.undo.push_back({tool.group, false, other, changed, std::nullopt, false});
+			changed.umbrella.clear(); // a spread one stays alone on its console
+			catenary_scene_update(other, changed);
+			if (auto found{tool.spots.find(other)}; found != tool.spots.end())
+				found->second.data = changed;
+		}
+	current = catenary_scene_get(index);
+	// it stood the pole and others stay on it: one of them stands it now (not one of a pair, which the pair stands itself)
+	if (false == current->shared_pole)
+	{
+		std::vector<std::size_t> rest;
+		for (auto const other : pole_sharers(index))
+			if (other != index)
+				rest.push_back(other);
+		auto const standing{std::any_of(rest.begin(), rest.end(), [](std::size_t const Other) { auto const *data{catenary_scene_get(Other)}; return data != nullptr && false == data->shared_pole; })};
+		if (false == rest.empty() && false == standing)
+		{
+			auto changed{*catenary_scene_get(rest.front())};
+			tool.undo.push_back({tool.group, false, rest.front(), changed, std::nullopt, false});
+			changed.shared_pole = false;
+			catenary_scene_update(rest.front(), changed);
+			if (auto found{tool.spots.find(rest.front())}; found != tool.spots.end())
+				found->second.data = changed;
+		}
+		current = catenary_scene_get(index);
 	}
 	tool.undo.push_back({tool.group, false, index, *current, std::nullopt, true});
 	catenary_scene_remove(index);
@@ -1606,6 +2275,7 @@ bool catenary_editor::catenary_undo()
 {
 	auto &tool{m_catenary};
 	tool.connect_from = -1;
+	tool.anchor_pick = -1;
 	// in the middle of a drag, or with nothing of its own: the editor takes back its own changes
 	if (tool.dragging != 0 || tool.undo.empty())
 		return false;
@@ -1738,9 +2408,9 @@ void catenary_editor::render_catenary_chain_ui()
 	}
 }
 
-std::size_t catenary_editor::catenary_anchor_of(catenary::chain const &Chain, std::string const &File, bool const Start) const
+std::size_t catenary_editor::catenary_anchor_of(catenary::chain const &Chain, std::string const &File, bool const Start, bool const Contact) const
 {
-	auto const &name{Start ? Chain.anchor_start : Chain.anchor_end};
+	auto const &name{Contact ? (Start ? Chain.anchor_start_contact : Chain.anchor_end_contact) : (Start ? Chain.anchor_start : Chain.anchor_end)};
 	if (name.empty())
 		return catenary_anchor_size();
 	for (std::size_t index = 0; index < catenary_anchor_size(); ++index)
@@ -1766,6 +2436,114 @@ int weight_color_index(std::string const &Name)
 
 } // namespace
 
+bool catenary_editor::catenary_anchor_create(std::size_t const Chain, bool const Start, int const On, bool const Contact)
+{
+	auto &tool{m_catenary};
+	auto const *chain{catenary_chain_get(Chain)};
+	if (chain == nullptr)
+		return false;
+	auto const file{catenary_chain_file(Chain)};
+	auto const members{catenary_chain_members(Chain)};
+	if (members.size() < 2)
+		return false;
+	auto const *last{catenary_scene_get(Start ? members.front() : members.back())};
+	auto const *previous{catenary_scene_get(Start ? members[1] : members[members.size() - 2])};
+	if (last == nullptr || previous == nullptr || false == last->has_at || false == previous->has_at)
+		return false;
+	catenary::anchor data;
+	data.name = catenary_scene_new_anchor_name(file);
+	data.network = chain->type;
+	if (On >= 0)
+	{
+		// on an existing pole: it has to stand (a pole entry) and be in the same file as the chain
+		auto const *carrier{catenary_scene_get(static_cast<std::size_t>(On))};
+		if (carrier == nullptr || false == carrier->has_pole || carrier->name.empty() || catenary_scene_file_of(static_cast<std::size_t>(On)) != file)
+		{
+			tool.status = STR("This pole can't carry the anchor: it has to be a pole (not a drop or a point) from the file of the chain");
+			return false;
+		}
+		if (static_cast<std::size_t>(On) == (Start ? members.front() : members.back()))
+		{
+			tool.status = STR("The anchor goes on another pole than the last one of the chain");
+			return false;
+		}
+		data.on = carrier->name;
+		data.pole_type = carrier->pole_type;
+		std::copy(std::begin(carrier->pole), std::end(carrier->pole), data.pole);
+	}
+	else
+	{
+		// the anchor pole 24 m past the last pole, in line with it (catalogue 22 m; Glowacki 24 m for big tensions)
+		glm::dvec2 along{last->at[0] - previous->at[0], last->at[2] - previous->at[2]};
+		if (glm::length(along) < 0.1)
+			return false;
+		along = glm::normalize(along);
+		auto const base{last->has_pole ? glm::dvec2{last->pole[0], last->pole[2]} : glm::dvec2{last->at[0], last->at[2]}};
+		auto const at{base + along * 24.0};
+		data.pole_type = tool.poles.empty() ? std::string{} : tool.poles[std::clamp(tool.pole, 0, static_cast<int>(tool.poles.size()) - 1)];
+		data.pole[0] = at.x;
+		data.pole[1] = last->has_pole ? last->pole[1] : last->at[1] - static_cast<double>(tool.height);
+		data.pole[2] = at.y;
+	}
+	std::copy(std::begin(last->at), std::end(last->at), data.toward);
+	// from the middle anchor: half of the chain, by default
+	double length{0.0};
+	for (std::size_t k = 1; k < members.size(); ++k)
+	{
+		auto const *a{catenary_scene_get(members[k - 1])};
+		auto const *b{catenary_scene_get(members[k])};
+		if (a != nullptr && b != nullptr)
+			length += std::hypot(b->at[0] - a->at[0], b->at[2] - a->at[2]);
+	}
+	data.distance = std::clamp(std::round(0.5 * length / 10.0) * 10.0, 100.0, 750.0);
+	data.color = "szary";
+	data.top_color = "zolty";
+	auto changed{*chain};
+	++tool.group;
+	if (Contact)
+	{
+		// the contact wires by themselves (0404, or the wires of a split one); the anchor of the messenger keeps the messenger only
+		auto const main{catenary_anchor_of(*chain, file, Start)};
+		auto const *messenger{main < catenary_anchor_size() ? catenary_anchor_get(main) : nullptr};
+		if (messenger == nullptr)
+			return false;
+		auto const *devices{catenary_scene_tensioners()};
+		auto const *device{devices != nullptr ? devices->device(messenger->device) : nullptr};
+		auto const fixed{device == nullptr || device->fixed};
+		data.device = fixed ? "0404" : "0482-c";
+		if (device == nullptr || device->only != "messenger")
+		{
+			auto changedmessenger{*messenger};
+			changedmessenger.device = fixed ? "0405" : "0482-m";
+			catenary_change before;
+			before.group = tool.group;
+			before.anchor = true;
+			before.index = main;
+			before.anchor_before = *messenger;
+			tool.undo.push_back(before);
+			catenary_anchor_update(main, changedmessenger);
+		}
+		(Start ? changed.anchor_start_contact : changed.anchor_end_contact) = data.name;
+	}
+	else
+		(Start ? changed.anchor_start : changed.anchor_end) = data.name;
+	catenary_change added;
+	added.group = tool.group;
+	added.anchor = true;
+	added.index = catenary_anchor_add(file, data);
+	tool.undo.push_back(added);
+	catenary_change linked;
+	linked.group = tool.group;
+	linked.chain = true;
+	linked.index = Chain;
+	linked.chain_before = *chain;
+	tool.undo.push_back(linked);
+	catenary_chain_update(Chain, changed);
+	tool.anchor_pick_contact = false;
+	tool.status = Contact ? STR("The contact wires are anchored on their own; the other anchor holds the messenger only") : STR("Anchored: the last span goes without droppers to the tensioning device");
+	return true;
+}
+
 void catenary_editor::render_catenary_anchor_ui(std::size_t const Chain)
 {
 	auto &tool{m_catenary};
@@ -1777,16 +2555,122 @@ void catenary_editor::render_catenary_anchor_ui(std::size_t const Chain)
 	if (members.size() < 2)
 		return;
 	ImGui::Separator();
-	ImGui::TextUnformatted(STR_C("Anchors (weight tensioning, card 23-0461)"));
-	for (int end = 0; end < 2; ++end)
+	// middle anchor (cards 63-0406 / 0408): at one of the inner poles of the chain, the anchor rope goes to the poles on both sides
 	{
+		auto changed{*chain};
+		std::vector<std::string> labels{STR("none")};
+		int chosen{0};
+		for (std::size_t k = 1; k + 1 < chain->suspensions.size(); ++k)
+		{
+			labels.push_back(format(STR_C("pole %d (%s)"), static_cast<int>(k + 1), chain->suspensions[k].c_str()));
+			if (chain->suspensions[k] == chain->middle)
+				chosen = static_cast<int>(labels.size()) - 1;
+		}
+		ImGui::PushItemWidth(180.0f);
+		auto edited{false};
+		if (ImGui::BeginCombo(STR_C("Middle anchor"), labels[chosen].c_str()))
+		{
+			for (std::size_t k = 0; k < labels.size(); ++k)
+				if (ImGui::Selectable(labels[k].c_str(), static_cast<int>(k) == chosen))
+				{
+					changed.middle = k == 0 ? std::string{} : chain->suspensions[k];
+					changed.middle_heights[0] = changed.middle_heights[1] = 0.0;
+					edited = true;
+				}
+			ImGui::EndCombo();
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("The anchor rope is clamped on the messenger 1 m on each side of this pole and goes to the poles next to it; in the middle of both spans a V ties it to the contact wire. The weight anchors measure their distance from it"));
+		if (false == chain->middle.empty())
+		{
+			char const *const cards[] = {"0406", "0408", "0418", "0416"};
+			int insulated{0};
+			for (int k = 0; k < 4; ++k)
+				if (chain->middle_device == cards[k])
+					insulated = k;
+			std::string const kinds[] = {STR("with insulation (card 0406)"), STR("without insulation (card 0408)"), STR("insulated on one side (card 0418)"), STR("to the beam of a gantry (card 0416)")};
+			char const *const items[] = {kinds[0].c_str(), kinds[1].c_str(), kinds[2].c_str(), kinds[3].c_str()};
+			if (ImGui::Combo(STR_C("Middle anchor kind"), &insulated, items, 4))
+			{
+				changed.middle_device = cards[std::clamp(insulated, 0, 3)];
+				edited = true;
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("0416: the middle pole is a drop of a gantry; the anchor ropes go from the beam above the messenger to clamps on it about 3 m on both sides, the poles next to it carry nothing"));
+			// heights of the anchor rope on the poles before and after (when the cantilever is in the way)
+			auto const where{std::find(chain->suspensions.begin(), chain->suspensions.end(), chain->middle) - chain->suspensions.begin()};
+			auto const members{catenary_chain_members(Chain)};
+			for (int side = 0; side < 2 && chain->middle_device != "0416"; ++side)
+			{
+				auto const k{static_cast<std::size_t>(where) + (side == 0 ? -1 : 1)};
+				auto const *neighbour{k < members.size() ? catenary_scene_get(members[k]) : nullptr};
+				if (neighbour == nullptr || false == neighbour->has_pole)
+					continue;
+				auto const automatic{(neighbour->has_rope ? neighbour->rope[1] : neighbour->at[1] + 1.70) - neighbour->pole[1]};
+				auto height{static_cast<float>(chain->middle_heights[side] > 0.0 ? chain->middle_heights[side] : automatic)};
+				ImGui::PushID(side);
+				if (ImGui::SliderFloat(side == 0 ? STR_C("Anchor rope on the pole before (m)") : STR_C("Anchor rope on the pole after (m)"), &height, 4.0f, 10.0f, "%.2f"))
+				{
+					changed.middle_heights[side] = height;
+					edited = true;
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("Height of the anchor of the middle anchor rope on that pole above the rail heads; by default at the messenger. Move it when it hits the cantilever"));
+				ImGui::PopID();
+			}
+			if ((chain->middle_heights[0] > 0.0 || chain->middle_heights[1] > 0.0) && ImGui::Button(STR_C("Anchor rope at the messenger")))
+			{
+				changed.middle_heights[0] = changed.middle_heights[1] = 0.0;
+				edited = true;
+			}
+		}
+		ImGui::PopItemWidth();
+		if (edited)
+		{
+			// one undo step for one drag of a slider
+			auto const &last{tool.undo.empty() ? catenary_change{} : tool.undo.back()};
+			if (tool.undo.empty() || false == last.chain || last.index != Chain || false == ImGui::IsMouseDragging(0))
+				tool.undo.push_back({++tool.group, true, Chain, std::nullopt, *chain, false});
+			catenary_chain_update(Chain, changed);
+			chain = catenary_chain_get(Chain);
+			if (chain == nullptr)
+				return;
+		}
+	}
+	ImGui::TextUnformatted(STR_C("Anchors"));
+	// each end: the anchor of the network (or of the messenger only), then the one of the contact wires when they're anchored apart
+	for (int slot = 0; slot < 4; ++slot)
+	{
+		auto const end{slot / 2};
+		auto const contact{slot % 2 == 1};
 		auto const start{end == 0};
-		ImGui::PushID(end);
+		auto const separate{false == (start ? chain->anchor_start_contact : chain->anchor_end_contact).empty()};
+		ImGui::PushID(slot);
 		// the last two poles at this end: the wires come along them to the anchor
 		auto const *last{catenary_scene_get(start ? members.front() : members.back())};
 		auto const *previous{catenary_scene_get(start ? members[1] : members[members.size() - 2])};
-		auto const index{catenary_anchor_of(*chain, file, start)};
+		auto const index{catenary_anchor_of(*chain, file, start, contact)};
 		auto const *anchor{index < catenary_anchor_size() ? catenary_anchor_get(index) : nullptr};
+		if (contact && anchor == nullptr)
+		{
+			// the contact wires apart from the messenger (0405 + 0404, or the two halves of a split one): on another pole
+			if (catenary_anchor_of(*chain, file, start) < catenary_anchor_size())
+			{
+				auto const picking{tool.anchor_pick == static_cast<int>(Chain) && tool.anchor_pick_start == start && tool.anchor_pick_contact};
+				if (ImGui::SmallButton(picking ? STR_C("Stop picking the pole") : STR_C("Contact wires anchored apart: on another pole")))
+				{
+					tool.anchor_pick = picking ? -1 : static_cast<int>(Chain);
+					tool.anchor_pick_start = start;
+					tool.anchor_pick_contact = false == picking;
+					tool.connect_from = -1;
+					tool.status = picking ? std::string{} : STR("LMB on the pole the anchor of the contact wires goes on");
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("The messenger stays on the anchor above (it becomes one of the messenger only: 0405 or the messenger of a split one), the contact wires go to an anchor of their own on the pole picked (0404 or the wires of a split one)"));
+			}
+			ImGui::PopID();
+			continue;
+		}
 		if (last == nullptr || previous == nullptr || false == last->has_at || false == previous->has_at)
 		{
 			ImGui::PopID();
@@ -1805,55 +2689,78 @@ void catenary_editor::render_catenary_anchor_ui(std::size_t const Chain)
 		if (anchor == nullptr)
 		{
 			if (ImGui::Button(start ? STR_C("Anchor the start of the chain") : STR_C("Anchor the end of the chain")))
-			{
-				// the anchor pole 24 m past the last pole, in line with it (catalogue 22 m; Glowacki 24 m for big tensions)
-				catenary::anchor data;
-				data.name = catenary_scene_new_anchor_name(file);
-				data.network = chain->type;
-				data.pole_type = tool.poles.empty() ? std::string{} : tool.poles[std::clamp(tool.pole, 0, static_cast<int>(tool.poles.size()) - 1)];
-				auto const at{base + along * 24.0};
-				data.pole[0] = at.x;
-				data.pole[1] = baseheight;
-				data.pole[2] = at.y;
-				std::copy(std::begin(last->at), std::end(last->at), data.toward);
-				// from the middle anchor: half of the chain, by default
-				double length{0.0};
-				for (std::size_t k = 1; k < members.size(); ++k)
-				{
-					auto const *a{catenary_scene_get(members[k - 1])};
-					auto const *b{catenary_scene_get(members[k])};
-					if (a != nullptr && b != nullptr)
-						length += std::hypot(b->at[0] - a->at[0], b->at[2] - a->at[2]);
-				}
-				data.distance = std::clamp(std::round(0.5 * length / 10.0) * 10.0, 100.0, 750.0);
-				data.color = "szary";
-				data.top_color = "zolty";
-				auto changed{*chain};
-				(start ? changed.anchor_start : changed.anchor_end) = data.name;
-				++tool.group;
-				catenary_change added;
-				added.group = tool.group;
-				added.anchor = true;
-				added.index = catenary_anchor_add(file, data);
-				tool.undo.push_back(added);
-				catenary_change linked;
-				linked.group = tool.group;
-				linked.chain = true;
-				linked.index = Chain;
-				linked.chain_before = *chain;
-				tool.undo.push_back(linked);
-				catenary_chain_update(Chain, changed);
-				tool.status = STR("Anchored: the last span goes without droppers to the tensioning device");
-			}
+				catenary_anchor_create(Chain, start, -1);
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s", STR_C("An anchor pole 24 m past the last pole, in line with it, with the weight tensioning device; the last span hangs without droppers"));
+			ImGui::SameLine();
+			auto const picking{tool.anchor_pick == static_cast<int>(Chain) && tool.anchor_pick_start == start};
+			if (ImGui::Button(picking ? STR_C("Stop picking the pole") : STR_C("to an existing pole")))
+			{
+				tool.anchor_pick = picking ? -1 : static_cast<int>(Chain);
+				tool.anchor_pick_start = start;
+				tool.anchor_pick_contact = false;
+				tool.connect_from = -1;
+				tool.status = picking ? std::string{} : STR("LMB on the pole the tensioning device goes on");
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("The tensioning device goes on a pole already standing (with its cantilever); the pole stays as it is"));
 			ImGui::PopID();
 			continue;
 		}
-		ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "%s", format(start ? STR_C("Start: anchor %s") : STR_C("End: anchor %s"), anchor->name.c_str()).c_str());
+		auto const picked{tool.anchor_selected == static_cast<int>(index)};
+		ImGui::TextColored(picked ? ImVec4(1.0f, 0.85f, 0.2f, 1.0f) : ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "%s",
+		                   (format(start ? STR_C("Start: anchor %s") : STR_C("End: anchor %s"), anchor->name.c_str()) + (contact ? " - " + STR("contact wires") : separate ? " - " + STR("messenger") : std::string{})
+		                    + (picked ? "  " + STR("(selected in the view)") : std::string{})).c_str());
+		if (picked && tool.anchor_scroll)
+		{
+			// picked in the view just now: the panel goes to its settings
+			ImGui::SetScrollHereY(0.2f);
+			tool.anchor_scroll = false;
+		}
 		auto data{*anchor};
 		auto edited{false};
 		ImGui::PushItemWidth(180.0f);
+		// kind of the anchor: the card of the device (weight tensioning 0461, fixed 0403); variants for network types go by themselves
+		auto fixed{false};
+		{
+			auto const devices{catenary_anchor_devices(contact ? "contact" : separate ? "messenger" : "")};
+			auto card{data.device.substr(0, data.device.find('-'))};
+			for (auto const &item : devices)
+				if (item.card == data.device)
+					card = data.device; // a variant listed by itself (0461-2x2)
+			std::vector<std::string> labels;
+			int chosen{-1};
+			for (std::size_t k = 0; k < devices.size(); ++k)
+			{
+				if (false == devices[k].title.empty())
+					labels.push_back(devices[k].title + " (" + devices[k].card + ")");
+				else
+				labels.push_back(format(devices[k].fixed ? STR_C("fixed (card %s)") : devices[k].split ? STR_C("weights, messenger and contact wires separately (card %s)") : devices[k].series ? STR_C("weights, pulleys in series (card %s)") : STR_C("weight tensioning (card %s)"), devices[k].card.c_str()));
+				if (devices[k].card == card)
+				{
+					chosen = static_cast<int>(k);
+					fixed = devices[k].fixed;
+				}
+			}
+			if (ImGui::BeginCombo(STR_C("Kind"), chosen >= 0 ? labels[chosen].c_str() : data.device.c_str()))
+			{
+				for (std::size_t k = 0; k < devices.size(); ++k)
+					if (ImGui::Selectable(labels[k].c_str(), static_cast<int>(k) == chosen))
+					{
+						data.device = devices[k].card;
+						data.height = 0.0;
+						data.rope_height = 0.0;
+						fixed = devices[k].fixed;
+						edited = true;
+					}
+				ImGui::EndCombo();
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("Weight tensioning keeps the tension with the air temperature; a fixed anchor holds the wires straight on the pole (the other end of the half-section has the weights)"));
+		}
+		if (false == data.on.empty())
+			ImGui::TextDisabled("%s", format(STR_C("On the pole of %s"), data.on.c_str()).c_str());
+		else
 		{
 			// the anchor pole along the line of the last two poles
 			glm::dvec2 const pole{data.pole[0], data.pole[2]};
@@ -1866,7 +2773,7 @@ void catenary_editor::render_catenary_anchor_ui(std::size_t const Chain)
 				edited = true;
 			}
 		}
-		if (ImGui::BeginCombo(STR_C("Anchor pole"), data.pole_type.c_str()))
+		if (data.on.empty() && ImGui::BeginCombo(STR_C("Anchor pole"), data.pole_type.c_str()))
 		{
 			auto chosen{static_cast<int>(std::find(tool.poles.begin(), tool.poles.end(), data.pole_type) - tool.poles.begin())};
 			if (grouped_items(tool.poles, chosen) && chosen >= 0 && chosen < static_cast<int>(tool.poles.size()))
@@ -1876,6 +2783,9 @@ void catenary_editor::render_catenary_anchor_ui(std::size_t const Chain)
 			}
 			ImGui::EndCombo();
 		}
+		if (false == fixed && false == chain->middle.empty())
+			ImGui::TextDisabled("%s", STR_C("Distance from the middle anchor: along the chain"));
+		else if (false == fixed)
 		{
 			auto distance{static_cast<float>(data.distance)};
 			if (ImGui::SliderFloat(STR_C("From the middle anchor (m)"), &distance, 50.0f, 900.0f, "%.0f"))
@@ -1888,6 +2798,7 @@ void catenary_editor::render_catenary_anchor_ui(std::size_t const Chain)
 		}
 		std::string const colornames[] = {STR(kWeightColorNames[0]), STR(kWeightColorNames[1]), STR(kWeightColorNames[2]), STR(kWeightColorNames[3])};
 		char const *const colors[] = {colornames[0].c_str(), colornames[1].c_str(), colornames[2].c_str(), colornames[3].c_str()};
+		if (false == fixed)
 		{
 			auto color{weight_color_index(data.color)};
 			if (ImGui::Combo(STR_C("Weights"), &color, colors, 4))
@@ -1902,23 +2813,71 @@ void catenary_editor::render_catenary_anchor_ui(std::size_t const Chain)
 				edited = true;
 			}
 		}
+		if (false == fixed)
 		{
-			auto missing{data.missing};
-			if (ImGui::SliderInt(STR_C("Weights missing"), &missing, 0, 10))
+			// the insulators of the chains to the wires: resin 7150 or the old roller ESN-2025
+			static char const *const values[] = {"", "new", "old", "messenger", "contact"};
+			std::string const names[] = {STR("by the wires (roller ones when tarnished)"), STR("resin 7150"), STR("roller ESN-2025 on both"), STR("roller on the messenger only"), STR("roller on the contact wires only")};
+			char const *const items[] = {names[0].c_str(), names[1].c_str(), names[2].c_str(), names[3].c_str(), names[4].c_str()};
+			int chosen{0};
+			for (int i = 0; i < 5; ++i)
+				if (data.insulators == values[i])
+					chosen = i;
+			if (ImGui::Combo(STR_C("Insulators"), &chosen, items, 5))
 			{
-				data.missing = missing;
+				data.insulators = values[chosen];
 				edited = true;
 			}
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C("Stolen from the top of the stack: about 100 daN less tension each"));
-			auto elongation{static_cast<float>(data.elongation * 100.0)};
-			if (ImGui::SliderFloat(STR_C("Wires stretched since regulated (cm)"), &elongation, 0.0f, 60.0f, "%.0f"))
+				ImGui::SetTooltip("%s", STR_C("Old assemblies have the roller insulator ESN-2025 straight in the lever hole, then the turnbuckle and the clamp; by default the roller ones come with tarnished wires, as the 5110 clamps do"));
+		}
+		{
+			if (false == fixed)
 			{
-				data.elongation = elongation / 100.0;
+				auto missing{data.missing};
+				if (ImGui::SliderInt(STR_C("Weights missing"), &missing, 0, 10))
+				{
+					data.missing = missing;
+					edited = true;
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("Stolen from the top of the stack: about 100 daN less tension each"));
+				auto elongation{static_cast<float>(data.elongation * 100.0)};
+				if (ImGui::SliderFloat(STR_C("Wires stretched since regulated (cm)"), &elongation, 0.0f, 60.0f, "%.0f"))
+				{
+					data.elongation = elongation / 100.0;
+					edited = true;
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("Creep and wear of an old network: the weights hang 4 times this much lower; on the ground the network loses its tension"));
+			}
+			auto const *solved{catenary_anchor_result(index)};
+			auto height{static_cast<float>(data.height > 0.0 ? data.height : (solved != nullptr && solved->height > 0.0 ? solved->height : 6.70))};
+			if (ImGui::SliderFloat(fixed ? STR_C("Contact wire anchor above the rail heads (m)") : STR_C("Pulleys above the rail heads (m)"), &height, 4.5f, 9.0f, "%.2f"))
+			{
+				data.height = height;
 				edited = true;
 			}
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C("Creep and wear of an old network: the weights hang 4 times this much lower; on the ground the network loses its tension"));
+				ImGui::SetTooltip("%s", fixed ? STR_C("Height of the anchor of the contact wires on the mast (the messenger one goes as much higher as at the last pole); by default at the height of the wires at the last pole. Drag or Ctrl+click to type")
+				                              : STR_C("Height of the pulley axles on the mast; the weights move up or down with them. The mounting table gives 6.70 m. Drag or Ctrl+click to type"));
+			if (fixed)
+			{
+				auto rope{static_cast<float>(data.rope_height > 0.0 ? data.rope_height : (solved != nullptr && solved->rope_height > 0.0 ? solved->rope_height : 7.40))};
+				if (ImGui::SliderFloat(STR_C("Messenger anchor above the rail heads (m)"), &rope, 5.0f, 10.0f, "%.2f"))
+				{
+					data.rope_height = rope;
+					edited = true;
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("Height of the anchor of the messenger on the mast; by default as at the last pole. Drag or Ctrl+click to type"));
+				if ((data.height > 0.0 || data.rope_height > 0.0) && ImGui::Button(STR_C("Heights as at the last pole")))
+				{
+					data.height = 0.0;
+					data.rope_height = 0.0;
+					edited = true;
+				}
+			}
 		}
 		ImGui::PopItemWidth();
 		if (edited)
@@ -1938,33 +2897,92 @@ void catenary_editor::render_catenary_anchor_ui(std::size_t const Chain)
 		}
 		if (auto const *result{catenary_anchor_result(index)}; result != nullptr)
 		{
-			ImGui::TextDisabled("%s", format(STR_C("%.1f deg C: pulley %.2f m from the pole, weights %.2f m over the rails; %d weights, messenger %.0f daN, contact wires %.0f daN"),
-			                                   Global.AirTemperature, result->b, result->s, result->weights, result->messenger_tension, result->contact_tension).c_str());
+			if (result->fixed)
+				ImGui::TextDisabled("%s", format(STR_C("Fixed anchor: messenger %.2f m, contact wires %.2f m over the rails"), result->rope_height, result->height).c_str());
+			else
+				ImGui::TextDisabled("%s", format(STR_C("%.1f deg C: pulley %.2f m from the pole, weights %.2f m over the rails; %d weights, messenger %.0f daN, contact wires %.0f daN"),
+				                                   Global.AirTemperature, result->b, result->s, result->weights, result->messenger_tension, result->contact_tension).c_str());
 			for (auto const &warning : result->warnings)
 				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", warning.c_str());
 		}
 		if (ImGui::Button(STR_C("Remove the anchor")))
 		{
-			auto changed{*chain};
-			(start ? changed.anchor_start : changed.anchor_end).clear();
-			++tool.group;
-			catenary_change removed;
-			removed.group = tool.group;
-			removed.anchor = true;
-			removed.index = index;
-			removed.anchor_before = *anchor;
-			tool.undo.push_back(removed);
-			catenary_change unlinked;
-			unlinked.group = tool.group;
-			unlinked.chain = true;
-			unlinked.index = Chain;
-			unlinked.chain_before = *chain;
-			tool.undo.push_back(unlinked);
-			catenary_anchor_remove(index);
-			catenary_chain_update(Chain, changed);
+			catenary_anchor_delete(Chain, start, contact);
+			if (tool.anchor_selected == static_cast<int>(index))
+				tool.anchor_selected = -1;
 		}
 		ImGui::PopID();
 	}
+}
+
+void catenary_editor::catenary_anchor_delete(std::size_t const Chain, bool const Start, bool const Contact)
+{
+	auto &tool{m_catenary};
+	auto const *chain{catenary_chain_get(Chain)};
+	if (chain == nullptr)
+		return;
+	auto const file{catenary_chain_file(Chain)};
+	auto const index{catenary_anchor_of(*chain, file, Start, Contact)};
+	auto const *anchor{index < catenary_anchor_size() ? catenary_anchor_get(index) : nullptr};
+	if (anchor == nullptr)
+		return;
+	auto changed{*chain};
+	++tool.group;
+	if (Contact)
+	{
+		changed.anchor_start_contact = Start ? std::string{} : changed.anchor_start_contact;
+		changed.anchor_end_contact = Start ? changed.anchor_end_contact : std::string{};
+		// the anchor of the messenger takes the contact wires again: the whole network on it
+		auto const main{catenary_anchor_of(*chain, file, Start)};
+		if (auto const *messenger{main < catenary_anchor_size() ? catenary_anchor_get(main) : nullptr}; messenger != nullptr)
+		{
+			auto const *devices{catenary_scene_tensioners()};
+			auto const *device{devices != nullptr ? devices->device(messenger->device) : nullptr};
+			if (device != nullptr && device->only == "messenger")
+			{
+				auto whole{*messenger};
+				whole.device = device->fixed ? "0403" : "0461";
+				catenary_change before;
+				before.group = tool.group;
+				before.anchor = true;
+				before.index = main;
+				before.anchor_before = *messenger;
+				tool.undo.push_back(before);
+				catenary_anchor_update(main, whole);
+			}
+		}
+	}
+	else
+	{
+		(Start ? changed.anchor_start : changed.anchor_end).clear();
+		// the contact wires anchored apart go with it
+		auto const contact{catenary_anchor_of(*chain, file, Start, true)};
+		if (auto const *wires{contact < catenary_anchor_size() ? catenary_anchor_get(contact) : nullptr}; wires != nullptr)
+		{
+			catenary_change gone;
+			gone.group = tool.group;
+			gone.anchor = true;
+			gone.index = contact;
+			gone.anchor_before = *wires;
+			tool.undo.push_back(gone);
+			catenary_anchor_remove(contact);
+			(Start ? changed.anchor_start_contact : changed.anchor_end_contact).clear();
+		}
+	}
+	catenary_change removed;
+	removed.group = tool.group;
+	removed.anchor = true;
+	removed.index = index;
+	removed.anchor_before = *anchor;
+	tool.undo.push_back(removed);
+	catenary_change unlinked;
+	unlinked.group = tool.group;
+	unlinked.chain = true;
+	unlinked.index = Chain;
+	unlinked.chain_before = *chain;
+	tool.undo.push_back(unlinked);
+	catenary_anchor_remove(index);
+	catenary_chain_update(Chain, changed);
 }
 
 // the cantilever from the described catalogue: category, group, family (automatic by the track), card (automatic by A),
@@ -2107,6 +3125,81 @@ bool catenary_editor::render_catenary_catalog_ui()
 	return changed;
 }
 
+void catenary_editor::render_catenary_chain_state()
+{
+	auto &tool{m_catenary};
+	auto const colour{ImVec4(0.3f, 0.85f, 1.0f, 1.0f)};
+	ImGui::Separator();
+	// the selected pole: the chain can go on from it
+	if (tool.selected >= 0)
+	{
+		auto const pole{static_cast<std::size_t>(tool.selected)};
+		std::size_t position{0};
+		auto const chain{catenary_chain_of(pole, position)};
+		auto const *data{catenary_chain_get(chain >= 0 ? static_cast<std::size_t>(chain) : catenary_chain_size())};
+		auto const middle{data != nullptr && position != 0 && position + 1 != data->suspensions.size()};
+		if (middle)
+		{
+			ImGui::TextDisabled("%s", format(STR_C("In the middle of chain %s (pole %zu of %zu)"), data->name.c_str(), position + 1, data->suspensions.size()).c_str());
+			return;
+		}
+		if (ImGui::Button(data != nullptr ? STR_C("Go on with the chain from this pole (C)") : STR_C("Start a chain from this pole (C)")))
+			tool.continue_pending = tool.selected;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("The poles placed next by the track are joined to this one with spans, one after another; Esc ends the chain"));
+		if (data != nullptr)
+		{
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", format(position == 0 ? STR_C("start of chain %s") : STR_C("end of chain %s"), data->name.c_str()).c_str());
+		}
+		return;
+	}
+	ImGui::Checkbox(STR_C("Chain: a span from the last pole"), &tool.chaining);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Each pole placed is joined with a span to the one placed before it, one chain from anchor to anchor"));
+	ImGui::SameLine();
+	ImGui::Checkbox(STR_C("Into spans"), &tool.insert_spans);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("A pole placed under the span of a chain (its wire point within 1.5 m of the span, not at its ends) goes into that chain between the two poles"));
+	if (false == tool.chaining)
+		return;
+	auto const *last{tool.last >= 0 ? catenary_scene_get(static_cast<std::size_t>(tool.last)) : nullptr};
+	if (last == nullptr)
+	{
+		ImGui::TextDisabled("%s", STR_C("The next pole starts a new chain; LMB on a pole and C goes on from it"));
+		return;
+	}
+	auto const *chain{tool.chain >= 0 ? catenary_chain_get(static_cast<std::size_t>(tool.chain)) : nullptr};
+	auto const lastname{last->name.empty() ? std::string{"-"} : last->name};
+	if (chain != nullptr)
+		ImGui::TextColored(colour, "%s", format(tool.append ? STR_C("Next pole: a span from %s, at the end of chain %s (%zu poles)") : STR_C("Next pole: a span from %s, at the start of chain %s (%zu poles)"),
+		                                        lastname.c_str(), chain->name.c_str(), chain->suspensions.size()).c_str());
+	else
+		ImGui::TextColored(colour, "%s", format(STR_C("Next pole: a new chain from %s"), lastname.c_str()).c_str());
+	if (ImGui::Button(STR_C("End the chain (Esc)")))
+		catenary_chain_end();
+	if (chain != nullptr && chain->suspensions.size() >= 2)
+	{
+		auto const index{static_cast<std::size_t>(tool.chain)};
+		auto const start{false == tool.append};
+		if (catenary_anchor_of(*chain, catenary_chain_file(index), start) >= catenary_anchor_size())
+		{
+			ImGui::SameLine();
+			if (ImGui::Button(STR_C("Anchor here and end")))
+			{
+				if (catenary_anchor_create(index, start, -1))
+				{
+					catenary_chain_end();
+					tool.chain_selected = static_cast<int>(index);
+					tool.status = STR("Anchored and ended: the anchor pole is 24 m past the last pole; its settings are on the Wires page");
+				}
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("An anchor pole 24 m past the last pole, in line with it, with the weight tensioning device; the chain is ended"));
+		}
+	}
+}
+
 // the wires page: the selected chain and its settings, the spans hung from the selected pole to the next ones
 void catenary_editor::render_catenary_wires_ui()
 {
@@ -2124,6 +3217,7 @@ void catenary_editor::render_catenary_wires_ui()
 		}
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("Joins this pole with the poles clicked after it: it goes on the chain at its end, a new chain of the two, or two chains become one"));
+		render_catenary_chain_state();
 	}
 	render_catenary_chain_ui();
 }
@@ -2139,6 +3233,8 @@ void catenary_editor::catenary_choose_page(int const Page)
 	tool.gantry_single = false;
 	tool.gantry_first.reset();
 	tool.connect_from = -1;
+	tool.anchor_pick = -1;
+	tool.anchor_selected = -1;
 	if (Page != 1)
 		tool.gantry_selected = -1; // the poles go by the track again, not on the drops of a gantry
 	tool.status.clear();
@@ -2156,18 +3252,7 @@ void catenary_editor::render_catenary_cantilever_ui()
 		ImGui::InputText(STR_C("Catenary file"), tool.file, sizeof(tool.file));
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("File in the scenery directory the new poles go to; a new one is added to the scenery with the directive catenary <file> endcatenary when it's saved"));
-		ImGui::Checkbox(STR_C("Chain: a span from the last pole"), &tool.chaining);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Each pole placed is joined with a span to the one placed before it, one chain from anchor to anchor"));
-		if (tool.last >= 0 && catenary_scene_get(static_cast<std::size_t>(tool.last)) != nullptr)
-		{
-			ImGui::SameLine();
-			if (ImGui::Button(STR_C("End the chain")))
-			{
-				tool.chain = -1;
-				tool.last = -1;
-			}
-		}
+		render_catenary_chain_state();
 	}
 	else
 		ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "%s", format(STR_C("Selected pole (%s): changes apply to it at once"), catenary_scene_file_of(static_cast<std::size_t>(tool.selected)).c_str()).c_str());
@@ -2262,13 +3347,34 @@ void catenary_editor::render_catenary_cantilever_ui()
 				catenary_compose(spot, glm::dot(plan_of(pole_of(*current)) - plan_of(spot.axis), right) - 0.5 * own->depth(0.0), tool.stagger, tool.toward, current->pole_type);
 				std::copy(std::begin(current->pole), std::end(current->pole), spot.data.pole);
 			}
+			else if (false == drop && own != nullptr && pole_sharers(static_cast<std::size_t>(tool.selected)).size() > 1)
+			{
+				// an umbrella or spread cantilevers: the pole stays, unless its face from the track was changed - then it goes
+				// across the track and the other cantilever goes with it
+				auto const plane{current->has_spread ? glm::dvec3{current->spread[0], current->pole[1], current->spread[2]} : pole_of(*current)};
+				auto const right{right_of(spot.forward) * static_cast<double>(spot.side)};
+				auto const clearance{glm::dot(plan_of(plane) - plan_of(spot.axis), right) - 0.5 * own->depth(0.0)};
+				if (std::abs(clearance - static_cast<double>(tool.clearance)) > 1e-4)
+				{
+					catenary_compose(spot, tool.clearance, tool.stagger, tool.toward);
+					if (spot.card != 0)
+					{
+						auto foot{glm::dvec3{spot.data.pole[0], spot.data.pole[1], spot.data.pole[2]} - (plane - pole_of(*current))};
+						foot.y = current->pole[1];
+						catenary_pair_move(static_cast<std::size_t>(tool.selected), foot, true);
+						spot.card = -1; // done
+					}
+				}
+				else
+					catenary_keep_pole(spot, *current, tool.stagger, tool.toward);
+			}
 			else
 				catenary_compose(spot, tool.clearance, tool.stagger, tool.toward, drop ? current->pole_type : std::string{});
 			if (drop)
 				spot.data.pole[1] = current->pole[1];
-			if (spot.card != 0)
+			if (spot.card > 0)
 				catenary_apply(spot);
-			else
+			else if (spot.card == 0)
 				tool.status = spot.problem;
 		}
 	}
@@ -2322,6 +3428,67 @@ void catenary_editor::render_catenary_cantilever_ui()
 			}
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s", STR_C("Joins this pole with the poles clicked after it: it goes on the chain at its end, a new chain of the two, or two chains become one"));
+			// an umbrella: the second cantilever on this pole (or drop), to the track on its other side
+			if (data->umbrella.empty())
+			{
+				if (ImGui::Button(tool.umbrella_from >= 0 ? STR_C("Stop the umbrella") : STR_C("Umbrella: a cantilever to the other track")))
+				{
+					tool.umbrella_from = tool.umbrella_from >= 0 ? -1 : tool.selected;
+					tool.connect_from = -1;
+					tool.anchor_pick = -1;
+					tool.status = tool.umbrella_from >= 0 ? STR("LMB by the track on the other side of the pole: the second cantilever goes on this pole, with the settings of the panel") : std::string{};
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("Two cantilevers on one pole or drop, to the tracks on both sides of it; on adjustable mounts (band round the pole) they share the double mounts 4640-4670 at one height"));
+				auto const *ownscheme{catalog->scheme(data->card, data->execution)};
+				auto const steadyonly{ownscheme != nullptr && ownscheme->roles.count("strut") == 0 && ownscheme->roles.count("stay") == 0};
+				if (auto const *own{catalog->pole(data->pole_type)}; own != nullptr && (steadyonly ? false == own->steady_console.empty() : false == own->console.empty()))
+				{
+					ImGui::SameLine();
+					if (ImGui::Button(STR_C("Spread cantilevers")))
+					{
+						catenary_spread_create(static_cast<std::size_t>(tool.selected));
+						data = tool.selected >= 0 ? catenary_scene_get(static_cast<std::size_t>(tool.selected)) : nullptr;
+						if (data == nullptr)
+							return;
+					}
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s", STR_C("Two cantilevers to this track on consoles 4890 (cards 0517/0518), 1.19 m apart along it: this one goes onto the first mount, the second onto the other; each can then hold any chain or only its messenger or its wires"));
+				}
+			}
+			else
+			{
+				std::string partner;
+				for (std::size_t index = 0; index < catenary_scene_size(); ++index)
+					if (auto const *other{catenary_scene_get(index)}; other != nullptr && static_cast<int>(index) != tool.selected && other->umbrella == data->umbrella)
+						partner = other->name;
+				ImGui::TextUnformatted(format(data->has_spread ? STR_C("Spread cantilevers %s with %s") : STR_C("Umbrella %s with %s"), data->umbrella.c_str(), partner.empty() ? "-" : partner.c_str()).c_str());
+				if (data->has_spread)
+				{
+					// a third one on the same pole, in its axis on its own mounts (messenger only by the spread ones holding the wires)
+					if (ImGui::SmallButton(STR_C("A cantilever in the axis of the pole")))
+					{
+						catenary_third_create(static_cast<std::size_t>(tool.selected));
+						data = tool.selected >= 0 ? catenary_scene_get(static_cast<std::size_t>(tool.selected)) : nullptr;
+						if (data == nullptr)
+							return;
+					}
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s", STR_C("A third cantilever to this track on the same pole, in its axis on the usual mounts (move them apart from the consoles by hand if they meet); the pole stays one"));
+					ImGui::SameLine();
+				}
+				ImGui::SameLine();
+				if (ImGui::SmallButton(STR_C("Separate")))
+				{
+					catenary_umbrella_break(static_cast<std::size_t>(tool.selected));
+					data = catenary_scene_get(static_cast<std::size_t>(tool.selected));
+					if (data == nullptr)
+						return;
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("The two cantilevers stay where they are, each on its own single mounts"));
+			}
+			render_catenary_chain_state();
 			// copying to the neighbours in the chain
 			std::size_t position{0};
 			auto const chain{catenary_chain_of(static_cast<std::size_t>(tool.selected), position)};
@@ -2350,6 +3517,7 @@ void catenary_editor::render_catenary_cantilever_ui()
 					catenary_copy(members);
 				if (ImGui::IsItemHovered())
 					ImGui::SetTooltip("%s", STR_C("The pole, its face from the track, execution, height of the wires and insulators; each pole keeps its stagger"));
+				render_catenary_messenger_from(static_cast<std::size_t>(chain));
 			}
 			if (ImGui::Button(STR_C("Remove the pole")))
 				catenary_delete_selected();
@@ -2360,10 +3528,103 @@ void catenary_editor::render_catenary_cantilever_ui()
 	}
 }
 
+// the messenger of the chain at the selected suspension held by another cantilever on the same pole or next to it (spread
+// cantilevers on the console 4890, a cantilever of the messenger only by a pull-off of the wires): chain entry messenger_from
+void catenary_editor::render_catenary_messenger_from(std::size_t const Chain)
+{
+	auto &tool{m_catenary};
+	auto const *chain{catenary_chain_get(Chain)};
+	auto const *data{tool.selected >= 0 ? catenary_scene_get(static_cast<std::size_t>(tool.selected)) : nullptr};
+	if (chain == nullptr || data == nullptr || data->name.empty())
+		return;
+	auto const file{catenary_chain_file(Chain)};
+	auto const holder{catenary::messenger_holder(*chain, data->name)};
+	// a cantilever of the messenger only in the chain between two others of its pole (spread steady arms 0167 with a messenger
+	// cantilever in the axis of the pole): it leaves the list, the wires go straight between the two, the messenger through it
+	{
+		auto const &list{chain->suspensions};
+		auto const found{std::find(list.begin(), list.end(), data->name)};
+		auto const position{static_cast<std::size_t>(found - list.begin())};
+		if (found != list.end() && position > 0 && position + 1 < list.size() && chain->middle != data->name)
+		{
+			auto const sharers{pole_sharers(static_cast<std::size_t>(tool.selected))};
+			auto const onpole = [&](std::string const &Name) {
+				return std::any_of(sharers.begin(), sharers.end(), [&](std::size_t const Index) {
+					auto const *other{catenary_scene_get(Index)};
+					return other != nullptr && other->name == Name;
+				});
+			};
+			if (onpole(list[position - 1]) && onpole(list[position + 1]))
+			{
+				if (ImGui::Button(STR_C("Messenger only: the wires straight past it")))
+				{
+					auto changed{*chain};
+					tool.undo.push_back({++tool.group, true, Chain, std::nullopt, *chain, false});
+					auto const before{list[position - 1]}, after{list[position + 1]};
+					auto &pairs{changed.messenger_from};
+					pairs.erase(std::remove_if(pairs.begin(), pairs.end(), [&](auto const &Pair) { return Pair.first == before || Pair.first == after || Pair.first == data->name; }), pairs.end());
+					pairs.emplace_back(before, data->name);
+					pairs.emplace_back(after, data->name);
+					changed.suspensions.erase(changed.suspensions.begin() + static_cast<std::ptrdiff_t>(position));
+					tool.status = format(STR_C("The wires of the chain go straight from %s to %s, the messenger through %s"), before.c_str(), after.c_str(), data->name.c_str());
+					catenary_chain_update(Chain, changed);
+					return;
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("This cantilever holds only the messenger: it leaves the chain, the contact wires go straight between the two cantilevers of the pole next to it in the chain, the messenger goes through this one and their cords hang from it"));
+			}
+		}
+	}
+	// the cantilevers up to 3 m from this pole (in the plan), in the file of the chain
+	constexpr double kHolderRange{3.0};
+	std::vector<std::string> names{data->name};
+	for (std::size_t index = 0; index < catenary_scene_size(); ++index)
+	{
+		auto const *other{catenary_scene_get(index)};
+		if (other == nullptr || static_cast<int>(index) == tool.selected || other->name.empty() || false == other->has_rope || catenary_scene_file_of(index) != file)
+			continue;
+		if (glm::length(plan_of(pole_of(*other)) - plan_of(pole_of(*data))) <= kHolderRange)
+			names.push_back(other->name);
+	}
+	if (names.size() < 2 && holder == data->name)
+		return;
+	ImGui::PushItemWidth(160.0f);
+	auto const label{holder == data->name ? format(STR_C("%s (this one)"), holder.c_str()) : holder};
+	if (ImGui::BeginCombo(STR_C("Messenger held by"), label.c_str()))
+	{
+		for (auto const &name : names)
+		{
+			auto const text{name == data->name ? format(STR_C("%s (this one)"), name.c_str()) : name};
+			if (ImGui::Selectable(text.c_str(), name == holder) && name != holder)
+			{
+				auto changed{*chain};
+				tool.undo.push_back({++tool.group, true, Chain, std::nullopt, *chain, false});
+				auto &pairs{changed.messenger_from};
+				pairs.erase(std::remove_if(pairs.begin(), pairs.end(), [&](auto const &Pair) { return Pair.first == data->name; }), pairs.end());
+				if (name != data->name)
+					pairs.emplace_back(data->name, name);
+				tool.status = name == data->name ? STR("The messenger goes through this cantilever again")
+				                                 : format(STR_C("The wires of the chain go through %s, its messenger through %s"), data->name.c_str(), name.c_str());
+				catenary_chain_update(Chain, changed);
+				break;
+			}
+		}
+		ImGui::EndCombo();
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Another cantilever up to 3 m from this pole holds the messenger of this chain here, this one only its wires: spread cantilevers on a console, a cantilever of the messenger only, chains crossing over in a tension span"));
+	ImGui::PopItemWidth();
+}
+
 void catenary_editor::render_catenary_ui()
 {
 	auto &tool{m_catenary};
 	catenary_scan();
+	if (tool.continue_pending >= 0)
+	{
+		catenary_chain_continue(static_cast<std::size_t>(tool.continue_pending));
+		tool.continue_pending = -1;
+	}
 	auto const *catalog{catenary_scene_catalog()};
 	if (catalog == nullptr || tool.poles.empty())
 	{
@@ -2883,6 +4144,51 @@ void catenary_editor::draw_catenary_overlay() const
 			drawlist->AddText(ImVec2(head.x + 6.0f, head.y - 6.0f), colour, label.c_str());
 		}
 	}
+	// anchors: the device from the face of the pole to the moving pulley and the column of weights; not assembled - red at the pole
+	for (std::size_t index = 0; index < catenary_anchor_size(); ++index)
+	{
+		auto const *anchor{catenary_anchor_get(index)};
+		if (anchor == nullptr)
+			continue;
+		auto const selected{static_cast<int>(index) == tool.anchor_selected};
+		auto const hovered{is_intent(e.m_intent, intent_detail::anchor) && e.m_intent.index == static_cast<int>(index)};
+		double shape[4][3];
+		ImVec2 head;
+		if (false == catenary_anchor_shape(index, shape))
+		{
+			if (false == anchor->on.empty())
+				continue; // on the pole of a suspension: that one shows what's wrong with it
+			glm::dvec3 const foot{anchor->pole[0], anchor->pole[1], anchor->pole[2]};
+			if (glm::distance(foot, camera) > kCatenaryRange)
+				continue;
+			projection.line(drawlist, foot, foot + glm::dvec3{0.0, 8.0, 0.0}, overlay_color::invalid, 2.0f);
+			if (projection.project(foot + glm::dvec3{0.0, 8.3, 0.0}, head))
+				drawlist->AddText(ImVec2(head.x + 6.0f, head.y - 6.0f), overlay_color::invalid, (anchor->name + "  " + STR("doesn't assemble")).c_str());
+			continue;
+		}
+		glm::dvec3 const face{shape[0][0], shape[0][1], shape[0][2]}, lever{shape[1][0], shape[1][1], shape[1][2]};
+		glm::dvec3 const top{shape[2][0], shape[2][1], shape[2][2]}, bottom{shape[3][0], shape[3][1], shape[3][2]};
+		if (glm::distance(face, camera) > kCatenaryRange)
+			continue;
+		auto const *result{catenary_anchor_result(index)};
+		auto const warned{result != nullptr && false == result->warnings.empty()};
+		auto const colour{selected ? overlay_color::selected : hovered ? overlay_color::highlight : warned ? overlay_color::invalid : IM_COL32(120, 200, 255, 170)};
+		auto const width{selected || hovered ? 3.0f : 1.5f};
+		projection.line(drawlist, face, lever, colour, width);
+		projection.line(drawlist, top, bottom, colour, width);
+		ImVec2 point;
+		if (projection.project(lever, point))
+			drawlist->AddCircleFilled(point, width + 1.5f, colour);
+		if ((selected || hovered || warned) && projection.project(top + glm::dvec3{0.0, 0.4, 0.0}, head))
+		{
+			auto label{anchor->name};
+			if (result != nullptr)
+				label += format("  %d x, %.0f daN", result->weights, result->tension);
+			if (warned)
+				label += "  (" + result->warnings.front() + ")";
+			drawlist->AddText(ImVec2(head.x + 6.0f, head.y - 6.0f), colour, label.c_str());
+		}
+	}
 	// spans against the catalogue: green within the limit, red over it; the selected chain brighter
 	auto const &network{tool.networks.empty() ? std::string{} : tool.networks[std::clamp(tool.network, 0, static_cast<int>(tool.networks.size()) - 1)]};
 	for (auto const &span : spans_around(camera, network, tool.zone))
@@ -2910,7 +4216,22 @@ void catenary_editor::draw_catenary_overlay() const
 			auto const colour{spot.card != 0 && false == spot.switch_error ? overlay_color::marked : overlay_color::invalid};
 			draw_pole(spot.data, colour, 3.0f);
 			projection.line(drawlist, spot.axis + glm::dvec3{0.0, kRailTop, 0.0}, pole_of(spot.data), colour, 1.5f);
-			if (tool.chaining && tool.last >= 0)
+			chain_insert insert;
+			if (catenary_insert_at(spot, insert))
+			{
+				// into the span: the two new spans to its ends instead of the old one
+				auto const *a{catenary_scene_get(insert.from)};
+				auto const *b{catenary_scene_get(insert.to)};
+				if (a != nullptr && b != nullptr)
+				{
+					projection.line(drawlist, wire_of(*a), wire_of(spot.data), overlay_color::grip, 2.5f);
+					projection.line(drawlist, wire_of(spot.data), wire_of(*b), overlay_color::grip, 2.5f);
+					ImVec2 point;
+					if (projection.project(wire_of(spot.data) + glm::dvec3{0.0, 0.6, 0.0}, point))
+						drawlist->AddText(ImVec2(point.x + 6.0f, point.y - 14.0f), overlay_color::grip, format(STR_C("into the span %s - %s"), a->name.c_str(), b->name.c_str()).c_str());
+				}
+			}
+			else if (tool.chaining && tool.last >= 0)
 				if (auto const *previous{catenary_scene_get(static_cast<std::size_t>(tool.last))}; previous != nullptr)
 					projection.line(drawlist, wire_of(*previous), wire_of(spot.data), colour, 1.5f);
 		}
@@ -2955,6 +4276,17 @@ void catenary_editor::catenary_drag_update()
 			return; // a drop, or a cantilever on a mast, goes with its gantry
 		spot.curve = tool.bend == 2 || (tool.bend == 0 && spot.radius > 0.0 && spot.radius < kCurveRadius);
 		catenary_compose(spot, tool.clearance, tool.stagger, tool.toward);
+		if (pole_sharers(static_cast<std::size_t>(tool.selected)).size() > 1)
+		{
+			// an umbrella or spread cantilevers: the pole goes where this one puts it, the other cantilever goes with it
+			if (spot.card == 0)
+				return;
+			auto const plane{current->has_spread ? glm::dvec3{current->spread[0], current->pole[1], current->spread[2]} : pole_of(*current)};
+			auto foot{glm::dvec3{spot.data.pole[0], spot.data.pole[1], spot.data.pole[2]} - (plane - pole_of(*current))};
+			foot.y = spot.data.pole[1];
+			catenary_pair_move(static_cast<std::size_t>(tool.selected), foot, false);
+			return;
+		}
 		if (spot.card != 0)
 			catenary_apply(spot);
 		return;
@@ -3185,10 +4517,20 @@ bool catenary_editor::catenary_intent(track_intent &Intent)
 		Intent.detail = static_cast<int>(intent_detail::mast);
 		return true;
 	}
+	// the tensioning device of an anchor (not while a pole is being picked for an anchor or a span)
+	if (m_catenary.anchor_pick < 0 && m_catenary.connect_from < 0)
+		if (auto const hit{catenary_anchor_hit()}; hit >= 0)
+		{
+			Intent.index = hit;
+			Intent.action = STR("Click: select the anchor");
+			Intent.what = kind::catenary;
+			Intent.detail = static_cast<int>(intent_detail::anchor);
+			return true;
+		}
 	if (auto const hit{catenary_hit()}; hit >= 0)
 	{
 		Intent.index = hit;
-		Intent.action = m_catenary.connect_from >= 0 ? STR("Click: hang the span to this pole") : STR("Click: select the pole");
+		Intent.action = m_catenary.anchor_pick >= 0 ? STR("Click: the tensioning device on this pole") : m_catenary.connect_from >= 0 ? STR("Click: hang the span to this pole") : STR("Click: select the pole");
 		Intent.what = kind::catenary;
 		Intent.detail = static_cast<int>(intent_detail::select);
 		return true;
@@ -3208,6 +4550,22 @@ bool catenary_editor::catenary_intent(track_intent &Intent)
 		Intent.what = kind::catenary;
 		Intent.detail = static_cast<int>(intent_detail::chain);
 		return true;
+	}
+	// the second cantilever of an umbrella: by any track, onto the pole of the first one
+	if (m_catenary.umbrella_from >= 0 && e.m_hover.track != nullptr && m_catenary.page != 2)
+	{
+		catenary_spot spot;
+		if (catenary_umbrella_spot(*e.m_hover.track, e.m_hover.path, spot))
+		{
+			Intent.track = e.m_hover.track;
+			Intent.path = e.m_hover.path;
+			Intent.position = spot.axis;
+			Intent.action = spot.card == 0 ? format(STR_C("Umbrella: %s"), spot.problem.c_str())
+			                               : format(STR_C("Click: the second cantilever of the umbrella, card %04d execution %d, A = %.2f m"), spot.card, spot.data.execution, spot.reach);
+			Intent.what = kind::catenary;
+			Intent.detail = static_cast<int>(intent_detail::place);
+			return true;
+		}
 	}
 	// the wires page places nothing, the gantries page places only on the selected gantry
 	if (e.m_hover.track != nullptr && m_catenary.page != 2 && (m_catenary.page != 1 || m_catenary.gantry_selected >= 0))
@@ -3230,27 +4588,68 @@ bool catenary_editor::catenary_intent(track_intent &Intent)
 std::string catenary_editor::catenary_mode_name() const
 {
 	if (m_catenary.page == 2)
-		return m_catenary.connect_from >= 0 ? STR_C("Wires: LMB on the next pole hangs the span to it") : STR_C("Wires: LMB on a span selects its chain, LMB on a pole selects it");
+		return m_catenary.anchor_pick >= 0 ? STR_C("Wires: LMB on the pole the tensioning device goes on") : m_catenary.connect_from >= 0 ? STR_C("Wires: LMB on the next pole hangs the span to it") : STR_C("Wires: LMB on a span selects its chain, LMB on a pole selects it");
 	if (m_catenary.page == 1)
 	{
 		if (m_catenary.gantry_placing)
 			return STR_C("Gantries: LMB the masts");
 		return m_catenary.gantry_selected >= 0 ? STR_C("Gantries: LMB by a track puts a cantilever on the selected gantry, drag the beam to move it") : STR_C("Gantries: LMB on a gantry selects it, or place a new one below");
 	}
+	if (m_catenary.umbrella_from >= 0)
+		return STR_C("Umbrella: LMB by the track on the other side of the pole puts the second cantilever on it; Esc stops");
 	if (m_catenary.selected >= 0)
-		return STR_C("Catenary: the selected pole follows the settings below");
+		return STR_C("Catenary: the selected pole follows the settings below; C goes on with the chain from it");
+	if (m_catenary.chaining && m_catenary.last >= 0)
+		return STR_C("Catenary: LMB by the track places the next pole of the chain; Esc ends the chain");
 	return STR_C("Catenary: LMB by the track places a pole on that side, LMB on a pole selects it");
 }
 
 void catenary_editor::catenary_key_hints(std::vector<key_hint> &Hints) const
 {
 	Hints = {{"LMB by a track", "places a pole on that side, with the card for its distance"}, {"LMB on a pole", "selects it: the settings then change it at once"}};
+	Hints.push_back({"LMB on a tensioning device", "selects the anchor and its chain"});
+	Hints.push_back({"LMB under a span", "puts the pole into the chain between the two poles"});
+	if (m_catenary.chaining && m_catenary.last >= 0 && m_catenary.selected < 0)
+		Hints.push_back({"Esc", "ends the chain: the next pole starts a new one"});
 	if (m_catenary.selected >= 0)
+	{
+		if (m_catenary.umbrella_from >= 0)
+			Hints.push_back({"LMB by the other track", "the second cantilever of the umbrella on this pole"});
+		Hints.push_back({"C", "the chain goes on from the selected pole"});
 		Hints.push_back({"Del", "removes the selected pole"});
+	}
+	else if (m_catenary.anchor_selected >= 0)
+		Hints.push_back({"Del", "removes the selected anchor"});
 }
 
 bool catenary_editor::catenary_on_key(int const Key, int const Action, int const Mods)
 {
+	auto &tool{m_catenary};
+	if (Action != GLFW_PRESS || (Mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SHIFT)) != 0 || ImGui::GetIO().WantTextInput)
+		return false;
+	if (Key == GLFW_KEY_ESCAPE)
+	{
+		// first what's being picked, then the chain going on; with nothing of that the editor has the key
+		if (tool.anchor_pick >= 0 || tool.connect_from >= 0 || tool.umbrella_from >= 0)
+		{
+			tool.anchor_pick = -1;
+			tool.connect_from = -1;
+			tool.umbrella_from = -1;
+			tool.status.clear();
+			return true;
+		}
+		if (tool.chaining && tool.last >= 0 && tool.selected < 0)
+		{
+			catenary_chain_end();
+			return true;
+		}
+		return false;
+	}
+	if (Key == GLFW_KEY_C && tool.selected >= 0)
+	{
+		catenary_chain_continue(static_cast<std::size_t>(tool.selected));
+		return true;
+	}
 	return false;
 }
 

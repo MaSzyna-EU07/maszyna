@@ -29,7 +29,7 @@ struct catenary_editor
 	using track_intent = editor_mode::track_intent;
 	using key_hint = editor_mode::key_hint;
 	// what a catenary intent (track_intent::kind::catenary) is about, in its detail
-	enum class intent_detail { place, select, chain, gantry, mast };
+	enum class intent_detail { place, select, chain, gantry, mast, anchor };
 	static bool is_intent(track_intent const &Intent, intent_detail const Detail)
 	{
 		return Intent.what == track_intent::kind::catenary && Intent.detail == static_cast<int>(Detail);
@@ -46,6 +46,7 @@ struct catenary_editor
 		glm::dvec2 forward{0.0, 1.0};
 		int side{1}; // the pole on the right (+1) or on the left (-1) of the direction of the path
 		double radius{0.0}; // of the track there, 0 on a straight
+		int inward{0}; // the centre of the bend: +1 on the right of the direction of the path, -1 on the left, 0 straight
 		bool curve{false};
 		bool toward{true}; // the wires are offset towards the pole
 		double reach{0.0}; // A: from the wires to the face of the pole
@@ -90,11 +91,19 @@ struct catenary_editor
 		int selected{-1};
 		// chains: the poles placed one after another are joined by spans
 		bool chaining{true};
+		int continue_pending{-1}; // the chain goes on from this pole, from the next frame of the panel (the button is in the middle of it)
+		bool insert_spans{true}; // a pole placed in a span of a chain goes into the chain between the two poles of the span
 		int chain{-1}; // the chain the next pole is added to
 		int last{-1}; // the pole the next span starts at
 		bool append{true}; // the next pole goes after the last one of the chain, otherwise before the first
 		int chain_selected{-1}; // the chain shown in the panel
 		int connect_from{-1}; // hanging the wires on from this suspension: the next poles clicked get the spans
+		int umbrella_from{-1}; // an umbrella from this suspension: the next LMB by a track puts the second cantilever on its pole (or drop)
+		int anchor_pick{-1}; // anchoring this chain to an existing pole: the next pole clicked carries the tensioning device
+		bool anchor_pick_start{false}; // ... at the start of the chain, otherwise at its end
+		bool anchor_pick_contact{false}; // ... the contact wires only (anchored apart from the messenger)
+		int anchor_selected{-1}; // the anchor picked in the view: its chain is shown, the panel marks it, Del removes it
+		bool anchor_scroll{false}; // the panel scrolls to the anchor picked in the view, once
 		char power[64]{"none"};
 		float voltage{3000.0f};
 		int material{0}; // 0 cu, 1 al
@@ -157,6 +166,10 @@ struct catenary_editor
 	mutable std::vector<std::pair<TTrack const *, int>> m_switch_paths; // the paths of switches, gathered again when the number of tracks changes
 	mutable std::size_t m_switch_tracks{static_cast<std::size_t>(-1)};
 	mutable std::map<std::size_t, switch_check> m_switch_checks;
+	// superelevation of the track at the spot (radians, unsigned) and the horizontal shift of the axis of a leaning
+	// pantograph at Height above the rail heads, towards the inside of the bend (table 23-0007, curve with superelevation)
+	static double catenary_cant(catenary_spot const &Spot);
+	static glm::dvec3 catenary_cant_shift(catenary_spot const &Spot, double Height);
 	void catenary_compose(catenary_spot &Spot, double const Clearance, double const Stagger, bool const Toward, std::string const &Pole = {}) const;
 	bool catenary_on_mast(catenary::gantry const &Gantry, double const Stagger, catenary_spot &Spot) const;
 	catenary_spot const *catenary_spot_of(std::size_t const Index);
@@ -168,7 +181,38 @@ struct catenary_editor
 	void catenary_copy(std::vector<std::size_t> const &Targets);
 	bool catenary_propose_toward(bool &Toward);
 	void catenary_place(catenary_spot const &Spot);
+	// the second cantilever of an umbrella on the pole (or drop) of tool.umbrella_from, towards this track; false when it can't
+	// be put there (Spot.problem says why when Spot.card is 0)
+	bool catenary_umbrella_spot(TTrack &Track, int Path, catenary_spot &Spot);
+	void catenary_umbrella_place(catenary_spot const &Spot);
+	// the two cantilevers of the umbrella of this suspension become separate ones
+	void catenary_umbrella_break(std::size_t Index);
+	// a cantilever of an umbrella or of spread cantilevers: composed with its pole (and its console mount) where they are
+	void catenary_keep_pole(catenary_spot &Spot, catenary::suspension const &Current, double Stagger, bool Toward) const;
+	// spread cantilevers on the console of the pole: this one onto the first mount, a second one onto the other, same track
+	void catenary_spread_create(std::size_t Index);
+	// the pole of an umbrella or of spread cantilevers moved to Foot (rail heads): both cantilevers go with it
+	// (Panel: from the distance slider - the selected one takes the stagger of the panel, the slider is one undo group)
+	void catenary_pair_move(std::size_t Selected, glm::dvec3 const &Foot, bool Panel);
+	// a third cantilever on the pole of spread cantilevers, in the axis of the pole, to the same track (shared_pole)
+	void catenary_third_create(std::size_t Index);
+	// the span of a chain the spot falls in (in the plan: the wire point near the line of the span, between its ends)
+	struct chain_insert
+	{
+		int chain{-1};
+		std::size_t after{0}; // the new pole goes after this position of the chain
+		std::size_t from{0}, to{0}; // the suspensions at both ends of the span
+	};
+	bool catenary_insert_at(catenary_spot const &Spot, chain_insert &Insert) const;
+	// the next pole placed starts a new chain
+	void catenary_chain_end();
+	// the next poles placed go on from this pole: at the end (or the start) of its chain, or a new chain from it;
+	// false when the pole is in the middle of a chain
+	bool catenary_chain_continue(std::size_t Pole);
+	// the chain block of the poles page: what the next click does, end, anchor, go on from the selected pole
+	void render_catenary_chain_state();
 	void catenary_chain_apply();
+	void render_catenary_messenger_from(std::size_t Chain);
 	void catenary_connect(std::size_t const To);
 	int catenary_gantry_hit() const;
 	bool catenary_gantry_beam(std::size_t const Index, glm::dvec3 &From, glm::dvec3 &To, double &Bottom) const;
@@ -194,7 +238,15 @@ struct catenary_editor
 	// the anchors at both ends of the selected chain: add, settings, remove
 	void render_catenary_anchor_ui(std::size_t Chain);
 	// the anchor of the chain at its start (Start) or end; catenary_anchor_size() when none
-	std::size_t catenary_anchor_of(catenary::chain const &Chain, std::string const &File, bool Start) const;
+	std::size_t catenary_anchor_of(catenary::chain const &Chain, std::string const &File, bool Start, bool Contact = false) const;
+	// anchors the start or the end of the chain: on a new pole past the last one, or (On >= 0) on that existing pole
+	bool catenary_anchor_create(std::size_t Chain, bool Start, int On, bool Contact = false);
+	// removes the anchor at the start or the end of the chain (one undo step with the chain)
+	void catenary_anchor_delete(std::size_t Chain, bool Start, bool Contact = false);
+	// the anchor whose tensioning device is under the cursor; -1 if none
+	int catenary_anchor_hit() const;
+	// shows the chain in the panel as a click on its span does
+	void catenary_chain_show(int Chain);
 	void render_catenary_cantilever_ui();
 	void render_catenary_wires_ui();
 	void catenary_choose_page(int const Page);

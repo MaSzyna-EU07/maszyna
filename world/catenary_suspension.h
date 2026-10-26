@@ -38,6 +38,12 @@ struct suspension {
     // parasol: dwa wpisy ze słupem i tą samą nazwą parasola to dwa wysięgniki na jednym słupie, po przeciwnych stronach.
     // słup stawia pierwszy z nich; mocowania regulowane (z połówką z nakrętkami) idą na wspólną wysokość
     std::string umbrella;
+    // wysięgnik rozstawiony (konsola 4890; para wpisów z tą samą nazwą "umbrella" po tej samej stronie słupa albo jeden): punkt na osi
+    // płaszczyzny wysięgnika przy słupie (oś słupa przesunięta wzdłuż toru do punktu mocowania na konsoli), "spread x y z"
+    // słup stawia inny wpis w tym samym miejscu (trzeci wysięgnik przy rozstawionych, w osi słupa): ten tylko z niego korzysta
+    bool   shared_pole { false };
+    bool   has_spread { false };
+    double spread[ 3 ] { 0.0, 0.0, 0.0 };
 };
 
 // łańcuch sieci: kolejne przęsła między podwieszeniami z listy (od kotwy do kotwy), wpis
@@ -58,12 +64,28 @@ struct chain {
     double      hangers[ 4 ] { 0.4, 4.0, 3.0, 0.04 }; // jak w node traction: najniższy wieszak, odstęp, liczba drutów, odstęp drutów
     std::string parallel;                   // przęsło bieżni wspólnej (jak "parallel" w node traction); puste = brak
     std::string anchor_start, anchor_end;   // kotwienia (wpisy "anchor") przed pierwszym i za ostatnim podwieszeniem; puste = brak
+    // przewody jezdne zakotwione osobno (inne kotwienie, zwykle na innym słupie; 0404 albo przewody rozdzielonego): wtedy
+    // anchor_start/anchor_end trzyma samą linę nośną (0405, lina rozdzielonego). Puste = całość na anchor_start/anchor_end
+    std::string anchor_start_contact, anchor_end_contact;
+    // kotwienie środkowe (karty 63-0406 / 0408): podwieszenie, przy którym lina kotwienia środkowego jest zaciśnięta na linie nośnej,
+    // i karta (0406 z izolacją, 0408 bez); lina idzie do słupów sąsiednich podwieszeń. Puste = brak
+    std::string middle;
+    std::string middle_device { "0406" };
+    double      middle_heights[ 2 ] { 0.0, 0.0 };  // uchwyty liny kotwienia na słupach przed i za (nad główką); 0 = lina nośna sąsiada
+    // lina nośna z innego podwieszenia niż przewody jezdne (wysięgniki rozstawione na konsoli 4890, wysięgnik samej liny przy
+    // odciągu przewodów): w punkcie łańcucha <podwieszenie z listy> przewody idą przez jego "at", lina przez "rope" podwieszenia
+    // <trzymające linę>. Wpis "messenger_from <z listy> <trzymające linę>", przed "suspensions"
+    std::vector<std::pair<std::string, std::string>> messenger_from;
     std::vector<std::string> suspensions;   // nazwy podwieszeń z tego samego pliku, po kolei
 };
 
+// podwieszenie, które trzyma linę nośną łańcucha w punkcie Listed (samo Listed, gdy nie ma wpisu messenger_from)
+std::string const &messenger_holder( chain const &Chain, std::string const &Listed );
+
 // kotwienie ciężarowe (urządzenie naprężające z pliku traction_tensioners.txt) na słupie kotwowym, wpis
-// "node <max> <min> <nazwa> anchor device <karta> network <symbol typu> pole <słup> x y z toward x y z distance <m>
-//  [color <kolor>] [top_color <kolor>] [elongation <m>] [missing <n>] [ground <m>] [skin <tekstura>] endanchor".
+// "node <max> <min> <nazwa> anchor device <karta> network <symbol typu> pole <słup> x y z [on <podwieszenie>] toward x y z distance <m>
+//  [color <kolor>] [top_color <kolor>] [elongation <m>] [missing <n>] [ground <m>] [height <m>] [rope_height <m>] [insulators <rodzaj>] [skin <tekstura>]
+//  endanchor".
 // pole: oś słupa na wysokości główki szyny; toward: punkt, z którego przychodzą druty (urządzenie leży w tym kierunku od
 // słupa); distance: odległość od kotwienia środkowego albo stałego. Łańcuch przypina się do niego "anchor_start/anchor_end",
 // a ostatnie przęsło (bez wieszaków) kończy się na uchwytach krańcowych urządzenia
@@ -75,12 +97,19 @@ struct anchor {
     std::string network;                    // symbol typu sieci (traction_<symbol>.txt): numer typu i liczba przewodów jezdnych
     std::string pole_type;
     double      pole[ 3 ] { 0.0, 0.0, 0.0 };
+    std::string on;                         // kotwienie na istniejącym słupie: nazwa podwieszenia (z tego pliku), którego słup to
+                                            // jest; słupa nie stawia, typ i punkt bierze z tamtego wpisu (pole tylko zapasowo)
     double      toward[ 3 ] { 0.0, 0.0, 0.0 };
     double      distance { 700.0 };
     std::string color, top_color;
     double      elongation { 0.0 };
     int         missing { 0 };
     double      ground { -0.50 };
+    double      height { 0.0 };              // oś rolek nad główką szyny; 0 = z tablicy montażowej (6,70). Kotwienie stałe: przewody
+    double      rope_height { 0.0 };         // kotwienie stałe: uchwyt liny nośnej nad główką szyny; 0 = jak przy ostatnim słupie
+    // izolatory w łańcuchach do drutów: puste = auto (rolkowe ESN-2025 na obu przy drutach zaśniedziałych, inaczej żywiczne 7150),
+    // "new" żywiczne, "old" rolkowe na obu, "messenger" rolkowy tylko na linie nośnej, "contact" rolkowe tylko na przewodach
+    std::string insulators;
     std::string skin;
 };
 

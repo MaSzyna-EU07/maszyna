@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "world/catenary_span.h"
 
+#include <memory>
+
 #include "world/Traction.h"
 #include "world/catenary_network.h"
 #include "utilities/Globals.h"
@@ -31,6 +33,10 @@ struct catenary_span {
     gfx::geometrybank_handle solidbank;                         // osobny bank na bryły tego przęsła
     catenary_solid solid;                                       // bryły do oglądania z bliska
     bool solidloaded { false };
+    std::vector<catenary::solid_vertex> attached;               // bryła dołączona (lina kotwienia), układ scenerii
+    std::shared_ptr<catenary::network_definition> own;          // kopia typu z naciągiem z dopisku "tension"
+    bool rope2set[ 2 ] { false, false };                        // końce drugiej liny nośnej z dopisku "rope2"
+    catenary::vec3 rope2[ 2 ];
 };
 
 namespace {
@@ -43,11 +49,19 @@ definition( TTraction const &Traction ) {
 
 catenary::span_points
 points( TTraction const &Traction ) {
-    return {
+    catenary::span_points result {
         { Traction.pPoint1.x, Traction.pPoint1.y, Traction.pPoint1.z },
         { Traction.pPoint2.x, Traction.pPoint2.y, Traction.pPoint2.z },
         { Traction.pPoint3.x, Traction.pPoint3.y, Traction.pPoint3.z },
         { Traction.pPoint4.x, Traction.pPoint4.y, Traction.pPoint4.z } };
+    if( Traction.m_catenaryspan ) {
+        auto const &span { *Traction.m_catenaryspan };
+        result.messenger2_start_set = span.rope2set[ 0 ];
+        result.messenger2_end_set = span.rope2set[ 1 ];
+        result.messenger2_start = span.rope2[ 0 ];
+        result.messenger2_end = span.rope2[ 1 ];
+    }
+    return result;
 }
 
 // długość podwieszenia Y, jaką typ sieci przewiduje dla tego przęsła; 0 gdy brak
@@ -249,13 +263,17 @@ catenary_span_metal( TTraction const &Traction, bool const Fitting ) {
 
 // przypisuje przęsłu typ sieci z dopisku "type" i dobiera rozstaw wieszaków
 void
-catenary_span_assign( TTraction &Traction, std::string const &Symbol ) {
+catenary_span_assign( TTraction &Traction, std::string const &Symbol, double const Messenger, double const Contact, glm::dvec3 const *Rope2, bool const *Rope2set ) {
 
     Traction.m_catenaryspan.reset();
     if( Symbol.empty() ) { return; }
 
     auto span { std::make_shared<catenary_span>() };
     span->symbol = Symbol;
+    for( int end = 0; end < 2 && Rope2 != nullptr && Rope2set != nullptr; ++end ) {
+        span->rope2set[ end ] = Rope2set[ end ];
+        span->rope2[ end ] = catenary::vec3 { Rope2[ end ].x, Rope2[ end ].y, Rope2[ end ].z };
+    }
     Traction.m_catenaryspan = span;
     if( false == Global.CatenaryProcedural ) { return; }
 
@@ -265,6 +283,13 @@ catenary_span_assign( TTraction &Traction, std::string const &Symbol ) {
     }
     span->definition = registry.find( Symbol );
     if( span->definition == nullptr ) { return; } // brak typu został już zgłoszony, przęsło rysuje się po staremu
+    // naciąg z dopisku "tension" (daN): przęsło liczone z kopią typu
+    if( Messenger > 0.0 || Contact > 0.0 ) {
+        span->own = std::make_shared<catenary::network_definition>( *span->definition );
+        if( Messenger > 0.0 ) { span->own->type.messenger_tension = 10.0 * Messenger; }
+        if( Contact > 0.0 && span->own->type.contact_tension > 0.0 ) { span->own->type.contact_tension = 10.0 * Contact; }
+        span->definition = span->own.get();
+    }
     // odstęp wieszaków 0 w scenerii oznacza odcinek bez wieszaków (do kotwienia albo urządzenia naprężającego):
     // rysowane są same liny i przewody w liczbie wg typu, a rozstaw wieszaków zostaje pusty
     if( Traction.iNumSections == 0 ) { return; }
@@ -272,6 +297,13 @@ catenary_span_assign( TTraction &Traction, std::string const &Symbol ) {
         registry.hanger_gaps(
             span->definition->hanger_table,
             std::hypot( Traction.pPoint2.x - Traction.pPoint1.x, Traction.pPoint2.z - Traction.pPoint1.z ) );
+}
+
+// wygląd liny stalowej (ocynk, lekko zmatowiały)
+catenary_metal const &
+catenary_rope_metal() {
+    static catenary_metal const steel { { 0.56f, 0.57f, 0.58f }, 0.8f, 0.30f, 0.20f };
+    return steel;
 }
 
 // symbol typu sieci przypisany przęsłu; pusty gdy brak
@@ -318,6 +350,7 @@ catenary_span_solid( TTraction &Traction, glm::dvec3 const &Camera ) {
             // kamera daleko: zwolnienie pamięci, linie wystarczą
             release( span.solid.wires );
             release( span.solid.fittings );
+            release( span.solid.rope );
             span.solid = {};
             span.solidloaded = false;
             return {};
@@ -344,6 +377,10 @@ catenary_span_solid( TTraction &Traction, glm::dvec3 const &Camera ) {
         auto data { vertices( Traction, fittings ) };
         span.solid.fittings = GfxRenderer->Insert( data, userdata, span.solidbank, GL_TRIANGLES );
     }
+    if( false == span.attached.empty() ) {
+        auto data { vertices( Traction, span.attached ) };
+        span.solid.rope = GfxRenderer->Insert( data, userdata, span.solidbank, GL_TRIANGLES );
+    }
     span.solidloaded = ( span.solid.wires != null_handle );
     return ( span.solidloaded ? span.solid : catenary_solid() );
 }
@@ -358,6 +395,7 @@ drop_solid( TTraction &Traction ) {
     if( false == span.solidloaded ) { return; }
     release( span.solid.wires );
     release( span.solid.fittings );
+    release( span.solid.rope );
     span.solid = {};
     span.solidloaded = false;
 }
@@ -382,4 +420,13 @@ void
 catenary_span_release( TTraction &Traction ) {
     drop_solid( Traction );
     release( Traction.m_geometry );
+}
+
+// bryła spoza przęsła rysowana razem z nim (lina kotwienia); zrobi się przy następnym podejściu kamery
+bool
+catenary_span_attach( TTraction &Traction, std::vector<catenary::solid_vertex> const &Triangles ) {
+    if( false == static_cast<bool>( Traction.m_catenaryspan ) ) { return false; }
+    drop_solid( Traction );
+    Traction.m_catenaryspan->attached = Triangles;
+    return ( Traction.m_catenaryspan->definition != nullptr );
 }

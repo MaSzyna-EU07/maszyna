@@ -5894,3 +5894,360 @@ msgstr "żółte, pędzlowane"
 
 msgid "grey, shabby"
 msgstr "szare, brzydkie"
+
+msgid "Stop picking the pole"
+msgstr "Przerwij wybieranie słupa"
+
+msgid "to an existing pole"
+msgstr "do istniejącego słupa"
+
+msgid "LMB on the pole the tensioning device goes on"
+msgstr "LPM na słup, na którym ma stanąć urządzenie naprężające"
+
+msgid "The tensioning device goes on a pole already standing (with its cantilever); the pole stays as it is"
+msgstr "Urządzenie naprężające na słupie, który już stoi (z wysięgnikiem); słup zostaje jak jest"
+
+msgid "On the pole of %s"
+msgstr "Na słupie %s"
+
+msgid "This pole can't carry the anchor: it has to be a pole (not a drop or a point) from the file of the chain"
+msgstr "Na tym słupie nie da się zakotwić: musi to być słup (nie zwis ani punkt) z pliku łańcucha"
+
+msgid "The anchor goes on another pole than the last one of the chain"
+msgstr "Kotwienie musi być na innym słupie niż ostatni słup łańcucha"
+
+msgid "Click: the tensioning device on this pole"
+msgstr "Klik: urządzenie naprężające na tym słupie"
+
+msgid "Wires: LMB on the pole the tensioning device goes on"
+msgstr "Druty: LPM na słup, na którym ma stanąć urządzenie naprężające"
+
+msgid "Pulleys above the rail heads (m)"
+msgstr "Rolki nad główką szyny (m)"
+
+msgid "Height of the pulley axles on the mast; the weights move up or down with them. The mounting table gives 6.70 m. Drag or Ctrl+click to type"
+msgstr "Wysokość osi rolek na słupie; ciężary przesuwają się razem z nimi. Tablica montażowa podaje 6,70 m. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid ", superelevation %.0f mm"
+msgstr ", przechyłka %.0f mm"
+
+msgid "Click: select the anchor"
+msgstr "Klik: zaznacz kotwienie"
+
+msgid "Anchor %s selected: its settings are below, Del removes it"
+msgstr "Zaznaczone kotwienie %s: ustawienia poniżej, Del je usuwa"
+
+msgid "Anchor %s isn't at the end of any chain"
+msgstr "Kotwienie %s nie kończy żadnego łańcucha"
+
+msgid "Anchor removed"
+msgstr "Kotwienie usunięte"
+
+msgid "(selected in the view)"
+msgstr "(zaznaczone w oknie)"
+
+msgid "LMB on a tensioning device"
+msgstr "LPM na urządzeniu naprężającym"
+
+msgid "selects the anchor and its chain"
+msgstr "zaznacza kotwienie i jego łańcuch"
+
+msgid "removes the selected anchor"
+msgstr "usuwa zaznaczone kotwienie"
+
+msgid "The chain is ended: the next pole starts a new one"
+msgstr "Łańcuch zakończony: następny słup zaczyna nowy"
+
+msgid "The pole is in the middle of a chain: the chain goes on from its ends only"
+msgstr "Słup jest w środku łańcucha: łańcuch można ciągnąć tylko od jego końców"
+
+msgid "The next poles go on from %s: LMB by the track; Esc ends the chain"
+msgstr "Następne słupy idą od %s: LPM przy torze; Esc kończy łańcuch"
+
+msgid "; put into chain %s between %s and %s"
+msgstr "; wstawiony do łańcucha %s między %s a %s"
+
+msgid "into the span %s - %s"
+msgstr "w przęsło %s - %s"
+
+msgid "In the middle of chain %s (pole %zu of %zu)"
+msgstr "W środku łańcucha %s (słup %zu z %zu)"
+
+msgid "Go on with the chain from this pole (C)"
+msgstr "Ciągnij łańcuch od tego słupa (C)"
+
+msgid "Start a chain from this pole (C)"
+msgstr "Zacznij łańcuch od tego słupa (C)"
+
+msgid "The poles placed next by the track are joined to this one with spans, one after another; Esc ends the chain"
+msgstr "Kolejne słupy stawiane przy torze łączą się z tym przęsłami, jeden za drugim; Esc kończy łańcuch"
+
+msgid "start of chain %s"
+msgstr "początek łańcucha %s"
+
+msgid "end of chain %s"
+msgstr "koniec łańcucha %s"
+
+msgid "Into spans"
+msgstr "W przęsła"
+
+msgid "A pole placed under the span of a chain (its wire point within 1.5 m of the span, not at its ends) goes into that chain between the two poles"
+msgstr "Słup postawiony pod przęsłem łańcucha (punkt drutu do 1,5 m od przęsła, nie przy jego końcach) wchodzi do łańcucha między te dwa słupy"
+
+msgid "The next pole starts a new chain; LMB on a pole and C goes on from it"
+msgstr "Następny słup zaczyna nowy łańcuch; LPM na słupie i C – ciągnięcie od niego"
+
+msgid "Next pole: a span from %s, at the end of chain %s (%zu poles)"
+msgstr "Następny słup: przęsło od %s, na końcu łańcucha %s (%zu słupów)"
+
+msgid "Next pole: a span from %s, at the start of chain %s (%zu poles)"
+msgstr "Następny słup: przęsło od %s, na początku łańcucha %s (%zu słupów)"
+
+msgid "Next pole: a new chain from %s"
+msgstr "Następny słup: nowy łańcuch od %s"
+
+msgid "End the chain (Esc)"
+msgstr "Zakończ łańcuch (Esc)"
+
+msgid "Anchor here and end"
+msgstr "Zakotwij tu i zakończ"
+
+msgid "Anchored and ended: the anchor pole is 24 m past the last pole; its settings are on the Wires page"
+msgstr "Zakotwiono i zakończono: słup kotwowy 24 m za ostatnim słupem; ustawienia na stronie Druty"
+
+msgid "An anchor pole 24 m past the last pole, in line with it, with the weight tensioning device; the chain is ended"
+msgstr "Słup kotwowy 24 m za ostatnim słupem, w jego linii, z urządzeniem naprężającym; łańcuch zostaje zakończony"
+
+msgid "Catenary: the selected pole follows the settings below; C goes on with the chain from it"
+msgstr "Sieć trakcyjna: zaznaczony słup idzie za ustawieniami poniżej; C ciągnie od niego łańcuch"
+
+msgid "Catenary: LMB by the track places the next pole of the chain; Esc ends the chain"
+msgstr "Sieć trakcyjna: LPM przy torze stawia następny słup łańcucha; Esc kończy łańcuch"
+
+msgid "LMB under a span"
+msgstr "LPM pod przęsłem"
+
+msgid "puts the pole into the chain between the two poles"
+msgstr "wstawia słup do łańcucha między te dwa słupy"
+
+msgid "ends the chain: the next pole starts a new one"
+msgstr "kończy łańcuch: następny słup zaczyna nowy"
+
+msgid "the chain goes on from the selected pole"
+msgstr "łańcuch idzie dalej od zaznaczonego słupa"
+
+msgid "by the wires (roller ones when tarnished)"
+msgstr "wg drutów (rolkowe przy zaśniedziałych)"
+
+msgid "resin 7150"
+msgstr "żywiczne 7150"
+
+msgid "roller ESN-2025 on both"
+msgstr "rolkowe ESN-2025 na obu"
+
+msgid "roller on the messenger only"
+msgstr "rolkowy tylko na linie nośnej"
+
+msgid "roller on the contact wires only"
+msgstr "rolkowe tylko na przewodach"
+
+msgid "Insulators"
+msgstr "Izolatory"
+
+msgid "Old assemblies have the roller insulator ESN-2025 straight in the lever hole, then the turnbuckle and the clamp; by default the roller ones come with tarnished wires, as the 5110 clamps do"
+msgstr "Stare złożenia mają izolator rolkowy ESN-2025 wprost w otworze dźwigni, za nim śrubę rzymską i uchwyt; domyślnie rolkowe są przy drutach zaśniedziałych, tak jak uchwyty 5110"
+
+msgid "Anchors"
+msgstr "Kotwienia"
+
+msgid "fixed (card %s)"
+msgstr "stałe (karta %s)"
+
+msgid "weight tensioning (card %s)"
+msgstr "ciężarowe (karta %s)"
+
+msgid "Weight tensioning keeps the tension with the air temperature; a fixed anchor holds the wires straight on the pole (the other end of the half-section has the weights)"
+msgstr "Ciężarowe trzyma naciąg przy każdej temperaturze; stałe trzyma druty wprost na słupie (ciężary są na drugim końcu połówki odcinka)"
+
+msgid "Contact wire anchor above the rail heads (m)"
+msgstr "Kotwienie przewodów nad główką szyny (m)"
+
+msgid "Height of the anchor of the contact wires on the mast (the messenger one goes as much higher as at the last pole); by default at the height of the wires at the last pole. Drag or Ctrl+click to type"
+msgstr "Wysokość zakotwienia przewodów jezdnych na słupie (lina nośna o tyle wyżej, co przy ostatnim słupie); domyślnie na wysokości drutów przy ostatnim słupie. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid "Fixed anchor: messenger %.2f m, contact wires %.2f m over the rails"
+msgstr "Kotwienie stałe: lina %.2f m, przewody %.2f m nad główką szyny"
+
+msgid "weights, pulleys in series (card %s)"
+msgstr "ciężarowe, rolki szeregowe (karta %s)"
+
+msgid "weights, messenger and contact wires separately (card %s)"
+msgstr "ciężarowe rozdzielone, lina i przewody osobno (karta %s)"
+
+msgid "Messenger anchor above the rail heads (m)"
+msgstr "Kotwienie liny nośnej nad główką szyny (m)"
+
+msgid "Height of the anchor of the messenger on the mast; by default as at the last pole. Drag or Ctrl+click to type"
+msgstr "Wysokość zakotwienia liny nośnej na słupie; domyślnie jak przy ostatnim słupie. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid "Heights as at the last pole"
+msgstr "Wysokości jak przy ostatnim słupie"
+
+msgid "pole %d (%s)"
+msgstr "słup %d (%s)"
+
+msgid "Middle anchor"
+msgstr "Kotwienie środkowe"
+
+msgid "The anchor rope is clamped on the messenger 1 m on each side of this pole and goes to the poles next to it; in the middle of both spans a V ties it to the contact wire. The weight anchors measure their distance from it"
+msgstr "Lina kotwienia jest zaciśnięta na linie nośnej 1 m po obu stronach tego słupa i idzie do słupów obok; w połowie obu przęseł V wiąże ją z przewodem jezdnym. Kotwienia ciężarowe liczą odległość od niego"
+
+msgid "Middle anchor kind"
+msgstr "Rodzaj kotwienia środkowego"
+
+msgid "with insulation (card 0406)"
+msgstr "z izolacją (karta 0406)"
+
+msgid "without insulation (card 0408)"
+msgstr "bez izolacji (karta 0408)"
+
+msgid "none"
+msgstr "brak"
+
+msgid "Distance from the middle anchor: along the chain"
+msgstr "Odległość od kotwienia środkowego: wzdłuż łańcucha"
+
+msgid "Anchor rope on the pole before (m)"
+msgstr "Lina kotwienia na słupie przed (m)"
+
+msgid "Anchor rope on the pole after (m)"
+msgstr "Lina kotwienia na słupie za (m)"
+
+msgid "Height of the anchor of the middle anchor rope on that pole above the rail heads; by default at the messenger. Move it when it hits the cantilever"
+msgstr "Wysokość zakotwienia liny kotwienia środkowego na tym słupie nad główką szyny; domyślnie przy linie nośnej. Przesuń, gdy wchodzi w wysięgnik"
+
+msgid "Anchor rope at the messenger"
+msgstr "Lina kotwienia przy linie nośnej"
+
+msgid "This track is on the same side of the pole as its cantilever: the second cantilever of an umbrella goes to a track on the other side"
+msgstr "Ten tor jest po tej samej stronie słupa co jego wysięgnik: drugi wysięgnik parasola idzie do toru po drugiej stronie"
+
+msgid "Umbrella %s: the second cantilever (card %d execution %d, A = %.2f m) on pole %s of %s; hang its wires with the button below or C"
+msgstr "Parasol %s: drugi wysięgnik (karta %d wykonanie %d, A = %.2f m) na słupie %s podwieszenia %s; druty rozwieś przyciskiem niżej albo C"
+
+msgid "Umbrella %s separated: two cantilevers on their own mounts"
+msgstr "Parasol %s rozdzielony: dwa wysięgniki na własnych mocowaniach"
+
+msgid "Umbrella: %s"
+msgstr "Parasol: %s"
+
+msgid "Click: the second cantilever of the umbrella, card %04d execution %d, A = %.2f m"
+msgstr "Kliknij: drugi wysięgnik parasola, karta %04d wykonanie %d, A = %.2f m"
+
+msgid "Umbrella: LMB by the track on the other side of the pole puts the second cantilever on it; Esc stops"
+msgstr "Parasol: LPM przy torze po drugiej stronie słupa stawia na nim drugi wysięgnik; Esc przerywa"
+
+msgid "Stop the umbrella"
+msgstr "Przerwij parasol"
+
+msgid "Umbrella: a cantilever to the other track"
+msgstr "Parasol: wysięgnik do drugiego toru"
+
+msgid "LMB by the track on the other side of the pole: the second cantilever goes on this pole, with the settings of the panel"
+msgstr "LPM przy torze po drugiej stronie słupa: drugi wysięgnik staje na tym słupie, z ustawieniami panelu"
+
+msgid "Two cantilevers on one pole or drop, to the tracks on both sides of it; on adjustable mounts (band round the pole) they share the double mounts 4640-4670 at one height"
+msgstr "Dwa wysięgniki na jednym słupie albo zwisie, do torów po obu jego stronach; przy mocowaniach regulowanych (opaska wokół słupa) mają wspólne mocowania dwustronne 4640–4670 na jednej wysokości"
+
+msgid "Umbrella %s with %s"
+msgstr "Parasol %s z %s"
+
+msgid "Separate"
+msgstr "Rozdziel"
+
+msgid "The two cantilevers stay where they are, each on its own single mounts"
+msgstr "Oba wysięgniki zostają na miejscu, każdy na własnych mocowaniach jednostronnych"
+
+msgid "LMB by the other track"
+msgstr "LPM przy drugim torze"
+
+msgid "the second cantilever of the umbrella on this pole"
+msgstr "drugi wysięgnik parasola na tym słupie"
+
+msgid "%s (this one)"
+msgstr "%s (ten)"
+
+msgid "Messenger held by"
+msgstr "Linę nośną trzyma"
+
+msgid "The messenger goes through this cantilever again"
+msgstr "Lina nośna znowu idzie przez ten wysięgnik"
+
+msgid "The wires of the chain go through %s, its messenger through %s"
+msgstr "Przewody jezdne łańcucha idą przez %s, lina nośna przez %s"
+
+msgid "Another cantilever up to 3 m from this pole holds the messenger of this chain here, this one only its wires: spread cantilevers on a console, a cantilever of the messenger only, chains crossing over in a tension span"
+msgstr "Linę nośną łańcucha trzyma tu inny wysięgnik do 3 m od tego słupa, ten tylko przewody jezdne: wysięgniki rozstawione na konsoli, wysięgnik samej liny, łańcuchy krzyżujące się w przęśle naprężenia"
+
+msgid "Two cantilevers share this pole (umbrella or spread cantilevers): separate them to move it"
+msgstr "Na tym słupie są dwa wysięgniki (parasol albo rozstawione): rozdziel je, żeby go przesunąć"
+
+msgid "Pole %s carries no console for spread cantilevers (\"console\" in its entry in traction_supports.txt)"
+msgstr "Słup %s nie ma konsoli wysięgników rozstawionych (\"console\" w jego wpisie w traction_supports.txt)"
+
+msgid "Spread cantilevers %s on console %s: %s and %s, %.2f m apart; give each its chain, \"Messenger held by\" splits the messenger and the wires between them"
+msgstr "Wysięgniki rozstawione %s na konsoli %s: %s i %s, %.2f m od siebie; każdemu daj jego łańcuch, „Linę nośną trzyma” dzieli linę i przewody między nie"
+
+msgid "Spread cantilevers"
+msgstr "Wysięgniki rozstawione"
+
+msgid "Two cantilevers to this track on consoles 4890 (cards 0517/0518), 1.19 m apart along it: this one goes onto the first mount, the second onto the other; each can then hold any chain or only its messenger or its wires"
+msgstr "Dwa wysięgniki do tego toru na konsolach 4890 (karty 0517/0518), 1,19 m od siebie wzdłuż toru: ten idzie na pierwsze mocowanie, drugi na drugie; potem każdy może trzymać dowolny łańcuch albo samą jego linę nośną lub same przewody"
+
+msgid "Spread cantilevers %s with %s"
+msgstr "Wysięgniki rozstawione %s z %s"
+
+msgid "Cantilever %s in the axis of pole %s (card %d execution %d): set its card (a messenger only one: 1002-1015, 1290-1297), hang it in a chain, an umbrella to the other track can go on it too"
+msgstr "Wysięgnik %s w osi słupa %s (karta %d wykonanie %d): ustaw mu kartę (samej liny: 1002–1015, 1290–1297), rozwieś w łańcuchu; może też dostać parasol do drugiego toru"
+
+msgid "A cantilever in the axis of the pole"
+msgstr "Wysięgnik w osi słupa"
+
+msgid "A third cantilever to this track on the same pole, in its axis on the usual mounts (move them apart from the consoles by hand if they meet); the pole stays one"
+msgstr "Trzeci wysięgnik do tego toru na tym samym słupie, w jego osi na zwykłych mocowaniach (jeśli wejdą w konsole, rozsuń ręcznie); słup zostaje jeden"
+
+msgid "insulated on one side (card 0418)"
+msgstr "z jednostronną izolacją (karta 0418)"
+
+msgid "to the beam of a gantry (card 0416)"
+msgstr "do dźwigara bramki (karta 0416)"
+
+msgid "0416: the middle pole is a drop of a gantry; the anchor ropes go from the beam above the messenger to clamps on it about 3 m on both sides, the poles next to it carry nothing"
+msgstr "0416: podwieszenie środkowe jest na zwisie bramki; liny kotwienia idą od dźwigara nad liną nośną do zacisków na niej ok. 3 m z obu stron, słupy sąsiednie nic nie niosą"
+
+msgid "Contact wires anchored apart: on another pole"
+msgstr "Przewody jezdne zakotwione osobno: na innym słupie"
+
+msgid "LMB on the pole the anchor of the contact wires goes on"
+msgstr "LPM na słupie, na którym ma być kotwienie przewodów jezdnych"
+
+msgid "The messenger stays on the anchor above (it becomes one of the messenger only: 0405 or the messenger of a split one), the contact wires go to an anchor of their own on the pole picked (0404 or the wires of a split one)"
+msgstr "Lina nośna zostaje na kotwieniu wyżej (staje się kotwieniem samej liny: 0405 albo liną rozdzielonego), przewody jezdne idą na własne kotwienie na wskazanym słupie (0404 albo przewody rozdzielonego)"
+
+msgid "The contact wires are anchored on their own; the other anchor holds the messenger only"
+msgstr "Przewody jezdne zakotwione osobno; drugie kotwienie trzyma samą linę nośną"
+
+msgid "contact wires"
+msgstr "przewody jezdne"
+
+msgid "messenger"
+msgstr "lina nośna"
+
+msgid "Messenger only: the wires straight past it"
+msgstr "Sama lina: przewody prosto obok"
+
+msgid "The wires of the chain go straight from %s to %s, the messenger through %s"
+msgstr "Przewody łańcucha idą prosto od %s do %s, lina nośna przez %s"
+
+msgid "This cantilever holds only the messenger: it leaves the chain, the contact wires go straight between the two cantilevers of the pole next to it in the chain, the messenger goes through this one and their cords hang from it"
+msgstr "Ten wysięgnik trzyma tylko linę nośną: wypada z listy łańcucha, przewody jezdne idą prosto między dwoma wysięgnikami tego słupa obok niego w łańcuchu, lina nośna przez niego, a ich linki wiszą na niej"

@@ -30,6 +30,7 @@ void catenary_scene_data( std::string const &Directory );
 // Zmiany trafiają do plików sieci dopiero przy catenary_scene_save().
 
 #include <vector>
+#include <utility>
 #include "world/catenary_suspension.h"
 #include "world/catenary_cantilever.h"
 #include "world/catenary_layout.h"
@@ -87,6 +88,9 @@ std::size_t catenary_chain_add( std::string const &File, catenary::chain const &
 // zmienia łańcuch i robi jego przęsła od nowa (mniej niż dwa podwieszenia = łańcuch usunięty)
 bool catenary_chain_update( std::size_t Index, catenary::chain const &Data );
 void catenary_chain_remove( std::size_t Index );
+// kotwienie środkowe łańcucha: liczba wstawionych części (na słupach sąsiednich podwieszeń) i trójkątów brył (lina, V, zaciski);
+// false, gdy łańcuch go nie ma albo się nie złożyło
+bool catenary_chain_middle( std::size_t Index, std::size_t &Parts, std::size_t &Triangles );
 // łańcuch, do którego należy podwieszenie, i jego miejsce w łańcuchu; -1 gdy żaden
 int catenary_chain_of( std::size_t Suspension, std::size_t &Position );
 
@@ -97,6 +101,23 @@ std::string catenary_anchor_file( std::size_t Index );
 std::size_t catenary_anchor_parts( std::size_t Index );
 // wynik solvera ostatniego złożenia (b, s, ciężary, naciągi, uwagi); nullptr gdy usunięte
 catenary::tensioner_result const *catenary_anchor_result( std::size_t Index );
+// obrys złożonego urządzenia dla edytora (współrzędne scenerii): czoło słupa i oś rolki ruchomej na wysokości rolek, góra i spód
+// kolumny ciężarów; false gdy usunięte albo niezłożone
+bool catenary_anchor_shape( std::size_t Index, double ( &Shape )[ 4 ][ 3 ] );
+// karty urządzeń kotwienia do wyboru (bez odmian dla typów sieci, np. 0461-2x2): nazwa, kotwienie stałe, rolki szeregowe
+struct catenary_anchor_card {
+    std::string card;
+    bool fixed { false };
+    bool series { false };
+    bool split { false };   // dwa stosy (lina i przewody osobno)
+    std::string title;      // opis z danych (odmiany pokazane osobno, np. 0461-2x2)
+};
+// Only: puste - kotwienia całości; "messenger" / "contact" - samej liny / samych przewodów (przewody zakotwione osobno)
+std::vector<catenary_anchor_card> catenary_anchor_devices( std::string const &Only = {} );
+// katalog urządzeń naprężających (traction_tensioners.txt); nullptr, gdy go nie ma
+catenary::tensioner_catalog const *catenary_scene_tensioners();
+// łańcuch, który kończy się tym kotwieniem (Start: na początku), -1 gdy żaden
+int catenary_anchor_chain( std::size_t Index, bool &Start );
 // dodaje kotwienie, składa je i przebudowuje łańcuchy, które go używają. zwraca numer
 std::size_t catenary_anchor_add( std::string const &File, catenary::anchor const &Data );
 // zmienia kotwienie (także przywraca usunięte) i przebudowuje łańcuchy, które go używają
