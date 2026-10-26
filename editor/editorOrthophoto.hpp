@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -78,6 +79,14 @@ class editor_orthophoto
 		int resident{0}; // tiles with imagery on screen
 		int loading{0};  // tiles waiting for or being processed by a worker
 		int failed{0};   // tiles whose last attempt failed
+		// the download area: its tiles, the ones in the disk cache in every product the settings ask for, the ones which failed
+		int area_tiles{0};
+		int area_cached{0};
+		int area_failed{0};
+		bool area_paused{false};
+		int requests{0}; // asked of the services since the start, the disk cache left out
+		int uploads{0};  // images of tiles sent to the graphics card
+		int stale{0};    // images which came when the tile no longer wanted them, dropped
 	};
 
 	static constexpr double tile_size{256.0}; // metres per tile side
@@ -102,6 +111,28 @@ class editor_orthophoto
 	// the heights the ground will have where there's none yet, as of the terrain model on its way: a tile laid out before its
 	// ground comes lies there, or level with the tiles beside, rather than at the height of the layer far below or above
 	void guess_source(height_query Query) { m_guess = std::move(Query); }
+	// the area the imagery is downloaded in, a polygon of PUWG 1992 (easting, northing): its tiles go to the disk cache in the
+	// background, the products the settings ask for, and no tile outside it is asked for around the camera. Empty: no area, the
+	// tiles around the camera as before
+	void area(std::vector<glm::dvec2> Polygon);
+	std::vector<glm::dvec2> const &area() const { return m_area; }
+	bool in_area(double const East, double const North) const;
+	// the download in the background held, or going on
+	void area_paused(bool const Paused);
+	// the squares of the tiles of the area in the world (x, z): 0 waiting, 1 in the disk cache, 2 failed
+	struct area_square
+	{
+		glm::dvec2 low{0.0};
+		glm::dvec2 high{0.0};
+		int state{0};
+	};
+	std::vector<area_square> area_squares() const;
+	// world (x, z) and PUWG 1992 (easting, northing), by the origin of the scenery
+	glm::dvec2 to_puwg(glm::dvec2 const &World) const { return {m_config.east - World.x, m_config.north + World.y}; }
+	glm::dvec2 to_world(glm::dvec2 const &Puwg) const { return {m_config.east - Puwg.x, Puwg.y - m_config.north}; }
+	// the area kept in the scenery, as the lines after its mark
+	static std::vector<std::string> area_lines(std::vector<glm::dvec2> const &Polygon);
+	static std::vector<glm::dvec2> read_area(std::vector<std::string> const &Lines);
 	// samples the ground again (after it was edited); tiles are refitted progressively
 	void refit();
 	// the tiles lying at guessed heights sampled again where the ground has come under them
@@ -220,6 +251,8 @@ class editor_orthophoto
 	void draw_map(glm::mat4 const &ViewProjection, glm::dvec3 const &CameraPos, float ScreenWidth, float ScreenHeight) const;
 	void start_workers();
 	void worker();
+	// the tiles of the area queued for the download in the background again, nearest to the camera first
+	void restart_prefetch();
 
 	config m_config;
 	bool m_enabled{false};
@@ -241,12 +274,26 @@ class editor_orthophoto
 	std::uint8_t m_alpha_pending{255}; // latest requested
 	double m_alpha_changed{0.0};       // when the requested value last changed
 
+	std::vector<glm::dvec2> m_area;  // PUWG, empty: no area
+	std::set<tile_key> m_area_tiles; // the tiles it touches
+	int m_uploads{0};
+	int m_stale{0};
+
 	// shared with the workers, guarded by m_mutex
 	mutable std::mutex m_mutex;
 	std::condition_variable m_wakeup;
 	std::deque<job> m_queue;
 	std::deque<result> m_done;
 	tile_key m_focus{0, 0}; // workers pick the queued tile closest to it
+	std::set<std::pair<int, tile_key>> m_running; // (map, tile) a worker is on: another job of it waits till that one is done
+	// the download of the area in the background: the tiles nearest to the camera first, taken when no tile around the camera waits
+	std::vector<tile_key> m_prefetch;
+	std::size_t m_prefetch_next{0};
+	std::set<tile_key> m_prefetch_failed;
+	std::set<tile_key> m_prefetch_cached;
+	bool m_prefetch_paused{false};
+	source m_prefetch_source;
+	std::uint32_t m_prefetch_generation{0};
 
 	std::atomic<bool> m_stop{false};
 	std::atomic<std::uint32_t> m_generation{1};

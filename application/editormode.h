@@ -471,6 +471,20 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the chunks waiting for the terrain model and the tiles of the imagery asked for outlined where they will be, so it's seen
 	// what's on its way
 	void draw_nmt_pending() const;
+	// the download area: a polygon drawn on the map, the boundary of what the orthophoto and the terrain model download in the
+	// background, none of them asking for anything outside it (application/editormodenmt.cpp)
+	void area_start();
+	// Keep: the area drawn taken, else the one before stays
+	void area_finish(bool const Keep);
+	// a press of the left button while drawing: a point added, or the one under the cursor taken to drag, Shift: removed
+	void area_click(bool const Shift);
+	void area_update();
+	// a point of the area (x, z) where it's drawn: over the map of the top view, on the ground in the 3d view
+	glm::dvec3 area_point(glm::dvec2 const &Point) const;
+	void draw_download_area() const;
+	void render_download_area_ui(editor_orthophoto::statistics const &Stats);
+	// the chunk of the terrain (x, z) touches the area, or there's none
+	bool in_download_area(glm::dvec2 const &Low, glm::dvec2 const &High) const;
 	// over the 3d view while the terrain panel isn't seen
 	void render_nmt_banner();
 	bool nmt_busy() const;
@@ -712,6 +726,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t m_ortho_waiting{0}; // squares of the terrain model asked for and not in yet, the same
 	std::string m_orthophoto_scenery;            // scenery whose origin is loaded
 	std::string m_orthophoto_mark;
+	std::vector<std::string> m_orthophoto_area_mark; // the lines of the download area as the scenery keeps them
+	// the download area being drawn on the map: its points in the world (x, z), the one dragged
+	struct area_drawing
+	{
+		bool active{false};
+		std::vector<glm::dvec2> points;
+		int dragged{-1};
+	} m_area_drawing;
+	std::vector<glm::dvec2> m_nmt_prefetched; // the download area the terrain model was given
+	bool m_area_paused{false}; // the download of the area held by the button; out of the editor it's held anyway
 	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends
 
 	// hierarchy management

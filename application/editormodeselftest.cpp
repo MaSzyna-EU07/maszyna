@@ -124,6 +124,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   terrainturn <palette entry> <degrees>  the textures of the palette entry turned
 //   terrainwater <index> <material> [size]    material and repeat of a body of water; terrainwaterdefault <material>
 //   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
+//   orthoarea <x> <z>... | clear         the download area through the points of the world, as drawn on the map; orthoareapause 0|1
+//   orthohires 0|1                       the 4K tiles on or off; orthostats logs the tiles, the area and the requests made
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined

@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -238,6 +239,69 @@ inline glm::dvec3 level(glm::dvec3 const &Vector)
 {
 	glm::dvec3 const flat{Vector.x, 0.0, Vector.z};
 	return glm::length(flat) > 1e-9 ? glm::normalize(flat) : glm::dvec3{0.0, 0.0, 1.0};
+}
+
+// a point inside the polygon, by the number of its edges a ray along +x from it crosses
+inline bool point_in_polygon(std::vector<glm::dvec2> const &Polygon, glm::dvec2 const &Point)
+{
+	bool result{false};
+	for (std::size_t i = 0, j = Polygon.size() - 1; i < Polygon.size(); j = i++)
+	{
+		auto const &a{Polygon[i]};
+		auto const &b{Polygon[j]};
+		if ((a.y > Point.y) != (b.y > Point.y) && Point.x < a.x + (b.x - a.x) * (Point.y - a.y) / (b.y - a.y))
+			result = !result;
+	}
+	return result;
+}
+
+// the square of the side from (West, South), the axes the polygon's, touches the polygon: a corner of it inside the polygon, a
+// vertex of the polygon inside it, or an edge crossing an edge. A side of 0: the point inside the polygon
+inline bool square_touches(std::vector<glm::dvec2> const &Polygon, double const West, double const South, double const Size)
+{
+	if (Polygon.size() < 3)
+		return false;
+	glm::dvec2 const corners[]{{West, South}, {West + Size, South}, {West + Size, South + Size}, {West, South + Size}};
+	for (auto const &corner : corners)
+		if (point_in_polygon(Polygon, corner))
+			return true;
+	if (Size <= 0.0)
+		return false;
+	for (auto const &point : Polygon)
+		if (point.x >= West && point.x <= West + Size && point.y >= South && point.y <= South + Size)
+			return true;
+	// two segments crossing, by the sides each one's ends lie on of the other
+	auto const side = [](glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &P) { return (B.x - A.x) * (P.y - A.y) - (B.y - A.y) * (P.x - A.x); };
+	auto const crossing = [&](glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &C, glm::dvec2 const &D) {
+		return ((side(A, B, C) > 0.0) != (side(A, B, D) > 0.0)) && ((side(C, D, A) > 0.0) != (side(C, D, B) > 0.0));
+	};
+	for (std::size_t i = 0, j = Polygon.size() - 1; i < Polygon.size(); j = i++)
+		for (int k = 0; k < 4; ++k)
+			if (crossing(Polygon[j], Polygon[i], corners[k], corners[(k + 1) % 4]))
+				return true;
+	return false;
+}
+
+// the squares of a grid of the size, from 0 along both axes, the polygon touches, by their indices along the axes
+inline std::vector<std::pair<int, int>> squares_in(std::vector<glm::dvec2> const &Polygon, double const Size)
+{
+	std::vector<std::pair<int, int>> result;
+	if (Polygon.size() < 3 || Size <= 0.0)
+		return result;
+	glm::dvec2 low{Polygon.front()};
+	glm::dvec2 high{Polygon.front()};
+	for (auto const &point : Polygon)
+	{
+		low = glm::min(low, point);
+		high = glm::max(high, point);
+	}
+	auto const first{glm::ivec2{static_cast<int>(std::floor(low.x / Size)), static_cast<int>(std::floor(low.y / Size))}};
+	auto const last{glm::ivec2{static_cast<int>(std::floor(high.x / Size)), static_cast<int>(std::floor(high.y / Size))}};
+	for (int y = first.y; y <= last.y; ++y)
+		for (int x = first.x; x <= last.x; ++x)
+			if (square_touches(Polygon, x * Size, y * Size, Size))
+				result.emplace_back(x, y);
+	return result;
 }
 
 } // namespace geometry

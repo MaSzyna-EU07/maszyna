@@ -59,6 +59,18 @@ class editor_nmt
 	void clear();
 	// whether this build can fetch from the service at all
 	static bool can_download();
+	// the squares touching the polygon of PUWG 1992 (easting, northing) put into the disk cache in the background, while no
+	// square is asked for; none of them kept in the memory. Empty: none
+	void prefetch(std::vector<glm::dvec2> const &Polygon);
+	void prefetch_paused(bool const Paused);
+	// of the squares of the polygon: in the disk cache, all of them, failed
+	struct prefetch_state
+	{
+		int cached{0};
+		int total{0};
+		int failed{0};
+	};
+	prefetch_state prefetched() const;
 
 	// side of a square of the grid, m
 	static double constexpr square_size{500.0};
@@ -93,4 +105,13 @@ class editor_nmt
 	double m_north{0.0};
 	double m_east{0.0};
 	bool m_stop{false};
+	// the squares of the download area for the disk cache
+	std::vector<key> m_prefetch;
+	std::size_t m_prefetch_next{0};
+	std::set<key> m_prefetch_cached;
+	std::set<key> m_prefetch_failed;
+	std::uint32_t m_prefetch_generation{0};
+	bool m_prefetch_paused{false};
+	void start_workers(); // under the lock
+	std::string file_of(key const &Key) const;
 };

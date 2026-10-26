@@ -73,6 +73,46 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog(format("SELFTEST orthophoto at %.0f %.0f, radius %d, %s%s", config.north, config.east, config.radius, config.drape ? "fitted" : "flat", config.in_scene ? ", in the scene" : ""));
 		return selftest_result::handled;
 	}
+	if (command == "orthoarea")
+	{
+		// the download area through the points of the world (x, z), as drawn on the map; clear: none
+		std::vector<glm::dvec2> polygon;
+		if (words.str().find(" clear") == std::string::npos)
+			for (glm::dvec2 point{0.0}; words >> point.x >> point.y;)
+				polygon.push_back(m_orthophoto.to_puwg(point));
+		m_orthophoto.area(polygon);
+		WriteLog(format("SELFTEST orthoarea: %zu points, %d tiles", m_orthophoto.area().size(), m_orthophoto.stats().area_tiles));
+		return selftest_result::handled;
+	}
+	if (command == "orthoareapause")
+	{
+		int paused{1};
+		words >> paused;
+		m_area_paused = paused != 0;
+		m_orthophoto.area_paused(m_area_paused);
+		m_nmt.prefetch_paused(m_area_paused);
+		WriteLog(format("SELFTEST orthoareapause %d", paused));
+		return selftest_result::handled;
+	}
+	if (command == "orthohires")
+	{
+		int hires{1};
+		words >> hires;
+		auto config{m_orthophoto.settings()};
+		config.hires = hires != 0;
+		m_orthophoto.settings(config);
+		WriteLog(format("SELFTEST orthohires %d", hires));
+		return selftest_result::handled;
+	}
+	if (command == "orthostats")
+	{
+		auto const stats{m_orthophoto.stats()};
+		auto const terrain{m_nmt.prefetched()};
+		WriteLog(format("SELFTEST orthostats: shown %d, loading %d, failed %d; area %d of %d in the cache, %d failed%s; requests %d, uploads %d, stale %d; terrain area %d of %d, %d failed",
+		                stats.resident, stats.loading, stats.failed, stats.area_cached, stats.area_tiles, stats.area_failed, stats.area_paused ? ", paused" : "", stats.requests, stats.uploads, stats.stale, terrain.cached,
+		                terrain.total, terrain.failed));
+		return selftest_result::handled;
+	}
 	if (command == "nmtfit")
 	{
 		// the heights of the terrain model fitted to the tracks, as the button of the terrain panel does

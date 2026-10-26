@@ -12248,3 +12248,40 @@ msgstr "Łuk %d %s"
 msgid "Vertex %zu: the transition curve between the curve of the adjoining track and R %.0f m is shorter than the required %.0f m"
 msgstr "Wierzchołek %zu: krzywa przejściowa między łukiem przylegającego toru a R %.0f m jest krótsza niż wymagane %.0f m"
 
+
+msgid "Download area"
+msgstr "Obszar pobierania"
+
+msgid "A polygon drawn on the map: what the settings ask for inside it, the orthophoto and the terrain model,
+goes to the disk cache in the background, and nothing outside it is downloaded, also around the camera"
+msgstr "Wielokąt narysowany na mapie: to, co wybrano w ustawieniach, ortofotomapa i model terenu, pobiera się w nim w tle
+do pamięci podręcznej na dysku, a poza nim nic się nie pobiera, także wokół kamery"
+
+msgid "Click the points of the area on the map. Enter closes it, Backspace takes the last point back, Esc gives up;
+a point dragged moves, Shift+click removes it"
+msgstr "Klikaj na mapie punkty obszaru. Enter go zamyka, Backspace cofa ostatni punkt, Esc rezygnuje;
+przeciągnięty punkt się przesuwa, Shift+klik go usuwa"
+
+msgid "%zu points"
+msgstr "punktów: %zu"
+
+msgid "Draw on the map"
+msgstr "Narysuj na mapie"
+
+msgid "Draw again"
+msgstr "Narysuj od nowa"
+
+msgid "none: the tiles around the camera, wherever it is"
+msgstr "brak: kafle wokół kamery, gdziekolwiek jest"
+
+msgid "Area: %d of %d tiles in the cache, %d failed"
+msgstr "Obszar: %d z %d kafli w pamięci podręcznej, nieudanych %d"
+
+msgid "Resume"
+msgstr "Wznów"
+
+msgid "Pause"
+msgstr "Wstrzymaj"
+
+msgid "Terrain model: %d of %d squares in the cache, %d failed"
+msgstr "Model terenu: %d z %d kwadratów w pamięci podręcznej, nieudanych %d"

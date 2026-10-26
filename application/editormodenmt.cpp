@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <set>
 #include <unordered_set>
+#include <utility>
 
 namespace
 {
@@ -511,7 +512,12 @@ std::vector<heightmap::chunk_key> editor_mode::nmt_keys_around() const
 	auto const first{-(m_terrain_add_count - 1) / 2};
 	for (int dz = 0; dz < m_terrain_add_count; ++dz)
 		for (int dx = 0; dx < m_terrain_add_count; ++dx)
-			result.push_back({centre.first + first + dx, centre.second + first + dz});
+		{
+			heightmap::chunk_key const key{centre.first + first + dx, centre.second + first + dz};
+			// none outside the download area
+			if (auto const low{heightmap::chunk_corner(key)}; in_download_area(low, low + glm::dvec2{heightmap::chunk_size}))
+				result.push_back(key);
+		}
 	return result;
 }
 
@@ -529,7 +535,7 @@ std::vector<heightmap::chunk_key> editor_mode::nmt_keys_along_tracks() const
 				auto const low{heightmap::chunk_corner(key)};
 				// the chunk reaches within the band of the track
 				glm::dvec2 const nearest{std::clamp(place.position.x, low.x, low.x + heightmap::chunk_size), std::clamp(place.position.z, low.y, low.y + heightmap::chunk_size)};
-				if (glm::distance(nearest, glm::dvec2{place.position.x, place.position.z}) <= m_nmt_state.band)
+				if (glm::distance(nearest, glm::dvec2{place.position.x, place.position.z}) <= m_nmt_state.band && in_download_area(low, low + glm::dvec2{heightmap::chunk_size}))
 					keys.insert(key);
 			}
 	}
@@ -890,6 +896,12 @@ std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
 void editor_mode::nmt_update()
 {
 	auto &state{m_nmt_state};
+	// the squares of the model in the download area to the disk cache, where the scenery is placed and its terrain is there
+	if (auto const wanted{m_nmt.placed() && m_streamer.active() ? m_orthophoto.area() : std::vector<glm::dvec2>{}}; wanted != m_nmt_prefetched)
+	{
+		m_nmt_prefetched = wanted;
+		m_nmt.prefetch(wanted);
+	}
 	nmt_offer();
 	nmt_follow_tracks();
 	if (state.stage != nmt_state::automatic::idle)
@@ -1007,6 +1019,9 @@ void editor_mode::nmt_grow()
 	if (false == laying && false == m_streamer.active())
 		return;
 	auto const at{m_extend.active ? m_extend.mouse : m_lay.active ? m_lay.mouse : glm::dvec3{Camera.Pos}};
+	// nothing asked for outside the download area
+	if (false == in_download_area({at.x - 100.0, at.z - 100.0}, {at.x + 100.0, at.z + 100.0}))
+		return;
 	// the model under it, for the heights of the points laid where there's no terrain yet, as over the base map
 	m_nmt.request({at.x - 100.0, at.z - 100.0}, {at.x + 100.0, at.z + 100.0});
 	if (m_streamer.resident() == 0)
@@ -1023,7 +1038,8 @@ void editor_mode::nmt_grow()
 			auto const low{heightmap::chunk_corner(key)};
 			glm::dvec2 const nearest{std::clamp(cursor.x, low.x, low.x + heightmap::chunk_size), std::clamp(cursor.y, low.y, low.y + heightmap::chunk_size)};
 			auto const distance{glm::distance(nearest, cursor)};
-			if (distance <= grow_reach && false == m_streamer.exists(key) && false == state.given_up.contains(key) && std::find(state.pending.begin(), state.pending.end(), key) == state.pending.end())
+			if (distance <= grow_reach && false == m_streamer.exists(key) && false == state.given_up.contains(key) && std::find(state.pending.begin(), state.pending.end(), key) == state.pending.end() &&
+			    in_download_area(low, low + glm::dvec2{heightmap::chunk_size}))
 				missing.emplace_back(distance, key);
 		}
 	if (missing.empty())
@@ -1357,6 +1373,202 @@ void editor_mode::draw_nmt_pending() const
 		chunks.emplace_back(heightmap::chunk_corner(key), heightmap::chunk_corner(key) + glm::dvec2{heightmap::chunk_size});
 	for (auto const &[low, high] : nearest(chunks, 64))
 		square(low, high, 90, 170, 255, STR("Terrain model loading"));
+}
+
+// ---------------------------------------------------------------------------------------------
+// the download area
+
+void editor_mode::area_start()
+{
+	auto &drawing{m_area_drawing};
+	drawing = {};
+	drawing.active = true;
+	// the area there is taken up to be changed
+	for (auto const &point : m_orthophoto.area())
+		drawing.points.push_back(m_orthophoto.to_world(point));
+	// drawn on the map of the top view
+	if (false == m_orthophoto.enabled())
+		m_orthophoto.enabled(true);
+	if (false == Global.EditorOrtho)
+		toggle_ortho();
+	WriteLog("Editor: drawing the download area");
+}
+
+void editor_mode::area_finish(bool const Keep)
+{
+	auto &drawing{m_area_drawing};
+	if (Keep && drawing.points.size() >= 3)
+	{
+		std::vector<glm::dvec2> polygon;
+		for (auto const &point : drawing.points)
+			polygon.push_back(m_orthophoto.to_puwg(point));
+		m_orthophoto.area(std::move(polygon));
+		WriteLog(format("Editor: the download area of %zu points, %d tiles of the orthophoto", drawing.points.size(), m_orthophoto.stats().area_tiles));
+	}
+	drawing = {};
+}
+
+glm::dvec3 editor_mode::area_point(glm::dvec2 const &Point) const
+{
+	double height{Camera.Pos.y - 2.0};
+	if (false == Global.EditorOrtho && false == m_streamer.height_at(Point.x, Point.y, height) && false == nmt_ground(Point.x, Point.y, height))
+		height = 0.0;
+	return {Point.x, height, Point.y};
+}
+
+void editor_mode::area_click(bool const Shift)
+{
+	auto &drawing{m_area_drawing};
+	screen_projection const projection;
+	// the point under the cursor, within 10 pixels
+	int nearest{-1};
+	auto best{100.0f};
+	for (std::size_t i = 0; i < drawing.points.size(); ++i)
+		if (auto const distance{projection.mouse_distance2(area_point(drawing.points[i]))}; distance < best)
+		{
+			best = distance;
+			nearest = static_cast<int>(i);
+		}
+	if (nearest >= 0)
+	{
+		if (Shift)
+			drawing.points.erase(drawing.points.begin() + nearest);
+		else
+			drawing.dragged = nearest;
+		return;
+	}
+	if (Shift)
+		return;
+	auto const cursor{std::as_const(*this).cursor_ground()};
+	drawing.points.emplace_back(cursor.x, cursor.z);
+}
+
+void editor_mode::area_update()
+{
+	auto &drawing{m_area_drawing};
+	if (false == drawing.active || drawing.dragged < 0)
+		return;
+	if (false == ImGui::IsMouseDown(0) || drawing.dragged >= static_cast<int>(drawing.points.size()))
+	{
+		drawing.dragged = -1;
+		return;
+	}
+	auto const cursor{std::as_const(*this).cursor_ground()};
+	drawing.points[drawing.dragged] = {cursor.x, cursor.z};
+}
+
+void editor_mode::draw_download_area() const
+{
+	auto const &drawing{m_area_drawing};
+	std::vector<glm::dvec2> points;
+	if (drawing.active)
+		points = drawing.points;
+	else
+		for (auto const &point : m_orthophoto.area())
+			points.push_back(m_orthophoto.to_world(point));
+	// shown while it's drawn, with the settings of the orthophoto open, and over the map of the top view
+	if (points.empty() || (false == drawing.active && false == m_orthophoto_window && false == Global.EditorOrthoMap))
+		return;
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetBackgroundDrawList()};
+	// the tiles of the area as they are: in the disk cache, failed; the ones waiting left clear
+	if (false == drawing.active && m_orthophoto_window)
+		for (auto const &square : m_orthophoto.area_squares())
+		{
+			if (square.state == 0)
+				continue;
+			std::array<ImVec2, 4> corners;
+			auto seen{true};
+			glm::dvec2 const at[]{square.low, {square.high.x, square.low.y}, square.high, {square.low.x, square.high.y}};
+			for (int i = 0; i < 4 && seen; ++i)
+				seen = projection.project(area_point(at[i]), corners[i]);
+			if (seen)
+				drawlist->AddQuadFilled(corners[0], corners[1], corners[2], corners[3], square.state == 1 ? IM_COL32(90, 220, 120, 45) : IM_COL32(240, 80, 70, 80));
+		}
+	auto const edge{IM_COL32(80, 220, 255, 230)};
+	auto const closing{IM_COL32(80, 220, 255, drawing.active ? 110 : 230)};
+	// the edge back to the first point from three points on
+	auto const edges{points.size() >= 3 ? points.size() : points.size() - 1};
+	for (std::size_t i = 0; i < edges; ++i)
+	{
+		auto const last{i + 1 == points.size()};
+		projection.line(drawlist, area_point(points[i]), area_point(points[(i + 1) % points.size()]), last ? closing : edge, 2.0f);
+	}
+	if (false == drawing.active)
+		return;
+	// the points, the one under the cursor larger, and the line on to the cursor
+	ImVec2 screen;
+	for (auto const &point : points)
+		if (projection.project(area_point(point), screen))
+			drawlist->AddCircleFilled(screen, projection.mouse_distance2(area_point(point)) < 100.0f ? 6.0f : 4.0f, edge);
+	if (false == points.empty() && drawing.dragged < 0 && false == ImGui::GetIO().WantCaptureMouse)
+	{
+		auto const cursor{std::as_const(*this).cursor_ground()};
+		projection.line(drawlist, area_point(points.back()), area_point({cursor.x, cursor.z}), closing, 1.5f);
+	}
+}
+
+bool editor_mode::in_download_area(glm::dvec2 const &Low, glm::dvec2 const &High) const
+{
+	auto const &area{m_orthophoto.area()};
+	if (area.empty())
+		return true;
+	// the square in PUWG: the easting grows to the west of the scenery, the northing with z
+	auto const &config{m_orthophoto.settings()};
+	return geometry::square_touches(area, config.east - High.x, config.north + Low.y, High.x - Low.x);
+}
+
+void editor_mode::render_download_area_ui(editor_orthophoto::statistics const &Stats)
+{
+	auto &drawing{m_area_drawing};
+	ImGui::TextUnformatted(STR_C("Download area"));
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("A polygon drawn on the map: what the settings ask for inside it, the orthophoto and the terrain model,\n"
+		                              "goes to the disk cache in the background, and nothing outside it is downloaded, also around the camera"));
+	if (drawing.active)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "%s", STR_C("Click the points of the area on the map. Enter closes it, Backspace takes the last point back, Esc gives up;\n"
+		                                                              "a point dragged moves, Shift+click removes it"));
+		ImGui::Text(STR_C("%zu points"), drawing.points.size());
+		ImGui::SameLine();
+		if (drawing.points.size() >= 3 && ImGui::Button(STR_C("Done")))
+			area_finish(true);
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Cancel")))
+			area_finish(false);
+		return;
+	}
+	auto const &area{m_orthophoto.area()};
+	if (ImGui::Button(area.empty() ? STR_C("Draw on the map") : STR_C("Draw again")))
+		area_start();
+	if (area.empty())
+	{
+		ImGui::SameLine();
+		ImGui::TextDisabled("%s", STR_C("none: the tiles around the camera, wherever it is"));
+		return;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Remove")))
+		m_orthophoto.area({});
+	ImGui::Text(STR_C("Area: %d of %d tiles in the cache, %d failed"), Stats.area_cached, Stats.area_tiles, Stats.area_failed);
+	ImGui::SameLine();
+	if (ImGui::SmallButton(m_area_paused ? STR_C("Resume") : STR_C("Pause")))
+	{
+		m_area_paused = false == m_area_paused;
+		m_orthophoto.area_paused(m_area_paused);
+		m_nmt.prefetch_paused(m_area_paused);
+	}
+	if (auto const terrain{m_nmt.prefetched()}; terrain.total > 0)
+	{
+		ImGui::Text(STR_C("Terrain model: %d of %d squares in the cache, %d failed"), terrain.cached, terrain.total, terrain.failed);
+		// the ones there are only looked up again
+		if (terrain.failed > 0)
+		{
+			ImGui::SameLine();
+			if (ImGui::SmallButton((std::string{STR_C("Retry")} + "##terrainarea").c_str()))
+				m_nmt.prefetch(m_nmt_prefetched);
+		}
+	}
 }
 
 void editor_mode::render_nmt_banner()

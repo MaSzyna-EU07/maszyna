@@ -1506,6 +1506,8 @@ bool editor_mode::update()
     background->PushClipRect(ImVec2(editor_ui::view_min().x, editor_ui::view_min().y), ImVec2(editor_ui::view_max().x, editor_ui::view_max().y), true);
     draw_orthophoto();
     draw_nmt_pending();
+    area_update();
+    draw_download_area();
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
@@ -2288,6 +2290,11 @@ void editor_mode::load_orthophoto_settings()
     }
     m_orthophoto.settings(config);
     m_orthophoto_origin_edit = {config.north, config.east};
+    // the area the imagery and the terrain model are downloaded in, none in a scenery which has none
+    m_orthophoto_area_mark = scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$a");
+    m_orthophoto.area(editor_orthophoto::read_area(m_orthophoto_area_mark));
+    if (false == m_orthophoto.area().empty())
+        WriteLog(format("Editor: the download area of the scenery, %zu points, %d tiles of the orthophoto", m_orthophoto.area().size(), m_orthophoto.stats().area_tiles));
 }
 
 void editor_mode::save_orthophoto_settings()
@@ -2384,13 +2391,17 @@ void editor_mode::render_orthophoto_ui()
     };
 
     auto const stats = m_orthophoto.stats();
-    if (stats.failed > 0)
+    if (stats.failed > 0 || stats.area_failed > 0)
     {
         ImGui::Text(STR_C("Tiles: %d shown, %d loading, %d failed"), stats.resident, stats.loading, stats.failed);
         ImGui::SameLine();
         if (ImGui::Button(STR_C("Retry")))
             m_orthophoto.retry_failed();
     }
+
+    ImGui::Separator();
+    render_download_area_ui(stats);
+    ImGui::Separator();
 
     if (ImGui::TreeNode(STR_C("More settings")))
     {
@@ -3054,6 +3065,11 @@ bool editor_mode::save()
     {
         m_orthophoto_mark = map;
         scene::Layers.mark(scene::layer_handle{1}, "//$o", {map});
+    }
+    if (auto const area{editor_orthophoto::area_lines(m_orthophoto.area())}; false == m_orthophoto_scenery.empty() && area != m_orthophoto_area_mark)
+    {
+        m_orthophoto_area_mark = area;
+        scene::Layers.mark(scene::layer_handle{1}, "//$a", area);
     }
     auto const terrainadded{false == rootstatements.empty() || false == statements.empty()};
     auto const controls{turntable_controls(rootstatements)};
@@ -6181,6 +6197,8 @@ void editor_mode::enter()
     EditorModeFlag = true;
 
     load_orthophoto_settings();
+    m_orthophoto.area_paused(m_area_paused);
+    m_nmt.prefetch_paused(m_area_paused);
 
     Application.set_cursor(GLFW_CURSOR_NORMAL);
 }
@@ -6211,6 +6229,9 @@ void editor_mode::exit()
     m_fill_last.clear();
     m_orthophoto.cancel_pending();
     m_orthophoto.detach_scene(); // the layer is an editor aid, keep it out of the other modes
+    // the download of the area held while the scenery is driven, it goes on once the editor is back
+    m_orthophoto.area_paused(true);
+    m_nmt.prefetch_paused(true);
     scene::Layers.show_all(); // likewise for hidden scenery layers, the other modes get the scenery as it was defined
 
     // drop selection so a stale/dangling node pointer isn't used on the next editor session
@@ -6484,6 +6505,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // an open list or menu takes this Esc for itself, the selection behind it stays
         if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
             break;
+        // the download area being drawn given up, the one before stays
+        if (is_press(Action) && m_area_drawing.active)
+        {
+            area_finish(false);
+            break;
+        }
         if (is_press(Action))
         {
             road_cancel();
@@ -6526,6 +6553,13 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_BACKSPACE:
+        // the download area: the last point taken back
+        if (is_press(Action) && m_area_drawing.active)
+        {
+            if (false == m_area_drawing.points.empty())
+                m_area_drawing.points.pop_back();
+            break;
+        }
         // area fill: remove the last outline point
         if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && !m_fill_points.empty())
             m_fill_points.pop_back();
@@ -6540,6 +6574,13 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
     case GLFW_KEY_ENTER:
     case GLFW_KEY_KP_ENTER:
+        // the download area closed, from three points on
+        if (is_press(Action) && m_area_drawing.active)
+        {
+            if (m_area_drawing.points.size() >= 3)
+                area_finish(true);
+            break;
+        }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
             lay_enter();
         if (is_press(Action) && m_route.trace.active && route_active())
@@ -6596,6 +6637,17 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // UI first
     if (m_userinterface->on_mouse_button(Button, Action))
     {
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
+    // the download area drawn on the map takes the left button while it's drawn
+    if (m_area_drawing.active && Button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        if (is_press(Action))
+            area_click(Global.shiftState);
+        else
+            m_area_drawing.dragged = -1;
         m_input.mouse.button(Button, Action);
         return;
     }

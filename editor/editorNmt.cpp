@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorNmt.hpp"
 #include "editor/editorHttp.hpp"
+#include "editor/editorGeometry.hpp"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
 
@@ -262,13 +263,58 @@ bool editor_nmt::request(glm::dvec2 const &Min, glm::dvec2 const &Max)
 			m_queued.insert(square);
 			m_queue.push_back(square);
 		}
-		if (false == wanted.empty() && m_workers.empty())
-			for (int i = 0; i < worker_count; ++i)
-				m_workers.emplace_back([this]() { work(); });
+		if (false == wanted.empty())
+			start_workers();
 	}
 	if (false == wanted.empty())
 		m_wake.notify_all();
 	return all;
+}
+
+void editor_nmt::start_workers()
+{
+	if (m_workers.empty())
+		for (int i = 0; i < worker_count; ++i)
+			m_workers.emplace_back([this]() { work(); });
+}
+
+std::string editor_nmt::file_of(key const &Key) const
+{
+	return std::string{cache_folder} + std::to_string(Key.first) + "_" + std::to_string(Key.second) + ".tif";
+}
+
+void editor_nmt::prefetch(std::vector<glm::dvec2> const &Polygon)
+{
+	std::vector<key> keys;
+	if (can_download())
+		for (auto const &square : geometry::squares_in(Polygon, square_size))
+			keys.emplace_back(square);
+	{
+		std::lock_guard<std::mutex> lock{m_mutex};
+		m_prefetch = std::move(keys);
+		m_prefetch_next = 0;
+		m_prefetch_cached.clear();
+		m_prefetch_failed.clear();
+		++m_prefetch_generation;
+		if (false == m_prefetch.empty())
+			start_workers();
+	}
+	m_wake.notify_all();
+}
+
+void editor_nmt::prefetch_paused(bool const Paused)
+{
+	{
+		std::lock_guard<std::mutex> lock{m_mutex};
+		m_prefetch_paused = Paused;
+	}
+	m_wake.notify_all();
+}
+
+editor_nmt::prefetch_state editor_nmt::prefetched() const
+{
+	std::lock_guard<std::mutex> lock{m_mutex};
+	return {static_cast<int>(m_prefetch_cached.size()), static_cast<int>(m_prefetch.size()), static_cast<int>(m_prefetch_failed.size())};
 }
 
 std::size_t editor_nmt::waiting() const
@@ -338,13 +384,37 @@ void editor_nmt::work()
 	while (true)
 	{
 		key square;
+		bool prefetching{false};
+		std::uint32_t generation{0};
 		{
 			std::unique_lock<std::mutex> lock{m_mutex};
-			m_wake.wait(lock, [this]() { return m_stop || false == m_queue.empty(); });
+			auto const prefetchable = [this]() { return false == m_prefetch_paused && m_prefetch_next < m_prefetch.size(); };
+			m_wake.wait(lock, [&]() { return m_stop || false == m_queue.empty() || prefetchable(); });
 			if (m_stop)
 				return;
-			square = m_queue.front();
-			m_queue.pop_front();
+			if (false == m_queue.empty())
+			{
+				square = m_queue.front();
+				m_queue.pop_front();
+			}
+			else
+			{
+				// a square of the download area, while none is asked for
+				square = m_prefetch[m_prefetch_next++];
+				prefetching = true;
+				generation = m_prefetch_generation;
+			}
+		}
+		if (prefetching)
+		{
+			// put into the disk cache only, the file there not read
+			std::error_code fault;
+			std::string error;
+			auto const ok{fs::exists(file_of(square), fault) || false == fetch(square, error)->failed};
+			std::lock_guard<std::mutex> lock{m_mutex};
+			if (generation == m_prefetch_generation)
+				(ok ? m_prefetch_cached : m_prefetch_failed).insert(square);
+			continue;
 		}
 		std::string error;
 		auto fetched{fetch(square, error)};
@@ -363,7 +433,7 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 	auto result{std::make_shared<square>()};
 	std::error_code fault;
 	fs::create_directories(cache_folder, fault);
-	auto const file{std::string{cache_folder} + std::to_string(Key.first) + "_" + std::to_string(Key.second) + ".tif"};
+	auto const file{file_of(Key)};
 	std::vector<std::uint8_t> data;
 	if (std::ifstream cached{file, std::ios::binary}; cached.is_open())
 	{
