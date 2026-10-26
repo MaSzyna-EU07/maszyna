@@ -86,6 +86,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	m_window = Window;
 
 	gl::glsl_common_setup();
+	m_windscreenwater.set_host({[this](material_handle const Material) { return &m_materials.material(Material); }});
 
 	if (true == Global.ScaleSpecularValues)
 	{
@@ -1086,7 +1087,8 @@ void opengl46_renderer::SwapBuffers()
         + ( Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string( std::max( Global.DynamicLightCount, 0 ) ) )
         + "\n" + m_locallights.info()
         + m_localshadows.info()
-        + m_gpuparticles.info();
+        + m_gpuparticles.info()
+        + m_windscreenwater.info();
     if( auto const cullstats = ( m_viewports.empty() || !( Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap ) ? std::nullopt : m_viewports.front()->clusters->stats() ) ) {
         statstext +=
             "\ncluster lists: " + std::to_string( cullstats->index_count )
@@ -1599,6 +1601,16 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			float percipitation_intensity = glm::saturate(Global.Overcast - 1.);
 			scene_ubs.rain_params.x = percipitation_intensity; // % amount of droplets
 			scene_ubs.rain_params.y = glm::mix(15., 1., percipitation_intensity); // Regeneration time
+			scene_ubs.rain_params.z = (Global.Weather == "snow:" ? 1.f : 0.f); // flakes on the glass in place of the drops
+			scene_ubs.rain_params.w = Global.AirTemperature; // how fast the flakes melt
+			{
+				// the air the drops on the glass are blown with: the wind as the particles drift with it, less the velocity of the
+				// vehicle (V is along the front of the vehicle)
+				glm::dvec3 air{glm::dvec3{simulation::Environment.wind()} * 0.5};
+				if (TDynamicObject const *owner = Global.pCamera.m_owner)
+					air -= owner->VectorFront() * owner->MoverParameters->V;
+				scene_ubs.rain_wind = glm::vec4{glm::vec3{air}, 0.f};
+			}
 			if (TDynamicObject const *owner = Global.pCamera.m_owner; owner && !!owner->MoverParameters->CabActive)
 			{
 				for (int i = 0; i < 4; ++i)
@@ -1643,6 +1655,10 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_colorpass.pass_camera.modelview() } } );
         scene_ubo->update(scene_ubs);
 		scene_ubo->bind_uniform();
+		// the water on the windscreens of the cab: a step of its simulation once a frame, its storage for the glasses of every view
+		if (vp.main)
+			m_windscreenwater.update(Timer::GetDeltaTime());
+		m_windscreenwater.bind();
 
 		if (Global.bWireFrame)
 			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);

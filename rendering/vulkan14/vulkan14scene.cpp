@@ -150,6 +150,7 @@ VkDescriptorType pass_binding_type(std::uint32_t const Binding)
 	case CLUSTER_RANGE_SSBO:
 	case CLUSTER_INDEX_SSBO:
 	case SKY_SSBO:
+	case WATER_SSBO:
 		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	case ATMOSPHERE_UBO:
 	case WEATHER_HORIZON_UBO:
@@ -708,6 +709,40 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		scene.particles.init(device, ctx.pipelines, ctx.shaders, scene.pass_layout, ctx.memory, ctx.uploads, ctx.deletions, ctx.ring, ctx.device.caps().limits.minUniformBufferOffsetAlignment, frames,
 		                     std::move(host));
 	}
+	{
+		vk14::windscreen_water::host host;
+		host.commands = [this]() {
+			suspend_rendering();
+			return m_context->commands;
+		};
+		host.texture = [this](texture_handle const Texture, VkImageView &View, VkSampler &Sampler) {
+			auto &ctx{*m_context};
+			if ((Texture == null_handle) || (false == bool(ctx.textures)))
+			{
+				return false;
+			}
+			auto &source{ctx.textures->mark_as_used(Texture)};
+			if (false == source.create())
+			{
+				return false;
+			}
+			auto const *entry{ctx.images.find(source.get_id())};
+			if (entry == nullptr)
+			{
+				return false;
+			}
+			View = entry->target->view();
+			Sampler = entry->sampler;
+			return true;
+		};
+		if (false == scene.water.init(device, ctx.pipelines, ctx.shaders, scene.pass_layout, ctx.memory, ctx.uploads, ctx.deletions, ctx.ring, ctx.device.caps().limits.minUniformBufferOffsetAlignment,
+		                              std::move(host)))
+		{
+			Reason = "no storage of the water on the windscreens";
+			return false;
+		}
+		scene.water.set_host({[this](material_handle const Material) { return &m_materials.material(Material); }});
+	}
 	scene.terrain->init(ctx.resources, [this](vk14::command_stream *const Commands, VkImageView const Target, VkFormat const Format, VkExtent2D const Extent, VkImageView const Source, VkSampler const Sampler) {
 		auto &scene{m_context->scene};
 		auto const pipeline{post_pipeline("copy.frag", static_cast<int>(Format))};
@@ -779,6 +814,7 @@ void vulkan14_renderer::destroy_scene()
 	scene.terrain.reset();
 	scene.grass.destroy();
 	scene.particles.destroy();
+	scene.water.destroy();
 	scene.grass_program.reset();
 	scene.grass_tried = false;
 	scene.cluster_heatmap.reset();
@@ -931,6 +967,7 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 	VkDescriptorBufferInfo const atmosphereblock{scene.sky.atmosphere.handle(), 0, sizeof(gl::atmosphere_ubs)};
 	VkDescriptorBufferInfo const weatherblock{ctx.ring.handle(), 0, offsetof(gl::weather_ubs, fog_horizon)};
 	VkDescriptorBufferInfo const horizonblock{scene.weather_horizon.handle(), 0, sizeof(glm::vec4) * gl::FOG_HORIZON_SAMPLES};
+	VkDescriptorBufferInfo const water{scene.water.storage(), 0, VK_WHOLE_SIZE};
 	VkDescriptorImageInfo const headlightsinfo{scene.headlights_sampler, scene.headlights_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	std::vector<VkWriteDescriptorSet> writes;
 	std::vector<std::unique_ptr<VkDescriptorImageInfo>> images;
@@ -964,6 +1001,7 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 		write(handle, ATMOSPHERE_UBO, &atmosphereblock, nullptr);
 		write(handle, WEATHER_UBO, &weatherblock, nullptr);
 		write(handle, WEATHER_HORIZON_UBO, &horizonblock, nullptr);
+		write(handle, WATER_SSBO, &water, nullptr);
 		write(handle, HEADLIGHT_TEX, nullptr, &headlightsinfo);
 		write(handle, SHADOW_TEX, nullptr, image(ctx.sampling.shadow, views[SHADOW_TEX]));
 		write(handle, ENV_TEX, nullptr, image(ctx.sampling.clamp_linear, views[ENV_TEX]));

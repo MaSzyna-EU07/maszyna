@@ -990,6 +990,8 @@ void vulkan14_renderer::render_scene()
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
+	// the water on the windscreens of the cab: a step of its simulation once a frame, before the passes which draw the glasses
+	scene.water.update(Timer::GetDeltaTime());
 	if (scene.targets.size() < m_viewports.size())
 	{
 		scene.targets.resize(m_viewports.size());
@@ -1406,6 +1408,16 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		float percipitation_intensity = glm::saturate(Global.Overcast - 1.);
 		scene_ubs.rain_params.x = percipitation_intensity;
 		scene_ubs.rain_params.y = glm::mix(15., 1., percipitation_intensity);
+		scene_ubs.rain_params.z = (Global.Weather == "snow:" ? 1.f : 0.f); // flakes on the glass in place of the drops
+		scene_ubs.rain_params.w = Global.AirTemperature; // how fast the flakes melt
+		{
+			// the air the drops on the glass are blown with: the wind as the particles drift with it, less the velocity of the
+			// vehicle (V is along the front of the vehicle)
+			glm::dvec3 air{glm::dvec3{simulation::Environment.wind()} * 0.5};
+			if (TDynamicObject const *owner = Global.pCamera.m_owner)
+				air -= owner->VectorFront() * owner->MoverParameters->V;
+			scene_ubs.rain_wind = glm::vec4{glm::vec3{air}, 0.f};
+		}
 		if (TDynamicObject const *owner = Global.pCamera.m_owner; owner && !!owner->MoverParameters->CabActive)
 		{
 			for (int i = 0; i < 4; ++i)

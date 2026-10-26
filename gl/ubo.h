@@ -5,6 +5,8 @@
 #include "buffer.h"
 #include <glm/glm.hpp>
 #include <cstddef>
+#include <array>
+#include <utility>
 
 #define UBS_PAD(x) uint8_t PAD[x]
 
@@ -124,9 +126,12 @@ namespace gl
         // the reflection of the surroundings the screen space reflections and the ray tracing don't find, for every pass: x: albedo
         // of the ground below the horizon of the environment map (gfx.ambient.groundalbedo), yzw unused
         glm::vec4 env_params;
+        // the water on the windscreens (mat_rain_windscreen): xyz the velocity of the air against the vehicle of the camera (the
+        // share of the wind the particles of the rain drift with, less the velocity of the vehicle), world space, m/s; w unused
+        glm::vec4 rain_wind;
     };
 
-    static_assert(sizeof(scene_ubs) == 688 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 704 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
@@ -564,6 +569,93 @@ namespace gl
         glm::vec4 color;
     };
     static_assert(sizeof(particle_draw) == 48, "bad size of particle_draw");
+
+    // the water on the windscreens (gfx::windscreen_water, water_*.comp, water.glsl, mat_rain_windscreen.frag): the glasses of the
+    // cab of the train simulated at once (each a material of mat_rain_windscreen), the drops a glass holds, the cells of the grid
+    // the drops are looked up by along each coordinate of the texture of the glass (uv) and the drops a cell lists, the texels of
+    // the map of the wetted paths and of the map of the glass (its axes, the blades of the wipers) along each coordinate, the work
+    // group of the passes
+    const GLuint WATER_SLOTS = 4;
+    const GLuint WATER_DROPS = 65536;
+    const GLuint WATER_GRID = 128;
+    const GLuint WATER_CELL_DROPS = 32;
+    const GLuint WATER_TRAIL = 1024;
+    const GLuint WATER_MAP = 256;
+    const GLuint WATER_GROUP_SIZE = 64;
+    // the binding points of the opengl renderer: the storage of the water (read by the glasses, written by the passes), the block
+    // of the step of the simulation (water_ubs) and the texture unit of the mask of the wipers the map is baked from. the storage
+    // point is used by nothing else, bound with the colour passes
+    const GLuint WATER_SSBO_BINDING = 16;
+    const GLuint WATER_UBO_BINDING = 6;
+    const size_t WATER_MASK_TEX = MAX_TEXTURES + HELPER_TEXTURES + 13;
+    // the parts of the storage of the water (std430, GLSL water_ssbo), offsets in bytes: the header of every glass (vec4), the
+    // counts of every glass (uvec4), the drops (two vec4 each), the axes of the map (two vec4 a texel), the blades of the map (vec4
+    // a texel), the state of the drops (uint), the drops they flow into (uint), what they gather (four int), what they keep
+    // (vec4), then the cells of the grids (a count and the drops of each cell) and the wetted paths (uint)
+    const size_t WATER_SLOT_DROPS = static_cast<size_t>(WATER_SLOTS) * WATER_DROPS;
+    const size_t WATER_SLOT_TEXELS = static_cast<size_t>(WATER_SLOTS) * WATER_MAP * WATER_MAP;
+    const size_t WATER_HEADER_OFFSET = 0;
+    const size_t WATER_COUNTS_OFFSET = WATER_HEADER_OFFSET + 16 * WATER_SLOTS;
+    const size_t WATER_DROPS_OFFSET = WATER_COUNTS_OFFSET + 16 * WATER_SLOTS;
+    const size_t WATER_AXES_OFFSET = WATER_DROPS_OFFSET + 32 * WATER_SLOT_DROPS;
+    const size_t WATER_BLADES_OFFSET = WATER_AXES_OFFSET + 32 * WATER_SLOT_TEXELS;
+    const size_t WATER_STATE_OFFSET = WATER_BLADES_OFFSET + 16 * WATER_SLOT_TEXELS;
+    const size_t WATER_TARGET_OFFSET = WATER_STATE_OFFSET + 4 * WATER_SLOT_DROPS;
+    const size_t WATER_GATHER_OFFSET = WATER_TARGET_OFFSET + 4 * WATER_SLOT_DROPS;
+    const size_t WATER_EXTRA_OFFSET = WATER_GATHER_OFFSET + 16 * WATER_SLOT_DROPS;
+    const size_t WATER_CELLS_OFFSET = WATER_EXTRA_OFFSET + 16 * WATER_SLOT_DROPS;
+    const size_t WATER_CELLS_SIZE = 4 * static_cast<size_t>(WATER_SLOTS) * WATER_GRID * WATER_GRID * (1 + WATER_CELL_DROPS);
+    const size_t WATER_TRAIL_OFFSET = WATER_CELLS_OFFSET + WATER_CELLS_SIZE;
+    const size_t WATER_STORAGE_SIZE = WATER_TRAIL_OFFSET + 4 * static_cast<size_t>(WATER_SLOTS) * WATER_TRAIL * WATER_TRAIL;
+    // the parts of a glass in the storage: its drops and what the passes keep of them, its map (the axes the second part), its
+    // cells and its paths, its header and its counts, (offset, size) in bytes
+    inline std::array<std::pair<size_t, size_t>, 11> water_slot_parts(size_t const Slot)
+    {
+        auto const drops{static_cast<size_t>(WATER_DROPS)};
+        auto const texels{static_cast<size_t>(WATER_MAP) * WATER_MAP};
+        auto const cells{4 * static_cast<size_t>(WATER_GRID) * WATER_GRID * (1 + WATER_CELL_DROPS)};
+        auto const trail{4 * static_cast<size_t>(WATER_TRAIL) * WATER_TRAIL};
+        return {{{WATER_DROPS_OFFSET + 32 * drops * Slot, 32 * drops},
+                 {WATER_AXES_OFFSET + 32 * texels * Slot, 32 * texels},
+                 {WATER_BLADES_OFFSET + 16 * texels * Slot, 16 * texels},
+                 {WATER_STATE_OFFSET + 4 * drops * Slot, 4 * drops},
+                 {WATER_TARGET_OFFSET + 4 * drops * Slot, 4 * drops},
+                 {WATER_GATHER_OFFSET + 16 * drops * Slot, 16 * drops},
+                 {WATER_EXTRA_OFFSET + 16 * drops * Slot, 16 * drops},
+                 {WATER_CELLS_OFFSET + cells * Slot, cells},
+                 {WATER_TRAIL_OFFSET + trail * Slot, trail},
+                 {WATER_HEADER_OFFSET + 16 * Slot, 16},
+                 {WATER_COUNTS_OFFSET + 16 * Slot, 16}}};
+    }
+
+    // layout std140: the step of the simulation of the water on the windscreens (GLSL water_ubo), every vector in the space of the
+    // model of the cab
+    struct water_ubs
+    {
+        // x: seconds of the step, y: seconds the simulation runs (the wetted paths are marked with it), z: how heavy the rain or
+        // the snow is, 0 .. 1, w: 1 for snow
+        glm::vec4 step;
+        // xyz: up, w: the temperature of the air, degrees Celsius
+        glm::vec4 up;
+        // xyz: the air against the cab (the share of the wind the rain drifts with, less the velocity of the vehicle), m/s; w: how
+        // fast the rain or the snow falls, m/s
+        glm::vec4 air;
+        // the blades of the wipers (the channels of their mask) now and at the step before: 0 at rest .. 1 at the far end of
+        // their sweep, below 0 where there's none
+        glm::vec4 blades;
+        glm::vec4 blades_before;
+        // the drops of the rain: x the smallest diameter which lands as a drop of its own, mm (the smaller ones are the mist of the
+        // glass), y: 1 / the mean of the diameters above it, 1 / mm (they go as Marshall-Palmer), zw: unused
+        glm::vec4 rain;
+        // x: random seed of the step, y: the most landings tried on a glass in the step, z: the glass the passes for a single glass
+        // work on (the baking of the mask of the wipers)
+        glm::uvec4 counts;
+        // every glass: x the landings tried in the step, y 1 / the most metres squared of the glass a unit of its uv holds (the
+        // landings tried at the densest place are all taken), z 1 when it's simulated, w the size of its drops (the param
+        // rain_scale of its material)
+        glm::vec4 slots[WATER_SLOTS];
+    };
+    static_assert(sizeof(water_ubs) == 112 + 16 * WATER_SLOTS, "bad size of water_ubs");
 
     // layout std430: a bucket of a scene cell queued in the pass (GLSL: instance_cull_job)
     struct instance_cull_job

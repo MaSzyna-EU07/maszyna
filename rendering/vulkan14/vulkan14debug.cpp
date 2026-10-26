@@ -168,7 +168,7 @@ std::string vulkan14_renderer::scene_info()
 	        line(" shapes:   ", colour.shapes, shadowstats.shapes) + " traction: " + to_string(colour.traction, 7) + "\n" + " lines:    " + to_string(colour.lines, 7) + "\n" +
 	        "particles: " + to_string(colour.particles, 7) + "\nlights:    " + to_string(static_cast<int>(m_lights_lit), 7) + " (" + std::to_string(m_lights_dropped) + " over capacity), " +
 	        (Global.gfx_lights_clustered ? "clustered" : "first " + std::to_string(std::max(Global.DynamicLightCount, 0))) + "\n" + m_locallights.info() + scene.lamps.info() +
-	        scene.particles.info();
+	        scene.particles.info() + scene.water.info();
 	auto const &stats{scene.clusters.stats};
 	if (stats.valid && (Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap))
 	{

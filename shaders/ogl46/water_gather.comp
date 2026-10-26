@@ -1,0 +1,40 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): the drops flow into the ones water_merge.comp found for them, where those don't
+// flow on themselves (they do in a later step): the water and the moment of the places of the drops gathered by the one they
+// flow into (water_settle.comp moves it to the middle of the water), the drops gone. a thread per drop, a row of groups per glass
+
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+void main()
+{
+	uint slot = gl_WorkGroupID.y;
+	uint place = gl_GlobalInvocationID.x;
+	if ((water_slots[slot].z < 0.5) || (place >= uint(WATER_DROPS)))
+		return;
+	uint base = slot * uint(WATER_DROPS);
+	uint index = base + place;
+	uint target = water_target[index];
+	if ((target == place) || (target >= uint(WATER_DROPS)) || (water_target[base + target] != target))
+		return;
+	water_drop_s drop = water_drops[index];
+	water_drop_s into = water_drops[base + target];
+	if ((drop.place.z <= 0.0) || (into.place.z <= 0.0))
+		return;
+	// with what flowed into the drop itself in the step (the landings)
+	float landed = float(water_gather[index * 4u]) * 1e-4;
+	vec2 moment = vec2(float(water_gather[index * 4u + 1u]), float(water_gather[index * 4u + 2u])) * 1e-6;
+	float volume = drop.place.z + landed;
+	vec2 offset = drop.place.xy - into.place.xy;
+	atomicAdd(water_gather[(base + target) * 4u], int(volume * 1e4));
+	atomicAdd(water_gather[(base + target) * 4u + 1u], int((offset.x * volume + moment.x) * 1e6));
+	atomicAdd(water_gather[(base + target) * 4u + 2u], int((offset.y * volume + moment.y) * 1e6));
+	// the blade carrying the drop carries what it flows into
+	uint carried = water_state[index] & 0x1eu;
+	if ((carried != 0u) && ((water_state[base + target] & 0x0eu) == 0u))
+		atomicOr(water_state[base + target], carried);
+	water_remove(index);
+}

@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14terrain.h"
 #include "rendering/vulkan14/vulkan14grass.h"
 #include "rendering/vulkan14/vulkan14particles.h"
+#include "rendering/vulkan14/vulkan14water.h"
 #include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14raytracing.h"
 #include "rendering/vulkan14/vulkan14dlss.h"
@@ -397,6 +398,8 @@ struct scene_state
 	bool grass_tried{false};
 	// the smoke and the rain or snow of the gpu
 	gpu_particles particles;
+	// the water on the windscreens of the cab of the train; its storage is held by the pass sets (WATER_SSBO)
+	windscreen_water water;
 	// the ray traced reflections (gfx.raytracing), on a device with ray queries; its set is set RT_SET of the pipelines of the scene
 	std::unique_ptr<ray_tracing> raytracing;
 	// the heatmap of the light clusters (gfx.lights.clusterheatmap), made when it's first drawn

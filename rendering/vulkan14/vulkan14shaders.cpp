@@ -802,6 +802,7 @@ std::string binding_preamble(bool const Raytracing)
 	define("HEADLIGHT_SHADOW_TEX", HEADLIGHT_SHADOW_TEX);
 	define("SCENE_DEPTH_TEX", SCENE_DEPTH_TEX);
 	define("SSR_HISTORY_TEX", SSR_HISTORY_TEX);
+	define("WATER_SSBO", WATER_SSBO);
 	define("PASS_BINDING_COUNT", PASS_BINDING_COUNT);
 	define("MATERIAL_TEXTURE_FIRST", MATERIAL_TEXTURE_FIRST);
 	define("CL_CLUSTER_UBO", CL_CLUSTER_UBO);
@@ -865,6 +866,13 @@ std::string binding_preamble(bool const Raytracing)
 	define("SHADOW_FIT_GROUP_SIZE", gl::SHADOW_FIT_GROUP_SIZE);
 	preamble += "#define LOCAL_SHADOW_NEAR " + std::to_string(gfx::local_shadows::shadow_near) + "\n";
 	define("PARTICLE_GROUP_SIZE", gl::PARTICLE_GROUP_SIZE);
+	define("WATER_SLOTS", gl::WATER_SLOTS);
+	define("WATER_DROPS", gl::WATER_DROPS);
+	define("WATER_GRID", gl::WATER_GRID);
+	define("WATER_CELL_DROPS", gl::WATER_CELL_DROPS);
+	define("WATER_TRAIL", gl::WATER_TRAIL);
+	define("WATER_MAP", gl::WATER_MAP);
+	define("WATER_GROUP_SIZE", gl::WATER_GROUP_SIZE);
 	return preamble;
 }
 

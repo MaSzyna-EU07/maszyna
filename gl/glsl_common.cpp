@@ -40,6 +40,16 @@ void gl::glsl_common_setup()
     "#define PARTICLE_OWNER_SSBO_BINDING " + std::to_string(PARTICLE_OWNER_SSBO_BINDING) + "\n" +
     "#define PARTICLE_OUTPUT_SSBO_BINDING " + std::to_string(PARTICLE_OUTPUT_SSBO_BINDING) + "\n" +
     "#define PARTICLE_COMMAND_SSBO_BINDING " + std::to_string(PARTICLE_COMMAND_SSBO_BINDING) + "\n" +
+    "#define WATER_SLOTS " + std::to_string(WATER_SLOTS) + "\n" +
+    "#define WATER_DROPS " + std::to_string(WATER_DROPS) + "\n" +
+    "#define WATER_GRID " + std::to_string(WATER_GRID) + "\n" +
+    "#define WATER_CELL_DROPS " + std::to_string(WATER_CELL_DROPS) + "\n" +
+    "#define WATER_TRAIL " + std::to_string(WATER_TRAIL) + "\n" +
+    "#define WATER_MAP " + std::to_string(WATER_MAP) + "\n" +
+    "#define WATER_GROUP_SIZE " + std::to_string(WATER_GROUP_SIZE) + "\n" +
+    "#define WATER_SSBO_BINDING " + std::to_string(WATER_SSBO_BINDING) + "\n" +
+    "#define WATER_UBO_BINDING " + std::to_string(WATER_UBO_BINDING) + "\n" +
+    "#define WATER_MASK_TEX " + std::to_string(WATER_MASK_TEX) + "\n" +
     "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
     "#define INSTANCE_JOB_SLEEPERS " + std::to_string(INSTANCE_JOB_SLEEPERS) + "U\n" +
     "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +

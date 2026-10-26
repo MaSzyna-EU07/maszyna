@@ -1,0 +1,65 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): the rain or the snow landing on the glasses in the step. a thread per landing
+// tried, a row of groups per glass: a place of the uv picked at random is taken as often as the glass there gets hit (the
+// metres squared the place holds, how much it faces the rain coming at it), so the landings go evenly over the glass. a raindrop
+// spreads and throws a splash of droplets around, along the way it came, which flow into the drops they land on (water_settle.comp
+// takes the water); a flake sticks where it lands
+
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+void main()
+{
+	uint slot = gl_WorkGroupID.y;
+	uint landing = gl_GlobalInvocationID.x;
+	if ((water_slots[slot].z < 0.5) || (float(landing) >= water_slots[slot].x))
+		return;
+	vec4 r = water_random(water_counts.x, slot, landing, 0u);
+	vec2 uv = r.xy;
+	water_frame_s frame = water_frame(slot, uv);
+	if (frame.valid < 0.75)
+		return;
+	// the rain coming at the glass, against the cab
+	vec3 coming = water_air.xyz - water_up.xyz * water_air.w;
+	float speed = length(coming);
+	if (speed < 1e-3)
+		return;
+	float facing = max(-dot(coming, frame.normal), 0.0) / speed;
+	float density = length(cross(frame.tu, frame.tv));
+	if (r.z >= density * water_slots[slot].y * facing)
+		return;
+	float scale = max(water_slots[slot].w, 0.05);
+	vec4 s = water_random(water_counts.x, slot, landing, 1u);
+	uint seed = water_pcg4d(uvec4(water_counts.x, slot, landing, 2u)).x;
+	if (water_step.w > 0.5)
+	{
+		// a flake, a few mm of snow holding a little water
+		water_add(slot, seed, uv, mix(0.3, 2.5, s.x) * scale * scale * scale, 0.0, s.y, true);
+		return;
+	}
+	// the diameter of the raindrop, mm: above the least landing as a drop of its own they go as Marshall-Palmer (exponential)
+	float diameter = min(water_rain.x - log(max(r.w, 1e-6)) / max(water_rain.y, 0.1), 5.0) * scale;
+	float drop = 0.5236 * diameter * diameter * diameter;
+	// most of it stays where it hit, the rest is thrown around as droplets, forward along the glass
+	float kept = mix(0.55, 0.85, s.x);
+	water_land(slot, seed, frame, uv, drop * kept, s.y);
+	vec3 along = coming - frame.normal * dot(coming, frame.normal);
+	float glancing = length(along) / speed;
+	vec3 forward = (glancing > 1e-3) ? normalize(along) : normalize(frame.tu);
+	vec3 across = cross(frame.normal, forward);
+	float radius = water_radius(drop * kept);
+	int splash = 2 + int(s.z * 4.0);
+	for (int k = 0; k < splash; ++k)
+	{
+		vec4 e = water_random(water_counts.x, slot, landing, 3u + uint(k));
+		float angle = e.x * 6.2831853;
+		vec3 way = cos(angle) * forward + sin(angle) * across + forward * (1.5 * glancing);
+		way = (length(way) > 1e-3) ? normalize(way) : forward;
+		float distance = radius * (1.3 + 2.5 * e.y) * (1.0 + glancing);
+		float volume = drop * (1.0 - kept) / float(splash) * mix(0.4, 1.6, e.z);
+		water_land(slot, seed + 101u * uint(k + 1), frame, uv + water_to_uv(frame, way * distance), volume, e.w);
+	}
+}

@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46light.h"
 #include "rendering/opengl46/opengl46particles.h"
 #include "rendering/opengl46/opengl46gpuparticles.h"
+#include "rendering/opengl46/opengl46water.h"
 #include "rendering/opengl46/opengl46skydome.h"
 #include "rendering/opengl46/opengl46precipitation.h"
 #include "simulation/simulationenvironment.h"
@@ -533,6 +534,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
     opengl46_precipitation m_precipitationrenderer;
     opengl46_particles m_particlerenderer; // particle visualization subsystem
     opengl46_gpu_particles m_gpuparticles; // the smoke, rain and snow of the gpu (gfx.smoke.gpu, gfx.precipitation.gpu)
+    opengl46_windscreen_water m_windscreenwater; // the water on the windscreens of the cab of the train
     bool m_particlesoft{false}; // the depth for the soft particles is bound in the colour pass being drawn
 
 	float m_framerate;

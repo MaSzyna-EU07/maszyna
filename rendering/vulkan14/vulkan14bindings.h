@@ -71,7 +71,9 @@ constexpr std::uint32_t HEADLIGHT_SHADOW_TEX = 23;
 constexpr std::uint32_t SCENE_DEPTH_TEX = 24;
 // the image of the last frame of the main view with its mipmaps, which the screen space reflections take their colour from
 constexpr std::uint32_t SSR_HISTORY_TEX = 25;
-constexpr std::uint32_t PASS_BINDING_COUNT = 26;
+// the water on the windscreens (gfx::windscreen_water): the drops, their grids and the wetted paths the glasses read
+constexpr std::uint32_t WATER_SSBO = 26;
+constexpr std::uint32_t PASS_BINDING_COUNT = 27;
 // the offsets of the bindings above with dynamic offsets, in the order of the bindings
 constexpr std::uint32_t PASS_DYNAMIC_OFFSETS = 6;
 // the textures of a material take the bindings of their units (#pragma texture(name, unit, ...)), 0 .. MAX_TEXTURES - 1

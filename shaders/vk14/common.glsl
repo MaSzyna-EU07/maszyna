@@ -60,7 +60,8 @@
 #define HEADLIGHT_SHADOW_TEX 23
 #define SCENE_DEPTH_TEX 24
 #define SSR_HISTORY_TEX 25
-#define PASS_BINDING_COUNT 26
+#define WATER_SSBO 26
+#define PASS_BINDING_COUNT 27
 #define MATERIAL_TEXTURE_FIRST 0
 #define CL_CLUSTER_UBO 0
 #define CL_AABB_SSBO 1
@@ -121,6 +122,13 @@
 #define SHADOW_FIT_GROUP_SIZE 16
 #define LOCAL_SHADOW_NEAR 0.150000
 #define PARTICLE_GROUP_SIZE 64
+#define WATER_SLOTS 4
+#define WATER_DROPS 65536
+#define WATER_GRID 128
+#define WATER_CELL_DROPS 32
+#define WATER_TRAIL 1024
+#define WATER_MAP 256
+#define WATER_GROUP_SIZE 64
 #endif
 
 #include "settings.glsl"
@@ -271,6 +279,8 @@ layout(std140, set = PASS_SET, binding = SCENE_UBO) uniform scene_ubo
 	vec4 ssr_params;
 	vec4 ssr_params2;
 	vec4 env_params;
+	// the air against the vehicle of the camera, see gl::scene_ubs
+	vec4 rain_wind;
 };
 
 #ifndef LAYOUT_COMPUTE

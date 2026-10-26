@@ -49,6 +49,16 @@
 #define PARTICLE_OWNER_SSBO_BINDING 11
 #define PARTICLE_OUTPUT_SSBO_BINDING 12
 #define PARTICLE_COMMAND_SSBO_BINDING 13
+#define WATER_SLOTS 4
+#define WATER_DROPS 65536
+#define WATER_GRID 128
+#define WATER_CELL_DROPS 32
+#define WATER_TRAIL 1024
+#define WATER_MAP 256
+#define WATER_GROUP_SIZE 64
+#define WATER_SSBO_BINDING 16
+#define WATER_UBO_BINDING 6
+#define WATER_MASK_TEX 25
 #define INSTANCE_COUNTER_HEADER 8
 #define INSTANCE_JOB_SLEEPERS 1U
 #define LIGHT_SSBO_BINDING 0
@@ -297,6 +307,8 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     vec4 ssr_params;
     vec4 ssr_params2;
     vec4 env_params;
+    // the air against the vehicle of the camera, see gl::scene_ubs
+    vec4 rain_wind;
 };
 
 #ifdef STAGE_VERTEX
