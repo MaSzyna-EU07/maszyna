@@ -1546,6 +1546,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	                                     lay_line_plan *Plan = nullptr) const;
 	// Adjoining: the curve next to a free end on a curve goes on from its curvature, where it turns its way; else from a straight there
 	bool lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining = true) const;
+	// whether the points next to the start of the line, or to its end, AtEnd, a free end joined there, are clicked along a curve
+	static bool traced_from(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, bool const AtEnd);
 	// the curves of a stretch traced, the ones fitted lately kept for the same points
 	// none while the stretch the cursor moves along is still being fitted; Meanwhile: the fit done last of the same points but the one
 	// at the cursor until then
@@ -1673,7 +1675,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void extend_add(int const Side);
 	void render_extend_ui();
 	using track_layout = editor_track::layout;
-	track_layout m_track_layout{track_layout::arc_straight};
+	// the shape dragged from a free end, as the mode of laying has it: a straight in the one of the straights, an arc and a straight in
+	// the one of a curve
+	track_layout m_track_layout{track_layout::straight};
 	double m_join_radius{0.0};
 	int m_join_variant{0};
 	TTrack const *m_join_track{nullptr};
@@ -1696,7 +1700,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	wheel_state m_wheel;
 	int wheel_step(double const Offset, bool const Gesture);
 	std::string track_shaping(bool const Joined) const;
-	void render_layout_combo();
 	double design_speed(TTrack const *From, TTrack const *To) const;
 	// the track whose speed the design takes, none where it's the one set for the laying
 	TTrack const *speed_track(TTrack const *From, TTrack const *To) const;

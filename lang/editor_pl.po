@@ -12285,3 +12285,15 @@ msgstr "Wstrzymaj"
 
 msgid "Terrain model: %d of %d squares in the cache, %d failed"
 msgstr "Model terenu: %d z %d kwadratów w pamięci podręcznej, nieudanych %d"
+
+msgid "Tab while laying: an arc, then a straight"
+msgstr "Tab przy kładzeniu: łuk, potem prosta"
+
+msgid "Ctrl+wheel: radius, Tab while laying: a straight"
+msgstr "Ctrl+kółko: promień, Tab przy kładzeniu: prosta"
+
+msgid "Lead a track out of it: a straight, an arc and a straight where a curve is traced (Tab); onto another free end: join the two"
+msgstr "Wyprowadza z niego tor: prostą, a w trybie łuku (Tab) łuk i prostą; na inny wolny koniec: łączy oba"
+
+msgid "Dragging over another free end: another way to join"
+msgstr "Przeciąganie nad innym wolnym końcem: inny sposób połączenia"

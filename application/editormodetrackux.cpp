@@ -621,7 +621,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.track = lay.mouse_snap.track;
 			intent.position = lay.mouse_snap.position;
 			auto const diverging{lay.mouse_snap.track->eType == tt_Switch && lay.mouse_snap.point == editor_track::point_ref{1, editor_track::point_kind::end}};
-			if (lay.points.empty() && diverging)
+			if (lay.points.empty() && diverging && m_track_layout != track_layout::straight)
 				return make(kind::lay_end, "Click: start from this free end, drag: the curve of the switch goes on");
 			return make(kind::lay_end, lay.points.empty() ? "Click: start from this free end, drag: lead a track out of it" : "Click: join this end and lay");
 		}
@@ -732,7 +732,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 				intent.snap.track = selected;
 				intent.snap.point = hit;
 				intent.snap.position = intent.position;
-				auto const diverging{selected->eType == tt_Switch && hit == editor_track::point_ref{1, editor_track::point_kind::end}};
+				auto const diverging{selected->eType == tt_Switch && hit == editor_track::point_ref{1, editor_track::point_kind::end} && m_track_layout != track_layout::straight};
 				return make(kind::extend_end, diverging ? "Drag: the curve of the switch goes on; Ctrl+drag: move the end" : "Drag: a new track out of this end, as in laying; Ctrl+drag: move the end");
 			}
 		}

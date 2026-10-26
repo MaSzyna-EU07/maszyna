@@ -1690,8 +1690,10 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		else
 		{
 			hints = {{"LMB", curve ? "a point along the middle of the curve, the last two on the straight after it" : "a bend of the straights, eased with a large curve"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}};
-			if (m_lay.mouse_snap.track != nullptr)
+			if (m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
+			else if (m_lay.mouse_snap.track != nullptr && curve)
+				hints.push_back({"Ctrl+wheel", "radius"});
 			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", "stop laying"},
 			                           {"Backspace", m_lay.chain.empty() ? "take back the point" : "take back the last piece"}, {"Esc", "stop laying"}});
 		}
@@ -1703,7 +1705,14 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{m_straights.tool == 2 ? "LMB" : "Shift+click", format(STR_C("point %zu of 4: %s"), step + 1, STR_C(steps[step]))}, {"Esc", "cancel"}};
 	}
 	else if (m_extend.active)
-		hints = {{"Drag", "lays the shape to the cursor, to a free end: joins it"}, {"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}, {"Release", "build"}, {"Esc", "cancel"}};
+	{
+		hints = {{"Drag", "lays the shape to the cursor, to a free end: joins it"}};
+		if (editor_track::snap_target target; extend_snap(target))
+			hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
+		else if (m_track_layout != track_layout::straight)
+			hints.push_back({"Ctrl+wheel", "radius"});
+		hints.insert(hints.end(), {{"Release", "build"}, {"Esc", "cancel"}});
+	}
 	else if (m_switch.placing)
 		hints = m_switch.connection >= 0 && false == m_switch.curved ?
 		            std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}} :
@@ -2092,7 +2101,9 @@ std::string editor_mode::track_shaping(bool const Joined) const
 		auto text{std::string{STR_C(names[static_cast<int>(m_track_layout)])}};
 		if (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc)
 			text += format("   R %.0f m", m_lay.radius);
-		return text + "\n" + STR("Ctrl+wheel: radius, Shift+wheel: arc / straight") + STR(", Ctrl+Shift+wheel: speed");
+		// the shape follows the mode of laying, Tab switching it where the laying goes on
+		return text + "\n" + (m_track_layout == track_layout::straight ? STR("Tab while laying: an arc, then a straight") : STR("Ctrl+wheel: radius, Tab while laying: a straight")) +
+		       STR(", Ctrl+Shift+wheel: speed");
 	}
 	auto const &join{m_join_last};
 	char const *const kinds[]{"", "straight", "arc", "curve", "reverse curve", "free curve"};

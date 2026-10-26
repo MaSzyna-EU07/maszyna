@@ -49,11 +49,19 @@ using namespace track_mode;
 namespace
 {
 
+// the curve of the track of a free end the line goes on from or into: the one of a plain track always, the one of the diverging track
+// of a switch where a curve is traced from it, Traced; the bends of straights begin there with a straight, the curvature jumping as at
+// the start of the switch
+bool goes_on_curved(editor_track::snap_target const &End, bool const Traced)
+{
+	return End.track != nullptr && (End.track->eType == tt_Normal || (End.track->eType == tt_Switch && Traced));
+}
+
 // the curve of the track of a free end the line laid goes on from at its start, or into at its end: its radius, the side it turns to
 // as the line runs and its cant leaning into the turn; nothing on a straight
-void adjoining_curve(editor_track::snap_target const &End, bool const Atend, double const Gauge, alignment::design &Design)
+void adjoining_curve(editor_track::snap_target const &End, bool const Atend, bool const Traced, double const Gauge, alignment::design &Design)
 {
-	if (End.track == nullptr || (End.track->eType != tt_Normal && End.track->eType != tt_Switch))
+	if (false == goes_on_curved(End, Traced))
 		return;
 	auto const bend{editor_track::bend_at(*End.track, End.position)};
 	if (false == bend.has_value() || std::abs(bend->curvature) < 1e-4)
@@ -460,9 +468,10 @@ void editor_mode::point_drag_finish()
 std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const
 {
 	m_eased_last.reset();
-	// from the end of a curved track, the diverging track of a switch too, the line goes on from its curvature: a curve from it, a
-	// straight after a transition out of it, never with a jump of the curvature at the end
-	if (From == nullptr || (From->eType != tt_Normal && From->eType != tt_Switch))
+	// from the end of a curved track the line goes on from its curvature: a curve from it, a straight after a transition out of it, never
+	// with a jump of the curvature at the end; at the diverging track of a switch a curve from it, a straight right from its end, as the
+	// switch goes on with a straight
+	if (From == nullptr || (From->eType != tt_Normal && (From->eType != tt_Switch || m_track_layout == track_layout::straight)))
 		return std::nullopt;
 	auto const end{editor_track::bend_at(*From, Point)};
 	if (false == end.has_value())
@@ -784,66 +793,6 @@ void editor_mode::render_extend_ui()
 		extend_add(-1);
 }
 
-// the shapes laid from a free end as four tiles, each with a sketch: the end of the track, what's laid from it, the cursor
-void editor_mode::render_layout_combo()
-{
-	char const *const names[]{"Arc, then straight", "Straight, then arc", "Arc through the cursor", "Straight"};
-	auto const current{static_cast<int>(m_track_layout)};
-	ImGui::TextDisabled("%s", STR_C("Shape from a free end"));
-	auto const font{ImGui::GetFontSize()};
-	auto const gap{std::round(font * 0.3f)};
-	auto const width{std::floor((ImGui::GetContentRegionAvail().x - 3.0f * gap) * 0.25f)};
-	auto const height{std::round(font * 2.4f)};
-	auto *list{ImGui::GetWindowDrawList()};
-	auto const accent{family_colour(0)};
-	for (int i = 0; i < 4; ++i)
-	{
-		if (i > 0)
-			ImGui::SameLine(0.0f, gap);
-		ImGui::PushID(i);
-		auto const top{ImGui::GetCursorScreenPos()};
-		if (ImGui::InvisibleButton("##shape", ImVec2(width, height)))
-			m_track_layout = static_cast<track_layout>(i);
-		auto const hovered{ImGui::IsItemHovered()};
-		if (hovered)
-			ImGui::SetTooltip("%s\n%s", STR_C(names[i]), STR_C("While laying from a free end: Shift+wheel"));
-		ImGui::PopID();
-		auto const chosen{i == current};
-		ImVec2 const bottom{top.x + width, top.y + height};
-		auto const rounding{std::round(font * 0.35f)};
-		list->AddRectFilled(top, bottom, chosen ? (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 46) : ImGui::GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), rounding);
-		list->AddRect(top, bottom, chosen ? accent : ImGui::GetColorU32(ImGuiCol_Border), rounding, 0, chosen ? 2.0f : 1.0f);
-		auto const pad{std::round(font * 0.45f)};
-		auto const at = [&](float const X, float const Y) { return ImVec2(top.x + pad + X * (width - 2.0f * pad), top.y + pad + Y * (height - 2.0f * pad)); };
-		auto const laid{chosen ? accent : ImGui::GetColorU32(ImGuiCol_Text, 0.7f)};
-		list->AddLine(at(0.0f, 0.85f), at(0.18f, 0.85f), ImGui::GetColorU32(ImGuiCol_TextDisabled), 3.0f);
-		switch (i)
-		{
-		case 0:
-			list->AddBezierQuadratic(at(0.18f, 0.85f), at(0.4f, 0.85f), at(0.61f, 0.6f), laid, 2.0f);
-			list->AddLine(at(0.61f, 0.6f), at(1.0f, 0.1f), laid, 2.0f);
-			break;
-		case 1:
-			list->AddLine(at(0.18f, 0.85f), at(0.45f, 0.85f), laid, 2.0f);
-			list->AddBezierQuadratic(at(0.45f, 0.85f), at(0.85f, 0.85f), at(1.0f, 0.1f), laid, 2.0f);
-			break;
-		case 2: list->AddBezierQuadratic(at(0.18f, 0.85f), at(0.7f, 0.85f), at(1.0f, 0.1f), laid, 2.0f); break;
-		default:
-			list->AddLine(at(0.18f, 0.85f), at(1.0f, 0.85f), laid, 2.0f);
-			for (float y{0.15f}; y < 0.8f; y += 0.2f)
-				list->AddLine(at(1.0f, y), at(1.0f, y + 0.1f), IM_COL32(255, 210, 60, 160), 1.0f);
-			break;
-		}
-		list->AddCircleFilled(at(0.18f, 0.85f), 2.5f, IM_COL32(230, 80, 230, 255));
-		auto const cursor{at(1.0f, 0.1f)};
-		list->AddLine(ImVec2(cursor.x - 4.0f, cursor.y), ImVec2(cursor.x + 4.0f, cursor.y), IM_COL32(255, 210, 60, 255), 1.5f);
-		list->AddLine(ImVec2(cursor.x, cursor.y - 4.0f), ImVec2(cursor.x, cursor.y + 4.0f), IM_COL32(255, 210, 60, 255), 1.5f);
-	}
-	ImGui::TextUnformatted(STR_C(names[current]));
-	ImGui::SameLine();
-	ImGui::TextDisabled("%s", STR_C("(Shift+wheel)"));
-}
-
 int editor_mode::wheel_step(double const Offset, bool const Gesture)
 {
 	auto const &io{ImGui::GetIO()};
@@ -944,8 +893,6 @@ bool editor_mode::track_wheel(double const Offset)
 	}
 	if (joined)
 		m_join_variant += step;
-	else
-		m_track_layout = static_cast<track_layout>((static_cast<int>(m_track_layout) + 4 - step) % 4);
 	return true;
 }
 
@@ -1002,10 +949,11 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	};
 	std::vector<segment_data> pieces;
 	// the curvature of the track laid has to go on from the one of the track it joins, a jump gets a transition curve between them; at
-	// the end of the diverging track of a switch as well, the curve of the switch going on
+	// the end of the diverging track of a switch where a curve is traced from it, the curve of the switch going on, the bends of
+	// straights beginning there with a straight
 	auto const grade{(Points.back().y - Points.front().y) / std::max(1.0, plan_distance(Points.front(), Points.back()))};
 	auto const eased = [&](editor_track::snap_target const &Joint, double const Chainage, double const Sign) {
-		if (Joint.track == nullptr || (Joint.track->eType != tt_Normal && Joint.track->eType != tt_Switch))
+		if (false == goes_on_curved(Joint, traced_from(Points, Modes, Sign < 0.0)))
 			return editor_track::easing{};
 		auto result{editor_track::ease_out_of(*Joint.track, Joint.position, grade * Sign, design.speed, design.norms)};
 		auto const own{Sign * curvature_at(shape, Chainage)};
@@ -1095,6 +1043,14 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	return pieces;
 }
 
+bool editor_mode::traced_from(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, bool const AtEnd)
+{
+	if (Points.size() < 3)
+		return false;
+	auto const index{AtEnd ? Points.size() - 2 : std::size_t{1}};
+	return index < Modes.size() && Modes[index] == lay_mode::curve;
+}
+
 bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining) const
 {
 	auto const &tool{m_lay};
@@ -1107,13 +1063,13 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	auto const joined{End.track != nullptr && glm::length(plan_of(End.direction)) > 1e-6};
 	// from a free end on a curve, or to one, the curve laid next to it turning its way goes on from its curvature: it begins right at the
 	// end, not on a straight, its transition going from that curvature. Where no such curve fits, the line is laid from a straight there,
-	// which lay_pieces eases out of the curve
+	// which lay_pieces eases out of the curve. At a switch only a curve traced from it, the bends of straights from a straight there
 	if (Adjoining)
 	{
 		if (tool.start.track != nullptr && glm::length(plan_of(tool.start.direction)) > 1e-6)
-			adjoining_curve(tool.start, false, design.norms.gauge, design);
+			adjoining_curve(tool.start, false, traced_from(Points, Modes, false), design.norms.gauge, design);
 		if (joined)
-			adjoining_curve(End, true, design.norms.gauge, design);
+			adjoining_curve(End, true, traced_from(Points, Modes, true), design.norms.gauge, design);
 	}
 	auto const curved{design.start_curved || design.end_curved};
 	auto const from_straight = [&]() { return curved && lay_line(Points, Modes, End, Plan, Error, false); };
@@ -1505,6 +1461,7 @@ void editor_mode::lay_switch_mode()
 {
 	auto &tool{m_lay};
 	tool.mode = tool.mode == lay_mode::straights ? lay_mode::curve : lay_mode::straights;
+	m_track_layout = tool.mode == lay_mode::curve ? track_layout::arc_straight : track_layout::straight;
 	if (tool.mode == lay_mode::curve)
 		first_step_done(first_step::trace);
 	tool.status = tool.mode == lay_mode::curve ? STR("Curve: click points along the middle of the track, the last two on the straight after the curve. Tab: back to the straights")
@@ -2010,7 +1967,6 @@ void editor_mode::render_lay_ui()
 	value_chips("radii", tool.radius, {190.0, 300.0, 500.0, 800.0, 1200.0, 2000.0}, "%.0f");
 	tool.radius = std::max(10.0, tool.radius);
 	ImGui::PopItemWidth();
-	render_layout_combo();
 	ImGui::Spacing();
 	ImGui::PushItemWidth(120.0f);
 	ImGui::DragScalar(STR_C("Longest path (m)"), ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
