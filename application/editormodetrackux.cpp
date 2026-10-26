@@ -1829,6 +1829,7 @@ void editor_mode::track_set_delete()
 		if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end())
 			m_route = {};
 	}
+	auto const designs{designs_trimmed(removed)};
 	push_track_snapshot({}, {}, removed);
 	m_track_set.clear();
 	m_node = nullptr;
@@ -1838,6 +1839,8 @@ void editor_mode::track_set_delete()
 	auto status{format(STR_P("%zu track deleted, Ctrl+Z brings it back", "%zu tracks deleted, Ctrl+Z brings them back", static_cast<long long>(removed.size())), removed.size())};
 	if (kept > 0)
 		status += format(STR_C(", %zu with vehicles on them or in the files which can't be changed are left"), kept);
+	if (false == designs.empty())
+		status += "\n" + designs;
 	ui()->set_status(status, false);
 }
 

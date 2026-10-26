@@ -536,12 +536,12 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	for (auto const index : covered)
 	{
 		auto const &old{records[index]};
-		auto const start{alignment_store::chainage_on(result, old.design.start)};
-		auto const end{alignment_store::chainage_on(result, old.design.end)};
+		auto const start{alignment_store::chainage_on(result, alignment_store::kept_start(old))};
+		auto const end{alignment_store::chainage_on(result, alignment_store::kept_end(old))};
 		if (false == start.has_value() || false == end.has_value())
 			return false;
 		if (index == *covered.begin() && *end > *start)
-			origin = old.origin - *start;
+			origin = old.origin + old.from - *start;
 	}
 	auto const layer{covered.empty() ? alignment_store::layer_of(*Chain.tracks.front()) : records[*covered.begin()].layer};
 	for (auto index{covered.rbegin()}; index != covered.rend(); ++index)

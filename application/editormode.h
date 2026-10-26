@@ -1780,6 +1780,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_straight_ui();
 	track_tab m_track_tab{track_tab::path};
 	void delete_selected_track();
+	std::string designs_trimmed(std::vector<TTrack *> const &Removed);
 	void start_straight_gesture(int const Tool);
 	void finish_straight_gesture();
 	void toggle_straight_set(TTrack &Track);

@@ -1596,6 +1596,14 @@ void editor_mode::render_path_ui()
 
 
 
+// the designs kept for the lines the tracks deleted lay along cut down to the tracks left, in the same step of the undo history: what
+// the status tells of it
+std::string editor_mode::designs_trimmed(std::vector<TTrack *> const &Removed)
+{
+	auto const cut{alignment_store::trim(Removed)};
+	return cut > 0 ? std::string{STR_P("The design kept for the line is cut down to the tracks left along it", "The designs kept for the lines are cut down to the tracks left along them", static_cast<long long>(cut))} : std::string{};
+}
+
 void editor_mode::delete_selected_track()
 {
 	auto *track{selected_track()};
@@ -1630,6 +1638,8 @@ void editor_mode::delete_selected_track()
 			created.push_back(straight);
 			ui()->set_status(STR_C("The double switch is replaced by its main track, Shift+Del removes all of it"), false);
 		}
+		if (auto const note{designs_trimmed({set->first, set->link, set->second})}; false == note.empty())
+			ui()->set_status(note, false);
 		push_track_snapshot({}, created, {set->first, set->link, set->second});
 		if (std::any_of(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), [&](TTrack const *Each) { return Each == set->first || Each == set->link || Each == set->second; }))
 			m_route = {};
@@ -1653,6 +1663,8 @@ void editor_mode::delete_selected_track()
 		created.push_back(main);
 		ui()->set_status(STR_C("The switch is replaced by its main track, Shift+Del removes all of it"), false);
 	}
+	if (auto const note{designs_trimmed({track})}; false == note.empty())
+		ui()->set_status(note, false);
 	push_track_snapshot({}, created, {track});
 	// the model and the events of a turntable can't stay without its track
 	if (track->eType == tt_Table)

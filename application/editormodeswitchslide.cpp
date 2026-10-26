@@ -436,6 +436,8 @@ void editor_mode::lay_switch_branch(switch_branch const &Branch, editor_track::e
 	for (std::size_t i = 0; i < records.size(); ++i)
 	{
 		auto const &record{records[i]};
+		if (false == record.whole())
+			continue;
 		auto const atstart{plan_distance(record.design.start, from) < geometry::same_point};
 		if (false == atstart && plan_distance(record.design.end, from) >= geometry::same_point)
 			continue;

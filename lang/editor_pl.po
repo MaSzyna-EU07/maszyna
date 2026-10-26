@@ -12297,3 +12297,9 @@ msgstr "Wyprowadza z niego tor: prostą, a w trybie łuku (Tab) łuk i prostą; 
 
 msgid "Dragging over another free end: another way to join"
 msgstr "Przeciąganie nad innym wolnym końcem: inny sposób połączenia"
+
+msgid "The design kept for the line is cut down to the tracks left along it"
+msgid_plural "The designs kept for the lines are cut down to the tracks left along them"
+msgstr[0] "Projekt linii zapisany w scenerii przycięto do torów, które przy nim zostały"
+msgstr[1] "Projekty linii zapisane w scenerii przycięto do torów, które przy nich zostały"
+msgstr[2] "Projekty linii zapisane w scenerii przycięto do torów, które przy nich zostały"

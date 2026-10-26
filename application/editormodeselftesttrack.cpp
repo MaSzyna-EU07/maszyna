@@ -398,7 +398,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		for (std::size_t r = 0; r < records.size(); ++r)
 		{
 			auto const &entry{records[r]};
-			WriteLog(format("SELFTEST alignment %zu in %s: km %.3f, %zu vertices, %zu elements, consistent %d, length %.3f", r, scene::Layers.layer(entry.layer).name.c_str(), entry.origin / 1000.0, entry.design.vertices.size(), entry.elements.size(), entry.consistent ? 1 : 0, entry.result.length));
+			WriteLog(format("SELFTEST alignment %zu in %s: km %.3f, %zu vertices, %zu elements, consistent %d, length %.3f, kept %.3f - %.3f, %zu clicks", r, scene::Layers.layer(entry.layer).name.c_str(), entry.origin / 1000.0, entry.design.vertices.size(), entry.elements.size(), entry.consistent ? 1 : 0, entry.result.length,
+			                entry.from, entry.kept_to(), entry.clicks.size()));
 			for (auto const &e : entry.elements)
 				WriteLog(format("SELFTEST   element %s vertex %d km %.3f L %.3f R %.3f -> %.3f cant %.1f", e.kind.c_str(), e.vertex, (entry.origin + e.chainage) / 1000.0, e.length, e.radius_start, e.radius_end, e.cant));
 		}

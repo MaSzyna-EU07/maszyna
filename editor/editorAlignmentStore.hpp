@@ -53,6 +53,12 @@ struct record
 	std::vector<glm::dvec2> samples;
 	// the points clicked when the line was laid, its curves fitted to them, so they can be fitted again
 	std::vector<glm::dvec3> clicks;
+	// the stretch of its line the design is kept for, chainages from its start: all of it, unless tracks along it were deleted and
+	// the design was cut down to the ones left
+	double from{0.0};
+	double to{-1.0}; // below 0: to the end of the line
+	double kept_to() const { return to < 0.0 ? result.length : to; }
+	bool whole() const { return from <= 1e-6 && (to < 0.0 || to >= result.length - 1e-6); }
 };
 
 struct hit
@@ -82,8 +88,15 @@ std::optional<hit> at(glm::dvec3 const &Point, double const Reach = tolerance);
 std::optional<hit> on_track(TTrack const &Track, double const Reach = tolerance);
 // the vertex the tracks follow, if they all lie along one stored alignment and the curve elements under them belong to one vertex
 std::optional<designed_vertex> vertex_of(std::vector<std::pair<TTrack *, bool>> const &Run);
-// stored alignment with these ends, either way
+// stored alignment with these ends, either way; none cut down to a part of its line
 int find(glm::dvec3 const &Start, glm::dvec3 const &End, bool &Reversed);
+// the ends of the stretch of its line the record is kept for
+glm::dvec3 kept_start(record const &Record);
+glm::dvec3 kept_end(record const &Record);
+// the stored alignments the tracks deleted lay along cut down to the stretches of their line other tracks still lie along, a design
+// with none left forgotten: the part of a line with no track is no part of its design any more. Called before the deletion goes into
+// the undo history, which takes the records along. The count of the designs cut down or forgotten
+std::size_t trim(std::vector<TTrack *> const &Removed);
 // stored alignment near the tracks, whose line they no longer follow; Departure receives the largest distance
 int departed(std::vector<TTrack *> const &Tracks, double &Departure);
 // keeps the design in the file of the layer, in place of the one with the same ends; with no points clicked given it keeps the
