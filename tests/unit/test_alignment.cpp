@@ -798,3 +798,87 @@ TEST_CASE("alignment: the pieces of a compound curve are never of no length, wha
 	MESSAGE(valid << " valid designs");
 	CHECK(bad == 0);
 }
+
+namespace {
+glm::dvec2 heading_of(double const Angle) { return heading(Angle); }
+
+// points every Spacing metres along a line from the origin along x of segments of the curvature going evenly from the first to the
+// second (to the left positive) over the length, and two on the straight after it 30 and 60 m on; the end and the heading there
+std::vector<glm::dvec2> walked_points(std::vector<std::array<double, 3>> const &Segments, double const Spacing, line_end &End) {
+	std::vector<glm::dvec2> points;
+	glm::dvec2 position{0.0};
+	double heading{0.0};
+	double chainage{0.0};
+	auto next{Spacing};
+	for (auto const &[from, to, length] : Segments) {
+		int const steps{std::max(1, static_cast<int>(std::ceil(length / 0.05)))};
+		auto const step{length / steps};
+		auto const start{heading};
+		auto const angle = [&, from = from, to = to, length = length](double const S) { return start + from * S + (to - from) * S * S / (2.0 * length); };
+		for (int i = 0; i < steps; ++i) {
+			position += heading_of(angle((i + 0.5) * step)) * step;
+			chainage += step;
+			if (chainage >= next - 1e-6) {
+				points.push_back(position);
+				next += Spacing;
+			}
+		}
+		heading = angle(length);
+	}
+	points.push_back(position + heading_of(heading) * 30.0);
+	points.push_back(position + heading_of(heading) * 60.0);
+	End.position = position + heading_of(heading) * 60.0;
+	End.heading = heading;
+	return points;
+}
+} // namespace
+
+TEST_CASE("alignment: reverse curves traced in the mode of a curve, with no straight between them or with one, two or three curves") {
+	double const k{1.0 / 300.0};
+	struct shape {
+		char const *name;
+		std::vector<std::array<double, 3>> segments;
+		double speed;
+		std::vector<double> radii;
+		double noise;
+	};
+	std::vector<shape> const shapes{
+	    {"transitions meeting at the inflection", {{0, 0, 20}, {0, k, 30}, {k, k, 50}, {k, -k, 60}, {-k, -k, 50}, {-k, 0, 30}}, 100.0, {300.0, 300.0}, 0.0},
+	    {"the same clicked 5 cm off", {{0, 0, 20}, {0, k, 30}, {k, k, 50}, {k, -k, 60}, {-k, -k, 50}, {-k, 0, 30}}, 60.0, {300.0, 300.0}, 0.05},
+	    {"a straight between", {{0, 0, 20}, {0, k, 30}, {k, k, 50}, {k, 0, 30}, {0, 0, 30}, {0, -k, 30}, {-k, -k, 50}, {-k, 0, 30}}, 60.0, {300.0, 300.0}, 0.0},
+	    {"arcs meeting", {{0, 0, 20}, {k, k, 60}, {-k, -k, 60}}, 40.0, {300.0, 300.0}, 0.0},
+	    {"other radii", {{0, 0, 20}, {0, 0.5 * k, 40}, {0.5 * k, 0.5 * k, 60}, {0.5 * k, -0.75 * k, 70}, {-0.75 * k, -0.75 * k, 40}, {-0.75 * k, 0, 40}}, 80.0, {600.0, 400.0}, 0.0},
+	    {"the ends not parallel", {{0, 0, 20}, {0, k, 30}, {k, k, 90}, {k, -k, 60}, {-k, -k, 30}, {-k, 0, 30}}, 60.0, {300.0, 300.0}, 0.0},
+	    {"left, right, left", {{0, 0, 20}, {0, k, 30}, {k, k, 40}, {k, -k, 60}, {-k, -k, 40}, {-k, k, 60}, {k, k, 40}, {k, 0, 30}}, 60.0, {300.0, 300.0, 300.0}, 0.0},
+	    {"left, right, left clicked 5 cm off", {{0, 0, 20}, {0, k, 30}, {k, k, 40}, {k, -k, 60}, {-k, -k, 40}, {-k, k, 60}, {k, k, 40}, {k, 0, 30}}, 60.0, {300.0, 300.0, 300.0}, 0.05},
+	};
+	for (auto const &each : shapes) {
+		std::string const name{each.name};
+		CAPTURE(name);
+		line_end end;
+		auto points{walked_points(each.segments, 10.0, end)};
+		// off to and fro across the way, as clicks are
+		for (std::size_t i = 0; i < points.size(); ++i)
+			points[i].y += each.noise * (i % 3 == 0 ? 1.0 : i % 3 == 1 ? -0.6 : 0.2);
+		alignment::design base;
+		base.speed = each.speed;
+		base.start = {0.0, 0.0, 0.0};
+		base.start_direction = heading(0.0);
+		base.end = {end.position.x, 0.0, end.position.y};
+		base.end_direction = heading(end.heading);
+		auto const fit{alignment::fit_trace_stretch(base, points, 0, true)};
+		REQUIRE(fit.valid);
+		REQUIRE(fit.vertices.size() == each.radii.size());
+		for (std::size_t i = 0; i < each.radii.size(); ++i)
+			CHECK(fit.vertices[i].radius == doctest::Approx(each.radii[i]).epsilon(0.03));
+		CHECK(fit.rms < 0.02 + each.noise);
+		// laid as the design of the curves fitted, with no warning of radii made smaller
+		auto laid{base};
+		laid.vertices = fit.vertices;
+		for (std::size_t i = 1; i + 1 < laid.vertices.size(); ++i)
+			laid.vertices[i].position = fit.vertices[i].position;
+		auto const line{alignment::compute(laid)};
+		CHECK(line.valid);
+		CHECK(line.radius_warnings.empty());
+	}
+}

@@ -3974,6 +3974,218 @@ std::optional<trace_stretch> fit_arcs(design const &Single, std::vector<glm::dve
 
 } // namespace
 
+namespace
+{
+
+// a chain of curves the points show, two to four: a curve where they turn one way, the next where they turn the other way or after a
+// straight. The lines between the curves, the common tangents of two curves of a reverse curve, are fitted with the radii and the
+// transitions; two curves turning the other way may meet with no straight between them, their tangents filling the room between their
+// vertices. Two turning the same way are two curves only with a straight of shortest_between between them, else one compound curve
+std::optional<trace_stretch> fit_chain(design const &Base, std::vector<glm::dvec2> const &Points, double const Speed)
+{
+	auto const n{Points.size()};
+	if (n < 6)
+		return std::nullopt;
+	auto const start{plan_of(Base.start)};
+	auto const startdirection{glm::normalize(Base.start_direction)};
+	auto const end{plan_of(Base.end)};
+	auto const enddirection{glm::normalize(Base.end_direction)};
+	auto const travel{end - start};
+
+	// the curvature the points show, of the circle through each point and its neighbours, a little smoothed
+	std::vector<double> bends(n, 0.0);
+	for (std::size_t i = 1; i + 1 < n; ++i)
+	{
+		auto const a{Points[i] - Points[i - 1]};
+		auto const b{Points[i + 1] - Points[i]};
+		auto const c{Points[i + 1] - Points[i - 1]};
+		auto const lengths{glm::length(a) * glm::length(b) * glm::length(c)};
+		if (lengths > 1e-9)
+			bends[i] = 2.0 * cross(a, b) / lengths;
+	}
+	std::vector<double> curvature(n, 0.0);
+	double peak{0.0};
+	for (std::size_t i = 1; i + 1 < n; ++i)
+	{
+		curvature[i] = (bends[i - 1] + 2.0 * bends[i] + bends[i + 1]) / ((i > 1 ? 1.0 : 0.0) + 2.0 + (i + 2 < n ? 1.0 : 0.0));
+		peak = std::max(peak, std::abs(curvature[i]));
+	}
+	if (peak < 1.0 / kTraceRadiusMax)
+		return std::nullopt;
+	// the parts turning one way, of two points at least, the ones turning hardly at all between them
+	struct part
+	{
+		int side;
+		std::size_t first;
+		std::size_t last;
+	};
+	std::vector<part> parts;
+	for (std::size_t i = 1; i + 1 < n; ++i)
+	{
+		int const side{curvature[i] > 0.2 * peak ? 1 : curvature[i] < -0.2 * peak ? -1 : 0};
+		if (side == 0)
+			continue;
+		if (false == parts.empty() && parts.back().side == side && parts.back().last + 1 == i)
+			parts.back().last = i;
+		else
+			parts.push_back({side, i, i});
+	}
+	parts.erase(std::remove_if(parts.begin(), parts.end(), [](part const &Part) { return Part.last == Part.first; }), parts.end());
+	// the same way again right after, with nothing straight between, is the same curve
+	for (std::size_t i = 1; i < parts.size();)
+		if (parts[i].side == parts[i - 1].side && parts[i].first <= parts[i - 1].last + 1)
+		{
+			parts[i - 1].last = parts[i].last;
+			parts.erase(parts.begin() + static_cast<std::ptrdiff_t>(i));
+		}
+		else
+			++i;
+	auto const count{parts.size()};
+	if (count < 2 || count > 4 || std::none_of(parts.begin() + 1, parts.end(), [&](part const &Part) { return Part.side != (&Part - 1)->side; }))
+		return std::nullopt;
+
+	// the parameters: of each line between two curves its direction and its distance from the start across it, then the logarithms of the
+	// radii, then the square roots of the lengths of the transitions
+	auto const lines{count - 1};
+	auto const shaped = [&](std::vector<double> const &Parameters, design &Trial) {
+		std::vector<glm::dvec2> origins;
+		std::vector<glm::dvec2> directions;
+		for (std::size_t j = 0; j < lines; ++j)
+		{
+			glm::dvec2 const direction{std::cos(Parameters[2 * j]), std::sin(Parameters[2 * j])};
+			glm::dvec2 const across{-direction.y, direction.x};
+			directions.push_back(direction);
+			origins.push_back(start + across * Parameters[2 * j + 1]);
+		}
+		// where two lines cross: along the first one, along the second
+		auto const crossing = [](glm::dvec2 const &A, glm::dvec2 const &Along, glm::dvec2 const &B, glm::dvec2 const &Other, double &First, double &Second) {
+			auto const determinant{cross(Along, Other)};
+			if (std::abs(determinant) < 1e-9)
+				return false;
+			First = cross(B - A, Other) / determinant;
+			Second = cross(B - A, Along) / determinant;
+			return true;
+		};
+		std::vector<glm::dvec2> vertices;
+		double first;
+		double along;
+		if (false == crossing(start, startdirection, origins.front(), directions.front(), first, along) || first <= 0.0)
+			return false;
+		vertices.push_back(start + startdirection * first);
+		for (std::size_t j = 0; j + 1 < lines; ++j)
+		{
+			double a;
+			double b;
+			if (false == crossing(origins[j], directions[j], origins[j + 1], directions[j + 1], a, b))
+				return false;
+			vertices.push_back(origins[j] + directions[j] * a);
+		}
+		double last;
+		if (false == crossing(end, -enddirection, origins.back(), directions.back(), last, along) || last <= 0.0)
+			return false;
+		vertices.push_back(end - enddirection * last);
+		// each vertex on from the one before along the line between them
+		for (std::size_t j = 0; j < lines; ++j)
+			if (glm::dot(vertices[j + 1] - vertices[j], directions[j]) <= 0.0)
+				return false;
+		Trial = Base;
+		Trial.vertices.assign(count, vertex{});
+		Trial.vertices.front().offset = first;
+		Trial.vertices.back().offset = last;
+		for (std::size_t i = 1; i + 1 < count; ++i)
+			Trial.vertices[i].position = vertices[i];
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			auto const radius{std::exp(std::clamp(Parameters[2 * lines + i], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax)))};
+			auto const length{Parameters.size() > 2 * lines + count ? Parameters[2 * lines + count + i] * Parameters[2 * lines + count + i] : 0.0};
+			plain_curve(Trial.vertices[i], radius, std::min({length, radius * vertex_deflection(Trial, i), longest_transition(Speed, radius, Trial.norms)}), Speed, Trial.norms);
+		}
+		return true;
+	};
+	residuals_of const residuals{[&](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
+		design trial;
+		return shaped(Parameters, trial) && stretch_residuals(trial, Points, Residuals);
+	}};
+	// started from the line through the points where the curvature changes, the ones hardly turning there or the two either side
+	std::vector<double> parameters;
+	for (std::size_t j = 0; j < lines; ++j)
+	{
+		auto const from{parts[j].last};
+		auto const to{parts[j + 1].first};
+		auto direction{Points[to] - Points[from]};
+		if (glm::length(direction) < 1e-3)
+			return std::nullopt;
+		if (glm::dot(direction, travel) < 0.0)
+			direction = -direction;
+		auto const angle{std::atan2(direction.y, direction.x)};
+		glm::dvec2 const across{-std::sin(angle), std::cos(angle)};
+		parameters.push_back(angle);
+		parameters.push_back(glm::dot(across, 0.5 * (Points[from] + Points[to]) - start));
+	}
+	for (auto const &each : parts)
+	{
+		double sum{0.0};
+		for (auto i{each.first}; i <= each.last; ++i)
+			sum += std::abs(curvature[i]);
+		parameters.push_back(std::log(std::clamp(static_cast<double>(each.last - each.first + 1) / std::max(sum, 1e-9), kTraceRadiusMin, kTraceRadiusMax)));
+	}
+	auto best{parameters};
+	auto lowest{least_squares(best, residuals)};
+	if (lowest == std::numeric_limits<double>::max())
+		return std::nullopt;
+	auto longer{best};
+	for (std::size_t i = 0; i < count; ++i)
+		longer.push_back(std::sqrt(20.0));
+	if (least_squares(longer, residuals) < lowest)
+		best = longer;
+	design chain;
+	if (false == shaped(best, chain))
+		return std::nullopt;
+	auto const laid{compute(chain)};
+	if (false == laid.valid || laid.curves.size() != count)
+		return std::nullopt;
+	// the radii and the transitions the curves were laid with, to the metre; where two curves of a reverse curve meet, filling the room
+	// between their vertices, a metre more doesn't fit: those as they were laid, a hair under, the design laid again giving no warning
+	auto const settled = [&](bool const Exact) {
+		auto settle{chain};
+		for (auto const &curve : laid.curves)
+		{
+			if (curve.vertex < 0 || curve.vertex >= static_cast<int>(count))
+				return std::optional<design>{};
+			auto &curved{settle.vertices[curve.vertex]};
+			auto const radius{Exact ? curve.radius * (1.0 - 1e-6) : std::max(kTraceRadiusMin, std::round(curve.radius))};
+			auto const in{Exact ? curve.transition_in * (1.0 - 1e-6) : std::round(curve.transition_in)};
+			auto const out{Exact ? curve.transition_out * (1.0 - 1e-6) : std::round(curve.transition_out)};
+			plain_curve(curved, radius, std::min(in, out), Speed, settle.norms);
+			curved.transition_in = in;
+			curved.transition_out = out;
+		}
+		return std::optional<design>{settle};
+	};
+	auto rounded{settled(false)};
+	if (false == rounded.has_value())
+		return std::nullopt;
+	chain = *rounded;
+	auto again{compute(chain)};
+	if (again.valid && false == again.radius_warnings.empty())
+	{
+		chain = *settled(true);
+		again = compute(chain);
+	}
+	if (false == again.valid || again.curves.size() != count || false == again.radius_warnings.empty())
+		return std::nullopt;
+	for (auto const &curve : again.curves)
+		if (curve.radius < 1.05 * kTraceRadiusMin || curve.radius > 0.95 * kTraceRadiusMax || curve.deflection < 0.25 * kPi / 180.0 || curve.curvature_in > 0.0 || curve.curvature_out > 0.0)
+			return std::nullopt;
+	auto const curves{laid_curves(again)};
+	for (std::size_t i = 1; i < curves.size(); ++i)
+		if (curves[i].side == curves[i - 1].side && curves[i].from - curves[i - 1].to < shortest_between(Base))
+			return std::nullopt;
+	return stretch_of(chain, Points);
+}
+
+} // namespace
+
 trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights)
 {
 	trace_stretch chosen;
@@ -4171,6 +4383,10 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 				take(candidate);
 		}
 	}
+
+	// a reverse curve, or more curves turning to and fro
+	if (false == chosen.valid || chosen.rms > kStretchClose)
+		take(fit_chain(Base, Points, speed));
 	return chosen;
 }
 
