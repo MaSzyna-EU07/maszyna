@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <memory>
 
 #include "scene/scenenode.h"
 #include "world/Segment.h"
@@ -21,6 +22,7 @@ namespace gfx
 {
 class scene_walk;
 }
+struct catenary_span;
 
 class TTraction : public scene::basic_node
 {
@@ -58,6 +60,8 @@ class TTraction : public scene::basic_node
     // visualization data
     glm::dvec3 m_origin;
     gfx::geometry_handle m_geometry;
+    // stan przęsła rysowanego wg typu sieci (dopisek "type"); pusty = przęsło rysowane po staremu. szczegóły w world/catenary_span.h
+    std::shared_ptr<catenary_span> m_catenaryspan;
 
     explicit TTraction( scene::node_data const &Nodedata );
 

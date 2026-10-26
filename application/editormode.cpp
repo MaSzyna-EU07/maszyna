@@ -34,6 +34,7 @@ extern char **environ;
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "world/catenary_scene.h"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIcons.hpp"
 #include "utilities/translation.h"
@@ -1276,6 +1277,7 @@ void editor_mode::redo_one()
 
 bool editor_mode::update()
 {
+    // the catenary doesn't need the far tracks drawn (50 km of them cost a lot in a big scenery)
     Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
     if (m_vehicle.leave)
@@ -1442,6 +1444,11 @@ bool editor_mode::update()
             signal_refresh();
             signal_move_update();
             draw_signal_overlay();
+        }
+        if (m_track_tab == track_tab::catenary)
+        {
+            catenary_drag_update();
+            draw_catenary_overlay();
         }
         draw_parallel_preview();
         if (m_track_tab == track_tab::lineside)
@@ -2986,6 +2993,23 @@ bool editor_mode::save()
     switch_store::tidy();
     switch_store::settle();
     infra_store();
+    // the catenary (cantilevers on the poles) lives in files of its own; a file made in the editor needs the directive
+    std::vector<std::string> catenarynew;
+    if (catenary_scene_changed())
+    {
+        std::string message;
+        if (false == catenary_scene_save(message))
+        {
+            ui()->set_status(format(STR_C("The catenary couldn't be saved: %s"), message.c_str()), true);
+            return false;
+        }
+        WriteLog("Editor: catenary written: " + message, logtype::generic);
+    }
+    for (auto const &file : catenary_scene_new_files())
+    {
+        rootstatements.emplace_back("catenary " + file + " endcatenary");
+        catenarynew.push_back(file);
+    }
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {
         m_saved_camera = std::make_pair(glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle});
@@ -3034,6 +3058,9 @@ bool editor_mode::save()
     {
         scene::Layers.terrain_directive(true);
     }
+    if (result.success)
+        for (auto const &file : catenarynew)
+            catenary_scene_file_included(file);
     ui()->set_status(result.message, false == result.success);
     WriteLog("Editor: " + result.message, logtype::generic);
     return result.success;
@@ -3815,6 +3842,7 @@ void editor_mode::render_environment_window()
         {
             Global.AirTemperature = std::clamp(temperature, -35.0f, 40.0f);
             simulation::Environment.compute_weather();
+            catenary_scene_temperature(); // ciężary kotwień idą za temperaturą
         }
         // the layers of clouds, the fog and a weather report, as the weather section of a scenery describes them
         if (ImGui::CollapsingHeader(STR_C("Clouds, fog and weather report")))
@@ -4668,7 +4696,7 @@ editor_mode::work_area editor_mode::current_work_area() const
 	if (m_terrain_open)
 		return work_area::terrain;
 	if (m_track_window_open)
-		return work_area::tracks;
+		return m_track_tab == track_tab::catenary ? work_area::catenary : work_area::tracks;
 	if (m_roadtool.window)
 		return work_area::roads;
 	return work_area::surroundings;
@@ -4684,7 +4712,11 @@ void editor_mode::choose_work_area(work_area const Area)
 		break;
 	case work_area::tracks:
 		terrain_workspace(false);
-		show_track_tab(m_track_tab);
+		show_track_tab(m_track_tab == track_tab::catenary ? track_tab::path : m_track_tab);
+		break;
+	case work_area::catenary:
+		terrain_workspace(false);
+		show_track_tab(track_tab::catenary);
 		break;
 	case work_area::roads:
 		m_track_window_open = false;
@@ -4713,8 +4745,9 @@ void editor_mode::render_workspaces()
 	    {STR_C("Tracks"), work_area::tracks, editor_icons::icon::work_tracks, STR_C("Tracks and switches, signals, objects along the track, checks of the line")},
 	    {STR_C("Roads"), work_area::roads, editor_icons::icon::work_roads, STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
 	    {STR_C("Terrain"), work_area::terrain, editor_icons::icon::work_terrain, STR_C("Heightmap terrain: chunks, sculpting, painting, water, orthophoto")},
+	    {STR_C("Catenary"), work_area::catenary, editor_icons::icon::work_catenary, STR_C("The overhead catenary: poles with cantilevers, gantries, the wires of the chains")},
 	};
-	char const *const keys[] = {"F2", "F3", "F4", "F5"};
+	char const *const keys[] = {"F2", "F3", "F4", "F5", "F6"};
 	auto const current{current_work_area()};
 	auto const &style{ImGui::GetStyle()};
 	auto *list{ImGui::GetWindowDrawList()};
@@ -5610,7 +5643,7 @@ void editor_mode::render_shortcuts_window()
 	      {"Ctrl+Shift+F11", "Export scenery dump"},
 	      {"F11", "Leave the editor"},
 	      {"F10", "Quit the simulator"}}},
-	    {"Fields of work", {{"F2", "Surroundings"}, {"F3", "Tracks"}, {"F4", "Roads"}, {"F5", "Terrain"}}},
+	    {"Fields of work", {{"F2", "Surroundings"}, {"F3", "Tracks"}, {"F4", "Roads"}, {"F5", "Terrain"}, {"F6", "Catenary"}}},
 	    {"Camera",
 	     {{"RMB held, mouse", "Look around"},
 	      {"RMB held, W S A D", "Fly forwards, back, left, right (arrows in the legacy scheme)"},
@@ -6362,6 +6395,8 @@ void editor_mode::delete_selected()
     // what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks
     if (road_delete())
         return;
+    if (m_track_tab == track_tab::catenary && ui()->mode() == nodebank_panel::TRACK && catenary_delete_selected())
+        return;
     if (m_instance != 0 && signal_delete(m_instance))
         return;
     if (m_instance != 0)
@@ -6429,6 +6464,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     if (ui()->mode() == nodebank_panel::TRACK && is_press(Action) && (Mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT)) == 0 && typed_key(Key))
         return;
 
+    // the catenary tool may have keys of its own
+    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::catenary && catenary_on_key(Key, Action, Mods))
+        return;
+
     // gizmo transform shortcuts (Q/W/E/R) — only when the camera isn't being flown (RMB up).
     // handled before the camera keyboard step because Q/W/E are also the fly-mode movement keys,
     // which would otherwise consume them.
@@ -6452,6 +6491,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_F3: choose_work_area(work_area::tracks); break;
         case GLFW_KEY_F4: choose_work_area(work_area::roads); break;
         case GLFW_KEY_F5: choose_work_area(work_area::terrain); break;
+        case GLFW_KEY_F6: choose_work_area(work_area::catenary); break;
         // the edit modes in the order of the toolbar; in the track mode the digits typed as a value were taken already
         case GLFW_KEY_1: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::MODIFY); break;
         case GLFW_KEY_2: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::ADD); break;
@@ -6544,6 +6584,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         return;
     if (Global.ctrlState && Key == GLFW_KEY_Z && is_press(Action))
     {
+        // in the catenary tool its own changes are taken back first
+        if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::catenary && catenary_undo())
+            return;
         undo_last();
         return;
     }
@@ -6886,6 +6929,8 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     signal_release();
                 if (m_switch.slide.active)
                     switch_slide_finish();
+                if (catenary_dragging())
+                    catenary_release();
             }
 
             m_dragging = false;

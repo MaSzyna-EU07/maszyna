@@ -403,6 +403,13 @@ enum class user_command
 	wiperswitchincrease,
 	wiperswitchdecrease,
 	lightsset,
+	fmradiotoggle,
+	fmradiovolumeincrease,
+	fmradiovolumedecrease,
+	fmradiovolumeset,
+	fmradiotuneincrease,
+	fmradiotunedecrease,
+	fmradiotuneset,
 	none = -1
 };
 

@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "world/Track.h"
 #include "world/Traction.h"
+#include "world/catenary_span.h"
 #include "world/MemCell.h"
 #include "world/TrackSleepers.h"
 #include "model/AnimModel.h"
@@ -2655,6 +2656,33 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 		walk_program( walk_shader::line );
 
 	walk_draw(Traction->m_geometry);
+
+	// up close also the solids of a span drawn by the type of the catenary: the wires and ropes in their real thickness and the fittings.
+	// they're opaque, so they're drawn without blending and write the depth; otherwise they'd cover one another by the order they're drawn in
+	if (auto const solid{catenary_span_solid(*Traction, Global.pCamera.Pos)}; solid.wires != null_handle)
+	{
+		auto const blending{walk_blending_enabled()};
+		if (m_renderpass.draw_mode != rendermode::shadows)
+			walk_blending(false);
+		model_ubs.param[0] = glm::vec4(Traction->wire_color(), 1.0f);
+		walk_draw(solid.wires);
+		++m_renderpass.draw_stats.drawcalls;
+		if (solid.fittings != null_handle)
+		{
+			walk_draw(solid.fittings);
+			++m_renderpass.draw_stats.drawcalls;
+		}
+		// the rope of the tensioning device at the end of the span (steel)
+		if (solid.rope != null_handle)
+		{
+			auto const &steel{catenary_rope_metal()};
+			model_ubs.param[0] = glm::vec4(steel.color[0], steel.color[1], steel.color[2], 1.0f);
+			walk_draw(solid.rope);
+			++m_renderpass.draw_stats.drawcalls;
+		}
+		if (m_renderpass.draw_mode != rendermode::shadows)
+			walk_blending(blending);
+	}
 
 	// debug data
 	++m_renderpass.draw_stats.traction;

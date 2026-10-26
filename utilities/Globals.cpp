@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "world/catenary_span.h"
 #include "Console.h"
 #include "scripting/PyInt.h"
 #include "utilities/Timer.h"
@@ -196,6 +197,24 @@ bool global_settings::ConfigParseAudio(cParser& Parser, const std::string& token
     if (token == "sound.asyncload")
     {
         ParseOne(Parser, AudioAsyncLoad);
+        return true;
+    }
+
+    if (token == "fmradio.enabled")
+    {
+        ParseOne(Parser, fmradio_enabled);
+        return true;
+    }
+
+    if (token == "fmradio.cleansound")
+    {
+        ParseOne(Parser, fmradio_cleansound);
+        return true;
+    }
+
+    if (token == "fmradio.stations")
+    {
+        fmradio_stations = Parser.getToken<std::string>(false);
         return true;
     }
 
@@ -606,6 +625,20 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     if (token == "smoothtraction")
     {
         ParseOne(Parser, bSmoothTraction);
+        return true;
+    }
+
+    if (token == "catenary.procedural")
+    {
+        ParseOne(Parser, CatenaryProcedural);
+        return true;
+    }
+
+    if (token == "catenary.solidrange")
+    {
+        // zasięg rysowania przewodów sieci trakcyjnej jako brył [m]; 0 wyłącza
+        ParseOne(Parser, CatenarySettings.solid_range);
+        CatenarySettings.solid_range = std::clamp(CatenarySettings.solid_range, 0.f, 2000.f);
         return true;
     }
 
@@ -2046,6 +2079,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.volume.positional", EnvironmentPositionalVolume );
     export_as_text( Output, "sound.volume.ambient", EnvironmentAmbientVolume );
     export_as_text( Output, "sound.asyncload", AudioAsyncLoad );
+    export_as_text( Output, "fmradio.enabled", fmradio_enabled );
+    export_as_text( Output, "fmradio.cleansound", fmradio_cleansound );
+    export_as_text( Output, "fmradio.stations", fmradio_stations );
     export_as_text( Output, "physicslog", WriteLogFlag );
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "physics.sleepheld", physics_sleepheld );
@@ -2098,6 +2134,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.smoke", Smoke );
     export_as_text( Output, "gfx.smoke.fidelity", SmokeFidelity );
     export_as_text( Output, "smoothtraction", bSmoothTraction );
+    export_as_text( Output, "catenary.procedural", CatenaryProcedural );
+    export_as_text( Output, "catenary.solidrange", CatenarySettings.solid_range );
     export_as_text( Output, "splinefidelity", SplineFidelity );
     export_as_text( Output, "sleeperdistance", SleeperDistance );
     export_as_text( Output, "sleepers3d", ( Sleepers3D.empty() ? std::string{ "none" } : Sleepers3D ) );

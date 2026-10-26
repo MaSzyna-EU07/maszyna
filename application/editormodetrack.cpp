@@ -348,9 +348,9 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 11> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 11> const modes{{
+	static std::array<track_mode, 12> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters", editor_icons::icon::select, 0},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track", editor_icons::icon::lay_track, 0},
 	    {"Plan", "G", track_tab::straights, "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too", editor_icons::icon::curve, 0},
@@ -358,6 +358,7 @@ std::array<editor_mode::track_mode, 11> const &editor_mode::track_modes()
 	    {"Parallel", "N", track_tab::parallel, "A second track beside a track: LMB on it, then the side and the spacing", editor_icons::icon::parallel, 0},
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it", editor_icons::icon::turntable, 1},
 	    {"Signals", "H", track_tab::signals, "Signals by the track, from the templates of the scenery, with the event the train reads them by", editor_icons::icon::signal, 1},
+	    {"Catenary", "F6", track_tab::catenary, "Poles with cantilevers by the track, the card chosen from the catalogue by the distance of the pole; the spans checked against the catalogue", editor_icons::icon::catenary, 1},
 	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, trainsets", editor_icons::icon::objects, 1},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line", editor_icons::icon::profile, 2},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows", editor_icons::icon::speed, 2},
@@ -415,6 +416,9 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 		break;
 	case track_tab::signals:
 		signal_refresh(true);
+		break;
+	case track_tab::catenary:
+		catenary_scan();
 		break;
 	default:
 		break;
@@ -491,6 +495,7 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::parallel: return STR_C("Parallel track");
 	case track_tab::signals: return STR_C("Signal");
 	case track_tab::turntable: return STR_C("Turntable");
+	case track_tab::catenary: return catenary_mode_name();
 	default: return STR_C("Select");
 	}
 }
@@ -511,6 +516,7 @@ void editor_mode::render_track_inspector()
 		m_vehicle.open = false;
 	}
 	ui()->set_track(m_track_window_open);
+	ui()->set_track_title(m_track_tab == track_tab::catenary ? STR("Catenary") : std::string{});
 	if (false == m_track_window_open)
 	{
 		// a closed window takes its mode with it
@@ -549,9 +555,13 @@ void editor_mode::render_track_tool_options()
 {
 	auto *track{selected_track()};
 	// the tools themselves are in the toolbar
-	render_track_search();
-	ImGui::Spacing();
-	render_track_guide();
+	if (m_track_tab != track_tab::catenary)
+	{
+		// the catenary is a field of work of its own: no search of the paths there
+		render_track_search();
+		ImGui::Spacing();
+		render_track_guide();
+	}
 	// the texts of the tools go on to the next line at the edge of the panel, none of them makes it scroll sideways
 	ImGui::PushTextWrapPos(0.0f);
 	switch (m_track_tab)
@@ -584,6 +594,7 @@ void editor_mode::render_track_tool_options()
 		break;
 	case track_tab::lineside: render_lineside_ui(); break;
 	case track_tab::signals: render_signal_ui(); break;
+	case track_tab::catenary: render_catenary_ui(); break;
 	case track_tab::turntable: render_turntable_ui(); break;
 	default:
 		render_track_set_ui();
@@ -1591,6 +1602,10 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB around it", "leads a track out"}, {"LMB on a free end", "fits that track to the turntable"}};
 	else if (m_track_window_open && m_track_tab == track_tab::turntable)
 		hints = {{"LMB", "places a new turntable"}};
+	else if (m_track_window_open && m_track_tab == track_tab::catenary)
+	{
+		catenary_key_hints(hints);
+	}
 	else if (m_track_window_open && m_track_tab == track_tab::joints)
 		hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
 	else if (m_track_window_open && m_track_tab == track_tab::infra)
@@ -2038,6 +2053,8 @@ void editor_mode::draw_build_overlay() const
 	auto const in_reach = [&](glm::dvec3 const &Point) { return Global.EditorOrtho || glm::distance(Point, eye) <= kDotsRange; };
 	for (auto const *track : simulation::Paths.sequence())
 	{
+		if (m_track_tab == track_tab::catenary)
+			break;
 		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
 			continue;
 		for (auto const &path : track->m_paths)

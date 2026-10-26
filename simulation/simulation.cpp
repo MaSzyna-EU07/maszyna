@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/Timer.h"
 #include "vehicle/Driver.h"
+#include "world/catenary_scene.h"
 
 namespace simulation {
 
@@ -389,6 +390,7 @@ void state_manager::process_commands() {
 			Global.AirTemperature = commanddata.param1;
 			Global.Overcast = commanddata.param2;
 			simulation::Environment.compute_weather();
+			catenary_scene_temperature(); // ciężary kotwień idą za temperaturą
 		}
 
 		if (commanddata.command == user_command::insertmodel) {

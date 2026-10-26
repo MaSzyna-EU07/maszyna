@@ -405,6 +405,13 @@ commanddescription_sequence Commands_descriptions = {
     {"wiperswitchincrease", command_target::vehicle, command_mode::oneoff},
     {"wiperswitchdecrease", command_target::vehicle, command_mode::oneoff},
     {"lightsset", command_target::vehicle, command_mode::oneoff},
+    {"fmradiotoggle", command_target::vehicle, command_mode::oneoff},
+    {"fmradiovolumeincrease", command_target::vehicle, command_mode::oneoff},
+    {"fmradiovolumedecrease", command_target::vehicle, command_mode::oneoff},
+    {"fmradiovolumeset", command_target::vehicle, command_mode::oneoff},
+    {"fmradiotuneincrease", command_target::vehicle, command_mode::oneoff},
+    {"fmradiotunedecrease", command_target::vehicle, command_mode::oneoff},
+    {"fmradiotuneset", command_target::vehicle, command_mode::oneoff},
 };
 
 // Maps of command and coresponding strings
@@ -789,6 +796,13 @@ std::unordered_map<std::string, user_command> const commandMap = {
 	{"wiperswitchincrease", user_command::wiperswitchincrease},
 	{"wiperswitchdecrease", user_command::wiperswitchdecrease},
     {"lightsset", user_command::lightsset},
+	{"fmradiotoggle", user_command::fmradiotoggle},
+	{"fmradiovolumeincrease", user_command::fmradiovolumeincrease},
+	{"fmradiovolumedecrease", user_command::fmradiovolumedecrease},
+	{"fmradiovolumeset", user_command::fmradiovolumeset},
+	{"fmradiotuneincrease", user_command::fmradiotuneincrease},
+	{"fmradiotunedecrease", user_command::fmradiotunedecrease},
+	{"fmradiotuneset", user_command::fmradiotuneset},
 	{"none", user_command::none}};
 
 } // namespace simulation
