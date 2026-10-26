@@ -50,6 +50,28 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_switch(std::string const &command, std::istringstream &words)
 {
+	// each switch: the tips of its blades and its drive from the joint before them; drivetips moves the drives there first
+	if (command == "bladetips" || command == "drivetips")
+	{
+		if (command == "drivetips")
+			WriteLog(format("SELFTEST drivetips: %zu moved", drives_to_blade_tips()));
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->m_paths.size() < 2)
+				continue;
+			auto const start{track->m_paths[0].points[segment_data::point::start]};
+			std::string text{format("SELFTEST drive of %s: blades from %.3f m", track->name().c_str(), editor_track::blade_tip_of(*track))};
+			for (int path = 0; path < 2; ++path)
+				if (auto const &shape{track->blade(path)}; shape.valid)
+					text += format(", blade %d %.3f - %.3f m", path, shape.tip, shape.heel);
+			if (auto const found{find_switch_drive(*track)})
+				text += format(", drive %.3f m from the joint", geometry::plan_distance(found->standing.location, start));
+			else
+				text += ", no drive";
+			WriteLog(text);
+		}
+		return selftest_result::handled;
+	}
 	if (command == "curvedswitch")
 	{
 		std::string name;

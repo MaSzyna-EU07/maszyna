@@ -12303,3 +12303,15 @@ msgid_plural "The designs kept for the lines are cut down to the tracks left alo
 msgstr[0] "Projekt linii zapisany w scenerii przycięto do torów, które przy nim zostały"
 msgstr[1] "Projekty linii zapisane w scenerii przycięto do torów, które przy nich zostały"
 msgstr[2] "Projekty linii zapisane w scenerii przycięto do torów, które przy nich zostały"
+
+msgid "joint before the blades"
+msgstr "styk przediglicowy"
+
+msgid "tips of the blades"
+msgstr "ostrza iglic"
+
+msgid "The drive of %zu switch is moved to the tips of its blades"
+msgid_plural "The drives of %zu switches are moved to the tips of their blades"
+msgstr[0] "Napęd %zu rozjazdu przestawiony na ostrza iglic"
+msgstr[1] "Napędy %zu rozjazdów przestawione na ostrza iglic"
+msgstr[2] "Napędy %zu rozjazdów przestawione na ostrza iglic"

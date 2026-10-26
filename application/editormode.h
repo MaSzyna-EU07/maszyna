@@ -1714,6 +1714,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool extend_snap(editor_track::snap_target &Target) const;
 	void update_build_tools();
 	void draw_build_overlay() const;
+	// the joint before the blades of the switch being placed or the one selected and the tips of its blades
+	void draw_blade_tips() const;
 	// modes of the track editor, one at a time: path is the plain selection
 	using track_tab = editor_track_tab;
 	struct track_mode
@@ -2089,6 +2091,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void apply_switch_drive_choice(TTrack &Switch);
 	void switch_drive_captured(TTrack const &Track);
 	void switch_drives_committed(std::vector<TTrack *> const &Tracks);
+	// the drives of the switches deleted go with them, in the step of the undo history the deletion made last
+	void drives_deleted(std::vector<TTrack *> const &Switches);
+	// the drives of all the switches of the scenery set at the tips of their blades, the ones the earlier versions of the editor set at the
+	// joint before them too: once, as the scenery is opened, with no step of the undo history; how many moved
+	std::size_t drives_to_blade_tips();
+	bool m_drives_checked{false};
 	scene::layer_handle output_layer(std::string const &Part) override;
 	// places them in the active layer or the given one, as one step of the undo. returns: how many were placed
 	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error, scene::layer_handle Layer = scene::layer_handle{}) override;

@@ -208,7 +208,12 @@ class editor_track
 		glm::dvec2 tilt{0.0};
 		bool rightswitch{false};
 	};
+	// the drive of the switch by the tips of its blades, where the rods throw them over
 	static std::optional<drive_spot> drive_spot_of(TTrack const &Switch);
+	// how far along the main track of the switch the tips of its blades lie, where the pre-blade stretch from the joint ends: as the
+	// blades are shaped, else where the diverging track is broken at the tip of a blade planed back from the start; 0 at the start
+	static double blade_tip_of(TTrack const &Switch);
+	static double blade_tip_of(segment_data const &Diverging);
 
 	struct straight_axis
 	{

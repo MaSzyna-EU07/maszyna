@@ -299,6 +299,26 @@ glm::dvec3 editor_track::control_vector(TTrack const &Track, point_ref const &Co
 	return point_position(Track, Control) - point_position(Track, end_of(Control));
 }
 
+double editor_track::blade_tip_of(segment_data const &Diverging)
+{
+	// the tip of a planed blade lies some metres from the start at most, a longer first piece is a part of the curve
+	if (Diverging.pieces.size() < 2)
+		return 0.0;
+	auto const length{bezier{Diverging.pieces.front()}.plan_length()};
+	return length < 5.0 ? length : 0.0;
+}
+
+double editor_track::blade_tip_of(TTrack const &Switch)
+{
+	if (Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
+		return 0.0;
+	double tip{0.0};
+	for (int path = 0; path < 2; ++path)
+		if (auto const &shape{Switch.blade(path)}; shape.valid && shape.tip > 0.0)
+			tip = tip > 0.0 ? std::min(tip, shape.tip) : shape.tip;
+	return tip > 0.0 ? tip : blade_tip_of(Switch.m_paths[1]);
+}
+
 std::optional<editor_track::drive_spot> editor_track::drive_spot_of(TTrack const &Switch)
 {
 	if (Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
@@ -306,8 +326,10 @@ std::optional<editor_track::drive_spot> editor_track::drive_spot_of(TTrack const
 	auto const &main{Switch.m_paths[0]};
 	auto const &diverging{Switch.m_paths[1]};
 	auto const start{main.points[segment_data::point::start]};
-	auto const &control{main.points[segment_data::point::control1]};
-	auto const along{control != glm::dvec3{} ? control : main.points[segment_data::point::end] - start};
+	// by the tips of the blades, not at the joint before them
+	bezier const curve{main};
+	auto const at{curve.parameter(blade_tip_of(Switch))};
+	auto const along{curve.first(at)};
 	auto heading{plan_of(along)};
 	if (glm::length(heading) < 1e-9)
 		return std::nullopt;
@@ -315,11 +337,11 @@ std::optional<editor_track::drive_spot> editor_track::drive_spot_of(TTrack const
 	glm::dvec2 const right{-heading.y, heading.x};
 	drive_spot spot;
 	spot.rightswitch = glm::dot(plan_of(diverging.points[segment_data::point::end] - start), right) > 0.0;
-	spot.location = start;
+	spot.location = curve.point(at);
 	auto const yaw{glm::degrees(std::atan2(heading.x, heading.y))};
 	spot.yaw = yaw < 0.0 ? yaw + 360.0 : yaw;
 	auto const run{glm::length(plan_of(along))};
-	auto const roll{static_cast<double>(main.rolls[0])};
+	auto const roll{glm::mix(static_cast<double>(main.rolls[0]), static_cast<double>(main.rolls[1]), at)};
 	spot.tilt = {-glm::degrees(std::atan(along.y / run)), roll};
 	if (Global.bRollFix)
 		spot.location.y += 0.75 * std::abs(std::sin(glm::radians(roll)));

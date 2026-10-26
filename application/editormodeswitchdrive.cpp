@@ -292,6 +292,41 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	return true;
 }
 
+void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches)
+{
+	if (m_history.empty())
+		return;
+	for (auto const *track : Switches)
+	{
+		if (track == nullptr || track->eType != tt_Switch)
+			continue;
+		auto const found{find_switch_drive(*track)};
+		if (false == found.has_value() || false == scene::Layers.removable(found->standing.instance) || scene::Layers.instance(found->standing.instance).removed)
+			continue;
+		scene::Layers.removed(found->standing.instance, true);
+		m_history.back().instances.push_back(found->standing.instance);
+	}
+}
+
+std::size_t editor_mode::drives_to_blade_tips()
+{
+	// the drives the earlier versions of the editor set at the joint before the blades among them
+	std::vector<TTrack *> switches;
+	std::vector<std::pair<scene::instance_handle, std::string>> before;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch)
+			continue;
+		if (auto const found{find_switch_drive(*track)}; found.has_value() && scene::Layers.removable(found->standing.instance))
+		{
+			switches.push_back(track);
+			before.emplace_back(found->standing.instance, scene::Layers.directive(found->standing.instance));
+		}
+	}
+	switch_drives_committed(switches);
+	return static_cast<std::size_t>(std::count_if(before.begin(), before.end(), [](auto const &Before) { return scene::Layers.directive(Before.first) != Before.second; }));
+}
+
 bool editor_mode::render_switch_drive_choice()
 {
 	auto &tool{m_switch};

@@ -1346,6 +1346,21 @@ bool editor_mode::update()
 {
     Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
+    // the drives of the switches go to the tips of their blades once, as the templates of the scenery are known
+    if (false == m_drives_checked)
+    {
+        EditorIncludes.start();
+        if (EditorIncludes.scanned())
+        {
+            m_drives_checked = true;
+            if (auto const moved{drives_to_blade_tips()}; moved > 0)
+            {
+                auto const text{format(STR_P("The drive of %zu switch is moved to the tips of its blades", "The drives of %zu switches are moved to the tips of their blades", static_cast<long long>(moved)), moved)};
+                ui()->set_status(text, false);
+                WriteLog("Editor: " + text, logtype::generic);
+            }
+        }
+    }
     // after the tool has told its own status
     if (false == m_orphan_note.empty())
     {
@@ -1560,6 +1575,7 @@ bool editor_mode::update()
         draw_track_set();
         draw_track_spread();
         draw_build_overlay();
+        draw_blade_tips();
         draw_track_intent();
         draw_tape();
         m_speed.update();

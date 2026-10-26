@@ -1641,6 +1641,7 @@ void editor_mode::delete_selected_track()
 		if (auto const note{designs_trimmed({set->first, set->link, set->second})}; false == note.empty())
 			ui()->set_status(note, false);
 		push_track_snapshot({}, created, {set->first, set->link, set->second});
+		drives_deleted({set->first, set->second});
 		if (std::any_of(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), [&](TTrack const *Each) { return Each == set->first || Each == set->link || Each == set->second; }))
 			m_route = {};
 		m_node = nullptr;
@@ -1666,6 +1667,7 @@ void editor_mode::delete_selected_track()
 	if (auto const note{designs_trimmed({track})}; false == note.empty())
 		ui()->set_status(note, false);
 	push_track_snapshot({}, created, {track});
+	drives_deleted({track});
 	// the model and the events of a turntable can't stay without its track
 	if (track->eType == tt_Table)
 		for (auto const instance : turntable_includes(*track))
@@ -2262,6 +2264,53 @@ void editor_mode::draw_track_hints()
 	foreground->AddRectFilled(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), IM_COL32(0, 0, 0, 190), 4.0f);
 	foreground->AddRect(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), overlay_color::marked, 4.0f);
 	foreground->AddText(at, IM_COL32(255, 255, 255, 255), readout.c_str());
+}
+
+void editor_mode::draw_blade_tips() const
+{
+	segment_data main;
+	double tip{0.0};
+	if (m_switch.placing && m_switch.connection < 0)
+	{
+		auto const preview{switch_preview()};
+		if (preview.size() < 2)
+			return;
+		main = preview[0];
+		tip = editor_track::blade_tip_of(preview[1]);
+	}
+	else if (auto const *selected{selected_track()}; selected != nullptr && selected->eType == tt_Switch && selected->m_paths.size() >= 2 && false == selected->m_editorremoved)
+	{
+		main = selected->m_paths[0];
+		tip = editor_track::blade_tip_of(*selected);
+	}
+	else
+		return;
+	// on the photo the tips of the blades are seen where the switch seems to begin, the joint before them isn't
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	geometry::bezier const curve{main};
+	auto const mark = [&](double const Distance, ImU32 const Colour, float const Width, char const *Label, int const Side) {
+		auto const t{curve.parameter(Distance)};
+		auto const at{curve.point(t)};
+		auto direction{plan_of(curve.first(t))};
+		if (glm::length(direction) < 1e-9)
+			return;
+		direction = glm::normalize(direction);
+		glm::dvec3 const across{-direction.y * 1.6, 0.0, direction.x * 1.6};
+		projection.line(drawlist, at - across, at + across, IM_COL32(0, 0, 0, 170), Width + 3.0f);
+		projection.line(drawlist, at - across, at + across, Colour, Width);
+		ImVec2 screen;
+		if (projection.project(at + across * static_cast<double>(Side), screen))
+		{
+			auto const size{ImGui::CalcTextSize(Label)};
+			ImVec2 const corner{Side > 0 ? screen.x + 6.0f : screen.x - 6.0f - size.x, screen.y - 0.5f * size.y};
+			drawlist->AddRectFilled({corner.x - 3.0f, corner.y - 1.0f}, {corner.x + size.x + 3.0f, corner.y + size.y + 1.0f}, IM_COL32(0, 0, 0, 160), 3.0f);
+			drawlist->AddText(corner, Colour, Label);
+		}
+	};
+	mark(0.0, IM_COL32(220, 220, 220, 230), 2.0f, STR_C("joint before the blades"), -1);
+	if (tip > 0.05)
+		mark(tip, IM_COL32(255, 170, 40, 255), 3.0f, STR_C("tips of the blades"), 1);
 }
 
 void editor_mode::draw_build_overlay() const

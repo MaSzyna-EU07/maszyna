@@ -1831,6 +1831,7 @@ void editor_mode::track_set_delete()
 	}
 	auto const designs{designs_trimmed(removed)};
 	push_track_snapshot({}, {}, removed);
+	drives_deleted(removed);
 	m_track_set.clear();
 	m_node = nullptr;
 	ui()->set_node(nullptr);
