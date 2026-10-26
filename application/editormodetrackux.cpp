@@ -913,6 +913,8 @@ char const *editor_mode::typed_meaning() const
 		return "type the turn in degrees, + to the right";
 	if (m_lay.active && false == m_lay.points.empty())
 		return "type the length of the next leg, Enter adds the point";
+	if (m_track_tab == track_tab::catenary && catenary_takes_typed())
+		return "type the span from the last pole, LMB by the track places the pole there";
 	return nullptr;
 }
 

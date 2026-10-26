@@ -11397,3 +11397,313 @@ msgstr "Przewody łańcucha idą prosto od %s do %s, lina nośna przez %s"
 
 msgid "This cantilever holds only the messenger: it leaves the chain, the contact wires go straight between the two cantilevers of the pole next to it in the chain, the messenger goes through this one and their cords hang from it"
 msgstr "Ten wysięgnik trzyma tylko linę nośną: wypada z listy łańcucha, przewody jezdne idą prosto między dwoma wysięgnikami tego słupa obok niego w łańcuchu, lina nośna przez niego, a ich linki wiszą na niej"
+
+# scenery editor: catenary - the zigzag of Iet-107, the counter and the step of the span, the swaps of the cantilevers
+
+msgid "Zigzag by Iet-107 (PKP PLK)"
+msgstr "Zygzak wg Iet-107 (PKP PLK)"
+
+msgid "The staggers of the next poles by the guidelines Iet-107: on a straight the wires on the other side of the track axis than at the pole before, the full cycle in two spans (4.6.4.3), on a curve to its outside so that in the middle of the span they're tangent to the track axis (3.4.4.4). The chains and their spans are checked by it too"
+msgstr "Odsuwy kolejnych słupów wg wytycznych Iet-107: na prostej przewody po drugiej stronie osi toru niż przy poprzednim słupie, pełny cykl w dwóch przęsłach (4.6.4.3), na łuku na zewnątrz łuku tak, żeby w środku przęsła przebiegały po stycznej do osi toru (3.4.4.4). Według nich sprawdzane są też łańcuchy i ich przęsła"
+
+msgid "up to 160 km/h"
+msgstr "do 160 km/h"
+
+msgid "over 160 km/h"
+msgstr "ponad 160 km/h"
+
+msgid "Over 160 km/h: the stagger on a straight up to 0.20 m, the normal span 62 +-4 m, the tension section up to 1400 m (Iet-107 7.4)"
+msgstr "Ponad 160 km/h: odsuw na prostej do 0,20 m, przęsło normalne 62 ±4 m, odcinek naprężenia do 1400 m (Iet-107 7.4)"
+
+msgid "Stagger on a straight, either side (m)"
+msgstr "Odsuw na prostej, na przemian (m)"
+
+msgid "From the track axis, in turn to its two sides: up to 0.30 m, over 160 km/h up to 0.20 m (Iet-107 3.4.4.3, 7.4.2.1)"
+msgstr "Od osi toru, na przemian w obie strony: do 0,30 m, ponad 160 km/h do 0,20 m (Iet-107 3.4.4.3, 7.4.2.1)"
+
+msgid "Stagger on a curve, outwards (m)"
+msgstr "Odsuw na łuku, na zewnątrz (m)"
+
+msgid "To the outside of the curve at every pole, up to 0.30 m (Iet-107 7.4.2.1); the span on the curve no longer than lets the wires be tangent to the track axis in its middle: 2 sqrt(2 R z)"
+msgstr "Na zewnątrz łuku przy każdym słupie, do 0,30 m (Iet-107 7.4.2.1); przęsło na łuku nie dłuższe, niż pozwala na przebieg przewodów po stycznej do osi toru w jego środku: 2 √(2 R z)"
+
+msgid "Next pole: the wires on the other side of the track than at %s"
+msgstr "Następny słup: przewody po drugiej stronie toru niż przy %s"
+
+msgid "Next pole: the wires on the same side of the track as at %s (a swap)"
+msgstr "Następny słup: przewody po tej samej stronie toru co przy %s (przekładka)"
+
+msgid "The first pole: wires towards it (short cantilever)"
+msgstr "Pierwszy słup: odsuw do słupa (wysięgnik krótki)"
+
+msgid "The first pole of a zigzag; the next ones go in turn. Off: away from the pole (a long cantilever)"
+msgstr "Pierwszy słup zygzaka; następne idą na przemian. Wyłączone: odsuw od słupa (wysięgnik długi)"
+
+msgid "Swap (X)"
+msgstr "Przełóż (X)"
+
+msgid "The next pole the other way than the zigzag proposes: a short cantilever instead of a long one or the other way round. On a curve the wires stay at its outside"
+msgstr "Następny słup odwrotnie, niż proponuje zygzak: wysięgnik krótki zamiast długiego albo odwrotnie. Na łuku przewody zostają na zewnątrz łuku"
+
+msgid "Next span (M):"
+msgstr "Następne przęsło (M):"
+
+msgid "at the cursor"
+msgstr "pod kursorem"
+
+msgid "recommended"
+msgstr "zalecane"
+
+msgid "The pole goes along the track where its span from the last pole is the nominal one of the network (traction_layout.txt; 62 m over 160 km/h), on a curve no longer than allowed there, no more than 10 % over the span before (Iet-107 4.6.1.2)"
+msgstr "Słup staje wzdłuż toru tam, gdzie jego przęsło od ostatniego słupa ma rozpiętość nominalną sieci (traction_layout.txt; ponad 160 km/h 62 m), na łuku nie dłuższą niż tam dopuszczalna, najwyżej o 10 % dłuższą od przęsła poprzedniego (Iet-107 4.6.1.2)"
+
+msgid "own"
+msgstr "własne"
+
+msgid "recommended from the last pole %.1f m"
+msgstr "zalecane od ostatniego słupa %.1f m"
+
+msgid "at most %.1f m"
+msgstr "najwyżej %.1f m"
+
+msgid "the span before %.1f m"
+msgstr "przęsło poprzednie %.1f m"
+
+msgid "Digits typed: the span of the next pole (e.g. 62, then LMB by the track)"
+msgstr "Wpisane cyfry: przęsło następnego słupa (np. 62, potem LPM przy torze)"
+
+msgid "type the span from the last pole, LMB by the track places the pole there"
+msgstr "wpisz przęsło od ostatniego słupa, LPM przy torze stawia tam słup"
+
+msgid "Iet-107 allows up to %.2f m here"
+msgstr "Iet-107 dopuszcza tu najwyżej %.2f m"
+
+msgid "Towards the pole: a short cantilever; away from it: a long one. On a straight the wires zigzag, on a curve they go to its outside"
+msgstr "Do słupa: wysięgnik krótki; od słupa: długi. Na prostej przewody idą zygzakiem, na łuku na zewnątrz łuku"
+
+msgid "Swap short / long (X)"
+msgstr "Przełóż krótki / długi (X)"
+
+msgid "The wires of this pole to the other side of the track axis: the short cantilever becomes a long one or the other way round; the pole stays where it stands"
+msgstr "Przewody tego słupa na drugą stronę osi toru: wysięgnik krótki staje się długim albo odwrotnie; słup zostaje na miejscu"
+
+msgid "Zigzag:"
+msgstr "Zygzak:"
+
+msgid "from this pole on"
+msgstr "od tego słupa"
+
+msgid "This pole keeps its side of the track, the next ones of the chain get the wires in turn on the other side of the track axis (on a curve to its outside), with the staggers set for the zigzag"
+msgstr "Ten słup zostaje po swojej stronie toru, kolejne słupy łańcucha dostają przewody na przemian po drugiej stronie osi toru (na łuku na zewnątrz łuku), z odsuwami ustawionymi dla zygzaka"
+
+msgid "swap from this pole on"
+msgstr "przekładka od tego słupa"
+
+msgid "This pole goes to the other side of the track (short <-> long cantilever) and the next ones of the chain follow it in turn: the zigzag moved by one pole"
+msgstr "Ten słup przechodzi na drugą stronę toru (wysięgnik krótki <-> długi), a kolejne słupy łańcucha idą za nim na przemian: zygzak przesunięty o jeden słup"
+
+msgid "The first pole of the chain keeps its side, all the others get the zigzag of Iet-107 from it"
+msgstr "Pierwszy słup łańcucha zostaje po swojej stronie, wszystkie pozostałe dostają od niego zygzak wg Iet-107"
+
+msgid "Iet-107: no remarks to the chain"
+msgstr "Iet-107: brak uwag do łańcucha"
+
+msgid "Iet-107: %zu remarks to the chain, %d at this pole (the list on the Wires page)"
+msgstr "Iet-107: uwag do łańcucha: %zu, przy tym słupie: %d (lista na stronie Druty)"
+
+msgid "%.0f m of the chain, no remarks of Iet-107"
+msgstr "%.0f m łańcucha, bez uwag wg Iet-107"
+
+msgid "%.0f m of the chain, %zu remarks of Iet-107 (the list on the Wires page)"
+msgstr "%.0f m łańcucha, uwag wg Iet-107: %zu (lista na stronie Druty)"
+
+msgid "Iet-107: %zu spans, %.0f m (spans %.1f - %.1f m)"
+msgstr "Iet-107: przęseł %zu, %.0f m (przęsła %.1f - %.1f m)"
+
+msgid "Zigzag the chain by Iet-107"
+msgstr "Zygzakuj łańcuch wg Iet-107"
+
+msgid "The first pole keeps its side of the track, the next ones get the wires in turn on the other side of the track axis, on a curve to its outside; the staggers as set for the zigzag on the Poles page. The poles stay where they stand, the cards follow the distance A"
+msgstr "Pierwszy słup zostaje po swojej stronie toru, kolejne dostają przewody na przemian po drugiej stronie osi toru, na łuku na zewnątrz łuku; odsuwy jak ustawione dla zygzaka na stronie Słupy. Słupy zostają na miejscu, karty idą za odległością A"
+
+msgid "Staggers in the view"
+msgstr "Odsuwy w widoku"
+
+msgid "No remarks"
+msgstr "Bez uwag"
+
+msgid "Click: select the pole and fly to it"
+msgstr "Kliknij: zaznacz słup i przeleć do niego"
+
+msgid "%s: stagger %.2f m, more than the %.2f m allowed (Iet-107 %s)"
+msgstr "%s: odsuw %.2f m, więcej niż dopuszczalne %.2f m (Iet-107 %s)"
+
+msgid "%s: on a curve the wires go to its outside (Iet-107 3.4.4.4)"
+msgstr "%s: na łuku przewody idą na zewnątrz łuku (Iet-107 3.4.4.4)"
+
+msgid "Span %s - %s: %.1f m, longer than the %.1f m allowed there"
+msgstr "Przęsło %s - %s: %.1f m, dłuższe niż dopuszczalne tam %.1f m"
+
+msgid "Span %s - %s: %.1f m, outside 62 +-4 m (Iet-107 7.4.3.1)"
+msgstr "Przęsło %s - %s: %.1f m, poza 62 ±4 m (Iet-107 7.4.3.1)"
+
+msgid "Span %s - %s: no zigzag, the wires on the same side of the track axis at both poles (Iet-107 4.6.4.3)"
+msgstr "Przęsło %s - %s: brak zygzaka, przewody przy obu słupach po tej samej stronie osi toru (Iet-107 4.6.4.3)"
+
+msgid "Span %s - %s: in its middle the wires are %.2f m inside the track axis of the curve, the span is too long for the stagger (Iet-107 3.4.4.4)"
+msgstr "Przęsło %s - %s: w jego środku przewody są %.2f m po wewnętrznej stronie osi toru na łuku, przęsło za długie na ten odsuw (Iet-107 3.4.4.4)"
+
+msgid "%s: the spans %.1f and %.1f m on both sides differ by %.0f %% (Iet-107 4.6.1.2: up to 10 %%)"
+msgstr "%s: przęsła %.1f i %.1f m po obu stronach różnią się o %.0f %% (Iet-107 4.6.1.2: najwyżej 10 %%)"
+
+msgid "Middle anchor at %s: the spans %.1f and %.1f m on both sides of it, up to 2 m apart (Iet-107 4.6.3.3)"
+msgstr "Kotwienie środkowe przy %s: przęsła po obu stronach %.1f i %.1f m, różnica do 2 m (Iet-107 4.6.3.3)"
+
+msgid "Tension section %.0f m, longer than %.0f m (Iet-107 %s)"
+msgstr "Odcinek naprężenia %.0f m, dłuższy niż %.0f m (Iet-107 %s)"
+
+msgid "Weight anchors at both ends and no middle anchor (Iet-107 3.4.6.1, 4.6.3.2)"
+msgstr "Kotwienia ciężarowe na obu końcach bez kotwienia środkowego (Iet-107 3.4.6.1, 4.6.3.2)"
+
+msgid "Zigzag of Iet-107: %zu poles changed, the others had it already"
+msgstr "Zygzak wg Iet-107: zmienione słupy: %zu, pozostałe już go miały"
+
+msgid "Zigzag of Iet-107: %zu poles changed, %zu couldn't take it (no card for their A or not by a track)"
+msgstr "Zygzak wg Iet-107: zmienione słupy: %zu, nie dało się zmienić: %zu (brak karty dla ich A albo nie stoją przy torze)"
+
+msgid "Swapped: stagger %.2f m towards the pole (short cantilever)"
+msgstr "Przełożone: odsuw %.2f m do słupa (wysięgnik krótki)"
+
+msgid "Swapped: stagger %.2f m away from the pole (long cantilever)"
+msgstr "Przełożone: odsuw %.2f m od słupa (wysięgnik długi)"
+
+msgid "- on a curve the wires go to its outside (Iet-107 3.4.4.4)"
+msgstr "- na łuku przewody idą na zewnątrz łuku (Iet-107 3.4.4.4)"
+
+msgid "No card of the catalogue for the cantilever swapped: it stays as it was"
+msgstr "Brak w katalogu karty dla przełożonego wysięgnika: zostaje tak jak był"
+
+msgid "The next pole: the wires on the same side of the track as at the last pole (a swap)"
+msgstr "Następny słup: przewody po tej samej stronie toru co przy ostatnim słupie (przekładka)"
+
+msgid "The next pole: the wires on the other side of the track than at the last pole (zigzag)"
+msgstr "Następny słup: przewody po drugiej stronie toru niż przy ostatnim słupie (zygzak)"
+
+msgid "The next pole: the wires towards the pole (short cantilever)"
+msgstr "Następny słup: odsuw do słupa (wysięgnik krótki)"
+
+msgid "The next pole: the wires away from the pole (long cantilever)"
+msgstr "Następny słup: odsuw od słupa (wysięgnik długi)"
+
+msgid "The next pole where the cursor is"
+msgstr "Następny słup tam, gdzie kursor"
+
+msgid "The next pole at the recommended span from the last one"
+msgstr "Następny słup w zalecanej rozpiętości przęsła od ostatniego"
+
+msgid "The next pole at the span set in the panel"
+msgstr "Następny słup w rozpiętości przęsła ustawionej w panelu"
+
+msgid "stagger %.2f m towards the pole (short cantilever)"
+msgstr "odsuw %.2f m do słupa (wysięgnik krótki)"
+
+msgid "stagger %.2f m away from the pole (long cantilever)"
+msgstr "odsuw %.2f m od słupa (wysięgnik długi)"
+
+msgid "span %.1f m from the last pole"
+msgstr "przęsło %.1f m od ostatniego słupa"
+
+msgid "towards the pole, short cantilever"
+msgstr "do słupa, wysięgnik krótki"
+
+msgid "away from the pole, long cantilever"
+msgstr "od słupa, wysięgnik długi"
+
+msgid "stagger %.2f m"
+msgstr "odsuw %.2f m"
+
+msgid "to the outside of the curve"
+msgstr "na zewnątrz łuku"
+
+msgid "the same side of the track as the last pole (swap, X)"
+msgstr "po tej samej stronie toru co ostatni słup (przekładka, X)"
+
+msgid "the other side of the track than the last pole (X swaps)"
+msgstr "po drugiej stronie toru niż ostatni słup (X przekłada)"
+
+msgid "%.1f m from the last pole"
+msgstr "%.1f m od ostatniego słupa"
+
+msgid "(typed %.1f m)"
+msgstr "(wpisane %.1f m)"
+
+msgid "%.2f to the pole"
+msgstr "%.2f do słupa"
+
+msgid "%.2f from the pole"
+msgstr "%.2f od słupa"
+
+msgid "recommended %.1f"
+msgstr "zalecane %.1f"
+
+msgid "max %.1f"
+msgstr "maks. %.1f"
+
+msgid "before %.1f (%+.0f %%)"
+msgstr "poprz. %.1f (%+.0f %%)"
+
+msgid "swaps the next pole: short <-> long cantilever"
+msgstr "przekłada następny słup: wysięgnik krótki <-> długi"
+
+msgid "the next span: at the cursor / recommended / own"
+msgstr "następne przęsło: pod kursorem / zalecane / własne"
+
+msgid "swaps the selected pole: short <-> long cantilever"
+msgstr "przekłada zaznaczony słup: wysięgnik krótki <-> długi"
+
+msgid "lets go of the selected pole"
+msgstr "odznacza zaznaczony słup"
+
+# scenery editor: catenary - anchors moved along the track, the reach of placing the poles
+
+msgid "Anchor %s selected: its settings are below, drag moves it along the track, Del removes it"
+msgstr "Zaznaczone kotwienie %s: ustawienia poniżej, przeciągnięcie przesuwa je wzdłuż toru, Del je usuwa"
+
+msgid "Anchor %s: its pole %.1f m from the last pole of the chain"
+msgstr "Kotwienie %s: słup kotwowy %.1f m od ostatniego słupa łańcucha"
+
+msgid "Drag a tensioning device"
+msgstr "Przeciągnij urządzenie naprężające"
+
+msgid "moves the anchor pole along the track"
+msgstr "przesuwa słup kotwowy wzdłuż toru"
+
+msgid "Anchor pole from the track axis (m)"
+msgstr "Słup kotwowy od osi toru (m)"
+
+msgid "From the axis of the nearest track to the axis of the anchor pole: it moves square to the track, away from it or towards it; the tensioning device turns after the wires. Drag or Ctrl+click to type"
+msgstr "Od osi najbliższego toru do osi słupa kotwowego: słup przesuwa się prostopadle do toru, od niego albo do niego; urządzenie naprężające obraca się za drutami. Przeciągnij albo Ctrl+klik, żeby wpisać"
+
+msgid "Stop placing the cantilever"
+msgstr "Przerwij stawianie wysięgnika"
+
+msgid "A cantilever on the anchor pole"
+msgstr "Wysięgnik na słupie kotwowym"
+
+msgid "LMB by the track the cantilever reaches to: it goes on the anchor pole, with the settings of the Poles page"
+msgstr "LPM przy torze, do którego sięga wysięgnik: staje na słupie kotwowym, z ustawieniami ze strony Słupy"
+
+msgid "The anchor pole gets a cantilever to a track by it (the same or the neighbouring one); the pole is then stood by that cantilever and the anchor stays on it. The cantilever can start or go on with a chain like any other pole"
+msgstr "Słup kotwowy dostaje wysięgnik do toru obok (tego samego albo sąsiedniego); słup stawia wtedy ten wysięgnik, a kotwienie zostaje na nim. Od wysięgnika można zacząć albo dalej prowadzić łańcuch jak od każdego słupa"
+
+msgid "Pole %s of the anchor takes no cantilever from the catalogue"
+msgstr "Słup kotwowy %s nie przyjmuje wysięgnika z katalogu"
+
+msgid "Cantilever %s (card %d execution %d, A = %.2f m) on the pole of anchor %s; C starts or goes on with a chain from it"
+msgstr "Wysięgnik %s (karta %d, wykonanie %d, A = %.2f m) na słupie kotwienia %s; C zaczyna od niego albo prowadzi dalej łańcuch"
+
+msgid "Click: the cantilever on the anchor pole, card %04d execution %d, A = %.2f m (X: towards / away from the pole)"
+msgstr "Kliknij: wysięgnik na słupie kotwowym, karta %04d, wykonanie %d, A = %.2f m (X: do / od słupa)"
+
+msgid "Anchor: LMB by the track the cantilever on the anchor pole reaches to; Esc stops"
+msgstr "Kotwienie: LPM przy torze, do którego sięga wysięgnik na słupie kotwowym; Esc przerywa"
