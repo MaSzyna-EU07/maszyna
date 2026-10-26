@@ -1143,6 +1143,8 @@ void editor_track::join(TTrack &Track)
 					join(*other);
 			}
 		}
+		// and a switch right after another one
+		Track.join_switches();
 		break;
 	}
 	default:

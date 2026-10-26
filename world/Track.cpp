@@ -2016,6 +2016,59 @@ bool TTrack::SetConnections(int i)
     return false;
 }
 
+void TTrack::join_switches()
+{
+    if( eType != tt_Switch || SwitchExtension == nullptr || simulation::Region == nullptr ) {
+        return;
+    }
+    // the ends of the paths as the codes of the track joined to them have them: 0 the start of a switch, where both paths begin, 1 the end of
+    // its first path, 3 the end of its second one; a vehicle going on onto a start keeps its direction, onto an end it turns
+    auto const code = []( int const Endpoint ) { return Endpoint == 3 ? 1 : Endpoint == 5 ? 3 : 0; };
+    // the paths of the switch joined to its neighbours as it's set, as Switch() takes them
+    auto const bind = []( TTrack &Switch ) {
+        auto const &extension { *Switch.SwitchExtension };
+        auto const state { extension.CurrentIndex & 1 };
+        Switch.trNext = extension.pNexts[ state ];
+        Switch.trPrev = extension.pPrevs[ state ];
+        Switch.iNextDirection = extension.iNextDirection[ state ];
+        Switch.iPrevDirection = extension.iPrevDirection[ state ];
+    };
+    auto &own { *SwitchExtension };
+    for( int path = 0; path < 2; ++path ) {
+        for( int end = 0; end < 2; ++end ) {
+            if( ( end ? own.pNexts[ path ] : own.pPrevs[ path ] ) != nullptr || own.Segments[ path ] == nullptr ) {
+                continue;
+            }
+            auto const point { end ? own.Segments[ path ]->FastGetPoint_1() : own.Segments[ path ]->FastGetPoint_0() };
+            auto const [ other, endpoint ] { simulation::Region->find_path( point, this ) };
+            if( other == nullptr || other == this || other->eType != tt_Switch || other->SwitchExtension == nullptr || endpoint < 2 || endpoint > 5 ) {
+                continue;
+            }
+            auto &theirs { *other->SwitchExtension };
+            if( end == 0 ) {
+                own.pPrevs[ 0 ] = own.pPrevs[ 1 ] = other;
+                own.iPrevDirection[ 0 ] = own.iPrevDirection[ 1 ] = code( endpoint );
+            }
+            else {
+                own.pNexts[ path ] = other;
+                own.iNextDirection[ path ] = code( endpoint );
+            }
+            auto const ours { end == 0 ? 0 : path ? 3 : 1 };
+            if( endpoint == 2 || endpoint == 4 ) {
+                theirs.pPrevs[ 0 ] = theirs.pPrevs[ 1 ] = this;
+                theirs.iPrevDirection[ 0 ] = theirs.iPrevDirection[ 1 ] = ours;
+            }
+            else {
+                auto const theirpath { endpoint == 5 ? 1 : 0 };
+                theirs.pNexts[ theirpath ] = this;
+                theirs.iNextDirection[ theirpath ] = ours;
+            }
+            bind( *other );
+        }
+    }
+    bind( *this );
+}
+
 bool TTrack::Switch(int i, float const t, float const d)
 { // przełączenie torów z uruchomieniem animacji
     if (SwitchExtension) // tory przełączalne mają doklejkę
@@ -3944,6 +3997,13 @@ path_table::InitTracks() {
                     ErrorLog( "Bad track: " + ( trackname.empty() ? "unnamed track" : "\"" + trackname + "\"" ) + " can't find assigned memory cell \"" + inputcellname + "\"" );
                 }
             }
+        }
+    }
+
+    // the plain tracks are joined to the switches above, a switch right after another one only here, once they are
+    for( auto *track : m_items ) {
+        if( track->eType == tt_Switch ) {
+            track->join_switches();
         }
     }
 

@@ -337,6 +337,46 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog("SELFTEST conecheck " + name + ":" + text);
 		return selftest_result::handled;
 	}
+	// a walk along the tracks from the plain one nearest the point as an axle runs: along it (1) or against it (-1), on the path of a switch
+	// it's set to, or the one come onto from its end; each track, the path of a switch and the way, END where no track goes on
+	if (command == "pathwalk")
+	{
+		glm::dvec3 point{0.0};
+		double direction{1.0};
+		int steps{8};
+		words >> point.x >> point.z >> direction >> steps;
+		TTrack *track{nullptr};
+		double nearest{1e9};
+		for (auto *candidate : simulation::Paths.sequence())
+		{
+			if (candidate == nullptr || candidate->m_editorremoved || candidate->eType != tt_Normal || candidate->m_paths.empty())
+				continue;
+			if (auto const d{geometry::plan_distance(editor_track::point_at(*candidate, editor_track::nearest_parameter(*candidate, point)), point)}; d < nearest)
+			{
+				nearest = d;
+				track = candidate;
+			}
+		}
+		std::string text{"SELFTEST pathwalk:"};
+		int path{-1};
+		for (int step = 0; step < steps && track != nullptr; ++step)
+		{
+			text += " " + track->name() + (path >= 0 ? "[" + std::to_string(path) + "]" : std::string{}) + (direction > 0 ? ">" : "<");
+			auto const side{direction > 0 ? 1 : -1};
+			auto const switched{track->eType == tt_Switch && path >= 0};
+			auto const joined{switched ? (side > 0 ? track->SwitchExtension->iNextDirection[path] : track->SwitchExtension->iPrevDirection[path]) : (side > 0 ? track->iNextDirection : track->iPrevDirection)};
+			auto *next{track->Connected(side, direction, switched ? path : -1)};
+			if (next == nullptr)
+			{
+				text += " END";
+				break;
+			}
+			path = next->eType == tt_Switch ? ((joined & 1) ? joined >> 1 : next->SwitchExtension->CurrentIndex) : -1;
+			track = next;
+		}
+		WriteLog(text);
+		return selftest_result::handled;
+	}
 	if (command == "throw")
 	{
 		std::string name;
