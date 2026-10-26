@@ -1045,7 +1045,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 
 bool editor_mode::traced_from(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, bool const AtEnd)
 {
-	if (Points.size() < 3)
+	if (Points.size() < (AtEnd ? 3u : 2u))
 		return false;
 	auto const index{AtEnd ? Points.size() - 2 : std::size_t{1}};
 	return index < Modes.size() && Modes[index] == lay_mode::curve;
@@ -1136,6 +1136,39 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 		while (last < inner && mode_of(last) == lay_mode::curve)
 			++last;
 		auto const reaching{last == inner && joined};
+		// one point of a curve right after the end of the diverging track of a switch: the curve of the switch goes on towards it, then a
+		// straight from where it heads for the point; the curve fitted to the points once more of them are clicked
+		if (i == 1 && last == 2 && false == reaching && along.has_value() && design.start_curved && design.start_radius > 0.0 && tool.start.track != nullptr && tool.start.track->eType == tt_Switch)
+		{
+			auto const radius{design.start_radius};
+			auto const side{design.start_turn > 0 ? 1.0 : -1.0};
+			auto const from{plan_of(anchor)};
+			glm::dvec2 const inward{-along->y * side, along->x * side};
+			auto const centre{from + inward * radius};
+			auto const point{plan_of(Points[1])};
+			auto const outward{point - centre};
+			auto const distance{glm::length(outward)};
+			if (distance > radius + 0.5)
+			{
+				// where the straight to the point touches the circle, and how far round the curve turns to there
+				auto const heading{std::atan2(outward.y, outward.x) - side * std::acos(radius / distance)};
+				glm::dvec2 const touch{centre + glm::dvec2{std::cos(heading), std::sin(heading)} * radius};
+				auto turned{std::fmod(side * (heading - std::atan2(from.y - centre.y, from.x - centre.x)), 2.0 * glm::pi<double>())};
+				if (turned < 0.0)
+					turned += 2.0 * glm::pi<double>();
+				if (turned > 1e-3 && turned < glm::pi<double>())
+				{
+					alignment::vertex curve;
+					curve.radius = radius;
+					curve.cant = design.start_cant;
+					bends.push_back({lifted(from + *along * (radius * std::tan(0.5 * turned)), anchor.y), curve, false});
+					anchor = Points[1];
+					along = glm::normalize(point - touch);
+					i = last;
+					continue;
+				}
+			}
+		}
 		// a bend of straights, or a point of a curve too alone to make one
 		if (last == i || (last - i < 2 && false == reaching))
 		{
@@ -1269,7 +1302,11 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 				// a curve going on which keeps to the points within 8 cm on average and 30 cm at most, as the fits take it for one keeping to
 				// them, stays: the straight one fits the points clicked a little off closer with the radii it has more
 				auto const loose{fitted->valid && (fitted->rms > 0.08 || fitted->worst > 0.3)};
-				if (other->valid && (false == fitted->valid || false == goes_on || (loose && other->rms < 0.75 * fitted->rms)))
+				// at the end of the diverging track of a switch the curve of the switch goes on wherever it turns its way, however loosely the
+				// points clicked on the photo keep to it
+				auto const switched = [](editor_track::snap_target const &Joint, bool const Curved) { return Curved && Joint.track != nullptr && Joint.track->eType == tt_Switch; };
+				auto const obliged{switched(tool.start, base.start_curved) || switched(End, base.end_curved)};
+				if (other->valid && (false == fitted->valid || false == goes_on || (loose && false == obliged && other->rms < 0.75 * fitted->rms)))
 				{
 					fitted = other;
 					// the line laid from the end of the transition out of the curve, which lay_pieces lays before it
