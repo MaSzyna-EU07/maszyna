@@ -1637,7 +1637,13 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                             continue;
                         }
                         vertices.clear(); // reuse the scratchpad
-                        Segment->RenderLoft( vertices, m_origin, profile, iTrapezoid > 0, texturelength );
+                        // the rail starts behind the heel of a blade running on into the track from the switch before it
+                        if( auto const runon { eType == tt_Normal && iTrapezoid == 0 ? track_rails::blade_runon( *this, side ) : 0.0 }; runon > 0.0 ) {
+                            Segment->RenderLoftSpan( vertices, m_origin, profile, { .side = side, .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = texturelength, .from = runon, .to = Segment->GetLength() } );
+                        }
+                        else {
+                            Segment->RenderLoft( vertices, m_origin, profile, iTrapezoid > 0, texturelength );
+                        }
                         if( open ) {
                             cut_faces( vertices, nnumPts, trPrev == nullptr, trNext == nullptr, GeometryCut1 );
                         }

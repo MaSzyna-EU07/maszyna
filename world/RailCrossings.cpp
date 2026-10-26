@@ -96,6 +96,19 @@ bool cut_rails( TTrack const &Track ) {
              Track.eType == tt_Switch && Track.SwitchExtension && Track.SwitchExtension->m_frogs && Track.SwitchExtension->Segments[ 0 ] && Track.SwitchExtension->Segments[ 1 ] );
 }
 
+bool shaped_blades( TTrack const &Track ) {
+
+    if( cut_rails( Track ) ) {
+        return true;
+    }
+    return track_features::blades
+        && ( Track.iCategoryFlag & 15 ) == 1
+        && Track.m_material1 != null_handle
+        && false == Track.m_editorremoved
+        && Track.eType == tt_Switch && Track.SwitchExtension && Track.SwitchExtension->m_frogs && Track.SwitchExtension->Segments[ 0 ] && Track.SwitchExtension->Segments[ 1 ]
+        && false == Track.DoubleSlip();
+}
+
 int blade_steps( TTrack const &Track, int const Path ) {
 
     return static_cast<int>( std::ceil( Track.SwitchExtension->Segments[ Path ]->RaSegCount() * 0.65 ) );
@@ -131,7 +144,7 @@ TTrack const *runon_track( TTrack const &Switch, int const Path ) {
 double blade_runon( TTrack const &Track, int const Side ) {
 
     auto const *owner { Track.trPrev };
-    if( Track.eType != tt_Normal || Track.Segment == nullptr || owner == nullptr || owner->eType != tt_Switch || false == cut_rails( *owner ) ) {
+    if( Track.eType != tt_Normal || Track.Segment == nullptr || owner == nullptr || owner->eType != tt_Switch || false == shaped_blades( *owner ) ) {
         return 0.0;
     }
     for( int path = 0; path < 2; ++path ) {
@@ -831,7 +844,7 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
     }
     cached = switch_blade {};
     auto &result { *cached };
-    if( eType != tt_Switch || false == cut_rails( *this ) || m_profiles.empty() ) {
+    if( eType != tt_Switch || false == shaped_blades( *this ) || m_profiles.empty() ) {
         return result;
     }
     auto const side { blade_side( Path ) };
