@@ -557,10 +557,10 @@ std::uint64_t sky_occlusion::signature(scene::basic_region *Region, glm::ivec2 c
 {
 	auto const tilesize{static_cast<double>(m_layout.tile)};
 	glm::dvec2 const corner{Tile.x * tilesize, Tile.y * tilesize};
-	glm::dvec2 const far{corner + glm::dvec2{tilesize}};
+	glm::dvec2 const opposite{corner + glm::dvec2{tilesize}};
 	glm::dvec3 const center{corner.x + 0.5 * tilesize, 0.0, corner.y + 0.5 * tilesize};
 	auto const overlaps = [&](scene::bounding_area const &Area, double const Radius) {
-		return (Area.center.x + Radius >= corner.x) && (Area.center.x - Radius <= far.x) && (Area.center.z + Radius >= corner.y) && (Area.center.z - Radius <= far.y);
+		return (Area.center.x + Radius >= corner.x) && (Area.center.x - Radius <= opposite.x) && (Area.center.z + Radius >= corner.y) && (Area.center.z - Radius <= opposite.y);
 	};
 	std::uint64_t hash{0x5ca1ab1e};
 	auto const &found{Region->sections(center, static_cast<float>(tilesize * 0.75))};
@@ -605,10 +605,10 @@ void sky_occlusion::gather(scene::basic_region *Region, glm::ivec2 const &Tile, 
 {
 	auto const tilesize{static_cast<double>(m_layout.tile)};
 	glm::dvec2 const corner{Tile.x * tilesize, Tile.y * tilesize};
-	glm::dvec2 const far{corner + glm::dvec2{tilesize}};
+	glm::dvec2 const opposite{corner + glm::dvec2{tilesize}};
 	glm::dvec3 const center{corner.x + 0.5 * tilesize, 0.0, corner.y + 0.5 * tilesize};
 	auto const overlaps = [&](scene::bounding_area const &Area, double const Radius) {
-		return (Area.center.x + Radius >= corner.x) && (Area.center.x - Radius <= far.x) && (Area.center.z + Radius >= corner.y) && (Area.center.z - Radius <= far.y);
+		return (Area.center.x + Radius >= corner.x) && (Area.center.x - Radius <= opposite.x) && (Area.center.z + Radius >= corner.y) && (Area.center.z - Radius <= opposite.y);
 	};
 	auto const add = [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C, glm::vec3 const &Normal) {
 		// the bounds of the triangle against the tile
@@ -616,7 +616,7 @@ void sky_occlusion::gather(scene::basic_region *Region, glm::ivec2 const &Tile, 
 		auto const maxx{std::max(A.x, std::max(B.x, C.x))};
 		auto const minz{std::min(A.z, std::min(B.z, C.z))};
 		auto const maxz{std::max(A.z, std::max(B.z, C.z))};
-		if ((maxx < corner.x) || (minx > far.x) || (maxz < corner.y) || (minz > far.y))
+		if ((maxx < corner.x) || (minx > opposite.x) || (maxz < corner.y) || (minz > opposite.y))
 			return;
 		// whether it faces down: the side of the normals of its vertices (the side it's seen from), its winding taken where they
 		// don't tell
@@ -692,7 +692,7 @@ void sky_occlusion::gather(scene::basic_region *Region, glm::ivec2 const &Tile, 
 				transform = glm::scale(transform, glm::dvec3{instance->Scale()});
 				auto alpha{static_cast<std::uint32_t>(instance->Material() != nullptr ? instance->Material()->textures_alpha : 0x30300030)};
 				alpha ^= 0x0F0F000F;
-				gather_model(instance->pModel, alpha, transform, corner, far, Triangles);
+				gather_model(instance->pModel, alpha, transform, corner, opposite, Triangles);
 			}
 		}
 	}
