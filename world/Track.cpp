@@ -60,8 +60,10 @@ void init_switch_piece( TSegment &Segment, segment_data const &Piece, bool const
         p1.y += 0.18;
         p2.y += 0.18;
     }
-    if( glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 )
-     || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) ) {
+    // one with its radius given is a curve however gently it bends, as a short path bent with the curve it's laid into
+    if( Piece.radius == 0.f
+     && ( glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 )
+       || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) ) ) {
         cp1 = cp2 = glm::dvec3( 0, 0, 0 );
     }
     auto const straight { cp1 == glm::dvec3() && cp2 == glm::dvec3() };
@@ -837,10 +839,11 @@ void TTrack::init_segments( bool const Initial ) {
 
         // length2 is better than length for comparing because it does not require sqrt function
         // "prostowanie" prostych z kontrolnymi, dokładność 2cm: a straight only where both control vectors lie along it, or aren't
-        // given; one of them moved off it, the other one left where a straight has it, makes a curve
+        // given; one of them moved off it, the other one left where a straight has it, makes a curve. One with its radius given is a
+        // curve however gently it bends, as a short path bent with the curve it's laid into
         auto const startalong { cp1 == glm::dvec3() || glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 ) };
         auto const endalong { cp2 == glm::dvec3() || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) };
-        if( startalong && endalong ) {
+        if( startalong && endalong && fRadius == 0 ) {
 			cp1 = cp2 = glm::dvec3(0, 0, 0);
         }
 
@@ -932,8 +935,8 @@ void TTrack::init_segments( bool const Initial ) {
             // na przechyłce doliczyć jeszcze pół przechyłki?
         }
 
-        if( eType != tt_Cross ) {
-            // dla skrzyżowań muszą być podane kontrolne
+        if( eType != tt_Cross && fRadiusTable[ 0 ] == 0 ) {
+            // dla skrzyżowań muszą być podane kontrolne; a path with its radius given is a curve however gently it bends
 			// length2 is better than length for comparing because it does not require sqrt function
             if( glm::length2(( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq(0.02)
              || glm::length2(( p1 + p2 + p2 ) / 3.0 - p2 + cp1 ) < sq(0.02) ) {
@@ -997,8 +1000,8 @@ void TTrack::init_segments( bool const Initial ) {
             // na przechyłce doliczyć jeszcze pół przechyłki?
         }
 
-        if( eType != tt_Cross ) {
-            // dla skrzyżowań muszą być podane kontrolne
+        if( eType != tt_Cross && fRadiusTable[ 1 ] == 0 ) {
+            // dla skrzyżowań muszą być podane kontrolne; a path with its radius given is a curve however gently it bends
 			// length2 is better than length for comparing because it does not require sqrt function
             if( glm::length2((p3 + p3 + p4) / 3.0 - p3 - cp3) < sq(0.02)
              || glm::length2((p3 + p4 + p4) / 3.0 - p4 + cp3) < sq(0.02) ) {
