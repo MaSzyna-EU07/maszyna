@@ -139,7 +139,7 @@ std::string template_tooltip(editor_track::switch_template const &Template)
 		text += "\n";
 		text += Template.type == "Rkp" ? STR_C("Single slip (Rkp)") : Template.type == "Rkpd" ? STR_C("Double slip (Rkpd)") : STR_C("Crossing (Skrz)");
 		text += "\n" + format(STR_C("a %.3f m from the middle of the crossing to the joint"), Template.a) + "\n";
-		text += Template.type == "Rkp" ? STR_C("Click at a crossing of two straights, on the side of the tracks to join") : STR_C("Click at a crossing of two straights");
+		text += Template.type == "Rkp" ? STR_C("Drag at a crossing of two straights, on the side of the tracks to join") : STR_C("Drag at a crossing of two straights");
 		return text;
 	}
 	text += "\n" + format(STR_C("a %.3f m to the centre of the switch, b %.3f m on to its end"), Template.a, Template.b);
@@ -275,13 +275,13 @@ void editor_mode::render_switch_ui()
 	switch (kind)
 	{
 	case switch_kind::slip:
-	case switch_kind::crossing: how = {{"LMB on a crossing", "of two straights: it goes there"}}; break;
+	case switch_kind::crossing: how = {{"Drag at a crossing", "of two straights: it goes there"}}; break;
 	case switch_kind::connection:
 		how = {{"Drag", "from a straight onto the other track"}, {"Shift+wheel", "the kind"}, {"Ctrl+wheel", "R of the aligning curve"}};
 		if (tool.connection == static_cast<int>(connection::kind::double_crossover))
 			how.push_back({"Alt+wheel", "where they meet"});
 		break;
-	default: how = {{"Drag on a track", "along: the direction, sideways: the side"}}; break;
+	default: how = {{"Drag on a track", "along: the direction, sideways: the side"}, {"Drag on the ground", "a switch with no track, on from a free end near it"}}; break;
 	}
 	gesture_rows(how);
 

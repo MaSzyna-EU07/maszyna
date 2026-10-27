@@ -3159,6 +3159,33 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 	return track;
 }
 
+TTrack *editor_track::create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, path_style const &Style, std::string const &Name)
+{
+	if (Paths.size() < 2)
+		return nullptr;
+	if (Template.source != nullptr)
+		return create_switch(Template, Paths, *Template.source, Name);
+	std::ostringstream text;
+	text.precision(std::numeric_limits<double>::digits10);
+	// the rails of the style on both paths, its ballast under the switch
+	text << "switch " << Template.length << " 1.435 0.15 10 20 0 flat vis " << Style.rail << " 6 " << Style.rail << " 0.2 0.5 1.1 ";
+	write_points(text, Paths[0]);
+	write_points(text, Paths[1]);
+	text << "trackbed " << Style.ballast << ' ';
+	if (Style.velocity > 0.0)
+		text << "velocity " << Style.velocity << ' ';
+	if (false == Style.rail_profile.empty())
+		text << "railprofile " << Style.rail_profile << ' ';
+	text << "endtrack\n";
+	auto *track{load_text(text.str(), nullptr, Name)};
+	track->SwitchExtension->m_frogs = true;
+	track->SwitchExtension->m_movablenose = Template.movable;
+	track->SwitchExtension->m_bladeheel = Template.heel;
+	track->SwitchExtension->m_bladethrow = Template.bladethrow;
+	track->m_paths.assign(Paths.begin(), Paths.begin() + 2);
+	return track;
+}
+
 bool editor_track::touches(TTrack const &Track, glm::dvec3 const &Point)
 {
 	for (auto const &path : Track.m_paths)

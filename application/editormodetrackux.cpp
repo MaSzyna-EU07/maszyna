@@ -829,6 +829,14 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::switch_at, "Press and drag: a switch here, along sets its direction, sideways its side");
 		}
 	}
+	// a press on the ground lays a switch with no track there, going on from a free end within reach
+	if (m_hover.track == nullptr && free_switch_offered())
+	{
+		auto const end{free_switch_end(ground)};
+		intent.position = end.track != nullptr ? end.position : ground;
+		return make(kind::switch_free, end.track != nullptr ? "Press and drag: a switch going on from this free end, sideways its side"
+		                                                    : "Press and drag: a switch with no track, along the direction of its main track, then sideways its side");
+	}
 	if (m_track_tab == track_tab::lineside && m_fouling.tab().open)
 		if (auto const hit{m_fouling.hit()}; hit.has_value())
 		{
@@ -1022,7 +1030,20 @@ void editor_mode::track_press(track_intent const &Intent)
 		m_route.grip = Intent.index;
 		handle_drag_start(Intent.position);
 		return;
-	case kind::switch_at: start_switch_placement(); return;
+	case kind::switch_at:
+	{
+		auto const &io{ImGui::GetIO()};
+		m_switch.pressed_at = {io.MousePos.x, io.MousePos.y};
+		start_switch_placement();
+		return;
+	}
+	case kind::switch_free:
+	{
+		auto const &io{ImGui::GetIO()};
+		m_switch.pressed_at = {io.MousePos.x, io.MousePos.y};
+		start_free_switch(Intent.position);
+		return;
+	}
 	case kind::kilometrage:
 		if (Intent.track != nullptr)
 			m_km.pick(*Intent.track, Intent.position);
@@ -1099,6 +1120,7 @@ void editor_mode::draw_track_intent() const
 		case kind::route_vertex:
 		case kind::route_grip: drawlist->AddCircle(at, 13.0f, overlay_color::marked, 24, 2.5f); break;
 		case kind::switch_at:
+		case kind::switch_free:
 		case kind::straight_tool:
 			drawlist->AddCircleFilled(at, 4.0f, overlay_color::grip);
 			drawlist->AddCircle(at, 11.0f, overlay_color::grip, 20, 2.0f);

@@ -481,6 +481,49 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		                model->location().x, model->location().y, model->location().z, path.points[segment_data::point::start].y));
 		return selftest_result::handled;
 	}
+	if (command == "switchfree")
+	{
+		// a switch with no track: pressed at the point, the direction of its main track toward the second one (none at a free end), let
+		// go at the third one, whose side it takes
+		std::string label;
+		glm::dvec3 press{0.0};
+		glm::dvec3 heading{0.0};
+		glm::dvec3 release{0.0};
+		words >> label >> press.x >> press.z >> heading.x >> heading.z >> release.x >> release.z;
+		std::replace(label.begin(), label.end(), '_', ' ');
+		auto &tool{m_switch};
+		show_track_tab(track_tab::turnout);
+		tool.templates = editor_track::standard_switch_templates();
+		tool.collected = true;
+		tool.connection = -1;
+		tool.armed = -1;
+		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+			if (tool.templates[i].label.rfind(label, 0) == 0)
+			{
+				tool.armed = i;
+				break;
+			}
+		start_free_switch(press);
+		if (false == tool.placing)
+		{
+			WriteLog("SELFTEST switchfree: not started, no template " + label);
+			return selftest_result::handled;
+		}
+		if (tool.free_end.track == nullptr)
+			tool.free_heading = glm::normalize(geometry::plan_of(heading - tool.point));
+		tool.mouse = glm::dvec3{release.x, tool.point.y, release.z};
+		tool.placing = false;
+		finish_switch_placement();
+		WriteLog("SELFTEST switchfree" + (tool.free_end.track != nullptr ? " from " + tool.free_end.track->name() : std::string{}) + ": " + tool.status);
+		if (auto const *track{selected_track()}; track != nullptr && track->eType == tt_Switch)
+			for (std::size_t i = 0; i < track->m_paths.size(); ++i)
+			{
+				auto const &a{track->m_paths[i].points[segment_data::point::start]};
+				auto const &b{track->m_paths[i].points[segment_data::point::end]};
+				WriteLog(format("SELFTEST switchfree path %s/%zu: %.3f %.3f %.3f -> %.3f %.3f %.3f", track->name().c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z));
+			}
+		return selftest_result::handled;
+	}
 	if (command == "switchplace" || command == "switchcurve" || command == "slipplace")
 	{
 		std::string label;

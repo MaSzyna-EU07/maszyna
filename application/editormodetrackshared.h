@@ -207,6 +207,8 @@ float const kHandleRadius{10.0f};
 double const kLaySnapRadius{5.0};
 float const kSnapPixels{16.0f};
 double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
+double const kFreeSwitchLock{4.0}; // m of the drag a switch with no track takes the direction of its main track from
+double const kFreeSwitchRelease{2.0}; // m from its start the drag of a switch with no track lets the direction go again
 double const kSlipReach{12.0}; // m; a slip goes to the crossing nearest the cursor, if it's this close
 // m, of the straights past the ends of a curve a crossover laid along it reaches onto: from a transition it goes on onto the
 // straight after it

@@ -1727,6 +1727,9 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints.push_back({"Ctrl+wheel", "radius"});
 		hints.insert(hints.end(), {{"Release", "build"}, {"Esc", "cancel"}});
 	}
+	else if (m_switch.placing && m_switch.free)
+		hints = m_switch.free_end.track != nullptr ? std::vector<key_hint>{{"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}}
+		                                           : std::vector<key_hint>{{"Drag along", "the direction of the main track, held from 4 m on"}, {"Drag sideways", "side of the diverging track"}, {"Back to the start", "the direction free again"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
 		hints = m_switch.connection >= 0 && false == m_switch.curved ?
 		            std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}} :
@@ -1739,8 +1742,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		{
 		case switch_kind::connection: hints = {{"Press on a straight", "and drag onto the other track"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}}; break;
 		case switch_kind::slip:
-		case switch_kind::crossing: hints = {{"LMB", "at a crossing of two straights"}}; break;
-		default: hints = {{"LMB on a track", "the straight or the curve for the switch"}}; break;
+		case switch_kind::crossing: hints = {{"Press+drag at a crossing", "of two straights"}}; break;
+		default: hints = {{"LMB on a track", "the straight or the curve for the switch"}, {"Press+drag on the ground", "a switch with no track, on from a free end near it"}}; break;
 		}
 		if (selected != nullptr)
 		{
@@ -2472,7 +2475,7 @@ void editor_mode::draw_build_overlay() const
 			{
 				marker = plan.replaces->location();
 				colour = overlay_color::highlight;
-				text = STR_C("Click: this double slip is replaced by the one chosen");
+				text = STR_C("Press and drag: this double slip is replaced by the one chosen");
 			}
 			else if (valid)
 			{
@@ -2485,7 +2488,7 @@ void editor_mode::draw_build_overlay() const
 				}
 				marker = {plan.crossing.x, line.start.y + line.grade * plan.alongfirst, plan.crossing.y};
 				colour = overlay_color::highlight;
-				text = plan.note.empty() ? std::string{STR_C("Click: it goes here")} : plan.note;
+				text = plan.note.empty() ? std::string{STR_C("Press and drag: it goes here")} : plan.note;
 			}
 			ImVec2 screen;
 			if (projection.project(marker, screen))

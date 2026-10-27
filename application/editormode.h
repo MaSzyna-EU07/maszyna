@@ -1104,6 +1104,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static std::vector<segment_data> double_paths(double_switch const &Set);
 	// the switch of the template, or the two switches of a double one with the plain track between them, committed and recorded
 	std::vector<TTrack *> create_switch_set(editor_track::switch_template const &Shape, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name);
+	// with no Style, as the lay tool lays its tracks
+	std::vector<TTrack *> create_switch_set(editor_track::switch_template const &Shape, std::vector<segment_data> const &Paths, TTrack const *Style, std::string const &Name);
 	void record_slip(std::vector<TTrack *> const &Parts, std::string const &Kind, std::string const &Type, double const Radius, double const Angle, std::string const &Base, double const Middle = 0.0);
 	void render_switch_record(TTrack const &Track) const;
 	void route_store();
@@ -1267,6 +1269,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	{
 		std::vector<std::string> keep_names; // the names the switches laid next take, before the ones of the tool
 		bool curved{false};
+		// a switch placed where there's no track: started on the ground, or at the free end it goes on from in its direction; the direction
+		// of its main track taken from the drag once it's long enough, then the drag sideways gives the side of the diverging one
+		bool free{false};
+		editor_track::snap_target free_end;
+		std::optional<glm::dvec2> free_heading;
 		std::vector<curve_sample> frame;
 		std::vector<TTrack *> frame_tracks;
 		std::vector<editor_track::switch_template> templates;
@@ -1274,6 +1281,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int armed{-1};
 		int last{0}; // template armed the last time
 		bool placing{false};
+		// where it was pressed on the screen: let go no farther from there, the press places nothing, a click doesn't lay a switch by chance
+		glm::vec2 pressed_at{0.f};
 		double along{0.0};
 		double pressed{0.0}; // along a curve: where the press was, the start of the switch drawn from it to the ends of the cant ramps
 		glm::dvec3 point{0.0};
@@ -1565,6 +1574,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_rail_profile_hint(TTrack &Track);
 	bool start_switch_placement();
 	void finish_switch_placement();
+	// a switch with no track there: where a press on the ground starts it, at the free end of a track within reach or right there
+	editor_track::snap_target free_switch_end(glm::dvec3 const &Ground) const;
+	bool free_switch_offered() const;
+	void start_free_switch(glm::dvec3 const &Ground);
+	// the start of the switch, the way its main track goes and the side of its diverging one, as the drag gives them so far
+	void free_switch_pose(glm::dvec3 &Start, glm::dvec2 &Heading, int &Side, double &Grade) const;
+	std::vector<segment_data> free_switch_paths() const;
+	void insert_free_switch();
 	std::vector<segment_data> switch_preview() const;
 	void insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side);
 	void switch_placed(std::vector<TTrack *> const &Created);
@@ -1815,7 +1832,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling, measure, route_trace, kilometrage, srk_boundary };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling, measure, route_trace, kilometrage, srk_boundary };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};

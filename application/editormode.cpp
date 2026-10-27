@@ -6865,7 +6865,21 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                 if (m_extend.active)
                     finish_extend();
                 if (m_switch.placing)
-                    finish_switch_placement();
+                {
+                    // a press let go with no drag places no switch, a click on the ground with no track there selects nothing
+                    auto const &io{ImGui::GetIO()};
+                    if (glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_switch.pressed_at) <= 10.0f)
+                    {
+                        m_switch.placing = false;
+                        if (m_switch.free)
+                        {
+                            m_switch.free = false;
+                            track_click_select(nullptr);
+                        }
+                    }
+                    else
+                        finish_switch_placement();
+                }
                 if (m_turntable.placing)
                     turntable_finish_placement();
                 if (m_signal.placing || m_signal.moving)

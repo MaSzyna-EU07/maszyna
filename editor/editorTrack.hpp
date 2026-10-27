@@ -512,6 +512,8 @@ class editor_track
 	static glm::dvec3 point_at(TTrack const &Track, double const T);
 	static std::vector<segment_data> place_switch(switch_template const &Template, glm::dvec3 const &Origin, glm::dvec2 const &Direction, int const Side, double const Grade);
 	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name = {});
+	// one laid where there's no track to copy, styled as the lay tool lays its tracks
+	static TTrack *create_switch(switch_template const &Template, std::vector<segment_data> const &Paths, path_style const &Style, std::string const &Name = {});
 	static TTrack *create_turntable(segment_data const &Path, TTrack const *Style, std::string const &Name);
 	static void move_straights(std::vector<straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
 	// Intervals: the path of the chain each piece takes the place of, else they're handed out in turn

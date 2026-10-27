@@ -49,12 +49,28 @@ std::vector<segment_data> editor_mode::switch_preview() const
 	auto const &tool{m_switch};
 	if (false == tool.placing || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
 		return {};
+	if (tool.free)
+		return free_switch_paths();
 	if (tool.curved)
 	{
 		int forward;
 		int side;
 		curved_switch_pose(forward, side);
 		return curved_switch_paths(tool.templates[tool.armed], tool.frame, curved_switch_start(forward), forward, side);
+	}
+	if (tool.templates[tool.armed].double_slip)
+	{
+		// a slip at the crossing where it was pressed: its two straights, laid there once dragged
+		slip_plan plan;
+		if (false == plan_double_slip(tool.line, tool.point, tool.templates[tool.armed], plan) || plan.replaces != nullptr)
+			return {};
+		auto const straight = [](glm::dvec3 const &From, glm::dvec3 const &To) {
+			segment_data path;
+			path.points[segment_data::point::start] = From;
+			path.points[segment_data::point::end] = To;
+			return path;
+		};
+		return {straight(plan.points[0], plan.points[1]), straight(plan.points[2], plan.points[3])};
 	}
 	if (switch_link plan; plan_switch_link(plan))
 	{
@@ -80,6 +96,7 @@ bool editor_mode::start_switch_placement()
 		return false;
 	glm::dvec3 const ground{cursor_level(selected->m_paths.front().points[segment_data::point::start].y)};
 	tool.curved = false;
+	tool.free = false;
 	tool.status.clear();
 	if (current_straight().tracks.empty())
 	{
@@ -141,7 +158,12 @@ bool editor_mode::start_switch_placement()
 		return false;
 	if (tool.templates[tool.armed].double_slip)
 	{
-		insert_double_slip(line, cursor, tool.templates[tool.armed]);
+		// at the crossing where it was pressed, laid only once dragged, as a switch is
+		tool.along = along;
+		tool.point = cursor;
+		tool.mouse = cursor;
+		tool.line = line;
+		tool.placing = true;
 		return true;
 	}
 	tool.along = along;
@@ -155,6 +177,12 @@ bool editor_mode::start_switch_placement()
 void editor_mode::finish_switch_placement()
 {
 	auto &tool{m_switch};
+	if (tool.free)
+	{
+		tool.placing = false;
+		insert_free_switch();
+		return;
+	}
 	if (tool.connection >= 0)
 	{
 		if (false == tool.curved)
@@ -170,6 +198,11 @@ void editor_mode::finish_switch_placement()
 	tool.placing = false;
 	if (tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
 		return;
+	if (tool.templates[tool.armed].double_slip && false == tool.curved)
+	{
+		insert_double_slip(tool.line, tool.point, tool.templates[tool.armed]);
+		return;
+	}
 	if (linked)
 	{
 		insert_linked_switch(plan);
@@ -206,6 +239,98 @@ void editor_mode::insert_switch(editor_track::straight const &Line, double const
 	switch_placed(placed);
 }
 
+
+bool editor_mode::free_switch_offered() const
+{
+	auto const &tool{m_switch};
+	return m_track_tab == track_tab::turnout && tool.connection < 0 && tool.armed >= 0 && tool.armed < static_cast<int>(tool.templates.size()) && false == tool.templates[tool.armed].double_slip;
+}
+
+editor_track::snap_target editor_mode::free_switch_end(glm::dvec3 const &Ground) const
+{
+	return editor_track::find_free_end(nullptr, kRailCategory, Ground, kLaySnapRadius, {});
+}
+
+void editor_mode::start_free_switch(glm::dvec3 const &Ground)
+{
+	auto &tool{m_switch};
+	if (false == free_switch_offered())
+		return;
+	tool.status.clear();
+	tool.curved = false;
+	tool.line = {};
+	tool.free = true;
+	tool.free_end = free_switch_end(Ground);
+	tool.free_heading.reset();
+	if (tool.free_end.track != nullptr)
+	{
+		// going on from the free end in its direction
+		auto const outward{plan_of(-tool.free_end.direction)};
+		if (glm::length(outward) > 1e-9)
+			tool.free_heading = glm::normalize(outward);
+		tool.point = tool.free_end.position;
+	}
+	else
+		tool.point = lay_bed(Ground);
+	tool.mouse = tool.point;
+	tool.placing = true;
+}
+
+void editor_mode::free_switch_pose(glm::dvec3 &Start, glm::dvec2 &Heading, int &Side, double &Grade) const
+{
+	auto const &tool{m_switch};
+	Start = tool.point;
+	glm::dvec2 const offset{plan_of(tool.mouse - tool.point)};
+	// till the drag is long enough to take the direction from, it follows the cursor, the diverging track to the left
+	Heading = tool.free_heading.value_or(glm::length(offset) > 1e-6 ? glm::normalize(offset) : glm::dvec2{0.0, 1.0});
+	Side = cross(Heading, offset) >= 0.0 ? 1 : -1;
+	Grade = 0.0;
+	if (tool.free_end.track != nullptr)
+	{
+		// the grade of the track it goes on from
+		auto const &into{tool.free_end.direction};
+		auto const run{glm::length(plan_of(into))};
+		Grade = run > 1e-9 ? -into.y / run : 0.0;
+	}
+}
+
+std::vector<segment_data> editor_mode::free_switch_paths() const
+{
+	auto const &tool{m_switch};
+	if (tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
+		return {};
+	glm::dvec3 start;
+	glm::dvec2 heading;
+	int side;
+	double grade;
+	free_switch_pose(start, heading, side, grade);
+	return editor_track::place_switch(tool.templates[tool.armed], start, heading, side, grade);
+}
+
+void editor_mode::insert_free_switch()
+{
+	auto &tool{m_switch};
+	tool.free = false;
+	// a click with no drag on the ground gives no direction; from a free end it's the end's
+	if (tool.free_end.track == nullptr && false == tool.free_heading.has_value())
+	{
+		tool.status = refused(STR_C("Drag along the main track of the switch, then sideways to the side of the diverging one"));
+		return;
+	}
+	auto const paths{free_switch_paths()};
+	if (paths.size() < 2)
+		return;
+	auto const made{create_switch_set(tool.templates[tool.armed], paths, tool.free_end.track, switch_name_for_new())};
+	if (made.empty())
+		return;
+	push_track_snapshot({}, made, {});
+	straight_refresh();
+	switch_placed(made);
+	auto const text{tool.free_end.track != nullptr ? format(STR_C("Switch %s laid on from %s, its other ends free: lay on from them"), made.front()->name().c_str(), tool.free_end.track->name().c_str())
+	                                                : format(STR_C("Switch %s laid with no track, its ends free: lay on from them"), made.front()->name().c_str())};
+	tool.status = text + (tool.status.empty() ? std::string{} : "\n" + tool.status);
+	ui()->set_status(tool.status, false);
+}
 
 void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 {
@@ -424,15 +549,24 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 
 std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_template const &Shape, std::vector<segment_data> const &Paths, TTrack const &Style, std::string const &Name)
 {
+	return create_switch_set(Shape, Paths, &Style, Name);
+}
+
+std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_template const &Shape, std::vector<segment_data> const &Paths, TTrack const *Style, std::string const &Name)
+{
+	// with no track to copy, styled as the lay tool lays its tracks
+	auto const switch_of = [&](editor_track::switch_template const &Template, std::vector<segment_data> const &Each, std::string const &Named) {
+		return Style != nullptr ? editor_track::create_switch(Template, Each, *Style, Named) : editor_track::create_switch(Template, Each, m_lay.style, Named);
+	};
 	if (Shape.twofold() && Paths.size() >= 5)
 	{
 		auto firstshape{Shape};
 		firstshape.length = glm::distance(Paths[0].points[segment_data::point::start], Paths[0].points[segment_data::point::end]);
 		auto secondshape{Shape};
 		secondshape.length = Shape.length - Shape.stagger;
-		auto *one{editor_track::create_switch(firstshape, Paths, Style, Name)};
-		auto *two{one != nullptr ? editor_track::create_switch(secondshape, {Paths[2], Paths[3]}, Style, Name + "b") : nullptr};
-		auto *link{two != nullptr ? editor_track::create_path(Style, Paths[4]) : nullptr};
+		auto *one{switch_of(firstshape, Paths, Name)};
+		auto *two{one != nullptr ? switch_of(secondshape, {Paths[2], Paths[3]}, Name + "b") : nullptr};
+		auto *link{two == nullptr ? nullptr : Style != nullptr ? editor_track::create_path(*Style, Paths[4]) : editor_track::create_path(m_lay.style, Paths[4])};
 		if (link == nullptr)
 		{
 			m_switch.status = refused(STR_C("The switch couldn't be created from this template"));
@@ -443,7 +577,7 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 		m_switch.status = format(STR_C("Double switch %s with its second switch %s inserted"), one->name().c_str(), two->name().c_str());
 		return {one, two, link};
 	}
-	auto *track{editor_track::create_switch(Shape, Paths, Style, Name)};
+	auto *track{switch_of(Shape, Paths, Name)};
 	if (track == nullptr)
 	{
 		m_switch.status = refused(STR_C("The switch couldn't be created from this template"));

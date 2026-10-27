@@ -12315,3 +12315,54 @@ msgid_plural "The drives of %zu switches are moved to the tips of their blades"
 msgstr[0] "Napęd %zu rozjazdu przestawiony na ostrza iglic"
 msgstr[1] "Napędy %zu rozjazdów przestawione na ostrza iglic"
 msgstr[2] "Napędy %zu rozjazdów przestawione na ostrza iglic"
+
+msgid "Press and drag: a switch going on from this free end, sideways its side"
+msgstr "Wciśnij i przeciągnij: rozjazd od tego wolnego końca, w bok jego strona"
+
+msgid "Press and drag: a switch with no track, along the direction of its main track, then sideways its side"
+msgstr "Wciśnij i przeciągnij: rozjazd bez toru, wzdłuż kierunek toru zasadniczego, potem w bok jego strona"
+
+msgid "Drag along the main track of the switch, then sideways to the side of the diverging one"
+msgstr "Przeciągnij wzdłuż toru zasadniczego rozjazdu, potem w bok na stronę toru zwrotnego"
+
+msgid "Switch %s laid on from %s, its other ends free: lay on from them"
+msgstr "Rozjazd %s ułożony od %s, pozostałe końce wolne: kładź od nich dalej"
+
+msgid "Switch %s laid with no track, its ends free: lay on from them"
+msgstr "Rozjazd %s ułożony bez toru, końce wolne: kładź od nich dalej"
+
+msgid "Press and drag: this double slip is replaced by the one chosen"
+msgstr "Wciśnij i przeciągnij: ten rozjazd krzyżowy zostanie zastąpiony wybranym"
+
+msgid "Press and drag: it goes here"
+msgstr "Wciśnij i przeciągnij: stanie tutaj"
+
+msgid "Press+drag at a crossing"
+msgstr "Wciśnij i przeciągnij na skrzyżowaniu"
+
+msgid "of two straights"
+msgstr "dwóch prostych"
+
+msgid "Press+drag on the ground"
+msgstr "Wciśnij i przeciągnij na terenie"
+
+msgid "a switch with no track, on from a free end near it"
+msgstr "rozjazd bez toru, od pobliskiego wolnego końca"
+
+msgid "the direction of the main track, held from 4 m on"
+msgstr "kierunek toru zasadniczego, od 4 m zatrzaśnięty"
+
+msgid "Back to the start"
+msgstr "Z powrotem do początku"
+
+msgid "the direction free again"
+msgstr "kierunek znów wolny"
+
+msgid "Drag at a crossing"
+msgstr "Przeciągnij na skrzyżowaniu"
+
+msgid "Drag at a crossing of two straights"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych"
+
+msgid "Drag at a crossing of two straights, on the side of the tracks to join"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych, po stronie torów do połączenia"

@@ -102,7 +102,19 @@ void editor_mode::update_build_tools()
 		joining(m_extend.snap);
 	}
 	if (m_switch.placing)
+	{
 		m_switch.mouse = cursor_level(m_switch.point.y);
+		// a switch with no track takes the direction of its main track once the drag is long enough, dragged sideways after that it
+		// takes the side; back by its start the direction is free again
+		if (auto &tool{m_switch}; tool.free && tool.free_end.track == nullptr)
+		{
+			auto const offset{plan_of(tool.mouse - tool.point)};
+			if (glm::length(offset) < kFreeSwitchRelease)
+				tool.free_heading.reset();
+			else if (false == tool.free_heading.has_value() && glm::length(offset) >= kFreeSwitchLock)
+				tool.free_heading = glm::normalize(offset);
+		}
+	}
 	auto &lay{m_lay};
 	lay.preview.clear();
 	lay.preview_error.clear();
